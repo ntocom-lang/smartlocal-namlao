@@ -1,0 +1,34 @@
+@import "tailwindcss";
+@variant dark (&:where(.dark, .dark *));
+
+:root {
+  --color-primary: #1c7cd6;
+  --color-primary-dark: #1565b3;
+  --color-primary-rgb: 28, 124, 214;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: 'Sarabun', sans-serif;
+  background: linear-gradient(-45deg, #09090b, #2e1065, #1e3a8a, #020617);
+  background-size: 400% 400%;
+  animation: gradient-animation 15s ease infinite;
+  background-attachment: fixed;
+  color: #f8fafc;
+  -webkit-font-smoothing: antialiased;
+}
+
+@keyframes gradient-animation {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+#root { min-height: 100vh; }
+
+@keyframes fadeSlide {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}

@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm create *)",
+      "Bash(npx create-vite@latest . --template react)",
+      "Bash(npx --yes create-vite@latest . --template react --force)",
+      "Bash(echo \"Exit: $?\")",
+      "Bash(cd /tmp)",
+      "Bash(npx create-vite@latest smartlocal --template react)",
+      "Bash(npm install *)",
+      "Bash(npx tailwindcss *)",
+      "Bash(./node_modules/.bin/tailwindcss init *)",
+      "Bash(timeout 15 npm run dev)",
+      "Bash(npm run *)",
+      "Bash(npx supabase *)",
+      "WebFetch(domain:namlao.web.app)"
+    ]
+  }
+}
