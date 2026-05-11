@@ -4,10 +4,12 @@ import { TenantProvider, useTenant } from './contexts/TenantContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 import Header from './components/layout/Header'
 import Footer from './components/layout/Footer'
+import BottomNav from './components/layout/BottomNav'
 import HomePage from './pages/HomePage'
 import CitizenForm from './pages/CitizenForm'
 import AdminLogin from './pages/AdminLogin'
 import AuthPage from './pages/AuthPage'
+import ProfilePage from './pages/ProfilePage'
 import { supabase } from './lib/supabase'
 
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'))
@@ -78,6 +80,11 @@ function AppShell() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/auth" element={<AuthPage />} />
+          <Route path="/profile" element={
+            <RequireAuth>
+              <ProfilePage />
+            </RequireAuth>
+          } />
           <Route path="/request" element={
             <RequireAuth>
               <CitizenForm />
@@ -99,6 +106,7 @@ function AppShell() {
         </Routes>
       </main>
       <Footer />
+      <BottomNav />
     </div>
   )
 }

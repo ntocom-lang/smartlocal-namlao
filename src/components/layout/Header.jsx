@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Menu, X, Phone, Sun, Moon, LogIn, LogOut, UserCircle2 } from 'lucide-react'
+import { Menu, X, Phone, Sun, Moon, LogIn, LogOut, UserCircle2, Bell, User } from 'lucide-react'
 import { useTenant } from '../../contexts/TenantContext'
 import { useTheme } from '../../contexts/ThemeContext'
 import { supabase } from '../../lib/supabase'
@@ -32,8 +32,8 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-50 shadow-md">
-      {/* Top strip */}
-      <div className="text-white text-xs py-1 px-4 flex justify-end items-center gap-3"
+      {/* Top strip — hidden on mobile */}
+      <div className="hidden md:flex text-white text-xs py-1 px-4 justify-end items-center gap-3"
            style={{ backgroundColor: 'var(--color-primary-dark)' }}>
         <Phone size={11} />
         <span>E-Service</span>
@@ -44,27 +44,27 @@ export default function Header() {
       {/* Main header */}
       <div className="text-white px-4 py-3"
            style={{ background: `linear-gradient(90deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)` }}>
-        <div className="max-w-6xl mx-auto flex items-center gap-4">
+        <div className="max-w-6xl mx-auto flex items-center gap-3">
           {/* Logo circle */}
           {tenant?.logo_url ? (
             <img
               src={tenant.logo_url}
               alt="โลโก้"
-              className="w-14 h-14 shrink-0 rounded-full object-contain"
+              className="w-10 h-10 md:w-14 md:h-14 shrink-0 rounded-full object-contain"
             />
           ) : (
-            <div className="w-14 h-14 rounded-full border-2 border-white/40 shrink-0 bg-white/20
-                            flex items-center justify-center text-2xl font-bold">
+            <div className="w-10 h-10 md:w-14 md:h-14 rounded-full border-2 border-white/40 shrink-0 bg-white/20
+                            flex items-center justify-center text-xl font-bold">
               {tenant?.name?.[0] ?? '?'}
             </div>
           )}
 
           {/* Name block */}
           <div className="flex-1 min-w-0">
-            <h1 className="font-bold text-lg md:text-xl leading-tight truncate">
+            <h1 className="font-bold text-sm md:text-xl leading-tight line-clamp-2">
               {tenant?.name}
             </h1>
-            <p className="text-white/70 text-xs">ระบบยื่นคำร้องออนไลน์ · {tenant?.province}</p>
+            <p className="text-white/70 text-[10px] md:text-xs hidden sm:block">ระบบยื่นคำร้องออนไลน์ · {tenant?.province}</p>
           </div>
 
           {/* Desktop nav */}
@@ -104,10 +104,31 @@ export default function Header() {
             </a>
           )}
 
-          {/* Mobile menu button */}
-          <button onClick={() => setOpen(!open)} className="md:hidden p-1 text-white">
-            {open ? <X size={22} /> : <Menu size={22} />}
-          </button>
+          {/* Mobile: Bell + Auth icons */}
+          <div className="md:hidden flex items-center gap-1">
+            <button className="p-2 text-white/85 hover:text-white transition-colors">
+              <Bell size={20} />
+            </button>
+            {session ? (
+              <a href="/profile" className="p-1">
+                {session.user?.user_metadata?.avatar_url ? (
+                  <img
+                    src={session.user.user_metadata.avatar_url}
+                    alt="avatar"
+                    className="w-8 h-8 rounded-full object-cover border-2 border-white/60"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-white/20 border-2 border-white/60 flex items-center justify-center text-white text-xs font-bold">
+                    {(session.user?.user_metadata?.full_name || session.user?.email || '?')[0].toUpperCase()}
+                  </div>
+                )}
+              </a>
+            ) : (
+              <a href="/auth" className="p-2 text-white/85 hover:text-white transition-colors">
+                <User size={20} />
+              </a>
+            )}
+          </div>
         </div>
       </div>
 
