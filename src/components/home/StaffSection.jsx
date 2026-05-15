@@ -104,7 +104,7 @@ export default function StaffSection() {
     mayor.length > 0       && { label: 'นายกเทศมนตรี',   people: mayor,       isMayor: true },
     clerks.length > 0      && { label: 'ปลัดเทศบาล',      people: clerks,      isMayor: true },
     teamMembers.length > 0 && { label: 'ทีมบริการ',        people: teamMembers, isMayor: false },
-    deputies.length > 0    && { label: 'รองนายกเทศมนตรี', people: deputies,    isMayor: true },
+    deputies.length > 0    && { label: 'ทีมผู้บริหาร',     people: deputies,    isMayor: true },
   ].filter(Boolean)
 
   // Auto-slide ทุก 3 วินาที — Hook ต้องอยู่ก่อน early return เสมอ
