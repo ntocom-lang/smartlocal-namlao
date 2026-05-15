@@ -6,7 +6,7 @@ import {
   Phone, MapPin, Globe, Share2, MessageCircle,
   ChevronRight, Star, Copy, Download, Check,
 } from 'lucide-react'
-import QRCode from 'react-qr-code'
+import { QRCode } from 'react-qr-code'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useNotifications } from '../contexts/NotificationsContext'
