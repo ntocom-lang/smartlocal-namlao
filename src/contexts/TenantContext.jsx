@@ -40,6 +40,43 @@ function detectTenantSlug() {
   return segment ?? null
 }
 
+function injectPWAManifest(tenant) {
+  const manifest = {
+    name: `${tenant.name} E-Service`,
+    short_name: tenant.name,
+    description: 'ระบบยื่นคำร้องออนไลน์',
+    theme_color: tenant.theme_color ?? '#1c7cd6',
+    background_color: '#ffffff',
+    display: 'standalone',
+    start_url: '/',
+    icons: tenant.logo_url
+      ? [{ src: tenant.logo_url, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }]
+      : [],
+  }
+
+  const blob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' })
+  const url = URL.createObjectURL(blob)
+
+  let link = document.querySelector('link[rel="manifest"]')
+  if (!link) {
+    link = document.createElement('link')
+    link.rel = 'manifest'
+    document.head.appendChild(link)
+  }
+  link.href = url
+
+  // iOS Safari ใช้ apple-touch-icon แทน manifest icons
+  if (tenant.logo_url) {
+    let appleIcon = document.querySelector('link[rel="apple-touch-icon"]')
+    if (!appleIcon) {
+      appleIcon = document.createElement('link')
+      appleIcon.rel = 'apple-touch-icon'
+      document.head.appendChild(appleIcon)
+    }
+    appleIcon.href = tenant.logo_url
+  }
+}
+
 function applyTheme(hexColor) {
   const root = document.documentElement
   root.style.setProperty('--color-primary', hexColor)
@@ -85,6 +122,7 @@ export function TenantProvider({ children }) {
       setTerminology(TERMINOLOGY[data.org_type] ?? TERMINOLOGY['อบต.'])
       applyTheme(data.theme_color ?? '#1d4ed8')
       document.title = data.name
+      injectPWAManifest(data)
       setLoading(false)
     }
 
