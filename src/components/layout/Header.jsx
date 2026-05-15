@@ -59,32 +59,18 @@ export default function Header() {
       <div className="text-white px-4 py-3"
            style={{ background: `linear-gradient(90deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)` }}>
         <div className="max-w-6xl mx-auto flex items-center gap-3">
-          {/* Logo circle — external website หรือ home */}
-          {tenant?.website_url ? (
-            <a href={tenant.website_url} target="_blank" rel="noreferrer" className="shrink-0">
-              {tenant?.logo_url ? (
-                <img src={tenant.logo_url} alt="โลโก้"
-                  className="w-10 h-10 md:w-14 md:h-14 rounded-full object-contain hover:opacity-85 transition-opacity" />
-              ) : (
-                <div className="w-10 h-10 md:w-14 md:h-14 rounded-full border-2 border-white/40 bg-white/20
-                                flex items-center justify-center text-xl font-bold hover:bg-white/30 transition-colors">
-                  {tenant?.name?.[0] ?? '?'}
-                </div>
-              )}
-            </a>
-          ) : (
-            <Link to={role === 'technician' ? '/technician' : '/'} className="shrink-0">
-              {tenant?.logo_url ? (
-                <img src={tenant.logo_url} alt="โลโก้"
-                  className="w-10 h-10 md:w-14 md:h-14 rounded-full object-contain hover:opacity-85 transition-opacity" />
-              ) : (
-                <div className="w-10 h-10 md:w-14 md:h-14 rounded-full border-2 border-white/40 bg-white/20
-                                flex items-center justify-center text-xl font-bold hover:bg-white/30 transition-colors">
-                  {tenant?.name?.[0] ?? '?'}
-                </div>
-              )}
-            </Link>
-          )}
+          {/* Logo circle — always home */}
+          <Link to={role === 'technician' ? '/technician' : '/'} className="shrink-0">
+            {tenant?.logo_url ? (
+              <img src={tenant.logo_url} alt="โลโก้"
+                className="w-10 h-10 md:w-14 md:h-14 rounded-full object-contain hover:opacity-85 transition-opacity" />
+            ) : (
+              <div className="w-10 h-10 md:w-14 md:h-14 rounded-full border-2 border-white/40 bg-white/20
+                              flex items-center justify-center text-xl font-bold hover:bg-white/30 transition-colors">
+                {tenant?.name?.[0] ?? '?'}
+              </div>
+            )}
+          </Link>
 
           {/* Name block */}
           <div className="flex-1 min-w-0">
