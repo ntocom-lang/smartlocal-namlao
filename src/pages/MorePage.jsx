@@ -4,7 +4,7 @@ import {
   ArrowLeft, UserCircle2, Pencil, LogIn, LogOut,
   Bell, FileSearch, ClipboardList, ShieldCheck,
   Phone, MapPin, Globe, Share2, MessageCircle,
-  ChevronRight, Star, Copy, Download, Check,
+  ChevronRight, Star, Copy, Download, Check, Monitor,
 } from 'lucide-react'
 import { QRCode } from 'react-qr-code'
 import { supabase } from '../lib/supabase'
@@ -16,7 +16,38 @@ import { useNotifications } from '../contexts/NotificationsContext'
 function QRShareCard({ tenant }) {
   const qrRef = useRef(null)
   const [copied, setCopied] = useState(false)
+  const [installPrompt, setInstallPrompt] = useState(null)
+  const [installState, setInstallState] = useState('unknown') // 'unknown' | 'installable' | 'installed'
   const url = window.location.origin
+
+  useEffect(() => {
+    // ตรวจว่า install แล้วหรือยัง
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true
+    if (isStandalone) {
+      setInstallState('installed')
+      return
+    }
+
+    const handler = (e) => {
+      e.preventDefault()
+      setInstallPrompt(e)
+      setInstallState('installable')
+    }
+    window.addEventListener('beforeinstallprompt', handler)
+    return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [])
+
+  async function handleInstall() {
+    if (!installPrompt) return
+    await installPrompt.prompt()
+    const { outcome } = await installPrompt.userChoice
+    if (outcome === 'accepted') {
+      setInstallState('installed')
+      setInstallPrompt(null)
+    }
+  }
 
   async function handleCopy() {
     await navigator.clipboard.writeText(url)
@@ -74,6 +105,21 @@ function QRShareCard({ tenant }) {
         <div className="bg-white/15 rounded-xl px-4 py-2 w-full text-center">
           <p className="text-white/90 text-xs font-medium truncate">{url.replace('https://', '')}</p>
         </div>
+
+        {/* Install button */}
+        {installState === 'installed' ? (
+          <div className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-white/10 border border-white/20">
+            <Check size={16} className="text-green-300" />
+            <span className="text-sm text-white/80 font-semibold">มีในหน้าจอหลักแล้ว</span>
+          </div>
+        ) : installState === 'installable' ? (
+          <button onClick={handleInstall}
+            className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-white font-bold text-sm transition-opacity hover:opacity-90 active:opacity-80"
+            style={{ color: 'var(--color-primary)' }}>
+            <Monitor size={18} />
+            เพิ่มลงในหน้าจอหลัก
+          </button>
+        ) : null}
 
         {/* Buttons */}
         <div className="grid grid-cols-3 gap-2.5 w-full">
