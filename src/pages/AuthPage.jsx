@@ -3,6 +3,17 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { Mail, Lock, User, Loader2, UserCircle2, Phone, Eye, EyeOff } from 'lucide-react'
 
+const PHONE_EMAIL_DOMAIN = 'phone.smartlocal.app'
+
+function phoneToEmail(phone) {
+  return `${phone.replace(/\D/g, '')}@${PHONE_EMAIL_DOMAIN}`
+}
+
+function resolveLoginEmail(input) {
+  const v = input.trim()
+  return v.includes('@') ? v : phoneToEmail(v)
+}
+
 export default function AuthPage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -34,12 +45,12 @@ export default function AuthPage() {
     setError('')
     setLoading(true)
     const { error: err } = await supabase.auth.signInWithPassword({
-      email: form.email,
+      email: resolveLoginEmail(form.email),
       password: form.password,
       options: { persistSession: remember },
     })
     setLoading(false)
-    if (err) { setError('อีเมลหรือรหัสผ่านไม่ถูกต้อง'); return }
+    if (err) { setError('เบอร์โทร/อีเมล หรือรหัสผ่านไม่ถูกต้อง'); return }
     navigate(from, { replace: true })
   }
 
@@ -47,9 +58,18 @@ export default function AuthPage() {
     e.preventDefault()
     setError('')
     if (form.password.length < 6) { setError('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร'); return }
+
+    const hasEmail = form.email.trim().length > 0
+    const phoneDigits = form.phone.replace(/\D/g, '')
+    if (!hasEmail && phoneDigits.length < 9) {
+      setError('กรุณาใส่เบอร์โทรศัพท์ให้ถูกต้อง (อย่างน้อย 9 หลัก)')
+      return
+    }
+
+    const email = hasEmail ? form.email.trim() : phoneToEmail(form.phone)
     setLoading(true)
     const { error: err } = await supabase.auth.signUp({
-      email: form.email,
+      email,
       password: form.password,
       options: {
         data: { full_name: form.name.trim(), phone: form.phone.trim() },
@@ -57,7 +77,11 @@ export default function AuthPage() {
     })
     setLoading(false)
     if (err) { setError(err.message); return }
-    setSuccess('สมัครสมาชิกสำเร็จ! กรุณาตรวจสอบอีเมลเพื่อยืนยันตัวตน แล้วเข้าสู่ระบบ')
+    if (hasEmail) {
+      setSuccess('สมัครสมาชิกสำเร็จ! กรุณาตรวจสอบอีเมลเพื่อยืนยันตัวตน แล้วเข้าสู่ระบบ')
+    } else {
+      setSuccess('สมัครสมาชิกสำเร็จ! กรุณาเข้าสู่ระบบด้วยเบอร์โทรและรหัสผ่าน')
+    }
     setMode('login')
   }
 
@@ -113,8 +137,10 @@ export default function AuthPage() {
 
           <div className="relative">
             <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input value={form.email} onChange={set('email')} required
-              type="email" placeholder="อีเมล"
+            <input value={form.email} onChange={set('email')}
+              required={mode === 'login'}
+              type={mode === 'login' ? 'text' : 'email'}
+              placeholder={mode === 'login' ? 'อีเมลหรือเบอร์โทรศัพท์' : 'อีเมล (ไม่บังคับ)'}
               className="w-full pl-9 pr-3 py-3 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:border-transparent"
               style={{ '--tw-ring-color': 'var(--color-primary)' }} />
           </div>
@@ -123,7 +149,7 @@ export default function AuthPage() {
             <div className="relative">
               <Phone size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input value={form.phone} onChange={set('phone')}
-                type="tel" placeholder="เบอร์โทรศัพท์ (ไม่บังคับ)"
+                required type="tel" placeholder="เบอร์โทรศัพท์ *"
                 className="w-full pl-9 pr-3 py-3 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:border-transparent"
                 style={{ '--tw-ring-color': 'var(--color-primary)' }} />
             </div>
@@ -145,7 +171,7 @@ export default function AuthPage() {
           {mode === 'login' && (
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)}
-                className="w-4 h-4 rounded accent-[var(--color-primary)]" />
+                className="w-4 h-4 rounded accent-(--color-primary)" />
               <span className="text-sm text-gray-500">จดจำรหัสผ่าน</span>
             </label>
           )}
