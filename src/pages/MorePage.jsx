@@ -1,14 +1,102 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft, UserCircle2, Pencil, LogIn, LogOut,
   Bell, FileSearch, ClipboardList, ShieldCheck,
   Phone, MapPin, Globe, Share2, MessageCircle,
-  ChevronRight, Star,
+  ChevronRight, Star, Copy, Download, Check,
 } from 'lucide-react'
+import QRCode from 'react-qr-code'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useNotifications } from '../contexts/NotificationsContext'
+
+// ─── QR Share Card ────────────────────────────────────────────────────────
+
+function QRShareCard({ tenant }) {
+  const qrRef = useRef(null)
+  const [copied, setCopied] = useState(false)
+  const url = window.location.origin
+
+  async function handleCopy() {
+    await navigator.clipboard.writeText(url)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  async function handleShare() {
+    if (navigator.share) {
+      await navigator.share({ title: tenant?.name, text: 'ระบบยื่นคำร้องออนไลน์', url })
+    } else {
+      handleCopy()
+    }
+  }
+
+  function handleDownload() {
+    const svg = qrRef.current?.querySelector('svg')
+    if (!svg) return
+    const svgData = new XMLSerializer().serializeToString(svg)
+    const canvas = document.createElement('canvas')
+    canvas.width = 300
+    canvas.height = 300
+    const ctx = canvas.getContext('2d')
+    const img = new Image()
+    img.onload = () => {
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, 300, 300)
+      ctx.drawImage(img, 0, 0, 300, 300)
+      const a = document.createElement('a')
+      a.download = `qr-${tenant?.slug ?? 'smartlocal'}.png`
+      a.href = canvas.toDataURL('image/png')
+      a.click()
+    }
+    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)))
+  }
+
+  return (
+    <div className="rounded-3xl overflow-hidden shadow-lg"
+         style={{ background: 'linear-gradient(145deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)' }}>
+      <div className="px-5 pt-6 pb-5 flex flex-col items-center gap-4">
+        <div className="flex items-center gap-2">
+          <Share2 size={16} className="text-white/80" />
+          <p className="text-white font-bold text-base">แชร์บริการออนไลน์</p>
+        </div>
+        <p className="text-white/70 text-xs text-center -mt-2">
+          สแกน QR Code เพื่อเข้าใช้บริการ<br />แชร์ให้เพื่อนหรือครอบครัวได้ง่ายๆ
+        </p>
+
+        {/* QR Code */}
+        <div ref={qrRef} className="bg-white rounded-2xl p-4 shadow-md">
+          <QRCode value={url} size={160} />
+        </div>
+
+        {/* URL */}
+        <div className="bg-white/15 rounded-xl px-4 py-2 w-full text-center">
+          <p className="text-white/90 text-xs font-medium truncate">{url.replace('https://', '')}</p>
+        </div>
+
+        {/* Buttons */}
+        <div className="grid grid-cols-3 gap-2.5 w-full">
+          <button onClick={handleShare}
+            className="flex flex-col items-center gap-1.5 py-3 rounded-2xl bg-white/20 hover:bg-white/30 active:bg-white/40 transition-colors">
+            <Share2 size={18} className="text-white" />
+            <span className="text-[11px] text-white font-semibold">แชร์ลิงก์</span>
+          </button>
+          <button onClick={handleCopy}
+            className="flex flex-col items-center gap-1.5 py-3 rounded-2xl bg-white/20 hover:bg-white/30 active:bg-white/40 transition-colors">
+            {copied ? <Check size={18} className="text-green-300" /> : <Copy size={18} className="text-white" />}
+            <span className="text-[11px] text-white font-semibold">{copied ? 'คัดลอกแล้ว' : 'คัดลอกลิงก์'}</span>
+          </button>
+          <button onClick={handleDownload}
+            className="flex flex-col items-center gap-1.5 py-3 rounded-2xl bg-white/20 hover:bg-white/30 active:bg-white/40 transition-colors">
+            <Download size={18} className="text-white" />
+            <span className="text-[11px] text-white font-semibold">บันทึก QR</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 // ─── Section + Row helpers ─────────────────────────────────────────────────
 
@@ -303,6 +391,9 @@ export default function MorePage() {
             />
           )}
         </Section>
+
+        {/* ─── QR Share ─── */}
+        <QRShareCard tenant={tenant} />
 
         {/* ─── Footer ─── */}
         <div className="text-center pb-2">
