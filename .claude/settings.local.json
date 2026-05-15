@@ -20,7 +20,8 @@
       "Bash(tasklist /FI \"PID eq 16016\" /FO LIST)",
       "PowerShell(Get-Process -Id 16016)",
       "PowerShell(Get-Process | Where-Object { $_.Id -eq 16016 })",
-      "PowerShell(Stop-Process -Id 16016 -Force)"
+      "PowerShell(Stop-Process -Id 16016 -Force)",
+      "Bash(vercel --version)"
     ]
   }
 }
