@@ -68,7 +68,7 @@ export default function AuthPage() {
 
     const email = hasEmail ? form.email.trim() : phoneToEmail(form.phone)
     setLoading(true)
-    const { error: err } = await supabase.auth.signUp({
+    const { data, error: err } = await supabase.auth.signUp({
       email,
       password: form.password,
       options: {
@@ -77,12 +77,18 @@ export default function AuthPage() {
     })
     setLoading(false)
     if (err) { setError(err.message); return }
-    if (hasEmail) {
-      setSuccess('สมัครสมาชิกสำเร็จ! กรุณาตรวจสอบอีเมลเพื่อยืนยันตัวตน แล้วเข้าสู่ระบบ')
-    } else {
-      setSuccess('สมัครสมาชิกสำเร็จ! กรุณาเข้าสู่ระบบด้วยเบอร์โทรและรหัสผ่าน')
+    if (data.session) {
+      navigate(from, { replace: true })
+      return
     }
-    setMode('login')
+    // session อาจ null แม้ปิด confirm email — sign in อัตโนมัติด้วยข้อมูลเดิม
+    const { error: loginErr } = await supabase.auth.signInWithPassword({ email, password: form.password })
+    if (!loginErr) {
+      navigate(from, { replace: true })
+    } else {
+      setSuccess('สมัครสมาชิกสำเร็จ! กรุณาเข้าสู่ระบบ')
+      setMode('login')
+    }
   }
 
   return (
