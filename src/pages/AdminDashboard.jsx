@@ -435,7 +435,11 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
 
         {/* Action footer for Admin */}
         <div className="px-5 py-4 border-t border-gray-100 shrink-0 bg-gray-50">
-          {c.status === 'in_progress' && !showCloseJob ? (
+          {currentUserRole === 'viewer' ? (
+            <button onClick={onClose} className="px-4 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors">
+              ปิดหน้าต่าง
+            </button>
+          ) : c.status === 'in_progress' && !showCloseJob ? (
             <div className="flex gap-2">
               <button onClick={() => setShowCloseJob(true)}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white transition-all active:scale-95"
@@ -544,6 +548,7 @@ const ROLE_LABELS = {
   superadmin:  { label: 'Super Admin', color: '#7c3aed', bg: '#ede9fe' },
   admin:       { label: 'แอดมิน',     color: '#1d4ed8', bg: '#dbeafe' },
   technician:  { label: 'ช่าง',       color: '#d97706', bg: '#fef3c7' },
+  viewer:      { label: 'ผู้บริหาร',  color: '#059669', bg: '#d1fae5' },
   citizen:     { label: 'สมาชิก',     color: '#374151', bg: '#f3f4f6' },
 }
 
@@ -622,6 +627,7 @@ function UserManager({ tenant, currentUserRole }) {
                     className="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-700 focus:outline-none shrink-0"
                   >
                     <option value="citizen">สมาชิก</option>
+                    <option value="viewer">ผู้บริหาร</option>
                     <option value="technician">ช่าง</option>
                     <option value="admin">แอดมิน</option>
                     <option value="superadmin">Super Admin</option>
@@ -635,6 +641,7 @@ function UserManager({ tenant, currentUserRole }) {
                     className="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-700 focus:outline-none shrink-0"
                   >
                     <option value="citizen">สมาชิก</option>
+                    <option value="viewer">ผู้บริหาร</option>
                     <option value="technician">ช่าง</option>
                     <option value="admin">แอดมิน</option>
                   </select>
@@ -1615,7 +1622,11 @@ export default function AdminDashboard() {
     supabase.auth.getSession().then(({ data }) => {
       if (!data.session) return
       supabase.from('profiles').select('role').eq('id', data.session.user.id).single()
-        .then(({ data: p }) => setCurrentUserRole(p?.role ?? 'citizen'))
+        .then(({ data: p }) => {
+          const r = p?.role ?? 'citizen'
+          setCurrentUserRole(r)
+          if (r === 'viewer') setActivePage('report')
+        })
     })
   }, [])
 
