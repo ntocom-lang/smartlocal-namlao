@@ -1,34 +1,48 @@
 import { useState, useEffect } from 'react'
-import { Menu, X, Phone, Sun, Moon, LogIn, LogOut, UserCircle2, Bell, User } from 'lucide-react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Phone, Sun, Moon, LogIn, LogOut, UserCircle2, User, LayoutDashboard, Bell } from 'lucide-react'
 import { useTenant } from '../../contexts/TenantContext'
 import { useTheme } from '../../contexts/ThemeContext'
 import { supabase } from '../../lib/supabase'
+import { useNotifications } from '../../contexts/NotificationsContext'
 
 const NAV_LINKS = [
-  { label: 'หน้าแรก',        href: '/' },
-  { label: 'ยื่นคำร้อง',     href: '/request' },
-  { label: 'ตรวจสอบสถานะ',  href: '/status' },
-  { label: 'ข่าวสาร',        href: '/news' },
-  { label: 'ติดต่อเรา',      href: '/contact' },
+  { label: 'หน้าแรก',       href: '/' },
+  { label: 'ยื่นคำร้อง',    href: '/complaint' },
+  { label: 'คำร้องของฉัน',  href: '/my-complaints' },
+  { label: 'โปรไฟล์',       href: '/profile' },
 ]
 
 export default function Header() {
   const { tenant } = useTenant()
   const { theme, toggle } = useTheme()
-  const [open, setOpen] = useState(false)
+  const location = useLocation()
+  const navigate = useNavigate()
+  const { unreadCount } = useNotifications()
   const [session, setSession] = useState(null)
+  const [role, setRole] = useState(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+      setSession(s)
+      if (!s) setRole(null)
+    })
     return () => subscription.unsubscribe()
   }, [])
+
+  useEffect(() => {
+    if (!session) return
+    supabase.from('profiles').select('role').eq('id', session.user.id).single()
+      .then(({ data }) => setRole(data?.role ?? 'citizen'))
+  }, [session])
 
   async function logout() {
     await supabase.auth.signOut()
   }
 
   const displayName = session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || ''
+  const isAdmin = role === 'admin' || role === 'superadmin'
 
   return (
     <header className="sticky top-0 z-50 shadow-md">
@@ -45,18 +59,31 @@ export default function Header() {
       <div className="text-white px-4 py-3"
            style={{ background: `linear-gradient(90deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)` }}>
         <div className="max-w-6xl mx-auto flex items-center gap-3">
-          {/* Logo circle */}
-          {tenant?.logo_url ? (
-            <img
-              src={tenant.logo_url}
-              alt="โลโก้"
-              className="w-10 h-10 md:w-14 md:h-14 shrink-0 rounded-full object-contain"
-            />
+          {/* Logo circle — external website หรือ home */}
+          {tenant?.website_url ? (
+            <a href={tenant.website_url} target="_blank" rel="noreferrer" className="shrink-0">
+              {tenant?.logo_url ? (
+                <img src={tenant.logo_url} alt="โลโก้"
+                  className="w-10 h-10 md:w-14 md:h-14 rounded-full object-contain hover:opacity-85 transition-opacity" />
+              ) : (
+                <div className="w-10 h-10 md:w-14 md:h-14 rounded-full border-2 border-white/40 bg-white/20
+                                flex items-center justify-center text-xl font-bold hover:bg-white/30 transition-colors">
+                  {tenant?.name?.[0] ?? '?'}
+                </div>
+              )}
+            </a>
           ) : (
-            <div className="w-10 h-10 md:w-14 md:h-14 rounded-full border-2 border-white/40 shrink-0 bg-white/20
-                            flex items-center justify-center text-xl font-bold">
-              {tenant?.name?.[0] ?? '?'}
-            </div>
+            <Link to={role === 'technician' ? '/technician' : '/'} className="shrink-0">
+              {tenant?.logo_url ? (
+                <img src={tenant.logo_url} alt="โลโก้"
+                  className="w-10 h-10 md:w-14 md:h-14 rounded-full object-contain hover:opacity-85 transition-opacity" />
+              ) : (
+                <div className="w-10 h-10 md:w-14 md:h-14 rounded-full border-2 border-white/40 bg-white/20
+                                flex items-center justify-center text-xl font-bold hover:bg-white/30 transition-colors">
+                  {tenant?.name?.[0] ?? '?'}
+                </div>
+              )}
+            </Link>
           )}
 
           {/* Name block */}
@@ -69,12 +96,20 @@ export default function Header() {
 
           {/* Desktop nav */}
           <nav className="hidden md:flex items-center gap-0.5">
-            {NAV_LINKS.map((l) => (
-              <a key={l.href} href={l.href}
-                 className="px-3 py-2 rounded-lg text-sm text-white/85 hover:text-white hover:bg-white/15 transition-colors">
-                {l.label}
-              </a>
-            ))}
+            {NAV_LINKS.map((l) => {
+              const isActive = location.pathname === l.href ||
+                (l.href !== '/' && location.pathname.startsWith(l.href))
+              return (
+                <Link key={l.href} to={l.href}
+                   className={`px-3 py-2 rounded-lg text-sm transition-colors font-medium ${
+                     isActive
+                       ? 'text-white bg-white/20'
+                       : 'text-white/80 hover:text-white hover:bg-white/12'
+                   }`}>
+                  {l.label}
+                </Link>
+              )
+            })}
           </nav>
 
           {/* Theme toggle */}
@@ -89,28 +124,43 @@ export default function Header() {
           {/* Auth */}
           {session ? (
             <div className="hidden md:flex items-center gap-2">
-              <span className="text-white/80 text-xs flex items-center gap-1">
+              {isAdmin && (
+                <Link to="/admin"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-colors hover:opacity-90"
+                  style={{ backgroundColor: 'white', color: 'var(--color-primary)' }}>
+                  <LayoutDashboard size={14} /> แผงควบคุม Admin
+                </Link>
+              )}
+              <Link to="/profile" className="text-white/80 text-xs flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-white/12 transition-colors">
                 <UserCircle2 size={15} /> {displayName}
-              </span>
+              </Link>
               <button onClick={logout}
                 className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs text-white/80 hover:text-white hover:bg-white/15 transition-colors">
                 <LogOut size={14} /> ออก
               </button>
             </div>
           ) : (
-            <a href="/auth"
+            <Link to="/auth"
               className="hidden md:flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs bg-white/20 hover:bg-white/30 text-white transition-colors font-medium">
               <LogIn size={14} /> เข้าสู่ระบบ
-            </a>
+            </Link>
           )}
 
-          {/* Mobile: Bell + Auth icons */}
+          {/* Mobile: Bell + Auth icon */}
           <div className="md:hidden flex items-center gap-1">
-            <button className="p-2 text-white/85 hover:text-white transition-colors">
+            <button
+              onClick={() => navigate('/notifications')}
+              aria-label="การแจ้งเตือน"
+              className="relative p-2 text-white/85 hover:text-white transition-colors">
               <Bell size={20} />
+              {unreadCount > 0 && (
+                <span className="absolute top-1 right-1 min-w-3.5 h-3.5 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow-sm">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
             </button>
             {session ? (
-              <a href="/profile" className="p-1">
+              <Link to="/profile" className="p-1">
                 {session.user?.user_metadata?.avatar_url ? (
                   <img
                     src={session.user.user_metadata.avatar_url}
@@ -122,39 +172,15 @@ export default function Header() {
                     {(session.user?.user_metadata?.full_name || session.user?.email || '?')[0].toUpperCase()}
                   </div>
                 )}
-              </a>
+              </Link>
             ) : (
-              <a href="/auth" className="p-2 text-white/85 hover:text-white transition-colors">
+              <Link to="/auth" className="p-2 text-white/85 hover:text-white transition-colors">
                 <User size={20} />
-              </a>
+              </Link>
             )}
           </div>
         </div>
       </div>
-
-      {/* Mobile dropdown */}
-      {open && (
-        <div className="md:hidden text-white divide-y divide-white/10"
-             style={{ backgroundColor: 'var(--color-primary-dark)' }}>
-          {NAV_LINKS.map((l) => (
-            <a key={l.href} href={l.href} onClick={() => setOpen(false)}
-               className="block px-5 py-3 text-sm hover:bg-white/10">
-              {l.label}
-            </a>
-          ))}
-          {session ? (
-            <button onClick={() => { logout(); setOpen(false) }}
-              className="block w-full text-left px-5 py-3 text-sm hover:bg-white/10 text-white/80">
-              ออกจากระบบ ({displayName})
-            </button>
-          ) : (
-            <a href="/auth" onClick={() => setOpen(false)}
-               className="block px-5 py-3 text-sm hover:bg-white/10 font-medium">
-              เข้าสู่ระบบ / สมัครสมาชิก
-            </a>
-          )}
-        </div>
-      )}
     </header>
   )
 }

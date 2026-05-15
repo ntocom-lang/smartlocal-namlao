@@ -24,12 +24,18 @@ function detectTenantSlug() {
   const parts = hostname.split('.')
   const excluded = ['www', 'app', 'admin', 'localhost']
 
-  // Subdomain: namlao.localhost หรือ namlao.smartlocal.th
-  if (parts.length >= 2 && !excluded.includes(parts[0])) {
+  // Subdomain: namlao.smartlocal.th — ต้องเป็น custom domain เท่านั้น
+  // ไม่นับ xxx.vercel.app หรือ localhost
+  const isCustomDomain =
+    !hostname.endsWith('.vercel.app') &&
+    hostname !== 'localhost' &&
+    !hostname.match(/^\d/)   // ไม่ใช่ IP
+
+  if (isCustomDomain && parts.length >= 2 && !excluded.includes(parts[0])) {
     return parts[0]
   }
 
-  // Path fallback: /namlao/...
+  // Path mode: smartlocal.vercel.app/namlao/...
   const segment = pathname.split('/').filter(Boolean)[0]
   return segment ?? null
 }
@@ -65,7 +71,7 @@ export function TenantProvider({ children }) {
     async function fetchTenant() {
       const { data, error: dbError } = await supabase
         .from('municipalities')
-        .select('id, slug, name, org_type, province, theme_color, logo_url, developer_name')
+        .select('id, slug, name, org_type, province, theme_color, logo_url, developer_name, website_url')
         .eq('slug', slug)
         .single()
 

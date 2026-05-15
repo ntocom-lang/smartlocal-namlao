@@ -12,8 +12,7 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
   const [error, setError] = useState('')
-  const [notifications, setNotifications] = useState(true)
-  const [editName, setEditName] = useState(false)
+const [editName, setEditName] = useState(false)
   const [editPhone, setEditPhone] = useState(false)
   const [isGoogleLinked, setIsGoogleLinked] = useState(false)
   const fileRef = useRef()
@@ -190,20 +189,12 @@ export default function ProfilePage() {
             )}
           </div>
 
-          {/* การแจ้งเตือน */}
+          {/* อีเมล */}
           <div className="flex items-center px-5 py-4 gap-3">
-            <span className="text-sm text-gray-700 flex-1">การแจ้งเตือน</span>
-            <button
-              onClick={() => setNotifications((v) => !v)}
-              className={`relative w-12 h-6 rounded-full transition-colors ${notifications ? 'bg-blue-500' : 'bg-gray-300'}`}>
-              <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${notifications ? 'translate-x-6' : 'translate-x-0.5'}`} />
-            </button>
+            <span className="text-sm text-gray-700 flex-1">อีเมล</span>
+            <span className="text-sm text-gray-500 text-right truncate max-w-45">{session?.user?.email || '-'}</span>
           </div>
-        </div>
 
-        {/* Delete account */}
-        <div className="text-center">
-          <button className="text-sm text-red-500 font-medium py-1">ลบบัญชี</button>
         </div>
 
         {/* Feedback */}

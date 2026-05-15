@@ -1,0 +1,1111 @@
+import { useEffect, useState, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
+import {
+  PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
+} from 'recharts'
+import {
+  RefreshCw, ClipboardList, Clock, Loader2,
+  CheckCircle2, XCircle, AlertCircle, ChevronRight,
+  Filter, Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical,
+  X, FileText, AlignLeft, Image, Calendar, Hash, Home, LayoutGrid,
+} from 'lucide-react'
+import { supabase } from '../lib/supabase'
+import { useTenant } from '../contexts/TenantContext'
+
+// ─── Status config ────────────────────────────────────────────────────────────
+const STATUS = {
+  pending:     { label: 'รอดำเนินการ',    color: '#f59e0b', bg: '#fef3c7', text: '#92400e' },
+  received:    { label: 'รับเรื่องแล้ว',   color: '#3b82f6', bg: '#dbeafe', text: '#1e40af' },
+  in_progress: { label: 'กำลังดำเนินการ', color: '#8b5cf6', bg: '#ede9fe', text: '#5b21b6' },
+  completed:   { label: 'เสร็จสิ้น',      color: '#10b981', bg: '#d1fae5', text: '#065f46' },
+  rejected:    { label: 'ปฏิเสธ',         color: '#ef4444', bg: '#fee2e2', text: '#991b1b' },
+}
+
+const STATUS_FLOW = ['pending', 'received', 'in_progress', 'completed']
+const STATUS_FLOW_LABEL = {
+  pending:     { label: 'รอดำเนินการ',    desc: 'ประชาชนส่งคำร้องเข้าระบบ' },
+  received:    { label: 'รับเรื่องแล้ว',   desc: 'เจ้าหน้าที่รับเรื่องและตรวจสอบ' },
+  in_progress: { label: 'กำลังดำเนินการ', desc: 'อยู่ระหว่างดำเนินการแก้ไข' },
+  completed:   { label: 'เสร็จสิ้น',      desc: 'ดำเนินการเสร็จสิ้นเรียบร้อย' },
+}
+
+const NEXT_ACTION = {
+  pending:     { label: 'รับเรื่อง',       next: 'received' },
+  received:    { label: 'เริ่มดำเนินการ', next: 'in_progress' },
+  in_progress: { label: 'ปิดงาน',         next: 'completed' },
+}
+
+const CATEGORY_LABEL = {
+  road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าส่องสว่าง',
+  trash: 'ขยะ/ความสะอาด', water: 'น้ำประปา',
+  flood: 'น้ำท่วม/ระบายน้ำ', tree: 'ต้นไม้/สวนสาธารณะ',
+  noise: 'เหตุรำคาญ', other: 'อื่นๆ',
+}
+
+const CATEGORY_EMOJI = {
+  road: '🛣️', light: '💡', trash: '🗑️', water: '🚰',
+  flood: '🌊', tree: '🌳', noise: '📢', drain: '🕳️',
+  waste_water: '💧', suction: '🚛', manhole: '⚙️', vendor: '🏪',
+  building: '🏗️', mosquito: '🦟', pollution: '🌫️', corruption: '⚖️',
+  tax: '📋', canal: '🏞️', animals: '🐕', other: '📝',
+}
+
+const FILTER_TABS = ['ทั้งหมด', ...Object.values(STATUS).map((s) => s.label)]
+const FILTER_KEYS = [null, ...Object.keys(STATUS)]
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+function StatCard({ label, value, icon: Icon, color }) {
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex items-center gap-4">
+      <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+           style={{ backgroundColor: `${color}20` }}>
+        <Icon size={22} style={{ color }} />
+      </div>
+      <div>
+        <p className="text-2xl font-bold text-gray-800 leading-none">{value}</p>
+        <p className="text-xs text-gray-500 mt-0.5">{label}</p>
+      </div>
+    </div>
+  )
+}
+
+function StatusBadge({ status }) {
+  const s = STATUS[status] ?? STATUS.pending
+  return (
+    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"
+          style={{ backgroundColor: s.bg, color: s.text }}>
+      {s.label}
+    </span>
+  )
+}
+
+function StatusStepper({ status }) {
+  if (status === 'rejected') {
+    return (
+      <div className="flex items-center gap-3 p-4 bg-red-50 rounded-2xl border border-red-100">
+        <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+          <XCircle size={20} className="text-red-500" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-red-700">คำร้องถูกปฏิเสธ</p>
+          <p className="text-xs text-red-400 mt-0.5">ระบบยุติการดำเนินการคำร้องนี้</p>
+        </div>
+      </div>
+    )
+  }
+
+  const currentIdx = STATUS_FLOW.indexOf(status)
+
+  return (
+    <div className="space-y-0">
+      {STATUS_FLOW.map((step, i) => {
+        const done = i <= currentIdx
+        const isCurrent = i === currentIdx
+        const isLast = i === STATUS_FLOW.length - 1
+        const info = STATUS_FLOW_LABEL[step]
+
+        return (
+          <div key={step} className="flex gap-4">
+            {/* line + dot column */}
+            <div className="flex flex-col items-center">
+              <div
+                className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 border-2 transition-all mt-1"
+                style={done
+                  ? { backgroundColor: 'var(--color-primary)', borderColor: 'var(--color-primary)' }
+                  : { backgroundColor: '#fff', borderColor: '#e5e7eb' }}
+              >
+                {done && !isCurrent ? (
+                  <CheckCircle2 size={14} className="text-white" />
+                ) : isCurrent ? (
+                  <div className="w-2.5 h-2.5 rounded-full bg-white" />
+                ) : (
+                  <div className="w-2.5 h-2.5 rounded-full bg-gray-200" />
+                )}
+              </div>
+              {!isLast && (
+                <div
+                  className="w-0.5 flex-1 my-1 rounded-full"
+                  style={{ backgroundColor: i < currentIdx ? 'var(--color-primary)' : '#e5e7eb', minHeight: '28px' }}
+                />
+              )}
+            </div>
+
+            {/* text column */}
+            <div className={`pb-5 pt-0.5 ${isLast ? 'pb-0' : ''}`}>
+              <p className={`text-sm font-semibold transition-colors ${done ? 'text-gray-800' : 'text-gray-300'}`}>
+                {info.label}
+                {isCurrent && (
+                  <span className="ml-2 text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+                    style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 15%, transparent)', color: 'var(--color-primary)' }}>
+                    ปัจจุบัน
+                  </span>
+                )}
+              </p>
+              <p className={`text-xs mt-0.5 transition-colors ${done ? 'text-gray-400' : 'text-gray-200'}`}>
+                {info.desc}
+              </p>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function ActionButton({ status, id, onUpdate, loading }) {
+  const action = NEXT_ACTION[status]
+  if (!action) return null
+  return (
+    <button onClick={() => onUpdate(id, action.next)} disabled={loading === id}
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white transition-all active:scale-95 disabled:opacity-50"
+      style={{ backgroundColor: 'var(--color-primary)' }}>
+      {loading === id
+        ? <Loader2 size={12} className="animate-spin" />
+        : <ChevronRight size={12} />}
+      {action.label}
+    </button>
+  )
+}
+
+function RejectButton({ status, id, onUpdate, loading }) {
+  if (status === 'completed' || status === 'rejected') return null
+  return (
+    <button onClick={() => onUpdate(id, 'rejected')} disabled={loading === id}
+      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition-colors disabled:opacity-50">
+      <XCircle size={12} /> ปฏิเสธ
+    </button>
+  )
+}
+
+const CustomTooltip = ({ active, payload }) => {
+  if (!active || !payload?.length) return null
+  const { name, value } = payload[0]
+  return (
+    <div className="bg-white shadow-lg rounded-xl px-3 py-2 text-sm border border-gray-100">
+      <p className="font-medium text-gray-700">{name}</p>
+      <p className="text-gray-500">{value} รายการ</p>
+    </div>
+  )
+}
+
+// ─── Complaint Detail Modal ───────────────────────────────────────────────────
+function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating }) {
+  if (!c) return null
+  const attachments = c.attachments ?? []
+  const categoryLabel = CATEGORY_LABEL[c.category] ?? c.category
+  const categoryEmoji = CATEGORY_EMOJI[c.category] ?? '📄'
+  const dateStr = new Date(c.created_at).toLocaleDateString('th-TH', {
+    day: '2-digit', month: 'long', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  })
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+
+      {/* Sheet */}
+      <div className="relative w-full sm:max-w-lg bg-white sm:rounded-2xl rounded-t-3xl shadow-2xl max-h-[90dvh] flex flex-col overflow-hidden">
+        {/* Header - Gradient */}
+        <div className="shrink-0 px-5 pt-6 pb-5 relative"
+             style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 60%, color-mix(in srgb, var(--color-primary) 70%, #7c3aed) 100%)' }}>
+          <button onClick={onClose}
+            className="absolute top-4 right-4 p-2 rounded-xl bg-white/20 hover:bg-white/30 text-white transition-colors">
+            <X size={16} />
+          </button>
+
+          <div className="flex items-start gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-2xl shrink-0">
+              {categoryEmoji}
+            </div>
+            <div className="flex-1 min-w-0 pr-10">
+              <p className="text-white/70 text-xs font-medium">ประเภทคำร้อง</p>
+              <p className="text-white font-bold text-base leading-tight mt-0.5">{categoryLabel}</p>
+              {c.subject && (
+                <p className="text-white/80 text-sm mt-1 leading-snug">{c.subject}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between mt-4 pt-4 border-t border-white/20">
+            <div>
+              <p className="text-white/60 text-[10px] uppercase tracking-wider">เลขที่คำร้อง</p>
+              <p className="text-white font-black text-lg tracking-wider mt-0.5 font-mono">
+                {c.complaint_number ? (() => { const d = new Date(c.created_at); const yy = String(d.getFullYear()+543).slice(-2); const mm = String(d.getMonth()+1).padStart(2,'0'); return `${yy}${mm}${String(c.complaint_number).padStart(3,'0')}` })() : '—'}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-white/60 text-[10px] uppercase tracking-wider">ยื่นเมื่อ</p>
+              <p className="text-white/90 text-xs font-medium mt-0.5">{dateStr} น.</p>
+            </div>
+          </div>
+        </div>
+
+        {/* scrollable body */}
+        <div className="overflow-y-auto flex-1 px-5 py-5 space-y-5 bg-white">
+          {/* status stepper */}
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">ความคืบหน้า</p>
+            <StatusStepper status={c.status} />
+          </div>
+
+          {/* contact / origin user */}
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ข้อมูลผู้แจ้ง</p>
+            <div className="bg-blue-50 rounded-2xl p-4 border border-blue-100 flex items-center gap-3">
+              <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center shrink-0">
+                <Users size={18} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-gray-800">
+                  {c.profiles?.full_name || 'ไม่ระบุชื่อ (ผู้ใช้งานทั่วไป)'}
+                </p>
+                <p className="text-xs text-gray-500 font-mono mt-0.5">
+                  {c.profiles?.email || (c.user_id ? `ID: ${c.user_id.slice(0, 8)}` : 'ไม่ได้เข้าสู่ระบบ')}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Location + Phone */}
+          {(c.location_name || c.village || c.phone || c.latitude) && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">จุดเกิดเหตุและติดต่อ</p>
+              <div className="bg-gray-50 rounded-2xl divide-y divide-gray-100 overflow-hidden border border-gray-100">
+                {(c.location_name || c.village) && (
+                  <div className="flex items-center gap-3 px-4 py-3">
+                    <div className="w-8 h-8 rounded-xl bg-orange-50 flex items-center justify-center shrink-0">
+                      <MapPin size={15} className="text-orange-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] text-gray-400">สถานที่</p>
+                      <p className="text-sm font-medium text-gray-800 truncate">{c.location_name ?? c.village}</p>
+                    </div>
+                  </div>
+                )}
+                {c.phone && (
+                  <a href={`tel:${c.phone}`}
+                     className="flex items-center gap-3 px-4 py-3 hover:bg-gray-100 transition-colors active:bg-gray-100">
+                    <div className="w-8 h-8 rounded-xl bg-green-50 flex items-center justify-center shrink-0">
+                      <Phone size={15} className="text-green-500" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] text-gray-400">เบอร์โทรติดต่อ</p>
+                      <p className="text-sm font-bold text-gray-800">{c.phone}</p>
+                    </div>
+                    <span className="text-xs font-semibold px-2 py-1 bg-green-100 text-green-700 rounded-lg shrink-0">โทรออก</span>
+                  </a>
+                )}
+                {c.latitude && (
+                  <a href={`https://maps.google.com/?q=${c.latitude},${c.longitude}`}
+                     target="_blank" rel="noreferrer"
+                     className="flex items-center gap-3 px-4 py-3 hover:bg-gray-100 transition-colors">
+                    <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
+                      <MapPin size={15} className="text-blue-500" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] text-gray-400">พิกัด</p>
+                      <p className="text-sm font-medium text-gray-800">
+                        {c.latitude.toFixed(5)}, {c.longitude.toFixed(5)}
+                      </p>
+                    </div>
+                    <span className="text-xs font-semibold px-2 py-1 bg-blue-100 text-blue-700 rounded-lg shrink-0">เปิดแผนที่</span>
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* detail */}
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">รายละเอียดแนบมา</p>
+            <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{c.detail}</p>
+            </div>
+          </div>
+
+          {/* Attachments */}
+          {attachments.length > 0 && (
+            <div className="space-y-2 pb-4">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                ไฟล์แนบ ({attachments.length})
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {attachments.map((url, i) => (
+                  <a key={i} href={url} target="_blank" rel="noreferrer"
+                     className="aspect-square rounded-xl overflow-hidden border border-gray-200 bg-gray-100 flex items-center justify-center">
+                    {/\.(jpg|jpeg|png|gif|webp)$/i.test(url) ? (
+                      <img src={url} alt={`ไฟล์ ${i + 1}`} className="w-full h-full object-cover" />
+                    ) : (
+                      <FileText size={22} className="text-gray-400" />
+                    )}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Action footer for Admin */}
+        <div className="px-5 py-4 border-t border-gray-100 shrink-0 bg-gray-50 flex gap-2">
+          <ActionButton status={c.status} id={c.id} onUpdate={(id, next) => { onUpdate(id, next); onClose() }} loading={updating} />
+          <RejectButton status={c.status} id={c.id} onUpdate={(id, next) => { onUpdate(id, next); onClose() }} loading={updating} />
+          <button onClick={onClose} className="ml-auto px-4 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors">
+            ปิดหน้าต่าง
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Row({ icon: Icon, label, value }) {
+  return (
+    <div className="flex items-start gap-2.5">
+      <Icon size={14} className="text-gray-400 mt-0.5 shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="text-[10px] text-gray-400 uppercase tracking-wide">{label}</p>
+        <p className="text-sm text-gray-800 font-medium mt-0.5 wrap-break-word">{value}</p>
+      </div>
+    </div>
+  )
+}
+
+// ─── User Manager ─────────────────────────────────────────────────────────────
+const ROLE_LABELS = {
+  superadmin: { label: 'Super Admin', color: '#7c3aed', bg: '#ede9fe' },
+  admin:      { label: 'แอดมิน',     color: '#1d4ed8', bg: '#dbeafe' },
+  citizen:    { label: 'สมาชิก',     color: '#374151', bg: '#f3f4f6' },
+}
+
+function UserManager({ tenant, currentUserRole }) {
+  const [users, setUsers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(null)
+
+  const fetchUsers = useCallback(async () => {
+    setLoading(true)
+    // superadmin เห็นทุกคน, admin เห็นเฉพาะ municipality ตัวเอง
+    let query = supabase.from('profiles').select('*').order('created_at', { ascending: false })
+    if (currentUserRole === 'admin') {
+      query = query.eq('municipality_id', tenant?.id)
+    }
+    const { data } = await query
+    setUsers(data ?? [])
+    setLoading(false)
+  }, [tenant?.id, currentUserRole])
+
+  useEffect(() => { fetchUsers() }, [fetchUsers])
+
+  async function updateRole(userId, newRole, municipalityId) {
+    setSaving(userId)
+    await supabase.from('profiles').update({
+      role: newRole,
+      municipality_id: newRole === 'admin' ? (municipalityId || tenant?.id) : null,
+    }).eq('id', userId)
+    setUsers((prev) => prev.map((u) =>
+      u.id === userId ? { ...u, role: newRole, municipality_id: newRole === 'admin' ? (municipalityId || tenant?.id) : null } : u
+    ))
+    setSaving(null)
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <h3 className="font-semibold text-gray-700 flex items-center gap-2">
+          <Users size={16} /> จัดการผู้ใช้งาน
+        </h3>
+        <button onClick={fetchUsers} className="text-gray-400 hover:text-gray-600 transition-colors">
+          <RefreshCw size={15} />
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-10 text-gray-400">
+          <Loader2 size={20} className="animate-spin" />
+        </div>
+      ) : users.length === 0 ? (
+        <p className="text-center py-10 text-gray-400 text-sm">ยังไม่มีผู้ใช้งาน</p>
+      ) : (
+        <div className="divide-y divide-gray-50">
+          {users.map((u) => {
+            const rs = ROLE_LABELS[u.role] ?? ROLE_LABELS.citizen
+            const isSelf = false
+            return (
+              <div key={u.id} className="flex items-center gap-3 px-5 py-3">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"
+                     style={{ backgroundColor: rs.color }}>
+                  {(u.full_name || u.email || '?')[0].toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-gray-800 text-sm truncate">{u.full_name || '—'}</p>
+                  <p className="text-xs text-gray-400 truncate">{u.email}</p>
+                </div>
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0"
+                      style={{ backgroundColor: rs.bg, color: rs.color }}>
+                  {rs.label}
+                </span>
+                {/* เปลี่ยน role ได้ถ้าไม่ใช่ superadmin อีกคน */}
+                {u.role !== 'superadmin' && currentUserRole === 'superadmin' && (
+                  <select
+                    value={u.role}
+                    disabled={saving === u.id}
+                    onChange={(e) => updateRole(u.id, e.target.value, u.municipality_id)}
+                    className="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-700 focus:outline-none shrink-0"
+                  >
+                    <option value="citizen">สมาชิก</option>
+                    <option value="admin">แอดมิน</option>
+                    <option value="superadmin">Super Admin</option>
+                  </select>
+                )}
+                {u.role !== 'superadmin' && currentUserRole === 'admin' && u.role !== 'admin' && (
+                  <select
+                    value={u.role}
+                    disabled={saving === u.id}
+                    onChange={(e) => updateRole(u.id, e.target.value, u.municipality_id)}
+                    className="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-700 focus:outline-none shrink-0"
+                  >
+                    <option value="citizen">สมาชิก</option>
+                    <option value="admin">แอดมิน</option>
+                  </select>
+                )}
+                {saving === u.id && <Loader2 size={14} className="animate-spin text-gray-400 shrink-0" />}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Emergency Contacts Manager ───────────────────────────────────────────────
+function EmergencyManager({ tenant }) {
+  const [contacts, setContacts] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState({ label: '', number: '', emoji: '📞', color: '#1d4ed8', bg: '#dbeafe' })
+
+  const fetchContacts = useCallback(async () => {
+    if (!tenant?.id) return
+    setLoading(true)
+    const { data } = await supabase
+      .from('emergency_contacts')
+      .select('*')
+      .eq('municipality_id', tenant.id)
+      .order('display_order')
+    setContacts(data ?? [])
+    setLoading(false)
+  }, [tenant?.id])
+
+  useEffect(() => { fetchContacts() }, [fetchContacts])
+
+  async function addContact() {
+    if (!form.label.trim() || !form.number.trim()) return
+    setSaving(true)
+    const { data } = await supabase.from('emergency_contacts').insert({
+      municipality_id: tenant.id,
+      label: form.label.trim(),
+      number: form.number.trim(),
+      emoji: form.emoji,
+      color: form.color,
+      bg: form.bg,
+      display_order: contacts.length + 1,
+    }).select().single()
+    if (data) setContacts((prev) => [...prev, data])
+    setForm({ label: '', number: '', emoji: '📞', color: '#1d4ed8', bg: '#dbeafe' })
+    setSaving(false)
+  }
+
+  async function deleteContact(id) {
+    await supabase.from('emergency_contacts').delete().eq('id', id)
+    setContacts((prev) => prev.filter((c) => c.id !== id))
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Add form */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
+        <p className="font-semibold text-gray-700 text-sm">เพิ่มสายด่วนใหม่</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <input value={form.emoji} onChange={(e) => setForm({ ...form, emoji: e.target.value })}
+            className="border border-gray-200 rounded-xl px-3 py-2 text-sm text-center text-gray-800"
+            placeholder="emoji" maxLength={2} />
+          <input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })}
+            className="border border-gray-200 rounded-xl px-3 py-2 text-sm col-span-1 text-gray-800"
+            placeholder="ชื่อ เช่น ตำรวจ" />
+          <input value={form.number} onChange={(e) => setForm({ ...form, number: e.target.value })}
+            className="border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800"
+            placeholder="เบอร์โทร เช่น 191" />
+          <button onClick={addContact} disabled={saving || !form.label || !form.number}
+            className="flex items-center justify-center gap-1 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-50"
+            style={{ backgroundColor: 'var(--color-primary)' }}>
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+            เพิ่ม
+          </button>
+        </div>
+      </div>
+
+      {/* List */}
+      {loading ? (
+        <div className="flex justify-center py-8 text-gray-400">
+          <Loader2 size={20} className="animate-spin" />
+        </div>
+      ) : contacts.length === 0 ? (
+        <div className="text-center py-8 text-gray-400 text-sm">
+          ยังไม่มีข้อมูลสายด่วน — เพิ่มจากแบบฟอร์มด้านบน
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          {contacts.map((c, i) => (
+            <div key={c.id} className={`flex items-center gap-3 px-4 py-3 ${i < contacts.length - 1 ? 'border-b border-gray-50' : ''}`}>
+              <div className="w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0"
+                   style={{ backgroundColor: c.bg }}>
+                {c.emoji}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-gray-800 text-sm">{c.label}</p>
+                <p className="text-xs text-gray-400">{c.number}</p>
+              </div>
+              <a href={`tel:${c.number}`}
+                 className="p-2 rounded-xl text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors">
+                <PhoneCall size={15} />
+              </a>
+              <button onClick={() => deleteContact(c.id)}
+                className="p-2 rounded-xl text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                <Trash2 size={15} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Location Manager ─────────────────────────────────────────────────────────
+function LocationManager({ tenant }) {
+  const [locations, setLocations] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [newName, setNewName] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+
+  async function fetchLocations() {
+    if (!tenant?.id) return
+    setLoading(true)
+    setError(null)
+    const { data, error: err } = await supabase
+      .from('locations')
+      .select('*')
+      .eq('municipality_id', tenant.id)
+      .order('sort_order')
+    if (err) setError('ไม่สามารถโหลดข้อมูลได้: ' + err.message)
+    setLocations(data ?? [])
+    setLoading(false)
+  }
+
+  useEffect(() => { fetchLocations() }, [tenant?.id])
+
+  async function addLocation() {
+    const name = newName.trim()
+    if (!name || !tenant?.id) return
+    setSaving(true)
+    setError(null)
+    const { data, error: err } = await supabase.from('locations').insert({
+      municipality_id: tenant.id,
+      name,
+      sort_order: locations.length,
+    }).select().single()
+    if (err) {
+      setError('เพิ่มไม่สำเร็จ: ' + err.message)
+    } else if (data) {
+      setLocations((prev) => [...prev, data])
+      setNewName('')
+    }
+    setSaving(false)
+  }
+
+  async function deleteLocation(id) {
+    const { error: err } = await supabase.from('locations').delete().eq('id', id)
+    if (err) { setError('ลบไม่สำเร็จ: ' + err.message); return }
+    setLocations((prev) => prev.filter((l) => l.id !== id))
+  }
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
+      <h2 className="font-semibold text-gray-700">จัดการสถานที่เกิดเหตุ</h2>
+
+      {/* Error */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+          ⚠️ {error}
+          {error.includes('does not exist') && (
+            <p className="mt-1 text-xs text-red-500">กรุณารัน migration 009 ใน Supabase SQL Editor ก่อน</p>
+          )}
+        </div>
+      )}
+
+      {/* Add form */}
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && addLocation()}
+          placeholder="ชื่อสถานที่ เช่น หมู่ 3 บ้านท่าข้าม"
+          className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2"
+          style={{ '--tw-ring-color': 'var(--color-primary)' }}
+        />
+        <button
+          onClick={addLocation}
+          disabled={saving || !newName.trim()}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium text-white disabled:opacity-50"
+          style={{ backgroundColor: 'var(--color-primary)' }}
+        >
+          {saving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+          เพิ่ม
+        </button>
+      </div>
+
+      {/* List */}
+      {loading ? (
+        <div className="flex justify-center py-8"><Loader2 size={22} className="animate-spin text-gray-300" /></div>
+      ) : locations.length === 0 ? (
+        <p className="text-sm text-gray-400 text-center py-8">ยังไม่มีสถานที่ กรุณาเพิ่มสถานที่ด้านบน</p>
+      ) : (
+        <div className="space-y-2">
+          {locations.map((loc) => (
+            <div key={loc.id} className="flex items-center gap-3 bg-gray-50 rounded-xl px-3 py-2.5">
+              <GripVertical size={15} className="text-gray-300 shrink-0" />
+              <MapPin size={14} className="text-gray-400 shrink-0" />
+              <span className="flex-1 text-sm text-gray-700">{loc.name}</span>
+              <button
+                onClick={() => deleteLocation(loc.id)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Main page ─────────────────────────────────────────────────────────────────
+export default function AdminDashboard() {
+  const { tenant } = useTenant()
+  const navigate = useNavigate()
+  const [complaints, setComplaints] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [updating, setUpdating] = useState(null)
+  const [filterTab, setFilterTab] = useState(0)
+  const [search, setSearch] = useState('')
+  const [activePage, setActivePage] = useState('complaints')
+  const [currentUserRole, setCurrentUserRole] = useState(null)
+  const [selectedComplaint, setSelectedComplaint] = useState(null)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (!data.session) return
+      supabase.from('profiles').select('role').eq('id', data.session.user.id).single()
+        .then(({ data: p }) => setCurrentUserRole(p?.role ?? 'citizen'))
+    })
+  }, [])
+
+  async function handleLogout() {
+    await supabase.auth.signOut()
+    navigate('/admin/login')
+  }
+
+  const fetchComplaints = useCallback(async () => {
+    if (!tenant?.id) return
+    setLoading(true)
+    const { data } = await supabase
+      .from('complaints')
+      .select('*, profiles(full_name, email, phone)')
+      .eq('municipality_id', tenant.id)
+      .order('created_at', { ascending: false })
+    setComplaints(data ?? [])
+    setLoading(false)
+  }, [tenant?.id])
+
+  useEffect(() => { fetchComplaints() }, [fetchComplaints])
+
+  async function updateStatus(id, nextStatus) {
+    setUpdating(id)
+    await supabase.from('complaints').update({ status: nextStatus }).eq('id', id)
+    setComplaints((prev) =>
+      prev.map((c) => c.id === id ? { ...c, status: nextStatus } : c)
+    )
+    setUpdating(null)
+  }
+
+  // ─── Derived data ──────────────────────────────────────────────────────────
+  const statsData = Object.entries(STATUS).map(([key, s]) => ({
+    name: s.label,
+    value: complaints.filter((c) => c.status === key).length,
+    color: s.color,
+  })).filter((d) => d.value > 0)
+
+  const filtered = complaints.filter((c) => {
+    const matchStatus = FILTER_KEYS[filterTab] ? c.status === FILTER_KEYS[filterTab] : true
+    const matchSearch = search === '' ||
+      c.detail.includes(search) ||
+      (CATEGORY_LABEL[c.category] ?? '').includes(search) ||
+      (c.phone ?? '').includes(search)
+    return matchStatus && matchSearch
+  })
+
+  const counts = Object.fromEntries(
+    Object.keys(STATUS).map((k) => [k, complaints.filter((c) => c.status === k).length])
+  )
+
+  return (
+    <div className="max-w-6xl mx-auto px-4 py-6 pb-24 md:pb-6 space-y-6">
+      {/* Detail modal */}
+      {selectedComplaint && (
+        <ComplaintDetailModal
+          complaint={selectedComplaint}
+          onClose={() => setSelectedComplaint(null)}
+          onUpdate={updateStatus}
+          updating={updating}
+        />
+      )}
+
+      {/* Page header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-gray-800">แผงควบคุมเจ้าหน้าที่</h1>
+          <p className="text-sm text-gray-400">{tenant?.name}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {activePage === 'complaints' && (
+            <button onClick={fetchComplaints} disabled={loading}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border border-gray-200 bg-white hover:bg-gray-50 transition-colors disabled:opacity-50">
+              <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+              รีเฟรช
+            </button>
+          )}
+          <button onClick={handleLogout}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border border-red-200 text-red-500 bg-white hover:bg-red-50 transition-colors">
+            <LogOut size={15} />
+            ออกจากระบบ
+          </button>
+        </div>
+      </div>
+
+      {/* Tab navigation — desktop only */}
+      <div className="hidden md:flex gap-2">
+        <button onClick={() => setActivePage('complaints')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+            activePage === 'complaints'
+              ? 'text-white shadow-sm'
+              : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+          }`}
+          style={activePage === 'complaints' ? { backgroundColor: 'var(--color-primary)' } : {}}>
+          <ClipboardList size={15} /> คำร้อง
+        </button>
+        <button onClick={() => setActivePage('emergency')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+            activePage === 'emergency'
+              ? 'text-white shadow-sm'
+              : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+          }`}
+          style={activePage === 'emergency' ? { backgroundColor: '#ef4444' } : {}}>
+          <Phone size={15} /> สายด่วนฉุกเฉิน
+        </button>
+        {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
+          <button onClick={() => setActivePage('users')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+              activePage === 'users'
+                ? 'text-white shadow-sm'
+                : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+            }`}
+            style={activePage === 'users' ? { backgroundColor: '#7c3aed' } : {}}>
+            <Shield size={15} /> จัดการผู้ใช้
+          </button>
+        )}
+        <button onClick={() => setActivePage('locations')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+              activePage === 'locations'
+                ? 'text-white shadow-sm'
+                : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+            }`}
+            style={activePage === 'locations' ? { backgroundColor: '#0891b2' } : {}}>
+            <MapPin size={15} /> สถานที่
+          </button>
+        </div>
+
+      {/* ─── Mobile Admin Bottom Tab Bar ─── */}
+      <div
+        className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-100 shadow-[0_-4px_24px_rgba(0,0,0,0.10)] flex items-stretch"
+        style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 8px)' }}
+      >
+        {[
+          { key: 'home',       label: 'หน้าแรก',  Icon: Home,          activeColor: '#6b7280' },
+          { key: 'complaints', label: 'คำร้อง',   Icon: ClipboardList, activeColor: 'var(--color-primary)' },
+          { key: 'emergency',  label: 'สายด่วน',  Icon: Phone,         activeColor: '#ef4444' },
+          { key: 'locations',  label: 'สถานที่',  Icon: MapPin,        activeColor: '#0891b2' },
+          { key: 'more',       label: 'อื่นๆ',      Icon: LayoutGrid,    activeColor: '#6b7280' },
+        ].map(({ key, label, Icon, activeColor }) => {
+          const isActive = activePage === key
+          return (
+            <button
+              key={key}
+              onClick={() => key === 'home' ? navigate('/') : setActivePage(key)}
+              className="relative flex-1 flex flex-col items-center justify-center gap-0.5 pt-2 pb-1 transition-transform active:scale-90"
+            >
+              {isActive && (
+                <span
+                  className="absolute top-0 h-0.5 w-8 rounded-full"
+                  style={{ backgroundColor: activeColor }}
+                />
+              )}
+              <Icon
+                size={22}
+                style={{ color: isActive ? activeColor : '#9ca3af' }}
+                strokeWidth={isActive ? 2.5 : 1.8}
+              />
+              <span
+                className="text-[10px] font-semibold leading-tight"
+                style={{ color: isActive ? activeColor : '#9ca3af' }}
+              >
+                {label}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
+      {activePage === 'emergency' ? (
+        <EmergencyManager tenant={tenant} />
+      ) : activePage === 'users' ? (
+        <UserManager tenant={tenant} currentUserRole={currentUserRole} />
+      ) : activePage === 'locations' ? (
+        <LocationManager tenant={tenant} />
+      ) : activePage === 'users' ? (
+        <UserManager tenant={tenant} currentUserRole={currentUserRole} />
+      ) : activePage === 'more' ? (
+        /* ─── อื่นๆ page ─── */
+        <div className="space-y-4">
+          <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide">เมนูเพิ่มเติม</h2>
+          <div className="grid grid-cols-2 gap-3">
+            {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
+              <button
+                onClick={() => setActivePage('users')}
+                className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center"
+              >
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#ede9fe' }}>
+                  <Shield size={24} style={{ color: '#7c3aed' }} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-800">จัดการผู้ใช้</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">สิทธิ์และบทบาท</p>
+                </div>
+              </button>
+            )}
+            {/* พื้นที่เพิ่มเมนูในอนาคต */}
+          </div>
+        </div>
+      ) : (
+        <>
+
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <StatCard label="ทั้งหมด"        value={complaints.length}      icon={ClipboardList} color="#64748b" />
+        <StatCard label="รอดำเนินการ"    value={counts.pending ?? 0}    icon={Clock}         color="#f59e0b" />
+        <StatCard label="กำลังดำเนินการ" value={counts.in_progress ?? 0} icon={AlertCircle}  color="#8b5cf6" />
+        <StatCard label="เสร็จสิ้น"      value={counts.completed ?? 0}  icon={CheckCircle2}  color="#10b981" />
+      </div>
+
+      {/* Chart + filter row */}
+      <div className="grid md:grid-cols-3 gap-4">
+        {/* Pie chart */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+          <h2 className="font-semibold text-gray-700 text-sm mb-4">สัดส่วนตามสถานะ</h2>
+          {statsData.length === 0 ? (
+            <div className="flex items-center justify-center h-40 text-gray-400 text-sm">
+              ยังไม่มีข้อมูล
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={200}>
+              <PieChart>
+                <Pie data={statsData} cx="50%" cy="50%" innerRadius={50} outerRadius={80}
+                     paddingAngle={3} dataKey="value">
+                  {statsData.map((entry, i) => (
+                    <Cell key={i} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip content={<CustomTooltip />} />
+                <Legend iconType="circle" iconSize={8}
+                        formatter={(value) => <span className="text-xs text-gray-600">{value}</span>} />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        {/* Quick status summary */}
+        <div className="md:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+          <h2 className="font-semibold text-gray-700 text-sm mb-4">สรุปสถานะ</h2>
+          <div className="space-y-2.5">
+            {Object.entries(STATUS).map(([key, s]) => {
+              const count = counts[key] ?? 0
+              const pct = complaints.length ? Math.round((count / complaints.length) * 100) : 0
+              return (
+                <div key={key}>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-gray-600">{s.label}</span>
+                    <span className="font-semibold text-gray-700">{count} ({pct}%)</span>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-2">
+                    <div className="h-2 rounded-full transition-all duration-500"
+                         style={{ width: `${pct}%`, backgroundColor: s.color }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Table section */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        {/* Table header */}
+        <div className="px-5 pt-5 pb-3 border-b border-gray-100">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <h2 className="font-semibold text-gray-700 flex-1">รายการคำร้อง</h2>
+            {/* Search */}
+            <div className="relative">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)}
+                placeholder="ค้นหาคำร้อง..."
+                className="pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent w-52"
+                style={{ '--tw-ring-color': 'var(--color-primary)' }} />
+            </div>
+          </div>
+
+          {/* Filter tabs */}
+          <div className="flex gap-1 mt-3 overflow-x-auto pb-1">
+            {FILTER_TABS.map((tab, i) => (
+              <button key={i} onClick={() => setFilterTab(i)}
+                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  filterTab === i
+                    ? 'text-white'
+                    : 'text-gray-500 bg-gray-100 hover:bg-gray-200'
+                }`}
+                style={filterTab === i ? { backgroundColor: 'var(--color-primary)' } : {}}>
+                <span className="flex items-center gap-1">
+                  <Filter size={10} />
+                  {tab}
+                  {i > 0 && (
+                    <span className={`ml-1 px-1.5 rounded-full text-[10px] font-bold ${
+                      filterTab === i ? 'bg-white/25' : 'bg-gray-200 text-gray-600'
+                    }`}>
+                      {complaints.filter((c) => c.status === FILTER_KEYS[i]).length}
+                    </span>
+                  )}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* List */}
+        {loading ? (
+          <div className="flex items-center justify-center py-16 text-gray-400">
+            <Loader2 size={24} className="animate-spin mr-2" /> กำลังโหลด...
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+            <ClipboardList size={36} className="mb-2 opacity-30" />
+            <p className="text-sm">ไม่มีรายการคำร้อง</p>
+          </div>
+        ) : (
+          <>
+            {/* Mobile card list */}
+            <div className="md:hidden divide-y divide-gray-100">
+              {filtered.map((c) => (
+                <div key={c.id} className="px-4 py-4 space-y-2 active:bg-gray-50 cursor-pointer"
+                     onClick={() => setSelectedComplaint(c)}>
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="font-semibold text-gray-800 text-sm leading-snug">
+                      {CATEGORY_LABEL[c.category] ?? c.category}
+                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <StatusBadge status={c.status} />
+                      <ChevronRight size={14} className="text-gray-300" />
+                    </div>
+                  </div>
+                  {c.subject && (
+                    <p className="text-xs text-gray-600 truncate">{c.subject}</p>
+                  )}
+                  <p className="text-xs text-gray-400 truncate">{c.detail}</p>
+                  <div className="flex items-center gap-3 text-xs text-gray-400 pt-1">
+                    <span>{new Date(c.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}</span>
+                    {c.phone && <span>{c.phone}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop table */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 text-gray-500 text-xs">
+                    <th className="px-5 py-3 text-left font-medium">วันที่</th>
+                    <th className="px-5 py-3 text-left font-medium">ประเภท</th>
+                    <th className="px-5 py-3 text-left font-medium">รายละเอียด</th>
+                    <th className="px-5 py-3 text-left font-medium">โทรศัพท์</th>
+                    <th className="px-5 py-3 text-left font-medium">สถานะ</th>
+                    <th className="px-5 py-3 text-left font-medium">การดำเนินการ</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {filtered.map((c) => (
+                    <tr key={c.id} className="hover:bg-gray-50/70 transition-colors cursor-pointer"
+                        onClick={() => setSelectedComplaint(c)}>
+                      <td className="px-5 py-4 text-gray-500 whitespace-nowrap text-xs">
+                        {new Date(c.created_at).toLocaleDateString('th-TH', {
+                          day: '2-digit', month: 'short', year: '2-digit',
+                        })}
+                      </td>
+                      <td className="px-5 py-4 font-medium text-gray-700 whitespace-nowrap">
+                        {CATEGORY_LABEL[c.category] ?? c.category}
+                      </td>
+                      <td className="px-5 py-4 text-gray-500 max-w-xs">
+                        <p className="truncate">{c.detail}</p>
+                      </td>
+                      <td className="px-5 py-4 text-gray-500">
+                        {c.phone ?? <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-5 py-4">
+                        <StatusBadge status={c.status} />
+                      </td>
+                      <td className="px-5 py-4" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-2">
+                          <ActionButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} />
+                          <RejectButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <p className="px-5 py-3 text-xs text-gray-400 border-t border-gray-100">
+              แสดง {filtered.length} จาก {complaints.length} รายการ
+            </p>
+          </>
+        )}
+      </div>
+      </>
+      )}
+    </div>
+  )
+}
+

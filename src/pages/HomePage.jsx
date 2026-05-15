@@ -1,46 +1,55 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
-import StatCards from '../components/home/StatCards'
 import HeroBanner from '../components/home/HeroBanner'
 import StaffSection from '../components/home/StaffSection'
 import ServiceButtons from '../components/home/ServiceButtons'
 import NewsSection from '../components/home/NewsSection'
 import EmergencyGrid from '../components/home/EmergencyGrid'
-import { Info } from 'lucide-react'
+import { Info, LayoutDashboard, ChevronRight } from 'lucide-react'
 
 export default function HomePage() {
   const { tenant } = useTenant()
-  const [stats, setStats] = useState({})
   const [session, setSession] = useState(undefined)
+  const [role, setRole] = useState(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+      setSession(s)
+      if (!s) setRole(null)
+    })
     return () => subscription.unsubscribe()
   }, [])
 
   useEffect(() => {
-    if (!tenant?.id) return
-    async function fetchStats() {
-      const { data } = await supabase
-        .from('complaints')
-        .select('status')
-        .eq('municipality_id', tenant.id)
+    if (!session) return
+    supabase.from('profiles').select('role').eq('id', session.user.id).single()
+      .then(({ data }) => setRole(data?.role ?? 'citizen'))
+  }, [session])
 
-      if (!data) return
-      setStats({
-        total:      data.length,
-        completed:  data.filter((r) => r.status === 'completed').length,
-        received:   data.filter((r) => r.status === 'received').length,
-        inProgress: data.filter((r) => r.status === 'in_progress').length,
-      })
-    }
-    fetchStats()
-  }, [tenant?.id])
+  const isAdmin = role === 'admin' || role === 'superadmin'
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+
+      {/* Admin banner */}
+      {isAdmin && (
+        <a href="/admin"
+          className="flex items-center gap-3 rounded-2xl px-4 py-3.5 shadow-md active:scale-98 transition-transform"
+          style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)' }}
+        >
+          <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+            <LayoutDashboard size={18} className="text-white" />
+          </div>
+          <div className="flex-1">
+            <p className="text-white font-bold text-sm">เข้าสู่แผงควบคุม Admin</p>
+            <p className="text-white/70 text-xs">จัดการคำร้อง สถานที่ และผู้ใช้งาน</p>
+          </div>
+          <ChevronRight size={18} className="text-white/60" />
+        </a>
+      )}
+
       {/* Notice bar — แสดงเฉพาะคนที่ยังไม่ได้ login */}
       {!session && (
         <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800 dark:bg-blue-900/30 dark:border-blue-700/50 dark:text-blue-200">
@@ -49,7 +58,6 @@ export default function HomePage() {
         </div>
       )}
 
-      <StatCards stats={stats} />
       <HeroBanner />
       <StaffSection />
       <ServiceButtons />

@@ -8,3 +8,13 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+
+supabase.auth.onAuthStateChange((event) => {
+  if (event === 'TOKEN_REFRESHED') return
+  if (event === 'SIGNED_OUT') {
+    const path = window.location.pathname
+    if (path.startsWith('/admin') && path !== '/admin/login') {
+      window.location.href = '/admin/login'
+    }
+  }
+})

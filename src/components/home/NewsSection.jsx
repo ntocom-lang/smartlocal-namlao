@@ -2,14 +2,18 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowRight } from 'lucide-react'
 
 const FB_PAGE_URL = 'https://www.facebook.com/profile.php?id=100068879483708'
+const SCALE = 0.78
+const VISIBLE_H = 280
 
 function buildSrc(width) {
+  const fbW = Math.round(width / SCALE)
+  const fbH = Math.round(VISIBLE_H / SCALE)
   return (
     'https://www.facebook.com/plugins/page.php' +
     '?href=' + encodeURIComponent(FB_PAGE_URL) +
     '&tabs=timeline' +
-    '&width=' + width +
-    '&height=400' +
+    '&width=' + fbW +
+    '&height=' + fbH +
     '&small_header=true' +
     '&adapt_container_width=true' +
     '&hide_cover=false' +
@@ -53,15 +57,21 @@ export default function NewsSection() {
       <div
         ref={wrapRef}
         className="w-full bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden dark:bg-white/10 dark:border-white/10 dark:shadow-none"
-        style={{ minHeight: 400 }}
+        style={{ minHeight: VISIBLE_H, height: VISIBLE_H }}
       >
         {src && (
           <iframe
             key={src}
             src={src}
-            width="100%"
-            height="400"
-            style={{ border: 'none', overflow: 'hidden', display: 'block' }}
+            width={`${Math.round(100 / SCALE)}%`}
+            height={Math.round(VISIBLE_H / SCALE)}
+            style={{
+              border: 'none',
+              overflow: 'hidden',
+              display: 'block',
+              transform: `scale(${SCALE})`,
+              transformOrigin: 'top left',
+            }}
             scrolling="no"
             frameBorder="0"
             allowFullScreen

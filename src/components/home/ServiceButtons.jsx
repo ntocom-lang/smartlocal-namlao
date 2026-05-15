@@ -1,70 +1,74 @@
-import { FileText, Search, Bell, BookOpen } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { supabase } from '../../lib/supabase'
+import { useTenant } from '../../contexts/TenantContext'
 
-const SERVICES = [
-  {
-    label: 'ยื่นคำร้องใหม่',
-    sub: 'แจ้งเรื่องร้องเรียน ขอใช้บริการ',
-    icon: FileText,
-    href: '/request',
-    color: '#1c7cd6',
-    bg: '#e0f0ff',
-    primary: true,
-  },
-  {
-    label: 'ตรวจสอบสถานะ',
-    sub: 'ติดตามความคืบหน้าคำร้อง',
-    icon: Search,
-    href: '/status',
-    color: '#16a34a',
-    bg: '#dcfce7',
-  },
-  {
-    label: 'รับการแจ้งเตือน',
-    sub: 'ลงทะเบียนรับข่าวสาร',
-    icon: Bell,
-    href: '/notify',
-    color: '#d97706',
-    bg: '#fef3c7',
-  },
-  {
-    label: 'คู่มือการใช้งาน',
-    sub: 'วิธียื่นคำร้องออนไลน์',
-    icon: BookOpen,
-    href: '/guide',
-    color: '#7c3aed',
-    bg: '#ede9fe',
-  },
+const FALLBACK = [
+  { value: 'light',            label: 'ไฟฟ้าสาธารณะ',              emoji: '💡', color: '#FEF3C7' },
+  { value: 'road',             label: 'ซ่อมแซมถนน',               emoji: '🛣️', color: '#F3F4F6' },
+  { value: 'mosquito',         label: 'พ่นยุง',                   emoji: '🦟', color: '#D1FAE5' },
+  { value: 'tree',             label: 'ตัดต้นไม้',                emoji: '🌳', color: '#D1FAE5' },
+  { value: 'trash',            label: 'ขยะ / ความสะอาด',         emoji: '🗑️', color: '#F3F4F6' },
+  { value: 'water_supply',     label: 'สนับสนุนน้ำอุปโภค',        emoji: '🚿', color: '#DBEAFE' },
+  { value: 'borrow_equipment', label: 'ยืมพัสดุ',                 emoji: '📦', color: '#E0E7FF' },
+  { value: 'corruption',       label: 'แจ้งการทุจริต',            emoji: '⚖️', color: '#FEE2E2' },
 ]
 
 export default function ServiceButtons() {
+  const { tenant } = useTenant()
+  const navigate = useNavigate()
+  const [cats, setCats] = useState(FALLBACK)
+
+  useEffect(() => {
+    if (!tenant?.id) return
+    supabase
+      .from('complaint_categories')
+      .select('value, label, emoji, color')
+      .eq('municipality_id', tenant.id)
+      .order('sort_order')
+      .limit(8)
+      .then(({ data }) => {
+        if (data && data.length > 0) setCats(data)
+      })
+  }, [tenant?.id])
+
   return (
-    <section>
-      <div className="flex items-center gap-2 mb-4">
+    <section className="space-y-4">
+      <div className="flex items-center gap-2">
         <div className="w-1 h-6 rounded-full" style={{ backgroundColor: 'var(--color-primary)' }} />
-        <h2 className="text-base font-bold text-gray-700 dark:text-slate-200">บริการออนไลน์ (E-Service)</h2>
+        <h2 className="text-base font-bold text-gray-700 dark:text-slate-200">ยื่นคำร้องออนไลน์</h2>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {SERVICES.map(({ label, sub, icon: Icon, href, color, bg, primary }) => (
-          <a key={href} href={href}
-             className={`group flex flex-col items-center text-center gap-3 p-5 rounded-2xl border transition-all duration-200 hover:-translate-y-1 hover:shadow-lg ${
-               primary
-                 ? 'text-white border-transparent shadow-md'
-                 : 'bg-white border-gray-100 text-gray-700 hover:border-transparent dark:bg-white/10 dark:border-white/10 dark:text-white'
-             }`}
-             style={primary
-               ? { background: `linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)` }
-               : {}}>
-            <div className="w-14 h-14 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110"
-                 style={{ backgroundColor: primary ? 'rgba(255,255,255,0.2)' : bg }}>
-              <Icon size={28} style={{ color: primary ? '#fff' : color }} />
-            </div>
-            <div>
-              <p className={`font-semibold text-sm ${primary ? 'text-white' : 'text-gray-800 dark:text-white'}`}>{label}</p>
-              <p className={`text-xs mt-0.5 ${primary ? 'text-white/75' : 'text-gray-400 dark:text-white/60'}`}>{sub}</p>
-            </div>
-          </a>
-        ))}
+      <div className="bg-white dark:bg-white/10 rounded-2xl border border-gray-100 dark:border-white/10 p-4">
+        <div className="grid grid-cols-4 gap-3">
+          {cats.map((cat) => (
+            <button
+              key={cat.value}
+              onClick={() => navigate(`/request?category=${cat.value}`)}
+              className="flex flex-col items-center gap-2 active:scale-95 transition-transform"
+            >
+              <div
+                className="w-14 h-14 rounded-full flex items-center justify-center text-2xl shadow-sm"
+                style={{ backgroundColor: cat.color }}
+              >
+                {cat.emoji}
+              </div>
+              <span className="text-[10px] text-gray-600 dark:text-slate-300 font-medium text-center leading-tight">
+                {cat.label}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        <div className="flex justify-end mt-3">
+          <button
+            onClick={() => navigate('/complaint')}
+            className="text-xs font-semibold px-4 py-1.5 rounded-full border transition-colors"
+            style={{ color: 'var(--color-primary)', borderColor: 'var(--color-primary)' }}
+          >
+            ดูทั้งหมด →
+          </button>
+        </div>
       </div>
     </section>
   )
