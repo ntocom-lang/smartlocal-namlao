@@ -71,7 +71,7 @@ export function TenantProvider({ children }) {
     async function fetchTenant() {
       const { data, error: dbError } = await supabase
         .from('municipalities')
-        .select('id, slug, name, org_type, province, theme_color, logo_url, developer_name, website_url')
+        .select('id, slug, name, org_type, province, theme_color, logo_url, developer_name, website_url, facebook_url')
         .eq('slug', slug)
         .single()
 
