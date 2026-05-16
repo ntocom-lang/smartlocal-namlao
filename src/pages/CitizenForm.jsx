@@ -410,7 +410,7 @@ export default function CitizenForm() {
                     ? <img src={item.preview} alt={item.name} className="object-cover w-full h-full" />
                     : <div className="flex flex-col items-center gap-1 px-1">
                         <FileText size={24} className="text-gray-400" />
-                        <span className="text-[10px] text-gray-400 text-center leading-tight truncate w-full px-1">{item.name}</span>
+                        <span className="text-[11px] text-gray-400 text-center leading-tight truncate w-full px-1">{item.name}</span>
                       </div>
                   }
                   {item.compressed && (

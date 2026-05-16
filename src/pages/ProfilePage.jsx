@@ -29,7 +29,7 @@ const [editName, setEditName] = useState(false)
 
       const { data: p } = await supabase
         .from('profiles')
-        .select('full_name, phone')
+        .select('full_name, phone, avatar_url')
         .eq('id', s.user.id)
         .single()
 
@@ -38,6 +38,7 @@ const [editName, setEditName] = useState(false)
           full_name: p.full_name || meta?.full_name || '',
           phone: p.phone || meta?.phone || '',
         })
+        setAvatarUrl(p.avatar_url || meta?.avatar_url || null)
       } else {
         setProfile({
           full_name: meta?.full_name || '',
@@ -74,9 +75,31 @@ const [editName, setEditName] = useState(false)
   async function handleAvatarChange(e) {
     const file = e.target.files?.[0]
     if (!file) return
-    const url = URL.createObjectURL(file)
-    setAvatarUrl(url)
-    // TODO: upload to Supabase Storage if needed
+
+    setAvatarUrl(URL.createObjectURL(file))
+    setSaving(true)
+    setMsg('')
+    setError('')
+
+    const ext = file.name.split('.').pop()
+    const path = `${session.user.id}/avatar.${ext}`
+
+    const { error: upErr } = await supabase.storage
+      .from('avatars')
+      .upload(path, file, { upsert: true })
+
+    if (upErr) {
+      setError('อัปโหลดรูปไม่สำเร็จ: ' + upErr.message)
+      setSaving(false)
+      return
+    }
+
+    const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path)
+
+    await supabase.from('profiles').upsert({ id: session.user.id, avatar_url: publicUrl })
+    setAvatarUrl(publicUrl)
+    setMsg('อัปโหลดรูปโปรไฟล์สำเร็จ')
+    setSaving(false)
   }
 
   async function handleGoogleLink() {

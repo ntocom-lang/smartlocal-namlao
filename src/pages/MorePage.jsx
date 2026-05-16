@@ -268,7 +268,7 @@ export default function MorePage() {
                 <p className="text-white font-bold text-base leading-tight truncate">{displayName}</p>
                 <p className="text-white/70 text-xs mt-0.5 truncate">{session.user?.email}</p>
                 {isAdmin && (
-                  <span className="inline-flex items-center gap-1 mt-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-200 border border-amber-300/30">
+                  <span className="inline-flex items-center gap-1 mt-1.5 text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-200 border border-amber-300/30">
                     <Star size={8} fill="currentColor" /> ผู้ดูแลระบบ
                   </span>
                 )}
@@ -444,7 +444,7 @@ export default function MorePage() {
         {/* ─── Footer ─── */}
         <div className="text-center pb-2">
           <p className="text-xs text-gray-300 font-medium">{tenant?.name}</p>
-          <p className="text-[10px] text-gray-300 mt-0.5">SmartLocal E-Service v1.1</p>
+          <p className="text-[11px] text-gray-300 mt-0.5">SmartLocal E-Service v1.1</p>
         </div>
       </div>
     </div>

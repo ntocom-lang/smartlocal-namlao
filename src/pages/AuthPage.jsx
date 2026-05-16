@@ -130,12 +130,13 @@ export default function AuthPage() {
         )}
 
         {/* Form */}
-        <form onSubmit={mode === 'login' ? handleLogin : handleRegister} className="space-y-3">
+        <form onSubmit={mode === 'login' ? handleLogin : handleRegister} className="space-y-3" autoComplete="on">
           {mode === 'register' && (
             <div className="relative">
               <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input value={form.name} onChange={set('name')} required
                 type="text" placeholder="ชื่อ-นามสกุล"
+                autoComplete="name"
                 className="w-full pl-9 pr-3 py-3 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:border-transparent"
                 style={{ '--tw-ring-color': 'var(--color-primary)' }} />
             </div>
@@ -147,6 +148,7 @@ export default function AuthPage() {
               required={mode === 'login'}
               type={mode === 'login' ? 'text' : 'email'}
               placeholder={mode === 'login' ? 'อีเมลหรือเบอร์โทรศัพท์' : 'อีเมล (ไม่บังคับ)'}
+              autoComplete="email"
               className="w-full pl-9 pr-3 py-3 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:border-transparent"
               style={{ '--tw-ring-color': 'var(--color-primary)' }} />
           </div>
@@ -156,6 +158,7 @@ export default function AuthPage() {
               <Phone size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input value={form.phone} onChange={set('phone')}
                 required type="tel" placeholder="เบอร์โทรศัพท์ *"
+                autoComplete="tel"
                 className="w-full pl-9 pr-3 py-3 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:border-transparent"
                 style={{ '--tw-ring-color': 'var(--color-primary)' }} />
             </div>
@@ -166,6 +169,7 @@ export default function AuthPage() {
             <input value={form.password} onChange={set('password')} required
               type={showPassword ? 'text' : 'password'}
               placeholder={mode === 'register' ? 'รหัสผ่าน (อย่างน้อย 6 ตัว)' : 'รหัสผ่าน'}
+              autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
               className="w-full pl-9 pr-10 py-3 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:border-transparent"
               style={{ '--tw-ring-color': 'var(--color-primary)' }} />
             <button type="button" onClick={() => setShowPassword((v) => !v)}

@@ -53,7 +53,7 @@ export default function ServiceButtons() {
               >
                 {cat.emoji}
               </div>
-              <span className="text-[10px] text-gray-600 dark:text-slate-300 font-medium text-center leading-tight">
+              <span className="text-[11px] text-gray-600 dark:text-slate-300 font-medium text-center leading-tight">
                 {cat.label}
               </span>
             </button>

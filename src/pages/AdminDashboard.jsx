@@ -140,7 +140,7 @@ function StatusStepper({ status }) {
               <p className={`text-sm font-semibold transition-colors ${done ? 'text-gray-800' : 'text-gray-300'}`}>
                 {info.label}
                 {isCurrent && (
-                  <span className="ml-2 text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+                  <span className="ml-2 text-[11px] font-medium px-1.5 py-0.5 rounded-full"
                     style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 15%, transparent)', color: 'var(--color-primary)' }}>
                     ปัจจุบัน
                   </span>
@@ -258,13 +258,13 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
 
           <div className="flex items-center justify-between mt-4 pt-4 border-t border-white/20">
             <div>
-              <p className="text-white/60 text-[10px] uppercase tracking-wider">เลขที่คำร้อง</p>
+              <p className="text-white/60 text-[11px] uppercase tracking-wider">เลขที่คำร้อง</p>
               <p className="text-white font-black text-lg tracking-wider mt-0.5 font-mono">
                 {c.complaint_number ? (() => { const d = new Date(c.created_at); const yy = String(d.getFullYear()+543).slice(-2); const mm = String(d.getMonth()+1).padStart(2,'0'); return `${yy}${mm}${String(c.complaint_number).padStart(3,'0')}` })() : '—'}
               </p>
             </div>
             <div className="text-right">
-              <p className="text-white/60 text-[10px] uppercase tracking-wider">ยื่นเมื่อ</p>
+              <p className="text-white/60 text-[11px] uppercase tracking-wider">ยื่นเมื่อ</p>
               <p className="text-white/90 text-xs font-medium mt-0.5">{dateStr} น.</p>
             </div>
           </div>
@@ -345,7 +345,7 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
                       <MapPin size={15} className="text-orange-400" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[10px] text-gray-400">สถานที่</p>
+                      <p className="text-[11px] text-gray-400">สถานที่</p>
                       <p className="text-sm font-medium text-gray-800 truncate">{c.location_name ?? c.village}</p>
                     </div>
                   </div>
@@ -357,7 +357,7 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
                       <Phone size={15} className="text-green-500" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[10px] text-gray-400">เบอร์โทรติดต่อ</p>
+                      <p className="text-[11px] text-gray-400">เบอร์โทรติดต่อ</p>
                       <p className="text-sm font-bold text-gray-800">{c.phone}</p>
                     </div>
                     <span className="text-xs font-semibold px-2 py-1 bg-green-100 text-green-700 rounded-lg shrink-0">โทรออก</span>
@@ -371,7 +371,7 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
                       <MapPin size={15} className="text-blue-500" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[10px] text-gray-400">พิกัด</p>
+                      <p className="text-[11px] text-gray-400">พิกัด</p>
                       <p className="text-sm font-medium text-gray-800">
                         {c.latitude.toFixed(5)}, {c.longitude.toFixed(5)}
                       </p>
@@ -509,7 +509,7 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
           {/* Superadmin: override status */}
           {currentUserRole === 'superadmin' && (
             <div className="mt-3 pt-3 border-t border-dashed border-purple-200">
-              <p className="text-[10px] font-semibold text-purple-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+              <p className="text-[11px] font-semibold text-purple-400 uppercase tracking-wider mb-2 flex items-center gap-1">
                 <Shield size={10} /> Superadmin — แก้ไขสถานะ
               </p>
               <div className="flex items-center gap-2">
@@ -536,7 +536,7 @@ function Row({ icon: Icon, label, value }) {
     <div className="flex items-start gap-2.5">
       <Icon size={14} className="text-gray-400 mt-0.5 shrink-0" />
       <div className="flex-1 min-w-0">
-        <p className="text-[10px] text-gray-400 uppercase tracking-wide">{label}</p>
+        <p className="text-[11px] text-gray-400 uppercase tracking-wide">{label}</p>
         <p className="text-sm text-gray-800 font-medium mt-0.5 wrap-break-word">{value}</p>
       </div>
     </div>
@@ -575,10 +575,15 @@ function UserManager({ tenant, currentUserRole }) {
     setSaving(userId)
     const needsMuni = newRole === 'admin' || newRole === 'technician'
     const muni = needsMuni ? (municipalityId || tenant?.id) : null
-    await supabase.from('profiles').update({ role: newRole, municipality_id: muni }).eq('id', userId)
-    setUsers((prev) => prev.map((u) =>
-      u.id === userId ? { ...u, role: newRole, municipality_id: muni } : u
-    ))
+    const { error } = await supabase.from('profiles').update({ role: newRole, municipality_id: muni }).eq('id', userId)
+    if (error) {
+      console.error('updateRole failed:', error.message)
+      alert(`บันทึกไม่สำเร็จ: ${error.message}`)
+    } else {
+      setUsers((prev) => prev.map((u) =>
+        u.id === userId ? { ...u, role: newRole, municipality_id: muni } : u
+      ))
+    }
     setSaving(null)
   }
 
@@ -1500,7 +1505,7 @@ function ReportManager({ complaints, tenant }) {
         ].map(({ label, value, color, sub }) => (
           <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
             <p className="text-2xl font-black leading-none" style={{ color }}>{value}</p>
-            <p className="text-[10px] text-gray-400 mt-1">{sub}</p>
+            <p className="text-[11px] text-gray-400 mt-1">{sub}</p>
             <p className="text-xs font-medium text-gray-600 mt-0.5">{label}</p>
           </div>
         ))}
@@ -1585,7 +1590,7 @@ function ReportManager({ complaints, tenant }) {
                       <p className="text-xs font-semibold text-gray-700 truncate">
                         {CATEGORY_LABEL[c.category] ?? c.category}
                       </p>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                      <span className="text-[11px] px-1.5 py-0.5 rounded-full font-medium"
                         style={{ backgroundColor: s?.bg, color: s?.text }}>
                         {s?.label}
                       </span>
@@ -1831,7 +1836,7 @@ export default function AdminDashboard() {
                 strokeWidth={isActive ? 2.5 : 1.8}
               />
               <span
-                className="text-[10px] font-semibold leading-tight"
+                className="text-[11px] font-semibold leading-tight"
                 style={{ color: isActive ? activeColor : '#9ca3af' }}
               >
                 {label}
@@ -1875,7 +1880,7 @@ export default function AdminDashboard() {
               </div>
               <div>
                 <p className="text-sm font-bold text-gray-800">สายด่วนฉุกเฉิน</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">จัดการเบอร์ติดต่อ</p>
+                <p className="text-[11px] text-gray-400 mt-0.5">จัดการเบอร์ติดต่อ</p>
               </div>
             </button>
             <button
@@ -1887,7 +1892,7 @@ export default function AdminDashboard() {
               </div>
               <div>
                 <p className="text-sm font-bold text-gray-800">สถานที่เกิดเหตุ</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">จัดการหมู่บ้าน / ตำบล</p>
+                <p className="text-[11px] text-gray-400 mt-0.5">จัดการหมู่บ้าน / ตำบล</p>
               </div>
             </button>
             <button
@@ -1899,7 +1904,7 @@ export default function AdminDashboard() {
               </div>
               <div>
                 <p className="text-sm font-bold text-gray-800">ผู้รับผิดชอบ</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">ตั้งค่าช่างแต่ละประเภท</p>
+                <p className="text-[11px] text-gray-400 mt-0.5">ตั้งค่าช่างแต่ละประเภท</p>
               </div>
             </button>
             <button
@@ -1911,7 +1916,7 @@ export default function AdminDashboard() {
               </div>
               <div>
                 <p className="text-sm font-bold text-gray-800">รายงานสถิติ</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">สรุปผลรายเดือน</p>
+                <p className="text-[11px] text-gray-400 mt-0.5">สรุปผลรายเดือน</p>
               </div>
             </button>
           </div>
@@ -2007,7 +2012,7 @@ export default function AdminDashboard() {
                   <Filter size={10} />
                   {tab}
                   {i > 0 && (
-                    <span className={`ml-1 px-1.5 rounded-full text-[10px] font-bold ${
+                    <span className={`ml-1 px-1.5 rounded-full text-[11px] font-bold ${
                       filterTab === i ? 'bg-white/25' : 'bg-gray-200 text-gray-600'
                     }`}>
                       {complaints.filter((c) => c.status === FILTER_KEYS[i]).length}

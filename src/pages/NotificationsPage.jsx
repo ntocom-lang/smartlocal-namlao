@@ -155,7 +155,7 @@ export default function NotificationsPage() {
                       </div>
 
                       {cno && (
-                        <p className="text-[10px] text-gray-400 font-mono mt-0.5">{cno}</p>
+                        <p className="text-[11px] text-gray-400 font-mono mt-0.5">{cno}</p>
                       )}
 
                       <p className="text-xs text-gray-500 mt-1 leading-snug">
@@ -163,12 +163,12 @@ export default function NotificationsPage() {
                       </p>
 
                       <div className="flex items-center gap-2 mt-2">
-                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full"
                               style={{ backgroundColor: s.bg, color: s.color }}>
                           <Icon size={10} />
                           {s.label}
                         </span>
-                        <span className="text-[10px] text-gray-400">{timeAgo(n.updated_at)}</span>
+                        <span className="text-[11px] text-gray-400">{timeAgo(n.updated_at)}</span>
                       </div>
                     </div>
                   </button>

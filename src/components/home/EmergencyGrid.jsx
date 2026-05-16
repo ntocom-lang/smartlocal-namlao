@@ -48,7 +48,7 @@ export default function EmergencyGrid() {
             </div>
             <div>
               <p className="text-sm font-extrabold leading-none" style={{ color }}>{number}</p>
-              <p className="text-[10px] text-gray-500 mt-0.5 dark:text-slate-400">{label}</p>
+              <p className="text-[11px] text-gray-500 mt-0.5 dark:text-slate-400">{label}</p>
             </div>
           </a>
         ))}

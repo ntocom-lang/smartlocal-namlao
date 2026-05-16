@@ -80,7 +80,7 @@ function NotificationPanel({ items, loading, onClose, onMarkAll, onItemTap }) {
             <div>
               <h2 className="font-bold text-gray-800 text-sm leading-tight">การแจ้งเตือน</h2>
               {!loading && items.length > 0 && (
-                <p className="text-[10px] text-gray-400 mt-0.5">
+                <p className="text-[11px] text-gray-400 mt-0.5">
                   {hasUnread ? `${items.filter(n => n._unread).length} รายการยังไม่อ่าน` : 'อ่านทั้งหมดแล้ว'}
                 </p>
               )}
@@ -155,7 +155,7 @@ function NotificationPanel({ items, loading, onClose, onMarkAll, onItemTap }) {
                       </div>
 
                       {n.complaint_number && (
-                        <p className="text-[10px] text-gray-400 font-mono mt-0.5">
+                        <p className="text-[11px] text-gray-400 font-mono mt-0.5">
                           {(() => { const d = new Date(n.created_at); const yy = String(d.getFullYear()+543).slice(-2); const mm = String(d.getMonth()+1).padStart(2,'0'); return `${yy}${mm}${String(n.complaint_number).padStart(3,'0')}` })()}
                         </p>
                       )}
@@ -165,12 +165,12 @@ function NotificationPanel({ items, loading, onClose, onMarkAll, onItemTap }) {
                       </p>
 
                       <div className="flex items-center gap-2 mt-2">
-                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full"
                               style={{ backgroundColor: s.bg, color: s.color }}>
                           <Icon size={10} />
                           {s.label}
                         </span>
-                        <span className="text-[10px] text-gray-400">{timeAgo(n.updated_at)}</span>
+                        <span className="text-[11px] text-gray-400">{timeAgo(n.updated_at)}</span>
                       </div>
                     </div>
                   </button>

@@ -77,7 +77,7 @@ export default function Header() {
             <h1 className="font-bold text-sm md:text-xl leading-tight line-clamp-2">
               {tenant?.name}
             </h1>
-            <p className="text-white/70 text-[10px] md:text-xs hidden sm:block">ระบบยื่นคำร้องออนไลน์ · {tenant?.province}</p>
+            <p className="text-white/70 text-[11px] md:text-xs hidden sm:block">ระบบยื่นคำร้องออนไลน์ · {tenant?.province}</p>
           </div>
 
           {/* Desktop nav */}
