@@ -2651,9 +2651,21 @@ export default function AdminDashboard() {
                     <p className="text-xs text-gray-600 truncate">{c.subject}</p>
                   )}
                   <p className="text-xs text-gray-400 truncate">{c.detail}</p>
-                  <div className="flex items-center gap-3 text-xs text-gray-400 pt-1">
+                  <div className="flex items-center gap-3 text-xs text-gray-400 pt-1 flex-wrap">
                     <span>{new Date(c.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}</span>
                     {c.phone && <span>{c.phone}</span>}
+                    {(c.village || c.location_name) && (
+                      <span className="flex items-center gap-1">
+                        <MapPin size={10} className="shrink-0" />
+                        {c.village || c.location_name}
+                      </span>
+                    )}
+                    {c.assigned_to && (
+                      <span className="flex items-center gap-1 text-blue-500">
+                        <Wrench size={10} className="shrink-0" />
+                        {technicians.find((t) => t.id === c.assigned_to)?.full_name ?? 'ช่าง'}
+                      </span>
+                    )}
                   </div>
                 </div>
               ))}
@@ -2667,6 +2679,8 @@ export default function AdminDashboard() {
                     <th className="px-5 py-3 text-left font-medium">วันที่</th>
                     <th className="px-5 py-3 text-left font-medium">ประเภท</th>
                     <th className="px-5 py-3 text-left font-medium">รายละเอียด</th>
+                    <th className="px-5 py-3 text-left font-medium">สถานที่</th>
+                    <th className="px-5 py-3 text-left font-medium">ช่าง</th>
                     <th className="px-5 py-3 text-left font-medium">โทรศัพท์</th>
                     <th className="px-5 py-3 text-left font-medium">สถานะ</th>
                     <th className="px-5 py-3 text-left font-medium">การดำเนินการ</th>
@@ -2686,6 +2700,16 @@ export default function AdminDashboard() {
                       </td>
                       <td className="px-5 py-4 text-gray-500 max-w-xs">
                         <p className="truncate">{c.detail}</p>
+                      </td>
+                      <td className="px-5 py-4 text-gray-500 whitespace-nowrap">
+                        {(c.village || c.location_name)
+                          ? <span className="flex items-center gap-1"><MapPin size={11} className="text-gray-300 shrink-0" />{c.village || c.location_name}</span>
+                          : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-5 py-4 whitespace-nowrap">
+                        {c.assigned_to
+                          ? <span className="flex items-center gap-1 text-blue-600 text-xs font-medium"><Wrench size={11} className="shrink-0" />{technicians.find((t) => t.id === c.assigned_to)?.full_name ?? 'ช่าง'}</span>
+                          : <span className="text-gray-300">—</span>}
                       </td>
                       <td className="px-5 py-4 text-gray-500">
                         {c.phone ?? <span className="text-gray-300">—</span>}
