@@ -104,11 +104,10 @@ function AppShell() {
       const uid = data.session.user.id
       const { data: profile } = await supabase
         .from('profiles')
-        .select('phone, role')
+        .select('phone')
         .eq('id', uid)
         .single()
-      const role = profile?.role ?? 'citizen'
-      if (role === 'citizen' && !profile?.phone?.trim()) {
+      if (!profile?.phone?.trim()) {
         setShowPhoneReminder(true)
       }
     })
