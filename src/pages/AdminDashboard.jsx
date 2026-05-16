@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
@@ -193,14 +193,143 @@ const CustomTooltip = ({ active, payload }) => {
   )
 }
 
+// ─── Fixed-position custom select (ไม่โดน overflow:hidden ของ modal ตัด) ──────
+function FixedSelect({ value, onChange, options }) {
+  const [open, setOpen] = useState(false)
+  const [rect, setRect] = useState(null)
+  const btnRef = useRef(null)
+
+  function toggle() {
+    if (!open && btnRef.current) setRect(btnRef.current.getBoundingClientRect())
+    setOpen(o => !o)
+  }
+
+  const selected = options.find(o => o.value === value)
+  const ITEM_H = 44
+  const listH = options.length * ITEM_H + 8
+  const spaceBelow = rect ? window.innerHeight - rect.bottom - 8 : 0
+  const openUp = rect && spaceBelow < listH
+
+  return (
+    <>
+      <button ref={btnRef} onClick={toggle} type="button"
+        className="flex-1 text-xs border border-purple-200 rounded-xl px-3 py-2 text-gray-700 bg-purple-50 text-left flex items-center justify-between gap-2">
+        <span>{selected?.label ?? value}</span>
+        <ChevronDown size={12} className="text-purple-400 shrink-0" />
+      </button>
+      {open && rect && (
+        <div className="fixed inset-0 z-[9999]" onClick={() => setOpen(false)}>
+          <div
+            className="absolute bg-white rounded-xl shadow-xl border border-gray-200 py-1"
+            style={{
+              left: rect.left,
+              width: rect.width,
+              ...(openUp
+                ? { bottom: window.innerHeight - rect.top + 4 }
+                : { top: rect.bottom + 4 }),
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {options.map(o => (
+              <button key={o.value} type="button"
+                onClick={() => { onChange(o.value); setOpen(false) }}
+                className={`w-full text-left px-4 py-2.5 text-sm hover:bg-purple-50 transition-colors ${o.value === value ? 'text-purple-600 font-semibold' : 'text-gray-700'}`}>
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 // ─── Complaint Detail Modal ───────────────────────────────────────────────────
 function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, currentUserRole }) {
+  const { tenant } = useTenant()
   const [assigning, setAssigning] = useState(false)
   const [showCloseJob, setShowCloseJob] = useState(false)
   const [pendingPhotos, setPendingPhotos] = useState([])
   const [closeUploading, setCloseUploading] = useState(false)
 
   if (!c) return null
+
+  function handlePrintComplaint() {
+    const d = new Date(c.created_at)
+    const thDate = d.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
+    const yy = String(d.getFullYear() + 543).slice(-2)
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const num = c.complaint_number ? `${yy}${mm}${String(c.complaint_number).padStart(3, '0')}` : '—'
+    const reporter = c.reporter_name || c.profiles?.full_name || '—'
+    const phone = c.phone || c.profiles?.phone || '—'
+    const cat = CATEGORY_LABEL[c.category] ?? c.category ?? '—'
+    const statusLabel = STATUS[c.status]?.label ?? c.status
+    const location = [c.location_name, c.village].filter(Boolean).join(', ') || '—'
+    const assignee = c.assigned_to_name || '—'
+    const nowTH = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
+
+    const workPhotosHtml = (c.work_photos ?? []).length > 0
+      ? `<p style="margin:16px 0 6px;font-weight:600">ภาพผลการดำเนินงาน</p>
+         <div style="display:flex;flex-wrap:wrap;gap:8px">${(c.work_photos).map(u => `<img src="${u}" style="width:160px;height:120px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb">`).join('')}</div>`
+      : ''
+
+    const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
+<title>ใบคำร้อง ${num}</title>
+<style>
+  @page { size: A4 portrait; margin: 2cm 2cm 2cm 2.5cm; }
+  body { font-family: 'Sarabun', sans-serif; font-size: 15px; color: #111; line-height: 1.7; }
+  .center { text-align: center; }
+  .bold { font-weight: 700; }
+  .title { font-size: 18px; font-weight: 700; margin-bottom: 2px; }
+  .sub { font-size: 14px; color: #555; margin-bottom: 20px; }
+  table.info { width: 100%; border-collapse: collapse; margin-top: 12px; }
+  table.info td { padding: 5px 10px; font-size: 14px; }
+  table.info td:first-child { width: 160px; font-weight: 600; color: #374151; }
+  .detail-box { border: 1px solid #d1d5db; border-radius: 8px; padding: 12px 16px; margin-top: 8px; font-size: 14px; line-height: 1.8; background: #f9fafb; }
+  .badge { display:inline-block; padding:2px 10px; border-radius:99px; font-size:12px; font-weight:700; }
+  .footer { margin-top:40px; display:flex; justify-content:flex-end; }
+  .sign-block { text-align:center; width:220px; }
+  .sign-line { border-top:1px solid #374151; margin-top:48px; padding-top:6px; font-size:13px; }
+  @media print { button { display:none; } }
+</style></head><body>
+<div class="center">
+  <div class="title">${tenant?.name ?? 'หน่วยงาน'}</div>
+  <div class="sub">ใบบันทึกคำร้องออนไลน์ &nbsp;|&nbsp; เลขที่ ${num}</div>
+</div>
+<hr style="border:none;border-top:2px solid #1d4ed8;margin:0 0 16px">
+
+<table class="info">
+  <tr><td>ประเภทคำร้อง</td><td class="bold">${cat}</td></tr>
+  ${c.subject ? `<tr><td>เรื่อง</td><td>${c.subject}</td></tr>` : ''}
+  <tr><td>ผู้แจ้ง</td><td>${reporter}</td></tr>
+  <tr><td>เบอร์ติดต่อ</td><td>${phone}</td></tr>
+  <tr><td>วันที่ยื่นคำร้อง</td><td>${thDate}</td></tr>
+  <tr><td>จุดเกิดเหตุ</td><td>${location}</td></tr>
+  ${c.latitude ? `<tr><td>พิกัด GPS</td><td>${Number(c.latitude).toFixed(6)}, ${Number(c.longitude).toFixed(6)}</td></tr>` : ''}
+  <tr><td>สถานะ</td><td><span class="badge" style="background:${STATUS[c.status]?.bg ?? '#f3f4f6'};color:${STATUS[c.status]?.text ?? '#374151'}">${statusLabel}</span></td></tr>
+</table>
+
+<p style="margin:20px 0 6px;font-weight:600">รายละเอียดคำร้อง</p>
+<div class="detail-box">${(c.detail ?? '—').replace(/\n/g, '<br>')}</div>
+
+${workPhotosHtml}
+
+<div class="footer">
+  <div class="sign-block">
+    <div class="sign-line">
+      <div>(............................................)</div>
+      <div style="margin-top:2px">ผู้รับคำร้อง</div>
+      <div style="color:#555;font-size:12px">วันที่ ${nowTH}</div>
+    </div>
+  </div>
+</div>
+</body></html>`
+
+    const w = window.open('', '_blank', 'width=900,height=700')
+    w.document.write(html)
+    w.document.close()
+    setTimeout(() => w.print(), 500)
+  }
 
   async function handleCloseJob() {
     setCloseUploading(true)
@@ -497,9 +626,13 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
               </div>
             </div>
           ) : (
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <ActionButton status={c.status} id={c.id} onUpdate={(id, next) => { onUpdate(id, next, []); onClose() }} loading={updating} />
               <RejectButton status={c.status} id={c.id} onUpdate={(id, next) => { onUpdate(id, next, []); onClose() }} loading={updating} />
+              <button onClick={handlePrintComplaint}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
+                <Printer size={13} /> พิมพ์
+              </button>
               <button onClick={onClose} className="ml-auto px-4 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors">
                 ปิดหน้าต่าง
               </button>
@@ -513,15 +646,11 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
                 <Shield size={10} /> Superadmin — แก้ไขสถานะ
               </p>
               <div className="flex items-center gap-2">
-                <select
-                  defaultValue={c.status}
-                  onChange={(e) => { onUpdate(c.id, e.target.value, []); onClose() }}
-                  className="flex-1 text-xs border border-purple-200 rounded-xl px-3 py-2 text-gray-700 bg-purple-50 focus:outline-none focus:ring-2 focus:ring-purple-300"
-                >
-                  {Object.entries(STATUS).map(([key, s]) => (
-                    <option key={key} value={key}>{s.label}</option>
-                  ))}
-                </select>
+                <FixedSelect
+                  value={c.status}
+                  onChange={(val) => { onUpdate(c.id, val, []); onClose() }}
+                  options={Object.entries(STATUS).map(([key, s]) => ({ value: key, label: s.label }))}
+                />
               </div>
             </div>
           )}
@@ -2110,6 +2239,69 @@ export default function AdminDashboard() {
     Object.keys(STATUS).map((k) => [k, complaints.filter((c) => c.status === k).length])
   )
 
+  function handlePrintComplaints() {
+    const now = new Date()
+    const thDate = now.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
+    const filterLabel = FILTER_TABS[filterTab]
+    const rows = filtered.map((c, i) => {
+      const d = new Date(c.created_at)
+      const yy = String(d.getFullYear() + 543).slice(-2)
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const num = c.complaint_number ? `${yy}${mm}${String(c.complaint_number).padStart(3, '0')}` : '—'
+      const dateStr = d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
+      const cat = CATEGORY_LABEL[c.category] ?? c.category ?? '—'
+      const reporter = c.reporter_name || c.profiles?.full_name || '—'
+      const status = STATUS[c.status]?.label ?? c.status
+      const detail = (c.detail ?? '').substring(0, 60) + ((c.detail ?? '').length > 60 ? '...' : '')
+      return `<tr>
+        <td style="text-align:center">${i + 1}</td>
+        <td style="text-align:center">${num}</td>
+        <td>${dateStr}</td>
+        <td>${cat}</td>
+        <td>${reporter}</td>
+        <td>${detail}</td>
+        <td style="text-align:center">${status}</td>
+      </tr>`
+    }).join('')
+
+    const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
+<title>รายการคำร้อง</title>
+<style>
+  @page { size: A4 landscape; margin: 1.5cm; }
+  body { font-family: 'Sarabun', sans-serif; font-size: 14px; color: #111; }
+  h2 { text-align:center; font-size:16px; margin:0 0 4px; }
+  p.sub { text-align:center; font-size:13px; color:#555; margin:0 0 16px; }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th { background:#1d4ed8; color:#fff; padding:6px 8px; text-align:center; }
+  td { padding:5px 8px; border-bottom:1px solid #e5e7eb; vertical-align:top; }
+  tr:nth-child(even) td { background:#f8fafc; }
+  .footer { margin-top:12px; font-size:12px; color:#555; text-align:right; }
+  @media print { button { display:none; } }
+</style></head><body>
+<h2>${tenant?.name ?? ''} — รายการคำร้อง</h2>
+<p class="sub">ตัวกรอง: ${filterLabel} &nbsp;|&nbsp; ทั้งหมด ${filtered.length} รายการ &nbsp;|&nbsp; พิมพ์วันที่ ${thDate}</p>
+<table>
+  <thead><tr>
+    <th style="width:40px">ที่</th>
+    <th style="width:80px">เลขที่</th>
+    <th style="width:80px">วันที่</th>
+    <th style="width:130px">ประเภท</th>
+    <th style="width:110px">ผู้แจ้ง</th>
+    <th>รายละเอียด</th>
+    <th style="width:90px">สถานะ</th>
+  </tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+<div class="footer">ออกจากระบบยื่นคำร้องออนไลน์ SmartLocal</div>
+</body></html>`
+
+    const w = window.open('', '_blank', 'width=1100,height=700')
+    w.document.write(html)
+    w.document.close()
+    setTimeout(() => w.print(), 500)
+  }
+
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 pb-24 md:pb-6 space-y-6">
       {/* Detail modal */}
@@ -2371,6 +2563,11 @@ export default function AdminDashboard() {
                 className="pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent w-52"
                 style={{ '--tw-ring-color': 'var(--color-primary)' }} />
             </div>
+            <button onClick={handlePrintComplaints}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border border-gray-200 bg-white hover:bg-gray-50 transition-colors shrink-0">
+              <Printer size={15} className="text-gray-500" />
+              พิมพ์
+            </button>
           </div>
 
           {/* Filter tabs */}
