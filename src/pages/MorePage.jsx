@@ -4,7 +4,8 @@ import {
   ArrowLeft, UserCircle2, Pencil, LogIn, LogOut,
   Bell, FileSearch, ClipboardList, ShieldCheck,
   Phone, MapPin, Globe, Share2, MessageCircle,
-  ChevronRight, Star, Copy, Download, Check, Monitor,
+  ChevronRight, Star, Copy, Download, Check, Monitor, X,
+  UploadIcon, PlusSquare,
 } from 'lucide-react'
 import { QRCode } from 'react-qr-code'
 import { supabase } from '../lib/supabase'
@@ -13,20 +14,84 @@ import { useNotifications } from '../contexts/NotificationsContext'
 
 // ─── QR Share Card ────────────────────────────────────────────────────────
 
+function IOSGuide({ onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 px-4 pb-4"
+         onClick={onClose}>
+      <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl"
+           onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <p className="font-bold text-gray-800 text-base">เพิ่มลงในหน้าจอหลัก</p>
+          <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-gray-100">
+            <X size={18} className="text-gray-500" />
+          </button>
+        </div>
+        <div className="space-y-3.5">
+          <div className="flex items-start gap-3">
+            <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center shrink-0 mt-0.5">
+              <span className="text-xs font-bold text-blue-600">1</span>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-700">กดปุ่ม แชร์ ใน Safari</p>
+              <p className="text-xs text-gray-400 mt-0.5">ปุ่มรูปกล่องมีลูกศรขึ้น ที่แถบด้านล่าง</p>
+              <div className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 bg-gray-100 rounded-lg">
+                <UploadIcon size={14} className="text-blue-500" />
+                <span className="text-xs text-gray-600 font-medium">Share</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-start gap-3">
+            <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center shrink-0 mt-0.5">
+              <span className="text-xs font-bold text-blue-600">2</span>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-700">เลือก "เพิ่มที่หน้าจอโฮม"</p>
+              <p className="text-xs text-gray-400 mt-0.5">เลื่อนลงในเมนูที่ปรากฏขึ้น</p>
+              <div className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 bg-gray-100 rounded-lg">
+                <PlusSquare size={14} className="text-gray-600" />
+                <span className="text-xs text-gray-600 font-medium">Add to Home Screen</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-start gap-3">
+            <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center shrink-0 mt-0.5">
+              <span className="text-xs font-bold text-blue-600">3</span>
+            </div>
+            <p className="text-sm font-semibold text-gray-700 mt-0.5">กด "เพิ่ม" มุมขวาบน</p>
+          </div>
+        </div>
+        <button onClick={onClose}
+          className="mt-5 w-full py-3 rounded-2xl font-bold text-sm text-white"
+          style={{ background: 'var(--color-primary)' }}>
+          เข้าใจแล้ว
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function QRShareCard({ tenant }) {
   const qrRef = useRef(null)
   const [copied, setCopied] = useState(false)
   const [installPrompt, setInstallPrompt] = useState(null)
   const [installState, setInstallState] = useState('unknown') // 'unknown' | 'installable' | 'installed'
+  const [showIOSGuide, setShowIOSGuide] = useState(false)
   const url = window.location.origin
 
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream
+
   useEffect(() => {
-    // ตรวจว่า install แล้วหรือยัง
     const isStandalone =
       window.matchMedia('(display-mode: standalone)').matches ||
       window.navigator.standalone === true
     if (isStandalone) {
       setInstallState('installed')
+      return
+    }
+
+    // iOS Safari ไม่มี beforeinstallprompt — ต้องแนะนำ manual
+    if (isIOS) {
+      setInstallState('installable')
       return
     }
 
@@ -37,9 +102,13 @@ function QRShareCard({ tenant }) {
     }
     window.addEventListener('beforeinstallprompt', handler)
     return () => window.removeEventListener('beforeinstallprompt', handler)
-  }, [])
+  }, [isIOS])
 
   async function handleInstall() {
+    if (isIOS) {
+      setShowIOSGuide(true)
+      return
+    }
     if (!installPrompt) return
     await installPrompt.prompt()
     const { outcome } = await installPrompt.userChoice
@@ -85,6 +154,8 @@ function QRShareCard({ tenant }) {
   }
 
   return (
+    <>
+    {showIOSGuide && <IOSGuide onClose={() => setShowIOSGuide(false)} />}
     <div className="rounded-3xl overflow-hidden shadow-lg"
          style={{ background: 'linear-gradient(145deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)' }}>
       <div className="px-5 pt-6 pb-5 flex flex-col items-center gap-4">
@@ -99,11 +170,6 @@ function QRShareCard({ tenant }) {
         {/* QR Code */}
         <div ref={qrRef} className="bg-white rounded-2xl p-4 shadow-md">
           <QRCode value={url} size={160} />
-        </div>
-
-        {/* URL */}
-        <div className="bg-white/15 rounded-xl px-4 py-2 w-full text-center">
-          <p className="text-white/90 text-xs font-medium truncate">{url.replace('https://', '')}</p>
         </div>
 
         {/* Install button */}
@@ -141,6 +207,7 @@ function QRShareCard({ tenant }) {
         </div>
       </div>
     </div>
+    </>
   )
 }
 

@@ -245,12 +245,23 @@ function FixedSelect({ value, onChange, options }) {
 }
 
 // ─── Complaint Detail Modal ───────────────────────────────────────────────────
-function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, currentUserRole }) {
+function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, currentUserRole, onDelete }) {
   const { tenant } = useTenant()
   const [assigning, setAssigning] = useState(false)
   const [showCloseJob, setShowCloseJob] = useState(false)
   const [pendingPhotos, setPendingPhotos] = useState([])
   const [closeUploading, setCloseUploading] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  async function handleDelete() {
+    if (!window.confirm(`ลบคำร้องนี้ออกจากระบบ?\n\nการลบไม่สามารถย้อนกลับได้`)) return
+    setDeleting(true)
+    const { error } = await supabase.from('complaints').delete().eq('id', c.id)
+    setDeleting(false)
+    if (error) { alert('ลบไม่สำเร็จ: ' + error.message); return }
+    onDelete(c.id)
+    onClose()
+  }
 
   if (!c) return null
 
@@ -569,13 +580,19 @@ ${workPhotosHtml}
               ปิดหน้าต่าง
             </button>
           ) : c.status === 'in_progress' && !showCloseJob ? (
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <button onClick={() => setShowCloseJob(true)}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white transition-all active:scale-95"
                 style={{ backgroundColor: 'var(--color-primary)' }}>
                 <CheckCircle2 size={12} /> ปิดงาน
               </button>
               <RejectButton status={c.status} id={c.id} onUpdate={(id, next) => { onUpdate(id, next, []); onClose() }} loading={updating} />
+              {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
+                <button onClick={handleDelete} disabled={deleting}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 transition-colors disabled:opacity-50">
+                  {deleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} ลบคำร้อง
+                </button>
+              )}
               <button onClick={onClose} className="ml-auto px-4 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors">
                 ปิดหน้าต่าง
               </button>
@@ -633,6 +650,12 @@ ${workPhotosHtml}
                 className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
                 <Printer size={13} /> พิมพ์
               </button>
+              {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
+                <button onClick={handleDelete} disabled={deleting}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 transition-colors disabled:opacity-50">
+                  {deleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} ลบคำร้อง
+                </button>
+              )}
               <button onClick={onClose} className="ml-auto px-4 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors">
                 ปิดหน้าต่าง
               </button>
@@ -845,7 +868,7 @@ function UserManager({ tenant, currentUserRole }) {
                       onChange={(e) => setEditingNameValue(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') updateName(u.id); if (e.key === 'Escape') setEditingNameId(null) }}
                       placeholder="ชื่อ-นามสกุล"
-                      className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-blue-400"
+                      className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-blue-400 bg-white text-gray-900"
                     />
                     <button
                       onClick={() => updateName(u.id)}
@@ -2176,6 +2199,10 @@ export default function AdminDashboard() {
     }
   }
 
+  function handleDeleteComplaint(id) {
+    setComplaints((prev) => prev.filter((c) => c.id !== id))
+  }
+
   async function handleLogout() {
     await supabase.auth.signOut()
     navigate('/admin/login')
@@ -2311,6 +2338,7 @@ export default function AdminDashboard() {
           technicians={technicians}
           onAssign={assignTechnician}
           currentUserRole={currentUserRole}
+          onDelete={handleDeleteComplaint}
         />
       )}
 
