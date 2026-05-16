@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { useTenant } from '../contexts/TenantContext'
 import { Mail, Lock, User, Loader2, UserCircle2, Phone, Eye, EyeOff } from 'lucide-react'
 
 const PHONE_EMAIL_DOMAIN = 'phone.smartlocal.app'
@@ -17,6 +18,7 @@ function resolveLoginEmail(input) {
 export default function AuthPage() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { tenant } = useTenant()
   const from = location.state?.from ?? '/'
 
   const [mode, setMode] = useState('login') // 'login' | 'register'
@@ -72,11 +74,27 @@ export default function AuthPage() {
       email,
       password: form.password,
       options: {
-        data: { full_name: form.name.trim(), phone: form.phone.trim() },
+        data: {
+          full_name: form.name.trim(),
+          phone: form.phone.trim(),
+          municipality_id: tenant?.id ?? null,
+        },
       },
     })
+    if (err) { setLoading(false); setError(err.message); return }
+
+    const userId = data.user?.id
+    if (userId && tenant?.id) {
+      await supabase.from('profiles').upsert({
+        id: userId,
+        full_name: form.name.trim(),
+        phone: form.phone.trim() || null,
+        municipality_id: tenant.id,
+        role: 'citizen',
+      }, { onConflict: 'id' })
+    }
+
     setLoading(false)
-    if (err) { setError(err.message); return }
     if (data.session) {
       navigate(from, { replace: true })
       return
