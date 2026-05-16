@@ -63,7 +63,7 @@ export default function MapPicker({ initialPos, onConfirm, onClose }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState([])
   const [searching, setSearching] = useState(false)
-  const [tileMode, setTileMode] = useState('street')
+  const [tileMode, setTileMode] = useState('satellite')
   const searchTimeout = useRef(null)
   const geocodeTimeout = useRef(null)
 

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   MapPin, Phone, FileText, ChevronDown, AlignLeft, Home,
-  Loader2, CheckCircle2, ArrowLeft, Send, Paperclip, X, Image,
+  Loader2, CheckCircle2, ArrowLeft, Send, Paperclip, X, Image, User,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
@@ -87,7 +87,7 @@ export default function CitizenForm() {
   const [searchParams] = useSearchParams()
   const preCategory = searchParams.get('category') ?? ''
 
-  const [form, setForm] = useState({ category: preCategory, subject: '', village: '', detail: '', phone: '' })
+  const [form, setForm] = useState({ category: preCategory, subject: '', village: '', detail: '', phone: '', reporter_name: '' })
   const [geo, setGeo] = useState({ lat: null, lng: null, address: null })
   const [geoStatus, setGeoStatus] = useState(GEO_STATUS.idle)
   const [showMap, setShowMap] = useState(false)
@@ -100,6 +100,32 @@ export default function CitizenForm() {
   const [complaintNumber, setComplaintNumber] = useState(null)
   const [locations, setLocations] = useState([])
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) return
+      const meta = session.user.user_metadata ?? {}
+      const metaName = meta.full_name || meta.name || ''
+      const metaPhone = meta.phone || ''
+      supabase.from('profiles').select('full_name, phone').eq('id', session.user.id).single()
+        .then(({ data }) => {
+          const name = data?.full_name || metaName
+          const phone = data?.phone || metaPhone
+          setForm((prev) => ({
+            ...prev,
+            ...(name ? { reporter_name: name } : {}),
+            ...(phone ? { phone } : {}),
+          }))
+        })
+        .catch(() => {
+          setForm((prev) => ({
+            ...prev,
+            ...(metaName ? { reporter_name: metaName } : {}),
+            ...(metaPhone ? { phone: metaPhone } : {}),
+          }))
+        })
+    })
+  }, [])
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -188,6 +214,7 @@ export default function CitizenForm() {
   async function handleSubmit(e) {
     e.preventDefault()
     if (!form.category) { setError('กรุณาเลือกประเภทปัญหา'); return }
+    if (!form.reporter_name.trim()) { setError('กรุณากรอกชื่อ-นามสกุล'); return }
     if (!form.subject.trim()) { setError('กรุณากรอกเรื่อง'); return }
     if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
     if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
@@ -211,6 +238,7 @@ export default function CitizenForm() {
       village:         form.village || null,
       detail:          form.detail.trim(),
       phone:           form.phone.trim(),
+      reporter_name:   form.reporter_name.trim(),
       latitude:        geo.lat,
       longitude:       geo.lng,
       user_id:         session?.user?.id ?? null,
@@ -361,6 +389,19 @@ export default function CitizenForm() {
             className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-700 placeholder-gray-400 resize-none focus:outline-none focus:ring-2 focus:border-transparent"
             style={{ '--tw-ring-color': 'var(--color-primary)' }} />
           <p className="text-right text-xs text-gray-400 mt-1">{form.detail.length} ตัวอักษร</p>
+        </div>
+
+        {/* Reporter name */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <User size={16} style={{ color: 'var(--color-primary)' }} />
+            <span className="text-sm font-semibold text-gray-700">ชื่อ-นามสกุลผู้แจ้ง</span>
+          </div>
+          <input type="text" value={form.reporter_name} onChange={set('reporter_name')} required
+            placeholder="กรอกชื่อ-นามสกุล"
+            autoComplete="name"
+            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:border-transparent"
+            style={{ '--tw-ring-color': 'var(--color-primary)' }} />
         </div>
 
         {/* Phone */}

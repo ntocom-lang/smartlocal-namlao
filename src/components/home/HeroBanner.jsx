@@ -23,7 +23,7 @@ export default function HeroBanner() {
             ได้ทุกที่ทุกเวลา ไม่ต้องเดินทางมาที่สำนักงาน
           </p>
         </div>
-        <a href="/request"
+        <a href="/complaint"
            className="shrink-0 inline-flex items-center gap-2 bg-white font-semibold text-sm px-5 py-2.5 rounded-xl shadow hover:shadow-md transition-shadow"
            style={{ color: 'var(--color-primary)' }}>
           ยื่นคำร้องเลย <ArrowRight size={16} />
