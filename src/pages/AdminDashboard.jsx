@@ -536,7 +536,7 @@ ${workPhotosHtml}
           {attachments.length > 0 && (
             <div className="space-y-2 pb-4">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                ไฟล์แนบ ({attachments.length})
+                ก่อนดำเนินการ ({attachments.length})
               </p>
               <div className="grid grid-cols-3 gap-2">
                 {attachments.map((url, i) => (
@@ -556,7 +556,7 @@ ${workPhotosHtml}
           {(c.work_photos ?? []).length > 0 && (
             <div className="space-y-2 pb-4">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Camera size={12} /> หลักฐานการทำงาน ({c.work_photos.length})
+                <Camera size={12} /> หลังดำเนินการ ({c.work_photos.length})
               </p>
               <div className="grid grid-cols-3 gap-2">
                 {c.work_photos.map((url, i) => (

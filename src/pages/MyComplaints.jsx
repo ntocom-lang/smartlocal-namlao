@@ -244,11 +244,11 @@ function DetailSheet({ complaint: c, onClose }) {
             </div>
           </div>
 
-          {/* attachments */}
+          {/* attachments - before */}
           {attachments.length > 0 && (
             <div className="space-y-2">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                ภาพ/ไฟล์แนบ ({attachments.length})
+                ก่อนดำเนินการ ({attachments.length})
               </p>
               <div className="grid grid-cols-3 gap-2">
                 {attachments.map((url, i) => (
@@ -268,11 +268,11 @@ function DetailSheet({ complaint: c, onClose }) {
             </div>
           )}
 
-          {/* work photos from technician */}
+          {/* work photos - after */}
           {(c.work_photos ?? []).length > 0 && (
             <div className="space-y-2">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Camera size={11} /> ผลการดำเนินงาน ({c.work_photos.length})
+                <Camera size={11} /> หลังดำเนินการ ({c.work_photos.length})
               </p>
               <div className="grid grid-cols-3 gap-2">
                 {c.work_photos.map((url, i) => (
