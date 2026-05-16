@@ -20,6 +20,7 @@ const NAV_TECH = [
   { label: 'เมนูอื่นๆ',    icon: LayoutGrid,    href: '/more' },
 ]
 
+
 export default function BottomNav() {
   const location = useLocation()
   const navigate = useNavigate()

@@ -219,6 +219,7 @@ export default function MorePage() {
   }
 
   const isAdmin = role === 'admin' || role === 'superadmin'
+  const isViewer = role === 'viewer'
   const displayName = session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || ''
   const avatarUrl = session?.user?.user_metadata?.avatar_url
   const initials = (displayName[0] || '?').toUpperCase()
@@ -346,6 +347,18 @@ export default function MorePage() {
               iconColor="text-amber-500"
               label="แผงควบคุม Admin"
               desc="จัดการคำร้อง เจ้าหน้าที่ และข้อมูลระบบ"
+              href="/admin"
+            />
+          </Section>
+        )}
+        {isViewer && (
+          <Section title="ผู้บริหาร">
+            <MenuRow
+              icon={ShieldCheck}
+              iconBg="bg-emerald-50"
+              iconColor="text-emerald-500"
+              label="รายงานสรุป"
+              desc="ดูรายงานและสถิติคำร้องของหน่วยงาน"
               href="/admin"
             />
           </Section>

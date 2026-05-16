@@ -556,24 +556,41 @@ function UserManager({ tenant, currentUserRole }) {
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(null)
+  const [editingNameId, setEditingNameId] = useState(null)
+  const [editingNameValue, setEditingNameValue] = useState('')
+  const [search, setSearch] = useState('')
+  const [filterRole, setFilterRole] = useState('')
 
   const fetchUsers = useCallback(async () => {
     setLoading(true)
-    // superadmin เห็นทุกคน, admin เห็นเฉพาะ municipality ตัวเอง
-    let query = supabase.from('profiles').select('*').order('created_at', { ascending: false })
+    const { data } = await supabase.rpc('get_users_with_email')
+    let list = data ?? []
     if (currentUserRole === 'admin') {
-      query = query.eq('municipality_id', tenant?.id)
+      list = list.filter((u) => u.municipality_id === tenant?.id)
     }
-    const { data } = await query
-    setUsers(data ?? [])
+    setUsers(list)
     setLoading(false)
   }, [tenant?.id, currentUserRole])
 
   useEffect(() => { fetchUsers() }, [fetchUsers])
 
+  async function updateName(userId) {
+    const name = editingNameValue.trim()
+    if (!name) return
+    setSaving(userId)
+    const { error } = await supabase.from('profiles').update({ full_name: name }).eq('id', userId)
+    if (error) {
+      alert(`บันทึกไม่สำเร็จ: ${error.message}`)
+    } else {
+      setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, full_name: name } : u))
+      setEditingNameId(null)
+    }
+    setSaving(null)
+  }
+
   async function updateRole(userId, newRole, municipalityId) {
     setSaving(userId)
-    const needsMuni = newRole === 'admin' || newRole === 'technician'
+    const needsMuni = newRole === 'admin' || newRole === 'technician' || newRole === 'viewer'
     const muni = needsMuni ? (municipalityId || tenant?.id) : null
     const { error } = await supabase.from('profiles').update({ role: newRole, municipality_id: muni }).eq('id', userId)
     if (error) {
@@ -587,6 +604,13 @@ function UserManager({ tenant, currentUserRole }) {
     setSaving(null)
   }
 
+  const filtered = users.filter((u) => {
+    const q = search.toLowerCase()
+    const matchSearch = !q || (u.full_name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q) || (u.phone || '').includes(q)
+    const matchRole = !filterRole || u.role === filterRole
+    return matchSearch && matchRole
+  })
+
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
       <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
@@ -598,60 +622,120 @@ function UserManager({ tenant, currentUserRole }) {
         </button>
       </div>
 
+      {/* ตัวกรอง */}
+      <div className="px-4 py-3 border-b border-gray-50 flex gap-2 flex-wrap">
+        <div className="relative flex-1">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="ค้นหาชื่อ, อีเมล, เบอร์..."
+            className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-blue-400"
+          />
+        </div>
+        <select
+          value={filterRole}
+          onChange={(e) => setFilterRole(e.target.value)}
+          className="text-xs border border-gray-200 rounded-xl px-2 py-2 text-gray-600 focus:outline-none shrink-0"
+        >
+          <option value="">ทุกตำแหน่ง</option>
+          <option value="citizen">สมาชิก</option>
+          <option value="viewer">ผู้บริหาร</option>
+          <option value="technician">ช่าง</option>
+          <option value="admin">แอดมิน</option>
+          {currentUserRole === 'superadmin' && <option value="superadmin">Super Admin</option>}
+        </select>
+        {(search || filterRole) && (
+          <button
+            onClick={() => { setSearch(''); setFilterRole('') }}
+            className="flex items-center gap-1 text-xs text-gray-400 hover:text-red-500 border border-gray-200 rounded-xl px-2.5 py-2 transition-colors shrink-0"
+          >
+            <X size={12} /> ล้าง
+          </button>
+        )}
+      </div>
+
       {loading ? (
         <div className="flex justify-center py-10 text-gray-400">
           <Loader2 size={20} className="animate-spin" />
         </div>
-      ) : users.length === 0 ? (
-        <p className="text-center py-10 text-gray-400 text-sm">ยังไม่มีผู้ใช้งาน</p>
+      ) : filtered.length === 0 ? (
+        <p className="text-center py-10 text-gray-400 text-sm">{users.length === 0 ? 'ยังไม่มีผู้ใช้งาน' : 'ไม่พบผู้ใช้ที่ค้นหา'}</p>
       ) : (
         <div className="divide-y divide-gray-50">
-          {users.map((u) => {
+          {filtered.map((u) => {
             const rs = ROLE_LABELS[u.role] ?? ROLE_LABELS.citizen
             const isSelf = false
             return (
-              <div key={u.id} className="flex items-center gap-3 px-5 py-3">
-                <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"
-                     style={{ backgroundColor: rs.color }}>
-                  {(u.full_name || u.email || '?')[0].toUpperCase()}
+              <div key={u.id} className="flex flex-col px-4 py-3 gap-2">
+                {/* แถว 1: avatar + ชื่อ + badge */}
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"
+                       style={{ backgroundColor: rs.color }}>
+                    {(u.full_name || u.email || '?')[0].toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <p className="font-medium text-gray-800 text-sm">{u.full_name || '—'}</p>
+                      {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && u.role !== 'superadmin' && (
+                        <button
+                          onClick={() => { setEditingNameId(u.id); setEditingNameValue(u.full_name || '') }}
+                          className="text-gray-300 hover:text-gray-500 transition-colors"
+                        >
+                          <Pencil size={12} />
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400 break-all mt-0.5">{u.email || u.phone || '—'}</p>
+                  </div>
+                  <span className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0"
+                        style={{ backgroundColor: rs.bg, color: rs.color }}>
+                    {rs.label}
+                  </span>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-800 text-sm truncate">{u.full_name || '—'}</p>
-                  <p className="text-xs text-gray-400 truncate">{u.email}</p>
-                </div>
-                <span className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0"
-                      style={{ backgroundColor: rs.bg, color: rs.color }}>
-                  {rs.label}
-                </span>
-                {/* เปลี่ยน role ได้ถ้าไม่ใช่ superadmin อีกคน */}
-                {u.role !== 'superadmin' && currentUserRole === 'superadmin' && (
-                  <select
-                    value={u.role}
-                    disabled={saving === u.id}
-                    onChange={(e) => updateRole(u.id, e.target.value, u.municipality_id)}
-                    className="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-700 focus:outline-none shrink-0"
-                  >
-                    <option value="citizen">สมาชิก</option>
-                    <option value="viewer">ผู้บริหาร</option>
-                    <option value="technician">ช่าง</option>
-                    <option value="admin">แอดมิน</option>
-                    <option value="superadmin">Super Admin</option>
-                  </select>
+                {/* แถว 2: dropdown เปลี่ยน role (เฉพาะ admin/superadmin) */}
+                {u.role !== 'superadmin' && (currentUserRole === 'superadmin' || currentUserRole === 'admin') && (
+                  <div className="flex items-center gap-2 pl-12 justify-end">
+                    <select
+                      value={u.role}
+                      disabled={saving === u.id}
+                      onChange={(e) => updateRole(u.id, e.target.value, u.municipality_id)}
+                      className="text-xs border border-gray-200 rounded-xl px-2 py-1.5 text-gray-700 focus:outline-none bg-gray-50"
+                    >
+                      <option value="citizen">สมาชิก</option>
+                      <option value="viewer">ผู้บริหาร</option>
+                      <option value="technician">ช่าง</option>
+                      <option value="admin">แอดมิน</option>
+                      {currentUserRole === 'superadmin' && <option value="superadmin">Super Admin</option>}
+                    </select>
+                    {saving === u.id && <Loader2 size={14} className="animate-spin text-gray-400 shrink-0" />}
+                  </div>
                 )}
-                {u.role !== 'superadmin' && currentUserRole === 'admin' && (
-                  <select
-                    value={u.role}
-                    disabled={saving === u.id}
-                    onChange={(e) => updateRole(u.id, e.target.value, u.municipality_id)}
-                    className="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-700 focus:outline-none shrink-0"
-                  >
-                    <option value="citizen">สมาชิก</option>
-                    <option value="viewer">ผู้บริหาร</option>
-                    <option value="technician">ช่าง</option>
-                    <option value="admin">แอดมิน</option>
-                  </select>
+                {editingNameId === u.id && (
+                  <div className="flex items-center gap-2 pl-12">
+                    <input
+                      autoFocus
+                      value={editingNameValue}
+                      onChange={(e) => setEditingNameValue(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') updateName(u.id); if (e.key === 'Escape') setEditingNameId(null) }}
+                      placeholder="ชื่อ-นามสกุล"
+                      className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-blue-400"
+                    />
+                    <button
+                      onClick={() => updateName(u.id)}
+                      disabled={saving === u.id}
+                      className="text-xs bg-blue-500 text-white px-3 py-1.5 rounded-lg font-medium disabled:opacity-50"
+                    >
+                      บันทึก
+                    </button>
+                    <button
+                      onClick={() => setEditingNameId(null)}
+                      className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5"
+                    >
+                      ยกเลิก
+                    </button>
+                  </div>
                 )}
-                {saving === u.id && <Loader2 size={14} className="animate-spin text-gray-400 shrink-0" />}
               </div>
             )
           })}
@@ -662,7 +746,7 @@ function UserManager({ tenant, currentUserRole }) {
 }
 
 // ─── Emergency Contacts Manager ───────────────────────────────────────────────
-function SortableContact({ c, i, total, onDelete, onMove }) {
+function SortableContact({ c, i, total, onDelete, onMove, onEdit, editingId, editingForm, onEditChange, onEditSave }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: c.id })
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -671,39 +755,77 @@ function SortableContact({ c, i, total, onDelete, onMove }) {
     zIndex: isDragging ? 10 : undefined,
     position: 'relative',
   }
+  const isEditing = editingId === c.id
   return (
     <div ref={setNodeRef} style={style}
-         className={`flex items-center gap-2 px-4 py-3 bg-white ${i < total - 1 ? 'border-b border-gray-50' : ''}`}>
-      <button {...attributes} {...listeners}
-              className="p-1 text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing touch-none shrink-0">
-        <GripVertical size={16} />
-      </button>
-      <div className="w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0"
-           style={{ backgroundColor: c.bg }}>
-        {c.emoji}
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="font-semibold text-gray-800 text-sm">{c.label}</p>
-        <p className="text-xs text-gray-400">{c.number}</p>
-      </div>
-      <div className="flex flex-col gap-0">
-        <button onClick={() => onMove(i, -1)} disabled={i === 0}
-                className="p-0.5 rounded text-gray-300 hover:text-gray-600 disabled:opacity-20 transition-colors">
-          <ChevronUp size={14} />
+         className={`px-4 py-3 bg-white ${i < total - 1 ? 'border-b border-gray-50' : ''}`}>
+      <div className="flex items-center gap-2">
+        <button {...attributes} {...listeners}
+                className="p-1 text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing touch-none shrink-0">
+          <GripVertical size={16} />
         </button>
-        <button onClick={() => onMove(i, 1)} disabled={i === total - 1}
-                className="p-0.5 rounded text-gray-300 hover:text-gray-600 disabled:opacity-20 transition-colors">
-          <ChevronDown size={14} />
+        <div className="w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0"
+             style={{ backgroundColor: c.bg }}>
+          {c.emoji}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-gray-800 text-sm">{c.label}</p>
+          <p className="text-[11px] text-gray-400">{c.number}</p>
+        </div>
+        <div className="flex flex-col gap-0">
+          <button onClick={() => onMove(i, -1)} disabled={i === 0}
+                  className="p-0.5 rounded text-gray-300 hover:text-gray-600 disabled:opacity-20 transition-colors">
+            <ChevronUp size={14} />
+          </button>
+          <button onClick={() => onMove(i, 1)} disabled={i === total - 1}
+                  className="p-0.5 rounded text-gray-300 hover:text-gray-600 disabled:opacity-20 transition-colors">
+            <ChevronDown size={14} />
+          </button>
+        </div>
+        <a href={`tel:${c.number}`}
+           className="p-2 rounded-xl text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors">
+          <PhoneCall size={15} />
+        </a>
+        <button onClick={() => onEdit(c)}
+                className="p-2 rounded-xl text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-colors">
+          <Pencil size={15} />
+        </button>
+        <button onClick={() => onDelete(c.id)}
+                className="p-2 rounded-xl text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+          <Trash2 size={15} />
         </button>
       </div>
-      <a href={`tel:${c.number}`}
-         className="p-2 rounded-xl text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors">
-        <PhoneCall size={15} />
-      </a>
-      <button onClick={() => onDelete(c.id)}
-              className="p-2 rounded-xl text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
-        <Trash2 size={15} />
-      </button>
+      {isEditing && (
+        <div className="mt-3 ml-12 space-y-2">
+          <input
+            autoFocus
+            value={editingForm.label}
+            onChange={(e) => onEditChange('label', e.target.value)}
+            placeholder="ชื่อสายด่วน"
+            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2"
+            style={{ '--tw-ring-color': 'var(--color-primary)' }}
+          />
+          <input
+            value={editingForm.number}
+            onChange={(e) => onEditChange('number', e.target.value)}
+            placeholder="เบอร์โทร"
+            type="tel"
+            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2"
+            style={{ '--tw-ring-color': 'var(--color-primary)' }}
+          />
+          <div className="flex gap-2">
+            <button onClick={onEditSave}
+                    className="px-4 py-1.5 rounded-xl text-sm font-medium text-white"
+                    style={{ backgroundColor: 'var(--color-primary)' }}>
+              บันทึก
+            </button>
+            <button onClick={() => onEdit(null)}
+                    className="px-4 py-1.5 rounded-xl text-sm font-medium text-gray-500 border border-gray-200">
+              ยกเลิก
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -713,6 +835,8 @@ function EmergencyManager({ tenant }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ label: '', number: '', emoji: '📞', color: '#1d4ed8', bg: '#dbeafe' })
+  const [editingId, setEditingId] = useState(null)
+  const [editingForm, setEditingForm] = useState({ label: '', number: '' })
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -774,8 +898,26 @@ function EmergencyManager({ tenant }) {
   }
 
   async function deleteContact(id) {
+    const contact = contacts.find((c) => c.id === id)
+    if (!window.confirm(`ลบ "${contact?.label}" ออกจากรายการเบอร์ฉุกเฉิน?`)) return
     await supabase.from('emergency_contacts').delete().eq('id', id)
     setContacts((prev) => prev.filter((c) => c.id !== id))
+  }
+
+  function handleEdit(c) {
+    if (!c) { setEditingId(null); return }
+    setEditingId(c.id)
+    setEditingForm({ label: c.label, number: c.number })
+  }
+
+  async function saveContactEdit() {
+    if (!editingForm.label.trim() || !editingForm.number.trim()) return
+    const { error } = await supabase.from('emergency_contacts')
+      .update({ label: editingForm.label.trim(), number: editingForm.number.trim() })
+      .eq('id', editingId)
+    if (error) return
+    setContacts((prev) => prev.map((c) => c.id === editingId ? { ...c, ...editingForm } : c))
+    setEditingId(null)
   }
 
   return (
@@ -821,6 +963,11 @@ function EmergencyManager({ tenant }) {
                   c={c} i={i} total={contacts.length}
                   onDelete={deleteContact}
                   onMove={handleMove}
+                  onEdit={handleEdit}
+                  editingId={editingId}
+                  editingForm={editingForm}
+                  onEditChange={(field, val) => setEditingForm((p) => ({ ...p, [field]: val }))}
+                  onEditSave={saveContactEdit}
                 />
               ))}
             </div>
@@ -845,7 +992,7 @@ const DEFAULT_CATS = [
   { value: 'other',            label: 'อื่นๆ',                  emoji: '📝' },
 ]
 
-function AssignmentManager({ tenant }) {
+function AssignmentManager({ tenant, readOnly = false }) {
   const [cats, setCats] = useState(DEFAULT_CATS)
   const [techs, setTechs] = useState([])
   const [assignments, setAssignments] = useState({}) // { category: technician_id }
@@ -908,13 +1055,15 @@ function AssignmentManager({ tenant }) {
                 {isSaving && <Loader2 size={13} className="animate-spin text-gray-300" />}
                 <select
                   value={currentTech}
-                  onChange={(e) => handleChange(cat.value, e.target.value)}
-                  disabled={isSaving}
-                  className="text-xs border border-gray-200 rounded-xl px-2 py-1.5 bg-white text-gray-700 focus:outline-none max-w-32"
+                  onChange={(e) => !readOnly && handleChange(cat.value, e.target.value)}
+                  disabled={isSaving || readOnly}
+                  className={`text-xs border border-gray-200 rounded-xl px-2 py-1.5 bg-white text-gray-700 focus:outline-none max-w-32 ${readOnly ? 'opacity-60 cursor-not-allowed' : ''}`}
                 >
                   <option value="">— ไม่ระบุ —</option>
                   {techs.map((t) => (
-                    <option key={t.id} value={t.id}>{t.full_name || t.email}</option>
+                    <option key={t.id} value={t.id}>
+                      {t.full_name ? `${t.full_name} (${t.email || ''})` : t.email}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -933,6 +1082,8 @@ function LocationManager({ tenant }) {
   const [newName, setNewName] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  const [editingId, setEditingId] = useState(null)
+  const [editingName, setEditingName] = useState('')
 
   async function fetchLocations() {
     if (!tenant?.id) return
@@ -970,9 +1121,20 @@ function LocationManager({ tenant }) {
   }
 
   async function deleteLocation(id) {
+    const loc = locations.find((l) => l.id === id)
+    if (!window.confirm(`ลบ "${loc?.name}" ออกจากรายการสถานที่?`)) return
     const { error: err } = await supabase.from('locations').delete().eq('id', id)
     if (err) { setError('ลบไม่สำเร็จ: ' + err.message); return }
     setLocations((prev) => prev.filter((l) => l.id !== id))
+  }
+
+  async function saveEdit(id) {
+    const name = editingName.trim()
+    if (!name) { setEditingId(null); return }
+    const { error: err } = await supabase.from('locations').update({ name }).eq('id', id)
+    if (err) { setError('แก้ไขไม่สำเร็จ: ' + err.message); return }
+    setLocations((prev) => prev.map((l) => l.id === id ? { ...l, name } : l))
+    setEditingId(null)
   }
 
   return (
@@ -1022,7 +1184,25 @@ function LocationManager({ tenant }) {
             <div key={loc.id} className="flex items-center gap-3 bg-gray-50 rounded-xl px-3 py-2.5">
               <GripVertical size={15} className="text-gray-300 shrink-0" />
               <MapPin size={14} className="text-gray-400 shrink-0" />
-              <span className="flex-1 text-sm text-gray-700">{loc.name}</span>
+              {editingId === loc.id ? (
+                <input
+                  autoFocus
+                  value={editingName}
+                  onChange={(e) => setEditingName(e.target.value)}
+                  onBlur={() => saveEdit(loc.id)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(loc.id); if (e.key === 'Escape') setEditingId(null) }}
+                  className="flex-1 text-sm text-gray-800 bg-white border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2"
+                  style={{ '--tw-ring-color': 'var(--color-primary)' }}
+                />
+              ) : (
+                <span className="flex-1 text-sm text-gray-700">{loc.name}</span>
+              )}
+              <button
+                onClick={() => { setEditingId(loc.id); setEditingName(loc.name) }}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-colors"
+              >
+                <Pencil size={14} />
+              </button>
               <button
                 onClick={() => deleteLocation(loc.id)}
                 className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
@@ -1242,6 +1422,8 @@ function CategoryManager({ tenant }) {
   }
 
   async function deleteCat(id) {
+    const cat = cats.find((c) => c.id === id)
+    if (!window.confirm(`ลบประเภท "${cat?.label}" ออกจากระบบ?\n\nคำร้องที่มีอยู่แล้วจะไม่หายไป แต่จะไม่มีประเภทนี้ให้เลือกในอนาคต`)) return
     const { error: err } = await supabase.from('complaint_categories').delete().eq('id', id)
     if (err) { setError('ลบไม่สำเร็จ: ' + err.message); return }
     setCats((prev) => prev.filter((c) => c.id !== id))
@@ -1631,6 +1813,7 @@ export default function AdminDashboard() {
           const r = p?.role ?? 'citizen'
           setCurrentUserRole(r)
           if (r === 'viewer') setActivePage('report')
+          return r
         })
     })
   }, [])
@@ -1773,11 +1956,13 @@ export default function AdminDashboard() {
           style={activePage === 'complaints' ? { backgroundColor: 'var(--color-primary)' } : {}}>
           <ClipboardList size={15} /> คำร้อง
         </button>
-        <button onClick={() => setActivePage('categories')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'categories' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-          style={activePage === 'categories' ? { backgroundColor: '#d97706' } : {}}>
-          <Tag size={15} /> ประเภทคำร้อง
-        </button>
+        {currentUserRole !== 'viewer' && (
+          <button onClick={() => setActivePage('categories')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'categories' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+            style={activePage === 'categories' ? { backgroundColor: '#d97706' } : {}}>
+            <Tag size={15} /> ประเภทคำร้อง
+          </button>
+        )}
         {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
           <button onClick={() => setActivePage('users')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'users' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
@@ -1795,11 +1980,13 @@ export default function AdminDashboard() {
           style={activePage === 'report' ? { backgroundColor: '#10b981' } : {}}>
           <TrendingUp size={15} /> รายงาน
         </button>
-        <button onClick={() => setActivePage('more')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'more' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-          style={activePage === 'more' ? { backgroundColor: '#6b7280' } : {}}>
-          <LayoutGrid size={15} /> อื่นๆ
-        </button>
+        {currentUserRole !== 'viewer' && (
+          <button onClick={() => setActivePage('more')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'more' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+            style={activePage === 'more' ? { backgroundColor: '#6b7280' } : {}}>
+            <LayoutGrid size={15} /> อื่นๆ
+          </button>
+        )}
       </div>
 
       {/* ─── Mobile Admin Bottom Tab Bar ─── */}
@@ -1808,14 +1995,19 @@ export default function AdminDashboard() {
         style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 8px)' }}
       >
         {[
-          { key: 'home',       label: 'หน้าแรก',     Icon: Home,          activeColor: '#6b7280' },
-          { key: 'complaints', label: 'คำร้อง',      Icon: ClipboardList, activeColor: 'var(--color-primary)' },
-          { key: 'categories', label: 'ประเภท',      Icon: Tag,           activeColor: '#d97706' },
+          { key: 'home',       label: 'หน้าแรก', Icon: Home,          activeColor: '#6b7280' },
+          { key: 'complaints', label: 'คำร้อง',  Icon: ClipboardList, activeColor: 'var(--color-primary)' },
+          ...(currentUserRole !== 'viewer'
+            ? [{ key: 'categories', label: 'ประเภท', Icon: Tag, activeColor: '#d97706' }]
+            : []),
           ...(currentUserRole === 'admin' || currentUserRole === 'superadmin'
             ? [{ key: 'users', label: 'ผู้ใช้', Icon: Shield, activeColor: '#7c3aed' }]
             : []),
-          { key: 'report',     label: 'รายงาน',      Icon: TrendingUp,    activeColor: '#10b981' },
-          { key: 'more',       label: 'อื่นๆ',        Icon: LayoutGrid,    activeColor: '#6b7280' },
+          { key: 'assignments', label: 'ผู้รับผิดชอบ', Icon: Wrench, activeColor: '#d97706' },
+          { key: 'report',      label: 'รายงาน',       Icon: TrendingUp, activeColor: '#10b981' },
+          ...(currentUserRole !== 'viewer'
+            ? [{ key: 'more', label: 'อื่นๆ', Icon: LayoutGrid, activeColor: '#6b7280' }]
+            : []),
         ].map(({ key, label, Icon, activeColor }) => {
           const isActive = activePage === key
           return (
@@ -1859,12 +2051,14 @@ export default function AdminDashboard() {
       ) : activePage === 'assignments' ? (
         <div className="space-y-4">
           <div className="flex items-center gap-2">
-            <button onClick={() => setActivePage('more')} className="p-1.5 rounded-xl hover:bg-gray-100 text-gray-400 transition-colors">
-              <ChevronRight size={16} className="rotate-180" />
-            </button>
-            <h2 className="font-bold text-gray-700">ตั้งค่าช่างผู้รับผิดชอบแต่ละประเภทคำร้อง</h2>
+            {currentUserRole !== 'viewer' && (
+              <button onClick={() => setActivePage('more')} className="p-1.5 rounded-xl hover:bg-gray-100 text-gray-400 transition-colors">
+                <ChevronRight size={16} className="rotate-180" />
+              </button>
+            )}
+            <h2 className="font-bold text-gray-700">ผู้รับผิดชอบแต่ละประเภทคำร้อง</h2>
           </div>
-          <AssignmentManager tenant={tenant} />
+          <AssignmentManager tenant={tenant} readOnly={currentUserRole === 'viewer'} />
         </div>
       ) : activePage === 'more' ? (
         /* ─── อื่นๆ page ─── */
@@ -1999,10 +2193,10 @@ export default function AdminDashboard() {
           </div>
 
           {/* Filter tabs */}
-          <div className="flex gap-1 mt-3 overflow-x-auto pb-1">
+          <div className="flex flex-wrap gap-1 mt-3">
             {FILTER_TABS.map((tab, i) => (
               <button key={i} onClick={() => setFilterTab(i)}
-                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                   filterTab === i
                     ? 'text-white'
                     : 'text-gray-500 bg-gray-100 hover:bg-gray-200'

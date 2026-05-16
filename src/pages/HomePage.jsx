@@ -29,12 +29,13 @@ export default function HomePage() {
   }, [session])
 
   const isAdmin = role === 'admin' || role === 'superadmin'
+  const isViewer = role === 'viewer'
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
 
-      {/* Admin banner */}
-      {isAdmin && (
+      {/* Admin / Viewer banner */}
+      {(isAdmin || isViewer) && (
         <a href="/admin"
           className="flex items-center gap-3 rounded-2xl px-4 py-3.5 shadow-md active:scale-98 transition-transform"
           style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)' }}
@@ -43,8 +44,12 @@ export default function HomePage() {
             <LayoutDashboard size={18} className="text-white" />
           </div>
           <div className="flex-1">
-            <p className="text-white font-bold text-sm">เข้าสู่แผงควบคุม Admin</p>
-            <p className="text-white/70 text-xs">จัดการคำร้อง สถานที่ และผู้ใช้งาน</p>
+            <p className="text-white font-bold text-sm">
+              {isViewer ? 'ดูรายงานและคำร้อง' : 'เข้าสู่แผงควบคุม Admin'}
+            </p>
+            <p className="text-white/70 text-xs">
+              {isViewer ? 'รายงานสรุป และรายการคำร้องของหน่วยงาน' : 'จัดการคำร้อง สถานที่ และผู้ใช้งาน'}
+            </p>
           </div>
           <ChevronRight size={18} className="text-white/60" />
         </a>
