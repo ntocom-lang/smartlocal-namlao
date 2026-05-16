@@ -54,7 +54,8 @@ function injectPWAManifest(tenant) {
     theme_color: tenant.theme_color ?? '#1c7cd6',
     background_color: '#ffffff',
     display: 'standalone',
-    start_url: '/',
+    start_url: window.location.origin + '/',
+    scope: window.location.origin + '/',
     icons: tenant.logo_url
       ? [{ src: tenant.logo_url, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }]
       : [],
