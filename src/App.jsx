@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { TenantProvider, useTenant } from './contexts/TenantContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { NotificationsProvider } from './contexts/NotificationsContext'
@@ -18,6 +18,39 @@ import MyComplaints from './pages/MyComplaints'
 import MorePage from './pages/MorePage'
 import NotificationsPage from './pages/NotificationsPage'
 import { supabase } from './lib/supabase'
+import { Phone, X } from 'lucide-react'
+
+function PhoneReminderModal({ onClose, onGoProfile }) {
+  return (
+    <div className="fixed inset-0 z-999 flex items-center justify-center px-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+        <button onClick={onClose} className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-gray-100">
+          <X size={16} className="text-gray-400" />
+        </button>
+        <div className="flex flex-col items-center text-center gap-3">
+          <div className="w-14 h-14 rounded-full flex items-center justify-center"
+               style={{ backgroundColor: 'var(--color-primary)' }}>
+            <Phone size={26} className="text-white" />
+          </div>
+          <h2 className="text-lg font-bold text-gray-800">กรุณาเพิ่มเบอร์มือถือ</h2>
+          <p className="text-sm text-gray-500 leading-relaxed">
+            ระบบต้องการเบอร์มือถือของท่านเพื่อให้เจ้าหน้าที่ติดต่อกลับ<br />
+            และแจ้งความคืบหน้าของคำร้องได้สะดวกขึ้น
+          </p>
+          <button onClick={onGoProfile}
+            className="w-full py-3 rounded-xl font-semibold text-white text-sm mt-1"
+            style={{ backgroundColor: 'var(--color-primary)' }}>
+            ไปที่หน้าโปรไฟล์
+          </button>
+          <button onClick={onClose} className="text-xs text-gray-400 hover:text-gray-600">
+            ข้ามไปก่อน
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'))
 
@@ -62,6 +95,24 @@ function RequireAuth({ children, adminOnly = false, techOnly = false }) {
 
 function AppShell() {
   const { loading, error } = useTenant()
+  const navigate = useNavigate()
+  const [showPhoneReminder, setShowPhoneReminder] = useState(false)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data }) => {
+      if (!data.session) return
+      const uid = data.session.user.id
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('phone, role')
+        .eq('id', uid)
+        .single()
+      const role = profile?.role ?? 'citizen'
+      if (role === 'citizen' && !profile?.phone?.trim()) {
+        setShowPhoneReminder(true)
+      }
+    })
+  }, [])
 
   if (loading) {
     return (
@@ -89,6 +140,12 @@ function AppShell() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-transparent flex flex-col">
+      {showPhoneReminder && (
+        <PhoneReminderModal
+          onClose={() => setShowPhoneReminder(false)}
+          onGoProfile={() => { setShowPhoneReminder(false); navigate('/profile') }}
+        />
+      )}
       <NotificationsProvider>
         <Header />
         <main className="flex-1">
