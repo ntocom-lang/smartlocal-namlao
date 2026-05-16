@@ -33,12 +33,15 @@ function PhoneReminderModal({ onClose }) {
     setSaving(true)
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { setSaving(false); return }
-    const { error: err } = await supabase
+    const { data: updated, error: err } = await supabase
       .from('profiles')
       .update({ phone: phone.trim() })
       .eq('id', session.user.id)
+      .select('phone')
+      .single()
     setSaving(false)
-    if (err) { setError('บันทึกไม่สำเร็จ กรุณาลองใหม่'); return }
+    if (err) { setError(`บันทึกไม่สำเร็จ: ${err.message}`); return }
+    if (!updated?.phone) { setError('บันทึกไม่สำเร็จ กรุณาลองใหม่'); return }
     onClose()
   }
 
