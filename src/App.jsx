@@ -127,23 +127,39 @@ function RequireAuth({ children, adminOnly = false, techOnly = false }) {
 }
 
 function AppShell() {
-  const { loading, error } = useTenant()
+  const { loading, error, tenant } = useTenant()
   const [showPhoneReminder, setShowPhoneReminder] = useState(false)
 
+  async function checkAndFixProfile(uid) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('phone, municipality_id')
+      .eq('id', uid)
+      .maybeSingle()
+
+    // fix municipality_id ถ้ายัง NULL และรู้ tenant แล้ว
+    if (tenant?.id && !profile?.municipality_id) {
+      await supabase.from('profiles').upsert(
+        { id: uid, municipality_id: tenant.id, role: 'citizen' },
+        { onConflict: 'id' }
+      )
+    }
+
+    if (!profile?.phone?.trim()) setShowPhoneReminder(true)
+  }
+
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }) => {
-      if (!data.session) return
-      const uid = data.session.user.id
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('phone')
-        .eq('id', uid)
-        .maybeSingle()
-      if (!profile?.phone?.trim()) {
-        setShowPhoneReminder(true)
-      }
+    if (!tenant?.id) return
+    // ตรวจ session ปัจจุบัน
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) checkAndFixProfile(data.session.user.id)
     })
-  }, [])
+    // ฟัง sign-in ใหม่ (รวม Google OAuth redirect)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) checkAndFixProfile(session.user.id)
+    })
+    return () => subscription.unsubscribe()
+  }, [tenant?.id])
 
   if (loading) {
     return (
