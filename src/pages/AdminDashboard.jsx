@@ -321,7 +321,7 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
 </table>
 
 <p style="margin:20px 0 6px;font-weight:600">รายละเอียดคำร้อง</p>
-<div class="detail-box">${(c.detail ?? '—').replace(/\n/g, '<br>')}</div>
+<div class="detail-box">${(c.detail ?? '—').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}</div>
 
 ${workPhotosHtml}
 

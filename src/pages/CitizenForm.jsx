@@ -50,6 +50,10 @@ async function compressImage(file) {
         0.82,
       )
     }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      resolve(file) // fallback ใช้ไฟล์ต้นฉบับ
+    }
     img.src = url
   })
 }
@@ -93,6 +97,10 @@ export default function CitizenForm() {
   const [showMap, setShowMap] = useState(false)
   const [files, setFiles] = useState([])        // { file, preview, name }
   const [consent, setConsent] = useState([false, false, false])
+
+  useEffect(() => {
+    return () => files.forEach((f) => { if (f.preview) URL.revokeObjectURL(f.preview) })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const [showPdpa, setShowPdpa] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
