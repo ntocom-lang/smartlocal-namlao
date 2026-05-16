@@ -65,7 +65,7 @@ function PhoneReminderModal({ onClose }) {
             placeholder="เช่น 0812345678"
             maxLength={10}
             className="w-full mt-1 px-4 py-4 text-center text-2xl font-bold tracking-widest border-2 rounded-2xl focus:outline-none transition-colors"
-            style={{ borderColor: error ? '#ef4444' : phone ? 'var(--color-primary)' : '#e5e7eb', color: '#111827' }}
+            style={{ borderColor: error ? '#ef4444' : phone ? 'var(--color-primary)' : '#e5e7eb', color: '#000', backgroundColor: '#fff' }}
             autoFocus
           />
           {error && <p className="text-xs text-red-500">{error}</p>}
