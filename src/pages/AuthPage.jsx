@@ -81,7 +81,16 @@ export default function AuthPage() {
         },
       },
     })
-    if (err) { setLoading(false); setError(err.message); return }
+    if (err) {
+      setLoading(false)
+      const msg = err.message?.toLowerCase() ?? ''
+      if (msg.includes('already registered') || msg.includes('already exists') || msg.includes('duplicate')) {
+        setError('⚠️ อีเมลนี้เคยสมัครกับหน่วยงานอื่นแล้ว กรุณาใช้อีเมลใหม่สำหรับหน่วยงานนี้')
+      } else {
+        setError(err.message)
+      }
+      return
+    }
 
     const userId = data.user?.id
     if (userId && tenant?.id) {
@@ -147,16 +156,6 @@ export default function AuthPage() {
           </div>
         )}
 
-        {/* คำเตือน 1 อีเมล ต่อ 1 หน่วยงาน */}
-        {mode === 'register' && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-2 flex items-start gap-2">
-            <span className="text-amber-500 text-base shrink-0 mt-0.5">⚠️</span>
-            <p className="text-xs text-amber-800 leading-relaxed">
-              <span className="font-semibold">1 อีเมล ใช้ได้กับ 1 หน่วยงานเท่านั้น</span><br />
-              หากท่านเคยสมัครกับหน่วยงานอื่นด้วยอีเมลเดิม กรุณาใช้อีเมลใหม่สำหรับหน่วยงานนี้
-            </p>
-          </div>
-        )}
 
         {/* Form */}
         <form onSubmit={mode === 'login' ? handleLogin : handleRegister} className="space-y-3" autoComplete="on">
