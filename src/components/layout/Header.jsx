@@ -33,7 +33,7 @@ export default function Header() {
 
   useEffect(() => {
     if (!session) return
-    supabase.from('profiles').select('role').eq('id', session.user.id).single()
+    supabase.from('profiles').select('role').eq('id', session.user.id).maybeSingle()
       .then(({ data }) => setRole(data?.role ?? 'citizen'))
   }, [session])
 

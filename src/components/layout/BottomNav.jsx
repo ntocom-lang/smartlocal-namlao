@@ -30,7 +30,7 @@ export default function BottomNav() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (!data.session) { localStorage.removeItem('sl_role'); setRole(null); return }
-      supabase.from('profiles').select('role').eq('id', data.session.user.id).single()
+      supabase.from('profiles').select('role').eq('id', data.session.user.id).maybeSingle()
         .then(({ data: p }) => {
           const r = p?.role ?? 'citizen'
           localStorage.setItem('sl_role', r)
