@@ -692,11 +692,8 @@ function UserManager({ tenant, currentUserRole }) {
 
   const fetchUsers = useCallback(async () => {
     setLoading(true)
-    const { data } = await supabase.rpc('get_users_with_email')
+    const { data } = await supabase.rpc('get_users_with_email', { p_municipality_id: tenant?.id ?? null })
     let list = data ?? []
-    if (currentUserRole === 'admin') {
-      list = list.filter((u) => u.municipality_id === tenant?.id)
-    }
     setUsers(list)
     setLoading(false)
   }, [tenant?.id, currentUserRole])
