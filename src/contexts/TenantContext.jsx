@@ -35,6 +35,12 @@ function detectTenantSlug() {
     return parts[0]
   }
 
+  // Vercel project name: smartlocal-{slug}.vercel.app
+  if (hostname.endsWith('.vercel.app')) {
+    const match = parts[0].match(/^smartlocal-(.+)$/)
+    if (match) return match[1]
+  }
+
   // Path mode: smartlocal.vercel.app/namlao/...
   const segment = pathname.split('/').filter(Boolean)[0]
   return segment ?? null
