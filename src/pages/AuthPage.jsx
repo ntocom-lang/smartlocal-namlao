@@ -85,7 +85,11 @@ export default function AuthPage() {
       setLoading(false)
       const msg = err.message?.toLowerCase() ?? ''
       if (msg.includes('already registered') || msg.includes('already exists') || msg.includes('duplicate')) {
-        setError('⚠️ อีเมลนี้เคยสมัครกับหน่วยงานอื่นแล้ว กรุณาใช้อีเมลใหม่สำหรับหน่วยงานนี้')
+        const usingPhone = !form.email.trim()
+        setError(usingPhone
+          ? '⚠️ เบอร์มือถือนี้มีบัญชีอยู่แล้ว กรุณาเข้าสู่ระบบแทน'
+          : '⚠️ อีเมลนี้มีบัญชีอยู่แล้ว กรุณาเข้าสู่ระบบแทน หรือใช้อีเมลใหม่'
+        )
       } else {
         setError(err.message)
       }
