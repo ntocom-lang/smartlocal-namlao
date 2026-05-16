@@ -250,6 +250,7 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
   const [assigning, setAssigning] = useState(false)
   const [showCloseJob, setShowCloseJob] = useState(false)
   const [pendingPhotos, setPendingPhotos] = useState([])
+  const [closeNote, setCloseNote] = useState('')
   const [closeUploading, setCloseUploading] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
@@ -357,7 +358,7 @@ ${workPhotosHtml}
       }
     }
     setCloseUploading(false)
-    onUpdate(c.id, 'completed', urls)
+    onUpdate(c.id, 'completed', urls, closeNote.trim() || null)
     onClose()
   }
   const attachments = c.attachments ?? []
@@ -628,6 +629,18 @@ ${workPhotosHtml}
                   ))}
                 </div>
               )}
+              <div>
+                <p className="text-xs font-semibold text-gray-500 flex items-center gap-1.5 mb-1.5">
+                  <AlignLeft size={12} /> หมายเหตุ / รายการอุปกรณ์ที่ใช้ (ไม่บังคับ)
+                </p>
+                <textarea
+                  value={closeNote}
+                  onChange={(e) => setCloseNote(e.target.value)}
+                  rows={3}
+                  placeholder="เช่น เปลี่ยนหลอดไฟ LED 18W จำนวน 2 ดวง, ค่าแรง 500 บาท..."
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-800 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-blue-300"
+                />
+              </div>
               <div className="flex gap-2">
                 <button onClick={handleCloseJob} disabled={closeUploading}
                   className="flex-1 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50 flex items-center justify-center gap-2"
@@ -636,7 +649,7 @@ ${workPhotosHtml}
                     ? <><Loader2 size={14} className="animate-spin" /> กำลังอัปโหลด...</>
                     : <><CheckCircle2 size={14} /> ยืนยันปิดงาน</>}
                 </button>
-                <button onClick={() => { setShowCloseJob(false); setPendingPhotos([]) }}
+                <button onClick={() => { setShowCloseJob(false); setPendingPhotos([]); setCloseNote('') }}
                   className="px-4 py-2 rounded-xl text-sm text-gray-500 bg-gray-100 hover:bg-gray-200 transition-colors">
                   ยกเลิก
                 </button>
@@ -2223,10 +2236,11 @@ export default function AdminDashboard() {
 
   useEffect(() => { fetchComplaints() }, [fetchComplaints])
 
-  async function updateStatus(id, nextStatus, workPhotos = []) {
+  async function updateStatus(id, nextStatus, workPhotos = [], techNote = null) {
     setUpdating(id)
     const payload = { status: nextStatus }
     if (workPhotos.length > 0) payload.work_photos = workPhotos
+    if (techNote) payload.technician_note = techNote
     const { error } = await supabase
       .from('complaints')
       .update(payload)
