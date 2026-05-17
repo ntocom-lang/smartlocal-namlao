@@ -35,8 +35,31 @@ export default function AuthPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [remember, setRemember] = useState(false)
   const [loadingGoogle, setLoadingGoogle] = useState(false)
+  const [loadingLine, setLoadingLine] = useState(false)
 
   const set = (f) => (e) => setForm((p) => ({ ...p, [f]: e.target.value }))
+
+  function handleLine() {
+    setLoadingLine(true)
+    const state = crypto.randomUUID()
+    // Callback URL อยู่ที่ root เสมอ → ลงทะเบียนแค่ URL เดียวใน LINE Developers
+    const redirectUri = `${window.location.origin}/auth/line/callback`
+    // เก็บ full path (รวม slug เช่น /namlao) เพื่อกลับมาหน่วยงานที่ถูกต้องหลัง auth
+    const basePath = window.location.pathname.replace(/\/auth.*$/, '')
+    const routerFrom = from === '/' ? '' : from
+    const returnTo = (basePath + routerFrom) || '/'
+    sessionStorage.setItem('line_oauth_state', state)
+    sessionStorage.setItem('line_oauth_redirect_uri', redirectUri)
+    sessionStorage.setItem('line_oauth_from', returnTo)
+    const params = new URLSearchParams({
+      response_type: 'code',
+      client_id: import.meta.env.VITE_LINE_CHANNEL_ID,
+      redirect_uri: redirectUri,
+      state,
+      scope: 'profile openid',
+    })
+    window.location.href = `https://access.line.me/oauth2/v2.1/authorize?${params}`
+  }
 
   async function handleGoogle() {
     if (inAppBrowser) {
@@ -285,6 +308,23 @@ export default function AuthPage() {
           <span className="text-xs text-gray-400">หรือ</span>
           <div className="flex-1 h-px bg-gray-200" />
         </div>
+
+        {/* LINE OAuth */}
+        <button onClick={handleLine} disabled={loadingLine}
+          className="w-full flex items-center justify-center gap-3 py-3 rounded-xl text-white text-sm font-medium active:scale-95 transition-all disabled:opacity-60 shadow-sm"
+          style={{ backgroundColor: '#06C755' }}>
+          {loadingLine ? (
+            <svg className="animate-spin w-4.5 h-4.5" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="white" strokeWidth="4"/>
+              <path className="opacity-75" fill="white" d="M4 12a8 8 0 018-8v8H4z"/>
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" className="w-4.5 h-4.5" fill="white">
+              <path d="M12 2C6.48 2 2 5.92 2 10.76c0 3.23 2.06 6.07 5.18 7.72-.18.65-.67 2.38-.77 2.75-.12.44.16.43.34.31.14-.09 2.22-1.47 3.12-2.07.69.1 1.4.15 2.13.15 5.52 0 10-3.92 10-8.76S17.52 2 12 2z"/>
+            </svg>
+          )}
+          {mode === 'login' ? 'เข้าสู่ระบบด้วย LINE' : 'สมัครด้วย LINE'}
+        </button>
 
         {/* Google OAuth */}
         <button onClick={handleGoogle} disabled={loadingGoogle}

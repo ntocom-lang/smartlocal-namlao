@@ -18,6 +18,7 @@ import ProfilePage from './pages/ProfilePage'
 import MyComplaints from './pages/MyComplaints'
 import MorePage from './pages/MorePage'
 import NotificationsPage from './pages/NotificationsPage'
+import LineCallback from './pages/LineCallback'
 import { supabase } from './lib/supabase'
 import { Phone, X } from 'lucide-react'
 
@@ -208,6 +209,7 @@ function AppShell() {
           <Route path="/" element={<HomeOrTechRedirect />} />
           <Route path="/complaint" element={<ComplaintCategory />} />
           <Route path="/auth" element={<AuthPage />} />
+          <Route path="/auth/line/callback" element={<LineCallback />} />
           <Route path="/profile" element={
             <RequireAuth>
               <ProfilePage />
@@ -270,6 +272,22 @@ function getBasename() {
 }
 
 export default function App() {
+  // LINE OAuth callback อยู่ที่ root เสมอ (ไม่มี slug prefix)
+  // เพื่อให้ลงทะเบียนแค่ URL เดียวใน LINE Developers สำหรับทุกหน่วยงาน
+  if (window.location.pathname === '/auth/line/callback') {
+    return (
+      <InAppBrowserGate>
+        <BrowserRouter>
+          <ThemeProvider>
+            <Routes>
+              <Route path="/auth/line/callback" element={<LineCallback />} />
+            </Routes>
+          </ThemeProvider>
+        </BrowserRouter>
+      </InAppBrowserGate>
+    )
+  }
+
   return (
     <InAppBrowserGate>
       <BrowserRouter basename={getBasename()}>
