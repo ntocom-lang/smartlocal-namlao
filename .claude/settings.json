@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(vercel ls *)",
+      "Bash(git -C \"d:\\\\VS Code\\\\E-Service\\\\SmartLocal v1.1\" status)",
+      "Bash(curl -s 'https://umxssfahtuprnztlytdd.supabase.co/rest/v1/municipalities?slug=eq.namlao&select=id,name,slug' -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVteHNzZmFodHVwcm56dGx5dGRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0NDI0MzAsImV4cCI6MjA5NDAxODQzMH0.SeQTZHWIAPx0XdQ_xK_BNhHjDVd8CeDdwK2NyXdof7E' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVteHNzZmFodHVwcm56dGx5dGRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0NDI0MzAsImV4cCI6MjA5NDAxODQzMH0.SeQTZHWIAPx0XdQ_xK_BNhHjDVd8CeDdwK2NyXdof7E')",
+      "Bash(curl -s 'https://umxssfahtuprnztlytdd.supabase.co/rest/v1/staff?municipality_id=eq.4a3b6295-ceda-4ca9-999c-35b3309485e9&select=id,name,title,role,display_order,is_active&order=display_order' -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVteHNzZmFodHVwcm56dGx5dGRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0NDI0MzAsImV4cCI6MjA5NDAxODQzMH0.SeQTZHWIAPx0XdQ_xK_BNhHjDVd8CeDdwK2NyXdof7E' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVteHNzZmFodHVwcm56dGx5dGRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0NDI0MzAsImV4cCI6MjA5NDAxODQzMH0.SeQTZHWIAPx0XdQ_xK_BNhHjDVd8CeDdwK2NyXdof7E')",
+      "Bash(curl -s -X POST https://umxssfahtuprnztlytdd.supabase.co/rest/v1/staff -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVteHNzZmFodHVwcm56dGx5dGRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0NDI0MzAsImV4cCI6MjA5NDAxODQzMH0.SeQTZHWIAPx0XdQ_xK_BNhHjDVd8CeDdwK2NyXdof7E' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVteHNzZmFodHVwcm56dGx5dGRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0NDI0MzAsImV4cCI6MjA5NDAxODQzMH0.SeQTZHWIAPx0XdQ_xK_BNhHjDVd8CeDdwK2NyXdof7E' -H 'Content-Type: application/json' -H 'Prefer: return=representation' -d '{ *)",
+      "Bash(curl -s -X POST https://umxssfahtuprnztlytdd.supabase.co/rest/v1/staff -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVteHNzZmFodHVwcm56dGx5dGRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0NDI0MzAsImV4cCI6MjA5NDAxODQzMH0.SeQTZHWIAPx0XdQ_xK_BNhHjDVd8CeDdwK2NyXdof7E' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVteHNzZmFodHVwcm56dGx5dGRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0NDI0MzAsImV4cCI6MjA5NDAxODQzMH0.SeQTZHWIAPx0XdQ_xK_BNhHjDVd8CeDdwK2NyXdof7E' -H 'Content-Type: application/json' -H 'Prefer: return=representation' --data-raw '{\"municipality_id\":\"4a3b6295-ceda-4ca9-999c-35b3309485e9\",\"name\":\"ทีมผู้บริหาร\",\"title\":\"เทศบาลตำบลน้ำเลา\",\"role\":\"deputy_mayor\",\"photo_url\":\"https://umxssfahtuprnztlytdd.supabase.co/storage/v1/object/public/staff-photos/mayor2.jpg\",\"display_order\":3,\"is_active\":true}')",
+      "Bash(python -c ' *)",
+      "Bash(node -e ' *)",
+      "Bash(Get-Item \"d:\\\\VS Code\\\\E-Service\\\\SmartLocal v1.1\\\\src\\\\pages\\\\AdminDashboard.jsx\")",
+      "Bash(Select-Object Length)",
+      "Bash(npx vite *)",
+      "Bash(sed -i 's/\\\\.select\\('\\\\''role'\\\\''\\)\\\\.eq\\('\\\\''id'\\\\'', session\\\\.user\\\\.id\\)\\\\.single\\(\\)/.select\\('\\\\''role'\\\\''\\).eq\\('\\\\''id'\\\\'', session.user.id\\).maybeSingle\\(\\)/g' src/components/layout/Header.jsx src/pages/HomePage.jsx)",
+      "Bash(sed -i 's/\\\\.select\\('\\\\''role'\\\\''\\)\\\\.eq\\('\\\\''id'\\\\'', data\\\\.session\\\\.user\\\\.id\\)\\\\.single\\(\\)/.select\\('\\\\''role'\\\\''\\).eq\\('\\\\''id'\\\\'', data.session.user.id\\).maybeSingle\\(\\)/g' src/components/layout/BottomNav.jsx)",
+      "Bash(node -e \"const l = require\\('lucide-react'\\); console.log\\('UploadIcon:', !!l.UploadIcon, 'PlusSquare:', !!l.PlusSquare, 'Upload:', !!l.Upload\\)\")"
+    ]
+  }
+}

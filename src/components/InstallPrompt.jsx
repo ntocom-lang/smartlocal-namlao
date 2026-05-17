@@ -34,23 +34,32 @@ export default function InstallPrompt() {
   if (!visible) return null
 
   return (
-    <div className="md:hidden fixed bottom-20 left-4 right-4 z-50 flex items-center gap-3 bg-white rounded-2xl shadow-xl border border-gray-100 px-4 py-3">
-      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-           style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
-        <Download size={18} className="text-white" />
+    <div className="md:hidden fixed bottom-20 left-4 right-4 z-50 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden"
+         style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.15)' }}>
+      {/* Header strip */}
+      <div className="flex items-center justify-between px-4 pt-4 pb-2">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0"
+               style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
+            <Download size={22} className="text-white" />
+          </div>
+          <div>
+            <p className="text-base font-bold text-gray-800">ติดตั้งแอปพลิเคชัน</p>
+            <p className="text-xs text-gray-400">เข้าถึงได้รวดเร็วขึ้น ไม่ต้องเปิดเบราว์เซอร์</p>
+          </div>
+        </div>
+        <button onClick={dismiss} className="shrink-0 p-1 text-gray-300 hover:text-gray-500">
+          <X size={18} />
+        </button>
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-gray-800">ติดตั้งแอปพลิเคชัน</p>
-        <p className="text-xs text-gray-400">เข้าถึงได้รวดเร็วขึ้น ไม่ต้องเปิดเบราว์เซอร์</p>
+      {/* Big install button */}
+      <div className="px-4 pb-4 pt-2">
+        <button onClick={install}
+          className="w-full py-3.5 rounded-xl text-base font-bold text-white active:scale-95 transition-all"
+          style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
+          ติดตั้งเลย
+        </button>
       </div>
-      <button onClick={install}
-        className="shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold text-white"
-        style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
-        ติดตั้ง
-      </button>
-      <button onClick={dismiss} className="shrink-0 text-gray-300 hover:text-gray-500">
-        <X size={16} />
-      </button>
     </div>
   )
 }
