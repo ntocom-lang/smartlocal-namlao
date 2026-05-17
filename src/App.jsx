@@ -7,7 +7,7 @@ import Header from './components/layout/Header'
 import Footer from './components/layout/Footer'
 import BottomNav from './components/layout/BottomNav'
 import InstallPrompt from './components/InstallPrompt'
-import LineBrowserBanner from './components/LineBrowserBanner'
+import InAppBrowserGate from './components/InAppBrowserGate'
 import HomePage from './pages/HomePage'
 import CitizenForm from './pages/CitizenForm'
 import ComplaintCategory from './pages/ComplaintCategory'
@@ -248,7 +248,6 @@ function AppShell() {
         <Footer />
         <BottomNav />
         <InstallPrompt />
-        <LineBrowserBanner />
       </NotificationsProvider>
     </div>
   )
@@ -272,12 +271,14 @@ function getBasename() {
 
 export default function App() {
   return (
-    <BrowserRouter basename={getBasename()}>
-      <ThemeProvider>
-        <TenantProvider>
-          <AppShell />
-        </TenantProvider>
-      </ThemeProvider>
-    </BrowserRouter>
+    <InAppBrowserGate>
+      <BrowserRouter basename={getBasename()}>
+        <ThemeProvider>
+          <TenantProvider>
+            <AppShell />
+          </TenantProvider>
+        </ThemeProvider>
+      </BrowserRouter>
+    </InAppBrowserGate>
   )
 }
