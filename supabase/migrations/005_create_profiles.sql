@@ -19,6 +19,7 @@ RETURNS text
 LANGUAGE sql
 SECURITY DEFINER
 STABLE
+SET search_path = public
 AS $$
   SELECT role FROM public.profiles WHERE id = auth.uid()
 $$;
@@ -55,21 +56,30 @@ CREATE POLICY "admin update municipality profiles"
   );
 
 -- ─── Trigger: สร้าง profile อัตโนมัติเมื่อ signup ───────────────────────────
-CREATE OR REPLACE FUNCTION handle_new_user()
+-- รองรับ Google OAuth (ใช้ 'name') และ Email/Password (ใช้ 'full_name')
+CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger AS $$
 BEGIN
-  INSERT INTO profiles (id, email, full_name, phone, role)
+  INSERT INTO public.profiles (id, email, full_name, phone, role)
   VALUES (
     NEW.id,
     NEW.email,
-    NEW.raw_user_meta_data->>'full_name',
+    COALESCE(
+      NULLIF(TRIM(NEW.raw_user_meta_data->>'full_name'), ''),
+      NULLIF(TRIM(NEW.raw_user_meta_data->>'name'), '')
+    ),
     NEW.raw_user_meta_data->>'phone',
     'citizen'
   )
-  ON CONFLICT (id) DO NOTHING;
+  ON CONFLICT (id) DO UPDATE SET
+    full_name = COALESCE(
+      NULLIF(TRIM(NEW.raw_user_meta_data->>'full_name'), ''),
+      NULLIF(TRIM(NEW.raw_user_meta_data->>'name'), ''),
+      public.profiles.full_name
+    );
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created

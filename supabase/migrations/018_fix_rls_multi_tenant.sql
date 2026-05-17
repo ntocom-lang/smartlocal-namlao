@@ -10,6 +10,7 @@ RETURNS uuid
 LANGUAGE sql
 SECURITY DEFINER
 STABLE
+SET search_path = public
 AS $$
   SELECT municipality_id FROM public.profiles WHERE id = auth.uid()
 $$;
