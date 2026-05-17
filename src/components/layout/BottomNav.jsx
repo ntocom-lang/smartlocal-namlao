@@ -84,7 +84,7 @@ export default function BottomNav() {
                 )}
               </div>
 
-              <span className={`relative z-10 text-[11px] font-medium transition-all ${isActive ? 'text-white' : 'text-white/55'}`}>
+              <span className={`relative z-10 text-[13px] font-medium transition-all ${isActive ? 'text-white' : 'text-white/55'}`}>
                 {item.label}
               </span>
             </button>
