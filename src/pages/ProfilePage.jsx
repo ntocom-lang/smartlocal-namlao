@@ -12,7 +12,7 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
   const [error, setError] = useState('')
-const [editName, setEditName] = useState(false)
+  const [editName, setEditName] = useState(false)
   const [editPhone, setEditPhone] = useState(false)
   const [isGoogleLinked, setIsGoogleLinked] = useState(false)
   const fileRef = useRef()
@@ -76,7 +76,8 @@ const [editName, setEditName] = useState(false)
     const file = e.target.files?.[0]
     if (!file) return
 
-    setAvatarUrl(URL.createObjectURL(file))
+    const blobUrl = URL.createObjectURL(file)
+    setAvatarUrl(blobUrl)
     setSaving(true)
     setMsg('')
     setError('')
@@ -97,6 +98,7 @@ const [editName, setEditName] = useState(false)
     const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path)
 
     await supabase.from('profiles').upsert({ id: session.user.id, avatar_url: publicUrl })
+    URL.revokeObjectURL(blobUrl)
     setAvatarUrl(publicUrl)
     setMsg('อัปโหลดรูปโปรไฟล์สำเร็จ')
     setSaving(false)

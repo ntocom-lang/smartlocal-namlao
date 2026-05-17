@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   MapPin, Phone, FileText, ChevronDown, AlignLeft, Home,
@@ -97,10 +97,11 @@ export default function CitizenForm() {
   const [showMap, setShowMap] = useState(false)
   const [files, setFiles] = useState([])        // { file, preview, name }
   const [consent, setConsent] = useState([false, false, false])
-
+  const filesRef = useRef([])
+  useEffect(() => { filesRef.current = files }, [files])
   useEffect(() => {
-    return () => files.forEach((f) => { if (f.preview) URL.revokeObjectURL(f.preview) })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    return () => filesRef.current.forEach((f) => { if (f.preview) URL.revokeObjectURL(f.preview) })
+  }, [])
   const [showPdpa, setShowPdpa] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)

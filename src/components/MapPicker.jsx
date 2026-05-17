@@ -69,6 +69,10 @@ export default function MapPicker({ initialPos, onConfirm, onClose }) {
 
   useEffect(() => {
     fetchAddress(defaultPos.lat, defaultPos.lng)
+    return () => {
+      clearTimeout(geocodeTimeout.current)
+      clearTimeout(searchTimeout.current)
+    }
   }, [])
 
   async function fetchAddress(lat, lng) {
