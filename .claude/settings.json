@@ -14,7 +14,9 @@
       "Bash(npx vite *)",
       "Bash(sed -i 's/\\\\.select\\('\\\\''role'\\\\''\\)\\\\.eq\\('\\\\''id'\\\\'', session\\\\.user\\\\.id\\)\\\\.single\\(\\)/.select\\('\\\\''role'\\\\''\\).eq\\('\\\\''id'\\\\'', session.user.id\\).maybeSingle\\(\\)/g' src/components/layout/Header.jsx src/pages/HomePage.jsx)",
       "Bash(sed -i 's/\\\\.select\\('\\\\''role'\\\\''\\)\\\\.eq\\('\\\\''id'\\\\'', data\\\\.session\\\\.user\\\\.id\\)\\\\.single\\(\\)/.select\\('\\\\''role'\\\\''\\).eq\\('\\\\''id'\\\\'', data.session.user.id\\).maybeSingle\\(\\)/g' src/components/layout/BottomNav.jsx)",
-      "Bash(node -e \"const l = require\\('lucide-react'\\); console.log\\('UploadIcon:', !!l.UploadIcon, 'PlusSquare:', !!l.PlusSquare, 'Upload:', !!l.Upload\\)\")"
+      "Bash(node -e \"const l = require\\('lucide-react'\\); console.log\\('UploadIcon:', !!l.UploadIcon, 'PlusSquare:', !!l.PlusSquare, 'Upload:', !!l.Upload\\)\")",
+      "Bash(del \"d:\\\\VS Code\\\\E-Service\\\\SmartLocal v1.1\\\\src\\\\pages\\\\LineCallback.jsx\")",
+      "Bash(del \"d:\\\\VS Code\\\\E-Service\\\\SmartLocal v1.1\\\\src\\\\components\\\\LineBrowserBanner.jsx\")"
     ]
   }
 }
