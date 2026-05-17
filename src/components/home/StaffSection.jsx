@@ -17,7 +17,7 @@ function PhotoPlaceholder({ name, role }) {
   const isMayor = role === 'mayor'
   return (
     <div className={`rounded-full flex items-center justify-center font-bold text-white ${
-      isMayor ? 'w-28 h-28 text-3xl' : 'w-20 h-20 text-xl'
+      isMayor ? 'w-44 h-44 text-3xl' : 'w-20 h-20 text-xl'
     }`}
     style={{ background: `linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)` }}>
       {initials || <UserCircle2 size={isMayor ? 48 : 32} />}
@@ -36,7 +36,7 @@ function MayorCard({ person }) {
       <div className={`relative z-10 rounded-full overflow-hidden ${style.ring} mb-4`}>
         {person.photo_url
           ? <img src={person.photo_url} alt={person.name}
-                 className="w-28 h-28 object-cover object-top" />
+                 className="w-44 h-44 object-cover object-top" />
           : <PhotoPlaceholder name={person.name} role={person.role} />}
       </div>
 

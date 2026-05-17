@@ -78,7 +78,7 @@ export default function NotificationsPage() {
           <div className="flex-1">
             <h1 className="font-bold text-gray-800 text-base leading-tight">การแจ้งเตือน</h1>
             {!loading && items.length > 0 && (
-              <p className="text-[11px] text-gray-400 mt-0.5">
+              <p className="text-[13px] text-gray-400 mt-0.5">
                 {hasUnread ? `${unreadItems.length} รายการยังไม่อ่าน` : 'อ่านทั้งหมดแล้ว'}
               </p>
             )}
@@ -111,7 +111,21 @@ export default function NotificationsPage() {
           </div>
 
         ) : (
-          <div className="bg-white mt-3 rounded-2xl mx-3 overflow-hidden shadow-sm">
+          <>
+          {/* ปุ่มดูคำร้องทั้งหมด */}
+          <div className="flex justify-end px-3 pt-3">
+            <button
+              onClick={() => navigate('/my-complaints')}
+              className="text-sm font-semibold px-4 py-1.5 rounded-xl transition-colors"
+              style={{
+                color: 'var(--color-primary)',
+                backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, transparent)',
+              }}>
+              ดูคำร้องทั้งหมด
+            </button>
+          </div>
+
+          <div className="bg-white mt-2 rounded-2xl mx-3 overflow-hidden shadow-sm">
             <div className="divide-y divide-gray-50">
               {items.map((n) => {
                 const s = STATUS_INFO[n.status]
@@ -155,7 +169,7 @@ export default function NotificationsPage() {
                       </div>
 
                       {cno && (
-                        <p className="text-[11px] text-gray-400 font-mono mt-0.5">{cno}</p>
+                        <p className="text-[13px] text-gray-400 font-mono mt-0.5">{cno}</p>
                       )}
 
                       <p className="text-xs text-gray-500 mt-1 leading-snug">
@@ -163,12 +177,12 @@ export default function NotificationsPage() {
                       </p>
 
                       <div className="flex items-center gap-2 mt-2">
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full"
+                        <span className="inline-flex items-center gap-1 text-[13px] font-semibold px-2 py-0.5 rounded-full"
                               style={{ backgroundColor: s.bg, color: s.color }}>
                           <Icon size={10} />
                           {s.label}
                         </span>
-                        <span className="text-[11px] text-gray-400">{timeAgo(n.updated_at)}</span>
+                        <span className="text-[13px] text-gray-400">{timeAgo(n.updated_at)}</span>
                       </div>
                     </div>
                   </button>
@@ -176,21 +190,8 @@ export default function NotificationsPage() {
               })}
             </div>
           </div>
-        )}
-
-        {/* Footer CTA */}
-        {!loading && items.length > 0 && (
-          <div className="px-3 py-4 pb-28">
-            <button
-              onClick={() => navigate('/my-complaints')}
-              className="w-full py-3 rounded-2xl text-sm font-semibold transition-colors"
-              style={{
-                color: 'var(--color-primary)',
-                backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, transparent)',
-              }}>
-              ดูคำร้องทั้งหมด
-            </button>
-          </div>
+          <div className="pb-28" />
+          </>
         )}
       </div>
     </div>
