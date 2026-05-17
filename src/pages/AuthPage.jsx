@@ -45,9 +45,13 @@ export default function AuthPage() {
     }
     setLoadingGoogle(true)
     setError('')
+    // หลัง OAuth กลับมาที่หน้าที่ต้องการ ไม่ใช่แค่ root
+    const basePath = window.location.pathname.replace(/\/auth.*$/, '')
+    const target = from === '/' ? '' : from
+    const redirectTo = `${window.location.origin}${basePath}${target}` || window.location.origin
     const { error: err } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin },
+      options: { redirectTo },
     })
     if (err) { setError('ไม่สามารถเข้าสู่ระบบด้วย Google ได้'); setLoadingGoogle(false) }
   }
