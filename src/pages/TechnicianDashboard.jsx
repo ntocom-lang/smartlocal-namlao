@@ -86,7 +86,7 @@ function StatusStepper({ status }) {
               <p className={`text-sm font-semibold ${done ? 'text-gray-800' : 'text-gray-300'}`}>
                 {info.label}
                 {isCurrent && (
-                  <span className="ml-2 text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                  <span className="ml-2 text-[13px] font-medium px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">
                     ปัจจุบัน
                   </span>
                 )}
@@ -454,7 +454,7 @@ export default function TechnicianDashboard() {
                         <p className="text-xs text-gray-400 mt-0.5 truncate">{c.detail}</p>
                       </div>
                       <div className="flex flex-col items-end gap-1.5 shrink-0">
-                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
+                        <span className="text-[13px] font-semibold px-2 py-0.5 rounded-full"
                               style={{ backgroundColor: s?.bg, color: s?.text }}>
                           {s?.label}
                         </span>

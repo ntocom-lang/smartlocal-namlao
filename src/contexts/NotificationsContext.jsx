@@ -80,7 +80,7 @@ function NotificationPanel({ items, loading, onClose, onMarkAll, onItemTap }) {
             <div>
               <h2 className="font-bold text-gray-800 text-sm leading-tight">การแจ้งเตือน</h2>
               {!loading && items.length > 0 && (
-                <p className="text-[11px] text-gray-400 mt-0.5">
+                <p className="text-[13px] text-gray-400 mt-0.5">
                   {hasUnread ? `${items.filter(n => n._unread).length} รายการยังไม่อ่าน` : 'อ่านทั้งหมดแล้ว'}
                 </p>
               )}

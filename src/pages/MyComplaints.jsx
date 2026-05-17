@@ -111,7 +111,7 @@ function StatusStepper({ status }) {
               <p className={`text-sm font-semibold transition-colors ${done ? 'text-gray-800' : 'text-gray-300'}`}>
                 {info.label}
                 {isCurrent && (
-                  <span className="ml-2 text-[11px] font-medium px-1.5 py-0.5 rounded-full"
+                  <span className="ml-2 text-[13px] font-medium px-1.5 py-0.5 rounded-full"
                     style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 15%, transparent)', color: 'var(--color-primary)' }}>
                     ปัจจุบัน
                   </span>
@@ -166,13 +166,13 @@ function DetailSheet({ complaint: c, onClose }) {
 
           <div className="flex items-center justify-between mt-4 pt-4 border-t border-white/20">
             <div>
-              <p className="text-white/60 text-[11px] uppercase tracking-wider">เลขที่คำร้อง</p>
+              <p className="text-white/60 text-[13px] uppercase tracking-wider">เลขที่คำร้อง</p>
               <p className="text-white font-black text-xl tracking-wider mt-0.5">
                 {c.complaint_number ? fmtNo(c.complaint_number, c.created_at) : '—'}
               </p>
             </div>
             <div className="text-right">
-              <p className="text-white/60 text-[11px] uppercase tracking-wider">ยื่นเมื่อ</p>
+              <p className="text-white/60 text-[13px] uppercase tracking-wider">ยื่นเมื่อ</p>
               <p className="text-white/90 text-xs font-medium mt-0.5">{dateStr} น.</p>
             </div>
           </div>
@@ -198,7 +198,7 @@ function DetailSheet({ complaint: c, onClose }) {
                       <MapPin size={15} className="text-orange-400" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[11px] text-gray-400">สถานที่เกิดเหตุ</p>
+                      <p className="text-[13px] text-gray-400">สถานที่เกิดเหตุ</p>
                       <p className="text-sm font-medium text-gray-800 truncate">{c.location_name ?? c.village}</p>
                     </div>
                   </div>
@@ -210,7 +210,7 @@ function DetailSheet({ complaint: c, onClose }) {
                       <Phone size={15} className="text-green-500" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[11px] text-gray-400">เบอร์โทรติดต่อ</p>
+                      <p className="text-[13px] text-gray-400">เบอร์โทรติดต่อ</p>
                       <p className="text-sm font-medium text-gray-800">{c.phone}</p>
                     </div>
                     <span className="text-xs text-green-600 font-medium shrink-0">โทร</span>
@@ -224,7 +224,7 @@ function DetailSheet({ complaint: c, onClose }) {
                       <Navigation size={15} className="text-blue-500" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[11px] text-gray-400">พิกัดสถานที่</p>
+                      <p className="text-[13px] text-gray-400">พิกัดสถานที่</p>
                       <p className="text-sm font-medium text-gray-800">
                         {c.latitude.toFixed(5)}, {c.longitude.toFixed(5)}
                       </p>
@@ -259,7 +259,7 @@ function DetailSheet({ complaint: c, onClose }) {
                     ) : (
                       <div className="flex flex-col items-center gap-1">
                         <FileText size={22} className="text-gray-400" />
-                        <span className="text-[11px] text-gray-400">ไฟล์</span>
+                        <span className="text-[13px] text-gray-400">ไฟล์</span>
                       </div>
                     )}
                   </a>
@@ -393,12 +393,12 @@ export default function MyComplaints() {
                   <div className="flex items-center gap-2 mt-2">
                     <StatusBadge status={c.status} />
                     {c.complaint_number && (
-                      <span className="text-[11px] text-gray-400 font-mono">
+                      <span className="text-[13px] text-gray-400 font-mono">
                         {fmtNo(c.complaint_number, c.created_at)}
                       </span>
                     )}
                   </div>
-                  <p className="text-[11px] text-gray-300 mt-1.5">
+                  <p className="text-[13px] text-gray-300 mt-1.5">
                     {new Date(c.created_at).toLocaleDateString('th-TH', {
                       day: '2-digit', month: 'short', year: '2-digit',
                       hour: '2-digit', minute: '2-digit',

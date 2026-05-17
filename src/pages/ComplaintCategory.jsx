@@ -92,7 +92,7 @@ export default function ComplaintCategory() {
                 {cat.emoji}
               </div>
               <span
-                className="text-[11px] font-medium text-center leading-tight"
+                className="text-[13px] font-medium text-center leading-tight"
                 style={{ color: cat.text }}
               >
                 {cat.label}

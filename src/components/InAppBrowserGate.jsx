@@ -146,7 +146,7 @@ export default function InAppBrowserGate({ children }) {
             {copied ? <Check size={15} className="text-green-500" /> : <Copy size={15} />}
             {copied ? 'คัดลอกแล้ว!' : 'คัดลอกลิงก์'}
           </button>
-          <p className="text-[11px] text-gray-300 text-center break-all px-2 max-w-xs">{url}</p>
+          <p className="text-[13px] text-gray-300 text-center break-all px-2 max-w-xs">{url}</p>
         </div>
       </div>
     </div>

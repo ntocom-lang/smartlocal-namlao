@@ -192,17 +192,17 @@ function QRShareCard({ tenant }) {
           <button onClick={handleShare}
             className="flex flex-col items-center gap-1.5 py-3 rounded-2xl bg-white/20 hover:bg-white/30 active:bg-white/40 transition-colors">
             <Share2 size={18} className="text-white" />
-            <span className="text-[11px] text-white font-semibold">แชร์ลิงก์</span>
+            <span className="text-[13px] text-white font-semibold">แชร์ลิงก์</span>
           </button>
           <button onClick={handleCopy}
             className="flex flex-col items-center gap-1.5 py-3 rounded-2xl bg-white/20 hover:bg-white/30 active:bg-white/40 transition-colors">
             {copied ? <Check size={18} className="text-green-300" /> : <Copy size={18} className="text-white" />}
-            <span className="text-[11px] text-white font-semibold">{copied ? 'คัดลอกแล้ว' : 'คัดลอกลิงก์'}</span>
+            <span className="text-[13px] text-white font-semibold">{copied ? 'คัดลอกแล้ว' : 'คัดลอกลิงก์'}</span>
           </button>
           <button onClick={handleDownload}
             className="flex flex-col items-center gap-1.5 py-3 rounded-2xl bg-white/20 hover:bg-white/30 active:bg-white/40 transition-colors">
             <Download size={18} className="text-white" />
-            <span className="text-[11px] text-white font-semibold">บันทึก QR</span>
+            <span className="text-[13px] text-white font-semibold">บันทึก QR</span>
           </button>
         </div>
       </div>
@@ -336,7 +336,7 @@ export default function MorePage() {
                 <p className="text-white font-bold text-base leading-tight truncate">{displayName}</p>
                 <p className="text-white/70 text-xs mt-0.5 truncate">{session.user?.email}</p>
                 {isAdmin && (
-                  <span className="inline-flex items-center gap-1 mt-1.5 text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-200 border border-amber-300/30">
+                  <span className="inline-flex items-center gap-1 mt-1.5 text-[13px] font-bold px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-200 border border-amber-300/30">
                     <Star size={8} fill="currentColor" /> ผู้ดูแลระบบ
                   </span>
                 )}
@@ -380,7 +380,7 @@ export default function MorePage() {
                   <div className="w-12 h-12 rounded-2xl bg-blue-100 flex items-center justify-center shadow-sm">
                     <Globe size={22} className="text-blue-600" />
                   </div>
-                  <span className="text-[11px] font-semibold text-gray-600">เว็บไซต์</span>
+                  <span className="text-[13px] font-semibold text-gray-600">เว็บไซต์</span>
                 </a>
               )}
               {tenant.facebook_url && (
@@ -389,7 +389,7 @@ export default function MorePage() {
                   <div className="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center shadow-sm">
                     <Share2 size={22} className="text-white" />
                   </div>
-                  <span className="text-[11px] font-semibold text-gray-600">Facebook</span>
+                  <span className="text-[13px] font-semibold text-gray-600">Facebook</span>
                 </a>
               )}
               {tenant.line_oa_url && (
@@ -398,7 +398,7 @@ export default function MorePage() {
                   <div className="w-12 h-12 rounded-2xl bg-green-500 flex items-center justify-center shadow-sm">
                     <MessageCircle size={22} className="text-white" />
                   </div>
-                  <span className="text-[11px] font-semibold text-gray-600">Line OA</span>
+                  <span className="text-[13px] font-semibold text-gray-600">Line OA</span>
                 </a>
               )}
             </div>
@@ -524,7 +524,7 @@ export default function MorePage() {
         {/* ─── Footer ─── */}
         <div className="text-center pb-2">
           <p className="text-xs text-gray-300 font-medium">{tenant?.name}</p>
-          <p className="text-[11px] text-gray-300 mt-0.5">SmartLocal E-Service v1.1</p>
+          <p className="text-[13px] text-gray-300 mt-0.5">SmartLocal E-Service v1.1</p>
         </div>
       </div>
     </div>
