@@ -853,12 +853,6 @@ function UserManager({ tenant, currentUserRole }) {
                       )}
                     </div>
                     <p className="text-xs text-gray-400 break-all mt-0.5">{u.email || u.phone || '—'}</p>
-                    {u.municipality_name && (
-                      <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1">
-                        <Home size={10} className="shrink-0" />
-                        {u.municipality_name}
-                      </p>
-                    )}
                   </div>
                   <span className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0"
                         style={{ backgroundColor: rs.bg, color: rs.color }}>
