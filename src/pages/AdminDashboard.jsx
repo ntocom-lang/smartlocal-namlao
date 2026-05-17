@@ -778,6 +778,9 @@ function UserManager({ tenant, currentUserRole }) {
       <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
         <h3 className="font-semibold text-gray-700 flex items-center gap-2">
           <Users size={16} /> จัดการผู้ใช้งาน
+          {!loading && users.length > 0 && (
+            <span className="text-xs font-normal text-gray-400">({users.length} คน)</span>
+          )}
         </h3>
         <button onClick={fetchUsers} className="text-gray-400 hover:text-gray-600 transition-colors">
           <RefreshCw size={15} />
