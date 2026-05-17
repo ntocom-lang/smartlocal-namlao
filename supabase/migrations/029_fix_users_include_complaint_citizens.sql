@@ -1,6 +1,7 @@
 -- =====================================================
--- SmartLocal 026: Function ดึงรายชื่อผู้ใช้พร้อม email
--- ใช้ SECURITY DEFINER เพื่อเข้าถึง auth.users
+-- SmartLocal 029: Fix get_users_with_email ให้รวม citizens
+-- ที่ยื่นคำร้องกับ municipality แต่ profile.municipality_id ยัง NULL
+-- (เกิดจาก trigger ไม่ได้ set municipality_id ตอนสมัคร)
 -- =====================================================
 
 DROP FUNCTION IF EXISTS get_users_with_email(uuid);
@@ -35,8 +36,12 @@ BEGIN
   LEFT JOIN auth.users u ON u.id = p.id
   LEFT JOIN public.municipalities m ON m.id = p.municipality_id
   WHERE
+    -- superadmin ไม่ระบุ municipality → ดูทั้งหมด
     (p_municipality_id IS NULL AND get_my_role() = 'superadmin')
+    -- profile ถูก assign ไว้แล้ว
     OR p.municipality_id = p_municipality_id
+    -- citizens ที่สมัครแล้วยื่นคำร้องกับ municipality นี้
+    -- แต่ profile.municipality_id ยัง NULL (trigger ไม่ได้เซ็ต)
     OR (
       p_municipality_id IS NOT NULL
       AND p.municipality_id IS NULL

@@ -39,6 +39,15 @@ BEGIN
   WHERE
     (p_municipality_id IS NULL AND get_my_role() = 'superadmin')
     OR p.municipality_id = p_municipality_id
+    OR (
+      p_municipality_id IS NOT NULL
+      AND p.municipality_id IS NULL
+      AND EXISTS (
+        SELECT 1 FROM public.complaints c
+        WHERE c.user_id = p.id
+          AND c.municipality_id = p_municipality_id
+      )
+    )
   ORDER BY p.created_at DESC;
 END;
 $$;
