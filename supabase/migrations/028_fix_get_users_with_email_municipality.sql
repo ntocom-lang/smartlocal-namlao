@@ -1,6 +1,8 @@
 -- =====================================================
--- SmartLocal 026: Function ดึงรายชื่อผู้ใช้พร้อม email
--- ใช้ SECURITY DEFINER เพื่อเข้าถึง auth.users
+-- SmartLocal 028: Fix get_users_with_email
+-- 1. เพิ่ม municipality_name ใน return
+-- 2. แก้ bug: superadmin เห็น users ทุก municipality
+--    → ถ้าส่ง p_municipality_id มา ให้ filter เสมอ
 -- =====================================================
 
 DROP FUNCTION IF EXISTS get_users_with_email(uuid);
@@ -35,8 +37,6 @@ BEGIN
   LEFT JOIN auth.users u ON u.id = p.id
   LEFT JOIN public.municipalities m ON m.id = p.municipality_id
   WHERE
-    -- ถ้าส่ง p_municipality_id มา ให้ filter เสมอ (ทั้ง admin และ superadmin)
-    -- ถ้าไม่ส่ง (NULL) และเป็น superadmin → return ทั้งหมด
     (p_municipality_id IS NULL AND get_my_role() = 'superadmin')
     OR p.municipality_id = p_municipality_id
   ORDER BY p.created_at DESC;
