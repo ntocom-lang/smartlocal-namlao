@@ -449,6 +449,7 @@ export default function TechnicianDashboard() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-gray-800 truncate">
+                          <span className="text-gray-400 font-mono font-normal mr-1">{i + 1}.</span>
                           {CATEGORY_LABEL[c.category] ?? c.category}
                         </p>
                         <p className="text-xs text-gray-400 mt-0.5 truncate">{c.detail}</p>
@@ -482,6 +483,7 @@ export default function TechnicianDashboard() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-gray-600 truncate">
+                        <span className="text-gray-400 font-mono font-normal mr-1">{i + 1}.</span>
                         {CATEGORY_LABEL[c.category] ?? c.category}
                       </p>
                       <p className="text-xs text-gray-400 mt-0.5 truncate">{c.detail}</p>

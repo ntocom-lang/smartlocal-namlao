@@ -828,13 +828,14 @@ function UserManager({ tenant, currentUserRole }) {
         <p className="text-center py-10 text-gray-400 text-sm">{users.length === 0 ? 'ยังไม่มีผู้ใช้งาน' : 'ไม่พบผู้ใช้ที่ค้นหา'}</p>
       ) : (
         <div className="divide-y divide-gray-50">
-          {filtered.map((u) => {
+          {filtered.map((u, i) => {
             const rs = ROLE_LABELS[u.role] ?? ROLE_LABELS.citizen
             const isSelf = false
             return (
               <div key={u.id} className="flex flex-col px-4 py-3 gap-2">
                 {/* แถว 1: avatar + ชื่อ + badge */}
                 <div className="flex items-center gap-3">
+                  <span className="text-xs text-gray-400 font-mono w-5 text-right shrink-0">{i + 1}</span>
                   <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"
                        style={{ backgroundColor: rs.color }}>
                     {(u.full_name || u.email || '?')[0].toUpperCase()}
@@ -2957,11 +2958,12 @@ export default function AdminDashboard() {
           <>
             {/* Mobile card list */}
             <div className="md:hidden divide-y divide-gray-100">
-              {filtered.map((c) => (
+              {filtered.map((c, i) => (
                 <div key={c.id} className="px-4 py-4 space-y-2 active:bg-gray-50 cursor-pointer"
                      onClick={() => setSelectedComplaint(c)}>
                   <div className="flex items-start justify-between gap-2">
                     <span className="font-semibold text-gray-800 text-sm leading-snug">
+                      <span className="text-gray-400 font-mono font-normal mr-1">{i + 1}.</span>
                       {CATEGORY_LABEL[c.category] ?? c.category}
                     </span>
                     <div className="flex items-center gap-1.5 shrink-0">
@@ -2998,6 +3000,7 @@ export default function AdminDashboard() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50 text-gray-500 text-xs">
+                    <th className="px-3 py-3 text-center font-medium w-10">#</th>
                     <th className="px-5 py-3 text-left font-medium">วันที่</th>
                     <th className="px-5 py-3 text-left font-medium">ประเภท</th>
                     <th className="px-5 py-3 text-left font-medium">รายละเอียด</th>
@@ -3009,9 +3012,10 @@ export default function AdminDashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {filtered.map((c) => (
+                  {filtered.map((c, i) => (
                     <tr key={c.id} className="hover:bg-gray-50/70 transition-colors cursor-pointer"
                         onClick={() => setSelectedComplaint(c)}>
+                      <td className="px-3 py-4 text-center text-xs text-gray-400 font-mono">{i + 1}</td>
                       <td className="px-5 py-4 text-gray-500 whitespace-nowrap text-xs">
                         {new Date(c.created_at).toLocaleDateString('th-TH', {
                           day: '2-digit', month: 'short', year: '2-digit',

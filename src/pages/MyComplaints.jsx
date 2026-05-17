@@ -372,7 +372,7 @@ export default function MyComplaints() {
         </div>
       ) : (
         <div className="space-y-3">
-          {complaints.map((c) => (
+          {complaints.map((c, i) => (
             <div key={c.id}
               onClick={() => setSelected(c)}
               className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 cursor-pointer hover:shadow-md active:scale-[0.99] transition-all">
@@ -383,6 +383,7 @@ export default function MyComplaints() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2 mb-0.5">
                     <p className="font-semibold text-gray-800 text-sm truncate">
+                      <span className="text-gray-400 font-mono font-normal mr-1">{i + 1}.</span>
                       {CATEGORY_LABEL[c.category] ?? c.category}
                     </p>
                     <ChevronRight size={14} className="text-gray-300 shrink-0" />
