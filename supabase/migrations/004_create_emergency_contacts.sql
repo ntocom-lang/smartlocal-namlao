@@ -15,14 +15,16 @@ create table if not exists emergency_contacts (
   created_at       timestamptz not null default now()
 );
 
-create index emergency_contacts_municipality_idx on emergency_contacts(municipality_id);
+create index if not exists emergency_contacts_municipality_idx on emergency_contacts(municipality_id);
 
 alter table emergency_contacts enable row level security;
 
+drop policy if exists "public can read active emergency contacts" on emergency_contacts;
 create policy "public can read active emergency contacts"
   on emergency_contacts for select
   using (is_active = true);
 
+drop policy if exists "allow all for authenticated" on emergency_contacts;
 create policy "allow all for authenticated"
   on emergency_contacts for all
   using (auth.role() = 'authenticated');

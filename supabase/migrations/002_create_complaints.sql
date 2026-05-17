@@ -17,17 +17,19 @@ create table if not exists complaints (
   updated_at       timestamptz not null default now()
 );
 
-create index complaints_municipality_idx on complaints(municipality_id);
-create index complaints_status_idx       on complaints(status);
+create index if not exists complaints_municipality_idx on complaints(municipality_id);
+create index if not exists complaints_status_idx       on complaints(status);
 
 alter table complaints enable row level security;
 
 -- ประชาชนแจ้งได้ (insert) และดูเฉพาะของตัวเอง (ถ้า login)
 -- สำหรับ anonymous ให้ insert ได้อย่างเดียว
+drop policy if exists "anyone can submit complaint" on complaints;
 create policy "anyone can submit complaint"
   on complaints for insert
   with check (true);
 
+drop policy if exists "municipality staff can read all complaints" on complaints;
 create policy "municipality staff can read all complaints"
   on complaints for select
   using (true);
@@ -41,6 +43,7 @@ begin
 end;
 $$;
 
+drop trigger if exists complaints_updated_at on complaints;
 create trigger complaints_updated_at
   before update on complaints
   for each row execute function update_updated_at();

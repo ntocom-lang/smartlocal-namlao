@@ -13,7 +13,7 @@ CREATE INDEX IF NOT EXISTS complaints_assigned_to_idx ON complaints(assigned_to)
 -- 2. เพิ่ม technician ใน role check ของ profiles
 ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_role_check;
 ALTER TABLE profiles ADD CONSTRAINT profiles_role_check
-  CHECK (role IN ('superadmin', 'admin', 'technician', 'citizen'));
+  CHECK (role IN ('superadmin', 'admin', 'viewer', 'technician', 'citizen'));
 
 -- 3. Admin สามารถ update คำร้องได้ (assign + เปลี่ยนสถานะ)
 DROP POLICY IF EXISTS "admin update complaints" ON complaints;

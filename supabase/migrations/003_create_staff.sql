@@ -16,10 +16,11 @@ create table if not exists staff (
   created_at       timestamptz not null default now()
 );
 
-create index staff_municipality_idx on staff(municipality_id);
+create index if not exists staff_municipality_idx on staff(municipality_id);
 
 alter table staff enable row level security;
 
+drop policy if exists "public can read active staff" on staff;
 create policy "public can read active staff"
   on staff for select
   using (is_active = true);

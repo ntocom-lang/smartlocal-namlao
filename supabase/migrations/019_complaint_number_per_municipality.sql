@@ -7,9 +7,12 @@
 ALTER TABLE complaints DROP CONSTRAINT IF EXISTS complaints_complaint_number_key;
 
 -- 2. เพิ่ม unique constraint ใหม่แบบ per-municipality
-ALTER TABLE complaints
-  ADD CONSTRAINT complaints_complaint_number_municipality_key
-  UNIQUE (municipality_id, complaint_number);
+DO $$ BEGIN
+  ALTER TABLE complaints
+    ADD CONSTRAINT complaints_complaint_number_municipality_key
+    UNIQUE (municipality_id, complaint_number);
+EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL;
+END $$;
 
 -- 3. ฟังก์ชัน trigger: นับจำนวนคำร้องของ municipality นั้นแล้ว +1
 CREATE OR REPLACE FUNCTION assign_complaint_number_per_municipality()

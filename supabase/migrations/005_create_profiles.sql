@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   full_name        text,
   phone            text,
   role             text NOT NULL DEFAULT 'citizen'
-                   CHECK (role IN ('superadmin', 'admin', 'citizen')),
+                   CHECK (role IN ('superadmin', 'admin', 'viewer', 'technician', 'citizen')),
   municipality_id  uuid REFERENCES municipalities(id) ON DELETE SET NULL,
   created_at       timestamptz NOT NULL DEFAULT now()
 );
@@ -35,10 +35,10 @@ DROP POLICY IF EXISTS "admin update municipality profiles" ON profiles;
 CREATE POLICY "users read own profile"
   ON profiles FOR SELECT USING (auth.uid() = id);
 
--- superadmin และ admin อ่านได้ทุก profile (ใช้ function แทน subquery เพื่อกัน recursion)
+-- superadmin, admin, viewer อ่านได้ทุก profile (ใช้ function แทน subquery เพื่อกัน recursion)
 CREATE POLICY "admins read all profiles"
   ON profiles FOR SELECT
-  USING (get_my_role() IN ('superadmin', 'admin'));
+  USING (get_my_role() IN ('superadmin', 'admin', 'viewer'));
 
 -- superadmin อัปเดต role ได้ทุกคน
 CREATE POLICY "superadmin update profiles"

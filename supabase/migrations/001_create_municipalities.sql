@@ -2,10 +2,7 @@
 -- SmartLocal: ตาราง municipalities (Multi-tenant core)
 -- =====================================================
 
--- Drop ถ้ามีอยู่แล้ว (สำหรับ fresh setup)
-drop table if exists municipalities cascade;
-
-create table municipalities (
+create table if not exists municipalities (
   id          uuid primary key default gen_random_uuid(),
   slug        text unique not null,
   name        text not null,
@@ -19,10 +16,11 @@ create table municipalities (
   created_at  timestamptz not null default now()
 );
 
-create index municipalities_slug_idx on municipalities(slug);
+create index if not exists municipalities_slug_idx on municipalities(slug);
 
 alter table municipalities enable row level security;
 
+drop policy if exists "public can read active municipalities" on municipalities;
 create policy "public can read active municipalities"
   on municipalities for select
   using (is_active = true);
@@ -34,4 +32,5 @@ create policy "public can read active municipalities"
 insert into municipalities (slug, name, org_type, province, theme_color) values
   ('namlao',     'เทศบาลตำบลน้ำเลา',              'เทศบาลตำบล', 'แพร่', '#1c7cd6'),
   ('muangphrae', 'เทศบาลเมืองแพร่',               'เทศบาลเมือง', 'แพร่', '#7c3aed'),
-  ('tamnaktham', 'องค์การบริหารส่วนตำบลตำหนักธรรม', 'อบต.',       'แพร่', '#bd3017');
+  ('tamnaktham', 'องค์การบริหารส่วนตำบลตำหนักธรรม', 'อบต.',       'แพร่', '#bd3017')
+on conflict (slug) do nothing;
