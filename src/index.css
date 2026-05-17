@@ -12,6 +12,7 @@
 body {
   margin: 0;
   font-family: 'Sarabun', sans-serif;
+  font-size: 17px;
   background: linear-gradient(-45deg, #09090b, #2e1065, #1e3a8a, #020617);
   background-size: 400% 400%;
   animation: gradient-animation 15s ease infinite;
