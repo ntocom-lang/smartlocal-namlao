@@ -45,6 +45,25 @@ const CATEGORY_EMOJI = {
   borrow_equipment: '📦', grievance: '📣', other: '📝',
 }
 
+// ── badge helpers ────────────────────────────────────────────────────────────
+function getSeenIds() {
+  try { return new Set(JSON.parse(localStorage.getItem('sl_tech_seen') ?? '[]')) }
+  catch { return new Set() }
+}
+
+function markSeen(id) {
+  const seen = getSeenIds()
+  seen.add(id)
+  localStorage.setItem('sl_tech_seen', JSON.stringify([...seen]))
+}
+
+function emitTechBadge(list) {
+  const seen = getSeenIds()
+  const count = list.filter(c => c.status !== 'completed' && !seen.has(c.id)).length
+  localStorage.setItem('sl_tech_new', String(count))
+  window.dispatchEvent(new CustomEvent('tech-badge-update', { detail: count }))
+}
+
 const STATUS_FLOW = ['pending', 'received', 'in_progress', 'completed']
 const STATUS_FLOW_LABEL = {
   pending:     { label: 'รอดำเนินการ',    desc: 'คำร้องของคุณถูกส่งเข้าระบบแล้ว' },
@@ -341,6 +360,7 @@ export default function TechnicianDashboard() {
   const [updating, setUpdating] = useState(null)
   const [selected, setSelected] = useState(null)
   const [myName, setMyName] = useState('')
+  const [seenIds, setSeenIds] = useState(getSeenIds)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -366,6 +386,7 @@ export default function TechnicianDashboard() {
       .neq('status', 'rejected')
       .order('created_at', { ascending: false })
     setComplaints(data ?? [])
+    emitTechBadge(data ?? [])
     setLoading(false)
   }, [tenant?.id])
 
@@ -381,10 +402,20 @@ export default function TechnicianDashboard() {
       .update(payload)
       .eq('id', id)
     if (!error) {
-      setComplaints((prev) => prev.map((c) => c.id === id ? { ...c, ...payload } : c))
+      const updated = complaints.map((c) => c.id === id ? { ...c, ...payload } : c)
+      setComplaints(updated)
+      emitTechBadge(updated)
       setSelected(null)
     }
     setUpdating(null)
+  }
+
+  function handleOpenComplaint(c) {
+    markSeen(c.id)
+    const updated = getSeenIds()
+    setSeenIds(updated)
+    emitTechBadge(complaints)
+    setSelected(c)
   }
 
   const pending = complaints.filter((c) => c.status !== 'completed')
@@ -442,7 +473,7 @@ export default function TechnicianDashboard() {
                 {pending.map((c, i) => {
                   const s = STATUS[c.status]
                   return (
-                    <button key={c.id} onClick={() => setSelected(c)}
+                    <button key={c.id} onClick={() => handleOpenComplaint(c)}
                       className={`w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-gray-50 transition-colors active:bg-gray-100 ${i < pending.length - 1 ? 'border-b border-gray-50' : ''}`}>
                       <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 bg-gray-100">
                         {CATEGORY_EMOJI[c.category] ?? '📄'}
@@ -455,10 +486,15 @@ export default function TechnicianDashboard() {
                         <p className="text-xs text-gray-400 mt-0.5 truncate">{c.detail}</p>
                       </div>
                       <div className="flex flex-col items-end gap-1.5 shrink-0">
-                        <span className="text-[13px] font-semibold px-2 py-0.5 rounded-full"
-                              style={{ backgroundColor: s?.bg, color: s?.text }}>
-                          {s?.label}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {!seenIds.has(c.id) && (
+                            <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+                          )}
+                          <span className="text-[13px] font-semibold px-2 py-0.5 rounded-full"
+                                style={{ backgroundColor: s?.bg, color: s?.text }}>
+                            {s?.label}
+                          </span>
+                        </div>
                         <ChevronRight size={14} className="text-gray-300" />
                       </div>
                     </button>
@@ -476,7 +512,7 @@ export default function TechnicianDashboard() {
               </p>
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden opacity-70">
                 {done.map((c, i) => (
-                  <button key={c.id} onClick={() => setSelected(c)}
+                  <button key={c.id} onClick={() => handleOpenComplaint(c)}
                     className={`w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-gray-50 transition-colors ${i < done.length - 1 ? 'border-b border-gray-50' : ''}`}>
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 bg-green-50">
                       {CATEGORY_EMOJI[c.category] ?? '📄'}

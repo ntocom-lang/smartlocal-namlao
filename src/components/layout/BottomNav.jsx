@@ -26,6 +26,15 @@ export default function BottomNav() {
   const navigate = useNavigate()
   const { unreadCount } = useNotifications()
   const [role, setRole] = useState(() => localStorage.getItem('sl_role') ?? null)
+  const [techNewCount, setTechNewCount] = useState(
+    () => parseInt(localStorage.getItem('sl_tech_new') ?? '0', 10)
+  )
+
+  useEffect(() => {
+    const handler = (e) => setTechNewCount(e.detail)
+    window.addEventListener('tech-badge-update', handler)
+    return () => window.removeEventListener('tech-badge-update', handler)
+  }, [])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -80,6 +89,11 @@ export default function BottomNav() {
                 {item.href === '/notifications' && unreadCount > 0 && (
                   <span className="absolute -top-1.5 -right-2 min-w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-1 shadow-sm ring-1 ring-white/30">
                     {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+                {item.href === '/technician' && techNewCount > 0 && (
+                  <span className="absolute -top-1.5 -right-2 min-w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-1 shadow-sm ring-1 ring-white/30">
+                    {techNewCount > 9 ? '9+' : techNewCount}
                   </span>
                 )}
               </div>
