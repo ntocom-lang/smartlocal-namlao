@@ -26,7 +26,7 @@ export default function ServiceButtons() {
       .select('value, label, emoji, color')
       .eq('municipality_id', tenant.id)
       .order('sort_order')
-      .limit(12)
+      .limit(8)
       .then(({ data }) => {
         if (data && data.length > 0) setCats(data)
       })
@@ -40,7 +40,7 @@ export default function ServiceButtons() {
       </div>
 
       <div className="bg-white dark:bg-white/10 rounded-2xl border border-gray-100 dark:border-white/10 p-4">
-        <div className="grid grid-cols-4 md:grid-cols-4 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-4 gap-3">
           {cats.map((cat) => (
             <button
               key={cat.value}
