@@ -137,122 +137,115 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenantName }) 
     const complaintNo = fmtNo(c.complaint_number, c.created_at)
     const location = c.location_name || c.village || '—'
 
-    const field = (label, value, dotWidth = '180px') =>
-      `<div class="field"><span class="field-label">${label}</span><span class="field-dot" style="min-width:${dotWidth}"></span><span class="field-value">${value ?? '—'}</span></div>`
+    // สร้าง row สำหรับตาราง fields
+    const tr = (label, value) => `
+      <tr>
+        <td style="padding:5px 8px;font-weight:bold;white-space:nowrap;width:170px;vertical-align:top;border:1px solid #999;">${label}</td>
+        <td style="padding:5px 8px;border:1px solid #999;">${value ?? '—'}</td>
+      </tr>`
 
-    const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/>
-<title>แบบฟอร์มรับแจ้งปัญหา ${complaintNo}</title>
-<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet"/>
+    const html = `<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8"/>
+<title>คำร้อง ${complaintNo}</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Sarabun', 'TH SarabunPSK', sans-serif; font-size: 16px; color: #000; background: #fff; padding: 20mm 20mm 15mm; }
-  /* header */
-  .doc-header { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 6px; }
-  .emblem { width: 72px; height: 72px; border: 2px solid #000; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px; flex-shrink: 0; }
-  .header-text { flex: 1; }
-  .org-name { font-size: 20px; font-weight: 700; text-align: center; line-height: 1.3; }
-  .doc-title-block { text-align: center; margin: 8px 0 4px; }
-  .doc-title { font-size: 18px; font-weight: 700; display: inline-block; border-bottom: 2px solid #000; padding-bottom: 2px; }
-  .doc-no-row { display: flex; justify-content: flex-end; font-size: 14px; margin-bottom: 2px; gap: 4px; }
-  .doc-no-row span { min-width: 80px; }
-  /* divider */
-  .divider { border: none; border-top: 2px solid #000; margin: 6px 0; }
-  .divider-thin { border: none; border-top: 1px solid #666; margin: 8px 0; }
-  /* section */
-  .section { margin: 10px 0; }
-  .section-title { font-size: 15px; font-weight: 700; background: #000; color: #fff; padding: 2px 10px; display: inline-block; margin-bottom: 8px; }
-  /* field */
-  .field { display: flex; align-items: baseline; gap: 4px; margin: 7px 0; font-size: 15px; }
-  .field-label { white-space: nowrap; font-weight: 600; min-width: 120px; }
-  .field-dot { flex: 1; border-bottom: 1px dotted #555; min-height: 1px; }
-  .field-value { white-space: nowrap; padding-left: 6px; }
-  /* detail box */
-  .detail-box { border: 1px solid #000; min-height: 60px; padding: 6px 10px; font-size: 15px; line-height: 1.7; white-space: pre-wrap; margin-top: 4px; }
-  /* sign */
-  .sign-section { display: flex; justify-content: space-around; margin-top: 24px; gap: 20px; }
-  .sign-block { text-align: center; font-size: 14px; flex: 1; }
-  .sign-line { border-bottom: 1px solid #000; margin: 32px auto 4px; width: 80%; }
-  .sign-name { min-height: 1.4em; }
-  /* stamp */
-  .stamp-box { border: 2px solid #000; width: 100px; height: 80px; margin: 0 auto; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #888; }
-  /* official stamp area */
-  .official-area { display: flex; justify-content: space-between; align-items: flex-start; margin-top: 20px; }
-  .footer-note { font-size: 12px; color: #555; text-align: center; margin-top: 16px; border-top: 1px solid #ccc; padding-top: 6px; }
-  @media print {
-    body { padding: 15mm 18mm 12mm; }
-    @page { size: A4; margin: 0; }
-  }
-</style></head><body>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: 'TH Sarabun New', 'Sarabun', 'Tahoma', sans-serif; font-size:16pt; color:#000; background:#fff; }
+  @page { size:A4; margin:15mm 18mm 15mm 18mm; }
+  @media print { body { font-size:14pt; } }
+  table { border-collapse:collapse; width:100%; }
+</style>
+</head>
+<body style="padding:12mm 16mm 10mm;">
 
-<div class="doc-no-row">
-  <span>เลขที่คำร้อง</span><span><strong>${complaintNo}</strong></span>
-</div>
-<div class="doc-no-row">
-  <span>วันที่รับแจ้ง</span><span>${dateStr}</span>
-</div>
-
-<hr class="divider"/>
-
-<div class="doc-header">
-  <div class="emblem">🏛️</div>
-  <div class="header-text">
-    <div class="org-name">${tenantName ?? 'หน่วยงานปกครองส่วนท้องถิ่น'}</div>
-    <div class="doc-title-block"><span class="doc-title">แบบฟอร์มรับแจ้งปัญหา / คำร้องทั่วไป</span></div>
+  <!-- เลขที่ + วันที่ มุมขวา -->
+  <div style="text-align:right; font-size:13pt; margin-bottom:6px; line-height:1.7;">
+    <span>เลขที่คำร้อง&nbsp;&nbsp;<strong>${complaintNo}</strong></span><br/>
+    <span>วันที่รับแจ้ง&nbsp;&nbsp;${dateStr}</span>
   </div>
-</div>
 
-<hr class="divider"/>
+  <!-- หัวเอกสาร -->
+  <table style="border:none; margin-bottom:0;">
+    <tr>
+      <td style="border:none; width:80px; text-align:center; vertical-align:middle;">
+        <div style="width:68px;height:68px;border:2px solid #000;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:28pt;">🏛</div>
+      </td>
+      <td style="border:none; text-align:center; vertical-align:middle; padding-bottom:4px;">
+        <div style="font-size:18pt; font-weight:bold; line-height:1.4;">${tenantName ?? 'หน่วยงานปกครองส่วนท้องถิ่น'}</div>
+        <div style="font-size:15pt; font-weight:bold; margin-top:2px;">แบบรับแจ้งปัญหา / คำร้องทั่วไป</div>
+      </td>
+      <td style="border:none; width:80px;"></td>
+    </tr>
+  </table>
+  <hr style="border:none;border-top:3px solid #000;margin:6px 0 10px;"/>
 
-<div class="section">
-  <div class="section-title">ส่วนที่ ๑ — ข้อมูลผู้แจ้ง</div>
-  ${field('ชื่อ – นามสกุล', c.reporter_name)}
-  ${field('หมายเลขโทรศัพท์', c.phone)}
-</div>
-
-<div class="section">
-  <div class="section-title">ส่วนที่ ๒ — รายละเอียดคำร้อง</div>
-  ${field('ประเภทปัญหา', catLabel)}
-  ${c.subject ? field('เรื่อง', c.subject) : ''}
-  ${field('จุดเกิดเหตุ / สถานที่', location)}
-  ${c.latitude ? field('พิกัด GPS', `${c.latitude.toFixed(5)}, ${c.longitude.toFixed(5)}`) : ''}
-  <div style="font-size:15px;font-weight:600;margin-top:8px;">รายละเอียดปัญหา</div>
-  <div class="detail-box">${c.detail}</div>
-</div>
-
-<div class="section">
-  <div class="section-title">ส่วนที่ ๓ — สำหรับเจ้าหน้าที่</div>
-  ${field('ผู้รับเรื่อง', '')}
-  ${field('วันที่รับเรื่อง', '')}
-  ${field('ผู้รับผิดชอบ / ช่าง', '')}
-  ${field('วันที่ดำเนินการแล้วเสร็จ', '')}
-  <div style="font-size:15px;font-weight:600;margin-top:8px;">บันทึกการดำเนินการ</div>
-  <div class="detail-box" style="min-height:80px;">${c.technician_note ?? ''}</div>
-</div>
-
-<div class="sign-section">
-  <div class="sign-block">
-    <div class="sign-line"></div>
-    <div class="sign-name">(${c.reporter_name || '..................................'})</div>
-    <div>ผู้แจ้ง</div>
-    <div style="margin-top:4px;font-size:13px;">วันที่ ${dateStr}</div>
+  <!-- ส่วนที่ 1 -->
+  <div style="background:#000;color:#fff;font-weight:bold;font-size:13pt;padding:3px 10px;margin-bottom:6px;">
+    ส่วนที่ ๑ &nbsp;ข้อมูลผู้แจ้ง
   </div>
-  <div class="sign-block">
-    <div class="stamp-box">ประทับตราหน่วยงาน</div>
+  <table style="margin-bottom:10px;">
+    ${tr('ชื่อ – นามสกุล', c.reporter_name)}
+    ${tr('หมายเลขโทรศัพท์', c.phone)}
+  </table>
+
+  <!-- ส่วนที่ 2 -->
+  <div style="background:#000;color:#fff;font-weight:bold;font-size:13pt;padding:3px 10px;margin-bottom:6px;">
+    ส่วนที่ ๒ &nbsp;รายละเอียดคำร้อง
   </div>
-  <div class="sign-block">
-    <div class="sign-line"></div>
-    <div class="sign-name">(.......................................)</div>
-    <div>เจ้าหน้าที่ผู้รับเรื่อง</div>
-    <div style="margin-top:4px;font-size:13px;">วันที่ .................................</div>
+  <table style="margin-bottom:6px;">
+    ${tr('ประเภทปัญหา', catLabel)}
+    ${c.subject ? tr('เรื่อง', c.subject) : ''}
+    ${tr('จุดเกิดเหตุ / สถานที่', location)}
+    ${c.latitude ? tr('พิกัด GPS', `${c.latitude.toFixed(5)}, ${c.longitude.toFixed(5)}`) : ''}
+  </table>
+  <div style="font-weight:bold;margin-bottom:4px;">รายละเอียดปัญหา</div>
+  <div style="border:1px solid #000;min-height:64px;padding:6px 10px;line-height:1.8;white-space:pre-wrap;margin-bottom:10px;">${c.detail}</div>
+
+  <!-- ส่วนที่ 3 -->
+  <div style="background:#000;color:#fff;font-weight:bold;font-size:13pt;padding:3px 10px;margin-bottom:6px;">
+    ส่วนที่ ๓ &nbsp;สำหรับเจ้าหน้าที่ (กรอกเมื่อดำเนินการ)
   </div>
-</div>
+  <table style="margin-bottom:6px;">
+    ${tr('ผู้รับเรื่อง', '')}
+    ${tr('วันที่รับเรื่อง', '')}
+    ${tr('ผู้รับผิดชอบ / ช่าง', '')}
+    ${tr('วันที่แล้วเสร็จ', '')}
+  </table>
+  <div style="font-weight:bold;margin-bottom:4px;">บันทึกการดำเนินการ</div>
+  <div style="border:1px solid #000;min-height:72px;padding:6px 10px;line-height:1.8;white-space:pre-wrap;margin-bottom:16px;">${c.technician_note ?? ''}</div>
 
-<div class="footer-note">พิมพ์เมื่อ ${printDateStr} · SmartLocal E-Service · ${tenantName ?? ''}</div>
+  <!-- ลายมือชื่อ -->
+  <table style="border:none;margin-top:8px;">
+    <tr>
+      <td style="border:none;text-align:center;width:33%;padding:0 8px;">
+        <div style="border-bottom:1px solid #000;margin-bottom:6px;height:40px;"></div>
+        <div>(${c.reporter_name || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'})</div>
+        <div style="font-weight:bold;">ผู้แจ้ง</div>
+        <div style="font-size:13pt;">วันที่ ${dateStr}</div>
+      </td>
+      <td style="border:none;text-align:center;width:34%;padding:0 8px;">
+        <div style="border:2px solid #000;height:80px;display:flex;align-items:center;justify-content:center;font-size:12pt;color:#555;">ประทับตราหน่วยงาน</div>
+      </td>
+      <td style="border:none;text-align:center;width:33%;padding:0 8px;">
+        <div style="border-bottom:1px solid #000;margin-bottom:6px;height:40px;"></div>
+        <div>(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</div>
+        <div style="font-weight:bold;">เจ้าหน้าที่ผู้รับเรื่อง</div>
+        <div style="font-size:13pt;">วันที่ .................................</div>
+      </td>
+    </tr>
+  </table>
 
-<script>window.onload=()=>{ window.print(); }</script>
-</body></html>`
+  <hr style="border:none;border-top:1px solid #ccc;margin-top:14px;margin-bottom:4px;"/>
+  <div style="text-align:center;font-size:11pt;color:#666;">
+    พิมพ์เมื่อ ${printDateStr} &nbsp;·&nbsp; SmartLocal E-Service &nbsp;·&nbsp; ${tenantName ?? ''}
+  </div>
 
-    const w = window.open('', '_blank', 'width=820,height=1000')
+<script>window.onload = () => { window.print(); }</script>
+</body>
+</html>`
+
+    const w = window.open('', '_blank', 'width=820,height=1100')
     w.document.write(html)
     w.document.close()
   }
