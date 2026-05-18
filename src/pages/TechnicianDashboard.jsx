@@ -487,7 +487,7 @@ export default function TechnicianDashboard() {
                           {CATEGORY_LABEL[c.category] ?? c.category}
                         </p>
                         <p className="text-xs text-gray-500 mt-0.5 truncate font-medium">
-                          {c.reporter_name || '—'}
+                          {c.location_name || c.village || '—'}
                         </p>
                         <p className="text-xs text-gray-400 truncate">{c.detail}</p>
                       </div>
