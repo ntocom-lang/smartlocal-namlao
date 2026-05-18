@@ -176,6 +176,9 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating }) {
               <p className="text-white/70 text-xs">งานที่ได้รับมอบหมาย</p>
               <p className="text-white font-bold text-base mt-0.5">{catLabel}</p>
               {c.subject && <p className="text-white/80 text-sm mt-1">{c.subject}</p>}
+              {c.reporter_name && (
+                <p className="text-white/60 text-xs mt-1">ผู้แจ้ง: {c.reporter_name}</p>
+              )}
             </div>
           </div>
           <div className="mt-4 pt-4 border-t border-white/20 flex justify-between items-center">
@@ -483,7 +486,10 @@ export default function TechnicianDashboard() {
                           <span className="text-gray-400 font-mono font-normal mr-1">{i + 1}.</span>
                           {CATEGORY_LABEL[c.category] ?? c.category}
                         </p>
-                        <p className="text-xs text-gray-400 mt-0.5 truncate">{c.detail}</p>
+                        <p className="text-xs text-gray-500 mt-0.5 truncate font-medium">
+                          {c.reporter_name || '—'}
+                        </p>
+                        <p className="text-xs text-gray-400 truncate">{c.detail}</p>
                       </div>
                       <div className="flex flex-col items-end gap-1.5 shrink-0">
                         <div className="flex items-center gap-1.5">
