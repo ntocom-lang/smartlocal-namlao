@@ -208,15 +208,11 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenantName, te
   </div>
   <table style="margin-bottom:5px;font-size:13pt;">
     <tr>
-      <td style="padding:3px 8px;font-weight:bold;white-space:nowrap;width:170px;vertical-align:top;border:1px solid #999;">ผู้รับเรื่อง</td>
+      <td style="padding:3px 8px;font-weight:bold;white-space:nowrap;width:170px;border:1px solid #999;">วันที่รับเรื่อง</td>
       <td style="padding:3px 8px;border:1px solid #999;"></td>
-      <td style="padding:3px 8px;font-weight:bold;white-space:nowrap;width:150px;vertical-align:top;border:1px solid #999;">วันที่รับเรื่อง</td>
-      <td style="padding:3px 8px;border:1px solid #999;width:130px;"></td>
     </tr>
     <tr>
       <td style="padding:3px 8px;font-weight:bold;white-space:nowrap;border:1px solid #999;">ผู้รับผิดชอบ / ช่าง</td>
-      <td style="padding:3px 8px;border:1px solid #999;"></td>
-      <td style="padding:3px 8px;font-weight:bold;white-space:nowrap;border:1px solid #999;">วันที่แล้วเสร็จ</td>
       <td style="padding:3px 8px;border:1px solid #999;"></td>
     </tr>
   </table>
