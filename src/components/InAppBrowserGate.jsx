@@ -4,16 +4,26 @@ import { Copy, Check } from 'lucide-react'
 /* ─── detect ─────────────────────────────────────────────── */
 function detectEnv() {
   const ua = navigator.userAgent || ''
-  const isLine     = /Line\//i.test(ua)
-  const isFacebook = /FBAN|FBAV/i.test(ua)
+  const params  = new URLSearchParams(window.location.search)
+  const isIOS     = /iPhone|iPad|iPod/i.test(ua)
+  const isAndroid = /Android/i.test(ua)
+  const isMobile  = isIOS || isAndroid
+
+  const isLine      = /Line\//i.test(ua)
+  const isFacebook  = /FBAN|FBAV|FBIOS|FB_IAB/i.test(ua)
   const isInstagram = /Instagram/i.test(ua)
-  const isTwitter  = /Twitter\//i.test(ua)
-  const isWeChat   = /MicroMessenger/i.test(ua)
-  const isGSA      = /GSA\//i.test(ua) // Google app iOS
-  const isInApp    = isLine || isFacebook || isInstagram || isTwitter || isWeChat || isGSA
-  const isIOS      = /iPhone|iPad|iPod/i.test(ua)
-  const isAndroid  = /Android/i.test(ua)
-  return { isInApp, isLine, isFacebook, isInstagram, isIOS, isAndroid }
+  const isTwitter   = /Twitter\//i.test(ua)
+  const isWeChat    = /MicroMessenger/i.test(ua)
+  const isGSA       = /GSA\//i.test(ua) // Google app iOS
+  // Android WebView (ครอบ apps ที่เปิด link ใน built-in browser)
+  const isWebView   = isMobile && /; wv\)/i.test(ua)
+  // fbclid บนมือถือ = คลิกจาก Facebook/Messenger เกือบ 100%
+  const hasFbclid   = isMobile && params.has('fbclid')
+
+  const isInApp = isLine || isFacebook || isInstagram || isTwitter ||
+                  isWeChat || isGSA || isWebView || hasFbclid
+
+  return { isInApp, isLine, isFacebook: isFacebook || hasFbclid, isInstagram, isIOS, isAndroid }
 }
 
 /* ─── redirect helpers ───────────────────────────────────── */
@@ -42,20 +52,19 @@ export default function InAppBrowserGate({ children }) {
     if (!e.isInApp) return
 
     // ถ้า URL มี openExternalBrowser อยู่แล้ว → Line พยายาม redirect แล้วแต่ล้มเหลว → block
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('openExternalBrowser')) {
+    if (new URLSearchParams(window.location.search).get('openExternalBrowser')) {
       setEnv(e)
       setBlocked(true)
       return
     }
 
-    // Line: ใช้ query param ให้เปิดใน browser ภายนอกอัตโนมัติ
+    // Line: ลอง redirect ผ่าน openExternalBrowser param + แสดง gate ทันที
+    // (ถ้า redirect ทำงาน → user ออกจาก Line ไปเองก่อนที่จะเห็น gate นาน)
     if (e.isLine) {
       const sep = window.location.search ? '&' : '?'
       window.location.replace(window.location.href + sep + 'openExternalBrowser=1')
-      // ถ้า replace ทำงาน → page จะออกจาก Line ไป Safari/Chrome เลย
-      // ถ้าไม่ได้ผลภายใน 1.5s → แสดง block screen
-      setTimeout(() => { setEnv(e); setBlocked(true) }, 1500)
+      setEnv(e)
+      setBlocked(true)
       return
     }
 
@@ -83,10 +92,12 @@ export default function InAppBrowserGate({ children }) {
   const url = window.location.href
 
   return (
-    <div className="fixed inset-0 z-99999 flex flex-col items-center justify-center bg-gray-50 px-6">
+    <div className="fixed inset-0 z-99999 flex flex-col items-center justify-center bg-gray-50 px-6 overflow-y-auto py-8">
       {/* Icon */}
-      <div className="w-20 h-20 rounded-3xl mb-6 flex items-center justify-center shadow-lg"
-           style={{ background: 'linear-gradient(135deg, var(--color-primary,#2563eb) 0%, var(--color-primary-dark,#1d4ed8) 100%)' }}>
+      <div className="w-20 h-20 rounded-3xl mb-5 flex items-center justify-center shadow-lg shrink-0"
+           style={{ background: env.isLine
+             ? 'linear-gradient(135deg, #00B900 0%, #008f00 100%)'
+             : 'linear-gradient(135deg, var(--color-primary,#2563eb) 0%, var(--color-primary-dark,#1d4ed8) 100%)' }}>
         <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}
              strokeLinecap="round" strokeLinejoin="round" className="w-10 h-10">
           <circle cx="12" cy="12" r="10"/>
@@ -96,13 +107,44 @@ export default function InAppBrowserGate({ children }) {
       </div>
 
       <h1 className="text-xl font-bold text-gray-800 text-center mb-2">
-        กรุณาเปิดในบราวเซอร์
+        กรุณาเปิดในเบราว์เซอร์
       </h1>
-      <p className="text-sm text-gray-500 text-center leading-relaxed mb-8">
-        แอปนี้ไม่รองรับบราวเซอร์ภายในแอป<br />
-        (Line / Facebook / Instagram)<br />
-        กรุณาเปิดด้วยบราวเซอร์หลักของเครื่อง
+      <p className="text-sm text-gray-500 text-center leading-relaxed mb-4">
+        {env.isLine ? (
+          <>
+            แอปนี้ไม่รองรับบราวเซอร์ใน LINE<br />
+            กรุณาเปิดด้วยเบราว์เซอร์หลักของเครื่อง<br />
+            <span className="text-red-400 font-medium">เพื่อให้ สมัคร / เข้าสู่ระบบ ได้ปกติ</span>
+          </>
+        ) : (
+          <>
+            แอปนี้ไม่รองรับบราวเซอร์ภายในแอป<br />
+            (Line / Facebook / Instagram)<br />
+            กรุณาเปิดด้วยบราวเซอร์หลักของเครื่อง
+          </>
+        )}
       </p>
+
+      {/* LINE step-by-step instructions */}
+      {env.isLine && (
+        <div className="w-full max-w-xs bg-green-50 border border-green-200 rounded-2xl p-4 mb-4">
+          <p className="text-xs font-bold text-green-700 text-center mb-3">วิธีเปิดจาก LINE (แนะนำ)</p>
+          <div className="flex flex-col gap-3">
+            <div className="flex items-start gap-3">
+              <span className="w-6 h-6 rounded-full bg-green-500 text-white text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">1</span>
+              <p className="text-sm text-gray-700">แตะปุ่ม <strong>···</strong> (สามจุด) ที่ <strong>มุมขวาบน</strong> ของหน้าจอ</p>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="w-6 h-6 rounded-full bg-green-500 text-white text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">2</span>
+              <p className="text-sm text-gray-700">แตะ <strong>&ldquo;เปิดด้วยเบราว์เซอร์ภายนอก&rdquo;</strong></p>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="w-6 h-6 rounded-full bg-amber-400 text-white text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">!</span>
+              <p className="text-xs text-gray-500">ถ้าไม่มีตัวเลือกนั้น ให้ใช้ปุ่มด้านล่าง หรือคัดลอกลิงก์แล้วเปิดใน Chrome แทน</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="w-full max-w-xs flex flex-col gap-3">
         {/* Chrome button */}
