@@ -121,7 +121,7 @@ function StatusStepper({ status }) {
 }
 
 
-function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenantName }) {
+function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenantName, tenantLogo }) {
   const [note, setNote] = useState(c.technician_note ?? '')
   const [photos, setPhotos] = useState(c.work_photos ?? [])
   const [uploading, setUploading] = useState(false)
@@ -169,7 +169,7 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenantName }) 
   <table style="border:none; margin-bottom:0;">
     <tr>
       <td style="border:none; width:80px; text-align:center; vertical-align:middle;">
-        <div style="width:68px;height:68px;border:2px solid #000;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:28pt;">🏛</div>
+        ${tenantLogo ? `<img src="${tenantLogo}" style="width:68px;height:68px;object-fit:contain;" alt=""/>` : ''}
       </td>
       <td style="border:none; text-align:center; vertical-align:middle; padding-bottom:4px;">
         <div style="font-size:18pt; font-weight:bold; line-height:1.4;">${tenantName ?? 'หน่วยงานปกครองส่วนท้องถิ่น'}</div>
@@ -203,35 +203,40 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenantName }) 
   <div style="border:1px solid #000;min-height:64px;padding:6px 10px;line-height:1.8;white-space:pre-wrap;margin-bottom:10px;">${c.detail}</div>
 
   <!-- ส่วนที่ 3 -->
-  <div style="background:#000;color:#fff;font-weight:bold;font-size:13pt;padding:3px 10px;margin-bottom:6px;">
-    ส่วนที่ ๓ &nbsp;สำหรับเจ้าหน้าที่ (กรอกเมื่อดำเนินการ)
+  <div style="background:#000;color:#fff;font-weight:bold;font-size:12pt;padding:2px 10px;margin-bottom:5px;">
+    ส่วนที่ ๓ &nbsp;สำหรับเจ้าหน้าที่
   </div>
-  <table style="margin-bottom:6px;">
-    ${tr('ผู้รับเรื่อง', '')}
-    ${tr('วันที่รับเรื่อง', '')}
-    ${tr('ผู้รับผิดชอบ / ช่าง', '')}
-    ${tr('วันที่แล้วเสร็จ', '')}
-  </table>
-  <div style="font-weight:bold;margin-bottom:4px;">บันทึกการดำเนินการ</div>
-  <div style="border:1px solid #000;min-height:72px;padding:6px 10px;line-height:1.8;white-space:pre-wrap;margin-bottom:16px;">${c.technician_note ?? ''}</div>
-
-  <!-- ลายมือชื่อ -->
-  <table style="border:none;margin-top:8px;">
+  <table style="margin-bottom:5px;font-size:13pt;">
     <tr>
-      <td style="border:none;text-align:center;width:33%;padding:0 8px;">
-        <div style="border-bottom:1px solid #000;margin-bottom:6px;height:40px;"></div>
-        <div>(${c.reporter_name || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'})</div>
-        <div style="font-weight:bold;">ผู้แจ้ง</div>
-        <div style="font-size:13pt;">วันที่ ${dateStr}</div>
+      <td style="padding:3px 8px;font-weight:bold;white-space:nowrap;width:170px;vertical-align:top;border:1px solid #999;">ผู้รับเรื่อง</td>
+      <td style="padding:3px 8px;border:1px solid #999;"></td>
+      <td style="padding:3px 8px;font-weight:bold;white-space:nowrap;width:150px;vertical-align:top;border:1px solid #999;">วันที่รับเรื่อง</td>
+      <td style="padding:3px 8px;border:1px solid #999;width:130px;"></td>
+    </tr>
+    <tr>
+      <td style="padding:3px 8px;font-weight:bold;white-space:nowrap;border:1px solid #999;">ผู้รับผิดชอบ / ช่าง</td>
+      <td style="padding:3px 8px;border:1px solid #999;"></td>
+      <td style="padding:3px 8px;font-weight:bold;white-space:nowrap;border:1px solid #999;">วันที่แล้วเสร็จ</td>
+      <td style="padding:3px 8px;border:1px solid #999;"></td>
+    </tr>
+  </table>
+  <div style="font-weight:bold;font-size:13pt;margin-bottom:3px;">บันทึกการดำเนินการ</div>
+  <div style="border:1px solid #000;min-height:56px;padding:5px 10px;font-size:13pt;line-height:1.7;white-space:pre-wrap;margin-bottom:14px;">${c.technician_note ?? ''}</div>
+
+  <!-- ลายมือชื่อ เฉพาะเจ้าหน้าที่ -->
+  <table style="border:none;margin-top:4px;font-size:13pt;">
+    <tr>
+      <td style="border:none;width:50%;padding:0 8px 0 0;">
+        <div style="border-bottom:1px solid #000;height:36px;margin-bottom:5px;"></div>
+        <div style="text-align:center;">(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</div>
+        <div style="text-align:center;font-weight:bold;">เจ้าหน้าที่ผู้รับเรื่อง</div>
+        <div style="text-align:center;">วันที่ .................................</div>
       </td>
-      <td style="border:none;text-align:center;width:34%;padding:0 8px;">
-        <div style="border:2px solid #000;height:80px;display:flex;align-items:center;justify-content:center;font-size:12pt;color:#555;">ประทับตราหน่วยงาน</div>
-      </td>
-      <td style="border:none;text-align:center;width:33%;padding:0 8px;">
-        <div style="border-bottom:1px solid #000;margin-bottom:6px;height:40px;"></div>
-        <div>(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</div>
-        <div style="font-weight:bold;">เจ้าหน้าที่ผู้รับเรื่อง</div>
-        <div style="font-size:13pt;">วันที่ .................................</div>
+      <td style="border:none;width:50%;padding:0 0 0 8px;">
+        <div style="border-bottom:1px solid #000;height:36px;margin-bottom:5px;"></div>
+        <div style="text-align:center;">(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</div>
+        <div style="text-align:center;font-weight:bold;">ผู้อนุมัติ / หัวหน้างาน</div>
+        <div style="text-align:center;">วันที่ .................................</div>
       </td>
     </tr>
   </table>
@@ -560,6 +565,7 @@ export default function TechnicianDashboard() {
           onUpdate={updateStatus}
           updating={updating}
           tenantName={tenant?.name}
+          tenantLogo={tenant?.logo_url}
         />
       )}
 
