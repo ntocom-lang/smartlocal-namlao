@@ -7,6 +7,7 @@ import Header from './components/layout/Header'
 import Footer from './components/layout/Footer'
 import BottomNav from './components/layout/BottomNav'
 import InstallPrompt from './components/InstallPrompt'
+import ScrollToTopButton from './components/ScrollToTopButton'
 import InAppBrowserGate from './components/InAppBrowserGate'
 import HomePage from './pages/HomePage'
 import CitizenForm from './pages/CitizenForm'
@@ -248,6 +249,7 @@ function AppShell() {
         <Footer />
         <BottomNav />
         <InstallPrompt />
+        <ScrollToTopButton />
       </NotificationsProvider>
     </div>
   )

@@ -6,11 +6,20 @@ import { useTheme } from '../../contexts/ThemeContext'
 import { supabase } from '../../lib/supabase'
 import { useNotifications } from '../../contexts/NotificationsContext'
 
-const NAV_LINKS = [
+const NAV_CITIZEN = [
   { label: 'หน้าแรก',       href: '/' },
   { label: 'ยื่นคำร้อง',    href: '/complaint' },
   { label: 'คำร้องของฉัน',  href: '/my-complaints' },
-  { label: 'โปรไฟล์',       href: '/profile' },
+  { label: 'แจ้งเตือน',     href: '/notifications' },
+  { label: 'เมนูอื่นๆ',     href: '/more' },
+]
+
+const NAV_TECH = [
+  { label: 'หน้าแรก',       href: '/' },
+  { label: 'งานของฉัน',     href: '/technician' },
+  { label: 'คำร้องของฉัน',  href: '/my-complaints' },
+  { label: 'แจ้งเตือน',     href: '/notifications' },
+  { label: 'เมนูอื่นๆ',     href: '/more' },
 ]
 
 export default function Header() {
@@ -87,20 +96,40 @@ export default function Header() {
 
           {/* Desktop nav */}
           <nav className="hidden md:flex items-center gap-0.5">
-            {NAV_LINKS.map((l) => {
-              const isActive = location.pathname === l.href ||
-                (l.href !== '/' && location.pathname.startsWith(l.href))
+            {(role === 'technician' ? NAV_TECH : NAV_CITIZEN).map((l) => {
+              const isActive = l.href === '/'
+                ? location.pathname === '/'
+                : location.pathname.startsWith(l.href)
               return (
                 <Link key={l.href} to={l.href}
-                   className={`px-3 py-2 rounded-lg text-sm transition-colors font-medium ${
+                   className={`relative px-3 py-2 rounded-lg text-sm transition-colors font-medium ${
                      isActive
                        ? 'text-white bg-white/20'
                        : 'text-white/80 hover:text-white hover:bg-white/12'
                    }`}>
                   {l.label}
+                  {l.href === '/notifications' && unreadCount > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 min-w-3.5 h-3.5 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5">
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                  )}
                 </Link>
               )
             })}
+            {isAdmin && (
+              <Link to="/admin"
+                className="ml-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-colors hover:opacity-90"
+                style={{ backgroundColor: 'white', color: 'var(--color-primary)' }}>
+                <LayoutDashboard size={13} /> Admin
+              </Link>
+            )}
+            {role === 'viewer' && (
+              <Link to="/admin"
+                className="ml-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-colors hover:opacity-90"
+                style={{ backgroundColor: 'white', color: 'var(--color-primary)' }}>
+                <LayoutDashboard size={13} /> รายงาน
+              </Link>
+            )}
           </nav>
 
           {/* Theme toggle */}
