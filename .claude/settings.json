@@ -16,7 +16,20 @@
       "Bash(sed -i 's/\\\\.select\\('\\\\''role'\\\\''\\)\\\\.eq\\('\\\\''id'\\\\'', data\\\\.session\\\\.user\\\\.id\\)\\\\.single\\(\\)/.select\\('\\\\''role'\\\\''\\).eq\\('\\\\''id'\\\\'', data.session.user.id\\).maybeSingle\\(\\)/g' src/components/layout/BottomNav.jsx)",
       "Bash(node -e \"const l = require\\('lucide-react'\\); console.log\\('UploadIcon:', !!l.UploadIcon, 'PlusSquare:', !!l.PlusSquare, 'Upload:', !!l.Upload\\)\")",
       "Bash(del \"d:\\\\VS Code\\\\E-Service\\\\SmartLocal v1.1\\\\src\\\\pages\\\\LineCallback.jsx\")",
-      "Bash(del \"d:\\\\VS Code\\\\E-Service\\\\SmartLocal v1.1\\\\src\\\\components\\\\LineBrowserBanner.jsx\")"
+      "Bash(del \"d:\\\\VS Code\\\\E-Service\\\\SmartLocal v1.1\\\\src\\\\components\\\\LineBrowserBanner.jsx\")",
+      "Bash(Get-ChildItem -Path \"d:\\\\VS Code\\\\E-Service\\\\SmartLocal v1.1\\\\src\" -Recurse -File)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Sort-Object)",
+      "Bash(pg_dump --version)",
+      "Read(//c/Program Files/PostgreSQL/**)",
+      "Bash(npx tsc *)",
+      "Bash(Get-ChildItem -Path \"d:\\\\VS Code\\\\E-Service\\\\SmartLocal v1.1\\\\src\" -Recurse -Directory)",
+      "Bash(Select-Object -First 20)",
+      "Bash(Format-Table FullName)",
+      "Bash(node -e \"const fs=require\\('fs'\\); const html=fs.readFileSync\\('public/manual-citizen.html','utf8'\\); const styleCount=\\(html.match\\(/<style/g\\)||[]\\).length; const closeStyleCount=\\(html.match\\(/<\\\\/style>/g\\)||[]\\).length; console.log\\('style tags:', styleCount, closeStyleCount\\); console.log\\('Total size:', html.length, 'chars'\\);\")",
+      "Bash(node -e \"const fs=require\\('fs'\\); const html=fs.readFileSync\\('public/manual-citizen.html','utf8'\\); const ids=html.match\\(/id=\\\\\"\\(step\\\\d|faq\\)\\\\\"/g\\); console.log\\('IDs found:', ids\\); const hrefs=html.match\\(/href=\\\\\"#\\(step\\\\d|faq\\)\\\\\"/g\\); console.log\\('Hrefs found:', hrefs\\);\")",
+      "Bash(git restore *)",
+      "Bash(findstr -i \"supabase\\\\|notification\\\\|push\\\\|tag\")"
     ]
   }
 }

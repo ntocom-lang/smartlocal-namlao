@@ -350,10 +350,23 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
     const assignee = c.assigned_to_name || '—'
     const nowTH = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
 
-    const workPhotosHtml = (c.work_photos ?? []).length > 0
-      ? `<p style="margin:16px 0 6px;font-weight:600">ภาพผลการดำเนินงาน</p>
-         <div style="display:flex;flex-wrap:wrap;gap:8px">${(c.work_photos).map(u => `<img src="${u}" style="width:160px;height:120px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb">`).join('')}</div>`
-      : ''
+    const hasAttachments = (c.attachments ?? []).length > 0
+    const hasWorkPhotos = (c.work_photos ?? []).length > 0
+
+    const imgStyle = 'width:calc(25% - 5px);height:90px;object-fit:cover;border-radius:5px;border:1px solid #e5e7eb;display:inline-block;vertical-align:top'
+    const renderPhotos = (urls) =>
+      `<div style="display:flex;flex-wrap:wrap;gap:6px">${urls.map(u => `<img src="${u}" style="${imgStyle}">`).join('')}</div>`
+
+    const photoSectionHtml = (hasAttachments || hasWorkPhotos) ? `
+<p style="margin:16px 0 6px;font-weight:600;font-size:14px">ภาพประกอบ</p>
+${hasAttachments ? `<div style="margin-bottom:10px">
+  <div style="font-weight:600;font-size:12px;margin-bottom:4px;color:#374151">ก่อนดำเนินการ (${c.attachments.length} รูป)</div>
+  ${renderPhotos(c.attachments)}
+</div>` : ''}
+${hasWorkPhotos ? `<div>
+  <div style="font-weight:600;font-size:12px;margin-bottom:4px;color:#374151">หลังดำเนินการ (${c.work_photos.length} รูป)</div>
+  ${renderPhotos(c.work_photos)}
+</div>` : ''}` : ''
 
     const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
 <title>ใบคำร้อง ${num}</title>
@@ -394,7 +407,7 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
 <p style="margin:20px 0 6px;font-weight:600">รายละเอียดคำร้อง</p>
 <div class="detail-box">${(c.detail ?? '—').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}</div>
 
-${workPhotosHtml}
+${photoSectionHtml}
 
 <div class="footer">
   <div class="sign-block">
