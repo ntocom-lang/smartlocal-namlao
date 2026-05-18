@@ -6,12 +6,14 @@ import StaffSection from '../components/home/StaffSection'
 import ServiceButtons from '../components/home/ServiceButtons'
 import NewsSection from '../components/home/NewsSection'
 import EmergencyGrid from '../components/home/EmergencyGrid'
+import StatCards from '../components/home/StatCards'
 import { Info, LayoutDashboard, ChevronRight } from 'lucide-react'
 
 export default function HomePage() {
   const { tenant } = useTenant()
   const [session, setSession] = useState(undefined)
   const [role, setRole] = useState(null)
+  const [stats, setStats] = useState({})
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
@@ -28,13 +30,30 @@ export default function HomePage() {
       .then(({ data }) => setRole(data?.role ?? 'citizen'))
   }, [session])
 
+  useEffect(() => {
+    if (!tenant?.id) return
+    supabase.from('complaints')
+      .select('status')
+      .eq('municipality_id', tenant.id)
+      .then(({ data }) => {
+        if (!data) return
+        const counts = { total: data.length, completed: 0, received: 0, inProgress: 0 }
+        data.forEach(({ status }) => {
+          if (status === 'completed') counts.completed++
+          else if (status === 'received') counts.received++
+          else if (status === 'in_progress') counts.inProgress++
+        })
+        setStats(counts)
+      })
+  }, [tenant?.id])
+
   const isAdmin = role === 'admin' || role === 'superadmin'
   const isViewer = role === 'viewer'
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+    <div className="max-w-6xl mx-auto px-4 py-6 space-y-5">
 
-      {/* Admin / Viewer banner */}
+      {/* Admin / Viewer banner — full width */}
       {(isAdmin || isViewer) && (
         <a href="/admin"
           className="flex items-center gap-3 rounded-2xl px-4 py-3.5 shadow-md active:scale-98 transition-transform"
@@ -55,19 +74,36 @@ export default function HomePage() {
         </a>
       )}
 
-      {/* Notice bar — แสดงเฉพาะคนที่ยังไม่ได้ login */}
-      {!session && (
-        <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800 dark:bg-blue-900/30 dark:border-blue-700/50 dark:text-blue-200">
-          <Info size={16} className="shrink-0 mt-0.5" />
-          <p>สมัครสมาชิกเพื่อติดตามสถานะคำร้องของท่าน และรับการแจ้งเตือนทันที</p>
-        </div>
-      )}
+      {/* 2-column layout on desktop */}
+      <div className="flex flex-col md:flex-row md:items-start gap-6">
 
-      <HeroBanner />
-      <StaffSection />
-      <ServiceButtons />
-      <NewsSection />
-      <EmergencyGrid />
+        {/* ── Main content ── */}
+        <div className="flex-1 min-w-0 space-y-5">
+          {!session && (
+            <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800 dark:bg-blue-900/30 dark:border-blue-700/50 dark:text-blue-200">
+              <Info size={16} className="shrink-0 mt-0.5" />
+              <p>สมัครสมาชิกเพื่อติดตามสถานะคำร้องของท่าน และรับการแจ้งเตือนทันที</p>
+            </div>
+          )}
+          <HeroBanner />
+          <ServiceButtons />
+          <StaffSection />
+
+          {/* Mobile-only: News + Emergency below main content */}
+          <div className="md:hidden space-y-5">
+            <NewsSection />
+            <EmergencyGrid />
+          </div>
+        </div>
+
+        {/* ── Desktop sidebar ── */}
+        <aside className="hidden md:flex flex-col gap-5 w-80 lg:w-96 shrink-0">
+          <StatCards stats={stats} />
+          <NewsSection />
+          <EmergencyGrid />
+        </aside>
+
+      </div>
     </div>
   )
 }
