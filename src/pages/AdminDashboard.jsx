@@ -84,16 +84,19 @@ function StatusBadge({ status }) {
   )
 }
 
-function StatusStepper({ status }) {
+function StatusStepper({ status, note }) {
   if (status === 'rejected') {
     return (
-      <div className="flex items-center gap-3 p-4 bg-red-50 rounded-2xl border border-red-100">
-        <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+      <div className="flex items-start gap-3 p-4 bg-red-50 rounded-2xl border border-red-100">
+        <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0 mt-0.5">
           <XCircle size={20} className="text-red-500" />
         </div>
         <div>
           <p className="text-sm font-semibold text-red-700">คำร้องถูกปฏิเสธ</p>
-          <p className="text-xs text-red-400 mt-0.5">ระบบยุติการดำเนินการคำร้องนี้</p>
+          {note
+            ? <p className="text-xs text-red-600 mt-1 leading-relaxed">เหตุผล: {note}</p>
+            : <p className="text-xs text-red-400 mt-0.5">ระบบยุติการดำเนินการคำร้องนี้</p>
+          }
         </div>
       </div>
     )
@@ -159,26 +162,92 @@ function StatusStepper({ status }) {
 
 function ActionButton({ status, id, onUpdate, loading }) {
   const action = NEXT_ACTION[status]
+  const [confirm, setConfirm] = useState(false)
   if (!action) return null
   return (
-    <button onClick={() => onUpdate(id, action.next)} disabled={loading === id}
-      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white transition-all active:scale-95 disabled:opacity-50"
-      style={{ backgroundColor: 'var(--color-primary)' }}>
-      {loading === id
-        ? <Loader2 size={12} className="animate-spin" />
-        : <ChevronRight size={12} />}
-      {action.label}
-    </button>
+    <>
+      <button onClick={() => setConfirm(true)} disabled={loading === id}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white transition-all active:scale-95 disabled:opacity-50"
+        style={{ backgroundColor: 'var(--color-primary)' }}>
+        {loading === id
+          ? <Loader2 size={12} className="animate-spin" />
+          : <ChevronRight size={12} />}
+        {action.label}
+      </button>
+      {confirm && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40" onClick={() => setConfirm(false)}>
+          <div className="bg-white rounded-2xl p-5 shadow-xl w-72 mx-4" onClick={(e) => e.stopPropagation()}>
+            <p className="text-sm font-semibold text-gray-800 mb-1">ยืนยันการเปลี่ยนสถานะ</p>
+            <p className="text-xs text-gray-500 mb-4">ต้องการ <span className="font-medium text-gray-800">"{action.label}"</span> ใช่หรือไม่?</p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setConfirm(false); onUpdate(id, action.next) }}
+                disabled={loading === id}
+                className="flex-1 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
+                style={{ backgroundColor: 'var(--color-primary)' }}>
+                ยืนยัน
+              </button>
+              <button onClick={() => setConfirm(false)}
+                className="flex-1 py-2 rounded-xl text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 
 function RejectButton({ status, id, onUpdate, loading }) {
+  const [open, setOpen] = useState(false)
+  const [reason, setReason] = useState('')
+  const [err, setErr] = useState('')
   if (status === 'completed' || status === 'rejected') return null
+
+  function handleConfirm() {
+    if (!reason.trim()) { setErr('กรุณาระบุเหตุผลการปฏิเสธ'); return }
+    onUpdate(id, 'rejected', [], reason.trim())
+    setOpen(false)
+    setReason('')
+    setErr('')
+  }
+
   return (
-    <button onClick={() => onUpdate(id, 'rejected')} disabled={loading === id}
-      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition-colors disabled:opacity-50">
-      <XCircle size={12} /> ปฏิเสธ
-    </button>
+    <>
+      <button onClick={() => setOpen(true)} disabled={loading === id}
+        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition-colors disabled:opacity-50">
+        <XCircle size={12} /> ปฏิเสธ
+      </button>
+      {open && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40" onClick={() => { setOpen(false); setReason(''); setErr('') }}>
+          <div className="bg-white rounded-2xl p-5 shadow-xl w-80 mx-4" onClick={(e) => e.stopPropagation()}>
+            <p className="text-sm font-semibold text-gray-800 mb-1 flex items-center gap-2">
+              <XCircle size={14} className="text-red-500" /> ปฏิเสธคำร้อง
+            </p>
+            <p className="text-xs text-gray-500 mb-3">กรุณาระบุเหตุผลที่ปฏิเสธคำร้องนี้</p>
+            <textarea
+              value={reason}
+              onChange={(e) => { setReason(e.target.value); setErr('') }}
+              rows={3}
+              placeholder="เช่น ไม่อยู่ในความรับผิดชอบ, ข้อมูลไม่ครบถ้วน..."
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-800 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-red-200"
+            />
+            {err && <p className="text-xs text-red-500 mt-1">{err}</p>}
+            <div className="flex gap-2 mt-3">
+              <button onClick={handleConfirm} disabled={loading === id}
+                className="flex-1 py-2 rounded-xl text-sm font-semibold text-white bg-red-500 hover:bg-red-600 disabled:opacity-50">
+                ยืนยันปฏิเสธ
+              </button>
+              <button onClick={() => { setOpen(false); setReason(''); setErr('') }}
+                className="flex-1 py-2 rounded-xl text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -253,6 +322,7 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
   const [closeNote, setCloseNote] = useState('')
   const [closeUploading, setCloseUploading] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [overrideConfirm, setOverrideConfirm] = useState(null)
 
   async function handleDelete() {
     if (!window.confirm(`ลบคำร้องนี้ออกจากระบบ?\n\nการลบไม่สามารถย้อนกลับได้`)) return
@@ -416,7 +486,7 @@ ${workPhotosHtml}
           {/* status stepper */}
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">ความคืบหน้า</p>
-            <StatusStepper status={c.status} />
+            <StatusStepper status={c.status} note={c.technician_note} />
           </div>
 
           {/* assign technician */}
@@ -587,7 +657,7 @@ ${workPhotosHtml}
                 style={{ backgroundColor: 'var(--color-primary)' }}>
                 <CheckCircle2 size={12} /> ปิดงาน
               </button>
-              <RejectButton status={c.status} id={c.id} onUpdate={(id, next) => { onUpdate(id, next, []); onClose() }} loading={updating} />
+              <RejectButton status={c.status} id={c.id} onUpdate={(id, next, wp = [], note = null) => { onUpdate(id, next, wp, note); onClose() }} loading={updating} />
               {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
                 <button onClick={handleDelete} disabled={deleting}
                   className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 transition-colors disabled:opacity-50">
@@ -657,8 +727,8 @@ ${workPhotosHtml}
             </div>
           ) : (
             <div className="flex gap-2 flex-wrap">
-              <ActionButton status={c.status} id={c.id} onUpdate={(id, next) => { onUpdate(id, next, []); onClose() }} loading={updating} />
-              <RejectButton status={c.status} id={c.id} onUpdate={(id, next) => { onUpdate(id, next, []); onClose() }} loading={updating} />
+              <ActionButton status={c.status} id={c.id} onUpdate={(id, next, wp = [], note = null) => { onUpdate(id, next, wp, note); onClose() }} loading={updating} />
+              <RejectButton status={c.status} id={c.id} onUpdate={(id, next, wp = [], note = null) => { onUpdate(id, next, wp, note); onClose() }} loading={updating} />
               <button onClick={handlePrintComplaint}
                 className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
                 <Printer size={13} /> พิมพ์
@@ -684,7 +754,7 @@ ${workPhotosHtml}
               <div className="flex items-center gap-2">
                 <FixedSelect
                   value={c.status}
-                  onChange={(val) => { onUpdate(c.id, val, []); onClose() }}
+                  onChange={(val) => setOverrideConfirm(val)}
                   options={Object.entries(STATUS).map(([key, s]) => ({ value: key, label: s.label }))}
                 />
               </div>
@@ -692,6 +762,30 @@ ${workPhotosHtml}
           )}
         </div>
       </div>
+
+      {/* Superadmin override confirm dialog */}
+      {overrideConfirm && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40" onClick={() => setOverrideConfirm(null)}>
+          <div className="bg-white rounded-2xl p-5 shadow-xl w-72 mx-4" onClick={(e) => e.stopPropagation()}>
+            <p className="text-sm font-semibold text-gray-800 mb-1">ยืนยันการเปลี่ยนสถานะ</p>
+            <p className="text-xs text-gray-500 mb-4">
+              เปลี่ยนเป็น <span className="font-medium text-gray-800">"{STATUS[overrideConfirm]?.label}"</span> ใช่หรือไม่?
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => { onUpdate(c.id, overrideConfirm, []); setOverrideConfirm(null); onClose() }}
+                className="flex-1 py-2 rounded-xl text-sm font-semibold text-white"
+                style={{ backgroundColor: 'var(--color-primary)' }}>
+                ยืนยัน
+              </button>
+              <button onClick={() => setOverrideConfirm(null)}
+                className="flex-1 py-2 rounded-xl text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -2257,9 +2351,14 @@ function ReportManager({ complaints, tenant }) {
   // ประเภทคำร้อง
   const catCount = {}
   viewData.forEach(c => { catCount[c.category] = (catCount[c.category] || 0) + 1 })
-  const catData = Object.entries(catCount)
+  const catDataAll = Object.entries(catCount)
     .map(([cat, count]) => ({ name: CATEGORY_LABEL[cat] ?? cat, emoji: CATEGORY_EMOJI[cat] ?? '📄', count }))
-    .sort((a, b) => b.count - a.count).slice(0, 6)
+    .sort((a, b) => b.count - a.count)
+  const catData = catDataAll.slice(0, 6)
+  const otherCount = catDataAll.slice(6).reduce((s, d) => s + d.count, 0)
+  const catPieData = otherCount > 0 ? [...catData, { name: 'อื่นๆ', emoji: '📄', count: otherCount }] : catData
+
+  const CAT_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#94a3b8']
 
   // คำร้องค้างนานเกิน 7 วัน
   const overdue = complaints
@@ -2374,26 +2473,63 @@ function ReportManager({ complaints, tenant }) {
           {catData.length === 0 ? (
             <p className="text-sm text-gray-400 text-center py-8">ไม่มีข้อมูล</p>
           ) : (
-            <div className="space-y-3">
-              {catData.map(({ name, emoji, count }, i) => (
-                <div key={i}>
-                  <div className="flex items-center justify-between text-xs mb-1.5">
-                    <span className="text-gray-700 font-medium flex items-center gap-1.5 truncate">
-                      <span>{emoji}</span> {name}
-                    </span>
-                    <span className="text-gray-400 shrink-0 ml-2 font-semibold">{count}</span>
+            <>
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie
+                    data={catPieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={48}
+                    outerRadius={78}
+                    dataKey="count"
+                    nameKey="name"
+                    paddingAngle={2}
+                    label={({ cx, cy, midAngle, outerRadius, count }) => {
+                      const RADIAN = Math.PI / 180
+                      const x = cx + (outerRadius + 14) * Math.cos(-midAngle * RADIAN)
+                      const y = cy + (outerRadius + 14) * Math.sin(-midAngle * RADIAN)
+                      return (
+                        <text x={x} y={y} textAnchor="middle" dominantBaseline="central"
+                          fontSize={11} fontWeight={700} fill="#374151">
+                          {count}
+                        </text>
+                      )
+                    }}
+                    labelLine={{ stroke: '#d1d5db', strokeWidth: 1 }}
+                  >
+                    {catPieData.map((_, i) => (
+                      <Cell key={i} fill={CAT_COLORS[i % CAT_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(value, name) => [`${value} รายการ`, name]}
+                    contentStyle={{ borderRadius: 12, border: '1px solid #f3f4f6', fontSize: 12 }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="space-y-2.5 mt-2">
+                {catData.map(({ name, emoji, count }, i) => (
+                  <div key={i}>
+                    <div className="flex items-center justify-between text-xs mb-1.5">
+                      <span className="text-gray-700 font-medium flex items-center gap-2 truncate">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: CAT_COLORS[i % CAT_COLORS.length] }} />
+                        <span>{emoji}</span> {name}
+                      </span>
+                      <span className="text-gray-500 shrink-0 ml-2 font-semibold">{count}</span>
+                    </div>
+                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full transition-all"
+                        style={{
+                          width: `${count / catData[0].count * 100}%`,
+                          backgroundColor: CAT_COLORS[i % CAT_COLORS.length],
+                          opacity: 0.75,
+                        }} />
+                    </div>
                   </div>
-                  <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full rounded-full transition-all"
-                      style={{
-                        width: `${count / catData[0].count * 100}%`,
-                        backgroundColor: 'var(--color-primary)',
-                        opacity: 0.5 + 0.5 * (count / catData[0].count),
-                      }} />
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
 
@@ -2461,7 +2597,7 @@ export default function AdminDashboard() {
         .then(({ data: p }) => {
           const r = p?.role ?? 'citizen'
           setCurrentUserRole(r)
-          if (r === 'viewer') setActivePage('complaints')
+          if (r === 'viewer') setActivePage('report')
           return r
         })
     })
@@ -2669,6 +2805,13 @@ export default function AdminDashboard() {
 
       {/* Tab navigation — desktop only */}
       <div className="hidden md:flex gap-2">
+        {currentUserRole === 'viewer' && (
+          <button onClick={() => setActivePage('report')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'report' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+            style={activePage === 'report' ? { backgroundColor: '#10b981' } : {}}>
+            <TrendingUp size={15} /> รายงาน
+          </button>
+        )}
         <button onClick={() => setActivePage('complaints')}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'complaints' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
           style={activePage === 'complaints' ? { backgroundColor: 'var(--color-primary)' } : {}}>
@@ -2694,6 +2837,13 @@ export default function AdminDashboard() {
           <Wrench size={15} /> ผู้รับผิดชอบ
         </button>
         {currentUserRole !== 'viewer' && (
+          <button onClick={() => setActivePage('report')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'report' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+            style={activePage === 'report' ? { backgroundColor: '#10b981' } : {}}>
+            <TrendingUp size={15} /> รายงาน
+          </button>
+        )}
+        {currentUserRole !== 'viewer' && (
           <button onClick={() => setActivePage('more')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'more' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
             style={activePage === 'more' ? { backgroundColor: '#6b7280' } : {}}>
@@ -2710,6 +2860,9 @@ export default function AdminDashboard() {
       >
         {[
           { key: 'home',       label: 'หน้าแรก', Icon: Home,          activeColor: '#6b7280' },
+          ...(currentUserRole === 'viewer'
+            ? [{ key: 'report', label: 'รายงาน', Icon: TrendingUp, activeColor: '#10b981' }]
+            : []),
           { key: 'complaints', label: 'คำร้อง',  Icon: ClipboardList, activeColor: 'var(--color-primary)' },
           ...(currentUserRole !== 'viewer'
             ? [{ key: 'categories', label: 'ประเภท', Icon: Tag, activeColor: '#d97706' }]
@@ -2718,6 +2871,9 @@ export default function AdminDashboard() {
             ? [{ key: 'users', label: 'ผู้ใช้', Icon: Shield, activeColor: '#7c3aed' }]
             : []),
           { key: 'assignments', label: 'ผู้รับผิดชอบ', Icon: Wrench, activeColor: '#d97706' },
+          ...(currentUserRole !== 'viewer'
+            ? [{ key: 'report', label: 'รายงาน', Icon: TrendingUp, activeColor: '#10b981' }]
+            : []),
           ...(currentUserRole !== 'viewer'
             ? [{ key: 'more', label: 'อื่นๆ', Icon: LayoutGrid, activeColor: '#6b7280' }]
             : []),

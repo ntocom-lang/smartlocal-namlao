@@ -1,0 +1,1930 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>คู่มือการใช้งาน — ระบบยื่นคำร้องออนไลน์ (สำหรับประชาชน)</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  html { scroll-behavior: smooth; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --blue: #1976d2;
+    --blue-dark: #1451a8;
+    --blue-light: #e3f2fd;
+    --green: #10b981;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --purple: #8b5cf6;
+    --gray-50: #f9fafb;
+    --gray-100: #f3f4f6;
+    --gray-200: #e5e7eb;
+    --gray-400: #9ca3af;
+    --gray-500: #6b7280;
+    --gray-700: #374151;
+    --gray-800: #1f2937;
+  }
+
+  body {
+    font-family: 'Sarabun', sans-serif;
+    font-size: 15px;
+    line-height: 1.7;
+    color: var(--gray-800);
+    background: #fff;
+  }
+
+  /* ─── Page Layout ─── */
+  .page {
+    width: 210mm;
+    max-width: 100%;
+    min-height: 297mm;
+    margin: 0 auto 20px;
+    padding: 0;
+    background: #fff;
+    box-shadow: 0 2px 20px rgba(0,0,0,0.12);
+  }
+
+  @media print {
+    body { background: #fff; }
+    .page { width: 210mm; max-width: 210mm; box-shadow: none; margin: 0; page-break-after: always; }
+    .content-page { padding: 20mm 18mm 16mm; min-height: 270mm; }
+    .cover { min-height: 270mm; }
+    .no-print { display: none; }
+  }
+
+  /* ─── Cover Page ─── */
+  .cover {
+    background: linear-gradient(160deg, var(--blue-dark) 0%, var(--blue) 55%, #42a5f5 100%);
+    min-height: 297mm;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: #fff;
+    padding: 40px;
+    position: relative;
+    overflow: hidden;
+  }
+  .cover::before {
+    content: '';
+    position: absolute;
+    width: 400px; height: 400px;
+    border-radius: 50%;
+    border: 60px solid rgba(255,255,255,0.06);
+    top: -100px; right: -100px;
+  }
+  .cover::after {
+    content: '';
+    position: absolute;
+    width: 300px; height: 300px;
+    border-radius: 50%;
+    border: 50px solid rgba(255,255,255,0.05);
+    bottom: -80px; left: -80px;
+  }
+  .cover-badge {
+    background: rgba(255,255,255,0.18);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 99px;
+    padding: 6px 20px;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    margin-bottom: 28px;
+  }
+  .cover-logo {
+    width: 100px; height: 100px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.25);
+    border: 3px solid rgba(255,255,255,0.5);
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 24px;
+    font-size: 48px;
+  }
+  .cover h1 {
+    font-size: 34px;
+    font-weight: 800;
+    line-height: 1.25;
+    margin-bottom: 12px;
+  }
+  .cover p {
+    font-size: 17px;
+    color: rgba(255,255,255,0.8);
+    max-width: 360px;
+    margin: 0 auto 36px;
+  }
+  .cover-divider {
+    width: 60px; height: 3px;
+    background: rgba(255,255,255,0.5);
+    border-radius: 99px;
+    margin: 0 auto 36px;
+  }
+  .cover-steps {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 40px;
+  }
+  .cover-step {
+    background: rgba(255,255,255,0.18);
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 16px;
+    padding: 12px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 120px;
+  }
+  .cover-step-num {
+    width: 24px; height: 24px;
+    background: rgba(255,255,255,0.3);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 800;
+  }
+  .cover-footer {
+    position: absolute;
+    bottom: 28px;
+    font-size: 12px;
+    color: rgba(255,255,255,0.55);
+    letter-spacing: 0.3px;
+  }
+
+  /* ─── Content Pages ─── */
+  .content-page { padding: 36px 28px 28px; min-height: 297mm; }
+
+  .page-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 16px;
+    border-bottom: 2px solid var(--blue);
+    margin-bottom: 28px;
+  }
+  .page-header-icon {
+    width: 40px; height: 40px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--blue-dark), var(--blue));
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+  .page-header h2 {
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--blue-dark);
+  }
+  .page-header p {
+    font-size: 13px;
+    color: var(--gray-500);
+    margin-top: 1px;
+  }
+
+  /* ─── Step Layout ─── */
+  .step-section {
+    display: grid;
+    grid-template-columns: 1fr 200px;
+    gap: 28px;
+    align-items: start;
+    margin-bottom: 36px;
+    page-break-inside: avoid;
+  }
+  .step-section.reverse { grid-template-columns: 200px 1fr; }
+  .step-section.reverse .phone-col { order: -1; }
+
+  .step-num {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: linear-gradient(135deg, var(--blue-dark), var(--blue));
+    color: #fff;
+    border-radius: 99px;
+    padding: 4px 14px 4px 4px;
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 10px;
+  }
+  .step-num-circle {
+    width: 28px; height: 28px;
+    background: rgba(255,255,255,0.25);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 14px;
+  }
+  h3 {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--gray-800);
+    margin-bottom: 10px;
+  }
+  .step-desc { font-size: 14px; color: var(--gray-700); margin-bottom: 14px; line-height: 1.75; }
+
+  .tips {
+    background: var(--blue-light);
+    border-left: 4px solid var(--blue);
+    border-radius: 0 10px 10px 0;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--blue-dark);
+    margin-top: 12px;
+  }
+  .tips strong { display: block; font-weight: 700; margin-bottom: 3px; }
+
+  .note-box {
+    background: #fff8e1;
+    border: 1px solid #ffd54f;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: #7c5c00;
+    margin-top: 10px;
+  }
+
+  ul.steps-list { list-style: none; margin: 0; padding: 0; }
+  ul.steps-list li {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    margin-bottom: 8px;
+    font-size: 14px;
+    color: var(--gray-700);
+  }
+  ul.steps-list li::before {
+    content: attr(data-n);
+    min-width: 22px; height: 22px;
+    background: var(--blue);
+    color: #fff;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  /* ─── Phone Frame ─── */
+  .phone-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .phone {
+    width: 190px;
+    background: #1a1a2e;
+    border-radius: 32px;
+    padding: 10px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(255,255,255,0.08);
+    position: relative;
+  }
+  .phone-notch {
+    width: 60px; height: 6px;
+    background: #0d0d1a;
+    border-radius: 99px;
+    margin: 0 auto 6px;
+  }
+  .phone-screen {
+    background: var(--gray-50);
+    border-radius: 22px;
+    overflow: hidden;
+    min-height: 340px;
+  }
+
+  /* caption under phone */
+  .phone-caption {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--gray-500);
+    text-align: center;
+    font-weight: 600;
+  }
+
+  /* ─── App Screen Components ─── */
+  .app-header {
+    background: linear-gradient(135deg, var(--blue-dark) 0%, var(--blue) 100%);
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .app-header-logo {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.25);
+    border: 1px solid rgba(255,255,255,0.4);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+  .app-header-title { color: #fff; font-size: 10px; font-weight: 700; line-height: 1.3; }
+  .app-header-sub { color: rgba(255,255,255,0.7); font-size: 8px; }
+  .app-header-right { margin-left: auto; display: flex; gap: 4px; }
+  .app-header-btn {
+    width: 22px; height: 22px;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.2);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: #fff;
+  }
+
+  .app-back-header {
+    background: linear-gradient(135deg, var(--blue-dark) 0%, var(--blue) 100%);
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .app-back-btn {
+    width: 24px; height: 24px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.2);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; color: #fff; flex-shrink: 0;
+  }
+  .app-back-title { color: #fff; font-size: 10px; font-weight: 700; }
+  .app-back-sub { color: rgba(255,255,255,0.65); font-size: 8px; }
+
+  .screen-body { padding: 10px; }
+
+  /* Hero */
+  .hero-banner {
+    margin: 10px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, var(--blue-dark), var(--blue));
+    padding: 14px 12px;
+    color: #fff;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero-banner::after {
+    content: '';
+    position: absolute;
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    border: 15px solid rgba(255,255,255,0.08);
+    right: -20px; bottom: -20px;
+  }
+  .hero-banner p { font-size: 10px; font-weight: 700; margin-bottom: 4px; }
+  .hero-banner small { font-size: 8px; color: rgba(255,255,255,0.75); display: block; margin-bottom: 8px; }
+  .hero-cta {
+    display: inline-block;
+    background: #fff;
+    color: var(--blue);
+    font-size: 9px;
+    font-weight: 700;
+    padding: 5px 12px;
+    border-radius: 99px;
+  }
+
+  /* Service grid */
+  .service-section { padding: 0 10px 6px; }
+  .service-label { font-size: 9px; font-weight: 700; color: var(--gray-700); margin-bottom: 6px; }
+  .service-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+  }
+  .service-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    background: #fff;
+    border-radius: 10px;
+    padding: 7px 4px;
+    border: 1px solid var(--gray-200);
+  }
+  .service-emoji {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px;
+  }
+  .service-item span { font-size: 7px; color: var(--gray-700); text-align: center; line-height: 1.2; }
+
+  /* Category grid */
+  .cat-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 7px;
+    padding: 10px;
+  }
+  .cat-item {
+    background: #fff;
+    border-radius: 12px;
+    border: 1px solid var(--gray-200);
+    padding: 10px 6px 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+  }
+  .cat-emoji-box {
+    width: 34px; height: 34px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+  .cat-item span { font-size: 7.5px; color: var(--gray-700); text-align: center; font-weight: 600; }
+
+  .prompt-box {
+    margin: 10px 10px 0;
+    background: linear-gradient(135deg, var(--blue-dark), var(--blue));
+    color: #fff;
+    border-radius: 12px;
+    padding: 8px 12px;
+    font-size: 9px;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  /* Form fields */
+  .form-card {
+    background: #fff;
+    border-radius: 12px;
+    border: 1px solid var(--gray-200);
+    margin-bottom: 7px;
+    padding: 8px 10px;
+  }
+  .form-label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 8px;
+    font-weight: 700;
+    color: var(--gray-500);
+    margin-bottom: 4px;
+  }
+  .form-label-icon {
+    width: 14px; height: 14px;
+    border-radius: 4px;
+    background: var(--blue-light);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 8px;
+  }
+  .form-input {
+    width: 100%;
+    background: var(--gray-50);
+    border: 1px solid var(--gray-200);
+    border-radius: 7px;
+    padding: 5px 8px;
+    font-size: 8px;
+    color: var(--gray-400);
+  }
+  .form-textarea {
+    width: 100%;
+    background: var(--gray-50);
+    border: 1px solid var(--gray-200);
+    border-radius: 7px;
+    padding: 5px 8px;
+    font-size: 8px;
+    color: var(--gray-400);
+    height: 32px;
+  }
+  .form-submit {
+    background: linear-gradient(135deg, var(--blue-dark), var(--blue));
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    border-radius: 10px;
+    padding: 9px;
+    text-align: center;
+    margin: 8px 10px 0;
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+  }
+
+  /* Location pin button */
+  .location-btn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--gray-100);
+    border: 1px solid var(--gray-200);
+    border-radius: 7px;
+    padding: 5px 8px;
+    font-size: 8px;
+    color: var(--gray-500);
+  }
+
+  /* Status badges */
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 99px;
+    font-size: 8px;
+    font-weight: 700;
+  }
+  .badge-yellow { background: #fef3c7; color: #92400e; }
+  .badge-blue   { background: #dbeafe; color: #1e40af; }
+  .badge-purple { background: #ede9fe; color: #5b21b6; }
+  .badge-green  { background: #d1fae5; color: #065f46; }
+  .badge-red    { background: #fee2e2; color: #991b1b; }
+
+  /* Complaint card */
+  .complaint-card {
+    background: #fff;
+    border: 1px solid var(--gray-200);
+    border-radius: 12px;
+    padding: 9px 10px;
+    margin-bottom: 7px;
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  .complaint-emoji {
+    width: 30px; height: 30px;
+    background: var(--gray-100);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+  .complaint-info { flex: 1; min-width: 0; }
+  .complaint-title { font-size: 9px; font-weight: 700; color: var(--gray-800); margin-bottom: 2px; }
+  .complaint-sub { font-size: 8px; color: var(--gray-500); margin-bottom: 4px; }
+  .complaint-num { font-size: 7.5px; color: var(--gray-400); font-family: monospace; }
+  .complaint-arrow { font-size: 10px; color: var(--gray-400); margin-top: 8px; }
+
+  /* Success screen */
+  .success-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 30px 16px 20px;
+    text-align: center;
+  }
+  .success-icon {
+    width: 56px; height: 56px;
+    background: #d1fae5;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px;
+    margin-bottom: 12px;
+    border: 3px solid #a7f3d0;
+  }
+  .success-title { font-size: 13px; font-weight: 800; color: var(--gray-800); margin-bottom: 6px; }
+  .success-num {
+    background: var(--gray-100);
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: 9px;
+    color: var(--gray-500);
+    margin-bottom: 10px;
+    font-family: monospace;
+  }
+  .success-num strong { display: block; font-size: 14px; color: var(--gray-800); font-weight: 800; font-family: monospace; }
+  .success-desc { font-size: 8.5px; color: var(--gray-500); margin-bottom: 14px; line-height: 1.5; }
+  .success-btn {
+    background: linear-gradient(135deg, var(--blue-dark), var(--blue));
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    border-radius: 99px;
+    padding: 7px 20px;
+  }
+
+  /* Detail modal */
+  .detail-header {
+    background: linear-gradient(135deg, var(--blue-dark), var(--blue));
+    padding: 14px 12px 12px;
+    color: #fff;
+  }
+  .detail-emoji-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .detail-emoji-box {
+    width: 32px; height: 32px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+  .detail-cat { font-size: 9px; font-weight: 800; }
+  .detail-sub { font-size: 8px; color: rgba(255,255,255,0.7); }
+  .detail-meta {
+    display: flex; justify-content: space-between;
+    border-top: 1px solid rgba(255,255,255,0.2);
+    padding-top: 8px;
+    margin-top: 4px;
+  }
+  .detail-meta-item { text-align: center; }
+  .detail-meta-label { font-size: 7px; color: rgba(255,255,255,0.6); }
+  .detail-meta-val { font-size: 10px; font-weight: 800; font-family: monospace; }
+
+  /* Stepper */
+  .stepper { padding: 10px; }
+  .stepper-label { font-size: 8px; font-weight: 700; color: var(--gray-400); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+  .step-row { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 0; }
+  .step-dot-col { display: flex; flex-direction: column; align-items: center; }
+  .step-dot {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    border: 2px solid var(--gray-200);
+    background: #fff;
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .step-dot.done { background: var(--blue); border-color: var(--blue); }
+  .step-dot.done::after { content: '✓'; font-size: 7px; color: #fff; }
+  .step-dot.current { background: var(--blue); border-color: var(--blue); box-shadow: 0 0 0 3px rgba(25,118,210,0.2); }
+  .step-dot.current::after { content: '●'; font-size: 6px; color: #fff; }
+  .step-line {
+    width: 2px;
+    height: 20px;
+    background: var(--gray-200);
+    margin: 1px 0;
+  }
+  .step-line.done { background: var(--blue); }
+  .step-text { padding-top: 0; }
+  .step-text p { font-size: 8.5px; font-weight: 700; color: var(--gray-700); }
+  .step-text .current-badge {
+    display: inline-block;
+    font-size: 7px;
+    font-weight: 700;
+    background: var(--blue-light);
+    color: var(--blue);
+    padding: 1px 5px;
+    border-radius: 99px;
+    margin-left: 4px;
+  }
+  .step-text small { font-size: 7.5px; color: var(--gray-400); }
+
+  /* ─── Auth Card ─── */
+  .auth-card {
+    background: #fff;
+    border-radius: 20px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    border: 1px solid var(--gray-200);
+    margin: 12px 10px;
+    padding: 14px 12px;
+  }
+  .auth-icon {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, var(--blue-dark), var(--blue));
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    margin: 0 auto 10px;
+    color: #fff;
+  }
+  .auth-title { text-align: center; font-size: 12px; font-weight: 800; color: var(--gray-800); margin-bottom: 2px; }
+  .auth-sub { text-align: center; font-size: 8px; color: var(--gray-400); margin-bottom: 12px; }
+  .auth-tabs {
+    display: flex;
+    background: var(--gray-100);
+    border-radius: 10px;
+    padding: 3px;
+    margin-bottom: 12px;
+  }
+  .auth-tab {
+    flex: 1; text-align: center;
+    font-size: 8.5px; font-weight: 600;
+    padding: 5px;
+    border-radius: 8px;
+    color: var(--gray-500);
+  }
+  .auth-tab.active {
+    background: #fff;
+    color: var(--blue);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+    font-weight: 700;
+  }
+  .auth-input {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--gray-50);
+    border: 1px solid var(--gray-200);
+    border-radius: 9px;
+    padding: 6px 8px;
+    margin-bottom: 7px;
+    font-size: 8.5px;
+    color: var(--gray-400);
+  }
+  .auth-input-icon { font-size: 10px; color: var(--gray-400); }
+  .auth-btn {
+    width: 100%;
+    background: linear-gradient(135deg, var(--blue-dark), var(--blue));
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    border-radius: 10px;
+    padding: 9px;
+    text-align: center;
+    margin-top: 4px;
+    margin-bottom: 8px;
+  }
+  .auth-divider {
+    text-align: center;
+    font-size: 8px;
+    color: var(--gray-400);
+    margin-bottom: 8px;
+    position: relative;
+  }
+  .auth-divider::before, .auth-divider::after {
+    content: '';
+    position: absolute;
+    top: 50%; width: 38%;
+    height: 1px; background: var(--gray-200);
+  }
+  .auth-divider::before { left: 0; }
+  .auth-divider::after { right: 0; }
+  .google-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    background: #fff;
+    border: 1px solid var(--gray-200);
+    border-radius: 10px;
+    padding: 7px;
+    font-size: 8.5px;
+    font-weight: 600;
+    color: var(--gray-700);
+  }
+  .google-icon {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ea4335, #fbbc05, #34a853, #4285f4);
+    flex-shrink: 0;
+  }
+
+  /* Map picker */
+  .map-preview {
+    background: #e8f4f0;
+    border-radius: 8px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    margin-bottom: 5px;
+    position: relative;
+    overflow: hidden;
+  }
+  .map-grid {
+    position: absolute; inset: 0;
+    background-image: linear-gradient(rgba(0,0,0,0.06) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(0,0,0,0.06) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+  .map-pin { position: relative; z-index: 1; font-size: 22px; }
+  .location-selected {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: #d1fae5;
+    border: 1px solid #a7f3d0;
+    border-radius: 7px;
+    padding: 5px 8px;
+    font-size: 8px;
+    color: #065f46;
+    font-weight: 600;
+  }
+
+  /* Attachment grid */
+  .attach-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    margin-top: 5px;
+  }
+  .attach-item {
+    aspect-ratio: 1;
+    background: var(--gray-100);
+    border-radius: 7px;
+    border: 1px solid var(--gray-200);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    position: relative;
+    overflow: hidden;
+  }
+  .attach-placeholder {
+    background: linear-gradient(135deg, #e0e7ff, #dbeafe);
+    font-size: 18px;
+  }
+  .attach-add {
+    background: var(--gray-50);
+    border: 2px dashed var(--gray-200);
+    font-size: 16px;
+    color: var(--gray-400);
+  }
+
+  /* ─── Section divider ─── */
+  .section-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 24px 0 20px;
+  }
+  .section-divider-line { flex: 1; height: 1px; background: var(--gray-200); }
+  .section-divider-text {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--gray-400);
+    white-space: nowrap;
+  }
+
+  /* ─── Info table ─── */
+  .info-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+  .info-table th {
+    background: var(--blue);
+    color: #fff;
+    padding: 8px 12px;
+    text-align: left;
+    font-weight: 700;
+    font-size: 13px;
+  }
+  .info-table td { padding: 8px 12px; border-bottom: 1px solid var(--gray-100); vertical-align: top; }
+  .info-table tr:nth-child(even) td { background: var(--gray-50); }
+
+  /* ─── Status flow ─── */
+  .status-flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin: 16px 0;
+    flex-wrap: wrap;
+  }
+  .status-chip {
+    padding: 6px 14px;
+    border-radius: 99px;
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .status-arrow { font-size: 18px; color: var(--gray-400); }
+
+  /* ─── TOC ─── */
+  .toc { background: var(--gray-50); border-radius: 16px; padding: 20px 24px; margin-bottom: 20px; }
+  .toc h3 { font-size: 16px; font-weight: 800; color: var(--blue-dark); margin-bottom: 14px; }
+  .toc-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 10px;
+    border-bottom: 1px solid var(--gray-200);
+    border-radius: 10px;
+    font-size: 14px;
+    color: var(--gray-700);
+    text-decoration: none;
+    transition: background 0.15s, color 0.15s;
+    cursor: pointer;
+  }
+  a.toc-item:hover { background: var(--blue-light); color: var(--blue-dark); }
+  a.toc-item:hover .toc-num { background: linear-gradient(135deg, var(--blue-dark), var(--blue)); transform: scale(1.05); }
+  .toc-item:last-child { border-bottom: none; }
+  .toc-num {
+    min-width: 28px; height: 28px;
+    background: linear-gradient(135deg, var(--blue-dark), var(--blue));
+    color: #fff;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 800;
+  }
+  .toc-dots { flex: 1; border-bottom: 2px dotted var(--gray-300); height: 1px; margin: 0 6px; }
+  .toc-page { font-size: 13px; color: var(--gray-400); font-weight: 600; }
+
+  /* ─── Checklist ─── */
+  .checklist { margin: 10px 0; }
+  .check-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    font-size: 13.5px;
+    color: var(--gray-700);
+    padding: 6px 0;
+    border-bottom: 1px solid var(--gray-100);
+  }
+  .check-item:last-child { border-bottom: none; }
+  .check-box {
+    width: 20px; height: 20px;
+    border-radius: 6px;
+    background: var(--blue-light);
+    border: 2px solid var(--blue);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: var(--blue); font-weight: 800;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  /* ─── Mobile Responsive ─── */
+  @media (max-width: 640px) {
+    body { background: #f1f5f9; font-size: 14px; }
+
+    .page {
+      width: 100%;
+      min-height: unset;
+      margin: 0 0 10px;
+      box-shadow: none;
+      border-radius: 0;
+    }
+
+    /* Cover */
+    .cover {
+      min-height: unset;
+      padding: 48px 24px 40px;
+    }
+    .cover h1 { font-size: 24px; }
+    .cover p  { font-size: 15px; }
+    .cover-steps { gap: 8px; }
+    .cover-step  { min-width: unset; font-size: 12px; padding: 10px 12px; }
+    .cover-footer { position: static; margin-top: 24px; }
+
+    /* Content page */
+    .content-page {
+      padding: 24px 16px 24px;
+      min-height: unset;
+    }
+
+    /* Step section — stack vertically, phone always below text */
+    .step-section,
+    .step-section.reverse {
+      grid-template-columns: 1fr;
+      gap: 20px;
+    }
+    .step-section.reverse .phone-col { order: 1; }
+
+    /* Phone mockup — center and scale up slightly */
+    .phone-wrap { margin: 0 auto; }
+    .phone { width: 220px; }
+
+    /* Page header */
+    .page-header h2 { font-size: 19px; }
+
+    /* TOC */
+    .toc-dots { display: none; }
+    .toc-page { margin-left: auto; }
+
+    /* Status flow — wrap tighter */
+    .status-flow { gap: 4px; }
+    .status-chip { font-size: 11px; padding: 5px 10px; }
+    .status-arrow { font-size: 14px; }
+
+    /* Info table — horizontal scroll */
+    .info-table { font-size: 12px; display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+    /* Cover step grid — 2 columns */
+    .cover-steps { display: grid; grid-template-columns: 1fr 1fr; }
+
+    /* Section divider */
+    .section-divider { margin: 18px 0 16px; }
+
+    /* FAQ cards */
+    h3 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════ COVER PAGE ═══════════════════════════════════ -->
+<div class="page">
+  <div class="cover">
+    <div class="cover-badge">📋 คู่มือการใช้งานสำหรับประชาชน</div>
+    <div class="cover-logo">📱</div>
+    <h1>ระบบยื่นคำร้องออนไลน์<br>SmartLocal</h1>
+    <p>คู่มือการใช้งานระบบยื่นคำร้องออนไลน์ผ่านสมาร์ทโฟน สำหรับประชาชนทั่วไป</p>
+    <div class="cover-divider"></div>
+    <div class="cover-steps">
+      <div class="cover-step"><div class="cover-step-num">1</div>สมัคร/เข้าสู่ระบบ</div>
+      <div class="cover-step"><div class="cover-step-num">2</div>เลือกประเภทคำร้อง</div>
+      <div class="cover-step"><div class="cover-step-num">3</div>กรอกข้อมูลคำร้อง</div>
+      <div class="cover-step"><div class="cover-step-num">4</div>ส่งและติดตามสถานะ</div>
+    </div>
+    <div class="cover-footer">ระบบ E-Service สำหรับองค์กรปกครองส่วนท้องถิ่น · SmartLocal</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ PAGE 2 — TOC ═══════════════════════════════════ -->
+<div class="page" id="toc">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">📋</div>
+      <div>
+        <h2>สารบัญ</h2>
+        <p>Table of Contents</p>
+      </div>
+    </div>
+
+    <div class="toc">
+      <h3>เนื้อหาในคู่มือ</h3>
+      <a class="toc-item" href="#step1">
+        <div class="toc-num">1</div>
+        <span>การสมัครสมาชิกและเข้าสู่ระบบ</span>
+        <div class="toc-dots"></div>
+        <span class="toc-page">→</span>
+      </a>
+      <a class="toc-item" href="#step2">
+        <div class="toc-num">2</div>
+        <span>หน้าหลัก — การเลือกประเภทยื่นคำร้อง</span>
+        <div class="toc-dots"></div>
+        <span class="toc-page">→</span>
+      </a>
+      <a class="toc-item" href="#step3">
+        <div class="toc-num">3</div>
+        <span>การกรอกแบบฟอร์มยื่นคำร้อง</span>
+        <div class="toc-dots"></div>
+        <span class="toc-page">→</span>
+      </a>
+      <a class="toc-item" href="#step4">
+        <div class="toc-num">4</div>
+        <span>การปักหมุดตำแหน่งที่เกิดเหตุและแนบไฟล์</span>
+        <div class="toc-dots"></div>
+        <span class="toc-page">→</span>
+      </a>
+      <a class="toc-item" href="#step5">
+        <div class="toc-num">5</div>
+        <span>การส่งคำร้องและรับเลขที่คำร้อง</span>
+        <div class="toc-dots"></div>
+        <span class="toc-page">→</span>
+      </a>
+      <a class="toc-item" href="#step6">
+        <div class="toc-num">6</div>
+        <span>การติดตามสถานะคำร้อง</span>
+        <div class="toc-dots"></div>
+        <span class="toc-page">→</span>
+      </a>
+      <a class="toc-item" href="#faq" style="border-bottom:none;">
+        <div class="toc-num" style="background:linear-gradient(135deg,#d97706,#f59e0b);">❓</div>
+        <span>คำถามที่พบบ่อย (FAQ)</span>
+        <div class="toc-dots"></div>
+        <span class="toc-page">→</span>
+      </a>
+    </div>
+
+    <div style="background: linear-gradient(135deg, #ede9fe, #dbeafe); border-radius: 16px; padding: 20px 24px; margin-bottom: 20px;">
+      <h3 style="font-size: 15px; color: #3730a3; margin-bottom: 12px;">⚡ ขั้นตอนการใช้งานโดยย่อ</h3>
+      <div class="status-flow">
+        <div class="status-chip" style="background:#dbeafe;color:#1e40af;">🔑 เข้าสู่ระบบ</div>
+        <div class="status-arrow">→</div>
+        <div class="status-chip" style="background:#fef3c7;color:#92400e;">📋 เลือกประเภท</div>
+        <div class="status-arrow">→</div>
+        <div class="status-chip" style="background:#ede9fe;color:#5b21b6;">📝 กรอกข้อมูล</div>
+        <div class="status-arrow">→</div>
+        <div class="status-chip" style="background:#d1fae5;color:#065f46;">✅ ส่งคำร้อง</div>
+        <div class="status-arrow">→</div>
+        <div class="status-chip" style="background:#fee2e2;color:#991b1b;">🔍 ติดตามสถานะ</div>
+      </div>
+    </div>
+
+    <h3 style="font-size: 15px; margin-bottom: 10px;">สถานะการดำเนินการคำร้อง</h3>
+    <table class="info-table">
+      <thead>
+        <tr><th>สถานะ</th><th>ความหมาย</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="badge badge-yellow">รอดำเนินการ</span></td>
+          <td>คำร้องถูกส่งเข้าระบบแล้ว รอเจ้าหน้าที่รับเรื่อง</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-blue">รับเรื่องแล้ว</span></td>
+          <td>เจ้าหน้าที่รับเรื่องและตรวจสอบคำร้องแล้ว</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-purple">กำลังดำเนินการ</span></td>
+          <td>อยู่ระหว่างการดำเนินการแก้ไขปัญหา</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-green">เสร็จสิ้น</span></td>
+          <td>ดำเนินการแก้ไขปัญหาเสร็จสิ้นแล้ว</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-red">ปฏิเสธ</span></td>
+          <td>คำร้องถูกปฏิเสธ (ไม่อยู่ในความรับผิดชอบ หรือข้อมูลไม่ครบถ้วน)</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="note-box" style="margin-top: 20px;">
+      💡 <strong>ข้อแนะนำ:</strong> ท่านสามารถยื่นคำร้องได้ตลอด 24 ชั่วโมง ผ่านสมาร์ทโฟน แท็บเล็ต หรือคอมพิวเตอร์ โดยไม่จำเป็นต้องเดินทางมายังสำนักงาน
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ PAGE 3 — ขั้นตอนที่ 1 ═══════════════════════════════════ -->
+<div id="step1" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">🔑</div>
+      <div>
+        <h2>ขั้นตอนที่ 1</h2>
+        <p>การสมัครสมาชิกและเข้าสู่ระบบ</p>
+      </div>
+    </div>
+
+    <div class="step-section">
+      <div>
+        <div class="step-num"><div class="step-num-circle">1</div>เปิดเว็บไซต์และสมัครสมาชิก</div>
+        <h3>สมัครสมาชิกครั้งแรก</h3>
+        <p class="step-desc">เมื่อเข้าสู่ระบบครั้งแรก ท่านจะต้องสมัครสมาชิกก่อน เพื่อให้สามารถติดตามสถานะคำร้องได้</p>
+        <ul class="steps-list">
+          <li data-n="1">กดแท็บ <strong>"สมัครสมาชิก"</strong></li>
+          <li data-n="2">กรอก <strong>ชื่อ-นามสกุล</strong></li>
+          <li data-n="3">กรอก <strong>อีเมล</strong> (ไม่บังคับ)</li>
+          <li data-n="4">กรอก <strong>เบอร์โทรศัพท์</strong></li>
+          <li data-n="5">ตั้ง <strong>รหัสผ่าน</strong> (อย่างน้อย 6 ตัวอักษร)</li>
+          <li data-n="6">กด <strong>"สมัครสมาชิก"</strong></li>
+        </ul>
+        <div class="tips">
+          <strong>💡 เคล็ดลับ</strong>
+          หากมีบัญชี Google ท่านสามารถกด <strong>"เข้าสู่ระบบด้วย Google"</strong> ได้เลย สะดวกและรวดเร็วกว่า
+        </div>
+      </div>
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen" style="background:#f8fafc; min-height: 360px;">
+              <!-- minimal top bar -->
+              <div style="background: linear-gradient(135deg, #1451a8, #1976d2); padding: 8px 12px; display:flex; align-items:center; gap:7px;">
+                <div style="width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,0.25);display:flex;align-items:center;justify-content:center;font-size:11px;">🏛</div>
+                <div>
+                  <div style="color:#fff;font-size:8px;font-weight:700;">เทศบาลตำบลน้ำเลา</div>
+                  <div style="color:rgba(255,255,255,0.65);font-size:7px;">ระบบยื่นคำร้องออนไลน์</div>
+                </div>
+              </div>
+              <div class="auth-card">
+                <div class="auth-icon">👤</div>
+                <div class="auth-title">เข้าสู่ระบบ / สมัครสมาชิก</div>
+                <div class="auth-sub">เพื่อติดตามสถานะคำร้องของท่าน</div>
+                <div class="auth-tabs">
+                  <div class="auth-tab">เข้าสู่ระบบ</div>
+                  <div class="auth-tab active">สมัครสมาชิก</div>
+                </div>
+                <div class="auth-input"><span class="auth-input-icon">👤</span> ชื่อ-นามสกุล</div>
+                <div class="auth-input"><span class="auth-input-icon">✉️</span> อีเมล (ไม่บังคับ)</div>
+                <div class="auth-input"><span class="auth-input-icon">📱</span> เบอร์โทรศัพท์ *</div>
+                <div class="auth-input"><span class="auth-input-icon">🔒</span> รหัสผ่าน</div>
+                <div class="auth-btn">สมัครสมาชิก</div>
+                <div class="auth-divider">หรือ</div>
+                <div class="google-btn"><div class="google-icon"></div> เข้าสู่ระบบด้วย Google</div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-caption">หน้าสมัครสมาชิก</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-divider">
+      <div class="section-divider-line"></div>
+      <div class="section-divider-text">การเข้าสู่ระบบสำหรับสมาชิกเดิม</div>
+      <div class="section-divider-line"></div>
+    </div>
+
+    <div class="step-section reverse">
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen" style="background:#f8fafc; min-height: 320px;">
+              <div style="background: linear-gradient(135deg, #1451a8, #1976d2); padding: 8px 12px; display:flex; align-items:center; gap:7px;">
+                <div style="width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,0.25);display:flex;align-items:center;justify-content:center;font-size:11px;">🏛</div>
+                <div>
+                  <div style="color:#fff;font-size:8px;font-weight:700;">เทศบาลตำบลน้ำเลา</div>
+                  <div style="color:rgba(255,255,255,0.65);font-size:7px;">ระบบยื่นคำร้องออนไลน์</div>
+                </div>
+              </div>
+              <div class="auth-card">
+                <div class="auth-icon">🔑</div>
+                <div class="auth-title">เข้าสู่ระบบ</div>
+                <div class="auth-sub">ยินดีต้อนรับกลับมา</div>
+                <div class="auth-tabs">
+                  <div class="auth-tab active">เข้าสู่ระบบ</div>
+                  <div class="auth-tab">สมัครสมาชิก</div>
+                </div>
+                <div class="auth-input"><span class="auth-input-icon">✉️</span> อีเมลหรือเบอร์โทรศัพท์</div>
+                <div class="auth-input"><span class="auth-input-icon">🔒</span> รหัสผ่าน</div>
+                <div style="display:flex;align-items:center;gap:5px;margin-bottom:8px;">
+                  <div style="width:12px;height:12px;border-radius:3px;border:1px solid #d1d5db;"></div>
+                  <span style="font-size:8px;color:#6b7280;">จดจำรหัสผ่าน</span>
+                </div>
+                <div class="auth-btn">เข้าสู่ระบบ</div>
+                <div class="auth-divider">หรือ</div>
+                <div class="google-btn"><div class="google-icon"></div> เข้าสู่ระบบด้วย Google</div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-caption">หน้าเข้าสู่ระบบ</div>
+        </div>
+      </div>
+      <div>
+        <div class="step-num"><div class="step-num-circle">2</div>สมาชิกเดิม — เข้าสู่ระบบ</div>
+        <h3>เข้าสู่ระบบด้วยบัญชีที่มีอยู่</h3>
+        <p class="step-desc">หากเคยสมัครสมาชิกแล้ว ให้กดแท็บ <strong>"เข้าสู่ระบบ"</strong> แล้วกรอกข้อมูลที่ลงทะเบียนไว้</p>
+        <ul class="steps-list">
+          <li data-n="1">กดแท็บ <strong>"เข้าสู่ระบบ"</strong></li>
+          <li data-n="2">กรอก <strong>อีเมลหรือเบอร์โทรศัพท์</strong></li>
+          <li data-n="3">กรอก <strong>รหัสผ่าน</strong></li>
+          <li data-n="4">กด <strong>"เข้าสู่ระบบ"</strong></li>
+        </ul>
+        <div class="note-box">
+          ⚠️ <strong>หมายเหตุ:</strong> หากไม่ได้เป็นสมาชิก ท่านยังสามารถยื่นคำร้องได้ แต่จะไม่สามารถติดตามสถานะผ่านระบบได้
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ PAGE 4 — ขั้นตอนที่ 2 ═══════════════════════════════════ -->
+<div id="step2" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">🏠</div>
+      <div>
+        <h2>ขั้นตอนที่ 2</h2>
+        <p>หน้าหลัก — การเลือกประเภทยื่นคำร้อง</p>
+      </div>
+    </div>
+
+    <div class="step-section">
+      <div>
+        <div class="step-num"><div class="step-num-circle">1</div>หน้าหลักของระบบ</div>
+        <h3>เลือก "ยื่นคำร้อง" จากหน้าหลัก</h3>
+        <p class="step-desc">หลังจากเข้าสู่ระบบแล้ว ท่านจะพบกับหน้าหลักของระบบ ซึ่งมีปุ่มบริการต่าง ๆ ให้เลือก</p>
+        <ul class="steps-list">
+          <li data-n="1">ดูแบนเนอร์หน้าหลัก แล้วกดปุ่ม <strong>"ยื่นคำร้องเลย"</strong></li>
+          <li data-n="2">หรือเลื่อนลงมาพบส่วน <strong>"ยื่นคำร้องออนไลน์"</strong></li>
+          <li data-n="3">กดที่ <strong>ไอคอนประเภทปัญหา</strong> ที่ต้องการยื่น</li>
+        </ul>
+        <div class="tips">
+          <strong>💡 ทางลัด</strong>
+          กดที่ไอคอนประเภทปัญหาจากหน้าหลักได้เลย โดยไม่ต้องกดหลายขั้นตอน
+        </div>
+      </div>
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen" style="min-height: 380px;">
+              <div class="app-header">
+                <div class="app-header-logo">🏛</div>
+                <div><div class="app-header-title">เทศบาลตำบลน้ำเลา</div><div class="app-header-sub">ระบบยื่นคำร้องออนไลน์</div></div>
+                <div class="app-header-right">
+                  <div class="app-header-btn">🌙</div>
+                  <div class="app-header-btn">👤</div>
+                </div>
+              </div>
+              <div class="hero-banner">
+                <p>สะดวก รวดเร็ว ตลอด 24 ชั่วโมง</p>
+                <small>ยื่นคำร้องออนไลน์ผ่านสมาร์ทโฟน</small>
+                <div class="hero-cta">ยื่นคำร้องเลย →</div>
+              </div>
+              <div class="service-section">
+                <div class="service-label">ยื่นคำร้องออนไลน์</div>
+                <div class="service-grid">
+                  <div class="service-item"><div class="service-emoji" style="background:#fef3c7;">🛣️</div><span>ถนน/<br>ทาง</span></div>
+                  <div class="service-item"><div class="service-emoji" style="background:#fef9c3;">💡</div><span>ไฟฟ้า<br>ส่องสว่าง</span></div>
+                  <div class="service-item"><div class="service-emoji" style="background:#dcfce7;">🗑️</div><span>ขยะ/<br>ความสะอาด</span></div>
+                  <div class="service-item"><div class="service-emoji" style="background:#dbeafe;">🚰</div><span>น้ำ<br>ประปา</span></div>
+                  <div class="service-item"><div class="service-emoji" style="background:#e0f2fe;">🌊</div><span>น้ำท่วม/<br>ระบาย</span></div>
+                  <div class="service-item"><div class="service-emoji" style="background:#d1fae5;">🌳</div><span>ต้นไม้/<br>สวน</span></div>
+                  <div class="service-item"><div class="service-emoji" style="background:#fce7f3;">📢</div><span>เหตุ<br>รำคาญ</span></div>
+                  <div class="service-item" style="border-style:dashed;"><div class="service-emoji" style="background:#f3f4f6;">📝</div><span>อื่นๆ</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-caption">หน้าหลัก</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-divider">
+      <div class="section-divider-line"></div>
+      <div class="section-divider-text">หน้าเลือกประเภทคำร้อง</div>
+      <div class="section-divider-line"></div>
+    </div>
+
+    <div class="step-section reverse">
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen" style="min-height: 360px;">
+              <div class="app-back-header">
+                <div class="app-back-btn">←</div>
+                <div><div class="app-back-title">ยื่นคำร้องออนไลน์</div><div class="app-back-sub">เลือกประเภทคำร้อง</div></div>
+              </div>
+              <div class="prompt-box">เลือกประเภทที่ต้องการยื่นคำร้อง</div>
+              <div class="cat-grid">
+                <div class="cat-item" style="border-color:#fbbf24; border-width:2px;">
+                  <div class="cat-emoji-box" style="background:#fef3c7;">🛣️</div>
+                  <span style="color:#92400e;">ถนน/ทางสาธารณะ</span>
+                </div>
+                <div class="cat-item">
+                  <div class="cat-emoji-box" style="background:#fef9c3;">💡</div>
+                  <span>ไฟฟ้าส่องสว่าง</span>
+                </div>
+                <div class="cat-item">
+                  <div class="cat-emoji-box" style="background:#dcfce7;">🗑️</div>
+                  <span>ขยะ/ความสะอาด</span>
+                </div>
+                <div class="cat-item">
+                  <div class="cat-emoji-box" style="background:#dbeafe;">🚰</div>
+                  <span>น้ำประปา</span>
+                </div>
+                <div class="cat-item">
+                  <div class="cat-emoji-box" style="background:#e0f2fe;">🌊</div>
+                  <span>น้ำท่วม/ระบาย</span>
+                </div>
+                <div class="cat-item">
+                  <div class="cat-emoji-box" style="background:#d1fae5;">🌳</div>
+                  <span>ต้นไม้/สวน</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-caption">หน้าเลือกประเภทคำร้อง</div>
+        </div>
+      </div>
+      <div>
+        <div class="step-num"><div class="step-num-circle">2</div>เลือกประเภทคำร้อง</div>
+        <h3>เลือกประเภทปัญหาที่ต้องการแจ้ง</h3>
+        <p class="step-desc">หน้าเลือกประเภทจะแสดงรายการปัญหาทั้งหมดที่สามารถยื่นได้ ให้กดเลือกประเภทที่ตรงกับปัญหาของท่าน</p>
+        <div class="checklist">
+          <div class="check-item"><div class="check-box">✓</div><span><strong>ถนน/ทางสาธารณะ</strong> — ถนนชำรุด ฝาท่อแตก รางระบายน้ำ</span></div>
+          <div class="check-item"><div class="check-box">✓</div><span><strong>ไฟฟ้าส่องสว่าง</strong> — ไฟถนนดับ ไฟส่องสว่างชำรุด</span></div>
+          <div class="check-item"><div class="check-box">✓</div><span><strong>ขยะ/ความสะอาด</strong> — ขยะล้นถัง ไม่มีการเก็บขยะ</span></div>
+          <div class="check-item"><div class="check-box">✓</div><span><strong>น้ำประปา</strong> — ท่อแตก น้ำประปาไม่ไหล</span></div>
+          <div class="check-item"><div class="check-box">✓</div><span><strong>น้ำท่วม/ระบายน้ำ</strong> — ท่อระบายน้ำอุดตัน น้ำท่วมขัง</span></div>
+          <div class="check-item"><div class="check-box">✓</div><span><strong>อื่นๆ</strong> — ปัญหาที่ไม่อยู่ในรายการข้างต้น</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ PAGE 5 — ขั้นตอนที่ 3 ═══════════════════════════════════ -->
+<div id="step3" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">📝</div>
+      <div>
+        <h2>ขั้นตอนที่ 3</h2>
+        <p>การกรอกแบบฟอร์มยื่นคำร้อง</p>
+      </div>
+    </div>
+
+    <div class="step-section">
+      <div>
+        <div class="step-num"><div class="step-num-circle">3</div>กรอกรายละเอียดคำร้อง</div>
+        <h3>กรอกข้อมูลในแบบฟอร์ม</h3>
+        <p class="step-desc">หลังจากเลือกประเภทแล้ว ระบบจะแสดงแบบฟอร์มให้กรอก กรุณากรอกข้อมูลให้ครบถ้วนและถูกต้อง เพื่อให้เจ้าหน้าที่สามารถดำเนินการได้รวดเร็ว</p>
+        <table class="info-table" style="margin-bottom: 14px;">
+          <thead><tr><th>ช่อง</th><th>คำอธิบาย</th><th>บังคับ</th></tr></thead>
+          <tbody>
+            <tr><td><strong>เรื่อง</strong></td><td>หัวข้อสั้น ๆ ที่บอกว่าแจ้งเรื่องอะไร</td><td style="text-align:center;">✅</td></tr>
+            <tr><td><strong>สถานที่เกิดเหตุ</strong></td><td>เลือกหมู่บ้าน/ตำบล/ละแวกที่เกิดเหตุ</td><td style="text-align:center;">✅</td></tr>
+            <tr><td><strong>รายละเอียดปัญหา</strong></td><td>อธิบายปัญหาโดยละเอียด เช่น ตำแหน่งชัดเจน ความรุนแรง</td><td style="text-align:center;">✅</td></tr>
+            <tr><td><strong>ชื่อผู้แจ้ง</strong></td><td>ชื่อ-นามสกุลของผู้ยื่นคำร้อง</td><td style="text-align:center;">✅</td></tr>
+            <tr><td><strong>เบอร์ติดต่อ</strong></td><td>เบอร์โทรศัพท์ที่ติดต่อได้</td><td style="text-align:center;">✅</td></tr>
+          </tbody>
+        </table>
+        <div class="tips">
+          <strong>💡 เคล็ดลับในการกรอก</strong>
+          ยิ่งกรอกข้อมูลละเอียดมากเท่าไหร่ เจ้าหน้าที่จะยิ่งดำเนินการได้รวดเร็วขึ้น ควรระบุจุดที่เกิดเหตุชัดเจน เช่น <em>"หน้าบ้านเลขที่ 123 ถนนสายหลัก"</em>
+        </div>
+      </div>
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen" style="min-height: 420px;">
+              <div class="app-back-header">
+                <div class="app-back-btn">←</div>
+                <div><div class="app-back-title">🛣️ ถนน/ทางสาธารณะ</div><div class="app-back-sub">เทศบาลตำบลน้ำเลา</div></div>
+              </div>
+              <div class="screen-body">
+                <div class="form-card">
+                  <div class="form-label"><div class="form-label-icon">📄</div>เรื่อง</div>
+                  <div class="form-input">ถนนชำรุดหน้าหมู่บ้าน...</div>
+                </div>
+                <div class="form-card">
+                  <div class="form-label"><div class="form-label-icon">🏠</div>สถานที่เกิดเหตุ</div>
+                  <div class="form-input" style="display:flex;justify-content:space-between;">หมู่ 3 ต.น้ำเลา <span>▾</span></div>
+                </div>
+                <div class="form-card">
+                  <div class="form-label"><div class="form-label-icon">📋</div>รายละเอียดปัญหา</div>
+                  <div class="form-textarea">ถนนเกิดหลุมบ่อขนาดใหญ่ ความกว้างประมาณ 1 เมตร...</div>
+                  <div style="text-align:right;font-size:7px;color:#9ca3af;margin-top:2px;">125/500 ตัวอักษร</div>
+                </div>
+                <div class="form-card">
+                  <div class="form-label"><div class="form-label-icon">👤</div>ชื่อ-นามสกุลผู้แจ้ง</div>
+                  <div class="form-input">นาย สมชาย ใจดี</div>
+                </div>
+                <div class="form-card">
+                  <div class="form-label"><div class="form-label-icon">📱</div>เบอร์ติดต่อ</div>
+                  <div class="form-input">089-123-4567</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-caption">หน้ากรอกแบบฟอร์ม</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ PAGE 6 — ขั้นตอนที่ 4 ═══════════════════════════════════ -->
+<div id="step4" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">📍</div>
+      <div>
+        <h2>ขั้นตอนที่ 4</h2>
+        <p>การปักหมุดตำแหน่งที่เกิดเหตุ และแนบไฟล์หลักฐาน</p>
+      </div>
+    </div>
+
+    <div class="step-section">
+      <div>
+        <div class="step-num"><div class="step-num-circle">4</div>ระบุตำแหน่ง GPS</div>
+        <h3>ปักหมุดตำแหน่งที่เกิดเหตุ (ไม่บังคับ)</h3>
+        <p class="step-desc">การปักหมุดตำแหน่งจะช่วยให้เจ้าหน้าที่หาจุดเกิดเหตุได้รวดเร็วและแม่นยำยิ่งขึ้น</p>
+        <ul class="steps-list">
+          <li data-n="1">กดปุ่ม <strong>"ปักหมุดจากแผนที่"</strong></li>
+          <li data-n="2">แผนที่จะเปิดขึ้นมา อนุญาตการเข้าถึงตำแหน่ง</li>
+          <li data-n="3">ลากแผนที่เพื่อเลื่อนไปยังจุดที่เกิดเหตุ</li>
+          <li data-n="4">กด <strong>"ยืนยันตำแหน่ง"</strong></li>
+          <li data-n="5">ระบบจะแสดงพิกัด GPS ที่เลือก</li>
+        </ul>
+        <div class="tips">
+          <strong>💡 หากระบบขอสิทธิ์ตำแหน่ง</strong>
+          กด "อนุญาต" เพื่อให้ระบบระบุตำแหน่งปัจจุบันของท่านโดยอัตโนมัติ จากนั้นปรับตำแหน่งได้บนแผนที่
+        </div>
+      </div>
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen" style="min-height: 320px;">
+              <div class="app-back-header">
+                <div class="app-back-btn">←</div>
+                <div><div class="app-back-title">🛣️ ถนน/ทางสาธารณะ</div><div class="app-back-sub">เทศบาลตำบลน้ำเลา</div></div>
+              </div>
+              <div class="screen-body">
+                <div class="form-card">
+                  <div class="form-label"><div class="form-label-icon">📍</div>ตำแหน่งที่เกิดเหตุ (ไม่บังคับ)</div>
+                  <div class="map-preview">
+                    <div class="map-grid"></div>
+                    <div class="map-pin">📍</div>
+                  </div>
+                  <div class="location-selected">✅ ระบุตำแหน่งแล้ว — 18.123°N, 100.456°E</div>
+                </div>
+                <div class="form-card">
+                  <div class="form-label"><div class="form-label-icon">📎</div>ไฟล์แนบ (รูปภาพ/เอกสาร)</div>
+                  <div class="attach-grid">
+                    <div class="attach-item attach-placeholder">🛣️</div>
+                    <div class="attach-item attach-placeholder">📷</div>
+                    <div class="attach-add">+</div>
+                  </div>
+                  <div style="display:flex;gap:5px;margin-top:7px;">
+                    <div style="flex:1;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:7px;padding:5px;text-align:center;font-size:7.5px;color:#6b7280;">📷 รูปภาพ / ไฟล์</div>
+                    <div style="flex:1;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:7px;padding:5px;text-align:center;font-size:7.5px;color:#6b7280;">📸 ถ่ายรูป</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-caption">ปักหมุดและแนบไฟล์</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-divider">
+      <div class="section-divider-line"></div>
+      <div class="section-divider-text">การยืนยันข้อมูลและยินยอม PDPA</div>
+      <div class="section-divider-line"></div>
+    </div>
+
+    <div class="step-section reverse">
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen" style="min-height: 320px;">
+              <div class="screen-body" style="padding-top:12px;">
+                <div class="form-card" style="margin-bottom:0;">
+                  <div style="font-size:8.5px;font-weight:700;color:#374151;margin-bottom:8px;">ยืนยันการส่งคำร้อง</div>
+                  <div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:6px;">
+                    <div style="width:12px;height:12px;border-radius:3px;background:#1976d2;border:1px solid #1976d2;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;"><span style="color:#fff;font-size:8px;">✓</span></div>
+                    <span style="font-size:7.5px;color:#374151;">ข้าพเจ้ารับรองว่าข้อมูลที่กรอกเป็นความจริงทุกประการ</span>
+                  </div>
+                  <div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:6px;">
+                    <div style="width:12px;height:12px;border-radius:3px;background:#1976d2;border:1px solid #1976d2;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;"><span style="color:#fff;font-size:8px;">✓</span></div>
+                    <span style="font-size:7.5px;color:#374151;">หากคำร้องไม่เป็นความจริง ข้าพเจ้ายินยอมรับผิดชอบ</span>
+                  </div>
+                  <div style="display:flex;align-items:flex-start;gap:6px;">
+                    <div style="width:12px;height:12px;border-radius:3px;background:#1976d2;border:1px solid #1976d2;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;"><span style="color:#fff;font-size:8px;">✓</span></div>
+                    <span style="font-size:7.5px;color:#374151;">ข้าพเจ้ายินยอมให้เปิดเผยข้อมูล ตาม <span style="color:#1976d2;text-decoration:underline;">นโยบายความเป็นส่วนตัว (PDPA)</span></span>
+                  </div>
+                </div>
+                <div class="form-submit" style="margin-top:12px;">
+                  ✈️ ส่งคำร้อง
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-caption">ยืนยันและส่งคำร้อง</div>
+        </div>
+      </div>
+      <div>
+        <div class="step-num"><div class="step-num-circle">5</div>ยืนยันข้อมูลและส่ง</div>
+        <h3>ตรวจสอบข้อมูลและทำเครื่องหมายยืนยัน</h3>
+        <p class="step-desc">ก่อนส่งคำร้อง กรุณาตรวจสอบข้อมูลทั้งหมดให้ครบถ้วน แล้วทำเครื่องหมายในช่องยืนยัน 3 ข้อ</p>
+        <ul class="steps-list">
+          <li data-n="1">ตรวจสอบ <strong>ข้อมูลทั้งหมด</strong> ว่าถูกต้องครบถ้วน</li>
+          <li data-n="2">ทำเครื่องหมาย <strong>☑️ ข้อยืนยัน 3 ข้อ</strong></li>
+          <li data-n="3">กดปุ่ม <strong>"ส่งคำร้อง"</strong> สีน้ำเงินด้านล่าง</li>
+          <li data-n="4">รอสักครู่ ระบบกำลังส่งข้อมูล</li>
+        </ul>
+        <div class="note-box">
+          ⚠️ <strong>สำคัญ:</strong> กรุณาติ๊กครบทั้ง 3 ช่อง มิฉะนั้นระบบจะไม่ยอมให้กดส่ง
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ PAGE 7 — ขั้นตอนที่ 5 ═══════════════════════════════════ -->
+<div id="step5" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">✅</div>
+      <div>
+        <h2>ขั้นตอนที่ 5</h2>
+        <p>การส่งคำร้องสำเร็จ — รับเลขที่คำร้อง</p>
+      </div>
+    </div>
+
+    <div class="step-section">
+      <div>
+        <div class="step-num"><div class="step-num-circle">5</div>คำร้องถูกส่งแล้ว!</div>
+        <h3>ระบบได้รับคำร้องของท่านแล้ว</h3>
+        <p class="step-desc">เมื่อส่งสำเร็จ ระบบจะแสดงหน้ายืนยันพร้อม <strong>เลขที่คำร้อง</strong> ซึ่งท่านควรบันทึกเก็บไว้เพื่อใช้ติดตามสถานะ</p>
+
+        <div style="background: #d1fae5; border: 2px solid #a7f3d0; border-radius: 16px; padding: 18px 20px; margin-bottom: 16px; text-align: center;">
+          <div style="font-size: 32px; margin-bottom: 8px;">✅</div>
+          <div style="font-size: 16px; font-weight: 800; color: #065f46; margin-bottom: 4px;">ส่งเรื่องสำเร็จ!</div>
+          <div style="font-size: 13px; color: #047857; margin-bottom: 12px;">คำร้องของท่านถูกบันทึกในระบบแล้ว</div>
+          <div style="background: #fff; border-radius: 10px; padding: 10px 16px; display:inline-block;">
+            <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">เลขที่คำร้อง</div>
+            <div style="font-size: 22px; font-weight: 800; font-family: monospace; color: #1f2937;">2505001</div>
+          </div>
+        </div>
+
+        <ul class="steps-list">
+          <li data-n="1"><strong>จดบันทึกหรือ screenshot</strong> เลขที่คำร้องไว้</li>
+          <li data-n="2">กด <strong>"กลับหน้าหลัก"</strong> หรือ <strong>"คำร้องของฉัน"</strong></li>
+          <li data-n="3">ติดตามความคืบหน้าได้จากเมนู <strong>"คำร้องของฉัน"</strong></li>
+        </ul>
+
+        <div class="tips">
+          <strong>📣 แจ้งเตือน</strong>
+          หากท่านเข้าสู่ระบบด้วยบัญชี ระบบจะส่งการแจ้งเตือนเมื่อสถานะคำร้องเปลี่ยนแปลง
+        </div>
+      </div>
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen" style="min-height: 360px; background: #f0fdf4;">
+              <!-- minimal app bar -->
+              <div style="background: linear-gradient(135deg, #1451a8, #1976d2); padding: 8px 12px;">
+                <div style="color:#fff;font-size:9px;font-weight:700;">ระบบยื่นคำร้องออนไลน์</div>
+              </div>
+              <div class="success-screen">
+                <div class="success-icon">✅</div>
+                <div class="success-title">ส่งเรื่องสำเร็จ!</div>
+                <div class="success-num">
+                  เลขที่คำร้อง
+                  <strong>2505001</strong>
+                </div>
+                <div class="success-desc">
+                  คำร้องของท่านถูกบันทึกในระบบแล้ว<br>
+                  เจ้าหน้าที่จะดำเนินการโดยเร็วที่สุด
+                </div>
+                <div class="success-btn">← กลับหน้าหลัก</div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-caption">หน้ายืนยันการส่งคำร้อง</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="background: var(--gray-50); border-radius: 16px; padding: 18px 20px; margin-top: 10px;">
+      <h3 style="font-size: 15px; margin-bottom: 12px;">📖 รูปแบบเลขที่คำร้อง</h3>
+      <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+        <div style="background: #fff; border: 2px solid var(--blue); border-radius: 12px; padding: 12px 20px; font-family: monospace; font-size: 24px; font-weight: 800; color: var(--gray-800);">2505001</div>
+        <div style="flex: 1; min-width: 200px;">
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; font-size: 13px;">
+            <div style="text-align:center;"><div style="background:#dbeafe;color:#1e40af;font-weight:700;padding:4px 10px;border-radius:6px;font-family:monospace;font-size:15px;">25</div><div style="color:#6b7280;font-size:11px;margin-top:3px;">ปี พ.ศ. (2 ตัว)</div></div>
+            <div style="text-align:center;"><div style="background:#fef3c7;color:#92400e;font-weight:700;padding:4px 10px;border-radius:6px;font-family:monospace;font-size:15px;">05</div><div style="color:#6b7280;font-size:11px;margin-top:3px;">เดือน</div></div>
+            <div style="text-align:center;"><div style="background:#d1fae5;color:#065f46;font-weight:700;padding:4px 10px;border-radius:6px;font-family:monospace;font-size:15px;">001</div><div style="color:#6b7280;font-size:11px;margin-top:3px;">ลำดับที่</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ PAGE 8 — ขั้นตอนที่ 6 ═══════════════════════════════════ -->
+<div id="step6" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">🔍</div>
+      <div>
+        <h2>ขั้นตอนที่ 6</h2>
+        <p>การติดตามสถานะคำร้อง</p>
+      </div>
+    </div>
+
+    <div class="step-section">
+      <div>
+        <div class="step-num"><div class="step-num-circle">6</div>ติดตามสถานะ</div>
+        <h3>ดูสถานะคำร้องใน "คำร้องของฉัน"</h3>
+        <p class="step-desc">ท่านสามารถติดตามสถานะและความคืบหน้าของคำร้องทุกรายการได้ที่เมนู <strong>"คำร้องของฉัน"</strong> ในแถบเมนูบนสุด</p>
+        <ul class="steps-list">
+          <li data-n="1">กดเมนู <strong>"คำร้องของฉัน"</strong> ที่แถบด้านบน</li>
+          <li data-n="2">ดูรายการคำร้องทั้งหมดของท่าน</li>
+          <li data-n="3">กดที่การ์ดคำร้องเพื่อดู <strong>รายละเอียดและความคืบหน้า</strong></li>
+          <li data-n="4">ดู <strong>สถานะ</strong> ที่แสดงเป็นแถบสีต่าง ๆ</li>
+        </ul>
+        <div class="tips">
+          <strong>🔔 การแจ้งเตือน</strong>
+          เมื่อเจ้าหน้าที่อัพเดทสถานะ ท่านจะได้รับการแจ้งเตือนผ่านระบบ (ต้องเข้าสู่ระบบ)
+        </div>
+      </div>
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen" style="min-height: 380px;">
+              <div style="background: #fff; padding: 10px 12px; border-bottom: 1px solid #f3f4f6; display:flex; align-items:center; gap:8px;">
+                <div class="app-back-btn" style="background:#f3f4f6;color:#374151;">←</div>
+                <div>
+                  <div style="font-size:10px;font-weight:800;color:#1f2937;">คำร้องของฉัน</div>
+                  <div style="font-size:8px;color:#9ca3af;">ติดตามสถานะคำร้องที่ยื่น</div>
+                </div>
+              </div>
+              <div class="screen-body">
+                <div class="complaint-card">
+                  <div class="complaint-emoji">🛣️</div>
+                  <div class="complaint-info">
+                    <div class="complaint-title">ถนน/ทางสาธารณะ</div>
+                    <div class="complaint-sub">ถนนชำรุดหน้าหมู่บ้าน</div>
+                    <div style="margin-bottom:3px;"><span class="badge badge-purple">กำลังดำเนินการ</span></div>
+                    <div class="complaint-num">2505001</div>
+                  </div>
+                  <div class="complaint-arrow">›</div>
+                </div>
+                <div class="complaint-card">
+                  <div class="complaint-emoji">💡</div>
+                  <div class="complaint-info">
+                    <div class="complaint-title">ไฟฟ้าส่องสว่าง</div>
+                    <div class="complaint-sub">ไฟถนนดับ 3 ดวงติดกัน</div>
+                    <div style="margin-bottom:3px;"><span class="badge badge-green">เสร็จสิ้น</span></div>
+                    <div class="complaint-num">2504012</div>
+                  </div>
+                  <div class="complaint-arrow">›</div>
+                </div>
+                <div class="complaint-card">
+                  <div class="complaint-emoji">🗑️</div>
+                  <div class="complaint-info">
+                    <div class="complaint-title">ขยะ/ความสะอาด</div>
+                    <div class="complaint-sub">ขยะล้นถังไม่มีการเก็บ</div>
+                    <div style="margin-bottom:3px;"><span class="badge badge-yellow">รอดำเนินการ</span></div>
+                    <div class="complaint-num">2505003</div>
+                  </div>
+                  <div class="complaint-arrow">›</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-caption">หน้า "คำร้องของฉัน"</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-divider">
+      <div class="section-divider-line"></div>
+      <div class="section-divider-text">รายละเอียดคำร้องและความคืบหน้า</div>
+      <div class="section-divider-line"></div>
+    </div>
+
+    <div class="step-section reverse">
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen" style="min-height: 380px;">
+              <div class="detail-header">
+                <div class="detail-emoji-row">
+                  <div class="detail-emoji-box">🛣️</div>
+                  <div>
+                    <div class="detail-cat">ถนน/ทางสาธารณะ</div>
+                    <div class="detail-sub">ถนนชำรุดหน้าหมู่บ้าน</div>
+                  </div>
+                </div>
+                <div class="detail-meta">
+                  <div class="detail-meta-item">
+                    <div class="detail-meta-label">เลขที่คำร้อง</div>
+                    <div class="detail-meta-val">2505001</div>
+                  </div>
+                  <div class="detail-meta-item">
+                    <div class="detail-meta-label">ยื่นเมื่อ</div>
+                    <div class="detail-meta-val" style="font-size:8px;">12 พ.ค. 2568</div>
+                  </div>
+                </div>
+              </div>
+              <div class="stepper">
+                <div class="stepper-label">ความคืบหน้า</div>
+                <!-- Step 1 done -->
+                <div class="step-row">
+                  <div class="step-dot-col">
+                    <div class="step-dot done"></div>
+                    <div class="step-line done"></div>
+                  </div>
+                  <div class="step-text" style="margin-left:8px;padding-bottom:12px;">
+                    <p>รอดำเนินการ</p>
+                    <small>ประชาชนส่งคำร้องเข้าระบบ</small>
+                  </div>
+                </div>
+                <!-- Step 2 done -->
+                <div class="step-row">
+                  <div class="step-dot-col">
+                    <div class="step-dot done"></div>
+                    <div class="step-line done"></div>
+                  </div>
+                  <div class="step-text" style="margin-left:8px;padding-bottom:12px;">
+                    <p>รับเรื่องแล้ว</p>
+                    <small>เจ้าหน้าที่รับเรื่องแล้ว</small>
+                  </div>
+                </div>
+                <!-- Step 3 current -->
+                <div class="step-row">
+                  <div class="step-dot-col">
+                    <div class="step-dot current"></div>
+                    <div class="step-line"></div>
+                  </div>
+                  <div class="step-text" style="margin-left:8px;padding-bottom:12px;">
+                    <p>กำลังดำเนินการ <span class="current-badge">ปัจจุบัน</span></p>
+                    <small>อยู่ระหว่างการแก้ไข</small>
+                  </div>
+                </div>
+                <!-- Step 4 pending -->
+                <div class="step-row">
+                  <div class="step-dot-col">
+                    <div class="step-dot"></div>
+                  </div>
+                  <div class="step-text" style="margin-left:8px;">
+                    <p style="color:#d1d5db;">เสร็จสิ้น</p>
+                    <small style="color:#e5e7eb;">ดำเนินการเสร็จสิ้น</small>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-caption">รายละเอียดและความคืบหน้า</div>
+        </div>
+      </div>
+      <div>
+        <div class="step-num"><div class="step-num-circle">7</div>ดูรายละเอียดและ stepper</div>
+        <h3>ติดตามความคืบหน้าแบบ step-by-step</h3>
+        <p class="step-desc">เมื่อกดเข้าการ์ดคำร้อง จะพบ <strong>แถบความคืบหน้า (Stepper)</strong> แสดงสถานะปัจจุบันและขั้นตอนต่อไป พร้อมข้อมูลผลการดำเนินงาน</p>
+        <ul class="steps-list">
+          <li data-n="1">ดู <strong>แถบความคืบหน้า</strong> 4 ขั้นตอน</li>
+          <li data-n="2">ขั้นตอนที่เสร็จแล้วจะแสดง <strong>เครื่องหมาย ✓ สีน้ำเงิน</strong></li>
+          <li data-n="3">ขั้นตอนปัจจุบันจะมีป้าย <strong>"ปัจจุบัน"</strong> กำกับ</li>
+          <li data-n="4">เมื่องานเสร็จสิ้น อาจมี <strong>รูปภาพผลการดำเนินงาน</strong> ให้ดู</li>
+          <li data-n="5">หากมีหมายเหตุจากเจ้าหน้าที่ จะแสดงในส่วน <strong>"บันทึกจากเจ้าหน้าที่"</strong></li>
+        </ul>
+        <div class="note-box">
+          📌 <strong>หากคำร้องถูกปฏิเสธ:</strong> ระบบจะแสดงเหตุผลการปฏิเสธ ท่านสามารถยื่นคำร้องใหม่โดยแก้ไขข้อมูลให้ครบถ้วน
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ PAGE 9 — คำถามที่พบบ่อย ═══════════════════════════════════ -->
+<div id="faq" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">❓</div>
+      <div>
+        <h2>คำถามที่พบบ่อย (FAQ)</h2>
+        <p>Frequently Asked Questions</p>
+      </div>
+    </div>
+
+    <div style="display: grid; gap: 14px;">
+
+      <div style="background: #fff; border-radius: 14px; border: 1px solid var(--gray-200); overflow: hidden;">
+        <div style="background: var(--blue-light); padding: 10px 16px; font-size: 14px; font-weight: 700; color: var(--blue-dark);">
+          ❓ ต้องสมัครสมาชิกก่อนถึงจะยื่นคำร้องได้ไหม?
+        </div>
+        <div style="padding: 12px 16px; font-size: 13.5px; color: var(--gray-700); line-height: 1.7;">
+          <strong>ไม่จำเป็น</strong> ท่านสามารถยื่นคำร้องได้โดยไม่ต้องเข้าสู่ระบบ แต่หากสมัครสมาชิกจะสามารถ <strong>ติดตามสถานะ</strong> และรับ <strong>การแจ้งเตือน</strong> เมื่อมีความคืบหน้าได้
+        </div>
+      </div>
+
+      <div style="background: #fff; border-radius: 14px; border: 1px solid var(--gray-200); overflow: hidden;">
+        <div style="background: #fef9c3; padding: 10px 16px; font-size: 14px; font-weight: 700; color: #92400e;">
+          ❓ ยื่นคำร้องแล้วนานแค่ไหนถึงจะได้รับการดำเนินการ?
+        </div>
+        <div style="padding: 12px 16px; font-size: 13.5px; color: var(--gray-700); line-height: 1.7;">
+          ขึ้นอยู่กับประเภทและความเร่งด่วนของปัญหา โดยทั่วไปเจ้าหน้าที่จะ <strong>รับเรื่องภายใน 1-2 วันทำการ</strong> และดำเนินการให้แล้วเสร็จตามลำดับความสำคัญ
+        </div>
+      </div>
+
+      <div style="background: #fff; border-radius: 14px; border: 1px solid var(--gray-200); overflow: hidden;">
+        <div style="background: #d1fae5; padding: 10px 16px; font-size: 14px; font-weight: 700; color: #065f46;">
+          ❓ สามารถยื่นคำร้องผ่านคอมพิวเตอร์ได้ไหม?
+        </div>
+        <div style="padding: 12px 16px; font-size: 13.5px; color: var(--gray-700); line-height: 1.7;">
+          <strong>ได้เลย!</strong> ระบบรองรับการใช้งานผ่านเว็บเบราว์เซอร์บนคอมพิวเตอร์ แท็บเล็ต และสมาร์ทโฟน ทุกขนาดหน้าจอ
+        </div>
+      </div>
+
+      <div style="background: #fff; border-radius: 14px; border: 1px solid var(--gray-200); overflow: hidden;">
+        <div style="background: #ede9fe; padding: 10px 16px; font-size: 14px; font-weight: 700; color: #5b21b6;">
+          ❓ ยื่นคำร้องซ้ำในเรื่องเดิมได้ไหม?
+        </div>
+        <div style="padding: 12px 16px; font-size: 13.5px; color: var(--gray-700); line-height: 1.7;">
+          ได้ แต่ควรระบุในรายละเอียดว่าเป็นการแจ้งซ้ำในเรื่องเดิม พร้อมอ้างอิง <strong>เลขที่คำร้องเดิม</strong> เพื่อให้เจ้าหน้าที่ดำเนินการได้ถูกต้อง
+        </div>
+      </div>
+
+      <div style="background: #fff; border-radius: 14px; border: 1px solid var(--gray-200); overflow: hidden;">
+        <div style="background: #fee2e2; padding: 10px 16px; font-size: 14px; font-weight: 700; color: #991b1b;">
+          ❓ คำร้องถูกปฏิเสธ ต้องทำอย่างไร?
+        </div>
+        <div style="padding: 12px 16px; font-size: 13.5px; color: var(--gray-700); line-height: 1.7;">
+          อ่านเหตุผลที่เจ้าหน้าที่ระบุไว้ในคำร้อง หากเป็นเรื่องที่ไม่อยู่ในความรับผิดชอบขององค์กร ควรติดต่อหน่วยงานที่รับผิดชอบโดยตรง หากต้องการยื่นใหม่ให้ <strong>แก้ไขข้อมูลให้ครบถ้วน</strong> แล้วยื่นใหม่
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Footer -->
+    <div style="margin-top: 32px; padding-top: 20px; border-top: 2px solid var(--gray-200); text-align: center;">
+      <div style="font-size: 13px; color: var(--gray-500); line-height: 1.8;">
+        <strong style="color: var(--blue-dark); font-size: 15px;">ระบบยื่นคำร้องออนไลน์ SmartLocal</strong><br>
+        บริการตลอด 24 ชั่วโมง · ไม่ต้องเดินทาง · สะดวก รวดเร็ว โปร่งใส<br>
+        <span style="font-size: 12px; color: var(--gray-400);">คู่มือฉบับนี้จัดทำโดยระบบ SmartLocal E-Service</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="no-print" style="text-align:center;padding:20px;font-family:sans-serif;color:#666;">
+  <button onclick="window.print()" style="background:#1976d2;color:#fff;border:none;padding:12px 28px;border-radius:8px;font-size:15px;cursor:pointer;font-family:'Sarabun',sans-serif;font-weight:700;">🖨️ พิมพ์ / บันทึก PDF</button>
+</div>
+
+<!-- Floating close button -->
+<button onclick="window.close()" class="no-print"
+   title="ปิดหน้านี้"
+   style="position:fixed;top:16px;right:16px;z-index:9999;
+          background:rgba(0,0,0,0.55);color:#fff;border:none;cursor:pointer;
+          width:40px;height:40px;border-radius:50%;
+          font-size:20px;line-height:40px;text-align:center;
+          box-shadow:0 2px 10px rgba(0,0,0,0.3);
+          transition:background .15s;">
+  ✕
+</button>
+
+<!-- Floating back-to-top / back-to-TOC button -->
+<a id="back-btn" href="#toc" class="no-print"
+   style="display:none;position:fixed;bottom:24px;right:20px;z-index:9999;
+          background:#1976d2;color:#fff;text-decoration:none;
+          width:48px;height:48px;border-radius:50%;
+          box-shadow:0 4px 14px rgba(0,0,0,0.25);
+          font-size:22px;line-height:48px;text-align:center;
+          transition:opacity .2s,transform .2s;
+          opacity:0.92;">
+  ↑
+</a>
+<script>
+  (function(){
+    var btn = document.getElementById('back-btn');
+    window.addEventListener('scroll', function(){
+      btn.style.display = window.scrollY > 400 ? 'block' : 'none';
+    }, { passive: true });
+  })();
+</script>
+
+</body>
+</html>

@@ -5,7 +5,7 @@ import {
   Bell, FileSearch, ClipboardList, ShieldCheck,
   Phone, MapPin, Globe, Share2, MessageCircle,
   ChevronRight, Star, Copy, Download, Check, Monitor, X,
-  UploadIcon, PlusSquare,
+  UploadIcon, PlusSquare, BookOpen,
 } from 'lucide-react'
 import { QRCode } from 'react-qr-code'
 import { supabase } from '../lib/supabase'
@@ -228,7 +228,7 @@ function Section({ title, children }) {
   )
 }
 
-function MenuRow({ icon: Icon, iconBg, iconColor = 'text-gray-500', label, desc, badge, href, onClick, danger }) {
+function MenuRow({ icon: Icon, iconBg, iconColor = 'text-gray-500', label, desc, badge, href, onClick, danger, external }) {
   const inner = (
     <div className={`flex items-center gap-3.5 px-4 py-3.5 transition-colors hover:bg-gray-50 active:bg-gray-100 ${danger ? 'bg-red-50/50 hover:bg-red-50 active:bg-red-100' : ''}`}>
       <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${iconBg ?? 'bg-gray-100'}`}>
@@ -247,8 +247,8 @@ function MenuRow({ icon: Icon, iconBg, iconColor = 'text-gray-500', label, desc,
     </div>
   )
 
-  if (href && href.startsWith('tel:')) {
-    return <a href={href}>{inner}</a>
+  if (href && (href.startsWith('tel:') || external)) {
+    return <a href={href} target={external ? '_blank' : undefined} rel={external ? 'noopener noreferrer' : undefined}>{inner}</a>
   }
   if (href) {
     return <Link to={href}>{inner}</Link>
@@ -457,6 +457,15 @@ export default function MorePage() {
             label="ยื่นคำร้องใหม่"
             desc="แจ้งปัญหาหรือขอรับบริการจากเทศบาล"
             href="/complaint"
+          />
+          <MenuRow
+            icon={BookOpen}
+            iconBg="bg-indigo-50"
+            iconColor="text-indigo-500"
+            label="คู่มือการใช้งาน"
+            desc="วิธีการยื่นคำร้องสำหรับประชาชน"
+            href="/manual-citizen.html"
+            external
           />
         </Section>
 
