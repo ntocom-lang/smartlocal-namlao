@@ -24,10 +24,11 @@ function redirectChromeiOS() {
     .replace(/^http:\/\//, 'googlechrome://')
 }
 
-function redirectChromeAndroid() {
+function redirectExternalAndroid() {
   const url = window.location.href
   const withoutScheme = url.replace(/^https?:\/\//, '')
-  window.location.href = `intent://${withoutScheme}#Intent;scheme=https;package=com.android.chrome;end`
+  // ไม่ล็อก package เพื่อให้ Android ใช้ default browser (Samsung, Firefox, Chrome, ฯลฯ)
+  window.location.href = `intent://${withoutScheme}#Intent;scheme=https;action=android.intent.action.VIEW;end`
 }
 
 /* ─── Gate ───────────────────────────────────────────────── */
@@ -58,9 +59,9 @@ export default function InAppBrowserGate({ children }) {
       return
     }
 
-    // Facebook / Instagram / อื่นๆ: ลอง Chrome ก่อน
+    // Facebook / Instagram / อื่นๆ: ลอง default browser ก่อน
     if (e.isAndroid) {
-      redirectChromeAndroid()
+      redirectExternalAndroid()
       setTimeout(() => { setEnv(e); setBlocked(true) }, 2000)
     } else {
       // iOS: แสดง block screen เลย (Chrome scheme กด manual ดีกว่า auto เพราะ iOS ถาม confirm)
@@ -106,7 +107,7 @@ export default function InAppBrowserGate({ children }) {
       <div className="w-full max-w-xs flex flex-col gap-3">
         {/* Chrome button */}
         <button
-          onClick={env.isAndroid ? redirectChromeAndroid : redirectChromeiOS}
+          onClick={env.isAndroid ? redirectExternalAndroid : redirectChromeiOS}
           className="w-full flex items-center justify-center gap-3 py-4 rounded-2xl text-white font-bold text-base shadow-md active:scale-95 transition-all"
           style={{ background: 'linear-gradient(135deg, #4285F4 0%, #1a56db 100%)' }}
         >
@@ -116,7 +117,7 @@ export default function InAppBrowserGate({ children }) {
             <path d="M10.3 28.3c-.5-1.5-.8-3-.8-4.3s.3-2.8.8-4.3v-6.2H2.1C.8 16.2 0 19.9 0 24s.8 7.8 2.1 10.5l8.2-6.2z" fill="#ffffffaa"/>
             <path d="M24 9.5c3.6 0 6.8 1.2 9.3 3.6l6.9-6.9C36.2 2.3 30.6 0 24 0 14.5 0 6.1 5.3 2.1 13.5l8.2 6.2C12.2 13.8 17.6 9.5 24 9.5z" fill="#ffffffdd"/>
           </svg>
-          เปิดใน Google Chrome
+          {env.isAndroid ? 'เปิดในเบราว์เซอร์หลัก' : 'เปิดใน Google Chrome'}
         </button>
 
         {/* Safari (iOS only) */}

@@ -79,6 +79,8 @@ function QRShareCard({ tenant }) {
   const url = window.location.origin
 
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream
+  const isAndroid = /Android/i.test(navigator.userAgent)
+  const isMobile = isIOS || isAndroid
 
   useEffect(() => {
     const isStandalone =
@@ -130,6 +132,19 @@ function QRShareCard({ tenant }) {
     } else {
       handleCopy()
     }
+  }
+
+  function handleOpenChrome() {
+    const href = window.location.href
+    if (isAndroid) {
+      const withoutScheme = href.replace(/^https?:\/\//, '')
+      window.location.href = `intent://${withoutScheme}#Intent;scheme=https;package=com.android.chrome;end`
+    } else if (isIOS) {
+      window.location.href = href
+        .replace(/^https:\/\//, 'googlechromes://')
+        .replace(/^http:\/\//, 'googlechrome://')
+    }
+    // desktop: ไม่ทำอะไร — scheme นี้ใช้ได้บน mobile เท่านั้น
   }
 
   function handleDownload() {
@@ -188,7 +203,7 @@ function QRShareCard({ tenant }) {
         ) : null}
 
         {/* Buttons */}
-        <div className="grid grid-cols-3 gap-2.5 w-full">
+        <div className={`grid gap-2.5 w-full ${isMobile ? 'grid-cols-2' : 'grid-cols-3'}`}>
           <button onClick={handleShare}
             className="flex flex-col items-center gap-1.5 py-3 rounded-2xl bg-white/20 hover:bg-white/30 active:bg-white/40 transition-colors">
             <Share2 size={18} className="text-white" />
@@ -204,6 +219,18 @@ function QRShareCard({ tenant }) {
             <Download size={18} className="text-white" />
             <span className="text-[13px] text-white font-semibold">บันทึก QR</span>
           </button>
+          {isMobile && (
+            <button onClick={handleOpenChrome}
+              className="flex flex-col items-center gap-1.5 py-3 rounded-2xl bg-white/20 hover:bg-white/30 active:bg-white/40 transition-colors">
+              <svg width="18" height="18" viewBox="0 0 48 48" fill="none">
+                <path d="M47.5 24.5c0-1.6-.1-3.2-.4-4.7H24v8.9h13.2c-.6 3-2.3 5.6-4.9 7.3v6h7.9c4.6-4.3 7.3-10.6 7.3-17.5z" fill="#fff"/>
+                <path d="M24 48c6.6 0 12.2-2.2 16.2-5.9l-7.9-6c-2.2 1.5-5 2.3-8.3 2.3-6.4 0-11.8-4.3-13.7-10.1H2.1v6.2C6.1 42.7 14.5 48 24 48z" fill="#ffffffcc"/>
+                <path d="M10.3 28.3c-.5-1.5-.8-3-.8-4.3s.3-2.8.8-4.3v-6.2H2.1C.8 16.2 0 19.9 0 24s.8 7.8 2.1 10.5l8.2-6.2z" fill="#ffffffaa"/>
+                <path d="M24 9.5c3.6 0 6.8 1.2 9.3 3.6l6.9-6.9C36.2 2.3 30.6 0 24 0 14.5 0 6.1 5.3 2.1 13.5l8.2 6.2C12.2 13.8 17.6 9.5 24 9.5z" fill="#ffffffdd"/>
+              </svg>
+              <span className="text-[13px] text-white font-semibold">เปิดใน Chrome</span>
+            </button>
+          )}
         </div>
       </div>
     </div>
