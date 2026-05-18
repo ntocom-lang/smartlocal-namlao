@@ -1148,7 +1148,7 @@
               <div style="background: linear-gradient(135deg, #1451a8, #1976d2); padding: 8px 12px; display:flex; align-items:center; gap:7px;">
                 <div style="width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,0.25);display:flex;align-items:center;justify-content:center;font-size:11px;">🏛</div>
                 <div>
-                  <div style="color:#fff;font-size:8px;font-weight:700;">เทศบาลตำบลน้ำเลา</div>
+                  <div style="color:#fff;font-size:8px;font-weight:700;">SmartLocal</div>
                   <div style="color:rgba(255,255,255,0.65);font-size:7px;">ระบบยื่นคำร้องออนไลน์</div>
                 </div>
               </div>
@@ -1190,7 +1190,7 @@
               <div style="background: linear-gradient(135deg, #1451a8, #1976d2); padding: 8px 12px; display:flex; align-items:center; gap:7px;">
                 <div style="width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,0.25);display:flex;align-items:center;justify-content:center;font-size:11px;">🏛</div>
                 <div>
-                  <div style="color:#fff;font-size:8px;font-weight:700;">เทศบาลตำบลน้ำเลา</div>
+                  <div style="color:#fff;font-size:8px;font-weight:700;">SmartLocal</div>
                   <div style="color:rgba(255,255,255,0.65);font-size:7px;">ระบบยื่นคำร้องออนไลน์</div>
                 </div>
               </div>
@@ -1268,7 +1268,7 @@
             <div class="phone-screen" style="min-height: 380px;">
               <div class="app-header">
                 <div class="app-header-logo">🏛</div>
-                <div><div class="app-header-title">เทศบาลตำบลน้ำเลา</div><div class="app-header-sub">ระบบยื่นคำร้องออนไลน์</div></div>
+                <div><div class="app-header-title">SmartLocal</div><div class="app-header-sub">ระบบยื่นคำร้องออนไลน์</div></div>
                 <div class="app-header-right">
                   <div class="app-header-btn">🌙</div>
                   <div class="app-header-btn">👤</div>
@@ -1402,7 +1402,7 @@
             <div class="phone-screen" style="min-height: 420px;">
               <div class="app-back-header">
                 <div class="app-back-btn">←</div>
-                <div><div class="app-back-title">🛣️ ถนน/ทางสาธารณะ</div><div class="app-back-sub">เทศบาลตำบลน้ำเลา</div></div>
+                <div><div class="app-back-title">🛣️ ถนน/ทางสาธารณะ</div><div class="app-back-sub">SmartLocal</div></div>
               </div>
               <div class="screen-body">
                 <div class="form-card">
@@ -1471,7 +1471,7 @@
             <div class="phone-screen" style="min-height: 320px;">
               <div class="app-back-header">
                 <div class="app-back-btn">←</div>
-                <div><div class="app-back-title">🛣️ ถนน/ทางสาธารณะ</div><div class="app-back-sub">เทศบาลตำบลน้ำเลา</div></div>
+                <div><div class="app-back-title">🛣️ ถนน/ทางสาธารณะ</div><div class="app-back-sub">SmartLocal</div></div>
               </div>
               <div class="screen-body">
                 <div class="form-card">
@@ -1923,6 +1923,55 @@
     window.addEventListener('scroll', function(){
       btn.style.display = window.scrollY > 400 ? 'block' : 'none';
     }, { passive: true });
+  })();
+</script>
+
+<script>
+  (function(){
+    var PLACEHOLDER = 'SmartLocal';
+    var SUPABASE_URL = 'https://umxssfahtuprnztlytdd.supabase.co';
+    var ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVteHNzZmFodHVwcm56dGx5dGRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0NDI0MzAsImV4cCI6MjA5NDAxODQzMH0.SeQTZHWIAPx0XdQ_xK_BNhHjDVd8CeDdwK2NyXdof7E';
+
+    function detectSlug() {
+      var hostname = window.location.hostname;
+      var pathname = window.location.pathname;
+      var parts = hostname.split('.');
+      var excluded = ['www', 'app', 'admin', 'localhost'];
+      var isCustomDomain = !hostname.endsWith('.vercel.app') && hostname !== 'localhost' && !/^\d/.test(hostname);
+      if (isCustomDomain && parts.length >= 2 && excluded.indexOf(parts[0]) === -1) return parts[0];
+      if (hostname.endsWith('.vercel.app')) {
+        var m = parts[0].match(/^smartlocal-(.+)$/);
+        if (m) return m[1];
+      }
+      // กรอง path segment ที่เป็นชื่อไฟล์ (มีนามสกุล) ออก
+      var segs = pathname.split('/').filter(function(s){ return s && s.indexOf('.') === -1; });
+      return segs[0] || null;
+    }
+
+    function replaceAll(name) {
+      var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+      var nodes = [];
+      while (walker.nextNode()) nodes.push(walker.currentNode);
+      nodes.forEach(function(n) {
+        if (n.nodeValue.indexOf(PLACEHOLDER) !== -1)
+          n.nodeValue = n.nodeValue.split(PLACEHOLDER).join(name);
+      });
+      document.title = document.title.split(PLACEHOLDER).join(name);
+    }
+
+    // อ่านจาก localStorage ก่อน (บันทึกไว้โดย React app)
+    var cachedName = localStorage.getItem('sl_tenant_name');
+    if (cachedName) { replaceAll(cachedName); return; }
+
+    var slug = detectSlug();
+    if (!slug) return;
+
+    fetch(SUPABASE_URL + '/rest/v1/municipalities?slug=eq.' + slug + '&select=name', {
+      headers: { 'apikey': ANON_KEY, 'Authorization': 'Bearer ' + ANON_KEY }
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(data){ if (data && data[0] && data[0].name) replaceAll(data[0].name); })
+    .catch(function(){});
   })();
 </script>
 

@@ -130,6 +130,8 @@ export function TenantProvider({ children }) {
       applyTheme(data.theme_color ?? '#1d4ed8')
       document.title = data.name
       injectPWAManifest(data)
+      localStorage.setItem('sl_slug', data.slug)
+      localStorage.setItem('sl_tenant_name', data.name)
       setLoading(false)
     }
 
