@@ -2,10 +2,11 @@ import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Loader2, LogOut, MapPin, Phone, X, RefreshCw,
-  CheckCircle2, Image, AlignLeft, ChevronRight, Wrench,
+  CheckCircle2, Image, AlignLeft, ChevronRight, Wrench, Printer,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import { fmtNo } from '../lib/formatComplaintNo'
 
 const STATUS = {
   pending:     { label: 'รอดำเนินการ',    bg: '#fef3c7', text: '#92400e' },
@@ -120,7 +121,7 @@ function StatusStepper({ status }) {
 }
 
 
-function DetailSheet({ complaint: c, onClose, onUpdate, updating }) {
+function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenantName }) {
   const [note, setNote] = useState(c.technician_note ?? '')
   const [photos, setPhotos] = useState(c.work_photos ?? [])
   const [uploading, setUploading] = useState(false)
@@ -129,6 +130,58 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating }) {
   const action = NEXT_ACTION[c.status]
   const catLabel = CATEGORY_LABEL[c.category] ?? c.category
   const catEmoji = CATEGORY_EMOJI[c.category] ?? '📄'
+
+  function handlePrint() {
+    const dateStr = new Date(c.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'long', year: 'numeric' })
+    const complaintNo = fmtNo(c.complaint_number, c.created_at)
+    const statusLabel = STATUS[c.status]?.label ?? c.status
+    const location = c.location_name || c.village || '—'
+    const mapUrl = c.latitude ? `https://maps.google.com/?q=${c.latitude},${c.longitude}` : null
+
+    const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/>
+<title>คำร้อง ${complaintNo}</title>
+<style>
+  body { font-family: 'Sarabun', sans-serif; font-size: 14px; color: #111; margin: 0; padding: 24px 32px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: #555; font-size: 13px; margin-bottom: 16px; }
+  hr { border: none; border-top: 1px solid #ddd; margin: 12px 0; }
+  .row { display: flex; gap: 8px; margin: 6px 0; }
+  .label { color: #666; min-width: 110px; }
+  .value { font-weight: 600; }
+  .section { margin-top: 14px; }
+  .section-title { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+  .box { background: #f8f8f8; border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px 14px; white-space: pre-wrap; line-height: 1.6; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; background: #dbeafe; color: #1e40af; }
+  .footer { margin-top: 32px; font-size: 12px; color: #aaa; text-align: center; }
+  @media print { body { padding: 16px 24px; } }
+</style></head><body>
+<h1>${tenantName ?? 'หน่วยงาน'}</h1>
+<div class="sub">ใบคำร้อง / ใบงานช่าง — พิมพ์เมื่อ ${new Date().toLocaleDateString('th-TH', { day: '2-digit', month: 'long', year: 'numeric' })}</div>
+<hr/>
+<div class="row"><span class="label">เลขที่คำร้อง</span><span class="value">${complaintNo}</span></div>
+<div class="row"><span class="label">วันที่แจ้ง</span><span class="value">${dateStr}</span></div>
+<div class="row"><span class="label">ประเภท</span><span class="value">${catEmoji} ${catLabel}</span></div>
+<div class="row"><span class="label">สถานะ</span><span class="badge">${statusLabel}</span></div>
+<div class="row"><span class="label">ผู้แจ้ง</span><span class="value">${c.reporter_name || '—'}</span></div>
+<div class="row"><span class="label">เบอร์ติดต่อ</span><span class="value">${c.phone || '—'}</span></div>
+<div class="row"><span class="label">จุดเกิดเหตุ</span><span class="value">${location}</span></div>
+${mapUrl ? `<div class="row"><span class="label">พิกัด</span><span class="value">${c.latitude.toFixed(5)}, ${c.longitude.toFixed(5)}</span></div>` : ''}
+${c.subject ? `<div class="row"><span class="label">เรื่อง</span><span class="value">${c.subject}</span></div>` : ''}
+<div class="section"><div class="section-title">รายละเอียดปัญหา</div><div class="box">${c.detail}</div></div>
+${c.technician_note ? `<div class="section"><div class="section-title">บันทึกของช่าง</div><div class="box">${c.technician_note}</div></div>` : ''}
+<hr style="margin-top:24px"/>
+<div style="display:flex;justify-content:space-between;margin-top:32px;font-size:13px;">
+  <div>ลายมือชื่อผู้แจ้ง ..................................</div>
+  <div>ลายมือชื่อผู้รับเรื่อง ..................................</div>
+</div>
+<div class="footer">SmartLocal E-Service · ${tenantName ?? ''}</div>
+<script>window.onload=()=>{window.print();}</script>
+</body></html>`
+
+    const w = window.open('', '_blank', 'width=800,height=900')
+    w.document.write(html)
+    w.document.close()
+  }
 
   async function uploadPhoto(e) {
     const file = e.target.files?.[0]
@@ -164,10 +217,17 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating }) {
         {/* Header */}
         <div className="shrink-0 px-5 pt-6 pb-5"
              style={{ background: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)' }}>
-          <button onClick={onClose}
-            className="absolute top-4 right-4 p-2 rounded-xl bg-white/20 hover:bg-white/30 text-white transition-colors">
-            <X size={16} />
-          </button>
+          <div className="absolute top-4 right-4 flex gap-2">
+            <button onClick={handlePrint}
+              className="p-2 rounded-xl bg-white/20 hover:bg-white/30 text-white transition-colors"
+              title="พิมพ์">
+              <Printer size={16} />
+            </button>
+            <button onClick={onClose}
+              className="p-2 rounded-xl bg-white/20 hover:bg-white/30 text-white transition-colors">
+              <X size={16} />
+            </button>
+          </div>
           <div className="flex items-start gap-3">
             <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-2xl shrink-0">
               {catEmoji}
@@ -432,6 +492,7 @@ export default function TechnicianDashboard() {
           onClose={() => setSelected(null)}
           onUpdate={updateStatus}
           updating={updating}
+          tenantName={tenant?.name}
         />
       )}
 
