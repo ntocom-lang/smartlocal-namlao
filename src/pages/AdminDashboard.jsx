@@ -2373,11 +2373,20 @@ function ReportManager({ complaints, tenant }) {
 
   const CAT_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#94a3b8']
 
-  // คำร้องค้างนานเกิน 7 วัน
+  const nowMs = now.getTime()
+
+  // คำร้องค้างนานเกิน 15 วัน
   const overdue = complaints
     .filter(c => !['completed','rejected'].includes(c.status) &&
-      (Date.now() - new Date(c.created_at)) > 7 * 86400000)
+      (nowMs - new Date(c.created_at)) > 15 * 86400000)
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+    .slice(0, 6)
+
+  // รับเรื่องแล้ว (received) แต่ช่างยังไม่รับงานต่อเกิน 7 วัน
+  const noTechAction = complaints
+    .filter(c => c.status === 'received' &&
+      (nowMs - new Date(c.updated_at)) > 7 * 86400000)
+    .sort((a, b) => new Date(a.updated_at) - new Date(b.updated_at))
     .slice(0, 6)
 
   const rateColor = rate >= 70 ? '#10b981' : rate >= 40 ? '#f59e0b' : '#ef4444'
@@ -2476,115 +2485,156 @@ function ReportManager({ complaints, tenant }) {
         )}
       </div>
 
-      {/* Category + Overdue */}
-      <div className="grid md:grid-cols-2 gap-4">
-        {/* Category breakdown */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-          <h3 className="text-sm font-semibold text-gray-700 mb-4">
-            {view === 'all' ? 'ประเภทคำร้องทั้งหมด' : view === 'year' ? `ประเภทคำร้องปี ${year + 543}` : `ประเภทคำร้อง${MONTHS_FULL_TH[month]}นี้`}
-          </h3>
-          {catData.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-8">ไม่มีข้อมูล</p>
-          ) : (
-            <>
-              <ResponsiveContainer width="100%" height={200}>
-                <PieChart>
-                  <Pie
-                    data={catPieData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={48}
-                    outerRadius={78}
-                    dataKey="count"
-                    nameKey="name"
-                    paddingAngle={2}
-                    label={({ cx, cy, midAngle, outerRadius, count }) => {
-                      const RADIAN = Math.PI / 180
-                      const x = cx + (outerRadius + 14) * Math.cos(-midAngle * RADIAN)
-                      const y = cy + (outerRadius + 14) * Math.sin(-midAngle * RADIAN)
-                      return (
-                        <text x={x} y={y} textAnchor="middle" dominantBaseline="central"
-                          fontSize={11} fontWeight={700} fill="#374151">
-                          {count}
-                        </text>
-                      )
-                    }}
-                    labelLine={{ stroke: '#d1d5db', strokeWidth: 1 }}
-                  >
-                    {catPieData.map((_, i) => (
-                      <Cell key={i} fill={CAT_COLORS[i % CAT_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    formatter={(value, name) => [`${value} รายการ`, name]}
-                    contentStyle={{ borderRadius: 12, border: '1px solid #f3f4f6', fontSize: 12 }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="space-y-2.5 mt-2">
-                {catData.map(({ name, emoji, count }, i) => (
-                  <div key={i}>
-                    <div className="flex items-center justify-between text-xs mb-1.5">
-                      <span className="text-gray-700 font-medium flex items-center gap-2 truncate">
-                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: CAT_COLORS[i % CAT_COLORS.length] }} />
-                        <span>{emoji}</span> {name}
-                      </span>
-                      <span className="text-gray-500 shrink-0 ml-2 font-semibold">{count}</span>
-                    </div>
-                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full transition-all"
-                        style={{
-                          width: `${count / catData[0].count * 100}%`,
-                          backgroundColor: CAT_COLORS[i % CAT_COLORS.length],
-                          opacity: 0.75,
-                        }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Overdue complaints — แสดงเฉพาะ รายเดือน */}
-        {view === 'month' && <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-          <h3 className="text-sm font-semibold text-gray-700 mb-1 flex items-center gap-2">
-            <AlertTriangle size={14} className="text-amber-500" />
-            คำร้องค้างเกิน 7 วัน
-          </h3>
-          <p className="text-xs text-gray-400 mb-4">ทั้งระบบ {overdue.length} รายการ</p>
-          {overdue.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-8 text-gray-400">
-              <CheckCircle2 size={28} className="text-green-400 mb-2" />
-              <p className="text-sm text-green-600 font-medium">ไม่มีคำร้องค้าง</p>
-            </div>
-          ) : (
-            <div className="space-y-0 divide-y divide-gray-50">
-              {overdue.map(c => {
-                const days = Math.floor((Date.now() - new Date(c.created_at)) / 86400000)
-                const s = STATUS[c.status]
-                return (
-                  <div key={c.id} className="flex items-center gap-3 py-2.5">
-                    <span className="text-lg shrink-0">{CATEGORY_EMOJI[c.category] ?? '📄'}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-gray-700 truncate">
-                        {CATEGORY_LABEL[c.category] ?? c.category}
-                      </p>
-                      <span className="text-[13px] px-1.5 py-0.5 rounded-full font-medium"
-                        style={{ backgroundColor: s?.bg, color: s?.text }}>
-                        {s?.label}
-                      </span>
-                    </div>
-                    <span className="text-xs font-bold text-red-500 shrink-0 bg-red-50 px-2 py-0.5 rounded-lg">
-                      {days} วัน
+      {/* Category breakdown — full width */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+        <h3 className="text-sm font-semibold text-gray-700 mb-4">
+          {view === 'all' ? 'ประเภทคำร้องทั้งหมด' : view === 'year' ? `ประเภทคำร้องปี ${year + 543}` : `ประเภทคำร้อง${MONTHS_FULL_TH[month]}นี้`}
+        </h3>
+        {catData.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-8">ไม่มีข้อมูล</p>
+        ) : (
+          <>
+            <ResponsiveContainer width="100%" height={200}>
+              <PieChart>
+                <Pie
+                  data={catPieData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={48}
+                  outerRadius={78}
+                  dataKey="count"
+                  nameKey="name"
+                  paddingAngle={2}
+                  label={({ cx, cy, midAngle, outerRadius, count }) => {
+                    const RADIAN = Math.PI / 180
+                    const x = cx + (outerRadius + 14) * Math.cos(-midAngle * RADIAN)
+                    const y = cy + (outerRadius + 14) * Math.sin(-midAngle * RADIAN)
+                    return (
+                      <text x={x} y={y} textAnchor="middle" dominantBaseline="central"
+                        fontSize={11} fontWeight={700} fill="#374151">
+                        {count}
+                      </text>
+                    )
+                  }}
+                  labelLine={{ stroke: '#d1d5db', strokeWidth: 1 }}
+                >
+                  {catPieData.map((_, i) => (
+                    <Cell key={i} fill={CAT_COLORS[i % CAT_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(value, name) => [`${value} รายการ`, name]}
+                  contentStyle={{ borderRadius: 12, border: '1px solid #f3f4f6', fontSize: 12 }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="space-y-2.5 mt-2">
+              {catData.map(({ name, emoji, count }, i) => (
+                <div key={i}>
+                  <div className="flex items-center justify-between text-xs mb-1.5">
+                    <span className="text-gray-700 font-medium flex items-center gap-2 truncate">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: CAT_COLORS[i % CAT_COLORS.length] }} />
+                      <span>{emoji}</span> {name}
                     </span>
+                    <span className="text-gray-500 shrink-0 ml-2 font-semibold">{count}</span>
                   </div>
-                )
-              })}
+                  <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${count / catData[0].count * 100}%`,
+                        backgroundColor: CAT_COLORS[i % CAT_COLORS.length],
+                        opacity: 0.75,
+                      }} />
+                  </div>
+                </div>
+              ))}
             </div>
-          )}
-        </div>}
+          </>
+        )}
       </div>
+
+      {/* 2-col alert widgets — แสดงเฉพาะ รายเดือน */}
+      {view === 'month' && (
+        <div className="grid md:grid-cols-2 gap-4">
+          {/* รับเรื่องแล้ว แต่ช่างยังไม่รับงาน */}
+          <div className="bg-white rounded-2xl border border-orange-100 shadow-sm p-5">
+            <h3 className="text-sm font-semibold text-gray-700 mb-1 flex items-center gap-2">
+              <Clock size={14} className="text-orange-500" />
+              รอช่างรับงานเกิน 7 วัน
+            </h3>
+            <p className="text-xs text-gray-400 mb-4">ค้างเกิน 7 วันหลังรับเรื่อง · ทั้งระบบ {noTechAction.length} รายการ</p>
+            {noTechAction.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-gray-400">
+                <CheckCircle2 size={28} className="text-green-400 mb-2" />
+                <p className="text-sm text-green-600 font-medium">ช่างรับงานทุกรายการแล้ว</p>
+              </div>
+            ) : (
+              <div className="space-y-0 divide-y divide-gray-50">
+                {noTechAction.map(c => {
+                  const days = Math.floor((nowMs - new Date(c.updated_at)) / 86400000)
+                  return (
+                    <div key={c.id} className="flex items-center gap-3 py-2.5">
+                      <span className="text-lg shrink-0">{CATEGORY_EMOJI[c.category] ?? '📄'}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-gray-700 truncate">
+                          {CATEGORY_LABEL[c.category] ?? c.category}
+                        </p>
+                        <p className="text-[11px] text-gray-400 mt-0.5 truncate">
+                          {c.assigned_to_name
+                            ? `ช่าง: ${c.assigned_to_name}`
+                            : c.assigned_to ? 'มอบหมายแล้ว ยังไม่รับงาน' : 'ยังไม่ได้มอบหมายช่าง'}
+                        </p>
+                      </div>
+                      <span className="text-xs font-bold text-orange-500 shrink-0 bg-orange-50 px-2 py-0.5 rounded-lg">
+                        {days} วัน
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* คำร้องค้างเกิน 7 วัน */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <h3 className="text-sm font-semibold text-gray-700 mb-1 flex items-center gap-2">
+              <AlertTriangle size={14} className="text-amber-500" />
+              คำร้องค้างเกิน 15 วัน
+            </h3>
+            <p className="text-xs text-gray-400 mb-4">ค้างเกิน 15 วัน · ทั้งระบบ {overdue.length} รายการ</p>
+            {overdue.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-gray-400">
+                <CheckCircle2 size={28} className="text-green-400 mb-2" />
+                <p className="text-sm text-green-600 font-medium">ไม่มีคำร้องค้าง</p>
+              </div>
+            ) : (
+              <div className="space-y-0 divide-y divide-gray-50">
+                {overdue.map(c => {
+                  const days = Math.floor((nowMs - new Date(c.created_at)) / 86400000)
+                  const s = STATUS[c.status]
+                  return (
+                    <div key={c.id} className="flex items-center gap-3 py-2.5">
+                      <span className="text-lg shrink-0">{CATEGORY_EMOJI[c.category] ?? '📄'}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-gray-700 truncate">
+                          {CATEGORY_LABEL[c.category] ?? c.category}
+                        </p>
+                        <span className="text-[13px] px-1.5 py-0.5 rounded-full font-medium"
+                          style={{ backgroundColor: s?.bg, color: s?.text }}>
+                          {s?.label}
+                        </span>
+                      </div>
+                      <span className="text-xs font-bold text-red-500 shrink-0 bg-red-50 px-2 py-0.5 rounded-lg">
+                        {days} วัน
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
