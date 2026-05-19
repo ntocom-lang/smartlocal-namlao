@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft, UserCircle2, Pencil, LogIn, LogOut,
@@ -7,7 +7,7 @@ import {
   ChevronRight, Star, Copy, Download, Check, Monitor, X,
   UploadIcon, PlusSquare, BookOpen,
 } from 'lucide-react'
-import { QRCode } from 'react-qr-code'
+import qrCodeImage from '../assets/qr-code.png'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useNotifications } from '../contexts/NotificationsContext'
@@ -71,7 +71,6 @@ function IOSGuide({ onClose }) {
 }
 
 function QRShareCard({ tenant }) {
-  const qrRef = useRef(null)
   const [copied, setCopied] = useState(false)
   const [installPrompt, setInstallPrompt] = useState(null)
   const [installState, setInstallState] = useState('unknown') // 'unknown' | 'installable' | 'installed'
@@ -148,24 +147,10 @@ function QRShareCard({ tenant }) {
   }
 
   function handleDownload() {
-    const svg = qrRef.current?.querySelector('svg')
-    if (!svg) return
-    const svgData = new XMLSerializer().serializeToString(svg)
-    const canvas = document.createElement('canvas')
-    canvas.width = 300
-    canvas.height = 300
-    const ctx = canvas.getContext('2d')
-    const img = new Image()
-    img.onload = () => {
-      ctx.fillStyle = '#ffffff'
-      ctx.fillRect(0, 0, 300, 300)
-      ctx.drawImage(img, 0, 0, 300, 300)
-      const a = document.createElement('a')
-      a.download = `qr-${tenant?.slug ?? 'smartlocal'}.png`
-      a.href = canvas.toDataURL('image/png')
-      a.click()
-    }
-    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)))
+    const a = document.createElement('a')
+    a.download = `qr-${tenant?.slug ?? 'smartlocal'}.png`
+    a.href = qrCodeImage
+    a.click()
   }
 
   return (
@@ -183,8 +168,8 @@ function QRShareCard({ tenant }) {
         </p>
 
         {/* QR Code */}
-        <div ref={qrRef} className="bg-white rounded-2xl p-4 shadow-md">
-          <QRCode value={url} size={160} />
+        <div className="bg-white rounded-2xl p-4 shadow-md">
+          <img src={qrCodeImage} alt="QR Code" className="w-40 h-40 object-contain" />
         </div>
 
         {/* Install button */}
@@ -315,7 +300,7 @@ export default function MorePage() {
   const isAdmin = role === 'admin' || role === 'superadmin'
   const isViewer = role === 'viewer'
   const displayName = session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || ''
-  const avatarUrl = session?.user?.user_metadata?.avatar_url
+  const avatarUrl = session?.user?.user_metadata?.avatar_url || session?.user?.user_metadata?.picture
   const initials = (displayName[0] || '?').toUpperCase()
 
   const hasSocial = tenant?.website_url || tenant?.facebook_url || tenant?.line_oa_url

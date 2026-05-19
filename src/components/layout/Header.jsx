@@ -181,9 +181,9 @@ export default function Header() {
             </button>
             {session ? (
               <Link to="/profile" className="p-1">
-                {session.user?.user_metadata?.avatar_url ? (
+                {(session.user?.user_metadata?.avatar_url || session.user?.user_metadata?.picture) ? (
                   <img
-                    src={session.user.user_metadata.avatar_url}
+                    src={session.user.user_metadata.avatar_url || session.user.user_metadata.picture}
                     alt="avatar"
                     className="w-8 h-8 rounded-full object-cover border-2 border-white/60"
                   />

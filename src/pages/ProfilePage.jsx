@@ -24,7 +24,7 @@ const [editName, setEditName] = useState(false)
       setSession(s)
 
       const meta = s.user.user_metadata
-      setAvatarUrl(meta?.avatar_url || null)
+      setAvatarUrl(meta?.avatar_url || meta?.picture || null)
       setIsGoogleLinked(s.user.app_metadata?.providers?.includes('google') || false)
 
       const { data: p } = await supabase
@@ -38,7 +38,7 @@ const [editName, setEditName] = useState(false)
           full_name: p.full_name || meta?.full_name || '',
           phone: p.phone || meta?.phone || '',
         })
-        setAvatarUrl(p.avatar_url || meta?.avatar_url || null)
+        setAvatarUrl(p.avatar_url || meta?.avatar_url || meta?.picture || null)
       } else {
         setProfile({
           full_name: meta?.full_name || '',

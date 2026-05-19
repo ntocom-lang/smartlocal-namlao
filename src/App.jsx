@@ -146,10 +146,15 @@ function AppShell() {
       updates.role = 'citizen'
     }
 
-    // Google OAuth ส่ง name ใน key 'name' ไม่ใช่ 'full_name'
+    // Google OAuth ส่ง name ใน key 'name' ไม่ใช่ 'full_name', รูปใน key 'picture' ไม่ใช่ 'avatar_url'
     if (!profile?.full_name?.trim()) {
       const name = userMeta?.full_name || userMeta?.name || ''
       if (name) updates.full_name = name
+    }
+
+    if (!profile?.avatar_url?.trim()) {
+      const pic = userMeta?.avatar_url || userMeta?.picture || ''
+      if (pic) updates.avatar_url = pic
     }
 
     if (Object.keys(updates).length > 0) {
