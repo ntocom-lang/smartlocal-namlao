@@ -19,6 +19,7 @@ import ProfilePage from './pages/ProfilePage'
 import MyComplaints from './pages/MyComplaints'
 import MorePage from './pages/MorePage'
 import NotificationsPage from './pages/NotificationsPage'
+import WeatherPage from './pages/WeatherPage'
 import { supabase } from './lib/supabase'
 import { Phone, X } from 'lucide-react'
 
@@ -230,6 +231,7 @@ function AppShell() {
             </RequireAuth>
           } />
           <Route path="/more" element={<MorePage />} />
+          <Route path="/weather" element={<WeatherPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/technician" element={

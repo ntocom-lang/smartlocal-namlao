@@ -7,6 +7,7 @@ import ServiceButtons from '../components/home/ServiceButtons'
 import NewsSection from '../components/home/NewsSection'
 import EmergencyGrid from '../components/home/EmergencyGrid'
 import { Info, LayoutDashboard, ChevronRight } from 'lucide-react'
+import WeatherWidget from '../components/home/WeatherWidget'
 
 export default function HomePage() {
   const { tenant } = useTenant()
@@ -33,6 +34,11 @@ export default function HomePage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+
+      {/* Weather widget - top right */}
+      <div className="flex justify-end -mb-2">
+        <WeatherWidget />
+      </div>
 
       {/* Admin / Viewer banner */}
       {(isAdmin || isViewer) && (
