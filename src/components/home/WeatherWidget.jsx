@@ -54,30 +54,7 @@ export default function WeatherWidget() {
                  border border-gray-200/70 dark:border-gray-700/60 rounded-2xl shadow-sm
                  hover:shadow-md active:scale-[0.99] transition-all overflow-hidden group"
     >
-      {/* คอลัมน์ 1 — พยากรณ์อากาศ */}
-      <div className="flex-1 flex items-center gap-2.5 px-4 py-3">
-        <span className="text-2xl shrink-0">{info.icon}</span>
-        <div className="min-w-0">
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-lg font-bold text-gray-800 dark:text-white leading-none">
-              {weather.temp}°
-            </span>
-            <span className="text-[12px] text-gray-500 dark:text-gray-400 truncate">
-              {info.label}
-            </span>
-          </div>
-          <div className="flex items-center gap-0.5 mt-0.5
-                          text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300 transition-colors">
-            <span className="text-[11px]">พยากรณ์อากาศน้ำเลา</span>
-            <ChevronRight size={11} />
-          </div>
-        </div>
-      </div>
-
-      {/* Divider */}
-      <div className="w-px bg-gray-200/80 dark:bg-gray-700/60 my-3" />
-
-      {/* คอลัมน์ 2 — ฝุ่น PM2.5 */}
+      {/* คอลัมน์ 1 — ฝุ่น PM2.5 */}
       <div className="flex-1 flex items-center gap-2.5 px-4 py-3">
         {pmInfo ? (
           <div>
@@ -98,6 +75,29 @@ export default function WeatherWidget() {
         ) : (
           <span className="text-[11px] text-gray-400">ไม่มีข้อมูลฝุ่น</span>
         )}
+      </div>
+
+      {/* Divider */}
+      <div className="w-px bg-gray-200/80 dark:bg-gray-700/60 my-3" />
+
+      {/* คอลัมน์ 2 — พยากรณ์อากาศ */}
+      <div className="flex-1 flex items-center gap-2.5 px-4 py-3">
+        <span className="text-2xl shrink-0">{info.icon}</span>
+        <div className="min-w-0">
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-lg font-bold text-gray-800 dark:text-white leading-none">
+              {weather.temp}°
+            </span>
+            <span className="text-[12px] text-gray-500 dark:text-gray-400 truncate">
+              {info.label}
+            </span>
+          </div>
+          <div className="flex items-center gap-0.5 mt-0.5
+                          text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300 transition-colors">
+            <span className="text-[11px]">พยากรณ์อากาศน้ำเลา</span>
+            <ChevronRight size={11} />
+          </div>
+        </div>
       </div>
     </Link>
   )
