@@ -37,3 +37,15 @@ export function getWeatherInfo(code) {
 // ตำบลน้ำเลา อ.ร้องกวาง จ.แพร่
 export const WEATHER_LAT = 18.33
 export const WEATHER_LON = 100.32
+
+const PM25_LEVELS = [
+  { max: 15,   label: 'ดีมาก',               color: '#3b82f6' }, // blue
+  { max: 25,   label: 'ดี',                  color: '#22c55e' }, // green
+  { max: 37.5, label: 'ปานกลาง',             color: '#eab308' }, // yellow
+  { max: 75,   label: 'เริ่มมีผลต่อสุขภาพ', color: '#f97316' }, // orange
+  { max: Infinity, label: 'มีผลต่อสุขภาพ',  color: '#ef4444' }, // red
+]
+
+export function getPm25Info(value) {
+  return PM25_LEVELS.find(l => value <= l.max) ?? PM25_LEVELS.at(-1)
+}
