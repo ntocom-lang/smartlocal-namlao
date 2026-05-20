@@ -35,10 +35,8 @@ export default function HomePage() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
 
-      {/* Weather widget - top right */}
-      <div className="flex justify-end -mb-2">
-        <WeatherWidget />
-      </div>
+      {/* Weather widget - full width */}
+      <WeatherWidget />
 
       {/* Admin / Viewer banner */}
       {(isAdmin || isViewer) && (
