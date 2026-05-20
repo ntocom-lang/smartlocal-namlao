@@ -55,7 +55,7 @@ export default function WeatherWidget() {
                  hover:shadow-md active:scale-[0.99] transition-all overflow-hidden group"
     >
       {/* คอลัมน์ 1 — ฝุ่น PM2.5 */}
-      <div className="flex-1 flex items-center gap-2.5 px-3 py-2">
+      <div className="flex-1 flex items-center justify-center px-3 py-2">
         {pmInfo ? (
           <div>
             <div className="flex items-baseline gap-1">
@@ -81,7 +81,7 @@ export default function WeatherWidget() {
       <div className="w-px bg-gray-200/80 dark:bg-gray-700/60 my-3" />
 
       {/* คอลัมน์ 2 — พยากรณ์อากาศ */}
-      <div className="flex-1 flex items-center gap-2.5 px-3 py-2">
+      <div className="flex-1 flex items-center justify-center gap-2.5 px-3 py-2">
         <span className="text-2xl shrink-0">{info.icon}</span>
         <div className="min-w-0">
           <div className="flex items-baseline gap-1.5">
