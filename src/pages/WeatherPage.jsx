@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, MapPin } from 'lucide-react'
 import { getWeatherInfo, WEATHER_LAT, WEATHER_LON } from '../lib/weatherUtils'
+import { useTenant } from '../contexts/TenantContext'
 
 const DAYS_TH = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์']
 const MONTHS_TH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
@@ -102,9 +103,14 @@ function ErrorState({ message }) {
 
 export default function WeatherPage() {
   const navigate = useNavigate()
+  const { tenant } = useTenant()
   const [activeTab, setActiveTab] = useState(0)
 
-  // Tab 0 — พื้นที่น้ำเลา (hardcoded)
+  const lat = tenant?.latitude  ?? WEATHER_LAT
+  const lon = tenant?.longitude ?? WEATHER_LON
+  const localName = tenant?.name ?? 'พื้นที่'
+
+  // Tab 0 — พื้นที่หน่วยงาน (จาก tenant)
   const [localData, setLocalData] = useState(null)
   const [localLoading, setLocalLoading] = useState(true)
   const [localError, setLocalError] = useState(false)
@@ -117,11 +123,12 @@ export default function WeatherPage() {
   const [ipFetched, setIpFetched] = useState(false)
 
   useEffect(() => {
-    fetchWeather(WEATHER_LAT, WEATHER_LON)
+    if (!tenant) return
+    fetchWeather(lat, lon)
       .then(setLocalData)
       .catch(() => setLocalError(true))
       .finally(() => setLocalLoading(false))
-  }, [])
+  }, [lat, lon, tenant])
 
   const fetchIpWeather = useCallback(async () => {
     if (ipFetched) return
@@ -146,8 +153,12 @@ export default function WeatherPage() {
     if (tab === 1) fetchIpWeather()
   }
 
+  const shortName = tenant?.name
+    ?.replace(/^(เทศบาลนคร|เทศบาลเมือง|เทศบาลตำบล|เทศบาล|องค์การบริหารส่วนตำบล|อบต\.)\s*/, '')
+    ?? 'พื้นที่'
+
   const tabs = [
-    { label: '📍 น้ำเลา' },
+    { label: `📍 ${shortName}` },
     { label: '🌐 ตำแหน่งของฉัน' },
   ]
 
@@ -182,11 +193,11 @@ export default function WeatherPage() {
         ))}
       </div>
 
-      {/* Tab 0 — น้ำเลา */}
+      {/* Tab 0 — พื้นที่หน่วยงาน */}
       {activeTab === 0 && (
         localLoading ? <LoadingSpinner /> :
         localError   ? <ErrorState message="ไม่สามารถโหลดข้อมูลได้" /> :
-        localData    ? <WeatherContent data={localData} locationName="ตำบลน้ำเลา อ.ร้องกวาง จ.แพร่" /> :
+        localData    ? <WeatherContent data={localData} locationName={localName} /> :
         null
       )}
 
