@@ -182,8 +182,8 @@ function QRShareCard({ tenant }) {
           <button onClick={handleInstall}
             className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-white font-bold text-sm transition-opacity hover:opacity-90 active:opacity-80"
             style={{ color: 'var(--color-primary)' }}>
-            <Monitor size={18} />
-            เพิ่มลงในหน้าจอหลัก
+            {isIOS ? <UploadIcon size={18} /> : <Monitor size={18} />}
+            {isIOS ? 'เพิ่มไปยังหน้าจอโฮม' : 'เพิ่มลงในหน้าจอหลัก'}
           </button>
         ) : null}
 
