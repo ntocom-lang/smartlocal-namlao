@@ -111,11 +111,15 @@ export default function InstallPrompt() {
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0"
                  style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
-              <Download size={22} className="text-white" />
+              {iosMode ? <PlusSquare size={22} className="text-white" /> : <Download size={22} className="text-white" />}
             </div>
             <div>
-              <p className="text-base font-bold text-gray-800">ติดตั้งแอปพลิเคชัน</p>
-              <p className="text-xs text-gray-400">เข้าถึงได้รวดเร็วขึ้น ไม่ต้องเปิดเบราว์เซอร์</p>
+              <p className="text-base font-bold text-gray-800">
+                {iosMode ? 'เพิ่มไปยังหน้าจอโฮม' : 'ติดตั้งแอปพลิเคชัน'}
+              </p>
+              <p className="text-xs text-gray-400">
+                {iosMode ? 'ใช้งานได้เหมือนแอปจริง ไม่ต้องเปิดเบราว์เซอร์' : 'เข้าถึงได้รวดเร็วขึ้น ไม่ต้องเปิดเบราว์เซอร์'}
+              </p>
             </div>
           </div>
           <button onClick={dismiss} className="shrink-0 p-1 text-gray-300 hover:text-gray-500">

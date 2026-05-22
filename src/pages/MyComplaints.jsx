@@ -5,7 +5,7 @@ import { useTenant } from '../contexts/TenantContext'
 import { fmtNo } from '../lib/formatComplaintNo'
 import {
   ClipboardList, Loader2, ChevronRight, X, MapPin,
-  Phone, FileText, ArrowLeft, Check, XCircle, Navigation, Camera, AlignLeft,
+  Phone, FileText, ArrowLeft, Check, XCircle, Navigation, Camera, AlignLeft, Star,
 } from 'lucide-react'
 
 const STATUS = {
@@ -128,7 +128,71 @@ function StatusStepper({ status }) {
   )
 }
 
-function DetailSheet({ complaint: c, onClose }) {
+function RatingCard({ complaint, onRated }) {
+  const [hovered, setHovered] = useState(0)
+  const [selected, setSelected] = useState(complaint.rating ?? 0)
+  const [submitted, setSubmitted] = useState(complaint.rating != null)
+  const [submitting, setSubmitting] = useState(false)
+
+  async function handleSubmit() {
+    if (!selected || submitting) return
+    setSubmitting(true)
+    const { error } = await supabase
+      .from('complaints')
+      .update({ rating: selected })
+      .eq('id', complaint.id)
+    if (!error) {
+      setSubmitted(true)
+      onRated(complaint.id, selected)
+    }
+    setSubmitting(false)
+  }
+
+  if (submitted) {
+    return (
+      <div className="bg-green-50 rounded-2xl p-4 border border-green-100 text-center">
+        <p className="text-sm font-semibold text-green-700">ขอบคุณสำหรับการให้คะแนน</p>
+        <div className="flex justify-center gap-1 mt-2">
+          {[1, 2, 3, 4, 5].map(s => (
+            <Star key={s} size={20}
+              className={s <= selected ? 'text-amber-400 fill-amber-400' : 'text-gray-200 fill-gray-200'} />
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-amber-50 rounded-2xl p-4 border border-amber-100">
+      <p className="text-sm font-semibold text-gray-700 text-center mb-3">ให้คะแนนความพึงพอใจ</p>
+      <div className="flex justify-center gap-1.5 mb-4">
+        {[1, 2, 3, 4, 5].map(s => (
+          <button key={s}
+            onMouseEnter={() => setHovered(s)}
+            onMouseLeave={() => setHovered(0)}
+            onClick={() => setSelected(s)}
+            className="p-1 transition-transform active:scale-90">
+            <Star size={30}
+              className={s <= (hovered || selected)
+                ? 'text-amber-400 fill-amber-400'
+                : 'text-gray-300 fill-gray-300'} />
+          </button>
+        ))}
+      </div>
+      {selected > 0 && (
+        <button
+          onClick={handleSubmit}
+          disabled={submitting}
+          className="w-full py-2.5 rounded-xl text-sm font-semibold text-white transition-opacity disabled:opacity-60"
+          style={{ backgroundColor: 'var(--color-primary)' }}>
+          {submitting ? 'กำลังบันทึก...' : 'ส่งคะแนน'}
+        </button>
+      )}
+    </div>
+  )
+}
+
+function DetailSheet({ complaint: c, onClose, onRated }) {
   if (!c) return null
   const attachments = c.attachments ?? []
   const categoryLabel = CATEGORY_LABEL[c.category] ?? c.category
@@ -296,6 +360,11 @@ function DetailSheet({ complaint: c, onClose }) {
               </div>
             </div>
           )}
+
+          {/* rating — แสดงเฉพาะตอน completed */}
+          {c.status === 'completed' && (
+            <RatingCard complaint={c} onRated={onRated} />
+          )}
         </div>
 
         {/* footer */}
@@ -326,19 +395,20 @@ export default function MyComplaints() {
 
   useEffect(() => {
     if (!tenant?.id || !session?.user?.id) return
-    setLoading(true)
-    supabase
-      .from('complaints')
-      .select('*')
-      .eq('municipality_id', tenant.id)
-      .eq('user_id', session.user.id)
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        const list = data ?? []
-        setComplaints(list)
-        setLoading(false)
-        if (openId) setSelected(list.find((c) => c.id === openId) ?? null)
-      })
+    async function load() {
+      setLoading(true)
+      const { data } = await supabase
+        .from('complaints')
+        .select('*')
+        .eq('municipality_id', tenant.id)
+        .eq('user_id', session.user.id)
+        .order('created_at', { ascending: false })
+      const list = data ?? []
+      setComplaints(list)
+      setLoading(false)
+      if (openId) setSelected(list.find((c) => c.id === openId) ?? null)
+    }
+    load()
   }, [tenant?.id, session?.user?.id, openId])
 
   return (

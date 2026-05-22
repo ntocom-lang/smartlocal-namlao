@@ -74,18 +74,18 @@ export default function WeatherWidget() {
               <span className="text-lg font-bold leading-none" style={{ color: pmInfo.color }}>
                 {pm25}
               </span>
-              <span className="text-[11px] text-gray-400">μg/m³</span>
+              <span className="text-xs text-gray-600 dark:text-gray-300">μg/m³</span>
             </div>
             <div className="flex items-center gap-1 mt-0.5">
               <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: pmInfo.color }} />
-              <span className="text-[11px] font-medium" style={{ color: pmInfo.color }}>
+              <span className="text-xs font-medium" style={{ color: pmInfo.color }}>
                 {pmInfo.label}
               </span>
-              <span className="text-[11px] text-gray-400 ml-0.5">· PM2.5</span>
+              <span className="text-xs text-gray-600 dark:text-gray-300 ml-0.5">· PM2.5</span>
             </div>
           </div>
         ) : (
-          <span className="text-[11px] text-gray-400">ไม่มีข้อมูลฝุ่น</span>
+          <span className="text-xs text-gray-600 dark:text-gray-300">ไม่มีข้อมูลฝุ่น</span>
         )}
       </div>
 
@@ -100,13 +100,13 @@ export default function WeatherWidget() {
             <span className="text-lg font-bold text-gray-800 dark:text-white leading-none">
               {weather.temp}°
             </span>
-            <span className="text-[12px] text-gray-500 dark:text-gray-400 truncate">
+            <span className="text-[13px] text-gray-700 dark:text-gray-200 truncate">
               {info.label}
             </span>
           </div>
           <div className="flex items-center gap-0.5 mt-0.5
-                          text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300 transition-colors">
-            <span className="text-[11px]">พยากรณ์อากาศ{shortName}</span>
+                          text-gray-600 dark:text-gray-300 group-hover:text-gray-800 dark:group-hover:text-white transition-colors">
+            <span className="text-xs">พยากรณ์อากาศ{shortName}</span>
             <ChevronRight size={11} />
           </div>
         </div>
