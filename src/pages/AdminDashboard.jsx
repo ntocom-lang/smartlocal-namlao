@@ -12,7 +12,7 @@ import {
   CheckCircle2, XCircle, AlertCircle, ChevronRight,
   Filter, Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical,
   X, FileText, AlignLeft, Image, Calendar, Hash, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera,
-  TrendingUp, AlertTriangle, Printer, UserCircle2,
+  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
@@ -2639,6 +2639,337 @@ function ReportManager({ complaints, tenant }) {
   )
 }
 
+// ─── Events Manager ────────────────────────────────────────────────────────────
+const EVENTS_CATEGORIES = ['ประชุม', 'งานบุญ', 'ตลาดนัด', 'กีฬา', 'ฝึกอบรม', 'อื่นๆ']
+const EVENTS_CATEGORY_COLOR = {
+  'ประชุม': '#3b82f6', 'งานบุญ': '#f59e0b', 'ตลาดนัด': '#10b981',
+  'กีฬา': '#ef4444', 'ฝึกอบรม': '#8b5cf6', 'อื่นๆ': '#6b7280',
+}
+
+function EventCard({ ev, onEdit, onDelete, deleting }) {
+  const [confirmDel, setConfirmDel] = useState(false)
+  const color = EVENTS_CATEGORY_COLOR[ev.category] ?? '#6b7280'
+  const d = new Date(ev.event_date + 'T00:00:00')
+  const dateStr = d.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' })
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex gap-3">
+      <div className="w-1 rounded-full shrink-0" style={{ backgroundColor: color }} />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <span
+              className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold text-white mb-1"
+              style={{ backgroundColor: color }}
+            >
+              {ev.category}
+            </span>
+            <p className="text-sm font-bold text-gray-800 leading-tight">{ev.title}</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {dateStr}{!ev.is_all_day && ev.event_time ? ` · ${ev.event_time.slice(0, 5)} น.` : ''}
+            </p>
+            {ev.location && <p className="text-xs text-gray-400 mt-0.5">📍 {ev.location}</p>}
+            {ev.description && (
+              <p className="text-xs text-gray-500 mt-1 leading-relaxed line-clamp-2">{ev.description}</p>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={() => onEdit(ev)}
+              className="p-1.5 rounded-xl hover:bg-gray-100 text-gray-400 transition-colors"
+            >
+              <Pencil size={14} />
+            </button>
+            {confirmDel ? (
+              <div className="flex gap-1">
+                <button
+                  onClick={() => { onDelete(ev.id); setConfirmDel(false) }}
+                  disabled={deleting === ev.id}
+                  className="px-2 py-1 rounded-lg bg-red-500 text-white text-xs font-bold"
+                >
+                  {deleting === ev.id ? '...' : 'ลบ'}
+                </button>
+                <button
+                  onClick={() => setConfirmDel(false)}
+                  className="px-2 py-1 rounded-lg bg-gray-100 text-gray-600 text-xs"
+                >
+                  ยกเลิก
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirmDel(true)}
+                className="p-1.5 rounded-xl hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function EventsManager({ tenant }) {
+  const [events, setEvents] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [editingEvent, setEditingEvent] = useState(null)
+  const [deleting, setDeleting] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const emptyForm = { title: '', description: '', event_date: '', event_time: '', end_date: '', location: '', category: 'อื่นๆ', is_all_day: true }
+  const [form, setForm] = useState(emptyForm)
+
+  useEffect(() => { fetchEvents() }, [tenant.id])
+
+  async function fetchEvents() {
+    setLoading(true)
+    const { data } = await supabase
+      .from('events')
+      .select('*')
+      .eq('municipality_id', tenant.id)
+      .order('event_date', { ascending: true })
+    setEvents(data ?? [])
+    setLoading(false)
+  }
+
+  function openAdd() {
+    const today = new Date().toISOString().split('T')[0]
+    setForm({ ...emptyForm, event_date: today })
+    setEditingEvent(null)
+    setShowForm(true)
+  }
+
+  function openEdit(ev) {
+    setForm({
+      title: ev.title,
+      description: ev.description ?? '',
+      event_date: ev.event_date,
+      event_time: ev.event_time ?? '',
+      end_date: ev.end_date ?? '',
+      location: ev.location ?? '',
+      category: ev.category ?? 'อื่นๆ',
+      is_all_day: ev.is_all_day ?? true,
+    })
+    setEditingEvent(ev)
+    setShowForm(true)
+  }
+
+  async function handleSave() {
+    if (!form.title.trim() || !form.event_date) return
+    setSaving(true)
+    const payload = {
+      municipality_id: tenant.id,
+      title: form.title.trim(),
+      description: form.description.trim() || null,
+      event_date: form.event_date,
+      event_time: form.is_all_day ? null : (form.event_time || null),
+      end_date: form.end_date || null,
+      location: form.location.trim() || null,
+      category: form.category,
+      is_all_day: form.is_all_day,
+      updated_at: new Date().toISOString(),
+    }
+    if (editingEvent) {
+      await supabase.from('events').update(payload).eq('id', editingEvent.id)
+    } else {
+      await supabase.from('events').insert(payload)
+    }
+    setSaving(false)
+    setShowForm(false)
+    fetchEvents()
+  }
+
+  async function handleDelete(id) {
+    setDeleting(id)
+    await supabase.from('events').delete().eq('id', id)
+    setDeleting(null)
+    setEvents((prev) => prev.filter((e) => e.id !== id))
+  }
+
+  const now = new Date()
+  now.setHours(0, 0, 0, 0)
+  const upcoming = events.filter((e) => new Date(e.event_date + 'T00:00:00') >= now)
+  const past = events.filter((e) => new Date(e.event_date + 'T00:00:00') < now)
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="font-bold text-gray-700">ปฏิทินกิจกรรมชุมชน</h2>
+        <button
+          onClick={openAdd}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white"
+          style={{ backgroundColor: 'var(--color-primary)' }}
+        >
+          <Plus size={16} /> เพิ่มกิจกรรม
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 px-4 pb-4">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-gray-800">{editingEvent ? 'แก้ไขกิจกรรม' : 'เพิ่มกิจกรรม'}</h3>
+              <button onClick={() => setShowForm(false)} className="p-1.5 rounded-xl hover:bg-gray-100">
+                <X size={18} className="text-gray-500" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-gray-500 mb-1 block">ชื่อกิจกรรม *</label>
+                <input
+                  value={form.title}
+                  onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
+                  placeholder="เช่น ประชุมสภา อบต."
+                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 mb-1 block">วันที่เริ่ม *</label>
+                  <input
+                    type="date"
+                    value={form.event_date}
+                    onChange={(e) => setForm((p) => ({ ...p, event_date: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 mb-1 block">วันสิ้นสุด</label>
+                  <input
+                    type="date"
+                    value={form.end_date}
+                    onChange={(e) => setForm((p) => ({ ...p, end_date: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={form.is_all_day}
+                    onChange={(e) => setForm((p) => ({ ...p, is_all_day: e.target.checked }))}
+                    className="w-4 h-4 rounded"
+                  />
+                  <span className="text-sm text-gray-700">ทั้งวัน</span>
+                </label>
+                {!form.is_all_day && (
+                  <input
+                    type="time"
+                    value={form.event_time}
+                    onChange={(e) => setForm((p) => ({ ...p, event_time: e.target.value }))}
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none"
+                  />
+                )}
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-500 mb-1 block">ประเภท</label>
+                <div className="flex flex-wrap gap-2">
+                  {EVENTS_CATEGORIES.map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => setForm((p) => ({ ...p, category: cat }))}
+                      className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors"
+                      style={
+                        form.category === cat
+                          ? { backgroundColor: EVENTS_CATEGORY_COLOR[cat], color: 'white' }
+                          : { backgroundColor: '#f3f4f6', color: '#374151' }
+                      }
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-500 mb-1 block">สถานที่</label>
+                <input
+                  value={form.location}
+                  onChange={(e) => setForm((p) => ({ ...p, location: e.target.value }))}
+                  placeholder="เช่น ห้องประชุมสภา"
+                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-500 mb-1 block">รายละเอียด</label>
+                <textarea
+                  value={form.description}
+                  onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
+                  placeholder="รายละเอียดเพิ่มเติม..."
+                  rows={3}
+                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:border-blue-400 resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setShowForm(false)}
+                className="flex-1 py-3 rounded-2xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving || !form.title.trim() || !form.event_date}
+                className="flex-1 py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-50"
+                style={{ backgroundColor: 'var(--color-primary)' }}
+              >
+                {saving ? 'กำลังบันทึก...' : 'บันทึก'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex justify-center py-10 text-gray-400">
+          <Loader2 size={24} className="animate-spin" />
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+              กิจกรรมที่จะมาถึง ({upcoming.length})
+            </p>
+            {upcoming.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center text-gray-400 text-sm">
+                ยังไม่มีกิจกรรม กด "เพิ่มกิจกรรม" เพื่อเริ่มต้น
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {upcoming.map((ev) => (
+                  <EventCard key={ev.id} ev={ev} onEdit={openEdit} onDelete={handleDelete} deleting={deleting} />
+                ))}
+              </div>
+            )}
+          </div>
+          {past.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                กิจกรรมที่ผ่านมา ({past.length})
+              </p>
+              <div className="space-y-2 opacity-60">
+                {[...past].reverse().slice(0, 5).map((ev) => (
+                  <EventCard key={ev.id} ev={ev} onEdit={openEdit} onDelete={handleDelete} deleting={deleting} />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main page ─────────────────────────────────────────────────────────────────
 export default function AdminDashboard() {
   const { tenant } = useTenant()
@@ -2907,6 +3238,13 @@ export default function AdminDashboard() {
           </button>
         )}
         {currentUserRole !== 'viewer' && (
+          <button onClick={() => setActivePage('events')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'events' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+            style={activePage === 'events' ? { backgroundColor: '#10b981' } : {}}>
+            <CalendarDays size={15} /> กิจกรรม
+          </button>
+        )}
+        {currentUserRole !== 'viewer' && (
           <button onClick={() => setActivePage('more')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'more' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
             style={activePage === 'more' ? { backgroundColor: '#6b7280' } : {}}>
@@ -2923,23 +3261,12 @@ export default function AdminDashboard() {
       >
         {[
           { key: 'home',       label: 'หน้าแรก', Icon: Home,          activeColor: '#6b7280' },
-          ...(currentUserRole === 'viewer'
-            ? [{ key: 'report', label: 'รายงาน', Icon: TrendingUp, activeColor: '#10b981' }]
-            : []),
           { key: 'complaints', label: 'คำร้อง',  Icon: ClipboardList, activeColor: 'var(--color-primary)' },
           ...(currentUserRole !== 'viewer'
-            ? [{ key: 'categories', label: 'ประเภท', Icon: Tag, activeColor: '#d97706' }]
+            ? [{ key: 'events', label: 'กิจกรรม', Icon: CalendarDays, activeColor: '#10b981' }]
             : []),
-          ...(currentUserRole === 'admin' || currentUserRole === 'superadmin'
-            ? [{ key: 'users', label: 'ผู้ใช้', Icon: Shield, activeColor: '#7c3aed' }]
-            : []),
-          { key: 'assignments', label: 'ผู้รับผิดชอบ', Icon: Wrench, activeColor: '#d97706' },
-          ...(currentUserRole !== 'viewer'
-            ? [{ key: 'report', label: 'รายงาน', Icon: TrendingUp, activeColor: '#10b981' }]
-            : []),
-          ...(currentUserRole !== 'viewer'
-            ? [{ key: 'more', label: 'อื่นๆ', Icon: LayoutGrid, activeColor: '#6b7280' }]
-            : []),
+          { key: 'report',     label: 'รายงาน',  Icon: TrendingUp,    activeColor: '#10b981' },
+          { key: 'more',       label: 'อื่นๆ',   Icon: LayoutGrid,    activeColor: '#6b7280' },
         ].map(({ key, label, Icon, activeColor }) => {
           const isActive = activePage === key
           return (
@@ -2970,7 +3297,9 @@ export default function AdminDashboard() {
         })}
       </div>
 
-      {activePage === 'report' ? (
+      {activePage === 'events' ? (
+        <EventsManager tenant={tenant} />
+      ) : activePage === 'report' ? (
         <ReportManager complaints={complaints} tenant={tenant} />
       ) : activePage === 'staff' ? (
         <StaffManager tenant={tenant} />
@@ -2999,10 +3328,42 @@ export default function AdminDashboard() {
         <div className="space-y-4">
           <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide">เมนูเพิ่มเติม</h2>
           <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={() => setActivePage('emergency')}
-              className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center"
-            >
+            {currentUserRole !== 'viewer' && (
+              <button onClick={() => setActivePage('categories')}
+                className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#fef3c7' }}>
+                  <Tag size={24} style={{ color: '#d97706' }} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-800">ประเภทคำร้อง</p>
+                  <p className="text-[13px] text-gray-400 mt-0.5">จัดการหมวดหมู่</p>
+                </div>
+              </button>
+            )}
+            {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
+              <button onClick={() => setActivePage('users')}
+                className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#ede9fe' }}>
+                  <Shield size={24} style={{ color: '#7c3aed' }} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-800">จัดการผู้ใช้</p>
+                  <p className="text-[13px] text-gray-400 mt-0.5">สิทธิ์และบทบาท</p>
+                </div>
+              </button>
+            )}
+            <button onClick={() => setActivePage('assignments')}
+              className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#fef3c7' }}>
+                <Wrench size={24} style={{ color: '#d97706' }} />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-gray-800">ผู้รับผิดชอบ</p>
+                <p className="text-[13px] text-gray-400 mt-0.5">มอบหมายประเภทคำร้อง</p>
+              </div>
+            </button>
+            <button onClick={() => setActivePage('emergency')}
+              className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
               <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#fee2e2' }}>
                 <Phone size={24} style={{ color: '#ef4444' }} />
               </div>
@@ -3011,10 +3372,8 @@ export default function AdminDashboard() {
                 <p className="text-[13px] text-gray-400 mt-0.5">จัดการเบอร์ติดต่อ</p>
               </div>
             </button>
-            <button
-              onClick={() => setActivePage('locations')}
-              className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center"
-            >
+            <button onClick={() => setActivePage('locations')}
+              className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
               <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#e0f2fe' }}>
                 <MapPin size={24} style={{ color: '#0891b2' }} />
               </div>
@@ -3023,22 +3382,8 @@ export default function AdminDashboard() {
                 <p className="text-[13px] text-gray-400 mt-0.5">จัดการหมู่บ้าน / ตำบล</p>
               </div>
             </button>
-            <button
-              onClick={() => setActivePage('report')}
-              className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center"
-            >
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#d1fae5' }}>
-                <TrendingUp size={24} style={{ color: '#10b981' }} />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-gray-800">รายงานสถิติ</p>
-                <p className="text-[13px] text-gray-400 mt-0.5">สรุปผลรายเดือน/ปี</p>
-              </div>
-            </button>
-            <button
-              onClick={() => setActivePage('staff')}
-              className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center"
-            >
+            <button onClick={() => setActivePage('staff')}
+              className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
               <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#ede9fe' }}>
                 <UserCircle2 size={24} style={{ color: '#7c3aed' }} />
               </div>

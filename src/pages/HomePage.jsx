@@ -8,6 +8,7 @@ import NewsSection from '../components/home/NewsSection'
 import EmergencyGrid from '../components/home/EmergencyGrid'
 import { Info, LayoutDashboard, ChevronRight } from 'lucide-react'
 import WeatherWidget from '../components/home/WeatherWidget'
+import EventsSection from '../components/home/EventsSection'
 
 export default function HomePage() {
   const { tenant } = useTenant()
@@ -70,6 +71,7 @@ export default function HomePage() {
       </div>
       <StaffSection />
       <ServiceButtons />
+      <EventsSection />
       <NewsSection />
       <EmergencyGrid />
     </div>
