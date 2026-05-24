@@ -130,22 +130,48 @@ export default function WeatherPage() {
       .finally(() => setLocalLoading(false))
   }, [lat, lon, tenant])
 
-  const fetchIpWeather = useCallback(async () => {
+  const fetchIpWeather = useCallback(() => {
     if (ipFetched) return
     setIpFetched(true)
     setIpLoading(true)
-    try {
-      const geoRes = await fetch('https://ipapi.co/json/')
-      const geo = await geoRes.json()
-      if (!geo.latitude) throw new Error('no coords')
-      setIpLocation({ city: geo.city || geo.region || 'ตำแหน่งของคุณ', region: geo.region })
-      const weather = await fetchWeather(geo.latitude, geo.longitude)
-      setIpData(weather)
-    } catch {
+
+    if (!navigator.geolocation) {
       setIpError(true)
-    } finally {
       setIpLoading(false)
+      return
     }
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const { latitude, longitude } = pos.coords
+          const [weather, geoRes] = await Promise.all([
+            fetchWeather(latitude, longitude),
+            fetch(
+              `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&accept-language=th`,
+              { headers: { 'Accept-Language': 'th' } }
+            ),
+          ])
+          const geo = await geoRes.json()
+          const addr = geo.address ?? {}
+          const city =
+            addr.city || addr.town || addr.village ||
+            addr.suburb || addr.county || addr.state || 'ตำแหน่งของคุณ'
+          const region = addr.state ?? ''
+          setIpLocation({ city, region })
+          setIpData(weather)
+        } catch {
+          setIpError(true)
+        } finally {
+          setIpLoading(false)
+        }
+      },
+      () => {
+        setIpError(true)
+        setIpLoading(false)
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    )
   }, [ipFetched])
 
   function handleTabChange(tab) {
@@ -204,7 +230,7 @@ export default function WeatherPage() {
       {/* Tab 1 — IP location */}
       {activeTab === 1 && (
         ipLoading ? <LoadingSpinner /> :
-        ipError   ? <ErrorState message="ไม่สามารถระบุตำแหน่งจาก IP ได้" /> :
+        ipError   ? <ErrorState message="ไม่สามารถระบุตำแหน่งได้ กรุณาอนุญาตการเข้าถึง GPS" /> :
         ipData    ? (
           <WeatherContent
             data={ipData}
