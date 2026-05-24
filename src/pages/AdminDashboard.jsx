@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -2673,45 +2673,47 @@ function EventCard({ ev, onEdit, onDelete, deleting }) {
               <p className="text-xs text-gray-500 mt-1 leading-relaxed line-clamp-2">{ev.description}</p>
             )}
           </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              onClick={() => onEdit(ev)}
-              className="p-1.5 rounded-xl hover:bg-gray-100 text-gray-400 transition-colors"
-            >
-              <Pencil size={14} />
-            </button>
-            {confirmDel ? (
-              <div className="flex gap-1">
-                <button
-                  onClick={() => { onDelete(ev.id); setConfirmDel(false) }}
-                  disabled={deleting === ev.id}
-                  className="px-2 py-1 rounded-lg bg-red-500 text-white text-xs font-bold"
-                >
-                  {deleting === ev.id ? '...' : 'ลบ'}
-                </button>
-                <button
-                  onClick={() => setConfirmDel(false)}
-                  className="px-2 py-1 rounded-lg bg-gray-100 text-gray-600 text-xs"
-                >
-                  ยกเลิก
-                </button>
-              </div>
-            ) : (
+          {onEdit && (
+            <div className="flex items-center gap-1.5 shrink-0">
               <button
-                onClick={() => setConfirmDel(true)}
-                className="p-1.5 rounded-xl hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                onClick={() => onEdit(ev)}
+                className="p-1.5 rounded-xl hover:bg-gray-100 text-gray-400 transition-colors"
               >
-                <Trash2 size={14} />
+                <Pencil size={14} />
               </button>
-            )}
-          </div>
+              {confirmDel ? (
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => { onDelete(ev.id); setConfirmDel(false) }}
+                    disabled={deleting === ev.id}
+                    className="px-2 py-1 rounded-lg bg-red-500 text-white text-xs font-bold"
+                  >
+                    {deleting === ev.id ? '...' : 'ลบ'}
+                  </button>
+                  <button
+                    onClick={() => setConfirmDel(false)}
+                    className="px-2 py-1 rounded-lg bg-gray-100 text-gray-600 text-xs"
+                  >
+                    ยกเลิก
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setConfirmDel(true)}
+                  className="p-1.5 rounded-xl hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
   )
 }
 
-function EventsManager({ tenant }) {
+function EventsManager({ tenant, readOnly = false }) {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -2797,13 +2799,15 @@ function EventsManager({ tenant }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="font-bold text-gray-700">ปฏิทินกิจกรรมชุมชน</h2>
-        <button
-          onClick={openAdd}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white"
-          style={{ backgroundColor: 'var(--color-primary)' }}
-        >
-          <Plus size={16} /> เพิ่มกิจกรรม
-        </button>
+        {!readOnly && (
+          <button
+            onClick={openAdd}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white"
+            style={{ backgroundColor: 'var(--color-primary)' }}
+          >
+            <Plus size={16} /> เพิ่มกิจกรรม
+          </button>
+        )}
       </div>
 
       {showForm && (
@@ -2974,12 +2978,13 @@ function EventsManager({ tenant }) {
 export default function AdminDashboard() {
   const { tenant } = useTenant()
   const navigate = useNavigate()
+  const location = useLocation()
   const [complaints, setComplaints] = useState([])
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(null)
   const [filterTab, setFilterTab] = useState(0)
   const [search, setSearch] = useState('')
-  const [activePage, setActivePage] = useState('complaints')
+  const [activePage, setActivePage] = useState(location.state?.page ?? 'complaints')
   const [currentUserRole, setCurrentUserRole] = useState(null)
   const [selectedComplaint, setSelectedComplaint] = useState(null)
   const [technicians, setTechnicians] = useState([])
@@ -2991,7 +2996,7 @@ export default function AdminDashboard() {
         .then(({ data: p }) => {
           const r = p?.role ?? 'citizen'
           setCurrentUserRole(r)
-          if (r === 'viewer') setActivePage('report')
+          if (r === 'viewer' && !location.state?.page) setActivePage('report')
           return r
         })
     })
@@ -3237,13 +3242,11 @@ export default function AdminDashboard() {
             <TrendingUp size={15} /> รายงาน
           </button>
         )}
-        {currentUserRole !== 'viewer' && (
-          <button onClick={() => setActivePage('events')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'events' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-            style={activePage === 'events' ? { backgroundColor: '#10b981' } : {}}>
-            <CalendarDays size={15} /> กิจกรรม
-          </button>
-        )}
+        <button onClick={() => setActivePage('events')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'events' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+          style={activePage === 'events' ? { backgroundColor: '#10b981' } : {}}>
+          <CalendarDays size={15} /> กิจกรรม
+        </button>
         {currentUserRole !== 'viewer' && (
           <button onClick={() => setActivePage('more')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'more' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
@@ -3262,9 +3265,7 @@ export default function AdminDashboard() {
         {[
           { key: 'home',       label: 'หน้าแรก', Icon: Home,          activeColor: '#6b7280' },
           { key: 'complaints', label: 'คำร้อง',  Icon: ClipboardList, activeColor: 'var(--color-primary)' },
-          ...(currentUserRole !== 'viewer'
-            ? [{ key: 'events', label: 'กิจกรรม', Icon: CalendarDays, activeColor: '#10b981' }]
-            : []),
+          { key: 'events', label: 'กิจกรรม', Icon: CalendarDays, activeColor: '#10b981' },
           { key: 'report',     label: 'รายงาน',  Icon: TrendingUp,    activeColor: '#10b981' },
           { key: 'more',       label: 'อื่นๆ',   Icon: LayoutGrid,    activeColor: '#6b7280' },
         ].map(({ key, label, Icon, activeColor }) => {
@@ -3382,16 +3383,18 @@ export default function AdminDashboard() {
                 <p className="text-[13px] text-gray-400 mt-0.5">จัดการหมู่บ้าน / ตำบล</p>
               </div>
             </button>
-            <button onClick={() => setActivePage('staff')}
-              className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#ede9fe' }}>
-                <UserCircle2 size={24} style={{ color: '#7c3aed' }} />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-gray-800">รูปผู้บริหาร</p>
-                <p className="text-[13px] text-gray-400 mt-0.5">อัปโหลดรูปนายก/ทีมงาน</p>
-              </div>
-            </button>
+            {currentUserRole !== 'viewer' && (
+              <button onClick={() => setActivePage('staff')}
+                className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#ede9fe' }}>
+                  <UserCircle2 size={24} style={{ color: '#7c3aed' }} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-800">รูปผู้บริหาร</p>
+                  <p className="text-[13px] text-gray-400 mt-0.5">อัปโหลดรูปนายก/ทีมงาน</p>
+                </div>
+              </button>
+            )}
           </div>
         </div>
       ) : (

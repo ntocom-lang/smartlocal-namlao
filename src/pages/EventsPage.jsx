@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, CalendarDays, MapPin, Clock } from 'lucide-react'
+import { ArrowLeft, CalendarDays, MapPin, Clock, Plus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import EventDetailModal from '../components/EventDetailModal'
@@ -16,6 +16,18 @@ export default function EventsPage() {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
+  const [canEdit, setCanEdit] = useState(false)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (!data.session) return
+      supabase.from('profiles').select('role').eq('id', data.session.user.id).single()
+        .then(({ data: p }) => {
+          const r = p?.role ?? ''
+          setCanEdit(r === 'admin' || r === 'superadmin' || r === 'viewer')
+        })
+    })
+  }, [])
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -48,14 +60,25 @@ export default function EventsPage() {
     <div className="max-w-2xl mx-auto px-4 pb-24">
       {selected && <EventDetailModal ev={selected} onClose={() => setSelected(null)} />}
       <div className="sticky top-0 z-30 bg-gray-50/95 dark:bg-transparent backdrop-blur-md pt-3 pb-2 -mx-4 px-4">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => navigate(-1)}
-            className="p-2 -ml-1 rounded-xl hover:bg-gray-200/60 text-gray-500 transition-colors"
-          >
-            <ArrowLeft size={20} />
-          </button>
-          <h1 className="text-base font-bold text-gray-800 dark:text-slate-200">ปฏิทินกิจกรรมชุมชน</h1>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate(-1)}
+              className="p-2 -ml-1 rounded-xl hover:bg-gray-200/60 text-gray-500 transition-colors"
+            >
+              <ArrowLeft size={20} />
+            </button>
+            <h1 className="text-base font-bold text-gray-800 dark:text-slate-200">ปฏิทินกิจกรรมชุมชน</h1>
+          </div>
+          {canEdit && (
+            <button
+              onClick={() => navigate('/admin', { state: { page: 'events' } })}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-bold text-white"
+              style={{ backgroundColor: 'var(--color-primary)' }}
+            >
+              <Plus size={15} /> เพิ่มกิจกรรม
+            </button>
+          )}
         </div>
       </div>
 
