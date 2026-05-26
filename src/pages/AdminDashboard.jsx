@@ -2909,7 +2909,7 @@ function EventsManager({ tenant, readOnly = false }) {
                   onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
                   placeholder="รายละเอียดเพิ่มเติม..."
                   rows={3}
-                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:border-blue-400 resize-none"
+                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400 resize-none"
                 />
               </div>
             </div>

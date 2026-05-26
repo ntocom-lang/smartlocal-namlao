@@ -432,7 +432,7 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenantName, te
                   onChange={(e) => setNote(e.target.value)}
                   rows={3}
                   placeholder="บันทึกรายละเอียดการดำเนินการ..."
-                  className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-800 resize-none focus:outline-none focus:ring-2"
+                  className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-800 bg-white resize-none focus:outline-none focus:ring-2"
                   style={{ '--tw-ring-color': '#2563eb' }}
                 />
                 <button onClick={saveNote} disabled={savingNote}
