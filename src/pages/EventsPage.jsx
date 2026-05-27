@@ -28,7 +28,7 @@ const DAY_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 
 function audienceFilter(role) {
   if (role === 'admin' || role === 'superadmin') return null
-  if (role === 'viewer')     return ['public', 'staff', 'management']
+  if (role === 'viewer')     return ['public', 'staff', 'management', 'council']
   if (role === 'council')    return ['public', 'staff', 'council']
   if (role === 'technician' || role === 'officer') return ['public', 'staff']
   return ['public']
@@ -261,6 +261,7 @@ export default function EventsPage() {
   const [selected, setSelected] = useState(null)
   const [canEdit, setCanEdit] = useState(false)
   const [view, setView]       = useState('list') // 'list' | 'calendar'
+  const [selectedAudience, setSelectedAudience] = useState(null) // null = ทั้งหมด
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -276,6 +277,7 @@ export default function EventsPage() {
 
   useEffect(() => {
     if (!tenant?.id) return
+    setLoading(true)
     const threeMonthsAgo = new Date()
     threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
     let query = supabase
@@ -297,7 +299,15 @@ export default function EventsPage() {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
-  const grouped = events.reduce((acc, ev) => {
+  // audience ที่ role นี้มีสิทธิ์เห็น (null = ทุกอย่าง เช่น admin)
+  const allowedAudiences = audienceFilter(role)
+
+  // กรองตาม chip ที่เลือก
+  const filteredEvents = selectedAudience
+    ? events.filter(ev => ev.audience === selectedAudience)
+    : events
+
+  const grouped = filteredEvents.reduce((acc, ev) => {
     const d   = new Date(ev.event_date + 'T00:00:00')
     const key = d.toLocaleDateString('th-TH', { year: 'numeric', month: 'long' })
     if (!acc[key]) acc[key] = []
@@ -362,19 +372,64 @@ export default function EventsPage() {
         </div>
       </div>
 
+      {/* Audience filter chips — แสดงเมื่อ role เห็นได้มากกว่า 1 audience */}
+      {!loading && (allowedAudiences === null || allowedAudiences.length > 1) && (
+        <div className="flex gap-2 mt-3 overflow-x-auto pb-1 scrollbar-none">
+          <button
+            onClick={() => setSelectedAudience(null)}
+            className={`shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+              selectedAudience === null
+                ? 'bg-gray-700 text-white border-gray-700 dark:bg-slate-200 dark:text-gray-900 dark:border-slate-200'
+                : 'bg-white dark:bg-white/5 text-gray-500 border-gray-200 dark:border-white/10 hover:border-gray-400'
+            }`}
+          >
+            ทั้งหมด
+          </button>
+          {(allowedAudiences ?? Object.keys(AUDIENCE_LABEL)).map(key => (
+            <button
+              key={key}
+              onClick={() => setSelectedAudience(selectedAudience === key ? null : key)}
+              className={`shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+                selectedAudience === key
+                  ? 'text-white border-transparent'
+                  : 'bg-white dark:bg-white/5 border-gray-200 dark:border-white/10 hover:border-gray-400'
+              }`}
+              style={selectedAudience === key
+                ? { backgroundColor: AUDIENCE_COLOR[key] }
+                : { color: AUDIENCE_COLOR[key] }
+              }
+            >
+              {AUDIENCE_LABEL[key]}
+            </button>
+          ))}
+        </div>
+      )}
+
       {loading ? (
         <div className="space-y-3 mt-4">
           {[1, 2, 3, 4].map((i) => (
             <div key={i} className="h-24 bg-gray-100 dark:bg-white/5 rounded-2xl animate-pulse" />
           ))}
         </div>
-      ) : events.length === 0 ? (
+      ) : filteredEvents.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-gray-400">
           <CalendarDays size={48} strokeWidth={1.2} className="mb-3" />
-          <p className="text-sm">ยังไม่มีกิจกรรม</p>
+          <p className="text-sm">
+            {selectedAudience
+              ? `ไม่มีกิจกรรมสำหรับ "${AUDIENCE_LABEL[selectedAudience]}"`
+              : 'ยังไม่มีกิจกรรม'}
+          </p>
+          {selectedAudience && (
+            <button
+              onClick={() => setSelectedAudience(null)}
+              className="mt-2 text-xs text-blue-500 underline"
+            >
+              ดูทั้งหมด
+            </button>
+          )}
         </div>
       ) : view === 'calendar' ? (
-        <CalendarView events={events} onSelectEvent={setSelected} />
+        <CalendarView events={filteredEvents} onSelectEvent={setSelected} />
       ) : (
         <div className="mt-4 space-y-6">
           {Object.entries(grouped).map(([month, evs]) => (
