@@ -176,15 +176,13 @@ const [editName, setEditName] = useState(false)
           </div>
 
           {/* ตำแหน่ง (read-only — admin เป็นคนกำหนด) */}
-          {profile.job_title && (
-            <div className="flex items-center px-5 py-4 gap-3">
-              <span className="text-sm text-gray-700 flex-1">ตำแหน่ง</span>
-              <span className="text-sm font-medium text-right truncate max-w-50"
-                    style={{ color: 'var(--color-primary)' }}>
-                {profile.job_title}
-              </span>
-            </div>
-          )}
+          <div className="flex items-center px-5 py-4 gap-3">
+            <span className="text-sm text-gray-700 flex-1">ตำแหน่ง</span>
+            <span className={`text-sm text-right truncate max-w-50 ${profile.job_title ? 'font-medium' : 'text-gray-400'}`}
+                  style={profile.job_title ? { color: 'var(--color-primary)' } : {}}>
+              {profile.job_title || 'ยังไม่ได้ระบุ'}
+            </span>
+          </div>
 
           {/* เบอร์โทร */}
           <div className="flex items-center px-5 py-4 gap-3">
