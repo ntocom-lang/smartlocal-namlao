@@ -6,7 +6,7 @@ import { ChevronLeft, Pencil, Loader2 } from 'lucide-react'
 export default function ProfilePage() {
   const navigate = useNavigate()
   const [session, setSession] = useState(null)
-  const [profile, setProfile] = useState({ full_name: '', phone: '' })
+  const [profile, setProfile] = useState({ full_name: '', phone: '', job_title: '', role: '' })
   const [avatarUrl, setAvatarUrl] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -29,7 +29,7 @@ const [editName, setEditName] = useState(false)
 
       const { data: p } = await supabase
         .from('profiles')
-        .select('full_name, phone, avatar_url')
+        .select('full_name, phone, avatar_url, job_title, role')
         .eq('id', s.user.id)
         .single()
 
@@ -37,6 +37,8 @@ const [editName, setEditName] = useState(false)
         setProfile({
           full_name: p.full_name || meta?.full_name || '',
           phone: p.phone || meta?.phone || '',
+          job_title: p.job_title || '',
+          role: p.role || '',
         })
         setAvatarUrl(p.avatar_url || meta?.avatar_url || meta?.picture || null)
       } else {
@@ -172,6 +174,17 @@ const [editName, setEditName] = useState(false)
               <Pencil size={16} />
             </button>
           </div>
+
+          {/* ตำแหน่ง (read-only — admin เป็นคนกำหนด) */}
+          {profile.job_title && (
+            <div className="flex items-center px-5 py-4 gap-3">
+              <span className="text-sm text-gray-700 flex-1">ตำแหน่ง</span>
+              <span className="text-sm font-medium text-right truncate max-w-50"
+                    style={{ color: 'var(--color-primary)' }}>
+                {profile.job_title}
+              </span>
+            </div>
+          )}
 
           {/* เบอร์โทร */}
           <div className="flex items-center px-5 py-4 gap-3">
