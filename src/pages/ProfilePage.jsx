@@ -6,7 +6,7 @@ import { ChevronLeft, Pencil, Loader2 } from 'lucide-react'
 const ROLE_LABEL = {
   superadmin: 'Super Admin',
   admin:      'แอดมิน',
-  viewer:     'นายก/ผู้บริหาร',
+  viewer:     'ผู้บริหาร',
   council:    'สภาเทศบาล',
   officer:    'เจ้าหน้าที่',
   technician: 'ช่าง',
