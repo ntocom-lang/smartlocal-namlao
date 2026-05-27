@@ -6,8 +6,8 @@ import { useTenant } from '../../contexts/TenantContext'
 import EventDetailModal from '../EventDetailModal'
 
 const CATEGORY_COLOR = {
-  'ประชุม': '#3b82f6', 'งานบุญ': '#f59e0b', 'ตลาดนัด': '#10b981',
-  'กีฬา': '#ef4444', 'ฝึกอบรม': '#8b5cf6', 'อื่นๆ': '#6b7280',
+  'ประชาสัมพันธ์': '#10b981', 'ประชุม': '#3b82f6', 'กำหนดการ': '#f97316',
+  'อบรม': '#8b5cf6', 'อื่นๆ': '#6b7280',
 }
 
 function daysUntil(dateStr) {
@@ -34,6 +34,7 @@ export default function EventsSection() {
       .from('events')
       .select('*')
       .eq('municipality_id', tenant.id)
+      .eq('audience', 'public')
       .gte('event_date', today)
       .order('event_date', { ascending: true })
       .limit(3)

@@ -89,6 +89,7 @@ const [editName, setEditName] = useState(false)
       .upload(path, file, { upsert: true })
 
     if (upErr) {
+      console.error('Storage upload error:', upErr)
       setError('อัปโหลดรูปไม่สำเร็จ: ' + upErr.message)
       setSaving(false)
       return

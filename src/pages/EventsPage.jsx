@@ -1,22 +1,266 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, CalendarDays, MapPin, Clock, Plus } from 'lucide-react'
+import { ArrowLeft, CalendarDays, MapPin, Clock, Plus, List, ChevronLeft, ChevronRight } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import EventDetailModal from '../components/EventDetailModal'
 
 const CATEGORY_COLOR = {
-  'ประชุม': '#3b82f6', 'งานบุญ': '#f59e0b', 'ตลาดนัด': '#10b981',
-  'กีฬา': '#ef4444', 'ฝึกอบรม': '#8b5cf6', 'อื่นๆ': '#6b7280',
+  'ประชาสัมพันธ์': '#10b981', 'ประชุม': '#3b82f6', 'กำหนดการ': '#f97316',
+  'อบรม': '#8b5cf6', 'อื่นๆ': '#6b7280',
+}
+
+const AUDIENCE_LABEL = {
+  public:     'ประชาชน',
+  staff:      'เจ้าหน้าที่',
+  management: 'ผู้บริหาร',
+  council:    'สภาเทศบาล',
+}
+
+const AUDIENCE_COLOR = {
+  public:     '#10b981',
+  staff:      '#3b82f6',
+  management: '#8b5cf6',
+  council:    '#f59e0b',
+}
+
+const DAY_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
+
+function audienceFilter(role) {
+  if (role === 'admin' || role === 'superadmin') return null
+  if (role === 'viewer')     return ['public', 'staff', 'management']
+  if (role === 'council')    return ['public', 'staff', 'council']
+  if (role === 'technician' || role === 'officer') return ['public', 'staff']
+  return ['public']
+}
+
+function CalendarView({ events, onSelectEvent }) {
+  const todayRef = new Date()
+  todayRef.setHours(0, 0, 0, 0)
+
+  const [calYear, setCalYear]   = useState(todayRef.getFullYear())
+  const [calMonth, setCalMonth] = useState(todayRef.getMonth())
+  const [selectedDay, setSelectedDay] = useState(todayRef.getDate())
+
+  const eventMap = useMemo(() => {
+    const map = {}
+    events.forEach(ev => {
+      if (!map[ev.event_date]) map[ev.event_date] = []
+      map[ev.event_date].push(ev)
+    })
+    return map
+  }, [events])
+
+  const firstDow  = new Date(calYear, calMonth, 1).getDay()
+  const totalDays = new Date(calYear, calMonth + 1, 0).getDate()
+
+  const cells = []
+  for (let i = 0; i < firstDow; i++) cells.push(null)
+  for (let d = 1; d <= totalDays; d++) cells.push(d)
+  while (cells.length % 7 !== 0) cells.push(null)
+
+  const prevMonth = () => {
+    setSelectedDay(null)
+    if (calMonth === 0) { setCalMonth(11); setCalYear(y => y - 1) }
+    else setCalMonth(m => m - 1)
+  }
+  const nextMonth = () => {
+    setSelectedDay(null)
+    if (calMonth === 11) { setCalMonth(0); setCalYear(y => y + 1) }
+    else setCalMonth(m => m + 1)
+  }
+
+  const dayKey = (d) =>
+    `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+
+  const selectedEvents = selectedDay ? (eventMap[dayKey(selectedDay)] ?? []) : []
+
+  const monthName = new Date(calYear, calMonth, 1)
+    .toLocaleDateString('th-TH', { year: 'numeric', month: 'long' })
+
+  return (
+    <div className="mt-4">
+      {/* Month navigation */}
+      <div className="flex items-center justify-between mb-3">
+        <button
+          onClick={prevMonth}
+          className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-white/10 text-gray-500 transition-colors"
+        >
+          <ChevronLeft size={20} />
+        </button>
+        <p className="text-sm font-bold text-gray-800 dark:text-slate-200">{monthName}</p>
+        <button
+          onClick={nextMonth}
+          className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-white/10 text-gray-500 transition-colors"
+        >
+          <ChevronRight size={20} />
+        </button>
+      </div>
+
+      {/* Day-of-week header */}
+      <div className="grid grid-cols-7 mb-1">
+        {DAY_TH.map((label, i) => (
+          <div
+            key={label}
+            className={`text-center text-xs font-semibold py-1 ${
+              i === 0 ? 'text-red-400' : i === 6 ? 'text-blue-400' : 'text-gray-400'
+            }`}
+          >
+            {label}
+          </div>
+        ))}
+      </div>
+
+      {/* Calendar grid */}
+      <div className="grid grid-cols-7 gap-px bg-gray-100 dark:bg-white/10 rounded-2xl overflow-hidden border border-gray-100 dark:border-white/10">
+        {cells.map((day, idx) => {
+          if (!day) {
+            return (
+              <div
+                key={idx}
+                className="bg-gray-50 dark:bg-gray-900/60 min-h-13"
+              />
+            )
+          }
+          const key       = dayKey(day)
+          const dayEvs    = eventMap[key] ?? []
+          const dow       = (firstDow + day - 1) % 7
+          const isToday   = calYear === todayRef.getFullYear() && calMonth === todayRef.getMonth() && day === todayRef.getDate()
+          const isSelected = day === selectedDay
+
+          return (
+            <button
+              key={idx}
+              onClick={() => setSelectedDay(day === selectedDay ? null : day)}
+              className={`min-h-13 p-1 flex flex-col items-center transition-colors ${
+                isSelected
+                  ? 'bg-blue-50 dark:bg-blue-900/30'
+                  : 'bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-white/5'
+              }`}
+            >
+              <span
+                className={`text-xs font-bold w-7 h-7 flex items-center justify-center rounded-full mb-0.5 ${
+                  isToday
+                    ? 'bg-red-500 text-white'
+                    : isSelected
+                    ? 'text-blue-600 dark:text-blue-400'
+                    : dow === 0
+                    ? 'text-red-400'
+                    : dow === 6
+                    ? 'text-blue-400'
+                    : 'text-gray-700 dark:text-slate-300'
+                }`}
+              >
+                {day}
+              </span>
+              <div className="flex flex-wrap justify-center gap-px max-w-full">
+                {dayEvs.slice(0, 3).map((ev, i) => (
+                  <span
+                    key={i}
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{ backgroundColor: AUDIENCE_COLOR[ev.audience] ?? '#6b7280' }}
+                  />
+                ))}
+                {dayEvs.length > 3 && (
+                  <span className="text-[9px] text-gray-400 leading-none font-semibold">
+                    +{dayEvs.length - 3}
+                  </span>
+                )}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Legend */}
+      <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-3 px-1">
+        {Object.entries(AUDIENCE_COLOR).map(([key, color]) => (
+          <div key={key} className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+            <span className="text-[11px] text-gray-400">
+              {key === 'public' ? 'ประชาชน' : key === 'staff' ? 'เจ้าหน้าที่' : key === 'management' ? 'ผู้บริหาร' : 'สภาเทศบาล'}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Selected-day events */}
+      {selectedDay && (
+        <div className="mt-5">
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 px-1">
+            {new Date(calYear, calMonth, selectedDay).toLocaleDateString('th-TH', {
+              weekday: 'long', day: 'numeric', month: 'long',
+            })}
+          </p>
+          {selectedEvents.length === 0 ? (
+            <div className="flex flex-col items-center py-8 text-gray-300">
+              <CalendarDays size={32} strokeWidth={1.2} className="mb-2" />
+              <p className="text-sm">ไม่มีกิจกรรม</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {selectedEvents.map(ev => {
+                const color    = CATEGORY_COLOR[ev.category] ?? '#6b7280'
+                const audColor = AUDIENCE_COLOR[ev.audience] ?? '#6b7280'
+                const audLabel = AUDIENCE_LABEL[ev.audience] ?? ev.audience
+                return (
+                  <button
+                    key={ev.id}
+                    onClick={() => onSelectEvent(ev)}
+                    className="w-full text-left bg-white dark:bg-white/5 rounded-2xl border border-gray-100 dark:border-white/10 shadow-sm p-4 flex gap-3 active:scale-98 transition-transform"
+                    style={{ borderLeftColor: color, borderLeftWidth: 3 }}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                        <span
+                          className="text-[11px] font-semibold px-2 py-0.5 rounded-full text-white"
+                          style={{ backgroundColor: color }}
+                        >
+                          {ev.category}
+                        </span>
+                        <span
+                          className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
+                          style={{ backgroundColor: audColor + '20', color: audColor }}
+                        >
+                          {ev.audience !== 'public' && '🔒 '}{audLabel}
+                        </span>
+                      </div>
+                      <p className="text-sm font-bold text-gray-800 dark:text-slate-200 leading-tight">
+                        {ev.title}
+                      </p>
+                      {!ev.is_all_day && ev.event_time && (
+                        <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
+                          <Clock size={11} />
+                          {ev.event_time.slice(0, 5)}
+                          {ev.end_time ? ` – ${ev.end_time.slice(0, 5)}` : ''} น.
+                        </p>
+                      )}
+                      {ev.location && (
+                        <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
+                          <MapPin size={11} /> {ev.location}
+                        </p>
+                      )}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function EventsPage() {
   const { tenant } = useTenant()
-  const navigate = useNavigate()
-  const [events, setEvents] = useState([])
+  const navigate   = useNavigate()
+  const [events, setEvents]   = useState([])
   const [loading, setLoading] = useState(true)
+  const [role, setRole]       = useState(null)
   const [selected, setSelected] = useState(null)
   const [canEdit, setCanEdit] = useState(false)
+  const [view, setView]       = useState('list') // 'list' | 'calendar'
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -24,6 +268,7 @@ export default function EventsPage() {
       supabase.from('profiles').select('role').eq('id', data.session.user.id).single()
         .then(({ data: p }) => {
           const r = p?.role ?? ''
+          setRole(r)
           setCanEdit(r === 'admin' || r === 'superadmin' || r === 'viewer')
         })
     })
@@ -33,23 +278,27 @@ export default function EventsPage() {
     if (!tenant?.id) return
     const threeMonthsAgo = new Date()
     threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
-    supabase
+    let query = supabase
       .from('events')
       .select('*')
       .eq('municipality_id', tenant.id)
       .gte('event_date', threeMonthsAgo.toISOString().split('T')[0])
       .order('event_date', { ascending: true })
-      .then(({ data }) => {
-        setEvents(data ?? [])
-        setLoading(false)
-      })
-  }, [tenant?.id])
+
+    const allowed = audienceFilter(role)
+    if (allowed !== null) query = query.in('audience', allowed)
+
+    query.then(({ data }) => {
+      setEvents(data ?? [])
+      setLoading(false)
+    })
+  }, [tenant?.id, role])
 
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
   const grouped = events.reduce((acc, ev) => {
-    const d = new Date(ev.event_date + 'T00:00:00')
+    const d   = new Date(ev.event_date + 'T00:00:00')
     const key = d.toLocaleDateString('th-TH', { year: 'numeric', month: 'long' })
     if (!acc[key]) acc[key] = []
     acc[key].push(ev)
@@ -59,6 +308,8 @@ export default function EventsPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 pb-24">
       {selected && <EventDetailModal ev={selected} onClose={() => setSelected(null)} />}
+
+      {/* Sticky header */}
       <div className="sticky top-0 z-30 bg-gray-50/95 dark:bg-transparent backdrop-blur-md pt-3 pb-2 -mx-4 px-4">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -68,17 +319,46 @@ export default function EventsPage() {
             >
               <ArrowLeft size={20} />
             </button>
-            <h1 className="text-base font-bold text-gray-800 dark:text-slate-200">ปฏิทินกิจกรรมชุมชน</h1>
+            <h1 className="text-base font-bold text-gray-800 dark:text-slate-200">ปฏิทินกิจกรรม</h1>
           </div>
-          {canEdit && (
-            <button
-              onClick={() => navigate('/admin', { state: { page: 'events' } })}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-bold text-white"
-              style={{ backgroundColor: 'var(--color-primary)' }}
-            >
-              <Plus size={15} /> เพิ่มกิจกรรม
-            </button>
-          )}
+
+          <div className="flex items-center gap-1.5">
+            {/* View toggle */}
+            <div className="flex items-center bg-gray-100 dark:bg-white/10 rounded-xl p-0.5">
+              <button
+                onClick={() => setView('list')}
+                className={`p-1.5 rounded-lg transition-colors ${
+                  view === 'list'
+                    ? 'bg-white dark:bg-white/20 text-gray-700 dark:text-slate-200 shadow-sm'
+                    : 'text-gray-400 hover:text-gray-600'
+                }`}
+                title="มุมมองรายการ"
+              >
+                <List size={16} />
+              </button>
+              <button
+                onClick={() => setView('calendar')}
+                className={`p-1.5 rounded-lg transition-colors ${
+                  view === 'calendar'
+                    ? 'bg-white dark:bg-white/20 text-gray-700 dark:text-slate-200 shadow-sm'
+                    : 'text-gray-400 hover:text-gray-600'
+                }`}
+                title="มุมมองปฏิทิน"
+              >
+                <CalendarDays size={16} />
+              </button>
+            </div>
+
+            {canEdit && (
+              <button
+                onClick={() => navigate('/admin', { state: { page: 'events' } })}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-bold text-white"
+                style={{ backgroundColor: 'var(--color-primary)' }}
+              >
+                <Plus size={15} /> เพิ่ม
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -93,6 +373,8 @@ export default function EventsPage() {
           <CalendarDays size={48} strokeWidth={1.2} className="mb-3" />
           <p className="text-sm">ยังไม่มีกิจกรรม</p>
         </div>
+      ) : view === 'calendar' ? (
+        <CalendarView events={events} onSelectEvent={setSelected} />
       ) : (
         <div className="mt-4 space-y-6">
           {Object.entries(grouped).map(([month, evs]) => (
@@ -100,14 +382,20 @@ export default function EventsPage() {
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 px-1">{month}</p>
               <div className="space-y-2">
                 {evs.map((ev) => {
-                  const color = CATEGORY_COLOR[ev.category] ?? '#6b7280'
-                  const d = new Date(ev.event_date + 'T00:00:00')
-                  const isPast = d < today
+                  const color    = CATEGORY_COLOR[ev.category] ?? '#6b7280'
+                  const audColor = AUDIENCE_COLOR[ev.audience] ?? '#6b7280'
+                  const audLabel = AUDIENCE_LABEL[ev.audience] ?? ev.audience
+                  const d        = new Date(ev.event_date + 'T00:00:00')
+                  const isPast   = d < today
                   return (
                     <button
                       key={ev.id}
                       onClick={() => setSelected(ev)}
-                      className={`w-full text-left bg-white dark:bg-white/5 rounded-2xl border shadow-sm p-4 flex gap-4 active:scale-98 transition-transform ${isPast ? 'opacity-50 border-gray-100 dark:border-white/10' : 'border-gray-100 dark:border-white/10'}`}
+                      className={`w-full text-left bg-white dark:bg-white/5 rounded-2xl border shadow-sm p-4 flex gap-4 active:scale-98 transition-transform ${
+                        isPast
+                          ? 'opacity-50 border-gray-100 dark:border-white/10'
+                          : 'border-gray-100 dark:border-white/10'
+                      }`}
                       style={!isPast ? { borderLeftColor: color, borderLeftWidth: 3 } : {}}
                     >
                       <div className="shrink-0 text-center w-12">
@@ -119,21 +407,29 @@ export default function EventsPage() {
                       </div>
 
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 mb-1">
+                        <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                           <span
                             className="text-[11px] font-semibold px-2 py-0.5 rounded-full text-white"
                             style={{ backgroundColor: color }}
                           >
                             {ev.category}
                           </span>
+                          <span
+                            className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
+                            style={{ backgroundColor: audColor + '20', color: audColor }}
+                          >
+                            {ev.audience !== 'public' && '🔒 '}{audLabel}
+                          </span>
                           {isPast && <span className="text-[11px] text-gray-400 font-medium">ผ่านไปแล้ว</span>}
                         </div>
                         <p className="text-sm font-bold text-gray-800 dark:text-slate-200 leading-tight">{ev.title}</p>
                         {!ev.is_all_day && ev.event_time && (
                           <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
-                            <Clock size={11} /> {ev.event_time.slice(0, 5)} น.
+                            <Clock size={11} />
+                            {ev.event_time.slice(0, 5)}
+                            {ev.end_time ? ` – ${ev.end_time.slice(0, 5)}` : ''} น.
                             {ev.end_date && ev.end_date !== ev.event_date && (
-                              <> – {new Date(ev.end_date + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}</>
+                              <> · ถึง {new Date(ev.end_date + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}</>
                             )}
                           </p>
                         )}

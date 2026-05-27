@@ -12,7 +12,7 @@ import {
   CheckCircle2, XCircle, AlertCircle, ChevronRight,
   Filter, Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical,
   X, FileText, AlignLeft, Image, Calendar, Hash, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera,
-  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays,
+  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
@@ -817,11 +817,13 @@ function Row({ icon: Icon, label, value }) {
 
 // ─── User Manager ─────────────────────────────────────────────────────────────
 const ROLE_LABELS = {
-  superadmin:  { label: 'Super Admin', color: '#7c3aed', bg: '#ede9fe' },
-  admin:       { label: 'แอดมิน',     color: '#1d4ed8', bg: '#dbeafe' },
-  technician:  { label: 'ช่าง',       color: '#d97706', bg: '#fef3c7' },
-  viewer:      { label: 'ผู้บริหาร',  color: '#059669', bg: '#d1fae5' },
-  citizen:     { label: 'สมาชิก',     color: '#374151', bg: '#f3f4f6' },
+  superadmin:  { label: 'Super Admin',  color: '#7c3aed', bg: '#ede9fe' },
+  admin:       { label: 'แอดมิน',      color: '#1d4ed8', bg: '#dbeafe' },
+  viewer:      { label: 'ผู้บริหาร',   color: '#059669', bg: '#d1fae5' },
+  council:     { label: 'สภาเทศบาล',   color: '#f59e0b', bg: '#fff7ed' },
+  officer:     { label: 'เจ้าหน้าที่', color: '#0891b2', bg: '#e0f2fe' },
+  technician:  { label: 'ช่าง',        color: '#d97706', bg: '#fef3c7' },
+  citizen:     { label: 'สมาชิก',      color: '#374151', bg: '#f3f4f6' },
 }
 
 function UserManager({ tenant, currentUserRole }) {
@@ -859,7 +861,7 @@ function UserManager({ tenant, currentUserRole }) {
 
   async function updateRole(userId, newRole, municipalityId) {
     setSaving(userId)
-    const needsMuni = newRole === 'admin' || newRole === 'technician' || newRole === 'viewer'
+    const needsMuni = ['admin', 'technician', 'officer', 'viewer', 'council'].includes(newRole)
     const muni = needsMuni ? (municipalityId || tenant?.id) : null
     const { error } = await supabase.from('profiles').update({ role: newRole, municipality_id: muni }).eq('id', userId)
     if (error) {
@@ -913,6 +915,8 @@ function UserManager({ tenant, currentUserRole }) {
           <option value="">ทุกตำแหน่ง</option>
           <option value="citizen">สมาชิก</option>
           <option value="viewer">ผู้บริหาร</option>
+          <option value="council">สภาเทศบาล</option>
+          <option value="officer">เจ้าหน้าที่</option>
           <option value="technician">ช่าง</option>
           <option value="admin">แอดมิน</option>
           {currentUserRole === 'superadmin' && <option value="superadmin">Super Admin</option>}
@@ -977,6 +981,8 @@ function UserManager({ tenant, currentUserRole }) {
                     >
                       <option value="citizen">สมาชิก</option>
                       <option value="viewer">ผู้บริหาร</option>
+                      <option value="council">สภาเทศบาล</option>
+                      <option value="officer">เจ้าหน้าที่</option>
                       <option value="technician">ช่าง</option>
                       <option value="admin">แอดมิน</option>
                       {currentUserRole === 'superadmin' && <option value="superadmin">Super Admin</option>}
@@ -2640,11 +2646,17 @@ function ReportManager({ complaints, tenant }) {
 }
 
 // ─── Events Manager ────────────────────────────────────────────────────────────
-const EVENTS_CATEGORIES = ['ประชุม', 'งานบุญ', 'ตลาดนัด', 'กีฬา', 'ฝึกอบรม', 'อื่นๆ']
+const EVENTS_CATEGORIES = ['ประชาสัมพันธ์', 'ประชุม', 'กำหนดการ', 'อบรม', 'อื่นๆ']
 const EVENTS_CATEGORY_COLOR = {
-  'ประชุม': '#3b82f6', 'งานบุญ': '#f59e0b', 'ตลาดนัด': '#10b981',
-  'กีฬา': '#ef4444', 'ฝึกอบรม': '#8b5cf6', 'อื่นๆ': '#6b7280',
+  'ประชาสัมพันธ์': '#10b981', 'ประชุม': '#3b82f6', 'กำหนดการ': '#f97316',
+  'อบรม': '#8b5cf6', 'อื่นๆ': '#6b7280',
 }
+const AUDIENCE_OPTIONS = [
+  { value: 'public',     label: 'ประชาชน',                    color: '#10b981' },
+  { value: 'staff',      label: 'เทศบาล (เจ้าหน้าที่)',       color: '#3b82f6' },
+  { value: 'management', label: 'ผู้บริหาร',                   color: '#8b5cf6' },
+  { value: 'council',    label: 'สภาเทศบาล',                  color: '#f59e0b' },
+]
 
 function EventCard({ ev, onEdit, onDelete, deleting }) {
   const [confirmDel, setConfirmDel] = useState(false)
@@ -2658,15 +2670,32 @@ function EventCard({ ev, onEdit, onDelete, deleting }) {
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <span
-              className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold text-white mb-1"
-              style={{ backgroundColor: color }}
-            >
-              {ev.category}
-            </span>
-            <p className="text-sm font-bold text-gray-800 leading-tight">{ev.title}</p>
+            <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+              <span
+                className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold text-white"
+                style={{ backgroundColor: color }}
+              >
+                {ev.category}
+              </span>
+              {ev.audience && ev.audience !== 'public' && (() => {
+                const aud = AUDIENCE_OPTIONS.find(a => a.value === ev.audience)
+                return aud ? (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border"
+                    style={{ color: aud.color, borderColor: aud.color, backgroundColor: aud.color + '18' }}>
+                    🔒 {aud.label}
+                  </span>
+                ) : null
+              })()}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <p className="text-sm font-bold text-gray-800 leading-tight">{ev.title}</p>
+              {ev.attachment_url && <Paperclip size={12} className="text-gray-400 shrink-0" />}
+            </div>
             <p className="text-xs text-gray-500 mt-0.5">
-              {dateStr}{!ev.is_all_day && ev.event_time ? ` · ${ev.event_time.slice(0, 5)} น.` : ''}
+              {dateStr}
+              {!ev.is_all_day && ev.event_time
+                ? ` · ${ev.event_time.slice(0, 5)}${ev.end_time ? ` – ${ev.end_time.slice(0, 5)}` : ''} น.`
+                : ''}
             </p>
             {ev.location && <p className="text-xs text-gray-400 mt-0.5">📍 {ev.location}</p>}
             {ev.description && (
@@ -2713,14 +2742,15 @@ function EventCard({ ev, onEdit, onDelete, deleting }) {
   )
 }
 
-function EventsManager({ tenant, readOnly = false }) {
+function EventsManager({ tenant }) {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingEvent, setEditingEvent] = useState(null)
   const [deleting, setDeleting] = useState(null)
   const [saving, setSaving] = useState(false)
-  const emptyForm = { title: '', description: '', event_date: '', event_time: '', end_date: '', location: '', category: 'อื่นๆ', is_all_day: true }
+  const [formError, setFormError] = useState('')
+  const emptyForm = { title: '', description: '', event_date: '', event_time: '', end_time: '', end_date: '', location: '', category: 'อื่นๆ', is_all_day: true, audience: 'public', attachment_url: '', attachment_file: null }
   const [form, setForm] = useState(emptyForm)
 
   useEffect(() => { fetchEvents() }, [tenant.id])
@@ -2753,6 +2783,10 @@ function EventsManager({ tenant, readOnly = false }) {
       location: ev.location ?? '',
       category: ev.category ?? 'อื่นๆ',
       is_all_day: ev.is_all_day ?? true,
+      audience: ev.audience ?? 'public',
+      attachment_url: ev.attachment_url ?? '',
+      attachment_file: null,
+      end_time: ev.end_time ?? '',
     })
     setEditingEvent(ev)
     setShowForm(true)
@@ -2761,16 +2795,37 @@ function EventsManager({ tenant, readOnly = false }) {
   async function handleSave() {
     if (!form.title.trim() || !form.event_date) return
     setSaving(true)
+
+    let attachmentUrl = form.attachment_url || null
+    if (form.attachment_file) {
+      const file = form.attachment_file
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const path = `${tenant.id}/${Date.now()}_${safeName}`
+      const { error: upErr } = await supabase.storage
+        .from('event-attachments')
+        .upload(path, file, { upsert: false })
+      if (upErr) {
+        setSaving(false)
+        setFormError('อัปโหลดไฟล์ไม่สำเร็จ: ' + upErr.message)
+        return
+      }
+      const { data: { publicUrl } } = supabase.storage.from('event-attachments').getPublicUrl(path)
+      attachmentUrl = publicUrl
+    }
+
     const payload = {
       municipality_id: tenant.id,
       title: form.title.trim(),
       description: form.description.trim() || null,
       event_date: form.event_date,
       event_time: form.is_all_day ? null : (form.event_time || null),
+      end_time: form.is_all_day ? null : (form.end_time || null),
       end_date: form.end_date || null,
       location: form.location.trim() || null,
       category: form.category,
       is_all_day: form.is_all_day,
+      audience: form.audience,
+      attachment_url: attachmentUrl,
       updated_at: new Date().toISOString(),
     }
     if (editingEvent) {
@@ -2798,138 +2853,225 @@ function EventsManager({ tenant, readOnly = false }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="font-bold text-gray-700">ปฏิทินกิจกรรมชุมชน</h2>
-        {!readOnly && (
-          <button
-            onClick={openAdd}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white"
-            style={{ backgroundColor: 'var(--color-primary)' }}
-          >
-            <Plus size={16} /> เพิ่มกิจกรรม
-          </button>
-        )}
+        <h2 className="font-bold text-gray-700">ปฏิทินกิจกรรม</h2>
+        <button
+          onClick={openAdd}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white"
+          style={{ backgroundColor: 'var(--color-primary)' }}
+        >
+          <Plus size={16} /> เพิ่มกิจกรรม
+        </button>
       </div>
 
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 px-4 pb-4">
-          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-gray-800">{editingEvent ? 'แก้ไขกิจกรรม' : 'เพิ่มกิจกรรม'}</h3>
+        /* Mobile: dark overlay + bottom sheet  |  Desktop: fullscreen white page */
+        <div className="fixed inset-0 z-50 flex items-end md:items-stretch justify-center bg-black/40 md:bg-white px-4 pb-4 md:p-0">
+          <div className="w-full max-w-md md:max-w-none bg-white rounded-t-3xl md:rounded-none shadow-2xl md:shadow-none flex flex-col max-h-[90vh] md:max-h-none md:h-full overflow-hidden">
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 md:px-10 md:py-5 border-b border-gray-100 shrink-0">
+              <h3 className="font-bold text-gray-800 md:text-lg">
+                {editingEvent ? 'แก้ไขกิจกรรม' : 'เพิ่มกิจกรรม'}
+              </h3>
               <button onClick={() => setShowForm(false)} className="p-1.5 rounded-xl hover:bg-gray-100">
                 <X size={18} className="text-gray-500" />
               </button>
             </div>
 
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-semibold text-gray-500 mb-1 block">ชื่อกิจกรรม *</label>
-                <input
-                  value={form.title}
-                  onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
-                  placeholder="เช่น ประชุมสภา อบต."
-                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400"
-                />
-              </div>
+            {/* Body — scrollable */}
+            <div className="flex-1 overflow-y-auto">
+              <div className="px-6 py-4 md:px-10 md:py-6 md:max-w-2xl md:mx-auto space-y-4">
 
-              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-semibold text-gray-500 mb-1 block">วันที่เริ่ม *</label>
+                  <label className="text-xs font-semibold text-gray-500 mb-1 block">ชื่อกิจกรรม *</label>
                   <input
-                    type="date"
-                    value={form.event_date}
-                    onChange={(e) => setForm((p) => ({ ...p, event_date: e.target.value }))}
+                    value={form.title}
+                    onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
+                    placeholder="เช่น ประชุมสภา อบต."
                     className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400"
                   />
                 </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">วันที่เริ่ม *</label>
+                    <input
+                      type="date"
+                      value={form.event_date}
+                      onChange={(e) => setForm((p) => ({ ...p, event_date: e.target.value }))}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">วันสิ้นสุด</label>
+                    <input
+                      type="date"
+                      value={form.end_date}
+                      onChange={(e) => setForm((p) => ({ ...p, end_date: e.target.value }))}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 cursor-pointer select-none w-fit">
+                    <input
+                      type="checkbox"
+                      checked={form.is_all_day}
+                      onChange={(e) => setForm((p) => ({ ...p, is_all_day: e.target.checked, event_time: '', end_time: '' }))}
+                      className="w-4 h-4 rounded"
+                    />
+                    <span className="text-sm text-gray-700">ทั้งวัน</span>
+                  </label>
+                  {!form.is_all_day && (
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1">
+                        <label className="text-xs text-gray-400 mb-1 block">เริ่ม</label>
+                        <input
+                          type="time"
+                          value={form.event_time}
+                          onChange={(e) => setForm((p) => ({ ...p, event_time: e.target.value }))}
+                          className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400"
+                        />
+                      </div>
+                      <span className="text-gray-400 text-sm mt-5">–</span>
+                      <div className="flex-1">
+                        <label className="text-xs text-gray-400 mb-1 block">สิ้นสุด</label>
+                        <input
+                          type="time"
+                          value={form.end_time}
+                          onChange={(e) => setForm((p) => ({ ...p, end_time: e.target.value }))}
+                          className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="md:grid md:grid-cols-2 md:gap-6 space-y-4 md:space-y-0">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">ประเภทกิจกรรม</label>
+                    <div className="flex flex-wrap gap-2">
+                      {EVENTS_CATEGORIES.map((cat) => (
+                        <button
+                          key={cat}
+                          onClick={() => setForm((p) => ({ ...p, category: cat }))}
+                          className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors"
+                          style={
+                            form.category === cat
+                              ? { backgroundColor: EVENTS_CATEGORY_COLOR[cat], color: 'white' }
+                              : { backgroundColor: '#f3f4f6', color: '#374151' }
+                          }
+                        >
+                          {cat}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">แสดงให้</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {AUDIENCE_OPTIONS.map((opt) => (
+                        <button
+                          key={opt.value}
+                          onClick={() => setForm((p) => ({ ...p, audience: opt.value }))}
+                          className="px-3 py-2 rounded-xl text-xs font-semibold text-left transition-colors border"
+                          style={
+                            form.audience === opt.value
+                              ? { backgroundColor: opt.color, color: 'white', borderColor: opt.color }
+                              : { backgroundColor: 'white', color: '#374151', borderColor: '#e5e7eb' }
+                          }
+                        >
+                          {opt.value !== 'public' && '🔒 '}{opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="md:grid md:grid-cols-2 md:gap-6 space-y-4 md:space-y-0">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">สถานที่</label>
+                    <input
+                      value={form.location}
+                      onChange={(e) => setForm((p) => ({ ...p, location: e.target.value }))}
+                      placeholder="เช่น ห้องประชุมสภา"
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">รายละเอียด</label>
+                    <textarea
+                      value={form.description}
+                      onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
+                      placeholder="รายละเอียดเพิ่มเติม..."
+                      rows={3}
+                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400 resize-none"
+                    />
+                  </div>
+                </div>
+
                 <div>
-                  <label className="text-xs font-semibold text-gray-500 mb-1 block">วันสิ้นสุด</label>
-                  <input
-                    type="date"
-                    value={form.end_date}
-                    onChange={(e) => setForm((p) => ({ ...p, end_date: e.target.value }))}
-                    className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400"
-                  />
+                  <label className="text-xs font-semibold text-gray-500 mb-1.5 block">เอกสารแนบ</label>
+                  {form.attachment_url && !form.attachment_file ? (
+                    <div className="flex items-center gap-2 px-3 py-2.5 bg-blue-50 border border-blue-100 rounded-xl">
+                      <Paperclip size={14} className="text-blue-500 shrink-0" />
+                      <a href={form.attachment_url} target="_blank" rel="noopener noreferrer"
+                        className="flex-1 text-xs text-blue-600 font-medium truncate hover:underline">
+                        ดูไฟล์แนบปัจจุบัน
+                      </a>
+                      <button type="button"
+                        onClick={() => setForm((p) => ({ ...p, attachment_url: '' }))}
+                        className="p-1 rounded-lg hover:bg-blue-100 text-red-400 transition-colors">
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ) : form.attachment_file ? (
+                    <div className="flex items-center gap-2 px-3 py-2.5 bg-green-50 border border-green-100 rounded-xl">
+                      <Paperclip size={14} className="text-green-500 shrink-0" />
+                      <span className="flex-1 text-xs text-green-700 font-medium truncate">{form.attachment_file.name}</span>
+                      <button type="button"
+                        onClick={() => setForm((p) => ({ ...p, attachment_file: null }))}
+                        className="p-1 rounded-lg hover:bg-green-100 text-red-400 transition-colors">
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-gray-200 cursor-pointer hover:border-blue-300 hover:bg-blue-50/50 transition-colors">
+                      <Paperclip size={15} className="text-gray-400 shrink-0" />
+                      <span className="text-sm text-gray-400">แนบ PDF หรือรูปภาพ (สูงสุด 20 MB)</span>
+                      <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden"
+                        onChange={(e) => setForm((p) => ({ ...p, attachment_file: e.target.files?.[0] ?? null }))} />
+                    </label>
+                  )}
                 </div>
-              </div>
 
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={form.is_all_day}
-                    onChange={(e) => setForm((p) => ({ ...p, is_all_day: e.target.checked }))}
-                    className="w-4 h-4 rounded"
-                  />
-                  <span className="text-sm text-gray-700">ทั้งวัน</span>
-                </label>
-                {!form.is_all_day && (
-                  <input
-                    type="time"
-                    value={form.event_time}
-                    onChange={(e) => setForm((p) => ({ ...p, event_time: e.target.value }))}
-                    className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none"
-                  />
-                )}
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-gray-500 mb-1 block">ประเภท</label>
-                <div className="flex flex-wrap gap-2">
-                  {EVENTS_CATEGORIES.map((cat) => (
-                    <button
-                      key={cat}
-                      onClick={() => setForm((p) => ({ ...p, category: cat }))}
-                      className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors"
-                      style={
-                        form.category === cat
-                          ? { backgroundColor: EVENTS_CATEGORY_COLOR[cat], color: 'white' }
-                          : { backgroundColor: '#f3f4f6', color: '#374151' }
-                      }
-                    >
-                      {cat}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-gray-500 mb-1 block">สถานที่</label>
-                <input
-                  value={form.location}
-                  onChange={(e) => setForm((p) => ({ ...p, location: e.target.value }))}
-                  placeholder="เช่น ห้องประชุมสภา"
-                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-gray-500 mb-1 block">รายละเอียด</label>
-                <textarea
-                  value={form.description}
-                  onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
-                  placeholder="รายละเอียดเพิ่มเติม..."
-                  rows={3}
-                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400 resize-none"
-                />
+                {formError && <p className="text-xs text-red-500">{formError}</p>}
               </div>
             </div>
 
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={() => setShowForm(false)}
-                className="flex-1 py-3 rounded-2xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50"
-              >
-                ยกเลิก
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={saving || !form.title.trim() || !form.event_date}
-                className="flex-1 py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-50"
-                style={{ backgroundColor: 'var(--color-primary)' }}
-              >
-                {saving ? 'กำลังบันทึก...' : 'บันทึก'}
-              </button>
+            {/* Footer */}
+            <div className="border-t border-gray-100 shrink-0">
+              <div className="px-6 py-4 md:px-10 md:py-5 md:max-w-2xl md:mx-auto flex gap-3">
+                <button
+                  onClick={() => setShowForm(false)}
+                  className="flex-1 py-3 rounded-2xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving || !form.title.trim() || !form.event_date}
+                  className="flex-1 py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--color-primary)' }}
+                >
+                  {saving ? 'กำลังบันทึก...' : 'บันทึก'}
+                </button>
+              </div>
             </div>
+
           </div>
         </div>
       )}
@@ -3263,17 +3405,17 @@ export default function AdminDashboard() {
         style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 8px)' }}
       >
         {[
-          { key: 'home',       label: 'หน้าแรก', Icon: Home,          activeColor: '#6b7280' },
-          { key: 'complaints', label: 'คำร้อง',  Icon: ClipboardList, activeColor: 'var(--color-primary)' },
-          { key: 'events', label: 'กิจกรรม', Icon: CalendarDays, activeColor: '#10b981' },
-          { key: 'report',     label: 'รายงาน',  Icon: TrendingUp,    activeColor: '#10b981' },
-          { key: 'more',       label: 'อื่นๆ',   Icon: LayoutGrid,    activeColor: '#6b7280' },
-        ].map(({ key, label, Icon, activeColor }) => {
+          { key: 'home',       label: 'หน้าแรก', Icon: Home,          activeColor: '#6b7280',             nav: () => navigate('/') },
+          { key: 'complaints', label: 'คำร้อง',  Icon: ClipboardList, activeColor: 'var(--color-primary)', nav: () => setActivePage('complaints') },
+          { key: 'events',     label: 'กิจกรรม', Icon: CalendarDays,  activeColor: '#10b981',             nav: () => setActivePage('events') },
+          { key: 'report',     label: 'รายงาน',  Icon: TrendingUp,    activeColor: '#10b981',             nav: () => setActivePage('report') },
+          { key: 'more',       label: 'อื่นๆ',   Icon: LayoutGrid,    activeColor: '#6b7280',             nav: () => setActivePage('more') },
+        ].map(({ key, label, Icon, activeColor, nav }) => {
           const isActive = activePage === key
           return (
             <button
               key={key}
-              onClick={() => key === 'home' ? navigate('/') : setActivePage(key)}
+              onClick={nav}
               className="relative flex-1 flex flex-col items-center justify-center gap-0.5 pt-2 pb-1 transition-transform active:scale-90"
             >
               {isActive && (
