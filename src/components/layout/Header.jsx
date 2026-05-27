@@ -61,7 +61,7 @@ export default function Header() {
         <Phone size={11} />
         <span>E-Service</span>
         <span className="opacity-40">|</span>
-        <span>ระบบยื่นคำร้องออนไลน์ ตลอด 24 ชม.</span>
+        <span>ระบบบริการออนไลน์ ตลอด 24 ชม.</span>
         <span className="opacity-40">|</span>
         <a href="/manual-citizen.html" target="_blank" rel="noopener noreferrer"
           className="opacity-80 hover:opacity-100 transition-opacity underline underline-offset-2">
@@ -91,7 +91,7 @@ export default function Header() {
             <h1 className="font-bold text-sm md:text-xl leading-tight line-clamp-2">
               {tenant?.name}
             </h1>
-            <p className="text-white/70 text-[13px] md:text-xs hidden sm:block">ระบบยื่นคำร้องออนไลน์</p>
+            <p className="text-white/70 text-[13px] md:text-xs hidden sm:block">ระบบบริการออนไลน์</p>
           </div>
 
           {/* Desktop nav */}

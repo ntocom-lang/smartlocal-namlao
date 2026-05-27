@@ -127,7 +127,7 @@ function QRShareCard({ tenant }) {
 
   async function handleShare() {
     if (navigator.share) {
-      await navigator.share({ title: tenant?.name, text: 'ระบบยื่นคำร้องออนไลน์', url })
+      await navigator.share({ title: tenant?.name, text: 'ระบบบริการออนไลน์', url })
     } else {
       handleCopy()
     }

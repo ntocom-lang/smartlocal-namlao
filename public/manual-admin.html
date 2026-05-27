@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>คู่มือผู้ดูแลระบบ SmartLocal — ระบบบริการออนไลน์</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  html { scroll-behavior: smooth; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --primary: #059669;
+    --primary-dark: #047857;
+    --primary-light: #d1fae5;
+    --blue: #1976d2;
+    --blue-light: #e3f2fd;
+    --purple: #7c3aed;
+    --amber: #d97706;
+    --red: #dc2626;
+    --gray-50: #f9fafb;
+    --gray-100: #f3f4f6;
+    --gray-200: #e5e7eb;
+    --gray-400: #9ca3af;
+    --gray-500: #6b7280;
+    --gray-700: #374151;
+    --gray-800: #1f2937;
+  }
+
+  body { font-family: 'Sarabun', sans-serif; font-size: 15px; line-height: 1.7; color: var(--gray-800); background: #fff; }
+
+  .page { width: 210mm; max-width: 100%; min-height: 297mm; margin: 0 auto 20px; padding: 0; background: #fff; box-shadow: 0 2px 20px rgba(0,0,0,0.12); }
+
+  @media print {
+    body { background: #fff; }
+    .page { width: 210mm; max-width: 210mm; box-shadow: none; margin: 0; page-break-after: always; }
+    .content-page { padding: 20mm 18mm 16mm; min-height: 270mm; }
+    .cover { min-height: 270mm; }
+    .no-print { display: none; }
+  }
+
+  /* Cover */
+  .cover {
+    background: linear-gradient(160deg, #064e3b 0%, #047857 50%, #10b981 100%);
+    min-height: 297mm; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; color: #fff; padding: 40px; position: relative; overflow: hidden;
+  }
+  .cover::before { content: ''; position: absolute; width: 400px; height: 400px; border-radius: 50%; border: 60px solid rgba(255,255,255,0.06); top: -100px; right: -100px; }
+  .cover::after  { content: ''; position: absolute; width: 300px; height: 300px; border-radius: 50%; border: 50px solid rgba(255,255,255,0.05); bottom: -80px; left: -80px; }
+
+  .cover-badge { background: rgba(255,255,255,0.18); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.3); border-radius: 99px; padding: 6px 20px; font-size: 13px; font-weight: 500; letter-spacing: .5px; margin-bottom: 28px; }
+  .cover-logo { width: 100px; height: 100px; border-radius: 50%; background: rgba(255,255,255,0.25); border: 3px solid rgba(255,255,255,0.5); display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; font-size: 48px; }
+  .cover h1 { font-size: 34px; font-weight: 800; line-height: 1.25; margin-bottom: 12px; }
+  .cover p  { font-size: 17px; color: rgba(255,255,255,0.8); max-width: 360px; margin: 0 auto 36px; }
+  .cover-divider { width: 60px; height: 3px; background: rgba(255,255,255,0.5); border-radius: 99px; margin: 0 auto 36px; }
+  .cover-steps { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 40px; }
+  .cover-step { background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.3); border-radius: 16px; padding: 12px 16px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; min-width: 120px; }
+  .cover-step-num { width: 24px; height: 24px; background: rgba(255,255,255,0.3); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; }
+  .cover-footer { position: absolute; bottom: 28px; font-size: 12px; color: rgba(255,255,255,0.55); letter-spacing: .3px; }
+
+  /* Content */
+  .content-page { padding: 36px 28px 28px; min-height: 297mm; }
+  .page-header { display: flex; align-items: center; gap: 12px; padding-bottom: 16px; border-bottom: 2px solid var(--primary); margin-bottom: 28px; }
+  .page-header-icon { width: 40px; height: 40px; border-radius: 12px; background: linear-gradient(135deg, var(--primary-dark), var(--primary)); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 20px; flex-shrink: 0; }
+  .page-header h2 { font-size: 22px; font-weight: 800; color: var(--primary-dark); }
+  .page-header p  { font-size: 13px; color: var(--gray-500); margin-top: 1px; }
+
+  .step-section { display: grid; grid-template-columns: 1fr 200px; gap: 28px; align-items: start; margin-bottom: 36px; page-break-inside: avoid; }
+  .step-section.reverse { grid-template-columns: 200px 1fr; }
+  .step-section.reverse .phone-col { order: -1; }
+
+  .step-num { display: inline-flex; align-items: center; gap: 10px; background: linear-gradient(135deg, var(--primary-dark), var(--primary)); color: #fff; border-radius: 99px; padding: 4px 14px 4px 4px; font-size: 13px; font-weight: 700; margin-bottom: 10px; }
+  .step-num-circle { width: 28px; height: 28px; background: rgba(255,255,255,0.25); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 14px; }
+  h3 { font-size: 18px; font-weight: 800; color: var(--gray-800); margin-bottom: 10px; }
+  .step-desc { font-size: 14px; color: var(--gray-700); margin-bottom: 14px; line-height: 1.75; }
+
+  .tips { background: var(--primary-light); border-left: 4px solid var(--primary); border-radius: 0 10px 10px 0; padding: 10px 14px; font-size: 13px; color: var(--primary-dark); margin-top: 12px; }
+  .tips strong { display: block; font-weight: 700; margin-bottom: 3px; }
+  .note-box { background: #fff8e1; border: 1px solid #ffd54f; border-radius: 10px; padding: 10px 14px; font-size: 13px; color: #7c5c00; margin-top: 10px; }
+
+  ul.steps-list { list-style: none; margin: 0; padding: 0; }
+  ul.steps-list li { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 8px; font-size: 14px; color: var(--gray-700); }
+  ul.steps-list li::before { content: attr(data-n); min-width: 22px; height: 22px; background: var(--primary); color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 2px; }
+
+  /* Phone */
+  .phone-wrap { display: flex; flex-direction: column; align-items: center; }
+  .phone { width: 190px; background: #1a1a2e; border-radius: 32px; padding: 10px; box-shadow: 0 12px 40px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(255,255,255,0.08); position: relative; }
+  .phone-notch { width: 60px; height: 6px; background: #0d0d1a; border-radius: 99px; margin: 0 auto 6px; }
+  .phone-screen { background: var(--gray-50); border-radius: 22px; overflow: hidden; min-height: 340px; }
+  .phone-caption { margin-top: 10px; font-size: 12px; color: var(--gray-500); text-align: center; font-weight: 600; }
+
+  /* Badges */
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 8px; font-weight: 700; }
+  .badge-yellow { background: #fef3c7; color: #92400e; }
+  .badge-blue   { background: #dbeafe; color: #1e40af; }
+  .badge-purple { background: #ede9fe; color: #5b21b6; }
+  .badge-green  { background: #d1fae5; color: #065f46; }
+  .badge-red    { background: #fee2e2; color: #991b1b; }
+
+  /* Section divider */
+  .section-divider { display: flex; align-items: center; gap: 10px; margin: 24px 0 20px; }
+  .section-divider-line { flex: 1; height: 1px; background: var(--gray-200); }
+  .section-divider-text { font-size: 12px; font-weight: 700; color: var(--gray-400); white-space: nowrap; }
+
+  /* Info table */
+  .info-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+  .info-table th { background: var(--primary); color: #fff; padding: 8px 12px; text-align: left; font-weight: 700; font-size: 13px; }
+  .info-table td { padding: 8px 12px; border-bottom: 1px solid var(--gray-100); vertical-align: top; }
+  .info-table tr:nth-child(even) td { background: var(--gray-50); }
+
+  /* TOC */
+  .toc { background: var(--gray-50); border-radius: 16px; padding: 20px 24px; margin-bottom: 20px; }
+  .toc h3 { font-size: 16px; font-weight: 800; color: var(--primary-dark); margin-bottom: 14px; }
+  .toc-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-bottom: 1px solid var(--gray-200); border-radius: 10px; font-size: 14px; color: var(--gray-700); text-decoration: none; transition: background .15s, color .15s; cursor: pointer; }
+  a.toc-item:hover { background: var(--primary-light); color: var(--primary-dark); }
+  .toc-item:last-child { border-bottom: none; }
+  .toc-num { min-width: 28px; height: 28px; background: linear-gradient(135deg, var(--primary-dark), var(--primary)); color: #fff; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; }
+  .toc-dots { flex: 1; border-bottom: 2px dotted var(--gray-300); height: 1px; margin: 0 6px; }
+  .toc-page { font-size: 13px; color: var(--gray-400); font-weight: 600; }
+
+  /* Checklist */
+  .checklist { margin: 10px 0; }
+  .check-item { display: flex; align-items: flex-start; gap: 9px; font-size: 13.5px; color: var(--gray-700); padding: 6px 0; border-bottom: 1px solid var(--gray-100); }
+  .check-item:last-child { border-bottom: none; }
+  .check-box { width: 20px; height: 20px; border-radius: 6px; background: var(--primary-light); border: 2px solid var(--primary); display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--primary); font-weight: 800; flex-shrink: 0; margin-top: 1px; }
+
+  /* Status flow */
+  .status-flow { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 16px 0; flex-wrap: wrap; }
+  .status-chip { padding: 6px 14px; border-radius: 99px; font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 5px; }
+  .status-arrow { font-size: 18px; color: var(--gray-400); }
+
+  /* Role card */
+  .role-card { border-radius: 12px; padding: 12px 16px; margin-bottom: 8px; border: 1px solid; }
+
+  @media (max-width: 640px) {
+    body { background: #f1f5f9; font-size: 14px; }
+    .page { width: 100%; min-height: unset; margin: 0 0 10px; box-shadow: none; border-radius: 0; }
+    .cover { min-height: unset; padding: 48px 24px 40px; }
+    .cover h1 { font-size: 24px; } .cover p { font-size: 15px; }
+    .cover-steps { gap: 8px; display: grid; grid-template-columns: 1fr 1fr; }
+    .cover-step { min-width: unset; font-size: 12px; padding: 10px 12px; }
+    .cover-footer { position: static; margin-top: 24px; }
+    .content-page { padding: 24px 16px 24px; min-height: unset; }
+    .step-section, .step-section.reverse { grid-template-columns: 1fr; gap: 20px; }
+    .step-section.reverse .phone-col { order: 1; }
+    .phone-wrap { margin: 0 auto; } .phone { width: 220px; }
+    .page-header h2 { font-size: 19px; }
+    .toc-dots { display: none; } .toc-page { margin-left: auto; }
+    .info-table { font-size: 12px; display: block; overflow-x: auto; }
+    .section-divider { margin: 18px 0 16px; }
+    h3 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════ COVER ═══════════════════════ -->
+<div class="page">
+  <div class="cover">
+    <div class="cover-badge">🛠️ คู่มือสำหรับผู้ดูแลระบบ</div>
+    <div class="cover-logo">⚙️</div>
+    <h1>คู่มือแอดมิน<br>SmartLocal</h1>
+    <p>คู่มือการใช้งานแผงควบคุมสำหรับผู้ดูแลระบบและเจ้าหน้าที่</p>
+    <div class="cover-divider"></div>
+    <div class="cover-steps">
+      <div class="cover-step"><div class="cover-step-num">1</div>จัดการคำร้อง</div>
+      <div class="cover-step"><div class="cover-step-num">2</div>ปฏิทินกิจกรรม</div>
+      <div class="cover-step"><div class="cover-step-num">3</div>จัดการผู้ใช้</div>
+      <div class="cover-step"><div class="cover-step-num">4</div>รายงานและตั้งค่า</div>
+    </div>
+    <div class="cover-footer">SmartLocal E-Service · ระบบบริการออนไลน์สำหรับองค์กรปกครองส่วนท้องถิ่น</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ TOC ═══════════════════════ -->
+<div class="page" id="toc">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">📋</div>
+      <div><h2>สารบัญ</h2><p>Table of Contents</p></div>
+    </div>
+
+    <div class="toc">
+      <h3>เนื้อหาในคู่มือ</h3>
+      <a class="toc-item" href="#overview">
+        <div class="toc-num">1</div>
+        <span>ภาพรวมแผงควบคุม และระดับสิทธิ์การใช้งาน</span>
+        <div class="toc-dots"></div><span class="toc-page">→</span>
+      </a>
+      <a class="toc-item" href="#complaints">
+        <div class="toc-num">2</div>
+        <span>การจัดการคำร้อง — รับเรื่อง เปลี่ยนสถานะ มอบหมาย</span>
+        <div class="toc-dots"></div><span class="toc-page">→</span>
+      </a>
+      <a class="toc-item" href="#events">
+        <div class="toc-num">3</div>
+        <span>ปฏิทินกิจกรรม — เพิ่ม แก้ไข และตั้งค่า "แสดงให้"</span>
+        <div class="toc-dots"></div><span class="toc-page">→</span>
+      </a>
+      <a class="toc-item" href="#users">
+        <div class="toc-num">4</div>
+        <span>จัดการผู้ใช้งาน — บทบาทและสิทธิ์</span>
+        <div class="toc-dots"></div><span class="toc-page">→</span>
+      </a>
+      <a class="toc-item" href="#settings" style="border-bottom:none;">
+        <div class="toc-num">5</div>
+        <span>รายงาน ตั้งค่าระบบ และเมนูอื่นๆ</span>
+        <div class="toc-dots"></div><span class="toc-page">→</span>
+      </a>
+    </div>
+
+    <!-- Role overview table -->
+    <h3 style="font-size:15px;margin-bottom:10px;">ระดับสิทธิ์ในระบบ (Role Summary)</h3>
+    <table class="info-table">
+      <thead><tr><th>Role</th><th>ชื่อตำแหน่ง</th><th>สิทธิ์หลัก</th></tr></thead>
+      <tbody>
+        <tr><td><span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:8px;font-size:12px;font-weight:700;">superadmin</span></td><td>ผู้ดูแลสูงสุด</td><td>เข้าถึงได้ทุกฟีเจอร์ รวมถึงตั้งค่า superadmin</td></tr>
+        <tr><td><span style="background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:8px;font-size:12px;font-weight:700;">admin</span></td><td>ผู้ดูแลระบบ</td><td>จัดการคำร้อง กิจกรรม ผู้ใช้ ตั้งค่าทั่วไป</td></tr>
+        <tr><td><span style="background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:8px;font-size:12px;font-weight:700;">viewer</span></td><td>ผู้ดูแล (ดู+กิจกรรม)</td><td>ดูรายงาน จัดการกิจกรรม ไม่สามารถแก้ไขผู้ใช้</td></tr>
+        <tr><td><span style="background:#ede9fe;color:#5b21b6;padding:2px 8px;border-radius:8px;font-size:12px;font-weight:700;">council</span></td><td>สภาเทศบาล</td><td>ดูกิจกรรม (รวม audience: council)</td></tr>
+        <tr><td><span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:8px;font-size:12px;font-weight:700;">technician</span></td><td>ช่าง / เจ้าหน้าที่ภาคสนาม</td><td>รับงานผ่านแท็บ "งานของฉัน" อัปเดตสถานะ แนบรูปผลงาน</td></tr>
+        <tr><td><span style="background:#f3f4f6;color:#374151;padding:2px 8px;border-radius:8px;font-size:12px;font-weight:700;">officer</span></td><td>เจ้าหน้าที่ธุรการ</td><td>เหมือน technician แต่ไม่มีแท็บงานภาคสนาม</td></tr>
+        <tr><td><span style="background:#f3f4f6;color:#374151;padding:2px 8px;border-radius:8px;font-size:12px;font-weight:700;">citizen</span></td><td>ประชาชน</td><td>ยื่นคำร้อง ดูปฏิทิน (public เท่านั้น)</td></tr>
+      </tbody>
+    </table>
+
+    <div style="background:linear-gradient(135deg,#d1fae5,#a7f3d0);border-radius:14px;padding:16px 20px;margin-top:20px;">
+      <p style="font-size:13.5px;color:#065f46;font-weight:700;margin-bottom:8px;">🔑 วิธีเข้าสู่แผงควบคุม Admin</p>
+      <div class="status-flow">
+        <div class="status-chip" style="background:#fff;color:#047857;">🔐 เข้าสู่ระบบ</div>
+        <div class="status-arrow">→</div>
+        <div class="status-chip" style="background:#fff;color:#047857;">เมนูอื่นๆ</div>
+        <div class="status-arrow">→</div>
+        <div class="status-chip" style="background:#fff;color:#047857;">🛡️ แผงควบคุม Admin</div>
+      </div>
+      <p style="font-size:12px;color:#047857;text-align:center;margin-top:4px;">หรือไปที่ URL: <strong>/admin</strong> โดยตรง</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ PAGE 1 — ภาพรวม ═══════════════════════ -->
+<div id="overview" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">🏠</div>
+      <div><h2>ภาพรวมแผงควบคุม</h2><p>Admin Dashboard — เมนูและการนำทาง</p></div>
+    </div>
+
+    <div class="step-section">
+      <div>
+        <div class="step-num"><div class="step-num-circle">1</div>แถบเมนูหลัก</div>
+        <h3>แท็บในแผงควบคุม</h3>
+        <p class="step-desc">แผงควบคุมแบ่งออกเป็นแท็บตามหน้าที่ แต่ละ role จะเห็นแท็บที่แตกต่างกัน</p>
+        <table class="info-table">
+          <thead><tr><th>แท็บ</th><th>สีปุ่ม</th><th>ใครใช้ได้</th></tr></thead>
+          <tbody>
+            <tr><td>📋 <strong>คำร้อง</strong></td><td><span style="background:#1c7cd6;color:#fff;padding:2px 8px;border-radius:6px;font-size:11px;">น้ำเงิน</span></td><td>ทุก role (admin+)</td></tr>
+            <tr><td>🏷️ <strong>ประเภทคำร้อง</strong></td><td><span style="background:#d97706;color:#fff;padding:2px 8px;border-radius:6px;font-size:11px;">ส้ม</span></td><td>admin, superadmin (ไม่รวม viewer)</td></tr>
+            <tr><td>🛡️ <strong>จัดการผู้ใช้</strong></td><td><span style="background:#7c3aed;color:#fff;padding:2px 8px;border-radius:6px;font-size:11px;">ม่วง</span></td><td>admin, superadmin เท่านั้น</td></tr>
+            <tr><td>🔧 <strong>ผู้รับผิดชอบ</strong></td><td><span style="background:#d97706;color:#fff;padding:2px 8px;border-radius:6px;font-size:11px;">ส้ม</span></td><td>ทุก role (admin+)</td></tr>
+            <tr><td>📈 <strong>รายงาน</strong></td><td><span style="background:#10b981;color:#fff;padding:2px 8px;border-radius:6px;font-size:11px;">เขียว</span></td><td>ทุก role (admin+)</td></tr>
+            <tr><td>📅 <strong>กิจกรรม</strong></td><td><span style="background:#10b981;color:#fff;padding:2px 8px;border-radius:6px;font-size:11px;">เขียว</span></td><td>ทุก role (admin+)</td></tr>
+            <tr><td>⚙️ <strong>อื่นๆ</strong></td><td><span style="background:#6b7280;color:#fff;padding:2px 8px;border-radius:6px;font-size:11px;">เทา</span></td><td>admin, superadmin (ไม่รวม viewer)</td></tr>
+          </tbody>
+        </table>
+        <div class="tips">
+          💡 <strong>Desktop vs Mobile</strong> บน desktop เมนูแสดงเป็น tab bar ด้านบน บน mobile เมนูแสดงเป็น bottom navigation bar ด้านล่าง
+        </div>
+      </div>
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen" style="min-height:400px;background:#f9fafb;">
+              <!-- Admin header -->
+              <div style="background:linear-gradient(135deg,#047857,#059669);padding:10px 12px;display:flex;align-items:center;gap:8px;">
+                <div style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.25);border:1px solid rgba(255,255,255,.4);display:flex;align-items:center;justify-content:center;font-size:13px;">🏛</div>
+                <div>
+                  <div style="color:#fff;font-size:10px;font-weight:700;">SmartLocal</div>
+                  <div style="color:rgba(255,255,255,.7);font-size:8px;">แผงควบคุม Admin</div>
+                </div>
+                <div style="margin-left:auto;display:flex;gap:4px;">
+                  <div style="width:22px;height:22px;border-radius:6px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;">🔔</div>
+                  <div style="width:22px;height:22px;border-radius:6px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;">👤</div>
+                </div>
+              </div>
+              <!-- Stat cards -->
+              <div style="padding:8px;display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:2px;">
+                <div style="background:white;border-radius:10px;padding:8px;border:1px solid #f3f4f6;">
+                  <div style="font-size:8px;color:#6b7280;margin-bottom:3px;">ทั้งหมด</div>
+                  <div style="font-size:18px;font-weight:800;color:#374151;">24</div>
+                </div>
+                <div style="background:white;border-radius:10px;padding:8px;border:1px solid #f3f4f6;">
+                  <div style="font-size:8px;color:#6b7280;margin-bottom:3px;">รอดำเนินการ</div>
+                  <div style="font-size:18px;font-weight:800;color:#f59e0b;">8</div>
+                </div>
+                <div style="background:white;border-radius:10px;padding:8px;border:1px solid #f3f4f6;">
+                  <div style="font-size:8px;color:#6b7280;margin-bottom:3px;">กำลังดำเนินการ</div>
+                  <div style="font-size:18px;font-weight:800;color:#8b5cf6;">5</div>
+                </div>
+                <div style="background:white;border-radius:10px;padding:8px;border:1px solid #f3f4f6;">
+                  <div style="font-size:8px;color:#6b7280;margin-bottom:3px;">เสร็จสิ้น</div>
+                  <div style="font-size:18px;font-weight:800;color:#10b981;">11</div>
+                </div>
+              </div>
+              <!-- Bottom nav -->
+              <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(135deg,#047857,#059669);border-radius:14px 14px 22px 22px;padding:6px 4px 10px;display:flex;justify-content:space-around;">
+                <div style="display:flex;flex-direction:column;align-items:center;gap:2px;opacity:.6;">
+                  <span style="font-size:14px;color:#fff;">📋</span>
+                  <span style="font-size:7px;color:#fff;font-weight:600;">คำร้อง</span>
+                </div>
+                <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+                  <span style="font-size:14px;color:#fff;">📅</span>
+                  <span style="font-size:7px;color:#fff;font-weight:700;">กิจกรรม</span>
+                </div>
+                <div style="display:flex;flex-direction:column;align-items:center;gap:2px;opacity:.6;">
+                  <span style="font-size:14px;color:#fff;">📈</span>
+                  <span style="font-size:7px;color:#fff;font-weight:600;">รายงาน</span>
+                </div>
+                <div style="display:flex;flex-direction:column;align-items:center;gap:2px;opacity:.6;">
+                  <span style="font-size:14px;color:#fff;">⚙️</span>
+                  <span style="font-size:7px;color:#fff;font-weight:600;">อื่นๆ</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-caption">แผงควบคุม Admin</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ PAGE 2 — จัดการคำร้อง ═══════════════════════ -->
+<div id="complaints" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">📋</div>
+      <div><h2>การจัดการคำร้อง</h2><p>รับเรื่อง เปลี่ยนสถานะ มอบหมายงาน และตอบกลับ</p></div>
+    </div>
+
+    <div class="step-section">
+      <div>
+        <div class="step-num"><div class="step-num-circle">1</div>รายการคำร้อง</div>
+        <h3>ดูและค้นหาคำร้อง</h3>
+        <p class="step-desc">แท็บ "คำร้อง" แสดงรายการทั้งหมด ค้นหาได้จากชื่อ เลขที่ หรือกรองตามสถานะ</p>
+        <ul class="steps-list">
+          <li data-n="1">กดแท็บ <strong>"คำร้อง"</strong> ที่แถบเมนู</li>
+          <li data-n="2">ใช้ช่อง <strong>ค้นหา</strong> พิมพ์ชื่อ เลขที่ หรือหัวเรื่อง</li>
+          <li data-n="3">กดปุ่ม <strong>ตัวกรองสถานะ</strong> เพื่อแสดงเฉพาะสถานะที่ต้องการ</li>
+          <li data-n="4">กดที่การ์ดคำร้องเพื่อเปิดและดำเนินการ</li>
+        </ul>
+
+        <div class="step-num" style="margin-top:16px;"><div class="step-num-circle">2</div>เปลี่ยนสถานะคำร้อง</div>
+        <h3>อัปเดตความคืบหน้า</h3>
+        <table class="info-table" style="margin-bottom:10px;">
+          <thead><tr><th>สถานะ</th><th>ความหมาย</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge badge-yellow">รอดำเนินการ</span></td><td>คำร้องใหม่ รอเจ้าหน้าที่รับเรื่อง</td></tr>
+            <tr><td><span class="badge badge-blue">รับเรื่องแล้ว</span></td><td>เจ้าหน้าที่รับและตรวจสอบแล้ว</td></tr>
+            <tr><td><span class="badge badge-purple">กำลังดำเนินการ</span></td><td>อยู่ระหว่างแก้ไข</td></tr>
+            <tr><td><span class="badge badge-green">เสร็จสิ้น</span></td><td>แก้ไขเสร็จสิ้น แนบรูปผลงานได้</td></tr>
+            <tr><td><span class="badge badge-red">ปฏิเสธ</span></td><td>ไม่อยู่ในความรับผิดชอบหรือข้อมูลไม่ครบ</td></tr>
+          </tbody>
+        </table>
+        <div class="tips">
+          💡 เมื่อเปลี่ยนสถานะเป็น <strong>"เสร็จสิ้น"</strong> สามารถแนบ <strong>รูปภาพผลการดำเนินงาน</strong> เพื่อแสดงให้ประชาชนเห็นได้
+        </div>
+      </div>
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen" style="min-height:420px;">
+              <div style="background:linear-gradient(135deg,#047857,#059669);padding:10px 12px;display:flex;align-items:center;justify-content:space-between;">
+                <span style="color:#fff;font-size:11px;font-weight:700;">คำร้องทั้งหมด</span>
+                <div style="background:rgba(255,255,255,.2);border-radius:8px;padding:3px 8px;font-size:9px;color:#fff;font-weight:700;">🔄 รีเฟรช</div>
+              </div>
+              <!-- Filter chips -->
+              <div style="padding:6px 8px;display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid #f3f4f6;">
+                <span style="background:#1c7cd6;color:#fff;font-size:8px;font-weight:700;padding:2px 7px;border-radius:10px;">ทั้งหมด</span>
+                <span style="background:#fef3c7;color:#92400e;font-size:8px;font-weight:700;padding:2px 7px;border-radius:10px;">รอดำเนินการ</span>
+                <span style="background:#ede9fe;color:#5b21b6;font-size:8px;font-weight:700;padding:2px 7px;border-radius:10px;">กำลังดำเนินการ</span>
+              </div>
+              <!-- Complaint cards -->
+              <div style="padding:6px 8px;">
+                <div style="background:white;border-radius:10px;border:1px solid #f3f4f6;border-left:3px solid #f59e0b;padding:7px 8px;margin-bottom:5px;">
+                  <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                    <div>
+                      <div style="font-size:9px;font-weight:700;color:#1f2937;">🛣️ ถนน/ทางสาธารณะ</div>
+                      <div style="font-size:8px;color:#6b7280;margin:2px 0;">ถนนชำรุดหน้าหมู่บ้าน ม.3</div>
+                      <span style="background:#fef3c7;color:#92400e;font-size:7.5px;font-weight:700;padding:1px 6px;border-radius:8px;">รอดำเนินการ</span>
+                    </div>
+                    <div style="text-align:right;">
+                      <div style="font-size:7.5px;color:#9ca3af;font-family:monospace;">2505001</div>
+                      <div style="width:22px;height:22px;background:#d1fae5;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;margin-top:4px;margin-left:auto;">›</div>
+                    </div>
+                  </div>
+                </div>
+                <div style="background:white;border-radius:10px;border:1px solid #f3f4f6;border-left:3px solid #8b5cf6;padding:7px 8px;margin-bottom:5px;">
+                  <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                    <div>
+                      <div style="font-size:9px;font-weight:700;color:#1f2937;">💡 ไฟฟ้าส่องสว่าง</div>
+                      <div style="font-size:8px;color:#6b7280;margin:2px 0;">ไฟถนนดับ 3 ดวง ซอย 5</div>
+                      <span style="background:#ede9fe;color:#5b21b6;font-size:7.5px;font-weight:700;padding:1px 6px;border-radius:8px;">กำลังดำเนินการ</span>
+                    </div>
+                    <div style="text-align:right;">
+                      <div style="font-size:7.5px;color:#9ca3af;font-family:monospace;">2505002</div>
+                      <div style="width:22px;height:22px;background:#d1fae5;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;margin-top:4px;margin-left:auto;">›</div>
+                    </div>
+                  </div>
+                </div>
+                <div style="background:white;border-radius:10px;border:1px solid #f3f4f6;border-left:3px solid #10b981;padding:7px 8px;">
+                  <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                    <div>
+                      <div style="font-size:9px;font-weight:700;color:#1f2937;">🗑️ ขยะ/ความสะอาด</div>
+                      <div style="font-size:8px;color:#6b7280;margin:2px 0;">ขยะล้นถังไม่มีการเก็บ</div>
+                      <span style="background:#d1fae5;color:#065f46;font-size:7.5px;font-weight:700;padding:1px 6px;border-radius:8px;">เสร็จสิ้น</span>
+                    </div>
+                    <div style="text-align:right;">
+                      <div style="font-size:7.5px;color:#9ca3af;font-family:monospace;">2504015</div>
+                      <div style="width:22px;height:22px;background:#d1fae5;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;margin-top:4px;margin-left:auto;">›</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-caption">รายการคำร้อง</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-divider">
+      <div class="section-divider-line"></div>
+      <div class="section-divider-text">การมอบหมายงานและตอบกลับ</div>
+      <div class="section-divider-line"></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <div>
+        <div class="step-num"><div class="step-num-circle">3</div>มอบหมายงาน</div>
+        <h3>ส่งงานให้ช่าง/เจ้าหน้าที่</h3>
+        <p class="step-desc">เปิดคำร้อง → กด <strong>"มอบหมายงาน"</strong> → เลือกชื่อเจ้าหน้าที่ → บันทึก</p>
+        <p style="font-size:13px;color:var(--gray-700);">เจ้าหน้าที่ที่ได้รับมอบหมายจะเห็นงานในแท็บ <strong>"งานของฉัน"</strong> และรับการแจ้งเตือน</p>
+      </div>
+      <div>
+        <div class="step-num"><div class="step-num-circle">4</div>ตอบกลับ/หมายเหตุ</div>
+        <h3>ส่งข้อความถึงผู้ร้อง</h3>
+        <p class="step-desc">ในหน้ารายละเอียดคำร้อง → กรอกช่อง <strong>"หมายเหตุ/ผลการดำเนินการ"</strong> → บันทึก</p>
+        <p style="font-size:13px;color:var(--gray-700);">ข้อความจะแสดงในหน้าติดตามสถานะของประชาชน</p>
+      </div>
+    </div>
+
+    <div class="note-box" style="margin-top:16px;">
+      ⚠️ <strong>การปฏิเสธคำร้อง:</strong> ต้องระบุ <strong>เหตุผล</strong> ให้ชัดเจน เพื่อให้ประชาชนทราบว่าต้องแก้ไขอะไรหรือติดต่อหน่วยงานใด
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ PAGE 3 — ปฏิทินกิจกรรม ═══════════════════════ -->
+<div id="events" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">📅</div>
+      <div><h2>ปฏิทินกิจกรรม</h2><p>เพิ่ม แก้ไข ลบ และกำหนดการแสดงผล</p></div>
+    </div>
+
+    <div class="step-section">
+      <div>
+        <div class="step-num"><div class="step-num-circle">1</div>เพิ่มกิจกรรมใหม่</div>
+        <h3>กรอกข้อมูลฟอร์มกิจกรรม</h3>
+        <p class="step-desc">กดแท็บ <strong>"กิจกรรม"</strong> → กดปุ่ม <span style="background:#10b981;color:#fff;padding:1px 8px;border-radius:8px;font-size:13px;font-weight:700;">+ เพิ่มกิจกรรม</span> ฟอร์มจะเปิดเป็น bottom sheet บนมือถือ หรือ fullscreen บน desktop</p>
+        <div class="checklist">
+          <div class="check-item"><div class="check-box">✓</div><span><strong>ชื่อกิจกรรม *</strong> — ระบุชื่อที่ชัดเจน</span></div>
+          <div class="check-item"><div class="check-box">✓</div><span><strong>วันที่กิจกรรม *</strong> — วันเริ่มต้น และวันสิ้นสุด (ถ้าหลายวัน)</span></div>
+          <div class="check-item"><div class="check-box">✓</div><span><strong>เวลาเริ่ม / สิ้นสุด</strong> — ครึ่งวัน 2 ชม. หรือทั้งวัน</span></div>
+          <div class="check-item"><div class="check-box">✓</div><span><strong>สถานที่</strong> — ชื่อสถานที่จัดกิจกรรม</span></div>
+          <div class="check-item"><div class="check-box">✓</div><span><strong>ประเภทกิจกรรม</strong> — เลือก 1 ใน 5 ประเภท (ดูด้านล่าง)</span></div>
+          <div class="check-item"><div class="check-box">✓</div><span><strong>แสดงให้</strong> — กำหนดกลุ่มที่เห็นได้ (สำคัญมาก)</span></div>
+          <div class="check-item"><div class="check-box">✓</div><span><strong>แนบไฟล์</strong> — รูปภาพหรือ PDF (ไม่บังคับ, สูงสุด 20 MB)</span></div>
+        </div>
+
+        <div style="margin-top:12px;">
+          <p style="font-size:13px;font-weight:700;color:var(--gray-700);margin-bottom:6px;">ประเภทกิจกรรม 5 ประเภท:</p>
+          <div style="display:flex;flex-wrap:wrap;gap:5px;">
+            <span style="background:#d1fae5;color:#047857;font-size:12px;font-weight:700;padding:3px 10px;border-radius:10px;">ประชาสัมพันธ์</span>
+            <span style="background:#dbeafe;color:#1d4ed8;font-size:12px;font-weight:700;padding:3px 10px;border-radius:10px;">ประชุม</span>
+            <span style="background:#fef3c7;color:#b45309;font-size:12px;font-weight:700;padding:3px 10px;border-radius:10px;">กำหนดการ</span>
+            <span style="background:#ede9fe;color:#6d28d9;font-size:12px;font-weight:700;padding:3px 10px;border-radius:10px;">อบรม</span>
+            <span style="background:#f3f4f6;color:#374151;font-size:12px;font-weight:700;padding:3px 10px;border-radius:10px;">อื่นๆ</span>
+          </div>
+        </div>
+      </div>
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen" style="min-height:430px;background:#f9fafb;">
+              <div style="background:white;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #f3f4f6;">
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <div style="width:26px;height:26px;border-radius:8px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;font-size:11px;">✕</div>
+                  <span style="font-size:12px;font-weight:700;color:#1f2937;">เพิ่มกิจกรรม</span>
+                </div>
+                <div style="background:#10b981;color:white;border-radius:8px;padding:4px 10px;font-size:10px;font-weight:700;">บันทึก</div>
+              </div>
+              <div style="padding:8px 10px;">
+                <div style="margin-bottom:7px;">
+                  <div style="font-size:9px;font-weight:700;color:#6b7280;margin-bottom:3px;">ชื่อกิจกรรม *</div>
+                  <div style="background:white;border:1px solid #d1fae5;border-radius:8px;padding:6px 8px;font-size:10px;color:#1f2937;">ประชุมสภาเทศบาล สมัยสามัญ ครั้งที่ 1</div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:7px;">
+                  <div><div style="font-size:9px;font-weight:700;color:#6b7280;margin-bottom:3px;">วันที่ *</div><div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:6px 8px;font-size:10px;color:#1f2937;">28 พ.ค. 2569</div></div>
+                  <div><div style="font-size:9px;font-weight:700;color:#6b7280;margin-bottom:3px;">วันสิ้นสุด</div><div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:6px 8px;font-size:10px;color:#9ca3af;">ไม่ระบุ</div></div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:7px;">
+                  <div><div style="font-size:9px;font-weight:700;color:#6b7280;margin-bottom:3px;">เวลาเริ่ม</div><div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:6px 8px;font-size:10px;color:#1f2937;">09:00</div></div>
+                  <div><div style="font-size:9px;font-weight:700;color:#6b7280;margin-bottom:3px;">เวลาสิ้นสุด</div><div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:6px 8px;font-size:10px;color:#1f2937;">12:00</div></div>
+                </div>
+                <div style="margin-bottom:7px;">
+                  <div style="font-size:9px;font-weight:700;color:#6b7280;margin-bottom:4px;">ประเภทกิจกรรม</div>
+                  <div style="display:flex;flex-wrap:wrap;gap:3px;">
+                    <span style="background:#f3f4f6;color:#374151;font-size:9px;font-weight:700;padding:3px 7px;border-radius:8px;">ประชาสัมพันธ์</span>
+                    <span style="background:#3b82f6;color:white;font-size:9px;font-weight:700;padding:3px 7px;border-radius:8px;">ประชุม</span>
+                    <span style="background:#f3f4f6;color:#374151;font-size:9px;font-weight:700;padding:3px 7px;border-radius:8px;">กำหนดการ</span>
+                    <span style="background:#f3f4f6;color:#374151;font-size:9px;font-weight:700;padding:3px 7px;border-radius:8px;">อบรม</span>
+                    <span style="background:#f3f4f6;color:#374151;font-size:9px;font-weight:700;padding:3px 7px;border-radius:8px;">อื่นๆ</span>
+                  </div>
+                </div>
+                <div style="margin-bottom:7px;">
+                  <div style="font-size:9px;font-weight:700;color:#6b7280;margin-bottom:4px;">แสดงให้</div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px;">
+                    <div style="background:#10b981;color:white;border-radius:8px;padding:5px 8px;font-size:9px;font-weight:700;text-align:center;">ประชาชน</div>
+                    <div style="background:white;color:#374151;border:1px solid #e5e7eb;border-radius:8px;padding:5px 8px;font-size:9px;font-weight:700;text-align:center;">🔒 เจ้าหน้าที่</div>
+                    <div style="background:white;color:#374151;border:1px solid #e5e7eb;border-radius:8px;padding:5px 8px;font-size:9px;font-weight:700;text-align:center;">🔒 ผู้บริหาร</div>
+                    <div style="background:white;color:#374151;border:1px solid #e5e7eb;border-radius:8px;padding:5px 8px;font-size:9px;font-weight:700;text-align:center;">🔒 สภาเทศบาล</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-caption">ฟอร์มเพิ่มกิจกรรม</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-divider">
+      <div class="section-divider-line"></div>
+      <div class="section-divider-text">การตั้งค่า "แสดงให้" — ใครเห็นกิจกรรมนี้</div>
+      <div class="section-divider-line"></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
+      <div style="background:#f0fdf4;border-radius:12px;border:1px solid #a7f3d0;padding:12px;">
+        <div style="font-weight:800;font-size:13px;color:#065f46;margin-bottom:4px;">🌐 ประชาชน</div>
+        <div style="font-size:12px;color:#047857;line-height:1.6;">ทุกคนเห็นได้ รวมผู้ไม่ล็อกอิน เหมาะกับ: วันทำความสะอาด, งานประเพณี, ประกาศสาธารณะ</div>
+      </div>
+      <div style="background:#eff6ff;border-radius:12px;border:1px solid #bfdbfe;padding:12px;">
+        <div style="font-weight:800;font-size:13px;color:#1e40af;margin-bottom:4px;">🔒 เจ้าหน้าที่</div>
+        <div style="font-size:12px;color:#1d4ed8;line-height:1.6;">เฉพาะ officer, technician, viewer, admin เหมาะกับ: ตารางงาน, นัดหมายภายใน, ประชุมพนักงาน</div>
+      </div>
+      <div style="background:#f5f3ff;border-radius:12px;border:1px solid #ddd6fe;padding:12px;">
+        <div style="font-weight:800;font-size:13px;color:#5b21b6;margin-bottom:4px;">🔒 ผู้บริหาร</div>
+        <div style="font-size:12px;color:#6d28d9;line-height:1.6;">เฉพาะ viewer, admin เหมาะกับ: การประชุมระดับบริหาร, อบรมผู้บริหาร, วาระสำคัญ</div>
+      </div>
+      <div style="background:#fffbeb;border-radius:12px;border:1px solid #fde68a;padding:12px;">
+        <div style="font-weight:800;font-size:13px;color:#92400e;margin-bottom:4px;">🔒 สภาเทศบาล</div>
+        <div style="font-size:12px;color:#b45309;line-height:1.6;">เฉพาะ council, admin เหมาะกับ: นัดประชุมสภา, วาระสภา, ระเบียบวาระการประชุม</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <div>
+        <div class="step-num"><div class="step-num-circle">2</div>แก้ไขกิจกรรม</div>
+        <p style="font-size:13px;color:var(--gray-700);">กดปุ่ม <span style="background:#dbeafe;color:#1d4ed8;padding:1px 8px;border-radius:6px;font-size:12px;">✏️ แก้ไข</span> ที่การ์ดกิจกรรม → แก้ไขข้อมูล → กดบันทึก</p>
+      </div>
+      <div>
+        <div class="step-num"><div class="step-num-circle">3</div>ลบกิจกรรม</div>
+        <p style="font-size:13px;color:var(--gray-700);">กดปุ่ม <span style="background:#fee2e2;color:#991b1b;padding:1px 8px;border-radius:6px;font-size:12px;">🗑️ ลบ</span> → ยืนยัน การลบไม่สามารถกู้คืนได้ ไฟล์แนบถูกลบออกจาก Storage ด้วย</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ PAGE 4 — จัดการผู้ใช้ ═══════════════════════ -->
+<div id="users" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">🛡️</div>
+      <div><h2>จัดการผู้ใช้งาน</h2><p>บทบาท สิทธิ์ และการเพิ่มบัญชี</p></div>
+    </div>
+
+    <div class="step-section">
+      <div>
+        <div class="step-num"><div class="step-num-circle">1</div>เข้าหน้าจัดการผู้ใช้</div>
+        <h3>ดูและจัดการบัญชีทั้งหมด</h3>
+        <p class="step-desc">กดแท็บ <strong>"จัดการผู้ใช้"</strong> (เฉพาะ admin/superadmin) เพื่อดูรายชื่อบัญชีทั้งหมดในระบบ</p>
+        <ul class="steps-list">
+          <li data-n="1">ค้นหาด้วยชื่อหรืออีเมล</li>
+          <li data-n="2">กรองตาม role ด้วย dropdown</li>
+          <li data-n="3">กดปุ่ม <strong>"เปลี่ยน Role"</strong> ที่แต่ละแถวเพื่อเปลี่ยนสิทธิ์</li>
+          <li data-n="4">เลือก role ใหม่ และระบุ <strong>เหตุผล</strong> (บันทึกใน log)</li>
+        </ul>
+
+        <div class="step-num" style="margin-top:16px;"><div class="step-num-circle">2</div>เพิ่มบัญชีเจ้าหน้าที่ใหม่</div>
+        <h3>สร้างบัญชีสำหรับทีมงาน</h3>
+        <ul class="steps-list">
+          <li data-n="1">กดปุ่ม <strong>"+ เพิ่มผู้ใช้"</strong></li>
+          <li data-n="2">กรอก อีเมล, ชื่อ, role, และเลือกเทศบาล</li>
+          <li data-n="3">กด <strong>"สร้างบัญชี"</strong> ระบบจะส่งอีเมลเชิญ</li>
+        </ul>
+        <div class="note-box">
+          ⚠️ บัญชีที่ต้องกำหนดเทศบาล: officer, technician, viewer, council ต้องเลือกว่าสังกัดเทศบาลใด
+        </div>
+      </div>
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen" style="min-height:400px;">
+              <div style="background:linear-gradient(135deg,#5b21b6,#7c3aed);padding:10px 12px;display:flex;justify-content:space-between;align-items:center;">
+                <span style="color:#fff;font-size:11px;font-weight:700;">จัดการผู้ใช้งาน</span>
+                <div style="background:rgba(255,255,255,.2);border-radius:8px;padding:3px 8px;font-size:9px;color:#fff;font-weight:700;">+ เพิ่มผู้ใช้</div>
+              </div>
+              <!-- Filter -->
+              <div style="padding:6px 8px;border-bottom:1px solid #f3f4f6;display:flex;gap:4px;">
+                <div style="flex:1;background:#f3f4f6;border-radius:8px;padding:5px 8px;font-size:9px;color:#9ca3af;">🔍 ค้นหาชื่อ / อีเมล</div>
+                <div style="background:#f3f4f6;border-radius:8px;padding:5px 8px;font-size:9px;color:#6b7280;white-space:nowrap;">ทุก role ▾</div>
+              </div>
+              <!-- User rows -->
+              <div style="padding:6px 8px;">
+                <div style="background:white;border-radius:10px;border:1px solid #f3f4f6;padding:8px;margin-bottom:5px;display:flex;align-items:center;gap:8px;">
+                  <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#1d4ed8,#3b82f6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700;flex-shrink:0;">A</div>
+                  <div style="flex:1;min-width:0;">
+                    <div style="font-size:10px;font-weight:700;color:#1f2937;">สมชาย ใจดี</div>
+                    <div style="font-size:8px;color:#9ca3af;">somchai@muni.go.th</div>
+                  </div>
+                  <div style="display:flex;gap:3px;align-items:center;">
+                    <span style="background:#dbeafe;color:#1e40af;font-size:8px;font-weight:700;padding:2px 6px;border-radius:6px;">admin</span>
+                    <div style="width:20px;height:20px;background:#f3f4f6;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;">✏️</div>
+                  </div>
+                </div>
+                <div style="background:white;border-radius:10px;border:1px solid #f3f4f6;padding:8px;margin-bottom:5px;display:flex;align-items:center;gap:8px;">
+                  <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#d97706,#f59e0b);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700;flex-shrink:0;">T</div>
+                  <div style="flex:1;min-width:0;">
+                    <div style="font-size:10px;font-weight:700;color:#1f2937;">สมหมาย ช่างไฟ</div>
+                    <div style="font-size:8px;color:#9ca3af;">sommai@muni.go.th</div>
+                  </div>
+                  <div style="display:flex;gap:3px;align-items:center;">
+                    <span style="background:#fef3c7;color:#92400e;font-size:8px;font-weight:700;padding:2px 6px;border-radius:6px;">technician</span>
+                    <div style="width:20px;height:20px;background:#f3f4f6;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;">✏️</div>
+                  </div>
+                </div>
+                <div style="background:white;border-radius:10px;border:1px solid #f3f4f6;padding:8px;display:flex;align-items:center;gap:8px;">
+                  <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#8b5cf6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700;flex-shrink:0;">C</div>
+                  <div style="flex:1;min-width:0;">
+                    <div style="font-size:10px;font-weight:700;color:#1f2937;">สมศักดิ์ สภาเทศ</div>
+                    <div style="font-size:8px;color:#9ca3af;">somsak@muni.go.th</div>
+                  </div>
+                  <div style="display:flex;gap:3px;align-items:center;">
+                    <span style="background:#ede9fe;color:#5b21b6;font-size:8px;font-weight:700;padding:2px 6px;border-radius:6px;">council</span>
+                    <div style="width:20px;height:20px;background:#f3f4f6;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;">✏️</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-caption">หน้าจัดการผู้ใช้งาน</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-divider">
+      <div class="section-divider-line"></div>
+      <div class="section-divider-text">ตารางสิทธิ์ตามบทบาท</div>
+      <div class="section-divider-line"></div>
+    </div>
+
+    <table class="info-table">
+      <thead><tr><th>ฟีเจอร์</th><th>superadmin</th><th>admin</th><th>viewer</th><th>technician</th><th>officer</th><th>council</th></tr></thead>
+      <tbody>
+        <tr><td>จัดการคำร้อง</td><td style="text-align:center;">✅</td><td style="text-align:center;">✅</td><td style="text-align:center;">👁️</td><td style="text-align:center;">งานตน</td><td style="text-align:center;">—</td><td style="text-align:center;">—</td></tr>
+        <tr><td>เพิ่ม/แก้ไขกิจกรรม</td><td style="text-align:center;">✅</td><td style="text-align:center;">✅</td><td style="text-align:center;">✅</td><td style="text-align:center;">—</td><td style="text-align:center;">—</td><td style="text-align:center;">—</td></tr>
+        <tr><td>จัดการผู้ใช้</td><td style="text-align:center;">✅</td><td style="text-align:center;">✅</td><td style="text-align:center;">—</td><td style="text-align:center;">—</td><td style="text-align:center;">—</td><td style="text-align:center;">—</td></tr>
+        <tr><td>ตั้งค่าระบบ</td><td style="text-align:center;">✅</td><td style="text-align:center;">✅</td><td style="text-align:center;">—</td><td style="text-align:center;">—</td><td style="text-align:center;">—</td><td style="text-align:center;">—</td></tr>
+        <tr><td>ดูรายงาน</td><td style="text-align:center;">✅</td><td style="text-align:center;">✅</td><td style="text-align:center;">✅</td><td style="text-align:center;">—</td><td style="text-align:center;">—</td><td style="text-align:center;">—</td></tr>
+        <tr><td>เห็นกิจกรรม audience: management</td><td style="text-align:center;">✅</td><td style="text-align:center;">✅</td><td style="text-align:center;">✅</td><td style="text-align:center;">—</td><td style="text-align:center;">—</td><td style="text-align:center;">—</td></tr>
+        <tr><td>เห็นกิจกรรม audience: council</td><td style="text-align:center;">✅</td><td style="text-align:center;">✅</td><td style="text-align:center;">—</td><td style="text-align:center;">—</td><td style="text-align:center;">—</td><td style="text-align:center;">✅</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════ PAGE 5 — รายงาน + ตั้งค่า ═══════════════════════ -->
+<div id="settings" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">📈</div>
+      <div><h2>รายงาน และตั้งค่าระบบ</h2><p>สถิติ ออก PDF และเมนูอื่นๆ</p></div>
+    </div>
+
+    <div class="step-section">
+      <div>
+        <div class="step-num"><div class="step-num-circle">1</div>รายงานและสถิติ</div>
+        <h3>ดูสถิติและออกรายงาน PDF</h3>
+        <p class="step-desc">กดแท็บ <strong>"รายงาน"</strong> เพื่อดูสรุปผลการดำเนินงานในรูปแบบกราฟ และออกรายงาน PDF พร้อมส่งเจ้าหน้าที่</p>
+        <ul class="steps-list">
+          <li data-n="1">เลือก <strong>ช่วงเวลา</strong> ที่ต้องการ (รายวัน รายเดือน หรือกำหนดเอง)</li>
+          <li data-n="2">ดูสถิติแยกตาม <strong>ประเภทคำร้อง</strong> และ <strong>สถานะ</strong></li>
+          <li data-n="3">กดปุ่ม <strong>"ออกรายงาน PDF"</strong> เพื่อสร้างเอกสารรายงาน</li>
+          <li data-n="4">กด <strong>"พิมพ์ / บันทึก PDF"</strong> จากหน้ารายงาน</li>
+        </ul>
+        <div class="tips">
+          📄 <strong>รายงาน PDF</strong> มีหัวกระดาษชื่อหน่วยงาน สรุปสถิติ รายละเอียดคำร้องแต่ละรายการ เหมาะสำหรับรายงานผู้บริหารหรือส่งราชการ
+        </div>
+      </div>
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen" style="min-height:380px;">
+              <div style="background:linear-gradient(135deg,#047857,#10b981);padding:10px 12px;display:flex;justify-content:space-between;align-items:center;">
+                <span style="color:#fff;font-size:11px;font-weight:700;">รายงานสรุปผล</span>
+                <div style="background:rgba(255,255,255,.2);border-radius:8px;padding:3px 8px;font-size:9px;color:#fff;font-weight:700;">📄 ออก PDF</div>
+              </div>
+              <div style="padding:8px;">
+                <!-- Period select -->
+                <div style="background:white;border-radius:10px;border:1px solid #f3f4f6;padding:7px 10px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
+                  <span style="font-size:9px;color:#6b7280;">ช่วงเวลา:</span>
+                  <span style="font-size:9px;font-weight:700;color:#1f2937;">เดือนนี้ (พ.ค. 2569) ▾</span>
+                </div>
+                <!-- Stats grid -->
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:6px;">
+                  <div style="background:white;border-radius:10px;padding:8px;border:1px solid #f3f4f6;text-align:center;">
+                    <div style="font-size:20px;font-weight:800;color:#374151;">24</div>
+                    <div style="font-size:8px;color:#6b7280;">คำร้องทั้งหมด</div>
+                  </div>
+                  <div style="background:white;border-radius:10px;padding:8px;border:1px solid #f3f4f6;text-align:center;">
+                    <div style="font-size:20px;font-weight:800;color:#10b981;">11</div>
+                    <div style="font-size:8px;color:#6b7280;">เสร็จสิ้น</div>
+                  </div>
+                </div>
+                <!-- Bar chart mockup -->
+                <div style="background:white;border-radius:10px;padding:10px;border:1px solid #f3f4f6;">
+                  <div style="font-size:8px;font-weight:700;color:#6b7280;margin-bottom:6px;">แยกตามประเภท</div>
+                  <div style="display:flex;flex-direction:column;gap:4px;">
+                    <div style="display:flex;align-items:center;gap:5px;"><div style="font-size:8px;color:#6b7280;width:40px;text-align:right;flex-shrink:0;">ถนน</div><div style="flex:1;background:#f3f4f6;border-radius:4px;height:10px;"><div style="background:#1c7cd6;border-radius:4px;height:100%;width:70%;"></div></div><div style="font-size:8px;color:#374151;font-weight:700;width:14px;text-align:right;">8</div></div>
+                    <div style="display:flex;align-items:center;gap:5px;"><div style="font-size:8px;color:#6b7280;width:40px;text-align:right;flex-shrink:0;">ไฟฟ้า</div><div style="flex:1;background:#f3f4f6;border-radius:4px;height:10px;"><div style="background:#f59e0b;border-radius:4px;height:100%;width:50%;"></div></div><div style="font-size:8px;color:#374151;font-weight:700;width:14px;text-align:right;">6</div></div>
+                    <div style="display:flex;align-items:center;gap:5px;"><div style="font-size:8px;color:#6b7280;width:40px;text-align:right;flex-shrink:0;">ขยะ</div><div style="flex:1;background:#f3f4f6;border-radius:4px;height:10px;"><div style="background:#10b981;border-radius:4px;height:100%;width:40%;"></div></div><div style="font-size:8px;color:#374151;font-weight:700;width:14px;text-align:right;">5</div></div>
+                    <div style="display:flex;align-items:center;gap:5px;"><div style="font-size:8px;color:#6b7280;width:40px;text-align:right;flex-shrink:0;">น้ำ</div><div style="flex:1;background:#f3f4f6;border-radius:4px;height:10px;"><div style="background:#8b5cf6;border-radius:4px;height:100%;width:25%;"></div></div><div style="font-size:8px;color:#374151;font-weight:700;width:14px;text-align:right;">3</div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-caption">หน้ารายงานสถิติ</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-divider">
+      <div class="section-divider-line"></div>
+      <div class="section-divider-text">เมนูอื่นๆ — ตั้งค่าระบบ</div>
+      <div class="section-divider-line"></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div style="background:#fef3c7;border-radius:12px;padding:12px 14px;">
+        <p style="font-size:13px;font-weight:800;color:#92400e;margin-bottom:6px;">🏷️ ประเภทคำร้อง</p>
+        <p style="font-size:12px;color:#78350f;line-height:1.6;">เพิ่ม แก้ไข หรือลบประเภทคำร้อง ตั้งค่าสีและไอคอน กำหนดว่าจะแสดงบนหน้าหลักหรือไม่</p>
+      </div>
+      <div style="background:#e0f2fe;border-radius:12px;padding:12px 14px;">
+        <p style="font-size:13px;font-weight:800;color:#075985;margin-bottom:6px;">📍 สถานที่เกิดเหตุ</p>
+        <p style="font-size:12px;color:#0c4a6e;line-height:1.6;">จัดการรายชื่อหมู่บ้าน / ตำบล ที่ประชาชนเลือกในแบบฟอร์มยื่นคำร้อง</p>
+      </div>
+      <div style="background:#fee2e2;border-radius:12px;padding:12px 14px;">
+        <p style="font-size:13px;font-weight:800;color:#991b1b;margin-bottom:6px;">📞 สายด่วนฉุกเฉิน</p>
+        <p style="font-size:12px;color:#7f1d1d;line-height:1.6;">เพิ่มหรือแก้ไขเบอร์โทรฉุกเฉินที่แสดงในหน้า "เมนูอื่นๆ" ของประชาชน</p>
+      </div>
+      <div style="background:#ede9fe;border-radius:12px;padding:12px 14px;">
+        <p style="font-size:13px;font-weight:800;color:#5b21b6;margin-bottom:6px;">👤 รูปผู้บริหาร</p>
+        <p style="font-size:12px;color:#4c1d95;line-height:1.6;">อัปโหลดรูปนายกเทศมนตรี รองนายก หรือทีมบริหาร แสดงในหน้าข้อมูลเทศบาล</p>
+      </div>
+      <div style="background:#f0fdf4;border-radius:12px;padding:12px 14px;">
+        <p style="font-size:13px;font-weight:800;color:#065f46;margin-bottom:6px;">🔧 ผู้รับผิดชอบ</p>
+        <p style="font-size:12px;color:#047857;line-height:1.6;">กำหนดว่าประเภทคำร้องใดมอบหมายให้ช่างหรือเจ้าหน้าที่คนใดรับผิดชอบโดยอัตโนมัติ</p>
+      </div>
+      <div style="background:#f9fafb;border-radius:12px;padding:12px 14px;border:1px solid #e5e7eb;">
+        <p style="font-size:13px;font-weight:800;color:#374151;margin-bottom:6px;">📋 คู่มือการใช้งาน</p>
+        <p style="font-size:12px;color:#6b7280;line-height:1.6;">เปิดคู่มือฉบับนี้ได้จากเมนู "อื่นๆ" → "คู่มือผู้ดูแลระบบ" หรือไฟล์ <strong>/manual-admin.html</strong></p>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div style="margin-top:32px;padding-top:20px;border-top:2px solid var(--gray-200);text-align:center;">
+      <div style="font-size:13px;color:var(--gray-500);line-height:1.8;">
+        <strong style="color:var(--primary-dark);font-size:15px;">SmartLocal — ระบบบริการออนไลน์</strong><br>
+        คู่มือผู้ดูแลระบบ · จัดทำโดย SmartLocal E-Service<br>
+        <span style="font-size:12px;color:var(--gray-400);">หากมีปัญหาการใช้งาน กรุณาติดต่อผู้พัฒนาระบบ</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="no-print" style="text-align:center;padding:20px;font-family:sans-serif;color:#666;">
+  <button onclick="window.print()" style="background:#047857;color:#fff;border:none;padding:12px 28px;border-radius:8px;font-size:15px;cursor:pointer;font-family:'Sarabun',sans-serif;font-weight:700;">🖨️ พิมพ์ / บันทึก PDF</button>
+</div>
+
+<button onclick="window.close()" class="no-print" title="ปิดหน้านี้"
+   style="position:fixed;top:16px;right:16px;z-index:9999;background:rgba(0,0,0,0.55);color:#fff;border:none;cursor:pointer;width:40px;height:40px;border-radius:50%;font-size:20px;line-height:40px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,0.3);">✕</button>
+
+<a id="back-btn" href="#toc" class="no-print"
+   style="display:none;position:fixed;bottom:24px;right:20px;z-index:9999;background:#047857;color:#fff;text-decoration:none;width:48px;height:48px;border-radius:50%;box-shadow:0 4px 14px rgba(0,0,0,0.25);font-size:22px;line-height:48px;text-align:center;">↑</a>
+<script>
+  (function(){
+    var btn = document.getElementById('back-btn');
+    window.addEventListener('scroll', function(){ btn.style.display = window.scrollY > 400 ? 'block' : 'none'; }, { passive: true });
+  })();
+</script>
+
+<script>
+  (function(){
+    var PLACEHOLDER = 'SmartLocal';
+    var SUPABASE_URL = 'https://umxssfahtuprnztlytdd.supabase.co';
+    var ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVteHNzZmFodHVwcm56dGx5dGRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0NDI0MzAsImV4cCI6MjA5NDAxODQzMH0.SeQTZHWIAPx0XdQ_xK_BNhHjDVd8CeDdwK2NyXdof7E';
+    function detectSlug() {
+      var hostname = window.location.hostname;
+      var pathname = window.location.pathname;
+      var parts = hostname.split('.');
+      var excluded = ['www','app','admin','localhost'];
+      var isCustomDomain = !hostname.endsWith('.vercel.app') && hostname !== 'localhost' && !/^\d/.test(hostname);
+      if (isCustomDomain && parts.length >= 2 && excluded.indexOf(parts[0]) === -1) return parts[0];
+      if (hostname.endsWith('.vercel.app')) { var m = parts[0].match(/^smartlocal-(.+)$/); if (m) return m[1]; }
+      var segs = pathname.split('/').filter(function(s){ return s && s.indexOf('.') === -1; });
+      return segs[0] || null;
+    }
+    function replaceAll(name) {
+      var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+      var nodes = []; while (walker.nextNode()) nodes.push(walker.currentNode);
+      nodes.forEach(function(n){ if (n.nodeValue.indexOf(PLACEHOLDER) !== -1) n.nodeValue = n.nodeValue.split(PLACEHOLDER).join(name); });
+      document.title = document.title.split(PLACEHOLDER).join(name);
+    }
+    var cachedName = localStorage.getItem('sl_tenant_name');
+    if (cachedName) { replaceAll(cachedName); return; }
+    var slug = detectSlug(); if (!slug) return;
+    fetch(SUPABASE_URL + '/rest/v1/municipalities?slug=eq.' + slug + '&select=name', { headers: { 'apikey': ANON_KEY, 'Authorization': 'Bearer ' + ANON_KEY } })
+    .then(function(r){ return r.json(); })
+    .then(function(data){ if (data && data[0] && data[0].name) replaceAll(data[0].name); })
+    .catch(function(){});
+  })();
+</script>
+
+</body>
+</html>

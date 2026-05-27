@@ -12,7 +12,7 @@ import {
   CheckCircle2, XCircle, AlertCircle, ChevronRight,
   Filter, Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical,
   X, FileText, AlignLeft, Image, Calendar, Hash, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera,
-  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip,
+  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
@@ -2247,7 +2247,7 @@ function handlePrint({ view, month, year, viewLabel, total, completed, rejected,
     <b>เรียน</b><span>ผู้บังคับบัญชา</span>
   </div>
 
-  <p style="text-indent:2.5em">ตามที่ ${tenant?.name ?? 'หน่วยงาน'} ได้เปิดให้บริการรับเรื่องร้องทุกข์ผ่านระบบยื่นคำร้องออนไลน์ เพื่ออำนวยความสะดวกแก่ประชาชนนั้น ขอรายงานผลการดำเนินงาน${viewLabel} ดังนี้</p>
+  <p style="text-indent:2.5em">ตามที่ ${tenant?.name ?? 'หน่วยงาน'} ได้เปิดให้บริการรับเรื่องร้องทุกข์ผ่านระบบบริการออนไลน์ เพื่ออำนวยความสะดวกแก่ประชาชนนั้น ขอรายงานผลการดำเนินงาน${viewLabel} ดังนี้</p>
 
   <div class="section">๑. สรุปสถิติคำร้อง</div>
   <div class="stats">
@@ -3296,7 +3296,7 @@ export default function AdminDashboard() {
   </tr></thead>
   <tbody>${rows}</tbody>
 </table>
-<div class="footer">ออกจากระบบยื่นคำร้องออนไลน์ SmartLocal</div>
+<div class="footer">ออกจากระบบบริการออนไลน์ SmartLocal</div>
 </body></html>`
 
     const w = window.open('', '_blank', 'width=1100,height=700')
@@ -3537,6 +3537,16 @@ export default function AdminDashboard() {
                 </div>
               </button>
             )}
+            <a href="/manual-admin.html" target="_blank" rel="noopener noreferrer"
+              className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#d1fae5' }}>
+                <BookOpen size={24} style={{ color: '#059669' }} />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-gray-800">คู่มือผู้ดูแล</p>
+                <p className="text-[13px] text-gray-400 mt-0.5">คู่มือการใช้งานระบบ</p>
+              </div>
+            </a>
           </div>
         </div>
       ) : (

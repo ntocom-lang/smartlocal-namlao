@@ -50,7 +50,7 @@ function injectPWAManifest(tenant) {
   const manifest = {
     name: `${tenant.name} E-Service`,
     short_name: tenant.name,
-    description: 'ระบบยื่นคำร้องออนไลน์',
+    description: 'ระบบบริการออนไลน์',
     theme_color: tenant.theme_color ?? '#1c7cd6',
     background_color: '#ffffff',
     display: 'standalone',
