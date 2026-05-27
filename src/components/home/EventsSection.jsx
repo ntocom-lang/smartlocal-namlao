@@ -20,29 +20,49 @@ function daysUntil(dateStr) {
   return `อีก ${diff} วัน`
 }
 
+function audienceFilter(role) {
+  if (role === 'admin' || role === 'superadmin') return null
+  if (role === 'viewer')     return ['public', 'staff', 'management', 'council']
+  if (role === 'council')    return ['public', 'staff', 'council']
+  if (role === 'technician' || role === 'officer') return ['public', 'staff']
+  return ['public']
+}
+
 export default function EventsSection() {
   const { tenant } = useTenant()
   const navigate = useNavigate()
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
+  const [role, setRole] = useState(null)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (!data.session) return
+      supabase.from('profiles').select('role').eq('id', data.session.user.id).single()
+        .then(({ data: p }) => setRole(p?.role ?? null))
+    })
+  }, [])
 
   useEffect(() => {
     if (!tenant?.id) return
     const today = new Date().toISOString().split('T')[0]
-    supabase
+    let query = supabase
       .from('events')
       .select('*')
       .eq('municipality_id', tenant.id)
-      .eq('audience', 'public')
       .gte('event_date', today)
       .order('event_date', { ascending: true })
       .limit(3)
-      .then(({ data }) => {
-        setEvents(data ?? [])
-        setLoading(false)
-      })
-  }, [tenant?.id])
+
+    const allowed = audienceFilter(role)
+    if (allowed !== null) query = query.in('audience', allowed)
+
+    query.then(({ data }) => {
+      setEvents(data ?? [])
+      setLoading(false)
+    })
+  }, [tenant?.id, role])
 
   if (!loading && events.length === 0) return null
 
