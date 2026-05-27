@@ -832,6 +832,8 @@ function UserManager({ tenant, currentUserRole }) {
   const [saving, setSaving] = useState(null)
   const [editingNameId, setEditingNameId] = useState(null)
   const [editingNameValue, setEditingNameValue] = useState('')
+  const [editingPositionId, setEditingPositionId] = useState(null)
+  const [editingPositionValue, setEditingPositionValue] = useState('')
   const [search, setSearch] = useState('')
   const [filterRole, setFilterRole] = useState('')
 
@@ -859,6 +861,19 @@ function UserManager({ tenant, currentUserRole }) {
     setSaving(null)
   }
 
+  async function updatePosition(userId) {
+    const pos = editingPositionValue.trim()
+    setSaving(userId)
+    const { error } = await supabase.from('profiles').update({ job_title: pos || null }).eq('id', userId)
+    if (error) {
+      alert(`บันทึกไม่สำเร็จ: ${error.message}`)
+    } else {
+      setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, job_title: pos || null } : u))
+      setEditingPositionId(null)
+    }
+    setSaving(null)
+  }
+
   async function updateRole(userId, newRole, municipalityId) {
     setSaving(userId)
     const needsMuni = ['admin', 'technician', 'officer', 'viewer', 'council'].includes(newRole)
@@ -877,7 +892,7 @@ function UserManager({ tenant, currentUserRole }) {
 
   const filtered = users.filter((u) => {
     const q = search.toLowerCase()
-    const matchSearch = !q || (u.full_name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q) || (u.phone || '').includes(q)
+    const matchSearch = !q || (u.full_name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q) || (u.phone || '').includes(q) || (u.job_title || '').toLowerCase().includes(q)
     const matchRole = !filterRole || u.role === filterRole
     return matchSearch && matchRole
   })
@@ -956,10 +971,25 @@ function UserManager({ tenant, currentUserRole }) {
                       <p className="font-medium text-gray-800 text-sm">{u.full_name || '—'}</p>
                       {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && u.role !== 'superadmin' && (
                         <button
-                          onClick={() => { setEditingNameId(u.id); setEditingNameValue(u.full_name || '') }}
+                          onClick={() => { setEditingNameId(u.id); setEditingNameValue(u.full_name || ''); setEditingPositionId(null) }}
                           className="text-gray-300 hover:text-gray-500 transition-colors"
                         >
                           <Pencil size={12} />
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      {u.job_title ? (
+                        <p className="text-xs text-blue-500 font-medium truncate">{u.job_title}</p>
+                      ) : (
+                        <p className="text-xs text-gray-300 italic">ยังไม่มีตำแหน่ง</p>
+                      )}
+                      {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && u.role !== 'superadmin' && (
+                        <button
+                          onClick={() => { setEditingPositionId(u.id); setEditingPositionValue(u.job_title || ''); setEditingNameId(null) }}
+                          className="text-gray-300 hover:text-gray-500 transition-colors shrink-0"
+                        >
+                          <Pencil size={11} />
                         </button>
                       )}
                     </div>
@@ -1009,6 +1039,31 @@ function UserManager({ tenant, currentUserRole }) {
                     </button>
                     <button
                       onClick={() => setEditingNameId(null)}
+                      className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5"
+                    >
+                      ยกเลิก
+                    </button>
+                  </div>
+                )}
+                {editingPositionId === u.id && (
+                  <div className="flex items-center gap-2 pl-12">
+                    <input
+                      autoFocus
+                      value={editingPositionValue}
+                      onChange={(e) => setEditingPositionValue(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') updatePosition(u.id); if (e.key === 'Escape') setEditingPositionId(null) }}
+                      placeholder="เช่น นายกเทศมนตรีตำบลน้ำเลา, ช่างโยธา"
+                      className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-blue-400 bg-white text-gray-900"
+                    />
+                    <button
+                      onClick={() => updatePosition(u.id)}
+                      disabled={saving === u.id}
+                      className="text-xs bg-blue-500 text-white px-3 py-1.5 rounded-lg font-medium disabled:opacity-50"
+                    >
+                      บันทึก
+                    </button>
+                    <button
+                      onClick={() => setEditingPositionId(null)}
                       className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5"
                     >
                       ยกเลิก
