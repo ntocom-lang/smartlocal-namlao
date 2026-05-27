@@ -3,16 +3,26 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { ChevronLeft, Pencil, Loader2 } from 'lucide-react'
 
+const ROLE_LABEL = {
+  superadmin: 'Super Admin',
+  admin:      'แอดมิน',
+  viewer:     'นายก/ผู้บริหาร',
+  council:    'สภาเทศบาล',
+  officer:    'เจ้าหน้าที่',
+  technician: 'ช่าง',
+  citizen:    'ประชาชนทั่วไป',
+}
+
 export default function ProfilePage() {
   const navigate = useNavigate()
   const [session, setSession] = useState(null)
-  const [profile, setProfile] = useState({ full_name: '', phone: '', job_title: '', role: '' })
+  const [profile, setProfile] = useState({ full_name: '', phone: '', role: '' })
   const [avatarUrl, setAvatarUrl] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
   const [error, setError] = useState('')
-const [editName, setEditName] = useState(false)
+  const [editName, setEditName] = useState(false)
   const [editPhone, setEditPhone] = useState(false)
   const [isGoogleLinked, setIsGoogleLinked] = useState(false)
   const fileRef = useRef()
@@ -29,7 +39,7 @@ const [editName, setEditName] = useState(false)
 
       const { data: p } = await supabase
         .from('profiles')
-        .select('full_name, phone, avatar_url, job_title, role')
+        .select('full_name, phone, avatar_url, role')
         .eq('id', s.user.id)
         .single()
 
@@ -37,7 +47,6 @@ const [editName, setEditName] = useState(false)
         setProfile({
           full_name: p.full_name || meta?.full_name || '',
           phone: p.phone || meta?.phone || '',
-          job_title: p.job_title || '',
           role: p.role || '',
         })
         setAvatarUrl(p.avatar_url || meta?.avatar_url || meta?.picture || null)
@@ -45,6 +54,7 @@ const [editName, setEditName] = useState(false)
         setProfile({
           full_name: meta?.full_name || '',
           phone: meta?.phone || '',
+          role: '',
         })
       }
       setLoading(false)
@@ -121,6 +131,7 @@ const [editName, setEditName] = useState(false)
   }
 
   const displayName = profile.full_name || session?.user?.email?.split('@')[0] || 'ผู้ใช้'
+  const roleLabel = ROLE_LABEL[profile.role] ?? 'ประชาชนทั่วไป'
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -164,7 +175,7 @@ const [editName, setEditName] = useState(false)
               <input
                 value={profile.full_name}
                 onChange={(e) => setProfile((p) => ({ ...p, full_name: e.target.value }))}
-                className="text-sm text-gray-800 border-b border-gray-300 outline-none text-right flex-1 max-w-[160px]"
+                className="text-sm text-gray-800 bg-white border-b border-gray-300 outline-none text-right flex-1 max-w-40"
                 autoFocus
               />
             ) : (
@@ -175,12 +186,12 @@ const [editName, setEditName] = useState(false)
             </button>
           </div>
 
-          {/* ตำแหน่ง (read-only — admin เป็นคนกำหนด) */}
+          {/* ตำแหน่ง (read-only — map จาก role) */}
           <div className="flex items-center px-5 py-4 gap-3">
             <span className="text-sm text-gray-700 flex-1">ตำแหน่ง</span>
-            <span className={`text-sm text-right truncate max-w-50 ${profile.job_title ? 'font-medium' : 'text-gray-400'}`}
-                  style={profile.job_title ? { color: 'var(--color-primary)' } : {}}>
-              {profile.job_title || 'ยังไม่ได้ระบุ'}
+            <span className="text-sm font-medium text-right truncate max-w-50"
+                  style={{ color: 'var(--color-primary)' }}>
+              {roleLabel}
             </span>
           </div>
 
@@ -191,7 +202,7 @@ const [editName, setEditName] = useState(false)
               <input
                 value={profile.phone}
                 onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value }))}
-                className="text-sm text-gray-800 border-b border-gray-300 outline-none text-right flex-1 max-w-[160px]"
+                className="text-sm text-gray-800 bg-white border-b border-gray-300 outline-none text-right flex-1 max-w-40"
                 type="tel"
                 autoFocus
               />
@@ -229,7 +240,6 @@ const [editName, setEditName] = useState(false)
             <span className="text-sm text-gray-700 flex-1">อีเมล</span>
             <span className="text-sm text-gray-500 text-right truncate max-w-45">{session?.user?.email || '-'}</span>
           </div>
-
         </div>
 
         {/* Feedback */}
