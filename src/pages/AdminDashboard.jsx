@@ -2755,6 +2755,9 @@ function EventCard({ ev, onEdit, onDelete, deleting }) {
                 : ''}
             </p>
             {ev.location && <p className="text-xs text-gray-400 mt-0.5">📍 {ev.location}</p>}
+            {ev.creator?.full_name && (
+              <p className="text-xs text-gray-400 mt-0.5">✍️ {ev.creator.full_name}</p>
+            )}
             {ev.description && (
               <p className="text-xs text-gray-500 mt-1 leading-relaxed line-clamp-2">{ev.description}</p>
             )}
@@ -2816,7 +2819,7 @@ function EventsManager({ tenant }) {
     setLoading(true)
     const { data } = await supabase
       .from('events')
-      .select('*')
+      .select('*, creator:profiles!events_created_by_fkey(full_name)')
       .eq('municipality_id', tenant.id)
       .order('event_date', { ascending: true })
     setEvents(data ?? [])
@@ -2888,7 +2891,8 @@ function EventsManager({ tenant }) {
     if (editingEvent) {
       await supabase.from('events').update(payload).eq('id', editingEvent.id)
     } else {
-      await supabase.from('events').insert(payload)
+      const { data: { user } } = await supabase.auth.getUser()
+      await supabase.from('events').insert({ ...payload, created_by: user?.id ?? null })
     }
     setSaving(false)
     setShowForm(false)
