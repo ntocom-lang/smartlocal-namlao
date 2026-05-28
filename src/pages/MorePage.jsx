@@ -299,6 +299,7 @@ export default function MorePage() {
 
   const isAdmin = role === 'admin' || role === 'superadmin'
   const isViewer = role === 'viewer'
+  const isCouncil = role === 'council'
   const displayName = session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || ''
   const avatarUrl = session?.user?.user_metadata?.avatar_url || session?.user?.user_metadata?.picture
   const initials = (displayName[0] || '?').toUpperCase()
@@ -438,6 +439,18 @@ export default function MorePage() {
               iconColor="text-emerald-500"
               label="รายงานสรุป"
               desc="ดูรายงานและสถิติคำร้องของหน่วยงาน"
+              href="/admin"
+            />
+          </Section>
+        )}
+        {isCouncil && (
+          <Section title="สภาเทศบาล">
+            <MenuRow
+              icon={ShieldCheck}
+              iconBg="bg-amber-50"
+              iconColor="text-amber-500"
+              label="ปฏิทินกิจกรรม"
+              desc="จัดการกิจกรรมของสภาเทศบาล"
               href="/admin"
             />
           </Section>

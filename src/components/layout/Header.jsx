@@ -130,6 +130,13 @@ export default function Header() {
                 <LayoutDashboard size={13} /> รายงาน
               </Link>
             )}
+            {role === 'council' && (
+              <Link to="/admin"
+                className="ml-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-colors hover:opacity-90"
+                style={{ backgroundColor: 'white', color: 'var(--color-primary)' }}>
+                <LayoutDashboard size={13} /> กิจกรรม
+              </Link>
+            )}
           </nav>
 
           {/* Theme toggle */}
@@ -149,6 +156,13 @@ export default function Header() {
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-colors hover:opacity-90"
                   style={{ backgroundColor: 'white', color: 'var(--color-primary)' }}>
                   <LayoutDashboard size={14} /> แผงควบคุม Admin
+                </Link>
+              )}
+              {role === 'council' && (
+                <Link to="/admin"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-colors hover:opacity-90"
+                  style={{ backgroundColor: 'white', color: 'var(--color-primary)' }}>
+                  <LayoutDashboard size={14} /> ปฏิทินกิจกรรม
                 </Link>
               )}
               <Link to="/profile" className="text-white/80 text-xs flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-white/12 transition-colors">
