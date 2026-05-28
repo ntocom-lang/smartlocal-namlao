@@ -2802,7 +2802,7 @@ function EventCard({ ev, onEdit, onDelete, deleting }) {
   )
 }
 
-function EventsManager({ tenant }) {
+function EventsManager({ tenant, currentUserRole }) {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -3033,7 +3033,7 @@ function EventsManager({ tenant }) {
                   <div>
                     <label className="text-xs font-semibold text-gray-500 mb-1 block">แสดงให้</label>
                     <div className="grid grid-cols-2 gap-2">
-                      {AUDIENCE_OPTIONS.map((opt) => (
+                      {AUDIENCE_OPTIONS.filter((opt) => currentUserRole === 'council' ? opt.value !== 'management' : true).map((opt) => (
                         <button
                           key={opt.value}
                           onClick={() => setForm((p) => ({ ...p, audience: opt.value }))}
@@ -3510,7 +3510,7 @@ export default function AdminDashboard() {
       </div>
 
       {activePage === 'events' ? (
-        <EventsManager tenant={tenant} />
+        <EventsManager tenant={tenant} currentUserRole={currentUserRole} />
       ) : activePage === 'report' ? (
         <ReportManager complaints={complaints} tenant={tenant} />
       ) : activePage === 'staff' ? (
