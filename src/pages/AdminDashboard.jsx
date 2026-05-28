@@ -2813,15 +2813,19 @@ function EventsManager({ tenant, currentUserRole }) {
   const emptyForm = { title: '', description: '', event_date: '', event_time: '', end_time: '', end_date: '', location: '', category: 'อื่นๆ', is_all_day: true, audience: 'public', attachment_url: '', attachment_file: null }
   const [form, setForm] = useState(emptyForm)
 
-  useEffect(() => { fetchEvents() }, [tenant.id])
+  useEffect(() => { fetchEvents() }, [tenant.id, currentUserRole])
 
   async function fetchEvents() {
     setLoading(true)
-    const { data } = await supabase
+    let query = supabase
       .from('events')
       .select('*, creator:profiles!events_created_by_fkey(full_name)')
       .eq('municipality_id', tenant.id)
       .order('event_date', { ascending: true })
+    if (currentUserRole === 'council') {
+      query = query.in('audience', ['public', 'staff', 'council'])
+    }
+    const { data } = await query
     setEvents(data ?? [])
     setLoading(false)
   }
