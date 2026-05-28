@@ -3200,6 +3200,7 @@ export default function AdminDashboard() {
           const r = p?.role ?? 'citizen'
           setCurrentUserRole(r)
           if (r === 'viewer' && !location.state?.page) setActivePage('report')
+          if (r === 'council' && !location.state?.page) setActivePage('events')
           return r
         })
     })
@@ -3414,12 +3415,14 @@ export default function AdminDashboard() {
             <TrendingUp size={15} /> รายงาน
           </button>
         )}
-        <button onClick={() => setActivePage('complaints')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'complaints' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-          style={activePage === 'complaints' ? { backgroundColor: 'var(--color-primary)' } : {}}>
-          <ClipboardList size={15} /> คำร้อง
-        </button>
-        {currentUserRole !== 'viewer' && (
+        {currentUserRole !== 'council' && (
+          <button onClick={() => setActivePage('complaints')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'complaints' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+            style={activePage === 'complaints' ? { backgroundColor: 'var(--color-primary)' } : {}}>
+            <ClipboardList size={15} /> คำร้อง
+          </button>
+        )}
+        {currentUserRole !== 'viewer' && currentUserRole !== 'council' && (
           <button onClick={() => setActivePage('categories')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'categories' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
             style={activePage === 'categories' ? { backgroundColor: '#d97706' } : {}}>
@@ -3433,12 +3436,14 @@ export default function AdminDashboard() {
             <Shield size={15} /> จัดการผู้ใช้
           </button>
         )}
-        <button onClick={() => setActivePage('assignments')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'assignments' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-          style={activePage === 'assignments' ? { backgroundColor: '#d97706' } : {}}>
-          <Wrench size={15} /> ผู้รับผิดชอบ
-        </button>
-        {currentUserRole !== 'viewer' && (
+        {currentUserRole !== 'council' && (
+          <button onClick={() => setActivePage('assignments')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'assignments' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+            style={activePage === 'assignments' ? { backgroundColor: '#d97706' } : {}}>
+            <Wrench size={15} /> ผู้รับผิดชอบ
+          </button>
+        )}
+        {currentUserRole !== 'viewer' && currentUserRole !== 'council' && (
           <button onClick={() => setActivePage('report')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'report' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
             style={activePage === 'report' ? { backgroundColor: '#10b981' } : {}}>
@@ -3450,14 +3455,13 @@ export default function AdminDashboard() {
           style={activePage === 'events' ? { backgroundColor: '#10b981' } : {}}>
           <CalendarDays size={15} /> กิจกรรม
         </button>
-        {currentUserRole !== 'viewer' && (
+        {currentUserRole !== 'viewer' && currentUserRole !== 'council' && (
           <button onClick={() => setActivePage('more')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'more' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
             style={activePage === 'more' ? { backgroundColor: '#6b7280' } : {}}>
             <LayoutGrid size={15} /> อื่นๆ
           </button>
         )}
-
       </div>
 
       {/* ─── Mobile Admin Bottom Tab Bar ─── */}
@@ -3467,10 +3471,14 @@ export default function AdminDashboard() {
       >
         {[
           { key: 'home',       label: 'หน้าแรก', Icon: Home,          activeColor: '#6b7280',             nav: () => navigate('/') },
-          { key: 'complaints', label: 'คำร้อง',  Icon: ClipboardList, activeColor: 'var(--color-primary)', nav: () => setActivePage('complaints') },
+          ...( currentUserRole !== 'council' ? [
+            { key: 'complaints', label: 'คำร้อง',  Icon: ClipboardList, activeColor: 'var(--color-primary)', nav: () => setActivePage('complaints') },
+          ] : []),
           { key: 'events',     label: 'กิจกรรม', Icon: CalendarDays,  activeColor: '#10b981',             nav: () => setActivePage('events') },
-          { key: 'report',     label: 'รายงาน',  Icon: TrendingUp,    activeColor: '#10b981',             nav: () => setActivePage('report') },
-          { key: 'more',       label: 'อื่นๆ',   Icon: LayoutGrid,    activeColor: '#6b7280',             nav: () => setActivePage('more') },
+          ...( currentUserRole !== 'council' ? [
+            { key: 'report',   label: 'รายงาน',  Icon: TrendingUp,    activeColor: '#10b981',             nav: () => setActivePage('report') },
+            { key: 'more',     label: 'อื่นๆ',   Icon: LayoutGrid,    activeColor: '#6b7280',             nav: () => setActivePage('more') },
+          ] : []),
         ].map(({ key, label, Icon, activeColor, nav }) => {
           const isActive = activePage === key
           return (
