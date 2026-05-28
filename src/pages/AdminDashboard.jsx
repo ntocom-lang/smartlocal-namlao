@@ -832,6 +832,8 @@ function UserManager({ tenant, currentUserRole }) {
   const [saving, setSaving] = useState(null)
   const [editingNameId, setEditingNameId] = useState(null)
   const [editingNameValue, setEditingNameValue] = useState('')
+  const [editingPositionId, setEditingPositionId] = useState(null)
+  const [editingPositionValue, setEditingPositionValue] = useState('')
 
   const [search, setSearch] = useState('')
   const [filterRole, setFilterRole] = useState('')
@@ -876,6 +878,19 @@ function UserManager({ tenant, currentUserRole }) {
     setSaving(null)
   }
 
+  async function updatePosition(userId) {
+    const val = editingPositionValue.trim()
+    setSaving(userId)
+    const { error } = await supabase.from('profiles').update({ job_title: val || null }).eq('id', userId)
+    if (error) {
+      alert(`บันทึกไม่สำเร็จ: ${error.message}`)
+    } else {
+      setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, job_title: val || null } : u))
+      setEditingPositionId(null)
+    }
+    setSaving(null)
+  }
+
   const filtered = users.filter((u) => {
     const q = search.toLowerCase()
     const matchSearch = !q || (u.full_name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q) || (u.phone || '').includes(q)
@@ -913,14 +928,19 @@ function UserManager({ tenant, currentUserRole }) {
           onChange={(e) => setFilterRole(e.target.value)}
           className="text-xs border border-gray-200 rounded-xl px-2 py-2 text-gray-600 focus:outline-none shrink-0"
         >
-          <option value="">ทุกตำแหน่ง</option>
-          <option value="citizen">สมาชิก</option>
-          <option value="viewer">ผู้บริหาร</option>
-          <option value="council">สภาเทศบาล</option>
-          <option value="officer">เจ้าหน้าที่</option>
-          <option value="technician">ช่าง</option>
-          <option value="admin">แอดมิน</option>
-          {currentUserRole === 'superadmin' && <option value="superadmin">Super Admin</option>}
+          <option value="">ทุกตำแหน่ง ({users.length})</option>
+          {[
+            { value: 'citizen',    label: 'สมาชิก' },
+            { value: 'viewer',     label: 'ผู้บริหาร' },
+            { value: 'council',    label: 'สภาเทศบาล' },
+            { value: 'officer',    label: 'เจ้าหน้าที่' },
+            { value: 'technician', label: 'ช่าง' },
+            { value: 'admin',      label: 'แอดมิน' },
+            ...(currentUserRole === 'superadmin' ? [{ value: 'superadmin', label: 'Super Admin' }] : []),
+          ].map(({ value, label }) => {
+            const count = users.filter((u) => u.role === value).length
+            return count > 0 ? <option key={value} value={value}>{label} ({count})</option> : null
+          })}
         </select>
         {(search || filterRole) && (
           <button
@@ -965,6 +985,17 @@ function UserManager({ tenant, currentUserRole }) {
                       )}
                     </div>
                     <p className="text-xs text-gray-400 break-all mt-0.5">{u.email || u.phone || '—'}</p>
+                    {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && u.role !== 'superadmin' && (
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <p className="text-xs text-gray-400">{u.job_title || <span className="italic text-gray-300">ยังไม่ระบุตำแหน่งงาน</span>}</p>
+                        <button
+                          onClick={() => { setEditingPositionId(u.id); setEditingPositionValue(u.job_title || '') }}
+                          className="text-gray-300 hover:text-gray-500 transition-colors"
+                        >
+                          <Pencil size={11} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <span className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0"
                         style={{ backgroundColor: rs.bg, color: rs.color }}>
