@@ -12,10 +12,11 @@ import {
   CheckCircle2, XCircle, AlertCircle, ChevronRight,
   Filter, Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical,
   X, FileText, AlignLeft, Image, Calendar, Hash, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera,
-  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen,
+  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, BellOff,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import { usePushNotification } from '../hooks/usePushNotification'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS = {
@@ -2362,7 +2363,7 @@ const MONTHS_TH = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.',
 const MONTHS_FULL_TH = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
   'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
 
-function ReportManager({ complaints, tenant }) {
+function ReportManager({ complaints, tenant, technicians = [] }) {
   const now = new Date()
   const [view, setView]   = useState('month') // 'month' | 'year' | 'all'
   const [month, setMonth] = useState(now.getMonth())
@@ -2399,6 +2400,46 @@ function ReportManager({ complaints, tenant }) {
         s + (new Date(c.updated_at) - new Date(c.created_at)) / 86400000, 0
       ) / closedData.length)
     : null
+
+  // เทียบเดือนที่แล้ว (เฉพาะ view === 'month')
+  const prevMonth = month === 0 ? 11 : month - 1
+  const prevYear  = month === 0 ? year - 1 : year
+  const prevData  = view === 'month'
+    ? complaints.filter(c => { const d = new Date(c.created_at); return d.getMonth() === prevMonth && d.getFullYear() === prevYear })
+    : []
+  const prevTotal     = prevData.length
+  const prevCompleted = prevData.filter(c => c.status === 'completed').length
+  const prevRate      = prevTotal > 0 ? Math.round(prevCompleted / prevTotal * 100) : 0
+  const prevClosedData = complaints.filter(c => {
+    if (c.status !== 'completed') return false
+    const d = new Date(c.updated_at)
+    return d.getMonth() === prevMonth && d.getFullYear() === prevYear
+  })
+  const prevAvgDays = prevClosedData.length > 0
+    ? Math.round(prevClosedData.reduce((s, c) => s + (new Date(c.updated_at) - new Date(c.created_at)) / 86400000, 0) / prevClosedData.length)
+    : null
+
+  // SLA compliance — breakdown ระยะเวลาปิดงาน
+  const slaIn3    = closedData.filter(c => (new Date(c.updated_at) - new Date(c.created_at)) / 86400000 <= 3).length
+  const slaIn7    = closedData.filter(c => (new Date(c.updated_at) - new Date(c.created_at)) / 86400000 <= 7).length
+  const slaIn14   = closedData.filter(c => (new Date(c.updated_at) - new Date(c.created_at)) / 86400000 <= 14).length
+  const slaOver14 = closedData.length - slaIn14
+  const slaRate7  = closedData.length > 0 ? Math.round(slaIn7 / closedData.length * 100) : null
+
+  // ผลงานช่าง — lookup ชื่อจาก technicians array ด้วย assigned_to UUID
+  const techMap = {}
+  complaints.filter(c => c.status === 'completed' && c.assigned_to).forEach(c => {
+    const tech = technicians.find(t => t.id === c.assigned_to)
+    const name = tech?.full_name || tech?.email || null
+    if (!name) return
+    if (!techMap[name]) techMap[name] = { name, completed: 0, totalDays: 0 }
+    techMap[name].completed++
+    techMap[name].totalDays += (new Date(c.updated_at) - new Date(c.created_at)) / 86400000
+  })
+  const techLeaderboard = Object.values(techMap)
+    .map(t => ({ ...t, avgDays: Math.round(t.totalDays / t.completed) }))
+    .sort((a, b) => b.completed - a.completed)
+    .slice(0, 5)
 
   // กราฟแนวโน้ม
   const trend = view === 'all'
@@ -2509,18 +2550,57 @@ function ReportManager({ complaints, tenant }) {
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: 'คำร้องที่รับเข้า',   value: total,    color: '#64748b', sub: 'รายการ' },
-          { label: 'ปิดงานแล้ว',         value: completed, color: '#10b981', sub: 'รายการ' },
-          { label: 'อัตราปิดงาน',        value: `${rate}%`, color: rateColor, sub: rate >= 70 ? '✅ ดี' : rate >= 40 ? '⚠️ ปานกลาง' : '🔴 ต่ำ' },
-          { label: 'เฉลี่ยวันปิดงาน',    value: avgDays !== null ? avgDays : '—', color: '#8b5cf6', sub: avgDays !== null ? 'วัน' : 'ไม่มีข้อมูล' },
-        ].map(({ label, value, color, sub }) => (
+          { label: 'คำร้องที่รับเข้า', value: total,    color: '#64748b', sub: 'รายการ',           delta: view === 'month' ? total - prevTotal : null,                                    unit: '' },
+          { label: 'ปิดงานแล้ว',       value: completed, color: '#10b981', sub: 'รายการ',           delta: view === 'month' ? completed - prevCompleted : null,                            unit: '' },
+          { label: 'อัตราปิดงาน',      value: `${rate}%`, color: rateColor, sub: rate >= 70 ? '✅ ดี' : rate >= 40 ? '⚠️ ปานกลาง' : '🔴 ต่ำ', delta: view === 'month' && prevTotal > 0 ? rate - prevRate : null, unit: '%' },
+          { label: 'เฉลี่ยวันปิดงาน',  value: avgDays !== null ? avgDays : '—', color: '#8b5cf6', sub: avgDays !== null ? 'วัน' : 'ไม่มีข้อมูล', delta: view === 'month' && avgDays !== null && prevAvgDays !== null ? prevAvgDays - avgDays : null, unit: 'วัน' },
+        ].map(({ label, value, color, sub, delta, unit }) => (
           <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
             <p className="text-2xl font-black leading-none" style={{ color }}>{value}</p>
             <p className="text-[13px] text-gray-400 mt-1">{sub}</p>
             <p className="text-xs font-medium text-gray-600 mt-0.5">{label}</p>
+            {delta !== null && (
+              <p className={`text-[11px] font-semibold mt-1.5 ${delta > 0 ? 'text-green-500' : delta < 0 ? 'text-red-400' : 'text-gray-400'}`}>
+                {delta > 0 ? '↑' : delta < 0 ? '↓' : '='} {delta !== 0 ? `${Math.abs(delta)}${unit} จากเดือนก่อน` : 'เท่าเดิม'}
+              </p>
+            )}
           </div>
         ))}
       </div>
+
+      {/* SLA compliance */}
+      {closedData.length > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+              <Clock size={14} className="text-blue-500" />
+              SLA — ระยะเวลาแก้ไขปัญหา
+            </h3>
+            {slaRate7 !== null && (
+              <span className={`text-sm font-bold px-3 py-1 rounded-full ${slaRate7 >= 70 ? 'bg-green-50 text-green-600' : slaRate7 >= 40 ? 'bg-yellow-50 text-yellow-600' : 'bg-red-50 text-red-500'}`}>
+                {slaRate7 >= 70 ? '✅' : slaRate7 >= 40 ? '⚠️' : '🔴'} {slaRate7}% แก้ภายใน 7 วัน
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { label: '0–3 วัน', count: slaIn3,            color: '#10b981', bg: '#d1fae5', emoji: '🟢' },
+              { label: '4–7 วัน', count: slaIn7 - slaIn3,  color: '#3b82f6', bg: '#dbeafe', emoji: '🔵' },
+              { label: '8–14 วัน', count: slaIn14 - slaIn7, color: '#f59e0b', bg: '#fef3c7', emoji: '🟡' },
+              { label: '15+ วัน',  count: slaOver14,          color: '#ef4444', bg: '#fee2e2', emoji: '🔴' },
+            ].map(({ label, count, color, bg, emoji }) => (
+              <div key={label} className="rounded-2xl p-4 text-center" style={{ backgroundColor: bg }}>
+                <p className="text-xs mb-1">{emoji}</p>
+                <p className="text-2xl font-black" style={{ color }}>{count}</p>
+                <p className="text-xs font-semibold mt-1" style={{ color }}>{label}</p>
+                <p className="text-[11px] mt-0.5" style={{ color, opacity: 0.7 }}>
+                  {closedData.length > 0 ? `${Math.round(count / closedData.length * 100)}%` : '—'}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Trend chart */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
@@ -2615,6 +2695,38 @@ function ReportManager({ complaints, tenant }) {
           </>
         )}
       </div>
+
+      {/* Technician leaderboard */}
+      {techLeaderboard.length > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <h3 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
+            <Wrench size={14} className="text-orange-500" />
+            ผลงานช่าง
+            <span className="text-xs font-normal text-gray-400 ml-auto">ตลอดทุกช่วงเวลา</span>
+          </h3>
+          <div className="space-y-3">
+            {techLeaderboard.map((t, i) => {
+              const medals = ['🥇','🥈','🥉']
+              return (
+                <div key={t.name} className="flex items-center gap-3">
+                  <div className="w-7 text-center text-base shrink-0">{medals[i] ?? `${i + 1}.`}</div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-800 truncate">{t.name}</p>
+                    <div className="w-full bg-gray-100 rounded-full h-1.5 mt-1.5">
+                      <div className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${(t.completed / techLeaderboard[0].completed) * 100}%`, backgroundColor: '#f97316' }} />
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-bold text-gray-800">{t.completed} งาน</p>
+                    <p className="text-[11px] text-gray-400">เฉลี่ย {t.avgDays} วัน/งาน</p>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* 2-col alert widgets — แสดงเฉพาะ รายเดือน */}
       {view === 'month' && (
@@ -3193,12 +3305,18 @@ export default function AdminDashboard() {
   const [search, setSearch] = useState('')
   const [activePage, setActivePage] = useState(location.state?.page ?? 'complaints')
   const [currentUserRole, setCurrentUserRole] = useState(null)
+  const [currentUserId, setCurrentUserId] = useState(null)
   const [selectedComplaint, setSelectedComplaint] = useState(null)
   const [technicians, setTechnicians] = useState([])
+
+  const { supported: pushSupported, permission: pushPermission, subscribed: pushSubscribed,
+          loading: pushLoading, requestAndSubscribe: pushSubscribe, unsubscribe: pushUnsubscribe,
+  } = usePushNotification({ userId: currentUserId, municipalityId: tenant?.id })
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (!data.session) return
+      setCurrentUserId(data.session.user.id)
       supabase.from('profiles').select('role').eq('id', data.session.user.id).single()
         .then(({ data: p }) => {
           const r = p?.role ?? 'citizen'
@@ -3410,6 +3528,37 @@ export default function AdminDashboard() {
         </div>
       </div>
 
+      {/* Push notification opt-in banner */}
+      {pushSupported && pushPermission !== 'denied' && !pushSubscribed && (
+        <div className="flex items-center justify-between gap-3 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3">
+          <div className="flex items-center gap-3">
+            <Bell size={18} className="text-blue-500 shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-blue-800">เปิดการแจ้งเตือนคำร้องใหม่</p>
+              <p className="text-xs text-blue-600">รับแจ้งทันทีเมื่อประชาชนส่งคำร้องเข้ามา</p>
+            </div>
+          </div>
+          <button onClick={pushSubscribe} disabled={pushLoading}
+            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-50">
+            {pushLoading ? <Loader2 size={14} className="animate-spin" /> : <Bell size={14} />}
+            เปิดแจ้งเตือน
+          </button>
+        </div>
+      )}
+      {pushSubscribed && (
+        <div className="flex items-center justify-between gap-3 bg-green-50 border border-green-200 rounded-2xl px-4 py-3">
+          <div className="flex items-center gap-3">
+            <Bell size={18} className="text-green-500 shrink-0" />
+            <p className="text-sm font-medium text-green-800">เปิดการแจ้งเตือนแล้ว — รับแจ้งคำร้องใหม่อัตโนมัติ</p>
+          </div>
+          <button onClick={pushUnsubscribe} disabled={pushLoading}
+            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-white border border-green-300 text-green-700 text-sm font-medium rounded-xl hover:bg-green-50 transition-colors disabled:opacity-50">
+            {pushLoading ? <Loader2 size={14} className="animate-spin" /> : <BellOff size={14} />}
+            ปิด
+          </button>
+        </div>
+      )}
+
       {/* Tab navigation — desktop only */}
       <div className="hidden md:flex gap-2">
         {currentUserRole === 'viewer' && (
@@ -3516,7 +3665,7 @@ export default function AdminDashboard() {
       {activePage === 'events' ? (
         <EventsManager tenant={tenant} currentUserRole={currentUserRole} />
       ) : activePage === 'report' ? (
-        <ReportManager complaints={complaints} tenant={tenant} />
+        <ReportManager complaints={complaints} tenant={tenant} technicians={technicians} />
       ) : activePage === 'staff' ? (
         <StaffManager tenant={tenant} />
       ) : activePage === 'emergency' ? (

@@ -255,6 +255,19 @@ export default function CitizenForm() {
 
     if (dbError) { setSubmitting(false); setError(`เกิดข้อผิดพลาด: ${dbError.message}`); return }
 
+    // ส่ง push notification ให้เจ้าหน้าที่ (fire-and-forget)
+    const catLabel = form.category
+      ? (categories.find((c) => c.value === form.category)?.label?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category)
+      : 'คำร้อง'
+    supabase.functions.invoke('send-push', {
+      body: {
+        municipality_id: tenant.id,
+        title: `คำร้องใหม่: ${catLabel}`,
+        body: form.detail.trim().slice(0, 100),
+        url: '/admin',
+      },
+    }).catch(() => {})
+
     setSubmitting(false)
     setSuccess(true)
     setComplaintNumber(inserted.complaint_number ?? null)

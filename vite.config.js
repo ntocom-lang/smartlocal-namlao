@@ -9,8 +9,12 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
       registerType: 'autoUpdate',
       manifest: false, // manifest inject dynamically per-tenant in TenantContext
+      devOptions: { enabled: true, type: 'module' },
     }),
   ],
 })
