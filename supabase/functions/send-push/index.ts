@@ -16,9 +16,9 @@ const corsHeaders = {
 }
 
 webpush.setVapidDetails(
-  Deno.env.get('VAPID_SUBJECT')!,
-  Deno.env.get('VAPID_PUBLIC_KEY')!,
-  Deno.env.get('VAPID_PRIVATE_KEY')!,
+  'mailto:ntocom@gmail.com',
+  'BBH-3E4L9jXf1s8ks2bj3QyihvN9GUs75AioPx4Gzb-61ispg0aM5kpE6mH_LdhSXZwEAvWRO-2xTocvNyuBejg',
+  'RvfQKafR0pk8QuYrdcGlWJUfs8lGdYd1eFglVzjLkL8',
 )
 
 serve(async (req) => {
