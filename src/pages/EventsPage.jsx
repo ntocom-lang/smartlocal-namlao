@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, CalendarDays, MapPin, Clock, Plus, List, ChevronLeft, ChevronRight } from 'lucide-react'
+import { ArrowLeft, CalendarDays, MapPin, Clock, Plus, List, ChevronLeft, ChevronRight, History } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import EventDetailModal from '../components/EventDetailModal'
@@ -262,6 +262,11 @@ export default function EventsPage() {
   const [canEdit, setCanEdit] = useState(false)
   const [view, setView]       = useState('list') // 'list' | 'calendar'
   const [selectedAudience, setSelectedAudience] = useState(null) // null = ทั้งหมด
+  const [activeTab, setActiveTab] = useState('upcoming') // 'upcoming' | 'past'
+
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -307,7 +312,27 @@ export default function EventsPage() {
     ? events.filter(ev => ev.audience === selectedAudience)
     : events
 
-  const grouped = filteredEvents.reduce((acc, ev) => {
+  const upcomingEvents = useMemo(() => {
+    return filteredEvents.filter(ev => {
+      const d = new Date(ev.event_date + 'T00:00:00')
+      return d >= today
+    })
+  }, [filteredEvents, today])
+
+  const pastEvents = useMemo(() => {
+    return filteredEvents.filter(ev => {
+      const d = new Date(ev.event_date + 'T00:00:00')
+      return d < today
+    })
+  }, [filteredEvents, today])
+
+  const sortedPastEvents = useMemo(() => {
+    return [...pastEvents].sort((a, b) => new Date(b.event_date) - new Date(a.event_date))
+  }, [pastEvents])
+
+  const listEvents = activeTab === 'upcoming' ? upcomingEvents : sortedPastEvents
+
+  const grouped = listEvents.reduce((acc, ev) => {
     const d   = new Date(ev.event_date + 'T00:00:00')
     const key = d.toLocaleDateString('th-TH', { year: 'numeric', month: 'long' })
     if (!acc[key]) acc[key] = []
@@ -372,9 +397,39 @@ export default function EventsPage() {
         </div>
       </div>
 
+      {/* Tab Switcher - แสดงเฉพาะมุมมองรายการ */}
+      {!loading && view === 'list' && (
+        <div className="flex bg-gray-100 dark:bg-white/10 rounded-2xl p-1 mt-3">
+          <button
+            onClick={() => setActiveTab('upcoming')}
+            className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 ${
+              activeTab === 'upcoming'
+                ? 'bg-white dark:bg-white/20 shadow-sm'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-slate-200'
+            }`}
+            style={activeTab === 'upcoming' ? { color: 'var(--color-primary)' } : {}}
+          >
+            <CalendarDays size={14} />
+            กิจกรรมเร็วๆ นี้ ({upcomingEvents.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('past')}
+            className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 ${
+              activeTab === 'past'
+                ? 'bg-white dark:bg-white/20 shadow-sm'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-slate-200'
+            }`}
+            style={activeTab === 'past' ? { color: 'var(--color-primary)' } : {}}
+          >
+            <History size={14} />
+            กิจกรรมที่ผ่านมา ({pastEvents.length})
+          </button>
+        </div>
+      )}
+
       {/* Audience filter chips — แสดงเมื่อ role เห็นได้มากกว่า 1 audience */}
       {!loading && (allowedAudiences === null || allowedAudiences.length > 1) && (
-        <div className="flex gap-2 mt-3 overflow-x-auto pb-1 scrollbar-none">
+        <div className="flex flex-wrap gap-2 mt-3 pb-1">
           <button
             onClick={() => setSelectedAudience(null)}
             className={`shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
@@ -411,12 +466,16 @@ export default function EventsPage() {
             <div key={i} className="h-24 bg-gray-100 dark:bg-white/5 rounded-2xl animate-pulse" />
           ))}
         </div>
-      ) : filteredEvents.length === 0 ? (
+      ) : (view === 'list' ? listEvents.length === 0 : filteredEvents.length === 0) ? (
         <div className="flex flex-col items-center justify-center py-20 text-gray-400">
           <CalendarDays size={48} strokeWidth={1.2} className="mb-3" />
           <p className="text-sm">
             {selectedAudience
               ? `ไม่มีกิจกรรมสำหรับ "${AUDIENCE_LABEL[selectedAudience]}"`
+              : view === 'list'
+              ? activeTab === 'past'
+                ? 'ไม่มีกิจกรรมที่ผ่านมาแล้ว'
+                : 'ยังไม่มีกิจกรรมเร็วๆ นี้'
               : 'ยังไม่มีกิจกรรม'}
           </p>
           {selectedAudience && (

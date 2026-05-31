@@ -68,7 +68,21 @@ export default function MapPicker({ initialPos, onConfirm, onClose }) {
   const geocodeTimeout = useRef(null)
 
   useEffect(() => {
-    fetchAddress(defaultPos.lat, defaultPos.lng)
+    if (!initialPos && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        ({ coords }) => {
+          const target = { lat: coords.latitude, lng: coords.longitude }
+          setCenter(target)
+          setFlyTarget(target)
+          fetchAddress(target.lat, target.lng)
+        },
+        () => {
+          fetchAddress(defaultPos.lat, defaultPos.lng)
+        }
+      )
+    } else {
+      fetchAddress(defaultPos.lat, defaultPos.lng)
+    }
   }, [])
 
   async function fetchAddress(lat, lng) {

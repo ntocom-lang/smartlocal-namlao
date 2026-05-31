@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   MapPin, Phone, FileText, ChevronDown, AlignLeft, Home,
@@ -96,7 +96,8 @@ export default function CitizenForm() {
   const [geoStatus, setGeoStatus] = useState(GEO_STATUS.idle)
   const [showMap, setShowMap] = useState(false)
   const [files, setFiles] = useState([])        // { file, preview, name }
-  const [consent, setConsent] = useState([false, false, false])
+  const [consent, setConsent] = useState(false)
+  const prefilledRef = useRef(false)
 
   useEffect(() => {
     return () => files.forEach((f) => { if (f.preview) URL.revokeObjectURL(f.preview) })
@@ -108,6 +109,17 @@ export default function CitizenForm() {
   const [complaintNumber, setComplaintNumber] = useState(null)
   const [locations, setLocations] = useState([])
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES)
+
+  useEffect(() => {
+    if (form.category && categories.length > 0 && !prefilledRef.current) {
+      const matched = categories.find((c) => c.value === form.category)
+      if (matched) {
+        const cleanSubject = matched.label.replace(/^[\p{Emoji}\s]+/u, '').trim()
+        setForm((prev) => ({ ...prev, subject: cleanSubject }))
+        prefilledRef.current = true
+      }
+    }
+  }, [form.category, categories])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -226,7 +238,7 @@ export default function CitizenForm() {
     if (!form.subject.trim()) { setError('กรุณากรอกเรื่อง'); return }
     if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
     if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
-    if (!consent.every(Boolean)) { setError('กรุณายืนยันการรับรองทุกข้อก่อนส่งคำร้อง'); return }
+    if (!consent) { setError('กรุณายอมรับข้อตกลงและการรับรองข้อมูลก่อนส่งคำร้อง'); return }
     if (!tenant?.id) { setError('ไม่พบข้อมูลหน่วยงาน'); return }
 
     setError(null)
@@ -519,34 +531,24 @@ export default function CitizenForm() {
         )}
 
         {/* Consent */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3">
-          {[
-            'ข้าพเจ้ารับรองว่าข้อมูลที่ให้ไว้ถูกต้องและเป็นความจริงทุกประการ',
-            'หากคำร้องไม่เป็นความจริง หรือเกิดความเสียหาย จะขอรับผิดชอบทางแพ่งและอาญาเองทั้งหมด',
-            null, // PDPA ใช้ JSX พิเศษ
-          ].map((text, idx) => (
-            <label key={idx} className="flex items-start gap-3 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={consent[idx]}
-                onChange={(e) => setConsent((prev) => prev.map((v, i) => i === idx ? e.target.checked : v))}
-                className="mt-0.5 w-4 h-4 rounded accent-(--color-primary) shrink-0"
-              />
-              {idx < 2
-                ? <span className="text-xs text-gray-600 leading-relaxed">{text}</span>
-                : <span className="text-xs text-gray-600 leading-relaxed">
-                    ข้าพเจ้ายินยอมให้{tenant?.name ?? 'หน่วยงาน'}เก็บรวบรวมและใช้ข้อมูลส่วนบุคคลในคำร้องนี้
-                    {' '}เพื่อดำเนินการตามที่ร้องขอ ตาม{' '}
-                    <a
-                      href="#"
-                      className="underline"
-                      style={{ color: 'var(--color-primary)' }}
-                      onClick={(e) => { e.preventDefault(); setShowPdpa(true) }}
-                    >นโยบายความเป็นส่วนตัว (PDPA)</a>
-                  </span>
-              }
-            </label>
-          ))}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+          <label className="flex items-start gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={consent}
+              onChange={(e) => setConsent(e.target.checked)}
+              className="mt-1 w-4 h-4 rounded accent-(--color-primary) shrink-0"
+            />
+            <span className="text-xs text-gray-600 leading-relaxed">
+              ข้าพเจ้ารับรองว่าข้อมูลถูกต้องและเป็นความจริง ยอมรับผิดชอบทางแพ่งและอาญาหากเกิดความเสียหาย และยินยอมให้{tenant?.name ?? 'หน่วยงาน'}เก็บรวบรวมและใช้ข้อมูลส่วนบุคคลในคำร้องนี้เพื่อดำเนินการตามที่ร้องขอ ตาม{' '}
+              <a
+                href="#"
+                className="underline"
+                style={{ color: 'var(--color-primary)' }}
+                onClick={(e) => { e.preventDefault(); setShowPdpa(true) }}
+              >นโยบายความเป็นส่วนตัว (PDPA)</a>
+            </span>
+          </label>
         </div>
       </form>
 
