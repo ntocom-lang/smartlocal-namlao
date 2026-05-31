@@ -6,7 +6,10 @@ import { fmtNo } from '../lib/formatComplaintNo'
 import {
   ClipboardList, Loader2, ChevronRight, X, MapPin,
   Phone, FileText, ArrowLeft, Check, XCircle, Navigation, Camera, AlignLeft, Star,
+  ChevronLeft,
 } from 'lucide-react'
+
+const ITEMS_PER_PAGE_OPTIONS = [10, 20, 50, 100]
 
 const STATUS = {
   pending:     { label: 'รอดำเนินการ',    bg: '#fef3c7', text: '#92400e' },
@@ -388,6 +391,21 @@ export default function MyComplaints() {
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
   const [session, setSession] = useState(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [itemsPerPage, setItemsPerPage] = useState(10)
+
+  const perPage = itemsPerPage === 'all' ? complaints.length : itemsPerPage
+  const totalPages = perPage > 0 ? Math.max(1, Math.ceil(complaints.length / perPage)) : 1
+  const startIdx = (currentPage - 1) * perPage
+  const paginatedComplaints = itemsPerPage === 'all' ? complaints : complaints.slice(startIdx, startIdx + perPage)
+
+  useEffect(() => { setCurrentPage(1) }, [itemsPerPage])
+
+  function goToPage(page) {
+    const p = Math.max(1, Math.min(page, totalPages))
+    setCurrentPage(p)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
@@ -441,45 +459,117 @@ export default function MyComplaints() {
           </button>
         </div>
       ) : (
-        <div className="space-y-3">
-          {complaints.map((c, i) => (
-            <div key={c.id}
-              onClick={() => setSelected(c)}
-              className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 cursor-pointer hover:shadow-md active:scale-[0.99] transition-all">
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 bg-gray-50">
-                  {CATEGORY_EMOJI[c.category] ?? '📄'}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2 mb-0.5">
-                    <p className="font-semibold text-gray-800 text-sm truncate">
-                      <span className="text-gray-400 font-mono font-normal mr-1">{i + 1}.</span>
-                      {CATEGORY_LABEL[c.category] ?? c.category}
-                    </p>
-                    <ChevronRight size={14} className="text-gray-300 shrink-0" />
+        <>
+          <div className="space-y-3">
+            {paginatedComplaints.map((c, i) => (
+              <div key={c.id}
+                onClick={() => setSelected(c)}
+                className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 cursor-pointer hover:shadow-md active:scale-[0.99] transition-all">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 bg-gray-50">
+                    {CATEGORY_EMOJI[c.category] ?? '📄'}
                   </div>
-                  {c.subject && (
-                    <p className="text-xs text-gray-500 truncate">{c.subject}</p>
-                  )}
-                  <div className="flex items-center gap-2 mt-2">
-                    <StatusBadge status={c.status} />
-                    {c.complaint_number && (
-                      <span className="text-[13px] text-gray-400 font-mono">
-                        {fmtNo(c.complaint_number, c.created_at)}
-                      </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2 mb-0.5">
+                      <p className="font-semibold text-gray-800 text-sm truncate">
+                        <span className="text-gray-400 font-mono font-normal mr-1">{startIdx + i + 1}.</span>
+                        {CATEGORY_LABEL[c.category] ?? c.category}
+                      </p>
+                      <ChevronRight size={14} className="text-gray-300 shrink-0" />
+                    </div>
+                    {c.subject && (
+                      <p className="text-xs text-gray-500 truncate">{c.subject}</p>
                     )}
+                    <div className="flex items-center gap-2 mt-2">
+                      <StatusBadge status={c.status} />
+                      {c.complaint_number && (
+                        <span className="text-[13px] text-gray-400 font-mono">
+                          {fmtNo(c.complaint_number, c.created_at)}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[13px] text-gray-300 mt-1.5">
+                      {new Date(c.created_at).toLocaleDateString('th-TH', {
+                        day: '2-digit', month: 'short', year: '2-digit',
+                        hour: '2-digit', minute: '2-digit',
+                      })} น.
+                    </p>
                   </div>
-                  <p className="text-[13px] text-gray-300 mt-1.5">
-                    {new Date(c.created_at).toLocaleDateString('th-TH', {
-                      day: '2-digit', month: 'short', year: '2-digit',
-                      hour: '2-digit', minute: '2-digit',
-                    })} น.
-                  </p>
                 </div>
               </div>
+            ))}
+          </div>
+
+          {/* Pagination */}
+          <div className="flex flex-col items-center gap-3 mt-6">
+            {/* Page size selector */}
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              <span>แสดง</span>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => setItemsPerPage(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                className="px-2 py-1.5 rounded-lg border border-gray-200 bg-white text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:border-transparent cursor-pointer"
+                style={{ '--tw-ring-color': 'var(--color-primary)' }}>
+                {ITEMS_PER_PAGE_OPTIONS.map(n => (
+                  <option key={n} value={n}>{n} รายการ</option>
+                ))}
+                <option value="all">ทั้งหมด</option>
+              </select>
+              <span className="text-gray-400">
+                ({startIdx + 1}–{Math.min(startIdx + perPage, complaints.length)} จาก {complaints.length})
+              </span>
             </div>
-          ))}
-        </div>
+
+            {/* Page buttons */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-center gap-1.5">
+                <button
+                  onClick={() => goToPage(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className="p-2 rounded-xl border border-gray-200 text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                  <ChevronLeft size={16} />
+                </button>
+
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter(p => {
+                    if (totalPages <= 7) return true
+                    if (p === 1 || p === totalPages) return true
+                    if (Math.abs(p - currentPage) <= 1) return true
+                    return false
+                  })
+                  .reduce((acc, p, idx, arr) => {
+                    if (idx > 0 && p - arr[idx - 1] > 1) acc.push('...')
+                    acc.push(p)
+                    return acc
+                  }, [])
+                  .map((p, idx) =>
+                    p === '...' ? (
+                      <span key={`dots-${idx}`} className="px-1 text-gray-300 text-sm">…</span>
+                    ) : (
+                      <button
+                        key={p}
+                        onClick={() => goToPage(p)}
+                        className={`min-w-[36px] h-9 rounded-xl text-sm font-semibold transition-all ${
+                          currentPage === p
+                            ? 'text-white shadow-md'
+                            : 'text-gray-500 hover:bg-gray-100 border border-gray-200'
+                        }`}
+                        style={currentPage === p ? { backgroundColor: 'var(--color-primary)' } : undefined}>
+                        {p}
+                      </button>
+                    )
+                  )}
+
+                <button
+                  onClick={() => goToPage(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className="p-2 rounded-xl border border-gray-200 text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       {selected && <DetailSheet complaint={selected} onClose={() => setSelected(null)} />}

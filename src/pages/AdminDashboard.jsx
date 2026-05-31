@@ -9,7 +9,7 @@ import {
 } from 'recharts'
 import {
   RefreshCw, ClipboardList, Clock, Loader2,
-  CheckCircle2, XCircle, AlertCircle, ChevronRight,
+  CheckCircle2, XCircle, AlertCircle, ChevronRight, ChevronLeft,
   Filter, Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical,
   X, FileText, AlignLeft, Image, Calendar, Hash, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera,
   TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, BellOff,
@@ -3303,6 +3303,11 @@ export default function AdminDashboard() {
   const [updating, setUpdating] = useState(null)
   const [filterTab, setFilterTab] = useState(0)
   const [search, setSearch] = useState('')
+  const [complaintPage, setComplaintPage] = useState(1)
+  const [complaintsPerPage, setComplaintsPerPage] = useState(10)
+  const [filterCategory, setFilterCategory] = useState('')
+  const [filterVillage, setFilterVillage] = useState('')
+  const [filterTechnician, setFilterTechnician] = useState('')
   const [activePage, setActivePage] = useState(location.state?.page ?? 'complaints')
   const [currentUserRole, setCurrentUserRole] = useState(null)
   const [currentUserId, setCurrentUserId] = useState(null)
@@ -3420,8 +3425,52 @@ export default function AdminDashboard() {
       c.detail.includes(search) ||
       (CATEGORY_LABEL[c.category] ?? '').includes(search) ||
       (c.phone ?? '').includes(search)
+    const matchCategory = filterCategory === '' || c.category === filterCategory
+    const matchVillage = filterVillage === '' || (c.village || c.location_name || '') === filterVillage
+    const matchTech = filterTechnician === '' ||
+      (filterTechnician === '__none__' ? !c.assigned_to : c.assigned_to === filterTechnician)
+    return matchStatus && matchSearch && matchCategory && matchVillage && matchTech
+  })
+
+  // Build options with counts (computed from status+search filtered, before category/village/tech filters)
+  const baseFiltered = complaints.filter((c) => {
+    const matchStatus = FILTER_KEYS[filterTab] ? c.status === FILTER_KEYS[filterTab] : true
+    const matchSearch = search === '' ||
+      c.detail.includes(search) ||
+      (CATEGORY_LABEL[c.category] ?? '').includes(search) ||
+      (c.phone ?? '').includes(search)
     return matchStatus && matchSearch
   })
+
+  const categoryOptions = Object.entries(
+    baseFiltered.reduce((acc, c) => { acc[c.category] = (acc[c.category] || 0) + 1; return acc }, {})
+  ).sort((a, b) => b[1] - a[1])
+
+  const villageOptions = Object.entries(
+    baseFiltered.reduce((acc, c) => {
+      const v = c.village || c.location_name
+      if (v) acc[v] = (acc[v] || 0) + 1
+      return acc
+    }, {})
+  ).sort((a, b) => b[1] - a[1])
+
+  const techOptions = (() => {
+    const assigned = baseFiltered.filter(c => c.assigned_to)
+    const unassigned = baseFiltered.filter(c => !c.assigned_to)
+    const byTech = assigned.reduce((acc, c) => { acc[c.assigned_to] = (acc[c.assigned_to] || 0) + 1; return acc }, {})
+    const opts = Object.entries(byTech)
+      .map(([id, count]) => ({ id, name: technicians.find(t => t.id === id)?.full_name ?? 'ช่าง', count }))
+      .sort((a, b) => b.count - a.count)
+    return { opts, unassignedCount: unassigned.length }
+  })()
+
+  const perPage = complaintsPerPage === 'all' ? filtered.length : complaintsPerPage
+  const complaintTotalPages = perPage > 0 ? Math.max(1, Math.ceil(filtered.length / perPage)) : 1
+  const complaintStartIdx = (complaintPage - 1) * perPage
+  const paginatedFiltered = complaintsPerPage === 'all' ? filtered : filtered.slice(complaintStartIdx, complaintStartIdx + perPage)
+
+  // Reset to page 1 when any filter changes
+  useEffect(() => { setComplaintPage(1) }, [filterTab, search, complaintsPerPage, filterCategory, filterVillage, filterTechnician])
 
   const counts = Object.fromEntries(
     Object.keys(STATUS).map((k) => [k, complaints.filter((c) => c.status === k).length])
@@ -3877,6 +3926,56 @@ export default function AdminDashboard() {
               </button>
             ))}
           </div>
+
+          {/* Extra filters row */}
+          <div className="flex flex-wrap gap-2 mt-2">
+            {/* Category filter */}
+            <select
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-600 focus:outline-none focus:ring-2 focus:border-transparent cursor-pointer"
+              style={{ '--tw-ring-color': 'var(--color-primary)' }}>
+              <option value="">ประเภททั้งหมด ({baseFiltered.length})</option>
+              {categoryOptions.map(([cat, count]) => (
+                <option key={cat} value={cat}>{CATEGORY_LABEL[cat] ?? cat} ({count})</option>
+              ))}
+            </select>
+
+            {/* Village/Location filter */}
+            <select
+              value={filterVillage}
+              onChange={(e) => setFilterVillage(e.target.value)}
+              className="px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-600 focus:outline-none focus:ring-2 focus:border-transparent cursor-pointer"
+              style={{ '--tw-ring-color': 'var(--color-primary)' }}>
+              <option value="">สถานที่ทั้งหมด ({baseFiltered.length})</option>
+              {villageOptions.map(([v, count]) => (
+                <option key={v} value={v}>{v} ({count})</option>
+              ))}
+            </select>
+
+            {/* Technician filter */}
+            <select
+              value={filterTechnician}
+              onChange={(e) => setFilterTechnician(e.target.value)}
+              className="px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-600 focus:outline-none focus:ring-2 focus:border-transparent cursor-pointer"
+              style={{ '--tw-ring-color': 'var(--color-primary)' }}>
+              <option value="">ช่างทั้งหมด ({baseFiltered.length})</option>
+              <option value="__none__">ยังไม่มอบหมาย ({techOptions.unassignedCount})</option>
+              {techOptions.opts.map(t => (
+                <option key={t.id} value={t.id}>{t.name} ({t.count})</option>
+              ))}
+            </select>
+
+            {/* Clear all filters button */}
+            {(filterCategory || filterVillage || filterTechnician || filterTab !== 0 || search) && (
+              <button
+                onClick={() => { setFilterCategory(''); setFilterVillage(''); setFilterTechnician(''); setFilterTab(0); setSearch('') }}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-500 bg-red-50 hover:bg-red-100 transition-colors flex items-center gap-1">
+                <X size={12} />
+                ล้างตัวกรองทั้งหมด
+              </button>
+            )}
+          </div>
         </div>
 
         {/* List */}
@@ -3893,12 +3992,12 @@ export default function AdminDashboard() {
           <>
             {/* Mobile card list */}
             <div className="md:hidden divide-y divide-gray-100">
-              {filtered.map((c, i) => (
+              {paginatedFiltered.map((c, i) => (
                 <div key={c.id} className="px-4 py-4 space-y-2 active:bg-gray-50 cursor-pointer"
                      onClick={() => setSelectedComplaint(c)}>
                   <div className="flex items-start justify-between gap-2">
                     <span className="font-semibold text-gray-800 text-sm leading-snug">
-                      <span className="text-gray-400 font-mono font-normal mr-1">{i + 1}.</span>
+                      <span className="text-gray-400 font-mono font-normal mr-1">{complaintStartIdx + i + 1}.</span>
                       {CATEGORY_LABEL[c.category] ?? c.category}
                     </span>
                     <div className="flex items-center gap-1.5 shrink-0">
@@ -3946,10 +4045,10 @@ export default function AdminDashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {filtered.map((c, i) => (
+                  {paginatedFiltered.map((c, i) => (
                     <tr key={c.id} className="hover:bg-gray-50/70 transition-colors cursor-pointer"
                         onClick={() => setSelectedComplaint(c)}>
-                      <td className="px-3 py-1.5 text-center text-xs text-gray-400 font-mono">{i + 1}</td>
+                      <td className="px-3 py-1.5 text-center text-xs text-gray-400 font-mono">{complaintStartIdx + i + 1}</td>
                       <td className="px-3 py-1.5 text-gray-500 whitespace-nowrap text-xs">
                         {new Date(c.created_at).toLocaleDateString('th-TH', {
                           day: '2-digit', month: 'short', year: '2-digit',
@@ -3986,9 +4085,75 @@ export default function AdminDashboard() {
               </table>
             </div>
 
-            <p className="px-5 py-3 text-xs text-gray-400 border-t border-gray-100">
-              แสดง {filtered.length} จาก {complaints.length} รายการ
-            </p>
+            {/* Pagination Controls */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-5 py-3 border-t border-gray-100">
+              {/* Page size selector */}
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <span>แสดง</span>
+                <select
+                  value={complaintsPerPage}
+                  onChange={(e) => setComplaintsPerPage(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                  className="px-2 py-1.5 rounded-lg border border-gray-200 bg-white text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:border-transparent cursor-pointer"
+                  style={{ '--tw-ring-color': 'var(--color-primary)' }}>
+                  {[10, 20, 50, 100].map(n => (
+                    <option key={n} value={n}>{n} รายการ</option>
+                  ))}
+                  <option value="all">ทั้งหมด</option>
+                </select>
+                <span className="text-gray-400">
+                  ({complaintStartIdx + 1}–{Math.min(complaintStartIdx + perPage, filtered.length)} จาก {filtered.length})
+                </span>
+              </div>
+
+              {/* Page buttons */}
+              {complaintTotalPages > 1 && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => { setComplaintPage(p => Math.max(1, p - 1)); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                    disabled={complaintPage === 1}
+                    className="p-2 rounded-xl border border-gray-200 text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                    <ChevronLeft size={16} />
+                  </button>
+
+                  {Array.from({ length: complaintTotalPages }, (_, i) => i + 1)
+                    .filter(p => {
+                      if (complaintTotalPages <= 7) return true
+                      if (p === 1 || p === complaintTotalPages) return true
+                      if (Math.abs(p - complaintPage) <= 1) return true
+                      return false
+                    })
+                    .reduce((acc, p, idx, arr) => {
+                      if (idx > 0 && p - arr[idx - 1] > 1) acc.push('...')
+                      acc.push(p)
+                      return acc
+                    }, [])
+                    .map((p, idx) =>
+                      p === '...' ? (
+                        <span key={`dots-${idx}`} className="px-1 text-gray-300 text-sm">…</span>
+                      ) : (
+                        <button
+                          key={p}
+                          onClick={() => { setComplaintPage(p); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                          className={`min-w-[36px] h-9 rounded-xl text-sm font-semibold transition-all ${
+                            complaintPage === p
+                              ? 'text-white shadow-md'
+                              : 'text-gray-500 hover:bg-gray-100 border border-gray-200'
+                          }`}
+                          style={complaintPage === p ? { backgroundColor: 'var(--color-primary)' } : undefined}>
+                          {p}
+                        </button>
+                      )
+                    )}
+
+                  <button
+                    onClick={() => { setComplaintPage(p => Math.min(complaintTotalPages, p + 1)); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                    disabled={complaintPage === complaintTotalPages}
+                    className="p-2 rounded-xl border border-gray-200 text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              )}
+            </div>
           </>
         )}
       </div>
