@@ -3935,50 +3935,50 @@ export default function AdminDashboard() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50 text-gray-500 text-xs">
-                    <th className="px-3 py-3 text-center font-medium w-10">#</th>
-                    <th className="px-5 py-3 text-left font-medium">วันที่</th>
-                    <th className="px-5 py-3 text-left font-medium">ประเภท</th>
-                    <th className="px-5 py-3 text-left font-medium">รายละเอียด</th>
-                    <th className="px-5 py-3 text-left font-medium">สถานที่</th>
-                    <th className="px-5 py-3 text-left font-medium">ช่าง</th>
-                    <th className="px-5 py-3 text-left font-medium">โทรศัพท์</th>
-                    <th className="px-5 py-3 text-left font-medium">สถานะ</th>
-                    <th className="px-5 py-3 text-left font-medium">การดำเนินการ</th>
+                    <th className="px-3 py-2 text-center font-medium w-10">#</th>
+                    <th className="px-5 py-2 text-left font-medium">วันที่</th>
+                    <th className="px-5 py-2 text-left font-medium">ประเภท</th>
+                    <th className="px-5 py-2 text-left font-medium">รายละเอียด</th>
+                    <th className="px-5 py-2 text-left font-medium">สถานที่</th>
+                    <th className="px-5 py-2 text-left font-medium">ช่าง</th>
+                    <th className="px-5 py-2 text-left font-medium">โทรศัพท์</th>
+                    <th className="px-5 py-2 text-left font-medium">สถานะ</th>
+                    <th className="px-5 py-2 text-left font-medium">การดำเนินการ</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {filtered.map((c, i) => (
                     <tr key={c.id} className="hover:bg-gray-50/70 transition-colors cursor-pointer"
                         onClick={() => setSelectedComplaint(c)}>
-                      <td className="px-3 py-4 text-center text-xs text-gray-400 font-mono">{i + 1}</td>
-                      <td className="px-5 py-4 text-gray-500 whitespace-nowrap text-xs">
+                      <td className="px-3 py-2.5 text-center text-xs text-gray-400 font-mono">{i + 1}</td>
+                      <td className="px-5 py-2.5 text-gray-500 whitespace-nowrap text-xs">
                         {new Date(c.created_at).toLocaleDateString('th-TH', {
                           day: '2-digit', month: 'short', year: '2-digit',
                         })}
                       </td>
-                      <td className="px-5 py-4 font-medium text-gray-700 whitespace-nowrap">
+                      <td className="px-5 py-2.5 font-medium text-gray-700 whitespace-nowrap">
                         {CATEGORY_LABEL[c.category] ?? c.category}
                       </td>
-                      <td className="px-5 py-4 text-gray-500 max-w-xs">
+                      <td className="px-5 py-2.5 text-gray-500 max-w-xs">
                         <p className="truncate">{c.detail}</p>
                       </td>
-                      <td className="px-5 py-4 text-gray-500 whitespace-nowrap">
+                      <td className="px-5 py-2.5 text-gray-500 whitespace-nowrap">
                         {(c.village || c.location_name)
                           ? <span className="flex items-center gap-1"><MapPin size={11} className="text-gray-300 shrink-0" />{c.village || c.location_name}</span>
                           : <span className="text-gray-300">—</span>}
                       </td>
-                      <td className="px-5 py-4 whitespace-nowrap">
+                      <td className="px-5 py-2.5 whitespace-nowrap">
                         {c.assigned_to
                           ? <span className="flex items-center gap-1 text-blue-600 text-xs font-medium"><Wrench size={11} className="shrink-0" />{technicians.find((t) => t.id === c.assigned_to)?.full_name ?? 'ช่าง'}</span>
                           : <span className="text-gray-300">—</span>}
                       </td>
-                      <td className="px-5 py-4 text-gray-500">
+                      <td className="px-5 py-2.5 text-gray-500">
                         {c.phone ?? <span className="text-gray-300">—</span>}
                       </td>
-                      <td className="px-5 py-4">
+                      <td className="px-5 py-2.5">
                         <StatusBadge status={c.status} />
                       </td>
-                      <td className="px-5 py-4" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-5 py-2.5" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center gap-2">
                           <ActionButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} />
                           <RejectButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} />
