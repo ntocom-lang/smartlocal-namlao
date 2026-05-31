@@ -3938,7 +3938,6 @@ export default function AdminDashboard() {
                     <th className="px-3 py-2 text-center font-medium w-10">#</th>
                     <th className="px-3 py-2 text-left font-medium">วันที่</th>
                     <th className="px-3 py-2 text-left font-medium">ประเภท</th>
-                    <th className="px-3 py-2 text-left font-medium">รายละเอียด</th>
                     <th className="px-3 py-2 text-left font-medium">สถานที่</th>
                     <th className="px-3 py-2 text-left font-medium">ช่าง</th>
                     <th className="px-3 py-2 text-left font-medium">โทรศัพท์</th>
@@ -3958,9 +3957,6 @@ export default function AdminDashboard() {
                       </td>
                       <td className="px-3 py-1.5 font-medium text-gray-700 whitespace-nowrap">
                         {CATEGORY_LABEL[c.category] ?? c.category}
-                      </td>
-                      <td className="px-3 py-1.5 text-gray-500 max-w-xs">
-                        <p className="truncate">{c.detail}</p>
                       </td>
                       <td className="px-3 py-1.5 text-gray-500 whitespace-nowrap">
                         {(c.village || c.location_name)
