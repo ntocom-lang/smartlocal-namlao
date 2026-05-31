@@ -2846,12 +2846,12 @@ function EventCard({ ev, onEdit, onDelete, deleting }) {
               >
                 {ev.category}
               </span>
-              {ev.audience && ev.audience !== 'public' && (() => {
+              {ev.audience && (() => {
                 const aud = AUDIENCE_OPTIONS.find(a => a.value === ev.audience)
                 return aud ? (
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border"
                     style={{ color: aud.color, borderColor: aud.color, backgroundColor: aud.color + '18' }}>
-                    🔒 {aud.label}
+                    {ev.audience !== 'public' ? '🔒 ' : '👥 '}{aud.label}
                   </span>
                 ) : null
               })()}
