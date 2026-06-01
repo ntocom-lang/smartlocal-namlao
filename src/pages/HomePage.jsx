@@ -3,12 +3,9 @@ import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import HeroBanner from '../components/home/HeroBanner'
 import StaffSection from '../components/home/StaffSection'
-import ServiceButtons from '../components/home/ServiceButtons'
 import NewsSection from '../components/home/NewsSection'
-import EmergencyGrid from '../components/home/EmergencyGrid'
 import { Info, LayoutDashboard, ChevronRight } from 'lucide-react'
 import WeatherWidget from '../components/home/WeatherWidget'
-import EventsSection from '../components/home/EventsSection'
 
 export default function HomePage() {
   const { tenant } = useTenant()
@@ -71,10 +68,7 @@ export default function HomePage() {
         <HeroBanner />
       </div>
       <StaffSection />
-      <ServiceButtons />
-      <EventsSection />
       <NewsSection />
-      <EmergencyGrid />
     </div>
   )
 

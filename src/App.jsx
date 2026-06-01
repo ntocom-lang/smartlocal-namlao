@@ -21,6 +21,7 @@ import MorePage from './pages/MorePage'
 import NotificationsPage from './pages/NotificationsPage'
 import WeatherPage from './pages/WeatherPage'
 import EventsPage from './pages/EventsPage'
+import EmergencyPage from './pages/EmergencyPage'
 import { supabase } from './lib/supabase'
 import { Phone, X } from 'lucide-react'
 
@@ -234,6 +235,7 @@ function AppShell() {
           <Route path="/more" element={<MorePage />} />
           <Route path="/weather" element={<WeatherPage />} />
           <Route path="/events" element={<EventsPage />} />
+          <Route path="/emergency" element={<EmergencyPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/technician" element={
