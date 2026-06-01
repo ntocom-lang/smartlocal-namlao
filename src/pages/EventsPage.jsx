@@ -157,7 +157,7 @@ function CalendarView({ events, onSelectEvent }) {
                 {dayEvs.slice(0, 3).map((ev, i) => (
                   <span
                     key={i}
-                    className="w-1.5 h-1.5 rounded-full"
+                    className="w-2 h-2 rounded-full shadow-sm"
                     style={{ backgroundColor: AUDIENCE_COLOR[ev.audience] ?? '#6b7280' }}
                   />
                 ))}
@@ -359,28 +359,28 @@ export default function EventsPage() {
 
           <div className="flex items-center gap-1.5">
             {/* View toggle */}
-            <div className="flex items-center bg-gray-100 dark:bg-white/10 rounded-xl p-0.5">
+            <div className="flex items-center bg-gray-100 dark:bg-white/10 rounded-xl p-1">
               <button
                 onClick={() => setView('list')}
-                className={`p-1.5 rounded-lg transition-colors ${
+                className={`p-2 rounded-lg transition-colors ${
                   view === 'list'
                     ? 'bg-white dark:bg-white/20 text-gray-700 dark:text-slate-200 shadow-sm'
                     : 'text-gray-400 hover:text-gray-600'
                 }`}
                 title="มุมมองรายการ"
               >
-                <List size={16} />
+                <List size={22} />
               </button>
               <button
                 onClick={() => setView('calendar')}
-                className={`p-1.5 rounded-lg transition-colors ${
+                className={`p-2 rounded-lg transition-colors ${
                   view === 'calendar'
                     ? 'bg-white dark:bg-white/20 text-gray-700 dark:text-slate-200 shadow-sm'
                     : 'text-gray-400 hover:text-gray-600'
                 }`}
                 title="มุมมองปฏิทิน"
               >
-                <CalendarDays size={16} />
+                <CalendarDays size={22} />
               </button>
             </div>
 
