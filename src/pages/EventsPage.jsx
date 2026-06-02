@@ -12,7 +12,7 @@ const CATEGORY_COLOR = {
 
 const AUDIENCE_LABEL = {
   public:     'ประชาชน',
-  staff:      'เจ้าหน้าที่',
+  staff:      'เทศบาล',
   management: 'ผู้บริหาร',
   council:    'สภาเทศบาล',
 }
@@ -178,7 +178,7 @@ function CalendarView({ events, onSelectEvent }) {
           <div key={key} className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
             <span className="text-[11px] text-gray-400">
-              {key === 'public' ? 'ประชาชน' : key === 'staff' ? 'เจ้าหน้าที่' : key === 'management' ? 'ผู้บริหาร' : 'สภาเทศบาล'}
+              {key === 'public' ? 'ประชาชน' : key === 'staff' ? 'เทศบาล' : key === 'management' ? 'ผู้บริหาร' : 'สภาเทศบาล'}
             </span>
           </div>
         ))}
@@ -260,7 +260,7 @@ export default function EventsPage() {
   const [role, setRole]       = useState(null)
   const [selected, setSelected] = useState(null)
   const [canEdit, setCanEdit] = useState(false)
-  const [view, setView]       = useState('list') // 'list' | 'calendar'
+  const [view, setView]       = useState('calendar') // 'list' | 'calendar'
   const [selectedAudience, setSelectedAudience] = useState(null) // null = ทั้งหมด
   const [activeTab, setActiveTab] = useState('upcoming') // 'upcoming' | 'past'
 
@@ -357,40 +357,33 @@ export default function EventsPage() {
             <h1 className="text-base font-bold text-gray-800 dark:text-slate-200">ปฏิทินกิจกรรม</h1>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             {/* View toggle */}
-            <div className="flex items-center bg-gray-100 dark:bg-white/10 rounded-xl p-1">
-              <button
-                onClick={() => setView('list')}
-                className={`p-2 rounded-lg transition-colors ${
-                  view === 'list'
-                    ? 'bg-white dark:bg-white/20 text-gray-700 dark:text-slate-200 shadow-sm'
-                    : 'text-gray-400 hover:text-gray-600'
-                }`}
-                title="มุมมองรายการ"
-              >
-                <List size={22} />
-              </button>
-              <button
-                onClick={() => setView('calendar')}
-                className={`p-2 rounded-lg transition-colors ${
-                  view === 'calendar'
-                    ? 'bg-white dark:bg-white/20 text-gray-700 dark:text-slate-200 shadow-sm'
-                    : 'text-gray-400 hover:text-gray-600'
-                }`}
-                title="มุมมองปฏิทิน"
-              >
-                <CalendarDays size={22} />
-              </button>
-            </div>
+            <button
+              onClick={() => setView(view === 'list' ? 'calendar' : 'list')}
+              className="flex items-center justify-center gap-1.5 w-[92px] h-[36px] bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white rounded-xl shadow-md shadow-blue-500/20 transition-all active:scale-95"
+              title={view === 'list' ? 'มุมมองปฏิทิน' : 'มุมมองรายการ'}
+            >
+              {view === 'list' ? (
+                <>
+                  <CalendarDays size={16} />
+                  <span className="text-sm font-bold">ปฏิทิน</span>
+                </>
+              ) : (
+                <>
+                  <List size={16} />
+                  <span className="text-sm font-bold">รายการ</span>
+                </>
+              )}
+            </button>
 
             {canEdit && (
               <button
                 onClick={() => navigate('/admin', { state: { page: 'events' } })}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-bold text-white"
+                className="flex items-center justify-center gap-1.5 w-[92px] h-[36px] rounded-xl text-sm font-bold text-white transition-all active:scale-95 shadow-sm"
                 style={{ backgroundColor: 'var(--color-primary)' }}
               >
-                <Plus size={15} /> เพิ่ม
+                <Plus size={16} /> เพิ่ม
               </button>
             )}
           </div>
@@ -501,6 +494,7 @@ export default function EventsPage() {
                   const audLabel = AUDIENCE_LABEL[ev.audience] ?? ev.audience
                   const d        = new Date(ev.event_date + 'T00:00:00')
                   const isPast   = d < today
+                  const diffDays = Math.round((d - today) / (1000 * 60 * 60 * 24))
                   return (
                     <button
                       key={ev.id}
@@ -534,7 +528,17 @@ export default function EventsPage() {
                           >
                             {ev.audience !== 'public' && '🔒 '}{audLabel}
                           </span>
-                          {isPast && <span className="text-[11px] text-gray-400 font-medium">ผ่านไปแล้ว</span>}
+                          {isPast ? (
+                            <span className="text-[11px] text-gray-400 font-medium">ผ่านไปแล้ว</span>
+                          ) : (
+                            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                              diffDays === 0 ? 'bg-red-50 text-red-600 dark:bg-red-500/20 dark:text-red-400' :
+                              diffDays <= 3 ? 'bg-orange-50 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400' :
+                              'bg-blue-50 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400'
+                            }`}>
+                              {diffDays === 0 ? 'วันนี้' : diffDays === 1 ? 'พรุ่งนี้' : `อีก ${diffDays} วัน`}
+                            </span>
+                          )}
                         </div>
                         <p className="text-sm font-bold text-gray-800 dark:text-slate-200 leading-tight">{ev.title}</p>
                         {!ev.is_all_day && ev.event_time && (
