@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback } from 'react'
 import { useTenant } from '../../contexts/TenantContext'
 import { ArrowRight, CalendarDays, Phone } from 'lucide-react'
-import oneStopHeader from '../../assets/one-stop-header.png'
+import oneStopHeader from '../../assets/E service gif2.gif'
 
 const SLIDE_W = 0.9
 const GAP = 12
@@ -11,7 +11,6 @@ const TABS = [
   { label: 'ปฏิทินกิจกรรม' },
   { label: 'สายด่วน' },
 ]
-
 
 export default function HeroBanner() {
   const { tenant } = useTenant()

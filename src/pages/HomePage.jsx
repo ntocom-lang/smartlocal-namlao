@@ -4,6 +4,7 @@ import { useTenant } from '../contexts/TenantContext'
 import HeroBanner from '../components/home/HeroBanner'
 import StaffSection from '../components/home/StaffSection'
 import NewsSection from '../components/home/NewsSection'
+import TourismSection from '../components/home/TourismSection'
 import { Info, LayoutDashboard, ChevronRight } from 'lucide-react'
 import WeatherWidget from '../components/home/WeatherWidget'
 
@@ -69,7 +70,7 @@ export default function HomePage() {
       </div>
       <StaffSection />
       <NewsSection />
+      <TourismSection />
     </div>
   )
-
 }

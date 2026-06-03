@@ -3293,6 +3293,295 @@ function EventsManager({ tenant, currentUserRole }) {
   )
 }
 
+// ─── Tourism Manager ───────────────────────────────────────────────────────────
+const TOUR_CATS = [
+  { key: 'travel', label: 'เที่ยว', emoji: '🏛️', color: '#d97706' },
+  { key: 'food',   label: 'กิน',   emoji: '🍽️', color: '#10b981' },
+  { key: 'stay',   label: 'พัก',   emoji: '🏨', color: '#3b82f6' },
+  { key: 'shop',   label: 'ชอป',  emoji: '🛍️', color: '#ec4899' },
+]
+
+async function compressImage(file, maxPx = 1200, quality = 0.82) {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const img = new window.Image()
+      img.onload = () => {
+        const scale = img.naturalWidth > maxPx ? maxPx / img.naturalWidth : 1
+        const canvas = document.createElement('canvas')
+        canvas.width  = Math.round(img.naturalWidth  * scale)
+        canvas.height = Math.round(img.naturalHeight * scale)
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
+        canvas.toBlob(blob => resolve(new File([blob], 'photo.jpg', { type: 'image/jpeg' })), 'image/jpeg', quality)
+      }
+      img.src = e.target.result
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+const EMPTY_FORM = { name: '', category: 'travel', description: '', phone: '', address: '', maps_url: '' }
+
+function TourismManager({ tenant }) {
+  const [places, setPlaces]             = useState([])
+  const [loading, setLoading]           = useState(true)
+  const [sheet, setSheet]               = useState(null)   // null | 'add' | placeId (edit)
+  const [form, setForm]                 = useState(EMPTY_FORM)
+  const [saving, setSaving]             = useState(false)
+  const [uploadingFor, setUploadingFor] = useState(null)
+
+  useEffect(() => {
+    if (!tenant?.id) return
+    setLoading(true)
+    supabase.from('tourism_places').select('*').eq('municipality_id', tenant.id)
+      .order('display_order')
+      .then(({ data }) => { setPlaces(data ?? []); setLoading(false) })
+  }, [tenant?.id])
+
+  const sheetPlace = sheet && sheet !== 'add' ? places.find(p => p.id === sheet) : null
+  const sheetAllImgs = sheetPlace ? [sheetPlace.image_url, ...(sheetPlace.gallery ?? [])].filter(Boolean) : []
+
+  function openAdd() { setForm(EMPTY_FORM); setSheet('add') }
+  function openEdit(place) { setForm({ name: place.name, category: place.category, description: place.description || '', phone: place.phone || '', address: place.address || '', maps_url: place.maps_url || '' }); setSheet(place.id) }
+  function closeSheet() { setSheet(null) }
+
+  async function handleSave() {
+    if (!form.name.trim()) return
+    setSaving(true)
+    if (sheet === 'add') {
+      const { data } = await supabase.from('tourism_places').insert({
+        municipality_id: tenant.id, name: form.name.trim(), category: form.category,
+        description: form.description.trim() || null, phone: form.phone.trim() || null,
+        address: form.address.trim() || null, maps_url: form.maps_url.trim() || null,
+        is_active: true, display_order: places.length, gallery: [],
+      }).select().single()
+      if (data) { setPlaces(prev => [...prev, data]); setSheet(data.id) }
+    } else {
+      await supabase.from('tourism_places').update({
+        name: form.name.trim(), category: form.category,
+        description: form.description.trim() || null, phone: form.phone.trim() || null,
+        address: form.address.trim() || null, maps_url: form.maps_url.trim() || null,
+      }).eq('id', sheet)
+      setPlaces(prev => prev.map(p => p.id === sheet ? { ...p, ...form } : p))
+      closeSheet()
+    }
+    setSaving(false)
+  }
+
+  async function toggleActive(place, e) {
+    e.stopPropagation()
+    await supabase.from('tourism_places').update({ is_active: !place.is_active }).eq('id', place.id)
+    setPlaces(prev => prev.map(p => p.id === place.id ? { ...p, is_active: !p.is_active } : p))
+  }
+
+  async function handleDelete() {
+    if (!sheetPlace || !window.confirm(`ลบ "${sheetPlace.name}" ออกจากรายการ?`)) return
+    await supabase.from('tourism_places').delete().eq('id', sheetPlace.id)
+    setPlaces(prev => prev.filter(p => p.id !== sheetPlace.id))
+    closeSheet()
+  }
+
+  const MAX_IMAGES = 5
+
+  async function uploadImages(placeId, files) {
+    const place = places.find(p => p.id === placeId)
+    if (!place) return
+    const current = [place.image_url, ...(place.gallery ?? [])].filter(Boolean).length
+    const allowed = files.slice(0, Math.max(0, MAX_IMAGES - current))
+    if (allowed.length === 0) return
+    setUploadingFor(placeId)
+    for (const rawFile of allowed) {
+      const compressed = await compressImage(rawFile)
+      const path = `tourism/${placeId}/photo_${Date.now()}.jpg`
+      const { error } = await supabase.storage.from('complaint-attachments').upload(path, compressed, { upsert: true })
+      if (error) continue
+      const { data: urlData } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
+      const url = urlData.publicUrl
+      await supabase.from('tourism_places').select('image_url, gallery').eq('id', placeId).single()
+        .then(async ({ data: fresh }) => {
+          if (!fresh?.image_url) {
+            await supabase.from('tourism_places').update({ image_url: url }).eq('id', placeId)
+            setPlaces(prev => prev.map(p => p.id === placeId ? { ...p, image_url: url } : p))
+          } else {
+            const gallery = [...(fresh.gallery ?? []), url]
+            await supabase.from('tourism_places').update({ gallery }).eq('id', placeId)
+            setPlaces(prev => prev.map(p => p.id === placeId ? { ...p, gallery } : p))
+          }
+        })
+    }
+    setUploadingFor(null)
+  }
+
+  async function removeImage(url) {
+    const place = sheetPlace
+    if (!place) return
+    if (place.image_url === url) {
+      const gallery = place.gallery ?? []
+      const newPrimary = gallery[0] ?? null
+      const newGallery = gallery.slice(1)
+      await supabase.from('tourism_places').update({ image_url: newPrimary, gallery: newGallery }).eq('id', place.id)
+      setPlaces(prev => prev.map(p => p.id === place.id ? { ...p, image_url: newPrimary, gallery: newGallery } : p))
+    } else {
+      const newGallery = (place.gallery ?? []).filter(u => u !== url)
+      await supabase.from('tourism_places').update({ gallery: newGallery }).eq('id', place.id)
+      setPlaces(prev => prev.map(p => p.id === place.id ? { ...p, gallery: newGallery } : p))
+    }
+  }
+
+  const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
+  const isAdd = sheet === 'add'
+
+  return (
+    <div className="space-y-4">
+      <h2 className="font-bold text-gray-700">จัดการสถานที่แนะนำ</h2>
+
+      <button onClick={openAdd}
+        className="flex items-center justify-center gap-2 w-full py-3 rounded-2xl text-white font-semibold text-sm"
+        style={{ backgroundColor: 'var(--color-primary)' }}>
+        <Plus size={16} /> เพิ่มรายการใหม่
+      </button>
+
+      {loading ? (
+        <div className="flex justify-center py-8"><Loader2 className="animate-spin text-gray-300" size={28} /></div>
+      ) : places.length === 0 ? (
+        <p className="text-gray-400 text-sm text-center py-8">ยังไม่มีรายการ</p>
+      ) : (
+        <div className="space-y-2">
+          {places.map(place => {
+            const cat = TOUR_CATS.find(c => c.key === place.category)
+            const imgCount = [place.image_url, ...(place.gallery ?? [])].filter(Boolean).length
+            return (
+              <div key={place.id}
+                className={`bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden transition-opacity ${!place.is_active ? 'opacity-50' : ''}`}>
+                <div className="flex items-center gap-3 p-3">
+                  <div className="w-14 h-14 rounded-xl overflow-hidden shrink-0 bg-gray-100 flex items-center justify-center text-xl">
+                    {place.image_url ? <img src={place.image_url} alt="" className="w-full h-full object-cover" /> : (cat?.emoji ?? '🏛️')}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="inline-block text-[11px] font-bold px-1.5 py-0.5 rounded-md text-white mb-0.5"
+                          style={{ backgroundColor: cat?.color ?? '#64748b' }}>
+                      {cat?.emoji} {cat?.label}
+                    </span>
+                    <p className="text-sm font-semibold text-gray-800 truncate">{place.name}</p>
+                    <p className="text-xs text-gray-400">{imgCount} รูป · {place.is_active ? 'แสดงอยู่' : 'ซ่อนอยู่'}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button onClick={e => toggleActive(place, e)}
+                      className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${place.is_active ? 'bg-green-400' : 'bg-gray-300'}`}>
+                      {place.is_active ? '✓' : '—'}
+                    </button>
+                    <button onClick={() => openEdit(place)}
+                      className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center">
+                      <Pencil size={14} className="text-blue-500" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* ─── Bottom Sheet ─── */}
+      {sheet && (
+        <div className="fixed inset-0 z-50 flex items-end" onClick={closeSheet}>
+          <div className="absolute inset-0 bg-black/40" />
+          <div className="relative w-full bg-white rounded-t-3xl shadow-2xl max-h-[92vh] flex flex-col"
+               onClick={e => e.stopPropagation()}>
+
+            {/* Handle */}
+            <div className="flex justify-center pt-3 pb-1 shrink-0">
+              <div className="w-10 h-1 rounded-full bg-gray-300" />
+            </div>
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3 shrink-0 border-b border-gray-100">
+              <h3 className="font-bold text-gray-800">
+                {isAdd ? 'เพิ่มรายการใหม่' : `แก้ไข: ${sheetPlace?.name ?? ''}`}
+              </h3>
+              <button onClick={closeSheet} className="p-1.5 rounded-xl hover:bg-gray-100">
+                <X size={18} className="text-gray-500" />
+              </button>
+            </div>
+
+            {/* Scrollable content */}
+            <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+
+              {/* Image gallery (edit mode only) */}
+              {!isAdd && (
+                <div>
+                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">
+                    รูปภาพ ({sheetAllImgs.length}/{MAX_IMAGES})
+                    {uploadingFor === sheetPlace?.id && <span className="ml-2 text-blue-500 normal-case font-normal">กำลังอัปโหลด...</span>}
+                  </p>
+                  <div className="flex gap-2 overflow-x-auto pb-2" style={{ scrollbarWidth: 'none' }}>
+                    {sheetAllImgs.map((url, idx) => (
+                      <div key={url} className="relative shrink-0 w-24 h-24">
+                        <img src={url} alt="" className="w-full h-full object-cover rounded-xl" />
+                        {idx === 0 && <span className="absolute bottom-1 left-1 text-[9px] bg-yellow-400 text-white px-1.5 py-0.5 rounded-full font-bold">หลัก</span>}
+                        <button onClick={() => removeImage(url)}
+                          className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500 flex items-center justify-center shadow">
+                          <X size={10} className="text-white" />
+                        </button>
+                      </div>
+                    ))}
+                    {sheetAllImgs.length < MAX_IMAGES && (
+                      <label className={`shrink-0 w-24 h-24 rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 cursor-pointer transition-colors ${uploadingFor === sheetPlace?.id ? 'opacity-50 cursor-wait border-gray-200' : 'border-gray-300 hover:border-blue-400'}`}>
+                        {uploadingFor === sheetPlace?.id
+                          ? <Loader2 size={20} className="animate-spin text-gray-400" />
+                          : <><Camera size={20} className="text-gray-400" /><span className="text-[11px] text-gray-400">เพิ่มรูป</span></>}
+                        <input type="file" accept="image/*" multiple className="hidden"
+                          disabled={uploadingFor === sheetPlace?.id}
+                          onChange={e => uploadImages(sheetPlace.id, [...e.target.files])} />
+                      </label>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-gray-400">รูปแรก = รูปหน้าปก · รูปใหญ่ถูกบีบอัตโนมัติ</p>
+                </div>
+              )}
+
+              {/* Form fields */}
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">ข้อมูล</p>
+                <input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
+                  placeholder="ชื่อสถานที่ / ร้านอาหาร / ที่พัก *" className={inputCls} />
+                <select value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))} className={inputCls}>
+                  {TOUR_CATS.map(c => <option key={c.key} value={c.key}>{c.emoji} {c.label}</option>)}
+                </select>
+                <textarea value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
+                  placeholder="คำอธิบาย / ข้อมูลน่าสนใจ / ประวัติความเป็นมา..." rows={4}
+                  className={inputCls + ' resize-none'} />
+                <input value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}
+                  placeholder="เบอร์โทรศัพท์" className={inputCls} />
+                <input value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))}
+                  placeholder="ที่อยู่ / หมู่ที่ / ตำบล" className={inputCls} />
+                <input value={form.maps_url} onChange={e => setForm(p => ({ ...p, maps_url: e.target.value }))}
+                  placeholder="ลิงก์ Google Maps" className={inputCls} />
+              </div>
+
+              {/* Buttons */}
+              <div className="flex gap-2 pb-2">
+                <button onClick={handleSave} disabled={saving || !form.name.trim()}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-white text-sm font-semibold disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--color-primary)' }}>
+                  {saving ? <Loader2 size={14} className="animate-spin" /> : null}
+                  {isAdd ? 'เพิ่มรายการ' : 'บันทึก'}
+                </button>
+                {!isAdd && (
+                  <button onClick={handleDelete}
+                    className="px-4 py-3 rounded-xl bg-red-50 text-red-500 text-sm font-semibold">
+                    <Trash2 size={16} />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main page ─────────────────────────────────────────────────────────────────
 export default function AdminDashboard() {
   const { tenant } = useTenant()
@@ -3737,6 +4026,8 @@ export default function AdminDashboard() {
           </div>
           <AssignmentManager tenant={tenant} readOnly={currentUserRole === 'viewer'} />
         </div>
+      ) : activePage === 'tourism' ? (
+        <TourismManager tenant={tenant} />
       ) : activePage === 'more' ? (
         /* ─── อื่นๆ page ─── */
         <div className="space-y-4">
@@ -3784,6 +4075,16 @@ export default function AdminDashboard() {
               <div>
                 <p className="text-sm font-bold text-gray-800">สายด่วนฉุกเฉิน</p>
                 <p className="text-[13px] text-gray-400 mt-0.5">จัดการเบอร์ติดต่อ</p>
+              </div>
+            </button>
+            <button onClick={() => setActivePage('tourism')}
+              className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#fef3c7' }}>
+                <span className="text-2xl">🏛️</span>
+              </div>
+              <div>
+                <p className="text-sm font-bold text-gray-800">สถานที่แนะนำ</p>
+                <p className="text-[13px] text-gray-400 mt-0.5">เที่ยว กิน พัก ชอป</p>
               </div>
             </button>
             <button onClick={() => setActivePage('locations')}
