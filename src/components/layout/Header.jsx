@@ -116,13 +116,7 @@ export default function Header() {
                 </Link>
               )
             })}
-            {isAdmin && (
-              <Link to="/admin"
-                className="ml-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-colors hover:opacity-90"
-                style={{ backgroundColor: 'white', color: 'var(--color-primary)' }}>
-                <LayoutDashboard size={13} /> Admin
-              </Link>
-            )}
+
             {role === 'viewer' && (
               <Link to="/admin"
                 className="ml-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-colors hover:opacity-90"

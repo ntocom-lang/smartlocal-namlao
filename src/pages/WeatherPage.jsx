@@ -189,10 +189,10 @@ export default function WeatherPage() {
   ]
 
   return (
-    <div className="max-w-lg mx-auto min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="max-w-4xl mx-auto min-h-screen bg-gray-50 dark:bg-gray-900">
 
-      {/* Header */}
-      <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-4 text-white shadow-md"
+      {/* Mobile Header */}
+      <div className="md:hidden sticky top-0 z-10 flex items-center gap-3 px-4 py-4 text-white shadow-md"
            style={{ background: 'linear-gradient(135deg, #4a7c6f 0%, #2d5a4f 100%)' }}>
         <button onClick={() => navigate(-1)}
                 className="p-1.5 rounded-xl hover:bg-white/20 active:bg-white/30 transition-colors">
@@ -201,8 +201,20 @@ export default function WeatherPage() {
         <h1 className="font-bold text-lg">พยากรณ์อากาศ</h1>
       </div>
 
+      {/* PC Header */}
+      <div className="hidden md:flex items-center gap-3 px-4 pt-8 pb-5 border-b border-gray-200 dark:border-gray-700 mb-2">
+        <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-2xl shrink-0"
+             style={{ background: 'linear-gradient(135deg, #4a7c6f 0%, #2d5a4f 100%)' }}>
+          🌤️
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800 dark:text-slate-200">พยากรณ์อากาศ</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">ข้อมูลจาก Open-Meteo.com</p>
+        </div>
+      </div>
+
       {/* Tabs */}
-      <div className="flex mx-4 mt-4 gap-2">
+      <div className="flex mx-4 md:mx-0 md:px-4 mt-4 gap-2">
         {tabs.map((t, i) => (
           <button
             key={i}

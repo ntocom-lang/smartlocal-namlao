@@ -66,8 +66,8 @@ export default function NotificationsPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
 
-      {/* ── Top header ── */}
-      <div className="sticky top-0 z-10 bg-white border-b border-gray-100 shadow-sm">
+      {/* ── Mobile header ── */}
+      <div className="md:hidden sticky top-0 z-10 bg-white border-b border-gray-100 shadow-sm">
         <div className="flex items-center gap-3 px-4 py-3 max-w-2xl mx-auto">
           <button
             onClick={() => navigate(-1)}
@@ -91,8 +91,24 @@ export default function NotificationsPage() {
         </div>
       </div>
 
+      {/* ── PC header ── */}
+      <div className="hidden md:flex items-center gap-3 px-4 pt-8 pb-5 border-b border-gray-100 max-w-3xl mx-auto w-full">
+        <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0"
+             style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, color-mix(in srgb, var(--color-primary) 70%, #7c3aed) 100%)' }}>
+          <Bell size={20} className="text-white" />
+        </div>
+        <div className="flex-1">
+          <h1 className="text-2xl font-bold text-gray-800">การแจ้งเตือน</h1>
+          {!loading && items.length > 0 && (
+            <p className="text-sm text-gray-400 mt-0.5">
+              {hasUnread ? `${unreadItems.length} รายการยังไม่อ่าน` : 'อ่านทั้งหมดแล้ว'}
+            </p>
+          )}
+        </div>
+      </div>
+
       {/* ── Body ── */}
-      <div className="flex-1 max-w-2xl mx-auto w-full">
+      <div className="flex-1 max-w-3xl mx-auto w-full">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-24 gap-3">
             <Loader2 size={28} className="animate-spin text-gray-300" />

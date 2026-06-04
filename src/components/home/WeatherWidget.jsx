@@ -21,23 +21,46 @@ export default function WeatherWidget() {
   useEffect(() => {
     if (!tenant) return
     setLoading(true)
-    Promise.all([
-      fetch(
-        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-        `&current=temperature_2m,weather_code&timezone=Asia%2FBangkok`
-      ).then(r => r.json()),
-      fetch(
-        `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}` +
-        `&current=pm2_5&timezone=Asia%2FBangkok`
-      ).then(r => r.json()),
-    ])
+    
+    const fetchWeather = fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+      `&current=temperature_2m,weather_code&timezone=Asia%2FBangkok`
+    ).then(r => {
+      if (!r.ok) throw new Error('Weather fetch failed')
+      return r.json()
+    }).catch(err => {
+      console.warn("Weather API Error:", err)
+      return null
+    })
+
+    const fetchAQI = fetch(
+      `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}` +
+      `&current=pm2_5&timezone=Asia%2FBangkok`
+    ).then(r => {
+      if (!r.ok) throw new Error('AQI fetch failed')
+      return r.json()
+    }).catch(err => {
+      console.warn("AQI API Error:", err)
+      return null
+    })
+
+    Promise.all([fetchWeather, fetchAQI])
       .then(([wData, aqData]) => {
-        setWeather({
-          temp: Math.round(wData.current.temperature_2m * 10) / 10,
-          code: wData.current.weather_code,
-        })
-        const raw = aqData.current?.pm2_5
-        if (raw != null) setPm25(Math.round(raw * 10) / 10)
+        if (wData && wData.current) {
+          setWeather({
+            temp: Math.round(wData.current.temperature_2m * 10) / 10,
+            code: wData.current.weather_code,
+          })
+        } else {
+          setWeather(null)
+        }
+        
+        const raw = aqData?.current?.pm2_5
+        if (raw != null) {
+          setPm25(Math.round(raw * 10) / 10)
+        } else {
+          setPm25(null)
+        }
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -57,7 +80,15 @@ export default function WeatherWidget() {
     )
   }
 
-  if (!weather) return null
+  if (!weather && pm25 == null) {
+    return (
+      <div className="w-full flex items-center justify-center bg-white/85 dark:bg-gray-800/85 backdrop-blur-sm
+                      border border-gray-200/70 dark:border-gray-700/60 rounded-2xl px-4 py-3
+                      shadow-sm text-gray-500 text-sm">
+        <span>ไม่สามารถโหลดข้อมูลสภาพอากาศได้</span>
+      </div>
+    )
+  }
 
   return (
     <Link
@@ -94,22 +125,28 @@ export default function WeatherWidget() {
 
       {/* คอลัมน์ 2 — พยากรณ์อากาศ */}
       <div className="flex-1 flex items-center justify-center gap-2.5 px-3 py-2">
-        <span className="text-2xl shrink-0">{info.icon}</span>
-        <div className="min-w-0">
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-lg font-bold text-gray-800 dark:text-white leading-none">
-              {weather.temp}°
-            </span>
-            <span className="text-[13px] text-gray-700 dark:text-gray-200 truncate">
-              {info.label}
-            </span>
-          </div>
-          <div className="flex items-center gap-0.5 mt-0.5
-                          text-gray-600 dark:text-gray-300 group-hover:text-gray-800 dark:group-hover:text-white transition-colors">
-            <span className="text-xs">พยากรณ์อากาศ{shortName}</span>
-            <ChevronRight size={11} />
-          </div>
-        </div>
+        {weather && info ? (
+          <>
+            <span className="text-2xl shrink-0">{info.icon}</span>
+            <div className="min-w-0">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-lg font-bold text-gray-800 dark:text-white leading-none">
+                  {weather.temp}°
+                </span>
+                <span className="text-[13px] text-gray-700 dark:text-gray-200 truncate">
+                  {info.label}
+                </span>
+              </div>
+              <div className="flex items-center gap-0.5 mt-0.5
+                              text-gray-600 dark:text-gray-300 group-hover:text-gray-800 dark:group-hover:text-white transition-colors">
+                <span className="text-xs">พยากรณ์อากาศ{shortName}</span>
+                <ChevronRight size={11} />
+              </div>
+            </div>
+          </>
+        ) : (
+          <span className="text-xs text-gray-600 dark:text-gray-300">ไม่มีข้อมูลอากาศ</span>
+        )}
       </div>
     </Link>
   )

@@ -135,8 +135,8 @@ export default function ProfilePage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Top bar */}
-      <div className="flex items-center px-4 py-4 text-white"
+      {/* Mobile top bar */}
+      <div className="md:hidden flex items-center px-4 py-4 text-white"
            style={{ background: 'linear-gradient(90deg, var(--color-primary-dark), var(--color-primary))' }}>
         <button onClick={() => navigate(-1)} className="p-1 mr-3">
           <ChevronLeft size={24} />
@@ -145,7 +145,7 @@ export default function ProfilePage() {
         <div className="w-8" />
       </div>
 
-      <div className="max-w-md mx-auto px-4 py-6 space-y-4">
+      <div className="max-w-lg mx-auto px-4 py-6 md:py-10 space-y-4">
         {/* Avatar */}
         <div className="flex flex-col items-center gap-2 mb-2">
           <div className="relative">

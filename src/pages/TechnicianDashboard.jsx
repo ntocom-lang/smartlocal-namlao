@@ -553,7 +553,7 @@ export default function TechnicianDashboard() {
   const done = complaints.filter((c) => c.status === 'completed')
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6 pb-24 space-y-6">
+    <div className="max-w-4xl mx-auto px-4 py-6 pb-24 md:pb-8 space-y-6">
       {selected && (
         <DetailSheet
           complaint={selected}

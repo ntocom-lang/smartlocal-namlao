@@ -340,12 +340,141 @@ export default function EventsPage() {
     return acc
   }, {})
 
+  const tabSwitcher = (
+    <div className="flex bg-gray-100 dark:bg-white/10 rounded-2xl p-1">
+      <button
+        onClick={() => setActiveTab('upcoming')}
+        className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 ${
+          activeTab === 'upcoming'
+            ? 'bg-white dark:bg-white/20 shadow-sm'
+            : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-slate-200'
+        }`}
+        style={activeTab === 'upcoming' ? { color: 'var(--color-primary)' } : {}}
+      >
+        <CalendarDays size={14} />
+        กิจกรรมเร็วๆ นี้ ({upcomingEvents.length})
+      </button>
+      <button
+        onClick={() => setActiveTab('past')}
+        className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 ${
+          activeTab === 'past'
+            ? 'bg-white dark:bg-white/20 shadow-sm'
+            : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-slate-200'
+        }`}
+        style={activeTab === 'past' ? { color: 'var(--color-primary)' } : {}}
+      >
+        <History size={14} />
+        กิจกรรมที่ผ่านมา ({pastEvents.length})
+      </button>
+    </div>
+  )
+
+  const eventList = listEvents.length === 0 ? (
+    <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+      <CalendarDays size={40} strokeWidth={1.2} className="mb-3" />
+      <p className="text-sm">
+        {selectedAudience
+          ? `ไม่มีกิจกรรมสำหรับ "${AUDIENCE_LABEL[selectedAudience]}"`
+          : activeTab === 'past' ? 'ไม่มีกิจกรรมที่ผ่านมาแล้ว' : 'ยังไม่มีกิจกรรมเร็วๆ นี้'}
+      </p>
+      {selectedAudience && (
+        <button onClick={() => setSelectedAudience(null)} className="mt-2 text-xs text-blue-500 underline">
+          ดูทั้งหมด
+        </button>
+      )}
+    </div>
+  ) : (
+    <div className="space-y-6">
+      {Object.entries(grouped).map(([month, evs]) => (
+        <div key={month}>
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 px-1">{month}</p>
+          <div className="space-y-2">
+            {evs.map((ev) => {
+              const color    = CATEGORY_COLOR[ev.category] ?? '#6b7280'
+              const audColor = AUDIENCE_COLOR[ev.audience] ?? '#6b7280'
+              const audLabel = AUDIENCE_LABEL[ev.audience] ?? ev.audience
+              const d        = new Date(ev.event_date + 'T00:00:00')
+              const isPast   = d < today
+              const diffDays = Math.round((d - today) / (1000 * 60 * 60 * 24))
+              return (
+                <button
+                  key={ev.id}
+                  onClick={() => setSelected(ev)}
+                  className={`w-full text-left bg-white dark:bg-white/5 rounded-2xl border shadow-sm p-4 flex gap-4 active:scale-98 transition-transform ${
+                    isPast
+                      ? 'opacity-50 border-gray-100 dark:border-white/10'
+                      : 'border-gray-100 dark:border-white/10'
+                  }`}
+                  style={!isPast ? { borderLeftColor: color, borderLeftWidth: 3 } : {}}
+                >
+                  <div className="shrink-0 text-center w-12">
+                    <p className="text-xs text-gray-400">{d.toLocaleDateString('th-TH', { weekday: 'short' })}</p>
+                    <p className="text-2xl font-black leading-tight" style={{ color: isPast ? '#9ca3af' : color }}>
+                      {d.getDate()}
+                    </p>
+                    <p className="text-xs text-gray-400">{d.toLocaleDateString('th-TH', { month: 'short' })}</p>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                      <span
+                        className="text-[11px] font-semibold px-2 py-0.5 rounded-full text-white"
+                        style={{ backgroundColor: color }}
+                      >
+                        {ev.category}
+                      </span>
+                      <span
+                        className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
+                        style={{ backgroundColor: audColor + '20', color: audColor }}
+                      >
+                        {ev.audience !== 'public' && '🔒 '}{audLabel}
+                      </span>
+                      {isPast ? (
+                        <span className="text-[11px] text-gray-400 font-medium">ผ่านไปแล้ว</span>
+                      ) : (
+                        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                          diffDays === 0 ? 'bg-red-50 text-red-600 dark:bg-red-500/20 dark:text-red-400' :
+                          diffDays <= 3 ? 'bg-orange-50 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400' :
+                          'bg-blue-50 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400'
+                        }`}>
+                          {diffDays === 0 ? 'วันนี้' : diffDays === 1 ? 'พรุ่งนี้' : `อีก ${diffDays} วัน`}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm font-bold text-gray-800 dark:text-slate-200 leading-tight">{ev.title}</p>
+                    {!ev.is_all_day && ev.event_time && (
+                      <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
+                        <Clock size={11} />
+                        {ev.event_time.slice(0, 5)}
+                        {ev.end_time ? ` – ${ev.end_time.slice(0, 5)}` : ''} น.
+                        {ev.end_date && ev.end_date !== ev.event_date && (
+                          <> · ถึง {new Date(ev.end_date + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}</>
+                        )}
+                      </p>
+                    )}
+                    {ev.location && (
+                      <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
+                        <MapPin size={11} /> {ev.location}
+                      </p>
+                    )}
+                    {ev.description && (
+                      <p className="text-xs text-gray-400 mt-1.5 leading-relaxed line-clamp-2">{ev.description}</p>
+                    )}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+
   return (
-    <div className="max-w-2xl mx-auto px-4 pb-24">
+    <div className="max-w-6xl mx-auto px-4 pb-24 md:pb-8">
       {selected && <EventDetailModal ev={selected} onClose={() => setSelected(null)} />}
 
-      {/* Sticky header */}
-      <div className="sticky top-0 z-30 bg-gray-50/95 dark:bg-transparent backdrop-blur-md pt-3 pb-2 -mx-4 px-4">
+      {/* Mobile sticky header */}
+      <div className="md:hidden sticky top-0 z-30 bg-gray-50/95 dark:bg-transparent backdrop-blur-md pt-3 pb-2 -mx-4 px-4">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <button
@@ -356,27 +485,18 @@ export default function EventsPage() {
             </button>
             <h1 className="text-base font-bold text-gray-800 dark:text-slate-200">ปฏิทินกิจกรรม</h1>
           </div>
-
           <div className="flex items-center gap-2">
-            {/* View toggle */}
             <button
               onClick={() => setView(view === 'list' ? 'calendar' : 'list')}
-              className="flex items-center justify-center gap-1.5 w-[92px] h-[36px] bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white rounded-xl shadow-md shadow-blue-500/20 transition-all active:scale-95"
+              className="flex items-center justify-center gap-1.5 w-[92px] h-[36px] bg-linear-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white rounded-xl shadow-md shadow-blue-500/20 transition-all active:scale-95"
               title={view === 'list' ? 'มุมมองปฏิทิน' : 'มุมมองรายการ'}
             >
               {view === 'list' ? (
-                <>
-                  <CalendarDays size={16} />
-                  <span className="text-sm font-bold">ปฏิทิน</span>
-                </>
+                <><CalendarDays size={16} /><span className="text-sm font-bold">ปฏิทิน</span></>
               ) : (
-                <>
-                  <List size={16} />
-                  <span className="text-sm font-bold">รายการ</span>
-                </>
+                <><List size={16} /><span className="text-sm font-bold">รายการ</span></>
               )}
             </button>
-
             {canEdit && (
               <button
                 onClick={() => navigate('/admin', { state: { page: 'events' } })}
@@ -390,37 +510,30 @@ export default function EventsPage() {
         </div>
       </div>
 
-      {/* Tab Switcher - แสดงเฉพาะมุมมองรายการ */}
-      {!loading && view === 'list' && (
-        <div className="flex bg-gray-100 dark:bg-white/10 rounded-2xl p-1 mt-3">
-          <button
-            onClick={() => setActiveTab('upcoming')}
-            className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 ${
-              activeTab === 'upcoming'
-                ? 'bg-white dark:bg-white/20 shadow-sm'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-slate-200'
-            }`}
-            style={activeTab === 'upcoming' ? { color: 'var(--color-primary)' } : {}}
-          >
-            <CalendarDays size={14} />
-            กิจกรรมเร็วๆ นี้ ({upcomingEvents.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('past')}
-            className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 ${
-              activeTab === 'past'
-                ? 'bg-white dark:bg-white/20 shadow-sm'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-slate-200'
-            }`}
-            style={activeTab === 'past' ? { color: 'var(--color-primary)' } : {}}
-          >
-            <History size={14} />
-            กิจกรรมที่ผ่านมา ({pastEvents.length})
-          </button>
+      {/* PC header */}
+      <div className="hidden md:flex items-center justify-between pt-6 pb-4 border-b border-gray-100 dark:border-white/10 mb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-2xl shrink-0"
+               style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #4f46e5 100%)' }}>
+            📅
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800 dark:text-slate-200">ปฏิทินกิจกรรม</h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">กิจกรรมและงานสำคัญของหน่วยงาน</p>
+          </div>
         </div>
-      )}
+        {canEdit && (
+          <button
+            onClick={() => navigate('/admin', { state: { page: 'events' } })}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-white shadow-sm transition-all hover:opacity-90"
+            style={{ backgroundColor: 'var(--color-primary)' }}
+          >
+            <Plus size={16} /> เพิ่มกิจกรรม
+          </button>
+        )}
+      </div>
 
-      {/* Audience filter chips — แสดงเมื่อ role เห็นได้มากกว่า 1 audience */}
+      {/* Audience filter chips */}
       {!loading && (allowedAudiences === null || allowedAudiences.length > 1) && (
         <div className="flex flex-wrap gap-2 mt-3 pb-1">
           <button
@@ -459,114 +572,37 @@ export default function EventsPage() {
             <div key={i} className="h-24 bg-gray-100 dark:bg-white/5 rounded-2xl animate-pulse" />
           ))}
         </div>
-      ) : (view === 'list' ? listEvents.length === 0 : filteredEvents.length === 0) ? (
-        <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-          <CalendarDays size={48} strokeWidth={1.2} className="mb-3" />
-          <p className="text-sm">
-            {selectedAudience
-              ? `ไม่มีกิจกรรมสำหรับ "${AUDIENCE_LABEL[selectedAudience]}"`
-              : view === 'list'
-              ? activeTab === 'past'
-                ? 'ไม่มีกิจกรรมที่ผ่านมาแล้ว'
-                : 'ยังไม่มีกิจกรรมเร็วๆ นี้'
-              : 'ยังไม่มีกิจกรรม'}
-          </p>
-          {selectedAudience && (
-            <button
-              onClick={() => setSelectedAudience(null)}
-              className="mt-2 text-xs text-blue-500 underline"
-            >
-              ดูทั้งหมด
-            </button>
-          )}
-        </div>
-      ) : view === 'calendar' ? (
-        <CalendarView events={filteredEvents} onSelectEvent={setSelected} />
       ) : (
-        <div className="mt-4 space-y-6">
-          {Object.entries(grouped).map(([month, evs]) => (
-            <div key={month}>
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 px-1">{month}</p>
-              <div className="space-y-2">
-                {evs.map((ev) => {
-                  const color    = CATEGORY_COLOR[ev.category] ?? '#6b7280'
-                  const audColor = AUDIENCE_COLOR[ev.audience] ?? '#6b7280'
-                  const audLabel = AUDIENCE_LABEL[ev.audience] ?? ev.audience
-                  const d        = new Date(ev.event_date + 'T00:00:00')
-                  const isPast   = d < today
-                  const diffDays = Math.round((d - today) / (1000 * 60 * 60 * 24))
-                  return (
-                    <button
-                      key={ev.id}
-                      onClick={() => setSelected(ev)}
-                      className={`w-full text-left bg-white dark:bg-white/5 rounded-2xl border shadow-sm p-4 flex gap-4 active:scale-98 transition-transform ${
-                        isPast
-                          ? 'opacity-50 border-gray-100 dark:border-white/10'
-                          : 'border-gray-100 dark:border-white/10'
-                      }`}
-                      style={!isPast ? { borderLeftColor: color, borderLeftWidth: 3 } : {}}
-                    >
-                      <div className="shrink-0 text-center w-12">
-                        <p className="text-xs text-gray-400">{d.toLocaleDateString('th-TH', { weekday: 'short' })}</p>
-                        <p className="text-2xl font-black leading-tight" style={{ color: isPast ? '#9ca3af' : color }}>
-                          {d.getDate()}
-                        </p>
-                        <p className="text-xs text-gray-400">{d.toLocaleDateString('th-TH', { month: 'short' })}</p>
-                      </div>
+        <>
+          {/* Mobile: Tab switcher (only in list view) */}
+          {view === 'list' && (
+            <div className="md:hidden mt-3">{tabSwitcher}</div>
+          )}
 
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                          <span
-                            className="text-[11px] font-semibold px-2 py-0.5 rounded-full text-white"
-                            style={{ backgroundColor: color }}
-                          >
-                            {ev.category}
-                          </span>
-                          <span
-                            className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
-                            style={{ backgroundColor: audColor + '20', color: audColor }}
-                          >
-                            {ev.audience !== 'public' && '🔒 '}{audLabel}
-                          </span>
-                          {isPast ? (
-                            <span className="text-[11px] text-gray-400 font-medium">ผ่านไปแล้ว</span>
-                          ) : (
-                            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                              diffDays === 0 ? 'bg-red-50 text-red-600 dark:bg-red-500/20 dark:text-red-400' :
-                              diffDays <= 3 ? 'bg-orange-50 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400' :
-                              'bg-blue-50 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400'
-                            }`}>
-                              {diffDays === 0 ? 'วันนี้' : diffDays === 1 ? 'พรุ่งนี้' : `อีก ${diffDays} วัน`}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm font-bold text-gray-800 dark:text-slate-200 leading-tight">{ev.title}</p>
-                        {!ev.is_all_day && ev.event_time && (
-                          <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
-                            <Clock size={11} />
-                            {ev.event_time.slice(0, 5)}
-                            {ev.end_time ? ` – ${ev.end_time.slice(0, 5)}` : ''} น.
-                            {ev.end_date && ev.end_date !== ev.event_date && (
-                              <> · ถึง {new Date(ev.end_date + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}</>
-                            )}
-                          </p>
-                        )}
-                        {ev.location && (
-                          <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
-                            <MapPin size={11} /> {ev.location}
-                          </p>
-                        )}
-                        {ev.description && (
-                          <p className="text-xs text-gray-400 mt-1.5 leading-relaxed line-clamp-2">{ev.description}</p>
-                        )}
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
+          {/* Content: mobile=single view toggle; PC=side-by-side */}
+          <div className="md:grid md:grid-cols-[1fr_1.3fr] md:gap-8 md:mt-4">
+
+            {/* Calendar column */}
+            <div className={view === 'calendar' ? 'mt-0' : 'hidden md:block'}>
+              {filteredEvents.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-gray-300">
+                  <CalendarDays size={40} strokeWidth={1.2} className="mb-3" />
+                  <p className="text-sm">ยังไม่มีกิจกรรม</p>
+                </div>
+              ) : (
+                <CalendarView events={filteredEvents} onSelectEvent={setSelected} />
+              )}
             </div>
-          ))}
-        </div>
+
+            {/* List column */}
+            <div className={view === 'list' ? 'mt-4 md:mt-0' : 'hidden md:block md:mt-0'}>
+              {/* PC: tab switcher inside list column */}
+              <div className="hidden md:block mb-4">{tabSwitcher}</div>
+              {eventList}
+            </div>
+
+          </div>
+        </>
       )}
     </div>
   )

@@ -39,10 +39,10 @@ export default function TourismPage() {
   const catLabel = CATS.find(c => c.key === activeCat)?.label?.replace(/^[^ ]+ /, '') ?? 'ทั้งหมด'
 
   return (
-    <div className="max-w-lg mx-auto pb-28">
+    <div className="max-w-6xl mx-auto pb-28 md:pb-8">
 
-      {/* Header */}
-      <div className="sticky top-0 z-30 bg-gray-50/95 backdrop-blur-md">
+      {/* Mobile Header */}
+      <div className="md:hidden sticky top-0 z-30 bg-gray-50/95 backdrop-blur-md">
         <div className="flex items-center gap-2 px-4 pt-3 pb-2">
           <button onClick={() => navigate(-1)}
             className="p-2 -ml-1 rounded-xl hover:bg-gray-200/60 text-gray-500 transition-colors">
@@ -53,7 +53,7 @@ export default function TourismPage() {
           </h1>
         </div>
 
-        {/* Category filter */}
+        {/* Category filter (mobile) */}
         <div className="flex gap-2 px-4 pb-3 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
           {CATS.map(({ key, label }) => (
             <button
@@ -72,8 +72,37 @@ export default function TourismPage() {
         </div>
       </div>
 
+      {/* PC Header */}
+      <div className="hidden md:block px-4 pt-8 pb-4 border-b border-gray-100">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800">
+              สถานที่แนะนำ {activeCat ? `— ${catLabel}` : ''}
+            </h1>
+            <p className="text-sm text-gray-500 mt-0.5">ค้นพบสถานที่น่าสนใจในพื้นที่</p>
+          </div>
+        </div>
+        {/* Category filter (PC) */}
+        <div className="flex gap-2 flex-wrap">
+          {CATS.map(({ key, label }) => (
+            <button
+              key={key ?? 'all'}
+              onClick={() => setActiveCat(key)}
+              className="shrink-0 text-xs font-semibold px-4 py-2 rounded-full transition-colors"
+              style={
+                activeCat === key
+                  ? { backgroundColor: 'var(--color-primary)', color: '#fff' }
+                  : { backgroundColor: '#f1f5f9', color: '#64748b' }
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Content */}
-      <div className="px-4 pt-2">
+      <div className="px-4 pt-2 md:pt-6">
         {loading ? (
           <div className="flex justify-center py-16">
             <div className="w-6 h-6 border-4 border-gray-200 rounded-full animate-spin"
@@ -85,13 +114,13 @@ export default function TourismPage() {
             <p className="text-gray-400 text-sm">ยังไม่มีรายการในหมวดนี้</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
             {filtered.map(place => {
               const catObj = CATS.find(c => c.key === place.category)
               return (
                 <button key={place.id} onClick={() => navigate(`/tourism/${place.id}`)}
                      className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 active:scale-[0.98] transition-transform text-left w-full">
-                  <div className="h-36 relative">
+                  <div className="h-36 md:h-48 relative">
                     {place.image_url
                       ? <img src={place.image_url} alt={place.name} className="absolute inset-0 w-full h-full object-cover" />
                       : <div className="absolute inset-0 bg-gray-100 flex items-center justify-center text-3xl">🏛️</div>

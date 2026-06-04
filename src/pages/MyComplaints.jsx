@@ -430,15 +430,15 @@ export default function MyComplaints() {
   }, [tenant?.id, session?.user?.id, openId])
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6 pb-24">
+    <div className="max-w-5xl mx-auto px-4 py-6 pb-24 md:pb-8">
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <button onClick={() => navigate(-1)}
-          className="p-2 rounded-xl hover:bg-gray-100 text-gray-500 transition-colors">
+          className="md:hidden p-2 rounded-xl hover:bg-gray-100 text-gray-500 transition-colors">
           <ArrowLeft size={20} />
         </button>
         <div>
-          <h1 className="text-lg font-bold text-gray-800">คำร้องของฉัน</h1>
+          <h1 className="text-lg md:text-2xl font-bold text-gray-800">คำร้องของฉัน</h1>
           <p className="text-xs text-gray-400">ติดตามสถานะคำร้องที่ยื่น</p>
         </div>
       </div>
@@ -460,7 +460,7 @@ export default function MyComplaints() {
         </div>
       ) : (
         <>
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {paginatedComplaints.map((c, i) => (
               <div key={c.id}
                 onClick={() => setSelected(c)}

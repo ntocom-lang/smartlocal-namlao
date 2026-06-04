@@ -45,10 +45,10 @@ export default function ComplaintCategory() {
   }
 
   return (
-    <div className="max-w-lg mx-auto min-h-screen bg-gray-50">
-      {/* Top bar */}
+    <div className="max-w-4xl mx-auto min-h-screen bg-gray-50">
+      {/* Mobile top bar */}
       <div
-        className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 shadow-md"
+        className="md:hidden sticky top-0 z-10 flex items-center gap-3 px-4 py-3 shadow-md"
         style={{
           background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)',
         }}
@@ -62,8 +62,20 @@ export default function ComplaintCategory() {
         <h1 className="font-bold text-white text-base">ยื่นคำร้องออนไลน์</h1>
       </div>
 
-      {/* Prompt */}
-      <div className="px-4 pt-5 pb-2">
+      {/* PC header */}
+      <div className="hidden md:flex items-center gap-3 px-6 pt-8 pb-5 border-b border-gray-200 mb-2">
+        <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-2xl shrink-0"
+             style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
+          📋
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">ยื่นคำร้องออนไลน์</h1>
+          <p className="text-sm text-gray-500 mt-0.5">เลือกประเภทที่ต้องการยื่นคำร้อง</p>
+        </div>
+      </div>
+
+      {/* Mobile Prompt */}
+      <div className="md:hidden px-4 pt-5 pb-2">
         <div
           className="text-center py-3 px-4 rounded-2xl font-semibold text-white text-sm shadow"
           style={{ backgroundColor: 'var(--color-primary)' }}
@@ -78,15 +90,15 @@ export default function ComplaintCategory() {
           <Loader2 size={28} className="animate-spin text-gray-300" />
         </div>
       ) : (
-        <div className="px-4 pb-28 pt-3 grid grid-cols-3 gap-3">
+        <div className="px-4 md:px-6 pb-28 md:pb-8 pt-3 md:pt-4 grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
           {categories.map((cat) => (
             <button
               key={cat.value}
               onClick={() => handleSelect(cat.value)}
-              className="flex flex-col items-center gap-2 py-4 px-2 rounded-2xl bg-white shadow-sm border border-gray-100 active:scale-95 transition-transform hover:shadow-md"
+              className="flex flex-col items-center gap-2 py-4 md:py-6 px-2 rounded-2xl bg-white shadow-sm border border-gray-100 active:scale-95 transition-transform hover:shadow-md"
             >
               <div
-                className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl"
+                className="w-14 h-14 md:w-16 md:h-16 rounded-2xl flex items-center justify-center text-2xl md:text-3xl"
                 style={{ backgroundColor: cat.color }}
               >
                 {cat.emoji}

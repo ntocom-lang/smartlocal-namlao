@@ -11,8 +11,8 @@ import {
   RefreshCw, ClipboardList, Clock, Loader2,
   CheckCircle2, XCircle, AlertCircle, ChevronRight, ChevronLeft,
   Filter, Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical,
-  X, FileText, AlignLeft, Image, Calendar, Hash, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera,
-  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, BellOff,
+  X, FileText, AlignLeft, Image, Calendar, Hash, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Luggage,
+  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, BellOff, ExternalLink,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
@@ -835,6 +835,12 @@ function UserManager({ tenant, currentUserRole }) {
   const [editingNameValue, setEditingNameValue] = useState('')
   const [editingPositionId, setEditingPositionId] = useState(null)
   const [editingPositionValue, setEditingPositionValue] = useState('')
+  const [editingAddressId, setEditingAddressId] = useState(null)
+  const [editingAddressValue, setEditingAddressValue] = useState('')
+  const [editingRoleId, setEditingRoleId] = useState(null)
+  const [editingRoleValue, setEditingRoleValue] = useState('')
+  const [viewingUser, setViewingUser] = useState(null)
+  const [sortConfig, setSortConfig] = useState({ key: 'created_at', direction: 'desc' })
 
   const [search, setSearch] = useState('')
   const [filterRole, setFilterRole] = useState('')
@@ -892,11 +898,40 @@ function UserManager({ tenant, currentUserRole }) {
     setSaving(null)
   }
 
+  const handleSort = (key) => {
+    setSortConfig(current => ({
+      key,
+      direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc'
+    }))
+  }
+
   const filtered = users.filter((u) => {
     const q = search.toLowerCase()
     const matchSearch = !q || (u.full_name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q) || (u.phone || '').includes(q)
     const matchRole = !filterRole || u.role === filterRole
     return matchSearch && matchRole
+  }).sort((a, b) => {
+    const { key, direction } = sortConfig;
+    let aVal = '';
+    let bVal = '';
+
+    if (key === 'job_title') {
+      const aRoleLabel = (ROLE_LABELS[a.role] ?? ROLE_LABELS.citizen).label;
+      const bRoleLabel = (ROLE_LABELS[b.role] ?? ROLE_LABELS.citizen).label;
+      aVal = aRoleLabel + (a.job_title || '');
+      bVal = bRoleLabel + (b.job_title || '');
+    } else {
+      aVal = a[key] || '';
+      bVal = b[key] || '';
+    }
+    
+    // Sort logically for text, case insensitive
+    if (typeof aVal === 'string') aVal = aVal.toLowerCase();
+    if (typeof bVal === 'string') bVal = bVal.toLowerCase();
+
+    if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+    if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+    return 0;
   })
 
   return (
@@ -960,7 +995,8 @@ function UserManager({ tenant, currentUserRole }) {
       ) : filtered.length === 0 ? (
         <p className="text-center py-10 text-gray-400 text-sm">{users.length === 0 ? 'ยังไม่มีผู้ใช้งาน' : 'ไม่พบผู้ใช้ที่ค้นหา'}</p>
       ) : (
-        <div className="divide-y divide-gray-50">
+        <>
+        <div className="md:hidden divide-y divide-gray-50">
           {filtered.map((u, i) => {
             const rs = ROLE_LABELS[u.role] ?? ROLE_LABELS.citizen
             const isSelf = false
@@ -987,14 +1023,29 @@ function UserManager({ tenant, currentUserRole }) {
                     </div>
                     <p className="text-xs text-gray-400 break-all mt-0.5">{u.email || u.phone || '—'}</p>
                     {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && u.role !== 'superadmin' && (
-                      <div className="flex items-center gap-1 mt-0.5">
-                        <p className="text-xs text-gray-400">{u.job_title || <span className="italic text-gray-300">ยังไม่ระบุตำแหน่งงาน</span>}</p>
-                        <button
-                          onClick={() => { setEditingPositionId(u.id); setEditingPositionValue(u.job_title || '') }}
-                          className="text-gray-300 hover:text-gray-500 transition-colors"
-                        >
-                          <Pencil size={11} />
-                        </button>
+                      <div className="flex flex-col gap-0.5 mt-0.5">
+                        <div className="flex items-center gap-1">
+                          <p className="text-xs text-gray-400">
+                            {u.job_title || <span className="italic text-gray-300">ยังไม่ระบุตำแหน่งงาน</span>}
+                          </p>
+                          <button
+                            onClick={() => { setEditingPositionId(u.id); setEditingPositionValue(u.job_title || '') }}
+                            className="text-gray-300 hover:text-gray-500 transition-colors"
+                          >
+                            <Pencil size={11} />
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <p className="text-xs text-gray-400">
+                            {u.address || <span className="italic text-gray-300">ยังไม่ระบุที่อยู่</span>}
+                          </p>
+                          <button
+                            onClick={() => { setEditingAddressId(u.id); setEditingAddressValue(u.address || '') }}
+                            className="text-gray-300 hover:text-gray-500 transition-colors"
+                          >
+                            <Pencil size={11} />
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1005,24 +1056,39 @@ function UserManager({ tenant, currentUserRole }) {
                 </div>
                 {/* แถว 2: dropdown เปลี่ยน role (เฉพาะ admin/superadmin) */}
                 {u.role !== 'superadmin' && (currentUserRole === 'superadmin' || currentUserRole === 'admin') && (
-                  <div className="flex items-center gap-2 pl-12 justify-end">
-                    <select
-                      value={u.role}
-                      disabled={saving === u.id}
-                      onChange={(e) => updateRole(u.id, e.target.value, u.municipality_id)}
-                      className="text-xs border border-gray-200 rounded-xl px-2 py-1.5 text-gray-700 focus:outline-none bg-gray-50"
-                    >
-                      <option value="citizen">สมาชิก</option>
-                      <option value="viewer">ผู้บริหาร</option>
-                      <option value="council">สภาเทศบาล</option>
-                      <option value="officer">เจ้าหน้าที่</option>
-                      <option value="technician">ช่าง</option>
-                      <option value="admin">แอดมิน</option>
-                      {currentUserRole === 'superadmin' && <option value="superadmin">Super Admin</option>}
-                    </select>
-                    {saving === u.id && <Loader2 size={14} className="animate-spin text-gray-400 shrink-0" />}
+                  <div className="flex items-center gap-2 pl-[68px] mt-1 justify-start">
+                    {editingRoleId === u.id ? (
+                      <>
+                        <select
+                          value={editingRoleValue}
+                          disabled={saving === u.id}
+                          onChange={(e) => setEditingRoleValue(e.target.value)}
+                          className="text-xs border border-gray-200 rounded-xl px-2 py-1.5 text-gray-700 focus:outline-none bg-gray-50"
+                        >
+                          <option value="citizen">สมาชิก</option>
+                          <option value="viewer">ผู้บริหาร</option>
+                          <option value="council">สภาเทศบาล</option>
+                          <option value="officer">เจ้าหน้าที่</option>
+                          <option value="technician">ช่าง</option>
+                          <option value="admin">แอดมิน</option>
+                          {currentUserRole === 'superadmin' && <option value="superadmin">Super Admin</option>}
+                        </select>
+                        <button onClick={() => updateRole(u.id, editingRoleValue, u.municipality_id)} disabled={saving === u.id} className="text-xs text-blue-600 font-medium px-2">ยืนยัน</button>
+                        <button onClick={() => setEditingRoleId(null)} className="text-xs text-gray-400">ยกเลิก</button>
+                        {saving === u.id && <Loader2 size={14} className="animate-spin text-gray-400 shrink-0" />}
+                      </>
+                    ) : (
+                      <button onClick={() => { setEditingRoleId(u.id); setEditingRoleValue(u.role) }} className="text-xs text-gray-500 hover:text-gray-700 font-medium px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors whitespace-nowrap">
+                        เปลี่ยนบทบาท
+                      </button>
+                    )}
                   </div>
                 )}
+                <div className="flex items-center gap-2 pl-[68px] mt-1">
+                  <button onClick={() => setViewingUser(u)} className="text-[11px] text-blue-500 hover:text-blue-700 font-medium px-2 py-1 bg-blue-50 hover:bg-blue-100 rounded transition-colors">
+                    ดูรายละเอียด
+                  </button>
+                </div>
                 {editingNameId === u.id && (
                   <div className="flex items-center gap-2 pl-12">
                     <input
@@ -1042,6 +1108,31 @@ function UserManager({ tenant, currentUserRole }) {
                     </button>
                     <button
                       onClick={() => setEditingNameId(null)}
+                      className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5"
+                    >
+                      ยกเลิก
+                    </button>
+                  </div>
+                )}
+                {editingAddressId === u.id && (
+                  <div className="flex items-center gap-2 pl-12">
+                    <input
+                      autoFocus
+                      value={editingAddressValue}
+                      onChange={(e) => setEditingAddressValue(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') updateAddress(u.id); if (e.key === 'Escape') setEditingAddressId(null) }}
+                      placeholder="ที่อยู่"
+                      className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-blue-400 bg-white text-gray-900"
+                    />
+                    <button
+                      onClick={() => updateAddress(u.id)}
+                      disabled={saving === u.id}
+                      className="text-xs bg-blue-500 text-white px-3 py-1.5 rounded-lg font-medium disabled:opacity-50"
+                    >
+                      บันทึก
+                    </button>
+                    <button
+                      onClick={() => setEditingAddressId(null)}
                       className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5"
                     >
                       ยกเลิก
@@ -1076,6 +1167,227 @@ function UserManager({ tenant, currentUserRole }) {
               </div>
             )
           })}
+        </div>
+        
+        <div className="hidden md:block overflow-x-auto">
+          <table className="w-full text-sm text-left text-gray-600">
+            <thead className="text-xs text-gray-500 uppercase bg-gray-50/80 border-b border-gray-100">
+              <tr>
+                <th className="px-4 py-3 font-medium">ลำดับ</th>
+                <th className="px-4 py-3 font-medium cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('full_name')}>
+                  <div className="flex items-center gap-1">ชื่อ-นามสกุล {sortConfig.key === 'full_name' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
+                </th>
+                <th className="px-4 py-3 font-medium min-w-[150px] cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('address')}>
+                  <div className="flex items-center gap-1">ที่อยู่ {sortConfig.key === 'address' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
+                </th>
+                <th className="px-4 py-3 font-medium cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('job_title')}>
+                  <div className="flex items-center gap-1">ตำแหน่ง {sortConfig.key === 'job_title' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
+                </th>
+                <th className="px-4 py-3 font-medium cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('created_at')}>
+                  <div className="flex items-center gap-1">วันที่สมัคร {sortConfig.key === 'created_at' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
+                </th>
+                <th className="px-4 py-3 font-medium min-w-[200px]">จัดการ</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filtered.map((u, i) => {
+                const rs = ROLE_LABELS[u.role] ?? ROLE_LABELS.citizen
+                return (
+                  <tr key={u.id} className="hover:bg-gray-50/50 transition-colors">
+                    <td className="px-4 py-3 text-xs text-gray-400 font-mono">{i + 1}</td>
+                    <td className="px-4 py-3 min-w-[200px]">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
+                             style={{ backgroundColor: rs.color }}>
+                          {(u.full_name || u.email || '?')[0].toUpperCase()}
+                        </div>
+                        <div className="flex flex-col min-w-0">
+                          {editingNameId === u.id ? (
+                            <div className="flex items-center gap-2">
+                              <input
+                                autoFocus
+                                value={editingNameValue}
+                                onChange={(e) => setEditingNameValue(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') updateName(u.id); if (e.key === 'Escape') setEditingNameId(null) }}
+                                placeholder="ชื่อ-นามสกุล"
+                                className="flex-1 text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
+                              />
+                              <button onClick={() => updateName(u.id)} disabled={saving === u.id} className="text-xs text-blue-600 font-medium">บันทึก</button>
+                              <button onClick={() => setEditingNameId(null)} className="text-xs text-gray-400">ยกเลิก</button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-medium text-gray-800">{u.full_name || '—'}</span>
+                              {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && u.role !== 'superadmin' && (
+                                <button onClick={() => { setEditingNameId(u.id); setEditingNameValue(u.full_name || '') }} className="text-gray-300 hover:text-gray-500">
+                                  <Pencil size={12} />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                          <span className="text-xs text-gray-400 truncate">{u.email || u.phone || '—'}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {editingAddressId === u.id ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            autoFocus
+                            value={editingAddressValue}
+                            onChange={(e) => setEditingAddressValue(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') updateAddress(u.id); if (e.key === 'Escape') setEditingAddressId(null) }}
+                            placeholder="ที่อยู่"
+                            className="flex-1 text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
+                          />
+                          <button onClick={() => updateAddress(u.id)} disabled={saving === u.id} className="text-xs text-blue-600 font-medium">บันทึก</button>
+                          <button onClick={() => setEditingAddressId(null)} className="text-xs text-gray-400">ยกเลิก</button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs">{u.address || <span className="italic text-gray-300">ยังไม่ระบุ</span>}</span>
+                          {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && u.role !== 'superadmin' && (
+                            <button onClick={() => { setEditingAddressId(u.id); setEditingAddressValue(u.address || '') }} className="text-gray-300 hover:text-gray-500">
+                              <Pencil size={11} />
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 min-w-[180px]">
+                      <div className="flex flex-col items-start gap-1">
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: rs.bg, color: rs.color }}>
+                          {rs.label}
+                        </span>
+                        {editingPositionId === u.id ? (
+                          <div className="flex items-center gap-2 mt-1">
+                            <input
+                              autoFocus
+                              value={editingPositionValue}
+                              onChange={(e) => setEditingPositionValue(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === 'Enter') updatePosition(u.id); if (e.key === 'Escape') setEditingPositionId(null) }}
+                              placeholder="ตำแหน่งงาน"
+                              className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
+                            />
+                            <button onClick={() => updatePosition(u.id)} disabled={saving === u.id} className="text-xs text-blue-600 font-medium">บันทึก</button>
+                            <button onClick={() => setEditingPositionId(null)} className="text-xs text-gray-400">ยกเลิก</button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                            <span>{u.job_title || <span className="italic text-gray-300">ไม่มีตำแหน่ง</span>}</span>
+                            {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && u.role !== 'superadmin' && (
+                              <button onClick={() => { setEditingPositionId(u.id); setEditingPositionValue(u.job_title || '') }} className="text-gray-300 hover:text-gray-500">
+                                <Pencil size={11} />
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-400">
+                      {u.created_at ? new Date(u.created_at).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button onClick={() => setViewingUser(u)} className="text-xs text-blue-500 hover:text-blue-700 font-medium px-2 py-1 bg-blue-50 hover:bg-blue-100 rounded transition-colors whitespace-nowrap">
+                          ดูรายละเอียด
+                        </button>
+                        {u.role !== 'superadmin' && (currentUserRole === 'superadmin' || currentUserRole === 'admin') && (
+                          <div className="flex items-center gap-2">
+                            {editingRoleId === u.id ? (
+                              <>
+                                <select
+                                  value={editingRoleValue}
+                                  disabled={saving === u.id}
+                                  onChange={(e) => setEditingRoleValue(e.target.value)}
+                                  className="text-xs border border-gray-200 rounded px-2 py-1 text-gray-700 focus:outline-none bg-white cursor-pointer"
+                                >
+                                  <option value="citizen">สมาชิก</option>
+                                  <option value="viewer">ผู้บริหาร</option>
+                                  <option value="council">สภาเทศบาล</option>
+                                  <option value="officer">เจ้าหน้าที่</option>
+                                  <option value="technician">ช่าง</option>
+                                  <option value="admin">แอดมิน</option>
+                                  {currentUserRole === 'superadmin' && <option value="superadmin">Super Admin</option>}
+                                </select>
+                                <button onClick={() => updateRole(u.id, editingRoleValue, u.municipality_id)} disabled={saving === u.id} className="text-xs text-blue-600 font-medium">ยืนยัน</button>
+                                <button onClick={() => setEditingRoleId(null)} className="text-xs text-gray-400">ยกเลิก</button>
+                                {saving === u.id && <Loader2 size={12} className="animate-spin text-gray-400" />}
+                              </>
+                            ) : (
+                              <button onClick={() => { setEditingRoleId(u.id); setEditingRoleValue(u.role) }} className="text-xs text-gray-500 hover:text-gray-700 font-medium px-2 py-1 bg-gray-50 hover:bg-gray-100 rounded transition-colors whitespace-nowrap">
+                                เปลี่ยนบทบาท
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </>
+      )}
+
+      {/* View User Details Modal */}
+      {viewingUser && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4" onClick={() => setViewingUser(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-gray-100">
+              <h3 className="font-semibold text-gray-800">รายละเอียดผู้ใช้งาน</h3>
+              <button onClick={() => setViewingUser(null)} className="text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100 transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-5 overflow-y-auto">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold text-white shrink-0"
+                     style={{ backgroundColor: (ROLE_LABELS[viewingUser.role] || ROLE_LABELS.citizen).color }}>
+                  {(viewingUser.full_name || viewingUser.email || '?')[0].toUpperCase()}
+                </div>
+                <div>
+                  <h4 className="text-lg font-semibold text-gray-900">{viewingUser.full_name || '—'}</h4>
+                  <span className="text-sm font-medium px-2.5 py-0.5 rounded-full mt-1 inline-block"
+                        style={{ backgroundColor: (ROLE_LABELS[viewingUser.role] || ROLE_LABELS.citizen).bg, color: (ROLE_LABELS[viewingUser.role] || ROLE_LABELS.citizen).color }}>
+                    {(ROLE_LABELS[viewingUser.role] || ROLE_LABELS.citizen).label}
+                  </span>
+                </div>
+              </div>
+              
+              <div className="space-y-4">
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">ตำแหน่งงาน</p>
+                  <p className="text-sm text-gray-800 bg-gray-50 px-3 py-2 rounded-lg">{viewingUser.job_title || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">อีเมล</p>
+                  <p className="text-sm text-gray-800 bg-gray-50 px-3 py-2 rounded-lg break-all">{viewingUser.email || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">เบอร์โทรศัพท์</p>
+                  <p className="text-sm text-gray-800 bg-gray-50 px-3 py-2 rounded-lg">{viewingUser.phone || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">ที่อยู่</p>
+                  <p className="text-sm text-gray-800 bg-gray-50 px-3 py-2 rounded-lg whitespace-pre-wrap">{viewingUser.address || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">วันที่สมัคร</p>
+                  <p className="text-sm text-gray-800 bg-gray-50 px-3 py-2 rounded-lg">
+                    {viewingUser.created_at ? new Date(viewingUser.created_at).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="p-4 border-t border-gray-100 flex justify-end">
+              <button onClick={() => setViewingUser(null)} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors text-sm">
+                ปิด
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -3829,7 +4141,118 @@ export default function AdminDashboard() {
 
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-6 pb-24 md:pb-6 space-y-6">
+    <div className="md:flex md:min-h-screen">
+
+      {/* ─── Desktop Sidebar ─── */}
+      <aside className="hidden md:flex flex-col w-56 shrink-0 bg-white border-r border-gray-200 sticky top-0 self-start h-screen overflow-y-auto">
+        {/* Tenant name */}
+        <div className="px-4 py-5 border-b border-gray-100 shrink-0">
+          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">แผงควบคุม</p>
+          <p className="font-bold text-gray-800 text-sm leading-snug">{tenant?.name}</p>
+        </div>
+
+        {/* Nav items */}
+        <nav className="flex-1 px-2 py-3 overflow-y-auto">
+          {[
+            {
+              group: null,
+              items: [
+                { key: 'home', label: 'หน้าแรก', Icon: Home, color: '#64748b', show: true, isLink: true },
+              ],
+            },
+            {
+              group: 'งานประจำวัน',
+              items: [
+                { key: 'complaints', label: 'คำร้อง',   Icon: ClipboardList, color: 'var(--color-primary)', show: currentUserRole !== 'council' },
+                { key: 'events',     label: 'กิจกรรม', Icon: CalendarDays,  color: '#10b981', show: true },
+              ],
+            },
+            {
+              group: 'วิเคราะห์',
+              items: [
+                { key: 'report', label: 'รายงาน', Icon: TrendingUp, color: '#10b981', show: true },
+              ],
+            },
+            {
+              group: 'จัดการเนื้อหา',
+              items: [
+                { key: 'staff',   label: 'รูปผู้บริหาร',   Icon: UserCircle2, color: '#7c3aed', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
+                { key: 'tourism', label: 'สถานที่แนะนำ', Icon: Luggage,     color: '#d97706', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
+              ],
+            },
+            {
+              group: 'ตั้งค่าระบบ',
+              items: [
+                { key: 'categories',  label: 'ประเภทคำร้อง', Icon: Tag,      color: '#d97706', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
+                { key: 'assignments', label: 'ผู้รับผิดชอบ', Icon: Wrench,   color: '#d97706', show: currentUserRole !== 'council' },
+                { key: 'emergency',   label: 'สายด่วน',       Icon: Phone,    color: '#ef4444', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
+                { key: 'locations',   label: 'สถานที่เกิดเหตุ', Icon: MapPin, color: '#0891b2', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
+                { key: 'users',       label: 'จัดการผู้ใช้', Icon: Shield,   color: '#7c3aed', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+              ],
+            },
+            {
+              group: 'ทรัพยากร',
+              items: [
+                { key: 'manual', label: 'คู่มือผู้ดูแล', Icon: BookOpen, color: '#059669', show: true, isExternal: true, href: '/manual-admin.html' },
+              ],
+            },
+          ].map(({ group, items }) => {
+            const visible = items.filter(i => i.show)
+            if (visible.length === 0) return null
+            return (
+              <div key={group ?? '_top'} className="mb-3">
+                {group && (
+                  <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-3 pt-1 pb-1.5">
+                    {group}
+                  </p>
+                )}
+                <div className="space-y-0.5">
+                  {visible.map(({ key, label, Icon, color, isLink, isExternal, href }) => {
+                    const isActive = activePage === key
+                    const baseCls = 'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors'
+                    if (isExternal) return (
+                      <a key={key} href={href} target="_blank" rel="noopener noreferrer"
+                        className={`${baseCls} font-medium text-gray-400 hover:bg-gray-50 hover:text-gray-600`}>
+                        <Icon size={17} />
+                        <span className="flex-1 text-left">{label}</span>
+                        <ExternalLink size={12} className="text-gray-300" />
+                      </a>
+                    )
+                    if (isLink) return (
+                      <button key={key} onClick={() => navigate('/')}
+                        className={`${baseCls} font-medium text-gray-400 hover:bg-gray-50 hover:text-gray-600`}>
+                        <Icon size={17} />
+                        {label}
+                      </button>
+                    )
+                    return (
+                      <button key={key} onClick={() => setActivePage(key)}
+                        className={`${baseCls} ${isActive ? 'font-semibold bg-gray-50' : 'font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700'}`}
+                        style={isActive ? { color } : {}}>
+                        <Icon size={17} style={isActive ? { color } : { color: '#9ca3af' }} />
+                        <span className="flex-1 text-left">{label}</span>
+                        {isActive && <span className="w-1.5 h-5 rounded-full shrink-0" style={{ backgroundColor: color }} />}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </nav>
+
+        {/* Logout */}
+        <div className="px-2 py-3 border-t border-gray-100 shrink-0">
+          <button onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors">
+            <LogOut size={17} />
+            ออกจากระบบ
+          </button>
+        </div>
+      </aside>
+
+      {/* ─── Main content ─── */}
+      <div className="flex-1 min-w-0 px-4 py-4 pb-24 md:py-6 md:pb-8 md:px-8 space-y-4 md:space-y-6">
       {/* Detail modal */}
       {selectedComplaint && (
         <ComplaintDetailModal
@@ -3848,7 +4271,7 @@ export default function AdminDashboard() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-800">แผงควบคุมเจ้าหน้าที่</h1>
-          <p className="text-sm text-gray-400">{tenant?.name}</p>
+          <p className="text-sm text-gray-400 md:hidden">{tenant?.name}</p>
         </div>
         <div className="flex items-center gap-2">
           {activePage === 'complaints' && (
@@ -3859,7 +4282,7 @@ export default function AdminDashboard() {
             </button>
           )}
           <button onClick={handleLogout}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border border-red-200 text-red-500 bg-white hover:bg-red-50 transition-colors">
+            className="md:hidden flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border border-red-200 text-red-500 bg-white hover:bg-red-50 transition-colors">
             <LogOut size={15} />
             ออกจากระบบ
           </button>
@@ -3897,8 +4320,8 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Tab navigation — desktop only */}
-      <div className="hidden md:flex gap-2">
+      {/* Tab navigation — replaced by sidebar on desktop */}
+      <div className="hidden">
         {currentUserRole === 'viewer' && (
           <button onClick={() => setActivePage('report')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'report' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
@@ -4460,6 +4883,7 @@ export default function AdminDashboard() {
       </div>
       </>
       )}
+      </div>
     </div>
   )
 }

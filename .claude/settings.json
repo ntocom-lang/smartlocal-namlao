@@ -29,7 +29,8 @@
       "Bash(node -e \"const fs=require\\('fs'\\); const html=fs.readFileSync\\('public/manual-citizen.html','utf8'\\); const styleCount=\\(html.match\\(/<style/g\\)||[]\\).length; const closeStyleCount=\\(html.match\\(/<\\\\/style>/g\\)||[]\\).length; console.log\\('style tags:', styleCount, closeStyleCount\\); console.log\\('Total size:', html.length, 'chars'\\);\")",
       "Bash(node -e \"const fs=require\\('fs'\\); const html=fs.readFileSync\\('public/manual-citizen.html','utf8'\\); const ids=html.match\\(/id=\\\\\"\\(step\\\\d|faq\\)\\\\\"/g\\); console.log\\('IDs found:', ids\\); const hrefs=html.match\\(/href=\\\\\"#\\(step\\\\d|faq\\)\\\\\"/g\\); console.log\\('Hrefs found:', hrefs\\);\")",
       "Bash(git restore *)",
-      "Bash(findstr -i \"supabase\\\\|notification\\\\|push\\\\|tag\")"
+      "Bash(findstr -i \"supabase\\\\|notification\\\\|push\\\\|tag\")",
+      "Bash(npx esbuild *)"
     ]
   }
 }

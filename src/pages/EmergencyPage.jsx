@@ -32,10 +32,10 @@ export default function EmergencyPage() {
   }, [tenant?.id])
 
   return (
-    <div className="max-w-lg mx-auto pb-28">
+    <div className="max-w-4xl mx-auto pb-28 md:pb-8">
 
-      {/* Header */}
-      <div className="sticky top-0 z-30 px-4 pt-3 pb-2 bg-gray-50/95 backdrop-blur-md">
+      {/* Mobile header */}
+      <div className="md:hidden sticky top-0 z-30 px-4 pt-3 pb-2 bg-gray-50/95 backdrop-blur-md">
         <div className="flex items-center gap-2">
           <button
             onClick={() => navigate(-1)}
@@ -46,7 +46,19 @@ export default function EmergencyPage() {
         </div>
       </div>
 
-      <div className="px-4 pt-1 space-y-5">
+      {/* PC header */}
+      <div className="hidden md:flex items-center gap-3 px-4 pt-8 pb-5 border-b border-gray-100 mb-2">
+        <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-2xl shrink-0"
+             style={{ background: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)' }}>
+          📞
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">สายด่วนฉุกเฉิน</h1>
+          <p className="text-sm text-gray-500 mt-0.5">เบอร์โทรศัพท์ฉุกเฉิน 24 ชั่วโมง</p>
+        </div>
+      </div>
+
+      <div className="px-4 pt-1 md:pt-4 space-y-5">
 
         {/* Hero */}
         <div className="rounded-2xl p-5 flex items-center gap-4"
@@ -61,7 +73,7 @@ export default function EmergencyPage() {
         </div>
 
         {/* Grid */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
           {contacts.map(({ id, label, number, emoji, color, bg }) => (
             <a key={id} href={`tel:${number}`}
                className="flex flex-col items-center gap-2.5 p-4 rounded-2xl bg-white border border-gray-100 shadow-sm active:scale-95 transition-transform text-center">

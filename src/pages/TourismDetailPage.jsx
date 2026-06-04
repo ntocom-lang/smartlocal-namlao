@@ -32,7 +32,7 @@ function PhotoCarousel({ images, name, category, onBack, onShare }) {
 
   if (images.length === 0) {
     return (
-      <div className="relative h-72 bg-gray-100 flex items-center justify-center text-6xl">
+      <div className="relative h-72 md:h-[420px] bg-gray-100 flex items-center justify-center text-6xl rounded-2xl overflow-hidden">
         🏛️
         <button onClick={onBack}
           className="absolute top-4 left-4 w-9 h-9 rounded-full bg-black/20 flex items-center justify-center">
@@ -44,7 +44,7 @@ function PhotoCarousel({ images, name, category, onBack, onShare }) {
 
   return (
     <>
-      <div className="relative h-72">
+      <div className="relative h-72 md:h-[420px] md:rounded-2xl md:overflow-hidden">
         {/* Slides */}
         <div ref={scrollRef} onScroll={onScroll}
              className="flex h-full overflow-x-scroll snap-x snap-mandatory"
@@ -199,59 +199,82 @@ export default function TourismDetailPage() {
 
   const allImages = [place.image_url, ...(place.gallery ?? [])].filter(Boolean)
 
+  const placeContent = (
+    <div className="space-y-4">
+      <h1 className="text-2xl font-bold text-gray-900 leading-tight">{place.name}</h1>
+
+      {place.description && (
+        <div>
+          <h2 className="text-sm font-semibold text-gray-500 mb-2">เกี่ยวกับสถานที่</h2>
+          <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-line">{place.description}</p>
+        </div>
+      )}
+
+      {(place.phone || place.address) && (
+        <div className="bg-gray-50 rounded-2xl divide-y divide-gray-100">
+          {place.phone && (
+            <a href={`tel:${place.phone}`}
+               className="flex items-center gap-3 px-4 py-3 active:bg-gray-100 rounded-t-2xl transition-colors">
+              <Phone size={16} className="text-green-500 shrink-0" />
+              <span className="text-sm text-gray-700 font-medium">{place.phone}</span>
+            </a>
+          )}
+          {place.address && (
+            <div className="flex items-start gap-3 px-4 py-3">
+              <MapPin size={16} className="text-red-500 shrink-0 mt-0.5" />
+              <p className="text-sm text-gray-700 leading-relaxed">{place.address}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {place.maps_url && (
+        <a href={place.maps_url} target="_blank" rel="noopener noreferrer"
+           className="flex items-center justify-center gap-2 w-full py-3.5 rounded-2xl font-semibold text-sm text-white active:scale-[0.98] transition-transform"
+           style={{ backgroundColor: '#10b981' }}>
+          <MapPin size={16} />
+          เปิดใน Google Maps
+          <ExternalLink size={14} className="opacity-70" />
+        </a>
+      )}
+    </div>
+  )
+
   return (
-    <div className="max-w-lg mx-auto pb-28">
+    <div className="max-w-5xl mx-auto pb-28 md:pb-8">
 
-      {/* Photo carousel */}
-      <PhotoCarousel
-        images={allImages}
-        name={place.name}
-        category={place.category}
-        onBack={() => navigate(-1)}
-        onShare={handleShare}
-      />
-
-      {/* Content */}
-      <div className="px-5 pt-5 space-y-4">
-
-        <h1 className="text-2xl font-bold text-gray-900 leading-tight">{place.name}</h1>
-
-        {place.description && (
-          <div>
-            <h2 className="text-sm font-semibold text-gray-500 mb-2">เกี่ยวกับสถานที่</h2>
-            <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-line">{place.description}</p>
-          </div>
-        )}
-
-        {(place.phone || place.address) && (
-          <div className="bg-gray-50 rounded-2xl divide-y divide-gray-100">
-            {place.phone && (
-              <a href={`tel:${place.phone}`}
-                 className="flex items-center gap-3 px-4 py-3 active:bg-gray-100 rounded-t-2xl transition-colors">
-                <Phone size={16} className="text-green-500 shrink-0" />
-                <span className="text-sm text-gray-700 font-medium">{place.phone}</span>
-              </a>
-            )}
-            {place.address && (
-              <div className="flex items-start gap-3 px-4 py-3">
-                <MapPin size={16} className="text-red-500 shrink-0 mt-0.5" />
-                <p className="text-sm text-gray-700 leading-relaxed">{place.address}</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {place.maps_url && (
-          <a href={place.maps_url} target="_blank" rel="noopener noreferrer"
-             className="flex items-center justify-center gap-2 w-full py-3.5 rounded-2xl font-semibold text-sm text-white active:scale-[0.98] transition-transform"
-             style={{ backgroundColor: '#10b981' }}>
-            <MapPin size={16} />
-            เปิดใน Google Maps
-            <ExternalLink size={14} className="opacity-70" />
-          </a>
-        )}
-
+      {/* Mobile layout — stacked */}
+      <div className="md:hidden">
+        <PhotoCarousel
+          images={allImages}
+          name={place.name}
+          category={place.category}
+          onBack={() => navigate(-1)}
+          onShare={handleShare}
+        />
+        <div className="px-5 pt-5">
+          {placeContent}
+        </div>
       </div>
+
+      {/* PC layout — side by side */}
+      <div className="hidden md:grid md:grid-cols-[1.1fr_1fr] md:gap-8 md:px-6 md:py-8">
+        {/* Left: photo gallery */}
+        <div className="sticky top-24 self-start">
+          <PhotoCarousel
+            images={allImages}
+            name={place.name}
+            category={place.category}
+            onBack={() => navigate(-1)}
+            onShare={handleShare}
+          />
+        </div>
+        {/* Right: info */}
+        <div>
+          {placeContent}
+        </div>
+      </div>
+
     </div>
   )
 }

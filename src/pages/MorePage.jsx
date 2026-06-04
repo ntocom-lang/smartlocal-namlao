@@ -307,10 +307,10 @@ export default function MorePage() {
   const hasSocial = tenant?.website_url || tenant?.facebook_url || tenant?.line_oa_url
 
   return (
-    <div className="max-w-lg mx-auto pb-28">
+    <div className="max-w-4xl mx-auto pb-28 md:pb-8">
 
-      {/* Page header */}
-      <div className="sticky top-0 z-30 px-4 pt-3 pb-2 bg-gray-50/95 backdrop-blur-md">
+      {/* Mobile header */}
+      <div className="md:hidden sticky top-0 z-30 px-4 pt-3 pb-2 bg-gray-50/95 backdrop-blur-md">
         <div className="flex items-center gap-2">
           <button
             onClick={() => navigate(-1)}
@@ -321,7 +321,19 @@ export default function MorePage() {
         </div>
       </div>
 
-      <div className="px-4 pt-2 space-y-5">
+      {/* PC header */}
+      <div className="hidden md:flex items-center gap-3 px-4 pt-8 pb-5 border-b border-gray-100 mb-2">
+        <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-2xl shrink-0"
+             style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)' }}>
+          🗂️
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">เมนูทั้งหมด</h1>
+          <p className="text-sm text-gray-500 mt-0.5">บริการและการตั้งค่าทั้งหมด</p>
+        </div>
+      </div>
+
+      <div className="px-4 pt-2 md:pt-4 md:max-w-2xl md:mx-auto space-y-5">
 
         {/* ─── User card ─── */}
         {session ? (

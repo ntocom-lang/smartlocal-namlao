@@ -292,7 +292,7 @@ export default function CitizenForm() {
     : 'ปักหมุดจากแผนที่'
 
   return (
-    <div className="max-w-lg mx-auto min-h-screen bg-gray-50">
+    <div className="max-w-3xl mx-auto min-h-screen bg-gray-50">
       {showMap && (
         <MapPicker
           initialPos={geo.lat ? { lat: geo.lat, lng: geo.lng } : null}
@@ -340,8 +340,8 @@ export default function CitizenForm() {
           </div>
         </div>
       )}
-      {/* Top bar */}
-      <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-100 shadow-sm">
+      {/* Mobile top bar */}
+      <div className="md:hidden sticky top-0 z-10 flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-100 shadow-sm">
         <button onClick={() => navigate(-1)} className="p-1.5 rounded-xl hover:bg-gray-100 transition-colors">
           <ArrowLeft size={20} className="text-gray-600" />
         </button>
@@ -351,7 +351,19 @@ export default function CitizenForm() {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="px-4 pt-5 pb-32 space-y-4">
+      {/* PC header */}
+      <div className="hidden md:flex items-center gap-3 px-6 pt-8 pb-5 border-b border-gray-200 mb-2">
+        <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-2xl shrink-0"
+             style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
+          📝
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">ยื่นคำร้องออนไลน์</h1>
+          <p className="text-sm text-gray-500 mt-0.5">{tenant?.name}</p>
+        </div>
+      </div>
+
+      <form onSubmit={handleSubmit} className="px-4 md:px-6 pt-5 pb-32 md:pb-10 space-y-4">
         {/* Category — แสดงเป็น badge หัวข้อ */}
         {form.category && (
           <div className="flex items-center gap-2 px-1">
