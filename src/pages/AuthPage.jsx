@@ -187,7 +187,7 @@ export default function AuthPage() {
           {mode === 'login' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก'}
         </h1>
         <p className="text-sm text-gray-400 text-center mb-6">
-          {mode === 'login' ? 'เข้าสู่ระบบเพื่อยื่นคำร้องออนไลน์' : 'สร้างบัญชีเพื่อใช้บริการ E-Service'}
+          {mode === 'login' ? 'เข้าสู่ระบบน้ำเลา One Data' : 'สร้างบัญชีเพื่อใช้บริการ'}
         </p>
 
         {/* Tab */}

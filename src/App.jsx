@@ -12,6 +12,9 @@ import InAppBrowserGate from './components/InAppBrowserGate'
 import HomePage from './pages/HomePage'
 import CitizenForm from './pages/CitizenForm'
 import ComplaintCategory from './pages/ComplaintCategory'
+import OneDataLanding from './pages/OneDataLanding'
+import BusinessRegisterPage from './pages/BusinessRegisterPage'
+import MarketPage from './pages/MarketPage'
 import AdminLogin from './pages/AdminLogin'
 import AuthPage from './pages/AuthPage'
 import TechnicianDashboard from './pages/TechnicianDashboard'
@@ -217,7 +220,14 @@ function AppShell() {
         <main className="flex-1">
           <Routes>
           <Route path="/" element={<HomeOrTechRedirect />} />
-          <Route path="/complaint" element={<ComplaintCategory />} />
+          <Route path="/complaint" element={<OneDataLanding />} />
+          <Route path="/complaint-legacy" element={<ComplaintCategory />} />
+          <Route path="/business-register" element={
+            <RequireAuth>
+              <BusinessRegisterPage />
+            </RequireAuth>
+          } />
+          <Route path="/market" element={<MarketPage />} />
           <Route path="/auth" element={<AuthPage />} />
           <Route path="/profile" element={
             <RequireAuth>

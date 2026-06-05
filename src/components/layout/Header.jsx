@@ -59,9 +59,9 @@ export default function Header() {
       <div className="hidden md:flex text-white text-xs py-1 px-4 justify-end items-center gap-3"
            style={{ backgroundColor: 'var(--color-primary-dark)' }}>
         <Phone size={11} />
-        <span>E-Service</span>
+        <span className="font-semibold tracking-wide">น้ำเลา One Data</span>
         <span className="opacity-40">|</span>
-        <span>ระบบบริการออนไลน์ ตลอด 24 ชม.</span>
+        <span>ระบบจัดการข้อมูลเพื่อการพัฒนาตำบลน้ำเลา</span>
         <span className="opacity-40">|</span>
         <a href="/manual-citizen.html" target="_blank" rel="noopener noreferrer"
           className="opacity-80 hover:opacity-100 transition-opacity underline underline-offset-2">
@@ -88,10 +88,10 @@ export default function Header() {
 
           {/* Name block */}
           <div className="flex-1 min-w-0">
-            <h1 className="font-bold text-sm md:text-xl leading-tight line-clamp-2">
-              {tenant?.name}
+            <h1 className="font-bold text-sm md:text-base leading-tight">
+              น้ำเลา One Data
             </h1>
-            <p className="text-white/70 text-[13px] md:text-xs hidden sm:block">ระบบบริการออนไลน์</p>
+            <p className="text-white/70 text-[11px] md:text-xs hidden sm:block line-clamp-1">{tenant?.name}</p>
           </div>
 
           {/* Desktop nav */}

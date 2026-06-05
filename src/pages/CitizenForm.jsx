@@ -85,13 +85,64 @@ function SuccessScreen({ onBack, complaintNumber }) {
   )
 }
 
+// ─── One Data form type config ────────────────────────────────────────────────
+const FORM_TYPE_CONFIG = {
+  infrastructure: {
+    label: 'แจ้งซ่อมโครงสร้างพื้นฐาน',
+    icon: '🔧',
+    color: '#ef4444',
+    gpsRequired: true,
+    categories: [
+      { value: 'road',       label: '🛣️  ถนน / สะพาน' },
+      { value: 'light',      label: '💡  ไฟฟ้าสาธารณะ' },
+      { value: 'drain',      label: '🕳️  ท่อระบายน้ำ' },
+      { value: 'canal',      label: '🏞️  ลำเหมือง / คูน้ำ' },
+      { value: 'building',   label: '🏗️  สิ่งก่อสร้างชำรุด' },
+      { value: 'other',      label: '📝  อื่นๆ' },
+    ],
+    placeholder: 'อธิบายปัญหาที่พบ เช่น ถนนเป็นหลุมบ่อขนาดใหญ่ ลึกประมาณ 20 ซม. มีน้ำขัง...',
+  },
+  water_support: {
+    label: 'ขอสนับสนุนน้ำอุปโภค-บริโภค',
+    icon: '💧',
+    color: '#3b82f6',
+    gpsRequired: true,
+    categories: [
+      { value: 'water_drought', label: '🚛  ขอน้ำช่วงฤดูแล้ง' },
+      { value: 'water_tank',    label: '🪣  ถังน้ำกลางหมู่บ้านหมด' },
+      { value: 'water_flood',   label: '🌊  ขอน้ำช่วงอุทกภัย' },
+      { value: 'other',         label: '📝  อื่นๆ' },
+    ],
+    placeholder: 'อธิบายสถานการณ์ เช่น น้ำในถังกลางหมู่บ้านหมดแล้ว ประชาชนในหมู่ที่ 3 ขาดแคลนน้ำ...',
+  },
+  environment: {
+    label: 'แจ้งเหตุสิ่งแวดล้อม / จุดเสี่ยงภัย',
+    icon: '🌿',
+    color: '#10b981',
+    gpsRequired: true,
+    categories: [
+      { value: 'trash',       label: '🗑️  ขยะตกค้าง / ทิ้งผิดที่' },
+      { value: 'tree',        label: '🌳  กิ่งไม้ / ต้นไม้อันตราย' },
+      { value: 'env_hazard',  label: '⚠️  จุดเสี่ยง / มั่วสุม' },
+      { value: 'env_fire',    label: '🔥  ควันไฟ / เผาป่า' },
+      { value: 'mosquito',    label: '🦟  ยุงชุกชุม / น้ำขัง' },
+      { value: 'pollution',   label: '🌫️  กลิ่น / มลพิษ' },
+      { value: 'other',       label: '📝  อื่นๆ' },
+    ],
+    placeholder: 'อธิบายสถานการณ์ เช่น พบขยะทิ้งเกลื่อนข้างทาง มีกลิ่นเหม็น...',
+  },
+}
+
 export default function CitizenForm() {
   const { tenant } = useTenant()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const preCategory = searchParams.get('category') ?? ''
+  const formType = searchParams.get('form') ?? 'legacy'
+  const ftConfig = FORM_TYPE_CONFIG[formType] ?? null
 
-  const [form, setForm] = useState({ category: preCategory, subject: '', village: '', detail: '', phone: '', reporter_name: '' })
+  const defaultCategory = ftConfig?.categories?.[0]?.value ?? preCategory
+  const [form, setForm] = useState({ category: defaultCategory, subject: '', village: '', detail: '', phone: '', reporter_name: '' })
   const [geo, setGeo] = useState({ lat: null, lng: null, address: null })
   const [geoStatus, setGeoStatus] = useState(GEO_STATUS.idle)
   const [showMap, setShowMap] = useState(false)
@@ -238,6 +289,7 @@ export default function CitizenForm() {
     if (!form.subject.trim()) { setError('กรุณากรอกเรื่อง'); return }
     if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
     if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
+    if (ftConfig?.gpsRequired && !geo.lat) { setError('ฟอร์มนี้ต้องการพิกัด GPS หน้างาน — กรุณากดปักหมุดก่อนส่ง'); return }
     if (!consent) { setError('กรุณายอมรับข้อตกลงและการรับรองข้อมูลก่อนส่งคำร้อง'); return }
     if (!tenant?.id) { setError('ไม่พบข้อมูลหน่วยงาน'); return }
 
@@ -254,6 +306,7 @@ export default function CitizenForm() {
       id:              complaintId,
       municipality_id: tenant.id,
       category:        form.category,
+      form_type:       formType !== 'legacy' ? formType : 'legacy',
       subject:         form.subject.trim(),
       village:         form.village || null,
       detail:          form.detail.trim(),
@@ -341,36 +394,70 @@ export default function CitizenForm() {
         </div>
       )}
       {/* Mobile top bar */}
-      <div className="md:hidden sticky top-0 z-10 flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-100 shadow-sm">
-        <button onClick={() => navigate(-1)} className="p-1.5 rounded-xl hover:bg-gray-100 transition-colors">
-          <ArrowLeft size={20} className="text-gray-600" />
+      <div className="md:hidden sticky top-0 z-10 flex items-center gap-3 px-4 py-3 text-white shadow-sm"
+           style={{ background: ftConfig ? `linear-gradient(135deg, ${ftConfig.color}, ${ftConfig.color}cc)` : 'linear-gradient(135deg, var(--color-primary), var(--color-primary-dark))' }}>
+        <button onClick={() => navigate(-1)} className="p-1.5 rounded-xl bg-white/20 hover:bg-white/30 transition-colors">
+          <ArrowLeft size={20} className="text-white" />
         </button>
         <div>
-          <h1 className="font-bold text-gray-800 text-base leading-tight">ประเภทคำร้อง</h1>
-          <p className="text-xs text-gray-400">{tenant?.name}</p>
+          <h1 className="font-bold text-white text-base leading-tight">
+            {ftConfig ? ftConfig.label : 'ยื่นคำร้องออนไลน์'}
+          </h1>
+          <p className="text-white/70 text-xs">{tenant?.name}</p>
         </div>
+        {ftConfig?.gpsRequired && (
+          <span className="ml-auto shrink-0 text-[10px] font-bold bg-white/20 text-white px-2 py-0.5 rounded-full">
+            GPS บังคับ
+          </span>
+        )}
       </div>
 
       {/* PC header */}
       <div className="hidden md:flex items-center gap-3 px-6 pt-8 pb-5 border-b border-gray-200 mb-2">
         <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-2xl shrink-0"
-             style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
-          📝
+             style={{ background: ftConfig ? `linear-gradient(135deg, ${ftConfig.color}cc, ${ftConfig.color})` : 'linear-gradient(135deg, var(--color-primary), var(--color-primary-dark))' }}>
+          {ftConfig?.icon ?? '📝'}
         </div>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800">ยื่นคำร้องออนไลน์</h1>
+        <div className="flex-1">
+          <h1 className="text-2xl font-bold text-gray-800">{ftConfig?.label ?? 'ยื่นคำร้องออนไลน์'}</h1>
           <p className="text-sm text-gray-500 mt-0.5">{tenant?.name}</p>
         </div>
+        {ftConfig?.gpsRequired && (
+          <span className="text-xs font-bold px-3 py-1 rounded-full"
+                style={{ backgroundColor: ftConfig.color + '18', color: ftConfig.color }}>
+            📍 GPS บังคับ
+          </span>
+        )}
       </div>
 
       <form onSubmit={handleSubmit} className="px-4 md:px-6 pt-5 pb-32 md:pb-10 space-y-4">
-        {/* Category — แสดงเป็น badge หัวข้อ */}
-        {form.category && (
-          <div className="flex items-center gap-2 px-1">
-            <span className="text-xl font-bold text-gray-800">
-              {categories.find((c) => c.value === form.category)?.label ?? form.category}
-            </span>
+        {/* Category selector */}
+        {ftConfig ? (
+          /* One Data form: แสดงเป็น pill selector */
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+            <p className="text-sm font-semibold text-gray-700 mb-3">ประเภทย่อย</p>
+            <div className="flex flex-wrap gap-2">
+              {ftConfig.categories.map((cat) => (
+                <button key={cat.value} type="button"
+                  onClick={() => setForm((p) => ({ ...p, category: cat.value }))}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-full border transition-all"
+                  style={form.category === cat.value
+                    ? { backgroundColor: ftConfig.color, color: '#fff', borderColor: ftConfig.color }
+                    : { backgroundColor: '#f8fafc', color: '#475569', borderColor: '#e2e8f0' }}>
+                  {cat.label}
+                </button>
+              ))}
+            </div>
           </div>
+        ) : (
+          /* Legacy: แสดงเป็น badge หัวข้อ */
+          form.category && (
+            <div className="flex items-center gap-2 px-1">
+              <span className="text-xl font-bold text-gray-800">
+                {categories.find((c) => c.value === form.category)?.label ?? form.category}
+              </span>
+            </div>
+          )
         )}
 
         {/* Subject */}
@@ -462,10 +549,15 @@ export default function CitizenForm() {
         </div>
 
         {/* Geolocation */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+        <div className={`rounded-2xl shadow-sm border p-4 ${ftConfig?.gpsRequired ? 'bg-white border-orange-200 ring-1 ring-orange-100' : 'bg-white border-gray-100'}`}>
           <div className="flex items-center gap-2 mb-3">
-            <MapPin size={16} style={{ color: 'var(--color-primary)' }} />
+            <MapPin size={16} style={{ color: ftConfig?.gpsRequired ? '#f97316' : 'var(--color-primary)' }} />
             <span className="text-sm font-semibold text-gray-700">ตำแหน่งที่เกิดเหตุ</span>
+            {ftConfig?.gpsRequired && (
+              <span className="ml-auto text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">
+                * บังคับ
+              </span>
+            )}
           </div>
           <button type="button" onClick={() => setShowMap(true)}
             className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium border transition-all ${

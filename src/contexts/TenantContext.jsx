@@ -48,9 +48,9 @@ function detectTenantSlug() {
 
 function injectPWAManifest(tenant) {
   const manifest = {
-    name: `${tenant.name} E-Service`,
-    short_name: tenant.name,
-    description: 'ระบบบริการออนไลน์',
+    name: 'น้ำเลา One Data',
+    short_name: 'One Data',
+    description: 'ระบบจัดการข้อมูลเพื่อการพัฒนาตำบลน้ำเลาอย่างยั่งยืน',
     theme_color: tenant.theme_color ?? '#1c7cd6',
     background_color: '#ffffff',
     display: 'standalone',

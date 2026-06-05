@@ -5,7 +5,7 @@ import {
   Bell, FileSearch, ClipboardList, ShieldCheck,
   Phone, MapPin, Globe, Share2, MessageCircle,
   ChevronRight, Star, Copy, Download, Check, Monitor, X,
-  UploadIcon, PlusSquare, BookOpen,
+  UploadIcon, PlusSquare, BookOpen, Store,
 } from 'lucide-react'
 import qrCodeImage from '../assets/qr-code.png'
 import { supabase } from '../lib/supabase'
@@ -127,7 +127,7 @@ function QRShareCard({ tenant }) {
 
   async function handleShare() {
     if (navigator.share) {
-      await navigator.share({ title: tenant?.name, text: 'ระบบบริการออนไลน์', url })
+      await navigator.share({ title: 'น้ำเลา One Data', text: 'ระบบจัดการข้อมูลเพื่อการพัฒนาตำบลน้ำเลาอย่างยั่งยืน', url })
     } else {
       handleCopy()
     }
@@ -468,8 +468,36 @@ export default function MorePage() {
           </Section>
         )}
 
+        {/* ─── One Data ─── */}
+        <Section title="น้ำเลา One Data">
+          <MenuRow
+            icon={ClipboardList}
+            iconBg="bg-red-50"
+            iconColor="text-red-500"
+            label="ยื่นคำร้อง GPS"
+            desc="แจ้งซ่อม / ขอน้ำ / แจ้งเหตุสิ่งแวดล้อม"
+            href="/complaint"
+          />
+          <MenuRow
+            icon={Store}
+            iconBg="bg-amber-50"
+            iconColor="text-amber-500"
+            label="ตลาดออนไลน์น้ำเลา"
+            desc="ร้านค้า OTOP ที่พัก สถานที่ท่องเที่ยวในชุมชน"
+            href="/market"
+          />
+          <MenuRow
+            icon={Store}
+            iconBg="bg-orange-50"
+            iconColor="text-orange-500"
+            label="ลงทะเบียนร้านค้า / ท่องเที่ยว"
+            desc="Smart Economy — ส่งข้อมูลให้เจ้าหน้าที่อนุมัติ"
+            href="/business-register"
+          />
+        </Section>
+
         {/* ─── บริการ ─── */}
-        <Section title="บริการ">
+        <Section title="บริการอื่นๆ">
           <MenuRow
             icon={Bell}
             iconBg="bg-purple-50"
@@ -486,14 +514,6 @@ export default function MorePage() {
             label="คำร้องของฉัน"
             desc="ติดตามและดูประวัติคำร้องที่ยื่น"
             href="/my-complaints"
-          />
-          <MenuRow
-            icon={ClipboardList}
-            iconBg="bg-green-50"
-            iconColor="text-green-600"
-            label="ยื่นคำร้องใหม่"
-            desc="แจ้งปัญหาหรือขอรับบริการจากเทศบาล"
-            href="/complaint"
           />
           <MenuRow
             icon={BookOpen}
@@ -570,7 +590,7 @@ export default function MorePage() {
         {/* ─── Footer ─── */}
         <div className="text-center pb-2">
           <p className="text-xs text-gray-300 font-medium">{tenant?.name}</p>
-          <p className="text-[13px] text-gray-300 mt-0.5">SmartLocal E-Service v1.1</p>
+          <p className="text-[13px] text-gray-300 mt-0.5">น้ำเลา One Data · ระบบข้อมูลเพื่อการพัฒนาที่ยั่งยืน</p>
         </div>
       </div>
     </div>
