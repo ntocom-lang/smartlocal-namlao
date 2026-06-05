@@ -1,10 +1,25 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import {
   MapPin, Plus, X, Loader2, RefreshCw, Trash2, Pencil, ChevronLeft,
   Image, AlertTriangle, CheckCircle2, Calendar, Banknote, Building2,
+  Search, Clock, FileText, Upload, ChevronRight, Camera, Navigation,
 } from 'lucide-react'
+import { MapContainer, TileLayer, Marker, Tooltip, useMap } from 'react-leaflet'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 import { supabase } from '../../lib/supabase'
 import MapPicker from '../MapPicker'
+
+// Fix leaflet default marker icon
+const defaultIcon = L.icon({
+  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41],
+})
 
 const THIS_YEAR = new Date().getFullYear() + 543
 const TODAY     = new Date().toISOString().slice(0, 10)
@@ -20,15 +35,13 @@ const STATUS_CFG = {
 }
 
 const PROJECT_TYPES = [
-  { value: 'road',         label: 'ถนน/ทางหลวง',       icon: '🛣️' },
-  { value: 'drain',        label: 'ระบบระบายน้ำ',       icon: '🕳️' },
-  { value: 'bridge',       label: 'สะพาน/ท่อลอด',      icon: '🌉' },
-  { value: 'light',        label: 'ไฟฟ้าสาธารณะ',      icon: '💡' },
-  { value: 'waterway',     label: 'ลำเหมือง/คลอง',     icon: '🏞️' },
-  { value: 'building',     label: 'อาคาร/สิ่งก่อสร้าง', icon: '🏗️' },
-  { value: 'irrigation',   label: 'ระบบชลประทาน',      icon: '💧' },
-  { value: 'water_supply', label: 'ประปาหมู่บ้าน',      icon: '🚰' },
-  { value: 'other',        label: 'อื่นๆ',               icon: '📝' },
+  { value: 'road',         label: 'ถนน',                  icon: '🛣️' },
+  { value: 'drain',        label: 'ระบบระบายน้ำ',           icon: '🕳️' },
+  { value: 'waterway',     label: 'รางส่งน้ำ',               icon: '💧' },
+  { value: 'building',     label: 'อาคาร/สิ่งก่อสร้าง',      icon: '🏗️' },
+  { value: 'light',        label: 'ไฟฟ้าสาธารณะ',          icon: '💡' },
+  { value: 'park',         label: 'สวนสาธารณะ/ภูมิทัศน์',    icon: '🌳' },
+  { value: 'other',        label: 'อื่นๆ',                   icon: '📝' },
 ]
 
 const DEPARTMENTS = [
@@ -53,7 +66,7 @@ function StatusBadge({ status }) {
   const cfg = STATUS_CFG[status]
   if (!cfg) return null
   return (
-    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full"
+    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap"
           style={{ backgroundColor: cfg.bg, color: cfg.text }}>
       {cfg.label}
     </span>
@@ -61,7 +74,7 @@ function StatusBadge({ status }) {
 }
 
 function ProgressBar({ pct, status }) {
-  const color = STATUS_CFG[status]?.color ?? '#94a3b8'
+  const color = STATUS_CFG[status]?.color ?? '#3b82f6'
   return (
     <div className="flex items-center gap-2">
       <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
@@ -86,16 +99,119 @@ function Field({ label, required, children, half }) {
   )
 }
 
+/* ── Detail info row ── */
+function InfoRow({ label, value }) {
+  return (
+    <div className="flex justify-between py-1.5">
+      <span className="text-sm text-gray-400">{label}</span>
+      <span className="text-sm font-medium text-gray-700 text-right">{value || '-'}</span>
+    </div>
+  )
+}
+
+/* ── Detail Map with layer switcher ── */
+const TILE_STREET = {
+  url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+}
+const TILE_SATELLITE = {
+  url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  attribution: '&copy; Esri',
+}
+const TILE_LABELS = {
+  url: 'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png',
+  subdomains: 'abcd',
+}
+
+function LayerControl({ mode, setMode }) {
+  return (
+    <div className="absolute top-2.5 right-2.5 z-[1000] bg-white rounded-lg shadow-md border border-gray-200 px-3 py-2.5 text-sm space-y-1.5">
+      <label className="flex items-center gap-2 cursor-pointer text-gray-700">
+        <input type="radio" name="mapLayer" value="street"
+          checked={mode === 'street'} onChange={() => setMode('street')}
+          className="accent-blue-500" />
+        แผนที่ปกติ
+      </label>
+      <label className="flex items-center gap-2 cursor-pointer text-gray-700">
+        <input type="radio" name="mapLayer" value="satellite"
+          checked={mode === 'satellite'} onChange={() => setMode('satellite')}
+          className="accent-blue-500" />
+        ดาวเทียม
+      </label>
+    </div>
+  )
+}
+
+function DetailMap({ lat, lng, title }) {
+  const [tileMode, setTileMode] = useState('street')
+  const tile = tileMode === 'satellite' ? TILE_SATELLITE : TILE_STREET
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="flex items-center gap-2 px-5 py-3">
+        <MapPin size={16} className="text-blue-500" />
+        <h3 className="font-bold text-gray-700">ที่ตั้งบนแผนที่</h3>
+        <span className="ml-auto text-xs font-mono text-gray-400 tabular-nums">
+          {lat.toFixed(6)}, {lng.toFixed(6)}
+        </span>
+      </div>
+      <div style={{ height: 300, isolation: 'isolate', position: 'relative' }}>
+        <MapContainer
+          center={[lat, lng]}
+          zoom={15}
+          style={{ width: '100%', height: '100%' }}
+          scrollWheelZoom={true}
+          zoomControl={true}
+        >
+          <TileLayer key={tileMode} url={tile.url} attribution={tile.attribution} />
+          {tileMode === 'satellite' && (
+            <TileLayer key="labels" url={TILE_LABELS.url} subdomains={TILE_LABELS.subdomains} attribution="" />
+          )}
+          <Marker position={[lat, lng]} icon={defaultIcon}>
+            <Tooltip permanent direction="top" offset={[0, -36]}
+              className="!bg-white !border !border-gray-200 !shadow-md !rounded-lg !px-3 !py-1.5 !text-sm !font-medium !text-gray-700">
+              {title}
+            </Tooltip>
+          </Marker>
+        </MapContainer>
+        <LayerControl mode={tileMode} setMode={setTileMode} />
+        <div className="absolute bottom-3 left-3 z-[1000] flex items-center gap-2">
+          <a
+            href={`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl shadow-lg text-sm font-bold transition-colors"
+          >
+            <Navigation size={14} /> นำทาง
+          </a>
+          <a
+            href={`https://www.google.com/maps?q=${lat},${lng}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-gray-50 text-gray-700 rounded-xl shadow-lg border border-gray-200 text-sm font-bold transition-colors"
+          >
+            <MapPin size={14} /> แสดงบน Google Maps
+          </a>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const inputCls = 'w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-200 focus:border-violet-300'
 const selectCls = inputCls
 
 export default function CivilProjectAdmin({ tenant, currentUserRole }) {
-  const [view, setView]     = useState('list')
+  const [view, setView]     = useState('list')   // 'list' | 'detail' | 'form'
   const [editId, setEditId] = useState(null)
-  const [projects, setProjects] = useState([])
-  const [loading, setLoading]   = useState(false)
+  const [projects, setProjects] = useState(null) // null = กำลังโหลด
+  const loading = projects === null
   const [filterStatus, setFilterStatus] = useState('all')
-  const [filterYear, setFilterYear]     = useState(String(THIS_YEAR))
+  const [filterYear, setFilterYear]     = useState('all')
+  const [filterType, setFilterType]     = useState('all')
+  const [searchQuery, setSearchQuery]   = useState('')
+
+  const [selectedProject, setSelectedProject] = useState(null)
 
   const [form, setForm]                 = useState({ ...EMPTY_FORM })
   const [geo, setGeo]                   = useState({ lat: null, lng: null })
@@ -106,21 +222,41 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
   const [formError, setFormError]       = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
 
+  // Detail-view photo upload
+  const [detailPhotoFile, setDetailPhotoFile]     = useState(null)
+  const [detailPhotoDesc, setDetailPhotoDesc]     = useState('')
+  const [detailPhotoPhase, setDetailPhotoPhase]   = useState('after')
+  const [uploadingPhoto, setUploadingPhoto]       = useState(false)
+
+  // Progress log
+  const [progressNote, setProgressNote]   = useState('')
+  const [progressStatus, setProgressStatus] = useState('planned')
+  const [progressPct, setProgressPct]     = useState(0)
+  const [savingProgress, setSavingProgress] = useState(false)
+
   const isReadOnly = currentUserRole === 'viewer' || currentUserRole === 'council'
   const canDelete  = currentUserRole === 'admin' || currentUserRole === 'superadmin'
 
-  const fetchProjects = useCallback(async () => {
-    if (!tenant?.id) return
-    setLoading(true)
-    let q = supabase.from('civil_projects').select('*').eq('municipality_id', tenant.id)
+  const tenantId = tenant?.id
+  const [refreshTick, setRefreshTick] = useState(0)
+  const fetchProjects = useCallback(() => {
+    setProjects(null)
+    setRefreshTick(n => n + 1)
+  }, [])
+
+  useEffect(() => {
+    if (!tenantId) return
+    let cancelled = false
+    let q = supabase.from('civil_projects').select('*').eq('municipality_id', tenantId)
     if (filterStatus !== 'all') q = q.eq('status', filterStatus)
     if (filterYear  !== 'all') q = q.eq('fiscal_year', filterYear)
-    const { data } = await q.order('created_at', { ascending: false }).limit(200)
-    setProjects(data ?? [])
-    setLoading(false)
-  }, [tenant?.id, filterStatus, filterYear])
-
-  useEffect(() => { fetchProjects() }, [fetchProjects])
+    if (filterType  !== 'all') q = q.eq('project_type', filterType)
+    if (searchQuery.trim()) q = q.ilike('title', `%${searchQuery.trim()}%`)
+    q.order('created_at', { ascending: false }).limit(200).then(({ data }) => {
+      if (!cancelled) setProjects(data ?? [])
+    })
+    return () => { cancelled = true }
+  }, [tenantId, filterStatus, filterYear, filterType, searchQuery, refreshTick])
 
   function handleStatusChange(newStatus) {
     const cfg = STATUS_CFG[newStatus]
@@ -160,6 +296,16 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
     setPhotos([])
     setFormError(null)
     setView('form')
+  }
+
+  function openDetail(p) {
+    setSelectedProject(p)
+    setProgressStatus(p.status)
+    setProgressPct(p.progress_pct)
+    setProgressNote('')
+    setDetailPhotoFile(null)
+    setDetailPhotoDesc('')
+    setView('detail')
   }
 
   async function uploadPhotos(newPhotos, id) {
@@ -238,7 +384,19 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
     }
     setSubmitting(false)
     if (dbErr) { setFormError(`บันทึกไม่สำเร็จ: ${dbErr.message}`); return }
-    setView('list')
+
+    // If editing from detail view, refresh and go back to detail
+    if (editId) {
+      const { data: updated } = await supabase.from('civil_projects').select('*').eq('id', editId).single()
+      if (updated) {
+        setSelectedProject(updated)
+        setView('detail')
+      } else {
+        setView('list')
+      }
+    } else {
+      setView('list')
+    }
     setEditId(null)
     fetchProjects()
   }
@@ -246,17 +404,58 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
   async function deleteProject(id) {
     await supabase.from('civil_projects').delete().eq('id', id)
     setDeleteConfirm(null)
+    setView('list')
     fetchProjects()
   }
 
-  const typeIcon = (t) => PROJECT_TYPES.find(x => x.value === t)?.icon ?? '📝'
+  // Photo upload from detail view
+  async function handleDetailPhotoUpload() {
+    if (!detailPhotoFile || !selectedProject) return
+    setUploadingPhoto(true)
+    const ext = detailPhotoFile.name.split('.').pop()
+    const path = `civil/${selectedProject.id}/${Date.now()}.${ext}`
+    const { error } = await supabase.storage.from('complaint-attachments').upload(path, detailPhotoFile)
+    if (!error) {
+      const { data: urlData } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
+      const newPhotos = [...(selectedProject.photos ?? []), urlData.publicUrl]
+      await supabase.from('civil_projects').update({ photos: newPhotos, updated_at: new Date().toISOString() }).eq('id', selectedProject.id)
+      setSelectedProject(p => ({ ...p, photos: newPhotos }))
+      setDetailPhotoFile(null)
+      setDetailPhotoDesc('')
+    }
+    setUploadingPhoto(false)
+  }
+
+  // Save progress update from detail view
+  async function handleSaveProgress() {
+    if (!selectedProject) return
+    setSavingProgress(true)
+    const updates = {
+      status: progressStatus,
+      progress_pct: Number(progressPct),
+      note: progressNote.trim() ? `${selectedProject.note ? selectedProject.note + '\n' : ''}[${new Date().toLocaleDateString('th-TH')}] ${progressNote.trim()}` : selectedProject.note,
+      updated_at: new Date().toISOString(),
+    }
+    await supabase.from('civil_projects').update(updates).eq('id', selectedProject.id)
+    setSelectedProject(p => ({ ...p, ...updates }))
+    setProgressNote('')
+    setSavingProgress(false)
+    fetchProjects()
+  }
+
   const typeLabel = (t) => PROJECT_TYPES.find(x => x.value === t)?.label ?? t
+  const deptLabel = (d) => DEPARTMENTS.find(x => x.value === d)?.label ?? d
   const fmt = (n) => n != null ? Number(n).toLocaleString('th-TH') : '—'
-  const incomplete = (p) => !p.project_no && !p.budget_amount
+  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
+
+  const locationStr = (p) => {
+    const parts = [p.village, p.subdistrict, p.district, p.province].filter(Boolean)
+    return parts.join(', ') || '-'
+  }
 
   // ─── LIST VIEW ──────────────────────────────────────────────────────────────
   if (view === 'list') return (
-    <div className="space-y-4">
+    <div className="space-y-5">
 
       {/* Delete confirm */}
       {deleteConfirm && (
@@ -275,152 +474,386 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-violet-100 flex items-center justify-center">
-            <Building2 size={16} className="text-violet-600" />
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">รายการโครงการ</h2>
+          <p className="text-sm text-gray-400 mt-0.5">ทั้งหมด {(projects ?? []).length} โครงการ</p>
+        </div>
+        {!isReadOnly && (
+          <button onClick={openCreate}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-white"
+            style={{ backgroundColor: '#3b82f6' }}>
+            <Plus size={14} /> เพิ่มโครงการ
+          </button>
+        )}
+      </div>
+
+      {/* Filter row */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+        <div className="flex flex-wrap gap-3 items-end">
+          <div className="flex-1 min-w-[160px]">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="ค้นหาชื่อโครงการ..."
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300"
+            />
           </div>
-          <div>
-            <h2 className="font-bold text-gray-800">โครงการกองช่าง</h2>
-            <p className="text-xs text-gray-400">ติดตามสถานะ · งบประมาณ · พิกัด GPS</p>
+          <div className="min-w-[140px]">
+            <select value={filterYear} onChange={e => setFilterYear(e.target.value)}
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200">
+              <option value="all">ทุกปีงบประมาณ</option>
+              {FISCAL_YEARS.map(y => <option key={y} value={y}>พ.ศ. {y}</option>)}
+            </select>
+          </div>
+          <div className="min-w-[140px]">
+            <select value={filterType} onChange={e => setFilterType(e.target.value)}
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200">
+              <option value="all">ทุกประเภท</option>
+              {PROJECT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </div>
+          <div className="min-w-[130px]">
+            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200">
+              <option value="all">ทุกสถานะ</option>
+              {Object.entries(STATUS_CFG).map(([v, c]) => <option key={v} value={v}>{c.label}</option>)}
+            </select>
+          </div>
+          <button onClick={fetchProjects}
+            className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold text-white"
+            style={{ backgroundColor: '#3b82f6' }}>
+            <Search size={14} /> ค้นหา
+          </button>
+        </div>
+      </div>
+
+      {/* Data table */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        {loading ? (
+          <div className="flex justify-center py-16">
+            <Loader2 size={22} className="animate-spin text-gray-300" />
+          </div>
+        ) : (projects ?? []).length === 0 ? (
+          <div className="text-center py-16 text-gray-400">
+            <Building2 size={36} className="mx-auto mb-2 opacity-20" />
+            <p className="text-sm">ยังไม่มีโครงการ</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 whitespace-nowrap">เลขที่โครงการ</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 whitespace-nowrap">ชื่อโครงการ</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 whitespace-nowrap">ประเภท</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 whitespace-nowrap">สถานะ</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 whitespace-nowrap">ปีงบประมาณ</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 whitespace-nowrap">วงเงิน</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 whitespace-nowrap">พื้นที่</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 whitespace-nowrap" style={{ minWidth: 140 }}>ความคืบหน้า</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(projects ?? []).map(p => (
+                  <tr key={p.id} className="border-b border-gray-50 hover:bg-blue-50/30 transition-colors">
+                    <td className="px-4 py-3.5 whitespace-nowrap">
+                      <button onClick={() => openDetail(p)}
+                        className="text-blue-500 hover:text-blue-700 font-semibold hover:underline text-left">
+                        {p.project_no || '-'}
+                      </button>
+                    </td>
+                    <td className="px-4 py-3.5 max-w-[240px]">
+                      <button onClick={() => openDetail(p)}
+                        className="text-left hover:text-blue-600 transition-colors">
+                        <p className="font-semibold text-gray-800 truncate">{p.title}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">{deptLabel(p.department)}</p>
+                      </button>
+                    </td>
+                    <td className="px-4 py-3.5 text-gray-600 whitespace-nowrap">{typeLabel(p.project_type)}</td>
+                    <td className="px-4 py-3.5"><StatusBadge status={p.status} /></td>
+                    <td className="px-4 py-3.5 text-gray-600 whitespace-nowrap">{p.fiscal_year}</td>
+                    <td className="px-4 py-3.5 text-gray-700 font-medium whitespace-nowrap">
+                      {p.budget_amount ? `฿${fmt(p.budget_amount)}` : '-'}
+                    </td>
+                    <td className="px-4 py-3.5 text-gray-500 text-xs max-w-[180px]">
+                      <span className="truncate block">{locationStr(p)}</span>
+                    </td>
+                    <td className="px-4 py-3.5" style={{ minWidth: 140 }}>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full transition-all"
+                               style={{ width: `${p.progress_pct}%`, backgroundColor: '#3b82f6' }} />
+                        </div>
+                        <span className="text-xs font-bold text-gray-500 shrink-0">{p.progress_pct}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+
+  // ─── DETAIL VIEW ────────────────────────────────────────────────────────────
+  if (view === 'detail' && selectedProject) {
+    const p = selectedProject
+    return (
+      <div className="space-y-5 max-w-4xl">
+
+        {/* Delete confirm */}
+        {deleteConfirm && (
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl p-5 shadow-xl max-w-xs w-full space-y-4">
+              <p className="font-bold text-gray-800">ลบโครงการนี้?</p>
+              <p className="text-sm text-gray-500 truncate">{deleteConfirm.title}</p>
+              <div className="flex gap-2">
+                <button onClick={() => deleteProject(deleteConfirm.id)}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white bg-red-500 hover:bg-red-600">ลบ</button>
+                <button onClick={() => setDeleteConfirm(null)}
+                  className="flex-1 py-2.5 rounded-xl text-sm text-gray-500 bg-gray-100 hover:bg-gray-200">ยกเลิก</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Breadcrumb + Edit button */}
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 text-sm text-gray-400 mb-2 flex-wrap">
+              <button onClick={() => setView('list')} className="hover:text-blue-500 transition-colors">รายการโครงการ</button>
+              <ChevronRight size={14} />
+              {p.project_no && <span className="text-gray-500">{p.project_no}</span>}
+            </div>
+            <h2 className="text-xl font-bold text-gray-800 leading-snug">{p.title}</h2>
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              <StatusBadge status={p.status} />
+              <span className="text-sm text-gray-500">{deptLabel(p.department)}</span>
+              <span className="text-sm text-gray-400">ปีงบประมาณ {p.fiscal_year}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {!isReadOnly && (
+              <button onClick={() => openEdit(p)}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium text-blue-600 border border-blue-200 bg-white hover:bg-blue-50 transition-colors">
+                <Pencil size={14} /> แก้ไข
+              </button>
+            )}
+            {canDelete && (
+              <button onClick={() => setDeleteConfirm(p)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-red-500 border border-red-200 bg-white hover:bg-red-50 transition-colors">
+                <Trash2 size={14} />
+              </button>
+            )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={fetchProjects} disabled={loading}
-            className="p-2 rounded-xl border border-gray-200 text-gray-400 hover:bg-gray-50 disabled:opacity-50">
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          </button>
+
+        {/* Progress card */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-semibold text-gray-600">ความคืบหน้าโครงการ</span>
+            <span className="text-lg font-bold" style={{ color: '#3b82f6' }}>{p.progress_pct}%</span>
+          </div>
+          <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+            <div className="h-full rounded-full transition-all"
+                 style={{ width: `${p.progress_pct}%`, backgroundColor: '#3b82f6' }} />
+          </div>
+        </div>
+
+        {/* Info cards grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+          {/* ที่ตั้งโครงการ */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <MapPin size={16} className="text-blue-500" />
+              <h3 className="font-bold text-gray-700">ที่ตั้งโครงการ</h3>
+            </div>
+            <div className="space-y-0.5 text-sm">
+              {p.village && <p className="text-gray-600"><span className="text-gray-400">หมู่บ้าน/ชุมชน:</span> {p.village}</p>}
+              {p.district && <p className="text-gray-600"><span className="text-gray-400">อำเภอ:</span> <b>{p.district}</b></p>}
+              {p.province && <p className="text-gray-600"><span className="text-gray-400">จังหวัด:</span> {p.province}</p>}
+              {p.latitude && p.longitude && (
+                <p className="text-xs text-gray-400 font-mono mt-1">{Number(p.latitude).toFixed(6)}, {Number(p.longitude).toFixed(6)}</p>
+              )}
+              {!p.village && !p.district && !p.province && <p className="text-gray-400 text-xs">ยังไม่ระบุที่ตั้ง</p>}
+            </div>
+          </div>
+
+          {/* ระยะเวลา */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <Calendar size={16} className="text-blue-500" />
+              <h3 className="font-bold text-gray-700">ระยะเวลา</h3>
+            </div>
+            <div className="space-y-1">
+              <InfoRow label="วันที่เริ่มต้น" value={fmtDate(p.start_date)} />
+              <InfoRow label="วันที่สิ้นสุด" value={fmtDate(p.end_date)} />
+              <div className="border-t border-gray-50 mt-2 pt-2">
+                <InfoRow label="บันทึกโดย" value="ผู้ดูแลระบบ" />
+                <InfoRow label="วันที่บันทึก" value={fmtDate(p.created_at)} />
+              </div>
+            </div>
+          </div>
+
+          {/* งบประมาณ */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <Banknote size={16} className="text-blue-500" />
+              <h3 className="font-bold text-gray-700">งบประมาณ</h3>
+            </div>
+            <div className="space-y-1">
+              <InfoRow label="วงเงินงบประมาณ" value={p.budget_amount ? `฿${fmt(p.budget_amount)}` : '-'} />
+              {p.contract_amount && <InfoRow label="ราคาสัญญา" value={`฿${fmt(p.contract_amount)}`} />}
+              {p.paid_amount && <InfoRow label="เบิกจ่ายแล้ว" value={`฿${fmt(p.paid_amount)}`} />}
+            </div>
+          </div>
+
+          {/* ผู้รับจ้าง */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <Building2 size={16} className="text-blue-500" />
+              <h3 className="font-bold text-gray-700">ผู้รับจ้าง</h3>
+            </div>
+            <div className="space-y-1">
+              <InfoRow label="ชื่อผู้รับจ้าง" value={p.contractor_name} />
+              <InfoRow label="เลขที่สัญญา" value={p.contract_no} />
+            </div>
+          </div>
+        </div>
+
+        {/* Map card */}
+        {p.latitude && p.longitude && (
+          <DetailMap lat={Number(p.latitude)} lng={Number(p.longitude)} title={p.title} />
+        )}
+
+        {/* Description */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <h3 className="font-bold text-gray-700 mb-2">รายละเอียดโครงการ</h3>
+          <p className="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed">
+            {p.description || <span className="text-gray-400">ยังไม่มีรายละเอียด</span>}
+          </p>
+        </div>
+
+        {/* Photos */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Camera size={16} className="text-blue-500" />
+            <h3 className="font-bold text-gray-700">รูปภาพโครงการ ({(p.photos ?? []).length})</h3>
+          </div>
+
+          {/* Upload row */}
           {!isReadOnly && (
-            <button onClick={openCreate}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-bold text-white"
-              style={{ backgroundColor: '#7c3aed' }}>
-              <Plus size={14} /> สร้างโครงการ
-            </button>
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              <select value={detailPhotoPhase} onChange={e => setDetailPhotoPhase(e.target.value)}
+                className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none">
+                <option value="before">ก่อนดำเนินการ</option>
+                <option value="during">ระหว่างดำเนินการ</option>
+                <option value="after">หลังดำเนินการ</option>
+              </select>
+              <input type="text" value={detailPhotoDesc} onChange={e => setDetailPhotoDesc(e.target.value)}
+                placeholder="คำอธิบายรูป (ไม่บังคับ)"
+                className="flex-1 min-w-[200px] bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-200" />
+              <label className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white cursor-pointer hover:opacity-90 transition-opacity"
+                style={{ backgroundColor: '#3b82f6' }}>
+                <Upload size={14} />
+                {uploadingPhoto ? 'กำลังอัพโหลด...' : 'อัพโหลดรูป'}
+                <input type="file" accept="image/*" className="hidden"
+                  onChange={e => { setDetailPhotoFile(e.target.files?.[0] ?? null); e.target.value = '' }}
+                  disabled={uploadingPhoto} />
+              </label>
+            </div>
+          )}
+
+          {/* Photo preview for pending upload */}
+          {detailPhotoFile && (
+            <div className="flex items-center gap-3 mb-4 bg-blue-50 rounded-xl px-4 py-2.5">
+              <span className="text-sm text-blue-700 truncate flex-1">{detailPhotoFile.name}</span>
+              <button onClick={handleDetailPhotoUpload} disabled={uploadingPhoto}
+                className="text-sm font-bold text-blue-600 hover:text-blue-800 disabled:opacity-50">
+                {uploadingPhoto ? <Loader2 size={14} className="animate-spin" /> : 'ยืนยันอัพโหลด'}
+              </button>
+              <button onClick={() => setDetailPhotoFile(null)} className="text-gray-400 hover:text-red-500">
+                <X size={14} />
+              </button>
+            </div>
+          )}
+
+          {/* Photos grid */}
+          {(p.photos ?? []).length > 0 ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+              {p.photos.map((url, i) => (
+                <div key={i} className="aspect-video rounded-xl overflow-hidden bg-gray-100">
+                  <img src={url} alt="" className="w-full h-full object-cover" />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-center text-sm text-blue-400 py-6">ยังไม่มีรูปภาพ</p>
+          )}
+        </div>
+
+        {/* Progress log */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Clock size={16} className="text-blue-500" />
+            <h3 className="font-bold text-gray-700">บันทึกความคืบหน้า</h3>
+          </div>
+
+          {!isReadOnly && (
+            <div className="space-y-3">
+              <textarea
+                value={progressNote}
+                onChange={e => setProgressNote(e.target.value)}
+                placeholder="บันทึกความคืบหน้า..."
+                rows={3}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-200 resize-none"
+              />
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-500">สถานะ:</span>
+                  <select value={progressStatus} onChange={e => setProgressStatus(e.target.value)}
+                    className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-1.5 text-sm font-semibold text-blue-700 focus:outline-none">
+                    {Object.entries(STATUS_CFG).map(([v, c]) => <option key={v} value={v}>{c.label}</option>)}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-500">ความคืบหน้า:</span>
+                  <input type="number" min="0" max="100" value={progressPct}
+                    onChange={e => setProgressPct(Math.min(100, Math.max(0, Number(e.target.value))))}
+                    className="w-16 bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-200" />
+                  <span className="text-sm text-gray-400">%</span>
+                </div>
+                <button onClick={handleSaveProgress} disabled={savingProgress}
+                  className="ml-auto flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-bold text-white disabled:opacity-50"
+                  style={{ backgroundColor: '#6366f1' }}>
+                  {savingProgress ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                  บันทึก
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Notes display */}
+          {p.note ? (
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <div className="space-y-2">
+                {p.note.split('\n').filter(Boolean).map((line, i) => (
+                  <p key={i} className="text-sm text-gray-600">{line}</p>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-center text-sm text-blue-400 py-4 mt-2">ยังไม่มีการบันทึกความคืบหน้า</p>
           )}
         </div>
       </div>
-
-      {/* Alert: รอรายละเอียด */}
-      {!isReadOnly && projects.some(incomplete) && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-xs text-amber-800 flex items-center gap-2">
-          <AlertTriangle size={13} className="shrink-0" />
-          <span><b>{projects.filter(incomplete).length} โครงการ</b> ที่ช่างปักหมุดไว้ยังไม่มีเลขที่โครงการ/งบประมาณ — กด ✏️ เพื่อเพิ่มรายละเอียด</span>
-        </div>
-      )}
-
-      {/* Filters */}
-      <div className="flex flex-wrap gap-2 items-center">
-        <select value={filterYear} onChange={e => setFilterYear(e.target.value)}
-          className="text-xs font-semibold border border-gray-200 rounded-xl px-3 py-1.5 bg-white text-gray-700 focus:outline-none">
-          <option value="all">ทุกปีงบ</option>
-          {FISCAL_YEARS.map(y => <option key={y} value={y}>พ.ศ. {y}</option>)}
-        </select>
-        <div className="flex flex-wrap gap-1">
-          {['all', ...Object.keys(STATUS_CFG)].map(s => (
-            <button key={s} onClick={() => setFilterStatus(s)}
-              className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
-                filterStatus === s ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-500 border-gray-200'
-              }`}>
-              {s === 'all' ? `ทั้งหมด (${projects.length})` : `${STATUS_CFG[s].label} (${projects.filter(p => p.status === s).length})`}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Summary bar */}
-      {projects.length > 0 && (() => {
-        const totalBudget = projects.reduce((s, p) => s + (Number(p.budget_amount) || 0), 0)
-        const totalPaid   = projects.reduce((s, p) => s + (Number(p.paid_amount)   || 0), 0)
-        return (
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { label: 'โครงการทั้งหมด', value: `${projects.length} โครงการ`, color: '#7c3aed' },
-              { label: 'งบรวม',          value: totalBudget ? `${(totalBudget/1e6).toFixed(2)} ล้าน ฿` : '—', color: '#0891b2' },
-              { label: 'เบิกจ่ายแล้ว',  value: totalPaid   ? `${(totalPaid/1e6).toFixed(2)} ล้าน ฿` : '—', color: '#10b981' },
-            ].map(card => (
-              <div key={card.label} className="bg-white rounded-xl border border-gray-100 p-3 text-center">
-                <p className="text-xs text-gray-400">{card.label}</p>
-                <p className="text-sm font-bold mt-0.5" style={{ color: card.color }}>{card.value}</p>
-              </div>
-            ))}
-          </div>
-        )
-      })()}
-
-      {/* Project list */}
-      {loading ? (
-        <div className="flex justify-center py-10">
-          <Loader2 size={22} className="animate-spin text-gray-300" />
-        </div>
-      ) : projects.length === 0 ? (
-        <div className="text-center py-12 text-gray-400">
-          <Building2 size={36} className="mx-auto mb-2 opacity-20" />
-          <p className="text-sm">ยังไม่มีโครงการ</p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {projects.map(p => (
-            <div key={p.id}
-              className={`bg-white rounded-2xl border shadow-sm p-4 ${incomplete(p) ? 'border-amber-200' : 'border-gray-100'}`}>
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center text-xl shrink-0">
-                  {typeIcon(p.project_type)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {p.project_no && <span className="text-[10px] font-mono text-gray-400">{p.project_no}</span>}
-                    <StatusBadge status={p.status} />
-                    {incomplete(p) && <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full">รอรายละเอียด</span>}
-                  </div>
-                  <p className="text-sm font-bold text-gray-800 mt-1 leading-snug">{p.title}</p>
-                  <p className="text-xs text-gray-400 mt-0.5 truncate">
-                    {typeLabel(p.project_type)}
-                    {p.village ? ` · ${p.village}` : ''}
-                    {p.fiscal_year ? ` · พ.ศ. ${p.fiscal_year}` : ''}
-                  </p>
-                  <div className="mt-2">
-                    <ProgressBar pct={p.progress_pct} status={p.status} />
-                  </div>
-                  {p.budget_amount && (
-                    <p className="text-xs text-gray-400 mt-1.5">
-                      <span className="font-semibold text-gray-600">งบ {fmt(p.budget_amount)} ฿</span>
-                      {p.paid_amount ? ` · เบิกแล้ว ${fmt(p.paid_amount)} ฿` : ''}
-                    </p>
-                  )}
-                  {(p.start_date || p.end_date) && (
-                    <p className="text-[10px] text-gray-400 mt-0.5">
-                      📅 {p.start_date ? new Date(p.start_date).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' }) : '?'}
-                      {' → '}
-                      {p.end_date ? new Date(p.end_date).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' }) : '?'}
-                    </p>
-                  )}
-                  {p.cancel_reason && (
-                    <p className="text-[11px] text-red-500 bg-red-50 rounded-lg px-2 py-1 mt-1.5">
-                      ⚠️ {p.cancel_reason}
-                    </p>
-                  )}
-                </div>
-                <div className="flex items-center gap-1 shrink-0 mt-0.5">
-                  {!isReadOnly && (
-                    <button onClick={() => openEdit(p)}
-                      className="p-1.5 rounded-lg hover:bg-violet-50 text-gray-300 hover:text-violet-600 transition-colors">
-                      <Pencil size={13} />
-                    </button>
-                  )}
-                  {canDelete && (
-                    <button onClick={() => setDeleteConfirm(p)}
-                      className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors">
-                      <Trash2 size={13} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
+    )
+  }
 
   // ─── FORM VIEW ──────────────────────────────────────────────────────────────
   const statusCfg = STATUS_CFG[form.status]
@@ -443,7 +876,13 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
 
       {/* Form header */}
       <div className="flex items-center gap-3">
-        <button onClick={() => setView('list')}
+        <button onClick={() => {
+          if (editId && selectedProject) {
+            setView('detail')
+          } else {
+            setView('list')
+          }
+        }}
           className="p-1.5 rounded-xl hover:bg-gray-100 text-gray-400 transition-colors">
           <ChevronLeft size={18} />
         </button>
@@ -679,7 +1118,13 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
               ? <><Loader2 size={14} className="animate-spin" /> กำลังบันทึก...</>
               : <><CheckCircle2 size={14} /> บันทึกโครงการ</>}
           </button>
-          <button type="button" onClick={() => setView('list')}
+          <button type="button" onClick={() => {
+            if (editId && selectedProject) {
+              setView('detail')
+            } else {
+              setView('list')
+            }
+          }}
             className="px-5 py-3 rounded-xl text-sm text-gray-500 bg-gray-100 hover:bg-gray-200 font-medium">
             ยกเลิก
           </button>

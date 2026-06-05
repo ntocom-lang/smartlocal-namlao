@@ -229,12 +229,15 @@ export default function MapPicker({ initialPos, onConfirm, onClose }) {
 
       {/* Bottom panel */}
       <div className="absolute bottom-0 left-0 right-0 z-201 bg-white border-t border-gray-100 shadow-[0_-4px_12px_rgba(0,0,0,0.08)] px-4 pt-3 pb-6">
-        <div className="flex items-start gap-2 mb-3">
+        <div className="flex items-start gap-2 mb-1.5">
           <MapPin size={16} className="text-red-500 shrink-0 mt-0.5" />
           <p className="text-sm text-gray-600 leading-snug line-clamp-2">
             {loadingAddr ? 'กำลังโหลดที่อยู่...' : address}
           </p>
         </div>
+        <p className="text-xs text-gray-400 font-mono mb-3 pl-6">
+          {center.lat.toFixed(6)}, {center.lng.toFixed(6)}
+        </p>
         <button
           onClick={() => onConfirm({ lat: center.lat, lng: center.lng, address })}
           className="w-full py-3.5 rounded-2xl font-semibold text-white shadow-lg active:scale-95 transition-transform text-sm flex items-center justify-center gap-2"
