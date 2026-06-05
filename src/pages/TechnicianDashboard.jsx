@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Loader2, LogOut, MapPin, Phone, X, RefreshCw,
-  CheckCircle2, Image, AlignLeft, ChevronRight, Wrench, Printer,
+  CheckCircle2, ChevronRight, Wrench, Printer,
   Plus, ChevronDown,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -570,22 +570,15 @@ export default function TechnicianDashboard() {
 
   // ─── New project state ───────────────────────────────────────────────────
   const [showNewForm, setShowNewForm]     = useState(false)
-  const [newForm, setNewForm]             = useState({
-    title: '', category: 'road', contractor: '', contract_no: '',
-    budget: '', location_name: '', work_date: TODAY, description: '',
-  })
+  const [newForm, setNewForm]             = useState({ title: '', category: 'road', location_name: '', work_date: TODAY })
   const [newGeo, setNewGeo]               = useState({ lat: null, lng: null })
-  const [newPhotos, setNewPhotos]         = useState([])
   const [newSubmitting, setNewSubmitting] = useState(false)
   const [newError, setNewError]           = useState(null)
 
   // ─── Repair state ────────────────────────────────────────────────────────
   const [showRepairForm, setShowRepairForm]     = useState(false)
-  const [repairForm, setRepairForm]             = useState({
-    title: '', category: 'road', budget: '', location_name: '', work_date: TODAY, description: '',
-  })
+  const [repairForm, setRepairForm]             = useState({ title: '', category: 'road', location_name: '', work_date: TODAY })
   const [repairGeo, setRepairGeo]               = useState({ lat: null, lng: null })
-  const [repairPhotos, setRepairPhotos]         = useState([])
   const [repairSubmitting, setRepairSubmitting] = useState(false)
   const [repairError, setRepairError]           = useState(null)
 
@@ -606,37 +599,13 @@ export default function TechnicianDashboard() {
     setLoadingInfra(false)
   }, [tenant?.id])
 
-  async function uploadPhotos(photos, id) {
-    const urls = []
-    for (const item of photos) {
-      const ext = item.file.name.split('.').pop()
-      const path = `infra/${id}/${Date.now()}.${ext}`
-      const { error } = await supabase.storage.from('complaint-attachments').upload(path, item.file)
-      if (!error) {
-        const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
-        urls.push(data.publicUrl)
-      }
-    }
-    return urls
-  }
-
-  function addPhotos(setFn) {
-    return (e) => {
-      const files = Array.from(e.target.files ?? [])
-      const items = files.map((f) => ({ file: f, preview: URL.createObjectURL(f) }))
-      setFn((prev) => [...prev, ...items].slice(0, 5))
-      e.target.value = ''
-    }
-  }
-
-  async function submitWork(workType, form, geo, photos, setSubmitting, setError, resetForm, resetGeo, resetPhotos, closeForm) {
+  async function submitWork(workType, form, geo, setSubmitting, setError, resetForm, resetGeo, closeForm) {
     if (!form.title.trim()) { setError('กรุณาระบุชื่องาน / โครงการ'); return }
     if (!geo.lat) { setError('กรุณาปักหมุด GPS ตำแหน่งงานก่อนบันทึก — นี่คือหัวใจของระบบ'); return }
     setError(null)
     setSubmitting(true)
     const { data: { session } } = await supabase.auth.getSession()
     const id = crypto.randomUUID()
-    const photoUrls = await uploadPhotos(photos, id)
     const { error: dbErr } = await supabase.from('infrastructure_works').insert({
       id,
       municipality_id: tenant.id,
@@ -644,22 +613,16 @@ export default function TechnicianDashboard() {
       work_type:       workType,
       title:           form.title.trim(),
       category:        form.category,
-      description:     form.description?.trim() || null,
-      budget:          form.budget ? parseFloat(form.budget) : null,
       location_name:   form.location_name?.trim() || null,
-      contractor:      form.contractor?.trim() || null,
-      contract_no:     form.contract_no?.trim() || null,
       work_date:       form.work_date,
       latitude:        geo.lat,
       longitude:       geo.lng,
-      photos:          photoUrls,
       status:          'completed',
     })
     setSubmitting(false)
     if (dbErr) { setError(`บันทึกไม่สำเร็จ: ${dbErr.message}`); return }
     resetForm()
     resetGeo({ lat: null, lng: null })
-    resetPhotos([])
     closeForm(false)
     fetchInfraWorks()
   }
@@ -863,13 +826,17 @@ export default function TechnicianDashboard() {
                 onSubmit={(e) => {
                   e.preventDefault()
                   submitWork(
-                    'new_project', newForm, newGeo, newPhotos,
+                    'new_project', newForm, newGeo,
                     setNewSubmitting, setNewError,
-                    () => setNewForm({ title: '', category: 'road', contractor: '', contract_no: '', budget: '', location_name: '', work_date: TODAY, description: '' }),
-                    setNewGeo, setNewPhotos, setShowNewForm
+                    () => setNewForm({ title: '', category: 'road', location_name: '', work_date: TODAY }),
+                    setNewGeo, setShowNewForm
                   )
                 }}
                 className="bg-white rounded-2xl border border-violet-100 shadow-sm p-4 space-y-3">
+
+                <div className="text-xs text-violet-600 bg-violet-50 rounded-lg px-3 py-2">
+                  ปักหมุด GPS ตำแหน่งโครงการ · ธุรการจะเพิ่มรายละเอียดในระบบ Admin ต่อ
+                </div>
 
                 {/* Category */}
                 <div className="flex flex-wrap gap-1.5">
@@ -890,17 +857,6 @@ export default function TechnicianDashboard() {
                   placeholder="ชื่อโครงการ เช่น ก่อสร้างถนน คสล. หมู่ที่ 5"
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
 
-                <div className="grid grid-cols-2 gap-2">
-                  <input type="text" value={newForm.contractor}
-                    onChange={e => setNewForm(p => ({ ...p, contractor: e.target.value }))}
-                    placeholder="ผู้รับเหมา"
-                    className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
-                  <input type="text" value={newForm.contract_no}
-                    onChange={e => setNewForm(p => ({ ...p, contract_no: e.target.value }))}
-                    placeholder="เลขที่สัญญา"
-                    className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
-                </div>
-
                 {/* GPS บังคับ */}
                 <div className={`rounded-xl border p-3 ${newGeo.lat ? 'bg-green-50 border-green-200' : 'bg-violet-50 border-violet-200'}`}>
                   <div className="flex items-center gap-2 mb-2">
@@ -918,45 +874,15 @@ export default function TechnicianDashboard() {
                   </button>
                 </div>
 
-                <input type="text" value={newForm.location_name}
-                  onChange={e => setNewForm(p => ({ ...p, location_name: e.target.value }))}
-                  placeholder="ชื่อสถานที่ / หมู่บ้าน"
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
-
                 <div className="grid grid-cols-2 gap-2">
-                  <input type="number" value={newForm.budget}
-                    onChange={e => setNewForm(p => ({ ...p, budget: e.target.value }))}
-                    placeholder="งบประมาณ (บาท)"
+                  <input type="text" value={newForm.location_name}
+                    onChange={e => setNewForm(p => ({ ...p, location_name: e.target.value }))}
+                    placeholder="ชื่อสถานที่ / หมู่บ้าน"
                     className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
                   <input type="date" value={newForm.work_date}
                     onChange={e => setNewForm(p => ({ ...p, work_date: e.target.value }))}
                     className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-300" />
                 </div>
-
-                <textarea value={newForm.description}
-                  onChange={e => setNewForm(p => ({ ...p, description: e.target.value }))} rows={2}
-                  placeholder="รายละเอียดเพิ่มเติม (ไม่บังคับ)"
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-violet-300" />
-
-                <label className="flex items-center gap-2 cursor-pointer border border-dashed border-gray-200 rounded-xl px-4 py-2.5 hover:bg-gray-50 transition-colors">
-                  <Image size={14} className="text-gray-400" />
-                  <span className="text-xs text-gray-500">รูปภาพตรวจรับงาน (ไม่เกิน 5 รูป)</span>
-                  <input type="file" accept="image/*" multiple className="hidden" onChange={addPhotos(setNewPhotos)} />
-                </label>
-                {newPhotos.length > 0 && (
-                  <div className="grid grid-cols-5 gap-1.5">
-                    {newPhotos.map((p, i) => (
-                      <div key={i} className="relative aspect-square rounded-xl overflow-hidden bg-gray-100">
-                        <img src={p.preview} alt="" className="w-full h-full object-cover" />
-                        <button type="button"
-                          onClick={() => setNewPhotos(prev => prev.filter((_, j) => j !== i))}
-                          className="absolute top-0.5 right-0.5 bg-black/50 rounded-full p-0.5">
-                          <X size={9} className="text-white" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
 
                 {newError && <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-xl">{newError}</p>}
 
@@ -966,7 +892,7 @@ export default function TechnicianDashboard() {
                     style={{ backgroundColor: '#7c3aed' }}>
                     {newSubmitting
                       ? <><Loader2 size={13} className="animate-spin" /> กำลังบันทึก...</>
-                      : '🏗️ บันทึกโครงการลงแผนที่'}
+                      : '🏗️ ปักหมุดโครงการ'}
                   </button>
                   <button type="button" onClick={() => setShowNewForm(false)}
                     className="px-4 py-2.5 rounded-xl text-sm text-gray-500 bg-gray-100 hover:bg-gray-200">
@@ -1000,13 +926,17 @@ export default function TechnicianDashboard() {
                 onSubmit={(e) => {
                   e.preventDefault()
                   submitWork(
-                    'repair', repairForm, repairGeo, repairPhotos,
+                    'repair', repairForm, repairGeo,
                     setRepairSubmitting, setRepairError,
-                    () => setRepairForm({ title: '', category: 'road', budget: '', location_name: '', work_date: TODAY, description: '' }),
-                    setRepairGeo, setRepairPhotos, setShowRepairForm
+                    () => setRepairForm({ title: '', category: 'road', location_name: '', work_date: TODAY }),
+                    setRepairGeo, setShowRepairForm
                   )
                 }}
                 className="bg-white rounded-2xl border border-cyan-100 shadow-sm p-4 space-y-3">
+
+                <div className="text-xs text-cyan-700 bg-cyan-50 rounded-lg px-3 py-2">
+                  ปักหมุด GPS จุดที่ซ่อม · ธุรการจะเพิ่มรายละเอียดในระบบ Admin ต่อ
+                </div>
 
                 {/* Category */}
                 <div className="flex flex-wrap gap-1.5">
@@ -1044,45 +974,15 @@ export default function TechnicianDashboard() {
                   </button>
                 </div>
 
-                <input type="text" value={repairForm.location_name}
-                  onChange={e => setRepairForm(p => ({ ...p, location_name: e.target.value }))}
-                  placeholder="ชื่อสถานที่ / หมู่บ้าน"
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-300" />
-
                 <div className="grid grid-cols-2 gap-2">
-                  <input type="number" value={repairForm.budget}
-                    onChange={e => setRepairForm(p => ({ ...p, budget: e.target.value }))}
-                    placeholder="ค่าซ่อม (บาท)"
+                  <input type="text" value={repairForm.location_name}
+                    onChange={e => setRepairForm(p => ({ ...p, location_name: e.target.value }))}
+                    placeholder="ชื่อสถานที่ / หมู่บ้าน"
                     className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-300" />
                   <input type="date" value={repairForm.work_date}
                     onChange={e => setRepairForm(p => ({ ...p, work_date: e.target.value }))}
                     className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-cyan-300" />
                 </div>
-
-                <textarea value={repairForm.description}
-                  onChange={e => setRepairForm(p => ({ ...p, description: e.target.value }))} rows={2}
-                  placeholder="รายละเอียดการซ่อม เช่น เปลี่ยนหลอด LED 18W จำนวน 2 ดวง"
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-cyan-300" />
-
-                <label className="flex items-center gap-2 cursor-pointer border border-dashed border-gray-200 rounded-xl px-4 py-2.5 hover:bg-gray-50 transition-colors">
-                  <Image size={14} className="text-gray-400" />
-                  <span className="text-xs text-gray-500">รูปก่อน-หลังซ่อม (ไม่เกิน 5 รูป)</span>
-                  <input type="file" accept="image/*" multiple className="hidden" onChange={addPhotos(setRepairPhotos)} />
-                </label>
-                {repairPhotos.length > 0 && (
-                  <div className="grid grid-cols-5 gap-1.5">
-                    {repairPhotos.map((p, i) => (
-                      <div key={i} className="relative aspect-square rounded-xl overflow-hidden bg-gray-100">
-                        <img src={p.preview} alt="" className="w-full h-full object-cover" />
-                        <button type="button"
-                          onClick={() => setRepairPhotos(prev => prev.filter((_, j) => j !== i))}
-                          className="absolute top-0.5 right-0.5 bg-black/50 rounded-full p-0.5">
-                          <X size={9} className="text-white" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
 
                 {repairError && <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-xl">{repairError}</p>}
 
@@ -1092,7 +992,7 @@ export default function TechnicianDashboard() {
                     style={{ backgroundColor: '#0891b2' }}>
                     {repairSubmitting
                       ? <><Loader2 size={13} className="animate-spin" /> กำลังบันทึก...</>
-                      : '🔧 บันทึกงานซ่อมลงแผนที่'}
+                      : '🔧 ปักหมุดจุดซ่อม'}
                   </button>
                   <button type="button" onClick={() => setShowRepairForm(false)}
                     className="px-4 py-2.5 rounded-xl text-sm text-gray-500 bg-gray-100 hover:bg-gray-200">

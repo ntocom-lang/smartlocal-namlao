@@ -18,6 +18,7 @@ import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { usePushNotification } from '../hooks/usePushNotification'
 import MapDashboardAdmin from '../components/admin/MapDashboardAdmin'
+import InfraWorkAdmin from '../components/admin/InfraWorkAdmin'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS = {
@@ -4166,6 +4167,7 @@ export default function AdminDashboard() {
               items: [
                 { key: 'complaints', label: 'คำร้อง',   Icon: ClipboardList, color: 'var(--color-primary)', show: currentUserRole !== 'council' },
                 { key: 'events',     label: 'กิจกรรม', Icon: CalendarDays,  color: '#10b981', show: true },
+                { key: 'infra',      label: 'งานโยธา', Icon: Wrench,        color: '#7c3aed', show: currentUserRole !== 'council' },
               ],
             },
             {
@@ -4451,6 +4453,8 @@ export default function AdminDashboard() {
           </div>
           <AssignmentManager tenant={tenant} readOnly={currentUserRole === 'viewer'} />
         </div>
+      ) : activePage === 'infra' ? (
+        <InfraWorkAdmin tenant={tenant} currentUserRole={currentUserRole} />
       ) : activePage === 'map' ? (
         <MapDashboardAdmin tenant={tenant} currentUserRole={currentUserRole} />
       ) : activePage === 'tourism' ? (
