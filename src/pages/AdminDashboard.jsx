@@ -1650,25 +1650,78 @@ function EmergencyManager({ tenant }) {
           ยังไม่มีข้อมูลสายด่วน — เพิ่มจากแบบฟอร์มด้านบน
         </div>
       ) : (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={contacts.map((c) => c.id)} strategy={verticalListSortingStrategy}>
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-              {contacts.map((c, i) => (
-                <SortableContact
-                  key={c.id}
-                  c={c} i={i} total={contacts.length}
-                  onDelete={deleteContact}
-                  onMove={handleMove}
-                  onEdit={handleEdit}
-                  editingId={editingId}
-                  editingForm={editingForm}
-                  onEditChange={(field, val) => setEditingForm((p) => ({ ...p, [field]: val }))}
-                  onEditSave={saveContactEdit}
-                />
-              ))}
-            </div>
-          </SortableContext>
-        </DndContext>
+        <>
+          {/* Mobile: DnD sortable cards */}
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={contacts.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+              <div className="md:hidden bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                {contacts.map((c, i) => (
+                  <SortableContact key={c.id} c={c} i={i} total={contacts.length}
+                    onDelete={deleteContact} onMove={handleMove} onEdit={handleEdit}
+                    editingId={editingId} editingForm={editingForm}
+                    onEditChange={(field, val) => setEditingForm((p) => ({ ...p, [field]: val }))}
+                    onEditSave={saveContactEdit} />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
+          {/* Desktop table */}
+          <div className="hidden md:block border border-gray-200 rounded-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-16">ลำดับ</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-16">สัญลักษณ์</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ชื่อ / หน่วยงาน</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">เบอร์โทร</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 w-28">จัดการ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {contacts.map((c, i) => (
+                  <tr key={c.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3 text-xs text-gray-400">{i + 1}</td>
+                    <td className="px-4 py-3 text-2xl">{c.emoji}</td>
+                    <td className="px-4 py-3">
+                      {editingId === c.id ? (
+                        <input value={editingForm.label} onChange={e => setEditingForm(p => ({ ...p, label: e.target.value }))}
+                          className="border border-gray-300 rounded-lg px-2 py-1 text-sm text-gray-800 focus:outline-none w-full max-w-xs" />
+                      ) : (
+                        <span className="font-medium text-gray-800">{c.label}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {editingId === c.id ? (
+                        <div className="flex items-center gap-2">
+                          <input value={editingForm.number} onChange={e => setEditingForm(p => ({ ...p, number: e.target.value }))}
+                            className="border border-gray-300 rounded-lg px-2 py-1 text-sm text-gray-800 focus:outline-none w-32" />
+                          <button onClick={saveContactEdit}
+                            className="px-2.5 py-1 rounded-lg text-xs font-semibold text-white bg-green-500 hover:bg-green-600">บันทึก</button>
+                          <button onClick={() => setEditingId(null)}
+                            className="px-2.5 py-1 rounded-lg text-xs text-gray-500 border border-gray-200 hover:bg-gray-50">ยกเลิก</button>
+                        </div>
+                      ) : (
+                        <a href={`tel:${c.number}`} className="text-blue-600 hover:underline font-mono">{c.number}</a>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-1.5">
+                        <button onClick={() => handleEdit(c)}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="แก้ไข">
+                          <Pencil size={14} />
+                        </button>
+                        <button onClick={() => deleteContact(c.id)}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="ลบ">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   )
@@ -1962,95 +2015,143 @@ function StaffManager({ tenant }) {
           <p className="text-xs mt-1">กด "เพิ่มบุคลากร" ด้านบนเพื่อเริ่มต้น</p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {staff.map((person) => (
-            <div key={person.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-              {editingId === person.id ? (
-                /* Edit mode */
-                <div className="space-y-3">
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <div>
-                      <label className="text-xs text-gray-500 mb-1 block">ชื่อ-นามสกุล</label>
-                      <input value={editForm.name} onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
-                        className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2"
-                        style={{ '--tw-ring-color': 'var(--color-primary)' }} />
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-500 mb-1 block">ตำแหน่ง</label>
-                      <input value={editForm.title} onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))}
-                        className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2"
-                        style={{ '--tw-ring-color': 'var(--color-primary)' }} />
-                    </div>
-                  </div>
-                  <select value={editForm.role} onChange={(e) => setEditForm((f) => ({ ...f, role: e.target.value }))}
-                    className="border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none">
-                    {Object.entries(STAFF_ROLE_LABEL).map(([k, v]) => (
-                      <option key={k} value={k}>{v}</option>
-                    ))}
-                  </select>
-                  <div className="flex gap-2 justify-end">
-                    <button onClick={() => setEditingId(null)}
-                      className="px-4 py-2 text-sm rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50">
-                      ยกเลิก
-                    </button>
-                    <button onClick={() => saveEdit(person.id)}
-                      className="px-4 py-2 text-sm rounded-xl font-medium text-white"
-                      style={{ backgroundColor: 'var(--color-primary)' }}>
-                      บันทึก
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                /* View mode */
-                <div className="flex items-center gap-4">
-                  <div className="shrink-0">
-                    {person.photo_url ? (
-                      <img src={person.photo_url} alt={person.name}
-                        className="w-16 h-16 rounded-full object-cover object-top ring-2 ring-gray-100" />
-                    ) : (
-                      <div className="w-16 h-16 rounded-full flex items-center justify-center font-bold text-white text-lg"
-                        style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
-                        {person.name.trim().split(' ').map((w) => w[0]).join('').slice(0, 2)}
+        <>
+          {/* Mobile: card list */}
+          <div className="md:hidden space-y-3">
+            {staff.map((person) => (
+              <div key={person.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+                {editingId === person.id ? (
+                  <div className="space-y-3">
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <div>
+                        <label className="text-xs text-gray-500 mb-1 block">ชื่อ-นามสกุล</label>
+                        <input value={editForm.name} onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+                          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2"
+                          style={{ '--tw-ring-color': 'var(--color-primary)' }} />
                       </div>
-                    )}
+                      <div>
+                        <label className="text-xs text-gray-500 mb-1 block">ตำแหน่ง</label>
+                        <input value={editForm.title} onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))}
+                          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2"
+                          style={{ '--tw-ring-color': 'var(--color-primary)' }} />
+                      </div>
+                    </div>
+                    <select value={editForm.role} onChange={(e) => setEditForm((f) => ({ ...f, role: e.target.value }))}
+                      className="border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none">
+                      {Object.entries(STAFF_ROLE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
+                    <div className="flex gap-2 justify-end">
+                      <button onClick={() => setEditingId(null)} className="px-4 py-2 text-sm rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50">ยกเลิก</button>
+                      <button onClick={() => saveEdit(person.id)} className="px-4 py-2 text-sm rounded-xl font-medium text-white" style={{ backgroundColor: 'var(--color-primary)' }}>บันทึก</button>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-gray-800 text-sm truncate">{person.name}</p>
-                    <p className="text-xs text-gray-500 truncate">{person.title}</p>
-                    <span className="inline-block text-[13px] px-2 py-0.5 rounded-full mt-1 text-white"
-                      style={{ backgroundColor: 'var(--color-primary)' }}>
-                      {STAFF_ROLE_LABEL[person.role] ?? person.role}
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-1.5 shrink-0">
-                    <label className={`cursor-pointer flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-xl font-medium text-white ${uploading === person.id ? 'opacity-60 cursor-wait' : ''}`}
-                      style={{ backgroundColor: 'var(--color-primary)' }}>
-                      {uploading === person.id ? <Loader2 size={11} className="animate-spin" /> : <Camera size={11} />}
-                      {person.photo_url ? 'เปลี่ยนรูป' : 'อัปโหลดรูป'}
-                      <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
-                        disabled={uploading === person.id}
-                        onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(person.id, f) }} />
-                    </label>
-                    <button onClick={() => { setEditingId(person.id); setEditForm({ name: person.name, title: person.title, role: person.role }) }}
-                      className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-xl font-medium text-gray-600 border border-gray-200 hover:bg-gray-50">
-                      <Pencil size={11} /> แก้ไข
-                    </button>
-                    {person.photo_url && (
-                      <button onClick={() => removePhoto(person.id)}
-                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-xl font-medium text-orange-500 border border-orange-200 hover:bg-orange-50">
-                        <X size={11} /> ลบรูป
+                ) : (
+                  <div className="flex items-center gap-4">
+                    <div className="shrink-0">
+                      {person.photo_url ? (
+                        <img src={person.photo_url} alt={person.name} className="w-16 h-16 rounded-full object-cover object-top ring-2 ring-gray-100" />
+                      ) : (
+                        <div className="w-16 h-16 rounded-full flex items-center justify-center font-bold text-white text-lg"
+                          style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
+                          {person.name.trim().split(' ').map((w) => w[0]).join('').slice(0, 2)}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-gray-800 text-sm truncate">{person.name}</p>
+                      <p className="text-xs text-gray-500 truncate">{person.title}</p>
+                      <span className="inline-block text-[13px] px-2 py-0.5 rounded-full mt-1 text-white" style={{ backgroundColor: 'var(--color-primary)' }}>
+                        {STAFF_ROLE_LABEL[person.role] ?? person.role}
+                      </span>
+                    </div>
+                    <div className="flex flex-col gap-1.5 shrink-0">
+                      <label className={`cursor-pointer flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-xl font-medium text-white ${uploading === person.id ? 'opacity-60 cursor-wait' : ''}`}
+                        style={{ backgroundColor: 'var(--color-primary)' }}>
+                        {uploading === person.id ? <Loader2 size={11} className="animate-spin" /> : <Camera size={11} />}
+                        {person.photo_url ? 'เปลี่ยนรูป' : 'อัปโหลดรูป'}
+                        <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+                          disabled={uploading === person.id}
+                          onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(person.id, f) }} />
+                      </label>
+                      <button onClick={() => { setEditingId(person.id); setEditForm({ name: person.name, title: person.title, role: person.role }) }}
+                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-xl font-medium text-gray-600 border border-gray-200 hover:bg-gray-50">
+                        <Pencil size={11} /> แก้ไข
                       </button>
-                    )}
-                    <button onClick={() => deleteStaff(person.id, person.name)} disabled={deleting === person.id}
-                      className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-xl font-medium text-red-500 border border-red-200 hover:bg-red-50 disabled:opacity-50">
-                      {deleting === person.id ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />} ลบ
-                    </button>
+                      {person.photo_url && (
+                        <button onClick={() => removePhoto(person.id)} className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-xl font-medium text-orange-500 border border-orange-200 hover:bg-orange-50">
+                          <X size={11} /> ลบรูป
+                        </button>
+                      )}
+                      <button onClick={() => deleteStaff(person.id, person.name)} disabled={deleting === person.id}
+                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-xl font-medium text-red-500 border border-red-200 hover:bg-red-50 disabled:opacity-50">
+                        {deleting === person.id ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />} ลบ
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
+                )}
+              </div>
+            ))}
+          </div>
+          {/* Desktop table */}
+          <div className="hidden md:block border border-gray-200 rounded-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-16">ลำดับ</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-16">รูป</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ชื่อ-นามสกุล</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ตำแหน่ง</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ประเภท</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500">จัดการ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {staff.map((person, i) => (
+                  <tr key={person.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3 text-xs text-gray-400">{i + 1}</td>
+                    <td className="px-4 py-3">
+                      {person.photo_url ? (
+                        <img src={person.photo_url} alt={person.name} className="w-9 h-9 rounded-full object-cover object-top ring-1 ring-gray-200" />
+                      ) : (
+                        <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-white text-xs"
+                          style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
+                          {person.name.trim().split(' ').map((w) => w[0]).join('').slice(0, 2)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 font-medium text-gray-800">{person.name}</td>
+                    <td className="px-4 py-3 text-gray-600">{person.title}</td>
+                    <td className="px-4 py-3">
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: 'var(--color-primary)' }}>
+                        {STAFF_ROLE_LABEL[person.role] ?? person.role}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end items-center gap-1.5">
+                        <label className={`cursor-pointer flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg font-medium text-white ${uploading === person.id ? 'opacity-60 cursor-wait' : ''}`}
+                          style={{ backgroundColor: 'var(--color-primary)' }} title={person.photo_url ? 'เปลี่ยนรูป' : 'อัปโหลดรูป'}>
+                          {uploading === person.id ? <Loader2 size={11} className="animate-spin" /> : <Camera size={11} />}
+                          รูป
+                          <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+                            disabled={uploading === person.id}
+                            onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(person.id, f) }} />
+                        </label>
+                        <button onClick={() => { setEditingId(person.id); setEditForm({ name: person.name, title: person.title, role: person.role }) }}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="แก้ไข">
+                          <Pencil size={14} />
+                        </button>
+                        <button onClick={() => deleteStaff(person.id, person.name)} disabled={deleting === person.id}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50" title="ลบ">
+                          {deleting === person.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   )
@@ -2160,39 +2261,76 @@ function LocationManager({ tenant }) {
       ) : locations.length === 0 ? (
         <p className="text-sm text-gray-400 text-center py-8">ยังไม่มีสถานที่ กรุณาเพิ่มสถานที่ด้านบน</p>
       ) : (
-        <div className="space-y-2">
-          {locations.map((loc) => (
-            <div key={loc.id} className="flex items-center gap-3 bg-gray-50 rounded-xl px-3 py-2.5">
-              <GripVertical size={15} className="text-gray-300 shrink-0" />
-              <MapPin size={14} className="text-gray-400 shrink-0" />
-              {editingId === loc.id ? (
-                <input
-                  autoFocus
-                  value={editingName}
-                  onChange={(e) => setEditingName(e.target.value)}
-                  onBlur={() => saveEdit(loc.id)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(loc.id); if (e.key === 'Escape') setEditingId(null) }}
-                  className="flex-1 text-sm text-gray-800 bg-white border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2"
-                  style={{ '--tw-ring-color': 'var(--color-primary)' }}
-                />
-              ) : (
-                <span className="flex-1 text-sm text-gray-700">{loc.name}</span>
-              )}
-              <button
-                onClick={() => { setEditingId(loc.id); setEditingName(loc.name) }}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-colors"
-              >
-                <Pencil size={14} />
-              </button>
-              <button
-                onClick={() => deleteLocation(loc.id)}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-              >
-                <Trash2 size={14} />
-              </button>
-            </div>
-          ))}
-        </div>
+        <>
+          {/* Mobile */}
+          <div className="md:hidden space-y-2">
+            {locations.map((loc) => (
+              <div key={loc.id} className="flex items-center gap-3 bg-gray-50 rounded-xl px-3 py-2.5">
+                <GripVertical size={15} className="text-gray-300 shrink-0" />
+                <MapPin size={14} className="text-gray-400 shrink-0" />
+                {editingId === loc.id ? (
+                  <input autoFocus value={editingName} onChange={(e) => setEditingName(e.target.value)}
+                    onBlur={() => saveEdit(loc.id)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(loc.id); if (e.key === 'Escape') setEditingId(null) }}
+                    className="flex-1 text-sm text-gray-800 bg-white border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2"
+                    style={{ '--tw-ring-color': 'var(--color-primary)' }} />
+                ) : (
+                  <span className="flex-1 text-sm text-gray-700">{loc.name}</span>
+                )}
+                <button onClick={() => { setEditingId(loc.id); setEditingName(loc.name) }}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-colors">
+                  <Pencil size={14} />
+                </button>
+                <button onClick={() => deleteLocation(loc.id)}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+          {/* Desktop table */}
+          <div className="hidden md:block border border-gray-200 rounded-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-16">ลำดับ</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ชื่อสถานที่เกิดเหตุ</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 w-28">จัดการ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {locations.map((loc, i) => (
+                  <tr key={loc.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3 text-xs text-gray-400">{i + 1}</td>
+                    <td className="px-4 py-3">
+                      {editingId === loc.id ? (
+                        <input autoFocus value={editingName} onChange={(e) => setEditingName(e.target.value)}
+                          onBlur={() => saveEdit(loc.id)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(loc.id); if (e.key === 'Escape') setEditingId(null) }}
+                          className="border border-gray-300 rounded-lg px-2 py-1 text-sm text-gray-800 focus:outline-none focus:ring-1 w-full max-w-sm"
+                          style={{ '--tw-ring-color': 'var(--color-primary)' }} />
+                      ) : (
+                        <span className="text-sm text-gray-800">{loc.name}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-1.5">
+                        <button onClick={() => { setEditingId(loc.id); setEditingName(loc.name) }}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="แก้ไข">
+                          <Pencil size={14} />
+                        </button>
+                        <button onClick={() => deleteLocation(loc.id)}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="ลบ">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   )
@@ -2539,23 +2677,63 @@ function CategoryManager({ tenant }) {
           ยังไม่มีประเภทคำร้อง — กด <strong>โหลดค่าเริ่มต้น</strong> หรือเพิ่มเองด้านบน
         </p>
       ) : (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={cats.map((c) => c.id)} strategy={verticalListSortingStrategy}>
-            <div className="space-y-2">
-              {cats.map((cat, idx) => (
-                <SortableCatItem
-                  key={cat.id}
-                  cat={cat}
-                  idx={idx}
-                  total={cats.length}
-                  onDelete={deleteCat}
-                  onMove={moveCat}
-                  onEdit={editCat}
-                />
-              ))}
-            </div>
-          </SortableContext>
-        </DndContext>
+        <>
+          {/* Mobile: DnD sortable cards */}
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={cats.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+              <div className="md:hidden space-y-2">
+                {cats.map((cat, idx) => (
+                  <SortableCatItem key={cat.id} cat={cat} idx={idx} total={cats.length}
+                    onDelete={deleteCat} onMove={moveCat} onEdit={editCat} />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
+          {/* Desktop table */}
+          <div className="hidden md:block border border-gray-200 rounded-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-16">ลำดับ</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ประเภท</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ป้ายสี</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 w-28">จัดการ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {cats.map((cat, idx) => {
+                  const color = COLOR_PRESETS[cat.color_idx ?? 0] ?? COLOR_PRESETS[0]
+                  return (
+                    <tr key={cat.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3 text-xs text-gray-400">{idx + 1}</td>
+                      <td className="px-4 py-3 font-medium text-gray-800">
+                        {cat.emoji} {cat.label}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                          style={{ backgroundColor: color.color, color: color.textColor }}>
+                          {cat.emoji} {cat.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-1.5">
+                          <button onClick={() => editCat(cat)}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="แก้ไข">
+                            <Pencil size={14} />
+                          </button>
+                          <button onClick={() => deleteCat(cat.id)}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="ลบ">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   )
@@ -3747,53 +3925,112 @@ function TourismManager({ tenant }) {
 
   return (
     <div className="space-y-4">
-      <h2 className="font-bold text-gray-700">จัดการสถานที่แนะนำ</h2>
-
-      <button onClick={openAdd}
-        className="flex items-center justify-center gap-2 w-full py-3 rounded-2xl text-white font-semibold text-sm"
-        style={{ backgroundColor: 'var(--color-primary)' }}>
-        <Plus size={16} /> เพิ่มรายการใหม่
-      </button>
+      <div className="flex items-center justify-between">
+        <h2 className="font-bold text-gray-700">จัดการสถานที่แนะนำ</h2>
+        <button onClick={openAdd}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-sm font-semibold"
+          style={{ backgroundColor: 'var(--color-primary)' }}>
+          <Plus size={15} /> เพิ่มรายการใหม่
+        </button>
+      </div>
 
       {loading ? (
         <div className="flex justify-center py-8"><Loader2 className="animate-spin text-gray-300" size={28} /></div>
       ) : places.length === 0 ? (
         <p className="text-gray-400 text-sm text-center py-8">ยังไม่มีรายการ</p>
       ) : (
-        <div className="space-y-2">
-          {places.map(place => {
-            const cat = TOUR_CATS.find(c => c.key === place.category)
-            const imgCount = [place.image_url, ...(place.gallery ?? [])].filter(Boolean).length
-            return (
-              <div key={place.id}
-                className={`bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden transition-opacity ${!place.is_active ? 'opacity-50' : ''}`}>
-                <div className="flex items-center gap-3 p-3">
-                  <div className="w-14 h-14 rounded-xl overflow-hidden shrink-0 bg-gray-100 flex items-center justify-center text-xl">
-                    {place.image_url ? <img src={place.image_url} alt="" className="w-full h-full object-cover" /> : (cat?.emoji ?? '🏛️')}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <span className="inline-block text-[11px] font-bold px-1.5 py-0.5 rounded-md text-white mb-0.5"
-                          style={{ backgroundColor: cat?.color ?? '#64748b' }}>
-                      {cat?.emoji} {cat?.label}
-                    </span>
-                    <p className="text-sm font-semibold text-gray-800 truncate">{place.name}</p>
-                    <p className="text-xs text-gray-400">{imgCount} รูป · {place.is_active ? 'แสดงอยู่' : 'ซ่อนอยู่'}</p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button onClick={e => toggleActive(place, e)}
-                      className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${place.is_active ? 'bg-green-400' : 'bg-gray-300'}`}>
-                      {place.is_active ? '✓' : '—'}
-                    </button>
-                    <button onClick={() => openEdit(place)}
-                      className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center">
-                      <Pencil size={14} className="text-blue-500" />
-                    </button>
+        <>
+          {/* Mobile: card list */}
+          <div className="md:hidden space-y-2">
+            {places.map(place => {
+              const cat = TOUR_CATS.find(c => c.key === place.category)
+              const imgCount = [place.image_url, ...(place.gallery ?? [])].filter(Boolean).length
+              return (
+                <div key={place.id}
+                  className={`bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden transition-opacity ${!place.is_active ? 'opacity-50' : ''}`}>
+                  <div className="flex items-center gap-3 p-3">
+                    <div className="w-14 h-14 rounded-xl overflow-hidden shrink-0 bg-gray-100 flex items-center justify-center text-xl">
+                      {place.image_url ? <img src={place.image_url} alt="" className="w-full h-full object-cover" /> : (cat?.emoji ?? '🏛️')}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="inline-block text-[11px] font-bold px-1.5 py-0.5 rounded-md text-white mb-0.5"
+                            style={{ backgroundColor: cat?.color ?? '#64748b' }}>
+                        {cat?.emoji} {cat?.label}
+                      </span>
+                      <p className="text-sm font-semibold text-gray-800 truncate">{place.name}</p>
+                      <p className="text-xs text-gray-400">{imgCount} รูป · {place.is_active ? 'แสดงอยู่' : 'ซ่อนอยู่'}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button onClick={e => toggleActive(place, e)}
+                        className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${place.is_active ? 'bg-green-400' : 'bg-gray-300'}`}>
+                        {place.is_active ? '✓' : '—'}
+                      </button>
+                      <button onClick={() => openEdit(place)}
+                        className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center">
+                        <Pencil size={14} className="text-blue-500" />
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )
-          })}
-        </div>
+              )
+            })}
+          </div>
+          {/* Desktop table */}
+          <div className="hidden md:block border border-gray-200 rounded-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-16">ลำดับ</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ชื่อสถานที่</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ประเภท</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 w-20">รูปภาพ</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 w-24">สถานะ</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 w-28">จัดการ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {places.map((place, i) => {
+                  const cat = TOUR_CATS.find(c => c.key === place.category)
+                  const imgCount = [place.image_url, ...(place.gallery ?? [])].filter(Boolean).length
+                  return (
+                    <tr key={place.id} className={`hover:bg-gray-50 transition-colors ${!place.is_active ? 'opacity-50' : ''}`}>
+                      <td className="px-4 py-3 text-xs text-gray-400">{i + 1}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-9 h-9 rounded-lg overflow-hidden shrink-0 bg-gray-100 flex items-center justify-center text-base">
+                            {place.image_url ? <img src={place.image_url} alt="" className="w-full h-full object-cover" /> : (cat?.emoji ?? '🏛️')}
+                          </div>
+                          <span className="font-medium text-gray-800">{place.name}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-md text-white"
+                          style={{ backgroundColor: cat?.color ?? '#64748b' }}>
+                          {cat?.emoji} {cat?.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center text-xs text-gray-500">{imgCount} รูป</td>
+                      <td className="px-4 py-3 text-center">
+                        <button onClick={e => toggleActive(place, e)}
+                          className={`text-xs font-semibold px-2.5 py-1 rounded-full ${place.is_active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                          {place.is_active ? 'แสดงอยู่' : 'ซ่อนอยู่'}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-1.5">
+                          <button onClick={() => openEdit(place)}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="แก้ไข">
+                            <Pencil size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {/* ─── Bottom Sheet ─── */}
@@ -4167,7 +4404,7 @@ export default function AdminDashboard() {
               items: [
                 { key: 'complaints', label: 'คำร้อง',   Icon: ClipboardList, color: 'var(--color-primary)', show: currentUserRole !== 'council' },
                 { key: 'events',     label: 'กิจกรรม', Icon: CalendarDays,  color: '#10b981', show: true },
-                { key: 'infra',      label: 'งานโยธา', Icon: Wrench,        color: '#7c3aed', show: currentUserRole !== 'council' },
+                { key: 'infra',      label: 'โครงการ', Icon: Wrench,        color: '#7c3aed', show: currentUserRole !== 'council' },
               ],
             },
             {
@@ -4463,7 +4700,9 @@ export default function AdminDashboard() {
         /* ─── อื่นๆ page ─── */
         <div className="space-y-4">
           <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide">เมนูเพิ่มเติม</h2>
-          <div className="grid grid-cols-2 gap-3">
+
+          {/* Mobile: icon grid */}
+          <div className="md:hidden grid grid-cols-2 gap-3">
             {currentUserRole !== 'viewer' && (
               <button onClick={() => setActivePage('categories')}
                 className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
@@ -4550,6 +4789,64 @@ export default function AdminDashboard() {
                 <p className="text-[13px] text-gray-400 mt-0.5">คู่มือการใช้งานระบบ</p>
               </div>
             </a>
+          </div>
+
+          {/* Desktop: settings table */}
+          <div className="hidden md:block bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500">เมนู</th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500">คำอธิบาย</th>
+                  <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 w-28">เข้าใช้งาน</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {[
+                  { key: 'categories',  Icon: Tag,         color: '#d97706', bg: '#fef3c7', label: 'ประเภทคำร้อง',    desc: 'จัดการหมวดหมู่คำร้อง',            show: currentUserRole !== 'viewer' },
+                  { key: 'assignments', Icon: Wrench,      color: '#d97706', bg: '#fef3c7', label: 'ผู้รับผิดชอบ',    desc: 'มอบหมายงานตามประเภทคำร้อง',       show: currentUserRole !== 'council' },
+                  { key: 'emergency',   Icon: Phone,       color: '#ef4444', bg: '#fee2e2', label: 'สายด่วนฉุกเฉิน',  desc: 'จัดการรายชื่อและเบอร์ติดต่อ',     show: currentUserRole !== 'viewer' },
+                  { key: 'locations',   Icon: MapPin,      color: '#0891b2', bg: '#e0f2fe', label: 'สถานที่เกิดเหตุ', desc: 'จัดการหมู่บ้าน / ตำบลในพื้นที่',  show: currentUserRole !== 'viewer' },
+                  { key: 'tourism',     Icon: Luggage,     color: '#d97706', bg: '#fef3c7', label: 'สถานที่แนะนำ',    desc: 'เที่ยว กิน พัก ชอป OTOP',         show: currentUserRole !== 'viewer' },
+                  { key: 'staff',       Icon: UserCircle2, color: '#7c3aed', bg: '#ede9fe', label: 'รูปผู้บริหาร',    desc: 'อัปโหลดรูปนายก/รองนายก/ทีมงาน', show: currentUserRole !== 'viewer' },
+                  { key: 'users',       Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', label: 'จัดการผู้ใช้',    desc: 'สิทธิ์การเข้าถึงและบทบาท',        show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                ].filter(r => r.show).map(({ key, Icon, color, bg, label, desc }) => (
+                  <tr key={key} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => setActivePage(key)}>
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: bg }}>
+                          <Icon size={16} style={{ color }} />
+                        </div>
+                        <span className="font-semibold text-gray-800">{label}</span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3.5 text-gray-500">{desc}</td>
+                    <td className="px-5 py-3.5 text-right">
+                      <button className="flex items-center gap-1.5 ml-auto text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors">
+                        เปิด <ChevronRight size={13} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                <tr className="hover:bg-gray-50 transition-colors">
+                  <td className="px-5 py-3.5">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: '#d1fae5' }}>
+                        <BookOpen size={16} style={{ color: '#059669' }} />
+                      </div>
+                      <span className="font-semibold text-gray-800">คู่มือผู้ดูแล</span>
+                    </div>
+                  </td>
+                  <td className="px-5 py-3.5 text-gray-500">เอกสารการใช้งานระบบสำหรับเจ้าหน้าที่</td>
+                  <td className="px-5 py-3.5 text-right">
+                    <a href="/manual-admin.html" target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 ml-auto text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors w-fit">
+                      เปิด <ExternalLink size={11} />
+                    </a>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       ) : (

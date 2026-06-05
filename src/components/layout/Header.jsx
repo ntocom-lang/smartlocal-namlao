@@ -87,11 +87,11 @@ export default function Header() {
           </Link>
 
           {/* Name block */}
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 flex flex-col justify-center">
             <h1 className="font-bold text-sm md:text-base leading-tight">
               น้ำเลา One Data
             </h1>
-            <p className="text-white/70 text-[11px] md:text-xs hidden sm:block line-clamp-1">{tenant?.name}</p>
+            <p className="text-white/80 text-[10px] md:text-xs line-clamp-1 mt-0.5">ระบบจัดการข้อมูลเพื่อการพัฒนา</p>
           </div>
 
           {/* Desktop nav */}

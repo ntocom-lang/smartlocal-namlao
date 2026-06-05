@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import {
   MapPin, Plus, X, Loader2, RefreshCw, Trash2, Pencil, ChevronLeft,
   Image, AlertTriangle, CheckCircle2, Calendar, Banknote, Building2,
-  Search, Clock, FileText, Upload, ChevronRight, Camera, Navigation,
+  Search, Clock, FileText, Upload, ChevronRight, Camera, Navigation, Copy, Check,
 } from 'lucide-react'
 import { MapContainer, TileLayer, Marker, Tooltip, useMap } from 'react-leaflet'
 import L from 'leaflet'
@@ -144,16 +144,28 @@ function LayerControl({ mode, setMode }) {
 
 function DetailMap({ lat, lng, title }) {
   const [tileMode, setTileMode] = useState('street')
+  const [copied, setCopied] = useState(false)
   const tile = tileMode === 'satellite' ? TILE_SATELLITE : TILE_STREET
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(`${lat.toFixed(6)}, ${lng.toFixed(6)}`)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
       <div className="flex items-center gap-2 px-5 py-3">
         <MapPin size={16} className="text-blue-500" />
         <h3 className="font-bold text-gray-700">ที่ตั้งบนแผนที่</h3>
-        <span className="ml-auto text-xs font-mono text-gray-400 tabular-nums">
-          {lat.toFixed(6)}, {lng.toFixed(6)}
-        </span>
+        <button
+          onClick={handleCopy}
+          className="ml-auto flex items-center gap-1.5 text-sm font-mono font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-xl border border-blue-100 transition-colors"
+          title="คัดลอกพิกัด"
+        >
+          {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+          {copied ? 'คัดลอกแล้ว' : `${lat.toFixed(6)}, ${lng.toFixed(6)}`}
+        </button>
       </div>
       <div style={{ height: 300, isolation: 'isolate', position: 'relative' }}>
         <MapContainer
@@ -918,7 +930,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
             </Field>
             <Field label="ประเภทโครงการ" required half>
               <select value={form.project_type} onChange={e => setForm(p => ({ ...p, project_type: e.target.value }))} className={selectCls}>
-                {PROJECT_TYPES.map(t => <option key={t.value} value={t.value}>{t.icon} {t.label}</option>)}
+                {PROJECT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
             </Field>
             <Field label="สถานะ" required half>

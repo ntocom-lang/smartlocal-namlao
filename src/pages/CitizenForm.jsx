@@ -162,15 +162,23 @@ export default function CitizenForm() {
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES)
 
   useEffect(() => {
-    if (form.category && categories.length > 0 && !prefilledRef.current) {
-      const matched = categories.find((c) => c.value === form.category)
-      if (matched) {
-        const cleanSubject = matched.label.replace(/^[\p{Emoji}\s]+/u, '').trim()
+    if (form.category) {
+      let matchedLabel = ''
+      if (ftConfig) {
+        const matched = ftConfig.categories.find((c) => c.value === form.category)
+        if (matched) matchedLabel = matched.label
+      } else if (categories.length > 0) {
+        const matched = categories.find((c) => c.value === form.category)
+        if (matched) matchedLabel = matched.label
+      }
+
+      if (matchedLabel && (!prefilledRef.current || prefilledRef.current !== form.category)) {
+        const cleanSubject = matchedLabel.replace(/^[\p{Emoji}\s]+/u, '').trim()
         setForm((prev) => ({ ...prev, subject: cleanSubject }))
-        prefilledRef.current = true
+        prefilledRef.current = form.category
       }
     }
-  }, [form.category, categories])
+  }, [form.category, categories, ftConfig])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {

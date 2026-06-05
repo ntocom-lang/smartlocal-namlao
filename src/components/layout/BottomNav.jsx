@@ -1,22 +1,22 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Home, ClipboardList, FileSearch, Bell, LayoutGrid, Wrench } from 'lucide-react'
+import { Home, ClipboardList, FileSearch, Bell, LayoutGrid, Wrench, CalendarDays } from 'lucide-react'
 import { useNotifications } from '../../contexts/NotificationsContext'
 import { supabase } from '../../lib/supabase'
 
 const NAV_CITIZEN = [
   { label: 'หน้าแรก',      icon: Home,          href: '/' },
   { label: 'ยื่นคำร้อง',   icon: ClipboardList, href: '/complaint' },
-  { label: 'คำร้องของฉัน', icon: FileSearch,    href: '/my-complaints' },
-  { label: 'แจ้งเตือน',    icon: Bell,          href: '/notifications' },
+  { label: 'คำร้อง',      icon: FileSearch,    href: '/my-complaints' },
+  { label: 'ปฏิทิน',       icon: CalendarDays, href: '/events' },
   { label: 'เมนูอื่นๆ',    icon: LayoutGrid,    href: '/more' },
 ]
 
 const NAV_TECH = [
   { label: 'หน้าแรก',      icon: Home,          href: '/' },
   { label: 'งานของฉัน',    icon: Wrench,        href: '/technician' },
-  { label: 'คำร้องของฉัน', icon: FileSearch,    href: '/my-complaints' },
-  { label: 'แจ้งเตือน',    icon: Bell,          href: '/notifications' },
+  { label: 'คำร้อง',      icon: FileSearch,    href: '/my-complaints' },
+  { label: 'ปฏิทิน',       icon: CalendarDays, href: '/events' },
   { label: 'เมนูอื่นๆ',    icon: LayoutGrid,    href: '/more' },
 ]
 
