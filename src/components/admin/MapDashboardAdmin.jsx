@@ -32,15 +32,29 @@ const BIZ_TYPE_LABEL = {
   otop: '🏺 OTOP', tourism: '📍 ท่องเที่ยว', service: '🔧 บริการ', other: '📝 อื่นๆ',
 }
 
-const INFRA_CAT_LABEL = {
-  road: 'ถนน', drainage: 'ระบายน้ำ', electrical: 'ไฟฟ้า',
-  waterway: 'ลำเหมือง', building: 'อาคาร', irrigation: 'ชลประทาน', other: 'อื่นๆ',
+const PROJECT_TYPE_LABEL = {
+  road: 'ถนน/สะพาน', drain: 'ระบายน้ำ', bridge: 'สะพาน', light: 'ไฟฟ้า',
+  waterway: 'ลำเหมือง', building: 'อาคาร', irrigation: 'ชลประทาน',
+  water_supply: 'ประปา', other: 'อื่นๆ',
+}
+
+const CIVIL_STATUS_COLOR = {
+  planned:     '#9ca3af',
+  approved:    '#3b82f6',
+  in_progress: '#f97316',
+  completed:   '#10b981',
+  cancelled:   '#ef4444',
+  suspended:   '#f59e0b',
+}
+
+const CIVIL_STATUS_TH = {
+  planned: 'วางแผน', approved: 'อนุมัติแล้ว', in_progress: 'กำลังดำเนินการ',
+  completed: 'แล้วเสร็จ', cancelled: 'ยกเลิก', suspended: 'ระงับชั่วคราว',
 }
 
 const STATUS_TH = {
   pending: 'รอดำเนินการ', received: 'รับเรื่องแล้ว', in_progress: 'กำลังดำเนินการ',
   completed: 'เสร็จสิ้น', rejected: 'ปฏิเสธ',
-  planned: 'วางแผนไว้', recorded: 'บันทึกแล้ว', approved: 'อนุมัติแล้ว',
 }
 
 // ─── Legend ──────────────────────────────────────────────────────────────────
@@ -50,8 +64,9 @@ const LEGEND = [
   { color: '#10b981', label: 'คำร้อง — เสร็จสิ้น' },
   { color: '#3b82f6', label: 'ร้านค้า — รอการอนุมัติ' },
   { color: '#f59e0b', label: 'ร้านค้า — อนุมัติแล้ว' },
-  { color: '#7c3aed', label: 'โครงการใหม่ (ตรวจรับงาน)' },
-  { color: '#0891b2', label: 'งานซ่อม (หน้างาน)' },
+  { color: '#9ca3af', label: 'โครงการ — วางแผน' },
+  { color: '#f97316', label: 'โครงการ — กำลังดำเนินการ' },
+  { color: '#10b981', label: 'โครงการ — แล้วเสร็จ' },
 ]
 
 // ─── Recenter helper ─────────────────────────────────────────────────────────
@@ -67,7 +82,7 @@ function RecenterMap({ lat, lng }) {
 export default function MapDashboardAdmin({ tenant, currentUserRole }) {
   const [complaints, setComplaints] = useState([])
   const [bizRegs, setBizRegs] = useState([])
-  const [infraWorks, setInfraWorks] = useState([])
+  const [civilProjects, setCivilProjects] = useState([])
   const [loading, setLoading] = useState(true)
   const [approving, setApproving] = useState(null)
 
@@ -97,14 +112,16 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
         .eq('municipality_id', tenant.id)
         .order('created_at', { ascending: false }),
       supabase
-        .from('infrastructure_works')
-        .select('*')
+        .from('civil_projects')
+        .select('id, title, project_type, status, progress_pct, latitude, longitude, village, budget_amount, created_at, start_date, fiscal_year')
         .eq('municipality_id', tenant.id)
-        .order('work_date', { ascending: false }),
+        .not('latitude', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(500),
     ])
     setComplaints(cmpRes.data ?? [])
     setBizRegs(bizRes.data ?? [])
-    setInfraWorks(infraRes.data ?? [])
+    setCivilProjects(infraRes.data ?? [])
     setLoading(false)
   }, [tenant?.id])
 
@@ -131,7 +148,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
     return true
   })
   const filteredBiz = bizRegs.filter(b => showBiz && b.latitude)
-  const filteredInfra = infraWorks.filter(w => showInfra && w.latitude)
+  const filteredInfra = civilProjects.filter(w => showInfra)
 
   const totalPins = filteredComplaints.length + filteredBiz.length + filteredInfra.length
   const pendingBiz = bizRegs.filter(b => b.status === 'pending')
@@ -168,7 +185,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
         </button>
         <button onClick={() => setShowInfra(v => !v)}
           className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${showInfra ? 'bg-violet-500 text-white border-violet-500' : 'bg-white text-gray-500 border-gray-200'}`}>
-          <span className="w-2 h-2 rounded-full bg-current" /> งานโยธา ({infraWorks.length})
+          <span className="w-2 h-2 rounded-full bg-current" /> งานโยธา ({civilProjects.length})
         </button>
       </div>
 
@@ -288,56 +305,61 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
               </CircleMarker>
             ))}
 
-            {/* ── งานโยธา (แยกสีตาม work_type) ── */}
-            {filteredInfra.map((w) => (
-              <CircleMarker
-                key={w.id}
-                center={[w.latitude, w.longitude]}
-                radius={w.work_type === 'new_project' ? 10 : 8}
-                pathOptions={{
-                  color: '#fff',
-                  weight: 2,
-                  fillColor: w.work_type === 'new_project' ? '#7c3aed' : '#0891b2',
-                  fillOpacity: 0.9,
-                }}
-              >
-                <Popup>
-                  <div className="text-sm min-w-[200px]">
-                    <p className="font-bold text-gray-800 mb-0.5">
-                      {w.work_type === 'new_project' ? '🏗️' : '🔧'} {w.title}
-                    </p>
-                    <p className="text-xs font-semibold mb-1"
-                       style={{ color: w.work_type === 'new_project' ? '#7c3aed' : '#0891b2' }}>
-                      {w.work_type === 'new_project' ? 'โครงการใหม่' : 'งานซ่อม'}
-                    </p>
-                    <p className="text-gray-500 text-xs">{INFRA_CAT_LABEL[w.category] ?? w.category}</p>
-                    {w.contractor && <p className="text-xs text-gray-500 mt-0.5">🏢 {w.contractor}</p>}
-                    {w.contract_no && <p className="text-xs text-gray-400">สัญญา: {w.contract_no}</p>}
-                    {w.description && (
-                      <p className="text-gray-500 text-xs mt-1 line-clamp-2">{w.description}</p>
-                    )}
-                    {w.budget && (
-                      <p className="text-xs text-violet-600 mt-1">
-                        💰 {Number(w.budget).toLocaleString('th-TH')} บาท
-                      </p>
-                    )}
-                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-50 text-violet-700">
-                        {STATUS_TH[w.status] ?? w.status}
-                      </span>
-                      <span className="text-xs text-gray-400">
-                        {new Date(w.work_date).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}
-                      </span>
+            {/* ── งานโยธา (แยกสีตาม status) ── */}
+            {filteredInfra.map((w) => {
+              const statusColor = CIVIL_STATUS_COLOR[w.status] ?? '#9ca3af'
+              return (
+                <CircleMarker
+                  key={w.id}
+                  center={[w.latitude, w.longitude]}
+                  radius={w.status === 'in_progress' ? 10 : 8}
+                  pathOptions={{
+                    color: '#fff',
+                    weight: 2,
+                    fillColor: statusColor,
+                    fillOpacity: 0.9,
+                  }}
+                >
+                  <Popup>
+                    <div className="text-sm min-w-[200px]">
+                      <p className="font-bold text-gray-800 mb-0.5">🏗️ {w.title}</p>
+                      <p className="text-gray-500 text-xs mb-1">{PROJECT_TYPE_LABEL[w.project_type] ?? w.project_type}</p>
+                      {w.progress_pct > 0 && (
+                        <div className="mb-1.5">
+                          <div className="flex justify-between text-[10px] text-gray-400 mb-0.5">
+                            <span>ความคืบหน้า</span>
+                            <span>{w.progress_pct}%</span>
+                          </div>
+                          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all"
+                              style={{ width: `${w.progress_pct}%`, backgroundColor: statusColor }} />
+                          </div>
+                        </div>
+                      )}
+                      {w.budget_amount && (
+                        <p className="text-xs text-violet-600 mb-1">
+                          💰 {Number(w.budget_amount).toLocaleString('th-TH')} บาท
+                        </p>
+                      )}
+                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                          style={{ backgroundColor: statusColor + '20', color: statusColor }}>
+                          {CIVIL_STATUS_TH[w.status] ?? w.status}
+                        </span>
+                        {w.fiscal_year && (
+                          <span className="text-xs text-gray-400">ปี {w.fiscal_year}</span>
+                        )}
+                      </div>
+                      {w.village && (
+                        <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                          <MapPin size={10} /> {w.village}
+                        </p>
+                      )}
                     </div>
-                    {w.location_name && (
-                      <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
-                        <MapPin size={10} /> {w.location_name}
-                      </p>
-                    )}
-                  </div>
-                </Popup>
-              </CircleMarker>
-            ))}
+                  </Popup>
+                </CircleMarker>
+              )
+            })}
           </MapContainer>
         )}
       </div>

@@ -18,7 +18,7 @@ import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { usePushNotification } from '../hooks/usePushNotification'
 import MapDashboardAdmin from '../components/admin/MapDashboardAdmin'
-import InfraWorkAdmin from '../components/admin/InfraWorkAdmin'
+import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS = {
@@ -4454,7 +4454,7 @@ export default function AdminDashboard() {
           <AssignmentManager tenant={tenant} readOnly={currentUserRole === 'viewer'} />
         </div>
       ) : activePage === 'infra' ? (
-        <InfraWorkAdmin tenant={tenant} currentUserRole={currentUserRole} />
+        <CivilProjectAdmin tenant={tenant} currentUserRole={currentUserRole} />
       ) : activePage === 'map' ? (
         <MapDashboardAdmin tenant={tenant} currentUserRole={currentUserRole} />
       ) : activePage === 'tourism' ? (

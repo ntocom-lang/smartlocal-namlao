@@ -551,83 +551,75 @@ export default function TechnicianDashboard() {
     setSelected(c)
   }
 
-  // ─── Engineer GPS Tool — shared ──────────────────────────────────────────
-  const TODAY = new Date().toISOString().split('T')[0]
-  const INFRA_CATEGORIES = [
-    { value: 'road',       label: '🛣️  ถนน / สะพาน' },
-    { value: 'drainage',   label: '🕳️  ระบายน้ำ' },
-    { value: 'electrical', label: '💡  ไฟฟ้า' },
-    { value: 'waterway',   label: '🏞️  ลำเหมือง' },
-    { value: 'building',   label: '🏗️  อาคาร' },
-    { value: 'irrigation', label: '💧  ชลประทาน' },
-    { value: 'other',      label: '📝  อื่นๆ' },
+  // ─── GPS ปักหมุดโครงการ (civil_projects) ────────────────────────────────
+  const GPS_TODAY   = new Date().toISOString().split('T')[0]
+  const THIS_YEAR_BE = String(new Date().getFullYear() + 543)
+  const GPS_TYPES = [
+    { value: 'road',         label: '🛣️  ถนน/สะพาน' },
+    { value: 'drain',        label: '🕳️  ระบายน้ำ' },
+    { value: 'light',        label: '💡  ไฟฟ้า' },
+    { value: 'waterway',     label: '🏞️  ลำเหมือง' },
+    { value: 'building',     label: '🏗️  อาคาร' },
+    { value: 'irrigation',   label: '💧  ชลประทาน' },
+    { value: 'water_supply', label: '🚰  ประปา' },
+    { value: 'other',        label: '📝  อื่นๆ' },
   ]
 
-  const [infraTab, setInfraTab]         = useState('new_project') // 'new_project' | 'repair'
-  const [showInfraMap, setShowInfraMap] = useState(false)
-  const [infraWorks, setInfraWorks]     = useState([])
-  const [loadingInfra, setLoadingInfra] = useState(false)
+  const [showGpsMap, setShowGpsMap]       = useState(false)
+  const [showGpsForm, setShowGpsForm]     = useState(false)
+  const [gpsForm, setGpsForm]             = useState({ title: '', project_type: 'road', village: '', start_date: GPS_TODAY })
+  const [gpsGeo, setGpsGeo]               = useState({ lat: null, lng: null })
+  const [gpsSubmitting, setGpsSubmitting] = useState(false)
+  const [gpsError, setGpsError]           = useState(null)
+  const [myProjects, setMyProjects]       = useState([])
+  const [loadingProjects, setLoadingProjects] = useState(false)
 
-  // ─── New project state ───────────────────────────────────────────────────
-  const [showNewForm, setShowNewForm]     = useState(false)
-  const [newForm, setNewForm]             = useState({ title: '', category: 'road', location_name: '', work_date: TODAY })
-  const [newGeo, setNewGeo]               = useState({ lat: null, lng: null })
-  const [newSubmitting, setNewSubmitting] = useState(false)
-  const [newError, setNewError]           = useState(null)
-
-  // ─── Repair state ────────────────────────────────────────────────────────
-  const [showRepairForm, setShowRepairForm]     = useState(false)
-  const [repairForm, setRepairForm]             = useState({ title: '', category: 'road', location_name: '', work_date: TODAY })
-  const [repairGeo, setRepairGeo]               = useState({ lat: null, lng: null })
-  const [repairSubmitting, setRepairSubmitting] = useState(false)
-  const [repairError, setRepairError]           = useState(null)
-
-  // ─── Shared functions ────────────────────────────────────────────────────
-  const fetchInfraWorks = useCallback(async () => {
+  const fetchMyProjects = useCallback(async () => {
     if (!tenant?.id) return
-    setLoadingInfra(true)
+    setLoadingProjects(true)
     const { data: { session } } = await supabase.auth.getSession()
-    if (!session) { setLoadingInfra(false); return }
+    if (!session) { setLoadingProjects(false); return }
     const { data } = await supabase
-      .from('infrastructure_works')
-      .select('*')
+      .from('civil_projects')
+      .select('id, title, project_type, status, latitude, longitude, village, start_date, progress_pct, fiscal_year')
       .eq('municipality_id', tenant.id)
       .eq('created_by', session.user.id)
-      .order('work_date', { ascending: false })
-      .limit(30)
-    setInfraWorks(data ?? [])
-    setLoadingInfra(false)
+      .order('created_at', { ascending: false })
+      .limit(20)
+    setMyProjects(data ?? [])
+    setLoadingProjects(false)
   }, [tenant?.id])
 
-  async function submitWork(workType, form, geo, setSubmitting, setError, resetForm, resetGeo, closeForm) {
-    if (!form.title.trim()) { setError('กรุณาระบุชื่องาน / โครงการ'); return }
-    if (!geo.lat) { setError('กรุณาปักหมุด GPS ตำแหน่งงานก่อนบันทึก — นี่คือหัวใจของระบบ'); return }
-    setError(null)
-    setSubmitting(true)
+  async function submitGps(e) {
+    e.preventDefault()
+    if (!gpsForm.title.trim()) { setGpsError('กรุณาระบุชื่องาน / โครงการ'); return }
+    if (!gpsGeo.lat) { setGpsError('กรุณาปักหมุด GPS ตำแหน่งงานก่อนบันทึก'); return }
+    setGpsError(null)
+    setGpsSubmitting(true)
     const { data: { session } } = await supabase.auth.getSession()
-    const id = crypto.randomUUID()
-    const { error: dbErr } = await supabase.from('infrastructure_works').insert({
-      id,
+    const { error: dbErr } = await supabase.from('civil_projects').insert({
+      id:              crypto.randomUUID(),
       municipality_id: tenant.id,
       created_by:      session.user.id,
-      work_type:       workType,
-      title:           form.title.trim(),
-      category:        form.category,
-      location_name:   form.location_name?.trim() || null,
-      work_date:       form.work_date,
-      latitude:        geo.lat,
-      longitude:       geo.lng,
-      status:          'completed',
+      title:           gpsForm.title.trim(),
+      project_type:    gpsForm.project_type,
+      status:          'in_progress',
+      progress_pct:    50,
+      village:         gpsForm.village?.trim() || null,
+      start_date:      gpsForm.start_date,
+      fiscal_year:     THIS_YEAR_BE,
+      latitude:        gpsGeo.lat,
+      longitude:       gpsGeo.lng,
     })
-    setSubmitting(false)
-    if (dbErr) { setError(`บันทึกไม่สำเร็จ: ${dbErr.message}`); return }
-    resetForm()
-    resetGeo({ lat: null, lng: null })
-    closeForm(false)
-    fetchInfraWorks()
+    setGpsSubmitting(false)
+    if (dbErr) { setGpsError(`บันทึกไม่สำเร็จ: ${dbErr.message}`); return }
+    setGpsForm({ title: '', project_type: 'road', village: '', start_date: GPS_TODAY })
+    setGpsGeo({ lat: null, lng: null })
+    setShowGpsForm(false)
+    fetchMyProjects()
   }
 
-  useEffect(() => { fetchInfraWorks() }, [fetchInfraWorks])
+  useEffect(() => { fetchMyProjects() }, [fetchMyProjects])
 
   const pending = complaints.filter((c) => c.status !== 'completed')
   const done = complaints.filter((c) => c.status === 'completed')
@@ -749,293 +741,142 @@ export default function TechnicianDashboard() {
         </>
       )}
 
-      {/* ─── Engineer GPS Tool ─── */}
+      {/* ─── GPS ปักหมุดโครงการ ─── */}
 
-      {/* MapPicker overlay — shared between both tabs */}
-      {showInfraMap && (
+      {showGpsMap && (
         <MapPicker
-          initialPos={
-            infraTab === 'new_project'
-              ? (newGeo.lat ? { lat: newGeo.lat, lng: newGeo.lng } : null)
-              : (repairGeo.lat ? { lat: repairGeo.lat, lng: repairGeo.lng } : null)
-          }
+          initialPos={gpsGeo.lat ? { lat: gpsGeo.lat, lng: gpsGeo.lng } : null}
           onConfirm={({ lat, lng, address }) => {
-            if (infraTab === 'new_project') {
-              setNewGeo({ lat, lng })
-              if (address && !newForm.location_name) setNewForm(p => ({ ...p, location_name: address }))
-            } else {
-              setRepairGeo({ lat, lng })
-              if (address && !repairForm.location_name) setRepairForm(p => ({ ...p, location_name: address }))
-            }
-            setShowInfraMap(false)
+            setGpsGeo({ lat, lng })
+            if (address && !gpsForm.village) setGpsForm(p => ({ ...p, village: address }))
+            setShowGpsMap(false)
           }}
-          onClose={() => setShowInfraMap(false)}
+          onClose={() => setShowGpsMap(false)}
         />
       )}
 
       <div className="space-y-3">
 
         {/* Section header */}
-        <div className="flex items-center gap-3 px-1">
-          <div className="w-8 h-8 rounded-xl bg-violet-100 flex items-center justify-center shrink-0">
-            <MapPin size={15} className="text-violet-600" />
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-violet-100 flex items-center justify-center shrink-0">
+              <MapPin size={15} className="text-violet-600" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-gray-700">ปักหมุด GPS โครงการ</p>
+              <p className="text-xs text-gray-400">ช่างบันทึกพิกัด · ธุรการเพิ่มรายละเอียดใน Admin</p>
+            </div>
           </div>
-          <div>
-            <p className="text-sm font-bold text-gray-700">บันทึกงานโยธาหน้างาน (GPS)</p>
-            <p className="text-xs text-gray-400">กองช่างปลั๊กอิน · ป้องกันโครงสร้างพื้นฐานทับซ้อน</p>
-          </div>
-        </div>
-
-        {/* Tab switcher */}
-        <div className="flex bg-gray-100 rounded-2xl p-1">
-          <button
-            onClick={() => { setInfraTab('new_project'); setShowRepairForm(false) }}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
-              infraTab === 'new_project' ? 'bg-white shadow-sm text-violet-700' : 'text-gray-500'
-            }`}>
-            🏗️ โครงการใหม่
-          </button>
-          <button
-            onClick={() => { setInfraTab('repair'); setShowNewForm(false) }}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
-              infraTab === 'repair' ? 'bg-white shadow-sm text-cyan-700' : 'text-gray-500'
-            }`}>
-            🔧 งานซ่อม
+          <button onClick={fetchMyProjects} disabled={loadingProjects}
+            className="p-1.5 rounded-xl text-gray-400 hover:text-gray-600 transition-colors">
+            <RefreshCw size={13} className={loadingProjects ? 'animate-spin' : ''} />
           </button>
         </div>
 
-        {/* ══════════════════════ TAB: โครงการใหม่ ══════════════════════ */}
-        {infraTab === 'new_project' && (
-          <>
-            {/* Info banner */}
-            <div className="bg-violet-50 border border-violet-100 rounded-xl px-4 py-3 text-xs text-violet-700 leading-relaxed">
-              <span className="font-bold">โครงการก่อสร้างใหม่</span> — ปักหมุดทุกครั้งที่ตรวจรับงาน
-              เพื่อวาดแผนที่ดิจิทัลและป้องกันสาธารณูปโภคทับซ้อนในอนาคต
+        {/* Open form button */}
+        <button onClick={() => setShowGpsForm(v => !v)}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white"
+          style={{ backgroundColor: '#7c3aed' }}>
+          {showGpsForm ? <ChevronDown size={14} /> : <Plus size={14} />}
+          {showGpsForm ? 'ซ่อนฟอร์ม' : '📍 ปักหมุด GPS โครงการ'}
+        </button>
+
+        {showGpsForm && (
+          <form onSubmit={submitGps}
+            className="bg-white rounded-2xl border border-violet-100 shadow-sm p-4 space-y-3">
+            <p className="text-xs text-violet-600 bg-violet-50 rounded-lg px-3 py-2">
+              ปักหมุด GPS ตำแหน่งโครงการหน้างาน · ธุรการเพิ่มรายละเอียดใน Admin ต่อ
+            </p>
+
+            {/* ประเภท */}
+            <div className="flex flex-wrap gap-1.5">
+              {GPS_TYPES.map(t => (
+                <button key={t.value} type="button"
+                  onClick={() => setGpsForm(p => ({ ...p, project_type: t.value }))}
+                  className="text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all"
+                  style={gpsForm.project_type === t.value
+                    ? { backgroundColor: '#7c3aed', color: '#fff', borderColor: '#7c3aed' }
+                    : { backgroundColor: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' }}>
+                  {t.label}
+                </button>
+              ))}
             </div>
 
-            <button
-              onClick={() => setShowNewForm(v => !v)}
-              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white transition-all"
-              style={{ backgroundColor: '#7c3aed' }}>
-              {showNewForm ? <ChevronDown size={14} /> : <Plus size={14} />}
-              {showNewForm ? 'ซ่อนฟอร์ม' : '🏗️ บันทึกโครงการใหม่'}
-            </button>
+            <input type="text" value={gpsForm.title} required
+              onChange={e => setGpsForm(p => ({ ...p, title: e.target.value }))}
+              placeholder="ชื่อโครงการ / งานที่ทำ"
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
 
-            {showNewForm && (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  submitWork(
-                    'new_project', newForm, newGeo,
-                    setNewSubmitting, setNewError,
-                    () => setNewForm({ title: '', category: 'road', location_name: '', work_date: TODAY }),
-                    setNewGeo, setShowNewForm
-                  )
-                }}
-                className="bg-white rounded-2xl border border-violet-100 shadow-sm p-4 space-y-3">
-
-                <div className="text-xs text-violet-600 bg-violet-50 rounded-lg px-3 py-2">
-                  ปักหมุด GPS ตำแหน่งโครงการ · ธุรการจะเพิ่มรายละเอียดในระบบ Admin ต่อ
-                </div>
-
-                {/* Category */}
-                <div className="flex flex-wrap gap-1.5">
-                  {INFRA_CATEGORIES.map((cat) => (
-                    <button key={cat.value} type="button"
-                      onClick={() => setNewForm(p => ({ ...p, category: cat.value }))}
-                      className="text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all"
-                      style={newForm.category === cat.value
-                        ? { backgroundColor: '#7c3aed', color: '#fff', borderColor: '#7c3aed' }
-                        : { backgroundColor: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' }}>
-                      {cat.label}
-                    </button>
-                  ))}
-                </div>
-
-                <input type="text" value={newForm.title}
-                  onChange={e => setNewForm(p => ({ ...p, title: e.target.value }))} required
-                  placeholder="ชื่อโครงการ เช่น ก่อสร้างถนน คสล. หมู่ที่ 5"
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
-
-                {/* GPS บังคับ */}
-                <div className={`rounded-xl border p-3 ${newGeo.lat ? 'bg-green-50 border-green-200' : 'bg-violet-50 border-violet-200'}`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <MapPin size={13} className={newGeo.lat ? 'text-green-600' : 'text-violet-600'} />
-                    <span className="text-xs font-bold text-gray-700">พิกัด GPS ตำแหน่งโครงการ</span>
-                    <span className="ml-auto text-[10px] font-bold text-violet-700 bg-violet-100 px-2 py-0.5 rounded-full">* บังคับ</span>
-                  </div>
-                  <button type="button" onClick={() => setShowInfraMap(true)}
-                    className={`w-full py-2 rounded-lg text-xs font-medium border transition-all ${
-                      newGeo.lat ? 'bg-white border-green-200 text-green-700' : 'bg-white border-violet-200 text-violet-700'
-                    }`}>
-                    {newGeo.lat
-                      ? `📍 ${newGeo.lat.toFixed(5)}, ${newGeo.lng.toFixed(5)} — กดแก้ไข`
-                      : '📍 กดปักหมุดตำแหน่งโครงการบนแผนที่'}
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <input type="text" value={newForm.location_name}
-                    onChange={e => setNewForm(p => ({ ...p, location_name: e.target.value }))}
-                    placeholder="ชื่อสถานที่ / หมู่บ้าน"
-                    className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
-                  <input type="date" value={newForm.work_date}
-                    onChange={e => setNewForm(p => ({ ...p, work_date: e.target.value }))}
-                    className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-300" />
-                </div>
-
-                {newError && <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-xl">{newError}</p>}
-
-                <div className="flex gap-2">
-                  <button type="submit" disabled={newSubmitting}
-                    className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 flex items-center justify-center gap-2"
-                    style={{ backgroundColor: '#7c3aed' }}>
-                    {newSubmitting
-                      ? <><Loader2 size={13} className="animate-spin" /> กำลังบันทึก...</>
-                      : '🏗️ ปักหมุดโครงการ'}
-                  </button>
-                  <button type="button" onClick={() => setShowNewForm(false)}
-                    className="px-4 py-2.5 rounded-xl text-sm text-gray-500 bg-gray-100 hover:bg-gray-200">
-                    ยกเลิก
-                  </button>
-                </div>
-              </form>
-            )}
-          </>
-        )}
-
-        {/* ══════════════════════ TAB: งานซ่อม ══════════════════════ */}
-        {infraTab === 'repair' && (
-          <>
-            {/* Info banner */}
-            <div className="bg-cyan-50 border border-cyan-100 rounded-xl px-4 py-3 text-xs text-cyan-800 leading-relaxed">
-              <span className="font-bold">งานซ่อมบำรุง</span> — บันทึกทุกครั้งที่ออกซ่อมจุดเกิดเหตุ
-              GPS จะระบุตำแหน่งที่ซ่อมไปแล้ว เพื่อให้ Admin ดูภาพรวมบนแผนที่ได้
-            </div>
-
-            <button
-              onClick={() => setShowRepairForm(v => !v)}
-              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white transition-all"
-              style={{ backgroundColor: '#0891b2' }}>
-              {showRepairForm ? <ChevronDown size={14} /> : <Plus size={14} />}
-              {showRepairForm ? 'ซ่อนฟอร์ม' : '🔧 บันทึกงานซ่อม'}
-            </button>
-
-            {showRepairForm && (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  submitWork(
-                    'repair', repairForm, repairGeo,
-                    setRepairSubmitting, setRepairError,
-                    () => setRepairForm({ title: '', category: 'road', location_name: '', work_date: TODAY }),
-                    setRepairGeo, setShowRepairForm
-                  )
-                }}
-                className="bg-white rounded-2xl border border-cyan-100 shadow-sm p-4 space-y-3">
-
-                <div className="text-xs text-cyan-700 bg-cyan-50 rounded-lg px-3 py-2">
-                  ปักหมุด GPS จุดที่ซ่อม · ธุรการจะเพิ่มรายละเอียดในระบบ Admin ต่อ
-                </div>
-
-                {/* Category */}
-                <div className="flex flex-wrap gap-1.5">
-                  {INFRA_CATEGORIES.map((cat) => (
-                    <button key={cat.value} type="button"
-                      onClick={() => setRepairForm(p => ({ ...p, category: cat.value }))}
-                      className="text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all"
-                      style={repairForm.category === cat.value
-                        ? { backgroundColor: '#0891b2', color: '#fff', borderColor: '#0891b2' }
-                        : { backgroundColor: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' }}>
-                      {cat.label}
-                    </button>
-                  ))}
-                </div>
-
-                <input type="text" value={repairForm.title}
-                  onChange={e => setRepairForm(p => ({ ...p, title: e.target.value }))} required
-                  placeholder="ชื่องานซ่อม เช่น ซ่อมไฟกิ่งดับ หน้าโรงเรียน"
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-300" />
-
-                {/* GPS บังคับ */}
-                <div className={`rounded-xl border p-3 ${repairGeo.lat ? 'bg-green-50 border-green-200' : 'bg-cyan-50 border-cyan-200'}`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <MapPin size={13} className={repairGeo.lat ? 'text-green-600' : 'text-cyan-600'} />
-                    <span className="text-xs font-bold text-gray-700">พิกัด GPS จุดที่ซ่อม</span>
-                    <span className="ml-auto text-[10px] font-bold text-cyan-700 bg-cyan-100 px-2 py-0.5 rounded-full">* บังคับ</span>
-                  </div>
-                  <button type="button" onClick={() => setShowInfraMap(true)}
-                    className={`w-full py-2 rounded-lg text-xs font-medium border transition-all ${
-                      repairGeo.lat ? 'bg-white border-green-200 text-green-700' : 'bg-white border-cyan-200 text-cyan-700'
-                    }`}>
-                    {repairGeo.lat
-                      ? `📍 ${repairGeo.lat.toFixed(5)}, ${repairGeo.lng.toFixed(5)} — กดแก้ไข`
-                      : '📍 กดปักหมุดจุดที่ซ่อมบนแผนที่'}
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <input type="text" value={repairForm.location_name}
-                    onChange={e => setRepairForm(p => ({ ...p, location_name: e.target.value }))}
-                    placeholder="ชื่อสถานที่ / หมู่บ้าน"
-                    className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-300" />
-                  <input type="date" value={repairForm.work_date}
-                    onChange={e => setRepairForm(p => ({ ...p, work_date: e.target.value }))}
-                    className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-cyan-300" />
-                </div>
-
-                {repairError && <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-xl">{repairError}</p>}
-
-                <div className="flex gap-2">
-                  <button type="submit" disabled={repairSubmitting}
-                    className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 flex items-center justify-center gap-2"
-                    style={{ backgroundColor: '#0891b2' }}>
-                    {repairSubmitting
-                      ? <><Loader2 size={13} className="animate-spin" /> กำลังบันทึก...</>
-                      : '🔧 ปักหมุดจุดซ่อม'}
-                  </button>
-                  <button type="button" onClick={() => setShowRepairForm(false)}
-                    className="px-4 py-2.5 rounded-xl text-sm text-gray-500 bg-gray-100 hover:bg-gray-200">
-                    ยกเลิก
-                  </button>
-                </div>
-              </form>
-            )}
-          </>
-        )}
-
-        {/* ─── รายการงานที่บันทึกไว้ ─── */}
-        {infraWorks.length > 0 && (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                งานที่บันทึกไว้ ({infraWorks.length})
-              </p>
-              <button onClick={fetchInfraWorks} disabled={loadingInfra}
-                className="text-gray-400 hover:text-gray-600 transition-colors">
-                <RefreshCw size={13} className={loadingInfra ? 'animate-spin' : ''} />
+            {/* GPS */}
+            <div className={`rounded-xl border p-3 ${gpsGeo.lat ? 'bg-green-50 border-green-200' : 'bg-violet-50 border-violet-200'}`}>
+              <div className="flex items-center gap-2 mb-2">
+                <MapPin size={13} className={gpsGeo.lat ? 'text-green-600' : 'text-violet-600'} />
+                <span className="text-xs font-bold text-gray-700">พิกัด GPS</span>
+                <span className="ml-auto text-[10px] font-bold text-violet-700 bg-violet-100 px-2 py-0.5 rounded-full">* บังคับ</span>
+              </div>
+              <button type="button" onClick={() => setShowGpsMap(true)}
+                className={`w-full py-2 rounded-lg text-xs font-medium border transition-all ${
+                  gpsGeo.lat ? 'bg-white border-green-200 text-green-700' : 'bg-white border-violet-200 text-violet-700'
+                }`}>
+                {gpsGeo.lat
+                  ? `📍 ${gpsGeo.lat.toFixed(5)}, ${gpsGeo.lng.toFixed(5)} — กดแก้ไข`
+                  : '📍 กดเพื่อปักหมุดบนแผนที่'}
               </button>
             </div>
-            {infraWorks.map((w, i) => {
-              const isNew = w.work_type === 'new_project'
-              return (
-                <div key={w.id}
-                  className={`flex items-center gap-3 px-4 py-3 ${i < infraWorks.length - 1 ? 'border-b border-gray-50' : ''}`}>
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0 ${isNew ? 'bg-violet-50' : 'bg-cyan-50'}`}>
-                    {isNew ? '🏗️' : '🔧'}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-700 truncate">{w.title}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {w.location_name || '—'} · {new Date(w.work_date).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}
-                    </p>
-                  </div>
-                  <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${isNew ? 'bg-violet-50 text-violet-600' : 'bg-cyan-50 text-cyan-700'}`}>
-                    {isNew ? '🏗️ ใหม่' : '🔧 ซ่อม'}
-                  </span>
+
+            <div className="grid grid-cols-2 gap-2">
+              <input type="text" value={gpsForm.village}
+                onChange={e => setGpsForm(p => ({ ...p, village: e.target.value }))}
+                placeholder="หมู่บ้าน / สถานที่"
+                className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
+              <input type="date" value={gpsForm.start_date}
+                onChange={e => setGpsForm(p => ({ ...p, start_date: e.target.value }))}
+                className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-300" />
+            </div>
+
+            {gpsError && <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-xl">{gpsError}</p>}
+
+            <div className="flex gap-2">
+              <button type="submit" disabled={gpsSubmitting}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 flex items-center justify-center gap-2"
+                style={{ backgroundColor: '#7c3aed' }}>
+                {gpsSubmitting ? <><Loader2 size={13} className="animate-spin" /> บันทึก...</> : '📍 ปักหมุดโครงการ'}
+              </button>
+              <button type="button" onClick={() => setShowGpsForm(false)}
+                className="px-4 py-2.5 rounded-xl text-sm text-gray-500 bg-gray-100 hover:bg-gray-200">
+                ยกเลิก
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* รายการที่ฉันบันทึกไว้ */}
+        {myProjects.length > 0 && (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-50">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                โครงการที่บันทึกไว้ ({myProjects.length})
+              </p>
+            </div>
+            {myProjects.map((p, i) => (
+              <div key={p.id}
+                className={`flex items-center gap-3 px-4 py-3 ${i < myProjects.length - 1 ? 'border-b border-gray-50' : ''}`}>
+                <div className="w-9 h-9 rounded-xl bg-violet-50 flex items-center justify-center text-base shrink-0">
+                  🏗️
                 </div>
-              )
-            })}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-700 truncate">{p.title}</p>
+                  <p className="text-xs text-gray-400 mt-0.5 truncate">
+                    {p.village || '—'}
+                    {p.start_date ? ` · ${new Date(p.start_date).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}` : ''}
+                  </p>
+                </div>
+                {p.latitude && (
+                  <span className="text-[10px] text-green-600 font-mono bg-green-50 px-1.5 py-0.5 rounded shrink-0">📍</span>
+                )}
+              </div>
+            ))}
           </div>
         )}
 
