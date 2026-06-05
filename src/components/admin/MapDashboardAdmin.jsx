@@ -123,16 +123,20 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
   const [showComplaints, setShowComplaints] = useState(true)
   const [showBiz, setShowBiz]               = useState(true)
   const [showInfra, setShowInfra]           = useState(true)
-  const [filterCmpStatus, setFilterCmpStatus]     = useState('all')
-  const [filterProjStatus, setFilterProjStatus]   = useState('all')
-  const [showLabels, setShowLabels]               = useState(false)
+  const [filterCmpStatus,   setFilterCmpStatus]   = useState('all')
+  const [filterCmpCat,      setFilterCmpCat]       = useState('all')
+  const [filterProjStatus,  setFilterProjStatus]   = useState('all')
+  const [filterProjType,    setFilterProjType]     = useState('all')
+  const [showLabels, setShowLabels]                = useState(false)
 
   function clearFilters() {
     setShowComplaints(true); setShowBiz(true); setShowInfra(true)
-    setFilterCmpStatus('all'); setFilterProjStatus('all')
+    setFilterCmpStatus('all'); setFilterCmpCat('all')
+    setFilterProjStatus('all'); setFilterProjType('all')
   }
   const isFiltered = !showComplaints || !showBiz || !showInfra
-    || filterCmpStatus !== 'all' || filterProjStatus !== 'all'
+    || filterCmpStatus !== 'all' || filterCmpCat !== 'all'
+    || filterProjStatus !== 'all' || filterProjType !== 'all'
 
   const centerLat = tenant?.latitude  ?? 18.2
   const centerLng = tenant?.longitude ?? 100.8
@@ -196,12 +200,14 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
   const filteredComplaints = complaints.filter(c => {
     if (!showComplaints) return false
     if (filterCmpStatus !== 'all' && c.status !== filterCmpStatus) return false
+    if (filterCmpCat    !== 'all' && c.category !== filterCmpCat)   return false
     return true
   })
   const filteredBiz = bizRegs.filter(b => showBiz && b.latitude)
   const filteredInfra = civilProjects.filter(w => {
     if (!showInfra) return false
-    if (filterProjStatus !== 'all' && w.status !== filterProjStatus) return false
+    if (filterProjStatus !== 'all' && w.status       !== filterProjStatus) return false
+    if (filterProjType   !== 'all' && w.project_type !== filterProjType)   return false
     return true
   })
 
@@ -251,44 +257,72 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
           ))}
         </div>
 
-        {/* Row 2: สถานะคำร้อง */}
+        {/* Row 2: กรองคำร้อง */}
         {showComplaints && (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wide w-20 shrink-0">คำร้อง</span>
-            <div className="flex flex-wrap gap-1.5">
-              {[
-                { v: 'all',         label: 'ทั้งหมด' },
-                { v: 'pending',     label: 'รอดำเนินการ' },
-                { v: 'in_progress', label: 'กำลังดำเนินการ' },
-                { v: 'completed',   label: 'เสร็จสิ้น' },
-                { v: 'rejected',    label: 'ปฏิเสธ' },
-              ].map(({ v, label }) => (
-                <button key={v} onClick={() => setFilterCmpStatus(v)}
-                  className={`text-xs font-semibold px-3 py-1 rounded-full border transition-all ${filterCmpStatus === v ? 'bg-red-500 border-red-500 text-white' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}>
-                  {label}
-                </button>
-              ))}
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wide w-20 shrink-0">สถานะ</span>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { v: 'all',         label: 'ทั้งหมด' },
+                  { v: 'pending',     label: 'รอดำเนินการ' },
+                  { v: 'in_progress', label: 'กำลังดำเนินการ' },
+                  { v: 'completed',   label: 'เสร็จสิ้น' },
+                  { v: 'rejected',    label: 'ปฏิเสธ' },
+                ].map(({ v, label }) => (
+                  <button key={v} onClick={() => setFilterCmpStatus(v)}
+                    className={`text-xs font-semibold px-3 py-1 rounded-full border transition-all ${filterCmpStatus === v ? 'bg-red-500 border-red-500 text-white' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-x-3">
+              <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wide w-20 shrink-0">ประเภท</span>
+              <select value={filterCmpCat} onChange={e => setFilterCmpCat(e.target.value)}
+                className="text-xs font-medium px-3 py-1.5 rounded-xl border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-300 min-w-[160px]">
+                <option value="all">ทุกประเภท</option>
+                {Object.entries(CATEGORY_LABEL).map(([k, v]) => (
+                  <option key={k} value={k}>{v}</option>
+                ))}
+              </select>
             </div>
           </div>
         )}
 
-        {/* Row 3: สถานะโครงการ */}
+        {/* Row 3: กรองโครงการ */}
         {showInfra && (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wide w-20 shrink-0">โครงการ</span>
-            <div className="flex flex-wrap gap-1.5">
-              {[
-                { v: 'all',         label: 'ทั้งหมด' },
-                { v: 'planned',     label: 'วางแผน' },
-                { v: 'approved',    label: 'อนุมัติแล้ว' },
-                { v: 'in_progress', label: 'กำลังดำเนินการ' },
-                { v: 'completed',   label: 'แล้วเสร็จ' },
-              ].map(({ v, label }) => (
-                <button key={v} onClick={() => setFilterProjStatus(v)}
-                  className={`text-xs font-semibold px-3 py-1 rounded-full border transition-all ${filterProjStatus === v ? 'bg-violet-500 border-violet-500 text-white' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}>
-                  {label}
-                </button>
-              ))}
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wide w-20 shrink-0">สถานะ</span>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { v: 'all',         label: 'ทั้งหมด' },
+                  { v: 'planned',     label: 'วางแผน' },
+                  { v: 'approved',    label: 'อนุมัติแล้ว' },
+                  { v: 'in_progress', label: 'กำลังดำเนินการ' },
+                  { v: 'completed',   label: 'แล้วเสร็จ' },
+                ].map(({ v, label }) => (
+                  <button key={v} onClick={() => setFilterProjStatus(v)}
+                    className={`text-xs font-semibold px-3 py-1 rounded-full border transition-all ${filterProjStatus === v ? 'bg-violet-500 border-violet-500 text-white' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-x-3">
+              <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wide w-20 shrink-0">ประเภท</span>
+              <select value={filterProjType} onChange={e => setFilterProjType(e.target.value)}
+                className="text-xs font-medium px-3 py-1.5 rounded-xl border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-violet-200 focus:border-violet-300 min-w-[160px]">
+                <option value="all">ทุกประเภท</option>
+                <option value="road">ถนน</option>
+                <option value="drain">ระบบระบายน้ำ</option>
+                <option value="waterway">รางส่งน้ำ</option>
+                <option value="building">อาคาร/สิ่งก่อสร้าง</option>
+                <option value="light">ไฟฟ้าสาธารณะ</option>
+                <option value="park">สวนสาธารณะ/ภูมิทัศน์</option>
+                <option value="other">อื่นๆ</option>
+              </select>
             </div>
           </div>
         )}
