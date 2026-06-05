@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { MapContainer, TileLayer, CircleMarker, Marker, Popup, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, CircleMarker, Marker, Popup, Tooltip, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { supabase } from '../../lib/supabase'
@@ -125,6 +125,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
   const [showInfra, setShowInfra]           = useState(true)
   const [filterCmpStatus, setFilterCmpStatus]     = useState('all')
   const [filterProjStatus, setFilterProjStatus]   = useState('all')
+  const [showLabels, setShowLabels]               = useState(false)
 
   function clearFilters() {
     setShowComplaints(true); setShowBiz(true); setShowInfra(true)
@@ -284,15 +285,19 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
           </div>
         )}
 
-        {/* ล้างตัวกรอง */}
-        {isFiltered && (
-          <div className="flex justify-end pt-0.5">
+        {/* Row 4: แสดงชื่อ + ล้าง */}
+        <div className="flex items-center justify-between pt-0.5">
+          <button onClick={() => setShowLabels(v => !v)}
+            className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full border transition-all ${showLabels ? 'bg-blue-500 border-blue-500 text-white' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}>
+            🏷️ แสดงชื่อ
+          </button>
+          {isFiltered && (
             <button onClick={clearFilters}
               className="text-xs font-semibold px-3 py-1 rounded-full border border-gray-300 text-gray-500 hover:bg-gray-100 transition-colors">
               ✕ ล้างตัวกรอง
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Map */}
@@ -328,6 +333,12 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
                   fillOpacity: 0.9,
                 }}
               >
+                {showLabels && (
+                  <Tooltip permanent direction="top" offset={[0, -10]}
+                    className="bg-white! text-gray-700! text-[10px]! font-semibold! border-gray-200! shadow-sm! px-1.5! py-0.5! rounded-lg!">
+                    {CATEGORY_LABEL[c.category] ?? FORM_TYPE_LABEL[c.form_type] ?? 'คำร้อง'}
+                  </Tooltip>
+                )}
                 <Popup>
                   <div className="text-sm min-w-[200px]">
                     <p className="font-bold text-gray-800 mb-1">
@@ -373,6 +384,12 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
                   fillOpacity: 0.9,
                 }}
               >
+                {showLabels && (
+                  <Tooltip permanent direction="top" offset={[0, -10]}
+                    className="bg-white! text-gray-700! text-[10px]! font-semibold! border-gray-200! shadow-sm! px-1.5! py-0.5! rounded-lg!">
+                    {b.business_name}
+                  </Tooltip>
+                )}
                 <Popup>
                   <div className="text-sm min-w-[200px]">
                     <p className="font-bold text-gray-800 mb-0.5">{b.business_name}</p>
@@ -428,6 +445,12 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
                     fillOpacity: 0.9,
                   }}
                 >
+                  {showLabels && (
+                    <Tooltip permanent direction="top" offset={[0, -10]}
+                      className="bg-white! text-gray-700! text-[10px]! font-semibold! border-gray-200! shadow-sm! px-1.5! py-0.5! rounded-lg!">
+                      {w.title.length > 24 ? w.title.slice(0, 24) + '…' : w.title}
+                    </Tooltip>
+                  )}
                   <Popup>
                     <div className="text-sm min-w-[200px]">
                       <p className="font-bold text-gray-800 mb-0.5">🏗️ {w.title}</p>
