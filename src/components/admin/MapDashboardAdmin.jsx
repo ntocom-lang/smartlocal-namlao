@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
-import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, CircleMarker, Marker, Popup, useMap } from 'react-leaflet'
+import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { supabase } from '../../lib/supabase'
 import { RefreshCw, Loader2, CheckCircle2, XCircle, MapPin } from 'lucide-react'
@@ -92,6 +93,15 @@ function GmapsBtn({ lat, lng }) {
   )
 }
 
+// ─── Shape icons (diamond = ร้านค้า, triangle = โครงการ) ─────────────────────
+function shapeIcon(shape, color) {
+  const w = 18, h = shape === 'diamond' ? 18 : 16
+  const svg = shape === 'diamond'
+    ? `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polygon points="9,1 17,9 9,17 1,9" fill="${color}" stroke="white" stroke-width="2.5"/></svg>`
+    : `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polygon points="9,1 17,15 1,15" fill="${color}" stroke="white" stroke-width="2.5"/></svg>`
+  return L.divIcon({ html: svg, className: '', iconSize: [w, h], iconAnchor: [w / 2, h / 2] })
+}
+
 // ─── Recenter helper ─────────────────────────────────────────────────────────
 function RecenterMap({ lat, lng }) {
   const map = useMap()
@@ -111,44 +121,61 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
 
   // filter toggles
   const [showComplaints, setShowComplaints] = useState(true)
-  const [showBiz, setShowBiz] = useState(true)
-  const [showInfra, setShowInfra] = useState(true)
-  const [showCompleted, setShowCompleted] = useState(true)
+  const [showBiz, setShowBiz]               = useState(true)
+  const [showInfra, setShowInfra]           = useState(true)
+  const [filterCmpStatus, setFilterCmpStatus]     = useState('all')
+  const [filterProjStatus, setFilterProjStatus]   = useState('all')
+
+  function clearFilters() {
+    setShowComplaints(true); setShowBiz(true); setShowInfra(true)
+    setFilterCmpStatus('all'); setFilterProjStatus('all')
+  }
+  const isFiltered = !showComplaints || !showBiz || !showInfra
+    || filterCmpStatus !== 'all' || filterProjStatus !== 'all'
 
   const centerLat = tenant?.latitude  ?? 18.2
   const centerLng = tenant?.longitude ?? 100.8
 
-  const fetchAll = useCallback(async () => {
-    if (!tenant?.id) return
+  const tenantId = tenant?.id
+  const [refreshTick, setRefreshTick] = useState(0)
+  const fetchAll = useCallback(() => {
     setLoading(true)
-    const [cmpRes, bizRes, infraRes] = await Promise.all([
+    setRefreshTick(n => n + 1)
+  }, [])
+
+  useEffect(() => {
+    if (!tenantId) return
+    let cancelled = false
+    Promise.all([
       supabase
         .from('complaints')
         .select('id, latitude, longitude, category, form_type, status, detail, created_at, location_name, village, reporter_name')
-        .eq('municipality_id', tenant.id)
+        .eq('municipality_id', tenantId)
         .not('latitude', 'is', null)
         .order('created_at', { ascending: false })
         .limit(500),
       supabase
         .from('business_registrations')
         .select('*')
-        .eq('municipality_id', tenant.id)
+        .eq('municipality_id', tenantId)
         .order('created_at', { ascending: false }),
       supabase
         .from('civil_projects')
         .select('id, title, project_type, status, progress_pct, latitude, longitude, village, budget_amount, created_at, start_date, fiscal_year')
-        .eq('municipality_id', tenant.id)
+        .eq('municipality_id', tenantId)
         .not('latitude', 'is', null)
         .order('created_at', { ascending: false })
         .limit(500),
-    ])
-    setComplaints(cmpRes.data ?? [])
-    setBizRegs(bizRes.data ?? [])
-    setCivilProjects(infraRes.data ?? [])
-    setLoading(false)
-  }, [tenant?.id])
-
-  useEffect(() => { fetchAll() }, [fetchAll])
+    ]).then(([cmpRes, bizRes, infraRes]) => {
+      if (!cancelled) {
+        setComplaints(cmpRes.data ?? [])
+        setBizRegs(bizRes.data ?? [])
+        setCivilProjects(infraRes.data ?? [])
+        setLoading(false)
+      }
+    })
+    return () => { cancelled = true }
+  }, [tenantId, refreshTick])
 
   async function approveBiz(id, approved) {
     setApproving(id)
@@ -167,11 +194,15 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
 
   const filteredComplaints = complaints.filter(c => {
     if (!showComplaints) return false
-    if (!showCompleted && c.status === 'completed') return false
+    if (filterCmpStatus !== 'all' && c.status !== filterCmpStatus) return false
     return true
   })
   const filteredBiz = bizRegs.filter(b => showBiz && b.latitude)
-  const filteredInfra = civilProjects.filter(w => showInfra)
+  const filteredInfra = civilProjects.filter(w => {
+    if (!showInfra) return false
+    if (filterProjStatus !== 'all' && w.status !== filterProjStatus) return false
+    return true
+  })
 
   const totalPins = filteredComplaints.length + filteredBiz.length + filteredInfra.length
   const pendingBiz = bizRegs.filter(b => b.status === 'pending')
@@ -191,25 +222,77 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
         </button>
       </div>
 
-      {/* Filter toggles */}
-      <div className="flex flex-wrap gap-2">
-        <button onClick={() => setShowComplaints(v => !v)}
-          className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${showComplaints ? 'bg-red-500 text-white border-red-500' : 'bg-white text-gray-500 border-gray-200'}`}>
-          <span className="w-2 h-2 rounded-full bg-current" /> คำร้อง ({complaints.length})
-        </button>
-        <button onClick={() => setShowCompleted(v => !v)}
-          disabled={!showComplaints}
-          className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all disabled:opacity-40 ${showCompleted ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-white text-gray-500 border-gray-200'}`}>
-          แสดงงานเสร็จ
-        </button>
-        <button onClick={() => setShowBiz(v => !v)}
-          className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${showBiz ? 'bg-amber-400 text-white border-amber-400' : 'bg-white text-gray-500 border-gray-200'}`}>
-          <span className="w-2 h-2 rounded-full bg-current" /> ร้านค้า ({bizRegs.length})
-        </button>
-        <button onClick={() => setShowInfra(v => !v)}
-          className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${showInfra ? 'bg-violet-500 text-white border-violet-500' : 'bg-white text-gray-500 border-gray-200'}`}>
-          <span className="w-2 h-2 rounded-full bg-current" /> งานโยธา ({civilProjects.length})
-        </button>
+      {/* Filter panel */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3 space-y-2.5">
+
+        {/* Row 1: ชั้นข้อมูล */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wide w-20 shrink-0">ชั้นข้อมูล</span>
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              { key: 'cmp',  label: `คำร้อง (${complaints.length})`,   active: showComplaints, toggle: () => setShowComplaints(v => !v), color: 'bg-red-500 border-red-500' },
+              { key: 'biz',  label: `ร้านค้า (${bizRegs.length})`,     active: showBiz,        toggle: () => setShowBiz(v => !v),        color: 'bg-amber-400 border-amber-400' },
+              { key: 'proj', label: `โครงการ (${civilProjects.length})`,active: showInfra,      toggle: () => setShowInfra(v => !v),      color: 'bg-violet-500 border-violet-500' },
+            ].map(({ key, label, active, toggle, color }) => (
+              <button key={key} onClick={toggle}
+                className={`text-xs font-semibold px-3 py-1 rounded-full border transition-all ${active ? `${color} text-white` : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Row 2: สถานะคำร้อง */}
+        {showComplaints && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wide w-20 shrink-0">คำร้อง</span>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                { v: 'all',         label: 'ทั้งหมด' },
+                { v: 'pending',     label: 'รอดำเนินการ' },
+                { v: 'in_progress', label: 'กำลังดำเนินการ' },
+                { v: 'completed',   label: 'เสร็จสิ้น' },
+                { v: 'rejected',    label: 'ปฏิเสธ' },
+              ].map(({ v, label }) => (
+                <button key={v} onClick={() => setFilterCmpStatus(v)}
+                  className={`text-xs font-semibold px-3 py-1 rounded-full border transition-all ${filterCmpStatus === v ? 'bg-red-500 border-red-500 text-white' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Row 3: สถานะโครงการ */}
+        {showInfra && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wide w-20 shrink-0">โครงการ</span>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                { v: 'all',         label: 'ทั้งหมด' },
+                { v: 'planned',     label: 'วางแผน' },
+                { v: 'approved',    label: 'อนุมัติแล้ว' },
+                { v: 'in_progress', label: 'กำลังดำเนินการ' },
+                { v: 'completed',   label: 'แล้วเสร็จ' },
+              ].map(({ v, label }) => (
+                <button key={v} onClick={() => setFilterProjStatus(v)}
+                  className={`text-xs font-semibold px-3 py-1 rounded-full border transition-all ${filterProjStatus === v ? 'bg-violet-500 border-violet-500 text-white' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ล้างตัวกรอง */}
+        {isFiltered && (
+          <div className="flex justify-end pt-0.5">
+            <button onClick={clearFilters}
+              className="text-xs font-semibold px-3 py-1 rounded-full border border-gray-300 text-gray-500 hover:bg-gray-100 transition-colors">
+              ✕ ล้างตัวกรอง
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Map */}
@@ -330,7 +413,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
               </CircleMarker>
             ))}
 
-            {/* ── งานโยธา (แยกสีตาม status) ── */}
+            {/* ── โครงการ (แยกสีตาม status) ── */}
             {filteredInfra.map((w) => {
               const statusColor = CIVIL_STATUS_COLOR[w.status] ?? '#9ca3af'
               return (
