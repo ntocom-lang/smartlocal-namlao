@@ -69,6 +69,29 @@ const LEGEND = [
   { color: '#10b981', label: 'โครงการ — แล้วเสร็จ' },
 ]
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function gmapsUrl(lat, lng) {
+  return `https://www.google.com/maps?q=${lat},${lng}`
+}
+
+function GmapsBtn({ lat, lng }) {
+  return (
+    <a
+      href={gmapsUrl(lat, lng)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="mt-2 flex items-center justify-center gap-1.5 w-full py-1.5 rounded-lg text-xs font-semibold border transition-colors"
+      style={{ color: '#1a73e8', borderColor: '#dadce0', backgroundColor: '#f8f9fa' }}
+      onClick={e => e.stopPropagation()}
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="#1a73e8">
+        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+      </svg>
+      แสดงบน Google Maps
+    </a>
+  )
+}
+
 // ─── Recenter helper ─────────────────────────────────────────────────────────
 function RecenterMap({ lat, lng }) {
   const map = useMap()
@@ -248,6 +271,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
                         <MapPin size={10} /> {c.location_name ?? c.village}
                       </p>
                     )}
+                    <GmapsBtn lat={c.latitude} lng={c.longitude} />
                   </div>
                 </Popup>
               </CircleMarker>
@@ -300,6 +324,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
                         </button>
                       </div>
                     )}
+                    <GmapsBtn lat={b.latitude} lng={b.longitude} />
                   </div>
                 </Popup>
               </CircleMarker>
@@ -355,6 +380,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
                           <MapPin size={10} /> {w.village}
                         </p>
                       )}
+                      <GmapsBtn lat={w.latitude} lng={w.longitude} />
                     </div>
                   </Popup>
                 </CircleMarker>
