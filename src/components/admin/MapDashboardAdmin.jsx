@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { MapContainer, TileLayer, CircleMarker, Marker, Popup, Tooltip, useMap } from 'react-leaflet'
-import L from 'leaflet'
+import { MapContainer, TileLayer, CircleMarker, Popup, Tooltip, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import { supabase } from '../../lib/supabase'
 import { RefreshCw, Loader2, CheckCircle2, XCircle, MapPin, Maximize2, Minimize2 } from 'lucide-react'
@@ -93,14 +92,6 @@ function GmapsBtn({ lat, lng }) {
   )
 }
 
-// ─── Shape icons (diamond = ร้านค้า, triangle = โครงการ) ─────────────────────
-function shapeIcon(shape, color) {
-  const w = 18, h = shape === 'diamond' ? 18 : 16
-  const svg = shape === 'diamond'
-    ? `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polygon points="9,1 17,9 9,17 1,9" fill="${color}" stroke="white" stroke-width="2.5"/></svg>`
-    : `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polygon points="9,1 17,15 1,15" fill="${color}" stroke="white" stroke-width="2.5"/></svg>`
-  return L.divIcon({ html: svg, className: '', iconSize: [w, h], iconAnchor: [w / 2, h / 2] })
-}
 
 // ─── Recenter helper ─────────────────────────────────────────────────────────
 function RecenterMap({ lat, lng }) {
@@ -136,18 +127,21 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
   const [showEnv,    setShowEnv]    = useState(true)  // สิ่งแวดล้อม
   const [showBiz,    setShowBiz]    = useState(true)  // ร้านค้า/ท่องเที่ยว
   const [showProj,   setShowProj]   = useState(true)  // โครงการ (civil_projects)
-  const [filterStatus,   setFilterStatus]   = useState('all')
-  const [filterCmpCat,   setFilterCmpCat]   = useState('all')
-  const [filterProjType, setFilterProjType] = useState('all')
+  const [filterStatus,     setFilterStatus]     = useState('all')
+  const [filterCmpCat,     setFilterCmpCat]     = useState('all')
+  const [filterProjStatus, setFilterProjStatus] = useState('all')
+  const [filterProjType,   setFilterProjType]   = useState('all')
   const [showLabels, setShowLabels] = useState(false)
 
   function clearFilters() {
     setShowRepair(true); setShowWater(true); setShowEnv(true)
     setShowBiz(true);    setShowProj(true)
-    setFilterStatus('all'); setFilterCmpCat('all'); setFilterProjType('all')
+    setFilterStatus('all'); setFilterCmpCat('all')
+    setFilterProjStatus('all'); setFilterProjType('all')
   }
   const isFiltered = !showRepair || !showWater || !showEnv || !showBiz || !showProj
-    || filterStatus !== 'all' || filterCmpCat !== 'all' || filterProjType !== 'all'
+    || filterStatus !== 'all' || filterCmpCat !== 'all'
+    || filterProjStatus !== 'all' || filterProjType !== 'all'
 
   const [selectedItem, setSelectedItem] = useState(null) // { type: 'civil'|'complaint', data }
   const [mapType, setMapType] = useState('normal')
@@ -258,8 +252,8 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
   })
   const filteredProj = civilProjects.filter(w => {
     if (!showProj) return false
-    if (filterStatus  !== 'all' && w.status       !== filterStatus)   return false
-    if (filterProjType !== 'all' && w.project_type !== filterProjType) return false
+    if (filterProjStatus !== 'all' && w.status       !== filterProjStatus) return false
+    if (filterProjType   !== 'all' && w.project_type !== filterProjType)   return false
     return true
   })
 
@@ -329,45 +323,8 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
           ))}
         </div>
 
-        {/* ── หัวข้อ: สถานะ ── */}
-        <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
-          <span className="text-[11px] font-bold text-gray-600 uppercase tracking-wider">
-            กรองตามสถานะ
-            <span className="ml-1.5 font-normal text-gray-400 normal-case">(ใช้กับทุกชั้นข้อมูล)</span>
-          </span>
-        </div>
-        <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap gap-1.5">
-          {[
-            { v: 'all',         label: 'ทั้งหมด',        color: '#374151' },
-            { v: 'pending',     label: 'รอดำเนินการ',    color: '#ef4444' },
-            { v: 'received',    label: 'รับเรื่องแล้ว',  color: '#f97316' },
-            { v: 'in_progress', label: 'กำลังดำเนินการ', color: '#f59e0b' },
-            { v: 'planned',     label: 'วางแผน',         color: '#64748b' },
-            { v: 'approved',    label: 'อนุมัติแล้ว',    color: '#3b82f6' },
-            { v: 'completed',   label: 'แล้วเสร็จ',      color: '#10b981' },
-            { v: 'rejected',    label: 'ปฏิเสธ',         color: '#6b7280' },
-            { v: 'cancelled',   label: 'ยกเลิก',         color: '#dc2626' },
-            { v: 'suspended',   label: 'ระงับชั่วคราว',  color: '#b45309' },
-          ].map(({ v, label, color }) => {
-            const active = filterStatus === v
-            return (
-              <button key={v} onClick={() => setFilterStatus(v)}
-                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 border transition-all"
-                style={active
-                  ? { backgroundColor: color, borderColor: color, color: '#fff', borderRadius: '2px' }
-                  : { backgroundColor: '#fff', borderColor: '#d1d5db', color: '#374151', borderRadius: '2px' }}>
-                {v !== 'all' && (
-                  <span className="w-1.5 h-1.5 shrink-0"
-                    style={{ backgroundColor: active ? 'rgba(255,255,255,0.7)' : color }} />
-                )}
-                {label}
-              </button>
-            )
-          })}
-        </div>
-
-        {/* ── หัวข้อ: ประเภท (conditional) ── */}
-        {(showRepair || showProj) && (
+        {/* ── กรองตามประเภทและสถานะ ── */}
+        {(showRepair || showWater || showEnv || showBiz || showProj) && (
           <>
             <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
               <span className="text-[11px] font-bold text-gray-600 uppercase tracking-wider">กรองตามประเภท</span>
@@ -386,6 +343,22 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
                   </select>
                 </div>
               )}
+              {(showRepair || showWater || showEnv || showBiz) && (
+                <div className="flex items-center gap-2.5">
+                  <span className="text-[11px] font-bold text-gray-600 shrink-0 w-24">สถานะคำร้อง</span>
+                  <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+                    className="text-xs font-medium px-2.5 py-1.5 border border-gray-300 bg-white text-gray-800 focus:outline-none"
+                    style={{ borderRadius: '2px', minWidth: '160px' }}>
+                    <option value="all">— ทุกสถานะ —</option>
+                    <option value="pending">รอดำเนินการ</option>
+                    <option value="received">รับเรื่องแล้ว</option>
+                    <option value="in_progress">กำลังดำเนินการ</option>
+                    <option value="rejected">ปฏิเสธ</option>
+                    <option value="cancelled">ยกเลิก</option>
+                    <option value="suspended">ระงับชั่วคราว</option>
+                  </select>
+                </div>
+              )}
               {showProj && (
                 <div className="flex items-center gap-2.5">
                   <span className="text-[11px] font-bold text-gray-600 shrink-0 w-24">ประเภทโครงการ</span>
@@ -400,6 +373,22 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
                     <option value="light">ไฟฟ้าสาธารณะ</option>
                     <option value="park">สวนสาธารณะ / ภูมิทัศน์</option>
                     <option value="other">อื่น ๆ</option>
+                  </select>
+                </div>
+              )}
+              {showProj && (
+                <div className="flex items-center gap-2.5">
+                  <span className="text-[11px] font-bold text-gray-600 shrink-0 w-24">สถานะโครงการ</span>
+                  <select value={filterProjStatus} onChange={e => setFilterProjStatus(e.target.value)}
+                    className="text-xs font-medium px-2.5 py-1.5 border border-gray-300 bg-white text-gray-800 focus:outline-none"
+                    style={{ borderRadius: '2px', minWidth: '160px' }}>
+                    <option value="all">— ทุกสถานะ —</option>
+                    <option value="planned">วางแผน</option>
+                    <option value="approved">อนุมัติแล้ว</option>
+                    <option value="in_progress">กำลังดำเนินการ</option>
+                    <option value="completed">แล้วเสร็จ</option>
+                    <option value="cancelled">ยกเลิก</option>
+                    <option value="suspended">ระงับชั่วคราว</option>
                   </select>
                 </div>
               )}
