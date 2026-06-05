@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import {
   Loader2, LogOut, MapPin, Phone, X, RefreshCw,
   CheckCircle2, Image, AlignLeft, ChevronRight, Wrench, Printer,
+  Plus, ChevronDown,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { fmtNo } from '../lib/formatComplaintNo'
+import MapPicker from '../components/MapPicker'
 
 const STATUS = {
   pending:     { label: 'รอดำเนินการ',    bg: '#fef3c7', text: '#92400e' },
@@ -549,6 +551,96 @@ export default function TechnicianDashboard() {
     setSelected(c)
   }
 
+  // ─── Engineer GPS Tool state ─────────────────────────────────────────────
+  const [showInfraForm, setShowInfraForm] = useState(false)
+  const [infraForm, setInfraForm] = useState({
+    title: '', category: 'road', description: '', budget: '', location_name: '', work_date: new Date().toISOString().split('T')[0],
+  })
+  const [infraGeo, setInfraGeo] = useState({ lat: null, lng: null })
+  const [infraPhotos, setInfraPhotos] = useState([])
+  const [showInfraMap, setShowInfraMap] = useState(false)
+  const [infraSubmitting, setInfraSubmitting] = useState(false)
+  const [infraError, setInfraError] = useState(null)
+  const [infraWorks, setInfraWorks] = useState([])
+  const [loadingInfra, setLoadingInfra] = useState(false)
+
+  const INFRA_CATEGORIES = [
+    { value: 'road',        label: '🛣️  ถนน / สะพาน' },
+    { value: 'drainage',    label: '🕳️  ระบบระบายน้ำ' },
+    { value: 'electrical',  label: '💡  ไฟฟ้า / แสงสว่าง' },
+    { value: 'waterway',    label: '🏞️  ลำเหมือง / คูน้ำ' },
+    { value: 'building',    label: '🏗️  อาคาร / สิ่งก่อสร้าง' },
+    { value: 'irrigation',  label: '💧  ระบบชลประทาน' },
+    { value: 'other',       label: '📝  อื่นๆ' },
+  ]
+
+  const fetchInfraWorks = useCallback(async () => {
+    if (!tenant?.id) return
+    setLoadingInfra(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) { setLoadingInfra(false); return }
+    const { data } = await supabase
+      .from('infrastructure_works')
+      .select('*')
+      .eq('municipality_id', tenant.id)
+      .eq('created_by', session.user.id)
+      .order('work_date', { ascending: false })
+      .limit(20)
+    setInfraWorks(data ?? [])
+    setLoadingInfra(false)
+  }, [tenant?.id])
+
+  async function handleInfraPhotos(e) {
+    const files = Array.from(e.target.files ?? [])
+    const items = files.map((f) => ({ file: f, preview: URL.createObjectURL(f) }))
+    setInfraPhotos((prev) => [...prev, ...items].slice(0, 4))
+    e.target.value = ''
+  }
+
+  async function submitInfraWork(e) {
+    e.preventDefault()
+    if (!infraForm.title.trim()) { setInfraError('กรุณาระบุชื่องาน'); return }
+    if (!infraGeo.lat) { setInfraError('กรุณาปักหมุด GPS ตำแหน่งงานก่อนบันทึก'); return }
+    setInfraError(null)
+    setInfraSubmitting(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const id = crypto.randomUUID()
+    const photoUrls = []
+    for (const item of infraPhotos) {
+      const ext = item.file.name.split('.').pop()
+      const path = `infra/${id}/${Date.now()}.${ext}`
+      const { error } = await supabase.storage.from('complaint-attachments').upload(path, item.file)
+      if (!error) {
+        const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
+        photoUrls.push(data.publicUrl)
+      }
+    }
+    const { error: dbErr } = await supabase.from('infrastructure_works').insert({
+      id,
+      municipality_id: tenant.id,
+      created_by:      session.user.id,
+      title:           infraForm.title.trim(),
+      category:        infraForm.category,
+      description:     infraForm.description.trim() || null,
+      budget:          infraForm.budget ? parseFloat(infraForm.budget) : null,
+      location_name:   infraForm.location_name.trim() || null,
+      work_date:       infraForm.work_date,
+      latitude:        infraGeo.lat,
+      longitude:       infraGeo.lng,
+      photos:          photoUrls,
+      status:          'completed',
+    })
+    setInfraSubmitting(false)
+    if (dbErr) { setInfraError(`บันทึกไม่สำเร็จ: ${dbErr.message}`); return }
+    setInfraForm({ title: '', category: 'road', description: '', budget: '', location_name: '', work_date: new Date().toISOString().split('T')[0] })
+    setInfraGeo({ lat: null, lng: null })
+    setInfraPhotos([])
+    setShowInfraForm(false)
+    fetchInfraWorks()
+  }
+
+  useEffect(() => { fetchInfraWorks() }, [fetchInfraWorks])
+
   const pending = complaints.filter((c) => c.status !== 'completed')
   const done = complaints.filter((c) => c.status === 'completed')
 
@@ -668,6 +760,175 @@ export default function TechnicianDashboard() {
           )}
         </>
       )}
+
+      {/* ─── Engineer GPS Tool ─── */}
+      {showInfraMap && (
+        <MapPicker
+          initialPos={infraGeo.lat ? { lat: infraGeo.lat, lng: infraGeo.lng } : null}
+          onConfirm={({ lat, lng, address }) => {
+            setInfraGeo({ lat, lng })
+            if (address && !infraForm.location_name) setInfraForm(p => ({ ...p, location_name: address }))
+            setShowInfraMap(false)
+          }}
+          onClose={() => setShowInfraMap(false)}
+        />
+      )}
+
+      <div className="space-y-3">
+        {/* Section header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-violet-100 flex items-center justify-center">
+              <Wrench size={15} className="text-violet-600" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-gray-700">บันทึกงานโยธาหน้างาน</p>
+              <p className="text-xs text-gray-400">Engineer GPS · กองช่างปลั๊กอิน</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowInfraForm(v => !v)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white transition-all"
+            style={{ backgroundColor: '#8b5cf6' }}>
+            {showInfraForm ? <ChevronDown size={13} /> : <Plus size={13} />}
+            {showInfraForm ? 'ซ่อน' : 'บันทึกงาน'}
+          </button>
+        </div>
+
+        {/* Form */}
+        {showInfraForm && (
+          <form onSubmit={submitInfraWork}
+            className="bg-white rounded-2xl border border-violet-100 shadow-sm p-4 space-y-3">
+
+            {/* Category + title */}
+            <div className="flex flex-wrap gap-1.5">
+              {INFRA_CATEGORIES.map((cat) => (
+                <button key={cat.value} type="button"
+                  onClick={() => setInfraForm(p => ({ ...p, category: cat.value }))}
+                  className="text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all"
+                  style={infraForm.category === cat.value
+                    ? { backgroundColor: '#8b5cf6', color: '#fff', borderColor: '#8b5cf6' }
+                    : { backgroundColor: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' }}>
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+
+            <input type="text" value={infraForm.title}
+              onChange={e => setInfraForm(p => ({ ...p, title: e.target.value }))} required
+              placeholder="ชื่องาน เช่น ซ่อมถนนลาดยางหมู่ที่ 3"
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
+
+            {/* GPS — บังคับ */}
+            <div className={`rounded-xl border p-3 ${infraGeo.lat ? 'bg-green-50 border-green-200' : 'bg-violet-50 border-violet-200'}`}>
+              <div className="flex items-center gap-2 mb-2">
+                <MapPin size={14} className={infraGeo.lat ? 'text-green-600' : 'text-violet-600'} />
+                <span className="text-xs font-semibold text-gray-700">พิกัด GPS หน้างาน</span>
+                <span className="ml-auto text-[10px] font-bold text-violet-700 bg-violet-100 px-2 py-0.5 rounded-full">* บังคับ</span>
+              </div>
+              <button type="button" onClick={() => setShowInfraMap(true)}
+                className={`w-full py-2 rounded-lg text-xs font-medium border transition-all ${
+                  infraGeo.lat
+                    ? 'bg-white border-green-200 text-green-700'
+                    : 'bg-white border-violet-200 text-violet-700'
+                }`}>
+                {infraGeo.lat
+                  ? `📍 ${infraGeo.lat.toFixed(5)}, ${infraGeo.lng.toFixed(5)} — กดแก้ไข`
+                  : '📍 กดปักหมุด GPS ตำแหน่งงาน'}
+              </button>
+            </div>
+
+            <input type="text" value={infraForm.location_name}
+              onChange={e => setInfraForm(p => ({ ...p, location_name: e.target.value }))}
+              placeholder="ชื่อสถานที่ / หมู่บ้าน"
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
+
+            <div className="grid grid-cols-2 gap-2">
+              <input type="number" value={infraForm.budget}
+                onChange={e => setInfraForm(p => ({ ...p, budget: e.target.value }))}
+                placeholder="งบประมาณ (บาท)"
+                className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
+              <input type="date" value={infraForm.work_date}
+                onChange={e => setInfraForm(p => ({ ...p, work_date: e.target.value }))}
+                className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-300" />
+            </div>
+
+            <textarea value={infraForm.description}
+              onChange={e => setInfraForm(p => ({ ...p, description: e.target.value }))} rows={2}
+              placeholder="รายละเอียดงาน (ไม่บังคับ)"
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-violet-300" />
+
+            {/* Photos */}
+            <label className="flex items-center gap-2 cursor-pointer border border-dashed border-gray-200 rounded-xl px-4 py-2.5 hover:bg-gray-50 transition-colors">
+              <Image size={15} className="text-gray-400" />
+              <span className="text-xs text-gray-500">แนบรูปภาพงาน (ไม่เกิน 4 รูป)</span>
+              <input type="file" accept="image/*" multiple className="hidden" onChange={handleInfraPhotos} />
+            </label>
+            {infraPhotos.length > 0 && (
+              <div className="grid grid-cols-4 gap-1.5">
+                {infraPhotos.map((p, i) => (
+                  <div key={i} className="relative aspect-square rounded-xl overflow-hidden bg-gray-100">
+                    <img src={p.preview} alt="" className="w-full h-full object-cover" />
+                    <button type="button"
+                      onClick={() => setInfraPhotos(prev => prev.filter((_, j) => j !== i))}
+                      className="absolute top-0.5 right-0.5 bg-black/50 rounded-full p-0.5">
+                      <X size={9} className="text-white" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {infraError && <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-xl">{infraError}</p>}
+
+            <div className="flex gap-2">
+              <button type="submit" disabled={infraSubmitting}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 flex items-center justify-center gap-2"
+                style={{ backgroundColor: '#8b5cf6' }}>
+                {infraSubmitting ? <><Loader2 size={14} className="animate-spin" /> กำลังบันทึก...</> : '📍 บันทึกงานลงแผนที่'}
+              </button>
+              <button type="button" onClick={() => setShowInfraForm(false)}
+                className="px-4 py-2.5 rounded-xl text-sm text-gray-500 bg-gray-100 hover:bg-gray-200 transition-colors">
+                ยกเลิก
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* My infra works list */}
+        {infraWorks.length > 0 && (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                งานที่บันทึกไว้ ({infraWorks.length})
+              </p>
+              <button onClick={fetchInfraWorks} disabled={loadingInfra}
+                className="text-gray-400 hover:text-gray-600 transition-colors">
+                <RefreshCw size={13} className={loadingInfra ? 'animate-spin' : ''} />
+              </button>
+            </div>
+            {infraWorks.map((w, i) => (
+              <div key={w.id}
+                className={`flex items-center gap-3 px-4 py-3 ${i < infraWorks.length - 1 ? 'border-b border-gray-50' : ''}`}>
+                <div className="w-9 h-9 rounded-xl bg-violet-50 flex items-center justify-center shrink-0">
+                  <Wrench size={15} className="text-violet-500" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-700 truncate">{w.title}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {w.location_name || '—'} · {new Date(w.work_date).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}
+                  </p>
+                </div>
+                {w.latitude && (
+                  <span className="shrink-0 text-[10px] bg-violet-50 text-violet-600 font-semibold px-2 py-0.5 rounded-full">
+                    📍 GPS
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

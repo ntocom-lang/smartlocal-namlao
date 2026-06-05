@@ -17,6 +17,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { usePushNotification } from '../hooks/usePushNotification'
+import MapDashboardAdmin from '../components/admin/MapDashboardAdmin'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS = {
@@ -4170,7 +4171,8 @@ export default function AdminDashboard() {
             {
               group: 'วิเคราะห์',
               items: [
-                { key: 'report', label: 'รายงาน', Icon: TrendingUp, color: '#10b981', show: true },
+                { key: 'report', label: 'รายงาน',          Icon: TrendingUp, color: '#10b981', show: true },
+                { key: 'map',    label: 'แผนที่ข้อมูล',   Icon: MapPin,     color: '#3b82f6', show: currentUserRole !== 'council' },
               ],
             },
             {
@@ -4449,6 +4451,8 @@ export default function AdminDashboard() {
           </div>
           <AssignmentManager tenant={tenant} readOnly={currentUserRole === 'viewer'} />
         </div>
+      ) : activePage === 'map' ? (
+        <MapDashboardAdmin tenant={tenant} currentUserRole={currentUserRole} />
       ) : activePage === 'tourism' ? (
         <TourismManager tenant={tenant} />
       ) : activePage === 'more' ? (
