@@ -551,29 +551,45 @@ export default function TechnicianDashboard() {
     setSelected(c)
   }
 
-  // ─── Engineer GPS Tool state ─────────────────────────────────────────────
-  const [showInfraForm, setShowInfraForm] = useState(false)
-  const [infraForm, setInfraForm] = useState({
-    title: '', category: 'road', description: '', budget: '', location_name: '', work_date: new Date().toISOString().split('T')[0],
-  })
-  const [infraGeo, setInfraGeo] = useState({ lat: null, lng: null })
-  const [infraPhotos, setInfraPhotos] = useState([])
-  const [showInfraMap, setShowInfraMap] = useState(false)
-  const [infraSubmitting, setInfraSubmitting] = useState(false)
-  const [infraError, setInfraError] = useState(null)
-  const [infraWorks, setInfraWorks] = useState([])
-  const [loadingInfra, setLoadingInfra] = useState(false)
-
+  // ─── Engineer GPS Tool — shared ──────────────────────────────────────────
+  const TODAY = new Date().toISOString().split('T')[0]
   const INFRA_CATEGORIES = [
-    { value: 'road',        label: '🛣️  ถนน / สะพาน' },
-    { value: 'drainage',    label: '🕳️  ระบบระบายน้ำ' },
-    { value: 'electrical',  label: '💡  ไฟฟ้า / แสงสว่าง' },
-    { value: 'waterway',    label: '🏞️  ลำเหมือง / คูน้ำ' },
-    { value: 'building',    label: '🏗️  อาคาร / สิ่งก่อสร้าง' },
-    { value: 'irrigation',  label: '💧  ระบบชลประทาน' },
-    { value: 'other',       label: '📝  อื่นๆ' },
+    { value: 'road',       label: '🛣️  ถนน / สะพาน' },
+    { value: 'drainage',   label: '🕳️  ระบายน้ำ' },
+    { value: 'electrical', label: '💡  ไฟฟ้า' },
+    { value: 'waterway',   label: '🏞️  ลำเหมือง' },
+    { value: 'building',   label: '🏗️  อาคาร' },
+    { value: 'irrigation', label: '💧  ชลประทาน' },
+    { value: 'other',      label: '📝  อื่นๆ' },
   ]
 
+  const [infraTab, setInfraTab]         = useState('new_project') // 'new_project' | 'repair'
+  const [showInfraMap, setShowInfraMap] = useState(false)
+  const [infraWorks, setInfraWorks]     = useState([])
+  const [loadingInfra, setLoadingInfra] = useState(false)
+
+  // ─── New project state ───────────────────────────────────────────────────
+  const [showNewForm, setShowNewForm]     = useState(false)
+  const [newForm, setNewForm]             = useState({
+    title: '', category: 'road', contractor: '', contract_no: '',
+    budget: '', location_name: '', work_date: TODAY, description: '',
+  })
+  const [newGeo, setNewGeo]               = useState({ lat: null, lng: null })
+  const [newPhotos, setNewPhotos]         = useState([])
+  const [newSubmitting, setNewSubmitting] = useState(false)
+  const [newError, setNewError]           = useState(null)
+
+  // ─── Repair state ────────────────────────────────────────────────────────
+  const [showRepairForm, setShowRepairForm]     = useState(false)
+  const [repairForm, setRepairForm]             = useState({
+    title: '', category: 'road', budget: '', location_name: '', work_date: TODAY, description: '',
+  })
+  const [repairGeo, setRepairGeo]               = useState({ lat: null, lng: null })
+  const [repairPhotos, setRepairPhotos]         = useState([])
+  const [repairSubmitting, setRepairSubmitting] = useState(false)
+  const [repairError, setRepairError]           = useState(null)
+
+  // ─── Shared functions ────────────────────────────────────────────────────
   const fetchInfraWorks = useCallback(async () => {
     if (!tenant?.id) return
     setLoadingInfra(true)
@@ -585,57 +601,66 @@ export default function TechnicianDashboard() {
       .eq('municipality_id', tenant.id)
       .eq('created_by', session.user.id)
       .order('work_date', { ascending: false })
-      .limit(20)
+      .limit(30)
     setInfraWorks(data ?? [])
     setLoadingInfra(false)
   }, [tenant?.id])
 
-  async function handleInfraPhotos(e) {
-    const files = Array.from(e.target.files ?? [])
-    const items = files.map((f) => ({ file: f, preview: URL.createObjectURL(f) }))
-    setInfraPhotos((prev) => [...prev, ...items].slice(0, 4))
-    e.target.value = ''
-  }
-
-  async function submitInfraWork(e) {
-    e.preventDefault()
-    if (!infraForm.title.trim()) { setInfraError('กรุณาระบุชื่องาน'); return }
-    if (!infraGeo.lat) { setInfraError('กรุณาปักหมุด GPS ตำแหน่งงานก่อนบันทึก'); return }
-    setInfraError(null)
-    setInfraSubmitting(true)
-    const { data: { session } } = await supabase.auth.getSession()
-    const id = crypto.randomUUID()
-    const photoUrls = []
-    for (const item of infraPhotos) {
+  async function uploadPhotos(photos, id) {
+    const urls = []
+    for (const item of photos) {
       const ext = item.file.name.split('.').pop()
       const path = `infra/${id}/${Date.now()}.${ext}`
       const { error } = await supabase.storage.from('complaint-attachments').upload(path, item.file)
       if (!error) {
         const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
-        photoUrls.push(data.publicUrl)
+        urls.push(data.publicUrl)
       }
     }
+    return urls
+  }
+
+  function addPhotos(setFn) {
+    return (e) => {
+      const files = Array.from(e.target.files ?? [])
+      const items = files.map((f) => ({ file: f, preview: URL.createObjectURL(f) }))
+      setFn((prev) => [...prev, ...items].slice(0, 5))
+      e.target.value = ''
+    }
+  }
+
+  async function submitWork(workType, form, geo, photos, setSubmitting, setError, resetForm, resetGeo, resetPhotos, closeForm) {
+    if (!form.title.trim()) { setError('กรุณาระบุชื่องาน / โครงการ'); return }
+    if (!geo.lat) { setError('กรุณาปักหมุด GPS ตำแหน่งงานก่อนบันทึก — นี่คือหัวใจของระบบ'); return }
+    setError(null)
+    setSubmitting(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const id = crypto.randomUUID()
+    const photoUrls = await uploadPhotos(photos, id)
     const { error: dbErr } = await supabase.from('infrastructure_works').insert({
       id,
       municipality_id: tenant.id,
       created_by:      session.user.id,
-      title:           infraForm.title.trim(),
-      category:        infraForm.category,
-      description:     infraForm.description.trim() || null,
-      budget:          infraForm.budget ? parseFloat(infraForm.budget) : null,
-      location_name:   infraForm.location_name.trim() || null,
-      work_date:       infraForm.work_date,
-      latitude:        infraGeo.lat,
-      longitude:       infraGeo.lng,
+      work_type:       workType,
+      title:           form.title.trim(),
+      category:        form.category,
+      description:     form.description?.trim() || null,
+      budget:          form.budget ? parseFloat(form.budget) : null,
+      location_name:   form.location_name?.trim() || null,
+      contractor:      form.contractor?.trim() || null,
+      contract_no:     form.contract_no?.trim() || null,
+      work_date:       form.work_date,
+      latitude:        geo.lat,
+      longitude:       geo.lng,
       photos:          photoUrls,
       status:          'completed',
     })
-    setInfraSubmitting(false)
-    if (dbErr) { setInfraError(`บันทึกไม่สำเร็จ: ${dbErr.message}`); return }
-    setInfraForm({ title: '', category: 'road', description: '', budget: '', location_name: '', work_date: new Date().toISOString().split('T')[0] })
-    setInfraGeo({ lat: null, lng: null })
-    setInfraPhotos([])
-    setShowInfraForm(false)
+    setSubmitting(false)
+    if (dbErr) { setError(`บันทึกไม่สำเร็จ: ${dbErr.message}`); return }
+    resetForm()
+    resetGeo({ lat: null, lng: null })
+    resetPhotos([])
+    closeForm(false)
     fetchInfraWorks()
   }
 
@@ -762,12 +787,23 @@ export default function TechnicianDashboard() {
       )}
 
       {/* ─── Engineer GPS Tool ─── */}
+
+      {/* MapPicker overlay — shared between both tabs */}
       {showInfraMap && (
         <MapPicker
-          initialPos={infraGeo.lat ? { lat: infraGeo.lat, lng: infraGeo.lng } : null}
+          initialPos={
+            infraTab === 'new_project'
+              ? (newGeo.lat ? { lat: newGeo.lat, lng: newGeo.lng } : null)
+              : (repairGeo.lat ? { lat: repairGeo.lat, lng: repairGeo.lng } : null)
+          }
           onConfirm={({ lat, lng, address }) => {
-            setInfraGeo({ lat, lng })
-            if (address && !infraForm.location_name) setInfraForm(p => ({ ...p, location_name: address }))
+            if (infraTab === 'new_project') {
+              setNewGeo({ lat, lng })
+              if (address && !newForm.location_name) setNewForm(p => ({ ...p, location_name: address }))
+            } else {
+              setRepairGeo({ lat, lng })
+              if (address && !repairForm.location_name) setRepairForm(p => ({ ...p, location_name: address }))
+            }
             setShowInfraMap(false)
           }}
           onClose={() => setShowInfraMap(false)}
@@ -775,127 +811,300 @@ export default function TechnicianDashboard() {
       )}
 
       <div className="space-y-3">
+
         {/* Section header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-violet-100 flex items-center justify-center">
-              <Wrench size={15} className="text-violet-600" />
-            </div>
-            <div>
-              <p className="text-sm font-bold text-gray-700">บันทึกงานโยธาหน้างาน</p>
-              <p className="text-xs text-gray-400">Engineer GPS · กองช่างปลั๊กอิน</p>
-            </div>
+        <div className="flex items-center gap-3 px-1">
+          <div className="w-8 h-8 rounded-xl bg-violet-100 flex items-center justify-center shrink-0">
+            <MapPin size={15} className="text-violet-600" />
           </div>
+          <div>
+            <p className="text-sm font-bold text-gray-700">บันทึกงานโยธาหน้างาน (GPS)</p>
+            <p className="text-xs text-gray-400">กองช่างปลั๊กอิน · ป้องกันโครงสร้างพื้นฐานทับซ้อน</p>
+          </div>
+        </div>
+
+        {/* Tab switcher */}
+        <div className="flex bg-gray-100 rounded-2xl p-1">
           <button
-            onClick={() => setShowInfraForm(v => !v)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white transition-all"
-            style={{ backgroundColor: '#8b5cf6' }}>
-            {showInfraForm ? <ChevronDown size={13} /> : <Plus size={13} />}
-            {showInfraForm ? 'ซ่อน' : 'บันทึกงาน'}
+            onClick={() => { setInfraTab('new_project'); setShowRepairForm(false) }}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+              infraTab === 'new_project' ? 'bg-white shadow-sm text-violet-700' : 'text-gray-500'
+            }`}>
+            🏗️ โครงการใหม่
+          </button>
+          <button
+            onClick={() => { setInfraTab('repair'); setShowNewForm(false) }}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+              infraTab === 'repair' ? 'bg-white shadow-sm text-cyan-700' : 'text-gray-500'
+            }`}>
+            🔧 งานซ่อม
           </button>
         </div>
 
-        {/* Form */}
-        {showInfraForm && (
-          <form onSubmit={submitInfraWork}
-            className="bg-white rounded-2xl border border-violet-100 shadow-sm p-4 space-y-3">
-
-            {/* Category + title */}
-            <div className="flex flex-wrap gap-1.5">
-              {INFRA_CATEGORIES.map((cat) => (
-                <button key={cat.value} type="button"
-                  onClick={() => setInfraForm(p => ({ ...p, category: cat.value }))}
-                  className="text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all"
-                  style={infraForm.category === cat.value
-                    ? { backgroundColor: '#8b5cf6', color: '#fff', borderColor: '#8b5cf6' }
-                    : { backgroundColor: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' }}>
-                  {cat.label}
-                </button>
-              ))}
+        {/* ══════════════════════ TAB: โครงการใหม่ ══════════════════════ */}
+        {infraTab === 'new_project' && (
+          <>
+            {/* Info banner */}
+            <div className="bg-violet-50 border border-violet-100 rounded-xl px-4 py-3 text-xs text-violet-700 leading-relaxed">
+              <span className="font-bold">โครงการก่อสร้างใหม่</span> — ปักหมุดทุกครั้งที่ตรวจรับงาน
+              เพื่อวาดแผนที่ดิจิทัลและป้องกันสาธารณูปโภคทับซ้อนในอนาคต
             </div>
 
-            <input type="text" value={infraForm.title}
-              onChange={e => setInfraForm(p => ({ ...p, title: e.target.value }))} required
-              placeholder="ชื่องาน เช่น ซ่อมถนนลาดยางหมู่ที่ 3"
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
+            <button
+              onClick={() => setShowNewForm(v => !v)}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white transition-all"
+              style={{ backgroundColor: '#7c3aed' }}>
+              {showNewForm ? <ChevronDown size={14} /> : <Plus size={14} />}
+              {showNewForm ? 'ซ่อนฟอร์ม' : '🏗️ บันทึกโครงการใหม่'}
+            </button>
 
-            {/* GPS — บังคับ */}
-            <div className={`rounded-xl border p-3 ${infraGeo.lat ? 'bg-green-50 border-green-200' : 'bg-violet-50 border-violet-200'}`}>
-              <div className="flex items-center gap-2 mb-2">
-                <MapPin size={14} className={infraGeo.lat ? 'text-green-600' : 'text-violet-600'} />
-                <span className="text-xs font-semibold text-gray-700">พิกัด GPS หน้างาน</span>
-                <span className="ml-auto text-[10px] font-bold text-violet-700 bg-violet-100 px-2 py-0.5 rounded-full">* บังคับ</span>
-              </div>
-              <button type="button" onClick={() => setShowInfraMap(true)}
-                className={`w-full py-2 rounded-lg text-xs font-medium border transition-all ${
-                  infraGeo.lat
-                    ? 'bg-white border-green-200 text-green-700'
-                    : 'bg-white border-violet-200 text-violet-700'
-                }`}>
-                {infraGeo.lat
-                  ? `📍 ${infraGeo.lat.toFixed(5)}, ${infraGeo.lng.toFixed(5)} — กดแก้ไข`
-                  : '📍 กดปักหมุด GPS ตำแหน่งงาน'}
-              </button>
-            </div>
+            {showNewForm && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  submitWork(
+                    'new_project', newForm, newGeo, newPhotos,
+                    setNewSubmitting, setNewError,
+                    () => setNewForm({ title: '', category: 'road', contractor: '', contract_no: '', budget: '', location_name: '', work_date: TODAY, description: '' }),
+                    setNewGeo, setNewPhotos, setShowNewForm
+                  )
+                }}
+                className="bg-white rounded-2xl border border-violet-100 shadow-sm p-4 space-y-3">
 
-            <input type="text" value={infraForm.location_name}
-              onChange={e => setInfraForm(p => ({ ...p, location_name: e.target.value }))}
-              placeholder="ชื่อสถานที่ / หมู่บ้าน"
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
-
-            <div className="grid grid-cols-2 gap-2">
-              <input type="number" value={infraForm.budget}
-                onChange={e => setInfraForm(p => ({ ...p, budget: e.target.value }))}
-                placeholder="งบประมาณ (บาท)"
-                className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
-              <input type="date" value={infraForm.work_date}
-                onChange={e => setInfraForm(p => ({ ...p, work_date: e.target.value }))}
-                className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-300" />
-            </div>
-
-            <textarea value={infraForm.description}
-              onChange={e => setInfraForm(p => ({ ...p, description: e.target.value }))} rows={2}
-              placeholder="รายละเอียดงาน (ไม่บังคับ)"
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-violet-300" />
-
-            {/* Photos */}
-            <label className="flex items-center gap-2 cursor-pointer border border-dashed border-gray-200 rounded-xl px-4 py-2.5 hover:bg-gray-50 transition-colors">
-              <Image size={15} className="text-gray-400" />
-              <span className="text-xs text-gray-500">แนบรูปภาพงาน (ไม่เกิน 4 รูป)</span>
-              <input type="file" accept="image/*" multiple className="hidden" onChange={handleInfraPhotos} />
-            </label>
-            {infraPhotos.length > 0 && (
-              <div className="grid grid-cols-4 gap-1.5">
-                {infraPhotos.map((p, i) => (
-                  <div key={i} className="relative aspect-square rounded-xl overflow-hidden bg-gray-100">
-                    <img src={p.preview} alt="" className="w-full h-full object-cover" />
-                    <button type="button"
-                      onClick={() => setInfraPhotos(prev => prev.filter((_, j) => j !== i))}
-                      className="absolute top-0.5 right-0.5 bg-black/50 rounded-full p-0.5">
-                      <X size={9} className="text-white" />
+                {/* Category */}
+                <div className="flex flex-wrap gap-1.5">
+                  {INFRA_CATEGORIES.map((cat) => (
+                    <button key={cat.value} type="button"
+                      onClick={() => setNewForm(p => ({ ...p, category: cat.value }))}
+                      className="text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all"
+                      style={newForm.category === cat.value
+                        ? { backgroundColor: '#7c3aed', color: '#fff', borderColor: '#7c3aed' }
+                        : { backgroundColor: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' }}>
+                      {cat.label}
                     </button>
+                  ))}
+                </div>
+
+                <input type="text" value={newForm.title}
+                  onChange={e => setNewForm(p => ({ ...p, title: e.target.value }))} required
+                  placeholder="ชื่อโครงการ เช่น ก่อสร้างถนน คสล. หมู่ที่ 5"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
+
+                <div className="grid grid-cols-2 gap-2">
+                  <input type="text" value={newForm.contractor}
+                    onChange={e => setNewForm(p => ({ ...p, contractor: e.target.value }))}
+                    placeholder="ผู้รับเหมา"
+                    className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
+                  <input type="text" value={newForm.contract_no}
+                    onChange={e => setNewForm(p => ({ ...p, contract_no: e.target.value }))}
+                    placeholder="เลขที่สัญญา"
+                    className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
+                </div>
+
+                {/* GPS บังคับ */}
+                <div className={`rounded-xl border p-3 ${newGeo.lat ? 'bg-green-50 border-green-200' : 'bg-violet-50 border-violet-200'}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <MapPin size={13} className={newGeo.lat ? 'text-green-600' : 'text-violet-600'} />
+                    <span className="text-xs font-bold text-gray-700">พิกัด GPS ตำแหน่งโครงการ</span>
+                    <span className="ml-auto text-[10px] font-bold text-violet-700 bg-violet-100 px-2 py-0.5 rounded-full">* บังคับ</span>
                   </div>
-                ))}
-              </div>
+                  <button type="button" onClick={() => setShowInfraMap(true)}
+                    className={`w-full py-2 rounded-lg text-xs font-medium border transition-all ${
+                      newGeo.lat ? 'bg-white border-green-200 text-green-700' : 'bg-white border-violet-200 text-violet-700'
+                    }`}>
+                    {newGeo.lat
+                      ? `📍 ${newGeo.lat.toFixed(5)}, ${newGeo.lng.toFixed(5)} — กดแก้ไข`
+                      : '📍 กดปักหมุดตำแหน่งโครงการบนแผนที่'}
+                  </button>
+                </div>
+
+                <input type="text" value={newForm.location_name}
+                  onChange={e => setNewForm(p => ({ ...p, location_name: e.target.value }))}
+                  placeholder="ชื่อสถานที่ / หมู่บ้าน"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
+
+                <div className="grid grid-cols-2 gap-2">
+                  <input type="number" value={newForm.budget}
+                    onChange={e => setNewForm(p => ({ ...p, budget: e.target.value }))}
+                    placeholder="งบประมาณ (บาท)"
+                    className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
+                  <input type="date" value={newForm.work_date}
+                    onChange={e => setNewForm(p => ({ ...p, work_date: e.target.value }))}
+                    className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-300" />
+                </div>
+
+                <textarea value={newForm.description}
+                  onChange={e => setNewForm(p => ({ ...p, description: e.target.value }))} rows={2}
+                  placeholder="รายละเอียดเพิ่มเติม (ไม่บังคับ)"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-violet-300" />
+
+                <label className="flex items-center gap-2 cursor-pointer border border-dashed border-gray-200 rounded-xl px-4 py-2.5 hover:bg-gray-50 transition-colors">
+                  <Image size={14} className="text-gray-400" />
+                  <span className="text-xs text-gray-500">รูปภาพตรวจรับงาน (ไม่เกิน 5 รูป)</span>
+                  <input type="file" accept="image/*" multiple className="hidden" onChange={addPhotos(setNewPhotos)} />
+                </label>
+                {newPhotos.length > 0 && (
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {newPhotos.map((p, i) => (
+                      <div key={i} className="relative aspect-square rounded-xl overflow-hidden bg-gray-100">
+                        <img src={p.preview} alt="" className="w-full h-full object-cover" />
+                        <button type="button"
+                          onClick={() => setNewPhotos(prev => prev.filter((_, j) => j !== i))}
+                          className="absolute top-0.5 right-0.5 bg-black/50 rounded-full p-0.5">
+                          <X size={9} className="text-white" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {newError && <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-xl">{newError}</p>}
+
+                <div className="flex gap-2">
+                  <button type="submit" disabled={newSubmitting}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 flex items-center justify-center gap-2"
+                    style={{ backgroundColor: '#7c3aed' }}>
+                    {newSubmitting
+                      ? <><Loader2 size={13} className="animate-spin" /> กำลังบันทึก...</>
+                      : '🏗️ บันทึกโครงการลงแผนที่'}
+                  </button>
+                  <button type="button" onClick={() => setShowNewForm(false)}
+                    className="px-4 py-2.5 rounded-xl text-sm text-gray-500 bg-gray-100 hover:bg-gray-200">
+                    ยกเลิก
+                  </button>
+                </div>
+              </form>
             )}
-
-            {infraError && <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-xl">{infraError}</p>}
-
-            <div className="flex gap-2">
-              <button type="submit" disabled={infraSubmitting}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 flex items-center justify-center gap-2"
-                style={{ backgroundColor: '#8b5cf6' }}>
-                {infraSubmitting ? <><Loader2 size={14} className="animate-spin" /> กำลังบันทึก...</> : '📍 บันทึกงานลงแผนที่'}
-              </button>
-              <button type="button" onClick={() => setShowInfraForm(false)}
-                className="px-4 py-2.5 rounded-xl text-sm text-gray-500 bg-gray-100 hover:bg-gray-200 transition-colors">
-                ยกเลิก
-              </button>
-            </div>
-          </form>
+          </>
         )}
 
-        {/* My infra works list */}
+        {/* ══════════════════════ TAB: งานซ่อม ══════════════════════ */}
+        {infraTab === 'repair' && (
+          <>
+            {/* Info banner */}
+            <div className="bg-cyan-50 border border-cyan-100 rounded-xl px-4 py-3 text-xs text-cyan-800 leading-relaxed">
+              <span className="font-bold">งานซ่อมบำรุง</span> — บันทึกทุกครั้งที่ออกซ่อมจุดเกิดเหตุ
+              GPS จะระบุตำแหน่งที่ซ่อมไปแล้ว เพื่อให้ Admin ดูภาพรวมบนแผนที่ได้
+            </div>
+
+            <button
+              onClick={() => setShowRepairForm(v => !v)}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white transition-all"
+              style={{ backgroundColor: '#0891b2' }}>
+              {showRepairForm ? <ChevronDown size={14} /> : <Plus size={14} />}
+              {showRepairForm ? 'ซ่อนฟอร์ม' : '🔧 บันทึกงานซ่อม'}
+            </button>
+
+            {showRepairForm && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  submitWork(
+                    'repair', repairForm, repairGeo, repairPhotos,
+                    setRepairSubmitting, setRepairError,
+                    () => setRepairForm({ title: '', category: 'road', budget: '', location_name: '', work_date: TODAY, description: '' }),
+                    setRepairGeo, setRepairPhotos, setShowRepairForm
+                  )
+                }}
+                className="bg-white rounded-2xl border border-cyan-100 shadow-sm p-4 space-y-3">
+
+                {/* Category */}
+                <div className="flex flex-wrap gap-1.5">
+                  {INFRA_CATEGORIES.map((cat) => (
+                    <button key={cat.value} type="button"
+                      onClick={() => setRepairForm(p => ({ ...p, category: cat.value }))}
+                      className="text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all"
+                      style={repairForm.category === cat.value
+                        ? { backgroundColor: '#0891b2', color: '#fff', borderColor: '#0891b2' }
+                        : { backgroundColor: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' }}>
+                      {cat.label}
+                    </button>
+                  ))}
+                </div>
+
+                <input type="text" value={repairForm.title}
+                  onChange={e => setRepairForm(p => ({ ...p, title: e.target.value }))} required
+                  placeholder="ชื่องานซ่อม เช่น ซ่อมไฟกิ่งดับ หน้าโรงเรียน"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-300" />
+
+                {/* GPS บังคับ */}
+                <div className={`rounded-xl border p-3 ${repairGeo.lat ? 'bg-green-50 border-green-200' : 'bg-cyan-50 border-cyan-200'}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <MapPin size={13} className={repairGeo.lat ? 'text-green-600' : 'text-cyan-600'} />
+                    <span className="text-xs font-bold text-gray-700">พิกัด GPS จุดที่ซ่อม</span>
+                    <span className="ml-auto text-[10px] font-bold text-cyan-700 bg-cyan-100 px-2 py-0.5 rounded-full">* บังคับ</span>
+                  </div>
+                  <button type="button" onClick={() => setShowInfraMap(true)}
+                    className={`w-full py-2 rounded-lg text-xs font-medium border transition-all ${
+                      repairGeo.lat ? 'bg-white border-green-200 text-green-700' : 'bg-white border-cyan-200 text-cyan-700'
+                    }`}>
+                    {repairGeo.lat
+                      ? `📍 ${repairGeo.lat.toFixed(5)}, ${repairGeo.lng.toFixed(5)} — กดแก้ไข`
+                      : '📍 กดปักหมุดจุดที่ซ่อมบนแผนที่'}
+                  </button>
+                </div>
+
+                <input type="text" value={repairForm.location_name}
+                  onChange={e => setRepairForm(p => ({ ...p, location_name: e.target.value }))}
+                  placeholder="ชื่อสถานที่ / หมู่บ้าน"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-300" />
+
+                <div className="grid grid-cols-2 gap-2">
+                  <input type="number" value={repairForm.budget}
+                    onChange={e => setRepairForm(p => ({ ...p, budget: e.target.value }))}
+                    placeholder="ค่าซ่อม (บาท)"
+                    className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-300" />
+                  <input type="date" value={repairForm.work_date}
+                    onChange={e => setRepairForm(p => ({ ...p, work_date: e.target.value }))}
+                    className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-cyan-300" />
+                </div>
+
+                <textarea value={repairForm.description}
+                  onChange={e => setRepairForm(p => ({ ...p, description: e.target.value }))} rows={2}
+                  placeholder="รายละเอียดการซ่อม เช่น เปลี่ยนหลอด LED 18W จำนวน 2 ดวง"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-cyan-300" />
+
+                <label className="flex items-center gap-2 cursor-pointer border border-dashed border-gray-200 rounded-xl px-4 py-2.5 hover:bg-gray-50 transition-colors">
+                  <Image size={14} className="text-gray-400" />
+                  <span className="text-xs text-gray-500">รูปก่อน-หลังซ่อม (ไม่เกิน 5 รูป)</span>
+                  <input type="file" accept="image/*" multiple className="hidden" onChange={addPhotos(setRepairPhotos)} />
+                </label>
+                {repairPhotos.length > 0 && (
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {repairPhotos.map((p, i) => (
+                      <div key={i} className="relative aspect-square rounded-xl overflow-hidden bg-gray-100">
+                        <img src={p.preview} alt="" className="w-full h-full object-cover" />
+                        <button type="button"
+                          onClick={() => setRepairPhotos(prev => prev.filter((_, j) => j !== i))}
+                          className="absolute top-0.5 right-0.5 bg-black/50 rounded-full p-0.5">
+                          <X size={9} className="text-white" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {repairError && <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-xl">{repairError}</p>}
+
+                <div className="flex gap-2">
+                  <button type="submit" disabled={repairSubmitting}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 flex items-center justify-center gap-2"
+                    style={{ backgroundColor: '#0891b2' }}>
+                    {repairSubmitting
+                      ? <><Loader2 size={13} className="animate-spin" /> กำลังบันทึก...</>
+                      : '🔧 บันทึกงานซ่อมลงแผนที่'}
+                  </button>
+                  <button type="button" onClick={() => setShowRepairForm(false)}
+                    className="px-4 py-2.5 rounded-xl text-sm text-gray-500 bg-gray-100 hover:bg-gray-200">
+                    ยกเลิก
+                  </button>
+                </div>
+              </form>
+            )}
+          </>
+        )}
+
+        {/* ─── รายการงานที่บันทึกไว้ ─── */}
         {infraWorks.length > 0 && (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
@@ -907,27 +1116,29 @@ export default function TechnicianDashboard() {
                 <RefreshCw size={13} className={loadingInfra ? 'animate-spin' : ''} />
               </button>
             </div>
-            {infraWorks.map((w, i) => (
-              <div key={w.id}
-                className={`flex items-center gap-3 px-4 py-3 ${i < infraWorks.length - 1 ? 'border-b border-gray-50' : ''}`}>
-                <div className="w-9 h-9 rounded-xl bg-violet-50 flex items-center justify-center shrink-0">
-                  <Wrench size={15} className="text-violet-500" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-700 truncate">{w.title}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {w.location_name || '—'} · {new Date(w.work_date).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}
-                  </p>
-                </div>
-                {w.latitude && (
-                  <span className="shrink-0 text-[10px] bg-violet-50 text-violet-600 font-semibold px-2 py-0.5 rounded-full">
-                    📍 GPS
+            {infraWorks.map((w, i) => {
+              const isNew = w.work_type === 'new_project'
+              return (
+                <div key={w.id}
+                  className={`flex items-center gap-3 px-4 py-3 ${i < infraWorks.length - 1 ? 'border-b border-gray-50' : ''}`}>
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0 ${isNew ? 'bg-violet-50' : 'bg-cyan-50'}`}>
+                    {isNew ? '🏗️' : '🔧'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-700 truncate">{w.title}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {w.location_name || '—'} · {new Date(w.work_date).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}
+                    </p>
+                  </div>
+                  <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${isNew ? 'bg-violet-50 text-violet-600' : 'bg-cyan-50 text-cyan-700'}`}>
+                    {isNew ? '🏗️ ใหม่' : '🔧 ซ่อม'}
                   </span>
-                )}
-              </div>
-            ))}
+                </div>
+              )
+            })}
           </div>
         )}
+
       </div>
     </div>
   )

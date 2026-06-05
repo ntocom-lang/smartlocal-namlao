@@ -50,7 +50,8 @@ const LEGEND = [
   { color: '#10b981', label: 'คำร้อง — เสร็จสิ้น' },
   { color: '#3b82f6', label: 'ร้านค้า — รอการอนุมัติ' },
   { color: '#f59e0b', label: 'ร้านค้า — อนุมัติแล้ว' },
-  { color: '#8b5cf6', label: 'งานโยธา (วิศวกร)' },
+  { color: '#7c3aed', label: 'โครงการใหม่ (ตรวจรับงาน)' },
+  { color: '#0891b2', label: 'งานซ่อม (หน้างาน)' },
 ]
 
 // ─── Recenter helper ─────────────────────────────────────────────────────────
@@ -287,23 +288,31 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
               </CircleMarker>
             ))}
 
-            {/* ── งานโยธา ── */}
+            {/* ── งานโยธา (แยกสีตาม work_type) ── */}
             {filteredInfra.map((w) => (
               <CircleMarker
                 key={w.id}
                 center={[w.latitude, w.longitude]}
-                radius={8}
+                radius={w.work_type === 'new_project' ? 10 : 8}
                 pathOptions={{
                   color: '#fff',
                   weight: 2,
-                  fillColor: '#8b5cf6',
+                  fillColor: w.work_type === 'new_project' ? '#7c3aed' : '#0891b2',
                   fillOpacity: 0.9,
                 }}
               >
                 <Popup>
                   <div className="text-sm min-w-[200px]">
-                    <p className="font-bold text-gray-800 mb-0.5">🔩 {w.title}</p>
+                    <p className="font-bold text-gray-800 mb-0.5">
+                      {w.work_type === 'new_project' ? '🏗️' : '🔧'} {w.title}
+                    </p>
+                    <p className="text-xs font-semibold mb-1"
+                       style={{ color: w.work_type === 'new_project' ? '#7c3aed' : '#0891b2' }}>
+                      {w.work_type === 'new_project' ? 'โครงการใหม่' : 'งานซ่อม'}
+                    </p>
                     <p className="text-gray-500 text-xs">{INFRA_CAT_LABEL[w.category] ?? w.category}</p>
+                    {w.contractor && <p className="text-xs text-gray-500 mt-0.5">🏢 {w.contractor}</p>}
+                    {w.contract_no && <p className="text-xs text-gray-400">สัญญา: {w.contract_no}</p>}
                     {w.description && (
                       <p className="text-gray-500 text-xs mt-1 line-clamp-2">{w.description}</p>
                     )}
