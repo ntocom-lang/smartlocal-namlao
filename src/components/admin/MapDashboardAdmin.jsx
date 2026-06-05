@@ -226,21 +226,29 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
       {/* Filter panel */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3 space-y-2.5">
 
-        {/* Row 1: ชั้นข้อมูล */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wide w-20 shrink-0">ชั้นข้อมูล</span>
-          <div className="flex flex-wrap gap-1.5">
-            {[
-              { key: 'cmp',  label: `คำร้อง (${complaints.length})`,   active: showComplaints, toggle: () => setShowComplaints(v => !v), color: 'bg-red-500 border-red-500' },
-              { key: 'biz',  label: `ร้านค้า (${bizRegs.length})`,     active: showBiz,        toggle: () => setShowBiz(v => !v),        color: 'bg-amber-400 border-amber-400' },
-              { key: 'proj', label: `โครงการ (${civilProjects.length})`,active: showInfra,      toggle: () => setShowInfra(v => !v),      color: 'bg-violet-500 border-violet-500' },
-            ].map(({ key, label, active, toggle, color }) => (
-              <button key={key} onClick={toggle}
-                className={`text-xs font-semibold px-3 py-1 rounded-full border transition-all ${active ? `${color} text-white` : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
+        {/* Row 1: ชั้นข้อมูล — visual shape cards */}
+        <div className="flex flex-wrap gap-2">
+          {[
+            { key: 'cmp',  label: 'คำร้อง',  count: complaints.length,     active: showComplaints, toggle: () => setShowComplaints(v => !v), color: '#ef4444',
+              shape: <circle cx="7" cy="7" r="5.5" fill="currentColor" stroke="white" strokeWidth="1.5"/> },
+            { key: 'biz',  label: 'ร้านค้า', count: bizRegs.length,         active: showBiz,        toggle: () => setShowBiz(v => !v),        color: '#f59e0b',
+              shape: <polygon points="7,1 13,7 7,13 1,7" fill="currentColor" stroke="white" strokeWidth="1.5"/> },
+            { key: 'proj', label: 'โครงการ', count: civilProjects.length,   active: showInfra,      toggle: () => setShowInfra(v => !v),      color: '#8b5cf6',
+              shape: <polygon points="7,1 13,13 1,13" fill="currentColor" stroke="white" strokeWidth="1.5"/> },
+          ].map(({ key, label, count, active, toggle, color, shape }) => (
+            <button key={key} onClick={toggle}
+              className={`flex items-center gap-2 pl-3 pr-4 py-2 rounded-xl border transition-all ${active ? 'shadow-sm' : 'opacity-50 grayscale'}`}
+              style={active ? { backgroundColor: color + '12', borderColor: color + '50' } : { backgroundColor: '#f9fafb', borderColor: '#e5e7eb' }}>
+              <svg width="14" height="14" viewBox="0 0 14 14" style={{ color: active ? color : '#9ca3af' }}>
+                {shape}
+              </svg>
+              <span className="text-xs font-semibold" style={{ color: active ? color : '#6b7280' }}>{label}</span>
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white min-w-[20px] text-center"
+                style={{ backgroundColor: active ? color : '#9ca3af' }}>
+                {count}
+              </span>
+            </button>
+          ))}
         </div>
 
         {/* Row 2: สถานะคำร้อง */}
