@@ -3,9 +3,8 @@ import {
   MapPin, Plus, X, Loader2, Trash2, Pencil, ChevronLeft,
   Image, AlertTriangle, CheckCircle2, Calendar, Banknote, Building2,
   Search, Clock, Upload, ChevronRight, Camera, Navigation, Copy, Check,
-  List, Map,
 } from 'lucide-react'
-import { MapContainer, TileLayer, Marker, Tooltip, CircleMarker, Popup } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Tooltip } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { supabase } from '../../lib/supabase'
@@ -219,7 +218,6 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
   const [editId, setEditId] = useState(null)
   const [projects, setProjects] = useState(null) // null = กำลังโหลด
   const loading = projects === null
-  const [listTab, setListTab] = useState('list') // 'list' | 'map'
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterYear, setFilterYear]     = useState('all')
   const [filterType, setFilterType]     = useState('all')
@@ -510,33 +508,18 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+      <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-gray-800">รายการโครงการ</h2>
           <p className="text-sm text-gray-400 mt-0.5">ทั้งหมด {(projects ?? []).length} โครงการ</p>
         </div>
-        <div className="flex items-center gap-2">
-          {/* List / Map toggle */}
-          <div className="flex rounded-xl border border-gray-200 overflow-hidden bg-white shadow-sm">
-            <button
-              onClick={() => setListTab('list')}
-              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold transition-colors ${listTab === 'list' ? 'bg-blue-500 text-white' : 'text-gray-500 hover:bg-gray-50'}`}>
-              <List size={13} /> รายการ
-            </button>
-            <button
-              onClick={() => setListTab('map')}
-              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold transition-colors ${listTab === 'map' ? 'bg-blue-500 text-white' : 'text-gray-500 hover:bg-gray-50'}`}>
-              <Map size={13} /> แผนที่
-            </button>
-          </div>
-          {!isReadOnly && (
-            <button onClick={openCreate}
-              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-white"
-              style={{ backgroundColor: '#3b82f6' }}>
-              <Plus size={14} /> เพิ่มโครงการ
-            </button>
-          )}
-        </div>
+        {!isReadOnly && (
+          <button onClick={openCreate}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-white"
+            style={{ backgroundColor: '#3b82f6' }}>
+            <Plus size={14} /> เพิ่มโครงการ
+          </button>
+        )}
       </div>
 
       {/* Filter row */}
@@ -580,95 +563,8 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
         </div>
       </div>
 
-      {/* Map view */}
-      {listTab === 'map' && (() => {
-        const withGps = (projects ?? []).filter(p => p.latitude && p.longitude)
-        const centerLat = tenant?.latitude  ?? 18.2
-        const centerLng = tenant?.longitude ?? 100.8
-        return (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            {loading ? (
-              <div className="flex justify-center py-16"><Loader2 size={22} className="animate-spin text-gray-300" /></div>
-            ) : (
-              <>
-                <div style={{ height: 540 }}>
-                  <MapContainer center={[centerLat, centerLng]} zoom={13} style={{ width: '100%', height: '100%' }} scrollWheelZoom>
-                    <TileLayer
-                      attribution='&copy; <a href="https://www.openstreetmap.org">OpenStreetMap</a>'
-                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    />
-                    {withGps.map(p => {
-                      const color = STATUS_CFG[p.status]?.color ?? '#9ca3af'
-                      const typeInfo = PROJECT_TYPES.find(t => t.value === p.project_type)
-                      return (
-                        <CircleMarker
-                          key={p.id}
-                          center={[p.latitude, p.longitude]}
-                          radius={p.status === 'in_progress' ? 11 : 8}
-                          pathOptions={{ color: '#fff', weight: 2, fillColor: color, fillOpacity: 0.92 }}
-                        >
-                          <Popup>
-                            <div className="text-sm min-w-[200px]">
-                              <p className="font-bold text-gray-800 mb-0.5">
-                                {typeInfo?.icon ?? '🏗️'} {p.title}
-                              </p>
-                              {p.project_no && <p className="text-xs text-gray-400 mb-1">#{p.project_no}</p>}
-                              {p.progress_pct > 0 && (
-                                <div className="mb-1.5">
-                                  <div className="flex justify-between text-[10px] text-gray-400 mb-0.5">
-                                    <span>ความคืบหน้า</span><span>{p.status === 'completed' ? 100 : p.progress_pct}%</span>
-                                  </div>
-                                  <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                                    <div className="h-full rounded-full" style={{ width: `${p.status === 'completed' ? 100 : p.progress_pct}%`, backgroundColor: color }} />
-                                  </div>
-                                </div>
-                              )}
-                              {p.budget_amount && (
-                                <p className="text-xs mb-1" style={{ color }}>💰 {Number(p.budget_amount).toLocaleString('th-TH')} บาท</p>
-                              )}
-                              <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-gray-100">
-                                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full"
-                                  style={{ backgroundColor: color + '20', color }}>
-                                  {STATUS_CFG[p.status]?.label ?? p.status}
-                                </span>
-                                {p.fiscal_year && <span className="text-[10px] text-gray-400">ปี {p.fiscal_year}</span>}
-                              </div>
-                              {p.village && (
-                                <p className="text-[11px] text-gray-400 mt-1 flex items-center gap-1">
-                                  <MapPin size={10} /> {p.village}
-                                </p>
-                              )}
-                              <button
-                                onClick={() => openDetail(p)}
-                                className="mt-2 w-full py-1.5 rounded-lg text-xs font-semibold text-blue-600 border border-blue-200 hover:bg-blue-50 transition-colors">
-                                ดูรายละเอียด →
-                              </button>
-                            </div>
-                          </Popup>
-                        </CircleMarker>
-                      )
-                    })}
-                  </MapContainer>
-                </div>
-                <div className="px-4 py-3 flex items-center justify-between border-t border-gray-100">
-                  <p className="text-xs text-gray-400">{withGps.length} โครงการบนแผนที่ (จาก {(projects ?? []).length} รายการ)</p>
-                  <div className="flex flex-wrap gap-x-4 gap-y-1">
-                    {Object.entries(STATUS_CFG).map(([k, v]) => (
-                      <div key={k} className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-full border-2 border-white shadow-sm shrink-0" style={{ backgroundColor: v.color }} />
-                        <span className="text-[11px] text-gray-500">{v.label}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        )
-      })()}
-
       {/* Data table */}
-      {listTab === 'list' && <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         {loading ? (
           <div className="flex justify-center py-16">
             <Loader2 size={22} className="animate-spin text-gray-300" />
@@ -733,7 +629,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
             </table>
           </div>
         )}
-      </div>}
+      </div>
     </div>
   )
 
