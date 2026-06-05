@@ -1,10 +1,11 @@
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import {
-  MapPin, Plus, X, Loader2, RefreshCw, Trash2, Pencil, ChevronLeft,
+  MapPin, Plus, X, Loader2, Trash2, Pencil, ChevronLeft,
   Image, AlertTriangle, CheckCircle2, Calendar, Banknote, Building2,
-  Search, Clock, FileText, Upload, ChevronRight, Camera, Navigation, Copy, Check,
+  Search, Clock, Upload, ChevronRight, Camera, Navigation, Copy, Check,
+  List, Map,
 } from 'lucide-react'
-import { MapContainer, TileLayer, Marker, Tooltip, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Tooltip, CircleMarker, Popup } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { supabase } from '../../lib/supabase'
@@ -22,7 +23,6 @@ const defaultIcon = L.icon({
 })
 
 const THIS_YEAR = new Date().getFullYear() + 543
-const TODAY     = new Date().toISOString().slice(0, 10)
 const FISCAL_YEARS = Array.from({ length: 8 }, (_, i) => String(THIS_YEAR - 3 + i))
 
 const STATUS_CFG = {
@@ -75,13 +75,14 @@ function StatusBadge({ status }) {
 
 function ProgressBar({ pct, status }) {
   const color = STATUS_CFG[status]?.color ?? '#3b82f6'
+  const displayPct = status === 'completed' ? 100 : (pct || 0)
   return (
     <div className="flex items-center gap-2">
       <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
         <div className="h-full rounded-full transition-all"
-             style={{ width: `${pct}%`, backgroundColor: color }} />
+             style={{ width: `${displayPct}%`, backgroundColor: color }} />
       </div>
-      <span className="text-[10px] font-bold text-gray-400 shrink-0">{pct}%</span>
+      <span className="text-[10px] font-bold text-gray-400 shrink-0">{displayPct}%</span>
     </div>
   )
 }
@@ -218,6 +219,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
   const [editId, setEditId] = useState(null)
   const [projects, setProjects] = useState(null) // null = กำลังโหลด
   const loading = projects === null
+  const [listTab, setListTab] = useState('list') // 'list' | 'map'
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterYear, setFilterYear]     = useState('all')
   const [filterType, setFilterType]     = useState('all')
@@ -230,6 +232,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
   const [photos, setPhotos]             = useState([])
   const [existingPhotos, setExisting]   = useState([])
   const [showMap, setShowMap]           = useState(false)
+  const [locations, setLocations]       = useState([])
   const [submitting, setSubmitting]     = useState(false)
   const [formError, setFormError]       = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
@@ -267,6 +270,12 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
     q.order('created_at', { ascending: false }).limit(200).then(({ data }) => {
       if (!cancelled) setProjects(data ?? [])
     })
+    
+    // Fetch locations for village dropdown
+    supabase.from('locations').select('id, name').eq('municipality_id', tenantId).order('sort_order').then(({ data }) => {
+      if (!cancelled) setLocations(data ?? [])
+    })
+
     return () => { cancelled = true }
   }, [tenantId, filterStatus, filterYear, filterType, searchQuery, refreshTick])
 
@@ -280,8 +289,23 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
   }
 
   function openCreate() {
+    let sd = '', dt = '', pv = tenant?.province || ''
+    
+    const addressStr = tenant?.address || 'เลขที่ 101 หมู่ที่ 5 ตำบลน้ำเลา\nอำเภอร้องกวาง จังหวัดแพร่ 54140'
+    const s = addressStr.match(/ตำบล\s*([^\s\n]+)/)
+    const d = addressStr.match(/อำเภอ\s*([^\s\n]+)/)
+    const p = addressStr.match(/จังหวัด\s*([^\s\n0-9]+)/)
+    
+    if (s) sd = s[1]
+    if (d) dt = d[1]
+    if (p && !pv) pv = p[1]
+
+    if (!sd && tenant?.name?.includes('ตำบล')) {
+      sd = tenant.name.split('ตำบล')[1].trim()
+    }
+
     setEditId(null)
-    setForm({ ...EMPTY_FORM })
+    setForm({ ...EMPTY_FORM, subdistrict: sd, district: dt, province: pv })
     setGeo({ lat: null, lng: null })
     setPhotos([])
     setExisting([])
@@ -294,7 +318,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
     setForm({
       project_no: p.project_no ?? '', fiscal_year: p.fiscal_year, title: p.title,
       description: p.description ?? '', project_type: p.project_type,
-      status: p.status, department: p.department ?? 'civil', progress_pct: p.progress_pct,
+      status: p.status, department: p.department ?? 'civil', progress_pct: p.status === 'completed' ? 100 : (p.progress_pct || 0),
       village: p.village ?? '', subdistrict: p.subdistrict ?? '',
       district: p.district ?? '', province: p.province ?? '',
       location_desc: p.location_desc ?? '',
@@ -313,7 +337,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
   function openDetail(p) {
     setSelectedProject(p)
     setProgressStatus(p.status)
-    setProgressPct(p.progress_pct)
+    setProgressPct(p.status === 'completed' ? 100 : (p.progress_pct || 0))
     setProgressNote('')
     setDetailPhotoFile(null)
     setDetailPhotoDesc('')
@@ -486,18 +510,33 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-xl font-bold text-gray-800">รายการโครงการ</h2>
           <p className="text-sm text-gray-400 mt-0.5">ทั้งหมด {(projects ?? []).length} โครงการ</p>
         </div>
-        {!isReadOnly && (
-          <button onClick={openCreate}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-white"
-            style={{ backgroundColor: '#3b82f6' }}>
-            <Plus size={14} /> เพิ่มโครงการ
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* List / Map toggle */}
+          <div className="flex rounded-xl border border-gray-200 overflow-hidden bg-white shadow-sm">
+            <button
+              onClick={() => setListTab('list')}
+              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold transition-colors ${listTab === 'list' ? 'bg-blue-500 text-white' : 'text-gray-500 hover:bg-gray-50'}`}>
+              <List size={13} /> รายการ
+            </button>
+            <button
+              onClick={() => setListTab('map')}
+              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold transition-colors ${listTab === 'map' ? 'bg-blue-500 text-white' : 'text-gray-500 hover:bg-gray-50'}`}>
+              <Map size={13} /> แผนที่
+            </button>
+          </div>
+          {!isReadOnly && (
+            <button onClick={openCreate}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-white"
+              style={{ backgroundColor: '#3b82f6' }}>
+              <Plus size={14} /> เพิ่มโครงการ
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Filter row */}
@@ -541,8 +580,95 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
         </div>
       </div>
 
+      {/* Map view */}
+      {listTab === 'map' && (() => {
+        const withGps = (projects ?? []).filter(p => p.latitude && p.longitude)
+        const centerLat = tenant?.latitude  ?? 18.2
+        const centerLng = tenant?.longitude ?? 100.8
+        return (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            {loading ? (
+              <div className="flex justify-center py-16"><Loader2 size={22} className="animate-spin text-gray-300" /></div>
+            ) : (
+              <>
+                <div style={{ height: 540 }}>
+                  <MapContainer center={[centerLat, centerLng]} zoom={13} style={{ width: '100%', height: '100%' }} scrollWheelZoom>
+                    <TileLayer
+                      attribution='&copy; <a href="https://www.openstreetmap.org">OpenStreetMap</a>'
+                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    />
+                    {withGps.map(p => {
+                      const color = STATUS_CFG[p.status]?.color ?? '#9ca3af'
+                      const typeInfo = PROJECT_TYPES.find(t => t.value === p.project_type)
+                      return (
+                        <CircleMarker
+                          key={p.id}
+                          center={[p.latitude, p.longitude]}
+                          radius={p.status === 'in_progress' ? 11 : 8}
+                          pathOptions={{ color: '#fff', weight: 2, fillColor: color, fillOpacity: 0.92 }}
+                        >
+                          <Popup>
+                            <div className="text-sm min-w-[200px]">
+                              <p className="font-bold text-gray-800 mb-0.5">
+                                {typeInfo?.icon ?? '🏗️'} {p.title}
+                              </p>
+                              {p.project_no && <p className="text-xs text-gray-400 mb-1">#{p.project_no}</p>}
+                              {p.progress_pct > 0 && (
+                                <div className="mb-1.5">
+                                  <div className="flex justify-between text-[10px] text-gray-400 mb-0.5">
+                                    <span>ความคืบหน้า</span><span>{p.status === 'completed' ? 100 : p.progress_pct}%</span>
+                                  </div>
+                                  <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                    <div className="h-full rounded-full" style={{ width: `${p.status === 'completed' ? 100 : p.progress_pct}%`, backgroundColor: color }} />
+                                  </div>
+                                </div>
+                              )}
+                              {p.budget_amount && (
+                                <p className="text-xs mb-1" style={{ color }}>💰 {Number(p.budget_amount).toLocaleString('th-TH')} บาท</p>
+                              )}
+                              <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-gray-100">
+                                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full"
+                                  style={{ backgroundColor: color + '20', color }}>
+                                  {STATUS_CFG[p.status]?.label ?? p.status}
+                                </span>
+                                {p.fiscal_year && <span className="text-[10px] text-gray-400">ปี {p.fiscal_year}</span>}
+                              </div>
+                              {p.village && (
+                                <p className="text-[11px] text-gray-400 mt-1 flex items-center gap-1">
+                                  <MapPin size={10} /> {p.village}
+                                </p>
+                              )}
+                              <button
+                                onClick={() => openDetail(p)}
+                                className="mt-2 w-full py-1.5 rounded-lg text-xs font-semibold text-blue-600 border border-blue-200 hover:bg-blue-50 transition-colors">
+                                ดูรายละเอียด →
+                              </button>
+                            </div>
+                          </Popup>
+                        </CircleMarker>
+                      )
+                    })}
+                  </MapContainer>
+                </div>
+                <div className="px-4 py-3 flex items-center justify-between border-t border-gray-100">
+                  <p className="text-xs text-gray-400">{withGps.length} โครงการบนแผนที่ (จาก {(projects ?? []).length} รายการ)</p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1">
+                    {Object.entries(STATUS_CFG).map(([k, v]) => (
+                      <div key={k} className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full border-2 border-white shadow-sm shrink-0" style={{ backgroundColor: v.color }} />
+                        <span className="text-[11px] text-gray-500">{v.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )
+      })()}
+
       {/* Data table */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      {listTab === 'list' && <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         {loading ? (
           <div className="flex justify-center py-16">
             <Loader2 size={22} className="animate-spin text-gray-300" />
@@ -596,9 +722,9 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
                       <div className="flex items-center gap-2">
                         <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
                           <div className="h-full rounded-full transition-all"
-                               style={{ width: `${p.progress_pct}%`, backgroundColor: '#3b82f6' }} />
+                               style={{ width: `${p.status === 'completed' ? 100 : (p.progress_pct || 0)}%`, backgroundColor: STATUS_CFG[p.status]?.color ?? '#3b82f6' }} />
                         </div>
-                        <span className="text-xs font-bold text-gray-500 shrink-0">{p.progress_pct}%</span>
+                        <span className="text-xs font-bold text-gray-500 shrink-0">{p.status === 'completed' ? 100 : (p.progress_pct || 0)}%</span>
                       </div>
                     </td>
                   </tr>
@@ -607,7 +733,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
             </table>
           </div>
         )}
-      </div>
+      </div>}
     </div>
   )
 
@@ -668,11 +794,11 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <div className="flex items-center justify-between mb-3">
             <span className="text-sm font-semibold text-gray-600">ความคืบหน้าโครงการ</span>
-            <span className="text-lg font-bold" style={{ color: '#3b82f6' }}>{p.progress_pct}%</span>
+            <span className="text-lg font-bold" style={{ color: STATUS_CFG[p.status]?.color ?? '#3b82f6' }}>{p.status === 'completed' ? 100 : (p.progress_pct || 0)}%</span>
           </div>
           <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
             <div className="h-full rounded-full transition-all"
-                 style={{ width: `${p.progress_pct}%`, backgroundColor: '#3b82f6' }} />
+                 style={{ width: `${p.status === 'completed' ? 100 : (p.progress_pct || 0)}%`, backgroundColor: STATUS_CFG[p.status]?.color ?? '#3b82f6' }} />
           </div>
         </div>
 
@@ -690,7 +816,21 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
               {p.district && <p className="text-gray-600"><span className="text-gray-400">อำเภอ:</span> <b>{p.district}</b></p>}
               {p.province && <p className="text-gray-600"><span className="text-gray-400">จังหวัด:</span> {p.province}</p>}
               {p.latitude && p.longitude && (
-                <p className="text-xs text-gray-400 font-mono mt-1">{Number(p.latitude).toFixed(6)}, {Number(p.longitude).toFixed(6)}</p>
+                <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-[11px] text-gray-400 font-mono flex items-center gap-1">
+                    <MapPin size={12} />
+                    {Number(p.latitude).toFixed(6)}, {Number(p.longitude).toFixed(6)}
+                  </p>
+                  <a
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${p.latitude},${p.longitude}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 text-xs font-bold hover:bg-blue-100 transition-colors"
+                  >
+                    <Navigation size={12} />
+                    นำทาง
+                  </a>
+                </div>
               )}
               {!p.village && !p.district && !p.province && <p className="text-gray-400 text-xs">ยังไม่ระบุที่ตั้ง</p>}
             </div>
@@ -828,7 +968,13 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
               <div className="flex flex-wrap items-center gap-3">
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-gray-500">สถานะ:</span>
-                  <select value={progressStatus} onChange={e => setProgressStatus(e.target.value)}
+                  <select value={progressStatus} onChange={e => {
+                      const newStatus = e.target.value;
+                      setProgressStatus(newStatus);
+                      if (STATUS_CFG[newStatus]?.autoProgress !== null) {
+                        setProgressPct(STATUS_CFG[newStatus].autoProgress);
+                      }
+                    }}
                     className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-1.5 text-sm font-semibold text-blue-700 focus:outline-none">
                     {Object.entries(STATUS_CFG).map(([v, c]) => <option key={v} value={v}>{c.label}</option>)}
                   </select>
@@ -837,7 +983,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
                   <span className="text-sm text-gray-500">ความคืบหน้า:</span>
                   <input type="number" min="0" max="100" value={progressPct}
                     onChange={e => setProgressPct(Math.min(100, Math.max(0, Number(e.target.value))))}
-                    className="w-16 bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-200" />
+                    className="w-16 bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5 text-sm text-center text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-200" />
                   <span className="text-sm text-gray-400">%</span>
                 </div>
                 <button onClick={handleSaveProgress} disabled={savingProgress}
@@ -969,8 +1115,12 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
           <h3 className="text-sm font-bold text-gray-700 border-b border-gray-100 pb-2">ที่ตั้งโครงการ</h3>
           <div className="grid grid-cols-2 gap-3">
             <Field label="หมู่บ้าน/ชุมชน" half>
-              <input value={form.village} onChange={e => setForm(p => ({ ...p, village: e.target.value }))}
-                placeholder="เช่น หมู่ 3 บ้านนา" className={inputCls} />
+              <select value={form.village} onChange={e => setForm(p => ({ ...p, village: e.target.value }))} className={selectCls}>
+                <option value="">- เลือกหมู่บ้าน/ชุมชน -</option>
+                {locations.map(l => (
+                  <option key={l.id} value={l.name}>{l.name}</option>
+                ))}
+              </select>
             </Field>
             <Field label="ตำบล" half>
               <input value={form.subdistrict} onChange={e => setForm(p => ({ ...p, subdistrict: e.target.value }))}

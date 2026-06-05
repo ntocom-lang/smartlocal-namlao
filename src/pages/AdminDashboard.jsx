@@ -51,11 +51,11 @@ const CATEGORY_LABEL = {
 }
 
 const CATEGORY_EMOJI = {
-  road: '🛣️', light: '💡', trash: '🗑️', water: '🚰',
-  flood: '🌊', tree: '🌳', noise: '📢', drain: '🕳️',
-  waste_water: '💧', suction: '🚛', manhole: '⚙️', vendor: '🏪',
-  building: '🏗️', mosquito: '🦟', pollution: '🌫️', corruption: '⚖️',
-  tax: '📋', canal: '🏞️', animals: '🐕', other: '📝',
+  road: '', light: '', trash: '', water: '',
+  flood: '', tree: '', noise: '', drain: '',
+  waste_water: '', suction: '', manhole: '', vendor: '',
+  building: '', mosquito: '', pollution: '', corruption: '',
+  tax: '', canal: '', animals: '', other: '',
 }
 
 const FILTER_TABS = ['ทั้งหมด', ...Object.values(STATUS).map((s) => s.label)]
@@ -449,7 +449,7 @@ ${photoSectionHtml}
   }
   const attachments = c.attachments ?? []
   const categoryLabel = CATEGORY_LABEL[c.category] ?? c.category
-  const categoryEmoji = CATEGORY_EMOJI[c.category] ?? '📄'
+  const categoryEmoji = CATEGORY_EMOJI[c.category] || ''
   const dateStr = new Date(c.created_at).toLocaleDateString('th-TH', {
     day: '2-digit', month: 'long', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
@@ -3416,6 +3416,17 @@ function EventsManager({ tenant, currentUserRole }) {
   const [formError, setFormError] = useState('')
   const emptyForm = { title: '', description: '', event_date: '', event_time: '', end_time: '', end_date: '', location: '', category: 'อื่นๆ', is_all_day: true, audience: 'public', attachment_url: '', attachment_file: null }
   const [form, setForm] = useState(emptyForm)
+  const [filterMonth, setFilterMonth] = useState('all')
+  const [filterCategory, setFilterCategory] = useState('all')
+  const [filterAudience, setFilterAudience] = useState('all')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [activeTab, setActiveTab] = useState('upcoming')
+  const [pageSize, setPageSize] = useState(10)
+  const [currentPage, setCurrentPage] = useState(1)
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [activeTab, searchQuery, filterMonth, filterCategory, filterAudience, pageSize])
 
   useEffect(() => { fetchEvents() }, [tenant.id, currentUserRole])
 
@@ -3514,10 +3525,30 @@ function EventsManager({ tenant, currentUserRole }) {
     setEvents((prev) => prev.filter((e) => e.id !== id))
   }
 
+  let filteredEvents = events
+  if (filterMonth !== 'all') {
+    filteredEvents = filteredEvents.filter(e => e.event_date.startsWith(filterMonth))
+  }
+  if (filterCategory !== 'all') {
+    filteredEvents = filteredEvents.filter(e => e.category === filterCategory)
+  }
+  if (filterAudience !== 'all') {
+    filteredEvents = filteredEvents.filter(e => e.audience === filterAudience)
+  }
+  if (searchQuery.trim()) {
+    const q = searchQuery.trim().toLowerCase()
+    filteredEvents = filteredEvents.filter(e => e.title.toLowerCase().includes(q) || (e.description && e.description.toLowerCase().includes(q)))
+  }
+
   const now = new Date()
   now.setHours(0, 0, 0, 0)
-  const upcoming = events.filter((e) => new Date(e.event_date + 'T00:00:00') >= now)
-  const past = events.filter((e) => new Date(e.event_date + 'T00:00:00') < now)
+  const upcoming = filteredEvents.filter((e) => new Date(e.event_date + 'T00:00:00') >= now)
+  const past = filteredEvents.filter((e) => new Date(e.event_date + 'T00:00:00') < now)
+
+  const currentList = activeTab === 'upcoming' ? upcoming : [...past].reverse()
+  const totalItems = currentList.length
+  const totalPages = pageSize === 'all' ? 1 : Math.ceil(totalItems / pageSize)
+  const paginatedList = pageSize === 'all' ? currentList : currentList.slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
   return (
     <div className="space-y-4">
@@ -3532,14 +3563,62 @@ function EventsManager({ tenant, currentUserRole }) {
         </button>
       </div>
 
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+        <div className="flex flex-wrap gap-3 items-end">
+          <div className="flex-1 min-w-[160px]">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="ค้นหาชื่อหรือรายละเอียดกิจกรรม..."
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            />
+          </div>
+          <div className="min-w-[140px]">
+            <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)}
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200">
+              <option value="all">ทุกเดือน</option>
+              {Array.from(new Set(events.map(e => e.event_date.slice(0, 7)))).sort().reverse().map(ym => {
+                const [y, m] = ym.split('-')
+                const d = new Date(Number(y), Number(m) - 1, 1)
+                const label = d.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })
+                return <option key={ym} value={ym}>{label}</option>
+              })}
+            </select>
+          </div>
+          <div className="min-w-[140px]">
+            <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200">
+              <option value="all">ทุกประเภท</option>
+              {EVENTS_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+            </select>
+          </div>
+          <div className="min-w-[140px]">
+            <select value={filterAudience} onChange={e => setFilterAudience(e.target.value)}
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200">
+              <option value="all">ทุกกลุ่มเป้าหมาย</option>
+              {AUDIENCE_OPTIONS.filter((opt) => currentUserRole === 'council' ? opt.value !== 'management' : true).map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+          {(searchQuery || filterMonth !== 'all' || filterCategory !== 'all' || filterAudience !== 'all') && (
+            <button onClick={() => { setSearchQuery(''); setFilterMonth('all'); setFilterCategory('all'); setFilterAudience('all'); }}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-gray-500 bg-gray-100 hover:bg-gray-200 transition-colors">
+              <X size={16} /> ล้าง
+            </button>
+          )}
+        </div>
+      </div>
+
       {showForm && (
-        /* Mobile: dark overlay + bottom sheet  |  Desktop: fullscreen white page */
-        <div className="fixed inset-0 z-50 flex items-end md:items-stretch justify-center bg-black/40 md:bg-white px-4 pb-4 md:p-0">
-          <div className="w-full max-w-md md:max-w-none bg-white rounded-t-3xl md:rounded-none shadow-2xl md:shadow-none flex flex-col max-h-[90vh] md:max-h-none md:h-full overflow-hidden">
+        /* Mobile: bottom sheet  |  Desktop: centered dialog */
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/50 px-4 pb-4 md:p-6">
+          <div className="w-full max-w-md md:max-w-2xl bg-white rounded-t-3xl md:rounded-2xl shadow-2xl flex flex-col max-h-[90vh] md:max-h-[88vh] overflow-hidden">
 
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 md:px-10 md:py-5 border-b border-gray-100 shrink-0">
-              <h3 className="font-bold text-gray-800 md:text-lg">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
+              <h3 className="font-bold text-gray-800">
                 {editingEvent ? 'แก้ไขกิจกรรม' : 'เพิ่มกิจกรรม'}
               </h3>
               <button onClick={() => setShowForm(false)} className="p-1.5 rounded-xl hover:bg-gray-100">
@@ -3549,7 +3628,7 @@ function EventsManager({ tenant, currentUserRole }) {
 
             {/* Body — scrollable */}
             <div className="flex-1 overflow-y-auto">
-              <div className="px-6 py-4 md:px-10 md:py-6 md:max-w-2xl md:mx-auto space-y-4">
+              <div className="px-6 py-4 space-y-4">
 
                 <div>
                   <label className="text-xs font-semibold text-gray-500 mb-1 block">ชื่อกิจกรรม *</label>
@@ -3639,7 +3718,7 @@ function EventsManager({ tenant, currentUserRole }) {
                   </div>
 
                   <div>
-                    <label className="text-xs font-semibold text-gray-500 mb-1 block">แสดงให้</label>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">กลุ่มเป้าหมาย</label>
                     <div className="grid grid-cols-2 gap-2">
                       {AUDIENCE_OPTIONS.filter((opt) => currentUserRole === 'council' ? opt.value !== 'management' : true).map((opt) => (
                         <button
@@ -3723,7 +3802,7 @@ function EventsManager({ tenant, currentUserRole }) {
 
             {/* Footer */}
             <div className="border-t border-gray-100 shrink-0">
-              <div className="px-6 py-4 md:px-10 md:py-5 md:max-w-2xl md:mx-auto flex gap-3">
+              <div className="px-6 py-4 flex gap-3">
                 <button
                   onClick={() => setShowForm(false)}
                   className="flex-1 py-3 rounded-2xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50"
@@ -3750,35 +3829,78 @@ function EventsManager({ tenant, currentUserRole }) {
           <Loader2 size={24} className="animate-spin" />
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex bg-gray-100 p-1 rounded-xl w-fit">
+              <button
+                onClick={() => setActiveTab('upcoming')}
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'upcoming' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                กิจกรรมที่จะมาถึง ({upcoming.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('past')}
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'past' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                กิจกรรมที่ผ่านมา ({past.length})
+              </button>
+            </div>
+
+            {paginatedList.length > 0 && (
+              <div className="flex flex-wrap items-center gap-4 bg-white px-3 py-2 rounded-xl border border-gray-100 shadow-sm w-fit">
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <span>แสดง</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => setPageSize(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                    className="bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  >
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value="all">ทั้งหมด</option>
+                  </select>
+                  <span>รายการ</span>
+                </div>
+                
+                {pageSize !== 'all' && totalPages > 1 && (
+                  <div className="flex items-center gap-1 border-l pl-4 border-gray-100">
+                    <button
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      className="p-1 rounded-lg text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <span className="text-sm font-medium text-gray-700 px-2">
+                      หน้า {currentPage} / {totalPages}
+                    </span>
+                    <button
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                      className="p-1 rounded-lg text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-              กิจกรรมที่จะมาถึง ({upcoming.length})
-            </p>
-            {upcoming.length === 0 ? (
+            {paginatedList.length === 0 ? (
               <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center text-gray-400 text-sm">
-                ยังไม่มีกิจกรรม กด "เพิ่มกิจกรรม" เพื่อเริ่มต้น
+                {activeTab === 'upcoming' ? 'ยังไม่มีกิจกรรม กด "เพิ่มกิจกรรม" เพื่อเริ่มต้น' : 'ยังไม่มีกิจกรรมที่ผ่านมา'}
               </div>
             ) : (
-              <div className="space-y-2">
-                {upcoming.map((ev) => (
+              <div className={`space-y-2 ${activeTab === 'past' ? 'opacity-80' : ''}`}>
+                {paginatedList.map((ev) => (
                   <EventCard key={ev.id} ev={ev} onEdit={openEdit} onDelete={handleDelete} deleting={deleting} />
                 ))}
               </div>
             )}
           </div>
-          {past.length > 0 && (
-            <div>
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-                กิจกรรมที่ผ่านมา ({past.length})
-              </p>
-              <div className="space-y-2 opacity-60">
-                {[...past].reverse().slice(0, 5).map((ev) => (
-                  <EventCard key={ev.id} ev={ev} onEdit={openEdit} onDelete={handleDelete} deleting={deleting} />
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -3787,10 +3909,10 @@ function EventsManager({ tenant, currentUserRole }) {
 
 // ─── Tourism Manager ───────────────────────────────────────────────────────────
 const TOUR_CATS = [
-  { key: 'travel', label: 'เที่ยว', emoji: '🏛️', color: '#d97706' },
-  { key: 'food',   label: 'กิน',   emoji: '🍽️', color: '#10b981' },
-  { key: 'stay',   label: 'พัก',   emoji: '🏨', color: '#3b82f6' },
-  { key: 'shop',   label: 'ชอป',  emoji: '🛍️', color: '#ec4899' },
+  { key: 'travel', label: 'เที่ยว', emoji: '', color: '#d97706' },
+  { key: 'food',   label: 'กิน',   emoji: '', color: '#10b981' },
+  { key: 'stay',   label: 'พัก',   emoji: '', color: '#3b82f6' },
+  { key: 'shop',   label: 'ชอป',  emoji: '', color: '#ec4899' },
 ]
 
 async function compressImage(file, maxPx = 1200, quality = 0.82) {
@@ -3950,7 +4072,7 @@ function TourismManager({ tenant }) {
                   className={`bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden transition-opacity ${!place.is_active ? 'opacity-50' : ''}`}>
                   <div className="flex items-center gap-3 p-3">
                     <div className="w-14 h-14 rounded-xl overflow-hidden shrink-0 bg-gray-100 flex items-center justify-center text-xl">
-                      {place.image_url ? <img src={place.image_url} alt="" className="w-full h-full object-cover" /> : (cat?.emoji ?? '🏛️')}
+                      {place.image_url ? <img src={place.image_url} alt="" className="w-full h-full object-cover" /> : (cat?.emoji || '')}
                     </div>
                     <div className="flex-1 min-w-0">
                       <span className="inline-block text-[11px] font-bold px-1.5 py-0.5 rounded-md text-white mb-0.5"
@@ -3998,7 +4120,7 @@ function TourismManager({ tenant }) {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2.5">
                           <div className="w-9 h-9 rounded-lg overflow-hidden shrink-0 bg-gray-100 flex items-center justify-center text-base">
-                            {place.image_url ? <img src={place.image_url} alt="" className="w-full h-full object-cover" /> : (cat?.emoji ?? '🏛️')}
+                            {place.image_url ? <img src={place.image_url} alt="" className="w-full h-full object-cover" /> : (cat?.emoji || '')}
                           </div>
                           <span className="font-medium text-gray-800">{place.name}</span>
                         </div>

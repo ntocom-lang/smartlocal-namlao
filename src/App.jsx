@@ -27,6 +27,7 @@ import EventsPage from './pages/EventsPage'
 import EmergencyPage from './pages/EmergencyPage'
 import TourismPage from './pages/TourismPage'
 import TourismDetailPage from './pages/TourismDetailPage'
+import ContactPage from './pages/ContactPage'
 import { supabase } from './lib/supabase'
 import { Phone, X } from 'lucide-react'
 
@@ -250,6 +251,7 @@ function AppShell() {
           <Route path="/emergency" element={<EmergencyPage />} />
           <Route path="/tourism" element={<TourismPage />} />
           <Route path="/tourism/:id" element={<TourismDetailPage />} />
+          <Route path="/contact" element={<ContactPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/technician" element={
@@ -280,13 +282,11 @@ function AppShell() {
   )
 }
 
-function getBasename() {
-  // VITE_TENANT_SLUG = single-tenant Vercel deploy → ไม่ต้อง prefix
+function computeBasename() {
   if (import.meta.env.VITE_TENANT_SLUG) return ''
 
   const { hostname, pathname } = window.location
 
-  // Custom domain + subdomain mode → ไม่ต้อง prefix
   if (!hostname.endsWith('.vercel.app') && hostname !== 'localhost' && !hostname.match(/^\d/)) {
     return ''
   }
@@ -296,10 +296,13 @@ function getBasename() {
   return segment ? `/${segment}` : ''
 }
 
+// computed once at module load — must NOT be inside the component (re-render would shift basename)
+const BASENAME = computeBasename()
+
 export default function App() {
   return (
     <InAppBrowserGate>
-      <BrowserRouter basename={getBasename()}>
+      <BrowserRouter basename={BASENAME}>
         <ThemeProvider>
           <TenantProvider>
             <AppShell />
