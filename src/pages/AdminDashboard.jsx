@@ -12,13 +12,14 @@ import {
   CheckCircle2, XCircle, AlertCircle, ChevronRight, ChevronLeft,
   Filter, Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical,
   X, FileText, AlignLeft, Image, Calendar, Hash, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Luggage,
-  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, BellOff, ExternalLink,
+  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, BellOff, ExternalLink, BarChart2,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { usePushNotification } from '../hooks/usePushNotification'
 import MapDashboardAdmin from '../components/admin/MapDashboardAdmin'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
+import CivilProjectReport from '../components/admin/CivilProjectReport'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS = {
@@ -4532,8 +4533,9 @@ export default function AdminDashboard() {
             {
               group: 'วิเคราะห์',
               items: [
-                { key: 'report', label: 'รายงาน',          Icon: TrendingUp, color: '#10b981', show: true },
-                { key: 'map',    label: 'แผนที่ข้อมูล',   Icon: MapPin,     color: '#3b82f6', show: currentUserRole !== 'council' },
+                { key: 'report',       label: 'รายงานคำร้อง', Icon: TrendingUp, color: '#10b981', show: true },
+                { key: 'civil-report', label: 'รายงานโครงการ', Icon: BarChart2,  color: '#7c3aed', show: currentUserRole !== 'council' && currentUserRole !== 'viewer' },
+                { key: 'map',          label: 'แผนที่ข้อมูล',  Icon: MapPin,     color: '#3b82f6', show: currentUserRole !== 'council' },
               ],
             },
             {
@@ -4644,11 +4646,17 @@ export default function AdminDashboard() {
               รีเฟรช
             </button>
           )}
-          <button onClick={handleLogout}
-            className="md:hidden flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border border-red-200 text-red-500 bg-white hover:bg-red-50 transition-colors">
-            <LogOut size={15} />
-            ออกจากระบบ
-          </button>
+          <div className="md:hidden flex items-center gap-2">
+            <button onClick={() => navigate('/')}
+              className="p-2 rounded-xl text-gray-400 border border-gray-200 bg-white hover:bg-gray-50 transition-colors">
+              <Home size={15} />
+            </button>
+            <button onClick={handleLogout}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium border border-red-200 text-red-500 bg-white hover:bg-red-50 transition-colors">
+              <LogOut size={15} />
+              ออก
+            </button>
+          </div>
         </div>
       </div>
 
@@ -4747,38 +4755,24 @@ export default function AdminDashboard() {
         style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 8px)' }}
       >
         {[
-          { key: 'home',       label: 'หน้าแรก', Icon: Home,          activeColor: '#6b7280',             nav: () => navigate('/') },
-          ...( currentUserRole !== 'council' ? [
-            { key: 'complaints', label: 'คำร้อง',  Icon: ClipboardList, activeColor: 'var(--color-primary)', nav: () => setActivePage('complaints') },
-          ] : []),
-          { key: 'events',     label: 'กิจกรรม', Icon: CalendarDays,  activeColor: '#10b981',             nav: () => setActivePage('events') },
-          ...( currentUserRole !== 'council' ? [
-            { key: 'report',   label: 'รายงาน',  Icon: TrendingUp,    activeColor: '#10b981',             nav: () => setActivePage('report') },
-            { key: 'more',     label: 'อื่นๆ',   Icon: LayoutGrid,    activeColor: '#6b7280',             nav: () => setActivePage('more') },
-          ] : []),
-        ].map(({ key, label, Icon, activeColor, nav }) => {
+          { key: 'complaints', label: 'คำร้อง',  Icon: ClipboardList, activeColor: 'var(--color-primary)', show: currentUserRole !== 'council' && currentUserRole !== 'viewer' },
+          { key: 'events',     label: 'กิจกรรม', Icon: CalendarDays,  activeColor: '#10b981',              show: true },
+          { key: 'report',     label: 'รายงานคำร้อง',  Icon: TrendingUp,    activeColor: '#10b981',              show: currentUserRole !== 'council' },
+          { key: 'map',        label: 'แผนที่',  Icon: MapPin,        activeColor: '#3b82f6',              show: currentUserRole !== 'council' },
+          { key: 'more',       label: 'อื่นๆ',   Icon: LayoutGrid,    activeColor: '#6b7280',              show: true },
+        ].filter(i => i.show).map(({ key, label, Icon, activeColor }) => {
           const isActive = activePage === key
           return (
             <button
               key={key}
-              onClick={nav}
+              onClick={() => setActivePage(key)}
               className="relative flex-1 flex flex-col items-center justify-center gap-0.5 pt-2 pb-1 transition-transform active:scale-90"
             >
               {isActive && (
-                <span
-                  className="absolute top-0 h-0.5 w-8 rounded-full"
-                  style={{ backgroundColor: activeColor }}
-                />
+                <span className="absolute top-0 h-0.5 w-8 rounded-full" style={{ backgroundColor: activeColor }} />
               )}
-              <Icon
-                size={22}
-                style={{ color: isActive ? activeColor : '#9ca3af' }}
-                strokeWidth={isActive ? 2.5 : 1.8}
-              />
-              <span
-                className="text-[13px] font-semibold leading-tight"
-                style={{ color: isActive ? activeColor : '#9ca3af' }}
-              >
+              <Icon size={22} style={{ color: isActive ? activeColor : '#9ca3af' }} strokeWidth={isActive ? 2.5 : 1.8} />
+              <span className="text-[11px] font-semibold leading-tight" style={{ color: isActive ? activeColor : '#9ca3af' }}>
                 {label}
               </span>
             </button>
@@ -4812,10 +4806,13 @@ export default function AdminDashboard() {
           </div>
           <AssignmentManager tenant={tenant} readOnly={currentUserRole === 'viewer'} />
         </div>
+      ) : activePage === 'civil-report' ? (
+        <CivilProjectReport tenant={tenant} />
       ) : activePage === 'infra' ? (
         <CivilProjectAdmin tenant={tenant} currentUserRole={currentUserRole} />
       ) : activePage === 'map' ? (
-        <MapDashboardAdmin tenant={tenant} currentUserRole={currentUserRole} />
+        <MapDashboardAdmin tenant={tenant} currentUserRole={currentUserRole}
+          onNavigate={(page) => setActivePage(page)} />
       ) : activePage === 'tourism' ? (
         <TourismManager tenant={tenant} />
       ) : activePage === 'more' ? (
@@ -4825,6 +4822,30 @@ export default function AdminDashboard() {
 
           {/* Mobile: icon grid */}
           <div className="md:hidden grid grid-cols-2 gap-3">
+            {currentUserRole !== 'viewer' && currentUserRole !== 'council' && (
+              <button onClick={() => setActivePage('infra')}
+                className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#ede9fe' }}>
+                  <Wrench size={24} style={{ color: '#7c3aed' }} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-800">โครงการก่อสร้าง</p>
+                  <p className="text-[13px] text-gray-400 mt-0.5">ติดตามความคืบหน้า</p>
+                </div>
+              </button>
+            )}
+            {currentUserRole !== 'viewer' && currentUserRole !== 'council' && (
+              <button onClick={() => setActivePage('civil-report')}
+                className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#ede9fe' }}>
+                  <BarChart2 size={24} style={{ color: '#7c3aed' }} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-800">รายงานโครงการ</p>
+                  <p className="text-[13px] text-gray-400 mt-0.5">สรุปตามปีงบประมาณ</p>
+                </div>
+              </button>
+            )}
             {currentUserRole !== 'viewer' && (
               <button onClick={() => setActivePage('categories')}
                 className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">

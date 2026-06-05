@@ -527,30 +527,16 @@ export default function MorePage() {
         </Section>
 
         {/* ─── ข้อมูลหน่วยงาน ─── */}
-        {(tenant?.phone || tenant?.address) && (
-          <Section title="ติดต่อหน่วยงาน">
-            {tenant.phone && (
-              <MenuRow
-                icon={Phone}
-                iconBg="bg-emerald-50"
-                iconColor="text-emerald-500"
-                label="โทรศัพท์"
-                desc={tenant.phone}
-                href={`tel:${tenant.phone}`}
-              />
-            )}
-            {tenant.address && (
-              <MenuRow
-                icon={MapPin}
-                iconBg="bg-orange-50"
-                iconColor="text-orange-500"
-                label="ที่อยู่"
-                desc={tenant.address}
-                onClick={() => {}}
-              />
-            )}
-          </Section>
-        )}
+        <Section title="ติดต่อหน่วยงาน">
+          <MenuRow
+            icon={Phone}
+            iconBg="bg-emerald-50"
+            iconColor="text-emerald-500"
+            label="ติดต่อเรา"
+            desc="เบอร์โทรศัพท์ สถานที่ตั้ง และช่องทางโซเชียลมีเดีย"
+            href="/contact"
+          />
+        </Section>
 
         {/* ─── บัญชีผู้ใช้ ─── */}
         <Section title="บัญชีของฉัน">
