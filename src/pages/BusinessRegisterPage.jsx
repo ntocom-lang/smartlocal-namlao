@@ -258,6 +258,17 @@ export default function BusinessRegisterPage() {
           )}
         </div>
 
+        {/* Address */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <MapPin size={16} className="text-amber-500" />
+            <span className="text-sm font-semibold text-gray-700">ที่อยู่ / วิธีเดินทาง</span>
+          </div>
+          <textarea value={form.address} onChange={set('address')} rows={2}
+            placeholder="เช่น บ้านเลขที่ 12 หมู่ 3 บ้านบุญแจ่ม ตำบลน้ำเลา หรืออธิบายทางเข้า..."
+            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-amber-300" />
+        </div>
+
         {/* Description */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
           <div className="flex items-center gap-2 mb-3">
