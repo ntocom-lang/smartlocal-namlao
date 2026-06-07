@@ -918,7 +918,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
 
       {showMap && (
         <MapPicker
-          initialPos={geo.lat ? { lat: geo.lat, lng: geo.lng } : null}
+          initialPos={geo.lat ? { lat: geo.lat, lng: geo.lng } : (tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null)}
           onConfirm={({ lat, lng, address }) => {
             setGeo({ lat, lng })
             if (address && !form.location_desc) setForm(p => ({ ...p, location_desc: address }))

@@ -88,7 +88,7 @@ function SuccessScreen({ onBack, complaintNumber }) {
 // ─── One Data form type config ────────────────────────────────────────────────
 const FORM_TYPE_CONFIG = {
   infrastructure: {
-    label: 'แจ้งคำร้องออนไลน์',
+    label: 'ยื่นคำร้องออนไลน์',
     icon: '🔧',
     color: '#ef4444',
     gpsRequired: true,
@@ -356,7 +356,7 @@ export default function CitizenForm() {
     <div className="max-w-3xl mx-auto min-h-screen bg-gray-50">
       {showMap && (
         <MapPicker
-          initialPos={geo.lat ? { lat: geo.lat, lng: geo.lng } : null}
+          initialPos={geo.lat ? { lat: geo.lat, lng: geo.lng } : (tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null)}
           onConfirm={handleMapConfirm}
           onClose={() => setShowMap(false)}
         />

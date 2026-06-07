@@ -180,8 +180,8 @@ export default function InfraWorkAdmin({ tenant, currentUserRole }) {
         <MapPicker
           initialPos={
             infraTab === 'new_project'
-              ? (newGeo.lat ? { lat: newGeo.lat, lng: newGeo.lng } : null)
-              : (repairGeo.lat ? { lat: repairGeo.lat, lng: repairGeo.lng } : null)
+              ? (newGeo.lat ? { lat: newGeo.lat, lng: newGeo.lng } : (tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null))
+              : (repairGeo.lat ? { lat: repairGeo.lat, lng: repairGeo.lng } : (tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null))
           }
           onConfirm={({ lat, lng, address }) => {
             if (infraTab === 'new_project') {

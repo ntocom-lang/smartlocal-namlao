@@ -745,7 +745,7 @@ export default function TechnicianDashboard() {
 
       {showGpsMap && (
         <MapPicker
-          initialPos={gpsGeo.lat ? { lat: gpsGeo.lat, lng: gpsGeo.lng } : null}
+          initialPos={gpsGeo.lat ? { lat: gpsGeo.lat, lng: gpsGeo.lng } : (tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null)}
           onConfirm={({ lat, lng, address }) => {
             setGpsGeo({ lat, lng })
             if (address && !gpsForm.village) setGpsForm(p => ({ ...p, village: address }))
