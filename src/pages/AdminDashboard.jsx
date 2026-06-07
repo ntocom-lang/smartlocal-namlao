@@ -12,7 +12,7 @@ import {
   CheckCircle2, XCircle, AlertCircle, ChevronRight, ChevronLeft,
   Filter, Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical,
   X, FileText, AlignLeft, Image, Calendar, Hash, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Luggage,
-  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, BellOff, ExternalLink, BarChart2, Settings
+  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, BellOff, ExternalLink, BarChart2, Settings, Store
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
@@ -21,6 +21,7 @@ import MapDashboardAdmin from '../components/admin/MapDashboardAdmin'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 import CivilProjectReport from '../components/admin/CivilProjectReport'
 import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
+import BusinessRegistrationAdmin from '../components/admin/BusinessRegistrationAdmin'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS = {
@@ -4543,7 +4544,8 @@ export default function AdminDashboard() {
               group: 'จัดการเนื้อหา',
               items: [
                 { key: 'staff',   label: 'รูปผู้บริหาร',   Icon: UserCircle2, color: '#7c3aed', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
-                { key: 'tourism', label: 'สถานที่แนะนำ', Icon: Luggage,     color: '#d97706', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
+                { key: 'tourism',       label: 'สถานที่แนะนำ',     Icon: Luggage, color: '#d97706', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
+                { key: 'biz-register', label: 'คำขอลงทะเบียน', Icon: Store,   color: '#d97706', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
               ],
             },
             {
@@ -4817,6 +4819,8 @@ export default function AdminDashboard() {
           onNavigate={(page) => setActivePage(page)} />
       ) : activePage === 'tourism' ? (
         <TourismManager tenant={tenant} />
+      ) : activePage === 'biz-register' ? (
+        <BusinessRegistrationAdmin tenant={tenant} />
       ) : activePage === 'system-settings' ? (
         <SystemSettingsAdmin tenant={tenant} onUpdateTenant={(updated) => window.location.reload()} />
       ) : activePage === 'more' ? (
@@ -4847,6 +4851,18 @@ export default function AdminDashboard() {
                 <div>
                   <p className="text-sm font-bold text-gray-800">รายงานโครงการ</p>
                   <p className="text-[13px] text-gray-400 mt-0.5">สรุปตามปีงบประมาณ</p>
+                </div>
+              </button>
+            )}
+            {currentUserRole !== 'viewer' && currentUserRole !== 'council' && (
+              <button onClick={() => setActivePage('biz-register')}
+                className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#fef3c7' }}>
+                  <Store size={24} style={{ color: '#d97706' }} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-800">คำขอลงทะเบียน</p>
+                  <p className="text-[13px] text-gray-400 mt-0.5">ธุรกิจ / ท่องเที่ยว</p>
                 </div>
               </button>
             )}
