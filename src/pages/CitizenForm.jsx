@@ -88,7 +88,7 @@ function SuccessScreen({ onBack, complaintNumber }) {
 // ─── One Data form type config ────────────────────────────────────────────────
 const FORM_TYPE_CONFIG = {
   infrastructure: {
-    label: 'แจ้งซ่อมโครงสร้างพื้นฐาน',
+    label: 'แจ้งคำร้องออนไลน์',
     icon: '🔧',
     color: '#ef4444',
     gpsRequired: true,

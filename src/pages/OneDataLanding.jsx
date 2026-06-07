@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { MapPin, Droplets, Leaf, Store, ArrowRight } from 'lucide-react'
+import { useTenant } from '../contexts/TenantContext'
 
 const FORMS = [
   {
@@ -7,8 +8,8 @@ const FORMS = [
     icon:  '🔧',
     color: '#ef4444',
     bg:    'from-red-500 to-red-700',
-    label: 'แจ้งซ่อมโครงสร้างพื้นฐาน',
-    sub:   'สายด่วนโยธา',
+    label: 'แจ้งคำร้องออนไลน์',
+    sub:   'ตลอด 24 ชั่วโมง',
     desc:  'ไฟกิ่งดับ · ถนนเป็นหลุม · ท่อระบายน้ำอุดตัน · ลำเหมืองตื้นเขิน',
     badge: 'GPS บังคับ',
     route: '/request?form=infrastructure',
@@ -31,7 +32,7 @@ const FORMS = [
     bg:    'from-emerald-500 to-emerald-700',
     label: 'แจ้งเหตุสิ่งแวดล้อม / จุดเสี่ยงภัย',
     sub:   'Smart Environment',
-    desc:  'ขยะตกค้าง · กิ่งไม้บดบังกล้อง CCTV · จุดเสี่ยงมั่วสุม · ควันไฟป่า',
+    desc:  'ขยะตกค้าง · กิ่งไม้หักโค่น · จุดเสี่ยงมั่วสุม · ควันไฟป่า',
     badge: 'GPS บังคับ',
     route: '/request?form=environment',
   },
@@ -50,6 +51,7 @@ const FORMS = [
 
 export default function OneDataLanding() {
   const navigate = useNavigate()
+  const { tenant } = useTenant()
 
   return (
     <div className="max-w-4xl mx-auto px-4 pb-28 md:pb-8">

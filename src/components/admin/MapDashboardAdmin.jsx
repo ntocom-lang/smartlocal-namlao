@@ -289,7 +289,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
         {/* ชั้นข้อมูล 5 ประเภท */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 border-b border-gray-200">
           {[
-            { key: 'repair', active: showRepair, toggle: () => setShowRepair(v => !v), color: '#ef4444', count: repairCount, label: 'แจ้งซ่อมโครงสร้างพื้นฐาน', sub: 'สายด่วนโยธา' },
+            { key: 'repair', active: showRepair, toggle: () => setShowRepair(v => !v), color: '#ef4444', count: repairCount, label: 'แจ้งคำร้องออนไลน์', sub: 'ตลอด 24 ชั่วโมง' },
             { key: 'water',  active: showWater,  toggle: () => setShowWater(v => !v),  color: '#3b82f6', count: waterCount,  label: 'ขอสนับสนุนน้ำอุปโภค',       sub: 'ภัยแล้ง / ภัยพิบัติ' },
             { key: 'env',    active: showEnv,    toggle: () => setShowEnv(v => !v),    color: '#10b981', count: envCount,    label: 'สิ่งแวดล้อม / จุดเสี่ยงภัย', sub: 'Smart Environment' },
             { key: 'biz',    active: showBiz,    toggle: () => setShowBiz(v => !v),    color: '#f59e0b', count: bizRegs.length,       label: 'ร้านค้า / ท่องเที่ยว',        sub: 'Smart Economy' },
