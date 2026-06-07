@@ -163,7 +163,7 @@ export default function BusinessRegisterPage() {
     <div className="max-w-3xl mx-auto min-h-screen bg-gray-50">
       {showMap && (
         <MapPicker
-          initialPos={geo.lat ? { lat: geo.lat, lng: geo.lng } : null}
+          initialPos={geo.lat ? { lat: geo.lat, lng: geo.lng } : (tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null)}
           onConfirm={({ lat, lng, address }) => {
             setGeo({ lat, lng })
             if (address) setForm((p) => ({ ...p, address }))

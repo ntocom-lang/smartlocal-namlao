@@ -47,10 +47,17 @@ async function reverseGeocode(lat, lng) {
   }
 }
 
-async function searchPlace(query) {
-  const res = await fetch(
-    `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&accept-language=th`
-  )
+async function searchPlace(query, center) {
+  const delta = 0.4
+  const viewbox = center
+    ? `${center.lng - delta},${center.lat + delta},${center.lng + delta},${center.lat - delta}`
+    : ''
+  const params = new URLSearchParams({
+    q: query, format: 'json', limit: 6,
+    'accept-language': 'th', countrycodes: 'th',
+    ...(viewbox ? { viewbox, bounded: '0' } : {}),
+  })
+  const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`)
   return res.json()
 }
 
@@ -105,7 +112,7 @@ export default function MapPicker({ initialPos, onConfirm, onClose }) {
     if (!q.trim()) { setSearchResults([]); return }
     searchTimeout.current = setTimeout(async () => {
       setSearching(true)
-      const results = await searchPlace(q)
+      const results = await searchPlace(q, center)
       setSearchResults(results)
       setSearching(false)
     }, 600)
@@ -168,6 +175,12 @@ export default function MapPicker({ initialPos, onConfirm, onClose }) {
         )}
         {searching && (
           <div className="pointer-events-auto mt-1 bg-white rounded-2xl shadow px-4 py-3 text-sm text-gray-400">กำลังค้นหา...</div>
+        )}
+        {!searching && searchQuery.length > 1 && searchResults.length === 0 && (
+          <div className="pointer-events-auto mt-1 bg-white rounded-2xl shadow px-4 py-3 text-sm text-gray-500 leading-snug">
+            ไม่พบสถานที่ — ลองค้นหาชื่ออำเภอหรือจังหวัดแทน<br />
+            <span className="text-xs text-gray-400">หรือเลื่อนแผนที่ดาวเทียมไปยังตำแหน่งที่ต้องการ แล้วกด ยืนยันตำแหน่ง</span>
+          </div>
         )}
       </div>
 
