@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback } from 'react'
 import { useTenant } from '../../contexts/TenantContext'
 import { ArrowRight, CalendarDays, Phone } from 'lucide-react'
-import oneStopHeader from '../../assets/one-data-banner.png'
+
 
 const SLIDE_W = 0.9
 const GAP = 12
@@ -62,9 +62,22 @@ export default function HeroBanner() {
         >
           {/* Slide 1 — ยื่นคำร้อง */}
           <a href="/complaint" className="snap-start shrink-0 rounded-2xl overflow-hidden shadow-md cursor-pointer transition-transform active:scale-[0.98] bg-white border border-gray-100 flex flex-col w-[90%] md:w-full md:h-full md:col-span-2 md:row-span-2">
-            <div className="bg-white p-2 md:p-4 pb-0">
-              <img src={oneStopHeader} alt="One Stop Service"
-                   className="w-full object-contain max-h-[250px] md:max-h-[400px] rounded-xl" />
+            <div className="bg-white p-5 md:p-8 pb-0 flex items-center justify-center gap-4 md:gap-8 flex-1 min-h-[160px] md:min-h-[250px]">
+              {tenant?.logo_url ? (
+                <img src={tenant.logo_url} alt="โลโก้หน่วยงาน" className="w-20 h-20 md:w-32 md:h-32 object-contain shrink-0 drop-shadow-md" />
+              ) : (
+                <div className="w-20 h-20 md:w-32 md:h-32 rounded-full flex items-center justify-center shrink-0 shadow-inner" style={{ backgroundColor: 'var(--color-primary-dark)', color: 'white', fontSize: '2rem', fontWeight: 'bold' }}>
+                  {tenant?.name?.[0] ?? '?'}
+                </div>
+              )}
+              <div className="flex flex-col justify-center">
+                <h1 className="text-2xl md:text-4xl font-extrabold text-gray-800 tracking-tight leading-tight mb-1 md:mb-2" style={{ color: 'var(--color-primary-dark)' }}>
+                  {tenant?.system_name || `${tenant?.name} One Data`}
+                </h1>
+                <p className="text-xs md:text-sm text-gray-500 font-medium leading-relaxed">
+                  ระบบจัดการข้อมูล เพื่อการพัฒนา<br className="hidden md:block" /> {tenant?.name}อย่างยั่งยืน
+                </p>
+              </div>
             </div>
             <div className="px-5 py-4">
               <div className="flex items-center justify-center gap-2 text-white font-bold text-sm px-5 py-3 rounded-xl shadow-sm transition-opacity hover:opacity-90 w-full"
