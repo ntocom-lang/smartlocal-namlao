@@ -181,7 +181,7 @@ export default function BusinessRegisterPage() {
         </button>
         <div>
           <h1 className="font-bold text-white text-base leading-tight">ลงทะเบียนร้านค้า / ท่องเที่ยว</h1>
-          <p className="text-white/70 text-xs">Smart Economy · น้ำเลา One Data</p>
+          <p className="text-white/70 text-xs">Smart Economy · {tenant?.system_name || `${tenant?.name} One Data`}</p>
         </div>
       </div>
 

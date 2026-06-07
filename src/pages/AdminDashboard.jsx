@@ -12,7 +12,7 @@ import {
   CheckCircle2, XCircle, AlertCircle, ChevronRight, ChevronLeft,
   Filter, Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical,
   X, FileText, AlignLeft, Image, Calendar, Hash, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Luggage,
-  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, BellOff, ExternalLink, BarChart2,
+  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, BellOff, ExternalLink, BarChart2, Settings
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
@@ -20,6 +20,7 @@ import { usePushNotification } from '../hooks/usePushNotification'
 import MapDashboardAdmin from '../components/admin/MapDashboardAdmin'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 import CivilProjectReport from '../components/admin/CivilProjectReport'
+import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS = {
@@ -4552,6 +4553,7 @@ export default function AdminDashboard() {
                 { key: 'assignments', label: 'ผู้รับผิดชอบ', Icon: Wrench,   color: '#d97706', show: currentUserRole !== 'council' },
                 { key: 'emergency',   label: 'สายด่วน',       Icon: Phone,    color: '#ef4444', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
                 { key: 'locations',   label: 'สถานที่เกิดเหตุ', Icon: MapPin, color: '#0891b2', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
+                { key: 'system-settings', label: 'ตั้งค่าระบบ', Icon: Settings, color: '#3b82f6', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 { key: 'users',       label: 'จัดการผู้ใช้', Icon: Shield,   color: '#7c3aed', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
               ],
             },
@@ -4815,6 +4817,8 @@ export default function AdminDashboard() {
           onNavigate={(page) => setActivePage(page)} />
       ) : activePage === 'tourism' ? (
         <TourismManager tenant={tenant} />
+      ) : activePage === 'system-settings' ? (
+        <SystemSettingsAdmin tenant={tenant} onUpdateTenant={(updated) => window.location.reload()} />
       ) : activePage === 'more' ? (
         /* ─── อื่นๆ page ─── */
         <div className="space-y-4">
@@ -4922,6 +4926,18 @@ export default function AdminDashboard() {
                 </div>
               </button>
             )}
+            {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
+              <button onClick={() => setActivePage('system-settings')}
+                className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#dbeafe' }}>
+                  <Settings size={24} style={{ color: '#3b82f6' }} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-800">ตั้งค่าระบบ</p>
+                  <p className="text-[13px] text-gray-400 mt-0.5">ชื่อระบบ</p>
+                </div>
+              </button>
+            )}
             <a href="/manual-admin.html" target="_blank" rel="noopener noreferrer"
               className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
               <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#d1fae5' }}>
@@ -4952,6 +4968,7 @@ export default function AdminDashboard() {
                   { key: 'locations',   Icon: MapPin,      color: '#0891b2', bg: '#e0f2fe', label: 'สถานที่เกิดเหตุ', desc: 'จัดการหมู่บ้าน / ตำบลในพื้นที่',  show: currentUserRole !== 'viewer' },
                   { key: 'tourism',     Icon: Luggage,     color: '#d97706', bg: '#fef3c7', label: 'สถานที่แนะนำ',    desc: 'เที่ยว กิน พัก ชอป OTOP',         show: currentUserRole !== 'viewer' },
                   { key: 'staff',       Icon: UserCircle2, color: '#7c3aed', bg: '#ede9fe', label: 'รูปผู้บริหาร',    desc: 'อัปโหลดรูปนายก/รองนายก/ทีมงาน', show: currentUserRole !== 'viewer' },
+                  { key: 'system-settings', Icon: Settings,color: '#3b82f6', bg: '#dbeafe', label: 'ตั้งค่าระบบ',    desc: 'ตั้งค่าชื่อระบบและข้อมูลพื้นฐาน',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'users',       Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', label: 'จัดการผู้ใช้',    desc: 'สิทธิ์การเข้าถึงและบทบาท',        show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 ].filter(r => r.show).map(({ key, Icon, color, bg, label, desc }) => (
                   <tr key={key} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => setActivePage(key)}>

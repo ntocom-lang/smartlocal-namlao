@@ -127,7 +127,7 @@ function QRShareCard({ tenant }) {
 
   async function handleShare() {
     if (navigator.share) {
-      await navigator.share({ title: 'น้ำเลา One Data', text: 'ระบบจัดการข้อมูลเพื่อการพัฒนาตำบลน้ำเลาอย่างยั่งยืน', url })
+      await navigator.share({ title: tenant?.system_name || `${tenant?.name} One Data`, text: `ระบบจัดการข้อมูลเพื่อการพัฒนา${tenant?.name}อย่างยั่งยืน`, url })
     } else {
       handleCopy()
     }
@@ -469,7 +469,7 @@ export default function MorePage() {
         )}
 
         {/* ─── One Data ─── */}
-        <Section title="น้ำเลา One Data">
+        <Section title={tenant?.system_name || `${tenant?.name} One Data`}>
           <MenuRow
             icon={ClipboardList}
             iconBg="bg-red-50"
@@ -576,7 +576,7 @@ export default function MorePage() {
         {/* ─── Footer ─── */}
         <div className="text-center pb-2">
           <p className="text-xs text-gray-300 font-medium">{tenant?.name}</p>
-          <p className="text-[13px] text-gray-300 mt-0.5">น้ำเลา One Data · ระบบข้อมูลเพื่อการพัฒนาที่ยั่งยืน</p>
+          <p className="text-[13px] text-gray-300 mt-0.5">{tenant?.system_name || `${tenant?.name} One Data`} · ระบบข้อมูลเพื่อการพัฒนาที่ยั่งยืน</p>
         </div>
       </div>
     </div>

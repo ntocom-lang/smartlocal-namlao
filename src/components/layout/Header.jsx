@@ -59,7 +59,7 @@ export default function Header() {
       <div className="hidden md:flex text-white text-xs py-1 px-4 justify-end items-center gap-3"
            style={{ backgroundColor: 'var(--color-primary-dark)' }}>
         <Phone size={11} />
-        <span className="font-semibold tracking-wide">น้ำเลา One Data</span>
+        <span className="font-semibold tracking-wide">{tenant?.system_name || `${tenant?.name} One Data`}</span>
         <span className="opacity-40">|</span>
         <span>ระบบจัดการข้อมูลเพื่อการพัฒนาตำบลน้ำเลา</span>
         <span className="opacity-40">|</span>
@@ -89,7 +89,7 @@ export default function Header() {
           {/* Name block */}
           <div className="flex-1 min-w-0 flex flex-col justify-center">
             <h1 className="font-bold text-sm md:text-base leading-tight">
-              น้ำเลา One Data
+              {tenant?.system_name || `${tenant?.name} One Data`}
             </h1>
             <p className="text-white/80 text-[10px] md:text-xs line-clamp-1 mt-0.5">ระบบจัดการข้อมูลเพื่อการพัฒนา</p>
           </div>

@@ -56,13 +56,13 @@ export default function OneDataLanding() {
 
       {/* PC header */}
       <div className="hidden md:block pt-8 pb-6 border-b border-gray-100 mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">น้ำเลา One Data</h1>
+        <h1 className="text-2xl font-bold text-gray-800">{tenant?.system_name || `${tenant?.name} One Data`}</h1>
         <p className="text-sm text-gray-500 mt-1">เลือกประเภทข้อมูลที่ต้องการส่ง — ทุกฟอร์มใช้พิกัด GPS จุดที่เกิดเหตุจริง</p>
       </div>
 
       {/* Mobile header */}
       <div className="md:hidden pt-4 pb-3">
-        <h1 className="text-lg font-bold text-gray-800">น้ำเลา One Data</h1>
+        <h1 className="text-lg font-bold text-gray-800">{tenant?.system_name || `${tenant?.name} One Data`}</h1>
         <p className="text-xs text-gray-500 mt-0.5">เลือกประเภทที่ต้องการส่งข้อมูล</p>
       </div>
 

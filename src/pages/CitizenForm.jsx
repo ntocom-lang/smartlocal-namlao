@@ -441,7 +441,7 @@ export default function CitizenForm() {
       <form onSubmit={handleSubmit} className="px-4 md:px-6 pt-5 pb-32 md:pb-10 space-y-4">
         {/* Category selector */}
         {ftConfig ? (
-          /* One Data form: แสดงเป็น pill selector */
+          /* System form: แสดงเป็น pill selector */
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
             <p className="text-sm font-semibold text-gray-700 mb-3">ประเภทย่อย</p>
             <div className="flex flex-wrap gap-2">

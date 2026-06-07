@@ -48,9 +48,9 @@ function detectTenantSlug() {
 
 function injectPWAManifest(tenant) {
   const manifest = {
-    name: 'น้ำเลา One Data',
-    short_name: 'One Data',
-    description: 'ระบบจัดการข้อมูลเพื่อการพัฒนาตำบลน้ำเลาอย่างยั่งยืน',
+    name: tenant.system_name || `${tenant.name} One Data`,
+    short_name: tenant.system_name || 'One Data',
+    description: `ระบบจัดการข้อมูลเพื่อการพัฒนา${tenant.name}อย่างยั่งยืน`,
     theme_color: tenant.theme_color ?? '#1c7cd6',
     background_color: '#ffffff',
     display: 'standalone',
@@ -115,7 +115,7 @@ export function TenantProvider({ children }) {
     async function fetchTenant() {
       const { data, error: dbError } = await supabase
         .from('municipalities')
-        .select('id, slug, name, org_type, province, theme_color, logo_url, developer_name, website_url, facebook_url, line_oa_url, phone, address, latitude, longitude')
+        .select('id, slug, name, org_type, province, theme_color, logo_url, developer_name, website_url, facebook_url, line_oa_url, phone, address, latitude, longitude, system_name')
         .eq('slug', slug)
         .single()
 

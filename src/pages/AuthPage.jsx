@@ -187,7 +187,7 @@ export default function AuthPage() {
           {mode === 'login' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก'}
         </h1>
         <p className="text-sm text-gray-400 text-center mb-6">
-          {mode === 'login' ? 'เข้าสู่ระบบน้ำเลา One Data' : 'สร้างบัญชีเพื่อใช้บริการ'}
+          {mode === 'login' ? `เข้าสู่ระบบ${tenant?.system_name || `${tenant?.name} One Data`}` : 'สร้างบัญชีเพื่อใช้บริการ'}
         </p>
 
         {/* Tab */}
