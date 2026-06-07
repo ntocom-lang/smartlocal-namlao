@@ -131,7 +131,7 @@ export default function NotificationsPage() {
           {/* ปุ่มดูคำร้องทั้งหมด */}
           <div className="flex justify-end px-3 pt-3">
             <button
-              onClick={() => navigate('/my-complaints')}
+              onClick={() => { markAllRead(); navigate('/my-complaints') }}
               className="text-sm font-semibold px-4 py-1.5 rounded-xl transition-colors"
               style={{
                 color: 'var(--color-primary)',
