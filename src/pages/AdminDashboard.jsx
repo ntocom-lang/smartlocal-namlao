@@ -1311,6 +1311,7 @@ function UserManager({ tenant, currentUserRole }) {
                                   className="text-xs border border-gray-200 rounded px-2 py-1 text-gray-700 focus:outline-none bg-white cursor-pointer"
                                 >
                                   <option value="citizen">สมาชิก</option>
+                                  <option value="staff">เจ้าหน้าที่เอกสาร</option>
                                   <option value="viewer">ผู้บริหาร</option>
                                   <option value="council">สภาเทศบาล</option>
                                   <option value="officer">เจ้าหน้าที่</option>
