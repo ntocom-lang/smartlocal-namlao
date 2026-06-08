@@ -5,7 +5,7 @@ import {
   Bell, FileSearch, ClipboardList, ShieldCheck,
   Phone, MapPin, Globe, Share2, MessageCircle,
   ChevronRight, Star, Copy, Download, Check, Monitor, X,
-  UploadIcon, PlusSquare, BookOpen, Store, FileText,
+  UploadIcon, PlusSquare, BookOpen, Store, FileText, Briefcase,
 } from 'lucide-react'
 import qrCodeImage from '../assets/qr-code.png'
 import { supabase } from '../lib/supabase'
@@ -297,7 +297,8 @@ export default function MorePage() {
     navigate('/')
   }
 
-  const isAdmin = role === 'admin' || role === 'superadmin'
+  const isAdmin  = role === 'admin' || role === 'superadmin'
+  const isStaff  = role === 'staff'
   const isViewer = role === 'viewer'
   const isCouncil = role === 'council'
   const displayName = session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || ''
@@ -440,6 +441,26 @@ export default function MorePage() {
               label="แผงควบคุม Admin"
               desc="จัดการคำร้อง เจ้าหน้าที่ และข้อมูลระบบ"
               href="/admin"
+            />
+            <MenuRow
+              icon={Briefcase}
+              iconBg="bg-sky-50"
+              iconColor="text-sky-500"
+              label="ระบบเจ้าหน้าที่"
+              desc="กล่องงาน เอกสาร อนุมัติ รายงาน"
+              href="/staff"
+            />
+          </Section>
+        )}
+        {isStaff && (
+          <Section title="ระบบเจ้าหน้าที่">
+            <MenuRow
+              icon={Briefcase}
+              iconBg="bg-sky-50"
+              iconColor="text-sky-500"
+              label="ระบบเจ้าหน้าที่"
+              desc="กล่องงาน เอกสาร อนุมัติ รายงาน"
+              href="/staff"
             />
           </Section>
         )}

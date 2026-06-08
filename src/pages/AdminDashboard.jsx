@@ -825,6 +825,7 @@ function Row({ icon: Icon, label, value }) {
 const ROLE_LABELS = {
   superadmin:  { label: 'Super Admin',  color: '#7c3aed', bg: '#ede9fe' },
   admin:       { label: 'แอดมิน',      color: '#1d4ed8', bg: '#dbeafe' },
+  staff:       { label: 'เจ้าหน้าที่เอกสาร', color: '#0ea5e9', bg: '#e0f2fe' },
   viewer:      { label: 'ผู้บริหาร',   color: '#059669', bg: '#d1fae5' },
   council:     { label: 'สภาเทศบาล',   color: '#f59e0b', bg: '#fff7ed' },
   officer:     { label: 'เจ้าหน้าที่', color: '#0891b2', bg: '#e0f2fe' },
@@ -876,7 +877,7 @@ function UserManager({ tenant, currentUserRole }) {
 
   async function updateRole(userId, newRole, municipalityId) {
     setSaving(userId)
-    const needsMuni = ['admin', 'technician', 'officer', 'viewer', 'council'].includes(newRole)
+    const needsMuni = ['admin', 'staff', 'technician', 'officer', 'viewer', 'council'].includes(newRole)
     const muni = needsMuni ? (municipalityId || tenant?.id) : null
     const { error } = await supabase.from('profiles').update({ role: newRole, municipality_id: muni }).eq('id', userId)
     if (error) {
@@ -972,6 +973,7 @@ function UserManager({ tenant, currentUserRole }) {
           <option value="">ทุกตำแหน่ง ({users.length})</option>
           {[
             { value: 'citizen',    label: 'สมาชิก' },
+            { value: 'staff',      label: 'เจ้าหน้าที่เอกสาร' },
             { value: 'viewer',     label: 'ผู้บริหาร' },
             { value: 'council',    label: 'สภาเทศบาล' },
             { value: 'officer',    label: 'เจ้าหน้าที่' },
@@ -1071,6 +1073,7 @@ function UserManager({ tenant, currentUserRole }) {
                           className="text-xs border border-gray-200 rounded-xl px-2 py-1.5 text-gray-700 focus:outline-none bg-gray-50"
                         >
                           <option value="citizen">สมาชิก</option>
+                          <option value="staff">เจ้าหน้าที่เอกสาร</option>
                           <option value="viewer">ผู้บริหาร</option>
                           <option value="council">สภาเทศบาล</option>
                           <option value="officer">เจ้าหน้าที่</option>
