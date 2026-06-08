@@ -4,7 +4,7 @@ import {
   Inbox, FileText, CheckSquare, BarChart2, LogOut,
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, AlignLeft, Calendar, Hash, RefreshCw,
-  Printer, PenLine,
+  Printer, PenLine, Search, Download,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
@@ -44,6 +44,16 @@ const APPROVAL_TYPES = [
 ]
 
 const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
+
+const ROLE_TH = {
+  staff:      'เจ้าหน้าที่เอกสาร',
+  officer:    'เจ้าหน้าที่',
+  technician: 'ช่างเทคนิค',
+  admin:      'ผู้ดูแลระบบ',
+  superadmin: 'Super Admin',
+  viewer:     'ผู้บริหาร',
+  council:    'สภาเทศบาล',
+}
 
 function dateTH(s) {
   if (!s) return ''
@@ -108,7 +118,7 @@ function TaskCard({ req, onClick }) {
 
 // ─── Task Detail Sheet ────────────────────────────────────────────────────────
 
-function TaskDetailSheet({ req, onClose, onUpdate, acting }) {
+function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant }) {
   const [staffNote, setStaffNote]     = useState(req.staff_notes || '')
   const [confirmReject, setConfirmReject] = useState(false)
   const [rejectReason, setRejectReason]   = useState('')
@@ -202,6 +212,22 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting }) {
         </div>
 
         {/* Footer actions */}
+        {req.status === 'completed' && (
+          <div className="px-4 pb-6 pt-3 border-t border-gray-100 shrink-0">
+            <button onClick={() => {
+              const html = buildDocHTML({ req, tenant, docDate: new Date().toISOString().slice(0, 10) })
+              const w = window.open('', '_blank', 'width=860,height=1100')
+              if (!w) return
+              w.document.write(html)
+              w.document.close()
+              setTimeout(() => { w.focus(); w.print() }, 400)
+            }}
+              className="w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 text-sm active:scale-[0.98] transition-all"
+              style={{ backgroundColor: '#8b5cf6' }}>
+              <Printer size={16} /> พิมพ์ / บันทึกเป็น PDF
+            </button>
+          </div>
+        )}
         {isActive && !confirmReject && (
           <div className="px-4 pb-6 pt-3 border-t border-gray-100 space-y-2 shrink-0">
             {req.status === 'pending' && (
@@ -271,10 +297,24 @@ function NewRequestSheet({ tenant, staffId, onClose, onCreated }) {
         </div>
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
           <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">ประเภทเอกสาร</label>
-            <select value={form.document_type} onChange={set('document_type')} className={inputCls}>
-              {DOC_TYPES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
-            </select>
+            <label className="text-xs font-semibold text-gray-500 mb-2 block">ประเภทเอกสาร</label>
+            <div className="grid grid-cols-2 gap-2">
+              {DOC_TYPES.map(d => {
+                const [emoji, ...rest] = d.label.split(' ')
+                const isSel = form.document_type === d.value
+                return (
+                  <button key={d.value} type="button"
+                    onClick={() => setForm(p => ({ ...p, document_type: d.value }))}
+                    className="flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left text-xs font-semibold transition-all active:scale-95"
+                    style={isSel
+                      ? { borderColor: '#3b82f6', backgroundColor: '#eff6ff', color: '#1d4ed8' }
+                      : { borderColor: '#e5e7eb', backgroundColor: '#fff', color: '#6b7280' }}>
+                    <span className="text-base shrink-0">{emoji}</span>
+                    <span className="leading-snug">{rest.join(' ')}</span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
           {[
             { k: 'requester_name',     label: 'ชื่อ-สกุล *',      ph: 'นายสมชาย ใจดี', type: 'text' },
@@ -313,14 +353,16 @@ function NewRequestSheet({ tenant, staffId, onClose, onCreated }) {
 // ─── Inbox Module ─────────────────────────────────────────────────────────────
 
 function InboxModule({ tenant, staffId }) {
-  const [requests, setRequests] = useState([])
-  const [loading, setLoading]   = useState(true)
+  const [requests, setRequests]   = useState([])
+  const [loading, setLoading]     = useState(true)
   const [activeTab, setActiveTab] = useState('pending')
-  const [selected, setSelected] = useState(null)
-  const [acting, setActing]     = useState(false)
-  const [showAdd, setShowAdd]   = useState(false)
+  const [selected, setSelected]   = useState(null)
+  const [acting, setActing]       = useState(false)
+  const [showAdd, setShowAdd]     = useState(false)
+  const [search, setSearch]       = useState('')
+  const [refreshKey, setRefreshKey] = useState(0)
 
-  useEffect(() => {
+  function reload() {
     if (!tenant?.id) return
     setLoading(true)
     supabase.from('document_requests')
@@ -328,6 +370,19 @@ function InboxModule({ tenant, staffId }) {
       .eq('municipality_id', tenant.id)
       .order('created_at', { ascending: false })
       .then(({ data }) => { setRequests(data ?? []); setLoading(false) })
+  }
+
+  useEffect(() => { reload() }, [tenant?.id, refreshKey])
+
+  useEffect(() => {
+    if (!tenant?.id) return
+    const ch = supabase.channel(`inbox-${tenant.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'document_requests',
+        filter: `municipality_id=eq.${tenant.id}`,
+      }, payload => setRequests(prev => [payload.new, ...prev]))
+      .subscribe()
+    return () => supabase.removeChannel(ch)
   }, [tenant?.id])
 
   async function handleUpdate(id, newStatus, staffNote, rejectReason) {
@@ -358,7 +413,14 @@ function InboxModule({ tenant, staffId }) {
     completed:  requests.filter(r => r.status === 'completed').length,
     all:        requests.length,
   }
-  const filtered = activeTab === 'all' ? requests : requests.filter(r => r.status === activeTab)
+  const byTab    = activeTab === 'all' ? requests : requests.filter(r => r.status === activeTab)
+  const filtered = search.trim()
+    ? byTab.filter(r => {
+        const q = search.toLowerCase()
+        const docLabel = (DOC_TYPES.find(d => d.value === r.document_type)?.label ?? '').toLowerCase()
+        return r.requester_name?.toLowerCase().includes(q) || docLabel.includes(q)
+      })
+    : byTab
 
   return (
     <div className="space-y-4">
@@ -368,11 +430,32 @@ function InboxModule({ tenant, staffId }) {
           <h2 className="text-lg font-bold text-gray-800">กล่องงาน</h2>
           <p className="text-xs text-gray-400 mt-0.5">คำขอเอกสารจากประชาชน</p>
         </div>
-        <button onClick={() => setShowAdd(true)}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-white shadow-sm active:scale-95 transition-all"
-          style={{ backgroundColor: '#3b82f6' }}>
-          <Plus size={14} /> สร้างคำขอ
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setRefreshKey(k => k + 1)} disabled={loading}
+            className="p-2 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors disabled:opacity-40"
+            title="รีเฟรช">
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          </button>
+          <button onClick={() => setShowAdd(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-white shadow-sm active:scale-95 transition-all"
+            style={{ backgroundColor: '#3b82f6' }}>
+            <Plus size={14} /> สร้างคำขอ
+          </button>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="relative">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+          placeholder="ค้นหาชื่อ หรือประเภทเอกสาร..."
+          className="w-full pl-9 pr-9 py-2.5 text-sm border border-gray-200 rounded-xl bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-200" />
+        {search && (
+          <button onClick={() => setSearch('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors">
+            <X size={14} />
+          </button>
+        )}
       </div>
 
       {/* Stats */}
@@ -418,8 +501,8 @@ function InboxModule({ tenant, staffId }) {
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-gray-400">
           <Inbox size={44} className="mb-3 opacity-20" />
-          <p className="text-sm font-semibold text-gray-400">ไม่มีรายการ</p>
-          <p className="text-xs text-gray-300 mt-1">ลองเลือกแท็บอื่น</p>
+          <p className="text-sm font-semibold text-gray-400">{search ? 'ไม่พบคำขอที่ค้นหา' : 'ไม่มีรายการ'}</p>
+          <p className="text-xs text-gray-300 mt-1">{search ? `"${search}"` : 'ลองเลือกแท็บอื่น'}</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -431,7 +514,7 @@ function InboxModule({ tenant, staffId }) {
 
       {selected && (
         <TaskDetailSheet req={selected} onClose={() => setSelected(null)}
-          onUpdate={handleUpdate} acting={acting} />
+          onUpdate={handleUpdate} acting={acting} tenant={tenant} />
       )}
       {showAdd && (
         <NewRequestSheet tenant={tenant} staffId={staffId}
@@ -1238,6 +1321,28 @@ function ReportModule({ tenant }) {
   const byStatus = rows.reduce((acc, r) => { acc[r.status] = (acc[r.status] ?? 0) + 1; return acc }, {})
   const byType   = rows.reduce((acc, r) => { acc[r.document_type] = (acc[r.document_type] ?? 0) + 1; return acc }, {})
 
+  function exportCSV() {
+    if (!rows.length) return
+    const BOM = '﻿'
+    const headers = ['ประเภทเอกสาร', 'สถานะ', 'วันที่ยื่น']
+    const lines = rows.map(r => {
+      const typeLabel   = DOC_TYPES.find(d => d.value === r.document_type)?.label.replace(/^\S+\s*/, '') ?? r.document_type
+      const statusLabel = STATUS[r.status]?.label ?? r.status
+      const date        = new Date(r.created_at).toLocaleDateString('th-TH')
+      return [typeLabel, statusLabel, date].map(v => `"${v}"`).join(',')
+    })
+    const csv  = BOM + [headers.join(','), ...lines].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    a.download = `รายงาน-${period}-${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   const PERIODS = [
     { key: 'week',  label: '7 วัน' },
     { key: 'month', label: 'เดือนนี้' },
@@ -1252,9 +1357,15 @@ function ReportModule({ tenant }) {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="text-lg font-bold text-gray-800">รายงาน</h2>
-        <p className="text-xs text-gray-400 mt-0.5">สรุปสถิติการออกเอกสาร</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-gray-800">รายงาน</h2>
+          <p className="text-xs text-gray-400 mt-0.5">สรุปสถิติการออกเอกสาร</p>
+        </div>
+        <button onClick={exportCSV} disabled={!rows.length}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-amber-50 text-amber-600 hover:bg-amber-100 disabled:opacity-40 transition-colors">
+          <Download size={13} /> Export CSV
+        </button>
       </div>
 
       {/* Period picker */}
@@ -1376,11 +1487,18 @@ export default function StaffDashboard() {
 
   useEffect(() => {
     if (!tenant?.id) return
-    supabase.from('document_requests')
-      .select('id', { count: 'exact', head: true })
-      .eq('municipality_id', tenant.id)
-      .eq('status', 'pending')
-      .then(({ count }) => setPendingCount(count ?? 0))
+    Promise.all([
+      supabase.from('document_requests')
+        .select('id', { count: 'exact', head: true })
+        .eq('municipality_id', tenant.id)
+        .eq('status', 'pending'),
+      supabase.from('approval_requests')
+        .select('id', { count: 'exact', head: true })
+        .eq('municipality_id', tenant.id)
+        .eq('status', 'pending'),
+    ]).then(([docs, approvals]) => {
+      setPendingCount((docs.count ?? 0) + (approvals.count ?? 0))
+    })
   }, [tenant?.id])
 
   async function handleLogout() {
@@ -1440,7 +1558,7 @@ export default function StaffDashboard() {
               </div>
               <div className="min-w-0">
                 <p className="text-xs font-semibold text-gray-700 truncate">{profile.full_name ?? 'เจ้าหน้าที่'}</p>
-                <p className="text-[10px] text-gray-400">{profile.role}</p>
+                <p className="text-[10px] text-gray-400">{ROLE_TH[profile.role] ?? profile.role}</p>
               </div>
             </div>
           )}
