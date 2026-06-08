@@ -45,6 +45,7 @@ CREATE INDEX IF NOT EXISTS idx_approval_requests_municipality
 ALTER TABLE approval_requests ENABLE ROW LEVEL SECURITY;
 
 -- authenticated users เท่านั้น (ระบบนี้ internal สำหรับเจ้าหน้าที่)
+DROP POLICY IF EXISTS "authenticated full access approval_requests" ON approval_requests;
 CREATE POLICY "authenticated full access approval_requests"
   ON approval_requests
   USING (auth.role() = 'authenticated')

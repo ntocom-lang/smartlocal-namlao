@@ -43,16 +43,19 @@ CREATE INDEX IF NOT EXISTS idx_doc_requests_municipality
 ALTER TABLE document_requests ENABLE ROW LEVEL SECURITY;
 
 -- ทุกคน insert ได้ (ประชาชนยื่นคำขอ)
+DROP POLICY IF EXISTS "public can insert document_requests" ON document_requests;
 CREATE POLICY "public can insert document_requests"
   ON document_requests FOR INSERT
   WITH CHECK (true);
 
 -- อ่านได้ทุกคน (เจ้าหน้าที่ + ประชาชนดูของตัวเอง)
+DROP POLICY IF EXISTS "public can select document_requests" ON document_requests;
 CREATE POLICY "public can select document_requests"
   ON document_requests FOR SELECT
   USING (true);
 
 -- update ได้เฉพาะ authenticated
+DROP POLICY IF EXISTS "authenticated can update document_requests" ON document_requests;
 CREATE POLICY "authenticated can update document_requests"
   ON document_requests FOR UPDATE
   USING (auth.role() = 'authenticated');
