@@ -5,7 +5,7 @@ import HeroBanner from '../components/home/HeroBanner'
 import StaffSection from '../components/home/StaffSection'
 import NewsSection from '../components/home/NewsSection'
 import TourismSection from '../components/home/TourismSection'
-import { Info, LayoutDashboard, ChevronRight } from 'lucide-react'
+import { Info, LayoutDashboard, ChevronRight, Briefcase, FileText, ClipboardList } from 'lucide-react'
 import WeatherWidget from '../components/home/WeatherWidget'
 
 export default function HomePage() {
@@ -31,6 +31,7 @@ export default function HomePage() {
   const isAdmin = role === 'admin' || role === 'superadmin'
   const isViewer = role === 'viewer'
   const isCouncil = role === 'council'
+  const isStaff = role === 'staff'
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-4 space-y-4">
@@ -58,6 +59,46 @@ export default function HomePage() {
             <ChevronRight size={18} className="text-white/60" />
           </a>
         )}
+
+        {isStaff && (
+          <a href="/staff"
+            className="flex items-center gap-3 rounded-2xl px-4 py-3.5 shadow-md active:scale-98 transition-transform"
+            style={{ background: 'linear-gradient(135deg, #0369a1 0%, #0ea5e9 100%)' }}
+          >
+            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+              <Briefcase size={18} className="text-white" />
+            </div>
+            <div className="flex-1">
+              <p className="text-white font-bold text-sm">ระบบเจ้าหน้าที่</p>
+              <p className="text-white/70 text-xs">กล่องงาน เอกสาร อนุมัติ รายงาน</p>
+            </div>
+            <ChevronRight size={18} className="text-white/60" />
+          </a>
+        )}
+
+        {/* Quick Actions */}
+        <div className="grid grid-cols-2 gap-2">
+          <a href="/doc-request"
+            className="flex items-center gap-2.5 bg-white rounded-2xl px-3.5 py-3 shadow-sm border border-gray-100 hover:shadow-md active:scale-[0.98] transition-all">
+            <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
+              <FileText size={18} className="text-blue-500" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-gray-800 leading-tight">ขอเอกสาร</p>
+              <p className="text-[11px] text-gray-400 leading-tight">ราชการออนไลน์</p>
+            </div>
+          </a>
+          <a href="/complaint"
+            className="flex items-center gap-2.5 bg-white rounded-2xl px-3.5 py-3 shadow-sm border border-gray-100 hover:shadow-md active:scale-[0.98] transition-all">
+            <div className="w-9 h-9 rounded-xl bg-red-50 flex items-center justify-center shrink-0">
+              <ClipboardList size={18} className="text-red-500" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-gray-800 leading-tight">ยื่นคำร้อง</p>
+              <p className="text-[11px] text-gray-400 leading-tight">แจ้งซ่อม / แจ้งเหตุ</p>
+            </div>
+          </a>
+        </div>
 
         {!session && (
           <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800 dark:bg-blue-900/30 dark:border-blue-700/50 dark:text-blue-200">

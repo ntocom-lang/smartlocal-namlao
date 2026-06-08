@@ -29,6 +29,7 @@ import TourismPage from './pages/TourismPage'
 import TourismDetailPage from './pages/TourismDetailPage'
 import ContactPage from './pages/ContactPage'
 import CitizenDocRequest from './pages/CitizenDocRequest'
+import MyDocRequests from './pages/MyDocRequests'
 import { supabase } from './lib/supabase'
 import { Phone, X } from 'lucide-react'
 
@@ -260,6 +261,7 @@ function AppShell() {
           <Route path="/tourism/:id" element={<TourismDetailPage />} />
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/doc-request" element={<CitizenDocRequest />} />
+          <Route path="/my-docs" element={<MyDocRequests />} />
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/staff" element={

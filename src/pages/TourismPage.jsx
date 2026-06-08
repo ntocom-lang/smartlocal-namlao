@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, Phone, MapPin, Plus, ShoppingCart,
-  CalendarCheck, MessageCircle, Globe, Bike, Zap, ChevronRight, Loader2,
+  CalendarCheck, MessageCircle, Globe, Bike, Zap, ChevronRight, Loader2, Star,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
@@ -27,7 +27,18 @@ const SVC = {
 
 // ─── Place card (grid) ────────────────────────────────────────────────────────
 
-function PlaceCard({ place, onClick }) {
+function RatingBadge({ avg, count }) {
+  if (!avg || !count) return null
+  return (
+    <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-amber-700">
+      <Star size={10} fill="#f59e0b" stroke="none" />
+      {avg.toFixed(1)}
+      <span className="font-normal text-gray-400">({count})</span>
+    </span>
+  )
+}
+
+function PlaceCard({ place, onClick, avgRating, reviewCount }) {
   const cat = CATS.find(c => c.key === place.category)
   const isOnline = place.service_type === 'online'
   const svc = SVC[place.online_service] ?? SVC.order
@@ -73,6 +84,7 @@ function PlaceCard({ place, onClick }) {
           <p className="text-xs text-gray-500 mt-1 line-clamp-2 leading-snug">{place.description}</p>
         )}
         <div className="mt-1.5 space-y-0.5">
+          <RatingBadge avg={avgRating} count={reviewCount} />
           {place.phone && (
             <div className="flex items-center gap-1">
               <Phone size={10} className="text-gray-400 shrink-0" />
@@ -193,6 +205,7 @@ export default function TourismPage() {
   const [loading, setLoading] = useState(true)
   const [activeCat, setActiveCat] = useState(searchParams.get('cat') || null)
   const [showOnline, setShowOnline] = useState(searchParams.get('online') === '1')
+  const [ratingMap, setRatingMap] = useState({})
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -203,6 +216,27 @@ export default function TourismPage() {
       .eq('is_active', true)
       .order('display_order')
       .then(({ data }) => { setPlaces(data ?? []); setLoading(false) })
+  }, [tenant?.id])
+
+  useEffect(() => {
+    if (!tenant?.id) return
+    supabase.from('tourism_reviews')
+      .select('place_id, rating')
+      .eq('municipality_id', tenant.id)
+      .then(({ data }) => {
+        if (!data) return
+        const map = {}
+        data.forEach(r => {
+          if (!map[r.place_id]) map[r.place_id] = { sum: 0, count: 0 }
+          map[r.place_id].sum += r.rating
+          map[r.place_id].count += 1
+        })
+        const result = {}
+        Object.entries(map).forEach(([id, { sum, count }]) => {
+          result[id] = { avg: sum / count, count }
+        })
+        setRatingMap(result)
+      })
   }, [tenant?.id])
 
   const onlinePlaces  = places.filter(p => p.service_type === 'online')
@@ -347,7 +381,10 @@ export default function TourismPage() {
                 )}
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
                   {filtered.map(place => (
-                    <PlaceCard key={place.id} place={place} onClick={() => navigate(`/tourism/${place.id}`)} />
+                    <PlaceCard key={place.id} place={place}
+                      avgRating={ratingMap[place.id]?.avg}
+                      reviewCount={ratingMap[place.id]?.count}
+                      onClick={() => navigate(`/tourism/${place.id}`)} />
                   ))}
                 </div>
               </>

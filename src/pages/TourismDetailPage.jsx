@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, ChevronLeft, ChevronRight, MapPin, ExternalLink, Share2, Phone, X, Zap, ShoppingCart, CalendarCheck, MessageCircle, Globe, Bike } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, MapPin, ExternalLink, Share2, Phone, X, Zap, ShoppingCart, CalendarCheck, MessageCircle, Globe, Bike, Star, Loader2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { useTenant } from '../contexts/TenantContext'
 
 const CAT_LABEL = {
   travel:  '🏛️ เที่ยว',
@@ -167,6 +168,176 @@ function PhotoCarousel({ images, name, category, onBack, onShare }) {
   )
 }
 
+function StarRow({ value, onChange, size = 24 }) {
+  const [hover, setHover] = useState(0)
+  return (
+    <div className="flex gap-1">
+      {[1,2,3,4,5].map(i => (
+        <button key={i} type="button"
+          onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(0)}
+          onClick={() => onChange(i)}
+          className="transition-transform active:scale-90">
+          <Star size={size}
+            className="transition-colors"
+            fill={(hover || value) >= i ? '#f59e0b' : 'none'}
+            stroke={(hover || value) >= i ? '#f59e0b' : '#d1d5db'}
+            strokeWidth={1.5}
+          />
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function StarDisplay({ value, size = 14 }) {
+  const rounded = Math.round(value)
+  return (
+    <span className="flex items-center gap-0.5">
+      {[1,2,3,4,5].map(i => (
+        <Star key={i} size={size}
+          fill={rounded >= i ? '#f59e0b' : 'none'}
+          stroke={rounded >= i ? '#f59e0b' : '#d1d5db'}
+          strokeWidth={1.5}
+        />
+      ))}
+    </span>
+  )
+}
+
+function ReviewsSection({ placeId }) {
+  const { tenant } = useTenant()
+  const [session, setSession]     = useState(undefined)
+  const [reviews, setReviews]     = useState([])
+  const [myReview, setMyReview]   = useState(null)
+  const [rating, setRating]       = useState(0)
+  const [comment, setComment]     = useState('')
+  const [saving, setSaving]       = useState(false)
+  const [editing, setEditing]     = useState(false)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session))
+  }, [])
+
+  useEffect(() => {
+    if (!placeId) return
+    supabase.from('tourism_reviews').select('*')
+      .eq('place_id', placeId)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => setReviews(data ?? []))
+  }, [placeId])
+
+  useEffect(() => {
+    if (!session || reviews.length === 0) return
+    const mine = reviews.find(r => r.user_id === session.user.id)
+    setMyReview(mine ?? null)
+    if (mine && !editing) { setRating(mine.rating); setComment(mine.comment ?? '') }
+  }, [session, reviews])
+
+  const avg = reviews.length ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length) : 0
+
+  async function handleSubmit() {
+    if (!rating || !session || !tenant?.id) return
+    setSaving(true)
+    const userName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'ผู้ใช้'
+    const payload = {
+      place_id: placeId,
+      user_id: session.user.id,
+      municipality_id: tenant.id,
+      reviewer_name: userName,
+      rating,
+      comment: comment.trim() || null,
+    }
+    const { data: saved } = await supabase.from('tourism_reviews').upsert(payload, { onConflict: 'place_id,user_id' }).select().single()
+    if (saved) {
+      setReviews(prev => {
+        const rest = prev.filter(r => r.user_id !== session.user.id)
+        return [saved, ...rest]
+      })
+      setMyReview(saved)
+    }
+    setEditing(false)
+    setSaving(false)
+  }
+
+  const showForm = session && (!myReview || editing)
+
+  return (
+    <div className="space-y-4">
+      {/* Summary */}
+      <div className="flex items-center gap-3">
+        <div className="text-center">
+          <p className="text-3xl font-bold text-gray-800 leading-none">{avg ? avg.toFixed(1) : '–'}</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">{reviews.length} รีวิว</p>
+        </div>
+        <div>
+          <StarDisplay value={avg} size={18} />
+          {!session && <p className="text-xs text-gray-400 mt-1">เข้าสู่ระบบเพื่อเขียนรีวิว</p>}
+        </div>
+      </div>
+
+      {/* My review (submitted) */}
+      {myReview && !editing && (
+        <div className="bg-amber-50 border border-amber-100 rounded-2xl p-3.5 space-y-1">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <StarDisplay value={myReview.rating} size={13} />
+              <span className="text-xs text-amber-700 font-semibold">รีวิวของคุณ</span>
+            </div>
+            <button onClick={() => setEditing(true)} className="text-xs text-amber-600 underline">แก้ไข</button>
+          </div>
+          {myReview.comment && <p className="text-sm text-amber-800 leading-relaxed">{myReview.comment}</p>}
+        </div>
+      )}
+
+      {/* Write review form */}
+      {showForm && (
+        <div className="bg-gray-50 rounded-2xl p-4 space-y-3 border border-gray-100">
+          <p className="text-sm font-bold text-gray-700">{editing ? 'แก้ไขรีวิว' : 'เขียนรีวิว'}</p>
+          <StarRow value={rating} onChange={setRating} />
+          <textarea value={comment} onChange={e => setComment(e.target.value)}
+            rows={2} placeholder="บอกเล่าประสบการณ์... (ไม่บังคับ)"
+            className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-amber-200"
+          />
+          <div className="flex gap-2">
+            {editing && (
+              <button onClick={() => { setEditing(false); setRating(myReview.rating); setComment(myReview.comment ?? '') }}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-100 transition-colors">
+                ยกเลิก
+              </button>
+            )}
+            <button onClick={handleSubmit} disabled={saving || !rating}
+              className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white disabled:opacity-50 flex items-center justify-center gap-1.5"
+              style={{ backgroundColor: '#f59e0b' }}>
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Star size={14} fill="white" strokeWidth={0} />}
+              {saving ? 'กำลังบันทึก...' : 'ส่งรีวิว'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Reviews list */}
+      {reviews.filter(r => r.user_id !== session?.user?.id).length > 0 && (
+        <div className="space-y-2.5">
+          {reviews.filter(r => r.user_id !== session?.user?.id).slice(0, 6).map(r => (
+            <div key={r.id} className="bg-white rounded-xl border border-gray-100 px-3.5 py-3 space-y-1">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-500">
+                  {(r.reviewer_name?.[0] || '?').toUpperCase()}
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-gray-700 leading-none">{r.reviewer_name || 'นิรนาม'}</p>
+                  <StarDisplay value={r.rating} size={11} />
+                </div>
+              </div>
+              {r.comment && <p className="text-sm text-gray-600 leading-relaxed pl-9">{r.comment}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function TourismDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -286,6 +457,12 @@ export default function TourismDetailPage() {
           <ExternalLink size={14} className="opacity-70" />
         </a>
       )}
+
+      {/* Reviews */}
+      <div>
+        <h2 className="text-sm font-semibold text-gray-500 mb-3">รีวิวและคะแนน</h2>
+        <ReviewsSection placeId={id} />
+      </div>
     </div>
   )
 

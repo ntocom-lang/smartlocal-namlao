@@ -545,6 +545,14 @@ export default function MorePage() {
             href="/my-complaints"
           />
           <MenuRow
+            icon={FileText}
+            iconBg="bg-sky-50"
+            iconColor="text-sky-500"
+            label="ติดตามคำขอเอกสาร"
+            desc="ตรวจสอบสถานะใบรับรองและเอกสารราชการ"
+            href="/my-docs"
+          />
+          <MenuRow
             icon={BookOpen}
             iconBg="bg-indigo-50"
             iconColor="text-indigo-500"
