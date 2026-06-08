@@ -4,6 +4,7 @@ import {
   Inbox, FileText, CheckSquare, BarChart2, LogOut,
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, AlignLeft, Calendar, Hash, RefreshCw,
+  Printer,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
@@ -431,6 +432,271 @@ function InboxModule({ tenant, staffId }) {
   )
 }
 
+// ─── Document Templates ───────────────────────────────────────────────────────
+
+const MONTHS_TH = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
+  'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
+
+function thaiDate(dateStr) {
+  const d = new Date(dateStr)
+  return `${d.getDate()} ${MONTHS_TH[d.getMonth()]} พ.ศ. ${d.getFullYear() + 543}`
+}
+
+const DOC_CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=Sarabun:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+  @page { size: A4 portrait; margin: 2.5cm 2cm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Sarabun', 'TH SarabunNew', sans-serif; font-size: 16pt; line-height: 2; color: #000; }
+  .header { text-align: center; margin-bottom: 16pt; }
+  .header .emblem { font-size: 44pt; display: block; margin-bottom: 4pt; }
+  .header h1 { font-size: 18pt; font-weight: 700; }
+  .header h2 { font-size: 15pt; font-weight: 400; }
+  .doc-title { font-size: 20pt; font-weight: 700; text-align: center;
+    text-decoration: underline; margin: 12pt 0 20pt; }
+  .meta { text-align: right; margin-bottom: 20pt; font-size: 14pt; }
+  .body p { text-indent: 3em; margin-bottom: 10pt; }
+  .body .no-indent { text-indent: 0; }
+  .closing { text-indent: 3em; margin-top: 8pt; margin-bottom: 40pt; }
+  .signature { text-align: center; margin-top: 30pt; }
+  .signature .sig-line { border-top: 1px solid #000; width: 200pt; margin: 0 auto 4pt; }
+  .signature p { margin: 2pt 0; font-size: 14pt; }
+  .footer-note { margin-top: 40pt; font-size: 11pt; color: #555; border-top: 1px solid #ccc; padding-top: 6pt; }
+  @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+`
+
+const DOC_TITLES = {
+  residence_cert: 'หนังสือรับรองการอยู่อาศัย',
+  personal_cert:  'หนังสือรับรองบุคคล',
+  conduct_cert:   'หนังสือรับรองความประพฤติ',
+  tax_notice:     'ใบแจ้งชำระภาษีที่ดินและสิ่งปลูกสร้าง',
+  other:          'หนังสือรับรอง',
+}
+
+function buildDocBody(req, orgName) {
+  const name    = `<strong>${req.requester_name}</strong>`
+  const idCard  = req.requester_id_card ? ` เลขบัตรประจำตัวประชาชน ${req.requester_id_card}` : ''
+  const addr    = req.requester_address ?? '......................................................................'
+  const purpose = req.purpose ? `เพื่อ${req.purpose}` : 'เพื่อใช้เป็นหลักฐาน'
+
+  switch (req.document_type) {
+    case 'residence_cert':
+      return `<p>ขอรับรองว่า ${name}${idCard} อาศัยอยู่ ณ ${addr} อยู่ในเขต${orgName}จริง</p>
+              <p>เอกสารฉบับนี้ออกให้${purpose}</p>`
+    case 'personal_cert':
+      return `<p>ขอรับรองว่า ${name}${idCard} เป็นบุคคลที่อยู่ในทะเบียนราษฎรของ${orgName} และเป็นผู้มีตัวตนอยู่จริง</p>
+              <p>เอกสารฉบับนี้ออกให้${purpose}</p>`
+    case 'conduct_cert':
+      return `<p>ขอรับรองว่า ${name}${idCard} เป็นผู้มีความประพฤติเรียบร้อย ไม่มีพฤติกรรมเสื่อมเสียหรือประวัติอาชญากรรมแต่อย่างใด ตามที่ปรากฏในทะเบียนของ${orgName}</p>
+              <p>เอกสารฉบับนี้ออกให้${purpose}</p>`
+    case 'tax_notice':
+      return `<p>แจ้งให้ ${name}${idCard} ที่อยู่ ${addr} ทราบว่า มีรายการภาษีที่ดินและสิ่งปลูกสร้างที่ต้องชำระตามรายละเอียดที่ระบุด้านล่าง</p>
+              <p class="no-indent" style="margin-left:3em; margin-top:6pt">
+                รายละเอียด: ....................................................................................<br/>
+                จำนวนเงิน: ...................................... บาท (.................................................)<br/>
+                กำหนดชำระ: ..................................................................
+              </p>
+              ${req.staff_notes ? `<p>หมายเหตุ: ${req.staff_notes}</p>` : ''}`
+    default:
+      return `<p>${req.purpose ?? 'ตามที่ได้รับการร้องขอ'}</p>
+              ${req.staff_notes ? `<p>รายละเอียดเพิ่มเติม: ${req.staff_notes}</p>` : ''}`
+  }
+}
+
+function buildDocHTML({ req, tenant, docDate }) {
+  const orgName = tenant?.name ?? 'หน่วยงาน'
+  const title   = DOC_TITLES[req.document_type] ?? DOC_TITLES.other
+
+  return `<!DOCTYPE html>
+<html lang="th"><head>
+<meta charset="UTF-8"><title>${title}</title>
+<style>${DOC_CSS}</style>
+</head><body>
+<div class="header">
+  <span class="emblem">🏛️</span>
+  <h1>${orgName}</h1>
+</div>
+<div class="doc-title">${title}</div>
+<div class="meta"><p>วันที่ ${thaiDate(docDate)}</p></div>
+<div class="body">
+  ${buildDocBody(req, orgName)}
+</div>
+<p class="closing">จึงออกหนังสือรับรองฉบับนี้ให้เพื่อเป็นหลักฐาน</p>
+<div class="signature">
+  <div class="sig-line"></div>
+  <p>(...............................................)</p>
+  <p>ผู้มีอำนาจลงนาม</p>
+  <p>${orgName}</p>
+</div>
+<div class="footer-note">
+  หมายเลขอ้างอิง: ${req.id?.slice(0, 8)?.toUpperCase() ?? '-'} &nbsp;|&nbsp; ออกโดย ${orgName} &nbsp;|&nbsp; วันที่ ${thaiDate(docDate)}
+</div>
+</body></html>`
+}
+
+// ─── Doc Card ─────────────────────────────────────────────────────────────────
+
+function DocCard({ req, onClick }) {
+  const docType  = DOC_TYPES.find(d => d.value === req.document_type)
+  const emoji    = docType?.label.match(/^(\S+)/)?.[1] ?? '📄'
+  const docLabel = docType?.label.replace(/^\S+\s*/, '') ?? req.document_type
+  return (
+    <button onClick={onClick}
+      className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-4 text-left hover:shadow-md active:scale-[0.99] transition-all flex items-center gap-3">
+      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-xl bg-purple-50">
+        {emoji}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-bold text-gray-800 truncate">{req.requester_name}</p>
+        <p className="text-xs text-gray-500 truncate">{docLabel}</p>
+        {req.purpose && <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{req.purpose}</p>}
+        <p className="text-[11px] text-gray-300 mt-1">{dateTH(req.updated_at)}</p>
+      </div>
+      <div className="flex items-center gap-1 shrink-0">
+        <Printer size={14} className="text-purple-400" />
+        <ChevronRight size={16} className="text-gray-300" />
+      </div>
+    </button>
+  )
+}
+
+// ─── Doc Preview Sheet ────────────────────────────────────────────────────────
+
+function DocPreviewSheet({ req, tenant, onClose }) {
+  const [docDate, setDocDate] = useState(new Date().toISOString().slice(0, 10))
+  const docType = DOC_TYPES.find(d => d.value === req.document_type)
+
+  function handlePrint() {
+    const html = buildDocHTML({ req, tenant, docDate })
+    const w = window.open('', '_blank', 'width=860,height=1100')
+    if (!w) return
+    w.document.write(html)
+    w.document.close()
+    setTimeout(() => { w.focus(); w.print() }, 400)
+  }
+
+  const previewHTML = buildDocHTML({ req, tenant, docDate })
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-end md:items-center justify-center">
+      <div className="bg-white w-full md:max-w-2xl md:rounded-3xl rounded-t-3xl max-h-[96vh] flex flex-col overflow-hidden shadow-2xl">
+
+        {/* Header */}
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 shrink-0">
+          <button onClick={onClose} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500 transition-colors">
+            <X size={18} />
+          </button>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-gray-800 truncate">{docType?.label ?? req.document_type}</p>
+            <p className="text-xs text-gray-400 truncate">{req.requester_name}</p>
+          </div>
+        </div>
+
+        {/* Date picker */}
+        <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center gap-3 shrink-0">
+          <label className="text-xs font-semibold text-gray-500 shrink-0">วันที่ออกเอกสาร</label>
+          <input type="date" value={docDate} onChange={e => setDocDate(e.target.value)}
+            className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-purple-200" />
+        </div>
+
+        {/* Preview */}
+        <div className="flex-1 overflow-hidden bg-gray-200 p-3 min-h-0">
+          <iframe
+            srcDoc={previewHTML}
+            className="w-full h-full bg-white rounded-xl shadow-inner border-0"
+            title="Document Preview"
+            sandbox="allow-same-origin"
+          />
+        </div>
+
+        {/* Print button */}
+        <div className="px-4 pb-6 pt-3 border-t border-gray-100 shrink-0">
+          <button onClick={handlePrint}
+            className="w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 text-sm active:scale-[0.98] transition-all"
+            style={{ backgroundColor: '#8b5cf6' }}>
+            <Printer size={16} /> พิมพ์ / บันทึก PDF
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Docs Module ──────────────────────────────────────────────────────────────
+
+function DocsModule({ tenant }) {
+  const [requests, setRequests]   = useState([])
+  const [loading, setLoading]     = useState(true)
+  const [filterType, setFilterType] = useState('all')
+  const [selected, setSelected]   = useState(null)
+
+  useEffect(() => {
+    if (!tenant?.id) return
+    setLoading(true)
+    supabase.from('document_requests')
+      .select('*')
+      .eq('municipality_id', tenant.id)
+      .eq('status', 'completed')
+      .order('updated_at', { ascending: false })
+      .then(({ data }) => { setRequests(data ?? []); setLoading(false) })
+  }, [tenant?.id])
+
+  const filtered = filterType === 'all'
+    ? requests
+    : requests.filter(r => r.document_type === filterType)
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-bold text-gray-800">เอกสารออนไลน์</h2>
+        <p className="text-xs text-gray-400 mt-0.5">ออกใบรับรองจากคำขอที่เสร็จสิ้นแล้ว</p>
+      </div>
+
+      {/* Filter */}
+      <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+        {[{ value: 'all', label: 'ทั้งหมด' }, ...DOC_TYPES].map(d => (
+          <button key={d.value} onClick={() => setFilterType(d.value)}
+            className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full transition-all"
+            style={filterType === d.value
+              ? { backgroundColor: '#8b5cf6', color: '#fff' }
+              : { backgroundColor: '#f1f5f9', color: '#64748b' }}>
+            {d.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tip */}
+      <div className="flex items-start gap-2 bg-purple-50 rounded-2xl px-4 py-3">
+        <Printer size={14} className="text-purple-400 mt-0.5 shrink-0" />
+        <p className="text-xs text-purple-700 leading-relaxed">
+          กดที่รายการเพื่อดูตัวอย่างและพิมพ์ใบรับรอง — รองรับเฉพาะคำขอที่ <strong>เสร็จสิ้น</strong> แล้ว
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-16">
+          <Loader2 size={28} className="animate-spin text-gray-200" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+          <FileText size={44} className="mb-3 opacity-20" />
+          <p className="text-sm font-semibold text-gray-400">ไม่มีคำขอที่เสร็จสิ้น</p>
+          <p className="text-xs text-gray-300 mt-1">คำขอสถานะ "เสร็จสิ้น" จะแสดงที่นี่</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map(req => (
+            <DocCard key={req.id} req={req} onClick={() => setSelected(req)} />
+          ))}
+        </div>
+      )}
+
+      {selected && (
+        <DocPreviewSheet req={selected} tenant={tenant} onClose={() => setSelected(null)} />
+      )}
+    </div>
+  )
+}
+
 // ─── Placeholder ──────────────────────────────────────────────────────────────
 
 function Placeholder({ title, desc, Icon }) {
@@ -577,7 +843,7 @@ export default function StaffDashboard() {
         {/* Main */}
         <main className="flex-1 overflow-y-auto px-4 md:px-6 py-5 pb-24 md:pb-6">
           {activeModule === 'inbox'   && <InboxModule tenant={tenant} staffId={profile?.id} />}
-          {activeModule === 'docs'    && <Placeholder title="เอกสารออนไลน์"   desc="ออกและพิมพ์ใบรับรองต่างๆ" Icon={FileText} />}
+          {activeModule === 'docs'    && <DocsModule tenant={tenant} staffId={profile?.id} />}
           {activeModule === 'approve' && <Placeholder title="อนุมัติ"          desc="Workflow ลงนามสำหรับผู้บริหาร"   Icon={CheckSquare} />}
           {activeModule === 'report'  && <Placeholder title="รายงาน"           desc="สรุปสถิติการออกเอกสารรายเดือน"  Icon={BarChart2} />}
         </main>
