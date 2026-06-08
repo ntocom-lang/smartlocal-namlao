@@ -4740,8 +4740,8 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Push notification opt-in banner */}
-      {pushSupported && pushPermission !== 'denied' && !pushSubscribed && (
+      {/* Push notification opt-in banner — complaints page only */}
+      {activePage === 'complaints' && pushSupported && pushPermission !== 'denied' && !pushSubscribed && (
         <div className="flex items-center justify-between gap-3 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3">
           <div className="flex items-center gap-3">
             <Bell size={18} className="text-blue-500 shrink-0" />
@@ -4757,7 +4757,7 @@ export default function AdminDashboard() {
           </button>
         </div>
       )}
-      {pushSubscribed && (
+      {activePage === 'complaints' && pushSubscribed && (
         <div className="flex items-center justify-between gap-3 bg-green-50 border border-green-200 rounded-2xl px-4 py-3">
           <div className="flex items-center gap-3">
             <Bell size={18} className="text-green-500 shrink-0" />
