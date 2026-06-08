@@ -48,7 +48,7 @@ export default function BottomNav() {
     })
   }, [])
 
-  if (location.pathname.startsWith('/admin')) return null
+  if (location.pathname.startsWith('/admin') || location.pathname.startsWith('/staff')) return null
 
   const NAV_ITEMS = role === 'technician' ? NAV_TECH : NAV_CITIZEN
 

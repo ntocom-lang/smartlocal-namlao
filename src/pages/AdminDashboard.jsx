@@ -12,7 +12,7 @@ import {
   CheckCircle2, XCircle, AlertCircle, ChevronRight, ChevronLeft,
   Filter, Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical,
   X, FileText, AlignLeft, Image, Calendar, Hash, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Luggage,
-  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, BellOff, ExternalLink, BarChart2, Settings, Store
+  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, BellOff, ExternalLink, BarChart2, Settings, Store, Star, Download
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
@@ -22,6 +22,8 @@ import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 import CivilProjectReport from '../components/admin/CivilProjectReport'
 import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
 import BusinessRegistrationAdmin from '../components/admin/BusinessRegistrationAdmin'
+import EventsManagerComponent from '../components/admin/EventsManager'
+import ReportManagerComponent from '../components/admin/ReportManager'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS = {
@@ -3034,6 +3036,28 @@ function ReportManager({ complaints, tenant, technicians = [] }) {
               {MONTHS_TH.map((m, i) => <option key={i} value={i}>{m}</option>)}
             </select>
           )}
+          <button onClick={() => {
+            const rows = [
+              ['เลขที่','วันที่','ผู้ร้อง','โทรศัพท์','ประเภท','รายละเอียด','สถานที่','สถานะ'],
+              ...viewData.map(c => [
+                c.id.slice(0,8).toUpperCase(),
+                new Date(c.created_at).toLocaleDateString('th-TH'),
+                c.profiles?.full_name ?? '',
+                c.profiles?.phone ?? c.phone ?? '',
+                CATEGORY_LABEL[c.category] ?? c.category ?? '',
+                (c.description ?? '').replace(/\n/g,' '),
+                [c.location_name, c.village].filter(Boolean).join(', '),
+                STATUS[c.status]?.label ?? c.status,
+              ])
+            ]
+            const csv = '﻿' + rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n')
+            const a = document.createElement('a')
+            a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
+            a.download = `คำร้อง_${viewLabel}_${tenant?.name ?? ''}.csv`
+            a.click()
+          }} className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
+            <Download size={15} /> Export CSV
+          </button>
           <button onClick={() => handlePrint({ view, month, year, viewLabel, total, completed, rejected, active, rate, avgDays, catData, trend, tenant })}
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
             <Printer size={15} /> พิมพ์
@@ -3945,6 +3969,105 @@ async function compressImage(file, maxPx = 1200, quality = 0.82) {
 
 const EMPTY_FORM = { name: '', category: 'travel', description: '', phone: '', address: '', maps_url: '', service_type: 'offline', online_service: 'order', online_url: '', has_delivery: false }
 
+function TourismReviewsAdmin({ tenant }) {
+  const [reviews, setReviews] = useState([])
+  const [places,  setPlaces]  = useState([])
+  const [loading, setLoading] = useState(true)
+  const [filterRating, setFilterRating] = useState(0)
+  const [deleting, setDeleting] = useState(null)
+
+  async function fetchData() {
+    if (!tenant?.id) return
+    setLoading(true)
+    const [{ data: rv }, { data: pl }] = await Promise.all([
+      supabase.from('tourism_reviews').select('*').eq('municipality_id', tenant.id).order('created_at', { ascending: false }),
+      supabase.from('tourism_places').select('id, name').eq('municipality_id', tenant.id),
+    ])
+    setReviews(rv ?? [])
+    setPlaces(pl ?? [])
+    setLoading(false)
+  }
+
+  useEffect(() => { fetchData() }, [tenant?.id])
+
+  const placeMap = Object.fromEntries((places ?? []).map(p => [p.id, p.name]))
+
+  async function handleDelete(id) {
+    if (!window.confirm('ลบรีวิวนี้ออกจากระบบ?')) return
+    setDeleting(id)
+    await supabase.from('tourism_reviews').delete().eq('id', id)
+    setDeleting(null)
+    setReviews(prev => prev.filter(r => r.id !== id))
+  }
+
+  const filtered = filterRating > 0 ? reviews.filter(r => r.rating === filterRating) : reviews
+  const avgRating = reviews.length > 0
+    ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1)
+    : '—'
+
+  if (loading) return <div className="flex items-center justify-center py-16"><Loader2 size={24} className="animate-spin text-gray-400" /></div>
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex-1">
+          <h2 className="font-bold text-gray-800 flex items-center gap-2">
+            <Star size={18} style={{ color: '#f59e0b' }} />
+            รีวิวสถานที่ท่องเที่ยว
+          </h2>
+          <p className="text-xs text-gray-400 mt-0.5">{reviews.length} รีวิว · คะแนนเฉลี่ย {avgRating}</p>
+        </div>
+        <div className="flex items-center gap-1 flex-wrap">
+          {[0,5,4,3,2,1].map(r => (
+            <button key={r} onClick={() => setFilterRating(r)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors ${filterRating === r ? 'text-white border-amber-500' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+              style={filterRating === r ? { backgroundColor: '#f59e0b' } : {}}>
+              {r === 0 ? 'ทั้งหมด' : `${r}★`}
+            </button>
+          ))}
+        </div>
+        <button onClick={fetchData} className="p-2 rounded-xl hover:bg-gray-100 text-gray-400 transition-colors">
+          <RefreshCw size={16} />
+        </button>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
+          <p className="text-gray-400 text-sm">ไม่พบรีวิว</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map(r => {
+            const date = new Date(r.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
+            return (
+              <div key={r.id} className="bg-white rounded-2xl border border-gray-100 px-4 py-3 flex items-start gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap text-xs">
+                    <span className="font-semibold tracking-wider" style={{ color: '#f59e0b' }}>
+                      {'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}
+                    </span>
+                    <span className="text-gray-300">·</span>
+                    <span className="font-semibold text-gray-700">{placeMap[r.place_id] ?? '—'}</span>
+                    <span className="text-gray-300">·</span>
+                    <span className="text-gray-500">{r.reviewer_name ?? 'ไม่ระบุชื่อ'}</span>
+                    <span className="text-gray-300">·</span>
+                    <span className="text-gray-400">{date}</span>
+                  </div>
+                  {r.comment && <p className="text-sm text-gray-600 mt-1 leading-snug">{r.comment}</p>}
+                </div>
+                <button onClick={() => handleDelete(r.id)} disabled={deleting === r.id}
+                  className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors shrink-0">
+                  {deleting === r.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function TourismManager({ tenant }) {
   const [places, setPlaces]             = useState([])
   const [loading, setLoading]           = useState(true)
@@ -4607,26 +4730,12 @@ export default function AdminDashboard() {
               ],
             },
             {
-              group: 'งานประจำวัน',
-              items: [
-                { key: 'complaints', label: 'คำร้อง',   Icon: ClipboardList, color: 'var(--color-primary)', show: currentUserRole !== 'council' },
-                { key: 'events',     label: 'กิจกรรม', Icon: CalendarDays,  color: '#10b981', show: true },
-                { key: 'infra',      label: 'โครงการ', Icon: Wrench,        color: '#7c3aed', show: currentUserRole !== 'council' },
-              ],
-            },
-            {
-              group: 'วิเคราะห์',
-              items: [
-                { key: 'report',       label: 'รายงานคำร้อง', Icon: TrendingUp, color: '#10b981', show: true },
-                { key: 'civil-report', label: 'รายงานโครงการ', Icon: BarChart2,  color: '#7c3aed', show: currentUserRole !== 'council' && currentUserRole !== 'viewer' },
-                { key: 'map',          label: 'แผนที่ข้อมูล',  Icon: MapPin,     color: '#3b82f6', show: currentUserRole !== 'council' },
-              ],
-            },
-            {
               group: 'จัดการเนื้อหา',
               items: [
-                { key: 'staff',   label: 'รูปผู้บริหาร',   Icon: UserCircle2, color: '#7c3aed', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
-                { key: 'tourism', label: 'เที่ยว กิน พัก ชอบ', Icon: Luggage, color: '#d97706', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
+                { key: 'staff',            label: 'รูปผู้บริหาร',       Icon: UserCircle2, color: '#7c3aed', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
+                { key: 'tourism',          label: 'เที่ยว กิน พัก ชอบ', Icon: Luggage,     color: '#d97706', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
+                { key: 'tourism-reviews',  label: 'รีวิวสถานที่',        Icon: Star,         color: '#f59e0b', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
+                { key: 'business-register', label: 'ลงทะเบียนธุรกิจ',   Icon: Store,        color: '#d97706', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
               ],
             },
             {
@@ -4866,9 +4975,9 @@ export default function AdminDashboard() {
       </div>
 
       {activePage === 'events' ? (
-        <EventsManager tenant={tenant} currentUserRole={currentUserRole} />
+        <EventsManagerComponent tenant={tenant} currentUserRole={currentUserRole} />
       ) : activePage === 'report' ? (
-        <ReportManager complaints={complaints} tenant={tenant} technicians={technicians} />
+        <ReportManagerComponent complaints={complaints} tenant={tenant} technicians={technicians} />
       ) : activePage === 'staff' ? (
         <StaffManager tenant={tenant} />
       ) : activePage === 'emergency' ? (
@@ -4894,12 +5003,16 @@ export default function AdminDashboard() {
       ) : activePage === 'civil-report' ? (
         <CivilProjectReport tenant={tenant} />
       ) : activePage === 'infra' ? (
-        <CivilProjectAdmin tenant={tenant} currentUserRole={currentUserRole} />
+        <CivilProjectReport tenant={tenant} />
       ) : activePage === 'map' ? (
         <MapDashboardAdmin tenant={tenant} currentUserRole={currentUserRole}
           onNavigate={(page) => setActivePage(page)} />
       ) : activePage === 'tourism' ? (
         <TourismManager tenant={tenant} />
+      ) : activePage === 'tourism-reviews' ? (
+        <TourismReviewsAdmin tenant={tenant} />
+      ) : activePage === 'business-register' ? (
+        <BusinessRegistrationAdmin tenant={tenant} />
       ) : activePage === 'system-settings' ? (
         <SystemSettingsAdmin tenant={tenant} onUpdateTenant={(updated) => window.location.reload()} />
       ) : activePage === 'more' ? (
@@ -4909,30 +5022,6 @@ export default function AdminDashboard() {
 
           {/* Mobile: icon grid */}
           <div className="md:hidden grid grid-cols-2 gap-3">
-            {currentUserRole !== 'viewer' && currentUserRole !== 'council' && (
-              <button onClick={() => setActivePage('infra')}
-                className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
-                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#ede9fe' }}>
-                  <Wrench size={24} style={{ color: '#7c3aed' }} />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-gray-800">โครงการก่อสร้าง</p>
-                  <p className="text-[13px] text-gray-400 mt-0.5">ติดตามความคืบหน้า</p>
-                </div>
-              </button>
-            )}
-            {currentUserRole !== 'viewer' && currentUserRole !== 'council' && (
-              <button onClick={() => setActivePage('civil-report')}
-                className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
-                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#ede9fe' }}>
-                  <BarChart2 size={24} style={{ color: '#7c3aed' }} />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-gray-800">รายงานโครงการ</p>
-                  <p className="text-[13px] text-gray-400 mt-0.5">สรุปตามปีงบประมาณ</p>
-                </div>
-              </button>
-            )}
             {currentUserRole !== 'viewer' && (
               <button onClick={() => setActivePage('categories')}
                 className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
@@ -4987,6 +5076,30 @@ export default function AdminDashboard() {
                 <p className="text-[13px] text-gray-400 mt-0.5">ท่องเที่ยว ร้านค้า บริการ</p>
               </div>
             </button>
+            {currentUserRole !== 'viewer' && currentUserRole !== 'council' && (
+              <button onClick={() => setActivePage('tourism-reviews')}
+                className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#fef3c7' }}>
+                  <Star size={24} style={{ color: '#f59e0b' }} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-800">รีวิวสถานที่</p>
+                  <p className="text-[13px] text-gray-400 mt-0.5">ตรวจสอบและลบรีวิว</p>
+                </div>
+              </button>
+            )}
+            {currentUserRole !== 'viewer' && currentUserRole !== 'council' && (
+              <button onClick={() => setActivePage('business-register')}
+                className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#fef3c7' }}>
+                  <Store size={24} style={{ color: '#d97706' }} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-800">ลงทะเบียนธุรกิจ</p>
+                  <p className="text-[13px] text-gray-400 mt-0.5">อนุมัติคำขอลงทะเบียน</p>
+                </div>
+              </button>
+            )}
             <button onClick={() => setActivePage('locations')}
               className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
               <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#e0f2fe' }}>
@@ -5045,12 +5158,14 @@ export default function AdminDashboard() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {[
-                  { key: 'categories',  Icon: Tag,         color: '#d97706', bg: '#fef3c7', label: 'ประเภทคำร้อง',    desc: 'จัดการหมวดหมู่คำร้อง',            show: currentUserRole !== 'viewer' },
-                  { key: 'assignments', Icon: Wrench,      color: '#d97706', bg: '#fef3c7', label: 'ผู้รับผิดชอบ',    desc: 'มอบหมายงานตามประเภทคำร้อง',       show: currentUserRole !== 'council' },
+                  { key: 'categories',  Icon: Tag,    color: '#d97706', bg: '#fef3c7', label: 'ประเภทคำร้อง', desc: 'จัดการหมวดหมู่คำร้อง',       show: currentUserRole !== 'viewer' },
+                  { key: 'assignments', Icon: Wrench, color: '#d97706', bg: '#fef3c7', label: 'ผู้รับผิดชอบ', desc: 'มอบหมายงานตามประเภทคำร้อง', show: currentUserRole !== 'council' },
                   { key: 'emergency',   Icon: Phone,       color: '#ef4444', bg: '#fee2e2', label: 'สายด่วนฉุกเฉิน',  desc: 'จัดการรายชื่อและเบอร์ติดต่อ',     show: currentUserRole !== 'viewer' },
                   { key: 'locations',   Icon: MapPin,      color: '#0891b2', bg: '#e0f2fe', label: 'สถานที่เกิดเหตุ', desc: 'จัดการหมู่บ้าน / ตำบลในพื้นที่',  show: currentUserRole !== 'viewer' },
-                  { key: 'tourism',     Icon: Luggage,     color: '#d97706', bg: '#fef3c7', label: 'เที่ยว กิน พัก ชอบ', desc: 'ท่องเที่ยว ร้านค้า บริการออนไลน์', show: currentUserRole !== 'viewer' },
-                  { key: 'staff',       Icon: UserCircle2, color: '#7c3aed', bg: '#ede9fe', label: 'รูปผู้บริหาร',    desc: 'อัปโหลดรูปนายก/รองนายก/ทีมงาน', show: currentUserRole !== 'viewer' },
+                  { key: 'tourism',          Icon: Luggage,     color: '#d97706', bg: '#fef3c7', label: 'เที่ยว กิน พัก ชอบ',  desc: 'ท่องเที่ยว ร้านค้า บริการออนไลน์',      show: currentUserRole !== 'viewer' },
+                  { key: 'tourism-reviews',  Icon: Star,        color: '#f59e0b', bg: '#fef3c7', label: 'รีวิวสถานที่',       desc: 'ตรวจสอบและลบรีวิวที่ไม่เหมาะสม',     show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
+                  { key: 'business-register', Icon: Store,      color: '#d97706', bg: '#fef3c7', label: 'ลงทะเบียนธุรกิจ',   desc: 'อนุมัติ/จัดการคำขอลงทะเบียนธุรกิจ',  show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
+                  { key: 'staff',            Icon: UserCircle2, color: '#7c3aed', bg: '#ede9fe', label: 'รูปผู้บริหาร',       desc: 'อัปโหลดรูปนายก/รองนายก/ทีมงาน',       show: currentUserRole !== 'viewer' },
                   { key: 'system-settings', Icon: Settings,color: '#3b82f6', bg: '#dbeafe', label: 'ตั้งค่าระบบ',    desc: 'ตั้งค่าชื่อระบบและข้อมูลพื้นฐาน',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'users',       Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', label: 'จัดการผู้ใช้',    desc: 'สิทธิ์การเข้าถึงและบทบาท',        show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 ].filter(r => r.show).map(({ key, Icon, color, bg, label, desc }) => (

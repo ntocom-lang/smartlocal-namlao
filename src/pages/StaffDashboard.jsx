@@ -4,8 +4,14 @@ import {
   Inbox, FileText, CheckSquare, BarChart2, LogOut,
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, AlignLeft, Calendar, Hash, RefreshCw,
-  Printer, PenLine, Search, Download,
+  Printer, PenLine, Search, Download, Wrench, Home, CalendarDays, TrendingUp,
 } from 'lucide-react'
+import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
+import CivilProjectReport from '../components/admin/CivilProjectReport'
+import MapDashboardAdmin from '../components/admin/MapDashboardAdmin'
+import EventsManager from '../components/admin/EventsManager'
+import ComplaintsManager from '../components/admin/ComplaintsManager'
+import ReportManager from '../components/admin/ReportManager'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 
@@ -26,12 +32,32 @@ const STATUS = {
   rejected:   { label: 'ปฏิเสธ',         color: '#ef4444', bg: '#fee2e2', Icon: XCircle },
 }
 
-const MODULES = [
-  { key: 'inbox',   label: 'กล่องงาน',  Icon: Inbox,       color: '#3b82f6' },
-  { key: 'docs',    label: 'เอกสาร',    Icon: FileText,    color: '#8b5cf6' },
-  { key: 'approve', label: 'อนุมัติ',   Icon: CheckSquare, color: '#10b981' },
-  { key: 'report',  label: 'รายงาน',    Icon: BarChart2,   color: '#f59e0b' },
+const MODULE_GROUPS = [
+  {
+    group: 'บริการประชาชน',
+    items: [
+      { key: 'inbox',      label: 'กล่องงาน', Icon: Inbox,        color: '#3b82f6' },
+      { key: 'docs',       label: 'เอกสาร',   Icon: FileText,     color: '#8b5cf6' },
+      { key: 'complaints', label: 'คำร้อง',   Icon: BarChart2,    color: '#ef4444' },
+    ],
+  },
+  {
+    group: 'งานภายใน',
+    items: [
+      { key: 'events',   label: 'กิจกรรม', Icon: CalendarDays, color: '#10b981' },
+      { key: 'approve',  label: 'อนุมัติ',  Icon: CheckSquare,  color: '#f97316' },
+      { key: 'projects', label: 'โครงการ', Icon: Wrench,       color: '#7c3aed' },
+    ],
+  },
+  {
+    group: 'ข้อมูลและรายงาน',
+    items: [
+      { key: 'map',    label: 'แผนที่',  Icon: MapPin,    color: '#0891b2' },
+      { key: 'report', label: 'รายงาน', Icon: TrendingUp, color: '#f59e0b' },
+    ],
+  },
 ]
+const MODULES = MODULE_GROUPS.flatMap(g => g.items)
 
 const APPROVAL_TYPES = [
   { value: 'expense_claim',  label: '💰 เบิกจ่ายค่าใช้จ่าย',        requiresSign: true  },
@@ -1468,6 +1494,150 @@ function Placeholder({ title, desc, Icon }) {
   )
 }
 
+// ─── Complaints Module (staff-side) ───────────────────────────────────────────
+
+const C_STATUS = {
+  pending:     { label: 'รอดำเนินการ',    color: '#f59e0b', bg: '#fef3c7' },
+  received:    { label: 'รับเรื่องแล้ว',  color: '#3b82f6', bg: '#dbeafe' },
+  in_progress: { label: 'กำลังดำเนินการ', color: '#8b5cf6', bg: '#ede9fe' },
+  completed:   { label: 'เสร็จสิ้น',     color: '#10b981', bg: '#d1fae5' },
+  rejected:    { label: 'ปฏิเสธ',        color: '#ef4444', bg: '#fee2e2' },
+}
+const C_NEXT = {
+  pending:     { label: 'รับเรื่อง',       next: 'received' },
+  received:    { label: 'เริ่มดำเนินการ', next: 'in_progress' },
+  in_progress: { label: 'ปิดงาน',         next: 'completed' },
+}
+const C_CAT = {
+  road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าส่องสว่าง', trash: 'ขยะ/ความสะอาด',
+  water: 'น้ำประปา', flood: 'น้ำท่วม/ระบายน้ำ', tree: 'ต้นไม้/สวนสาธารณะ',
+  noise: 'เหตุรำคาญ', other: 'อื่นๆ',
+}
+
+function ComplaintsStaffModule({ tenant, staffId }) {
+  const [complaints, setComplaints] = useState([])
+  const [loading, setLoading]       = useState(true)
+  const [search, setSearch]         = useState('')
+  const [filterStatus, setFilterStatus] = useState('all')
+  const [updating, setUpdating]     = useState(null)
+
+  useEffect(() => { fetchAll() }, [tenant?.id])
+
+  async function fetchAll() {
+    if (!tenant?.id) return
+    setLoading(true)
+    const { data } = await supabase.from('complaints')
+      .select('*, profiles(full_name, phone)')
+      .eq('municipality_id', tenant.id)
+      .order('created_at', { ascending: false })
+    setComplaints(data ?? [])
+    setLoading(false)
+  }
+
+  async function advanceStatus(id, next) {
+    setUpdating(id)
+    await supabase.from('complaints').update({ status: next, updated_at: new Date().toISOString() }).eq('id', id)
+    setComplaints(prev => prev.map(c => c.id === id ? { ...c, status: next } : c))
+    setUpdating(null)
+  }
+
+  const filtered = complaints.filter(c => {
+    if (filterStatus !== 'all' && c.status !== filterStatus) return false
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      return (c.description ?? '').toLowerCase().includes(q) || (C_CAT[c.category] ?? '').toLowerCase().includes(q) || (c.profiles?.full_name ?? '').toLowerCase().includes(q)
+    }
+    return true
+  })
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h2 className="font-bold text-gray-800">คำร้องประชาชน</h2>
+        <div className="flex items-center gap-2">
+          <button onClick={fetchAll} className="p-2 rounded-xl hover:bg-gray-100 text-gray-400 transition-colors">
+            <RefreshCw size={16} />
+          </button>
+        </div>
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        {['all','pending','received','in_progress','completed','rejected'].map(s => (
+          <button key={s} onClick={() => setFilterStatus(s)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors ${filterStatus === s ? 'text-white border-transparent' : 'bg-white text-gray-500 border-gray-200'}`}
+            style={filterStatus === s ? { backgroundColor: C_STATUS[s]?.color ?? 'var(--color-primary)' } : {}}>
+            {s === 'all' ? 'ทั้งหมด' : C_STATUS[s]?.label ?? s}
+            {s === 'all' && ` (${complaints.length})`}
+          </button>
+        ))}
+      </div>
+
+      <div className="relative">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหาคำร้อง..."
+          className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-gray-200 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+        {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={14} /></button>}
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-16"><Loader2 size={24} className="animate-spin text-gray-300" /></div>
+      ) : filtered.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center text-gray-400 text-sm">ไม่พบคำร้อง</div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map(c => {
+            const st = C_STATUS[c.status]
+            const nx = C_NEXT[c.status]
+            const date = new Date(c.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
+            return (
+              <div key={c.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: st?.bg, color: st?.color }}>{st?.label}</span>
+                      <span className="text-xs text-gray-400">{C_CAT[c.category] ?? c.category}</span>
+                      <span className="text-xs text-gray-300">·</span>
+                      <span className="text-xs text-gray-400">{date}</span>
+                    </div>
+                    <p className="text-sm text-gray-700 line-clamp-2">{c.description}</p>
+                    {c.profiles?.full_name && <p className="text-xs text-gray-400 mt-1">👤 {c.profiles.full_name}</p>}
+                  </div>
+                  {nx && (
+                    <button onClick={() => advanceStatus(c.id, nx.next)} disabled={updating === c.id}
+                      className="shrink-0 text-xs font-bold px-3 py-1.5 rounded-xl text-white disabled:opacity-50"
+                      style={{ backgroundColor: 'var(--color-primary)' }}>
+                      {updating === c.id ? '...' : nx.label}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StaffReportWrapper({ tenant }) {
+  const [complaints, setComplaints] = useState([])
+  const [technicians, setTechnicians] = useState([])
+  const [loading, setLoading] = useState(true)
+  useEffect(() => {
+    if (!tenant?.id) return
+    Promise.all([
+      supabase.from('complaints').select('*, profiles(full_name, phone)').eq('municipality_id', tenant.id).order('created_at', { ascending: false }),
+      supabase.from('profiles').select('id, full_name, email').eq('municipality_id', tenant.id).eq('role', 'technician'),
+    ]).then(([{ data: c }, { data: t }]) => {
+      setComplaints(c ?? [])
+      setTechnicians(t ?? [])
+      setLoading(false)
+    })
+  }, [tenant?.id])
+  if (loading) return <div className="flex justify-center py-16"><Loader2 size={24} className="animate-spin text-gray-300" /></div>
+  return <ReportManager complaints={complaints} tenant={tenant} technicians={technicians} />
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function StaffDashboard() {
@@ -1527,26 +1697,39 @@ export default function StaffDashboard() {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-          {MODULES.map(({ key, label, Icon, color }) => {
-            const isActive = activeModule === key
-            const badge    = key === 'inbox' && pendingCount > 0 ? pendingCount : null
-            return (
-              <button key={key} onClick={() => setActiveModule(key)}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all"
-                style={isActive
-                  ? { backgroundColor: color + '15', color }
-                  : { color: '#64748b' }}>
-                <Icon size={18} strokeWidth={isActive ? 2.2 : 1.5} />
-                <span className="flex-1 text-left">{label}</span>
-                {badge && (
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white bg-amber-400">
-                    {badge > 99 ? '99+' : badge}
-                  </span>
-                )}
-              </button>
-            )
-          })}
+        <nav className="flex-1 px-3 py-3 overflow-y-auto">
+          <button onClick={() => navigate('/')}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all mb-2"
+            style={{ color: '#94a3b8' }}>
+            <Home size={16} strokeWidth={1.5} style={{ color: '#94a3b8' }} />
+            <span className="flex-1 text-left text-xs">หน้าแรกแอป</span>
+          </button>
+          {MODULE_GROUPS.map(({ group, items }) => (
+            <div key={group} className="mb-4">
+              <p className="px-3 mb-1 text-[9px] font-bold uppercase tracking-widest text-gray-400">{group}</p>
+              <div className="space-y-0.5">
+                {items.map(({ key, label, Icon, color }) => {
+                  const isActive = activeModule === key
+                  const badge    = key === 'inbox' && pendingCount > 0 ? pendingCount : null
+                  return (
+                    <button key={key} onClick={() => setActiveModule(key)}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all"
+                      style={isActive
+                        ? { backgroundColor: color + '18', color }
+                        : { color: '#64748b' }}>
+                      <Icon size={17} strokeWidth={isActive ? 2.2 : 1.5} />
+                      <span className="flex-1 text-left">{label}</span>
+                      {badge && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white bg-amber-400">
+                          {badge > 99 ? '99+' : badge}
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
 
         {/* Profile + logout */}
@@ -1574,10 +1757,11 @@ export default function StaffDashboard() {
 
         {/* Mobile header */}
         <header className="md:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-100 shadow-sm shrink-0">
-          <div className="w-8 h-8 rounded-xl flex items-center justify-center text-white shrink-0"
+          <button onClick={() => navigate('/')}
+            className="w-8 h-8 rounded-xl flex items-center justify-center text-white shrink-0 active:opacity-70 transition-opacity"
             style={{ background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)' }}>
             🏛️
-          </div>
+          </button>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-bold text-gray-800 truncate">{tenant?.name ?? 'Staff Portal'}</p>
             <p className="text-xs text-blue-500 font-semibold">ระบบเจ้าหน้าที่</p>
@@ -1603,27 +1787,33 @@ export default function StaffDashboard() {
 
         {/* Main */}
         <main className="flex-1 overflow-y-auto px-4 md:px-6 py-5 pb-24 md:pb-6">
-          {activeModule === 'inbox'   && <InboxModule tenant={tenant} staffId={profile?.id} />}
-          {activeModule === 'docs'    && <DocsModule tenant={tenant} staffId={profile?.id} />}
-          {activeModule === 'approve' && <ApproveModule tenant={tenant} staffProfile={profile} />}
-          {activeModule === 'report'  && <ReportModule tenant={tenant} />}
+          {activeModule === 'inbox'      && <InboxModule tenant={tenant} staffId={profile?.id} />}
+          {activeModule === 'docs'       && <DocsModule tenant={tenant} staffId={profile?.id} />}
+          {activeModule === 'complaints' && <ComplaintsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
+          {activeModule === 'events'     && <EventsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
+          {activeModule === 'approve'    && <ApproveModule tenant={tenant} staffProfile={profile} />}
+          {activeModule === 'projects'   && <CivilProjectAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
+          {activeModule === 'map'        && <MapDashboardAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} onNavigate={() => {}} />}
+          {activeModule === 'report'     && <StaffReportWrapper tenant={tenant} />}
+
         </main>
 
-        {/* Mobile bottom nav */}
+        {/* Mobile bottom nav — horizontal scroll, 72px per item */}
         <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 shadow-lg z-20 safe-bottom">
-          <div className="flex">
+          <div className="flex overflow-x-auto" style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
             {MODULES.map(({ key, label, Icon, color }) => {
               const isActive = activeModule === key
               const badge    = key === 'inbox' && pendingCount > 0 ? pendingCount : null
               return (
                 <button key={key} onClick={() => setActiveModule(key)}
-                  className="flex-1 flex flex-col items-center gap-1 pt-2 pb-3 relative transition-colors">
+                  className="flex flex-col items-center gap-1 pt-2 pb-3 relative transition-colors shrink-0"
+                  style={{ width: 72 }}>
                   {isActive && (
                     <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full"
                       style={{ backgroundColor: color }} />
                   )}
                   <div className="relative">
-                    <Icon size={22} strokeWidth={isActive ? 2.2 : 1.5}
+                    <Icon size={21} strokeWidth={isActive ? 2.2 : 1.5}
                       style={{ color: isActive ? color : '#94a3b8' }} />
                     {badge && (
                       <span className="absolute -top-1 -right-2.5 min-w-[16px] h-4 rounded-full text-[9px] font-bold text-white flex items-center justify-center px-1 bg-amber-400">

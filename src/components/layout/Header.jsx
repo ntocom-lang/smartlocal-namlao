@@ -53,6 +53,8 @@ export default function Header() {
   const displayName = session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || ''
   const isAdmin = role === 'admin' || role === 'superadmin'
 
+  if (location.pathname.startsWith('/staff')) return null
+
   return (
     <header className="sticky top-0 z-50 shadow-md">
       {/* Top strip — hidden on mobile */}

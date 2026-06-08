@@ -1,7 +1,11 @@
+import { useLocation } from 'react-router-dom'
 import { useTenant } from '../../contexts/TenantContext'
 
 export default function Footer() {
   const { tenant } = useTenant()
+  const location = useLocation()
+
+  if (location.pathname.startsWith('/staff') || location.pathname.startsWith('/admin')) return null
 
   return (
     <footer className="mt-12 text-white" style={{ backgroundColor: 'var(--color-primary-dark, var(--color-primary))' }}>
