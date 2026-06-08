@@ -5,7 +5,7 @@ import {
   Bell, FileSearch, ClipboardList, ShieldCheck,
   Phone, MapPin, Globe, Share2, MessageCircle,
   ChevronRight, Star, Copy, Download, Check, Monitor, X,
-  UploadIcon, PlusSquare, BookOpen, Store,
+  UploadIcon, PlusSquare, BookOpen, Store, FileText,
 } from 'lucide-react'
 import qrCodeImage from '../assets/qr-code.png'
 import { supabase } from '../lib/supabase'
@@ -477,6 +477,14 @@ export default function MorePage() {
             label="ยื่นคำร้องออนไลน์"
             desc="แจ้งซ่อม / ขอน้ำ / แจ้งเหตุสิ่งแวดล้อม"
             href="/complaint"
+          />
+          <MenuRow
+            icon={FileText}
+            iconBg="bg-blue-50"
+            iconColor="text-blue-500"
+            label="ขอเอกสารราชการออนไลน์"
+            desc="ใบรับรองการอยู่อาศัย / หนังสือรับรองบุคคล และอื่นๆ"
+            href="/doc-request"
           />
           <MenuRow
             icon={Store}

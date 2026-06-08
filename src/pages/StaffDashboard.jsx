@@ -697,6 +697,135 @@ function DocsModule({ tenant }) {
   )
 }
 
+// ─── Report Module ────────────────────────────────────────────────────────────
+
+function ReportModule({ tenant }) {
+  const [rows, setRows]       = useState([])
+  const [loading, setLoading] = useState(true)
+  const [period, setPeriod]   = useState('month')
+
+  useEffect(() => {
+    if (!tenant?.id) return
+    setLoading(true)
+    let query = supabase
+      .from('document_requests')
+      .select('document_type, status, created_at')
+      .eq('municipality_id', tenant.id)
+    if (period !== 'all') {
+      const since = new Date()
+      if (period === 'week') since.setDate(since.getDate() - 7)
+      else { since.setDate(1); since.setHours(0, 0, 0, 0) }
+      query = query.gte('created_at', since.toISOString())
+    }
+    query.then(({ data }) => { setRows(data ?? []); setLoading(false) })
+  }, [tenant?.id, period])
+
+  const total    = rows.length
+  const byStatus = rows.reduce((acc, r) => { acc[r.status] = (acc[r.status] ?? 0) + 1; return acc }, {})
+  const byType   = rows.reduce((acc, r) => { acc[r.document_type] = (acc[r.document_type] ?? 0) + 1; return acc }, {})
+
+  const PERIODS = [
+    { key: 'week',  label: '7 วัน' },
+    { key: 'month', label: 'เดือนนี้' },
+    { key: 'all',   label: 'ทั้งหมด' },
+  ]
+  const statCards = [
+    { label: 'ทั้งหมด',     count: total,                    color: '#64748b', bg: '#f1f5f9' },
+    { label: 'รอดำเนินการ', count: byStatus.pending    ?? 0, color: '#f59e0b', bg: '#fef3c7' },
+    { label: 'กำลังดำเนิน', count: byStatus.processing ?? 0, color: '#3b82f6', bg: '#dbeafe' },
+    { label: 'เสร็จสิ้น',   count: byStatus.completed  ?? 0, color: '#10b981', bg: '#d1fae5' },
+  ]
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-lg font-bold text-gray-800">รายงาน</h2>
+        <p className="text-xs text-gray-400 mt-0.5">สรุปสถิติการออกเอกสาร</p>
+      </div>
+
+      {/* Period picker */}
+      <div className="flex gap-2">
+        {PERIODS.map(p => (
+          <button key={p.key} onClick={() => setPeriod(p.key)}
+            className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all"
+            style={period === p.key
+              ? { backgroundColor: '#f59e0b', color: '#fff' }
+              : { backgroundColor: '#f1f5f9', color: '#64748b' }}>
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-16">
+          <Loader2 size={28} className="animate-spin text-gray-200" />
+        </div>
+      ) : (
+        <>
+          {/* Stat cards */}
+          <div className="grid grid-cols-2 gap-2.5">
+            {statCards.map(s => (
+              <div key={s.label} className="rounded-2xl p-4 shadow-sm border border-gray-100"
+                style={{ backgroundColor: s.bg }}>
+                <p className="text-3xl font-bold" style={{ color: s.color }}>{s.count}</p>
+                <p className="text-xs font-semibold mt-1" style={{ color: s.color }}>{s.label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Breakdown by type */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+            <p className="text-sm font-bold text-gray-700 mb-3">แยกตามประเภทเอกสาร</p>
+            {total === 0 ? (
+              <p className="text-xs text-gray-400 text-center py-4">ไม่มีข้อมูลในช่วงเวลานี้</p>
+            ) : (
+              <div className="space-y-3">
+                {DOC_TYPES
+                  .filter(d => byType[d.value])
+                  .sort((a, b) => (byType[b.value] ?? 0) - (byType[a.value] ?? 0))
+                  .map(d => {
+                    const count = byType[d.value] ?? 0
+                    const pct   = total > 0 ? (count / total * 100) : 0
+                    return (
+                      <div key={d.value}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-xs text-gray-600 truncate max-w-[72%]">{d.label}</span>
+                          <span className="text-xs font-bold text-gray-800">{count} ครั้ง</span>
+                        </div>
+                        <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full transition-all duration-500"
+                            style={{ width: `${pct}%`, backgroundColor: '#f59e0b' }} />
+                        </div>
+                      </div>
+                    )
+                  })}
+              </div>
+            )}
+          </div>
+
+          {/* Completion rate */}
+          {total > 0 && (
+            <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 flex items-center gap-4">
+              <div>
+                <p className="text-3xl font-bold text-emerald-600">
+                  {Math.round((byStatus.completed ?? 0) / total * 100)}%
+                </p>
+                <p className="text-xs font-semibold text-emerald-500 mt-0.5">อัตราดำเนินการสำเร็จ</p>
+              </div>
+              <div className="flex-1 text-right">
+                <p className="text-xs text-emerald-600">{byStatus.completed ?? 0} จาก {total} คำขอ</p>
+                {(byStatus.rejected ?? 0) > 0 && (
+                  <p className="text-xs text-red-400 mt-0.5">ปฏิเสธ {byStatus.rejected} ครั้ง</p>
+                )}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 // ─── Placeholder ──────────────────────────────────────────────────────────────
 
 function Placeholder({ title, desc, Icon }) {
@@ -845,7 +974,7 @@ export default function StaffDashboard() {
           {activeModule === 'inbox'   && <InboxModule tenant={tenant} staffId={profile?.id} />}
           {activeModule === 'docs'    && <DocsModule tenant={tenant} staffId={profile?.id} />}
           {activeModule === 'approve' && <Placeholder title="อนุมัติ"          desc="Workflow ลงนามสำหรับผู้บริหาร"   Icon={CheckSquare} />}
-          {activeModule === 'report'  && <Placeholder title="รายงาน"           desc="สรุปสถิติการออกเอกสารรายเดือน"  Icon={BarChart2} />}
+          {activeModule === 'report'  && <ReportModule tenant={tenant} />}
         </main>
 
         {/* Mobile bottom nav */}
