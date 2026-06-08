@@ -887,6 +887,7 @@ function UserManager({ tenant, currentUserRole }) {
       setUsers((prev) => prev.map((u) =>
         u.id === userId ? { ...u, role: newRole, municipality_id: muni } : u
       ))
+      setEditingRoleId(null)
     }
     setSaving(null)
   }
