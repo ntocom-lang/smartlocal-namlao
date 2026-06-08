@@ -124,7 +124,7 @@ export default function BusinessRegisterPage() {
   async function handleSubmit(e) {
     e.preventDefault()
     if (!form.business_name.trim()) { setError('กรุณากรอกชื่อร้าน/สถานที่'); return }
-    if (!geo.lat) { setError('กรุณาปักหมุด GPS ตำแหน่งร้านก่อนส่ง — ข้อมูลนี้จะใช้แสดงบนแผนที่'); return }
+    if (!geo.lat && form.service_type !== 'online_only') { setError('กรุณาปักหมุด GPS ตำแหน่งร้านก่อนส่ง — ข้อมูลนี้จะใช้แสดงบนแผนที่'); return }
     if (!tenant?.id) { setError('ไม่พบข้อมูลหน่วยงาน'); return }
 
     setError(null)
@@ -151,9 +151,9 @@ export default function BusinessRegisterPage() {
       images:          imageUrls,
       status:          'pending',
       service_type:    form.service_type,
-      online_service:  form.service_type === 'online' ? form.online_service : null,
-      online_url:      form.service_type === 'online' ? (form.online_url.trim() || null) : null,
-      has_delivery:    form.service_type === 'online' ? form.has_delivery : false,
+      online_service:  form.service_type !== 'offline' ? form.online_service : null,
+      online_url:      form.service_type !== 'offline' ? (form.online_url.trim() || null) : null,
+      has_delivery:    form.service_type !== 'offline' ? form.has_delivery : false,
     })
 
     setSubmitting(false)
@@ -238,12 +238,15 @@ export default function BusinessRegisterPage() {
             className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-300" />
         </div>
 
-        {/* GPS — บังคับ */}
-        <div className="rounded-2xl shadow-sm border border-amber-200 ring-1 ring-amber-100 bg-white p-4">
+        {/* GPS — บังคับ (ซ่อนเมื่อ online_only) */}
+        <div className={`rounded-2xl shadow-sm bg-white p-4 transition-all ${form.service_type === 'online_only' ? 'border border-gray-100 opacity-50 pointer-events-none' : 'border border-amber-200 ring-1 ring-amber-100'}`}>
           <div className="flex items-center gap-2 mb-3">
             <MapPin size={16} className="text-amber-500" />
             <span className="text-sm font-semibold text-gray-700">ตำแหน่ง GPS ของร้าน</span>
-            <span className="ml-auto text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">* บังคับ</span>
+            {form.service_type !== 'online_only'
+              ? <span className="ml-auto text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">* บังคับ</span>
+              : <span className="ml-auto text-[10px] font-bold text-gray-400 bg-gray-50 px-2 py-0.5 rounded-full">ไม่จำเป็น</span>
+            }
           </div>
           <button type="button" onClick={() => setShowMap(true)}
             className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium border transition-all ${
@@ -350,19 +353,35 @@ export default function BusinessRegisterPage() {
             <span className="text-sm font-semibold text-gray-700">บริการออนไลน์</span>
           </div>
           <p className="text-xs text-gray-500 mb-3">ถ้ามีช่องทางให้ลูกค้าสั่งซื้อ / จอง / ติดต่อออนไลน์ได้</p>
-          <div className="flex gap-2 mb-3">
-            {[{ v: 'offline', label: '📍 ไม่มี (ออฟไลน์)' }, { v: 'online', label: '⚡ มีบริการออนไลน์' }].map(({ v, label }) => (
-              <button key={v} type="button"
-                onClick={() => setForm(p => ({ ...p, service_type: v }))}
-                className="flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all"
-                style={form.service_type === v
-                  ? { backgroundColor: v === 'online' ? '#dcfce7' : '#f1f5f9', color: v === 'online' ? '#15803d' : '#374151', borderColor: v === 'online' ? '#86efac' : '#d1d5db' }
-                  : { backgroundColor: '#f8fafc', color: '#94a3b8', borderColor: '#e2e8f0' }}>
-                {label}
-              </button>
-            ))}
+          <div className="grid grid-cols-1 gap-2 mb-3">
+            {[
+              { v: 'offline',     label: '📍 มีหน้าร้าน / ออฟไลน์',          desc: 'มีสถานที่จริง ไม่มีบริการออนไลน์' },
+              { v: 'online',      label: '⚡ มีหน้าร้าน + บริการออนไลน์',    desc: 'มีที่ตั้งร้านและรับออร์เดอร์ออนไลน์ด้วย' },
+              { v: 'online_only', label: '🏪 ไม่มีหน้าร้าน / ออนไลน์เท่านั้น', desc: 'ไม่มีสถานที่จริง ขายผ่านออนไลน์อย่างเดียว' },
+            ].map(({ v, label, desc }) => {
+              const active = form.service_type === v
+              const colors = v === 'online' ? { bg: '#dcfce7', color: '#15803d', border: '#86efac' }
+                           : v === 'online_only' ? { bg: '#ede9fe', color: '#7c3aed', border: '#c4b5fd' }
+                           : { bg: '#f1f5f9', color: '#374151', border: '#d1d5db' }
+              return (
+                <button key={v} type="button"
+                  onClick={() => setForm(p => ({ ...p, service_type: v }))}
+                  className="flex items-center gap-3 w-full py-2.5 px-3 rounded-xl text-left border transition-all"
+                  style={active
+                    ? { backgroundColor: colors.bg, color: colors.color, borderColor: colors.border }
+                    : { backgroundColor: '#f8fafc', color: '#94a3b8', borderColor: '#e2e8f0' }}>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-xs font-semibold ${active ? '' : 'text-gray-500'}`}>{label}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">{desc}</p>
+                  </div>
+                  <div className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center transition-all ${active ? 'border-current' : 'border-gray-200'}`}>
+                    {active && <div className="w-2 h-2 rounded-full bg-current" />}
+                  </div>
+                </button>
+              )
+            })}
           </div>
-          {form.service_type === 'online' && (
+          {form.service_type !== 'offline' && (
             <div className="space-y-2.5 p-3 bg-green-50 rounded-xl border border-green-100">
               <div>
                 <p className="text-xs text-gray-500 mb-1.5">ประเภทบริการ</p>

@@ -10,11 +10,12 @@ import { useTenant } from '../contexts/TenantContext'
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 const CATS = [
-  { key: null,     label: 'ทั้งหมด', emoji: null,  color: '#64748b', bg: '#f1f5f9' },
-  { key: 'travel', label: 'เที่ยว',   emoji: '🏛️', color: '#1d4ed8', bg: '#dbeafe' },
-  { key: 'food',   label: 'กิน',      emoji: '🍽️', color: '#d97706', bg: '#fef3c7' },
-  { key: 'stay',   label: 'พัก',      emoji: '🏨', color: '#7c3aed', bg: '#ede9fe' },
-  { key: 'shop',   label: 'ชอป',     emoji: '🛍️', color: '#15803d', bg: '#dcfce7' },
+  { key: null,      label: 'ทั้งหมด', emoji: null,  color: '#64748b', bg: '#f1f5f9' },
+  { key: 'travel',  label: 'เที่ยว',  emoji: '🏛️', color: '#1d4ed8', bg: '#dbeafe' },
+  { key: 'food',    label: 'กิน',     emoji: '🍽️', color: '#d97706', bg: '#fef3c7' },
+  { key: 'stay',    label: 'พัก',     emoji: '🏨', color: '#7c3aed', bg: '#ede9fe' },
+  { key: 'shop',    label: 'ชอป',    emoji: '🛍️', color: '#15803d', bg: '#dcfce7' },
+  { key: 'service', label: 'บริการ',  emoji: '🔧', color: '#dc2626', bg: '#fee2e2' },
 ]
 
 const SVC = {
@@ -98,6 +99,55 @@ function PlaceCard({ place, onClick }) {
   )
 }
 
+// ─── Market card (horizontal layout, online_only) ────────────────────────────
+
+function MarketCard({ place, onClick }) {
+  const cat = CATS.find(c => c.key === place.category)
+  const svc = SVC[place.online_service] ?? SVC.order
+  const SvcIcon = svc.Icon
+
+  return (
+    <button onClick={onClick}
+      className="bg-white rounded-2xl shadow-sm border border-gray-100 flex gap-3 p-3 active:scale-[0.98] transition-all hover:shadow-md text-left w-full group">
+      <div className="relative shrink-0 w-20 h-20 rounded-xl overflow-hidden">
+        {place.image_url
+          ? <img src={place.image_url} alt={place.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+          : <div className="w-full h-full bg-linear-to-br from-purple-100 to-indigo-200 flex items-center justify-center text-2xl">🏪</div>
+        }
+        {place.has_delivery && (
+          <span className="absolute bottom-1 left-1 flex items-center gap-0.5 bg-orange-500 text-white text-[8px] font-bold px-1 py-0.5 rounded-full">
+            <Bike size={7} /> ส่ง
+          </span>
+        )}
+      </div>
+      <div className="flex-1 min-w-0 flex flex-col justify-between">
+        <div>
+          {cat?.emoji && (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+              style={{ backgroundColor: cat.bg, color: cat.color }}>
+              {cat.emoji} {cat.label}
+            </span>
+          )}
+          <p className="text-sm font-bold text-gray-800 mt-1 truncate">{place.name}</p>
+          {place.description && (
+            <p className="text-xs text-gray-500 mt-0.5 line-clamp-2 leading-snug">{place.description}</p>
+          )}
+        </div>
+        {place.online_url ? (
+          <div className="mt-1.5 inline-flex items-center gap-1 py-1 px-2.5 rounded-lg text-[11px] font-bold"
+            style={{ backgroundColor: svc.bg, color: svc.color }}>
+            <SvcIcon size={10} /> {svc.label}
+          </div>
+        ) : (
+          <div className="mt-1.5 inline-flex items-center gap-1 py-1 px-2.5 rounded-lg text-[11px] font-bold bg-gray-100 text-gray-500">
+            <SvcIcon size={10} /> {svc.label}
+          </div>
+        )}
+      </div>
+    </button>
+  )
+}
+
 // ─── Featured card (horizontal scroll, online only) ───────────────────────────
 
 function FeaturedCard({ place, onClick }) {
@@ -155,13 +205,19 @@ export default function TourismPage() {
       .then(({ data }) => { setPlaces(data ?? []); setLoading(false) })
   }, [tenant?.id])
 
-  const onlinePlaces = places.filter(p => p.service_type === 'online')
+  const onlinePlaces  = places.filter(p => p.service_type === 'online')
+  const marketPlaces  = places.filter(p => p.service_type === 'online_only')
+  const mainPlaces    = places.filter(p => p.service_type !== 'online_only')
 
-  const filtered = places.filter(p => {
+  const filtered = mainPlaces.filter(p => {
     if (showOnline) return p.service_type === 'online'
     if (activeCat) return p.category === activeCat
     return true
   })
+
+  const filteredMarket = activeCat
+    ? marketPlaces.filter(p => p.category === activeCat)
+    : marketPlaces
 
   function handleCatClick(key) {
     if (key === '__online__') { setShowOnline(true); setActiveCat(null) }
@@ -169,7 +225,8 @@ export default function TourismPage() {
   }
 
   const activeKey = showOnline ? '__online__' : activeCat
-  const showFeaturedRow = !showOnline && !activeCat && onlinePlaces.length > 0
+  const showFeaturedRow  = !showOnline && !activeCat && onlinePlaces.length > 0
+  const showMarketSection = !showOnline && filteredMarket.length > 0
 
   return (
     <div className="max-w-6xl mx-auto pb-28 md:pb-8">
@@ -294,6 +351,31 @@ export default function TourismPage() {
                   ))}
                 </div>
               </>
+            )}
+
+            {/* ── ตลาดออนไลน์ section ── */}
+            {showMarketSection && (
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-base"
+                    style={{ background: 'linear-gradient(135deg, #7c3aed, #4f46e5)' }}>
+                    🏪
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h2 className="font-bold text-gray-800 text-sm leading-tight">ตลาดออนไลน์</h2>
+                    <p className="text-[11px] text-gray-400 leading-tight">สั่งซื้อได้เลย · ไม่ต้องออกจากบ้าน</p>
+                  </div>
+                  <span className="shrink-0 text-[11px] font-bold px-2 py-0.5 rounded-full"
+                    style={{ backgroundColor: '#ede9fe', color: '#7c3aed' }}>
+                    {filteredMarket.length} ร้าน
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {filteredMarket.map(place => (
+                    <MarketCard key={place.id} place={place} onClick={() => navigate(`/tourism/${place.id}`)} />
+                  ))}
+                </div>
+              </div>
             )}
 
             {/* ── CTA: register ── */}

@@ -24,14 +24,15 @@ const BIZ_LABEL = {
 
 const BIZ_TO_CAT = {
   shop: 'shop', food: 'food', stay: 'stay',
-  tourism: 'travel', otop: 'shop', service: 'shop', other: 'shop',
+  tourism: 'travel', otop: 'shop', service: 'service', other: 'shop',
 }
 
 const TOURISM_CATS = [
-  { value: 'travel', label: '🏛️ เที่ยว' },
-  { value: 'food',   label: '🍽️ กิน' },
-  { value: 'stay',   label: '🏨 พัก' },
-  { value: 'shop',   label: '🛍️ ชอป / OTOP' },
+  { value: 'travel',  label: '🏛️ เที่ยว' },
+  { value: 'food',    label: '🍽️ กิน' },
+  { value: 'stay',    label: '🏨 พัก' },
+  { value: 'shop',    label: '🛍️ ชอป / OTOP' },
+  { value: 'service', label: '🔧 บริการ' },
 ]
 
 function dateTH(dateStr) {
@@ -230,19 +231,29 @@ function DetailSheet({ reg, onClose, onApprove, onReject, acting }) {
               {/* Online toggle */}
               <div>
                 <label className="text-xs text-gray-500 mb-1.5 block">บริการออนไลน์</label>
-                <div className="flex gap-2 mb-2">
-                  {[{ v: 'offline', label: '📍 ออฟไลน์' }, { v: 'online', label: '⚡ ออนไลน์' }].map(({ v, label }) => (
-                    <button key={v} type="button"
-                      onClick={() => setForm(p => ({ ...p, service_type: v }))}
-                      className="flex-1 py-2 rounded-xl text-sm font-semibold border transition-all"
-                      style={form.service_type === v
-                        ? { backgroundColor: v === 'online' ? '#dcfce7' : '#f1f5f9', color: v === 'online' ? '#15803d' : '#374151', borderColor: v === 'online' ? '#86efac' : '#d1d5db' }
-                        : { backgroundColor: '#f8fafc', color: '#94a3b8', borderColor: '#e2e8f0' }}>
-                      {label}
-                    </button>
-                  ))}
+                <div className="flex flex-col gap-1.5 mb-2">
+                  {[
+                    { v: 'offline',     label: '📍 ออฟไลน์ (มีหน้าร้าน)' },
+                    { v: 'online',      label: '⚡ ออนไลน์ + มีหน้าร้าน' },
+                    { v: 'online_only', label: '🏪 ตลาดออนไลน์ (ไม่มีหน้าร้าน)' },
+                  ].map(({ v, label }) => {
+                    const colors = v === 'online' ? { bg: '#dcfce7', color: '#15803d', border: '#86efac' }
+                                 : v === 'online_only' ? { bg: '#ede9fe', color: '#7c3aed', border: '#c4b5fd' }
+                                 : { bg: '#f1f5f9', color: '#374151', border: '#d1d5db' }
+                    const active = form.service_type === v
+                    return (
+                      <button key={v} type="button"
+                        onClick={() => setForm(p => ({ ...p, service_type: v }))}
+                        className="py-2 px-3 rounded-xl text-sm font-semibold border text-left transition-all"
+                        style={active
+                          ? { backgroundColor: colors.bg, color: colors.color, borderColor: colors.border }
+                          : { backgroundColor: '#f8fafc', color: '#94a3b8', borderColor: '#e2e8f0' }}>
+                        {label}
+                      </button>
+                    )
+                  })}
                 </div>
-                {form.service_type === 'online' && (
+                {form.service_type !== 'offline' && (
                   <div className="space-y-2 p-3 bg-green-50 rounded-xl border border-green-100">
                     <select value={form.online_service} onChange={set('online_service')} className={inputCls}>
                       <option value="order">🛒 สั่งซื้อสินค้า</option>
@@ -333,8 +344,8 @@ export default function BusinessRegistrationAdmin({ tenant }) {
       ? `https://maps.google.com/?q=${selected.latitude},${selected.longitude}`
       : ''
 
-    const onlineFields = form.service_type === 'online'
-      ? { service_type: 'online', online_service: form.online_service, online_url: form.online_url.trim() || null, has_delivery: form.has_delivery }
+    const onlineFields = form.service_type !== 'offline'
+      ? { service_type: form.service_type, online_service: form.online_service, online_url: form.online_url.trim() || null, has_delivery: form.has_delivery }
       : { service_type: 'offline', online_service: null, online_url: null, has_delivery: false }
 
     const { error: insertErr } = await supabase.from('tourism_places').insert({

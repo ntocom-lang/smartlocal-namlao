@@ -4,10 +4,11 @@ import { ArrowLeft, ChevronLeft, ChevronRight, MapPin, ExternalLink, Share2, Pho
 import { supabase } from '../lib/supabase'
 
 const CAT_LABEL = {
-  travel: '🏛️ เที่ยว',
-  food:   '🍽️ กิน',
-  stay:   '🏨 พัก',
-  shop:   '🛍️ ชอป',
+  travel:  '🏛️ เที่ยว',
+  food:    '🍽️ กิน',
+  stay:    '🏨 พัก',
+  shop:    '🛍️ ชอป',
+  service: '🔧 บริการ',
 }
 
 const SVC = {
@@ -109,8 +110,8 @@ function PhotoCarousel({ images, name, category, onBack, onShare }) {
 
       {/* Fullscreen Viewer */}
       {fullscreen && (
-        <div className="fixed inset-0 z-[100] bg-black flex flex-col">
-          <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-50 bg-gradient-to-b from-black/60 to-transparent">
+        <div className="fixed inset-0 z-100 bg-black flex flex-col">
+          <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-50 bg-linear-to-b from-black/60 to-transparent">
              <div className="w-10" />
              {images.length > 1 && (
                <div className="text-white text-sm font-medium bg-black/40 px-3 py-1 rounded-full backdrop-blur-sm">
@@ -206,7 +207,8 @@ export default function TourismDetailPage() {
 
   const allImages = [place.image_url, ...(place.gallery ?? [])].filter(Boolean)
 
-  const isOnline = place.service_type === 'online'
+  const isOnline       = place.service_type === 'online' || place.service_type === 'online_only'
+  const isOnlineOnly   = place.service_type === 'online_only'
   const svc = SVC[place.online_service] ?? SVC.order
   const SvcIcon = svc.Icon
 
@@ -223,7 +225,12 @@ export default function TourismDetailPage() {
           )}
           {isOnline && (
             <span className="flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200">
-              <Zap size={10} fill="#15803d" strokeWidth={0} /> บริการออนไลน์
+              <Zap size={10} fill="#15803d" strokeWidth={0} /> {isOnlineOnly ? 'ตลาดออนไลน์' : 'บริการออนไลน์'}
+            </span>
+          )}
+          {isOnlineOnly && (
+            <span className="flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+              🏪 ไม่มีหน้าร้าน
             </span>
           )}
           {place.has_delivery && (

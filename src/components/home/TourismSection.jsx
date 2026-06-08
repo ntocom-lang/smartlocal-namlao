@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Luggage, Utensils, BedDouble, ShoppingBag, ChevronRight, Zap } from 'lucide-react'
+import { Luggage, Utensils, BedDouble, ShoppingBag, Wrench, ChevronRight, Zap } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 
 const CATS = [
-  { key: 'travel', label: 'เที่ยว', Icon: Luggage },
-  { key: 'food',   label: 'กิน',   Icon: Utensils },
-  { key: 'stay',   label: 'พัก',   Icon: BedDouble },
-  { key: 'shop',   label: 'ชอป',  Icon: ShoppingBag },
+  { key: 'travel',  label: 'เที่ยว', Icon: Luggage },
+  { key: 'food',    label: 'กิน',    Icon: Utensils },
+  { key: 'stay',    label: 'พัก',    Icon: BedDouble },
+  { key: 'shop',    label: 'ชอป',   Icon: ShoppingBag },
+  { key: 'service', label: 'บริการ', Icon: Wrench },
 ]
 
 export default function TourismSection() {
