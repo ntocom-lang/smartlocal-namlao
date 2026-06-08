@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, ChevronLeft, ChevronRight, MapPin, ExternalLink, Share2, Phone, X } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, MapPin, ExternalLink, Share2, Phone, X, Zap, ShoppingCart, CalendarCheck, MessageCircle, Globe, Bike } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 
 const CAT_LABEL = {
@@ -8,6 +8,13 @@ const CAT_LABEL = {
   food:   '🍽️ กิน',
   stay:   '🏨 พัก',
   shop:   '🛍️ ชอป',
+}
+
+const SVC = {
+  order:   { label: 'สั่งซื้อเลย',  Icon: ShoppingCart,  bg: '#fef3c7', color: '#d97706', border: '#fcd34d' },
+  book:    { label: 'จองเลย',       Icon: CalendarCheck,  bg: '#dbeafe', color: '#1d4ed8', border: '#93c5fd' },
+  line:    { label: 'ติดต่อ Line',   Icon: MessageCircle, bg: '#dcfce7', color: '#15803d', border: '#86efac' },
+  website: { label: 'เปิดเว็บไซต์',  Icon: Globe,          bg: '#ede9fe', color: '#7c3aed', border: '#c4b5fd' },
 }
 
 function PhotoCarousel({ images, name, category, onBack, onShare }) {
@@ -199,9 +206,44 @@ export default function TourismDetailPage() {
 
   const allImages = [place.image_url, ...(place.gallery ?? [])].filter(Boolean)
 
+  const isOnline = place.service_type === 'online'
+  const svc = SVC[place.online_service] ?? SVC.order
+  const SvcIcon = svc.Icon
+
   const placeContent = (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold text-gray-900 leading-tight">{place.name}</h1>
+      {/* Name + badges */}
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900 leading-tight">{place.name}</h1>
+        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+          {CAT_LABEL[place.category] && (
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+              {CAT_LABEL[place.category]}
+            </span>
+          )}
+          {isOnline && (
+            <span className="flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200">
+              <Zap size={10} fill="#15803d" strokeWidth={0} /> บริการออนไลน์
+            </span>
+          )}
+          {place.has_delivery && (
+            <span className="flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-orange-50 text-orange-600 border border-orange-200">
+              <Bike size={10} /> มีบริการส่ง
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Online CTA — prominent */}
+      {isOnline && place.online_url && (
+        <a href={place.online_url} target="_blank" rel="noopener noreferrer"
+          className="flex items-center justify-center gap-2 w-full py-4 rounded-2xl font-bold text-sm active:scale-[0.98] transition-transform shadow-sm border"
+          style={{ backgroundColor: svc.bg, color: svc.color, borderColor: svc.border }}>
+          <SvcIcon size={18} />
+          {svc.label}
+          <ExternalLink size={13} className="opacity-60" />
+        </a>
+      )}
 
       {place.description && (
         <div>

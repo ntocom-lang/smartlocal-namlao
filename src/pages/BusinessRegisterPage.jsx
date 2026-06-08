@@ -75,6 +75,10 @@ export default function BusinessRegisterPage() {
     line_id: '',
     facebook_url: '',
     address: '',
+    service_type: 'offline',
+    online_service: 'order',
+    online_url: '',
+    has_delivery: false,
   })
   const [geo, setGeo] = useState({ lat: null, lng: null })
   const [showMap, setShowMap] = useState(false)
@@ -146,6 +150,10 @@ export default function BusinessRegisterPage() {
       longitude:       geo.lng,
       images:          imageUrls,
       status:          'pending',
+      service_type:    form.service_type,
+      online_service:  form.service_type === 'online' ? form.online_service : null,
+      online_url:      form.service_type === 'online' ? (form.online_url.trim() || null) : null,
+      has_delivery:    form.service_type === 'online' ? form.has_delivery : false,
     })
 
     setSubmitting(false)
@@ -331,6 +339,60 @@ export default function BusinessRegisterPage() {
                   </button>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+
+        {/* Online service */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-base">⚡</span>
+            <span className="text-sm font-semibold text-gray-700">บริการออนไลน์</span>
+          </div>
+          <p className="text-xs text-gray-500 mb-3">ถ้ามีช่องทางให้ลูกค้าสั่งซื้อ / จอง / ติดต่อออนไลน์ได้</p>
+          <div className="flex gap-2 mb-3">
+            {[{ v: 'offline', label: '📍 ไม่มี (ออฟไลน์)' }, { v: 'online', label: '⚡ มีบริการออนไลน์' }].map(({ v, label }) => (
+              <button key={v} type="button"
+                onClick={() => setForm(p => ({ ...p, service_type: v }))}
+                className="flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all"
+                style={form.service_type === v
+                  ? { backgroundColor: v === 'online' ? '#dcfce7' : '#f1f5f9', color: v === 'online' ? '#15803d' : '#374151', borderColor: v === 'online' ? '#86efac' : '#d1d5db' }
+                  : { backgroundColor: '#f8fafc', color: '#94a3b8', borderColor: '#e2e8f0' }}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {form.service_type === 'online' && (
+            <div className="space-y-2.5 p-3 bg-green-50 rounded-xl border border-green-100">
+              <div>
+                <p className="text-xs text-gray-500 mb-1.5">ประเภทบริการ</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { v: 'order',   label: '🛒 สั่งซื้อ' },
+                    { v: 'book',    label: '📅 จอง' },
+                    { v: 'line',    label: '💬 Line' },
+                    { v: 'website', label: '🌐 เว็บไซต์' },
+                  ].map(({ v, label }) => (
+                    <button key={v} type="button"
+                      onClick={() => setForm(p => ({ ...p, online_service: v }))}
+                      className="py-2 rounded-xl text-xs font-semibold border transition-all"
+                      style={form.online_service === v
+                        ? { backgroundColor: '#f59e0b', color: '#fff', borderColor: '#f59e0b' }
+                        : { backgroundColor: '#fff', color: '#64748b', borderColor: '#e2e8f0' }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <input type="text" value={form.online_url} onChange={set('online_url')}
+                placeholder="ลิงก์ / Line ID / URL"
+                className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-300" />
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={form.has_delivery}
+                  onChange={e => setForm(p => ({ ...p, has_delivery: e.target.checked }))}
+                  className="w-4 h-4 rounded accent-amber-500" />
+                <span className="text-sm text-gray-700">🛵 มีบริการส่งถึงบ้าน</span>
+              </label>
             </div>
           )}
         </div>

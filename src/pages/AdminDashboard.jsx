@@ -3937,7 +3937,7 @@ async function compressImage(file, maxPx = 1200, quality = 0.82) {
   })
 }
 
-const EMPTY_FORM = { name: '', category: 'travel', description: '', phone: '', address: '', maps_url: '' }
+const EMPTY_FORM = { name: '', category: 'travel', description: '', phone: '', address: '', maps_url: '', service_type: 'offline', online_service: 'order', online_url: '', has_delivery: false }
 
 function TourismManager({ tenant }) {
   const [places, setPlaces]             = useState([])
@@ -3970,27 +3970,30 @@ function TourismManager({ tenant }) {
   const sheetAllImgs = sheetPlace ? [sheetPlace.image_url, ...(sheetPlace.gallery ?? [])].filter(Boolean) : []
 
   function openAdd() { setForm(EMPTY_FORM); setSheet('add') }
-  function openEdit(place) { setForm({ name: place.name, category: place.category, description: place.description || '', phone: place.phone || '', address: place.address || '', maps_url: place.maps_url || '' }); setSheet(place.id) }
+  function openEdit(place) { setForm({ name: place.name, category: place.category, description: place.description || '', phone: place.phone || '', address: place.address || '', maps_url: place.maps_url || '', service_type: place.service_type || 'offline', online_service: place.online_service || 'order', online_url: place.online_url || '', has_delivery: place.has_delivery ?? false }); setSheet(place.id) }
   function closeSheet() { setSheet(null) }
 
   async function handleSave() {
     if (!form.name.trim()) return
     setSaving(true)
+    const onlineFields = form.service_type === 'online'
+      ? { service_type: 'online', online_service: form.online_service, online_url: form.online_url.trim() || null, has_delivery: form.has_delivery }
+      : { service_type: 'offline', online_service: null, online_url: null, has_delivery: false }
     if (sheet === 'add') {
       const { data } = await supabase.from('tourism_places').insert({
         municipality_id: tenant.id, name: form.name.trim(), category: form.category,
         description: form.description.trim() || null, phone: form.phone.trim() || null,
         address: form.address.trim() || null, maps_url: form.maps_url.trim() || null,
-        is_active: true, display_order: places.length, gallery: [],
+        is_active: true, display_order: places.length, gallery: [], ...onlineFields,
       }).select().single()
       if (data) { setPlaces(prev => [...prev, data]); setSheet(data.id) }
     } else {
       await supabase.from('tourism_places').update({
         name: form.name.trim(), category: form.category,
         description: form.description.trim() || null, phone: form.phone.trim() || null,
-        address: form.address.trim() || null, maps_url: form.maps_url.trim() || null,
+        address: form.address.trim() || null, maps_url: form.maps_url.trim() || null, ...onlineFields,
       }).eq('id', sheet)
-      setPlaces(prev => prev.map(p => p.id === sheet ? { ...p, ...form } : p))
+      setPlaces(prev => prev.map(p => p.id === sheet ? { ...p, ...form, ...onlineFields } : p))
       closeSheet()
     }
     setSaving(false)
@@ -4261,6 +4264,41 @@ function TourismManager({ tenant }) {
                   placeholder="ที่อยู่ / หมู่ที่ / ตำบล" className={inputCls} />
                 <input value={form.maps_url} onChange={e => setForm(p => ({ ...p, maps_url: e.target.value }))}
                   placeholder="ลิงก์ Google Maps" className={inputCls} />
+              </div>
+
+              {/* Online service toggle */}
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">บริการออนไลน์</p>
+                <div className="flex gap-2">
+                  {[{ v: 'offline', label: '📍 ออฟไลน์' }, { v: 'online', label: '⚡ ออนไลน์' }].map(({ v, label }) => (
+                    <button key={v} type="button"
+                      onClick={() => setForm(p => ({ ...p, service_type: v }))}
+                      className="flex-1 py-2 rounded-xl text-sm font-semibold border transition-all"
+                      style={form.service_type === v
+                        ? { backgroundColor: v === 'online' ? '#dcfce7' : '#f1f5f9', color: v === 'online' ? '#15803d' : '#374151', borderColor: v === 'online' ? '#86efac' : '#e2e8f0' }
+                        : { backgroundColor: '#f8fafc', color: '#94a3b8', borderColor: '#e2e8f0' }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {form.service_type === 'online' && (
+                  <div className="space-y-2 p-3 bg-green-50 rounded-xl border border-green-100">
+                    <select value={form.online_service} onChange={e => setForm(p => ({ ...p, online_service: e.target.value }))} className={inputCls}>
+                      <option value="order">🛒 สั่งซื้อสินค้า</option>
+                      <option value="book">📅 จองที่พัก / บริการ</option>
+                      <option value="line">💬 ติดต่อผ่าน Line</option>
+                      <option value="website">🌐 เว็บไซต์</option>
+                    </select>
+                    <input value={form.online_url} onChange={e => setForm(p => ({ ...p, online_url: e.target.value }))}
+                      placeholder="ลิงก์ / Line ID / URL" className={inputCls} />
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={form.has_delivery}
+                        onChange={e => setForm(p => ({ ...p, has_delivery: e.target.checked }))}
+                        className="w-4 h-4 rounded accent-green-500" />
+                      <span className="text-sm text-gray-700">🛵 มีบริการส่งถึงบ้าน</span>
+                    </label>
+                  </div>
+                )}
               </div>
 
               {/* Buttons */}

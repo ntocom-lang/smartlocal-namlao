@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Luggage, Utensils, BedDouble, ShoppingBag, ChevronRight } from 'lucide-react'
+import { Luggage, Utensils, BedDouble, ShoppingBag, ChevronRight, Zap } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 
@@ -83,6 +83,11 @@ export default function TourismSection() {
                       ? <img src={place.image_url} alt={place.name} className="absolute inset-0 w-full h-full object-cover" />
                       : <div className="absolute inset-0 bg-gray-100 flex items-center justify-center text-2xl">🏛️</div>
                     }
+                    {place.service_type === 'online' && (
+                      <span className="absolute top-1 right-1 flex items-center gap-0.5 bg-green-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                        <Zap size={7} fill="white" strokeWidth={0} /> ออนไลน์
+                      </span>
+                    )}
                   </div>
                   <div className="px-2 py-2.5">
                     <p className="text-xs font-bold text-gray-800 truncate">{place.name}</p>

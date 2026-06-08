@@ -75,11 +75,15 @@ function ImageStrip({ images, active, onSelect }) {
 function DetailSheet({ reg, onClose, onApprove, onReject, acting }) {
   const [imgIdx, setImgIdx] = useState(0)
   const [form, setForm] = useState({
-    name:        reg.business_name,
-    category:    BIZ_TO_CAT[reg.business_type] ?? 'shop',
-    description: reg.description || '',
-    phone:       reg.phone || '',
-    address:     reg.address || '',
+    name:           reg.business_name,
+    category:       BIZ_TO_CAT[reg.business_type] ?? 'shop',
+    description:    reg.description || '',
+    phone:          reg.phone || '',
+    address:        reg.address || '',
+    service_type:   reg.service_type || 'offline',
+    online_service: reg.online_service || 'order',
+    online_url:     reg.online_url || '',
+    has_delivery:   reg.has_delivery ?? false,
   })
   const [confirmReject, setConfirmReject] = useState(false)
 
@@ -218,9 +222,44 @@ function DetailSheet({ reg, onClose, onApprove, onReject, acting }) {
               </div>
 
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">ที่อยู่ / การเดินทาง</label>
+                <label className="text-xs text-gray-500 mb-1 block">ที่อยู่</label>
                 <textarea value={form.address} onChange={set('address')} rows={2}
                   className={`${inputCls} resize-none`} placeholder="ที่อยู่สถานที่" />
+              </div>
+
+              {/* Online toggle */}
+              <div>
+                <label className="text-xs text-gray-500 mb-1.5 block">บริการออนไลน์</label>
+                <div className="flex gap-2 mb-2">
+                  {[{ v: 'offline', label: '📍 ออฟไลน์' }, { v: 'online', label: '⚡ ออนไลน์' }].map(({ v, label }) => (
+                    <button key={v} type="button"
+                      onClick={() => setForm(p => ({ ...p, service_type: v }))}
+                      className="flex-1 py-2 rounded-xl text-sm font-semibold border transition-all"
+                      style={form.service_type === v
+                        ? { backgroundColor: v === 'online' ? '#dcfce7' : '#f1f5f9', color: v === 'online' ? '#15803d' : '#374151', borderColor: v === 'online' ? '#86efac' : '#d1d5db' }
+                        : { backgroundColor: '#f8fafc', color: '#94a3b8', borderColor: '#e2e8f0' }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {form.service_type === 'online' && (
+                  <div className="space-y-2 p-3 bg-green-50 rounded-xl border border-green-100">
+                    <select value={form.online_service} onChange={set('online_service')} className={inputCls}>
+                      <option value="order">🛒 สั่งซื้อสินค้า</option>
+                      <option value="book">📅 จองที่พัก / บริการ</option>
+                      <option value="line">💬 ติดต่อผ่าน Line</option>
+                      <option value="website">🌐 เว็บไซต์</option>
+                    </select>
+                    <input value={form.online_url} onChange={set('online_url')}
+                      placeholder="ลิงก์ / Line ID / URL" className={inputCls} />
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={form.has_delivery}
+                        onChange={e => setForm(p => ({ ...p, has_delivery: e.target.checked }))}
+                        className="w-4 h-4 rounded accent-green-500" />
+                      <span className="text-sm text-gray-700">🛵 มีบริการส่งถึงบ้าน</span>
+                    </label>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -294,6 +333,10 @@ export default function BusinessRegistrationAdmin({ tenant }) {
       ? `https://maps.google.com/?q=${selected.latitude},${selected.longitude}`
       : ''
 
+    const onlineFields = form.service_type === 'online'
+      ? { service_type: 'online', online_service: form.online_service, online_url: form.online_url.trim() || null, has_delivery: form.has_delivery }
+      : { service_type: 'offline', online_service: null, online_url: null, has_delivery: false }
+
     const { error: insertErr } = await supabase.from('tourism_places').insert({
       municipality_id: tenant.id,
       name:        form.name.trim(),
@@ -306,6 +349,7 @@ export default function BusinessRegistrationAdmin({ tenant }) {
       gallery:     gallery.length > 0 ? gallery : [],
       is_active:   true,
       display_order: 999,
+      ...onlineFields,
     })
     if (insertErr) {
       setActing(false)
