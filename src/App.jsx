@@ -97,12 +97,13 @@ function PhoneReminderModal({ onClose }) {
 }
 
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'))
+const StaffDashboard  = lazy(() => import('./pages/StaffDashboard'))
 
 function HomeOrTechRedirect() {
   return <HomePage />
 }
 
-function RequireAuth({ children, adminOnly = false, techOnly = false }) {
+function RequireAuth({ children, adminOnly = false, techOnly = false, staffOnly = false }) {
   const [session, setSession] = useState(undefined)
   const [role, setRole] = useState(null)
   const location = useLocation()
@@ -129,11 +130,16 @@ function RequireAuth({ children, adminOnly = false, techOnly = false }) {
   }
   if (adminOnly && role !== null && role !== 'admin' && role !== 'superadmin' && role !== 'viewer' && role !== 'council') {
     if (role === 'technician') return <Navigate to="/technician" replace />
+    if (role === 'staff')      return <Navigate to="/staff" replace />
     return <Navigate to="/" replace />
   }
   if (adminOnly && role === null) return null
   if (techOnly && role !== null && role !== 'technician') return <Navigate to="/" replace />
   if (techOnly && role === null) return null
+  if (staffOnly && role !== null && role !== 'staff' && role !== 'admin' && role !== 'superadmin') {
+    return <Navigate to="/" replace />
+  }
+  if (staffOnly && role === null) return null
   return children
 }
 
@@ -254,6 +260,18 @@ function AppShell() {
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/admin/login" element={<AdminLogin />} />
+          <Route path="/staff" element={
+            <RequireAuth staffOnly>
+              <Suspense fallback={
+                <div className="flex items-center justify-center min-h-screen">
+                  <div className="w-6 h-6 border-4 border-gray-200 rounded-full animate-spin"
+                       style={{ borderTopColor: '#3b82f6' }} />
+                </div>
+              }>
+                <StaffDashboard />
+              </Suspense>
+            </RequireAuth>
+          } />
           <Route path="/technician" element={
             <RequireAuth techOnly>
               <TechnicianDashboard />
