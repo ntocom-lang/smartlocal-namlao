@@ -482,7 +482,7 @@ export default function MorePage() {
             icon={Store}
             iconBg="bg-amber-50"
             iconColor="text-amber-500"
-            label="ตลาดออนไลน์น้ำเลา"
+            label="เที่ยว กิน พัก ชอบ"
             desc="ร้านค้า OTOP ที่พัก สถานที่ท่องเที่ยวในชุมชน"
             href="/market"
           />
@@ -491,7 +491,7 @@ export default function MorePage() {
             iconBg="bg-orange-50"
             iconColor="text-orange-500"
             label="ลงทะเบียนร้านค้า / ท่องเที่ยว"
-            desc="เที่ยว กิน พัก ชอป — ส่งข้อมูลให้เจ้าหน้าที่อนุมัติ"
+            desc="เที่ยว กิน พัก ชอบ — ส่งข้อมูลให้เจ้าหน้าที่อนุมัติ"
             href="/business-register"
           />
         </Section>

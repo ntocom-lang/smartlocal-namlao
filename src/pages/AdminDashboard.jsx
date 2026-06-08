@@ -3915,7 +3915,7 @@ const TOUR_CATS = [
   { key: 'travel',  label: 'เที่ยว', emoji: '🏛️', color: '#d97706' },
   { key: 'food',    label: 'กิน',    emoji: '🍽️', color: '#10b981' },
   { key: 'stay',    label: 'พัก',    emoji: '🏨', color: '#3b82f6' },
-  { key: 'shop',    label: 'ชอป',   emoji: '🛍️', color: '#ec4899' },
+  { key: 'shop',    label: 'ชอบ',   emoji: '🛍️', color: '#ec4899' },
   { key: 'service', label: 'บริการ', emoji: '🔧', color: '#dc2626' },
 ]
 
@@ -4621,7 +4621,7 @@ export default function AdminDashboard() {
               group: 'จัดการเนื้อหา',
               items: [
                 { key: 'staff',   label: 'รูปผู้บริหาร',   Icon: UserCircle2, color: '#7c3aed', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
-                { key: 'tourism', label: 'เที่ยว กิน พัก ชอป', Icon: Luggage, color: '#d97706', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
+                { key: 'tourism', label: 'เที่ยว กิน พัก ชอบ', Icon: Luggage, color: '#d97706', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
               ],
             },
             {
@@ -4978,7 +4978,7 @@ export default function AdminDashboard() {
                 <span className="text-2xl">🏛️</span>
               </div>
               <div>
-                <p className="text-sm font-bold text-gray-800">เที่ยว กิน พัก ชอป</p>
+                <p className="text-sm font-bold text-gray-800">เที่ยว กิน พัก ชอบ</p>
                 <p className="text-[13px] text-gray-400 mt-0.5">ท่องเที่ยว ร้านค้า บริการ</p>
               </div>
             </button>
@@ -5044,7 +5044,7 @@ export default function AdminDashboard() {
                   { key: 'assignments', Icon: Wrench,      color: '#d97706', bg: '#fef3c7', label: 'ผู้รับผิดชอบ',    desc: 'มอบหมายงานตามประเภทคำร้อง',       show: currentUserRole !== 'council' },
                   { key: 'emergency',   Icon: Phone,       color: '#ef4444', bg: '#fee2e2', label: 'สายด่วนฉุกเฉิน',  desc: 'จัดการรายชื่อและเบอร์ติดต่อ',     show: currentUserRole !== 'viewer' },
                   { key: 'locations',   Icon: MapPin,      color: '#0891b2', bg: '#e0f2fe', label: 'สถานที่เกิดเหตุ', desc: 'จัดการหมู่บ้าน / ตำบลในพื้นที่',  show: currentUserRole !== 'viewer' },
-                  { key: 'tourism',     Icon: Luggage,     color: '#d97706', bg: '#fef3c7', label: 'เที่ยว กิน พัก ชอป', desc: 'ท่องเที่ยว ร้านค้า บริการออนไลน์', show: currentUserRole !== 'viewer' },
+                  { key: 'tourism',     Icon: Luggage,     color: '#d97706', bg: '#fef3c7', label: 'เที่ยว กิน พัก ชอบ', desc: 'ท่องเที่ยว ร้านค้า บริการออนไลน์', show: currentUserRole !== 'viewer' },
                   { key: 'staff',       Icon: UserCircle2, color: '#7c3aed', bg: '#ede9fe', label: 'รูปผู้บริหาร',    desc: 'อัปโหลดรูปนายก/รองนายก/ทีมงาน', show: currentUserRole !== 'viewer' },
                   { key: 'system-settings', Icon: Settings,color: '#3b82f6', bg: '#dbeafe', label: 'ตั้งค่าระบบ',    desc: 'ตั้งค่าชื่อระบบและข้อมูลพื้นฐาน',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'users',       Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', label: 'จัดการผู้ใช้',    desc: 'สิทธิ์การเข้าถึงและบทบาท',        show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },

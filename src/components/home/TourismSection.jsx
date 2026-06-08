@@ -8,7 +8,7 @@ const CATS = [
   { key: 'travel',  label: 'เที่ยว',  Icon: Luggage,    from: '#f59e0b', to: '#d97706', glow: '#f59e0b50', emoji: '🏛️' },
   { key: 'food',    label: 'กิน',     Icon: Utensils,   from: '#22c55e', to: '#15803d', glow: '#22c55e50', emoji: '🍽️' },
   { key: 'stay',    label: 'พัก',     Icon: BedDouble,  from: '#3b82f6', to: '#1d4ed8', glow: '#3b82f650', emoji: '🏨' },
-  { key: 'shop',    label: 'ชอป',    Icon: ShoppingBag, from: '#f472b6', to: '#db2777', glow: '#f472b650', emoji: '🛍️' },
+  { key: 'shop',    label: 'ชอบ',    Icon: ShoppingBag, from: '#f472b6', to: '#db2777', glow: '#f472b650', emoji: '🛍️' },
   { key: 'service', label: 'บริการ',  Icon: Wrench,     from: '#fb923c', to: '#ea580c', glow: '#fb923c50', emoji: '🔧' },
 ]
 
