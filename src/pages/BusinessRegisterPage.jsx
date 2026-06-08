@@ -189,7 +189,7 @@ export default function BusinessRegisterPage() {
         </button>
         <div>
           <h1 className="font-bold text-white text-base leading-tight">ลงทะเบียนร้านค้า / ท่องเที่ยว</h1>
-          <p className="text-white/70 text-xs">Smart Economy · {tenant?.system_name || `${tenant?.name} One Data`}</p>
+          <p className="text-white/70 text-xs">เที่ยว กิน พัก ชอป · {tenant?.system_name || `${tenant?.name} One Data`}</p>
         </div>
       </div>
 
@@ -201,7 +201,7 @@ export default function BusinessRegisterPage() {
         </div>
         <div className="flex-1">
           <h1 className="text-2xl font-bold text-gray-800">ลงทะเบียนร้านค้า / ท่องเที่ยว</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Smart Economy · หลังอนุมัติจะแสดงบนหน้าตลาดออนไลน์น้ำเลา</p>
+          <p className="text-sm text-gray-500 mt-0.5">เที่ยว กิน พัก ชอป · หลังอนุมัติจะแสดงบนหน้าตลาดออนไลน์น้ำเลา</p>
         </div>
         <span className="text-xs font-bold px-3 py-1 rounded-full bg-amber-50 text-amber-700">
           📍 GPS บังคับ

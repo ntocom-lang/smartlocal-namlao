@@ -183,7 +183,7 @@ export default function TourismPage() {
             <ArrowLeft size={20} />
           </button>
           <h1 className="text-base font-bold text-gray-800 flex-1 truncate">
-            สถานที่แนะนำ
+            เที่ยว กิน พัก ชอป
             {showOnline ? ' — ออนไลน์' : activeCat ? ` — ${CATS.find(c => c.key === activeCat)?.label}` : ''}
           </h1>
           <button onClick={() => navigate('/business-register')}
@@ -196,7 +196,7 @@ export default function TourismPage() {
         {/* PC title row */}
         <div className="hidden md:flex items-center justify-between px-6 pt-5 pb-1">
           <div>
-            <h1 className="text-2xl font-bold text-gray-800">สถานที่แนะนำ</h1>
+            <h1 className="text-2xl font-bold text-gray-800">เที่ยว กิน พัก ชอป</h1>
             <p className="text-sm text-gray-400 mt-0.5">ค้นพบสถานที่ ร้านค้า และบริการในพื้นที่ · {places.length} รายการ</p>
           </div>
           <button onClick={() => navigate('/business-register')}

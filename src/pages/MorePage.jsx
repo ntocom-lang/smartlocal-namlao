@@ -474,7 +474,7 @@ export default function MorePage() {
             icon={ClipboardList}
             iconBg="bg-red-50"
             iconColor="text-red-500"
-            label="ยื่นคำร้อง GPS"
+            label="ยื่นคำร้องออนไลน์"
             desc="แจ้งซ่อม / ขอน้ำ / แจ้งเหตุสิ่งแวดล้อม"
             href="/complaint"
           />
@@ -491,7 +491,7 @@ export default function MorePage() {
             iconBg="bg-orange-50"
             iconColor="text-orange-500"
             label="ลงทะเบียนร้านค้า / ท่องเที่ยว"
-            desc="Smart Economy — ส่งข้อมูลให้เจ้าหน้าที่อนุมัติ"
+            desc="เที่ยว กิน พัก ชอป — ส่งข้อมูลให้เจ้าหน้าที่อนุมัติ"
             href="/business-register"
           />
         </Section>
