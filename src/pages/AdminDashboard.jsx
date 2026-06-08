@@ -3946,6 +3946,8 @@ function TourismManager({ tenant }) {
   const [form, setForm]                 = useState(EMPTY_FORM)
   const [saving, setSaving]             = useState(false)
   const [uploadingFor, setUploadingFor] = useState(null)
+  const [mgTab, setMgTab]               = useState('places')
+  const [pendingCount, setPendingCount]  = useState(0)
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -3953,6 +3955,15 @@ function TourismManager({ tenant }) {
     supabase.from('tourism_places').select('*').eq('municipality_id', tenant.id)
       .order('display_order')
       .then(({ data }) => { setPlaces(data ?? []); setLoading(false) })
+  }, [tenant?.id])
+
+  useEffect(() => {
+    if (!tenant?.id) return
+    supabase.from('business_registrations')
+      .select('id', { count: 'exact', head: true })
+      .eq('municipality_id', tenant.id)
+      .eq('status', 'pending')
+      .then(({ count }) => setPendingCount(count ?? 0))
   }, [tenant?.id])
 
   const sheetPlace = sheet && sheet !== 'add' ? places.find(p => p.id === sheet) : null
@@ -4050,16 +4061,33 @@ function TourismManager({ tenant }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="font-bold text-gray-700">จัดการสถานที่แนะนำ</h2>
-        <button onClick={openAdd}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-sm font-semibold"
-          style={{ backgroundColor: 'var(--color-primary)' }}>
-          <Plus size={15} /> เพิ่มรายการใหม่
+      {/* ── Tab bar ── */}
+      <div className="flex items-center gap-1 pb-3 border-b border-gray-100">
+        <button onClick={() => setMgTab('places')}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-semibold rounded-xl transition-colors"
+          style={mgTab === 'places' ? { backgroundColor: 'var(--color-primary)', color: '#fff' } : { color: '#64748b' }}>
+          <Luggage size={14} /> สถานที่ทั้งหมด
         </button>
+        <button onClick={() => setMgTab('requests')}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-semibold rounded-xl transition-colors"
+          style={mgTab === 'requests' ? { backgroundColor: '#d97706', color: '#fff' } : { color: '#64748b' }}>
+          <Store size={14} /> คำขอลงทะเบียน
+          {pendingCount > 0 && (
+            <span className="ml-1 text-[11px] font-bold px-1.5 rounded-full bg-red-500 text-white">{pendingCount}</span>
+          )}
+        </button>
+        {mgTab === 'places' && (
+          <button onClick={openAdd}
+            className="ml-auto flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-sm font-semibold"
+            style={{ backgroundColor: 'var(--color-primary)' }}>
+            <Plus size={15} /> เพิ่มรายการใหม่
+          </button>
+        )}
       </div>
 
-      {loading ? (
+      {mgTab === 'requests' ? (
+        <BusinessRegistrationAdmin tenant={tenant} />
+      ) : loading ? (
         <div className="flex justify-center py-8"><Loader2 className="animate-spin text-gray-300" size={28} /></div>
       ) : places.length === 0 ? (
         <p className="text-gray-400 text-sm text-center py-8">ยังไม่มีรายการ</p>
@@ -4544,8 +4572,7 @@ export default function AdminDashboard() {
               group: 'จัดการเนื้อหา',
               items: [
                 { key: 'staff',   label: 'รูปผู้บริหาร',   Icon: UserCircle2, color: '#7c3aed', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
-                { key: 'tourism',       label: 'สถานที่แนะนำ',     Icon: Luggage, color: '#d97706', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
-                { key: 'biz-register', label: 'คำขอลงทะเบียน', Icon: Store,   color: '#d97706', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
+                { key: 'tourism', label: 'สถานที่แนะนำ', Icon: Luggage, color: '#d97706', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
               ],
             },
             {
@@ -4819,8 +4846,6 @@ export default function AdminDashboard() {
           onNavigate={(page) => setActivePage(page)} />
       ) : activePage === 'tourism' ? (
         <TourismManager tenant={tenant} />
-      ) : activePage === 'biz-register' ? (
-        <BusinessRegistrationAdmin tenant={tenant} />
       ) : activePage === 'system-settings' ? (
         <SystemSettingsAdmin tenant={tenant} onUpdateTenant={(updated) => window.location.reload()} />
       ) : activePage === 'more' ? (
@@ -4851,18 +4876,6 @@ export default function AdminDashboard() {
                 <div>
                   <p className="text-sm font-bold text-gray-800">รายงานโครงการ</p>
                   <p className="text-[13px] text-gray-400 mt-0.5">สรุปตามปีงบประมาณ</p>
-                </div>
-              </button>
-            )}
-            {currentUserRole !== 'viewer' && currentUserRole !== 'council' && (
-              <button onClick={() => setActivePage('biz-register')}
-                className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
-                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#fef3c7' }}>
-                  <Store size={24} style={{ color: '#d97706' }} />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-gray-800">คำขอลงทะเบียน</p>
-                  <p className="text-[13px] text-gray-400 mt-0.5">ธุรกิจ / ท่องเที่ยว</p>
                 </div>
               </button>
             )}

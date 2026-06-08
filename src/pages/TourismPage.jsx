@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Phone, MapPin, Plus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 
@@ -114,13 +114,14 @@ export default function TourismPage() {
             <p className="text-gray-400 text-sm">ยังไม่มีรายการในหมวดนี้</p>
           </div>
         ) : (
+          <>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
             {filtered.map(place => {
               const catObj = CATS.find(c => c.key === place.category)
               return (
                 <button key={place.id} onClick={() => navigate(`/tourism/${place.id}`)}
                      className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 active:scale-[0.98] transition-transform text-left w-full">
-                  <div className="h-36 md:h-48 relative">
+                  <div className="h-36 md:h-44 relative">
                     {place.image_url
                       ? <img src={place.image_url} alt={place.name} className="absolute inset-0 w-full h-full object-cover" />
                       : <div className="absolute inset-0 bg-gray-100 flex items-center justify-center text-3xl">🏛️</div>
@@ -129,16 +130,41 @@ export default function TourismPage() {
                       {catObj?.label ?? place.category}
                     </span>
                   </div>
-                  <div className="p-3">
-                    <p className="text-sm font-bold text-gray-800 leading-tight">{place.name}</p>
+                  <div className="p-3 space-y-1">
+                    <p className="text-sm font-bold text-gray-800 leading-tight line-clamp-1">{place.name}</p>
                     {place.description && (
-                      <p className="text-xs text-gray-500 mt-1 line-clamp-2">{place.description}</p>
+                      <p className="text-xs text-gray-500 line-clamp-2 leading-snug">{place.description}</p>
+                    )}
+                    {place.phone && (
+                      <div className="flex items-center gap-1 pt-0.5">
+                        <Phone size={10} className="text-gray-400 shrink-0" />
+                        <span className="text-[11px] text-gray-500 truncate">{place.phone}</span>
+                      </div>
+                    )}
+                    {place.address && (
+                      <div className="flex items-start gap-1">
+                        <MapPin size={10} className="text-gray-400 shrink-0 mt-0.5" />
+                        <span className="text-[11px] text-gray-400 line-clamp-1">{place.address}</span>
+                      </div>
                     )}
                   </div>
                 </button>
               )
             })}
           </div>
+
+          {/* CTA: ลงทะเบียนสถานที่ */}
+          <button onClick={() => navigate('/business-register')}
+            className="mt-6 w-full flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-4 text-left active:scale-[0.99] transition-transform hover:bg-amber-100">
+            <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
+              <Plus size={20} className="text-amber-600" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-amber-800">มีร้านค้า / สถานที่ท่องเที่ยว?</p>
+              <p className="text-xs text-amber-600 mt-0.5">ลงทะเบียนเพื่อแสดงบนแผนที่และเว็บไซต์ →</p>
+            </div>
+          </button>
+          </>
         )}
       </div>
     </div>
