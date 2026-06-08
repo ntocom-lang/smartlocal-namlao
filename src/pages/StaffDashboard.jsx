@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Inbox, FileText, CheckSquare, BarChart2, LogOut,
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, AlignLeft, Calendar, Hash, RefreshCw,
-  Printer,
+  Printer, PenLine,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
@@ -31,6 +31,16 @@ const MODULES = [
   { key: 'docs',    label: 'เอกสาร',    Icon: FileText,    color: '#8b5cf6' },
   { key: 'approve', label: 'อนุมัติ',   Icon: CheckSquare, color: '#10b981' },
   { key: 'report',  label: 'รายงาน',    Icon: BarChart2,   color: '#f59e0b' },
+]
+
+const APPROVAL_TYPES = [
+  { value: 'expense_claim',  label: '💰 เบิกจ่ายค่าใช้จ่าย',        requiresSign: true  },
+  { value: 'budget_request', label: '📊 ขออนุมัติงบประมาณ',          requiresSign: true  },
+  { value: 'procurement',    label: '🛒 จัดซื้อจัดจ้าง',             requiresSign: true  },
+  { value: 'leave_request',  label: '📅 คำขอลา',                     requiresSign: false },
+  { value: 'overtime',       label: '⏰ ขออนุมัติทำงานล่วงเวลา',      requiresSign: false },
+  { value: 'other_quick',    label: '📝 อื่นๆ (ไม่ต้องลงนาม)',        requiresSign: false },
+  { value: 'other_sign',     label: '✍️ อื่นๆ (ต้องลงนาม)',           requiresSign: true  },
 ]
 
 const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
@@ -697,6 +707,510 @@ function DocsModule({ tenant }) {
   )
 }
 
+// ─── Signature Pad ────────────────────────────────────────────────────────────
+
+function SignaturePad({ onConfirm, onCancel }) {
+  const canvasRef = useRef(null)
+  const [isDrawing, setIsDrawing] = useState(false)
+  const [hasContent, setHasContent] = useState(false)
+
+  function getPos(e, canvas) {
+    const rect = canvas.getBoundingClientRect()
+    const src  = e.touches ? e.touches[0] : e
+    return {
+      x: (src.clientX - rect.left) * (canvas.width  / rect.width),
+      y: (src.clientY - rect.top)  * (canvas.height / rect.height),
+    }
+  }
+  function startDraw(e) {
+    e.preventDefault()
+    const canvas = canvasRef.current
+    const pos = getPos(e, canvas)
+    const ctx = canvas.getContext('2d')
+    ctx.beginPath()
+    ctx.moveTo(pos.x, pos.y)
+    setIsDrawing(true)
+    setHasContent(true)
+  }
+  function continueDraw(e) {
+    if (!isDrawing) return
+    e.preventDefault()
+    const canvas = canvasRef.current
+    const ctx = canvas.getContext('2d')
+    const pos = getPos(e, canvas)
+    ctx.lineTo(pos.x, pos.y)
+    ctx.strokeStyle = '#0f172a'
+    ctx.lineWidth = 2.5
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    ctx.stroke()
+  }
+  function endDraw() { setIsDrawing(false) }
+  function clearPad() {
+    canvasRef.current.getContext('2d').clearRect(0, 0, 600, 180)
+    setHasContent(false)
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs font-semibold text-gray-500 text-center">ลงลายมือชื่อในกรอบด้านล่าง</p>
+      <div className="border-2 border-dashed border-gray-300 rounded-2xl overflow-hidden relative bg-white">
+        <canvas ref={canvasRef} width={600} height={180}
+          className="w-full touch-none cursor-crosshair block"
+          onMouseDown={startDraw} onMouseMove={continueDraw} onMouseUp={endDraw} onMouseLeave={endDraw}
+          onTouchStart={startDraw} onTouchMove={continueDraw} onTouchEnd={endDraw} />
+        {!hasContent && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <p className="text-xs text-gray-400">ลากเพื่อเขียนลายเซ็น</p>
+          </div>
+        )}
+      </div>
+      <div className="flex gap-2">
+        <button onClick={clearPad}
+          className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">
+          ล้าง
+        </button>
+        <button onClick={onCancel}
+          className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors">
+          ยกเลิก
+        </button>
+        <button onClick={() => onConfirm(canvasRef.current.toDataURL('image/png'))} disabled={!hasContent}
+          className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 transition-opacity flex items-center justify-center gap-1.5"
+          style={{ backgroundColor: '#10b981' }}>
+          <PenLine size={14} /> ยืนยันลงนาม
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Approval Card ────────────────────────────────────────────────────────────
+
+function ApprovalCard({ req, onClick }) {
+  const type = APPROVAL_TYPES.find(t => t.value === req.request_type)
+  const emoji = type?.label.match(/^(\S+)/)?.[1] ?? '📋'
+  const typeLabel = type?.label.replace(/^\S+\s*/, '') ?? req.request_type
+  const ASTATUS = {
+    pending:  { label: 'รออนุมัติ',   color: '#f59e0b', bg: '#fef3c7' },
+    approved: { label: 'อนุมัติแล้ว', color: '#10b981', bg: '#d1fae5' },
+    rejected: { label: 'ไม่อนุมัติ',  color: '#ef4444', bg: '#fee2e2' },
+  }
+  const s = ASTATUS[req.status] ?? ASTATUS.pending
+  return (
+    <button onClick={onClick}
+      className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-4 text-left hover:shadow-md active:scale-[0.99] transition-all flex items-start gap-3">
+      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-emerald-50 text-xl">{emoji}</div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-start justify-between gap-2 mb-0.5">
+          <p className="text-sm font-bold text-gray-800 truncate">{req.title}</p>
+          <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap"
+            style={{ backgroundColor: s.bg, color: s.color }}>{s.label}</span>
+        </div>
+        <p className="text-xs text-gray-500 truncate">{typeLabel}</p>
+        {req.amount != null && (
+          <p className="text-xs font-semibold text-emerald-600 mt-0.5">
+            {Number(req.amount).toLocaleString()} บาท
+          </p>
+        )}
+        <div className="flex items-center gap-2 mt-1.5">
+          {req.requires_signature && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-600">
+              <PenLine size={9} /> ต้องลงนาม
+            </span>
+          )}
+          <p className="text-[11px] text-gray-300">{dateTH(req.created_at)}</p>
+        </div>
+      </div>
+      <ChevronRight size={16} className="text-gray-300 shrink-0 mt-1" />
+    </button>
+  )
+}
+
+// ─── Approve Sheet ────────────────────────────────────────────────────────────
+
+function ApproveSheet({ req, approverProfile, onClose, onApproved }) {
+  const [note, setNote]           = useState('')
+  const [step, setStep]           = useState('confirm') // 'confirm' | 'sign'
+  const [acting, setActing]       = useState(false)
+  const [showReject, setShowReject] = useState(false)
+  const [rejectReason, setRejectReason] = useState('')
+
+  const type = APPROVAL_TYPES.find(t => t.value === req.request_type)
+  const isActive = req.status === 'pending'
+
+  async function doApprove(signatureData) {
+    setActing(true)
+    const now = new Date().toISOString()
+    await supabase.from('approval_requests').update({
+      status:         'approved',
+      approved_by:    approverProfile?.id   ?? null,
+      approver_name:  approverProfile?.full_name ?? null,
+      approved_at:    now,
+      approver_note:  note || null,
+      signature_data: signatureData ?? null,
+      updated_at:     now,
+    }).eq('id', req.id)
+    setActing(false)
+    onApproved(req.id, 'approved')
+    onClose()
+  }
+
+  async function doReject() {
+    if (!rejectReason.trim()) return
+    setActing(true)
+    const now = new Date().toISOString()
+    await supabase.from('approval_requests').update({
+      status:        'rejected',
+      approved_by:   approverProfile?.id ?? null,
+      approver_name: approverProfile?.full_name ?? null,
+      approved_at:   now,
+      approver_note: rejectReason,
+      updated_at:    now,
+    }).eq('id', req.id)
+    setActing(false)
+    onApproved(req.id, 'rejected')
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-end md:items-center justify-center">
+      <div className="bg-white w-full md:max-w-xl md:rounded-3xl rounded-t-3xl max-h-[93vh] flex flex-col overflow-hidden shadow-2xl">
+
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 shrink-0">
+          <button onClick={onClose} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500"><X size={18} /></button>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-gray-800 truncate">{req.title}</p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="text-xs text-gray-400 truncate">{type?.label ?? req.request_type}</span>
+              {req.requires_signature && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-600 flex items-center gap-1 shrink-0">
+                  <PenLine size={9} /> ต้องลงนาม
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          <div className="bg-gray-50 rounded-2xl p-4 space-y-2.5">
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">รายละเอียดคำขอ</p>
+            {req.description && <InfoRow icon={<AlignLeft size={14} />} label="รายละเอียด"    value={req.description} />}
+            {req.amount != null && <InfoRow icon={<Hash size={14} />}   label="จำนวนเงิน"   value={`${Number(req.amount).toLocaleString()} บาท`} />}
+            {req.department && <InfoRow icon={<User size={14} />}       label="หน่วยงาน"    value={req.department} />}
+            {req.requester_name && <InfoRow icon={<User size={14} />}   label="ผู้ขออนุมัติ" value={req.requester_name} />}
+            <InfoRow icon={<Calendar size={14} />} label="วันที่" value={dateTH(req.created_at)} />
+          </div>
+
+          {isActive && step === 'confirm' && !showReject && (
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1.5 block">บันทึกผู้อนุมัติ</label>
+              <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+                placeholder="เงื่อนไข หมายเหตุ หรือข้อสังเกต..."
+                className={inputCls + ' resize-none'} />
+            </div>
+          )}
+
+          {step === 'sign' && (
+            <SignaturePad
+              onConfirm={doApprove}
+              onCancel={() => setStep('confirm')} />
+          )}
+
+          {isActive && showReject && (
+            <div className="bg-red-50 border border-red-200 rounded-2xl p-4 space-y-3">
+              <p className="text-sm font-bold text-red-700">ระบุเหตุผลที่ไม่อนุมัติ</p>
+              <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={2}
+                placeholder="งบเกินวงเงิน / เอกสารไม่ครบ / อื่นๆ..."
+                className="w-full border border-red-200 rounded-xl px-3 py-2 text-sm text-gray-900 bg-white resize-none focus:outline-none" />
+              <div className="flex gap-2">
+                <button onClick={() => setShowReject(false)}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-600">
+                  ยกเลิก
+                </button>
+                <button onClick={doReject} disabled={acting || !rejectReason.trim()}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-red-500 text-white disabled:opacity-50">
+                  {acting ? <Loader2 size={14} className="animate-spin mx-auto" /> : 'ยืนยัน'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!isActive && req.approver_note && (
+            <div className={`rounded-xl p-3.5 ${req.status === 'rejected' ? 'bg-red-50' : 'bg-emerald-50'}`}>
+              <p className="text-[11px] font-bold uppercase tracking-wide mb-1"
+                style={{ color: req.status === 'rejected' ? '#dc2626' : '#059669' }}>
+                {req.status === 'rejected' ? 'เหตุผลที่ไม่อนุมัติ' : 'บันทึกผู้อนุมัติ'}
+              </p>
+              <p className="text-sm leading-relaxed"
+                style={{ color: req.status === 'rejected' ? '#b91c1c' : '#047857' }}>
+                {req.approver_note}
+              </p>
+              {req.approver_name && (
+                <p className="text-xs mt-1.5" style={{ color: req.status === 'rejected' ? '#ef4444' : '#10b981' }}>
+                  โดย {req.approver_name} · {dateTH(req.approved_at)}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Show signature image if signed */}
+          {req.signature_data && (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 mb-2">ลายมือชื่อผู้อนุมัติ</p>
+              <div className="border border-gray-200 rounded-xl overflow-hidden bg-gray-50 p-2">
+                <img src={req.signature_data} alt="ลายเซ็น" className="max-h-24 mx-auto" />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {isActive && step === 'confirm' && !showReject && (
+          <div className="px-4 pb-6 pt-3 border-t border-gray-100 space-y-2 shrink-0">
+            {req.requires_signature ? (
+              <button onClick={() => setStep('sign')}
+                className="w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 text-sm active:scale-[0.98] transition-all"
+                style={{ backgroundColor: '#10b981' }}>
+                <PenLine size={16} /> ลงนามอนุมัติ
+              </button>
+            ) : (
+              <button onClick={() => doApprove(null)} disabled={acting}
+                className="w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 text-sm active:scale-[0.98] transition-all disabled:opacity-50"
+                style={{ backgroundColor: '#10b981' }}>
+                {acting ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                อนุมัติ
+              </button>
+            )}
+            <button onClick={() => setShowReject(true)}
+              className="w-full py-2.5 rounded-2xl font-semibold text-red-500 bg-red-50 hover:bg-red-100 text-sm transition-colors flex items-center justify-center gap-2">
+              <XCircle size={16} /> ไม่อนุมัติ
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── New Approval Sheet ───────────────────────────────────────────────────────
+
+const EMPTY_APPR = { request_type: 'expense_claim', title: '', description: '', amount: '', department: '' }
+
+function NewApprovalSheet({ tenant, staffProfile, onClose, onCreated }) {
+  const [form, setForm] = useState(EMPTY_APPR)
+  const [saving, setSaving] = useState(false)
+  const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }))
+  const reqType = APPROVAL_TYPES.find(t => t.value === form.request_type)
+
+  async function handleCreate() {
+    if (!form.title.trim()) return
+    setSaving(true)
+    const { data } = await supabase.from('approval_requests').insert({
+      municipality_id:    tenant.id,
+      request_type:       form.request_type,
+      requires_signature: reqType?.requiresSign ?? false,
+      title:              form.title.trim(),
+      description:        form.description.trim() || null,
+      amount:             form.amount ? Number(form.amount) : null,
+      department:         form.department.trim() || null,
+      created_by:         staffProfile?.id ?? null,
+      requester_name:     staffProfile?.full_name ?? null,
+      status:             'pending',
+    }).select().single()
+    setSaving(false)
+    if (data) { onCreated(data); onClose() }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-end md:items-center justify-center">
+      <div className="bg-white w-full md:max-w-xl md:rounded-3xl rounded-t-3xl max-h-[93vh] flex flex-col overflow-hidden shadow-2xl">
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 shrink-0">
+          <button onClick={onClose} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500"><X size={18} /></button>
+          <p className="font-bold text-gray-800">สร้างคำขออนุมัติ</p>
+        </div>
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+          <div>
+            <label className="text-xs font-semibold text-gray-500 mb-1 block">ประเภทคำขอ</label>
+            <select value={form.request_type} onChange={set('request_type')} className={inputCls}>
+              {APPROVAL_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </div>
+          {reqType && (
+            <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold ${reqType.requiresSign ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
+              {reqType.requiresSign
+                ? <><PenLine size={12} /> ต้องผู้บริหารลงนาม</>
+                : <><CheckCircle2 size={12} /> กดอนุมัติได้เลย — ไม่ต้องลงนาม</>}
+            </div>
+          )}
+          <div>
+            <label className="text-xs font-semibold text-gray-500 mb-1 block">หัวข้อ / เรื่อง *</label>
+            <input type="text" value={form.title} onChange={set('title')}
+              placeholder="เช่น เบิกค่าน้ำมัน เดือนมิถุนายน 2568" className={inputCls} />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-500 mb-1 block">รายละเอียด</label>
+            <textarea value={form.description} onChange={set('description')} rows={3}
+              placeholder="รายละเอียดเพิ่มเติม รายการ เหตุผล..." className={inputCls + ' resize-none'} />
+          </div>
+          {reqType?.requiresSign && (
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1 block">จำนวนเงิน (บาท)</label>
+              <input type="number" min="0" value={form.amount} onChange={set('amount')}
+                placeholder="0.00" className={inputCls} />
+            </div>
+          )}
+          <div>
+            <label className="text-xs font-semibold text-gray-500 mb-1 block">กอง / หน่วยงาน</label>
+            <input type="text" value={form.department} onChange={set('department')}
+              placeholder="กองคลัง, กองช่าง, สำนักปลัด..." className={inputCls} />
+          </div>
+        </div>
+        <div className="px-4 pb-6 pt-3 border-t border-gray-100 shrink-0">
+          <button onClick={handleCreate} disabled={saving || !form.title.trim()}
+            className="w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50 text-sm active:scale-[0.98] transition-all"
+            style={{ backgroundColor: '#10b981' }}>
+            {saving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+            สร้างคำขออนุมัติ
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Approve Module ───────────────────────────────────────────────────────────
+
+function ApproveModule({ tenant, staffProfile }) {
+  const [requests, setRequests]     = useState([])
+  const [loading, setLoading]       = useState(true)
+  const [filterStatus, setFilterStatus] = useState('pending')
+  const [selected, setSelected]     = useState(null)
+  const [showAdd, setShowAdd]       = useState(false)
+
+  useEffect(() => {
+    if (!tenant?.id) return
+    setLoading(true)
+    supabase.from('approval_requests')
+      .select('*')
+      .eq('municipality_id', tenant.id)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => { setRequests(data ?? []); setLoading(false) })
+  }, [tenant?.id])
+
+  function handleApproved(id, newStatus) {
+    setRequests(prev => prev.map(r => r.id === id ? { ...r, status: newStatus } : r))
+  }
+
+  const TABS = [
+    { key: 'pending',  label: 'รออนุมัติ' },
+    { key: 'approved', label: 'อนุมัติแล้ว' },
+    { key: 'all',      label: 'ทั้งหมด' },
+  ]
+  const counts = {
+    pending:  requests.filter(r => r.status === 'pending').length,
+    approved: requests.filter(r => r.status === 'approved').length,
+    all:      requests.length,
+  }
+  const filtered      = filterStatus === 'all' ? requests : requests.filter(r => r.status === filterStatus)
+  const pendingList   = filtered.filter(r => r.status === 'pending')
+  const needsSign     = pendingList.filter(r => r.requires_signature)
+  const quickApprove  = pendingList.filter(r => !r.requires_signature)
+  const donePending   = filtered.filter(r => r.status !== 'pending')
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-gray-800">อนุมัติ</h2>
+          <p className="text-xs text-gray-400 mt-0.5">คำขออนุมัติและลงนาม</p>
+        </div>
+        <button onClick={() => setShowAdd(true)}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-white shadow-sm active:scale-95 transition-all"
+          style={{ backgroundColor: '#10b981' }}>
+          <Plus size={14} /> สร้างคำขอ
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-2">
+        {TABS.map(t => (
+          <button key={t.key} onClick={() => setFilterStatus(t.key)}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-all"
+            style={filterStatus === t.key
+              ? { backgroundColor: '#10b981', color: '#fff' }
+              : { backgroundColor: '#f1f5f9', color: '#64748b' }}>
+            {t.label}
+            {counts[t.key] > 0 && (
+              <span className="text-[10px] font-bold px-1 rounded-full"
+                style={filterStatus === t.key
+                  ? { backgroundColor: 'rgba(255,255,255,0.25)', color: '#fff' }
+                  : { backgroundColor: '#e2e8f0', color: '#64748b' }}>
+                {counts[t.key]}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-16">
+          <Loader2 size={28} className="animate-spin text-gray-200" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+          <CheckSquare size={44} className="mb-3 opacity-20" />
+          <p className="text-sm font-semibold text-gray-400">ไม่มีคำขออนุมัติ</p>
+          <p className="text-xs text-gray-300 mt-1">กด "+ สร้างคำขอ" เพื่อเพิ่มรายการ</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {filterStatus === 'pending' && needsSign.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 px-1">
+                <PenLine size={13} className="text-amber-500" />
+                <p className="text-xs font-bold text-amber-600">ต้องลงนาม ({needsSign.length})</p>
+              </div>
+              {needsSign.map(req => (
+                <ApprovalCard key={req.id} req={req} onClick={() => setSelected(req)} />
+              ))}
+            </div>
+          )}
+          {filterStatus === 'pending' && quickApprove.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 px-1">
+                <CheckCircle2 size={13} className="text-emerald-500" />
+                <p className="text-xs font-bold text-emerald-600">กดอนุมัติได้เลย ({quickApprove.length})</p>
+              </div>
+              {quickApprove.map(req => (
+                <ApprovalCard key={req.id} req={req} onClick={() => setSelected(req)} />
+              ))}
+            </div>
+          )}
+          {filterStatus !== 'pending' && (
+            <div className="space-y-2">
+              {filtered.map(req => <ApprovalCard key={req.id} req={req} onClick={() => setSelected(req)} />)}
+            </div>
+          )}
+          {filterStatus === 'pending' && donePending.length > 0 && (
+            <div className="space-y-2">
+              {donePending.map(req => <ApprovalCard key={req.id} req={req} onClick={() => setSelected(req)} />)}
+            </div>
+          )}
+        </div>
+      )}
+
+      {selected && (
+        <ApproveSheet req={selected} approverProfile={staffProfile}
+          onClose={() => setSelected(null)} onApproved={handleApproved} />
+      )}
+      {showAdd && (
+        <NewApprovalSheet tenant={tenant} staffProfile={staffProfile}
+          onClose={() => setShowAdd(false)}
+          onCreated={r => setRequests(prev => [r, ...prev])} />
+      )}
+    </div>
+  )
+}
+
 // ─── Report Module ────────────────────────────────────────────────────────────
 
 function ReportModule({ tenant }) {
@@ -973,7 +1487,7 @@ export default function StaffDashboard() {
         <main className="flex-1 overflow-y-auto px-4 md:px-6 py-5 pb-24 md:pb-6">
           {activeModule === 'inbox'   && <InboxModule tenant={tenant} staffId={profile?.id} />}
           {activeModule === 'docs'    && <DocsModule tenant={tenant} staffId={profile?.id} />}
-          {activeModule === 'approve' && <Placeholder title="อนุมัติ"          desc="Workflow ลงนามสำหรับผู้บริหาร"   Icon={CheckSquare} />}
+          {activeModule === 'approve' && <ApproveModule tenant={tenant} staffProfile={profile} />}
           {activeModule === 'report'  && <ReportModule tenant={tenant} />}
         </main>
 
