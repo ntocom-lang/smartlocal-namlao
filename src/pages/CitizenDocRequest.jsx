@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, FileText, CheckCircle2, Loader2, Copy, Check, ChevronRight } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import { notifyTelegram } from '../lib/notifyTelegram'
 
 const DOC_TYPES = [
   {
@@ -92,7 +93,12 @@ export default function CitizenDocRequest() {
       user_id:           session?.user?.id ?? null,
     }).select().single()
     setSaving(false)
-    if (data) setDone({ ref: data.id.slice(0, 8).toUpperCase() })
+    if (data) {
+      notifyTelegram(tenant?.telegram_group_id,
+        `📄 <b>คำขอเอกสารใหม่</b>\nประเภท: ${selected.label}\nผู้ขอ: ${form.requester_name.trim()}\nเบอร์: ${form.requester_phone?.trim() || '-'}`
+      )
+      setDone({ ref: data.id.slice(0, 8).toUpperCase() })
+    }
   }
 
   if (session === undefined) return null

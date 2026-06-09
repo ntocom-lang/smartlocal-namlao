@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
+import { notifyTelegram } from '../../lib/notifyTelegram'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const STATUS = {
@@ -819,6 +820,11 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
         prev.map((c) => c.id === id
           ? { ...c, status: nextStatus, ...(workPhotos.length > 0 ? { work_photos: workPhotos } : {}) }
           : c)
+      )
+      const c = complaints.find(x => x.id === id)
+      const catLabel = CATEGORY_LABEL[c?.category] ?? c?.category ?? ''
+      notifyTelegram(tenant?.telegram_group_id,
+        `🔄 <b>อัปเดตสถานะคำร้อง</b>\nประเภท: ${catLabel}\nสถานะ: ${STATUS[nextStatus]?.label ?? nextStatus}${techNote ? `\nหมายเหตุ: ${techNote}` : ''}`
       )
     }
     setUpdating(null)

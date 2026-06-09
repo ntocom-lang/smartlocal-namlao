@@ -5,6 +5,7 @@ import {
   Loader2, CheckCircle2, ArrowLeft, Send, Paperclip, X, Image, User,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { notifyTelegram } from '../lib/notifyTelegram'
 import { useTenant } from '../contexts/TenantContext'
 import MapPicker from '../components/MapPicker'
 
@@ -340,6 +341,10 @@ export default function CitizenForm() {
         url: '/admin',
       },
     }).catch(() => {})
+
+    notifyTelegram(tenant.telegram_group_id,
+      `📋 <b>คำร้องใหม่</b>\nประเภท: ${catLabel}\nผู้แจ้ง: ${form.reporter_name.trim()}\nเบอร์: ${form.phone.trim()}\nรายละเอียด: ${form.detail.trim().slice(0, 120)}`
+    )
 
     setSubmitting(false)
     setSuccess(true)

@@ -15,6 +15,7 @@ import ReportManager from '../components/admin/ReportManager'
 import DocumentArchive from '../components/admin/DocumentArchive'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import { notifyTelegram } from '../lib/notifyTelegram'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -425,6 +426,10 @@ function InboxModule({ tenant, staffId }) {
     setRequests(prev => prev.map(r =>
       r.id === id ? { ...r, status: newStatus, staff_notes: staffNote || null } : r
     ))
+    const req = requests.find(r => r.id === id)
+    notifyTelegram(tenant?.telegram_group_id,
+      `🔄 <b>อัปเดตสถานะคำขอเอกสาร</b>\nประเภท: ${req?.document_type ?? ''}\nผู้ขอ: ${req?.requester_name ?? ''}\nสถานะ: ${STATUS[newStatus]?.label ?? newStatus}${staffNote ? `\nหมายเหตุ: ${staffNote}` : ''}`
+    )
     setActing(false)
     setSelected(null)
   }
@@ -1646,6 +1651,12 @@ export default function StaffDashboard() {
   const navigate = useNavigate()
   const { tenant } = useTenant()
   const [activeModule, setActiveModule] = useState('inbox')
+
+  const enabledKeys = tenant?.enabled_modules ?? MODULES.map(m => m.key)
+  const visibleGroups = MODULE_GROUPS
+    .map(g => ({ ...g, items: g.items.filter(m => enabledKeys.includes(m.key)) }))
+    .filter(g => g.items.length > 0)
+  const visibleModules = visibleGroups.flatMap(g => g.items)
   const [profile, setProfile]           = useState(null)
   const [pendingCount, setPendingCount] = useState(0)
 
@@ -1706,7 +1717,7 @@ export default function StaffDashboard() {
             <Home size={16} strokeWidth={1.5} style={{ color: '#94a3b8' }} />
             <span className="flex-1 text-left text-xs">หน้าแรกแอป</span>
           </button>
-          {MODULE_GROUPS.map(({ group, items }) => (
+          {visibleGroups.map(({ group, items }) => (
             <div key={group} className="mb-4">
               <p className="px-3 mb-1 text-[9px] font-bold uppercase tracking-widest text-gray-400">{group}</p>
               <div className="space-y-0.5">
@@ -1777,7 +1788,7 @@ export default function StaffDashboard() {
         <div className="hidden md:flex items-center justify-between px-6 py-4 bg-white border-b border-gray-100 shrink-0">
           <div>
             <h1 className="text-base font-bold text-gray-800">
-              {MODULES.find(m => m.key === activeModule)?.label}
+              {visibleModules.find(m => m.key === activeModule)?.label}
             </h1>
             {profile && (
               <p className="text-xs text-gray-400 mt-0.5">
@@ -1804,7 +1815,7 @@ export default function StaffDashboard() {
         {/* Mobile bottom nav — horizontal scroll, 72px per item */}
         <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 shadow-lg z-20 safe-bottom">
           <div className="flex overflow-x-auto" style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
-            {MODULES.map(({ key, label, Icon, color }) => {
+            {visibleModules.map(({ key, label, Icon, color }) => {
               const isActive = activeModule === key
               const badge    = key === 'inbox' && pendingCount > 0 ? pendingCount : null
               return (
