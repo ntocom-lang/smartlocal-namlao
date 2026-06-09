@@ -72,10 +72,10 @@ export default function HeroBanner() {
               )}
               <div className="flex flex-col justify-center">
                 <h1 className="text-2xl md:text-4xl font-extrabold text-gray-800 tracking-tight leading-tight mb-1 md:mb-2" style={{ color: 'var(--color-primary-dark)' }}>
-                  {tenant?.system_name || `${tenant?.name} One Data`}
+                  E-Service
                 </h1>
                 <p className="text-xs md:text-sm text-gray-500 font-medium leading-relaxed">
-                  ระบบจัดการข้อมูล เพื่อการพัฒนา<br className="hidden md:block" /> {tenant?.name}อย่างยั่งยืน
+                  ระบบยื่นคำร้องออนไลน์ ตลอด 24 ชั่วโมง
                 </p>
               </div>
             </div>
