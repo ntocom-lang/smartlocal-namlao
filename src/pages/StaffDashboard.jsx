@@ -4,7 +4,7 @@ import {
   Inbox, FileText, CheckSquare, BarChart2, LogOut,
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, AlignLeft, Calendar, Hash, RefreshCw,
-  Printer, PenLine, Search, Download, Wrench, Home, CalendarDays, TrendingUp,
+  Printer, PenLine, Search, Download, Wrench, Home, CalendarDays, TrendingUp, Archive,
 } from 'lucide-react'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 import CivilProjectReport from '../components/admin/CivilProjectReport'
@@ -12,6 +12,7 @@ import MapDashboardAdmin from '../components/admin/MapDashboardAdmin'
 import EventsManager from '../components/admin/EventsManager'
 import ComplaintsManager from '../components/admin/ComplaintsManager'
 import ReportManager from '../components/admin/ReportManager'
+import DocumentArchive from '../components/admin/DocumentArchive'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 
@@ -37,7 +38,7 @@ const MODULE_GROUPS = [
     group: 'บริการประชาชน',
     items: [
       { key: 'inbox',      label: 'กล่องงาน', Icon: Inbox,        color: '#3b82f6' },
-      { key: 'docs',       label: 'เอกสาร',   Icon: FileText,     color: '#8b5cf6' },
+      { key: 'docs',       label: 'คำขอเอกสาร',   Icon: FileText,     color: '#8b5cf6' },
       { key: 'complaints', label: 'คำร้อง',   Icon: BarChart2,    color: '#ef4444' },
     ],
   },
@@ -52,8 +53,9 @@ const MODULE_GROUPS = [
   {
     group: 'ข้อมูลและรายงาน',
     items: [
-      { key: 'map',    label: 'แผนที่',  Icon: MapPin,    color: '#0891b2' },
-      { key: 'report', label: 'รายงาน', Icon: TrendingUp, color: '#f59e0b' },
+      { key: 'docs-archive', label: 'คลังเอกสาร', Icon: Archive,    color: '#0f766e' },
+      { key: 'map',          label: 'แผนที่',      Icon: MapPin,    color: '#0891b2' },
+      { key: 'report',       label: 'รายงาน',     Icon: TrendingUp, color: '#f59e0b' },
     ],
   },
 ]
@@ -1795,6 +1797,7 @@ export default function StaffDashboard() {
           {activeModule === 'projects'   && <CivilProjectAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
           {activeModule === 'map'        && <MapDashboardAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} onNavigate={() => {}} />}
           {activeModule === 'report'     && <StaffReportWrapper tenant={tenant} />}
+          {activeModule === 'docs-archive' && <DocumentArchive tenant={tenant} profile={profile} />}
 
         </main>
 

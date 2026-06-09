@@ -138,7 +138,7 @@ function RequireAuth({ children, adminOnly = false, techOnly = false, staffOnly 
   if (adminOnly && role === null) return null
   if (techOnly && role !== null && role !== 'technician') return <Navigate to="/" replace />
   if (techOnly && role === null) return null
-  if (staffOnly && role !== null && role !== 'staff' && role !== 'admin' && role !== 'superadmin') {
+  if (staffOnly && role !== null && !['staff', 'admin', 'superadmin', 'viewer', 'technician'].includes(role)) {
     return <Navigate to="/" replace />
   }
   if (staffOnly && role === null) return null
