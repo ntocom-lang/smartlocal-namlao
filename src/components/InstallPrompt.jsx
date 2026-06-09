@@ -105,42 +105,23 @@ export default function InstallPrompt() {
   return (
     <>
       {showGuide && <IOSGuide onClose={() => setShowGuide(false)} />}
-      <div className="md:hidden fixed bottom-20 left-4 right-4 z-50 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden"
-           style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.15)' }}>
-        <div className="flex items-center justify-between px-4 pt-4 pb-2">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0"
-                 style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
-              {iosMode ? <PlusSquare size={22} className="text-white" /> : <Download size={22} className="text-white" />}
-            </div>
-            <div>
-              <p className="text-base font-bold text-gray-800">
-                {iosMode ? 'เพิ่มไปยังหน้าจอโฮม' : 'ติดตั้งแอปพลิเคชัน'}
-              </p>
-              <p className="text-xs text-gray-400">
-                {iosMode ? 'ใช้งานได้เหมือนแอปจริง ไม่ต้องเปิดเบราว์เซอร์' : 'เข้าถึงได้รวดเร็วขึ้น ไม่ต้องเปิดเบราว์เซอร์'}
-              </p>
-            </div>
-          </div>
-          <button onClick={dismiss} className="shrink-0 p-1 text-gray-300 hover:text-gray-500">
-            <X size={18} />
-          </button>
+      <div className="md:hidden fixed bottom-20 left-4 right-4 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 px-3 py-2.5 flex items-center gap-2.5"
+           style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.12)' }}>
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+             style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
+          {iosMode ? <PlusSquare size={18} className="text-white" /> : <Download size={18} className="text-white" />}
         </div>
-        <div className="px-4 pb-4 pt-2">
-          {iosMode ? (
-            <button onClick={() => setShowGuide(true)}
-              className="w-full py-3.5 rounded-xl text-base font-bold text-white active:scale-95 transition-all"
-              style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
-              ดูวิธีเพิ่มในหน้าจอโฮม
-            </button>
-          ) : (
-            <button onClick={install}
-              className="w-full py-3.5 rounded-xl text-base font-bold text-white active:scale-95 transition-all"
-              style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
-              ติดตั้งเลย
-            </button>
-          )}
-        </div>
+        <p className="flex-1 text-xs font-medium text-gray-700 leading-snug">
+          {iosMode ? 'เพิ่มไปยังหน้าจอโฮม ใช้งานได้เหมือนแอปจริง' : 'ติดตั้งแอป · เข้าถึงได้รวดเร็วขึ้น'}
+        </p>
+        <button onClick={iosMode ? () => setShowGuide(true) : install}
+          className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold text-white active:scale-95 transition-all"
+          style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
+          {iosMode ? 'ดูวิธี' : 'ติดตั้ง'}
+        </button>
+        <button onClick={dismiss} className="shrink-0 p-1 text-gray-300 hover:text-gray-500">
+          <X size={16} />
+        </button>
       </div>
     </>
   )
