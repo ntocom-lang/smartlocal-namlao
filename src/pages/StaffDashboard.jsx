@@ -4,7 +4,7 @@ import {
   Inbox, FileText, CheckSquare, BarChart2, LogOut,
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, AlignLeft, Calendar, Hash, RefreshCw,
-  Printer, PenLine, Search, Download, Wrench, Home, CalendarDays, TrendingUp, Archive,
+  Printer, PenLine, Search, Download, Wrench, Home, CalendarDays, TrendingUp, Archive, Images,
 } from 'lucide-react'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 import CivilProjectReport from '../components/admin/CivilProjectReport'
@@ -54,9 +54,10 @@ const MODULE_GROUPS = [
   {
     group: 'ข้อมูลและรายงาน',
     items: [
-      { key: 'docs-archive', label: 'คลังเอกสาร', Icon: Archive,    color: '#0f766e' },
-      { key: 'map',          label: 'แผนที่',      Icon: MapPin,    color: '#0891b2' },
-      { key: 'report',       label: 'รายงาน',     Icon: TrendingUp, color: '#f59e0b' },
+      { key: 'docs-archive',  label: 'คลังเอกสาร',     Icon: Archive,    color: '#0f766e' },
+      { key: 'photo-album',  label: 'อัลบั้มกิจกรรม', Icon: Images,     color: '#1877f2', externalUrl: 'https://www.facebook.com/groups/2193529028125946/media/albums' },
+      { key: 'map',          label: 'แผนที่',          Icon: MapPin,     color: '#0891b2' },
+      { key: 'report',       label: 'รายงาน',          Icon: TrendingUp, color: '#f59e0b' },
     ],
   },
 ]
@@ -1721,11 +1722,11 @@ export default function StaffDashboard() {
             <div key={group} className="mb-4">
               <p className="px-3 mb-1 text-[9px] font-bold uppercase tracking-widest text-gray-400">{group}</p>
               <div className="space-y-0.5">
-                {items.map(({ key, label, Icon, color }) => {
+                {items.map(({ key, label, Icon, color, externalUrl }) => {
                   const isActive = activeModule === key
                   const badge    = key === 'inbox' && pendingCount > 0 ? pendingCount : null
                   return (
-                    <button key={key} onClick={() => setActiveModule(key)}
+                    <button key={key} onClick={() => externalUrl ? window.open(externalUrl, '_blank') : setActiveModule(key)}
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all"
                       style={isActive
                         ? { backgroundColor: color + '18', color }
@@ -1815,11 +1816,11 @@ export default function StaffDashboard() {
         {/* Mobile bottom nav — horizontal scroll, 72px per item */}
         <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 shadow-lg z-20 safe-bottom">
           <div className="flex overflow-x-auto" style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
-            {visibleModules.map(({ key, label, Icon, color }) => {
+            {visibleModules.map(({ key, label, Icon, color, externalUrl }) => {
               const isActive = activeModule === key
               const badge    = key === 'inbox' && pendingCount > 0 ? pendingCount : null
               return (
-                <button key={key} onClick={() => setActiveModule(key)}
+                <button key={key} onClick={() => externalUrl ? window.open(externalUrl, '_blank') : setActiveModule(key)}
                   className="flex flex-col items-center gap-1 pt-2 pb-3 relative transition-colors shrink-0"
                   style={{ width: 72 }}>
                   {isActive && (
