@@ -1861,6 +1861,18 @@ export default function StaffDashboard() {
         {/* Mobile bottom nav — horizontal scroll, 72px per item */}
         <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 shadow-lg z-20 safe-bottom">
           <div className="flex overflow-x-auto" style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
+            {/* หน้าหลัก */}
+            <button onClick={() => setActiveModule('home')}
+              className="flex flex-col items-center gap-1 pt-2 pb-3 relative transition-colors shrink-0"
+              style={{ width: 72 }}>
+              {activeModule === 'home' && (
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full bg-blue-500" />
+              )}
+              <Home size={21} strokeWidth={activeModule === 'home' ? 2.2 : 1.5}
+                style={{ color: activeModule === 'home' ? '#3b82f6' : '#94a3b8' }} />
+              <span className="text-[10px] font-semibold"
+                style={{ color: activeModule === 'home' ? '#3b82f6' : '#94a3b8' }}>หน้าหลัก</span>
+            </button>
             {visibleModules.map(({ key, label, Icon, color, externalUrl }) => {
               const isActive = activeModule === key
               const badge    = key === 'inbox' && pendingCount > 0 ? pendingCount : null
