@@ -1,9 +1,87 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, Tooltip, useMap } from 'react-leaflet'
+import { createPortal } from 'react-dom'
+import { MapContainer, TileLayer, Marker, Popup, Tooltip, Polyline, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { supabase } from '../../lib/supabase'
-import { RefreshCw, Loader2, CheckCircle2, XCircle, MapPin, Maximize2, Minimize2 } from 'lucide-react'
+import { RefreshCw, Loader2, CheckCircle2, XCircle, MapPin, Maximize2, Minimize2, Layers } from 'lucide-react'
+
+// ─── FilterPills (used inside mobile dropdown popup) ─────────────────────────
+function FilterPills({ value, onChange, options }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {options.map(({ v, icon, label, color }) => {
+        const active = value === v
+        const activeColor = color ?? 'var(--color-primary)'
+        return (
+          <button key={v} type="button" onClick={() => onChange(v)}
+            className="flex flex-col items-center gap-0.5 min-w-[52px] px-2.5 py-2 rounded-2xl border-2 transition-all"
+            style={active
+              ? { borderColor: activeColor, backgroundColor: activeColor + (color ? '22' : '18'), color: activeColor }
+              : { borderColor: '#e5e7eb', backgroundColor: '#fff', color: '#9ca3af' }}>
+            <span className="text-base leading-none">{icon}</span>
+            <span className="text-[10px] font-bold leading-tight text-center">{label}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function MobileFilterPill({ id, icon, label, color, value, onChange, options, openFilter, setOpenFilter }) {
+  const active = value !== 'all'
+  const current = options.find(o => o.v === value) ?? options[0]
+  const isOpen = openFilter === id
+  const pillColor = active ? (current.color ?? color) : color
+  const btnRef = useRef(null)
+  const [dropPos, setDropPos] = useState({ top: 0, left: 0 })
+
+  useEffect(() => {
+    if (isOpen && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      setDropPos({ top: r.bottom + 4, left: r.left })
+    }
+  }, [isOpen])
+
+  return (
+    <div>
+      <button ref={btnRef} type="button" onClick={() => setOpenFilter(isOpen ? null : id)}
+        className="flex flex-col items-center justify-center gap-1 rounded-2xl border-2 bg-white transition-all"
+        style={{ width: '100%', height: 70, borderColor: active ? pillColor : '#e5e7eb' }}>
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xl"
+          style={{ backgroundColor: pillColor + '22' }}>
+          <span>{active ? current.icon : icon}</span>
+        </div>
+        <span className="text-[10px] font-semibold leading-tight text-center text-gray-600 px-1">
+          {label}
+        </span>
+      </button>
+      {isOpen && createPortal(
+        <div className="fixed bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden"
+          style={{ top: dropPos.top, left: dropPos.left, width: 200, maxHeight: 280, overflowY: 'auto', zIndex: 9999 }}>
+          {[
+            options[0],
+            ...[...options.slice(1)]
+              .filter(o => o.count == null || o.count > 0)
+              .sort((a, b) => (b.count ?? 0) - (a.count ?? 0)),
+          ].map(({ v, label: optLabel, count }) => (
+            <button key={v} type="button"
+              onClick={() => { onChange(v); setOpenFilter(null) }}
+              className="w-full text-left px-4 py-1.5 text-[10px] border-b border-gray-50 last:border-0 transition-colors"
+              style={{
+                color:           value === v ? pillColor : '#374151',
+                fontWeight:      value === v ? '600' : '400',
+                backgroundColor: value === v ? pillColor + '15' : 'transparent',
+              }}>
+              {optLabel}{count != null ? ` (${count})` : ''}
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </div>
+  )
+}
 
 // ─── pin config ──────────────────────────────────────────────────────────────
 const COMPLAINT_STATUS_COLOR = {
@@ -38,6 +116,19 @@ const PROJECT_TYPE_LABEL = {
   waterway: 'ลำเหมือง', building: 'อาคาร', irrigation: 'ชลประทาน',
   water_supply: 'ประปา', other: 'อื่นๆ',
 }
+
+const ROUTE_DASH = {
+  road:     null,
+  drain:    '10, 7',
+  waterway: '3, 7',
+}
+const LINEAR_TYPES = Object.keys(ROUTE_DASH)
+
+const ROUTE_TYPE_LEGEND = [
+  { type: 'road',     label: 'ถนน',       dashArray: null,    color: '#6366f1' },
+  { type: 'drain',    label: 'ระบายน้ำ',  dashArray: '10, 7', color: '#6366f1' },
+  { type: 'waterway', label: 'รางส่งน้ำ', dashArray: '3, 7',  color: '#6366f1' },
+]
 
 const CIVIL_STATUS_COLOR = {
   planned:     '#9ca3af',
@@ -88,14 +179,14 @@ const STATUS_TH = {
 
 // ─── Legend ──────────────────────────────────────────────────────────────────
 const LEGEND = [
-  { color: '#ef4444', emoji: '📋', label: 'คำร้อง — รอดำเนินการ' },
-  { color: '#f97316', emoji: '📋', label: 'คำร้อง — กำลังดำเนินการ' },
-  { color: '#10b981', emoji: '📋', label: 'คำร้อง — เสร็จสิ้น' },
-  { color: '#3b82f6', emoji: '🏪', label: 'ร้านค้า — รอการอนุมัติ' },
-  { color: '#f59e0b', emoji: '🏪', label: 'ร้านค้า — อนุมัติแล้ว' },
-  { color: '#9ca3af', emoji: '🔨', label: 'โครงการ — วางแผน' },
-  { color: '#f97316', emoji: '🔨', label: 'โครงการ — กำลังดำเนินการ' },
-  { color: '#10b981', emoji: '🔨', label: 'โครงการ — แล้วเสร็จ' },
+  { layer: 'complaint', status: 'pending',     color: '#ef4444', emoji: '📋', label: 'คำร้อง — รอดำเนินการ' },
+  { layer: 'complaint', status: 'in_progress', color: '#f97316', emoji: '📋', label: 'คำร้อง — กำลังดำเนินการ' },
+  { layer: 'complaint', status: 'completed',   color: '#10b981', emoji: '📋', label: 'คำร้อง — เสร็จสิ้น' },
+  { layer: 'biz',       status: 'pending',     color: '#3b82f6', emoji: '🏪', label: 'ร้านค้า — รอการอนุมัติ' },
+  { layer: 'biz',       status: 'approved',    color: '#f59e0b', emoji: '🏪', label: 'ร้านค้า — อนุมัติแล้ว' },
+  { layer: 'proj',      status: 'planned',     color: '#9ca3af', emoji: '🔨', label: 'โครงการ — วางแผน' },
+  { layer: 'proj',      status: 'in_progress', color: '#f97316', emoji: '🔨', label: 'โครงการ — กำลังดำเนินการ' },
+  { layer: 'proj',      status: 'completed',   color: '#10b981', emoji: '🔨', label: 'โครงการ — แล้วเสร็จ' },
 ]
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -173,6 +264,9 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
     || filterProjStatus !== 'all' || filterProjType !== 'all'
 
   const [selectedItem, setSelectedItem] = useState(null) // { type: 'civil'|'complaint', data }
+  const [quickStatus, setQuickStatus]   = useState(null)
+  const [savingQuick, setSavingQuick]   = useState(false)
+  const [openFilter,  setOpenFilter]    = useState(null)
   const [mapType, setMapType] = useState('normal')
   const [isFullscreen, setIsFullscreen] = useState(false)
   const mapWrapRef = useRef(null)
@@ -219,7 +313,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
         .order('created_at', { ascending: false }),
       supabase
         .from('civil_projects')
-        .select('id, title, project_no, project_type, status, progress_pct, latitude, longitude, village, budget_amount, contract_amount, paid_amount, contractor_name, contract_no, description, photos, created_at, start_date, end_date, fiscal_year')
+        .select('id, title, project_no, project_type, status, progress_pct, latitude, longitude, village, budget_amount, contract_amount, paid_amount, contractor_name, contract_no, description, photos, created_at, start_date, end_date, fiscal_year, route_points, route_color')
         .eq('municipality_id', tenantId)
         .not('latitude', 'is', null)
         .order('created_at', { ascending: false })
@@ -234,6 +328,17 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
     })
     return () => { cancelled = true }
   }, [tenantId, refreshTick])
+
+  useEffect(() => { setQuickStatus(null) }, [selectedItem?.data?.id])
+
+  async function saveQuickStatus(id, newStatus) {
+    setSavingQuick(true)
+    await supabase.from('civil_projects').update({ status: newStatus }).eq('id', id)
+    setCivilProjects(ps => ps.map(p => p.id === id ? { ...p, status: newStatus } : p))
+    setSelectedItem(s => s ? { ...s, data: { ...s.data, status: newStatus } } : s)
+    setSavingQuick(false)
+    setQuickStatus(null)
+  }
 
   async function approveBiz(id, approved) {
     setApproving(id)
@@ -309,56 +414,41 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
       <div className="bg-white border border-gray-300 overflow-hidden shadow-sm"
         style={{ borderRadius: '4px', borderTop: '3px solid var(--color-primary)' }}>
 
-        {/* ── หัวข้อ: ชั้นข้อมูล ── */}
-        <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-200">
-          <span className="text-[11px] font-bold text-gray-600 uppercase tracking-wider">ชั้นข้อมูลบนแผนที่</span>
-          <span className="text-[10px] text-gray-400">คลิกเพื่อเปิด / ปิด</span>
-        </div>
-
-        {/* ชั้นข้อมูล 5 ประเภท */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 border-b border-gray-200">
+        {/* ชั้นข้อมูล 5 ประเภท — compact pill row */}
+        <div className="flex gap-2 px-3 py-2.5 border-b border-gray-200">
           {[
-            { key: 'repair', active: showRepair, toggle: () => setShowRepair(v => !v), color: '#ef4444', count: repairCount, label: 'ยื่นคำร้องออนไลน์', sub: 'ตลอด 24 ชั่วโมง' },
-            { key: 'water',  active: showWater,  toggle: () => setShowWater(v => !v),  color: '#3b82f6', count: waterCount,  label: 'ขอสนับสนุนน้ำอุปโภค',       sub: 'ภัยแล้ง / ภัยพิบัติ' },
-            { key: 'env',    active: showEnv,    toggle: () => setShowEnv(v => !v),    color: '#10b981', count: envCount,    label: 'สิ่งแวดล้อม / จุดเสี่ยงภัย', sub: 'Smart Environment' },
-            { key: 'biz',    active: showBiz,    toggle: () => setShowBiz(v => !v),    color: '#f59e0b', count: bizRegs.length,       label: 'ร้านค้า / ท่องเที่ยว',        sub: 'เที่ยว กิน พัก ชอบ' },
-            { key: 'proj',   active: showProj,   toggle: () => setShowProj(v => !v),   color: '#8b5cf6', count: civilProjects.length, label: 'โครงการกองช่าง',             sub: 'งานก่อสร้าง / ซ่อมแซม' },
-          ].map(({ key, active, toggle, color, count, label, sub }) => (
-            <label key={key}
-              className="flex items-center gap-3 px-3 py-2.5 cursor-pointer select-none transition-colors border-b sm:border-b-0 sm:border-r border-gray-100 last:border-0"
-              style={{ backgroundColor: active ? '#fff' : '#f9fafb' }}>
-              <input type="checkbox" checked={active} onChange={toggle} className="sr-only" />
-              {/* custom checkbox */}
-              <div className="w-4 h-4 border-2 flex items-center justify-center shrink-0 transition-all"
-                style={active ? { borderColor: color, backgroundColor: color } : { borderColor: '#d1d5db', backgroundColor: '#fff' }}>
-                {active && (
-                  <svg width="9" height="7" viewBox="0 0 9 7" fill="none">
-                    <path d="M1 3.5L3.2 5.8L8 1" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                )}
+            { key: 'repair', active: showRepair, toggle: () => setShowRepair(v => !v), color: '#ef4444', count: repairCount,         icon: '📋', label: 'คำร้อง' },
+            { key: 'water',  active: showWater,  toggle: () => setShowWater(v => !v),  color: '#3b82f6', count: waterCount,           icon: '💧', label: 'ขอน้ำ' },
+            { key: 'env',    active: showEnv,    toggle: () => setShowEnv(v => !v),    color: '#10b981', count: envCount,             icon: '🌿', label: 'สิ่งแวดล้อม' },
+            { key: 'biz',    active: showBiz,    toggle: () => setShowBiz(v => !v),    color: '#f59e0b', count: bizRegs.length,       icon: '🏪', label: 'ร้านค้า' },
+            { key: 'proj',   active: showProj,   toggle: () => setShowProj(v => !v),   color: '#8b5cf6', count: civilProjects.length, icon: '🔨', label: 'โครงการ' },
+          ].map(({ key, active, toggle, color, count, icon, label }) => (
+            <button key={key} type="button" onClick={toggle}
+              className="flex-1 flex flex-col items-center gap-1 py-2 rounded-2xl border-2 transition-all select-none"
+              style={active
+                ? { borderColor: color, backgroundColor: color + '12' }
+                : { borderColor: '#e5e7eb', backgroundColor: '#f9fafb' }}>
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center text-lg leading-none"
+                style={{ backgroundColor: active ? color + '25' : '#e5e7eb' }}>
+                {icon}
               </div>
-              {/* color bar */}
-              <div className="w-1 h-8 shrink-0 rounded-sm transition-colors"
-                style={{ backgroundColor: active ? color : '#e5e7eb' }} />
-              <div className="flex-1 min-w-0">
-                <p className="text-[11px] font-bold text-gray-800 leading-tight truncate">{label}</p>
-                <p className="text-[10px] text-gray-500 leading-tight">{sub}</p>
-              </div>
-              <span className="text-[10px] font-bold px-1.5 py-0.5 text-white shrink-0 min-w-[22px] text-center"
-                style={{ backgroundColor: active ? color : '#9ca3af', borderRadius: '2px' }}>
+              <span className="text-[10px] font-semibold leading-tight text-center"
+                style={{ color: active ? color : '#9ca3af' }}>
+                {label}
+              </span>
+              <span className="text-[10px] font-bold leading-none px-1.5 py-0.5 rounded-full"
+                style={{ backgroundColor: active ? color : '#d1d5db', color: '#fff' }}>
                 {count}
               </span>
-            </label>
+            </button>
           ))}
         </div>
 
         {/* ── กรองตามประเภทและสถานะ ── */}
         {(showRepair || showWater || showEnv || showBiz || showProj) && (
           <>
-            <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
-              <span className="text-[11px] font-bold text-gray-600 uppercase tracking-wider">กรองตามประเภท</span>
-            </div>
-            <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap gap-x-6 gap-y-2.5">
+            {/* Desktop */}
+            <div className="hidden md:flex flex-wrap gap-x-6 gap-y-2.5 px-4 py-3 border-b border-gray-100">
               {showRepair && (
                 <div className="flex items-center gap-2.5">
                   <span className="text-[11px] font-bold text-gray-600 shrink-0 w-24">ประเภทคำร้อง</span>
@@ -366,9 +456,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
                     className="text-xs font-medium px-2.5 py-1.5 border border-gray-300 bg-white text-gray-800 focus:outline-none"
                     style={{ borderRadius: '2px', minWidth: '160px' }}>
                     <option value="all">— ทุกประเภท —</option>
-                    {Object.entries(CATEGORY_LABEL).map(([k, v]) => (
-                      <option key={k} value={k}>{v}</option>
-                    ))}
+                    {Object.entries(CATEGORY_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                   </select>
                 </div>
               )}
@@ -422,33 +510,106 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
                 </div>
               )}
             </div>
+
+            {/* Mobile */}
+            <div className="md:hidden px-4 py-3 border-b border-gray-100">
+              {openFilter && <div className="fixed inset-0 z-40" onClick={() => setOpenFilter(null)} />}
+              {(() => {
+                const cmpAll = complaints
+                const cmpCatCounts = {}
+                cmpAll.forEach(c => { cmpCatCounts[c.category] = (cmpCatCounts[c.category] || 0) + 1 })
+                const cmpStatusCounts = {}
+                cmpAll.forEach(c => { cmpStatusCounts[c.status] = (cmpStatusCounts[c.status] || 0) + 1 })
+                bizRegs.forEach(b => { cmpStatusCounts[b.status] = (cmpStatusCounts[b.status] || 0) + 1 })
+                const projTypeCounts = {}
+                civilProjects.forEach(p => { projTypeCounts[p.project_type] = (projTypeCounts[p.project_type] || 0) + 1 })
+                const projStatusCounts = {}
+                civilProjects.forEach(p => { projStatusCounts[p.status] = (projStatusCounts[p.status] || 0) + 1 })
+                return (
+              <div className="grid grid-cols-4 gap-2">
+                {showRepair && (
+                  <MobileFilterPill id="cmpCat" icon="📋" label="ประเภทคำร้อง" color="#f59e0b"
+                    value={filterCmpCat} onChange={setFilterCmpCat}
+                    openFilter={openFilter} setOpenFilter={setOpenFilter}
+                    options={[
+                      { v: 'all',           icon: '📋', label: 'ทั้งหมด',        count: cmpAll.length },
+                      { v: 'road',          icon: '🛣️', label: 'ถนน',            count: cmpCatCounts['road'] ?? 0 },
+                      { v: 'light',         icon: '💡', label: 'ไฟฟ้า',          count: cmpCatCounts['light'] ?? 0 },
+                      { v: 'drain',         icon: '🌊', label: 'ท่อระบาย',       count: cmpCatCounts['drain'] ?? 0 },
+                      { v: 'canal',         icon: '💧', label: 'ลำเหมือง',       count: cmpCatCounts['canal'] ?? 0 },
+                      { v: 'building',      icon: '🏗️', label: 'สิ่งก่อสร้าง',  count: cmpCatCounts['building'] ?? 0 },
+                      { v: 'water_drought', icon: '☀️', label: 'ขอน้ำแล้ง',     count: cmpCatCounts['water_drought'] ?? 0 },
+                      { v: 'water_tank',    icon: '🪣', label: 'ถังน้ำหมด',     count: cmpCatCounts['water_tank'] ?? 0 },
+                      { v: 'water_flood',   icon: '🌊', label: 'อุทกภัย',        count: cmpCatCounts['water_flood'] ?? 0 },
+                      { v: 'trash',         icon: '🗑️', label: 'ขยะ',            count: cmpCatCounts['trash'] ?? 0 },
+                      { v: 'tree',          icon: '🌳', label: 'ต้นไม้',          count: cmpCatCounts['tree'] ?? 0 },
+                      { v: 'env_hazard',    icon: '⚠️', label: 'จุดเสี่ยง',      count: cmpCatCounts['env_hazard'] ?? 0 },
+                      { v: 'env_fire',      icon: '🔥', label: 'ควันไฟ',          count: cmpCatCounts['env_fire'] ?? 0 },
+                      { v: 'mosquito',      icon: '🦟', label: 'ยุง',             count: cmpCatCounts['mosquito'] ?? 0 },
+                      { v: 'pollution',     icon: '💨', label: 'มลพิษ',           count: cmpCatCounts['pollution'] ?? 0 },
+                      { v: 'other',         icon: '📝', label: 'อื่นๆ',           count: cmpCatCounts['other'] ?? 0 },
+                    ]} />
+                )}
+                {(showRepair || showWater || showEnv || showBiz) && (
+                  <MobileFilterPill id="status" icon="⏳" label="สถานะคำร้อง" color="#3b82f6"
+                    value={filterStatus} onChange={setFilterStatus}
+                    openFilter={openFilter} setOpenFilter={setOpenFilter}
+                    options={[
+                      { v: 'all',         icon: '📋', label: 'ทั้งหมด',         count: cmpAll.length + bizRegs.length },
+                      { v: 'pending',     icon: '⏳', label: 'รอดำเนินการ',    color: '#ef4444', count: cmpStatusCounts['pending'] ?? 0 },
+                      { v: 'received',    icon: '📬', label: 'รับเรื่องแล้ว',  color: '#f97316', count: cmpStatusCounts['received'] ?? 0 },
+                      { v: 'in_progress', icon: '⚙️', label: 'กำลังดำเนินการ',color: '#f97316', count: cmpStatusCounts['in_progress'] ?? 0 },
+                      { v: 'completed',   icon: '✅', label: 'เสร็จสิ้น',      color: '#10b981', count: cmpStatusCounts['completed'] ?? 0 },
+                      { v: 'rejected',    icon: '❌', label: 'ปฏิเสธ',         color: '#9ca3af', count: cmpStatusCounts['rejected'] ?? 0 },
+                    ]} />
+                )}
+                {showProj && (
+                  <MobileFilterPill id="projType" icon="🔨" label="ประเภทโครงการ" color="#10b981"
+                    value={filterProjType} onChange={setFilterProjType}
+                    openFilter={openFilter} setOpenFilter={setOpenFilter}
+                    options={[
+                      { v: 'all',      icon: '🔨', label: 'ทั้งหมด',               count: civilProjects.length },
+                      { v: 'road',     icon: '🛣️', label: 'ถนน / สะพาน',          count: projTypeCounts['road'] ?? 0 },
+                      { v: 'drain',    icon: '🌊', label: 'ระบบระบายน้ำ',          count: projTypeCounts['drain'] ?? 0 },
+                      { v: 'waterway', icon: '💧', label: 'รางส่งน้ำ / ลำเหมือง', count: projTypeCounts['waterway'] ?? 0 },
+                      { v: 'building', icon: '🏗️', label: 'อาคาร / สิ่งก่อสร้าง', count: projTypeCounts['building'] ?? 0 },
+                      { v: 'light',    icon: '💡', label: 'ไฟฟ้าสาธารณะ',          count: projTypeCounts['light'] ?? 0 },
+                      { v: 'park',     icon: '🌳', label: 'สวนสาธารณะ',            count: projTypeCounts['park'] ?? 0 },
+                      { v: 'other',    icon: '📝', label: 'อื่น ๆ',                count: projTypeCounts['other'] ?? 0 },
+                    ]} />
+                )}
+                {showProj && (
+                  <MobileFilterPill id="projStatus" icon="📐" label="สถานะโครงการ" color="#8b5cf6"
+                    value={filterProjStatus} onChange={setFilterProjStatus}
+                    openFilter={openFilter} setOpenFilter={setOpenFilter}
+                    options={[
+                      { v: 'all',         icon: '🔨', label: 'ทั้งหมด',          count: civilProjects.length },
+                      { v: 'planned',     icon: '📐', label: 'วางแผน',          color: '#9ca3af', count: projStatusCounts['planned'] ?? 0 },
+                      { v: 'approved',    icon: '📌', label: 'อนุมัติแล้ว',     color: '#3b82f6', count: projStatusCounts['approved'] ?? 0 },
+                      { v: 'in_progress', icon: '⚙️', label: 'กำลังดำเนินการ', color: '#f97316', count: projStatusCounts['in_progress'] ?? 0 },
+                      { v: 'completed',   icon: '🏆', label: 'แล้วเสร็จ',       color: '#10b981', count: projStatusCounts['completed'] ?? 0 },
+                      { v: 'cancelled',   icon: '🚫', label: 'ยกเลิก',          color: '#9ca3af', count: projStatusCounts['cancelled'] ?? 0 },
+                      { v: 'suspended',   icon: '⏸️', label: 'ระงับชั่วคราว',  color: '#f59e0b', count: projStatusCounts['suspended'] ?? 0 },
+                    ]} />
+                )}
+                {isFiltered && (
+                  <div className="flex items-end pb-1">
+                    <button type="button" onClick={clearFilters}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border-2 transition-all"
+                      style={{ borderColor: '#ef4444', backgroundColor: '#ef444415' }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                      </svg>
+                      <span className="text-[10px] font-semibold" style={{ color: '#ef4444' }}>ล้าง</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+                )
+              })()}
+            </div>
           </>
         )}
-
-        {/* ── แถบล่าง: แสดงชื่อ + ล้างตัวกรอง ── */}
-        <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50">
-          <label className="flex items-center gap-2 cursor-pointer select-none group">
-            <input type="checkbox" checked={showLabels} onChange={() => setShowLabels(v => !v)} className="sr-only" />
-            <div className="w-4 h-4 border-2 flex items-center justify-center shrink-0 transition-all"
-              style={showLabels
-                ? { borderColor: 'var(--color-primary)', backgroundColor: 'var(--color-primary)' }
-                : { borderColor: '#d1d5db', backgroundColor: '#fff' }}>
-              {showLabels && (
-                <svg width="9" height="7" viewBox="0 0 9 7" fill="none">
-                  <path d="M1 3.5L3.2 5.8L8 1" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              )}
-            </div>
-            <span className="text-xs font-medium text-gray-700 group-hover:text-gray-900">แสดงชื่อ / ป้ายกำกับบนแผนที่</span>
-          </label>
-          {isFiltered && (
-            <button onClick={clearFilters}
-              className="text-xs font-semibold px-3 py-1.5 border border-gray-300 bg-white text-gray-600 hover:bg-gray-100 transition-colors"
-              style={{ borderRadius: '2px' }}>
-              ล้างตัวกรองทั้งหมด
-            </button>
-          )}
-        </div>
       </div>
 
       {/* Map */}
@@ -459,29 +620,27 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
         {/* ── ปุ่มควบคุมแผนที่ ── */}
         {!loading && (
           <div className="absolute top-3 right-3 z-1000 flex items-center gap-1.5">
-            {/* มุมมอง */}
-            <div className="flex overflow-hidden shadow-md border border-gray-300 bg-white"
-                 style={{ borderRadius: '3px' }}>
-              {[
-                { v: 'normal',    label: 'แผนที่' },
-                { v: 'satellite', label: 'ดาวเทียม' },
-              ].map(({ v, label }, i) => (
-                <button key={v} onClick={() => setMapType(v)}
-                  className="px-3 py-1.5 text-xs font-semibold transition-colors"
-                  style={mapType === v
-                    ? { backgroundColor: 'var(--color-primary)', color: '#fff', borderRight: i === 0 ? '1px solid rgba(255,255,255,0.3)' : 'none' }
-                    : { backgroundColor: '#fff', color: '#374151', borderRight: i === 0 ? '1px solid #d1d5db' : 'none' }}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            {/* เต็มหน้าจอ */}
+            <button onClick={() => setMapType(m => m === 'normal' ? 'satellite' : 'normal')}
+              title={mapType === 'normal' ? 'เปลี่ยนเป็นดาวเทียม' : 'เปลี่ยนเป็นแผนที่'}
+              className="flex items-center justify-center shadow-md border border-gray-300 hover:bg-gray-50 transition-colors"
+              style={{ width: '30px', height: '30px', borderRadius: '3px', backgroundColor: mapType === 'satellite' ? 'var(--color-primary)' : '#fff' }}>
+              <Layers size={14} color={mapType === 'satellite' ? '#fff' : '#374151'} />
+            </button>
             <button onClick={toggleFullscreen}
               title={isFullscreen ? 'ออกจากเต็มหน้าจอ' : 'ขยายเต็มหน้าจอ'}
               className="flex items-center justify-center shadow-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
               style={{ width: '30px', height: '30px', borderRadius: '3px' }}>
               {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
             </button>
+            <label className="flex items-center gap-1.5 cursor-pointer select-none shadow-md border border-gray-300 bg-white hover:bg-gray-50 transition-colors px-2.5"
+              style={{ height: '30px', borderRadius: '3px' }}>
+              <input type="checkbox" checked={showLabels} onChange={() => setShowLabels(v => !v)} className="sr-only" />
+              <div className="w-3.5 h-3.5 border-2 flex items-center justify-center shrink-0 transition-all"
+                style={{ borderRadius: '2px', borderColor: showLabels ? 'var(--color-primary)' : '#9ca3af', backgroundColor: showLabels ? 'var(--color-primary)' : '#fff' }}>
+                {showLabels && <svg width="8" height="6" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.2 5.8L8 1" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+              </div>
+              <span className="text-xs font-semibold text-gray-700">แสดงชื่อ</span>
+            </label>
           </div>
         )}
 
@@ -617,69 +776,92 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
               </Marker>
             ))}
 
-            {/* ── โครงการ (แยกสีตาม status) ── */}
+            {/* ── โครงการ (polyline หรือ marker ขึ้นกับ route_points) ── */}
             {filteredProj.map((w) => {
               const statusColor = CIVIL_STATUS_COLOR[w.status] ?? '#9ca3af'
+              const lineColor   = w.route_color || statusColor
+              const hasRoute    = w.route_points?.length >= 2
+              const dashArray   = ROUTE_DASH[w.project_type] ?? null
+
+              const popup = (
+                <Popup>
+                  <div className="text-sm min-w-[200px]">
+                    <button
+                      onClick={() => setSelectedItem({ type: 'civil', data: w })}
+                      className="font-bold text-left w-full mb-0.5 hover:underline flex items-center gap-1"
+                      style={{ color: 'var(--color-primary)' }}>
+                      🏗️ {w.title}
+                      <span className="text-[10px] opacity-60">→</span>
+                    </button>
+                    <p className="text-gray-500 text-xs mb-1">{PROJECT_TYPE_LABEL[w.project_type] ?? w.project_type}</p>
+                    {w.progress_pct > 0 && (
+                      <div className="mb-1.5">
+                        <div className="flex justify-between text-[10px] text-gray-400 mb-0.5">
+                          <span>ความคืบหน้า</span>
+                          <span>{w.progress_pct}%</span>
+                        </div>
+                        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full transition-all"
+                            style={{ width: `${w.progress_pct}%`, backgroundColor: statusColor }} />
+                        </div>
+                      </div>
+                    )}
+                    {w.budget_amount && (
+                      <p className="text-xs text-violet-600 mb-1">
+                        💰 {Number(w.budget_amount).toLocaleString('th-TH')} บาท
+                      </p>
+                    )}
+                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                        style={{ backgroundColor: statusColor + '20', color: statusColor }}>
+                        {CIVIL_STATUS_TH[w.status] ?? w.status}
+                      </span>
+                      {w.fiscal_year && (
+                        <span className="text-xs text-gray-400">ปี {w.fiscal_year}</span>
+                      )}
+                    </div>
+                    {w.village && (
+                      <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                        <MapPin size={10} /> {w.village}
+                      </p>
+                    )}
+                    <GmapsBtn lat={w.latitude} lng={w.longitude} />
+                  </div>
+                </Popup>
+              )
+
+              if (hasRoute) {
+                return (
+                  <Polyline key={w.id}
+                    positions={w.route_points.map(p => [p.lat, p.lng])}
+                    pathOptions={{ color: lineColor, weight: 5, opacity: 0.85, ...(dashArray && { dashArray }) }}
+                    eventHandlers={{ click: () => setSelectedItem({ type: 'civil', data: w }) }}>
+                    {showLabels && (
+                      <Tooltip sticky
+                        className="bg-white! text-gray-700! text-[10px]! font-semibold! border-gray-200! shadow-sm! px-1.5! py-0.5! rounded-lg!">
+                        {w.title.length > 24 ? w.title.slice(0, 24) + '…' : w.title}
+                      </Tooltip>
+                    )}
+                    {popup}
+                  </Polyline>
+                )
+              }
+
               return (
-                <Marker
-                  key={w.id}
+                <Marker key={w.id}
                   position={[w.latitude, w.longitude]}
                   icon={makeDivIcon(
                     PROJ_TYPE_EMOJI[w.project_type] ?? '🔨',
                     statusColor,
                     w.status === 'in_progress' ? 34 : 30,
-                  )}
-                >
+                  )}>
                   {showLabels && (
                     <Tooltip permanent direction="top" offset={[0, -10]}
                       className="bg-white! text-gray-700! text-[10px]! font-semibold! border-gray-200! shadow-sm! px-1.5! py-0.5! rounded-lg!">
                       {w.title.length > 24 ? w.title.slice(0, 24) + '…' : w.title}
                     </Tooltip>
                   )}
-                  <Popup>
-                    <div className="text-sm min-w-[200px]">
-                      <button
-                        onClick={() => setSelectedItem({ type: 'civil', data: w })}
-                        className="font-bold text-left w-full mb-0.5 hover:underline flex items-center gap-1"
-                        style={{ color: 'var(--color-primary)' }}>
-                        🏗️ {w.title}
-                        <span className="text-[10px] opacity-60">→</span>
-                      </button>
-                      <p className="text-gray-500 text-xs mb-1">{PROJECT_TYPE_LABEL[w.project_type] ?? w.project_type}</p>
-                      {w.progress_pct > 0 && (
-                        <div className="mb-1.5">
-                          <div className="flex justify-between text-[10px] text-gray-400 mb-0.5">
-                            <span>ความคืบหน้า</span>
-                            <span>{w.progress_pct}%</span>
-                          </div>
-                          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                            <div className="h-full rounded-full transition-all"
-                              style={{ width: `${w.progress_pct}%`, backgroundColor: statusColor }} />
-                          </div>
-                        </div>
-                      )}
-                      {w.budget_amount && (
-                        <p className="text-xs text-violet-600 mb-1">
-                          💰 {Number(w.budget_amount).toLocaleString('th-TH')} บาท
-                        </p>
-                      )}
-                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
-                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                          style={{ backgroundColor: statusColor + '20', color: statusColor }}>
-                          {CIVIL_STATUS_TH[w.status] ?? w.status}
-                        </span>
-                        {w.fiscal_year && (
-                          <span className="text-xs text-gray-400">ปี {w.fiscal_year}</span>
-                        )}
-                      </div>
-                      {w.village && (
-                        <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
-                          <MapPin size={10} /> {w.village}
-                        </p>
-                      )}
-                      <GmapsBtn lat={w.latitude} lng={w.longitude} />
-                    </div>
-                  </Popup>
+                  {popup}
                 </Marker>
               )
             })}
@@ -689,15 +871,46 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
 
       {/* Legend */}
       <div className="flex flex-wrap gap-x-5 gap-y-2 px-1">
-        {LEGEND.map(({ color, emoji, label }) => (
-          <div key={label} className="flex items-center gap-1.5">
-            <span className="w-5 h-5 rounded-full shrink-0 border-2 border-white shadow-sm flex items-center justify-center text-[10px]"
-                  style={{ backgroundColor: color }}>
-              {emoji}
-            </span>
-            <span className="text-xs text-gray-500">{label}</span>
-          </div>
-        ))}
+        {LEGEND
+          .filter(({ layer, status }) => {
+            if (layer === 'complaint') {
+              if (!showRepair && !showWater && !showEnv) return false
+              return filterStatus === 'all' || filterStatus === status
+            }
+            if (layer === 'biz') {
+              if (!showBiz) return false
+              return filterStatus === 'all' || filterStatus === status
+            }
+            if (layer === 'proj') {
+              if (!showProj) return false
+              // linear types render as lines — circle pin legend irrelevant
+              if (LINEAR_TYPES.includes(filterProjType)) return false
+              return filterProjStatus === 'all' || filterProjStatus === status
+            }
+            return true
+          })
+          .map(({ color, emoji, label }) => (
+            <div key={label} className="flex items-center gap-1.5">
+              <span className="w-5 h-5 rounded-full shrink-0 border-2 border-white shadow-sm flex items-center justify-center text-[10px]"
+                    style={{ backgroundColor: color }}>
+                {emoji}
+              </span>
+              <span className="text-xs text-gray-500">{label}</span>
+            </div>
+          ))}
+        {/* Route dash pattern legend — conditional on showProj + filterProjType */}
+        {showProj && ROUTE_TYPE_LEGEND
+          .filter(({ type }) => filterProjType === 'all' || filterProjType === type)
+          .map(({ label, dashArray, color }) => (
+            <div key={label} className="flex items-center gap-1.5">
+              <svg width="28" height="10" viewBox="0 0 28 10" className="shrink-0">
+                <line x1="0" y1="5" x2="28" y2="5"
+                  stroke={color} strokeWidth="3.5" strokeLinecap="round"
+                  strokeDasharray={dashArray ?? undefined} />
+              </svg>
+              <span className="text-xs text-gray-500">เส้นทาง — {label}</span>
+            </div>
+          ))}
       </div>
 
       {/* Pending business approvals panel */}
@@ -918,6 +1131,30 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
                   </div>
                 )}
               </div>
+
+              {/* Quick status update (civil only) */}
+              {iscivil && (
+                <div className="px-5 pb-4 pt-3 border-t border-gray-100">
+                  <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-2">อัปเดตสถานะ</p>
+                  <div className="flex gap-2">
+                    <select
+                      value={quickStatus ?? d.status}
+                      onChange={e => setQuickStatus(e.target.value)}
+                      className="flex-1 text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-200">
+                      {Object.entries(CIVIL_STATUS_TH).map(([v, label]) => (
+                        <option key={v} value={v}>{label}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => saveQuickStatus(d.id, quickStatus ?? d.status)}
+                      disabled={savingQuick || (quickStatus ?? d.status) === d.status}
+                      className="px-4 py-1.5 text-xs font-bold text-white rounded-lg disabled:opacity-40 transition-opacity"
+                      style={{ backgroundColor: 'var(--color-primary)' }}>
+                      {savingQuick ? '...' : 'บันทึก'}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Footer actions */}
               <div className="px-5 pb-5 pt-3 border-t border-gray-100 flex gap-2 flex-wrap">

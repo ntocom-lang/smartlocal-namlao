@@ -24,6 +24,7 @@ import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
 import BusinessRegistrationAdmin from '../components/admin/BusinessRegistrationAdmin'
 import EventsManagerComponent from '../components/admin/EventsManager'
 import ReportManagerComponent from '../components/admin/ReportManager'
+import ModuleManager from '../components/admin/ModuleManager'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS = {
@@ -4745,8 +4746,9 @@ export default function AdminDashboard() {
                 { key: 'assignments', label: 'ผู้รับผิดชอบ', Icon: Wrench,   color: '#d97706', show: currentUserRole !== 'council' },
                 { key: 'emergency',   label: 'สายด่วน',       Icon: Phone,    color: '#ef4444', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
                 { key: 'locations',   label: 'สถานที่เกิดเหตุ', Icon: MapPin, color: '#0891b2', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
-                { key: 'system-settings', label: 'ตั้งค่าระบบ', Icon: Settings, color: '#3b82f6', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                { key: 'users',       label: 'จัดการผู้ใช้', Icon: Shield,   color: '#7c3aed', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                { key: 'system-settings', label: 'ตั้งค่าระบบ',  Icon: Settings,    color: '#3b82f6', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                { key: 'users',           label: 'จัดการผู้ใช้', Icon: Shield,      color: '#7c3aed', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                { key: 'modules',         label: 'จัดการโมดูล', Icon: LayoutGrid,   color: '#7c3aed', show: currentUserRole === 'superadmin' },
               ],
             },
             {
@@ -5207,6 +5209,8 @@ export default function AdminDashboard() {
             </table>
           </div>
         </div>
+      ) : activePage === 'modules' ? (
+        <ModuleManager tenant={tenant} />
       ) : (
         <>
 

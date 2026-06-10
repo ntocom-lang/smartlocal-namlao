@@ -18,7 +18,12 @@ function EventCard({ ev, onEdit, onDelete, deleting }) {
   const [confirmDel, setConfirmDel] = useState(false)
   const color = EVENTS_CATEGORY_COLOR[ev.category] ?? '#6b7280'
   const d = new Date(ev.event_date + 'T00:00:00')
-  const dateStr = d.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' })
+  const hasEndDate = ev.end_date && ev.end_date !== ev.event_date
+  const dEnd = hasEndDate ? new Date(ev.end_date + 'T00:00:00') : null
+  const fmtDate = (dt) => dt.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric', weekday: 'short' })
+  const dateStr = hasEndDate
+    ? `${fmtDate(d)} – ${fmtDate(dEnd)}`
+    : d.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' })
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex gap-3">
@@ -90,7 +95,8 @@ function EventCard({ ev, onEdit, onDelete, deleting }) {
   )
 }
 
-export default function EventsManager({ tenant, currentUserRole }) {
+export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
+  const canManage = ['admin', 'superadmin', 'staff'].includes(currentUserRole)
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -191,9 +197,11 @@ export default function EventsManager({ tenant, currentUserRole }) {
 
   async function handleDelete(id) {
     setDeleting(id)
-    await supabase.from('events').delete().eq('id', id)
+    const { error } = await supabase.from('events').delete().eq('id', id)
     setDeleting(null)
-    setEvents((prev) => prev.filter((e) => e.id !== id))
+    if (!error) {
+      setEvents((prev) => prev.filter((e) => e.id !== id))
+    }
   }
 
   let filteredEvents = events
@@ -262,11 +270,13 @@ export default function EventsManager({ tenant, currentUserRole }) {
       )}
       <div className="flex items-center justify-between">
         <h2 className="font-bold text-gray-700">ปฏิทินกิจกรรม</h2>
-        <button onClick={openAdd}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white"
-          style={{ backgroundColor: 'var(--color-primary)' }}>
-          <Plus size={16} /> เพิ่มกิจกรรม
-        </button>
+        {canManage && (
+          <button onClick={openAdd}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white"
+            style={{ backgroundColor: 'var(--color-primary)' }}>
+            <Plus size={16} /> เพิ่มกิจกรรม
+          </button>
+        )}
       </div>
 
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
@@ -589,7 +599,10 @@ export default function EventsManager({ tenant, currentUserRole }) {
             ) : (
               <div className={`space-y-2 ${activeTab === 'past' ? 'opacity-80' : ''}`}>
                 {paginatedList.map((ev) => (
-                  <EventCard key={ev.id} ev={ev} onEdit={openEdit} onDelete={handleDelete} deleting={deleting} />
+                  <EventCard key={ev.id} ev={ev}
+                    onEdit={canManage ? openEdit : null}
+                    onDelete={canManage ? handleDelete : null}
+                    deleting={deleting} />
                 ))}
               </div>
             )}

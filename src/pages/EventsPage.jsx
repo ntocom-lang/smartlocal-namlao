@@ -390,12 +390,15 @@ export default function EventsPage() {
           <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 px-1">{month}</p>
           <div className="space-y-2">
             {evs.map((ev) => {
-              const color    = CATEGORY_COLOR[ev.category] ?? '#6b7280'
-              const audColor = AUDIENCE_COLOR[ev.audience] ?? '#6b7280'
-              const audLabel = AUDIENCE_LABEL[ev.audience] ?? ev.audience
-              const d        = new Date(ev.event_date + 'T00:00:00')
-              const isPast   = d < today
-              const diffDays = Math.round((d - today) / (1000 * 60 * 60 * 24))
+              const color       = CATEGORY_COLOR[ev.category] ?? '#6b7280'
+              const audColor    = AUDIENCE_COLOR[ev.audience] ?? '#6b7280'
+              const audLabel    = AUDIENCE_LABEL[ev.audience] ?? ev.audience
+              const d           = new Date(ev.event_date + 'T00:00:00')
+              const isPast      = d < today
+              const diffDays    = Math.round((d - today) / (1000 * 60 * 60 * 24))
+              const hasEndDate  = ev.end_date && ev.end_date !== ev.event_date
+              const dEnd        = hasEndDate ? new Date(ev.end_date + 'T00:00:00') : null
+              const sameMonth   = dEnd && d.getMonth() === dEnd.getMonth()
               return (
                 <button
                   key={ev.id}
@@ -409,10 +412,20 @@ export default function EventsPage() {
                 >
                   <div className="shrink-0 text-center w-12">
                     <p className="text-xs text-gray-400">{d.toLocaleDateString('th-TH', { weekday: 'short' })}</p>
-                    <p className="text-2xl font-black leading-tight" style={{ color: isPast ? '#9ca3af' : color }}>
-                      {d.getDate()}
+                    {hasEndDate ? (
+                      <p className="text-base font-black leading-tight" style={{ color: isPast ? '#9ca3af' : color }}>
+                        {d.getDate()}–{dEnd.getDate()}
+                      </p>
+                    ) : (
+                      <p className="text-2xl font-black leading-tight" style={{ color: isPast ? '#9ca3af' : color }}>
+                        {d.getDate()}
+                      </p>
+                    )}
+                    <p className="text-xs text-gray-400">
+                      {hasEndDate && !sameMonth
+                        ? `${d.toLocaleDateString('th-TH', { month: 'short' })}–${dEnd.toLocaleDateString('th-TH', { month: 'short' })}`
+                        : d.toLocaleDateString('th-TH', { month: 'short' })}
                     </p>
-                    <p className="text-xs text-gray-400">{d.toLocaleDateString('th-TH', { month: 'short' })}</p>
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 mb-1 flex-wrap">
@@ -444,11 +457,14 @@ export default function EventsPage() {
                     {!ev.is_all_day && ev.event_time && (
                       <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
                         <Clock size={11} />
-                        {ev.event_time.slice(0, 5)}
-                        {ev.end_time ? ` – ${ev.end_time.slice(0, 5)}` : ''} น.
-                        {ev.end_date && ev.end_date !== ev.event_date && (
-                          <> · ถึง {new Date(ev.end_date + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}</>
-                        )}
+                        {ev.event_time.slice(0, 5)}{ev.end_time ? ` – ${ev.end_time.slice(0, 5)}` : ''} น.
+                      </p>
+                    )}
+                    {hasEndDate && (
+                      <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
+                        <span>📅</span>
+                        {d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })} – {dEnd.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}
+                        {` (${Math.round((dEnd - d) / 86400000) + 1} วัน)`}
                       </p>
                     )}
                     {ev.location && (

@@ -1,15 +1,17 @@
 import { useEffect, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import {
   MapPin, Plus, X, Loader2, Trash2, Pencil, ChevronLeft,
   Image, AlertTriangle, CheckCircle2, Calendar, Banknote, Building2,
-  Search, Clock, Upload, ChevronRight, Camera, Navigation, Copy, Check,
+  Search, Clock, Upload, ChevronRight, Camera, Navigation, Copy, Check, Layers, Maximize2, Minimize2,
 } from 'lucide-react'
-import { MapContainer, TileLayer, Marker, Tooltip } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Tooltip, Polyline, CircleMarker } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { supabase } from '../../lib/supabase'
 import MapPicker from '../MapPicker'
 import InlineMapPicker from '../InlineMapPicker'
+import InlinePolylinePicker from '../InlinePolylinePicker'
 
 // Fix leaflet default marker icon
 const defaultIcon = L.icon({
@@ -23,6 +25,26 @@ const defaultIcon = L.icon({
 })
 
 const THIS_YEAR = new Date().getFullYear() + 543
+const LINEAR_TYPES = ['road', 'drain', 'waterway']
+
+const ROUTE_DASH = {
+  road:     null,       // เส้นทึบ
+  drain:    '10, 7',    // ขีดประ
+  waterway: '3, 7',     // จุดประ
+}
+
+const ROUTE_COLORS = [
+  { hex: '#3b82f6', label: 'น้ำเงิน' },
+  { hex: '#22c55e', label: 'เขียว' },
+  { hex: '#ef4444', label: 'แดง' },
+  { hex: '#f97316', label: 'ส้ม' },
+  { hex: '#a855f7', label: 'ม่วง' },
+  { hex: '#eab308', label: 'เหลือง' },
+  { hex: '#06b6d4', label: 'ฟ้า' },
+  { hex: '#ec4899', label: 'ชมพู' },
+  { hex: '#92400e', label: 'น้ำตาล' },
+  { hex: '#1f2937', label: 'ดำ' },
+]
 const FISCAL_YEARS = Array.from({ length: 8 }, (_, i) => String(THIS_YEAR - 3 + i))
 
 const STATUS_CFG = {
@@ -59,7 +81,7 @@ const EMPTY_FORM = {
   budget_amount: '', contract_amount: '', paid_amount: '',
   contractor_name: '', contract_no: '',
   start_date: '', end_date: '',
-  cancel_reason: '', note: '',
+  cancel_reason: '', note: '', route_color: '#3b82f6',
 }
 
 function StatusBadge({ status }) {
@@ -124,28 +146,26 @@ const TILE_LABELS = {
   subdomains: 'abcd',
 }
 
-function LayerControl({ mode, setMode }) {
+function LayerControl({ mode, setMode, onExpand, isFullscreen }) {
   return (
-    <div className="absolute top-2.5 right-2.5 z-[1000] bg-white rounded-lg shadow-md border border-gray-200 px-3 py-2.5 text-sm space-y-1.5">
-      <label className="flex items-center gap-2 cursor-pointer text-gray-700">
-        <input type="radio" name="mapLayer" value="street"
-          checked={mode === 'street'} onChange={() => setMode('street')}
-          className="accent-blue-500" />
-        แผนที่ปกติ
-      </label>
-      <label className="flex items-center gap-2 cursor-pointer text-gray-700">
-        <input type="radio" name="mapLayer" value="satellite"
-          checked={mode === 'satellite'} onChange={() => setMode('satellite')}
-          className="accent-blue-500" />
-        ดาวเทียม
-      </label>
+    <div className="absolute top-2 right-2 z-1000 flex flex-col gap-1.5">
+      <button type="button" onClick={onExpand}
+        className="w-8 h-8 bg-white rounded-lg shadow border border-gray-100 flex items-center justify-center hover:bg-gray-50 transition-colors">
+        {isFullscreen ? <Minimize2 size={15} className="text-gray-600" /> : <Maximize2 size={15} className="text-gray-600" />}
+      </button>
+      <button type="button" onClick={() => setMode(m => m === 'street' ? 'satellite' : 'street')}
+        className="w-8 h-8 bg-white rounded-lg shadow border border-gray-100 flex items-center justify-center hover:bg-gray-50 transition-colors"
+        title={mode === 'street' ? 'เปลี่ยนเป็นดาวเทียม' : 'เปลี่ยนเป็นแผนที่ปกติ'}>
+        <Layers size={15} className="text-gray-600" />
+      </button>
     </div>
   )
 }
 
-function DetailMap({ lat, lng, title }) {
-  const [tileMode, setTileMode] = useState('street')
-  const [copied, setCopied] = useState(false)
+function DetailMap({ lat, lng, title, routePoints, routeColor = '#3b82f6', projectType }) {
+  const [tileMode, setTileMode]   = useState('street')
+  const [copied, setCopied]       = useState(false)
+  const [fullscreen, setFullscreen] = useState(false)
   const tile = tileMode === 'satellite' ? TILE_SATELLITE : TILE_STREET
 
   const handleCopy = () => {
@@ -154,59 +174,95 @@ function DetailMap({ lat, lng, title }) {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  const navButtons = (
+    <div className="absolute bottom-3 left-3 z-1000 flex items-center gap-2">
+      <a href={`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`}
+        target="_blank" rel="noopener noreferrer"
+        className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl shadow-lg text-sm font-bold transition-colors">
+        <Navigation size={14} /> นำทาง
+      </a>
+      <a href={`https://www.google.com/maps?q=${lat},${lng}`}
+        target="_blank" rel="noopener noreferrer"
+        className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-gray-50 text-gray-700 rounded-xl shadow-lg border border-gray-200 text-sm font-bold transition-colors">
+        <MapPin size={14} /> แสดงบน Google Maps
+      </a>
+    </div>
+  )
+
+  const hasRoute = routePoints?.length >= 2
+
+  function markerColor(i) {
+    if (i === 0) return '#22c55e'
+    if (i === routePoints.length - 1) return '#ef4444'
+    return routeColor
+  }
+
+  const center = hasRoute
+    ? [routePoints[Math.floor(routePoints.length / 2)].lat, routePoints[Math.floor(routePoints.length / 2)].lng]
+    : [lat, lng]
+
+  const mapContent = (zoom) => (
+    <>
+      <TileLayer key={tileMode} url={tile.url} attribution={tile.attribution} />
+      {tileMode === 'satellite' && (
+        <TileLayer key="labels" url={TILE_LABELS.url} subdomains={TILE_LABELS.subdomains} attribution="" />
+      )}
+      {hasRoute ? (
+        <>
+          <Polyline positions={routePoints.map(p => [p.lat, p.lng])}
+            pathOptions={{ color: routeColor, weight: 5, opacity: 0.85, ...(ROUTE_DASH[projectType] && { dashArray: ROUTE_DASH[projectType] }) }} />
+          {null}
+        </>
+      ) : (
+        <Marker position={[lat, lng]} icon={defaultIcon}>
+          <Tooltip permanent direction="top" offset={[0, -36]}
+            className="bg-white! border! border-gray-200! shadow-md! rounded-lg! px-3! py-1.5! text-sm! font-medium! text-gray-700!">
+            {title}
+          </Tooltip>
+        </Marker>
+      )}
+    </>
+  )
+
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
       <div className="flex items-center gap-2 px-5 py-3">
         <MapPin size={16} className="text-blue-500" />
         <h3 className="font-bold text-gray-700">ที่ตั้งบนแผนที่</h3>
-        <button
-          onClick={handleCopy}
+        <button onClick={handleCopy}
           className="ml-auto flex items-center gap-1.5 text-sm font-mono font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-xl border border-blue-100 transition-colors"
-          title="คัดลอกพิกัด"
-        >
+          title="คัดลอกพิกัด">
           {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
           {copied ? 'คัดลอกแล้ว' : `${lat.toFixed(6)}, ${lng.toFixed(6)}`}
         </button>
       </div>
-      <div style={{ height: 300, isolation: 'isolate', position: 'relative' }}>
-        <MapContainer
-          center={[lat, lng]}
-          zoom={15}
-          style={{ width: '100%', height: '100%' }}
-          scrollWheelZoom={true}
-          zoomControl={true}
-        >
-          <TileLayer key={tileMode} url={tile.url} attribution={tile.attribution} />
-          {tileMode === 'satellite' && (
-            <TileLayer key="labels" url={TILE_LABELS.url} subdomains={TILE_LABELS.subdomains} attribution="" />
-          )}
-          <Marker position={[lat, lng]} icon={defaultIcon}>
-            <Tooltip permanent direction="top" offset={[0, -36]}
-              className="!bg-white !border !border-gray-200 !shadow-md !rounded-lg !px-3 !py-1.5 !text-sm !font-medium !text-gray-700">
-              {title}
-            </Tooltip>
-          </Marker>
+      <div style={{ height: 300, position: 'relative' }}>
+        <MapContainer center={center} zoom={15} style={{ width: '100%', height: '100%' }} scrollWheelZoom zoomControl>
+          {mapContent(15)}
         </MapContainer>
-        <LayerControl mode={tileMode} setMode={setTileMode} />
-        <div className="absolute bottom-3 left-3 z-[1000] flex items-center gap-2">
-          <a
-            href={`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl shadow-lg text-sm font-bold transition-colors"
-          >
-            <Navigation size={14} /> นำทาง
-          </a>
-          <a
-            href={`https://www.google.com/maps?q=${lat},${lng}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-gray-50 text-gray-700 rounded-xl shadow-lg border border-gray-200 text-sm font-bold transition-colors"
-          >
-            <MapPin size={14} /> แสดงบน Google Maps
-          </a>
-        </div>
+        <LayerControl mode={tileMode} setMode={setTileMode} onExpand={() => setFullscreen(true)} isFullscreen={false} />
+        {navButtons}
       </div>
+
+      {fullscreen && createPortal(
+        <div className="fixed inset-0 z-9999 flex flex-col bg-black">
+          <div className="flex items-center justify-between px-4 py-3 bg-gray-900 text-white shrink-0">
+            <span className="text-sm font-semibold truncate">{title}</span>
+            <button type="button" onClick={() => setFullscreen(false)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm font-medium transition-colors shrink-0">
+              <Minimize2 size={14} /> ย่อแผนที่
+            </button>
+          </div>
+          <div className="relative flex-1">
+            <MapContainer center={center} zoom={16} style={{ width: '100%', height: '100%' }} scrollWheelZoom zoomControl>
+              {mapContent(16)}
+            </MapContainer>
+            <LayerControl mode={tileMode} setMode={setTileMode} onExpand={() => setFullscreen(false)} isFullscreen />
+            {navButtons}
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   )
 }
@@ -228,6 +284,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
 
   const [form, setForm]                 = useState({ ...EMPTY_FORM })
   const [geo, setGeo]                   = useState({ lat: null, lng: null })
+  const [routePoints, setRoutePoints]   = useState([])
   const [photos, setPhotos]             = useState([])
   const [existingPhotos, setExisting]   = useState([])
   const [showMap, setShowMap]           = useState(false)
@@ -306,6 +363,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
     setEditId(null)
     setForm({ ...EMPTY_FORM, subdistrict: sd, district: dt, province: pv })
     setGeo({ lat: null, lng: null })
+    setRoutePoints([])
     setPhotos([])
     setExisting([])
     setFormError(null)
@@ -325,8 +383,10 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
       paid_amount: p.paid_amount ?? '', contractor_name: p.contractor_name ?? '',
       contract_no: p.contract_no ?? '', start_date: p.start_date ?? '',
       end_date: p.end_date ?? '', cancel_reason: p.cancel_reason ?? '', note: p.note ?? '',
+      route_color: p.route_color || '#3b82f6',
     })
     setGeo({ lat: p.latitude ?? null, lng: p.longitude ?? null })
+    setRoutePoints(p.route_points ?? [])
     setExisting(p.photos ?? [])
     setPhotos([])
     setFormError(null)
@@ -379,6 +439,14 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
     const id       = editId ?? crypto.randomUUID()
     const newUrls  = await uploadPhotos(photos, id)
     const allPhotos = [...existingPhotos, ...newUrls]
+    // road projects: use midpoint of route as primary lat/lng
+    let primaryLat = geo.lat, primaryLng = geo.lng
+    if (form.project_type === 'road' && routePoints.length > 0) {
+      const mid = routePoints[Math.floor(routePoints.length / 2)]
+      primaryLat = mid.lat
+      primaryLng = mid.lng
+    }
+
     const record = {
       municipality_id: tenant.id,
       created_by:      session.user.id,
@@ -395,8 +463,10 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
       district:        form.district?.trim()        || null,
       province:        form.province?.trim()        || null,
       location_desc:   form.location_desc?.trim()   || null,
-      latitude:        geo.lat  ?? null,
-      longitude:       geo.lng  ?? null,
+      latitude:        primaryLat ?? null,
+      longitude:       primaryLng ?? null,
+      route_points:    LINEAR_TYPES.includes(form.project_type) && routePoints.length >= 2 ? routePoints : null,
+      route_color:     LINEAR_TYPES.includes(form.project_type) ? (form.route_color || '#3b82f6') : null,
       budget_amount:   form.budget_amount   ? parseFloat(form.budget_amount)   : null,
       contract_amount: form.contract_amount ? parseFloat(form.contract_amount) : null,
       paid_amount:     form.paid_amount     ? parseFloat(form.paid_amount)     : null,
@@ -777,7 +847,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
 
         {/* Map card */}
         {p.latitude && p.longitude && (
-          <DetailMap lat={Number(p.latitude)} lng={Number(p.longitude)} title={p.title} />
+          <DetailMap lat={Number(p.latitude)} lng={Number(p.longitude)} title={p.title} routePoints={p.route_points} routeColor={p.route_color} projectType={p.project_type} />
         )}
 
         {/* Description */}
@@ -1026,32 +1096,71 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
             </Field>
           </div>
 
-          {/* GPS */}
+          {/* GPS / Route */}
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-2">พิกัดที่ตั้ง</label>
-            <InlineMapPicker
-              value={geo.lat ? { lat: geo.lat, lng: geo.lng } : null}
-              onChange={({ lat, lng }) => setGeo({ lat, lng })}
-              defaultCenter={tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null}
-            />
-            {geo.lat && (
-              <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 mt-2">
-                <MapPin size={13} className="text-blue-500 shrink-0" />
-                <span className="text-xs font-mono text-blue-700">{geo.lat.toFixed(7)}, {geo.lng.toFixed(7)}</span>
-                <button type="button" onClick={() => setGeo({ lat: null, lng: null })}
-                  className="ml-auto text-red-400 hover:text-red-600 text-xs font-semibold flex items-center gap-1">
-                  <Trash2 size={11} /> ล้าง
-                </button>
+            <label className="block text-xs font-semibold text-gray-500 mb-2">
+              {LINEAR_TYPES.includes(form.project_type) ? 'แนวเส้นทางโครงการ' : 'พิกัดที่ตั้ง'}
+            </label>
+
+            {/* Color picker — แสดงเฉพาะ linear types */}
+            {LINEAR_TYPES.includes(form.project_type) && (
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
+                <span className="text-xs text-gray-500 shrink-0">สีเส้นทาง:</span>
+                {ROUTE_COLORS.map(({ hex, label }) => (
+                  <button key={hex} type="button" title={label}
+                    onClick={() => setForm(p => ({ ...p, route_color: hex }))}
+                    className="w-6 h-6 rounded-full transition-all"
+                    style={{
+                      backgroundColor: hex,
+                      outline: form.route_color === hex ? `3px solid ${hex}` : '2px solid transparent',
+                      outlineOffset: '2px',
+                    }} />
+                ))}
+                <label className="relative w-6 h-6 rounded-full overflow-hidden cursor-pointer border border-gray-300" title="เลือกสีเอง"
+                  style={{ background: 'conic-gradient(red,yellow,lime,cyan,blue,magenta,red)' }}>
+                  <input type="color" value={form.route_color || '#3b82f6'}
+                    onChange={e => setForm(p => ({ ...p, route_color: e.target.value }))}
+                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
+                </label>
+                <span className="text-xs font-mono text-gray-400">{form.route_color}</span>
               </div>
             )}
-            <div className="grid grid-cols-2 gap-2 mt-2">
-              <input type="number" step="any" value={geo.lat ?? ''}
-                onChange={e => setGeo(p => ({ ...p, lat: e.target.value ? parseFloat(e.target.value) : null }))}
-                placeholder="ละติจูด" className={inputCls} />
-              <input type="number" step="any" value={geo.lng ?? ''}
-                onChange={e => setGeo(p => ({ ...p, lng: e.target.value ? parseFloat(e.target.value) : null }))}
-                placeholder="ลองจิจูด" className={inputCls} />
-            </div>
+
+            {LINEAR_TYPES.includes(form.project_type) ? (
+              <InlinePolylinePicker
+                value={routePoints}
+                onChange={setRoutePoints}
+                color={form.route_color || '#3b82f6'}
+                dashArray={ROUTE_DASH[form.project_type] ?? null}
+                defaultCenter={tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null}
+              />
+            ) : (
+              <>
+                <InlineMapPicker
+                  value={geo.lat ? { lat: geo.lat, lng: geo.lng } : null}
+                  onChange={({ lat, lng }) => setGeo({ lat, lng })}
+                  defaultCenter={tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null}
+                />
+                {geo.lat && (
+                  <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 mt-2">
+                    <MapPin size={13} className="text-blue-500 shrink-0" />
+                    <span className="text-xs font-mono text-blue-700">{geo.lat.toFixed(7)}, {geo.lng.toFixed(7)}</span>
+                    <button type="button" onClick={() => setGeo({ lat: null, lng: null })}
+                      className="ml-auto text-red-400 hover:text-red-600 text-xs font-semibold flex items-center gap-1">
+                      <Trash2 size={11} /> ล้าง
+                    </button>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <input type="number" step="any" value={geo.lat ?? ''}
+                    onChange={e => setGeo(p => ({ ...p, lat: e.target.value ? parseFloat(e.target.value) : null }))}
+                    placeholder="ละติจูด" className={inputCls} />
+                  <input type="number" step="any" value={geo.lng ?? ''}
+                    onChange={e => setGeo(p => ({ ...p, lng: e.target.value ? parseFloat(e.target.value) : null }))}
+                    placeholder="ลองจิจูด" className={inputCls} />
+                </div>
+              </>
+            )}
           </div>
         </section>
 
