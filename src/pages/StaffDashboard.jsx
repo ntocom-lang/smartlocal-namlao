@@ -1738,7 +1738,7 @@ export default function StaffDashboard() {
 
         {/* Brand */}
         <div className="px-5 py-5 border-b border-gray-100">
-          <button onClick={() => setActiveModule('home')} className="flex items-center gap-3 w-full text-left hover:opacity-80 transition-opacity">
+          <button onClick={() => navigate('/')} className="flex items-center gap-3 w-full text-left hover:opacity-80 transition-opacity">
             <div className="w-9 h-9 rounded-xl overflow-hidden shrink-0"
               style={!tenant?.logo_url ? { background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)' } : {}}>
               {tenant?.logo_url
