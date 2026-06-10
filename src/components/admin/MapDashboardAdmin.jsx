@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { MapContainer, TileLayer, CircleMarker, Popup, Tooltip, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, Tooltip, useMap } from 'react-leaflet'
+import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { supabase } from '../../lib/supabase'
 import { RefreshCw, Loader2, CheckCircle2, XCircle, MapPin, Maximize2, Minimize2 } from 'lucide-react'
@@ -45,6 +46,34 @@ const CIVIL_STATUS_COLOR = {
   completed:   '#10b981',
   cancelled:   '#ef4444',
   suspended:   '#f59e0b',
+}
+
+const CATEGORY_EMOJI = {
+  road: '🛣️', light: '💡', drain: '🚰', canal: '💧',
+  building: '🏗️', water_drought: '🚛', water_tank: '🪣',
+  water_flood: '🌊', trash: '🗑️', tree: '🌿', env_hazard: '⚠️',
+  env_fire: '🔥', mosquito: '🦟', pollution: '🌫️', other: '📋',
+}
+const FORM_TYPE_EMOJI = {
+  infrastructure: '🔧', water_support: '💧', environment: '🌿', legacy: '📝',
+}
+const BIZ_TYPE_EMOJI = {
+  shop: '🛍️', food: '🍽️', stay: '🏨', otop: '🏺', tourism: '📍', service: '🔧', other: '📝',
+}
+const PROJ_TYPE_EMOJI = {
+  road: '🛣️', drain: '🌊', bridge: '🌉', light: '💡',
+  waterway: '💧', building: '🏗️', irrigation: '🚿', water_supply: '🚰', other: '🔨',
+}
+
+function makeDivIcon(emoji, color, size = 32) {
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:${size}px;height:${size}px;background:${color};border:2px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:${size * 0.5}px;box-shadow:0 2px 8px rgba(0,0,0,0.28);cursor:pointer">${emoji}</div>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -(size / 2)],
+    tooltipAnchor: [0, -(size / 2) - 2],
+  })
 }
 
 const CIVIL_STATUS_TH = {
@@ -481,16 +510,14 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
 
             {/* ── คำร้อง (3 ประเภทฟอร์ม) ── */}
             {[...filteredRepair, ...filteredWater, ...filteredEnv].map((c) => (
-              <CircleMarker
+              <Marker
                 key={c.id}
-                center={[c.latitude, c.longitude]}
-                radius={c.status === 'completed' ? 7 : 9}
-                pathOptions={{
-                  color: '#fff',
-                  weight: 2,
-                  fillColor: COMPLAINT_STATUS_COLOR[c.status] ?? '#ef4444',
-                  fillOpacity: 0.9,
-                }}
+                position={[c.latitude, c.longitude]}
+                icon={makeDivIcon(
+                  CATEGORY_EMOJI[c.category] ?? FORM_TYPE_EMOJI[c.form_type] ?? '📋',
+                  COMPLAINT_STATUS_COLOR[c.status] ?? '#ef4444',
+                  c.status === 'completed' ? 28 : 32,
+                )}
               >
                 {showLabels && (
                   <Tooltip permanent direction="top" offset={[0, -10]}
@@ -531,21 +558,18 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
                     <GmapsBtn lat={c.latitude} lng={c.longitude} />
                   </div>
                 </Popup>
-              </CircleMarker>
+              </Marker>
             ))}
 
             {/* ── ร้านค้า/ท่องเที่ยว ── */}
             {filteredBiz.map((b) => (
-              <CircleMarker
+              <Marker
                 key={b.id}
-                center={[b.latitude, b.longitude]}
-                radius={8}
-                pathOptions={{
-                  color: '#fff',
-                  weight: 2,
-                  fillColor: b.status === 'approved' ? '#f59e0b' : b.status === 'rejected' ? '#9ca3af' : '#3b82f6',
-                  fillOpacity: 0.9,
-                }}
+                position={[b.latitude, b.longitude]}
+                icon={makeDivIcon(
+                  BIZ_TYPE_EMOJI[b.business_type] ?? '🏪',
+                  b.status === 'approved' ? '#f59e0b' : b.status === 'rejected' ? '#9ca3af' : '#3b82f6',
+                )}
               >
                 {showLabels && (
                   <Tooltip permanent direction="top" offset={[0, -10]}
@@ -590,23 +614,21 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
                     <GmapsBtn lat={b.latitude} lng={b.longitude} />
                   </div>
                 </Popup>
-              </CircleMarker>
+              </Marker>
             ))}
 
             {/* ── โครงการ (แยกสีตาม status) ── */}
             {filteredProj.map((w) => {
               const statusColor = CIVIL_STATUS_COLOR[w.status] ?? '#9ca3af'
               return (
-                <CircleMarker
+                <Marker
                   key={w.id}
-                  center={[w.latitude, w.longitude]}
-                  radius={w.status === 'in_progress' ? 10 : 8}
-                  pathOptions={{
-                    color: '#fff',
-                    weight: 2,
-                    fillColor: statusColor,
-                    fillOpacity: 0.9,
-                  }}
+                  position={[w.latitude, w.longitude]}
+                  icon={makeDivIcon(
+                    PROJ_TYPE_EMOJI[w.project_type] ?? '🔨',
+                    statusColor,
+                    w.status === 'in_progress' ? 34 : 30,
+                  )}
                 >
                   {showLabels && (
                     <Tooltip permanent direction="top" offset={[0, -10]}
@@ -658,7 +680,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
                       <GmapsBtn lat={w.latitude} lng={w.longitude} />
                     </div>
                   </Popup>
-                </CircleMarker>
+                </Marker>
               )
             })}
           </MapContainer>
