@@ -88,14 +88,14 @@ const STATUS_TH = {
 
 // ─── Legend ──────────────────────────────────────────────────────────────────
 const LEGEND = [
-  { color: '#ef4444', label: 'คำร้อง — รอดำเนินการ' },
-  { color: '#f97316', label: 'คำร้อง — กำลังดำเนินการ' },
-  { color: '#10b981', label: 'คำร้อง — เสร็จสิ้น' },
-  { color: '#3b82f6', label: 'ร้านค้า — รอการอนุมัติ' },
-  { color: '#f59e0b', label: 'ร้านค้า — อนุมัติแล้ว' },
-  { color: '#9ca3af', label: 'โครงการ — วางแผน' },
-  { color: '#f97316', label: 'โครงการ — กำลังดำเนินการ' },
-  { color: '#10b981', label: 'โครงการ — แล้วเสร็จ' },
+  { color: '#ef4444', emoji: '📋', label: 'คำร้อง — รอดำเนินการ' },
+  { color: '#f97316', emoji: '📋', label: 'คำร้อง — กำลังดำเนินการ' },
+  { color: '#10b981', emoji: '📋', label: 'คำร้อง — เสร็จสิ้น' },
+  { color: '#3b82f6', emoji: '🏪', label: 'ร้านค้า — รอการอนุมัติ' },
+  { color: '#f59e0b', emoji: '🏪', label: 'ร้านค้า — อนุมัติแล้ว' },
+  { color: '#9ca3af', emoji: '🔨', label: 'โครงการ — วางแผน' },
+  { color: '#f97316', emoji: '🔨', label: 'โครงการ — กำลังดำเนินการ' },
+  { color: '#10b981', emoji: '🔨', label: 'โครงการ — แล้วเสร็จ' },
 ]
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -689,10 +689,12 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
 
       {/* Legend */}
       <div className="flex flex-wrap gap-x-5 gap-y-2 px-1">
-        {LEGEND.map(({ color, label }) => (
+        {LEGEND.map(({ color, emoji, label }) => (
           <div key={label} className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full shrink-0 border-2 border-white shadow-sm"
-                  style={{ backgroundColor: color }} />
+            <span className="w-5 h-5 rounded-full shrink-0 border-2 border-white shadow-sm flex items-center justify-center text-[10px]"
+                  style={{ backgroundColor: color }}>
+              {emoji}
+            </span>
             <span className="text-xs text-gray-500">{label}</span>
           </div>
         ))}
