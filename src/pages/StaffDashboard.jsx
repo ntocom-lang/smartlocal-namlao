@@ -1646,12 +1646,52 @@ function StaffReportWrapper({ tenant }) {
   return <ReportManager complaints={complaints} tenant={tenant} technicians={technicians} />
 }
 
+// ─── Staff Home Dashboard ─────────────────────────────────────────────────────
+
+function StaffHomeModule({ visibleGroups, setActiveModule, pendingCount, staffName }) {
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-bold text-gray-800">สวัสดี{staffName ? `, ${staffName}` : ''} 👋</h2>
+        <p className="text-sm text-gray-400 mt-0.5">เลือกเมนูที่ต้องการดำเนินการ</p>
+      </div>
+      {visibleGroups.map(({ group, items }) => (
+        <div key={group}>
+          <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-3">{group}</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {items.map(({ key, label, Icon, color, externalUrl }) => (
+              <button
+                key={key}
+                onClick={() => externalUrl ? window.open(externalUrl, '_blank') : setActiveModule(key)}
+                className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col items-start gap-3 text-left hover:shadow-md active:scale-95 transition-all">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                     style={{ backgroundColor: color + '18' }}>
+                  <Icon size={20} style={{ color }} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-700">{label}</p>
+                  {key === 'inbox' && pendingCount > 0 && (
+                    <p className="text-xs font-semibold mt-0.5" style={{ color: '#ef4444' }}>{pendingCount} รายการรอ</p>
+                  )}
+                  {externalUrl && (
+                    <p className="text-[10px] text-gray-400 mt-0.5">เปิดใน Facebook ↗</p>
+                  )}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function StaffDashboard() {
   const navigate = useNavigate()
   const { tenant } = useTenant()
-  const [activeModule, setActiveModule] = useState('inbox')
+  const [activeModule, setActiveModule] = useState('home')
 
   const enabledKeys = tenant?.enabled_modules ?? MODULES.map(m => m.key)
   const visibleGroups = MODULE_GROUPS
@@ -1698,7 +1738,7 @@ export default function StaffDashboard() {
 
         {/* Brand */}
         <div className="px-5 py-5 border-b border-gray-100">
-          <div className="flex items-center gap-3">
+          <button onClick={() => setActiveModule('home')} className="flex items-center gap-3 w-full text-left hover:opacity-80 transition-opacity">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-base shrink-0"
               style={{ background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)' }}>
               🏛️
@@ -1707,7 +1747,7 @@ export default function StaffDashboard() {
               <p className="text-sm font-bold text-gray-800 truncate">{tenant?.name ?? 'Staff Portal'}</p>
               <p className="text-xs font-semibold text-blue-500">ระบบเจ้าหน้าที่</p>
             </div>
-          </div>
+          </button>
         </div>
 
         {/* Nav */}
@@ -1789,7 +1829,7 @@ export default function StaffDashboard() {
         <div className="hidden md:flex items-center justify-between px-6 py-4 bg-white border-b border-gray-100 shrink-0">
           <div>
             <h1 className="text-base font-bold text-gray-800">
-              {visibleModules.find(m => m.key === activeModule)?.label}
+              {activeModule === 'home' ? 'หน้าหลัก' : visibleModules.find(m => m.key === activeModule)?.label}
             </h1>
             {profile && (
               <p className="text-xs text-gray-400 mt-0.5">
@@ -1801,6 +1841,7 @@ export default function StaffDashboard() {
 
         {/* Main */}
         <main className="flex-1 overflow-y-auto px-4 md:px-6 py-5 pb-24 md:pb-6">
+          {activeModule === 'home'       && <StaffHomeModule visibleGroups={visibleGroups} setActiveModule={setActiveModule} pendingCount={pendingCount} staffName={profile?.full_name} />}
           {activeModule === 'inbox'      && <InboxModule tenant={tenant} staffId={profile?.id} />}
           {activeModule === 'docs'       && <DocsModule tenant={tenant} staffId={profile?.id} />}
           {activeModule === 'complaints' && <ComplaintsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
