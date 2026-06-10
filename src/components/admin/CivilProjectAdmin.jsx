@@ -9,6 +9,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { supabase } from '../../lib/supabase'
 import MapPicker from '../MapPicker'
+import InlineMapPicker from '../InlineMapPicker'
 
 // Fix leaflet default marker icon
 const defaultIcon = L.icon({
@@ -916,17 +917,6 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
   return (
     <div className="space-y-4 max-w-2xl">
 
-      {showMap && (
-        <MapPicker
-          initialPos={geo.lat ? { lat: geo.lat, lng: geo.lng } : (tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null)}
-          onConfirm={({ lat, lng, address }) => {
-            setGeo({ lat, lng })
-            if (address && !form.location_desc) setForm(p => ({ ...p, location_desc: address }))
-            setShowMap(false)
-          }}
-          onClose={() => setShowMap(false)}
-        />
-      )}
 
       {/* Form header */}
       <div className="flex items-center gap-3">
@@ -970,6 +960,11 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
                 rows={3} placeholder="อธิบายรายละเอียดโครงการ"
                 className={inputCls + ' resize-none'} />
             </Field>
+            <Field label="กอง/หน่วยงาน" required half>
+              <select value={form.department} onChange={e => setForm(p => ({ ...p, department: e.target.value }))} className={selectCls}>
+                {DEPARTMENTS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+              </select>
+            </Field>
             <Field label="ประเภทโครงการ" required half>
               <select value={form.project_type} onChange={e => setForm(p => ({ ...p, project_type: e.target.value }))} className={selectCls}>
                 {PROJECT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
@@ -978,11 +973,6 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
             <Field label="สถานะ" required half>
               <select value={form.status} onChange={e => handleStatusChange(e.target.value)} className={selectCls}>
                 {Object.entries(STATUS_CFG).map(([v, c]) => <option key={v} value={v}>{c.label}</option>)}
-              </select>
-            </Field>
-            <Field label="กอง/หน่วยงาน" required half>
-              <select value={form.department} onChange={e => setForm(p => ({ ...p, department: e.target.value }))} className={selectCls}>
-                {DEPARTMENTS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
               </select>
             </Field>
             <Field label={`ความคืบหน้า (${form.progress_pct}%)`} half>
@@ -1039,20 +1029,21 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
           {/* GPS */}
           <div>
             <label className="block text-xs font-semibold text-gray-500 mb-2">พิกัดที่ตั้ง</label>
+            <InlineMapPicker
+              value={geo.lat ? { lat: geo.lat, lng: geo.lng } : null}
+              onChange={({ lat, lng }) => setGeo({ lat, lng })}
+              defaultCenter={tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null}
+            />
             {geo.lat && (
-              <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 mb-2">
+              <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 mt-2">
                 <MapPin size={13} className="text-blue-500 shrink-0" />
-                <span className="text-xs font-mono text-blue-700">พิกัด: {geo.lat.toFixed(7)}, {geo.lng.toFixed(7)}</span>
+                <span className="text-xs font-mono text-blue-700">{geo.lat.toFixed(7)}, {geo.lng.toFixed(7)}</span>
                 <button type="button" onClick={() => setGeo({ lat: null, lng: null })}
                   className="ml-auto text-red-400 hover:text-red-600 text-xs font-semibold flex items-center gap-1">
                   <Trash2 size={11} /> ล้าง
                 </button>
               </div>
             )}
-            <button type="button" onClick={() => setShowMap(true)}
-              className="w-full border border-dashed border-gray-300 rounded-xl py-3 text-xs text-gray-500 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2">
-              <MapPin size={13} /> {geo.lat ? 'คลิกเพื่อแก้ไขพิกัด' : 'คลิกแผนที่เพื่อปักหมุด หรือพิมพ์พิกัดโดยตรง'}
-            </button>
             <div className="grid grid-cols-2 gap-2 mt-2">
               <input type="number" step="any" value={geo.lat ?? ''}
                 onChange={e => setGeo(p => ({ ...p, lat: e.target.value ? parseFloat(e.target.value) : null }))}
@@ -1061,7 +1052,6 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
                 onChange={e => setGeo(p => ({ ...p, lng: e.target.value ? parseFloat(e.target.value) : null }))}
                 placeholder="ลองจิจูด" className={inputCls} />
             </div>
-            <p className="text-[10px] text-gray-400 mt-1">คลิกแผนที่เพื่อปักหมุด หรือพิมพ์พิกัดโดยตรง</p>
           </div>
         </section>
 
