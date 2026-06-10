@@ -1739,9 +1739,11 @@ export default function StaffDashboard() {
         {/* Brand */}
         <div className="px-5 py-5 border-b border-gray-100">
           <button onClick={() => setActiveModule('home')} className="flex items-center gap-3 w-full text-left hover:opacity-80 transition-opacity">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-base shrink-0"
-              style={{ background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)' }}>
-              🏛️
+            <div className="w-9 h-9 rounded-xl overflow-hidden shrink-0"
+              style={!tenant?.logo_url ? { background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)' } : {}}>
+              {tenant?.logo_url
+                ? <img src={tenant.logo_url} alt="" className="w-full h-full object-cover" />
+                : <span className="flex items-center justify-center w-full h-full text-white text-base">🏛️</span>}
             </div>
             <div className="min-w-0">
               <p className="text-sm font-bold text-gray-800 truncate">{tenant?.name ?? 'Staff Portal'}</p>
@@ -1812,9 +1814,11 @@ export default function StaffDashboard() {
         {/* Mobile header */}
         <header className="md:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-100 shadow-sm shrink-0">
           <button onClick={() => navigate('/')}
-            className="w-8 h-8 rounded-xl flex items-center justify-center text-white shrink-0 active:opacity-70 transition-opacity"
-            style={{ background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)' }}>
-            🏛️
+            className="w-8 h-8 rounded-xl overflow-hidden shrink-0 active:opacity-70 transition-opacity"
+            style={!tenant?.logo_url ? { background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)' } : {}}>
+            {tenant?.logo_url
+              ? <img src={tenant.logo_url} alt="" className="w-full h-full object-cover" />
+              : <span className="flex items-center justify-center w-full h-full text-white">🏛️</span>}
           </button>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-bold text-gray-800 truncate">{tenant?.name ?? 'Staff Portal'}</p>
