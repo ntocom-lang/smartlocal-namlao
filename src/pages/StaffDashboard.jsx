@@ -55,7 +55,7 @@ const MODULE_GROUPS = [
     group: 'ข้อมูลและรายงาน',
     items: [
       { key: 'docs-archive',  label: 'คลังเอกสาร',     Icon: Archive,    color: '#0f766e' },
-      { key: 'photo-album',  label: 'อัลบั้มกิจกรรม', Icon: Images,     color: '#1877f2', externalUrl: 'https://www.facebook.com/groups/2193529028125946/media/albums' },
+      { key: 'photo-album',  label: 'อัลบั้มกิจกรรม', Icon: Images,     color: '#1877f2', externalUrl: 'https://m.facebook.com/groups/2193529028125946/media/albums' },
       { key: 'map',          label: 'แผนที่',          Icon: MapPin,     color: '#0891b2' },
       { key: 'report',       label: 'รายงาน',          Icon: TrendingUp, color: '#f59e0b' },
     ],
