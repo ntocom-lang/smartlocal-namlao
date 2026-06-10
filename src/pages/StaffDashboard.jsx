@@ -1754,11 +1754,11 @@ export default function StaffDashboard() {
 
         {/* Nav */}
         <nav className="flex-1 px-3 py-3 overflow-y-auto">
-          <button onClick={() => navigate('/')}
+          <button onClick={() => setActiveModule('home')}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all mb-2"
-            style={{ color: '#94a3b8' }}>
-            <Home size={16} strokeWidth={1.5} style={{ color: '#94a3b8' }} />
-            <span className="flex-1 text-left text-xs">หน้าแรกแอป</span>
+            style={activeModule === 'home' ? { backgroundColor: '#3b82f618', color: '#3b82f6' } : { color: '#94a3b8' }}>
+            <Home size={16} strokeWidth={activeModule === 'home' ? 2.2 : 1.5} />
+            <span className="flex-1 text-left text-xs">หน้าหลัก</span>
           </button>
           {visibleGroups.map(({ group, items }) => (
             <div key={group} className="mb-4">
