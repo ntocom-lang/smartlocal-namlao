@@ -49,9 +49,9 @@ const CIVIL_STATUS_COLOR = {
 }
 
 const CATEGORY_EMOJI = {
-  road: '🛣️', light: '💡', drain: '🚰', canal: '💧',
+  road: '🛣️', light: '💡', drain: '🕳️', canal: '🏞️',
   building: '🏗️', water_drought: '🚛', water_tank: '🪣',
-  water_flood: '🌊', trash: '🗑️', tree: '🌿', env_hazard: '⚠️',
+  water_flood: '🌊', trash: '🗑️', tree: '🌳', env_hazard: '⚠️',
   env_fire: '🔥', mosquito: '🦟', pollution: '🌫️', other: '📋',
 }
 const FORM_TYPE_EMOJI = {
