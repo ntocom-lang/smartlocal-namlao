@@ -297,8 +297,8 @@ export default function MorePage() {
     navigate('/')
   }
 
-  const isAdmin  = role === 'admin' || role === 'superadmin'
-  const isStaff  = role === 'staff'
+  const isAdmin  = role === 'admin' || role === 'superadmin' || role === 'officer'
+  const isStaff  = role === 'staff' || role === 'technician'
   const isViewer = role === 'viewer'
   const isCouncil = role === 'council'
   const displayName = session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || ''

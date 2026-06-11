@@ -51,7 +51,7 @@ export default function Header() {
   }
 
   const displayName = session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || ''
-  const isAdmin = role === 'admin' || role === 'superadmin'
+  const isAdmin = role === 'admin' || role === 'superadmin' || role === 'officer'
 
   if (location.pathname.startsWith('/staff')) return null
 

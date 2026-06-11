@@ -2,29 +2,57 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
-import { fmtNo } from '../lib/formatComplaintNo'
 import {
   ClipboardList, Loader2, ChevronRight, X, MapPin,
   Phone, FileText, ArrowLeft, Check, XCircle, Navigation, Camera, AlignLeft, Star,
-  ChevronLeft,
+  ChevronLeft, Clock,
 } from 'lucide-react'
 
 const ITEMS_PER_PAGE_OPTIONS = [10, 20, 50, 100]
 
 const STATUS = {
-  pending:     { label: 'รอดำเนินการ',    bg: '#fef3c7', text: '#92400e' },
-  received:    { label: 'รับเรื่องแล้ว',   bg: '#dbeafe', text: '#1e40af' },
+  new:         { label: 'คำร้องใหม่',      bg: '#fef3c7', text: '#92400e' },
   in_progress: { label: 'กำลังดำเนินการ', bg: '#ede9fe', text: '#5b21b6' },
-  completed:   { label: 'เสร็จสิ้น',      bg: '#d1fae5', text: '#065f46' },
+  done:        { label: 'ดำเนินการแล้ว',  bg: '#dbeafe', text: '#1e40af' },
+  closed:      { label: 'ปิดเรื่องแล้ว',  bg: '#d1fae5', text: '#065f46' },
   rejected:    { label: 'ปฏิเสธ',         bg: '#fee2e2', text: '#991b1b' },
+  // backward compat
+  pending:     { label: 'คำร้องใหม่',      bg: '#fef3c7', text: '#92400e' },
+  received:    { label: 'กำลังดำเนินการ', bg: '#ede9fe', text: '#5b21b6' },
+  completed:   { label: 'ดำเนินการแล้ว',  bg: '#dbeafe', text: '#1e40af' },
 }
 
-const STATUS_FLOW = ['pending', 'received', 'in_progress', 'completed']
+const STATUS_FLOW = ['new', 'in_progress', 'done', 'closed']
 const STATUS_FLOW_LABEL = {
-  pending:     { label: 'รอดำเนินการ',    desc: 'คำร้องของคุณถูกส่งเข้าระบบแล้ว' },
-  received:    { label: 'รับเรื่องแล้ว',   desc: 'เจ้าหน้าที่รับทราบและตรวจสอบ' },
-  in_progress: { label: 'กำลังดำเนินการ', desc: 'อยู่ระหว่างดำเนินการแก้ไข' },
-  completed:   { label: 'เสร็จสิ้น',      desc: 'ดำเนินการเสร็จสิ้นแล้ว' },
+  new:         { label: 'คำร้องใหม่',      desc: 'คำร้องของคุณถูกส่งเข้าระบบแล้ว' },
+  in_progress: { label: 'กำลังดำเนินการ', desc: 'เจ้าหน้าที่รับเรื่องและลงพื้นที่แล้ว' },
+  done:        { label: 'ดำเนินการแล้ว',  desc: 'เจ้าหน้าที่ดำเนินการเสร็จแล้ว' },
+  closed:      { label: 'ปิดเรื่องแล้ว',  desc: 'ปิดเรื่องและแจ้งผลประชาชนแล้ว' },
+}
+
+function slaDaysLeft(dueDateStr) {
+  if (!dueDateStr) return null
+  const now = new Date(); now.setHours(0, 0, 0, 0)
+  const due = new Date(dueDateStr); due.setHours(0, 0, 0, 0)
+  return Math.round((due - now) / 86400000)
+}
+
+function SlaBadge({ dueDate, status }) {
+  if (!dueDate || status === 'done' || status === 'closed' || status === 'rejected') return null
+  const days = slaDaysLeft(dueDate)
+  if (days === null) return null
+  const color = days < 0 ? { bg: '#fee2e2', text: '#991b1b' }
+    : days <= 5 ? { bg: '#fef3c7', text: '#92400e' }
+    : { bg: '#d1fae5', text: '#065f46' }
+  const label = days < 0 ? `เกินกำหนด ${Math.abs(days)} วัน`
+    : days === 0 ? 'ครบกำหนดวันนี้'
+    : `เหลือ ${days} วัน`
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap"
+          style={{ backgroundColor: color.bg, color: color.text }}>
+      <Clock size={9} /> {label}
+    </span>
+  )
 }
 
 const CATEGORY_LABEL = {
@@ -49,7 +77,7 @@ const CATEGORY_EMOJI = {
 }
 
 function StatusBadge({ status }) {
-  const s = STATUS[status] ?? STATUS.pending
+  const s = STATUS[status] ?? STATUS.new
   return (
     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"
           style={{ backgroundColor: s.bg, color: s.text }}>
@@ -58,8 +86,11 @@ function StatusBadge({ status }) {
   )
 }
 
+const STATUS_COMPAT = { pending: 'new', received: 'in_progress', completed: 'done' }
+
 function StatusStepper({ status }) {
-  if (status === 'rejected') {
+  const normalized = STATUS_COMPAT[status] ?? status
+  if (normalized === 'rejected') {
     return (
       <div className="flex items-center gap-3 p-4 bg-red-50 rounded-2xl border border-red-100">
         <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
@@ -73,7 +104,7 @@ function StatusStepper({ status }) {
     )
   }
 
-  const currentIdx = STATUS_FLOW.indexOf(status)
+  const currentIdx = STATUS_FLOW.indexOf(normalized)
 
   return (
     <div className="space-y-0">
@@ -196,6 +227,17 @@ function RatingCard({ complaint, onRated }) {
 }
 
 function DetailSheet({ complaint: c, onClose, onRated }) {
+  const [timeline, setTimeline] = useState(null)
+
+  useEffect(() => {
+    if (!c) return
+    supabase.from('complaint_timeline')
+      .select('*')
+      .eq('complaint_id', c.id)
+      .order('created_at', { ascending: true })
+      .then(({ data }) => setTimeline(data ?? []))
+  }, [c?.id])
+
   if (!c) return null
   const attachments = c.attachments ?? []
   const categoryLabel = CATEGORY_LABEL[c.category] ?? c.category
@@ -233,10 +275,15 @@ function DetailSheet({ complaint: c, onClose, onRated }) {
 
           <div className="flex items-center justify-between mt-4 pt-4 border-t border-white/20">
             <div>
-              <p className="text-white/60 text-[13px] uppercase tracking-wider">เลขที่คำร้อง</p>
-              <p className="text-white font-black text-xl tracking-wider mt-0.5">
-                {c.complaint_number ? fmtNo(c.complaint_number, c.created_at) : '—'}
+              <p className="text-white/60 text-[13px] uppercase tracking-wider">เลขที่อ้างอิง</p>
+              <p className="text-white font-black text-xl tracking-wider mt-0.5 font-mono">
+                {c.ref_no ?? '—'}
               </p>
+              {c.due_date && (
+                <div className="mt-1">
+                  <SlaBadge dueDate={c.due_date} status={c.status} />
+                </div>
+              )}
             </div>
             <div className="text-right">
               <p className="text-white/60 text-[13px] uppercase tracking-wider">ยื่นเมื่อ</p>
@@ -364,8 +411,36 @@ function DetailSheet({ complaint: c, onClose, onRated }) {
             </div>
           )}
 
-          {/* rating — แสดงเฉพาะตอน completed */}
-          {c.status === 'completed' && (
+          {/* timeline */}
+          {timeline && timeline.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ประวัติการดำเนินงาน</p>
+              <div className="space-y-2">
+                {timeline.map((t) => {
+                  const s = STATUS[t.status]
+                  return (
+                    <div key={t.id} className="flex gap-3 items-start">
+                      <div className="w-2 h-2 rounded-full mt-1.5 shrink-0"
+                           style={{ backgroundColor: s?.text ?? '#9ca3af' }} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-gray-700">{s?.label ?? t.status}</p>
+                        {t.note && <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{t.note}</p>}
+                        <p className="text-[11px] text-gray-300 mt-0.5">
+                          {new Date(t.created_at).toLocaleDateString('th-TH', {
+                            day: '2-digit', month: 'short', year: '2-digit',
+                            hour: '2-digit', minute: '2-digit',
+                          })} น.
+                        </p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* rating — แสดงเฉพาะตอน closed/done */}
+          {(c.status === 'closed' || c.status === 'completed') && (
             <RatingCard complaint={c} onRated={onRated} />
           )}
         </div>
@@ -480,12 +555,11 @@ export default function MyComplaints() {
                     {c.subject && (
                       <p className="text-xs text-gray-500 truncate">{c.subject}</p>
                     )}
-                    <div className="flex items-center gap-2 mt-2">
+                    <div className="flex items-center gap-2 mt-2 flex-wrap">
                       <StatusBadge status={c.status} />
-                      {c.complaint_number && (
-                        <span className="text-[13px] text-gray-400 font-mono">
-                          {fmtNo(c.complaint_number, c.created_at)}
-                        </span>
+                      <SlaBadge dueDate={c.due_date} status={c.status} />
+                      {c.ref_no && (
+                        <span className="text-[11px] text-gray-400 font-mono">{c.ref_no}</span>
                       )}
                     </div>
                     <p className="text-[13px] text-gray-300 mt-1.5">

@@ -130,7 +130,7 @@ function RequireAuth({ children, adminOnly = false, techOnly = false, staffOnly 
     const redirectTo = adminOnly ? '/admin/login' : '/auth'
     return <Navigate to={redirectTo} state={{ from: location.pathname + location.search }} replace />
   }
-  if (adminOnly && role !== null && role !== 'admin' && role !== 'superadmin' && role !== 'viewer' && role !== 'council') {
+  if (adminOnly && role !== null && !['admin', 'superadmin', 'officer', 'viewer', 'council'].includes(role)) {
     if (role === 'technician') return <Navigate to="/technician" replace />
     if (role === 'staff')      return <Navigate to="/staff" replace />
     return <Navigate to="/" replace />
@@ -138,7 +138,7 @@ function RequireAuth({ children, adminOnly = false, techOnly = false, staffOnly 
   if (adminOnly && role === null) return null
   if (techOnly && role !== null && role !== 'technician') return <Navigate to="/" replace />
   if (techOnly && role === null) return null
-  if (staffOnly && role !== null && !['staff', 'admin', 'superadmin', 'viewer', 'technician'].includes(role)) {
+  if (staffOnly && role !== null && !['staff', 'officer', 'admin', 'superadmin', 'viewer', 'technician'].includes(role)) {
     return <Navigate to="/" replace />
   }
   if (staffOnly && role === null) return null
@@ -229,8 +229,8 @@ function AppShell() {
         <main className="flex-1">
           <Routes>
           <Route path="/" element={<HomeOrTechRedirect />} />
-          <Route path="/complaint" element={<OneDataLanding />} />
-          <Route path="/complaint-legacy" element={<ComplaintCategory />} />
+          <Route path="/complaint" element={<ComplaintCategory />} />
+          <Route path="/complaint-legacy" element={<OneDataLanding />} />
           <Route path="/business-register" element={
             <RequireAuth>
               <BusinessRegisterPage />

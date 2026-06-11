@@ -14,23 +14,28 @@ import { notifyTelegram } from '../../lib/notifyTelegram'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const STATUS = {
-  pending:     { label: 'รอดำเนินการ',    color: '#f59e0b', bg: '#fef3c7', text: '#92400e' },
-  received:    { label: 'รับเรื่องแล้ว',   color: '#3b82f6', bg: '#dbeafe', text: '#1e40af' },
-  in_progress: { label: 'กำลังดำเนินการ', color: '#8b5cf6', bg: '#ede9fe', text: '#5b21b6' },
-  completed:   { label: 'เสร็จสิ้น',      color: '#10b981', bg: '#d1fae5', text: '#065f46' },
-  rejected:    { label: 'ปฏิเสธ',         color: '#ef4444', bg: '#fee2e2', text: '#991b1b' },
+  new:         { label: 'คำร้องใหม่',      color: '#f59e0b', bg: '#fef3c7', text: '#92400e' },
+  in_progress: { label: 'กำลังดำเนินการ',  color: '#8b5cf6', bg: '#ede9fe', text: '#5b21b6' },
+  done:        { label: 'ดำเนินการแล้ว',   color: '#3b82f6', bg: '#dbeafe', text: '#1e40af' },
+  closed:      { label: 'ปิดเรื่องแล้ว',   color: '#10b981', bg: '#d1fae5', text: '#065f46' },
+  rejected:    { label: 'ปฏิเสธ',          color: '#ef4444', bg: '#fee2e2', text: '#991b1b' },
+  // backward compat (ข้อมูลเก่าก่อน migrate)
+  pending:     { label: 'คำร้องใหม่',      color: '#f59e0b', bg: '#fef3c7', text: '#92400e' },
+  received:    { label: 'กำลังดำเนินการ',  color: '#8b5cf6', bg: '#ede9fe', text: '#5b21b6' },
+  completed:   { label: 'ดำเนินการแล้ว',   color: '#3b82f6', bg: '#dbeafe', text: '#1e40af' },
 }
-const STATUS_FLOW = ['pending', 'received', 'in_progress', 'completed']
+const STATUS_FLOW = ['new', 'in_progress', 'done', 'closed']
 const STATUS_FLOW_LABEL = {
-  pending:     { label: 'รอดำเนินการ',    desc: 'ประชาชนส่งคำร้องเข้าระบบ' },
-  received:    { label: 'รับเรื่องแล้ว',   desc: 'เจ้าหน้าที่รับเรื่องและตรวจสอบ' },
-  in_progress: { label: 'กำลังดำเนินการ', desc: 'อยู่ระหว่างดำเนินการแก้ไข' },
-  completed:   { label: 'เสร็จสิ้น',      desc: 'ดำเนินการเสร็จสิ้นเรียบร้อย' },
+  new:         { label: 'คำร้องใหม่',      desc: 'ประชาชนส่งคำร้องเข้าระบบ' },
+  in_progress: { label: 'กำลังดำเนินการ',  desc: 'เจ้าหน้าที่รับเรื่องและลงพื้นที่' },
+  done:        { label: 'ดำเนินการแล้ว',   desc: 'เจ้าหน้าที่ดำเนินการเสร็จแล้ว' },
+  closed:      { label: 'ปิดเรื่องแล้ว',   desc: 'ปิดเรื่องและแจ้งผลประชาชนแล้ว' },
 }
+const DEPARTMENTS = ['สำนักปลัด', 'กองช่าง', 'กองการศึกษา', 'กองคลัง']
 const NEXT_ACTION = {
-  pending:     { label: 'รับเรื่อง',       next: 'received' },
-  received:    { label: 'เริ่มดำเนินการ', next: 'in_progress' },
-  in_progress: { label: 'ปิดงาน',         next: 'completed' },
+  new:         { label: 'รับเรื่อง',       next: 'in_progress' },
+  in_progress: { label: 'ดำเนินการแล้ว',   next: 'done' },
+  done:        { label: 'ปิดเรื่อง',        next: 'closed' },
 }
 const CATEGORY_LABEL = {
   road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าส่องสว่าง',
@@ -45,8 +50,51 @@ const CATEGORY_EMOJI = {
   building: '', mosquito: '', pollution: '', corruption: '',
   tax: '', canal: '', animals: '', other: '',
 }
-const FILTER_TABS = ['ทั้งหมด', ...Object.values(STATUS).map((s) => s.label)]
-const FILTER_KEYS = [null, ...Object.keys(STATUS)]
+const STATUS_MAIN = ['new', 'in_progress', 'done', 'closed', 'rejected']
+
+function addWorkingDays(date, days) {
+  const d = new Date(date)
+  let added = 0
+  while (added < days) {
+    d.setDate(d.getDate() + 1)
+    const dow = d.getDay()
+    if (dow !== 0 && dow !== 6) added++
+  }
+  return d.toISOString().slice(0, 10)
+}
+
+function slaDaysLeft(dueDateStr) {
+  if (!dueDateStr) return null
+  const now = new Date(); now.setHours(0, 0, 0, 0)
+  const due = new Date(dueDateStr); due.setHours(0, 0, 0, 0)
+  return Math.round((due - now) / 86400000)
+}
+
+function SlaBadge({ dueDate, status }) {
+  if (!dueDate || status === 'done' || status === 'closed' || status === 'rejected') return null
+  const days = slaDaysLeft(dueDate)
+  if (days === null) return null
+  const color = days < 0 ? { bg: '#fee2e2', text: '#991b1b' }
+    : days <= 5 ? { bg: '#fef3c7', text: '#92400e' }
+    : { bg: '#d1fae5', text: '#065f46' }
+  const label = days < 0 ? `เกินกำหนด ${Math.abs(days)} วัน`
+    : days === 0 ? 'ครบกำหนดวันนี้'
+    : `เหลือ ${days} วัน`
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap"
+          style={{ backgroundColor: color.bg, color: color.text }}>
+      ⏱ {label}
+    </span>
+  )
+}
+const FILTER_TABS = ['ทั้งหมด', ...STATUS_MAIN.map((k) => STATUS[k].label)]
+const FILTER_KEYS = [null, ...STATUS_MAIN]
+
+const PRIORITY = {
+  urgent: { label: '🔴 เร่งด่วน', short: 'เร่งด่วน', color: '#ef4444', bg: '#fee2e2', text: '#991b1b', order: 0 },
+  normal: { label: '🟡 ปกติ',     short: 'ปกติ',     color: '#f59e0b', bg: '#fef3c7', text: '#92400e', order: 1 },
+  low:    { label: '🟢 ต่ำ',      short: 'ต่ำ',      color: '#10b981', bg: '#d1fae5', text: '#065f46', order: 2 },
+}
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 function StatCard({ label, value, icon: Icon, color }) {
@@ -70,6 +118,18 @@ function StatusBadge({ status }) {
     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"
           style={{ backgroundColor: s.bg, color: s.text }}>
       {s.label}
+    </span>
+  )
+}
+
+function PriorityBadge({ priority }) {
+  if (!priority || priority === 'normal') return null
+  const p = PRIORITY[priority]
+  if (!p) return null
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap"
+          style={{ backgroundColor: p.bg, color: p.text }}>
+      {p.short}
     </span>
   )
 }
@@ -143,7 +203,13 @@ function StatusStepper({ status, note }) {
 function ActionButton({ status, id, onUpdate, loading }) {
   const action = NEXT_ACTION[status]
   const [confirm, setConfirm] = useState(false)
+  const [note, setNote] = useState('')
   if (!action) return null
+  function handleConfirm() {
+    setConfirm(false)
+    onUpdate(id, action.next, [], note.trim() || null)
+    setNote('')
+  }
   return (
     <>
       <button onClick={() => setConfirm(true)} disabled={loading === id}
@@ -153,18 +219,20 @@ function ActionButton({ status, id, onUpdate, loading }) {
         {action.label}
       </button>
       {confirm && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40" onClick={() => setConfirm(false)}>
-          <div className="bg-white rounded-2xl p-5 shadow-xl w-72 mx-4" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40" onClick={() => { setConfirm(false); setNote('') }}>
+          <div className="bg-white rounded-2xl p-5 shadow-xl w-80 mx-4" onClick={(e) => e.stopPropagation()}>
             <p className="text-sm font-semibold text-gray-800 mb-1">ยืนยันการเปลี่ยนสถานะ</p>
-            <p className="text-xs text-gray-500 mb-4">ต้องการ <span className="font-medium text-gray-800">"{action.label}"</span> ใช่หรือไม่?</p>
+            <p className="text-xs text-gray-500 mb-3">ต้องการ <span className="font-medium text-gray-800">"{action.label}"</span> ใช่หรือไม่?</p>
+            <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2}
+              placeholder="หมายเหตุ (ไม่บังคับ)"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-blue-200 mb-3" />
             <div className="flex gap-2">
-              <button onClick={() => { setConfirm(false); onUpdate(id, action.next) }}
-                disabled={loading === id}
+              <button onClick={handleConfirm} disabled={loading === id}
                 className="flex-1 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
                 style={{ backgroundColor: 'var(--color-primary)' }}>
                 ยืนยัน
               </button>
-              <button onClick={() => setConfirm(false)}
+              <button onClick={() => { setConfirm(false); setNote('') }}
                 className="flex-1 py-2 rounded-xl text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
                 ยกเลิก
               </button>
@@ -277,7 +345,7 @@ function FixedSelect({ value, onChange, options }) {
   )
 }
 
-function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, currentUserRole, onDelete }) {
+function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, onDeptAssign, onPriority, currentUserRole, onDelete }) {
   const { tenant } = useTenant()
   const [assigning, setAssigning] = useState(false)
   const [showCloseJob, setShowCloseJob] = useState(false)
@@ -302,9 +370,7 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
   function handlePrintComplaint() {
     const d = new Date(c.created_at)
     const thDate = d.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
-    const yy = String(d.getFullYear() + 543).slice(-2)
-    const mm = String(d.getMonth() + 1).padStart(2, '0')
-    const num = c.complaint_number ? `${yy}${mm}${String(c.complaint_number).padStart(3, '0')}` : '—'
+    const num = c.ref_no ?? '—'
     const reporter = c.reporter_name || c.profiles?.full_name || '—'
     const phone = c.phone || c.profiles?.phone || '—'
     const cat = CATEGORY_LABEL[c.category] ?? c.category ?? '—'
@@ -397,7 +463,7 @@ ${photoSectionHtml}
       }
     }
     setCloseUploading(false)
-    onUpdate(c.id, 'completed', urls, closeNote.trim() || null)
+    onUpdate(c.id, 'done', urls, closeNote.trim() || null)
     onClose()
   }
 
@@ -434,13 +500,13 @@ ${photoSectionHtml}
             <div>
               <p className="text-white/60 text-[13px] uppercase tracking-wider">เลขที่คำร้อง</p>
               <p className="text-white font-black text-lg tracking-wider mt-0.5 font-mono">
-                {c.complaint_number ? (() => {
-                  const d = new Date(c.created_at)
-                  const yy = String(d.getFullYear()+543).slice(-2)
-                  const mm = String(d.getMonth()+1).padStart(2,'0')
-                  return `${yy}${mm}${String(c.complaint_number).padStart(3,'0')}`
-                })() : '—'}
+                {c.ref_no ?? '—'}
               </p>
+              {c.due_date && (
+                <div className="mt-1">
+                  <SlaBadge dueDate={c.due_date} status={c.status} />
+                </div>
+              )}
             </div>
             <div className="text-right">
               <p className="text-white/60 text-[13px] uppercase tracking-wider">ยื่นเมื่อ</p>
@@ -456,9 +522,26 @@ ${photoSectionHtml}
             <StatusStepper status={c.status} note={c.technician_note} />
           </div>
 
-          {technicians?.length > 0 && c.status !== 'completed' && c.status !== 'rejected' && (
+          {/* Department assignment — admin only */}
+          {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
             <div className="space-y-2">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">มอบหมายให้ช่าง</p>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">กองรับผิดชอบ</p>
+              <div className="bg-indigo-50 rounded-2xl p-3 border border-indigo-100 flex items-center gap-3">
+                <select value={c.department ?? ''}
+                  onChange={(e) => onDeptAssign(c.id, e.target.value)}
+                  className="flex-1 text-sm border border-indigo-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none">
+                  <option value="">— ยังไม่ระบุกอง —</option>
+                  {DEPARTMENTS.map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {technicians?.length > 0 && c.status !== 'closed' && c.status !== 'completed' && c.status !== 'rejected' && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">มอบหมายเจ้าหน้าที่</p>
               <div className="bg-orange-50 rounded-2xl p-4 border border-orange-100">
                 <div className="flex items-center gap-3">
                   <Wrench size={16} className="text-orange-500 shrink-0" />
@@ -482,6 +565,28 @@ ${photoSectionHtml}
                     ))}
                   </select>
                   {assigning && <Loader2 size={14} className="animate-spin text-orange-400 shrink-0" />}
+                </div>
+
+                {/* Priority selector */}
+                <div className="flex items-center justify-between gap-3 mt-3 pt-3 border-t border-orange-100">
+                  <p className="text-xs font-semibold text-gray-500 flex items-center gap-1.5">
+                    ⚡ ความเร่งด่วน
+                  </p>
+                  <div className="flex gap-1.5">
+                    {Object.entries(PRIORITY).map(([k, p]) => {
+                      const active = (c.priority ?? 'normal') === k
+                      return (
+                        <button key={k} type="button"
+                          onClick={() => onPriority(c.id, k)}
+                          className="px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all border"
+                          style={active
+                            ? { backgroundColor: p.bg, color: p.text, borderColor: p.color }
+                            : { backgroundColor: '#f9fafb', color: '#9ca3af', borderColor: '#e5e7eb' }}>
+                          {p.short}
+                        </button>
+                      )
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
@@ -602,12 +707,12 @@ ${photoSectionHtml}
             <button onClick={onClose} className="px-4 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors">
               ปิดหน้าต่าง
             </button>
-          ) : c.status === 'in_progress' && !showCloseJob ? (
+          ) : (c.status === 'in_progress' || c.status === 'received') && !showCloseJob ? (
             <div className="flex gap-2 flex-wrap">
               <button onClick={() => setShowCloseJob(true)}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white transition-all active:scale-95"
                 style={{ backgroundColor: 'var(--color-primary)' }}>
-                <CheckCircle2 size={12} /> ปิดงาน
+                <CheckCircle2 size={12} /> ดำเนินการแล้ว
               </button>
               <RejectButton status={c.status} id={c.id}
                 onUpdate={(id, next, wp = [], note = null) => { onUpdate(id, next, wp, note); onClose() }}
@@ -622,7 +727,7 @@ ${photoSectionHtml}
                 ปิดหน้าต่าง
               </button>
             </div>
-          ) : c.status === 'in_progress' && showCloseJob ? (
+          ) : (c.status === 'in_progress' || c.status === 'received') && showCloseJob ? (
             <div className="space-y-3 w-full">
               <p className="text-xs font-semibold text-gray-500 flex items-center gap-1.5">
                 <Camera size={12} /> แนบรูปหลักฐานการทำงาน (ไม่บังคับ)
@@ -752,6 +857,8 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
   const [filterCategory, setFilterCategory]       = useState('')
   const [filterVillage, setFilterVillage]         = useState('')
   const [filterTechnician, setFilterTechnician]   = useState('')
+  const [filterPriority, setFilterPriority]       = useState('')
+  const [filterDepartment, setFilterDepartment]   = useState('')
   const [selectedComplaint, setSelectedComplaint] = useState(null)
   const [technicians, setTechnicians]             = useState([])
 
@@ -759,9 +866,9 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
     if (!tenant?.id) return
     const { data } = await supabase
       .from('profiles')
-      .select('id, full_name, email')
+      .select('id, full_name, email, department, is_dept_head')
       .eq('municipality_id', tenant.id)
-      .eq('role', 'technician')
+      .in('role', ['technician', 'officer'])
       .order('full_name')
     setTechnicians(data ?? [])
   }, [tenant?.id])
@@ -783,23 +890,26 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
   useEffect(() => { fetchComplaints() }, [fetchComplaints])
 
   async function assignTechnician(complaintId, technicianId) {
+    const newStatus = technicianId ? 'in_progress' : 'new'
     const { error } = await supabase
       .from('complaints')
-      .update({ assigned_to: technicianId, status: technicianId ? 'received' : 'pending' })
+      .update({ assigned_to: technicianId, status: newStatus })
       .eq('id', complaintId)
     if (!error) {
       setComplaints((prev) => prev.map((c) =>
-        c.id === complaintId
-          ? { ...c, assigned_to: technicianId, status: technicianId ? 'received' : 'pending' }
-          : c
+        c.id === complaintId ? { ...c, assigned_to: technicianId, status: newStatus } : c
       ))
-      if (selectedComplaint?.id === complaintId) {
-        setSelectedComplaint((prev) => ({
-          ...prev,
-          assigned_to: technicianId,
-          status: technicianId ? 'received' : 'pending',
-        }))
-      }
+      if (selectedComplaint?.id === complaintId)
+        setSelectedComplaint((prev) => ({ ...prev, assigned_to: technicianId, status: newStatus }))
+    }
+  }
+
+  async function assignDepartment(complaintId, department) {
+    const { error } = await supabase.from('complaints').update({ department }).eq('id', complaintId)
+    if (!error) {
+      setComplaints((prev) => prev.map((c) => c.id === complaintId ? { ...c, department } : c))
+      if (selectedComplaint?.id === complaintId)
+        setSelectedComplaint((prev) => ({ ...prev, department }))
     }
   }
 
@@ -807,21 +917,49 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
     setComplaints((prev) => prev.filter((c) => c.id !== id))
   }
 
+  async function updatePriority(complaintId, priority) {
+    await supabase.from('complaints').update({ priority }).eq('id', complaintId)
+    setComplaints(prev => prev.map(c => c.id === complaintId ? { ...c, priority } : c))
+    if (selectedComplaint?.id === complaintId) setSelectedComplaint(prev => ({ ...prev, priority }))
+  }
+
   async function updateStatus(id, nextStatus, workPhotos = [], techNote = null) {
     setUpdating(id)
     const payload = { status: nextStatus }
     if (workPhotos.length > 0) payload.work_photos = workPhotos
     if (techNote) payload.technician_note = techNote
+    if (nextStatus === 'in_progress') payload.due_date = addWorkingDays(new Date(), 15)
+    if (nextStatus === 'closed') payload.closed_at = new Date().toISOString()
     const { error } = await supabase.from('complaints').update(payload).eq('id', id)
     if (error) {
       console.error('update status error:', error.message)
     } else {
       setComplaints((prev) =>
         prev.map((c) => c.id === id
-          ? { ...c, status: nextStatus, ...(workPhotos.length > 0 ? { work_photos: workPhotos } : {}) }
+          ? { ...c, status: nextStatus, ...(payload.due_date ? { due_date: payload.due_date } : {}), ...(workPhotos.length > 0 ? { work_photos: workPhotos } : {}) }
           : c)
       )
+
       const c = complaints.find(x => x.id === id)
+
+      supabase.from('complaint_timeline').insert({
+        complaint_id: id,
+        status: nextStatus,
+        note: techNote ?? null,
+        actor_name: null,
+      }).then()
+
+      if (nextStatus === 'closed' && c?.user_id) {
+        supabase.functions.invoke('send-push', {
+          body: {
+            user_id: c.user_id,
+            title: 'คำร้องของคุณปิดเรื่องแล้ว',
+            body: `คำร้อง${CATEGORY_LABEL[c?.category] ?? c?.category ?? ''} ดำเนินการเสร็จสิ้นแล้ว`,
+            url: '/my-complaints',
+          },
+        }).catch(() => {})
+      }
+
       const catLabel = CATEGORY_LABEL[c?.category] ?? c?.category ?? ''
       notifyTelegram(tenant?.telegram_group_id,
         `🔄 <b>อัปเดตสถานะคำร้อง</b>\nประเภท: ${catLabel}\nสถานะ: ${STATUS[nextStatus]?.label ?? nextStatus}${techNote ? `\nหมายเหตุ: ${techNote}` : ''}`
@@ -836,9 +974,7 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
     const filterLabel = FILTER_TABS[filterTab]
     const rows = filtered.map((c, i) => {
       const d = new Date(c.created_at)
-      const yy = String(d.getFullYear() + 543).slice(-2)
-      const mm = String(d.getMonth() + 1).padStart(2, '0')
-      const num = c.complaint_number ? `${yy}${mm}${String(c.complaint_number).padStart(3, '0')}` : '—'
+      const num = c.ref_no ?? '—'
       const dateStr = d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
       const cat = CATEGORY_LABEL[c.category] ?? c.category ?? '—'
       const reporter = c.reporter_name || c.profiles?.full_name || '—'
@@ -898,17 +1034,31 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
     color: s.color,
   })).filter((d) => d.value > 0)
 
+  const normalizeStatus = (s) => {
+    if (s === 'pending') return 'new'
+    if (s === 'received') return 'in_progress'
+    if (s === 'completed') return 'done'
+    return s
+  }
+
   const filtered = complaints.filter((c) => {
-    const matchStatus = FILTER_KEYS[filterTab] ? c.status === FILTER_KEYS[filterTab] : true
+    const ns = normalizeStatus(c.status)
+    const matchStatus = FILTER_KEYS[filterTab] ? ns === FILTER_KEYS[filterTab] : true
     const matchSearch = search === '' ||
-      c.detail.includes(search) ||
+      (c.detail ?? '').includes(search) ||
       (CATEGORY_LABEL[c.category] ?? '').includes(search) ||
       (c.phone ?? '').includes(search)
-    const matchCategory = filterCategory === '' || c.category === filterCategory
-    const matchVillage  = filterVillage === '' || (c.village || c.location_name || '') === filterVillage
-    const matchTech     = filterTechnician === '' ||
+    const matchCategory   = filterCategory === '' || c.category === filterCategory
+    const matchVillage    = filterVillage === '' || (c.village || c.location_name || '') === filterVillage
+    const matchTech       = filterTechnician === '' ||
       (filterTechnician === '__none__' ? !c.assigned_to : c.assigned_to === filterTechnician)
-    return matchStatus && matchSearch && matchCategory && matchVillage && matchTech
+    const matchPriority   = filterPriority === '' || (c.priority ?? 'normal') === filterPriority
+    const matchDepartment = filterDepartment === '' || (c.department ?? '') === filterDepartment
+    return matchStatus && matchSearch && matchCategory && matchVillage && matchTech && matchPriority && matchDepartment
+  }).sort((a, b) => {
+    const pa = PRIORITY[a.priority ?? 'normal']?.order ?? 1
+    const pb = PRIORITY[b.priority ?? 'normal']?.order ?? 1
+    return pa !== pb ? pa - pb : new Date(b.created_at) - new Date(a.created_at)
   })
 
   const baseFiltered = complaints.filter((c) => {
@@ -947,11 +1097,12 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
   const complaintStartIdx   = (complaintPage - 1) * perPage
   const paginatedFiltered   = complaintsPerPage === 'all' ? filtered : filtered.slice(complaintStartIdx, complaintStartIdx + perPage)
 
-  useEffect(() => { setComplaintPage(1) }, [filterTab, search, complaintsPerPage, filterCategory, filterVillage, filterTechnician])
+  useEffect(() => { setComplaintPage(1) }, [filterTab, search, complaintsPerPage, filterCategory, filterVillage, filterTechnician, filterPriority])
 
-  const counts = Object.fromEntries(
-    Object.keys(STATUS).map((k) => [k, complaints.filter((c) => c.status === k).length])
-  )
+  const counts = STATUS_MAIN.reduce((acc, k) => {
+    acc[k] = complaints.filter((c) => normalizeStatus(c.status) === k).length
+    return acc
+  }, {})
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
@@ -967,10 +1118,10 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label="ทั้งหมด"        value={complaints.length}       icon={ClipboardList} color="#64748b" />
-        <StatCard label="รอดำเนินการ"    value={counts.pending ?? 0}     icon={Clock}         color="#f59e0b" />
-        <StatCard label="กำลังดำเนินการ" value={counts.in_progress ?? 0} icon={AlertCircle}   color="#8b5cf6" />
-        <StatCard label="เสร็จสิ้น"      value={counts.completed ?? 0}   icon={CheckCircle2}  color="#10b981" />
+        <StatCard label="ทั้งหมด"         value={complaints.length}         icon={ClipboardList} color="#64748b" />
+        <StatCard label="คำร้องใหม่"      value={counts.new ?? 0}           icon={Clock}         color="#f59e0b" />
+        <StatCard label="กำลังดำเนินการ"  value={counts.in_progress ?? 0}   icon={AlertCircle}   color="#8b5cf6" />
+        <StatCard label="ปิดเรื่องแล้ว"   value={counts.closed ?? 0}        icon={CheckCircle2}  color="#10b981" />
       </div>
 
       {/* Chart + status summary */}
@@ -1089,9 +1240,27 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
               ))}
             </select>
 
-            {(filterCategory || filterVillage || filterTechnician || filterTab !== 0 || search) && (
+            <select value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)}
+              className="px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-600 focus:outline-none focus:ring-2 focus:border-transparent cursor-pointer"
+              style={{ '--tw-ring-color': 'var(--color-primary)' }}>
+              <option value="">ทุกกอง</option>
+              {DEPARTMENTS.map((d) => (
+                <option key={d} value={d}>{d} ({complaints.filter(c => c.department === d).length})</option>
+              ))}
+            </select>
+
+            <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)}
+              className="px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-600 focus:outline-none focus:ring-2 focus:border-transparent cursor-pointer"
+              style={{ '--tw-ring-color': 'var(--color-primary)' }}>
+              <option value="">ความเร่งด่วนทั้งหมด</option>
+              {Object.entries(PRIORITY).map(([k, p]) => (
+                <option key={k} value={k}>{p.short} ({complaints.filter(c => (c.priority ?? 'normal') === k).length})</option>
+              ))}
+            </select>
+
+            {(filterCategory || filterVillage || filterTechnician || filterPriority || filterDepartment || filterTab !== 0 || search) && (
               <button
-                onClick={() => { setFilterCategory(''); setFilterVillage(''); setFilterTechnician(''); setFilterTab(0); setSearch('') }}
+                onClick={() => { setFilterCategory(''); setFilterVillage(''); setFilterTechnician(''); setFilterPriority(''); setFilterDepartment(''); setFilterTab(0); setSearch('') }}
                 className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-500 bg-red-50 hover:bg-red-100 transition-colors flex items-center gap-1">
                 <X size={12} />
                 ล้างตัวกรองทั้งหมด
@@ -1123,9 +1292,16 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
                       {CATEGORY_LABEL[c.category] ?? c.category}
                     </span>
                     <div className="flex items-center gap-1.5 shrink-0">
+                      <PriorityBadge priority={c.priority} />
                       <StatusBadge status={c.status} />
                       <ChevronRight size={14} className="text-gray-300" />
                     </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {c.ref_no && (
+                      <span className="text-[10px] text-gray-400 font-mono">{c.ref_no}</span>
+                    )}
+                    <SlaBadge dueDate={c.due_date} status={c.status} />
                   </div>
                   {c.subject && <p className="text-xs text-gray-600 truncate">{c.subject}</p>}
                   <p className="text-xs text-gray-400 truncate">{c.detail}</p>
@@ -1160,6 +1336,7 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
                     <th className="px-3 py-2 text-left font-medium">สถานที่</th>
                     <th className="px-3 py-2 text-left font-medium">ช่าง</th>
                     <th className="px-3 py-2 text-left font-medium">โทรศัพท์</th>
+                    <th className="px-3 py-2 text-left font-medium">ความเร่งด่วน</th>
                     <th className="px-3 py-2 text-left font-medium">สถานะ</th>
                     <th className="px-3 py-2 text-left font-medium">การดำเนินการ</th>
                   </tr>
@@ -1187,6 +1364,14 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
                       </td>
                       <td className="px-3 py-1.5 text-gray-500 whitespace-nowrap">
                         {c.phone ?? <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-3 py-1.5">
+                        {c.priority && c.priority !== 'normal'
+                          ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap"
+                              style={{ backgroundColor: PRIORITY[c.priority]?.bg, color: PRIORITY[c.priority]?.text }}>
+                              {PRIORITY[c.priority]?.short}
+                            </span>
+                          : <span className="text-gray-300 text-xs">—</span>}
                       </td>
                       <td className="px-3 py-1.5">
                         <StatusBadge status={c.status} />
@@ -1272,6 +1457,8 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
           updating={updating}
           technicians={technicians}
           onAssign={assignTechnician}
+          onDeptAssign={assignDepartment}
+          onPriority={updatePriority}
           currentUserRole={currentUserRole ?? 'staff'}
           onDelete={handleDeleteComplaint}
         />

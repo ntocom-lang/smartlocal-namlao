@@ -5,12 +5,13 @@ import { ChevronLeft, Pencil, Loader2 } from 'lucide-react'
 
 const ROLE_LABEL = {
   superadmin: 'Super Admin',
-  admin:      'แอดมิน',
+  admin:      'แอดมินระบบ',
+  officer:    'แอดมินกอง',
+  technician: 'ปฏิบัติงาน',
+  staff:      'เจ้าหน้าที่',
   viewer:     'ผู้บริหาร',
   council:    'สภาเทศบาล',
-  officer:    'เจ้าหน้าที่',
-  technician: 'ช่าง',
-  citizen:    'ประชาชนทั่วไป',
+  citizen:    'ประชาชน',
 }
 
 export default function ProfilePage() {

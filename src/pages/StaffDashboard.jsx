@@ -76,11 +76,11 @@ const APPROVAL_TYPES = [
 const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
 
 const ROLE_TH = {
-  staff:      'เจ้าหน้าที่เอกสาร',
-  officer:    'เจ้าหน้าที่',
-  technician: 'ช่างเทคนิค',
-  admin:      'ผู้ดูแลระบบ',
   superadmin: 'Super Admin',
+  admin:      'แอดมินระบบ',
+  officer:    'แอดมินกอง',
+  technician: 'ปฏิบัติงาน',
+  staff:      'เจ้าหน้าที่',
   viewer:     'ผู้บริหาร',
   council:    'สภาเทศบาล',
 }

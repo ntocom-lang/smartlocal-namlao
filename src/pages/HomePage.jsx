@@ -28,10 +28,10 @@ export default function HomePage() {
       .then(({ data }) => setRole(data?.role ?? 'citizen'))
   }, [session])
 
-  const isAdmin = role === 'admin' || role === 'superadmin'
+  const isAdmin = role === 'admin' || role === 'superadmin' || role === 'officer'
   const isViewer = role === 'viewer'
   const isCouncil = role === 'council'
-  const isStaff = role === 'staff'
+  const isStaff = role === 'staff' || role === 'technician'
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-4 space-y-4">

@@ -826,14 +826,14 @@ function Row({ icon: Icon, label, value }) {
 
 // ─── User Manager ─────────────────────────────────────────────────────────────
 const ROLE_LABELS = {
-  superadmin:  { label: 'Super Admin',  color: '#7c3aed', bg: '#ede9fe' },
-  admin:       { label: 'แอดมิน',      color: '#1d4ed8', bg: '#dbeafe' },
-  staff:       { label: 'เจ้าหน้าที่เอกสาร', color: '#0ea5e9', bg: '#e0f2fe' },
-  viewer:      { label: 'ผู้บริหาร',   color: '#059669', bg: '#d1fae5' },
-  council:     { label: 'สภาเทศบาล',   color: '#f59e0b', bg: '#fff7ed' },
-  officer:     { label: 'เจ้าหน้าที่', color: '#0891b2', bg: '#e0f2fe' },
-  technician:  { label: 'ช่าง',        color: '#d97706', bg: '#fef3c7' },
-  citizen:     { label: 'สมาชิก',      color: '#374151', bg: '#f3f4f6' },
+  superadmin:  { label: 'Super Admin',   color: '#7c3aed', bg: '#ede9fe' },
+  admin:       { label: 'แอดมินระบบ',   color: '#1d4ed8', bg: '#dbeafe' },
+  officer:     { label: 'แอดมินกอง',    color: '#0891b2', bg: '#e0f2fe' },
+  technician:  { label: 'ปฏิบัติงาน',   color: '#d97706', bg: '#fef3c7' },
+  staff:       { label: 'เจ้าหน้าที่',  color: '#0ea5e9', bg: '#e0f2fe' },
+  viewer:      { label: 'ผู้บริหาร',    color: '#059669', bg: '#d1fae5' },
+  council:     { label: 'สภาเทศบาล',    color: '#f59e0b', bg: '#fff7ed' },
+  citizen:     { label: 'ประชาชน',       color: '#374151', bg: '#f3f4f6' },
 }
 
 function UserManager({ tenant, currentUserRole }) {
@@ -976,13 +976,13 @@ function UserManager({ tenant, currentUserRole }) {
         >
           <option value="">ทุกตำแหน่ง ({users.length})</option>
           {[
-            { value: 'citizen',    label: 'สมาชิก' },
-            { value: 'staff',      label: 'เจ้าหน้าที่เอกสาร' },
+            { value: 'citizen',    label: 'ประชาชน' },
+            { value: 'staff',      label: 'เจ้าหน้าที่' },
             { value: 'viewer',     label: 'ผู้บริหาร' },
             { value: 'council',    label: 'สภาเทศบาล' },
-            { value: 'officer',    label: 'เจ้าหน้าที่' },
-            { value: 'technician', label: 'ช่าง' },
-            { value: 'admin',      label: 'แอดมิน' },
+            { value: 'officer',    label: 'แอดมินกอง' },
+            { value: 'technician', label: 'ปฏิบัติงาน' },
+            { value: 'admin',      label: 'แอดมินระบบ' },
             ...(currentUserRole === 'superadmin' ? [{ value: 'superadmin', label: 'Super Admin' }] : []),
           ].map(({ value, label }) => {
             const count = users.filter((u) => u.role === value).length
@@ -1076,13 +1076,13 @@ function UserManager({ tenant, currentUserRole }) {
                           onChange={(e) => setEditingRoleValue(e.target.value)}
                           className="text-xs border border-gray-200 rounded-xl px-2 py-1.5 text-gray-700 focus:outline-none bg-gray-50"
                         >
-                          <option value="citizen">สมาชิก</option>
-                          <option value="staff">เจ้าหน้าที่เอกสาร</option>
+                          <option value="citizen">ประชาชน</option>
+                          <option value="staff">เจ้าหน้าที่</option>
                           <option value="viewer">ผู้บริหาร</option>
                           <option value="council">สภาเทศบาล</option>
-                          <option value="officer">เจ้าหน้าที่</option>
-                          <option value="technician">ช่าง</option>
-                          <option value="admin">แอดมิน</option>
+                          <option value="officer">แอดมินกอง</option>
+                          <option value="technician">ปฏิบัติงาน</option>
+                          <option value="admin">แอดมินระบบ</option>
                           {currentUserRole === 'superadmin' && <option value="superadmin">Super Admin</option>}
                         </select>
                         <button onClick={() => updateRole(u.id, editingRoleValue, u.municipality_id)} disabled={saving === u.id} className="text-xs text-blue-600 font-medium px-2">ยืนยัน</button>
@@ -1314,13 +1314,13 @@ function UserManager({ tenant, currentUserRole }) {
                                   onChange={(e) => setEditingRoleValue(e.target.value)}
                                   className="text-xs border border-gray-200 rounded px-2 py-1 text-gray-700 focus:outline-none bg-white cursor-pointer"
                                 >
-                                  <option value="citizen">สมาชิก</option>
-                                  <option value="staff">เจ้าหน้าที่เอกสาร</option>
+                                  <option value="citizen">ประชาชน</option>
+                                  <option value="staff">เจ้าหน้าที่</option>
                                   <option value="viewer">ผู้บริหาร</option>
                                   <option value="council">สภาเทศบาล</option>
-                                  <option value="officer">เจ้าหน้าที่</option>
-                                  <option value="technician">ช่าง</option>
-                                  <option value="admin">แอดมิน</option>
+                                  <option value="officer">แอดมินกอง</option>
+                                  <option value="technician">ปฏิบัติงาน</option>
+                                  <option value="admin">แอดมินระบบ</option>
                                   {currentUserRole === 'superadmin' && <option value="superadmin">Super Admin</option>}
                                 </select>
                                 <button onClick={() => updateRole(u.id, editingRoleValue, u.municipality_id)} disabled={saving === u.id} className="text-xs text-blue-600 font-medium">ยืนยัน</button>
