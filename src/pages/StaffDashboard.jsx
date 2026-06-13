@@ -554,11 +554,52 @@ function InboxModule({ tenant, staffId }) {
           <p className="text-xs text-gray-300 mt-1">{search ? `"${search}"` : 'ลองเลือกแท็บอื่น'}</p>
         </div>
       ) : (
-        <div className="space-y-2">
-          {filtered.map(req => (
-            <TaskCard key={req.id} req={req} onClick={() => setSelected(req)} />
-          ))}
-        </div>
+        <>
+          {/* PC — table */}
+          <div className="hidden md:block overflow-x-auto rounded-2xl border border-gray-100 shadow-sm">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  <th className="px-4 py-3 text-left w-8">#</th>
+                  <th className="px-4 py-3 text-left">ชื่อ-สกุลผู้ยื่น</th>
+                  <th className="px-4 py-3 text-left">ประเภทเอกสาร</th>
+                  <th className="px-4 py-3 text-left">วัตถุประสงค์</th>
+                  <th className="px-4 py-3 text-left">โทรศัพท์</th>
+                  <th className="px-4 py-3 text-left">วันที่ยื่น</th>
+                  <th className="px-4 py-3 text-center">สถานะ</th>
+                  <th className="px-4 py-3 text-center">ดำเนินการ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 bg-white">
+                {filtered.map((req, idx) => {
+                  const docType = DOC_TYPES.find(d => d.value === req.document_type)
+                  return (
+                    <tr key={req.id} className="hover:bg-blue-50/40 transition-colors cursor-pointer"
+                      onClick={() => setSelected(req)}>
+                      <td className="px-4 py-3 text-gray-400 text-xs">{idx + 1}</td>
+                      <td className="px-4 py-3 font-semibold text-gray-800">{req.requester_name}</td>
+                      <td className="px-4 py-3 text-gray-600">{docType?.label ?? req.document_type}</td>
+                      <td className="px-4 py-3 text-gray-400 max-w-[180px] truncate">{req.purpose || '—'}</td>
+                      <td className="px-4 py-3 text-gray-500">{req.requester_phone || '—'}</td>
+                      <td className="px-4 py-3 text-gray-400 whitespace-nowrap">{dateTH(req.created_at)}</td>
+                      <td className="px-4 py-3 text-center"><StatusBadge status={req.status} /></td>
+                      <td className="px-4 py-3 text-center">
+                        <button className="text-xs font-semibold text-blue-600 hover:underline">เปิด</button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile — cards */}
+          <div className="md:hidden space-y-2">
+            {filtered.map(req => (
+              <TaskCard key={req.id} req={req} onClick={() => setSelected(req)} />
+            ))}
+          </div>
+        </>
       )}
 
       {selected && (
