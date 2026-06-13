@@ -85,7 +85,7 @@ function DocDetailSheet({ req, onClose }) {
           <StatusBadge status={req.status} />
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 py-5 space-y-5">
+        <div className="flex-1 overflow-y-auto px-4 pt-5 pb-24 space-y-5">
 
           {/* Timeline */}
           <div>
