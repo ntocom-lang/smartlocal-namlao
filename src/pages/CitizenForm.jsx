@@ -91,7 +91,7 @@ async function compressImage(file) {
   })
 }
 
-function SuccessScreen({ onBack, onMyComplaints, complaintNumber }) {
+function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[70vh] px-6 text-center">
       <div className="w-20 h-20 rounded-full bg-green-50 flex items-center justify-center mb-5">
@@ -100,19 +100,21 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber }) {
       <h2 className="text-xl font-bold text-gray-800 mb-2">ส่งคำร้องสำเร็จ!</h2>
       {complaintNumber && (
         <div className="mb-4 px-6 py-3 bg-gray-50 rounded-2xl border border-gray-100">
-          <p className="text-xs text-gray-400 mb-0.5">เลขที่อ้างอิง</p>
-          <p className="text-xl font-black text-gray-800 tracking-widest font-mono">{complaintNumber}</p>
+          <p className="text-xs text-gray-400 mb-0.5">เลขที่อ้างอิง — บันทึกไว้เพื่อติดตาม</p>
+          <p className="text-2xl font-black text-gray-800 tracking-widest font-mono">{complaintNumber}</p>
         </div>
       )}
       <p className="text-gray-500 text-sm leading-relaxed mb-8 max-w-xs">
         เจ้าหน้าที่จะดำเนินการตรวจสอบและติดต่อกลับหาท่านโดยเร็วที่สุด
       </p>
       <div className="w-full max-w-xs flex flex-col gap-3">
-        <button onClick={onMyComplaints}
-          className="w-full py-3.5 rounded-2xl font-semibold text-white shadow-lg active:scale-95 transition-transform"
-          style={{ backgroundColor: 'var(--color-primary)' }}>
-          ติดตามสถานะคำร้อง
-        </button>
+        {isLoggedIn && (
+          <button onClick={onMyComplaints}
+            className="w-full py-3.5 rounded-2xl font-semibold text-white shadow-lg active:scale-95 transition-transform"
+            style={{ backgroundColor: 'var(--color-primary)' }}>
+            ติดตามสถานะคำร้อง
+          </button>
+        )}
         <button onClick={onBack}
           className="w-full py-3 rounded-2xl font-medium text-gray-600 bg-gray-100 active:scale-95 transition-transform">
           กลับหน้าหลัก
@@ -184,6 +186,7 @@ export default function CitizenForm() {
   const [showMap, setShowMap] = useState(false)
   const [files, setFiles] = useState([])
   const [showConsent, setShowConsent] = useState(false)
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
 
   useEffect(() => {
     return () => files.forEach((f) => { if (f.preview) URL.revokeObjectURL(f.preview) })
@@ -203,6 +206,7 @@ export default function CitizenForm() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) return
+      setIsLoggedIn(true)
       const meta = session.user.user_metadata ?? {}
       const metaName = meta.full_name || meta.name || ''
       const metaPhone = meta.phone || ''
@@ -288,7 +292,8 @@ export default function CitizenForm() {
   async function handleSubmit(e) {
     e?.preventDefault()
     if (!form.category) { setError('กรุณาเลือกประเภทคำร้อง'); return }
-if (!form.subject.trim()) { setError('กรุณากรอกหัวข้อ'); return }
+    if (!form.reporter_name.trim()) { setError('กรุณากรอกชื่อ-นามสกุล'); return }
+    if (!form.subject.trim()) { setError('กรุณากรอกหัวข้อ'); return }
     if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
     if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
     if (ftConfig?.gpsRequired && !geo.lat) { setError('ฟอร์มนี้ต้องการพิกัด GPS — กรุณากดปักหมุดก่อนส่ง'); return }
@@ -333,7 +338,7 @@ if (!form.subject.trim()) { setError('กรุณากรอกหัวข้
     setComplaintNumber(inserted.ref_no ?? null)
   }
 
-  if (success) return <SuccessScreen onBack={() => navigate('/')} onMyComplaints={() => navigate('/my-complaints')} complaintNumber={complaintNumber} />
+  if (success) return <SuccessScreen onBack={() => navigate('/')} onMyComplaints={() => navigate('/my-complaints')} complaintNumber={complaintNumber} isLoggedIn={isLoggedIn} />
 
   const catLabel = categories.find((c) => c.value === form.category)?.label?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category
   const CatIcon = CATEGORY_ICON[form.category] ?? HelpCircle
@@ -424,6 +429,26 @@ if (!form.subject.trim()) { setError('กรุณากรอกหัวข้
       {/* Form */}
       <form onSubmit={handleSubmit} className="px-3 pt-3 pb-24 space-y-2">
 
+        {!isLoggedIn && (
+          <div className="bg-blue-50 border border-blue-100 rounded-xl px-3.5 py-2.5 flex items-center gap-2.5">
+            <User size={14} className="text-blue-400 shrink-0" />
+            <p className="text-xs text-blue-600 leading-relaxed">
+              ไม่ต้องเข้าสู่ระบบก็ยื่นได้ — กรอกชื่อและเบอร์ติดต่อเพื่อให้เจ้าหน้าที่ตามงานได้
+            </p>
+          </div>
+        )}
+
+        {/* Reporter name */}
+        <div className="relative">
+          <input type="text" value={form.reporter_name}
+            onChange={isLoggedIn ? undefined : set('reporter_name')}
+            readOnly={isLoggedIn}
+            placeholder="ชื่อ-นามสกุล *"
+            className={`w-full px-4 py-2.5 pl-10 rounded-xl border text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:border-blue-400 ${isLoggedIn ? 'bg-gray-50 border-gray-200 text-gray-500' : 'bg-white border-gray-300'}`} />
+          <User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          {isLoggedIn && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-emerald-500 font-semibold">จากโปรไฟล์</span>}
+        </div>
+
         {/* Subject */}
         <input type="text" value={form.subject} onChange={set('subject')} required
           placeholder="หัวข้อ"
@@ -451,9 +476,15 @@ if (!form.subject.trim()) { setError('กรุณากรอกหัวข้
         )}
 
         {/* Phone */}
-        <input type="tel" value={form.phone} onChange={set('phone')} required
-          placeholder="เบอร์ติดต่อ"
-          className="w-full px-4 py-2.5 rounded-xl border border-gray-300 bg-white text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:border-blue-400" />
+        <div className="relative">
+          <input type="tel" value={form.phone}
+            onChange={isLoggedIn && form.phone ? undefined : set('phone')}
+            readOnly={isLoggedIn && !!form.phone}
+            placeholder="เบอร์ติดต่อ *"
+            className={`w-full px-4 py-2.5 pl-10 rounded-xl border text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:border-blue-400 ${isLoggedIn && form.phone ? 'bg-gray-50 border-gray-200 text-gray-500' : 'bg-white border-gray-300'}`} />
+          <Phone size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          {isLoggedIn && form.phone && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-emerald-500 font-semibold">จากโปรไฟล์</span>}
+        </div>
 
         {/* Map pin */}
         <button type="button" onClick={() => setShowMap(true)}
@@ -532,6 +563,7 @@ if (!form.subject.trim()) { setError('กรุณากรอกหัวข้
         <button type="button" onClick={async () => {
           setError(null)
           if (!form.category) { setError('กรุณาเลือกประเภทคำร้อง'); return }
+          if (!form.reporter_name.trim()) { setError('กรุณากรอกชื่อ-นามสกุล'); return }
           if (!form.subject.trim()) { setError('กรุณากรอกหัวข้อ'); return }
           if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
           if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }

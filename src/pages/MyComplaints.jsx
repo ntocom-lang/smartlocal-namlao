@@ -5,7 +5,7 @@ import { useTenant } from '../contexts/TenantContext'
 import {
   ClipboardList, Loader2, ChevronRight, X, MapPin,
   Phone, FileText, ArrowLeft, Check, XCircle, Navigation, Camera, AlignLeft, Star,
-  ChevronLeft, Clock,
+  ChevronLeft, Clock, Search,
 } from 'lucide-react'
 
 const ITEMS_PER_PAGE_OPTIONS = [10, 20, 50, 100]
@@ -465,9 +465,15 @@ export default function MyComplaints() {
   const [complaints, setComplaints] = useState([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
-  const [session, setSession] = useState(null)
+  const [session, setSession] = useState(undefined)
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(10)
+
+  // anon search
+  const [refInput, setRefInput]       = useState('')
+  const [searching, setSearching]     = useState(false)
+  const [searchResult, setSearchResult] = useState(null)
+  const [searched, setSearched]       = useState(false)
 
   const perPage = itemsPerPage === 'all' ? complaints.length : itemsPerPage
   const totalPages = perPage > 0 ? Math.max(1, Math.ceil(complaints.length / perPage)) : 1
@@ -504,6 +510,95 @@ export default function MyComplaints() {
     load()
   }, [tenant?.id, session?.user?.id, openId])
 
+  async function handleRefSearch() {
+    const ref = refInput.trim().toUpperCase()
+    if (!ref || !tenant?.id) return
+    setSearching(true); setSearched(true); setSearchResult(null)
+    const { data } = await supabase.rpc('get_complaint_by_ref', {
+      _ref_no: ref, _municipality_id: tenant.id,
+    })
+    setSearchResult(data?.[0] ?? null)
+    setSearching(false)
+  }
+
+  if (session === undefined) return null
+
+  // ── Anon: show search UI ───────────────────────────────────────────────────
+  if (!session) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shadow-sm">
+          <button onClick={() => navigate(-1)} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500">
+            <ArrowLeft size={18} />
+          </button>
+          <div>
+            <p className="font-bold text-gray-800">ติดตามคำร้อง</p>
+            <p className="text-xs text-gray-400">ค้นหาด้วยเลขอ้างอิงที่ได้รับ</p>
+          </div>
+        </div>
+
+        <div className="max-w-lg mx-auto px-4 py-5 pb-12 space-y-4">
+          <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 text-center space-y-2">
+            <p className="text-sm font-bold text-blue-700">เข้าสู่ระบบเพื่อดูคำร้องทั้งหมด</p>
+            <p className="text-xs text-blue-500">หรือค้นหาด้วยเลขอ้างอิงด้านล่าง</p>
+            <button onClick={() => navigate('/auth', { state: { from: '/my-complaints' } })}
+              className="px-5 py-2 rounded-xl font-bold text-sm text-white"
+              style={{ backgroundColor: 'var(--color-primary)' }}>
+              เข้าสู่ระบบ
+            </button>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3">
+            <p className="text-sm font-bold text-gray-700">ค้นหาด้วยเลขอ้างอิง</p>
+            <p className="text-xs text-gray-400 leading-relaxed">
+              เลขที่ได้รับหลังยื่นคำร้อง เช่น <span className="font-mono font-semibold">NL-001-2568</span>
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={refInput}
+                onChange={e => { setRefInput(e.target.value.toUpperCase()); setSearched(false) }}
+                placeholder="NL-001-2568"
+                className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200 font-mono tracking-widest uppercase"
+                onKeyDown={e => e.key === 'Enter' && handleRefSearch()}
+              />
+              <button onClick={handleRefSearch} disabled={searching || !refInput.trim()}
+                className="px-4 py-2.5 rounded-xl font-semibold text-white text-sm disabled:opacity-50 flex items-center gap-1.5"
+                style={{ backgroundColor: 'var(--color-primary)' }}>
+                {searching ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                ค้นหา
+              </button>
+            </div>
+
+            {searched && !searching && !searchResult && (
+              <p className="text-xs text-red-500">ไม่พบเลขอ้างอิงนี้ ลองตรวจสอบอีกครั้ง</p>
+            )}
+
+            {searchResult && (
+              <div
+                onClick={() => setSelected(searchResult)}
+                className="bg-gray-50 rounded-2xl border border-gray-100 p-4 cursor-pointer hover:bg-gray-100 transition-colors">
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <p className="font-bold text-gray-800 text-sm">
+                    {CATEGORY_EMOJI[searchResult.category] ?? '📄'} {CATEGORY_LABEL[searchResult.category] ?? searchResult.category}
+                  </p>
+                  <StatusBadge status={searchResult.status} />
+                </div>
+                {searchResult.subject && <p className="text-xs text-gray-500 mb-1">{searchResult.subject}</p>}
+                <p className="text-xs text-gray-400 font-mono">{searchResult.ref_no}</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {selected && (
+          <DetailSheet complaint={selected} onClose={() => setSelected(null)} onRated={() => {}} />
+        )}
+      </div>
+    )
+  }
+
+  // ── Logged-in: full list ───────────────────────────────────────────────────
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 pb-24 md:pb-8">
       {/* Header */}
@@ -646,7 +741,13 @@ export default function MyComplaints() {
         </>
       )}
 
-      {selected && <DetailSheet complaint={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <DetailSheet
+          complaint={selected}
+          onClose={() => setSelected(null)}
+          onRated={(id, rating) => setComplaints(prev => prev.map(c => c.id === id ? { ...c, rating } : c))}
+        />
+      )}
     </div>
   )
 }

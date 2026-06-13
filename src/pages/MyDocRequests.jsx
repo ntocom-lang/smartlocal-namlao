@@ -3,16 +3,20 @@ import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, FileText, Clock, CheckCircle2, XCircle,
   RefreshCw, Loader2, ChevronRight, X, Search, Download,
+  CreditCard, Upload, ImageIcon,
 } from 'lucide-react'
+import QRCode from 'react-qr-code'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import { generatePromptPayPayload } from '../lib/promptpay'
 
 const DOC_TYPES = {
-  residence_cert: 'ใบรับรองการอยู่อาศัย',
-  personal_cert:  'หนังสือรับรองบุคคล',
-  conduct_cert:   'หนังสือรับรองความประพฤติ',
-  tax_notice:     'ใบแจ้งชำระภาษีที่ดินและสิ่งปลูกสร้าง',
-  other:          'คำขออื่นๆ',
+  residence_cert:   'ใบรับรองการอยู่อาศัย',
+  personal_cert:    'หนังสือรับรองบุคคล',
+  conduct_cert:     'หนังสือรับรองความประพฤติ',
+  tax_notice:       'ใบแจ้งชำระภาษีที่ดินและสิ่งปลูกสร้าง',
+  waste_collection: '🗑️ ชำระค่าเก็บขยะมูลฝอย',
+  other:            'คำขออื่นๆ',
 }
 
 const STATUS = {
@@ -40,8 +44,17 @@ function StatusBadge({ status }) {
   )
 }
 
+const PAY_BADGE = {
+  pending:  { label: '💳 รอชำระค่าธรรมเนียม', cls: 'text-amber-600 bg-amber-50 border-amber-200' },
+  uploaded: { label: '⏳ รอเจ้าหน้าที่ยืนยัน',  cls: 'text-orange-600 bg-orange-50 border-orange-200' },
+  verified: { label: '✅ ชำระแล้ว',             cls: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
+  waived:   { label: '✅ ยกเว้นค่าธรรมเนียม',   cls: 'text-gray-500 bg-gray-50 border-gray-200' },
+}
+
 function DocCard({ req, onClick }) {
   const docLabel = DOC_TYPES[req.document_type] ?? req.document_type
+  const payBadge = req.payment_status && req.payment_status !== 'not_required'
+    ? PAY_BADGE[req.payment_status] : null
   return (
     <button onClick={onClick}
       className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-4 text-left hover:shadow-md active:scale-[0.99] transition-all flex items-center gap-3">
@@ -54,6 +67,11 @@ function DocCard({ req, onClick }) {
           <StatusBadge status={req.status} />
           <span className="text-xs text-gray-400 font-mono">{req.id.slice(0,8).toUpperCase()}</span>
         </div>
+        {payBadge && (
+          <span className={`inline-flex items-center text-[11px] font-bold px-2 py-0.5 rounded-full border mt-1 ${payBadge.cls}`}>
+            {payBadge.label}
+          </span>
+        )}
         {req.purpose && <p className="text-xs text-gray-400 mt-0.5 truncate">{req.purpose}</p>}
         <p className="text-[11px] text-gray-300 mt-0.5">{dateTH(req.created_at)}</p>
         {req.document_url && req.status === 'completed' && (
@@ -67,8 +85,62 @@ function DocCard({ req, onClick }) {
   )
 }
 
-function DocDetailSheet({ req, onClose }) {
+function DocDetailSheet({ req, onClose, tenant, onRefresh }) {
   const docLabel = DOC_TYPES[req.document_type] ?? req.document_type
+  const [slipFile, setSlipFile]       = useState(null)
+  const [slipPreview, setSlipPreview] = useState(null)
+  const [uploading, setUploading]     = useState(false)
+  const [slipSignedUrl, setSlipSignedUrl] = useState(null)
+
+  useEffect(() => {
+    if (!req.payment_slip_url) return
+    let cancelled = false
+    async function resolve() {
+      if (!req.payment_slip_url.startsWith('http')) {
+        const { data } = await supabase.storage.from('payment-slips')
+          .createSignedUrl(req.payment_slip_url, 3600)
+        if (!cancelled && data?.signedUrl) setSlipSignedUrl(data.signedUrl)
+      } else {
+        if (!cancelled) setSlipSignedUrl(req.payment_slip_url)
+      }
+    }
+    resolve()
+    return () => { cancelled = true }
+  }, [req.payment_slip_url])
+
+  const hasPayment   = req.payment_status && req.payment_status !== 'not_required'
+  const needsPayment = req.payment_status === 'pending'
+  const qrPayload    = needsPayment && tenant?.promptpay_id
+    ? generatePromptPayPayload(tenant.promptpay_id, req.fee_amount ?? 0)
+    : null
+
+  function handleSlipChange(e) {
+    const f = e.target.files?.[0]
+    if (!f) return
+    setSlipFile(f)
+    setSlipPreview(URL.createObjectURL(f))
+  }
+
+  async function handleUploadSlip() {
+    if (!slipFile) return
+    setUploading(true)
+    try {
+      const ext  = slipFile.name.split('.').pop()
+      const path = `${req.municipality_id}/${req.id}/slip.${ext}`
+      const { error: upErr } = await supabase.storage
+        .from('payment-slips').upload(path, slipFile, { upsert: true })
+      if (upErr) throw upErr
+      const { error: dbErr } = await supabase.from('document_requests')
+        .update({ payment_status: 'uploaded', payment_slip_url: path }).eq('id', req.id)
+      if (dbErr) throw dbErr
+      onRefresh?.()
+      onClose()
+    } catch (err) {
+      alert('อัปโหลดไม่สำเร็จ: ' + err.message)
+    } finally {
+      setUploading(false)
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-end md:items-center justify-center">
@@ -153,6 +225,83 @@ function DocDetailSheet({ req, onClose }) {
             ))}
           </div>
 
+          {/* Payment section */}
+          {hasPayment && (
+            <div className="space-y-3">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">ค่าธรรมเนียม</p>
+
+              {/* Status banner */}
+              {req.payment_status === 'pending' && (
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-4">
+                  <div className="flex items-center gap-3">
+                    <CreditCard size={20} className="text-amber-500 shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-amber-800">กรุณาชำระค่าธรรมเนียม</p>
+                      <p className="text-xl font-black text-amber-700">{(req.fee_amount ?? 0).toLocaleString()} บาท</p>
+                    </div>
+                  </div>
+
+                  {qrPayload && (
+                    <div className="flex flex-col items-center gap-3 py-2">
+                      <p className="text-xs text-amber-700 font-semibold">สแกน PromptPay ด้วยแอปธนาคาร</p>
+                      <div className="p-3 bg-white rounded-2xl border-2 border-amber-100 shadow-sm">
+                        <QRCode value={qrPayload} size={150} />
+                      </div>
+                      <p className="text-xs text-gray-500 font-mono tracking-widest">{tenant.promptpay_id}</p>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-amber-700">อัปโหลดสลิปเพื่อยืนยัน</p>
+                    <label className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 border-dashed cursor-pointer transition-colors ${slipFile ? 'border-emerald-300 bg-emerald-50' : 'border-amber-200 hover:border-amber-300 bg-white'}`}>
+                      {slipPreview
+                        ? <img src={slipPreview} alt="slip" className="max-h-32 rounded-lg object-contain" />
+                        : <><ImageIcon size={22} className="text-amber-300" /><p className="text-xs text-amber-600">แตะเพื่อเลือกรูปสลิป</p></>
+                      }
+                      <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handleSlipChange} />
+                    </label>
+                    {slipFile && (
+                      <button onClick={handleUploadSlip} disabled={uploading}
+                        className="w-full py-3 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95 transition-all"
+                        style={{ backgroundColor: '#f59e0b' }}>
+                        {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                        {uploading ? 'กำลังส่ง...' : 'ส่งหลักฐานการชำระ'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {req.payment_status === 'uploaded' && (
+                <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 flex items-start gap-3">
+                  <CreditCard size={18} className="text-orange-500 shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-orange-800">ส่งสลิปแล้ว — รอเจ้าหน้าที่ยืนยัน</p>
+                    <p className="text-xs text-orange-500 mt-0.5">ค่าธรรมเนียม {(req.fee_amount ?? 0).toLocaleString()} บาท</p>
+                    {slipSignedUrl && (
+                      <a href={slipSignedUrl} target="_blank" rel="noopener noreferrer"
+                        className="text-xs text-blue-500 underline mt-1 block">ดูสลิปที่ส่ง</a>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {(req.payment_status === 'verified' || req.payment_status === 'waived') && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3.5 flex items-center gap-3">
+                  <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />
+                  <div>
+                    <p className="text-sm font-bold text-emerald-700">
+                      {req.payment_status === 'verified' ? 'ยืนยันการชำระเรียบร้อย' : 'ได้รับการยกเว้นค่าธรรมเนียม'}
+                    </p>
+                    {req.payment_status === 'verified' && (
+                      <p className="text-xs text-emerald-500">{(req.fee_amount ?? 0).toLocaleString()} บาท</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Staff note */}
           {req.staff_notes && (
             <div className="bg-blue-50 rounded-xl p-3.5">
@@ -195,6 +344,7 @@ export default function MyDocRequests() {
   const [searching, setSearching]   = useState(false)
   const [searchResult, setSearchResult] = useState(null)
   const [searched, setSearched]     = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
@@ -210,7 +360,7 @@ export default function MyDocRequests() {
       .eq('user_id', session.user.id)
       .order('created_at', { ascending: false })
       .then(({ data }) => { setRequests(data ?? []); setLoading(false) })
-  }, [session, tenant?.id])
+  }, [session, tenant?.id, refreshKey])
 
   async function handleSearch() {
     const ref = searchRef.trim().toLowerCase()
@@ -237,7 +387,7 @@ export default function MyDocRequests() {
           <ArrowLeft size={18} />
         </button>
         <div>
-          <p className="font-bold text-gray-800">ติดตามคำขอเอกสาร</p>
+          <p className="font-bold text-gray-800">เอกสารของฉัน</p>
           <p className="text-xs text-gray-400">สถานะใบรับรองและเอกสารราชการ</p>
         </div>
       </div>
@@ -311,7 +461,14 @@ export default function MyDocRequests() {
         )}
       </div>
 
-      {selected && <DocDetailSheet req={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <DocDetailSheet
+          req={selected}
+          tenant={tenant}
+          onClose={() => setSelected(null)}
+          onRefresh={() => setRefreshKey(k => k + 1)}
+        />
+      )}
     </div>
   )
 }

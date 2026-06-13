@@ -30,6 +30,7 @@ import TourismDetailPage from './pages/TourismDetailPage'
 import ContactPage from './pages/ContactPage'
 import CitizenDocRequest from './pages/CitizenDocRequest'
 import MyDocRequests from './pages/MyDocRequests'
+import LpaDocStats from './pages/LpaDocStats'
 import { supabase } from './lib/supabase'
 import { Phone, X } from 'lucide-react'
 
@@ -242,16 +243,8 @@ function AppShell() {
               <ProfilePage />
             </RequireAuth>
           } />
-          <Route path="/request" element={
-            <RequireAuth>
-              <CitizenForm />
-            </RequireAuth>
-          } />
-          <Route path="/my-complaints" element={
-            <RequireAuth>
-              <MyComplaints />
-            </RequireAuth>
-          } />
+          <Route path="/request" element={<CitizenForm />} />
+          <Route path="/my-complaints" element={<MyComplaints />} />
           <Route path="/more" element={<MorePage />} />
           <Route path="/weather" element={<WeatherPage />} />
           <Route path="/events" element={<EventsPage />} />
@@ -261,6 +254,7 @@ function AppShell() {
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/doc-request" element={<CitizenDocRequest />} />
           <Route path="/my-docs" element={<MyDocRequests />} />
+          <Route path="/doc-stats" element={<LpaDocStats />} />
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/staff" element={

@@ -5,6 +5,7 @@ import {
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, AlignLeft, Calendar, Hash, RefreshCw,
   Printer, PenLine, Search, Download, Wrench, Home, CalendarDays, TrendingUp, Archive, Images,
+  CreditCard, BadgeCheck, Banknote, QrCode, Save,
 } from 'lucide-react'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 import CivilProjectReport from '../components/admin/CivilProjectReport'
@@ -20,11 +21,12 @@ import { notifyTelegram } from '../lib/notifyTelegram'
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 const DOC_TYPES = [
-  { value: 'residence_cert',  label: '🏠 ใบรับรองการอยู่อาศัย' },
-  { value: 'personal_cert',   label: '👤 หนังสือรับรองบุคคล' },
-  { value: 'conduct_cert',    label: '✅ หนังสือรับรองความประพฤติ' },
-  { value: 'tax_notice',      label: '💰 ใบแจ้งชำระภาษีที่ดินและสิ่งปลูกสร้าง' },
-  { value: 'other',           label: '📝 คำขออื่นๆ' },
+  { value: 'residence_cert',   label: '🏠 ใบรับรองการอยู่อาศัย' },
+  { value: 'personal_cert',    label: '👤 หนังสือรับรองบุคคล' },
+  { value: 'conduct_cert',     label: '✅ หนังสือรับรองความประพฤติ' },
+  { value: 'tax_notice',       label: '💰 ใบแจ้งชำระภาษีที่ดินและสิ่งปลูกสร้าง' },
+  { value: 'waste_collection', label: '🗑️ ชำระค่าเก็บขยะ' },
+  { value: 'other',            label: '📝 คำขออื่นๆ' },
 ]
 
 const STATUS = {
@@ -54,13 +56,28 @@ const MODULE_GROUPS = [
     group: 'ข้อมูลและรายงาน',
     items: [
       { key: 'docs-archive',  label: 'คลังเอกสาร',     Icon: Archive,    color: '#0f766e' },
-      { key: 'photo-album',  label: 'อัลบั้มกิจกรรม', Icon: Images,     color: '#1877f2', externalUrl: 'https://m.facebook.com/groups/2193529028125946/media/albums' },
       { key: 'map',          label: 'แผนที่',          Icon: MapPin,     color: '#0891b2' },
       { key: 'report',       label: 'รายงาน',          Icon: TrendingUp, color: '#f59e0b' },
     ],
   },
+  {
+    group: 'กองคลัง',
+    items: [
+      { key: 'fee-settings', label: 'ค่าธรรมเนียม', Icon: Banknote, color: '#10b981', adminOnly: true },
+    ],
+  },
 ]
 const MODULES = MODULE_GROUPS.flatMap(g => g.items)
+
+const DOC_FEE_LABELS = [
+  { value: 'residence_cert',   label: '🏠 ใบรับรองการอยู่อาศัย' },
+  { value: 'personal_cert',    label: '👤 หนังสือรับรองบุคคล' },
+  { value: 'conduct_cert',     label: '✅ หนังสือรับรองความประพฤติ' },
+  { value: 'tax_notice',       label: '📋 ใบแจ้งชำระภาษีที่ดิน' },
+  { value: 'waste_collection', label: '🗑️ ค่าเก็บขยะมูลฝอย' },
+  { value: 'other',            label: '📝 คำขออื่นๆ' },
+]
+const DEFAULT_FEE = { residence_cert: 0, personal_cert: 0, conduct_cert: 0, tax_notice: 0, waste_collection: 0, other: 0 }
 
 const APPROVAL_TYPES = [
   { value: 'expense_claim',  label: '💰 เบิกจ่ายค่าใช้จ่าย',        requiresSign: true  },
@@ -118,10 +135,19 @@ function InfoRow({ icon, label, value }) {
 
 // ─── Task Card ────────────────────────────────────────────────────────────────
 
+const PAYMENT_BADGE = {
+  pending:  { label: 'รอชำระ',   cls: 'bg-amber-50 text-amber-600 border-amber-200' },
+  uploaded: { label: 'รอยืนยัน', cls: 'bg-orange-50 text-orange-600 border-orange-200' },
+  verified: { label: 'ชำระแล้ว', cls: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
+  waived:   { label: 'ยกเว้นค่า', cls: 'bg-gray-50 text-gray-500 border-gray-200' },
+}
+
 function TaskCard({ req, onClick }) {
   const docType = DOC_TYPES.find(d => d.value === req.document_type)
   const emoji = docType?.label.match(/^(\S+)/)?.[1] ?? '📄'
   const docLabel = docType?.label.replace(/^\S+\s*/, '') ?? req.document_type
+  const payBadge = req.payment_status && req.payment_status !== 'not_required'
+    ? PAYMENT_BADGE[req.payment_status] : null
 
   return (
     <button onClick={onClick}
@@ -138,7 +164,14 @@ function TaskCard({ req, onClick }) {
         {req.purpose && (
           <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{req.purpose}</p>
         )}
-        <p className="text-[11px] text-gray-300 mt-1.5">{dateTH(req.created_at)}</p>
+        <div className="flex items-center gap-2 mt-1.5">
+          <p className="text-[11px] text-gray-300">{dateTH(req.created_at)}</p>
+          {payBadge && (
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${payBadge.cls}`}>
+              💳 {payBadge.label}
+            </span>
+          )}
+        </div>
       </div>
       <ChevronRight size={16} className="text-gray-300 shrink-0 mt-1" />
     </button>
@@ -147,13 +180,50 @@ function TaskCard({ req, onClick }) {
 
 // ─── Task Detail Sheet ────────────────────────────────────────────────────────
 
-function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant }) {
-  const [staffNote, setStaffNote]     = useState(req.staff_notes || '')
+function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpdate }) {
+  const [staffNote, setStaffNote]         = useState(req.staff_notes || '')
   const [confirmReject, setConfirmReject] = useState(false)
   const [rejectReason, setRejectReason]   = useState('')
+  const [payActing, setPayActing]         = useState(false)
+  const [slipSignedUrl, setSlipSignedUrl] = useState(null)
+
+  useEffect(() => {
+    if (!req.payment_slip_url) return
+    let cancelled = false
+    async function resolve() {
+      if (!req.payment_slip_url.startsWith('http')) {
+        const { data } = await supabase.storage.from('payment-slips')
+          .createSignedUrl(req.payment_slip_url, 3600)
+        if (!cancelled && data?.signedUrl) setSlipSignedUrl(data.signedUrl)
+      } else {
+        if (!cancelled) setSlipSignedUrl(req.payment_slip_url)
+      }
+    }
+    resolve()
+    return () => { cancelled = true }
+  }, [req.payment_slip_url])
 
   const docType  = DOC_TYPES.find(d => d.value === req.document_type)
   const isActive = req.status === 'pending' || req.status === 'processing'
+
+  const hasPayment = req.payment_status && req.payment_status !== 'not_required'
+
+  async function handlePaymentVerify(action) {
+    setPayActing(true)
+    try {
+      const updates = action === 'verify'
+        ? { payment_status: 'verified', payment_verified_at: new Date().toISOString() }
+        : { payment_status: 'waived',   payment_verified_at: new Date().toISOString() }
+      const { error } = await supabase.from('document_requests')
+        .update(updates).eq('id', req.id)
+      if (error) throw error
+      onPaymentUpdate?.()
+    } catch (err) {
+      alert('เกิดข้อผิดพลาด: ' + err.message)
+    } finally {
+      setPayActing(false)
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-end md:items-center justify-center">
@@ -195,6 +265,57 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant }) {
             )}
             <InfoRow icon={<Calendar size={14} />}  label="วันที่ยื่น"     value={dateTH(req.created_at)} />
           </div>
+
+          {/* Payment section */}
+          {hasPayment && (
+            <div className="rounded-2xl border overflow-hidden"
+              style={{ borderColor: req.payment_status === 'verified' ? '#6ee7b7' : req.payment_status === 'uploaded' ? '#fed7aa' : '#fde68a' }}>
+              <div className="px-4 py-2.5 flex items-center gap-2"
+                style={{ backgroundColor: req.payment_status === 'verified' ? '#f0fdf4' : req.payment_status === 'uploaded' ? '#fff7ed' : '#fffbeb' }}>
+                <CreditCard size={14} className="shrink-0" style={{ color: req.payment_status === 'verified' ? '#059669' : req.payment_status === 'uploaded' ? '#ea580c' : '#d97706' }} />
+                <p className="text-xs font-bold" style={{ color: req.payment_status === 'verified' ? '#065f46' : req.payment_status === 'uploaded' ? '#9a3412' : '#92400e' }}>
+                  ค่าธรรมเนียม {req.fee_amount?.toLocaleString()} บาท
+                  {' · '}
+                  {req.payment_status === 'pending'  && 'รอการชำระเงิน'}
+                  {req.payment_status === 'uploaded' && 'อัปโหลดสลิปแล้ว — รอยืนยัน'}
+                  {req.payment_status === 'verified' && '✅ ยืนยันการชำระแล้ว'}
+                  {req.payment_status === 'waived'   && '✅ ยกเว้นค่าธรรมเนียม'}
+                </p>
+              </div>
+
+              {req.payment_slip_url && (
+                <div className="px-4 py-3 bg-white border-t border-gray-100 space-y-2">
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">หลักฐานการชำระ</p>
+                  {slipSignedUrl ? (
+                    <a href={slipSignedUrl} target="_blank" rel="noopener noreferrer"
+                      className="block rounded-xl overflow-hidden border border-gray-100 hover:opacity-90 transition-opacity">
+                      <img src={slipSignedUrl} alt="slip" className="w-full max-h-52 object-contain bg-gray-50" />
+                    </a>
+                  ) : (
+                    <div className="flex items-center justify-center h-20 bg-gray-50 rounded-xl">
+                      <Loader2 size={18} className="animate-spin text-gray-300" />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {(req.payment_status === 'uploaded' || req.payment_status === 'pending') && (
+                <div className="px-4 py-3 bg-white border-t border-gray-100 flex gap-2">
+                  <button onClick={() => handlePaymentVerify('verify')} disabled={payActing}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-1.5 disabled:opacity-50 transition-opacity active:scale-95"
+                    style={{ backgroundColor: '#10b981' }}>
+                    {payActing ? <Loader2 size={14} className="animate-spin" /> : <BadgeCheck size={14} />}
+                    ยืนยันการชำระ
+                  </button>
+                  <button onClick={() => handlePaymentVerify('waive')} disabled={payActing}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-bold text-gray-600 bg-gray-100 flex items-center justify-center gap-1.5 disabled:opacity-50 transition-opacity active:scale-95">
+                    {payActing ? <Loader2 size={14} className="animate-spin" /> : <Banknote size={14} />}
+                    ยกเว้นค่าธรรมเนียม
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Staff notes (editable when active) */}
           {isActive && (
@@ -604,7 +725,8 @@ function InboxModule({ tenant, staffId }) {
 
       {selected && (
         <TaskDetailSheet req={selected} onClose={() => setSelected(null)}
-          onUpdate={handleUpdate} acting={acting} tenant={tenant} />
+          onUpdate={handleUpdate} acting={acting} tenant={tenant}
+          onPaymentUpdate={() => { setSelected(null); setRefreshKey(k => k + 1) }} />
       )}
       {showAdd && (
         <NewRequestSheet tenant={tenant} staffId={staffId}
@@ -1702,6 +1824,140 @@ function StaffReportWrapper({ tenant }) {
   return <ReportManager complaints={complaints} tenant={tenant} technicians={technicians} />
 }
 
+// ─── Fee Settings Module ──────────────────────────────────────────────────────
+
+function FeeSettingsModule({ tenant }) {
+  const [promptpayId, setPromptpayId] = useState(tenant?.promptpay_id || '')
+  const [feeSchedule, setFeeSchedule] = useState({ ...DEFAULT_FEE, ...(tenant?.fee_schedule || {}) })
+  const [loading, setLoading] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    if (!tenant) return
+    setPromptpayId(tenant.promptpay_id || '')
+    setFeeSchedule({ ...DEFAULT_FEE, ...(tenant.fee_schedule || {}) })
+  }, [tenant?.id])
+
+  function setFee(docType, val) {
+    const n = Math.max(0, parseInt(val) || 0)
+    setFeeSchedule(p => ({ ...p, [docType]: n }))
+  }
+
+  async function handleSave(e) {
+    e.preventDefault()
+    const pid = promptpayId.trim()
+    if (pid && !/^(0[689]\d{8}|\d{13})$/.test(pid)) {
+      alert('รหัส PromptPay ต้องเป็นเบอร์มือถือ 10 หลัก หรือเลขประชาชน/นิติบุคคล 13 หลัก')
+      return
+    }
+    setLoading(true)
+    try {
+      const { error } = await supabase
+        .from('municipalities')
+        .update({ promptpay_id: pid || null, fee_schedule: feeSchedule })
+        .eq('id', tenant.id)
+      if (error) throw error
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch (err) {
+      alert('บันทึกไม่สำเร็จ: ' + err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white"
+             style={{ backgroundColor: '#10b981' }}>
+          <Banknote size={20} />
+        </div>
+        <div>
+          <h1 className="text-xl font-bold text-gray-800">กองคลัง — ค่าธรรมเนียมและ PromptPay</h1>
+          <p className="text-sm text-gray-500">ตั้งค่าบัญชีรับชำระและอัตราค่าธรรมเนียมบริการออกเอกสาร</p>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <h2 className="text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
+          <QrCode size={15} /> PromptPay และค่าธรรมเนียม
+          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">LPA ๑.๖</span>
+        </h2>
+        <p className="text-xs text-gray-400 mb-5 leading-relaxed">
+          ค่าธรรมเนียม 0 บาท = ไม่ต้องชำระ (ฟรี)
+        </p>
+
+        <form onSubmit={handleSave} className="space-y-5">
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">
+              รหัส PromptPay <span className="font-normal text-gray-400">(เบอร์โทร 10 หลัก หรือเลขนิติบุคคล 13 หลัก)</span>
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={promptpayId}
+              onChange={e => setPromptpayId(e.target.value.replace(/\D/g, '').slice(0, 13))}
+              placeholder="เช่น 0812345678 หรือ 1234567890123"
+              maxLength={13}
+              className={inputCls + ' font-mono tracking-widest'}
+            />
+            {promptpayId && (
+              <p className="text-xs mt-1" style={{ color: /^(0[689]\d{8}|\d{13})$/.test(promptpayId) ? '#10b981' : '#f59e0b' }}>
+                {/^(0[689]\d{8}|\d{13})$/.test(promptpayId) ? '✅ รูปแบบถูกต้อง' : '⚠️ เบอร์โทร 10 หลัก หรือเลขนิติบุคคล 13 หลัก'}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-3">ตารางค่าธรรมเนียม (บาท)</label>
+            <div className="rounded-xl border border-gray-100 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500">ประเภทเอกสาร/บริการ</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 w-32">ค่าธรรมเนียม (บาท)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {DOC_FEE_LABELS.map(({ value, label }) => (
+                    <tr key={value} className="hover:bg-gray-50/50">
+                      <td className="px-4 py-2.5 text-gray-700">{label}</td>
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <input
+                            type="number"
+                            min={0}
+                            max={9999}
+                            value={feeSchedule[value] ?? 0}
+                            onChange={e => setFee(value, e.target.value)}
+                            className="w-20 text-right text-sm text-gray-900 bg-white border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-300"
+                          />
+                          <span className="text-xs text-gray-400 shrink-0">บาท</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-xs text-gray-400 mt-2">* ค่าธรรมเนียม 0 บาท = ไม่แสดง QR ให้ประชาชน</p>
+          </div>
+
+          <button type="submit" disabled={loading}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-all"
+            style={{ backgroundColor: '#10b981' }}>
+            {loading
+              ? <Loader2 size={15} className="animate-spin" />
+              : saved ? <CheckCircle2 size={15} /> : <Save size={15} />}
+            {saved ? 'บันทึกสำเร็จ' : 'บันทึกการตั้งค่าการชำระเงิน'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 // ─── Staff Home Dashboard ─────────────────────────────────────────────────────
 
 function StaffHomeModule({ visibleGroups, setActiveModule, pendingCount, staffName }) {
@@ -1748,14 +2004,20 @@ export default function StaffDashboard() {
   const navigate = useNavigate()
   const { tenant } = useTenant()
   const [activeModule, setActiveModule] = useState('home')
-
-  const enabledKeys = tenant?.enabled_modules ?? MODULES.map(m => m.key)
-  const visibleGroups = MODULE_GROUPS
-    .map(g => ({ ...g, items: g.items.filter(m => enabledKeys.includes(m.key)) }))
-    .filter(g => g.items.length > 0)
-  const visibleModules = visibleGroups.flatMap(g => g.items)
   const [profile, setProfile]           = useState(null)
   const [pendingCount, setPendingCount] = useState(0)
+
+  const isAdmin = ['admin', 'superadmin'].includes(profile?.role)
+  const enabledKeys = tenant?.enabled_modules ?? MODULES.map(m => m.key)
+  const visibleGroups = MODULE_GROUPS
+    .map(g => ({
+      ...g,
+      items: g.items.filter(m =>
+        m.adminOnly ? isAdmin : enabledKeys.includes(m.key)
+      ),
+    }))
+    .filter(g => g.items.length > 0)
+  const visibleModules = visibleGroups.flatMap(g => g.items)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -1907,8 +2169,9 @@ export default function StaffDashboard() {
           {activeModule === 'approve'    && <ApproveModule tenant={tenant} staffProfile={profile} />}
           {activeModule === 'projects'   && <CivilProjectAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
           {activeModule === 'map'        && <MapDashboardAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} onNavigate={() => {}} />}
-          {activeModule === 'report'     && <StaffReportWrapper tenant={tenant} />}
+          {activeModule === 'report'       && <StaffReportWrapper tenant={tenant} />}
           {activeModule === 'docs-archive' && <DocumentArchive tenant={tenant} profile={profile} />}
+          {activeModule === 'fee-settings' && <FeeSettingsModule tenant={tenant} />}
 
         </main>
 
