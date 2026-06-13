@@ -1652,8 +1652,8 @@ function StaffHomeModule({ visibleGroups, setActiveModule, pendingCount, staffNa
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-bold text-gray-800">สวัสดี{staffName ? `, ${staffName}` : ''} 👋</h2>
-        <p className="text-sm text-gray-400 mt-0.5">เลือกเมนูที่ต้องการดำเนินการ</p>
+        <h1 className="text-xl font-bold text-gray-800">ระบบเจ้าหน้าที่</h1>
+        <p className="text-sm text-gray-400 mt-0.5">สวัสดี{staffName ? `, ${staffName}` : ''} 👋</p>
       </div>
       {visibleGroups.map(({ group, items }) => (
         <div key={group}>
@@ -1822,7 +1822,6 @@ export default function StaffDashboard() {
           </button>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-bold text-gray-800 truncate">{tenant?.name ?? 'Staff Portal'}</p>
-            <p className="text-xs text-blue-500 font-semibold">ระบบเจ้าหน้าที่</p>
           </div>
           <button onClick={handleLogout} className="p-2 rounded-xl text-gray-400 hover:bg-gray-100 transition-colors">
             <LogOut size={18} />

@@ -4831,7 +4831,7 @@ export default function AdminDashboard() {
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-gray-800">แผงควบคุมเจ้าหน้าที่</h1>
+          <h1 className="text-xl font-bold text-gray-800">แผงควบคุมผู้ดูแลระบบ</h1>
           <p className="text-sm text-gray-400 md:hidden">{tenant?.name}</p>
         </div>
         <div className="flex items-center gap-2">
