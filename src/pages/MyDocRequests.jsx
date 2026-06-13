@@ -44,25 +44,25 @@ function DocCard({ req, onClick }) {
   const docLabel = DOC_TYPES[req.document_type] ?? req.document_type
   return (
     <button onClick={onClick}
-      className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-4 text-left hover:shadow-md active:scale-[0.99] transition-all flex items-start gap-3">
+      className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-4 text-left hover:shadow-md active:scale-[0.99] transition-all flex items-center gap-3">
       <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
         <FileText size={18} className="text-blue-500" />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="flex items-start justify-between gap-2 mb-0.5">
-          <p className="text-sm font-bold text-gray-800 truncate">{docLabel}</p>
+        <p className="text-sm font-bold text-gray-800 leading-snug">{docLabel}</p>
+        <div className="flex items-center gap-2 mt-1 flex-wrap">
           <StatusBadge status={req.status} />
+          <span className="text-xs text-gray-400 font-mono">{req.id.slice(0,8).toUpperCase()}</span>
         </div>
-        <p className="text-xs text-gray-400">เลขอ้างอิง: <span className="font-mono font-semibold">{req.id.slice(0,8).toUpperCase()}</span></p>
         {req.purpose && <p className="text-xs text-gray-400 mt-0.5 truncate">{req.purpose}</p>}
-        <p className="text-[11px] text-gray-300 mt-1">{dateTH(req.created_at)}</p>
+        <p className="text-[11px] text-gray-300 mt-0.5">{dateTH(req.created_at)}</p>
         {req.document_url && req.status === 'completed' && (
           <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 mt-1">
             <Download size={10} /> เอกสารพร้อมดาวน์โหลด
           </span>
         )}
       </div>
-      <ChevronRight size={16} className="text-gray-300 shrink-0 mt-1" />
+      <ChevronRight size={16} className="text-gray-300 shrink-0" />
     </button>
   )
 }
