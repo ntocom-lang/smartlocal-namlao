@@ -1,20 +1,57 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Loader2 } from 'lucide-react'
+import {
+  ArrowLeft, Loader2,
+  Lightbulb, Trash2, TreePine, Droplets, Package, Megaphone, Bug,
+  Waves, Wind, Building2, Volume2, AlertTriangle, HelpCircle,
+  CreditCard, Scissors, PawPrint, Shield, FlameKindling, Phone,
+  Axe, Wrench, Zap, Construction,
+} from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 
+const CATEGORY_ICON = {
+  light:            Lightbulb,
+  road:             Wrench,
+  mosquito:         Bug,
+  tree:             Scissors,
+  trash:            Trash2,
+  water_supply:     Droplets,
+  drain:            Wind,
+  flood:            Waves,
+  borrow_equipment: Package,
+  corruption:       Shield,
+  grievance:        Megaphone,
+  noise:            Volume2,
+  building:         Building2,
+  tax:              CreditCard,
+  canal:            Axe,
+  animals:          PawPrint,
+  fire:             FlameKindling,
+  phone_complaint:  Phone,
+  waste_water:      Droplets,
+  other:            HelpCircle,
+}
+
 const DEFAULT_CATEGORIES = [
-  { value: 'light',            label: 'ไฟฟ้าสาธารณะ',              emoji: '💡', color: '#FEF3C7', text: '#D97706' },
-  { value: 'road',             label: 'ซ่อมแซมถนน',               emoji: '🛣️', color: '#F3F4F6', text: '#374151' },
-  { value: 'mosquito',         label: 'พ่นยุง',                   emoji: '🦟', color: '#D1FAE5', text: '#059669' },
-  { value: 'tree',             label: 'ตัดต้นไม้',                emoji: '🌳', color: '#D1FAE5', text: '#059669' },
-  { value: 'trash',            label: 'ขยะ / ความสะอาด',         emoji: '🗑️', color: '#F3F4F6', text: '#374151' },
-  { value: 'water_supply',     label: 'สนับสนุนน้ำอุปโภค',        emoji: '🚿', color: '#DBEAFE', text: '#2563EB' },
-  { value: 'borrow_equipment', label: 'ยืมพัสดุ',                 emoji: '📦', color: '#E0E7FF', text: '#4338CA' },
-  { value: 'corruption',       label: 'แจ้งการทุจริต',            emoji: '⚖️', color: '#FEE2E2', text: '#DC2626' },
-  { value: 'grievance',        label: 'แจ้งเรื่องร้องทุกข์ร้องเรียน', emoji: '📣', color: '#FEF3C7', text: '#D97706' },
-  { value: 'other',            label: 'อื่นๆ',                    emoji: '📝', color: '#E0E7FF', text: '#4338CA' },
+  { value: 'light',            label: 'ไฟฟ้าสาธารณะ' },
+  { value: 'drain',            label: 'ท่อระบายน้ำ' },
+  { value: 'trash',            label: 'ขยะ / ความสะอาด' },
+  { value: 'waste_water',      label: 'น้ำเสีย' },
+  { value: 'canal',            label: 'ดูดสิ่งปฏิกูล' },
+  { value: 'road',             label: 'ถนน / ทางเท้า' },
+  { value: 'noise',            label: 'แจ้งเหตุรำคาญ' },
+  { value: 'flood',            label: 'ฝาท่อระบายน้ำ' },
+  { value: 'building',         label: 'ตรวจสอบอาคาร' },
+  { value: 'mosquito',         label: 'พ่นยุง / โรคระบาด' },
+  { value: 'grievance',        label: 'กลิ่น / ควัน / เสียง' },
+  { value: 'corruption',       label: 'แจ้งการทุจริต' },
+  { value: 'tax',              label: 'ภาษีและค่าธรรมเนียม' },
+  { value: 'tree',             label: 'ตัดต้นไม้' },
+  { value: 'water_supply',     label: 'ลอกคลอง' },
+  { value: 'animals',          label: 'สุนัขจรจัด' },
+  { value: 'phone_complaint',  label: 'ร้องเรียนเสียง' },
+  { value: 'other',            label: 'อื่นๆ' },
 ]
 
 export default function ComplaintCategory() {
@@ -31,11 +68,7 @@ export default function ComplaintCategory() {
       .eq('municipality_id', tenant.id)
       .order('sort_order')
       .then(({ data }) => {
-        if (data && data.length > 0) {
-          setCategories(data.map((c) => ({ ...c, text: c.text_color })))
-        } else {
-          setCategories(DEFAULT_CATEGORIES)
-        }
+        setCategories(data && data.length > 0 ? data : DEFAULT_CATEGORIES)
         setLoading(false)
       })
   }, [tenant?.id])
@@ -45,74 +78,52 @@ export default function ComplaintCategory() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto min-h-screen bg-gray-50">
-      {/* Mobile top bar */}
-      <div
-        className="md:hidden sticky top-0 z-10 flex items-center gap-3 px-4 py-3 shadow-md"
-        style={{
-          background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)',
-        }}
-      >
-        <button
-          onClick={() => navigate(-1)}
-          className="p-1.5 rounded-xl bg-white/20 hover:bg-white/30 transition-colors"
-        >
+    <div className="min-h-screen" style={{ backgroundColor: '#EFF6FF' }}>
+
+      {/* Header */}
+      <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 shadow-md"
+        style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
+        <button onClick={() => navigate(-1)}
+          className="p-1.5 rounded-xl bg-white/20 hover:bg-white/30 transition-colors">
           <ArrowLeft size={20} className="text-white" />
         </button>
-        <h1 className="font-bold text-white text-base">ยื่นคำร้องออนไลน์</h1>
+        <h1 className="font-bold text-white text-base flex-1 text-center pr-8">ยื่นคำร้องออนไลน์</h1>
       </div>
 
-      {/* PC header */}
-      <div className="hidden md:flex items-center gap-3 px-6 pt-8 pb-5 border-b border-gray-200 mb-2">
-        <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-2xl shrink-0"
-             style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
-          📋
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800">ยื่นคำร้องออนไลน์</h1>
-          <p className="text-sm text-gray-500 mt-0.5">เลือกประเภทที่ต้องการยื่นคำร้อง</p>
-        </div>
-      </div>
+      <div className="max-w-2xl mx-auto px-4 pt-5 pb-28">
 
-      {/* Mobile Prompt */}
-      <div className="md:hidden px-4 pt-5 pb-2">
-        <div
-          className="text-center py-3 px-4 rounded-2xl font-semibold text-white text-sm shadow"
-          style={{ backgroundColor: 'var(--color-primary)' }}
-        >
-          เลือกประเภทที่ต้องการยื่นคำร้อง
-        </div>
-      </div>
+        {/* Prompt button */}
+        <button onClick={() => {}} disabled
+          className="w-full py-3.5 rounded-full font-semibold text-white text-sm mb-5 shadow"
+          style={{ backgroundColor: '#1e3a5f' }}>
+          เลือกหมวดหมู่
+        </button>
 
-      {/* Category Grid */}
-      {loading ? (
-        <div className="flex justify-center py-20">
-          <Loader2 size={28} className="animate-spin text-gray-300" />
-        </div>
-      ) : (
-        <div className="px-4 md:px-6 pb-28 md:pb-8 pt-3 md:pt-4 grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-          {categories.map((cat) => (
-            <button
-              key={cat.value}
-              onClick={() => handleSelect(cat.value)}
-              className="flex flex-col items-center gap-2 py-4 md:py-6 px-2 rounded-2xl bg-white shadow-sm border border-gray-100 active:scale-95 transition-transform hover:shadow-md"
-            >
-              <div
-                className="w-14 h-14 md:w-16 md:h-16 rounded-2xl flex items-center justify-center text-2xl md:text-3xl"
-                style={{ backgroundColor: cat.color }}
-              >
-                {cat.emoji}
-              </div>
-              <span
-                className="text-[13px] font-medium text-center leading-tight"
-                style={{ color: cat.text }}
-              >
-                {cat.label}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
+        {/* Grid */}
+        {loading ? (
+          <div className="flex justify-center py-20">
+            <Loader2 size={28} className="animate-spin text-blue-300" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-4 gap-x-3 gap-y-5">
+            {categories.map((cat) => {
+              const Icon = CATEGORY_ICON[cat.value] ?? HelpCircle
+              return (
+                <button key={cat.value} onClick={() => handleSelect(cat.value)}
+                  className="flex flex-col items-center gap-2 active:scale-95 transition-transform">
+                  <div className="w-16 h-16 rounded-full bg-white shadow-md flex items-center justify-center"
+                    style={{ boxShadow: '0 2px 10px rgba(0,0,0,0.10)' }}>
+                    <Icon size={28} strokeWidth={1.5} style={{ color: 'var(--color-primary)' }} />
+                  </div>
+                  <span className="text-[11px] font-medium text-gray-600 text-center leading-tight w-full px-0.5 line-clamp-2">
+                    {cat.label}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

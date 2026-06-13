@@ -152,15 +152,14 @@ function AppShell() {
   async function checkAndFixProfile(uid, userMeta = {}) {
     const { data: profile } = await supabase
       .from('profiles')
-      .select('phone, municipality_id, full_name')
+      .select('phone, municipality_id, full_name, role')
       .eq('id', uid)
       .maybeSingle()
 
     const updates = {}
 
-    if (tenant?.id && !profile?.municipality_id) {
+    if (tenant?.id && !profile?.municipality_id && profile?.role === 'citizen') {
       updates.municipality_id = tenant.id
-      updates.role = 'citizen'
     }
 
     // Google OAuth ส่ง name ใน key 'name' ไม่ใช่ 'full_name', รูปใน key 'picture' ไม่ใช่ 'avatar_url'

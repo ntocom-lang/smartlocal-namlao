@@ -25,13 +25,20 @@ const defaultIcon = L.icon({
 })
 
 const THIS_YEAR = new Date().getFullYear() + 543
-const LINEAR_TYPES = ['road', 'drain', 'waterway']
-
-const ROUTE_DASH = {
-  road:     null,       // เส้นทึบ
-  drain:    '10, 7',    // ขีดประ
-  waterway: '3, 7',     // จุดประ
+const ROUTE_STYLE = {
+  road:          { color: '#374151', weight: 5, dashArray: null },
+  road_concrete: { color: '#6b7280', weight: 6, dashArray: null },
+  road_asphalt:  { color: '#292524', weight: 5, dashArray: null },
+  road_slurry:   { color: '#92400e', weight: 4, dashArray: '12, 4' },
+  road_gravel:   { color: '#d97706', weight: 4, dashArray: '3, 6' },
+  drain:         { color: '#3b82f6', weight: 4, dashArray: '10, 5' },
+  dredge:        { color: '#06b6d4', weight: 4, dashArray: '2, 4' },
+  canal:         { color: '#0369a1', weight: 4, dashArray: '15,5,3,5' },
+  pipe_water:    { color: '#1d4ed8', weight: 3, dashArray: '5, 3' },
+  waterway:      { color: '#0ea5e9', weight: 4, dashArray: '3, 7' },
 }
+const LINEAR_TYPES = Object.keys(ROUTE_STYLE)
+const ROUTE_DASH = Object.fromEntries(Object.entries(ROUTE_STYLE).map(([k, v]) => [k, v.dashArray]))
 
 const ROUTE_COLORS = [
   { hex: '#3b82f6', label: 'น้ำเงิน' },
@@ -57,13 +64,21 @@ const STATUS_CFG = {
 }
 
 const PROJECT_TYPES = [
-  { value: 'road',         label: 'ถนน',                  icon: '🛣️' },
-  { value: 'drain',        label: 'ระบบระบายน้ำ',           icon: '🕳️' },
-  { value: 'waterway',     label: 'รางส่งน้ำ',               icon: '💧' },
-  { value: 'building',     label: 'อาคาร/สิ่งก่อสร้าง',      icon: '🏗️' },
-  { value: 'light',        label: 'ไฟฟ้าสาธารณะ',          icon: '💡' },
-  { value: 'park',         label: 'สวนสาธารณะ/ภูมิทัศน์',    icon: '🌳' },
-  { value: 'other',        label: 'อื่นๆ',                   icon: '📝' },
+  // ถนน
+  { value: 'road_concrete', label: 'ถนน ค.ส.ล.',          icon: '🛣️', group: 'ถนน' },
+  { value: 'road_asphalt',  label: 'ลาดยางแอสฟัลท์',       icon: '🛣️', group: 'ถนน' },
+  { value: 'road_slurry',   label: 'ฉาบผิวสเลอรี่ซิล',     icon: '🛣️', group: 'ถนน' },
+  { value: 'road_gravel',   label: 'หินคลุก',               icon: '🛣️', group: 'ถนน' },
+  // น้ำ
+  { value: 'drain',         label: 'รางระบายน้ำ',           icon: '🌊', group: 'น้ำ' },
+  { value: 'dredge',        label: 'ขุดลอก',                icon: '⛏️', group: 'น้ำ' },
+  { value: 'canal',         label: 'รางน้ำ/ลำเหมือง',       icon: '💧', group: 'น้ำ' },
+  { value: 'pipe_water',    label: 'ท่อน้ำประปา',            icon: '🚰', group: 'น้ำ' },
+  // อื่นๆ
+  { value: 'building',      label: 'อาคาร/สิ่งก่อสร้าง',   icon: '🏗️', group: '' },
+  { value: 'light',         label: 'ไฟฟ้าสาธารณะ',         icon: '💡', group: '' },
+  { value: 'park',          label: 'สวนสาธารณะ/ภูมิทัศน์', icon: '🌳', group: '' },
+  { value: 'other',         label: 'อื่นๆ',                 icon: '📝', group: '' },
 ]
 
 const DEPARTMENTS = [
@@ -76,12 +91,12 @@ const DEPARTMENTS = [
 
 const EMPTY_FORM = {
   project_no: '', fiscal_year: String(THIS_YEAR), title: '', description: '',
-  project_type: 'road', status: 'planned', department: 'civil', progress_pct: 0,
+  project_type: 'road_concrete', status: 'planned', department: 'civil', progress_pct: 0,
   village: '', subdistrict: '', district: '', province: '', location_desc: '',
   budget_amount: '', contract_amount: '', paid_amount: '',
   contractor_name: '', contract_no: '',
   start_date: '', end_date: '',
-  cancel_reason: '', note: '', route_color: '#3b82f6',
+  cancel_reason: '', note: '', route_color: ROUTE_STYLE.road_concrete.color,
 }
 
 function StatusBadge({ status }) {
@@ -616,7 +631,15 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
             <select value={filterType} onChange={e => setFilterType(e.target.value)}
               className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200">
               <option value="all">ทุกประเภท</option>
-              {PROJECT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              <optgroup label="ถนน">
+                {PROJECT_TYPES.filter(t => t.group === 'ถนน').map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </optgroup>
+              <optgroup label="น้ำ">
+                {PROJECT_TYPES.filter(t => t.group === 'น้ำ').map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </optgroup>
+              <optgroup label="อื่นๆ">
+                {PROJECT_TYPES.filter(t => t.group === '').map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </optgroup>
             </select>
           </div>
           <div className="min-w-[130px]">
@@ -1036,8 +1059,22 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
               </select>
             </Field>
             <Field label="ประเภทโครงการ" required half>
-              <select value={form.project_type} onChange={e => setForm(p => ({ ...p, project_type: e.target.value }))} className={selectCls}>
-                {PROJECT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              <select value={form.project_type}
+                onChange={e => {
+                  const type = e.target.value
+                  const defaultColor = ROUTE_STYLE[type]?.color
+                  setForm(p => ({ ...p, project_type: type, ...(defaultColor && { route_color: defaultColor }) }))
+                }}
+                className={selectCls}>
+                <optgroup label="ถนน">
+                  {PROJECT_TYPES.filter(t => t.group === 'ถนน').map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </optgroup>
+                <optgroup label="น้ำ">
+                  {PROJECT_TYPES.filter(t => t.group === 'น้ำ').map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </optgroup>
+                <optgroup label="อื่นๆ">
+                  {PROJECT_TYPES.filter(t => t.group === '').map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </optgroup>
               </select>
             </Field>
             <Field label="สถานะ" required half>

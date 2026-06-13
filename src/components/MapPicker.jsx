@@ -3,10 +3,13 @@ import { MapContainer, TileLayer, useMapEvents, useMap } from 'react-leaflet'
 import { Search, X, MapPin, CheckCircle2, LocateFixed, Layers } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
 
+const LONGDO_KEY = import.meta.env.VITE_LONGDO_KEY
+
+// Longdo tile URL ใช้ได้ใน Leaflet โดยตรง — ไม่ต้องการ SDK
 const TILES = {
-  street: {
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  normal: {
+    url: `https://ms.longdo.com/mmmap/tile.php?zoom={z}&x={x}&y={y}&key=${LONGDO_KEY}`,
+    attribution: '&copy; <a href="https://map.longdo.com">Longdo Map</a>',
   },
   satellite: {
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -14,7 +17,6 @@ const TILES = {
   },
 }
 
-/** ฟัง moveend แล้วส่งพิกัดศูนย์กลางกลับ */
 function MapCenterTracker({ onMoveEnd }) {
   useMapEvents({
     moveend(e) {
@@ -25,7 +27,6 @@ function MapCenterTracker({ onMoveEnd }) {
   return null
 }
 
-/** Fly ไปตำแหน่งที่กำหนด */
 function FlyTo({ target }) {
   const map = useMap()
   useEffect(() => {
@@ -36,33 +37,33 @@ function FlyTo({ target }) {
 
 async function reverseGeocode(lat, lng) {
   try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=th`,
-      { headers: { 'Accept-Language': 'th' } }
+    const r = await fetch(
+      `https://api.longdo.com/map/services/address?lon=${lng}&lat=${lat}&noelevation=1&key=${LONGDO_KEY}`
     )
-    const data = await res.json()
-    return data.display_name ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`
+    const d = await r.json()
+    if (d.error) throw new Error(d.error)
+    const parts = [d.aoi, d.road, d.subdistrict, d.district, d.province, d.postcode]
+    return parts.filter(Boolean).join(' ') || `${lat.toFixed(5)}, ${lng.toFixed(5)}`
   } catch {
     return `${lat.toFixed(5)}, ${lng.toFixed(5)}`
   }
 }
 
-async function searchPlace(query, center) {
-  const delta = 0.4
-  const viewbox = center
-    ? `${center.lng - delta},${center.lat + delta},${center.lng + delta},${center.lat - delta}`
-    : ''
-  const params = new URLSearchParams({
-    q: query, format: 'json', limit: 6,
-    'accept-language': 'th', countrycodes: 'th',
-    ...(viewbox ? { viewbox, bounded: '0' } : {}),
-  })
-  const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`)
-  return res.json()
+async function searchPlace(query) {
+  const r = await fetch(
+    `https://search.longdo.com/mapsearch/json/search?keyword=${encodeURIComponent(query)}&limit=10&key=${LONGDO_KEY}`
+  )
+  const d = await r.json()
+  return (d.data ?? []).map(item => ({
+    place_id: item.id ?? `${item.lat}${item.lon}`,
+    display_name: [item.name, item.address].filter(Boolean).join(' — '),
+    lat: String(item.lat),
+    lon: String(item.lon),
+  }))
 }
 
-export default function MapPicker({ initialPos, onConfirm, onClose }) {
-  const defaultPos = initialPos ?? { lat: 18.1448, lng: 100.1167 }
+export default function MapPicker({ initialPos, fallbackPos, onConfirm, onClose }) {
+  const defaultPos = initialPos ?? fallbackPos ?? { lat: 18.1448, lng: 100.1167 }
   const [center, setCenter] = useState(defaultPos)
   const [flyTarget, setFlyTarget] = useState(null)
   const [address, setAddress] = useState('')
@@ -70,7 +71,7 @@ export default function MapPicker({ initialPos, onConfirm, onClose }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState([])
   const [searching, setSearching] = useState(false)
-  const [tileMode, setTileMode] = useState('satellite')
+  const [tileMode, setTileMode] = useState('normal')
   const searchTimeout = useRef(null)
   const geocodeTimeout = useRef(null)
 
@@ -83,9 +84,7 @@ export default function MapPicker({ initialPos, onConfirm, onClose }) {
           setFlyTarget(target)
           fetchAddress(target.lat, target.lng)
         },
-        () => {
-          fetchAddress(defaultPos.lat, defaultPos.lng)
-        }
+        () => fetchAddress(defaultPos.lat, defaultPos.lng)
       )
     } else {
       fetchAddress(defaultPos.lat, defaultPos.lng)
@@ -94,15 +93,14 @@ export default function MapPicker({ initialPos, onConfirm, onClose }) {
 
   async function fetchAddress(lat, lng) {
     setLoadingAddr(true)
-    const addr = await reverseGeocode(lat, lng)
-    setAddress(addr)
+    setAddress(await reverseGeocode(lat, lng))
     setLoadingAddr(false)
   }
 
   function handleMoveEnd({ lat, lng }) {
     setCenter({ lat, lng })
     clearTimeout(geocodeTimeout.current)
-    geocodeTimeout.current = setTimeout(() => fetchAddress(lat, lng), 300)
+    geocodeTimeout.current = setTimeout(() => fetchAddress(lat, lng), 400)
   }
 
   function handleSearchChange(e) {
@@ -112,8 +110,7 @@ export default function MapPicker({ initialPos, onConfirm, onClose }) {
     if (!q.trim()) { setSearchResults([]); return }
     searchTimeout.current = setTimeout(async () => {
       setSearching(true)
-      const results = await searchPlace(q, center)
-      setSearchResults(results)
+      setSearchResults(await searchPlace(q))
       setSearching(false)
     }, 600)
   }
@@ -138,9 +135,9 @@ export default function MapPicker({ initialPos, onConfirm, onClose }) {
   const tile = TILES[tileMode]
 
   return (
-    <div className="fixed inset-0 z-200 flex flex-col bg-white">
+    <div className="fixed inset-0 flex flex-col bg-white" style={{ zIndex: 200 }}>
       {/* Search bar */}
-      <div className="absolute top-0 left-0 right-0 z-201 px-3 pt-3 pb-2 pointer-events-none">
+      <div className="absolute top-0 left-0 right-0 px-3 pt-3 pb-2 pointer-events-none" style={{ zIndex: 201 }}>
         <div className="pointer-events-auto flex items-center gap-2 bg-white rounded-2xl shadow-lg border border-gray-100 px-3 py-2">
           <Search size={18} className="text-gray-400 shrink-0" />
           <input
@@ -148,7 +145,7 @@ export default function MapPicker({ initialPos, onConfirm, onClose }) {
             value={searchQuery}
             onChange={handleSearchChange}
             placeholder="ค้นหาสถานที่..."
-            className="flex-1 text-sm text-gray-700 placeholder-gray-400 outline-none bg-transparent"
+            className="flex-1 text-sm text-gray-900 bg-white placeholder-gray-400 outline-none"
           />
           {searchQuery && (
             <button onClick={() => { setSearchQuery(''); setSearchResults([]) }}>
@@ -162,7 +159,7 @@ export default function MapPicker({ initialPos, onConfirm, onClose }) {
 
         {searchResults.length > 0 && (
           <div className="pointer-events-auto mt-1 bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-            {searchResults.map((r) => (
+            {searchResults.map(r => (
               <button
                 key={r.place_id}
                 onClick={() => selectResult(r)}
@@ -176,15 +173,15 @@ export default function MapPicker({ initialPos, onConfirm, onClose }) {
         {searching && (
           <div className="pointer-events-auto mt-1 bg-white rounded-2xl shadow px-4 py-3 text-sm text-gray-400">กำลังค้นหา...</div>
         )}
-        {!searching && searchQuery.length > 1 && searchResults.length === 0 && (
-          <div className="pointer-events-auto mt-1 bg-white rounded-2xl shadow px-4 py-3 text-sm text-gray-500 leading-snug">
-            ไม่พบสถานที่ — ลองค้นหาชื่ออำเภอหรือจังหวัดแทน<br />
-            <span className="text-xs text-gray-400">หรือเลื่อนแผนที่ดาวเทียมไปยังตำแหน่งที่ต้องการ แล้วกด ยืนยันตำแหน่ง</span>
+        {!searching && searchQuery.length > 1 && !searchResults.length && (
+          <div className="pointer-events-auto mt-1 bg-white rounded-2xl shadow px-4 py-3 text-sm text-gray-500">
+            ไม่พบสถานที่ — ลองระบุให้ชัดขึ้น เช่น{' '}
+            <span className="font-medium text-gray-700">"น้ำเลา ร้องกวาง แพร่"</span>
           </div>
         )}
       </div>
 
-      {/* Map — wrapper isolation กัน leaflet z-index ไม่ให้ไปแข่งกับ overlay หมุด */}
+      {/* Map */}
       <div style={{ flex: 1, position: 'relative', isolation: 'isolate', minHeight: 0 }}>
         <MapContainer
           center={[defaultPos.lat, defaultPos.lng]}
@@ -193,7 +190,6 @@ export default function MapPicker({ initialPos, onConfirm, onClose }) {
           zoomControl={false}
         >
           <TileLayer key={tileMode} url={tile.url} attribution={tile.attribution} />
-          {/* label-only overlay สำหรับ mode ดาวเทียม */}
           {tileMode === 'satellite' && (
             <TileLayer
               key="labels"
@@ -207,8 +203,8 @@ export default function MapPicker({ initialPos, onConfirm, onClose }) {
         </MapContainer>
       </div>
 
-      {/* หมุดกลางจอ (CSS) — tip ชี้ตรงกลาง */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-201">
+      {/* Center pin */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: 201 }}>
         <div style={{ transform: 'translateY(-50%)' }}>
           <div
             className="absolute left-1/2 -translate-x-1/2"
@@ -221,31 +217,34 @@ export default function MapPicker({ initialPos, onConfirm, onClose }) {
         </div>
       </div>
 
-      {/* ปุ่ม toggle satellite */}
+      {/* Layer toggle */}
       <button
-        onClick={() => setTileMode(tileMode === 'street' ? 'satellite' : 'street')}
-        className="absolute left-4 z-201 flex items-center gap-1.5 px-3 py-2 bg-white rounded-xl shadow-lg border border-gray-100 text-xs font-medium text-gray-700 active:scale-95 transition-transform"
-        style={{ bottom: '140px' }}
+        onClick={() => setTileMode(tileMode === 'normal' ? 'satellite' : 'normal')}
+        className="absolute left-4 flex items-center gap-1.5 px-3 py-2 bg-white rounded-xl shadow-lg border border-gray-100 text-xs font-medium text-gray-700 active:scale-95 transition-transform"
+        style={{ bottom: '140px', zIndex: 201 }}
       >
         <Layers size={16} className="text-gray-500" />
-        {tileMode === 'street' ? 'ดาวเทียม' : 'แผนที่'}
+        {tileMode === 'normal' ? 'ดาวเทียม' : 'แผนที่'}
       </button>
 
-      {/* ปุ่มตำแหน่งปัจจุบัน */}
+      {/* GPS */}
       <button
         onClick={handleMyLocation}
-        className="absolute right-4 z-201 p-3 bg-white rounded-full shadow-lg border border-gray-100 active:scale-95 transition-transform"
-        style={{ bottom: '140px' }}
+        className="absolute right-4 p-3 bg-white rounded-full shadow-lg border border-gray-100 active:scale-95 transition-transform"
+        style={{ bottom: '140px', zIndex: 201 }}
       >
         <LocateFixed size={20} className="text-blue-500" />
       </button>
 
       {/* Bottom panel */}
-      <div className="absolute bottom-0 left-0 right-0 z-201 bg-white border-t border-gray-100 shadow-[0_-4px_12px_rgba(0,0,0,0.08)] px-4 pt-3 pb-6">
+      <div
+        className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-100 shadow-[0_-4px_12px_rgba(0,0,0,0.08)] px-4 pt-3 pb-6"
+        style={{ zIndex: 201 }}
+      >
         <div className="flex items-start gap-2 mb-1.5">
           <MapPin size={16} className="text-red-500 shrink-0 mt-0.5" />
           <p className="text-sm text-gray-600 leading-snug line-clamp-2">
-            {loadingAddr ? 'กำลังโหลดที่อยู่...' : address}
+            {loadingAddr ? 'กำลังโหลดที่อยู่...' : (address || '—')}
           </p>
         </div>
         <p className="text-xs text-gray-400 font-mono mb-3 pl-6">
@@ -263,4 +262,3 @@ export default function MapPicker({ initialPos, onConfirm, onClose }) {
     </div>
   )
 }
-

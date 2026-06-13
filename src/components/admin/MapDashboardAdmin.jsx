@@ -111,24 +111,29 @@ const BIZ_TYPE_LABEL = {
   otop: '🏺 OTOP', tourism: '📍 ท่องเที่ยว', service: '🔧 บริการ', other: '📝 อื่นๆ',
 }
 
-const PROJECT_TYPE_LABEL = {
-  road: 'ถนน/สะพาน', drain: 'ระบายน้ำ', bridge: 'สะพาน', light: 'ไฟฟ้า',
-  waterway: 'ลำเหมือง', building: 'อาคาร', irrigation: 'ชลประทาน',
-  water_supply: 'ประปา', other: 'อื่นๆ',
+// ─── ROUTE_STYLE — แหล่งความจริงเดียวของ linear project types ──────────────
+const ROUTE_STYLE = {
+  // ถนน — โทนเทา/ดำ
+  road:          { color: '#374151', weight: 5, dashArray: null,        label: 'ถนน (ไม่ระบุ)',           icon: '🛣️', linear: true },
+  road_concrete: { color: '#6b7280', weight: 6, dashArray: null,        label: 'ถนน ค.ส.ล.',              icon: '🛣️', linear: true },
+  road_asphalt:  { color: '#292524', weight: 5, dashArray: null,        label: 'ลาดยางแอสฟัลท์',          icon: '🛣️', linear: true },
+  road_slurry:   { color: '#92400e', weight: 4, dashArray: '12, 4',     label: 'ฉาบผิวสเลอรี่ซิล',       icon: '🛣️', linear: true },
+  road_gravel:   { color: '#d97706', weight: 4, dashArray: '3, 6',      label: 'ถนนหินคลุก',              icon: '🛣️', linear: true },
+  // น้ำ — โทนฟ้า
+  drain:         { color: '#3b82f6', weight: 4, dashArray: '10, 5',     label: 'รางระบายน้ำ',              icon: '🌊', linear: true },
+  dredge:        { color: '#06b6d4', weight: 4, dashArray: '2, 4',      label: 'ขุดลอก',                  icon: '⛏️', linear: true },
+  canal:         { color: '#0369a1', weight: 4, dashArray: '15,5,3,5',  label: 'รางน้ำ/ลำเหมือง',         icon: '💧', linear: true },
+  pipe_water:    { color: '#1d4ed8', weight: 3, dashArray: '5, 3',      label: 'ท่อน้ำประปา',             icon: '🚰', linear: true },
+  waterway:      { color: '#0ea5e9', weight: 4, dashArray: '3, 7',      label: 'รางส่งน้ำ',               icon: '💧', linear: true },
+  // จุด
+  building:      { color: '#8b5cf6', weight: null, dashArray: null,     label: 'อาคาร/สิ่งก่อสร้าง',     icon: '🏗️', linear: false },
+  light:         { color: '#f59e0b', weight: null, dashArray: null,     label: 'ไฟฟ้าสาธารณะ',           icon: '💡', linear: false },
+  park:          { color: '#10b981', weight: null, dashArray: null,     label: 'สวนสาธารณะ',              icon: '🌳', linear: false },
+  other:         { color: '#9ca3af', weight: null, dashArray: null,     label: 'อื่นๆ',                   icon: '📝', linear: false },
 }
-
-const ROUTE_DASH = {
-  road:     null,
-  drain:    '10, 7',
-  waterway: '3, 7',
-}
-const LINEAR_TYPES = Object.keys(ROUTE_DASH)
-
-const ROUTE_TYPE_LEGEND = [
-  { type: 'road',     label: 'ถนน',       dashArray: null,    color: '#6366f1' },
-  { type: 'drain',    label: 'ระบายน้ำ',  dashArray: '10, 7', color: '#6366f1' },
-  { type: 'waterway', label: 'รางส่งน้ำ', dashArray: '3, 7',  color: '#6366f1' },
-]
+const LINEAR_TYPES = Object.entries(ROUTE_STYLE).filter(([, v]) => v.linear).map(([k]) => k)
+const PROJECT_TYPE_LABEL = Object.fromEntries(Object.entries(ROUTE_STYLE).map(([k, v]) => [k, v.label]))
+const PROJ_TYPE_EMOJI_MAP = Object.fromEntries(Object.entries(ROUTE_STYLE).map(([k, v]) => [k, v.icon]))
 
 const CIVIL_STATUS_COLOR = {
   planned:     '#9ca3af',
@@ -151,10 +156,7 @@ const FORM_TYPE_EMOJI = {
 const BIZ_TYPE_EMOJI = {
   shop: '🛍️', food: '🍽️', stay: '🏨', otop: '🏺', tourism: '📍', service: '🔧', other: '📝',
 }
-const PROJ_TYPE_EMOJI = {
-  road: '🛣️', drain: '🌊', bridge: '🌉', light: '💡',
-  waterway: '💧', building: '🏗️', irrigation: '🚿', water_supply: '🚰', other: '🔨',
-}
+const PROJ_TYPE_EMOJI = PROJ_TYPE_EMOJI_MAP
 
 function makeDivIcon(emoji, color, size = 32) {
   return L.divIcon({
@@ -483,13 +485,24 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
                     className="text-xs font-medium px-2.5 py-1.5 border border-gray-300 bg-white text-gray-800 focus:outline-none"
                     style={{ borderRadius: '2px', minWidth: '160px' }}>
                     <option value="all">— ทุกประเภท —</option>
-                    <option value="road">ถนน / สะพาน</option>
-                    <option value="drain">ระบบระบายน้ำ</option>
-                    <option value="waterway">รางส่งน้ำ / ลำเหมือง</option>
-                    <option value="building">อาคาร / สิ่งก่อสร้าง</option>
-                    <option value="light">ไฟฟ้าสาธารณะ</option>
-                    <option value="park">สวนสาธารณะ / ภูมิทัศน์</option>
-                    <option value="other">อื่น ๆ</option>
+                    <optgroup label="ถนน">
+                      <option value="road_concrete">ถนน ค.ส.ล.</option>
+                      <option value="road_asphalt">ลาดยางแอสฟัลท์</option>
+                      <option value="road_slurry">ฉาบผิวสเลอรี่ซิล</option>
+                      <option value="road_gravel">หินคลุก</option>
+                    </optgroup>
+                    <optgroup label="น้ำ">
+                      <option value="drain">รางระบายน้ำ</option>
+                      <option value="dredge">ขุดลอก</option>
+                      <option value="canal">รางน้ำ/ลำเหมือง</option>
+                      <option value="pipe_water">ท่อน้ำประปา</option>
+                    </optgroup>
+                    <optgroup label="อื่นๆ">
+                      <option value="building">อาคาร/สิ่งก่อสร้าง</option>
+                      <option value="light">ไฟฟ้าสาธารณะ</option>
+                      <option value="park">สวนสาธารณะ</option>
+                      <option value="other">อื่น ๆ</option>
+                    </optgroup>
                   </select>
                 </div>
               )}
@@ -568,14 +581,21 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
                     value={filterProjType} onChange={setFilterProjType}
                     openFilter={openFilter} setOpenFilter={setOpenFilter}
                     options={[
-                      { v: 'all',      icon: '🔨', label: 'ทั้งหมด',               count: civilProjects.length },
-                      { v: 'road',     icon: '🛣️', label: 'ถนน / สะพาน',          count: projTypeCounts['road'] ?? 0 },
-                      { v: 'drain',    icon: '🌊', label: 'ระบบระบายน้ำ',          count: projTypeCounts['drain'] ?? 0 },
-                      { v: 'waterway', icon: '💧', label: 'รางส่งน้ำ / ลำเหมือง', count: projTypeCounts['waterway'] ?? 0 },
-                      { v: 'building', icon: '🏗️', label: 'อาคาร / สิ่งก่อสร้าง', count: projTypeCounts['building'] ?? 0 },
-                      { v: 'light',    icon: '💡', label: 'ไฟฟ้าสาธารณะ',          count: projTypeCounts['light'] ?? 0 },
-                      { v: 'park',     icon: '🌳', label: 'สวนสาธารณะ',            count: projTypeCounts['park'] ?? 0 },
-                      { v: 'other',    icon: '📝', label: 'อื่น ๆ',                count: projTypeCounts['other'] ?? 0 },
+                      { v: 'all',           icon: '🔨', label: 'ทั้งหมด',          count: civilProjects.length },
+                      { v: 'road_concrete', icon: '🛣️', label: 'ค.ส.ล.',           count: projTypeCounts['road_concrete'] ?? 0 },
+                      { v: 'road_asphalt',  icon: '🛣️', label: 'ลาดยาง',           count: projTypeCounts['road_asphalt'] ?? 0 },
+                      { v: 'road_slurry',   icon: '🛣️', label: 'สเลอรี่ซิล',       count: projTypeCounts['road_slurry'] ?? 0 },
+                      { v: 'road_gravel',   icon: '🛣️', label: 'หินคลุก',           count: projTypeCounts['road_gravel'] ?? 0 },
+                      { v: 'road',          icon: '🛣️', label: 'ถนน (เก่า)',        count: projTypeCounts['road'] ?? 0 },
+                      { v: 'drain',         icon: '🌊', label: 'รางระบายน้ำ',       count: projTypeCounts['drain'] ?? 0 },
+                      { v: 'dredge',        icon: '⛏️', label: 'ขุดลอก',            count: projTypeCounts['dredge'] ?? 0 },
+                      { v: 'canal',         icon: '💧', label: 'รางน้ำ/ลำเหมือง',  count: projTypeCounts['canal'] ?? 0 },
+                      { v: 'pipe_water',    icon: '🚰', label: 'ท่อน้ำประปา',       count: projTypeCounts['pipe_water'] ?? 0 },
+                      { v: 'waterway',      icon: '💧', label: 'รางส่งน้ำ',         count: projTypeCounts['waterway'] ?? 0 },
+                      { v: 'building',      icon: '🏗️', label: 'อาคาร',             count: projTypeCounts['building'] ?? 0 },
+                      { v: 'light',         icon: '💡', label: 'ไฟฟ้า',             count: projTypeCounts['light'] ?? 0 },
+                      { v: 'park',          icon: '🌳', label: 'สวนสาธารณะ',        count: projTypeCounts['park'] ?? 0 },
+                      { v: 'other',         icon: '📝', label: 'อื่น ๆ',            count: projTypeCounts['other'] ?? 0 },
                     ]} />
                 )}
                 {showProj && (
@@ -779,9 +799,11 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
             {/* ── โครงการ (polyline หรือ marker ขึ้นกับ route_points) ── */}
             {filteredProj.map((w) => {
               const statusColor = CIVIL_STATUS_COLOR[w.status] ?? '#9ca3af'
-              const lineColor   = w.route_color || statusColor
+              const routeStyle  = ROUTE_STYLE[w.project_type]
+              const lineColor   = w.route_color || routeStyle?.color || statusColor
               const hasRoute    = w.route_points?.length >= 2
-              const dashArray   = ROUTE_DASH[w.project_type] ?? null
+              const dashArray   = routeStyle?.dashArray ?? null
+              const lineWeight  = routeStyle?.weight ?? 5
 
               const popup = (
                 <Popup>
@@ -834,7 +856,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
                 return (
                   <Polyline key={w.id}
                     positions={w.route_points.map(p => [p.lat, p.lng])}
-                    pathOptions={{ color: lineColor, weight: 5, opacity: 0.85, ...(dashArray && { dashArray }) }}
+                    pathOptions={{ color: lineColor, weight: lineWeight, opacity: 0.9, ...(dashArray && { dashArray }) }}
                     eventHandlers={{ click: () => setSelectedItem({ type: 'civil', data: w }) }}>
                     {showLabels && (
                       <Tooltip sticky
@@ -898,17 +920,17 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
               <span className="text-xs text-gray-500">{label}</span>
             </div>
           ))}
-        {/* Route dash pattern legend — conditional on showProj + filterProjType */}
-        {showProj && ROUTE_TYPE_LEGEND
-          .filter(({ type }) => filterProjType === 'all' || filterProjType === type)
-          .map(({ label, dashArray, color }) => (
-            <div key={label} className="flex items-center gap-1.5">
-              <svg width="28" height="10" viewBox="0 0 28 10" className="shrink-0">
-                <line x1="0" y1="5" x2="28" y2="5"
-                  stroke={color} strokeWidth="3.5" strokeLinecap="round"
+        {/* Route legend — ใช้ ROUTE_STYLE */}
+        {showProj && Object.entries(ROUTE_STYLE)
+          .filter(([type, v]) => v.linear && (filterProjType === 'all' || filterProjType === type))
+          .map(([type, { color, dashArray, label, weight }]) => (
+            <div key={type} className="flex items-center gap-1.5">
+              <svg width="30" height="10" viewBox="0 0 30 10" className="shrink-0">
+                <line x1="0" y1="5" x2="30" y2="5"
+                  stroke={color} strokeWidth={Math.min(weight ?? 4, 4)} strokeLinecap="round"
                   strokeDasharray={dashArray ?? undefined} />
               </svg>
-              <span className="text-xs text-gray-500">เส้นทาง — {label}</span>
+              <span className="text-xs text-gray-500">{label}</span>
             </div>
           ))}
       </div>
