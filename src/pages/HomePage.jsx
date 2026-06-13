@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import HeroBanner from '../components/home/HeroBanner'
@@ -41,7 +42,7 @@ export default function HomePage() {
         <WeatherWidget />
 
         {(isAdmin || isViewer || isCouncil) && (
-          <a href="/admin"
+          <Link to="/admin"
             className="flex items-center gap-3 rounded-2xl px-4 py-3.5 shadow-md active:scale-98 transition-transform"
             style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)' }}
           >
@@ -57,11 +58,11 @@ export default function HomePage() {
               </p>
             </div>
             <ChevronRight size={18} className="text-white/60" />
-          </a>
+          </Link>
         )}
 
         {isStaff && (
-          <a href="/staff"
+          <Link to="/staff"
             className="flex items-center gap-3 rounded-2xl px-4 py-3.5 shadow-md active:scale-98 transition-transform"
             style={{ background: 'linear-gradient(135deg, #0369a1 0%, #0ea5e9 100%)' }}
           >
@@ -73,12 +74,12 @@ export default function HomePage() {
               <p className="text-white/70 text-xs">กล่องงาน เอกสาร อนุมัติ รายงาน</p>
             </div>
             <ChevronRight size={18} className="text-white/60" />
-          </a>
+          </Link>
         )}
 
         {/* Quick Actions */}
         <div className="grid grid-cols-2 gap-2">
-          <a href="/doc-request"
+          <Link to="/doc-request"
             className="flex items-center gap-2.5 bg-white rounded-2xl px-3.5 py-3 shadow-sm border border-gray-100 hover:shadow-md active:scale-[0.98] transition-all">
             <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
               <FileText size={18} className="text-blue-500" />
@@ -87,8 +88,8 @@ export default function HomePage() {
               <p className="text-xs font-bold text-gray-800 leading-tight">ขอเอกสาร</p>
               <p className="text-[11px] text-gray-400 leading-tight">ราชการออนไลน์</p>
             </div>
-          </a>
-          <a href="/complaint"
+          </Link>
+          <Link to="/complaint"
             className="flex items-center gap-2.5 bg-white rounded-2xl px-3.5 py-3 shadow-sm border border-gray-100 hover:shadow-md active:scale-[0.98] transition-all">
             <div className="w-9 h-9 rounded-xl bg-red-50 flex items-center justify-center shrink-0">
               <ClipboardList size={18} className="text-red-500" />
@@ -97,7 +98,7 @@ export default function HomePage() {
               <p className="text-xs font-bold text-gray-800 leading-tight">ยื่นคำร้อง</p>
               <p className="text-[11px] text-gray-400 leading-tight">แจ้งซ่อม / แจ้งเหตุ</p>
             </div>
-          </a>
+          </Link>
         </div>
 
         {!session && (
