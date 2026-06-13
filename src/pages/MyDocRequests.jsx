@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, FileText, Clock, CheckCircle2, XCircle,
-  RefreshCw, Loader2, ChevronRight, X, Search,
+  RefreshCw, Loader2, ChevronRight, X, Search, Download,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
@@ -56,6 +56,11 @@ function DocCard({ req, onClick }) {
         <p className="text-xs text-gray-400">เลขอ้างอิง: <span className="font-mono font-semibold">{req.id.slice(0,8).toUpperCase()}</span></p>
         {req.purpose && <p className="text-xs text-gray-400 mt-0.5 truncate">{req.purpose}</p>}
         <p className="text-[11px] text-gray-300 mt-1">{dateTH(req.created_at)}</p>
+        {req.document_url && req.status === 'completed' && (
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 mt-1">
+            <Download size={10} /> เอกสารพร้อมดาวน์โหลด
+          </span>
+        )}
       </div>
       <ChevronRight size={16} className="text-gray-300 shrink-0 mt-1" />
     </button>
@@ -153,6 +158,24 @@ function DocDetailSheet({ req, onClose }) {
             <div className="bg-blue-50 rounded-xl p-3.5">
               <p className="text-[11px] font-bold text-blue-400 uppercase tracking-wide mb-1">บันทึกเจ้าหน้าที่</p>
               <p className="text-sm text-blue-800 leading-relaxed">{req.staff_notes}</p>
+            </div>
+          )}
+
+          {/* Download issued document */}
+          {req.document_url && req.status === 'completed' && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />
+                <div>
+                  <p className="text-sm font-bold text-emerald-700">เอกสารออกให้แล้ว</p>
+                  <p className="text-xs text-emerald-500">เปิดหรือบันทึกเอกสารดิจิทัลของท่านได้เลย</p>
+                </div>
+              </div>
+              <a href={req.document_url} target="_blank" rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 w-full py-3 rounded-xl font-bold text-white text-sm active:scale-[0.98] transition-all"
+                style={{ backgroundColor: '#10b981' }}>
+                <Download size={16} /> เปิด / ดาวน์โหลดเอกสาร
+              </a>
             </div>
           )}
         </div>

@@ -417,17 +417,33 @@ function InboxModule({ tenant, staffId }) {
 
   async function handleUpdate(id, newStatus, staffNote, rejectReason) {
     setActing(true)
+    const req = requests.find(r => r.id === id)
+
+    let document_url = null
+    if (newStatus === 'completed' && req) {
+      const docDate = new Date().toISOString().slice(0, 10)
+      const html = buildDocHTML({ req: { ...req, staff_notes: staffNote || req.staff_notes }, tenant, docDate })
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+      const path = `${tenant?.id ?? 'org'}/${id}.html`
+      const { error: upErr } = await supabase.storage.from('document-certs').upload(path, blob, { upsert: true, contentType: 'text/html' })
+      if (!upErr) {
+        const { data: urlData } = supabase.storage.from('document-certs').getPublicUrl(path)
+        document_url = urlData?.publicUrl ?? null
+      }
+    }
+
     await supabase.from('document_requests').update({
       status:        newStatus,
       staff_notes:   staffNote   || null,
       reject_reason: rejectReason || null,
       assigned_to:   staffId,
       updated_at:    new Date().toISOString(),
+      ...(document_url ? { document_url, issued_at: new Date().toISOString() } : {}),
     }).eq('id', id)
+
     setRequests(prev => prev.map(r =>
-      r.id === id ? { ...r, status: newStatus, staff_notes: staffNote || null } : r
+      r.id === id ? { ...r, status: newStatus, staff_notes: staffNote || null, document_url } : r
     ))
-    const req = requests.find(r => r.id === id)
     notifyTelegram(tenant?.telegram_group_id,
       `🔄 <b>อัปเดตสถานะคำขอเอกสาร</b>\nประเภท: ${req?.document_type ?? ''}\nผู้ขอ: ${req?.requester_name ?? ''}\nสถานะ: ${STATUS[newStatus]?.label ?? newStatus}${staffNote ? `\nหมายเหตุ: ${staffNote}` : ''}`
     )
