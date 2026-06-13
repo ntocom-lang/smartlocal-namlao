@@ -38,9 +38,8 @@ const MODULE_GROUPS = [
   {
     group: 'บริการประชาชน',
     items: [
-      { key: 'inbox',      label: 'กล่องงาน', Icon: Inbox,        color: '#3b82f6' },
-      { key: 'docs',       label: 'คำขอเอกสาร',   Icon: FileText,     color: '#8b5cf6' },
-      { key: 'complaints', label: 'คำร้อง',   Icon: BarChart2,    color: '#ef4444' },
+      { key: 'inbox',      label: 'คำขอเอกสาร', Icon: FileText,     color: '#8b5cf6' },
+      { key: 'complaints', label: 'คำร้อง',      Icon: BarChart2,    color: '#ef4444' },
     ],
   },
   {
@@ -477,7 +476,7 @@ function InboxModule({ tenant, staffId }) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-bold text-gray-800">กล่องงาน</h2>
+          <h2 className="text-lg font-bold text-gray-800">คำขอเอกสาร</h2>
           <p className="text-xs text-gray-400 mt-0.5">คำขอเอกสารจากประชาชน</p>
         </div>
         <div className="flex items-center gap-2">
@@ -1862,7 +1861,6 @@ export default function StaffDashboard() {
         <main className="flex-1 overflow-y-auto px-4 md:px-6 py-5 pb-24 md:pb-6">
           {activeModule === 'home'       && <StaffHomeModule visibleGroups={visibleGroups} setActiveModule={setActiveModule} pendingCount={pendingCount} staffName={profile?.full_name} />}
           {activeModule === 'inbox'      && <InboxModule tenant={tenant} staffId={profile?.id} />}
-          {activeModule === 'docs'       && <DocsModule tenant={tenant} staffId={profile?.id} />}
           {activeModule === 'complaints' && <ComplaintsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
           {activeModule === 'events'     && <EventsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
           {activeModule === 'approve'    && <ApproveModule tenant={tenant} staffProfile={profile} />}
