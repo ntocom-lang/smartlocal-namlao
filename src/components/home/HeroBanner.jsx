@@ -1,4 +1,5 @@
 import { useRef, useState, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { useTenant } from '../../contexts/TenantContext'
 import { ArrowRight, CalendarDays, Phone } from 'lucide-react'
 
@@ -61,7 +62,7 @@ export default function HeroBanner() {
           style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}
         >
           {/* Slide 1 — ยื่นคำร้อง */}
-          <a href="/complaint" className="snap-start shrink-0 rounded-2xl overflow-hidden shadow-md cursor-pointer transition-transform active:scale-[0.98] bg-white border border-gray-100 flex flex-col w-[90%] md:w-full md:h-full md:col-span-2 md:row-span-2">
+          <Link to="/complaint" className="snap-start shrink-0 rounded-2xl overflow-hidden shadow-md cursor-pointer transition-transform active:scale-[0.98] bg-white border border-gray-100 flex flex-col w-[90%] md:w-full md:h-full md:col-span-2 md:row-span-2">
             <div className="bg-white p-5 md:p-8 pb-0 flex items-center justify-center gap-4 md:gap-8 flex-1 min-h-[160px] md:min-h-[250px]">
               {tenant?.logo_url ? (
                 <img src={tenant.logo_url} alt="โลโก้หน่วยงาน" className="w-20 h-20 md:w-32 md:h-32 object-contain shrink-0 drop-shadow-md" />
@@ -85,10 +86,10 @@ export default function HeroBanner() {
                 ยื่นคำร้องเลย <ArrowRight size={18} />
               </div>
             </div>
-          </a>
+          </Link>
 
           {/* Slide 2 — ปฏิทินกิจกรรม */}
-          <a href="/events" className="snap-start shrink-0 rounded-2xl overflow-hidden shadow-md flex flex-col p-5 md:p-6 cursor-pointer transition-transform active:scale-[0.98] w-[90%] md:w-full md:h-full md:col-span-1 md:row-span-1 justify-center"
+          <Link to="/events" className="snap-start shrink-0 rounded-2xl overflow-hidden shadow-md flex flex-col p-5 md:p-6 cursor-pointer transition-transform active:scale-[0.98] w-[90%] md:w-full md:h-full md:col-span-1 md:row-span-1 justify-center"
                style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' }}>
             <div className="flex items-center gap-3 mb-2 md:mb-3">
                <CalendarDays size={32} className="text-white/90 shrink-0" />
@@ -103,10 +104,10 @@ export default function HeroBanner() {
                style={{ color: '#d97706' }}>
               ดูกิจกรรมทั้งหมด <ArrowRight size={16} />
             </div>
-          </a>
+          </Link>
 
           {/* Slide 3 — สายด่วน */}
-          <a href="/emergency" className="snap-start shrink-0 rounded-2xl overflow-hidden shadow-md flex flex-col p-5 md:p-6 cursor-pointer transition-transform active:scale-[0.98] w-[90%] md:w-full md:h-full md:col-span-1 md:row-span-1 justify-center"
+          <Link to="/emergency" className="snap-start shrink-0 rounded-2xl overflow-hidden shadow-md flex flex-col p-5 md:p-6 cursor-pointer transition-transform active:scale-[0.98] w-[90%] md:w-full md:h-full md:col-span-1 md:row-span-1 justify-center"
                style={{ background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' }}>
             <div className="flex items-center gap-3 mb-2 md:mb-3">
                <Phone size={32} className="text-white/90 shrink-0" />
@@ -121,7 +122,7 @@ export default function HeroBanner() {
                style={{ color: '#dc2626' }}>
               ดูสายด่วนทั้งหมด <ArrowRight size={16} />
             </div>
-          </a>
+          </Link>
 
           {/* trailing spacer */}
           <div className="shrink-0 md:hidden" style={{ width: `${(1 - SLIDE_W) * 100}%` }} />
