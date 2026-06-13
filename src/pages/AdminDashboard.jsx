@@ -1032,7 +1032,13 @@ function UserManager({ tenant, currentUserRole }) {
                         </button>
                       )}
                     </div>
-                    <p className="text-xs text-gray-400 break-all mt-0.5">{u.email || u.phone || '—'}</p>
+                    <p className="text-xs text-gray-400 break-all mt-0.5">{u.email || '—'}</p>
+                    {u.phone && <p className="text-xs text-gray-500 mt-0.5">📞 {u.phone}</p>}
+                    {u.id_card && (
+                      <p className="text-xs font-mono text-gray-400 mt-0.5">
+                        🪪 {u.id_card.replace(/(\d{1})(\d{4})(\d{5})(\d{2})(\d{1})/, '$1-$2-$3-$4-$5')}
+                      </p>
+                    )}
                     {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && u.role !== 'superadmin' && (
                       <div className="flex flex-col gap-0.5 mt-0.5">
                         <div className="flex items-center gap-1">
@@ -1189,16 +1195,20 @@ function UserManager({ tenant, currentUserRole }) {
                 <th className="px-4 py-3 font-medium cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('full_name')}>
                   <div className="flex items-center gap-1">ชื่อ-นามสกุล {sortConfig.key === 'full_name' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
                 </th>
-                <th className="px-4 py-3 font-medium min-w-[150px] cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('address')}>
+                <th className="px-4 py-3 font-medium">เลขบัตรประชาชน</th>
+                <th className="px-4 py-3 font-medium cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('phone')}>
+                  <div className="flex items-center gap-1">เบอร์โทรศัพท์ {sortConfig.key === 'phone' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
+                </th>
+                <th className="px-4 py-3 font-medium min-w-[140px] cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('address')}>
                   <div className="flex items-center gap-1">ที่อยู่ {sortConfig.key === 'address' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
                 </th>
                 <th className="px-4 py-3 font-medium cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('job_title')}>
                   <div className="flex items-center gap-1">ตำแหน่ง {sortConfig.key === 'job_title' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
                 </th>
                 <th className="px-4 py-3 font-medium cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('created_at')}>
-                  <div className="flex items-center gap-1">วันที่สมัคร {sortConfig.key === 'created_at' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
+                  <div className="flex items-center gap-1">วันที่ลงทะเบียน {sortConfig.key === 'created_at' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
                 </th>
-                <th className="px-4 py-3 font-medium min-w-[200px]">จัดการ</th>
+                <th className="px-4 py-3 font-medium min-w-[180px]">จัดการ</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -1241,6 +1251,21 @@ function UserManager({ tenant, currentUserRole }) {
                         </div>
                       </div>
                     </td>
+                    {/* เลขบัตรประชาชน */}
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {u.id_card ? (
+                        <span className="text-xs font-mono text-gray-600 tracking-wide">
+                          {u.id_card.replace(/(\d{1})(\d{4})(\d{5})(\d{2})(\d{1})/, '$1-$2-$3-$4-$5')}
+                        </span>
+                      ) : (
+                        <span className="text-xs italic text-gray-300">ยังไม่ยืนยัน</span>
+                      )}
+                    </td>
+                    {/* เบอร์โทรศัพท์ */}
+                    <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-600">
+                      {u.phone || <span className="italic text-gray-300">ยังไม่ระบุ</span>}
+                    </td>
+                    {/* ที่อยู่ */}
                     <td className="px-4 py-3">
                       {editingAddressId === u.id ? (
                         <div className="flex items-center gap-2">
@@ -1370,29 +1395,33 @@ function UserManager({ tenant, currentUserRole }) {
                 </div>
               </div>
               
-              <div className="space-y-4">
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">ตำแหน่งงาน</p>
-                  <p className="text-sm text-gray-800 bg-gray-50 px-3 py-2 rounded-lg">{viewingUser.job_title || '-'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">อีเมล</p>
-                  <p className="text-sm text-gray-800 bg-gray-50 px-3 py-2 rounded-lg break-all">{viewingUser.email || '-'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">เบอร์โทรศัพท์</p>
-                  <p className="text-sm text-gray-800 bg-gray-50 px-3 py-2 rounded-lg">{viewingUser.phone || '-'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">ที่อยู่</p>
-                  <p className="text-sm text-gray-800 bg-gray-50 px-3 py-2 rounded-lg whitespace-pre-wrap">{viewingUser.address || '-'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">วันที่สมัคร</p>
-                  <p className="text-sm text-gray-800 bg-gray-50 px-3 py-2 rounded-lg">
-                    {viewingUser.created_at ? new Date(viewingUser.created_at).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
-                  </p>
-                </div>
+              <div className="space-y-3">
+                {[
+                  { label: 'ตำแหน่งงาน',        value: viewingUser.job_title },
+                  { label: 'อีเมล',              value: viewingUser.email,   cls: 'break-all' },
+                  { label: 'เบอร์โทรศัพท์',      value: viewingUser.phone },
+                  {
+                    label: 'เลขบัตรประชาชน',
+                    value: viewingUser.id_card
+                      ? viewingUser.id_card.replace(/(\d{1})(\d{4})(\d{5})(\d{2})(\d{1})/, '$1-$2-$3-$4-$5')
+                      : null,
+                    mono: true,
+                  },
+                  { label: 'ที่อยู่',             value: viewingUser.address, pre: true },
+                  {
+                    label: 'วันที่ลงทะเบียน',
+                    value: viewingUser.created_at
+                      ? new Date(viewingUser.created_at).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                      : null,
+                  },
+                ].map(({ label, value, cls = '', mono, pre }) => (
+                  <div key={label}>
+                    <p className="text-xs text-gray-500 mb-1">{label}</p>
+                    <p className={`text-sm bg-gray-50 px-3 py-2 rounded-lg ${mono ? 'font-mono tracking-wide' : ''} ${pre ? 'whitespace-pre-wrap' : ''} ${cls} ${value ? 'text-gray-800' : 'text-gray-400 italic'}`}>
+                      {value || 'ยังไม่ได้ระบุ'}
+                    </p>
+                  </div>
+                ))}
               </div>
             </div>
             <div className="p-4 border-t border-gray-100 flex justify-end">

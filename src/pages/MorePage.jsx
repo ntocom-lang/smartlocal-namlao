@@ -548,7 +548,7 @@ export default function MorePage() {
             icon={FileText}
             iconBg="bg-sky-50"
             iconColor="text-sky-500"
-            label="ติดตามคำขอเอกสาร"
+            label="เอกสารของฉัน"
             desc="ตรวจสอบสถานะใบรับรองและเอกสารราชการ"
             href="/my-docs"
           />
@@ -560,6 +560,18 @@ export default function MorePage() {
             desc="วิธีการยื่นคำร้องสำหรับประชาชน"
             href="/manual-citizen.html"
             external
+          />
+        </Section>
+
+        {/* ─── ความโปร่งใส ─── */}
+        <Section title="ความโปร่งใส (LPA / ITA)">
+          <MenuRow
+            icon={ShieldCheck}
+            iconBg="bg-emerald-50"
+            iconColor="text-emerald-600"
+            label="รายงานการออกเอกสารดิจิทัล"
+            desc="สถิติคำขอ อัตราเสร็จสิ้น ระยะเวลาดำเนินการ — LPA ๑.๗"
+            href="/doc-stats"
           />
         </Section>
 

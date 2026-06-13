@@ -17,7 +17,7 @@ const ROLE_LABEL = {
 export default function ProfilePage() {
   const navigate = useNavigate()
   const [session, setSession] = useState(null)
-  const [profile, setProfile] = useState({ full_name: '', phone: '', role: '' })
+  const [profile, setProfile] = useState({ full_name: '', phone: '', role: '', id_card: '' })
   const [avatarUrl, setAvatarUrl] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -25,6 +25,7 @@ export default function ProfilePage() {
   const [error, setError] = useState('')
   const [editName, setEditName] = useState(false)
   const [editPhone, setEditPhone] = useState(false)
+  const [editIdCard, setEditIdCard] = useState(false)
   const [isGoogleLinked, setIsGoogleLinked] = useState(false)
   const fileRef = useRef()
 
@@ -40,7 +41,7 @@ export default function ProfilePage() {
 
       const { data: p } = await supabase
         .from('profiles')
-        .select('full_name, phone, avatar_url, role')
+        .select('full_name, phone, avatar_url, role, id_card')
         .eq('id', s.user.id)
         .single()
 
@@ -49,6 +50,7 @@ export default function ProfilePage() {
           full_name: p.full_name || meta?.full_name || '',
           phone: p.phone || meta?.phone || '',
           role: p.role || '',
+          id_card: p.id_card || '',
         })
         setAvatarUrl(p.avatar_url || meta?.avatar_url || meta?.picture || null)
       } else {
@@ -66,18 +68,25 @@ export default function ProfilePage() {
     setSaving(true)
     setMsg('')
     setError('')
+    if (profile.id_card && !/^\d{13}$/.test(profile.id_card)) {
+      setError('เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก')
+      setSaving(false)
+      return
+    }
     const { error: err } = await supabase
       .from('profiles')
       .upsert({
         id: session.user.id,
         full_name: profile.full_name,
         phone: profile.phone,
+        id_card: profile.id_card || null,
       })
     setSaving(false)
     if (err) { setError('บันทึกไม่สำเร็จ: ' + err.message); return }
     setMsg('บันทึกข้อมูลเรียบร้อยแล้ว')
     setEditName(false)
     setEditPhone(false)
+    setEditIdCard(false)
   }
 
   async function handleLogout() {
@@ -211,6 +220,39 @@ export default function ProfilePage() {
               <span className="text-sm text-gray-500 flex-1 text-right">{profile.phone || 'ยังไม่ได้ระบุ'}</span>
             )}
             <button onClick={() => setEditPhone((v) => !v)} className="ml-2 text-blue-400">
+              <Pencil size={16} />
+            </button>
+          </div>
+
+          {/* เลขบัตรประชาชน */}
+          <div className="flex items-center px-5 py-4 gap-3">
+            <div className="flex-1">
+              <span className="text-sm text-gray-700">เลขบัตรประชาชน</span>
+              {!profile.id_card && (
+                <span className="ml-2 text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full">
+                  ยืนยันตัวตน
+                </span>
+              )}
+            </div>
+            {editIdCard ? (
+              <input
+                value={profile.id_card}
+                onChange={(e) => setProfile((p) => ({ ...p, id_card: e.target.value.replace(/\D/g, '').slice(0, 13) }))}
+                className="text-sm text-gray-800 bg-white border-b border-gray-300 outline-none text-right flex-1 max-w-44 tracking-widest"
+                type="text"
+                inputMode="numeric"
+                placeholder="x-xxxx-xxxxx-xx-x"
+                maxLength={13}
+                autoFocus
+              />
+            ) : (
+              <span className="text-sm flex-1 text-right" style={{ color: profile.id_card ? '#6b7280' : '#f59e0b' }}>
+                {profile.id_card
+                  ? profile.id_card.replace(/(\d{1})(\d{4})(\d{5})(\d{2})(\d{1})/, '$1-$2-$3-$4-$5')
+                  : 'ยังไม่ได้ยืนยัน'}
+              </span>
+            )}
+            <button onClick={() => setEditIdCard((v) => !v)} className="ml-2 text-blue-400">
               <Pencil size={16} />
             </button>
           </div>
