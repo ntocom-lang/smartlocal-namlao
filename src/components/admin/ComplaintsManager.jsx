@@ -6,7 +6,7 @@ import {
   ClipboardList, Clock, Loader2, CheckCircle2, XCircle, AlertCircle,
   ChevronRight, ChevronLeft, Filter, Search, Phone, Trash2, Wrench,
   MapPin, X, FileText, AlignLeft, Camera, ChevronDown,
-  Shield, Printer, Users, RefreshCw,
+  Shield, Printer, Users, RefreshCw, AlertTriangle,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
@@ -354,6 +354,16 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
   const [closeUploading, setCloseUploading] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [overrideConfirm, setOverrideConfirm] = useState(null)
+  const [nearbyList, setNearbyList] = useState([])
+
+  useEffect(() => {
+    if (!c.latitude || !tenant?.id) return
+    supabase.rpc('complaints_near', {
+      _lat: c.latitude, _lng: c.longitude, _radius_m: 300, _municipality_id: tenant.id,
+    }).then(({ data }) => {
+      if (data) setNearbyList(data.filter((n) => n.id !== c.id).slice(0, 5))
+    })
+  }, [c.id, c.latitude])
 
   async function handleDelete() {
     if (!window.confirm(`ลบคำร้องนี้ออกจากระบบ?\n\nการลบไม่สามารถย้อนกลับได้`)) return
@@ -653,6 +663,27 @@ ${photoSectionHtml}
                     <span className="text-xs font-semibold px-2 py-1 bg-blue-100 text-blue-700 rounded-lg shrink-0">เปิดแผนที่</span>
                   </a>
                 )}
+              </div>
+            </div>
+          )}
+
+          {nearbyList.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-amber-500 uppercase tracking-wider flex items-center gap-1.5">
+                <AlertTriangle size={13} /> คำร้องใกล้เคียงในรัศมี 300 ม. ({nearbyList.length})
+              </p>
+              <div className="bg-amber-50 rounded-2xl divide-y divide-amber-100 overflow-hidden border border-amber-100">
+                {nearbyList.map((n) => (
+                  <div key={n.id} className="flex items-center gap-3 px-4 py-2.5">
+                    <MapPin size={13} className="text-amber-400 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-800 truncate">{n.subject}</p>
+                      <p className="text-xs text-gray-400">
+                        {Math.round(n.distance_m)} ม. · {n.ref_no ?? '—'} · {{ new: 'รอรับเรื่อง', in_progress: 'กำลังดำเนินการ', done: 'เสร็จสิ้น', closed: 'ปิดเรื่อง' }[n.status] ?? n.status}
+                      </p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
