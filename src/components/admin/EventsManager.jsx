@@ -135,13 +135,20 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
       .select('*, creator:profiles!events_created_by_fkey(full_name)')
       .eq('municipality_id', tenant.id)
       .order('event_date', { ascending: true })
-      .order('event_time', { ascending: true, nullsFirst: false })
-      .order('created_at', { ascending: true })
     if (currentUserRole === 'council') {
       query = query.in('audience', ['public', 'staff', 'council'])
     }
     const { data } = await query
-    setEvents(data ?? [])
+    const sorted = (data ?? []).sort((a, b) => {
+      if (a.event_date < b.event_date) return -1
+      if (a.event_date > b.event_date) return 1
+      const ta = a.event_time ?? '99:99'
+      const tb = b.event_time ?? '99:99'
+      if (ta < tb) return -1
+      if (ta > tb) return 1
+      return new Date(a.created_at) - new Date(b.created_at)
+    })
+    setEvents(sorted)
     setLoading(false)
   }
 
