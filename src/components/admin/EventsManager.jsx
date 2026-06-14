@@ -135,6 +135,8 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
       .select('*, creator:profiles!events_created_by_fkey(full_name)')
       .eq('municipality_id', tenant.id)
       .order('event_date', { ascending: true })
+      .order('event_time', { ascending: true, nullsFirst: false })
+      .order('created_at', { ascending: true })
     if (currentUserRole === 'council') {
       query = query.in('audience', ['public', 'staff', 'council'])
     }
