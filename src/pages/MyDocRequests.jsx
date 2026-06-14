@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, FileText, Clock, CheckCircle2, XCircle,
   RefreshCw, Loader2, ChevronRight, X, Search, Download,
-  CreditCard, Upload, ImageIcon,
+  CreditCard, Upload, ImageIcon, Share2, Copy, Check,
 } from 'lucide-react'
 import QRCode from 'react-qr-code'
 import { supabase } from '../lib/supabase'
@@ -82,6 +82,59 @@ function DocCard({ req, onClick }) {
       </div>
       <ChevronRight size={16} className="text-gray-300 shrink-0" />
     </button>
+  )
+}
+
+function DocDownloadShare({ url, docLabel }) {
+  const [copied, setCopied] = useState(false)
+
+  async function handleShare() {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: docLabel ?? 'เอกสารราชการ',
+          text: 'เอกสารดิจิทัลจากระบบ SmartLocal',
+          url,
+        })
+      } catch (_) {}
+    } else {
+      handleCopy()
+    }
+  }
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (_) {}
+  }
+
+  return (
+    <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />
+        <div>
+          <p className="text-sm font-bold text-emerald-700">เอกสารออกให้แล้ว</p>
+          <p className="text-xs text-emerald-500">ดาวน์โหลดหรือแชร์เพื่อนำไปปริ้นได้เลย</p>
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <a href={url} target="_blank" rel="noopener noreferrer" download
+          className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-white text-sm active:scale-[0.98] transition-all"
+          style={{ backgroundColor: '#10b981' }}>
+          <Download size={15} /> ดาวน์โหลด
+        </a>
+        <button onClick={handleShare}
+          className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm active:scale-[0.98] transition-all border-2 border-emerald-400 text-emerald-700 bg-white">
+          <Share2 size={15} /> แชร์
+        </button>
+        <button onClick={handleCopy} title="คัดลอกลิงก์"
+          className="w-12 flex items-center justify-center rounded-xl border-2 border-gray-200 text-gray-500 bg-white active:scale-[0.98] transition-all">
+          {copied ? <Check size={15} className="text-emerald-500" /> : <Copy size={15} />}
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -310,22 +363,9 @@ function DocDetailSheet({ req, onClose, tenant, onRefresh }) {
             </div>
           )}
 
-          {/* Download issued document */}
+          {/* Download + Share issued document */}
           {req.document_url && req.status === 'completed' && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />
-                <div>
-                  <p className="text-sm font-bold text-emerald-700">เอกสารออกให้แล้ว</p>
-                  <p className="text-xs text-emerald-500">เปิดหรือบันทึกเอกสารดิจิทัลของท่านได้เลย</p>
-                </div>
-              </div>
-              <a href={req.document_url} target="_blank" rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 w-full py-3 rounded-xl font-bold text-white text-sm active:scale-[0.98] transition-all"
-                style={{ backgroundColor: '#10b981' }}>
-                <Download size={16} /> เปิด / ดาวน์โหลดเอกสาร
-              </a>
-            </div>
+            <DocDownloadShare url={req.document_url} docLabel={docLabel} />
           )}
         </div>
       </div>
