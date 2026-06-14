@@ -104,7 +104,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
   const [deleting, setDeleting] = useState(null)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
-  const emptyForm = { title: '', description: '', event_date: '', event_time: '', end_time: '', end_date: '', location: '', category: 'อื่นๆ', is_all_day: false, audience: 'public', attachment_url: '', attachment_file: null }
+  const emptyForm = { title: '', description: '', event_date: '', event_time: '', end_time: '', end_date: '', location: '', category: 'ประชุม', customCategory: '', is_all_day: false, audience: 'public', attachment_url: '', attachment_file: null }
   const [form, setForm] = useState(emptyForm)
   const [filterMonth, setFilterMonth] = useState('all')
   const [filterCategory, setFilterCategory] = useState('all')
@@ -163,7 +163,9 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
     setForm({
       title: ev.title, description: ev.description ?? '', event_date: ev.event_date,
       event_time: ev.event_time ?? '', end_date: ev.end_date ?? '', location: ev.location ?? '',
-      category: ev.category ?? 'อื่นๆ', is_all_day: false,
+      category: EVENTS_CATEGORIES.includes(ev.category ?? '') ? ev.category : 'อื่นๆ',
+      customCategory: EVENTS_CATEGORIES.includes(ev.category ?? '') ? '' : (ev.category ?? ''),
+      is_all_day: false,
       audience: ev.audience ?? 'public', attachment_url: ev.attachment_url ?? '',
       attachment_file: null, end_time: ev.end_time ?? '',
     })
@@ -190,7 +192,8 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
       event_time: form.event_time || null,
       end_time: form.end_time || null,
       end_date: form.end_date || null, location: form.location.trim() || null,
-      category: form.category, is_all_day: false, audience: form.audience,
+      category: form.category === 'อื่นๆ' ? (form.customCategory.trim() || 'อื่นๆ') : form.category,
+      is_all_day: false, audience: form.audience,
       attachment_url: attachmentUrl, updated_at: new Date().toISOString(),
     }
     if (editingEvent) {
@@ -474,7 +477,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
                     <label className="text-xs font-semibold text-gray-500 mb-1 block">ประเภทกิจกรรม</label>
                     <div className="flex flex-wrap gap-2">
                       {EVENTS_CATEGORIES.map((cat) => (
-                        <button key={cat} onClick={() => setForm((p) => ({ ...p, category: cat }))}
+                        <button key={cat} onClick={() => setForm((p) => ({ ...p, category: cat, customCategory: '' }))}
                           className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors"
                           style={form.category === cat
                             ? { backgroundColor: EVENTS_CATEGORY_COLOR[cat], color: 'white' }
@@ -483,6 +486,16 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
                         </button>
                       ))}
                     </div>
+                    {form.category === 'อื่นๆ' && (
+                      <input
+                        type="text"
+                        value={form.customCategory}
+                        onChange={e => setForm(p => ({ ...p, customCategory: e.target.value }))}
+                        placeholder="ระบุประเภทกิจกรรม..."
+                        className="mt-2 w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200"
+                        autoFocus
+                      />
+                    )}
                   </div>
                   <div>
                     <label className="text-xs font-semibold text-gray-500 mb-1 block">กลุ่มเป้าหมาย</label>
