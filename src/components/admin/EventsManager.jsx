@@ -104,7 +104,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
   const [deleting, setDeleting] = useState(null)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
-  const emptyForm = { title: '', description: '', event_date: '', event_time: '', end_time: '', end_date: '', location: '', category: 'อื่นๆ', is_all_day: true, audience: 'public', attachment_url: '', attachment_file: null }
+  const emptyForm = { title: '', description: '', event_date: '', event_time: '', end_time: '', end_date: '', location: '', category: 'อื่นๆ', is_all_day: false, audience: 'public', attachment_url: '', attachment_file: null }
   const [form, setForm] = useState(emptyForm)
   const [filterMonth, setFilterMonth] = useState('all')
   const [filterCategory, setFilterCategory] = useState('all')
@@ -163,7 +163,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
     setForm({
       title: ev.title, description: ev.description ?? '', event_date: ev.event_date,
       event_time: ev.event_time ?? '', end_date: ev.end_date ?? '', location: ev.location ?? '',
-      category: ev.category ?? 'อื่นๆ', is_all_day: ev.is_all_day ?? true,
+      category: ev.category ?? 'อื่นๆ', is_all_day: false,
       audience: ev.audience ?? 'public', attachment_url: ev.attachment_url ?? '',
       attachment_file: null, end_time: ev.end_time ?? '',
     })
@@ -187,10 +187,10 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
     const payload = {
       municipality_id: tenant.id, title: form.title.trim(),
       description: form.description.trim() || null, event_date: form.event_date,
-      event_time: form.is_all_day ? null : (form.event_time || null),
-      end_time: form.is_all_day ? null : (form.end_time || null),
+      event_time: form.event_time || null,
+      end_time: form.end_time || null,
       end_date: form.end_date || null, location: form.location.trim() || null,
-      category: form.category, is_all_day: form.is_all_day, audience: form.audience,
+      category: form.category, is_all_day: false, audience: form.audience,
       attachment_url: attachmentUrl, updated_at: new Date().toISOString(),
     }
     if (editingEvent) {
@@ -456,28 +456,18 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
                       className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400" />
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 cursor-pointer select-none w-fit">
-                    <input type="checkbox" checked={form.is_all_day}
-                      onChange={(e) => setForm((p) => ({ ...p, is_all_day: e.target.checked, event_time: '', end_time: '' }))}
-                      className="w-4 h-4 rounded" />
-                    <span className="text-sm text-gray-700">ทั้งวัน</span>
-                  </label>
-                  {!form.is_all_day && (
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1">
-                        <label className="text-xs text-gray-400 mb-1 block">เริ่ม</label>
-                        <input type="time" value={form.event_time} onChange={(e) => setForm((p) => ({ ...p, event_time: e.target.value }))}
-                          className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400" />
-                      </div>
-                      <span className="text-gray-400 text-sm mt-5">–</span>
-                      <div className="flex-1">
-                        <label className="text-xs text-gray-400 mb-1 block">สิ้นสุด</label>
-                        <input type="time" value={form.end_time} onChange={(e) => setForm((p) => ({ ...p, end_time: e.target.value }))}
-                          className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400" />
-                      </div>
-                    </div>
-                  )}
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <label className="text-xs text-gray-400 mb-1 block">เริ่ม</label>
+                    <input type="time" value={form.event_time} onChange={(e) => setForm((p) => ({ ...p, event_time: e.target.value }))}
+                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400" />
+                  </div>
+                  <span className="text-gray-400 text-sm mt-5">–</span>
+                  <div className="flex-1">
+                    <label className="text-xs text-gray-400 mb-1 block">สิ้นสุด</label>
+                    <input type="time" value={form.end_time} onChange={(e) => setForm((p) => ({ ...p, end_time: e.target.value }))}
+                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400" />
+                  </div>
                 </div>
                 <div className="md:grid md:grid-cols-2 md:gap-6 space-y-4 md:space-y-0">
                   <div>
