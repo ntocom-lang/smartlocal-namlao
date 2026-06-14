@@ -12,7 +12,7 @@ import {
   CheckCircle2, XCircle, AlertCircle, ChevronRight, ChevronLeft,
   Filter, Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical,
   X, FileText, AlignLeft, Image, Calendar, Hash, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Luggage,
-  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, BellOff, ExternalLink, BarChart2, Settings, Store, Star, Download
+  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, BellOff, ExternalLink, BarChart2, Settings, Store, Star, Download, Banknote
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
@@ -21,6 +21,7 @@ import MapDashboardAdmin from '../components/admin/MapDashboardAdmin'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 import CivilProjectReport from '../components/admin/CivilProjectReport'
 import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
+import FeeSettingsAdmin from '../components/admin/FeeSettingsAdmin'
 import BusinessRegistrationAdmin from '../components/admin/BusinessRegistrationAdmin'
 import EventsManagerComponent from '../components/admin/EventsManager'
 import ReportManagerComponent from '../components/admin/ReportManager'
@@ -4772,6 +4773,7 @@ export default function AdminDashboard() {
               group: 'ตั้งค่าระบบ',
               items: [
                 { key: 'categories',  label: 'ประเภทคำร้อง', Icon: Tag,      color: '#d97706', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
+                { key: 'fee-settings', label: 'ค่าธรรมเนียม', Icon: Banknote, color: '#10b981', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 { key: 'assignments', label: 'ผู้รับผิดชอบ', Icon: Wrench,   color: '#d97706', show: currentUserRole !== 'council' },
                 { key: 'emergency',   label: 'สายด่วน',       Icon: Phone,    color: '#ef4444', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
                 { key: 'locations',   label: 'สถานที่เกิดเหตุ', Icon: MapPin, color: '#0891b2', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
@@ -5044,6 +5046,8 @@ export default function AdminDashboard() {
         <TourismReviewsAdmin tenant={tenant} />
       ) : activePage === 'business-register' ? (
         <BusinessRegistrationAdmin tenant={tenant} />
+      ) : activePage === 'fee-settings' ? (
+        <FeeSettingsAdmin tenant={tenant} />
       ) : activePage === 'system-settings' ? (
         <SystemSettingsAdmin tenant={tenant} onUpdateTenant={(updated) => window.location.reload()} />
       ) : activePage === 'more' ? (
