@@ -296,7 +296,16 @@ export default function EventsPage() {
     if (allowed !== null) query = query.in('audience', allowed)
 
     query.then(({ data }) => {
-      setEvents(data ?? [])
+      const sorted = (data ?? []).sort((a, b) => {
+        if (a.event_date < b.event_date) return -1
+        if (a.event_date > b.event_date) return 1
+        const ta = a.event_time ?? '99:99'
+        const tb = b.event_time ?? '99:99'
+        if (ta < tb) return -1
+        if (ta > tb) return 1
+        return new Date(a.created_at) - new Date(b.created_at)
+      })
+      setEvents(sorted)
       setLoading(false)
     })
   }, [tenant?.id, role])
