@@ -1,8 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import {
-  PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
-} from 'recharts'
-import {
   ClipboardList, Clock, Loader2, CheckCircle2, XCircle, AlertCircle,
   ChevronRight, ChevronLeft, Filter, Search, Phone, Trash2, Wrench,
   MapPin, X, FileText, AlignLeft, Camera, ChevronDown,
@@ -290,16 +287,6 @@ function RejectButton({ status, id, onUpdate, loading }) {
   )
 }
 
-const CustomTooltip = ({ active, payload }) => {
-  if (!active || !payload?.length) return null
-  const { name, value } = payload[0]
-  return (
-    <div className="bg-white shadow-lg rounded-xl px-3 py-2 text-sm border border-gray-100">
-      <p className="font-medium text-gray-700">{name}</p>
-      <p className="text-gray-500">{value} รายการ</p>
-    </div>
-  )
-}
 
 function FixedSelect({ value, onChange, options }) {
   const [open, setOpen] = useState(false)
@@ -557,7 +544,7 @@ ${photoSectionHtml}
                   <Wrench size={16} className="text-orange-500 shrink-0" />
                   <div className="flex-1">
                     {c.assigned_to
-                      ? <p className="text-sm font-semibold text-gray-800">{technicians.find((t) => t.id === c.assigned_to)?.full_name ?? 'ช่าง'}</p>
+                      ? <p className="text-sm font-semibold text-gray-800">{technicians.find((t) => t.id === c.assigned_to)?.full_name ?? 'ผู้รับผิดชอบ'}</p>
                       : <p className="text-sm text-gray-400">ยังไม่ได้มอบหมาย</p>}
                   </div>
                   <select value={c.assigned_to ?? ''}
@@ -569,7 +556,7 @@ ${photoSectionHtml}
                     }}
                     disabled={assigning}
                     className="text-xs border border-orange-200 rounded-xl px-2 py-1.5 bg-white text-gray-700 focus:outline-none">
-                    <option value="">— เลือกช่าง —</option>
+                    <option value="">— เลือกผู้รับผิดชอบ —</option>
                     {technicians.map((t) => (
                       <option key={t.id} value={t.id}>{t.full_name || t.email}</option>
                     ))}
@@ -1058,12 +1045,6 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
     setTimeout(() => w.print(), 500)
   }
 
-  // ─── Derived data ─────────────────────────────────────────────────────────
-  const statsData = Object.entries(STATUS).map(([key, s]) => ({
-    name: s.label,
-    value: complaints.filter((c) => c.status === key).length,
-    color: s.color,
-  })).filter((d) => d.value > 0)
 
   const normalizeStatus = (s) => {
     if (s === 'pending') return 'new'
@@ -1118,7 +1099,7 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
     const unassigned = baseFiltered.filter(c => !c.assigned_to)
     const byTech     = assigned.reduce((acc, c) => { acc[c.assigned_to] = (acc[c.assigned_to] || 0) + 1; return acc }, {})
     const opts       = Object.entries(byTech)
-      .map(([id, count]) => ({ id, name: technicians.find(t => t.id === id)?.full_name ?? 'ช่าง', count }))
+      .map(([id, count]) => ({ id, name: technicians.find(t => t.id === id)?.full_name ?? 'ผู้รับผิดชอบ', count }))
       .sort((a, b) => b.count - a.count)
     return { opts, unassignedCount: unassigned.length }
   })()
@@ -1153,50 +1134,6 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
         <StatCard label="คำร้องใหม่"      value={counts.new ?? 0}           icon={Clock}         color="#f59e0b" />
         <StatCard label="กำลังดำเนินการ"  value={counts.in_progress ?? 0}   icon={AlertCircle}   color="#8b5cf6" />
         <StatCard label="ปิดเรื่องแล้ว"   value={counts.closed ?? 0}        icon={CheckCircle2}  color="#10b981" />
-      </div>
-
-      {/* Chart + status summary */}
-      <div className="grid md:grid-cols-3 gap-4">
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-          <h2 className="font-semibold text-gray-700 text-sm mb-4">สัดส่วนตามสถานะ</h2>
-          {statsData.length === 0 ? (
-            <div className="flex items-center justify-center h-40 text-gray-400 text-sm">ยังไม่มีข้อมูล</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie data={statsData} cx="50%" cy="50%" innerRadius={50} outerRadius={80}
-                     paddingAngle={3} dataKey="value">
-                  {statsData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                </Pie>
-                <Tooltip content={<CustomTooltip />} />
-                <Legend iconType="circle" iconSize={8}
-                        formatter={(value) => <span className="text-xs text-gray-600">{value}</span>} />
-              </PieChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-
-        <div className="md:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-          <h2 className="font-semibold text-gray-700 text-sm mb-4">สรุปสถานะ</h2>
-          <div className="space-y-2.5">
-            {Object.entries(STATUS).map(([key, s]) => {
-              const count = counts[key] ?? 0
-              const pct = complaints.length ? Math.round((count / complaints.length) * 100) : 0
-              return (
-                <div key={key}>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-gray-600">{s.label}</span>
-                    <span className="font-semibold text-gray-700">{count} ({pct}%)</span>
-                  </div>
-                  <div className="w-full bg-gray-100 rounded-full h-2">
-                    <div className="h-2 rounded-full transition-all duration-500"
-                         style={{ width: `${pct}%`, backgroundColor: s.color }} />
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
       </div>
 
       {/* Table section */}
@@ -1264,7 +1201,7 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
             <select value={filterTechnician} onChange={(e) => setFilterTechnician(e.target.value)}
               className="px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-600 focus:outline-none focus:ring-2 focus:border-transparent cursor-pointer"
               style={{ '--tw-ring-color': 'var(--color-primary)' }}>
-              <option value="">ช่างทั้งหมด ({baseFiltered.length})</option>
+              <option value="">ผู้รับผิดชอบทั้งหมด ({baseFiltered.length})</option>
               <option value="__none__">ยังไม่มอบหมาย ({techOptions.unassignedCount})</option>
               {techOptions.opts.map(t => (
                 <option key={t.id} value={t.id}>{t.name} ({t.count})</option>
@@ -1338,7 +1275,6 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
                   <p className="text-xs text-gray-400 truncate">{c.detail}</p>
                   <div className="flex items-center gap-3 text-xs text-gray-400 pt-1 flex-wrap">
                     <span>{new Date(c.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}</span>
-                    {c.phone && <span>{c.phone}</span>}
                     {(c.village || c.location_name) && (
                       <span className="flex items-center gap-1">
                         <MapPin size={10} className="shrink-0" />
@@ -1348,7 +1284,7 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
                     {c.assigned_to && (
                       <span className="flex items-center gap-1 text-blue-500">
                         <Wrench size={10} className="shrink-0" />
-                        {technicians.find((t) => t.id === c.assigned_to)?.full_name ?? 'ช่าง'}
+                        {technicians.find((t) => t.id === c.assigned_to)?.full_name ?? 'ผู้รับผิดชอบ'}
                       </span>
                     )}
                   </div>
@@ -1362,11 +1298,10 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
                 <thead>
                   <tr className="bg-gray-50 text-gray-500 text-xs">
                     <th className="px-3 py-2 text-center font-medium w-10">#</th>
-                    <th className="px-3 py-2 text-left font-medium">วันที่</th>
                     <th className="px-3 py-2 text-left font-medium">ประเภท</th>
                     <th className="px-3 py-2 text-left font-medium">สถานที่</th>
-                    <th className="px-3 py-2 text-left font-medium">ช่าง</th>
-                    <th className="px-3 py-2 text-left font-medium">โทรศัพท์</th>
+                    <th className="px-3 py-2 text-left font-medium">วันที่ยื่นคำร้อง</th>
+                    <th className="px-3 py-2 text-left font-medium">ผู้รับผิดชอบ</th>
                     <th className="px-3 py-2 text-left font-medium">ความเร่งด่วน</th>
                     <th className="px-3 py-2 text-left font-medium">สถานะ</th>
                     <th className="px-3 py-2 text-left font-medium">การดำเนินการ</th>
@@ -1377,9 +1312,6 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
                     <tr key={c.id} className="hover:bg-gray-50/70 transition-colors cursor-pointer"
                         onClick={() => setSelectedComplaint(c)}>
                       <td className="px-3 py-1.5 text-center text-xs text-gray-400 font-mono">{complaintStartIdx + i + 1}</td>
-                      <td className="px-3 py-1.5 text-gray-500 whitespace-nowrap text-xs">
-                        {new Date(c.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}
-                      </td>
                       <td className="px-3 py-1.5 font-medium text-gray-700 whitespace-nowrap">
                         {CATEGORY_LABEL[c.category] ?? c.category}
                       </td>
@@ -1388,13 +1320,13 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
                           ? <span className="flex items-center gap-1"><MapPin size={11} className="text-gray-300 shrink-0" />{c.village || c.location_name}</span>
                           : <span className="text-gray-300">—</span>}
                       </td>
+                      <td className="px-3 py-1.5 text-gray-500 whitespace-nowrap text-xs">
+                        {new Date(c.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}
+                      </td>
                       <td className="px-3 py-1.5 whitespace-nowrap">
                         {c.assigned_to
-                          ? <span className="flex items-center gap-1 text-blue-600 text-xs font-medium"><Wrench size={11} className="shrink-0" />{technicians.find((t) => t.id === c.assigned_to)?.full_name ?? 'ช่าง'}</span>
+                          ? <span className="flex items-center gap-1 text-blue-600 text-xs font-medium"><Wrench size={11} className="shrink-0" />{technicians.find((t) => t.id === c.assigned_to)?.full_name ?? 'ผู้รับผิดชอบ'}</span>
                           : <span className="text-gray-300">—</span>}
-                      </td>
-                      <td className="px-3 py-1.5 text-gray-500 whitespace-nowrap">
-                        {c.phone ?? <span className="text-gray-300">—</span>}
                       </td>
                       <td className="px-3 py-1.5">
                         {c.priority && c.priority !== 'normal'
