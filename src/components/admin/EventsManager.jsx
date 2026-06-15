@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Loader2, Plus, X, Pencil, Trash2, ChevronLeft, ChevronRight, Paperclip, CalendarDays, Tag, Users, Check, ChevronUp } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { notifyTelegram } from '../../lib/notifyTelegram'
 
 const EVENTS_CATEGORIES = ['ประชาสัมพันธ์', 'ประชุม', 'กำหนดการ', 'อบรม', 'อื่นๆ']
 const EVENTS_CATEGORY_COLOR = {
@@ -136,8 +137,11 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
       .eq('municipality_id', tenant.id)
       .order('event_date', { ascending: true })
     if (currentUserRole === 'council') {
-      query = query.in('audience', ['public', 'staff', 'council'])
+      query = query.in('audience', ['public', 'council'])
+    } else if (['staff', 'technician', 'officer'].includes(currentUserRole)) {
+      query = query.in('audience', ['public', 'staff'])
     }
+    // admin, superadmin, viewer → ไม่ filter (เห็นทุกอย่าง)
     const { data } = await query
     const sorted = (data ?? []).sort((a, b) => {
       if (a.event_date < b.event_date) return -1
@@ -174,7 +178,9 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
   }
 
   async function handleSave() {
-    if (!form.title.trim() || !form.event_date) return
+    if (!form.title.trim() || !form.event_date) { setFormError('กรุณากรอกชื่อกิจกรรมและวันที่'); return }
+    if (!form.event_time) { setFormError('กรุณาระบุเวลาเริ่มต้น'); return }
+    setFormError('')
     setSaving(true)
     let attachmentUrl = form.attachment_url || null
     if (form.attachment_file) {
@@ -201,6 +207,16 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
     } else {
       const { data: { user } } = await supabase.auth.getUser()
       await supabase.from('events').insert({ ...payload, created_by: user?.id ?? null })
+      const dateStr = new Date(payload.event_date + 'T00:00:00')
+        .toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+      const timeStr = payload.event_time
+        ? `⏰ ${payload.event_time.slice(0, 5)}${payload.end_time ? ` – ${payload.end_time.slice(0, 5)}` : ''} น.`
+        : ''
+      const audLabel = AUDIENCE_OPTIONS.find(a => a.value === payload.audience)?.label ?? payload.audience
+      notifyTelegram(
+        tenant.telegram_group_id,
+        `📅 <b>กิจกรรมใหม่</b> [${audLabel}]\n<b>${payload.title}</b>\n📆 ${dateStr}\n${timeStr}${payload.location ? `\n📍 ${payload.location}` : ''}${payload.description ? `\n📝 ${payload.description.slice(0, 120)}` : ''}`
+      )
     }
     setSaving(false)
     setShowForm(false)
@@ -461,7 +477,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex-1">
-                    <label className="text-xs text-gray-400 mb-1 block">เริ่ม</label>
+                    <label className="text-xs text-gray-500 font-semibold mb-1 block">เริ่ม *</label>
                     <input type="time" value={form.event_time} onChange={(e) => setForm((p) => ({ ...p, event_time: e.target.value }))}
                       className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400" />
                   </div>
@@ -561,7 +577,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
                   className="flex-1 py-3 rounded-2xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50">
                   ยกเลิก
                 </button>
-                <button onClick={handleSave} disabled={saving || !form.title.trim() || !form.event_date}
+                <button onClick={handleSave} disabled={saving || !form.title.trim() || !form.event_date || !form.event_time}
                   className="flex-1 py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-50"
                   style={{ backgroundColor: 'var(--color-primary)' }}>
                   {saving ? 'กำลังบันทึก...' : 'บันทึก'}

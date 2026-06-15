@@ -27,10 +27,9 @@ const AUDIENCE_COLOR = {
 const DAY_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 
 function audienceFilter(role) {
-  if (role === 'admin' || role === 'superadmin') return null
-  if (role === 'viewer')     return ['public', 'staff', 'management', 'council']
-  if (role === 'council')    return ['public', 'staff', 'council']
-  if (role === 'technician' || role === 'officer') return ['public', 'staff']
+  if (role === 'admin' || role === 'superadmin' || role === 'viewer') return null
+  if (role === 'council') return ['public', 'council']
+  if (role === 'staff' || role === 'technician' || role === 'officer') return ['public', 'staff']
   return ['public']
 }
 
