@@ -146,7 +146,7 @@ export default function CitizenDocRequest() {
 
   async function handleSubmit(slipUrl) {
     setSaving(true)
-    const { data } = await supabase.from('document_requests').insert({
+    const { data, error } = await supabase.from('document_requests').insert({
       municipality_id:   tenant?.id,
       document_type:     selected.value,
       requester_name:    form.requester_name.trim(),
@@ -161,6 +161,7 @@ export default function CitizenDocRequest() {
       payment_slip_url:  slipUrl ?? null,
     }).select().single()
     setSaving(false)
+    if (error) { alert('ส่งคำขอไม่สำเร็จ: ' + error.message); return }
     if (data) {
       notifyTelegram(tenant?.telegram_group_id,
         `📄 <b>คำขอเอกสารใหม่</b>\nประเภท: ${selected.label}\nผู้ขอ: ${form.requester_name.trim()}\nเบอร์: ${form.requester_phone?.trim() || '-'}${feeAmount > 0 ? `\n💰 ค่าธรรมเนียม: ${feeAmount} บาท${slipUrl ? ' (แนบสลิปแล้ว)' : ' (รอชำระ)'}` : ''}`
@@ -500,7 +501,7 @@ export default function CitizenDocRequest() {
         </div>
 
         {/* Submit */}
-        <button onClick={handleSubmit}
+        <button onClick={handleFormNext}
           disabled={saving || !form.requester_name.trim() || !form.requester_phone.trim()}
           className="w-full py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-all"
           style={{ backgroundColor: 'var(--color-primary)' }}>
