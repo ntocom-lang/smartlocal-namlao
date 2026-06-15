@@ -5,7 +5,7 @@ import {
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, AlignLeft, Calendar, Hash, RefreshCw,
   Printer, PenLine, Search, Download, Wrench, Home, CalendarDays, TrendingUp, Archive, Images,
-  CreditCard, BadgeCheck, Banknote,
+  CreditCard, BadgeCheck, Banknote, Luggage, Star, Store,
 } from 'lucide-react'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 import CivilProjectReport from '../components/admin/CivilProjectReport'
@@ -14,6 +14,8 @@ import EventsManager from '../components/admin/EventsManager'
 import ComplaintsManager from '../components/admin/ComplaintsManager'
 import ReportManager from '../components/admin/ReportManager'
 import DocumentArchive from '../components/admin/DocumentArchive'
+import TourismManager, { TourismReviewsAdmin } from '../components/admin/TourismManager'
+import BusinessRegistrationAdmin from '../components/admin/BusinessRegistrationAdmin'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
@@ -58,6 +60,14 @@ const MODULE_GROUPS = [
       { key: 'docs-archive',  label: 'คลังเอกสาร',     Icon: Archive,    color: '#0f766e' },
       { key: 'map',          label: 'แผนที่',          Icon: MapPin,     color: '#0891b2' },
       { key: 'report',       label: 'รายงาน',          Icon: TrendingUp, color: '#f59e0b' },
+    ],
+  },
+  {
+    group: 'เนื้อหาและชุมชน',
+    items: [
+      { key: 'tourism',          label: 'เที่ยว กิน พัก ชอบ', Icon: Luggage, color: '#d97706' },
+      { key: 'tourism-reviews',  label: 'รีวิวสถานที่',        Icon: Star,    color: '#f59e0b' },
+      { key: 'business-register', label: 'ลงทะเบียนธุรกิจ',   Icon: Store,   color: '#0891b2' },
     ],
   },
 ]
@@ -2195,6 +2205,9 @@ export default function StaffDashboard() {
           {activeModule === 'map'        && <MapDashboardAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} onNavigate={() => {}} />}
           {activeModule === 'report'       && <StaffReportWrapper tenant={tenant} />}
           {activeModule === 'docs-archive' && <DocumentArchive tenant={tenant} profile={profile} />}
+          {activeModule === 'tourism'          && <TourismManager tenant={tenant} />}
+          {activeModule === 'tourism-reviews'  && <TourismReviewsAdmin tenant={tenant} />}
+          {activeModule === 'business-register' && <BusinessRegistrationAdmin tenant={tenant} />}
 
         </main>
 
