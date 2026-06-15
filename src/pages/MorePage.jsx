@@ -308,7 +308,8 @@ export default function MorePage() {
   const hasSocial = tenant?.website_url || tenant?.facebook_url || tenant?.line_oa_url
 
   return (
-    <div className="max-w-4xl mx-auto pb-28 md:pb-8">
+    <div className="min-h-screen pb-28 md:pb-8" style={{ backgroundColor: '#eef2f7' }}>
+    <div className="max-w-4xl mx-auto">
 
       {/* Mobile header */}
       <div className="md:hidden sticky top-0 z-30 px-4 pt-3 pb-2 bg-gray-50/95 backdrop-blur-md">
@@ -628,6 +629,7 @@ export default function MorePage() {
           <p className="text-[13px] text-gray-300 mt-0.5">{tenant?.system_name || `${tenant?.name} One Data`} · ระบบข้อมูลเพื่อการพัฒนาที่ยั่งยืน</p>
         </div>
       </div>
+    </div>
     </div>
   )
 }

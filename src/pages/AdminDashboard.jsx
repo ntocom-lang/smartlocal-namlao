@@ -11,8 +11,8 @@ import {
   RefreshCw, ClipboardList, Clock, Loader2,
   CheckCircle2, XCircle, AlertCircle, ChevronRight, ChevronLeft,
   Filter, Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical,
-  X, FileText, AlignLeft, Image, Calendar, Hash, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Luggage,
-  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, BellOff, ExternalLink, BarChart2, Settings, Store, Star, Download, Banknote
+  X, FileText, AlignLeft, Image, Calendar, Hash, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera,
+  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, BellOff, ExternalLink, BarChart2, Settings, Download, Banknote
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
@@ -22,9 +22,8 @@ import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 import CivilProjectReport from '../components/admin/CivilProjectReport'
 import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
 import FeeSettingsAdmin from '../components/admin/FeeSettingsAdmin'
-import BusinessRegistrationAdmin from '../components/admin/BusinessRegistrationAdmin'
-import TourismManager, { TourismReviewsAdmin } from '../components/admin/TourismManager'
 import EventsManagerComponent from '../components/admin/EventsManager'
+import { InboxModule } from './StaffDashboard'
 import ReportManagerComponent from '../components/admin/ReportManager'
 import ModuleManager from '../components/admin/ModuleManager'
 
@@ -3973,14 +3972,12 @@ function EventsManager({ tenant, currentUserRole }) {
 
 // ─── Main page ─────────────────────────────────────────────────────────────────
 const PAGE_LABELS = {
+  dashboard: 'ภาพรวม',
   complaints: 'รายการคำร้อง',
   staff: 'รูปผู้บริหาร',
-  tourism: 'เที่ยว กิน พัก ชอบ',
-  'tourism-reviews': 'รีวิวสถานที่',
   events: 'กิจกรรม',
   'doc-requests': 'คำขอเอกสาร',
   report: 'รายงานสรุป',
-  'business-register': 'ลงทะเบียนธุรกิจ',
   categories: 'ประเภทคำร้อง',
   'fee-settings': 'ค่าธรรมเนียม',
   assignments: 'ผู้รับผิดชอบ',
@@ -4008,7 +4005,7 @@ export default function AdminDashboard() {
   const [filterCategory, setFilterCategory] = useState('')
   const [filterVillage, setFilterVillage] = useState('')
   const [filterTechnician, setFilterTechnician] = useState('')
-  const [activePage, setActivePage] = useState(location.state?.page ?? 'complaints')
+  const [activePage, setActivePage] = useState(location.state?.page ?? 'dashboard')
   const [currentUserRole, setCurrentUserRole] = useState(null)
   const [currentUserId, setCurrentUserId] = useState(null)
   const [selectedComplaint, setSelectedComplaint] = useState(null)
@@ -4026,8 +4023,8 @@ export default function AdminDashboard() {
         .then(({ data: p }) => {
           const r = p?.role ?? 'citizen'
           setCurrentUserRole(r)
-          if (r === 'viewer' && !location.state?.page) setActivePage('report')
-          if (r === 'council' && !location.state?.page) setActivePage('events')
+          if (r === 'viewer' && !location.state?.page) setActivePage('dashboard')
+          if (r === 'council' && !location.state?.page) setActivePage('dashboard')
           return r
         })
     })
@@ -4257,16 +4254,25 @@ export default function AdminDashboard() {
             {
               group: null,
               items: [
-                { key: 'home', label: 'หน้าแรก', Icon: Home, color: '#64748b', show: true, isLink: true },
+                { key: 'dashboard', label: 'ภาพรวม', Icon: BarChart2, color: '#3b82f6', show: true },
+                { key: 'home', label: 'กลับเว็บหลัก', Icon: Home, color: '#64748b', show: true, isLink: true },
+              ],
+            },
+            {
+              group: 'บริการประชาชน',
+              items: [
+                { key: 'doc-requests',  label: 'คำขอเอกสาร',   Icon: FileText,      color: '#8b5cf6', show: currentUserRole !== 'council' },
+                { key: 'complaints',    label: 'คำร้อง',         Icon: ClipboardList, color: '#ef4444', show: currentUserRole !== 'council' && currentUserRole !== 'viewer' },
+                { key: 'events',        label: 'กิจกรรม',        Icon: CalendarDays,  color: '#10b981', show: true },
+                { key: 'report',        label: 'รายงาน',         Icon: TrendingUp,    color: '#059669', show: currentUserRole !== 'council' },
+                { key: 'map',           label: 'แผนที่คำร้อง',   Icon: MapPin,        color: '#3b82f6', show: currentUserRole !== 'council' },
+                { key: 'civil-project', label: 'โครงการโยธา',   Icon: Wrench,        color: '#7c3aed', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
               ],
             },
             {
               group: 'จัดการเนื้อหา',
               items: [
                 { key: 'staff',            label: 'รูปผู้บริหาร',       Icon: UserCircle2, color: '#7c3aed', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
-                { key: 'tourism',          label: 'เที่ยว กิน พัก ชอบ', Icon: Luggage,     color: '#d97706', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
-                { key: 'tourism-reviews',  label: 'รีวิวสถานที่',        Icon: Star,         color: '#f59e0b', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
-                { key: 'business-register', label: 'ลงทะเบียนธุรกิจ',   Icon: Store,        color: '#d97706', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
               ],
             },
             {
@@ -4527,9 +4533,9 @@ export default function AdminDashboard() {
         style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 8px)' }}
       >
         {[
+          { key: 'dashboard',  label: 'ภาพรวม',  Icon: BarChart2,     activeColor: '#3b82f6',              show: true },
           { key: 'complaints', label: 'คำร้อง',  Icon: ClipboardList, activeColor: 'var(--color-primary)', show: currentUserRole !== 'council' && currentUserRole !== 'viewer' },
           { key: 'events',     label: 'กิจกรรม', Icon: CalendarDays,  activeColor: '#10b981',              show: true },
-          { key: 'report',     label: 'รายงานคำร้อง',  Icon: TrendingUp,    activeColor: '#10b981',              show: currentUserRole !== 'council' },
           { key: 'map',        label: 'แผนที่',  Icon: MapPin,        activeColor: '#3b82f6',              show: currentUserRole !== 'council' },
           { key: 'more',       label: 'อื่นๆ',   Icon: LayoutGrid,    activeColor: '#6b7280',              show: true },
         ].filter(i => i.show).map(({ key, label, Icon, activeColor }) => {
@@ -4552,7 +4558,125 @@ export default function AdminDashboard() {
         })}
       </div>
 
-      {activePage === 'events' ? (
+      {activePage === 'dashboard' ? (
+        <div className="space-y-6">
+          {/* Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { label: 'คำร้องทั้งหมด', value: complaints.length,                                              color: '#1a3a5c', bg: '#dce8f5', Icon: ClipboardList },
+              { label: 'รอดำเนินการ',    value: complaints.filter(c => c.status === 'pending').length,          color: '#f59e0b', bg: '#fef3c7', Icon: Clock },
+              { label: 'กำลังดำเนินการ', value: complaints.filter(c => c.status === 'received' || c.status === 'in_progress').length, color: '#8b5cf6', bg: '#ede9fe', Icon: RefreshCw },
+              { label: 'เสร็จสิ้น',      value: complaints.filter(c => c.status === 'completed').length,        color: '#10b981', bg: '#d1fae5', Icon: CheckCircle2 },
+            ].map(({ label, value, color, bg, Icon }) => (
+              <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: bg }}>
+                  <Icon size={20} style={{ color }} />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-gray-800 leading-none">{value}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{label}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Quick nav */}
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-2.5">ทางลัด</p>
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-2.5">
+              {[
+                { key: 'complaints',   label: 'คำร้อง',       Icon: ClipboardList, color: '#1a3a5c', bg: '#dce8f5', show: currentUserRole !== 'council' && currentUserRole !== 'viewer' },
+                { key: 'doc-requests', label: 'คำขอเอกสาร',   Icon: FileText,      color: '#7c3aed', bg: '#ede9fe', show: currentUserRole !== 'council' },
+                { key: 'events',       label: 'กิจกรรม',       Icon: CalendarDays,  color: '#10b981', bg: '#d1fae5', show: true },
+                { key: 'report',       label: 'รายงาน',        Icon: TrendingUp,    color: '#059669', bg: '#d1fae5', show: currentUserRole !== 'council' },
+                { key: 'map',          label: 'แผนที่คำร้อง',  Icon: MapPin,        color: '#3b82f6', bg: '#dbeafe', show: currentUserRole !== 'council' },
+                { key: 'civil-project',label: 'โครงการโยธา',  Icon: Wrench,        color: '#d97706', bg: '#fef3c7', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
+              ].filter(i => i.show).map(({ key, label, Icon, color, bg }) => (
+                <button key={key} onClick={() => setActivePage(key)}
+                  className="flex flex-col items-center gap-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-4 hover:shadow-md active:scale-95 transition-all">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: bg }}>
+                    <Icon size={20} style={{ color }} />
+                  </div>
+                  <p className="text-xs font-semibold text-gray-700 text-center leading-tight">{label}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Recent complaints */}
+          {currentUserRole !== 'council' && currentUserRole !== 'viewer' && complaints.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-2.5">
+                <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">คำร้องล่าสุด</p>
+                <button onClick={() => setActivePage('complaints')}
+                  className="text-xs font-semibold text-blue-600 hover:underline">
+                  ดูทั้งหมด →
+                </button>
+              </div>
+              {/* Mobile list */}
+              <div className="md:hidden space-y-2">
+                {complaints.slice(0, 5).map(c => {
+                  const s = STATUS[c.status] ?? STATUS.pending
+                  return (
+                    <button key={c.id} onClick={() => setSelectedComplaint(c)}
+                      className="w-full flex items-center gap-3 bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3 text-left">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-800 truncate">{CATEGORY_LABEL[c.category] ?? c.category}</p>
+                        <p className="text-xs text-gray-400 truncate mt-0.5">{c.detail}</p>
+                      </div>
+                      <span className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium"
+                        style={{ backgroundColor: s.bg, color: s.text }}>{s.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              {/* PC table */}
+              <div className="hidden md:block bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr style={{ backgroundColor: '#1a3a5c' }}>
+                      <th className="px-5 py-3 text-left text-xs font-semibold text-white/80">ประเภท</th>
+                      <th className="px-5 py-3 text-left text-xs font-semibold text-white/80">รายละเอียด</th>
+                      <th className="px-5 py-3 text-left text-xs font-semibold text-white/80">สถานะ</th>
+                      <th className="px-5 py-3 text-left text-xs font-semibold text-white/80">วันที่</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {complaints.slice(0, 5).map((c, i) => {
+                      const s = STATUS[c.status] ?? STATUS.pending
+                      return (
+                        <tr key={c.id} onClick={() => setSelectedComplaint(c)}
+                          className="cursor-pointer transition-colors"
+                          style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#f5f8fc' }}
+                          onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#dbeafe' }}
+                          onMouseLeave={e => { e.currentTarget.style.backgroundColor = i % 2 === 0 ? '#fff' : '#f5f8fc' }}>
+                          <td className="px-5 py-3.5 font-semibold text-gray-800">{CATEGORY_LABEL[c.category] ?? c.category}</td>
+                          <td className="px-5 py-3.5 text-gray-500 max-w-xs truncate">{c.detail}</td>
+                          <td className="px-5 py-3.5">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                              style={{ backgroundColor: s.bg, color: s.text }}>{s.label}</span>
+                          </td>
+                          <td className="px-5 py-3.5 text-gray-400 text-xs">
+                            {new Date(c.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {loading && (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 size={24} className="animate-spin text-gray-400" />
+            </div>
+          )}
+        </div>
+      ) : activePage === 'doc-requests' ? (
+        <InboxModule tenant={tenant} staffId={currentUserId} />
+      ) : activePage === 'events' ? (
         <EventsManagerComponent tenant={tenant} currentUserRole={currentUserRole} />
       ) : activePage === 'report' ? (
         <ReportManagerComponent complaints={complaints} tenant={tenant} technicians={technicians} />
@@ -4585,12 +4709,6 @@ export default function AdminDashboard() {
       ) : activePage === 'map' ? (
         <MapDashboardAdmin tenant={tenant} currentUserRole={currentUserRole}
           onNavigate={(page) => setActivePage(page)} />
-      ) : activePage === 'tourism' ? (
-        <TourismManager tenant={tenant} />
-      ) : activePage === 'tourism-reviews' ? (
-        <TourismReviewsAdmin tenant={tenant} />
-      ) : activePage === 'business-register' ? (
-        <BusinessRegistrationAdmin tenant={tenant} />
       ) : activePage === 'fee-settings' ? (
         <FeeSettingsAdmin tenant={tenant} />
       ) : activePage === 'system-settings' ? (
@@ -4646,40 +4764,6 @@ export default function AdminDashboard() {
                 <p className="text-[13px] text-gray-400 mt-0.5">จัดการเบอร์ติดต่อ</p>
               </div>
             </button>
-            <button onClick={() => setActivePage('tourism')}
-              className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#fef3c7' }}>
-                <span className="text-2xl">🏛️</span>
-              </div>
-              <div>
-                <p className="text-sm font-bold text-gray-800">เที่ยว กิน พัก ชอบ</p>
-                <p className="text-[13px] text-gray-400 mt-0.5">ท่องเที่ยว ร้านค้า บริการ</p>
-              </div>
-            </button>
-            {currentUserRole !== 'viewer' && currentUserRole !== 'council' && (
-              <button onClick={() => setActivePage('tourism-reviews')}
-                className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
-                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#fef3c7' }}>
-                  <Star size={24} style={{ color: '#f59e0b' }} />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-gray-800">รีวิวสถานที่</p>
-                  <p className="text-[13px] text-gray-400 mt-0.5">ตรวจสอบและลบรีวิว</p>
-                </div>
-              </button>
-            )}
-            {currentUserRole !== 'viewer' && currentUserRole !== 'council' && (
-              <button onClick={() => setActivePage('business-register')}
-                className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
-                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#fef3c7' }}>
-                  <Store size={24} style={{ color: '#d97706' }} />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-gray-800">ลงทะเบียนธุรกิจ</p>
-                  <p className="text-[13px] text-gray-400 mt-0.5">อนุมัติคำขอลงทะเบียน</p>
-                </div>
-              </button>
-            )}
             <button onClick={() => setActivePage('locations')}
               className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
               <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#e0f2fe' }}>
@@ -4742,9 +4826,6 @@ export default function AdminDashboard() {
                   { key: 'assignments', Icon: Wrench, color: '#d97706', bg: '#fef3c7', label: 'ผู้รับผิดชอบ', desc: 'มอบหมายงานตามประเภทคำร้อง', show: currentUserRole !== 'council' },
                   { key: 'emergency',   Icon: Phone,       color: '#ef4444', bg: '#fee2e2', label: 'สายด่วนฉุกเฉิน',  desc: 'จัดการรายชื่อและเบอร์ติดต่อ',     show: currentUserRole !== 'viewer' },
                   { key: 'locations',   Icon: MapPin,      color: '#0891b2', bg: '#e0f2fe', label: 'สถานที่เกิดเหตุ', desc: 'จัดการหมู่บ้าน / ตำบลในพื้นที่',  show: currentUserRole !== 'viewer' },
-                  { key: 'tourism',          Icon: Luggage,     color: '#d97706', bg: '#fef3c7', label: 'เที่ยว กิน พัก ชอบ',  desc: 'ท่องเที่ยว ร้านค้า บริการออนไลน์',      show: currentUserRole !== 'viewer' },
-                  { key: 'tourism-reviews',  Icon: Star,        color: '#f59e0b', bg: '#fef3c7', label: 'รีวิวสถานที่',       desc: 'ตรวจสอบและลบรีวิวที่ไม่เหมาะสม',     show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
-                  { key: 'business-register', Icon: Store,      color: '#d97706', bg: '#fef3c7', label: 'ลงทะเบียนธุรกิจ',   desc: 'อนุมัติ/จัดการคำขอลงทะเบียนธุรกิจ',  show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
                   { key: 'staff',            Icon: UserCircle2, color: '#7c3aed', bg: '#ede9fe', label: 'รูปผู้บริหาร',       desc: 'อัปโหลดรูปนายก/รองนายก/ทีมงาน',       show: currentUserRole !== 'viewer' },
                   { key: 'system-settings', Icon: Settings,color: '#3b82f6', bg: '#dbeafe', label: 'ตั้งค่าระบบ',    desc: 'ตั้งค่าชื่อระบบและข้อมูลพื้นฐาน',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'users',       Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', label: 'จัดการผู้ใช้',    desc: 'สิทธิ์การเข้าถึงและบทบาท',        show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },

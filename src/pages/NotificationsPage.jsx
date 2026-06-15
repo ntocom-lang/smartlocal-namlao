@@ -64,7 +64,7 @@ export default function NotificationsPage() {
   const unreadItems = items.filter(n => n._unread)
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#eef2f7' }}>
 
       {/* ── Mobile header ── */}
       <div className="md:hidden sticky top-0 z-10 bg-white border-b border-gray-100 shadow-sm">
@@ -92,15 +92,11 @@ export default function NotificationsPage() {
       </div>
 
       {/* ── PC header ── */}
-      <div className="hidden md:flex items-center gap-3 px-4 pt-8 pb-5 border-b border-gray-100 max-w-3xl mx-auto w-full">
-        <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0"
-             style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, color-mix(in srgb, var(--color-primary) 70%, #7c3aed) 100%)' }}>
-          <Bell size={20} className="text-white" />
-        </div>
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold text-gray-800">การแจ้งเตือน</h1>
+      <div className="hidden md:flex items-center justify-between px-8 py-4 bg-white border-b border-gray-200 shadow-sm">
+        <div>
+          <h1 className="text-lg font-bold text-gray-800">การแจ้งเตือน</h1>
           {!loading && items.length > 0 && (
-            <p className="text-sm text-gray-400 mt-0.5">
+            <p className="text-xs text-gray-400 mt-0.5">
               {hasUnread ? `${unreadItems.length} รายการยังไม่อ่าน` : 'อ่านทั้งหมดแล้ว'}
             </p>
           )}

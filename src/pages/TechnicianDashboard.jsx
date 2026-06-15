@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Loader2, LogOut, MapPin, Phone, X, RefreshCw,
   CheckCircle2, ChevronRight, Wrench, Printer,
-  Plus, ChevronDown,
+  Plus, ChevronDown, Image,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
@@ -624,8 +624,13 @@ export default function TechnicianDashboard() {
   const pending = complaints.filter((c) => c.status !== 'completed')
   const done = complaints.filter((c) => c.status === 'completed')
 
+  async function handleLogout() {
+    await supabase.auth.signOut()
+    navigate('/')
+  }
+
   return (
-    <div className="max-w-4xl mx-auto px-4 py-6 pb-24 md:pb-8 space-y-6">
+    <div className="min-h-screen" style={{ backgroundColor: '#eef2f7' }}>
       {selected && (
         <DetailSheet
           complaint={selected}
@@ -636,112 +641,6 @@ export default function TechnicianDashboard() {
           tenantLogo={tenant?.logo_url}
         />
       )}
-
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-gray-800">งานของฉัน</h1>
-          <p className="text-sm text-gray-400">{myName} · {tenant?.name}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={fetchComplaints} disabled={loading}
-            className="p-2 rounded-xl border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition-colors disabled:opacity-50">
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-          </button>
-          <button onClick={async () => { await supabase.auth.signOut(); navigate('/') }}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border border-red-200 text-red-500 bg-white hover:bg-red-50 transition-colors">
-            <LogOut size={14} />
-            ออก
-          </button>
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="flex justify-center py-16">
-          <Loader2 size={24} className="animate-spin text-gray-300" />
-        </div>
-      ) : complaints.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">
-          <Wrench size={40} className="mx-auto mb-3 opacity-30" />
-          <p className="font-medium text-gray-500">ยังไม่มีงานที่ได้รับมอบหมาย</p>
-          <p className="text-sm mt-1">เมื่อ Admin มอบหมายงานให้ จะแสดงที่นี่</p>
-        </div>
-      ) : (
-        <>
-          {/* งานที่ยังค้างอยู่ */}
-          {pending.length > 0 && (
-            <div className="space-y-3">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                งานที่รอดำเนินการ ({pending.length})
-              </p>
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                {pending.map((c, i) => {
-                  const s = STATUS[c.status]
-                  return (
-                    <button key={c.id} onClick={() => handleOpenComplaint(c)}
-                      className={`w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-gray-50 transition-colors active:bg-gray-100 ${i < pending.length - 1 ? 'border-b border-gray-50' : ''}`}>
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 bg-gray-100">
-                        {CATEGORY_EMOJI[c.category] ?? '📄'}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-800 truncate">
-                          <span className="text-gray-400 font-mono font-normal mr-1">{i + 1}.</span>
-                          {CATEGORY_LABEL[c.category] ?? c.category}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-0.5 truncate font-medium">
-                          {c.location_name || c.village || '—'}
-                        </p>
-                        <p className="text-xs text-gray-400 truncate">{c.detail}</p>
-                      </div>
-                      <div className="flex flex-col items-end gap-1.5 shrink-0">
-                        <div className="flex items-center gap-1.5">
-                          {!seenIds.has(c.id) && (
-                            <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
-                          )}
-                          <span className="text-[13px] font-semibold px-2 py-0.5 rounded-full"
-                                style={{ backgroundColor: s?.bg, color: s?.text }}>
-                            {s?.label}
-                          </span>
-                        </div>
-                        <ChevronRight size={14} className="text-gray-300" />
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* งานที่เสร็จแล้ว */}
-          {done.length > 0 && (
-            <div className="space-y-3">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                เสร็จสิ้นแล้ว ({done.length})
-              </p>
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden opacity-70">
-                {done.map((c, i) => (
-                  <button key={c.id} onClick={() => handleOpenComplaint(c)}
-                    className={`w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-gray-50 transition-colors ${i < done.length - 1 ? 'border-b border-gray-50' : ''}`}>
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 bg-green-50">
-                      {CATEGORY_EMOJI[c.category] ?? '📄'}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-gray-600 truncate">
-                        <span className="text-gray-400 font-mono font-normal mr-1">{i + 1}.</span>
-                        {CATEGORY_LABEL[c.category] ?? c.category}
-                      </p>
-                      <p className="text-xs text-gray-400 mt-0.5 truncate">{c.detail}</p>
-                    </div>
-                    <CheckCircle2 size={18} className="text-green-500 shrink-0" />
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </>
-      )}
-
-      {/* ─── GPS ปักหมุดโครงการ ─── */}
 
       {showGpsMap && (
         <MapPicker
@@ -755,130 +654,302 @@ export default function TechnicianDashboard() {
         />
       )}
 
-      <div className="space-y-3">
-
-        {/* Section header */}
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-violet-100 flex items-center justify-center shrink-0">
-              <MapPin size={15} className="text-violet-600" />
-            </div>
-            <div>
-              <p className="text-sm font-bold text-gray-700">ปักหมุด GPS โครงการ</p>
-              <p className="text-xs text-gray-400">ช่างบันทึกพิกัด · ธุรการเพิ่มรายละเอียดใน Admin</p>
-            </div>
+      {/* PC header */}
+      <div className="hidden md:block">
+        <div className="px-8 py-1.5 flex items-center justify-between border-b"
+          style={{ backgroundColor: '#dce8f5', borderColor: '#b8cfea' }}>
+          <p className="text-[11px] text-gray-600">
+            ระบบบริการอิเล็กทรอนิกส์ › {tenant?.name ?? ''} › <span className="font-semibold text-gray-700">งานของฉัน</span>
+          </p>
+          <p className="text-[11px] text-gray-500">
+            {new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+          </p>
+        </div>
+        <div className="px-8 py-3 flex items-center justify-between bg-white border-b border-gray-200 shadow-sm">
+          <div>
+            <h1 className="text-base font-bold text-gray-800">งานของฉัน</h1>
+            <p className="text-[11px] text-gray-400 mt-0.5">{myName} · {tenant?.name} — แผงควบคุมช่าง</p>
           </div>
-          <button onClick={fetchMyProjects} disabled={loadingProjects}
-            className="p-1.5 rounded-xl text-gray-400 hover:text-gray-600 transition-colors">
-            <RefreshCw size={13} className={loadingProjects ? 'animate-spin' : ''} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={fetchComplaints} disabled={loading}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 bg-white hover:bg-gray-50 transition-colors disabled:opacity-50">
+              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+              รีเฟรช
+            </button>
+            <button onClick={handleLogout}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-red-200 text-red-500 bg-white hover:bg-red-50 transition-colors">
+              <LogOut size={13} />
+              ออกจากระบบ
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="px-4 py-4 pb-8 md:py-6 md:px-8 md:flex md:gap-6 md:items-start">
+
+        {/* Mobile header */}
+        <div className="md:hidden flex items-center justify-between mb-4">
+          <div>
+            <h1 className="text-xl font-bold text-gray-800">งานของฉัน</h1>
+            <p className="text-sm text-gray-400">{myName} · {tenant?.name}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={fetchComplaints} disabled={loading}
+              className="p-2 rounded-xl border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition-colors disabled:opacity-50">
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+            </button>
+            <button onClick={handleLogout}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border border-red-200 text-red-500 bg-white hover:bg-red-50 transition-colors">
+              <LogOut size={14} />
+              ออก
+            </button>
+          </div>
         </div>
 
-        {/* Open form button */}
-        <button onClick={() => setShowGpsForm(v => !v)}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white"
-          style={{ backgroundColor: '#7c3aed' }}>
-          {showGpsForm ? <ChevronDown size={14} /> : <Plus size={14} />}
-          {showGpsForm ? 'ซ่อนฟอร์ม' : '📍 ปักหมุด GPS โครงการ'}
-        </button>
+        {/* ─── Left: รายการงาน ─── */}
+        <div className="flex-1 min-w-0 space-y-4">
+          {loading ? (
+            <div className="flex justify-center py-16">
+              <Loader2 size={24} className="animate-spin text-gray-300" />
+            </div>
+          ) : complaints.length === 0 ? (
+            <div className="text-center py-16 text-gray-400">
+              <Wrench size={40} className="mx-auto mb-3 opacity-30" />
+              <p className="font-medium text-gray-500">ยังไม่มีงานที่ได้รับมอบหมาย</p>
+              <p className="text-sm mt-1">เมื่อ Admin มอบหมายงานให้ จะแสดงที่นี่</p>
+            </div>
+          ) : (
+            <>
+              {/* งานที่ยังค้างอยู่ */}
+              {pending.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">
+                    งานที่รอดำเนินการ ({pending.length})
+                  </p>
+                  {/* Mobile cards */}
+                  <div className="md:hidden bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                    {pending.map((c, i) => {
+                      const s = STATUS[c.status]
+                      return (
+                        <button key={c.id} onClick={() => handleOpenComplaint(c)}
+                          className={`w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-gray-50 transition-colors active:bg-gray-100 ${i < pending.length - 1 ? 'border-b border-gray-50' : ''}`}>
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 bg-gray-100">
+                            {CATEGORY_EMOJI[c.category] ?? '📄'}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-gray-800 truncate">
+                              <span className="text-gray-400 font-mono font-normal mr-1">{i + 1}.</span>
+                              {CATEGORY_LABEL[c.category] ?? c.category}
+                            </p>
+                            <p className="text-xs text-gray-500 mt-0.5 truncate font-medium">
+                              {c.location_name || c.village || '—'}
+                            </p>
+                            <p className="text-xs text-gray-400 truncate">{c.detail}</p>
+                          </div>
+                          <div className="flex flex-col items-end gap-1.5 shrink-0">
+                            <div className="flex items-center gap-1.5">
+                              {!seenIds.has(c.id) && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
+                              <span className="text-[13px] font-semibold px-2 py-0.5 rounded-full"
+                                style={{ backgroundColor: s?.bg, color: s?.text }}>{s?.label}</span>
+                            </div>
+                            <ChevronRight size={14} className="text-gray-300" />
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {/* PC table */}
+                  <div className="hidden md:block bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr style={{ backgroundColor: '#1a3a5c' }}>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-white/80 w-8">#</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-white/80">ประเภท</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-white/80">รายละเอียด</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-white/80">สถานที่</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-white/80">สถานะ</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-white/80">วันที่</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {pending.map((c, i) => {
+                          const s = STATUS[c.status]
+                          return (
+                            <tr key={c.id} onClick={() => handleOpenComplaint(c)}
+                              className="cursor-pointer transition-colors"
+                              style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#f5f8fc' }}
+                              onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#dbeafe' }}
+                              onMouseLeave={e => { e.currentTarget.style.backgroundColor = i % 2 === 0 ? '#fff' : '#f5f8fc' }}>
+                              <td className="px-4 py-3 text-gray-400 font-mono text-xs">{i + 1}</td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2">
+                                  {!seenIds.has(c.id) && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
+                                  <span className="font-semibold text-gray-800">{CATEGORY_LABEL[c.category] ?? c.category}</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-gray-500 max-w-[220px] truncate">{c.detail}</td>
+                              <td className="px-4 py-3 text-gray-500 text-xs">{c.location_name || c.village || '—'}</td>
+                              <td className="px-4 py-3">
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                                  style={{ backgroundColor: s?.bg, color: s?.text }}>{s?.label}</span>
+                              </td>
+                              <td className="px-4 py-3 text-gray-400 text-xs">
+                                {new Date(c.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
 
-        {showGpsForm && (
-          <form onSubmit={submitGps}
-            className="bg-white rounded-2xl border border-violet-100 shadow-sm p-4 space-y-3">
-            <p className="text-xs text-violet-600 bg-violet-50 rounded-lg px-3 py-2">
-              ปักหมุด GPS ตำแหน่งโครงการหน้างาน · ธุรการเพิ่มรายละเอียดใน Admin ต่อ
-            </p>
+              {/* งานที่เสร็จแล้ว */}
+              {done.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">
+                    เสร็จสิ้นแล้ว ({done.length})
+                  </p>
+                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden opacity-70">
+                    {done.map((c, i) => (
+                      <button key={c.id} onClick={() => handleOpenComplaint(c)}
+                        className={`w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-gray-50 transition-colors ${i < done.length - 1 ? 'border-b border-gray-50' : ''}`}>
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 bg-green-50">
+                          {CATEGORY_EMOJI[c.category] ?? '📄'}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-gray-600 truncate">
+                            <span className="text-gray-400 font-mono font-normal mr-1">{i + 1}.</span>
+                            {CATEGORY_LABEL[c.category] ?? c.category}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-0.5 truncate">{c.detail}</p>
+                        </div>
+                        <CheckCircle2 size={18} className="text-green-500 shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
 
-            {/* ประเภท */}
-            <div className="flex flex-wrap gap-1.5">
-              {GPS_TYPES.map(t => (
-                <button key={t.value} type="button"
-                  onClick={() => setGpsForm(p => ({ ...p, project_type: t.value }))}
-                  className="text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all"
-                  style={gpsForm.project_type === t.value
-                    ? { backgroundColor: '#7c3aed', color: '#fff', borderColor: '#7c3aed' }
-                    : { backgroundColor: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' }}>
-                  {t.label}
+        {/* ─── Right: GPS Projects ─── */}
+        <div className="mt-6 md:mt-0 md:w-80 md:shrink-0 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-violet-100 flex items-center justify-center shrink-0">
+                <MapPin size={13} className="text-violet-600" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-gray-700">ปักหมุด GPS โครงการ</p>
+                <p className="text-[11px] text-gray-400">ช่างบันทึก · ธุรการเพิ่มรายละเอียดใน Admin</p>
+              </div>
+            </div>
+            <button onClick={fetchMyProjects} disabled={loadingProjects}
+              className="p-1.5 rounded-xl text-gray-400 hover:text-gray-600 transition-colors">
+              <RefreshCw size={13} className={loadingProjects ? 'animate-spin' : ''} />
+            </button>
+          </div>
+
+          <button onClick={() => setShowGpsForm(v => !v)}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white"
+            style={{ backgroundColor: '#7c3aed' }}>
+            {showGpsForm ? <ChevronDown size={14} /> : <Plus size={14} />}
+            {showGpsForm ? 'ซ่อนฟอร์ม' : '📍 ปักหมุด GPS โครงการ'}
+          </button>
+
+          {showGpsForm && (
+            <form onSubmit={submitGps}
+              className="bg-white rounded-2xl border border-violet-100 shadow-sm p-4 space-y-3">
+              <p className="text-xs text-violet-600 bg-violet-50 rounded-lg px-3 py-2">
+                ปักหมุด GPS ตำแหน่งโครงการหน้างาน · ธุรการเพิ่มรายละเอียดใน Admin ต่อ
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {GPS_TYPES.map(t => (
+                  <button key={t.value} type="button"
+                    onClick={() => setGpsForm(p => ({ ...p, project_type: t.value }))}
+                    className="text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all"
+                    style={gpsForm.project_type === t.value
+                      ? { backgroundColor: '#7c3aed', color: '#fff', borderColor: '#7c3aed' }
+                      : { backgroundColor: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' }}>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              <input type="text" value={gpsForm.title} required
+                onChange={e => setGpsForm(p => ({ ...p, title: e.target.value }))}
+                placeholder="ชื่อโครงการ / งานที่ทำ"
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
+              <div className={`rounded-xl border p-3 ${gpsGeo.lat ? 'bg-green-50 border-green-200' : 'bg-violet-50 border-violet-200'}`}>
+                <div className="flex items-center gap-2 mb-2">
+                  <MapPin size={13} className={gpsGeo.lat ? 'text-green-600' : 'text-violet-600'} />
+                  <span className="text-xs font-bold text-gray-700">พิกัด GPS</span>
+                  <span className="ml-auto text-[10px] font-bold text-violet-700 bg-violet-100 px-2 py-0.5 rounded-full">* บังคับ</span>
+                </div>
+                <button type="button" onClick={() => setShowGpsMap(true)}
+                  className={`w-full py-2 rounded-lg text-xs font-medium border transition-all ${
+                    gpsGeo.lat ? 'bg-white border-green-200 text-green-700' : 'bg-white border-violet-200 text-violet-700'
+                  }`}>
+                  {gpsGeo.lat
+                    ? `📍 ${gpsGeo.lat.toFixed(5)}, ${gpsGeo.lng.toFixed(5)} — กดแก้ไข`
+                    : '📍 กดเพื่อปักหมุดบนแผนที่'}
                 </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <input type="text" value={gpsForm.village}
+                  onChange={e => setGpsForm(p => ({ ...p, village: e.target.value }))}
+                  placeholder="หมู่บ้าน / สถานที่"
+                  className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
+                <input type="date" value={gpsForm.start_date}
+                  onChange={e => setGpsForm(p => ({ ...p, start_date: e.target.value }))}
+                  className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-300" />
+              </div>
+              {gpsError && <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-xl">{gpsError}</p>}
+              <div className="flex gap-2">
+                <button type="submit" disabled={gpsSubmitting}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 flex items-center justify-center gap-2"
+                  style={{ backgroundColor: '#7c3aed' }}>
+                  {gpsSubmitting ? <><Loader2 size={13} className="animate-spin" /> บันทึก...</> : '📍 ปักหมุดโครงการ'}
+                </button>
+                <button type="button" onClick={() => setShowGpsForm(false)}
+                  className="px-4 py-2.5 rounded-xl text-sm text-gray-500 bg-gray-100 hover:bg-gray-200">
+                  ยกเลิก
+                </button>
+              </div>
+            </form>
+          )}
+
+          {myProjects.length > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-50">
+                <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">
+                  โครงการที่บันทึกไว้ ({myProjects.length})
+                </p>
+              </div>
+              {myProjects.map((p, i) => (
+                <div key={p.id}
+                  className={`flex items-center gap-3 px-4 py-3 ${i < myProjects.length - 1 ? 'border-b border-gray-50' : ''}`}>
+                  <div className="w-9 h-9 rounded-xl bg-violet-50 flex items-center justify-center text-base shrink-0">
+                    🏗️
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-700 truncate">{p.title}</p>
+                    <p className="text-xs text-gray-400 mt-0.5 truncate">
+                      {p.village || '—'}
+                      {p.start_date ? ` · ${new Date(p.start_date).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}` : ''}
+                    </p>
+                  </div>
+                  {p.latitude && (
+                    <span className="text-[10px] text-green-600 font-mono bg-green-50 px-1.5 py-0.5 rounded shrink-0">📍</span>
+                  )}
+                </div>
               ))}
             </div>
-
-            <input type="text" value={gpsForm.title} required
-              onChange={e => setGpsForm(p => ({ ...p, title: e.target.value }))}
-              placeholder="ชื่อโครงการ / งานที่ทำ"
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
-
-            {/* GPS */}
-            <div className={`rounded-xl border p-3 ${gpsGeo.lat ? 'bg-green-50 border-green-200' : 'bg-violet-50 border-violet-200'}`}>
-              <div className="flex items-center gap-2 mb-2">
-                <MapPin size={13} className={gpsGeo.lat ? 'text-green-600' : 'text-violet-600'} />
-                <span className="text-xs font-bold text-gray-700">พิกัด GPS</span>
-                <span className="ml-auto text-[10px] font-bold text-violet-700 bg-violet-100 px-2 py-0.5 rounded-full">* บังคับ</span>
-              </div>
-              <button type="button" onClick={() => setShowGpsMap(true)}
-                className={`w-full py-2 rounded-lg text-xs font-medium border transition-all ${
-                  gpsGeo.lat ? 'bg-white border-green-200 text-green-700' : 'bg-white border-violet-200 text-violet-700'
-                }`}>
-                {gpsGeo.lat
-                  ? `📍 ${gpsGeo.lat.toFixed(5)}, ${gpsGeo.lng.toFixed(5)} — กดแก้ไข`
-                  : '📍 กดเพื่อปักหมุดบนแผนที่'}
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <input type="text" value={gpsForm.village}
-                onChange={e => setGpsForm(p => ({ ...p, village: e.target.value }))}
-                placeholder="หมู่บ้าน / สถานที่"
-                className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
-              <input type="date" value={gpsForm.start_date}
-                onChange={e => setGpsForm(p => ({ ...p, start_date: e.target.value }))}
-                className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-300" />
-            </div>
-
-            {gpsError && <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-xl">{gpsError}</p>}
-
-            <div className="flex gap-2">
-              <button type="submit" disabled={gpsSubmitting}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 flex items-center justify-center gap-2"
-                style={{ backgroundColor: '#7c3aed' }}>
-                {gpsSubmitting ? <><Loader2 size={13} className="animate-spin" /> บันทึก...</> : '📍 ปักหมุดโครงการ'}
-              </button>
-              <button type="button" onClick={() => setShowGpsForm(false)}
-                className="px-4 py-2.5 rounded-xl text-sm text-gray-500 bg-gray-100 hover:bg-gray-200">
-                ยกเลิก
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* รายการที่ฉันบันทึกไว้ */}
-        {myProjects.length > 0 && (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-50">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                โครงการที่บันทึกไว้ ({myProjects.length})
-              </p>
-            </div>
-            {myProjects.map((p, i) => (
-              <div key={p.id}
-                className={`flex items-center gap-3 px-4 py-3 ${i < myProjects.length - 1 ? 'border-b border-gray-50' : ''}`}>
-                <div className="w-9 h-9 rounded-xl bg-violet-50 flex items-center justify-center text-base shrink-0">
-                  🏗️
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-700 truncate">{p.title}</p>
-                  <p className="text-xs text-gray-400 mt-0.5 truncate">
-                    {p.village || '—'}
-                    {p.start_date ? ` · ${new Date(p.start_date).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}` : ''}
-                  </p>
-                </div>
-                {p.latitude && (
-                  <span className="text-[10px] text-green-600 font-mono bg-green-50 px-1.5 py-0.5 rounded shrink-0">📍</span>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+          )}
+        </div>
 
       </div>
     </div>

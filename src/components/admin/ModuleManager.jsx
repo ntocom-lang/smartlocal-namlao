@@ -27,6 +27,14 @@ const ALL_MODULES = [
       { key: 'report',       label: 'รายงาน',     desc: 'สรุปสถิติและรายงาน' },
     ],
   },
+  {
+    group: 'เนื้อหาและชุมชน',
+    items: [
+      { key: 'tourism',           label: 'เที่ยว กิน พัก ชอบ', desc: 'จัดการสถานที่ท่องเที่ยว ร้านค้า ที่พัก' },
+      { key: 'tourism-reviews',   label: 'รีวิวสถานที่',        desc: 'ตรวจสอบและลบรีวิวที่ไม่เหมาะสม' },
+      { key: 'business-register', label: 'ลงทะเบียนธุรกิจ',    desc: 'อนุมัติ/จัดการคำขอลงทะเบียนธุรกิจ' },
+    ],
+  },
 ]
 
 const ALL_KEYS = ALL_MODULES.flatMap(g => g.items.map(m => m.key))

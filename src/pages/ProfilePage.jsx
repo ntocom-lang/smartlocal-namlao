@@ -144,7 +144,7 @@ export default function ProfilePage() {
   const roleLabel = ROLE_LABEL[profile.role] ?? 'ประชาชนทั่วไป'
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen" style={{ backgroundColor: '#eef2f7' }}>
       {/* Mobile top bar */}
       <div className="md:hidden flex items-center px-4 py-4 text-white"
            style={{ background: 'linear-gradient(90deg, var(--color-primary-dark), var(--color-primary))' }}>
@@ -155,7 +155,20 @@ export default function ProfilePage() {
         <div className="w-8" />
       </div>
 
-      <div className="max-w-lg mx-auto px-4 py-6 md:py-10 space-y-4">
+      {/* PC header */}
+      <div className="hidden md:flex items-center justify-between px-8 py-4 bg-white border-b border-gray-200 shadow-sm">
+        <div>
+          <h1 className="text-lg font-bold text-gray-800">ข้อมูลบัญชีของฉัน</h1>
+          <p className="text-xs text-gray-400 mt-0.5">จัดการข้อมูลส่วนตัวและความปลอดภัย</p>
+        </div>
+        <button onClick={() => navigate(-1)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors">
+          <ChevronLeft size={15} />
+          ย้อนกลับ
+        </button>
+      </div>
+
+      <div className="max-w-lg mx-auto px-4 py-6 md:py-8 space-y-4">
         {/* Avatar */}
         <div className="flex flex-col items-center gap-2 mb-2">
           <div className="relative">

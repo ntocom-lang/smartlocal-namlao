@@ -593,7 +593,7 @@ function NewRequestSheet({ tenant, staffId, onClose, onCreated }) {
 
 // ─── Inbox Module ─────────────────────────────────────────────────────────────
 
-function InboxModule({ tenant, staffId }) {
+export function InboxModule({ tenant, staffId }) {
   const [requests, setRequests]   = useState([])
   const [loading, setLoading]     = useState(true)
   const [activeTab, setActiveTab] = useState('pending')
@@ -2018,7 +2018,12 @@ export default function StaffDashboard() {
   const [profile, setProfile]           = useState(null)
   const [pendingCount, setPendingCount] = useState(0)
 
-  const enabledKeys = tenant?.enabled_modules ?? MODULES.map(m => m.key)
+  const allModuleKeys = MODULES.map(m => m.key)
+  // keys ที่เคยอยู่ใน ModuleManager — ถ้า key ใหม่ยังไม่เคยถูก manage ให้ default เป็น enabled
+  const managedKeys = ['inbox', 'docs', 'complaints', 'events', 'approve', 'projects', 'docs-archive', 'map', 'report']
+  const enabledKeys = tenant?.enabled_modules
+    ? [...tenant.enabled_modules, ...allModuleKeys.filter(k => !managedKeys.includes(k))]
+    : allModuleKeys
   const visibleGroups = MODULE_GROUPS
     .map(g => ({ ...g, items: g.items.filter(m => enabledKeys.includes(m.key)) }))
     .filter(g => g.items.length > 0)
