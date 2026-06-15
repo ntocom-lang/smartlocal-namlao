@@ -24,8 +24,8 @@ const DOC_TYPES = [
   { value: 'residence_cert',   label: '🏠 ใบรับรองการอยู่อาศัย' },
   { value: 'personal_cert',    label: '👤 หนังสือรับรองบุคคล' },
   { value: 'conduct_cert',     label: '✅ หนังสือรับรองความประพฤติ' },
-  { value: 'tax_notice',       label: '📋 ขอรับใบแจ้งชำระภาษีที่ดิน' },
-  { value: 'waste_collection', label: '🗑️ ขอรับใบแจ้งค่าเก็บขยะ' },
+  { value: 'tax_notice',       label: '🏦 ชำระภาษีที่ดินและสิ่งปลูกสร้าง' },
+  { value: 'waste_collection', label: '🗑️ ชำระค่าธรรมเนียมเก็บขนขยะ' },
   { value: 'other',            label: '📝 คำขออื่นๆ' },
 ]
 

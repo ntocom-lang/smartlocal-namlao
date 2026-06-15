@@ -11,8 +11,8 @@ const DOC_LABELS = {
   residence_cert: 'ใบรับรองการอยู่อาศัย',
   personal_cert:  'หนังสือรับรองบุคคล',
   conduct_cert:   'หนังสือรับรองความประพฤติ',
-  tax_notice:     'ขอรับใบแจ้งชำระภาษีที่ดิน',
-  waste_collection: 'ขอรับใบแจ้งค่าเก็บขยะ',
+  tax_notice:       'ชำระภาษีที่ดินและสิ่งปลูกสร้าง',
+  waste_collection: 'ชำระค่าธรรมเนียมเก็บขนขยะ',
   other:          'คำขออื่นๆ',
 }
 
