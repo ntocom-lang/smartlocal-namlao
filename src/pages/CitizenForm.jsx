@@ -344,7 +344,19 @@ export default function CitizenForm() {
   const CatIcon = CATEGORY_ICON[form.category] ?? HelpCircle
 
   return (
-    <div className="min-h-screen max-w-lg mx-auto" style={{ backgroundColor: '#F0F4F8' }}>
+    <div className="min-h-screen" style={{ backgroundColor: '#eef2f7' }}>
+
+      {/* PC header */}
+      <div className="hidden md:flex items-center justify-between px-8 py-4 bg-white border-b border-gray-200 shadow-sm">
+        <h1 className="text-lg font-bold text-gray-800">ยื่นคำร้องออนไลน์</h1>
+        <button onClick={() => navigate(-1)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors">
+          <ArrowLeft size={15} />
+          ย้อนกลับ
+        </button>
+      </div>
+
+      <div className="max-w-lg mx-auto">
 
       {/* MapPicker */}
       {showMap && (
@@ -385,8 +397,8 @@ export default function CitizenForm() {
         </div>
       )}
 
-      {/* Header */}
-      <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 shadow-sm"
+      {/* Mobile header */}
+      <div className="md:hidden sticky top-0 z-10 flex items-center gap-3 px-4 py-3 shadow-sm"
         style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
         <button onClick={() => navigate(-1)}
           className="p-1.5 rounded-xl bg-white/20 hover:bg-white/30 transition-colors">
@@ -654,7 +666,7 @@ export default function CitizenForm() {
         </div>
       )}
 
-
+      </div>
     </div>
   )
 }

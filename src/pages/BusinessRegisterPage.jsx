@@ -168,7 +168,8 @@ export default function BusinessRegisterPage() {
   )
 
   return (
-    <div className="max-w-3xl mx-auto min-h-screen bg-gray-50">
+    <div className="min-h-screen" style={{ backgroundColor: '#eef2f7' }}>
+    <div className="max-w-3xl mx-auto">
       {showMap && (
         <MapPicker
           initialPos={geo.lat ? { lat: geo.lat, lng: geo.lng } : (tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null)}
@@ -434,6 +435,7 @@ export default function BusinessRegisterPage() {
           หลังส่งแล้ว เจ้าหน้าที่จะตรวจสอบและอนุมัติภายใน 3 วันทำการ
         </p>
       </form>
+    </div>
     </div>
   )
 }

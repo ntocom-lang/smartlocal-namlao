@@ -78,10 +78,20 @@ export default function ComplaintCategory() {
   }
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#EFF6FF' }}>
+    <div className="min-h-screen" style={{ backgroundColor: '#eef2f7' }}>
 
-      {/* Header */}
-      <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 shadow-md"
+      {/* PC header */}
+      <div className="hidden md:flex items-center justify-between px-8 py-4 bg-white border-b border-gray-200 shadow-sm">
+        <h1 className="text-lg font-bold text-gray-800">ยื่นคำร้องออนไลน์</h1>
+        <button onClick={() => navigate(-1)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors">
+          <ArrowLeft size={15} />
+          ย้อนกลับ
+        </button>
+      </div>
+
+      {/* Mobile header */}
+      <div className="md:hidden sticky top-0 z-10 flex items-center gap-3 px-4 py-3 shadow-md"
         style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
         <button onClick={() => navigate(-1)}
           className="p-1.5 rounded-xl bg-white/20 hover:bg-white/30 transition-colors">
@@ -90,7 +100,7 @@ export default function ComplaintCategory() {
         <h1 className="font-bold text-white text-base flex-1 text-center pr-8">ยื่นคำร้องออนไลน์</h1>
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 pt-5 pb-28">
+      <div className="max-w-2xl mx-auto px-4 pt-5 pb-28 md:pb-8">
 
         {/* Prompt button */}
         <button onClick={() => {}} disabled
@@ -105,7 +115,7 @@ export default function ComplaintCategory() {
             <Loader2 size={28} className="animate-spin text-blue-300" />
           </div>
         ) : (
-          <div className="grid grid-cols-4 gap-x-3 gap-y-5">
+          <div className="grid grid-cols-4 md:grid-cols-5 gap-x-3 gap-y-5">
             {categories.map((cat) => {
               const Icon = CATEGORY_ICON[cat.value] ?? HelpCircle
               return (
