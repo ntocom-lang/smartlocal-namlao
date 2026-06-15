@@ -296,7 +296,8 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
           <ChevronUp size={20} />
         </button>
       )}
-      <div className="flex items-center justify-between">
+      {/* Mobile header */}
+      <div className="md:hidden flex items-center justify-between">
         <h2 className="font-bold text-gray-700">ปฏิทินกิจกรรม</h2>
         {canManage && (
           <button onClick={openAdd}
@@ -307,7 +308,26 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
         )}
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
+      {/* PC title bar */}
+      <div className="hidden md:flex items-center justify-between px-5 py-2.5 border border-gray-200"
+        style={{ backgroundColor: '#1a3a5c' }}>
+        <h2 className="text-[13px] font-bold text-white tracking-wide">ปฏิทินกิจกรรม</h2>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded"
+            style={{ backgroundColor: 'rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.9)' }}>
+            {filteredEvents.length} รายการ
+          </span>
+          {canManage && (
+            <button onClick={openAdd}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold border transition-colors hover:bg-white/20"
+              style={{ backgroundColor: 'rgba(255,255,255,0.12)', color: '#fff', borderColor: 'rgba(255,255,255,0.3)' }}>
+              <Plus size={13} /> เพิ่มกิจกรรม
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl md:rounded-none border border-gray-100 md:border-gray-200 shadow-sm p-4 md:bg-[#f5f8fc] space-y-3">
         {/* Search — always visible */}
         <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
           placeholder="ค้นหาชื่อหรือรายละเอียดกิจกรรม..."
@@ -625,14 +645,87 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
                 {activeTab === 'upcoming' ? 'ยังไม่มีกิจกรรม กด "เพิ่มกิจกรรม" เพื่อเริ่มต้น' : 'ยังไม่มีกิจกรรมที่ผ่านมา'}
               </div>
             ) : (
-              <div className={`space-y-2 ${activeTab === 'past' ? 'opacity-80' : ''}`}>
-                {paginatedList.map((ev) => (
-                  <EventCard key={ev.id} ev={ev}
-                    onEdit={canManage ? openEdit : null}
-                    onDelete={canManage ? handleDelete : null}
-                    deleting={deleting} />
-                ))}
-              </div>
+              <>
+                {/* Mobile cards */}
+                <div className={`md:hidden space-y-2 ${activeTab === 'past' ? 'opacity-80' : ''}`}>
+                  {paginatedList.map((ev) => (
+                    <EventCard key={ev.id} ev={ev}
+                      onEdit={canManage ? openEdit : null}
+                      onDelete={canManage ? handleDelete : null}
+                      deleting={deleting} />
+                  ))}
+                </div>
+
+                {/* PC table */}
+                <div className={`hidden md:block overflow-x-auto border border-gray-200 ${activeTab === 'past' ? 'opacity-75' : ''}`}>
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr style={{ backgroundColor: '#2c5282' }}>
+                        <th className="px-3 py-2.5 text-center text-[11px] font-bold text-white border-r border-white/10 w-10">ที่</th>
+                        <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ชื่อกิจกรรม</th>
+                        <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ประเภท</th>
+                        <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">วันที่/เวลา</th>
+                        <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">สถานที่</th>
+                        <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">กลุ่มเป้าหมาย</th>
+                        {canManage && <th className="px-3 py-2.5 text-center text-[11px] font-bold text-white">จัดการ</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {paginatedList.map((ev, i) => {
+                        const color = EVENTS_CATEGORY_COLOR[ev.category] ?? '#6b7280'
+                        const d = new Date(ev.event_date + 'T00:00:00')
+                        const dateStr = d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
+                        const timeStr = ev.event_time ? ev.event_time.slice(0, 5) + (ev.end_time ? `–${ev.end_time.slice(0, 5)}` : '') + ' น.' : '—'
+                        const aud = AUDIENCE_OPTIONS.find(a => a.value === ev.audience)
+                        return (
+                          <tr key={ev.id}
+                            className="transition-colors"
+                            style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#f5f8fc' }}
+                            onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'}
+                            onMouseLeave={e => e.currentTarget.style.backgroundColor = i % 2 === 0 ? '#fff' : '#f5f8fc'}>
+                            <td className="px-3 py-2 text-center text-xs text-gray-400 border-r border-gray-200">{i + 1}</td>
+                            <td className="px-3 py-2 border-r border-gray-200">
+                              <p className="font-semibold text-gray-800 text-xs leading-snug">{ev.title}</p>
+                              {ev.description && <p className="text-[11px] text-gray-400 truncate max-w-[220px]">{ev.description}</p>}
+                            </td>
+                            <td className="px-3 py-2 border-r border-gray-200">
+                              <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold text-white"
+                                style={{ backgroundColor: color }}>{ev.category}</span>
+                            </td>
+                            <td className="px-3 py-2 text-xs text-gray-600 whitespace-nowrap border-r border-gray-200">
+                              <p>{dateStr}</p>
+                              <p className="text-[11px] text-gray-400">{timeStr}</p>
+                            </td>
+                            <td className="px-3 py-2 text-xs text-gray-500 border-r border-gray-200">{ev.location || '—'}</td>
+                            <td className="px-3 py-2 border-r border-gray-200">
+                              {aud && (
+                                <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-semibold border"
+                                  style={{ color: aud.color, borderColor: aud.color, backgroundColor: aud.color + '15' }}>
+                                  {aud.label}
+                                </span>
+                              )}
+                            </td>
+                            {canManage && (
+                              <td className="px-3 py-2 text-center" onClick={e => e.stopPropagation()}>
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button onClick={() => openEdit(ev)}
+                                    className="px-2.5 py-1 rounded border border-blue-400 text-blue-600 text-[11px] font-bold hover:bg-blue-600 hover:text-white transition-colors">
+                                    แก้ไข
+                                  </button>
+                                  <button onClick={() => handleDelete(ev.id)} disabled={deleting === ev.id}
+                                    className="px-2.5 py-1 rounded border border-red-300 text-red-500 text-[11px] font-bold hover:bg-red-500 hover:text-white transition-colors disabled:opacity-40">
+                                    ลบ
+                                  </button>
+                                </div>
+                              </td>
+                            )}
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
             {pageSize !== 'all' && totalPages > 1 && (
               <div className="flex items-center justify-center gap-2 pt-3">

@@ -9,6 +9,7 @@ import QRCode from 'react-qr-code'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { generatePromptPayPayload } from '../lib/promptpay'
+import { notifyTelegram } from '../lib/notifyTelegram'
 
 const DOC_TYPES = {
   residence_cert:   'ใบรับรองการอยู่อาศัย',
@@ -191,6 +192,9 @@ function DocDetailSheet({ req, onClose, tenant, onRefresh }) {
       const { error: dbErr } = await supabase.from('document_requests')
         .update({ payment_status: 'uploaded', payment_slip_url: path }).eq('id', req.id)
       if (dbErr) throw dbErr
+      notifyTelegram(tenant?.telegram_group_id,
+        `📎 <b>สลิปชำระเงินใหม่</b>\nประเภท: ${docLabel}\nผู้ขอ: ${req.requester_name}\nยอด: ${(req.fee_amount ?? 0).toLocaleString()} บาท\nรอเจ้าหน้าที่ตรวจสอบ`
+      )
       onRefresh?.()
       onClose()
     } catch (err) {

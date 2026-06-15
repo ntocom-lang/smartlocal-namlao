@@ -332,7 +332,7 @@ function FixedSelect({ value, onChange, options }) {
   )
 }
 
-function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, onDeptAssign, onPriority, currentUserRole, onDelete }) {
+function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, onPriority, currentUserRole, onDelete }) {
   const { tenant } = useTenant()
   const [assigning, setAssigning] = useState(false)
   const [showCloseJob, setShowCloseJob] = useState(false)
@@ -518,23 +518,6 @@ ${photoSectionHtml}
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">ความคืบหน้า</p>
             <StatusStepper status={c.status} note={c.technician_note} />
           </div>
-
-          {/* Department assignment — admin only */}
-          {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">กองรับผิดชอบ</p>
-              <div className="bg-indigo-50 rounded-2xl p-3 border border-indigo-100 flex items-center gap-3">
-                <select value={c.department ?? ''}
-                  onChange={(e) => onDeptAssign(c.id, e.target.value)}
-                  className="flex-1 text-sm border border-indigo-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none">
-                  <option value="">— ยังไม่ระบุกอง —</option>
-                  {DEPARTMENTS.map((d) => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          )}
 
           {technicians?.length > 0 && c.status !== 'closed' && c.status !== 'completed' && c.status !== 'rejected' && (
             <div className="space-y-2">
@@ -922,15 +905,6 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
     }
   }
 
-  async function assignDepartment(complaintId, department) {
-    const { error } = await supabase.from('complaints').update({ department }).eq('id', complaintId)
-    if (!error) {
-      setComplaints((prev) => prev.map((c) => c.id === complaintId ? { ...c, department } : c))
-      if (selectedComplaint?.id === complaintId)
-        setSelectedComplaint((prev) => ({ ...prev, department }))
-    }
-  }
-
   function handleDeleteComplaint(id) {
     setComplaints((prev) => prev.filter((c) => c.id !== id))
   }
@@ -1122,25 +1096,50 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
       {/* Refresh */}
       <div className="flex justify-end">
         <button onClick={fetchComplaints} disabled={loading}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-medium border border-gray-200 bg-white hover:bg-gray-50 transition-colors disabled:opacity-50">
+          className="flex items-center gap-2 px-3 py-1.5 md:rounded text-sm font-medium border border-gray-200 bg-white hover:bg-gray-50 transition-colors disabled:opacity-50 rounded-xl">
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           รีเฟรช
         </button>
       </div>
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {/* Stat cards — mobile grid / PC formal bar */}
+      <div className="grid grid-cols-2 md:hidden gap-3">
         <StatCard label="ทั้งหมด"         value={complaints.length}         icon={ClipboardList} color="#64748b" />
         <StatCard label="คำร้องใหม่"      value={counts.new ?? 0}           icon={Clock}         color="#f59e0b" />
         <StatCard label="กำลังดำเนินการ"  value={counts.in_progress ?? 0}   icon={AlertCircle}   color="#8b5cf6" />
         <StatCard label="ปิดเรื่องแล้ว"   value={counts.closed ?? 0}        icon={CheckCircle2}  color="#10b981" />
       </div>
+      {/* PC stat bar */}
+      <div className="hidden md:flex border border-gray-200 rounded-none bg-white divide-x divide-gray-200 shadow-sm">
+        {[
+          { label: 'คำร้องทั้งหมด',    value: complaints.length,          color: '#1a3a5c', bg: '#eef2f7' },
+          { label: 'คำร้องใหม่',       value: counts.new ?? 0,            color: '#b45309', bg: '#fef3c7' },
+          { label: 'กำลังดำเนินการ',  value: counts.in_progress ?? 0,    color: '#6d28d9', bg: '#ede9fe' },
+          { label: 'ดำเนินการแล้ว',   value: counts.done ?? 0,            color: '#1d4ed8', bg: '#dbeafe' },
+          { label: 'ปิดเรื่องแล้ว',   value: counts.closed ?? 0,          color: '#065f46', bg: '#d1fae5' },
+          { label: 'ปฏิเสธ',           value: counts.rejected ?? 0,        color: '#991b1b', bg: '#fee2e2' },
+        ].map(s => (
+          <div key={s.label} className="flex-1 px-4 py-3 text-center" style={{ backgroundColor: s.bg }}>
+            <p className="text-2xl font-bold leading-none" style={{ color: s.color }}>{s.value}</p>
+            <p className="text-[10px] font-semibold mt-1" style={{ color: s.color }}>{s.label}</p>
+          </div>
+        ))}
+      </div>
 
       {/* Table section */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="px-5 pt-5 pb-3 border-b border-gray-100">
+      <div className="bg-white rounded-2xl md:rounded-none shadow-sm border border-gray-200 overflow-hidden">
+        {/* PC section title bar */}
+        <div className="hidden md:flex items-center justify-between px-5 py-2.5 border-b border-gray-200"
+          style={{ backgroundColor: '#1a3a5c' }}>
+          <h2 className="text-[13px] font-bold text-white tracking-wide">รายการคำร้องประชาชน</h2>
+          <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded"
+            style={{ backgroundColor: 'rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.9)' }}>
+            {filtered.length} รายการ
+          </span>
+        </div>
+        <div className="px-5 pt-4 pb-3 border-b border-gray-200 md:bg-[#f5f8fc]">
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-            <h2 className="font-semibold text-gray-700 flex-1">รายการคำร้อง</h2>
+            <h2 className="font-semibold text-gray-700 flex-1 md:hidden">รายการคำร้อง</h2>
             <div className="relative">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input value={search} onChange={(e) => setSearch(e.target.value)}
@@ -1294,52 +1293,56 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
 
             {/* Desktop table */}
             <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm border-collapse">
                 <thead>
-                  <tr className="bg-gray-50 text-gray-500 text-xs">
-                    <th className="px-3 py-2 text-center font-medium w-10">#</th>
-                    <th className="px-3 py-2 text-left font-medium">ประเภท</th>
-                    <th className="px-3 py-2 text-left font-medium">สถานที่</th>
-                    <th className="px-3 py-2 text-left font-medium">วันที่ยื่นคำร้อง</th>
-                    <th className="px-3 py-2 text-left font-medium">ผู้รับผิดชอบ</th>
-                    <th className="px-3 py-2 text-left font-medium">ความเร่งด่วน</th>
-                    <th className="px-3 py-2 text-left font-medium">สถานะ</th>
-                    <th className="px-3 py-2 text-left font-medium">การดำเนินการ</th>
+                  <tr style={{ backgroundColor: '#2c5282' }}>
+                    <th className="px-3 py-2.5 text-center text-[11px] font-bold text-white border-r border-white/10 w-10">ที่</th>
+                    <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ประเภทคำร้อง</th>
+                    <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">สถานที่</th>
+                    <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">วันที่ยื่น</th>
+                    <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ผู้รับผิดชอบ</th>
+                    <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ความเร่งด่วน</th>
+                    <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">สถานะ</th>
+                    <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white">การดำเนินการ</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-50">
+                <tbody className="divide-y divide-gray-200">
                   {paginatedFiltered.map((c, i) => (
-                    <tr key={c.id} className="hover:bg-gray-50/70 transition-colors cursor-pointer"
-                        onClick={() => setSelectedComplaint(c)}>
-                      <td className="px-3 py-1.5 text-center text-xs text-gray-400 font-mono">{complaintStartIdx + i + 1}</td>
-                      <td className="px-3 py-1.5 font-medium text-gray-700 whitespace-nowrap">
+                    <tr key={c.id}
+                      className="cursor-pointer transition-colors"
+                      style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#f5f8fc' }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = i % 2 === 0 ? '#fff' : '#f5f8fc'}
+                      onClick={() => setSelectedComplaint(c)}>
+                      <td className="px-3 py-2 text-center text-xs text-gray-500 border-r border-gray-200">{complaintStartIdx + i + 1}</td>
+                      <td className="px-3 py-2 font-medium text-gray-800 text-xs whitespace-nowrap border-r border-gray-200">
                         {CATEGORY_LABEL[c.category] ?? c.category}
                       </td>
-                      <td className="px-3 py-1.5 text-gray-500 whitespace-nowrap">
+                      <td className="px-3 py-2 text-gray-500 text-xs whitespace-nowrap border-r border-gray-200">
                         {(c.village || c.location_name)
-                          ? <span className="flex items-center gap-1"><MapPin size={11} className="text-gray-300 shrink-0" />{c.village || c.location_name}</span>
+                          ? <span className="flex items-center gap-1"><MapPin size={10} className="text-gray-400 shrink-0" />{c.village || c.location_name}</span>
                           : <span className="text-gray-300">—</span>}
                       </td>
-                      <td className="px-3 py-1.5 text-gray-500 whitespace-nowrap text-xs">
+                      <td className="px-3 py-2 text-gray-500 text-xs whitespace-nowrap border-r border-gray-200">
                         {new Date(c.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}
                       </td>
-                      <td className="px-3 py-1.5 whitespace-nowrap">
+                      <td className="px-3 py-2 text-xs whitespace-nowrap border-r border-gray-200">
                         {c.assigned_to
-                          ? <span className="flex items-center gap-1 text-blue-600 text-xs font-medium"><Wrench size={11} className="shrink-0" />{technicians.find((t) => t.id === c.assigned_to)?.full_name ?? 'ผู้รับผิดชอบ'}</span>
+                          ? <span className="flex items-center gap-1 text-blue-700 font-medium"><Wrench size={10} className="shrink-0" />{technicians.find((t) => t.id === c.assigned_to)?.full_name ?? 'ผู้รับผิดชอบ'}</span>
                           : <span className="text-gray-300">—</span>}
                       </td>
-                      <td className="px-3 py-1.5">
+                      <td className="px-3 py-2 border-r border-gray-200">
                         {c.priority && c.priority !== 'normal'
-                          ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap"
-                              style={{ backgroundColor: PRIORITY[c.priority]?.bg, color: PRIORITY[c.priority]?.text }}>
+                          ? <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap border"
+                              style={{ backgroundColor: PRIORITY[c.priority]?.bg, color: PRIORITY[c.priority]?.text, borderColor: PRIORITY[c.priority]?.color + '40' }}>
                               {PRIORITY[c.priority]?.short}
                             </span>
-                          : <span className="text-gray-300 text-xs">—</span>}
+                          : <span className="text-gray-300 text-xs">ปกติ</span>}
                       </td>
-                      <td className="px-3 py-1.5">
+                      <td className="px-3 py-2 border-r border-gray-200">
                         <StatusBadge status={c.status} />
                       </td>
-                      <td className="px-3 py-1.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-3 py-2 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center gap-1.5">
                           <ActionButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} />
                           <RejectButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} />
@@ -1352,7 +1355,7 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
             </div>
 
             {/* Pagination */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-5 py-3 border-t border-gray-100">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-5 py-3 border-t border-gray-200 md:bg-[#f5f8fc]">
               <div className="flex items-center gap-2 text-xs text-gray-500">
                 <span>แสดง</span>
                 <select value={complaintsPerPage}
@@ -1420,7 +1423,6 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
           updating={updating}
           technicians={technicians}
           onAssign={assignTechnician}
-          onDeptAssign={assignDepartment}
           onPriority={updatePriority}
           currentUserRole={currentUserRole ?? 'staff'}
           onDelete={handleDeleteComplaint}

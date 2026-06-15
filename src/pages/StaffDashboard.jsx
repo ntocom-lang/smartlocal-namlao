@@ -206,6 +206,10 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpda
         .update({ fee_amount: amount, payment_status: 'pending' })
         .eq('id', req.id)
       if (error) throw error
+      const docLabel = DOC_TYPES.find(d => d.value === req.document_type)?.label ?? req.document_type
+      notifyTelegram(tenant?.telegram_group_id,
+        `💳 <b>แจ้งยอดค่าชำระ</b>\nประเภท: ${docLabel}\nผู้ขอ: ${req.requester_name}\nยอด: <b>${amount.toLocaleString()} บาท</b>\nรอประชาชนชำระผ่าน PromptPay`
+      )
       onPaymentUpdate?.()
       onClose()
     } catch (err) {
@@ -241,6 +245,10 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpda
           ...(document_url ? { document_url } : {}),
         }).eq('id', req.id)
         if (error) throw error
+        const docLabel2 = DOC_TYPES.find(d => d.value === req.document_type)?.label ?? req.document_type
+        notifyTelegram(tenant?.telegram_group_id,
+          `✅ <b>${action === 'verify' ? 'ยืนยันการชำระเงิน' : 'ยกเว้นค่าธรรมเนียม'}</b>\nประเภท: ${docLabel2}\nผู้ขอ: ${req.requester_name}\n${action === 'verify' ? `จำนวน: ${(req.fee_amount ?? 0).toLocaleString()} บาท\n` : ''}ออกใบเสร็จแล้ว — รอประชาชนดาวน์โหลด`
+        )
       } else {
         const updates = action === 'verify'
           ? { payment_status: 'verified', payment_verified_at: now }
@@ -248,6 +256,10 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpda
         const { error } = await supabase.from('document_requests')
           .update(updates).eq('id', req.id)
         if (error) throw error
+        const docLabel3 = DOC_TYPES.find(d => d.value === req.document_type)?.label ?? req.document_type
+        notifyTelegram(tenant?.telegram_group_id,
+          `✅ <b>${action === 'verify' ? 'ยืนยันการชำระเงิน' : 'ยกเว้นค่าธรรมเนียม'}</b>\nประเภท: ${docLabel3}\nผู้ขอ: ${req.requester_name}`
+        )
       }
 
       onPaymentUpdate?.()
@@ -633,8 +645,9 @@ function InboxModule({ tenant, staffId }) {
     setRequests(prev => prev.map(r =>
       r.id === id ? { ...r, status: newStatus, staff_notes: staffNote || null, document_url } : r
     ))
+    const docLabel = DOC_TYPES.find(d => d.value === req?.document_type)?.label ?? req?.document_type ?? ''
     notifyTelegram(tenant?.telegram_group_id,
-      `🔄 <b>อัปเดตสถานะคำขอเอกสาร</b>\nประเภท: ${req?.document_type ?? ''}\nผู้ขอ: ${req?.requester_name ?? ''}\nสถานะ: ${STATUS[newStatus]?.label ?? newStatus}${staffNote ? `\nหมายเหตุ: ${staffNote}` : ''}`
+      `🔄 <b>อัปเดตสถานะคำขอเอกสาร</b>\nประเภท: ${docLabel}\nผู้ขอ: ${req?.requester_name ?? ''}\nสถานะ: ${STATUS[newStatus]?.label ?? newStatus}${staffNote ? `\nหมายเหตุ: ${staffNote}` : ''}`
     )
     setActing(false)
     setSelected(null)
@@ -745,36 +758,40 @@ function InboxModule({ tenant, staffId }) {
         </div>
       ) : (
         <>
-          {/* PC — table */}
-          <div className="hidden md:block overflow-x-auto rounded-2xl border border-gray-100 shadow-sm">
+          {/* PC — government table */}
+          <div className="hidden md:block overflow-x-auto border border-gray-300 shadow-sm" style={{ borderRadius: 4 }}>
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  <th className="px-4 py-3 text-left w-8">#</th>
-                  <th className="px-4 py-3 text-left">ชื่อ-สกุลผู้ยื่น</th>
-                  <th className="px-4 py-3 text-left">ประเภทเอกสาร</th>
-                  <th className="px-4 py-3 text-left">วัตถุประสงค์</th>
-                  <th className="px-4 py-3 text-left">โทรศัพท์</th>
-                  <th className="px-4 py-3 text-left">วันที่ยื่น</th>
-                  <th className="px-4 py-3 text-center">สถานะ</th>
-                  <th className="px-4 py-3 text-center">ดำเนินการ</th>
+                <tr style={{ backgroundColor: '#1a3a5c' }}>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white w-8 border-r border-white/10">ที่</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ชื่อ-สกุลผู้ยื่น</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ประเภทเอกสาร</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">วัตถุประสงค์</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">โทรศัพท์</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">วันที่ยื่น</th>
+                  <th className="px-4 py-2.5 text-center text-[11px] font-bold text-white border-r border-white/10">สถานะ</th>
+                  <th className="px-4 py-2.5 text-center text-[11px] font-bold text-white">ดำเนินการ</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
+              <tbody className="divide-y divide-gray-200">
                 {filtered.map((req, idx) => {
                   const docType = DOC_TYPES.find(d => d.value === req.document_type)
                   return (
-                    <tr key={req.id} className="hover:bg-blue-50/40 transition-colors cursor-pointer"
+                    <tr key={req.id}
+                      className="cursor-pointer transition-colors"
+                      style={{ backgroundColor: idx % 2 === 0 ? '#fff' : '#f5f8fc' }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = idx % 2 === 0 ? '#fff' : '#f5f8fc'}
                       onClick={() => setSelected(req)}>
-                      <td className="px-4 py-3 text-gray-400 text-xs">{idx + 1}</td>
-                      <td className="px-4 py-3 font-semibold text-gray-800">{req.requester_name}</td>
-                      <td className="px-4 py-3 text-gray-600">{docType?.label ?? req.document_type}</td>
-                      <td className="px-4 py-3 text-gray-400 max-w-[180px] truncate">{req.purpose || '—'}</td>
-                      <td className="px-4 py-3 text-gray-500">{req.requester_phone || '—'}</td>
-                      <td className="px-4 py-3 text-gray-400 whitespace-nowrap">{dateTH(req.created_at)}</td>
-                      <td className="px-4 py-3 text-center"><StatusBadge status={req.status} /></td>
-                      <td className="px-4 py-3 text-center">
-                        <button className="text-xs font-semibold text-blue-600 hover:underline">เปิด</button>
+                      <td className="px-4 py-2.5 text-gray-500 text-xs border-r border-gray-200">{idx + 1}</td>
+                      <td className="px-4 py-2.5 font-semibold text-gray-800 text-sm border-r border-gray-200">{req.requester_name}</td>
+                      <td className="px-4 py-2.5 text-gray-700 text-xs border-r border-gray-200">{docType?.label.replace(/^\S+\s*/, '') ?? req.document_type}</td>
+                      <td className="px-4 py-2.5 text-gray-500 text-xs max-w-[180px] truncate border-r border-gray-200">{req.purpose || '—'}</td>
+                      <td className="px-4 py-2.5 text-gray-500 text-xs border-r border-gray-200">{req.requester_phone || '—'}</td>
+                      <td className="px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap border-r border-gray-200">{dateTH(req.created_at)}</td>
+                      <td className="px-4 py-2.5 text-center border-r border-gray-200"><StatusBadge status={req.status} /></td>
+                      <td className="px-4 py-2.5 text-center">
+                        <button className="text-xs font-bold px-3 py-1 rounded border border-blue-600 text-blue-700 hover:bg-blue-600 hover:text-white transition-colors">ดำเนินการ</button>
                       </td>
                     </tr>
                   )
@@ -1906,23 +1923,43 @@ function StaffReportWrapper({ tenant }) {
 // ─── Staff Home Dashboard ─────────────────────────────────────────────────────
 
 function StaffHomeModule({ visibleGroups, setActiveModule, pendingCount, staffName }) {
+  const todayTH = new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
   return (
-    <div className="space-y-6">
-      <div>
+    <div className="space-y-5">
+      {/* Mobile greeting */}
+      <div className="md:hidden">
         <h1 className="text-xl font-bold text-gray-800">ระบบเจ้าหน้าที่</h1>
         <p className="text-sm text-gray-400 mt-0.5">สวัสดี{staffName ? `, ${staffName}` : ''} 👋</p>
       </div>
+
+      {/* PC welcome bar */}
+      <div className="hidden md:flex items-center justify-between px-5 py-3 border border-gray-200 bg-white shadow-sm">
+        <div>
+          <p className="text-xs text-gray-400">{todayTH}</p>
+          <p className="text-sm font-bold text-gray-700 mt-0.5">
+            สวัสดี{staffName ? `, ${staffName}` : ''} — ยินดีต้อนรับเข้าสู่ระบบบริการอิเล็กทรอนิกส์
+          </p>
+        </div>
+        {pendingCount > 0 && (
+          <div className="flex items-center gap-2 px-4 py-2 border rounded"
+            style={{ backgroundColor: '#fef3c7', borderColor: '#f59e0b' }}>
+            <span className="text-lg font-bold" style={{ color: '#b45309' }}>{pendingCount}</span>
+            <span className="text-xs font-semibold" style={{ color: '#92400e' }}>รายการรอดำเนินการ</span>
+          </div>
+        )}
+      </div>
+
       {visibleGroups.map(({ group, items }) => (
         <div key={group}>
-          <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-3">{group}</p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-3 md:mb-2">{group}</p>
+          {/* Mobile cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:hidden">
             {items.map(({ key, label, Icon, color, externalUrl }) => (
-              <button
-                key={key}
+              <button key={key}
                 onClick={() => externalUrl ? window.open(externalUrl, '_blank') : setActiveModule(key)}
                 className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col items-start gap-3 text-left hover:shadow-md active:scale-95 transition-all">
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                     style={{ backgroundColor: color + '18' }}>
+                  style={{ backgroundColor: color + '18' }}>
                   <Icon size={20} style={{ color }} />
                 </div>
                 <div>
@@ -1930,9 +1967,28 @@ function StaffHomeModule({ visibleGroups, setActiveModule, pendingCount, staffNa
                   {key === 'inbox' && pendingCount > 0 && (
                     <p className="text-xs font-semibold mt-0.5" style={{ color: '#ef4444' }}>{pendingCount} รายการรอ</p>
                   )}
-                  {externalUrl && (
-                    <p className="text-[10px] text-gray-400 mt-0.5">เปิดใน Facebook ↗</p>
+                  {externalUrl && <p className="text-[10px] text-gray-400 mt-0.5">เปิดใน Facebook ↗</p>}
+                </div>
+              </button>
+            ))}
+          </div>
+          {/* PC formal grid */}
+          <div className="hidden md:grid grid-cols-3 gap-0 border border-gray-200 bg-white shadow-sm">
+            {items.map(({ key, label, Icon, color, externalUrl }, idx) => (
+              <button key={key}
+                onClick={() => externalUrl ? window.open(externalUrl, '_blank') : setActiveModule(key)}
+                className="flex items-center gap-3 px-5 py-4 text-left transition-colors border-r border-b border-gray-200 hover:bg-blue-50 last:border-r-0"
+                style={{ borderRight: (idx + 1) % 3 === 0 ? 'none' : undefined }}>
+                <div className="w-9 h-9 rounded flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: color + '20' }}>
+                  <Icon size={18} style={{ color }} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-gray-700 leading-tight">{label}</p>
+                  {key === 'inbox' && pendingCount > 0 && (
+                    <p className="text-[11px] font-bold mt-0.5" style={{ color: '#ef4444' }}>{pendingCount} รายการรอ</p>
                   )}
+                  {externalUrl && <p className="text-[10px] text-gray-400 mt-0.5">เปิดใน Facebook ↗</p>}
                 </div>
               </button>
             ))}
@@ -1988,48 +2044,52 @@ export default function StaffDashboard() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
+    <div className="flex h-screen overflow-hidden" style={{ backgroundColor: '#eef2f7' }}>
 
-      {/* ── Desktop Sidebar ────────────────────────────────────────────────── */}
-      <aside className="hidden md:flex flex-col w-60 bg-white border-r border-gray-100 shadow-sm shrink-0">
+      {/* ── Desktop Sidebar — government style ─────────────────────────────── */}
+      <aside className="hidden md:flex flex-col w-60 shrink-0 shadow-lg"
+        style={{ backgroundColor: '#1a3a5c', borderRight: '1px solid #12293f' }}>
 
         {/* Brand */}
-        <div className="px-5 py-5 border-b border-gray-100">
+        <div className="px-5 py-4 border-b" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
           <button onClick={() => navigate('/')} className="flex items-center gap-3 w-full text-left hover:opacity-80 transition-opacity">
-            <div className="w-9 h-9 rounded-xl overflow-hidden shrink-0"
-              style={!tenant?.logo_url ? { background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)' } : {}}>
+            <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 border-2"
+              style={{ borderColor: 'rgba(255,255,255,0.2)', background: !tenant?.logo_url ? 'linear-gradient(135deg, #3b82f6,#1d4ed8)' : undefined }}>
               {tenant?.logo_url
                 ? <img src={tenant.logo_url} alt="" className="w-full h-full object-cover" />
-                : <span className="flex items-center justify-center w-full h-full text-white text-base">🏛️</span>}
+                : <span className="flex items-center justify-center w-full h-full text-white text-lg">🏛️</span>}
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-bold text-gray-800 truncate">{tenant?.name ?? 'Staff Portal'}</p>
-              <p className="text-xs font-semibold text-blue-500">ระบบเจ้าหน้าที่</p>
+              <p className="text-sm font-bold text-white truncate leading-tight">{tenant?.name ?? 'Staff Portal'}</p>
+              <p className="text-[10px] mt-0.5" style={{ color: 'rgba(147,197,253,0.85)' }}>ระบบบริการอิเล็กทรอนิกส์</p>
             </div>
           </button>
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 px-3 py-3 overflow-y-auto">
+        <nav className="flex-1 px-3 py-3 overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
           <button onClick={() => setActiveModule('home')}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all mb-2"
-            style={activeModule === 'home' ? { backgroundColor: '#3b82f618', color: '#3b82f6' } : { color: '#94a3b8' }}>
-            <Home size={16} strokeWidth={activeModule === 'home' ? 2.2 : 1.5} />
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all mb-1"
+            style={activeModule === 'home'
+              ? { backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff' }
+              : { color: 'rgba(255,255,255,0.6)' }}>
+            <Home size={15} strokeWidth={activeModule === 'home' ? 2.2 : 1.5} />
             <span className="flex-1 text-left text-xs">หน้าหลัก</span>
           </button>
           {visibleGroups.map(({ group, items }) => (
             <div key={group} className="mb-4">
-              <p className="px-3 mb-1 text-[9px] font-bold uppercase tracking-widest text-gray-400">{group}</p>
+              <p className="px-3 mb-1 text-[9px] font-bold uppercase tracking-widest"
+                style={{ color: 'rgba(255,255,255,0.35)', letterSpacing: '0.12em' }}>{group}</p>
               <div className="space-y-0.5">
                 {items.map(({ key, label, Icon, color, externalUrl }) => {
                   const isActive = activeModule === key
                   const badge    = key === 'inbox' && pendingCount > 0 ? pendingCount : null
                   return (
                     <button key={key} onClick={() => externalUrl ? window.open(externalUrl, '_blank') : setActiveModule(key)}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all"
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all"
                       style={isActive
-                        ? { backgroundColor: color + '18', color }
-                        : { color: '#64748b' }}>
+                        ? { backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff' }
+                        : { color: 'rgba(255,255,255,0.6)' }}>
                       <Icon size={17} strokeWidth={isActive ? 2.2 : 1.5} />
                       <span className="flex-1 text-left">{label}</span>
                       {badge && (
@@ -2046,21 +2106,23 @@ export default function StaffDashboard() {
         </nav>
 
         {/* Profile + logout */}
-        <div className="px-3 py-4 border-t border-gray-100 space-y-1">
+        <div className="px-3 py-4 space-y-1 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
           {profile && (
             <div className="flex items-center gap-2.5 px-3 py-2">
-              <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-600 shrink-0">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                style={{ backgroundColor: 'rgba(255,255,255,0.18)', color: '#fff' }}>
                 {profile.full_name?.[0]?.toUpperCase() ?? '?'}
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-semibold text-gray-700 truncate">{profile.full_name ?? 'เจ้าหน้าที่'}</p>
-                <p className="text-[10px] text-gray-400">{ROLE_TH[profile.role] ?? profile.role}</p>
+                <p className="text-xs font-semibold truncate" style={{ color: '#fff' }}>{profile.full_name ?? 'เจ้าหน้าที่'}</p>
+                <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.45)' }}>{ROLE_TH[profile.role] ?? profile.role}</p>
               </div>
             </div>
           )}
           <button onClick={handleLogout}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-gray-500 hover:bg-gray-100 transition-colors">
-            <LogOut size={16} /> ออกจากระบบ
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors hover:bg-white/10"
+            style={{ color: 'rgba(255,255,255,0.55)' }}>
+            <LogOut size={15} /> ออกจากระบบ
           </button>
         </div>
       </aside>
@@ -2085,16 +2147,39 @@ export default function StaffDashboard() {
           </button>
         </header>
 
-        {/* PC page header */}
-        <div className="hidden md:flex items-center justify-between px-6 py-4 bg-white border-b border-gray-100 shrink-0">
-          <div>
-            <h1 className="text-base font-bold text-gray-800">
-              {activeModule === 'home' ? 'หน้าหลัก' : visibleModules.find(m => m.key === activeModule)?.label}
-            </h1>
+        {/* PC header — government style */}
+        <div className="hidden md:block shrink-0">
+          {/* Breadcrumb strip */}
+          <div className="px-6 py-1.5 flex items-center justify-between border-b"
+            style={{ backgroundColor: '#dce8f5', borderColor: '#b8cfea' }}>
+            <p className="text-[11px] text-gray-600">
+              ระบบบริการอิเล็กทรอนิกส์ › {tenant?.name ?? ''} ›{' '}
+              <span className="font-semibold text-gray-700">
+                {activeModule === 'home' ? 'หน้าหลัก' : visibleModules.find(m => m.key === activeModule)?.label ?? activeModule}
+              </span>
+            </p>
+            <p className="text-[11px] text-gray-500">
+              {new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+            </p>
+          </div>
+          {/* Title bar */}
+          <div className="px-6 py-3 flex items-center justify-between bg-white border-b border-gray-200 shadow-sm">
+            <div>
+              <h1 className="text-base font-bold text-gray-800">
+                {activeModule === 'home' ? 'หน้าหลัก' : visibleModules.find(m => m.key === activeModule)?.label}
+              </h1>
+              <p className="text-[11px] text-gray-400 mt-0.5">{tenant?.name} — ระบบบริการอิเล็กทรอนิกส์สำหรับเจ้าหน้าที่</p>
+            </div>
             {profile && (
-              <p className="text-xs text-gray-400 mt-0.5">
-                สวัสดี {profile.full_name ?? 'เจ้าหน้าที่'}
-              </p>
+              <div className="flex items-center gap-2.5">
+                <div className="text-right">
+                  <p className="text-xs font-semibold text-gray-700">{profile.full_name}</p>
+                  <p className="text-[10px] text-gray-400">{ROLE_TH[profile.role] ?? profile.role}</p>
+                </div>
+                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-700">
+                  {profile.full_name?.[0]?.toUpperCase() ?? '?'}
+                </div>
+              </div>
             )}
           </div>
         </div>
