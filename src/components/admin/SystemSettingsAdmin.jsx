@@ -47,10 +47,10 @@ export default function SystemSettingsAdmin({ tenant, onUpdateTenant }) {
       const ext = file.name.split('.').pop()
       const path = `municipality-qr/${tenant.slug}.${ext}`
       const { error: upErr } = await supabase.storage
-        .from('avatars')
+        .from('complaint-attachments')
         .upload(path, file, { upsert: true })
       if (upErr) throw upErr
-      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path)
+      const { data: { publicUrl } } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
       const { error: dbErr } = await supabase
         .from('municipalities')
         .update({ qr_code_url: publicUrl })
