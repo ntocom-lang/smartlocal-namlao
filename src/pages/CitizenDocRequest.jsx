@@ -189,8 +189,9 @@ export default function CitizenDocRequest() {
   if (showPayment && selected) {
     const qrPayload = generatePromptPayPayload(tenant.promptpay_id, feeAmount)
     return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shadow-sm">
+      <div className="min-h-screen" style={{ backgroundColor: '#eef2f7' }}>
+        {/* Mobile header */}
+        <div className="md:hidden sticky top-0 z-10 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shadow-sm">
           <button onClick={() => setShowPayment(false)} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500">
             <ArrowLeft size={18} />
           </button>
@@ -200,7 +201,30 @@ export default function CitizenDocRequest() {
           </div>
         </div>
 
-        <div className="max-w-lg mx-auto px-4 py-5 pb-12 space-y-4">
+        {/* PC header */}
+        <div className="hidden md:block">
+          <div className="px-8 py-1.5 flex items-center justify-between border-b"
+            style={{ backgroundColor: '#dce8f5', borderColor: '#b8cfea' }}>
+            <p className="text-[11px] text-gray-600">
+              ระบบบริการอิเล็กทรอนิกส์ › {tenant?.name ?? ''} › ยื่นคำขอเอกสาร ›{' '}
+              <span className="font-semibold text-gray-700">ชำระค่าธรรมเนียม</span>
+            </p>
+            <p className="text-[11px] text-gray-500">
+              {new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+            </p>
+          </div>
+          <div className="px-8 py-3 flex items-center gap-3 bg-white border-b border-gray-200 shadow-sm">
+            <button onClick={() => setShowPayment(false)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
+              <ArrowLeft size={16} />
+            </button>
+            <div>
+              <h1 className="text-base font-bold text-gray-800">ชำระค่าธรรมเนียม</h1>
+              <p className="text-[11px] text-gray-400 mt-0.5">สแกน QR แล้วอัปโหลดสลิปยืนยัน</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="max-w-lg md:max-w-2xl mx-auto px-4 md:px-8 py-5 md:py-6 pb-12 space-y-4">
 
           {/* Amount banner */}
           <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-center gap-4">
@@ -281,7 +305,7 @@ export default function CitizenDocRequest() {
   // ─── Identity Verification Gate ───────────────────────────────────────────
   if (needsIdCard) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+      <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: '#eef2f7' }}>
         <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-7 w-full max-w-sm">
           <div className="flex flex-col items-center text-center gap-3 mb-6">
             <div className="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center">
@@ -333,7 +357,7 @@ export default function CitizenDocRequest() {
   // ─── Success screen ────────────────────────────────────────────────────────
   if (done) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+      <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: '#eef2f7' }}>
         <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8 w-full max-w-sm text-center">
           <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-4">
             <CheckCircle2 size={32} className="text-emerald-500" />
@@ -366,8 +390,9 @@ export default function CitizenDocRequest() {
   // ─── Step 1: Doc type picker ───────────────────────────────────────────────
   if (!selected) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shadow-sm">
+      <div className="min-h-screen" style={{ backgroundColor: '#eef2f7' }}>
+        {/* Mobile header */}
+        <div className="md:hidden sticky top-0 z-10 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shadow-sm">
           <button onClick={() => navigate(-1)} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500 transition-colors">
             <ArrowLeft size={18} />
           </button>
@@ -377,7 +402,25 @@ export default function CitizenDocRequest() {
           </div>
         </div>
 
-        <div className="max-w-lg mx-auto px-4 py-5 pb-12 space-y-4">
+        {/* PC header */}
+        <div className="hidden md:block">
+          <div className="px-8 py-1.5 flex items-center justify-between border-b"
+            style={{ backgroundColor: '#dce8f5', borderColor: '#b8cfea' }}>
+            <p className="text-[11px] text-gray-600">
+              ระบบบริการอิเล็กทรอนิกส์ › {tenant?.name ?? ''} ›{' '}
+              <span className="font-semibold text-gray-700">ยื่นคำขอเอกสาร</span>
+            </p>
+            <p className="text-[11px] text-gray-500">
+              {new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+            </p>
+          </div>
+          <div className="px-8 py-3 bg-white border-b border-gray-200 shadow-sm">
+            <h1 className="text-base font-bold text-gray-800">ยื่นคำขอเอกสาร</h1>
+            <p className="text-[11px] text-gray-400 mt-0.5">{tenant?.name} — เลือกประเภทเอกสารที่ต้องการ</p>
+          </div>
+        </div>
+
+        <div className="max-w-lg md:max-w-4xl mx-auto px-4 md:px-8 py-5 md:py-6 pb-12 space-y-4">
 
           {!session && (
             <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex items-start gap-3">
@@ -395,7 +438,8 @@ export default function CitizenDocRequest() {
 
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-1">เลือกเอกสารที่ต้องการ</p>
 
-          <div className="space-y-2.5">
+          {/* Mobile: vertical list | PC: 2-column grid */}
+          <div className="space-y-2.5 md:space-y-0 md:grid md:grid-cols-2 md:gap-3">
             {DOC_TYPES.map(d => (
               <button key={d.value} onClick={() => setSelected(d)}
                 className="w-full bg-white rounded-2xl border shadow-sm p-4 text-left flex items-center gap-4 active:scale-[0.98] hover:shadow-md transition-all"
@@ -419,8 +463,9 @@ export default function CitizenDocRequest() {
 
   // ─── Step 2: Form ──────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shadow-sm">
+    <div className="min-h-screen" style={{ backgroundColor: '#eef2f7' }}>
+      {/* Mobile header */}
+      <div className="md:hidden sticky top-0 z-10 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shadow-sm">
         <button onClick={() => setSelected(null)} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500 transition-colors">
           <ArrowLeft size={18} />
         </button>
@@ -433,85 +478,154 @@ export default function CitizenDocRequest() {
         </div>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 py-5 pb-12 space-y-4">
-
-        {/* Selected doc badge */}
-        <div className="flex items-center gap-3 rounded-2xl px-4 py-3 border"
-          style={{ backgroundColor: selected.bg, borderColor: selected.border }}>
-          <span className="text-2xl">{selected.emoji}</span>
+      {/* PC header */}
+      <div className="hidden md:block">
+        <div className="px-8 py-1.5 flex items-center justify-between border-b"
+          style={{ backgroundColor: '#dce8f5', borderColor: '#b8cfea' }}>
+          <p className="text-[11px] text-gray-600">
+            ระบบบริการอิเล็กทรอนิกส์ › {tenant?.name ?? ''} › ยื่นคำขอเอกสาร ›{' '}
+            <span className="font-semibold text-gray-700">{selected.label}</span>
+          </p>
+          <p className="text-[11px] text-gray-500">
+            {new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+          </p>
+        </div>
+        <div className="px-8 py-3 flex items-center gap-3 bg-white border-b border-gray-200 shadow-sm">
+          <button onClick={() => setSelected(null)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
+            <ArrowLeft size={16} />
+          </button>
           <div>
-            <p className="text-sm font-bold" style={{ color: selected.color }}>{selected.label}</p>
-            <p className="text-xs mt-0.5" style={{ color: selected.color, opacity: 0.7 }}>{selected.desc}</p>
+            <h1 className="text-base font-bold text-gray-800">{selected.label}</h1>
+            <p className="text-[11px] text-gray-400 mt-0.5">กรอกข้อมูลผู้ยื่นคำขอ</p>
           </div>
         </div>
+      </div>
 
-        {/* Form */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3.5">
-          <p className="text-sm font-bold text-gray-700">ข้อมูลผู้ยื่นคำขอ</p>
+      <div className="max-w-lg md:max-w-4xl mx-auto px-4 md:px-8 py-5 md:py-6 pb-12 space-y-4 md:grid md:grid-cols-[1fr_340px] md:gap-6 md:space-y-0 md:items-start">
 
-          {/* ชื่อ-สกุล */}
-          <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">ชื่อ-สกุล *</label>
-            <input type="text" value={form.requester_name} onChange={set('requester_name')}
-              placeholder="นายสมชาย ใจดี" className={inputCls} />
+        {/* Left column — form */}
+        <div className="space-y-4">
+          {/* Selected doc badge */}
+          <div className="flex items-center gap-3 rounded-2xl px-4 py-3 border"
+            style={{ backgroundColor: selected.bg, borderColor: selected.border }}>
+            <span className="text-2xl">{selected.emoji}</span>
+            <div>
+              <p className="text-sm font-bold" style={{ color: selected.color }}>{selected.label}</p>
+              <p className="text-xs mt-0.5" style={{ color: selected.color, opacity: 0.7 }}>{selected.desc}</p>
+            </div>
           </div>
 
-          {/* เลขบัตรประชาชน */}
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <label className="text-xs font-semibold text-gray-500">เลขบัตรประจำตัวประชาชน</label>
-              {session && form.requester_id_card && (
-                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full">
-                  <CheckCircle2 size={9} /> ยืนยันแล้ว
-                </span>
+          {/* Form */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3.5">
+            <p className="text-sm font-bold text-gray-700">ข้อมูลผู้ยื่นคำขอ</p>
+
+            {/* ชื่อ-สกุล */}
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1 block">ชื่อ-สกุล *</label>
+              <input type="text" value={form.requester_name} onChange={set('requester_name')}
+                placeholder="นายสมชาย ใจดี" className={inputCls} />
+            </div>
+
+            {/* เลขบัตรประชาชน */}
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <label className="text-xs font-semibold text-gray-500">เลขบัตรประจำตัวประชาชน</label>
+                {session && form.requester_id_card && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full">
+                    <CheckCircle2 size={9} /> ยืนยันแล้ว
+                  </span>
+                )}
+              </div>
+              {session && form.requester_id_card ? (
+                <div className={inputCls + ' bg-gray-50 text-gray-500 cursor-default select-none tracking-widest'}>
+                  {form.requester_id_card.replace(/(\d{1})(\d{4})(\d{5})(\d{2})(\d{1})/, '$1-$2-$3-$4-$5')}
+                </div>
+              ) : (
+                <input type="text" inputMode="numeric"
+                  value={form.requester_id_card}
+                  onChange={e => setForm(p => ({ ...p, requester_id_card: e.target.value.replace(/\D/g, '').slice(0, 13) }))}
+                  placeholder="1-xxxx-xxxxx-xx-x" maxLength={13} className={inputCls} />
               )}
             </div>
-            {session && form.requester_id_card ? (
-              <div className={inputCls + ' bg-gray-50 text-gray-500 cursor-default select-none tracking-widest'}>
-                {form.requester_id_card.replace(/(\d{1})(\d{4})(\d{5})(\d{2})(\d{1})/, '$1-$2-$3-$4-$5')}
-              </div>
-            ) : (
-              <input type="text" inputMode="numeric"
-                value={form.requester_id_card}
-                onChange={e => setForm(p => ({ ...p, requester_id_card: e.target.value.replace(/\D/g, '').slice(0, 13) }))}
-                placeholder="1-xxxx-xxxxx-xx-x" maxLength={13} className={inputCls} />
-            )}
+
+            {/* เบอร์โทร */}
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1 block">เบอร์โทรศัพท์ *</label>
+              <input type="tel" inputMode="numeric" value={form.requester_phone} onChange={set('requester_phone')}
+                placeholder="08x-xxx-xxxx" className={inputCls} />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1 block">ที่อยู่ปัจจุบัน</label>
+              <textarea value={form.requester_address} onChange={set('requester_address')} rows={2}
+                placeholder="บ้านเลขที่ หมู่ที่ ตำบล อำเภอ จังหวัด..."
+                className={inputCls + ' resize-none'} />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1 block">วัตถุประสงค์</label>
+              <input type="text" value={form.purpose} onChange={set('purpose')}
+                placeholder="เช่น เพื่อยื่นกู้ธนาคาร, สมัครงาน, เรียนต่อ"
+                className={inputCls} />
+            </div>
           </div>
 
-          {/* เบอร์โทร */}
-          <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">เบอร์โทรศัพท์ *</label>
-            <input type="tel" inputMode="numeric" value={form.requester_phone} onChange={set('requester_phone')}
-              placeholder="08x-xxx-xxxx" className={inputCls} />
-          </div>
+          {/* Submit */}
+          <button onClick={handleFormNext}
+            disabled={saving || !form.requester_name.trim() || !form.requester_phone.trim()}
+            className="w-full py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-all"
+            style={{ backgroundColor: 'var(--color-primary)' }}>
+            {saving ? <Loader2 size={18} className="animate-spin" /> : <FileText size={18} />}
+            {saving ? 'กำลังส่งคำขอ...' : 'ยื่นคำขอเอกสาร'}
+          </button>
 
-          <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">ที่อยู่ปัจจุบัน</label>
-            <textarea value={form.requester_address} onChange={set('requester_address')} rows={2}
-              placeholder="บ้านเลขที่ หมู่ที่ ตำบล อำเภอ จังหวัด..."
-              className={inputCls + ' resize-none'} />
-          </div>
-
-          <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">วัตถุประสงค์</label>
-            <input type="text" value={form.purpose} onChange={set('purpose')}
-              placeholder="เช่น เพื่อยื่นกู้ธนาคาร, สมัครงาน, เรียนต่อ"
-              className={inputCls} />
-          </div>
+          <p className="text-xs text-gray-400 text-center leading-relaxed">
+            เจ้าหน้าที่จะดำเนินการและแจ้งผลทางโทรศัพท์<br />ภายใน 1–3 วันทำการ
+          </p>
         </div>
 
-        {/* Submit */}
-        <button onClick={handleFormNext}
-          disabled={saving || !form.requester_name.trim() || !form.requester_phone.trim()}
-          className="w-full py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-all"
-          style={{ backgroundColor: 'var(--color-primary)' }}>
-          {saving ? <Loader2 size={18} className="animate-spin" /> : <FileText size={18} />}
-          {saving ? 'กำลังส่งคำขอ...' : 'ยื่นคำขอเอกสาร'}
-        </button>
+        {/* Right column — info panel (PC only) */}
+        <div className="hidden md:flex flex-col gap-4">
+          {/* Fee info */}
+          {feeAmount > 0 ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-2">
+              <p className="text-xs font-bold text-amber-700 uppercase tracking-wide">ค่าธรรมเนียม</p>
+              <p className="text-2xl font-bold text-amber-800">{feeAmount.toLocaleString()} <span className="text-base font-normal">บาท</span></p>
+              <p className="text-xs text-amber-600">ชำระผ่าน PromptPay หลังยื่นคำขอ</p>
+            </div>
+          ) : (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
+              <p className="text-xs font-bold text-emerald-700 uppercase tracking-wide mb-1">ค่าธรรมเนียม</p>
+              <p className="text-sm font-semibold text-emerald-700">ไม่มีค่าธรรมเนียม</p>
+            </div>
+          )}
 
-        <p className="text-xs text-gray-400 text-center leading-relaxed">
-          เจ้าหน้าที่จะดำเนินการและแจ้งผลทางโทรศัพท์<br />ภายใน 1–3 วันทำการ
-        </p>
+          {/* Process steps */}
+          <div className="bg-white border border-gray-200 rounded-2xl p-4 space-y-3">
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">ขั้นตอนการดำเนินการ</p>
+            {[
+              { step: '1', label: 'ยื่นคำขอ', desc: 'กรอกแบบฟอร์มและส่งเอกสาร' },
+              { step: '2', label: 'เจ้าหน้าที่รับเรื่อง', desc: 'ตรวจสอบและดำเนินการ' },
+              { step: '3', label: 'รับเอกสาร', desc: 'ดาวน์โหลดหรือรับที่สำนักงาน' },
+            ].map(({ step, label, desc }) => (
+              <div key={step} className="flex items-start gap-3">
+                <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0 mt-0.5"
+                  style={{ backgroundColor: '#1a3a5c' }}>{step}</div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-700">{label}</p>
+                  <p className="text-xs text-gray-400">{desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Timeline note */}
+          <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4">
+            <p className="text-xs font-bold text-blue-700 mb-1">ระยะเวลาดำเนินการ</p>
+            <p className="text-sm font-semibold text-blue-800">1–3 วันทำการ</p>
+            <p className="text-xs text-blue-500 mt-1">เจ้าหน้าที่จะติดต่อกลับผ่านเบอร์โทรที่ท่านให้ไว้</p>
+          </div>
+        </div>
       </div>
     </div>
   )

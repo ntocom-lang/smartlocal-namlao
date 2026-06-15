@@ -4495,6 +4495,28 @@ function TourismManager({ tenant }) {
 }
 
 // ─── Main page ─────────────────────────────────────────────────────────────────
+const PAGE_LABELS = {
+  complaints: 'รายการคำร้อง',
+  staff: 'รูปผู้บริหาร',
+  tourism: 'เที่ยว กิน พัก ชอบ',
+  'tourism-reviews': 'รีวิวสถานที่',
+  events: 'กิจกรรม',
+  'doc-requests': 'คำขอเอกสาร',
+  report: 'รายงานสรุป',
+  'business-register': 'ลงทะเบียนธุรกิจ',
+  categories: 'ประเภทคำร้อง',
+  'fee-settings': 'ค่าธรรมเนียม',
+  assignments: 'ผู้รับผิดชอบ',
+  emergency: 'สายด่วน',
+  locations: 'สถานที่เกิดเหตุ',
+  'system-settings': 'ตั้งค่าระบบ',
+  users: 'จัดการผู้ใช้',
+  modules: 'จัดการโมดูล',
+  map: 'แผนที่คำร้อง',
+  'civil-project': 'โครงการโยธา',
+  'civil-report': 'รายงานโยธา',
+}
+
 export default function AdminDashboard() {
   const { tenant } = useTenant()
   const navigate = useNavigate()
@@ -4741,18 +4763,19 @@ export default function AdminDashboard() {
 
 
   return (
-    <div className="md:flex md:min-h-screen">
+    <div className="md:flex md:min-h-screen" style={{ backgroundColor: '#eef2f7' }}>
 
-      {/* ─── Desktop Sidebar ─── */}
-      <aside className="hidden md:flex flex-col w-56 shrink-0 bg-white border-r border-gray-200 sticky top-0 self-start h-screen overflow-y-auto">
-        {/* Tenant name */}
-        <div className="px-4 py-5 border-b border-gray-100 shrink-0">
-          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">แผงควบคุม</p>
-          <p className="font-bold text-gray-800 text-sm leading-snug">{tenant?.name}</p>
+      {/* ─── Desktop Sidebar — government style ─── */}
+      <aside className="hidden md:flex flex-col w-60 shrink-0 sticky top-0 self-start h-screen overflow-y-auto shadow-lg"
+        style={{ backgroundColor: '#1a3a5c', borderRight: '1px solid #12293f' }}>
+        {/* Brand */}
+        <div className="px-4 py-4 border-b shrink-0" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+          <p className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: 'rgba(255,255,255,0.38)' }}>แผงควบคุม Admin</p>
+          <p className="font-bold text-white text-sm leading-snug">{tenant?.name}</p>
         </div>
 
         {/* Nav items */}
-        <nav className="flex-1 px-2 py-3 overflow-y-auto">
+        <nav className="flex-1 px-2 py-3 overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
           {[
             {
               group: null,
@@ -4794,36 +4817,43 @@ export default function AdminDashboard() {
             return (
               <div key={group ?? '_top'} className="mb-3">
                 {group && (
-                  <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-3 pt-1 pb-1.5">
+                  <p className="text-[10px] font-bold uppercase tracking-widest px-3 pt-1 pb-1.5"
+                    style={{ color: 'rgba(255,255,255,0.35)' }}>
                     {group}
                   </p>
                 )}
                 <div className="space-y-0.5">
                   {visible.map(({ key, label, Icon, color, isLink, isExternal, href }) => {
                     const isActive = activePage === key
-                    const baseCls = 'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors'
+                    const baseCls = 'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors'
                     if (isExternal) return (
                       <a key={key} href={href} target="_blank" rel="noopener noreferrer"
-                        className={`${baseCls} font-medium text-gray-400 hover:bg-gray-50 hover:text-gray-600`}>
-                        <Icon size={17} />
+                        className={`${baseCls} font-medium hover:bg-white/10`}
+                        style={{ color: 'rgba(255,255,255,0.55)' }}>
+                        <Icon size={16} />
                         <span className="flex-1 text-left">{label}</span>
-                        <ExternalLink size={12} className="text-gray-300" />
+                        <ExternalLink size={11} style={{ color: 'rgba(255,255,255,0.3)' }} />
                       </a>
                     )
                     if (isLink) return (
                       <button key={key} onClick={() => navigate('/')}
-                        className={`${baseCls} font-medium text-gray-400 hover:bg-gray-50 hover:text-gray-600`}>
-                        <Icon size={17} />
+                        className={`${baseCls} font-medium hover:bg-white/10`}
+                        style={{ color: 'rgba(255,255,255,0.55)' }}>
+                        <Icon size={16} />
                         {label}
                       </button>
                     )
                     return (
                       <button key={key} onClick={() => setActivePage(key)}
-                        className={`${baseCls} ${isActive ? 'font-semibold bg-gray-50' : 'font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700'}`}
-                        style={isActive ? { color } : {}}>
-                        <Icon size={17} style={isActive ? { color } : { color: '#9ca3af' }} />
+                        className={`${baseCls} font-semibold`}
+                        style={isActive
+                          ? { backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff' }
+                          : { color: 'rgba(255,255,255,0.6)' }}
+                        onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)' }}
+                        onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = '' }}>
+                        <Icon size={16} style={isActive ? { color: '#fff' } : { color: 'rgba(255,255,255,0.55)' }} />
                         <span className="flex-1 text-left">{label}</span>
-                        {isActive && <span className="w-1.5 h-5 rounded-full shrink-0" style={{ backgroundColor: color }} />}
+                        {isActive && <span className="w-1 h-4 rounded-full shrink-0" style={{ backgroundColor: 'rgba(255,255,255,0.6)' }} />}
                       </button>
                     )
                   })}
@@ -4834,10 +4864,11 @@ export default function AdminDashboard() {
         </nav>
 
         {/* Logout */}
-        <div className="px-2 py-3 border-t border-gray-100 shrink-0">
+        <div className="px-2 py-3 shrink-0 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
           <button onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors">
-            <LogOut size={17} />
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors hover:bg-white/10"
+            style={{ color: 'rgba(255,255,255,0.55)' }}>
+            <LogOut size={16} />
             ออกจากระบบ
           </button>
         </div>
@@ -4859,8 +4890,45 @@ export default function AdminDashboard() {
         />
       )}
 
-      {/* Page header */}
-      <div className="flex items-center justify-between">
+      {/* PC header — government style */}
+      <div className="hidden md:block shrink-0 -mx-8 -mt-6 mb-6">
+        {/* Breadcrumb strip */}
+        <div className="px-8 py-1.5 flex items-center justify-between border-b"
+          style={{ backgroundColor: '#dce8f5', borderColor: '#b8cfea' }}>
+          <p className="text-[11px] text-gray-600">
+            ระบบบริการอิเล็กทรอนิกส์ › {tenant?.name ?? ''} ›{' '}
+            <span className="font-semibold text-gray-700">
+              {PAGE_LABELS[activePage] ?? activePage}
+            </span>
+          </p>
+          <p className="text-[11px] text-gray-500">
+            {new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+          </p>
+        </div>
+        {/* Title bar */}
+        <div className="px-8 py-3 flex items-center justify-between bg-white border-b border-gray-200 shadow-sm">
+          <div>
+            <h1 className="text-base font-bold text-gray-800">{PAGE_LABELS[activePage] ?? 'แผงควบคุม'}</h1>
+            <p className="text-[11px] text-gray-400 mt-0.5">{tenant?.name} — แผงควบคุมผู้ดูแลระบบ</p>
+          </div>
+          <div className="flex items-center gap-3">
+            {activePage === 'complaints' && (
+              <button onClick={fetchComplaints} disabled={loading}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 bg-white hover:bg-gray-50 transition-colors disabled:opacity-50">
+                <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+                รีเฟรช
+              </button>
+            )}
+            <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
+              style={{ backgroundColor: '#1a3a5c' }}>
+              A
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Page header — mobile only */}
+      <div className="md:hidden flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-800">แผงควบคุมผู้ดูแลระบบ</h1>
           <p className="text-sm text-gray-400 md:hidden">{tenant?.name}</p>

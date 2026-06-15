@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, FileText, Clock, CheckCircle2, XCircle,
   RefreshCw, Loader2, ChevronRight, X, Search, Download,
-  CreditCard, Upload, ImageIcon, Share2, Copy, Check,
+  CreditCard, Upload, ImageIcon, Share2, Copy, Check, Plus,
 } from 'lucide-react'
 import QRCode from 'react-qr-code'
 import { supabase } from '../lib/supabase'
@@ -441,10 +441,10 @@ export default function MyDocRequests() {
   if (session === undefined) return null
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen" style={{ backgroundColor: '#eef2f7' }}>
 
-      {/* Header */}
-      <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shadow-sm">
+      {/* Mobile header */}
+      <div className="md:hidden sticky top-0 z-10 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shadow-sm">
         <button onClick={() => navigate(-1)} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500 transition-colors">
           <ArrowLeft size={18} />
         </button>
@@ -454,7 +454,32 @@ export default function MyDocRequests() {
         </div>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 py-5 pb-12 space-y-5">
+      {/* PC header — government breadcrumb */}
+      <div className="hidden md:block">
+        <div className="px-8 py-1.5 flex items-center justify-between border-b"
+          style={{ backgroundColor: '#dce8f5', borderColor: '#b8cfea' }}>
+          <p className="text-[11px] text-gray-600">
+            ระบบบริการอิเล็กทรอนิกส์ › {tenant?.name ?? ''} ›{' '}
+            <span className="font-semibold text-gray-700">เอกสารของฉัน</span>
+          </p>
+          <p className="text-[11px] text-gray-500">
+            {new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+          </p>
+        </div>
+        <div className="px-8 py-3 flex items-center justify-between bg-white border-b border-gray-200 shadow-sm">
+          <div>
+            <h1 className="text-base font-bold text-gray-800">เอกสารของฉัน</h1>
+            <p className="text-[11px] text-gray-400 mt-0.5">{tenant?.name} — คำขอเอกสารและใบรับรองราชการ</p>
+          </div>
+          <button onClick={() => navigate('/doc-request')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
+            style={{ backgroundColor: '#1a3a5c' }}>
+            <Plus size={13} /> ยื่นคำขอใหม่
+          </button>
+        </div>
+      </div>
+
+      <div className="max-w-lg md:max-w-5xl mx-auto px-4 md:px-8 py-5 md:py-6 pb-12 space-y-5">
 
         {session ? (
           /* ── Logged in: own requests ── */
@@ -475,12 +500,66 @@ export default function MyDocRequests() {
                 </button>
               </div>
             ) : (
-              <div className="space-y-2.5">
-                <p className="text-xs text-gray-400 font-semibold px-1">{requests.length} คำขอ</p>
-                {requests.map(req => (
-                  <DocCard key={req.id} req={req} onClick={() => setSelected(req)} />
-                ))}
-              </div>
+              <>
+                {/* Mobile: cards */}
+                <div className="md:hidden space-y-2.5">
+                  <p className="text-xs text-gray-400 font-semibold px-1">{requests.length} คำขอ</p>
+                  {requests.map(req => (
+                    <DocCard key={req.id} req={req} onClick={() => setSelected(req)} />
+                  ))}
+                </div>
+
+                {/* PC: table */}
+                <div className="hidden md:block bg-white border border-gray-200 overflow-hidden shadow-sm">
+                  <div className="px-5 py-3 flex items-center justify-between border-b border-gray-200"
+                    style={{ backgroundColor: '#f5f8fc' }}>
+                    <p className="text-xs font-semibold text-gray-600">รายการคำขอเอกสารทั้งหมด</p>
+                    <p className="text-xs text-gray-400">{requests.length} รายการ</p>
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr style={{ backgroundColor: '#1a3a5c' }}>
+                        <th className="text-center text-white/80 text-xs font-semibold px-4 py-2.5 w-10 border-r border-white/10">ที่</th>
+                        <th className="text-left text-white/80 text-xs font-semibold px-4 py-2.5 border-r border-white/10">ประเภทเอกสาร</th>
+                        <th className="text-center text-white/80 text-xs font-semibold px-4 py-2.5 border-r border-white/10">สถานะ</th>
+                        <th className="text-center text-white/80 text-xs font-semibold px-4 py-2.5 border-r border-white/10">การชำระเงิน</th>
+                        <th className="text-left text-white/80 text-xs font-semibold px-4 py-2.5 border-r border-white/10">วันที่ยื่น</th>
+                        <th className="text-center text-white/80 text-xs font-semibold px-4 py-2.5">เลขอ้างอิง</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {requests.map((req, i) => {
+                        const docLabel = DOC_TYPES[req.document_type] ?? req.document_type
+                        const awaitingFee = SET_FEE_TYPES.includes(req.document_type) && req.payment_status === 'not_required'
+                        const payBadge = awaitingFee
+                          ? { label: 'รอแจ้งยอด',  cls: 'text-amber-700 bg-amber-50' }
+                          : req.payment_status === 'pending'  ? { label: 'รอชำระ',   cls: 'text-amber-700 bg-amber-50' }
+                          : req.payment_status === 'uploaded' ? { label: 'รอยืนยัน', cls: 'text-orange-700 bg-orange-50' }
+                          : req.payment_status === 'verified' ? { label: 'ชำระแล้ว', cls: 'text-emerald-700 bg-emerald-50' }
+                          : req.payment_status === 'waived'   ? { label: 'ยกเว้น',   cls: 'text-gray-500 bg-gray-100' }
+                          : null
+                        return (
+                          <tr key={req.id}
+                            className="cursor-pointer transition-colors hover:bg-[#dbeafe]"
+                            style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#f5f8fc' }}
+                            onClick={() => setSelected(req)}>
+                            <td className="px-4 py-3 text-center text-xs text-gray-400 border-r border-gray-100">{i + 1}</td>
+                            <td className="px-4 py-3 font-medium text-gray-800 border-r border-gray-100">{docLabel}</td>
+                            <td className="px-4 py-3 text-center border-r border-gray-100"><StatusBadge status={req.status} /></td>
+                            <td className="px-4 py-3 text-center border-r border-gray-100">
+                              {payBadge
+                                ? <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${payBadge.cls}`}>{payBadge.label}</span>
+                                : <span className="text-xs text-gray-300">—</span>}
+                            </td>
+                            <td className="px-4 py-3 text-xs text-gray-500 border-r border-gray-100">{dateTH(req.created_at)}</td>
+                            <td className="px-4 py-3 text-center text-xs font-mono font-bold text-gray-600">{req.id.slice(0,8).toUpperCase()}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </>
         ) : (
