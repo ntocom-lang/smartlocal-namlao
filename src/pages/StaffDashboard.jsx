@@ -165,12 +165,16 @@ function TaskCard({ req, onClick }) {
 
 // ─── Task Detail Sheet ────────────────────────────────────────────────────────
 
+const SET_FEE_TYPES = ['tax_notice', 'waste_collection']
+
 function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpdate }) {
   const [staffNote, setStaffNote]         = useState(req.staff_notes || '')
   const [confirmReject, setConfirmReject] = useState(false)
   const [rejectReason, setRejectReason]   = useState('')
   const [payActing, setPayActing]         = useState(false)
   const [slipSignedUrl, setSlipSignedUrl] = useState(null)
+  const [feeInput, setFeeInput]           = useState('')
+  const [settingFee, setSettingFee]       = useState(false)
 
   useEffect(() => {
     if (!req.payment_slip_url) return
@@ -188,21 +192,66 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpda
     return () => { cancelled = true }
   }, [req.payment_slip_url])
 
-  const docType  = DOC_TYPES.find(d => d.value === req.document_type)
-  const isActive = req.status === 'pending' || req.status === 'processing'
+  const docType     = DOC_TYPES.find(d => d.value === req.document_type)
+  const isActive    = req.status === 'pending' || req.status === 'processing'
+  const hasPayment  = req.payment_status && req.payment_status !== 'not_required'
+  const needsFeeSet = SET_FEE_TYPES.includes(req.document_type) && req.payment_status === 'not_required'
 
-  const hasPayment = req.payment_status && req.payment_status !== 'not_required'
+  async function handleSetFee() {
+    const amount = parseInt(feeInput)
+    if (!amount || amount <= 0) { alert('กรุณาระบุยอดที่ถูกต้อง'); return }
+    setSettingFee(true)
+    try {
+      const { error } = await supabase.from('document_requests')
+        .update({ fee_amount: amount, payment_status: 'pending' })
+        .eq('id', req.id)
+      if (error) throw error
+      onPaymentUpdate?.()
+      onClose()
+    } catch (err) {
+      alert('เกิดข้อผิดพลาด: ' + err.message)
+    } finally {
+      setSettingFee(false)
+    }
+  }
 
   async function handlePaymentVerify(action) {
     setPayActing(true)
     try {
-      const updates = action === 'verify'
-        ? { payment_status: 'verified', payment_verified_at: new Date().toISOString() }
-        : { payment_status: 'waived',   payment_verified_at: new Date().toISOString() }
-      const { error } = await supabase.from('document_requests')
-        .update(updates).eq('id', req.id)
-      if (error) throw error
+      const now = new Date().toISOString()
+
+      if (SET_FEE_TYPES.includes(req.document_type)) {
+        // Auto-generate receipt + mark completed in one step
+        const docDate = now.slice(0, 10)
+        const html = buildDocHTML({ req, tenant, docDate })
+        const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+        const path = `${tenant?.id ?? 'org'}/${req.id}.html`
+        let document_url = null
+        const { error: upErr } = await supabase.storage
+          .from('document-certs').upload(path, blob, { upsert: true, contentType: 'text/html' })
+        if (!upErr) {
+          const { data: urlData } = supabase.storage.from('document-certs').getPublicUrl(path)
+          document_url = urlData?.publicUrl ?? null
+        }
+        const { error } = await supabase.from('document_requests').update({
+          payment_status:      action === 'verify' ? 'verified' : 'waived',
+          payment_verified_at: now,
+          status:              'completed',
+          issued_at:           now,
+          ...(document_url ? { document_url } : {}),
+        }).eq('id', req.id)
+        if (error) throw error
+      } else {
+        const updates = action === 'verify'
+          ? { payment_status: 'verified', payment_verified_at: now }
+          : { payment_status: 'waived',   payment_verified_at: now }
+        const { error } = await supabase.from('document_requests')
+          .update(updates).eq('id', req.id)
+        if (error) throw error
+      }
+
       onPaymentUpdate?.()
+      onClose()
     } catch (err) {
       alert('เกิดข้อผิดพลาด: ' + err.message)
     } finally {
@@ -250,6 +299,41 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpda
             )}
             <InfoRow icon={<Calendar size={14} />}  label="วันที่ยื่น"     value={dateTH(req.created_at)} />
           </div>
+
+          {/* Set fee for tax/waste types */}
+          {needsFeeSet && (
+            <div className="rounded-2xl border border-amber-200 overflow-hidden">
+              <div className="px-4 py-2.5 bg-amber-50 flex items-center gap-2">
+                <Banknote size={14} className="text-amber-600 shrink-0" />
+                <p className="text-xs font-bold text-amber-800">แจ้งยอดค่าชำระให้ประชาชน</p>
+              </div>
+              <div className="px-4 py-3 bg-white space-y-3">
+                <p className="text-xs text-gray-500 leading-relaxed">
+                  คำนวณยอดจากระบบ อปท. แล้วระบุที่นี่ ระบบจะแสดง QR PromptPay ให้ประชาชนชำระ
+                </p>
+                <div className="flex gap-2">
+                  <div className="flex-1 relative">
+                    <input
+                      type="number" min={1} max={999999}
+                      value={feeInput}
+                      onChange={e => setFeeInput(e.target.value)}
+                      placeholder="ระบุยอดที่ต้องชำระ"
+                      className={inputCls + ' pr-10'}
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">บาท</span>
+                  </div>
+                  <button
+                    onClick={handleSetFee}
+                    disabled={settingFee || !feeInput || parseInt(feeInput) <= 0}
+                    className="px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-all flex items-center gap-1.5 shrink-0"
+                    style={{ backgroundColor: '#f59e0b' }}>
+                    {settingFee ? <Loader2 size={14} className="animate-spin" /> : <Banknote size={14} />}
+                    แจ้งยอด
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Payment section */}
           {hasPayment && (
@@ -755,11 +839,12 @@ const DOC_CSS = `
 `
 
 const DOC_TITLES = {
-  residence_cert: 'หนังสือรับรองการอยู่อาศัย',
-  personal_cert:  'หนังสือรับรองบุคคล',
-  conduct_cert:   'หนังสือรับรองความประพฤติ',
-  tax_notice:     'ขอรับใบแจ้งชำระภาษีที่ดิน',
-  other:          'หนังสือรับรอง',
+  residence_cert:   'หนังสือรับรองการอยู่อาศัย',
+  personal_cert:    'หนังสือรับรองบุคคล',
+  conduct_cert:     'หนังสือรับรองความประพฤติ',
+  tax_notice:       'ใบเสร็จรับเงินภาษีที่ดินและสิ่งปลูกสร้าง',
+  waste_collection: 'ใบเสร็จรับเงินค่าธรรมเนียมเก็บขนขยะ',
+  other:            'หนังสือรับรอง',
 }
 
 function buildDocBody(req, orgName) {
@@ -779,11 +864,19 @@ function buildDocBody(req, orgName) {
       return `<p>ขอรับรองว่า ${name}${idCard} เป็นผู้มีความประพฤติเรียบร้อย ไม่มีพฤติกรรมเสื่อมเสียหรือประวัติอาชญากรรมแต่อย่างใด ตามที่ปรากฏในทะเบียนของ${orgName}</p>
               <p>เอกสารฉบับนี้ออกให้${purpose}</p>`
     case 'tax_notice':
-      return `<p>แจ้งให้ ${name}${idCard} ที่อยู่ ${addr} ทราบว่า มีรายการภาษีที่ดินและสิ่งปลูกสร้างที่ต้องชำระตามรายละเอียดที่ระบุด้านล่าง</p>
+      return `<p>ได้รับเงินจาก ${name}${idCard} ที่อยู่ ${addr}</p>
               <p class="no-indent" style="margin-left:3em; margin-top:6pt">
-                รายละเอียด: ....................................................................................<br/>
-                จำนวนเงิน: ...................................... บาท (.................................................)<br/>
-                กำหนดชำระ: ..................................................................
+                รายการ: ค่าภาษีที่ดินและสิ่งปลูกสร้างประจำปี<br/>
+                จำนวนเงิน: <strong>${req.fee_amount ? req.fee_amount.toLocaleString() + ' บาท' : '...............................................'}</strong><br/>
+                วันที่รับชำระ: ${thaiDate(new Date().toISOString().slice(0, 10))}
+              </p>
+              ${req.staff_notes ? `<p>หมายเหตุ: ${req.staff_notes}</p>` : ''}`
+    case 'waste_collection':
+      return `<p>ได้รับเงินจาก ${name}${idCard} ที่อยู่ ${addr}</p>
+              <p class="no-indent" style="margin-left:3em; margin-top:6pt">
+                รายการ: ค่าธรรมเนียมเก็บและขนขยะมูลฝอย<br/>
+                จำนวนเงิน: <strong>${req.fee_amount ? req.fee_amount.toLocaleString() + ' บาท' : '...............................................'}</strong><br/>
+                วันที่รับชำระ: ${thaiDate(new Date().toISOString().slice(0, 10))}
               </p>
               ${req.staff_notes ? `<p>หมายเหตุ: ${req.staff_notes}</p>` : ''}`
     default:
@@ -793,8 +886,9 @@ function buildDocBody(req, orgName) {
 }
 
 function buildDocHTML({ req, tenant, docDate }) {
-  const orgName = tenant?.name ?? 'หน่วยงาน'
-  const title   = DOC_TITLES[req.document_type] ?? DOC_TITLES.other
+  const orgName  = tenant?.name ?? 'หน่วยงาน'
+  const title    = DOC_TITLES[req.document_type] ?? DOC_TITLES.other
+  const isReceipt = ['tax_notice', 'waste_collection'].includes(req.document_type)
 
   return `<!DOCTYPE html>
 <html lang="th"><head>
@@ -806,15 +900,15 @@ function buildDocHTML({ req, tenant, docDate }) {
   <h1>${orgName}</h1>
 </div>
 <div class="doc-title">${title}</div>
-<div class="meta"><p>วันที่ ${thaiDate(docDate)}</p></div>
+<div class="meta"><p>วันที่ ${thaiDate(docDate)}</p><p>เลขที่: ${req.id?.slice(0, 8)?.toUpperCase() ?? '-'}</p></div>
 <div class="body">
   ${buildDocBody(req, orgName)}
 </div>
-<p class="closing">จึงออกหนังสือรับรองฉบับนี้ให้เพื่อเป็นหลักฐาน</p>
+<p class="closing">${isReceipt ? 'ใบเสร็จนี้ออกโดยระบบอิเล็กทรอนิกส์ ถือเป็นหลักฐานการรับชำระเงิน' : 'จึงออกหนังสือรับรองฉบับนี้ให้เพื่อเป็นหลักฐาน'}</p>
 <div class="signature">
   <div class="sig-line"></div>
   <p>(...............................................)</p>
-  <p>ผู้มีอำนาจลงนาม</p>
+  <p>${isReceipt ? 'ผู้รับเงิน' : 'ผู้มีอำนาจลงนาม'}</p>
   <p>${orgName}</p>
 </div>
 <div class="footer-note">

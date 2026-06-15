@@ -51,10 +51,15 @@ const PAY_BADGE = {
   waived:   { label: '✅ ยกเว้นค่าธรรมเนียม',   cls: 'text-gray-500 bg-gray-50 border-gray-200' },
 }
 
+const SET_FEE_TYPES = ['tax_notice', 'waste_collection']
+
 function DocCard({ req, onClick }) {
   const docLabel = DOC_TYPES[req.document_type] ?? req.document_type
-  const payBadge = req.payment_status && req.payment_status !== 'not_required'
-    ? PAY_BADGE[req.payment_status] : null
+  const awaitingFee = SET_FEE_TYPES.includes(req.document_type) && req.payment_status === 'not_required'
+  const payBadge = awaitingFee
+    ? { label: '⏳ รอแจ้งยอดค่าชำระ', cls: 'text-amber-600 bg-amber-50 border-amber-200' }
+    : req.payment_status && req.payment_status !== 'not_required'
+      ? PAY_BADGE[req.payment_status] : null
   return (
     <button onClick={onClick}
       className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-4 text-left hover:shadow-md active:scale-[0.99] transition-all flex items-center gap-3">
@@ -277,6 +282,19 @@ function DocDetailSheet({ req, onClose, tenant, onRefresh }) {
               </div>
             ))}
           </div>
+
+          {/* Awaiting fee calculation for tax/waste types */}
+          {SET_FEE_TYPES.includes(req.document_type) && (!req.payment_status || req.payment_status === 'not_required') && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
+              <Clock size={18} className="text-amber-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-bold text-amber-800">รอเจ้าหน้าที่แจ้งยอดค่าชำระ</p>
+                <p className="text-xs text-amber-600 mt-1 leading-relaxed">
+                  เจ้าหน้าที่กำลังคำนวณยอดจากระบบ อปท. เมื่อแจ้งยอดแล้ว QR PromptPay จะแสดงที่นี่
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Payment section */}
           {hasPayment && (
