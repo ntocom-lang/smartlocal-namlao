@@ -224,7 +224,7 @@ export default function CitizenDocRequest() {
           </div>
         </div>
 
-        <div className="max-w-lg md:max-w-2xl mx-auto px-4 md:px-8 py-5 md:py-6 pb-12 space-y-4">
+        <div className="max-w-lg md:max-w-2xl mx-auto px-4 md:px-8 py-5 md:py-6 pb-28 md:pb-8 space-y-4">
 
           {/* Amount banner */}
           <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-center gap-4">
@@ -420,7 +420,7 @@ export default function CitizenDocRequest() {
           </div>
         </div>
 
-        <div className="max-w-lg md:max-w-4xl mx-auto px-4 md:px-8 py-5 md:py-6 pb-12 space-y-4">
+        <div className="max-w-lg md:max-w-4xl mx-auto px-4 md:px-8 py-5 md:py-6 pb-28 md:pb-8 space-y-4">
 
           {!session && (
             <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex items-start gap-3">
@@ -501,7 +501,7 @@ export default function CitizenDocRequest() {
         </div>
       </div>
 
-      <div className="max-w-lg md:max-w-4xl mx-auto px-4 md:px-8 py-5 md:py-6 pb-12 space-y-4 md:grid md:grid-cols-[1fr_340px] md:gap-6 md:space-y-0 md:items-start">
+      <div className="max-w-lg md:max-w-4xl mx-auto px-4 md:px-8 py-5 md:py-6 pb-28 md:pb-8 space-y-4 md:grid md:grid-cols-[1fr_340px] md:gap-6 md:space-y-0 md:items-start">
 
         {/* Left column — form */}
         <div className="space-y-4">

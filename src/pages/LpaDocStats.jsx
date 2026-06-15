@@ -321,7 +321,7 @@ export default function LpaDocStats() {
         </div>
 
         {/* Footer */}
-        <p className="text-center text-xs text-gray-300 pb-6 print:text-gray-500">
+        <p className="text-center text-xs text-gray-300 pb-6 mb-20 md:mb-0 print:text-gray-500">
           SmartLocal e-Service Platform • รายงานนี้สร้างโดยอัตโนมัติ •{' '}
           {tenant?.name} • {now}
         </p>

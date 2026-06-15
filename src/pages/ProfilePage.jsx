@@ -168,7 +168,7 @@ export default function ProfilePage() {
         </button>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 py-6 md:py-8 space-y-4">
+      <div className="max-w-lg mx-auto px-4 py-6 md:py-8 pb-28 md:pb-8 space-y-4">
         {/* Avatar */}
         <div className="flex flex-col items-center gap-2 mb-2">
           <div className="relative">
