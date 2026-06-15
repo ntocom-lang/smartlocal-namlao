@@ -14,8 +14,8 @@ const DOC_TYPES = {
   residence_cert:   'ใบรับรองการอยู่อาศัย',
   personal_cert:    'หนังสือรับรองบุคคล',
   conduct_cert:     'หนังสือรับรองความประพฤติ',
-  tax_notice:       'ใบแจ้งชำระภาษีที่ดินและสิ่งปลูกสร้าง',
-  waste_collection: '🗑️ ชำระค่าเก็บขยะมูลฝอย',
+  tax_notice:       'ขอรับใบแจ้งชำระภาษีที่ดิน',
+  waste_collection: 'ขอรับใบแจ้งค่าเก็บขยะ',
   other:            'คำขออื่นๆ',
 }
 

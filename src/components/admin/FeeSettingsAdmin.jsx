@@ -3,14 +3,12 @@ import { Banknote, QrCode, Save, Loader2, CheckCircle2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
 const DOC_FEE_LABELS = [
-  { value: 'residence_cert',   label: '🏠 ใบรับรองการอยู่อาศัย' },
-  { value: 'personal_cert',    label: '👤 หนังสือรับรองบุคคล' },
-  { value: 'conduct_cert',     label: '✅ หนังสือรับรองความประพฤติ' },
-  { value: 'tax_notice',       label: '📋 ใบแจ้งชำระภาษีที่ดิน' },
-  { value: 'waste_collection', label: '🗑️ ค่าเก็บขยะมูลฝอย' },
-  { value: 'other',            label: '📝 คำขออื่นๆ' },
+  { value: 'residence_cert', label: '🏠 ใบรับรองการอยู่อาศัย' },
+  { value: 'personal_cert',  label: '👤 หนังสือรับรองบุคคล' },
+  { value: 'conduct_cert',   label: '✅ หนังสือรับรองความประพฤติ' },
+  { value: 'other',          label: '📝 คำขออื่นๆ' },
 ]
-const DEFAULT_FEE = { residence_cert: 0, personal_cert: 0, conduct_cert: 0, tax_notice: 0, waste_collection: 0, other: 0 }
+const DEFAULT_FEE = { residence_cert: 0, personal_cert: 0, conduct_cert: 0, other: 0 }
 const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
 
 export default function FeeSettingsAdmin({ tenant }) {
