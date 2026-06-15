@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Settings, Save, Loader2, CheckCircle2 } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
 const inputCls = 'w-full px-4 py-2.5 text-sm text-gray-900 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent transition-all'
@@ -8,10 +8,14 @@ export default function SystemSettingsAdmin({ tenant, onUpdateTenant }) {
   const [formData, setFormData] = useState({ system_name: tenant.system_name || 'One Data' })
   const [loading, setLoading] = useState(false)
   const [savedSection, setSavedSection] = useState(null)
+  const [qrUploading, setQrUploading] = useState(false)
+  const [qrPreview, setQrPreview] = useState(tenant.qr_code_url || null)
+  const qrRef = useRef()
 
   useEffect(() => {
     if (tenant) {
       setFormData({ system_name: tenant.system_name || 'One Data' })
+      setQrPreview(tenant.qr_code_url || null)
     }
   }, [tenant])
 
@@ -31,6 +35,35 @@ export default function SystemSettingsAdmin({ tenant, onUpdateTenant }) {
       alert('บันทึกไม่สำเร็จ: ' + err.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleQrUpload(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setQrPreview(URL.createObjectURL(file))
+    setQrUploading(true)
+    try {
+      const ext = file.name.split('.').pop()
+      const path = `municipality-qr/${tenant.slug}.${ext}`
+      const { error: upErr } = await supabase.storage
+        .from('avatars')
+        .upload(path, file, { upsert: true })
+      if (upErr) throw upErr
+      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path)
+      const { error: dbErr } = await supabase
+        .from('municipalities')
+        .update({ qr_code_url: publicUrl })
+        .eq('id', tenant.id)
+      if (dbErr) throw dbErr
+      setQrPreview(publicUrl)
+      onUpdateTenant?.({ ...tenant, qr_code_url: publicUrl })
+      setSavedSection('qr')
+      setTimeout(() => setSavedSection(null), 2500)
+    } catch (err) {
+      alert('อัปโหลด QR ไม่สำเร็จ: ' + err.message)
+    } finally {
+      setQrUploading(false)
     }
   }
 
@@ -76,6 +109,60 @@ export default function SystemSettingsAdmin({ tenant, onUpdateTenant }) {
             {savedSection === 'name' ? 'บันทึกสำเร็จ' : 'บันทึก'}
           </button>
         </form>
+      </div>
+
+      {/* ── QR Code ── */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <h2 className="text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
+          <QrCode size={15} /> QR Code ของหน่วยงาน
+        </h2>
+        <p className="text-xs text-gray-400 mb-5 leading-relaxed">
+          แสดงในหน้า "เมนูอื่นๆ" ให้ประชาชนสแกนเพื่อเข้าระบบ · แนะนำ PNG ขนาด 400×400px ขึ้นไป
+        </p>
+
+        <div className="flex items-start gap-5">
+          {/* Preview */}
+          <div className="shrink-0">
+            <div className="w-32 h-32 rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden">
+              {qrPreview ? (
+                <img src={qrPreview} alt="QR Code" className="w-full h-full object-contain p-1" />
+              ) : (
+                <div className="flex flex-col items-center gap-1 text-gray-300">
+                  <Image size={28} />
+                  <span className="text-[10px]">ยังไม่มี QR</span>
+                </div>
+              )}
+            </div>
+            {savedSection === 'qr' && (
+              <p className="flex items-center gap-1 text-xs text-emerald-600 mt-2 justify-center">
+                <CheckCircle2 size={12} /> บันทึกสำเร็จ
+              </p>
+            )}
+          </div>
+
+          {/* Upload */}
+          <div className="flex-1">
+            <p className="text-xs text-gray-500 mb-3 leading-relaxed">
+              อัปโหลดภาพ QR Code สำหรับ URL ของระบบนี้<br />
+              <span className="text-gray-400">{window.location.origin}</span>
+            </p>
+            <input
+              ref={qrRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={handleQrUpload}
+            />
+            <button
+              onClick={() => qrRef.current?.click()}
+              disabled={qrUploading}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-all"
+              style={{ backgroundColor: 'var(--color-primary)' }}>
+              {qrUploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+              {qrUploading ? 'กำลังอัปโหลด...' : 'อัปโหลด QR Code'}
+            </button>
+          </div>
+        </div>
       </div>
 
     </div>

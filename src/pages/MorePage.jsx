@@ -149,7 +149,7 @@ function QRShareCard({ tenant }) {
   function handleDownload() {
     const a = document.createElement('a')
     a.download = `qr-${tenant?.slug ?? 'smartlocal'}.png`
-    a.href = qrCodeImage
+    a.href = tenant?.qr_code_url || qrCodeImage
     a.click()
   }
 
@@ -169,7 +169,7 @@ function QRShareCard({ tenant }) {
 
         {/* QR Code */}
         <div className="bg-white rounded-2xl p-4 shadow-md">
-          <img src={qrCodeImage} alt="QR Code" className="w-40 h-40 object-contain" />
+          <img src={tenant?.qr_code_url || qrCodeImage} alt="QR Code" className="w-40 h-40 object-contain" />
         </div>
 
         {/* Install button */}
