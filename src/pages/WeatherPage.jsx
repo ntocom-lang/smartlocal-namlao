@@ -251,7 +251,7 @@ export default function WeatherPage() {
         ) : null
       )}
 
-      <p className="text-center text-xs text-gray-400 dark:text-gray-600 py-5">
+      <p className="text-center text-xs text-gray-400 dark:text-gray-600 pt-5 pb-28 md:pb-8">
         ข้อมูลจาก Open-Meteo.com · อัปเดตทุก 1 ชั่วโมง
       </p>
     </div>

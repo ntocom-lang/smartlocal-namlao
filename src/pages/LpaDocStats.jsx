@@ -91,7 +91,7 @@ export default function LpaDocStats() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 print:bg-white">
+    <div className="min-h-screen print:bg-white" style={{ backgroundColor: '#eef2f7' }}>
 
       {/* ── Header ── */}
       <div className="bg-white border-b border-gray-100 shadow-sm print:shadow-none px-4 py-5">
