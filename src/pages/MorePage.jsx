@@ -168,8 +168,11 @@ function QRShareCard({ tenant }) {
         </p>
 
         {/* QR Code */}
-        <div className="bg-white rounded-2xl p-4 shadow-md">
+        <div className="bg-white rounded-2xl p-4 shadow-md flex flex-col items-center gap-2">
           <img src={tenant?.qr_code_url || qrCodeImage} alt="QR Code" className="w-40 h-40 object-contain" />
+          {tenant?.qr_label && (
+            <p className="text-xs font-semibold text-gray-600 text-center leading-snug px-1">{tenant.qr_label}</p>
+          )}
         </div>
 
         {/* Install button */}

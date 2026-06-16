@@ -12,12 +12,15 @@ export default function SystemSettingsAdmin({ tenant, onUpdateTenant }) {
   const [savedSection, setSavedSection] = useState(null)
   const [qrUploading, setQrUploading] = useState(false)
   const [qrPreview, setQrPreview] = useState(tenant.qr_code_url || null)
+  const [qrLabel, setQrLabel] = useState(tenant.qr_label || '')
+  const [qrLabelSaving, setQrLabelSaving] = useState(false)
   const qrRef = useRef()
 
   useEffect(() => {
     if (tenant) {
       setFormData({ system_name: tenant.system_name || 'One Data' })
       setQrPreview(tenant.qr_code_url || null)
+      setQrLabel(tenant.qr_label || '')
     }
   }, [tenant])
 
@@ -81,6 +84,25 @@ export default function SystemSettingsAdmin({ tenant, onUpdateTenant }) {
       alert('อัปโหลด QR ไม่สำเร็จ: ' + err.message)
     } finally {
       setQrUploading(false)
+    }
+  }
+
+  async function saveQrLabel(e) {
+    e.preventDefault()
+    setQrLabelSaving(true)
+    try {
+      const { error } = await supabase
+        .from('municipalities')
+        .update({ qr_label: qrLabel.trim() || null })
+        .eq('id', tenant.id)
+      if (error) throw error
+      patchTenant({ qr_label: qrLabel.trim() || null })
+      setSavedSection('qrLabel')
+      setTimeout(() => setSavedSection(null), 2500)
+    } catch (err) {
+      alert('บันทึกไม่สำเร็จ: ' + err.message)
+    } finally {
+      setQrLabelSaving(false)
     }
   }
 
@@ -180,6 +202,28 @@ export default function SystemSettingsAdmin({ tenant, onUpdateTenant }) {
             </button>
           </div>
         </div>
+
+        {/* QR Label */}
+        <form onSubmit={saveQrLabel} className="mt-5 pt-5 border-t border-gray-100">
+          <label className="block text-xs font-semibold text-gray-500 mb-1">ชื่อที่แสดงใต้ QR Code</label>
+          <p className="text-xs text-gray-400 mb-2">แสดงใต้ภาพ QR ในหน้า "เมนูอื่นๆ" เช่น "สแกนเพื่อเข้าใช้บริการ อบต.น้ำเลา"</p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={qrLabel}
+              onChange={e => setQrLabel(e.target.value)}
+              placeholder={`เช่น สแกนเพื่อเข้าใช้บริการ ${tenant?.name || ''}`}
+              className={inputCls + ' flex-1'}
+              maxLength={80}
+            />
+            <button type="submit" disabled={qrLabelSaving}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-all shrink-0"
+              style={{ backgroundColor: 'var(--color-primary)' }}>
+              {qrLabelSaving ? <Loader2 size={14} className="animate-spin" /> : savedSection === 'qrLabel' ? <CheckCircle2 size={14} /> : <Save size={14} />}
+              {savedSection === 'qrLabel' ? 'บันทึกแล้ว' : 'บันทึก'}
+            </button>
+          </div>
+        </form>
       </div>
 
     </div>
