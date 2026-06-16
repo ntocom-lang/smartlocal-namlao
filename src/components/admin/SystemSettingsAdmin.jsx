@@ -46,10 +46,11 @@ export default function SystemSettingsAdmin({ tenant, onUpdateTenant }) {
     try {
       const ext = file.name.split('.').pop()
       const path = `qr/${tenant.slug}.${ext}`
-      const { error: upErr } = await supabase.storage
+      const { error: upErr, data: upData } = await supabase.storage
         .from('municipality-assets')
         .upload(path, file, { upsert: true })
-      if (upErr) throw upErr
+      console.log('upload result:', upData, upErr)
+      if (upErr) throw new Error(`${upErr.message} | statusCode: ${upErr.statusCode} | error: ${upErr.error}`)
       const { data: { publicUrl } } = supabase.storage.from('municipality-assets').getPublicUrl(path)
       const { error: dbErr } = await supabase
         .from('municipalities')
