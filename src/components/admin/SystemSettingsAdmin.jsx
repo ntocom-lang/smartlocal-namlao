@@ -38,19 +38,33 @@ export default function SystemSettingsAdmin({ tenant, onUpdateTenant }) {
     }
   }
 
+  function resizeImage(file, maxPx = 600) {
+    return new Promise((resolve) => {
+      const img = new Image()
+      img.onload = () => {
+        const scale = Math.min(1, maxPx / Math.max(img.width, img.height))
+        const canvas = document.createElement('canvas')
+        canvas.width  = Math.round(img.width  * scale)
+        canvas.height = Math.round(img.height * scale)
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
+        canvas.toBlob(resolve, 'image/png', 0.92)
+      }
+      img.src = URL.createObjectURL(file)
+    })
+  }
+
   async function handleQrUpload(e) {
     const file = e.target.files?.[0]
     if (!file) return
     setQrPreview(URL.createObjectURL(file))
     setQrUploading(true)
     try {
-      const ext = file.name.split('.').pop()
-      const path = `qr/${tenant.slug}.${ext}`
-      const { error: upErr, data: upData } = await supabase.storage
+      const blob = await resizeImage(file, 600)
+      const path = `qr/${tenant.slug}.png`
+      const { error: upErr } = await supabase.storage
         .from('municipality-assets')
-        .upload(path, file, { upsert: true })
-      console.log('upload result:', upData, upErr)
-      if (upErr) throw new Error(`${upErr.message} | statusCode: ${upErr.statusCode} | error: ${upErr.error}`)
+        .upload(path, blob, { upsert: true, contentType: 'image/png' })
+      if (upErr) throw upErr
       const { data: { publicUrl } } = supabase.storage.from('municipality-assets').getPublicUrl(path)
       const { error: dbErr } = await supabase
         .from('municipalities')
@@ -58,7 +72,6 @@ export default function SystemSettingsAdmin({ tenant, onUpdateTenant }) {
         .eq('id', tenant.id)
       if (dbErr) throw dbErr
       setQrPreview(publicUrl)
-      onUpdateTenant?.({ ...tenant, qr_code_url: publicUrl })
       setSavedSection('qr')
       setTimeout(() => setSavedSection(null), 2500)
     } catch (err) {
