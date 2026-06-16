@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image } from 'lucide-react'
+import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
 const inputCls = 'w-full px-4 py-2.5 text-sm text-gray-900 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent transition-all'
@@ -142,7 +142,7 @@ export default function SystemSettingsAdmin({ tenant, onUpdateTenant }) {
                 <img src={qrPreview} alt="QR Code" className="w-full h-full object-contain p-1" />
               ) : (
                 <div className="flex flex-col items-center gap-1 text-gray-300">
-                  <Image size={28} />
+                  <ImageIcon size={28} />
                   <span className="text-[10px]">ยังไม่มี QR</span>
                 </div>
               )}
