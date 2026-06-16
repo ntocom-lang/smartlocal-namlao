@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, MapPin, Phone, Store, Image, AlignLeft, CheckCircle2, Loader2, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import { compressImage } from '../lib/imageUtils'
 import MapPicker from '../components/MapPicker'
 
 const BUSINESS_TYPES = [
@@ -14,33 +15,6 @@ const BUSINESS_TYPES = [
   { value: 'service', label: '🔧  บริการ / ช่าง' },
   { value: 'other',   label: '📝  อื่นๆ' },
 ]
-
-async function compressImage(file) {
-  return new Promise((resolve) => {
-    const img = new window.Image()
-    const url = URL.createObjectURL(file)
-    img.onload = () => {
-      URL.revokeObjectURL(url)
-      let { width, height } = img
-      const ratio = Math.min(1920 / width, 1920 / height, 1)
-      width = Math.round(width * ratio)
-      height = Math.round(height * ratio)
-      const canvas = document.createElement('canvas')
-      canvas.width = width
-      canvas.height = height
-      canvas.getContext('2d').drawImage(img, 0, 0, width, height)
-      canvas.toBlob(
-        (blob) => {
-          const name = file.name.replace(/\.[^.]+$/, '.jpg')
-          resolve(new File([blob], name, { type: 'image/jpeg' }))
-        },
-        'image/jpeg', 0.82
-      )
-    }
-    img.onerror = () => { URL.revokeObjectURL(url); resolve(file) }
-    img.src = url
-  })
-}
 
 function SuccessScreen({ onBack }) {
   return (

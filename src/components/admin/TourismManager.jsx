@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Luggage, Store, Star, RefreshCw, Loader2, Plus, Camera, Pencil, Trash2, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { compressImage } from '../../lib/imageUtils'
 import BusinessRegistrationAdmin from './BusinessRegistrationAdmin'
 
 const TOUR_CATS = [
@@ -10,25 +11,6 @@ const TOUR_CATS = [
   { key: 'shop',    label: 'ชอบ',   emoji: '🛍️', color: '#ec4899' },
   { key: 'service', label: 'บริการ', emoji: '🔧', color: '#dc2626' },
 ]
-
-async function compressImage(file, maxPx = 1200, quality = 0.82) {
-  return new Promise((resolve) => {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const img = new window.Image()
-      img.onload = () => {
-        const scale = img.naturalWidth > maxPx ? maxPx / img.naturalWidth : 1
-        const canvas = document.createElement('canvas')
-        canvas.width  = Math.round(img.naturalWidth  * scale)
-        canvas.height = Math.round(img.naturalHeight * scale)
-        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
-        canvas.toBlob(blob => resolve(new File([blob], 'photo.jpg', { type: 'image/jpeg' })), 'image/jpeg', quality)
-      }
-      img.src = e.target.result
-    }
-    reader.readAsDataURL(file)
-  })
-}
 
 const EMPTY_FORM = { name: '', category: 'travel', description: '', phone: '', address: '', maps_url: '', service_type: 'offline', online_service: 'order', online_url: '', has_delivery: false }
 

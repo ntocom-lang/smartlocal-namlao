@@ -3,6 +3,7 @@ import {
   MapPin, Plus, ChevronDown, Image, X, Loader2, RefreshCw, Trash2, Pencil, CheckCircle2,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { compressImage } from '../../lib/imageUtils'
 import MapPicker from '../MapPicker'
 
 const TODAY = new Date().toISOString().slice(0, 10)
@@ -74,7 +75,8 @@ export default function InfraWorkAdmin({ tenant, currentUserRole }) {
     for (const item of photos) {
       const ext = item.file.name.split('.').pop()
       const path = `infra/${id}/${Date.now()}.${ext}`
-      const { error } = await supabase.storage.from('complaint-attachments').upload(path, item.file)
+      const compressed = await compressImage(item.file, 1200)
+      const { error } = await supabase.storage.from('complaint-attachments').upload(path, compressed)
       if (!error) {
         const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
         urls.push(data.publicUrl)

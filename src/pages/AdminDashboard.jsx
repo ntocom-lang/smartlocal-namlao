@@ -15,6 +15,7 @@ import {
   TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, BellOff, ExternalLink, BarChart2, Settings, Download, Banknote
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { compressImage } from '../lib/imageUtils'
 import { useTenant } from '../contexts/TenantContext'
 import { usePushNotification } from '../hooks/usePushNotification'
 import MapDashboardAdmin from '../components/admin/MapDashboardAdmin'
@@ -442,9 +443,10 @@ ${photoSectionHtml}
     for (const item of pendingPhotos) {
       const ext = item.file.name.split('.').pop()
       const path = `${c.id}/work_${Date.now()}.${ext}`
+      const compressed = await compressImage(item.file, 1200)
       const { error } = await supabase.storage
         .from('complaint-attachments')
-        .upload(path, item.file, { upsert: false })
+        .upload(path, compressed, { upsert: false })
       if (!error) {
         const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
         urls.push(data.publicUrl)
@@ -1951,9 +1953,10 @@ function StaffManager({ tenant }) {
     setError(null)
     const ext = file.name.split('.').pop().toLowerCase()
     const path = `staff/${staffId}/photo_${Date.now()}.${ext}`
+    const compressed = await compressImage(file, 400)
     const { error: uploadErr } = await supabase.storage
       .from('complaint-attachments')
-      .upload(path, file, { upsert: true })
+      .upload(path, compressed, { upsert: true })
     if (uploadErr) {
       setError('อัปโหลดรูปไม่สำเร็จ: ' + uploadErr.message)
       setUploading(null)
@@ -3543,9 +3546,10 @@ function EventsManager({ tenant, currentUserRole }) {
       const file = form.attachment_file
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
       const path = `${tenant.id}/${Date.now()}_${safeName}`
+      const toUpload = await compressImage(file, 1200)
       const { error: upErr } = await supabase.storage
         .from('event-attachments')
-        .upload(path, file, { upsert: false })
+        .upload(path, toUpload, { upsert: false })
       if (upErr) {
         setSaving(false)
         setFormError('อัปโหลดไฟล์ไม่สำเร็จ: ' + upErr.message)

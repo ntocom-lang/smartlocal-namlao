@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { notifyTelegram } from '../lib/notifyTelegram'
+import { compressImage } from '../lib/imageUtils'
 import { useTenant } from '../contexts/TenantContext'
 import MapPicker from '../components/MapPicker'
 
@@ -62,34 +63,6 @@ const GEO_STATUS = { idle: 'idle', ok: 'ok' }
 const MAX_FILE_MB  = 5
 const COMPRESS_MB  = 2
 const MAX_DIM      = 1920
-
-async function compressImage(file) {
-  return new Promise((resolve) => {
-    const img = new window.Image()
-    const url = URL.createObjectURL(file)
-    img.onload = () => {
-      URL.revokeObjectURL(url)
-      let { width, height } = img
-      const ratio = Math.min(MAX_DIM / width, MAX_DIM / height, 1)
-      width  = Math.round(width  * ratio)
-      height = Math.round(height * ratio)
-      const canvas = document.createElement('canvas')
-      canvas.width  = width
-      canvas.height = height
-      canvas.getContext('2d').drawImage(img, 0, 0, width, height)
-      canvas.toBlob(
-        (blob) => {
-          const name = file.name.replace(/\.[^.]+$/, '.jpg')
-          resolve(new File([blob], name, { type: 'image/jpeg' }))
-        },
-        'image/jpeg',
-        0.82,
-      )
-    }
-    img.onerror = () => { URL.revokeObjectURL(url); resolve(file) }
-    img.src = url
-  })
-}
 
 function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn }) {
   return (

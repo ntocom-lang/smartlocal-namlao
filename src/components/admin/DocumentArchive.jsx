@@ -5,6 +5,7 @@ import {
   Lock, ChevronDown, ChevronUp, Hash,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { compressImage } from '../../lib/imageUtils'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -177,7 +178,8 @@ function UploadModal({ tenantId, uploaderId, allowedDepts, onClose, onSuccess })
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
     const path = `${tenantId}/${form.department}/${Date.now()}_${safeName}`
 
-    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false })
+    const toUpload = await compressImage(file, 1200)
+    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, toUpload, { upsert: false })
     if (upErr) { setSaving(false); setErr('อัปโหลดไฟล์ไม่สำเร็จ: ' + upErr.message); return }
 
     const tags = form.tags.split(/[,\s]+/).map(t => t.replace(/^#/, '').trim()).filter(Boolean)

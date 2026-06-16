@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { ChevronLeft, Pencil, Loader2 } from 'lucide-react'
+import { compressImage } from '../lib/imageUtils'
 
 const ROLE_LABEL = {
   superadmin: 'Super Admin',
@@ -106,9 +107,10 @@ export default function ProfilePage() {
     const ext = file.name.split('.').pop()
     const path = `${session.user.id}/avatar.${ext}`
 
+    const compressed = await compressImage(file, 400)
     const { error: upErr } = await supabase.storage
       .from('avatars')
-      .upload(path, file, { upsert: true })
+      .upload(path, compressed, { upsert: true })
 
     if (upErr) {
       console.error('Storage upload error:', upErr)

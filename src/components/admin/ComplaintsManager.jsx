@@ -8,6 +8,7 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import { notifyTelegram } from '../../lib/notifyTelegram'
+import { compressImage } from '../../lib/imageUtils'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const STATUS = {
@@ -451,9 +452,10 @@ ${photoSectionHtml}
     for (const item of pendingPhotos) {
       const ext = item.file.name.split('.').pop()
       const path = `${c.id}/work_${Date.now()}.${ext}`
+      const compressed = await compressImage(item.file, 1200)
       const { error } = await supabase.storage
         .from('complaint-attachments')
-        .upload(path, item.file, { upsert: false })
+        .upload(path, compressed, { upsert: false })
       if (!error) {
         const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
         urls.push(data.publicUrl)

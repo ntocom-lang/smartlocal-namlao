@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Loader2, Plus, X, Pencil, Trash2, ChevronLeft, ChevronRight, Paperclip, CalendarDays, Tag, Users, Check, ChevronUp } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { notifyTelegram } from '../../lib/notifyTelegram'
+import { compressImage } from '../../lib/imageUtils'
 
 const EVENTS_CATEGORIES = ['ประชาสัมพันธ์', 'ประชุม', 'กำหนดการ', 'อบรม', 'อื่นๆ']
 const EVENTS_CATEGORY_COLOR = {
@@ -187,7 +188,8 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
       const file = form.attachment_file
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
       const path = `${tenant.id}/${Date.now()}_${safeName}`
-      const { error: upErr } = await supabase.storage.from('event-attachments').upload(path, file, { upsert: false })
+      const toUpload = await compressImage(file, 1200)
+      const { error: upErr } = await supabase.storage.from('event-attachments').upload(path, toUpload, { upsert: false })
       if (upErr) { setSaving(false); setFormError('อัปโหลดไฟล์ไม่สำเร็จ: ' + upErr.message); return }
       const { data: { publicUrl } } = supabase.storage.from('event-attachments').getPublicUrl(path)
       attachmentUrl = publicUrl

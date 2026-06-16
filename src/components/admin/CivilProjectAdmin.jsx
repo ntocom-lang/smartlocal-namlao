@@ -9,6 +9,7 @@ import { MapContainer, TileLayer, Marker, Tooltip, Polyline, CircleMarker } from
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { supabase } from '../../lib/supabase'
+import { compressImage } from '../../lib/imageUtils'
 import MapPicker from '../MapPicker'
 import InlineMapPicker from '../InlineMapPicker'
 import InlinePolylinePicker from '../InlinePolylinePicker'
@@ -423,7 +424,8 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
     for (const item of newPhotos) {
       const ext  = item.file.name.split('.').pop()
       const path = `civil/${id}/${Date.now()}.${ext}`
-      const { error } = await supabase.storage.from('complaint-attachments').upload(path, item.file)
+      const compressed = await compressImage(item.file, 1200)
+      const { error } = await supabase.storage.from('complaint-attachments').upload(path, compressed)
       if (!error) {
         const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
         urls.push(data.publicUrl)
@@ -534,7 +536,8 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
     setUploadingPhoto(true)
     const ext = detailPhotoFile.name.split('.').pop()
     const path = `civil/${selectedProject.id}/${Date.now()}.${ext}`
-    const { error } = await supabase.storage.from('complaint-attachments').upload(path, detailPhotoFile)
+    const compressed = await compressImage(detailPhotoFile, 1200)
+    const { error } = await supabase.storage.from('complaint-attachments').upload(path, compressed)
     if (!error) {
       const { data: urlData } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
       const newPhotos = [...(selectedProject.photos ?? []), urlData.publicUrl]

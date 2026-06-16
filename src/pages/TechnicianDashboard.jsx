@@ -8,6 +8,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { fmtNo } from '../lib/formatComplaintNo'
+import { compressImage } from '../lib/imageUtils'
 import MapPicker from '../components/MapPicker'
 
 const STATUS = {
@@ -258,9 +259,10 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenantName, te
     if (!file) return
     setUploading(true)
     const path = `${c.id}/work_${Date.now()}.${file.name.split('.').pop()}`
+    const compressed = await compressImage(file, 1200)
     const { error: upErr } = await supabase.storage
       .from('complaint-attachments')
-      .upload(path, file, { upsert: false })
+      .upload(path, compressed, { upsert: false })
     if (!upErr) {
       const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
       const newPhotos = [...photos, data.publicUrl]
