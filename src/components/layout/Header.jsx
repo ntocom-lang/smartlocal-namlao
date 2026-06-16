@@ -63,7 +63,7 @@ export default function Header() {
         <Phone size={11} />
         <span className="font-semibold tracking-wide">{tenant?.system_name || `${tenant?.name} One Data`}</span>
         <span className="opacity-40">|</span>
-        <span>ระบบจัดการข้อมูลเพื่อการพัฒนาตำบลน้ำเลา</span>
+        <span>{tenant?.name}</span>
         <span className="opacity-40">|</span>
         <a href="/manual-citizen.html" target="_blank" rel="noopener noreferrer"
           className="opacity-80 hover:opacity-100 transition-opacity underline underline-offset-2">
@@ -93,7 +93,7 @@ export default function Header() {
             <h1 className="font-bold text-sm md:text-base leading-tight">
               {tenant?.system_name || `${tenant?.name} One Data`}
             </h1>
-            <p className="text-white/80 text-[10px] md:text-xs line-clamp-1 mt-0.5">ระบบจัดการข้อมูลเพื่อการพัฒนา</p>
+            <p className="text-white/80 text-[10px] md:text-xs line-clamp-1 mt-0.5">{tenant?.name}</p>
           </div>
 
           {/* Desktop nav */}
