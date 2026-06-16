@@ -115,7 +115,7 @@ export function TenantProvider({ children }) {
     async function fetchTenant() {
       const { data, error: dbError } = await supabase
         .from('municipalities')
-        .select('id, slug, name, org_type, province, theme_color, logo_url, developer_name, website_url, facebook_url, line_oa_url, phone, address, latitude, longitude, system_name, enabled_modules, telegram_group_id, promptpay_id, fee_schedule')
+        .select('id, slug, name, org_type, province, theme_color, logo_url, developer_name, website_url, facebook_url, line_oa_url, phone, address, latitude, longitude, system_name, enabled_modules, telegram_group_id, promptpay_id, fee_schedule, qr_code_url')
         .eq('slug', slug)
         .single()
 
@@ -138,8 +138,12 @@ export function TenantProvider({ children }) {
     fetchTenant()
   }, [])
 
+  function patchTenant(fields) {
+    setTenant((prev) => prev ? { ...prev, ...fields } : prev)
+  }
+
   return (
-    <TenantContext.Provider value={{ tenant, terminology, loading, error }}>
+    <TenantContext.Provider value={{ tenant, terminology, loading, error, patchTenant }}>
       {children}
     </TenantContext.Provider>
   )

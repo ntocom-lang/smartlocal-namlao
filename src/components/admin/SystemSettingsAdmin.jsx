@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { useTenant } from '../../contexts/TenantContext'
 
 const inputCls = 'w-full px-4 py-2.5 text-sm text-gray-900 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent transition-all'
 
 export default function SystemSettingsAdmin({ tenant, onUpdateTenant }) {
+  const { patchTenant } = useTenant()
   const [formData, setFormData] = useState({ system_name: tenant.system_name || 'One Data' })
   const [loading, setLoading] = useState(false)
   const [savedSection, setSavedSection] = useState(null)
@@ -72,6 +74,7 @@ export default function SystemSettingsAdmin({ tenant, onUpdateTenant }) {
         .eq('id', tenant.id)
       if (dbErr) throw dbErr
       setQrPreview(publicUrl)
+      patchTenant({ qr_code_url: publicUrl })
       setSavedSection('qr')
       setTimeout(() => setSavedSection(null), 2500)
     } catch (err) {
