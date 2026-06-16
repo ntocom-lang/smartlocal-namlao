@@ -45,12 +45,12 @@ export default function SystemSettingsAdmin({ tenant, onUpdateTenant }) {
     setQrUploading(true)
     try {
       const ext = file.name.split('.').pop()
-      const path = `municipality-qr/${tenant.slug}.${ext}`
+      const path = `qr/${tenant.slug}.${ext}`
       const { error: upErr } = await supabase.storage
-        .from('complaint-attachments')
+        .from('municipality-assets')
         .upload(path, file, { upsert: true })
       if (upErr) throw upErr
-      const { data: { publicUrl } } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
+      const { data: { publicUrl } } = supabase.storage.from('municipality-assets').getPublicUrl(path)
       const { error: dbErr } = await supabase
         .from('municipalities')
         .update({ qr_code_url: publicUrl })
