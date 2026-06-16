@@ -91,9 +91,9 @@ export default function Header() {
           {/* Name block */}
           <div className="flex-1 min-w-0 flex flex-col justify-center">
             <h1 className="font-bold text-sm md:text-base leading-tight">
-              {tenant?.system_name || `${tenant?.name} One Data`}
+              {tenant?.name}
             </h1>
-            <p className="text-white/80 text-[10px] md:text-xs line-clamp-1 mt-0.5">{tenant?.name}</p>
+            <p className="text-white/80 text-[10px] md:text-xs line-clamp-1 mt-0.5">{tenant?.system_name || `${tenant?.name} One Data`}</p>
           </div>
 
           {/* Desktop nav */}
