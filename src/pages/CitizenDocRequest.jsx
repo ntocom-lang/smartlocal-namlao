@@ -235,10 +235,22 @@ export default function CitizenDocRequest() {
             </div>
           </div>
 
-          {/* Bank Account Info */}
+          {/* Bank Account Info + QR */}
           {tenant?.bank_account_no && (
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-3">
               <p className="text-sm font-bold text-gray-700">โอนเงินเข้าบัญชีธนาคาร</p>
+
+              {/* QR Code */}
+              {tenant.qr_code_url && (
+                <div className="flex flex-col items-center gap-2 py-2">
+                  <img src={tenant.qr_code_url} alt="QR ชำระเงิน"
+                    className="w-44 h-44 object-contain rounded-2xl border border-gray-100 p-2 bg-white shadow-sm" />
+                  <p className="text-xs text-gray-500 text-center">
+                    สแกน QR ด้วยแอปธนาคาร แล้วกรอกยอด <span className="font-bold text-blue-700">{feeAmount.toLocaleString()} บาท</span>
+                  </p>
+                </div>
+              )}
+
               <div className="bg-blue-50 rounded-xl p-4 space-y-2">
                 <div className="flex justify-between items-center">
                   <span className="text-xs text-gray-500">ธนาคาร</span>

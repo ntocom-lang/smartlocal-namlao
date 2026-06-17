@@ -315,6 +315,19 @@ function DocDetailSheet({ req, onClose, tenant, onRefresh }) {
                   {hasBankAccount && (
                     <div className="bg-white rounded-xl border border-amber-100 p-3 space-y-1.5">
                       <p className="text-xs text-amber-700 font-semibold mb-2">โอนเงินเข้าบัญชีธนาคาร</p>
+
+                      {/* QR Code */}
+                      {tenant.qr_code_url && (
+                        <div className="flex flex-col items-center gap-1 py-2 border-b border-amber-50 mb-2">
+                          <img src={tenant.qr_code_url} alt="QR ชำระเงิน"
+                            className="w-36 h-36 object-contain rounded-xl border border-gray-100 p-1 bg-white" />
+                          <p className="text-[11px] text-gray-500 text-center leading-relaxed">
+                            สแกน QR ด้วยแอปธนาคาร<br />
+                            แล้วกรอกยอด <span className="font-bold text-amber-700">{(req.fee_amount ?? 0).toLocaleString()} บาท</span>
+                          </p>
+                        </div>
+                      )}
+
                       <div className="flex justify-between">
                         <span className="text-xs text-gray-500">ธนาคาร</span>
                         <span className="text-xs font-bold text-gray-800">{tenant.bank_name || '-'}</span>
