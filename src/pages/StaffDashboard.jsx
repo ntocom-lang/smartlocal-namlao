@@ -183,7 +183,8 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpda
   const [rejectReason, setRejectReason]   = useState('')
   const [payActing, setPayActing]         = useState(false)
   const [slipSignedUrl, setSlipSignedUrl] = useState(null)
-  const [feeInput, setFeeInput]           = useState('')
+  const defaultFee = tenant?.fee_schedule?.[req.document_type] ?? 0
+  const [feeInput, setFeeInput]           = useState(defaultFee > 0 ? String(defaultFee) : '')
   const [settingFee, setSettingFee]       = useState(false)
 
   useEffect(() => {
@@ -850,6 +851,7 @@ const DOC_CSS = `
   body { font-family: 'Sarabun', 'TH SarabunNew', sans-serif; font-size: 16pt; line-height: 2; color: #000; }
   .header { text-align: center; margin-bottom: 16pt; }
   .header .emblem { font-size: 44pt; display: block; margin-bottom: 4pt; }
+  .header .emblem-img { width: 64pt; height: 64pt; object-fit: contain; display: block; margin: 0 auto 6pt; }
   .header h1 { font-size: 18pt; font-weight: 700; }
   .header h2 { font-size: 15pt; font-weight: 400; }
   .doc-title { font-size: 20pt; font-weight: 700; text-align: center;
@@ -923,7 +925,9 @@ function buildDocHTML({ req, tenant, docDate }) {
 <style>${DOC_CSS}</style>
 </head><body>
 <div class="header">
-  <span class="emblem">🏛️</span>
+  ${tenant?.logo_url
+    ? `<img src="${tenant.logo_url}" class="emblem-img" alt="โลโก้" />`
+    : `<span class="emblem">🏛️</span>`}
   <h1>${orgName}</h1>
 </div>
 <div class="doc-title">${title}</div>

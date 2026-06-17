@@ -4,12 +4,14 @@ import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 
 const DOC_FEE_LABELS = [
-  { value: 'residence_cert', label: '🏠 ใบรับรองการอยู่อาศัย' },
-  { value: 'personal_cert',  label: '👤 หนังสือรับรองบุคคล' },
-  { value: 'conduct_cert',   label: '✅ หนังสือรับรองความประพฤติ' },
-  { value: 'other',          label: '📝 คำขออื่นๆ' },
+  { value: 'residence_cert',   label: '🏠 ใบรับรองการอยู่อาศัย' },
+  { value: 'personal_cert',    label: '👤 หนังสือรับรองบุคคล' },
+  { value: 'conduct_cert',     label: '✅ หนังสือรับรองความประพฤติ' },
+  { value: 'waste_collection', label: '🗑️ ค่าธรรมเนียมเก็บขนขยะ (ต่อปี)', hint: 'ใช้เป็นค่าเริ่มต้นเมื่อเจ้าหน้าที่แจ้งยอด' },
+  { value: 'tax_notice',       label: '🏦 ภาษีที่ดินและสิ่งปลูกสร้าง', hint: 'ใช้เป็นค่าเริ่มต้น — เจ้าหน้าที่ปรับได้ต่อรายการ' },
+  { value: 'other',            label: '📝 คำขออื่นๆ' },
 ]
-const DEFAULT_FEE = { residence_cert: 0, personal_cert: 0, conduct_cert: 0, other: 0 }
+const DEFAULT_FEE = { residence_cert: 0, personal_cert: 0, conduct_cert: 0, waste_collection: 0, tax_notice: 0, other: 0 }
 const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
 
 export default function FeeSettingsAdmin({ tenant }) {
@@ -132,9 +134,12 @@ export default function FeeSettingsAdmin({ tenant }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {DOC_FEE_LABELS.map(({ value, label }) => (
+                  {DOC_FEE_LABELS.map(({ value, label, hint }) => (
                     <tr key={value} className="hover:bg-gray-50/50">
-                      <td className="px-4 py-2.5 text-gray-700">{label}</td>
+                      <td className="px-4 py-2.5">
+                        <p className="text-sm text-gray-700">{label}</p>
+                        {hint && <p className="text-[10px] text-gray-400 mt-0.5">{hint}</p>}
+                      </td>
                       <td className="px-4 py-2.5">
                         <div className="flex items-center justify-end gap-1.5">
                           <input

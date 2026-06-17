@@ -426,8 +426,11 @@ export default function MyDocRequests() {
   const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session))
-  }, [])
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+      if (!data.session) navigate('/auth', { state: { from: '/my-docs' }, replace: true })
+    })
+  }, [navigate])
 
   useEffect(() => {
     if (session === undefined || !tenant?.id) return
