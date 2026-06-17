@@ -1,11 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, FileText, CheckCircle2, Loader2, Copy, Check, ChevronRight, ShieldCheck, Upload, CreditCard, ImageIcon } from 'lucide-react'
-import QRCode from 'react-qr-code'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
-import { generatePromptPayPayload } from '../lib/promptpay'
 
 const DOC_TYPES = [
   {
@@ -128,7 +126,7 @@ export default function CitizenDocRequest() {
   }
 
   const feeAmount = selected ? ((tenant?.fee_schedule ?? {})[selected.value] ?? 0) : 0
-  const requiresPayment = feeAmount > 0 && !!tenant?.promptpay_id
+  const requiresPayment = feeAmount > 0 && !!tenant?.bank_account_no
 
   // ขั้นที่ 1: ตรวจว่าต้องชำระหรือไม่ — ถ้าใช่ไปหน้าชำระก่อน
   function handleFormNext() {
@@ -187,7 +185,6 @@ export default function CitizenDocRequest() {
 
   // ─── Payment Screen ────────────────────────────────────────────────────────
   if (showPayment && selected) {
-    const qrPayload = generatePromptPayPayload(tenant.promptpay_id, feeAmount)
     return (
       <div className="min-h-screen" style={{ backgroundColor: '#eef2f7' }}>
         {/* Mobile header */}
@@ -197,7 +194,7 @@ export default function CitizenDocRequest() {
           </button>
           <div>
             <p className="font-bold text-gray-800">ชำระค่าธรรมเนียม</p>
-            <p className="text-xs text-gray-400">สแกน QR แล้วอัปโหลดสลิป</p>
+            <p className="text-xs text-gray-400">โอนเงิน แล้วอัปโหลดสลิป</p>
           </div>
         </div>
 
@@ -238,19 +235,27 @@ export default function CitizenDocRequest() {
             </div>
           </div>
 
-          {/* QR Code */}
-          {qrPayload && (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col items-center gap-4">
-              <p className="text-sm font-bold text-gray-700">สแกนด้วยแอปธนาคาร / เป๋าตัง / True Money</p>
-              <div className="p-4 bg-white rounded-2xl border-2 border-gray-100 shadow-inner">
-                <QRCode value={qrPayload} size={180} />
-              </div>
-              <div className="text-center">
-                <p className="text-xs text-gray-400">PromptPay</p>
-                <p className="text-sm font-bold text-gray-700 font-mono tracking-widest mt-0.5">
-                  {tenant.promptpay_id}
-                </p>
-                <p className="text-xl font-black text-gray-800 mt-1">{feeAmount.toLocaleString()} บาท</p>
+          {/* Bank Account Info */}
+          {tenant?.bank_account_no && (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-3">
+              <p className="text-sm font-bold text-gray-700">โอนเงินเข้าบัญชีธนาคาร</p>
+              <div className="bg-blue-50 rounded-xl p-4 space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-gray-500">ธนาคาร</span>
+                  <span className="text-sm font-bold text-gray-800">{tenant.bank_name || '-'}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-gray-500">เลขบัญชี</span>
+                  <span className="text-sm font-bold text-gray-800 font-mono tracking-widest">{tenant.bank_account_no}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-gray-500">ชื่อบัญชี</span>
+                  <span className="text-sm font-bold text-gray-800 text-right max-w-[60%]">{tenant.bank_account_name || '-'}</span>
+                </div>
+                <div className="border-t border-blue-100 pt-2 flex justify-between items-center">
+                  <span className="text-xs text-gray-500">ยอดชำระ</span>
+                  <span className="text-xl font-black text-blue-700">{feeAmount.toLocaleString()} บาท</span>
+                </div>
               </div>
             </div>
           )}
@@ -591,7 +596,7 @@ export default function CitizenDocRequest() {
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-2">
               <p className="text-xs font-bold text-amber-700 uppercase tracking-wide">ค่าธรรมเนียม</p>
               <p className="text-2xl font-bold text-amber-800">{feeAmount.toLocaleString()} <span className="text-base font-normal">บาท</span></p>
-              <p className="text-xs text-amber-600">ชำระผ่าน PromptPay หลังยื่นคำขอ</p>
+              <p className="text-xs text-amber-600">โอนเงินผ่านบัญชีธนาคาร หลังยื่นคำขอ</p>
             </div>
           ) : (
             <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">

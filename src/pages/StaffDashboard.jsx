@@ -218,7 +218,7 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpda
       if (error) throw error
       const docLabel = DOC_TYPES.find(d => d.value === req.document_type)?.label ?? req.document_type
       notifyTelegram(tenant?.telegram_group_id,
-        `💳 <b>แจ้งยอดค่าชำระ</b>\nประเภท: ${docLabel}\nผู้ขอ: ${req.requester_name}\nยอด: <b>${amount.toLocaleString()} บาท</b>\nรอประชาชนชำระผ่าน PromptPay`
+        `💳 <b>แจ้งยอดค่าชำระ</b>\nประเภท: ${docLabel}\nผู้ขอ: ${req.requester_name}\nยอด: <b>${amount.toLocaleString()} บาท</b>\nรอประชาชนชำระผ่านบัญชีธนาคาร`
       )
       onPaymentUpdate?.()
       onClose()
@@ -331,7 +331,7 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpda
               </div>
               <div className="px-4 py-3 bg-white space-y-3">
                 <p className="text-xs text-gray-500 leading-relaxed">
-                  คำนวณยอดจากระบบ อปท. แล้วระบุที่นี่ ระบบจะแสดง QR PromptPay ให้ประชาชนชำระ
+                  คำนวณยอดจากระบบ อปท. แล้วระบุที่นี่ ระบบจะแสดงบัญชีธนาคารให้ประชาชนชำระ
                 </p>
                 <div className="flex gap-2">
                   <div className="flex-1 relative">

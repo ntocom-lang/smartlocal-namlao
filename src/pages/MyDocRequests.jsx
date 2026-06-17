@@ -5,10 +5,8 @@ import {
   RefreshCw, Loader2, ChevronRight, X, Search, Download,
   CreditCard, Upload, ImageIcon, Share2, Copy, Check, Plus,
 } from 'lucide-react'
-import QRCode from 'react-qr-code'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
-import { generatePromptPayPayload } from '../lib/promptpay'
 import { notifyTelegram } from '../lib/notifyTelegram'
 
 const DOC_TYPES = {
@@ -167,11 +165,9 @@ function DocDetailSheet({ req, onClose, tenant, onRefresh }) {
     return () => { cancelled = true }
   }, [req.payment_slip_url])
 
-  const hasPayment   = req.payment_status && req.payment_status !== 'not_required'
-  const needsPayment = req.payment_status === 'pending'
-  const qrPayload    = needsPayment && tenant?.promptpay_id
-    ? generatePromptPayPayload(tenant.promptpay_id, req.fee_amount ?? 0)
-    : null
+  const hasPayment     = req.payment_status && req.payment_status !== 'not_required'
+  const needsPayment   = req.payment_status === 'pending'
+  const hasBankAccount = needsPayment && !!tenant?.bank_account_no
 
   function handleSlipChange(e) {
     const f = e.target.files?.[0]
@@ -294,7 +290,7 @@ function DocDetailSheet({ req, onClose, tenant, onRefresh }) {
               <div>
                 <p className="text-sm font-bold text-amber-800">รอเจ้าหน้าที่แจ้งยอดค่าชำระ</p>
                 <p className="text-xs text-amber-600 mt-1 leading-relaxed">
-                  เจ้าหน้าที่กำลังคำนวณยอดจากระบบ อปท. เมื่อแจ้งยอดแล้ว QR PromptPay จะแสดงที่นี่
+                  เจ้าหน้าที่กำลังคำนวณยอดจากระบบ อปท. เมื่อแจ้งยอดแล้ว ข้อมูลบัญชีธนาคารสำหรับชำระจะแสดงที่นี่
                 </p>
               </div>
             </div>
@@ -316,13 +312,21 @@ function DocDetailSheet({ req, onClose, tenant, onRefresh }) {
                     </div>
                   </div>
 
-                  {qrPayload && (
-                    <div className="flex flex-col items-center gap-3 py-2">
-                      <p className="text-xs text-amber-700 font-semibold">สแกน PromptPay ด้วยแอปธนาคาร</p>
-                      <div className="p-3 bg-white rounded-2xl border-2 border-amber-100 shadow-sm">
-                        <QRCode value={qrPayload} size={150} />
+                  {hasBankAccount && (
+                    <div className="bg-white rounded-xl border border-amber-100 p-3 space-y-1.5">
+                      <p className="text-xs text-amber-700 font-semibold mb-2">โอนเงินเข้าบัญชีธนาคาร</p>
+                      <div className="flex justify-between">
+                        <span className="text-xs text-gray-500">ธนาคาร</span>
+                        <span className="text-xs font-bold text-gray-800">{tenant.bank_name || '-'}</span>
                       </div>
-                      <p className="text-xs text-gray-500 font-mono tracking-widest">{tenant.promptpay_id}</p>
+                      <div className="flex justify-between">
+                        <span className="text-xs text-gray-500">เลขบัญชี</span>
+                        <span className="text-xs font-bold text-gray-800 font-mono tracking-wider">{tenant.bank_account_no}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-xs text-gray-500">ชื่อบัญชี</span>
+                        <span className="text-xs font-bold text-gray-800 text-right">{tenant.bank_account_name || '-'}</span>
+                      </div>
                     </div>
                   )}
 
