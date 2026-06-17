@@ -3,15 +3,18 @@ import { supabase } from '../../lib/supabase'
 import { ChevronRight, ArrowLeft, Printer, BarChart2 } from 'lucide-react'
 
 const PROJECT_TYPE_LABEL = {
-  road:         'ถนน/สะพาน',
-  drain:        'ระบายน้ำ',
-  bridge:       'สะพาน',
-  light:        'ไฟฟ้า',
-  waterway:     'ลำเหมือง',
-  building:     'อาคาร/สิ่งก่อสร้าง',
-  irrigation:   'ชลประทาน',
-  water_supply: 'ประปา',
-  other:        'อื่นๆ',
+  road_concrete: 'ถนน ค.ส.ล.',
+  road_asphalt:  'ลาดยางแอสฟัลท์',
+  road_slurry:   'ฉาบผิวสเลอรี่ซิล',
+  road_gravel:   'หินคลุก',
+  drain:         'รางระบายน้ำ',
+  dredge:        'ขุดลอก',
+  canal:         'รางน้ำ/ลำเหมือง',
+  pipe_water:    'ท่อน้ำประปา',
+  building:      'อาคาร/สิ่งก่อสร้าง',
+  light:         'ไฟฟ้าสาธารณะ',
+  park:          'สวนสาธารณะ/ภูมิทัศน์',
+  other:         'อื่นๆ',
 }
 
 const STATUS_TH = {

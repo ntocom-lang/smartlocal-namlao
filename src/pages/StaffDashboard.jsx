@@ -62,6 +62,7 @@ const MODULE_GROUPS = [
       { key: 'docs-archive',  label: 'คลังเอกสาร',     Icon: Archive,    color: '#0f766e' },
       { key: 'map',          label: 'แผนที่',          Icon: MapPin,     color: '#0891b2' },
       { key: 'report',       label: 'รายงาน',          Icon: TrendingUp, color: '#f59e0b' },
+      { key: 'civil-report', label: 'รายงานโครงการ',  Icon: Printer,    color: '#7c3aed' },
     ],
   },
   {
@@ -2220,6 +2221,7 @@ export default function StaffDashboard() {
           {activeModule === 'map'        && <MapDashboardAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} onNavigate={() => {}} />}
           {activeModule === 'report'       && <StaffReportWrapper tenant={tenant} />}
           {activeModule === 'docs-archive' && <DocumentArchive tenant={tenant} profile={profile} />}
+          {activeModule === 'civil-report'      && <CivilProjectReport tenant={tenant} />}
           {activeModule === 'tourism'          && <TourismManager tenant={tenant} />}
           {activeModule === 'tourism-reviews'  && <TourismReviewsAdmin tenant={tenant} />}
           {activeModule === 'business-register' && <BusinessRegistrationAdmin tenant={tenant} />}
