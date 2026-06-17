@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { compressImage } from '../../lib/imageUtils'
+import { logAction } from '../../lib/auditLog'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -413,6 +414,13 @@ export default function DocumentArchive({ tenant, profile }) {
     if (!window.confirm('ลบเอกสารนี้? ไม่สามารถกู้คืนได้')) return
     setDeleting(id)
     const doc = docs.find(d => d.id === id)
+    await logAction({
+      action: 'delete', resourceType: 'document',
+      resourceId: id,
+      resourceLabel: doc?.title,
+      municipalityId: tenant.id,
+      metadata: { department: doc?.department, file_type: doc?.file_type, file_path: doc?.file_path },
+    })
     await supabase.storage.from(BUCKET).remove([doc.file_path])
     await supabase.from('documents').delete().eq('id', id)
     setDocs(p => p.filter(d => d.id !== id))

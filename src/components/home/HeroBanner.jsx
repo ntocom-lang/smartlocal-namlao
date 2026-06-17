@@ -76,7 +76,7 @@ export default function HeroBanner() {
                   E-Service
                 </h1>
                 <p className="text-xs md:text-sm text-gray-500 font-medium leading-relaxed">
-                  ระบบยื่นคำร้องออนไลน์ ตลอด 24 ชั่วโมง
+                  ระบบยื่นคำร้องและขอเอกสาร ตลอด 24 ชั่วโมง
                 </p>
               </div>
             </div>

@@ -3,6 +3,7 @@ import { Loader2, Plus, X, Pencil, Trash2, ChevronLeft, ChevronRight, Paperclip,
 import { supabase } from '../../lib/supabase'
 import { notifyTelegram } from '../../lib/notifyTelegram'
 import { compressImage } from '../../lib/imageUtils'
+import { logAction } from '../../lib/auditLog'
 
 const EVENTS_CATEGORIES = ['ประชาสัมพันธ์', 'ประชุม', 'กำหนดการ', 'อบรม', 'อื่นๆ']
 const EVENTS_CATEGORY_COLOR = {
@@ -227,6 +228,14 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
 
   async function handleDelete(id) {
     setDeleting(id)
+    const ev = events.find(e => e.id === id)
+    await logAction({
+      action: 'delete', resourceType: 'event',
+      resourceId: id,
+      resourceLabel: ev?.title,
+      municipalityId: tenant.id,
+      metadata: { event_date: ev?.event_date, category: ev?.category, audience: ev?.audience },
+    })
     const { error } = await supabase.from('events').delete().eq('id', id)
     setDeleting(null)
     if (!error) {

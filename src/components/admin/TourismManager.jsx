@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Luggage, Store, Star, RefreshCw, Loader2, Plus, Camera, Pencil, Trash2, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { compressImage } from '../../lib/imageUtils'
+import { logAction } from '../../lib/auditLog'
 import BusinessRegistrationAdmin from './BusinessRegistrationAdmin'
 
 const TOUR_CATS = [
@@ -40,6 +41,14 @@ export function TourismReviewsAdmin({ tenant }) {
   async function handleDelete(id) {
     if (!window.confirm('ลบรีวิวนี้ออกจากระบบ?')) return
     setDeleting(id)
+    const rev = reviews.find(r => r.id === id)
+    await logAction({
+      action: 'delete', resourceType: 'tourism_review',
+      resourceId: id,
+      resourceLabel: placeMap[rev?.place_id] ? `รีวิว ${placeMap[rev.place_id]}` : 'รีวิว',
+      municipalityId: tenant?.id,
+      metadata: { rating: rev?.rating, reviewer: rev?.reviewer_name, comment: rev?.comment?.slice(0, 80) },
+    })
     await supabase.from('tourism_reviews').delete().eq('id', id)
     setDeleting(null)
     setReviews(prev => prev.filter(r => r.id !== id))
@@ -181,6 +190,13 @@ export default function TourismManager({ tenant }) {
 
   async function handleDelete() {
     if (!sheetPlace || !window.confirm(`ลบ "${sheetPlace.name}" ออกจากรายการ?`)) return
+    await logAction({
+      action: 'delete', resourceType: 'tourism_place',
+      resourceId: sheetPlace.id,
+      resourceLabel: sheetPlace.name,
+      municipalityId: tenant?.id,
+      metadata: { category: sheetPlace.category, is_active: sheetPlace.is_active },
+    })
     await supabase.from('tourism_places').delete().eq('id', sheetPlace.id)
     setPlaces(prev => prev.filter(p => p.id !== sheetPlace.id))
     closeSheet()

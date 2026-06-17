@@ -22,16 +22,18 @@ const STATUS_MSG = {
 }
 
 const CATEGORY_LABEL = {
-  road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าส่องสว่าง',
+  road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าสาธารณะ',
   trash: 'ขยะ/ความสะอาด', water: 'น้ำประปา',
-  flood: 'น้ำท่วม/ระบายน้ำ', tree: 'ตัดต้นไม้',
-  noise: 'แจ้งเหตุรำคาญ', drain: 'ท่อระบายน้ำ',
+  flood: 'น้ำท่วม/ระบายน้ำ', tree: 'ต้นไม้/สวนสาธารณะ',
+  noise: 'เหตุรำคาญ', drain: 'ท่อระบายน้ำ',
   waste_water: 'น้ำเสีย', suction: 'ดูดสิ่งปฏิกูล',
   manhole: 'ฝาท่อระบายน้ำ', vendor: 'ขายของบนทางสาธารณะ',
   building: 'ตรวจสอบอาคาร', mosquito: 'พ่นยุง',
   pollution: 'กลิ่นควัน/มลพิษ', corruption: 'แจ้งการทุจริต',
   tax: 'ภาษีและค่าธรรมเนียม', canal: 'ลอกคลอง',
-  animals: 'สุนัขและแมวจรจัด', other: 'อื่นๆ',
+  animals: 'สุนัขจรจัด', water_supply: 'สนับสนุนน้ำอุปโภค',
+  borrow_equipment: 'ยืมพัสดุ', grievance: 'ร้องทุกข์/ร้องเรียน',
+  other: 'อื่นๆ',
 }
 
 const CATEGORY_EMOJI = {
@@ -39,7 +41,8 @@ const CATEGORY_EMOJI = {
   flood: '🌊', tree: '🌳', noise: '📢', drain: '🕳️',
   waste_water: '💧', suction: '🚛', manhole: '⚙️', vendor: '🏪',
   building: '🏗️', mosquito: '🦟', pollution: '🌫️', corruption: '⚖️',
-  tax: '📋', canal: '🏞️', animals: '🐕', other: '📝',
+  tax: '📋', canal: '🏞️', animals: '🐕', water_supply: '🚿',
+  borrow_equipment: '📦', grievance: '📣', other: '📝',
 }
 
 function timeAgo(dateStr) {
@@ -124,10 +127,17 @@ export default function NotificationsPage() {
 
         ) : (
           <>
-          {/* ปุ่มดูคำร้องทั้งหมด */}
-          <div className="flex justify-end px-3 pt-3">
+          {/* action bar */}
+          <div className="flex items-center justify-between px-3 pt-3">
+            {hasUnread ? (
+              <button
+                onClick={markAllRead}
+                className="text-sm font-semibold px-4 py-1.5 rounded-xl transition-colors text-gray-500 bg-gray-100 hover:bg-gray-200">
+                อ่านทั้งหมด
+              </button>
+            ) : <div />}
             <button
-              onClick={() => { markAllRead(); navigate('/my-complaints') }}
+              onClick={() => navigate('/my-complaints')}
               className="text-sm font-semibold px-4 py-1.5 rounded-xl transition-colors"
               style={{
                 color: 'var(--color-primary)',

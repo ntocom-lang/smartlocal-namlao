@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { fmtNo } from '../lib/formatComplaintNo'
 import { compressImage } from '../lib/imageUtils'
+import { notifyTelegram } from '../lib/notifyTelegram'
 import MapPicker from '../components/MapPicker'
 
 const STATUS = {
@@ -540,6 +541,20 @@ export default function TechnicianDashboard() {
       const updated = complaints.map((c) => c.id === id ? { ...c, ...payload } : c)
       setComplaints(updated)
       emitTechBadge(updated)
+
+      const c = complaints.find(x => x.id === id)
+      const catLabel = CATEGORY_LABEL[c?.category] ?? c?.category ?? ''
+      const statusMsg = {
+        received:    'ช่างรับงานแล้ว',
+        in_progress: 'ช่างเริ่มลงพื้นที่ดำเนินการ',
+        completed:   'ช่างปิดงานแล้ว — รอเจ้าหน้าที่ตรวจสอบและปิดเรื่อง',
+      }[nextStatus]
+      if (statusMsg) {
+        notifyTelegram(tenant?.telegram_group_id,
+          `🔧 <b>${statusMsg}</b>\nประเภท: ${catLabel}${c?.subject ? `\nเรื่อง: ${c.subject}` : ''}${myName ? `\nช่าง: ${myName}` : ''}${techNote ? `\nหมายเหตุ: ${techNote}` : ''}`
+        )
+      }
+
       setSelected(null)
     }
     setUpdating(null)

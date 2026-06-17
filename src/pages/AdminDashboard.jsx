@@ -27,6 +27,7 @@ import EventsManagerComponent from '../components/admin/EventsManager'
 import { InboxModule } from './StaffDashboard'
 import ReportManagerComponent from '../components/admin/ReportManager'
 import ModuleManager from '../components/admin/ModuleManager'
+import AuditLogViewer from '../components/admin/AuditLogViewer'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS = {
@@ -3993,6 +3994,7 @@ const PAGE_LABELS = {
   map: 'แผนที่คำร้อง',
   'civil-project': 'โครงการโยธา',
   'civil-report': 'รายงานโยธา',
+  'audit-log': 'บันทึกกิจกรรม',
 }
 
 export default function AdminDashboard() {
@@ -4258,38 +4260,37 @@ export default function AdminDashboard() {
             {
               group: null,
               items: [
-                { key: 'dashboard', label: 'ภาพรวม', Icon: BarChart2, color: '#3b82f6', show: true },
-                { key: 'home', label: 'กลับเว็บหลัก', Icon: Home, color: '#64748b', show: true, isLink: true },
+                { key: 'dashboard',   label: 'ภาพรวม',             Icon: BarChart2, color: '#3b82f6', show: true },
+                { key: 'goto-staff',  label: 'หน้างานเจ้าหน้าที่', Icon: Users,     color: '#0891b2', show: ['admin','superadmin','officer'].includes(currentUserRole), isLink: true, navTo: '/staff' },
+                { key: 'home',        label: 'กลับเว็บหลัก',       Icon: Home,      color: '#64748b', show: true, isLink: true },
               ],
             },
             {
-              group: 'บริการประชาชน',
+              group: 'ดูแลและรายงาน',
               items: [
-                { key: 'doc-requests',  label: 'คำขอเอกสาร',   Icon: FileText,      color: '#8b5cf6', show: currentUserRole !== 'council' },
-                { key: 'complaints',    label: 'คำร้อง',         Icon: ClipboardList, color: '#ef4444', show: currentUserRole !== 'council' && currentUserRole !== 'viewer' },
-                { key: 'events',        label: 'กิจกรรม',        Icon: CalendarDays,  color: '#10b981', show: true },
-                { key: 'report',        label: 'รายงาน',         Icon: TrendingUp,    color: '#059669', show: currentUserRole !== 'council' },
-                { key: 'map',           label: 'แผนที่คำร้อง',   Icon: MapPin,        color: '#3b82f6', show: currentUserRole !== 'council' },
-                { key: 'civil-project', label: 'โครงการโยธา',   Icon: Wrench,        color: '#7c3aed', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
+                { key: 'complaints', label: 'คำร้อง',  Icon: ClipboardList, color: '#ef4444', show: currentUserRole !== 'viewer' },
+                { key: 'report',     label: 'รายงาน',  Icon: TrendingUp,    color: '#059669', show: true },
               ],
             },
             {
               group: 'จัดการเนื้อหา',
               items: [
-                { key: 'staff',            label: 'รูปผู้บริหาร',       Icon: UserCircle2, color: '#7c3aed', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
+                { key: 'events', label: 'กิจกรรม',     Icon: CalendarDays, color: '#10b981',  show: true },
+                { key: 'staff',  label: 'รูปผู้บริหาร', Icon: UserCircle2,  color: '#7c3aed', show: currentUserRole !== 'viewer' },
               ],
             },
             {
               group: 'ตั้งค่าระบบ',
               items: [
-                { key: 'categories',  label: 'ประเภทคำร้อง', Icon: Tag,      color: '#d97706', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
+                { key: 'categories',  label: 'ประเภทคำร้อง', Icon: Tag,      color: '#d97706', show: currentUserRole !== 'viewer' },
                 { key: 'fee-settings', label: 'ค่าธรรมเนียม', Icon: Banknote, color: '#10b981', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                { key: 'assignments', label: 'ผู้รับผิดชอบ', Icon: Wrench,   color: '#d97706', show: currentUserRole !== 'council' },
-                { key: 'emergency',   label: 'สายด่วน',       Icon: Phone,    color: '#ef4444', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
-                { key: 'locations',   label: 'สถานที่เกิดเหตุ', Icon: MapPin, color: '#0891b2', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
+                { key: 'assignments', label: 'ผู้รับผิดชอบ', Icon: Wrench,   color: '#d97706', show: true },
+                { key: 'emergency',   label: 'สายด่วน',       Icon: Phone,    color: '#ef4444', show: currentUserRole !== 'viewer' },
+                { key: 'locations',   label: 'สถานที่เกิดเหตุ', Icon: MapPin, color: '#0891b2', show: currentUserRole !== 'viewer' },
                 { key: 'system-settings', label: 'ตั้งค่าระบบ',  Icon: Settings,    color: '#3b82f6', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 { key: 'users',           label: 'จัดการผู้ใช้', Icon: Shield,      color: '#7c3aed', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 { key: 'modules',         label: 'จัดการโมดูล', Icon: LayoutGrid,   color: '#7c3aed', show: currentUserRole === 'superadmin' },
+                { key: 'audit-log',       label: 'บันทึกกิจกรรม', Icon: Shield,     color: '#ef4444', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
               ],
             },
             {
@@ -4310,7 +4311,7 @@ export default function AdminDashboard() {
                   </p>
                 )}
                 <div className="space-y-0.5">
-                  {visible.map(({ key, label, Icon, color, isLink, isExternal, href }) => {
+                  {visible.map(({ key, label, Icon, color, isLink, isExternal, href, navTo }) => {
                     const isActive = activePage === key
                     const baseCls = 'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors'
                     if (isExternal) return (
@@ -4323,7 +4324,7 @@ export default function AdminDashboard() {
                       </a>
                     )
                     if (isLink) return (
-                      <button key={key} onClick={() => navigate('/')}
+                      <button key={key} onClick={() => navigate(navTo ?? '/')}
                         className={`${baseCls} font-medium hover:bg-white/10`}
                         style={{ color: 'rgba(255,255,255,0.55)' }}>
                         <Icon size={16} />
@@ -4589,12 +4590,12 @@ export default function AdminDashboard() {
             <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-2.5">ทางลัด</p>
             <div className="grid grid-cols-3 md:grid-cols-6 gap-2.5">
               {[
-                { key: 'complaints',   label: 'คำร้อง',       Icon: ClipboardList, color: '#1a3a5c', bg: '#dce8f5', show: currentUserRole !== 'council' && currentUserRole !== 'viewer' },
-                { key: 'doc-requests', label: 'คำขอเอกสาร',   Icon: FileText,      color: '#7c3aed', bg: '#ede9fe', show: currentUserRole !== 'council' },
-                { key: 'events',       label: 'กิจกรรม',       Icon: CalendarDays,  color: '#10b981', bg: '#d1fae5', show: true },
-                { key: 'report',       label: 'รายงาน',        Icon: TrendingUp,    color: '#059669', bg: '#d1fae5', show: currentUserRole !== 'council' },
-                { key: 'map',          label: 'แผนที่คำร้อง',  Icon: MapPin,        color: '#3b82f6', bg: '#dbeafe', show: currentUserRole !== 'council' },
-                { key: 'civil-project',label: 'โครงการโยธา',  Icon: Wrench,        color: '#d97706', bg: '#fef3c7', show: currentUserRole !== 'viewer' && currentUserRole !== 'council' },
+                { key: 'complaints', label: 'คำร้อง',           Icon: ClipboardList, color: '#1a3a5c', bg: '#dce8f5', show: currentUserRole !== 'viewer' },
+                { key: 'events',     label: 'กิจกรรม',           Icon: CalendarDays,  color: '#10b981', bg: '#d1fae5', show: true },
+                { key: 'report',     label: 'รายงาน',            Icon: TrendingUp,    color: '#059669', bg: '#d1fae5', show: true },
+                { key: 'categories', label: 'ประเภทคำร้อง',      Icon: Tag,           color: '#d97706', bg: '#fef3c7', show: currentUserRole !== 'viewer' },
+                { key: 'users',      label: 'จัดการผู้ใช้',      Icon: Shield,        color: '#7c3aed', bg: '#ede9fe', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                { key: 'audit-log',  label: 'บันทึกกิจกรรม',    Icon: Bell,          color: '#ef4444', bg: '#fee2e2', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
               ].filter(i => i.show).map(({ key, label, Icon, color, bg }) => (
                 <button key={key} onClick={() => setActivePage(key)}
                   className="flex flex-col items-center gap-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-4 hover:shadow-md active:scale-95 transition-all">
@@ -4608,7 +4609,7 @@ export default function AdminDashboard() {
           </div>
 
           {/* Recent complaints */}
-          {currentUserRole !== 'council' && currentUserRole !== 'viewer' && complaints.length > 0 && (
+          {currentUserRole !== 'viewer' && complaints.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-2.5">
                 <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">คำร้องล่าสุด</p>
@@ -4708,8 +4709,6 @@ export default function AdminDashboard() {
         </div>
       ) : activePage === 'civil-report' ? (
         <CivilProjectReport tenant={tenant} />
-      ) : activePage === 'infra' ? (
-        <CivilProjectReport tenant={tenant} />
       ) : activePage === 'map' ? (
         <MapDashboardAdmin tenant={tenant} currentUserRole={currentUserRole}
           onNavigate={(page) => setActivePage(page)} />
@@ -4717,6 +4716,8 @@ export default function AdminDashboard() {
         <FeeSettingsAdmin tenant={tenant} />
       ) : activePage === 'system-settings' ? (
         <SystemSettingsAdmin tenant={tenant} onUpdateTenant={(updated) => window.location.reload()} />
+      ) : activePage === 'audit-log' ? (
+        <AuditLogViewer tenant={tenant} />
       ) : activePage === 'more' ? (
         /* ─── อื่นๆ page ─── */
         <div className="space-y-4">

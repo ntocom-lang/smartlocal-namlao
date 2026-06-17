@@ -4,6 +4,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { compressImage } from '../../lib/imageUtils'
+import { logAction } from '../../lib/auditLog'
 import MapPicker from '../MapPicker'
 
 const TODAY = new Date().toISOString().slice(0, 10)
@@ -166,6 +167,14 @@ export default function InfraWorkAdmin({ tenant, currentUserRole }) {
   }
 
   async function deleteWork(id) {
+    const work = infraWorks.find(w => w.id === id)
+    await logAction({
+      action: 'delete', resourceType: 'infrastructure_work',
+      resourceId: id,
+      resourceLabel: work?.title ?? work?.location,
+      municipalityId: tenant?.id,
+      metadata: { work_type: work?.work_type, status: work?.status, budget: work?.budget },
+    })
     await supabase.from('infrastructure_works').delete().eq('id', id)
     setDeleteConfirm(null)
     fetchWorks()

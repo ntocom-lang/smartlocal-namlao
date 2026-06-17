@@ -85,7 +85,7 @@ export default function HomePage() {
             { to: '/doc-request', label: 'ขอเอกสาร',     sub: 'ราชการออนไลน์',     Icon: FileText,      bg: 'bg-blue-50',   iconCls: 'text-blue-500' },
             { to: '/complaint',   label: 'ยื่นคำร้อง',    sub: 'แจ้งซ่อม / แจ้งเหตุ', Icon: ClipboardList, bg: 'bg-red-50',    iconCls: 'text-red-500' },
             { to: '/my-docs',     label: 'เอกสารของฉัน',  sub: 'ติดตามสถานะเอกสาร',   Icon: FolderOpen,    bg: 'bg-purple-50', iconCls: 'text-purple-500' },
-            { to: '/events',      label: 'กิจกรรม',       sub: 'ข่าวและปฏิทิน',        Icon: CalendarDays,  bg: 'bg-green-50',  iconCls: 'text-green-500' },
+            { to: '/events',      label: 'ปฏิทิน',        sub: 'กิจกรรมและข่าว',       Icon: CalendarDays,  bg: 'bg-green-50',  iconCls: 'text-green-500' },
           ].map(({ to, label, sub, Icon, bg, iconCls }) => (
             <Link key={to} to={to}
               className="flex items-center gap-2.5 bg-white rounded-2xl px-3.5 py-3 shadow-sm border border-gray-100 hover:shadow-md active:scale-[0.98] transition-all">

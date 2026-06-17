@@ -499,7 +499,7 @@ export default function MorePage() {
             icon={ClipboardList}
             iconBg="bg-red-50"
             iconColor="text-red-500"
-            label="ยื่นคำร้องออนไลน์"
+            label="ยื่นคำร้อง"
             desc="แจ้งซ่อม / ขอน้ำ / แจ้งเหตุสิ่งแวดล้อม"
             href="/complaint"
           />
@@ -507,7 +507,7 @@ export default function MorePage() {
             icon={FileText}
             iconBg="bg-blue-50"
             iconColor="text-blue-500"
-            label="ขอเอกสารราชการออนไลน์"
+            label="ขอเอกสาร"
             desc="ใบรับรองการอยู่อาศัย / หนังสือรับรองบุคคล และอื่นๆ"
             href="/doc-request"
           />

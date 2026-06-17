@@ -8,6 +8,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
+import { compressImage } from '../lib/imageUtils'
 
 const DOC_TYPES = {
   residence_cert:   'ใบรับรองการอยู่อาศัย',
@@ -182,8 +183,9 @@ function DocDetailSheet({ req, onClose, tenant, onRefresh }) {
     try {
       const ext  = slipFile.name.split('.').pop()
       const path = `${req.municipality_id}/${req.id}/slip.${ext}`
+      const toUpload = await compressImage(slipFile, 1200, 0.85)
       const { error: upErr } = await supabase.storage
-        .from('payment-slips').upload(path, slipFile, { upsert: true })
+        .from('payment-slips').upload(path, toUpload, { upsert: true })
       if (upErr) throw upErr
       const { error: dbErr } = await supabase.from('document_requests')
         .update({ payment_status: 'uploaded', payment_slip_url: path }).eq('id', req.id)
@@ -516,7 +518,7 @@ export default function MyDocRequests() {
                 <button onClick={() => navigate('/doc-request')}
                   className="px-6 py-3 rounded-2xl font-bold text-white text-sm active:scale-95 transition-all"
                   style={{ backgroundColor: 'var(--color-primary)' }}>
-                  ยื่นคำขอเอกสาร
+                  ขอเอกสาร
                 </button>
               </div>
             ) : (

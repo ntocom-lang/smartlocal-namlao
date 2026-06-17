@@ -8,6 +8,7 @@ import {
   CreditCard, BadgeCheck, Banknote, Luggage, Star, Store,
 } from 'lucide-react'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
+import InfraWorkAdmin from '../components/admin/InfraWorkAdmin'
 import CivilProjectReport from '../components/admin/CivilProjectReport'
 import MapDashboardAdmin from '../components/admin/MapDashboardAdmin'
 import EventsManager from '../components/admin/EventsManager'
@@ -49,9 +50,10 @@ const MODULE_GROUPS = [
   {
     group: 'งานภายใน',
     items: [
-      { key: 'events',   label: 'กิจกรรม', Icon: CalendarDays, color: '#10b981' },
-      { key: 'approve',  label: 'อนุมัติ',  Icon: CheckSquare,  color: '#f97316' },
-      { key: 'projects', label: 'โครงการ', Icon: Wrench,       color: '#7c3aed' },
+      { key: 'events',   label: 'กิจกรรม',          Icon: CalendarDays, color: '#10b981' },
+      { key: 'approve',  label: 'อนุมัติ',           Icon: CheckSquare,  color: '#f97316' },
+      { key: 'projects', label: 'โครงการ',           Icon: Wrench,       color: '#7c3aed' },
+      { key: 'infra',    label: 'โครงสร้างพื้นฐาน', Icon: MapPin,       color: '#0891b2' },
     ],
   },
   {
@@ -480,7 +482,10 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpda
                 รับเรื่อง — เริ่มดำเนินการ
               </button>
             )}
-            {req.status === 'processing' && (
+            {req.status === 'processing' &&
+             (!SET_FEE_TYPES.includes(req.document_type) ||
+              req.payment_status === 'verified' ||
+              req.payment_status === 'waived') && (
               <button onClick={() => onUpdate(req.id, 'completed', staffNote, '')} disabled={acting}
                 className="w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-all text-sm"
                 style={{ backgroundColor: '#10b981' }}>
@@ -2211,6 +2216,7 @@ export default function StaffDashboard() {
           {activeModule === 'events'     && <EventsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
           {activeModule === 'approve'    && <ApproveModule tenant={tenant} staffProfile={profile} />}
           {activeModule === 'projects'   && <CivilProjectAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
+          {activeModule === 'infra'      && <InfraWorkAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
           {activeModule === 'map'        && <MapDashboardAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} onNavigate={() => {}} />}
           {activeModule === 'report'       && <StaffReportWrapper tenant={tenant} />}
           {activeModule === 'docs-archive' && <DocumentArchive tenant={tenant} profile={profile} />}

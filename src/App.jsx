@@ -131,7 +131,7 @@ function RequireAuth({ children, adminOnly = false, techOnly = false, staffOnly 
     const redirectTo = adminOnly ? '/admin/login' : '/auth'
     return <Navigate to={redirectTo} state={{ from: location.pathname + location.search }} replace />
   }
-  if (adminOnly && role !== null && !['admin', 'superadmin', 'officer', 'viewer', 'council'].includes(role)) {
+  if (adminOnly && role !== null && !['admin', 'superadmin', 'officer', 'viewer'].includes(role)) {
     if (role === 'technician') return <Navigate to="/technician" replace />
     if (role === 'staff')      return <Navigate to="/staff" replace />
     return <Navigate to="/" replace />

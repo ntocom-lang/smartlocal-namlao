@@ -10,6 +10,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { supabase } from '../../lib/supabase'
 import { compressImage } from '../../lib/imageUtils'
+import { logAction } from '../../lib/auditLog'
 import MapPicker from '../MapPicker'
 import InlineMapPicker from '../InlineMapPicker'
 import InlinePolylinePicker from '../InlinePolylinePicker'
@@ -524,6 +525,14 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
   }
 
   async function deleteProject(id) {
+    const proj = (projects ?? []).find(p => p.id === id)
+    await logAction({
+      action: 'delete', resourceType: 'civil_project',
+      resourceId: id,
+      resourceLabel: proj?.project_name ?? proj?.name,
+      municipalityId: tenantId,
+      metadata: { type: proj?.project_type, status: proj?.status, budget: proj?.budget },
+    })
     await supabase.from('civil_projects').delete().eq('id', id)
     setDeleteConfirm(null)
     setView('list')

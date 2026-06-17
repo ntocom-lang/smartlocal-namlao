@@ -4,6 +4,7 @@ import { ArrowLeft, FileText, CheckCircle2, Loader2, Copy, Check, ChevronRight, 
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
+import { compressImage } from '../lib/imageUtils'
 
 const DOC_TYPES = [
   {
@@ -174,7 +175,8 @@ export default function CitizenDocRequest() {
       setSlipUploading(true)
       const ext = slipFile.name.split('.').pop()
       const slipPath = `${tenant?.id ?? 'org'}/${Date.now()}.${ext}`
-      const { error } = await supabase.storage.from('payment-slips').upload(slipPath, slipFile, { upsert: false })
+      const toUpload = await compressImage(slipFile, 1200, 0.85)
+      const { error } = await supabase.storage.from('payment-slips').upload(slipPath, toUpload, { upsert: false })
       if (!error) slipUrl = slipPath  // store path, not public URL (bucket is private)
       setSlipUploading(false)
     }
@@ -203,7 +205,7 @@ export default function CitizenDocRequest() {
           <div className="px-8 py-1.5 flex items-center justify-between border-b"
             style={{ backgroundColor: '#dce8f5', borderColor: '#b8cfea' }}>
             <p className="text-[11px] text-gray-600">
-              ระบบบริการอิเล็กทรอนิกส์ › {tenant?.name ?? ''} › ยื่นคำขอเอกสาร ›{' '}
+              ระบบบริการอิเล็กทรอนิกส์ › {tenant?.name ?? ''} › ขอเอกสาร ›{' '}
               <span className="font-semibold text-gray-700">ชำระค่าธรรมเนียม</span>
             </p>
             <p className="text-[11px] text-gray-500">
@@ -414,7 +416,7 @@ export default function CitizenDocRequest() {
             <ArrowLeft size={18} />
           </button>
           <div>
-            <p className="font-bold text-gray-800">ยื่นคำขอเอกสาร</p>
+            <p className="font-bold text-gray-800">ขอเอกสาร</p>
             <p className="text-xs text-gray-400">เลือกประเภทเอกสารที่ต้องการ</p>
           </div>
         </div>
@@ -425,14 +427,14 @@ export default function CitizenDocRequest() {
             style={{ backgroundColor: '#dce8f5', borderColor: '#b8cfea' }}>
             <p className="text-[11px] text-gray-600">
               ระบบบริการอิเล็กทรอนิกส์ › {tenant?.name ?? ''} ›{' '}
-              <span className="font-semibold text-gray-700">ยื่นคำขอเอกสาร</span>
+              <span className="font-semibold text-gray-700">ขอเอกสาร</span>
             </p>
             <p className="text-[11px] text-gray-500">
               {new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
             </p>
           </div>
           <div className="px-8 py-3 bg-white border-b border-gray-200 shadow-sm">
-            <h1 className="text-base font-bold text-gray-800">ยื่นคำขอเอกสาร</h1>
+            <h1 className="text-base font-bold text-gray-800">ขอเอกสาร</h1>
             <p className="text-[11px] text-gray-400 mt-0.5">{tenant?.name} — เลือกประเภทเอกสารที่ต้องการ</p>
           </div>
         </div>
@@ -500,7 +502,7 @@ export default function CitizenDocRequest() {
         <div className="px-8 py-1.5 flex items-center justify-between border-b"
           style={{ backgroundColor: '#dce8f5', borderColor: '#b8cfea' }}>
           <p className="text-[11px] text-gray-600">
-            ระบบบริการอิเล็กทรอนิกส์ › {tenant?.name ?? ''} › ยื่นคำขอเอกสาร ›{' '}
+            ระบบบริการอิเล็กทรอนิกส์ › {tenant?.name ?? ''} › ขอเอกสาร ›{' '}
             <span className="font-semibold text-gray-700">{selected.label}</span>
           </p>
           <p className="text-[11px] text-gray-500">
@@ -593,7 +595,7 @@ export default function CitizenDocRequest() {
             className="w-full py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-all"
             style={{ backgroundColor: 'var(--color-primary)' }}>
             {saving ? <Loader2 size={18} className="animate-spin" /> : <FileText size={18} />}
-            {saving ? 'กำลังส่งคำขอ...' : 'ยื่นคำขอเอกสาร'}
+            {saving ? 'กำลังส่งคำขอ...' : 'ขอเอกสาร'}
           </button>
 
           <p className="text-xs text-gray-400 text-center leading-relaxed">

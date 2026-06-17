@@ -10,7 +10,7 @@ const NAV_CITIZEN = [
   { label: 'หน้าแรก',       href: '/' },
   { label: 'ยื่นคำร้อง',    href: '/complaint' },
   { label: 'คำร้องของฉัน',  href: '/my-complaints' },
-  { label: 'แจ้งเตือน',     href: '/notifications' },
+  { label: 'การแจ้งเตือน',  href: '/notifications' },
   { label: 'เมนูอื่นๆ',     href: '/more' },
 ]
 
@@ -18,7 +18,7 @@ const NAV_TECH = [
   { label: 'หน้าแรก',       href: '/' },
   { label: 'งานของฉัน',     href: '/technician' },
   { label: 'คำร้องของฉัน',  href: '/my-complaints' },
-  { label: 'แจ้งเตือน',     href: '/notifications' },
+  { label: 'การแจ้งเตือน',  href: '/notifications' },
   { label: 'เมนูอื่นๆ',     href: '/more' },
 ]
 

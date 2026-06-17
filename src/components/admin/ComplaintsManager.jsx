@@ -9,6 +9,7 @@ import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import { notifyTelegram } from '../../lib/notifyTelegram'
 import { compressImage } from '../../lib/imageUtils'
+import { logAction } from '../../lib/auditLog'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const STATUS = {
@@ -36,17 +37,24 @@ const NEXT_ACTION = {
   done:        { label: 'ปิดเรื่อง',        next: 'closed' },
 }
 const CATEGORY_LABEL = {
-  road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าส่องสว่าง',
+  road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าสาธารณะ',
   trash: 'ขยะ/ความสะอาด', water: 'น้ำประปา',
   flood: 'น้ำท่วม/ระบายน้ำ', tree: 'ต้นไม้/สวนสาธารณะ',
-  noise: 'เหตุรำคาญ', other: 'อื่นๆ',
+  noise: 'เหตุรำคาญ', drain: 'ท่อระบายน้ำ',
+  waste_water: 'น้ำเสีย', building: 'ตรวจสอบอาคาร',
+  mosquito: 'พ่นยุง', canal: 'ลอกคลอง',
+  animals: 'สุนัขจรจัด', water_supply: 'สนับสนุนน้ำอุปโภค',
+  borrow_equipment: 'ยืมพัสดุ', grievance: 'ร้องทุกข์/ร้องเรียน',
+  corruption: 'แจ้งการทุจริต', tax: 'ภาษีและค่าธรรมเนียม',
+  other: 'อื่นๆ',
 }
 const CATEGORY_EMOJI = {
-  road: '', light: '', trash: '', water: '',
-  flood: '', tree: '', noise: '', drain: '',
-  waste_water: '', suction: '', manhole: '', vendor: '',
-  building: '', mosquito: '', pollution: '', corruption: '',
-  tax: '', canal: '', animals: '', other: '',
+  road: '🛣️', light: '💡', trash: '🗑️', water: '🚰',
+  flood: '🌊', tree: '🌳', noise: '📢', drain: '🕳️',
+  waste_water: '💧', suction: '🚛', manhole: '⚙️', vendor: '🏪',
+  building: '🏗️', mosquito: '🦟', pollution: '🌫️', corruption: '⚖️',
+  tax: '📋', canal: '🏞️', animals: '🐕', water_supply: '🚿',
+  borrow_equipment: '📦', grievance: '📣', other: '📝',
 }
 const STATUS_MAIN = ['new', 'in_progress', 'done', 'closed', 'rejected']
 
@@ -356,6 +364,13 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
   async function handleDelete() {
     if (!window.confirm(`ลบคำร้องนี้ออกจากระบบ?\n\nการลบไม่สามารถย้อนกลับได้`)) return
     setDeleting(true)
+    await logAction({
+      action: 'delete', resourceType: 'complaint',
+      resourceId: c.id,
+      resourceLabel: `[${c.ref_no ?? c.id.slice(0, 8)}] ${c.description?.slice(0, 60) ?? ''}`,
+      municipalityId: tenant?.id,
+      metadata: { category: c.category, status: c.status, reporter: c.reporter_name },
+    })
     const { error } = await supabase.from('complaints').delete().eq('id', c.id)
     setDeleting(false)
     if (error) { alert('ลบไม่สำเร็จ: ' + error.message); return }
@@ -783,6 +798,16 @@ ${photoSectionHtml}
               </div>
             </div>
           ) : (
+            <div className="space-y-3">
+              {(c.status === 'done' || c.status === 'completed') && (
+                <div className="flex items-start gap-2.5 px-3.5 py-2.5 bg-green-50 border border-green-200 rounded-xl">
+                  <CheckCircle2 size={15} className="text-green-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-semibold text-green-800">ช่างรายงานว่าดำเนินการแล้ว</p>
+                    <p className="text-[11px] text-green-600 mt-0.5">กรุณาตรวจสอบผลงานและกด "ปิดเรื่อง" เพื่อแจ้งประชาชน</p>
+                  </div>
+                </div>
+              )}
             <div className="flex gap-2 flex-wrap">
               <ActionButton status={c.status} id={c.id}
                 onUpdate={(id, next, wp = [], note = null) => { onUpdate(id, next, wp, note); onClose() }}
@@ -803,6 +828,7 @@ ${photoSectionHtml}
               <button onClick={onClose} className="ml-auto px-4 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors">
                 ปิดหน้าต่าง
               </button>
+            </div>
             </div>
           )}
 
@@ -1050,7 +1076,7 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
   })
 
   const baseFiltered = complaints.filter((c) => {
-    const matchStatus = FILTER_KEYS[filterTab] ? c.status === FILTER_KEYS[filterTab] : true
+    const matchStatus = FILTER_KEYS[filterTab] ? normalizeStatus(c.status) === FILTER_KEYS[filterTab] : true
     const matchSearch = search === '' ||
       c.detail.includes(search) ||
       (CATEGORY_LABEL[c.category] ?? '').includes(search) ||
@@ -1171,7 +1197,7 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
                     <span className={`ml-1 px-1.5 rounded-full text-[13px] font-bold ${
                       filterTab === i ? 'bg-white/25' : 'bg-gray-200 text-gray-600'
                     }`}>
-                      {complaints.filter((c) => c.status === FILTER_KEYS[i]).length}
+                      {complaints.filter((c) => normalizeStatus(c.status) === FILTER_KEYS[i]).length}
                     </span>
                   )}
                 </span>

@@ -368,9 +368,9 @@ export default function TourismDetailPage() {
 
   if (!place) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen gap-3">
+      <div className="flex flex-col items-center justify-center min-h-screen gap-3 bg-white">
         <p className="text-4xl">🏙️</p>
-        <p className="text-gray-400 text-sm">ไม่พบข้อมูลสถานที่นี้</p>
+        <p className="text-gray-500 text-sm">ไม่พบข้อมูลสถานที่นี้</p>
         <button onClick={() => navigate(-1)} className="text-sm text-blue-500 underline">กลับ</button>
       </div>
     )
