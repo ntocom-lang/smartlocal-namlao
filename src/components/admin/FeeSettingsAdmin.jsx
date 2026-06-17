@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Banknote, Save, Loader2, CheckCircle2 } from 'lucide-react'
+import { Banknote, Save, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { useTenant } from '../../contexts/TenantContext'
 
 const DOC_FEE_LABELS = [
   { value: 'residence_cert', label: '🏠 ใบรับรองการอยู่อาศัย' },
@@ -12,12 +13,14 @@ const DEFAULT_FEE = { residence_cert: 0, personal_cert: 0, conduct_cert: 0, othe
 const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
 
 export default function FeeSettingsAdmin({ tenant }) {
+  const { patchTenant } = useTenant()
   const [bankName, setBankName] = useState(tenant?.bank_name || '')
   const [bankAccountNo, setBankAccountNo] = useState(tenant?.bank_account_no || '')
   const [bankAccountName, setBankAccountName] = useState(tenant?.bank_account_name || '')
   const [feeSchedule, setFeeSchedule] = useState({ ...DEFAULT_FEE, ...(tenant?.fee_schedule || {}) })
   const [loading, setLoading] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   useEffect(() => {
     if (!tenant) return
@@ -35,6 +38,7 @@ export default function FeeSettingsAdmin({ tenant }) {
   async function handleSave(e) {
     e.preventDefault()
     setLoading(true)
+    setSaveError('')
     try {
       const { error } = await supabase
         .from('municipalities')
@@ -46,10 +50,16 @@ export default function FeeSettingsAdmin({ tenant }) {
         })
         .eq('id', tenant.id)
       if (error) throw error
+      patchTenant({
+        bank_name: bankName.trim() || null,
+        bank_account_no: bankAccountNo.trim() || null,
+        bank_account_name: bankAccountName.trim() || null,
+        fee_schedule: feeSchedule,
+      })
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
     } catch (err) {
-      alert('บันทึกไม่สำเร็จ: ' + err.message)
+      setSaveError(err.message)
     } finally {
       setLoading(false)
     }
@@ -146,13 +156,20 @@ export default function FeeSettingsAdmin({ tenant }) {
             <p className="text-xs text-gray-400 mt-2">* ค่าธรรมเนียม 0 บาท = ไม่ต้องชำระ (ฟรี)</p>
           </div>
 
-          <button type="submit" disabled={loading}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-all"
-            style={{ backgroundColor: '#10b981' }}>
-            {loading ? <Loader2 size={15} className="animate-spin" />
-              : saved ? <CheckCircle2 size={15} /> : <Save size={15} />}
-            {saved ? 'บันทึกสำเร็จ' : 'บันทึกการตั้งค่าการชำระเงิน'}
-          </button>
+          <div className="space-y-2">
+            <button type="submit" disabled={loading}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-all"
+              style={{ backgroundColor: '#10b981' }}>
+              {loading ? <Loader2 size={15} className="animate-spin" />
+                : saved ? <CheckCircle2 size={15} /> : <Save size={15} />}
+              {loading ? 'กำลังบันทึก...' : saved ? 'บันทึกสำเร็จ' : 'บันทึกการตั้งค่าการชำระเงิน'}
+            </button>
+            {saveError && (
+              <p className="flex items-center gap-1.5 text-xs text-red-600">
+                <AlertCircle size={13} /> {saveError}
+              </p>
+            )}
+          </div>
         </form>
       </div>
     </div>
