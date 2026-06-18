@@ -28,6 +28,7 @@ export default function ProfilePage() {
   const [editPhone, setEditPhone] = useState(false)
   const [editIdCard, setEditIdCard] = useState(false)
   const [isGoogleLinked, setIsGoogleLinked] = useState(false)
+  const [isLineLinked, setIsLineLinked] = useState(false)
   const fileRef = useRef()
 
   useEffect(() => {
@@ -38,7 +39,9 @@ export default function ProfilePage() {
 
       const meta = s.user.user_metadata
       setAvatarUrl(meta?.avatar_url || meta?.picture || null)
-      setIsGoogleLinked(s.user.app_metadata?.providers?.includes('google') || false)
+      const providers = s.user.app_metadata?.providers ?? []
+      setIsGoogleLinked(providers.includes('google'))
+      setIsLineLinked(providers.includes('custom:line'))
 
       const { data: p } = await supabase
         .from('profiles')
@@ -128,8 +131,15 @@ export default function ProfilePage() {
   }
 
   async function handleGoogleLink() {
-    await supabase.auth.signInWithOAuth({
+    await supabase.auth.linkIdentity({
       provider: 'google',
+      options: { redirectTo: window.location.href },
+    })
+  }
+
+  async function handleLineLink() {
+    await supabase.auth.linkIdentity({
+      provider: 'custom:line',
       options: { redirectTo: window.location.href },
     })
   }
@@ -288,6 +298,25 @@ export default function ProfilePage() {
             ) : (
               <button onClick={handleGoogleLink}
                 className="text-xs text-white bg-green-500 hover:bg-green-600 px-4 py-1.5 rounded-full font-medium transition-colors">
+                เชื่อมต่อ
+              </button>
+            )}
+          </div>
+
+          {/* LINE */}
+          <div className="flex items-center px-5 py-4 gap-3">
+            <svg width="22" height="22" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <rect width="24" height="24" rx="6" fill="#06C755"/>
+              <path d="M12 2.5C6.753 2.5 2.5 6.314 2.5 11.027c0 4.218 3.739 7.749 8.79 8.369.342.074.808.226.926.519.106.268.07.686.034.956l-.15.898c-.046.267-.21 1.043.914.569 1.124-.474 6.063-3.572 8.274-6.117C22.413 14.598 21.5 12.9 21.5 11.027c0-4.713-4.253-8.527-9.5-8.527z" fill="white"/>
+              <path d="M9.807 9.2H8.8a.2.2 0 0 0-.2.2v3.2c0 .11.09.2.2.2h1.007a.2.2 0 0 0 .2-.2V9.4a.2.2 0 0 0-.2-.2zm5.593 0h-1.007a.2.2 0 0 0-.2.2v1.9l-1.463-2.007A.2.2 0 0 0 12.567 9.2h-1.007a.2.2 0 0 0-.2.2v3.2c0 .11.09.2.2.2H12.567a.2.2 0 0 0 .2-.2v-1.9l1.465 2.008a.2.2 0 0 0 .168.092H15.4a.2.2 0 0 0 .2-.2V9.4a.2.2 0 0 0-.2-.2zm-7.2 0H7a.2.2 0 0 0-.2.2v3.2c0 .11.09.2.2.2h2.2a.2.2 0 0 0 .2-.2v-.8a.2.2 0 0 0-.2-.2H7.8v-2.2a.2.2 0 0 0-.2-.2H7.2zm10 2.4h-1.4v-2.2a.2.2 0 0 0-.2-.2h-.8a.2.2 0 0 0-.2.2v3.2c0 .11.09.2.2.2H17.4a.2.2 0 0 0 .2-.2v-.8a.2.2 0 0 0-.2-.2z" fill="#06C755"/>
+            </svg>
+            <span className="text-sm text-gray-700 flex-1">LINE</span>
+            {isLineLinked ? (
+              <span className="text-xs text-green-600 bg-green-50 px-3 py-1 rounded-full font-medium">เชื่อมต่อแล้ว</span>
+            ) : (
+              <button onClick={handleLineLink}
+                className="text-xs text-white px-4 py-1.5 rounded-full font-medium transition-colors"
+                style={{ backgroundColor: '#06C755' }}>
                 เชื่อมต่อ
               </button>
             )}
