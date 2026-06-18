@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
@@ -30,9 +30,15 @@ export default function AuthPage() {
   const [mode, setMode] = useState('login') // 'login' | 'register'
   const [form, setForm] = useState({ email: '', password: '', name: '', phone: '' })
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(location.state?.oauthError
-    ? 'เข้าสู่ระบบด้วย LINE/Google ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'
-    : '')
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (location.state?.oauthError) {
+      setError('เข้าสู่ระบบด้วย LINE/Google ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')
+      // clear oauthError จาก history เพื่อไม่ให้แสดงซ้ำเมื่อกด Back กลับมา
+      navigate(location.pathname, { replace: true, state: { from } })
+    }
+  }, [])
   const [success, setSuccess] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [remember, setRemember] = useState(false)

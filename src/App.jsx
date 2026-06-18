@@ -205,6 +205,25 @@ function AppShell() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session) {
         await checkAndFixProfile(session.user.id, session.user.user_metadata)
+
+        // merge phone/id_card จาก account เดิม กรณี LINE OAuth เริ่มจากหน้า ProfilePage
+        const mergeRaw = sessionStorage.getItem('merge_profile_on_oauth')
+        if (mergeRaw) {
+          sessionStorage.removeItem('merge_profile_on_oauth')
+          try {
+            const mergeData = JSON.parse(mergeRaw)
+            const updates = {}
+            if (mergeData.phone)   updates.phone   = mergeData.phone
+            if (mergeData.id_card) updates.id_card = mergeData.id_card
+            if (Object.keys(updates).length > 0) {
+              await supabase.from('profiles').upsert(
+                { id: session.user.id, ...updates },
+                { onConflict: 'id' }
+              )
+            }
+          } catch {}
+        }
+
         const returnTo = sessionStorage.getItem('oauth_from')
         if (returnTo) {
           sessionStorage.removeItem('oauth_from')

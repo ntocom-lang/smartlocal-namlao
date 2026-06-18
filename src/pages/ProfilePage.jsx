@@ -138,8 +138,12 @@ export default function ProfilePage() {
   }
 
   async function handleLineLink() {
-    // linkIdentity ไม่รองรับ custom provider ที่ไม่มี email (LINE ไม่ return email)
-    // signInWithOAuth จะสร้าง LINE session ใหม่ — ใช้สำหรับ user ที่ยังไม่มี LINE account
+    // บันทึก phone + id_card ไว้ merge เข้า LINE account ใหม่หลัง OAuth
+    sessionStorage.setItem('merge_profile_on_oauth', JSON.stringify({
+      phone:   profile.phone   || '',
+      id_card: profile.id_card || '',
+    }))
+    sessionStorage.setItem('oauth_from', '/profile')
     await supabase.auth.signInWithOAuth({
       provider: 'custom:line',
       options: { redirectTo: window.location.origin },
