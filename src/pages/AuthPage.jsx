@@ -35,6 +35,7 @@ export default function AuthPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [remember, setRemember] = useState(false)
   const [loadingGoogle, setLoadingGoogle] = useState(false)
+  const [loadingLine, setLoadingLine] = useState(false)
 
   const set = (f) => (e) => setForm((p) => ({ ...p, [f]: e.target.value }))
 
@@ -50,6 +51,16 @@ export default function AuthPage() {
       options: { redirectTo: window.location.origin },
     })
     if (err) { setError('ไม่สามารถเข้าสู่ระบบด้วย Google ได้'); setLoadingGoogle(false) }
+  }
+
+  async function handleLine() {
+    setLoadingLine(true)
+    setError('')
+    const { error: err } = await supabase.auth.signInWithOAuth({
+      provider: 'custom:line',
+      options: { redirectTo: window.location.origin },
+    })
+    if (err) { setError('ไม่สามารถเข้าสู่ระบบด้วย LINE ได้'); setLoadingLine(false) }
   }
 
   async function handleLogin(e) {
@@ -300,6 +311,21 @@ export default function AuthPage() {
             </svg>
           )}
           {mode === 'login' ? 'เข้าสู่ระบบด้วย Google' : 'สมัครด้วย Google'}
+        </button>
+
+        {/* LINE OAuth */}
+        <button onClick={handleLine} disabled={loadingLine}
+          className="w-full flex items-center justify-center gap-3 py-3 rounded-xl text-white text-sm font-medium active:scale-95 transition-all disabled:opacity-60 shadow-sm mt-3"
+          style={{ backgroundColor: '#06C755' }}>
+          {loadingLine ? (
+            <Loader2 size={18} className="animate-spin text-white/80" />
+          ) : (
+            <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2C6.477 2 2 6.065 2 11.108c0 4.535 4.02 8.33 9.452 8.997.368.08.869.243.996.558.114.287.075.736.037 1.025l-.161.965c-.05.287-.226 1.122.984.612 1.21-.51 6.523-3.84 8.9-6.578C23.48 14.96 22 13.155 22 11.108 22 6.065 17.523 2 12 2z" fill="white"/>
+              <path d="M9.807 9.2H8.8a.2.2 0 0 0-.2.2v3.2c0 .11.09.2.2.2h1.007a.2.2 0 0 0 .2-.2V9.4a.2.2 0 0 0-.2-.2zm5.593 0h-1.007a.2.2 0 0 0-.2.2v1.9l-1.463-2.007A.2.2 0 0 0 12.567 9.2h-1.007a.2.2 0 0 0-.2.2v3.2c0 .11.09.2.2.2H12.567a.2.2 0 0 0 .2-.2v-1.9l1.465 2.008a.2.2 0 0 0 .168.092H15.4a.2.2 0 0 0 .2-.2V9.4a.2.2 0 0 0-.2-.2zm-7.2 0H7a.2.2 0 0 0-.2.2v3.2c0 .11.09.2.2.2h2.2a.2.2 0 0 0 .2-.2v-.8a.2.2 0 0 0-.2-.2H7.8v-2.2a.2.2 0 0 0-.2-.2H7.2zm10 2.4h-1.4v-2.2a.2.2 0 0 0-.2-.2h-.8a.2.2 0 0 0-.2.2v3.2c0 .11.09.2.2.2H17.4a.2.2 0 0 0 .2-.2v-.8a.2.2 0 0 0-.2-.2z" fill="#06C755"/>
+            </svg>
+          )}
+          {mode === 'login' ? 'เข้าสู่ระบบด้วย LINE' : 'สมัครด้วย LINE'}
         </button>
       </div>
     </div>
