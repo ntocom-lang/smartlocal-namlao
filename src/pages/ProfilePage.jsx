@@ -131,14 +131,14 @@ export default function ProfilePage() {
   }
 
   async function handleGoogleLink() {
-    await supabase.auth.signInWithOAuth({
+    await supabase.auth.linkIdentity({
       provider: 'google',
       options: { redirectTo: window.location.href },
     })
   }
 
   async function handleLineLink() {
-    await supabase.auth.signInWithOAuth({
+    await supabase.auth.linkIdentity({
       provider: 'custom:line',
       options: { redirectTo: window.location.href },
     })
