@@ -138,9 +138,11 @@ export default function ProfilePage() {
   }
 
   async function handleLineLink() {
-    await supabase.auth.linkIdentity({
+    // linkIdentity ไม่รองรับ custom provider ที่ไม่มี email (LINE ไม่ return email)
+    // signInWithOAuth จะสร้าง LINE session ใหม่ — ใช้สำหรับ user ที่ยังไม่มี LINE account
+    await supabase.auth.signInWithOAuth({
       provider: 'custom:line',
-      options: { redirectTo: window.location.href },
+      options: { redirectTo: window.location.origin },
     })
   }
 
@@ -315,9 +317,9 @@ export default function ProfilePage() {
               <span className="text-xs text-green-600 bg-green-50 px-3 py-1 rounded-full font-medium">เชื่อมต่อแล้ว</span>
             ) : (
               <button onClick={handleLineLink}
-                className="text-xs text-white px-4 py-1.5 rounded-full font-medium transition-colors"
+                className="text-xs text-white px-4 py-1.5 rounded-full font-medium transition-colors active:scale-95"
                 style={{ backgroundColor: '#06C755' }}>
-                เชื่อมต่อ
+                เข้าสู่ระบบ LINE
               </button>
             )}
           </div>
