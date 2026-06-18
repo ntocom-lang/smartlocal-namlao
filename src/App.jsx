@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { TenantProvider, useTenant } from './contexts/TenantContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { NotificationsProvider } from './contexts/NotificationsContext'
@@ -149,11 +149,12 @@ function RequireAuth({ children, adminOnly = false, techOnly = false, staffOnly 
 function AppShell() {
   const { loading, error, tenant } = useTenant()
   const [showPhoneReminder, setShowPhoneReminder] = useState(false)
+  const navigate = useNavigate()
 
   async function checkAndFixProfile(uid, userMeta = {}) {
     const { data: profile } = await supabase
       .from('profiles')
-      .select('phone, municipality_id, full_name, role')
+      .select('phone, municipality_id, full_name, avatar_url, role')
       .eq('id', uid)
       .maybeSingle()
 
@@ -163,7 +164,7 @@ function AppShell() {
       updates.municipality_id = tenant.id
     }
 
-    // Google OAuth ส่ง name ใน key 'name' ไม่ใช่ 'full_name', รูปใน key 'picture' ไม่ใช่ 'avatar_url'
+    // LINE/Google OAuth — ชื่ออยู่ใน 'name', รูปอยู่ใน 'picture'
     if (!profile?.full_name?.trim()) {
       const name = userMeta?.full_name || userMeta?.name || ''
       if (name) updates.full_name = name
@@ -189,8 +190,15 @@ function AppShell() {
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) checkAndFixProfile(data.session.user.id, data.session.user.user_metadata)
     })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session) checkAndFixProfile(session.user.id, session.user.user_metadata)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        await checkAndFixProfile(session.user.id, session.user.user_metadata)
+        const returnTo = sessionStorage.getItem('oauth_from')
+        if (returnTo) {
+          sessionStorage.removeItem('oauth_from')
+          navigate(returnTo, { replace: true })
+        }
+      }
     })
     return () => subscription.unsubscribe()
   }, [tenant?.id])

@@ -39,11 +39,16 @@ export default function AuthPage() {
 
   const set = (f) => (e) => setForm((p) => ({ ...p, [f]: e.target.value }))
 
+  function storeOauthFrom() {
+    if (from && from !== '/') sessionStorage.setItem('oauth_from', from)
+  }
+
   async function handleGoogle() {
     if (inAppBrowser) {
       setError('ไม่สามารถเข้าสู่ระบบด้วย Google ในบราวเซอร์นี้ได้ กรุณาเปิดลิงก์ใน Safari ก่อน')
       return
     }
+    storeOauthFrom()
     setLoadingGoogle(true)
     setError('')
     const { error: err } = await supabase.auth.signInWithOAuth({
@@ -54,6 +59,7 @@ export default function AuthPage() {
   }
 
   async function handleLine() {
+    storeOauthFrom()
     setLoadingLine(true)
     setError('')
     const { error: err } = await supabase.auth.signInWithOAuth({
