@@ -30,7 +30,9 @@ export default function AuthPage() {
   const [mode, setMode] = useState('login') // 'login' | 'register'
   const [form, setForm] = useState({ email: '', password: '', name: '', phone: '' })
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState(location.state?.oauthError
+    ? 'เข้าสู่ระบบด้วย LINE/Google ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'
+    : '')
   const [success, setSuccess] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [remember, setRemember] = useState(false)

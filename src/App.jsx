@@ -186,6 +186,18 @@ function AppShell() {
   }
 
   useEffect(() => {
+    // ดัก OAuth error callback เช่น LINE/Google login ล้มเหลวฝั่ง provider
+    const params = new URLSearchParams(window.location.search)
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+    const oauthError = params.get('error') || hashParams.get('error')
+    const oauthErrorDesc = params.get('error_description') || hashParams.get('error_description')
+    if (oauthError) {
+      window.history.replaceState({}, '', window.location.pathname)
+      navigate('/auth', { replace: true, state: { oauthError: oauthErrorDesc || oauthError } })
+    }
+  }, [])
+
+  useEffect(() => {
     if (!tenant?.id) return
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) checkAndFixProfile(data.session.user.id, data.session.user.user_metadata)
