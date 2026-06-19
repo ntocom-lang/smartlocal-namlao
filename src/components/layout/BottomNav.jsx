@@ -13,11 +13,11 @@ const NAV_CITIZEN = [
 ]
 
 const NAV_TECH = [
-  { label: 'หน้าแรก',        icon: Home,          href: '/' },
-  { label: 'งานของฉัน',      icon: Wrench,        href: '/technician' },
-  { label: 'เจ้าหน้าที่',    icon: LayoutGrid,    href: '/staff' },
-  { label: 'คำร้อง',        icon: FileSearch,    href: '/my-complaints' },
-  { label: 'เมนูอื่นๆ',      icon: LayoutGrid,    href: '/more' },
+  { label: 'หน้าแรก',      icon: Home,          href: '/' },
+  { label: 'งานของฉัน',    icon: Wrench,        href: '/technician' },
+  { label: 'คำร้องของฉัน', icon: FileSearch,    href: '/my-complaints' },
+  { label: 'การแจ้งเตือน', icon: Bell,          href: '/notifications' },
+  { label: 'เมนูอื่นๆ',    icon: LayoutGrid,    href: '/more' },
 ]
 
 
