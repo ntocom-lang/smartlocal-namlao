@@ -23,7 +23,7 @@ const INFRA_CATEGORIES = [
 const EMPTY_FORM = { title: '', category: 'road', budget: '', location_name: '', work_date: TODAY, description: '' }
 
 export default function InfraWorkAdmin({ tenant, currentUserRole }) {
-  const [infraTab, setInfraTab]         = useState('new_project')
+  const [infraTab, setInfraTab]         = useState('repair')
   const [showInfraMap, setShowInfraMap] = useState(false)
   const [infraWorks, setInfraWorks]     = useState([])
   const [loading, setLoading]           = useState(false)
@@ -52,9 +52,16 @@ export default function InfraWorkAdmin({ tenant, currentUserRole }) {
   const [editError, setEditError]       = useState(null)
 
   const [deleteConfirm, setDeleteConfirm] = useState(null)
+  const [locationOptions, setLocationOptions] = useState([])
 
   const isReadOnly = currentUserRole === 'viewer' || currentUserRole === 'council'
   const canDelete  = currentUserRole === 'admin' || currentUserRole === 'superadmin'
+
+  useEffect(() => {
+    if (!tenant?.id) return
+    supabase.from('locations').select('name').eq('municipality_id', tenant.id).order('sort_order')
+      .then(({ data }) => setLocationOptions((data ?? []).map(l => l.name)))
+  }, [tenant?.id])
 
   const fetchWorks = useCallback(async () => {
     if (!tenant?.id) return
@@ -240,7 +247,11 @@ export default function InfraWorkAdmin({ tenant, currentUserRole }) {
               <input type="text" value={editForm.location_name}
                 onChange={e => setEditForm(p => ({ ...p, location_name: e.target.value }))}
                 placeholder="ชื่อสถานที่ / หมู่บ้าน"
+                list="location-options-edit"
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
+              <datalist id="location-options-edit">
+                {locationOptions.map(n => <option key={n} value={n} />)}
+              </datalist>
 
               <textarea value={editForm.description}
                 onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))} rows={3}
@@ -351,18 +362,18 @@ export default function InfraWorkAdmin({ tenant, currentUserRole }) {
         <>
           <div className="flex bg-gray-100 rounded-2xl p-1">
             <button
-              onClick={() => { setInfraTab('new_project'); setShowRepairForm(false) }}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                infraTab === 'new_project' ? 'bg-white shadow-sm text-violet-700' : 'text-gray-500'
-              }`}>
-              🏗️ โครงการใหม่
-            </button>
-            <button
               onClick={() => { setInfraTab('repair'); setShowNewForm(false) }}
               className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
                 infraTab === 'repair' ? 'bg-white shadow-sm text-cyan-700' : 'text-gray-500'
               }`}>
               🔧 งานซ่อม
+            </button>
+            <button
+              onClick={() => { setInfraTab('new_project'); setShowRepairForm(false) }}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                infraTab === 'new_project' ? 'bg-white shadow-sm text-violet-700' : 'text-gray-500'
+              }`}>
+              🏗️ บันทึกงานก่อสร้าง
             </button>
           </div>
 
@@ -374,7 +385,7 @@ export default function InfraWorkAdmin({ tenant, currentUserRole }) {
                 className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white transition-all"
                 style={{ backgroundColor: '#7c3aed' }}>
                 {showNewForm ? <ChevronDown size={14} /> : <Plus size={14} />}
-                {showNewForm ? 'ซ่อนฟอร์ม' : '🏗️ บันทึกโครงการใหม่'}
+                {showNewForm ? 'ซ่อนฟอร์ม' : '🏗️ บันทึกงานก่อสร้างใหม่'}
               </button>
 
               {showNewForm && (
@@ -427,7 +438,11 @@ export default function InfraWorkAdmin({ tenant, currentUserRole }) {
                   <input type="text" value={newForm.location_name}
                     onChange={e => setNewForm(p => ({ ...p, location_name: e.target.value }))}
                     placeholder="ชื่อสถานที่ / หมู่บ้าน"
+                    list="location-options-new"
                     className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-300" />
+                  <datalist id="location-options-new">
+                    {locationOptions.map(n => <option key={n} value={n} />)}
+                  </datalist>
 
                   <div className="grid grid-cols-2 gap-2">
                     <input type="number" value={newForm.budget}
@@ -545,7 +560,11 @@ export default function InfraWorkAdmin({ tenant, currentUserRole }) {
                   <input type="text" value={repairForm.location_name}
                     onChange={e => setRepairForm(p => ({ ...p, location_name: e.target.value }))}
                     placeholder="ชื่อสถานที่ / หมู่บ้าน"
+                    list="location-options-repair"
                     className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-300" />
+                  <datalist id="location-options-repair">
+                    {locationOptions.map(n => <option key={n} value={n} />)}
+                  </datalist>
 
                   <div className="grid grid-cols-2 gap-2">
                     <input type="number" value={repairForm.budget}

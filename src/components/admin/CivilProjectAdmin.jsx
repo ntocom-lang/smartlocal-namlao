@@ -183,6 +183,7 @@ function DetailMap({ lat, lng, title, routePoints, routeColor = '#3b82f6', proje
   const [tileMode, setTileMode]   = useState('street')
   const [copied, setCopied]       = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
+  const [viewMode, setViewMode]   = useState('route') // 'route' | 'pin'
   const tile = tileMode === 'satellite' ? TILE_SATELLITE : TILE_STREET
 
   const handleCopy = () => {
@@ -191,14 +192,19 @@ function DetailMap({ lat, lng, title, routePoints, routeColor = '#3b82f6', proje
     setTimeout(() => setCopied(false), 2000)
   }
 
+  const hasRoute = routePoints?.length >= 2
+
+  const navLat = hasRoute ? routePoints[0].lat : lat
+  const navLng = hasRoute ? routePoints[0].lng : lng
+
   const navButtons = (
     <div className="absolute bottom-3 left-3 z-1000 flex items-center gap-2">
-      <a href={`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`}
+      <a href={`https://www.google.com/maps/dir/?api=1&destination=${navLat},${navLng}`}
         target="_blank" rel="noopener noreferrer"
         className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl shadow-lg text-sm font-bold transition-colors">
         <Navigation size={14} /> นำทาง
       </a>
-      <a href={`https://www.google.com/maps?q=${lat},${lng}`}
+      <a href={`https://www.google.com/maps?q=${navLat},${navLng}`}
         target="_blank" rel="noopener noreferrer"
         className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-gray-50 text-gray-700 rounded-xl shadow-lg border border-gray-200 text-sm font-bold transition-colors">
         <MapPin size={14} /> แสดงบน Google Maps
@@ -206,17 +212,36 @@ function DetailMap({ lat, lng, title, routePoints, routeColor = '#3b82f6', proje
     </div>
   )
 
-  const hasRoute = routePoints?.length >= 2
-
-  function markerColor(i) {
-    if (i === 0) return '#22c55e'
-    if (i === routePoints.length - 1) return '#ef4444'
-    return routeColor
+  function haversineKm(a, b) {
+    const R = 6371
+    const dLat = (b.lat - a.lat) * Math.PI / 180
+    const dLng = (b.lng - a.lng) * Math.PI / 180
+    const s = Math.sin(dLat / 2) ** 2 +
+      Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) *
+      Math.sin(dLng / 2) ** 2
+    return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s))
   }
 
-  const center = hasRoute
+  const totalDistanceKm = hasRoute
+    ? routePoints.reduce((sum, p, i) => i === 0 ? 0 : sum + haversineKm(routePoints[i - 1], p), 0)
+    : 0
+
+  const distanceLabel = totalDistanceKm >= 1
+    ? `${totalDistanceKm.toFixed(2)} กม.`
+    : `${Math.round(totalDistanceKm * 1000)} ม.`
+
+  const startIcon = L.divIcon({
+    html: `<div style="width:14px;height:14px;border-radius:50%;background:#22c55e;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.4)"></div>`,
+    className: '', iconAnchor: [7, 7],
+  })
+  const endIcon = L.divIcon({
+    html: `<div style="width:14px;height:14px;border-radius:50%;background:#ef4444;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.4)"></div>`,
+    className: '', iconAnchor: [7, 7],
+  })
+
+  const center = hasRoute && viewMode === 'route'
     ? [routePoints[Math.floor(routePoints.length / 2)].lat, routePoints[Math.floor(routePoints.length / 2)].lng]
-    : [lat, lng]
+    : [navLat, navLng]
 
   const mapContent = (zoom) => (
     <>
@@ -224,14 +249,25 @@ function DetailMap({ lat, lng, title, routePoints, routeColor = '#3b82f6', proje
       {tileMode === 'satellite' && (
         <TileLayer key="labels" url={TILE_LABELS.url} subdomains={TILE_LABELS.subdomains} attribution="" />
       )}
-      {hasRoute ? (
+      {hasRoute && viewMode === 'route' ? (
         <>
           <Polyline positions={routePoints.map(p => [p.lat, p.lng])}
             pathOptions={{ color: routeColor, weight: 5, opacity: 0.85, ...(ROUTE_DASH[projectType] && { dashArray: ROUTE_DASH[projectType] }) }} />
-          {null}
+          <Marker position={[routePoints[0].lat, routePoints[0].lng]} icon={startIcon}>
+            <Tooltip permanent direction="top" offset={[0, -10]}
+              className="bg-white! border! border-green-300! shadow-md! rounded-lg! px-2! py-1! text-xs! font-bold! text-green-700!">
+              จุดเริ่มต้น
+            </Tooltip>
+          </Marker>
+          <Marker position={[routePoints[routePoints.length - 1].lat, routePoints[routePoints.length - 1].lng]} icon={endIcon}>
+            <Tooltip permanent direction="top" offset={[0, -10]}
+              className="bg-white! border! border-red-300! shadow-md! rounded-lg! px-2! py-1! text-xs! font-bold! text-red-700!">
+              จุดสิ้นสุด
+            </Tooltip>
+          </Marker>
         </>
       ) : (
-        <Marker position={[lat, lng]} icon={defaultIcon}>
+        <Marker position={[navLat, navLng]} icon={defaultIcon}>
           <Tooltip permanent direction="top" offset={[0, -36]}
             className="bg-white! border! border-gray-200! shadow-md! rounded-lg! px-3! py-1.5! text-sm! font-medium! text-gray-700!">
             {title}
@@ -246,13 +282,51 @@ function DetailMap({ lat, lng, title, routePoints, routeColor = '#3b82f6', proje
       <div className="flex items-center gap-2 px-5 py-3">
         <MapPin size={16} className="text-blue-500" />
         <h3 className="font-bold text-gray-700">ที่ตั้งบนแผนที่</h3>
-        <button onClick={handleCopy}
-          className="ml-auto flex items-center gap-1.5 text-sm font-mono font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-xl border border-blue-100 transition-colors"
-          title="คัดลอกพิกัด">
-          {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
-          {copied ? 'คัดลอกแล้ว' : `${lat.toFixed(6)}, ${lng.toFixed(6)}`}
-        </button>
+        {hasRoute ? (
+          <div className="ml-auto flex items-center bg-gray-100 rounded-xl p-0.5 gap-0.5">
+            <button onClick={() => setViewMode('route')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${viewMode === 'route' ? 'bg-white shadow-sm text-blue-700' : 'text-gray-500'}`}>
+              〰 แนวเส้นทางโครงการ
+            </button>
+            <button onClick={() => setViewMode('pin')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${viewMode === 'pin' ? 'bg-white shadow-sm text-blue-700' : 'text-gray-500'}`}>
+              📍 ปักหมุด
+            </button>
+          </div>
+        ) : (
+          <button onClick={handleCopy}
+            className="ml-auto flex items-center gap-1.5 text-sm font-mono font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-xl border border-blue-100 transition-colors"
+            title="คัดลอกพิกัด">
+            {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+            {copied ? 'คัดลอกแล้ว' : `${lat.toFixed(6)}, ${lng.toFixed(6)}`}
+          </button>
+        )}
       </div>
+      {hasRoute && viewMode === 'route' && (
+        <div className="flex items-center gap-3 px-5 pb-3 text-xs">
+          <span className="flex items-center gap-1.5 bg-green-50 border border-green-200 text-green-700 font-semibold px-2.5 py-1 rounded-lg">
+            <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" /> จุดเริ่มต้น {routePoints[0].lat.toFixed(5)}, {routePoints[0].lng.toFixed(5)}
+          </span>
+          <span className="flex items-center gap-1.5 bg-red-50 border border-red-200 text-red-700 font-semibold px-2.5 py-1 rounded-lg">
+            <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" /> จุดสิ้นสุด {routePoints[routePoints.length - 1].lat.toFixed(5)}, {routePoints[routePoints.length - 1].lng.toFixed(5)}
+          </span>
+          <span className="ml-auto flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-700 font-bold px-2.5 py-1 rounded-lg">
+            ระยะทางรวม {distanceLabel}
+          </span>
+        </div>
+      )}
+      {hasRoute && viewMode === 'pin' && (
+        <div className="flex items-center gap-3 px-5 pb-3 text-xs">
+          <span className="flex items-center gap-1.5 bg-green-50 border border-green-200 text-green-700 font-semibold px-2.5 py-1 rounded-lg">
+            <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" /> จุดเริ่มต้น {routePoints[0].lat.toFixed(5)}, {routePoints[0].lng.toFixed(5)}
+          </span>
+          <button onClick={handleCopy}
+            className="ml-auto flex items-center gap-1.5 text-xs font-mono font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-lg border border-blue-100 transition-colors">
+            {copied ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
+            {copied ? 'คัดลอกแล้ว' : `${navLat.toFixed(6)}, ${navLng.toFixed(6)}`}
+          </button>
+        </div>
+      )}
       <div style={{ height: 300, position: 'relative' }}>
         <MapContainer center={center} zoom={15} style={{ width: '100%', height: '100%' }} scrollWheelZoom zoomControl>
           {mapContent(15)}

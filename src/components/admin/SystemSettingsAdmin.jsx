@@ -1,39 +1,39 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useRef } from 'react'
 import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 
-const inputCls = 'w-full px-4 py-2.5 text-sm text-gray-900 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent transition-all'
+const inputCls = 'w-full px-4 py-2.5 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent transition-all'
 
-export default function SystemSettingsAdmin({ tenant, onUpdateTenant }) {
-  const { patchTenant } = useTenant()
-  const [formData, setFormData] = useState({ system_name: tenant.system_name || 'One Data' })
+export default function SystemSettingsAdmin() {
+  const { tenant, patchTenant } = useTenant()
+  const [systemName, setSystemName] = useState(() => tenant?.system_name || 'One Data')
+  const [subtitle, setSubtitle] = useState(() => tenant?.system_subtitle || '')
+  const [pwaShortName, setPwaShortName] = useState(() => tenant?.pwa_short_name || '')
   const [loading, setLoading] = useState(false)
   const [savedSection, setSavedSection] = useState(null)
   const [qrUploading, setQrUploading] = useState(false)
-  const [qrPreview, setQrPreview] = useState(tenant.qr_code_url || null)
-  const [qrLabel, setQrLabel] = useState(tenant.qr_label || '')
+  const [qrPreview, setQrPreview] = useState(() => tenant?.qr_code_url || null)
+  const [qrLabel, setQrLabel] = useState(() => tenant?.qr_label || '')
   const [qrLabelSaving, setQrLabelSaving] = useState(false)
   const qrRef = useRef()
-
-  useEffect(() => {
-    if (tenant) {
-      setFormData({ system_name: tenant.system_name || 'One Data' })
-      setQrPreview(tenant.qr_code_url || null)
-      setQrLabel(tenant.qr_label || '')
-    }
-  }, [tenant])
 
   async function saveSystemName(e) {
     e.preventDefault()
     setLoading(true)
     try {
-      const { error } = await supabase
-        .from('municipalities')
-        .update({ system_name: formData.system_name.trim() || 'One Data' })
-        .eq('id', tenant.id)
+      const newName = systemName.trim() || 'One Data'
+      const newSubtitle = subtitle.trim() || null
+      const newPwaShortName = pwaShortName.trim() || null
+      if (!tenant?.id) throw new Error('ไม่พบ tenant.id — กรุณา refresh หน้า')
+      const { error } = await supabase.rpc('update_municipality_settings', {
+        p_municipality_id: tenant.id,
+        p_system_name:     newName,
+        p_system_subtitle: newSubtitle,
+        p_pwa_short_name:  newPwaShortName,
+      })
       if (error) throw error
-      onUpdateTenant?.({ ...tenant, system_name: formData.system_name.trim() || 'One Data' })
+      patchTenant({ system_name: newName, system_subtitle: newSubtitle, pwa_short_name: newPwaShortName })
       setSavedSection('name')
       setTimeout(() => setSavedSection(null), 2500)
     } catch (err) {
@@ -130,15 +130,43 @@ export default function SystemSettingsAdmin({ tenant, onUpdateTenant }) {
           <div>
             <label className="block text-xs font-semibold text-gray-500 mb-1">System Name</label>
             <p className="text-xs text-gray-400 mb-2 leading-relaxed">
-              แสดงผลเป็น "{formData.system_name || `${tenant?.name || ''} One Data`}"
+              แสดงผลเป็น "{systemName || `${tenant?.name || ''} One Data`}"
             </p>
             <input
               type="text"
-              value={formData.system_name}
-              onChange={e => setFormData({ ...formData, system_name: e.target.value })}
+              value={systemName}
+              onChange={e => setSystemName(e.target.value)}
               placeholder={`เช่น ${tenant?.name || 'เทศบาลตำบลน้ำเลา'} One Data`}
               className={inputCls}
               required
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">ข้อความบรรทัดล่าง</label>
+            <p className="text-xs text-gray-400 mb-2 leading-relaxed">
+              แสดงใต้ชื่อระบบใน header — ถ้าไม่กำหนดจะแสดงชื่อหน่วยงาน ({tenant?.name})
+            </p>
+            <input
+              type="text"
+              value={subtitle}
+              onChange={e => setSubtitle(e.target.value)}
+              placeholder={`เช่น ${tenant?.name || 'เทศบาลตำบลน้ำเลา'}`}
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">ชื่อแอปบนมือถือ (PWA Short Name)</label>
+            <p className="text-xs text-gray-400 mb-2 leading-relaxed">
+              ชื่อที่แสดงใต้ไอคอนและหน้า Splash Screen เมื่อติดตั้งแอป — แนะนำไม่เกิน 12 ตัวอักษร<br />
+              ถ้าไม่กำหนดจะใช้ชื่อระบบแทน
+            </p>
+            <input
+              type="text"
+              value={pwaShortName}
+              onChange={e => setPwaShortName(e.target.value)}
+              placeholder={`เช่น น้ำเลา E-Service`}
+              maxLength={20}
+              className={inputCls}
             />
           </div>
           <button type="submit" disabled={loading}

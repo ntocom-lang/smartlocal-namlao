@@ -12,7 +12,7 @@ import {
   CheckCircle2, XCircle, AlertCircle, ChevronRight, ChevronLeft,
   Filter, Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical,
   X, FileText, AlignLeft, Image, Calendar, Hash, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera,
-  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, BellOff, ExternalLink, BarChart2, Settings, Download, Banknote
+  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, BellOff, ExternalLink, BarChart2, Settings, Download, Banknote, Star, MessageSquare
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { compressImage } from '../lib/imageUtils'
@@ -853,6 +853,8 @@ function UserManager({ tenant, currentUserRole }) {
   const [editingRoleId, setEditingRoleId] = useState(null)
   const [editingRoleValue, setEditingRoleValue] = useState('')
   const [viewingUser, setViewingUser] = useState(null)
+  const [deletingUser, setDeletingUser] = useState(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
   const [sortConfig, setSortConfig] = useState({ key: 'created_at', direction: 'desc' })
 
   const [search, setSearch] = useState('')
@@ -910,6 +912,18 @@ function UserManager({ tenant, currentUserRole }) {
       setEditingPositionId(null)
     }
     setSaving(null)
+  }
+
+  async function deleteUser(userId) {
+    setDeleteLoading(true)
+    const { error } = await supabase.rpc('delete_user_by_id', { p_user_id: userId })
+    setDeleteLoading(false)
+    if (error) {
+      alert(`ลบไม่สำเร็จ: ${error.message}`)
+    } else {
+      setUsers((prev) => prev.filter((u) => u.id !== userId))
+      setDeletingUser(null)
+    }
   }
 
   const handleSort = (key) => {
@@ -1110,6 +1124,15 @@ function UserManager({ tenant, currentUserRole }) {
                   <button onClick={() => setViewingUser(u)} className="text-[11px] text-blue-500 hover:text-blue-700 font-medium px-2 py-1 bg-blue-50 hover:bg-blue-100 rounded transition-colors">
                     ดูรายละเอียด
                   </button>
+                  {(currentUserRole === 'superadmin' || currentUserRole === 'admin') && u.role !== 'superadmin' && (
+                    <button
+                      onClick={() => setDeletingUser(u)}
+                      className="p-1.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                      title="ลบผู้ใช้งาน"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
                 </div>
                 {editingNameId === u.id && (
                   <div className="flex items-center gap-2 pl-12">
@@ -1236,7 +1259,7 @@ function UserManager({ tenant, currentUserRole }) {
                                 onChange={(e) => setEditingNameValue(e.target.value)}
                                 onKeyDown={(e) => { if (e.key === 'Enter') updateName(u.id); if (e.key === 'Escape') setEditingNameId(null) }}
                                 placeholder="ชื่อ-นามสกุล"
-                                className="flex-1 text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
+                                className="flex-1 text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400 bg-white text-gray-900"
                               />
                               <button onClick={() => updateName(u.id)} disabled={saving === u.id} className="text-xs text-blue-600 font-medium">บันทึก</button>
                               <button onClick={() => setEditingNameId(null)} className="text-xs text-gray-400">ยกเลิก</button>
@@ -1279,7 +1302,7 @@ function UserManager({ tenant, currentUserRole }) {
                             onChange={(e) => setEditingAddressValue(e.target.value)}
                             onKeyDown={(e) => { if (e.key === 'Enter') updateAddress(u.id); if (e.key === 'Escape') setEditingAddressId(null) }}
                             placeholder="ที่อยู่"
-                            className="flex-1 text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
+                            className="flex-1 text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400 bg-white text-gray-900"
                           />
                           <button onClick={() => updateAddress(u.id)} disabled={saving === u.id} className="text-xs text-blue-600 font-medium">บันทึก</button>
                           <button onClick={() => setEditingAddressId(null)} className="text-xs text-gray-400">ยกเลิก</button>
@@ -1308,7 +1331,7 @@ function UserManager({ tenant, currentUserRole }) {
                               onChange={(e) => setEditingPositionValue(e.target.value)}
                               onKeyDown={(e) => { if (e.key === 'Enter') updatePosition(u.id); if (e.key === 'Escape') setEditingPositionId(null) }}
                               placeholder="ตำแหน่งงาน"
-                              className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
+                              className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400 bg-white text-gray-900"
                             />
                             <button onClick={() => updatePosition(u.id)} disabled={saving === u.id} className="text-xs text-blue-600 font-medium">บันทึก</button>
                             <button onClick={() => setEditingPositionId(null)} className="text-xs text-gray-400">ยกเลิก</button>
@@ -1363,6 +1386,15 @@ function UserManager({ tenant, currentUserRole }) {
                             )}
                           </div>
                         )}
+                        {(currentUserRole === 'superadmin' || currentUserRole === 'admin') && u.role !== 'superadmin' && (
+                          <button
+                            onClick={() => setDeletingUser(u)}
+                            className="p-1.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                            title="ลบผู้ใช้งาน"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1374,8 +1406,51 @@ function UserManager({ tenant, currentUserRole }) {
       </>
       )}
 
+      {/* Delete Confirmation Modal */}
+      {deletingUser && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4" onClick={() => !deleteLoading && setDeletingUser(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex flex-col items-center text-center gap-3">
+              <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center">
+                <Trash2 size={24} className="text-red-500" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-800">ยืนยันการลบผู้ใช้งาน</h3>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                คุณกำลังจะลบ <strong className="text-gray-800">{deletingUser.full_name || deletingUser.email || 'ผู้ใช้นี้'}</strong> ออกจากระบบถาวร<br />
+                ข้อมูลทั้งหมดจะหายไปและไม่สามารถกู้คืนได้
+              </p>
+              <div className="flex gap-3 w-full mt-2">
+                <button
+                  onClick={() => setDeletingUser(null)}
+                  disabled={deleteLoading}
+                  className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  onClick={() => deleteUser(deletingUser.id)}
+                  disabled={deleteLoading}
+                  className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {deleteLoading ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                  {deleteLoading ? 'กำลังลบ...' : 'ลบออกจากระบบ'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* View User Details Modal */}
-      {viewingUser && (
+      {viewingUser && (() => {
+        const rs = ROLE_LABELS[viewingUser.role] || ROLE_LABELS.citizen
+        const providerBadge = {
+          'email':       { label: 'Email/Password', bg: '#f3f4f6', color: '#374151', icon: '✉️' },
+          'google':      { label: 'Google',          bg: '#fef9c3', color: '#854d0e', icon: '🔵' },
+          'custom:line': { label: 'LINE',             bg: '#dcfce7', color: '#166534', icon: '💚' },
+        }
+        const providers = viewingUser.providers || []
+        return (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4" onClick={() => setViewingUser(null)}>
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-gray-100">
@@ -1384,49 +1459,97 @@ function UserManager({ tenant, currentUserRole }) {
                 <X size={20} />
               </button>
             </div>
-            <div className="p-5 overflow-y-auto">
-              <div className="flex items-center gap-4 mb-6">
-                <div className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold text-white shrink-0"
-                     style={{ backgroundColor: (ROLE_LABELS[viewingUser.role] || ROLE_LABELS.citizen).color }}>
-                  {(viewingUser.full_name || viewingUser.email || '?')[0].toUpperCase()}
+            <div className="p-5 overflow-y-auto space-y-5">
+
+              {/* Avatar + ชื่อ + role */}
+              <div className="flex items-center gap-4">
+                {viewingUser.avatar_url ? (
+                  <img src={viewingUser.avatar_url} alt="avatar"
+                       className="w-16 h-16 rounded-full object-cover shrink-0 border-2 border-gray-100" />
+                ) : (
+                  <div className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold text-white shrink-0"
+                       style={{ backgroundColor: rs.color }}>
+                    {(viewingUser.full_name || viewingUser.email || '?')[0].toUpperCase()}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <h4 className="text-lg font-semibold text-gray-900 truncate">{viewingUser.full_name || '—'}</h4>
+                  <span className="text-xs font-medium px-2 py-0.5 rounded-full inline-block mt-1"
+                        style={{ backgroundColor: rs.bg, color: rs.color }}>
+                    {rs.label}
+                  </span>
+                  {viewingUser.job_title && (
+                    <p className="text-xs text-gray-400 mt-0.5 truncate">{viewingUser.job_title}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* ข้อมูลบัญชี */}
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ข้อมูลบัญชี</p>
+                <div className="space-y-2">
+                  {[
+                    { label: 'อีเมล',           value: viewingUser.email,   cls: 'break-all' },
+                    { label: 'เบอร์โทรศัพท์',    value: viewingUser.phone },
+                    {
+                      label: 'เลขบัตรประชาชน',
+                      value: viewingUser.id_card
+                        ? viewingUser.id_card.replace(/(\d{1})(\d{4})(\d{5})(\d{2})(\d{1})/, '$1-$2-$3-$4-$5')
+                        : null,
+                      mono: true,
+                    },
+                    { label: 'ที่อยู่', value: viewingUser.address, pre: true },
+                  ].map(({ label, value, cls = '', mono, pre }) => (
+                    <div key={label} className="flex gap-2">
+                      <span className="text-xs text-gray-400 shrink-0 w-28 pt-1">{label}</span>
+                      <span className={`text-sm text-right flex-1 ${mono ? 'font-mono tracking-wide' : ''} ${pre ? 'whitespace-pre-wrap' : ''} ${cls} ${value ? 'text-gray-800' : 'text-gray-300 italic'}`}>
+                        {value || '—'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* การเชื่อมต่อ */}
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">การเชื่อมต่อบัญชี</p>
+                {providers.length === 0 ? (
+                  <p className="text-xs text-gray-300 italic">ไม่พบข้อมูล</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {providers.map((p) => {
+                      const b = providerBadge[p] ?? { label: p, bg: '#f3f4f6', color: '#374151', icon: '🔗' }
+                      return (
+                        <span key={p} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
+                              style={{ backgroundColor: b.bg, color: b.color }}>
+                          {b.icon} {b.label}
+                        </span>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* วันที่ */}
+              <div className="flex gap-4 text-xs text-gray-400 border-t border-gray-50 pt-3">
+                <div>
+                  <span className="block text-gray-300 mb-0.5">ลงทะเบียน</span>
+                  <span className="text-gray-500">
+                    {viewingUser.created_at
+                      ? new Date(viewingUser.created_at).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' })
+                      : '—'}
+                  </span>
                 </div>
                 <div>
-                  <h4 className="text-lg font-semibold text-gray-900">{viewingUser.full_name || '—'}</h4>
-                  <span className="text-sm font-medium px-2.5 py-0.5 rounded-full mt-1 inline-block"
-                        style={{ backgroundColor: (ROLE_LABELS[viewingUser.role] || ROLE_LABELS.citizen).bg, color: (ROLE_LABELS[viewingUser.role] || ROLE_LABELS.citizen).color }}>
-                    {(ROLE_LABELS[viewingUser.role] || ROLE_LABELS.citizen).label}
+                  <span className="block text-gray-300 mb-0.5">เข้าสู่ระบบล่าสุด</span>
+                  <span className="text-gray-500">
+                    {viewingUser.last_sign_in_at
+                      ? new Date(viewingUser.last_sign_in_at).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                      : '—'}
                   </span>
                 </div>
               </div>
-              
-              <div className="space-y-3">
-                {[
-                  { label: 'ตำแหน่งงาน',        value: viewingUser.job_title },
-                  { label: 'อีเมล',              value: viewingUser.email,   cls: 'break-all' },
-                  { label: 'เบอร์โทรศัพท์',      value: viewingUser.phone },
-                  {
-                    label: 'เลขบัตรประชาชน',
-                    value: viewingUser.id_card
-                      ? viewingUser.id_card.replace(/(\d{1})(\d{4})(\d{5})(\d{2})(\d{1})/, '$1-$2-$3-$4-$5')
-                      : null,
-                    mono: true,
-                  },
-                  { label: 'ที่อยู่',             value: viewingUser.address, pre: true },
-                  {
-                    label: 'วันที่ลงทะเบียน',
-                    value: viewingUser.created_at
-                      ? new Date(viewingUser.created_at).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-                      : null,
-                  },
-                ].map(({ label, value, cls = '', mono, pre }) => (
-                  <div key={label}>
-                    <p className="text-xs text-gray-500 mb-1">{label}</p>
-                    <p className={`text-sm bg-gray-50 px-3 py-2 rounded-lg ${mono ? 'font-mono tracking-wide' : ''} ${pre ? 'whitespace-pre-wrap' : ''} ${cls} ${value ? 'text-gray-800' : 'text-gray-400 italic'}`}>
-                      {value || 'ยังไม่ได้ระบุ'}
-                    </p>
-                  </div>
-                ))}
-              </div>
+
             </div>
             <div className="p-4 border-t border-gray-100 flex justify-end">
               <button onClick={() => setViewingUser(null)} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors text-sm">
@@ -1435,7 +1558,8 @@ function UserManager({ tenant, currentUserRole }) {
             </div>
           </div>
         </div>
-      )}
+        )
+      })()}
     </div>
   )
 }
@@ -3995,6 +4119,151 @@ const PAGE_LABELS = {
   'civil-project': 'โครงการโยธา',
   'civil-report': 'รายงานโยธา',
   'audit-log': 'บันทึกกิจกรรม',
+  'satisfaction': 'ผลการประเมิน',
+}
+
+// ─── SatisfactionAdmin ────────────────────────────────────────────────────────
+const RATING_LABELS = { 5: 'ยอดเยี่ยม', 4: 'ดี', 3: 'พอสมควร', 2: 'แย่', 1: 'แย่มาก' }
+const RATING_COLORS = { 5: '#22c55e', 4: '#3b82f6', 3: '#f59e0b', 2: '#f97316', 1: '#ef4444' }
+const RATING_EMOJI  = { 5: '😄', 4: '😊', 3: '😐', 2: '😢', 1: '😡' }
+
+function SatisfactionAdmin({ tenant }) {
+  const [ratings, setRatings]   = useState([])
+  const [loading, setLoading]   = useState(true)
+
+  useEffect(() => {
+    if (!tenant?.id) return
+    setLoading(true)
+    supabase.from('satisfaction_ratings')
+      .select('*')
+      .eq('municipality_id', tenant.id)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => { setRatings(data ?? []); setLoading(false) })
+  }, [tenant?.id])
+
+const avg = ratings.length ? (ratings.reduce((s, r) => s + r.rating, 0) / ratings.length).toFixed(1) : '-'
+  const counts = [5,4,3,2,1].map(v => ({ v, count: ratings.filter(r => r.rating === v).length }))
+
+  function thDate(iso) {
+    const d = new Date(iso)
+    return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  }
+
+  function handlePrint() {
+    const now = new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })
+    const avgScore = ratings.length ? (ratings.reduce((s, r) => s + r.rating, 0) / ratings.length).toFixed(2) : '-'
+    const bars = [5,4,3,2,1].map(v => {
+      const c = ratings.filter(r => r.rating === v).length
+      const pct = ratings.length ? Math.round(c / ratings.length * 100) : 0
+      return `<tr>
+        <td>${RATING_EMOJI[v]} ${RATING_LABELS[v]}</td>
+        <td style="width:260px">
+          <div style="background:#e5e7eb;border-radius:4px;overflow:hidden;height:14px">
+            <div style="width:${pct}%;background:${RATING_COLORS[v]};height:14px"></div>
+          </div>
+        </td>
+        <td style="text-align:center;width:50px">${c}</td>
+        <td style="text-align:center;width:60px">${pct}%</td>
+      </tr>`
+    }).join('')
+
+    const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
+<title>ผลการประเมินความพึงพอใจ</title>
+<style>
+  @page { size: A4; margin: 2cm; }
+  body { font-family: 'Sarabun', sans-serif; font-size: 14px; color: #111; }
+  h2 { text-align:center; font-size:18px; margin:0 0 4px; font-weight:700; }
+  p.sub { text-align:center; font-size:13px; color:#555; margin:0 0 20px; }
+  .stats { display:flex; gap:16px; margin-bottom:20px; }
+  .stat-box { flex:1; border:1px solid #e5e7eb; border-radius:8px; padding:12px; text-align:center; }
+  .stat-num { font-size:28px; font-weight:900; color:#1a3a5c; }
+  .stat-lbl { font-size:12px; color:#6b7280; margin-top:2px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; margin-bottom:20px; }
+  th { background:#1a3a5c; color:#fff; padding:7px 10px; text-align:left; }
+  td { padding:6px 10px; border-bottom:1px solid #e5e7eb; vertical-align:top; }
+  tr:nth-child(even) td { background:#f8fafc; }
+  .section { font-size:15px; font-weight:700; color:#1a3a5c; margin:20px 0 8px; border-left:4px solid #1a3a5c; padding-left:8px; }
+  .footer { margin-top:20px; font-size:12px; color:#9ca3af; text-align:right; }
+  @media print { button { display:none; } }
+</style></head><body>
+<h2>${tenant?.name ?? 'หน่วยงาน'}</h2>
+<p class="sub">รายงานผลการประเมินความพึงพอใจการให้บริการ &nbsp;|&nbsp; วันที่พิมพ์ ${now}</p>
+<div class="stats">
+  <div class="stat-box"><div class="stat-num">${avgScore}</div><div class="stat-lbl">คะแนนเฉลี่ย (จาก 5)</div></div>
+  <div class="stat-box"><div class="stat-num">${ratings.length}</div><div class="stat-lbl">ผู้ประเมินทั้งหมด</div></div>
+  <div class="stat-box"><div class="stat-num" style="color:#22c55e">${ratings.filter(r=>r.rating>=4).length}</div><div class="stat-lbl">พึงพอใจ (ดี/ยอดเยี่ยม)</div></div>
+  <div class="stat-box"><div class="stat-num" style="color:#ef4444">${ratings.filter(r=>r.rating<=2).length}</div><div class="stat-lbl">ไม่พึงพอใจ (แย่/แย่มาก)</div></div>
+</div>
+<div class="section">สัดส่วนคะแนน</div>
+<table><thead><tr><th>ระดับ</th><th>สัดส่วน</th><th style="width:50px;text-align:center">จำนวน</th><th style="width:60px;text-align:center">ร้อยละ</th></tr></thead>
+<tbody>${bars}</tbody></table>
+<div class="footer">ออกจากระบบบริการออนไลน์ SmartLocal &nbsp;|&nbsp; ${tenant?.name ?? ''}</div>
+</body></html>`
+
+    const w = window.open('', '_blank', 'width=900,height=700')
+    w.document.write(html)
+    w.document.close()
+    setTimeout(() => w.print(), 500)
+  }
+
+  if (loading) return <div className="flex items-center justify-center py-20"><Loader2 size={28} className="animate-spin text-gray-400" /></div>
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-gray-800">ผลการประเมินความพึงพอใจ</h2>
+          <p className="text-xs text-gray-400 mt-0.5">สรุปความคิดเห็นจากประชาชน</p>
+        </div>
+        <button onClick={handlePrint}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white shadow-sm transition-colors"
+          style={{ backgroundColor: '#1a3a5c' }}>
+          <Printer size={14} /> พิมพ์
+        </button>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex flex-col items-center gap-1">
+          <Star size={22} className="text-yellow-400" />
+          <p className="text-3xl font-black text-gray-800">{avg}</p>
+          <p className="text-xs text-gray-400">คะแนนเฉลี่ย</p>
+        </div>
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex flex-col items-center gap-1">
+          <MessageSquare size={22} className="text-blue-400" />
+          <p className="text-3xl font-black text-gray-800">{ratings.length}</p>
+          <p className="text-xs text-gray-400">ผู้ประเมินทั้งหมด</p>
+        </div>
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex flex-col items-center gap-1">
+          <span className="text-2xl">😄</span>
+          <p className="text-3xl font-black text-green-600">{counts[0].count}</p>
+          <p className="text-xs text-gray-400">ยอดเยี่ยม</p>
+        </div>
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex flex-col items-center gap-1">
+          <span className="text-2xl">😡</span>
+          <p className="text-3xl font-black text-red-500">{counts[4].count}</p>
+          <p className="text-xs text-gray-400">แย่มาก</p>
+        </div>
+      </div>
+
+      {/* Bar chart */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">
+        <p className="text-sm font-bold text-gray-700">สัดส่วนคะแนน</p>
+        {counts.map(({ v, count }) => (
+          <div key={v} className="flex items-center gap-3">
+            <span className="text-base w-5 text-center">{RATING_EMOJI[v]}</span>
+            <span className="text-xs font-semibold text-gray-600 w-16 shrink-0">{RATING_LABELS[v]}</span>
+            <div className="flex-1 h-4 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-full rounded-full transition-all"
+                style={{ width: ratings.length ? `${(count / ratings.length) * 100}%` : '0%', backgroundColor: RATING_COLORS[v] }} />
+            </div>
+            <span className="text-xs font-bold text-gray-500 w-6 text-right">{count}</span>
+          </div>
+        ))}
+      </div>
+
+    </div>
+  )
 }
 
 export default function AdminDashboard() {
@@ -4268,14 +4537,13 @@ export default function AdminDashboard() {
             {
               group: 'ดูแลและรายงาน',
               items: [
-                { key: 'complaints', label: 'คำร้อง',  Icon: ClipboardList, color: '#ef4444', show: currentUserRole !== 'viewer' },
-                { key: 'report',     label: 'รายงาน',  Icon: TrendingUp,    color: '#059669', show: true },
+                { key: 'report',       label: 'รายงาน',           Icon: TrendingUp, color: '#059669', show: true },
+                { key: 'satisfaction', label: 'ผลการประเมิน',    Icon: Star,       color: '#f59e0b', show: true },
               ],
             },
             {
               group: 'จัดการเนื้อหา',
               items: [
-                { key: 'events', label: 'กิจกรรม',     Icon: CalendarDays, color: '#10b981',  show: true },
                 { key: 'staff',  label: 'รูปผู้บริหาร', Icon: UserCircle2,  color: '#7c3aed', show: currentUserRole !== 'viewer' },
               ],
             },
@@ -4483,13 +4751,6 @@ export default function AdminDashboard() {
             <TrendingUp size={15} /> รายงาน
           </button>
         )}
-        {currentUserRole !== 'council' && (
-          <button onClick={() => setActivePage('complaints')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'complaints' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-            style={activePage === 'complaints' ? { backgroundColor: 'var(--color-primary)' } : {}}>
-            <ClipboardList size={15} /> คำร้อง
-          </button>
-        )}
         {currentUserRole !== 'viewer' && currentUserRole !== 'council' && (
           <button onClick={() => setActivePage('categories')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'categories' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
@@ -4518,11 +4779,6 @@ export default function AdminDashboard() {
             <TrendingUp size={15} /> รายงาน
           </button>
         )}
-        <button onClick={() => setActivePage('events')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'events' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-          style={activePage === 'events' ? { backgroundColor: '#10b981' } : {}}>
-          <CalendarDays size={15} /> กิจกรรม
-        </button>
         {currentUserRole !== 'viewer' && currentUserRole !== 'council' && (
           <button onClick={() => setActivePage('more')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'more' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
@@ -4539,8 +4795,6 @@ export default function AdminDashboard() {
       >
         {[
           { key: 'dashboard',  label: 'ภาพรวม',  Icon: BarChart2,     activeColor: '#3b82f6',              show: true },
-          { key: 'complaints', label: 'คำร้อง',  Icon: ClipboardList, activeColor: 'var(--color-primary)', show: currentUserRole !== 'council' && currentUserRole !== 'viewer' },
-          { key: 'events',     label: 'กิจกรรม', Icon: CalendarDays,  activeColor: '#10b981',              show: true },
           { key: 'map',        label: 'แผนที่',  Icon: MapPin,        activeColor: '#3b82f6',              show: currentUserRole !== 'council' },
           { key: 'more',       label: 'อื่นๆ',   Icon: LayoutGrid,    activeColor: '#6b7280',              show: true },
         ].filter(i => i.show).map(({ key, label, Icon, activeColor }) => {
@@ -4590,9 +4844,8 @@ export default function AdminDashboard() {
             <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-2.5">ทางลัด</p>
             <div className="grid grid-cols-3 md:grid-cols-6 gap-2.5">
               {[
-                { key: 'complaints', label: 'คำร้อง',           Icon: ClipboardList, color: '#1a3a5c', bg: '#dce8f5', show: currentUserRole !== 'viewer' },
-                { key: 'events',     label: 'กิจกรรม',           Icon: CalendarDays,  color: '#10b981', bg: '#d1fae5', show: true },
-                { key: 'report',     label: 'รายงาน',            Icon: TrendingUp,    color: '#059669', bg: '#d1fae5', show: true },
+                { key: 'report',       label: 'รายงาน',        Icon: TrendingUp, color: '#059669', bg: '#d1fae5', show: true },
+                { key: 'satisfaction', label: 'ผลการประเมิน', Icon: Star,       color: '#d97706', bg: '#fef3c7', show: true },
                 { key: 'categories', label: 'ประเภทคำร้อง',      Icon: Tag,           color: '#d97706', bg: '#fef3c7', show: currentUserRole !== 'viewer' },
                 { key: 'users',      label: 'จัดการผู้ใช้',      Icon: Shield,        color: '#7c3aed', bg: '#ede9fe', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 { key: 'audit-log',  label: 'บันทึกกิจกรรม',    Icon: Bell,          color: '#ef4444', bg: '#fee2e2', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
@@ -4683,6 +4936,8 @@ export default function AdminDashboard() {
         <InboxModule tenant={tenant} staffId={currentUserId} />
       ) : activePage === 'events' ? (
         <EventsManagerComponent tenant={tenant} currentUserRole={currentUserRole} />
+      ) : activePage === 'satisfaction' ? (
+        <SatisfactionAdmin tenant={tenant} />
       ) : activePage === 'report' ? (
         <ReportManagerComponent complaints={complaints} tenant={tenant} technicians={technicians} />
       ) : activePage === 'staff' ? (

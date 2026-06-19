@@ -17,6 +17,8 @@ import BusinessRegisterPage from './pages/BusinessRegisterPage'
 import MarketPage from './pages/MarketPage'
 import AdminLogin from './pages/AdminLogin'
 import AuthPage from './pages/AuthPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
+import SatisfactionPage from './pages/SatisfactionPage'
 import TechnicianDashboard from './pages/TechnicianDashboard'
 import ProfilePage from './pages/ProfilePage'
 import MyComplaints from './pages/MyComplaints'
@@ -277,6 +279,8 @@ function AppShell() {
           } />
           <Route path="/market" element={<MarketPage />} />
           <Route path="/auth" element={<AuthPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/satisfaction" element={<SatisfactionPage />} />
           <Route path="/profile" element={
             <RequireAuth>
               <ProfilePage />

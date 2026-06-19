@@ -51,9 +51,8 @@ const MODULE_GROUPS = [
     group: 'งานภายใน',
     items: [
       { key: 'events',   label: 'กิจกรรม',          Icon: CalendarDays, color: '#10b981' },
-      { key: 'approve',  label: 'อนุมัติ',           Icon: CheckSquare,  color: '#f97316' },
-      { key: 'projects', label: 'โครงการ',           Icon: Wrench,       color: '#7c3aed' },
-      { key: 'infra',    label: 'โครงสร้างพื้นฐาน', Icon: MapPin,       color: '#0891b2' },
+      { key: 'projects', label: 'แผนงาน/โครงการ',    Icon: Wrench,       color: '#7c3aed' },
+      { key: 'infra',    label: 'บันทึกงานซ่อม',     Icon: MapPin,       color: '#0891b2' },
     ],
   },
   {
@@ -2030,7 +2029,7 @@ export default function StaffDashboard() {
 
   const allModuleKeys = MODULES.map(m => m.key)
   // keys ที่เคยอยู่ใน ModuleManager — ถ้า key ใหม่ยังไม่เคยถูก manage ให้ default เป็น enabled
-  const managedKeys = ['inbox', 'docs', 'complaints', 'events', 'approve', 'projects', 'docs-archive', 'map', 'report']
+  const managedKeys = ['inbox', 'docs', 'complaints', 'events', 'projects', 'docs-archive', 'map', 'report']
   const enabledKeys = tenant?.enabled_modules
     ? [...tenant.enabled_modules, ...allModuleKeys.filter(k => !managedKeys.includes(k))]
     : allModuleKeys
@@ -2215,7 +2214,6 @@ export default function StaffDashboard() {
           {activeModule === 'inbox'      && <InboxModule tenant={tenant} staffId={profile?.id} />}
           {activeModule === 'complaints' && <ComplaintsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
           {activeModule === 'events'     && <EventsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
-          {activeModule === 'approve'    && <ApproveModule tenant={tenant} staffProfile={profile} />}
           {activeModule === 'projects'   && <CivilProjectAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
           {activeModule === 'infra'      && <InfraWorkAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
           {activeModule === 'map'        && <MapDashboardAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} onNavigate={() => {}} />}

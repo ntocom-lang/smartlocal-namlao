@@ -254,6 +254,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
   const [filterProjStatus, setFilterProjStatus] = useState('all')
   const [filterProjType,   setFilterProjType]   = useState('all')
   const [showLabels, setShowLabels] = useState(false)
+  const [projViewMode, setProjViewMode] = useState('pin') // 'route' | 'pin'
 
   function clearFilters() {
     setShowRepair(true); setShowWater(true); setShowEnv(true)
@@ -661,6 +662,20 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
               </div>
               <span className="text-xs font-semibold text-gray-700">แสดงชื่อ</span>
             </label>
+            <div className="flex shadow-md border border-gray-300 overflow-hidden" style={{ height: '30px', borderRadius: '3px' }}>
+              <button onClick={() => setProjViewMode('pin')}
+                className="flex items-center gap-1 px-2 text-xs font-semibold transition-colors"
+                style={{ backgroundColor: projViewMode === 'pin' ? 'var(--color-primary)' : '#fff', color: projViewMode === 'pin' ? '#fff' : '#374151' }}
+                title="แสดงโครงการเป็นหมุด">
+                📍 ปักหมุด
+              </button>
+              <button onClick={() => setProjViewMode('route')}
+                className="flex items-center gap-1 px-2 text-xs font-semibold border-l border-gray-300 transition-colors"
+                style={{ backgroundColor: projViewMode === 'route' ? 'var(--color-primary)' : '#fff', color: projViewMode === 'route' ? '#fff' : '#374151' }}
+                title="แสดงโครงการเป็นแนวเส้นทาง">
+                〰 เส้นทาง
+              </button>
+            </div>
           </div>
         )}
 
@@ -852,7 +867,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
                 </Popup>
               )
 
-              if (hasRoute) {
+              if (hasRoute && projViewMode === 'route') {
                 return (
                   <Polyline key={w.id}
                     positions={w.route_points.map(p => [p.lat, p.lng])}
@@ -869,9 +884,11 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
                 )
               }
 
+              const pinLat = hasRoute ? w.route_points[0].lat : w.latitude
+              const pinLng = hasRoute ? w.route_points[0].lng : w.longitude
               return (
                 <Marker key={w.id}
-                  position={[w.latitude, w.longitude]}
+                  position={[pinLat, pinLng]}
                   icon={makeDivIcon(
                     PROJ_TYPE_EMOJI[w.project_type] ?? '🔨',
                     statusColor,

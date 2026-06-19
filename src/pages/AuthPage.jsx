@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
-import { Mail, Lock, User, Loader2, UserCircle2, Phone, Eye, EyeOff, ExternalLink } from 'lucide-react'
+import { Mail, Lock, User, Loader2, UserCircle2, Phone, Eye, EyeOff, ExternalLink, ArrowLeft } from 'lucide-react'
 
 const PHONE_EMAIL_DOMAIN = 'phone.smartlocal.app'
 
@@ -27,7 +27,7 @@ export default function AuthPage() {
   const from = location.state?.from ?? '/'
   const inAppBrowser = detectInAppBrowser()
 
-  const [mode, setMode] = useState('login') // 'login' | 'register'
+  const [mode, setMode] = useState('login') // 'login' | 'register' | 'forgot'
   const [form, setForm] = useState({ email: '', password: '', name: '', phone: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -44,6 +44,7 @@ export default function AuthPage() {
   const [remember, setRemember] = useState(false)
   const [loadingGoogle, setLoadingGoogle] = useState(false)
   const [loadingLine, setLoadingLine] = useState(false)
+  const [forgotEmail, setForgotEmail] = useState('')
 
   const set = (f) => (e) => setForm((p) => ({ ...p, [f]: e.target.value }))
 
@@ -75,6 +76,26 @@ export default function AuthPage() {
       options: { redirectTo: window.location.origin },
     })
     if (err) { setError('ไม่สามารถเข้าสู่ระบบด้วย LINE ได้'); setLoadingLine(false) }
+  }
+
+  async function handleForgotPassword(e) {
+    e.preventDefault()
+    const email = forgotEmail.trim()
+    if (!email.includes('@')) {
+      setError('บัญชีที่สมัครด้วยเบอร์โทรศัพท์ไม่สามารถรีเซ็ตรหัสผ่านทางอีเมลได้\nกรุณาติดต่อเจ้าหน้าที่')
+      return
+    }
+    setError('')
+    setLoading(true)
+    const { error: err } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    })
+    setLoading(false)
+    if (err) {
+      setError('ส่งอีเมลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')
+    } else {
+      setSuccess(`ส่งลิงก์รีเซ็ตรหัสผ่านไปที่ ${email} แล้ว\nกรุณาตรวจสอบกล่องขาเข้า (และโฟลเดอร์ Spam)`)
+    }
   }
 
   async function handleLogin(e) {
@@ -209,33 +230,79 @@ export default function AuthPage() {
 
         {/* Title */}
         <h1 className="text-xl font-bold text-gray-800 text-center mb-1">
-          {mode === 'login' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก'}
+          {mode === 'forgot' ? 'รีเซ็ตรหัสผ่าน' : mode === 'login' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก'}
         </h1>
         <p className="text-sm text-gray-400 text-center mb-6">
-          {mode === 'login' ? `เข้าสู่ระบบ${tenant?.system_name || `${tenant?.name} One Data`}` : 'สร้างบัญชีเพื่อใช้บริการ'}
+          {mode === 'forgot'
+            ? 'ระบุอีเมลที่ลงทะเบียนไว้ เราจะส่งลิงก์ให้'
+            : mode === 'login'
+            ? `เข้าสู่ระบบ${tenant?.system_name || `${tenant?.name} One Data`}`
+            : 'สร้างบัญชีเพื่อใช้บริการ'}
         </p>
 
-        {/* Tab */}
-        <div className="flex bg-gray-100 rounded-xl p-1 mb-6">
-          {['login', 'register'].map((m) => (
-            <button key={m} onClick={() => { setMode(m); setError(''); setSuccess('') }}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
-                mode === m ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'
-              }`}>
-              {m === 'login' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก'}
-            </button>
-          ))}
-        </div>
+        {/* Tab — ซ่อนเมื่อ forgot */}
+        {mode !== 'forgot' && (
+          <div className="flex bg-gray-100 rounded-xl p-1 mb-6">
+            {['login', 'register'].map((m) => (
+              <button key={m} onClick={() => { setMode(m); setError(''); setSuccess('') }}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
+                  mode === m ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'
+                }`}>
+                {m === 'login' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก'}
+              </button>
+            ))}
+          </div>
+        )}
 
-        {/* Success msg */}
-        {success && (
+        {/* Success msg (login/register only — forgot มี inline success ของตัวเอง) */}
+        {success && mode !== 'forgot' && (
           <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-xl px-4 py-3 mb-4">
             {success}
           </div>
         )}
 
 
+        {/* Forgot password form */}
+        {mode === 'forgot' && (
+          <form onSubmit={handleForgotPassword} className="space-y-4">
+            {success ? (
+              <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-xl px-4 py-4 text-center leading-relaxed whitespace-pre-line">
+                {success}
+              </div>
+            ) : (
+              <>
+                <div className="relative">
+                  <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    value={forgotEmail}
+                    onChange={(e) => { setForgotEmail(e.target.value); setError('') }}
+                    required type="email" placeholder="อีเมลที่ลงทะเบียนไว้"
+                    autoComplete="email"
+                    className="w-full pl-9 pr-3 py-3 border border-gray-200 rounded-xl text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:border-transparent"
+                    style={{ '--tw-ring-color': 'var(--color-primary)' }}
+                  />
+                </div>
+                {error && <p className="text-sm text-red-500 text-center whitespace-pre-line">{error}</p>}
+                <button type="submit" disabled={loading}
+                  className="w-full py-3 rounded-xl text-white font-semibold text-sm transition-all disabled:opacity-60 active:scale-95"
+                  style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
+                  {loading
+                    ? <span className="flex items-center justify-center gap-2"><Loader2 size={16} className="animate-spin" /> กำลังส่ง...</span>
+                    : 'ส่งลิงก์รีเซ็ตรหัสผ่าน'
+                  }
+                </button>
+              </>
+            )}
+            <button type="button" onClick={() => { setMode('login'); setError(''); setSuccess(''); setForgotEmail('') }}
+              className="w-full flex items-center justify-center gap-1.5 text-sm text-gray-400 hover:text-gray-600 transition-colors py-1">
+              <ArrowLeft size={14} /> กลับไปเข้าสู่ระบบ
+            </button>
+          </form>
+        )}
+
         {/* Form */}
+        {mode !== 'forgot' && (
+        <>
         <form onSubmit={mode === 'login' ? handleLogin : handleRegister} className="space-y-3" autoComplete="on">
           {mode === 'register' && (
             <div className="relative">
@@ -285,11 +352,17 @@ export default function AuthPage() {
           </div>
 
           {mode === 'login' && (
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)}
-                className="w-4 h-4 rounded accent-(--color-primary)" />
-              <span className="text-sm text-gray-500">จดจำรหัสผ่าน</span>
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)}
+                  className="w-4 h-4 rounded accent-(--color-primary)" />
+                <span className="text-sm text-gray-500">จดจำรหัสผ่าน</span>
+              </label>
+              <button type="button" onClick={() => { setMode('forgot'); setError(''); setSuccess('') }}
+                className="text-sm text-blue-500 hover:text-blue-700 transition-colors">
+                ลืมรหัสผ่าน?
+              </button>
+            </div>
           )}
 
           {error && <p className="text-sm text-red-500 text-center">{error}</p>}
@@ -311,9 +384,24 @@ export default function AuthPage() {
           <div className="flex-1 h-px bg-gray-200" />
         </div>
 
+        {/* LINE OAuth */}
+        <button onClick={handleLine} disabled={loadingLine}
+          className="w-full flex items-center justify-center gap-3 py-3 rounded-xl text-white text-sm font-medium active:scale-95 transition-all disabled:opacity-60 shadow-sm"
+          style={{ backgroundColor: '#06C755' }}>
+          {loadingLine ? (
+            <Loader2 size={18} className="animate-spin text-white/80" />
+          ) : (
+            <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2C6.477 2 2 6.065 2 11.108c0 4.535 4.02 8.33 9.452 8.997.368.08.869.243.996.558.114.287.075.736.037 1.025l-.161.965c-.05.287-.226 1.122.984.612 1.21-.51 6.523-3.84 8.9-6.578C23.48 14.96 22 13.155 22 11.108 22 6.065 17.523 2 12 2z" fill="white"/>
+              <path d="M9.807 9.2H8.8a.2.2 0 0 0-.2.2v3.2c0 .11.09.2.2.2h1.007a.2.2 0 0 0 .2-.2V9.4a.2.2 0 0 0-.2-.2zm5.593 0h-1.007a.2.2 0 0 0-.2.2v1.9l-1.463-2.007A.2.2 0 0 0 12.567 9.2h-1.007a.2.2 0 0 0-.2.2v3.2c0 .11.09.2.2.2H12.567a.2.2 0 0 0 .2-.2v-1.9l1.465 2.008a.2.2 0 0 0 .168.092H15.4a.2.2 0 0 0 .2-.2V9.4a.2.2 0 0 0-.2-.2zm-7.2 0H7a.2.2 0 0 0-.2.2v3.2c0 .11.09.2.2.2h2.2a.2.2 0 0 0 .2-.2v-.8a.2.2 0 0 0-.2-.2H7.8v-2.2a.2.2 0 0 0-.2-.2H7.2zm10 2.4h-1.4v-2.2a.2.2 0 0 0-.2-.2h-.8a.2.2 0 0 0-.2.2v3.2c0 .11.09.2.2.2H17.4a.2.2 0 0 0 .2-.2v-.8a.2.2 0 0 0-.2-.2z" fill="#06C755"/>
+            </svg>
+          )}
+          {mode === 'login' ? 'เข้าสู่ระบบด้วย LINE' : 'สมัครด้วย LINE'}
+        </button>
+
         {/* Google OAuth */}
         <button onClick={handleGoogle} disabled={loadingGoogle}
-          className="w-full flex items-center justify-center gap-3 py-3 rounded-xl border border-gray-200 bg-white text-gray-700 text-sm font-medium hover:bg-gray-50 active:scale-95 transition-all disabled:opacity-60 shadow-sm">
+          className="w-full flex items-center justify-center gap-3 py-3 rounded-xl border border-gray-200 bg-white text-gray-700 text-sm font-medium hover:bg-gray-50 active:scale-95 transition-all disabled:opacity-60 shadow-sm mt-3">
           {loadingGoogle ? (
             <Loader2 size={18} className="animate-spin text-gray-400" />
           ) : (
@@ -326,21 +414,8 @@ export default function AuthPage() {
           )}
           {mode === 'login' ? 'เข้าสู่ระบบด้วย Google' : 'สมัครด้วย Google'}
         </button>
-
-        {/* LINE OAuth */}
-        <button onClick={handleLine} disabled={loadingLine}
-          className="w-full flex items-center justify-center gap-3 py-3 rounded-xl text-white text-sm font-medium active:scale-95 transition-all disabled:opacity-60 shadow-sm mt-3"
-          style={{ backgroundColor: '#06C755' }}>
-          {loadingLine ? (
-            <Loader2 size={18} className="animate-spin text-white/80" />
-          ) : (
-            <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 2C6.477 2 2 6.065 2 11.108c0 4.535 4.02 8.33 9.452 8.997.368.08.869.243.996.558.114.287.075.736.037 1.025l-.161.965c-.05.287-.226 1.122.984.612 1.21-.51 6.523-3.84 8.9-6.578C23.48 14.96 22 13.155 22 11.108 22 6.065 17.523 2 12 2z" fill="white"/>
-              <path d="M9.807 9.2H8.8a.2.2 0 0 0-.2.2v3.2c0 .11.09.2.2.2h1.007a.2.2 0 0 0 .2-.2V9.4a.2.2 0 0 0-.2-.2zm5.593 0h-1.007a.2.2 0 0 0-.2.2v1.9l-1.463-2.007A.2.2 0 0 0 12.567 9.2h-1.007a.2.2 0 0 0-.2.2v3.2c0 .11.09.2.2.2H12.567a.2.2 0 0 0 .2-.2v-1.9l1.465 2.008a.2.2 0 0 0 .168.092H15.4a.2.2 0 0 0 .2-.2V9.4a.2.2 0 0 0-.2-.2zm-7.2 0H7a.2.2 0 0 0-.2.2v3.2c0 .11.09.2.2.2h2.2a.2.2 0 0 0 .2-.2v-.8a.2.2 0 0 0-.2-.2H7.8v-2.2a.2.2 0 0 0-.2-.2H7.2zm10 2.4h-1.4v-2.2a.2.2 0 0 0-.2-.2h-.8a.2.2 0 0 0-.2.2v3.2c0 .11.09.2.2.2H17.4a.2.2 0 0 0 .2-.2v-.8a.2.2 0 0 0-.2-.2z" fill="#06C755"/>
-            </svg>
-          )}
-          {mode === 'login' ? 'เข้าสู่ระบบด้วย LINE' : 'สมัครด้วย LINE'}
-        </button>
+        </>
+        )}
       </div>
     </div>
   )
