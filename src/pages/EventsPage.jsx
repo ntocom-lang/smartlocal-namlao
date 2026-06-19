@@ -305,8 +305,9 @@ export default function EventsPage() {
         return new Date(a.created_at) - new Date(b.created_at)
       })
       setEvents(sorted)
-      setLoading(false)
     })
+      .catch(() => {})
+      .finally(() => setLoading(false))
   }, [tenant?.id, role])
 
   const today = new Date()

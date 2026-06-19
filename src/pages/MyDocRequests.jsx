@@ -443,7 +443,9 @@ export default function MyDocRequests() {
       .eq('municipality_id', tenant.id)
       .eq('user_id', session.user.id)
       .order('created_at', { ascending: false })
-      .then(({ data }) => { setRequests(data ?? []); setLoading(false) })
+      .then(({ data }) => setRequests(data ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
   }, [session, tenant?.id, refreshKey])
 
   async function handleSearch() {

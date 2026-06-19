@@ -346,7 +346,9 @@ export default function TourismDetailPage() {
 
   useEffect(() => {
     supabase.from('tourism_places').select('*').eq('id', id).single()
-      .then(({ data }) => { setPlace(data); setLoading(false) })
+      .then(({ data }) => setPlace(data))
+      .catch(() => {})
+      .finally(() => setLoading(false))
   }, [id])
 
   async function handleShare() {

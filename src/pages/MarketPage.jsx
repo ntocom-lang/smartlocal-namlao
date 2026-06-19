@@ -35,10 +35,9 @@ export default function MarketPage() {
       .eq('municipality_id', tenant.id)
       .eq('status', 'approved')
       .order('approved_at', { ascending: false })
-      .then(({ data }) => {
-        setPlaces(data ?? [])
-        setLoading(false)
-      })
+      .then(({ data }) => setPlaces(data ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
   }, [tenant?.id])
 
   const filtered = activeType ? places.filter((p) => p.business_type === activeType) : places

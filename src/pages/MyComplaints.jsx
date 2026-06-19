@@ -496,16 +496,18 @@ export default function MyComplaints() {
     if (!tenant?.id || !session?.user?.id) return
     async function load() {
       setLoading(true)
-      const { data } = await supabase
-        .from('complaints')
-        .select('*')
-        .eq('municipality_id', tenant.id)
-        .eq('user_id', session.user.id)
-        .order('created_at', { ascending: false })
-      const list = data ?? []
-      setComplaints(list)
-      setLoading(false)
-      if (openId) setSelected(list.find((c) => c.id === openId) ?? null)
+      try {
+        const { data } = await supabase
+          .from('complaints')
+          .select('*')
+          .eq('municipality_id', tenant.id)
+          .eq('user_id', session.user.id)
+          .order('created_at', { ascending: false })
+        const list = data ?? []
+        setComplaints(list)
+        if (openId) setSelected(list.find((c) => c.id === openId) ?? null)
+      } catch {}
+      finally { setLoading(false) }
     }
     load()
   }, [tenant?.id, session?.user?.id, openId])

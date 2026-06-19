@@ -65,7 +65,7 @@ export default function ProfilePage() {
         })
       }
       setLoading(false)
-    })
+    }).catch(() => setLoading(false))
   }, [navigate])
 
   async function handleSave() {

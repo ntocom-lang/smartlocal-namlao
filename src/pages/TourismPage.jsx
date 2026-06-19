@@ -215,7 +215,9 @@ export default function TourismPage() {
       .eq('municipality_id', tenant.id)
       .eq('is_active', true)
       .order('display_order')
-      .then(({ data }) => { setPlaces(data ?? []); setLoading(false) })
+      .then(({ data }) => setPlaces(data ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
   }, [tenant?.id])
 
   useEffect(() => {

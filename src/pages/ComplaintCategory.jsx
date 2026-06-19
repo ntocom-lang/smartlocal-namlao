@@ -69,8 +69,9 @@ export default function ComplaintCategory() {
       .order('sort_order')
       .then(({ data }) => {
         setCategories(data && data.length > 0 ? data : DEFAULT_CATEGORIES)
-        setLoading(false)
       })
+      .catch(() => setCategories(DEFAULT_CATEGORIES))
+      .finally(() => setLoading(false))
   }, [tenant?.id])
 
   function handleSelect(value) {

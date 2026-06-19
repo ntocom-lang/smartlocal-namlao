@@ -73,8 +73,9 @@ export default function LpaDocStats() {
     ]).then(([{ data: s }, { data: r }]) => {
       setStats(s)
       setRows(r ?? [])
-      setLoading(false)
     })
+      .catch(() => {})
+      .finally(() => setLoading(false))
   }, [tenant?.id])
 
   const completionRate = stats?.total > 0
