@@ -15,11 +15,11 @@ const NAV_CITIZEN = [
 ]
 
 const NAV_TECH = [
-  { label: 'หน้าแรก',       href: '/' },
-  { label: 'งานของฉัน',     href: '/technician' },
-  { label: 'คำร้องของฉัน',  href: '/my-complaints' },
-  { label: 'การแจ้งเตือน',  href: '/notifications' },
-  { label: 'เมนูอื่นๆ',     href: '/more' },
+  { label: 'หน้าแรก',           href: '/' },
+  { label: 'งานของฉัน',         href: '/technician' },
+  { label: 'ระบบเจ้าหน้าที่',   href: '/staff' },
+  { label: 'การแจ้งเตือน',      href: '/notifications' },
+  { label: 'เมนูอื่นๆ',         href: '/more' },
 ]
 
 export default function Header() {
