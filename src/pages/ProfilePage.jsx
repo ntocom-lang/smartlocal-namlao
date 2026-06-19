@@ -138,15 +138,9 @@ export default function ProfilePage() {
   }
 
   async function handleLineLink() {
-    // บันทึก phone + id_card ไว้ merge เข้า LINE account ใหม่หลัง OAuth
-    sessionStorage.setItem('merge_profile_on_oauth', JSON.stringify({
-      phone:   profile.phone   || '',
-      id_card: profile.id_card || '',
-    }))
-    sessionStorage.setItem('oauth_from', '/profile')
-    await supabase.auth.signInWithOAuth({
+    await supabase.auth.linkIdentity({
       provider: 'custom:line',
-      options: { redirectTo: window.location.origin },
+      options: { redirectTo: window.location.href },
     })
   }
 
