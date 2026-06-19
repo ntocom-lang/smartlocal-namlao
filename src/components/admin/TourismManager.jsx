@@ -381,12 +381,12 @@ export default function TourismManager({ tenant }) {
 
       {/* ─── Bottom Sheet ─── */}
       {sheet && (
-        <div className="fixed inset-0 z-50 flex items-end" onClick={closeSheet}>
+        <div className="fixed inset-0 z-50 flex items-end md:items-center md:justify-center" onClick={closeSheet}>
           <div className="absolute inset-0 bg-black/40" />
-          <div className="relative w-full bg-white rounded-t-3xl shadow-2xl max-h-[92vh] flex flex-col"
+          <div className="relative w-full md:max-w-lg md:mx-4 bg-white rounded-t-3xl md:rounded-2xl shadow-2xl max-h-[92vh] flex flex-col"
                onClick={e => e.stopPropagation()}>
 
-            <div className="flex justify-center pt-3 pb-1 shrink-0">
+            <div className="flex justify-center pt-3 pb-1 shrink-0 md:hidden">
               <div className="w-10 h-1 rounded-full bg-gray-300" />
             </div>
 
