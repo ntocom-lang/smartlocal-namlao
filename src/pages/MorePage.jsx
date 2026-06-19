@@ -279,20 +279,24 @@ export default function MorePage() {
   const { unreadCount } = useNotifications()
   const [session, setSession] = useState(null)
   const [role, setRole] = useState(null)
+  const [profileName, setProfileName] = useState(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s)
-      if (!s) setRole(null)
+      if (!s) { setRole(null); setProfileName(null) }
     })
     return () => subscription.unsubscribe()
   }, [])
 
   useEffect(() => {
     if (!session) return
-    supabase.from('profiles').select('role').eq('id', session.user.id).single()
-      .then(({ data }) => setRole(data?.role ?? 'citizen'))
+    supabase.from('profiles').select('role, full_name').eq('id', session.user.id).single()
+      .then(({ data }) => {
+        setRole(data?.role ?? 'citizen')
+        setProfileName(data?.full_name ?? null)
+      })
   }, [session])
 
   async function handleLogout() {
@@ -304,7 +308,7 @@ export default function MorePage() {
   const isStaff  = role === 'staff'
   const isViewer = role === 'viewer'
   const isCouncil = role === 'council'
-  const displayName = session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || ''
+  const displayName = profileName || session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || ''
   const avatarUrl = session?.user?.user_metadata?.avatar_url || session?.user?.user_metadata?.picture
   const initials = (displayName[0] || '?').toUpperCase()
 
