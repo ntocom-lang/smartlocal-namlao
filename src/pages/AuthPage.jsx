@@ -158,7 +158,7 @@ export default function AuthPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-10">
+    <div className="min-h-screen flex items-center justify-center px-4 pt-10 pb-28">
       <div className="w-full max-w-sm bg-white rounded-3xl shadow-xl border border-gray-100 p-8">
 
         {/* In-app browser warning */}
