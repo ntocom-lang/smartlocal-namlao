@@ -317,7 +317,7 @@ export default function ProfilePage() {
               <button onClick={handleLineLink}
                 className="text-xs text-white px-4 py-1.5 rounded-full font-medium transition-colors active:scale-95"
                 style={{ backgroundColor: '#06C755' }}>
-                เข้าสู่ระบบ LINE
+                เชื่อมต่อ
               </button>
             )}
           </div>
