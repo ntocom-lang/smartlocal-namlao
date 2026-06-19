@@ -51,32 +51,32 @@ export default function InAppBrowserGate({ children }) {
     const e = detectEnv()
     if (!e.isInApp) return
 
-    // ถ้า URL มี openExternalBrowser อยู่แล้ว → Line พยายาม redirect แล้วแต่ล้มเหลว → block
+    // URL มี openExternalBrowser อยู่แล้ว → redirect ล้มเหลว (LINE เก่ามาก) → block ทันที
     if (new URLSearchParams(window.location.search).get('openExternalBrowser')) {
       setEnv(e)
       setBlocked(true)
       return
     }
 
-    // Line: ลอง redirect ผ่าน openExternalBrowser param + แสดง gate ทันที
-    // (ถ้า redirect ทำงาน → user ออกจาก Line ไปเองก่อนที่จะเห็น gate นาน)
+    let timer
     if (e.isLine) {
+      // ยิง openExternalBrowser redirect — LINE 10+ จะเปิด Safari อัตโนมัติโดยไม่โชว์ gate
       const sep = window.location.search ? '&' : '?'
       window.location.replace(window.location.href + sep + 'openExternalBrowser=1')
+      // ถ้า redirect ทำงาน → user ไป Safari แล้ว, gate ใน LINE เห็นแค่ fraction ก่อน close
+      // ถ้า redirect ถูก ignore (LINE เก่า) → page reload ด้วย ?openExternalBrowser → check ด้านบน
+      // fallback 2s: กรณี location.replace ถูก ignore โดยสิ้นเชิง
+      timer = setTimeout(() => { setEnv(e); setBlocked(true) }, 2000)
+    } else if (e.isAndroid) {
+      redirectExternalAndroid()
+      timer = setTimeout(() => { setEnv(e); setBlocked(true) }, 2000)
+    } else {
+      // iOS non-LINE in-app browser (Facebook, Instagram) — แสดง gate เลย
       setEnv(e)
       setBlocked(true)
-      return
     }
 
-    // Facebook / Instagram / อื่นๆ: ลอง default browser ก่อน
-    if (e.isAndroid) {
-      redirectExternalAndroid()
-      setTimeout(() => { setEnv(e); setBlocked(true) }, 2000)
-    } else {
-      // iOS: แสดง block screen เลย (Chrome scheme กด manual ดีกว่า auto เพราะ iOS ถาม confirm)
-      setEnv(e)
-      setBlocked(true)
-    }
+    return () => clearTimeout(timer)
   }, [])
 
   const copyUrl = useCallback(() => {
