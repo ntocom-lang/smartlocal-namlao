@@ -203,7 +203,7 @@ export default function Header() {
                   />
                 ) : (
                   <div className="w-8 h-8 rounded-full bg-white/20 border-2 border-white/60 flex items-center justify-center text-white text-xs font-bold">
-                    {(session.user?.user_metadata?.full_name || session.user?.email || '?')[0].toUpperCase()}
+                    {(displayName || session.user?.email || '?')[0].toUpperCase()}
                   </div>
                 )}
               </Link>

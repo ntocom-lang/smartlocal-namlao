@@ -207,6 +207,7 @@ function StarDisplay({ value, size = 14 }) {
 function ReviewsSection({ placeId }) {
   const { tenant } = useTenant()
   const [session, setSession]     = useState(undefined)
+  const [profileName, setProfileName] = useState(null)
   const [reviews, setReviews]     = useState([])
   const [myReview, setMyReview]   = useState(null)
   const [rating, setRating]       = useState(0)
@@ -217,6 +218,12 @@ function ReviewsSection({ placeId }) {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
   }, [])
+
+  useEffect(() => {
+    if (!session?.user?.id) return
+    supabase.from('profiles').select('full_name').eq('id', session.user.id).maybeSingle()
+      .then(({ data }) => setProfileName(data?.full_name ?? null))
+  }, [session?.user?.id])
 
   useEffect(() => {
     if (!placeId) return
@@ -238,7 +245,7 @@ function ReviewsSection({ placeId }) {
   async function handleSubmit() {
     if (!rating || !session || !tenant?.id) return
     setSaving(true)
-    const userName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'ผู้ใช้'
+    const userName = profileName || session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'ผู้ใช้'
     const payload = {
       place_id: placeId,
       user_id: session.user.id,
