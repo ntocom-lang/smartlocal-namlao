@@ -30,27 +30,31 @@ export default function Header() {
   const { unreadCount } = useNotifications()
   const [session, setSession] = useState(null)
   const [role, setRole] = useState(null)
+  const [profileName, setProfileName] = useState(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s)
-      if (!s) setRole(null)
+      if (!s) { setRole(null); setProfileName(null) }
     })
     return () => subscription.unsubscribe()
   }, [])
 
   useEffect(() => {
     if (!session) return
-    supabase.from('profiles').select('role').eq('id', session.user.id).maybeSingle()
-      .then(({ data }) => setRole(data?.role ?? 'citizen'))
+    supabase.from('profiles').select('role, full_name').eq('id', session.user.id).maybeSingle()
+      .then(({ data }) => {
+        setRole(data?.role ?? 'citizen')
+        setProfileName(data?.full_name ?? null)
+      })
   }, [session])
 
   async function logout() {
     await supabase.auth.signOut()
   }
 
-  const displayName = session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || ''
+  const displayName = profileName || session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || ''
   const isAdmin = role === 'admin' || role === 'superadmin' || role === 'officer'
 
   if (location.pathname.startsWith('/staff')) return null
