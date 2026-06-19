@@ -301,7 +301,7 @@ export default function MorePage() {
   }
 
   const isAdmin  = role === 'admin' || role === 'superadmin' || role === 'officer'
-  const isStaff  = role === 'staff' || role === 'technician'
+  const isStaff  = role === 'staff'
   const isViewer = role === 'viewer'
   const isCouncil = role === 'council'
   const displayName = session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || ''
