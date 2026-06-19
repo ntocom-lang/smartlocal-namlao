@@ -7,8 +7,6 @@ const inputCls = 'w-full px-4 py-2.5 text-sm text-gray-900 bg-white border borde
 
 export default function SystemSettingsAdmin() {
   const { tenant, patchTenant } = useTenant()
-  const [systemName, setSystemName] = useState(() => tenant?.system_name || 'One Data')
-  const [subtitle, setSubtitle] = useState(() => tenant?.system_subtitle || '')
   const [pwaShortName, setPwaShortName] = useState(() => tenant?.pwa_short_name || '')
   const [loading, setLoading] = useState(false)
   const [savedSection, setSavedSection] = useState(null)
@@ -22,18 +20,16 @@ export default function SystemSettingsAdmin() {
     e.preventDefault()
     setLoading(true)
     try {
-      const newName = systemName.trim() || 'One Data'
-      const newSubtitle = subtitle.trim() || null
       const newPwaShortName = pwaShortName.trim() || null
       if (!tenant?.id) throw new Error('ไม่พบ tenant.id — กรุณา refresh หน้า')
       const { error } = await supabase.rpc('update_municipality_settings', {
         p_municipality_id: tenant.id,
-        p_system_name:     newName,
-        p_system_subtitle: newSubtitle,
+        p_system_name:     tenant.system_name || tenant.name,
+        p_system_subtitle: null,
         p_pwa_short_name:  newPwaShortName,
       })
       if (error) throw error
-      patchTenant({ system_name: newName, system_subtitle: newSubtitle, pwa_short_name: newPwaShortName })
+      patchTenant({ pwa_short_name: newPwaShortName })
       setSavedSection('name')
       setTimeout(() => setSavedSection(null), 2500)
     } catch (err) {
@@ -121,50 +117,23 @@ export default function SystemSettingsAdmin() {
         </div>
       </div>
 
-      {/* ── ชื่อระบบ ── */}
+      {/* ── ชื่อแอปบนมือถือ ── */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         <h2 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
-          <Settings size={15} /> ชื่อย่อระบบ
+          <Settings size={15} /> ชื่อแอปบนมือถือ
         </h2>
         <form onSubmit={saveSystemName} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1">System Name</label>
-            <p className="text-xs text-gray-400 mb-2 leading-relaxed">
-              แสดงผลเป็น "{systemName || `${tenant?.name || ''} One Data`}"
-            </p>
-            <input
-              type="text"
-              value={systemName}
-              onChange={e => setSystemName(e.target.value)}
-              placeholder={`เช่น ${tenant?.name || 'เทศบาลตำบลน้ำเลา'} One Data`}
-              className={inputCls}
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1">ข้อความบรรทัดล่าง</label>
-            <p className="text-xs text-gray-400 mb-2 leading-relaxed">
-              แสดงใต้ชื่อระบบใน header — ถ้าไม่กำหนดจะแสดงชื่อหน่วยงาน ({tenant?.name})
-            </p>
-            <input
-              type="text"
-              value={subtitle}
-              onChange={e => setSubtitle(e.target.value)}
-              placeholder={`เช่น ${tenant?.name || 'เทศบาลตำบลน้ำเลา'}`}
-              className={inputCls}
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1">ชื่อแอปบนมือถือ (PWA Short Name)</label>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">PWA Short Name</label>
             <p className="text-xs text-gray-400 mb-2 leading-relaxed">
               ชื่อที่แสดงใต้ไอคอนและหน้า Splash Screen เมื่อติดตั้งแอป — แนะนำไม่เกิน 12 ตัวอักษร<br />
-              ถ้าไม่กำหนดจะใช้ชื่อระบบแทน
+              ถ้าไม่กำหนดจะใช้ชื่อย่ออัตโนมัติ เช่น ทต.น้ำเลา, อบต.ตำหนักธรรม
             </p>
             <input
               type="text"
               value={pwaShortName}
               onChange={e => setPwaShortName(e.target.value)}
-              placeholder={`เช่น น้ำเลา E-Service`}
+              placeholder={`เช่น ทต.${tenant?.name?.replace(/เทศบาลตำบล|เทศบาลเมือง|เทศบาลนคร|องค์การบริหารส่วนตำบล/g, '') || 'น้ำเลา'}`}
               maxLength={20}
               className={inputCls}
             />

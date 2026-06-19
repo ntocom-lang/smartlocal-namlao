@@ -46,11 +46,26 @@ function detectTenantSlug() {
   return segment ?? null
 }
 
+const ORG_ABBR = {
+  'เทศบาลนคร':  { abbr: 'ทน.', strip: 'เทศบาลนคร' },
+  'เทศบาลเมือง': { abbr: 'ทม.', strip: 'เทศบาลเมือง' },
+  'เทศบาลตำบล': { abbr: 'ทต.', strip: 'เทศบาลตำบล' },
+  'อบต.':        { abbr: 'อบต.', strip: 'องค์การบริหารส่วนตำบล' },
+}
+
+function autoShortName(tenant) {
+  if (tenant.pwa_short_name) return tenant.pwa_short_name
+  const map = ORG_ABBR[tenant.org_type]
+  if (!map) return tenant.name
+  const location = tenant.name.replace(map.strip, '').trim()
+  return map.abbr + location
+}
+
 function injectPWAManifest(tenant) {
   const manifest = {
-    name: tenant.system_name || `${tenant.name} One Data`,
-    short_name: tenant.pwa_short_name || tenant.system_name || tenant.name || 'One Data',
-    description: `ระบบจัดการข้อมูลเพื่อการพัฒนา${tenant.name}อย่างยั่งยืน`,
+    name: tenant.name,
+    short_name: autoShortName(tenant),
+    description: `ระบบศูนย์รวมข้อมูลดิจิทัลเพื่อการพัฒนา${tenant.name}อย่างยั่งยืน`,
     theme_color: tenant.theme_color ?? '#1c7cd6',
     background_color: '#ffffff',
     display: 'standalone',
