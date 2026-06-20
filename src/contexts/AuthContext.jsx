@@ -35,13 +35,13 @@ export function AuthProvider({ children }) {
         const profileMuniId = data?.municipality_id
         setProfileName(data?.full_name ?? null)
 
-        // superadmin ที่ไม่มี municipality_id = เข้าได้ทุก municipality
-        if (profileRole === 'superadmin' && !profileMuniId) {
+        // superadmin เข้าได้ทุก municipality เสมอ
+        if (profileRole === 'superadmin') {
           setRole('superadmin')
           return
         }
 
-        // ถ้า profile ผูกกับ municipality อื่น → ลด role เหลือ citizen
+        // role อื่น — ถ้า municipality ไม่ตรง → ลดเหลือ citizen
         if (tenant?.id && profileMuniId && profileMuniId !== tenant.id) {
           setRole('citizen')
           return
