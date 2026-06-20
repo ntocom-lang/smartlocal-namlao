@@ -215,12 +215,26 @@ function GmapsBtn({ lat, lng }) {
 }
 
 
-// ─── Recenter helper ─────────────────────────────────────────────────────────
-function RecenterMap({ lat, lng }) {
+// ─── Fit to all markers on first load ────────────────────────────────────────
+function FitBoundsOnLoad({ points, fallbackLat, fallbackLng }) {
   const map = useMap()
+  const fitted = useRef(false)
+
   useEffect(() => {
-    if (lat && lng) map.setView([lat, lng], 13)
-  }, [lat, lng, map])
+    if (fitted.current || points.length === 0) return
+    fitted.current = true
+    const valid = points.filter(([lat, lng]) => lat && lng)
+    if (valid.length === 0) {
+      if (fallbackLat && fallbackLng) map.setView([fallbackLat, fallbackLng], 13)
+      return
+    }
+    if (valid.length === 1) {
+      map.setView(valid[0], 14)
+      return
+    }
+    map.fitBounds(L.latLngBounds(valid), { padding: [48, 48], maxZoom: 15 })
+  }, [points.length])  // eslint-disable-line react-hooks/exhaustive-deps
+
   return null
 }
 
@@ -699,7 +713,15 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
                 ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
                 : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'}
             />
-            <RecenterMap lat={centerLat} lng={centerLng} />
+            <FitBoundsOnLoad
+              points={[
+                ...complaints.map(c => [c.latitude, c.longitude]),
+                ...civilProjects.map(p => [p.latitude, p.longitude]),
+                ...bizRegs.filter(b => b.latitude).map(b => [b.latitude, b.longitude]),
+              ]}
+              fallbackLat={centerLat}
+              fallbackLng={centerLng}
+            />
             <FullscreenResizer />
 
             {/* ── คำร้อง (3 ประเภทฟอร์ม) ── */}
