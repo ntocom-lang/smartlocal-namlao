@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
+import MapPicker from '../MapPicker'
 import {
   ClipboardList, Clock, Loader2, CheckCircle2, XCircle, AlertCircle,
   ChevronRight, ChevronLeft, Filter, Search, Phone, Trash2, Wrench,
@@ -351,6 +352,18 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
   const [deleting, setDeleting] = useState(false)
   const [overrideConfirm, setOverrideConfirm] = useState(null)
   const [nearbyList, setNearbyList] = useState([])
+  const [showPinEdit, setShowPinEdit] = useState(false)
+  const [savingPin, setSavingPin] = useState(false)
+
+  async function handleSavePin({ lat, lng }) {
+    setSavingPin(true)
+    const { error } = await supabase
+      .from('complaints')
+      .update({ latitude: lat, longitude: lng })
+      .eq('id', c.id)
+    setSavingPin(false)
+    if (!error) setShowPinEdit(false)
+  }
 
   useEffect(() => {
     if (!c.latitude || !tenant?.id) return
@@ -635,20 +648,39 @@ ${photoSectionHtml}
                   </a>
                 )}
                 {c.latitude && (
-                  <a href={`https://maps.google.com/?q=${c.latitude},${c.longitude}`}
-                    target="_blank" rel="noreferrer"
-                    className="flex items-center gap-3 px-4 py-3 hover:bg-gray-100 transition-colors">
-                    <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
-                      <MapPin size={15} className="text-blue-500" />
+                  <>
+                    <div className="flex items-center gap-3 px-4 py-3">
+                      <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
+                        <MapPin size={15} className="text-blue-500" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[13px] text-gray-400">พิกัด</p>
+                        <p className="text-sm font-medium text-gray-800">
+                          {c.latitude.toFixed(5)}, {c.longitude.toFixed(5)}
+                        </p>
+                      </div>
+                      <div className="flex gap-1.5 shrink-0">
+                        <a href={`https://maps.google.com/?q=${c.latitude},${c.longitude}`}
+                          target="_blank" rel="noreferrer"
+                          className="text-xs font-semibold px-2 py-1 bg-blue-100 text-blue-700 rounded-lg">เปิดแผนที่</a>
+                        <button type="button"
+                          onClick={() => setShowPinEdit(true)}
+                          className="text-xs font-semibold px-2 py-1 rounded-lg bg-orange-100 text-orange-700">
+                          แก้ไขหมุด
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[13px] text-gray-400">พิกัด</p>
-                      <p className="text-sm font-medium text-gray-800">
-                        {c.latitude.toFixed(5)}, {c.longitude.toFixed(5)}
-                      </p>
-                    </div>
-                    <span className="text-xs font-semibold px-2 py-1 bg-blue-100 text-blue-700 rounded-lg shrink-0">เปิดแผนที่</span>
-                  </a>
+                    {showPinEdit && (
+                      <div className="fixed inset-0 z-9999">
+                        <MapPicker
+                          initialPos={{ lat: c.latitude, lng: c.longitude }}
+                          fallbackPos={{ lat: c.latitude, lng: c.longitude }}
+                          onConfirm={handleSavePin}
+                          onClose={() => setShowPinEdit(false)}
+                        />
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -875,7 +907,7 @@ ${photoSectionHtml}
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export default function ComplaintsManager({ tenant, currentUserRole }) {
+export default function ComplaintsManager({ tenant, currentUserRole, openComplaintId }) {
   const [complaints, setComplaints] = useState([])
   const [loading, setLoading]       = useState(true)
   const [updating, setUpdating]     = useState(null)
@@ -917,6 +949,12 @@ export default function ComplaintsManager({ tenant, currentUserRole }) {
 
   useEffect(() => { fetchTechnicians() }, [fetchTechnicians])
   useEffect(() => { fetchComplaints() }, [fetchComplaints])
+
+  useEffect(() => {
+    if (!openComplaintId || complaints.length === 0) return
+    const found = complaints.find(c => c.id === openComplaintId)
+    if (found) setSelectedComplaint(found)
+  }, [complaints, openComplaintId])
 
   async function assignTechnician(complaintId, technicianId) {
     const newStatus = technicianId ? 'in_progress' : 'new'

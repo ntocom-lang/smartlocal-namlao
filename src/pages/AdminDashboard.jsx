@@ -4966,7 +4966,9 @@ export default function AdminDashboard() {
         <CivilProjectReport tenant={tenant} />
       ) : activePage === 'map' ? (
         <MapDashboardAdmin tenant={tenant} currentUserRole={currentUserRole}
-          onNavigate={(page) => setActivePage(page)} />
+          onNavigate={(page) => setActivePage(page)}
+          onEditComplaint={(id) => navigate('/staff', { state: { module: 'complaints', openComplaintId: id } })}
+          onEditProject={() => navigate('/staff', { state: { module: 'projects' } })} />
       ) : activePage === 'fee-settings' ? (
         <FeeSettingsAdmin tenant={tenant} />
       ) : activePage === 'system-settings' ? (

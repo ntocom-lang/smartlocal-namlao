@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Inbox, FileText, CheckSquare, BarChart2, LogOut,
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
@@ -2022,8 +2022,10 @@ function StaffHomeModule({ visibleGroups, setActiveModule, pendingCount, staffNa
 
 export default function StaffDashboard() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { tenant } = useTenant()
-  const [activeModule, setActiveModule] = useState('home')
+  const [activeModule, setActiveModule] = useState(location.state?.module ?? 'home')
+  const [mapOpenComplaintId, setMapOpenComplaintId] = useState(location.state?.openComplaintId ?? null)
   const [profile, setProfile]           = useState(null)
   const [pendingCount, setPendingCount] = useState(0)
 
@@ -2212,11 +2214,13 @@ export default function StaffDashboard() {
         <main className="flex-1 overflow-y-auto px-4 md:px-6 py-5 pb-24 md:pb-6">
           {activeModule === 'home'       && <StaffHomeModule visibleGroups={visibleGroups} setActiveModule={setActiveModule} pendingCount={pendingCount} staffName={profile?.full_name} />}
           {activeModule === 'inbox'      && <InboxModule tenant={tenant} staffId={profile?.id} />}
-          {activeModule === 'complaints' && <ComplaintsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
+          {activeModule === 'complaints' && <ComplaintsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} openComplaintId={mapOpenComplaintId} />}
           {activeModule === 'events'     && <EventsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
           {activeModule === 'projects'   && <CivilProjectAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
           {activeModule === 'infra'      && <InfraWorkAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
-          {activeModule === 'map'        && <MapDashboardAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} onNavigate={() => {}} />}
+          {activeModule === 'map'        && <MapDashboardAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} onNavigate={() => {}}
+            onEditComplaint={(id) => { setMapOpenComplaintId(id); setActiveModule('complaints') }}
+            onEditProject={() => setActiveModule('projects')} />}
           {activeModule === 'report'       && <StaffReportWrapper tenant={tenant} />}
           {activeModule === 'docs-archive' && <DocumentArchive tenant={tenant} profile={profile} />}
           {activeModule === 'civil-report'      && <CivilProjectReport tenant={tenant} />}
