@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Home, ClipboardList, FileSearch, Bell, LayoutGrid, Wrench, CalendarDays } from 'lucide-react'
 import { useNotifications } from '../../contexts/NotificationsContext'
-import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
 
 const NAV_CITIZEN = [
   { label: 'หน้าแรก',      icon: Home,          href: '/' },
@@ -25,7 +25,7 @@ export default function BottomNav() {
   const location = useLocation()
   const navigate = useNavigate()
   const { unreadCount } = useNotifications()
-  const [role, setRole] = useState(() => localStorage.getItem('sl_role') ?? null)
+  const { role } = useAuth()
   const [techNewCount, setTechNewCount] = useState(
     () => parseInt(localStorage.getItem('sl_tech_new') ?? '0', 10)
   )
@@ -34,18 +34,6 @@ export default function BottomNav() {
     const handler = (e) => setTechNewCount(e.detail)
     window.addEventListener('tech-badge-update', handler)
     return () => window.removeEventListener('tech-badge-update', handler)
-  }, [])
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) { localStorage.removeItem('sl_role'); setRole(null); return }
-      supabase.from('profiles').select('role').eq('id', data.session.user.id).maybeSingle()
-        .then(({ data: p }) => {
-          const r = p?.role ?? 'citizen'
-          localStorage.setItem('sl_role', r)
-          setRole(r)
-        })
-    })
   }, [])
 
   if (location.pathname.startsWith('/admin') || location.pathname.startsWith('/staff')) return null

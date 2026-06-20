@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Phone, Sun, Moon, LogIn, LogOut, UserCircle2, User, LayoutDashboard, Bell } from 'lucide-react'
 import { useTenant } from '../../contexts/TenantContext'
+import { useAuth } from '../../contexts/AuthContext'
 import { useTheme } from '../../contexts/ThemeContext'
 import { supabase } from '../../lib/supabase'
 import { useNotifications } from '../../contexts/NotificationsContext'
@@ -28,33 +28,11 @@ export default function Header() {
   const location = useLocation()
   const navigate = useNavigate()
   const { unreadCount } = useNotifications()
-  const [session, setSession] = useState(null)
-  const [role, setRole] = useState(null)
-  const [profileName, setProfileName] = useState(null)
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session))
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
-      setSession(s)
-      if (!s) { setRole(null); setProfileName(null) }
-    })
-    return () => subscription.unsubscribe()
-  }, [])
-
-  useEffect(() => {
-    if (!session) return
-    supabase.from('profiles').select('role, full_name').eq('id', session.user.id).maybeSingle()
-      .then(({ data }) => {
-        setRole(data?.role ?? 'citizen')
-        setProfileName(data?.full_name ?? null)
-      })
-  }, [session])
+  const { session, role, displayName } = useAuth()
 
   async function logout() {
     await supabase.auth.signOut()
   }
-
-  const displayName = profileName || session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || ''
   const isAdmin = role === 'admin' || role === 'superadmin' || role === 'officer'
 
   if (location.pathname.startsWith('/staff')) return null

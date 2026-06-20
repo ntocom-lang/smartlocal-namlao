@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { TenantProvider, useTenant } from './contexts/TenantContext'
+import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { NotificationsProvider } from './contexts/NotificationsContext'
 import Header from './components/layout/Header'
@@ -109,26 +110,10 @@ function HomeOrTechRedirect() {
 }
 
 function RequireAuth({ children, adminOnly = false, techOnly = false, staffOnly = false }) {
-  const [session, setSession] = useState(undefined)
-  const [role, setRole] = useState(null)
+  const { session, role, profileLoading } = useAuth()
   const location = useLocation()
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session))
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
-    return () => subscription.unsubscribe()
-  }, [])
-
-  useEffect(() => {
-    if (!session) { setRole(null); return }
-    supabase.from('profiles').select('role').eq('id', session.user.id).single()
-      .then(({ data, error }) => {
-        if (error) { setRole('citizen'); return }
-        setRole(data?.role ?? 'citizen')
-      })
-  }, [session])
-
-  if (session === undefined) return null
+  if (session === undefined || profileLoading) return null
   if (!session) {
     const redirectTo = adminOnly ? '/admin/login' : '/auth'
     return <Navigate to={redirectTo} state={{ from: location.pathname + location.search }} replace />
@@ -363,7 +348,9 @@ export default function App() {
       <BrowserRouter basename={BASENAME}>
         <ThemeProvider>
           <TenantProvider>
-            <AppShell />
+            <AuthProvider>
+              <AppShell />
+            </AuthProvider>
           </TenantProvider>
         </ThemeProvider>
       </BrowserRouter>

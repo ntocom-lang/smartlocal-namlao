@@ -1,0 +1,71 @@
+import { createContext, useContext, useEffect, useState } from 'react'
+import { supabase } from '../lib/supabase'
+import { useTenant } from './TenantContext'
+
+const AuthContext = createContext(null)
+
+export function AuthProvider({ children }) {
+  const { tenant } = useTenant()
+  const [session, setSession]       = useState(undefined) // undefined = loading
+  const [role, setRole]             = useState(null)
+  const [profileName, setProfileName] = useState(null)
+  const [profileLoading, setProfileLoading] = useState(false)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session))
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+      setSession(s)
+      if (!s) { setRole(null); setProfileName(null) }
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
+  useEffect(() => {
+    if (session === undefined) return
+    if (!session) { setRole(null); setProfileName(null); return }
+
+    setProfileLoading(true)
+    supabase
+      .from('profiles')
+      .select('role, municipality_id, full_name')
+      .eq('id', session.user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        const profileRole   = data?.role ?? 'citizen'
+        const profileMuniId = data?.municipality_id
+        setProfileName(data?.full_name ?? null)
+
+        // superadmin ที่ไม่มี municipality_id = เข้าได้ทุก municipality
+        if (profileRole === 'superadmin' && !profileMuniId) {
+          setRole('superadmin')
+          return
+        }
+
+        // ถ้า profile ผูกกับ municipality อื่น → ลด role เหลือ citizen
+        if (tenant?.id && profileMuniId && profileMuniId !== tenant.id) {
+          setRole('citizen')
+          return
+        }
+
+        setRole(profileRole)
+      })
+      .finally(() => setProfileLoading(false))
+  }, [session?.user?.id, tenant?.id])
+
+  const displayName = profileName
+    || session?.user?.user_metadata?.full_name
+    || session?.user?.email?.split('@')[0]
+    || ''
+
+  return (
+    <AuthContext.Provider value={{ session, role, profileName, displayName, profileLoading }}>
+      {children}
+    </AuthContext.Provider>
+  )
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext)
+  if (!ctx) throw new Error('useAuth ต้องใช้ภายใน AuthProvider')
+  return ctx
+}

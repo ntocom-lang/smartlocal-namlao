@@ -10,6 +10,7 @@ import {
 import qrCodeImage from '../assets/qr-code.png'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import { useAuth } from '../contexts/AuthContext'
 import { useNotifications } from '../contexts/NotificationsContext'
 
 // ─── QR Share Card ────────────────────────────────────────────────────────
@@ -277,40 +278,19 @@ export default function MorePage() {
   const navigate = useNavigate()
   const { tenant } = useTenant()
   const { unreadCount } = useNotifications()
-  const [session, setSession] = useState(null)
-  const [role, setRole] = useState(null)
-  const [profileName, setProfileName] = useState(null)
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session))
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
-      setSession(s)
-      if (!s) { setRole(null); setProfileName(null) }
-    })
-    return () => subscription.unsubscribe()
-  }, [])
-
-  useEffect(() => {
-    if (!session) return
-    supabase.from('profiles').select('role, full_name').eq('id', session.user.id).single()
-      .then(({ data }) => {
-        setRole(data?.role ?? 'citizen')
-        setProfileName(data?.full_name ?? null)
-      })
-  }, [session])
+  const { session, role, displayName } = useAuth()
 
   async function handleLogout() {
     await supabase.auth.signOut()
     navigate('/')
   }
 
-  const isAdmin  = role === 'admin' || role === 'superadmin' || role === 'officer'
-  const isStaff  = role === 'staff'
-  const isViewer = role === 'viewer'
+  const isAdmin   = role === 'admin' || role === 'superadmin' || role === 'officer'
+  const isStaff   = role === 'staff'
+  const isViewer  = role === 'viewer'
   const isCouncil = role === 'council'
-  const displayName = profileName || session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || ''
   const avatarUrl = session?.user?.user_metadata?.avatar_url || session?.user?.user_metadata?.picture
-  const initials = (displayName[0] || '?').toUpperCase()
+  const initials  = (displayName[0] || '?').toUpperCase()
 
   const hasSocial = tenant?.website_url || tenant?.facebook_url || tenant?.line_oa_url
 
