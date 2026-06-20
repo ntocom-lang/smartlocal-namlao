@@ -1,3 +1,10 @@
 {
-  "rewrites": [{ "source": "/:path*", "destination": "/index.html" }]
+  "functions": {
+    "api/ssr.js": {
+      "includeFiles": "dist/index.html"
+    }
+  },
+  "rewrites": [
+    { "source": "/:path*", "destination": "/api/ssr" }
+  ]
 }
