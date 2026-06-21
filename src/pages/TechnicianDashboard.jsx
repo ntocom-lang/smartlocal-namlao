@@ -280,7 +280,7 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenantName, te
     setSavingNote(false)
   }
 
-  const needsPhoto = c.status === 'in_progress' && photos.length === 0
+  const needsPhoto = false
 
   return (
     <div className="fixed inset-0 z-60 flex items-end sm:items-center justify-center">

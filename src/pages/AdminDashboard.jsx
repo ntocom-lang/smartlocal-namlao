@@ -1913,6 +1913,7 @@ function AssignmentManager({ tenant, readOnly = false }) {
   const [cats, setCats] = useState(DEFAULT_CATS)
   const [techs, setTechs] = useState([])
   const [assignments, setAssignments] = useState({}) // { category: technician_id }
+  const [slaMap, setSlaMap] = useState({})            // { category: sla_days }
   const [saving, setSaving] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -1921,13 +1922,18 @@ function AssignmentManager({ tenant, readOnly = false }) {
     Promise.all([
       supabase.from('complaint_categories').select('value,label,emoji').eq('municipality_id', tenant.id).order('sort_order'),
       supabase.from('profiles').select('id,full_name,email').eq('municipality_id', tenant.id).eq('role', 'technician').order('full_name'),
-      supabase.from('category_assignments').select('category,technician_id').eq('municipality_id', tenant.id),
+      supabase.from('category_assignments').select('category,technician_id,sla_days').eq('municipality_id', tenant.id),
     ]).then(([catsRes, techsRes, assignRes]) => {
       if (catsRes.data?.length > 0) setCats(catsRes.data)
       setTechs(techsRes.data ?? [])
       const map = {}
-      for (const a of assignRes.data ?? []) map[a.category] = a.technician_id ?? ''
+      const slaM = {}
+      for (const a of assignRes.data ?? []) {
+        map[a.category] = a.technician_id ?? ''
+        slaM[a.category] = a.sla_days ?? 3
+      }
       setAssignments(map)
+      setSlaMap(slaM)
       setLoading(false)
     })
   }, [tenant?.id])
@@ -1939,6 +1945,18 @@ function AssignmentManager({ tenant, readOnly = false }) {
       municipality_id: tenant.id,
       category,
       technician_id: technicianId || null,
+    }, { onConflict: 'municipality_id,category' })
+    setSaving(null)
+  }
+
+  async function handleSlaChange(category, rawDays) {
+    const days = Math.max(1, parseInt(rawDays) || 1)
+    setSlaMap((prev) => ({ ...prev, [category]: days }))
+    setSaving(category)
+    await supabase.from('category_assignments').upsert({
+      municipality_id: tenant.id,
+      category,
+      sla_days: days,
     }, { onConflict: 'municipality_id,category' })
     setSaving(null)
   }
@@ -1955,11 +1973,12 @@ function AssignmentManager({ tenant, readOnly = false }) {
   return (
     <div className="space-y-3">
       <div className="bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3 text-xs text-blue-700">
-        เมื่อประชาชนส่งคำร้อง ระบบจะ <strong>มอบหมายให้ช่างที่ตั้งไว้อัตโนมัติ</strong> ไม่ต้องรอ Admin assign ทีละเรื่อง
+        เมื่อประชาชนส่งคำร้อง ระบบจะ <strong>มอบหมายให้ช่างที่ตั้งไว้อัตโนมัติ</strong> — กำหนด <strong>ระยะเวลาดำเนินการ</strong> (วัน) แต่ละประเภทสำหรับการประเมิน LPA
       </div>
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         {cats.map((cat, i) => {
           const currentTech = assignments[cat.value] ?? ''
+          const currentSla = slaMap[cat.value] ?? 3
           const isSaving = saving === cat.value
           return (
             <div key={cat.value}
@@ -1970,6 +1989,19 @@ function AssignmentManager({ tenant, readOnly = false }) {
               <p className="flex-1 text-sm font-medium text-gray-700 min-w-0 truncate">{cat.label}</p>
               <div className="flex items-center gap-2 shrink-0">
                 {isSaving && <Loader2 size={13} className="animate-spin text-gray-300" />}
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min="1"
+                    max="365"
+                    value={currentSla}
+                    onChange={(e) => !readOnly && setSlaMap((prev) => ({ ...prev, [cat.value]: e.target.value }))}
+                    onBlur={(e) => !readOnly && handleSlaChange(cat.value, e.target.value)}
+                    disabled={isSaving || readOnly}
+                    className={`w-12 text-xs border border-gray-200 rounded-xl px-2 py-1.5 bg-white text-gray-900 text-center focus:outline-none focus:border-amber-400 ${readOnly ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  />
+                  <span className="text-xs text-gray-400">วัน</span>
+                </div>
                 <select
                   value={currentTech}
                   onChange={(e) => !readOnly && handleChange(cat.value, e.target.value)}
@@ -2570,7 +2602,26 @@ function guessEmoji(label) {
   return null
 }
 
-function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit }) {
+function SlaInput({ value, onCommit }) {
+  const [local, setLocal] = useState(value)
+  useEffect(() => { setLocal(value) }, [value])
+  return (
+    <div className="flex items-center gap-1 justify-center">
+      <input
+        type="number"
+        min="1"
+        max="365"
+        value={local}
+        onChange={(e) => setLocal(e.target.value)}
+        onBlur={(e) => onCommit?.(e.target.value)}
+        className="w-12 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-900 text-center focus:outline-none focus:border-amber-400"
+      />
+      <span className="text-xs text-gray-400">วัน</span>
+    </div>
+  )
+}
+
+function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, techs = [], techId = '', slaDays = 3, onTechChange, onSlaChange, savingAssign = false }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(cat.label)
@@ -2591,65 +2642,133 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit }) {
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
-      className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2.5"
+      className="bg-gray-50 rounded-xl px-3 py-2.5 space-y-2"
     >
-      {/* drag handle */}
-      <button
-        {...attributes} {...listeners}
-        className="cursor-grab active:cursor-grabbing p-1 rounded text-gray-300 hover:text-gray-500 transition-colors shrink-0 touch-none"
-      >
-        <GripVertical size={16} />
-      </button>
-      {/* ปุ่มขึ้น/ลง */}
-      <div className="flex flex-col gap-0.5 shrink-0">
-        <button onClick={() => onMove(idx, -1)} disabled={idx === 0}
-          className="p-0.5 rounded text-gray-300 hover:text-gray-600 disabled:opacity-20 transition-colors">
-          <ChevronUp size={13} />
+      <div className="flex items-center gap-2">
+        {/* drag handle */}
+        <button
+          {...attributes} {...listeners}
+          className="cursor-grab active:cursor-grabbing p-1 rounded text-gray-300 hover:text-gray-500 transition-colors shrink-0 touch-none"
+        >
+          <GripVertical size={16} />
         </button>
-        <button onClick={() => onMove(idx, 1)} disabled={idx === total - 1}
-          className="p-0.5 rounded text-gray-300 hover:text-gray-600 disabled:opacity-20 transition-colors">
-          <ChevronDown size={13} />
+        {/* ปุ่มขึ้น/ลง */}
+        <div className="flex flex-col gap-0.5 shrink-0">
+          <button onClick={() => onMove(idx, -1)} disabled={idx === 0}
+            className="p-0.5 rounded text-gray-300 hover:text-gray-600 disabled:opacity-20 transition-colors">
+            <ChevronUp size={13} />
+          </button>
+          <button onClick={() => onMove(idx, 1)} disabled={idx === total - 1}
+            className="p-0.5 rounded text-gray-300 hover:text-gray-600 disabled:opacity-20 transition-colors">
+            <ChevronDown size={13} />
+          </button>
+        </div>
+        <span className="w-8 h-8 rounded-xl flex items-center justify-center text-base shrink-0"
+          style={{ backgroundColor: cat.color }}>{cat.emoji}</span>
+
+        {/* label — inline edit */}
+        {isEditing ? (
+          <input
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={confirmEdit}
+            onKeyDown={handleKeyDown}
+            className="flex-1 text-sm text-gray-800 bg-white border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2"
+            style={{ '--tw-ring-color': 'var(--color-primary)' }}
+          />
+        ) : (
+          <button
+            onClick={startEdit}
+            className="flex-1 flex items-center gap-1.5 group text-left"
+          >
+            <span className="text-sm text-gray-700 group-hover:text-gray-900">{cat.label}</span>
+            <Pencil size={11} className="text-gray-300 group-hover:text-gray-500 shrink-0 transition-colors" />
+          </button>
+        )}
+
+        <button onClick={() => onDelete(cat.id)}
+          className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors shrink-0">
+          <Trash2 size={14} />
         </button>
       </div>
-      <span className="w-8 h-8 rounded-xl flex items-center justify-center text-base shrink-0"
-        style={{ backgroundColor: cat.color }}>{cat.emoji}</span>
 
-      {/* label — inline edit */}
-      {isEditing ? (
-        <input
-          autoFocus
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={confirmEdit}
-          onKeyDown={handleKeyDown}
-          className="flex-1 text-sm text-gray-800 bg-white border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2"
-          style={{ '--tw-ring-color': 'var(--color-primary)' }}
-        />
-      ) : (
-        <button
-          onClick={startEdit}
-          className="flex-1 flex items-center gap-1.5 group text-left"
+      {/* assignment row */}
+      <div className="flex items-center gap-2 pl-14">
+        {savingAssign && <Loader2 size={12} className="animate-spin text-gray-300 shrink-0" />}
+        <select
+          value={techId}
+          onChange={(e) => onTechChange?.(e.target.value)}
+          className="flex-1 min-w-0 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none"
         >
-          <span className="text-sm text-gray-700 group-hover:text-gray-900">{cat.label}</span>
-          <Pencil size={11} className="text-gray-300 group-hover:text-gray-500 shrink-0 transition-colors" />
-        </button>
-      )}
-
-      <button onClick={() => onDelete(cat.id)}
-        className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors shrink-0">
-        <Trash2 size={14} />
-      </button>
+          <option value="">— ไม่ระบุช่าง —</option>
+          {techs.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.full_name || t.email}
+            </option>
+          ))}
+        </select>
+        <SlaInput value={slaDays} onCommit={onSlaChange} />
+      </div>
     </div>
   )
 }
 
 function CategoryManager({ tenant }) {
   const [cats, setCats] = useState([])
+  const [techs, setTechs] = useState([])
+  const [assignMap, setAssignMap] = useState({}) // { catValue: { technician_id, sla_days } }
+  const [savingAssign, setSavingAssign] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [seeding, setSeeding] = useState(false)
   const [error, setError] = useState(null)
   const [form, setForm] = useState({ label: '', emoji: '📝', colorIdx: 6, emojiTouched: false })
+  const [rowDrafts, setRowDrafts] = useState({}) // { catValue: { label?, technician_id?, sla_days?, editingLabel? } }
+
+  function setDraft(catValue, patch) {
+    setRowDrafts((prev) => ({ ...prev, [catValue]: { ...(prev[catValue] ?? {}), ...patch } }))
+  }
+  function isRowEditing(catValue) { return !!rowDrafts[catValue] }
+  function cancelRow(catValue) {
+    setRowDrafts((prev) => { const n = { ...prev }; delete n[catValue]; return n })
+  }
+  function startLabelEdit(cat) {
+    setRowDrafts((prev) => ({ ...prev, [cat.value]: { ...(prev[cat.value] ?? {}), editingLabel: true, label: cat.label } }))
+  }
+  async function saveRow(cat) {
+    const d = rowDrafts[cat.value]
+    if (!d) return
+    setSavingAssign(cat.value)
+    const ops = []
+    const newLabel = d.label?.trim()
+    if (d.editingLabel && newLabel && newLabel !== cat.label) ops.push(editCat(cat.id, newLabel))
+    const techChanged = d.technician_id !== undefined
+    const slaChanged = d.sla_days !== undefined
+    if (techChanged || slaChanged) {
+      const slaVal = slaChanged ? Math.max(1, parseInt(d.sla_days) || 1) : undefined
+      ops.push(
+        supabase.from('category_assignments').upsert({
+          municipality_id: tenant.id,
+          category: cat.value,
+          ...(techChanged ? { technician_id: d.technician_id || null } : {}),
+          ...(slaChanged ? { sla_days: slaVal } : {}),
+        }, { onConflict: 'municipality_id,category' }).then(() => {
+          setAssignMap((prev) => ({
+            ...prev,
+            [cat.value]: {
+              ...(prev[cat.value] ?? { sla_days: 3 }),
+              ...(techChanged ? { technician_id: d.technician_id ?? '' } : {}),
+              ...(slaChanged ? { sla_days: slaVal } : {}),
+            },
+          }))
+        })
+      )
+    }
+    await Promise.all(ops)
+    setRowDrafts((prev) => { const n = { ...prev }; delete n[cat.value]; return n })
+    setSavingAssign(null)
+  }
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -2671,17 +2790,50 @@ function CategoryManager({ tenant }) {
     if (!tenant?.id) return
     setLoading(true)
     setError(null)
-    const { data, error: err } = await supabase
-      .from('complaint_categories')
-      .select('*')
-      .eq('municipality_id', tenant.id)
-      .order('sort_order')
-    if (err) setError('โหลดข้อมูลไม่ได้: ' + err.message)
-    setCats(data ?? [])
+    const [catsRes, assignRes] = await Promise.all([
+      supabase.from('complaint_categories').select('*').eq('municipality_id', tenant.id).order('sort_order'),
+      supabase.from('category_assignments').select('category,technician_id,sla_days').eq('municipality_id', tenant.id),
+    ])
+    if (catsRes.error) setError('โหลดข้อมูลไม่ได้: ' + catsRes.error.message)
+    setCats(catsRes.data ?? [])
+    const aMap = {}
+    for (const a of assignRes.data ?? []) {
+      aMap[a.category] = { technician_id: a.technician_id ?? '', sla_days: a.sla_days ?? 3 }
+    }
+    setAssignMap(aMap)
     setLoading(false)
   }
 
   useEffect(() => { fetchCats() }, [tenant?.id])
+
+  useEffect(() => {
+    if (!tenant?.id) return
+    supabase.from('profiles').select('id,full_name,email').eq('municipality_id', tenant.id).eq('role', 'technician').order('full_name')
+      .then(({ data }) => setTechs(data ?? []))
+  }, [tenant?.id])
+
+  async function handleTechChange(catValue, techId) {
+    setSavingAssign(catValue)
+    setAssignMap((prev) => ({ ...prev, [catValue]: { ...(prev[catValue] ?? { sla_days: 3 }), technician_id: techId } }))
+    await supabase.from('category_assignments').upsert({
+      municipality_id: tenant.id,
+      category: catValue,
+      technician_id: techId || null,
+    }, { onConflict: 'municipality_id,category' })
+    setSavingAssign(null)
+  }
+
+  async function handleSlaChange(catValue, rawDays) {
+    const days = Math.max(1, parseInt(rawDays) || 1)
+    setSavingAssign(catValue)
+    setAssignMap((prev) => ({ ...prev, [catValue]: { ...(prev[catValue] ?? { technician_id: '' }), sla_days: days } }))
+    await supabase.from('category_assignments').upsert({
+      municipality_id: tenant.id,
+      category: catValue,
+      sla_days: days,
+    }, { onConflict: 'municipality_id,category' })
+    setSavingAssign(null)
+  }
 
   async function addCat() {
     const label = form.label.trim()
@@ -2853,7 +3005,14 @@ function CategoryManager({ tenant }) {
               <div className="md:hidden space-y-2">
                 {cats.map((cat, idx) => (
                   <SortableCatItem key={cat.id} cat={cat} idx={idx} total={cats.length}
-                    onDelete={deleteCat} onMove={moveCat} onEdit={editCat} />
+                    onDelete={deleteCat} onMove={moveCat} onEdit={editCat}
+                    techs={techs}
+                    techId={assignMap[cat.value]?.technician_id ?? ''}
+                    slaDays={assignMap[cat.value]?.sla_days ?? 3}
+                    onTechChange={(tid) => handleTechChange(cat.value, tid)}
+                    onSlaChange={(d) => handleSlaChange(cat.value, d)}
+                    savingAssign={savingAssign === cat.value}
+                  />
                 ))}
               </div>
             </SortableContext>
@@ -2863,20 +3022,41 @@ function CategoryManager({ tenant }) {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-16">ลำดับ</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-12">ลำดับ</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ประเภท</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ป้ายสี</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 w-28">จัดการ</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ช่างรับผิดชอบ</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 w-24">ระยะเวลา</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 w-20">จัดการ</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {cats.map((cat, idx) => {
                   const color = COLOR_PRESETS[cat.color_idx ?? 0] ?? COLOR_PRESETS[0]
+                  const assign = assignMap[cat.value] ?? {}
+                  const draft = rowDrafts[cat.value]
+                  const editing = isRowEditing(cat.value)
+                  const isSaving = savingAssign === cat.value
+                  const currentTechId = draft?.technician_id ?? assign.technician_id ?? ''
+                  const currentSla = draft?.sla_days ?? assign.sla_days ?? 3
                   return (
-                    <tr key={cat.id} className="hover:bg-gray-50 transition-colors">
+                    <tr key={cat.id} className={`transition-colors ${editing ? 'bg-amber-50' : 'hover:bg-gray-50'}`}>
                       <td className="px-4 py-3 text-xs text-gray-400">{idx + 1}</td>
-                      <td className="px-4 py-3 font-medium text-gray-800">
-                        {cat.emoji} {cat.label}
+                      <td className="px-4 py-3">
+                        {draft?.editingLabel ? (
+                          <input
+                            autoFocus
+                            value={draft.label ?? cat.label}
+                            onChange={(e) => setDraft(cat.value, { label: e.target.value })}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') { e.preventDefault(); saveRow(cat) }
+                              if (e.key === 'Escape') cancelRow(cat.value)
+                            }}
+                            className="w-full text-sm text-gray-800 bg-white border border-amber-300 rounded-lg px-2 py-1 focus:outline-none"
+                          />
+                        ) : (
+                          <span className="font-medium text-gray-800">{cat.emoji} {cat.label}</span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
@@ -2884,17 +3064,58 @@ function CategoryManager({ tenant }) {
                           {cat.emoji} {cat.label}
                         </span>
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="flex justify-end gap-1.5">
-                          <button onClick={() => editCat(cat)}
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="แก้ไข">
-                            <Pencil size={14} />
-                          </button>
-                          <button onClick={() => deleteCat(cat.id)}
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="ลบ">
-                            <Trash2 size={14} />
-                          </button>
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-1.5">
+                          {isSaving && <Loader2 size={12} className="animate-spin text-gray-300 shrink-0" />}
+                          <select
+                            value={currentTechId}
+                            onChange={(e) => setDraft(cat.value, { technician_id: e.target.value })}
+                            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none max-w-40"
+                          >
+                            <option value="">— ไม่ระบุ —</option>
+                            {techs.map((t) => (
+                              <option key={t.id} value={t.id}>{t.full_name || t.email}</option>
+                            ))}
+                          </select>
                         </div>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-1 justify-center">
+                          <input
+                            type="number"
+                            min="1"
+                            max="365"
+                            value={currentSla}
+                            onChange={(e) => setDraft(cat.value, { sla_days: e.target.value })}
+                            className="w-12 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-900 text-center focus:outline-none focus:border-amber-400"
+                          />
+                          <span className="text-xs text-gray-400">วัน</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        {editing ? (
+                          <div className="flex justify-end gap-1.5">
+                            <button onClick={() => saveRow(cat)} disabled={isSaving}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50 transition-colors">
+                              {isSaving ? <Loader2 size={12} className="animate-spin" /> : 'บันทึก'}
+                            </button>
+                            <button onClick={() => cancelRow(cat.value)} disabled={isSaving}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 transition-colors">
+                              ยกเลิก
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex justify-end gap-1.5">
+                            <button onClick={() => startLabelEdit(cat)}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="แก้ไขชื่อ">
+                              <Pencil size={14} />
+                            </button>
+                            <button onClick={() => deleteCat(cat.id)}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="ลบ">
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )
@@ -4552,7 +4773,7 @@ export default function AdminDashboard() {
               items: [
                 { key: 'categories',  label: 'ประเภทคำร้อง', Icon: Tag,      color: '#d97706', show: currentUserRole !== 'viewer' },
                 { key: 'fee-settings', label: 'ค่าธรรมเนียม', Icon: Banknote, color: '#10b981', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                { key: 'assignments', label: 'ผู้รับผิดชอบ', Icon: Wrench,   color: '#d97706', show: true },
+                { key: 'assignments', label: 'ผู้รับผิดชอบ', Icon: Wrench,   color: '#d97706', show: false },
                 { key: 'emergency',   label: 'สายด่วน',       Icon: Phone,    color: '#ef4444', show: currentUserRole !== 'viewer' },
                 { key: 'locations',   label: 'สถานที่เกิดเหตุ', Icon: MapPin, color: '#0891b2', show: currentUserRole !== 'viewer' },
                 { key: 'system-settings', label: 'ตั้งค่าระบบ',  Icon: Settings,    color: '#3b82f6', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
@@ -4763,13 +4984,6 @@ export default function AdminDashboard() {
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'users' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
             style={activePage === 'users' ? { backgroundColor: '#7c3aed' } : {}}>
             <Shield size={15} /> จัดการผู้ใช้
-          </button>
-        )}
-        {currentUserRole !== 'council' && (
-          <button onClick={() => setActivePage('assignments')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'assignments' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-            style={activePage === 'assignments' ? { backgroundColor: '#d97706' } : {}}>
-            <Wrench size={15} /> ผู้รับผิดชอบ
           </button>
         )}
         {currentUserRole !== 'viewer' && currentUserRole !== 'council' && (
@@ -5006,16 +5220,6 @@ export default function AdminDashboard() {
                 </div>
               </button>
             )}
-            <button onClick={() => setActivePage('assignments')}
-              className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#fef3c7' }}>
-                <Wrench size={24} style={{ color: '#d97706' }} />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-gray-800">ผู้รับผิดชอบ</p>
-                <p className="text-[13px] text-gray-400 mt-0.5">มอบหมายประเภทคำร้อง</p>
-              </div>
-            </button>
             <button onClick={() => setActivePage('emergency')}
               className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
               <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#fee2e2' }}>
@@ -5085,7 +5289,7 @@ export default function AdminDashboard() {
               <tbody className="divide-y divide-gray-100">
                 {[
                   { key: 'categories',  Icon: Tag,    color: '#d97706', bg: '#fef3c7', label: 'ประเภทคำร้อง', desc: 'จัดการหมวดหมู่คำร้อง',       show: currentUserRole !== 'viewer' },
-                  { key: 'assignments', Icon: Wrench, color: '#d97706', bg: '#fef3c7', label: 'ผู้รับผิดชอบ', desc: 'มอบหมายงานตามประเภทคำร้อง', show: currentUserRole !== 'council' },
+                  { key: 'assignments', Icon: Wrench, color: '#d97706', bg: '#fef3c7', label: 'ผู้รับผิดชอบ', desc: 'มอบหมายงานตามประเภทคำร้อง', show: false },
                   { key: 'emergency',   Icon: Phone,       color: '#ef4444', bg: '#fee2e2', label: 'สายด่วนฉุกเฉิน',  desc: 'จัดการรายชื่อและเบอร์ติดต่อ',     show: currentUserRole !== 'viewer' },
                   { key: 'locations',   Icon: MapPin,      color: '#0891b2', bg: '#e0f2fe', label: 'สถานที่เกิดเหตุ', desc: 'จัดการหมู่บ้าน / ตำบลในพื้นที่',  show: currentUserRole !== 'viewer' },
                   { key: 'staff',            Icon: UserCircle2, color: '#7c3aed', bg: '#ede9fe', label: 'รูปผู้บริหาร',       desc: 'อัปโหลดรูปนายก/รองนายก/ทีมงาน',       show: currentUserRole !== 'viewer' },

@@ -15,27 +15,29 @@ import { logAction } from '../../lib/auditLog'
 // ─── Constants ────────────────────────────────────────────────────────────────
 const STATUS = {
   new:         { label: 'คำร้องใหม่',      color: '#f59e0b', bg: '#fef3c7', text: '#92400e' },
+  received:    { label: 'รับเรื่องแล้ว',   color: '#0ea5e9', bg: '#e0f2fe', text: '#0369a1' },
   in_progress: { label: 'กำลังดำเนินการ',  color: '#8b5cf6', bg: '#ede9fe', text: '#5b21b6' },
   done:        { label: 'ดำเนินการแล้ว',   color: '#3b82f6', bg: '#dbeafe', text: '#1e40af' },
   closed:      { label: 'ปิดเรื่องแล้ว',   color: '#10b981', bg: '#d1fae5', text: '#065f46' },
   rejected:    { label: 'ปฏิเสธ',          color: '#ef4444', bg: '#fee2e2', text: '#991b1b' },
-  // backward compat (ข้อมูลเก่าก่อน migrate)
+  // backward compat
   pending:     { label: 'คำร้องใหม่',      color: '#f59e0b', bg: '#fef3c7', text: '#92400e' },
-  received:    { label: 'กำลังดำเนินการ',  color: '#8b5cf6', bg: '#ede9fe', text: '#5b21b6' },
   completed:   { label: 'ดำเนินการแล้ว',   color: '#3b82f6', bg: '#dbeafe', text: '#1e40af' },
 }
-const STATUS_FLOW = ['new', 'in_progress', 'done', 'closed']
+const STATUS_FLOW = ['new', 'received', 'in_progress', 'done', 'closed']
 const STATUS_FLOW_LABEL = {
   new:         { label: 'คำร้องใหม่',      desc: 'ประชาชนส่งคำร้องเข้าระบบ' },
-  in_progress: { label: 'กำลังดำเนินการ',  desc: 'เจ้าหน้าที่รับเรื่องและลงพื้นที่' },
+  received:    { label: 'รับเรื่องแล้ว',   desc: 'เจ้าหน้าที่รับเรื่องแล้ว' },
+  in_progress: { label: 'กำลังดำเนินการ',  desc: 'เจ้าหน้าที่ลงพื้นที่ดำเนินการ' },
   done:        { label: 'ดำเนินการแล้ว',   desc: 'เจ้าหน้าที่ดำเนินการเสร็จแล้ว' },
   closed:      { label: 'ปิดเรื่องแล้ว',   desc: 'ปิดเรื่องและแจ้งผลประชาชนแล้ว' },
 }
 const DEPARTMENTS = ['สำนักปลัด', 'กองช่าง', 'กองการศึกษา', 'กองคลัง']
 const NEXT_ACTION = {
-  new:         { label: 'รับเรื่อง',       next: 'in_progress' },
-  in_progress: { label: 'ดำเนินการแล้ว',   next: 'done' },
-  done:        { label: 'ปิดเรื่อง',        next: 'closed' },
+  new:         { label: 'รับเรื่อง',        next: 'received' },
+  received:    { label: 'เริ่มดำเนินการ',   next: 'in_progress' },
+  in_progress: { label: 'ดำเนินการแล้ว',    next: 'done' },
+  done:        { label: 'ปิดเรื่อง',         next: 'closed' },
 }
 const CATEGORY_LABEL = {
   road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าสาธารณะ',
@@ -57,7 +59,7 @@ const CATEGORY_EMOJI = {
   tax: '📋', canal: '🏞️', animals: '🐕', water_supply: '🚿',
   borrow_equipment: '📦', grievance: '📣', other: '📝',
 }
-const STATUS_MAIN = ['new', 'in_progress', 'done', 'closed', 'rejected']
+const STATUS_MAIN = ['new', 'received', 'in_progress', 'done', 'closed', 'rejected']
 
 function addWorkingDays(date, days) {
   const d = new Date(date)
@@ -158,7 +160,7 @@ function StatusStepper({ status, note }) {
       </div>
     )
   }
-  const currentIdx = STATUS_FLOW.indexOf(status)
+  const currentIdx = STATUS_FLOW.indexOf(normalizeActionStatus(status))
   return (
     <div className="space-y-0">
       {STATUS_FLOW.map((step, i) => {
@@ -207,8 +209,61 @@ function StatusStepper({ status, note }) {
   )
 }
 
+function QuickStatusChange({ id, currentStatus, onUpdate, loading }) {
+  const [open, setOpen] = useState(false)
+  const [sel, setSel] = useState(currentStatus)
+  const [note, setNote] = useState('')
+
+  function handleOpen() { setSel(currentStatus || 'new'); setNote(''); setOpen(true) }
+  function handleSave() {
+    if (sel !== currentStatus) onUpdate(id, sel, [], note.trim() || null)
+    setOpen(false)
+  }
+
+  return (
+    <>
+      <button onClick={handleOpen} disabled={loading === id}
+        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors disabled:opacity-50">
+        <ChevronDown size={11} /> สถานะ
+      </button>
+      {open && (
+        <div className="fixed inset-0 z-9999 flex items-center justify-center bg-black/40"
+             onClick={() => setOpen(false)}>
+          <div className="bg-white rounded-2xl p-5 shadow-xl w-80 mx-4" onClick={(e) => e.stopPropagation()}>
+            <p className="text-sm font-semibold text-gray-800 mb-1">ยืนยันการเปลี่ยนสถานะ</p>
+            <p className="text-xs text-gray-500 mb-3">เลือกสถานะที่ต้องการเปลี่ยนเป็น</p>
+            <select value={sel} onChange={(e) => setSel(e.target.value)}
+              className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-200 mb-3">
+              {Object.entries(STATUS).filter(([k]) => ['new','in_progress','done','closed','rejected'].includes(k)).map(([key, s]) => (
+                <option key={key} value={key}>{s.label}</option>
+              ))}
+            </select>
+            <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2}
+              placeholder="หมายเหตุ (ไม่บังคับ)"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-blue-200 mb-3" />
+            <div className="flex gap-2">
+              <button onClick={handleSave} disabled={loading === id}
+                className="flex-1 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
+                style={{ backgroundColor: 'var(--color-primary)' }}>
+                ยืนยัน
+              </button>
+              <button onClick={() => setOpen(false)}
+                className="flex-1 py-2 rounded-xl text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+const LEGACY_STATUS = { pending: 'new', completed: 'done', received: 'received' }
+function normalizeActionStatus(s) { return LEGACY_STATUS[s] ?? s ?? 'new' }
+
 function ActionButton({ status, id, onUpdate, loading }) {
-  const action = NEXT_ACTION[status]
+  const action = NEXT_ACTION[normalizeActionStatus(status)]
   const [confirm, setConfirm] = useState(false)
   const [note, setNote] = useState('')
   if (!action) return null
@@ -757,7 +812,7 @@ ${photoSectionHtml}
             <button onClick={onClose} className="px-4 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors">
               ปิดหน้าต่าง
             </button>
-          ) : (c.status === 'in_progress' || c.status === 'received') && !showCloseJob ? (
+          ) : c.status === 'in_progress' && !showCloseJob ? (
             <div className="flex gap-2 flex-wrap">
               <button onClick={() => setShowCloseJob(true)}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white transition-all active:scale-95"
@@ -777,7 +832,7 @@ ${photoSectionHtml}
                 ปิดหน้าต่าง
               </button>
             </div>
-          ) : (c.status === 'in_progress' || c.status === 'received') && showCloseJob ? (
+          ) : c.status === 'in_progress' && showCloseJob ? (
             <div className="space-y-3 w-full">
               <p className="text-xs font-semibold text-gray-500 flex items-center gap-1.5">
                 <Camera size={12} /> แนบรูปหลักฐานการทำงาน (ไม่บังคับ)
@@ -864,10 +919,10 @@ ${photoSectionHtml}
             </div>
           )}
 
-          {currentUserRole === 'superadmin' && (
-            <div className="mt-3 pt-3 border-t border-dashed border-purple-200">
-              <p className="text-[13px] font-semibold text-purple-400 uppercase tracking-wider mb-2 flex items-center gap-1">
-                <Shield size={10} /> Superadmin — แก้ไขสถานะ
+          {(currentUserRole === 'superadmin' || currentUserRole === 'admin' || currentUserRole === 'officer') && (
+            <div className={`mt-3 pt-3 border-t border-dashed ${currentUserRole === 'superadmin' ? 'border-purple-200' : 'border-gray-200'}`}>
+              <p className={`text-[13px] font-semibold uppercase tracking-wider mb-2 flex items-center gap-1 ${currentUserRole === 'superadmin' ? 'text-purple-400' : 'text-gray-400'}`}>
+                <Shield size={10} /> {currentUserRole === 'superadmin' ? 'Superadmin — แก้ไขสถานะ' : 'เปลี่ยนสถานะ (Admin)'}
               </p>
               <div className="flex items-center gap-2">
                 <FixedSelect
@@ -1099,7 +1154,9 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
     const matchSearch = search === '' ||
       (c.detail ?? '').includes(search) ||
       (CATEGORY_LABEL[c.category] ?? '').includes(search) ||
-      (c.phone ?? '').includes(search)
+      (c.phone ?? '').includes(search) ||
+      (c.reporter_name ?? '').includes(search) ||
+      (c.profiles?.full_name ?? '').includes(search)
     const matchCategory   = filterCategory === '' || c.category === filterCategory
     const matchVillage    = filterVillage === '' || (c.village || c.location_name || '') === filterVillage
     const matchTech       = filterTechnician === '' ||
@@ -1116,9 +1173,11 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   const baseFiltered = complaints.filter((c) => {
     const matchStatus = FILTER_KEYS[filterTab] ? normalizeStatus(c.status) === FILTER_KEYS[filterTab] : true
     const matchSearch = search === '' ||
-      c.detail.includes(search) ||
+      (c.detail ?? '').includes(search) ||
       (CATEGORY_LABEL[c.category] ?? '').includes(search) ||
-      (c.phone ?? '').includes(search)
+      (c.phone ?? '').includes(search) ||
+      (c.reporter_name ?? '').includes(search) ||
+      (c.profiles?.full_name ?? '').includes(search)
     return matchStatus && matchSearch
   })
 
@@ -1317,7 +1376,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
             {/* Mobile card list */}
             <div className="md:hidden divide-y divide-gray-100">
               {paginatedFiltered.map((c, i) => (
-                <div key={c.id} className="px-4 py-4 space-y-2 active:bg-gray-50 cursor-pointer"
+                <div key={c.id} className="px-4 py-3.5 space-y-2 cursor-pointer"
                      onClick={() => setSelectedComplaint(c)}>
                   <div className="flex items-start justify-between gap-2">
                     <span className="font-semibold text-gray-800 text-sm leading-snug">
@@ -1327,7 +1386,6 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                     <div className="flex items-center gap-1.5 shrink-0">
                       <PriorityBadge priority={c.priority} />
                       <StatusBadge status={c.status} />
-                      <ChevronRight size={14} className="text-gray-300" />
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
@@ -1338,19 +1396,26 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                   </div>
                   {c.subject && <p className="text-xs text-gray-600 truncate">{c.subject}</p>}
                   <p className="text-xs text-gray-400 truncate">{c.detail}</p>
-                  <div className="flex items-center gap-3 text-xs text-gray-400 pt-1 flex-wrap">
-                    <span>{new Date(c.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}</span>
-                    {(c.village || c.location_name) && (
-                      <span className="flex items-center gap-1">
-                        <MapPin size={10} className="shrink-0" />
-                        {c.village || c.location_name}
-                      </span>
-                    )}
-                    {c.assigned_to && (
-                      <span className="flex items-center gap-1 text-blue-500">
-                        <Wrench size={10} className="shrink-0" />
-                        {technicians.find((t) => t.id === c.assigned_to)?.full_name ?? 'ผู้รับผิดชอบ'}
-                      </span>
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <div className="flex items-center gap-3 text-xs text-gray-400 flex-wrap">
+                      <span>{new Date(c.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}</span>
+                      {(c.village || c.location_name) && (
+                        <span className="flex items-center gap-1">
+                          <MapPin size={10} className="shrink-0" />
+                          {c.village || c.location_name}
+                        </span>
+                      )}
+                      {c.assigned_to && (
+                        <span className="flex items-center gap-1 text-blue-500">
+                          <Wrench size={10} className="shrink-0" />
+                          {technicians.find((t) => t.id === c.assigned_to)?.full_name ?? 'ผู้รับผิดชอบ'}
+                        </span>
+                      )}
+                    </div>
+                    {NEXT_ACTION[c.status] && currentUserRole !== 'viewer' && (
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <ActionButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} />
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1363,9 +1428,11 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                 <thead>
                   <tr style={{ backgroundColor: '#2c5282' }}>
                     <th className="px-3 py-2.5 text-center text-[11px] font-bold text-white border-r border-white/10 w-10">ที่</th>
+                    <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10 w-20">เลขที่</th>
                     <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ประเภทคำร้อง</th>
                     <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">สถานที่</th>
                     <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">วันที่ยื่น</th>
+                    <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ผู้แจ้ง</th>
                     <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ผู้รับผิดชอบ</th>
                     <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ความเร่งด่วน</th>
                     <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">สถานะ</th>
@@ -1381,6 +1448,9 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                       onMouseLeave={e => e.currentTarget.style.backgroundColor = i % 2 === 0 ? '#fff' : '#f5f8fc'}
                       onClick={() => setSelectedComplaint(c)}>
                       <td className="px-3 py-2 text-center text-xs text-gray-500 border-r border-gray-200">{complaintStartIdx + i + 1}</td>
+                      <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap border-r border-gray-200">
+                        {c.ref_no ? c.ref_no.replace(/^[A-Z]+-/, '') : <span className="text-gray-300">—</span>}
+                      </td>
                       <td className="px-3 py-2 font-medium text-gray-800 text-xs whitespace-nowrap border-r border-gray-200">
                         {CATEGORY_LABEL[c.category] ?? c.category}
                       </td>
@@ -1391,6 +1461,23 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                       </td>
                       <td className="px-3 py-2 text-gray-500 text-xs whitespace-nowrap border-r border-gray-200">
                         {new Date(c.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}
+                      </td>
+                      <td className="px-3 py-2 border-r border-gray-200 min-w-[110px]">
+                        {(() => {
+                          const name = c.reporter_name || c.profiles?.full_name
+                          const phone = c.phone || c.profiles?.phone
+                          return (
+                            <div className="flex flex-col gap-0.5">
+                              {name
+                                ? <span className="text-xs font-medium text-gray-700 truncate max-w-[120px]">{name}</span>
+                                : <span className="text-gray-300 text-xs">ไม่ระบุ</span>}
+                              {phone && (
+                                <a href={`tel:${phone}`} onClick={e => e.stopPropagation()}
+                                  className="text-[10px] text-blue-500 hover:underline">{phone}</a>
+                              )}
+                            </div>
+                          )
+                        })()}
                       </td>
                       <td className="px-3 py-2 text-xs whitespace-nowrap border-r border-gray-200">
                         {c.assigned_to
