@@ -234,7 +234,7 @@ function QuickStatusChange({ id, currentStatus, onUpdate, loading }) {
             <p className="text-xs text-gray-500 mb-3">เลือกสถานะที่ต้องการเปลี่ยนเป็น</p>
             <select value={sel} onChange={(e) => setSel(e.target.value)}
               className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-200 mb-3">
-              {Object.entries(STATUS).filter(([k]) => ['new','in_progress','done','closed','rejected'].includes(k)).map(([key, s]) => (
+              {STATUS_MAIN.map(key => ({ key, s: STATUS[key] })).map(({ key, s }) => (
                 <option key={key} value={key}>{s.label}</option>
               ))}
             </select>
@@ -266,11 +266,35 @@ function ActionButton({ status, id, onUpdate, loading }) {
   const action = NEXT_ACTION[normalizeActionStatus(status)]
   const [confirm, setConfirm] = useState(false)
   const [note, setNote] = useState('')
+  const [pendingFiles, setPendingFiles] = useState([])
+  const [uploading, setUploading] = useState(false)
   if (!action) return null
-  function handleConfirm() {
-    setConfirm(false)
-    onUpdate(id, action.next, [], note.trim() || null)
-    setNote('')
+  const withPhoto = action.next === 'done'
+  function handleClose() { setConfirm(false); setNote(''); setPendingFiles([]) }
+  async function handleConfirm() {
+    if (withPhoto && pendingFiles.length > 0) {
+      setUploading(true)
+      const urls = []
+      for (const f of pendingFiles) {
+        const ext = f.name.split('.').pop()
+        const path = `${id}/work_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
+        const compressed = await compressImage(f, 1200)
+        const { error } = await supabase.storage.from('complaint-attachments').upload(path, compressed, { upsert: false })
+        if (!error) {
+          const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
+          urls.push(data.publicUrl)
+        }
+      }
+      setUploading(false)
+      onUpdate(id, action.next, urls, note.trim() || null)
+    } else {
+      onUpdate(id, action.next, [], note.trim() || null)
+    }
+    handleClose()
+  }
+  function handleFiles(e) {
+    setPendingFiles(prev => [...prev, ...Array.from(e.target.files)])
+    e.target.value = ''
   }
   return (
     <>
@@ -281,20 +305,40 @@ function ActionButton({ status, id, onUpdate, loading }) {
         {action.label}
       </button>
       {confirm && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40" onClick={() => { setConfirm(false); setNote('') }}>
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40" onClick={handleClose}>
           <div className="bg-white rounded-2xl p-5 shadow-xl w-80 mx-4" onClick={(e) => e.stopPropagation()}>
             <p className="text-sm font-semibold text-gray-800 mb-1">ยืนยันการเปลี่ยนสถานะ</p>
             <p className="text-xs text-gray-500 mb-3">ต้องการ <span className="font-medium text-gray-800">"{action.label}"</span> ใช่หรือไม่?</p>
+            {withPhoto && (
+              <div className="mb-3">
+                <p className="text-xs font-medium text-gray-600 mb-1.5 flex items-center gap-1"><Camera size={11} /> รูปภาพหลังดำเนินการ (ไม่บังคับ)</p>
+                <label className="flex items-center justify-center gap-2 w-full py-2 border-2 border-dashed border-gray-200 rounded-xl text-xs text-gray-500 cursor-pointer hover:border-blue-300 hover:text-blue-500 transition-colors">
+                  <Camera size={13} /> เพิ่มรูปภาพ
+                  <input type="file" accept="image/*" multiple className="hidden" onChange={handleFiles} />
+                </label>
+                {pendingFiles.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {pendingFiles.map((f, i) => (
+                      <div key={i} className="relative">
+                        <img src={URL.createObjectURL(f)} alt="" className="w-14 h-14 object-cover rounded-lg" />
+                        <button onClick={() => setPendingFiles(prev => prev.filter((_, j) => j !== i))}
+                          className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-white leading-none text-[10px]">×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2}
               placeholder="หมายเหตุ (ไม่บังคับ)"
               className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-blue-200 mb-3" />
             <div className="flex gap-2">
-              <button onClick={handleConfirm} disabled={loading === id}
-                className="flex-1 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
+              <button onClick={handleConfirm} disabled={loading === id || uploading}
+                className="flex-1 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50 flex items-center justify-center gap-1"
                 style={{ backgroundColor: 'var(--color-primary)' }}>
-                ยืนยัน
+                {uploading ? <><Loader2 size={13} className="animate-spin" /> กำลังอัปโหลด...</> : 'ยืนยัน'}
               </button>
-              <button onClick={() => { setConfirm(false); setNote('') }}
+              <button onClick={handleClose}
                 className="flex-1 py-2 rounded-xl text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
                 ยกเลิก
               </button>
@@ -394,6 +438,78 @@ function FixedSelect({ value, onChange, options }) {
         </div>
       )}
     </>
+  )
+}
+
+function AvatarLightbox({ src, name }) {
+  const [big, setBig] = useState(false)
+  return (
+    <>
+      <div className="flex justify-center py-4 border-b border-gray-50">
+        <img src={src} alt={name} onClick={() => setBig(true)}
+          className="w-20 h-20 rounded-full object-cover border-2 border-blue-100 shadow-sm cursor-zoom-in hover:scale-105 transition-transform" />
+      </div>
+      {big && (
+        <div className="fixed inset-0 z-9999 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          onClick={() => setBig(false)}>
+          <img src={src} alt={name}
+            className="max-w-[80vw] max-h-[80vh] rounded-2xl shadow-2xl object-contain" />
+        </div>
+      )}
+    </>
+  )
+}
+
+function ReporterCard({ c }) {
+  const [open, setOpen] = useState(false)
+  const p = c.profiles
+  const name = c.reporter_name || p?.full_name || 'ไม่ระบุชื่อ'
+  const phone = c.phone || p?.phone
+  const email = p?.email
+  const avatar = p?.avatar_url
+  const joinDate = p?.created_at ? new Date(p.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: 'numeric' }) : null
+  const isRegistered = !!c.user_id
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ข้อมูลผู้แจ้ง</p>
+      <button type="button" onClick={() => setOpen(v => !v)}
+        className="w-full bg-blue-50 rounded-2xl p-4 border border-blue-100 flex items-center gap-3 text-left hover:bg-blue-100 transition-colors">
+        <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 bg-blue-100 flex items-center justify-center">
+          {avatar
+            ? <img src={avatar} alt={name} className="w-full h-full object-cover" />
+            : <Users size={18} className="text-blue-600" />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-gray-800">{name}</p>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {email || phone || (isRegistered ? `ID: ${c.user_id.slice(0, 8)}` : 'ไม่ได้เข้าสู่ระบบ')}
+          </p>
+        </div>
+        <ChevronDown size={16} className={`text-gray-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+          {avatar && (
+            <AvatarLightbox src={avatar} name={name} />
+          )}
+          <div className="divide-y divide-gray-50">
+            {[
+              { label: 'ชื่อ-นามสกุล', value: name },
+              { label: 'อีเมล', value: email },
+              { label: 'เบอร์โทร', value: phone },
+              { label: 'สถานะบัญชี', value: isRegistered ? 'ลงทะเบียนแล้ว' : 'Guest (ไม่ได้ล็อกอิน)' },
+              { label: 'วันที่สมัคร', value: joinDate },
+              { label: 'User ID', value: c.user_id ? c.user_id.slice(0, 16) + '…' : null, mono: true },
+            ].filter(r => r.value).map(r => (
+              <div key={r.label} className="flex items-start gap-3 px-4 py-2.5">
+                <span className="text-xs text-gray-400 w-24 shrink-0 pt-0.5">{r.label}</span>
+                <span className={`text-xs text-gray-800 font-medium flex-1 ${r.mono ? 'font-mono' : ''}`}>{r.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -657,22 +773,7 @@ ${photoSectionHtml}
             </div>
           )}
 
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ข้อมูลผู้แจ้ง</p>
-            <div className="bg-blue-50 rounded-2xl p-4 border border-blue-100 flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center shrink-0">
-                <Users size={18} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-gray-800">
-                  {c.reporter_name || c.profiles?.full_name || 'ไม่ระบุชื่อ'}
-                </p>
-                <p className="text-xs text-gray-500 font-mono mt-0.5">
-                  {c.profiles?.email || c.profiles?.phone || (c.user_id ? `ID: ${c.user_id.slice(0, 8)}` : 'ไม่ได้เข้าสู่ระบบ')}
-                </p>
-              </div>
-            </div>
-          </div>
+          <ReporterCard c={c} />
 
           {(c.location_name || c.village || c.phone || c.latitude) && (
             <div className="space-y-2">
@@ -928,7 +1029,7 @@ ${photoSectionHtml}
                 <FixedSelect
                   value={c.status}
                   onChange={(val) => setOverrideConfirm(val)}
-                  options={Object.entries(STATUS).map(([key, s]) => ({ value: key, label: s.label }))}
+                  options={STATUS_MAIN.map(key => ({ value: key, label: STATUS[key].label }))}
                 />
               </div>
             </div>
@@ -994,7 +1095,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
     setLoading(true)
     const { data, error } = await supabase
       .from('complaints')
-      .select('*, profiles(full_name, email, phone)')
+      .select('*, profiles(full_name, email, phone, role, created_at, avatar_url)')
       .eq('municipality_id', tenant.id)
       .order('created_at', { ascending: false })
     if (error) console.error('fetch complaints error:', error.message)
