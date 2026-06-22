@@ -66,10 +66,10 @@ export default function SystemSettingsAdmin() {
       const blob = await resizeImage(file, 512)
       const path = `logos/logo-${tenant.slug}.png`
       const { error: upErr } = await supabase.storage
-        .from('logos')
+        .from('municipality-assets')
         .upload(path, blob, { upsert: true, contentType: 'image/png' })
       if (upErr) throw upErr
-      const { data: { publicUrl } } = supabase.storage.from('logos').getPublicUrl(path)
+      const { data: { publicUrl } } = supabase.storage.from('municipality-assets').getPublicUrl(path)
       const { error: dbErr } = await supabase.rpc('update_municipality_logo', {
         p_municipality_id: tenant.id,
         p_logo_url: publicUrl,
