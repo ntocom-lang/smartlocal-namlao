@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import { useAuth } from '../contexts/AuthContext'
 import HeroBanner from '../components/home/HeroBanner'
 import StaffSection from '../components/home/StaffSection'
 import NewsSection from '../components/home/NewsSection'
@@ -11,23 +10,7 @@ import WeatherWidget from '../components/home/WeatherWidget'
 
 export default function HomePage() {
   const { tenant } = useTenant()
-  const [session, setSession] = useState(undefined)
-  const [role, setRole] = useState(null)
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session))
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
-      setSession(s)
-      if (!s) setRole(null)
-    })
-    return () => subscription.unsubscribe()
-  }, [])
-
-  useEffect(() => {
-    if (!session) return
-    supabase.from('profiles').select('role').eq('id', session.user.id).maybeSingle()
-      .then(({ data }) => setRole(data?.role ?? 'citizen'))
-  }, [session])
+  const { role } = useAuth()
 
   const isAdmin = role === 'admin' || role === 'superadmin' || role === 'officer'
   const isViewer = role === 'viewer'
@@ -100,7 +83,7 @@ export default function HomePage() {
           ))}
         </div>
 
-        {!session && (
+        {!role && (
           <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800">
             <Info size={16} className="shrink-0 mt-0.5" />
             <p>สมัครสมาชิกเพื่อติดตามสถานะคำร้องของท่าน และรับการแจ้งเตือนทันที</p>
