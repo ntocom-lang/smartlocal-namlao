@@ -2093,9 +2093,9 @@ export default function StaffDashboard() {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 px-3 py-3 overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
+        <nav className="flex-1 px-3 py-2 overflow-y-auto sidebar-nav">
           <button onClick={() => setActiveModule('home')}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all mb-1"
+            className="w-full flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all mb-1"
             style={activeModule === 'home'
               ? { backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff' }
               : { color: 'rgba(255,255,255,0.6)' }}>
@@ -2103,8 +2103,8 @@ export default function StaffDashboard() {
             <span className="flex-1 text-left text-xs">หน้าหลัก</span>
           </button>
           {visibleGroups.map(({ group, items }) => (
-            <div key={group} className="mb-4">
-              <p className="px-3 mb-1 text-[9px] font-bold uppercase tracking-widest"
+            <div key={group} className="mb-2">
+              <p className="px-3 mb-0.5 text-[9px] font-bold uppercase tracking-widest"
                 style={{ color: 'rgba(255,255,255,0.35)', letterSpacing: '0.12em' }}>{group}</p>
               <div className="space-y-0.5">
                 {items.map(({ key, label, Icon, color, externalUrl }) => {
@@ -2112,7 +2112,7 @@ export default function StaffDashboard() {
                   const badge    = key === 'inbox' && pendingCount > 0 ? pendingCount : null
                   return (
                     <button key={key} onClick={() => externalUrl ? window.open(externalUrl, '_blank') : setActiveModule(key)}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all"
+                      className="w-full flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all"
                       style={isActive
                         ? { backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff' }
                         : { color: 'rgba(255,255,255,0.6)' }}>

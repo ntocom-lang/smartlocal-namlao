@@ -6,6 +6,7 @@ import {
   Phone, MapPin, Globe, Share2, MessageCircle,
   ChevronRight, Star, Copy, Download, Check, Monitor, X,
   UploadIcon, PlusSquare, BookOpen, Store, FileText, Briefcase,
+  CalendarDays, Luggage, AlertTriangle, Cloud,
 } from 'lucide-react'
 import qrCodeImage from '../assets/qr-code.png'
 import { supabase } from '../lib/supabase'
@@ -496,6 +497,22 @@ export default function MorePage() {
             href="/doc-request"
           />
           <MenuRow
+            icon={CalendarDays}
+            iconBg="bg-green-50"
+            iconColor="text-green-500"
+            label="ปฏิทินกิจกรรม"
+            desc="กิจกรรมและงานประเพณีของท้องถิ่น"
+            href="/events"
+          />
+          <MenuRow
+            icon={Luggage}
+            iconBg="bg-orange-50"
+            iconColor="text-orange-500"
+            label="แหล่งท่องเที่ยว"
+            desc="สถานที่ท่องเที่ยว ร้านอาหาร ที่พัก ในพื้นที่"
+            href="/tourism"
+          />
+          <MenuRow
             icon={Store}
             iconBg="bg-amber-50"
             iconColor="text-amber-500"
@@ -547,6 +564,22 @@ export default function MorePage() {
             label="เอกสารของฉัน"
             desc="ตรวจสอบสถานะใบรับรองและเอกสารราชการ"
             href="/my-docs"
+          />
+          <MenuRow
+            icon={AlertTriangle}
+            iconBg="bg-red-50"
+            iconColor="text-red-500"
+            label="เหตุฉุกเฉิน"
+            desc="เบอร์ฉุกเฉิน แจ้งเหตุด่วน ในพื้นที่"
+            href="/emergency"
+          />
+          <MenuRow
+            icon={Cloud}
+            iconBg="bg-sky-50"
+            iconColor="text-sky-500"
+            label="สภาพอากาศ"
+            desc="ข้อมูลสภาพอากาศและการพยากรณ์ในพื้นที่"
+            href="/weather"
           />
           <MenuRow
             icon={BookOpen}

@@ -678,6 +678,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
                         <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">วันที่/เวลา</th>
                         <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">สถานที่</th>
                         <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">กลุ่มเป้าหมาย</th>
+                        <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ผู้เพิ่ม</th>
                         {canManage && <th className="px-3 py-2.5 text-center text-[11px] font-bold text-white">จัดการ</th>}
                       </tr>
                     </thead>
@@ -715,6 +716,9 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
                                   {aud.label}
                                 </span>
                               )}
+                            </td>
+                            <td className="px-3 py-2 text-xs text-gray-600 border-r border-gray-200 whitespace-nowrap">
+                              {ev.creator?.full_name ?? <span className="text-gray-300">—</span>}
                             </td>
                             {canManage && (
                               <td className="px-3 py-2 text-center" onClick={e => e.stopPropagation()}>
