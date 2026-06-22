@@ -64,28 +64,20 @@ module.exports = async (req, res) => {
           const shortName = escapeHtml(autoShortName(tenant))
           const fullName  = escapeHtml(tenant.name)
           const desc      = 'ระบบศูนย์รวมข้อมูลดิจิทัลเพื่อการพัฒนาอย่างยั่งยืน'
-          const logoUrl   = tenant.logo_url || ''
           const siteUrl   = `https://${req.headers.host}/`
 
           const ogTags = [
-            `<title>${shortName}</title>`,
+            `<title>${fullName}</title>`,
             `<meta name="description" content="${desc}" />`,
             `<meta property="og:type" content="website" />`,
             `<meta property="og:url" content="${siteUrl}" />`,
-            `<meta property="og:title" content="${shortName}" />`,
+            `<meta property="og:title" content="${fullName}" />`,
             `<meta property="og:description" content="${desc}" />`,
-            `<meta property="og:site_name" content="${fullName}" />`,
-            logoUrl ? `<meta property="og:image" content="${logoUrl}" />` : '',
-            logoUrl ? `<link rel="icon" type="image/png" href="${logoUrl}" />` : '',
-            logoUrl ? `<link rel="shortcut icon" href="${logoUrl}" />` : '',
-            logoUrl ? `<link rel="apple-touch-icon" href="${logoUrl}" />` : '',
-          ].filter(Boolean).join('\n    ')
+            `<meta property="og:site_name" content="${shortName}" />`,
+          ].join('\n    ')
 
           html = html
             .replace(/<title>[^<]*<\/title>/, '')
-            .replace(/<link rel="icon"[^>]*>/g, '')
-            .replace(/<link rel="shortcut icon"[^>]*>/g, '')
-            .replace(/<link rel="apple-touch-icon"[^>]*>/g, '')
             .replace('<meta charset="UTF-8" />', `<meta charset="UTF-8" />\n    ${ogTags}`)
         }
       }
