@@ -1,6 +1,10 @@
 const { readFileSync } = require('fs')
 const { join } = require('path')
 
+// anon key ปลอดภัยที่จะ embed — ถูก expose ใน client bundle อยู่แล้วทุก deployment
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://umxssfahtuprnztlytdd.supabase.co'
+const SUPABASE_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVteHNzZmFodHVwcm56dGx5dGRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0NDI0MzAsImV4cCI6MjA5NDAxODQzMH0.SeQTZHWIAPx0XdQ_xK_BNhHjDVd8CeDdwK2NyXdof7E'
+
 const ORG_ABBR = {
   'เทศบาลนคร':   { abbr: 'ทน.', strip: 'เทศบาลนคร' },
   'เทศบาลเมือง':  { abbr: 'ทม.', strip: 'เทศบาลเมือง' },
@@ -43,15 +47,15 @@ module.exports = async (req, res) => {
 
   try {
     const slug = detectSlug(req.headers.host)
-    if (slug && process.env.VITE_SUPABASE_URL && process.env.VITE_SUPABASE_ANON_KEY) {
+    if (slug) {
       const r = await fetch(
-        `${process.env.VITE_SUPABASE_URL}/rest/v1/municipalities?slug=eq.${encodeURIComponent(slug)}&select=name,logo_url,org_type,pwa_short_name`,
+        `${SUPABASE_URL}/rest/v1/municipalities?slug=eq.${encodeURIComponent(slug)}&select=name,logo_url,org_type,pwa_short_name`,
         {
           headers: {
-            apikey: process.env.VITE_SUPABASE_ANON_KEY,
-            Authorization: `Bearer ${process.env.VITE_SUPABASE_ANON_KEY}`,
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
           },
-          signal: AbortSignal.timeout(3000),
+          signal: AbortSignal.timeout(5000),
         }
       )
       if (r.ok) {
