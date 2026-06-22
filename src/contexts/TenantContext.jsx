@@ -128,26 +128,41 @@ export function TenantProvider({ children }) {
     }
 
     async function fetchTenant() {
-      const { data, error: dbError } = await supabase
-        .from('municipalities')
-        .select('id, slug, name, org_type, province, theme_color, logo_url, developer_name, website_url, facebook_url, line_oa_url, phone, address, latitude, longitude, system_name, system_subtitle, pwa_short_name, enabled_modules, telegram_group_id, promptpay_id, fee_schedule, qr_code_url, qr_label, bank_name, bank_account_no, bank_account_name')
-        .eq('slug', slug)
-        .single()
+      try {
+        const timeout = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), 10000)
+        )
+        const query = supabase
+          .from('municipalities')
+          .select('id, slug, name, org_type, province, theme_color, logo_url, developer_name, website_url, facebook_url, line_oa_url, phone, address, latitude, longitude, system_name, system_subtitle, pwa_short_name, enabled_modules, telegram_group_id, promptpay_id, fee_schedule, qr_code_url, qr_label, bank_name, bank_account_no, bank_account_name')
+          .eq('slug', slug)
+          .single()
 
-      if (dbError || !data) {
-        setError(`ไม่พบหน่วยงานรหัส "${slug}" ในระบบ`)
+        const { data, error: dbError } = await Promise.race([query, timeout])
+
+        if (dbError || !data) {
+          setError(`ไม่พบหน่วยงานรหัส "${slug}" ในระบบ`)
+          setLoading(false)
+          return
+        }
+
+        setTenant(data)
+        setTerminology(TERMINOLOGY[data.org_type] ?? TERMINOLOGY['อบต.'])
+        applyTheme(data.theme_color ?? '#1d4ed8')
+        document.title = data.name
+        try { injectPWAManifest(data) } catch (_) {}
+        try {
+          localStorage.setItem('sl_slug', data.slug)
+          localStorage.setItem('sl_tenant_name', data.name)
+        } catch (_) {}
+      } catch (err) {
+        const msg = err?.message === 'timeout'
+          ? `ไม่สามารถเชื่อมต่อระบบได้ (timeout) กรุณาลองใหม่`
+          : `ไม่พบหน่วยงานรหัส "${slug}" ในระบบ`
+        setError(msg)
+      } finally {
         setLoading(false)
-        return
       }
-
-      setTenant(data)
-      setTerminology(TERMINOLOGY[data.org_type] ?? TERMINOLOGY['อบต.'])
-      applyTheme(data.theme_color ?? '#1d4ed8')
-      document.title = data.name
-      injectPWAManifest(data)
-      localStorage.setItem('sl_slug', data.slug)
-      localStorage.setItem('sl_tenant_name', data.name)
-      setLoading(false)
     }
 
     fetchTenant()
