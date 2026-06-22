@@ -31,6 +31,8 @@ const DOC_TYPES = [
   { value: 'waste_collection', label: '🗑️ ชำระค่าธรรมเนียมเก็บขนขยะ' },
   { value: 'other',            label: '📝 คำขออื่นๆ' },
 ]
+let _customDocTypes = []
+function getAllDocTypes() { return [...DOC_TYPES, ..._customDocTypes] }
 
 const STATUS = {
   pending:    { label: 'รอดำเนินการ',    color: '#f59e0b', bg: '#fef3c7', Icon: Clock },
@@ -140,7 +142,7 @@ const PAYMENT_BADGE = {
 }
 
 function TaskCard({ req, onClick }) {
-  const docType = DOC_TYPES.find(d => d.value === req.document_type)
+  const docType = getAllDocTypes().find(d => d.value === req.document_type)
   const emoji = docType?.label.match(/^(\S+)/)?.[1] ?? '📄'
   const docLabel = docType?.label.replace(/^\S+\s*/, '') ?? req.document_type
   const payBadge = req.payment_status && req.payment_status !== 'not_required'
@@ -206,7 +208,7 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpda
     return () => { cancelled = true }
   }, [req.payment_slip_url])
 
-  const docType     = DOC_TYPES.find(d => d.value === req.document_type)
+  const docType     = getAllDocTypes().find(d => d.value === req.document_type)
   const isActive    = req.status === 'pending' || req.status === 'processing'
   const hasPayment  = req.payment_status && req.payment_status !== 'not_required'
   const needsFeeSet = SET_FEE_TYPES.includes(req.document_type) && req.payment_status === 'not_required'
@@ -220,7 +222,7 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpda
         .update({ fee_amount: amount, payment_status: 'pending' })
         .eq('id', req.id)
       if (error) throw error
-      const docLabel = DOC_TYPES.find(d => d.value === req.document_type)?.label ?? req.document_type
+      const docLabel = getAllDocTypes().find(d => d.value === req.document_type)?.label ?? req.document_type
       notifyTelegram(tenant?.telegram_group_id,
         `💳 <b>แจ้งยอดค่าชำระ</b>\nประเภท: ${docLabel}\nผู้ขอ: ${req.requester_name}\nยอด: <b>${amount.toLocaleString()} บาท</b>\nรอประชาชนชำระผ่านบัญชีธนาคาร`
       )
@@ -259,7 +261,7 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpda
           ...(document_url ? { document_url } : {}),
         }).eq('id', req.id)
         if (error) throw error
-        const docLabel2 = DOC_TYPES.find(d => d.value === req.document_type)?.label ?? req.document_type
+        const docLabel2 = getAllDocTypes().find(d => d.value === req.document_type)?.label ?? req.document_type
         notifyTelegram(tenant?.telegram_group_id,
           `✅ <b>${action === 'verify' ? 'ยืนยันการชำระเงิน' : 'ยกเว้นค่าธรรมเนียม'}</b>\nประเภท: ${docLabel2}\nผู้ขอ: ${req.requester_name}\n${action === 'verify' ? `จำนวน: ${(req.fee_amount ?? 0).toLocaleString()} บาท\n` : ''}ออกใบเสร็จแล้ว — รอประชาชนดาวน์โหลด`
         )
@@ -270,7 +272,7 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpda
         const { error } = await supabase.from('document_requests')
           .update(updates).eq('id', req.id)
         if (error) throw error
-        const docLabel3 = DOC_TYPES.find(d => d.value === req.document_type)?.label ?? req.document_type
+        const docLabel3 = getAllDocTypes().find(d => d.value === req.document_type)?.label ?? req.document_type
         notifyTelegram(tenant?.telegram_group_id,
           `✅ <b>${action === 'verify' ? 'ยืนยันการชำระเงิน' : 'ยกเว้นค่าธรรมเนียม'}</b>\nประเภท: ${docLabel3}\nผู้ขอ: ${req.requester_name}`
         )
@@ -548,7 +550,7 @@ function NewRequestSheet({ tenant, staffId, onClose, onCreated }) {
           <div>
             <label className="text-xs font-semibold text-gray-500 mb-2 block">ประเภทเอกสาร</label>
             <div className="grid grid-cols-2 gap-2">
-              {DOC_TYPES.map(d => {
+              {getAllDocTypes().map(d => {
                 const [emoji, ...rest] = d.label.split(' ')
                 const isSel = form.document_type === d.value
                 return (
@@ -663,7 +665,7 @@ export function InboxModule({ tenant, staffId }) {
     setRequests(prev => prev.map(r =>
       r.id === id ? { ...r, status: newStatus, staff_notes: staffNote || null, document_url } : r
     ))
-    const docLabel = DOC_TYPES.find(d => d.value === req?.document_type)?.label ?? req?.document_type ?? ''
+    const docLabel = getAllDocTypes().find(d => d.value === req?.document_type)?.label ?? req?.document_type ?? ''
     notifyTelegram(tenant?.telegram_group_id,
       `🔄 <b>อัปเดตสถานะคำขอเอกสาร</b>\nประเภท: ${docLabel}\nผู้ขอ: ${req?.requester_name ?? ''}\nสถานะ: ${STATUS[newStatus]?.label ?? newStatus}${staffNote ? `\nหมายเหตุ: ${staffNote}` : ''}`
     )
@@ -687,7 +689,7 @@ export function InboxModule({ tenant, staffId }) {
   const filtered = search.trim()
     ? byTab.filter(r => {
         const q = search.toLowerCase()
-        const docLabel = (DOC_TYPES.find(d => d.value === r.document_type)?.label ?? '').toLowerCase()
+        const docLabel = (getAllDocTypes().find(d => d.value === r.document_type)?.label ?? '').toLowerCase()
         return r.requester_name?.toLowerCase().includes(q) || docLabel.includes(q)
       })
     : byTab
@@ -794,7 +796,7 @@ export function InboxModule({ tenant, staffId }) {
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {filtered.map((req, idx) => {
-                  const docType = DOC_TYPES.find(d => d.value === req.document_type)
+                  const docType = getAllDocTypes().find(d => d.value === req.document_type)
                   return (
                     <tr key={req.id}
                       className="cursor-pointer transition-colors"
@@ -960,7 +962,7 @@ function buildDocHTML({ req, tenant, docDate }) {
 // ─── Doc Card ─────────────────────────────────────────────────────────────────
 
 function DocCard({ req, onClick }) {
-  const docType  = DOC_TYPES.find(d => d.value === req.document_type)
+  const docType  = getAllDocTypes().find(d => d.value === req.document_type)
   const emoji    = docType?.label.match(/^(\S+)/)?.[1] ?? '📄'
   const docLabel = docType?.label.replace(/^\S+\s*/, '') ?? req.document_type
   return (
@@ -987,7 +989,7 @@ function DocCard({ req, onClick }) {
 
 function DocPreviewSheet({ req, tenant, onClose }) {
   const [docDate, setDocDate] = useState(new Date().toISOString().slice(0, 10))
-  const docType = DOC_TYPES.find(d => d.value === req.document_type)
+  const docType = getAllDocTypes().find(d => d.value === req.document_type)
 
   function handlePrint() {
     const html = buildDocHTML({ req, tenant, docDate })
@@ -1077,7 +1079,7 @@ function DocsModule({ tenant }) {
 
       {/* Filter */}
       <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-        {[{ value: 'all', label: 'ทั้งหมด' }, ...DOC_TYPES].map(d => (
+        {[{ value: 'all', label: 'ทั้งหมด' }, ...getAllDocTypes()].map(d => (
           <button key={d.value} onClick={() => setFilterType(d.value)}
             className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full transition-all"
             style={filterType === d.value
@@ -1657,7 +1659,7 @@ function ReportModule({ tenant }) {
     const BOM = '﻿'
     const headers = ['ประเภทเอกสาร', 'สถานะ', 'วันที่ยื่น']
     const lines = rows.map(r => {
-      const typeLabel   = DOC_TYPES.find(d => d.value === r.document_type)?.label.replace(/^\S+\s*/, '') ?? r.document_type
+      const typeLabel   = getAllDocTypes().find(d => d.value === r.document_type)?.label.replace(/^\S+\s*/, '') ?? r.document_type
       const statusLabel = STATUS[r.status]?.label ?? r.status
       const date        = new Date(r.created_at).toLocaleDateString('th-TH')
       return [typeLabel, statusLabel, date].map(v => `"${v}"`).join(',')
@@ -1736,7 +1738,7 @@ function ReportModule({ tenant }) {
               <p className="text-xs text-gray-400 text-center py-4">ไม่มีข้อมูลในช่วงเวลานี้</p>
             ) : (
               <div className="space-y-3">
-                {DOC_TYPES
+                {getAllDocTypes()
                   .filter(d => byType[d.value])
                   .sort((a, b) => (byType[b.value] ?? 0) - (byType[a.value] ?? 0))
                   .map(d => {
@@ -2043,6 +2045,13 @@ export default function StaffDashboard() {
     .map(g => ({ ...g, items: g.items.filter(m => enabledKeys.includes(m.key)) }))
     .filter(g => g.items.length > 0)
   const visibleModules = visibleGroups.flatMap(g => g.items)
+
+  useEffect(() => {
+    _customDocTypes = (tenant?.fee_schedule?._custom_types || []).map(t => ({
+      value: t.value,
+      label: `${t.emoji || '📋'} ${t.label}`,
+    }))
+  }, [tenant?.fee_schedule?._custom_types])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {

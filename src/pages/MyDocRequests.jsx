@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, FileText, Clock, CheckCircle2, XCircle,
@@ -10,13 +10,17 @@ import { useTenant } from '../contexts/TenantContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { compressImage } from '../lib/imageUtils'
 
-const DOC_TYPES = {
+const BASE_DOC_TYPES = {
   residence_cert:   'ใบรับรองการอยู่อาศัย',
   personal_cert:    'หนังสือรับรองบุคคล',
   conduct_cert:     'หนังสือรับรองความประพฤติ',
   tax_notice:       'ชำระภาษีที่ดินและสิ่งปลูกสร้าง',
   waste_collection: 'ชำระค่าธรรมเนียมเก็บขนขยะ',
   other:            'คำขออื่นๆ',
+}
+let _customDocLabels = {}
+function docTypeLabel(key) {
+  return BASE_DOC_TYPES[key] ?? _customDocLabels[key] ?? key
 }
 
 const STATUS = {
@@ -54,7 +58,7 @@ const PAY_BADGE = {
 const SET_FEE_TYPES = ['tax_notice', 'waste_collection']
 
 function DocCard({ req, onClick }) {
-  const docLabel = DOC_TYPES[req.document_type] ?? req.document_type
+  const docLabel = docTypeLabel(req.document_type)
   const awaitingFee = SET_FEE_TYPES.includes(req.document_type) && req.payment_status === 'not_required'
   const payBadge = awaitingFee
     ? { label: '⏳ รอแจ้งยอดค่าชำระ', cls: 'text-amber-600 bg-amber-50 border-amber-200' }
@@ -144,7 +148,7 @@ function DocDownloadShare({ url, docLabel }) {
 }
 
 function DocDetailSheet({ req, onClose, tenant, onRefresh }) {
-  const docLabel = DOC_TYPES[req.document_type] ?? req.document_type
+  const docLabel = docTypeLabel(req.document_type)
   const [slipFile, setSlipFile]       = useState(null)
   const [slipPreview, setSlipPreview] = useState(null)
   const [uploading, setUploading]     = useState(false)
@@ -428,6 +432,13 @@ export default function MyDocRequests() {
   const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
+    _customDocLabels = (tenant?.fee_schedule?._custom_types || []).reduce((acc, t) => {
+      acc[t.value] = `${t.emoji || ''} ${t.label}`.trim()
+      return acc
+    }, {})
+  }, [tenant?.fee_schedule?._custom_types])
+
+  useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session)
       if (!data.session) navigate('/auth', { state: { from: '/my-docs' }, replace: true })
@@ -553,7 +564,7 @@ export default function MyDocRequests() {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {requests.map((req, i) => {
-                        const docLabel = DOC_TYPES[req.document_type] ?? req.document_type
+                        const docLabel = docTypeLabel(req.document_type)
                         const awaitingFee = SET_FEE_TYPES.includes(req.document_type) && req.payment_status === 'not_required'
                         const payBadge = awaitingFee
                           ? { label: 'รอแจ้งยอด',  cls: 'text-amber-700 bg-amber-50' }

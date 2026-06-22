@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Banknote, Save, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Banknote, Save, Loader2, CheckCircle2, AlertCircle, Plus, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 
@@ -19,17 +19,23 @@ export default function FeeSettingsAdmin({ tenant }) {
   const [bankName, setBankName] = useState(tenant?.bank_name || '')
   const [bankAccountNo, setBankAccountNo] = useState(tenant?.bank_account_no || '')
   const [bankAccountName, setBankAccountName] = useState(tenant?.bank_account_name || '')
-  const [feeSchedule, setFeeSchedule] = useState({ ...DEFAULT_FEE, ...(tenant?.fee_schedule || {}) })
+  const [feeSchedule, setFeeSchedule] = useState({ ...DEFAULT_FEE })
+  const [customTypes, setCustomTypes] = useState([])
   const [loading, setLoading] = useState(false)
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState('')
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [newEmoji, setNewEmoji] = useState('📋')
+  const [newLabel, setNewLabel] = useState('')
 
   useEffect(() => {
     if (!tenant) return
     setBankName(tenant.bank_name || '')
     setBankAccountNo(tenant.bank_account_no || '')
     setBankAccountName(tenant.bank_account_name || '')
-    setFeeSchedule({ ...DEFAULT_FEE, ...(tenant.fee_schedule || {}) })
+    const { _custom_types: ct, ...fees } = tenant.fee_schedule || {}
+    setFeeSchedule({ ...DEFAULT_FEE, ...fees })
+    setCustomTypes(ct || [])
   }, [tenant?.id])
 
   function setFee(docType, val) {
@@ -37,18 +43,39 @@ export default function FeeSettingsAdmin({ tenant }) {
     setFeeSchedule(p => ({ ...p, [docType]: n }))
   }
 
+  function addCustomType() {
+    const label = newLabel.trim()
+    if (!label) return
+    const value = `custom_${Date.now()}`
+    setCustomTypes(prev => [...prev, { value, label, emoji: newEmoji || '📋' }])
+    setFeeSchedule(prev => ({ ...prev, [value]: 0 }))
+    setNewLabel('')
+    setNewEmoji('📋')
+    setShowAddForm(false)
+  }
+
+  function removeCustomType(value) {
+    setCustomTypes(prev => prev.filter(t => t.value !== value))
+    setFeeSchedule(prev => {
+      const next = { ...prev }
+      delete next[value]
+      return next
+    })
+  }
+
   async function handleSave(e) {
     e.preventDefault()
     setLoading(true)
     setSaveError('')
     try {
+      const fee_schedule = { ...feeSchedule, _custom_types: customTypes }
       const { error } = await supabase
         .from('municipalities')
         .update({
           bank_name: bankName.trim() || null,
           bank_account_no: bankAccountNo.trim() || null,
           bank_account_name: bankAccountName.trim() || null,
-          fee_schedule: feeSchedule,
+          fee_schedule,
         })
         .eq('id', tenant.id)
       if (error) throw error
@@ -56,7 +83,7 @@ export default function FeeSettingsAdmin({ tenant }) {
         bank_name: bankName.trim() || null,
         bank_account_no: bankAccountNo.trim() || null,
         bank_account_name: bankAccountName.trim() || null,
-        fee_schedule: feeSchedule,
+        fee_schedule,
       })
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
@@ -130,7 +157,8 @@ export default function FeeSettingsAdmin({ tenant }) {
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
                     <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500">ประเภทเอกสาร/บริการ</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 w-32">ค่าธรรมเนียม (บาท)</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 w-36">ค่าธรรมเนียม (บาท)</th>
+                    <th className="w-8"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
@@ -153,12 +181,80 @@ export default function FeeSettingsAdmin({ tenant }) {
                           <span className="text-xs text-gray-400 shrink-0">บาท</span>
                         </div>
                       </td>
+                      <td></td>
+                    </tr>
+                  ))}
+
+                  {customTypes.map(t => (
+                    <tr key={t.value} className="hover:bg-blue-50/40 bg-blue-50/20">
+                      <td className="px-4 py-2.5">
+                        <p className="text-sm text-gray-700">{t.emoji} {t.label}</p>
+                        <p className="text-[10px] text-blue-400 mt-0.5">ประเภทที่เพิ่มเอง</p>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <input
+                            type="number"
+                            min={0}
+                            max={9999}
+                            value={feeSchedule[t.value] ?? 0}
+                            onChange={e => setFee(t.value, e.target.value)}
+                            className="w-20 text-right text-sm text-gray-900 bg-white border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-300"
+                          />
+                          <span className="text-xs text-gray-400 shrink-0">บาท</span>
+                        </div>
+                      </td>
+                      <td className="pr-2">
+                        <button type="button" onClick={() => removeCustomType(t.value)}
+                          className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors">
+                          <Trash2 size={13} />
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
             <p className="text-xs text-gray-400 mt-2">* ค่าธรรมเนียม 0 บาท = ไม่ต้องชำระ (ฟรี)</p>
+
+            {showAddForm ? (
+              <div className="mt-3 border border-blue-200 rounded-xl p-4 bg-blue-50 space-y-3">
+                <p className="text-xs font-bold text-blue-700">เพิ่มประเภทเอกสาร/บริการใหม่</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newEmoji}
+                    onChange={e => setNewEmoji(e.target.value)}
+                    placeholder="📋"
+                    maxLength={4}
+                    className="w-14 text-center text-lg border border-gray-200 rounded-lg px-1 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-blue-300"
+                  />
+                  <input
+                    type="text"
+                    value={newLabel}
+                    onChange={e => setNewLabel(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addCustomType())}
+                    placeholder="ชื่อประเภท เช่น ถ่ายเอกสาร, ค่าน้ำประปา"
+                    className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 bg-white focus:outline-none focus:ring-1 focus:ring-blue-300"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" onClick={addCustomType} disabled={!newLabel.trim()}
+                    className="px-4 py-2 rounded-lg text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-40 transition-colors">
+                    เพิ่ม
+                  </button>
+                  <button type="button" onClick={() => { setShowAddForm(false); setNewLabel(''); setNewEmoji('📋') }}
+                    className="px-4 py-2 rounded-lg text-xs text-gray-500 bg-white border border-gray-200 hover:bg-gray-50 transition-colors">
+                    ยกเลิก
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setShowAddForm(true)}
+                className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 transition-colors">
+                <Plus size={13} /> เพิ่มประเภทเอกสาร/บริการใหม่
+              </button>
+            )}
           </div>
 
           <div className="space-y-2">

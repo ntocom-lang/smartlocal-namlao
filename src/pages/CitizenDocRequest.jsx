@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, FileText, CheckCircle2, Loader2, Copy, Check, ChevronRight, ShieldCheck, Upload, CreditCard, ImageIcon } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -7,7 +7,7 @@ import { notifyTelegram } from '../lib/notifyTelegram'
 import { compressImage } from '../lib/imageUtils'
 
 
-const DOC_TYPES = [
+const BASE_DOC_TYPES = [
   {
     value:   'residence_cert',
     label:   'ใบรับรองการอยู่อาศัย',
@@ -69,6 +69,18 @@ const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-3 text-sm tex
 export default function CitizenDocRequest() {
   const navigate  = useNavigate()
   const { tenant } = useTenant()
+  const allDocTypes = useMemo(() => {
+    const extras = (tenant?.fee_schedule?._custom_types || []).map(t => ({
+      value:  t.value,
+      label:  t.label,
+      emoji:  t.emoji || '📋',
+      desc:   'บริการเพิ่มเติมของ อปท.',
+      color:  '#6366f1',
+      bg:     '#eef2ff',
+      border: '#c7d2fe',
+    }))
+    return [...BASE_DOC_TYPES, ...extras]
+  }, [tenant?.fee_schedule?._custom_types])
   const [session, setSession]     = useState(undefined)
   const [selected, setSelected]   = useState(null)
   const [form, setForm]           = useState({ requester_name: '', requester_id_card: '', requester_phone: '', requester_address: '', purpose: '' })
@@ -462,7 +474,7 @@ export default function CitizenDocRequest() {
 
           {/* Mobile: vertical list | PC: 2-column grid */}
           <div className="space-y-2.5 md:space-y-0 md:grid md:grid-cols-2 md:gap-3">
-            {DOC_TYPES.map(d => (
+            {allDocTypes.map(d => (
               <button key={d.value} onClick={() => setSelected(d)}
                 className="w-full bg-white rounded-2xl border shadow-sm p-4 text-left flex items-center gap-4 active:scale-[0.98] hover:shadow-md transition-all"
                 style={{ borderColor: d.border }}>
