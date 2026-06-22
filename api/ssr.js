@@ -66,6 +66,7 @@ module.exports = async (req, res) => {
           const fullName  = escapeHtml(tenant.name)
           const desc      = 'ระบบศูนย์รวมข้อมูลดิจิทัลเพื่อการพัฒนาอย่างยั่งยืน'
           const siteUrl   = `https://${req.headers.host}/`
+          const logoUrl   = tenant.logo_url || ''
 
           const ogTags = [
             `<title>${fullName}</title>`,
@@ -75,7 +76,10 @@ module.exports = async (req, res) => {
             `<meta property="og:title" content="${fullName}" />`,
             `<meta property="og:description" content="${desc}" />`,
             `<meta property="og:site_name" content="${shortName}" />`,
-          ].join('\n    ')
+            logoUrl ? `<meta property="og:image" content="${logoUrl}" />` : '',
+            logoUrl ? `<meta property="og:image:width" content="512" />` : '',
+            logoUrl ? `<meta property="og:image:height" content="512" />` : '',
+          ].filter(Boolean).join('\n    ')
 
           html = html
             .replace(/<title>[^<]*<\/title>/, '')
