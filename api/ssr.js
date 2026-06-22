@@ -39,7 +39,7 @@ function escapeHtml(str) {
 module.exports = async (req, res) => {
   let html
   try {
-    html = readFileSync(join(process.cwd(), 'dist', 'index.html'), 'utf8')
+    html = readFileSync(join(process.cwd(), 'dist', '_template.html'), 'utf8')
   } catch {
     res.status(500).send('Build output not found')
     return
