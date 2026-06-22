@@ -322,6 +322,7 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpda
             {req.purpose && (
               <InfoRow icon={<AlignLeft size={14} />} label="วัตถุประสงค์"  value={req.purpose} />
             )}
+            <InfoRow icon={<Hash size={14} />}       label="เลขอ้างอิง"    value={<span className="font-mono font-bold tracking-widest">{req.id?.slice(0, 8)?.toUpperCase() ?? '—'}</span>} />
             <InfoRow icon={<Calendar size={14} />}  label="วันที่ยื่น"     value={dateTH(req.created_at)} />
           </div>
 
