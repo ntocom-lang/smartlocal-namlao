@@ -1,5 +1,6 @@
 const { readFileSync } = require('fs')
 const { join } = require('path')
+const TEMPLATE = join(__dirname, '_template.html')
 
 // anon key ปลอดภัยที่จะ embed — ถูก expose ใน client bundle อยู่แล้วทุก deployment
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://umxssfahtuprnztlytdd.supabase.co'
@@ -39,7 +40,7 @@ function escapeHtml(str) {
 module.exports = async (req, res) => {
   let html
   try {
-    html = readFileSync(join(process.cwd(), 'dist', '_template.html'), 'utf8')
+    html = readFileSync(TEMPLATE, 'utf8')
   } catch {
     res.status(500).send('Build output not found')
     return

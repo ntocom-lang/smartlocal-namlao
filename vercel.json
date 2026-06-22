@@ -1,11 +1,6 @@
 {
   "buildCommand": "npm run build",
-  "functions": {
-    "api/ssr.js": {
-      "includeFiles": "dist/_template.html"
-    }
-  },
-  "rewrites": [
+"rewrites": [
     { "source": "/(.*)", "destination": "/api/ssr" }
   ]
 }
