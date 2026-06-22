@@ -974,7 +974,7 @@ ${photoSectionHtml}
                   style={{ backgroundColor: 'var(--color-primary)' }}>
                   {closeUploading
                     ? <><Loader2 size={14} className="animate-spin" /> กำลังอัปโหลด...</>
-                    : <><CheckCircle2 size={14} /> ยืนยันปิดงาน</>}
+                    : <><CheckCircle2 size={14} /> ยืนยันดำเนินการแล้ว</>}
                 </button>
                 <button onClick={() => { setShowCloseJob(false); setPendingPhotos([]); setCloseNote('') }}
                   className="px-4 py-2 rounded-xl text-sm text-gray-500 bg-gray-100 hover:bg-gray-200 transition-colors">
