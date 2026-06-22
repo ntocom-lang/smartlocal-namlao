@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { ChevronLeft, Pencil, Loader2 } from 'lucide-react'
 import { compressImage } from '../lib/imageUtils'
+import { useAuth } from '../contexts/AuthContext'
 
 const ROLE_LABEL = {
   superadmin: 'Super Admin',
@@ -17,6 +18,7 @@ const ROLE_LABEL = {
 
 export default function ProfilePage() {
   const navigate = useNavigate()
+  const { role: contextRole } = useAuth()
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState({ full_name: '', phone: '', role: '', id_card: '' })
   const [avatarUrl, setAvatarUrl] = useState(null)
@@ -153,7 +155,7 @@ export default function ProfilePage() {
   }
 
   const displayName = profile.full_name || session?.user?.email?.split('@')[0] || 'ผู้ใช้'
-  const roleLabel = ROLE_LABEL[profile.role] ?? 'ประชาชนทั่วไป'
+  const roleLabel = ROLE_LABEL[contextRole ?? profile.role] ?? 'ประชาชนทั่วไป'
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#eef2f7' }}>
