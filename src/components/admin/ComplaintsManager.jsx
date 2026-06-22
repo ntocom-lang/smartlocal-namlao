@@ -525,6 +525,8 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
   const [nearbyList, setNearbyList] = useState([])
   const [showPinEdit, setShowPinEdit] = useState(false)
   const [savingPin, setSavingPin] = useState(false)
+  const [pendingAssign, setPendingAssign] = useState(null)
+  const [pendingPriority, setPendingPriority] = useState(null)
 
   async function handleSavePin({ lat, lng }) {
     setSavingPin(true)
@@ -732,12 +734,7 @@ ${photoSectionHtml}
                       : <p className="text-sm text-gray-400">ยังไม่ได้มอบหมาย</p>}
                   </div>
                   <select value={c.assigned_to ?? ''}
-                    onChange={async (e) => {
-                      const val = e.target.value || null
-                      setAssigning(true)
-                      await onAssign(c.id, val)
-                      setAssigning(false)
-                    }}
+                    onChange={(e) => setPendingAssign(e.target.value || null)}
                     disabled={assigning}
                     className="text-xs border border-orange-200 rounded-xl px-2 py-1.5 bg-white text-gray-700 focus:outline-none">
                     <option value="">— เลือกผู้รับผิดชอบ —</option>
@@ -758,7 +755,7 @@ ${photoSectionHtml}
                       const active = (c.priority ?? 'normal') === k
                       return (
                         <button key={k} type="button"
-                          onClick={() => onPriority(c.id, k)}
+                          onClick={() => { if ((c.priority ?? 'normal') !== k) setPendingPriority(k) }}
                           className="px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all border"
                           style={active
                             ? { backgroundColor: p.bg, color: p.text, borderColor: p.color }
@@ -1051,6 +1048,59 @@ ${photoSectionHtml}
                 ยืนยัน
               </button>
               <button onClick={() => setOverrideConfirm(null)}
+                className="flex-1 py-2 rounded-xl text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingAssign !== undefined && pendingAssign !== c.assigned_to && pendingAssign !== null && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40" onClick={() => setPendingAssign(null)}>
+          <div className="bg-white rounded-2xl p-5 shadow-xl w-72 mx-4" onClick={(e) => e.stopPropagation()}>
+            <p className="text-sm font-semibold text-gray-800 mb-1">ยืนยันการมอบหมาย</p>
+            <p className="text-xs text-gray-500 mb-4">
+              มอบหมายให้ <span className="font-medium text-gray-800">
+                {technicians.find(t => t.id === pendingAssign)?.full_name ?? 'ผู้รับผิดชอบ'}
+              </span> ใช่หรือไม่?
+            </p>
+            <div className="flex gap-2">
+              <button onClick={async () => {
+                  setAssigning(true)
+                  await onAssign(c.id, pendingAssign)
+                  setAssigning(false)
+                  setPendingAssign(null)
+                }}
+                className="flex-1 py-2 rounded-xl text-sm font-semibold text-white"
+                style={{ backgroundColor: 'var(--color-primary)' }}>
+                ยืนยัน
+              </button>
+              <button onClick={() => setPendingAssign(null)}
+                className="flex-1 py-2 rounded-xl text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingPriority && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40" onClick={() => setPendingPriority(null)}>
+          <div className="bg-white rounded-2xl p-5 shadow-xl w-72 mx-4" onClick={(e) => e.stopPropagation()}>
+            <p className="text-sm font-semibold text-gray-800 mb-1">ยืนยันการเปลี่ยนความเร่งด่วน</p>
+            <p className="text-xs text-gray-500 mb-4">
+              เปลี่ยนเป็น <span className="font-medium" style={{ color: PRIORITY[pendingPriority]?.text }}>
+                {PRIORITY[pendingPriority]?.label}
+              </span> ใช่หรือไม่?
+            </p>
+            <div className="flex gap-2">
+              <button onClick={() => { onPriority(c.id, pendingPriority); setPendingPriority(null) }}
+                className="flex-1 py-2 rounded-xl text-sm font-semibold text-white"
+                style={{ backgroundColor: 'var(--color-primary)' }}>
+                ยืนยัน
+              </button>
+              <button onClick={() => setPendingPriority(null)}
                 className="flex-1 py-2 rounded-xl text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
                 ยกเลิก
               </button>
