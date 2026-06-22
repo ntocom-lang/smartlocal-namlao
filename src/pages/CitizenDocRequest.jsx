@@ -80,7 +80,8 @@ export default function CitizenDocRequest() {
       border: '#c7d2fe',
     }))
     return [...BASE_DOC_TYPES, ...extras]
-  }, [tenant?.fee_schedule?._custom_types])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant])
   const [session, setSession]     = useState(undefined)
   const [selected, setSelected]   = useState(null)
   const [form, setForm]           = useState({ requester_name: '', requester_id_card: '', requester_phone: '', requester_address: '', purpose: '' })
