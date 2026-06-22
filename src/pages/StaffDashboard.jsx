@@ -163,6 +163,7 @@ function TaskCard({ req, onClick }) {
         )}
         <div className="flex items-center gap-2 mt-1.5">
           <p className="text-[11px] text-gray-300">{dateTH(req.created_at)}</p>
+          <p className="text-[11px] font-mono text-gray-300">#{req.id?.slice(0, 8)?.toUpperCase()}</p>
           {payBadge && (
             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${payBadge.cls}`}>
               💳 {payBadge.label}
