@@ -5,7 +5,7 @@ import { useTenant } from '../contexts/TenantContext'
 import SatisfactionModal from '../components/SatisfactionModal'
 import {
   ClipboardList, Loader2, ChevronRight, X, MapPin,
-  Phone, FileText, ArrowLeft, Check, XCircle, Navigation, Camera, AlignLeft, Star,
+  Phone, FileText, ArrowLeft, Check, XCircle, Navigation, Camera, AlignLeft,
   ChevronLeft, Clock, Search,
 } from 'lucide-react'
 
@@ -164,71 +164,7 @@ function StatusStepper({ status }) {
   )
 }
 
-function RatingCard({ complaint, onRated }) {
-  const [hovered, setHovered] = useState(0)
-  const [selected, setSelected] = useState(complaint.rating ?? 0)
-  const [submitted, setSubmitted] = useState(complaint.rating != null)
-  const [submitting, setSubmitting] = useState(false)
-
-  async function handleSubmit() {
-    if (!selected || submitting) return
-    setSubmitting(true)
-    const { error } = await supabase
-      .from('complaints')
-      .update({ rating: selected })
-      .eq('id', complaint.id)
-    if (!error) {
-      setSubmitted(true)
-      onRated(complaint.id, selected)
-    }
-    setSubmitting(false)
-  }
-
-  if (submitted) {
-    return (
-      <div className="bg-green-50 rounded-2xl p-4 border border-green-100 text-center">
-        <p className="text-sm font-semibold text-green-700">ขอบคุณสำหรับการให้คะแนน</p>
-        <div className="flex justify-center gap-1 mt-2">
-          {[1, 2, 3, 4, 5].map(s => (
-            <Star key={s} size={20}
-              className={s <= selected ? 'text-amber-400 fill-amber-400' : 'text-gray-200 fill-gray-200'} />
-          ))}
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="bg-amber-50 rounded-2xl p-4 border border-amber-100">
-      <p className="text-sm font-semibold text-gray-700 text-center mb-3">ให้คะแนนความพึงพอใจ</p>
-      <div className="flex justify-center gap-1.5 mb-4">
-        {[1, 2, 3, 4, 5].map(s => (
-          <button key={s}
-            onMouseEnter={() => setHovered(s)}
-            onMouseLeave={() => setHovered(0)}
-            onClick={() => setSelected(s)}
-            className="p-1 transition-transform active:scale-90">
-            <Star size={30}
-              className={s <= (hovered || selected)
-                ? 'text-amber-400 fill-amber-400'
-                : 'text-gray-300 fill-gray-300'} />
-          </button>
-        ))}
-      </div>
-      {selected > 0 && (
-        <button
-          onClick={handleSubmit}
-          disabled={submitting}
-          className="w-full py-2.5 rounded-xl text-sm font-semibold text-white transition-opacity disabled:opacity-60"
-          style={{ backgroundColor: 'var(--color-primary)' }}>
-          {submitting ? 'กำลังบันทึก...' : 'ส่งคะแนน'}
-        </button>
-      )}
-    </div>
-  )
-}
-
-function DetailSheet({ complaint: c, onClose, onRated }) {
+function DetailSheet({ complaint: c, onClose }) {
   const [timeline, setTimeline] = useState(null)
 
   useEffect(() => {
@@ -441,10 +377,6 @@ function DetailSheet({ complaint: c, onClose, onRated }) {
             </div>
           )}
 
-          {/* rating — แสดงเฉพาะตอน closed/done */}
-          {(c.status === 'closed' || c.status === 'completed') && (
-            <RatingCard complaint={c} onRated={onRated} />
-          )}
         </div>
 
         {/* footer */}
@@ -607,7 +539,7 @@ export default function MyComplaints() {
         </div>
 
         {selected && (
-          <DetailSheet complaint={selected} onClose={() => setSelected(null)} onRated={() => {}} />
+          <DetailSheet complaint={selected} onClose={() => setSelected(null)} />
         )}
       </div>
     )
@@ -784,7 +716,6 @@ export default function MyComplaints() {
         <DetailSheet
           complaint={selected}
           onClose={() => setSelected(null)}
-          onRated={(id, rating) => setComplaints(prev => prev.map(c => c.id === id ? { ...c, rating } : c))}
         />
       )}
       </div>
