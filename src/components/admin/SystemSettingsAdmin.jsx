@@ -67,16 +67,20 @@ export default function SystemSettingsAdmin() {
         .upload(path, blob, { upsert: true, contentType: 'image/png' })
       if (upErr) throw upErr
       const { data: { publicUrl } } = supabase.storage.from('municipality-assets').getPublicUrl(path)
-      const { error: dbErr } = await supabase
+      const { data: dbData, error: dbErr } = await supabase
         .from('municipalities')
         .update({ qr_code_url: publicUrl })
         .eq('id', tenant.id)
+        .select('qr_code_url')
+        .single()
       if (dbErr) throw dbErr
+      if (!dbData) throw new Error('บันทึกไม่สำเร็จ — ตรวจสอบสิทธิ์การแก้ไข (RLS)')
       setQrPreview(publicUrl)
       patchTenant({ qr_code_url: publicUrl })
       setSavedSection('qr')
       setTimeout(() => setSavedSection(null), 2500)
     } catch (err) {
+      setQrPreview(tenant?.qr_code_url || null)
       alert('อัปโหลด QR ไม่สำเร็จ: ' + err.message)
     } finally {
       setQrUploading(false)
@@ -87,12 +91,15 @@ export default function SystemSettingsAdmin() {
     e.preventDefault()
     setQrLabelSaving(true)
     try {
-      const { error } = await supabase
+      const { data: saved, error } = await supabase
         .from('municipalities')
         .update({ qr_label: qrLabel.trim() || null })
         .eq('id', tenant.id)
+        .select('qr_label')
+        .single()
       if (error) throw error
-      patchTenant({ qr_label: qrLabel.trim() || null })
+      if (!saved) throw new Error('บันทึกไม่สำเร็จ — ตรวจสอบสิทธิ์การแก้ไข (RLS)')
+      patchTenant({ qr_label: saved.qr_label })
       setSavedSection('qrLabel')
       setTimeout(() => setSavedSection(null), 2500)
     } catch (err) {
