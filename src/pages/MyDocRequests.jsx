@@ -544,11 +544,11 @@ export default function MyDocRequests() {
                     <thead>
                       <tr style={{ backgroundColor: '#1a3a5c' }}>
                         <th className="text-center text-white/80 text-xs font-semibold px-4 py-2.5 w-10 border-r border-white/10">ที่</th>
+                        <th className="text-center text-white/80 text-xs font-semibold px-4 py-2.5 border-r border-white/10">เลขอ้างอิง</th>
                         <th className="text-left text-white/80 text-xs font-semibold px-4 py-2.5 border-r border-white/10">ประเภทเอกสาร</th>
                         <th className="text-center text-white/80 text-xs font-semibold px-4 py-2.5 border-r border-white/10">สถานะ</th>
                         <th className="text-center text-white/80 text-xs font-semibold px-4 py-2.5 border-r border-white/10">การชำระเงิน</th>
-                        <th className="text-left text-white/80 text-xs font-semibold px-4 py-2.5 border-r border-white/10">วันที่ยื่น</th>
-                        <th className="text-center text-white/80 text-xs font-semibold px-4 py-2.5">เลขอ้างอิง</th>
+                        <th className="text-left text-white/80 text-xs font-semibold px-4 py-2.5">วันที่ยื่น</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -568,6 +568,7 @@ export default function MyDocRequests() {
                             style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#f5f8fc' }}
                             onClick={() => setSelected(req)}>
                             <td className="px-4 py-3 text-center text-xs text-gray-400 border-r border-gray-100">{i + 1}</td>
+                            <td className="px-4 py-3 text-center text-xs font-mono font-bold text-gray-600 border-r border-gray-100">{req.id.slice(0,8).toUpperCase()}</td>
                             <td className="px-4 py-3 font-medium text-gray-800 border-r border-gray-100">{docLabel}</td>
                             <td className="px-4 py-3 text-center border-r border-gray-100"><StatusBadge status={req.status} /></td>
                             <td className="px-4 py-3 text-center border-r border-gray-100">
@@ -575,8 +576,7 @@ export default function MyDocRequests() {
                                 ? <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${payBadge.cls}`}>{payBadge.label}</span>
                                 : <span className="text-xs text-gray-300">—</span>}
                             </td>
-                            <td className="px-4 py-3 text-xs text-gray-500 border-r border-gray-100">{dateTH(req.created_at)}</td>
-                            <td className="px-4 py-3 text-center text-xs font-mono font-bold text-gray-600">{req.id.slice(0,8).toUpperCase()}</td>
+                            <td className="px-4 py-3 text-xs text-gray-500">{dateTH(req.created_at)}</td>
                           </tr>
                         )
                       })}
