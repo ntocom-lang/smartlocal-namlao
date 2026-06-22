@@ -67,10 +67,11 @@ export default function SystemSettingsAdmin() {
         .upload(path, blob, { upsert: true, contentType: 'image/png' })
       if (upErr) throw upErr
       const { data: { publicUrl } } = supabase.storage.from('municipality-assets').getPublicUrl(path)
-      const { error: dbErr } = await supabase
-        .from('municipalities')
-        .update({ qr_code_url: publicUrl })
-        .eq('id', tenant.id)
+      const { error: dbErr } = await supabase.rpc('update_municipality_qr', {
+        p_municipality_id: tenant.id,
+        p_qr_code_url:     publicUrl,
+        p_qr_label:        tenant.qr_label ?? null,
+      })
       if (dbErr) throw dbErr
       setQrPreview(publicUrl)
       patchTenant({ qr_code_url: publicUrl })
@@ -88,12 +89,14 @@ export default function SystemSettingsAdmin() {
     e.preventDefault()
     setQrLabelSaving(true)
     try {
-      const { error } = await supabase
-        .from('municipalities')
-        .update({ qr_label: qrLabel.trim() || null })
-        .eq('id', tenant.id)
+      const label = qrLabel.trim() || null
+      const { error } = await supabase.rpc('update_municipality_qr', {
+        p_municipality_id: tenant.id,
+        p_qr_code_url:     tenant.qr_code_url ?? null,
+        p_qr_label:        label,
+      })
       if (error) throw error
-      patchTenant({ qr_label: qrLabel.trim() || null })
+      patchTenant({ qr_label: label })
       setSavedSection('qrLabel')
       setTimeout(() => setSavedSection(null), 2500)
     } catch (err) {
