@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon } from 'lucide-react'
+import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 
@@ -10,10 +10,13 @@ export default function SystemSettingsAdmin() {
   const [pwaShortName, setPwaShortName] = useState(() => tenant?.pwa_short_name || '')
   const [loading, setLoading] = useState(false)
   const [savedSection, setSavedSection] = useState(null)
+  const [logoUploading, setLogoUploading] = useState(false)
+  const [logoPreview, setLogoPreview] = useState(() => tenant?.logo_url || null)
   const [qrUploading, setQrUploading] = useState(false)
   const [qrPreview, setQrPreview] = useState(() => tenant?.qr_code_url || null)
   const [qrLabel, setQrLabel] = useState(() => tenant?.qr_label || '')
   const [qrLabelSaving, setQrLabelSaving] = useState(false)
+  const logoRef = useRef()
   const qrRef = useRef()
 
   async function saveSystemName(e) {
@@ -52,6 +55,37 @@ export default function SystemSettingsAdmin() {
       }
       img.src = URL.createObjectURL(file)
     })
+  }
+
+  async function handleLogoUpload(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setLogoPreview(URL.createObjectURL(file))
+    setLogoUploading(true)
+    try {
+      const blob = await resizeImage(file, 512)
+      const path = `logos/logo-${tenant.slug}.png`
+      const { error: upErr } = await supabase.storage
+        .from('logos')
+        .upload(path, blob, { upsert: true, contentType: 'image/png' })
+      if (upErr) throw upErr
+      const { data: { publicUrl } } = supabase.storage.from('logos').getPublicUrl(path)
+      const { error: dbErr } = await supabase.rpc('update_municipality_logo', {
+        p_municipality_id: tenant.id,
+        p_logo_url: publicUrl,
+      })
+      if (dbErr) throw dbErr
+      setLogoPreview(publicUrl)
+      patchTenant({ logo_url: publicUrl })
+      setSavedSection('logo')
+      setTimeout(() => setSavedSection(null), 2500)
+    } catch (err) {
+      setLogoPreview(tenant?.logo_url || null)
+      alert('อัปโหลดโลโก้ไม่สำเร็จ: ' + err.message)
+    } finally {
+      setLogoUploading(false)
+      e.target.value = ''
+    }
   }
 
   async function handleQrUpload(e) {
@@ -149,6 +183,47 @@ export default function SystemSettingsAdmin() {
             {savedSection === 'name' ? 'บันทึกสำเร็จ' : 'บันทึก'}
           </button>
         </form>
+      </div>
+
+      {/* ── โลโก้หน่วยงาน ── */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <h2 className="text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
+          <Building2 size={15} /> โลโก้หน่วยงาน
+        </h2>
+        <p className="text-xs text-gray-400 mb-5 leading-relaxed">
+          แสดงในแอปและ link preview เมื่อแชร์ลิ้งก์ใน LINE / WhatsApp · แนะนำ PNG สี่เหลี่ยม ขนาด 512×512px
+        </p>
+        <div className="flex items-center gap-5">
+          <div className="shrink-0">
+            <div className="w-24 h-24 rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden">
+              {logoPreview
+                ? <img src={logoPreview} alt="โลโก้" className="w-full h-full object-contain p-1" />
+                : <div className="flex flex-col items-center gap-1 text-gray-300">
+                    <ImageIcon size={24} />
+                    <span className="text-[10px]">ยังไม่มีโลโก้</span>
+                  </div>
+              }
+            </div>
+            {savedSection === 'logo' && (
+              <p className="flex items-center gap-1 text-xs text-emerald-600 mt-2 justify-center">
+                <CheckCircle2 size={12} /> บันทึกสำเร็จ
+              </p>
+            )}
+          </div>
+          <div className="flex-1">
+            <p className="text-xs text-gray-500 mb-3 leading-relaxed">
+              โลโก้จะปรากฏใน link preview และ PWA icon<br />
+              <span className="text-gray-400">รองรับ PNG · JPG · WebP</span>
+            </p>
+            <input ref={logoRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleLogoUpload} />
+            <button onClick={() => logoRef.current?.click()} disabled={logoUploading}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-all"
+              style={{ backgroundColor: 'var(--color-primary)' }}>
+              {logoUploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+              {logoUploading ? 'กำลังอัปโหลด...' : 'อัปโหลดโลโก้'}
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* ── QR Code ── */}
