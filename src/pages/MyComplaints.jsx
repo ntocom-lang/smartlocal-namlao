@@ -19,14 +19,15 @@ const STATUS = {
   rejected:    { label: 'ปฏิเสธ',         bg: '#fee2e2', text: '#991b1b' },
   // backward compat
   pending:     { label: 'คำร้องใหม่',      bg: '#fef3c7', text: '#92400e' },
-  received:    { label: 'กำลังดำเนินการ', bg: '#ede9fe', text: '#5b21b6' },
+  received:    { label: 'รับเรื่องแล้ว',   bg: '#e0f2fe', text: '#0369a1' },
   completed:   { label: 'ดำเนินการแล้ว',  bg: '#dbeafe', text: '#1e40af' },
 }
 
-const STATUS_FLOW = ['new', 'in_progress', 'done', 'closed']
+const STATUS_FLOW = ['new', 'received', 'in_progress', 'done', 'closed']
 const STATUS_FLOW_LABEL = {
   new:         { label: 'คำร้องใหม่',      desc: 'คำร้องของคุณถูกส่งเข้าระบบแล้ว' },
-  in_progress: { label: 'กำลังดำเนินการ', desc: 'เจ้าหน้าที่รับเรื่องและลงพื้นที่แล้ว' },
+  received:    { label: 'รับเรื่องแล้ว',   desc: 'เจ้าหน้าที่รับเรื่องแล้ว' },
+  in_progress: { label: 'กำลังดำเนินการ', desc: 'เจ้าหน้าที่ลงพื้นที่ดำเนินการ' },
   done:        { label: 'ดำเนินการแล้ว',  desc: 'เจ้าหน้าที่ดำเนินการเสร็จแล้ว' },
   closed:      { label: 'ปิดเรื่องแล้ว',  desc: 'ปิดเรื่องและแจ้งผลประชาชนแล้ว' },
 }
@@ -87,7 +88,7 @@ function StatusBadge({ status }) {
   )
 }
 
-const STATUS_COMPAT = { pending: 'new', received: 'in_progress', completed: 'done' }
+const STATUS_COMPAT = { pending: 'new', completed: 'done' }
 
 function StatusStepper({ status }) {
   const normalized = STATUS_COMPAT[status] ?? status
