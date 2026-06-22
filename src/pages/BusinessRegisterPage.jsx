@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { compressImage } from '../lib/imageUtils'
 import MapPicker from '../components/MapPicker'
+import SatisfactionModal from '../components/SatisfactionModal'
 
 const BUSINESS_TYPES = [
   { value: 'shop',    label: '🛍️  ร้านค้าทั่วไป / ร้านสะดวกซื้อ' },
@@ -17,6 +18,7 @@ const BUSINESS_TYPES = [
 ]
 
 function SuccessScreen({ onBack }) {
+  const [showSat, setShowSat] = useState(true)
   return (
     <div className="flex flex-col items-center justify-center min-h-[65vh] px-6 text-center">
       <div className="w-20 h-20 rounded-full bg-amber-50 flex items-center justify-center mb-5">
@@ -33,6 +35,7 @@ function SuccessScreen({ onBack }) {
         style={{ backgroundColor: '#f59e0b' }}>
         กลับหน้าหลัก
       </button>
+      {showSat && <SatisfactionModal onClose={() => setShowSat(false)} />}
     </div>
   )
 }

@@ -163,10 +163,11 @@
     <p>คู่มือการใช้งานแผงควบคุมสำหรับผู้ดูแลระบบและเจ้าหน้าที่</p>
     <div class="cover-divider"></div>
     <div class="cover-steps">
-      <div class="cover-step"><div class="cover-step-num">1</div>จัดการคำร้อง</div>
-      <div class="cover-step"><div class="cover-step-num">2</div>ปฏิทินกิจกรรม</div>
-      <div class="cover-step"><div class="cover-step-num">3</div>จัดการผู้ใช้</div>
-      <div class="cover-step"><div class="cover-step-num">4</div>รายงานและตั้งค่า</div>
+      <div class="cover-step"><div class="cover-step-num">1</div>จัดการคำร้อง 5 ขั้น</div>
+      <div class="cover-step"><div class="cover-step-num">2</div>ตรวจสอบผู้แจ้ง</div>
+      <div class="cover-step"><div class="cover-step-num">3</div>ปฏิทินกิจกรรม</div>
+      <div class="cover-step"><div class="cover-step-num">4</div>จัดการผู้ใช้</div>
+      <div class="cover-step"><div class="cover-step-num">5</div>รายงาน+พึงพอใจ</div>
     </div>
     <div class="cover-footer">SmartLocal E-Service · ระบบบริการออนไลน์สำหรับองค์กรปกครองส่วนท้องถิ่น</div>
   </div>
@@ -189,12 +190,12 @@
       </a>
       <a class="toc-item" href="#complaints">
         <div class="toc-num">2</div>
-        <span>การจัดการคำร้อง — รับเรื่อง เปลี่ยนสถานะ มอบหมาย</span>
+        <span>การจัดการคำร้อง — 5 ขั้นตอน ตรวจผู้แจ้ง แนบรูป มอบหมาย</span>
         <div class="toc-dots"></div><span class="toc-page">→</span>
       </a>
       <a class="toc-item" href="#events">
         <div class="toc-num">3</div>
-        <span>ปฏิทินกิจกรรม — เพิ่ม แก้ไข และตั้งค่า "แสดงให้"</span>
+        <span>ปฏิทินกิจกรรม — เพิ่ม แก้ไข ผู้เพิ่ม และตั้งค่า "แสดงให้"</span>
         <div class="toc-dots"></div><span class="toc-page">→</span>
       </a>
       <a class="toc-item" href="#users">
@@ -351,20 +352,32 @@
           <li data-n="4">กดที่การ์ดคำร้องเพื่อเปิดและดำเนินการ</li>
         </ul>
 
-        <div class="step-num" style="margin-top:16px;"><div class="step-num-circle">2</div>เปลี่ยนสถานะคำร้อง</div>
-        <h3>อัปเดตความคืบหน้า</h3>
+        <div class="step-num" style="margin-top:16px;"><div class="step-num-circle">2</div>เปลี่ยนสถานะคำร้อง (5 ขั้นตอน)</div>
+        <h3>Flow การดำเนินการ</h3>
+        <div class="status-flow" style="margin:8px 0 10px;flex-wrap:wrap;gap:4px;">
+          <div class="status-chip" style="background:#fef3c7;color:#92400e;font-size:11px;padding:4px 10px;">คำร้องใหม่</div>
+          <div class="status-arrow" style="font-size:14px;">→</div>
+          <div class="status-chip" style="background:#e0f2fe;color:#0369a1;font-size:11px;padding:4px 10px;">รับเรื่องแล้ว</div>
+          <div class="status-arrow" style="font-size:14px;">→</div>
+          <div class="status-chip" style="background:#ede9fe;color:#5b21b6;font-size:11px;padding:4px 10px;">กำลังดำเนินการ</div>
+          <div class="status-arrow" style="font-size:14px;">→</div>
+          <div class="status-chip" style="background:#dbeafe;color:#1e40af;font-size:11px;padding:4px 10px;">ดำเนินการแล้ว</div>
+          <div class="status-arrow" style="font-size:14px;">→</div>
+          <div class="status-chip" style="background:#d1fae5;color:#065f46;font-size:11px;padding:4px 10px;">ปิดเรื่องแล้ว</div>
+        </div>
         <table class="info-table" style="margin-bottom:10px;">
-          <thead><tr><th>สถานะ</th><th>ความหมาย</th></tr></thead>
+          <thead><tr><th>สถานะ</th><th>ปุ่มดำเนินการ</th><th>ความหมาย</th></tr></thead>
           <tbody>
-            <tr><td><span class="badge badge-yellow">รอดำเนินการ</span></td><td>คำร้องใหม่ รอเจ้าหน้าที่รับเรื่อง</td></tr>
-            <tr><td><span class="badge badge-blue">รับเรื่องแล้ว</span></td><td>เจ้าหน้าที่รับและตรวจสอบแล้ว</td></tr>
-            <tr><td><span class="badge badge-purple">กำลังดำเนินการ</span></td><td>อยู่ระหว่างแก้ไข</td></tr>
-            <tr><td><span class="badge badge-green">เสร็จสิ้น</span></td><td>แก้ไขเสร็จสิ้น แนบรูปผลงานได้</td></tr>
-            <tr><td><span class="badge badge-red">ปฏิเสธ</span></td><td>ไม่อยู่ในความรับผิดชอบหรือข้อมูลไม่ครบ</td></tr>
+            <tr><td><span class="badge badge-yellow">คำร้องใหม่</span></td><td><span style="background:#0ea5e9;color:#fff;padding:1px 7px;border-radius:6px;font-size:11px;">รับเรื่อง</span></td><td>คำร้องใหม่ รอรับเรื่อง</td></tr>
+            <tr><td><span class="badge" style="background:#e0f2fe;color:#0369a1;">รับเรื่องแล้ว</span></td><td><span style="background:#8b5cf6;color:#fff;padding:1px 7px;border-radius:6px;font-size:11px;">เริ่มดำเนินการ</span></td><td>รับแล้ว ตรวจสอบ+มอบหมายงาน</td></tr>
+            <tr><td><span class="badge badge-purple">กำลังดำเนินการ</span></td><td><span style="background:#3b82f6;color:#fff;padding:1px 7px;border-radius:6px;font-size:11px;">ดำเนินการแล้ว+รูป</span></td><td>อยู่ระหว่างแก้ไข</td></tr>
+            <tr><td><span class="badge badge-blue">ดำเนินการแล้ว</span></td><td><span style="background:#10b981;color:#fff;padding:1px 7px;border-radius:6px;font-size:11px;">ปิดเรื่อง</span></td><td>แก้ไขเสร็จแล้ว รอปิด</td></tr>
+            <tr><td><span class="badge badge-green">ปิดเรื่องแล้ว</span></td><td>—</td><td>เสร็จสมบูรณ์ ปิดแล้ว</td></tr>
+            <tr><td><span class="badge badge-red">ปฏิเสธ</span></td><td>—</td><td>ไม่อยู่ในความรับผิดชอบหรือข้อมูลไม่ครบ</td></tr>
           </tbody>
         </table>
         <div class="tips">
-          💡 เมื่อเปลี่ยนสถานะเป็น <strong>"เสร็จสิ้น"</strong> สามารถแนบ <strong>รูปภาพผลการดำเนินงาน</strong> เพื่อแสดงให้ประชาชนเห็นได้
+          💡 เมื่อกด <strong>"ดำเนินการแล้ว"</strong> ระบบจะให้แนบ <strong>รูปภาพผลงาน</strong> ก่อนยืนยัน เพื่อให้ประชาชนเห็นผลงานจริง (ไม่บังคับแต่แนะนำ)
         </div>
       </div>
       <div class="phone-col">
@@ -439,13 +452,39 @@
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
       <div>
-        <div class="step-num"><div class="step-num-circle">3</div>มอบหมายงาน</div>
+        <div class="step-num"><div class="step-num-circle">3</div>ดูข้อมูลผู้แจ้ง (ReporterCard)</div>
+        <h3>ตรวจสอบตัวตนผู้แจ้งก่อนรับเรื่อง</h3>
+        <p class="step-desc">เปิดรายละเอียดคำร้อง → กด <strong>"ข้อมูลผู้แจ้ง"</strong> เพื่อขยายดูข้อมูลบัญชี รูปโปรไฟล์ เบอร์โทร อีเมล และประวัติการลงทะเบียน</p>
+        <ul class="steps-list">
+          <li data-n="1">กด <strong>"ข้อมูลผู้แจ้ง"</strong> ในหน้ารายละเอียดคำร้อง</li>
+          <li data-n="2">ดูชื่อ เบอร์ อีเมล และวันที่สมัคร</li>
+          <li data-n="3">กด <strong>รูปโปรไฟล์</strong> เพื่อขยายดูภาพขนาดใหญ่</li>
+        </ul>
+        <div class="tips">
+          💡 ผู้แจ้งที่ไม่ได้ล็อกอินจะแสดงเฉพาะชื่อและเบอร์ที่กรอกในฟอร์ม
+        </div>
+      </div>
+      <div>
+        <div class="step-num"><div class="step-num-circle">4</div>มอบหมายงาน</div>
         <h3>ส่งงานให้ช่าง/เจ้าหน้าที่</h3>
         <p class="step-desc">เปิดคำร้อง → กด <strong>"มอบหมายงาน"</strong> → เลือกชื่อเจ้าหน้าที่ → บันทึก</p>
         <p style="font-size:13px;color:var(--gray-700);">เจ้าหน้าที่ที่ได้รับมอบหมายจะเห็นงานในแท็บ <strong>"งานของฉัน"</strong> และรับการแจ้งเตือน</p>
       </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;">
       <div>
-        <div class="step-num"><div class="step-num-circle">4</div>ตอบกลับ/หมายเหตุ</div>
+        <div class="step-num"><div class="step-num-circle">5</div>แนบรูปผลงาน</div>
+        <h3>อัปโหลดรูปเมื่อกด "ดำเนินการแล้ว"</h3>
+        <p class="step-desc">เมื่อกดปุ่ม <strong>"ดำเนินการแล้ว"</strong> จากตารางหรือ modal คำร้อง ระบบจะให้เลือกรูปภาพผลงานก่อน กดยืนยันพร้อมกัน</p>
+        <ul class="steps-list">
+          <li data-n="1">กดปุ่ม <strong>"ดำเนินการแล้ว"</strong></li>
+          <li data-n="2">เลือกรูปภาพผลงาน (สูงสุด 5 รูป ไม่บังคับ)</li>
+          <li data-n="3">กด <strong>"ยืนยัน"</strong> สถานะเปลี่ยน + รูปบันทึก</li>
+        </ul>
+      </div>
+      <div>
+        <div class="step-num"><div class="step-num-circle">6</div>ตอบกลับ/หมายเหตุ</div>
         <h3>ส่งข้อความถึงผู้ร้อง</h3>
         <p class="step-desc">ในหน้ารายละเอียดคำร้อง → กรอกช่อง <strong>"หมายเหตุ/ผลการดำเนินการ"</strong> → บันทึก</p>
         <p style="font-size:13px;color:var(--gray-700);">ข้อความจะแสดงในหน้าติดตามสถานะของประชาชน</p>
@@ -577,6 +616,10 @@
       <div>
         <div class="step-num"><div class="step-num-circle">3</div>ลบกิจกรรม</div>
         <p style="font-size:13px;color:var(--gray-700);">กดปุ่ม <span style="background:#fee2e2;color:#991b1b;padding:1px 8px;border-radius:6px;font-size:12px;">🗑️ ลบ</span> → ยืนยัน การลบไม่สามารถกู้คืนได้ ไฟล์แนบถูกลบออกจาก Storage ด้วย</p>
+      </div>
+      <div style="grid-column:span 2;">
+        <div class="step-num"><div class="step-num-circle">4</div>ดูว่าใครเป็นคนเพิ่มกิจกรรม</div>
+        <p style="font-size:13px;color:var(--gray-700);">บนมุมมอง <strong>Desktop (PC)</strong> ตารางกิจกรรมมีคอลัมน์ <strong>"ผู้เพิ่ม"</strong> แสดงชื่อเจ้าหน้าที่ที่เป็นผู้สร้างกิจกรรมนั้น ช่วยติดตามความรับผิดชอบได้ชัดเจน</p>
       </div>
     </div>
   </div>
@@ -758,6 +801,30 @@
           </div>
           <div class="phone-caption">หน้ารายงานสถิติ</div>
         </div>
+      </div>
+    </div>
+
+    <div class="section-divider">
+      <div class="section-divider-line"></div>
+      <div class="section-divider-text">ผลประเมินความพึงพอใจ</div>
+      <div class="section-divider-line"></div>
+    </div>
+
+    <div style="background:#fffbeb;border-radius:14px;padding:16px 20px;margin-bottom:20px;">
+      <p style="font-size:13.5px;color:#92400e;font-weight:700;margin-bottom:8px;">⭐ ดูผลประเมินความพึงพอใจของประชาชน</p>
+      <p style="font-size:13px;color:#78350f;line-height:1.7;margin-bottom:10px;">ระบบเก็บคะแนนความพึงพอใจ (1–5 ดาว) ที่ประชาชนให้หลังส่งคำร้อง ขอเอกสาร หรือลงทะเบียนร้านค้า ดูได้จากหน้า <strong>รายงาน → ประเมินความพึงพอใจ</strong></p>
+      <table class="info-table">
+        <thead><tr><th>คะแนน</th><th>หมายความว่า</th><th>emoji</th></tr></thead>
+        <tbody>
+          <tr><td><strong>5</strong></td><td>ยอดเยี่ยม</td><td>😄</td></tr>
+          <tr><td><strong>4</strong></td><td>ดี</td><td>😊</td></tr>
+          <tr><td><strong>3</strong></td><td>พอสมควร</td><td>😐</td></tr>
+          <tr><td><strong>2</strong></td><td>แย่</td><td>😢</td></tr>
+          <tr><td><strong>1</strong></td><td>แย่มาก</td><td>😡</td></tr>
+        </tbody>
+      </table>
+      <div class="tips" style="margin-top:10px;">
+        💡 ประชาชนสามารถประเมินได้ทั้งหมด 3 จุด: หลังส่งคำร้อง / ขอเอกสาร / ลงทะเบียนร้านค้า และประเมินซ้ำได้จากเมนูอื่นๆ → ประเมินความพึงพอใจ
       </div>
     </div>
 

@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { compressImage } from '../lib/imageUtils'
+import SatisfactionModal from '../components/SatisfactionModal'
 
 const DOC_TYPES = [
   {
@@ -74,6 +75,7 @@ export default function CitizenDocRequest() {
   const [saving, setSaving]       = useState(false)
   const [done, setDone]           = useState(null)
   const [copied, setCopied]       = useState(false)
+  const [showSat, setShowSat]     = useState(false)
   // ── payment step ────────────────────────────────────────────────────────────
   const [showPayment, setShowPayment] = useState(false)  // true = กำลังแสดงหน้าชำระ
   const [slipFile, setSlipFile]       = useState(null)
@@ -166,6 +168,7 @@ export default function CitizenDocRequest() {
         `📄 <b>คำขอเอกสารใหม่</b>\nประเภท: ${selected.label}\nผู้ขอ: ${form.requester_name.trim()}\nเบอร์: ${form.requester_phone?.trim() || '-'}${feeAmount > 0 ? `\n💰 ค่าธรรมเนียม: ${feeAmount} บาท${slipUrl ? ' (แนบสลิปแล้ว)' : ' (รอชำระ)'}` : ''}`
       )
       setDone({ ref: data.id.slice(0, 8).toUpperCase() })
+      setShowSat(true)
     }
   }
 
@@ -402,6 +405,7 @@ export default function CitizenDocRequest() {
             กลับหน้าหลัก
           </button>
         </div>
+        {showSat && <SatisfactionModal onClose={() => setShowSat(false)} />}
       </div>
     )
   }

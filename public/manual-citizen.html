@@ -998,7 +998,8 @@
       <div class="cover-step"><div class="cover-step-num">2</div>เลือกประเภทคำร้อง</div>
       <div class="cover-step"><div class="cover-step-num">3</div>กรอกและส่งคำร้อง</div>
       <div class="cover-step"><div class="cover-step-num">4</div>ติดตามสถานะ</div>
-      <div class="cover-step"><div class="cover-step-num">5</div>ดูปฏิทินกิจกรรม</div>
+      <div class="cover-step"><div class="cover-step-num">5</div>ประเมินพึงพอใจ</div>
+      <div class="cover-step"><div class="cover-step-num">6</div>บริการอื่นๆ</div>
     </div>
     <div class="cover-footer">ระบบ E-Service สำหรับองค์กรปกครองส่วนท้องถิ่น · SmartLocal</div>
   </div>
@@ -1059,6 +1060,12 @@
         <div class="toc-dots"></div>
         <span class="toc-page">→</span>
       </a>
+      <a class="toc-item" href="#faq">
+        <div class="toc-num" style="background:linear-gradient(135deg,#d97706,#f59e0b);">⭐</div>
+        <span>ประเมินความพึงพอใจ และบริการอื่นๆ</span>
+        <div class="toc-dots"></div>
+        <span class="toc-page">→</span>
+      </a>
       <a class="toc-item" href="#faq" style="border-bottom:none;">
         <div class="toc-num" style="background:linear-gradient(135deg,#d97706,#f59e0b);">❓</div>
         <span>คำถามที่พบบ่อย (FAQ)</span>
@@ -1084,27 +1091,31 @@
       </div>
     </div>
 
-    <h3 style="font-size: 15px; margin-bottom: 10px;">สถานะการดำเนินการคำร้อง</h3>
+    <h3 style="font-size: 15px; margin-bottom: 10px;">สถานะการดำเนินการคำร้อง (5 ขั้นตอน)</h3>
     <table class="info-table">
       <thead>
         <tr><th>สถานะ</th><th>ความหมาย</th></tr>
       </thead>
       <tbody>
         <tr>
-          <td><span class="badge badge-yellow">รอดำเนินการ</span></td>
+          <td><span class="badge badge-yellow">คำร้องใหม่</span></td>
           <td>คำร้องถูกส่งเข้าระบบแล้ว รอเจ้าหน้าที่รับเรื่อง</td>
         </tr>
         <tr>
-          <td><span class="badge badge-blue">รับเรื่องแล้ว</span></td>
-          <td>เจ้าหน้าที่รับเรื่องและตรวจสอบคำร้องแล้ว</td>
+          <td><span class="badge" style="background:#e0f2fe;color:#0369a1;">รับเรื่องแล้ว</span></td>
+          <td>เจ้าหน้าที่รับเรื่องและตรวจสอบคำร้องแล้ว กำลังเตรียมมอบหมาย</td>
         </tr>
         <tr>
           <td><span class="badge badge-purple">กำลังดำเนินการ</span></td>
           <td>อยู่ระหว่างการดำเนินการแก้ไขปัญหา</td>
         </tr>
         <tr>
-          <td><span class="badge badge-green">เสร็จสิ้น</span></td>
-          <td>ดำเนินการแก้ไขปัญหาเสร็จสิ้นแล้ว</td>
+          <td><span class="badge badge-blue">ดำเนินการแล้ว</span></td>
+          <td>แก้ไขปัญหาแล้ว อาจมีรูปผลงานให้ดู รอผู้ดูแลปิดเรื่อง</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-green">ปิดเรื่องแล้ว</span></td>
+          <td>เรื่องเสร็จสิ้นสมบูรณ์ ปิดคำร้องแล้ว</td>
         </tr>
         <tr>
           <td><span class="badge badge-red">ปฏิเสธ</span></td>
@@ -1704,7 +1715,7 @@
                   <div class="complaint-info">
                     <div class="complaint-title">ไฟฟ้าส่องสว่าง</div>
                     <div class="complaint-sub">ไฟถนนดับ 3 ดวงติดกัน</div>
-                    <div style="margin-bottom:3px;"><span class="badge badge-green">เสร็จสิ้น</span></div>
+                    <div style="margin-bottom:3px;"><span class="badge badge-green">ปิดเรื่องแล้ว</span></div>
                     <div class="complaint-num">2504012</div>
                   </div>
                   <div class="complaint-arrow">›</div>
@@ -1714,7 +1725,7 @@
                   <div class="complaint-info">
                     <div class="complaint-title">ขยะ/ความสะอาด</div>
                     <div class="complaint-sub">ขยะล้นถังไม่มีการเก็บ</div>
-                    <div style="margin-bottom:3px;"><span class="badge badge-yellow">รอดำเนินการ</span></div>
+                    <div style="margin-bottom:3px;"><span class="badge badge-yellow">คำร้องใหม่</span></div>
                     <div class="complaint-num">2505003</div>
                   </div>
                   <div class="complaint-arrow">›</div>
@@ -1797,10 +1808,21 @@
                 <div class="step-row">
                   <div class="step-dot-col">
                     <div class="step-dot"></div>
+                    <div class="step-line"></div>
+                  </div>
+                  <div class="step-text" style="margin-left:8px;padding-bottom:12px;">
+                    <p style="color:#d1d5db;">ดำเนินการแล้ว</p>
+                    <small style="color:#e5e7eb;">แก้ไขเสร็จ มีรูปผลงาน</small>
+                  </div>
+                </div>
+                <!-- Step 5 pending -->
+                <div class="step-row">
+                  <div class="step-dot-col">
+                    <div class="step-dot"></div>
                   </div>
                   <div class="step-text" style="margin-left:8px;">
-                    <p style="color:#d1d5db;">เสร็จสิ้น</p>
-                    <small style="color:#e5e7eb;">ดำเนินการเสร็จสิ้น</small>
+                    <p style="color:#d1d5db;">ปิดเรื่องแล้ว</p>
+                    <small style="color:#e5e7eb;">เรื่องเสร็จสมบูรณ์</small>
                   </div>
                 </div>
               </div>
@@ -1814,16 +1836,139 @@
         <h3>ติดตามความคืบหน้าแบบ step-by-step</h3>
         <p class="step-desc">เมื่อกดเข้าการ์ดคำร้อง จะพบ <strong>แถบความคืบหน้า (Stepper)</strong> แสดงสถานะปัจจุบันและขั้นตอนต่อไป พร้อมข้อมูลผลการดำเนินงาน</p>
         <ul class="steps-list">
-          <li data-n="1">ดู <strong>แถบความคืบหน้า</strong> 4 ขั้นตอน</li>
+          <li data-n="1">ดู <strong>แถบความคืบหน้า 5 ขั้นตอน</strong>: คำร้องใหม่ → รับเรื่อง → กำลังดำเนินการ → ดำเนินการแล้ว → ปิดเรื่อง</li>
           <li data-n="2">ขั้นตอนที่เสร็จแล้วจะแสดง <strong>เครื่องหมาย ✓ สีน้ำเงิน</strong></li>
           <li data-n="3">ขั้นตอนปัจจุบันจะมีป้าย <strong>"ปัจจุบัน"</strong> กำกับ</li>
-          <li data-n="4">เมื่องานเสร็จสิ้น อาจมี <strong>รูปภาพผลการดำเนินงาน</strong> ให้ดู</li>
+          <li data-n="4">เมื่อสถานะเป็น "ดำเนินการแล้ว" อาจมี <strong>รูปภาพผลงาน</strong> ให้ดู</li>
           <li data-n="5">หากมีหมายเหตุจากเจ้าหน้าที่ จะแสดงในส่วน <strong>"บันทึกจากเจ้าหน้าที่"</strong></li>
         </ul>
         <div class="note-box">
           📌 <strong>หากคำร้องถูกปฏิเสธ:</strong> ระบบจะแสดงเหตุผลการปฏิเสธ ท่านสามารถยื่นคำร้องใหม่โดยแก้ไขข้อมูลให้ครบถ้วน
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ PAGE 9.5 — ประเมินพึงพอใจ + บริการอื่นๆ ═══════════════ -->
+<div class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">⭐</div>
+      <div>
+        <h2>ประเมินความพึงพอใจ</h2>
+        <p>ระบบให้คะแนนบริการอัตโนมัติ หลังทำกิจกรรมสำเร็จ</p>
+      </div>
+    </div>
+
+    <div class="step-section">
+      <div>
+        <div class="step-num"><div class="step-num-circle">1</div>ประเมินอัตโนมัติ</div>
+        <h3>หน้าต่างประเมินจะขึ้นเองหลังทำกิจกรรมสำเร็จ</h3>
+        <p class="step-desc">หลังจากส่งคำร้อง / ขอเอกสาร / ลงทะเบียนร้านค้า เสร็จสมบูรณ์ ระบบจะแสดงหน้าต่างประเมินความพึงพอใจขึ้นมาอัตโนมัติภายใน 1 วินาที โดยไม่ต้องกดไปเองที่เมนูอื่น</p>
+        <div class="checklist">
+          <div class="check-item"><div class="check-box">1</div><span>เลือก <strong>ระดับความพึงพอใจ</strong> 5 ระดับ (😄 😊 😐 😢 😡)</span></div>
+          <div class="check-item"><div class="check-box">2</div><span><strong>ความคิดเห็นเพิ่มเติม</strong> — พิมพ์ได้ ไม่บังคับ จะปรากฏหลังเลือกระดับ</span></div>
+          <div class="check-item"><div class="check-box">3</div><span>กด <strong>"ส่งคะแนน"</strong> — ระบบแสดง "ขอบคุณ" แล้วปิดอัตโนมัติ</span></div>
+          <div class="check-item"><div class="check-box">✕</div><span>กด <strong>"ข้าม"</strong> หรือแตะพื้นหลังเพื่อปิดโดยไม่ประเมินก็ได้</span></div>
+        </div>
+        <div class="tips">
+          💡 ความคิดเห็นของท่านจะช่วยให้หน่วยงานพัฒนาบริการให้ดียิ่งขึ้น ใช้เวลาไม่ถึง 10 วินาที
+        </div>
+        <div class="note-box" style="margin-top:10px;">
+          📋 หากต้องการประเมินในภายหลัง ไปที่ <strong>เมนูอื่นๆ → ประเมินความพึงพอใจ</strong> ได้ตลอดเวลา
+        </div>
+      </div>
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen" style="min-height:380px;background:#f0fdf4;position:relative;">
+              <!-- Success screen behind -->
+              <div style="background:linear-gradient(135deg,#1451a8,#1976d2);padding:8px 12px;">
+                <div style="color:#fff;font-size:9px;font-weight:700;">ส่งคำร้องสำเร็จ!</div>
+              </div>
+              <div style="padding:12px;text-align:center;opacity:0.4;">
+                <div style="font-size:24px;margin-bottom:6px;">✅</div>
+                <div style="font-size:10px;font-weight:700;color:#065f46;">เลขที่ 2505001</div>
+              </div>
+              <!-- Satisfaction modal overlay -->
+              <div style="position:absolute;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:flex-end;padding:8px;">
+                <div style="background:#fff;border-radius:20px;width:100%;overflow:hidden;">
+                  <div style="padding:10px 12px 6px;border-bottom:1px solid #f3f4f6;display:flex;justify-content:space-between;align-items:center;">
+                    <div>
+                      <div style="font-size:10px;font-weight:700;color:#1f2937;">ประเมินความพึงพอใจ</div>
+                      <div style="font-size:8px;color:#9ca3af;">กรุณาให้คะแนนการให้บริการ</div>
+                    </div>
+                    <div style="width:18px;height:18px;background:#f3f4f6;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;">✕</div>
+                  </div>
+                  <div style="padding:8px 10px;">
+                    <div style="background:#f0fdf4;border:2px solid #86efac;border-radius:10px;padding:6px 8px;display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+                      <span style="font-size:18px;">😄</span>
+                      <span style="font-size:10px;font-weight:700;color:#22c55e;">ยอดเยี่ยม</span>
+                      <span style="margin-left:auto;font-size:12px;">✓</span>
+                    </div>
+                    <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:6px 8px;display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+                      <span style="font-size:18px;">😊</span>
+                      <span style="font-size:10px;color:#374151;">ดี</span>
+                    </div>
+                    <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:6px 8px;display:flex;align-items:center;gap:6px;">
+                      <span style="font-size:18px;">😐</span>
+                      <span style="font-size:10px;color:#374151;">พอสมควร</span>
+                    </div>
+                  </div>
+                  <div style="display:flex;gap:6px;padding:6px 10px 10px;">
+                    <div style="flex:1;background:#1c7cd6;border-radius:10px;padding:7px;text-align:center;font-size:9px;font-weight:700;color:#fff;">ส่งคะแนน</div>
+                    <div style="background:#f3f4f6;border-radius:10px;padding:7px 10px;font-size:9px;color:#6b7280;">ข้าม</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-caption">หน้าต่างประเมินอัตโนมัติ</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-divider">
+      <div class="section-divider-line"></div>
+      <div class="section-divider-text">บริการอื่นๆ ที่เข้าถึงได้จากระบบ</div>
+      <div class="section-divider-line"></div>
+    </div>
+
+    <p class="step-desc" style="margin-bottom:14px;">เมนู <strong>"เมนูอื่นๆ"</strong> ที่แถบด้านล่าง รวบรวมบริการออนไลน์ทั้งหมดของหน่วยงาน ท่านสามารถกดลิ้งก์เพื่อเข้าถึงหน้าต่างๆ ได้โดยตรง</p>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <div style="background:#f0fdf4;border-radius:12px;border:1px solid #a7f3d0;padding:12px;">
+        <div style="font-weight:800;font-size:13px;color:#065f46;margin-bottom:4px;">📅 ปฏิทินกิจกรรม</div>
+        <div style="font-size:12px;color:#047857;line-height:1.6;">กิจกรรมและงานประเพณีของท้องถิ่น เข้าถึงได้จากหน้าหลัก, เมนูบน (PC), และเมนูอื่นๆ</div>
+      </div>
+      <div style="background:#fff7ed;border-radius:12px;border:1px solid #fed7aa;padding:12px;">
+        <div style="font-weight:800;font-size:13px;color:#9a3412;margin-bottom:4px;">🧳 แหล่งท่องเที่ยว</div>
+        <div style="font-size:12px;color:#c2410c;line-height:1.6;">สถานที่ท่องเที่ยว ร้านอาหาร ที่พัก ในพื้นที่ เข้าได้จากเมนูอื่นๆ</div>
+      </div>
+      <div style="background:#fef2f2;border-radius:12px;border:1px solid #fca5a5;padding:12px;">
+        <div style="font-weight:800;font-size:13px;color:#991b1b;margin-bottom:4px;">🚨 เหตุฉุกเฉิน</div>
+        <div style="font-size:12px;color:#dc2626;line-height:1.6;">เบอร์ฉุกเฉิน แจ้งเหตุด่วน ในพื้นที่ เข้าได้จากเมนูอื่นๆ → เหตุฉุกเฉิน</div>
+      </div>
+      <div style="background:#eff6ff;border-radius:12px;border:1px solid #bfdbfe;padding:12px;">
+        <div style="font-weight:800;font-size:13px;color:#1e40af;margin-bottom:4px;">🌤️ สภาพอากาศ</div>
+        <div style="font-size:12px;color:#1d4ed8;line-height:1.6;">ข้อมูลสภาพอากาศและการพยากรณ์ในพื้นที่ เข้าได้จากเมนูอื่นๆ → สภาพอากาศ</div>
+      </div>
+      <div style="background:#f5f3ff;border-radius:12px;border:1px solid #ddd6fe;padding:12px;">
+        <div style="font-weight:800;font-size:13px;color:#5b21b6;margin-bottom:4px;">📄 ขอเอกสาร</div>
+        <div style="font-size:12px;color:#6d28d9;line-height:1.6;">ใบรับรองการอยู่อาศัย หนังสือรับรองบุคคล และอื่นๆ ยื่นออนไลน์ได้เลย</div>
+      </div>
+      <div style="background:#fffbeb;border-radius:12px;border:1px solid #fde68a;padding:12px;">
+        <div style="font-weight:800;font-size:13px;color:#92400e;margin-bottom:4px;">🛍️ ลงทะเบียนร้านค้า</div>
+        <div style="font-size:12px;color:#b45309;line-height:1.6;">แจ้งข้อมูลร้านค้า OTOP ที่พัก สถานที่ท่องเที่ยว ให้หน่วยงานอนุมัติ</div>
+      </div>
+    </div>
+
+    <div class="tips" style="margin-top:16px;">
+      <strong>📱 เข้าถึงได้ทั้ง มือถือ และ PC</strong><br>
+      บน PC: ลิ้งก์ทุกหน้าอยู่ในแถบเมนูด้านบน (Header) และ <strong>เมนูอื่นๆ</strong><br>
+      บนมือถือ: กด <strong>แถบเมนูด้านล่าง → เมนูอื่นๆ</strong> เพื่อดูรายการครบทุกบริการ
     </div>
   </div>
 </div>
