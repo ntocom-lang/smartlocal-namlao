@@ -5,6 +5,10 @@ import { useTenant } from './TenantContext'
 
 const SEEN_KEY = 'smartlocal_notif_read_ids'
 
+// track by `${id}_${status}` — each status change = new notification
+const notifKey = (item) => `${item.id}_${item.status}`
+const AUTO_READ = new Set(['closed', 'rejected'])
+
 const NotificationsCtx = createContext({
   unreadCount: 0,
   items: [],
@@ -71,22 +75,28 @@ export function NotificationsProvider({ children }) {
     return () => supabase.removeChannel(channel)
   }, [session?.user?.id, tenant?.id, fetchItems])
 
-  const tagged = items.map(n => ({ ...n, _unread: !readIds.has(n.id) }))
+  const tagged = items.map(n => ({
+    ...n,
+    _unread: !AUTO_READ.has(n.status) && !readIds.has(notifKey(n)),
+  }))
   const unreadCount = tagged.filter(n => n._unread).length
 
   function markRead(id) {
+    const item = items.find(n => n.id === id)
+    if (!item) return
+    const key = notifKey(item)
     setReadIds((prev) => {
       const next = new Set(prev)
-      next.add(id)
+      next.add(key)
       localStorage.setItem(SEEN_KEY, JSON.stringify([...next]))
       return next
     })
   }
 
   function markAllRead() {
-    const allIds = items.map(n => n.id)
-    localStorage.setItem(SEEN_KEY, JSON.stringify(allIds))
-    setReadIds(new Set(allIds))
+    const allKeys = items.map(notifKey)
+    localStorage.setItem(SEEN_KEY, JSON.stringify(allKeys))
+    setReadIds(new Set(allKeys))
   }
 
   function openPanel() {
