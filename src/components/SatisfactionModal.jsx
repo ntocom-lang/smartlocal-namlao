@@ -11,7 +11,7 @@ const RATINGS = [
   { value: 1, emoji: '😡', label: 'แย่มาก',    color: '#ef4444', bg: '#fef2f2', border: '#fca5a5' },
 ]
 
-export default function SatisfactionModal({ onClose, delayMs = 800 }) {
+export default function SatisfactionModal({ onClose, complaintId = null, delayMs = 800 }) {
   const { tenant } = useTenant()
   const [visible, setVisible] = useState(false)
   const [selected, setSelected] = useState(null)
@@ -32,6 +32,9 @@ export default function SatisfactionModal({ onClose, delayMs = 800 }) {
       rating: selected,
       comment: comment.trim() || null,
     })
+    if (complaintId) {
+      await supabase.from('complaints').update({ rating: selected }).eq('id', complaintId)
+    }
     setLoading(false)
     setDone(true)
     setTimeout(() => onClose?.(), 1800)

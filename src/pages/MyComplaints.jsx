@@ -469,6 +469,7 @@ export default function MyComplaints() {
   const [selected, setSelected] = useState(null)
   const [session, setSession] = useState(undefined)
   const [showSat, setShowSat] = useState(false)
+  const [satComplaintId, setSatComplaintId] = useState(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(10)
 
@@ -509,13 +510,14 @@ export default function MyComplaints() {
         const list = data ?? []
         setComplaints(list)
         if (openId) setSelected(list.find((c) => c.id === openId) ?? null)
-        const closedUnrated = list.find(c => c.status === 'closed' && c.rating == null)
+        const closedUnrated = list.find(c =>
+          c.status === 'closed' &&
+          c.rating == null &&
+          !localStorage.getItem(`sat_done_${c.id}`)
+        )
         if (closedUnrated) {
-          const key = `sat_shown_${closedUnrated.id}`
-          if (!sessionStorage.getItem(key)) {
-            sessionStorage.setItem(key, '1')
-            setShowSat(true)
-          }
+          setSatComplaintId(closedUnrated.id)
+          setShowSat(true)
         }
       } catch {}
       finally { setLoading(false) }
@@ -614,7 +616,15 @@ export default function MyComplaints() {
   // ── Logged-in: full list ───────────────────────────────────────────────────
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#eef2f7' }}>
-      {showSat && <SatisfactionModal onClose={() => setShowSat(false)} />}
+      {showSat && (
+        <SatisfactionModal
+          complaintId={satComplaintId}
+          onClose={() => {
+            if (satComplaintId) localStorage.setItem(`sat_done_${satComplaintId}`, '1')
+            setShowSat(false)
+          }}
+        />
+      )}
       {/* PC header */}
       <div className="hidden md:flex items-center justify-between px-8 py-4 bg-white border-b border-gray-200 shadow-sm">
         <div>
