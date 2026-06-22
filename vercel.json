@@ -1,6 +1,5 @@
 {
   "buildCommand": "npm run build",
-  "outputDirectory": "dist",
   "functions": {
     "api/ssr.js": {
       "includeFiles": "dist/_template.html"
