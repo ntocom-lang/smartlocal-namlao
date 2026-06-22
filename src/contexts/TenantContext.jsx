@@ -128,17 +128,22 @@ export function TenantProvider({ children }) {
     }
 
     async function fetchTenant() {
+      let timedOut = false
+      const timerId = setTimeout(() => {
+        timedOut = true
+        setError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่')
+        setLoading(false)
+      }, 12000)
+
       try {
-        const timeout = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('timeout')), 10000)
-        )
-        const query = supabase
+        const { data, error: dbError } = await supabase
           .from('municipalities')
           .select('id, slug, name, org_type, province, theme_color, logo_url, developer_name, website_url, facebook_url, line_oa_url, phone, address, latitude, longitude, system_name, system_subtitle, pwa_short_name, enabled_modules, telegram_group_id, promptpay_id, fee_schedule, qr_code_url, qr_label, bank_name, bank_account_no, bank_account_name')
           .eq('slug', slug)
           .single()
 
-        const { data, error: dbError } = await Promise.race([query, timeout])
+        clearTimeout(timerId)
+        if (timedOut) return
 
         if (dbError || !data) {
           setError(`ไม่พบหน่วยงานรหัส "${slug}" ในระบบ`)
@@ -155,13 +160,13 @@ export function TenantProvider({ children }) {
           localStorage.setItem('sl_slug', data.slug)
           localStorage.setItem('sl_tenant_name', data.name)
         } catch (_) {}
-      } catch (err) {
-        const msg = err?.message === 'timeout'
-          ? `ไม่สามารถเชื่อมต่อระบบได้ (timeout) กรุณาลองใหม่`
-          : `ไม่พบหน่วยงานรหัส "${slug}" ในระบบ`
-        setError(msg)
-      } finally {
         setLoading(false)
+      } catch (err) {
+        clearTimeout(timerId)
+        if (!timedOut) {
+          setError(`ไม่พบหน่วยงานรหัส "${slug}" ในระบบ`)
+          setLoading(false)
+        }
       }
     }
 
