@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import SatisfactionModal from '../components/SatisfactionModal'
 import {
   ClipboardList, Loader2, ChevronRight, X, MapPin,
   Phone, FileText, ArrowLeft, Check, XCircle, Navigation, Camera, AlignLeft, Star,
@@ -466,6 +467,7 @@ export default function MyComplaints() {
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
   const [session, setSession] = useState(undefined)
+  const [showSat, setShowSat] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(10)
 
@@ -506,6 +508,14 @@ export default function MyComplaints() {
         const list = data ?? []
         setComplaints(list)
         if (openId) setSelected(list.find((c) => c.id === openId) ?? null)
+        const closedUnrated = list.find(c => c.status === 'closed' && c.rating == null)
+        if (closedUnrated) {
+          const key = `sat_shown_${closedUnrated.id}`
+          if (!sessionStorage.getItem(key)) {
+            sessionStorage.setItem(key, '1')
+            setShowSat(true)
+          }
+        }
       } catch {}
       finally { setLoading(false) }
     }
@@ -603,6 +613,7 @@ export default function MyComplaints() {
   // ── Logged-in: full list ───────────────────────────────────────────────────
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#eef2f7' }}>
+      {showSat && <SatisfactionModal onClose={() => setShowSat(false)} />}
       {/* PC header */}
       <div className="hidden md:flex items-center justify-between px-8 py-4 bg-white border-b border-gray-200 shadow-sm">
         <div>

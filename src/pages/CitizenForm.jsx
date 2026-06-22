@@ -12,7 +12,7 @@ import { notifyTelegram } from '../lib/notifyTelegram'
 import { compressImage } from '../lib/imageUtils'
 import { useTenant } from '../contexts/TenantContext'
 import MapPicker from '../components/MapPicker'
-import SatisfactionModal from '../components/SatisfactionModal'
+
 
 const CATEGORY_ICON = {
   light:            Lightbulb,
@@ -66,7 +66,6 @@ const COMPRESS_MB  = 2
 const MAX_DIM      = 1920
 
 function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn }) {
-  const [showSat, setShowSat] = useState(true)
   return (
     <div className="flex flex-col items-center justify-center min-h-[70vh] px-6 text-center">
       <div className="w-20 h-20 rounded-full bg-green-50 flex items-center justify-center mb-5">
@@ -95,7 +94,6 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn }) 
           กลับหน้าหลัก
         </button>
       </div>
-      {showSat && <SatisfactionModal onClose={() => setShowSat(false)} />}
     </div>
   )
 }
