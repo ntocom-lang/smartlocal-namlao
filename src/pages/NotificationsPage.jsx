@@ -10,14 +10,16 @@ import { useNotifications } from '../contexts/NotificationsContext'
 const STATUS_INFO = {
   received:    { label: 'รับเรื่องแล้ว',   bg: '#dbeafe', color: '#1e40af', Icon: Clock },
   in_progress: { label: 'กำลังดำเนินการ', bg: '#ede9fe', color: '#5b21b6', Icon: RefreshCw },
-  completed:   { label: 'เสร็จสิ้น',      bg: '#d1fae5', color: '#065f46', Icon: CheckCircle2 },
+  done:        { label: 'ดำเนินการแล้ว',  bg: '#d1fae5', color: '#065f46', Icon: CheckCircle2 },
+  closed:      { label: 'ปิดเรื่องแล้ว',  bg: '#f1f5f9', color: '#475569', Icon: CheckCircle2 },
   rejected:    { label: 'ปฏิเสธ',         bg: '#fee2e2', color: '#991b1b', Icon: XCircle },
 }
 
 const STATUS_MSG = {
   received:    'เจ้าหน้าที่รับเรื่องของคุณแล้ว',
   in_progress: 'เจ้าหน้าที่อยู่ระหว่างดำเนินการ',
-  completed:   'ดำเนินการเสร็จสิ้นแล้ว 🎉',
+  done:        'เจ้าหน้าที่ดำเนินการเสร็จแล้ว 🎉',
+  closed:      'ปิดเรื่องและแจ้งผลเรียบร้อยแล้ว ✅',
   rejected:    'ขออภัย คำร้องของคุณถูกปฏิเสธ',
 }
 
