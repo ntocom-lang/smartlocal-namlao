@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTenant } from './TenantContext'
 
-const SEEN_KEY = 'smartlocal_notif_read_ids'
+const SEEN_KEY    = 'smartlocal_notif_read_ids'
+const CLEARED_KEY = 'smartlocal_notif_cleared_at'
 
 // track by `${id}_${status}` — each status change = new notification
 const notifKey = (item) => `${item.id}_${item.status}`
@@ -28,6 +29,9 @@ export function NotificationsProvider({ children }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
   const [session, setSession] = useState(null)
+  const [clearedAt, setClearedAt] = useState(
+    () => parseInt(localStorage.getItem(CLEARED_KEY) ?? '0')
+  )
   const [readIds, setReadIds] = useState(
     () => new Set(JSON.parse(localStorage.getItem(SEEN_KEY) ?? '[]'))
   )
@@ -77,7 +81,9 @@ export function NotificationsProvider({ children }) {
 
   const tagged = items.map(n => ({
     ...n,
-    _unread: !AUTO_READ.has(n.status) && !readIds.has(notifKey(n)),
+    _unread: !AUTO_READ.has(n.status)
+      && new Date(n.updated_at).getTime() > clearedAt
+      && !readIds.has(notifKey(n)),
   }))
   const unreadCount = tagged.filter(n => n._unread).length
 
@@ -94,6 +100,9 @@ export function NotificationsProvider({ children }) {
   }
 
   function markAllRead() {
+    const now = Date.now()
+    localStorage.setItem(CLEARED_KEY, String(now))
+    setClearedAt(now)
     const allKeys = items.map(notifKey)
     localStorage.setItem(SEEN_KEY, JSON.stringify(allKeys))
     setReadIds(new Set(allKeys))
