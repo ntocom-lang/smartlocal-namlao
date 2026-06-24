@@ -5,7 +5,7 @@ import {
   Loader2, CheckCircle2, ArrowLeft, X, Image, Camera, User,
   Lightbulb, Trash2, Scissors, Droplets, Package, Megaphone, Bug,
   Waves, Wind, Building2, Volume2, HelpCircle,
-  CreditCard, PawPrint, Shield, FlameKindling, Axe, Wrench, AlertTriangle,
+  CreditCard, PawPrint, Shield, FlameKindling, Axe, Wrench,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { notifyTelegram } from '../lib/notifyTelegram'
@@ -160,7 +160,6 @@ export default function CitizenForm() {
   const [showMap, setShowMap] = useState(false)
   const [files, setFiles] = useState([])
   const [showConsent, setShowConsent] = useState(false)
-  const [checking, setChecking] = useState(false)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
 
   useEffect(() => {
@@ -172,8 +171,6 @@ export default function CitizenForm() {
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
   const [complaintNumber, setComplaintNumber] = useState(null)
-  const [nearbyComplaints, setNearbyComplaints] = useState([])
-  const [showNearbyWarning, setShowNearbyWarning] = useState(false)
   const [locations, setLocations] = useState([])
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES)
 
@@ -547,7 +544,7 @@ export default function CitizenForm() {
         )}
 
         {/* Submit */}
-        <button type="button" onClick={async () => {
+        <button type="button" onClick={() => {
           setError(null)
           if (!form.category) { setError('กรุณาเลือกประเภทคำร้อง'); return }
           if (!form.reporter_name.trim()) { setError('กรุณากรอกชื่อ-นามสกุล'); return }
@@ -555,72 +552,17 @@ export default function CitizenForm() {
           if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
           if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
           if (ftConfig?.gpsRequired && !geo.lat) { setError('ฟอร์มนี้ต้องการพิกัด GPS — กรุณากดปักหมุดก่อนส่ง'); return }
-          if (geo.lat && tenant?.id) {
-            setChecking(true)
-            try {
-              const { data: nearby } = await supabase.rpc('complaints_near', {
-                _lat: geo.lat, _lng: geo.lng, _radius_m: 200, _municipality_id: tenant.id,
-              })
-              if (nearby && nearby.length > 0) {
-                setNearbyComplaints(nearby.slice(0, 3))
-                setShowNearbyWarning(true)
-                return
-              }
-            } catch {
-              // RPC failed — proceed anyway
-            } finally {
-              setChecking(false)
-            }
-          }
           setShowConsent(true)
-        }} disabled={submitting || checking}
+        }} disabled={submitting}
           className="w-full flex items-center justify-center gap-2 py-3 rounded-full font-semibold text-white text-sm shadow-sm active:scale-95 transition-all disabled:opacity-60"
           style={{ backgroundColor: '#16a34a' }}>
-          {(submitting || checking)
-            ? <><Loader2 size={18} className="animate-spin" /> {checking ? 'กำลังตรวจสอบ...' : 'กำลังส่ง...'}</>
+          {submitting
+            ? <><Loader2 size={18} className="animate-spin" /> กำลังส่ง...</>
             : 'ยื่นคำร้อง'}
         </button>
 
 
       </form>
-
-      {/* Proximity warning modal */}
-      {showNearbyWarning && (
-        <div className="fixed inset-0 z-200 flex items-end bg-black/50" onClick={() => setShowNearbyWarning(false)}>
-          <div className="w-full max-w-lg mx-auto bg-white rounded-t-3xl px-5 pt-5 pb-8"
-            onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-2 mb-1">
-              <AlertTriangle size={20} className="text-amber-500 shrink-0" />
-              <h2 className="font-bold text-gray-800 text-base">พบคำร้องในบริเวณใกล้เคียง</h2>
-            </div>
-            <p className="text-sm text-gray-500 mb-3">มีคำร้องที่ยื่นไว้แล้วในรัศมี 200 เมตร คุณต้องการส่งคำร้องซ้ำหรือไม่?</p>
-            <div className="space-y-2 mb-4">
-              {nearbyComplaints.map((n) => (
-                <div key={n.id} className="flex items-center gap-3 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2.5">
-                  <MapPin size={14} className="text-amber-500 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-800 truncate">{n.subject}</p>
-                    <p className="text-xs text-gray-400">
-                      {Math.round(n.distance_m)} เมตร · {{ new: 'รอรับเรื่อง', in_progress: 'กำลังดำเนินการ', done: 'เสร็จสิ้น', closed: 'ปิดเรื่อง' }[n.status] ?? n.status}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setShowNearbyWarning(false)}
-                className="flex-1 py-3 rounded-2xl border border-gray-200 text-gray-600 text-sm font-medium">
-                ยกเลิก
-              </button>
-              <button onClick={() => { setShowNearbyWarning(false); setShowConsent(true) }}
-                className="flex-1 py-3 rounded-2xl font-semibold text-white text-sm"
-                style={{ backgroundColor: 'var(--color-primary)' }}>
-                ส่งต่อไป
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Consent modal */}
       {showConsent && (
