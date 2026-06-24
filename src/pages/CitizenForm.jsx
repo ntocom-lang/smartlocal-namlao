@@ -103,7 +103,6 @@ const FORM_TYPE_CONFIG = {
     label: 'ยื่นคำร้อง',
     icon: '🔧',
     color: '#ef4444',
-    gpsRequired: true,
     categories: [
       { value: 'road',       label: '🛣️  ถนน / สะพาน' },
       { value: 'light',      label: '💡  ไฟฟ้าสาธารณะ' },
@@ -118,7 +117,6 @@ const FORM_TYPE_CONFIG = {
     label: 'ขอสนับสนุนน้ำอุปโภค-บริโภค',
     icon: '💧',
     color: '#3b82f6',
-    gpsRequired: true,
     categories: [
       { value: 'water_drought', label: '🚛  ขอน้ำช่วงฤดูแล้ง' },
       { value: 'water_tank',    label: '🪣  ถังน้ำกลางหมู่บ้านหมด' },
@@ -131,7 +129,6 @@ const FORM_TYPE_CONFIG = {
     label: 'แจ้งเหตุสิ่งแวดล้อม / จุดเสี่ยงภัย',
     icon: '🌿',
     color: '#10b981',
-    gpsRequired: true,
     categories: [
       { value: 'trash',       label: '🗑️  ขยะตกค้าง / ทิ้งผิดที่' },
       { value: 'tree',        label: '🌳  กิ่งไม้ / ต้นไม้อันตราย' },
@@ -268,7 +265,6 @@ export default function CitizenForm() {
     if (!form.subject.trim()) { setError('กรุณากรอกหัวข้อ'); return }
     if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
     if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
-    if (ftConfig?.gpsRequired && !geo.lat) { setError('ฟอร์มนี้ต้องการพิกัด GPS — กรุณากดปักหมุดก่อนส่ง'); return }
     if (!tenant?.id) { setError('ไม่พบข้อมูลหน่วยงาน'); return }
 
     setError(null)
@@ -551,7 +547,6 @@ export default function CitizenForm() {
           if (!form.subject.trim()) { setError('กรุณากรอกหัวข้อ'); return }
           if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
           if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
-          if (ftConfig?.gpsRequired && !geo.lat) { setError('ฟอร์มนี้ต้องการพิกัด GPS — กรุณากดปักหมุดก่อนส่ง'); return }
           setShowConsent(true)
         }} disabled={submitting}
           className="w-full flex items-center justify-center gap-2 py-3 rounded-full font-semibold text-white text-sm shadow-sm active:scale-95 transition-all disabled:opacity-60"
