@@ -270,40 +270,47 @@ export default function CitizenForm() {
     setError(null)
     setSubmitting(true)
 
-    const { data: { session } } = await supabase.auth.getSession()
-    const complaintId = crypto.randomUUID()
-    const attachmentUrls = files.length > 0 ? await uploadFiles(complaintId) : []
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const userId = sessionData?.session?.user?.id ?? null
 
-    const { data: inserted, error: dbError } = await supabase.from('complaints').insert({
-      id:              complaintId,
-      municipality_id: tenant.id,
-      category:        form.category,
-      form_type:       formType !== 'legacy' ? formType : 'legacy',
-      subject:         form.subject.trim(),
-      village:         form.village || null,
-      detail:          form.detail.trim(),
-      phone:           form.phone.trim(),
-      reporter_name:   form.reporter_name.trim(),
-      latitude:        geo.lat,
-      longitude:       geo.lng,
-      user_id:         session?.user?.id ?? null,
-      attachments:     attachmentUrls,
-      department:      CATEGORY_DEPT[form.category] ?? 'สำนักปลัด',
-    }).select('id, ref_no').single()
+      const complaintId = crypto.randomUUID()
+      const attachmentUrls = files.length > 0 ? await uploadFiles(complaintId) : []
 
-    if (dbError) { setSubmitting(false); setError(`เกิดข้อผิดพลาด: ${dbError.message}`); return }
+      const { data: inserted, error: dbError } = await supabase.from('complaints').insert({
+        id:              complaintId,
+        municipality_id: tenant.id,
+        category:        form.category,
+        form_type:       formType !== 'legacy' ? formType : 'legacy',
+        subject:         form.subject.trim(),
+        village:         form.village || null,
+        detail:          form.detail.trim(),
+        phone:           form.phone.trim(),
+        reporter_name:   form.reporter_name.trim(),
+        latitude:        geo.lat,
+        longitude:       geo.lng,
+        user_id:         userId,
+        attachments:     attachmentUrls,
+        department:      CATEGORY_DEPT[form.category] ?? 'สำนักปลัด',
+      }).select('id, ref_no').single()
 
-    const catLabel = categories.find((c) => c.value === form.category)?.label ?? form.category
-    supabase.functions.invoke('send-push', {
-      body: { municipality_id: tenant.id, title: `คำร้องใหม่: ${catLabel}`, body: form.detail.trim().slice(0, 100), url: '/admin' },
-    }).catch(() => {})
-    notifyTelegram(tenant.telegram_group_id,
-      `📋 <b>คำร้องใหม่</b>\nประเภท: ${catLabel}\nผู้แจ้ง: ${form.reporter_name.trim()}\nเบอร์: ${form.phone.trim()}\nรายละเอียด: ${form.detail.trim().slice(0, 120)}`
-    )
+      if (dbError) { setError(`เกิดข้อผิดพลาด: ${dbError.message}`); return }
 
-    setSubmitting(false)
-    setSuccess(true)
-    setComplaintNumber(inserted.ref_no ?? null)
+      const catLabel = categories.find((c) => c.value === form.category)?.label ?? form.category
+      supabase.functions.invoke('send-push', {
+        body: { municipality_id: tenant.id, title: `คำร้องใหม่: ${catLabel}`, body: form.detail.trim().slice(0, 100), url: '/admin' },
+      }).catch(() => {})
+      notifyTelegram(tenant.telegram_group_id,
+        `📋 <b>คำร้องใหม่</b>\nประเภท: ${catLabel}\nผู้แจ้ง: ${form.reporter_name.trim()}\nเบอร์: ${form.phone.trim()}\nรายละเอียด: ${form.detail.trim().slice(0, 120)}`
+      )
+
+      setSuccess(true)
+      setComplaintNumber(inserted?.ref_no ?? null)
+    } catch (err) {
+      setError(`เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง`)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   if (success) return <SuccessScreen onBack={() => navigate('/')} onMyComplaints={() => navigate('/my-complaints')} complaintNumber={complaintNumber} isLoggedIn={isLoggedIn} />
