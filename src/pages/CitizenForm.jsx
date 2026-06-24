@@ -63,7 +63,7 @@ const GEO_STATUS = { idle: 'idle', ok: 'ok' }
 
 const MAX_FILE_MB = 5
 
-function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn }) {
+function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, uploadSkipped }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[70vh] px-6 text-center">
       <div className="w-20 h-20 rounded-full bg-green-50 flex items-center justify-center mb-5">
@@ -74,6 +74,11 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn }) 
         <div className="mb-4 px-6 py-3 bg-gray-50 rounded-2xl border border-gray-100">
           <p className="text-xs text-gray-400 mb-0.5">เลขที่อ้างอิง — บันทึกไว้เพื่อติดตาม</p>
           <p className="text-2xl font-black text-gray-800 tracking-widest font-mono">{complaintNumber}</p>
+        </div>
+      )}
+      {uploadSkipped && (
+        <div className="mb-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-2xl max-w-xs">
+          <p className="text-xs text-amber-700 leading-relaxed">รูปภาพไม่สามารถอัปโหลดได้เนื่องจากสัญญาณอินเทอร์เน็ตอ่อน — คำร้องถูกส่งแล้ว แจ้งเจ้าหน้าที่ส่งรูปเพิ่มทีหลังได้</p>
         </div>
       )}
       <p className="text-gray-500 text-sm leading-relaxed mb-8 max-w-xs">
@@ -166,6 +171,7 @@ export default function CitizenForm() {
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
   const [complaintNumber, setComplaintNumber] = useState(null)
+  const [uploadSkipped, setUploadSkipped] = useState(false)
   const [locations, setLocations] = useState([])
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES)
 
@@ -235,28 +241,33 @@ export default function CitizenForm() {
     })
   }
 
+  function raceTimeout(promise, ms) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
+    ])
+  }
+
   async function uploadFiles(complaintId) {
     const urls = []
+    let skipped = false
     for (const item of files) {
       try {
         const rawExt = item.name.split('.').pop().toLowerCase()
         const ext = rawExt && rawExt !== item.name ? rawExt : 'jpg'
         const path = `${complaintId}/${crypto.randomUUID()}.${ext}`
-        const uploadPromise = supabase.storage
-          .from('complaint-attachments')
-          .upload(path, item.file, { upsert: false })
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('upload timeout')), 60_000)
+        const { error: upErr } = await raceTimeout(
+          supabase.storage.from('complaint-attachments').upload(path, item.file, { upsert: false }),
+          15_000,
         )
-        const { error: upErr } = await Promise.race([uploadPromise, timeoutPromise])
-        if (upErr) continue
+        if (upErr) { skipped = true; continue }
         const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
         if (data?.publicUrl) urls.push(data.publicUrl)
       } catch {
-        // skip ไฟล์ที่ upload ไม่ได้ (timeout / network error) แล้วส่งคำร้องต่อ
+        skipped = true
       }
     }
-    return urls
+    return { urls, skipped }
   }
 
   const set = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }))
@@ -280,28 +291,37 @@ export default function CitizenForm() {
     setSubmitting(true)
 
     try {
-      const { data: sessionData } = await supabase.auth.getSession()
-      const userId = sessionData?.session?.user?.id ?? null
+      const sessionRes = await raceTimeout(supabase.auth.getSession(), 8_000).catch(() => null)
+      const userId = sessionRes?.data?.session?.user?.id ?? null
 
       const complaintId = crypto.randomUUID()
-      const attachmentUrls = files.length > 0 ? await uploadFiles(complaintId) : []
+      let attachmentUrls = []
+      let anySkipped = false
+      if (files.length > 0) {
+        const result = await uploadFiles(complaintId)
+        attachmentUrls = result.urls
+        anySkipped = result.skipped
+      }
 
-      const { data: inserted, error: dbError } = await supabase.from('complaints').insert({
-        id:              complaintId,
-        municipality_id: tenant.id,
-        category:        form.category,
-        form_type:       formType !== 'legacy' ? formType : 'legacy',
-        subject:         form.subject.trim(),
-        village:         form.village || null,
-        detail:          form.detail.trim(),
-        phone:           form.phone.trim(),
-        reporter_name:   form.reporter_name.trim(),
-        latitude:        geo.lat,
-        longitude:       geo.lng,
-        user_id:         userId,
-        attachments:     attachmentUrls,
-        department:      CATEGORY_DEPT[form.category] ?? 'สำนักปลัด',
-      }).select('id, ref_no').single()
+      const { data: inserted, error: dbError } = await raceTimeout(
+        supabase.from('complaints').insert({
+          id:              complaintId,
+          municipality_id: tenant.id,
+          category:        form.category,
+          form_type:       formType !== 'legacy' ? formType : 'legacy',
+          subject:         form.subject.trim(),
+          village:         form.village || null,
+          detail:          form.detail.trim(),
+          phone:           form.phone.trim(),
+          reporter_name:   form.reporter_name.trim(),
+          latitude:        geo.lat,
+          longitude:       geo.lng,
+          user_id:         userId,
+          attachments:     attachmentUrls,
+          department:      CATEGORY_DEPT[form.category] ?? 'สำนักปลัด',
+        }).select('id, ref_no').single(),
+        20_000,
+      )
 
       if (dbError) { setError(`เกิดข้อผิดพลาด: ${dbError.message}`); return }
 
@@ -313,16 +333,17 @@ export default function CitizenForm() {
         `📋 <b>คำร้องใหม่</b>\nประเภท: ${catLabel}\nผู้แจ้ง: ${form.reporter_name.trim()}\nเบอร์: ${form.phone.trim()}\nรายละเอียด: ${form.detail.trim().slice(0, 120)}`
       )
 
+      setUploadSkipped(anySkipped)
       setSuccess(true)
       setComplaintNumber(inserted?.ref_no ?? null)
     } catch (err) {
-      setError(`เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง`)
+      setError('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง')
     } finally {
       setSubmitting(false)
     }
   }
 
-  if (success) return <SuccessScreen onBack={() => navigate('/')} onMyComplaints={() => navigate('/my-complaints')} complaintNumber={complaintNumber} isLoggedIn={isLoggedIn} />
+  if (success) return <SuccessScreen onBack={() => navigate('/')} onMyComplaints={() => navigate('/my-complaints')} complaintNumber={complaintNumber} isLoggedIn={isLoggedIn} uploadSkipped={uploadSkipped} />
 
   const catLabel = categories.find((c) => c.value === form.category)?.label?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category
   const CatIcon = CATEGORY_ICON[form.category] ?? HelpCircle
