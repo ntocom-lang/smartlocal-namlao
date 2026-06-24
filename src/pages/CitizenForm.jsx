@@ -240,12 +240,23 @@ export default function CitizenForm() {
   async function uploadFiles(complaintId) {
     const urls = []
     for (const item of files) {
-      const ext = item.name.split('.').pop()
-      const path = `${complaintId}/${crypto.randomUUID()}.${ext}`
-      const { error: upErr } = await supabase.storage.from('complaint-attachments').upload(path, item.file, { upsert: false })
-      if (upErr) continue
-      const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
-      if (data?.publicUrl) urls.push(data.publicUrl)
+      try {
+        const rawExt = item.name.split('.').pop().toLowerCase()
+        const ext = rawExt && rawExt !== item.name ? rawExt : 'jpg'
+        const path = `${complaintId}/${crypto.randomUUID()}.${ext}`
+        const uploadPromise = supabase.storage
+          .from('complaint-attachments')
+          .upload(path, item.file, { upsert: false })
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('upload timeout')), 30_000)
+        )
+        const { error: upErr } = await Promise.race([uploadPromise, timeoutPromise])
+        if (upErr) continue
+        const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
+        if (data?.publicUrl) urls.push(data.publicUrl)
+      } catch {
+        // skip ไฟล์ที่ upload ไม่ได้ (timeout / network error) แล้วส่งคำร้องต่อ
+      }
     }
     return urls
   }
