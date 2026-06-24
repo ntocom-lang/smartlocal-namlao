@@ -1,4 +1,9 @@
 import { precacheAndRoute } from 'workbox-precaching'
+import { clientsClaim } from 'workbox-core'
+
+// ทันที activate SW ใหม่ ไม่ต้องรอปิดแอป
+self.skipWaiting()
+clientsClaim()
 
 // workbox precache — Vite injects the manifest here at build time
 precacheAndRoute(self.__WB_MANIFEST)

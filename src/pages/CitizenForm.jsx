@@ -221,8 +221,7 @@ export default function CitizenForm() {
     const oversized = []
     for (const f of toProcess) {
       if (f.type.startsWith('image/')) {
-        // compress ทุกรูปเสมอ — ลดขนาดให้พร้อม upload บน mobile network
-        const processed = await compressImage(f).catch(() => f)
+        const processed = await raceTimeout(compressImage(f), 10_000).catch(() => f)
         added.push({ file: processed, name: processed.name, preview: URL.createObjectURL(processed), compressed: true })
       } else {
         if (f.size > MAX_FILE_MB * 1024 * 1024) oversized.push(f.name)
