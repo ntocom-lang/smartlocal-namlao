@@ -160,6 +160,7 @@ export default function CitizenForm() {
   const [showMap, setShowMap] = useState(false)
   const [files, setFiles] = useState([])
   const [showConsent, setShowConsent] = useState(false)
+  const [checking, setChecking] = useState(false)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
 
   useEffect(() => {
@@ -555,21 +556,28 @@ export default function CitizenForm() {
           if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
           if (ftConfig?.gpsRequired && !geo.lat) { setError('ฟอร์มนี้ต้องการพิกัด GPS — กรุณากดปักหมุดก่อนส่ง'); return }
           if (geo.lat && tenant?.id) {
-            const { data: nearby } = await supabase.rpc('complaints_near', {
-              _lat: geo.lat, _lng: geo.lng, _radius_m: 200, _municipality_id: tenant.id,
-            })
-            if (nearby && nearby.length > 0) {
-              setNearbyComplaints(nearby.slice(0, 3))
-              setShowNearbyWarning(true)
-              return
+            setChecking(true)
+            try {
+              const { data: nearby } = await supabase.rpc('complaints_near', {
+                _lat: geo.lat, _lng: geo.lng, _radius_m: 200, _municipality_id: tenant.id,
+              })
+              if (nearby && nearby.length > 0) {
+                setNearbyComplaints(nearby.slice(0, 3))
+                setShowNearbyWarning(true)
+                return
+              }
+            } catch {
+              // RPC failed — proceed anyway
+            } finally {
+              setChecking(false)
             }
           }
           setShowConsent(true)
-        }} disabled={submitting}
+        }} disabled={submitting || checking}
           className="w-full flex items-center justify-center gap-2 py-3 rounded-full font-semibold text-white text-sm shadow-sm active:scale-95 transition-all disabled:opacity-60"
           style={{ backgroundColor: '#16a34a' }}>
-          {submitting
-            ? <><Loader2 size={18} className="animate-spin" /> กำลังส่ง...</>
+          {(submitting || checking)
+            ? <><Loader2 size={18} className="animate-spin" /> {checking ? 'กำลังตรวจสอบ...' : 'กำลังส่ง...'}</>
             : 'ยื่นคำร้อง'}
         </button>
 
