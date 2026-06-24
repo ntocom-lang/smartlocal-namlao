@@ -61,9 +61,7 @@ const CATEGORY_DEPT = {
 
 const GEO_STATUS = { idle: 'idle', ok: 'ok' }
 
-const MAX_FILE_MB  = 5
-const COMPRESS_MB  = 2
-const MAX_DIM      = 1920
+const MAX_FILE_MB = 5
 
 function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn }) {
   return (
@@ -217,9 +215,9 @@ export default function CitizenForm() {
     const oversized = []
     for (const f of toProcess) {
       if (f.type.startsWith('image/')) {
-        const needsCompress = f.size > COMPRESS_MB * 1024 * 1024
-        const processed = needsCompress ? await compressImage(f) : f
-        added.push({ file: processed, name: processed.name, preview: URL.createObjectURL(processed), compressed: needsCompress })
+        // compress ทุกรูปเสมอ — ลดขนาดให้พร้อม upload บน mobile network
+        const processed = await compressImage(f).catch(() => f)
+        added.push({ file: processed, name: processed.name, preview: URL.createObjectURL(processed), compressed: true })
       } else {
         if (f.size > MAX_FILE_MB * 1024 * 1024) oversized.push(f.name)
         else added.push({ file: f, name: f.name, preview: null, compressed: false })
@@ -248,7 +246,7 @@ export default function CitizenForm() {
           .from('complaint-attachments')
           .upload(path, item.file, { upsert: false })
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('upload timeout')), 30_000)
+          setTimeout(() => reject(new Error('upload timeout')), 60_000)
         )
         const { error: upErr } = await Promise.race([uploadPromise, timeoutPromise])
         if (upErr) continue
