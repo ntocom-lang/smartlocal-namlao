@@ -295,14 +295,8 @@ export default function CitizenForm() {
       const userId = sessionRes?.data?.session?.user?.id ?? null
 
       const complaintId = crypto.randomUUID()
-      let attachmentUrls = []
-      let anySkipped = false
-      if (files.length > 0) {
-        const result = await uploadFiles(complaintId)
-        attachmentUrls = result.urls
-        anySkipped = result.skipped
-      }
 
+      // Insert ก่อน — ไม่รอ upload รูป
       const { data: inserted, error: dbError } = await raceTimeout(
         supabase.from('complaints').insert({
           id:              complaintId,
@@ -317,13 +311,17 @@ export default function CitizenForm() {
           latitude:        geo.lat,
           longitude:       geo.lng,
           user_id:         userId,
-          attachments:     attachmentUrls,
+          attachments:     [],
           department:      CATEGORY_DEPT[form.category] ?? 'สำนักปลัด',
         }).select('id, ref_no').single(),
         20_000,
       )
 
       if (dbError) { setError(`เกิดข้อผิดพลาด: ${dbError.message}`); return }
+
+      // แสดง success ทันที ไม่รอรูป
+      setSuccess(true)
+      setComplaintNumber(inserted?.ref_no ?? null)
 
       const catLabel = categories.find((c) => c.value === form.category)?.label ?? form.category
       supabase.functions.invoke('send-push', {
@@ -333,9 +331,17 @@ export default function CitizenForm() {
         `📋 <b>คำร้องใหม่</b>\nประเภท: ${catLabel}\nผู้แจ้ง: ${form.reporter_name.trim()}\nเบอร์: ${form.phone.trim()}\nรายละเอียด: ${form.detail.trim().slice(0, 120)}`
       )
 
-      setUploadSkipped(anySkipped)
-      setSuccess(true)
-      setComplaintNumber(inserted?.ref_no ?? null)
+      // Upload รูปใน background หลังจาก success แล้ว — แล้วค่อย update complaint
+      if (files.length > 0) {
+        uploadFiles(complaintId)
+          .then(({ urls, skipped }) => {
+            if (urls.length > 0) {
+              supabase.from('complaints').update({ attachments: urls }).eq('id', complaintId).catch(() => {})
+            }
+            if (skipped) setUploadSkipped(true)
+          })
+          .catch(() => setUploadSkipped(true))
+      }
     } catch (err) {
       setError('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง')
     } finally {
