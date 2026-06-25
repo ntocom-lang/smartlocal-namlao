@@ -290,31 +290,30 @@ export default function CitizenForm() {
     setSubmitting(true)
 
     try {
-      const sessionRes = await raceTimeout(supabase.auth.getSession(), 8_000).catch(() => null)
-      const userId = sessionRes?.data?.session?.user?.id ?? null
+      // getSession อ่านจาก cache (IndexedDB) — ไม่ต้องใส่ timeout
+      const { data: sessionData } = await supabase.auth.getSession().catch(() => ({ data: null }))
+      const userId = sessionData?.session?.user?.id ?? null
 
       const complaintId = crypto.randomUUID()
 
-      // Insert ก่อน — ไม่รอ upload รูป
-      const { data: inserted, error: dbError } = await raceTimeout(
-        supabase.from('complaints').insert({
-          id:              complaintId,
-          municipality_id: tenant.id,
-          category:        form.category,
-          form_type:       formType !== 'legacy' ? formType : 'legacy',
-          subject:         form.subject.trim(),
-          village:         form.village || null,
-          detail:          form.detail.trim(),
-          phone:           form.phone.trim(),
-          reporter_name:   form.reporter_name.trim(),
-          latitude:        geo.lat,
-          longitude:       geo.lng,
-          user_id:         userId,
-          attachments:     [],
-          department:      CATEGORY_DEPT[form.category] ?? 'สำนักปลัด',
-        }).select('id, ref_no').single(),
-        20_000,
-      )
+      // Insert ก่อน ไม่รอ upload รูป
+      // ไม่ใส่ raceTimeout — network ช้าต้องรอได้ไม่จำกัด เพื่อป้องกัน false-error
+      const { data: inserted, error: dbError } = await supabase.from('complaints').insert({
+        id:              complaintId,
+        municipality_id: tenant.id,
+        category:        form.category,
+        form_type:       formType !== 'legacy' ? formType : 'legacy',
+        subject:         form.subject.trim(),
+        village:         form.village || null,
+        detail:          form.detail.trim(),
+        phone:           form.phone.trim(),
+        reporter_name:   form.reporter_name.trim(),
+        latitude:        geo.lat,
+        longitude:       geo.lng,
+        user_id:         userId,
+        attachments:     [],
+        department:      CATEGORY_DEPT[form.category] ?? 'สำนักปลัด',
+      }).select('id, ref_no').single()
 
       if (dbError) { setError(`เกิดข้อผิดพลาด: ${dbError.message}`); return }
 
@@ -342,7 +341,8 @@ export default function CitizenForm() {
           .catch(() => setUploadSkipped(true))
       }
     } catch (err) {
-      setError('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง')
+      const isNetworkErr = err?.message?.toLowerCase().includes('fetch') || err?.message?.toLowerCase().includes('network')
+      setError(isNetworkErr ? 'ไม่มีสัญญาณอินเทอร์เน็ต กรุณาตรวจสอบสัญญาณแล้วลองใหม่' : 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง')
     } finally {
       setSubmitting(false)
     }
