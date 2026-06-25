@@ -330,12 +330,13 @@ export default function CitizenForm() {
       )
 
       // Upload รูปใน background หลังจาก success แล้ว — แล้วค่อย update complaint
+      // NOTE: supabase.rpc() คืน PostgrestFilterBuilder (ไม่ใช่ native Promise) — ไม่มี .catch()
+      // ต้องใช้ await (ซึ่ง call .then() ภายใน) เพื่อ trigger HTTP request
       if (files.length > 0) {
         uploadFiles(complaintId)
-          .then(({ urls, skipped }) => {
+          .then(async ({ urls, skipped }) => {
             if (urls.length > 0) {
-              // ใช้ RPC เพราะ citizen ไม่มีสิทธิ์ UPDATE complaints โดยตรง (RLS block)
-              supabase.rpc('attach_complaint_photos', { p_complaint_id: complaintId, p_urls: urls }).catch(() => {})
+              try { await supabase.rpc('attach_complaint_photos', { p_complaint_id: complaintId, p_urls: urls }) } catch {}
             }
             if (skipped) setUploadSkipped(true)
           })
