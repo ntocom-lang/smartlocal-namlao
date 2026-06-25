@@ -257,7 +257,7 @@ export default function CitizenForm() {
         const path = `${complaintId}/${crypto.randomUUID()}.${ext}`
         const { error: upErr } = await raceTimeout(
           supabase.storage.from('complaint-attachments').upload(path, item.file, { upsert: false }),
-          15_000,
+          60_000,
         )
         if (upErr) { skipped = true; continue }
         const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
