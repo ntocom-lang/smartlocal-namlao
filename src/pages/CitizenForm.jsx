@@ -334,7 +334,8 @@ export default function CitizenForm() {
         uploadFiles(complaintId)
           .then(({ urls, skipped }) => {
             if (urls.length > 0) {
-              supabase.from('complaints').update({ attachments: urls }).eq('id', complaintId).catch(() => {})
+              // ใช้ RPC เพราะ citizen ไม่มีสิทธิ์ UPDATE complaints โดยตรง (RLS block)
+              supabase.rpc('attach_complaint_photos', { p_complaint_id: complaintId, p_urls: urls }).catch(() => {})
             }
             if (skipped) setUploadSkipped(true)
           })
