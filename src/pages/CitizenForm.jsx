@@ -267,26 +267,33 @@ export default function CitizenForm() {
     ])
   }
 
-  async function uploadFiles(complaintId) {
-    const urls = []
-    let skipped = false
-    for (const item of files) {
-      try {
-        const rawExt = item.name.split('.').pop().toLowerCase()
-        const ext = rawExt && rawExt !== item.name ? rawExt : 'jpg'
-        const path = `${complaintId}/${crypto.randomUUID()}.${ext}`
-        const { error: upErr } = await raceTimeout(
-          supabase.storage.from('complaint-attachments').upload(path, item.file, { upsert: false }),
-          60_000,
-        )
-        if (upErr) { skipped = true; continue }
-        const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
-        if (data?.publicUrl) urls.push(data.publicUrl)
-      } catch {
-        skipped = true
-      }
-    }
-    return { urls, skipped }
+  // อัปโหลดไฟล์แบบ parallel — ทำใน foreground ก่อน setSuccess
+  // ไม่ใช้ fire-and-forget หลัง success เพราะ iOS Safari throttle background fetch
+  async function uploadAllFiles(complaintId) {
+    const results = await Promise.all(
+      files.map(async (item) => {
+        try {
+          const rawExt = item.name.split('.').pop().toLowerCase()
+          const ext = rawExt && rawExt !== item.name ? rawExt : 'jpg'
+          const path = `${complaintId}/${crypto.randomUUID()}.${ext}`
+          const { error: upErr } = await raceTimeout(
+            supabase.storage.from('complaint-attachments').upload(path, item.file, { upsert: false }),
+            30_000,
+          )
+          if (upErr) {
+            console.error('[upload]', upErr.message ?? upErr)
+            return null
+          }
+          const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
+          return data?.publicUrl ?? null
+        } catch (err) {
+          console.error('[upload exception]', err?.message ?? err)
+          return null
+        }
+      })
+    )
+    const urls = results.filter(Boolean)
+    return { urls, skipped: urls.length < files.length }
   }
 
   const set = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }))
@@ -322,6 +329,15 @@ export default function CitizenForm() {
 
       const complaintId = crypto.randomUUID()
 
+      // อัปโหลดรูปก่อน INSERT — ให้ browser ไม่ throttle (iOS Safari kill background fetch หลัง success)
+      let attachmentUrls = []
+      let uploadWasSkipped = false
+      if (files.length > 0) {
+        const { urls, skipped } = await uploadAllFiles(complaintId)
+        attachmentUrls = urls
+        uploadWasSkipped = skipped
+      }
+
       // INSERT — timeout 40s กันแขวนบน mobile network ช้า/หลุด
       let insertResult
       try {
@@ -339,7 +355,7 @@ export default function CitizenForm() {
             latitude:        geo.lat,
             longitude:       geo.lng,
             user_id:         userId,
-            attachments:     [],
+            attachments:     attachmentUrls,
             department:      CATEGORY_DEPT[form.category] ?? 'สำนักปลัด',
           }).select('id, ref_no').single()
             .abortSignal(abortCtrl.signal),
@@ -353,9 +369,9 @@ export default function CitizenForm() {
 
       if (dbError) { setError(`เกิดข้อผิดพลาด: ${dbError.message}`); return }
 
-      // แสดง success ทันที ไม่รอรูป
       setSuccess(true)
       setComplaintNumber(inserted?.ref_no ?? null)
+      if (uploadWasSkipped) setUploadSkipped(true)
 
       const catLabel = categories.find((c) => c.value === form.category)?.label ?? form.category
       supabase.functions.invoke('send-push', {
@@ -364,20 +380,6 @@ export default function CitizenForm() {
       notifyTelegram(tenant.telegram_group_id,
         `📋 <b>คำร้องใหม่</b>\nประเภท: ${catLabel}\nผู้แจ้ง: ${form.reporter_name.trim()}\nเบอร์: ${form.phone.trim()}\nรายละเอียด: ${form.detail.trim().slice(0, 120)}`
       )
-
-      // Upload รูปใน background หลังจาก success แล้ว — แล้วค่อย update complaint
-      // NOTE: supabase.rpc() คืน PostgrestFilterBuilder (ไม่ใช่ native Promise) — ไม่มี .catch()
-      // ต้องใช้ await (ซึ่ง call .then() ภายใน) เพื่อ trigger HTTP request
-      if (files.length > 0) {
-        uploadFiles(complaintId)
-          .then(async ({ urls, skipped }) => {
-            if (urls.length > 0) {
-              try { await supabase.rpc('attach_complaint_photos', { p_complaint_id: complaintId, p_urls: urls }) } catch {}
-            }
-            if (skipped) setUploadSkipped(true)
-          })
-          .catch(() => setUploadSkipped(true))
-      }
     } catch (err) {
       const isNetworkErr = err?.message?.toLowerCase().includes('fetch') || err?.message?.toLowerCase().includes('network')
       setError(isNetworkErr ? 'ไม่มีสัญญาณอินเทอร์เน็ต กรุณาตรวจสอบสัญญาณแล้วลองใหม่' : 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง')
