@@ -175,7 +175,24 @@ export default function CitizenForm() {
   const [uploadSkipped, setUploadSkipped] = useState(false)
   const [locations, setLocations] = useState([])
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES)
+  const abortCtrlRef = useRef(null)
 
+  // ถ้า submitting อยู่แล้วกลับมาจาก background นาน > 5s → abort request ทันที
+  // (setTimeout ถูก mobile browser pause แต่ visibilitychange fire ทันทีเมื่อ JS resume)
+  useEffect(() => {
+    if (!submitting) return
+    let hiddenAt = null
+    function onVisChange() {
+      if (document.visibilityState === 'hidden') {
+        hiddenAt = Date.now()
+      } else if (document.visibilityState === 'visible' && hiddenAt !== null) {
+        if (Date.now() - hiddenAt > 5_000) abortCtrlRef.current?.abort()
+        hiddenAt = null
+      }
+    }
+    document.addEventListener('visibilitychange', onVisChange)
+    return () => document.removeEventListener('visibilitychange', onVisChange)
+  }, [submitting])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -292,6 +309,9 @@ export default function CitizenForm() {
     setError(null)
     setSubmitting(true)
 
+    const abortCtrl = new AbortController()
+    abortCtrlRef.current = abortCtrl
+
     try {
       // getSession อ่านจาก IndexedDB — timeout 5s กันแขวนบน mobile
       const { data: sessionData } = await raceTimeout(
@@ -321,7 +341,8 @@ export default function CitizenForm() {
             user_id:         userId,
             attachments:     [],
             department:      CATEGORY_DEPT[form.category] ?? 'สำนักปลัด',
-          }).select('id, ref_no').single(),
+          }).select('id, ref_no').single()
+            .abortSignal(abortCtrl.signal),
           40_000,
         )
       } catch {
@@ -362,6 +383,7 @@ export default function CitizenForm() {
       setError(isNetworkErr ? 'ไม่มีสัญญาณอินเทอร์เน็ต กรุณาตรวจสอบสัญญาณแล้วลองใหม่' : 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง')
     } finally {
       setSubmitting(false)
+      abortCtrlRef.current = null
     }
   }
 
@@ -542,7 +564,10 @@ export default function CitizenForm() {
 
         {/* Attachments */}
         <div>
-          <p className="text-sm font-semibold text-gray-700 mb-2">แนบไฟล์หลักฐาน</p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm font-semibold text-gray-700">แนบไฟล์หลักฐาน</p>
+            <p className="text-[11px] text-gray-500 font-medium">สูงสุด 5 ไฟล์ (ไม่เกิน 5MB/ไฟล์)</p>
+          </div>
 
           {files.length > 0 && (
             <div className="grid grid-cols-3 gap-2 mb-3">
