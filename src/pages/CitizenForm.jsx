@@ -167,6 +167,7 @@ export default function CitizenForm() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [showPdpa, setShowPdpa] = useState(false)
+  const [compressing, setCompressing] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
@@ -217,11 +218,12 @@ export default function CitizenForm() {
     const remaining = 5 - files.length
     if (remaining <= 0) return
     const toProcess = chosen.slice(0, remaining)
+    setCompressing(true)
     const added = []
     const oversized = []
     for (const f of toProcess) {
       if (f.type.startsWith('image/')) {
-        const processed = await raceTimeout(compressImage(f), 10_000).catch(() => f)
+        const processed = await raceTimeout(compressImage(f), 15_000).catch(() => f)
         added.push({ file: processed, name: processed.name, preview: URL.createObjectURL(processed), compressed: true })
       } else {
         if (f.size > MAX_FILE_MB * 1024 * 1024) oversized.push(f.name)
@@ -230,6 +232,7 @@ export default function CitizenForm() {
     }
     if (oversized.length > 0) setError(`ไฟล์ต่อไปนี้ใหญ่เกิน ${MAX_FILE_MB} MB: ${oversized.join(', ')}`)
     setFiles((prev) => [...prev, ...added])
+    setCompressing(false)
     e.target.value = ''
   }
 
@@ -290,30 +293,42 @@ export default function CitizenForm() {
     setSubmitting(true)
 
     try {
-      // getSession อ่านจาก cache (IndexedDB) — ไม่ต้องใส่ timeout
-      const { data: sessionData } = await supabase.auth.getSession().catch(() => ({ data: null }))
+      // getSession อ่านจาก IndexedDB — timeout 5s กันแขวนบน mobile
+      const { data: sessionData } = await raceTimeout(
+        supabase.auth.getSession().catch(() => ({ data: null })),
+        5_000,
+      ).catch(() => ({ data: null }))
       const userId = sessionData?.session?.user?.id ?? null
 
       const complaintId = crypto.randomUUID()
 
-      // Insert ก่อน ไม่รอ upload รูป
-      // ไม่ใส่ raceTimeout — network ช้าต้องรอได้ไม่จำกัด เพื่อป้องกัน false-error
-      const { data: inserted, error: dbError } = await supabase.from('complaints').insert({
-        id:              complaintId,
-        municipality_id: tenant.id,
-        category:        form.category,
-        form_type:       formType !== 'legacy' ? formType : 'legacy',
-        subject:         form.subject.trim(),
-        village:         form.village || null,
-        detail:          form.detail.trim(),
-        phone:           form.phone.trim(),
-        reporter_name:   form.reporter_name.trim(),
-        latitude:        geo.lat,
-        longitude:       geo.lng,
-        user_id:         userId,
-        attachments:     [],
-        department:      CATEGORY_DEPT[form.category] ?? 'สำนักปลัด',
-      }).select('id, ref_no').single()
+      // INSERT — timeout 40s กันแขวนบน mobile network ช้า/หลุด
+      let insertResult
+      try {
+        insertResult = await raceTimeout(
+          supabase.from('complaints').insert({
+            id:              complaintId,
+            municipality_id: tenant.id,
+            category:        form.category,
+            form_type:       formType !== 'legacy' ? formType : 'legacy',
+            subject:         form.subject.trim(),
+            village:         form.village || null,
+            detail:          form.detail.trim(),
+            phone:           form.phone.trim(),
+            reporter_name:   form.reporter_name.trim(),
+            latitude:        geo.lat,
+            longitude:       geo.lng,
+            user_id:         userId,
+            attachments:     [],
+            department:      CATEGORY_DEPT[form.category] ?? 'สำนักปลัด',
+          }).select('id, ref_no').single(),
+          40_000,
+        )
+      } catch {
+        setError('เครือข่ายช้าหรือขาดหาย กรุณาตรวจสอบสัญญาณแล้วกด ยื่นคำร้อง อีกครั้ง')
+        return
+      }
+      const { data: inserted, error: dbError } = insertResult ?? {}
 
       if (dbError) { setError(`เกิดข้อผิดพลาด: ${dbError.message}`); return }
 
@@ -586,16 +601,19 @@ export default function CitizenForm() {
         {/* Submit */}
         <button type="button" onClick={() => {
           setError(null)
+          if (compressing) return
           if (!form.category) { setError('กรุณาเลือกประเภทคำร้อง'); return }
           if (!form.reporter_name.trim()) { setError('กรุณากรอกชื่อ-นามสกุล'); return }
           if (!form.subject.trim()) { setError('กรุณากรอกหัวข้อ'); return }
           if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
           if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
           setShowConsent(true)
-        }} disabled={submitting}
+        }} disabled={submitting || compressing}
           className="w-full flex items-center justify-center gap-2 py-3 rounded-full font-semibold text-white text-sm shadow-sm active:scale-95 transition-all disabled:opacity-60"
           style={{ backgroundColor: '#16a34a' }}>
-          {submitting
+          {compressing
+            ? <><Loader2 size={18} className="animate-spin" /> กำลัง compress รูป...</>
+            : submitting
             ? <><Loader2 size={18} className="animate-spin" /> กำลังส่ง...</>
             : 'ยื่นคำร้อง'}
         </button>
@@ -619,7 +637,7 @@ export default function CitizenForm() {
                 className="flex-1 py-3 rounded-2xl border border-gray-200 text-gray-600 text-sm font-medium">
                 ยกเลิก
               </button>
-              <button onClick={() => { setShowConsent(false); handleSubmit() }} disabled={submitting}
+              <button onClick={() => { setShowConsent(false); handleSubmit() }} disabled={submitting || compressing}
                 className="flex-1 py-3 rounded-2xl font-semibold text-white text-sm disabled:opacity-60"
                 style={{ backgroundColor: 'var(--color-primary)' }}>
                 {submitting ? <Loader2 size={16} className="animate-spin mx-auto" /> : 'ยอมรับและส่ง'}
