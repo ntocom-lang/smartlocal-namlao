@@ -100,6 +100,7 @@ function EventCard({ ev, onEdit, onDelete, deleting }) {
 
 export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
   const canManage = ['admin', 'superadmin', 'staff'].includes(currentUserRole)
+  const [currentUserId, setCurrentUserId] = useState(null)
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -135,6 +136,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     const userId = user?.id
+    setCurrentUserId(userId ?? null)
 
     let query = supabase
       .from('events')
@@ -142,15 +144,14 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
       .eq('municipality_id', tenant.id)
       .order('event_date', { ascending: true })
 
-    // role-based filter — แต่เพิ่ม OR created_by เพื่อให้เห็น event ที่ตัวเองสร้างเสมอ
+    // staff/officer/technician → เห็นทุก event เพื่อป้องกันสร้างซ้ำ
+    //   แต่ edit/delete ได้เฉพาะ event ที่ตัวเองสร้าง (ดูในส่วน render)
+    // council → เห็นเฉพาะ public + council
+    // admin, superadmin → ไม่ filter
     if (currentUserRole === 'council') {
       if (userId) query = query.or(`audience.in.(public,council),created_by.eq.${userId}`)
       else query = query.in('audience', ['public', 'council'])
-    } else if (['staff', 'technician', 'officer'].includes(currentUserRole)) {
-      if (userId) query = query.or(`audience.in.(public,staff),created_by.eq.${userId}`)
-      else query = query.in('audience', ['public', 'staff'])
     }
-    // admin, superadmin, viewer → ไม่ filter (เห็นทุกอย่าง)
     const { data } = await query
     const sorted = (data ?? []).sort((a, b) => {
       if (a.event_date < b.event_date) return -1
@@ -666,12 +667,15 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
               <>
                 {/* Mobile cards */}
                 <div className={`md:hidden space-y-2 ${activeTab === 'past' ? 'opacity-80' : ''}`}>
-                  {paginatedList.map((ev) => (
-                    <EventCard key={ev.id} ev={ev}
-                      onEdit={canManage ? openEdit : null}
-                      onDelete={canManage ? handleDelete : null}
-                      deleting={deleting} />
-                  ))}
+                  {paginatedList.map((ev) => {
+                    const isOwner = ['admin', 'superadmin'].includes(currentUserRole) || ev.created_by === currentUserId
+                    return (
+                      <EventCard key={ev.id} ev={ev}
+                        onEdit={canManage && isOwner ? openEdit : null}
+                        onDelete={canManage && isOwner ? handleDelete : null}
+                        deleting={deleting} />
+                    )
+                  })}
                 </div>
 
                 {/* PC table */}
@@ -696,6 +700,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
                         const dateStr = d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
                         const timeStr = ev.event_time ? ev.event_time.slice(0, 5) + (ev.end_time ? `–${ev.end_time.slice(0, 5)}` : '') + ' น.' : '—'
                         const aud = AUDIENCE_OPTIONS.find(a => a.value === ev.audience)
+                        const isOwner = ['admin', 'superadmin'].includes(currentUserRole) || ev.created_by === currentUserId
                         return (
                           <tr key={ev.id}
                             className="transition-colors"
@@ -729,16 +734,20 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
                             </td>
                             {canManage && (
                               <td className="px-3 py-2 text-center" onClick={e => e.stopPropagation()}>
-                                <div className="flex items-center justify-center gap-1.5">
-                                  <button onClick={() => openEdit(ev)}
-                                    className="px-2.5 py-1 rounded border border-blue-400 text-blue-600 text-[11px] font-bold hover:bg-blue-600 hover:text-white transition-colors">
-                                    แก้ไข
-                                  </button>
-                                  <button onClick={() => handleDelete(ev.id)} disabled={deleting === ev.id}
-                                    className="px-2.5 py-1 rounded border border-red-300 text-red-500 text-[11px] font-bold hover:bg-red-500 hover:text-white transition-colors disabled:opacity-40">
-                                    ลบ
-                                  </button>
-                                </div>
+                                {isOwner ? (
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <button onClick={() => openEdit(ev)}
+                                      className="px-2.5 py-1 rounded border border-blue-400 text-blue-600 text-[11px] font-bold hover:bg-blue-600 hover:text-white transition-colors">
+                                      แก้ไข
+                                    </button>
+                                    <button onClick={() => handleDelete(ev.id)} disabled={deleting === ev.id}
+                                      className="px-2.5 py-1 rounded border border-red-300 text-red-500 text-[11px] font-bold hover:bg-red-500 hover:text-white transition-colors disabled:opacity-40">
+                                      ลบ
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <span className="text-[11px] text-gray-300">—</span>
+                                )}
                               </td>
                             )}
                           </tr>
