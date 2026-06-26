@@ -133,15 +133,22 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
 
   async function fetchEvents() {
     setLoading(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    const userId = user?.id
+
     let query = supabase
       .from('events')
       .select('*, creator:profiles!events_created_by_fkey(full_name)')
       .eq('municipality_id', tenant.id)
       .order('event_date', { ascending: true })
+
+    // role-based filter — แต่เพิ่ม OR created_by เพื่อให้เห็น event ที่ตัวเองสร้างเสมอ
     if (currentUserRole === 'council') {
-      query = query.in('audience', ['public', 'council'])
+      if (userId) query = query.or(`audience.in.(public,council),created_by.eq.${userId}`)
+      else query = query.in('audience', ['public', 'council'])
     } else if (['staff', 'technician', 'officer'].includes(currentUserRole)) {
-      query = query.in('audience', ['public', 'staff'])
+      if (userId) query = query.or(`audience.in.(public,staff),created_by.eq.${userId}`)
+      else query = query.in('audience', ['public', 'staff'])
     }
     // admin, superadmin, viewer → ไม่ filter (เห็นทุกอย่าง)
     const { data } = await query
