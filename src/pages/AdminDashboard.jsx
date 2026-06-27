@@ -2446,7 +2446,7 @@ function guessEmoji(label) {
   return null
 }
 
-function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit }) {
+function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, techs, assignment, onAssign, saving }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(cat.label)
@@ -2467,62 +2467,87 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit }) {
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
-      className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2.5"
+      className="bg-gray-50 rounded-xl px-3 py-2.5 space-y-2"
     >
-      {/* drag handle */}
-      <button
-        {...attributes} {...listeners}
-        className="cursor-grab active:cursor-grabbing p-1 rounded text-gray-300 hover:text-gray-500 transition-colors shrink-0 touch-none"
-      >
-        <GripVertical size={16} />
-      </button>
-      {/* ปุ่มขึ้น/ลง */}
-      <div className="flex flex-col gap-0.5 shrink-0">
-        <button onClick={() => onMove(idx, -1)} disabled={idx === 0}
-          className="p-0.5 rounded text-gray-300 hover:text-gray-600 disabled:opacity-20 transition-colors">
-          <ChevronUp size={13} />
+      <div className="flex items-center gap-2">
+        {/* drag handle */}
+        <button
+          {...attributes} {...listeners}
+          className="cursor-grab active:cursor-grabbing p-1 rounded text-gray-300 hover:text-gray-500 transition-colors shrink-0 touch-none"
+        >
+          <GripVertical size={16} />
         </button>
-        <button onClick={() => onMove(idx, 1)} disabled={idx === total - 1}
-          className="p-0.5 rounded text-gray-300 hover:text-gray-600 disabled:opacity-20 transition-colors">
-          <ChevronDown size={13} />
+        {/* ปุ่มขึ้น/ลง */}
+        <div className="flex flex-col gap-0.5 shrink-0">
+          <button onClick={() => onMove(idx, -1)} disabled={idx === 0}
+            className="p-0.5 rounded text-gray-300 hover:text-gray-600 disabled:opacity-20 transition-colors">
+            <ChevronUp size={13} />
+          </button>
+          <button onClick={() => onMove(idx, 1)} disabled={idx === total - 1}
+            className="p-0.5 rounded text-gray-300 hover:text-gray-600 disabled:opacity-20 transition-colors">
+            <ChevronDown size={13} />
+          </button>
+        </div>
+        <span className="w-8 h-8 rounded-xl flex items-center justify-center text-base shrink-0"
+          style={{ backgroundColor: cat.color }}>{cat.emoji}</span>
+
+        {/* label — inline edit */}
+        {isEditing ? (
+          <input
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={confirmEdit}
+            onKeyDown={handleKeyDown}
+            className="flex-1 text-sm text-gray-800 bg-white border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2"
+            style={{ '--tw-ring-color': 'var(--color-primary)' }}
+          />
+        ) : (
+          <button onClick={startEdit} className="flex-1 flex items-center gap-1.5 group text-left">
+            <span className="text-sm text-gray-700 group-hover:text-gray-900">{cat.label}</span>
+            <Pencil size={11} className="text-gray-300 group-hover:text-gray-500 shrink-0 transition-colors" />
+          </button>
+        )}
+
+        <button onClick={() => onDelete(cat.id)}
+          className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors shrink-0">
+          <Trash2 size={14} />
         </button>
       </div>
-      <span className="w-8 h-8 rounded-xl flex items-center justify-center text-base shrink-0"
-        style={{ backgroundColor: cat.color }}>{cat.emoji}</span>
 
-      {/* label — inline edit */}
-      {isEditing ? (
-        <input
-          autoFocus
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={confirmEdit}
-          onKeyDown={handleKeyDown}
-          className="flex-1 text-sm text-gray-800 bg-white border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2"
-          style={{ '--tw-ring-color': 'var(--color-primary)' }}
-        />
-      ) : (
-        <button
-          onClick={startEdit}
-          className="flex-1 flex items-center gap-1.5 group text-left"
-        >
-          <span className="text-sm text-gray-700 group-hover:text-gray-900">{cat.label}</span>
-          <Pencil size={11} className="text-gray-300 group-hover:text-gray-500 shrink-0 transition-colors" />
-        </button>
+      {/* ผู้รับผิดชอบ row */}
+      {techs && (
+        <div className="flex items-center gap-2 pl-[68px]">
+          <Wrench size={12} className="text-gray-300 shrink-0" />
+          {saving === cat.value
+            ? <Loader2 size={12} className="animate-spin text-gray-300" />
+            : null}
+          <select
+            value={assignment ?? ''}
+            onChange={(e) => onAssign(cat.value, e.target.value)}
+            disabled={saving === cat.value}
+            className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white text-gray-600 focus:outline-none"
+          >
+            <option value="">— ไม่ระบุผู้รับผิดชอบ —</option>
+            {techs.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.full_name || t.email}
+              </option>
+            ))}
+          </select>
+        </div>
       )}
-
-      <button onClick={() => onDelete(cat.id)}
-        className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors shrink-0">
-        <Trash2 size={14} />
-      </button>
     </div>
   )
 }
 
 function CategoryManager({ tenant }) {
   const [cats, setCats] = useState([])
+  const [techs, setTechs] = useState([])
+  const [assignments, setAssignments] = useState({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [assignSaving, setAssignSaving] = useState(null)
   const [seeding, setSeeding] = useState(false)
   const [error, setError] = useState(null)
   const [form, setForm] = useState({ label: '', emoji: '📝', colorIdx: 6, emojiTouched: false })
@@ -2547,14 +2572,29 @@ function CategoryManager({ tenant }) {
     if (!tenant?.id) return
     setLoading(true)
     setError(null)
-    const { data, error: err } = await supabase
-      .from('complaint_categories')
-      .select('*')
-      .eq('municipality_id', tenant.id)
-      .order('sort_order')
-    if (err) setError('โหลดข้อมูลไม่ได้: ' + err.message)
-    setCats(data ?? [])
+    const [catsRes, techsRes, assignRes] = await Promise.all([
+      supabase.from('complaint_categories').select('*').eq('municipality_id', tenant.id).order('sort_order'),
+      supabase.from('profiles').select('id,full_name,email').eq('municipality_id', tenant.id).eq('role', 'technician').order('full_name'),
+      supabase.from('category_assignments').select('category,technician_id').eq('municipality_id', tenant.id),
+    ])
+    if (catsRes.error) setError('โหลดข้อมูลไม่ได้: ' + catsRes.error.message)
+    setCats(catsRes.data ?? [])
+    setTechs(techsRes.data ?? [])
+    const map = {}
+    for (const a of assignRes.data ?? []) map[a.category] = a.technician_id ?? ''
+    setAssignments(map)
     setLoading(false)
+  }
+
+  async function handleAssign(category, technicianId) {
+    setAssignSaving(category)
+    setAssignments((prev) => ({ ...prev, [category]: technicianId }))
+    await supabase.from('category_assignments').upsert({
+      municipality_id: tenant.id,
+      category,
+      technician_id: technicianId || null,
+    }, { onConflict: 'municipality_id,category' })
+    setAssignSaving(null)
   }
 
   useEffect(() => { fetchCats() }, [tenant?.id])
@@ -2729,7 +2769,8 @@ function CategoryManager({ tenant }) {
               <div className="md:hidden space-y-2">
                 {cats.map((cat, idx) => (
                   <SortableCatItem key={cat.id} cat={cat} idx={idx} total={cats.length}
-                    onDelete={deleteCat} onMove={moveCat} onEdit={editCat} />
+                    onDelete={deleteCat} onMove={moveCat} onEdit={editCat}
+                    techs={techs} assignment={assignments[cat.value]} onAssign={handleAssign} saving={assignSaving} />
                 ))}
               </div>
             </SortableContext>
@@ -2739,10 +2780,11 @@ function CategoryManager({ tenant }) {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-16">ลำดับ</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-12">ลำดับ</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ประเภท</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ป้ายสี</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 w-28">จัดการ</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ผู้รับผิดชอบ</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 w-24">จัดการ</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -2759,6 +2801,22 @@ function CategoryManager({ tenant }) {
                           style={{ backgroundColor: color.color, color: color.textColor }}>
                           {cat.emoji} {cat.label}
                         </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1.5">
+                          {assignSaving === cat.value && <Loader2 size={12} className="animate-spin text-gray-300 shrink-0" />}
+                          <select
+                            value={assignments[cat.value] ?? ''}
+                            onChange={(e) => handleAssign(cat.value, e.target.value)}
+                            disabled={assignSaving === cat.value}
+                            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-600 focus:outline-none max-w-40"
+                          >
+                            <option value="">— ไม่ระบุ —</option>
+                            {techs.map((t) => (
+                              <option key={t.id} value={t.id}>{t.full_name || t.email}</option>
+                            ))}
+                          </select>
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-1.5">
@@ -4504,13 +4562,6 @@ export default function AdminDashboard() {
             <Shield size={15} /> จัดการผู้ใช้
           </button>
         )}
-        {currentUserRole !== 'council' && (
-          <button onClick={() => setActivePage('assignments')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'assignments' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-            style={activePage === 'assignments' ? { backgroundColor: '#d97706' } : {}}>
-            <Wrench size={15} /> ผู้รับผิดชอบ
-          </button>
-        )}
         {currentUserRole !== 'viewer' && currentUserRole !== 'council' && (
           <button onClick={() => setActivePage('report')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'report' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
@@ -4695,18 +4746,6 @@ export default function AdminDashboard() {
         <LocationManager tenant={tenant} />
       ) : activePage === 'categories' ? (
         <CategoryManager tenant={tenant} />
-      ) : activePage === 'assignments' ? (
-        <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            {currentUserRole !== 'viewer' && (
-              <button onClick={() => setActivePage('more')} className="p-1.5 rounded-xl hover:bg-gray-100 text-gray-400 transition-colors">
-                <ChevronRight size={16} className="rotate-180" />
-              </button>
-            )}
-            <h2 className="font-bold text-gray-700">ผู้รับผิดชอบแต่ละประเภทคำร้อง</h2>
-          </div>
-          <AssignmentManager tenant={tenant} readOnly={currentUserRole === 'viewer'} />
-        </div>
       ) : activePage === 'civil-report' ? (
         <CivilProjectReport tenant={tenant} />
       ) : activePage === 'map' ? (
@@ -4749,16 +4788,6 @@ export default function AdminDashboard() {
                 </div>
               </button>
             )}
-            <button onClick={() => setActivePage('assignments')}
-              className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#fef3c7' }}>
-                <Wrench size={24} style={{ color: '#d97706' }} />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-gray-800">ผู้รับผิดชอบ</p>
-                <p className="text-[13px] text-gray-400 mt-0.5">มอบหมายประเภทคำร้อง</p>
-              </div>
-            </button>
             <button onClick={() => setActivePage('emergency')}
               className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
               <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#fee2e2' }}>
@@ -4827,8 +4856,7 @@ export default function AdminDashboard() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {[
-                  { key: 'categories',  Icon: Tag,    color: '#d97706', bg: '#fef3c7', label: 'ประเภทคำร้อง', desc: 'จัดการหมวดหมู่คำร้อง',       show: currentUserRole !== 'viewer' },
-                  { key: 'assignments', Icon: Wrench, color: '#d97706', bg: '#fef3c7', label: 'ผู้รับผิดชอบ', desc: 'มอบหมายงานตามประเภทคำร้อง', show: currentUserRole !== 'council' },
+                  { key: 'categories',  Icon: Tag,    color: '#d97706', bg: '#fef3c7', label: 'ประเภทคำร้อง', desc: 'จัดการหมวดหมู่และผู้รับผิดชอบ', show: currentUserRole !== 'viewer' },
                   { key: 'emergency',   Icon: Phone,       color: '#ef4444', bg: '#fee2e2', label: 'สายด่วนฉุกเฉิน',  desc: 'จัดการรายชื่อและเบอร์ติดต่อ',     show: currentUserRole !== 'viewer' },
                   { key: 'locations',   Icon: MapPin,      color: '#0891b2', bg: '#e0f2fe', label: 'สถานที่เกิดเหตุ', desc: 'จัดการหมู่บ้าน / ตำบลในพื้นที่',  show: currentUserRole !== 'viewer' },
                   { key: 'staff',            Icon: UserCircle2, color: '#7c3aed', bg: '#ede9fe', label: 'รูปผู้บริหาร',       desc: 'อัปโหลดรูปนายก/รองนายก/ทีมงาน',       show: currentUserRole !== 'viewer' },
