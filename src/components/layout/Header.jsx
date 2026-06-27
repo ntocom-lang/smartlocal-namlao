@@ -93,7 +93,7 @@ export default function Header() {
             <h1 className="font-bold text-sm md:text-base leading-tight">
               {tenant?.name}
             </h1>
-            <p className="text-white/80 text-[10px] md:text-xs line-clamp-1 mt-0.5">ระบบบริการประชาชนออนไลน์</p>
+            <p className="text-white/80 text-[10px] md:text-xs line-clamp-1 mt-0.5">ระบบศูนย์รวมข้อมูลดิจิทัลเพื่อการพัฒนาอย่างยั่งยืน</p>
           </div>
 
           {/* Desktop nav */}
