@@ -177,7 +177,6 @@ function DetailSheet({ complaint: c, onClose }) {
   }, [c?.id])
 
   if (!c) return null
-  const attachments = c.attachments ?? []
   const categoryLabel = CATEGORY_LABEL[c.category] ?? c.category
   const categoryEmoji = CATEGORY_EMOJI[c.category] ?? '📄'
   const dateStr = new Date(c.created_at).toLocaleDateString('th-TH', {
@@ -295,30 +294,6 @@ function DetailSheet({ complaint: c, onClose }) {
               <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{c.detail}</p>
             </div>
           </div>
-
-          {/* attachments - before */}
-          {attachments.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                ก่อนดำเนินการ ({attachments.length})
-              </p>
-              <div className="grid grid-cols-3 gap-2">
-                {attachments.map((url, i) => (
-                  <a key={i} href={url} target="_blank" rel="noreferrer"
-                     className="aspect-square rounded-xl overflow-hidden border border-gray-100 bg-gray-50 flex items-center justify-center shadow-sm">
-                    {/\.(jpg|jpeg|png|gif|webp)$/i.test(url) ? (
-                      <img src={url} alt={`รูป ${i + 1}`} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="flex flex-col items-center gap-1">
-                        <FileText size={22} className="text-gray-400" />
-                        <span className="text-[13px] text-gray-400">ไฟล์</span>
-                      </div>
-                    )}
-                  </a>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* work photos - after */}
           {(c.work_photos ?? []).length > 0 && (

@@ -577,18 +577,13 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
     const location = [c.location_name, c.village].filter(Boolean).join(', ') || '—'
     const nowTH = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
 
-    const hasAttachments = (c.attachments ?? []).length > 0
     const hasWorkPhotos = (c.work_photos ?? []).length > 0
     const imgStyle = 'width:calc(25% - 5px);height:90px;object-fit:cover;border-radius:5px;border:1px solid #e5e7eb;display:inline-block;vertical-align:top'
     const renderPhotos = (urls) =>
       `<div style="display:flex;flex-wrap:wrap;gap:6px">${urls.map(u => `<img src="${u}" style="${imgStyle}">`).join('')}</div>`
 
-    const photoSectionHtml = (hasAttachments || hasWorkPhotos) ? `
+    const photoSectionHtml = hasWorkPhotos ? `
 <p style="margin:16px 0 6px;font-weight:600;font-size:14px">ภาพประกอบ</p>
-${hasAttachments ? `<div style="margin-bottom:10px">
-  <div style="font-weight:600;font-size:12px;margin-bottom:4px;color:#374151">ก่อนดำเนินการ (${c.attachments.length} รูป)</div>
-  ${renderPhotos(c.attachments)}
-</div>` : ''}
 ${hasWorkPhotos ? `<div>
   <div style="font-weight:600;font-size:12px;margin-bottom:4px;color:#374151">หลังดำเนินการ (${c.work_photos.length} รูป)</div>
   ${renderPhotos(c.work_photos)}
@@ -667,7 +662,6 @@ ${photoSectionHtml}
     onClose()
   }
 
-  const attachments = c.attachments ?? []
   const categoryLabel = CATEGORY_LABEL[c.category] ?? c.category
   const categoryEmoji = CATEGORY_EMOJI[c.category] || ''
   const dateStr = new Date(c.created_at).toLocaleDateString('th-TH', {
@@ -866,24 +860,6 @@ ${photoSectionHtml}
               <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{c.detail}</p>
             </div>
           </div>
-
-          {attachments.length > 0 && (
-            <div className="space-y-2 pb-4">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                ก่อนดำเนินการ ({attachments.length})
-              </p>
-              <div className="grid grid-cols-3 gap-2">
-                {attachments.map((url, i) => (
-                  <a key={i} href={url} target="_blank" rel="noreferrer"
-                    className="aspect-square rounded-xl overflow-hidden border border-gray-200 bg-gray-100 flex items-center justify-center">
-                    {/\.(jpg|jpeg|png|gif|webp)$/i.test(url)
-                      ? <img src={url} alt={`ไฟล์ ${i + 1}`} className="w-full h-full object-cover" />
-                      : <FileText size={22} className="text-gray-400" />}
-                  </a>
-                ))}
-              </div>
-            </div>
-          )}
 
           {(c.work_photos ?? []).length > 0 && (
             <div className="space-y-2 pb-4">

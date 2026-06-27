@@ -274,7 +274,6 @@ export default function CitizenForm() {
             latitude:        geo.lat,
             longitude:       geo.lng,
             user_id:         userId,
-            attachments:     [],
             department:      CATEGORY_DEPT[form.category] ?? 'สำนักปลัด',
           }).select('id, ref_no').single()
             .abortSignal(abortCtrl.signal),
