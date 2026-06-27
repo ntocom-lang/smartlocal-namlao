@@ -9,17 +9,23 @@ import { useNotifications } from '../contexts/NotificationsContext'
 // ─── constants ────────────────────────────────────────────────────────────────
 
 const STATUS_INFO = {
-  received:    { label: 'รับเรื่องแล้ว',   bg: '#dbeafe', color: '#1e40af', Icon: Clock },
+  // new status values
   in_progress: { label: 'กำลังดำเนินการ', bg: '#ede9fe', color: '#5b21b6', Icon: RefreshCw },
-  completed:   { label: 'เสร็จสิ้น',      bg: '#d1fae5', color: '#065f46', Icon: CheckCircle2 },
+  done:        { label: 'ดำเนินการแล้ว',  bg: '#dbeafe', color: '#1e40af', Icon: CheckCircle2 },
+  closed:      { label: 'ปิดเรื่องแล้ว',  bg: '#d1fae5', color: '#065f46', Icon: CheckCircle2 },
   rejected:    { label: 'ปฏิเสธ',         bg: '#fee2e2', color: '#991b1b', Icon: XCircle },
+  // legacy aliases
+  received:    { label: 'รับเรื่องแล้ว',   bg: '#ede9fe', color: '#5b21b6', Icon: Clock },
+  completed:   { label: 'เสร็จสิ้น',      bg: '#d1fae5', color: '#065f46', Icon: CheckCircle2 },
 }
 
 const STATUS_MSG = {
-  received:    'เจ้าหน้าที่รับเรื่องของคุณแล้ว',
-  in_progress: 'เจ้าหน้าที่อยู่ระหว่างดำเนินการ',
-  completed:   'ดำเนินการเสร็จสิ้นแล้ว 🎉',
+  in_progress: 'เจ้าหน้าที่รับเรื่องและอยู่ระหว่างดำเนินการ',
+  done:        'เจ้าหน้าที่ดำเนินการเสร็จสิ้นแล้ว 🎉',
+  closed:      'ปิดเรื่องและแจ้งผลเรียบร้อยแล้ว ✅',
   rejected:    'ขออภัย คำร้องของคุณถูกปฏิเสธ',
+  received:    'เจ้าหน้าที่รับเรื่องของคุณแล้ว',
+  completed:   'ดำเนินการเสร็จสิ้นแล้ว 🎉',
 }
 
 const CATEGORY_LABEL = {

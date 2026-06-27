@@ -46,7 +46,7 @@ export function NotificationsProvider({ children }) {
       .select('id, ref_no, category, status, updated_at, created_at')
       .eq('municipality_id', tenant.id)
       .eq('user_id', session.user.id)
-      .neq('status', 'pending')
+      .not('status', 'in', '("new","pending")')
       .order('updated_at', { ascending: false })
       .limit(50)
     setItems(data ?? [])
@@ -84,9 +84,12 @@ export function NotificationsProvider({ children }) {
   }
 
   function markAllRead() {
-    const allIds = items.map(n => n.id)
-    localStorage.setItem(SEEN_KEY, JSON.stringify(allIds))
-    setReadIds(new Set(allIds))
+    setReadIds((prev) => {
+      const next = new Set(prev)
+      items.forEach(n => next.add(n.id))
+      localStorage.setItem(SEEN_KEY, JSON.stringify([...next]))
+      return next
+    })
   }
 
   function openPanel() {
