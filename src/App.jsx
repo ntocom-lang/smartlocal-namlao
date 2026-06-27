@@ -34,7 +34,6 @@ import ContactPage from './pages/ContactPage'
 import CitizenDocRequest from './pages/CitizenDocRequest'
 import MyDocRequests from './pages/MyDocRequests'
 import LpaDocStats from './pages/LpaDocStats'
-import SatisfactionPage from './pages/SatisfactionPage'
 import { supabase } from './lib/supabase'
 import { Phone, X } from 'lucide-react'
 
@@ -285,7 +284,6 @@ function AppShell() {
           <Route path="/my-docs" element={<MyDocRequests />} />
           <Route path="/doc-stats" element={<LpaDocStats />} />
           <Route path="/notifications" element={<NotificationsPage />} />
-          <Route path="/satisfaction" element={<SatisfactionPage />} />
           <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/staff" element={
             <RequireAuth staffOnly>
