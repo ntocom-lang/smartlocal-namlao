@@ -2551,6 +2551,7 @@ function CategoryManager({ tenant }) {
   const [seeding, setSeeding] = useState(false)
   const [error, setError] = useState(null)
   const [form, setForm] = useState({ label: '', emoji: '📝', colorIdx: 6, emojiTouched: false })
+  const [desktopEdit, setDesktopEdit] = useState({ id: null, draft: '' })
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -2794,7 +2795,25 @@ function CategoryManager({ tenant }) {
                     <tr key={cat.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-3 text-xs text-gray-400">{idx + 1}</td>
                       <td className="px-4 py-3 font-medium text-gray-800">
-                        {cat.emoji} {cat.label}
+                        {desktopEdit.id === cat.id ? (
+                          <input
+                            autoFocus
+                            value={desktopEdit.draft}
+                            onChange={(e) => setDesktopEdit((prev) => ({ ...prev, draft: e.target.value }))}
+                            onBlur={() => {
+                              const trimmed = desktopEdit.draft.trim()
+                              if (trimmed && trimmed !== cat.label) editCat(cat.id, trimmed)
+                              setDesktopEdit({ id: null, draft: '' })
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') { e.target.blur() }
+                              if (e.key === 'Escape') { setDesktopEdit({ id: null, draft: '' }) }
+                            }}
+                            className="w-full text-sm text-gray-800 bg-white border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2"
+                          />
+                        ) : (
+                          <span>{cat.emoji} {cat.label}</span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
@@ -2820,7 +2839,8 @@ function CategoryManager({ tenant }) {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-1.5">
-                          <button onClick={() => editCat(cat)}
+                          <button
+                            onClick={() => setDesktopEdit({ id: cat.id, draft: cat.label })}
                             className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="แก้ไข">
                             <Pencil size={14} />
                           </button>
