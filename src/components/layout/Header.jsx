@@ -7,19 +7,21 @@ import { supabase } from '../../lib/supabase'
 import { useNotifications } from '../../contexts/NotificationsContext'
 
 const NAV_CITIZEN = [
-  { label: 'หน้าแรก',       href: '/' },
-  { label: 'ยื่นคำร้อง',    href: '/complaint' },
-  { label: 'คำร้องของฉัน',  href: '/my-complaints' },
-  { label: 'การแจ้งเตือน',  href: '/notifications' },
-  { label: 'เมนูอื่นๆ',     href: '/more' },
+  { label: 'หน้าแรก',          href: '/' },
+  { label: 'ยื่นคำร้อง',       href: '/complaint' },
+  { label: 'คำร้องของฉัน',     href: '/my-complaints' },
+  { label: 'ปฏิทินกิจกรรม',   href: '/events' },
+  { label: 'การแจ้งเตือน',     href: '/notifications' },
+  { label: 'เมนูอื่นๆ',        href: '/more' },
 ]
 
 const NAV_TECH = [
-  { label: 'หน้าแรก',       href: '/' },
-  { label: 'งานของฉัน',     href: '/technician' },
-  { label: 'คำร้องของฉัน',  href: '/my-complaints' },
-  { label: 'การแจ้งเตือน',  href: '/notifications' },
-  { label: 'เมนูอื่นๆ',     href: '/more' },
+  { label: 'หน้าแรก',          href: '/' },
+  { label: 'งานของฉัน',        href: '/technician' },
+  { label: 'คำร้องของฉัน',     href: '/my-complaints' },
+  { label: 'ปฏิทินกิจกรรม',   href: '/events' },
+  { label: 'การแจ้งเตือน',     href: '/notifications' },
+  { label: 'เมนูอื่นๆ',        href: '/more' },
 ]
 
 export default function Header() {

@@ -51,9 +51,8 @@ const MODULE_GROUPS = [
     group: 'งานภายใน',
     items: [
       { key: 'events',   label: 'กิจกรรม',          Icon: CalendarDays, color: '#10b981' },
-      { key: 'approve',  label: 'อนุมัติ',           Icon: CheckSquare,  color: '#f97316' },
-      { key: 'projects', label: 'โครงการ',           Icon: Wrench,       color: '#7c3aed' },
-      { key: 'infra',    label: 'โครงสร้างพื้นฐาน', Icon: MapPin,       color: '#0891b2' },
+      { key: 'projects', label: 'แผนงาน/โครงการ',    Icon: Wrench,       color: '#7c3aed' },
+      { key: 'infra',    label: 'บันทึกงานซ่อม',    Icon: MapPin,       color: '#0891b2' },
     ],
   },
   {

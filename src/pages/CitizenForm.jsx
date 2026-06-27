@@ -6,7 +6,7 @@ import {
   Lightbulb, Trash2, Scissors, Droplets, Package, Megaphone, Bug,
   Waves, Wind, Building2, Volume2, HelpCircle,
   CreditCard, PawPrint, Shield, FlameKindling, Axe, Wrench, AlertTriangle,
-  ImagePlus, Camera, Images,
+  Camera, Images,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { notifyTelegram } from '../lib/notifyTelegram'
@@ -65,7 +65,7 @@ const CATEGORY_DEPT = {
 const GEO_STATUS = { idle: 'idle', ok: 'ok' }
 
 
-function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn }) {
+function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, uploadWarn }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[70vh] px-6 text-center">
       <div className="w-20 h-20 rounded-full bg-green-50 flex items-center justify-center mb-5">
@@ -76,6 +76,11 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn }) 
         <div className="mb-4 px-6 py-3 bg-gray-50 rounded-2xl border border-gray-100">
           <p className="text-xs text-gray-400 mb-0.5">เลขที่อ้างอิง — บันทึกไว้เพื่อติดตาม</p>
           <p className="text-2xl font-black text-gray-800 tracking-widest font-mono">{complaintNumber}</p>
+        </div>
+      )}
+      {uploadWarn && (
+        <div className="mb-4 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700 max-w-xs">
+          ⚠️ รูปภาพบางรายการอัปโหลดไม่สำเร็จ — คำร้องถูกบันทึกแล้ว ส่งรูปเพิ่มได้ทีหลัง
         </div>
       )}
       <p className="text-gray-500 text-sm leading-relaxed mb-8 max-w-xs">
@@ -170,7 +175,9 @@ export default function CitizenForm() {
   const [showNearbyWarning, setShowNearbyWarning] = useState(false)
   const [locations, setLocations] = useState([])
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES)
-  const [files, setFiles] = useState([])        // { file, preview }[]
+  const [files, setFiles] = useState([])
+  const [submitStage, setSubmitStage] = useState(null)  // null | 'uploading' | 'saving'
+  const [uploadWarn, setUploadWarn] = useState(false)   // some photos failed to upload
   const galleryRef = useRef(null)
   const cameraRef  = useRef(null)
 
@@ -237,18 +244,19 @@ export default function CitizenForm() {
   }
 
   async function uploadFiles(complaintId) {
-    if (files.length === 0) return []
+    if (files.length === 0) return { urls: [], failed: 0 }
+    let failed = 0
     const urls = []
     for (const { file } of files) {
       const compressed = await compressImage(file, 1600, 0.82)
       const ext  = compressed.name.split('.').pop()
       const path = `${tenant.id}/${complaintId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
       const { error: upErr } = await supabase.storage.from('complaint-attachments').upload(path, compressed, { upsert: false })
-      if (upErr) continue
+      if (upErr) { failed++; continue }
       const { data: { publicUrl } } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
       urls.push(publicUrl)
     }
-    return urls
+    return { urls, failed }
   }
 
   function handleMapConfirm({ lat, lng, address }) {
@@ -270,8 +278,15 @@ export default function CitizenForm() {
 
     const { data: { session } } = await supabase.auth.getSession()
     const complaintId = crypto.randomUUID()
-    const catLabel = categories.find((c) => c.value === form.category)?.label ?? form.category
+    const allCats = [...(ftConfig?.categories ?? []), ...categories]
+    const catLabel = allCats.find((c) => c.value === form.category)?.label
+      ?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category
 
+    setSubmitStage('uploading')
+    const { urls: attachmentUrls, failed } = await uploadFiles(complaintId)
+    if (failed > 0) setUploadWarn(true)
+
+    setSubmitStage('saving')
     const { data: inserted, error: dbError } = await supabase.from('complaints').insert({
       id:              complaintId,
       municipality_id: tenant.id,
@@ -285,11 +300,11 @@ export default function CitizenForm() {
       latitude:        geo.lat,
       longitude:       geo.lng,
       user_id:         session?.user?.id ?? null,
-      attachments:     await uploadFiles(complaintId),
+      attachments:     attachmentUrls,
       department:      CATEGORY_DEPT[form.category] ?? 'สำนักปลัด',
     }).select('id, ref_no').single()
 
-    if (dbError) { setSubmitting(false); setError(`เกิดข้อผิดพลาด: ${dbError.message}`); return }
+    if (dbError) { setSubmitting(false); setSubmitStage(null); setError(`เกิดข้อผิดพลาด: ${dbError.message}`); return }
 
     supabase.functions.invoke('send-push', {
       body: { municipality_id: tenant.id, title: `คำร้องใหม่: ${catLabel}`, body: form.detail.trim().slice(0, 100), url: '/admin' },
@@ -299,11 +314,12 @@ export default function CitizenForm() {
     )
 
     setSubmitting(false)
+    setSubmitStage(null)
     setSuccess(true)
     setComplaintNumber(inserted.ref_no ?? null)
   }
 
-  if (success) return <SuccessScreen onBack={() => navigate('/')} onMyComplaints={() => navigate('/my-complaints')} complaintNumber={complaintNumber} isLoggedIn={isLoggedIn} />
+  if (success) return <SuccessScreen onBack={() => navigate('/')} onMyComplaints={() => navigate('/my-complaints')} complaintNumber={complaintNumber} isLoggedIn={isLoggedIn} uploadWarn={uploadWarn} />
 
   const catLabel = categories.find((c) => c.value === form.category)?.label?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category
   const CatIcon = CATEGORY_ICON[form.category] ?? HelpCircle
@@ -457,6 +473,26 @@ export default function CitizenForm() {
           {isLoggedIn && form.phone && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-emerald-500 font-semibold">จากโปรไฟล์</span>}
         </div>
 
+        {/* Map pin */}
+        <button type="button" onClick={() => setShowMap(true)}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-full font-semibold text-white text-sm transition-all active:scale-95 shadow-sm"
+          style={{ backgroundColor: geoStatus === GEO_STATUS.ok ? '#16a34a' : 'var(--color-primary)' }}>
+          {geoStatus === GEO_STATUS.ok
+            ? <CheckCircle2 size={18} />
+            : <MapPin size={18} />}
+          <span className="truncate max-w-[220px]">
+            {geoStatus === GEO_STATUS.ok
+              ? `${geo.lat?.toFixed(5)}, ${geo.lng?.toFixed(5)}`
+              : 'ปักหมุดจากแผนที่'}
+          </span>
+          {geoStatus !== GEO_STATUS.ok && <ChevronRight size={18} />}
+        </button>
+        {geoStatus === GEO_STATUS.ok && geo.address && (
+          <p className="text-xs text-gray-500 text-center px-4 -mt-1 leading-snug line-clamp-2">
+            📍 {geo.address}
+          </p>
+        )}
+
         {/* Photo upload */}
         <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-2">
           <div className="flex items-center justify-between">
@@ -502,21 +538,6 @@ export default function CitizenForm() {
           )}
         </div>
 
-        {/* Map pin */}
-        <button type="button" onClick={() => setShowMap(true)}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-full font-semibold text-white text-sm transition-all active:scale-95 shadow-sm"
-          style={{ backgroundColor: geoStatus === GEO_STATUS.ok ? '#16a34a' : 'var(--color-primary)' }}>
-          {geoStatus === GEO_STATUS.ok
-            ? <CheckCircle2 size={18} />
-            : <MapPin size={18} />}
-          <span className="truncate max-w-[220px]">
-            {geoStatus === GEO_STATUS.ok
-              ? `${geo.lat?.toFixed(5)}, ${geo.lng?.toFixed(5)}`
-              : 'ปักหมุดจากแผนที่'}
-          </span>
-          {geoStatus !== GEO_STATUS.ok && <ChevronRight size={18} />}
-        </button>
-
         {/* Error */}
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
@@ -529,10 +550,11 @@ export default function CitizenForm() {
           setError(null)
           if (!form.category) { setError('กรุณาเลือกประเภทคำร้อง'); return }
           if (!form.reporter_name.trim()) { setError('กรุณากรอกชื่อ-นามสกุล'); return }
-
           if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
           if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
-                if (geo.lat && tenant?.id) {
+          if (!/^0[0-9]{8,9}$/.test(form.phone.trim())) { setError('เบอร์โทรไม่ถูกต้อง — ต้องเป็น 10 หลัก เช่น 0812345678'); return }
+          if (ftConfig?.gpsRequired && geoStatus !== GEO_STATUS.ok) { setError('กรุณาปักหมุดตำแหน่งบนแผนที่ก่อนส่งคำร้อง'); return }
+          if (geo.lat && tenant?.id) {
             const { data: nearby } = await supabase.rpc('complaints_near', {
               _lat: geo.lat, _lng: geo.lng, _radius_m: 200, _municipality_id: tenant.id,
             })
@@ -547,7 +569,9 @@ export default function CitizenForm() {
           className="w-full flex items-center justify-center gap-2 py-3 rounded-full font-semibold text-white text-sm shadow-sm active:scale-95 transition-all disabled:opacity-60"
           style={{ backgroundColor: '#16a34a' }}>
           {submitting
-            ? <><Loader2 size={18} className="animate-spin" /> กำลังส่ง...</>
+            ? submitStage === 'uploading' && files.length > 0
+              ? <><Loader2 size={18} className="animate-spin" /> กำลังอัปโหลดรูปภาพ...</>
+              : <><Loader2 size={18} className="animate-spin" /> กำลังบันทึก...</>
             : 'ยื่นคำร้อง'}
         </button>
 

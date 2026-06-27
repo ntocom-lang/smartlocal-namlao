@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { MapContainer, TileLayer, useMapEvents, useMap } from 'react-leaflet'
-import { Search, X, MapPin, CheckCircle2, LocateFixed, Layers } from 'lucide-react'
+import { Search, X, MapPin, CheckCircle2, LocateFixed, Layers, Maximize2, Minimize2 } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
 
 const LONGDO_KEY = import.meta.env.VITE_LONGDO_KEY
@@ -72,8 +72,23 @@ export default function MapPicker({ initialPos, fallbackPos, onConfirm, onClose 
   const [searchResults, setSearchResults] = useState([])
   const [searching, setSearching] = useState(false)
   const [tileMode, setTileMode] = useState('normal')
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const searchTimeout = useRef(null)
   const geocodeTimeout = useRef(null)
+
+  useEffect(() => {
+    function onFsChange() { setIsFullscreen(!!document.fullscreenElement) }
+    document.addEventListener('fullscreenchange', onFsChange)
+    return () => document.removeEventListener('fullscreenchange', onFsChange)
+  }, [])
+
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen?.()
+    } else {
+      document.exitFullscreen?.()
+    }
+  }
 
   useEffect(() => {
     if (!initialPos && navigator.geolocation) {
@@ -227,6 +242,17 @@ export default function MapPicker({ initialPos, fallbackPos, onConfirm, onClose 
         {tileMode === 'normal' ? 'ดาวเทียม' : 'แผนที่'}
       </button>
 
+      {/* Fullscreen toggle */}
+      <button
+        onClick={toggleFullscreen}
+        className="absolute right-4 p-3 bg-white rounded-full shadow-lg border border-gray-100 active:scale-95 transition-transform"
+        style={{ bottom: '197px', zIndex: 201 }}
+      >
+        {isFullscreen
+          ? <Minimize2 size={20} className="text-gray-600" />
+          : <Maximize2 size={20} className="text-gray-600" />}
+      </button>
+
       {/* GPS */}
       <button
         onClick={handleMyLocation}
@@ -259,6 +285,7 @@ export default function MapPicker({ initialPos, fallbackPos, onConfirm, onClose 
           ยืนยันตำแหน่ง
         </button>
       </div>
+
     </div>
   )
 }

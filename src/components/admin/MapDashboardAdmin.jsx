@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { MapContainer, TileLayer, Marker, Popup, Tooltip, Polyline, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, Tooltip, Polyline, CircleMarker, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { supabase } from '../../lib/supabase'
@@ -254,6 +254,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
   const [filterProjStatus, setFilterProjStatus] = useState('all')
   const [filterProjType,   setFilterProjType]   = useState('all')
   const [showLabels, setShowLabels] = useState(false)
+  const [mapViewMode, setMapViewMode] = useState('pin') // 'pin' | 'route'
 
   function clearFilters() {
     setShowRepair(true); setShowWater(true); setShowEnv(true)
@@ -661,6 +662,19 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
               </div>
               <span className="text-xs font-semibold text-gray-700">แสดงชื่อ</span>
             </label>
+            {/* mode toggle */}
+            <div className="flex shadow-md border border-gray-300 overflow-hidden" style={{ borderRadius: '3px', height: '30px' }}>
+              <button onClick={() => setMapViewMode('pin')}
+                className="flex items-center gap-1 px-2.5 text-xs font-semibold transition-colors"
+                style={{ backgroundColor: mapViewMode === 'pin' ? 'var(--color-primary)' : '#fff', color: mapViewMode === 'pin' ? '#fff' : '#374151' }}>
+                📍 ปักหมุด
+              </button>
+              <button onClick={() => setMapViewMode('route')}
+                className="flex items-center gap-1 px-2.5 text-xs font-semibold transition-colors border-l border-gray-300"
+                style={{ backgroundColor: mapViewMode === 'route' ? 'var(--color-primary)' : '#fff', color: mapViewMode === 'route' ? '#fff' : '#374151' }}>
+                〰 เส้นทาง
+              </button>
+            </div>
           </div>
         )}
 
@@ -852,26 +866,50 @@ export default function MapDashboardAdmin({ tenant, currentUserRole }) {
                 </Popup>
               )
 
-              if (hasRoute) {
+              if (hasRoute && mapViewMode === 'route') {
+                const rStart = w.route_points[0]
+                const rEnd   = w.route_points[w.route_points.length - 1]
                 return (
-                  <Polyline key={w.id}
-                    positions={w.route_points.map(p => [p.lat, p.lng])}
-                    pathOptions={{ color: lineColor, weight: lineWeight, opacity: 0.9, ...(dashArray && { dashArray }) }}
-                    eventHandlers={{ click: () => setSelectedItem({ type: 'civil', data: w }) }}>
-                    {showLabels && (
-                      <Tooltip sticky
-                        className="bg-white! text-gray-700! text-[10px]! font-semibold! border-gray-200! shadow-sm! px-1.5! py-0.5! rounded-lg!">
-                        {w.title.length > 24 ? w.title.slice(0, 24) + '…' : w.title}
-                      </Tooltip>
-                    )}
-                    {popup}
-                  </Polyline>
+                  <React.Fragment key={w.id}>
+                    <Polyline
+                      positions={w.route_points.map(p => [p.lat, p.lng])}
+                      pathOptions={{ color: lineColor, weight: lineWeight, opacity: 0.9, ...(dashArray && { dashArray }) }}
+                      eventHandlers={{ click: () => setSelectedItem({ type: 'civil', data: w }) }}>
+                      {showLabels && (
+                        <Tooltip sticky
+                          className="bg-white! text-gray-700! text-[10px]! font-semibold! border-gray-200! shadow-sm! px-1.5! py-0.5! rounded-lg!">
+                          {w.title.length > 24 ? w.title.slice(0, 24) + '…' : w.title}
+                        </Tooltip>
+                      )}
+                      {popup}
+                    </Polyline>
+                    <CircleMarker center={[rStart.lat, rStart.lng]} radius={7} pathOptions={{ color: '#fff', weight: 2, fillColor: '#22c55e', fillOpacity: 1 }}>
+                      {showLabels && (
+                        <Tooltip permanent direction="top" offset={[0, -8]}
+                          className="bg-white! border! border-gray-200! shadow-sm! rounded-lg! px-1.5! py-0.5! text-[10px]! font-semibold! text-gray-700!">
+                          จุดเริ่มต้น
+                        </Tooltip>
+                      )}
+                    </CircleMarker>
+                    <CircleMarker center={[rEnd.lat, rEnd.lng]} radius={7} pathOptions={{ color: '#fff', weight: 2, fillColor: '#ef4444', fillOpacity: 1 }}>
+                      {showLabels && (
+                        <Tooltip permanent direction="top" offset={[0, -8]}
+                          className="bg-white! border! border-gray-200! shadow-sm! rounded-lg! px-1.5! py-0.5! text-[10px]! font-semibold! text-gray-700!">
+                          จุดสิ้นสุด
+                        </Tooltip>
+                      )}
+                    </CircleMarker>
+                  </React.Fragment>
                 )
               }
 
+              const pinPos = hasRoute
+                ? [w.route_points[Math.floor(w.route_points.length / 2)].lat, w.route_points[Math.floor(w.route_points.length / 2)].lng]
+                : [w.latitude, w.longitude]
+
               return (
                 <Marker key={w.id}
-                  position={[w.latitude, w.longitude]}
+                  position={pinPos}
                   icon={makeDivIcon(
                     PROJ_TYPE_EMOJI[w.project_type] ?? '🔨',
                     statusColor,

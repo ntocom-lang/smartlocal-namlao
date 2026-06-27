@@ -6,6 +6,7 @@ import {
   Phone, MapPin, Globe, Share2, MessageCircle,
   ChevronRight, Star, Copy, Download, Check, Monitor, X,
   UploadIcon, PlusSquare, BookOpen, Store, FileText, Briefcase,
+  CalendarDays, CloudSun, Landmark,
 } from 'lucide-react'
 import qrCodeImage from '../assets/qr-code.png'
 import { supabase } from '../lib/supabase'
@@ -557,13 +558,36 @@ export default function MorePage() {
             href="/my-docs"
           />
           <MenuRow
-            icon={BookOpen}
-            iconBg="bg-indigo-50"
-            iconColor="text-indigo-500"
-            label="คู่มือการใช้งาน"
-            desc="วิธีการยื่นคำร้องสำหรับประชาชน"
-            href="/manual-citizen.html"
-            external
+            icon={CalendarDays}
+            iconBg="bg-orange-50"
+            iconColor="text-orange-500"
+            label="ปฏิทินกิจกรรม"
+            desc="ข่าวสารและกิจกรรมของหน่วยงาน"
+            href="/events"
+          />
+          <MenuRow
+            icon={Phone}
+            iconBg="bg-red-50"
+            iconColor="text-red-500"
+            label="สายด่วนฉุกเฉิน"
+            desc="เบอร์โทรฉุกเฉินที่สำคัญ พร้อมโทรได้ทันที"
+            href="/emergency"
+          />
+          <MenuRow
+            icon={Landmark}
+            iconBg="bg-teal-50"
+            iconColor="text-teal-500"
+            label="สถานที่ท่องเที่ยว"
+            desc="แหล่งท่องเที่ยว สถานที่น่าสนใจในชุมชน"
+            href="/tourism"
+          />
+          <MenuRow
+            icon={CloudSun}
+            iconBg="bg-sky-50"
+            iconColor="text-sky-400"
+            label="สภาพอากาศ"
+            desc="ข้อมูลอุณหภูมิและสภาพอากาศในพื้นที่"
+            href="/weather"
           />
           <MenuRow
             icon={Star}
@@ -572,6 +596,15 @@ export default function MorePage() {
             label="ประเมินความพึงพอใจ"
             desc="ให้คะแนนการให้บริการเพื่อพัฒนาหน่วยงาน"
             href="/satisfaction"
+          />
+          <MenuRow
+            icon={BookOpen}
+            iconBg="bg-indigo-50"
+            iconColor="text-indigo-500"
+            label="คู่มือการใช้งาน"
+            desc="วิธีการยื่นคำร้องสำหรับประชาชน"
+            href="/manual-citizen.html"
+            external
           />
         </Section>
 
