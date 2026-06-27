@@ -1,14 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  MapPin, Phone, FileText, ChevronDown, ChevronRight,
-  Loader2, CheckCircle2, ArrowLeft, X, Image, Camera, User,
+  MapPin, Phone, ChevronDown, ChevronRight,
+  Loader2, CheckCircle2, ArrowLeft, X, User,
   Lightbulb, Trash2, Scissors, Droplets, Package, Megaphone, Bug,
   Waves, Wind, Building2, Volume2, HelpCircle,
   CreditCard, PawPrint, Shield, FlameKindling, Axe, Wrench,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { compressImage } from '../lib/imageUtils'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { useTenant } from '../contexts/TenantContext'
 import MapPicker from '../components/MapPicker'
@@ -61,9 +60,7 @@ const CATEGORY_DEPT = {
 
 const GEO_STATUS = { idle: 'idle', ok: 'ok' }
 
-const MAX_FILE_MB = 5
-
-function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, uploadSkipped }) {
+function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[70vh] px-6 text-center">
       <div className="w-20 h-20 rounded-full bg-green-50 flex items-center justify-center mb-5">
@@ -74,11 +71,6 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, up
         <div className="mb-4 px-6 py-3 bg-gray-50 rounded-2xl border border-gray-100">
           <p className="text-xs text-gray-400 mb-0.5">เลขที่อ้างอิง — บันทึกไว้เพื่อติดตาม</p>
           <p className="text-2xl font-black text-gray-800 tracking-widest font-mono">{complaintNumber}</p>
-        </div>
-      )}
-      {uploadSkipped && (
-        <div className="mb-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-2xl max-w-xs">
-          <p className="text-xs text-amber-700 leading-relaxed">รูปภาพไม่สามารถอัปโหลดได้เนื่องจากสัญญาณอินเทอร์เน็ตอ่อน — คำร้องถูกส่งแล้ว แจ้งเจ้าหน้าที่ส่งรูปเพิ่มทีหลังได้</p>
         </div>
       )}
       <p className="text-gray-500 text-sm leading-relaxed mb-8 max-w-xs">
@@ -158,21 +150,14 @@ export default function CitizenForm() {
   const [geo, setGeo] = useState({ lat: null, lng: null, address: null })
   const [geoStatus, setGeoStatus] = useState(GEO_STATUS.idle)
   const [showMap, setShowMap] = useState(false)
-  const [files, setFiles] = useState([])
   const [showConsent, setShowConsent] = useState(false)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
 
-  useEffect(() => {
-    return () => files.forEach((f) => { if (f.preview) URL.revokeObjectURL(f.preview) })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
   const [showPdpa, setShowPdpa] = useState(false)
-  const [compressing, setCompressing] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
   const [complaintNumber, setComplaintNumber] = useState(null)
-  const [uploadSkipped, setUploadSkipped] = useState(false)
   const [locations, setLocations] = useState([])
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES)
   const abortCtrlRef = useRef(null)
@@ -230,42 +215,6 @@ export default function CitizenForm() {
       })
   }, [tenant?.id])
 
-  async function handleFileChange(e) {
-    const chosen = Array.from(e.target.files)
-    const remaining = 5 - files.length
-    if (remaining <= 0) return
-    const toProcess = chosen.slice(0, remaining)
-    setCompressing(true)
-    const added = []
-    const oversized = []
-    for (const f of toProcess) {
-      if (f.type.startsWith('image/')) {
-        try {
-          const compressed = await raceTimeout(compressImage(f), 15_000)
-          added.push({ file: compressed, name: compressed.name, preview: URL.createObjectURL(compressed) })
-        } catch {
-          // compress ล้มเหลว — ใช้ไฟล์ดิบถ้าไม่เกิน 5MB
-          if (f.size <= MAX_FILE_MB * 1024 * 1024)
-            added.push({ file: f, name: f.name, preview: URL.createObjectURL(f) })
-          else oversized.push(f.name)
-        }
-      } else {
-        if (f.size > MAX_FILE_MB * 1024 * 1024) oversized.push(f.name)
-        else added.push({ file: f, name: f.name, preview: null })
-      }
-    }
-    if (oversized.length > 0) setError(`ไฟล์ต่อไปนี้ใหญ่เกิน ${MAX_FILE_MB} MB: ${oversized.join(', ')}`)
-    setFiles((prev) => [...prev, ...added])
-    setCompressing(false)
-    e.target.value = ''
-  }
-
-  function removeFile(idx) {
-    setFiles((prev) => {
-      if (prev[idx]?.preview) URL.revokeObjectURL(prev[idx].preview)
-      return prev.filter((_, i) => i !== idx)
-    })
-  }
 
   function raceTimeout(promise, ms) {
     return Promise.race([
@@ -276,44 +225,6 @@ export default function CitizenForm() {
 
 
   // Upload รูปหลัง INSERT สำเร็จ — ส่งเป็น base64 JSON ผ่าน Edge Function
-  // mobile binary upload ไปที่ storage โดยตรงค้าง (0.00 KB/s)
-  // Edge Function รับ JSON (เหมือน API call ปกติ) → อัปโหลดฝั่ง server แทน
-  async function uploadAfterSuccess(complaintId) {
-    const urls = []
-    for (const item of files) {
-      try {
-        const rawExt = item.name.split('.').pop().toLowerCase()
-        const ext = rawExt && rawExt !== item.name ? rawExt : 'jpg'
-        const path = `${complaintId}/${crypto.randomUUID()}.${ext}`
-
-        // File → base64 string
-        const base64 = await new Promise((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onload = () => resolve(reader.result.split(',')[1])
-          reader.onerror = reject
-          reader.readAsDataURL(item.file)
-        })
-
-        const { data, error: fnErr } = await supabase.functions.invoke('upload-photo', {
-          body: { path, data: base64, contentType: item.file.type || 'image/jpeg' },
-        })
-
-        if (fnErr || !data?.url) {
-          console.error('[upload-photo fn]', fnErr?.message ?? data?.error)
-        } else {
-          urls.push(data.url)
-        }
-      } catch (err) {
-        console.error('[upload-photo exception]', err?.message ?? err)
-      }
-    }
-
-    if (urls.length > 0) {
-      await supabase.rpc('attach_complaint_photos', { p_complaint_id: complaintId, p_urls: urls })
-    }
-    return { attached: urls.length > 0 }
-  }
-
   const set = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }))
 
   function handleMapConfirm({ lat, lng, address }) {
@@ -379,14 +290,6 @@ export default function CitizenForm() {
       setSuccess(true)
       setComplaintNumber(inserted?.ref_no ?? null)
 
-      // Upload รูปใน background หลัง success — XHR ทนกว่า fetch, complaint บันทึกแล้วแน่นอน
-      if (files.length > 0) {
-        setUploadSkipped(true) // สมมติว่ายังไม่ได้แนบ → warning แสดงก่อน
-        uploadAfterSuccess(complaintId)
-          .then(({ attached }) => { if (attached) setUploadSkipped(false) })
-          .catch(() => {}) // ล้มเหลว → warning ยังแสดง (uploadSkipped=true)
-      }
-
       const allCats = [...(ftConfig?.categories ?? []), ...categories]
       const catLabel = allCats.find((c) => c.value === form.category)?.label?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category
       supabase.functions.invoke('send-push', {
@@ -404,7 +307,7 @@ export default function CitizenForm() {
     }
   }
 
-  if (success) return <SuccessScreen onBack={() => navigate('/')} onMyComplaints={() => navigate('/my-complaints')} complaintNumber={complaintNumber} isLoggedIn={isLoggedIn} uploadSkipped={uploadSkipped} />
+  if (success) return <SuccessScreen onBack={() => navigate('/')} onMyComplaints={() => navigate('/my-complaints')} complaintNumber={complaintNumber} isLoggedIn={isLoggedIn} />
 
   const allCatsDisplay = [...(ftConfig?.categories ?? []), ...categories]
   const catLabel = allCatsDisplay.find((c) => c.value === form.category)?.label?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category
@@ -580,57 +483,6 @@ export default function CitizenForm() {
           {geoStatus !== GEO_STATUS.ok && <ChevronRight size={18} />}
         </button>
 
-        {/* Attachments */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-sm font-semibold text-gray-700">แนบไฟล์หลักฐาน</p>
-            <p className="text-[11px] text-gray-500 font-medium">สูงสุด 5 ไฟล์ (ไม่เกิน 5MB/ไฟล์)</p>
-          </div>
-
-          {files.length > 0 && (
-            <div className="grid grid-cols-3 gap-2 mb-3">
-              {files.map((item, idx) => (
-                <div key={idx} className="relative group rounded-xl overflow-hidden border border-gray-200 bg-gray-50 aspect-square flex items-center justify-center">
-                  {item.preview
-                    ? <img src={item.preview} alt={item.name} className="object-cover w-full h-full" />
-                    : <div className="flex flex-col items-center gap-1 px-1">
-                        <FileText size={24} className="text-gray-400" />
-                        <span className="text-[11px] text-gray-400 text-center leading-tight truncate w-full px-1">{item.name}</span>
-                      </div>
-                  }
-                  <button type="button" onClick={() => removeFile(idx)}
-                    className="absolute top-1 right-1 bg-black/50 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <X size={12} className="text-white" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {files.length < 5 && (
-            <div className="grid grid-cols-3 gap-3">
-              <label className="flex flex-col items-center justify-center gap-1 py-2.5 rounded-2xl text-white text-sm font-medium cursor-pointer active:scale-95 transition-transform"
-                style={{ backgroundColor: 'var(--color-primary)' }}>
-                <Image size={22} strokeWidth={1.5} />
-                <span>รูปภาพ</span>
-                <input type="file" accept="image/*,.pdf,.doc,.docx" multiple className="hidden" onChange={handleFileChange} />
-              </label>
-              <label className="flex flex-col items-center justify-center gap-1 py-2.5 rounded-2xl text-white text-sm font-medium cursor-pointer active:scale-95 transition-transform"
-                style={{ backgroundColor: 'var(--color-primary)' }}>
-                <Camera size={22} strokeWidth={1.5} />
-                <span>กล้อง</span>
-                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileChange} />
-              </label>
-              <label className="flex flex-col items-center justify-center gap-1 py-2.5 rounded-2xl text-white text-sm font-medium cursor-pointer active:scale-95 transition-transform"
-                style={{ backgroundColor: 'var(--color-primary)' }}>
-                <FileText size={22} strokeWidth={1.5} />
-                <span>เอกสาร</span>
-                <input type="file" accept=".pdf,.doc,.docx" className="hidden" onChange={handleFileChange} />
-              </label>
-            </div>
-          )}
-        </div>
-
         {/* Error */}
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
@@ -647,12 +499,10 @@ export default function CitizenForm() {
           if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
           if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
           setShowConsent(true)
-        }} disabled={submitting || compressing}
+        }} disabled={submitting}
           className="w-full flex items-center justify-center gap-2 py-3 rounded-full font-semibold text-white text-sm shadow-sm active:scale-95 transition-all disabled:opacity-60"
           style={{ backgroundColor: '#16a34a' }}>
-          {compressing
-            ? <><Loader2 size={18} className="animate-spin" /> กำลังบีบอัดรูป...</>
-            : submitting
+          {submitting
             ? <><Loader2 size={18} className="animate-spin" /> กำลังส่ง...</>
             : 'ยื่นคำร้อง'}
         </button>
@@ -676,7 +526,7 @@ export default function CitizenForm() {
                 className="flex-1 py-3 rounded-2xl border border-gray-200 text-gray-600 text-sm font-medium">
                 ยกเลิก
               </button>
-              <button onClick={() => { setShowConsent(false); handleSubmit() }} disabled={submitting || compressing}
+              <button onClick={() => { setShowConsent(false); handleSubmit() }} disabled={submitting}
                 className="flex-1 py-3 rounded-2xl font-semibold text-white text-sm disabled:opacity-60"
                 style={{ backgroundColor: 'var(--color-primary)' }}>
                 {submitting ? <Loader2 size={16} className="animate-spin mx-auto" /> : 'ยอมรับและส่ง'}
