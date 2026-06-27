@@ -173,7 +173,6 @@ export default function CitizenForm() {
   const [success, setSuccess] = useState(false)
   const [complaintNumber, setComplaintNumber] = useState(null)
   const [uploadSkipped, setUploadSkipped] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState('')
   const [locations, setLocations] = useState([])
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES)
   const abortCtrlRef = useRef(null)
@@ -302,46 +301,30 @@ export default function CitizenForm() {
     })
   }
 
-  // อัปโหลดทีละไฟล์ + retry 1 ครั้ง — ใช้ XHR แทน fetch เพื่อ abort/timeout ที่เชื่อถือได้บน mobile
-  async function uploadAllFiles(complaintId, authToken) {
-    const signal = abortCtrlRef.current?.signal
+  // Upload รูปหลัง INSERT สำเร็จ — XHR ทนกว่า fetch สำหรับ background
+  // ไม่มี abort เพราะ INSERT สำเร็จแล้ว ค่อยๆ อัปโหลดได้
+  async function uploadAfterSuccess(complaintId, authToken) {
     const urls = []
-    let failCount = 0
-
-    for (let i = 0; i < files.length; i++) {
-      if (signal?.aborted) break
-      const item = files[i]
-      setUploadProgress(`อัปโหลดรูป ${i + 1}/${files.length}`)
-
-      let url = null
-      for (let attempt = 0; attempt < 2; attempt++) {
-        try {
-          const rawExt = item.name.split('.').pop().toLowerCase()
-          const ext = rawExt && rawExt !== item.name ? rawExt : 'jpg'
-          const path = `${complaintId}/${crypto.randomUUID()}.${ext}`
-          const { error: upErr } = await xhrUpload(path, item.file, authToken, signal)
-          if (upErr) {
-            console.error(`[upload ${i + 1} attempt ${attempt + 1}]`, upErr.message)
-            if (attempt === 0) continue
-            break
-          }
+    for (const item of files) {
+      try {
+        const rawExt = item.name.split('.').pop().toLowerCase()
+        const ext = rawExt && rawExt !== item.name ? rawExt : 'jpg'
+        const path = `${complaintId}/${crypto.randomUUID()}.${ext}`
+        const { error: upErr } = await xhrUpload(path, item.file, authToken, null)
+        if (!upErr) {
           const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
-          url = data?.publicUrl ?? null
-          break
-        } catch (err) {
-          console.error(`[upload ${i + 1} attempt ${attempt + 1}]`, err?.message ?? err)
-          if (attempt === 0 && !signal?.aborted) {
-            await new Promise((r) => setTimeout(r, 1_500))
-            continue
-          }
+          if (data?.publicUrl) urls.push(data.publicUrl)
+        } else {
+          console.error('[bg-upload]', upErr.message)
         }
+      } catch (err) {
+        console.error('[bg-upload exception]', err?.message ?? err)
       }
-
-      if (url) urls.push(url)
-      else failCount++
     }
-
-    return { urls, skipped: failCount > 0 }
+    if (urls.length > 0) {
+      await supabase.rpc('attach_complaint_photos', { p_complaint_id: complaintId, p_urls: urls })
+    }
+    return { attached: urls.length > 0 }
   }
 
   const set = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }))
@@ -378,17 +361,7 @@ export default function CitizenForm() {
 
       const complaintId = crypto.randomUUID()
 
-      // อัปโหลดรูปก่อน INSERT — ให้ browser ไม่ throttle (iOS Safari kill background fetch หลัง success)
-      let attachmentUrls = []
-      let uploadWasSkipped = false
-      if (files.length > 0) {
-        const { urls, skipped } = await uploadAllFiles(complaintId, authToken)
-        attachmentUrls = urls
-        uploadWasSkipped = skipped
-      }
-      setUploadProgress('กำลังบันทึกคำร้อง...')
-
-      // INSERT — timeout 40s กันแขวนบน mobile network ช้า/หลุด
+      // INSERT ก่อน — ไม่รอ upload (upload ค้างบน mobile ทำให้ connection เย็นลง INSERT ก็ stall ด้วย)
       let insertResult
       try {
         insertResult = await raceTimeout(
@@ -405,23 +378,29 @@ export default function CitizenForm() {
             latitude:        geo.lat,
             longitude:       geo.lng,
             user_id:         userId,
-            attachments:     attachmentUrls,
+            attachments:     [],
             department:      CATEGORY_DEPT[form.category] ?? 'สำนักปลัด',
           }).select('id, ref_no').single()
             .abortSignal(abortCtrl.signal),
-          40_000,
+          20_000,
         )
       } catch {
         setError('เครือข่ายช้าหรือขาดหาย กรุณาตรวจสอบสัญญาณแล้วกด ยื่นคำร้อง อีกครั้ง')
         return
       }
       const { data: inserted, error: dbError } = insertResult ?? {}
-
       if (dbError) { setError(`เกิดข้อผิดพลาด: ${dbError.message}`); return }
 
       setSuccess(true)
       setComplaintNumber(inserted?.ref_no ?? null)
-      if (uploadWasSkipped) setUploadSkipped(true)
+
+      // Upload รูปใน background หลัง success — XHR ทนกว่า fetch, complaint บันทึกแล้วแน่นอน
+      if (files.length > 0) {
+        setUploadSkipped(true) // สมมติว่ายังไม่ได้แนบ → warning แสดงก่อน
+        uploadAfterSuccess(complaintId, authToken)
+          .then(({ attached }) => { if (attached) setUploadSkipped(false) })
+          .catch(() => {}) // ล้มเหลว → warning ยังแสดง (uploadSkipped=true)
+      }
 
       const catLabel = categories.find((c) => c.value === form.category)?.label ?? form.category
       supabase.functions.invoke('send-push', {
@@ -435,7 +414,6 @@ export default function CitizenForm() {
       setError(isNetworkErr ? 'ไม่มีสัญญาณอินเทอร์เน็ต กรุณาตรวจสอบสัญญาณแล้วลองใหม่' : 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง')
     } finally {
       setSubmitting(false)
-      setUploadProgress('')
       abortCtrlRef.current = null
     }
   }
@@ -688,7 +666,7 @@ export default function CitizenForm() {
           {compressing
             ? <><Loader2 size={18} className="animate-spin" /> กำลังบีบอัดรูป...</>
             : submitting
-            ? <><Loader2 size={18} className="animate-spin" /> {uploadProgress || 'กำลังส่ง...'}</>
+            ? <><Loader2 size={18} className="animate-spin" /> กำลังส่ง...</>
             : 'ยื่นคำร้อง'}
         </button>
 
