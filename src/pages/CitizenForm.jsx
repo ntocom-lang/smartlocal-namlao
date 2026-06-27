@@ -1,15 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  MapPin, Phone, FileText, ChevronDown, ChevronRight,
-  Loader2, CheckCircle2, ArrowLeft, X, Image, Camera, User,
+  MapPin, Phone, ChevronDown, ChevronRight,
+  Loader2, CheckCircle2, ArrowLeft, X, User,
   Lightbulb, Trash2, Scissors, Droplets, Package, Megaphone, Bug,
   Waves, Wind, Building2, Volume2, HelpCircle,
   CreditCard, PawPrint, Shield, FlameKindling, Axe, Wrench, AlertTriangle,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { notifyTelegram } from '../lib/notifyTelegram'
-import { compressImage } from '../lib/imageUtils'
 import { useTenant } from '../contexts/TenantContext'
 import MapPicker from '../components/MapPicker'
 
@@ -60,9 +59,6 @@ const CATEGORY_DEPT = {
 
 const GEO_STATUS = { idle: 'idle', ok: 'ok' }
 
-const MAX_FILE_MB  = 5
-const COMPRESS_MB  = 2
-const MAX_DIM      = 1920
 
 function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn }) {
   return (
@@ -157,13 +153,8 @@ export default function CitizenForm() {
   const [geo, setGeo] = useState({ lat: null, lng: null, address: null })
   const [geoStatus, setGeoStatus] = useState(GEO_STATUS.idle)
   const [showMap, setShowMap] = useState(false)
-  const [files, setFiles] = useState([])
   const [showConsent, setShowConsent] = useState(false)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
-
-  useEffect(() => {
-    return () => files.forEach((f) => { if (f.preview) URL.revokeObjectURL(f.preview) })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [showPdpa, setShowPdpa] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -212,48 +203,6 @@ export default function CitizenForm() {
       })
   }, [tenant?.id])
 
-  async function handleFileChange(e) {
-    const chosen = Array.from(e.target.files)
-    const remaining = 5 - files.length
-    if (remaining <= 0) return
-    const toProcess = chosen.slice(0, remaining)
-    const added = []
-    const oversized = []
-    for (const f of toProcess) {
-      if (f.type.startsWith('image/')) {
-        const needsCompress = f.size > COMPRESS_MB * 1024 * 1024
-        const processed = needsCompress ? await compressImage(f) : f
-        added.push({ file: processed, name: processed.name, preview: URL.createObjectURL(processed), compressed: needsCompress })
-      } else {
-        if (f.size > MAX_FILE_MB * 1024 * 1024) oversized.push(f.name)
-        else added.push({ file: f, name: f.name, preview: null, compressed: false })
-      }
-    }
-    if (oversized.length > 0) setError(`ไฟล์ต่อไปนี้ใหญ่เกิน ${MAX_FILE_MB} MB: ${oversized.join(', ')}`)
-    setFiles((prev) => [...prev, ...added])
-    e.target.value = ''
-  }
-
-  function removeFile(idx) {
-    setFiles((prev) => {
-      if (prev[idx]?.preview) URL.revokeObjectURL(prev[idx].preview)
-      return prev.filter((_, i) => i !== idx)
-    })
-  }
-
-  async function uploadFiles(complaintId) {
-    const urls = []
-    for (const item of files) {
-      const ext = item.name.split('.').pop()
-      const path = `${complaintId}/${crypto.randomUUID()}.${ext}`
-      const { error: upErr } = await supabase.storage.from('complaint-attachments').upload(path, item.file, { upsert: false })
-      if (upErr) continue
-      const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
-      if (data?.publicUrl) urls.push(data.publicUrl)
-    }
-    return urls
-  }
-
   const set = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }))
 
   function handleMapConfirm({ lat, lng, address }) {
@@ -277,7 +226,6 @@ export default function CitizenForm() {
 
     const { data: { session } } = await supabase.auth.getSession()
     const complaintId = crypto.randomUUID()
-    const attachmentUrls = files.length > 0 ? await uploadFiles(complaintId) : []
 
     const { data: inserted, error: dbError } = await supabase.from('complaints').insert({
       id:              complaintId,
@@ -292,7 +240,7 @@ export default function CitizenForm() {
       latitude:        geo.lat,
       longitude:       geo.lng,
       user_id:         session?.user?.id ?? null,
-      attachments:     attachmentUrls,
+      attachments:     [],
       department:      CATEGORY_DEPT[form.category] ?? 'สำนักปลัด',
     }).select('id, ref_no').single()
 
@@ -485,57 +433,6 @@ export default function CitizenForm() {
           </span>
           {geoStatus !== GEO_STATUS.ok && <ChevronRight size={18} />}
         </button>
-
-        {/* Attachments */}
-        <div>
-          <p className="text-sm font-semibold text-gray-700 mb-2">แนบไฟล์หลักฐาน</p>
-
-          {files.length > 0 && (
-            <div className="grid grid-cols-3 gap-2 mb-3">
-              {files.map((item, idx) => (
-                <div key={idx} className="relative group rounded-xl overflow-hidden border border-gray-200 bg-gray-50 aspect-square flex items-center justify-center">
-                  {item.preview
-                    ? <img src={item.preview} alt={item.name} className="object-cover w-full h-full" />
-                    : <div className="flex flex-col items-center gap-1 px-1">
-                        <FileText size={24} className="text-gray-400" />
-                        <span className="text-[11px] text-gray-400 text-center leading-tight truncate w-full px-1">{item.name}</span>
-                      </div>
-                  }
-                  {item.compressed && (
-                    <span className="absolute bottom-1 left-1 bg-green-500/80 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none">บีบอัด</span>
-                  )}
-                  <button type="button" onClick={() => removeFile(idx)}
-                    className="absolute top-1 right-1 bg-black/50 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <X size={12} className="text-white" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {files.length < 5 && (
-            <div className="grid grid-cols-3 gap-3">
-              <label className="flex flex-col items-center justify-center gap-1 py-2.5 rounded-2xl text-white text-sm font-medium cursor-pointer active:scale-95 transition-transform"
-                style={{ backgroundColor: 'var(--color-primary)' }}>
-                <Image size={22} strokeWidth={1.5} />
-                <span>รูปภาพ</span>
-                <input type="file" accept="image/*,.pdf,.doc,.docx" multiple className="hidden" onChange={handleFileChange} />
-              </label>
-              <label className="flex flex-col items-center justify-center gap-1 py-2.5 rounded-2xl text-white text-sm font-medium cursor-pointer active:scale-95 transition-transform"
-                style={{ backgroundColor: 'var(--color-primary)' }}>
-                <Camera size={22} strokeWidth={1.5} />
-                <span>กล้อง</span>
-                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileChange} />
-              </label>
-              <label className="flex flex-col items-center justify-center gap-1 py-2.5 rounded-2xl text-white text-sm font-medium cursor-pointer active:scale-95 transition-transform"
-                style={{ backgroundColor: 'var(--color-primary)' }}>
-                <FileText size={22} strokeWidth={1.5} />
-                <span>เอกสาร</span>
-                <input type="file" accept=".pdf,.doc,.docx" className="hidden" onChange={handleFileChange} />
-              </label>
-            </div>
-          )}
-        </div>
 
         {/* Error */}
         {error && (
