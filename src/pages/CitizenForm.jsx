@@ -7,7 +7,7 @@ import {
   Waves, Wind, Building2, Volume2, HelpCircle,
   CreditCard, PawPrint, Shield, FlameKindling, Axe, Wrench,
 } from 'lucide-react'
-import { supabase, supabaseUrl, supabaseAnonKey } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
 import { compressImage } from '../lib/imageUtils'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { useTenant } from '../contexts/TenantContext'
@@ -274,53 +274,40 @@ export default function CitizenForm() {
     ])
   }
 
-  // XHR upload — ใช้แทน fetch() ของ supabase storage
-  // xhr.timeout = HTTP-level timeout (ไม่ถูก JS suspend), xhr.abort() = ยกเลิก TCP จริง
-  function xhrUpload(path, file, authToken, signal) {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest()
-      xhr.open('POST', `${supabaseUrl}/storage/v1/object/complaint-attachments/${path}`)
-      xhr.setRequestHeader('Authorization', `Bearer ${authToken}`)
-      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
-      xhr.setRequestHeader('x-upsert', 'false')
-      xhr.timeout = 45_000
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) resolve({ error: null })
-        else {
-          const msg = (() => { try { return JSON.parse(xhr.responseText)?.error ?? `HTTP ${xhr.status}` } catch { return `HTTP ${xhr.status}` } })()
-          resolve({ error: { message: msg } })
-        }
-      }
-      xhr.onerror = () => reject(new Error('network'))
-      xhr.ontimeout = () => reject(new Error('timeout'))
-      if (signal) {
-        if (signal.aborted) { reject(new DOMException('Aborted', 'AbortError')); return }
-        signal.addEventListener('abort', () => { xhr.abort(); reject(new DOMException('Aborted', 'AbortError')) }, { once: true })
-      }
-      xhr.send(file)
-    })
-  }
 
-  // Upload รูปหลัง INSERT สำเร็จ — XHR ทนกว่า fetch สำหรับ background
-  // ไม่มี abort เพราะ INSERT สำเร็จแล้ว ค่อยๆ อัปโหลดได้
-  async function uploadAfterSuccess(complaintId, authToken) {
+  // Upload รูปหลัง INSERT สำเร็จ — ส่งเป็น base64 JSON ผ่าน Edge Function
+  // mobile binary upload ไปที่ storage โดยตรงค้าง (0.00 KB/s)
+  // Edge Function รับ JSON (เหมือน API call ปกติ) → อัปโหลดฝั่ง server แทน
+  async function uploadAfterSuccess(complaintId) {
     const urls = []
     for (const item of files) {
       try {
         const rawExt = item.name.split('.').pop().toLowerCase()
         const ext = rawExt && rawExt !== item.name ? rawExt : 'jpg'
         const path = `${complaintId}/${crypto.randomUUID()}.${ext}`
-        const { error: upErr } = await xhrUpload(path, item.file, authToken, null)
-        if (!upErr) {
-          const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
-          if (data?.publicUrl) urls.push(data.publicUrl)
+
+        // File → base64 string
+        const base64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result.split(',')[1])
+          reader.onerror = reject
+          reader.readAsDataURL(item.file)
+        })
+
+        const { data, error: fnErr } = await supabase.functions.invoke('upload-photo', {
+          body: { path, data: base64, contentType: item.file.type || 'image/jpeg' },
+        })
+
+        if (fnErr || !data?.url) {
+          console.error('[upload-photo fn]', fnErr?.message ?? data?.error)
         } else {
-          console.error('[bg-upload]', upErr.message)
+          urls.push(data.url)
         }
       } catch (err) {
-        console.error('[bg-upload exception]', err?.message ?? err)
+        console.error('[upload-photo exception]', err?.message ?? err)
       }
     }
+
     if (urls.length > 0) {
       await supabase.rpc('attach_complaint_photos', { p_complaint_id: complaintId, p_urls: urls })
     }
@@ -357,8 +344,6 @@ export default function CitizenForm() {
         5_000,
       ).catch(() => ({ data: null }))
       const userId = sessionData?.session?.user?.id ?? null
-      const authToken = sessionData?.session?.access_token ?? supabaseAnonKey
-
       const complaintId = crypto.randomUUID()
 
       // INSERT ก่อน — ไม่รอ upload (upload ค้างบน mobile ทำให้ connection เย็นลง INSERT ก็ stall ด้วย)
@@ -397,7 +382,7 @@ export default function CitizenForm() {
       // Upload รูปใน background หลัง success — XHR ทนกว่า fetch, complaint บันทึกแล้วแน่นอน
       if (files.length > 0) {
         setUploadSkipped(true) // สมมติว่ายังไม่ได้แนบ → warning แสดงก่อน
-        uploadAfterSuccess(complaintId, authToken)
+        uploadAfterSuccess(complaintId)
           .then(({ attached }) => { if (attached) setUploadSkipped(false) })
           .catch(() => {}) // ล้มเหลว → warning ยังแสดง (uploadSkipped=true)
       }
