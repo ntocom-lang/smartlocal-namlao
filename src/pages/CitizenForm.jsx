@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   MapPin, Phone, ChevronDown, ChevronRight,
   Loader2, CheckCircle2, ArrowLeft, X, User,
-  Camera, Image, Upload, CheckCircle,
+
   Lightbulb, Trash2, Scissors, Droplets, Package, Megaphone, Bug,
   Waves, Wind, Building2, Volume2, HelpCircle,
   CreditCard, PawPrint, Shield, FlameKindling, Axe, Wrench,
@@ -61,55 +61,7 @@ const CATEGORY_DEPT = {
 
 const GEO_STATUS = { idle: 'idle', ok: 'ok' }
 
-function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, complaintId }) {
-  const [photos, setPhotos]       = useState([]) // { file, preview, status: 'pending'|'ok'|'error' }
-  const [uploading, setUploading] = useState(false)
-  const [uploadDone, setUploadDone] = useState(false)
-
-  function handlePick(e) {
-    const picked = Array.from(e.target.files).slice(0, 5 - photos.length)
-    setPhotos(prev => [...prev, ...picked.map(f => ({ file: f, preview: URL.createObjectURL(f), status: 'pending' }))])
-    e.target.value = ''
-  }
-
-  function removePhoto(idx) {
-    setPhotos(prev => { URL.revokeObjectURL(prev[idx].preview); return prev.filter((_, i) => i !== idx) })
-  }
-
-  async function handleUpload() {
-    if (!complaintId || photos.length === 0 || uploading) return
-    setUploading(true)
-    const updated = photos.map(p => ({ ...p }))
-    const urls = []
-    for (let i = 0; i < updated.length; i++) {
-      if (updated[i].status === 'ok') continue
-      try {
-        const f = updated[i].file
-        const ext = f.name.split('.').pop().toLowerCase() || 'jpg'
-        const path = `${complaintId}/${crypto.randomUUID()}.${ext}`
-        const base64 = await new Promise((res, rej) => {
-          const reader = new FileReader()
-          reader.onload = () => res(reader.result.split(',')[1])
-          reader.onerror = rej
-          reader.readAsDataURL(f)
-        })
-        const { data, error: fnErr } = await supabase.functions.invoke('upload-photo', {
-          body: { path, data: base64, contentType: f.type || 'image/jpeg' },
-        })
-        if (fnErr || !data?.url) { updated[i].status = 'error' }
-        else { updated[i].status = 'ok'; urls.push(data.url) }
-      } catch { updated[i].status = 'error' }
-      setPhotos([...updated])
-    }
-    if (urls.length > 0) {
-      await supabase.rpc('attach_complaint_photos', { p_complaint_id: complaintId, p_urls: urls }).catch(() => {})
-    }
-    setUploading(false)
-    setUploadDone(updated.every(p => p.status === 'ok'))
-  }
-
-  const hasError = photos.some(p => p.status === 'error')
-
+function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[70vh] px-6 text-center">
       <div className="w-20 h-20 rounded-full bg-green-50 flex items-center justify-center mb-5">
@@ -122,80 +74,6 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
           <p className="text-2xl font-black text-gray-800 tracking-widest font-mono">{complaintNumber}</p>
         </div>
       )}
-
-      {/* Photo section */}
-      {complaintId && !uploadDone && (
-        <div className="w-full max-w-xs mb-6 text-left">
-          <p className="text-xs font-semibold text-gray-500 mb-2 text-center">ต้องการแนบรูปภาพประกอบ? (ไม่บังคับ)</p>
-
-          {photos.length > 0 && (
-            <div className="grid grid-cols-3 gap-2 mb-3">
-              {photos.map((p, i) => (
-                <div key={i} className="relative rounded-xl overflow-hidden aspect-square border-2"
-                  style={{ borderColor: p.status === 'ok' ? '#22c55e' : p.status === 'error' ? '#ef4444' : '#e5e7eb' }}>
-                  <img src={p.preview} alt="" className="w-full h-full object-cover" />
-                  {p.status === 'ok' && (
-                    <div className="absolute inset-0 bg-green-500/30 flex items-center justify-center">
-                      <CheckCircle size={22} className="text-white drop-shadow" />
-                    </div>
-                  )}
-                  {p.status === 'error' && (
-                    <div className="absolute inset-0 bg-red-500/30 flex items-center justify-center">
-                      <X size={22} className="text-white drop-shadow" />
-                    </div>
-                  )}
-                  {p.status === 'pending' && !uploading && (
-                    <button onClick={() => removePhoto(i)}
-                      className="absolute top-1 right-1 bg-black/50 rounded-full p-0.5">
-                      <X size={12} className="text-white" />
-                    </button>
-                  )}
-                  {p.status === 'pending' && uploading && (
-                    <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
-                      <Loader2 size={18} className="animate-spin text-white" />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="flex gap-2 mb-3">
-            {photos.length < 5 && (
-              <>
-                <label className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-2xl border-2 border-dashed border-gray-300 text-gray-500 text-xs font-semibold cursor-pointer hover:border-gray-400 transition-colors">
-                  <Image size={16} /> แกลเลอรี
-                  <input type="file" accept="image/*" multiple className="hidden" onChange={handlePick} />
-                </label>
-                <label className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-2xl border-2 border-dashed border-gray-300 text-gray-500 text-xs font-semibold cursor-pointer hover:border-gray-400 transition-colors">
-                  <Camera size={16} /> กล้อง
-                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePick} />
-                </label>
-              </>
-            )}
-          </div>
-
-          {photos.length > 0 && (
-            <button onClick={handleUpload} disabled={uploading}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl font-semibold text-sm text-white disabled:opacity-60 transition-all active:scale-95"
-              style={{ backgroundColor: hasError ? '#ef4444' : 'var(--color-primary)' }}>
-              {uploading
-                ? <><Loader2 size={16} className="animate-spin" /> กำลังส่งรูป...</>
-                : hasError
-                ? <><Upload size={16} /> ส่งใหม่อีกครั้ง ({photos.filter(p => p.status !== 'ok').length} ภาพ)</>
-                : <><Upload size={16} /> ส่งรูปภาพ {photos.length} ภาพ</>}
-            </button>
-          )}
-        </div>
-      )}
-
-      {uploadDone && (
-        <div className="mb-5 px-4 py-2.5 bg-green-50 border border-green-200 rounded-2xl flex items-center gap-2">
-          <CheckCircle size={16} className="text-green-600 shrink-0" />
-          <p className="text-xs text-green-700 font-semibold">แนบรูปภาพเรียบร้อย {photos.length} ภาพ</p>
-        </div>
-      )}
-
       <p className="text-gray-500 text-sm leading-relaxed mb-8 max-w-xs">
         เจ้าหน้าที่จะดำเนินการตรวจสอบและติดต่อกลับหาท่านโดยเร็วที่สุด
       </p>
@@ -281,7 +159,6 @@ export default function CitizenForm() {
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
   const [complaintNumber, setComplaintNumber] = useState(null)
-  const [savedComplaintId, setSavedComplaintId] = useState(null)
   const [locations, setLocations] = useState([])
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES)
   const abortCtrlRef = useRef(null)
@@ -348,7 +225,6 @@ export default function CitizenForm() {
   }
 
 
-  // Upload รูปหลัง INSERT สำเร็จ — ส่งเป็น base64 JSON ผ่าน Edge Function
   const set = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }))
 
   function handleMapConfirm({ lat, lng, address }) {
@@ -413,8 +289,6 @@ export default function CitizenForm() {
 
       setSuccess(true)
       setComplaintNumber(inserted?.ref_no ?? null)
-      setSavedComplaintId(complaintId)
-
       const allCats = [...(ftConfig?.categories ?? []), ...categories]
       const catLabel = allCats.find((c) => c.value === form.category)?.label?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category
       supabase.functions.invoke('send-push', {
@@ -432,7 +306,7 @@ export default function CitizenForm() {
     }
   }
 
-  if (success) return <SuccessScreen onBack={() => navigate('/')} onMyComplaints={() => navigate('/my-complaints')} complaintNumber={complaintNumber} isLoggedIn={isLoggedIn} complaintId={savedComplaintId} />
+  if (success) return <SuccessScreen onBack={() => navigate('/')} onMyComplaints={() => navigate('/my-complaints')} complaintNumber={complaintNumber} isLoggedIn={isLoggedIn} />
 
   const allCatsDisplay = [...(ftConfig?.categories ?? []), ...categories]
   const catLabel = allCatsDisplay.find((c) => c.value === form.category)?.label?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category
