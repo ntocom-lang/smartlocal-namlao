@@ -91,8 +91,7 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
       toUpload.map(async ({ file, idx }) => {
         try {
           const compressed = await compressImage(file, 1920, 0.85)
-          const ext = file.name.split('.').pop().toLowerCase() || 'jpg'
-          const path = `${complaintId}/${crypto.randomUUID()}.${ext}`
+          const path = `${complaintId}/${crypto.randomUUID()}.jpg`
           const { error } = await supabase.storage
             .from('complaint-attachments')
             .upload(path, compressed, { upsert: false })
