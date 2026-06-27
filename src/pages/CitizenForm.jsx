@@ -270,16 +270,23 @@ export default function CitizenForm() {
   // อัปโหลดไฟล์แบบ parallel — ทำใน foreground ก่อน setSuccess
   // ไม่ใช้ fire-and-forget หลัง success เพราะ iOS Safari throttle background fetch
   async function uploadAllFiles(complaintId) {
+    // ดึง signal จาก abortCtrlRef เพื่อให้ visibilitychange abort ตัด upload ได้ทันที
+    // (supabase storage ไม่รองรับ AbortSignal โดยตรง — ใช้ Promise.race แทน)
+    const signal = abortCtrlRef.current?.signal
     const results = await Promise.all(
       files.map(async (item) => {
         try {
           const rawExt = item.name.split('.').pop().toLowerCase()
           const ext = rawExt && rawExt !== item.name ? rawExt : 'jpg'
           const path = `${complaintId}/${crypto.randomUUID()}.${ext}`
-          const { error: upErr } = await raceTimeout(
+          const { error: upErr } = await Promise.race([
             supabase.storage.from('complaint-attachments').upload(path, item.file, { upsert: false }),
-            30_000,
-          )
+            new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 30_000)),
+            ...(signal ? [new Promise((_, rej) => {
+              if (signal.aborted) return rej(new DOMException('Aborted', 'AbortError'))
+              signal.addEventListener('abort', () => rej(new DOMException('Aborted', 'AbortError')), { once: true })
+            })] : []),
+          ])
           if (upErr) {
             console.error('[upload]', upErr.message ?? upErr)
             return null
