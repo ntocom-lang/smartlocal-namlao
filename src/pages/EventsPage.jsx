@@ -274,7 +274,7 @@ export default function EventsPage() {
         .then(({ data: p }) => {
           const r = p?.role ?? ''
           setRole(r)
-          setCanEdit(r === 'admin' || r === 'superadmin' || r === 'viewer' || r === 'council')
+          setCanEdit(r === 'admin' || r === 'superadmin' || r === 'officer' || r === 'council')
         })
     })
   }, [])
