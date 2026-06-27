@@ -4063,7 +4063,6 @@ const PAGE_LABELS = {
   report: 'รายงานสรุป',
   categories: 'ประเภทคำร้อง',
   'fee-settings': 'ค่าธรรมเนียม',
-  assignments: 'ผู้รับผิดชอบ',
   emergency: 'สายด่วน',
   locations: 'สถานที่เกิดเหตุ',
   'system-settings': 'ตั้งค่าระบบ',
@@ -4362,7 +4361,6 @@ export default function AdminDashboard() {
               items: [
                 { key: 'categories',  label: 'ประเภทคำร้อง', Icon: Tag,      color: '#d97706', show: currentUserRole !== 'viewer' },
                 { key: 'fee-settings', label: 'ค่าธรรมเนียม', Icon: Banknote, color: '#10b981', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                { key: 'assignments', label: 'ผู้รับผิดชอบ', Icon: Wrench,   color: '#d97706', show: true },
                 { key: 'emergency',   label: 'สายด่วน',       Icon: Phone,    color: '#ef4444', show: currentUserRole !== 'viewer' },
                 { key: 'locations',   label: 'สถานที่เกิดเหตุ', Icon: MapPin, color: '#0891b2', show: currentUserRole !== 'viewer' },
                 { key: 'system-settings', label: 'ตั้งค่าระบบ',  Icon: Settings,    color: '#3b82f6', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
