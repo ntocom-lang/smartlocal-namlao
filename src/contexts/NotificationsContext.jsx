@@ -43,7 +43,7 @@ export function NotificationsProvider({ children }) {
     setLoading(true)
     const { data } = await supabase
       .from('complaints')
-      .select('id, complaint_number, category, status, updated_at, created_at')
+      .select('id, ref_no, category, status, updated_at, created_at')
       .eq('municipality_id', tenant.id)
       .eq('user_id', session.user.id)
       .neq('status', 'pending')

@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Bell, ChevronLeft, CheckCircle2, XCircle, Loader2,
@@ -65,6 +66,13 @@ export default function NotificationsPage() {
 
   const hasUnread = items.some(n => n._unread)
   const unreadItems = items.filter(n => n._unread)
+
+  // mark all read automatically when page opens and items are loaded
+  useEffect(() => {
+    if (!loading && items.length > 0 && hasUnread) {
+      markAllRead()
+    }
+  }, [loading]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#eef2f7' }}>
@@ -137,7 +145,7 @@ export default function NotificationsPage() {
               </button>
             ) : <div />}
             <button
-              onClick={() => navigate('/my-complaints')}
+              onClick={() => { markAllRead(); navigate('/my-complaints') }}
               className="text-sm font-semibold px-4 py-1.5 rounded-xl transition-colors"
               style={{
                 color: 'var(--color-primary)',
@@ -155,14 +163,7 @@ export default function NotificationsPage() {
                 const Icon = s.Icon
                 const catLabel = CATEGORY_LABEL[n.category] ?? n.category
                 const catEmoji = CATEGORY_EMOJI[n.category] ?? '📄'
-                const cno = n.complaint_number
-                  ? (() => {
-                      const d = new Date(n.created_at)
-                      const yy = String(d.getFullYear() + 543).slice(-2)
-                      const mm = String(d.getMonth() + 1).padStart(2, '0')
-                      return `${yy}${mm}${String(n.complaint_number).padStart(3, '0')}`
-                    })()
-                  : null
+                const cno = n.ref_no ?? null
 
                 return (
                   <button
