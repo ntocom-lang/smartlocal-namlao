@@ -565,6 +565,14 @@ export default function MorePage() {
             href="/manual-citizen.html"
             external
           />
+          <MenuRow
+            icon={Star}
+            iconBg="bg-yellow-50"
+            iconColor="text-yellow-500"
+            label="ประเมินความพึงพอใจ"
+            desc="ให้คะแนนการให้บริการเพื่อพัฒนาหน่วยงาน"
+            href="/satisfaction"
+          />
         </Section>
 
         {/* ─── ความโปร่งใส ─── */}
