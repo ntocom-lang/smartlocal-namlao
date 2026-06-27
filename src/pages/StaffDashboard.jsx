@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Inbox, FileText, CheckSquare, BarChart2, LogOut,
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
@@ -2023,8 +2023,9 @@ function StaffHomeModule({ visibleGroups, setActiveModule, pendingCount, staffNa
 
 export default function StaffDashboard() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { tenant } = useTenant()
-  const [activeModule, setActiveModule] = useState('home')
+  const [activeModule, setActiveModule] = useState(location.state?.module ?? 'home')
   const [profile, setProfile]           = useState(null)
   const [pendingCount, setPendingCount] = useState(0)
 

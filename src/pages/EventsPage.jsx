@@ -251,6 +251,8 @@ function CalendarView({ events, onSelectEvent }) {
   )
 }
 
+const ADMIN_ROLES = new Set(['admin', 'superadmin', 'officer', 'council'])
+
 export default function EventsPage() {
   const { tenant } = useTenant()
   const navigate   = useNavigate()
@@ -274,7 +276,7 @@ export default function EventsPage() {
         .then(({ data: p }) => {
           const r = p?.role ?? ''
           setRole(r)
-          setCanEdit(r === 'admin' || r === 'superadmin' || r === 'officer' || r === 'council')
+          setCanEdit(r === 'admin' || r === 'superadmin' || r === 'officer' || r === 'council' || r === 'viewer' || r === 'staff')
         })
     })
   }, [])
@@ -308,6 +310,14 @@ export default function EventsPage() {
       setLoading(false)
     })
   }, [tenant?.id, role])
+
+  function goToAddEvent() {
+    if (ADMIN_ROLES.has(role)) {
+      navigate('/admin', { state: { page: 'events' } })
+    } else {
+      navigate('/staff', { state: { module: 'events' } })
+    }
+  }
 
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -523,7 +533,7 @@ export default function EventsPage() {
             </button>
             {canEdit && (
               <button
-                onClick={() => navigate('/admin', { state: { page: 'events' } })}
+                onClick={goToAddEvent}
                 className="flex items-center justify-center gap-1.5 w-[92px] h-[36px] rounded-xl text-sm font-bold text-white transition-all active:scale-95 shadow-sm"
                 style={{ backgroundColor: 'var(--color-primary)' }}
               >
@@ -548,7 +558,7 @@ export default function EventsPage() {
         </div>
         {canEdit && (
           <button
-            onClick={() => navigate('/admin', { state: { page: 'events' } })}
+            onClick={goToAddEvent}
             className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-white shadow-sm transition-all hover:opacity-90"
             style={{ backgroundColor: 'var(--color-primary)' }}
           >
