@@ -269,7 +269,7 @@ export default function CitizenForm() {
   const ftConfig = FORM_TYPE_CONFIG[formType] ?? null
 
   const defaultCategory = ftConfig?.categories?.[0]?.value ?? preCategory
-  const [form, setForm] = useState({ category: defaultCategory, subject: '', village: '', detail: '', phone: '', reporter_name: '' })
+  const [form, setForm] = useState({ category: defaultCategory, village: '', detail: '', phone: '', reporter_name: '' })
   const [geo, setGeo] = useState({ lat: null, lng: null, address: null })
   const [geoStatus, setGeoStatus] = useState(GEO_STATUS.idle)
   const [showMap, setShowMap] = useState(false)
@@ -361,7 +361,7 @@ export default function CitizenForm() {
     e?.preventDefault()
     if (!form.category) { setError('กรุณาเลือกประเภทคำร้อง'); return }
     if (!form.reporter_name.trim()) { setError('กรุณากรอกชื่อ-นามสกุล'); return }
-    if (!form.subject.trim()) { setError('กรุณากรอกหัวข้อ'); return }
+
     if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
     if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
     if (!tenant?.id) { setError('ไม่พบข้อมูลหน่วยงาน'); return }
@@ -390,7 +390,7 @@ export default function CitizenForm() {
             municipality_id: tenant.id,
             category:        form.category,
             form_type:       formType !== 'legacy' ? formType : 'legacy',
-            subject:         form.subject.trim(),
+
             village:         form.village || null,
             detail:          form.detail.trim(),
             phone:           form.phone.trim(),
@@ -556,10 +556,7 @@ export default function CitizenForm() {
           {isLoggedIn && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-emerald-500 font-semibold">จากโปรไฟล์</span>}
         </div>
 
-        {/* Subject */}
-        <input type="text" value={form.subject} onChange={set('subject')} required
-          placeholder="หัวข้อ"
-          className="w-full px-4 py-2.5 rounded-xl border border-gray-300 bg-white text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:border-blue-400" />
+
 
         {/* Detail */}
         <textarea value={form.detail} onChange={set('detail')} rows={4} required
@@ -620,7 +617,7 @@ export default function CitizenForm() {
           setError(null)
           if (!form.category) { setError('กรุณาเลือกประเภทคำร้อง'); return }
           if (!form.reporter_name.trim()) { setError('กรุณากรอกชื่อ-นามสกุล'); return }
-          if (!form.subject.trim()) { setError('กรุณากรอกหัวข้อ'); return }
+
           if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
           if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
           setShowConsent(true)

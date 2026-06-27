@@ -35,7 +35,11 @@
       "Bash(node -e \"const {execSync} = require\\('child_process'\\); console.log\\(execSync\\('npx lucide-react --version 2>nul || echo ok'\\).toString\\(\\)\\)\")",
       "Bash(node -e \"require\\('./node_modules/lucide-react/dist/cjs/lucide-react.js'\\)\")",
       "Bash(node -e \"const l = require\\('./node_modules/lucide-react/dist/cjs/lucide-react.js'\\); const icons = ['ArrowLeft','MapPin','Phone','Globe','Share2','Mail','Printer','Network','Map','Navigation','ExternalLink','Info','MapPinned','ChevronRight']; icons.forEach\\(i => { if\\(!l[i]\\) console.log\\('MISSING:', i\\) }\\); console.log\\('done'\\)\")",
-      "Bash(node --input-type=module --eval ' *)"
+      "Bash(node --input-type=module --eval ' *)",
+      "Bash(grep -v \"//\\\\|CATEGORY\\\\|formType\\\\|form\\\\.\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ]
   }
 }
