@@ -9,7 +9,6 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { notifyTelegram } from '../lib/notifyTelegram'
-import { compressImage } from '../lib/imageUtils'
 import { useTenant } from '../contexts/TenantContext'
 import MapPicker from '../components/MapPicker'
 
@@ -167,7 +166,6 @@ export default function CitizenForm() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [showPdpa, setShowPdpa] = useState(false)
-  const [compressing, setCompressing] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
@@ -231,36 +229,19 @@ export default function CitizenForm() {
       })
   }, [tenant?.id])
 
-  async function handleFileChange(e) {
+  function handleFileChange(e) {
     const chosen = Array.from(e.target.files)
     const remaining = 5 - files.length
     if (remaining <= 0) return
     const toProcess = chosen.slice(0, remaining)
-    setCompressing(true)
     const added = []
     const oversized = []
     for (const f of toProcess) {
-      if (f.type.startsWith('image/')) {
-        try {
-          const processed = await raceTimeout(compressImage(f), 15_000)
-          added.push({ file: processed, name: processed.name, preview: URL.createObjectURL(processed), compressed: true })
-        } catch {
-          // compress ล้มเหลว — ใช้ไฟล์ดิบถ้าไม่เกิน MAX_FILE_MB
-          console.warn('[compress fallback]', f.name)
-          if (f.size <= MAX_FILE_MB * 1024 * 1024) {
-            added.push({ file: f, name: f.name, preview: URL.createObjectURL(f), compressed: false })
-          } else {
-            oversized.push(f.name)
-          }
-        }
-      } else {
-        if (f.size > MAX_FILE_MB * 1024 * 1024) oversized.push(f.name)
-        else added.push({ file: f, name: f.name, preview: null, compressed: false })
-      }
+      if (f.size > MAX_FILE_MB * 1024 * 1024) oversized.push(f.name)
+      else added.push({ file: f, name: f.name, preview: f.type.startsWith('image/') ? URL.createObjectURL(f) : null, compressed: false })
     }
     if (oversized.length > 0) setError(`ไฟล์ต่อไปนี้ใหญ่เกิน ${MAX_FILE_MB} MB: ${oversized.join(', ')}`)
     setFiles((prev) => [...prev, ...added])
-    setCompressing(false)
     e.target.value = ''
   }
 
@@ -618,9 +599,6 @@ export default function CitizenForm() {
                         <span className="text-[11px] text-gray-400 text-center leading-tight truncate w-full px-1">{item.name}</span>
                       </div>
                   }
-                  {item.compressed && (
-                    <span className="absolute bottom-1 left-1 bg-green-500/80 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none">บีบอัด</span>
-                  )}
                   <button type="button" onClick={() => removeFile(idx)}
                     className="absolute top-1 right-1 bg-black/50 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                     <X size={12} className="text-white" />
@@ -664,19 +642,16 @@ export default function CitizenForm() {
         {/* Submit */}
         <button type="button" onClick={() => {
           setError(null)
-          if (compressing) return
           if (!form.category) { setError('กรุณาเลือกประเภทคำร้อง'); return }
           if (!form.reporter_name.trim()) { setError('กรุณากรอกชื่อ-นามสกุล'); return }
           if (!form.subject.trim()) { setError('กรุณากรอกหัวข้อ'); return }
           if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
           if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
           setShowConsent(true)
-        }} disabled={submitting || compressing}
+        }} disabled={submitting}
           className="w-full flex items-center justify-center gap-2 py-3 rounded-full font-semibold text-white text-sm shadow-sm active:scale-95 transition-all disabled:opacity-60"
           style={{ backgroundColor: '#16a34a' }}>
-          {compressing
-            ? <><Loader2 size={18} className="animate-spin" /> กำลัง compress รูป...</>
-            : submitting
+          {submitting
             ? <><Loader2 size={18} className="animate-spin" /> {uploadProgress || 'กำลังส่ง...'}</>
             : 'ยื่นคำร้อง'}
         </button>
@@ -700,7 +675,7 @@ export default function CitizenForm() {
                 className="flex-1 py-3 rounded-2xl border border-gray-200 text-gray-600 text-sm font-medium">
                 ยกเลิก
               </button>
-              <button onClick={() => { setShowConsent(false); handleSubmit() }} disabled={submitting || compressing}
+              <button onClick={() => { setShowConsent(false); handleSubmit() }} disabled={submitting}
                 className="flex-1 py-3 rounded-2xl font-semibold text-white text-sm disabled:opacity-60"
                 style={{ backgroundColor: 'var(--color-primary)' }}>
                 {submitting ? <Loader2 size={16} className="animate-spin mx-auto" /> : 'ยอมรับและส่ง'}
