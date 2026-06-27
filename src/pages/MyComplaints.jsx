@@ -1,13 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import { compressImage } from '../lib/imageUtils'
 import SatisfactionModal from '../components/SatisfactionModal'
 import {
   ClipboardList, Loader2, ChevronRight, X, MapPin,
-  Phone, FileText, ArrowLeft, Check, XCircle, Navigation, Camera, AlignLeft,
-  ChevronLeft, Clock, Search,
+  Phone, ArrowLeft, Check, XCircle, Navigation, Camera, AlignLeft,
+  ChevronLeft, Clock, Search, ImagePlus, Upload,
 } from 'lucide-react'
+
+const MAX_CITIZEN_PHOTOS = 3
 
 const ITEMS_PER_PAGE_OPTIONS = [10, 20, 50, 100]
 
@@ -164,8 +167,17 @@ function StatusStepper({ status }) {
   )
 }
 
-function DetailSheet({ complaint: c, onClose }) {
-  const [timeline, setTimeline] = useState(null)
+function DetailSheet({ complaint: c, onClose, onAttachmentsChange }) {
+  const [timeline, setTimeline]   = useState(null)
+  const [newPhotos, setNewPhotos] = useState([]) // { file, preview }
+  const [uploading, setUploading] = useState(false)
+  const photosRef = useRef([])
+  useEffect(() => { photosRef.current = newPhotos }, [newPhotos])
+  useEffect(() => () => photosRef.current.forEach(p => URL.revokeObjectURL(p.preview)), [])
+
+  useEffect(() => {
+    setNewPhotos([])
+  }, [c?.id])
 
   useEffect(() => {
     if (!c) return
@@ -175,6 +187,46 @@ function DetailSheet({ complaint: c, onClose }) {
       .order('created_at', { ascending: true })
       .then(({ data }) => setTimeline(data ?? []))
   }, [c?.id])
+
+  function handlePhotoPick(e) {
+    const existing = (c?.attachments ?? []).length
+    const slots = MAX_CITIZEN_PHOTOS - existing - newPhotos.length
+    if (slots <= 0) return
+    const picked = Array.from(e.target.files).slice(0, slots)
+    setNewPhotos(prev => [...prev, ...picked.map(f => ({ file: f, preview: URL.createObjectURL(f) }))])
+    e.target.value = ''
+  }
+
+  function removeNewPhoto(idx) {
+    setNewPhotos(prev => { URL.revokeObjectURL(prev[idx].preview); return prev.filter((_, i) => i !== idx) })
+  }
+
+  async function handleUpload() {
+    if (!c?.id || newPhotos.length === 0 || uploading) return
+    setUploading(true)
+    const uploaded = []
+    for (const { file } of newPhotos) {
+      try {
+        const compressed = await compressImage(file, 1920, 0.85)
+        const ext = file.name.split('.').pop().toLowerCase() || 'jpg'
+        const path = `${c.id}/${crypto.randomUUID()}.${ext}`
+        const { error } = await supabase.storage
+          .from('complaint-attachments')
+          .upload(path, compressed, { upsert: false })
+        if (error) throw error
+        const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
+        uploaded.push(data.publicUrl)
+      } catch {}
+    }
+    if (uploaded.length > 0) {
+      const merged = [...(c.attachments ?? []), ...uploaded]
+      await supabase.from('complaints').update({ attachments: merged }).eq('id', c.id)
+      onAttachmentsChange?.(c.id, merged)
+    }
+    newPhotos.forEach(p => URL.revokeObjectURL(p.preview))
+    setNewPhotos([])
+    setUploading(false)
+  }
 
   if (!c) return null
   const categoryLabel = CATEGORY_LABEL[c.category] ?? c.category
@@ -295,6 +347,68 @@ function DetailSheet({ complaint: c, onClose }) {
             </div>
           </div>
 
+          {/* citizen attachments */}
+          {((c.attachments ?? []).length > 0 || onAttachmentsChange) && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">รูปภาพจากท่าน</p>
+
+              {(c.attachments ?? []).length > 0 && (
+                <div className="grid grid-cols-3 gap-2">
+                  {c.attachments.map((url, i) => (
+                    <a key={i} href={url} target="_blank" rel="noreferrer"
+                       className="aspect-square rounded-xl overflow-hidden border border-gray-200 bg-gray-100">
+                      <img src={url} alt={`รูป ${i + 1}`} className="w-full h-full object-cover" />
+                    </a>
+                  ))}
+                </div>
+              )}
+
+              {newPhotos.length > 0 && (
+                <div className="grid grid-cols-3 gap-2">
+                  {newPhotos.map((p, i) => (
+                    <div key={i} className="relative aspect-square rounded-xl overflow-hidden border-2 border-dashed border-blue-300 bg-blue-50">
+                      <img src={p.preview} alt="" className="w-full h-full object-cover" />
+                      {!uploading && (
+                        <button onClick={() => removeNewPhoto(i)}
+                          className="absolute top-1 right-1 bg-black/55 rounded-full p-0.5 active:scale-90">
+                          <X size={12} className="text-white" />
+                        </button>
+                      )}
+                      {uploading && (
+                        <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
+                          <Loader2 size={16} className="animate-spin text-white" />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {onAttachmentsChange && (c.attachments ?? []).length + newPhotos.length < MAX_CITIZEN_PHOTOS && (
+                <div className="flex gap-2">
+                  <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl border border-dashed border-gray-300 text-gray-500 text-xs font-medium cursor-pointer active:bg-gray-50">
+                    <Camera size={14} /> ถ่ายรูป
+                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoPick} />
+                  </label>
+                  <label className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl border border-dashed border-gray-300 text-gray-500 text-xs font-medium cursor-pointer active:bg-gray-50">
+                    <ImagePlus size={14} /> แกลเลอรี
+                    <input type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoPick} />
+                  </label>
+                </div>
+              )}
+
+              {newPhotos.length > 0 && (
+                <button onClick={handleUpload} disabled={uploading}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60 transition-all active:scale-95"
+                  style={{ backgroundColor: 'var(--color-primary)' }}>
+                  {uploading
+                    ? <><Loader2 size={15} className="animate-spin" /> กำลังอัปโหลด...</>
+                    : <><Upload size={15} /> แนบรูปภาพ {newPhotos.length} รูป</>}
+                </button>
+              )}
+            </div>
+          )}
+
           {/* work photos - after */}
           {(c.work_photos ?? []).length > 0 && (
             <div className="space-y-2">
@@ -374,6 +488,11 @@ export default function MyComplaints() {
   const [complaints, setComplaints] = useState([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
+
+  function handleAttachmentsChange(id, newAttachments) {
+    setComplaints(prev => prev.map(c => c.id === id ? { ...c, attachments: newAttachments } : c))
+    setSelected(prev => prev?.id === id ? { ...prev, attachments: newAttachments } : prev)
+  }
   const [session, setSession] = useState(undefined)
   const [showSat, setShowSat] = useState(false)
   const [satComplaintId, setSatComplaintId] = useState(null)
@@ -691,6 +810,7 @@ export default function MyComplaints() {
         <DetailSheet
           complaint={selected}
           onClose={() => setSelected(null)}
+          onAttachmentsChange={handleAttachmentsChange}
         />
       )}
       </div>
