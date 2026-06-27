@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   MapPin, Phone, ChevronDown, ChevronRight,
   Loader2, CheckCircle2, ArrowLeft, X, User,
-
+  Camera, ImagePlus,
   Lightbulb, Trash2, Scissors, Droplets, Package, Megaphone, Bug,
   Waves, Wind, Building2, Volume2, HelpCircle,
   CreditCard, PawPrint, Shield, FlameKindling, Axe, Wrench,
@@ -11,7 +11,10 @@ import {
 import { supabase } from '../lib/supabase'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { useTenant } from '../contexts/TenantContext'
+import { compressImage } from '../lib/imageUtils'
 import MapPicker from '../components/MapPicker'
+
+const MAX_PHOTOS = 3
 
 
 const CATEGORY_ICON = {
@@ -61,7 +64,60 @@ const CATEGORY_DEPT = {
 
 const GEO_STATUS = { idle: 'idle', ok: 'ok' }
 
-function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn }) {
+function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, complaintId, photoFiles }) {
+  const [items, setItems] = useState(() =>
+    (photoFiles ?? []).map(f => ({ file: f, status: 'pending' }))
+  )
+  const [uploading, setUploading] = useState(false)
+  const didMount = useRef(false)
+
+  const hasPhotos = items.length > 0
+  const allOk     = hasPhotos && items.every(i => i.status === 'ok')
+  const hasFailed = items.some(i => i.status === 'error')
+  const okCount   = items.filter(i => i.status === 'ok').length
+
+  const uploadPhotos = useCallback(async () => {
+    if (!complaintId) return
+    let toUpload = []
+    setItems(prev => {
+      toUpload = prev.map((item, idx) => ({ ...item, idx })).filter(i => i.status !== 'ok')
+      return prev.map(i => i.status === 'error' ? { ...i, status: 'pending' } : i)
+    })
+    if (toUpload.length === 0) return
+    setUploading(true)
+
+    const collected = []
+    await Promise.all(
+      toUpload.map(async ({ file, idx }) => {
+        try {
+          const compressed = await compressImage(file, 1920, 0.85)
+          const ext = file.name.split('.').pop().toLowerCase() || 'jpg'
+          const path = `${complaintId}/${crypto.randomUUID()}.${ext}`
+          const { error } = await supabase.storage
+            .from('complaint-attachments')
+            .upload(path, compressed, { upsert: false })
+          if (error) throw error
+          const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
+          collected.push(data.publicUrl)
+          setItems(prev => prev.map((p, i) => i === idx ? { ...p, status: 'ok' } : p))
+        } catch {
+          setItems(prev => prev.map((p, i) => i === idx ? { ...p, status: 'error' } : p))
+        }
+      })
+    )
+
+    if (collected.length > 0) {
+      const { data: row } = await supabase.from('complaints').select('attachments').eq('id', complaintId).single()
+      const merged = [...new Set([...(row?.attachments ?? []), ...collected])]
+      await supabase.from('complaints').update({ attachments: merged }).eq('id', complaintId)
+    }
+    setUploading(false)
+  }, [complaintId])
+
+  useEffect(() => {
+    if (!didMount.current && hasPhotos) { didMount.current = true; uploadPhotos() }
+  }, [hasPhotos, uploadPhotos])
+
   return (
     <div className="flex flex-col items-center justify-center min-h-[70vh] px-6 text-center">
       <div className="w-20 h-20 rounded-full bg-green-50 flex items-center justify-center mb-5">
@@ -74,6 +130,31 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn }) 
           <p className="text-2xl font-black text-gray-800 tracking-widest font-mono">{complaintNumber}</p>
         </div>
       )}
+
+      {hasPhotos && (
+        <div className="w-full max-w-xs mb-5">
+          <div className="flex items-center justify-center gap-2 mb-2">
+            {items.map((item, i) => (
+              <div key={i} className="w-12 h-12 rounded-xl border-2 flex items-center justify-center bg-gray-50"
+                style={{ borderColor: item.status === 'ok' ? '#22c55e' : item.status === 'error' ? '#ef4444' : '#e5e7eb' }}>
+                {item.status === 'pending' && <Loader2 size={18} className="animate-spin text-gray-300" />}
+                {item.status === 'ok'      && <CheckCircle2 size={18} className="text-green-500" />}
+                {item.status === 'error'   && <X size={18} className="text-red-400" />}
+              </div>
+            ))}
+          </div>
+          {uploading && <p className="text-xs text-gray-400">กำลังอัปโหลดรูปภาพ...</p>}
+          {allOk     && <p className="text-xs text-green-600 font-semibold">แนบรูปภาพเรียบร้อย {okCount} รูป</p>}
+          {hasFailed && !uploading && (
+            <button onClick={uploadPhotos}
+              className="mt-2 w-full py-2 rounded-xl text-xs font-semibold text-white"
+              style={{ backgroundColor: '#ef4444' }}>
+              ลองอัปโหลดใหม่อีกครั้ง ({items.filter(i => i.status === 'error').length} รูป)
+            </button>
+          )}
+        </div>
+      )}
+
       <p className="text-gray-500 text-sm leading-relaxed mb-8 max-w-xs">
         เจ้าหน้าที่จะดำเนินการตรวจสอบและติดต่อกลับหาท่านโดยเร็วที่สุด
       </p>
@@ -159,6 +240,9 @@ export default function CitizenForm() {
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
   const [complaintNumber, setComplaintNumber] = useState(null)
+  const [savedComplaintId, setSavedComplaintId] = useState(null)
+  const [savedPhotoFiles, setSavedPhotoFiles] = useState([])
+  const [photos, setPhotos] = useState([]) // { file, preview }
   const [locations, setLocations] = useState([])
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES)
   const abortCtrlRef = useRef(null)
@@ -225,6 +309,20 @@ export default function CitizenForm() {
   }
 
 
+  const photosRef = useRef([])
+  useEffect(() => { photosRef.current = photos }, [photos])
+  useEffect(() => () => photosRef.current.forEach(p => URL.revokeObjectURL(p.preview)), [])
+
+  function handlePhotoPick(e) {
+    const picked = Array.from(e.target.files).slice(0, MAX_PHOTOS - photos.length)
+    setPhotos(prev => [...prev, ...picked.map(f => ({ file: f, preview: URL.createObjectURL(f) }))])
+    e.target.value = ''
+  }
+
+  function removePhoto(idx) {
+    setPhotos(prev => { URL.revokeObjectURL(prev[idx].preview); return prev.filter((_, i) => i !== idx) })
+  }
+
   const set = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }))
 
   function handleMapConfirm({ lat, lng, address }) {
@@ -288,6 +386,9 @@ export default function CitizenForm() {
 
       setSuccess(true)
       setComplaintNumber(inserted?.ref_no ?? null)
+      setSavedComplaintId(complaintId)
+      setSavedPhotoFiles(photos.map(p => p.file))
+      photos.forEach(p => URL.revokeObjectURL(p.preview))
       const allCats = [...(ftConfig?.categories ?? []), ...categories]
       const catLabel = allCats.find((c) => c.value === form.category)?.label?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category
       supabase.functions.invoke('send-push', {
@@ -305,7 +406,7 @@ export default function CitizenForm() {
     }
   }
 
-  if (success) return <SuccessScreen onBack={() => navigate('/')} onMyComplaints={() => navigate('/my-complaints')} complaintNumber={complaintNumber} isLoggedIn={isLoggedIn} />
+  if (success) return <SuccessScreen onBack={() => navigate('/')} onMyComplaints={() => navigate('/my-complaints')} complaintNumber={complaintNumber} isLoggedIn={isLoggedIn} complaintId={savedComplaintId} photoFiles={savedPhotoFiles} />
 
   const allCatsDisplay = [...(ftConfig?.categories ?? []), ...categories]
   const catLabel = allCatsDisplay.find((c) => c.value === form.category)?.label?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category
@@ -475,6 +576,46 @@ export default function CitizenForm() {
           </span>
           {geoStatus !== GEO_STATUS.ok && <ChevronRight size={18} />}
         </button>
+
+        {/* Photo picker */}
+        <div className="bg-white rounded-2xl border border-gray-200 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-semibold text-gray-700">
+              แนบรูปภาพประกอบ
+              <span className="ml-1.5 text-xs font-normal text-gray-400">(ไม่บังคับ สูงสุด {MAX_PHOTOS} รูป)</span>
+            </p>
+            {photos.length > 0 && (
+              <span className="text-xs text-gray-400 font-medium">{photos.length}/{MAX_PHOTOS}</span>
+            )}
+          </div>
+
+          {photos.length > 0 && (
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              {photos.map((p, i) => (
+                <div key={i} className="relative aspect-square rounded-xl overflow-hidden border border-gray-200 bg-gray-100">
+                  <img src={p.preview} alt="" className="w-full h-full object-cover" />
+                  <button type="button" onClick={() => removePhoto(i)}
+                    className="absolute top-1 right-1 bg-black/55 rounded-full p-0.5 active:scale-90 transition-transform">
+                    <X size={13} className="text-white" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {photos.length < MAX_PHOTOS && (
+            <div className="flex gap-2">
+              <label className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-dashed border-gray-300 text-gray-500 text-xs font-medium cursor-pointer active:bg-gray-50 transition-colors">
+                <Camera size={15} /> ถ่ายรูป
+                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoPick} />
+              </label>
+              <label className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-dashed border-gray-300 text-gray-500 text-xs font-medium cursor-pointer active:bg-gray-50 transition-colors">
+                <ImagePlus size={15} /> แกลเลอรี
+                <input type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoPick} />
+              </label>
+            </div>
+          )}
+        </div>
 
         {/* Error */}
         {error && (
