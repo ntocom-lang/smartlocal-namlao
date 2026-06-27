@@ -155,6 +155,7 @@ export default function CitizenDocRequest() {
     const file = e.target.files?.[0]
     if (!file) return
     setSlipFile(file)
+    if (slipPreview) URL.revokeObjectURL(slipPreview)
     setSlipPreview(URL.createObjectURL(file))
   }
 

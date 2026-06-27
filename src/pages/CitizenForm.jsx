@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   MapPin, Phone, ChevronDown, ChevronRight,
   Loader2, CheckCircle2, ArrowLeft, X, User,
-  Camera, Image, Trash2 as TrashIcon, Upload, CheckCircle,
+  Camera, Image, Upload, CheckCircle,
   Lightbulb, Trash2, Scissors, Droplets, Package, Megaphone, Bug,
   Waves, Wind, Building2, Volume2, HelpCircle,
   CreditCard, PawPrint, Shield, FlameKindling, Axe, Wrench,
@@ -555,8 +555,6 @@ export default function CitizenForm() {
           <User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           {isLoggedIn && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-emerald-500 font-semibold">จากโปรไฟล์</span>}
         </div>
-
-
 
         {/* Detail */}
         <textarea value={form.detail} onChange={set('detail')} rows={4} required

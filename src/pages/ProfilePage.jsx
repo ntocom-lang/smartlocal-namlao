@@ -104,6 +104,7 @@ export default function ProfilePage() {
     const file = e.target.files?.[0]
     if (!file) return
 
+    if (avatarUrl?.startsWith('blob:')) URL.revokeObjectURL(avatarUrl)
     setAvatarUrl(URL.createObjectURL(file))
     setSaving(true)
     setMsg('')

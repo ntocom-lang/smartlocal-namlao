@@ -178,6 +178,7 @@ function DocDetailSheet({ req, onClose, tenant, onRefresh }) {
     const f = e.target.files?.[0]
     if (!f) return
     setSlipFile(f)
+    if (slipPreview) URL.revokeObjectURL(slipPreview)
     setSlipPreview(URL.createObjectURL(f))
   }
 

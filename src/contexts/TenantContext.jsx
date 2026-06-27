@@ -85,6 +85,7 @@ function injectPWAManifest(tenant) {
     link.rel = 'manifest'
     document.head.appendChild(link)
   }
+  if (link.href?.startsWith('blob:')) URL.revokeObjectURL(link.href)
   link.href = url
 
   // iOS Safari ใช้ apple-touch-icon แทน manifest icons
