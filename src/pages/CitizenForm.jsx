@@ -173,6 +173,7 @@ export default function CitizenForm() {
   const [success, setSuccess] = useState(false)
   const [complaintNumber, setComplaintNumber] = useState(null)
   const [uploadSkipped, setUploadSkipped] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState('')
   const [locations, setLocations] = useState([])
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES)
   const abortCtrlRef = useRef(null)
@@ -240,8 +241,18 @@ export default function CitizenForm() {
     const oversized = []
     for (const f of toProcess) {
       if (f.type.startsWith('image/')) {
-        const processed = await raceTimeout(compressImage(f), 15_000).catch(() => f)
-        added.push({ file: processed, name: processed.name, preview: URL.createObjectURL(processed), compressed: true })
+        try {
+          const processed = await raceTimeout(compressImage(f), 15_000)
+          added.push({ file: processed, name: processed.name, preview: URL.createObjectURL(processed), compressed: true })
+        } catch {
+          // compress ล้มเหลว — ใช้ไฟล์ดิบถ้าไม่เกิน MAX_FILE_MB
+          console.warn('[compress fallback]', f.name)
+          if (f.size <= MAX_FILE_MB * 1024 * 1024) {
+            added.push({ file: f, name: f.name, preview: URL.createObjectURL(f), compressed: false })
+          } else {
+            oversized.push(f.name)
+          }
+        }
       } else {
         if (f.size > MAX_FILE_MB * 1024 * 1024) oversized.push(f.name)
         else added.push({ file: f, name: f.name, preview: null, compressed: false })
@@ -267,40 +278,56 @@ export default function CitizenForm() {
     ])
   }
 
-  // อัปโหลดไฟล์แบบ parallel — ทำใน foreground ก่อน setSuccess
-  // ไม่ใช้ fire-and-forget หลัง success เพราะ iOS Safari throttle background fetch
+  // อัปโหลดไฟล์แบบ sequential ทีละไฟล์ — ลด connection pressure บนมือถือ
+  // retry 1 ครั้งต่อไฟล์ก่อน skip — ป้องกัน network glitch ครั้งเดียวทำพังทั้งหมด
   async function uploadAllFiles(complaintId) {
-    // ดึง signal จาก abortCtrlRef เพื่อให้ visibilitychange abort ตัด upload ได้ทันที
-    // (supabase storage ไม่รองรับ AbortSignal โดยตรง — ใช้ Promise.race แทน)
     const signal = abortCtrlRef.current?.signal
-    const results = await Promise.all(
-      files.map(async (item) => {
+    const urls = []
+    let failCount = 0
+
+    for (let i = 0; i < files.length; i++) {
+      if (signal?.aborted) break
+      const item = files[i]
+      setUploadProgress(`อัปโหลดรูป ${i + 1}/${files.length}`)
+
+      let url = null
+      for (let attempt = 0; attempt < 2; attempt++) {
         try {
           const rawExt = item.name.split('.').pop().toLowerCase()
           const ext = rawExt && rawExt !== item.name ? rawExt : 'jpg'
           const path = `${complaintId}/${crypto.randomUUID()}.${ext}`
+          // timeout ปรับตามขนาดไฟล์ — 30s ขั้นต่ำ, สูงสุด 60s
+          const timeoutMs = Math.max(30_000, Math.min(60_000, (item.file.size / (50 * 1024)) * 1000))
           const { error: upErr } = await Promise.race([
             supabase.storage.from('complaint-attachments').upload(path, item.file, { upsert: false }),
-            new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 30_000)),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), timeoutMs)),
             ...(signal ? [new Promise((_, rej) => {
               if (signal.aborted) return rej(new DOMException('Aborted', 'AbortError'))
               signal.addEventListener('abort', () => rej(new DOMException('Aborted', 'AbortError')), { once: true })
             })] : []),
           ])
           if (upErr) {
-            console.error('[upload]', upErr.message ?? upErr)
-            return null
+            console.error(`[upload file ${i + 1} attempt ${attempt + 1}]`, upErr.message ?? upErr)
+            if (attempt === 0) continue // retry อีก 1 ครั้ง
+            break
           }
           const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
-          return data?.publicUrl ?? null
+          url = data?.publicUrl ?? null
+          break // สำเร็จ ไม่ต้อง retry
         } catch (err) {
-          console.error('[upload exception]', err?.message ?? err)
-          return null
+          console.error(`[upload file ${i + 1} attempt ${attempt + 1}]`, err?.message ?? err)
+          if (attempt === 0 && !signal?.aborted) {
+            await new Promise((r) => setTimeout(r, 1_000)) // รอ 1s ก่อน retry
+            continue
+          }
         }
-      })
-    )
-    const urls = results.filter(Boolean)
-    return { urls, skipped: urls.length < files.length }
+      }
+
+      if (url) urls.push(url)
+      else failCount++
+    }
+
+    return { urls, skipped: failCount > 0 }
   }
 
   const set = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }))
@@ -344,6 +371,7 @@ export default function CitizenForm() {
         attachmentUrls = urls
         uploadWasSkipped = skipped
       }
+      setUploadProgress('กำลังบันทึกคำร้อง...')
 
       // INSERT — timeout 40s กันแขวนบน mobile network ช้า/หลุด
       let insertResult
@@ -392,6 +420,7 @@ export default function CitizenForm() {
       setError(isNetworkErr ? 'ไม่มีสัญญาณอินเทอร์เน็ต กรุณาตรวจสอบสัญญาณแล้วลองใหม่' : 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง')
     } finally {
       setSubmitting(false)
+      setUploadProgress('')
       abortCtrlRef.current = null
     }
   }
@@ -648,7 +677,7 @@ export default function CitizenForm() {
           {compressing
             ? <><Loader2 size={18} className="animate-spin" /> กำลัง compress รูป...</>
             : submitting
-            ? <><Loader2 size={18} className="animate-spin" /> กำลังส่ง...</>
+            ? <><Loader2 size={18} className="animate-spin" /> {uploadProgress || 'กำลังส่ง...'}</>
             : 'ยื่นคำร้อง'}
         </button>
 
