@@ -7,7 +7,8 @@ import {
   Waves, Wind, Building2, Volume2, HelpCircle,
   CreditCard, PawPrint, Shield, FlameKindling, Axe, Wrench,
 } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { supabase, supabaseUrl, supabaseAnonKey } from '../lib/supabase'
+import { compressImage } from '../lib/imageUtils'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { useTenant } from '../contexts/TenantContext'
 import MapPicker from '../components/MapPicker'
@@ -166,6 +167,7 @@ export default function CitizenForm() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [showPdpa, setShowPdpa] = useState(false)
+  const [compressing, setCompressing] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
@@ -229,19 +231,33 @@ export default function CitizenForm() {
       })
   }, [tenant?.id])
 
-  function handleFileChange(e) {
+  async function handleFileChange(e) {
     const chosen = Array.from(e.target.files)
     const remaining = 5 - files.length
     if (remaining <= 0) return
     const toProcess = chosen.slice(0, remaining)
+    setCompressing(true)
     const added = []
     const oversized = []
     for (const f of toProcess) {
-      if (f.size > MAX_FILE_MB * 1024 * 1024) oversized.push(f.name)
-      else added.push({ file: f, name: f.name, preview: f.type.startsWith('image/') ? URL.createObjectURL(f) : null, compressed: false })
+      if (f.type.startsWith('image/')) {
+        try {
+          const compressed = await raceTimeout(compressImage(f), 15_000)
+          added.push({ file: compressed, name: compressed.name, preview: URL.createObjectURL(compressed) })
+        } catch {
+          // compress ล้มเหลว — ใช้ไฟล์ดิบถ้าไม่เกิน 5MB
+          if (f.size <= MAX_FILE_MB * 1024 * 1024)
+            added.push({ file: f, name: f.name, preview: URL.createObjectURL(f) })
+          else oversized.push(f.name)
+        }
+      } else {
+        if (f.size > MAX_FILE_MB * 1024 * 1024) oversized.push(f.name)
+        else added.push({ file: f, name: f.name, preview: null })
+      }
     }
     if (oversized.length > 0) setError(`ไฟล์ต่อไปนี้ใหญ่เกิน ${MAX_FILE_MB} MB: ${oversized.join(', ')}`)
     setFiles((prev) => [...prev, ...added])
+    setCompressing(false)
     e.target.value = ''
   }
 
@@ -259,9 +275,35 @@ export default function CitizenForm() {
     ])
   }
 
-  // อัปโหลดไฟล์แบบ sequential ทีละไฟล์ — ลด connection pressure บนมือถือ
-  // retry 1 ครั้งต่อไฟล์ก่อน skip — ป้องกัน network glitch ครั้งเดียวทำพังทั้งหมด
-  async function uploadAllFiles(complaintId) {
+  // XHR upload — ใช้แทน fetch() ของ supabase storage
+  // xhr.timeout = HTTP-level timeout (ไม่ถูก JS suspend), xhr.abort() = ยกเลิก TCP จริง
+  function xhrUpload(path, file, authToken, signal) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', `${supabaseUrl}/storage/v1/object/complaint-attachments/${path}`)
+      xhr.setRequestHeader('Authorization', `Bearer ${authToken}`)
+      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
+      xhr.setRequestHeader('x-upsert', 'false')
+      xhr.timeout = 45_000
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve({ error: null })
+        else {
+          const msg = (() => { try { return JSON.parse(xhr.responseText)?.error ?? `HTTP ${xhr.status}` } catch { return `HTTP ${xhr.status}` } })()
+          resolve({ error: { message: msg } })
+        }
+      }
+      xhr.onerror = () => reject(new Error('network'))
+      xhr.ontimeout = () => reject(new Error('timeout'))
+      if (signal) {
+        if (signal.aborted) { reject(new DOMException('Aborted', 'AbortError')); return }
+        signal.addEventListener('abort', () => { xhr.abort(); reject(new DOMException('Aborted', 'AbortError')) }, { once: true })
+      }
+      xhr.send(file)
+    })
+  }
+
+  // อัปโหลดทีละไฟล์ + retry 1 ครั้ง — ใช้ XHR แทน fetch เพื่อ abort/timeout ที่เชื่อถือได้บน mobile
+  async function uploadAllFiles(complaintId, authToken) {
     const signal = abortCtrlRef.current?.signal
     const urls = []
     let failCount = 0
@@ -277,28 +319,19 @@ export default function CitizenForm() {
           const rawExt = item.name.split('.').pop().toLowerCase()
           const ext = rawExt && rawExt !== item.name ? rawExt : 'jpg'
           const path = `${complaintId}/${crypto.randomUUID()}.${ext}`
-          // timeout ปรับตามขนาดไฟล์ — 30s ขั้นต่ำ, สูงสุด 60s
-          const timeoutMs = Math.max(30_000, Math.min(60_000, (item.file.size / (50 * 1024)) * 1000))
-          const { error: upErr } = await Promise.race([
-            supabase.storage.from('complaint-attachments').upload(path, item.file, { upsert: false }),
-            new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), timeoutMs)),
-            ...(signal ? [new Promise((_, rej) => {
-              if (signal.aborted) return rej(new DOMException('Aborted', 'AbortError'))
-              signal.addEventListener('abort', () => rej(new DOMException('Aborted', 'AbortError')), { once: true })
-            })] : []),
-          ])
+          const { error: upErr } = await xhrUpload(path, item.file, authToken, signal)
           if (upErr) {
-            console.error(`[upload file ${i + 1} attempt ${attempt + 1}]`, upErr.message ?? upErr)
-            if (attempt === 0) continue // retry อีก 1 ครั้ง
+            console.error(`[upload ${i + 1} attempt ${attempt + 1}]`, upErr.message)
+            if (attempt === 0) continue
             break
           }
           const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
           url = data?.publicUrl ?? null
-          break // สำเร็จ ไม่ต้อง retry
+          break
         } catch (err) {
-          console.error(`[upload file ${i + 1} attempt ${attempt + 1}]`, err?.message ?? err)
+          console.error(`[upload ${i + 1} attempt ${attempt + 1}]`, err?.message ?? err)
           if (attempt === 0 && !signal?.aborted) {
-            await new Promise((r) => setTimeout(r, 1_000)) // รอ 1s ก่อน retry
+            await new Promise((r) => setTimeout(r, 1_500))
             continue
           }
         }
@@ -341,6 +374,7 @@ export default function CitizenForm() {
         5_000,
       ).catch(() => ({ data: null }))
       const userId = sessionData?.session?.user?.id ?? null
+      const authToken = sessionData?.session?.access_token ?? supabaseAnonKey
 
       const complaintId = crypto.randomUUID()
 
@@ -348,7 +382,7 @@ export default function CitizenForm() {
       let attachmentUrls = []
       let uploadWasSkipped = false
       if (files.length > 0) {
-        const { urls, skipped } = await uploadAllFiles(complaintId)
+        const { urls, skipped } = await uploadAllFiles(complaintId, authToken)
         attachmentUrls = urls
         uploadWasSkipped = skipped
       }
@@ -648,10 +682,12 @@ export default function CitizenForm() {
           if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
           if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
           setShowConsent(true)
-        }} disabled={submitting}
+        }} disabled={submitting || compressing}
           className="w-full flex items-center justify-center gap-2 py-3 rounded-full font-semibold text-white text-sm shadow-sm active:scale-95 transition-all disabled:opacity-60"
           style={{ backgroundColor: '#16a34a' }}>
-          {submitting
+          {compressing
+            ? <><Loader2 size={18} className="animate-spin" /> กำลังบีบอัดรูป...</>
+            : submitting
             ? <><Loader2 size={18} className="animate-spin" /> {uploadProgress || 'กำลังส่ง...'}</>
             : 'ยื่นคำร้อง'}
         </button>
@@ -675,7 +711,7 @@ export default function CitizenForm() {
                 className="flex-1 py-3 rounded-2xl border border-gray-200 text-gray-600 text-sm font-medium">
                 ยกเลิก
               </button>
-              <button onClick={() => { setShowConsent(false); handleSubmit() }} disabled={submitting}
+              <button onClick={() => { setShowConsent(false); handleSubmit() }} disabled={submitting || compressing}
                 className="flex-1 py-3 rounded-2xl font-semibold text-white text-sm disabled:opacity-60"
                 style={{ backgroundColor: 'var(--color-primary)' }}>
                 {submitting ? <Loader2 size={16} className="animate-spin mx-auto" /> : 'ยอมรับและส่ง'}
