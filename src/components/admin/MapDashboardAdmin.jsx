@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { MapContainer, TileLayer, Marker, Popup, Tooltip, Polyline, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, Tooltip, Polyline, CircleMarker, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { supabase } from '../../lib/supabase'
@@ -890,24 +890,45 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
               )
 
               if (hasRoute && projViewMode === 'route') {
+                const rStart = w.route_points[0]
+                const rEnd   = w.route_points[w.route_points.length - 1]
                 return (
-                  <Polyline key={w.id}
-                    positions={w.route_points.map(p => [p.lat, p.lng])}
-                    pathOptions={{ color: lineColor, weight: lineWeight, opacity: 0.9, ...(dashArray && { dashArray }) }}
-                    eventHandlers={{ click: () => setSelectedItem({ type: 'civil', data: w }) }}>
-                    {showLabels && (
-                      <Tooltip sticky
-                        className="bg-white! text-gray-700! text-[10px]! font-semibold! border-gray-200! shadow-sm! px-1.5! py-0.5! rounded-lg!">
-                        {w.title.length > 24 ? w.title.slice(0, 24) + '…' : w.title}
-                      </Tooltip>
-                    )}
-                    {popup}
-                  </Polyline>
+                  <React.Fragment key={w.id}>
+                    <Polyline
+                      positions={w.route_points.map(p => [p.lat, p.lng])}
+                      pathOptions={{ color: lineColor, weight: lineWeight, opacity: 0.9, ...(dashArray && { dashArray }) }}
+                      eventHandlers={{ click: () => setSelectedItem({ type: 'civil', data: w }) }}>
+                      {showLabels && (
+                        <Tooltip sticky
+                          className="bg-white! text-gray-700! text-[10px]! font-semibold! border-gray-200! shadow-sm! px-1.5! py-0.5! rounded-lg!">
+                          {w.title.length > 24 ? w.title.slice(0, 24) + '…' : w.title}
+                        </Tooltip>
+                      )}
+                      {popup}
+                    </Polyline>
+                    <CircleMarker center={[rStart.lat, rStart.lng]} radius={7} pathOptions={{ color: '#fff', weight: 2, fillColor: '#22c55e', fillOpacity: 1 }}>
+                      {showLabels && (
+                        <Tooltip permanent direction="top" offset={[0, -8]}
+                          className="bg-white! border! border-gray-200! shadow-sm! rounded-lg! px-1.5! py-0.5! text-[10px]! font-semibold! text-gray-700!">
+                          จุดเริ่มต้น
+                        </Tooltip>
+                      )}
+                    </CircleMarker>
+                    <CircleMarker center={[rEnd.lat, rEnd.lng]} radius={7} pathOptions={{ color: '#fff', weight: 2, fillColor: '#ef4444', fillOpacity: 1 }}>
+                      {showLabels && (
+                        <Tooltip permanent direction="top" offset={[0, -8]}
+                          className="bg-white! border! border-gray-200! shadow-sm! rounded-lg! px-1.5! py-0.5! text-[10px]! font-semibold! text-gray-700!">
+                          จุดสิ้นสุด
+                        </Tooltip>
+                      )}
+                    </CircleMarker>
+                  </React.Fragment>
                 )
               }
 
-              const pinLat = hasRoute ? w.route_points[0].lat : w.latitude
-              const pinLng = hasRoute ? w.route_points[0].lng : w.longitude
+              const pinMid = hasRoute ? w.route_points[Math.floor(w.route_points.length / 2)] : null
+              const pinLat = pinMid ? pinMid.lat : w.latitude
+              const pinLng = pinMid ? pinMid.lng : w.longitude
               return (
                 <Marker key={w.id}
                   position={[pinLat, pinLng]}

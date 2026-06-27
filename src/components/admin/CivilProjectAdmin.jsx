@@ -196,6 +196,9 @@ function DetailMap({ lat, lng, title, routePoints, routeColor = '#3b82f6', proje
 
   const navLat = hasRoute ? routePoints[0].lat : lat
   const navLng = hasRoute ? routePoints[0].lng : lng
+  const pinMid = hasRoute ? routePoints[Math.floor(routePoints.length / 2)] : null
+  const pinLat = pinMid ? pinMid.lat : navLat
+  const pinLng = pinMid ? pinMid.lng : navLng
 
   const navButtons = (
     <div className="absolute bottom-3 left-3 z-1000 flex items-center gap-2">
@@ -267,7 +270,7 @@ function DetailMap({ lat, lng, title, routePoints, routeColor = '#3b82f6', proje
           </Marker>
         </>
       ) : (
-        <Marker position={[navLat, navLng]} icon={defaultIcon}>
+        <Marker position={[pinLat, pinLng]} icon={defaultIcon}>
           <Tooltip permanent direction="top" offset={[0, -36]}
             className="bg-white! border! border-gray-200! shadow-md! rounded-lg! px-3! py-1.5! text-sm! font-medium! text-gray-700!">
             {title}

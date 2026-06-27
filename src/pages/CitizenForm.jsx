@@ -387,7 +387,8 @@ export default function CitizenForm() {
           .catch(() => {}) // ล้มเหลว → warning ยังแสดง (uploadSkipped=true)
       }
 
-      const catLabel = categories.find((c) => c.value === form.category)?.label ?? form.category
+      const allCats = [...(ftConfig?.categories ?? []), ...categories]
+      const catLabel = allCats.find((c) => c.value === form.category)?.label?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category
       supabase.functions.invoke('send-push', {
         body: { municipality_id: tenant.id, title: `คำร้องใหม่: ${catLabel}`, body: form.detail.trim().slice(0, 100), url: '/admin' },
       }).catch(() => {})
@@ -405,7 +406,8 @@ export default function CitizenForm() {
 
   if (success) return <SuccessScreen onBack={() => navigate('/')} onMyComplaints={() => navigate('/my-complaints')} complaintNumber={complaintNumber} isLoggedIn={isLoggedIn} uploadSkipped={uploadSkipped} />
 
-  const catLabel = categories.find((c) => c.value === form.category)?.label?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category
+  const allCatsDisplay = [...(ftConfig?.categories ?? []), ...categories]
+  const catLabel = allCatsDisplay.find((c) => c.value === form.category)?.label?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category
   const CatIcon = CATEGORY_ICON[form.category] ?? HelpCircle
 
   return (

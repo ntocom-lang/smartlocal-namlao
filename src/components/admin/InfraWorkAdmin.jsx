@@ -339,7 +339,7 @@ export default function InfraWorkAdmin({ tenant, currentUserRole }) {
             <MapPin size={16} className="text-violet-600" />
           </div>
           <div>
-            <h2 className="font-bold text-gray-800">งานโยธา (GPS)</h2>
+            <h2 className="font-bold text-gray-800">บันทึกงานซ่อม (GPS)</h2>
             <p className="text-xs text-gray-400">ช่างปักหมุดหน้างาน · ธุรการบันทึกรายละเอียด</p>
           </div>
         </div>
@@ -627,7 +627,7 @@ export default function InfraWorkAdmin({ tenant, currentUserRole }) {
       <div className="space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-            รายการงานโยธา ({displayed.length})
+            รายการบันทึกงานซ่อม ({displayed.length})
           </p>
           <div className="flex gap-1">
             {['all', 'new_project', 'repair'].map((tab) => (
@@ -648,7 +648,7 @@ export default function InfraWorkAdmin({ tenant, currentUserRole }) {
         ) : displayed.length === 0 ? (
           <div className="text-center py-10 text-gray-400">
             <MapPin size={36} className="mx-auto mb-2 opacity-20" />
-            <p className="text-sm">ยังไม่มีรายการงานโยธา</p>
+            <p className="text-sm">ยังไม่มีรายการบันทึกงานซ่อม</p>
           </div>
         ) : (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
