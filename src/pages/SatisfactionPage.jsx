@@ -25,7 +25,6 @@ export default function SatisfactionPage() {
     if (!selected) return
     setSubmitting(true)
     setError(null)
-
     const { data: { session } } = await supabase.auth.getSession()
     const { error: err } = await supabase.from('satisfaction_responses').insert({
       municipality_id: tenant.id,
@@ -33,125 +32,103 @@ export default function SatisfactionPage() {
       comment: comment.trim() || null,
       user_id: session?.user?.id ?? null,
     })
-
     setSubmitting(false)
-    if (err) {
-      setError('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง')
-    } else {
-      setDone(true)
-    }
+    if (err) setError('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง')
+    else setDone(true)
   }
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#f0f4fb' }}>
+    <div className="flex flex-col pb-20" style={{ minHeight: 'calc(100dvh - 64px)', backgroundColor: '#f0f4fb' }}>
 
-      {/* Header gradient */}
-      <div className="relative text-white text-center px-6 pt-10 pb-14"
+      {/* Header — compact */}
+      <div className="relative text-white text-center px-6 pt-5 pb-10 shrink-0"
            style={{ background: 'linear-gradient(160deg, #1e40af 0%, #3b82f6 60%, #60a5fa 100%)' }}>
-        <button
-          onClick={() => navigate(-1)}
-          className="absolute top-4 left-4 p-2 rounded-xl hover:bg-white/20 transition-colors"
-        >
-          <ArrowLeft size={20} />
+        <button onClick={() => navigate(-1)}
+          className="absolute top-3 left-3 p-2 rounded-xl hover:bg-white/20 transition-colors">
+          <ArrowLeft size={18} />
         </button>
-        <div className="text-5xl mb-3">📋</div>
-        <h1 className="text-xl font-bold">ประเมินความพึงพอใจ</h1>
-        <p className="text-white/80 text-sm mt-1">{tenant?.name}</p>
+        <div className="text-3xl mb-1.5">📋</div>
+        <h1 className="text-base font-bold">ประเมินความพึงพอใจ</h1>
+        <p className="text-white/75 text-xs mt-0.5">{tenant?.name}</p>
       </div>
 
-      {/* Card */}
-      <div className="flex-1 -mt-6 mx-4 bg-white rounded-3xl shadow-lg p-5 space-y-4 mb-8">
-
+      {/* Card — pulls up over header */}
+      <div className="flex-1 flex flex-col -mt-5 mx-3 bg-white rounded-2xl shadow-lg overflow-hidden">
         {done ? (
-          /* Success state */
-          <div className="flex flex-col items-center justify-center py-12 gap-4">
-            <CheckCircle2 size={64} className="text-green-400" strokeWidth={1.5} />
-            <p className="text-xl font-bold text-gray-700">ขอบคุณสำหรับการประเมิน!</p>
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6">
+            <CheckCircle2 size={56} className="text-green-400" strokeWidth={1.5} />
+            <p className="text-lg font-bold text-gray-700">ขอบคุณสำหรับการประเมิน!</p>
             <p className="text-sm text-gray-400 text-center leading-relaxed">
-              ความคิดเห็นของคุณมีคุณค่ามาก<br />
-              เราจะนำไปพัฒนาบริการให้ดียิ่งขึ้น
+              ความคิดเห็นของคุณมีคุณค่ามาก<br />เราจะนำไปพัฒนาบริการให้ดียิ่งขึ้น
             </p>
-            <button
-              onClick={() => navigate('/')}
-              className="mt-4 px-8 py-3 rounded-2xl text-white font-bold text-sm transition-all hover:opacity-90 active:scale-95"
-              style={{ background: 'linear-gradient(135deg, #1e40af, #3b82f6)' }}
-            >
+            <button onClick={() => navigate('/')}
+              className="mt-2 px-8 py-2.5 rounded-2xl text-white font-bold text-sm active:scale-95 transition-all"
+              style={{ background: 'linear-gradient(135deg, #1e40af, #3b82f6)' }}>
               กลับหน้าหลัก
             </button>
           </div>
         ) : (
-          <>
-            <p className="text-sm text-gray-500 text-center pt-2">
-              กรุณาให้คะแนนความพึงพอใจการให้บริการ
-            </p>
+          <div className="flex flex-col h-full p-4 gap-2.5">
+
+            <p className="text-xs text-gray-400 text-center">กรุณาให้คะแนนความพึงพอใจการให้บริการ</p>
 
             {/* Rating options */}
-            <div className="space-y-2.5">
+            <div className="flex flex-col gap-1.5">
               {RATINGS.map(({ score, emoji, label }) => (
                 <button
                   key={score}
                   onClick={() => setSelected(score)}
-                  className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl border-2 transition-all active:scale-[0.98] ${
+                  className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border-2 transition-all active:scale-[0.98] ${
                     selected === score
                       ? 'border-blue-400 bg-blue-50'
-                      : 'border-gray-100 bg-white hover:border-gray-200 hover:bg-gray-50'
+                      : 'border-gray-100 bg-white hover:border-gray-200'
                   }`}
                 >
-                  <span className="text-3xl">{emoji}</span>
-                  <span className={`text-base font-semibold ${selected === score ? 'text-blue-700' : 'text-gray-700'}`}>
+                  <span className="text-2xl leading-none">{emoji}</span>
+                  <span className={`text-sm font-semibold flex-1 text-left ${selected === score ? 'text-blue-700' : 'text-gray-700'}`}>
                     {label}
                   </span>
-                  {selected === score && (
-                    <span className="ml-auto w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center shrink-0">
-                      <span className="w-2 h-2 rounded-full bg-white" />
-                    </span>
-                  )}
+                  <span className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center transition-colors ${
+                    selected === score ? 'border-blue-500 bg-blue-500' : 'border-gray-300'
+                  }`}>
+                    {selected === score && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                  </span>
                 </button>
               ))}
             </div>
 
-            {/* Optional comment */}
-            <div className="pt-1">
-              <label className="text-xs font-semibold text-gray-400 mb-1.5 block">ความคิดเห็นเพิ่มเติม (ไม่บังคับ)</label>
+            {/* Comment */}
+            <div>
+              <label className="text-[11px] font-semibold text-gray-400 mb-1 block">ความคิดเห็นเพิ่มเติม (ไม่บังคับ)</label>
               <textarea
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 placeholder="แนะนำหรือติชมเพื่อปรับปรุงบริการ..."
-                rows={3}
-                className="w-full px-4 py-3 text-sm text-gray-900 bg-white border border-gray-200 rounded-2xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-300"
+                rows={2}
+                className="w-full px-3 py-2 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-300"
               />
             </div>
 
-            {error && (
-              <p className="text-sm text-red-500 text-center">{error}</p>
-            )}
+            {error && <p className="text-xs text-red-500 text-center">{error}</p>}
 
             {/* Submit */}
             <button
               onClick={handleSubmit}
               disabled={!selected || submitting}
-              className="w-full py-4 rounded-2xl text-white font-bold text-base transition-all active:scale-[0.98] disabled:opacity-50"
-              style={{
-                background: selected
-                  ? 'linear-gradient(135deg, #1e40af, #3b82f6)'
-                  : '#93c5fd',
-              }}
+              className="w-full py-3 rounded-xl text-white font-bold text-sm transition-all active:scale-[0.98] disabled:opacity-50"
+              style={{ background: selected ? 'linear-gradient(135deg, #1e40af, #3b82f6)' : '#93c5fd' }}
             >
               {submitting
-                ? <span className="flex items-center justify-center gap-2"><Loader2 size={18} className="animate-spin" /> กำลังส่ง...</span>
+                ? <span className="flex items-center justify-center gap-2"><Loader2 size={16} className="animate-spin" />กำลังส่ง...</span>
                 : 'ส่งผลการประเมิน'}
             </button>
-          </>
+
+            <p className="text-center text-[10px] text-gray-300 leading-relaxed">
+              ทุกความคิดเห็นของคุณจะนำไปพัฒนา{tenant?.name}ให้ดียิ่งขึ้น
+            </p>
+          </div>
         )}
       </div>
-
-      {/* Footer note */}
-      {!done && (
-        <p className="text-center text-xs text-gray-400 px-6 pb-8 leading-relaxed">
-          ทุกความคิดเห็นของคุณจะเป็นประโยชน์ให้เรา<br />
-          นำไปพัฒนา{tenant?.name}ให้ดียิ่งขึ้น
-        </p>
-      )}
     </div>
   )
 }
