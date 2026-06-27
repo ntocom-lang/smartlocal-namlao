@@ -192,7 +192,13 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange }) {
     const existing = (c?.attachments ?? []).length
     const slots = MAX_CITIZEN_PHOTOS - existing - newPhotos.length
     if (slots <= 0) return
-    const picked = Array.from(e.target.files).slice(0, slots)
+    const MAX_MB = 25
+    const picked = Array.from(e.target.files)
+      .filter(f => {
+        if (f.size > MAX_MB * 1024 * 1024) { alert(`ไฟล์ "${f.name}" ใหญ่เกิน ${MAX_MB} MB`); return false }
+        return true
+      })
+      .slice(0, slots)
     setNewPhotos(prev => [...prev, ...picked.map(f => ({ file: f, preview: URL.createObjectURL(f) }))])
     e.target.value = ''
   }
@@ -207,7 +213,7 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange }) {
     const uploaded = []
     for (const { file } of newPhotos) {
       try {
-        const compressed = await compressImage(file, 1920, 0.85)
+        const compressed = await compressImage(file, undefined, 0.85)
         const path = `${c.id}/${crypto.randomUUID()}.jpg`
         const { error } = await supabase.storage
           .from('complaint-attachments')

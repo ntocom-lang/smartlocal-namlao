@@ -90,7 +90,7 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
     await Promise.all(
       toUpload.map(async ({ file, idx }) => {
         try {
-          const compressed = await compressImage(file, 1920, 0.85)
+          const compressed = await compressImage(file, undefined, 0.85)
           const path = `${complaintId}/${crypto.randomUUID()}.jpg`
           const { error } = await supabase.storage
             .from('complaint-attachments')
@@ -313,8 +313,14 @@ export default function CitizenForm() {
   useEffect(() => () => photosRef.current.forEach(p => URL.revokeObjectURL(p.preview)), [])
 
   function handlePhotoPick(e) {
-    const picked = Array.from(e.target.files).slice(0, MAX_PHOTOS - photos.length)
-    setPhotos(prev => [...prev, ...picked.map(f => ({ file: f, preview: URL.createObjectURL(f) }))])
+    const MAX_MB = 25
+    const valid = Array.from(e.target.files)
+      .filter(f => {
+        if (f.size > MAX_MB * 1024 * 1024) { alert(`ไฟล์ "${f.name}" ใหญ่เกิน ${MAX_MB} MB กรุณาย่อขนาดก่อนแนบ`); return false }
+        return true
+      })
+      .slice(0, MAX_PHOTOS - photos.length)
+    setPhotos(prev => [...prev, ...valid.map(f => ({ file: f, preview: URL.createObjectURL(f) }))])
     e.target.value = ''
   }
 
