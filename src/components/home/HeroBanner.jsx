@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { useTenant } from '../../contexts/TenantContext'
-import { ArrowRight, CalendarDays, Phone } from 'lucide-react'
+import { ArrowRight, Star, Phone } from 'lucide-react'
 
 
 const SLIDE_W = 0.9
@@ -9,7 +9,7 @@ const GAP = 12
 
 const TABS = [
   { label: 'ยื่นคำร้อง' },
-  { label: 'ปฏิทินกิจกรรม' },
+  { label: 'ประเมินความพึงพอใจ' },
   { label: 'สายด่วน' },
 ]
 
@@ -88,21 +88,21 @@ export default function HeroBanner() {
             </div>
           </Link>
 
-          {/* Slide 2 — ปฏิทินกิจกรรม */}
-          <Link to="/events" className="snap-start shrink-0 rounded-2xl overflow-hidden shadow-md flex flex-col p-5 md:p-6 cursor-pointer transition-transform active:scale-[0.98] w-[90%] md:w-full md:h-full md:col-span-1 md:row-span-1 justify-center"
-               style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' }}>
+          {/* Slide 2 — ประเมินความพึงพอใจ */}
+          <Link to="/satisfaction" className="snap-start shrink-0 rounded-2xl overflow-hidden shadow-md flex flex-col p-5 md:p-6 cursor-pointer transition-transform active:scale-[0.98] w-[90%] md:w-full md:h-full md:col-span-1 md:row-span-1 justify-center"
+               style={{ background: 'linear-gradient(135deg, #1e40af 0%, #3b82f6 100%)' }}>
             <div className="flex items-center gap-3 mb-2 md:mb-3">
-               <CalendarDays size={32} className="text-white/90 shrink-0" />
+               <Star size={32} className="text-white/90 shrink-0" />
                <h2 className="text-white text-lg md:text-xl font-bold leading-snug">
-                 ปฏิทินกิจกรรม
+                 ประเมินความพึงพอใจ
                </h2>
             </div>
             <p className="text-white/80 text-xs md:text-sm leading-relaxed mb-4 md:mb-5 line-clamp-2 md:line-clamp-3">
-              ติดตามกิจกรรม งานประชุม และงานสำคัญของ{tenant?.name || 'เทศบาล'}ได้ในที่เดียว
+              ให้คะแนนการให้บริการเพื่อนำไปพัฒนา{tenant?.name || 'หน่วยงาน'}ให้ดียิ่งขึ้น
             </p>
             <div className="inline-flex items-center gap-2 bg-white font-semibold text-sm px-4 py-2 md:px-5 md:py-2.5 rounded-xl shadow self-start mt-auto"
-               style={{ color: '#d97706' }}>
-              ดูกิจกรรมทั้งหมด <ArrowRight size={16} />
+               style={{ color: '#1e40af' }}>
+              ประเมินเลย <ArrowRight size={16} />
             </div>
           </Link>
 
