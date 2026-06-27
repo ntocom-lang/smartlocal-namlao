@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   MapPin, Phone, ChevronDown, ChevronRight,
@@ -6,11 +6,16 @@ import {
   Lightbulb, Trash2, Scissors, Droplets, Package, Megaphone, Bug,
   Waves, Wind, Building2, Volume2, HelpCircle,
   CreditCard, PawPrint, Shield, FlameKindling, Axe, Wrench, AlertTriangle,
+  ImagePlus, Camera, Images,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { useTenant } from '../contexts/TenantContext'
 import MapPicker from '../components/MapPicker'
+import { compressImage } from '../lib/imageUtils'
+
+const MAX_FILES = 3
+const MAX_MB = 5
 
 const CATEGORY_ICON = {
   light:            Lightbulb,
@@ -165,6 +170,9 @@ export default function CitizenForm() {
   const [showNearbyWarning, setShowNearbyWarning] = useState(false)
   const [locations, setLocations] = useState([])
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES)
+  const [files, setFiles] = useState([])        // { file, preview }[]
+  const galleryRef = useRef(null)
+  const cameraRef  = useRef(null)
 
 
   useEffect(() => {
@@ -205,6 +213,44 @@ export default function CitizenForm() {
 
   const set = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }))
 
+  function handleFileAdd(e) {
+    const incoming = Array.from(e.target.files ?? [])
+    e.target.value = ''
+    const allowed = incoming.filter(f => {
+      if (!f.type.startsWith('image/')) return false
+      if (f.size > MAX_MB * 1024 * 1024) { setError(`ไฟล์ "${f.name}" ใหญ่เกิน ${MAX_MB}MB`); return false }
+      return true
+    })
+    setFiles(prev => {
+      const slots = MAX_FILES - prev.length
+      if (slots <= 0) return prev
+      const added = allowed.slice(0, slots).map(f => ({ file: f, preview: URL.createObjectURL(f) }))
+      return [...prev, ...added]
+    })
+  }
+
+  function removeFile(idx) {
+    setFiles(prev => {
+      URL.revokeObjectURL(prev[idx].preview)
+      return prev.filter((_, i) => i !== idx)
+    })
+  }
+
+  async function uploadFiles(complaintId) {
+    if (files.length === 0) return []
+    const urls = []
+    for (const { file } of files) {
+      const compressed = await compressImage(file, 1600, 0.82)
+      const ext  = compressed.name.split('.').pop()
+      const path = `${tenant.id}/${complaintId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+      const { error: upErr } = await supabase.storage.from('complaint-attachments').upload(path, compressed, { upsert: false })
+      if (upErr) continue
+      const { data: { publicUrl } } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
+      urls.push(publicUrl)
+    }
+    return urls
+  }
+
   function handleMapConfirm({ lat, lng, address }) {
     setGeo({ lat, lng, address })
     setGeoStatus(GEO_STATUS.ok)
@@ -239,7 +285,7 @@ export default function CitizenForm() {
       latitude:        geo.lat,
       longitude:       geo.lng,
       user_id:         session?.user?.id ?? null,
-      attachments:     [],
+      attachments:     await uploadFiles(complaintId),
       department:      CATEGORY_DEPT[form.category] ?? 'สำนักปลัด',
     }).select('id, ref_no').single()
 
@@ -409,6 +455,51 @@ export default function CitizenForm() {
             className={`w-full px-4 py-2.5 pl-10 rounded-xl border text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:border-blue-400 ${isLoggedIn && form.phone ? 'bg-gray-50 border-gray-200 text-gray-500' : 'bg-white border-gray-300'}`} />
           <Phone size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           {isLoggedIn && form.phone && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-emerald-500 font-semibold">จากโปรไฟล์</span>}
+        </div>
+
+        {/* Photo upload */}
+        <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-gray-600">แนบภาพถ่าย</span>
+            <span className="text-[11px] text-gray-400">สูงสุด {MAX_FILES} ภาพ (ไม่เกิน {MAX_MB}MB/ภาพ)</span>
+          </div>
+
+          {/* Hidden inputs */}
+          <input ref={galleryRef} type="file" accept="image/*" multiple className="hidden"
+            onChange={handleFileAdd} />
+          <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden"
+            onChange={handleFileAdd} />
+
+          {/* Preview thumbnails */}
+          {files.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {files.map(({ preview }, idx) => (
+                <div key={idx} className="relative w-20 h-20 rounded-xl overflow-hidden border border-gray-200 shrink-0">
+                  <img src={preview} alt="" className="w-full h-full object-cover" />
+                  <button type="button" onClick={() => removeFile(idx)}
+                    className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/60 flex items-center justify-center">
+                    <X size={11} className="text-white" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Buttons */}
+          {files.length < MAX_FILES && (
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => galleryRef.current?.click()}
+                className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-white transition-all active:scale-95"
+                style={{ background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)' }}>
+                <Images size={16} /> รูปภาพ
+              </button>
+              <button type="button" onClick={() => cameraRef.current?.click()}
+                className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-white transition-all active:scale-95"
+                style={{ background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)' }}>
+                <Camera size={16} /> กล้อง
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Map pin */}
