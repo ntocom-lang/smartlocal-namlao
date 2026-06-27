@@ -217,7 +217,6 @@ export default function CitizenForm() {
     if (!form.reporter_name.trim()) { setError('กรุณากรอกชื่อ-นามสกุล'); return }
     if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
     if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
-    if (ftConfig?.gpsRequired && !geo.lat) { setError('ฟอร์มนี้ต้องการพิกัด GPS — กรุณากดปักหมุดก่อนส่ง'); return }
     if (!tenant?.id) { setError('ไม่พบข้อมูลหน่วยงาน'); return }
 
     setError(null)
@@ -443,8 +442,7 @@ export default function CitizenForm() {
 
           if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
           if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
-          if (ftConfig?.gpsRequired && !geo.lat) { setError('ฟอร์มนี้ต้องการพิกัด GPS — กรุณากดปักหมุดก่อนส่ง'); return }
-          if (geo.lat && tenant?.id) {
+                if (geo.lat && tenant?.id) {
             const { data: nearby } = await supabase.rpc('complaints_near', {
               _lat: geo.lat, _lng: geo.lng, _radius_m: 200, _municipality_id: tenant.id,
             })
