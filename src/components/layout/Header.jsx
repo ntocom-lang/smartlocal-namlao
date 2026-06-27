@@ -61,9 +61,7 @@ export default function Header() {
       <div className="hidden md:flex text-white text-xs py-1 px-4 justify-end items-center gap-3"
            style={{ backgroundColor: 'var(--color-primary-dark)' }}>
         <Phone size={11} />
-        <span className="font-semibold tracking-wide">{tenant?.system_name || `${tenant?.name} One Data`}</span>
-        <span className="opacity-40">|</span>
-        <span>{tenant?.name}</span>
+        <span className="font-semibold tracking-wide">{tenant?.name}</span>
         <span className="opacity-40">|</span>
         <a href="/manual-citizen.html" target="_blank" rel="noopener noreferrer"
           className="opacity-80 hover:opacity-100 transition-opacity underline underline-offset-2">
