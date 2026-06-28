@@ -138,11 +138,13 @@ export default function SystemSettingsAdmin() {
       if (upErr) throw upErr
       const { data: { publicUrl: url } } = supabase.storage.from('municipality-assets').getPublicUrl(path)
       publicUrl = url
-      const { error: dbErr } = await supabase
+      const { data: updatedRows, error: dbErr } = await supabase
         .from('municipalities')
         .update({ header_image_url: publicUrl })
         .eq('id', tenant.id)
+        .select('id')
       if (dbErr) throw dbErr
+      if (!updatedRows?.length) throw new Error('RLS block — ไม่มีสิทธิ์ update municipalities\nกรุณารัน SQL ใน Supabase: CREATE POLICY admin_update_municipality...')
       setHeaderPreview(publicUrl)
       patchTenant({ header_image_url: publicUrl })
       setSavedSection('header')
