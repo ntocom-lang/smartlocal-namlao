@@ -309,7 +309,7 @@ export default function SystemSettingsAdmin() {
             <p className="text-xs text-gray-500 leading-relaxed">รองรับ JPG · PNG · WebP<br /><span className="text-gray-400">ขนาดไฟล์ไม่เกิน 5 MB</span></p>
             <input ref={headerRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleHeaderUpload} />
             <button onClick={() => headerRef.current?.click()} disabled={headerUploading}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-all"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-all whitespace-nowrap"
               style={{ backgroundColor: 'var(--color-primary)' }}>
               {headerUploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
               {headerUploading ? 'กำลังอัปโหลด...' : 'อัปโหลดภาพพื้นหลัง'}
