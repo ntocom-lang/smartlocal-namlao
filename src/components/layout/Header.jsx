@@ -58,7 +58,7 @@ export default function Header() {
       {/* Main header */}
       {/* เมื่อมีรูป header → nav โปร่งใส, รูปอยู่ใน hero zone ใน HomePage แทน */}
       <div className="text-white px-4 relative overflow-visible"
-           style={tenant?.header_image_url
+           style={tenant?.header_image_url && location.pathname === '/'
              ? { background: 'transparent', paddingTop: 14, paddingBottom: 20 }
              : { background: `linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 55%, color-mix(in srgb, var(--color-primary) 70%, #60a5fa) 100%)`, paddingTop: 12, paddingBottom: 12 }
            }>
