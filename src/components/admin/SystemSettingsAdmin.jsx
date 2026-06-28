@@ -425,6 +425,7 @@ function BannerManager({ tenant }) {
   const [uploading, setUploading] = useState(false)
   const [deleting, setDeleting] = useState(null)
   const [dragOver, setDragOver] = useState(null)
+  const [showPos, setShowPos] = useState(null) // id ของรูปที่เปิด picker อยู่
   const fileRef = useRef()
   const dragSrc = useRef(null)
 
@@ -542,9 +543,16 @@ function BannerManager({ tenant }) {
                 </button>
                 <span className="absolute bottom-1 left-1.5 text-[9px] text-white/70 font-bold">#{i + 1}</span>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-gray-400">ตำแหน่ง</span>
-                <PositionPicker value={b.object_position || 'center'} onChange={pos => handlePosition(b.id, pos)} />
+              <div className="flex flex-col gap-1">
+                <button type="button"
+                  onClick={() => setShowPos(showPos === b.id ? null : b.id)}
+                  className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-gray-600 transition-colors self-start">
+                  <span>ตำแหน่ง</span>
+                  <span style={{ fontSize: 8 }}>{showPos === b.id ? '▲' : '▼'}</span>
+                </button>
+                {showPos === b.id && (
+                  <PositionPicker value={b.object_position || 'center'} onChange={pos => handlePosition(b.id, pos)} />
+                )}
               </div>
             </div>
           ))}
