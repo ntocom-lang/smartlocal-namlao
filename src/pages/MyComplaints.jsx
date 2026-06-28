@@ -671,7 +671,7 @@ export default function MyComplaints() {
           className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white"
           style={{ backgroundColor: 'var(--color-primary)' }}>
           <ClipboardList size={15} />
-          ยื่นคำร้องใหม่
+          ร้องเรียน/ร้องทุกข์ใหม่
         </button>
       </div>
 
@@ -696,11 +696,11 @@ export default function MyComplaints() {
         <div className="flex flex-col items-center justify-center py-20 text-gray-400">
           <ClipboardList size={48} className="mb-3 opacity-20" />
           <p className="font-medium text-gray-500">ยังไม่มีคำร้อง</p>
-          <p className="text-sm mt-1">กดยื่นคำร้องเพื่อแจ้งปัญหา</p>
+          <p className="text-sm mt-1">กดร้องเรียน/ร้องทุกข์เพื่อแจ้งปัญหา</p>
           <button onClick={() => navigate('/complaint')}
             className="mt-5 px-5 py-2.5 rounded-xl text-sm font-semibold text-white"
             style={{ backgroundColor: 'var(--color-primary)' }}>
-            ยื่นคำร้อง
+            ร้องเรียน/ร้องทุกข์
           </button>
         </div>
       ) : (

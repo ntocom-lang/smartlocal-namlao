@@ -185,7 +185,7 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
 
 const FORM_TYPE_CONFIG = {
   infrastructure: {
-    label: 'ยื่นคำร้อง',
+    label: 'ร้องเรียน/ร้องทุกข์',
     icon: '🔧',
     color: '#ef4444',
     categories: [
@@ -398,7 +398,7 @@ export default function CitizenForm() {
           20_000,
         )
       } catch {
-        setError('เครือข่ายช้าหรือขาดหาย กรุณาตรวจสอบสัญญาณแล้วกด ยื่นคำร้อง อีกครั้ง')
+        setError('เครือข่ายช้าหรือขาดหาย กรุณาตรวจสอบสัญญาณแล้วกด ร้องเรียน/ร้องทุกข์ อีกครั้ง')
         return
       }
       const { data: inserted, error: dbError } = insertResult ?? {}
@@ -437,7 +437,7 @@ export default function CitizenForm() {
 
       {/* PC header */}
       <div className="hidden md:flex items-center justify-between px-8 py-4 bg-white border-b border-gray-200 shadow-sm">
-        <h1 className="text-lg font-bold text-gray-800">ยื่นคำร้อง</h1>
+        <h1 className="text-lg font-bold text-gray-800">ร้องเรียน/ร้องทุกข์</h1>
         <button onClick={() => navigate(-1)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors">
           <ArrowLeft size={15} />
@@ -494,7 +494,7 @@ export default function CitizenForm() {
           <ArrowLeft size={20} className="text-white" />
         </button>
         <h1 className="font-bold text-white text-base flex-1 text-center pr-8">
-          {ftConfig ? ftConfig.label : 'ยื่นคำร้อง'}
+          {ftConfig ? ftConfig.label : 'ร้องเรียน/ร้องทุกข์'}
         </h1>
       </div>
 
@@ -645,7 +645,7 @@ export default function CitizenForm() {
           style={{ backgroundColor: '#16a34a' }}>
           {submitting
             ? <><Loader2 size={18} className="animate-spin" /> กำลังส่ง...</>
-            : 'ยื่นคำร้อง'}
+            : 'ร้องเรียน/ร้องทุกข์'}
         </button>
 
 

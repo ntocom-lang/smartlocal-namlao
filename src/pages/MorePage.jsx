@@ -484,7 +484,7 @@ export default function MorePage() {
             icon={ClipboardList}
             iconBg="bg-red-50"
             iconColor="text-red-500"
-            label="ยื่นคำร้อง"
+            label="ร้องเรียน/ร้องทุกข์"
             desc="แจ้งซ่อม / ขอน้ำ / แจ้งเหตุสิ่งแวดล้อม"
             href="/complaint"
           />

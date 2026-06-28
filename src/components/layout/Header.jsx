@@ -8,7 +8,7 @@ import { useNotifications } from '../../contexts/NotificationsContext'
 
 const NAV_CITIZEN = [
   { label: 'หน้าแรก',       href: '/' },
-  { label: 'ยื่นคำร้อง',    href: '/complaint' },
+  { label: 'ร้องเรียน/ร้องทุกข์', href: '/complaint' },
   { label: 'คำร้องของฉัน',  href: '/my-complaints' },
   { label: 'ปฏิทินกิจกรรม', href: '/events' },
   { label: 'การแจ้งเตือน',  href: '/notifications' },

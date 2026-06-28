@@ -8,7 +8,7 @@ const SLIDE_W = 0.9
 const GAP = 12
 
 const TABS = [
-  { label: 'ยื่นคำร้อง' },
+  { label: 'ร้องเรียน/ร้องทุกข์' },
   { label: 'ประเมินความพึงพอใจ' },
   { label: 'สายด่วน' },
 ]
@@ -61,7 +61,7 @@ export default function HeroBanner() {
           className="flex md:grid md:grid-cols-3 md:grid-rows-2 md:gap-4 md:overflow-visible snap-x snap-mandatory overflow-x-scroll gap-3"
           style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}
         >
-          {/* Slide 1 — ยื่นคำร้อง */}
+          {/* Slide 1 — ร้องเรียน/ร้องทุกข์ */}
           <Link to="/complaint" className="snap-start shrink-0 rounded-2xl overflow-hidden shadow-md cursor-pointer transition-transform active:scale-[0.98] bg-white border border-gray-100 flex flex-col w-[90%] md:w-full md:h-full md:col-span-2 md:row-span-2">
             <div className="bg-white p-5 md:p-8 pb-0 flex items-center justify-center gap-4 md:gap-8 flex-1 min-h-[160px] md:min-h-[250px]">
               {tenant?.logo_url ? (
@@ -76,14 +76,14 @@ export default function HeroBanner() {
                   E-Service
                 </h1>
                 <p className="text-xs md:text-sm text-gray-500 font-medium leading-relaxed">
-                  ระบบยื่นคำร้องและขอเอกสาร ตลอด 24 ชั่วโมง
+                  ระบบร้องเรียน/ร้องทุกข์และขอเอกสาร ตลอด 24 ชั่วโมง
                 </p>
               </div>
             </div>
             <div className="px-5 py-4">
               <div className="flex items-center justify-center gap-2 text-white font-bold text-sm px-5 py-3 rounded-xl shadow-sm transition-opacity hover:opacity-90 w-full"
                  style={{ background: `linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)` }}>
-                ยื่นคำร้องเลย <ArrowRight size={18} />
+                ร้องเรียน/ร้องทุกข์เลย <ArrowRight size={18} />
               </div>
             </div>
           </Link>
