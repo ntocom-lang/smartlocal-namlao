@@ -185,20 +185,8 @@ export default function Header() {
               )}
             </button>
             {session ? (
-              <div className="flex items-center gap-1">
-                {isStaff && (
-                  <Link to="/staff" aria-label="ระบบเจ้าหน้าที่"
-                    className="w-8 h-8 rounded-lg bg-white/20 hover:bg-white/35 flex items-center justify-center transition-colors">
-                    <Briefcase size={15} className="text-white" />
-                  </Link>
-                )}
-                {isAdmin && (
-                  <Link to="/admin" aria-label="แผงควบคุม Admin"
-                    className="w-8 h-8 rounded-lg bg-white/20 hover:bg-white/35 flex items-center justify-center transition-colors">
-                    <LayoutDashboard size={15} className="text-white" />
-                  </Link>
-                )}
-                <Link to="/profile" className="p-1">
+              <div className="flex flex-col items-center gap-1">
+                <Link to="/profile" className="p-0.5">
                   {(session.user?.user_metadata?.avatar_url || session.user?.user_metadata?.picture) ? (
                     <img
                       src={session.user.user_metadata.avatar_url || session.user.user_metadata.picture}
@@ -211,6 +199,22 @@ export default function Header() {
                     </div>
                   )}
                 </Link>
+                {(isStaff || isAdmin) && (
+                  <div className="flex gap-1">
+                    {isStaff && (
+                      <Link to="/staff" aria-label="ระบบเจ้าหน้าที่"
+                        className="w-8 h-5 rounded bg-white/25 hover:bg-white/40 flex items-center justify-center transition-colors">
+                        <Briefcase size={11} className="text-white" />
+                      </Link>
+                    )}
+                    {isAdmin && (
+                      <Link to="/admin" aria-label="แผงควบคุม Admin"
+                        className="w-8 h-5 rounded bg-white/25 hover:bg-white/40 flex items-center justify-center transition-colors">
+                        <LayoutDashboard size={11} className="text-white" />
+                      </Link>
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
               <Link to="/auth" className="p-2 text-white/85 hover:text-white transition-colors">
