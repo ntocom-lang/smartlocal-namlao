@@ -3,7 +3,6 @@ import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 
 const INTERVAL = 4500
-// ratio กำหนดผ่าน Tailwind class แทน (responsive)
 
 export default function BannerSlider() {
   const { tenant } = useTenant()
@@ -48,40 +47,61 @@ export default function BannerSlider() {
   if (!banners.length) return null
 
   const cur = banners[idx]
-  const Wrapper = cur.link_url ? 'a' : 'div'
-  const wrapperProps = cur.link_url
+  const MobileWrapper = cur.link_url ? 'a' : 'div'
+  const mobileProps = cur.link_url
     ? { href: cur.link_url, target: '_blank', rel: 'noopener noreferrer' }
     : {}
 
   return (
-    <div className="rounded-2xl overflow-hidden shadow-md select-none">
-      <Wrapper {...wrapperProps}
-        className="block relative w-full overflow-hidden aspect-video md:aspect-auto md:h-64"
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}>
-        {banners.map((b, i) => (
-          <img key={b.id} src={b.image_url} alt=""
-            className="absolute inset-0 w-full h-full object-cover transition-opacity duration-700"
-            style={{
-              opacity: i === idx ? 1 : 0,
-              objectPosition: b.object_position || 'center',
-            }} />
-        ))}
-      </Wrapper>
-
-      {banners.length > 1 && (
-        <div className="flex justify-center gap-1.5 py-2.5 bg-white">
-          {banners.map((_, i) => (
-            <button key={i} onClick={() => goTo(i)}
-              className="rounded-full transition-all duration-300"
+    <>
+      {/* Mobile: single slider */}
+      <div className="md:hidden rounded-2xl overflow-hidden shadow-md select-none">
+        <MobileWrapper {...mobileProps}
+          className="block relative w-full overflow-hidden aspect-video"
+          onTouchStart={onTouchStart}
+          onTouchEnd={onTouchEnd}>
+          {banners.map((b, i) => (
+            <img key={b.id} src={b.image_url} alt=""
+              className="absolute inset-0 w-full h-full object-cover transition-opacity duration-700"
               style={{
-                width: i === idx ? 20 : 7,
-                height: 7,
-                backgroundColor: i === idx ? 'var(--color-primary)' : '#d1d5db',
+                opacity: i === idx ? 1 : 0,
+                objectPosition: b.object_position || 'center',
               }} />
           ))}
-        </div>
-      )}
-    </div>
+        </MobileWrapper>
+
+        {banners.length > 1 && (
+          <div className="flex justify-center gap-1.5 py-2.5 bg-white">
+            {banners.map((_, i) => (
+              <button key={i} onClick={() => goTo(i)}
+                className="rounded-full transition-all duration-300"
+                style={{
+                  width: i === idx ? 20 : 7,
+                  height: 7,
+                  backgroundColor: i === idx ? 'var(--color-primary)' : '#d1d5db',
+                }} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Desktop: 2-column grid */}
+      <div className="hidden md:grid grid-cols-2 gap-3 select-none">
+        {banners.map(b => {
+          const Tag = b.link_url ? 'a' : 'div'
+          const props = b.link_url
+            ? { href: b.link_url, target: '_blank', rel: 'noopener noreferrer' }
+            : {}
+          return (
+            <Tag key={b.id} {...props}
+              className="block relative w-full h-52 rounded-2xl overflow-hidden shadow-md">
+              <img src={b.image_url} alt=""
+                className="absolute inset-0 w-full h-full object-cover"
+                style={{ objectPosition: b.object_position || 'center' }} />
+            </Tag>
+          )
+        })}
+      </div>
+    </>
   )
 }
