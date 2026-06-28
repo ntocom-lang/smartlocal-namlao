@@ -40,7 +40,7 @@ export default function Header() {
   if (location.pathname.startsWith('/staff')) return null
 
   return (
-    <header className="sticky top-0 z-50 shadow-md">
+    <header className="shadow-md">
       {/* Top strip — hidden on mobile */}
       <div className="hidden md:flex text-white text-xs py-1 px-4 justify-end items-center gap-3"
            style={{ backgroundColor: 'var(--color-primary-dark)' }}>
