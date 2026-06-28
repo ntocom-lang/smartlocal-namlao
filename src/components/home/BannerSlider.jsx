@@ -56,7 +56,7 @@ export default function BannerSlider() {
   return (
     <div className="rounded-2xl overflow-hidden shadow-md select-none">
       <Wrapper {...wrapperProps}
-        className="block relative w-full overflow-hidden aspect-video md:aspect-7/2"
+        className="block relative w-full overflow-hidden aspect-video md:aspect-auto md:h-64"
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}>
         {banners.map((b, i) => (
