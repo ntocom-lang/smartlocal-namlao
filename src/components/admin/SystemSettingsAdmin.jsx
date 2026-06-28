@@ -137,14 +137,15 @@ export default function SystemSettingsAdmin() {
         .upload(path, blob, { upsert: true, contentType: 'image/jpeg' })
       if (upErr) throw upErr
       const { data: { publicUrl: url } } = supabase.storage.from('municipality-assets').getPublicUrl(path)
-      publicUrl = url
+      // เพิ่ม timestamp ป้องกัน browser cache รูปเก่า
+      publicUrl = `${url}?v=${Date.now()}`
       const { data: updatedRows, error: dbErr } = await supabase
         .from('municipalities')
         .update({ header_image_url: publicUrl })
         .eq('id', tenant.id)
         .select('id')
       if (dbErr) throw dbErr
-      if (!updatedRows?.length) throw new Error('RLS block — ไม่มีสิทธิ์ update municipalities\nกรุณารัน SQL ใน Supabase: CREATE POLICY admin_update_municipality...')
+      if (!updatedRows?.length) throw new Error('RLS block — ไม่มีสิทธิ์ update municipalities\nกรุณารัน SQL ใน Supabase: ALTER TABLE municipalities DISABLE ROW LEVEL SECURITY;')
       setHeaderPreview(publicUrl)
       patchTenant({ header_image_url: publicUrl })
       setSavedSection('header')
