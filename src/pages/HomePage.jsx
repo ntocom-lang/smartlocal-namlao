@@ -25,15 +25,15 @@ export default function HomePage() {
       {/* Hero zone — ยืดขึ้นไปอยู่ใต้ sticky nav (margin-top: -68px) เพื่อให้รูปต่อเนื่อง */}
       <div className="relative overflow-hidden"
         style={tenant?.header_image_url
-          ? { borderRadius: '0 0 28px 28px' }
+          ? { marginTop: -74, borderRadius: '0 0 28px 28px', position: 'relative', zIndex: 1 }
           : {}}>
         {tenant?.header_image_url && <>
           <img src={tenant.header_image_url} aria-hidden="true"
             className="absolute inset-0 w-full h-full object-cover object-top pointer-events-none" />
           <div className="absolute inset-0 pointer-events-none"
-            style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.05) 50%, white 100%)' }} />
+            style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.05) 55%, white 100%)' }} />
         </>}
-        <div className={`relative z-10 flex flex-col gap-2 md:gap-3 ${tenant?.header_image_url ? 'px-4 pt-4 pb-8' : 'px-4 py-4'}`}>
+        <div className={`relative z-10 flex flex-col gap-2 md:gap-3 ${tenant?.header_image_url ? 'px-4 pt-20 pb-8' : 'px-4 py-4'}`}>
           <WeatherWidget transparent={!!tenant?.header_image_url} />
           <BannerSlider />
         </div>

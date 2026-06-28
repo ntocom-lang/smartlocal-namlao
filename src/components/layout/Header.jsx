@@ -40,7 +40,7 @@ export default function Header() {
   if (location.pathname.startsWith('/staff')) return null
 
   return (
-    <header className="shadow-md">
+    <header className="shadow-md" style={tenant?.header_image_url ? { position: 'relative', zIndex: 2 } : {}}>
       {/* Top strip — hidden on mobile */}
       <div className="hidden md:flex text-white text-xs py-1 px-4 justify-end items-center gap-3"
            style={{ backgroundColor: 'var(--color-primary-dark)' }}>
