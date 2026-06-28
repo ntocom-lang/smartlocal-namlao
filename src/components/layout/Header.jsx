@@ -184,8 +184,8 @@ export default function Header() {
               )}
             </button>
             {session ? (
-              <div className="flex flex-col items-center gap-0.5">
-                <Link to="/profile" className="p-1">
+              <div className="relative p-1">
+                <Link to="/profile">
                   {(session.user?.user_metadata?.avatar_url || session.user?.user_metadata?.picture) ? (
                     <img
                       src={session.user.user_metadata.avatar_url || session.user.user_metadata.picture}
@@ -200,8 +200,8 @@ export default function Header() {
                 </Link>
                 {isAdmin && (
                   <Link to="/admin" aria-label="แผงควบคุม Admin"
-                    className="w-8 h-5 rounded-md bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors">
-                    <LayoutDashboard size={12} className="text-white" />
+                    className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-7 h-4 rounded bg-white/25 hover:bg-white/40 flex items-center justify-center transition-colors">
+                    <LayoutDashboard size={10} className="text-white" />
                   </Link>
                 )}
               </div>
