@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 
 const INTERVAL = 4500
-const RATIO = '16/9'
+// ratio กำหนดผ่าน Tailwind class แทน (responsive)
 
 export default function BannerSlider() {
   const { tenant } = useTenant()
@@ -56,8 +56,7 @@ export default function BannerSlider() {
   return (
     <div className="rounded-2xl overflow-hidden shadow-md select-none">
       <Wrapper {...wrapperProps}
-        className="block relative w-full overflow-hidden"
-        style={{ aspectRatio: RATIO }}
+        className="block relative w-full overflow-hidden aspect-video md:aspect-5/2"
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}>
         {banners.map((b, i) => (
