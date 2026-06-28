@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   MapPin, Phone, ChevronDown, ChevronRight,
   Loader2, CheckCircle2, ArrowLeft, X, User,
-  ImagePlus, FileText,
+  ImagePlus,
   Lightbulb, Trash2, Scissors, Droplets, Package, Megaphone, Bug,
   Waves, Wind, Building2, Volume2, HelpCircle,
   CreditCard, PawPrint, Shield, FlameKindling, Axe, Wrench,
@@ -15,7 +15,6 @@ import { compressImage } from '../lib/imageUtils'
 import MapPicker from '../components/MapPicker'
 
 const MAX_PHOTOS = 3
-const MAX_DOCS   = 3
 
 
 const CATEGORY_ICON = {
@@ -65,19 +64,17 @@ const CATEGORY_DEPT = {
 
 const GEO_STATUS = { idle: 'idle', ok: 'ok' }
 
-function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, complaintId, photoFiles, docFiles }) {
-  const [items, setItems] = useState(() => [
-    ...(photoFiles ?? []).map(f => ({ file: f, status: 'pending', kind: 'photo' })),
-    ...(docFiles   ?? []).map(f => ({ file: f, status: 'pending', kind: 'doc'   })),
-  ])
+function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, complaintId, photoFiles }) {
+  const [items, setItems] = useState(() =>
+    (photoFiles ?? []).map(f => ({ file: f, status: 'pending' }))
+  )
   const [uploading, setUploading] = useState(false)
   const didMount = useRef(false)
 
   const hasItems  = items.length > 0
   const allOk     = hasItems && items.every(i => i.status === 'ok')
   const hasFailed = items.some(i => i.status === 'error')
-  const okPhotos  = items.filter(i => i.kind === 'photo' && i.status === 'ok').length
-  const okDocs    = items.filter(i => i.kind === 'doc'   && i.status === 'ok').length
+  const okCount   = items.filter(i => i.status === 'ok').length
   const failCount = items.filter(i => i.status === 'error').length
 
   const uploadAll = useCallback(async () => {
@@ -92,25 +89,15 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
 
     const collected = []
     await Promise.all(
-      toUpload.map(async ({ file, idx, kind }) => {
+      toUpload.map(async ({ file, idx }) => {
         try {
-          let uploadFile, path, contentType
-          if (kind === 'photo') {
-            let compressed
-            try { compressed = await compressImage(file, undefined, 0.85) }
-            catch { try { compressed = await compressImage(file, 480, 0.60) } catch { compressed = file } }
-            path        = `${complaintId}/${crypto.randomUUID()}.jpg`
-            uploadFile  = compressed
-            contentType = 'image/jpeg'
-          } else {
-            const ext   = (file.name.split('.').pop() || 'bin').toLowerCase()
-            path        = `${complaintId}/${crypto.randomUUID()}.${ext}`
-            uploadFile  = file
-            contentType = file.type || 'application/octet-stream'
-          }
+          let compressed
+          try { compressed = await compressImage(file, undefined, 0.85) }
+          catch { try { compressed = await compressImage(file, 480, 0.60) } catch { compressed = file } }
+          const path = `${complaintId}/${crypto.randomUUID()}.jpg`
           const { error } = await supabase.storage
             .from('complaint-attachments')
-            .upload(path, uploadFile, { upsert: false, contentType })
+            .upload(path, compressed, { upsert: false, contentType: 'image/jpeg' })
           if (error) throw error
           const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
           collected.push(data.publicUrl)
@@ -165,13 +152,7 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
             ))}
           </div>
           {uploading && <p className="text-xs text-gray-400">กำลังอัปโหลด...</p>}
-          {allOk && (
-            <p className="text-xs text-green-600 font-semibold">
-              แนบไฟล์เรียบร้อย
-              {okPhotos > 0 && ` รูปภาพ ${okPhotos} รูป`}
-              {okDocs   > 0 && ` เอกสาร ${okDocs} ไฟล์`}
-            </p>
-          )}
+          {allOk && <p className="text-xs text-green-600 font-semibold">แนบรูปภาพเรียบร้อย {okCount} รูป</p>}
           {hasFailed && !uploading && (
             <button onClick={uploadAll}
               className="mt-2 w-full py-2 rounded-xl text-xs font-semibold text-white"
@@ -269,9 +250,7 @@ export default function CitizenForm() {
   const [complaintNumber, setComplaintNumber] = useState(null)
   const [savedComplaintId, setSavedComplaintId] = useState(null)
   const [savedPhotoFiles, setSavedPhotoFiles] = useState([])
-  const [savedDocFiles,   setSavedDocFiles]   = useState([])
   const [photos, setPhotos] = useState([]) // { file, preview }
-  const [docs,   setDocs]   = useState([]) // { file }
   const [locations, setLocations] = useState([])
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES)
   const abortCtrlRef = useRef(null)
@@ -361,21 +340,7 @@ export default function CitizenForm() {
     setPhotos(prev => { URL.revokeObjectURL(prev[idx].preview); return prev.filter((_, i) => i !== idx) })
   }
 
-  function handleDocPick(e) {
-    const MAX_MB = 25
-    const valid = Array.from(e.target.files)
-      .filter(f => {
-        if (f.size > MAX_MB * 1024 * 1024) { alert(`ไฟล์ "${f.name}" ใหญ่เกิน ${MAX_MB} MB`); return false }
-        return true
-      })
-      .slice(0, MAX_DOCS - docs.length)
-    setDocs(prev => [...prev, ...valid.map(f => ({ file: f }))])
-    e.target.value = ''
-  }
 
-  function removeDoc(idx) {
-    setDocs(prev => prev.filter((_, i) => i !== idx))
-  }
 
   const set = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }))
 
@@ -443,7 +408,6 @@ export default function CitizenForm() {
       setComplaintNumber(inserted?.ref_no ?? null)
       setSavedComplaintId(complaintId)
       setSavedPhotoFiles(photos.map(p => p.file))
-      setSavedDocFiles(docs.map(d => d.file))
       photos.forEach(p => URL.revokeObjectURL(p.preview))
       const allCats = [...(ftConfig?.categories ?? []), ...categories]
       const catLabel = allCats.find((c) => c.value === form.category)?.label?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category
@@ -462,7 +426,7 @@ export default function CitizenForm() {
     }
   }
 
-  if (success) return <SuccessScreen onBack={() => navigate('/')} onMyComplaints={() => navigate('/my-complaints')} complaintNumber={complaintNumber} isLoggedIn={isLoggedIn} complaintId={savedComplaintId} photoFiles={savedPhotoFiles} docFiles={savedDocFiles} />
+  if (success) return <SuccessScreen onBack={() => navigate('/')} onMyComplaints={() => navigate('/my-complaints')} complaintNumber={complaintNumber} isLoggedIn={isLoggedIn} complaintId={savedComplaintId} photoFiles={savedPhotoFiles} />
 
   const allCatsDisplay = [...(ftConfig?.categories ?? []), ...categories]
   const catLabel = allCatsDisplay.find((c) => c.value === form.category)?.label?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category
@@ -640,10 +604,9 @@ export default function CitizenForm() {
               แนบไฟล์ประกอบ
               <span className="ml-1.5 text-xs font-normal text-gray-400">(ไม่บังคับ)</span>
             </p>
-            <div className="flex gap-2 text-xs text-gray-400 font-medium">
-              {photos.length > 0 && <span>รูป {photos.length}/{MAX_PHOTOS}</span>}
-              {docs.length   > 0 && <span>เอกสาร {docs.length}/{MAX_DOCS}</span>}
-            </div>
+            {photos.length > 0 && (
+              <p className="text-xs text-gray-400 font-medium">รูป {photos.length}/{MAX_PHOTOS}</p>
+            )}
           </div>
 
           {photos.length > 0 && (
@@ -660,34 +623,12 @@ export default function CitizenForm() {
             </div>
           )}
 
-          {docs.length > 0 && (
-            <div className="flex flex-col gap-1.5 mb-3">
-              {docs.map((d, i) => (
-                <div key={i} className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2">
-                  <FileText size={14} className="text-gray-400 shrink-0" />
-                  <span className="text-xs text-gray-600 flex-1 truncate">{d.file.name}</span>
-                  <button type="button" onClick={() => removeDoc(i)} className="shrink-0 active:scale-90 transition-transform">
-                    <X size={14} className="text-gray-400" />
-                  </button>
-                </div>
-              ))}
-            </div>
+          {photos.length < MAX_PHOTOS && (
+            <label className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-dashed border-gray-300 text-gray-500 text-xs font-medium cursor-pointer active:bg-gray-50 transition-colors">
+              <ImagePlus size={15} /> รูปภาพ
+              <input type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoPick} />
+            </label>
           )}
-
-          <div className="flex gap-2">
-            {photos.length < MAX_PHOTOS && (
-              <label className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-dashed border-gray-300 text-gray-500 text-xs font-medium cursor-pointer active:bg-gray-50 transition-colors">
-                <ImagePlus size={15} /> รูปภาพ
-                <input type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoPick} />
-              </label>
-            )}
-            {docs.length < MAX_DOCS && (
-              <label className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-dashed border-gray-300 text-gray-500 text-xs font-medium cursor-pointer active:bg-gray-50 transition-colors">
-                <FileText size={15} /> เอกสาร
-                <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx" multiple className="hidden" onChange={handleDocPick} />
-              </label>
-            )}
-          </div>
         </div>
 
         {/* Error */}
