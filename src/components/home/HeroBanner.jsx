@@ -75,7 +75,7 @@ export default function HeroBanner() {
                   E-Service
                 </h1>
                 <p className="text-xs md:text-sm text-gray-500 font-medium leading-relaxed">
-                  ระบบร้องเรียน/ร้องทุกข์และบริการออนไลน์ ตลอด 24 ชั่วโมง
+                  บริการประชาชนออนไลน์ ตลอด 24 ชั่วโมง
                 </p>
               </div>
             </div>
