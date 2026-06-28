@@ -424,7 +424,9 @@ function BannerManager({ tenant }) {
   const [banners, setBanners] = useState([])
   const [uploading, setUploading] = useState(false)
   const [deleting, setDeleting] = useState(null)
+  const [dragOver, setDragOver] = useState(null)
   const fileRef = useRef()
+  const dragSrc = useRef(null)
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -474,30 +476,71 @@ function BannerManager({ tenant }) {
     await supabase.from('banners').update({ object_position: pos }).eq('id', id)
   }
 
+  function onDragStart(idx) {
+    dragSrc.current = idx
+  }
+
+  function onDragEnter(idx) {
+    if (dragSrc.current === idx) return
+    setDragOver(idx)
+  }
+
+  async function onDrop(targetIdx) {
+    setDragOver(null)
+    const src = dragSrc.current
+    if (src == null || src === targetIdx) return
+    dragSrc.current = null
+
+    // reorder local state
+    const next = [...banners]
+    const [moved] = next.splice(src, 1)
+    next.splice(targetIdx, 0, moved)
+    const reordered = next.map((b, i) => ({ ...b, sort_order: i + 1 }))
+    setBanners(reordered)
+
+    // batch update DB
+    await Promise.all(reordered.map(b =>
+      supabase.from('banners').update({ sort_order: b.sort_order }).eq('id', b.id)
+    ))
+  }
+
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
       <h2 className="text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
         <ImageIcon size={15} /> สไลด์ Banner หน้าแรก
       </h2>
       <p className="text-xs text-gray-400 mb-5 leading-relaxed">
-        รูปภาพประกาศ / กิจกรรม แสดงสไลด์อัตโนมัติ · กด grid จุดเพื่อปรับตำแหน่งภาพในกรอบ
+        ลาก-วาง เพื่อเรียงลำดับ · กด grid จุดใต้รูปเพื่อปรับตำแหน่งในกรอบ
       </p>
 
       {banners.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-5">
-          {banners.map(b => (
-            <div key={b.id} className="flex flex-col gap-2">
-              <div className="relative rounded-xl overflow-hidden border border-gray-100 bg-gray-50"
-                style={{ aspectRatio: '5/2' }}>
+          {banners.map((b, i) => (
+            <div key={b.id}
+              draggable
+              onDragStart={() => onDragStart(i)}
+              onDragEnter={() => onDragEnter(i)}
+              onDragOver={e => e.preventDefault()}
+              onDrop={() => onDrop(i)}
+              onDragEnd={() => setDragOver(null)}
+              className="flex flex-col gap-2 transition-opacity"
+              style={{ opacity: dragOver === i ? 0.4 : 1, cursor: 'grab' }}>
+              <div className="relative rounded-xl overflow-hidden border bg-gray-50"
+                style={{ aspectRatio: '5/2', borderColor: dragOver === i ? 'var(--color-primary)' : '#f3f4f6', borderWidth: dragOver === i ? 2 : 1 }}>
                 <img src={b.image_url} alt=""
                   className="w-full h-full object-cover"
                   style={{ objectPosition: b.object_position || 'center' }} />
+                {/* drag handle */}
+                <div className="absolute top-1.5 left-1.5 w-6 h-6 bg-black/50 rounded-full flex items-center justify-center cursor-grab">
+                  <span className="text-white text-[10px] leading-none select-none">⠿</span>
+                </div>
                 <button onClick={() => handleDelete(b.id)} disabled={deleting === b.id}
                   className="absolute top-1.5 right-1.5 w-6 h-6 bg-black/60 hover:bg-red-600 rounded-full flex items-center justify-center transition-colors">
                   {deleting === b.id
                     ? <Loader2 size={11} className="animate-spin text-white" />
                     : <span className="text-white text-[10px] font-bold leading-none">✕</span>}
                 </button>
+                <span className="absolute bottom-1 left-1.5 text-[9px] text-white/70 font-bold">#{i + 1}</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] text-gray-400">ตำแหน่ง</span>
