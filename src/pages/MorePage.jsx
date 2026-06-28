@@ -533,6 +533,14 @@ export default function MorePage() {
         {/* ─── บริการ ─── */}
         <Section title="บริการอื่นๆ">
           <MenuRow
+            icon={Star}
+            iconBg="bg-yellow-50"
+            iconColor="text-yellow-500"
+            label="ประเมินความพึงพอใจ"
+            desc={`ให้คะแนนการให้บริการของ${tenant?.name || 'หน่วยงาน'}`}
+            href="/satisfaction"
+          />
+          <MenuRow
             icon={Bell}
             iconBg="bg-purple-50"
             iconColor="text-purple-500"
