@@ -98,7 +98,7 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
           if (kind === 'photo') {
             let compressed
             try { compressed = await compressImage(file, undefined, 0.85) }
-            catch { compressed = await compressImage(file, 640, 0.65) }
+            catch { try { compressed = await compressImage(file, 480, 0.60) } catch { compressed = file } }
             path        = `${complaintId}/${crypto.randomUUID()}.jpg`
             uploadFile  = compressed
             contentType = 'image/jpeg'
@@ -115,8 +115,9 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
           const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
           collected.push(data.publicUrl)
           setItems(prev => prev.map((p, i) => i === idx ? { ...p, status: 'ok' } : p))
-        } catch {
-          setItems(prev => prev.map((p, i) => i === idx ? { ...p, status: 'error' } : p))
+        } catch (err) {
+          console.error('[upload]', file.name, err?.message ?? err)
+          setItems(prev => prev.map((p, i) => i === idx ? { ...p, status: 'error', errMsg: err?.message } : p))
         }
       })
     )
@@ -150,11 +151,16 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
         <div className="w-full max-w-xs mb-5">
           <div className="flex items-center justify-center gap-2 mb-2">
             {items.map((item, i) => (
-              <div key={i} className="w-12 h-12 rounded-xl border-2 flex items-center justify-center bg-gray-50"
-                style={{ borderColor: item.status === 'ok' ? '#22c55e' : item.status === 'error' ? '#ef4444' : '#e5e7eb' }}>
-                {item.status === 'pending' && <Loader2 size={18} className="animate-spin text-gray-300" />}
-                {item.status === 'ok'      && <CheckCircle2 size={18} className="text-green-500" />}
-                {item.status === 'error'   && <X size={18} className="text-red-400" />}
+              <div key={i} className="flex flex-col items-center gap-1">
+                <div className="w-12 h-12 rounded-xl border-2 flex items-center justify-center bg-gray-50"
+                  style={{ borderColor: item.status === 'ok' ? '#22c55e' : item.status === 'error' ? '#ef4444' : '#e5e7eb' }}>
+                  {item.status === 'pending' && <Loader2 size={18} className="animate-spin text-gray-300" />}
+                  {item.status === 'ok'      && <CheckCircle2 size={18} className="text-green-500" />}
+                  {item.status === 'error'   && <X size={18} className="text-red-400" />}
+                </div>
+                {item.status === 'error' && item.errMsg && (
+                  <p className="text-[9px] text-red-400 max-w-[60px] text-center leading-tight">{item.errMsg}</p>
+                )}
               </div>
             ))}
           </div>

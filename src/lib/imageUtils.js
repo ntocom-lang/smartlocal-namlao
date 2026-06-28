@@ -2,93 +2,83 @@ function isMobile() {
   return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
 }
 
-function resizeOnCanvas(file, maxPx, quality) {
+function doBlob(canvas, outName, quality) {
   return new Promise((resolve, reject) => {
-    const outName = (file.name ?? 'photo').replace(/\.[^.]+$/, '.jpg')
-
-    const doBlob = (canvas) =>
-      new Promise((res, rej) => {
-        const timer = setTimeout(() => {
-          canvas.width = 0
-          canvas.height = 0
-          rej(new Error('toBlob_timeout'))
-        }, 8_000)
-        try {
-          canvas.toBlob(
-            (blob) => {
-              clearTimeout(timer)
-              canvas.width = 0
-              canvas.height = 0
-              if (blob) res(new File([blob], outName, { type: 'image/jpeg' }))
-              else rej(new Error('toBlob_null'))
-            },
-            'image/jpeg',
-            quality,
-          )
-        } catch (err) {
+    const timer = setTimeout(() => {
+      canvas.width = 0
+      canvas.height = 0
+      reject(new Error('toBlob_timeout'))
+    }, 8_000)
+    try {
+      canvas.toBlob(
+        (blob) => {
           clearTimeout(timer)
           canvas.width = 0
           canvas.height = 0
-          rej(err)
-        }
-      })
-
-    const draw = (source, w, h) => {
-      const canvas = document.createElement('canvas')
-      canvas.width = w
-      canvas.height = h
-      canvas.getContext('2d').drawImage(source, 0, 0, w, h)
-      return canvas
+          if (blob) resolve(new File([blob], outName, { type: 'image/jpeg' }))
+          else reject(new Error('toBlob_null'))
+        },
+        'image/jpeg',
+        quality,
+      )
+    } catch (err) {
+      clearTimeout(timer)
+      canvas.width = 0
+      canvas.height = 0
+      reject(err)
     }
+  })
+}
 
-    // ─── primary: createImageBitmap (off-thread, no DOM, รับ format กว้างกว่า) ───
-    if (typeof createImageBitmap === 'function') {
-      const bitmapTimeout = setTimeout(() => reject(new Error('bitmap_timeout')), 15_000)
-      createImageBitmap(file)
-        .then(async (bitmap) => {
-          clearTimeout(bitmapTimeout)
-          const scale = Math.min(1, maxPx / Math.max(bitmap.width, bitmap.height))
-          const canvas = draw(bitmap, Math.round(bitmap.width * scale), Math.round(bitmap.height * scale))
-          bitmap.close()
-          try { resolve(await doBlob(canvas)) } catch (e) { reject(e) }
-        })
-        .catch(() => {
-          clearTimeout(bitmapTimeout)
-          // ─── fallback: img element ───────────────────────────────────────
-          const url = URL.createObjectURL(file)
-          const img = new Image()
-          const loadTimeout = setTimeout(() => {
-            URL.revokeObjectURL(url)
-            reject(new Error('image_load_timeout'))
-          }, 10_000)
-          img.onload = async () => {
-            clearTimeout(loadTimeout)
-            URL.revokeObjectURL(url)
-            const scale = Math.min(1, maxPx / Math.max(img.naturalWidth, img.naturalHeight))
-            const canvas = draw(img, Math.round(img.naturalWidth * scale), Math.round(img.naturalHeight * scale))
-            try { resolve(await doBlob(canvas)) } catch (e) { reject(e) }
-          }
-          img.onerror = () => { clearTimeout(loadTimeout); URL.revokeObjectURL(url); reject(new Error('image_load_error')) }
-          img.src = url
-        })
-    } else {
-      // ─── browsers ที่ไม่มี createImageBitmap ─────────────────────────────
-      const url = URL.createObjectURL(file)
-      const img = new Image()
-      const loadTimeout = setTimeout(() => {
-        URL.revokeObjectURL(url)
-        reject(new Error('image_load_timeout'))
-      }, 10_000)
-      img.onload = async () => {
-        clearTimeout(loadTimeout)
-        URL.revokeObjectURL(url)
-        const scale = Math.min(1, maxPx / Math.max(img.naturalWidth, img.naturalHeight))
-        const canvas = draw(img, Math.round(img.naturalWidth * scale), Math.round(img.naturalHeight * scale))
-        try { resolve(await doBlob(canvas)) } catch (e) { reject(e) }
-      }
-      img.onerror = () => { clearTimeout(loadTimeout); URL.revokeObjectURL(url); reject(new Error('image_load_error')) }
-      img.src = url
+function drawToCanvas(source, w, h) {
+  const canvas = document.createElement('canvas')
+  canvas.width  = w
+  canvas.height = h
+  canvas.getContext('2d').drawImage(source, 0, 0, w, h)
+  return canvas
+}
+
+async function resizeOnCanvas(file, maxPx, quality) {
+  const outName = (file.name ?? 'photo').replace(/\.[^.]+$/, '.jpg')
+
+  // ─── primary: createImageBitmap ด้วย inline resize ──────────────────
+  // resizeWidth เพียงค่าเดียว → browser รักษา aspect ratio อัตโนมัติ
+  // decode + resize ใน GPU layer → ใช้ RAM ต่ำกว่าการ decode ขนาดเต็มมาก
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await Promise.race([
+        createImageBitmap(file, { resizeWidth: maxPx, resizeQuality: 'medium' }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('bitmap_timeout')), 15_000)),
+      ])
+      const canvas = drawToCanvas(bitmap, bitmap.width, bitmap.height)
+      bitmap.close()
+      return await doBlob(canvas, outName, quality)
+    } catch {
+      // fall through → img element fallback
     }
+  }
+
+  // ─── fallback: img element (ต้อง decode ขนาดเต็มก่อน) ───────────────
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    const timer = setTimeout(() => {
+      URL.revokeObjectURL(url)
+      reject(new Error('image_load_timeout'))
+    }, 10_000)
+    img.onload = async () => {
+      clearTimeout(timer)
+      URL.revokeObjectURL(url)
+      const scale  = Math.min(1, maxPx / Math.max(img.naturalWidth, img.naturalHeight))
+      const canvas = drawToCanvas(img, Math.round(img.naturalWidth * scale), Math.round(img.naturalHeight * scale))
+      try { resolve(await doBlob(canvas, outName, quality)) } catch (e) { reject(e) }
+    }
+    img.onerror = () => {
+      clearTimeout(timer)
+      URL.revokeObjectURL(url)
+      reject(new Error('image_load_error'))
+    }
+    img.src = url
   })
 }
 
