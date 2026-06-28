@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   MapPin, Phone, ChevronDown, ChevronRight,
   Loader2, CheckCircle2, ArrowLeft, X, User,
-  Camera, ImagePlus,
+  ImagePlus,
   Lightbulb, Trash2, Scissors, Droplets, Package, Megaphone, Bug,
   Waves, Wind, Building2, Volume2, HelpCircle,
   CreditCard, PawPrint, Shield, FlameKindling, Axe, Wrench,
@@ -618,16 +618,10 @@ export default function CitizenForm() {
           )}
 
           {photos.length < MAX_PHOTOS && (
-            <div className="flex gap-2">
-              <label className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-dashed border-gray-300 text-gray-500 text-xs font-medium cursor-pointer active:bg-gray-50 transition-colors">
-                <Camera size={15} /> ถ่ายรูป
-                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoPick} />
-              </label>
-              <label className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-dashed border-gray-300 text-gray-500 text-xs font-medium cursor-pointer active:bg-gray-50 transition-colors">
-                <ImagePlus size={15} /> แกลเลอรี
-                <input type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoPick} />
-              </label>
-            </div>
+            <label className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-dashed border-gray-300 text-gray-500 text-xs font-medium cursor-pointer active:bg-gray-50 transition-colors">
+              <ImagePlus size={15} /> เพิ่มรูปภาพ
+              <input type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoPick} />
+            </label>
           )}
         </div>
 
