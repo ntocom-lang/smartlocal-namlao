@@ -91,19 +91,22 @@ export default function BannerSlider() {
       </div>
 
       {/* Desktop: 2 slots side-by-side, slide ทีละ 1 ภาพ */}
-      <div className="hidden md:block select-none rounded-2xl overflow-hidden shadow-md">
-        <div className="flex gap-0.5 h-56">
+      <div className="hidden md:block select-none shadow-md rounded-2xl overflow-hidden">
+        <div className="flex h-56">
           <div className="relative flex-1 overflow-hidden">
             {banners.map((b, i) => (
               <SlotImg key={b.id} b={b} visible={i === idx} />
             ))}
           </div>
           {n > 1 && (
-            <div className="relative flex-1 overflow-hidden">
-              {banners.map((b, i) => (
-                <SlotImg key={b.id} b={b} visible={i === rightIdx} />
-              ))}
-            </div>
+            <>
+              <div className="w-px bg-white/30 shrink-0" />
+              <div className="relative flex-1 overflow-hidden">
+                {banners.map((b, i) => (
+                  <SlotImg key={b.id} b={b} visible={i === rightIdx} />
+                ))}
+              </div>
+            </>
           )}
         </div>
         {dots}
