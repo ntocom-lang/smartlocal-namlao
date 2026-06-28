@@ -109,15 +109,6 @@ function HomeOrTechRedirect() {
   return <HomePage />
 }
 
-function PageTopBand() {
-  const location = useLocation()
-  const isHome = location.pathname === '/'
-  if (isHome) return null
-  return (
-    <div className="h-14 md:h-16"
-      style={{ background: `linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 60%, color-mix(in srgb, var(--color-primary) 70%, #93c5fd) 100%)` }} />
-  )
-}
 
 function RequireAuth({ children, adminOnly = false, techOnly = false, staffOnly = false }) {
   const { session, role, profileLoading } = useAuth()
@@ -262,7 +253,6 @@ function AppShell() {
       )}
       <NotificationsProvider>
         <Header />
-        <PageTopBand />
         <main className="flex-1">
           <Routes>
           <Route path="/" element={<HomeOrTechRedirect />} />
