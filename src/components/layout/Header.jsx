@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Phone, Sun, Moon, LogIn, LogOut, UserCircle2, User, LayoutDashboard, Bell } from 'lucide-react'
+import { Phone, Sun, Moon, LogIn, LogOut, UserCircle2, User, LayoutDashboard, Bell, Briefcase } from 'lucide-react'
 import { useTenant } from '../../contexts/TenantContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTheme } from '../../contexts/ThemeContext'
@@ -36,6 +36,7 @@ export default function Header() {
     await supabase.auth.signOut()
   }
   const isAdmin = role === 'admin' || role === 'superadmin' || role === 'officer'
+  const isStaff = role === 'staff' || role === 'technician'
 
   if (location.pathname.startsWith('/staff')) return null
 
@@ -184,7 +185,7 @@ export default function Header() {
               )}
             </button>
             {session ? (
-              <div className="relative p-1">
+              <div className="relative p-1" style={{ paddingBottom: (isAdmin || isStaff) ? 20 : 4 }}>
                 <Link to="/profile">
                   {(session.user?.user_metadata?.avatar_url || session.user?.user_metadata?.picture) ? (
                     <img
@@ -198,11 +199,21 @@ export default function Header() {
                     </div>
                   )}
                 </Link>
-                {isAdmin && (
-                  <Link to="/admin" aria-label="แผงควบคุม Admin"
-                    className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-7 h-4 rounded bg-white/25 hover:bg-white/40 flex items-center justify-center transition-colors">
-                    <LayoutDashboard size={10} className="text-white" />
-                  </Link>
+                {(isAdmin || isStaff) && (
+                  <div className="absolute bottom-0 left-1/2 -translate-x-1/2 flex gap-1">
+                    {isStaff && (
+                      <Link to="/staff" aria-label="ระบบเจ้าหน้าที่"
+                        className="w-7 h-4 rounded bg-white/25 hover:bg-white/40 flex items-center justify-center transition-colors">
+                        <Briefcase size={10} className="text-white" />
+                      </Link>
+                    )}
+                    {isAdmin && (
+                      <Link to="/admin" aria-label="แผงควบคุม Admin"
+                        className="w-7 h-4 rounded bg-white/25 hover:bg-white/40 flex items-center justify-center transition-colors">
+                        <LayoutDashboard size={10} className="text-white" />
+                      </Link>
+                    )}
+                  </div>
                 )}
               </div>
             ) : (
