@@ -301,10 +301,13 @@ export default function CitizenForm() {
 
 
   function raceTimeout(promise, ms) {
-    return Promise.race([
-      promise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
-    ])
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('timeout')), ms)
+      promise.then(
+        v => { clearTimeout(timer); resolve(v) },
+        e => { clearTimeout(timer); reject(e) },
+      )
+    })
   }
 
 
@@ -345,6 +348,7 @@ export default function CitizenForm() {
     if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
     if (!tenant?.id) { setError('ไม่พบข้อมูลหน่วยงาน'); return }
 
+    abortCtrlRef.current?.abort()
     setError(null)
     setSubmitting(true)
 
