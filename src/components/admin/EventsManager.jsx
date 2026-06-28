@@ -133,6 +133,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
   const [formError, setFormError] = useState('')
   const emptyForm = { title: '', description: '', event_date: '', event_time: '', end_time: '', end_date: '', location: '', category: 'ประชุม', customCategory: '', is_all_day: false, audience: 'public', attachment_url: '', attachment_file: null }
   const [form, setForm] = useState(emptyForm)
+  const [multiDay, setMultiDay] = useState(false)
   const [filterMonth, setFilterMonth] = useState('all')
   const [filterCategory, setFilterCategory] = useState('all')
   const [filterAudience, setFilterAudience] = useState('all')
@@ -192,11 +193,13 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
   function openAdd() {
     const today = new Date().toISOString().split('T')[0]
     setForm({ ...emptyForm, event_date: today })
+    setMultiDay(false)
     setEditingEvent(null)
     setShowForm(true)
   }
 
   function openEdit(ev) {
+    const hasMultiDay = !!(ev.end_date && ev.end_date !== ev.event_date)
     setForm({
       title: ev.title, description: ev.description ?? '', event_date: ev.event_date,
       event_time: ev.event_time ?? '', end_date: ev.end_date ?? '', location: ev.location ?? '',
@@ -206,6 +209,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
       audience: ev.audience ?? 'public', attachment_url: ev.attachment_url ?? '',
       attachment_file: null, end_time: ev.end_time ?? '',
     })
+    setMultiDay(hasMultiDay)
     setEditingEvent(ev)
     setShowForm(true)
   }
@@ -525,17 +529,24 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
                     placeholder="เช่น ประชุมสภา อบต."
                     className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400" />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-semibold text-gray-500 mb-1 block">วันที่เริ่ม *</label>
-                    <input type="date" value={form.event_date} onChange={(e) => setForm((p) => ({ ...p, event_date: e.target.value }))}
-                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400" />
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-gray-500">{multiDay ? 'วันที่เริ่ม *' : 'วันที่ *'}</label>
+                    <button type="button"
+                      onClick={() => { setMultiDay(v => !v); if (multiDay) setForm(p => ({ ...p, end_date: '' })) }}
+                      className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-colors ${multiDay ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
+                      {multiDay ? '✓ หลายวัน' : '+ หลายวัน'}
+                    </button>
                   </div>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-500 mb-1 block">วันสิ้นสุด</label>
-                    <input type="date" value={form.end_date} onChange={(e) => setForm((p) => ({ ...p, end_date: e.target.value }))}
-                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400" />
-                  </div>
+                  <input type="date" value={form.event_date} onChange={(e) => setForm((p) => ({ ...p, event_date: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400" />
+                  {multiDay && (
+                    <div className="mt-2">
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">ถึงวันที่</label>
+                      <input type="date" value={form.end_date} min={form.event_date} onChange={(e) => setForm((p) => ({ ...p, end_date: e.target.value }))}
+                        className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400" />
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex-1">
