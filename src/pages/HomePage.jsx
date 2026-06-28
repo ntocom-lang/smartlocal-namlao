@@ -5,7 +5,8 @@ import HeroBanner from '../components/home/HeroBanner'
 import StaffSection from '../components/home/StaffSection'
 import NewsSection from '../components/home/NewsSection'
 import TourismSection from '../components/home/TourismSection'
-import { Info, LayoutDashboard, ChevronRight, Briefcase, FileText, ClipboardList, FolderOpen } from 'lucide-react'
+import ComplaintBand from '../components/home/ComplaintBand'
+import { Info, LayoutDashboard, ChevronRight, Briefcase, FileText, ClipboardList, FolderOpen, FileSearch } from 'lucide-react'
 import WeatherWidget from '../components/home/WeatherWidget'
 
 export default function HomePage() {
@@ -62,25 +63,26 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Quick Actions — 2 cols mobile / 4 cols PC */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          {[
-            { to: '/doc-request', label: 'บริการออนไลน์', sub: 'ราชการออนไลน์',     Icon: FileText,      bg: 'bg-blue-50',   iconCls: 'text-blue-500' },
-            { to: '/complaint',   label: 'ร้องเรียน/ร้องทุกข์', sub: 'แจ้งซ่อม / แจ้งเหตุ', Icon: ClipboardList, bg: 'bg-red-50',    iconCls: 'text-red-500' },
-            { to: '/my-docs',     label: 'เอกสารของฉัน',  sub: 'ติดตามสถานะเอกสาร',   Icon: FolderOpen,    bg: 'bg-purple-50', iconCls: 'text-purple-500' },
-            { to: '/my-complaints', label: 'คำร้องของฉัน', sub: 'ติดตามสถานะคำร้อง',   Icon: ClipboardList, bg: 'bg-green-50',  iconCls: 'text-green-500' },
-          ].map(({ to, label, sub, Icon, bg, iconCls }) => (
-            <Link key={to} to={to}
-              className="flex items-center gap-2.5 bg-white rounded-2xl px-3.5 py-3 shadow-sm border border-gray-100 hover:shadow-md active:scale-[0.98] transition-all">
-              <div className={`w-9 h-9 rounded-xl ${bg} flex items-center justify-center shrink-0`}>
-                <Icon size={18} className={iconCls} />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-bold text-gray-800 leading-tight">{label}</p>
-                <p className="text-[11px] text-gray-400 leading-tight">{sub}</p>
-              </div>
-            </Link>
-          ))}
+        {/* Service Band */}
+        <div className="rounded-2xl shadow-md px-4 py-5"
+          style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)' }}>
+          <p className="text-white/80 text-[11px] font-semibold mb-4 tracking-widest uppercase">E-Service</p>
+          <div className="grid grid-cols-4 gap-2">
+            {[
+              { to: '/doc-request',    label: 'บริการออนไลน์',       Icon: FileText      },
+              { to: '/complaint',      label: 'ร้องเรียน/ร้องทุกข์', Icon: ClipboardList  },
+              { to: '/my-docs',        label: 'เอกสารของฉัน',        Icon: FolderOpen    },
+              { to: '/my-complaints',  label: 'คำร้องของฉัน',        Icon: FileSearch    },
+            ].map(({ to, label, Icon }) => (
+              <Link key={to} to={to}
+                className="flex flex-col items-center gap-2 active:scale-95 transition-transform">
+                <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center shadow-inner">
+                  <Icon size={26} className="text-white" />
+                </div>
+                <p className="text-white text-[10px] font-semibold text-center leading-tight">{label}</p>
+              </Link>
+            ))}
+          </div>
         </div>
 
         {!role && (
@@ -91,6 +93,7 @@ export default function HomePage() {
         )}
 
         <HeroBanner />
+        <ComplaintBand />
       </div>
 
       <StaffSection />
