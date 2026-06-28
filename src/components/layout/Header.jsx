@@ -183,6 +183,13 @@ export default function Header() {
                 </span>
               )}
             </button>
+            {/* Admin icon — mobile only, admin/superadmin/officer */}
+            {isAdmin && (
+              <Link to="/admin" aria-label="แผงควบคุม Admin"
+                className="p-2 text-white/85 hover:text-white transition-colors">
+                <LayoutDashboard size={20} />
+              </Link>
+            )}
             {session ? (
               <Link to="/profile" className="p-1">
                 {(session.user?.user_metadata?.avatar_url || session.user?.user_metadata?.picture) ? (

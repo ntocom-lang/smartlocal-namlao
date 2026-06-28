@@ -7,7 +7,7 @@ import NewsSection from '../components/home/NewsSection'
 import TourismSection from '../components/home/TourismSection'
 import ComplaintBand from '../components/home/ComplaintBand'
 import BannerSlider from '../components/home/BannerSlider'
-import { Info, LayoutDashboard, ChevronRight, Briefcase, FileText, ClipboardList, FolderOpen, FileSearch } from 'lucide-react'
+import { Info, ChevronRight, Briefcase, FileText, ClipboardList, FolderOpen, FileSearch } from 'lucide-react'
 import WeatherWidget from '../components/home/WeatherWidget'
 
 export default function HomePage() {
@@ -42,42 +42,20 @@ export default function HomePage() {
       {/* ส่วนที่เหลือ — ปกติ */}
       <div className="flex flex-col gap-2 md:gap-3 px-4 md:px-0">
 
-        {/* Admin / Staff shortcuts — side by side on PC */}
-        {(isAdmin || isViewer || isCouncil || isStaff) && (
-          <div className="flex flex-col md:flex-row gap-2">
-            {(isAdmin || isViewer || isCouncil) && (
-              <Link to="/admin"
-                className="flex items-center gap-3 rounded-2xl px-4 py-3.5 shadow-md active:scale-98 transition-transform md:flex-1"
-                style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)' }}>
-                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-                  <LayoutDashboard size={18} className="text-white" />
-                </div>
-                <div className="flex-1">
-                  <p className="text-white font-bold text-sm">
-                    {isViewer ? 'ดูรายงานและคำร้อง' : isCouncil ? 'ปฏิทินกิจกรรม' : 'เข้าสู่แผงควบคุม Admin'}
-                  </p>
-                  <p className="text-white/70 text-xs">
-                    {isViewer ? 'รายงานสรุป และรายการคำร้องของหน่วยงาน' : isCouncil ? 'จัดการกิจกรรมของสภาเทศบาล' : 'จัดการคำร้อง สถานที่ และผู้ใช้งาน'}
-                  </p>
-                </div>
-                <ChevronRight size={18} className="text-white/60" />
-              </Link>
-            )}
-            {isStaff && (
-              <Link to="/staff"
-                className="flex items-center gap-3 rounded-2xl px-4 py-3.5 shadow-md active:scale-98 transition-transform md:flex-1"
-                style={{ background: 'linear-gradient(135deg, #0369a1 0%, #0ea5e9 100%)' }}>
-                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-                  <Briefcase size={18} className="text-white" />
-                </div>
-                <div className="flex-1">
-                  <p className="text-white font-bold text-sm">ระบบเจ้าหน้าที่</p>
-                  <p className="text-white/70 text-xs">กล่องงาน เอกสาร อนุมัติ รายงาน</p>
-                </div>
-                <ChevronRight size={18} className="text-white/60" />
-              </Link>
-            )}
-          </div>
+        {/* Staff shortcut — เฉพาะ staff/technician (admin ใช้ icon ใน Header แทน) */}
+        {isStaff && (
+          <Link to="/staff"
+            className="flex items-center gap-3 rounded-2xl px-4 py-3.5 shadow-md active:scale-98 transition-transform"
+            style={{ background: 'linear-gradient(135deg, #0369a1 0%, #0ea5e9 100%)' }}>
+            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+              <Briefcase size={18} className="text-white" />
+            </div>
+            <div className="flex-1">
+              <p className="text-white font-bold text-sm">ระบบเจ้าหน้าที่</p>
+              <p className="text-white/70 text-xs">กล่องงาน เอกสาร อนุมัติ รายงาน</p>
+            </div>
+            <ChevronRight size={18} className="text-white/60" />
+          </Link>
         )}
 
         {/* Service Band */}
