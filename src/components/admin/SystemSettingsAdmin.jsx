@@ -125,8 +125,10 @@ export default function SystemSettingsAdmin() {
   async function handleHeaderUpload(e) {
     const file = e.target.files?.[0]
     if (!file) return
-    setHeaderPreview(URL.createObjectURL(file))
+    const blobUrl = URL.createObjectURL(file)
+    setHeaderPreview(blobUrl)
     setHeaderUploading(true)
+    let publicUrl = null
     try {
       const blob = await resizeImage(file, 1600)
       const path = `headers/header-${tenant.slug}.jpg`
@@ -134,7 +136,8 @@ export default function SystemSettingsAdmin() {
         .from('municipality-assets')
         .upload(path, blob, { upsert: true, contentType: 'image/jpeg' })
       if (upErr) throw upErr
-      const { data: { publicUrl } } = supabase.storage.from('municipality-assets').getPublicUrl(path)
+      const { data: { publicUrl: url } } = supabase.storage.from('municipality-assets').getPublicUrl(path)
+      publicUrl = url
       const { error: dbErr } = await supabase
         .from('municipalities')
         .update({ header_image_url: publicUrl })
@@ -145,8 +148,14 @@ export default function SystemSettingsAdmin() {
       setSavedSection('header')
       setTimeout(() => setSavedSection(null), 2500)
     } catch (err) {
-      setHeaderPreview(tenant?.header_image_url || null)
-      alert('อัปโหลดภาพพื้นหลังไม่สำเร็จ: ' + err.message)
+      // storage สำเร็จแต่ DB ล้มเหลว → คง preview ไว้ + แจ้งให้รู้
+      if (publicUrl) {
+        setHeaderPreview(publicUrl)
+        alert('อัปโหลดไฟล์สำเร็จ แต่บันทึกลงฐานข้อมูลไม่ได้: ' + err.message + '\n\nตรวจสอบ RLS policy บน municipalities table')
+      } else {
+        setHeaderPreview(tenant?.header_image_url || null)
+        alert('อัปโหลดภาพพื้นหลังไม่สำเร็จ: ' + err.message)
+      }
     } finally {
       setHeaderUploading(false)
       e.target.value = ''
