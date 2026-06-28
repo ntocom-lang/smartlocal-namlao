@@ -561,6 +561,31 @@ export default function MyComplaints() {
     load()
   }, [tenant?.id, session?.user?.id, openId])
 
+  // Realtime: เมื่อ admin ปิดเรื่อง → เด้ง modal ทันที
+  useEffect(() => {
+    if (!tenant?.id || !session?.user?.id) return
+    const userId = session.user.id
+    const channel = supabase
+      .channel(`complaints-closed-${tenant.id}`)
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'complaints',
+        filter: `municipality_id=eq.${tenant.id}`,
+      }, ({ new: updated }) => {
+        setComplaints(prev => prev.map(c => c.id === updated.id ? { ...c, ...updated } : c))
+        if (
+          updated.user_id === userId &&
+          updated.status === 'closed' &&
+          updated.rating == null &&
+          !localStorage.getItem(`sat_done_${updated.id}`)
+        ) {
+          setSatComplaintId(updated.id)
+          setShowSat(true)
+        }
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [tenant?.id, session?.user?.id])
+
   async function handleRefSearch() {
     const ref = refInput.trim().toUpperCase()
     if (!ref || !tenant?.id) return
