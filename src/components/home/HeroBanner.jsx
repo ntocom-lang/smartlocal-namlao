@@ -8,7 +8,7 @@ const SLIDE_W = 0.9
 const GAP = 12
 
 const TABS = [
-  { label: 'ร้องเรียน/ร้องทุกข์' },
+  { label: 'บริการออนไลน์' },
   { label: 'สายด่วน' },
 ]
 
@@ -60,8 +60,8 @@ export default function HeroBanner() {
           className="flex md:grid md:grid-cols-3 md:grid-rows-2 md:gap-4 md:overflow-visible snap-x snap-mandatory overflow-x-scroll gap-3"
           style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}
         >
-          {/* Slide 1 — ร้องเรียน/ร้องทุกข์ */}
-          <Link to="/complaint" className="snap-start shrink-0 rounded-2xl overflow-hidden shadow-md cursor-pointer transition-transform active:scale-[0.98] bg-white border border-gray-100 flex flex-col w-[90%] md:w-full md:h-full md:col-span-2 md:row-span-2">
+          {/* Slide 1 — บริการออนไลน์ */}
+          <Link to="/doc-request" className="snap-start shrink-0 rounded-2xl overflow-hidden shadow-md cursor-pointer transition-transform active:scale-[0.98] bg-white border border-gray-100 flex flex-col w-[90%] md:w-full md:h-full md:col-span-2 md:row-span-2">
             <div className="bg-white p-5 md:p-8 pb-0 flex items-center justify-center gap-4 md:gap-8 flex-1 min-h-[160px] md:min-h-[250px]">
               {tenant?.logo_url ? (
                 <img src={tenant.logo_url} alt="โลโก้หน่วยงาน" className="w-20 h-20 md:w-32 md:h-32 object-contain shrink-0 drop-shadow-md" />
@@ -82,7 +82,7 @@ export default function HeroBanner() {
             <div className="px-5 py-4">
               <div className="flex items-center justify-center gap-2 text-white font-bold text-sm px-5 py-3 rounded-xl shadow-sm transition-opacity hover:opacity-90 w-full"
                  style={{ background: `linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)` }}>
-                ร้องเรียน/ร้องทุกข์เลย <ArrowRight size={18} />
+                บริการออนไลน์เลย <ArrowRight size={18} />
               </div>
             </div>
           </Link>
