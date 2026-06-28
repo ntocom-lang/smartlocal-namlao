@@ -36,7 +36,7 @@ export default function Header() {
     await supabase.auth.signOut()
   }
   const isAdmin = role === 'admin' || role === 'superadmin' || role === 'officer'
-  const isStaff = role === 'staff' || role === 'technician'
+  const isStaff = ['staff', 'technician', 'admin', 'superadmin', 'viewer', 'officer'].includes(role)
 
   if (location.pathname.startsWith('/staff')) return null
 
