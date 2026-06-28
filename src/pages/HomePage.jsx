@@ -6,6 +6,7 @@ import StaffSection from '../components/home/StaffSection'
 import NewsSection from '../components/home/NewsSection'
 import TourismSection from '../components/home/TourismSection'
 import ComplaintBand from '../components/home/ComplaintBand'
+import BannerSlider from '../components/home/BannerSlider'
 import { Info, LayoutDashboard, ChevronRight, Briefcase, FileText, ClipboardList, FolderOpen, FileSearch } from 'lucide-react'
 import WeatherWidget from '../components/home/WeatherWidget'
 
@@ -24,6 +25,7 @@ export default function HomePage() {
       {/* กลุ่มบนสุด */}
       <div className="flex flex-col gap-2 md:gap-3">
         <WeatherWidget />
+        <BannerSlider />
 
         {/* Admin / Staff shortcuts — side by side on PC */}
         {(isAdmin || isViewer || isCouncil || isStaff) && (

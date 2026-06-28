@@ -391,6 +391,94 @@ export default function SystemSettingsAdmin() {
         </form>
       </div>
 
+      {/* ── Banner Slider ── */}
+      <BannerManager tenant={tenant} />
+
+    </div>
+  )
+}
+
+function BannerManager({ tenant }) {
+  const [banners, setBanners] = useState([])
+  const [uploading, setUploading] = useState(false)
+  const [deleting, setDeleting] = useState(null)
+  const fileRef = useRef()
+
+  useEffect(() => {
+    if (!tenant?.id) return
+    supabase.from('banners').select('id, image_url, sort_order')
+      .eq('municipality_id', tenant.id).eq('is_active', true)
+      .order('sort_order')
+      .then(({ data }) => setBanners(data ?? []))
+      .catch(() => {})
+  }, [tenant?.id])
+
+  async function handleUpload(e) {
+    const files = Array.from(e.target.files ?? [])
+    if (!files.length) return
+    setUploading(true)
+    try {
+      for (const file of files) {
+        const ext  = file.name.split('.').pop() || 'jpg'
+        const path = `banners/${tenant.slug}/${crypto.randomUUID()}.${ext}`
+        const { error: upErr } = await supabase.storage
+          .from('municipality-assets')
+          .upload(path, file, { upsert: false, contentType: file.type || 'image/jpeg' })
+        if (upErr) throw upErr
+        const { data: { publicUrl } } = supabase.storage.from('municipality-assets').getPublicUrl(path)
+        const { data: row, error: dbErr } = await supabase.from('banners')
+          .insert({ municipality_id: tenant.id, image_url: publicUrl, sort_order: banners.length + 1 })
+          .select('id, image_url, sort_order').single()
+        if (dbErr) throw dbErr
+        setBanners(prev => [...prev, row])
+      }
+    } catch (err) {
+      alert('อัปโหลดไม่สำเร็จ: ' + err.message)
+    } finally {
+      setUploading(false)
+      e.target.value = ''
+    }
+  }
+
+  async function handleDelete(id) {
+    setDeleting(id)
+    await supabase.from('banners').update({ is_active: false }).eq('id', id)
+    setBanners(prev => prev.filter(b => b.id !== id))
+    setDeleting(null)
+  }
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+      <h2 className="text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
+        <ImageIcon size={15} /> สไลด์ Banner หน้าแรก
+      </h2>
+      <p className="text-xs text-gray-400 mb-5 leading-relaxed">
+        รูปภาพประกาศ / กิจกรรม แสดงสไลด์อัตโนมัติใต้พยากรณ์อากาศ · แนะนำขนาด 16:7 เช่น 1600×700px
+      </p>
+
+      {banners.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-5">
+          {banners.map(b => (
+            <div key={b.id} className="relative rounded-xl overflow-hidden border border-gray-100 aspect-video bg-gray-50">
+              <img src={b.image_url} alt="" className="w-full h-full object-cover" />
+              <button onClick={() => handleDelete(b.id)} disabled={deleting === b.id}
+                className="absolute top-1.5 right-1.5 w-6 h-6 bg-black/60 hover:bg-red-600 rounded-full flex items-center justify-center transition-colors">
+                {deleting === b.id
+                  ? <Loader2 size={11} className="animate-spin text-white" />
+                  : <span className="text-white text-[10px] font-bold leading-none">✕</span>}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} />
+      <button onClick={() => fileRef.current?.click()} disabled={uploading}
+        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-all"
+        style={{ backgroundColor: 'var(--color-primary)' }}>
+        {uploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+        {uploading ? 'กำลังอัปโหลด...' : 'เพิ่มรูป Banner'}
+      </button>
     </div>
   )
 }
