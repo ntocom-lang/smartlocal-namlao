@@ -59,7 +59,7 @@ export default function Header() {
       {/* เมื่อมีรูป header → nav โปร่งใส, รูปอยู่ใน hero zone ใน HomePage แทน */}
       <div className="text-white px-4 relative overflow-hidden"
            style={tenant?.header_image_url
-             ? { background: 'linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.25) 100%)', paddingTop: 14, paddingBottom: 14 }
+             ? { background: 'transparent', paddingTop: 14, paddingBottom: 14 }
              : { background: `linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 55%, color-mix(in srgb, var(--color-primary) 70%, #60a5fa) 100%)`, paddingTop: 12, paddingBottom: 12 }
            }>
         {/* Decorative shapes (only when no image) */}
