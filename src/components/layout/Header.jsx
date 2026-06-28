@@ -56,18 +56,12 @@ export default function Header() {
       </div>
 
       {/* Main header */}
+      {/* เมื่อมีรูป header → nav โปร่งใส, รูปอยู่ใน hero zone ใน HomePage แทน */}
       <div className="text-white px-4 relative overflow-hidden"
            style={tenant?.header_image_url
-             ? { backgroundColor: 'var(--color-primary-dark)', minHeight: 110, paddingTop: 20, paddingBottom: 20 }
+             ? { background: 'linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.25) 100%)', paddingTop: 14, paddingBottom: 14 }
              : { background: `linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 55%, color-mix(in srgb, var(--color-primary) 70%, #60a5fa) 100%)`, paddingTop: 12, paddingBottom: 12 }
            }>
-        {/* Background image layer */}
-        {tenant?.header_image_url && <>
-          <img src={tenant.header_image_url} aria-hidden="true"
-            className="absolute inset-0 w-full h-full object-cover object-center pointer-events-none" />
-          <div className="absolute inset-0 pointer-events-none"
-            style={{ background: `linear-gradient(100deg, var(--color-primary-dark) 0%, color-mix(in srgb, var(--color-primary-dark) 75%, transparent) 55%, transparent 100%)` }} />
-        </>}
         {/* Decorative shapes (only when no image) */}
         {!tenant?.header_image_url && <>
           <div className="absolute -top-8 -right-8 w-36 h-36 rounded-full bg-white/10 pointer-events-none" />
@@ -80,9 +74,9 @@ export default function Header() {
           <Link to={role === 'technician' ? '/technician' : '/'} className="shrink-0">
             {tenant?.logo_url ? (
               <img src={tenant.logo_url} alt="โลโก้"
-                className={`rounded-full object-contain hover:opacity-85 transition-opacity ${tenant?.header_image_url ? 'w-16 h-16 md:w-20 md:h-20' : 'w-10 h-10 md:w-14 md:h-14'}`} />
+                className="w-10 h-10 md:w-14 md:h-14 rounded-full object-contain hover:opacity-85 transition-opacity" />
             ) : (
-              <div className={`rounded-full border-2 border-white/40 bg-white/20 flex items-center justify-center font-bold hover:bg-white/30 transition-colors ${tenant?.header_image_url ? 'w-16 h-16 text-2xl' : 'w-10 h-10 text-xl'}`}>
+              <div className="w-10 h-10 md:w-14 md:h-14 rounded-full border-2 border-white/40 bg-white/20 flex items-center justify-center text-xl font-bold hover:bg-white/30 transition-colors">
                 {tenant?.name?.[0] ?? '?'}
               </div>
             )}
@@ -90,7 +84,7 @@ export default function Header() {
 
           {/* Name block */}
           <div className="flex-1 min-w-0 flex flex-col justify-center">
-            <h1 className={`font-bold leading-tight ${tenant?.header_image_url ? 'text-base md:text-xl drop-shadow-md' : 'text-sm md:text-base'}`}>
+            <h1 className="font-bold text-sm md:text-base leading-tight drop-shadow">
               {tenant?.name}
             </h1>
             <p className="text-white/80 text-[10px] md:text-xs line-clamp-1 mt-0.5 drop-shadow">ระบบศูนย์รวมข้อมูลดิจิทัลเพื่อการพัฒนาอย่างยั่งยืน</p>
