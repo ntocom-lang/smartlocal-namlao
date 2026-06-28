@@ -184,29 +184,30 @@ export default function Header() {
               )}
             </button>
             {session ? (
-              <Link to="/profile" className="p-1">
-                {(session.user?.user_metadata?.avatar_url || session.user?.user_metadata?.picture) ? (
-                  <img
-                    src={session.user.user_metadata.avatar_url || session.user.user_metadata.picture}
-                    alt="avatar"
-                    className="w-8 h-8 rounded-full object-cover border-2 border-white/60"
-                  />
-                ) : (
-                  <div className="w-8 h-8 rounded-full bg-white/20 border-2 border-white/60 flex items-center justify-center text-white text-xs font-bold">
-                    {(displayName || session.user?.email || '?')[0].toUpperCase()}
-                  </div>
+              <div className="flex flex-col items-center gap-0.5">
+                <Link to="/profile" className="p-1">
+                  {(session.user?.user_metadata?.avatar_url || session.user?.user_metadata?.picture) ? (
+                    <img
+                      src={session.user.user_metadata.avatar_url || session.user.user_metadata.picture}
+                      alt="avatar"
+                      className="w-8 h-8 rounded-full object-cover border-2 border-white/60"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-white/20 border-2 border-white/60 flex items-center justify-center text-white text-xs font-bold">
+                      {(displayName || session.user?.email || '?')[0].toUpperCase()}
+                    </div>
+                  )}
+                </Link>
+                {isAdmin && (
+                  <Link to="/admin" aria-label="แผงควบคุม Admin"
+                    className="w-8 h-5 rounded-md bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors">
+                    <LayoutDashboard size={12} className="text-white" />
+                  </Link>
                 )}
-              </Link>
+              </div>
             ) : (
               <Link to="/auth" className="p-2 text-white/85 hover:text-white transition-colors">
                 <User size={20} />
-              </Link>
-            )}
-            {/* Admin icon — ใต้ Avatar, เฉพาะ admin/superadmin/officer */}
-            {isAdmin && (
-              <Link to="/admin" aria-label="แผงควบคุม Admin"
-                className="p-2 text-white/85 hover:text-white transition-colors">
-                <LayoutDashboard size={20} />
               </Link>
             )}
           </div>
