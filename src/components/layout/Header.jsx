@@ -57,12 +57,24 @@ export default function Header() {
 
       {/* Main header */}
       <div className="text-white px-4 py-3 relative overflow-hidden"
-           style={{ background: `linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 55%, color-mix(in srgb, var(--color-primary) 70%, #60a5fa) 100%)` }}>
-        {/* Decorative shapes */}
-        <div className="absolute -top-8 -right-8 w-36 h-36 rounded-full bg-white/10 pointer-events-none" />
-        <div className="absolute -bottom-10 right-20 w-28 h-28 rounded-full bg-white/8 pointer-events-none" />
-        <div className="absolute top-1 left-1/3 w-20 h-20 rounded-full bg-white/5 pointer-events-none" />
-        <div className="absolute -top-4 right-1/3 w-14 h-14 rounded-full bg-white/10 pointer-events-none" />
+           style={tenant?.header_image_url
+             ? { backgroundColor: 'var(--color-primary-dark)' }
+             : { background: `linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 55%, color-mix(in srgb, var(--color-primary) 70%, #60a5fa) 100%)` }
+           }>
+        {/* Background image layer */}
+        {tenant?.header_image_url && <>
+          <img src={tenant.header_image_url} aria-hidden="true"
+            className="absolute inset-0 w-full h-full object-cover object-center pointer-events-none" />
+          <div className="absolute inset-0 pointer-events-none"
+            style={{ background: `linear-gradient(90deg, var(--color-primary-dark) 0%, color-mix(in srgb, var(--color-primary) 85%, transparent) 100%)`, opacity: 0.82 }} />
+        </>}
+        {/* Decorative shapes (only when no image) */}
+        {!tenant?.header_image_url && <>
+          <div className="absolute -top-8 -right-8 w-36 h-36 rounded-full bg-white/10 pointer-events-none" />
+          <div className="absolute -bottom-10 right-20 w-28 h-28 rounded-full bg-white/8 pointer-events-none" />
+          <div className="absolute top-1 left-1/3 w-20 h-20 rounded-full bg-white/5 pointer-events-none" />
+          <div className="absolute -top-4 right-1/3 w-14 h-14 rounded-full bg-white/10 pointer-events-none" />
+        </>}
         <div className="max-w-6xl mx-auto flex items-center gap-3 relative z-10">
           {/* Logo circle — always home */}
           <Link to={role === 'technician' ? '/technician' : '/'} className="shrink-0">

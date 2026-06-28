@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2 } from 'lucide-react'
+import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2, Wallpaper } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 
@@ -16,8 +16,11 @@ export default function SystemSettingsAdmin() {
   const [qrPreview, setQrPreview] = useState(() => tenant?.qr_code_url || null)
   const [qrLabel, setQrLabel] = useState(() => tenant?.qr_label || '')
   const [qrLabelSaving, setQrLabelSaving] = useState(false)
+  const [headerUploading, setHeaderUploading] = useState(false)
+  const [headerPreview, setHeaderPreview] = useState(() => tenant?.header_image_url || null)
   const logoRef = useRef()
   const qrRef = useRef()
+  const headerRef = useRef()
 
   async function saveSystemName(e) {
     e.preventDefault()
@@ -117,6 +120,48 @@ export default function SystemSettingsAdmin() {
     } finally {
       setQrUploading(false)
     }
+  }
+
+  async function handleHeaderUpload(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setHeaderPreview(URL.createObjectURL(file))
+    setHeaderUploading(true)
+    try {
+      const blob = await resizeImage(file, 1600)
+      const path = `headers/header-${tenant.slug}.jpg`
+      const { error: upErr } = await supabase.storage
+        .from('municipality-assets')
+        .upload(path, blob, { upsert: true, contentType: 'image/jpeg' })
+      if (upErr) throw upErr
+      const { data: { publicUrl } } = supabase.storage.from('municipality-assets').getPublicUrl(path)
+      const { error: dbErr } = await supabase
+        .from('municipalities')
+        .update({ header_image_url: publicUrl })
+        .eq('id', tenant.id)
+      if (dbErr) throw dbErr
+      setHeaderPreview(publicUrl)
+      patchTenant({ header_image_url: publicUrl })
+      setSavedSection('header')
+      setTimeout(() => setSavedSection(null), 2500)
+    } catch (err) {
+      setHeaderPreview(tenant?.header_image_url || null)
+      alert('อัปโหลดภาพพื้นหลังไม่สำเร็จ: ' + err.message)
+    } finally {
+      setHeaderUploading(false)
+      e.target.value = ''
+    }
+  }
+
+  async function removeHeaderImage() {
+    if (!confirm('ลบภาพพื้นหลัง header ออก?')) return
+    const { error } = await supabase
+      .from('municipalities')
+      .update({ header_image_url: null })
+      .eq('id', tenant.id)
+    if (error) { alert('ลบไม่สำเร็จ: ' + error.message); return }
+    setHeaderPreview(null)
+    patchTenant({ header_image_url: null })
   }
 
   async function saveQrLabel(e) {
@@ -222,6 +267,50 @@ export default function SystemSettingsAdmin() {
               {logoUploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
               {logoUploading ? 'กำลังอัปโหลด...' : 'อัปโหลดโลโก้'}
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── ภาพพื้นหลัง Header ── */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <h2 className="text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
+          <Wallpaper size={15} /> ภาพพื้นหลัง Header
+        </h2>
+        <p className="text-xs text-gray-400 mb-5 leading-relaxed">
+          แสดงเป็นพื้นหลังแถบ header บนสุดของแอป · แนะนำรูปแนวนอน 1600×400px ขึ้นไป · ระบบจะเพิ่ม gradient overlay อัตโนมัติให้อ่านข้อความได้
+        </p>
+        <div className="flex items-start gap-5">
+          <div className="shrink-0">
+            <div className="w-48 h-20 rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden">
+              {headerPreview
+                ? <img src={headerPreview} alt="Header" className="w-full h-full object-cover" />
+                : <div className="flex flex-col items-center gap-1 text-gray-300">
+                    <Wallpaper size={24} />
+                    <span className="text-[10px]">ยังไม่มีภาพ</span>
+                  </div>
+              }
+            </div>
+            {savedSection === 'header' && (
+              <p className="flex items-center gap-1 text-xs text-emerald-600 mt-2 justify-center">
+                <CheckCircle2 size={12} /> บันทึกสำเร็จ
+              </p>
+            )}
+          </div>
+          <div className="flex-1 space-y-2">
+            <p className="text-xs text-gray-500 leading-relaxed">รองรับ JPG · PNG · WebP<br /><span className="text-gray-400">ขนาดไฟล์ไม่เกิน 5 MB</span></p>
+            <input ref={headerRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleHeaderUpload} />
+            <button onClick={() => headerRef.current?.click()} disabled={headerUploading}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-all"
+              style={{ backgroundColor: 'var(--color-primary)' }}>
+              {headerUploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+              {headerUploading ? 'กำลังอัปโหลด...' : 'อัปโหลดภาพพื้นหลัง'}
+            </button>
+            {headerPreview && (
+              <button onClick={removeHeaderImage}
+                className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-600 transition-colors">
+                ลบภาพออก
+              </button>
+            )}
           </div>
         </div>
       </div>
