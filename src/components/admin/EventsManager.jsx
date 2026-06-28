@@ -5,6 +5,29 @@ import { notifyTelegram } from '../../lib/notifyTelegram'
 import { compressImage } from '../../lib/imageUtils'
 import { logAction } from '../../lib/auditLog'
 
+const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
+const MINUTES = ['00', '15', '30', '45']
+
+function TimeSelect({ value, onChange, required }) {
+  const [h, m] = value ? value.split(':') : ['', '']
+  const set = (nh, nm) => onChange(nh && nm !== undefined ? `${nh}:${nm ?? '00'}` : '')
+  return (
+    <div className="flex items-center gap-1">
+      <select value={h ?? ''} onChange={e => set(e.target.value, m ?? '00')} required={required}
+        className="flex-1 px-2 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400">
+        <option value="">ชม.</option>
+        {HOURS.map(v => <option key={v} value={v}>{v}</option>)}
+      </select>
+      <span className="text-gray-400 text-sm font-bold">:</span>
+      <select value={m ?? ''} onChange={e => set(h ?? '08', e.target.value)} required={required}
+        className="flex-1 px-2 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400">
+        <option value="">นาที</option>
+        {MINUTES.map(v => <option key={v} value={v}>{v}</option>)}
+      </select>
+    </div>
+  )
+}
+
 const EVENTS_CATEGORIES = ['ประชาสัมพันธ์', 'ประชุม', 'กำหนดการ', 'อบรม', 'อื่นๆ']
 const EVENTS_CATEGORY_COLOR = {
   'ประชาสัมพันธ์': '#10b981', 'ประชุม': '#3b82f6', 'กำหนดการ': '#f97316',
@@ -517,14 +540,12 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
                 <div className="flex items-center gap-2">
                   <div className="flex-1">
                     <label className="text-xs text-gray-500 font-semibold mb-1 block">เริ่ม *</label>
-                    <input type="time" value={form.event_time} onChange={(e) => setForm((p) => ({ ...p, event_time: e.target.value }))}
-                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400" />
+                    <TimeSelect value={form.event_time} onChange={v => setForm(p => ({ ...p, event_time: v }))} required />
                   </div>
                   <span className="text-gray-400 text-sm mt-5">–</span>
                   <div className="flex-1">
                     <label className="text-xs text-gray-400 mb-1 block">สิ้นสุด</label>
-                    <input type="time" value={form.end_time} onChange={(e) => setForm((p) => ({ ...p, end_time: e.target.value }))}
-                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400" />
+                    <TimeSelect value={form.end_time} onChange={v => setForm(p => ({ ...p, end_time: v }))} />
                   </div>
                 </div>
                 <div className="md:grid md:grid-cols-2 md:gap-6 space-y-4 md:space-y-0">
