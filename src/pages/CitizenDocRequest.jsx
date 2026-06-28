@@ -433,7 +433,7 @@ export default function CitizenDocRequest() {
             <ArrowLeft size={18} />
           </button>
           <div>
-            <p className="font-bold text-gray-800">ขอเอกสาร</p>
+            <p className="font-bold text-gray-800">บริการออนไลน์</p>
             <p className="text-xs text-gray-400">เลือกประเภทเอกสารที่ต้องการ</p>
           </div>
         </div>
@@ -444,14 +444,14 @@ export default function CitizenDocRequest() {
             style={{ backgroundColor: '#dce8f5', borderColor: '#b8cfea' }}>
             <p className="text-[11px] text-gray-600">
               ระบบบริการอิเล็กทรอนิกส์ › {tenant?.name ?? ''} ›{' '}
-              <span className="font-semibold text-gray-700">ขอเอกสาร</span>
+              <span className="font-semibold text-gray-700">บริการออนไลน์</span>
             </p>
             <p className="text-[11px] text-gray-500">
               {new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
             </p>
           </div>
           <div className="px-8 py-3 bg-white border-b border-gray-200 shadow-sm">
-            <h1 className="text-base font-bold text-gray-800">ขอเอกสาร</h1>
+            <h1 className="text-base font-bold text-gray-800">บริการออนไลน์</h1>
             <p className="text-[11px] text-gray-400 mt-0.5">{tenant?.name} — เลือกประเภทเอกสารที่ต้องการ</p>
           </div>
         </div>
@@ -612,7 +612,7 @@ export default function CitizenDocRequest() {
             className="w-full py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-all"
             style={{ backgroundColor: 'var(--color-primary)' }}>
             {saving ? <Loader2 size={18} className="animate-spin" /> : <FileText size={18} />}
-            {saving ? 'กำลังส่งคำขอ...' : 'ขอเอกสาร'}
+            {saving ? 'กำลังส่งคำขอ...' : 'ยื่นคำขอ'}
           </button>
 
           <p className="text-xs text-gray-400 text-center leading-relaxed">

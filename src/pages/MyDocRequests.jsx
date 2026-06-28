@@ -532,7 +532,7 @@ export default function MyDocRequests() {
                 <button onClick={() => navigate('/doc-request')}
                   className="px-6 py-3 rounded-2xl font-bold text-white text-sm active:scale-95 transition-all"
                   style={{ backgroundColor: 'var(--color-primary)' }}>
-                  ขอเอกสาร
+                  บริการออนไลน์
                 </button>
               </div>
             ) : (

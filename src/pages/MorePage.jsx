@@ -492,7 +492,7 @@ export default function MorePage() {
             icon={FileText}
             iconBg="bg-blue-50"
             iconColor="text-blue-500"
-            label="ขอเอกสาร"
+            label="บริการออนไลน์"
             desc="ใบรับรองการอยู่อาศัย / หนังสือรับรองบุคคล และอื่นๆ"
             href="/doc-request"
           />
