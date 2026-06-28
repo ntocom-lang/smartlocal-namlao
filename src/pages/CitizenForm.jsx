@@ -597,18 +597,8 @@ export default function CitizenForm() {
           {geoStatus !== GEO_STATUS.ok && <ChevronRight size={18} />}
         </button>
 
-        {/* Photo + Doc picker */}
+        {/* Photo picker */}
         <div className="bg-white rounded-2xl border border-gray-200 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-sm font-semibold text-gray-700">
-              แนบไฟล์ประกอบ
-              <span className="ml-1.5 text-xs font-normal text-gray-400">(ไม่บังคับ)</span>
-            </p>
-            {photos.length > 0 && (
-              <p className="text-xs text-gray-400 font-medium">รูป {photos.length}/{MAX_PHOTOS}</p>
-            )}
-          </div>
-
           {photos.length > 0 && (
             <div className="grid grid-cols-3 gap-2 mb-3">
               {photos.map((p, i) => (
@@ -625,7 +615,10 @@ export default function CitizenForm() {
 
           {photos.length < MAX_PHOTOS && (
             <label className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-dashed border-gray-300 text-gray-500 text-xs font-medium cursor-pointer active:bg-gray-50 transition-colors">
-              <ImagePlus size={15} /> รูปภาพ
+              <ImagePlus size={15} />
+              แนบรูปภาพ
+              <span className="text-gray-400 font-normal">(ไม่บังคับ)</span>
+              {photos.length > 0 && <span className="ml-auto text-gray-400">{photos.length}/{MAX_PHOTOS}</span>}
               <input type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoPick} />
             </label>
           )}
