@@ -213,11 +213,16 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange }) {
     const uploaded = []
     for (const { file } of newPhotos) {
       try {
-        const compressed = await compressImage(file, undefined, 0.85)
+        let compressed
+        try {
+          compressed = await compressImage(file, undefined, 0.85)
+        } catch {
+          compressed = await compressImage(file, 640, 0.65)
+        }
         const path = `${c.id}/${crypto.randomUUID()}.jpg`
         const { error } = await supabase.storage
           .from('complaint-attachments')
-          .upload(path, compressed, { upsert: false })
+          .upload(path, compressed, { upsert: false, contentType: 'image/jpeg' })
         if (error) throw error
         const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
         uploaded.push(data.publicUrl)

@@ -90,11 +90,16 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
     await Promise.all(
       toUpload.map(async ({ file, idx }) => {
         try {
-          const compressed = await compressImage(file, undefined, 0.85)
+          let compressed
+          try {
+            compressed = await compressImage(file, undefined, 0.85)
+          } catch {
+            compressed = await compressImage(file, 640, 0.65)
+          }
           const path = `${complaintId}/${crypto.randomUUID()}.jpg`
           const { error } = await supabase.storage
             .from('complaint-attachments')
-            .upload(path, compressed, { upsert: false })
+            .upload(path, compressed, { upsert: false, contentType: 'image/jpeg' })
           if (error) throw error
           const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
           collected.push(data.publicUrl)
