@@ -185,7 +185,7 @@ export default function Header() {
               )}
             </button>
             {session ? (
-              <div className="relative p-1" style={{ paddingBottom: (isAdmin || isStaff) ? 20 : 4 }}>
+              <div className="relative p-1">
                 <Link to="/profile">
                   {(session.user?.user_metadata?.avatar_url || session.user?.user_metadata?.picture) ? (
                     <img
