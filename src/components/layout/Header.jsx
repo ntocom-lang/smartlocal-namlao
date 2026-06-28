@@ -130,16 +130,11 @@ export default function Header() {
             )}
           </nav>
 
-          {/* Theme toggle */}
-          <button
-            onClick={toggle}
-            aria-label="สลับธีม"
-            className="p-2 rounded-lg text-white/80 hover:text-white hover:bg-white/15 transition-colors"
-          >
+          {/* Desktop: theme + auth */}
+          <button onClick={toggle} aria-label="สลับธีม"
+            className="hidden md:flex p-2 rounded-lg text-white/80 hover:text-white hover:bg-white/15 transition-colors">
             {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
           </button>
-
-          {/* Auth */}
           {session ? (
             <div className="hidden md:flex items-center gap-2">
               {isAdmin && (
@@ -171,51 +166,58 @@ export default function Header() {
             </Link>
           )}
 
-          {/* Mobile: Bell + Auth icon */}
+          {/* Mobile: 2-column layout — icons left, avatar right */}
           <div className="md:hidden flex items-center gap-1">
-            <button
-              onClick={() => navigate('/notifications')}
-              aria-label="การแจ้งเตือน"
-              className="relative p-2 text-white/85 hover:text-white transition-colors">
-              <Bell size={20} />
-              {unreadCount > 0 && (
-                <span className="absolute top-1 right-1 min-w-3.5 h-3.5 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow-sm">
-                  {unreadCount > 9 ? '9+' : unreadCount}
-                </span>
-              )}
-            </button>
-            {session ? (
-              <div className="flex flex-col items-center gap-1">
-                <Link to="/profile" className="p-0.5">
-                  {(session.user?.user_metadata?.avatar_url || session.user?.user_metadata?.picture) ? (
-                    <img
-                      src={session.user.user_metadata.avatar_url || session.user.user_metadata.picture}
-                      alt="avatar"
-                      className="w-8 h-8 rounded-full object-cover border-2 border-white/60"
-                    />
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-white/20 border-2 border-white/60 flex items-center justify-center text-white text-xs font-bold">
-                      {(displayName || session.user?.email || '?')[0].toUpperCase()}
-                    </div>
+            {/* ซ้าย: row1=Moon+Bell, row2=Staff+Admin */}
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center">
+                <button onClick={toggle} aria-label="สลับธีม"
+                  className="p-2 text-white/80 hover:text-white transition-colors">
+                  {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+                </button>
+                <button onClick={() => navigate('/notifications')} aria-label="การแจ้งเตือน"
+                  className="relative p-2 text-white/85 hover:text-white transition-colors">
+                  <Bell size={18} />
+                  {unreadCount > 0 && (
+                    <span className="absolute top-1 right-1 min-w-3.5 h-3.5 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow-sm">
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
                   )}
-                </Link>
-                {(isStaff || isAdmin) && (
-                  <div className="flex gap-1">
-                    {isStaff && (
-                      <Link to="/staff" aria-label="ระบบเจ้าหน้าที่"
-                        className="w-8 h-5 rounded bg-white/25 hover:bg-white/40 flex items-center justify-center transition-colors">
-                        <Briefcase size={11} className="text-white" />
-                      </Link>
-                    )}
-                    {isAdmin && (
-                      <Link to="/admin" aria-label="แผงควบคุม Admin"
-                        className="w-8 h-5 rounded bg-white/25 hover:bg-white/40 flex items-center justify-center transition-colors">
-                        <LayoutDashboard size={11} className="text-white" />
-                      </Link>
-                    )}
+                </button>
+              </div>
+              {session && (isStaff || isAdmin) && (
+                <div className="flex gap-1 px-1">
+                  {isStaff && (
+                    <Link to="/staff" aria-label="ระบบเจ้าหน้าที่"
+                      className="w-9 h-6 rounded-md bg-white/25 hover:bg-white/40 flex items-center justify-center transition-colors">
+                      <Briefcase size={13} className="text-white" />
+                    </Link>
+                  )}
+                  {isAdmin && (
+                    <Link to="/admin" aria-label="แผงควบคุม Admin"
+                      className="w-9 h-6 rounded-md bg-white/25 hover:bg-white/40 flex items-center justify-center transition-colors">
+                      <LayoutDashboard size={13} className="text-white" />
+                    </Link>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* ขวา: Avatar */}
+            {session ? (
+              <Link to="/profile" className="p-1 shrink-0">
+                {(session.user?.user_metadata?.avatar_url || session.user?.user_metadata?.picture) ? (
+                  <img
+                    src={session.user.user_metadata.avatar_url || session.user.user_metadata.picture}
+                    alt="avatar"
+                    className="w-10 h-10 rounded-full object-cover border-2 border-white/60"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-white/20 border-2 border-white/60 flex items-center justify-center text-white text-sm font-bold">
+                    {(displayName || session.user?.email || '?')[0].toUpperCase()}
                   </div>
                 )}
-              </div>
+              </Link>
             ) : (
               <Link to="/auth" className="p-2 text-white/85 hover:text-white transition-colors">
                 <User size={20} />
