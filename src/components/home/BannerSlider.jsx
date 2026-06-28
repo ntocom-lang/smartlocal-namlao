@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 
 const INTERVAL = 4500
-const RATIO = '5/2'  // 2.5:1 — แนวนอนพอดี ไม่ตัดหัว
+const RATIO = '16/9'
 
 export default function BannerSlider() {
   const { tenant } = useTenant()
