@@ -59,14 +59,14 @@ export default function BannerSlider() {
   return (
     <div className="rounded-2xl overflow-hidden shadow-md select-none">
       <Wrapper {...wrapperProps}
-        className="block relative w-full bg-gray-100"
-        style={{ aspectRatio: '16/7' }}
+        className="block relative w-full"
+        style={{ backgroundColor: '#000' }}
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}>
         {banners.map((b, i) => (
           <img key={b.id} src={b.image_url} alt=""
-            className="absolute inset-0 w-full h-full object-cover transition-opacity duration-700"
-            style={{ opacity: i === idx ? 1 : 0 }} />
+            className="block w-full transition-opacity duration-700"
+            style={{ opacity: i === idx ? 1 : 0, position: i === idx ? 'relative' : 'absolute', inset: 0 }} />
         ))}
       </Wrapper>
 
