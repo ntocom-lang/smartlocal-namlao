@@ -398,6 +398,28 @@ export default function SystemSettingsAdmin() {
   )
 }
 
+// position value → css objectPosition
+const POS_OPTIONS = [
+  ['left top',    'center top',    'right top'   ],
+  ['left center', 'center center', 'right center'],
+  ['left bottom', 'center bottom', 'right bottom'],
+]
+
+function PositionPicker({ value = 'center', onChange }) {
+  return (
+    <div className="grid grid-cols-3 gap-0.5 w-16">
+      {POS_OPTIONS.flat().map(pos => (
+        <button key={pos} type="button" onClick={() => onChange(pos)}
+          className="w-4 h-4 rounded-sm flex items-center justify-center transition-colors"
+          style={{ backgroundColor: pos === value ? 'var(--color-primary)' : '#e5e7eb' }}
+          title={pos}>
+          <span className="w-1.5 h-1.5 rounded-full bg-white" />
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function BannerManager({ tenant }) {
   const [banners, setBanners] = useState([])
   const [uploading, setUploading] = useState(false)
@@ -406,7 +428,7 @@ function BannerManager({ tenant }) {
 
   useEffect(() => {
     if (!tenant?.id) return
-    supabase.from('banners').select('id, image_url, sort_order')
+    supabase.from('banners').select('id, image_url, sort_order, object_position')
       .eq('municipality_id', tenant.id).eq('is_active', true)
       .order('sort_order')
       .then(({ data }) => setBanners(data ?? []))
@@ -427,8 +449,8 @@ function BannerManager({ tenant }) {
         if (upErr) throw upErr
         const { data: { publicUrl } } = supabase.storage.from('municipality-assets').getPublicUrl(path)
         const { data: row, error: dbErr } = await supabase.from('banners')
-          .insert({ municipality_id: tenant.id, image_url: publicUrl, sort_order: banners.length + 1 })
-          .select('id, image_url, sort_order').single()
+          .insert({ municipality_id: tenant.id, image_url: publicUrl, sort_order: banners.length + 1, object_position: 'center' })
+          .select('id, image_url, sort_order, object_position').single()
         if (dbErr) throw dbErr
         setBanners(prev => [...prev, row])
       }
@@ -447,26 +469,40 @@ function BannerManager({ tenant }) {
     setDeleting(null)
   }
 
+  async function handlePosition(id, pos) {
+    setBanners(prev => prev.map(b => b.id === id ? { ...b, object_position: pos } : b))
+    await supabase.from('banners').update({ object_position: pos }).eq('id', id)
+  }
+
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
       <h2 className="text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
         <ImageIcon size={15} /> สไลด์ Banner หน้าแรก
       </h2>
       <p className="text-xs text-gray-400 mb-5 leading-relaxed">
-        รูปภาพประกาศ / กิจกรรม แสดงสไลด์อัตโนมัติใต้พยากรณ์อากาศ · แนะนำขนาด 16:7 เช่น 1600×700px
+        รูปภาพประกาศ / กิจกรรม แสดงสไลด์อัตโนมัติ · กด grid จุดเพื่อปรับตำแหน่งภาพในกรอบ
       </p>
 
       {banners.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-5">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-5">
           {banners.map(b => (
-            <div key={b.id} className="relative rounded-xl overflow-hidden border border-gray-100 aspect-video bg-gray-50">
-              <img src={b.image_url} alt="" className="w-full h-full object-cover" />
-              <button onClick={() => handleDelete(b.id)} disabled={deleting === b.id}
-                className="absolute top-1.5 right-1.5 w-6 h-6 bg-black/60 hover:bg-red-600 rounded-full flex items-center justify-center transition-colors">
-                {deleting === b.id
-                  ? <Loader2 size={11} className="animate-spin text-white" />
-                  : <span className="text-white text-[10px] font-bold leading-none">✕</span>}
-              </button>
+            <div key={b.id} className="flex flex-col gap-2">
+              <div className="relative rounded-xl overflow-hidden border border-gray-100 bg-gray-50"
+                style={{ aspectRatio: '5/2' }}>
+                <img src={b.image_url} alt=""
+                  className="w-full h-full object-cover"
+                  style={{ objectPosition: b.object_position || 'center' }} />
+                <button onClick={() => handleDelete(b.id)} disabled={deleting === b.id}
+                  className="absolute top-1.5 right-1.5 w-6 h-6 bg-black/60 hover:bg-red-600 rounded-full flex items-center justify-center transition-colors">
+                  {deleting === b.id
+                    ? <Loader2 size={11} className="animate-spin text-white" />
+                    : <span className="text-white text-[10px] font-bold leading-none">✕</span>}
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-gray-400">ตำแหน่ง</span>
+                <PositionPicker value={b.object_position || 'center'} onChange={pos => handlePosition(b.id, pos)} />
+              </div>
             </div>
           ))}
         </div>
