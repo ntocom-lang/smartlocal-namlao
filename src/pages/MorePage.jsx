@@ -288,15 +288,14 @@ export default function MorePage() {
     if (!session?.user?.id || !tenant?.id) return
     supabase
       .from('complaints')
-      .select('id')
+      .select('id, rating')
       .eq('municipality_id', tenant.id)
       .eq('user_id', session.user.id)
       .eq('status', 'closed')
-      .is('rating', null)
-      .limit(1)
+      .limit(10)
       .then(({ data }) => {
         if (!data?.length) return
-        const unrated = data.find(c => !localStorage.getItem(`sat_done_${c.id}`))
+        const unrated = data.find(c => c.rating == null && !localStorage.getItem(`sat_done_${c.id}`))
         if (unrated) setSatComplaintId(unrated.id)
       })
   }, [session?.user?.id, tenant?.id])
