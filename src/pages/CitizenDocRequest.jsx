@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, FileText, CheckCircle2, Loader2, Copy, Check, ChevronRight, ShieldCheck, Upload, CreditCard, ImageIcon } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
@@ -68,6 +68,7 @@ const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-3 text-sm tex
 
 export default function CitizenDocRequest() {
   const navigate  = useNavigate()
+  const [searchParams] = useSearchParams()
   const { tenant } = useTenant()
   const allDocTypes = useMemo(() => {
     const extras = (tenant?.fee_schedule?._custom_types || []).map(t => ({
@@ -83,7 +84,10 @@ export default function CitizenDocRequest() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenant])
   const [session, setSession]     = useState(undefined)
-  const [selected, setSelected]   = useState(null)
+  const [selected, setSelected]   = useState(() => {
+    const t = searchParams.get('type')
+    return t ? (BASE_DOC_TYPES.find(d => d.value === t) ?? null) : null
+  })
   const [form, setForm]           = useState({ requester_name: '', requester_id_card: '', requester_phone: '', requester_address: '', purpose: '' })
   const [saving, setSaving]       = useState(false)
   const [done, setDone]           = useState(null)
@@ -100,6 +104,7 @@ export default function CitizenDocRequest() {
   const [verifyError, setVerifyError]   = useState('')
   const [verifySaving, setVerifySaving] = useState(false)
   const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }))
+
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {

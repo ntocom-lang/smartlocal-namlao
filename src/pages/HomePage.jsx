@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -7,8 +8,17 @@ import NewsSection from '../components/home/NewsSection'
 import TourismSection from '../components/home/TourismSection'
 import ComplaintBand from '../components/home/ComplaintBand'
 import BannerSlider from '../components/home/BannerSlider'
-import { Info, ChevronRight, Briefcase, FileText, ClipboardList, FolderOpen, FileSearch } from 'lucide-react'
+import { Info, ChevronRight, Briefcase } from 'lucide-react'
 import WeatherWidget from '../components/home/WeatherWidget'
+
+const BASE_DOC_TYPES = [
+  { value: 'residence_cert',  label: 'ใบรับรองการอยู่อาศัย',          emoji: '🏠' },
+  { value: 'personal_cert',   label: 'หนังสือรับรองบุคคล',             emoji: '👤' },
+  { value: 'conduct_cert',    label: 'หนังสือรับรองความประพฤติ',       emoji: '✅' },
+  { value: 'tax_notice',      label: 'ชำระภาษีที่ดินและสิ่งปลูกสร้าง', emoji: '🏦' },
+  { value: 'waste_collection', label: 'ชำระค่าธรรมเนียมขยะ',           emoji: '🗑️' },
+  { value: 'other',           label: 'คำขออื่นๆ',                      emoji: '📝' },
+]
 
 export default function HomePage() {
   const { tenant } = useTenant()
@@ -18,6 +28,13 @@ export default function HomePage() {
   const isViewer = role === 'viewer'
   const isCouncil = role === 'council'
   const isStaff = role === 'staff' || role === 'technician'
+
+  const docTypes = useMemo(() => {
+    const extras = (tenant?.fee_schedule?._custom_types || []).map(t => ({
+      value: t.value, label: t.label, emoji: t.emoji || '📋',
+    }))
+    return [...BASE_DOC_TYPES, ...extras]
+  }, [tenant])
 
   return (
     <div className="max-w-6xl mx-auto md:px-8 md:py-6 space-y-4 md:space-y-6">
@@ -62,19 +79,14 @@ export default function HomePage() {
         <div className="rounded-2xl shadow-md px-4 py-5"
           style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)' }}>
           <p className="text-white/80 text-[11px] font-semibold mb-4 tracking-widest uppercase">E-Service</p>
-          <div className="grid grid-cols-4 gap-2">
-            {[
-              { to: '/doc-request',    label: 'บริการออนไลน์',       Icon: FileText      },
-              { to: '/complaint',      label: 'ร้องเรียน/ร้องทุกข์', Icon: ClipboardList  },
-              { to: '/my-docs',        label: 'เอกสารของฉัน',        Icon: FolderOpen    },
-              { to: '/my-complaints',  label: 'คำร้องของฉัน',        Icon: FileSearch    },
-            ].map(({ to, label, Icon }) => (
-              <Link key={to} to={to}
-                className="flex flex-col items-center gap-2 active:scale-95 transition-transform">
-                <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center shadow-inner">
-                  <Icon size={26} className="text-white" />
+          <div className="flex gap-4 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+            {docTypes.map(({ value, label, emoji }) => (
+              <Link key={value} to={`/doc-request?type=${value}`}
+                className="flex flex-col items-center gap-2 shrink-0 active:scale-95 transition-transform">
+                <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center shadow-inner text-2xl">
+                  {emoji}
                 </div>
-                <p className="text-white text-[10px] font-semibold text-center leading-tight">{label}</p>
+                <p className="text-white text-[10px] font-semibold text-center leading-tight w-16">{label}</p>
               </Link>
             ))}
           </div>
