@@ -321,6 +321,7 @@ export default function CitizenForm() {
 
 
   const photosRef = useRef([])
+  const fileInputRef = useRef(null)
   useEffect(() => { photosRef.current = photos }, [photos])
   useEffect(() => () => photosRef.current.forEach(p => URL.revokeObjectURL(p.preview)), [])
 
@@ -614,14 +615,16 @@ export default function CitizenForm() {
           )}
 
           {photos.length < MAX_PHOTOS && (
-            <label className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-dashed border-gray-300 text-gray-500 text-xs font-medium cursor-pointer active:bg-gray-50 transition-colors">
+            <button type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-dashed border-gray-300 text-gray-500 text-xs font-medium cursor-pointer hover:bg-gray-50 active:bg-gray-100 transition-colors">
               <ImagePlus size={15} />
               แนบรูปภาพ
               <span className="text-gray-400 font-normal">(ไม่บังคับ)</span>
               {photos.length > 0 && <span className="ml-auto text-gray-400">{photos.length}/{MAX_PHOTOS}</span>}
-              <input type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoPick} />
-            </label>
+            </button>
           )}
+          <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoPick} />
         </div>
 
         {/* Error */}
