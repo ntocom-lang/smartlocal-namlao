@@ -13,6 +13,7 @@ import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useNotifications } from '../contexts/NotificationsContext'
+import SatisfactionModal from '../components/SatisfactionModal'
 
 // ─── QR Share Card ────────────────────────────────────────────────────────
 
@@ -280,7 +281,8 @@ export default function MorePage() {
   const { tenant } = useTenant()
   const { unreadCount } = useNotifications()
   const { session, role, displayName } = useAuth()
-  const [hasClosedUnrated, setHasClosedUnrated] = useState(false)
+  const [satComplaintId, setSatComplaintId] = useState(null)
+  const [showSat, setShowSat] = useState(false)
 
   useEffect(() => {
     if (!session?.user?.id || !tenant?.id) return
@@ -295,7 +297,7 @@ export default function MorePage() {
       .then(({ data }) => {
         if (!data?.length) return
         const unrated = data.find(c => !localStorage.getItem(`sat_done_${c.id}`))
-        setHasClosedUnrated(!!unrated)
+        if (unrated) setSatComplaintId(unrated.id)
       })
   }, [session?.user?.id, tenant?.id])
 
@@ -315,6 +317,16 @@ export default function MorePage() {
 
   return (
     <div className="min-h-screen pb-28 md:pb-8" style={{ backgroundColor: '#eef2f7' }}>
+    {showSat && (
+      <SatisfactionModal
+        complaintId={satComplaintId}
+        onClose={() => {
+          if (satComplaintId) localStorage.setItem(`sat_done_${satComplaintId}`, '1')
+          setShowSat(false)
+          setSatComplaintId(null)
+        }}
+      />
+    )}
     <div className="max-w-4xl mx-auto">
 
       {/* Mobile header */}
@@ -550,14 +562,14 @@ export default function MorePage() {
 
         {/* ─── บริการ ─── */}
         <Section title="บริการอื่นๆ">
-          {hasClosedUnrated && (
+          {satComplaintId && (
             <MenuRow
               icon={Star}
               iconBg="bg-yellow-50"
               iconColor="text-yellow-500"
               label="ประเมินความพึงพอใจ"
               desc="มีคำร้องที่ปิดแล้ว รอการประเมิน"
-              href="/my-complaints"
+              onClick={() => setShowSat(true)}
             />
           )}
           <MenuRow
