@@ -92,6 +92,8 @@ export default function HomePage() {
           </div>
         </div>
 
+        <ComplaintBand />
+
         {!role && (
           <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800">
             <Info size={16} className="shrink-0 mt-0.5" />
@@ -100,7 +102,6 @@ export default function HomePage() {
         )}
 
         <HeroBanner />
-        <ComplaintBand />
       </div>{/* end content section */}
 
       <div className="px-4 md:px-0"><StaffSection /></div>
