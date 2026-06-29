@@ -129,7 +129,7 @@ export default function HomePage() {
           </div>
           <div className="flex-1 overflow-hidden">
             <span className="whitespace-nowrap text-white text-xs font-medium inline-block"
-              style={{ animation: 'marquee 22s linear infinite' }}>
+              style={{ animation: 'marquee 40s linear infinite' }}>
               {MARQUEE_TEXT}
             </span>
           </div>
