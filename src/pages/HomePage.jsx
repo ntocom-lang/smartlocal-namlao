@@ -83,19 +83,30 @@ export default function HomePage() {
         )}
 
         {/* Service Band */}
-        <div className="rounded-2xl shadow-md px-4 py-5"
-          style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)' }}>
-          <p className="text-white/80 text-[11px] font-semibold mb-4 tracking-widest uppercase">E-Service</p>
-          <div className="flex gap-4 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-            {docTypes.map(({ value, label, emoji }) => (
-              <Link key={value} to={`/doc-request?type=${value}`}
-                className="flex flex-col items-center gap-2 shrink-0 active:scale-95 transition-transform">
-                <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center shadow-inner text-2xl">
-                  {emoji}
-                </div>
-                <p className="text-white text-[10px] font-semibold text-center leading-tight w-16">{label}</p>
-              </Link>
-            ))}
+        <div className="rounded-2xl shadow-xl px-4 py-5 relative overflow-hidden"
+          style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 35%, #1d4ed8 65%, #0ea5e9 100%)' }}>
+          {/* decorative glows */}
+          <div className="absolute -top-8 -right-8 w-36 h-36 rounded-full pointer-events-none"
+            style={{ background: 'radial-gradient(circle, rgba(99,102,241,0.45) 0%, transparent 70%)' }} />
+          <div className="absolute -bottom-10 -left-6 w-40 h-40 rounded-full pointer-events-none"
+            style={{ background: 'radial-gradient(circle, rgba(14,165,233,0.35) 0%, transparent 70%)' }} />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-24 rounded-full pointer-events-none"
+            style={{ background: 'radial-gradient(ellipse, rgba(139,92,246,0.2) 0%, transparent 70%)' }} />
+
+          <div className="relative z-10">
+            <p className="text-white/70 text-[11px] font-bold mb-4 tracking-widest uppercase">✦ E-Service ✦</p>
+            <div className="flex gap-4 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+              {docTypes.map(({ value, label, emoji }) => (
+                <Link key={value} to={`/doc-request?type=${value}`}
+                  className="flex flex-col items-center gap-2 shrink-0 active:scale-95 transition-transform">
+                  <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-lg"
+                    style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.08) 100%)', border: '1px solid rgba(255,255,255,0.2)', backdropFilter: 'blur(4px)' }}>
+                    {emoji}
+                  </div>
+                  <p className="text-white text-[10px] font-semibold text-center leading-tight w-16">{label}</p>
+                </Link>
+              ))}
+            </div>
           </div>
         </div>
 
