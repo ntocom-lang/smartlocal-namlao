@@ -562,16 +562,14 @@ export default function MorePage() {
 
         {/* ─── บริการ ─── */}
         <Section title="บริการอื่นๆ">
-          {satComplaintId && (
-            <MenuRow
-              icon={Star}
-              iconBg="bg-yellow-50"
-              iconColor="text-yellow-500"
-              label="ประเมินความพึงพอใจ"
-              desc="มีคำร้องที่ปิดแล้ว รอการประเมิน"
-              onClick={() => setShowSat(true)}
-            />
-          )}
+          <MenuRow
+            icon={Star}
+            iconBg="bg-yellow-50"
+            iconColor="text-yellow-500"
+            label="ประเมินความพึงพอใจ"
+            desc={satComplaintId ? 'มีคำร้องที่ปิดแล้ว รอการประเมิน' : `ให้คะแนนการให้บริการของ${tenant?.name || 'หน่วยงาน'}`}
+            onClick={() => satComplaintId ? setShowSat(true) : navigate('/satisfaction')}
+          />
           <MenuRow
             icon={Bell}
             iconBg="bg-purple-50"
