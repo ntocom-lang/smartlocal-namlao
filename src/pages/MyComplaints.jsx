@@ -168,7 +168,6 @@ function StatusStepper({ status }) {
 }
 
 function DetailSheet({ complaint: c, onClose, onAttachmentsChange }) {
-  const [timeline, setTimeline]   = useState(null)
   const [newPhotos, setNewPhotos] = useState([]) // { file, preview }
   const [uploading, setUploading] = useState(false)
   const photosRef = useRef([])
@@ -177,15 +176,6 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange }) {
 
   useEffect(() => {
     setNewPhotos([])
-  }, [c?.id])
-
-  useEffect(() => {
-    if (!c) return
-    supabase.from('complaint_timeline')
-      .select('*')
-      .eq('complaint_id', c.id)
-      .order('created_at', { ascending: true })
-      .then(({ data, error }) => { if (!error) setTimeline(data ?? []) })
   }, [c?.id])
 
   function handlePhotoPick(e) {
@@ -448,33 +438,6 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange }) {
             </div>
           )}
 
-          {/* timeline */}
-          {timeline && timeline.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ประวัติการดำเนินงาน</p>
-              <div className="space-y-2">
-                {timeline.map((t) => {
-                  const s = STATUS[t.status]
-                  return (
-                    <div key={t.id} className="flex gap-3 items-start">
-                      <div className="w-2 h-2 rounded-full mt-1.5 shrink-0"
-                           style={{ backgroundColor: s?.text ?? '#9ca3af' }} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-gray-700">{s?.label ?? t.status}</p>
-                        {t.note && <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{t.note}</p>}
-                        <p className="text-[11px] text-gray-300 mt-0.5">
-                          {new Date(t.created_at).toLocaleDateString('th-TH', {
-                            day: '2-digit', month: 'short', year: '2-digit',
-                            hour: '2-digit', minute: '2-digit',
-                          })} น.
-                        </p>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
 
         </div>
 
