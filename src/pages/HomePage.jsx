@@ -8,8 +8,16 @@ import NewsSection from '../components/home/NewsSection'
 import TourismSection from '../components/home/TourismSection'
 import ComplaintBand from '../components/home/ComplaintBand'
 import BannerSlider from '../components/home/BannerSlider'
-import { Info, ChevronRight, Briefcase } from 'lucide-react'
+import { Info, ChevronRight, Briefcase, Megaphone } from 'lucide-react'
 import WeatherWidget from '../components/home/WeatherWidget'
+
+const MARQUEE_TEXT = 'บริการประชาชนออนไลน์ ตลอด 24 ชั่วโมง เพื่อใช้เป็นช่องทางในการติดตามข่าวสาร แจ้งเรื่องร้องเรียน และรับบริการต่างๆได้อย่างสะดวก รวดเร็ว และเข้าถึงได้ทุกที่ทุกเวลา'
+
+const marqueeStyle = `
+@keyframes marquee {
+  0%   { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}`
 
 const BASE_DOC_TYPES = [
   { value: 'residence_cert',  label: 'ใบรับรองการอยู่อาศัย',          emoji: '🏠' },
@@ -53,6 +61,22 @@ export default function HomePage() {
         <div className={`relative z-10 flex flex-col gap-2 md:gap-3 ${tenant?.header_image_url ? 'px-4 pt-28 pb-3' : 'px-4 py-4'}`}>
           <WeatherWidget transparent={!!tenant?.header_image_url} />
           <BannerSlider />
+        </div>
+      </div>
+
+      {/* Marquee Band */}
+      <style>{marqueeStyle}</style>
+      <div className="flex items-center overflow-hidden rounded-xl shadow-md mx-4 md:mx-0"
+        style={{ background: 'linear-gradient(90deg, #1e40af 0%, #2563eb 100%)', height: 36 }}>
+        <div className="shrink-0 flex items-center justify-center px-3 h-full"
+          style={{ background: '#f59e0b' }}>
+          <Megaphone size={16} className="text-white" />
+        </div>
+        <div className="flex-1 overflow-hidden relative">
+          <span className="whitespace-nowrap text-white text-xs font-medium inline-block"
+            style={{ animation: 'marquee 22s linear infinite' }}>
+            {MARQUEE_TEXT}
+          </span>
         </div>
       </div>
 
