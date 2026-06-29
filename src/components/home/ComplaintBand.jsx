@@ -45,18 +45,18 @@ export default function ComplaintBand() {
 
   return (
     <div className="rounded-2xl overflow-hidden shadow-xl relative"
-      style={{ background: 'linear-gradient(135deg, #7f1d1d 0%, #dc2626 40%, #f97316 80%, #fbbf24 100%)' }}>
+      style={{ background: 'linear-gradient(135deg, #d97706 0%, #f59e0b 50%, #fde68a 100%)' }}>
       {/* decorative glows */}
       <div className="absolute -top-6 -left-6 w-32 h-32 rounded-full pointer-events-none"
-        style={{ background: 'radial-gradient(circle, rgba(251,191,36,0.4) 0%, transparent 70%)' }} />
+        style={{ background: 'radial-gradient(circle, rgba(253,230,138,0.5) 0%, transparent 70%)' }} />
       <div className="absolute -bottom-8 -right-4 w-36 h-36 rounded-full pointer-events-none"
-        style={{ background: 'radial-gradient(circle, rgba(220,38,38,0.5) 0%, transparent 70%)' }} />
+        style={{ background: 'radial-gradient(circle, rgba(217,119,6,0.35) 0%, transparent 70%)' }} />
 
       <div className="relative z-10 px-4 pt-4 pb-5">
         <div className="flex items-center justify-between mb-4">
-          <p className="text-white font-bold text-sm tracking-wide drop-shadow">🚨 ร้องเรียน / ร้องทุกข์</p>
+          <p className="text-amber-900 font-bold text-sm tracking-wide">🚨 ร้องเรียน / ร้องทุกข์</p>
           <button onClick={() => navigate('/complaint')}
-            className="flex items-center gap-0.5 text-white/80 text-xs bg-white/15 px-2 py-1 rounded-full hover:bg-white/25 transition-colors">
+            className="flex items-center gap-0.5 text-amber-900/70 text-xs bg-white/30 px-2 py-1 rounded-full hover:bg-white/50 transition-colors">
             ทั้งหมด <ChevronRight size={13} />
           </button>
         </div>
@@ -67,11 +67,11 @@ export default function ComplaintBand() {
               <button key={cat.value}
                 onClick={() => navigate(`/request?category=${cat.value}`)}
                 className="flex flex-col items-center gap-2 shrink-0 active:scale-95 transition-transform">
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg"
-                  style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.08) 100%)', border: '1px solid rgba(255,255,255,0.25)' }}>
-                  <Icon size={26} className="text-white drop-shadow" />
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-md"
+                  style={{ background: 'rgba(255,255,255,0.45)', border: '1px solid rgba(255,255,255,0.6)' }}>
+                  <Icon size={26} className="text-amber-700" />
                 </div>
-                <p className="text-white text-[10px] font-semibold text-center w-14 leading-tight drop-shadow">{cat.label}</p>
+                <p className="text-amber-900 text-[10px] font-semibold text-center w-14 leading-tight">{cat.label}</p>
               </button>
             )
           })}

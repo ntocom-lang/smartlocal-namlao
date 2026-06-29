@@ -84,17 +84,17 @@ export default function HomePage() {
 
         {/* Service Band */}
         <div className="rounded-2xl shadow-xl px-4 py-5 relative overflow-hidden"
-          style={{ background: 'linear-gradient(135deg, #4c1d95 0%, #7c3aed 40%, #a855f7 70%, #ec4899 100%)' }}>
+          style={{ background: 'linear-gradient(135deg, #0369a1 0%, #0ea5e9 50%, #7dd3fc 100%)' }}>
           {/* decorative glows */}
           <div className="absolute -top-6 -right-6 w-32 h-32 rounded-full pointer-events-none"
-            style={{ background: 'radial-gradient(circle, rgba(236,72,153,0.5) 0%, transparent 70%)' }} />
+            style={{ background: 'radial-gradient(circle, rgba(186,230,253,0.5) 0%, transparent 70%)' }} />
           <div className="absolute -bottom-8 -left-4 w-36 h-36 rounded-full pointer-events-none"
-            style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.4) 0%, transparent 70%)' }} />
+            style={{ background: 'radial-gradient(circle, rgba(14,165,233,0.35) 0%, transparent 70%)' }} />
           <div className="absolute top-0 right-1/3 w-24 h-24 rounded-full pointer-events-none"
-            style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 70%)' }} />
+            style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 70%)' }} />
 
           <div className="relative z-10">
-            <p className="text-white/80 text-[11px] font-bold mb-4 tracking-widest uppercase">✦ E-Service ✦</p>
+            <p className="text-white text-[11px] font-bold mb-4 tracking-widest uppercase drop-shadow">✦ E-Service ✦</p>
             <div className="flex gap-4 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
               {docTypes.map(({ value, label, emoji }) => (
                 <Link key={value} to={`/doc-request?type=${value}`}
