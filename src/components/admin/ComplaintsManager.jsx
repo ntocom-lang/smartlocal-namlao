@@ -867,6 +867,24 @@ ${photoSectionHtml}
             </div>
           </div>
 
+          {(c.attachments ?? []).length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Camera size={12} /> รูปภาพจากผู้แจ้ง ({c.attachments.length})
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {c.attachments.map((url, i) => (
+                  <a key={i} href={url} target="_blank" rel="noreferrer"
+                    className="aspect-square rounded-xl overflow-hidden border border-blue-100 bg-blue-50 flex items-center justify-center">
+                    {/\.(jpg|jpeg|png|gif|webp)$/i.test(url.split('?')[0])
+                      ? <img src={url} alt={`แนบ ${i + 1}`} className="w-full h-full object-cover" />
+                      : <FileText size={22} className="text-blue-400" />}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
           {(c.work_photos ?? []).length > 0 && (
             <div className="space-y-2 pb-4">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
