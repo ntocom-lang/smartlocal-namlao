@@ -958,7 +958,7 @@ function UserManager({ tenant, currentUserRole }) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="ค้นหาชื่อ, อีเมล, เบอร์..."
-            className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-blue-400"
+            className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-blue-400 text-gray-900 bg-white"
           />
         </div>
         <select
@@ -2909,7 +2909,7 @@ function CategoryManager({ tenant }) {
             value={form.emoji}
             onChange={(e) => setForm((p) => ({ ...p, emoji: e.target.value, emojiTouched: true }))}
             placeholder="emoji"
-            className="w-16 border border-gray-200 rounded-xl px-2 py-2 text-center text-lg bg-white focus:outline-none focus:ring-2"
+            className="w-16 border border-gray-200 rounded-xl px-2 py-2 text-center text-lg bg-white text-gray-900 focus:outline-none focus:ring-2"
             style={{ '--tw-ring-color': 'var(--color-primary)' }}
           />
           <input
@@ -4240,7 +4240,7 @@ function EventsManager({ tenant, currentUserRole }) {
                   <select
                     value={pageSize}
                     onChange={(e) => setPageSize(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-                    className="bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    className="bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-200"
                   >
                     <option value={10}>10</option>
                     <option value={20}>20</option>
@@ -5382,7 +5382,7 @@ export default function AdminDashboard() {
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input value={search} onChange={(e) => setSearch(e.target.value)}
                 placeholder="ค้นหาคำร้อง..."
-                className="pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent w-52"
+                className="pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent w-52 text-gray-900 bg-white"
                 style={{ '--tw-ring-color': 'var(--color-primary)' }} />
             </div>
             <button onClick={handlePrintComplaints}

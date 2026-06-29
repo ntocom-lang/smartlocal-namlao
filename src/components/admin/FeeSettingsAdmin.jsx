@@ -227,7 +227,7 @@ export default function FeeSettingsAdmin({ tenant }) {
                     onChange={e => setNewEmoji(e.target.value)}
                     placeholder="📋"
                     maxLength={4}
-                    className="w-14 text-center text-lg border border-gray-200 rounded-lg px-1 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-blue-300"
+                    className="w-14 text-center text-lg text-gray-900 border border-gray-200 rounded-lg px-1 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-blue-300"
                   />
                   <input
                     type="text"

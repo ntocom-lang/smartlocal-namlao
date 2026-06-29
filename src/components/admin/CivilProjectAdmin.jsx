@@ -988,7 +988,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
               </select>
               <input type="text" value={detailPhotoDesc} onChange={e => setDetailPhotoDesc(e.target.value)}
                 placeholder="คำอธิบายรูป (ไม่บังคับ)"
-                className="flex-1 min-w-[200px] bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-200" />
+                className="flex-1 min-w-[200px] bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-200" />
               <label className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white cursor-pointer hover:opacity-90 transition-opacity"
                 style={{ backgroundColor: '#3b82f6' }}>
                 <Upload size={14} />
