@@ -387,7 +387,7 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange }) {
               {onAttachmentsChange && (c.attachments ?? []).length + newPhotos.length < MAX_CITIZEN_PHOTOS && (
                 <div className="relative w-full">
                   <div className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-dashed border-gray-300 text-gray-500 text-xs font-medium pointer-events-none">
-                    <ImagePlus size={14} /> แกลเลอรี
+                    <ImagePlus size={14} /> แนบรูปภาพ
                   </div>
                   <input type="file" accept="image/*" multiple onChange={handlePhotoPick}
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
