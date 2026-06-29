@@ -727,16 +727,22 @@ ${photoSectionHtml}
                       ? <p className="text-sm font-semibold text-gray-800">{technicians.find((t) => t.id === c.assigned_to)?.full_name ?? 'ผู้รับผิดชอบ'}</p>
                       : <p className="text-sm text-gray-400">ยังไม่ได้มอบหมาย</p>}
                   </div>
-                  <select value={c.assigned_to ?? ''}
-                    onChange={(e) => setPendingAssign(e.target.value || null)}
-                    disabled={assigning}
-                    className="text-xs border border-orange-200 rounded-xl px-2 py-1.5 bg-white text-gray-700 focus:outline-none">
-                    <option value="">— เลือกผู้รับผิดชอบ —</option>
-                    {technicians.map((t) => (
-                      <option key={t.id} value={t.id}>{t.full_name || t.email}</option>
-                    ))}
-                  </select>
-                  {assigning && <Loader2 size={14} className="animate-spin text-orange-400 shrink-0" />}
+                  {['admin', 'superadmin', 'officer'].includes(currentUserRole) ? (
+                    <>
+                      <select value={c.assigned_to ?? ''}
+                        onChange={(e) => setPendingAssign(e.target.value || null)}
+                        disabled={assigning}
+                        className="text-xs border border-orange-200 rounded-xl px-2 py-1.5 bg-white text-gray-700 focus:outline-none">
+                        <option value="">— เลือกผู้รับผิดชอบ —</option>
+                        {technicians.map((t) => (
+                          <option key={t.id} value={t.id}>{t.full_name || t.email}</option>
+                        ))}
+                      </select>
+                      {assigning && <Loader2 size={14} className="animate-spin text-orange-400 shrink-0" />}
+                    </>
+                  ) : (
+                    <span className="text-xs text-gray-400 italic">เฉพาะ Admin</span>
+                  )}
                 </div>
 
                 {/* Priority selector */}
@@ -1539,7 +1545,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                         </span>
                       )}
                     </div>
-                    {NEXT_ACTION[c.status] && currentUserRole !== 'viewer' && (
+                    {NEXT_ACTION[c.status] && ['admin', 'superadmin', 'officer'].includes(currentUserRole) && (
                       <div onClick={(e) => e.stopPropagation()}>
                         <ActionButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} />
                       </div>
