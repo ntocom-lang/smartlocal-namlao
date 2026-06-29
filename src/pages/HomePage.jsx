@@ -15,8 +15,8 @@ const MARQUEE_TEXT = 'บริการประชาชนออนไลน�
 
 const marqueeStyle = `
 @keyframes marquee {
-  0%   { transform: translateX(100%); }
-  100% { transform: translateX(-100%); }
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
 }`
 
 const BASE_DOC_TYPES = [
@@ -130,7 +130,7 @@ export default function HomePage() {
           <div className="flex-1 overflow-hidden">
             <span className="whitespace-nowrap text-white text-xs font-medium inline-block"
               style={{ animation: 'marquee 40s linear infinite' }}>
-              {MARQUEE_TEXT}
+              {MARQUEE_TEXT}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{MARQUEE_TEXT}
             </span>
           </div>
         </div>
