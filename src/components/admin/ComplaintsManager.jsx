@@ -1660,8 +1660,12 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center gap-1.5">
-                          <ActionButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} />
-                          <RejectButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} />
+                          {(['admin', 'superadmin', 'officer'].includes(currentUserRole) || (currentUserRole === 'technician' && c.assigned_to === currentUserId)) && (
+                            <>
+                              <ActionButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} />
+                              <RejectButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} />
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
