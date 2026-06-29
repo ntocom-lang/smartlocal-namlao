@@ -122,9 +122,9 @@ export default function HomePage() {
 
         {/* Marquee Band */}
         <div className="flex items-center overflow-hidden rounded-xl shadow-md"
-          style={{ background: 'linear-gradient(90deg, #1e40af 0%, #2563eb 100%)', height: 36 }}>
+          style={{ background: 'linear-gradient(90deg, #0ea5e9 0%, #38bdf8 40%, #fbbf24 80%, #f59e0b 100%)', height: 36 }}>
           <div className="shrink-0 flex items-center justify-center px-3 h-full"
-            style={{ background: '#f59e0b' }}>
+            style={{ background: 'rgba(255,255,255,0.25)' }}>
             <Megaphone size={16} className="text-white" />
           </div>
           <div className="flex-1 overflow-hidden">
