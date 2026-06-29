@@ -170,12 +170,17 @@ function StatusStepper({ status }) {
 function DetailSheet({ complaint: c, onClose, onAttachmentsChange }) {
   const [newPhotos, setNewPhotos] = useState([]) // { file, preview }
   const [uploading, setUploading] = useState(false)
+  const [freshAttachments, setFreshAttachments] = useState(null) // null = not fetched yet
   const photosRef = useRef([])
   useEffect(() => { photosRef.current = newPhotos }, [newPhotos])
   useEffect(() => () => photosRef.current.forEach(p => URL.revokeObjectURL(p.preview)), [])
 
   useEffect(() => {
     setNewPhotos([])
+    setFreshAttachments(null)
+    if (!c?.id) return
+    supabase.from('complaints').select('attachments').eq('id', c.id).single()
+      .then(({ data }) => { if (data) setFreshAttachments(data.attachments ?? []) })
   }, [c?.id])
 
   function handlePhotoPick(e) {
@@ -219,8 +224,10 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange }) {
       } catch {}
     }
     if (uploaded.length > 0) {
-      const merged = [...(c.attachments ?? []), ...uploaded]
+      const base = freshAttachments ?? (c.attachments ?? [])
+      const merged = [...base, ...uploaded]
       await supabase.from('complaints').update({ attachments: merged }).eq('id', c.id)
+      setFreshAttachments(merged)
       onAttachmentsChange?.(c.id, merged)
     }
     newPhotos.forEach(p => URL.revokeObjectURL(p.preview))
@@ -347,14 +354,14 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange }) {
             </div>
           </div>
 
-          {/* citizen attachments */}
-          {((c.attachments ?? []).length > 0 || onAttachmentsChange) && (
+          {/* citizen attachments — ใช้ freshAttachments (fetch ใหม่ตอนเปิด) เพื่อแก้กรณี list โหลดก่อน upload เสร็จ */}
+          {(attDisplay => (attDisplay.length > 0 || onAttachmentsChange) && (
             <div className="space-y-2">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">รูปภาพจากท่าน</p>
 
-              {(c.attachments ?? []).length > 0 && (
+              {attDisplay.length > 0 && (
                 <div className="grid grid-cols-3 gap-2">
-                  {c.attachments.map((url, i) => (
+                  {attDisplay.map((url, i) => (
                     <a key={i} href={url} target="_blank" rel="noreferrer"
                        className="aspect-square rounded-xl overflow-hidden border border-gray-200 bg-gray-100">
                       <img src={url} alt={`รูป ${i + 1}`} className="w-full h-full object-cover" />
@@ -384,7 +391,7 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange }) {
                 </div>
               )}
 
-              {onAttachmentsChange && (c.attachments ?? []).length + newPhotos.length < MAX_CITIZEN_PHOTOS && (
+              {onAttachmentsChange && attDisplay.length + newPhotos.length < MAX_CITIZEN_PHOTOS && (
                 <div className="relative w-full">
                   <div className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-dashed border-gray-300 text-gray-500 text-xs font-medium pointer-events-none">
                     <ImagePlus size={14} /> แนบรูปภาพ
@@ -404,7 +411,7 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange }) {
                 </button>
               )}
             </div>
-          )}
+          ))(freshAttachments ?? (c.attachments ?? []))}
 
           {/* work photos - after */}
           {(c.work_photos ?? []).length > 0 && (
