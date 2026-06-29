@@ -75,6 +75,13 @@ export default function HomePage() {
           </Link>
         )}
 
+        {!role && (
+          <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800">
+            <Info size={16} className="shrink-0 mt-0.5" />
+            <p>สมัครสมาชิกเพื่อติดตามสถานะคำร้องของท่าน และรับการแจ้งเตือนทันที</p>
+          </div>
+        )}
+
         {/* Service Band */}
         <div className="rounded-2xl shadow-md px-4 py-5"
           style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)' }}>
@@ -93,14 +100,6 @@ export default function HomePage() {
         </div>
 
         <ComplaintBand />
-
-        {!role && (
-          <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800">
-            <Info size={16} className="shrink-0 mt-0.5" />
-            <p>สมัครสมาชิกเพื่อติดตามสถานะคำร้องของท่าน และรับการแจ้งเตือนทันที</p>
-          </div>
-        )}
-
         <HeroBanner />
       </div>{/* end content section */}
 
