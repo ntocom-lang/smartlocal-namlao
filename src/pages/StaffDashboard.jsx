@@ -5,7 +5,7 @@ import {
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, AlignLeft, Calendar, Hash, RefreshCw,
   Printer, PenLine, Search, Download, Wrench, Home, CalendarDays, TrendingUp, Archive, Images,
-  CreditCard, BadgeCheck, Banknote, Luggage, Star, Store,
+  CreditCard, BadgeCheck, Banknote, Luggage, Star, Store, MoreHorizontal,
 } from 'lucide-react'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 import InfraWorkAdmin from '../components/admin/InfraWorkAdmin'
@@ -2031,6 +2031,7 @@ export default function StaffDashboard() {
   const location = useLocation()
   const { tenant } = useTenant()
   const [activeModule, setActiveModule] = useState(location.state?.module ?? 'home')
+  const [showMoreMenu, setShowMoreMenu] = useState(false)
   const [mapOpenComplaintId, setMapOpenComplaintId] = useState(location.state?.openComplaintId ?? null)
   const [profile, setProfile]           = useState(null)
   const [pendingCount, setPendingCount] = useState(0)
@@ -2245,26 +2246,20 @@ export default function StaffDashboard() {
 
         {/* Mobile bottom nav — horizontal scroll, 72px per item */}
         <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 shadow-lg z-20 safe-bottom">
-          <div className="flex overflow-x-auto" style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
+          <div className="flex">
             {/* หน้าหลัก */}
-            <button onClick={() => setActiveModule('home')}
-              className="flex flex-col items-center gap-1 pt-2 pb-3 relative transition-colors shrink-0"
-              style={{ width: 72 }}>
-              {activeModule === 'home' && (
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full bg-blue-500" />
-              )}
-              <Home size={21} strokeWidth={activeModule === 'home' ? 2.2 : 1.5}
-                style={{ color: activeModule === 'home' ? '#3b82f6' : '#94a3b8' }} />
-              <span className="text-[10px] font-semibold"
-                style={{ color: activeModule === 'home' ? '#3b82f6' : '#94a3b8' }}>หน้าหลัก</span>
-            </button>
-            {visibleModules.map(({ key, label, Icon, color, externalUrl }) => {
+            {[
+              { key: 'home',       label: 'หน้าหลัก',    Icon: Home,        color: '#3b82f6' },
+              { key: 'inbox',      label: 'คำขอเอกสาร',  Icon: FileText,    color: '#8b5cf6' },
+              { key: 'complaints', label: 'คำร้อง',       Icon: BarChart2,   color: '#ef4444' },
+              { key: 'events',     label: 'กิจกรรม',      Icon: CalendarDays,color: '#10b981' },
+            ].filter(({ key }) => key === 'home' || visibleModules.some(m => m.key === key)).map(({ key, label, Icon, color }) => {
               const isActive = activeModule === key
-              const badge    = key === 'inbox' && pendingCount > 0 ? pendingCount : null
+              const badge = key === 'inbox' && pendingCount > 0 ? pendingCount : null
               return (
-                <button key={key} onClick={() => externalUrl ? window.open(externalUrl, '_blank') : setActiveModule(key)}
-                  className="flex flex-col items-center gap-1 pt-2 pb-3 relative transition-colors shrink-0"
-                  style={{ width: 72 }}>
+                <button key={key}
+                  onClick={() => { setShowMoreMenu(false); setActiveModule(key) }}
+                  className="flex-1 flex flex-col items-center gap-1 pt-2 pb-3 relative transition-colors">
                   {isActive && (
                     <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full"
                       style={{ backgroundColor: color }} />
@@ -2278,14 +2273,60 @@ export default function StaffDashboard() {
                       </span>
                     )}
                   </div>
-                  <span className="text-[10px] font-semibold" style={{ color: isActive ? color : '#94a3b8' }}>
-                    {label}
-                  </span>
+                  <span className="text-[10px] font-semibold" style={{ color: isActive ? color : '#94a3b8' }}>{label}</span>
                 </button>
               )
             })}
+            {/* อื่นๆ */}
+            <button onClick={() => setShowMoreMenu(v => !v)}
+              className="flex-1 flex flex-col items-center gap-1 pt-2 pb-3 relative transition-colors">
+              {showMoreMenu && <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full bg-gray-400" />}
+              <MoreHorizontal size={21} strokeWidth={showMoreMenu ? 2.2 : 1.5}
+                style={{ color: showMoreMenu ? '#64748b' : '#94a3b8' }} />
+              <span className="text-[10px] font-semibold" style={{ color: showMoreMenu ? '#64748b' : '#94a3b8' }}>อื่นๆ</span>
+            </button>
           </div>
         </nav>
+
+        {/* More menu drawer */}
+        {showMoreMenu && (
+          <div className="md:hidden fixed inset-0 z-30" onClick={() => setShowMoreMenu(false)}>
+            <div className="absolute bottom-16 left-0 right-0 bg-white border-t border-gray-100 shadow-2xl rounded-t-2xl"
+              onClick={(e) => e.stopPropagation()}>
+              <div className="flex justify-center pt-2 pb-1">
+                <div className="w-10 h-1 rounded-full bg-gray-200" />
+              </div>
+              <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest px-5 pt-2 pb-3">เมนูทั้งหมด</p>
+              {visibleGroups.map(({ group, items }) => {
+                const extraItems = items.filter(m => !['inbox', 'complaints', 'events'].includes(m.key))
+                if (!extraItems.length) return null
+                return (
+                  <div key={group} className="mb-2">
+                    <p className="text-[10px] font-bold text-gray-300 uppercase tracking-widest px-5 mb-1">{group}</p>
+                    <div className="grid grid-cols-4 gap-1 px-3 pb-2">
+                      {extraItems.map(({ key, label, Icon, color, externalUrl }) => {
+                        const isActive = activeModule === key
+                        return (
+                          <button key={key}
+                            onClick={() => { externalUrl ? window.open(externalUrl, '_blank') : setActiveModule(key); setShowMoreMenu(false) }}
+                            className="flex flex-col items-center gap-1.5 p-2 rounded-2xl transition-colors"
+                            style={{ backgroundColor: isActive ? `${color}18` : 'transparent' }}>
+                            <div className="w-11 h-11 rounded-2xl flex items-center justify-center"
+                              style={{ backgroundColor: `${color}20` }}>
+                              <Icon size={20} style={{ color }} />
+                            </div>
+                            <span className="text-[10px] font-semibold text-center leading-tight text-gray-700">{label}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+              <div className="h-4" />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
