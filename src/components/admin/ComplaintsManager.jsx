@@ -299,7 +299,7 @@ function ActionButton({ status, id, onUpdate, loading }) {
   return (
     <>
       <button onClick={() => setConfirm(true)} disabled={loading === id}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white transition-all active:scale-95 disabled:opacity-50"
+        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-white whitespace-nowrap transition-all active:scale-95 disabled:opacity-50"
         style={{ backgroundColor: 'var(--color-primary)' }}>
         {loading === id ? <Loader2 size={12} className="animate-spin" /> : <ChevronRight size={12} />}
         {action.label}
