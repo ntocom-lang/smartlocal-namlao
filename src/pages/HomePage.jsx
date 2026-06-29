@@ -92,50 +92,51 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Service Band */}
-        <div className="rounded-2xl shadow-xl px-4 py-5 relative overflow-hidden"
-          style={{ background: 'linear-gradient(135deg, #0369a1 0%, #0ea5e9 50%, #7dd3fc 100%)' }}>
-          {/* decorative glows */}
-          <div className="absolute -top-6 -right-6 w-32 h-32 rounded-full pointer-events-none"
-            style={{ background: 'radial-gradient(circle, rgba(186,230,253,0.5) 0%, transparent 70%)' }} />
-          <div className="absolute -bottom-8 -left-4 w-36 h-36 rounded-full pointer-events-none"
-            style={{ background: 'radial-gradient(circle, rgba(14,165,233,0.35) 0%, transparent 70%)' }} />
-          <div className="absolute top-0 right-1/3 w-24 h-24 rounded-full pointer-events-none"
-            style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 70%)' }} />
-
-          <div className="relative z-10">
-            <p className="text-white text-[11px] font-bold mb-4 tracking-widest uppercase drop-shadow">✦ E-Service ✦</p>
-            <div className="flex gap-4 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-              {docTypes.map(({ value, label, emoji }) => (
-                <Link key={value} to={`/doc-request?type=${value}`}
-                  className="flex flex-col items-center gap-2 shrink-0 active:scale-95 transition-transform">
-                  <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-lg"
-                    style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.08) 100%)', border: '1px solid rgba(255,255,255,0.2)', backdropFilter: 'blur(4px)' }}>
-                    {emoji}
-                  </div>
-                  <p className="text-white text-[10px] font-semibold text-center leading-tight w-16">{label}</p>
-                </Link>
-              ))}
+        {/* E-Service + Marquee + Complaint — ชิดกัน */}
+        <div className="flex flex-col gap-1">
+          {/* Service Band */}
+          <div className="rounded-2xl shadow-xl px-4 py-5 relative overflow-hidden"
+            style={{ background: 'linear-gradient(135deg, #0369a1 0%, #0ea5e9 50%, #7dd3fc 100%)' }}>
+            <div className="absolute -top-6 -right-6 w-32 h-32 rounded-full pointer-events-none"
+              style={{ background: 'radial-gradient(circle, rgba(186,230,253,0.5) 0%, transparent 70%)' }} />
+            <div className="absolute -bottom-8 -left-4 w-36 h-36 rounded-full pointer-events-none"
+              style={{ background: 'radial-gradient(circle, rgba(14,165,233,0.35) 0%, transparent 70%)' }} />
+            <div className="absolute top-0 right-1/3 w-24 h-24 rounded-full pointer-events-none"
+              style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 70%)' }} />
+            <div className="relative z-10">
+              <p className="text-white text-[11px] font-bold mb-4 tracking-widest uppercase drop-shadow">✦ E-Service ✦</p>
+              <div className="flex gap-4 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+                {docTypes.map(({ value, label, emoji }) => (
+                  <Link key={value} to={`/doc-request?type=${value}`}
+                    className="flex flex-col items-center gap-2 shrink-0 active:scale-95 transition-transform">
+                    <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-lg"
+                      style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.08) 100%)', border: '1px solid rgba(255,255,255,0.2)', backdropFilter: 'blur(4px)' }}>
+                      {emoji}
+                    </div>
+                    <p className="text-white text-[10px] font-semibold text-center leading-tight w-16">{label}</p>
+                  </Link>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Marquee Band */}
-        <div className="flex items-center overflow-hidden rounded-xl shadow-md"
-          style={{ background: 'linear-gradient(90deg, #0ea5e9 0%, #38bdf8 40%, #fbbf24 80%, #f59e0b 100%)', height: 36 }}>
-          <div className="shrink-0 flex items-center justify-center px-3 h-full"
-            style={{ background: 'rgba(255,255,255,0.25)' }}>
-            <Megaphone size={16} className="text-white" />
+          {/* Marquee Band */}
+          <div className="flex items-center overflow-hidden rounded-xl shadow-md"
+            style={{ background: 'linear-gradient(90deg, #0ea5e9 0%, #38bdf8 40%, #fbbf24 80%, #f59e0b 100%)', height: 36 }}>
+            <div className="shrink-0 flex items-center justify-center px-3 h-full"
+              style={{ background: 'rgba(255,255,255,0.25)' }}>
+              <Megaphone size={16} className="text-white" />
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <span className="whitespace-nowrap text-white text-xs font-medium inline-block"
+                style={{ animation: 'marquee 40s linear infinite' }}>
+                {MARQUEE_TEXT}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{MARQUEE_TEXT}
+              </span>
+            </div>
           </div>
-          <div className="flex-1 overflow-hidden">
-            <span className="whitespace-nowrap text-white text-xs font-medium inline-block"
-              style={{ animation: 'marquee 40s linear infinite' }}>
-              {MARQUEE_TEXT}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{MARQUEE_TEXT}
-            </span>
-          </div>
-        </div>
 
-        <ComplaintBand />
+          <ComplaintBand />
+        </div>
         <HeroBanner />
       </div>{/* end content section */}
 
