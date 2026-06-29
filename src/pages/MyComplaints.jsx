@@ -185,7 +185,7 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange }) {
       .select('*')
       .eq('complaint_id', c.id)
       .order('created_at', { ascending: true })
-      .then(({ data }) => setTimeline(data ?? []))
+      .then(({ data, error }) => { if (!error) setTimeline(data ?? []) })
   }, [c?.id])
 
   function handlePhotoPick(e) {
