@@ -280,6 +280,24 @@ export default function MorePage() {
   const { tenant } = useTenant()
   const { unreadCount } = useNotifications()
   const { session, role, displayName } = useAuth()
+  const [hasClosedUnrated, setHasClosedUnrated] = useState(false)
+
+  useEffect(() => {
+    if (!session?.user?.id || !tenant?.id) return
+    supabase
+      .from('complaints')
+      .select('id')
+      .eq('municipality_id', tenant.id)
+      .eq('user_id', session.user.id)
+      .eq('status', 'closed')
+      .is('rating', null)
+      .limit(1)
+      .then(({ data }) => {
+        if (!data?.length) return
+        const unrated = data.find(c => !localStorage.getItem(`sat_done_${c.id}`))
+        setHasClosedUnrated(!!unrated)
+      })
+  }, [session?.user?.id, tenant?.id])
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -532,14 +550,16 @@ export default function MorePage() {
 
         {/* ─── บริการ ─── */}
         <Section title="บริการอื่นๆ">
-          <MenuRow
-            icon={Star}
-            iconBg="bg-yellow-50"
-            iconColor="text-yellow-500"
-            label="ประเมินความพึงพอใจ"
-            desc={`ให้คะแนนการให้บริการของ${tenant?.name || 'หน่วยงาน'}`}
-            href="/satisfaction"
-          />
+          {hasClosedUnrated && (
+            <MenuRow
+              icon={Star}
+              iconBg="bg-yellow-50"
+              iconColor="text-yellow-500"
+              label="ประเมินความพึงพอใจ"
+              desc="มีคำร้องที่ปิดแล้ว รอการประเมิน"
+              href="/my-complaints"
+            />
+          )}
           <MenuRow
             icon={Bell}
             iconBg="bg-purple-50"
