@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
+import { useAuth } from '../../contexts/AuthContext'
 import { notifyTelegram } from '../../lib/notifyTelegram'
 import { compressImage } from '../../lib/imageUtils'
 import { logAction } from '../../lib/auditLog'
@@ -513,8 +514,11 @@ function ReporterCard({ c }) {
   )
 }
 
-function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, onPriority, currentUserRole, onDelete }) {
+function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, onPriority, currentUserRole, currentUserId, onDelete }) {
   const { tenant } = useTenant()
+  const isAdminRole = ['admin', 'superadmin', 'officer'].includes(currentUserRole)
+  const isTechAssigned = currentUserRole === 'technician' && c.assigned_to === currentUserId
+  const canAct = isAdminRole || isTechAssigned
   const [assigning, setAssigning] = useState(false)
   const [showCloseJob, setShowCloseJob] = useState(false)
   const [pendingPhotos, setPendingPhotos] = useState([])
@@ -727,7 +731,7 @@ ${photoSectionHtml}
                       ? <p className="text-sm font-semibold text-gray-800">{technicians.find((t) => t.id === c.assigned_to)?.full_name ?? 'ผู้รับผิดชอบ'}</p>
                       : <p className="text-sm text-gray-400">ยังไม่ได้มอบหมาย</p>}
                   </div>
-                  {['admin', 'superadmin', 'officer'].includes(currentUserRole) ? (
+                  {isAdminRole ? (
                     <>
                       <select value={c.assigned_to ?? ''}
                         onChange={(e) => setPendingAssign(e.target.value || null)}
@@ -906,7 +910,7 @@ ${photoSectionHtml}
 
         {/* Footer actions */}
         <div className="px-5 py-4 border-t border-gray-100 shrink-0 bg-gray-50">
-          {!['admin', 'superadmin', 'officer'].includes(currentUserRole) ? (
+          {!canAct ? (
             <div className="flex gap-2">
               <button onClick={handlePrintComplaint}
                 className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
@@ -1120,6 +1124,8 @@ ${photoSectionHtml}
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function ComplaintsManager({ tenant, currentUserRole, openComplaintId }) {
+  const { session } = useAuth()
+  const currentUserId = session?.user?.id
   const [complaints, setComplaints] = useState([])
   const [loading, setLoading]       = useState(true)
   const [updating, setUpdating]     = useState(null)
@@ -1569,7 +1575,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                         </span>
                       )}
                     </div>
-                    {NEXT_ACTION[c.status] && ['admin', 'superadmin', 'officer'].includes(currentUserRole) && (
+                    {NEXT_ACTION[c.status] && (['admin', 'superadmin', 'officer'].includes(currentUserRole) || (currentUserRole === 'technician' && c.assigned_to === currentUserId)) && (
                       <div onClick={(e) => e.stopPropagation()}>
                         <ActionButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} />
                       </div>
@@ -1735,6 +1741,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
           onAssign={assignTechnician}
           onPriority={updatePriority}
           currentUserRole={currentUserRole ?? 'staff'}
+          currentUserId={currentUserId}
           onDelete={handleDeleteComplaint}
         />
       )}
