@@ -69,6 +69,7 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
     (photoFiles ?? []).map(f => ({ file: f, status: 'pending' }))
   )
   const [uploading, setUploading] = useState(false)
+  const [dbSaved, setDbSaved] = useState(null) // null=pending, true=ok, false=error
   const didMount = useRef(false)
 
   const hasItems  = items.length > 0
@@ -76,6 +77,7 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
   const hasFailed = items.some(i => i.status === 'error')
   const okCount   = items.filter(i => i.status === 'ok').length
   const failCount = items.filter(i => i.status === 'error').length
+  const busy      = uploading || (hasItems && !hasFailed && dbSaved === null)
 
   const uploadAll = useCallback(async () => {
     if (!complaintId) return
@@ -86,6 +88,7 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
     })
     if (toUpload.length === 0) return
     setUploading(true)
+    setDbSaved(null)
 
     const collected = []
     await Promise.all(
@@ -108,13 +111,26 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
         }
       })
     )
+    setUploading(false)
 
     if (collected.length > 0) {
-      const { data: row } = await supabase.from('complaints').select('attachments').eq('id', complaintId).single()
-      const merged = [...new Set([...(row?.attachments ?? []), ...collected])]
-      await supabase.from('complaints').update({ attachments: merged }).eq('id', complaintId)
+      let saved = false
+      for (let attempt = 0; attempt < 3 && !saved; attempt++) {
+        try {
+          const { data: row } = await supabase.from('complaints').select('attachments').eq('id', complaintId).single()
+          const merged = [...new Set([...(row?.attachments ?? []), ...collected])]
+          const { error } = await supabase.from('complaints').update({ attachments: merged }).eq('id', complaintId)
+          if (error) throw error
+          saved = true
+        } catch (err) {
+          console.error('[db-save] attempt', attempt + 1, err?.message ?? err)
+          if (attempt < 2) await new Promise(r => setTimeout(r, 1500))
+        }
+      }
+      setDbSaved(saved)
+    } else {
+      setDbSaved(true)
     }
-    setUploading(false)
   }, [complaintId])
 
   useEffect(() => {
@@ -151,8 +167,10 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
               </div>
             ))}
           </div>
-          {uploading && <p className="text-xs text-gray-400">กำลังอัปโหลด...</p>}
-          {allOk && <p className="text-xs text-green-600 font-semibold">แนบรูปภาพเรียบร้อย {okCount} รูป</p>}
+          {uploading && <p className="text-xs text-gray-400">กำลังอัปโหลดรูปภาพ...</p>}
+          {!uploading && allOk && dbSaved === null && <p className="text-xs text-gray-400">กำลังบันทึก...</p>}
+          {!uploading && allOk && dbSaved === true && <p className="text-xs text-green-600 font-semibold">แนบรูปภาพเรียบร้อย {okCount} รูป</p>}
+          {!uploading && allOk && dbSaved === false && <p className="text-xs text-red-500 font-semibold">บันทึกรูปไม่สำเร็จ กรุณาลองใหม่</p>}
           {hasFailed && !uploading && (
             <button onClick={uploadAll}
               className="mt-2 w-full py-2 rounded-xl text-xs font-semibold text-white"
@@ -168,14 +186,14 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
       </p>
       <div className="w-full max-w-xs flex flex-col gap-3">
         {isLoggedIn && (
-          <button onClick={onMyComplaints}
-            className="w-full py-3.5 rounded-2xl font-semibold text-white shadow-lg active:scale-95 transition-transform"
+          <button onClick={onMyComplaints} disabled={busy}
+            className="w-full py-3.5 rounded-2xl font-semibold text-white shadow-lg active:scale-95 transition-all disabled:opacity-50"
             style={{ backgroundColor: 'var(--color-primary)' }}>
-            ติดตามสถานะคำร้อง
+            {busy ? <Loader2 size={18} className="animate-spin mx-auto" /> : 'ติดตามสถานะคำร้อง'}
           </button>
         )}
-        <button onClick={onBack}
-          className="w-full py-3 rounded-2xl font-medium text-gray-600 bg-gray-100 active:scale-95 transition-transform">
+        <button onClick={onBack} disabled={busy}
+          className="w-full py-3 rounded-2xl font-medium text-gray-600 bg-gray-100 active:scale-95 transition-all disabled:opacity-50">
           กลับหน้าหลัก
         </button>
       </div>
