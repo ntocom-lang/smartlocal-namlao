@@ -906,10 +906,16 @@ ${photoSectionHtml}
 
         {/* Footer actions */}
         <div className="px-5 py-4 border-t border-gray-100 shrink-0 bg-gray-50">
-          {currentUserRole === 'viewer' ? (
-            <button onClick={onClose} className="px-4 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors">
-              ปิดหน้าต่าง
-            </button>
+          {!['admin', 'superadmin', 'officer'].includes(currentUserRole) ? (
+            <div className="flex gap-2">
+              <button onClick={handlePrintComplaint}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
+                <Printer size={13} /> พิมพ์
+              </button>
+              <button onClick={onClose} className="ml-auto px-4 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors">
+                ปิดหน้าต่าง
+              </button>
+            </div>
           ) : c.status === 'in_progress' && !showCloseJob ? (
             <div className="flex gap-2 flex-wrap">
               <button onClick={() => setShowCloseJob(true)}
