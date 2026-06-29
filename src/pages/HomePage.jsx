@@ -64,21 +64,7 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Marquee Band */}
       <style>{marqueeStyle}</style>
-      <div className="flex items-center overflow-hidden rounded-xl shadow-md mx-4 md:mx-0"
-        style={{ background: 'linear-gradient(90deg, #1e40af 0%, #2563eb 100%)', height: 36 }}>
-        <div className="shrink-0 flex items-center justify-center px-3 h-full"
-          style={{ background: '#f59e0b' }}>
-          <Megaphone size={16} className="text-white" />
-        </div>
-        <div className="flex-1 overflow-hidden relative">
-          <span className="whitespace-nowrap text-white text-xs font-medium inline-block"
-            style={{ animation: 'marquee 22s linear infinite' }}>
-            {MARQUEE_TEXT}
-          </span>
-        </div>
-      </div>
 
       {/* ส่วนที่เหลือ — ปกติ */}
       <div className="flex flex-col gap-2 md:gap-3 px-4 md:px-0">
@@ -131,6 +117,21 @@ export default function HomePage() {
                 </Link>
               ))}
             </div>
+          </div>
+        </div>
+
+        {/* Marquee Band */}
+        <div className="flex items-center overflow-hidden rounded-xl shadow-md"
+          style={{ background: 'linear-gradient(90deg, #1e40af 0%, #2563eb 100%)', height: 36 }}>
+          <div className="shrink-0 flex items-center justify-center px-3 h-full"
+            style={{ background: '#f59e0b' }}>
+            <Megaphone size={16} className="text-white" />
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <span className="whitespace-nowrap text-white text-xs font-medium inline-block"
+              style={{ animation: 'marquee 22s linear infinite' }}>
+              {MARQUEE_TEXT}
+            </span>
           </div>
         </div>
 
