@@ -4530,7 +4530,6 @@ export default function AdminDashboard() {
 
   const fetchComplaints = useCallback(async () => {
     if (!tenant?.id || currentUserRole === null) return
-    if (currentUserRole === 'officer') { setComplaints([]); setLoading(false); return }
     setLoading(true)
     const { data, error } = await supabase
       .from('complaints')
@@ -4711,7 +4710,7 @@ export default function AdminDashboard() {
               group: null,
               items: [
                 { key: 'dashboard',   label: 'ภาพรวม',             Icon: BarChart2, color: '#3b82f6', show: true },
-                { key: 'goto-staff',  label: 'หน้างานเจ้าหน้าที่', Icon: Users,     color: '#0891b2', show: ['admin','superadmin','officer'].includes(currentUserRole), isLink: true, navTo: '/staff' },
+                { key: 'goto-staff',  label: 'หน้างานเจ้าหน้าที่', Icon: Users,     color: '#0891b2', show: currentUserRole === 'admin' || currentUserRole === 'superadmin', isLink: true, navTo: '/staff' },
                 { key: 'home',        label: 'กลับเว็บหลัก',       Icon: Home,      color: '#64748b', show: true, isLink: true },
               ],
             },
@@ -5299,22 +5298,6 @@ export default function AdminDashboard() {
       ) : (
         <>
 
-      {currentUserRole === 'officer' ? (
-        <div className="flex flex-col items-center justify-center py-24 text-center gap-4">
-          <div className="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center">
-            <ClipboardList size={28} className="text-blue-400" />
-          </div>
-          <div>
-            <p className="font-bold text-gray-700 text-base">คำร้องที่ได้รับมอบหมาย</p>
-            <p className="text-sm text-gray-400 mt-1">ดูคำร้องที่ได้รับมอบหมายได้ที่หน้างานเจ้าหน้าที่</p>
-          </div>
-          <button onClick={() => navigate('/staff', { state: { module: 'complaints' } })}
-            className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white"
-            style={{ backgroundColor: 'var(--color-primary)' }}>
-            ไปหน้างานเจ้าหน้าที่
-          </button>
-        </div>
-      ) : <>
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -5650,8 +5633,6 @@ export default function AdminDashboard() {
           </>
         )}
       </div>
-      </>
-      }
       </>
       )}
       </div>
