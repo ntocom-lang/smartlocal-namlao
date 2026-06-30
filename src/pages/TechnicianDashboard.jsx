@@ -344,6 +344,23 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenantName, te
             </div>
           </div>
 
+          {/* รูปจากผู้แจ้ง */}
+          {(c.attachments ?? []).length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                รูปภาพจากผู้แจ้ง ({c.attachments.length})
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {c.attachments.map((url, i) => (
+                  <a key={i} href={url} target="_blank" rel="noreferrer"
+                     className="aspect-square rounded-xl overflow-hidden border border-blue-200 bg-blue-50">
+                    <img src={url} alt={`แนบ ${i + 1}`} className="w-full h-full object-cover" />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* สถานที่ + โทร */}
           {(c.location_name || c.village || c.phone || c.latitude) && (
             <div className="space-y-2">
