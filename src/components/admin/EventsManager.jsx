@@ -131,6 +131,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
   const [showForm, setShowForm] = useState(false)
   const [editingEvent, setEditingEvent] = useState(null)
   const [deleting, setDeleting] = useState(null)
+  const [confirmDelId, setConfirmDelId] = useState(null)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
   const emptyForm = { title: '', description: '', event_date: '', event_time: '', end_time: '', end_date: '', location: '', category: 'ประชุม', customCategory: '', is_all_day: false, audience: 'public', attachment_url: '', attachment_file: null }
@@ -775,14 +776,29 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
                               <td className="px-3 py-2 text-center" onClick={e => e.stopPropagation()}>
                                 {isOwner ? (
                                   <div className="flex items-center justify-center gap-1.5">
-                                    <button onClick={() => openEdit(ev)}
-                                      className="px-2.5 py-1 rounded border border-blue-400 text-blue-600 text-[11px] font-bold hover:bg-blue-600 hover:text-white transition-colors">
-                                      แก้ไข
-                                    </button>
-                                    <button onClick={() => handleDelete(ev.id)} disabled={deleting === ev.id}
-                                      className="px-2.5 py-1 rounded border border-red-300 text-red-500 text-[11px] font-bold hover:bg-red-500 hover:text-white transition-colors disabled:opacity-40">
-                                      ลบ
-                                    </button>
+                                    {confirmDelId === ev.id ? (
+                                      <>
+                                        <button onClick={() => { handleDelete(ev.id); setConfirmDelId(null) }} disabled={deleting === ev.id}
+                                          className="px-2.5 py-1 rounded bg-red-500 text-white text-[11px] font-bold disabled:opacity-40">
+                                          {deleting === ev.id ? '...' : 'ยืนยัน'}
+                                        </button>
+                                        <button onClick={() => setConfirmDelId(null)}
+                                          className="px-2.5 py-1 rounded bg-gray-100 text-gray-600 text-[11px] font-semibold hover:bg-gray-200">
+                                          ยกเลิก
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <button onClick={() => openEdit(ev)}
+                                          className="px-2.5 py-1 rounded border border-blue-400 text-blue-600 text-[11px] font-bold hover:bg-blue-600 hover:text-white transition-colors">
+                                          แก้ไข
+                                        </button>
+                                        <button onClick={() => setConfirmDelId(ev.id)}
+                                          className="px-2.5 py-1 rounded border border-red-300 text-red-500 text-[11px] font-bold hover:bg-red-500 hover:text-white transition-colors">
+                                          ลบ
+                                        </button>
+                                      </>
+                                    )}
                                   </div>
                                 ) : (
                                   <span className="text-[11px] text-gray-300">—</span>
