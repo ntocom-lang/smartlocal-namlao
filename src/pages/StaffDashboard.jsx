@@ -2044,9 +2044,14 @@ export default function StaffDashboard() {
   const allModuleKeys = MODULES.map(m => m.key)
   // keys ที่เคยอยู่ใน ModuleManager — ถ้า key ใหม่ยังไม่เคยถูก manage ให้ default เป็น enabled
   const managedKeys = ['inbox', 'docs', 'complaints', 'events', 'projects', 'docs-archive', 'map', 'report']
-  const enabledKeys = tenant?.enabled_modules
+  const baseEnabledKeys = tenant?.enabled_modules
     ? [...tenant.enabled_modules, ...allModuleKeys.filter(k => !managedKeys.includes(k))]
     : allModuleKeys
+  // council ต้องเห็นโมดูลหลักของตัวเองเสมอ ไม่ขึ้นกับ ModuleManager
+  const councilCoreModules = ['events', 'map', 'civil-report', 'report']
+  const enabledKeys = profile?.role === 'council'
+    ? Array.from(new Set([...baseEnabledKeys, ...councilCoreModules]))
+    : baseEnabledKeys
   const visibleGroups = MODULE_GROUPS
     .map(g => ({ ...g, items: g.items.filter(m => enabledKeys.includes(m.key)) }))
     .filter(g => g.items.length > 0)

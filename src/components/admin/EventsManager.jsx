@@ -43,11 +43,13 @@ const AUDIENCE_OPTIONS = [
 function EventCard({ ev, onEdit, onDelete, deleting }) {
   const [confirmDel, setConfirmDel] = useState(false)
   const color = EVENTS_CATEGORY_COLOR[ev.category] ?? '#6b7280'
-  const d = new Date(ev.event_date + 'T00:00:00')
+  const d = ev.event_date ? new Date(ev.event_date + 'T00:00:00') : null
   const hasEndDate = ev.end_date && ev.end_date !== ev.event_date
   const dEnd = hasEndDate ? new Date(ev.end_date + 'T00:00:00') : null
   const fmtDate = (dt) => dt.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric', weekday: 'short' })
-  const dateStr = hasEndDate
+  const dateStr = !d
+    ? 'ยังไม่ระบุวันที่'
+    : hasEndDate
     ? `${fmtDate(d)} – ${fmtDate(dEnd)}`
     : d.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' })
 
@@ -216,6 +218,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
 
   async function handleSave() {
     if (!form.title.trim()) { setFormError('กรุณากรอกชื่อกิจกรรม'); return }
+    if (!form.event_date) { setFormError('กรุณาระบุวันที่กิจกรรม'); return }
     setFormError('')
     setSaving(true)
     let attachmentUrl = form.attachment_url || null
@@ -324,8 +327,8 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
 
   const now = new Date()
   now.setHours(0, 0, 0, 0)
-  const upcoming = filteredEvents.filter((e) => new Date(e.event_date + 'T00:00:00') >= now)
-  const past = filteredEvents.filter((e) => new Date(e.event_date + 'T00:00:00') < now)
+  const upcoming = filteredEvents.filter((e) => e.event_date && new Date(e.event_date + 'T00:00:00') >= now)
+  const past = filteredEvents.filter((e) => !e.event_date || new Date(e.event_date + 'T00:00:00') < now)
   const currentList = activeTab === 'upcoming' ? upcoming : [...past].reverse()
   const totalItems = currentList.length
   const totalPages = pageSize === 'all' ? 1 : Math.ceil(totalItems / pageSize)
@@ -650,7 +653,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
                   className="flex-1 py-3 rounded-2xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50">
                   ยกเลิก
                 </button>
-                <button onClick={handleSave} disabled={saving || !form.title.trim()}
+                <button onClick={handleSave} disabled={saving || !form.title.trim() || !form.event_date}
                   className="flex-1 py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-50"
                   style={{ backgroundColor: 'var(--color-primary)' }}>
                   {saving ? 'กำลังบันทึก...' : 'บันทึก'}
@@ -730,8 +733,8 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
                     <tbody className="divide-y divide-gray-200">
                       {paginatedList.map((ev, i) => {
                         const color = EVENTS_CATEGORY_COLOR[ev.category] ?? '#6b7280'
-                        const d = new Date(ev.event_date + 'T00:00:00')
-                        const dateStr = d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
+                        const d = ev.event_date ? new Date(ev.event_date + 'T00:00:00') : null
+                        const dateStr = d ? d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : 'ยังไม่ระบุ'
                         const timeStr = ev.event_time ? ev.event_time.slice(0, 5) + (ev.end_time ? `–${ev.end_time.slice(0, 5)}` : '') + ' น.' : '—'
                         const aud = AUDIENCE_OPTIONS.find(a => a.value === ev.audience)
                         const isOwner = ['admin', 'superadmin'].includes(currentUserRole) || ev.created_by === currentUserId
