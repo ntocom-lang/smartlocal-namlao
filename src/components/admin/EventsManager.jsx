@@ -284,7 +284,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
   }
 
   let filteredEvents = events
-  if (filterMonth !== 'all') filteredEvents = filteredEvents.filter(e => e.event_date.startsWith(filterMonth))
+  if (filterMonth !== 'all') filteredEvents = filteredEvents.filter(e => e.event_date?.startsWith(filterMonth))
   if (filterCategory !== 'all') filteredEvents = filteredEvents.filter(e => e.category === filterCategory)
   if (filterAudience !== 'all') filteredEvents = filteredEvents.filter(e => e.audience === filterAudience)
   if (searchQuery.trim()) {
@@ -304,13 +304,14 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
     .filter(e => filterAudience === 'all' || e.audience === filterAudience)
     .filter(matchSearch)
   const monthCounts = eventsForMonthCount.reduce((acc, e) => {
-    const ym = e.event_date.slice(0, 7)
+    const ym = e.event_date?.slice(0, 7)
+    if (!ym) return acc
     acc[ym] = (acc[ym] || 0) + 1
     return acc
   }, {})
 
   const eventsForCatCount = events
-    .filter(e => filterMonth === 'all' || e.event_date.startsWith(filterMonth))
+    .filter(e => filterMonth === 'all' || e.event_date?.startsWith(filterMonth))
     .filter(e => filterAudience === 'all' || e.audience === filterAudience)
     .filter(matchSearch)
   const categoryCounts = Object.fromEntries(
@@ -318,7 +319,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
   )
 
   const eventsForAudienceCount = events
-    .filter(e => filterMonth === 'all' || e.event_date.startsWith(filterMonth))
+    .filter(e => filterMonth === 'all' || e.event_date?.startsWith(filterMonth))
     .filter(e => filterCategory === 'all' || e.category === filterCategory)
     .filter(matchSearch)
   const audienceCounts = Object.fromEntries(
@@ -401,7 +402,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
           ]
           const monthOpts = [
             { value: 'all', label: 'ทั้งหมด', count: eventsForMonthCount.length },
-            ...Array.from(new Set(events.map(e => e.event_date.slice(0, 7)))).sort().reverse().map(ym => {
+            ...Array.from(new Set(events.filter(e => e.event_date).map(e => e.event_date.slice(0, 7)))).sort().reverse().map(ym => {
               const [y, m] = ym.split('-')
               const label = new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })
               return { value: ym, label, count: monthCounts[ym] ?? 0 }
@@ -482,7 +483,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
             <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)}
               className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200">
               <option value="all">ทุกเดือน ({eventsForMonthCount.length})</option>
-              {Array.from(new Set(events.map(e => e.event_date.slice(0, 7)))).sort().reverse().map(ym => {
+              {Array.from(new Set(events.filter(e => e.event_date).map(e => e.event_date.slice(0, 7)))).sort().reverse().map(ym => {
                 const [y, m] = ym.split('-')
                 const label = new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })
                 return <option key={ym} value={ym}>{label} ({monthCounts[ym] ?? 0})</option>
