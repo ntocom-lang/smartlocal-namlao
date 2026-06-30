@@ -215,8 +215,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
   }
 
   async function handleSave() {
-    if (!form.title.trim() || !form.event_date) { setFormError('กรุณากรอกชื่อกิจกรรมและวันที่'); return }
-    if (!form.event_time) { setFormError('กรุณาระบุเวลาเริ่มต้น'); return }
+    if (!form.title.trim()) { setFormError('กรุณากรอกชื่อกิจกรรม'); return }
     setFormError('')
     setSaving(true)
     let attachmentUrl = form.attachment_url || null
@@ -550,8 +549,8 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex-1">
-                    <label className="text-xs text-gray-500 font-semibold mb-1 block">เริ่ม *</label>
-                    <TimeSelect value={form.event_time} onChange={v => setForm(p => ({ ...p, event_time: v }))} required />
+                    <label className="text-xs text-gray-500 font-semibold mb-1 block">เริ่ม</label>
+                    <TimeSelect value={form.event_time} onChange={v => setForm(p => ({ ...p, event_time: v }))} />
                   </div>
                   <span className="text-gray-400 text-sm mt-5">–</span>
                   <div className="flex-1">
@@ -648,7 +647,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
                   className="flex-1 py-3 rounded-2xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50">
                   ยกเลิก
                 </button>
-                <button onClick={handleSave} disabled={saving || !form.title.trim() || !form.event_date || !form.event_time}
+                <button onClick={handleSave} disabled={saving || !form.title.trim()}
                   className="flex-1 py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-50"
                   style={{ backgroundColor: 'var(--color-primary)' }}>
                   {saving ? 'กำลังบันทึก...' : 'บันทึก'}
