@@ -122,7 +122,7 @@ function EventCard({ ev, onEdit, onDelete, deleting }) {
 }
 
 export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
-  const canManage = ['admin', 'superadmin', 'staff'].includes(currentUserRole)
+  const canManage = ['admin', 'superadmin', 'staff', 'officer'].includes(currentUserRole)
   const [currentUserId, setCurrentUserId] = useState(null)
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
