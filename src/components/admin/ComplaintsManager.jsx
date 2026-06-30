@@ -531,6 +531,31 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
   const [savingPin, setSavingPin] = useState(false)
   const [pendingAssign, setPendingAssign] = useState(null)
   const [pendingPriority, setPendingPriority] = useState(null)
+  const [extraWorkPhotos, setExtraWorkPhotos] = useState([])
+  const [wpUploading, setWpUploading] = useState(false)
+
+  async function handleAddWorkPhotos(files) {
+    if (!files.length || wpUploading) return
+    setWpUploading(true)
+    const urls = []
+    for (const f of files) {
+      const ext = f.name.split('.').pop()
+      const path = `${c.id}/work_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
+      const compressed = await compressImage(f, 1200)
+      const { error } = await supabase.storage.from('complaint-attachments').upload(path, compressed, { upsert: false })
+      if (!error) {
+        const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
+        urls.push(data.publicUrl)
+      }
+    }
+    if (urls.length > 0) {
+      const allPhotos = [...(c.work_photos ?? []), ...extraWorkPhotos, ...urls]
+      await supabase.from('complaints').update({ work_photos: allPhotos }).eq('id', c.id)
+      setExtraWorkPhotos(prev => [...prev, ...urls])
+      onUpdate(c.id, c.status, allPhotos)
+    }
+    setWpUploading(false)
+  }
 
   async function handleSavePin({ lat, lng }) {
     setSavingPin(true)
@@ -889,21 +914,33 @@ ${photoSectionHtml}
             </div>
           )}
 
-          {(c.work_photos ?? []).length > 0 && (
+          {((c.work_photos ?? []).length > 0 || extraWorkPhotos.length > 0 || isAdminRole) && (
             <div className="space-y-2 pb-4">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Camera size={12} /> หลังดำเนินการ ({c.work_photos.length})
+                <Camera size={12} /> หลังดำเนินการ ({(c.work_photos ?? []).length + extraWorkPhotos.length})
               </p>
-              <div className="grid grid-cols-3 gap-2">
-                {c.work_photos.map((url, i) => (
-                  <a key={i} href={url} target="_blank" rel="noreferrer"
-                    className="aspect-square rounded-xl overflow-hidden border border-green-200 bg-green-50 flex items-center justify-center">
-                    {/\.(jpg|jpeg|png|gif|webp)$/i.test(url)
-                      ? <img src={url} alt={`ผลงาน ${i + 1}`} className="w-full h-full object-cover" />
-                      : <FileText size={22} className="text-green-400" />}
-                  </a>
-                ))}
-              </div>
+              {[...(c.work_photos ?? []), ...extraWorkPhotos].length > 0 && (
+                <div className="grid grid-cols-3 gap-2">
+                  {[...(c.work_photos ?? []), ...extraWorkPhotos].map((url, i) => (
+                    <a key={i} href={url} target="_blank" rel="noreferrer"
+                      className="aspect-square rounded-xl overflow-hidden border border-green-200 bg-green-50 flex items-center justify-center">
+                      {/\.(jpg|jpeg|png|gif|webp)$/i.test(url)
+                        ? <img src={url} alt={`ผลงาน ${i + 1}`} className="w-full h-full object-cover" />
+                        : <FileText size={22} className="text-green-400" />}
+                    </a>
+                  ))}
+                </div>
+              )}
+              {isAdminRole && (
+                <label className="relative flex items-center justify-center gap-1.5 py-2 rounded-xl border border-dashed border-green-300 text-green-600 text-xs font-medium cursor-pointer hover:bg-green-50 transition-colors">
+                  {wpUploading
+                    ? <><Loader2 size={12} className="animate-spin" /> กำลังอัปโหลด...</>
+                    : <><Camera size={12} /> เพิ่มรูปหลักฐาน</>}
+                  <input type="file" accept="image/*" multiple className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                    disabled={wpUploading}
+                    onChange={(e) => { handleAddWorkPhotos(Array.from(e.target.files)); e.target.value = '' }} />
+                </label>
+              )}
             </div>
           )}
         </div>
