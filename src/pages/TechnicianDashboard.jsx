@@ -21,7 +21,6 @@ const STATUS = {
 }
 
 const NEXT_ACTION = {
-  pending:     { label: 'รับงาน',      next: 'received' },
   received:    { label: 'เริ่มดำเนินการ', next: 'in_progress' },
   in_progress: { label: 'ปิดงาน',     next: 'completed' },
 }
@@ -504,6 +503,7 @@ export default function TechnicianDashboard() {
       .select('*')
       .eq('municipality_id', tenant.id)
       .eq('assigned_to', session.session.user.id)
+      .neq('status', 'pending')
       .neq('status', 'rejected')
       .order('created_at', { ascending: false })
     setComplaints(data ?? [])

@@ -1837,6 +1837,7 @@ function ComplaintsStaffModule({ tenant, staffId }) {
       .select('*, profiles(full_name, phone)')
       .eq('municipality_id', tenant.id)
       .eq('assigned_to', staffId)
+      .neq('status', 'pending')
       .order('created_at', { ascending: false })
     setComplaints(data ?? [])
     setLoading(false)
