@@ -520,15 +520,6 @@ export default function MyComplaints() {
         const list = data ?? []
         setComplaints(list)
         if (openId) setSelected(list.find((c) => c.id === openId) ?? null)
-        const closedUnrated = list.find(c =>
-          (c.status === 'closed' || c.status === 'completed') &&
-          c.rating == null &&
-          !localStorage.getItem(`sat_done_${c.id}`)
-        )
-        if (closedUnrated) {
-          setSatComplaintId(closedUnrated.id)
-          setShowSat(true)
-        }
       } catch {}
       finally { setLoading(false) }
     }
