@@ -1807,13 +1807,14 @@ const C_STATUS = {
   pending:     { label: 'รอดำเนินการ',    color: '#f59e0b', bg: '#fef3c7' },
   received:    { label: 'รับเรื่องแล้ว',  color: '#3b82f6', bg: '#dbeafe' },
   in_progress: { label: 'กำลังดำเนินการ', color: '#8b5cf6', bg: '#ede9fe' },
-  completed:   { label: 'เสร็จสิ้น',     color: '#10b981', bg: '#d1fae5' },
-  rejected:    { label: 'ปฏิเสธ',        color: '#ef4444', bg: '#fee2e2' },
+  done:        { label: 'รอปิดเรื่อง',    color: '#f97316', bg: '#fff7ed' },
+  completed:   { label: 'ปิดเรื่องแล้ว',  color: '#10b981', bg: '#d1fae5' },
+  closed:      { label: 'ปิดเรื่องแล้ว',  color: '#10b981', bg: '#d1fae5' },
+  rejected:    { label: 'ปฏิเสธ',         color: '#ef4444', bg: '#fee2e2' },
 }
 const C_NEXT = {
-  pending:     { label: 'รับเรื่อง',       next: 'received' },
   received:    { label: 'เริ่มดำเนินการ', next: 'in_progress' },
-  in_progress: { label: 'ปิดงาน',         next: 'completed' },
+  in_progress: { label: 'ปิดงาน',        next: 'done' },
 }
 const C_CAT = {
   road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าส่องสว่าง', trash: 'ขยะ/ความสะอาด',

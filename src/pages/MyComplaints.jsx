@@ -23,7 +23,7 @@ const STATUS = {
   // backward compat
   pending:     { label: 'คำร้องใหม่',      bg: '#fef3c7', text: '#92400e' },
   received:    { label: 'รับเรื่องแล้ว',   bg: '#e0f2fe', text: '#0369a1' },
-  completed:   { label: 'ดำเนินการแล้ว',  bg: '#dbeafe', text: '#1e40af' },
+  completed:   { label: 'ปิดเรื่องแล้ว',  bg: '#d1fae5', text: '#065f46' },
 }
 
 const STATUS_FLOW = ['new', 'received', 'in_progress', 'done', 'closed']
@@ -91,7 +91,7 @@ function StatusBadge({ status }) {
   )
 }
 
-const STATUS_COMPAT = { pending: 'new', completed: 'done' }
+const STATUS_COMPAT = { pending: 'new', done: 'done', completed: 'closed' }
 
 function StatusStepper({ status }) {
   const normalized = STATUS_COMPAT[status] ?? status

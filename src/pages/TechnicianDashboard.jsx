@@ -16,13 +16,15 @@ const STATUS = {
   pending:     { label: 'รอดำเนินการ',    bg: '#fef3c7', text: '#92400e' },
   received:    { label: 'รับเรื่องแล้ว',   bg: '#dbeafe', text: '#1e40af' },
   in_progress: { label: 'กำลังดำเนินการ', bg: '#ede9fe', text: '#5b21b6' },
-  completed:   { label: 'เสร็จสิ้น',      bg: '#d1fae5', text: '#065f46' },
+  done:        { label: 'รอปิดเรื่อง',    bg: '#fff7ed', text: '#9a3412' },
+  completed:   { label: 'ปิดเรื่องแล้ว',  bg: '#d1fae5', text: '#065f46' },
+  closed:      { label: 'ปิดเรื่องแล้ว',  bg: '#d1fae5', text: '#065f46' },
   rejected:    { label: 'ปฏิเสธ',         bg: '#fee2e2', text: '#991b1b' },
 }
 
 const NEXT_ACTION = {
   received:    { label: 'เริ่มดำเนินการ', next: 'in_progress' },
-  in_progress: { label: 'ปิดงาน',     next: 'completed' },
+  in_progress: { label: 'ปิดงาน',        next: 'done' },
 }
 
 const CATEGORY_LABEL = {
@@ -63,17 +65,18 @@ function markSeen(id) {
 
 function emitTechBadge(list) {
   const seen = getSeenIds()
-  const count = list.filter(c => c.status !== 'completed' && !seen.has(c.id)).length
+  const count = list.filter(c => c.status !== 'completed' && c.status !== 'closed' && !seen.has(c.id)).length
   localStorage.setItem('sl_tech_new', String(count))
   window.dispatchEvent(new CustomEvent('tech-badge-update', { detail: count }))
 }
 
-const STATUS_FLOW = ['pending', 'received', 'in_progress', 'completed']
+const STATUS_FLOW = ['pending', 'received', 'in_progress', 'done', 'completed']
 const STATUS_FLOW_LABEL = {
   pending:     { label: 'รอดำเนินการ',    desc: 'คำร้องของคุณถูกส่งเข้าระบบแล้ว' },
   received:    { label: 'รับเรื่องแล้ว',   desc: 'เจ้าหน้าที่รับทราบและตรวจสอบ' },
   in_progress: { label: 'กำลังดำเนินการ', desc: 'อยู่ระหว่างดำเนินการแก้ไข' },
-  completed:   { label: 'เสร็จสิ้น',      desc: 'ดำเนินการเสร็จสิ้นเรียบร้อย' },
+  done:        { label: 'รอปิดเรื่อง',    desc: 'ดำเนินการเสร็จแล้ว รอผู้บริหารปิดเรื่อง' },
+  completed:   { label: 'ปิดเรื่องแล้ว',  desc: 'ผู้บริหารปิดเรื่องและแจ้งประชาชนแล้ว' },
 }
 
 function StatusStepper({ status }) {

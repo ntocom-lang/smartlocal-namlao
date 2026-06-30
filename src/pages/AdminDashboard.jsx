@@ -34,22 +34,24 @@ const STATUS = {
   pending:     { label: 'รอดำเนินการ',    color: '#f59e0b', bg: '#fef3c7', text: '#92400e' },
   received:    { label: 'รับเรื่องแล้ว',   color: '#3b82f6', bg: '#dbeafe', text: '#1e40af' },
   in_progress: { label: 'กำลังดำเนินการ', color: '#8b5cf6', bg: '#ede9fe', text: '#5b21b6' },
-  completed:   { label: 'เสร็จสิ้น',      color: '#10b981', bg: '#d1fae5', text: '#065f46' },
+  done:        { label: 'รอปิดเรื่อง',    color: '#f97316', bg: '#fff7ed', text: '#9a3412' },
+  completed:   { label: 'ปิดเรื่องแล้ว',  color: '#10b981', bg: '#d1fae5', text: '#065f46' },
+  closed:      { label: 'ปิดเรื่องแล้ว',  color: '#10b981', bg: '#d1fae5', text: '#065f46' },
   rejected:    { label: 'ปฏิเสธ',         color: '#ef4444', bg: '#fee2e2', text: '#991b1b' },
 }
 
-const STATUS_FLOW = ['pending', 'received', 'in_progress', 'completed']
+const STATUS_FLOW = ['pending', 'received', 'in_progress', 'done', 'completed']
 const STATUS_FLOW_LABEL = {
   pending:     { label: 'รอดำเนินการ',    desc: 'ประชาชนส่งคำร้องเข้าระบบ' },
   received:    { label: 'รับเรื่องแล้ว',   desc: 'เจ้าหน้าที่รับเรื่องและตรวจสอบ' },
   in_progress: { label: 'กำลังดำเนินการ', desc: 'อยู่ระหว่างดำเนินการแก้ไข' },
-  completed:   { label: 'เสร็จสิ้น',      desc: 'ดำเนินการเสร็จสิ้นเรียบร้อย' },
+  done:        { label: 'รอปิดเรื่อง',    desc: 'เจ้าหน้าที่ดำเนินการเสร็จ รอ admin ปิดเรื่อง' },
+  completed:   { label: 'ปิดเรื่องแล้ว',  desc: 'ปิดเรื่องและแจ้งผลประชาชนแล้ว' },
 }
 
 const NEXT_ACTION = {
-  pending:     { label: 'รับเรื่อง',       next: 'received' },
-  received:    { label: 'เริ่มดำเนินการ', next: 'in_progress' },
-  in_progress: { label: 'ปิดงาน',         next: 'completed' },
+  pending:     { label: 'รับเรื่อง',  next: 'received' },
+  done:        { label: 'ปิดเรื่อง', next: 'completed' },
 }
 
 const CATEGORY_LABEL = {
@@ -114,7 +116,8 @@ function StatusStepper({ status, note }) {
     )
   }
 
-  const currentIdx = STATUS_FLOW.indexOf(status)
+  const normalizedStatus = status === 'closed' ? 'completed' : (status === 'new' ? 'pending' : status)
+  const currentIdx = STATUS_FLOW.indexOf(normalizedStatus)
 
   return (
     <div className="space-y-0">
@@ -650,25 +653,7 @@ ${photoSectionHtml}
             <button onClick={onClose} className="px-4 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors">
               ปิดหน้าต่าง
             </button>
-          ) : c.status === 'in_progress' && !showCloseJob ? (
-            <div className="flex gap-2 flex-wrap">
-              <button onClick={() => setShowCloseJob(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white transition-all active:scale-95"
-                style={{ backgroundColor: 'var(--color-primary)' }}>
-                <CheckCircle2 size={12} /> ปิดงาน
-              </button>
-              <RejectButton status={c.status} id={c.id} onUpdate={(id, next, wp = [], note = null) => { onUpdate(id, next, wp, note); onClose() }} loading={updating} />
-              {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
-                <button onClick={handleDelete} disabled={deleting}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 transition-colors disabled:opacity-50">
-                  {deleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} ลบคำร้อง
-                </button>
-              )}
-              <button onClick={onClose} className="ml-auto px-4 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors">
-                ปิดหน้าต่าง
-              </button>
-            </div>
-          ) : c.status === 'in_progress' && showCloseJob ? (
+          ) : false && showCloseJob ? (
             <div className="space-y-3 w-full">
               <p className="text-xs font-semibold text-gray-500 flex items-center gap-1.5">
                 <Camera size={12} /> แนบรูปหลักฐานการทำงาน (ไม่บังคับ)
@@ -5013,8 +4998,8 @@ export default function AdminDashboard() {
             {[
               { label: 'คำร้องทั้งหมด', value: complaints.length,                                              color: '#1a3a5c', bg: '#dce8f5', Icon: ClipboardList },
               { label: 'รอดำเนินการ',    value: complaints.filter(c => c.status === 'pending').length,          color: '#f59e0b', bg: '#fef3c7', Icon: Clock },
-              { label: 'กำลังดำเนินการ', value: complaints.filter(c => c.status === 'received' || c.status === 'in_progress').length, color: '#8b5cf6', bg: '#ede9fe', Icon: RefreshCw },
-              { label: 'เสร็จสิ้น',      value: complaints.filter(c => c.status === 'completed').length,        color: '#10b981', bg: '#d1fae5', Icon: CheckCircle2 },
+              { label: 'กำลังดำเนินการ', value: complaints.filter(c => ['received', 'in_progress', 'done'].includes(c.status)).length, color: '#8b5cf6', bg: '#ede9fe', Icon: RefreshCw },
+              { label: 'ปิดเรื่องแล้ว',  value: complaints.filter(c => c.status === 'completed' || c.status === 'closed').length, color: '#10b981', bg: '#d1fae5', Icon: CheckCircle2 },
             ].map(({ label, value, color, bg, Icon }) => (
               <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: bg }}>
@@ -5335,8 +5320,8 @@ export default function AdminDashboard() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard label="ทั้งหมด"        value={complaints.length}      icon={ClipboardList} color="#64748b" />
         <StatCard label="รอดำเนินการ"    value={counts.pending ?? 0}    icon={Clock}         color="#f59e0b" />
-        <StatCard label="กำลังดำเนินการ" value={counts.in_progress ?? 0} icon={AlertCircle}  color="#8b5cf6" />
-        <StatCard label="เสร็จสิ้น"      value={counts.completed ?? 0}  icon={CheckCircle2}  color="#10b981" />
+        <StatCard label="กำลังดำเนินการ" value={(counts.in_progress ?? 0) + (counts.done ?? 0)} icon={AlertCircle}  color="#8b5cf6" />
+        <StatCard label="ปิดเรื่องแล้ว"  value={(counts.completed ?? 0) + (counts.closed ?? 0)}  icon={CheckCircle2}  color="#10b981" />
       </div>
 
       {/* Chart + filter row */}
