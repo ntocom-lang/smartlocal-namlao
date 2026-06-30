@@ -521,7 +521,7 @@ export default function MyComplaints() {
         setComplaints(list)
         if (openId) setSelected(list.find((c) => c.id === openId) ?? null)
         const closedUnrated = list.find(c =>
-          c.status === 'closed' &&
+          (c.status === 'closed' || c.status === 'completed') &&
           c.rating == null &&
           !localStorage.getItem(`sat_done_${c.id}`)
         )
@@ -548,7 +548,7 @@ export default function MyComplaints() {
         setComplaints(prev => prev.map(c => c.id === updated.id ? { ...c, ...updated } : c))
         if (
           updated.user_id === userId &&
-          updated.status === 'closed' &&
+          (updated.status === 'closed' || updated.status === 'completed') &&
           updated.rating == null &&
           !localStorage.getItem(`sat_done_${updated.id}`)
         ) {

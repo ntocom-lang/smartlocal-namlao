@@ -291,10 +291,10 @@ export default function MorePage() {
       .select('id, rating')
       .eq('municipality_id', tenant.id)
       .eq('user_id', session.user.id)
-      .eq('status', 'closed')
+      .in('status', ['completed', 'closed'])
       .limit(10)
-      .then(({ data }) => {
-        if (!data?.length) return
+      .then(({ data, error }) => {
+        if (error || !data?.length) return
         const unrated = data.find(c => c.rating == null && !localStorage.getItem(`sat_done_${c.id}`))
         if (unrated) setSatComplaintId(unrated.id)
       })
