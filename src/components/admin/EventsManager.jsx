@@ -148,7 +148,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
   const topRef = useRef(null)
 
   useEffect(() => { setCurrentPage(1) }, [activeTab, searchQuery, filterMonth, filterCategory, filterAudience, pageSize])
-  useEffect(() => { fetchEvents() }, [tenant.id, currentUserRole])
+  useEffect(() => { fetchEvents() }, [tenant?.id, currentUserRole])
 
   useEffect(() => {
     const scroller = topRef.current?.closest('[class*="overflow-y-auto"]')
@@ -159,6 +159,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
   }, [])
 
   async function fetchEvents() {
+    if (!tenant?.id) return
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     const userId = user?.id

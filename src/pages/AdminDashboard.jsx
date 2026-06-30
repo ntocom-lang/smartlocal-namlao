@@ -3799,7 +3799,7 @@ function EventsManager({ tenant, currentUserRole }) {
     setCurrentPage(1)
   }, [activeTab, searchQuery, filterMonth, filterCategory, filterAudience, pageSize])
 
-  useEffect(() => { fetchEvents() }, [tenant.id, currentUserRole])
+  useEffect(() => { fetchEvents() }, [tenant?.id, currentUserRole])
 
   async function fetchEvents() {
     setLoading(true)
