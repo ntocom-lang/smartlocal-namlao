@@ -251,8 +251,6 @@ function CalendarView({ events, onSelectEvent }) {
   )
 }
 
-const ADMIN_ROLES = new Set(['admin', 'superadmin', 'officer', 'council'])
-
 export default function EventsPage() {
   const { tenant } = useTenant()
   const navigate   = useNavigate()
@@ -313,11 +311,7 @@ export default function EventsPage() {
   }, [tenant?.id, role])
 
   function goToAddEvent() {
-    if (ADMIN_ROLES.has(role)) {
-      navigate('/admin', { state: { page: 'events' } })
-    } else {
-      navigate('/staff', { state: { module: 'events' } })
-    }
+    navigate('/staff', { state: { module: 'events' } })
   }
 
   const today = new Date()
