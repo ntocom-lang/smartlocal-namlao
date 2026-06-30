@@ -4544,7 +4544,8 @@ export default function AdminDashboard() {
   }
 
   const fetchComplaints = useCallback(async () => {
-    if (!tenant?.id) return
+    if (!tenant?.id || currentUserRole === null) return
+    if (currentUserRole === 'officer') { setComplaints([]); setLoading(false); return }
     setLoading(true)
     const { data, error } = await supabase
       .from('complaints')
@@ -4554,7 +4555,7 @@ export default function AdminDashboard() {
     if (error) console.error('fetch complaints error:', error.message)
     setComplaints(data ?? [])
     setLoading(false)
-  }, [tenant?.id])
+  }, [tenant?.id, currentUserRole])
 
   useEffect(() => { fetchComplaints() }, [fetchComplaints])
 
@@ -5313,6 +5314,23 @@ export default function AdminDashboard() {
       ) : (
         <>
 
+      {currentUserRole === 'officer' ? (
+        <div className="flex flex-col items-center justify-center py-24 text-center gap-4">
+          <div className="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center">
+            <ClipboardList size={28} className="text-blue-400" />
+          </div>
+          <div>
+            <p className="font-bold text-gray-700 text-base">คำร้องที่ได้รับมอบหมาย</p>
+            <p className="text-sm text-gray-400 mt-1">ดูคำร้องที่ได้รับมอบหมายได้ที่หน้างานเจ้าหน้าที่</p>
+          </div>
+          <button onClick={() => navigate('/staff', { state: { module: 'complaints' } })}
+            className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white"
+            style={{ backgroundColor: 'var(--color-primary)' }}>
+            ไปหน้างานเจ้าหน้าที่
+          </button>
+        </div>
+      ) : <>
+
       {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard label="ทั้งหมด"        value={complaints.length}      icon={ClipboardList} color="#64748b" />
@@ -5647,6 +5665,8 @@ export default function AdminDashboard() {
           </>
         )}
       </div>
+      </>
+      }
       </>
       )}
       </div>

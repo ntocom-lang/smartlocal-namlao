@@ -1831,11 +1831,12 @@ function ComplaintsStaffModule({ tenant, staffId }) {
   useEffect(() => { fetchAll() }, [tenant?.id])
 
   async function fetchAll() {
-    if (!tenant?.id) return
+    if (!tenant?.id || !staffId) return
     setLoading(true)
     const { data } = await supabase.from('complaints')
       .select('*, profiles(full_name, phone)')
       .eq('municipality_id', tenant.id)
+      .eq('assigned_to', staffId)
       .order('created_at', { ascending: false })
     setComplaints(data ?? [])
     setLoading(false)
@@ -1889,7 +1890,9 @@ function ComplaintsStaffModule({ tenant, staffId }) {
       {loading ? (
         <div className="flex justify-center py-16"><Loader2 size={24} className="animate-spin text-gray-300" /></div>
       ) : filtered.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center text-gray-400 text-sm">ไม่พบคำร้อง</div>
+        <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center text-gray-400 text-sm">
+          {search || filterStatus !== 'all' ? 'ไม่พบคำร้องที่ตรงเงื่อนไข' : 'ยังไม่มีคำร้องที่ได้รับมอบหมาย'}
+        </div>
       ) : (
         <div className="space-y-2">
           {filtered.map(c => {
@@ -2228,7 +2231,11 @@ export default function StaffDashboard() {
         <main className="flex-1 overflow-y-auto px-4 md:px-6 py-5 pb-24 md:pb-6">
           {activeModule === 'home'       && <StaffHomeModule visibleGroups={visibleGroups} setActiveModule={setActiveModule} pendingCount={pendingCount} staffName={profile?.full_name} />}
           {activeModule === 'inbox'      && <InboxModule tenant={tenant} staffId={profile?.id} />}
-          {activeModule === 'complaints' && <ComplaintsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} openComplaintId={mapOpenComplaintId} />}
+          {activeModule === 'complaints' && (
+            ['admin', 'superadmin'].includes(profile?.role)
+              ? <ComplaintsManager tenant={tenant} currentUserRole={profile?.role} openComplaintId={mapOpenComplaintId} />
+              : <ComplaintsStaffModule tenant={tenant} staffId={profile?.id} />
+          )}
           {activeModule === 'events'     && <EventsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
           {activeModule === 'projects'   && <CivilProjectAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
           {activeModule === 'infra'      && <InfraWorkAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}

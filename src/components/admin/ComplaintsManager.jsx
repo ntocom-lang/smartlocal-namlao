@@ -516,7 +516,7 @@ function ReporterCard({ c }) {
 
 function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, onPriority, currentUserRole, currentUserId, onDelete }) {
   const { tenant } = useTenant()
-  const isAdminRole = ['admin', 'superadmin', 'officer'].includes(currentUserRole)
+  const isAdminRole = ['admin', 'superadmin'].includes(currentUserRole)
   const isTechAssigned = currentUserRole === 'technician' && c.assigned_to === currentUserId
   const canAct = isAdminRole || isTechAssigned
   const [assigning, setAssigning] = useState(false)
@@ -1027,7 +1027,7 @@ ${photoSectionHtml}
             </div>
           )}
 
-          {(currentUserRole === 'superadmin' || currentUserRole === 'admin' || currentUserRole === 'officer') && (
+          {(currentUserRole === 'superadmin' || currentUserRole === 'admin') && (
             <div className={`mt-3 pt-3 border-t border-dashed ${currentUserRole === 'superadmin' ? 'border-purple-200' : 'border-gray-200'}`}>
               <p className={`text-[13px] font-semibold uppercase tracking-wider mb-2 flex items-center gap-1 ${currentUserRole === 'superadmin' ? 'text-purple-400' : 'text-gray-400'}`}>
                 <Shield size={10} /> {currentUserRole === 'superadmin' ? 'Superadmin — แก้ไขสถานะ' : 'เปลี่ยนสถานะ (Admin)'}
@@ -1575,7 +1575,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                         </span>
                       )}
                     </div>
-                    {NEXT_ACTION[c.status] && (['admin', 'superadmin', 'officer'].includes(currentUserRole) || (currentUserRole === 'technician' && c.assigned_to === currentUserId)) && (
+                    {NEXT_ACTION[c.status] && (['admin', 'superadmin'].includes(currentUserRole) || (currentUserRole === 'technician' && c.assigned_to === currentUserId)) && (
                       <div onClick={(e) => e.stopPropagation()}>
                         <ActionButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} />
                       </div>
@@ -1660,7 +1660,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center gap-1.5">
-                          {(['admin', 'superadmin', 'officer'].includes(currentUserRole) || (currentUserRole === 'technician' && c.assigned_to === currentUserId)) && (
+                          {(['admin', 'superadmin'].includes(currentUserRole) || (currentUserRole === 'technician' && c.assigned_to === currentUserId)) && (
                             <>
                               <ActionButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} />
                               <RejectButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} />
