@@ -502,7 +502,7 @@ export default function MorePage() {
               iconColor="text-amber-500"
               label="ปฏิทินกิจกรรม"
               desc="จัดการกิจกรรมของสภาเทศบาล"
-              href="/admin"
+              onClick={() => navigate('/staff', { state: { module: 'events' } })}
             />
           </Section>
         )}
