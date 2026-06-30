@@ -2,8 +2,7 @@ import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
-import HeroBanner from '../components/home/HeroBanner'
-import StaffSection from '../components/home/StaffSection'
+import PostsHighlight from '../components/home/PostsHighlight'
 import NewsSection from '../components/home/NewsSection'
 import TourismSection from '../components/home/TourismSection'
 import ComplaintBand from '../components/home/ComplaintBand'
@@ -137,10 +136,9 @@ export default function HomePage() {
 
           <ComplaintBand />
         </div>
-        <HeroBanner />
-      </div>{/* end content section */}
 
-      <div className="px-4 md:px-0"><StaffSection /></div>
+        <PostsHighlight />
+      </div>{/* end content section */}
 
       {/* News + Tourism — side by side on PC */}
       <div className="px-4 md:px-0 md:grid md:grid-cols-2 md:gap-6 space-y-4 md:space-y-0">

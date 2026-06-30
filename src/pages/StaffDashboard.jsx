@@ -17,6 +17,7 @@ import ReportManager from '../components/admin/ReportManager'
 import DocumentArchive from '../components/admin/DocumentArchive'
 import TourismManager, { TourismReviewsAdmin } from '../components/admin/TourismManager'
 import BusinessRegistrationAdmin from '../components/admin/BusinessRegistrationAdmin'
+import PostsManager from '../components/staff/PostsManager'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
@@ -69,6 +70,7 @@ const MODULE_GROUPS = [
   {
     group: 'เนื้อหาและชุมชน',
     items: [
+      { key: 'posts',            label: 'ข่าวสาร / กิจกรรม',  Icon: Images,  color: '#059669' },
       { key: 'tourism',          label: 'เที่ยว กิน พัก ชอบ', Icon: Luggage, color: '#d97706' },
       { key: 'tourism-reviews',  label: 'รีวิวสถานที่',        Icon: Star,    color: '#f59e0b' },
       { key: 'business-register', label: 'ลงทะเบียนธุรกิจ',   Icon: Store,   color: '#0891b2' },
@@ -2253,6 +2255,7 @@ export default function StaffDashboard() {
           {activeModule === 'report'       && <StaffReportWrapper tenant={tenant} />}
           {activeModule === 'docs-archive' && <DocumentArchive tenant={tenant} profile={profile} />}
           {activeModule === 'civil-report'      && <CivilProjectReport tenant={tenant} />}
+          {activeModule === 'posts'            && <PostsManager />}
           {activeModule === 'tourism'          && <TourismManager tenant={tenant} />}
           {activeModule === 'tourism-reviews'  && <TourismReviewsAdmin tenant={tenant} />}
           {activeModule === 'business-register' && <BusinessRegistrationAdmin tenant={tenant} />}
