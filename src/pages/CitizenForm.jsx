@@ -117,10 +117,12 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
       let saved = false
       for (let attempt = 0; attempt < 3 && !saved; attempt++) {
         try {
-          const { data: row } = await supabase.from('complaints').select('attachments').eq('id', complaintId).single()
-          const merged = [...new Set([...(row?.attachments ?? []), ...collected])]
-          const { error } = await supabase.from('complaints').update({ attachments: merged }).eq('id', complaintId)
+          const { data: ok, error } = await supabase.rpc('attach_complaint_photos', {
+            p_complaint_id: complaintId,
+            p_urls: collected,
+          })
           if (error) throw error
+          if (!ok) throw new Error('attach_failed')
           saved = true
         } catch (err) {
           console.error('[db-save] attempt', attempt + 1, err?.message ?? err)

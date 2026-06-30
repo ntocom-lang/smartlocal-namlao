@@ -226,9 +226,16 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange }) {
     if (uploaded.length > 0) {
       const base = freshAttachments ?? (c.attachments ?? [])
       const merged = [...base, ...uploaded]
-      await supabase.from('complaints').update({ attachments: merged }).eq('id', c.id)
-      setFreshAttachments(merged)
-      onAttachmentsChange?.(c.id, merged)
+      const { data: ok, error } = await supabase.rpc('attach_complaint_photos', {
+        p_complaint_id: c.id,
+        p_urls: merged,
+      })
+      if (!error && ok) {
+        setFreshAttachments(merged)
+        onAttachmentsChange?.(c.id, merged)
+      } else {
+        console.error('[attach_photos]', error?.message ?? 'attach_failed')
+      }
     }
     newPhotos.forEach(p => URL.revokeObjectURL(p.preview))
     setNewPhotos([])
