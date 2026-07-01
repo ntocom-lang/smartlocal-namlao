@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import PostsHighlight from '../components/home/PostsHighlight'
-import NewsSection from '../components/home/NewsSection'
 import TourismSection from '../components/home/TourismSection'
 import ComplaintBand from '../components/home/ComplaintBand'
 import BannerSlider from '../components/home/BannerSlider'
@@ -140,9 +139,7 @@ export default function HomePage() {
         <PostsHighlight />
       </div>{/* end content section */}
 
-      {/* News + Tourism — side by side on PC */}
-      <div className="px-4 md:px-0 md:grid md:grid-cols-2 md:gap-6 space-y-4 md:space-y-0">
-        <NewsSection />
+      <div className="px-4 md:px-0">
         <TourismSection />
       </div>
     </div>
