@@ -112,6 +112,8 @@ export default function PostsManager() {
     if (!form.title.trim()) { setError('กรุณาใส่หัวข้อ'); return }
     setSaving(true)
     setError(null)
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 12000)
     try {
       const payload = {
         municipality_id: tenant.id,
@@ -124,17 +126,21 @@ export default function PostsManager() {
         is_published: form.is_published,
         created_by: session?.user?.id ?? null,
       }
-      let err
-      if (editing) {
-        ;({ error: err } = await supabase.from('posts').update(payload).eq('id', editing))
-      } else {
-        ;({ error: err } = await supabase.from('posts').insert(payload))
-      }
+      const q = editing
+        ? supabase.from('posts').update(payload).eq('id', editing)
+        : supabase.from('posts').insert(payload)
+      const { error: err } = await q.abortSignal(ctrl.signal)
+      clearTimeout(timer)
       if (err) { setError(err.message); return }
       closeForm()
       fetchPosts()
     } catch (e) {
-      setError(e?.message ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่')
+      clearTimeout(timer)
+      setError(
+        e?.name === 'AbortError'
+          ? 'หมดเวลาเชื่อมต่อ (12s) — ตรวจสอบ RLS ใน Supabase'
+          : (e?.message ?? 'เกิดข้อผิดพลาด')
+      )
     } finally {
       setSaving(false)
     }
