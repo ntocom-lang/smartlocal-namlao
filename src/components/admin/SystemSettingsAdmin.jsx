@@ -498,23 +498,50 @@ function BannerManager({ tenant }) {
     setDragOver(idx)
   }
 
-  async function onDrop(targetIdx) {
+  async function reorder(srcIdx, targetIdx) {
     setDragOver(null)
-    const src = dragSrc.current
-    if (src == null || src === targetIdx) return
-    dragSrc.current = null
-
-    // reorder local state
+    if (srcIdx == null || srcIdx === targetIdx) return
     const next = [...banners]
-    const [moved] = next.splice(src, 1)
+    const [moved] = next.splice(srcIdx, 1)
     next.splice(targetIdx, 0, moved)
     const reordered = next.map((b, i) => ({ ...b, sort_order: i + 1 }))
     setBanners(reordered)
-
-    // batch update DB
     await Promise.all(reordered.map(b =>
       supabase.from('banners').update({ sort_order: b.sort_order }).eq('id', b.id)
     ))
+  }
+
+  async function onDrop(targetIdx) {
+    const src = dragSrc.current
+    dragSrc.current = null
+    await reorder(src, targetIdx)
+  }
+
+  // touch drag
+  const touchTarget = useRef(null)
+
+  function onTouchStart(e, idx) {
+    dragSrc.current = idx
+  }
+
+  function onTouchMove(e) {
+    e.preventDefault()
+    const touch = e.touches[0]
+    const el = document.elementFromPoint(touch.clientX, touch.clientY)
+    const card = el?.closest('[data-drag-idx]')
+    if (card) {
+      const t = parseInt(card.dataset.dragIdx)
+      touchTarget.current = t
+      if (t !== dragSrc.current) setDragOver(t)
+    }
+  }
+
+  async function onTouchEnd() {
+    const src = dragSrc.current
+    const target = touchTarget.current
+    dragSrc.current = null
+    touchTarget.current = null
+    await reorder(src, target)
   }
 
   return (
@@ -530,14 +557,18 @@ function BannerManager({ tenant }) {
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-5">
           {banners.map((b, i) => (
             <div key={b.id}
+              data-drag-idx={i}
               draggable
               onDragStart={() => onDragStart(i)}
               onDragEnter={() => onDragEnter(i)}
               onDragOver={e => e.preventDefault()}
               onDrop={() => onDrop(i)}
               onDragEnd={() => setDragOver(null)}
+              onTouchStart={e => onTouchStart(e, i)}
+              onTouchMove={onTouchMove}
+              onTouchEnd={onTouchEnd}
               className="flex flex-col gap-2 transition-opacity"
-              style={{ opacity: dragOver === i ? 0.4 : 1, cursor: 'grab' }}>
+              style={{ opacity: dragOver === i ? 0.4 : 1, cursor: 'grab', touchAction: 'none' }}>
               <div className="relative rounded-xl overflow-hidden border bg-gray-50"
                 style={{ aspectRatio: '5/2', borderColor: dragOver === i ? 'var(--color-primary)' : '#f3f4f6', borderWidth: dragOver === i ? 2 : 1 }}>
                 <img src={b.image_url} alt=""
