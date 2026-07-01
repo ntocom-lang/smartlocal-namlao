@@ -42,6 +42,7 @@ export default function PostsManager() {
   const [toggleSet, setToggleSet]   = useState(new Set())
   const [delConfirm, setDelConfirm] = useState(null)
   const [deleting, setDeleting]     = useState(false)
+  const [deleteError, setDeleteError] = useState(null)
 
   const imgRef  = useRef(null)
   const dragging = useRef(false)
@@ -228,9 +229,14 @@ export default function PostsManager() {
   async function handleDelete(id) {
     if (deleting) return
     setDeleting(true)
+    setDeleteError(null)
     const { error } = await supabase.from('posts').delete().eq('id', id)
-    if (!error) setPosts(prev => prev.filter(p => p.id !== id))
-    setDelConfirm(null)
+    if (error) {
+      setDeleteError('ลบไม่สำเร็จ: ' + error.message)
+    } else {
+      setPosts(prev => prev.filter(p => p.id !== id))
+      setDelConfirm(null)
+    }
     setDeleting(false)
   }
 
@@ -548,19 +554,19 @@ export default function PostsManager() {
 
                   {/* Delete */}
                   {delConfirm === p.id ? (
-                    <>
+                    <div className="flex items-center gap-1 relative z-10">
                       <button onClick={() => handleDelete(p.id)} disabled={deleting}
                         className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-red-500 text-white hover:bg-red-600 disabled:opacity-50">
-                        {deleting ? <Loader2 size={10} className="animate-spin" /> : null}
+                        {deleting ? <Loader2 size={10} className="animate-spin" /> : <Trash2 size={10} />}
                         ยืนยันลบ
                       </button>
-                      <button onClick={() => setDelConfirm(null)} disabled={deleting}
-                        className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-gray-100 text-gray-500">
+                      <button onClick={() => { setDelConfirm(null); setDeleteError(null) }} disabled={deleting}
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-gray-100 text-gray-500 hover:bg-gray-200">
                         ยกเลิก
                       </button>
-                    </>
+                    </div>
                   ) : (
-                    <button onClick={() => setDelConfirm(p.id)}
+                    <button onClick={() => { setDelConfirm(p.id); setDeleteError(null) }}
                       className="ml-auto p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50">
                       <Trash2 size={13} />
                     </button>
@@ -572,9 +578,12 @@ export default function PostsManager() {
         </div>
       )}
 
-      {/* Delete confirm backdrop */}
-      {delConfirm && !deleting && (
-        <div className="fixed inset-0 z-200 bg-transparent" onClick={() => setDelConfirm(null)} />
+      {/* Delete error toast */}
+      {deleteError && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-200 bg-red-600 text-white text-xs font-medium px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2">
+          <AlertCircle size={13} /> {deleteError}
+          <button onClick={() => setDeleteError(null)} className="ml-2 opacity-70 hover:opacity-100"><X size={12} /></button>
+        </div>
       )}
     </div>
   )
