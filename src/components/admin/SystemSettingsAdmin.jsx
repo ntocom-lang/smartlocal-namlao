@@ -417,8 +417,8 @@ function BannerManager({ tenant }) {
   const [deleting, setDeleting] = useState(null)
   const [dragOver, setDragOver] = useState(null)
   const fileRef = useRef()
-  const dragSrc = useRef(null)
-  const panState = useRef(null) // { id, startX, startY, objX, objY, livePos }
+  // iState: { type:'reorder', srcIdx, lastTarget } | { type:'pan', id, startX, startY, objX, objY, livePos }
+  const iState = useRef(null)
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -463,12 +463,9 @@ function BannerManager({ tenant }) {
     setDeleting(null)
   }
 
-  function onDragStart(idx) { dragSrc.current = idx }
-  function onDragEnter(idx) { if (dragSrc.current !== idx) setDragOver(idx) }
-
   async function reorder(srcIdx, targetIdx) {
     setDragOver(null)
-    if (srcIdx == null || srcIdx === targetIdx) return
+    if (srcIdx == null || targetIdx == null || srcIdx === targetIdx) return
     const next = [...banners]
     const [moved] = next.splice(srcIdx, 1)
     next.splice(targetIdx, 0, moved)
@@ -479,39 +476,30 @@ function BannerManager({ tenant }) {
     ))
   }
 
-  async function onDrop(targetIdx) {
-    const src = dragSrc.current
-    dragSrc.current = null
-    await reorder(src, targetIdx)
-  }
-
-  // touch reorder — เฉพาะ grip handle
-  const touchTarget = useRef(null)
-
-  function onGripTouchStart(e, idx) {
+  // ── Grip pointer events (เรียงลำดับ) ──
+  function onGripDown(e, idx) {
     e.stopPropagation()
-    dragSrc.current = idx
+    e.currentTarget.setPointerCapture(e.pointerId)
+    iState.current = { type: 'reorder', srcIdx: idx, lastTarget: idx }
   }
-  function onGripTouchMove(e) {
-    e.preventDefault()
-    const touch = e.touches[0]
-    const el = document.elementFromPoint(touch.clientX, touch.clientY)
+  function onGripMove(e) {
+    if (!iState.current || iState.current.type !== 'reorder') return
+    const el = document.elementFromPoint(e.clientX, e.clientY)
     const card = el?.closest('[data-drag-idx]')
     if (card) {
       const t = parseInt(card.dataset.dragIdx)
-      touchTarget.current = t
-      if (t !== dragSrc.current) setDragOver(t)
+      iState.current.lastTarget = t
+      setDragOver(t !== iState.current.srcIdx ? t : null)
     }
   }
-  async function onGripTouchEnd() {
-    const src = dragSrc.current
-    const target = touchTarget.current
-    dragSrc.current = null
-    touchTarget.current = null
-    await reorder(src, target)
+  async function onGripUp() {
+    if (!iState.current || iState.current.type !== 'reorder') return
+    const { srcIdx, lastTarget } = iState.current
+    iState.current = null
+    await reorder(srcIdx, lastTarget)
   }
 
-  // image pan — pointer events
+  // ── Image pointer events (ปรับตำแหน่ง) ──
   function parsePosToXY(pos = 'center') {
     const kw = { left: 0, center: 50, right: 100, top: 0, bottom: 100 }
     const parts = pos.trim().split(/\s+/)
@@ -519,29 +507,30 @@ function BannerManager({ tenant }) {
     const y = parts[1] !== undefined ? (kw[parts[1]] ?? parseFloat(parts[1])) : 50
     return [isNaN(x) ? 50 : x, isNaN(y) ? 50 : y]
   }
-
-  function onPanStart(e, b) {
+  function onImageDown(e, b) {
     if (e.target.closest('[data-is-grip]')) return
     e.currentTarget.setPointerCapture(e.pointerId)
     const [objX, objY] = parsePosToXY(b.object_position)
-    panState.current = { id: b.id, startX: e.clientX, startY: e.clientY, objX, objY, livePos: null }
+    iState.current = { type: 'pan', id: b.id, startX: e.clientX, startY: e.clientY, objX, objY, livePos: null }
   }
-  function onPanMove(e, bid) {
-    if (!panState.current || panState.current.id !== bid) return
-    const { startX, startY, objX, objY } = panState.current
+  function onImageMove(e, bid) {
+    if (!iState.current || iState.current.type !== 'pan' || iState.current.id !== bid) return
+    const { startX, startY, objX, objY } = iState.current
     const rect = e.currentTarget.getBoundingClientRect()
     const newX = Math.max(0, Math.min(100, objX - (e.clientX - startX) * 100 / Math.max(rect.width, 1)))
     const newY = Math.max(0, Math.min(100, objY - (e.clientY - startY) * 100 / Math.max(rect.height, 1)))
     const pos = `${Math.round(newX)}% ${Math.round(newY)}%`
-    panState.current.livePos = pos
+    iState.current.livePos = pos
     setBanners(prev => prev.map(b => b.id === bid ? { ...b, object_position: pos } : b))
   }
-  async function onPanEnd(e, bid) {
-    if (!panState.current || panState.current.id !== bid) return
-    const pos = panState.current.livePos
-    panState.current = null
+  async function onImageUp(e, bid) {
+    if (!iState.current || iState.current.type !== 'pan' || iState.current.id !== bid) return
+    const pos = iState.current.livePos
+    iState.current = null
     if (pos) await supabase.from('banners').update({ object_position: pos }).eq('id', bid)
   }
+
+  const cancelAll = () => { iState.current = null; setDragOver(null) }
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
@@ -555,37 +544,27 @@ function BannerManager({ tenant }) {
       {banners.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-5">
           {banners.map((b, i) => (
-            <div key={b.id}
-              data-drag-idx={i}
-              draggable
-              onDragStart={e => {
-                if (!e.target.closest('[data-is-grip]')) { e.preventDefault(); return }
-                onDragStart(i)
-              }}
-              onDragEnter={() => onDragEnter(i)}
-              onDragOver={e => e.preventDefault()}
-              onDrop={() => onDrop(i)}
-              onDragEnd={() => setDragOver(null)}
+            <div key={b.id} data-drag-idx={i}
               className="flex flex-col gap-2 transition-opacity"
               style={{ opacity: dragOver === i ? 0.4 : 1 }}>
               <div className="relative rounded-xl overflow-hidden border bg-gray-50"
                 style={{ aspectRatio: '5/2', borderColor: dragOver === i ? 'var(--color-primary)' : '#f3f4f6', borderWidth: dragOver === i ? 2 : 1, cursor: 'move', touchAction: 'none' }}
-                onPointerDown={e => onPanStart(e, b)}
-                onPointerMove={e => onPanMove(e, b.id)}
-                onPointerUp={e => onPanEnd(e, b.id)}
-                onPointerCancel={() => { panState.current = null }}>
+                onPointerDown={e => onImageDown(e, b)}
+                onPointerMove={e => onImageMove(e, b.id)}
+                onPointerUp={e => onImageUp(e, b.id)}
+                onPointerCancel={cancelAll}>
                 <img src={b.image_url} alt=""
                   className="w-full h-full object-cover pointer-events-none select-none"
                   style={{ objectPosition: b.object_position || 'center' }} />
                 {/* grip handle — เรียงลำดับ */}
                 <div data-is-grip
-                  className="absolute top-1.5 left-1.5 w-7 h-7 bg-black/60 rounded-full flex items-center justify-center cursor-grab z-10"
+                  className="absolute top-1.5 left-1.5 w-8 h-8 bg-black/60 rounded-full flex items-center justify-center cursor-grab z-10"
                   style={{ touchAction: 'none' }}
-                  onPointerDown={e => e.stopPropagation()}
-                  onTouchStart={e => onGripTouchStart(e, i)}
-                  onTouchMove={onGripTouchMove}
-                  onTouchEnd={onGripTouchEnd}>
-                  <span className="text-white text-[11px] leading-none select-none">⠿</span>
+                  onPointerDown={e => onGripDown(e, i)}
+                  onPointerMove={onGripMove}
+                  onPointerUp={onGripUp}
+                  onPointerCancel={cancelAll}>
+                  <span className="text-white text-[13px] leading-none select-none">⠿</span>
                 </div>
                 <button onClick={() => handleDelete(b.id)} disabled={deleting === b.id}
                   className="absolute top-1.5 right-1.5 w-6 h-6 bg-black/60 hover:bg-red-600 rounded-full flex items-center justify-center transition-colors z-10">
