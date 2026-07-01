@@ -537,9 +537,15 @@ function BannerManager({ tenant }) {
       <h2 className="text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
         <ImageIcon size={15} /> สไลด์ Banner หน้าแรก
       </h2>
-      <p className="text-xs text-gray-400 mb-5 leading-relaxed">
+      <p className="text-xs text-gray-400 mb-2 leading-relaxed">
         ลาก ⠿ เพื่อเรียงลำดับ · ลากบนรูปเพื่อปรับตำแหน่ง
       </p>
+      <div className="flex items-center gap-2 mb-5 px-3 py-2 rounded-xl bg-blue-50 border border-blue-100">
+        <span className="text-blue-400 text-base leading-none">📐</span>
+        <p className="text-xs text-blue-600 leading-relaxed">
+          ขนาดที่แนะนำ <strong>1280 × 720 px</strong> (สัดส่วน 16:9) · JPG หรือ PNG
+        </p>
+      </div>
 
       {banners.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-5">
