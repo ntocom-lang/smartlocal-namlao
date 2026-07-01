@@ -103,7 +103,12 @@ export default function HomePage() {
             <div className="absolute top-0 right-1/3 w-24 h-24 rounded-full pointer-events-none"
               style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 70%)' }} />
             <div className="relative z-10">
-              <p className="text-white text-[11px] font-bold mb-4 tracking-widest uppercase drop-shadow">✦ E-Service ✦</p>
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-white text-[11px] font-bold tracking-widest uppercase drop-shadow">✦ E-Service ✦</p>
+                <Link to="/more" className="flex items-center gap-0.5 text-white/80 text-[11px] font-semibold hover:text-white transition-colors">
+                  ทั้งหมด <ChevronRight size={13} />
+                </Link>
+              </div>
               <div className="flex gap-4 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
                 {docTypes.map(({ value, label, emoji }) => (
                   <Link key={value} to={`/doc-request?type=${value}`}
