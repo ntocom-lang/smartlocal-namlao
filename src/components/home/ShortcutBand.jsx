@@ -46,7 +46,6 @@ export default function ShortcutBand() {
            style={{ background: 'radial-gradient(circle, rgba(14,165,233,0.35) 0%, transparent 70%)' }} />
 
       <div className="relative z-10 px-4 py-3 flex items-center gap-4">
-        <p className="text-white/80 font-bold text-xs tracking-wide shrink-0">⚡ เมนูลัด</p>
         <div className="flex gap-3 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
           {items.map(({ label, Icon, action }) => (
             <button key={label} onClick={action}
