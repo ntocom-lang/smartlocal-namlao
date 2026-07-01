@@ -105,7 +105,7 @@ export default function HomePage() {
             <div className="relative z-10">
               <div className="flex items-center justify-between mb-4">
                 <p className="text-white text-[11px] font-bold tracking-widest uppercase drop-shadow">✦ E-Service ✦</p>
-                <Link to="/more" className="flex items-center gap-0.5 text-white/80 text-[11px] font-semibold hover:text-white transition-colors">
+                <Link to="/doc-request" className="flex items-center gap-0.5 text-white/80 text-[11px] font-semibold hover:text-white transition-colors">
                   ทั้งหมด <ChevronRight size={13} />
                 </Link>
               </div>
