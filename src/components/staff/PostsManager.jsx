@@ -11,7 +11,7 @@ import {
 
 const TABS = [
   { key: 'news',     label: 'ข่าวสำคัญ',  Icon: Newspaper },
-  { key: 'activity', label: 'ภาพกิจกรรม', Icon: Camera },
+  { key: 'activity', label: 'กิจกรรม', Icon: Camera },
 ]
 
 const EMPTY_FORM = {

@@ -40,6 +40,12 @@ body {
 }
 .animate-slide-up { animation: slide-up 0.3s ease-out; }
 
+@keyframes shimmer {
+  0%   { transform: translateX(-100%); }
+  60%  { transform: translateX(100%); }
+  100% { transform: translateX(100%); }
+}
+
 /* sidebar scrollbar — thin, visible on hover */
 .sidebar-nav { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.15) transparent; }
 .sidebar-nav::-webkit-scrollbar { width: 4px; }

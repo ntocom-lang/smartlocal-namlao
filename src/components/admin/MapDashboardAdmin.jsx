@@ -46,13 +46,19 @@ function MobileFilterPill({ id, icon, label, color, value, onChange, options, op
   return (
     <div>
       <button ref={btnRef} type="button" onClick={() => setOpenFilter(isOpen ? null : id)}
-        className="flex flex-col items-center justify-center gap-1 rounded-2xl border-2 bg-white transition-all"
-        style={{ width: '100%', height: 70, borderColor: active ? pillColor : '#e5e7eb' }}>
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xl"
-          style={{ backgroundColor: pillColor + '22' }}>
+        className="flex flex-col items-center justify-center gap-1 rounded-2xl border-2 transition-all duration-200 active:scale-95"
+        style={{
+          width: '100%', height: 70,
+          borderColor: active ? pillColor : '#f0f0f0',
+          backgroundColor: active ? pillColor + '12' : '#fafafa',
+          boxShadow: active ? `0 3px 10px ${pillColor}30` : 'none',
+        }}>
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xl shadow-sm"
+          style={{ background: active ? `linear-gradient(135deg, ${pillColor}35, ${pillColor}18)` : '#f0f0f0', border: active ? `1px solid ${pillColor}40` : 'none' }}>
           <span>{active ? current.icon : icon}</span>
         </div>
-        <span className="text-[10px] font-semibold leading-tight text-center text-gray-600 px-1">
+        <span className="text-[10px] font-bold leading-tight text-center px-1"
+          style={{ color: active ? pillColor : '#9ca3af' }}>
           {label}
         </span>
       </button>
@@ -413,26 +419,29 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
   const pendingBiz = bizRegs.filter(b => b.status === 'pending')
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-gray-800">แผนที่ข้อมูลพื้นที่</h2>
-          <p className="text-sm text-gray-400">{loading ? 'กำลังโหลด...' : `${totalPins} หมุดบนแผนที่`}</p>
+      <div className="relative rounded-2xl overflow-hidden px-4 py-3 flex items-center justify-between"
+           style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 60%, color-mix(in srgb, var(--color-primary) 70%, #60a5fa) 100%)' }}>
+        <div className="absolute -top-4 -right-4 w-24 h-24 rounded-full bg-white/10 pointer-events-none" />
+        <div className="absolute bottom-0 left-1/3 w-16 h-16 rounded-full bg-white/5 pointer-events-none" />
+        <div className="relative">
+          <h2 className="text-base font-black text-white drop-shadow">🗺️ แผนที่ข้อมูลพื้นที่</h2>
+          <p className="text-xs text-white/70 mt-0.5">
+            {loading ? 'กำลังโหลด...' : `${totalPins} หมุดบนแผนที่`}
+          </p>
         </div>
         <button onClick={fetchAll} disabled={loading}
-          className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-50 transition-colors">
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          รีเฟรช
+          className="relative flex items-center justify-center w-9 h-9 rounded-xl bg-white/20 hover:bg-white/30 disabled:opacity-50 transition-colors">
+          <RefreshCw size={15} className={`text-white ${loading ? 'animate-spin' : ''}`} />
         </button>
       </div>
 
-      {/* Filter panel — Government style */}
-      <div className="bg-white border border-gray-300 overflow-hidden shadow-sm"
-        style={{ borderRadius: '4px', borderTop: '3px solid var(--color-primary)' }}>
+      {/* Filter panel */}
+      <div className="bg-white rounded-2xl overflow-hidden shadow-md border border-gray-100">
 
-        {/* ชั้นข้อมูล 5 ประเภท — compact pill row */}
-        <div className="flex gap-2 px-3 py-2.5 border-b border-gray-200">
+        {/* ชั้นข้อมูล 5 ประเภท */}
+        <div className="flex gap-2 px-3 py-3 border-b border-gray-100">
           {[
             { key: 'repair', active: showRepair, toggle: () => setShowRepair(v => !v), color: '#ef4444', count: repairCount,         icon: '📋', label: 'คำร้อง' },
             { key: 'water',  active: showWater,  toggle: () => setShowWater(v => !v),  color: '#3b82f6', count: waterCount,           icon: '💧', label: 'ขอน้ำ' },
@@ -441,20 +450,20 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
             { key: 'proj',   active: showProj,   toggle: () => setShowProj(v => !v),   color: '#8b5cf6', count: civilProjects.length, icon: '🔨', label: 'โครงการ' },
           ].map(({ key, active, toggle, color, count, icon, label }) => (
             <button key={key} type="button" onClick={toggle}
-              className="flex-1 flex flex-col items-center gap-1 py-2 rounded-2xl border-2 transition-all select-none"
+              className="flex-1 flex flex-col items-center gap-1.5 py-2.5 rounded-2xl border-2 transition-all duration-200 select-none active:scale-95"
               style={active
-                ? { borderColor: color, backgroundColor: color + '12' }
-                : { borderColor: '#e5e7eb', backgroundColor: '#f9fafb' }}>
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center text-lg leading-none"
-                style={{ backgroundColor: active ? color + '25' : '#e5e7eb' }}>
+                ? { borderColor: color, backgroundColor: color + '15', boxShadow: `0 4px 12px ${color}30` }
+                : { borderColor: '#f3f4f6', backgroundColor: '#fafafa' }}>
+              <div className="w-10 h-10 rounded-2xl flex items-center justify-center text-xl leading-none shadow-sm"
+                style={{ background: active ? `linear-gradient(135deg, ${color}30, ${color}18)` : '#f3f4f6', border: active ? `1.5px solid ${color}40` : 'none' }}>
                 {icon}
               </div>
-              <span className="text-[10px] font-semibold leading-tight text-center"
+              <span className="text-[10px] font-bold leading-tight text-center"
                 style={{ color: active ? color : '#9ca3af' }}>
                 {label}
               </span>
-              <span className="text-[10px] font-bold leading-none px-1.5 py-0.5 rounded-full"
-                style={{ backgroundColor: active ? color : '#d1d5db', color: '#fff' }}>
+              <span className="text-[10px] font-black leading-none px-2 py-0.5 rounded-full shadow-sm"
+                style={{ background: active ? color : '#d1d5db', color: '#fff' }}>
                 {count}
               </span>
             </button>

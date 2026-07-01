@@ -2,7 +2,6 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { TenantProvider, useTenant } from './contexts/TenantContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
-import { ThemeProvider } from './contexts/ThemeContext'
 import { NotificationsProvider } from './contexts/NotificationsContext'
 import Header from './components/layout/Header'
 import Footer from './components/layout/Footer'
@@ -34,6 +33,8 @@ import ContactPage from './pages/ContactPage'
 import CitizenDocRequest from './pages/CitizenDocRequest'
 import MyDocRequests from './pages/MyDocRequests'
 import LpaDocStats from './pages/LpaDocStats'
+import PostsPage from './pages/PostsPage'
+import MapPage from './pages/MapPage'
 import { supabase } from './lib/supabase'
 import { Phone, X } from 'lucide-react'
 
@@ -285,6 +286,8 @@ function AppShell() {
           <Route path="/my-docs" element={<MyDocRequests />} />
           <Route path="/doc-stats" element={<LpaDocStats />} />
           <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/news" element={<PostsPage />} />
+          <Route path="/map" element={<MapPage />} />
           <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/staff" element={
             <RequireAuth staffOnly>
@@ -347,13 +350,11 @@ export default function App() {
   return (
     <InAppBrowserGate>
       <BrowserRouter basename={BASENAME}>
-        <ThemeProvider>
-          <TenantProvider>
-            <AuthProvider>
-              <AppShell />
-            </AuthProvider>
-          </TenantProvider>
-        </ThemeProvider>
+        <TenantProvider>
+          <AuthProvider>
+            <AppShell />
+          </AuthProvider>
+        </TenantProvider>
       </BrowserRouter>
     </InAppBrowserGate>
   )

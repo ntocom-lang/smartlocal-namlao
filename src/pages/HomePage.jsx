@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext'
 import PostsHighlight from '../components/home/PostsHighlight'
 import TourismSection from '../components/home/TourismSection'
 import ComplaintBand from '../components/home/ComplaintBand'
+import ShortcutBand from '../components/home/ShortcutBand'
 import BannerSlider from '../components/home/BannerSlider'
 import { Info, ChevronRight, Briefcase, Megaphone } from 'lucide-react'
 import WeatherWidget from '../components/home/WeatherWidget'
@@ -134,6 +135,7 @@ export default function HomePage() {
           </div>
 
           <ComplaintBand />
+          <ShortcutBand />
         </div>
 
         <PostsHighlight />

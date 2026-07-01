@@ -1,8 +1,7 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Phone, Sun, Moon, LogIn, LogOut, UserCircle2, User, LayoutDashboard, Bell, Briefcase } from 'lucide-react'
+import { Phone, LogIn, LogOut, UserCircle2, User, LayoutDashboard, Bell } from 'lucide-react'
 import { useTenant } from '../../contexts/TenantContext'
 import { useAuth } from '../../contexts/AuthContext'
-import { useTheme } from '../../contexts/ThemeContext'
 import { supabase } from '../../lib/supabase'
 import { useNotifications } from '../../contexts/NotificationsContext'
 
@@ -26,7 +25,6 @@ const NAV_TECH = [
 
 export default function Header() {
   const { tenant } = useTenant()
-  const { theme, toggle } = useTheme()
   const location = useLocation()
   const navigate = useNavigate()
   const { unreadCount } = useNotifications()
@@ -36,7 +34,6 @@ export default function Header() {
     await supabase.auth.signOut()
   }
   const isAdmin = role === 'admin' || role === 'superadmin' || role === 'officer'
-  const isStaff = ['staff', 'technician', 'admin', 'superadmin', 'viewer', 'officer'].includes(role)
 
   if (location.pathname.startsWith('/staff')) return null
 
@@ -123,11 +120,6 @@ export default function Header() {
             )}
           </nav>
 
-          {/* Desktop: theme + auth */}
-          <button onClick={toggle} aria-label="สลับธีม"
-            className="hidden md:flex p-2 rounded-lg text-white/80 hover:text-white hover:bg-white/15 transition-colors">
-            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
           {session ? (
             <div className="hidden md:flex items-center gap-2">
               {isAdmin && (
@@ -154,40 +146,16 @@ export default function Header() {
 
           {/* Mobile: 2-column layout — icons left, avatar right */}
           <div className="md:hidden flex items-center gap-1">
-            {/* ซ้าย: row1=Moon+Bell, row2=Staff+Admin */}
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center">
-                <button onClick={toggle} aria-label="สลับธีม"
-                  className="p-2 text-white/80 hover:text-white transition-colors">
-                  {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-                </button>
-                <button onClick={() => navigate('/notifications')} aria-label="การแจ้งเตือน"
-                  className="relative p-2 text-white/85 hover:text-white transition-colors">
-                  <Bell size={18} />
-                  {unreadCount > 0 && (
-                    <span className="absolute top-1 right-1 min-w-3.5 h-3.5 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow-sm">
-                      {unreadCount > 9 ? '9+' : unreadCount}
-                    </span>
-                  )}
-                </button>
-              </div>
-              {session && (isStaff || isAdmin) && (
-                <div className="flex gap-1 px-1">
-                  {isStaff && (
-                    <Link to="/staff" aria-label="ระบบเจ้าหน้าที่"
-                      className="w-9 h-6 rounded-md bg-white/25 hover:bg-white/40 flex items-center justify-center transition-colors">
-                      <Briefcase size={13} className="text-white" />
-                    </Link>
-                  )}
-                  {isAdmin && (
-                    <Link to="/admin" aria-label="แผงควบคุม Admin"
-                      className="w-9 h-6 rounded-md bg-white/25 hover:bg-white/40 flex items-center justify-center transition-colors">
-                      <LayoutDashboard size={13} className="text-white" />
-                    </Link>
-                  )}
-                </div>
+            {/* Bell */}
+            <button onClick={() => navigate('/notifications')} aria-label="การแจ้งเตือน"
+              className="relative p-2 text-white/85 hover:text-white transition-colors">
+              <Bell size={18} />
+              {unreadCount > 0 && (
+                <span className="absolute top-1 right-1 min-w-3.5 h-3.5 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow-sm">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
               )}
-            </div>
+            </button>
 
             {/* ขวา: Avatar */}
             {session ? (
