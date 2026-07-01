@@ -14,7 +14,8 @@ function NewsCard({ post }) {
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col hover:shadow-md transition-shadow cursor-pointer">
       <div className="aspect-4/3 bg-gray-100 overflow-hidden shrink-0">
         {post.image_url
-          ? <img src={post.image_url} alt={post.title} className="w-full h-full object-cover" />
+          ? <img src={post.image_url} alt={post.title} className="w-full h-full object-cover"
+              style={{ objectPosition: post.image_position ?? '50% 50%' }} />
           : <div className="w-full h-full flex items-center justify-center text-gray-300">
               <Newspaper size={32} strokeWidth={1.5} />
             </div>}
@@ -38,7 +39,8 @@ function ActivityCard({ post }) {
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow cursor-pointer">
       <div className="aspect-4/3 bg-gray-100 overflow-hidden">
         {post.image_url
-          ? <img src={post.image_url} alt={post.title} className="w-full h-full object-cover" />
+          ? <img src={post.image_url} alt={post.title} className="w-full h-full object-cover"
+              style={{ objectPosition: post.image_position ?? '50% 50%' }} />
           : <div className="w-full h-full flex items-center justify-center text-gray-300">
               <Camera size={28} strokeWidth={1.5} />
             </div>}
@@ -62,7 +64,7 @@ export default function PostsHighlight() {
   useEffect(() => {
     if (!tenant?.id) return
     supabase.from('posts')
-      .select('id,title,excerpt,image_url,event_date,created_at')
+      .select('id,title,excerpt,image_url,image_position,event_date,created_at')
       .eq('municipality_id', tenant.id)
       .eq('type', 'news')
       .eq('is_published', true)
@@ -71,7 +73,7 @@ export default function PostsHighlight() {
       .then(({ data }) => setNews(data ?? []))
 
     supabase.from('posts')
-      .select('id,title,image_url,event_date,created_at')
+      .select('id,title,image_url,image_position,event_date,created_at')
       .eq('municipality_id', tenant.id)
       .eq('type', 'activity')
       .eq('is_published', true)

@@ -1,19 +1,22 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { compressImage } from '../../lib/imageUtils'
 import {
   Plus, Trash2, Loader2, Newspaper, Camera, X, Upload,
-  Eye, EyeOff, CalendarDays, Pencil, Check,
+  Eye, EyeOff, CalendarDays, Pencil, Check, Move,
 } from 'lucide-react'
 
 const TABS = [
-  { key: 'news',     label: 'ข่าวสำคัญ',   Icon: Newspaper },
-  { key: 'activity', label: 'ภาพกิจกรรม',  Icon: Camera },
+  { key: 'news',     label: 'ข่าวสำคัญ',  Icon: Newspaper },
+  { key: 'activity', label: 'ภาพกิจกรรม', Icon: Camera },
 ]
 
-const EMPTY_FORM = { title: '', excerpt: '', image_url: '', event_date: '', is_published: true }
+const EMPTY_FORM = {
+  title: '', excerpt: '', image_url: '', image_position: '50% 50%',
+  event_date: '', is_published: true,
+}
 
 export default function PostsManager() {
   const { tenant } = useTenant()
@@ -29,12 +32,15 @@ export default function PostsManager() {
   const [delConfirm, setDelConfirm] = useState(null)
   const [error, setError] = useState(null)
 
+  const imgRef = useRef(null)
+  const dragging = useRef(false)
+
   const fetchPosts = useCallback(async () => {
     if (!tenant?.id) return
     setLoading(true)
     const { data } = await supabase
       .from('posts')
-      .select('id,title,excerpt,image_url,event_date,is_published,created_at')
+      .select('id,title,excerpt,image_url,image_position,event_date,is_published,created_at')
       .eq('municipality_id', tenant.id)
       .eq('type', tab)
       .order('created_at', { ascending: false })
@@ -57,6 +63,7 @@ export default function PostsManager() {
       title: p.title ?? '',
       excerpt: p.excerpt ?? '',
       image_url: p.image_url ?? '',
+      image_position: p.image_position ?? '50% 50%',
       event_date: p.event_date ?? '',
       is_published: p.is_published ?? true,
     })
@@ -64,7 +71,9 @@ export default function PostsManager() {
     setShowForm(true)
   }
 
-  function closeForm() { setShowForm(false); setEditing(null); setForm(EMPTY_FORM); setError(null) }
+  function closeForm() {
+    setShowForm(false); setEditing(null); setForm(EMPTY_FORM); setError(null)
+  }
 
   async function handleImageUpload(e) {
     const file = e.target.files?.[0]
@@ -73,14 +82,31 @@ export default function PostsManager() {
     const compressed = await compressImage(file, 1200)
     const ext = file.name.split('.').pop()
     const path = `posts/${tenant.id}/${Date.now()}.${ext}`
-    const { error: upErr } = await supabase.storage.from('complaint-attachments').upload(path, compressed, { upsert: false })
+    const { error: upErr } = await supabase.storage
+      .from('complaint-attachments').upload(path, compressed, { upsert: false })
     if (!upErr) {
       const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
-      setForm(f => ({ ...f, image_url: data.publicUrl }))
+      setForm(f => ({ ...f, image_url: data.publicUrl, image_position: '50% 50%' }))
     }
     setUploading(false)
     e.target.value = ''
   }
+
+  // ── Focal point drag ──────────────────────────────────────────────────────
+  function calcPos(e) {
+    const rect = imgRef.current.getBoundingClientRect()
+    const x = Math.round(Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100)))
+    const y = Math.round(Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100)))
+    setForm(f => ({ ...f, image_position: `${x}% ${y}%` }))
+  }
+
+  function onPointerDown(e) {
+    dragging.current = true
+    e.currentTarget.setPointerCapture(e.pointerId)
+    calcPos(e)
+  }
+  function onPointerMove(e) { if (dragging.current) calcPos(e) }
+  function onPointerUp()    { dragging.current = false }
 
   async function handleSave() {
     if (!form.title.trim()) { setError('กรุณาใส่หัวข้อ'); return }
@@ -92,6 +118,7 @@ export default function PostsManager() {
       title: form.title.trim(),
       excerpt: form.excerpt.trim() || null,
       image_url: form.image_url || null,
+      image_position: form.image_position,
       event_date: form.event_date || null,
       is_published: form.is_published,
       created_by: session?.user?.id ?? null,
@@ -119,8 +146,16 @@ export default function PostsManager() {
     setPosts(prev => prev.map(x => x.id === p.id ? { ...x, is_published: !x.is_published } : x))
   }
 
-  const fmtDate = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : ''
+  const fmtDate = (s) => s
+    ? new Date(s + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
+    : ''
   const isNews = tab === 'news'
+
+  // parse "x% y%" → { x, y } for focal dot position
+  function parseFocal(pos = '50% 50%') {
+    const [x = '50%', y = '50%'] = pos.split(' ')
+    return { x, y }
+  }
 
   return (
     <div className="space-y-4">
@@ -152,17 +187,56 @@ export default function PostsManager() {
               <button onClick={closeForm} className="p-2 rounded-xl hover:bg-gray-100"><X size={16} /></button>
             </div>
             <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
-              {/* Image */}
-              <div className="space-y-2">
+
+              {/* Image + Focal drag */}
+              <div className="space-y-1.5">
                 <p className="text-xs font-semibold text-gray-500">รูปภาพ</p>
                 {form.image_url ? (
-                  <div className="relative aspect-video rounded-xl overflow-hidden border border-gray-200">
-                    <img src={form.image_url} alt="" className="w-full h-full object-cover" />
-                    <button onClick={() => setForm(f => ({ ...f, image_url: '' }))}
-                      className="absolute top-2 right-2 p-1 bg-black/50 rounded-full text-white hover:bg-black/70">
-                      <X size={12} />
-                    </button>
-                  </div>
+                  <>
+                    {/* Drag area */}
+                    <div
+                      ref={imgRef}
+                      className="relative aspect-video rounded-xl overflow-hidden border border-gray-200 cursor-crosshair select-none touch-none"
+                      onPointerDown={onPointerDown}
+                      onPointerMove={onPointerMove}
+                      onPointerUp={onPointerUp}
+                      onPointerCancel={onPointerUp}
+                    >
+                      <img src={form.image_url} alt=""
+                        className="w-full h-full object-cover pointer-events-none"
+                        style={{ objectPosition: form.image_position }} />
+
+                      {/* Focal point dot */}
+                      {(() => {
+                        const { x, y } = parseFocal(form.image_position)
+                        return (
+                          <div className="absolute pointer-events-none"
+                            style={{ left: x, top: y, transform: 'translate(-50%, -50%)' }}>
+                            <div className="w-7 h-7 rounded-full border-2 border-white shadow-[0_0_0_1.5px_rgba(0,0,0,0.4)] bg-white/20" />
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <div className="w-px h-full bg-white/90 absolute" />
+                              <div className="h-px w-full bg-white/90 absolute" />
+                            </div>
+                          </div>
+                        )
+                      })()}
+
+                      {/* Hint overlay */}
+                      <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none">
+                        <span className="flex items-center gap-1 text-[10px] text-white bg-black/50 rounded-lg px-2 py-0.5">
+                          <Move size={10} /> ลากเพื่อตั้งจุดโฟกัส
+                        </span>
+                      </div>
+
+                      {/* Remove button */}
+                      <button
+                        className="absolute top-2 right-2 p-1 bg-black/50 rounded-full text-white hover:bg-black/70 pointer-events-auto"
+                        onClick={e => { e.stopPropagation(); setForm(f => ({ ...f, image_url: '', image_position: '50% 50%' })) }}>
+                        <X size={12} />
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-gray-400">ตำแหน่ง: {form.image_position}</p>
+                  </>
                 ) : (
                   <label className="flex flex-col items-center justify-center gap-2 py-6 rounded-xl border-2 border-dashed border-gray-200 text-gray-400 cursor-pointer hover:border-blue-300 hover:text-blue-400 transition-colors">
                     {uploading ? <Loader2 size={20} className="animate-spin" /> : <Upload size={20} />}
@@ -171,6 +245,7 @@ export default function PostsManager() {
                   </label>
                 )}
               </div>
+
               {/* Title */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-gray-500">หัวข้อ <span className="text-red-500">*</span></label>
@@ -178,6 +253,7 @@ export default function PostsManager() {
                   placeholder={isNews ? 'ชื่อข่าว...' : 'ชื่อกิจกรรม...'}
                   className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200" />
               </div>
+
               {/* Excerpt (news only) */}
               {isNews && (
                 <div className="space-y-1.5">
@@ -187,21 +263,26 @@ export default function PostsManager() {
                     className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-blue-200" />
                 </div>
               )}
+
               {/* Date */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-gray-500">วันที่{isNews ? 'ข่าว' : 'กิจกรรม'}</label>
                 <input type="date" value={form.event_date} onChange={e => setForm(f => ({ ...f, event_date: e.target.value }))}
                   className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200" />
               </div>
+
               {/* Published toggle */}
-              <label className="flex items-center gap-3 cursor-pointer">
+              <label className="flex items-center gap-3 cursor-pointer"
+                onClick={() => setForm(f => ({ ...f, is_published: !f.is_published }))}>
                 <div className={`w-10 h-5 rounded-full transition-colors relative ${form.is_published ? 'bg-green-500' : 'bg-gray-300'}`}>
                   <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${form.is_published ? 'translate-x-5' : 'translate-x-0.5'}`} />
                 </div>
                 <span className="text-sm font-medium text-gray-700">{form.is_published ? 'เผยแพร่แล้ว' : 'ฉบับร่าง (ซ่อนอยู่)'}</span>
               </label>
+
               {error && <p className="text-xs text-red-500">{error}</p>}
             </div>
+
             <div className="px-5 py-4 border-t border-gray-100 shrink-0 flex gap-2">
               <button onClick={handleSave} disabled={saving || uploading}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 flex items-center justify-center gap-2"
@@ -228,7 +309,8 @@ export default function PostsManager() {
             <div key={p.id} className={`bg-white rounded-2xl border shadow-sm overflow-hidden ${!p.is_published ? 'opacity-60' : 'border-gray-100'}`}>
               {p.image_url ? (
                 <div className="aspect-video overflow-hidden bg-gray-100">
-                  <img src={p.image_url} alt={p.title} className="w-full h-full object-cover" />
+                  <img src={p.image_url} alt={p.title} className="w-full h-full object-cover"
+                    style={{ objectPosition: p.image_position ?? '50% 50%' }} />
                 </div>
               ) : (
                 <div className="aspect-video bg-gray-100 flex items-center justify-center text-gray-300">
@@ -276,7 +358,6 @@ export default function PostsManager() {
         </div>
       )}
 
-      {/* Delete confirm overlay */}
       {delConfirm && (
         <div className="fixed inset-0 z-[200] bg-black/30" onClick={() => setDelConfirm(null)} />
       )}
