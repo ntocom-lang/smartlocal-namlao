@@ -1,10 +1,12 @@
 import { useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Briefcase, Star, MapPin } from 'lucide-react'
+import { LayoutDashboard, Briefcase, Star, MapPin, Siren, Globe, Facebook, MessageCircle } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
+import { useTenant } from '../../contexts/TenantContext'
 
 export default function ShortcutBand() {
   const navigate = useNavigate()
   const { role } = useAuth()
+  const { tenant } = useTenant()
 
   const isAdmin = ['admin', 'superadmin', 'officer', 'viewer'].includes(role)
   const isStaff = ['staff', 'technician', 'council'].includes(role)
@@ -13,26 +15,42 @@ export default function ShortcutBand() {
     isAdmin && {
       label: 'Admin',
       Icon: LayoutDashboard,
-      color: '#1d4ed8',
       action: () => navigate('/admin'),
     },
     (isStaff || isAdmin) && {
       label: 'Staff',
       Icon: Briefcase,
-      color: '#0369a1',
       action: () => navigate('/staff'),
     },
     {
       label: 'ประเมิน',
       Icon: Star,
-      color: '#d97706',
       action: () => navigate('/satisfaction'),
     },
     {
       label: 'แผนที่',
       Icon: MapPin,
-      color: '#059669',
       action: () => navigate('/map'),
+    },
+    {
+      label: 'เหตุฉุกเฉิน',
+      Icon: Siren,
+      action: () => navigate('/emergency'),
+    },
+    tenant?.website_url && {
+      label: 'เว็บไซต์',
+      Icon: Globe,
+      action: () => window.open(tenant.website_url, '_blank', 'noopener,noreferrer'),
+    },
+    tenant?.facebook_url && {
+      label: 'Facebook',
+      Icon: Facebook,
+      action: () => window.open(tenant.facebook_url, '_blank', 'noopener,noreferrer'),
+    },
+    tenant?.line_oa_url && {
+      label: 'Line OA',
+      Icon: MessageCircle,
+      action: () => window.open(tenant.line_oa_url, '_blank', 'noopener,noreferrer'),
     },
   ].filter(Boolean)
 
@@ -45,7 +63,7 @@ export default function ShortcutBand() {
       <div className="absolute -bottom-8 -left-4 w-36 h-36 rounded-full pointer-events-none"
            style={{ background: 'radial-gradient(circle, rgba(14,165,233,0.35) 0%, transparent 70%)' }} />
 
-      <div className="relative z-10 px-4 py-3 flex items-center gap-4">
+      <div className="relative z-10 px-4 py-3">
         <div className="flex gap-3 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
           {items.map(({ label, Icon, action }) => (
             <button key={label} onClick={action}
