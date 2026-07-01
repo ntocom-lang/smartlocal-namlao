@@ -410,36 +410,15 @@ export default function SystemSettingsAdmin() {
   )
 }
 
-// position value → css objectPosition
-const POS_OPTIONS = [
-  ['left top',    'center top',    'right top'   ],
-  ['left center', 'center center', 'right center'],
-  ['left bottom', 'center bottom', 'right bottom'],
-]
-
-function PositionPicker({ value = 'center', onChange }) {
-  return (
-    <div className="grid grid-cols-3 gap-0.5 w-16">
-      {POS_OPTIONS.flat().map(pos => (
-        <button key={pos} type="button" onClick={() => onChange(pos)}
-          className="w-4 h-4 rounded-sm flex items-center justify-center transition-colors"
-          style={{ backgroundColor: pos === value ? 'var(--color-primary)' : '#e5e7eb' }}
-          title={pos}>
-          <span className="w-1.5 h-1.5 rounded-full bg-white" />
-        </button>
-      ))}
-    </div>
-  )
-}
 
 function BannerManager({ tenant }) {
   const [banners, setBanners] = useState([])
   const [uploading, setUploading] = useState(false)
   const [deleting, setDeleting] = useState(null)
   const [dragOver, setDragOver] = useState(null)
-  const [showPos, setShowPos] = useState(null) // id ของรูปที่เปิด picker อยู่
   const fileRef = useRef()
   const dragSrc = useRef(null)
+  const panState = useRef(null) // { id, startX, startY, objX, objY, livePos }
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -484,19 +463,8 @@ function BannerManager({ tenant }) {
     setDeleting(null)
   }
 
-  async function handlePosition(id, pos) {
-    setBanners(prev => prev.map(b => b.id === id ? { ...b, object_position: pos } : b))
-    await supabase.from('banners').update({ object_position: pos }).eq('id', id)
-  }
-
-  function onDragStart(idx) {
-    dragSrc.current = idx
-  }
-
-  function onDragEnter(idx) {
-    if (dragSrc.current === idx) return
-    setDragOver(idx)
-  }
+  function onDragStart(idx) { dragSrc.current = idx }
+  function onDragEnter(idx) { if (dragSrc.current !== idx) setDragOver(idx) }
 
   async function reorder(srcIdx, targetIdx) {
     setDragOver(null)
@@ -517,14 +485,14 @@ function BannerManager({ tenant }) {
     await reorder(src, targetIdx)
   }
 
-  // touch drag
+  // touch reorder — เฉพาะ grip handle
   const touchTarget = useRef(null)
 
-  function onTouchStart(e, idx) {
+  function onGripTouchStart(e, idx) {
+    e.stopPropagation()
     dragSrc.current = idx
   }
-
-  function onTouchMove(e) {
+  function onGripTouchMove(e) {
     e.preventDefault()
     const touch = e.touches[0]
     const el = document.elementFromPoint(touch.clientX, touch.clientY)
@@ -535,13 +503,44 @@ function BannerManager({ tenant }) {
       if (t !== dragSrc.current) setDragOver(t)
     }
   }
-
-  async function onTouchEnd() {
+  async function onGripTouchEnd() {
     const src = dragSrc.current
     const target = touchTarget.current
     dragSrc.current = null
     touchTarget.current = null
     await reorder(src, target)
+  }
+
+  // image pan — pointer events
+  function parsePosToXY(pos = 'center') {
+    const kw = { left: 0, center: 50, right: 100, top: 0, bottom: 100 }
+    const parts = pos.trim().split(/\s+/)
+    const x = kw[parts[0]] ?? parseFloat(parts[0])
+    const y = parts[1] !== undefined ? (kw[parts[1]] ?? parseFloat(parts[1])) : 50
+    return [isNaN(x) ? 50 : x, isNaN(y) ? 50 : y]
+  }
+
+  function onPanStart(e, b) {
+    if (e.target.closest('[data-is-grip]')) return
+    e.currentTarget.setPointerCapture(e.pointerId)
+    const [objX, objY] = parsePosToXY(b.object_position)
+    panState.current = { id: b.id, startX: e.clientX, startY: e.clientY, objX, objY, livePos: null }
+  }
+  function onPanMove(e, bid) {
+    if (!panState.current || panState.current.id !== bid) return
+    const { startX, startY, objX, objY } = panState.current
+    const rect = e.currentTarget.getBoundingClientRect()
+    const newX = Math.max(0, Math.min(100, objX - (e.clientX - startX) * 100 / Math.max(rect.width, 1)))
+    const newY = Math.max(0, Math.min(100, objY - (e.clientY - startY) * 100 / Math.max(rect.height, 1)))
+    const pos = `${Math.round(newX)}% ${Math.round(newY)}%`
+    panState.current.livePos = pos
+    setBanners(prev => prev.map(b => b.id === bid ? { ...b, object_position: pos } : b))
+  }
+  async function onPanEnd(e, bid) {
+    if (!panState.current || panState.current.id !== bid) return
+    const pos = panState.current.livePos
+    panState.current = null
+    if (pos) await supabase.from('banners').update({ object_position: pos }).eq('id', bid)
   }
 
   return (
@@ -550,7 +549,7 @@ function BannerManager({ tenant }) {
         <ImageIcon size={15} /> สไลด์ Banner หน้าแรก
       </h2>
       <p className="text-xs text-gray-400 mb-5 leading-relaxed">
-        ลาก-วาง เพื่อเรียงลำดับ · กด grid จุดใต้รูปเพื่อปรับตำแหน่งในกรอบ
+        ลาก ⠿ เพื่อเรียงลำดับ · ลากบนรูปเพื่อปรับตำแหน่ง
       </p>
 
       {banners.length > 0 && (
@@ -559,43 +558,42 @@ function BannerManager({ tenant }) {
             <div key={b.id}
               data-drag-idx={i}
               draggable
-              onDragStart={() => onDragStart(i)}
+              onDragStart={e => {
+                if (!e.target.closest('[data-is-grip]')) { e.preventDefault(); return }
+                onDragStart(i)
+              }}
               onDragEnter={() => onDragEnter(i)}
               onDragOver={e => e.preventDefault()}
               onDrop={() => onDrop(i)}
               onDragEnd={() => setDragOver(null)}
-              onTouchStart={e => onTouchStart(e, i)}
-              onTouchMove={onTouchMove}
-              onTouchEnd={onTouchEnd}
               className="flex flex-col gap-2 transition-opacity"
-              style={{ opacity: dragOver === i ? 0.4 : 1, cursor: 'grab', touchAction: 'none' }}>
+              style={{ opacity: dragOver === i ? 0.4 : 1 }}>
               <div className="relative rounded-xl overflow-hidden border bg-gray-50"
-                style={{ aspectRatio: '5/2', borderColor: dragOver === i ? 'var(--color-primary)' : '#f3f4f6', borderWidth: dragOver === i ? 2 : 1 }}>
+                style={{ aspectRatio: '5/2', borderColor: dragOver === i ? 'var(--color-primary)' : '#f3f4f6', borderWidth: dragOver === i ? 2 : 1, cursor: 'move', touchAction: 'none' }}
+                onPointerDown={e => onPanStart(e, b)}
+                onPointerMove={e => onPanMove(e, b.id)}
+                onPointerUp={e => onPanEnd(e, b.id)}
+                onPointerCancel={() => { panState.current = null }}>
                 <img src={b.image_url} alt=""
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover pointer-events-none select-none"
                   style={{ objectPosition: b.object_position || 'center' }} />
-                {/* drag handle */}
-                <div className="absolute top-1.5 left-1.5 w-6 h-6 bg-black/50 rounded-full flex items-center justify-center cursor-grab">
-                  <span className="text-white text-[10px] leading-none select-none">⠿</span>
+                {/* grip handle — เรียงลำดับ */}
+                <div data-is-grip
+                  className="absolute top-1.5 left-1.5 w-7 h-7 bg-black/60 rounded-full flex items-center justify-center cursor-grab z-10"
+                  style={{ touchAction: 'none' }}
+                  onPointerDown={e => e.stopPropagation()}
+                  onTouchStart={e => onGripTouchStart(e, i)}
+                  onTouchMove={onGripTouchMove}
+                  onTouchEnd={onGripTouchEnd}>
+                  <span className="text-white text-[11px] leading-none select-none">⠿</span>
                 </div>
                 <button onClick={() => handleDelete(b.id)} disabled={deleting === b.id}
-                  className="absolute top-1.5 right-1.5 w-6 h-6 bg-black/60 hover:bg-red-600 rounded-full flex items-center justify-center transition-colors">
+                  className="absolute top-1.5 right-1.5 w-6 h-6 bg-black/60 hover:bg-red-600 rounded-full flex items-center justify-center transition-colors z-10">
                   {deleting === b.id
                     ? <Loader2 size={11} className="animate-spin text-white" />
                     : <span className="text-white text-[10px] font-bold leading-none">✕</span>}
                 </button>
-                <span className="absolute bottom-1 left-1.5 text-[9px] text-white/70 font-bold">#{i + 1}</span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <button type="button"
-                  onClick={() => setShowPos(showPos === b.id ? null : b.id)}
-                  className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-gray-600 transition-colors self-start">
-                  <span>ตำแหน่ง</span>
-                  <span style={{ fontSize: 8 }}>{showPos === b.id ? '▲' : '▼'}</span>
-                </button>
-                {showPos === b.id && (
-                  <PositionPicker value={b.object_position || 'center'} onChange={pos => handlePosition(b.id, pos)} />
-                )}
+                <span className="absolute bottom-1 left-1.5 text-[9px] text-white/70 font-bold select-none">#{i + 1}</span>
               </div>
             </div>
           ))}
