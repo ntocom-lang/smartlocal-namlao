@@ -112,27 +112,32 @@ export default function PostsManager() {
     if (!form.title.trim()) { setError('กรุณาใส่หัวข้อ'); return }
     setSaving(true)
     setError(null)
-    const payload = {
-      municipality_id: tenant.id,
-      type: tab,
-      title: form.title.trim(),
-      excerpt: form.excerpt.trim() || null,
-      image_url: form.image_url || null,
-      image_position: form.image_position,
-      event_date: form.event_date || null,
-      is_published: form.is_published,
-      created_by: session?.user?.id ?? null,
+    try {
+      const payload = {
+        municipality_id: tenant.id,
+        type: tab,
+        title: form.title.trim(),
+        excerpt: form.excerpt.trim() || null,
+        image_url: form.image_url || null,
+        image_position: form.image_position,
+        event_date: form.event_date || null,
+        is_published: form.is_published,
+        created_by: session?.user?.id ?? null,
+      }
+      let err
+      if (editing) {
+        ;({ error: err } = await supabase.from('posts').update(payload).eq('id', editing))
+      } else {
+        ;({ error: err } = await supabase.from('posts').insert(payload))
+      }
+      if (err) { setError(err.message); return }
+      closeForm()
+      fetchPosts()
+    } catch (e) {
+      setError(e?.message ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่')
+    } finally {
+      setSaving(false)
     }
-    let err
-    if (editing) {
-      ;({ error: err } = await supabase.from('posts').update(payload).eq('id', editing))
-    } else {
-      ;({ error: err } = await supabase.from('posts').insert(payload))
-    }
-    setSaving(false)
-    if (err) { setError(err.message); return }
-    closeForm()
-    fetchPosts()
   }
 
   async function handleDelete(id) {
@@ -179,7 +184,7 @@ export default function PostsManager() {
 
       {/* Form modal */}
       {showForm && (
-        <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center bg-black/40" onClick={closeForm}>
+        <div className="fixed inset-0 z-200 flex items-end sm:items-center justify-center bg-black/40" onClick={closeForm}>
           <div className="relative w-full sm:max-w-md bg-white sm:rounded-2xl rounded-t-3xl shadow-2xl max-h-[90dvh] flex flex-col overflow-hidden"
             onClick={e => e.stopPropagation()}>
             <div className="px-5 pt-5 pb-3 border-b border-gray-100 flex items-center justify-between shrink-0">
@@ -359,7 +364,7 @@ export default function PostsManager() {
       )}
 
       {delConfirm && (
-        <div className="fixed inset-0 z-[200] bg-black/30" onClick={() => setDelConfirm(null)} />
+        <div className="fixed inset-0 z-200 bg-black/30" onClick={() => setDelConfirm(null)} />
       )}
     </div>
   )
