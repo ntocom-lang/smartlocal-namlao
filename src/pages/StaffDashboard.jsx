@@ -5,7 +5,7 @@ import {
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, AlignLeft, Calendar, Hash, RefreshCw,
   Printer, PenLine, Search, Download, Wrench, Home, CalendarDays, TrendingUp, Archive, Images,
-  CreditCard, BadgeCheck, Banknote, Luggage, Star, Store, MoreHorizontal,
+  CreditCard, BadgeCheck, Banknote, Luggage, Star, Store, MoreHorizontal, Car,
 } from 'lucide-react'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 import InfraWorkAdmin from '../components/admin/InfraWorkAdmin'
@@ -56,6 +56,7 @@ const MODULE_GROUPS = [
       { key: 'events',   label: 'กิจกรรม',          Icon: CalendarDays, color: '#10b981' },
       { key: 'projects', label: 'แผนงาน/โครงการ',    Icon: Wrench,       color: '#7c3aed' },
       { key: 'infra',    label: 'บันทึกงานซ่อม',     Icon: MapPin,       color: '#0891b2' },
+      { key: 'fleet',    label: 'ยานพาหนะ/น้ำมัน',  Icon: Car,          color: '#0369a1', navTo: '/fleet' },
     ],
   },
   {
@@ -1954,7 +1955,7 @@ function StaffReportWrapper({ tenant }) {
 
 // ─── Staff Home Dashboard ─────────────────────────────────────────────────────
 
-function StaffHomeModule({ visibleGroups, setActiveModule, pendingCount, staffName }) {
+function StaffHomeModule({ visibleGroups, setActiveModule, pendingCount, staffName, navigate }) {
   const todayTH = new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
   return (
     <div className="space-y-5">
@@ -1986,9 +1987,9 @@ function StaffHomeModule({ visibleGroups, setActiveModule, pendingCount, staffNa
           <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-3 md:mb-2">{group}</p>
           {/* Mobile cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:hidden">
-            {items.map(({ key, label, Icon, color, externalUrl }) => (
+            {items.map(({ key, label, Icon, color, externalUrl, navTo }) => (
               <button key={key}
-                onClick={() => externalUrl ? window.open(externalUrl, '_blank') : setActiveModule(key)}
+                onClick={() => navTo ? navigate(navTo) : externalUrl ? window.open(externalUrl, '_blank') : setActiveModule(key)}
                 className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col items-start gap-3 text-left hover:shadow-md active:scale-95 transition-all">
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
                   style={{ backgroundColor: color + '18' }}>
@@ -2006,9 +2007,9 @@ function StaffHomeModule({ visibleGroups, setActiveModule, pendingCount, staffNa
           </div>
           {/* PC formal grid */}
           <div className="hidden md:grid grid-cols-3 gap-0 border border-gray-200 bg-white shadow-sm">
-            {items.map(({ key, label, Icon, color, externalUrl }, idx) => (
+            {items.map(({ key, label, Icon, color, externalUrl, navTo }, idx) => (
               <button key={key}
-                onClick={() => externalUrl ? window.open(externalUrl, '_blank') : setActiveModule(key)}
+                onClick={() => navTo ? navigate(navTo) : externalUrl ? window.open(externalUrl, '_blank') : setActiveModule(key)}
                 className="flex items-center gap-3 px-5 py-4 text-left transition-colors border-r border-b border-gray-200 hover:bg-blue-50 last:border-r-0"
                 style={{ borderRight: (idx + 1) % 3 === 0 ? 'none' : undefined }}>
                 <div className="w-9 h-9 rounded flex items-center justify-center shrink-0"
@@ -2134,11 +2135,11 @@ export default function StaffDashboard() {
               <p className="px-3 mb-0.5 text-[9px] font-bold uppercase tracking-widest"
                 style={{ color: 'rgba(255,255,255,0.35)', letterSpacing: '0.12em' }}>{group}</p>
               <div className="space-y-0.5">
-                {items.map(({ key, label, Icon, color, externalUrl }) => {
+                {items.map(({ key, label, Icon, color, externalUrl, navTo }) => {
                   const isActive = activeModule === key
                   const badge    = key === 'inbox' && pendingCount > 0 ? pendingCount : null
                   return (
-                    <button key={key} onClick={() => externalUrl ? window.open(externalUrl, '_blank') : setActiveModule(key)}
+                    <button key={key} onClick={() => navTo ? navigate(navTo) : externalUrl ? window.open(externalUrl, '_blank') : setActiveModule(key)}
                       className="w-full flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all"
                       style={isActive
                         ? { backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff' }
@@ -2239,7 +2240,7 @@ export default function StaffDashboard() {
 
         {/* Main */}
         <main className="flex-1 overflow-y-auto px-4 md:px-6 py-5 pb-24 md:pb-6">
-          {activeModule === 'home'       && <StaffHomeModule visibleGroups={visibleGroups} setActiveModule={setActiveModule} pendingCount={pendingCount} staffName={profile?.full_name} />}
+          {activeModule === 'home'       && <StaffHomeModule visibleGroups={visibleGroups} setActiveModule={setActiveModule} pendingCount={pendingCount} staffName={profile?.full_name} navigate={navigate} />}
           {activeModule === 'inbox'      && <InboxModule tenant={tenant} staffId={profile?.id} />}
           {activeModule === 'complaints' && (
             ['admin', 'superadmin'].includes(profile?.role)
@@ -2322,11 +2323,11 @@ export default function StaffDashboard() {
                   <div key={group} className="mb-2">
                     <p className="text-[10px] font-bold text-gray-300 uppercase tracking-widest px-5 mb-1">{group}</p>
                     <div className="grid grid-cols-4 gap-1 px-3 pb-2">
-                      {extraItems.map(({ key, label, Icon, color, externalUrl }) => {
+                      {extraItems.map(({ key, label, Icon, color, externalUrl, navTo }) => {
                         const isActive = activeModule === key
                         return (
                           <button key={key}
-                            onClick={() => { externalUrl ? window.open(externalUrl, '_blank') : setActiveModule(key); setShowMoreMenu(false) }}
+                            onClick={() => { navTo ? navigate(navTo) : externalUrl ? window.open(externalUrl, '_blank') : setActiveModule(key); setShowMoreMenu(false) }}
                             className="flex flex-col items-center gap-1.5 p-2 rounded-2xl transition-colors"
                             style={{ backgroundColor: isActive ? `${color}18` : 'transparent' }}>
                             <div className="w-11 h-11 rounded-2xl flex items-center justify-center"

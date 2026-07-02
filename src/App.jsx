@@ -35,6 +35,7 @@ import MyDocRequests from './pages/MyDocRequests'
 import LpaDocStats from './pages/LpaDocStats'
 import PostsPage from './pages/PostsPage'
 import MapPage from './pages/MapPage'
+import FleetPage from './pages/FleetPage'
 import { supabase } from './lib/supabase'
 import { Phone, X } from 'lucide-react'
 
@@ -288,6 +289,11 @@ function AppShell() {
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/news" element={<PostsPage />} />
           <Route path="/map" element={<MapPage />} />
+          <Route path="/fleet" element={
+            <RequireAuth staffOnly>
+              <FleetPage />
+            </RequireAuth>
+          } />
           <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/staff" element={
             <RequireAuth staffOnly>
