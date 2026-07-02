@@ -20,7 +20,7 @@ const TABS = [
   { id: 'setup',        label: 'ตั้งค่า',     Icon: Settings        },
 ]
 
-export default function FleetPage() {
+export default function FleetPage({ onBack } = {}) {
   const navigate    = useNavigate()
   const { tenant }  = useTenant()
   const { user }    = useAuth()
@@ -69,7 +69,7 @@ export default function FleetPage() {
       <div className="text-5xl">🚫</div>
       <h2 className="text-lg font-bold text-gray-800">ไม่มีสิทธิ์เข้าใช้ระบบ</h2>
       <p className="text-sm text-gray-500">กรุณาติดต่อผู้ดูแลระบบเพื่อขอสิทธิ์ใช้งานระบบยานพาหนะ</p>
-      <button onClick={() => navigate(-1)}
+      <button onClick={() => onBack ? onBack() : navigate(-1)}
               className="mt-2 px-4 py-2 rounded-xl text-sm font-medium bg-gray-100 text-gray-600">
         ย้อนกลับ
       </button>
@@ -83,7 +83,7 @@ export default function FleetPage() {
       {/* Header */}
       <div className="sticky top-0 z-30 bg-white border-b border-gray-100 shadow-sm">
         <div className="flex items-center gap-3 px-4 pt-3 pb-2">
-          <button onClick={() => navigate(-1)}
+          <button onClick={() => onBack ? onBack() : navigate(-1)}
                   className="p-2 -ml-1 rounded-xl hover:bg-gray-100 text-gray-500 transition-colors">
             <ArrowLeft size={20} />
           </button>

@@ -18,6 +18,7 @@ import DocumentArchive from '../components/admin/DocumentArchive'
 import TourismManager, { TourismReviewsAdmin } from '../components/admin/TourismManager'
 import BusinessRegistrationAdmin from '../components/admin/BusinessRegistrationAdmin'
 import PostsManager from '../components/staff/PostsManager'
+import FleetPage from './FleetPage'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
@@ -56,7 +57,7 @@ const MODULE_GROUPS = [
       { key: 'events',   label: 'กิจกรรม',          Icon: CalendarDays, color: '#10b981' },
       { key: 'projects', label: 'แผนงาน/โครงการ',    Icon: Wrench,       color: '#7c3aed' },
       { key: 'infra',    label: 'บันทึกงานซ่อม',     Icon: MapPin,       color: '#0891b2' },
-      { key: 'fleet',    label: 'ยานพาหนะ/น้ำมัน',  Icon: Car,          color: '#0369a1', navTo: '/fleet' },
+      { key: 'fleet',    label: 'ยานพาหนะ/น้ำมัน',  Icon: Car,          color: '#0369a1' },
     ],
   },
   {
@@ -2260,6 +2261,7 @@ export default function StaffDashboard() {
           {activeModule === 'tourism'          && <TourismManager tenant={tenant} />}
           {activeModule === 'tourism-reviews'  && <TourismReviewsAdmin tenant={tenant} />}
           {activeModule === 'business-register' && <BusinessRegistrationAdmin tenant={tenant} />}
+          {activeModule === 'fleet' && <FleetPage onBack={() => setActiveModule('home')} />}
 
         </main>
 
