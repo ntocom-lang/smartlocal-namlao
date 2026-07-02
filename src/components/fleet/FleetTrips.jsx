@@ -22,7 +22,8 @@ const EMPTY = {
 }
 
 export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff }) {
-  const { user } = useAuth()
+  const { session } = useAuth()
+  const user = session?.user
   const [trips,    setTrips]    = useState([])
   const [vehicles, setVehicles] = useState([])
   const [loading,  setLoading]  = useState(true)

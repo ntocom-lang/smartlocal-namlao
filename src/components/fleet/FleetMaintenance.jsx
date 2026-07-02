@@ -60,7 +60,8 @@ function DueSoonAlert({ records }) {
 }
 
 export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
-  const { user } = useAuth()
+  const { session } = useAuth()
+  const user = session?.user
   const [records,  setRecords]  = useState([])
   const [vehicles, setVehicles] = useState([])
   const [loading,  setLoading]  = useState(true)

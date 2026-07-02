@@ -16,7 +16,8 @@ const EMPTY_FORM = {
 }
 
 export default function FleetFuelLog({ tenant, fleetInfo, depts, isAdmin, isStaff }) {
-  const { user } = useAuth()
+  const { session } = useAuth()
+  const user = session?.user
   const [records,  setRecords]  = useState([])
   const [vehicles, setVehicles] = useState([])
   const [loading,  setLoading]  = useState(true)
