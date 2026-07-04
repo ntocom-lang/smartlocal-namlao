@@ -79,12 +79,53 @@ export default function FleetPage({ onBack } = {}) {
 
   const ctx = { tenant, fleetInfo, depts, setDepts, isAdmin, isStaff, isViewer }
 
+  const embedded = !!onBack
+
+  /* ── Tab bar (ใช้ร่วมทั้ง embedded + standalone) ── */
+  const tabBar = (
+    <div className="flex overflow-x-auto border-b border-gray-200 bg-white"
+         style={{ scrollbarWidth: 'none' }}>
+      {visibleTabs.map(({ id, label, Icon }) => (
+        <button key={id} onClick={() => setTab(id)}
+          className="flex items-center gap-1.5 px-4 py-2.5 text-[11px] font-bold shrink-0 border-b-2 transition-colors"
+          style={{
+            borderColor: tab === id ? 'var(--color-primary)' : 'transparent',
+            color:       tab === id ? 'var(--color-primary)' : '#9ca3af',
+          }}>
+          <Icon size={14} />
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+
+  const content = (
+    <div className="p-4 max-w-5xl mx-auto w-full">
+      {tab === 'dashboard'   && <FleetDashboard   {...ctx} />}
+      {tab === 'vehicles'    && <FleetVehicles    {...ctx} />}
+      {tab === 'fuel'        && <FleetFuelLog     {...ctx} />}
+      {tab === 'trips'       && <FleetTrips       {...ctx} />}
+      {tab === 'maintenance' && <FleetMaintenance {...ctx} />}
+      {tab === 'setup'       && <FleetSetup       {...ctx} />}
+    </div>
+  )
+
+  /* ── Embedded ใน StaffDashboard — ไม่มี header ซ้อน ── */
+  if (embedded) {
+    return (
+      <div className="-mx-4 md:-mx-6 -mt-5">
+        {tabBar}
+        <div className="px-4 md:px-6 py-5">{content}</div>
+      </div>
+    )
+  }
+
+  /* ── Standalone route /fleet ── */
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
-      {/* Header */}
       <div className="sticky top-0 z-30 bg-white border-b border-gray-100 shadow-sm">
         <div className="flex items-center gap-3 px-4 pt-3 pb-2">
-          <button onClick={() => onBack ? onBack() : navigate(-1)}
+          <button onClick={() => navigate(-1)}
                   className="p-2 -ml-1 rounded-xl hover:bg-gray-100 text-gray-500 transition-colors">
             <ArrowLeft size={20} />
           </button>
@@ -99,31 +140,9 @@ export default function FleetPage({ onBack } = {}) {
             </p>
           </div>
         </div>
-        {/* Tab bar */}
-        <div className="flex overflow-x-auto px-2 pb-0" style={{ scrollbarWidth: 'none' }}>
-          {visibleTabs.map(({ id, label, Icon }) => (
-            <button key={id} onClick={() => setTab(id)}
-              className="flex items-center gap-1.5 px-3 py-2.5 text-[11px] font-bold shrink-0 border-b-2 transition-colors"
-              style={{
-                borderColor: tab === id ? 'var(--color-primary)' : 'transparent',
-                color:       tab === id ? 'var(--color-primary)' : '#9ca3af',
-              }}>
-              <Icon size={14} />
-              {label}
-            </button>
-          ))}
-        </div>
+        {tabBar}
       </div>
-
-      {/* Content */}
-      <div className="flex-1 p-4 max-w-5xl mx-auto w-full">
-        {tab === 'dashboard'   && <FleetDashboard   {...ctx} />}
-        {tab === 'vehicles'    && <FleetVehicles    {...ctx} />}
-        {tab === 'fuel'        && <FleetFuelLog     {...ctx} />}
-        {tab === 'trips'       && <FleetTrips       {...ctx} />}
-        {tab === 'maintenance' && <FleetMaintenance {...ctx} />}
-        {tab === 'setup'       && <FleetSetup       {...ctx} />}
-      </div>
+      <div className="flex-1">{content}</div>
     </div>
   )
 }
