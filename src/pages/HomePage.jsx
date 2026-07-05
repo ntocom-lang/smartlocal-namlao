@@ -1,7 +1,8 @@
-import { useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
+import { supabase } from '../lib/supabase'
 import PostsHighlight from '../components/home/PostsHighlight'
 import TourismSection from '../components/home/TourismSection'
 import ComplaintBand from '../components/home/ComplaintBand'
@@ -42,6 +43,23 @@ export default function HomePage() {
     }))
     return [...BASE_DOC_TYPES, ...extras]
   }, [tenant])
+
+  const [docCounts, setDocCounts] = useState({})
+  useEffect(() => {
+    if (!tenant?.id) return
+    supabase.from('document_requests').select('document_type')
+      .eq('municipality_id', tenant.id)
+      .order('created_at', { ascending: false }).limit(300)
+      .then(({ data }) => {
+        const c = {}
+        ;(data ?? []).forEach(r => { c[r.document_type] = (c[r.document_type] ?? 0) + 1 })
+        setDocCounts(c)
+      })
+  }, [tenant?.id])
+
+  const topDocTypes = useMemo(() =>
+    [...docTypes].sort((a, b) => (docCounts[b.value] ?? 0) - (docCounts[a.value] ?? 0)).slice(0, 4)
+  , [docTypes, docCounts])
 
   return (
     <div className="max-w-6xl mx-auto md:px-8 md:py-6 space-y-2 md:space-y-4">
@@ -110,7 +128,7 @@ export default function HomePage() {
                 </Link>
               </div>
               <div className="flex gap-4 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-                {docTypes.map(({ value, label, emoji }) => (
+                {topDocTypes.map(({ value, label, emoji }) => (
                   <Link key={value} to={`/doc-request?type=${value}`}
                     className="flex flex-col items-center gap-2 shrink-0 active:scale-95 transition-transform">
                     <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-lg"

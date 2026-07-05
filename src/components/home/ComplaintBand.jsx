@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
@@ -31,17 +31,27 @@ export default function ComplaintBand() {
   const { tenant } = useTenant()
   const navigate = useNavigate()
   const [cats, setCats] = useState(DEFAULT_CATEGORIES)
+  const [catCounts, setCatCounts] = useState({})
 
   useEffect(() => {
     if (!tenant?.id) return
-    supabase
-      .from('complaint_categories')
-      .select('value, label')
-      .eq('municipality_id', tenant.id)
-      .order('sort_order')
+    supabase.from('complaint_categories').select('value, label')
+      .eq('municipality_id', tenant.id).order('sort_order')
       .then(({ data }) => { if (data?.length) setCats(data) })
       .catch(() => {})
+    supabase.from('complaints').select('category')
+      .eq('municipality_id', tenant.id)
+      .order('created_at', { ascending: false }).limit(300)
+      .then(({ data }) => {
+        const c = {}
+        ;(data ?? []).forEach(r => { c[r.category] = (c[r.category] ?? 0) + 1 })
+        setCatCounts(c)
+      })
   }, [tenant?.id])
+
+  const topCats = useMemo(() =>
+    [...cats].sort((a, b) => (catCounts[b.value] ?? 0) - (catCounts[a.value] ?? 0)).slice(0, 4)
+  , [cats, catCounts])
 
   return (
     <div className="rounded-2xl overflow-hidden shadow-xl relative"
@@ -61,7 +71,7 @@ export default function ComplaintBand() {
           </button>
         </div>
         <div className="flex gap-5 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-          {cats.map(cat => {
+          {topCats.map(cat => {
             const Icon = CATEGORY_ICON[cat.value] ?? HelpCircle
             return (
               <button key={cat.value}
