@@ -393,7 +393,7 @@ const DEFAULT_TYPES = [
 function VehicleTypesTab({ tenant }) {
   const [types,   setTypes]   = useState([])
   const [loading, setLoading] = useState(true)
-  const [form,    setForm]    = useState({ value: '', label: '' })
+  const [form,    setForm]    = useState({ label: '' })
   const [saving,  setSaving]  = useState(false)
   const [editId,  setEditId]  = useState(null)
 
@@ -406,7 +406,7 @@ function VehicleTypesTab({ tenant }) {
   }, [tenant?.id])
 
   async function handleSave() {
-    if (!form.value || !form.label) return alert('กรุณากรอกรหัสและชื่อประเภท')
+    if (!form.label) return alert('กรุณากรอกชื่อประเภท')
     setSaving(true)
     if (editId) {
       const { data, error } = await supabase.from('fleet_vehicle_types')
@@ -415,12 +415,12 @@ function VehicleTypesTab({ tenant }) {
       else alert(error.message)
     } else {
       const { data, error } = await supabase.from('fleet_vehicle_types').insert({
-        municipality_id: tenant.id, value: form.value, label: form.label, sort_order: types.length,
+        municipality_id: tenant.id, value: 'vt_' + Date.now().toString(36), label: form.label, sort_order: types.length,
       }).select().single()
       if (!error) setTypes(prev => [...prev, data])
       else alert(error.message)
     }
-    setSaving(false); setEditId(null); setForm({ value: '', label: '' })
+    setSaving(false); setEditId(null); setForm({ label: '' })
   }
 
   async function handleDelete(id) {
@@ -448,21 +448,14 @@ function VehicleTypesTab({ tenant }) {
     <div className="space-y-4">
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
         <p className="text-sm font-bold text-gray-700">{editId ? 'แก้ไขประเภท' : 'เพิ่มประเภทยานพาหนะ'}</p>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1 block">รหัส *</label>
-            <input value={form.value} onChange={e => setForm(f => ({ ...f, value: e.target.value }))}
-              placeholder="pickup" className={inp} disabled={!!editId} />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1 block">ชื่อประเภท *</label>
-            <input value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))}
-              placeholder="รถกระบะ" className={inp} />
-          </div>
+        <div>
+          <label className="text-xs font-semibold text-gray-600 mb-1 block">ชื่อประเภท *</label>
+          <input value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))}
+            placeholder="เช่น รถกระบะ, รถตู้" className={inp} />
         </div>
         <div className="flex gap-2">
           {editId && (
-            <button onClick={() => { setEditId(null); setForm({ value: '', label: '' }) }}
+            <button onClick={() => { setEditId(null); setForm({ label: '' }) }}
               className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-gray-100 text-gray-600">
               ยกเลิก
             </button>
@@ -487,12 +480,9 @@ function VehicleTypesTab({ tenant }) {
         )}
         {types.map(t => (
           <div key={t.id} className="flex items-center justify-between bg-white rounded-xl border border-gray-100 px-4 py-3">
-            <div>
-              <p className="text-sm font-semibold text-gray-800">{t.label}</p>
-              <p className="text-[10px] text-gray-400">{t.value}</p>
-            </div>
+            <p className="text-sm font-semibold text-gray-800">{t.label}</p>
             <div className="flex gap-1">
-              <button onClick={() => { setEditId(t.id); setForm({ value: t.value, label: t.label }) }}
+              <button onClick={() => { setEditId(t.id); setForm({ label: t.label }) }}
                 className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><Pencil size={13} /></button>
               <button onClick={() => handleDelete(t.id)}
                 className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400"><X size={13} /></button>
