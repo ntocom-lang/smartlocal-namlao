@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Plus, X, Check, Ban } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -35,6 +35,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   const [filterStatus, setFilterStatus] = useState('all')
 
   const canWrite = isAdmin || isStaff
+  const filterRef = useRef(filterStatus)
+  useEffect(() => { filterRef.current = filterStatus }, [filterStatus])
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -54,6 +56,33 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     if (filterStatus !== 'all') q = q.eq('status', filterStatus)
     q.then(({ data }) => setTrips(data ?? [])).finally(() => setLoading(false))
   }, [tenant?.id, filterStatus])
+
+  /* ── Realtime ── */
+  useEffect(() => {
+    if (!tenant?.id) return
+    const SELECT = '*, fleet_vehicles(name, license_plate), fleet_departments(name), profiles!fleet_trips_approved_by_fkey(full_name)'
+    const channel = supabase.channel(`fleet-trips-${tenant.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'fleet_trips' },
+        async ({ new: row }) => {
+          if (row.municipality_id !== tenant.id) return
+          const { data } = await supabase.from('fleet_trips').select(SELECT).eq('id', row.id).single()
+          if (!data) return
+          setTrips(prev => {
+            if (prev.find(t => t.id === data.id)) return prev
+            if (filterRef.current !== 'all' && data.status !== filterRef.current) return prev
+            return [data, ...prev]
+          })
+        })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'fleet_trips' },
+        async ({ new: row }) => {
+          if (row.municipality_id !== tenant.id) return
+          const { data } = await supabase.from('fleet_trips').select(SELECT).eq('id', row.id).single()
+          if (!data) return
+          setTrips(prev => prev.map(t => t.id === data.id ? data : t))
+        })
+      .subscribe()
+    return () => supabase.removeChannel(channel)
+  }, [tenant?.id])
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 

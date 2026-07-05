@@ -42,6 +42,29 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
       .finally(() => setLoading(false))
   }, [tenant?.id])
 
+  /* ── Realtime ── */
+  useEffect(() => {
+    if (!tenant?.id) return
+    const SELECT = '*, fleet_departments(name,short_name)'
+    const channel = supabase.channel(`fleet-vehicles-${tenant.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'fleet_vehicles' },
+        async ({ new: row }) => {
+          if (row.municipality_id !== tenant.id) return
+          const { data } = await supabase.from('fleet_vehicles').select(SELECT).eq('id', row.id).single()
+          if (data) setVehicles(prev =>
+            [...prev, data].sort((a, b) => a.name.localeCompare(b.name, 'th'))
+          )
+        })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'fleet_vehicles' },
+        async ({ new: row }) => {
+          if (row.municipality_id !== tenant.id) return
+          const { data } = await supabase.from('fleet_vehicles').select(SELECT).eq('id', row.id).single()
+          if (data) setVehicles(prev => prev.map(v => v.id === data.id ? data : v))
+        })
+      .subscribe()
+    return () => supabase.removeChannel(channel)
+  }, [tenant?.id])
+
   function openAdd() { setForm({ ...EMPTY, department_id: depts[0]?.id ?? '' }); setModal('add') }
   function openEdit(v) {
     setForm({

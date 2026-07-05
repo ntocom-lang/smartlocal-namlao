@@ -167,6 +167,29 @@ export default function FleetDashboard({ tenant, depts, isAdmin }) {
     }).finally(() => setLoading(false))
   }, [tenant?.id])
 
+  /* ── Realtime ── */
+  useEffect(() => {
+    if (!tenant?.id) return
+
+    const refreshPending = () =>
+      supabase.from('fleet_trips').select('id', { count: 'exact', head: true })
+        .eq('municipality_id', tenant.id).eq('status', 'pending')
+        .then(({ count }) => setPendingCnt(count ?? 0))
+
+    const refreshVehicles = () =>
+      supabase.from('fleet_vehicles').select('*').eq('municipality_id', tenant.id)
+        .then(({ data }) => setVehicles(data ?? []))
+
+    const channel = supabase.channel(`fleet-dash-${tenant.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fleet_trips' },
+        ({ new: row }) => { if (row?.municipality_id === tenant.id) refreshPending() })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fleet_vehicles' },
+        ({ new: row }) => { if (row?.municipality_id === tenant.id) refreshVehicles() })
+      .subscribe()
+
+    return () => supabase.removeChannel(channel)
+  }, [tenant?.id])
+
   if (loading) return (
     <div className="flex justify-center py-16">
       <div className="w-6 h-6 border-4 border-gray-200 rounded-full animate-spin"
