@@ -24,7 +24,9 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts, isAdmin, isStaf
   const [modal,    setModal]    = useState(false)
   const [form,     setForm]     = useState(EMPTY_FORM)
   const [saving,   setSaving]   = useState(false)
-  const [filterVeh, setFilterVeh] = useState('all')
+  const [filterVeh,  setFilterVeh]  = useState('all')
+  const [dateFrom,   setDateFrom]   = useState('')
+  const [dateTo,     setDateTo]     = useState('')
   const [page, setPage] = useState(0)
   const PER_PAGE = 20
 
@@ -47,8 +49,10 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts, isAdmin, isStaf
       .order('filled_at', { ascending: false })
       .range(page * PER_PAGE, (page + 1) * PER_PAGE - 1)
     if (filterVeh !== 'all') q = q.eq('vehicle_id', filterVeh)
+    if (dateFrom) q = q.gte('filled_at', dateFrom)
+    if (dateTo)   q = q.lte('filled_at', dateTo)
     q.then(({ data }) => setRecords(data ?? [])).finally(() => setLoading(false))
-  }, [tenant?.id, filterVeh, page])
+  }, [tenant?.id, filterVeh, dateFrom, dateTo, page])
 
   const set = k => e => setForm(f => ({
     ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value
@@ -92,6 +96,15 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts, isAdmin, isStaf
           <option value="all">ทุกคัน</option>
           {vehicles.map(v => <option key={v.id} value={v.id}>{v.name} ({v.license_plate})</option>)}
         </select>
+        <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(0) }}
+          className="text-xs border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none" />
+        <span className="text-xs text-gray-400">–</span>
+        <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(0) }}
+          className="text-xs border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none" />
+        {(dateFrom || dateTo) && (
+          <button onClick={() => { setDateFrom(''); setDateTo(''); setPage(0) }}
+            className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded-lg border border-gray-200">ล้าง</button>
+        )}
         {canWrite && (
           <button onClick={() => { setForm(EMPTY_FORM); setModal(true) }}
             className="ml-auto flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white"

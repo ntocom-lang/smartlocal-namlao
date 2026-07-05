@@ -69,6 +69,8 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
   const [form,     setForm]     = useState(EMPTY)
   const [saving,   setSaving]   = useState(false)
   const [filterType, setFilterType] = useState('all')
+  const [dateFrom,   setDateFrom]   = useState('')
+  const [dateTo,     setDateTo]     = useState('')
 
   const canWrite = isAdmin || isStaff
 
@@ -86,10 +88,12 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
       .select('*, fleet_vehicles(name, license_plate)')
       .eq('municipality_id', tenant.id)
       .order('service_date', { ascending: false })
-      .limit(50)
+      .limit(100)
     if (filterType !== 'all') q = q.eq('maintenance_type', filterType)
+    if (dateFrom) q = q.gte('service_date', dateFrom)
+    if (dateTo)   q = q.lte('service_date', dateTo)
     q.then(({ data }) => setRecords(data ?? [])).finally(() => setLoading(false))
-  }, [tenant?.id, filterType])
+  }, [tenant?.id, filterType, dateFrom, dateTo])
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
@@ -150,13 +154,24 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
             </button>
           ))}
         </div>
-        {canWrite && (
-          <button onClick={() => { setForm(EMPTY); setModal(true) }}
-            className="ml-auto flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white"
-            style={{ backgroundColor: 'var(--color-primary)' }}>
-            <Plus size={15} /> บันทึกซ่อมบำรุง
-          </button>
-        )}
+        <div className="flex items-center gap-2 ml-auto flex-wrap">
+          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+            className="text-xs border border-gray-200 rounded-xl px-3 py-1.5 bg-white text-gray-700 focus:outline-none" />
+          <span className="text-xs text-gray-400">–</span>
+          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+            className="text-xs border border-gray-200 rounded-xl px-3 py-1.5 bg-white text-gray-700 focus:outline-none" />
+          {(dateFrom || dateTo) && (
+            <button onClick={() => { setDateFrom(''); setDateTo('') }}
+              className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded-lg border border-gray-200">ล้าง</button>
+          )}
+          {canWrite && (
+            <button onClick={() => { setForm(EMPTY); setModal(true) }}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white"
+              style={{ backgroundColor: 'var(--color-primary)' }}>
+              <Plus size={15} /> บันทึกซ่อมบำรุง
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Records */}

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, LayoutDashboard, Car, Fuel, Route, Wrench } from 'lucide-react'
+import { ArrowLeft, LayoutDashboard, Car, Fuel, Route, Wrench, BarChart2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -9,12 +9,14 @@ import FleetVehicles    from '../components/fleet/FleetVehicles'
 import FleetFuelLog     from '../components/fleet/FleetFuelLog'
 import FleetTrips       from '../components/fleet/FleetTrips'
 import FleetMaintenance from '../components/fleet/FleetMaintenance'
+import FleetReport      from '../components/fleet/FleetReport'
 const TABS = [
   { id: 'dashboard',    label: 'ภาพรวม',     Icon: LayoutDashboard },
   { id: 'vehicles',     label: 'ยานพาหนะ',   Icon: Car             },
   { id: 'fuel',         label: 'น้ำมัน',      Icon: Fuel            },
   { id: 'trips',        label: 'การเดินทาง', Icon: Route           },
   { id: 'maintenance',  label: 'ซ่อมบำรุง',  Icon: Wrench          },
+  { id: 'report',       label: 'รายงาน',     Icon: BarChart2        },
 ]
 
 export default function FleetPage({ onBack } = {}) {
@@ -101,6 +103,7 @@ export default function FleetPage({ onBack } = {}) {
       {tab === 'fuel'        && <FleetFuelLog     {...ctx} />}
       {tab === 'trips'       && <FleetTrips       {...ctx} />}
       {tab === 'maintenance' && <FleetMaintenance {...ctx} />}
+      {tab === 'report'      && <FleetReport      tenant={tenant} depts={depts} />}
     </div>
   )
 
