@@ -5,6 +5,12 @@ const fmt  = n => (n ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 2 })
 const fmtB = n => `฿${Math.round(n ?? 0).toLocaleString('th-TH')}`
 const thDate = d => d ? new Date(d).toLocaleDateString('th-TH', { dateStyle: 'short' }) : '—'
 
+function nextDay(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00Z')
+  d.setDate(d.getDate() + 1)
+  return d.toISOString().slice(0, 10)
+}
+
 const MAINT_TH = {
   routine: 'บำรุงรักษา', oil_change: 'เปลี่ยนถ่ายน้ำมัน', repair: 'ซ่อมแซม',
   inspection: 'ตรวจสภาพ', tire: 'ยาง', battery: 'แบตเตอรี่', other: 'อื่นๆ',
@@ -70,19 +76,19 @@ export default function FleetReport({ tenant }) {
   async function loadReport() {
     setLoading(true)
     const vq = q => selVehicle ? q.eq('vehicle_id', selVehicle) : q
-    const toEOD = dateTo + 'T23:59:59'
+    const endDay = nextDay(dateTo) // ใช้ .lt(nextDay) แทน .lte(T23:59:59) เพื่อหลีกเลี่ยง format tz
 
     const [{ data: trips }, { data: fuel }, { data: maint }] = await Promise.all([
       vq(supabase.from('fleet_trips')
-        .select('*, vehicle:fleet_vehicles(name,license_plate), driver:profiles!fleet_trips_driver_id_fkey(full_name)')
+        .select('*, vehicle:fleet_vehicles(id,name,license_plate), driver:profiles!fleet_trips_driver_id_fkey(id,full_name), fleet_departments(name,short_name)')
         .eq('municipality_id', tenant.id).eq('status', 'completed')
-        .gte('started_at', dateFrom).lte('started_at', toEOD)).order('started_at'),
+        .gte('started_at', dateFrom).lt('started_at', endDay)).order('started_at'),
       vq(supabase.from('fleet_fuel_records')
-        .select('*, fleet_vehicles(name,license_plate)')
+        .select('*, fleet_vehicles(name, license_plate)')
         .eq('municipality_id', tenant.id)
         .gte('filled_at', dateFrom).lte('filled_at', dateTo)).order('filled_at'),
       vq(supabase.from('fleet_maintenance')
-        .select('*, fleet_vehicles(name,license_plate)')
+        .select('*, fleet_vehicles(name, license_plate)')
         .eq('municipality_id', tenant.id)
         .gte('service_date', dateFrom).lte('service_date', dateTo)).order('service_date'),
     ])
