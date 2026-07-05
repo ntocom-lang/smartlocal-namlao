@@ -1,384 +1,667 @@
-import { useState, useEffect, useRef } from 'react'
-import { Plus, X, Check, Ban } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Plus, Calendar, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 
+const STATUS_LABEL = {
+  pending:     'รอการอนุมัติ',
+  approved:    'อนุมัติแล้ว',
+  in_progress: 'กำลังเดินทาง',
+  completed:   'เสร็จสิ้น',
+  rejected:    'ปฏิเสธ',
+  cancelled:   'ยกเลิก',
+}
+const STATUS_CLR = {
+  pending:     '#f59e0b',
+  approved:    '#3b82f6',
+  in_progress: '#8b5cf6',
+  completed:   '#10b981',
+  rejected:    '#ef4444',
+  cancelled:   '#9ca3af',
+}
+
 const inp = 'w-full px-3 py-2.5 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent'
 const sel = inp + ' appearance-none'
-const thDate = d => new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
 
-const STATUS = {
-  draft:     { label: 'ร่าง',         color: '#9ca3af' },
-  pending:   { label: 'รออนุมัติ',    color: '#f59e0b' },
-  approved:  { label: 'อนุมัติแล้ว',  color: '#10b981' },
-  rejected:  { label: 'ไม่อนุมัติ',   color: '#ef4444' },
-  completed: { label: 'เสร็จสิ้น',   color: '#6366f1' },
+const SELECT = `*, vehicle:fleet_vehicles(id,name,license_plate), driver:profiles!fleet_trips_driver_id_fkey(id,full_name), approver:profiles!fleet_trips_approved_by_fkey(full_name), fleet_departments(name,short_name)`
+
+function toLocalDT(date) {
+  const d = new Date(date)
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
 }
 
-const EMPTY = {
-  vehicle_id: '', department_id: '', driver_id: '', trip_date: new Date().toISOString().slice(0,10),
-  depart_time: '', return_time: '', odometer_start: '', odometer_end: '',
-  destination: '', purpose: '', passengers: '1', notes: '',
+function fmtDT(str) {
+  if (!str) return '—'
+  return new Date(str).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })
 }
 
-export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff }) {
+function fmtDate(str) {
+  if (!str) return '—'
+  return new Date(str).toLocaleDateString('th-TH', { dateStyle: 'short' })
+}
+
+const EMPTY_RESERVE = {
+  vehicle_id: '', driver_id: '', department_id: '',
+  planned_departure: '', planned_return: '',
+  destination: '', purpose: '',
+}
+const EMPTY_DIRECT = {
+  vehicle_id: '', driver_id: '', department_id: '',
+  started_at: '', returned_at: '',
+  odometer_start: '', odometer_end: '',
+  destination: '', purpose: '', notes: '',
+}
+
+/* ── Modal shell ──────────────────────────────────────── */
+function Modal({ title, onClose, onSave, saveLabel = 'บันทึก', saving, children }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h2 className="text-base font-black text-gray-800">{title}</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><X size={16} /></button>
+        </div>
+        <div className="overflow-y-auto p-5 space-y-4 flex-1">{children}</div>
+        <div className="px-5 pb-5 pt-2 border-t border-gray-100">
+          <button onClick={onSave} disabled={saving}
+            className="w-full py-3 rounded-xl text-sm font-bold text-white disabled:opacity-50"
+            style={{ backgroundColor: 'var(--color-primary)' }}>
+            {saving ? 'กำลังบันทึก...' : saveLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── Main ──────────────────────────────────────────────── */
+export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
   const { session } = useAuth()
   const user = session?.user
-  const [trips,    setTrips]    = useState([])
-  const [vehicles, setVehicles] = useState([])
+
+  const [trips,     setTrips]     = useState([])
   const [staffList, setStaffList] = useState([])
-  const [loading,  setLoading]  = useState(true)
-  const [modal,    setModal]    = useState(false)
-  const [rejectId, setRejectId] = useState(null)
-  const [rejectReason, setRejectReason] = useState('')
-  const [form,     setForm]     = useState(EMPTY)
-  const [saving,   setSaving]   = useState(false)
-  const [filterStatus, setFilterStatus] = useState('all')
+  const [vehicles,  setVehicles]  = useState([])
+  const [loading,   setLoading]   = useState(true)
+  const [modal,     setModal]     = useState(null) // 'reserve'|'direct'|'depart'|'return'
+  const [selTrip,   setSelTrip]   = useState(null)
+  const [form,      setForm]      = useState({})
+  const [saving,    setSaving]    = useState(false)
+  const [conflict,  setConflict]  = useState(false)
 
-  const canWrite = isAdmin || isStaff
-  const filterRef = useRef(filterStatus)
-  useEffect(() => { filterRef.current = filterStatus }, [filterStatus])
-
+  /* ── Load ── */
   useEffect(() => {
     if (!tenant?.id) return
-    supabase.from('fleet_vehicles').select('id, name, license_plate')
-      .eq('municipality_id', tenant.id).eq('status', 'active').order('name')
-      .then(({ data }) => setVehicles(data ?? []))
-    supabase.from('profiles').select('id, full_name')
-      .eq('municipality_id', tenant.id).not('fleet_role', 'is', null).order('full_name')
-      .then(({ data }) => setStaffList(data ?? []))
+    Promise.all([
+      supabase.from('fleet_trips').select(SELECT)
+        .eq('municipality_id', tenant.id)
+        .order('created_at', { ascending: false })
+        .limit(300),
+      supabase.from('profiles').select('id,full_name,fleet_department_id')
+        .eq('municipality_id', tenant.id)
+        .not('fleet_role', 'is', null),
+      supabase.from('fleet_vehicles').select('id,name,license_plate')
+        .eq('municipality_id', tenant.id).eq('status', 'active').order('name'),
+    ]).then(([{ data: t }, { data: s }, { data: v }]) => {
+      setTrips(t ?? [])
+      setStaffList(s ?? [])
+      setVehicles(v ?? [])
+    }).finally(() => setLoading(false))
   }, [tenant?.id])
-
-  useEffect(() => {
-    if (!tenant?.id) return
-    setLoading(true)
-    let q = supabase.from('fleet_trips')
-      .select('*, fleet_vehicles(name, license_plate), fleet_departments(name), driver:profiles!fleet_trips_driver_id_fkey(full_name), approver:profiles!fleet_trips_approved_by_fkey(full_name)')
-      .eq('municipality_id', tenant.id)
-      .order('trip_date', { ascending: false })
-      .limit(50)
-    if (filterStatus !== 'all') q = q.eq('status', filterStatus)
-    q.then(({ data }) => setTrips(data ?? [])).finally(() => setLoading(false))
-  }, [tenant?.id, filterStatus])
 
   /* ── Realtime ── */
   useEffect(() => {
     if (!tenant?.id) return
-    const SELECT = '*, fleet_vehicles(name, license_plate), fleet_departments(name), driver:profiles!fleet_trips_driver_id_fkey(full_name), approver:profiles!fleet_trips_approved_by_fkey(full_name)'
-    const channel = supabase.channel(`fleet-trips-${tenant.id}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'fleet_trips' },
-        async ({ new: row }) => {
+    const ch = supabase.channel(`fleet-trips-${tenant.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fleet_trips' },
+        async ({ eventType, new: row, old }) => {
+          if (eventType === 'DELETE') return setTrips(p => p.filter(t => t.id !== old.id))
           if (row.municipality_id !== tenant.id) return
           const { data } = await supabase.from('fleet_trips').select(SELECT).eq('id', row.id).single()
           if (!data) return
-          setTrips(prev => {
-            if (prev.find(t => t.id === data.id)) return prev
-            if (filterRef.current !== 'all' && data.status !== filterRef.current) return prev
-            return [data, ...prev]
-          })
-        })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'fleet_trips' },
-        async ({ new: row }) => {
-          if (row.municipality_id !== tenant.id) return
-          const { data } = await supabase.from('fleet_trips').select(SELECT).eq('id', row.id).single()
-          if (!data) return
-          setTrips(prev => prev.map(t => t.id === data.id ? data : t))
-        })
-      .subscribe()
-    return () => supabase.removeChannel(channel)
+          setTrips(p => p.find(t => t.id === data.id)
+            ? p.map(t => t.id === data.id ? data : t)
+            : [data, ...p])
+        }).subscribe()
+    return () => supabase.removeChannel(ch)
   }, [tenant?.id])
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
-  async function handleSave() {
-    if (!form.vehicle_id || !form.destination || !form.purpose || !form.odometer_start)
-      return alert('กรุณากรอกข้อมูลที่จำเป็น')
+  /* ── Conflict check ── */
+  async function checkConflict(vehicleId, from, to) {
+    const { data: busy } = await supabase.from('fleet_trips')
+      .select('id').eq('vehicle_id', vehicleId).eq('status', 'in_progress').limit(1)
+    if (busy?.length) return true
+    const { data: overlap } = await supabase.from('fleet_trips')
+      .select('id').eq('vehicle_id', vehicleId)
+      .in('status', ['pending', 'approved'])
+      .lt('planned_departure', to).gt('planned_return', from)
+    return (overlap?.length ?? 0) > 0
+  }
+
+  /* ── Open modals ── */
+  function openReserve() {
+    const dep = new Date(Date.now() + 3600000)
+    const ret = new Date(Date.now() + 7200000)
+    setForm({
+      ...EMPTY_RESERVE,
+      driver_id: user?.id ?? '',
+      department_id: fleetInfo?.fleet_department_id ?? '',
+      planned_departure: toLocalDT(dep),
+      planned_return: toLocalDT(ret),
+    })
+    setConflict(false)
+    setModal('reserve')
+  }
+
+  function openDirect() {
+    setForm({
+      ...EMPTY_DIRECT,
+      driver_id: user?.id ?? '',
+      department_id: fleetInfo?.fleet_department_id ?? '',
+      started_at: toLocalDT(new Date()),
+    })
+    setModal('direct')
+  }
+
+  /* ── Submit reservation ── */
+  async function submitReserve() {
+    if (!form.vehicle_id || !form.planned_departure || !form.planned_return || !form.destination || !form.purpose)
+      return alert('กรุณากรอกข้อมูลให้ครบ')
+    if (new Date(form.planned_return) <= new Date(form.planned_departure))
+      return alert('เวลากลับต้องหลังเวลาออก')
+    const has = await checkConflict(form.vehicle_id, form.planned_departure, form.planned_return)
+    if (has) { setConflict(true); return }
     setSaving(true)
-    const { data, error } = await supabase.from('fleet_trips').insert({
+    const { error } = await supabase.from('fleet_trips').insert({
       municipality_id: tenant.id,
-      vehicle_id:      form.vehicle_id,
-      driver_id:       form.driver_id || user.id,
-      department_id:   form.department_id || fleetInfo?.fleet_department_id || null,
-      trip_date:       form.trip_date,
-      depart_time:     form.depart_time  || null,
-      return_time:     form.return_time  || null,
-      odometer_start:  parseFloat(form.odometer_start),
-      odometer_end:    form.odometer_end ? parseFloat(form.odometer_end) : null,
-      destination:     form.destination,
-      purpose:         form.purpose,
-      passengers:      parseInt(form.passengers) || 1,
-      notes:           form.notes || null,
-      status:          isAdmin ? 'approved' : 'pending',
-      created_by:      user.id,
-    }).select('*, fleet_vehicles(name, license_plate), fleet_departments(name)').single()
-    if (!error) { setTrips(prev => [data, ...prev]); setModal(false); setForm(EMPTY) }
-    else alert(error.message)
+      vehicle_id: form.vehicle_id,
+      driver_id: form.driver_id || user?.id,
+      department_id: form.department_id || null,
+      planned_departure: form.planned_departure,
+      planned_return: form.planned_return,
+      destination: form.destination,
+      purpose: form.purpose,
+      status: 'pending',
+    })
     setSaving(false)
+    if (error) return alert(error.message)
+    setModal(null)
   }
 
-  async function handleApprove(id) {
-    const { data, error } = await supabase.from('fleet_trips')
-      .update({ status: 'approved', approved_by: user.id, approved_at: new Date().toISOString() })
-      .eq('id', id).select('*, fleet_vehicles(name, license_plate), fleet_departments(name)').single()
-    if (!error) setTrips(prev => prev.map(t => t.id === id ? data : t))
-    else alert(error.message)
+  /* ── Submit direct entry ── */
+  async function submitDirect() {
+    if (!form.vehicle_id || !form.started_at || !form.destination || !form.purpose)
+      return alert('กรุณากรอกข้อมูลให้ครบ')
+    setSaving(true)
+    const { error } = await supabase.from('fleet_trips').insert({
+      municipality_id: tenant.id,
+      vehicle_id: form.vehicle_id,
+      driver_id: form.driver_id || user?.id,
+      department_id: form.department_id || null,
+      started_at: form.started_at,
+      returned_at: form.returned_at || null,
+      odometer_start: form.odometer_start ? Number(form.odometer_start) : null,
+      odometer_end: form.odometer_end ? Number(form.odometer_end) : null,
+      destination: form.destination,
+      purpose: form.purpose,
+      notes: form.notes || null,
+      status: 'completed',
+    })
+    setSaving(false)
+    if (error) return alert(error.message)
+    setModal(null)
   }
 
-  async function handleReject() {
-    if (!rejectReason) return alert('กรุณาระบุเหตุผล')
-    const { data, error } = await supabase.from('fleet_trips')
-      .update({ status: 'rejected', reject_reason: rejectReason })
-      .eq('id', rejectId).select('*, fleet_vehicles(name, license_plate), fleet_departments(name)').single()
-    if (!error) { setTrips(prev => prev.map(t => t.id === rejectId ? data : t)); setRejectId(null); setRejectReason('') }
-    else alert(error.message)
+  /* ── Admin approve/reject ── */
+  async function handleApprove(t) {
+    if (!confirm(`อนุมัติการจองรถ "${t.vehicle?.name}" ให้ ${t.driver?.full_name}?`)) return
+    await supabase.from('fleet_trips').update({ status: 'approved', approved_by: user?.id }).eq('id', t.id)
+  }
+  async function handleReject(t) {
+    if (!confirm(`ปฏิเสธการจองรถ "${t.vehicle?.name}"?`)) return
+    await supabase.from('fleet_trips').update({ status: 'rejected' }).eq('id', t.id)
   }
 
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-2 items-center">
-        <div className="flex gap-1 flex-wrap">
-          {['all', ...Object.keys(STATUS)].map(s => (
-            <button key={s} onClick={() => setFilterStatus(s)}
-              className="text-xs px-3 py-1.5 rounded-full font-semibold transition-colors border"
-              style={filterStatus === s
-                ? { backgroundColor: s === 'all' ? '#1e40af' : STATUS[s]?.color, color: '#fff', borderColor: 'transparent' }
-                : { backgroundColor: '#f9fafb', color: '#6b7280', borderColor: '#e5e7eb' }}>
-              {s === 'all' ? 'ทั้งหมด' : STATUS[s]?.label}
-            </button>
-          ))}
+  /* ── Depart / Return ── */
+  async function submitDepart() {
+    if (!form.started_at) return alert('กรุณาระบุเวลาออก')
+    setSaving(true)
+    const { error } = await supabase.from('fleet_trips').update({
+      status: 'in_progress',
+      started_at: form.started_at,
+      odometer_start: form.odometer_start ? Number(form.odometer_start) : null,
+    }).eq('id', selTrip.id)
+    setSaving(false)
+    if (error) return alert(error.message)
+    setModal(null); setSelTrip(null)
+  }
+
+  async function submitReturn() {
+    if (!form.returned_at) return alert('กรุณาระบุเวลากลับ')
+    setSaving(true)
+    const { error } = await supabase.from('fleet_trips').update({
+      status: 'completed',
+      returned_at: form.returned_at,
+      odometer_end: form.odometer_end ? Number(form.odometer_end) : null,
+      notes: form.notes || null,
+    }).eq('id', selTrip.id)
+    setSaving(false)
+    if (error) return alert(error.message)
+    setModal(null); setSelTrip(null)
+  }
+
+  /* ── Derived ── */
+  const active  = trips.filter(t => ['pending', 'approved', 'in_progress'].includes(t.status))
+  const history = trips.filter(t => ['completed', 'rejected', 'cancelled'].includes(t.status))
+  const isOwner = t => t.driver_id === user?.id
+
+  /* ── Trip Card (mobile) ── */
+  function TripCard({ t }) {
+    const clr = STATUS_CLR[t.status]
+    const canApprove = t.status === 'pending' && isAdmin
+    const canDepart  = t.status === 'approved' && (isOwner(t) || isAdmin)
+    const canReturn  = t.status === 'in_progress' && (isOwner(t) || isAdmin)
+    const dist = t.odometer_start && t.odometer_end ? t.odometer_end - t.odometer_start : null
+    return (
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-2">
+        <div className="flex items-start gap-2">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                    style={{ backgroundColor: clr + '18', color: clr }}>
+                {STATUS_LABEL[t.status]}
+              </span>
+              {t.planned_departure && (
+                <span className="text-[10px] font-semibold bg-blue-50 text-blue-500 px-2 py-0.5 rounded-full">
+                  📅 จอง
+                </span>
+              )}
+            </div>
+            <h3 className="text-sm font-bold text-gray-800 mt-1">
+              {t.vehicle?.name} · {t.vehicle?.license_plate}
+            </h3>
+            <p className="text-xs text-gray-600">📍 {t.destination} — {t.purpose}</p>
+          </div>
         </div>
-        {canWrite && (
-          <button onClick={() => { setForm({ ...EMPTY, driver_id: user?.id ?? '' }); setModal(true) }}
-            className="ml-auto flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white"
-            style={{ backgroundColor: 'var(--color-primary)' }}>
-            <Plus size={15} /> บันทึกการเดินทาง
-          </button>
+        <div className="text-[11px] text-gray-500 space-y-0.5 border-t border-gray-50 pt-2">
+          <div>👤 {t.driver?.full_name}{t.fleet_departments?.short_name ? ` · ${t.fleet_departments.short_name}` : ''}</div>
+          {t.planned_departure && <div>📅 วางแผน: {fmtDT(t.planned_departure)} – {fmtDT(t.planned_return)}</div>}
+          {t.started_at && (
+            <div>🚀 ออก: {fmtDT(t.started_at)}{t.odometer_start ? ` (${Number(t.odometer_start).toLocaleString()} กม.)` : ''}</div>
+          )}
+          {t.returned_at && (
+            <div>🏁 กลับ: {fmtDT(t.returned_at)}{t.odometer_end ? ` (${Number(t.odometer_end).toLocaleString()} กม.)` : ''}</div>
+          )}
+          {dist != null && <div className="font-semibold text-gray-700">📏 ระยะทาง: {dist.toLocaleString()} กม.</div>}
+        </div>
+        {(canApprove || canDepart || canReturn) && (
+          <div className="flex gap-2 pt-1">
+            {canApprove && <>
+              <button onClick={() => handleApprove(t)}
+                className="flex-1 py-2 rounded-xl text-xs font-bold text-white bg-green-500">
+                ✓ อนุมัติ
+              </button>
+              <button onClick={() => handleReject(t)}
+                className="flex-1 py-2 rounded-xl text-xs font-bold text-red-500 border border-red-200 bg-red-50">
+                ✕ ปฏิเสธ
+              </button>
+            </>}
+            {canDepart && (
+              <button onClick={() => {
+                setSelTrip(t)
+                setForm({ started_at: toLocalDT(new Date()), odometer_start: '' })
+                setModal('depart')
+              }} className="flex-1 py-2 rounded-xl text-xs font-bold text-white"
+                style={{ backgroundColor: 'var(--color-primary)' }}>
+                🚀 บันทึกออกเดินทาง
+              </button>
+            )}
+            {canReturn && (
+              <button onClick={() => {
+                setSelTrip(t)
+                setForm({ returned_at: toLocalDT(new Date()), odometer_end: '', notes: '' })
+                setModal('return')
+              }} className="flex-1 py-2 rounded-xl text-xs font-bold text-white bg-green-600">
+                🏁 บันทึกกลับถึง
+              </button>
+            )}
+          </div>
         )}
       </div>
+    )
+  }
 
-      {loading ? (
-        <div className="flex justify-center py-12">
-          <div className="w-6 h-6 border-4 border-gray-200 rounded-full animate-spin"
-               style={{ borderTopColor: 'var(--color-primary)' }} />
-        </div>
-      ) : (
-        <>
-          {/* Desktop Table */}
-          <div className="hidden md:block overflow-x-auto border border-gray-300 shadow-sm" style={{ borderRadius: 4 }}>
-            <table className="w-full text-sm border-collapse">
-              <thead>
-                <tr style={{ backgroundColor: '#1a3a5c' }}>
-                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">ที่</th>
-                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">วันที่</th>
-                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">ยานพาหนะ</th>
-                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">ปลายทาง</th>
-                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">วัตถุประสงค์</th>
-                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">ผู้ขับ</th>
-                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">กอง</th>
-                  <th className="px-4 py-2.5 text-center text-white font-bold text-[11px]">สถานะ</th>
-                  {isAdmin && <th className="px-4 py-2.5 text-center text-white font-bold text-[11px]">ดำเนินการ</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {trips.map((t, idx) => (
-                  <tr key={t.id}
-                    style={{ backgroundColor: idx % 2 === 0 ? '#fff' : '#f5f8fc' }}
-                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'}
-                    onMouseLeave={e => e.currentTarget.style.backgroundColor = idx % 2 === 0 ? '#fff' : '#f5f8fc'}>
-                    <td className="px-4 py-2.5 text-gray-400 text-xs border-r border-gray-200">{idx + 1}</td>
-                    <td className="px-4 py-2.5 text-gray-600 text-xs border-r border-gray-200 whitespace-nowrap">{thDate(t.trip_date)}</td>
-                    <td className="px-4 py-2.5 border-r border-gray-200">
-                      <p className="font-semibold text-gray-800 text-sm">{t.fleet_vehicles?.name ?? '—'}</p>
-                      <p className="text-[10px] text-gray-400">{t.fleet_vehicles?.license_plate}</p>
-                    </td>
-                    <td className="px-4 py-2.5 font-semibold text-gray-800 text-sm border-r border-gray-200">{t.destination}</td>
-                    <td className="px-4 py-2.5 text-gray-500 text-xs max-w-[200px] truncate border-r border-gray-200">{t.purpose}</td>
-                    <td className="px-4 py-2.5 text-gray-600 text-xs border-r border-gray-200 whitespace-nowrap">{t.driver?.full_name ?? '—'}</td>
-                    <td className="px-4 py-2.5 text-gray-500 text-xs border-r border-gray-200">{t.fleet_departments?.name ?? '—'}</td>
-                    <td className="px-4 py-2.5 text-center border-r border-gray-200">
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                        style={{ backgroundColor: STATUS[t.status]?.color + '18', color: STATUS[t.status]?.color }}>
-                        {STATUS[t.status]?.label}
-                      </span>
-                    </td>
-                    {isAdmin && t.status === 'pending' && (
-                      <td className="px-4 py-2.5 text-center">
-                        <div className="flex gap-1 justify-center">
-                          <button onClick={() => handleApprove(t.id)}
-                            className="text-xs font-bold px-2 py-1 rounded border border-emerald-600 text-emerald-600 hover:bg-emerald-600 hover:text-white transition-colors">
-                            อนุมัติ
-                          </button>
-                          <button onClick={() => setRejectId(t.id)}
-                            className="text-xs font-bold px-2 py-1 rounded border border-red-500 text-red-500 hover:bg-red-500 hover:text-white transition-colors">
-                            ไม่อนุมัติ
-                          </button>
-                        </div>
-                      </td>
-                    )}
-                    {isAdmin && t.status !== 'pending' && <td className="px-4 py-2.5"></td>}
-                  </tr>
-                ))}
-                {!trips.length && (
-                  <tr><td colSpan={isAdmin ? 9 : 8} className="text-center py-10 text-gray-400 text-sm">ไม่พบรายการ</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Mobile Cards */}
-          <div className="md:hidden space-y-2">
-            {trips.map(t => (
-              <div key={t.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <span className="text-sm font-bold text-gray-800">{t.destination}</span>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                            style={{ backgroundColor: STATUS[t.status]?.color + '18', color: STATUS[t.status]?.color }}>
-                        {STATUS[t.status]?.label}
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-500">{thDate(t.trip_date)} · {t.fleet_vehicles?.name ?? '—'}</p>
-                    <p className="text-xs text-gray-500">{t.purpose}</p>
-                    <div className="flex items-center gap-2 flex-wrap mt-0.5">
-                      {t.driver?.full_name && (
-                        <p className="text-[10px] text-blue-600 font-semibold">👤 {t.driver.full_name}</p>
-                      )}
-                      {t.fleet_departments && <p className="text-[10px] text-gray-400">{t.fleet_departments.name}</p>}
-                      {t.distance_km && <p className="text-[10px] text-gray-400">{t.distance_km} กม.</p>}
-                    </div>
-                    {t.reject_reason && <p className="text-[10px] text-red-500 mt-1">เหตุผล: {t.reject_reason}</p>}
-                  </div>
-                  {isAdmin && t.status === 'pending' && (
-                    <div className="flex gap-1.5 shrink-0">
-                      <button onClick={() => handleApprove(t.id)}
-                        className="p-2 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors">
-                        <Check size={14} />
-                      </button>
-                      <button onClick={() => setRejectId(t.id)}
-                        className="p-2 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-colors">
-                        <Ban size={14} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-            {!trips.length && <div className="text-center py-12 text-gray-400 text-sm">ไม่พบรายการ</div>}
-          </div>
-        </>
-      )}
-
-      {/* Add Modal */}
-      {modal && (
-        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setModal(false)} />
-          <div className="relative bg-white rounded-t-3xl md:rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
-            <div className="sticky top-0 bg-white px-5 pt-5 pb-3 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="font-bold text-gray-800">บันทึกการเดินทาง</h3>
-              <button onClick={() => setModal(false)} className="p-1.5 rounded-lg hover:bg-gray-100"><X size={16} /></button>
-            </div>
-            <div className="p-5 space-y-3">
-              <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1 block">ยานพาหนะ *</label>
-                <select value={form.vehicle_id} onChange={set('vehicle_id')} className={sel}>
-                  <option value="">— เลือกรถ —</option>
-                  {vehicles.map(v => <option key={v.id} value={v.id}>{v.name} ({v.license_plate})</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้ขับ / ผู้ใช้รถ</label>
-                <select value={form.driver_id} onChange={set('driver_id')} className={sel}>
-                  {staffList.map(s => (
-                    <option key={s.id} value={s.id}>
-                      {s.full_name}{s.id === user?.id ? ' (ฉัน)' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-semibold text-gray-600 mb-1 block">วันที่ *</label>
-                  <input type="date" value={form.trip_date} onChange={set('trip_date')} className={inp} />
-                </div>
-                {isAdmin && depts.length > 0 && (
-                  <div>
-                    <label className="text-xs font-semibold text-gray-600 mb-1 block">กอง</label>
-                    <select value={form.department_id} onChange={set('department_id')} className={sel}>
-                      <option value="">— ไม่ระบุ —</option>
-                      {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                    </select>
-                  </div>
-                )}
-                <div>
-                  <label className="text-xs font-semibold text-gray-600 mb-1 block">เวลาออก</label>
-                  <input type="time" value={form.depart_time} onChange={set('depart_time')} className={inp} />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-600 mb-1 block">เวลากลับ</label>
-                  <input type="time" value={form.return_time} onChange={set('return_time')} className={inp} />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-600 mb-1 block">เลขไมล์ออก *</label>
-                  <input type="number" value={form.odometer_start} onChange={set('odometer_start')} placeholder="50000" className={inp} />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-600 mb-1 block">เลขไมล์กลับ</label>
-                  <input type="number" value={form.odometer_end} onChange={set('odometer_end')} placeholder="50250" className={inp} />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1 block">ปลายทาง *</label>
-                <input value={form.destination} onChange={set('destination')} placeholder="อำเภอ / จังหวัด" className={inp} />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1 block">วัตถุประสงค์ *</label>
-                <input value={form.purpose} onChange={set('purpose')} placeholder="ประชุม / ส่งเอกสาร / ตรวจงาน" className={inp} />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1 block">จำนวนผู้โดยสาร</label>
-                <input type="number" value={form.passengers} onChange={set('passengers')} min={1} max={20} className={inp} />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1 block">หมายเหตุ</label>
-                <textarea value={form.notes} onChange={set('notes')} rows={2} className={inp} />
-              </div>
-              {!isAdmin && (
-                <p className="text-[11px] text-amber-600 bg-amber-50 rounded-xl px-3 py-2">
-                  การเดินทางจะถูกส่งให้ผู้ดูแลระบบอนุมัติ
-                </p>
-              )}
-              <button onClick={handleSave} disabled={saving}
-                className="w-full py-3 rounded-xl font-bold text-white text-sm disabled:opacity-50"
+  /* ── Trip Row (desktop) ── */
+  function TripRow({ t, idx }) {
+    const clr = STATUS_CLR[t.status]
+    const canApprove = t.status === 'pending' && isAdmin
+    const canDepart  = t.status === 'approved' && (isOwner(t) || isAdmin)
+    const canReturn  = t.status === 'in_progress' && (isOwner(t) || isAdmin)
+    const dateStr = t.planned_departure ? fmtDate(t.planned_departure) : fmtDate(t.started_at)
+    const dist = t.odometer_start && t.odometer_end ? t.odometer_end - t.odometer_start : null
+    return (
+      <tr style={{ backgroundColor: idx % 2 === 0 ? '#fff' : '#f5f8fc' }}
+          className="hover:bg-blue-50 transition-colors">
+        <td className="px-3 py-2.5 text-center text-xs text-gray-400 border-r border-gray-200">{idx + 1}</td>
+        <td className="px-4 py-2.5 text-xs border-r border-gray-200">
+          <div className="font-semibold text-gray-700">{dateStr}</div>
+          {t.planned_departure && <div className="text-[10px] text-blue-400">📅 จอง</div>}
+        </td>
+        <td className="px-4 py-2.5 text-xs font-semibold text-gray-700 border-r border-gray-200 whitespace-nowrap">
+          {t.vehicle?.name}
+        </td>
+        <td className="px-4 py-2.5 text-xs text-gray-600 border-r border-gray-200">{t.destination}</td>
+        <td className="px-4 py-2.5 text-xs text-gray-500 border-r border-gray-200">{t.purpose}</td>
+        <td className="px-4 py-2.5 text-xs text-gray-600 border-r border-gray-200 whitespace-nowrap">
+          {t.driver?.full_name}
+        </td>
+        <td className="px-4 py-2.5 text-xs text-gray-500 border-r border-gray-200 text-right whitespace-nowrap">
+          {dist != null ? `${dist.toLocaleString()} กม.` : '—'}
+        </td>
+        <td className="px-4 py-2.5 text-xs border-r border-gray-200">
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap"
+                style={{ backgroundColor: clr + '18', color: clr }}>
+            {STATUS_LABEL[t.status]}
+          </span>
+        </td>
+        <td className="px-3 py-2.5 text-xs">
+          <div className="flex gap-1 justify-center flex-wrap">
+            {canApprove && <>
+              <button onClick={() => handleApprove(t)}
+                className="px-2 py-1 rounded-lg bg-green-500 text-white text-[10px] font-bold">อนุมัติ</button>
+              <button onClick={() => handleReject(t)}
+                className="px-2 py-1 rounded-lg border border-red-200 text-red-500 text-[10px] font-bold">ปฏิเสธ</button>
+            </>}
+            {canDepart && (
+              <button onClick={() => {
+                setSelTrip(t)
+                setForm({ started_at: toLocalDT(new Date()), odometer_start: '' })
+                setModal('depart')
+              }} className="px-2 py-1 rounded-lg text-white text-[10px] font-bold whitespace-nowrap"
                 style={{ backgroundColor: 'var(--color-primary)' }}>
-                {saving ? 'กำลังบันทึก...' : isAdmin ? 'บันทึก (อนุมัติทันที)' : 'ส่งขออนุมัติ'}
+                🚀 ออก
               </button>
-            </div>
+            )}
+            {canReturn && (
+              <button onClick={() => {
+                setSelTrip(t)
+                setForm({ returned_at: toLocalDT(new Date()), odometer_end: '', notes: '' })
+                setModal('return')
+              }} className="px-2 py-1 rounded-lg bg-green-600 text-white text-[10px] font-bold whitespace-nowrap">
+                🏁 กลับ
+              </button>
+            )}
+          </div>
+        </td>
+      </tr>
+    )
+  }
+
+  /* ── Table wrapper ── */
+  function TripsTable({ rows }) {
+    return (
+      <div className="hidden md:block overflow-x-auto rounded-xl border border-gray-300 shadow-sm">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr style={{ backgroundColor: '#1a3a5c' }}>
+              {['ที่', 'วันที่', 'ยานพาหนะ', 'ปลายทาง', 'วัตถุประสงค์', 'ผู้ขับ', 'ระยะทาง', 'สถานะ', 'ดำเนินการ'].map(h => (
+                <th key={h} className="px-3 py-2.5 text-left text-xs font-bold text-white border-r border-white/10 last:border-r-0 whitespace-nowrap">
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((t, i) => <TripRow key={t.id} t={t} idx={i} />)}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+
+  if (loading) return (
+    <div className="flex justify-center py-8">
+      <div className="w-5 h-5 border-4 border-gray-200 rounded-full animate-spin"
+           style={{ borderTopColor: 'var(--color-primary)' }} />
+    </div>
+  )
+
+  return (
+    <div className="space-y-5">
+
+      {/* ── Action buttons ── */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <button onClick={openReserve}
+          className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold border-2 text-blue-600 border-blue-300 bg-blue-50 hover:bg-blue-100 transition-colors">
+          <Calendar size={13} /> จองรถ
+        </button>
+        <button onClick={openDirect}
+          className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-white transition-colors"
+          style={{ backgroundColor: 'var(--color-primary)' }}>
+          <Plus size={13} /> บันทึกทีหลัง
+        </button>
+      </div>
+
+      {/* ── Active trips ── */}
+      {active.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">
+            กำลังดำเนินการ <span className="text-blue-500 normal-case">({active.length})</span>
+          </p>
+          <TripsTable rows={active} />
+          <div className="md:hidden space-y-2">
+            {active.map(t => <TripCard key={t.id} t={t} />)}
           </div>
         </div>
       )}
 
-      {/* Reject reason modal */}
-      {rejectId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setRejectId(null)} />
-          <div className="relative bg-white rounded-2xl w-full max-w-sm mx-4 p-5 shadow-2xl">
-            <h3 className="font-bold text-gray-800 mb-3">ระบุเหตุผลที่ไม่อนุมัติ</h3>
-            <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)}
-              rows={3} placeholder="เหตุผล..." className={inp + ' resize-none'} />
-            <div className="flex gap-2 mt-4">
-              <button onClick={() => setRejectId(null)}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-gray-100 text-gray-600">
-                ยกเลิก
-              </button>
-              <button onClick={handleReject}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-red-500 text-white">
-                ยืนยันไม่อนุมัติ
-              </button>
+      {/* ── History ── */}
+      <div className="space-y-2">
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">
+          ประวัติการเดินทาง <span className="text-gray-400 normal-case">({history.length})</span>
+        </p>
+        {history.length === 0 ? (
+          <p className="text-center text-sm text-gray-400 py-8">ยังไม่มีรายการ</p>
+        ) : <>
+          <TripsTable rows={history} />
+          <div className="md:hidden space-y-2">
+            {history.map(t => <TripCard key={t.id} t={t} />)}
+          </div>
+        </>}
+      </div>
+
+      {/* ═══ MODALS ═══ */}
+
+      {/* จองรถ */}
+      {modal === 'reserve' && (
+        <Modal title="📅 จองรถ" onClose={() => setModal(null)} onSave={submitReserve}
+               saveLabel="ส่งคำขอจอง" saving={saving}>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">ยานพาหนะ *</label>
+            <select value={form.vehicle_id}
+              onChange={e => { set('vehicle_id')(e); setConflict(false) }} className={sel}>
+              <option value="">— เลือกรถ —</option>
+              {vehicles.map(v => <option key={v.id} value={v.id}>{v.name} ({v.license_plate})</option>)}
+            </select>
+          </div>
+          {conflict && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-600 font-semibold">
+              ⚠️ รถคันนี้ถูกจองในช่วงเวลาดังกล่าวแล้ว — กรุณาเปลี่ยนเวลาหรือเลือกรถคันอื่น
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">วันเวลาออก *</label>
+              <input type="datetime-local" value={form.planned_departure}
+                onChange={e => { set('planned_departure')(e); setConflict(false) }} className={inp} />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">กลับโดยประมาณ *</label>
+              <input type="datetime-local" value={form.planned_return}
+                onChange={e => { set('planned_return')(e); setConflict(false) }} className={inp} />
             </div>
           </div>
-        </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้ขับ / ผู้ใช้รถ</label>
+            <select value={form.driver_id} onChange={set('driver_id')} className={sel}>
+              {staffList.map(s => (
+                <option key={s.id} value={s.id}>{s.full_name}{s.id === user?.id ? ' (ฉัน)' : ''}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">กอง/หน่วยงาน</label>
+            <select value={form.department_id} onChange={set('department_id')} className={sel}>
+              <option value="">ทุกกอง</option>
+              {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">ปลายทาง *</label>
+            <input value={form.destination} onChange={set('destination')}
+              placeholder="เช่น อำเภอเมือง" className={inp} />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">วัตถุประสงค์ *</label>
+            <input value={form.purpose} onChange={set('purpose')}
+              placeholder="เช่น ประชุมราชการ" className={inp} />
+          </div>
+        </Modal>
       )}
+
+      {/* บันทึกทีหลัง */}
+      {modal === 'direct' && (
+        <Modal title="📝 บันทึกการเดินทาง" onClose={() => setModal(null)} onSave={submitDirect}
+               saveLabel="บันทึก" saving={saving}>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">ยานพาหนะ *</label>
+            <select value={form.vehicle_id} onChange={set('vehicle_id')} className={sel}>
+              <option value="">— เลือกรถ —</option>
+              {vehicles.map(v => <option key={v.id} value={v.id}>{v.name} ({v.license_plate})</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้ขับ / ผู้ใช้รถ</label>
+            <select value={form.driver_id} onChange={set('driver_id')} className={sel}>
+              {staffList.map(s => (
+                <option key={s.id} value={s.id}>{s.full_name}{s.id === user?.id ? ' (ฉัน)' : ''}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">กอง/หน่วยงาน</label>
+            <select value={form.department_id} onChange={set('department_id')} className={sel}>
+              <option value="">ทุกกอง</option>
+              {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">ปลายทาง *</label>
+            <input value={form.destination} onChange={set('destination')}
+              placeholder="เช่น อำเภอเมือง" className={inp} />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">วัตถุประสงค์ *</label>
+            <input value={form.purpose} onChange={set('purpose')}
+              placeholder="เช่น ประชุมราชการ" className={inp} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">วันเวลาออก *</label>
+              <input type="datetime-local" value={form.started_at} onChange={set('started_at')} className={inp} />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">วันเวลากลับ</label>
+              <input type="datetime-local" value={form.returned_at} onChange={set('returned_at')} className={inp} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">เลขไมล์ก่อน (กม.)</label>
+              <input type="number" value={form.odometer_start} onChange={set('odometer_start')}
+                placeholder="0" className={inp} />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">เลขไมล์หลัง (กม.)</label>
+              <input type="number" value={form.odometer_end} onChange={set('odometer_end')}
+                placeholder="0" className={inp} />
+            </div>
+          </div>
+          {form.odometer_start && form.odometer_end && Number(form.odometer_end) > Number(form.odometer_start) && (
+            <div className="bg-gray-50 rounded-xl p-2.5 text-xs text-center font-bold text-gray-700">
+              📏 ระยะทาง: {(Number(form.odometer_end) - Number(form.odometer_start)).toLocaleString()} กม.
+            </div>
+          )}
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">หมายเหตุ</label>
+            <input value={form.notes} onChange={set('notes')} className={inp} />
+          </div>
+        </Modal>
+      )}
+
+      {/* บันทึกออกเดินทาง */}
+      {modal === 'depart' && selTrip && (
+        <Modal title="🚀 บันทึกออกเดินทาง"
+               onClose={() => { setModal(null); setSelTrip(null) }}
+               onSave={submitDepart} saveLabel="ยืนยันออกเดินทาง" saving={saving}>
+          <div className="bg-blue-50 rounded-xl p-3">
+            <p className="text-sm font-bold text-gray-800">
+              {selTrip.vehicle?.name} · {selTrip.vehicle?.license_plate}
+            </p>
+            <p className="text-xs text-gray-600">{selTrip.destination} — {selTrip.purpose}</p>
+            <p className="text-xs text-blue-500 mt-1">👤 {selTrip.driver?.full_name}</p>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">เวลาออกจริง *</label>
+            <input type="datetime-local" value={form.started_at} onChange={set('started_at')} className={inp} />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">เลขไมล์ก่อนออก (กม.)</label>
+            <input type="number" value={form.odometer_start} onChange={set('odometer_start')}
+              placeholder="เช่น 12345" className={inp} />
+          </div>
+        </Modal>
+      )}
+
+      {/* บันทึกกลับถึง */}
+      {modal === 'return' && selTrip && (
+        <Modal title="🏁 บันทึกกลับถึง"
+               onClose={() => { setModal(null); setSelTrip(null) }}
+               onSave={submitReturn} saveLabel="ยืนยันกลับถึง" saving={saving}>
+          <div className="bg-green-50 rounded-xl p-3">
+            <p className="text-sm font-bold text-gray-800">
+              {selTrip.vehicle?.name} · {selTrip.vehicle?.license_plate}
+            </p>
+            <p className="text-xs text-gray-600">{selTrip.destination} — {selTrip.purpose}</p>
+            {selTrip.odometer_start && (
+              <p className="text-xs text-green-600 mt-1">
+                เลขไมล์ก่อนออก: {Number(selTrip.odometer_start).toLocaleString()} กม.
+              </p>
+            )}
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">เวลากลับจริง *</label>
+            <input type="datetime-local" value={form.returned_at} onChange={set('returned_at')} className={inp} />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">เลขไมล์หลังกลับ (กม.)</label>
+            <input type="number" value={form.odometer_end} onChange={set('odometer_end')}
+              placeholder="เช่น 12400" className={inp} />
+          </div>
+          {selTrip.odometer_start && form.odometer_end && Number(form.odometer_end) > Number(selTrip.odometer_start) && (
+            <div className="bg-gray-50 rounded-xl p-2.5 text-sm text-center font-bold text-gray-700">
+              📏 ระยะทาง: {(Number(form.odometer_end) - Number(selTrip.odometer_start)).toLocaleString()} กม.
+            </div>
+          )}
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">หมายเหตุ</label>
+            <input value={form.notes} onChange={set('notes')} className={inp} />
+          </div>
+        </Modal>
+      )}
+
     </div>
   )
 }
