@@ -28,42 +28,43 @@ function Tab({ id, active, label, onClick }) {
 
 /* ── กอง/หน่วยงาน ─────────────────────────────────────── */
 function DeptTab({ tenant, depts, setDepts }) {
-  const [form, setForm]   = useState({ name: '', short_name: '', code: '' })
+  const [form, setForm]   = useState({ name: '', short_name: '' })
   const [editId, setEditId] = useState(null)
   const [saving, setSaving] = useState(false)
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
   async function handleSave() {
-    if (!form.name || !form.code) return alert('กรุณากรอกชื่อและรหัส')
+    if (!form.name) return alert('กรุณากรอกชื่อกอง')
     setSaving(true)
     if (editId) {
       const { data, error } = await supabase.from('fleet_departments')
-        .update({ name: form.name, short_name: form.short_name || null, code: form.code })
+        .update({ name: form.name, short_name: form.short_name || null })
         .eq('id', editId).select().single()
       if (!error) setDepts(prev => prev.map(d => d.id === editId ? data : d))
       else alert(error.message)
     } else {
+      const code = 'dept_' + Date.now().toString(36)
       const { data, error } = await supabase.from('fleet_departments').insert({
         municipality_id: tenant.id, name: form.name,
-        short_name: form.short_name || null, code: form.code,
+        short_name: form.short_name || null, code,
         sort_order: depts.length,
       }).select().single()
       if (!error) setDepts(prev => [...prev, data])
       else alert(error.message)
     }
-    setSaving(false); setEditId(null); setForm({ name: '', short_name: '', code: '' })
+    setSaving(false); setEditId(null); setForm({ name: '', short_name: '' })
   }
 
   function startEdit(d) {
-    setEditId(d.id); setForm({ name: d.name, short_name: d.short_name ?? '', code: d.code })
+    setEditId(d.id); setForm({ name: d.name, short_name: d.short_name ?? '' })
   }
 
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
         <p className="text-sm font-bold text-gray-700">{editId ? 'แก้ไขกอง' : 'เพิ่มกอง/หน่วยงาน'}</p>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <div className="col-span-2">
             <label className="text-xs font-semibold text-gray-600 mb-1 block">ชื่อกอง *</label>
             <input value={form.name} onChange={set('name')} placeholder="กองช่าง" className={inp} />
@@ -71,10 +72,6 @@ function DeptTab({ tenant, depts, setDepts }) {
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">ชื่อย่อ</label>
             <input value={form.short_name} onChange={set('short_name')} placeholder="กช." className={inp} />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1 block">รหัส (unique) *</label>
-            <input value={form.code} onChange={set('code')} placeholder="engineering" className={inp} />
           </div>
         </div>
         <div className="flex gap-2">
