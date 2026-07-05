@@ -47,20 +47,20 @@ export default function ShortcutBand() {
       Icon: Siren,
       action: () => navigate('/emergency'),
     },
-    tenant?.website_url && {
-      label: 'เว็บไซต์',
-      Icon: Globe,
-      action: () => window.open(tenant.website_url, '_blank', 'noopener,noreferrer'),
+    tenant?.line_oa_url && {
+      label: 'Line OA',
+      Icon: MessageCircle,
+      action: () => window.open(tenant.line_oa_url, '_blank', 'noopener,noreferrer'),
     },
     tenant?.facebook_url && {
       label: 'Facebook',
       Icon: FacebookIcon,
       action: () => window.open(tenant.facebook_url, '_blank', 'noopener,noreferrer'),
     },
-    tenant?.line_oa_url && {
-      label: 'Line OA',
-      Icon: MessageCircle,
-      action: () => window.open(tenant.line_oa_url, '_blank', 'noopener,noreferrer'),
+    tenant?.website_url && {
+      label: 'เว็บไซต์',
+      Icon: Globe,
+      action: () => window.open(tenant.website_url, '_blank', 'noopener,noreferrer'),
     },
   ].filter(Boolean)
 
