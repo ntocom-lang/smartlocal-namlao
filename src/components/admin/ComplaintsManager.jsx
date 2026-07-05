@@ -1206,6 +1206,28 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   useEffect(() => { fetchComplaints() }, [fetchComplaints])
 
   useEffect(() => {
+    if (!tenant?.id) return
+    const SELECT = '*, profiles(full_name, email, phone, role, created_at, avatar_url)'
+    const ch = supabase.channel(`complaints-mgr-${tenant.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'complaints' },
+        async ({ new: row }) => {
+          if (row.municipality_id !== tenant.id) return
+          const { data } = await supabase.from('complaints').select(SELECT).eq('id', row.id).single()
+          if (data) setComplaints(prev => [data, ...prev])
+        })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'complaints' },
+        async ({ new: row }) => {
+          if (row.municipality_id !== tenant.id) return
+          const { data } = await supabase.from('complaints').select(SELECT).eq('id', row.id).single()
+          if (!data) return
+          setComplaints(prev => prev.map(c => c.id === data.id ? data : c))
+          setSelectedComplaint(prev => prev?.id === data.id ? data : prev)
+        })
+      .subscribe()
+    return () => supabase.removeChannel(ch)
+  }, [tenant?.id])
+
+  useEffect(() => {
     if (!openComplaintId || complaints.length === 0) return
     const found = complaints.find(c => c.id === openComplaintId)
     if (found) setSelectedComplaint(found)

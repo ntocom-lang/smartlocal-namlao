@@ -632,10 +632,16 @@ export function InboxModule({ tenant, staffId }) {
   useEffect(() => {
     if (!tenant?.id) return
     const ch = supabase.channel(`inbox-${tenant.id}`)
-      .on('postgres_changes', {
-        event: 'INSERT', schema: 'public', table: 'document_requests',
-        filter: `municipality_id=eq.${tenant.id}`,
-      }, payload => setRequests(prev => [payload.new, ...prev]))
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'document_requests' },
+        ({ new: row }) => {
+          if (row.municipality_id !== tenant.id) return
+          setRequests(prev => prev.find(r => r.id === row.id) ? prev : [row, ...prev])
+        })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'document_requests' },
+        ({ new: row }) => {
+          if (row.municipality_id !== tenant.id) return
+          setRequests(prev => prev.map(r => r.id === row.id ? { ...r, ...row } : r))
+        })
       .subscribe()
     return () => supabase.removeChannel(ch)
   }, [tenant?.id])
@@ -1835,6 +1841,35 @@ function ComplaintsStaffModule({ tenant, staffId }) {
 
   useEffect(() => { fetchAll() }, [tenant?.id])
 
+  useEffect(() => {
+    if (!tenant?.id || !staffId) return
+    const ch = supabase.channel(`complaints-staff-${tenant.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'complaints' },
+        async ({ new: row }) => {
+          if (row.municipality_id !== tenant.id || row.assigned_to !== staffId) return
+          const { data } = await supabase.from('complaints')
+            .select('*, profiles(full_name, phone)').eq('id', row.id).single()
+          if (data) setComplaints(prev => [data, ...prev])
+        })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'complaints' },
+        async ({ new: row }) => {
+          if (row.municipality_id !== tenant.id) return
+          const { data } = await supabase.from('complaints')
+            .select('*, profiles(full_name, phone)').eq('id', row.id).single()
+          if (!data) return
+          if (data.assigned_to === staffId) {
+            setComplaints(prev => {
+              const exists = prev.find(c => c.id === data.id)
+              return exists ? prev.map(c => c.id === data.id ? data : c) : [data, ...prev]
+            })
+          } else {
+            setComplaints(prev => prev.filter(c => c.id !== data.id))
+          }
+        })
+      .subscribe()
+    return () => supabase.removeChannel(ch)
+  }, [tenant?.id, staffId])
+
   async function fetchAll() {
     if (!tenant?.id || !staffId) return
     setLoading(true)
@@ -2091,6 +2126,22 @@ export default function StaffDashboard() {
     ]).then(([docs, approvals]) => {
       setPendingCount((docs.count ?? 0) + (approvals.count ?? 0))
     })
+
+    const refreshBadge = () =>
+      Promise.all([
+        supabase.from('document_requests').select('id', { count: 'exact', head: true })
+          .eq('municipality_id', tenant.id).eq('status', 'pending'),
+        supabase.from('approval_requests').select('id', { count: 'exact', head: true })
+          .eq('municipality_id', tenant.id).eq('status', 'pending'),
+      ]).then(([d, a]) => setPendingCount((d.count ?? 0) + (a.count ?? 0)))
+
+    const ch = supabase.channel(`pending-badge-${tenant.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'document_requests' },
+        ({ new: row }) => { if (row?.municipality_id === tenant.id) refreshBadge() })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'approval_requests' },
+        ({ new: row }) => { if (row?.municipality_id === tenant.id) refreshBadge() })
+      .subscribe()
+    return () => supabase.removeChannel(ch)
   }, [tenant?.id])
 
   async function handleLogout() {
