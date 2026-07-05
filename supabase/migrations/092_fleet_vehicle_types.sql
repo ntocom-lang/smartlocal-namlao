@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS public.fleet_vehicle_types (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_fvtype_mun_val ON public.fleet_vehicle_types(municipality_id, value);
 ALTER TABLE public.fleet_vehicle_types ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "fvtype_read" ON public.fleet_vehicle_types;
 CREATE POLICY "fvtype_read" ON public.fleet_vehicle_types FOR SELECT
   USING (
     municipality_id = (SELECT mun_id FROM public.my_fleet())
@@ -19,6 +20,7 @@ CREATE POLICY "fvtype_read" ON public.fleet_vehicle_types FOR SELECT
     )
   );
 
+DROP POLICY IF EXISTS "fvtype_write" ON public.fleet_vehicle_types;
 CREATE POLICY "fvtype_write" ON public.fleet_vehicle_types FOR ALL
   USING (
     municipality_id = (SELECT mun_id FROM public.my_fleet())

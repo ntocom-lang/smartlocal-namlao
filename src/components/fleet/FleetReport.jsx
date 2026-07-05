@@ -82,7 +82,7 @@ export default function FleetReport({ tenant }) {
       vq(supabase.from('fleet_trips')
         .select('*, vehicle:fleet_vehicles(id,name,license_plate), driver:profiles!fleet_trips_driver_id_fkey(id,full_name)')
         .eq('municipality_id', tenant.id).eq('status', 'completed')
-        .gte('started_at', dateFrom).lt('started_at', endDay)).order('started_at'),
+        .gte('trip_date', dateFrom).lt('trip_date', endDay)).order('trip_date'),
       vq(supabase.from('fleet_fuel_records')
         .select('*, fleet_vehicles(name, license_plate)')
         .eq('municipality_id', tenant.id)
@@ -110,7 +110,7 @@ export default function FleetReport({ tenant }) {
     const trRows = (data?.trips ?? []).map((t, i) => {
       const km = t.odometer_end && t.odometer_start ? t.odometer_end - t.odometer_start : ''
       return `<tr style="background:${i%2?'#f5f8fc':'#fff'}">
-        <td>${i+1}</td><td>${thDate(t.started_at)}</td>
+        <td>${i+1}</td><td>${thDate(t.trip_date)}</td>
         <td>${t.vehicle?.name??''} ${t.vehicle?.license_plate??''}</td>
         <td>${t.destination}</td><td>${t.purpose}</td>
         <td>${t.driver?.full_name??''}</td>
@@ -188,7 +188,7 @@ export default function FleetReport({ tenant }) {
       ['ที่','วันที่','ยานพาหนะ','ทะเบียน','ปลายทาง','วัตถุประสงค์','ผู้ขับ','เลขไมล์ก่อน','เลขไมล์หลัง','ระยะทาง (กม.)'],
       ...(data?.trips ?? []).map((t, i) => {
         const km = t.odometer_end && t.odometer_start ? t.odometer_end - t.odometer_start : ''
-        return [i+1, thDate(t.started_at), t.vehicle?.name??'', t.vehicle?.license_plate??'',
+        return [i+1, thDate(t.trip_date), t.vehicle?.name??'', t.vehicle?.license_plate??'',
           t.destination, t.purpose, t.driver?.full_name??'',
           t.odometer_start??'', t.odometer_end??'', km]
       }),
@@ -268,13 +268,22 @@ export default function FleetReport({ tenant }) {
             </button>
           </div>
         </div>
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           {[['เดือนนี้', setThisMonth], ['เดือนที่แล้ว', setLastMonth], ['ปีนี้', setThisYear]].map(([label, fn]) => (
             <button key={label} onClick={fn}
               className="px-3 py-1 text-[11px] font-semibold text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50">
               {label}
             </button>
           ))}
+          <button onClick={() => {
+            setSelVehicle('')
+            const d = new Date(); d.setDate(1)
+            setDateFrom(d.toISOString().slice(0, 10))
+            setDateTo(new Date().toISOString().slice(0, 10))
+            setData(null)
+          }} className="px-3 py-1 text-[11px] font-semibold text-red-500 border border-red-200 rounded-lg hover:bg-red-50">
+            ล้าง
+          </button>
         </div>
       </div>
 
@@ -327,7 +336,7 @@ export default function FleetReport({ tenant }) {
                   return (
                     <tr key={t.id} style={{ backgroundColor: i%2===0?'#fff':'#f5f8fc' }}>
                       <td className="px-3 py-2 text-xs text-gray-400 border-r border-gray-200 text-center">{i+1}</td>
-                      <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-200 whitespace-nowrap">{thDate(t.started_at)}</td>
+                      <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-200 whitespace-nowrap">{thDate(t.trip_date)}</td>
                       <td className="px-3 py-2 text-xs font-semibold text-gray-700 border-r border-gray-200 whitespace-nowrap">{t.vehicle?.name}</td>
                       <td className="px-3 py-2 text-xs text-gray-600 border-r border-gray-200">{t.destination}</td>
                       <td className="px-3 py-2 text-xs text-gray-500 border-r border-gray-200">{t.purpose}</td>

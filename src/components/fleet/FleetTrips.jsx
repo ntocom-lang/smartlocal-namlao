@@ -23,7 +23,7 @@ const STATUS_CLR = {
 const inp = 'w-full px-3 py-2.5 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent'
 const sel = inp + ' appearance-none'
 
-const SELECT = `*, vehicle:fleet_vehicles(id,name,license_plate), driver:profiles!fleet_trips_driver_id_fkey(id,full_name), approver:profiles!fleet_trips_approved_by_fkey(full_name)`
+const SELECT = `*, vehicle:fleet_vehicles(id,name,license_plate), driver:profiles!fleet_trips_driver_id_fkey(id,full_name), approver:profiles!fleet_trips_approved_by_fkey(full_name), fleet_departments(name,short_name)`
 
 function toLocalDT(date) {
   const d = new Date(date)
@@ -179,6 +179,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
       vehicle_id: form.vehicle_id,
       driver_id: form.driver_id || user?.id,
       department_id: form.department_id || null,
+      trip_date: form.planned_departure.slice(0, 10),
       planned_departure: form.planned_departure,
       planned_return: form.planned_return,
       destination: form.destination,
@@ -200,6 +201,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
       vehicle_id: form.vehicle_id,
       driver_id: form.driver_id || user?.id,
       department_id: form.department_id || null,
+      trip_date: form.started_at.slice(0, 10),
       started_at: form.started_at,
       returned_at: form.returned_at || null,
       odometer_start: form.odometer_start ? Number(form.odometer_start) : null,
@@ -263,7 +265,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
     const canApprove = t.status === 'pending' && isAdmin
     const canDepart  = t.status === 'approved' && (isOwner(t) || isAdmin)
     const canReturn  = t.status === 'in_progress' && (isOwner(t) || isAdmin)
-    const dist = t.odometer_start && t.odometer_end ? t.odometer_end - t.odometer_start : null
+    const dist = t.distance_km ?? null
     return (
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-2">
         <div className="flex items-start gap-2">
@@ -286,7 +288,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
           </div>
         </div>
         <div className="text-[11px] text-gray-500 space-y-0.5 border-t border-gray-50 pt-2">
-          <div>👤 {t.driver?.full_name}{t.department_id ? ` · ${depts.find(d => d.id === t.department_id)?.short_name ?? ''}` : ''}</div>
+          <div>👤 {t.driver?.full_name}{t.fleet_departments?.short_name ? ` · ${t.fleet_departments.short_name}` : ''}</div>
           {t.planned_departure && <div>📅 วางแผน: {fmtDT(t.planned_departure)} – {fmtDT(t.planned_return)}</div>}
           {t.started_at && (
             <div>🚀 ออก: {fmtDT(t.started_at)}{t.odometer_start ? ` (${Number(t.odometer_start).toLocaleString()} กม.)` : ''}</div>
@@ -339,8 +341,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
     const canApprove = t.status === 'pending' && isAdmin
     const canDepart  = t.status === 'approved' && (isOwner(t) || isAdmin)
     const canReturn  = t.status === 'in_progress' && (isOwner(t) || isAdmin)
-    const dateStr = t.planned_departure ? fmtDate(t.planned_departure) : fmtDate(t.started_at)
-    const dist = t.odometer_start && t.odometer_end ? t.odometer_end - t.odometer_start : null
+    const dateStr = t.planned_departure ? fmtDate(t.planned_departure) : fmtDate(t.trip_date || t.started_at)
+    const dist = t.distance_km ?? null
     return (
       <tr style={{ backgroundColor: idx % 2 === 0 ? '#fff' : '#f5f8fc' }}
           className="hover:bg-blue-50 transition-colors">
