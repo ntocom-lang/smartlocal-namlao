@@ -23,7 +23,7 @@ const STATUS_CLR = {
 const inp = 'w-full px-3 py-2.5 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent'
 const sel = inp + ' appearance-none'
 
-const SELECT = `*, vehicle:fleet_vehicles(id,name,license_plate), driver:profiles!fleet_trips_driver_id_fkey(id,full_name), approver:profiles!fleet_trips_approved_by_fkey(full_name), fleet_departments(name,short_name)`
+const SELECT = `*, vehicle:fleet_vehicles(id,name,license_plate), driver:profiles!fleet_trips_driver_id_fkey(id,full_name), approver:profiles!fleet_trips_approved_by_fkey(full_name)`
 
 function toLocalDT(date) {
   const d = new Date(date)
@@ -286,7 +286,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
           </div>
         </div>
         <div className="text-[11px] text-gray-500 space-y-0.5 border-t border-gray-50 pt-2">
-          <div>👤 {t.driver?.full_name}{t.fleet_departments?.short_name ? ` · ${t.fleet_departments.short_name}` : ''}</div>
+          <div>👤 {t.driver?.full_name}{t.department_id ? ` · ${depts.find(d => d.id === t.department_id)?.short_name ?? ''}` : ''}</div>
           {t.planned_departure && <div>📅 วางแผน: {fmtDT(t.planned_departure)} – {fmtDT(t.planned_return)}</div>}
           {t.started_at && (
             <div>🚀 ออก: {fmtDT(t.started_at)}{t.odometer_start ? ` (${Number(t.odometer_start).toLocaleString()} กม.)` : ''}</div>

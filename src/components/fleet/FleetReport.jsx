@@ -80,7 +80,7 @@ export default function FleetReport({ tenant }) {
 
     const [{ data: trips }, { data: fuel }, { data: maint }] = await Promise.all([
       vq(supabase.from('fleet_trips')
-        .select('*, vehicle:fleet_vehicles(id,name,license_plate), driver:profiles!fleet_trips_driver_id_fkey(id,full_name), fleet_departments(name,short_name)')
+        .select('*, vehicle:fleet_vehicles(id,name,license_plate), driver:profiles!fleet_trips_driver_id_fkey(id,full_name)')
         .eq('municipality_id', tenant.id).eq('status', 'completed')
         .gte('started_at', dateFrom).lt('started_at', endDay)).order('started_at'),
       vq(supabase.from('fleet_fuel_records')
