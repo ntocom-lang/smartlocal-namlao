@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { Loader2, Plus, X, Pencil, Trash2, ChevronLeft, ChevronRight, Paperclip, CalendarDays, Tag, Users, Check, ChevronUp } from 'lucide-react'
-import { supabase } from '../../lib/supabase'
+import { Loader2, Plus, X, Pencil, Trash2, ChevronLeft, ChevronRight, Paperclip, CalendarDays, Tag, Users, Check, ChevronUp, Link2, Copy, CheckCheck } from 'lucide-react'
+import { supabase, supabaseUrl } from '../../lib/supabase'
 import { notifyTelegram } from '../../lib/notifyTelegram'
 import { compressImage } from '../../lib/imageUtils'
 import { logAction } from '../../lib/auditLog'
@@ -146,10 +146,18 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
   const [pageSize, setPageSize] = useState(10)
   const [currentPage, setCurrentPage] = useState(1)
   const [showScrollTop, setShowScrollTop] = useState(false)
+  const [calToken, setCalToken] = useState(null)
+  const [copied, setCopied] = useState(false)
   const topRef = useRef(null)
 
   useEffect(() => { setCurrentPage(1) }, [activeTab, searchQuery, filterMonth, filterCategory, filterAudience, pageSize])
   useEffect(() => { fetchEvents() }, [tenant?.id, currentUserRole])
+
+  useEffect(() => {
+    if (!tenant?.id || !['admin', 'superadmin'].includes(currentUserRole)) return
+    supabase.from('municipalities').select('calendar_token').eq('id', tenant.id).single()
+      .then(({ data }) => setCalToken(data?.calendar_token ?? null))
+  }, [tenant?.id, currentUserRole])
 
   useEffect(() => {
     const scroller = topRef.current?.closest('[class*="overflow-y-auto"]')
@@ -342,6 +350,18 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
     scroller?.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
+  const icsUrl = calToken
+    ? `${supabaseUrl}/functions/v1/calendar-ics?token=${calToken}`
+    : null
+
+  function copyIcsUrl() {
+    if (!icsUrl) return
+    navigator.clipboard.writeText(icsUrl).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
+    })
+  }
+
   return (
     <div className="space-y-4" ref={topRef}>
       {showScrollTop && (
@@ -353,13 +373,22 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
       {/* Mobile header */}
       <div className="md:hidden flex items-center justify-between">
         <h2 className="font-bold text-gray-700">ปฏิทินกิจกรรม</h2>
-        {canManage && (
-          <button onClick={openAdd}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white"
-            style={{ backgroundColor: 'var(--color-primary)' }}>
-            <Plus size={16} /> เพิ่มกิจกรรม
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {icsUrl && (
+            <button onClick={copyIcsUrl}
+              className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold border border-gray-200 text-gray-600 bg-white">
+              {copied ? <CheckCheck size={13} className="text-green-500" /> : <Link2 size={13} />}
+              {copied ? 'คัดลอก!' : 'Subscribe'}
+            </button>
+          )}
+          {canManage && (
+            <button onClick={openAdd}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white"
+              style={{ backgroundColor: 'var(--color-primary)' }}>
+              <Plus size={16} /> เพิ่มกิจกรรม
+            </button>
+          )}
+        </div>
       </div>
 
       {/* PC title bar */}
@@ -376,6 +405,15 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
               className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold border transition-colors hover:bg-white/20"
               style={{ backgroundColor: 'rgba(255,255,255,0.12)', color: '#fff', borderColor: 'rgba(255,255,255,0.3)' }}>
               <Plus size={13} /> เพิ่มกิจกรรม
+            </button>
+          )}
+          {icsUrl && (
+            <button onClick={copyIcsUrl}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold border transition-colors hover:bg-white/20"
+              style={{ backgroundColor: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.85)', borderColor: 'rgba(255,255,255,0.25)' }}
+              title={icsUrl}>
+              {copied ? <CheckCheck size={13} className="text-green-300" /> : <Link2 size={13} />}
+              {copied ? 'คัดลอกแล้ว!' : 'Google Calendar'}
             </button>
           )}
         </div>
