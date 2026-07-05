@@ -16,7 +16,7 @@ const STATUS = {
 }
 
 const EMPTY = {
-  vehicle_id: '', department_id: '', trip_date: new Date().toISOString().slice(0,10),
+  vehicle_id: '', department_id: '', driver_id: '', trip_date: new Date().toISOString().slice(0,10),
   depart_time: '', return_time: '', odometer_start: '', odometer_end: '',
   destination: '', purpose: '', passengers: '1', notes: '',
 }
@@ -26,6 +26,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   const user = session?.user
   const [trips,    setTrips]    = useState([])
   const [vehicles, setVehicles] = useState([])
+  const [staffList, setStaffList] = useState([])
   const [loading,  setLoading]  = useState(true)
   const [modal,    setModal]    = useState(false)
   const [rejectId, setRejectId] = useState(null)
@@ -43,13 +44,16 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     supabase.from('fleet_vehicles').select('id, name, license_plate')
       .eq('municipality_id', tenant.id).eq('status', 'active').order('name')
       .then(({ data }) => setVehicles(data ?? []))
+    supabase.from('profiles').select('id, full_name')
+      .eq('municipality_id', tenant.id).not('fleet_role', 'is', null).order('full_name')
+      .then(({ data }) => setStaffList(data ?? []))
   }, [tenant?.id])
 
   useEffect(() => {
     if (!tenant?.id) return
     setLoading(true)
     let q = supabase.from('fleet_trips')
-      .select('*, fleet_vehicles(name, license_plate), fleet_departments(name), profiles!fleet_trips_approved_by_fkey(full_name)')
+      .select('*, fleet_vehicles(name, license_plate), fleet_departments(name), driver:profiles!fleet_trips_driver_id_fkey(full_name), approver:profiles!fleet_trips_approved_by_fkey(full_name)')
       .eq('municipality_id', tenant.id)
       .order('trip_date', { ascending: false })
       .limit(50)
@@ -60,7 +64,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   /* ── Realtime ── */
   useEffect(() => {
     if (!tenant?.id) return
-    const SELECT = '*, fleet_vehicles(name, license_plate), fleet_departments(name), profiles!fleet_trips_approved_by_fkey(full_name)'
+    const SELECT = '*, fleet_vehicles(name, license_plate), fleet_departments(name), driver:profiles!fleet_trips_driver_id_fkey(full_name), approver:profiles!fleet_trips_approved_by_fkey(full_name)'
     const channel = supabase.channel(`fleet-trips-${tenant.id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'fleet_trips' },
         async ({ new: row }) => {
@@ -93,7 +97,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     const { data, error } = await supabase.from('fleet_trips').insert({
       municipality_id: tenant.id,
       vehicle_id:      form.vehicle_id,
-      driver_id:       user.id,
+      driver_id:       form.driver_id || user.id,
       department_id:   form.department_id || fleetInfo?.fleet_department_id || null,
       trip_date:       form.trip_date,
       depart_time:     form.depart_time  || null,
@@ -144,7 +148,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
           ))}
         </div>
         {canWrite && (
-          <button onClick={() => { setForm(EMPTY); setModal(true) }}
+          <button onClick={() => { setForm({ ...EMPTY, driver_id: user?.id ?? '' }); setModal(true) }}
             className="ml-auto flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white"
             style={{ backgroundColor: 'var(--color-primary)' }}>
             <Plus size={15} /> บันทึกการเดินทาง
@@ -158,41 +162,111 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                style={{ borderTopColor: 'var(--color-primary)' }} />
         </div>
       ) : (
-        <div className="space-y-2">
-          {trips.map(t => (
-            <div key={t.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap mb-1">
-                    <span className="text-sm font-bold text-gray-800">{t.destination}</span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                          style={{ backgroundColor: STATUS[t.status]?.color + '18', color: STATUS[t.status]?.color }}>
-                      {STATUS[t.status]?.label}
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-500">{thDate(t.trip_date)} · {t.fleet_vehicles?.name ?? '—'}</p>
-                  <p className="text-xs text-gray-500">{t.purpose}</p>
-                  {t.fleet_departments && <p className="text-[10px] text-gray-400">{t.fleet_departments.name}</p>}
-                  {t.distance_km && <p className="text-[10px] text-gray-400">{t.distance_km} กม.</p>}
-                  {t.reject_reason && <p className="text-[10px] text-red-500 mt-1">เหตุผล: {t.reject_reason}</p>}
-                </div>
-                {isAdmin && t.status === 'pending' && (
-                  <div className="flex gap-1.5 shrink-0">
-                    <button onClick={() => handleApprove(t.id)}
-                      className="p-2 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors">
-                      <Check size={14} />
-                    </button>
-                    <button onClick={() => setRejectId(t.id)}
-                      className="p-2 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-colors">
-                      <Ban size={14} />
-                    </button>
-                  </div>
+        <>
+          {/* Desktop Table */}
+          <div className="hidden md:block overflow-x-auto border border-gray-300 shadow-sm" style={{ borderRadius: 4 }}>
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr style={{ backgroundColor: '#1a3a5c' }}>
+                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">ที่</th>
+                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">วันที่</th>
+                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">ยานพาหนะ</th>
+                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">ปลายทาง</th>
+                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">วัตถุประสงค์</th>
+                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">ผู้ขับ</th>
+                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">กอง</th>
+                  <th className="px-4 py-2.5 text-center text-white font-bold text-[11px]">สถานะ</th>
+                  {isAdmin && <th className="px-4 py-2.5 text-center text-white font-bold text-[11px]">ดำเนินการ</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {trips.map((t, idx) => (
+                  <tr key={t.id}
+                    style={{ backgroundColor: idx % 2 === 0 ? '#fff' : '#f5f8fc' }}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'}
+                    onMouseLeave={e => e.currentTarget.style.backgroundColor = idx % 2 === 0 ? '#fff' : '#f5f8fc'}>
+                    <td className="px-4 py-2.5 text-gray-400 text-xs border-r border-gray-200">{idx + 1}</td>
+                    <td className="px-4 py-2.5 text-gray-600 text-xs border-r border-gray-200 whitespace-nowrap">{thDate(t.trip_date)}</td>
+                    <td className="px-4 py-2.5 border-r border-gray-200">
+                      <p className="font-semibold text-gray-800 text-sm">{t.fleet_vehicles?.name ?? '—'}</p>
+                      <p className="text-[10px] text-gray-400">{t.fleet_vehicles?.license_plate}</p>
+                    </td>
+                    <td className="px-4 py-2.5 font-semibold text-gray-800 text-sm border-r border-gray-200">{t.destination}</td>
+                    <td className="px-4 py-2.5 text-gray-500 text-xs max-w-[200px] truncate border-r border-gray-200">{t.purpose}</td>
+                    <td className="px-4 py-2.5 text-gray-600 text-xs border-r border-gray-200 whitespace-nowrap">{t.driver?.full_name ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-gray-500 text-xs border-r border-gray-200">{t.fleet_departments?.name ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-center border-r border-gray-200">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                        style={{ backgroundColor: STATUS[t.status]?.color + '18', color: STATUS[t.status]?.color }}>
+                        {STATUS[t.status]?.label}
+                      </span>
+                    </td>
+                    {isAdmin && t.status === 'pending' && (
+                      <td className="px-4 py-2.5 text-center">
+                        <div className="flex gap-1 justify-center">
+                          <button onClick={() => handleApprove(t.id)}
+                            className="text-xs font-bold px-2 py-1 rounded border border-emerald-600 text-emerald-600 hover:bg-emerald-600 hover:text-white transition-colors">
+                            อนุมัติ
+                          </button>
+                          <button onClick={() => setRejectId(t.id)}
+                            className="text-xs font-bold px-2 py-1 rounded border border-red-500 text-red-500 hover:bg-red-500 hover:text-white transition-colors">
+                            ไม่อนุมัติ
+                          </button>
+                        </div>
+                      </td>
+                    )}
+                    {isAdmin && t.status !== 'pending' && <td className="px-4 py-2.5"></td>}
+                  </tr>
+                ))}
+                {!trips.length && (
+                  <tr><td colSpan={isAdmin ? 9 : 8} className="text-center py-10 text-gray-400 text-sm">ไม่พบรายการ</td></tr>
                 )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile Cards */}
+          <div className="md:hidden space-y-2">
+            {trips.map(t => (
+              <div key={t.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className="text-sm font-bold text-gray-800">{t.destination}</span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                            style={{ backgroundColor: STATUS[t.status]?.color + '18', color: STATUS[t.status]?.color }}>
+                        {STATUS[t.status]?.label}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500">{thDate(t.trip_date)} · {t.fleet_vehicles?.name ?? '—'}</p>
+                    <p className="text-xs text-gray-500">{t.purpose}</p>
+                    <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                      {t.driver?.full_name && (
+                        <p className="text-[10px] text-blue-600 font-semibold">👤 {t.driver.full_name}</p>
+                      )}
+                      {t.fleet_departments && <p className="text-[10px] text-gray-400">{t.fleet_departments.name}</p>}
+                      {t.distance_km && <p className="text-[10px] text-gray-400">{t.distance_km} กม.</p>}
+                    </div>
+                    {t.reject_reason && <p className="text-[10px] text-red-500 mt-1">เหตุผล: {t.reject_reason}</p>}
+                  </div>
+                  {isAdmin && t.status === 'pending' && (
+                    <div className="flex gap-1.5 shrink-0">
+                      <button onClick={() => handleApprove(t.id)}
+                        className="p-2 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors">
+                        <Check size={14} />
+                      </button>
+                      <button onClick={() => setRejectId(t.id)}
+                        className="p-2 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-colors">
+                        <Ban size={14} />
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-          {!trips.length && <div className="text-center py-12 text-gray-400 text-sm">ไม่พบรายการ</div>}
-        </div>
+            ))}
+            {!trips.length && <div className="text-center py-12 text-gray-400 text-sm">ไม่พบรายการ</div>}
+          </div>
+        </>
       )}
 
       {/* Add Modal */}
@@ -210,6 +284,16 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                 <select value={form.vehicle_id} onChange={set('vehicle_id')} className={sel}>
                   <option value="">— เลือกรถ —</option>
                   {vehicles.map(v => <option key={v.id} value={v.id}>{v.name} ({v.license_plate})</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้ขับ / ผู้ใช้รถ</label>
+                <select value={form.driver_id} onChange={set('driver_id')} className={sel}>
+                  {staffList.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.full_name}{s.id === user?.id ? ' (ฉัน)' : ''}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-3">

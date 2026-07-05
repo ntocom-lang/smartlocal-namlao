@@ -2,9 +2,12 @@ import { useState, useEffect } from 'react'
 import { Plus, X, Car, Pencil, AlertTriangle } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
-const TYPES  = ['car','pickup','truck','van','excavator','backhoe','pump','generator','motorcycle','other']
-const TYPE_TH = { car:'รถยนต์', pickup:'รถกระบะ', truck:'รถบรรทุก', van:'รถตู้', excavator:'รถขุด',
-                  backhoe:'แบคโฮ', pump:'เครื่องสูบน้ำ', generator:'เครื่องยนต์', motorcycle:'มอเตอร์ไซค์', other:'อื่นๆ' }
+const DEFAULT_VEHICLE_TYPES = [
+  { value:'car', label:'รถยนต์' }, { value:'pickup', label:'รถกระบะ' }, { value:'truck', label:'รถบรรทุก' },
+  { value:'van', label:'รถตู้' }, { value:'excavator', label:'รถขุด' }, { value:'backhoe', label:'แบคโฮ' },
+  { value:'pump', label:'เครื่องสูบน้ำ' }, { value:'generator', label:'เครื่องยนต์' },
+  { value:'motorcycle', label:'มอเตอร์ไซค์' }, { value:'other', label:'อื่นๆ' },
+]
 const FUELS  = ['diesel','gasoline','gas_lpg','electric','other']
 const FUEL_TH = { diesel:'ดีเซล', gasoline:'เบนซิน', gas_lpg:'แก๊ส LPG', electric:'ไฟฟ้า', other:'อื่นๆ' }
 const STATUS_TH = { active:'ใช้งานได้', inactive:'ปลดประจำการ', under_repair:'กำลังซ่อม', retired:'ปลดระวาง' }
@@ -26,20 +29,26 @@ function daysTo(dateStr) {
 }
 
 export default function FleetVehicles({ tenant, depts, isAdmin }) {
-  const [vehicles, setVehicles] = useState([])
-  const [loading,  setLoading]  = useState(true)
-  const [modal,    setModal]    = useState(null) // null | 'add' | vehicle obj
-  const [form,     setForm]     = useState(EMPTY)
-  const [saving,   setSaving]   = useState(false)
-  const [filterDept, setFilterDept] = useState('all')
+  const [vehicles,     setVehicles]     = useState([])
+  const [vehicleTypes, setVehicleTypes] = useState(DEFAULT_VEHICLE_TYPES)
+  const [loading,      setLoading]      = useState(true)
+  const [modal,        setModal]        = useState(null)
+  const [form,         setForm]         = useState(EMPTY)
+  const [saving,       setSaving]       = useState(false)
+  const [filterDept,   setFilterDept]   = useState('all')
   const [filterStatus, setFilterStatus] = useState('active')
 
   useEffect(() => {
     if (!tenant?.id) return
-    supabase.from('fleet_vehicles').select('*, fleet_departments(name,short_name)')
-      .eq('municipality_id', tenant.id).order('name')
-      .then(({ data }) => setVehicles(data ?? []))
-      .finally(() => setLoading(false))
+    Promise.all([
+      supabase.from('fleet_vehicles').select('*, fleet_departments(name,short_name)')
+        .eq('municipality_id', tenant.id).order('name'),
+      supabase.from('fleet_vehicle_types').select('value,label')
+        .eq('municipality_id', tenant.id).order('sort_order'),
+    ]).then(([{ data: v }, { data: t }]) => {
+      setVehicles(v ?? [])
+      if (t?.length) setVehicleTypes(t)
+    }).finally(() => setLoading(false))
   }, [tenant?.id])
 
   /* ── Realtime ── */
@@ -147,77 +156,151 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
                style={{ borderTopColor: 'var(--color-primary)' }} />
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {filtered.map(v => {
-            const expiries = [
-              { label:'ประกัน', days: daysTo(v.insurance_expiry) },
-              { label:'พรบ.',   days: daysTo(v.act_expiry) },
-              { label:'ทะเบียน',days: daysTo(v.registration_expiry) },
-              { label:'ตรวจสภาพ',days: daysTo(v.inspection_expiry) },
-            ].filter(e => e.days !== null && e.days <= 60)
-
-            return (
-              <div key={v.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-11 h-11 rounded-xl flex items-center justify-center text-2xl bg-gray-50 shrink-0">
-                    {v.vehicle_type === 'car'        ? '🚗'
-                     : v.vehicle_type === 'pickup'   ? '🛻'
-                     : v.vehicle_type === 'truck'    ? '🚚'
-                     : v.vehicle_type === 'excavator'? '🚜'
-                     : v.vehicle_type === 'pump'     ? '⚙️'
-                     : v.vehicle_type === 'motorcycle'? '🏍️'
-                     : '🚙'}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-sm font-bold text-gray-800 truncate">{v.name}</h3>
-                      {v.is_pool && (
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600">
-                          รถกลาง
+        <>
+          {/* Desktop Table */}
+          <div className="hidden md:block overflow-x-auto border border-gray-300 shadow-sm" style={{ borderRadius: 4 }}>
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr style={{ backgroundColor: '#1a3a5c' }}>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white w-8 border-r border-white/10">ที่</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ชื่อ / รหัส</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ทะเบียน</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ประเภท</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">กอง</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">เชื้อเพลิง</th>
+                  <th className="px-4 py-2.5 text-center text-[11px] font-bold text-white border-r border-white/10">สถานะ</th>
+                  <th className="px-4 py-2.5 text-center text-[11px] font-bold text-white border-r border-white/10">เอกสาร</th>
+                  {isAdmin && <th className="px-4 py-2.5 text-center text-[11px] font-bold text-white">จัดการ</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {filtered.map((v, idx) => {
+                  const expiries = [
+                    { label:'ประกัน',    days: daysTo(v.insurance_expiry) },
+                    { label:'พรบ.',      days: daysTo(v.act_expiry) },
+                    { label:'ทะเบียน',  days: daysTo(v.registration_expiry) },
+                    { label:'ตรวจสภาพ', days: daysTo(v.inspection_expiry) },
+                  ].filter(e => e.days !== null && e.days <= 60)
+                  return (
+                    <tr key={v.id}
+                      style={{ backgroundColor: idx % 2 === 0 ? '#fff' : '#f5f8fc' }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = idx % 2 === 0 ? '#fff' : '#f5f8fc'}>
+                      <td className="px-4 py-2.5 text-gray-400 text-xs border-r border-gray-200">{idx + 1}</td>
+                      <td className="px-4 py-2.5 border-r border-gray-200">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-gray-800 text-sm">{v.name}</span>
+                          {v.is_pool && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600">รถกลาง</span>}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5 text-gray-600 text-xs border-r border-gray-200 whitespace-nowrap">{v.license_plate}</td>
+                      <td className="px-4 py-2.5 text-gray-600 text-xs border-r border-gray-200">{vehicleTypes.find(t => t.value === v.vehicle_type)?.label ?? v.vehicle_type}</td>
+                      <td className="px-4 py-2.5 text-gray-500 text-xs border-r border-gray-200">{v.fleet_departments?.name ?? '—'}</td>
+                      <td className="px-4 py-2.5 text-gray-500 text-xs border-r border-gray-200">{FUEL_TH[v.fuel_type]}</td>
+                      <td className="px-4 py-2.5 text-center border-r border-gray-200">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                          style={{ backgroundColor: STATUS_CLR[v.status] + '18', color: STATUS_CLR[v.status] }}>
+                          {STATUS_TH[v.status]}
                         </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-center border-r border-gray-200">
+                        {expiries.length > 0 ? (
+                          <span className="flex items-center justify-center gap-0.5 text-[10px] font-bold text-red-500">
+                            <AlertTriangle size={10} /> {expiries.length} รายการ
+                          </span>
+                        ) : <span className="text-[10px] text-gray-300">—</span>}
+                      </td>
+                      {isAdmin && (
+                        <td className="px-4 py-2.5 text-center">
+                          <button onClick={() => openEdit(v)}
+                            className="text-xs font-bold px-3 py-1 rounded border border-blue-600 text-blue-700 hover:bg-blue-600 hover:text-white transition-colors">
+                            แก้ไข
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  )
+                })}
+                {!filtered.length && (
+                  <tr><td colSpan={isAdmin ? 9 : 8} className="text-center py-10 text-gray-400 text-sm">ไม่พบยานพาหนะ</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile Cards */}
+          <div className="md:hidden grid grid-cols-1 gap-3">
+            {filtered.map(v => {
+              const expiries = [
+                { label:'ประกัน',    days: daysTo(v.insurance_expiry) },
+                { label:'พรบ.',      days: daysTo(v.act_expiry) },
+                { label:'ทะเบียน',  days: daysTo(v.registration_expiry) },
+                { label:'ตรวจสภาพ', days: daysTo(v.inspection_expiry) },
+              ].filter(e => e.days !== null && e.days <= 60)
+
+              return (
+                <div key={v.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-11 h-11 rounded-xl flex items-center justify-center text-2xl bg-gray-50 shrink-0">
+                      {v.vehicle_type === 'car'         ? '🚗'
+                       : v.vehicle_type === 'pickup'    ? '🛻'
+                       : v.vehicle_type === 'truck'     ? '🚚'
+                       : v.vehicle_type === 'excavator' ? '🚜'
+                       : v.vehicle_type === 'pump'      ? '⚙️'
+                       : v.vehicle_type === 'motorcycle'? '🏍️'
+                       : '🚙'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-sm font-bold text-gray-800 truncate">{v.name}</h3>
+                        {v.is_pool && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600">
+                            รถกลาง
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-0.5">{v.license_plate} · {FUEL_TH[v.fuel_type]}</p>
+                      {v.fleet_departments && (
+                        <p className="text-[10px] text-gray-400 mt-0.5">{v.fleet_departments.name}</p>
                       )}
                     </div>
-                    <p className="text-xs text-gray-500 mt-0.5">{v.license_plate} · {FUEL_TH[v.fuel_type]}</p>
-                    {v.fleet_departments && (
-                      <p className="text-[10px] text-gray-400 mt-0.5">{v.fleet_departments.name}</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-[10px] font-bold px-2 py-1 rounded-full"
-                          style={{ backgroundColor: STATUS_CLR[v.status] + '18', color: STATUS_CLR[v.status] }}>
-                      {STATUS_TH[v.status]}
-                    </span>
-                    {isAdmin && (
-                      <button onClick={() => openEdit(v)}
-                              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors">
-                        <Pencil size={13} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {expiries.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {expiries.map(e => (
-                      <span key={e.label}
-                            className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                              e.days < 0 ? 'bg-red-100 text-red-600'
-                              : e.days <= 15 ? 'bg-orange-100 text-orange-600'
-                              : 'bg-amber-100 text-amber-600'
-                            }`}>
-                        <AlertTriangle size={9} />
-                        {e.label} {e.days < 0 ? `เกิน ${Math.abs(e.days)} วัน` : `อีก ${e.days} วัน`}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[10px] font-bold px-2 py-1 rounded-full"
+                            style={{ backgroundColor: STATUS_CLR[v.status] + '18', color: STATUS_CLR[v.status] }}>
+                        {STATUS_TH[v.status]}
                       </span>
-                    ))}
+                      {isAdmin && (
+                        <button onClick={() => openEdit(v)}
+                                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors">
+                          <Pencil size={13} />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                )}
-              </div>
-            )
-          })}
-          {!filtered.length && (
-            <div className="col-span-2 text-center py-12 text-gray-400 text-sm">ไม่พบยานพาหนะ</div>
-          )}
-        </div>
+
+                  {expiries.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {expiries.map(e => (
+                        <span key={e.label}
+                              className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                e.days < 0 ? 'bg-red-100 text-red-600'
+                                : e.days <= 15 ? 'bg-orange-100 text-orange-600'
+                                : 'bg-amber-100 text-amber-600'
+                              }`}>
+                          <AlertTriangle size={9} />
+                          {e.label} {e.days < 0 ? `เกิน ${Math.abs(e.days)} วัน` : `อีก ${e.days} วัน`}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+            {!filtered.length && (
+              <div className="text-center py-12 text-gray-400 text-sm">ไม่พบยานพาหนะ</div>
+            )}
+          </div>
+        </>
       )}
 
       {/* Modal Add/Edit */}
@@ -244,7 +327,7 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
                 <div>
                   <label className="text-xs font-semibold text-gray-600 mb-1 block">ประเภท</label>
                   <select value={form.vehicle_type} onChange={set('vehicle_type')} className={sel}>
-                    {TYPES.map(t => <option key={t} value={t}>{TYPE_TH[t]}</option>)}
+                    {vehicleTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                   </select>
                 </div>
                 <div>
@@ -291,6 +374,17 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
 
               <div className="border-t border-gray-100 pt-4">
                 <p className="text-xs font-bold text-gray-600 mb-3">📄 เอกสารสำคัญ</p>
+                <div className="flex items-end gap-2 mb-3 p-3 bg-blue-50 rounded-xl">
+                  <div className="flex-1">
+                    <label className="text-xs font-semibold text-blue-700 mb-1 block">ใช้วันหมดอายุเดียวกันทั้งหมด</label>
+                    <input type="date"
+                      className="w-full px-3 py-2 text-sm text-gray-900 bg-white border border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent"
+                      onChange={e => {
+                        const v = e.target.value
+                        setForm(f => ({ ...f, insurance_expiry: v, act_expiry: v, registration_expiry: v, inspection_expiry: v }))
+                      }} />
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   {[
                     { label:'ประกันภัยหมดอายุ', key:'insurance_expiry' },

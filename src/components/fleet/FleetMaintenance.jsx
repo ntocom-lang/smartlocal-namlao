@@ -166,38 +166,94 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
                style={{ borderTopColor: 'var(--color-primary)' }} />
         </div>
       ) : (
-        <div className="space-y-2">
-          {records.map(r => {
-            const t = TYPES[r.maintenance_type] ?? TYPES.other
-            return (
-              <div key={r.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <span className="text-sm font-bold text-gray-800">{r.fleet_vehicles?.name ?? '—'}</span>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                            style={{ backgroundColor: t.color + '18', color: t.color }}>
-                        {t.label}
-                      </span>
+        <>
+          {/* Desktop Table */}
+          <div className="hidden md:block overflow-x-auto border border-gray-300 shadow-sm" style={{ borderRadius: 4 }}>
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr style={{ backgroundColor: '#1a3a5c' }}>
+                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">ที่</th>
+                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">วันที่</th>
+                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">ยานพาหนะ</th>
+                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">ประเภท</th>
+                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">รายละเอียด</th>
+                  <th className="px-4 py-2.5 text-right text-white font-bold text-[11px] border-r border-blue-900">ค่าใช้จ่าย</th>
+                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">อู่/ผู้รับจ้าง</th>
+                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px]">ซ่อมถัดไป</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {records.map((r, idx) => {
+                  const t = TYPES[r.maintenance_type] ?? TYPES.other
+                  return (
+                    <tr key={r.id}
+                      style={{ backgroundColor: idx % 2 === 0 ? '#fff' : '#f5f8fc' }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = idx % 2 === 0 ? '#fff' : '#f5f8fc'}>
+                      <td className="px-4 py-2.5 text-gray-400 text-xs border-r border-gray-200">{idx + 1}</td>
+                      <td className="px-4 py-2.5 text-gray-600 text-xs border-r border-gray-200 whitespace-nowrap">{thDate(r.service_date)}</td>
+                      <td className="px-4 py-2.5 border-r border-gray-200">
+                        <p className="font-semibold text-gray-800 text-sm">{r.fleet_vehicles?.name ?? '—'}</p>
+                        <p className="text-[10px] text-gray-400">{r.fleet_vehicles?.license_plate}</p>
+                      </td>
+                      <td className="px-4 py-2.5 border-r border-gray-200">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                          style={{ backgroundColor: t.color + '18', color: t.color }}>
+                          {t.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-gray-700 text-xs max-w-[240px] border-r border-gray-200">{r.description}</td>
+                      <td className="px-4 py-2.5 text-right font-bold text-gray-800 border-r border-gray-200">{fmtB(r.cost)}</td>
+                      <td className="px-4 py-2.5 text-gray-500 text-xs border-r border-gray-200">{r.vendor || '—'}</td>
+                      <td className="px-4 py-2.5 text-xs">
+                        {r.next_service_date
+                          ? <span className="text-blue-500">{thDate(r.next_service_date)}</span>
+                          : <span className="text-gray-300">—</span>}
+                      </td>
+                    </tr>
+                  )
+                })}
+                {!records.length && (
+                  <tr><td colSpan={8} className="text-center py-10 text-gray-400 text-sm">ไม่พบรายการ</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile Cards */}
+          <div className="md:hidden space-y-2">
+            {records.map(r => {
+              const t = TYPES[r.maintenance_type] ?? TYPES.other
+              return (
+                <div key={r.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <span className="text-sm font-bold text-gray-800">{r.fleet_vehicles?.name ?? '—'}</span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                              style={{ backgroundColor: t.color + '18', color: t.color }}>
+                          {t.label}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-700">{r.description}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{thDate(r.service_date)}{r.vendor ? ` · ${r.vendor}` : ''}</p>
+                      {r.next_service_date && (
+                        <p className="text-[10px] text-blue-500 mt-1">
+                          ซ่อมบำรุงครั้งถัดไป: {thDate(r.next_service_date)}
+                          {r.next_service_km ? ` หรือ ${r.next_service_km.toLocaleString('th-TH')} กม.` : ''}
+                        </p>
+                      )}
                     </div>
-                    <p className="text-xs text-gray-700">{r.description}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">{thDate(r.service_date)}{r.vendor ? ` · ${r.vendor}` : ''}</p>
-                    {r.next_service_date && (
-                      <p className="text-[10px] text-blue-500 mt-1">
-                        ซ่อมบำรุงครั้งถัดไป: {thDate(r.next_service_date)}
-                        {r.next_service_km ? ` หรือ ${r.next_service_km.toLocaleString('th-TH')} กม.` : ''}
-                      </p>
-                    )}
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm font-black text-gray-800">{fmtB(r.cost)}</p>
+                    <div className="text-right shrink-0">
+                      <p className="text-sm font-black text-gray-800">{fmtB(r.cost)}</p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )
-          })}
-          {!records.length && <div className="text-center py-12 text-gray-400 text-sm">ไม่พบรายการ</div>}
-        </div>
+              )
+            })}
+            {!records.length && <div className="text-center py-12 text-gray-400 text-sm">ไม่พบรายการ</div>}
+          </div>
+        </>
       )}
 
       {/* Modal */}

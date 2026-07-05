@@ -12,7 +12,7 @@ import {
   CheckCircle2, XCircle, AlertCircle, ChevronRight, ChevronLeft,
   Filter, Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical,
   X, FileText, AlignLeft, Image, Calendar, Hash, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera,
-  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, BellOff, ExternalLink, BarChart2, Settings, Download, Banknote, Star, MessageSquare
+  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, BellOff, ExternalLink, BarChart2, Settings, Download, Banknote, Star, MessageSquare, Car
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { compressImage } from '../lib/imageUtils'
@@ -28,6 +28,7 @@ import { InboxModule } from './StaffDashboard'
 import ReportManagerComponent from '../components/admin/ReportManager'
 import ModuleManager from '../components/admin/ModuleManager'
 import AuditLogViewer from '../components/admin/AuditLogViewer'
+import FleetSetup from '../components/fleet/FleetSetup'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS = {
@@ -4300,6 +4301,7 @@ const PAGE_LABELS = {
   'civil-report': 'รายงานโยธา',
   'audit-log': 'บันทึกกิจกรรม',
   'satisfaction': 'ผลการประเมิน',
+  'fleet-setup': 'ตั้งค่ายานพาหนะ',
 }
 
 // ─── SatisfactionAdmin ────────────────────────────────────────────────────────
@@ -4735,6 +4737,7 @@ export default function AdminDashboard() {
                 { key: 'assignments', label: 'ผู้รับผิดชอบ', Icon: Wrench,   color: '#d97706', show: false },
                 { key: 'emergency',   label: 'สายด่วน',       Icon: Phone,    color: '#ef4444', show: currentUserRole !== 'viewer' },
                 { key: 'locations',   label: 'สถานที่เกิดเหตุ', Icon: MapPin, color: '#0891b2', show: currentUserRole !== 'viewer' },
+                { key: 'fleet-setup', label: 'ตั้งค่ายานพาหนะ', Icon: Car,    color: '#0369a1', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 { key: 'system-settings', label: 'ตั้งค่าระบบ',  Icon: Settings,    color: '#3b82f6', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 { key: 'users',           label: 'จัดการผู้ใช้', Icon: Shield,      color: '#7c3aed', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 { key: 'modules',         label: 'จัดการโมดูล', Icon: LayoutGrid,   color: '#7c3aed', show: currentUserRole === 'superadmin' },
@@ -5148,6 +5151,8 @@ export default function AdminDashboard() {
         <SystemSettingsAdmin tenant={tenant} onUpdateTenant={(updated) => window.location.reload()} />
       ) : activePage === 'audit-log' ? (
         <AuditLogViewer tenant={tenant} />
+      ) : activePage === 'fleet-setup' ? (
+        <FleetSetup tenant={tenant} />
       ) : activePage === 'more' ? (
         /* ─── อื่นๆ page ─── */
         <div className="space-y-4">
@@ -5212,6 +5217,18 @@ export default function AdminDashboard() {
               </button>
             )}
             {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
+              <button onClick={() => setActivePage('fleet-setup')}
+                className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#e0f2fe' }}>
+                  <Car size={24} style={{ color: '#0369a1' }} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-800">ตั้งค่ายานพาหนะ</p>
+                  <p className="text-[13px] text-gray-400 mt-0.5">กอง งบประมาณ สิทธิ์</p>
+                </div>
+              </button>
+            )}
+            {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
               <button onClick={() => setActivePage('system-settings')}
                 className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
                 <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#dbeafe' }}>
@@ -5252,8 +5269,9 @@ export default function AdminDashboard() {
                   { key: 'emergency',   Icon: Phone,       color: '#ef4444', bg: '#fee2e2', label: 'สายด่วนฉุกเฉิน',  desc: 'จัดการรายชื่อและเบอร์ติดต่อ',     show: currentUserRole !== 'viewer' },
                   { key: 'locations',   Icon: MapPin,      color: '#0891b2', bg: '#e0f2fe', label: 'สถานที่เกิดเหตุ', desc: 'จัดการหมู่บ้าน / ตำบลในพื้นที่',  show: currentUserRole !== 'viewer' },
                   { key: 'staff',            Icon: UserCircle2, color: '#7c3aed', bg: '#ede9fe', label: 'รูปผู้บริหาร',       desc: 'อัปโหลดรูปนายก/รองนายก/ทีมงาน',       show: currentUserRole !== 'viewer' },
-                  { key: 'system-settings', Icon: Settings,color: '#3b82f6', bg: '#dbeafe', label: 'ตั้งค่าระบบ',    desc: 'ตั้งค่าชื่อระบบและข้อมูลพื้นฐาน',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                  { key: 'users',       Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', label: 'จัดการผู้ใช้',    desc: 'สิทธิ์การเข้าถึงและบทบาท',        show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                  { key: 'fleet-setup',     Icon: Car,         color: '#0369a1', bg: '#e0f2fe', label: 'ตั้งค่ายานพาหนะ', desc: 'กอง/หน่วยงาน งบประมาณ สิทธิ์ผู้ใช้', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                  { key: 'system-settings', Icon: Settings,    color: '#3b82f6', bg: '#dbeafe', label: 'ตั้งค่าระบบ',    desc: 'ตั้งค่าชื่อระบบและข้อมูลพื้นฐาน',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                  { key: 'users',           Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', label: 'จัดการผู้ใช้',    desc: 'สิทธิ์การเข้าถึงและบทบาท',        show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 ].filter(r => r.show).map(({ key, Icon, color, bg, label, desc }) => (
                   <tr key={key} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => setActivePage(key)}>
                     <td className="px-5 py-3.5">

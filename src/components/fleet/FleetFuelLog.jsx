@@ -108,44 +108,96 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts, isAdmin, isStaf
                style={{ borderTopColor: 'var(--color-primary)' }} />
         </div>
       ) : (
-        <div className="space-y-2">
-          {records.map(r => (
-            <div key={r.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-bold text-gray-800">
-                      {r.fleet_vehicles?.name ?? '—'}
-                    </span>
-                    <span className="text-[10px] text-gray-400">{r.fleet_vehicles?.license_plate}</span>
-                    {r.is_anomaly && (
-                      <span className="flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">
-                        <AlertTriangle size={9} /> ผิดปกติ
+        <>
+          {/* Desktop Table */}
+          <div className="hidden md:block overflow-x-auto border border-gray-300 shadow-sm" style={{ borderRadius: 4 }}>
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr style={{ backgroundColor: '#1a3a5c' }}>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white w-8 border-r border-white/10">ที่</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">วันที่</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ยานพาหนะ</th>
+                  <th className="px-4 py-2.5 text-right text-[11px] font-bold text-white border-r border-white/10">ลิตร</th>
+                  <th className="px-4 py-2.5 text-right text-[11px] font-bold text-white border-r border-white/10">ราคา/ล.</th>
+                  <th className="px-4 py-2.5 text-right text-[11px] font-bold text-white border-r border-white/10">รวม (฿)</th>
+                  <th className="px-4 py-2.5 text-right text-[11px] font-bold text-white border-r border-white/10">กม./ล.</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">เลขไมล์</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white">ปั๊ม</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {records.map((r, idx) => (
+                  <tr key={r.id}
+                    style={{ backgroundColor: idx % 2 === 0 ? '#fff' : '#f5f8fc' }}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'}
+                    onMouseLeave={e => e.currentTarget.style.backgroundColor = idx % 2 === 0 ? '#fff' : '#f5f8fc'}>
+                    <td className="px-4 py-2.5 text-gray-400 text-xs border-r border-gray-200">{idx + 1}</td>
+                    <td className="px-4 py-2.5 text-gray-600 text-xs border-r border-gray-200 whitespace-nowrap">{thDate(r.filled_at)}</td>
+                    <td className="px-4 py-2.5 border-r border-gray-200">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold text-gray-800 text-sm">{r.fleet_vehicles?.name ?? '—'}</span>
+                        {r.is_anomaly && <span className="flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600"><AlertTriangle size={8} />ผิดปกติ</span>}
+                        {!r.full_tank && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">ไม่เต็ม</span>}
+                      </div>
+                      <p className="text-[10px] text-gray-400">{r.fleet_vehicles?.license_plate}</p>
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-gray-700 text-sm font-semibold border-r border-gray-200">{r.liters}</td>
+                    <td className="px-4 py-2.5 text-right text-gray-600 text-xs border-r border-gray-200">{r.price_per_liter}</td>
+                    <td className="px-4 py-2.5 text-right font-bold text-gray-800 border-r border-gray-200">{fmtB(r.total_cost)}</td>
+                    <td className="px-4 py-2.5 text-right text-xs border-r border-gray-200">
+                      {r.efficiency_kml ? <span className="text-emerald-600 font-semibold">{r.efficiency_kml}</span> : <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-500 text-xs border-r border-gray-200">{r.odometer ? fmt(r.odometer) : '—'}</td>
+                    <td className="px-4 py-2.5 text-gray-500 text-xs">{r.fuel_station || '—'}</td>
+                  </tr>
+                ))}
+                {!records.length && (
+                  <tr><td colSpan={9} className="text-center py-10 text-gray-400 text-sm">ยังไม่มีรายการเติมน้ำมัน</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile Cards */}
+          <div className="md:hidden space-y-2">
+            {records.map(r => (
+              <div key={r.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-bold text-gray-800">
+                        {r.fleet_vehicles?.name ?? '—'}
                       </span>
-                    )}
-                    {!r.full_tank && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">เติมไม่เต็ม</span>
+                      <span className="text-[10px] text-gray-400">{r.fleet_vehicles?.license_plate}</span>
+                      {r.is_anomaly && (
+                        <span className="flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">
+                          <AlertTriangle size={9} /> ผิดปกติ
+                        </span>
+                      )}
+                      {!r.full_tank && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">เติมไม่เต็ม</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {thDate(r.filled_at)} · {r.liters} ลิตร @ {r.price_per_liter} บ./ล.
+                      {r.fuel_station ? ` · ${r.fuel_station}` : ''}
+                    </p>
+                    {r.odometer && <p className="text-[10px] text-gray-400 mt-0.5">มิเตอร์ {fmt(r.odometer)} กม.</p>}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-base font-black text-gray-800">{fmtB(r.total_cost)}</p>
+                    {r.efficiency_kml && (
+                      <p className="text-[10px] text-emerald-600 font-semibold">{r.efficiency_kml} กม./ล.</p>
                     )}
                   </div>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    {thDate(r.filled_at)} · {r.liters} ลิตร @ {r.price_per_liter} บ./ล.
-                    {r.fuel_station ? ` · ${r.fuel_station}` : ''}
-                  </p>
-                  {r.odometer && <p className="text-[10px] text-gray-400 mt-0.5">มิเตอร์ {fmt(r.odometer)} กม.</p>}
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="text-base font-black text-gray-800">{fmtB(r.total_cost)}</p>
-                  {r.efficiency_kml && (
-                    <p className="text-[10px] text-emerald-600 font-semibold">{r.efficiency_kml} กม./ล.</p>
-                  )}
                 </div>
               </div>
-            </div>
-          ))}
-          {!records.length && (
-            <div className="text-center py-12 text-gray-400 text-sm">ยังไม่มีรายการเติมน้ำมัน</div>
-          )}
-        </div>
+            ))}
+            {!records.length && (
+              <div className="text-center py-12 text-gray-400 text-sm">ยังไม่มีรายการเติมน้ำมัน</div>
+            )}
+          </div>
+        </>
       )}
 
       {/* Pagination */}

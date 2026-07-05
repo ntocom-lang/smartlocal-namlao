@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, LayoutDashboard, Car, Fuel, Route, Wrench, Settings } from 'lucide-react'
+import { ArrowLeft, LayoutDashboard, Car, Fuel, Route, Wrench } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -9,22 +9,20 @@ import FleetVehicles    from '../components/fleet/FleetVehicles'
 import FleetFuelLog     from '../components/fleet/FleetFuelLog'
 import FleetTrips       from '../components/fleet/FleetTrips'
 import FleetMaintenance from '../components/fleet/FleetMaintenance'
-import FleetSetup       from '../components/fleet/FleetSetup'
-
 const TABS = [
   { id: 'dashboard',    label: 'ภาพรวม',     Icon: LayoutDashboard },
   { id: 'vehicles',     label: 'ยานพาหนะ',   Icon: Car             },
   { id: 'fuel',         label: 'น้ำมัน',      Icon: Fuel            },
   { id: 'trips',        label: 'การเดินทาง', Icon: Route           },
   { id: 'maintenance',  label: 'ซ่อมบำรุง',  Icon: Wrench          },
-  { id: 'setup',        label: 'ตั้งค่า',     Icon: Settings        },
 ]
 
 export default function FleetPage({ onBack } = {}) {
   const navigate    = useNavigate()
   const { tenant }  = useTenant()
-  const { session } = useAuth()
+  const { session, role } = useAuth()
   const user        = session?.user
+  const isSysAdmin  = role === 'admin' || role === 'superadmin'
   const [tab, setTab]           = useState('dashboard')
   const [fleetInfo, setFleetInfo] = useState(null)  // { fleet_role, fleet_department_id }
   const [depts, setDepts]       = useState([])
@@ -48,15 +46,12 @@ export default function FleetPage({ onBack } = {}) {
     }).finally(() => setLoading(false))
   }, [tenant?.id, user?.id])
 
-  const isAdmin   = fleetInfo?.fleet_role === 'fleet_admin'
+  const isAdmin   = fleetInfo?.fleet_role === 'fleet_admin' || isSysAdmin
   const isStaff   = fleetInfo?.fleet_role === 'fleet_staff'
   const isViewer  = fleetInfo?.fleet_role === 'fleet_viewer'
-  const hasAccess = isAdmin || isStaff || isViewer
+  const hasAccess = isAdmin || isStaff || isViewer || isSysAdmin
 
-  const visibleTabs = TABS.filter(t => {
-    if (t.id === 'setup') return isAdmin
-    return true
-  })
+  const visibleTabs = TABS
 
   if (loading) return (
     <div className="flex items-center justify-center min-h-screen">
@@ -106,7 +101,6 @@ export default function FleetPage({ onBack } = {}) {
       {tab === 'fuel'        && <FleetFuelLog     {...ctx} />}
       {tab === 'trips'       && <FleetTrips       {...ctx} />}
       {tab === 'maintenance' && <FleetMaintenance {...ctx} />}
-      {tab === 'setup'       && <FleetSetup       {...ctx} />}
     </div>
   )
 
