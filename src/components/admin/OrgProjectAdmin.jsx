@@ -190,6 +190,7 @@ function UpdateForm({ projectId, municipalityId, onSaved, onCancel }) {
   const [links, setLinks] = useState([])
   const [photos, setPhotos] = useState([])
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState(null)
   function set(k, v) { setForm(f => ({ ...f, [k]: v })) }
 
   function addPhotos(e) {
@@ -201,13 +202,14 @@ function UpdateForm({ projectId, municipalityId, onSaved, onCancel }) {
   async function handleSave() {
     if (!form.title.trim()) return
     setSaving(true)
+    setSaveError(null)
     const { data: { session } } = await supabase.auth.getSession()
     let photoUrls = []
     for (const f of photos) {
       const url = await uploadPhoto(f, projectId)
       if (url) photoUrls.push(url)
     }
-    const cleanLinks = links.filter(l => l.url.trim())
+    const cleanLinks = links.filter(l => l.url?.trim())
     const { error } = await supabase.from('org_project_updates').insert({
       project_id: projectId,
       municipality_id: municipalityId,
@@ -220,12 +222,11 @@ function UpdateForm({ projectId, municipalityId, onSaved, onCancel }) {
       created_by: session?.user?.id ?? null,
     })
     setSaving(false)
-    if (!error) {
-      setForm({ update_type: 'milestone', title: '', body: '', update_date: today })
-      setLinks([])
-      setPhotos([])
-      onSaved()
-    }
+    if (error) { setSaveError(error.message); return }
+    setForm({ update_type: 'milestone', title: '', body: '', update_date: today })
+    setLinks([])
+    setPhotos([])
+    onSaved()
   }
 
   return (
@@ -284,6 +285,9 @@ function UpdateForm({ projectId, municipalityId, onSaved, onCancel }) {
           </button>
         </div>
       </div>
+      {saveError && (
+        <p className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{saveError}</p>
+      )}
     </div>
   )
 }
@@ -295,6 +299,7 @@ function UpdateCard({ upd, onDelete, onSaved, canDelete }) {
   const [draft, setDraft] = useState({})
   const [draftLinks, setDraftLinks] = useState([])
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState(null)
 
   function startEdit() {
     setDraft({
@@ -312,6 +317,7 @@ function UpdateCard({ upd, onDelete, onSaved, canDelete }) {
   async function saveEdit() {
     if (!draft.title.trim()) return
     setSaving(true)
+    setSaveError(null)
     const cleanLinks = draftLinks.filter(l => l.url?.trim())
     const { error } = await supabase.from('org_project_updates').update({
       update_type: draft.update_type,
@@ -321,7 +327,9 @@ function UpdateCard({ upd, onDelete, onSaved, canDelete }) {
       links: cleanLinks,
     }).eq('id', upd.id)
     setSaving(false)
-    if (!error) { setIsEditing(false); onSaved?.() }
+    if (error) { setSaveError(error.message); return }
+    setIsEditing(false)
+    onSaved?.()
   }
 
   const cfg = getUpdateTypeCfg(isEditing ? draft.update_type : upd.update_type)
@@ -368,6 +376,9 @@ function UpdateCard({ upd, onDelete, onSaved, canDelete }) {
             <div>
               <LinksEditor links={draftLinks} onChange={setDraftLinks} />
             </div>
+            {saveError && (
+              <p className="text-[11px] text-red-500 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5">{saveError}</p>
+            )}
             <div className="flex gap-2 justify-end">
               <button onClick={cancelEdit} disabled={saving}
                 className="px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition-colors">
