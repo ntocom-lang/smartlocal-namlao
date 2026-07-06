@@ -10,17 +10,18 @@ const fmtB = n => `฿${fmt(Math.round(n ?? 0))}`
 const thDate = d => new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
 
 const TYPES = {
-  routine:    { label: 'บำรุงรักษา',   color: '#3b82f6' },
+  routine:    { label: 'บำรุงรักษา',       color: '#3b82f6' },
   oil_change: { label: 'เปลี่ยนถ่ายน้ำมัน', color: '#f59e0b' },
-  repair:     { label: 'ซ่อมแซม',      color: '#ef4444' },
-  inspection: { label: 'ตรวจสภาพ',    color: '#8b5cf6' },
-  tire:       { label: 'ยาง',          color: '#10b981' },
-  battery:    { label: 'แบตเตอรี่',   color: '#06b6d4' },
-  other:      { label: 'อื่นๆ',         color: '#9ca3af' },
+  repair:     { label: 'ซ่อมแซม',          color: '#ef4444' },
+  inspection: { label: 'ตรวจสภาพ',         color: '#8b5cf6' },
+  tire:       { label: 'ยาง',              color: '#10b981' },
+  battery:    { label: 'แบตเตอรี่',        color: '#06b6d4' },
+  other:      { label: 'อื่นๆ',             color: '#9ca3af' },
 }
 
 const EMPTY = {
-  vehicle_id: '', service_date: new Date().toISOString().slice(0,10),
+  vehicle_id: '', technician_id: '',
+  service_date: new Date().toISOString().slice(0,10),
   maintenance_type: 'routine', description: '', cost: '',
   vendor: '', odometer: '', next_service_km: '', next_service_date: '', notes: '',
 }
@@ -62,12 +63,13 @@ function DueSoonAlert({ records }) {
 export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
   const { session } = useAuth()
   const user = session?.user
-  const [records,  setRecords]  = useState([])
-  const [vehicles, setVehicles] = useState([])
-  const [loading,  setLoading]  = useState(true)
-  const [modal,    setModal]    = useState(false)
-  const [form,     setForm]     = useState(EMPTY)
-  const [saving,   setSaving]   = useState(false)
+  const [records,   setRecords]   = useState([])
+  const [vehicles,  setVehicles]  = useState([])
+  const [staffList, setStaffList] = useState([])
+  const [loading,   setLoading]   = useState(true)
+  const [modal,     setModal]     = useState(false)
+  const [form,      setForm]      = useState(EMPTY)
+  const [saving,    setSaving]    = useState(false)
   const [filterType, setFilterType] = useState('all')
   const [dateFrom,   setDateFrom]   = useState('')
   const [dateTo,     setDateTo]     = useState('')
@@ -76,16 +78,22 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
 
   useEffect(() => {
     if (!tenant?.id) return
-    supabase.from('fleet_vehicles').select('id, name, license_plate')
-      .eq('municipality_id', tenant.id).order('name')
-      .then(({ data }) => setVehicles(data ?? []))
+    Promise.all([
+      supabase.from('fleet_vehicles').select('id, name, license_plate')
+        .eq('municipality_id', tenant.id).order('name'),
+      supabase.from('profiles').select('id, full_name')
+        .eq('municipality_id', tenant.id).not('fleet_role', 'is', null).order('full_name'),
+    ]).then(([{ data: v }, { data: s }]) => {
+      setVehicles(v ?? [])
+      setStaffList(s ?? [])
+    })
   }, [tenant?.id])
 
   useEffect(() => {
     if (!tenant?.id) return
     setLoading(true)
     let q = supabase.from('fleet_maintenance')
-      .select('*, fleet_vehicles(name, license_plate)')
+      .select('*, fleet_vehicles(name, license_plate), technician:profiles!fleet_maintenance_technician_id_fkey(id,full_name)')
       .eq('municipality_id', tenant.id)
       .order('service_date', { ascending: false })
       .limit(100)
@@ -97,23 +105,29 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
+  function openModal() {
+    setForm({ ...EMPTY, technician_id: user?.id ?? '' })
+    setModal(true)
+  }
+
   async function handleSave() {
     if (!form.vehicle_id || !form.description) return alert('กรุณากรอกข้อมูลที่จำเป็น')
     setSaving(true)
     const { data, error } = await supabase.from('fleet_maintenance').insert({
-      municipality_id:  tenant.id,
-      vehicle_id:       form.vehicle_id,
-      service_date:     form.service_date,
-      maintenance_type: form.maintenance_type,
-      description:      form.description,
-      cost:             parseFloat(form.cost) || 0,
-      vendor:           form.vendor           || null,
-      odometer:         form.odometer ? parseFloat(form.odometer) : null,
-      next_service_km:  form.next_service_km  ? parseFloat(form.next_service_km) : null,
-      next_service_date:form.next_service_date || null,
-      notes:            form.notes            || null,
-      created_by:       user.id,
-    }).select('*, fleet_vehicles(name, license_plate)').single()
+      municipality_id:   tenant.id,
+      vehicle_id:        form.vehicle_id,
+      technician_id:     form.technician_id || null,
+      service_date:      form.service_date,
+      maintenance_type:  form.maintenance_type,
+      description:       form.description,
+      cost:              parseFloat(form.cost) || 0,
+      vendor:            form.vendor           || null,
+      odometer:          form.odometer ? parseFloat(form.odometer) : null,
+      next_service_km:   form.next_service_km  ? parseFloat(form.next_service_km) : null,
+      next_service_date: form.next_service_date || null,
+      notes:             form.notes            || null,
+      created_by:        user?.id,
+    }).select('*, fleet_vehicles(name, license_plate), technician:profiles!fleet_maintenance_technician_id_fkey(id,full_name)').single()
     if (!error) { setRecords(prev => [data, ...prev]); setModal(false); setForm(EMPTY) }
     else alert(error.message)
     setSaving(false)
@@ -130,7 +144,7 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
         </div>
         <div>
           <p className="text-lg font-black text-gray-800">{fmtB(totalCost)}</p>
-          <p className="text-xs text-gray-500">ค่าซ่อมบำรุงรวม (50 รายการล่าสุด)</p>
+          <p className="text-xs text-gray-500">ค่าซ่อมบำรุงรวม (100 รายการล่าสุด)</p>
         </div>
       </div>
 
@@ -165,7 +179,7 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
               className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded-lg border border-gray-200">ล้าง</button>
           )}
           {canWrite && (
-            <button onClick={() => { setForm(EMPTY); setModal(true) }}
+            <button onClick={openModal}
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white"
               style={{ backgroundColor: 'var(--color-primary)' }}>
               <Plus size={15} /> บันทึกซ่อมบำรุง
@@ -187,14 +201,9 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr style={{ backgroundColor: '#1a3a5c' }}>
-                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">ที่</th>
-                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">วันที่</th>
-                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">ยานพาหนะ</th>
-                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">ประเภท</th>
-                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">รายละเอียด</th>
-                  <th className="px-4 py-2.5 text-right text-white font-bold text-[11px] border-r border-blue-900">ค่าใช้จ่าย</th>
-                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900">อู่/ผู้รับจ้าง</th>
-                  <th className="px-4 py-2.5 text-left text-white font-bold text-[11px]">ซ่อมถัดไป</th>
+                  {['ที่','วันที่','ยานพาหนะ','ประเภท','รายละเอียด','ค่าใช้จ่าย','อู่/ผู้รับจ้าง','ผู้รับผิดชอบ','ซ่อมถัดไป'].map(h => (
+                    <th key={h} className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900 last:border-r-0 whitespace-nowrap">{h}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -217,9 +226,12 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
                           {t.label}
                         </span>
                       </td>
-                      <td className="px-4 py-2.5 text-gray-700 text-xs max-w-[240px] border-r border-gray-200">{r.description}</td>
+                      <td className="px-4 py-2.5 text-gray-700 text-xs max-w-[200px] border-r border-gray-200">{r.description}</td>
                       <td className="px-4 py-2.5 text-right font-bold text-gray-800 border-r border-gray-200">{fmtB(r.cost)}</td>
                       <td className="px-4 py-2.5 text-gray-500 text-xs border-r border-gray-200">{r.vendor || '—'}</td>
+                      <td className="px-4 py-2.5 text-gray-600 text-xs border-r border-gray-200 whitespace-nowrap">
+                        {r.technician?.full_name ?? '—'}
+                      </td>
                       <td className="px-4 py-2.5 text-xs">
                         {r.next_service_date
                           ? <span className="text-blue-500">{thDate(r.next_service_date)}</span>
@@ -229,7 +241,7 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
                   )
                 })}
                 {!records.length && (
-                  <tr><td colSpan={8} className="text-center py-10 text-gray-400 text-sm">ไม่พบรายการ</td></tr>
+                  <tr><td colSpan={9} className="text-center py-10 text-gray-400 text-sm">ไม่พบรายการ</td></tr>
                 )}
               </tbody>
             </table>
@@ -251,7 +263,12 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
                         </span>
                       </div>
                       <p className="text-xs text-gray-700">{r.description}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">{thDate(r.service_date)}{r.vendor ? ` · ${r.vendor}` : ''}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {thDate(r.service_date)}{r.vendor ? ` · ${r.vendor}` : ''}
+                      </p>
+                      {r.technician?.full_name && (
+                        <p className="text-[10px] text-gray-400 mt-0.5">👤 {r.technician.full_name}</p>
+                      )}
                       {r.next_service_date && (
                         <p className="text-[10px] text-blue-500 mt-1">
                           ซ่อมบำรุงครั้งถัดไป: {thDate(r.next_service_date)}
@@ -288,6 +305,18 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
                   {vehicles.map(v => <option key={v.id} value={v.id}>{v.name} ({v.license_plate})</option>)}
                 </select>
               </div>
+
+              {/* ผู้รับผิดชอบ */}
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้รับผิดชอบ (เจ้าหน้าที่)</label>
+                <select value={form.technician_id} onChange={set('technician_id')} className={sel}>
+                  <option value="">— ไม่ระบุ —</option>
+                  {staffList.map(s => (
+                    <option key={s.id} value={s.id}>{s.full_name}{s.id === user?.id ? ' (ฉัน)' : ''}</option>
+                  ))}
+                </select>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-semibold text-gray-600 mb-1 block">วันที่ซ่อม *</label>
@@ -310,7 +339,7 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
                   <input type="number" step="0.01" value={form.cost} onChange={set('cost')} placeholder="0" className={inp} />
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-gray-600 mb-1 block">อู่ / ผู้รับจ้าง</label>
+                  <label className="text-xs font-semibold text-gray-600 mb-1 block">อู่ / ผู้รับจ้าง (ภายนอก)</label>
                   <input value={form.vendor} onChange={set('vendor')} className={inp} />
                 </div>
                 <div>

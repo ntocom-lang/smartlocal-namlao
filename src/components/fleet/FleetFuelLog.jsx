@@ -10,7 +10,8 @@ const fmtB = n => `฿${fmt(Math.round(n ?? 0))}`
 const thDate = d => new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
 
 const EMPTY_FORM = {
-  vehicle_id: '', filled_at: new Date().toISOString().slice(0,10),
+  vehicle_id: '', driver_id: '',
+  filled_at: new Date().toISOString().slice(0,10),
   odometer: '', liters: '', price_per_liter: '',
   full_tank: true, fuel_station: '', receipt_no: '', notes: '',
 }
@@ -18,15 +19,16 @@ const EMPTY_FORM = {
 export default function FleetFuelLog({ tenant, fleetInfo, depts, isAdmin, isStaff }) {
   const { session } = useAuth()
   const user = session?.user
-  const [records,  setRecords]  = useState([])
-  const [vehicles, setVehicles] = useState([])
-  const [loading,  setLoading]  = useState(true)
-  const [modal,    setModal]    = useState(false)
-  const [form,     setForm]     = useState(EMPTY_FORM)
-  const [saving,   setSaving]   = useState(false)
-  const [filterVeh,  setFilterVeh]  = useState('all')
-  const [dateFrom,   setDateFrom]   = useState('')
-  const [dateTo,     setDateTo]     = useState('')
+  const [records,   setRecords]   = useState([])
+  const [vehicles,  setVehicles]  = useState([])
+  const [staffList, setStaffList] = useState([])
+  const [loading,   setLoading]   = useState(true)
+  const [modal,     setModal]     = useState(false)
+  const [form,      setForm]      = useState(EMPTY_FORM)
+  const [saving,    setSaving]    = useState(false)
+  const [filterVeh, setFilterVeh] = useState('all')
+  const [dateFrom,  setDateFrom]  = useState('')
+  const [dateTo,    setDateTo]    = useState('')
   const [page, setPage] = useState(0)
   const PER_PAGE = 20
 
@@ -37,14 +39,19 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts, isAdmin, isStaf
     Promise.all([
       supabase.from('fleet_vehicles').select('id, name, license_plate, tank_capacity, fuel_type')
         .eq('municipality_id', tenant.id).eq('status', 'active').order('name'),
-    ]).then(([{ data: v }]) => setVehicles(v ?? []))
+      supabase.from('profiles').select('id, full_name')
+        .eq('municipality_id', tenant.id).not('fleet_role', 'is', null).order('full_name'),
+    ]).then(([{ data: v }, { data: s }]) => {
+      setVehicles(v ?? [])
+      setStaffList(s ?? [])
+    })
   }, [tenant?.id])
 
   useEffect(() => {
     if (!tenant?.id) return
     setLoading(true)
     let q = supabase.from('fleet_fuel_records')
-      .select('*, fleet_vehicles(name, license_plate)', { count: 'exact' })
+      .select('*, fleet_vehicles(name, license_plate), driver:profiles!fleet_fuel_records_driver_id_fkey(id,full_name)', { count: 'exact' })
       .eq('municipality_id', tenant.id)
       .order('filled_at', { ascending: false })
       .range(page * PER_PAGE, (page + 1) * PER_PAGE - 1)
@@ -61,6 +68,11 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts, isAdmin, isStaf
   const totalCost = form.liters && form.price_per_liter
     ? (parseFloat(form.liters) * parseFloat(form.price_per_liter)).toFixed(2) : null
 
+  function openModal() {
+    setForm({ ...EMPTY_FORM, driver_id: user?.id ?? '' })
+    setModal(true)
+  }
+
   async function handleSave() {
     if (!form.vehicle_id || !form.odometer || !form.liters || !form.price_per_liter)
       return alert('กรุณากรอกข้อมูลที่จำเป็น')
@@ -68,7 +80,7 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts, isAdmin, isStaf
     const { data, error } = await supabase.from('fleet_fuel_records').insert({
       municipality_id: tenant.id,
       vehicle_id:      form.vehicle_id,
-      driver_id:       user.id,
+      driver_id:       form.driver_id || user?.id,
       filled_at:       form.filled_at,
       odometer:        parseFloat(form.odometer),
       liters:          parseFloat(form.liters),
@@ -77,8 +89,8 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts, isAdmin, isStaf
       fuel_station:    form.fuel_station || null,
       receipt_no:      form.receipt_no   || null,
       notes:           form.notes        || null,
-      created_by:      user.id,
-    }).select('*, fleet_vehicles(name, license_plate)').single()
+      created_by:      user?.id,
+    }).select('*, fleet_vehicles(name, license_plate), driver:profiles!fleet_fuel_records_driver_id_fkey(id,full_name)').single()
     if (!error) {
       setRecords(prev => [data, ...prev])
       setModal(false)
@@ -106,7 +118,7 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts, isAdmin, isStaf
             className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded-lg border border-gray-200">ล้าง</button>
         )}
         {canWrite && (
-          <button onClick={() => { setForm(EMPTY_FORM); setModal(true) }}
+          <button onClick={openModal}
             className="ml-auto flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white"
             style={{ backgroundColor: 'var(--color-primary)' }}>
             <Plus size={15} /> บันทึกเติมน้ำมัน
@@ -127,15 +139,9 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts, isAdmin, isStaf
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr style={{ backgroundColor: '#1a3a5c' }}>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white w-8 border-r border-white/10">ที่</th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">วันที่</th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ยานพาหนะ</th>
-                  <th className="px-4 py-2.5 text-right text-[11px] font-bold text-white border-r border-white/10">ลิตร</th>
-                  <th className="px-4 py-2.5 text-right text-[11px] font-bold text-white border-r border-white/10">ราคา/ล.</th>
-                  <th className="px-4 py-2.5 text-right text-[11px] font-bold text-white border-r border-white/10">รวม (฿)</th>
-                  <th className="px-4 py-2.5 text-right text-[11px] font-bold text-white border-r border-white/10">กม./ล.</th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">เลขไมล์</th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white">ปั๊ม</th>
+                  {['ที่','วันที่','ยานพาหนะ','ผู้เติม','ลิตร','ราคา/ล.','รวม (฿)','กม./ล.','เลขไมล์','ปั๊ม'].map(h => (
+                    <th key={h} className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10 last:border-r-0 whitespace-nowrap">{h}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -154,6 +160,9 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts, isAdmin, isStaf
                       </div>
                       <p className="text-[10px] text-gray-400">{r.fleet_vehicles?.license_plate}</p>
                     </td>
+                    <td className="px-4 py-2.5 text-gray-600 text-xs border-r border-gray-200 whitespace-nowrap">
+                      {r.driver?.full_name ?? '—'}
+                    </td>
                     <td className="px-4 py-2.5 text-right text-gray-700 text-sm font-semibold border-r border-gray-200">{r.liters}</td>
                     <td className="px-4 py-2.5 text-right text-gray-600 text-xs border-r border-gray-200">{r.price_per_liter}</td>
                     <td className="px-4 py-2.5 text-right font-bold text-gray-800 border-r border-gray-200">{fmtB(r.total_cost)}</td>
@@ -165,7 +174,7 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts, isAdmin, isStaf
                   </tr>
                 ))}
                 {!records.length && (
-                  <tr><td colSpan={9} className="text-center py-10 text-gray-400 text-sm">ยังไม่มีรายการเติมน้ำมัน</td></tr>
+                  <tr><td colSpan={10} className="text-center py-10 text-gray-400 text-sm">ยังไม่มีรายการเติมน้ำมัน</td></tr>
                 )}
               </tbody>
             </table>
@@ -178,9 +187,7 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts, isAdmin, isStaf
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-bold text-gray-800">
-                        {r.fleet_vehicles?.name ?? '—'}
-                      </span>
+                      <span className="text-sm font-bold text-gray-800">{r.fleet_vehicles?.name ?? '—'}</span>
                       <span className="text-[10px] text-gray-400">{r.fleet_vehicles?.license_plate}</span>
                       {r.is_anomaly && (
                         <span className="flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">
@@ -195,7 +202,10 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts, isAdmin, isStaf
                       {thDate(r.filled_at)} · {r.liters} ลิตร @ {r.price_per_liter} บ./ล.
                       {r.fuel_station ? ` · ${r.fuel_station}` : ''}
                     </p>
-                    {r.odometer && <p className="text-[10px] text-gray-400 mt-0.5">มิเตอร์ {fmt(r.odometer)} กม.</p>}
+                    {r.driver?.full_name && (
+                      <p className="text-[10px] text-gray-400 mt-0.5">👤 {r.driver.full_name}</p>
+                    )}
+                    {r.odometer && <p className="text-[10px] text-gray-400">มิเตอร์ {fmt(r.odometer)} กม.</p>}
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-base font-black text-gray-800">{fmtB(r.total_cost)}</p>
@@ -242,6 +252,26 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts, isAdmin, isStaf
                   ))}
                 </select>
               </div>
+
+              {/* ผู้เติม — admin เปลี่ยนได้, staff เห็นแค่ตัวเอง */}
+              {isAdmin && staffList.length > 0 ? (
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้เติม / ผู้ใช้รถ</label>
+                  <select value={form.driver_id} onChange={set('driver_id')} className={sel}>
+                    <option value="">— ไม่ระบุ —</option>
+                    {staffList.map(s => (
+                      <option key={s.id} value={s.id}>{s.full_name}{s.id === user?.id ? ' (ฉัน)' : ''}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div className="bg-gray-50 rounded-xl px-3 py-2 text-xs text-gray-500">
+                  👤 ผู้เติม: <span className="font-semibold text-gray-700">
+                    {staffList.find(s => s.id === user?.id)?.full_name ?? 'ฉัน'}
+                  </span>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-semibold text-gray-600 mb-1 block">วันที่ *</label>
