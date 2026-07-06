@@ -321,7 +321,7 @@ export default function CitizenForm() {
     if (!tenant?.id) return
     supabase.from('locations').select('id, name').eq('municipality_id', tenant.id).order('sort_order')
       .then(({ data }) => setLocations(data ?? []))
-    supabase.from('complaint_categories').select('value, label, emoji').eq('municipality_id', tenant.id).order('sort_order')
+    supabase.from('complaint_categories').select('value, label, emoji').eq('municipality_id', tenant.id).eq('is_active', true).order('sort_order')
       .then(({ data }) => {
         if (data && data.length > 0)
           setCategories(data.map((c) => ({ value: c.value, label: c.label })))

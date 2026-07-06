@@ -2581,7 +2581,7 @@ function SlaInput({ value, onCommit }) {
   )
 }
 
-function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, techs = [], techId = '', slaDays = 3, onTechChange, onSlaChange, savingAssign = false }) {
+function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleActive, techs = [], techId = '', slaDays = 3, onTechChange, onSlaChange, savingAssign = false }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(cat.label)
@@ -2602,7 +2602,7 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, techs = []
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
-      className="bg-gray-50 rounded-xl px-3 py-2.5 space-y-2"
+      className={`rounded-xl px-3 py-2.5 space-y-2 ${cat.is_active === false ? 'bg-gray-100 opacity-60' : 'bg-gray-50'}`}
     >
       <div className="flex items-center gap-2">
         {/* drag handle */}
@@ -2647,6 +2647,12 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, techs = []
           </button>
         )}
 
+        <button
+          onClick={() => onToggleActive?.(cat.id, cat.is_active !== false)}
+          className={`px-2 py-1 rounded-full text-[10px] font-bold shrink-0 transition-colors ${cat.is_active === false ? 'bg-gray-200 text-gray-500 hover:bg-green-100 hover:text-green-700' : 'bg-green-100 text-green-700 hover:bg-gray-200 hover:text-gray-500'}`}
+        >
+          {cat.is_active === false ? 'ปิด' : 'เปิด'}
+        </button>
         <button onClick={() => onDelete(cat.id)}
           className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors shrink-0">
           <Trash2 size={14} />
@@ -2835,6 +2841,12 @@ function CategoryManager({ tenant }) {
     setCats((prev) => prev.map((c) => c.id === id ? { ...c, label: newLabel } : c))
   }
 
+  async function toggleActive(id, current) {
+    const { error: err } = await supabase.from('complaint_categories').update({ is_active: !current }).eq('id', id)
+    if (err) { setError('บันทึกไม่สำเร็จ: ' + err.message); return }
+    setCats((prev) => prev.map((c) => c.id === id ? { ...c, is_active: !current } : c))
+  }
+
   async function moveCat(idx, dir) {
     const swapIdx = idx + dir
     if (swapIdx < 0 || swapIdx >= cats.length) return
@@ -2965,7 +2977,7 @@ function CategoryManager({ tenant }) {
               <div className="md:hidden space-y-2">
                 {cats.map((cat, idx) => (
                   <SortableCatItem key={cat.id} cat={cat} idx={idx} total={cats.length}
-                    onDelete={deleteCat} onMove={moveCat} onEdit={editCat}
+                    onDelete={deleteCat} onMove={moveCat} onEdit={editCat} onToggleActive={toggleActive}
                     techs={techs}
                     techId={assignMap[cat.value]?.technician_id ?? ''}
                     slaDays={assignMap[cat.value]?.sla_days ?? 3}
@@ -2987,6 +2999,7 @@ function CategoryManager({ tenant }) {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ป้ายสี</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ช่างรับผิดชอบ</th>
                   <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 w-24">ระยะเวลา</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 w-20">สถานะ</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 w-20">จัดการ</th>
                 </tr>
               </thead>
@@ -3000,7 +3013,7 @@ function CategoryManager({ tenant }) {
                   const currentTechId = draft?.technician_id ?? assign.technician_id ?? ''
                   const currentSla = draft?.sla_days ?? assign.sla_days ?? 3
                   return (
-                    <tr key={cat.id} className={`transition-colors ${editing ? 'bg-amber-50' : 'hover:bg-gray-50'}`}>
+                    <tr key={cat.id} className={`transition-colors ${cat.is_active === false ? 'opacity-50' : ''} ${editing ? 'bg-amber-50' : 'hover:bg-gray-50'}`}>
                       <td className="px-4 py-3 text-xs text-gray-400">{idx + 1}</td>
                       <td className="px-4 py-3">
                         {draft?.editingLabel ? (
@@ -3051,6 +3064,14 @@ function CategoryManager({ tenant }) {
                           />
                           <span className="text-xs text-gray-400">วัน</span>
                         </div>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => toggleActive(cat.id, cat.is_active !== false)}
+                          className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${cat.is_active === false ? 'bg-gray-200 text-gray-500 hover:bg-green-100 hover:text-green-700' : 'bg-green-100 text-green-700 hover:bg-gray-200 hover:text-gray-500'}`}
+                        >
+                          {cat.is_active === false ? 'ปิด' : 'เปิด'}
+                        </button>
                       </td>
                       <td className="px-4 py-3">
                         {editing ? (

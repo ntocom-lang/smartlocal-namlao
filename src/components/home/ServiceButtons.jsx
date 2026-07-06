@@ -25,6 +25,7 @@ export default function ServiceButtons() {
       .from('complaint_categories')
       .select('value, label, emoji, color')
       .eq('municipality_id', tenant.id)
+      .eq('is_active', true)
       .order('sort_order')
       .limit(8)
       .then(({ data }) => {

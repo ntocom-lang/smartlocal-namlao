@@ -66,6 +66,7 @@ export default function ComplaintCategory() {
       .from('complaint_categories')
       .select('value, label, emoji, color, text_color')
       .eq('municipality_id', tenant.id)
+      .eq('is_active', true)
       .order('sort_order')
       .then(({ data }) => {
         setCategories(data && data.length > 0 ? data : DEFAULT_CATEGORIES)

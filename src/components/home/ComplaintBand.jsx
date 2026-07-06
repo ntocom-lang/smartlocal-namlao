@@ -36,7 +36,7 @@ export default function ComplaintBand() {
   useEffect(() => {
     if (!tenant?.id) return
     supabase.from('complaint_categories').select('value, label')
-      .eq('municipality_id', tenant.id).order('sort_order')
+      .eq('municipality_id', tenant.id).eq('is_active', true).order('sort_order')
       .then(({ data }) => { if (data?.length) setCats(data) })
       .catch(() => {})
     supabase.from('complaints').select('category')
