@@ -36,7 +36,7 @@ export default function ServiceButtons() {
     <section className="space-y-4">
       <div className="flex items-center gap-2">
         <div className="w-1 h-6 rounded-full" style={{ backgroundColor: 'var(--color-primary)' }} />
-        <h2 className="text-base font-bold text-gray-700 dark:text-slate-200">ร้องเรียน/ร้องทุกข์</h2>
+        <h2 className="text-base font-bold text-gray-700 dark:text-slate-200">แจ้งเหตุ/แจ้งซ่อม</h2>
       </div>
 
       <div className="bg-white dark:bg-white/10 rounded-2xl border border-gray-100 dark:border-white/10 p-4">

@@ -83,7 +83,7 @@ export default function ComplaintCategory() {
 
       {/* PC header */}
       <div className="hidden md:flex items-center justify-between px-8 py-4 bg-white border-b border-gray-200 shadow-sm">
-        <h1 className="text-lg font-bold text-gray-800">ร้องเรียน/ร้องทุกข์</h1>
+        <h1 className="text-lg font-bold text-gray-800">แจ้งเหตุ/แจ้งซ่อม</h1>
         <button onClick={() => navigate(-1)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors">
           <ArrowLeft size={15} />
@@ -98,7 +98,7 @@ export default function ComplaintCategory() {
           className="p-1.5 rounded-xl bg-white/20 hover:bg-white/30 transition-colors">
           <ArrowLeft size={20} className="text-white" />
         </button>
-        <h1 className="font-bold text-white text-base flex-1 text-center pr-8">ร้องเรียน/ร้องทุกข์</h1>
+        <h1 className="font-bold text-white text-base flex-1 text-center pr-8">แจ้งเหตุ/แจ้งซ่อม</h1>
       </div>
 
       <div className="max-w-2xl mx-auto px-4 pt-5 pb-28 md:pb-8">
