@@ -79,8 +79,8 @@ export default function ShortcutBand() {
            style={{ background: 'radial-gradient(circle, rgba(14,165,233,0.35) 0%, transparent 70%)' }} />
 
       <div className="relative z-10 px-4 py-3">
-        <div className="grid grid-rows-2 grid-flow-col gap-x-3 gap-y-2 overflow-x-auto"
-             style={{ scrollbarWidth: 'none' }}>
+        <div className="grid grid-rows-2 grid-flow-col gap-x-1 gap-y-2"
+             style={{ gridTemplateColumns: `repeat(${Math.ceil(items.length / 2)}, 1fr)` }}>
           {items.map(({ label, Icon, action }) => (
             <button key={label} onClick={action}
                     className="flex flex-col items-center gap-1 active:scale-95 transition-transform">
@@ -88,7 +88,7 @@ export default function ShortcutBand() {
                    style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.35)' }}>
                 <Icon size={18} className="text-white" />
               </div>
-              <p className="text-white/80 text-[9px] font-semibold text-center w-12 leading-tight">{label}</p>
+              <p className="text-white/80 text-[9px] font-semibold text-center w-full leading-tight">{label}</p>
             </button>
           ))}
         </div>
