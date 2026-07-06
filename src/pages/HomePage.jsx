@@ -122,7 +122,7 @@ export default function HomePage() {
               style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 70%)' }} />
             <div className="relative z-10">
               <div className="flex items-center justify-between mb-4">
-                <p className="text-white text-[11px] font-bold tracking-widest uppercase drop-shadow">✦ E-Service ✦</p>
+                <p className="text-white text-[11px] font-bold tracking-widest uppercase drop-shadow">✦ E-Service ✦ <span className="normal-case font-medium opacity-80">งานบริการประชาชน</span></p>
                 <Link to="/doc-request" className="flex items-center gap-0.5 text-white/80 text-[11px] font-semibold hover:text-white transition-colors">
                   ทั้งหมด <ChevronRight size={13} />
                 </Link>
