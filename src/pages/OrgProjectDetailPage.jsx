@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import {
-  ArrowLeft, Calendar, Globe,
+  ArrowLeft, Calendar, Globe, Link2,
   Flag, Users, Trophy, AlertTriangle, CheckSquare, UserCheck, FileText,
 } from 'lucide-react'
 
@@ -175,6 +175,12 @@ export default function OrgProjectDetailPage() {
                       <p className="font-semibold text-gray-800 text-sm">{upd.title}</p>
                       {upd.body && (
                         <p className="text-gray-600 text-sm mt-1 whitespace-pre-wrap leading-relaxed">{upd.body}</p>
+                      )}
+                      {upd.link_url && (
+                        <a href={upd.link_url} target="_blank" rel="noreferrer"
+                          className="inline-flex items-center gap-1 mt-1.5 text-xs text-blue-600 hover:underline">
+                          <Link2 size={11} /> {upd.link_url.replace(/^https?:\/\//, '').slice(0, 60)}
+                        </a>
                       )}
                       {upd.photos?.length > 0 && (
                         <div className="flex gap-2 mt-2 flex-wrap">

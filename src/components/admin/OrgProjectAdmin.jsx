@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import {
   Plus, ArrowLeft, Pencil, Trash2, Flag, Users, Trophy,
   AlertTriangle, CheckSquare, UserCheck, FileText, ImagePlus,
-  Globe, Lock, ChevronDown, Loader2, X, Calendar,
+  Globe, Lock, ChevronDown, Loader2, X, Calendar, Link2,
 } from 'lucide-react'
 
 const STATUS_CFG = {
@@ -148,7 +148,7 @@ function ProjectForm({ initial, onSave, onCancel, saving }) {
 
 function UpdateForm({ projectId, municipalityId, onSaved, onCancel }) {
   const today = new Date().toISOString().slice(0, 10)
-  const [form, setForm] = useState({ update_type: 'milestone', title: '', body: '', update_date: today })
+  const [form, setForm] = useState({ update_type: 'milestone', title: '', body: '', update_date: today, link_url: '' })
   const [photos, setPhotos] = useState([])
   const [saving, setSaving] = useState(false)
   function set(k, v) { setForm(f => ({ ...f, [k]: v })) }
@@ -176,11 +176,12 @@ function UpdateForm({ projectId, municipalityId, onSaved, onCancel }) {
       body: form.body.trim() || null,
       update_date: form.update_date,
       photos: photoUrls,
+      link_url: form.link_url.trim() || null,
       created_by: session?.user?.id ?? null,
     })
     setSaving(false)
     if (!error) {
-      setForm({ update_type: 'milestone', title: '', body: '', update_date: today })
+      setForm({ update_type: 'milestone', title: '', body: '', update_date: today, link_url: '' })
       setPhotos([])
       onSaved()
     }
@@ -213,6 +214,15 @@ function UpdateForm({ projectId, municipalityId, onSaved, onCancel }) {
           <textarea value={form.body} onChange={e => set('body', e.target.value)} rows={3}
             className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 bg-white focus:outline-none focus:border-emerald-400 resize-y"
             placeholder="เล่าเรื่องราว บันทึกผล หรือสิ่งที่ตัดสินใจ..." />
+        </div>
+        <div className="md:col-span-2">
+          <label className="block text-xs font-semibold text-gray-500 mb-1">ลิ้งก์อ้างอิง (ถ้ามี)</label>
+          <div className="relative">
+            <Link2 size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input value={form.link_url} onChange={e => set('link_url', e.target.value)}
+              className="w-full pl-8 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 bg-white focus:outline-none focus:border-emerald-400"
+              placeholder="https://..." />
+          </div>
         </div>
       </div>
       <div className="flex items-center gap-3 flex-wrap">
@@ -256,6 +266,7 @@ function UpdateCard({ upd, onDelete, onSaved, canDelete }) {
       title: upd.title,
       body: upd.body ?? '',
       update_date: upd.update_date ?? '',
+      link_url: upd.link_url ?? '',
     })
     setIsEditing(true)
   }
@@ -270,6 +281,7 @@ function UpdateCard({ upd, onDelete, onSaved, canDelete }) {
       title: draft.title.trim(),
       body: draft.body.trim() || null,
       update_date: draft.update_date || upd.update_date,
+      link_url: draft.link_url?.trim() || null,
     }).eq('id', upd.id)
     setSaving(false)
     if (!error) { setIsEditing(false); onSaved?.() }
@@ -316,6 +328,15 @@ function UpdateCard({ upd, onDelete, onSaved, canDelete }) {
               <textarea value={draft.body} onChange={e => set('body', e.target.value)} rows={3}
                 className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-900 bg-white focus:outline-none focus:border-emerald-400 resize-y" />
             </div>
+            <div>
+              <label className="block text-[10px] font-semibold text-gray-400 mb-1">ลิ้งก์อ้างอิง</label>
+              <div className="relative">
+                <Link2 size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input value={draft.link_url} onChange={e => set('link_url', e.target.value)}
+                  className="w-full pl-6 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-900 bg-white focus:outline-none focus:border-emerald-400"
+                  placeholder="https://..." />
+              </div>
+            </div>
             <div className="flex gap-2 justify-end">
               <button onClick={cancelEdit} disabled={saving}
                 className="px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition-colors">
@@ -349,6 +370,12 @@ function UpdateCard({ upd, onDelete, onSaved, canDelete }) {
             </div>
             <p className="font-semibold text-gray-800 text-sm mt-0.5">{upd.title}</p>
             {upd.body && <p className="text-gray-600 text-xs mt-1 whitespace-pre-wrap leading-relaxed">{upd.body}</p>}
+            {upd.link_url && (
+              <a href={upd.link_url} target="_blank" rel="noreferrer"
+                className="inline-flex items-center gap-1 mt-1.5 text-xs text-blue-600 hover:underline">
+                <Link2 size={11} /> {upd.link_url.replace(/^https?:\/\//, '').slice(0, 50)}
+              </a>
+            )}
             {upd.photos?.length > 0 && (
               <div className="flex gap-2 mt-2 flex-wrap">
                 {upd.photos.map((url, i) => (
