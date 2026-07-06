@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import {
   Plus, ArrowLeft, Pencil, Trash2, Flag, Users, Trophy,
   AlertTriangle, CheckSquare, UserCheck, FileText, ImagePlus,
-  Globe, Lock, ChevronDown, Loader2, X, Calendar, Link2,
+  Globe, Lock, ChevronDown, Loader2, X, Calendar,
 } from 'lucide-react'
 
 const STATUS_CFG = {
@@ -146,48 +146,10 @@ function ProjectForm({ initial, onSave, onCancel, saving }) {
 
 // ─── Timeline Entry Form ──────────────────────────────────────────────────────
 
-// shared links editor UI — ใช้ทั้งใน UpdateForm และ UpdateCard edit
-function LinksEditor({ links, onChange }) {
-  function addLink() { onChange([...links, { label: '', url: '' }]) }
-  function removeLink(i) { onChange(links.filter((_, j) => j !== i)) }
-  function updateLink(i, k, v) {
-    const next = links.map((l, j) => j === i ? { ...l, [k]: v } : l)
-    onChange(next)
-  }
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <label className="block text-xs font-semibold text-gray-500">ลิ้งก์อ้างอิง</label>
-        <button type="button" onClick={addLink}
-          className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 font-semibold">
-          <Plus size={12} /> เพิ่มลิ้งก์
-        </button>
-      </div>
-      {links.map((l, i) => (
-        <div key={i} className="flex gap-2 items-center">
-          <input value={l.label} onChange={e => updateLink(i, 'label', e.target.value)}
-            className="w-28 shrink-0 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-900 bg-white focus:outline-none focus:border-emerald-400"
-            placeholder="ชื่อ (ถ้ามี)" />
-          <div className="relative flex-1">
-            <Link2 size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input value={l.url} onChange={e => updateLink(i, 'url', e.target.value)}
-              className="w-full pl-6 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-900 bg-white focus:outline-none focus:border-emerald-400"
-              placeholder="https://..." />
-          </div>
-          <button type="button" onClick={() => removeLink(i)}
-            className="text-gray-300 hover:text-red-400 transition-colors shrink-0">
-            <X size={14} />
-          </button>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 function UpdateForm({ projectId, municipalityId, onSaved, onCancel }) {
   const today = new Date().toISOString().slice(0, 10)
   const [form, setForm] = useState({ update_type: 'milestone', title: '', body: '', update_date: today })
-  const [links, setLinks] = useState([])
+  const [note, setNote] = useState('')
   const [photos, setPhotos] = useState([])
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(null)
@@ -209,7 +171,6 @@ function UpdateForm({ projectId, municipalityId, onSaved, onCancel }) {
       const url = await uploadPhoto(f, projectId)
       if (url) photoUrls.push(url)
     }
-    const cleanLinks = links.filter(l => l.url?.trim())
     const { error } = await supabase.from('org_project_updates').insert({
       project_id: projectId,
       municipality_id: municipalityId,
@@ -218,13 +179,13 @@ function UpdateForm({ projectId, municipalityId, onSaved, onCancel }) {
       body: form.body.trim() || null,
       update_date: form.update_date,
       photos: photoUrls,
-      links: cleanLinks,
+      note: note.trim() || null,
       created_by: session?.user?.id ?? null,
     })
     setSaving(false)
     if (error) { setSaveError(error.message); return }
     setForm({ update_type: 'milestone', title: '', body: '', update_date: today })
-    setLinks([])
+    setNote('')
     setPhotos([])
     onSaved()
   }
@@ -258,7 +219,10 @@ function UpdateForm({ projectId, municipalityId, onSaved, onCancel }) {
             placeholder="เล่าเรื่องราว บันทึกผล หรือสิ่งที่ตัดสินใจ..." />
         </div>
         <div className="md:col-span-2">
-          <LinksEditor links={links} onChange={setLinks} />
+          <label className="block text-xs font-semibold text-gray-500 mb-1">หมายเหตุ</label>
+          <input value={note} onChange={e => setNote(e.target.value)}
+            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 bg-white focus:outline-none focus:border-emerald-400"
+            placeholder="บันทึกเพิ่มเติม (ถ้ามี)" />
         </div>
       </div>
       <div className="flex items-center gap-3 flex-wrap">
@@ -297,7 +261,7 @@ function UpdateForm({ projectId, municipalityId, onSaved, onCancel }) {
 function UpdateCard({ upd, onDelete, onSaved, canDelete }) {
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState({})
-  const [draftLinks, setDraftLinks] = useState([])
+  const [draftNote, setDraftNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(null)
 
@@ -308,7 +272,7 @@ function UpdateCard({ upd, onDelete, onSaved, canDelete }) {
       body: upd.body ?? '',
       update_date: upd.update_date ?? '',
     })
-    setDraftLinks(Array.isArray(upd.links) ? upd.links : [])
+    setDraftNote(upd.note ?? '')
     setIsEditing(true)
   }
   function cancelEdit() { setIsEditing(false) }
@@ -318,13 +282,12 @@ function UpdateCard({ upd, onDelete, onSaved, canDelete }) {
     if (!draft.title.trim()) return
     setSaving(true)
     setSaveError(null)
-    const cleanLinks = draftLinks.filter(l => l.url?.trim())
     const { error } = await supabase.from('org_project_updates').update({
       update_type: draft.update_type,
       title: draft.title.trim(),
       body: draft.body.trim() || null,
       update_date: draft.update_date || upd.update_date,
-      links: cleanLinks,
+      note: draftNote.trim() || null,
     }).eq('id', upd.id)
     setSaving(false)
     if (error) { setSaveError(error.message); return }
@@ -374,7 +337,10 @@ function UpdateCard({ upd, onDelete, onSaved, canDelete }) {
                 className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-900 bg-white focus:outline-none focus:border-emerald-400 resize-y" />
             </div>
             <div>
-              <LinksEditor links={draftLinks} onChange={setDraftLinks} />
+              <label className="block text-[10px] font-semibold text-gray-400 mb-1">หมายเหตุ</label>
+              <input value={draftNote} onChange={e => setDraftNote(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-900 bg-white focus:outline-none focus:border-emerald-400"
+                placeholder="บันทึกเพิ่มเติม (ถ้ามี)" />
             </div>
             {saveError && (
               <p className="text-[11px] text-red-500 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5">{saveError}</p>
@@ -412,16 +378,8 @@ function UpdateCard({ upd, onDelete, onSaved, canDelete }) {
             </div>
             <p className="font-semibold text-gray-800 text-sm mt-0.5">{upd.title}</p>
             {upd.body && <p className="text-gray-600 text-xs mt-1 whitespace-pre-wrap leading-relaxed">{upd.body}</p>}
-            {Array.isArray(upd.links) && upd.links.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-1.5">
-                {upd.links.filter(l => l.url).map((l, i) => (
-                  <a key={i} href={l.url} target="_blank" rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">
-                    <Link2 size={11} />
-                    {l.label?.trim() || l.url.replace(/^https?:\/\//, '').slice(0, 40)}
-                  </a>
-                ))}
-              </div>
+            {upd.note && (
+              <p className="text-[11px] text-gray-400 mt-1 italic">{upd.note}</p>
             )}
             {upd.photos?.length > 0 && (
               <div className="flex gap-2 mt-2 flex-wrap">

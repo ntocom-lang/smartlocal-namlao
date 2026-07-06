@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import {
-  ArrowLeft, Calendar, Globe, Link2,
+  ArrowLeft, Calendar, Globe,
   Flag, Users, Trophy, AlertTriangle, CheckSquare, UserCheck, FileText,
 } from 'lucide-react'
 
@@ -176,16 +176,8 @@ export default function OrgProjectDetailPage() {
                       {upd.body && (
                         <p className="text-gray-600 text-sm mt-1 whitespace-pre-wrap leading-relaxed">{upd.body}</p>
                       )}
-                      {Array.isArray(upd.links) && upd.links.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mt-1.5">
-                          {upd.links.filter(l => l.url).map((l, i) => (
-                            <a key={i} href={l.url} target="_blank" rel="noreferrer"
-                              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">
-                              <Link2 size={11} />
-                              {l.label?.trim() || l.url.replace(/^https?:\/\//, '').slice(0, 50)}
-                            </a>
-                          ))}
-                        </div>
+                      {upd.note && (
+                        <p className="text-xs text-gray-400 mt-1 italic">{upd.note}</p>
                       )}
                       {upd.photos?.length > 0 && (
                         <div className="flex gap-2 mt-2 flex-wrap">
