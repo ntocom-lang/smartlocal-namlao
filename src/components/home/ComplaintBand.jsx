@@ -50,7 +50,7 @@ export default function ComplaintBand() {
   }, [tenant?.id])
 
   const topCats = useMemo(() =>
-    [...cats].sort((a, b) => (catCounts[b.value] ?? 0) - (catCounts[a.value] ?? 0)).slice(0, 4)
+    [...cats].sort((a, b) => (catCounts[b.value] ?? 0) - (catCounts[a.value] ?? 0))
   , [cats, catCounts])
 
   return (
@@ -70,7 +70,7 @@ export default function ComplaintBand() {
             ทั้งหมด <ChevronRight size={13} />
           </button>
         </div>
-        <div className="flex gap-5 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+        <div className="flex gap-5 overflow-x-auto pb-1 md:flex-wrap md:overflow-x-visible md:pb-0" style={{ scrollbarWidth: 'none' }}>
           {topCats.map(cat => {
             const Icon = CATEGORY_ICON[cat.value] ?? HelpCircle
             return (
