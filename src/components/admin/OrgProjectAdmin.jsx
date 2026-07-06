@@ -245,11 +245,41 @@ function UpdateForm({ projectId, municipalityId, onSaved, onCancel }) {
 
 // ─── Timeline Entry Card ──────────────────────────────────────────────────────
 
-function UpdateCard({ upd, onDelete, canDelete }) {
-  const cfg = getUpdateTypeCfg(upd.update_type)
+function UpdateCard({ upd, onDelete, onSaved, canDelete }) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [draft, setDraft] = useState({})
+  const [saving, setSaving] = useState(false)
+
+  function startEdit() {
+    setDraft({
+      update_type: upd.update_type,
+      title: upd.title,
+      body: upd.body ?? '',
+      update_date: upd.update_date ?? '',
+    })
+    setIsEditing(true)
+  }
+  function cancelEdit() { setIsEditing(false) }
+  function set(k, v) { setDraft(d => ({ ...d, [k]: v })) }
+
+  async function saveEdit() {
+    if (!draft.title.trim()) return
+    setSaving(true)
+    const { error } = await supabase.from('org_project_updates').update({
+      update_type: draft.update_type,
+      title: draft.title.trim(),
+      body: draft.body.trim() || null,
+      update_date: draft.update_date || upd.update_date,
+    }).eq('id', upd.id)
+    setSaving(false)
+    if (!error) { setIsEditing(false); onSaved?.() }
+  }
+
+  const cfg = getUpdateTypeCfg(isEditing ? draft.update_type : upd.update_type)
   const Icon = cfg.Icon
   const d = upd.update_date ? new Date(upd.update_date + 'T00:00:00') : null
   const dateStr = d ? d.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : ''
+
   return (
     <div className="flex gap-3">
       <div className="flex flex-col items-center">
@@ -260,28 +290,75 @@ function UpdateCard({ upd, onDelete, canDelete }) {
         <div className="w-px flex-1 bg-gray-200 mt-1" />
       </div>
       <div className="pb-4 flex-1 min-w-0">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: cfg.color }}>{cfg.label}</span>
-            <span className="text-[10px] text-gray-400 ml-2">{dateStr}</span>
+        {isEditing ? (
+          <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] font-semibold text-gray-400 mb-1">ประเภท</label>
+                <select value={draft.update_type} onChange={e => set('update_type', e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-700 bg-white focus:outline-none">
+                  {UPDATE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-gray-400 mb-1">วันที่</label>
+                <input type="date" value={draft.update_date} onChange={e => set('update_date', e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-900 bg-white focus:outline-none" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold text-gray-400 mb-1">หัวข้อ</label>
+              <input value={draft.title} onChange={e => set('title', e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-900 bg-white focus:outline-none focus:border-emerald-400" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold text-gray-400 mb-1">รายละเอียด</label>
+              <textarea value={draft.body} onChange={e => set('body', e.target.value)} rows={3}
+                className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-900 bg-white focus:outline-none focus:border-emerald-400 resize-y" />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={cancelEdit} disabled={saving}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition-colors">
+                ยกเลิก
+              </button>
+              <button onClick={saveEdit} disabled={saving || !draft.title.trim()}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 transition-colors flex items-center gap-1">
+                {saving ? <Loader2 size={11} className="animate-spin" /> : null} บันทึก
+              </button>
+            </div>
           </div>
-          {canDelete && (
-            <button onClick={() => onDelete(upd.id)}
-              className="p-1 text-gray-300 hover:text-red-400 transition-colors shrink-0">
-              <Trash2 size={12} />
-            </button>
-          )}
-        </div>
-        <p className="font-semibold text-gray-800 text-sm mt-0.5">{upd.title}</p>
-        {upd.body && <p className="text-gray-600 text-xs mt-1 whitespace-pre-wrap leading-relaxed">{upd.body}</p>}
-        {upd.photos?.length > 0 && (
-          <div className="flex gap-2 mt-2 flex-wrap">
-            {upd.photos.map((url, i) => (
-              <a key={i} href={url} target="_blank" rel="noreferrer">
-                <img src={url} className="w-16 h-16 object-cover rounded-lg border border-gray-200" />
-              </a>
-            ))}
-          </div>
+        ) : (
+          <>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: cfg.color }}>{cfg.label}</span>
+                <span className="text-[10px] text-gray-400 ml-2">{dateStr}</span>
+              </div>
+              <div className="flex gap-0.5 shrink-0">
+                <button onClick={startEdit}
+                  className="p-1 text-gray-300 hover:text-blue-500 transition-colors">
+                  <Pencil size={11} />
+                </button>
+                {canDelete && (
+                  <button onClick={() => onDelete(upd.id)}
+                    className="p-1 text-gray-300 hover:text-red-400 transition-colors">
+                    <Trash2 size={11} />
+                  </button>
+                )}
+              </div>
+            </div>
+            <p className="font-semibold text-gray-800 text-sm mt-0.5">{upd.title}</p>
+            {upd.body && <p className="text-gray-600 text-xs mt-1 whitespace-pre-wrap leading-relaxed">{upd.body}</p>}
+            {upd.photos?.length > 0 && (
+              <div className="flex gap-2 mt-2 flex-wrap">
+                {upd.photos.map((url, i) => (
+                  <a key={i} href={url} target="_blank" rel="noreferrer">
+                    <img src={url} className="w-16 h-16 object-cover rounded-lg border border-gray-200" />
+                  </a>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -546,7 +623,7 @@ export default function OrgProjectAdmin({ tenant }) {
               <div className="bg-white border border-gray-200 rounded-2xl p-4">
                 {updates.map(u => (
                   <UpdateCard key={u.id} upd={u}
-                    onDelete={handleDeleteUpdate} canDelete={true} />
+                    onDelete={handleDeleteUpdate} onSaved={() => loadUpdates(selected.id)} canDelete={true} />
                 ))}
               </div>
             )}
