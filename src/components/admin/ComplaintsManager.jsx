@@ -1365,7 +1365,6 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
 
   const normalizeStatus = (s) => {
     if (s === 'pending') return 'new'
-    if (s === 'received') return 'in_progress'
     if (s === 'completed') return 'done'
     return s
   }
