@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Calendar, X } from 'lucide-react'
+import { Plus, Calendar, X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 
@@ -74,6 +74,177 @@ function Modal({ title, onClose, onSave, saveLabel = 'บันทึก', savin
   )
 }
 
+/* ── Booking Calendar ────────────────────────────────────── */
+const DOW_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
+const MONTH_TH = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
+                  'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
+
+function BookingCalendar({ trips, onClose }) {
+  const now = new Date()
+  const [yr, setYr] = useState(now.getFullYear())
+  const [mo, setMo] = useState(now.getMonth()) // 0-indexed
+  const [selDay, setSelDay] = useState(null)  // { day, bookings }
+
+  function prevMonth() { setSelDay(null); if (mo === 0) { setMo(11); setYr(y => y - 1) } else setMo(m => m - 1) }
+  function nextMonth() { setSelDay(null); if (mo === 11) { setMo(0); setYr(y => y + 1) } else setMo(m => m + 1) }
+
+  const firstDow = new Date(yr, mo, 1).getDay()   // 0=Sun
+  const daysInMonth = new Date(yr, mo + 1, 0).getDate()
+
+  // all trips that have a date range (active or history)
+  const relevant = trips.filter(t =>
+    ['pending', 'approved', 'in_progress'].includes(t.status) ||
+    (t.status === 'completed' && t.planned_departure)
+  )
+
+  function getDay(day) {
+    const date = new Date(yr, mo, day)
+    const dateStr = date.toISOString().slice(0, 10)
+    return relevant.filter(t => {
+      const start = t.planned_departure
+        ? new Date(t.planned_departure).toISOString().slice(0, 10)
+        : t.trip_date
+      const end = t.planned_return
+        ? new Date(t.planned_return).toISOString().slice(0, 10)
+        : start
+      return dateStr >= start && dateStr <= end
+    })
+  }
+
+  const today = now.toISOString().slice(0, 10)
+  const todayStr = `${yr}-${String(mo + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+
+  // build grid cells: blanks + days
+  const cells = Array(firstDow).fill(null).concat(
+    Array.from({ length: daysInMonth }, (_, i) => i + 1)
+  )
+  // pad to complete last row
+  while (cells.length % 7 !== 0) cells.push(null)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            <button onClick={prevMonth}
+              className="w-7 h-7 rounded-full hover:bg-gray-100 flex items-center justify-center">
+              <ChevronLeft size={16} />
+            </button>
+            <h2 className="text-sm font-black text-gray-800 min-w-[130px] text-center">
+              {MONTH_TH[mo]} {yr + 543}
+            </h2>
+            <button onClick={nextMonth}
+              className="w-7 h-7 rounded-full hover:bg-gray-100 flex items-center justify-center">
+              <ChevronRight size={16} />
+            </button>
+          </div>
+          <button onClick={onClose}
+            className="w-7 h-7 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-400">
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Legend */}
+        <div className="flex gap-3 px-5 py-2 border-b border-gray-50 text-[10px]">
+          {[['pending','#f59e0b','รอการอนุมัติ'],['approved','#3b82f6','อนุมัติแล้ว'],['in_progress','#8b5cf6','กำลังเดินทาง']].map(([,clr,lbl]) => (
+            <div key={lbl} className="flex items-center gap-1">
+              <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: clr }} />
+              <span className="text-gray-500">{lbl}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Calendar grid */}
+        <div className="overflow-y-auto p-4">
+          {/* Day-of-week header */}
+          <div className="grid grid-cols-7 mb-1">
+            {DOW_TH.map(d => (
+              <div key={d} className="text-center text-[10px] font-bold text-gray-400 py-1">{d}</div>
+            ))}
+          </div>
+
+          {/* Cells */}
+          <div className="grid grid-cols-7 gap-1">
+            {cells.map((day, idx) => {
+              if (!day) return <div key={`blank-${idx}`} />
+              const bookings = getDay(day)
+              const cellDate = `${yr}-${String(mo + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`
+              const isToday = cellDate === today
+              const isSel = selDay?.day === day
+              const hasBook = bookings.length > 0
+              return (
+                <div key={day}
+                  onClick={() => hasBook && setSelDay(isSel ? null : { day, bookings })}
+                  className="rounded-xl p-1 min-h-[52px] flex flex-col transition-all"
+                  style={{
+                    background: isSel ? '#fffbeb' : isToday ? '#eff6ff' : '#f9fafb',
+                    border: isSel ? '2px solid #d97706' : isToday ? '1.5px solid #3b82f6' : '1px solid #f3f4f6',
+                    cursor: hasBook ? 'pointer' : 'default',
+                  }}>
+                  <span className="text-[10px] font-bold mb-0.5 self-end pr-0.5"
+                        style={{ color: isSel ? '#b45309' : isToday ? '#3b82f6' : '#6b7280' }}>
+                    {day}
+                  </span>
+                  <div className="space-y-0.5">
+                    {bookings.map(t => (
+                      <div key={t.id}
+                        className="text-[9px] font-semibold px-1 py-0.5 rounded leading-tight truncate"
+                        style={{ backgroundColor: STATUS_CLR[t.status] + '22', color: STATUS_CLR[t.status] }}>
+                        {t.vehicle?.name || '—'}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Day detail panel */}
+          {selDay && (
+            <div className="mt-3 rounded-2xl border border-blue-100 bg-blue-50 p-3 space-y-2">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-black text-blue-700">
+                  📅 {selDay.day} {MONTH_TH[mo]} {yr + 543} — {selDay.bookings.length} รายการ
+                </p>
+                <button onClick={() => setSelDay(null)}
+                  className="text-blue-300 hover:text-blue-500 text-xs">✕</button>
+              </div>
+              {selDay.bookings.map(t => (
+                <div key={t.id} className="bg-white rounded-xl p-3 shadow-sm space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[11px] font-black text-gray-800">
+                      {t.vehicle?.name} · {t.vehicle?.license_plate}
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                          style={{ backgroundColor: STATUS_CLR[t.status] + '20', color: STATUS_CLR[t.status] }}>
+                      {STATUS_LABEL[t.status]}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-600">📍 {t.destination} — {t.purpose}</p>
+                  <p className="text-[11px] text-gray-500">👤 {t.driver?.full_name}</p>
+                  {t.planned_departure && (
+                    <p className="text-[10px] text-gray-400">
+                      {new Date(t.planned_departure).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})}
+                      {' → '}
+                      {t.planned_return ? new Date(t.planned_return).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}) : '—'}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Summary for month */}
+          {relevant.length === 0 && (
+            <p className="text-center text-sm text-gray-400 py-6">ไม่มีรายการจองในเดือนนี้</p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ── Main ──────────────────────────────────────────────── */
 export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
   const { session } = useAuth()
@@ -88,8 +259,21 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
   const [form,      setForm]      = useState({})
   const [saving,    setSaving]    = useState(false)
   const [conflict,  setConflict]  = useState(false)
+  const [showCal,   setShowCal]   = useState(false)
 
   /* ── Load ── */
+  function loadTrips() {
+    if (!tenant?.id) return
+    supabase.from('fleet_trips').select(SELECT)
+      .eq('municipality_id', tenant.id)
+      .order('created_at', { ascending: false })
+      .limit(300)
+      .then(({ data, error }) => {
+        if (error) console.error('fleet_trips SELECT error:', error)
+        setTrips(data ?? [])
+      })
+  }
+
   useEffect(() => {
     if (!tenant?.id) return
     Promise.all([
@@ -102,7 +286,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
         .not('fleet_role', 'is', null),
       supabase.from('fleet_vehicles').select('id,name,license_plate')
         .eq('municipality_id', tenant.id).eq('status', 'active').order('name'),
-    ]).then(([{ data: t }, { data: s }, { data: v }]) => {
+    ]).then(([{ data: t, error: te }, { data: s }, { data: v }]) => {
+      if (te) console.error('fleet_trips load error:', te)
       setTrips(t ?? [])
       setStaffList(s ?? [])
       setVehicles(v ?? [])
@@ -178,6 +363,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
       municipality_id: tenant.id,
       vehicle_id: form.vehicle_id,
       driver_id: form.driver_id || user?.id,
+      created_by: user?.id,
       department_id: form.department_id || null,
       trip_date: form.planned_departure.slice(0, 10),
       planned_departure: form.planned_departure,
@@ -189,6 +375,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
     setSaving(false)
     if (error) return alert(error.message)
     setModal(null)
+    loadTrips()
   }
 
   /* ── Submit direct entry ── */
@@ -200,6 +387,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
       municipality_id: tenant.id,
       vehicle_id: form.vehicle_id,
       driver_id: form.driver_id || user?.id,
+      created_by: user?.id,
       department_id: form.department_id || null,
       trip_date: form.started_at.slice(0, 10),
       started_at: form.started_at,
@@ -214,16 +402,19 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
     setSaving(false)
     if (error) return alert(error.message)
     setModal(null)
+    loadTrips()
   }
 
   /* ── Admin approve/reject ── */
   async function handleApprove(t) {
     if (!confirm(`อนุมัติการจองรถ "${t.vehicle?.name}" ให้ ${t.driver?.full_name}?`)) return
     await supabase.from('fleet_trips').update({ status: 'approved', approved_by: user?.id }).eq('id', t.id)
+    loadTrips()
   }
   async function handleReject(t) {
     if (!confirm(`ปฏิเสธการจองรถ "${t.vehicle?.name}"?`)) return
     await supabase.from('fleet_trips').update({ status: 'rejected' }).eq('id', t.id)
+    loadTrips()
   }
 
   /* ── Depart / Return ── */
@@ -238,6 +429,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
     setSaving(false)
     if (error) return alert(error.message)
     setModal(null); setSelTrip(null)
+    loadTrips()
   }
 
   async function submitReturn() {
@@ -252,6 +444,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
     setSaving(false)
     if (error) return alert(error.message)
     setModal(null); setSelTrip(null)
+    loadTrips()
   }
 
   /* ── Derived ── */
@@ -447,17 +640,27 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
       </div>
 
       {/* ── Active trips ── */}
-      {active.length > 0 && (
-        <div className="space-y-2">
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
           <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">
-            กำลังดำเนินการ <span className="text-blue-500 normal-case">({active.length})</span>
+            การจองและการเดินทาง{active.length > 0 && <span className="text-blue-500 normal-case ml-1">({active.length})</span>}
           </p>
+          <button onClick={() => setShowCal(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors">
+            <Calendar size={13} /> ปฏิทินการจอง
+          </button>
+        </div>
+        {active.length === 0 ? (
+          <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-400">
+            ยังไม่มีรายการจองหรือการเดินทางที่ดำเนินการอยู่ — กด <strong>จองรถ</strong> เพื่อส่งคำขอ
+          </div>
+        ) : <>
           <TripsTable rows={active} />
           <div className="md:hidden space-y-2">
             {active.map(t => <TripCard key={t.id} t={t} />)}
           </div>
-        </div>
-      )}
+        </>}
+      </div>
 
       {/* ── History ── */}
       <div className="space-y-2">
@@ -473,6 +676,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
           </div>
         </>}
       </div>
+
+      {showCal && <BookingCalendar trips={trips} onClose={() => setShowCal(false)} />}
 
       {/* ═══ MODALS ═══ */}
 
