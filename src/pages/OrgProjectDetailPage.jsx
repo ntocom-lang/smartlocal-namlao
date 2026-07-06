@@ -176,11 +176,16 @@ export default function OrgProjectDetailPage() {
                       {upd.body && (
                         <p className="text-gray-600 text-sm mt-1 whitespace-pre-wrap leading-relaxed">{upd.body}</p>
                       )}
-                      {upd.link_url && (
-                        <a href={upd.link_url} target="_blank" rel="noreferrer"
-                          className="inline-flex items-center gap-1 mt-1.5 text-xs text-blue-600 hover:underline">
-                          <Link2 size={11} /> {upd.link_url.replace(/^https?:\/\//, '').slice(0, 60)}
-                        </a>
+                      {Array.isArray(upd.links) && upd.links.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-1.5">
+                          {upd.links.filter(l => l.url).map((l, i) => (
+                            <a key={i} href={l.url} target="_blank" rel="noreferrer"
+                              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">
+                              <Link2 size={11} />
+                              {l.label?.trim() || l.url.replace(/^https?:\/\//, '').slice(0, 50)}
+                            </a>
+                          ))}
+                        </div>
                       )}
                       {upd.photos?.length > 0 && (
                         <div className="flex gap-2 mt-2 flex-wrap">
