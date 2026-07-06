@@ -565,6 +565,14 @@ export default function MorePage() {
             desc="เที่ยว กิน พัก ชอบ — ส่งข้อมูลให้เจ้าหน้าที่อนุมัติ"
             href="/business-register"
           />
+          <MenuRow
+            icon={BookOpen}
+            iconBg="bg-emerald-50"
+            iconColor="text-emerald-600"
+            label="โครงการองค์กร"
+            desc="เรื่องราวและความคืบหน้าโครงการต่างๆ ขององค์กร"
+            href="/projects"
+          />
         </Section>
 
         {/* ─── บริการ ─── */}
