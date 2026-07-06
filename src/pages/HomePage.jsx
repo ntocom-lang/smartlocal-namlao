@@ -58,7 +58,7 @@ export default function HomePage() {
   }, [tenant?.id])
 
   const topDocTypes = useMemo(() =>
-    [...docTypes].sort((a, b) => (docCounts[b.value] ?? 0) - (docCounts[a.value] ?? 0)).slice(0, 4)
+    [...docTypes].sort((a, b) => (docCounts[b.value] ?? 0) - (docCounts[a.value] ?? 0))
   , [docTypes, docCounts])
 
   return (
@@ -127,7 +127,7 @@ export default function HomePage() {
                   ทั้งหมด <ChevronRight size={13} />
                 </Link>
               </div>
-              <div className="flex gap-4 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+              <div className="flex gap-4 overflow-x-auto pb-1 md:flex-wrap md:overflow-x-visible md:pb-0" style={{ scrollbarWidth: 'none' }}>
                 {topDocTypes.map(({ value, label, emoji }) => (
                   <Link key={value} to={`/doc-request?type=${value}`}
                     className="flex flex-col items-center gap-2 shrink-0 active:scale-95 transition-transform">
