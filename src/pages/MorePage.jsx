@@ -510,9 +510,17 @@ export default function MorePage() {
         {/* ─── One Data ─── */}
         <Section title={tenant?.system_name || `${tenant?.name} One Data`}>
           <MenuRow
-            icon={ClipboardList}
+            icon={AlertTriangle}
             iconBg="bg-red-50"
             iconColor="text-red-500"
+            label="เหตุฉุกเฉิน"
+            desc="เบอร์ฉุกเฉิน แจ้งเหตุด่วน ในพื้นที่"
+            href="/emergency"
+          />
+          <MenuRow
+            icon={ClipboardList}
+            iconBg="bg-orange-50"
+            iconColor="text-orange-500"
             label="ร้องเรียน/ร้องทุกข์"
             desc="แจ้งซ่อม / ขอน้ำ / แจ้งเหตุสิ่งแวดล้อม"
             href="/complaint"
@@ -593,14 +601,6 @@ export default function MorePage() {
             label="เอกสารของฉัน"
             desc="ตรวจสอบสถานะใบรับรองและเอกสารราชการ"
             href="/my-docs"
-          />
-          <MenuRow
-            icon={AlertTriangle}
-            iconBg="bg-red-50"
-            iconColor="text-red-500"
-            label="เหตุฉุกเฉิน"
-            desc="เบอร์ฉุกเฉิน แจ้งเหตุด่วน ในพื้นที่"
-            href="/emergency"
           />
           <MenuRow
             icon={Cloud}

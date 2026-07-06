@@ -55,7 +55,7 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
   useEffect(() => {
     if (!tenant?.id) return
     const SELECT = '*, fleet_departments(name,short_name)'
-    const channel = supabase.channel(`fleet-vehicles-${tenant.id}`)
+    const channel = supabase.channel(`fleet-vehicles-${tenant.id}-${crypto.randomUUID()}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'fleet_vehicles' },
         async ({ new: row }) => {
           if (row.municipality_id !== tenant.id) return

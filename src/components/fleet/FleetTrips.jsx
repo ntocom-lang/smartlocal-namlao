@@ -112,7 +112,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
   /* ── Realtime ── */
   useEffect(() => {
     if (!tenant?.id) return
-    const ch = supabase.channel(`fleet-trips-${tenant.id}`)
+    const ch = supabase.channel(`fleet-trips-${tenant.id}-${crypto.randomUUID()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fleet_trips' },
         async ({ eventType, new: row, old }) => {
           if (eventType === 'DELETE') return setTrips(p => p.filter(t => t.id !== old.id))
@@ -442,7 +442,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
         <button onClick={openDirect}
           className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-white transition-colors"
           style={{ backgroundColor: 'var(--color-primary)' }}>
-          <Plus size={13} /> บันทึกทีหลัง
+          <Plus size={13} /> บันทึกการเดินทาง
         </button>
       </div>
 

@@ -89,7 +89,7 @@ serve(async (req) => {
   return new Response(lines.join('\r\n') + '\r\n', {
     headers: {
       'Content-Type': 'text/calendar; charset=utf-8',
-      'Content-Disposition': `inline; filename="${calName}.ics"`,
+      'Content-Disposition': 'inline; filename="calendar.ics"',
       'Cache-Control': 'public, max-age=1800',
       'Access-Control-Allow-Origin': '*',
     },

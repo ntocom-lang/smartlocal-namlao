@@ -180,7 +180,7 @@ export default function FleetDashboard({ tenant, depts, isAdmin }) {
       supabase.from('fleet_vehicles').select('*').eq('municipality_id', tenant.id)
         .then(({ data }) => setVehicles(data ?? []))
 
-    const channel = supabase.channel(`fleet-dash-${tenant.id}`)
+    const channel = supabase.channel(`fleet-dash-${tenant.id}-${crypto.randomUUID()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fleet_trips' },
         ({ new: row }) => { if (row?.municipality_id === tenant.id) refreshPending() })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fleet_vehicles' },

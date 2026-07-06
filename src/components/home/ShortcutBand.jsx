@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Briefcase, Star, MapPin, Siren, Globe, MessageCircle } from 'lucide-react'
+import { LayoutDashboard, Briefcase, Star, MapPin, Siren, Globe, MessageCircle, Car } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTenant } from '../../contexts/TenantContext'
 
@@ -42,6 +42,11 @@ export default function ShortcutBand() {
       Icon: MapPin,
       action: () => navigate('/map'),
     },
+    (isStaff || isAdmin) && {
+      label: 'ยานพาหนะ',
+      Icon: Car,
+      action: () => navigate('/fleet'),
+    },
     {
       label: 'เหตุฉุกเฉิน',
       Icon: Siren,
@@ -74,10 +79,11 @@ export default function ShortcutBand() {
            style={{ background: 'radial-gradient(circle, rgba(14,165,233,0.35) 0%, transparent 70%)' }} />
 
       <div className="relative z-10 px-4 py-3">
-        <div className="flex gap-3 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+        <div className="grid grid-rows-2 grid-flow-col gap-x-3 gap-y-2 overflow-x-auto"
+             style={{ scrollbarWidth: 'none' }}>
           {items.map(({ label, Icon, action }) => (
             <button key={label} onClick={action}
-                    className="flex flex-col items-center gap-1 shrink-0 active:scale-95 transition-transform">
+                    className="flex flex-col items-center gap-1 active:scale-95 transition-transform">
               <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-sm"
                    style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.35)' }}>
                 <Icon size={18} className="text-white" />
