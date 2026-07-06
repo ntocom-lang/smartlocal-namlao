@@ -4,7 +4,7 @@ import {
   Inbox, FileText, CheckSquare, BarChart2, LogOut,
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, AlignLeft, Calendar, Hash, RefreshCw,
-  Printer, PenLine, Search, Download, Wrench, Home, CalendarDays, TrendingUp, Archive, Images,
+  Printer, PenLine, Search, Download, Wrench, Home, CalendarDays, TrendingUp, Images,
   CreditCard, BadgeCheck, Banknote, Luggage, Star, Store, MoreHorizontal, Car,
 } from 'lucide-react'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
@@ -14,7 +14,6 @@ import MapDashboardAdmin from '../components/admin/MapDashboardAdmin'
 import EventsManager from '../components/admin/EventsManager'
 import ComplaintsManager from '../components/admin/ComplaintsManager'
 import ReportManager from '../components/admin/ReportManager'
-import DocumentArchive from '../components/admin/DocumentArchive'
 import TourismManager, { TourismReviewsAdmin } from '../components/admin/TourismManager'
 import BusinessRegistrationAdmin from '../components/admin/BusinessRegistrationAdmin'
 import PostsManager from '../components/staff/PostsManager'
@@ -63,7 +62,6 @@ const MODULE_GROUPS = [
   {
     group: 'ข้อมูลและรายงาน',
     items: [
-      { key: 'docs-archive',  label: 'คลังเอกสาร',     Icon: Archive,    color: '#0f766e' },
       { key: 'map',          label: 'แผนที่',          Icon: MapPin,     color: '#0891b2' },
       { key: 'report',       label: 'รายงาน',          Icon: TrendingUp, color: '#f59e0b' },
       { key: 'civil-report', label: 'รายงานโครงการ',  Icon: Printer,    color: '#7c3aed' },
@@ -2082,7 +2080,7 @@ export default function StaffDashboard() {
 
   const allModuleKeys = MODULES.map(m => m.key)
   // keys ที่เคยอยู่ใน ModuleManager — ถ้า key ใหม่ยังไม่เคยถูก manage ให้ default เป็น enabled
-  const managedKeys = ['inbox', 'docs', 'complaints', 'events', 'projects', 'docs-archive', 'map', 'report']
+  const managedKeys = ['inbox', 'docs', 'complaints', 'events', 'projects', 'map', 'report']
   const baseEnabledKeys = tenant?.enabled_modules
     ? [...tenant.enabled_modules, ...allModuleKeys.filter(k => !managedKeys.includes(k))]
     : allModuleKeys
@@ -2306,7 +2304,6 @@ export default function StaffDashboard() {
             onEditComplaint={(id) => { setMapOpenComplaintId(id); setActiveModule('complaints') }}
             onEditProject={() => setActiveModule('projects')} />}
           {activeModule === 'report'       && <StaffReportWrapper tenant={tenant} />}
-          {activeModule === 'docs-archive' && <DocumentArchive tenant={tenant} profile={profile} />}
           {activeModule === 'civil-report'      && <CivilProjectReport tenant={tenant} />}
           {activeModule === 'posts'            && <PostsManager />}
           {activeModule === 'tourism'          && <TourismManager tenant={tenant} />}

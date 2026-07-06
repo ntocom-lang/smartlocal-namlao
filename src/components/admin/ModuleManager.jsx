@@ -25,7 +25,6 @@ const ALL_MODULES = [
     items: [
       { key: 'map',          label: 'แผนที่',      desc: 'แผนที่โครงการและสถานที่' },
       { key: 'report',       label: 'รายงาน',      desc: 'สรุปสถิติและรายงาน' },
-      { key: 'docs-archive', label: 'คลังเอกสาร', desc: 'เก็บเอกสารดิจิทัลภายในองค์กร' },
     ],
   },
   {
