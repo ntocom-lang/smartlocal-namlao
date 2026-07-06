@@ -146,7 +146,7 @@ function ProjectForm({ initial, onSave, onCancel, saving }) {
 
 // ─── Timeline Entry Form ──────────────────────────────────────────────────────
 
-function UpdateForm({ projectId, municipalityId, onSaved }) {
+function UpdateForm({ projectId, municipalityId, onSaved, onCancel }) {
   const today = new Date().toISOString().slice(0, 10)
   const [form, setForm] = useState({ update_type: 'milestone', title: '', body: '', update_date: today })
   const [photos, setPhotos] = useState([])
@@ -226,10 +226,18 @@ function UpdateForm({ projectId, municipalityId, onSaved }) {
             <button onClick={() => setPhotos(p => p.filter((_, j) => j !== i))}><X size={10} /></button>
           </div>
         ))}
-        <button onClick={handleSave} disabled={saving || !form.title.trim()}
-          className="ml-auto px-4 py-1.5 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 transition-colors flex items-center gap-1.5">
-          {saving ? <Loader2 size={13} className="animate-spin" /> : null} บันทึก
-        </button>
+        <div className="ml-auto flex gap-2">
+          {onCancel && (
+            <button onClick={onCancel} disabled={saving}
+              className="px-3 py-1.5 rounded-xl text-sm font-semibold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition-colors">
+              ยกเลิก
+            </button>
+          )}
+          <button onClick={handleSave} disabled={saving || !form.title.trim()}
+            className="px-4 py-1.5 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 transition-colors flex items-center gap-1.5">
+            {saving ? <Loader2 size={13} className="animate-spin" /> : null} บันทึก
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -329,9 +337,10 @@ export default function OrgProjectAdmin({ tenant }) {
   const [updates, setUpdates]     = useState([])
   const [updLoading, setUpdLoading] = useState(false)
   const [tab, setTab]             = useState('overview')  // 'overview' | 'timeline'
-  const [showForm, setShowForm]   = useState(false)
-  const [editMode, setEditMode]   = useState(false)
-  const [saving, setSaving]       = useState(false)
+  const [showForm, setShowForm]       = useState(false)
+  const [showUpdateForm, setShowUpdateForm] = useState(false)
+  const [editMode, setEditMode]       = useState(false)
+  const [saving, setSaving]           = useState(false)
 
   const loadProjects = useCallback(async () => {
     if (!tenant?.id) return
@@ -416,6 +425,7 @@ export default function OrgProjectAdmin({ tenant }) {
     setSelected(p)
     setTab('overview')
     setEditMode(false)
+    setShowUpdateForm(false)
     loadUpdates(p.id)
   }
 
@@ -514,12 +524,24 @@ export default function OrgProjectAdmin({ tenant }) {
         {/* Timeline tab */}
         {!editMode && tab === 'timeline' && (
           <div className="space-y-3">
-            <UpdateForm projectId={selected.id} municipalityId={tenant.id}
-              onSaved={() => loadUpdates(selected.id)} />
+            {showUpdateForm ? (
+              <UpdateForm
+                projectId={selected.id}
+                municipalityId={tenant.id}
+                onSaved={() => { setShowUpdateForm(false); loadUpdates(selected.id) }}
+                onCancel={() => setShowUpdateForm(false)}
+              />
+            ) : (
+              <button
+                onClick={() => setShowUpdateForm(true)}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-2xl border-2 border-dashed border-emerald-300 text-emerald-600 text-sm font-semibold hover:bg-emerald-50 transition-colors">
+                <Plus size={16} /> เพิ่มรายการในไทม์ไลน์
+              </button>
+            )}
             {updLoading ? (
               <div className="flex justify-center py-8"><Loader2 size={20} className="animate-spin text-gray-300" /></div>
             ) : updates.length === 0 ? (
-              <p className="text-center text-gray-400 text-sm py-8">ยังไม่มีรายการ — เพิ่มรายการแรกด้านบน</p>
+              <p className="text-center text-gray-400 text-sm py-8">ยังไม่มีรายการ — กดปุ่มด้านบนเพื่อเพิ่ม</p>
             ) : (
               <div className="bg-white border border-gray-200 rounded-2xl p-4">
                 {updates.map(u => (
