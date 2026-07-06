@@ -2082,7 +2082,7 @@ export default function StaffDashboard() {
 
   const allModuleKeys = MODULES.map(m => m.key)
   // keys ที่เคยอยู่ใน ModuleManager — ถ้า key ใหม่ยังไม่เคยถูก manage ให้ default เป็น enabled
-  const managedKeys = ['inbox', 'docs', 'complaints', 'events', 'projects', 'org-projects', 'map', 'report']
+  const managedKeys = ['inbox', 'docs', 'complaints', 'events', 'projects', 'map', 'report']
   const baseEnabledKeys = tenant?.enabled_modules
     ? [...tenant.enabled_modules, ...allModuleKeys.filter(k => !managedKeys.includes(k))]
     : allModuleKeys
