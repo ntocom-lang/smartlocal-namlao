@@ -509,6 +509,7 @@ function BannerManager({ tenant }) {
   }
   function onImageDown(e, b) {
     if (e.target.closest('[data-is-grip]')) return
+    if (e.target.closest('button')) return
     e.currentTarget.setPointerCapture(e.pointerId)
     const [objX, objY] = parsePosToXY(b.object_position)
     iState.current = { type: 'pan', id: b.id, startX: e.clientX, startY: e.clientY, objX, objY, livePos: null }
@@ -540,11 +541,12 @@ function BannerManager({ tenant }) {
       <p className="text-xs text-gray-400 mb-2 leading-relaxed">
         ลาก ⠿ เพื่อเรียงลำดับ · ลากบนรูปเพื่อปรับตำแหน่ง
       </p>
-      <div className="flex items-center gap-2 mb-5 px-3 py-2 rounded-xl bg-blue-50 border border-blue-100">
-        <span className="text-blue-400 text-base leading-none">📐</span>
-        <p className="text-xs text-blue-600 leading-relaxed">
-          ขนาดที่แนะนำ <strong>1280 × 720 px</strong> (สัดส่วน 16:9) · JPG หรือ PNG
-        </p>
+      <div className="flex items-start gap-2 mb-5 px-3 py-2.5 rounded-xl bg-blue-50 border border-blue-100">
+        <span className="text-blue-400 text-base leading-none mt-0.5">📐</span>
+        <div className="text-xs text-blue-600 leading-relaxed space-y-0.5">
+          <p>แนะนำอัปโหลด <strong>1280 × 640 px</strong> (สัดส่วน 2:1) · JPG หรือ PNG</p>
+          <p className="text-blue-400">มือถือแสดงเต็มหน้าจอ 16:9 · เดสก์ท็อปแสดง 2 ภาพคู่กัน ~544 × 224 px</p>
+        </div>
       </div>
 
       {banners.length > 0 && (
