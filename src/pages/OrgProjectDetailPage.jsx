@@ -180,10 +180,12 @@ export default function OrgProjectDetailPage() {
                         <p className="text-xs text-gray-400 mt-1 italic">{upd.note}</p>
                       )}
                       {upd.photos?.length > 0 && (
-                        <div className="flex gap-2 mt-2 flex-wrap">
+                        <div className={`mt-2 gap-1.5 ${upd.photos.length === 1 ? 'flex' : 'grid grid-cols-2 sm:grid-cols-3'}`}>
                           {upd.photos.map((url, i) => (
-                            <a key={i} href={url} target="_blank" rel="noreferrer">
-                              <img src={url} className="w-20 h-20 object-cover rounded-xl border border-gray-200 hover:opacity-90 transition-opacity" />
+                            <a key={i} href={url} target="_blank" rel="noreferrer"
+                              className={upd.photos.length === 1 ? 'block w-full max-w-sm' : ''}>
+                              <img src={url} alt=""
+                                className={`w-full object-cover rounded-xl border border-gray-100 hover:opacity-90 transition-opacity ${upd.photos.length === 1 ? 'max-h-64' : 'h-28 sm:h-36'}`} />
                             </a>
                           ))}
                         </div>

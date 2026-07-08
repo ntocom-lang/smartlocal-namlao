@@ -164,7 +164,13 @@ function UpdateForm({ projectId, municipalityId, onSaved, onCancel }) {
     if (!form.title.trim()) return
     setSaving(true)
     setSaveError(null)
-    const { data: { session } } = await supabase.auth.getSession()
+    // refreshSession ให้แน่ใจว่า JWT ไม่หมดอายุก่อน INSERT
+    const { data: { session }, error: authErr } = await supabase.auth.refreshSession()
+    if (!session) {
+      setSaveError('session หมดอายุ — กรุณา refresh หน้า')
+      setSaving(false)
+      return
+    }
     let photoUrls = []
     for (const f of photos) {
       const url = await uploadPhoto(f, projectId)
@@ -179,10 +185,13 @@ function UpdateForm({ projectId, municipalityId, onSaved, onCancel }) {
       update_date: form.update_date,
       photos: photoUrls,
       note: note.trim() || null,
-      created_by: session?.user?.id ?? null,
+      created_by: session.user.id,
     })
     setSaving(false)
-    if (error) { setSaveError(error.message); return }
+    if (error) {
+      setSaveError(`[${error.code ?? '?'}] ${error.message}${error.hint ? ' — ' + error.hint : ''}`)
+      return
+    }
     setForm({ update_type: 'milestone', title: '', body: '', update_date: today })
     setNote('')
     setPhotos([])
@@ -321,7 +330,10 @@ function UpdateCard({ upd, onDelete, onSaved, canDelete }) {
       photos:      [...draftPhotos, ...newUrls],
     }).eq('id', upd.id)
     setSaving(false)
-    if (error) { setSaveError(error.message); return }
+    if (error) {
+      setSaveError(`[${error.code ?? '?'}] ${error.message}${error.hint ? ' — ' + error.hint : ''}`)
+      return
+    }
     setIsEditing(false)
     onSaved?.()
   }
@@ -624,6 +636,7 @@ export default function OrgProjectAdmin({ tenant }) {
   async function handleDeleteUpdate(id) {
     if (!window.confirm('ลบรายการนี้?')) return
     await supabase.from('org_project_updates').delete().eq('id', id)
+    setUpdateCounts(c => ({ ...c, [selected.id]: Math.max(0, (c[selected.id] ?? 1) - 1) }))
     loadUpdates(selected.id)
   }
 
@@ -738,7 +751,11 @@ export default function OrgProjectAdmin({ tenant }) {
               <UpdateForm
                 projectId={selected.id}
                 municipalityId={tenant.id}
-                onSaved={() => { setShowUpdateForm(false); loadUpdates(selected.id) }}
+                onSaved={() => {
+                  setShowUpdateForm(false)
+                  loadUpdates(selected.id)
+                  setUpdateCounts(c => ({ ...c, [selected.id]: (c[selected.id] ?? 0) + 1 }))
+                }}
                 onCancel={() => setShowUpdateForm(false)}
               />
             ) : (
