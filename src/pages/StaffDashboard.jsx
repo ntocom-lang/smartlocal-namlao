@@ -4,11 +4,10 @@ import {
   Inbox, FileText, CheckSquare, BarChart2, LogOut,
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, AlignLeft, Calendar, Hash, RefreshCw,
-  Printer, PenLine, Search, Download, Wrench, Home, CalendarDays, TrendingUp, Images, BookOpen,
+  Printer, PenLine, Search, Download, Wrench, Home, CalendarDays, TrendingUp, Images,
   CreditCard, BadgeCheck, Banknote, Luggage, Star, Store, MoreHorizontal, Car,
 } from 'lucide-react'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
-import OrgProjectAdmin from '../components/admin/OrgProjectAdmin'
 import InfraWorkAdmin from '../components/admin/InfraWorkAdmin'
 import CivilProjectReport from '../components/admin/CivilProjectReport'
 import MapDashboardAdmin from '../components/admin/MapDashboardAdmin'
@@ -56,7 +55,6 @@ const MODULE_GROUPS = [
     items: [
       { key: 'events',   label: 'กิจกรรม',          Icon: CalendarDays, color: '#10b981' },
       { key: 'projects',     label: 'แผนงาน/โครงการ',    Icon: Wrench,    color: '#7c3aed' },
-      { key: 'org-projects', label: 'โครงการองค์กร',    Icon: BookOpen,  color: '#059669' },
       { key: 'infra',        label: 'บันทึกงานซ่อม',    Icon: MapPin,    color: '#0891b2' },
       { key: 'fleet',    label: 'ยานพาหนะ/น้ำมัน',  Icon: Car,          color: '#0369a1' },
     ],
@@ -2301,7 +2299,6 @@ export default function StaffDashboard() {
           )}
           {activeModule === 'events'     && <EventsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
           {activeModule === 'projects'      && <CivilProjectAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
-          {activeModule === 'org-projects'  && <OrgProjectAdmin tenant={tenant} />}
           {activeModule === 'infra'      && <InfraWorkAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
           {activeModule === 'map'        && <MapDashboardAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} onNavigate={() => {}}
             onEditComplaint={(id) => { setMapOpenComplaintId(id); setActiveModule('complaints') }}
