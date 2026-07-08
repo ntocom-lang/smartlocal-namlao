@@ -177,14 +177,13 @@ function UpdateForm({ projectId, municipalityId, onSaved, onCancel }) {
       if (url) photoUrls.push(url)
     }
     const { error } = await supabase.rpc('insert_org_project_update', {
-      p_project_id:      projectId,
-      p_municipality_id: municipalityId,
-      p_update_type:     form.update_type,
-      p_title:           form.title.trim(),
-      p_body:            form.body.trim() || null,
-      p_update_date:     form.update_date,
-      p_photos:          photoUrls,
-      p_note:            note.trim() || null,
+      p_project_id:  projectId,
+      p_update_type: form.update_type,
+      p_title:       form.title.trim(),
+      p_body:        form.body.trim() || null,
+      p_update_date: form.update_date,
+      p_photos:      photoUrls,
+      p_note:        note.trim() || null,
     })
     setSaving(false)
     if (error) {
