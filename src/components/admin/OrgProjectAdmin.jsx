@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import {
   Plus, ArrowLeft, Pencil, Trash2, Flag, Users, Trophy,
   AlertTriangle, CheckSquare, UserCheck, FileText, ImagePlus,
-  Globe, Lock, ChevronDown, Loader2, X, Calendar,
+  Globe, Lock, Loader2, X, Calendar,
 } from 'lucide-react'
 
 const STATUS_CFG = {
@@ -14,18 +14,18 @@ const STATUS_CFG = {
 }
 
 const UPDATE_TYPES = [
-  { value: 'milestone',  label: 'เหตุการณ์สำคัญ',     Icon: Flag,          color: '#7c3aed', bg: '#ede9fe' },
-  { value: 'meeting',    label: 'ประชุม',               Icon: Users,         color: '#0891b2', bg: '#e0f2fe' },
-  { value: 'achievement',label: 'ความสำเร็จ',           Icon: Trophy,        color: '#d97706', bg: '#fef3c7' },
-  { value: 'issue',      label: 'ปัญหา/อุปสรรค',       Icon: AlertTriangle, color: '#dc2626', bg: '#fee2e2' },
-  { value: 'decision',   label: 'การตัดสินใจ',          Icon: CheckSquare,   color: '#059669', bg: '#d1fae5' },
-  { value: 'personnel',  label: 'เปลี่ยนแปลงบุคลากร',  Icon: UserCheck,     color: '#db2777', bg: '#fce7f3' },
-  { value: 'other',      label: 'อื่นๆ',                Icon: FileText,      color: '#6b7280', bg: '#f3f4f6' },
+  { value: 'milestone',   label: 'เหตุการณ์สำคัญ',    Icon: Flag,          color: '#7c3aed', bg: '#ede9fe' },
+  { value: 'meeting',     label: 'ประชุม',              Icon: Users,         color: '#0891b2', bg: '#e0f2fe' },
+  { value: 'achievement', label: 'ความสำเร็จ',          Icon: Trophy,        color: '#d97706', bg: '#fef3c7' },
+  { value: 'issue',       label: 'ปัญหา/อุปสรรค',      Icon: AlertTriangle, color: '#dc2626', bg: '#fee2e2' },
+  { value: 'decision',    label: 'การตัดสินใจ',         Icon: CheckSquare,   color: '#059669', bg: '#d1fae5' },
+  { value: 'personnel',   label: 'เปลี่ยนแปลงบุคลากร', Icon: UserCheck,     color: '#db2777', bg: '#fce7f3' },
+  { value: 'other',       label: 'อื่นๆ',               Icon: FileText,      color: '#6b7280', bg: '#f3f4f6' },
 ]
 
 function getUpdateTypeCfg(t) { return UPDATE_TYPES.find(u => u.value === t) ?? UPDATE_TYPES[UPDATE_TYPES.length - 1] }
 
-async function compressImage(file, maxSize = 1200) {
+async function compressImage(file, maxSize = 1400) {
   return new Promise(resolve => {
     const img = new Image()
     img.onload = () => {
@@ -34,15 +34,15 @@ async function compressImage(file, maxSize = 1200) {
       canvas.width = Math.round(img.width * scale)
       canvas.height = Math.round(img.height * scale)
       canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
-      canvas.toBlob(b => resolve(b ?? file), 'image/jpeg', 0.82)
+      canvas.toBlob(b => resolve(b ?? file), 'image/jpeg', 0.85)
     }
     img.src = URL.createObjectURL(file)
   })
 }
 
 async function uploadPhoto(file, projectId) {
-  const ext  = file.name.split('.').pop()
-  const path = `org-projects/${projectId}/${Date.now()}.${ext}`
+  const ext  = file.name.split('.').pop().toLowerCase().replace('jpeg', 'jpg')
+  const path = `org-projects/${projectId}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`
   const compressed = await compressImage(file)
   const { error } = await supabase.storage.from('complaint-attachments').upload(path, compressed)
   if (error) return null
@@ -50,7 +50,7 @@ async function uploadPhoto(file, projectId) {
   return data.publicUrl
 }
 
-// ─── Project Form ────────────────────────────────────────────────────────────
+// ─── Project Form ─────────────────────────────────────────────────────────────
 
 function ProjectForm({ initial, onSave, onCancel, saving }) {
   const [form, setForm] = useState({
@@ -128,7 +128,6 @@ function ProjectForm({ initial, onSave, onCancel, saving }) {
           </label>
         </div>
       </div>
-
       <div className="flex gap-2 pt-2">
         <button onClick={() => onSave(form)} disabled={saving || !form.title.trim()}
           className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 transition-colors">
@@ -144,7 +143,7 @@ function ProjectForm({ initial, onSave, onCancel, saving }) {
   )
 }
 
-// ─── Timeline Entry Form ──────────────────────────────────────────────────────
+// ─── Timeline Entry Form (สร้างใหม่) ──────────────────────────────────────────
 
 function UpdateForm({ projectId, municipalityId, onSaved, onCancel }) {
   const today = new Date().toISOString().slice(0, 10)
@@ -157,7 +156,7 @@ function UpdateForm({ projectId, municipalityId, onSaved, onCancel }) {
 
   function addPhotos(e) {
     const files = Array.from(e.target.files ?? [])
-    setPhotos(prev => [...prev, ...files].slice(0, 5))
+    setPhotos(prev => [...prev, ...files])  // ไม่จำกัดจำนวน
     e.target.value = ''
   }
 
@@ -225,17 +224,29 @@ function UpdateForm({ projectId, municipalityId, onSaved, onCancel }) {
             placeholder="บันทึกเพิ่มเติม (ถ้ามี)" />
         </div>
       </div>
+
+      {/* Photo list */}
+      {photos.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {photos.map((f, i) => (
+            <div key={i} className="relative group">
+              <img src={URL.createObjectURL(f)} alt=""
+                className="w-16 h-16 object-cover rounded-lg border border-gray-200" />
+              <button type="button" onClick={() => setPhotos(p => p.filter((_, j) => j !== i))}
+                className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center shadow-sm">
+                <X size={10} className="text-white" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="flex items-center gap-3 flex-wrap">
         <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer bg-white border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-50">
-          <ImagePlus size={13} /> แนบรูป ({photos.length}/5)
+          <ImagePlus size={13} />
+          {photos.length > 0 ? `เพิ่มรูปอีก (${photos.length} รูป)` : 'แนบรูป'}
           <input type="file" accept="image/*" multiple className="hidden" onChange={addPhotos} />
         </label>
-        {photos.map((f, i) => (
-          <div key={i} className="flex items-center gap-1 text-xs text-gray-600 bg-white border border-gray-200 px-2 py-1 rounded-lg">
-            {f.name.slice(0, 16)}
-            <button onClick={() => setPhotos(p => p.filter((_, j) => j !== i))}><X size={10} /></button>
-          </div>
-        ))}
         <div className="ml-auto flex gap-2">
           {onCancel && (
             <button onClick={onCancel} disabled={saving}
@@ -245,7 +256,8 @@ function UpdateForm({ projectId, municipalityId, onSaved, onCancel }) {
           )}
           <button onClick={handleSave} disabled={saving || !form.title.trim()}
             className="px-4 py-1.5 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 transition-colors flex items-center gap-1.5">
-            {saving ? <Loader2 size={13} className="animate-spin" /> : null} บันทึก
+            {saving ? <Loader2 size={13} className="animate-spin" /> : null}
+            {saving ? 'กำลังบันทึก...' : 'บันทึก'}
           </button>
         </div>
       </div>
@@ -260,34 +272,53 @@ function UpdateForm({ projectId, municipalityId, onSaved, onCancel }) {
 
 function UpdateCard({ upd, onDelete, onSaved, canDelete }) {
   const [isEditing, setIsEditing] = useState(false)
-  const [draft, setDraft] = useState({})
+  const [draft, setDraft]         = useState({})
   const [draftNote, setDraftNote] = useState('')
-  const [saving, setSaving] = useState(false)
+  const [draftPhotos, setDraftPhotos]   = useState([])  // existing URLs to keep
+  const [newPhotoFiles, setNewPhotoFiles] = useState([]) // new File[] to upload
+  const [saving, setSaving]       = useState(false)
+  const [deletingPhoto, setDeletingPhoto] = useState(null)
   const [saveError, setSaveError] = useState(null)
 
   function startEdit() {
     setDraft({
       update_type: upd.update_type,
-      title: upd.title,
-      body: upd.body ?? '',
+      title:       upd.title,
+      body:        upd.body ?? '',
       update_date: upd.update_date ?? '',
     })
     setDraftNote(upd.note ?? '')
+    setDraftPhotos(upd.photos ?? [])
+    setNewPhotoFiles([])
+    setSaveError(null)
     setIsEditing(true)
   }
-  function cancelEdit() { setIsEditing(false) }
-  function set(k, v) { setDraft(d => ({ ...d, [k]: v })) }
+  function cancelEdit() { setIsEditing(false); setSaveError(null) }
+  function set(k, v)   { setDraft(d => ({ ...d, [k]: v })) }
+
+  function addNewPhotos(e) {
+    const files = Array.from(e.target.files ?? [])
+    setNewPhotoFiles(prev => [...prev, ...files])
+    e.target.value = ''
+  }
 
   async function saveEdit() {
     if (!draft.title.trim()) return
     setSaving(true)
     setSaveError(null)
+    // Upload new photos
+    const newUrls = []
+    for (const f of newPhotoFiles) {
+      const url = await uploadPhoto(f, upd.project_id)
+      if (url) newUrls.push(url)
+    }
     const { error } = await supabase.from('org_project_updates').update({
       update_type: draft.update_type,
-      title: draft.title.trim(),
-      body: draft.body.trim() || null,
+      title:       draft.title.trim(),
+      body:        draft.body.trim() || null,
       update_date: draft.update_date || upd.update_date,
-      note: draftNote.trim() || null,
+      note:        draftNote.trim() || null,
+      photos:      [...draftPhotos, ...newUrls],
     }).eq('id', upd.id)
     setSaving(false)
     if (error) { setSaveError(error.message); return }
@@ -295,9 +326,19 @@ function UpdateCard({ upd, onDelete, onSaved, canDelete }) {
     onSaved?.()
   }
 
-  const cfg = getUpdateTypeCfg(isEditing ? draft.update_type : upd.update_type)
-  const Icon = cfg.Icon
-  const d = upd.update_date ? new Date(upd.update_date + 'T00:00:00') : null
+  // ลบรูปเดียวจาก read mode โดยไม่ต้องเข้า edit
+  async function deletePhotoInline(url) {
+    if (!window.confirm('ลบรูปนี้?')) return
+    setDeletingPhoto(url)
+    const newPhotos = (upd.photos ?? []).filter(u => u !== url)
+    const { error } = await supabase.from('org_project_updates').update({ photos: newPhotos }).eq('id', upd.id)
+    setDeletingPhoto(null)
+    if (!error) onSaved?.()
+  }
+
+  const cfg     = getUpdateTypeCfg(isEditing ? draft.update_type : upd.update_type)
+  const Icon    = cfg.Icon
+  const d       = upd.update_date ? new Date(upd.update_date + 'T00:00:00') : null
   const dateStr = d ? d.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : ''
 
   return (
@@ -309,9 +350,11 @@ function UpdateCard({ upd, onDelete, onSaved, canDelete }) {
         </div>
         <div className="w-px flex-1 bg-gray-200 mt-1" />
       </div>
+
       <div className="pb-4 flex-1 min-w-0">
         {isEditing ? (
-          <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2">
+          /* ── Edit form ── */
+          <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2.5">
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="block text-[10px] font-semibold text-gray-400 mb-1">ประเภท</label>
@@ -327,7 +370,7 @@ function UpdateCard({ upd, onDelete, onSaved, canDelete }) {
               </div>
             </div>
             <div>
-              <label className="block text-[10px] font-semibold text-gray-400 mb-1">หัวข้อ</label>
+              <label className="block text-[10px] font-semibold text-gray-400 mb-1">หัวข้อ *</label>
               <input value={draft.title} onChange={e => set('title', e.target.value)}
                 className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-900 bg-white focus:outline-none focus:border-emerald-400" />
             </div>
@@ -342,21 +385,63 @@ function UpdateCard({ upd, onDelete, onSaved, canDelete }) {
                 className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-900 bg-white focus:outline-none focus:border-emerald-400"
                 placeholder="บันทึกเพิ่มเติม (ถ้ามี)" />
             </div>
+
+            {/* รูปที่มีอยู่แล้ว */}
+            {(draftPhotos.length > 0 || newPhotoFiles.length > 0) && (
+              <div>
+                <label className="block text-[10px] font-semibold text-gray-400 mb-1.5">รูปภาพ</label>
+                <div className="flex flex-wrap gap-2">
+                  {draftPhotos.map((url, i) => (
+                    <div key={url} className="relative group">
+                      <img src={url} alt=""
+                        className="w-14 h-14 object-cover rounded-lg border border-gray-200" />
+                      <button type="button"
+                        onClick={() => setDraftPhotos(p => p.filter((_, j) => j !== i))}
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center shadow-sm">
+                        <X size={9} className="text-white" />
+                      </button>
+                    </div>
+                  ))}
+                  {newPhotoFiles.map((f, i) => (
+                    <div key={i} className="relative group">
+                      <img src={URL.createObjectURL(f)} alt=""
+                        className="w-14 h-14 object-cover rounded-lg border-2 border-emerald-300" />
+                      <button type="button"
+                        onClick={() => setNewPhotoFiles(p => p.filter((_, j) => j !== i))}
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center shadow-sm">
+                        <X size={9} className="text-white" />
+                      </button>
+                      <span className="absolute bottom-0 left-0 right-0 text-[8px] text-center text-white bg-emerald-600/80 rounded-b-lg py-0.5">ใหม่</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* เพิ่มรูปใหม่ */}
+            <label className="inline-flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer bg-white border border-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-50">
+              <ImagePlus size={12} />
+              {newPhotoFiles.length > 0 ? `เพิ่มรูปอีก (${newPhotoFiles.length})` : 'เพิ่มรูป'}
+              <input type="file" accept="image/*" multiple className="hidden" onChange={addNewPhotos} />
+            </label>
+
             {saveError && (
               <p className="text-[11px] text-red-500 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5">{saveError}</p>
             )}
-            <div className="flex gap-2 justify-end">
+            <div className="flex gap-2 justify-end pt-1">
               <button onClick={cancelEdit} disabled={saving}
                 className="px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition-colors">
                 ยกเลิก
               </button>
               <button onClick={saveEdit} disabled={saving || !draft.title.trim()}
                 className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 transition-colors flex items-center gap-1">
-                {saving ? <Loader2 size={11} className="animate-spin" /> : null} บันทึก
+                {saving ? <Loader2 size={11} className="animate-spin" /> : null}
+                {saving ? 'กำลังบันทึก...' : 'บันทึก'}
               </button>
             </div>
           </div>
         ) : (
+          /* ── Read mode ── */
           <>
             <div className="flex items-start justify-between gap-2">
               <div>
@@ -365,28 +450,44 @@ function UpdateCard({ upd, onDelete, onSaved, canDelete }) {
               </div>
               <div className="flex gap-0.5 shrink-0">
                 <button onClick={startEdit}
-                  className="p-1 text-gray-300 hover:text-blue-500 transition-colors">
+                  className="p-1 text-gray-300 hover:text-blue-500 transition-colors" title="แก้ไข">
                   <Pencil size={11} />
                 </button>
                 {canDelete && (
                   <button onClick={() => onDelete(upd.id)}
-                    className="p-1 text-gray-300 hover:text-red-400 transition-colors">
+                    className="p-1 text-gray-300 hover:text-red-400 transition-colors" title="ลบรายการ">
                     <Trash2 size={11} />
                   </button>
                 )}
               </div>
             </div>
             <p className="font-semibold text-gray-800 text-sm mt-0.5">{upd.title}</p>
-            {upd.body && <p className="text-gray-600 text-xs mt-1 whitespace-pre-wrap leading-relaxed">{upd.body}</p>}
+            {upd.body && (
+              <p className="text-gray-600 text-xs mt-1 whitespace-pre-wrap leading-relaxed">{upd.body}</p>
+            )}
             {upd.note && (
               <p className="text-[11px] text-gray-400 mt-1 italic">{upd.note}</p>
             )}
             {upd.photos?.length > 0 && (
-              <div className="flex gap-2 mt-2 flex-wrap">
+              <div className="flex flex-wrap gap-2 mt-2">
                 {upd.photos.map((url, i) => (
-                  <a key={i} href={url} target="_blank" rel="noreferrer">
-                    <img src={url} className="w-16 h-16 object-cover rounded-lg border border-gray-200" />
-                  </a>
+                  <div key={i} className="relative group">
+                    <a href={url} target="_blank" rel="noreferrer">
+                      <img src={url} alt=""
+                        className="w-16 h-16 object-cover rounded-lg border border-gray-200 hover:opacity-90 transition-opacity" />
+                    </a>
+                    {canDelete && (
+                      <button
+                        onClick={() => deletePhotoInline(url)}
+                        disabled={deletingPhoto === url}
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 hover:bg-red-600 rounded-full items-center justify-center shadow-sm hidden group-hover:flex transition-colors"
+                        title="ลบรูปนี้">
+                        {deletingPhoto === url
+                          ? <Loader2 size={9} className="text-white animate-spin" />
+                          : <X size={9} className="text-white" />}
+                      </button>
+                    )}
+                  </div>
                 ))}
               </div>
             )}
@@ -439,17 +540,17 @@ function ProjectCard({ project, updateCount, onClick }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function OrgProjectAdmin({ tenant }) {
-  const [projects, setProjects]   = useState([])
+  const [projects, setProjects]     = useState([])
   const [updateCounts, setUpdateCounts] = useState({})
-  const [loading, setLoading]     = useState(true)
-  const [selected, setSelected]   = useState(null)  // project object
-  const [updates, setUpdates]     = useState([])
+  const [loading, setLoading]       = useState(true)
+  const [selected, setSelected]     = useState(null)
+  const [updates, setUpdates]       = useState([])
   const [updLoading, setUpdLoading] = useState(false)
-  const [tab, setTab]             = useState('overview')  // 'overview' | 'timeline'
-  const [showForm, setShowForm]       = useState(false)
+  const [tab, setTab]               = useState('overview')
+  const [showForm, setShowForm]     = useState(false)
   const [showUpdateForm, setShowUpdateForm] = useState(false)
-  const [editMode, setEditMode]       = useState(false)
-  const [saving, setSaving]           = useState(false)
+  const [editMode, setEditMode]     = useState(false)
+  const [saving, setSaving]         = useState(false)
 
   const loadProjects = useCallback(async () => {
     if (!tenant?.id) return
@@ -459,7 +560,6 @@ export default function OrgProjectAdmin({ tenant }) {
       .eq('municipality_id', tenant.id)
       .order('sort_order').order('created_at', { ascending: false })
     setProjects(data ?? [])
-    // count updates per project
     const { data: counts } = await supabase.from('org_project_updates')
       .select('project_id')
       .in('project_id', (data ?? []).map(p => p.id))
@@ -487,10 +587,10 @@ export default function OrgProjectAdmin({ tenant }) {
     if (selected && editMode) {
       const { error } = await supabase.from('org_projects').update({
         ...form,
-        start_date: form.start_date || null,
-        end_date: form.end_date || null,
+        start_date:      form.start_date || null,
+        end_date:        form.end_date || null,
         cover_image_url: form.cover_image_url || null,
-        updated_at: new Date().toISOString(),
+        updated_at:      new Date().toISOString(),
       }).eq('id', selected.id)
       if (!error) {
         const updated = { ...selected, ...form }
@@ -503,16 +603,13 @@ export default function OrgProjectAdmin({ tenant }) {
       const { error } = await supabase.from('org_projects').insert({
         id,
         municipality_id: tenant.id,
-        created_by: session?.user?.id ?? null,
+        created_by:      session?.user?.id ?? null,
         ...form,
-        start_date: form.start_date || null,
-        end_date: form.end_date || null,
+        start_date:      form.start_date || null,
+        end_date:        form.end_date || null,
         cover_image_url: form.cover_image_url || null,
       })
-      if (!error) {
-        setShowForm(false)
-        loadProjects()
-      }
+      if (!error) { setShowForm(false); loadProjects() }
     }
     setSaving(false)
   }
@@ -538,7 +635,7 @@ export default function OrgProjectAdmin({ tenant }) {
     loadUpdates(p.id)
   }
 
-  // ── Detail view ─────────────────────────────────────────────────────────────
+  // ── Detail view ──────────────────────────────────────────────────────────────
   if (selected) {
     const s = STATUS_CFG[selected.status] ?? STATUS_CFG.active
     return (
@@ -555,7 +652,7 @@ export default function OrgProjectAdmin({ tenant }) {
               style={{ backgroundColor: s.bg, color: s.text }}>{s.label}</span>
           </div>
           <button onClick={() => setEditMode(e => !e)}
-            className="p-2 rounded-xl text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+            className={`p-2 rounded-xl transition-colors ${editMode ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'}`}>
             <Pencil size={16} />
           </button>
           <button onClick={() => handleDelete(selected.id)}
@@ -606,9 +703,13 @@ export default function OrgProjectAdmin({ tenant }) {
                 <div>
                   <p className="text-xs text-gray-400 font-semibold">ระยะเวลา</p>
                   <p className="text-sm text-gray-700">
-                    {selected.start_date ? new Date(selected.start_date + 'T00:00:00').toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' }) : 'ไม่ระบุ'}
+                    {selected.start_date
+                      ? new Date(selected.start_date + 'T00:00:00').toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
+                      : 'ไม่ระบุ'}
                     {' — '}
-                    {selected.end_date ? new Date(selected.end_date + 'T00:00:00').toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' }) : 'ปัจจุบัน'}
+                    {selected.end_date
+                      ? new Date(selected.end_date + 'T00:00:00').toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
+                      : 'ปัจจุบัน'}
                   </p>
                 </div>
               )}
@@ -641,21 +742,25 @@ export default function OrgProjectAdmin({ tenant }) {
                 onCancel={() => setShowUpdateForm(false)}
               />
             ) : (
-              <button
-                onClick={() => setShowUpdateForm(true)}
+              <button onClick={() => setShowUpdateForm(true)}
                 className="w-full flex items-center justify-center gap-2 py-2.5 rounded-2xl border-2 border-dashed border-emerald-300 text-emerald-600 text-sm font-semibold hover:bg-emerald-50 transition-colors">
                 <Plus size={16} /> เพิ่มรายการในไทม์ไลน์
               </button>
             )}
             {updLoading ? (
-              <div className="flex justify-center py-8"><Loader2 size={20} className="animate-spin text-gray-300" /></div>
+              <div className="flex justify-center py-8">
+                <Loader2 size={20} className="animate-spin text-gray-300" />
+              </div>
             ) : updates.length === 0 ? (
               <p className="text-center text-gray-400 text-sm py-8">ยังไม่มีรายการ — กดปุ่มด้านบนเพื่อเพิ่ม</p>
             ) : (
               <div className="bg-white border border-gray-200 rounded-2xl p-4">
                 {updates.map(u => (
                   <UpdateCard key={u.id} upd={u}
-                    onDelete={handleDeleteUpdate} onSaved={() => loadUpdates(selected.id)} canDelete={true} />
+                    onDelete={handleDeleteUpdate}
+                    onSaved={() => loadUpdates(selected.id)}
+                    canDelete={true}
+                  />
                 ))}
               </div>
             )}
@@ -665,7 +770,7 @@ export default function OrgProjectAdmin({ tenant }) {
     )
   }
 
-  // ── List view ────────────────────────────────────────────────────────────────
+  // ── List view ─────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -688,7 +793,9 @@ export default function OrgProjectAdmin({ tenant }) {
       )}
 
       {loading ? (
-        <div className="flex justify-center py-16"><Loader2 size={24} className="animate-spin text-gray-300" /></div>
+        <div className="flex justify-center py-16">
+          <Loader2 size={24} className="animate-spin text-gray-300" />
+        </div>
       ) : projects.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <p className="text-4xl mb-3">📋</p>
