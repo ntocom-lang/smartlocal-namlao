@@ -88,37 +88,38 @@ export default function Header() {
             <p className="text-white/80 text-[10px] md:text-xs line-clamp-1 mt-0.5 drop-shadow">ระบบศูนย์รวมข้อมูลดิจิทัลเพื่อการพัฒนาอย่างยั่งยืน</p>
           </div>
 
-          {/* Desktop nav */}
-          <nav className="hidden md:flex items-center gap-0.5">
-            {(role === 'technician' ? NAV_TECH : NAV_CITIZEN).map((l) => {
-              const isActive = l.href === '/'
-                ? location.pathname === '/'
-                : location.pathname.startsWith(l.href)
-              return (
-                <Link key={l.href} to={l.href}
-                   className={`relative px-3 py-2 rounded-lg text-sm transition-colors font-medium ${
-                     isActive
-                       ? 'text-white bg-white/20'
-                       : 'text-white/80 hover:text-white hover:bg-white/12'
-                   }`}>
-                  {l.label}
-                  {l.href === '/notifications' && unreadCount > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 min-w-3.5 h-3.5 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5">
-                      {unreadCount > 9 ? '9+' : unreadCount}
-                    </span>
-                  )}
-                </Link>
-              )
-            })}
-
-            {role === 'viewer' && (
-              <Link to="/admin"
-                className="ml-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-colors hover:opacity-90"
-                style={{ backgroundColor: 'white', color: 'var(--color-primary)' }}>
-                <LayoutDashboard size={13} /> รายงาน
-              </Link>
-            )}
-          </nav>
+          {/* Desktop nav — technician เท่านั้น (citizen ใช้ CitizenSidebar แทน) */}
+          {role === 'technician' && (
+            <nav className="hidden md:flex items-center gap-0.5">
+              {NAV_TECH.map((l) => {
+                const isActive = l.href === '/'
+                  ? location.pathname === '/'
+                  : location.pathname.startsWith(l.href)
+                return (
+                  <Link key={l.href} to={l.href}
+                    className={`relative px-3 py-2 rounded-lg text-sm transition-colors font-medium ${
+                      isActive
+                        ? 'text-white bg-white/20'
+                        : 'text-white/80 hover:text-white hover:bg-white/12'
+                    }`}>
+                    {l.label}
+                    {l.href === '/notifications' && unreadCount > 0 && (
+                      <span className="absolute -top-0.5 -right-0.5 min-w-3.5 h-3.5 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5">
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                      </span>
+                    )}
+                  </Link>
+                )
+              })}
+            </nav>
+          )}
+          {role === 'viewer' && (
+            <Link to="/admin"
+              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-colors hover:opacity-90"
+              style={{ backgroundColor: 'white', color: 'var(--color-primary)' }}>
+              <LayoutDashboard size={13} /> รายงาน
+            </Link>
+          )}
 
           {session ? (
             <div className="hidden md:flex items-center gap-2">

@@ -6,6 +6,7 @@ import { NotificationsProvider } from './contexts/NotificationsContext'
 import Header from './components/layout/Header'
 import Footer from './components/layout/Footer'
 import BottomNav from './components/layout/BottomNav'
+import CitizenSidebar from './components/layout/CitizenSidebar'
 import InstallPrompt from './components/InstallPrompt'
 import ScrollToTopButton from './components/ScrollToTopButton'
 import InAppBrowserGate from './components/InAppBrowserGate'
@@ -255,7 +256,9 @@ function AppShell() {
       )}
       <NotificationsProvider>
         <Header />
-        <main className="flex-1">
+        <div className="flex flex-1 min-h-0">
+          <CitizenSidebar />
+          <main className="flex-1 min-w-0">
           <Routes>
           <Route path="/" element={<HomeOrTechRedirect />} />
           <Route path="/complaint" element={<ComplaintCategory />} />
@@ -325,7 +328,8 @@ function AppShell() {
             </RequireAuth>
           } />
         </Routes>
-        </main>
+          </main>
+        </div>
         <Footer />
         <BottomNav />
         <InstallPrompt />
