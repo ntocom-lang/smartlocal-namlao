@@ -59,7 +59,7 @@ export default function CitizenSidebar() {
   }
 
   return (
-    <aside className="hidden md:flex flex-col w-56 shrink-0 bg-white border-r border-gray-200 sticky top-0 h-screen overflow-y-auto">
+    <aside className="hidden md:flex flex-col w-56 shrink-0 bg-white border-r border-gray-200 self-start sticky top-0 max-h-screen overflow-y-auto">
 
       {/* Org branding */}
       {tenant && (
