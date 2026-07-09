@@ -499,7 +499,7 @@ export default function MyComplaints() {
   function goToPage(page) {
     const p = Math.max(1, Math.min(page, totalPages))
     setCurrentPage(p)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    document.querySelector('main')?.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   useEffect(() => {

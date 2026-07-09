@@ -78,8 +78,13 @@ export default function ShortcutBand() {
       <div className="absolute -bottom-8 -left-4 w-36 h-36 rounded-full pointer-events-none"
            style={{ background: 'radial-gradient(circle, rgba(14,165,233,0.35) 0%, transparent 70%)' }} />
 
-      <div className="relative z-10 px-4 py-3">
-        <div className="grid grid-rows-2 grid-flow-col gap-x-1 gap-y-2"
+      <div className="relative z-10 px-4 pt-3 pb-3">
+        <p className="text-white/90 font-bold text-[11px] tracking-widest uppercase mb-2.5">
+          🔗 ลิงก์ลัด
+        </p>
+
+        {/* Mobile: 2 rows */}
+        <div className="md:hidden grid grid-rows-2 grid-flow-col gap-x-1 gap-y-2"
              style={{ gridTemplateColumns: `repeat(${Math.ceil(items.length / 2)}, 1fr)` }}>
           {items.map(({ label, Icon, action }) => (
             <button key={label} onClick={action}
@@ -89,6 +94,21 @@ export default function ShortcutBand() {
                 <Icon size={18} className="text-white" />
               </div>
               <p className="text-white/80 text-[9px] font-semibold text-center w-full leading-tight">{label}</p>
+            </button>
+          ))}
+        </div>
+
+        {/* Desktop: 1 row */}
+        <div className="hidden md:grid gap-1"
+             style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
+          {items.map(({ label, Icon, action }) => (
+            <button key={label} onClick={action}
+                    className="flex flex-col items-center gap-1 p-1.5 rounded-xl hover:bg-white/10 active:scale-95 transition-all">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm"
+                   style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.35)' }}>
+                <Icon size={15} className="text-white" />
+              </div>
+              <p className="text-white/80 text-[9px] font-semibold text-center leading-tight">{label}</p>
             </button>
           ))}
         </div>

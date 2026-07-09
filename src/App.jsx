@@ -250,15 +250,15 @@ function AppShell() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-transparent flex flex-col">
+    <div className="h-dvh bg-gray-50 dark:bg-transparent flex flex-col">
       {showPhoneReminder && (
         <PhoneReminderModal onClose={() => setShowPhoneReminder(false)} />
       )}
       <NotificationsProvider>
         <Header />
-        <div className="flex flex-1 min-h-0">
+        <div className="flex flex-1 min-h-0 overflow-hidden">
           <CitizenSidebar />
-          <main className="flex-1 min-w-0">
+          <main className="flex-1 min-w-0 overflow-y-auto">
           <Routes>
           <Route path="/" element={<HomeOrTechRedirect />} />
           <Route path="/complaint" element={<ComplaintCategory />} />
@@ -301,7 +301,7 @@ function AppShell() {
           <Route path="/staff" element={
             <RequireAuth staffOnly>
               <Suspense fallback={
-                <div className="flex items-center justify-center min-h-screen">
+                <div className="flex items-center justify-center min-h-full h-full">
                   <div className="w-6 h-6 border-4 border-gray-200 rounded-full animate-spin"
                        style={{ borderTopColor: '#3b82f6' }} />
                 </div>
@@ -328,9 +328,9 @@ function AppShell() {
             </RequireAuth>
           } />
         </Routes>
+          <Footer />
           </main>
         </div>
-        <Footer />
         <BottomNav />
         <InstallPrompt />
         <ScrollToTopButton />

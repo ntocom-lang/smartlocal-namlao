@@ -407,15 +407,6 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
               <Plus size={13} /> เพิ่มกิจกรรม
             </button>
           )}
-          {icsUrl && (
-            <button onClick={copyIcsUrl}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold border transition-colors hover:bg-white/20"
-              style={{ backgroundColor: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.85)', borderColor: 'rgba(255,255,255,0.25)' }}
-              title={icsUrl}>
-              {copied ? <CheckCheck size={13} className="text-green-300" /> : <Link2 size={13} />}
-              {copied ? 'คัดลอกแล้ว!' : 'Google Calendar'}
-            </button>
-          )}
         </div>
       </div>
 

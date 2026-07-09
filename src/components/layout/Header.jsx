@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Phone, LogIn, LogOut, UserCircle2, User, LayoutDashboard, Bell } from 'lucide-react'
+import { Phone, LogIn, LogOut, UserCircle2, User, LayoutDashboard, Bell, Briefcase } from 'lucide-react'
 import { useTenant } from '../../contexts/TenantContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
@@ -35,33 +35,45 @@ export default function Header() {
   }
   const isAdmin = role === 'admin' || role === 'superadmin' || role === 'officer'
 
-  if (location.pathname.startsWith('/staff')) return null
-
   return (
-    <header className="shadow-md" style={tenant?.header_image_url ? { position: 'relative', zIndex: 2 } : {}}>
+    <header className="shadow-xl" style={tenant?.header_image_url ? { position: 'relative', zIndex: 2 } : {}}>
       {/* Top strip — hidden on mobile */}
-      <div className="hidden md:flex text-white text-xs py-1 px-4 justify-end items-center gap-3"
-           style={{ backgroundColor: 'var(--color-primary-dark)' }}>
-        <Phone size={11} />
-        <span className="font-semibold tracking-wide">{tenant?.name}</span>
-        <span className="opacity-40">|</span>
-        <span className="opacity-80">ระบบศูนย์รวมข้อมูลดิจิทัลเพื่อการพัฒนาอย่างยั่งยืน</span>
-        <span className="opacity-40">|</span>
+      <div className="hidden md:flex text-white text-xs py-1.5 px-4 justify-end items-center gap-3"
+           style={{ background: 'linear-gradient(90deg, #0a1628 0%, #0f2044 50%, #0a1628 100%)', borderBottom: '1px solid rgba(99,179,237,0.15)' }}>
+        <Phone size={11} className="text-sky-300/70" />
+        <span className="font-semibold tracking-wide text-sky-100">{tenant?.name}</span>
+        <span className="text-white/20">|</span>
+        <span className="text-white/60">ระบบศูนย์รวมข้อมูลดิจิทัลเพื่อการพัฒนาอย่างยั่งยืน</span>
+        <span className="text-white/20">|</span>
         <a href="/manual-citizen.html" target="_blank" rel="noopener noreferrer"
-          className="opacity-80 hover:opacity-100 transition-opacity underline underline-offset-2">
+          className="text-sky-300/80 hover:text-sky-200 transition-colors underline underline-offset-2">
           📋 คู่มือการใช้งาน
         </a>
       </div>
 
       {/* Main header */}
-      {/* เมื่อมีรูป header → nav โปร่งใส, รูปอยู่ใน hero zone ใน HomePage แทน */}
-      <div className="text-white px-4 relative overflow-visible"
-           style={{ background: `linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 55%, color-mix(in srgb, var(--color-primary) 70%, #60a5fa) 100%)`, paddingTop: 12, paddingBottom: 24 }}>
-        {/* Decorative shapes */}
-        <div className="absolute -top-8 -right-8 w-36 h-36 rounded-full bg-white/10 pointer-events-none" />
-        <div className="absolute -bottom-10 right-20 w-28 h-28 rounded-full bg-white/8 pointer-events-none" />
-        <div className="absolute top-1 left-1/3 w-20 h-20 rounded-full bg-white/5 pointer-events-none" />
-        <div className="absolute -top-4 right-1/3 w-14 h-14 rounded-full bg-white/10 pointer-events-none" />
+      <div className="text-white px-4 relative overflow-hidden"
+           style={{
+             background: `linear-gradient(135deg, #0a1628 0%, #0f2a4a 20%, var(--color-primary-dark) 40%, var(--color-primary) 65%, color-mix(in srgb, var(--color-primary) 55%, #38bdf8) 85%, #7dd3fc 100%)`,
+             paddingTop: 12, paddingBottom: 24,
+           }}>
+        {/* Aurora glow top edge */}
+        <div className="absolute top-0 left-0 right-0 h-0.5 pointer-events-none"
+          style={{ background: 'linear-gradient(90deg, transparent 0%, #38bdf8 20%, #818cf8 40%, #f472b6 55%, #fbbf24 70%, #38bdf8 85%, transparent 100%)', opacity: 0.7 }} />
+        {/* Light bloom left */}
+        <div className="absolute -top-10 -left-10 w-56 h-56 rounded-full pointer-events-none"
+          style={{ background: 'radial-gradient(circle, rgba(56,189,248,0.18) 0%, transparent 70%)' }} />
+        {/* Light bloom right */}
+        <div className="absolute -top-6 -right-6 w-64 h-64 rounded-full pointer-events-none"
+          style={{ background: 'radial-gradient(circle, rgba(129,140,248,0.2) 0%, transparent 70%)' }} />
+        {/* Gold bloom center-right */}
+        <div className="absolute top-0 right-1/3 w-48 h-32 pointer-events-none"
+          style={{ background: 'radial-gradient(ellipse, rgba(251,191,36,0.1) 0%, transparent 70%)' }} />
+        {/* Orbs */}
+        <div className="absolute -bottom-8 right-32 w-24 h-24 rounded-full pointer-events-none"
+          style={{ background: 'radial-gradient(circle, rgba(99,179,237,0.15) 0%, transparent 70%)' }} />
+        <div className="absolute top-2 left-1/4 w-16 h-16 rounded-full pointer-events-none"
+          style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.06) 0%, transparent 70%)' }} />
         <div className="max-w-6xl mx-auto flex items-center gap-3 relative z-10">
           {/* Logo circle — always home */}
           <Link to={role === 'technician' ? '/technician' : '/'} className="shrink-0">
@@ -118,6 +130,13 @@ export default function Header() {
 
           {session ? (
             <div className="hidden md:flex items-center gap-2">
+              {(isAdmin || role === 'staff' || role === 'officer') && (
+                <Link to="/staff"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-colors hover:opacity-90"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.18)', color: 'white' }}>
+                  <Briefcase size={14} /> สำหรับเจ้าหน้าที่
+                </Link>
+              )}
               {isAdmin && (
                 <Link to="/admin"
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-colors hover:opacity-90"

@@ -2148,7 +2148,7 @@ export default function StaffDashboard() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ backgroundColor: '#eef2f7' }}>
+    <div className="flex h-full overflow-hidden" style={{ backgroundColor: '#eef2f7' }}>
 
       {/* ── Desktop Sidebar — government style ─────────────────────────────── */}
       <aside className="hidden md:flex flex-col w-60 shrink-0 shadow-lg"
@@ -2156,16 +2156,9 @@ export default function StaffDashboard() {
 
         {/* Brand */}
         <div className="px-5 py-4 border-b" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-          <button onClick={() => navigate('/')} className="flex items-center gap-3 w-full text-left hover:opacity-80 transition-opacity">
-            <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 border-2"
-              style={{ borderColor: 'rgba(255,255,255,0.2)', background: !tenant?.logo_url ? 'linear-gradient(135deg, #3b82f6,#1d4ed8)' : undefined }}>
-              {tenant?.logo_url
-                ? <img src={tenant.logo_url} alt="" className="w-full h-full object-cover" />
-                : <span className="flex items-center justify-center w-full h-full text-white text-lg">🏛️</span>}
-            </div>
+          <button onClick={() => navigate('/')} className="flex items-center w-full text-left hover:opacity-80 transition-opacity">
             <div className="min-w-0">
-              <p className="text-sm font-bold text-white truncate leading-tight">{tenant?.name ?? 'Staff Portal'}</p>
-              <p className="text-[10px] mt-0.5" style={{ color: 'rgba(147,197,253,0.85)' }}>ระบบบริการอิเล็กทรอนิกส์</p>
+              <p className="text-[10px] font-semibold" style={{ color: 'rgba(147,197,253,0.85)' }}>สำหรับเจ้าหน้าที่</p>
             </div>
           </button>
         </div>

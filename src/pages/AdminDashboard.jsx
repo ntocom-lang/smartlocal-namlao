@@ -4722,8 +4722,7 @@ export default function AdminDashboard() {
         style={{ backgroundColor: '#1a3a5c', borderRight: '1px solid #12293f' }}>
         {/* Brand */}
         <div className="px-4 py-4 border-b shrink-0" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-          <p className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: 'rgba(255,255,255,0.38)' }}>แผงควบคุม Admin</p>
-          <p className="font-bold text-white text-sm leading-snug">{tenant?.name}</p>
+          <p className="text-[10px] font-semibold" style={{ color: 'rgba(147,197,253,0.85)' }}>แผงควบคุม Admin</p>
         </div>
 
         {/* Nav items */}
@@ -5624,7 +5623,7 @@ export default function AdminDashboard() {
               {complaintTotalPages > 1 && (
                 <div className="flex items-center gap-1.5">
                   <button
-                    onClick={() => { setComplaintPage(p => Math.max(1, p - 1)); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                    onClick={() => { setComplaintPage(p => Math.max(1, p - 1)); document.querySelector('main')?.scrollTo({ top: 0, behavior: 'smooth' }) }}
                     disabled={complaintPage === 1}
                     className="p-2 rounded-xl border border-gray-200 text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
                     <ChevronLeft size={16} />
@@ -5648,7 +5647,7 @@ export default function AdminDashboard() {
                       ) : (
                         <button
                           key={p}
-                          onClick={() => { setComplaintPage(p); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                          onClick={() => { setComplaintPage(p); document.querySelector('main')?.scrollTo({ top: 0, behavior: 'smooth' }) }}
                           className={`min-w-[36px] h-9 rounded-xl text-sm font-semibold transition-all ${
                             complaintPage === p
                               ? 'text-white shadow-md'
@@ -5661,7 +5660,7 @@ export default function AdminDashboard() {
                     )}
 
                   <button
-                    onClick={() => { setComplaintPage(p => Math.min(complaintTotalPages, p + 1)); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                    onClick={() => { setComplaintPage(p => Math.min(complaintTotalPages, p + 1)); document.querySelector('main')?.scrollTo({ top: 0, behavior: 'smooth' }) }}
                     disabled={complaintPage === complaintTotalPages}
                     className="p-2 rounded-xl border border-gray-200 text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
                     <ChevronRight size={16} />

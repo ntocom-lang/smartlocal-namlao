@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -8,7 +8,7 @@ import TourismSection from '../components/home/TourismSection'
 import ComplaintBand from '../components/home/ComplaintBand'
 import ShortcutBand from '../components/home/ShortcutBand'
 import BannerSlider from '../components/home/BannerSlider'
-import { Info, ChevronRight, Briefcase, Megaphone } from 'lucide-react'
+import { Info, ChevronRight, Briefcase, Megaphone, LayoutDashboard, Wrench, Newspaper, CalendarDays, ChevronLeft } from 'lucide-react'
 import WeatherWidget from '../components/home/WeatherWidget'
 
 const MARQUEE_TEXT = 'บริการประชาชนออนไลน์ ตลอด 24 ชั่วโมง เพื่อใช้เป็นช่องทางในการติดตามข่าวสาร แจ้งเรื่องร้องเรียน และรับบริการต่างๆได้อย่างสะดวก รวดเร็ว และเข้าถึงได้ทุกที่ทุกเวลา'
@@ -19,23 +19,201 @@ const marqueeStyle = `
   100% { transform: translateX(-50%); }
 }`
 
+const DAY_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
+const AUD_COLOR = {
+  public: '#10b981', staff: '#3b82f6', management: '#8b5cf6', council: '#f59e0b',
+}
+const AUD_LABEL = { public: 'ประชาชน', staff: 'เทศบาล', management: 'ผู้บริหาร', council: 'สภาเทศบาล' }
+
+function MiniCalendar({ events }) {
+  const navigate  = useNavigate()
+  const todayRef  = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d }, [])
+  const [calYear,  setCalYear]  = useState(todayRef.getFullYear())
+  const [calMonth, setCalMonth] = useState(todayRef.getMonth())
+
+  const eventMap = useMemo(() => {
+    const map = {}
+    events.forEach(ev => {
+      if (!map[ev.event_date]) map[ev.event_date] = []
+      map[ev.event_date].push(ev)
+    })
+    return map
+  }, [events])
+
+  const firstDow  = new Date(calYear, calMonth, 1).getDay()
+  const totalDays = new Date(calYear, calMonth + 1, 0).getDate()
+  const cells = []
+  for (let i = 0; i < firstDow; i++) cells.push(null)
+  for (let d = 1; d <= totalDays; d++) cells.push(d)
+  while (cells.length % 7 !== 0) cells.push(null)
+
+  const prevMonth = () => calMonth === 0
+    ? (setCalMonth(11), setCalYear(y => y - 1))
+    : setCalMonth(m => m - 1)
+  const nextMonth = () => calMonth === 11
+    ? (setCalMonth(0), setCalYear(y => y + 1))
+    : setCalMonth(m => m + 1)
+
+  const dayKey = d =>
+    `${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`
+
+  const monthName = new Date(calYear, calMonth, 1)
+    .toLocaleDateString('th-TH', { year: 'numeric', month: 'long' })
+
+  return (
+    <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-4">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <CalendarDays size={14} style={{ color: 'var(--color-primary)' }} className="shrink-0" />
+          <p className="text-xs font-bold text-gray-700">ปฏิทินกิจกรรม</p>
+        </div>
+        <Link to="/events" className="text-[11px] font-medium flex items-center gap-0.5 hover:underline"
+          style={{ color: 'var(--color-primary)' }}>
+          ทั้งหมด <ChevronRight size={11} />
+        </Link>
+      </div>
+
+      {/* Month nav */}
+      <div className="flex items-center justify-between mb-2">
+        <button onClick={prevMonth} className="p-1 rounded-lg hover:bg-gray-100 transition-colors text-gray-400">
+          <ChevronLeft size={14} />
+        </button>
+        <p className="text-xs font-bold text-gray-700">{monthName}</p>
+        <button onClick={nextMonth} className="p-1 rounded-lg hover:bg-gray-100 transition-colors text-gray-400">
+          <ChevronRight size={14} />
+        </button>
+      </div>
+
+      {/* Day headers */}
+      <div className="grid grid-cols-7 mb-0.5">
+        {DAY_TH.map((d, i) => (
+          <div key={d} className={`text-center text-[10px] font-bold py-0.5 ${
+            i === 0 ? 'text-red-400' : i === 6 ? 'text-blue-400' : 'text-gray-400'
+          }`}>{d}</div>
+        ))}
+      </div>
+
+      {/* Grid */}
+      <div className="grid grid-cols-7 gap-px bg-gray-100 rounded-xl overflow-hidden border border-gray-100">
+        {cells.map((day, i) => {
+          if (!day) return <div key={i} className="bg-gray-50 min-h-9" />
+          const key    = dayKey(day)
+          const evs    = eventMap[key] ?? []
+          const dow    = (firstDow + day - 1) % 7
+          const isToday = calYear === todayRef.getFullYear()
+            && calMonth === todayRef.getMonth()
+            && day === todayRef.getDate()
+          return (
+            <button key={i} onClick={() => navigate('/events')}
+              className="min-h-9 px-0.5 pt-1 pb-0.5 flex flex-col items-center bg-white hover:bg-gray-50 transition-colors">
+              <span className={`text-[11px] font-bold w-5 h-5 flex items-center justify-center rounded-full mb-0.5 ${
+                isToday ? 'bg-red-500 text-white'
+                  : dow === 0 ? 'text-red-400'
+                  : dow === 6 ? 'text-blue-400'
+                  : 'text-gray-700'
+              }`}>{day}</span>
+              <div className="flex flex-wrap justify-center gap-px">
+                {evs.slice(0, 3).map((ev, j) => (
+                  <span key={j} className="w-1.5 h-1.5 rounded-full"
+                    style={{ backgroundColor: AUD_COLOR[ev.audience] ?? '#6b7280' }} />
+                ))}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Legend */}
+      <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2.5">
+        {Object.entries(AUD_LABEL).map(([k, v]) => (
+          <div key={k} className="flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: AUD_COLOR[k] }} />
+            <span className="text-[10px] text-gray-400">{v}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function NewsSlider({ posts, label = 'ข่าวสำคัญ', href = '/news' }) {
+  const [idx, setIdx] = useState(0)
+  const [paused, setPaused] = useState(false)
+
+  const next = useCallback(() => setIdx(i => (i + 1) % posts.length), [posts.length])
+
+  useEffect(() => {
+    if (posts.length < 2 || paused) return
+    const t = setInterval(next, 4500)
+    return () => clearInterval(t)
+  }, [next, paused, posts.length])
+
+  if (!posts.length) return null
+  const post = posts[idx]
+
+  return (
+    <div className="rounded-2xl bg-white border border-gray-100 shadow-sm overflow-hidden"
+      onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
+        <div className="flex items-center gap-2">
+          <Newspaper size={14} className="shrink-0" style={{ color: 'var(--color-primary)' }} />
+          <p className="text-xs font-bold text-gray-700">{label}</p>
+        </div>
+        <Link to={href}
+          className="text-[11px] font-medium flex items-center gap-0.5 hover:underline"
+          style={{ color: 'var(--color-primary)' }}>
+          ทั้งหมด <ChevronRight size={11} />
+        </Link>
+      </div>
+
+      {/* Image */}
+      <div className="relative aspect-video bg-gray-100 cursor-pointer overflow-hidden"
+        onClick={() => next()}>
+        {post.image_url
+          ? <img key={post.id} src={post.image_url} alt={post.title}
+              className="w-full h-full object-cover transition-opacity duration-500"
+              style={{ objectPosition: post.image_position ?? '50% 50%' }} />
+          : <div className="w-full h-full flex items-center justify-center">
+              <Newspaper size={36} className="text-gray-300" strokeWidth={1.5} />
+            </div>}
+        {/* Dots */}
+        {posts.length > 1 && (
+          <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5">
+            {posts.map((_, i) => (
+              <button key={i} onClick={e => { e.stopPropagation(); setIdx(i) }}
+                className="rounded-full transition-all"
+                style={{
+                  width: i === idx ? 16 : 6, height: 6,
+                  backgroundColor: i === idx ? 'white' : 'rgba(255,255,255,0.5)',
+                }} />
+            ))}
+          </div>
+        )}
+      </div>
+
+    </div>
+  )
+}
+
 const BASE_DOC_TYPES = [
-  { value: 'residence_cert',  label: 'ใบรับรองการอยู่อาศัย',          emoji: '🏠' },
-  { value: 'personal_cert',   label: 'หนังสือรับรองบุคคล',             emoji: '👤' },
-  { value: 'conduct_cert',    label: 'หนังสือรับรองความประพฤติ',       emoji: '✅' },
-  { value: 'tax_notice',      label: 'ชำระภาษีที่ดินและสิ่งปลูกสร้าง', emoji: '🏦' },
-  { value: 'waste_collection', label: 'ชำระค่าธรรมเนียมขยะ',           emoji: '🗑️' },
-  { value: 'other',           label: 'คำขออื่นๆ',                      emoji: '📝' },
+  { value: 'residence_cert',   label: 'ใบรับรองการอยู่อาศัย',           emoji: '🏠' },
+  { value: 'personal_cert',    label: 'หนังสือรับรองบุคคล',              emoji: '👤' },
+  { value: 'conduct_cert',     label: 'หนังสือรับรองความประพฤติ',        emoji: '✅' },
+  { value: 'tax_notice',       label: 'ชำระภาษีที่ดินและสิ่งปลูกสร้าง', emoji: '🏦' },
+  { value: 'waste_collection', label: 'ชำระค่าธรรมเนียมขยะ',            emoji: '🗑️' },
+  { value: 'other',            label: 'คำขออื่นๆ',                       emoji: '📝' },
 ]
 
 export default function HomePage() {
   const { tenant } = useTenant()
-  const { role } = useAuth()
+  const { role }   = useAuth()
 
-  const isAdmin = role === 'admin' || role === 'superadmin' || role === 'officer'
-  const isViewer = role === 'viewer'
-  const isCouncil = role === 'council'
-  const isStaff = role === 'staff' || role === 'technician'
+  const isAdmin       = role === 'admin' || role === 'superadmin' || role === 'officer'
+  const isStaff       = role === 'staff'
+  const isTechnician  = role === 'technician'
+  const isViewerOrCouncil = role === 'viewer' || role === 'council'
 
   const docTypes = useMemo(() => {
     const extras = (tenant?.fee_schedule?._custom_types || []).map(t => ({
@@ -43,6 +221,39 @@ export default function HomePage() {
     }))
     return [...BASE_DOC_TYPES, ...extras]
   }, [tenant])
+
+  const [calEvents, setCalEvents] = useState([])
+  useEffect(() => {
+    if (!tenant?.id) return
+    const threeMonthsAgo = new Date()
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 1)
+    const threeMonthsAhead = new Date()
+    threeMonthsAhead.setMonth(threeMonthsAhead.getMonth() + 2)
+    supabase.from('events')
+      .select('id,event_date,audience,title')
+      .eq('municipality_id', tenant.id)
+      .gte('event_date', threeMonthsAgo.toISOString().split('T')[0])
+      .lte('event_date', threeMonthsAhead.toISOString().split('T')[0])
+      .then(({ data }) => setCalEvents(data ?? []))
+  }, [tenant?.id])
+
+  const [sidebarNews, setSidebarNews] = useState([])
+  const [sidebarActivities, setSidebarActivities] = useState([])
+  useEffect(() => {
+    if (!tenant?.id) return
+    supabase.from('posts')
+      .select('id,title,excerpt,image_url,image_position,event_date,created_at')
+      .eq('municipality_id', tenant.id).eq('type', 'news').eq('is_published', true)
+      .order('event_date', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false }).limit(5)
+      .then(({ data }) => setSidebarNews(data ?? []))
+    supabase.from('posts')
+      .select('id,title,excerpt,image_url,image_position,event_date,created_at')
+      .eq('municipality_id', tenant.id).eq('type', 'activity').eq('is_published', true)
+      .order('event_date', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false }).limit(5)
+      .then(({ data }) => setSidebarActivities(data ?? []))
+  }, [tenant?.id])
 
   const [docCounts, setDocCounts] = useState({})
   useEffect(() => {
@@ -62,34 +273,21 @@ export default function HomePage() {
   , [docTypes, docCounts])
 
   return (
-    <div className="max-w-6xl mx-auto md:px-8 md:py-6 space-y-2 md:space-y-4">
-
-      {/* Hero zone — ยืดขึ้นไปอยู่ใต้ sticky nav (margin-top: -68px) เพื่อให้รูปต่อเนื่อง */}
-      <div className="relative overflow-hidden"
-        style={tenant?.header_image_url
-          ? { marginTop: -100, borderRadius: '0 0 28px 28px', position: 'relative', zIndex: 1 }
-          : {}}>
-        {tenant?.header_image_url && <>
-          <img src={tenant.header_image_url} aria-hidden="true"
-            className="absolute inset-0 w-full h-full object-cover object-top pointer-events-none" />
-          <div className="absolute inset-0 pointer-events-none"
-            style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.05) 55%, white 100%)' }} />
-        </>}
-        <div className={`relative z-10 flex flex-col gap-2 md:gap-3 ${tenant?.header_image_url ? 'px-4 pt-28 pb-3' : 'px-4 py-4'}`}>
-          <WeatherWidget transparent={!!tenant?.header_image_url} />
-          <BannerSlider />
-        </div>
-      </div>
-
+    <div className="bg-gray-50">
       <style>{marqueeStyle}</style>
 
-      {/* ส่วนที่เหลือ — ปกติ */}
-      <div className="flex flex-col gap-2 md:gap-3 px-4 md:px-0">
+      {/* ── Main Layout ───────────────────────────────────────────────── */}
+      <div className="px-4 md:px-6 py-4 max-w-6xl mx-auto">
 
-        {/* Staff shortcut — เฉพาะ staff/technician (admin ใช้ icon ใน Header แทน) */}
+        {/* Mobile-only: weather widget (desktop จะอยู่ใน right column) */}
+        <div className="md:hidden mb-3">
+          <WeatherWidget />
+        </div>
+
+        {/* Role-specific shortcuts */}
         {isStaff && (
           <Link to="/staff"
-            className="flex items-center gap-3 rounded-2xl px-4 py-3.5 shadow-md active:scale-98 transition-transform"
+            className="md:hidden flex items-center gap-3 rounded-2xl px-4 py-3.5 shadow-md mb-4 transition-all hover:shadow-lg hover:-translate-y-0.5"
             style={{ background: 'linear-gradient(135deg, #0369a1 0%, #0ea5e9 100%)' }}>
             <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
               <Briefcase size={18} className="text-white" />
@@ -101,70 +299,138 @@ export default function HomePage() {
             <ChevronRight size={18} className="text-white/60" />
           </Link>
         )}
+        {isTechnician && (
+          <Link to="/technician"
+            className="md:hidden flex items-center gap-3 rounded-2xl px-4 py-3.5 shadow-md mb-4 transition-all hover:shadow-lg hover:-translate-y-0.5"
+            style={{ background: 'linear-gradient(135deg, #065f46 0%, #10b981 100%)' }}>
+            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+              <Wrench size={18} className="text-white" />
+            </div>
+            <div className="flex-1">
+              <p className="text-white font-bold text-sm">งานซ่อมของฉัน</p>
+              <p className="text-white/70 text-xs">คิวงาน สถานะ อัปเดต</p>
+            </div>
+            <ChevronRight size={18} className="text-white/60" />
+          </Link>
+        )}
+        {isViewerOrCouncil && (
+          <Link to="/admin"
+            className="md:hidden flex items-center gap-3 rounded-2xl px-4 py-3.5 shadow-md mb-4 transition-all hover:shadow-lg hover:-translate-y-0.5"
+            style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' }}>
+            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+              <LayoutDashboard size={18} className="text-white" />
+            </div>
+            <div className="flex-1">
+              <p className="text-white font-bold text-sm">ดูรายงาน</p>
+              <p className="text-white/70 text-xs">ข้อมูลสรุป สถิติ ผลการดำเนินงาน</p>
+            </div>
+            <ChevronRight size={18} className="text-white/60" />
+          </Link>
+        )}
 
         {!role && (
-          <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800">
+          <div className="md:hidden flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800 mb-4">
             <Info size={16} className="shrink-0 mt-0.5" />
             <p>สมัครสมาชิกเพื่อติดตามสถานะคำร้องของท่าน และรับการแจ้งเตือนทันที</p>
           </div>
         )}
 
-        {/* E-Service + Marquee + Complaint — ชิดกัน */}
-        <div className="flex flex-col gap-1">
-          {/* Service Band */}
-          <div className="rounded-2xl shadow-xl px-4 py-5 relative overflow-hidden"
-            style={{ background: 'linear-gradient(135deg, #0369a1 0%, #0ea5e9 50%, #7dd3fc 100%)' }}>
-            <div className="absolute -top-6 -right-6 w-32 h-32 rounded-full pointer-events-none"
-              style={{ background: 'radial-gradient(circle, rgba(186,230,253,0.5) 0%, transparent 70%)' }} />
-            <div className="absolute -bottom-8 -left-4 w-36 h-36 rounded-full pointer-events-none"
-              style={{ background: 'radial-gradient(circle, rgba(14,165,233,0.35) 0%, transparent 70%)' }} />
-            <div className="absolute top-0 right-1/3 w-24 h-24 rounded-full pointer-events-none"
-              style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 70%)' }} />
-            <div className="relative z-10">
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-white text-[11px] font-bold tracking-widest uppercase drop-shadow">✦ E-Service ✦ <span className="normal-case font-medium opacity-80">งานบริการประชาชน</span></p>
-                <Link to="/doc-request" className="flex items-center gap-0.5 text-white/80 text-[11px] font-semibold hover:text-white transition-colors">
-                  ทั้งหมด <ChevronRight size={13} />
-                </Link>
-              </div>
-              <div className="flex gap-4 overflow-x-auto pb-1 md:flex-wrap md:overflow-x-visible md:pb-0" style={{ scrollbarWidth: 'none' }}>
-                {topDocTypes.map(({ value, label, emoji }) => (
-                  <Link key={value} to={`/doc-request?type=${value}`}
-                    className="flex flex-col items-center gap-2 shrink-0 active:scale-95 transition-transform">
-                    <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-lg"
-                      style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.08) 100%)', border: '1px solid rgba(255,255,255,0.2)', backdropFilter: 'blur(4px)' }}>
-                      {emoji}
-                    </div>
-                    <p className="text-white text-[10px] font-semibold text-center leading-tight w-16">{label}</p>
+        {/* ── Desktop 2-column grid / Mobile single column ─────────── */}
+        <div className="md:grid md:grid-cols-3 md:gap-6">
+
+          {/* Left: main content (2/3) */}
+          <div className="md:col-span-2 flex flex-col gap-4 md:gap-3">
+
+            {/* Banner Slider */}
+            <BannerSlider />
+
+            {/* E-Service */}
+            <div className="rounded-2xl shadow-md px-4 py-4 relative overflow-hidden"
+              style={{ background: 'linear-gradient(135deg, #0369a1 0%, #0ea5e9 50%, #7dd3fc 100%)' }}>
+              {/* Decorative blobs */}
+              <div className="absolute -top-6 -right-6 w-32 h-32 rounded-full pointer-events-none"
+                style={{ background: 'radial-gradient(circle, rgba(186,230,253,0.5) 0%, transparent 70%)' }} />
+              <div className="absolute -bottom-8 -left-4 w-36 h-36 rounded-full pointer-events-none"
+                style={{ background: 'radial-gradient(circle, rgba(14,165,233,0.35) 0%, transparent 70%)' }} />
+
+              <div className="relative z-10">
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-white text-[11px] font-bold tracking-widest uppercase drop-shadow">
+                    ✦ E-Service ✦ <span className="normal-case font-medium opacity-80">งานบริการประชาชน</span>
+                  </p>
+                  <Link to="/doc-request"
+                    className="flex items-center gap-0.5 text-white/80 text-[11px] font-semibold hover:text-white transition-colors">
+                    ทั้งหมด <ChevronRight size={13} />
                   </Link>
-                ))}
+                </div>
+
+                {/* Mobile: horizontal scroll / Desktop: grid */}
+                <div className="flex gap-3 overflow-x-auto pb-1 md:hidden" style={{ scrollbarWidth: 'none' }}>
+                  {topDocTypes.map(({ value, label, emoji }) => (
+                    <Link key={value} to={`/doc-request?type=${value}`}
+                      className="flex flex-col items-center gap-2 shrink-0 active:scale-95 transition-transform">
+                      <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-lg"
+                        style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.08) 100%)', border: '1px solid rgba(255,255,255,0.2)' }}>
+                        {emoji}
+                      </div>
+                      <p className="text-white text-[10px] font-semibold text-center leading-tight w-16">{label}</p>
+                    </Link>
+                  ))}
+                </div>
+                <div className="hidden md:grid grid-cols-6 gap-2">
+                  {topDocTypes.map(({ value, label, emoji }) => (
+                    <Link key={value} to={`/doc-request?type=${value}`}
+                      className="flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all hover:scale-105 hover:bg-white/10 active:scale-95">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shadow-md"
+                        style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0.08) 100%)', border: '1px solid rgba(255,255,255,0.25)' }}>
+                        {emoji}
+                      </div>
+                      <p className="text-white text-[10px] font-semibold text-center leading-snug">{label}</p>
+                    </Link>
+                  ))}
+                </div>
               </div>
             </div>
+
+            {/* Marquee */}
+            <div className="flex items-center overflow-hidden rounded-xl shadow-sm"
+              style={{ background: 'linear-gradient(90deg, #0ea5e9 0%, #38bdf8 40%, #fbbf24 80%, #f59e0b 100%)', height: 36 }}>
+              <div className="shrink-0 flex items-center justify-center px-3 h-full"
+                style={{ background: 'rgba(255,255,255,0.25)' }}>
+                <Megaphone size={16} className="text-white" />
+              </div>
+              <div className="flex-1 overflow-hidden">
+                <span className="whitespace-nowrap text-white text-xs font-medium inline-block"
+                  style={{ animation: 'marquee 40s linear infinite' }}>
+                  {MARQUEE_TEXT}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{MARQUEE_TEXT}
+                </span>
+              </div>
+            </div>
+
+            <ComplaintBand />
+            <ShortcutBand />
           </div>
 
-          {/* Marquee Band */}
-          <div className="flex items-center overflow-hidden rounded-xl shadow-md"
-            style={{ background: 'linear-gradient(90deg, #0ea5e9 0%, #38bdf8 40%, #fbbf24 80%, #f59e0b 100%)', height: 36 }}>
-            <div className="shrink-0 flex items-center justify-center px-3 h-full"
-              style={{ background: 'rgba(255,255,255,0.25)' }}>
-              <Megaphone size={16} className="text-white" />
-            </div>
-            <div className="flex-1 overflow-hidden">
-              <span className="whitespace-nowrap text-white text-xs font-medium inline-block"
-                style={{ animation: 'marquee 40s linear infinite' }}>
-                {MARQUEE_TEXT}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{MARQUEE_TEXT}
-              </span>
-            </div>
-          </div>
+          {/* Right: widget column (desktop only, 1/3) */}
+          <div className="hidden md:flex flex-col gap-3">
 
-          <ComplaintBand />
-          <ShortcutBand />
+            {/* Weather */}
+            <WeatherWidget />
+
+            <NewsSlider posts={sidebarNews} />
+            <NewsSlider posts={sidebarActivities} label="กิจกรรม" href="/news?tab=activity" />
+            <MiniCalendar events={calEvents} />
+
+          </div>
         </div>
 
-        <PostsHighlight />
-      </div>{/* end content section */}
+        {/* Full-width sections */}
+        <div className="mt-6">
+          <PostsHighlight />
+        </div>
+      </div>
 
-      <div className="px-4 md:px-0">
+      <div className="px-4 md:px-6 pb-8 max-w-6xl mx-auto">
         <TourismSection />
       </div>
     </div>

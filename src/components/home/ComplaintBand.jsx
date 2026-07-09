@@ -62,15 +62,17 @@ export default function ComplaintBand() {
       <div className="absolute -bottom-8 -right-4 w-36 h-36 rounded-full pointer-events-none"
         style={{ background: 'radial-gradient(circle, rgba(217,119,6,0.35) 0%, transparent 70%)' }} />
 
-      <div className="relative z-10 px-4 pt-4 pb-5">
-        <div className="flex items-center justify-between mb-4">
+      <div className="relative z-10 px-4 pt-3 pb-4">
+        <div className="flex items-center justify-between mb-3">
           <p className="text-amber-900 font-bold text-sm tracking-wide">🚨 แจ้งเหตุ / แจ้งซ่อม</p>
           <button onClick={() => navigate('/complaint')}
             className="flex items-center gap-0.5 text-amber-900/70 text-xs bg-white/30 px-2 py-1 rounded-full hover:bg-white/50 transition-colors">
             ทั้งหมด <ChevronRight size={13} />
           </button>
         </div>
-        <div className="flex gap-5 overflow-x-auto pb-1 md:flex-wrap md:overflow-x-visible md:pb-0" style={{ scrollbarWidth: 'none' }}>
+
+        {/* Mobile: horizontal scroll */}
+        <div className="flex gap-5 overflow-x-auto pb-1 md:hidden" style={{ scrollbarWidth: 'none' }}>
           {topCats.map(cat => {
             const Icon = CATEGORY_ICON[cat.value] ?? HelpCircle
             return (
@@ -82,6 +84,24 @@ export default function ComplaintBand() {
                   <Icon size={26} className="text-amber-700" />
                 </div>
                 <p className="text-amber-900 text-[10px] font-semibold text-center w-14 leading-tight">{cat.label}</p>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Desktop: compact grid */}
+        <div className="hidden md:grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(topCats.length, 7)}, minmax(0, 1fr))` }}>
+          {topCats.map(cat => {
+            const Icon = CATEGORY_ICON[cat.value] ?? HelpCircle
+            return (
+              <button key={cat.value}
+                onClick={() => navigate(`/request?category=${cat.value}`)}
+                className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-white/20 active:scale-95 transition-all">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-sm"
+                  style={{ background: 'rgba(255,255,255,0.45)', border: '1px solid rgba(255,255,255,0.6)' }}>
+                  <Icon size={20} className="text-amber-700" />
+                </div>
+                <p className="text-amber-900 text-[10px] font-semibold text-center leading-tight">{cat.label}</p>
               </button>
             )
           })}

@@ -47,21 +47,6 @@ export default function BannerSlider() {
   if (!banners.length) return null
 
   const n = banners.length
-  const rightIdx = (idx + 1) % n
-
-  const dots = n > 1 ? (
-    <div className="flex justify-center gap-1.5 py-2.5 bg-white">
-      {banners.map((_, i) => (
-        <button key={i} onClick={() => goTo(i)}
-          className="rounded-full transition-all duration-300"
-          style={{
-            width: i === idx ? 20 : 7,
-            height: 7,
-            backgroundColor: i === idx ? 'var(--color-primary)' : '#d1d5db',
-          }} />
-      ))}
-    </div>
-  ) : null
 
   function SlotImg({ b, visible }) {
     const Tag = b.link_url ? 'a' : 'div'
@@ -78,39 +63,26 @@ export default function BannerSlider() {
   }
 
   return (
-    <>
-      {/* Mobile: single slider */}
-      <div className="md:hidden rounded-2xl overflow-hidden shadow-md select-none">
-        <div className="relative w-full overflow-hidden aspect-video"
-          onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-          {banners.map((b, i) => (
-            <SlotImg key={b.id} b={b} visible={i === idx} />
+    <div className="rounded-2xl overflow-hidden shadow-md select-none">
+      <div className="relative w-full overflow-hidden aspect-video md:aspect-21/9"
+        onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+        {banners.map((b, i) => (
+          <SlotImg key={b.id} b={b} visible={i === idx} />
+        ))}
+      </div>
+      {n > 1 && (
+        <div className="flex justify-center gap-1.5 py-2.5 bg-white">
+          {banners.map((_, i) => (
+            <button key={i} onClick={() => goTo(i)}
+              className="rounded-full transition-all duration-300"
+              style={{
+                width: i === idx ? 20 : 7,
+                height: 7,
+                backgroundColor: i === idx ? 'var(--color-primary)' : '#d1d5db',
+              }} />
           ))}
         </div>
-        {dots}
-      </div>
-
-      {/* Desktop: 2 slots side-by-side, slide ทีละ 1 ภาพ */}
-      <div className="hidden md:block select-none shadow-md rounded-2xl overflow-hidden">
-        <div className="flex h-56">
-          <div className="relative flex-1 overflow-hidden">
-            {banners.map((b, i) => (
-              <SlotImg key={b.id} b={b} visible={i === idx} />
-            ))}
-          </div>
-          {n > 1 && (
-            <>
-              <div className="w-px bg-white/30 shrink-0" />
-              <div className="relative flex-1 overflow-hidden">
-                {banners.map((b, i) => (
-                  <SlotImg key={b.id} b={b} visible={i === rightIdx} />
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-        {dots}
-      </div>
-    </>
+      )}
+    </div>
   )
 }

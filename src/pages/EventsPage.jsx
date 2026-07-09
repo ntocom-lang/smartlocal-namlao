@@ -264,7 +264,7 @@ export default function EventsPage() {
   const [activeTab, setActiveTab] = useState('upcoming') // 'upcoming' | 'past'
 
   useEffect(() => {
-    window.scrollTo(0, 0)
+    document.querySelector('main')?.scrollTo(0, 0)
   }, [])
 
   useEffect(() => {
