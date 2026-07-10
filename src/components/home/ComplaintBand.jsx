@@ -1,57 +1,42 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { ChevronRight } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
-import {
-  Lightbulb, Wrench, Bug, Scissors, Trash2, Droplets, Wind, Waves,
-  Package, Shield, Megaphone, Volume2, Building2, CreditCard, Axe,
-  PawPrint, FlameKindling, Phone, HelpCircle, ChevronRight,
-} from 'lucide-react'
 
-const CATEGORY_ICON = {
-  light: Lightbulb, road: Wrench, mosquito: Bug, tree: Scissors,
-  trash: Trash2, water_supply: Droplets, drain: Wind, flood: Waves,
-  borrow_equipment: Package, corruption: Shield, grievance: Megaphone,
-  noise: Volume2, building: Building2, tax: CreditCard, canal: Axe,
-  animals: PawPrint, fire: FlameKindling, phone_complaint: Phone,
-  waste_water: Droplets, other: HelpCircle,
+const FALLBACK_EMOJI = {
+  light: '💡', road: '🔧', mosquito: '🦟', tree: '✂️',
+  trash: '🗑️', water_supply: '💧', drain: '🌀', flood: '🌊',
+  borrow_equipment: '📦', corruption: '🛡️', grievance: '📢',
+  noise: '🔊', building: '🏢', tax: '💳', canal: '⛏️',
+  animals: '🐕', fire: '🔥', phone_complaint: '📞',
+  waste_water: '💧', other: '❓',
 }
 
 const DEFAULT_CATEGORIES = [
-  { value: 'light',       label: 'ไฟฟ้าสาธารณะ' },
-  { value: 'road',        label: 'ถนน / ทางเท้า' },
-  { value: 'trash',       label: 'ขยะ / ความสะอาด' },
-  { value: 'drain',       label: 'ท่อระบายน้ำ' },
-  { value: 'mosquito',    label: 'พ่นยุง' },
-  { value: 'corruption',  label: 'แจ้งทุจริต' },
-  { value: 'other',       label: 'อื่นๆ' },
+  { value: 'light',      label: 'ไฟฟ้าสาธารณะ', emoji: '💡' },
+  { value: 'road',       label: 'ถนน / ทางเท้า', emoji: '🔧' },
+  { value: 'trash',      label: 'ขยะ / ความสะอาด', emoji: '🗑️' },
+  { value: 'drain',      label: 'ท่อระบายน้ำ', emoji: '🌀' },
+  { value: 'mosquito',   label: 'พ่นยุง', emoji: '🦟' },
+  { value: 'corruption', label: 'แจ้งทุจริต', emoji: '🛡️' },
+  { value: 'other',      label: 'อื่นๆ', emoji: '❓' },
 ]
 
 export default function ComplaintBand() {
   const { tenant } = useTenant()
   const navigate = useNavigate()
   const [cats, setCats] = useState(DEFAULT_CATEGORIES)
-  const [catCounts, setCatCounts] = useState({})
 
   useEffect(() => {
     if (!tenant?.id) return
-    supabase.from('complaint_categories').select('value, label')
+    supabase.from('complaint_categories').select('value, label, emoji, color')
       .eq('municipality_id', tenant.id).eq('is_active', true).order('sort_order')
       .then(({ data }) => { if (data?.length) setCats(data) })
       .catch(() => {})
-    supabase.from('complaints').select('category')
-      .eq('municipality_id', tenant.id)
-      .order('created_at', { ascending: false }).limit(300)
-      .then(({ data }) => {
-        const c = {}
-        ;(data ?? []).forEach(r => { c[r.category] = (c[r.category] ?? 0) + 1 })
-        setCatCounts(c)
-      })
   }, [tenant?.id])
 
-  const topCats = useMemo(() =>
-    [...cats].sort((a, b) => (catCounts[b.value] ?? 0) - (catCounts[a.value] ?? 0))
-  , [cats, catCounts])
+  const topCats = cats
 
   return (
     <div className="rounded-2xl overflow-hidden shadow-xl relative"
@@ -72,16 +57,22 @@ export default function ComplaintBand() {
         </div>
 
         {/* Mobile: horizontal scroll */}
-        <div className="flex gap-5 overflow-x-auto pb-1 md:hidden" style={{ scrollbarWidth: 'none' }}>
+        <div className="flex gap-4 overflow-x-auto pb-1 md:hidden" style={{ scrollbarWidth: 'none' }}>
           {topCats.map(cat => {
-            const Icon = CATEGORY_ICON[cat.value] ?? HelpCircle
+            const emoji = cat.emoji || FALLBACK_EMOJI[cat.value] || '📋'
+            const color = cat.color || '#ffffff'
             return (
               <button key={cat.value}
                 onClick={() => navigate(`/request?category=${cat.value}`)}
-                className="flex flex-col items-center gap-2 shrink-0 active:scale-95 transition-transform">
+                className="flex flex-col items-center gap-1.5 shrink-0 active:scale-95 transition-transform">
                 <div className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-md"
-                  style={{ background: 'rgba(255,255,255,0.45)', border: '1px solid rgba(255,255,255,0.6)' }}>
-                  <Icon size={26} className="text-amber-700" />
+                  style={{
+                    backgroundColor: color + '22',
+                    border: `1.5px solid ${color}55`,
+                    backdropFilter: 'blur(4px)',
+                    boxShadow: `0 3px 10px ${color}30, inset 0 1px 0 rgba(255,255,255,0.5)`,
+                  }}>
+                  <span className="text-[1.75rem] leading-none select-none">{emoji}</span>
                 </div>
                 <p className="text-amber-900 text-[10px] font-semibold text-center w-14 leading-tight">{cat.label}</p>
               </button>
@@ -90,16 +81,22 @@ export default function ComplaintBand() {
         </div>
 
         {/* Desktop: compact grid */}
-        <div className="hidden md:grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(topCats.length, 7)}, minmax(0, 1fr))` }}>
+        <div className="hidden md:grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(topCats.length, 8)}, minmax(0, 1fr))` }}>
           {topCats.map(cat => {
-            const Icon = CATEGORY_ICON[cat.value] ?? HelpCircle
+            const emoji = cat.emoji || FALLBACK_EMOJI[cat.value] || '📋'
+            const color = cat.color || '#ffffff'
             return (
               <button key={cat.value}
                 onClick={() => navigate(`/request?category=${cat.value}`)}
-                className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-white/20 active:scale-95 transition-all">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-sm"
-                  style={{ background: 'rgba(255,255,255,0.45)', border: '1px solid rgba(255,255,255,0.6)' }}>
-                  <Icon size={20} className="text-amber-700" />
+                className="flex flex-col items-center gap-1.5 p-1.5 rounded-xl hover:bg-white/15 active:scale-95 transition-all">
+                <div className="w-11 h-11 rounded-2xl flex items-center justify-center"
+                  style={{
+                    backgroundColor: color + '22',
+                    border: `1.5px solid ${color}55`,
+                    backdropFilter: 'blur(4px)',
+                    boxShadow: `0 2px 8px ${color}25, inset 0 1px 0 rgba(255,255,255,0.5)`,
+                  }}>
+                  <span className="text-[1.4rem] leading-none select-none">{emoji}</span>
                 </div>
                 <p className="text-amber-900 text-[10px] font-semibold text-center leading-tight">{cat.label}</p>
               </button>

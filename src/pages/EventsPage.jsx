@@ -12,7 +12,7 @@ const CATEGORY_COLOR = {
 
 const AUDIENCE_LABEL = {
   public:     'ประชาชน',
-  staff:      'เทศบาล',
+  staff:      'เจ้าหน้าที่',
   management: 'ผู้บริหาร',
   council:    'สภาเทศบาล',
 }
@@ -177,7 +177,7 @@ function CalendarView({ events, onSelectEvent }) {
           <div key={key} className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
             <span className="text-[11px] text-gray-400">
-              {key === 'public' ? 'ประชาชน' : key === 'staff' ? 'เทศบาล' : key === 'management' ? 'ผู้บริหาร' : 'สภาเทศบาล'}
+              {AUDIENCE_LABEL[key] ?? key}
             </span>
           </div>
         ))}

@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Plus, X, Pencil, Users, Wallet, Building2 } from 'lucide-react'
+import { Plus, X, Pencil, Check } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
 const inp = 'w-full px-3 py-2.5 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent'
-const sel = inp + ' appearance-none'
 
 const ROLES = {
   fleet_admin:  'ผู้ดูแลระบบ (เต็มสิทธิ์)',
@@ -28,36 +27,65 @@ function Tab({ id, active, label, onClick }) {
 
 /* ── กอง/หน่วยงาน ─────────────────────────────────────── */
 function DeptTab({ tenant, depts, setDepts }) {
-  const [form, setForm]   = useState({ name: '', short_name: '' })
+  const [form, setForm]     = useState({ name: '', short_name: '' })
   const [editId, setEditId] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(null)
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
   async function handleSave() {
-    if (!form.name) return alert('กรุณากรอกชื่อกอง')
+    if (!form.name.trim()) return alert('กรุณากรอกชื่อกอง')
     setSaving(true)
     if (editId) {
       const { data, error } = await supabase.from('fleet_departments')
-        .update({ name: form.name, short_name: form.short_name || null })
+        .update({ name: form.name.trim(), short_name: form.short_name.trim() || null })
         .eq('id', editId).select().single()
-      if (!error) setDepts(prev => prev.map(d => d.id === editId ? data : d))
-      else alert(error.message)
+      if (!error) {
+        setDepts(prev => prev.map(d => d.id === editId ? data : d))
+        cancelEdit()
+      } else {
+        alert('บันทึกไม่สำเร็จ: ' + error.message)
+      }
     } else {
       const code = 'dept_' + Date.now().toString(36)
       const { data, error } = await supabase.from('fleet_departments').insert({
-        municipality_id: tenant.id, name: form.name,
-        short_name: form.short_name || null, code,
+        municipality_id: tenant.id, name: form.name.trim(),
+        short_name: form.short_name.trim() || null, code,
         sort_order: depts.length,
       }).select().single()
-      if (!error) setDepts(prev => [...prev, data])
-      else alert(error.message)
+      if (!error) {
+        setDepts(prev => [...prev, data])
+        setForm({ name: '', short_name: '' })
+      } else {
+        alert('เพิ่มไม่สำเร็จ: ' + error.message)
+      }
     }
-    setSaving(false); setEditId(null); setForm({ name: '', short_name: '' })
+    setSaving(false)
+  }
+
+  async function handleDelete(d) {
+    if (!confirm(`ลบกอง "${d.name}"?\n\nยานพาหนะที่ผูกกับกองนี้จะยังคงอยู่ แต่ไม่มีกองกำกับ`)) return
+    setDeleting(d.id)
+    const { error } = await supabase.from('fleet_departments').delete().eq('id', d.id)
+    if (!error) {
+      setDepts(prev => prev.filter(x => x.id !== d.id))
+      if (editId === d.id) cancelEdit()
+    } else {
+      alert('ลบไม่สำเร็จ: ' + error.message)
+    }
+    setDeleting(null)
   }
 
   function startEdit(d) {
-    setEditId(d.id); setForm({ name: d.name, short_name: d.short_name ?? '' })
+    setEditId(d.id)
+    setForm({ name: d.name, short_name: d.short_name ?? '' })
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  function cancelEdit() {
+    setEditId(null)
+    setForm({ name: '', short_name: '' })
   }
 
   return (
@@ -67,16 +95,18 @@ function DeptTab({ tenant, depts, setDepts }) {
         <div className="grid grid-cols-3 gap-3">
           <div className="col-span-2">
             <label className="text-xs font-semibold text-gray-600 mb-1 block">ชื่อกอง *</label>
-            <input value={form.name} onChange={set('name')} placeholder="กองช่าง" className={inp} />
+            <input value={form.name} onChange={set('name')} placeholder="กองช่าง" className={inp}
+              onKeyDown={e => e.key === 'Enter' && handleSave()} />
           </div>
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">ชื่อย่อ</label>
-            <input value={form.short_name} onChange={set('short_name')} placeholder="กช." className={inp} />
+            <input value={form.short_name} onChange={set('short_name')} placeholder="กช." className={inp}
+              onKeyDown={e => e.key === 'Enter' && handleSave()} />
           </div>
         </div>
         <div className="flex gap-2">
           {editId && (
-            <button onClick={() => { setEditId(null); setForm({ name: '', short_name: '', code: '' }) }}
+            <button onClick={cancelEdit}
               className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-gray-100 text-gray-600">
               ยกเลิก
             </button>
@@ -89,16 +119,33 @@ function DeptTab({ tenant, depts, setDepts }) {
         </div>
       </div>
 
+      {depts.length === 0 && (
+        <p className="text-center text-sm text-gray-400 py-6">ยังไม่มีกอง กรอกชื่อกองด้านบนแล้วกด "เพิ่มกอง"</p>
+      )}
+
       <div className="space-y-2">
-        {depts.map((d, i) => (
-          <div key={d.id} className="flex items-center justify-between bg-white rounded-xl border border-gray-100 px-4 py-3">
+        {depts.map(d => (
+          <div key={d.id} className={`flex items-center justify-between bg-white rounded-xl border px-4 py-3 transition-colors ${
+            editId === d.id ? 'border-blue-300 bg-blue-50/40' : 'border-gray-100'
+          }`}>
             <div>
               <p className="text-sm font-semibold text-gray-800">{d.name}</p>
-              <p className="text-[10px] text-gray-400">{d.short_name ? `${d.short_name} · ` : ''}{d.code}</p>
+              {(d.short_name || d.code) && (
+                <p className="text-[10px] text-gray-400">{d.short_name ? `${d.short_name} · ` : ''}{d.code}</p>
+              )}
             </div>
-            <button onClick={() => startEdit(d)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
-              <Pencil size={13} />
-            </button>
+            <div className="flex gap-1">
+              <button onClick={() => startEdit(d)} disabled={!!deleting}
+                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors">
+                <Pencil size={13} />
+              </button>
+              <button onClick={() => handleDelete(d)} disabled={!!deleting}
+                className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors">
+                {deleting === d.id
+                  ? <div className="w-3 h-3 border-2 border-red-300 border-t-transparent rounded-full animate-spin" />
+                  : <X size={13} />}
+              </button>
+            </div>
           </div>
         ))}
       </div>
@@ -135,6 +182,7 @@ function BudgetTab({ tenant, depts }) {
       const { data, error } = await supabase.from('fleet_budgets')
         .update({ budget_amount: amount }).eq('id', existing.id).select().single()
       if (!error) setBudgets(prev => prev.map(b => b.id === existing.id ? data : b))
+      else alert(error.message)
     } else {
       const { data, error } = await supabase.from('fleet_budgets').insert({
         municipality_id: tenant.id, department_id: deptId,
@@ -143,10 +191,16 @@ function BudgetTab({ tenant, depts }) {
       if (!error) setBudgets(prev => [...prev, data])
       else alert(error.message)
     }
-    setSaving(false); setEditCell(null); setVal('')
+    setSaving(false)
+    setEditCell(null)
+    setVal('')
   }
 
   if (loading) return <div className="flex justify-center py-8"><div className="w-5 h-5 border-4 border-gray-200 rounded-full animate-spin" style={{ borderTopColor: 'var(--color-primary)' }} /></div>
+
+  if (depts.length === 0) return (
+    <p className="text-center text-sm text-gray-400 py-10">ยังไม่มีกอง ตั้งค่ากอง/หน่วยงานก่อน</p>
+  )
 
   return (
     <div className="space-y-3">
@@ -172,8 +226,13 @@ function BudgetTab({ tenant, depts }) {
                       {isEditing ? (
                         <div className="flex items-center gap-0.5">
                           <input autoFocus value={val} onChange={e => setVal(e.target.value)}
-                            type="number" className="w-16 px-1 py-1 text-xs text-gray-900 bg-white border border-blue-300 rounded-lg focus:outline-none"
-                            onKeyDown={e => { if (e.key === 'Enter') handleSave(d.id, m); if (e.key === 'Escape') setEditCell(null) }} />
+                            type="number" min="0"
+                            className="w-14 px-1 py-1 text-xs text-gray-900 bg-white border border-blue-300 rounded-lg focus:outline-none"
+                            onKeyDown={e => { if (e.key === 'Enter') handleSave(d.id, m); if (e.key === 'Escape') { setEditCell(null); setVal('') } }} />
+                          <button onClick={() => handleSave(d.id, m)} disabled={saving}
+                            className="w-5 h-5 flex items-center justify-center rounded-md bg-blue-500 text-white disabled:opacity-50 shrink-0">
+                            <Check size={10} strokeWidth={3} />
+                          </button>
                         </div>
                       ) : (
                         <button onClick={() => { setEditCell({ dept_id: d.id, month: m }); setVal(amt?.toString() ?? '') }}
@@ -189,14 +248,14 @@ function BudgetTab({ tenant, depts }) {
           </tbody>
         </table>
       </div>
-      <p className="text-[10px] text-gray-400">คลิกที่ช่องเพื่อแก้ไข · Enter เพื่อบันทึก · Esc เพื่อยกเลิก</p>
+      <p className="text-[10px] text-gray-400">คลิกที่ช่องเพื่อแก้ไข · กด ✓ หรือ Enter เพื่อบันทึก · Esc เพื่อยกเลิก</p>
     </div>
   )
 }
 
 /* ── สิทธิ์ผู้ใช้ ──────────────────────────────────────── */
 function UsersTab({ tenant, depts }) {
-  const [users,    setUsers]    = useState([])   // คนที่มี fleet_role แล้ว
+  const [users,    setUsers]    = useState([])
   const [loading,  setLoading]  = useState(true)
   const [saving,   setSaving]   = useState(null)
   const [showPick, setShowPick] = useState(false)
@@ -226,29 +285,40 @@ function UsersTab({ tenant, depts }) {
       .update({ fleet_role: 'fleet_staff' }).eq('id', profile.id)
       .select('id, full_name, email, fleet_role, fleet_department_id').single()
     if (!error) {
-      setUsers(prev => [...prev, data].sort((a, b) => a.full_name.localeCompare(b.full_name, 'th')))
+      setUsers(prev => [...prev, data].sort((a, b) => (a.full_name ?? '').localeCompare(b.full_name ?? '', 'th')))
       setAllProfiles(prev => prev.filter(p => p.id !== profile.id))
+    } else {
+      alert('เพิ่มผู้ใช้ไม่สำเร็จ: ' + error.message)
     }
   }
 
   async function removeUser(user) {
     if (!confirm(`ยืนยันลบ "${user.full_name}" ออกจากระบบยานพาหนะ?`)) return
     setSaving(user.id)
-    await supabase.from('profiles').update({ fleet_role: null, fleet_department_id: null }).eq('id', user.id)
-    setUsers(prev => prev.filter(u => u.id !== user.id))
+    const { error } = await supabase.from('profiles')
+      .update({ fleet_role: null, fleet_department_id: null }).eq('id', user.id)
+    if (!error) {
+      setUsers(prev => prev.filter(u => u.id !== user.id))
+    } else {
+      alert('ลบไม่สำเร็จ: ' + error.message)
+    }
     setSaving(null)
   }
 
   async function update(id, field, value) {
     setSaving(id + field)
-    await supabase.from('profiles').update({ [field]: value || null }).eq('id', id)
-    setUsers(prev => prev.map(u => u.id === id ? { ...u, [field]: value || null } : u))
+    const { error } = await supabase.from('profiles').update({ [field]: value || null }).eq('id', id)
+    if (!error) {
+      setUsers(prev => prev.map(u => u.id === id ? { ...u, [field]: value || null } : u))
+    } else {
+      alert('บันทึกไม่สำเร็จ: ' + error.message)
+    }
     setSaving(null)
   }
 
   const filtered = allProfiles.filter(p =>
-    !search || p.full_name?.toLowerCase().includes(search.toLowerCase()) ||
-    p.email?.toLowerCase().includes(search.toLowerCase())
+    !search || (p.full_name ?? '').toLowerCase().includes(search.toLowerCase()) ||
+    (p.email ?? '').toLowerCase().includes(search.toLowerCase())
   )
 
   const visibleUsers = users.filter(u => {
@@ -302,6 +372,9 @@ function UsersTab({ tenant, depts }) {
       {users.length === 0 && (
         <div className="text-center py-10 text-gray-400 text-sm">ยังไม่มีผู้ใช้ กด "เพิ่มผู้ใช้" เพื่อเริ่มต้น</div>
       )}
+      {users.length > 0 && visibleUsers.length === 0 && (
+        <div className="text-center py-6 text-gray-400 text-sm">ไม่มีผู้ใช้ตามเงื่อนไขที่เลือก</div>
+      )}
 
       <div className="space-y-2">
         {visibleUsers.map(u => (
@@ -311,12 +384,14 @@ function UsersTab({ tenant, depts }) {
                 {u.full_name?.[0] ?? '?'}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-800 truncate">{u.full_name}</p>
-                <p className="text-[10px] text-gray-400 truncate">{u.email}</p>
+                <p className="text-sm font-semibold text-gray-800 truncate">{u.full_name ?? '(ไม่มีชื่อ)'}</p>
+                <p className="text-[10px] text-gray-400 truncate">{u.email ?? '—'}</p>
               </div>
               <button onClick={() => removeUser(u)} disabled={saving === u.id}
                 className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors shrink-0">
-                <X size={14} />
+                {saving === u.id
+                  ? <div className="w-3.5 h-3.5 border-2 border-red-300 border-t-transparent rounded-full animate-spin" />
+                  : <X size={14} />}
               </button>
             </div>
             <div className="grid grid-cols-2 gap-2">
@@ -324,7 +399,7 @@ function UsersTab({ tenant, depts }) {
                 <label className="text-[10px] font-semibold text-gray-500 mb-1 block">สิทธิ์</label>
                 <select value={u.fleet_role ?? ''} onChange={e => update(u.id, 'fleet_role', e.target.value)}
                   disabled={saving === u.id + 'fleet_role'}
-                  className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-lg bg-white text-gray-900 focus:outline-none appearance-none">
+                  className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-lg bg-white text-gray-900 focus:outline-none appearance-none disabled:opacity-60">
                   {Object.entries(ROLES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </select>
               </div>
@@ -332,7 +407,7 @@ function UsersTab({ tenant, depts }) {
                 <label className="text-[10px] font-semibold text-gray-500 mb-1 block">กอง</label>
                 <select value={u.fleet_department_id ?? ''} onChange={e => update(u.id, 'fleet_department_id', e.target.value)}
                   disabled={saving === u.id + 'fleet_department_id'}
-                  className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-lg bg-white text-gray-900 focus:outline-none appearance-none">
+                  className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-lg bg-white text-gray-900 focus:outline-none appearance-none disabled:opacity-60">
                   <option value="">— ไม่ระบุ —</option>
                   {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
@@ -358,7 +433,9 @@ function UsersTab({ tenant, depts }) {
             </div>
             <div className="flex-1 overflow-y-auto px-5 pb-5 space-y-1">
               {filtered.length === 0 && (
-                <p className="text-center text-sm text-gray-400 py-6">ไม่พบผู้ใช้</p>
+                <p className="text-center text-sm text-gray-400 py-6">
+                  {allProfiles.length === 0 ? 'ผู้ใช้ทุกคนมีสิทธิ์ระบบยานพาหนะแล้ว' : 'ไม่พบผู้ใช้'}
+                </p>
               )}
               {filtered.map(p => (
                 <button key={p.id} onClick={() => addUser(p)}
@@ -367,8 +444,8 @@ function UsersTab({ tenant, depts }) {
                     {p.full_name?.[0] ?? '?'}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-800 truncate">{p.full_name}</p>
-                    <p className="text-[10px] text-gray-400 truncate">{p.email}</p>
+                    <p className="text-sm font-semibold text-gray-800 truncate">{p.full_name ?? '(ไม่มีชื่อ)'}</p>
+                    <p className="text-[10px] text-gray-400 truncate">{p.email ?? '—'}</p>
                   </div>
                   <Plus size={14} className="text-blue-400 shrink-0" />
                 </button>
@@ -401,44 +478,69 @@ function VehicleTypesTab({ tenant }) {
     if (!tenant?.id) return
     supabase.from('fleet_vehicle_types').select('*')
       .eq('municipality_id', tenant.id).order('sort_order')
-      .then(({ data }) => setTypes(data?.length ? data : []))
+      .then(({ data }) => setTypes(data ?? []))
       .finally(() => setLoading(false))
   }, [tenant?.id])
 
   async function handleSave() {
-    if (!form.label) return alert('กรุณากรอกชื่อประเภท')
+    if (!form.label.trim()) return alert('กรุณากรอกชื่อประเภท')
     setSaving(true)
     if (editId) {
       const { data, error } = await supabase.from('fleet_vehicle_types')
-        .update({ label: form.label }).eq('id', editId).select().single()
-      if (!error) setTypes(prev => prev.map(t => t.id === editId ? data : t))
-      else alert(error.message)
+        .update({ label: form.label.trim() }).eq('id', editId).select().single()
+      if (!error) {
+        setTypes(prev => prev.map(t => t.id === editId ? data : t))
+        setEditId(null)
+        setForm({ label: '' })
+      } else {
+        alert('บันทึกไม่สำเร็จ: ' + error.message)
+      }
     } else {
       const { data, error } = await supabase.from('fleet_vehicle_types').insert({
-        municipality_id: tenant.id, value: 'vt_' + Date.now().toString(36), label: form.label, sort_order: types.length,
+        municipality_id: tenant.id,
+        value: 'vt_' + Date.now().toString(36),
+        label: form.label.trim(),
+        sort_order: types.length,
       }).select().single()
-      if (!error) setTypes(prev => [...prev, data])
-      else alert(error.message)
+      if (!error) {
+        setTypes(prev => [...prev, data])
+        setForm({ label: '' })
+      } else {
+        alert('เพิ่มไม่สำเร็จ: ' + error.message)
+      }
     }
-    setSaving(false); setEditId(null); setForm({ label: '' })
+    setSaving(false)
   }
 
   async function handleDelete(id) {
     if (!confirm('ลบประเภทนี้?')) return
-    await supabase.from('fleet_vehicle_types').delete().eq('id', id)
-    setTypes(prev => prev.filter(t => t.id !== id))
+    const { error } = await supabase.from('fleet_vehicle_types').delete().eq('id', id)
+    if (!error) setTypes(prev => prev.filter(t => t.id !== id))
+    else alert('ลบไม่สำเร็จ: ' + error.message)
   }
 
   async function seedDefaults() {
-    if (!confirm('เพิ่มประเภทมาตรฐานทั้งหมด?')) return
+    const label = types.length === 0 ? 'เพิ่มประเภทมาตรฐานทั้งหมด?' : 'เพิ่มประเภทมาตรฐานที่ยังไม่มี?'
+    if (!confirm(label)) return
     setSaving(true)
     const rows = DEFAULT_TYPES.map((t, i) => ({
-      municipality_id: tenant.id, value: t.value, label: t.label, sort_order: i,
+      municipality_id: tenant.id, value: t.value, label: t.label, sort_order: types.length + i,
     }))
     const { data, error } = await supabase.from('fleet_vehicle_types')
-      .upsert(rows, { onConflict: 'municipality_id,value' }).select()
-    if (!error) setTypes(data ?? [])
-    else alert(error.message)
+      .upsert(rows, { onConflict: 'municipality_id,value' }).select().order('sort_order')
+    if (!error && data) {
+      setTypes(prev => {
+        const merged = [...prev]
+        data.forEach(d => {
+          const idx = merged.findIndex(t => t.id === d.id)
+          if (idx >= 0) merged[idx] = d
+          else merged.push(d)
+        })
+        return merged.sort((a, b) => a.sort_order - b.sort_order)
+      })
+    } else if (error) {
+      alert(error.message)
+    }
     setSaving(false)
   }
 
@@ -451,7 +553,8 @@ function VehicleTypesTab({ tenant }) {
         <div>
           <label className="text-xs font-semibold text-gray-600 mb-1 block">ชื่อประเภท *</label>
           <input value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))}
-            placeholder="เช่น รถกระบะ, รถตู้" className={inp} />
+            placeholder="เช่น รถกระบะ, รถตู้" className={inp}
+            onKeyDown={e => e.key === 'Enter' && handleSave()} />
         </div>
         <div className="flex gap-2">
           {editId && (
@@ -465,21 +568,24 @@ function VehicleTypesTab({ tenant }) {
             style={{ backgroundColor: 'var(--color-primary)' }}>
             {saving ? 'กำลังบันทึก...' : editId ? 'อัปเดต' : 'เพิ่มประเภท'}
           </button>
-          {!editId && types.length === 0 && (
+          {!editId && (
             <button onClick={seedDefaults} disabled={saving}
-              className="px-4 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50">
-              + ค่าเริ่มต้น
+              className="px-4 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+              {types.length === 0 ? '+ ค่าเริ่มต้น' : '+ มาตรฐาน'}
             </button>
           )}
         </div>
       </div>
 
+      {types.length === 0 && (
+        <p className="text-center text-sm text-gray-400 py-6">ยังไม่มีประเภท กด "+ ค่าเริ่มต้น" เพื่อเพิ่มทั้งหมด</p>
+      )}
+
       <div className="space-y-2">
-        {types.length === 0 && (
-          <p className="text-center text-sm text-gray-400 py-6">ยังไม่มีประเภท กด "+ ค่าเริ่มต้น" เพื่อเพิ่มทั้งหมด</p>
-        )}
         {types.map(t => (
-          <div key={t.id} className="flex items-center justify-between bg-white rounded-xl border border-gray-100 px-4 py-3">
+          <div key={t.id} className={`flex items-center justify-between bg-white rounded-xl border px-4 py-3 transition-colors ${
+            editId === t.id ? 'border-blue-300 bg-blue-50/40' : 'border-gray-100'
+          }`}>
             <p className="text-sm font-semibold text-gray-800">{t.label}</p>
             <div className="flex gap-1">
               <button onClick={() => { setEditId(t.id); setForm({ label: t.label }) }}

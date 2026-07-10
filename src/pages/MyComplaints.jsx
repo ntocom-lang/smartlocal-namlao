@@ -60,7 +60,7 @@ function SlaBadge({ dueDate, status }) {
   )
 }
 
-const CATEGORY_LABEL = {
+const DEFAULT_CATEGORY_LABEL = {
   road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าส่องสว่าง',
   trash: 'ขยะ/ความสะอาด', water: 'น้ำประปา',
   flood: 'น้ำท่วม/ระบายน้ำ', tree: 'ตัดต้นไม้',
@@ -73,7 +73,7 @@ const CATEGORY_LABEL = {
   animals: 'สุนัขและแมวจรจัด', other: 'อื่นๆ',
 }
 
-const CATEGORY_EMOJI = {
+const DEFAULT_CATEGORY_EMOJI = {
   road: '🛣️', light: '💡', trash: '🗑️', water: '🚰',
   flood: '🌊', tree: '🌳', noise: '📢', drain: '🕳️',
   waste_water: '💧', suction: '🚛', manhole: '⚙️', vendor: '🏪',
@@ -167,7 +167,7 @@ function StatusStepper({ status }) {
   )
 }
 
-function DetailSheet({ complaint: c, onClose, onAttachmentsChange }) {
+function DetailSheet({ complaint: c, onClose, onAttachmentsChange, catLabel = DEFAULT_CATEGORY_LABEL, catEmoji = DEFAULT_CATEGORY_EMOJI }) {
   const [newPhotos, setNewPhotos] = useState([]) // { file, preview }
   const [uploading, setUploading] = useState(false)
   const [freshAttachments, setFreshAttachments] = useState(null) // null = not fetched yet
@@ -243,8 +243,8 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange }) {
   }
 
   if (!c) return null
-  const categoryLabel = CATEGORY_LABEL[c.category] ?? c.category
-  const categoryEmoji = CATEGORY_EMOJI[c.category] ?? '📄'
+  const categoryLabel = catLabel[c.category] ?? c.category
+  const categoryEmoji = catEmoji[c.category] ?? '📄'
   const dateStr = new Date(c.created_at).toLocaleDateString('th-TH', {
     day: '2-digit', month: 'long', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
@@ -472,6 +472,8 @@ export default function MyComplaints() {
   const [complaints, setComplaints] = useState([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
+  const [catLabel, setCatLabel] = useState(DEFAULT_CATEGORY_LABEL)
+  const [catEmoji, setCatEmoji] = useState(DEFAULT_CATEGORY_EMOJI)
 
   function handleAttachmentsChange(id, newAttachments) {
     setComplaints(prev => prev.map(c => c.id === id ? { ...c, attachments: newAttachments } : c))
@@ -505,6 +507,24 @@ export default function MyComplaints() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
   }, [])
+
+  // ดึงหมวดหมู่ที่ Admin สร้างเองจาก DB มา merge กับค่า default
+  useEffect(() => {
+    if (!tenant?.id) return
+    supabase.from('complaint_categories').select('value, label, emoji').eq('municipality_id', tenant.id)
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          const lblMap = { ...DEFAULT_CATEGORY_LABEL }
+          const emoMap = { ...DEFAULT_CATEGORY_EMOJI }
+          for (const c of data) {
+            lblMap[c.value] = c.label
+            if (c.emoji) emoMap[c.value] = c.emoji
+          }
+          setCatLabel(lblMap)
+          setCatEmoji(emoMap)
+        }
+      })
+  }, [tenant?.id])
 
   useEffect(() => {
     if (!tenant?.id || !session?.user?.id) return
@@ -621,7 +641,7 @@ export default function MyComplaints() {
                 className="bg-gray-50 rounded-2xl border border-gray-100 p-4 cursor-pointer hover:bg-gray-100 transition-colors">
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <p className="font-bold text-gray-800 text-sm">
-                    {CATEGORY_EMOJI[searchResult.category] ?? '📄'} {CATEGORY_LABEL[searchResult.category] ?? searchResult.category}
+                    {catEmoji[searchResult.category] ?? '📄'} {catLabel[searchResult.category] ?? searchResult.category}
                   </p>
                   <StatusBadge status={searchResult.status} />
                 </div>
@@ -633,7 +653,7 @@ export default function MyComplaints() {
         </div>
 
         {selected && (
-          <DetailSheet complaint={selected} onClose={() => setSelected(null)} />
+          <DetailSheet complaint={selected} onClose={() => setSelected(null)} catLabel={catLabel} catEmoji={catEmoji} />
         )}
       </div>
     )
@@ -702,13 +722,13 @@ export default function MyComplaints() {
                 className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 cursor-pointer hover:shadow-md active:scale-[0.99] transition-all">
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 bg-gray-50">
-                    {CATEGORY_EMOJI[c.category] ?? '📄'}
+                    {catEmoji[c.category] ?? '📄'}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2 mb-0.5">
                       <p className="font-semibold text-gray-800 text-sm truncate">
                         <span className="text-gray-400 font-mono font-normal mr-1">{startIdx + i + 1}.</span>
-                        {CATEGORY_LABEL[c.category] ?? c.category}
+                        {catLabel[c.category] ?? c.category}
                       </p>
                       <ChevronRight size={14} className="text-gray-300 shrink-0" />
                     </div>
@@ -720,6 +740,16 @@ export default function MyComplaints() {
                       <SlaBadge dueDate={c.due_date} status={c.status} />
                       {c.ref_no && (
                         <span className="text-[11px] text-gray-400 font-mono">{c.ref_no}</span>
+                      )}
+                      {c.latitude && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-orange-50 text-orange-600 border border-orange-100" title="มีพิกัด GPS">
+                          <MapPin size={10} /> พิกัด
+                        </span>
+                      )}
+                      {c.attachments && c.attachments.length > 0 && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-100" title="มีภาพประกอบ">
+                          <Camera size={10} /> {c.attachments.length} ภาพ
+                        </span>
                       )}
                     </div>
                     <p className="text-[13px] text-gray-300 mt-1.5">
@@ -811,6 +841,8 @@ export default function MyComplaints() {
           complaint={selected}
           onClose={() => setSelected(null)}
           onAttachmentsChange={handleAttachmentsChange}
+          catLabel={catLabel}
+          catEmoji={catEmoji}
         />
       )}
       </div>

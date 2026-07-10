@@ -23,7 +23,7 @@ const DAY_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 const AUD_COLOR = {
   public: '#10b981', staff: '#3b82f6', management: '#8b5cf6', council: '#f59e0b',
 }
-const AUD_LABEL = { public: 'ประชาชน', staff: 'เทศบาล', management: 'ผู้บริหาร', council: 'สภาเทศบาล' }
+const AUD_LABEL = { public: 'ประชาชน', staff: 'เจ้าหน้าที่', management: 'ผู้บริหาร', council: 'สภาเทศบาล' }
 
 function MiniCalendar({ events }) {
   const navigate  = useNavigate()

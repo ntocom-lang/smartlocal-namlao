@@ -4,7 +4,7 @@ import {
   Inbox, FileText, CheckSquare, BarChart2, LogOut,
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, AlignLeft, Calendar, Hash, RefreshCw,
-  Printer, PenLine, Search, Download, Wrench, Home, CalendarDays, TrendingUp, Images,
+  Printer, PenLine, Search, Download, Wrench, Home, CalendarDays, TrendingUp, Images, Camera,
   CreditCard, BadgeCheck, Banknote, Luggage, Star, Store, MoreHorizontal, Car,
 } from 'lucide-react'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
@@ -15,7 +15,6 @@ import EventsManager from '../components/admin/EventsManager'
 import ComplaintsManager from '../components/admin/ComplaintsManager'
 import ReportManager from '../components/admin/ReportManager'
 import TourismManager, { TourismReviewsAdmin } from '../components/admin/TourismManager'
-import BusinessRegistrationAdmin from '../components/admin/BusinessRegistrationAdmin'
 import PostsManager from '../components/staff/PostsManager'
 import FleetPage from './FleetPage'
 import { supabase } from '../lib/supabase'
@@ -73,7 +72,6 @@ const MODULE_GROUPS = [
       { key: 'posts',            label: 'ข่าวสาร / กิจกรรม',  Icon: Images,  color: '#059669' },
       { key: 'tourism',          label: 'เที่ยว กิน พัก ชอบ', Icon: Luggage, color: '#d97706' },
       { key: 'tourism-reviews',  label: 'รีวิวสถานที่',        Icon: Star,    color: '#f59e0b' },
-      { key: 'business-register', label: 'ลงทะเบียนธุรกิจ',   Icon: Store,   color: '#0891b2' },
     ],
   },
 ]
@@ -1824,7 +1822,7 @@ const C_NEXT = {
   received:    { label: 'เริ่มดำเนินการ', next: 'in_progress' },
   in_progress: { label: 'ปิดงาน',        next: 'done' },
 }
-const C_CAT = {
+let C_CAT = {
   road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าส่องสว่าง', trash: 'ขยะ/ความสะอาด',
   water: 'น้ำประปา', flood: 'น้ำท่วม/ระบายน้ำ', tree: 'ต้นไม้/สวนสาธารณะ',
   noise: 'เหตุรำคาญ', other: 'อื่นๆ',
@@ -1833,6 +1831,19 @@ const C_CAT = {
 function ComplaintsStaffModule({ tenant, staffId }) {
   const [complaints, setComplaints] = useState([])
   const [loading, setLoading]       = useState(true)
+
+  // ดึงหมวดหมู่ที่ Admin สร้างเอง merge เข้า C_CAT
+  const [, setCatVer] = useState(0)
+  useEffect(() => {
+    if (!tenant?.id) return
+    supabase.from('complaint_categories').select('value, label').eq('municipality_id', tenant.id)
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          for (const c of data) C_CAT[c.value] = c.label
+          setCatVer(v => v + 1)
+        }
+      })
+  }, [tenant?.id])
   const [search, setSearch]         = useState('')
   const [filterStatus, setFilterStatus] = useState('all')
   const [updating, setUpdating]     = useState(null)
@@ -1945,6 +1956,12 @@ function ComplaintsStaffModule({ tenant, staffId }) {
                     <div className="flex items-center gap-2 flex-wrap mb-1">
                       <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: st?.bg, color: st?.color }}>{st?.label}</span>
                       <span className="text-xs text-gray-400">{C_CAT[c.category] ?? c.category}</span>
+                      {c.latitude && (
+                        <span className="text-orange-500 shrink-0" title="มีพิกัด GPS"><MapPin size={11} /></span>
+                      )}
+                      {c.attachments && c.attachments.length > 0 && (
+                        <span className="text-blue-500 shrink-0" title="มีภาพประกอบ"><Camera size={11} /></span>
+                      )}
                       <span className="text-xs text-gray-300">·</span>
                       <span className="text-xs text-gray-400">{date}</span>
                     </div>
@@ -2301,7 +2318,6 @@ export default function StaffDashboard() {
           {activeModule === 'posts'            && <PostsManager />}
           {activeModule === 'tourism'          && <TourismManager tenant={tenant} />}
           {activeModule === 'tourism-reviews'  && <TourismReviewsAdmin tenant={tenant} />}
-          {activeModule === 'business-register' && <BusinessRegistrationAdmin tenant={tenant} />}
           {activeModule === 'fleet' && <FleetPage onBack={() => setActiveModule('home')} />}
 
         </main>

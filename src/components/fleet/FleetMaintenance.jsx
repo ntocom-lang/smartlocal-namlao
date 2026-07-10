@@ -22,8 +22,8 @@ const TYPES = {
 const EMPTY = {
   vehicle_id: '', technician_id: '',
   service_date: new Date().toISOString().slice(0,10),
-  maintenance_type: 'routine', description: '', cost: '',
-  vendor: '', odometer: '', next_service_km: '', next_service_date: '', notes: '',
+  maintenance_type: 'routine', other_type: '', description: '', cost: '',
+  vendor: '', odometer: '', next_service_km: '', next_service_date: '',
 }
 
 function DueSoonAlert({ records }) {
@@ -82,18 +82,19 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
       supabase.from('fleet_vehicles').select('id, name, license_plate')
         .eq('municipality_id', tenant.id).order('name'),
       supabase.from('profiles').select('id, full_name')
-        .eq('municipality_id', tenant.id).not('fleet_role', 'is', null).order('full_name'),
+        .eq('municipality_id', tenant.id).eq('fleet_role', 'fleet_staff').order('full_name'),
     ]).then(([{ data: v }, { data: s }]) => {
       setVehicles(v ?? [])
       setStaffList(s ?? [])
     })
   }, [tenant?.id])
 
-  useEffect(() => {
+  const SELECT_Q = '*, fleet_vehicles(name, license_plate), technician:profiles!fleet_maintenance_technician_id_fkey(id,full_name)'
+
+  function loadRecords() {
     if (!tenant?.id) return
     setLoading(true)
-    let q = supabase.from('fleet_maintenance')
-      .select('*, fleet_vehicles(name, license_plate), technician:profiles!fleet_maintenance_technician_id_fkey(id,full_name)')
+    let q = supabase.from('fleet_maintenance').select(SELECT_Q)
       .eq('municipality_id', tenant.id)
       .order('service_date', { ascending: false })
       .limit(100)
@@ -101,7 +102,9 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
     if (dateFrom) q = q.gte('service_date', dateFrom)
     if (dateTo)   q = q.lte('service_date', dateTo)
     q.then(({ data }) => setRecords(data ?? [])).finally(() => setLoading(false))
-  }, [tenant?.id, filterType, dateFrom, dateTo])
+  }
+
+  useEffect(() => { loadRecords() }, [tenant?.id, filterType, dateFrom, dateTo])
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
@@ -111,26 +114,38 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
   }
 
   async function handleSave() {
-    if (!form.vehicle_id || !form.description) return alert('กรุณากรอกข้อมูลที่จำเป็น')
+    const needDesc = form.maintenance_type !== 'other' || !form.other_type.trim()
+    if (!form.vehicle_id || (needDesc && !form.description)) return alert('กรุณากรอกข้อมูลที่จำเป็น')
+    if (form.maintenance_type === 'other' && !form.other_type.trim()) return alert('กรุณาระบุประเภท')
     setSaving(true)
-    const { data, error } = await supabase.from('fleet_maintenance').insert({
+    const { error } = await supabase.from('fleet_maintenance').insert({
       municipality_id:   tenant.id,
       vehicle_id:        form.vehicle_id,
       technician_id:     form.technician_id || null,
       service_date:      form.service_date,
       maintenance_type:  form.maintenance_type,
-      description:       form.description,
+      description:       form.maintenance_type === 'other' && form.other_type.trim()
+                           ? form.description.trim()
+                             ? `[${form.other_type.trim()}] ${form.description.trim()}`
+                             : form.other_type.trim()
+                           : form.description,
       cost:              parseFloat(form.cost) || 0,
       vendor:            form.vendor           || null,
       odometer:          form.odometer ? parseFloat(form.odometer) : null,
       next_service_km:   form.next_service_km  ? parseFloat(form.next_service_km) : null,
       next_service_date: form.next_service_date || null,
-      notes:             form.notes            || null,
-      created_by:        user?.id,
-    }).select('*, fleet_vehicles(name, license_plate), technician:profiles!fleet_maintenance_technician_id_fkey(id,full_name)').single()
-    if (!error) { setRecords(prev => [data, ...prev]); setModal(false); setForm(EMPTY) }
+      created_by:        user?.id ?? null,
+    })
+    if (!error) { setModal(false); setForm(EMPTY); loadRecords() }
     else alert(error.message)
     setSaving(false)
+  }
+
+  async function handleDelete(r) {
+    if (!confirm(`ลบรายการซ่อมบำรุง "${r.description}"?`)) return
+    const { error } = await supabase.from('fleet_maintenance').delete().eq('id', r.id)
+    if (!error) setRecords(prev => prev.filter(x => x.id !== r.id))
+    else alert('ลบไม่สำเร็จ: ' + error.message)
   }
 
   const totalCost = records.reduce((s, r) => s + (r.cost ?? 0), 0)
@@ -152,40 +167,27 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
 
       {/* Toolbar */}
       <div className="flex flex-wrap gap-2 items-center">
-        <div className="flex gap-1 flex-wrap">
-          <button onClick={() => setFilterType('all')}
-            className={`text-xs px-3 py-1.5 rounded-full font-semibold border transition-colors ${
-              filterType === 'all' ? 'bg-gray-800 text-white border-transparent' : 'bg-gray-50 text-gray-500 border-gray-200'}`}>
-            ทั้งหมด
+        <select value={filterType} onChange={e => setFilterType(e.target.value)}
+          className="text-xs border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none appearance-none">
+          <option value="all">ทุกประเภท</option>
+          {Object.entries(TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+        </select>
+        <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+          className="text-xs border border-gray-200 rounded-xl px-3 py-1.5 bg-white text-gray-700 focus:outline-none" />
+        <span className="text-xs text-gray-400">–</span>
+        <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+          className="text-xs border border-gray-200 rounded-xl px-3 py-1.5 bg-white text-gray-700 focus:outline-none" />
+        {(dateFrom || dateTo) && (
+          <button onClick={() => { setDateFrom(''); setDateTo('') }}
+            className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded-lg border border-gray-200">ล้าง</button>
+        )}
+        {canWrite && (
+          <button onClick={openModal}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white ml-auto"
+            style={{ backgroundColor: 'var(--color-primary)' }}>
+            <Plus size={15} /> บันทึกซ่อมบำรุง
           </button>
-          {Object.entries(TYPES).map(([k, v]) => (
-            <button key={k} onClick={() => setFilterType(k)}
-              className="text-xs px-3 py-1.5 rounded-full font-semibold border transition-colors"
-              style={filterType === k
-                ? { backgroundColor: v.color, color: '#fff', borderColor: 'transparent' }
-                : { backgroundColor: '#f9fafb', color: '#6b7280', borderColor: '#e5e7eb' }}>
-              {v.label}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-2 ml-auto flex-wrap">
-          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-            className="text-xs border border-gray-200 rounded-xl px-3 py-1.5 bg-white text-gray-700 focus:outline-none" />
-          <span className="text-xs text-gray-400">–</span>
-          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-            className="text-xs border border-gray-200 rounded-xl px-3 py-1.5 bg-white text-gray-700 focus:outline-none" />
-          {(dateFrom || dateTo) && (
-            <button onClick={() => { setDateFrom(''); setDateTo('') }}
-              className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded-lg border border-gray-200">ล้าง</button>
-          )}
-          {canWrite && (
-            <button onClick={openModal}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white"
-              style={{ backgroundColor: 'var(--color-primary)' }}>
-              <Plus size={15} /> บันทึกซ่อมบำรุง
-            </button>
-          )}
-        </div>
+        )}
       </div>
 
       {/* Records */}
@@ -201,7 +203,7 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr style={{ backgroundColor: '#1a3a5c' }}>
-                  {['ที่','วันที่','ยานพาหนะ','ประเภท','รายละเอียด','ค่าใช้จ่าย','อู่/ผู้รับจ้าง','ผู้รับผิดชอบ','ซ่อมถัดไป'].map(h => (
+                  {[...['ที่','วันที่','ยานพาหนะ','ประเภท','รายละเอียด','ค่าใช้จ่าย','อู่/ผู้รับจ้าง','ผู้รับผิดชอบ','ซ่อมถัดไป'], ...(isAdmin ? [''] : [])].map((h, i) => (
                     <th key={h} className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900 last:border-r-0 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -237,6 +239,14 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
                           ? <span className="text-blue-500">{thDate(r.next_service_date)}</span>
                           : <span className="text-gray-300">—</span>}
                       </td>
+                      {isAdmin && (
+                        <td className="px-4 py-2.5 text-center">
+                          <button onClick={() => handleDelete(r)}
+                            className="text-xs font-bold px-3 py-1 rounded border border-red-400 text-red-500 hover:bg-red-500 hover:text-white transition-colors">
+                            ลบ
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   )
                 })}
@@ -317,17 +327,34 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-semibold text-gray-600 mb-1 block">วันที่ซ่อม *</label>
-                  <input type="date" value={form.service_date} onChange={set('service_date')} className={inp} />
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1 block">วันที่ซ่อม *</label>
+                <input type="date" value={form.service_date} onChange={set('service_date')} className={inp} />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-2 block">ประเภท *</label>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(TYPES).map(([k, v]) => (
+                    <button key={k} type="button"
+                      onClick={() => setForm(f => ({ ...f, maintenance_type: k }))}
+                      className="text-xs px-3 py-1.5 rounded-full font-semibold border transition-colors"
+                      style={form.maintenance_type === k
+                        ? { backgroundColor: v.color, color: '#fff', borderColor: 'transparent' }
+                        : { backgroundColor: '#f9fafb', color: '#6b7280', borderColor: '#e5e7eb' }}>
+                      {v.label}
+                    </button>
+                  ))}
                 </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-600 mb-1 block">ประเภท *</label>
-                  <select value={form.maintenance_type} onChange={set('maintenance_type')} className={sel}>
-                    {Object.entries(TYPES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
-                  </select>
-                </div>
+                {form.maintenance_type === 'other' && (
+                  <input
+                    type="text"
+                    placeholder="ระบุประเภท..."
+                    value={form.other_type}
+                    onChange={set('other_type')}
+                    className={`mt-2 ${inp}`}
+                  />
+                )}
               </div>
               <div>
                 <label className="text-xs font-semibold text-gray-600 mb-1 block">รายละเอียด *</label>

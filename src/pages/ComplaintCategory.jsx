@@ -1,36 +1,25 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  ArrowLeft, Loader2,
-  Lightbulb, Trash2, TreePine, Droplets, Package, Megaphone, Bug,
-  Waves, Wind, Building2, Volume2, AlertTriangle, HelpCircle,
-  CreditCard, Scissors, PawPrint, Shield, FlameKindling, Phone,
-  Axe, Wrench, Zap, Construction,
-} from 'lucide-react'
+import { ArrowLeft, Loader2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 
-const CATEGORY_ICON = {
-  light:            Lightbulb,
-  road:             Wrench,
-  mosquito:         Bug,
-  tree:             Scissors,
-  trash:            Trash2,
-  water_supply:     Droplets,
-  drain:            Wind,
-  flood:            Waves,
-  borrow_equipment: Package,
-  corruption:       Shield,
-  grievance:        Megaphone,
-  noise:            Volume2,
-  building:         Building2,
-  tax:              CreditCard,
-  canal:            Axe,
-  animals:          PawPrint,
-  fire:             FlameKindling,
-  phone_complaint:  Phone,
-  waste_water:      Droplets,
-  other:            HelpCircle,
+const FALLBACK_EMOJI = {
+  light: '💡', road: '🔧', mosquito: '🦟', tree: '✂️',
+  trash: '🗑️', water_supply: '💧', drain: '🌀', flood: '🌊',
+  borrow_equipment: '📦', corruption: '🛡️', grievance: '📢',
+  noise: '🔊', building: '🏢', tax: '💳', canal: '⛏️',
+  animals: '🐕', fire: '🔥', phone_complaint: '📞',
+  waste_water: '💧', other: '❓',
+}
+
+const FALLBACK_COLOR = {
+  light: '#f59e0b', road: '#3b82f6', mosquito: '#10b981', tree: '#22c55e',
+  trash: '#6b7280', water_supply: '#06b6d4', drain: '#8b5cf6', flood: '#0ea5e9',
+  borrow_equipment: '#f97316', corruption: '#ef4444', grievance: '#ec4899',
+  noise: '#a855f7', building: '#64748b', tax: '#14b8a6', canal: '#78716c',
+  animals: '#f97316', fire: '#ef4444', phone_complaint: '#3b82f6',
+  waste_water: '#06b6d4', other: '#9ca3af',
 }
 
 const DEFAULT_CATEGORIES = [
@@ -119,13 +108,18 @@ export default function ComplaintCategory() {
         ) : (
           <div className="grid grid-cols-4 md:grid-cols-5 gap-x-3 gap-y-5">
             {categories.map((cat) => {
-              const Icon = CATEGORY_ICON[cat.value] ?? HelpCircle
+              const emoji = cat.emoji || FALLBACK_EMOJI[cat.value] || '📋'
+              const color = cat.color || FALLBACK_COLOR[cat.value] || '#6b7280'
               return (
                 <button key={cat.value} onClick={() => handleSelect(cat.value)}
-                  className="flex flex-col items-center gap-2 active:scale-95 transition-transform">
-                  <div className="w-16 h-16 rounded-full bg-white shadow-md flex items-center justify-center"
-                    style={{ boxShadow: '0 2px 10px rgba(0,0,0,0.10)' }}>
-                    <Icon size={28} strokeWidth={1.5} style={{ color: 'var(--color-primary)' }} />
+                  className="flex flex-col items-center gap-2 active:scale-95 transition-transform group">
+                  <div className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-sm transition-shadow group-hover:shadow-md"
+                    style={{
+                      backgroundColor: color + '18',
+                      border: `1.5px solid ${color}45`,
+                      boxShadow: `0 2px 8px ${color}20`,
+                    }}>
+                    <span className="text-[2rem] leading-none select-none">{emoji}</span>
                   </div>
                   <span className="text-[11px] font-medium text-gray-600 text-center leading-tight w-full px-0.5 line-clamp-2">
                     {cat.label}

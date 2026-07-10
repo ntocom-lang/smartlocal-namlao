@@ -1,15 +1,42 @@
 import { useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Briefcase, Star, MapPin, Siren, Globe, MessageCircle, Car } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTenant } from '../../contexts/TenantContext'
 
-function FacebookIcon({ size = 18, className }) {
+function FacebookSVGIcon({ size = 28 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-         stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-         className={className}>
-      <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path
+        d="M16.5 2H14C11.8 2 10 3.8 10 6v2H7v3h3v9h3v-9h2.5l.5-3H13V6c0-.6.4-1 1-1h2.5V2z"
+        fill="white"
+      />
     </svg>
+  )
+}
+
+function LineOAIcon({ size = 28 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 56 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path
+        d="M8 2 Q1 2 1 9 L1 44 Q1 49 5 52 L28 63 L51 52 Q55 49 55 44 L55 9 Q55 2 48 2 Z"
+        fill="white"
+      />
+      <text x="15" y="46" fontFamily="Arial Black, Arial, sans-serif" fontWeight="900" fontSize="30" fill="#06C755">L</text>
+    </svg>
+  )
+}
+
+function IconBox({ item, sizeCls, iconSizeMd }) {
+  const bg = item.bgColor ?? 'rgba(255,255,255,0.92)'
+  const border = item.bgColor ? 'none' : `1.5px solid ${item.color}55`
+  return (
+    <div className={`${sizeCls} rounded-2xl flex items-center justify-center overflow-hidden`}
+         style={{ backgroundColor: bg, border, boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
+      {item.render
+        ? item.render(iconSizeMd)
+        : item.emoji
+        ? <span className="leading-none select-none" style={{ fontSize: iconSizeMd }}>{item.emoji}</span>
+        : null}
+    </div>
   )
 }
 
@@ -24,47 +51,58 @@ export default function ShortcutBand() {
   const items = [
     isAdmin && {
       label: 'Admin',
-      Icon: LayoutDashboard,
+      emoji: '🛡️',
+      color: '#7c3aed',
       action: () => navigate('/admin'),
     },
     (isStaff || isAdmin) && {
-      label: 'Staff',
-      Icon: Briefcase,
+      label: 'เจ้าหน้าที่',
+      emoji: '💼',
+      color: '#2563eb',
       action: () => navigate('/staff'),
     },
     {
       label: 'ประเมิน',
-      Icon: Star,
+      emoji: '⭐',
+      color: '#d97706',
       action: () => navigate('/satisfaction'),
     },
     {
       label: 'แผนที่',
-      Icon: MapPin,
+      emoji: '🗺️',
+      color: '#059669',
       action: () => navigate('/map'),
     },
     (isStaff || isAdmin) && {
       label: 'ยานพาหนะ',
-      Icon: Car,
+      emoji: '🚗',
+      color: '#4f46e5',
       action: () => navigate('/fleet'),
     },
     {
       label: 'เหตุฉุกเฉิน',
-      Icon: Siren,
+      emoji: '🚨',
+      color: '#dc2626',
       action: () => navigate('/emergency'),
     },
     tenant?.line_oa_url && {
       label: 'Line OA',
-      Icon: MessageCircle,
+      bgColor: '#06C755',
+      color: '#06C755',
+      render: (size) => <LineOAIcon size={size === '1.4rem' ? 28 : 24} />,
       action: () => window.open(tenant.line_oa_url, '_blank', 'noopener,noreferrer'),
     },
     tenant?.facebook_url && {
       label: 'Facebook',
-      Icon: FacebookIcon,
+      bgColor: '#1877F2',
+      color: '#1877F2',
+      render: (size) => <FacebookSVGIcon size={size === '1.4rem' ? 28 : 24} />,
       action: () => window.open(tenant.facebook_url, '_blank', 'noopener,noreferrer'),
     },
     tenant?.website_url && {
       label: 'เว็บไซต์',
-      Icon: Globe,
+      emoji: '🌐',
+      color: '#0891b2',
       action: () => window.open(tenant.website_url, '_blank', 'noopener,noreferrer'),
     },
   ].filter(Boolean)
@@ -72,7 +110,6 @@ export default function ShortcutBand() {
   return (
     <div className="rounded-2xl overflow-hidden shadow-xl relative"
          style={{ background: 'linear-gradient(135deg, #0369a1 0%, #0ea5e9 50%, #7dd3fc 100%)' }}>
-      {/* decorative glows */}
       <div className="absolute -top-6 -right-6 w-32 h-32 rounded-full pointer-events-none"
            style={{ background: 'radial-gradient(circle, rgba(186,230,253,0.5) 0%, transparent 70%)' }} />
       <div className="absolute -bottom-8 -left-4 w-36 h-36 rounded-full pointer-events-none"
@@ -86,14 +123,11 @@ export default function ShortcutBand() {
         {/* Mobile: 2 rows */}
         <div className="md:hidden grid grid-rows-2 grid-flow-col gap-x-1 gap-y-2"
              style={{ gridTemplateColumns: `repeat(${Math.ceil(items.length / 2)}, 1fr)` }}>
-          {items.map(({ label, Icon, action }) => (
-            <button key={label} onClick={action}
+          {items.map((item) => (
+            <button key={item.label} onClick={item.action}
                     className="flex flex-col items-center gap-1 active:scale-95 transition-transform">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-sm"
-                   style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.35)' }}>
-                <Icon size={18} className="text-white" />
-              </div>
-              <p className="text-white/80 text-[9px] font-semibold text-center w-full leading-tight">{label}</p>
+              <IconBox item={item} sizeCls="w-11 h-11" iconSizeMd="1.4rem" />
+              <p className="text-white/90 text-[9px] font-semibold text-center w-full leading-tight drop-shadow">{item.label}</p>
             </button>
           ))}
         </div>
@@ -101,14 +135,11 @@ export default function ShortcutBand() {
         {/* Desktop: 1 row */}
         <div className="hidden md:grid gap-1"
              style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
-          {items.map(({ label, Icon, action }) => (
-            <button key={label} onClick={action}
+          {items.map((item) => (
+            <button key={item.label} onClick={item.action}
                     className="flex flex-col items-center gap-1 p-1.5 rounded-xl hover:bg-white/10 active:scale-95 transition-all">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm"
-                   style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.35)' }}>
-                <Icon size={15} className="text-white" />
-              </div>
-              <p className="text-white/80 text-[9px] font-semibold text-center leading-tight">{label}</p>
+              <IconBox item={item} sizeCls="w-10 h-10" iconSizeMd="1.25rem" />
+              <p className="text-white/90 text-[9px] font-semibold text-center leading-tight drop-shadow">{item.label}</p>
             </button>
           ))}
         </div>

@@ -1,4 +1,4 @@
-﻿import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
@@ -55,14 +55,14 @@ const NEXT_ACTION = {
   done:        { label: 'ปิดเรื่อง', next: 'completed' },
 }
 
-const CATEGORY_LABEL = {
+let CATEGORY_LABEL = {
   road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าส่องสว่าง',
   trash: 'ขยะ/ความสะอาด', water: 'น้ำประปา',
   flood: 'น้ำท่วม/ระบายน้ำ', tree: 'ต้นไม้/สวนสาธารณะ',
   noise: 'เหตุรำคาญ', other: 'อื่นๆ',
 }
 
-const CATEGORY_EMOJI = {
+let CATEGORY_EMOJI = {
   road: '', light: '', trash: '', water: '',
   flood: '', tree: '', noise: '', drain: '',
   waste_water: '', suction: '', manhole: '', vendor: '',
@@ -2667,16 +2667,127 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
           onChange={(e) => onTechChange?.(e.target.value)}
           className="flex-1 min-w-0 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none"
         >
-          <option value="">— ไม่ระบุช่าง —</option>
+          <option value="">— ไม่ระบุ —</option>
           {techs.map((t) => (
             <option key={t.id} value={t.id}>
-              {t.full_name || t.email}
+              {t.full_name || t.email}{t.role === 'staff' ? ' (เจ้าหน้าที่)' : t.role === 'admin' ? ' (แอดมิน)' : ' (ช่าง)'}
             </option>
           ))}
         </select>
         <SlaInput value={slaDays} onCommit={onSlaChange} />
       </div>
     </div>
+  )
+}
+
+function SortableDesktopRow({ cat, idx, draft, assign, isSaving, techs, onSetDraft, onSaveRow, onCancelRow, onStartLabelEdit, onToggleActive, onDeleteCat }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
+  const color = COLOR_PRESETS[cat.color_idx ?? 0] ?? COLOR_PRESETS[0]
+  const editingLabel = !!draft?.editingLabel
+  const hasDraft = !!draft && !editingLabel
+  const currentTechId = draft?.technician_id ?? assign?.technician_id ?? ''
+  const currentSla = draft?.sla_days ?? assign?.sla_days ?? 3
+
+  return (
+    <tr
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
+      className={`transition-colors ${cat.is_active === false ? 'opacity-50' : ''} ${editingLabel ? 'bg-amber-50' : hasDraft ? 'bg-amber-50/60' : 'hover:bg-gray-50'}`}
+    >
+      <td className="px-2 py-3 w-8">
+        <button
+          {...attributes} {...listeners}
+          className="cursor-grab active:cursor-grabbing p-1 rounded text-gray-300 hover:text-gray-500 transition-colors touch-none"
+          title="ลากเพื่อเปลี่ยนลำดับ"
+        >
+          <GripVertical size={15} />
+        </button>
+      </td>
+      <td className="px-2 py-3 text-xs text-gray-400 w-8">{idx + 1}</td>
+      <td className="px-4 py-3">
+        {editingLabel ? (
+          <input
+            autoFocus
+            value={draft.label ?? cat.label}
+            onChange={(e) => onSetDraft(cat.value, { label: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); onSaveRow(cat) }
+              if (e.key === 'Escape') onCancelRow(cat.value)
+            }}
+            className="w-full text-sm text-gray-800 bg-white border border-amber-300 rounded-lg px-2 py-1 focus:outline-none"
+          />
+        ) : (
+          <span className="font-medium text-gray-800">{cat.emoji} {cat.label}</span>
+        )}
+      </td>
+      <td className="px-4 py-3">
+        <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+          style={{ backgroundColor: color.color, color: color.textColor }}>
+          {cat.emoji} {cat.label}
+        </span>
+      </td>
+      <td className="px-3 py-2.5">
+        <div className="flex items-center gap-1.5">
+          {isSaving && <Loader2 size={12} className="animate-spin text-gray-300 shrink-0" />}
+          <select
+            value={currentTechId}
+            onChange={(e) => onSetDraft(cat.value, { technician_id: e.target.value })}
+            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none max-w-40"
+          >
+            <option value="">— ไม่ระบุ —</option>
+            {techs.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.full_name || t.email}{t.role === 'staff' ? ' (เจ้าหน้าที่)' : t.role === 'admin' ? ' (แอดมิน)' : ' (ช่าง)'}
+              </option>
+            ))}
+          </select>
+        </div>
+      </td>
+      <td className="px-3 py-2.5">
+        <div className="flex items-center gap-1 justify-center">
+          <input
+            type="number" min="1" max="365"
+            value={currentSla}
+            onChange={(e) => onSetDraft(cat.value, { sla_days: e.target.value })}
+            className="w-12 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-900 text-center focus:outline-none focus:border-amber-400"
+          />
+          <span className="text-xs text-gray-400">วัน</span>
+        </div>
+      </td>
+      <td className="px-4 py-3 text-center">
+        <button
+          onClick={() => onToggleActive(cat.id, cat.is_active !== false)}
+          className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${cat.is_active === false ? 'bg-gray-200 text-gray-500 hover:bg-green-100 hover:text-green-700' : 'bg-green-100 text-green-700 hover:bg-gray-200 hover:text-gray-500'}`}
+        >
+          {cat.is_active === false ? 'ปิด' : 'เปิด'}
+        </button>
+      </td>
+      <td className="px-4 py-3">
+        {editingLabel ? (
+          <div className="flex justify-end gap-1.5">
+            <button onClick={() => onSaveRow(cat)} disabled={isSaving}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50 transition-colors">
+              {isSaving ? <Loader2 size={12} className="animate-spin" /> : 'บันทึก'}
+            </button>
+            <button onClick={() => onCancelRow(cat.value)} disabled={isSaving}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 transition-colors">
+              ยกเลิก
+            </button>
+          </div>
+        ) : (
+          <div className="flex justify-end gap-1.5">
+            <button onClick={() => onStartLabelEdit(cat)}
+              className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="แก้ไขชื่อ">
+              <Pencil size={14} />
+            </button>
+            <button onClick={() => onDeleteCat(cat.id)}
+              className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="ลบ">
+              <Trash2 size={14} />
+            </button>
+          </div>
+        )}
+      </td>
+    </tr>
   )
 }
 
@@ -2691,6 +2802,7 @@ function CategoryManager({ tenant }) {
   const [error, setError] = useState(null)
   const [form, setForm] = useState({ label: '', emoji: '📝', colorIdx: 6, emojiTouched: false })
   const [rowDrafts, setRowDrafts] = useState({}) // { catValue: { label?, technician_id?, sla_days?, editingLabel? } }
+  const [savingAll, setSavingAll] = useState(false)
 
   function setDraft(catValue, patch) {
     setRowDrafts((prev) => ({ ...prev, [catValue]: { ...(prev[catValue] ?? {}), ...patch } }))
@@ -2698,6 +2810,13 @@ function CategoryManager({ tenant }) {
   function isRowEditing(catValue) { return !!rowDrafts[catValue] }
   function cancelRow(catValue) {
     setRowDrafts((prev) => { const n = { ...prev }; delete n[catValue]; return n })
+  }
+  async function saveAll() {
+    const pending = cats.filter(c => rowDrafts[c.value])
+    if (!pending.length) return
+    setSavingAll(true)
+    await Promise.all(pending.map(cat => saveRow(cat)))
+    setSavingAll(false)
   }
   function startLabelEdit(cat) {
     setRowDrafts((prev) => ({ ...prev, [cat.value]: { ...(prev[cat.value] ?? {}), editingLabel: true, label: cat.label } }))
@@ -2774,7 +2893,7 @@ function CategoryManager({ tenant }) {
 
   useEffect(() => {
     if (!tenant?.id) return
-    supabase.from('profiles').select('id,full_name,email').eq('municipality_id', tenant.id).eq('role', 'technician').order('full_name')
+    supabase.from('profiles').select('id,full_name,email,role').eq('municipality_id', tenant.id).in('role', ['technician', 'staff', 'admin']).order('full_name')
       .then(({ data }) => setTechs(data ?? []))
   }, [tenant?.id])
 
@@ -2962,6 +3081,26 @@ function CategoryManager({ tenant }) {
         </button>
       </div>
 
+      {/* Global save bar */}
+      {Object.keys(rowDrafts).some(k => !rowDrafts[k].editingLabel || rowDrafts[k].technician_id !== undefined || rowDrafts[k].sla_days !== undefined) && (
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
+          <span className="text-sm text-amber-700 font-medium">
+            มีการเปลี่ยนแปลง {Object.keys(rowDrafts).length} รายการที่ยังไม่ได้บันทึก
+          </span>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setRowDrafts({})} disabled={savingAll}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-50 transition-colors">
+              ยกเลิกทั้งหมด
+            </button>
+            <button onClick={saveAll} disabled={savingAll}
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50 transition-colors">
+              {savingAll ? <Loader2 size={12} className="animate-spin" /> : null}
+              บันทึกทั้งหมด
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* List */}
       {loading ? (
         <div className="flex justify-center py-8"><Loader2 size={22} className="animate-spin text-gray-300" /></div>
@@ -2989,121 +3128,46 @@ function CategoryManager({ tenant }) {
               </div>
             </SortableContext>
           </DndContext>
-          {/* Desktop table */}
-          <div className="hidden md:block border border-gray-200 rounded-xl overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-12">ลำดับ</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ประเภท</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ป้ายสี</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ช่างรับผิดชอบ</th>
-                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 w-24">ระยะเวลา</th>
-                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 w-20">สถานะ</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 w-20">จัดการ</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {cats.map((cat, idx) => {
-                  const color = COLOR_PRESETS[cat.color_idx ?? 0] ?? COLOR_PRESETS[0]
-                  const assign = assignMap[cat.value] ?? {}
-                  const draft = rowDrafts[cat.value]
-                  const editing = isRowEditing(cat.value)
-                  const isSaving = savingAssign === cat.value
-                  const currentTechId = draft?.technician_id ?? assign.technician_id ?? ''
-                  const currentSla = draft?.sla_days ?? assign.sla_days ?? 3
-                  return (
-                    <tr key={cat.id} className={`transition-colors ${cat.is_active === false ? 'opacity-50' : ''} ${editing ? 'bg-amber-50' : 'hover:bg-gray-50'}`}>
-                      <td className="px-4 py-3 text-xs text-gray-400">{idx + 1}</td>
-                      <td className="px-4 py-3">
-                        {draft?.editingLabel ? (
-                          <input
-                            autoFocus
-                            value={draft.label ?? cat.label}
-                            onChange={(e) => setDraft(cat.value, { label: e.target.value })}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') { e.preventDefault(); saveRow(cat) }
-                              if (e.key === 'Escape') cancelRow(cat.value)
-                            }}
-                            className="w-full text-sm text-gray-800 bg-white border border-amber-300 rounded-lg px-2 py-1 focus:outline-none"
-                          />
-                        ) : (
-                          <span className="font-medium text-gray-800">{cat.emoji} {cat.label}</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                          style={{ backgroundColor: color.color, color: color.textColor }}>
-                          {cat.emoji} {cat.label}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex items-center gap-1.5">
-                          {isSaving && <Loader2 size={12} className="animate-spin text-gray-300 shrink-0" />}
-                          <select
-                            value={currentTechId}
-                            onChange={(e) => setDraft(cat.value, { technician_id: e.target.value })}
-                            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none max-w-40"
-                          >
-                            <option value="">— ไม่ระบุ —</option>
-                            {techs.map((t) => (
-                              <option key={t.id} value={t.id}>{t.full_name || t.email}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex items-center gap-1 justify-center">
-                          <input
-                            type="number"
-                            min="1"
-                            max="365"
-                            value={currentSla}
-                            onChange={(e) => setDraft(cat.value, { sla_days: e.target.value })}
-                            className="w-12 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-900 text-center focus:outline-none focus:border-amber-400"
-                          />
-                          <span className="text-xs text-gray-400">วัน</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <button
-                          onClick={() => toggleActive(cat.id, cat.is_active !== false)}
-                          className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${cat.is_active === false ? 'bg-gray-200 text-gray-500 hover:bg-green-100 hover:text-green-700' : 'bg-green-100 text-green-700 hover:bg-gray-200 hover:text-gray-500'}`}
-                        >
-                          {cat.is_active === false ? 'ปิด' : 'เปิด'}
-                        </button>
-                      </td>
-                      <td className="px-4 py-3">
-                        {editing ? (
-                          <div className="flex justify-end gap-1.5">
-                            <button onClick={() => saveRow(cat)} disabled={isSaving}
-                              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50 transition-colors">
-                              {isSaving ? <Loader2 size={12} className="animate-spin" /> : 'บันทึก'}
-                            </button>
-                            <button onClick={() => cancelRow(cat.value)} disabled={isSaving}
-                              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 transition-colors">
-                              ยกเลิก
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex justify-end gap-1.5">
-                            <button onClick={() => startLabelEdit(cat)}
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="แก้ไขชื่อ">
-                              <Pencil size={14} />
-                            </button>
-                            <button onClick={() => deleteCat(cat.id)}
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="ลบ">
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        )}
-                      </td>
+          {/* Desktop table — DnD sortable */}
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={cats.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+              <div className="hidden md:block border border-gray-200 rounded-xl overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-2 py-3 w-8" />
+                      <th className="px-2 py-3 text-left text-xs font-semibold text-gray-500 w-8">#</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ประเภท</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ป้ายสี</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ช่างรับผิดชอบ</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 w-24">ระยะเวลา</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 w-20">สถานะ</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 w-20">จัดการ</th>
                     </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {cats.map((cat, idx) => (
+                      <SortableDesktopRow
+                        key={cat.id}
+                        cat={cat}
+                        idx={idx}
+                        draft={rowDrafts[cat.value]}
+                        assign={assignMap[cat.value]}
+                        isSaving={savingAssign === cat.value || savingAll}
+                        techs={techs}
+                        onSetDraft={setDraft}
+                        onSaveRow={saveRow}
+                        onCancelRow={cancelRow}
+                        onStartLabelEdit={startLabelEdit}
+                        onToggleActive={toggleActive}
+                        onDeleteCat={deleteCat}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </SortableContext>
+          </DndContext>
         </>
       )}
     </div>
@@ -3707,7 +3771,7 @@ const EVENTS_CATEGORY_COLOR = {
 }
 const AUDIENCE_OPTIONS = [
   { value: 'public',     label: 'ประชาชน',                    color: '#10b981' },
-  { value: 'staff',      label: 'เทศบาล (เจ้าหน้าที่)',       color: '#3b82f6' },
+  { value: 'staff',      label: 'เจ้าหน้าที่',                 color: '#3b82f6' },
   { value: 'management', label: 'ผู้บริหาร',                   color: '#8b5cf6' },
   { value: 'council',    label: 'สภาเทศบาล',                  color: '#f59e0b' },
 ]
@@ -4488,6 +4552,22 @@ export default function AdminDashboard() {
   const [currentUserId, setCurrentUserId] = useState(null)
   const [selectedComplaint, setSelectedComplaint] = useState(null)
   const [technicians, setTechnicians] = useState([])
+
+  // ดึงหมวดหมู่คำร้องที่ Admin สร้างเอง merge กับ CATEGORY_LABEL/EMOJI
+  const [, setCatVer] = useState(0) // force re-render หลัง merge
+  useEffect(() => {
+    if (!tenant?.id) return
+    supabase.from('complaint_categories').select('value, label, emoji').eq('municipality_id', tenant.id)
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          for (const c of data) {
+            CATEGORY_LABEL[c.value] = c.label
+            if (c.emoji) CATEGORY_EMOJI[c.value] = c.emoji
+          }
+          setCatVer(v => v + 1)
+        }
+      })
+  }, [tenant?.id])
 
   const { supported: pushSupported, permission: pushPermission, subscribed: pushSubscribed,
           loading: pushLoading, requestAndSubscribe: pushSubscribe, unsubscribe: pushUnsubscribe,

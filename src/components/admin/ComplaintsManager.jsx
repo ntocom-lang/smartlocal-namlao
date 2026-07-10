@@ -40,7 +40,7 @@ const NEXT_ACTION = {
   in_progress: { label: 'ดำเนินการแล้ว',    next: 'done' },
   done:        { label: 'ปิดเรื่อง',         next: 'closed' },
 }
-const CATEGORY_LABEL = {
+let CATEGORY_LABEL = {
   road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าสาธารณะ',
   trash: 'ขยะ/ความสะอาด', water: 'น้ำประปา',
   flood: 'น้ำท่วม/ระบายน้ำ', tree: 'ต้นไม้/สวนสาธารณะ',
@@ -52,7 +52,7 @@ const CATEGORY_LABEL = {
   corruption: 'แจ้งการทุจริต', tax: 'ภาษีและค่าธรรมเนียม',
   other: 'อื่นๆ',
 }
-const CATEGORY_EMOJI = {
+let CATEGORY_EMOJI = {
   road: '🛣️', light: '💡', trash: '🗑️', water: '🚰',
   flood: '🌊', tree: '🌳', noise: '📢', drain: '🕳️',
   waste_water: '💧', suction: '🚛', manhole: '⚙️', vendor: '🏪',
@@ -355,7 +355,8 @@ function RejectButton({ status, id, onUpdate, loading }) {
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState('')
   const [err, setErr] = useState('')
-  if (status === 'completed' || status === 'rejected') return null
+  const activeStatuses = ['new', 'pending', 'received', 'in_progress']
+  if (!activeStatuses.includes(status)) return null
 
   function handleConfirm() {
     if (!reason.trim()) { setErr('กรุณาระบุเหตุผลการปฏิเสธ'); return }
@@ -514,7 +515,7 @@ function ReporterCard({ c }) {
   )
 }
 
-function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, onPriority, currentUserRole, currentUserId, onDelete }) {
+function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, onPriority, currentUserRole, currentUserId, onDelete, onPinSave }) {
   const { tenant } = useTenant()
   const isAdminRole = ['admin', 'superadmin'].includes(currentUserRole)
   const isTechAssigned = currentUserRole === 'technician' && c.assigned_to === currentUserId
@@ -564,7 +565,10 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
       .update({ latitude: lat, longitude: lng })
       .eq('id', c.id)
     setSavingPin(false)
-    if (!error) setShowPinEdit(false)
+    if (!error) {
+      setShowPinEdit(false)
+      onPinSave?.(c.id, lat, lng)
+    }
   }
 
   useEffect(() => {
@@ -829,40 +833,59 @@ ${photoSectionHtml}
                     <span className="text-xs font-semibold px-2 py-1 bg-green-100 text-green-700 rounded-lg shrink-0">โทรออก</span>
                   </a>
                 )}
-                {c.latitude && (
-                  <>
-                    <div className="flex items-center gap-3 px-4 py-3">
-                      <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
-                        <MapPin size={15} className="text-blue-500" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[13px] text-gray-400">พิกัด</p>
-                        <p className="text-sm font-medium text-gray-800">
-                          {c.latitude.toFixed(5)}, {c.longitude.toFixed(5)}
-                        </p>
-                      </div>
-                      <div className="flex gap-1.5 shrink-0">
-                        <a href={`https://maps.google.com/?q=${c.latitude},${c.longitude}`}
-                          target="_blank" rel="noreferrer"
-                          className="text-xs font-semibold px-2 py-1 bg-blue-100 text-blue-700 rounded-lg">เปิดแผนที่</a>
+                {c.latitude ? (
+                  <div className="flex items-center gap-3 px-4 py-3">
+                    <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
+                      <MapPin size={15} className="text-blue-500" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] text-gray-400">พิกัด</p>
+                      <p className="text-sm font-medium text-gray-800">
+                        {c.latitude.toFixed(5)}, {c.longitude.toFixed(5)}
+                      </p>
+                    </div>
+                    <div className="flex gap-1.5 shrink-0">
+                      <a href={`https://maps.google.com/?q=${c.latitude},${c.longitude}`}
+                        target="_blank" rel="noreferrer"
+                        className="text-xs font-semibold px-2 py-1 bg-blue-100 text-blue-700 rounded-lg">เปิดแผนที่</a>
+                      {canAct && (
                         <button type="button"
                           onClick={() => setShowPinEdit(true)}
                           className="text-xs font-semibold px-2 py-1 rounded-lg bg-orange-100 text-orange-700">
                           แก้ไขหมุด
                         </button>
-                      </div>
+                      )}
                     </div>
-                    {showPinEdit && (
-                      <div className="fixed inset-0 z-9999">
-                        <MapPicker
-                          initialPos={{ lat: c.latitude, lng: c.longitude }}
-                          fallbackPos={{ lat: c.latitude, lng: c.longitude }}
-                          onConfirm={handleSavePin}
-                          onClose={() => setShowPinEdit(false)}
-                        />
+                  </div>
+                ) : (
+                  canAct && (
+                    <div className="flex items-center justify-between gap-3 px-4 py-3 bg-orange-50/50">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-orange-50 flex items-center justify-center shrink-0">
+                          <MapPin size={15} className="text-orange-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13px] text-orange-600 font-medium">ยังไม่มีพิกัด GPS</p>
+                          <p className="text-xs text-gray-400">ระบุตำแหน่งพิกัดเพื่อแสดงผลบนแผนที่</p>
+                        </div>
                       </div>
-                    )}
-                  </>
+                      <button type="button"
+                        onClick={() => setShowPinEdit(true)}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-orange-500 text-white hover:bg-orange-600 transition-colors shrink-0">
+                        เพิ่มพิกัด
+                      </button>
+                    </div>
+                  )
+                )}
+                {showPinEdit && (
+                  <div className="fixed inset-0 z-9999">
+                    <MapPicker
+                      initialPos={c.latitude ? { lat: c.latitude, lng: c.longitude } : null}
+                      fallbackPos={tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : { lat: 18.1448, lng: 100.1167 }}
+                      onConfirm={handleSavePin}
+                      onClose={() => setShowPinEdit(false)}
+                    />
+                  </div>
                 )}
               </div>
             </div>
@@ -1178,6 +1201,27 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   const [selectedComplaint, setSelectedComplaint] = useState(null)
   const [technicians, setTechnicians]             = useState([])
 
+  function handlePinSave(complaintId, lat, lng) {
+    setComplaints(prev => prev.map(comp => comp.id === complaintId ? { ...comp, latitude: lat, longitude: lng } : comp))
+    setSelectedComplaint(prev => prev?.id === complaintId ? { ...prev, latitude: lat, longitude: lng } : prev)
+  }
+
+  // ดึงหมวดหมู่คำร้องที่ Admin สร้างเอง merge เข้า CATEGORY_LABEL/EMOJI
+  const [, setCatVer] = useState(0)
+  useEffect(() => {
+    if (!tenant?.id) return
+    supabase.from('complaint_categories').select('value, label, emoji').eq('municipality_id', tenant.id)
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          for (const c of data) {
+            CATEGORY_LABEL[c.value] = c.label
+            if (c.emoji) CATEGORY_EMOJI[c.value] = c.emoji
+          }
+          setCatVer(v => v + 1)
+        }
+      })
+  }, [tenant?.id])
+
   const fetchTechnicians = useCallback(async () => {
     if (!tenant?.id) return
     const { data } = await supabase
@@ -1439,14 +1483,6 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4">
-      {/* Refresh */}
-      <div className="flex justify-end">
-        <button onClick={fetchComplaints} disabled={loading}
-          className="flex items-center gap-2 px-3 py-1.5 md:rounded text-sm font-medium border border-gray-200 bg-white hover:bg-gray-50 transition-colors disabled:opacity-50 rounded-xl">
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          รีเฟรช
-        </button>
-      </div>
 
       {/* Stat cards — mobile grid / PC formal bar */}
       <div className="grid grid-cols-2 md:hidden gap-3">
@@ -1497,6 +1533,11 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border border-gray-200 bg-white hover:bg-gray-50 transition-colors shrink-0">
               <Printer size={15} className="text-gray-500" />
               พิมพ์
+            </button>
+            <button onClick={fetchComplaints} disabled={loading}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border border-gray-200 bg-white hover:bg-gray-50 transition-colors disabled:opacity-50 shrink-0">
+              <RefreshCw size={14} className={`text-gray-500 ${loading ? 'animate-spin' : ''}`} />
+              รีเฟรช
             </button>
           </div>
 
@@ -1600,9 +1641,15 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                 <div key={c.id} className="px-4 py-3.5 space-y-2 cursor-pointer"
                      onClick={() => setSelectedComplaint(c)}>
                   <div className="flex items-start justify-between gap-2">
-                    <span className="font-semibold text-gray-800 text-sm leading-snug">
+                    <span className="font-semibold text-gray-800 text-sm leading-snug flex items-center gap-1.5 flex-wrap">
                       <span className="text-gray-400 font-mono font-normal mr-1">{complaintStartIdx + i + 1}.</span>
                       {CATEGORY_LABEL[c.category] ?? c.category}
+                      {c.latitude && (
+                        <span className="text-orange-500 shrink-0" title="มีพิกัด GPS"><MapPin size={11} /></span>
+                      )}
+                      {c.attachments && c.attachments.length > 0 && (
+                        <span className="text-blue-500 shrink-0" title="มีภาพประกอบ"><Camera size={11} /></span>
+                      )}
                     </span>
                     <div className="flex items-center gap-1.5 shrink-0">
                       <PriorityBadge priority={c.priority} />
@@ -1673,7 +1720,15 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                         {c.ref_no ? c.ref_no.replace(/^[A-Z]+-/, '') : <span className="text-gray-300">—</span>}
                       </td>
                       <td className="px-3 py-2 font-medium text-gray-800 text-xs whitespace-nowrap border-r border-gray-200">
-                        {CATEGORY_LABEL[c.category] ?? c.category}
+                        <div className="flex items-center gap-1.5">
+                          <span>{CATEGORY_LABEL[c.category] ?? c.category}</span>
+                          {c.latitude && (
+                            <span className="text-orange-500 shrink-0" title="มีพิกัด GPS"><MapPin size={11} /></span>
+                          )}
+                          {c.attachments && c.attachments.length > 0 && (
+                            <span className="text-blue-500 shrink-0" title="มีภาพประกอบ"><Camera size={11} /></span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-2 text-gray-500 text-xs whitespace-nowrap border-r border-gray-200">
                         {(c.village || c.location_name)
@@ -1805,6 +1860,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
           currentUserRole={currentUserRole ?? 'staff'}
           currentUserId={currentUserId}
           onDelete={handleDeleteComplaint}
+          onPinSave={handlePinSave}
         />
       )}
     </div>

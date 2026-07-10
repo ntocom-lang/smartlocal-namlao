@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react'
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { MapContainer, TileLayer, Marker, Popup, Tooltip, Polyline, CircleMarker, useMap } from 'react-leaflet'
 import L from 'leaflet'
@@ -105,7 +105,7 @@ const FORM_TYPE_LABEL = {
   legacy:         '📝 คำร้องเดิม',
 }
 
-const CATEGORY_LABEL = {
+let CATEGORY_LABEL = {
   road: 'ถนน/สะพาน', light: 'ไฟฟ้า', drain: 'ท่อระบายน้ำ', canal: 'ลำเหมือง',
   building: 'สิ่งก่อสร้าง', water_drought: 'ขอน้ำแล้ง', water_tank: 'ถังน้ำหมด',
   water_flood: 'ขอน้ำอุทกภัย', trash: 'ขยะ', tree: 'ต้นไม้', env_hazard: 'จุดเสี่ยง',
@@ -150,7 +150,7 @@ const CIVIL_STATUS_COLOR = {
   suspended:   '#f59e0b',
 }
 
-const CATEGORY_EMOJI = {
+let CATEGORY_EMOJI = {
   road: '🛣️', light: '💡', drain: '🕳️', canal: '🏞️',
   building: '🏗️', water_drought: '🚛', water_tank: '🪣',
   water_flood: '🌊', trash: '🗑️', tree: '🌳', env_hazard: '⚠️',
@@ -255,6 +255,12 @@ function FullscreenResizer() {
   return null
 }
 
+const normalizeStatus = (s) => {
+  if (s === 'new') return 'pending'
+  if (s === 'done' || s === 'closed') return 'completed'
+  return s
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate, onEditComplaint, onEditProject }) {
   const [complaints, setComplaints] = useState([])
@@ -262,6 +268,30 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
   const [civilProjects, setCivilProjects] = useState([])
   const [loading, setLoading] = useState(true)
   const [approving, setApproving] = useState(null)
+
+  const [dbCategories, setDbCategories] = useState([])
+
+  // ดึงหมวดหมู่ที่ Admin สร้างเอง merge เข้า CATEGORY_LABEL/EMOJI และเก็บลำดับเพื่อเอามาใช้กรอง
+  const [, setCatVer] = useState(0)
+  useEffect(() => {
+    if (!tenant?.id) return
+    supabase.from('complaint_categories')
+      .select('value, label, emoji')
+      .eq('municipality_id', tenant.id)
+      .order('sort_order')
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          setDbCategories(data)
+          for (const c of data) {
+            CATEGORY_LABEL[c.value] = c.label
+            if (c.emoji) CATEGORY_EMOJI[c.value] = c.emoji
+          }
+          setCatVer(v => v + 1)
+        }
+      })
+  }, [tenant?.id])
+
+
 
   // layer toggles — แยก 5 ประเภทตามหน้าแรก
   const [showRepair, setShowRepair] = useState(true)  // แจ้งซ่อมโครงสร้าง
@@ -275,6 +305,121 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
   const [filterProjType,   setFilterProjType]   = useState('all')
   const [showLabels, setShowLabels] = useState(false)
   const [projViewMode, setProjViewMode] = useState('pin') // 'route' | 'pin'
+
+  // คำร้องทั้งหมดที่อยู่ในกลุ่ม Layer ที่เปิดใช้งานอยู่
+  const activeComplaints = useMemo(() => {
+    return complaints.filter(c => {
+      if (showRepair && (c.form_type === 'infrastructure' || c.form_type === 'legacy')) return true
+      if (showWater && c.form_type === 'water_support') return true
+      if (showEnv && c.form_type === 'environment') return true
+      return false
+    })
+  }, [complaints, showRepair, showWater, showEnv])
+
+  // คำร้องทั้งหมดในเลเยอร์ที่มีหมวดหมู่ (คำร้อง และ สิ่งแวดล้อม)
+  const activeCategoryComplaints = useMemo(() => {
+    return complaints.filter(c => {
+      if (showRepair && (c.form_type === 'infrastructure' || c.form_type === 'legacy')) return true
+      if (showEnv && c.form_type === 'environment') return true
+      return false
+    })
+  }, [complaints, showRepair, showEnv])
+
+  // คำนวณหมวดหมู่เพื่อเรียงตาม Admin และนับจำนวน
+  const mapCategoryOptions = useMemo(() => {
+    const list = dbCategories.map(c => ({
+      value: c.value,
+      label: c.label,
+      count: activeCategoryComplaints.filter(comp => comp.category === c.value).length
+    }))
+
+    // กรณีมีประเภทในคำร้องที่ไม่ได้อยู่ใน DB ให้ใส่พ่วงท้ายมาด้วย
+    const dbVals = new Set(dbCategories.map(c => c.value))
+    const otherVals = [...new Set(activeCategoryComplaints.map(comp => comp.category))].filter(v => v && !dbVals.has(v))
+    for (const v of otherVals) {
+      list.push({
+        value: v,
+        label: CATEGORY_LABEL[v] ?? v,
+        count: activeCategoryComplaints.filter(comp => comp.category === v).length
+      })
+    }
+
+    if (dbCategories.length === 0) {
+      return Object.entries(CATEGORY_LABEL).map(([k, v]) => ({
+        value: k,
+        label: v,
+        count: activeCategoryComplaints.filter(comp => comp.category === k).length
+      }))
+    }
+
+    return list
+  }, [dbCategories, activeCategoryComplaints])
+
+  // คำนวณสถิติสถานะคำร้องตามประเภทคำร้องที่เลือก และหมวดงานที่เปิดใช้งานเลเยอร์อยู่
+  const statusCounts = useMemo(() => {
+    const filteredComplaints = filterCmpCat === 'all' ? activeComplaints : activeComplaints.filter(c => c.category === filterCmpCat)
+    const activeBiz = showBiz ? bizRegs.filter(b => b.latitude) : []
+    const normalizeBizStatus = (s) => {
+      if (s === 'approved') return 'completed'
+      return s
+    }
+
+    const totalList = [
+      ...filteredComplaints.map(c => normalizeStatus(c.status)),
+      ...activeBiz.map(b => normalizeBizStatus(b.status))
+    ]
+
+    return {
+      all: totalList.length,
+      pending: totalList.filter(s => s === 'pending').length,
+      received: totalList.filter(s => s === 'received').length,
+      in_progress: totalList.filter(s => s === 'in_progress').length,
+      completed: totalList.filter(s => s === 'completed').length,
+      rejected: totalList.filter(s => s === 'rejected').length,
+      cancelled: totalList.filter(s => s === 'cancelled').length,
+      suspended: totalList.filter(s => s === 'suspended').length,
+    }
+  }, [activeComplaints, bizRegs, filterCmpCat, showBiz])
+
+  // คำนวณสถิติประเภทโครงการตามสถานะที่เลือก
+  const projTypeCounts = useMemo(() => {
+    const list = filterProjStatus === 'all'
+      ? civilProjects
+      : civilProjects.filter(p => p.status === filterProjStatus)
+
+    return {
+      all: list.length,
+      road_concrete: list.filter(p => p.project_type === 'road_concrete').length,
+      road_asphalt: list.filter(p => p.project_type === 'road_asphalt').length,
+      road_slurry: list.filter(p => p.project_type === 'road_slurry').length,
+      road_gravel: list.filter(p => p.project_type === 'road_gravel').length,
+      drain: list.filter(p => p.project_type === 'drain').length,
+      dredge: list.filter(p => p.project_type === 'dredge').length,
+      canal: list.filter(p => p.project_type === 'canal').length,
+      pipe_water: list.filter(p => p.project_type === 'pipe_water').length,
+      building: list.filter(p => p.project_type === 'building').length,
+      light: list.filter(p => p.project_type === 'light').length,
+      park: list.filter(p => p.project_type === 'park').length,
+      other: list.filter(p => p.project_type === 'other').length,
+    }
+  }, [civilProjects, filterProjStatus])
+
+  // คำนวณสถิติสถานะโครงการตามประเภทที่เลือก
+  const projStatusCounts = useMemo(() => {
+    const list = filterProjType === 'all'
+      ? civilProjects
+      : civilProjects.filter(p => p.project_type === filterProjType)
+
+    return {
+      all: list.length,
+      planned: list.filter(p => p.status === 'planned').length,
+      approved: list.filter(p => p.status === 'approved').length,
+      in_progress: list.filter(p => p.status === 'in_progress').length,
+      completed: list.filter(p => p.status === 'completed').length,
+      cancelled: list.filter(p => p.status === 'cancelled').length,
+      suspended: list.filter(p => p.status === 'suspended').length,
+    }
+  }, [civilProjects, filterProjType])
 
   function clearFilters() {
     setShowRepair(true); setShowWater(true); setShowEnv(true)
@@ -386,20 +531,20 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
   const filteredRepair = complaints.filter(c => {
     if (!showRepair) return false
     if (c.form_type !== 'infrastructure' && c.form_type !== 'legacy') return false
-    if (filterStatus !== 'all' && c.status !== filterStatus) return false
+    if (filterStatus !== 'all' && normalizeStatus(c.status) !== filterStatus) return false
     if (filterCmpCat !== 'all' && c.category !== filterCmpCat) return false
     return true
   })
   const filteredWater = complaints.filter(c => {
     if (!showWater) return false
     if (c.form_type !== 'water_support') return false
-    if (filterStatus !== 'all' && c.status !== filterStatus) return false
+    if (filterStatus !== 'all' && normalizeStatus(c.status) !== filterStatus) return false
     return true
   })
   const filteredEnv = complaints.filter(c => {
     if (!showEnv) return false
     if (c.form_type !== 'environment') return false
-    if (filterStatus !== 'all' && c.status !== filterStatus) return false
+    if (filterStatus !== 'all' && normalizeStatus(c.status) !== filterStatus) return false
     return true
   })
   const filteredBiz = bizRegs.filter(b => {
@@ -441,19 +586,31 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
       <div className="bg-white rounded-2xl overflow-hidden shadow-md border border-gray-100">
 
         {/* ชั้นข้อมูล 5 ประเภท */}
-        <div className="flex gap-2 px-3 py-3 border-b border-gray-100">
+        <div className="flex gap-2 px-3 py-3 border-b border-gray-100 overflow-x-auto scrollbar-none">
           {[
+            {
+              key: 'all',
+              active: true,
+              toggle: () => {},
+              color: '#374151',
+              count: totalPins,
+              icon: '🌐',
+              label: 'ทั้งหมด'
+            },
             { key: 'repair', active: showRepair, toggle: () => setShowRepair(v => !v), color: '#ef4444', count: repairCount,         icon: '📋', label: 'คำร้อง' },
             { key: 'water',  active: showWater,  toggle: () => setShowWater(v => !v),  color: '#3b82f6', count: waterCount,           icon: '💧', label: 'ขอน้ำ' },
             { key: 'env',    active: showEnv,    toggle: () => setShowEnv(v => !v),    color: '#10b981', count: envCount,             icon: '🌿', label: 'สิ่งแวดล้อม' },
             { key: 'biz',    active: showBiz,    toggle: () => setShowBiz(v => !v),    color: '#f59e0b', count: bizRegs.length,       icon: '🏪', label: 'ร้านค้า' },
             { key: 'proj',   active: showProj,   toggle: () => setShowProj(v => !v),   color: '#8b5cf6', count: civilProjects.length, icon: '🔨', label: 'โครงการ' },
-          ].map(({ key, active, toggle, color, count, icon, label }) => (
+          ].filter(card => card.key === 'all' || card.count > 0).map(({ key, active, toggle, color, count, icon, label }) => (
             <button key={key} type="button" onClick={toggle}
-              className="flex-1 flex flex-col items-center gap-1.5 py-2.5 rounded-2xl border-2 transition-all duration-200 select-none active:scale-95"
-              style={active
-                ? { borderColor: color, backgroundColor: color + '15', boxShadow: `0 4px 12px ${color}30` }
-                : { borderColor: '#f3f4f6', backgroundColor: '#fafafa' }}>
+              className={`flex-1 min-w-[68px] flex flex-col items-center gap-1.5 py-2.5 rounded-2xl border-2 transition-all duration-200 select-none ${key === 'all' ? '' : 'active:scale-95'}`}
+              style={{
+                ...(active
+                  ? { borderColor: color, backgroundColor: color + '15', boxShadow: `0 4px 12px ${color}30` }
+                  : { borderColor: '#f3f4f6', backgroundColor: '#fafafa' }),
+                ...(key === 'all' ? { cursor: 'default' } : {})
+              }}>
               <div className="w-10 h-10 rounded-2xl flex items-center justify-center text-xl leading-none shadow-sm"
                 style={{ background: active ? `linear-gradient(135deg, ${color}30, ${color}18)` : '#f3f4f6', border: active ? `1.5px solid ${color}40` : 'none' }}>
                 {icon}
@@ -475,14 +632,20 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
           <>
             {/* Desktop */}
             <div className="hidden md:flex flex-wrap gap-x-6 gap-y-2.5 px-4 py-3 border-b border-gray-100">
-              {showRepair && (
+              {(showRepair || showEnv) && (
                 <div className="flex items-center gap-2.5">
                   <span className="text-[11px] font-bold text-gray-600 shrink-0 w-24">ประเภทคำร้อง</span>
                   <select value={filterCmpCat} onChange={e => setFilterCmpCat(e.target.value)}
                     className="text-xs font-medium px-2.5 py-1.5 border border-gray-300 bg-white text-gray-800 focus:outline-none"
                     style={{ borderRadius: '2px', minWidth: '160px' }}>
-                    <option value="all">— ทุกประเภท —</option>
-                    {Object.entries(CATEGORY_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    <option value="all">— ทุกประเภท ({activeCategoryComplaints.length}) —</option>
+                    {mapCategoryOptions
+                      .filter(opt => opt.count > 0)
+                      .map(opt => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label} ({opt.count})
+                        </option>
+                      ))}
                   </select>
                 </div>
               )}
@@ -492,13 +655,14 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                   <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
                     className="text-xs font-medium px-2.5 py-1.5 border border-gray-300 bg-white text-gray-800 focus:outline-none"
                     style={{ borderRadius: '2px', minWidth: '160px' }}>
-                    <option value="all">— ทุกสถานะ —</option>
-                    <option value="pending">รอดำเนินการ</option>
-                    <option value="received">รับเรื่องแล้ว</option>
-                    <option value="in_progress">กำลังดำเนินการ</option>
-                    <option value="rejected">ปฏิเสธ</option>
-                    <option value="cancelled">ยกเลิก</option>
-                    <option value="suspended">ระงับชั่วคราว</option>
+                    <option value="all">— ทุกสถานะ ({statusCounts.all}) —</option>
+                    {statusCounts.pending > 0 && <option value="pending">รอดำเนินการ ({statusCounts.pending})</option>}
+                    {statusCounts.received > 0 && <option value="received">รับเรื่องแล้ว ({statusCounts.received})</option>}
+                    {statusCounts.in_progress > 0 && <option value="in_progress">กำลังดำเนินการ ({statusCounts.in_progress})</option>}
+                    {statusCounts.completed > 0 && <option value="completed">เสร็จสิ้น ({statusCounts.completed})</option>}
+                    {statusCounts.rejected > 0 && <option value="rejected">ปฏิเสธ ({statusCounts.rejected})</option>}
+                    {statusCounts.cancelled > 0 && <option value="cancelled">ยกเลิก ({statusCounts.cancelled})</option>}
+                    {statusCounts.suspended > 0 && <option value="suspended">ระงับชั่วคราว ({statusCounts.suspended})</option>}
                   </select>
                 </div>
               )}
@@ -508,25 +672,31 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                   <select value={filterProjType} onChange={e => setFilterProjType(e.target.value)}
                     className="text-xs font-medium px-2.5 py-1.5 border border-gray-300 bg-white text-gray-800 focus:outline-none"
                     style={{ borderRadius: '2px', minWidth: '160px' }}>
-                    <option value="all">— ทุกประเภท —</option>
-                    <optgroup label="ถนน">
-                      <option value="road_concrete">ถนน ค.ส.ล.</option>
-                      <option value="road_asphalt">ลาดยางแอสฟัลท์</option>
-                      <option value="road_slurry">ฉาบผิวสเลอรี่ซิล</option>
-                      <option value="road_gravel">หินคลุก</option>
-                    </optgroup>
-                    <optgroup label="น้ำ">
-                      <option value="drain">รางระบายน้ำ</option>
-                      <option value="dredge">ขุดลอก</option>
-                      <option value="canal">รางน้ำ/ลำเหมือง</option>
-                      <option value="pipe_water">ท่อน้ำประปา</option>
-                    </optgroup>
-                    <optgroup label="อื่นๆ">
-                      <option value="building">อาคาร/สิ่งก่อสร้าง</option>
-                      <option value="light">ไฟฟ้าสาธารณะ</option>
-                      <option value="park">สวนสาธารณะ</option>
-                      <option value="other">อื่น ๆ</option>
-                    </optgroup>
+                    <option value="all">— ทุกประเภท ({projTypeCounts.all}) —</option>
+                    {(projTypeCounts.road_concrete > 0 || projTypeCounts.road_asphalt > 0 || projTypeCounts.road_slurry > 0 || projTypeCounts.road_gravel > 0) && (
+                      <optgroup label="ถนน">
+                        {projTypeCounts.road_concrete > 0 && <option value="road_concrete">ถนน ค.ส.ล. ({projTypeCounts.road_concrete})</option>}
+                        {projTypeCounts.road_asphalt > 0 && <option value="road_asphalt">ลาดยางแอสฟัลท์ ({projTypeCounts.road_asphalt})</option>}
+                        {projTypeCounts.road_slurry > 0 && <option value="road_slurry">ฉาบผิวสเลอรี่ซิล ({projTypeCounts.road_slurry})</option>}
+                        {projTypeCounts.road_gravel > 0 && <option value="road_gravel">หินคลุก ({projTypeCounts.road_gravel})</option>}
+                      </optgroup>
+                    )}
+                    {(projTypeCounts.drain > 0 || projTypeCounts.dredge > 0 || projTypeCounts.canal > 0 || projTypeCounts.pipe_water > 0) && (
+                      <optgroup label="น้ำ">
+                        {projTypeCounts.drain > 0 && <option value="drain">รางระบายน้ำ ({projTypeCounts.drain})</option>}
+                        {projTypeCounts.dredge > 0 && <option value="dredge">ขุดลอก ({projTypeCounts.dredge})</option>}
+                        {projTypeCounts.canal > 0 && <option value="canal">รางน้ำ/ลำเหมือง ({projTypeCounts.canal})</option>}
+                        {projTypeCounts.pipe_water > 0 && <option value="pipe_water">ท่อน้ำประปา ({projTypeCounts.pipe_water})</option>}
+                      </optgroup>
+                    )}
+                    {(projTypeCounts.building > 0 || projTypeCounts.light > 0 || projTypeCounts.park > 0 || projTypeCounts.other > 0) && (
+                      <optgroup label="อื่นๆ">
+                        {projTypeCounts.building > 0 && <option value="building">อาคาร/สิ่งก่อสร้าง ({projTypeCounts.building})</option>}
+                        {projTypeCounts.light > 0 && <option value="light">ไฟฟ้าสาธารณะ ({projTypeCounts.light})</option>}
+                        {projTypeCounts.park > 0 && <option value="park">สวนสาธารณะ ({projTypeCounts.park})</option>}
+                        {projTypeCounts.other > 0 && <option value="other">อื่น ๆ ({projTypeCounts.other})</option>}
+                      </optgroup>
+                    )}
                   </select>
                 </div>
               )}
@@ -536,14 +706,25 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                   <select value={filterProjStatus} onChange={e => setFilterProjStatus(e.target.value)}
                     className="text-xs font-medium px-2.5 py-1.5 border border-gray-300 bg-white text-gray-800 focus:outline-none"
                     style={{ borderRadius: '2px', minWidth: '160px' }}>
-                    <option value="all">— ทุกสถานะ —</option>
-                    <option value="planned">วางแผน</option>
-                    <option value="approved">อนุมัติแล้ว</option>
-                    <option value="in_progress">กำลังดำเนินการ</option>
-                    <option value="completed">แล้วเสร็จ</option>
-                    <option value="cancelled">ยกเลิก</option>
-                    <option value="suspended">ระงับชั่วคราว</option>
+                    <option value="all">— ทุกสถานะ ({projStatusCounts.all}) —</option>
+                    {projStatusCounts.planned > 0 && <option value="planned">วางแผน ({projStatusCounts.planned})</option>}
+                    {projStatusCounts.approved > 0 && <option value="approved">อนุมัติแล้ว ({projStatusCounts.approved})</option>}
+                    {projStatusCounts.in_progress > 0 && <option value="in_progress">กำลังดำเนินการ ({projStatusCounts.in_progress})</option>}
+                    {projStatusCounts.completed > 0 && <option value="completed">แล้วเสร็จ ({projStatusCounts.completed})</option>}
+                    {projStatusCounts.cancelled > 0 && <option value="cancelled">ยกเลิก ({projStatusCounts.cancelled})</option>}
+                    {projStatusCounts.suspended > 0 && <option value="suspended">ระงับชั่วคราว ({projStatusCounts.suspended})</option>}
                   </select>
+                </div>
+              )}
+              {isFiltered && (
+                <div className="flex items-center">
+                  <button type="button" onClick={clearFilters}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700 transition-colors text-xs font-semibold">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="mr-0.5">
+                      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                    ล้างตัวกรอง
+                  </button>
                 </div>
               )}
             </div>
@@ -552,39 +733,54 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
             <div className="md:hidden px-4 py-3 border-b border-gray-100">
               {openFilter && <div className="fixed inset-0 z-40" onClick={() => setOpenFilter(null)} />}
               {(() => {
-                const cmpAll = complaints
+                const cmpAll = complaints.filter(c => {
+                  if (showRepair && (c.form_type === 'infrastructure' || c.form_type === 'legacy')) return true
+                  if (showWater && c.form_type === 'water_support') return true
+                  if (showEnv && c.form_type === 'environment') return true
+                  return false
+                })
+                const cmpCategoryAll = complaints.filter(c => {
+                  if (showRepair && (c.form_type === 'infrastructure' || c.form_type === 'legacy')) return true
+                  if (showEnv && c.form_type === 'environment') return true
+                  return false
+                })
                 const cmpCatCounts = {}
                 cmpAll.forEach(c => { cmpCatCounts[c.category] = (cmpCatCounts[c.category] || 0) + 1 })
+                
+                const cmpFilteredForStatus = filterCmpCat === 'all' ? cmpAll : cmpAll.filter(c => c.category === filterCmpCat)
+                
+                const activeBiz = showBiz ? bizRegs.filter(b => b.latitude) : []
+                const normalizeBizStatus = (s) => {
+                  if (s === 'approved') return 'completed'
+                  return s
+                }
+
+                const totalList = [
+                  ...cmpFilteredForStatus.map(c => normalizeStatus(c.status)),
+                  ...activeBiz.map(b => normalizeBizStatus(b.status))
+                ]
+
                 const cmpStatusCounts = {}
-                cmpAll.forEach(c => { cmpStatusCounts[c.status] = (cmpStatusCounts[c.status] || 0) + 1 })
-                bizRegs.forEach(b => { cmpStatusCounts[b.status] = (cmpStatusCounts[b.status] || 0) + 1 })
-                const projTypeCounts = {}
-                civilProjects.forEach(p => { projTypeCounts[p.project_type] = (projTypeCounts[p.project_type] || 0) + 1 })
-                const projStatusCounts = {}
-                civilProjects.forEach(p => { projStatusCounts[p.status] = (projStatusCounts[p.status] || 0) + 1 })
+                totalList.forEach(s => {
+                  cmpStatusCounts[s] = (cmpStatusCounts[s] || 0) + 1
+                })
+
                 return (
               <div className="grid grid-cols-4 gap-2">
-                {showRepair && (
+                {(showRepair || showEnv) && (
                   <MobileFilterPill id="cmpCat" icon="📋" label="ประเภทคำร้อง" color="#f59e0b"
                     value={filterCmpCat} onChange={setFilterCmpCat}
                     openFilter={openFilter} setOpenFilter={setOpenFilter}
                     options={[
-                      { v: 'all',           icon: '📋', label: 'ทั้งหมด',        count: cmpAll.length },
-                      { v: 'road',          icon: '🛣️', label: 'ถนน',            count: cmpCatCounts['road'] ?? 0 },
-                      { v: 'light',         icon: '💡', label: 'ไฟฟ้า',          count: cmpCatCounts['light'] ?? 0 },
-                      { v: 'drain',         icon: '🌊', label: 'ท่อระบาย',       count: cmpCatCounts['drain'] ?? 0 },
-                      { v: 'canal',         icon: '💧', label: 'ลำเหมือง',       count: cmpCatCounts['canal'] ?? 0 },
-                      { v: 'building',      icon: '🏗️', label: 'สิ่งก่อสร้าง',  count: cmpCatCounts['building'] ?? 0 },
-                      { v: 'water_drought', icon: '☀️', label: 'ขอน้ำแล้ง',     count: cmpCatCounts['water_drought'] ?? 0 },
-                      { v: 'water_tank',    icon: '🪣', label: 'ถังน้ำหมด',     count: cmpCatCounts['water_tank'] ?? 0 },
-                      { v: 'water_flood',   icon: '🌊', label: 'อุทกภัย',        count: cmpCatCounts['water_flood'] ?? 0 },
-                      { v: 'trash',         icon: '🗑️', label: 'ขยะ',            count: cmpCatCounts['trash'] ?? 0 },
-                      { v: 'tree',          icon: '🌳', label: 'ต้นไม้',          count: cmpCatCounts['tree'] ?? 0 },
-                      { v: 'env_hazard',    icon: '⚠️', label: 'จุดเสี่ยง',      count: cmpCatCounts['env_hazard'] ?? 0 },
-                      { v: 'env_fire',      icon: '🔥', label: 'ควันไฟ',          count: cmpCatCounts['env_fire'] ?? 0 },
-                      { v: 'mosquito',      icon: '🦟', label: 'ยุง',             count: cmpCatCounts['mosquito'] ?? 0 },
-                      { v: 'pollution',     icon: '💨', label: 'มลพิษ',           count: cmpCatCounts['pollution'] ?? 0 },
-                      { v: 'other',         icon: '📝', label: 'อื่นๆ',           count: cmpCatCounts['other'] ?? 0 },
+                      { v: 'all', icon: '📋', label: 'ทั้งหมด', count: cmpCategoryAll.length },
+                      ...mapCategoryOptions
+                        .filter(opt => opt.count > 0)
+                        .map(opt => ({
+                          v: opt.value,
+                          icon: CATEGORY_EMOJI[opt.value] ?? '📄',
+                          label: opt.label,
+                          count: opt.count
+                        }))
                     ]} />
                 )}
                 {(showRepair || showWater || showEnv || showBiz) && (
@@ -592,20 +788,20 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                     value={filterStatus} onChange={setFilterStatus}
                     openFilter={openFilter} setOpenFilter={setOpenFilter}
                     options={[
-                      { v: 'all',         icon: '📋', label: 'ทั้งหมด',         count: cmpAll.length + bizRegs.length },
+                      { v: 'all',         icon: '📋', label: 'ทั้งหมด',         count: totalList.length },
                       { v: 'pending',     icon: '⏳', label: 'รอดำเนินการ',    color: '#ef4444', count: cmpStatusCounts['pending'] ?? 0 },
                       { v: 'received',    icon: '📬', label: 'รับเรื่องแล้ว',  color: '#f97316', count: cmpStatusCounts['received'] ?? 0 },
                       { v: 'in_progress', icon: '⚙️', label: 'กำลังดำเนินการ',color: '#f97316', count: cmpStatusCounts['in_progress'] ?? 0 },
                       { v: 'completed',   icon: '✅', label: 'เสร็จสิ้น',      color: '#10b981', count: cmpStatusCounts['completed'] ?? 0 },
                       { v: 'rejected',    icon: '❌', label: 'ปฏิเสธ',         color: '#9ca3af', count: cmpStatusCounts['rejected'] ?? 0 },
-                    ]} />
+                    ].filter(opt => opt.v === 'all' || opt.count > 0)} />
                 )}
                 {showProj && (
                   <MobileFilterPill id="projType" icon="🔨" label="ประเภทโครงการ" color="#10b981"
                     value={filterProjType} onChange={setFilterProjType}
                     openFilter={openFilter} setOpenFilter={setOpenFilter}
                     options={[
-                      { v: 'all',           icon: '🔨', label: 'ทั้งหมด',          count: civilProjects.length },
+                      { v: 'all',           icon: '🔨', label: 'ทั้งหมด',          count: projTypeCounts.all },
                       { v: 'road_concrete', icon: '🛣️', label: 'ค.ส.ล.',           count: projTypeCounts['road_concrete'] ?? 0 },
                       { v: 'road_asphalt',  icon: '🛣️', label: 'ลาดยาง',           count: projTypeCounts['road_asphalt'] ?? 0 },
                       { v: 'road_slurry',   icon: '🛣️', label: 'สเลอรี่ซิล',       count: projTypeCounts['road_slurry'] ?? 0 },
@@ -620,21 +816,21 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                       { v: 'light',         icon: '💡', label: 'ไฟฟ้า',             count: projTypeCounts['light'] ?? 0 },
                       { v: 'park',          icon: '🌳', label: 'สวนสาธารณะ',        count: projTypeCounts['park'] ?? 0 },
                       { v: 'other',         icon: '📝', label: 'อื่น ๆ',            count: projTypeCounts['other'] ?? 0 },
-                    ]} />
+                    ].filter(opt => opt.v === 'all' || opt.count > 0)} />
                 )}
                 {showProj && (
                   <MobileFilterPill id="projStatus" icon="📐" label="สถานะโครงการ" color="#8b5cf6"
                     value={filterProjStatus} onChange={setFilterProjStatus}
                     openFilter={openFilter} setOpenFilter={setOpenFilter}
                     options={[
-                      { v: 'all',         icon: '🔨', label: 'ทั้งหมด',          count: civilProjects.length },
+                      { v: 'all',         icon: '🔨', label: 'ทั้งหมด',          count: projStatusCounts.all },
                       { v: 'planned',     icon: '📐', label: 'วางแผน',          color: '#9ca3af', count: projStatusCounts['planned'] ?? 0 },
                       { v: 'approved',    icon: '📌', label: 'อนุมัติแล้ว',     color: '#3b82f6', count: projStatusCounts['approved'] ?? 0 },
                       { v: 'in_progress', icon: '⚙️', label: 'กำลังดำเนินการ', color: '#f97316', count: projStatusCounts['in_progress'] ?? 0 },
                       { v: 'completed',   icon: '🏆', label: 'แล้วเสร็จ',       color: '#10b981', count: projStatusCounts['completed'] ?? 0 },
                       { v: 'cancelled',   icon: '🚫', label: 'ยกเลิก',          color: '#9ca3af', count: projStatusCounts['cancelled'] ?? 0 },
                       { v: 'suspended',   icon: '⏸️', label: 'ระงับชั่วคราว',  color: '#f59e0b', count: projStatusCounts['suspended'] ?? 0 },
-                    ]} />
+                    ].filter(opt => opt.v === 'all' || opt.count > 0)} />
                 )}
                 {isFiltered && (
                   <div className="flex items-end pb-1">

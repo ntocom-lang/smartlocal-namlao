@@ -40,7 +40,7 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts, isAdmin, isStaf
       supabase.from('fleet_vehicles').select('id, name, license_plate, tank_capacity, fuel_type')
         .eq('municipality_id', tenant.id).eq('status', 'active').order('name'),
       supabase.from('profiles').select('id, full_name')
-        .eq('municipality_id', tenant.id).not('fleet_role', 'is', null).order('full_name'),
+        .eq('municipality_id', tenant.id).eq('fleet_role', 'fleet_staff').order('full_name'),
     ]).then(([{ data: v }, { data: s }]) => {
       setVehicles(v ?? [])
       setStaffList(s ?? [])
@@ -99,6 +99,13 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts, isAdmin, isStaf
     setSaving(false)
   }
 
+  async function handleDelete(r) {
+    if (!confirm(`ลบรายการเติมน้ำมัน ${thDate(r.filled_at)} — ${r.fleet_vehicles?.name} (${r.liters} ลิตร)?`)) return
+    const { error } = await supabase.from('fleet_fuel_records').delete().eq('id', r.id)
+    if (!error) setRecords(prev => prev.filter(x => x.id !== r.id))
+    else alert('ลบไม่สำเร็จ: ' + error.message)
+  }
+
   return (
     <div className="space-y-4">
       {/* Toolbar */}
@@ -139,8 +146,8 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts, isAdmin, isStaf
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr style={{ backgroundColor: '#1a3a5c' }}>
-                  {['ที่','วันที่','ยานพาหนะ','ผู้เติม','ลิตร','ราคา/ล.','รวม (฿)','กม./ล.','เลขไมล์','ปั๊ม'].map(h => (
-                    <th key={h} className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10 last:border-r-0 whitespace-nowrap">{h}</th>
+                  {[...['ที่','วันที่','ยานพาหนะ','ผู้เติม','ลิตร','ราคา/ล.','รวม (฿)','กม./ล.','เลขไมล์','ปั๊ม'], ...(isAdmin ? [''] : [])].map((h, i) => (
+                    <th key={i} className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10 last:border-r-0 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -171,6 +178,14 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts, isAdmin, isStaf
                     </td>
                     <td className="px-4 py-2.5 text-gray-500 text-xs border-r border-gray-200">{r.odometer ? fmt(r.odometer) : '—'}</td>
                     <td className="px-4 py-2.5 text-gray-500 text-xs">{r.fuel_station || '—'}</td>
+                    {isAdmin && (
+                      <td className="px-4 py-2.5 text-center">
+                        <button onClick={() => handleDelete(r)}
+                          className="text-xs font-bold px-3 py-1 rounded border border-red-400 text-red-500 hover:bg-red-500 hover:text-white transition-colors">
+                          ลบ
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
                 {!records.length && (
@@ -207,10 +222,16 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts, isAdmin, isStaf
                     )}
                     {r.odometer && <p className="text-[10px] text-gray-400">มิเตอร์ {fmt(r.odometer)} กม.</p>}
                   </div>
-                  <div className="text-right shrink-0">
+                  <div className="text-right shrink-0 flex flex-col items-end gap-1">
                     <p className="text-base font-black text-gray-800">{fmtB(r.total_cost)}</p>
                     {r.efficiency_kml && (
                       <p className="text-[10px] text-emerald-600 font-semibold">{r.efficiency_kml} กม./ล.</p>
+                    )}
+                    {isAdmin && (
+                      <button onClick={() => handleDelete(r)}
+                        className="text-[10px] font-bold px-2 py-0.5 rounded border border-red-300 text-red-400 hover:bg-red-400 hover:text-white transition-colors mt-1">
+                        ลบ
+                      </button>
                     )}
                   </div>
                 </div>

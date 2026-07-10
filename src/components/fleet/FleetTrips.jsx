@@ -283,7 +283,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
         .limit(300),
       supabase.from('profiles').select('id,full_name,fleet_department_id')
         .eq('municipality_id', tenant.id)
-        .not('fleet_role', 'is', null),
+        .eq('fleet_role', 'fleet_staff'),
       supabase.from('fleet_vehicles').select('id,name,license_plate')
         .eq('municipality_id', tenant.id).eq('status', 'active').order('name'),
     ]).then(([{ data: t, error: te }, { data: s }, { data: v }]) => {
@@ -447,6 +447,13 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
     loadTrips()
   }
 
+  async function handleDelete(t) {
+    if (!confirm(`ลบรายการ "${t.vehicle?.name}" วันที่ ${t.planned_departure ? new Date(t.planned_departure).toLocaleDateString('th-TH') : '—'}?`)) return
+    const { error } = await supabase.from('fleet_trips').delete().eq('id', t.id)
+    if (!error) setTrips(prev => prev.filter(x => x.id !== t.id))
+    else alert('ลบไม่สำเร็จ: ' + error.message)
+  }
+
   /* ── Derived ── */
   const active  = trips.filter(t => ['pending', 'approved', 'in_progress'].includes(t.status))
   const history = trips.filter(t => ['completed', 'rejected', 'cancelled'].includes(t.status))
@@ -491,7 +498,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
           )}
           {dist != null && <div className="font-semibold text-gray-700">📏 ระยะทาง: {dist.toLocaleString()} กม.</div>}
         </div>
-        {(canApprove || canDepart || canReturn) && (
+        {(canApprove || canDepart || canReturn || isAdmin) && (
           <div className="flex gap-2 pt-1">
             {canApprove && <>
               <button onClick={() => handleApprove(t)}
@@ -503,6 +510,12 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
                 ✕ ปฏิเสธ
               </button>
             </>}
+            {isAdmin && (
+              <button onClick={() => handleDelete(t)}
+                className="px-3 py-2 rounded-xl text-xs font-bold text-red-500 border border-red-200 bg-red-50 hover:bg-red-500 hover:text-white transition-colors">
+                ลบ
+              </button>
+            )}
             {canDepart && (
               <button onClick={() => {
                 setSelTrip(t)
@@ -586,6 +599,12 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
                 setModal('return')
               }} className="px-2 py-1 rounded-lg bg-green-600 text-white text-[10px] font-bold whitespace-nowrap">
                 🏁 กลับ
+              </button>
+            )}
+            {isAdmin && (
+              <button onClick={() => handleDelete(t)}
+                className="px-2 py-1 rounded-lg border border-red-300 text-red-400 hover:bg-red-400 hover:text-white text-[10px] font-bold transition-colors">
+                ลบ
               </button>
             )}
           </div>

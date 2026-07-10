@@ -120,6 +120,13 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
     setModal(null)
   }
 
+  async function handleDelete(v) {
+    if (!confirm(`ลบยานพาหนะ "${v.name}" (${v.license_plate})?\n\nข้อมูลเชื้อเพลิง/การเดินทางที่บันทึกไว้จะยังคงอยู่`)) return
+    const { error } = await supabase.from('fleet_vehicles').delete().eq('id', v.id)
+    if (!error) setVehicles(prev => prev.filter(x => x.id !== v.id))
+    else alert('ลบไม่สำเร็จ: ' + error.message)
+  }
+
   const filtered = vehicles.filter(v => {
     if (filterDept !== 'all' && v.department_id !== filterDept && !(filterDept === 'pool' && v.is_pool)) return false
     if (filterStatus !== 'all' && v.status !== filterStatus) return false
@@ -212,10 +219,16 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
                       </td>
                       {isAdmin && (
                         <td className="px-4 py-2.5 text-center">
-                          <button onClick={() => openEdit(v)}
-                            className="text-xs font-bold px-3 py-1 rounded border border-blue-600 text-blue-700 hover:bg-blue-600 hover:text-white transition-colors">
-                            แก้ไข
-                          </button>
+                          <div className="flex items-center justify-center gap-1">
+                            <button onClick={() => openEdit(v)}
+                              className="text-xs font-bold px-3 py-1 rounded border border-blue-600 text-blue-700 hover:bg-blue-600 hover:text-white transition-colors">
+                              แก้ไข
+                            </button>
+                            <button onClick={() => handleDelete(v)}
+                              className="text-xs font-bold px-3 py-1 rounded border border-red-400 text-red-500 hover:bg-red-500 hover:text-white transition-colors">
+                              ลบ
+                            </button>
+                          </div>
                         </td>
                       )}
                     </tr>
@@ -270,10 +283,16 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
                         {STATUS_TH[v.status]}
                       </span>
                       {isAdmin && (
-                        <button onClick={() => openEdit(v)}
-                                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors">
-                          <Pencil size={13} />
-                        </button>
+                        <>
+                          <button onClick={() => openEdit(v)}
+                            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors">
+                            <Pencil size={13} />
+                          </button>
+                          <button onClick={() => handleDelete(v)}
+                            className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors">
+                            <X size={13} />
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -372,37 +391,25 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
                 </div>
               </div>
 
-              <div className="border-t border-gray-100 pt-4">
-                <p className="text-xs font-bold text-gray-600 mb-3">📄 เอกสารสำคัญ</p>
-                <div className="flex items-end gap-2 mb-3 p-3 bg-blue-50 rounded-xl">
-                  <div className="flex-1">
-                    <label className="text-xs font-semibold text-blue-700 mb-1 block">ใช้วันหมดอายุเดียวกันทั้งหมด</label>
-                    <input type="date"
-                      className="w-full px-3 py-2 text-sm text-gray-900 bg-white border border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent"
-                      onChange={e => {
-                        const v = e.target.value
-                        setForm(f => ({ ...f, insurance_expiry: v, act_expiry: v, registration_expiry: v, inspection_expiry: v }))
-                      }} />
-                  </div>
+              <div className="border-t border-gray-100 pt-4 space-y-3">
+                <p className="text-xs font-bold text-gray-600">📄 เอกสารสำคัญ</p>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 mb-1 block">วันหมดอายุเอกสาร</label>
+                  <input type="date"
+                    value={form.insurance_expiry}
+                    onChange={e => {
+                      const v = e.target.value
+                      setForm(f => ({ ...f, insurance_expiry: v, act_expiry: v, registration_expiry: v, inspection_expiry: v }))
+                    }}
+                    className={inp} />
+                  <p className="text-[10px] text-gray-400 mt-1">ครอบคลุม: ประกันภัย · พรบ. · ทะเบียน · ตรวจสภาพ</p>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { label:'ประกันภัยหมดอายุ', key:'insurance_expiry' },
-                    { label:'พรบ. หมดอายุ',     key:'act_expiry' },
-                    { label:'ทะเบียนหมดอายุ',   key:'registration_expiry' },
-                    { label:'ตรวจสภาพหมดอายุ', key:'inspection_expiry' },
-                  ].map(({ label, key }) => (
-                    <div key={key}>
-                      <label className="text-xs font-semibold text-gray-600 mb-1 block">{label}</label>
-                      <input type="date" value={form[key]} onChange={set(key)} className={inp} />
-                    </div>
-                  ))}
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 mb-1 block">อื่นๆ / หมายเหตุ</label>
+                  <input value={form.notes} onChange={set('notes')}
+                    placeholder="เช่น ใบอนุญาตพิเศษ, เอกสารเพิ่มเติม..."
+                    className={inp} />
                 </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1 block">หมายเหตุ</label>
-                <textarea value={form.notes} onChange={set('notes')} rows={2} className={inp} />
               </div>
 
               <button onClick={handleSave} disabled={saving}

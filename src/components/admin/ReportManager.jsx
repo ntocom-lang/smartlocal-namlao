@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
 import { Wrench, TrendingUp, AlertTriangle, Printer, X, Clock, CheckCircle2, Download } from 'lucide-react'
+import { supabase } from '../../lib/supabase'
 
 const STATUS = {
   pending:     { label: 'รอดำเนินการ',    color: '#f59e0b', bg: '#fef3c7', text: '#92400e' },
@@ -9,13 +10,13 @@ const STATUS = {
   completed:   { label: 'เสร็จสิ้น',      color: '#10b981', bg: '#d1fae5', text: '#065f46' },
   rejected:    { label: 'ปฏิเสธ',         color: '#ef4444', bg: '#fee2e2', text: '#991b1b' },
 }
-const CATEGORY_LABEL = {
+let CATEGORY_LABEL = {
   road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าส่องสว่าง',
   trash: 'ขยะ/ความสะอาด', water: 'น้ำประปา',
   flood: 'น้ำท่วม/ระบายน้ำ', tree: 'ต้นไม้/สวนสาธารณะ',
   noise: 'เหตุรำคาญ', other: 'อื่นๆ',
 }
-const CATEGORY_EMOJI = {
+let CATEGORY_EMOJI = {
   road: '🛣️', light: '💡', trash: '🗑️', water: '💧',
   flood: '🌊', tree: '🌳', noise: '📢', drain: '🕳️',
 }
@@ -105,6 +106,22 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
   const [view, setView]   = useState('month')
   const [month, setMonth] = useState(now.getMonth())
   const [year, setYear]   = useState(now.getFullYear())
+
+  // ดึงหมวดหมู่ที่ Admin สร้างเอง merge เข้า CATEGORY_LABEL/EMOJI
+  const [, setCatVer] = useState(0)
+  useEffect(() => {
+    if (!tenant?.id) return
+    supabase.from('complaint_categories').select('value, label, emoji').eq('municipality_id', tenant.id)
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          for (const c of data) {
+            CATEGORY_LABEL[c.value] = c.label
+            if (c.emoji) CATEGORY_EMOJI[c.value] = c.emoji
+          }
+          setCatVer(v => v + 1)
+        }
+      })
+  }, [tenant?.id])
 
   const years = [...new Set(complaints.map(c => new Date(c.created_at).getFullYear()))]
   if (!years.includes(now.getFullYear())) years.push(now.getFullYear())

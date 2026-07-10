@@ -40,6 +40,24 @@ const CATEGORY_ICON = {
   other:            HelpCircle,
 }
 
+const FALLBACK_EMOJI = {
+  light: '💡', road: '🔧', mosquito: '🦟', tree: '✂️',
+  trash: '🗑️', water_supply: '💧', drain: '🌀', flood: '🌊',
+  borrow_equipment: '📦', corruption: '🛡️', grievance: '📢',
+  noise: '🔊', building: '🏢', tax: '💳', canal: '⛏️',
+  animals: '🐕', fire: '🔥', phone_complaint: '📞',
+  waste_water: '💧', other: '❓',
+}
+
+const FALLBACK_COLOR = {
+  light: '#f59e0b', road: '#3b82f6', mosquito: '#10b981', tree: '#22c55e',
+  trash: '#6b7280', water_supply: '#06b6d4', drain: '#8b5cf6', flood: '#0ea5e9',
+  borrow_equipment: '#f97316', corruption: '#ef4444', grievance: '#ec4899',
+  noise: '#a855f7', building: '#64748b', tax: '#14b8a6', canal: '#78716c',
+  animals: '#f97316', fire: '#ef4444', phone_complaint: '#3b82f6',
+  waste_water: '#06b6d4', other: '#9ca3af',
+}
+
 const DEFAULT_CATEGORIES = [
   { value: 'light',            label: 'ไฟฟ้าสาธารณะ' },
   { value: 'road',             label: 'ซ่อมแซมถนน' },
@@ -321,10 +339,10 @@ export default function CitizenForm() {
     if (!tenant?.id) return
     supabase.from('locations').select('id, name').eq('municipality_id', tenant.id).order('sort_order')
       .then(({ data }) => setLocations(data ?? []))
-    supabase.from('complaint_categories').select('value, label, emoji').eq('municipality_id', tenant.id).eq('is_active', true).order('sort_order')
+    supabase.from('complaint_categories').select('value, label, emoji, color').eq('municipality_id', tenant.id).eq('is_active', true).order('sort_order')
       .then(({ data }) => {
         if (data && data.length > 0)
-          setCategories(data.map((c) => ({ value: c.value, label: c.label })))
+          setCategories(data.map((c) => ({ value: c.value, label: c.label, emoji: c.emoji, color: c.color })))
       })
   }, [tenant?.id])
 
@@ -451,6 +469,9 @@ export default function CitizenForm() {
   const allCatsDisplay = [...(ftConfig?.categories ?? []), ...categories]
   const catLabel = allCatsDisplay.find((c) => c.value === form.category)?.label?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category
   const CatIcon = CATEGORY_ICON[form.category] ?? HelpCircle
+  const catDbData = categories.find(c => c.value === form.category)
+  const catEmoji = catDbData?.emoji ?? FALLBACK_EMOJI[form.category] ?? null
+  const catColor = catDbData?.color ?? FALLBACK_COLOR[form.category] ?? null
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#eef2f7' }}>
@@ -514,18 +535,26 @@ export default function CitizenForm() {
           <ArrowLeft size={20} className="text-white" />
         </button>
         <h1 className="font-bold text-white text-base flex-1 text-center pr-8">
-          {ftConfig ? ftConfig.label : 'แจ้งเหตุ/แจ้งซ่อม'}
+          {ftConfig ? ftConfig.label : (catLabel || 'แจ้งเหตุ/แจ้งซ่อม')}
         </h1>
       </div>
 
       {/* Category display row */}
       {!ftConfig && form.category && (
         <div className="flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-100">
-          <div className="w-13 h-13 rounded-full bg-blue-50 flex items-center justify-center shrink-0"
-            style={{ width: 40, height: 40 }}>
-            <CatIcon size={20} strokeWidth={1.5} style={{ color: 'var(--color-primary)' }} />
+          <div className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 shadow-sm"
+            style={{
+              backgroundColor: catColor ? catColor + '18' : '#eff6ff',
+              border: `1.5px solid ${catColor ? catColor + '45' : '#bfdbfe'}`,
+            }}>
+            {catEmoji
+              ? <span className="text-xl leading-none select-none">{catEmoji}</span>
+              : <CatIcon size={20} strokeWidth={1.5} style={{ color: catColor ?? 'var(--color-primary)' }} />}
           </div>
-          <span className="text-base font-bold text-gray-800">{catLabel}</span>
+          <div>
+            <p className="text-[10px] text-gray-400 font-medium">ประเภทคำร้อง</p>
+            <span className="text-sm font-bold text-gray-800">{catLabel}</span>
+          </div>
         </div>
       )}
 

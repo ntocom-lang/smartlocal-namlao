@@ -1,10 +1,12 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Bell, ChevronLeft, CheckCircle2, XCircle, Loader2,
   Clock, RefreshCw, ChevronRight,
 } from 'lucide-react'
 import { useNotifications } from '../contexts/NotificationsContext'
+import { useTenant } from '../contexts/TenantContext'
+import { supabase } from '../lib/supabase'
 
 // ─── constants ────────────────────────────────────────────────────────────────
 
@@ -24,7 +26,7 @@ const STATUS_MSG = {
   rejected:    'ขออภัย คำร้องของคุณถูกปฏิเสธ',
 }
 
-const CATEGORY_LABEL = {
+let CATEGORY_LABEL = {
   road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าสาธารณะ',
   trash: 'ขยะ/ความสะอาด', water: 'น้ำประปา',
   flood: 'น้ำท่วม/ระบายน้ำ', tree: 'ต้นไม้/สวนสาธารณะ',
@@ -39,7 +41,7 @@ const CATEGORY_LABEL = {
   other: 'อื่นๆ',
 }
 
-const CATEGORY_EMOJI = {
+let CATEGORY_EMOJI = {
   road: '🛣️', light: '💡', trash: '🗑️', water: '🚰',
   flood: '🌊', tree: '🌳', noise: '📢', drain: '🕳️',
   waste_water: '💧', suction: '🚛', manhole: '⚙️', vendor: '🏪',
@@ -64,7 +66,24 @@ function timeAgo(dateStr) {
 
 export default function NotificationsPage() {
   const navigate = useNavigate()
+  const { tenant } = useTenant()
   const { items, loading, markRead, markAllRead } = useNotifications()
+
+  // ดึงหมวดหมู่ที่ Admin สร้างเอง merge เข้า CATEGORY_LABEL/EMOJI
+  const [, setCatVer] = useState(0)
+  useEffect(() => {
+    if (!tenant?.id) return
+    supabase.from('complaint_categories').select('value, label, emoji').eq('municipality_id', tenant.id)
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          for (const c of data) {
+            CATEGORY_LABEL[c.value] = c.label
+            if (c.emoji) CATEGORY_EMOJI[c.value] = c.emoji
+          }
+          setCatVer(v => v + 1)
+        }
+      })
+  }, [tenant?.id])
 
   // mark all read when user leaves this page
   const markAllReadRef = useRef(markAllRead)

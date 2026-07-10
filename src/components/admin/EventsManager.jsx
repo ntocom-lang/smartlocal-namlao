@@ -68,7 +68,7 @@ const EVENTS_CATEGORY_COLOR = {
 }
 const AUDIENCE_OPTIONS = [
   { value: 'public',     label: 'ประชาชน',                 color: '#10b981' },
-  { value: 'staff',      label: 'เทศบาล (เจ้าหน้าที่)',    color: '#3b82f6' },
+  { value: 'staff',      label: 'เจ้าหน้าที่',              color: '#3b82f6' },
   { value: 'management', label: 'ผู้บริหาร',                color: '#8b5cf6' },
   { value: 'council',    label: 'สภาเทศบาล',               color: '#f59e0b' },
 ]

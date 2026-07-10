@@ -2,7 +2,7 @@ import { Link, useLocation } from 'react-router-dom'
 import {
   Home, ClipboardList, FileText, CalendarDays, Newspaper,
   MapPin, Map, FileSearch, FolderOpen, Bell,
-  Phone, AlertCircle, LogIn, LogOut, UserCircle2,
+  Phone, AlertCircle, LogIn, LogOut, LayoutGrid,
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTenant } from '../../contexts/TenantContext'
@@ -35,6 +35,7 @@ const NAV_GROUPS = [
     items: [
       { label: 'ติดต่อเรา',   href: '/contact',   Icon: Phone },
       { label: 'เหตุฉุกเฉิน', href: '/emergency', Icon: AlertCircle },
+      { label: 'เมนูทั้งหมด', href: '/more',      Icon: LayoutGrid },
     ],
   },
 ]

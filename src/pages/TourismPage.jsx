@@ -225,8 +225,8 @@ export default function TourismPage() {
     supabase.from('tourism_reviews')
       .select('place_id, rating')
       .eq('municipality_id', tenant.id)
-      .then(({ data }) => {
-        if (!data) return
+      .then(({ data, error }) => {
+        if (error || !data) return
         const map = {}
         data.forEach(r => {
           if (!map[r.place_id]) map[r.place_id] = { sum: 0, count: 0 }
@@ -239,6 +239,7 @@ export default function TourismPage() {
         })
         setRatingMap(result)
       })
+      .catch(() => {})
   }, [tenant?.id])
 
   const onlinePlaces  = places.filter(p => p.service_type === 'online')

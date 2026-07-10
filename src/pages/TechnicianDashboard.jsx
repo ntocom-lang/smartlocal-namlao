@@ -27,7 +27,7 @@ const NEXT_ACTION = {
   in_progress: { label: 'ปิดงาน',        next: 'done' },
 }
 
-const CATEGORY_LABEL = {
+let CATEGORY_LABEL = {
   road: 'ซ่อมแซมถนน', light: 'ไฟฟ้าสาธารณะ',
   trash: 'ขยะ/ความสะอาด', water: 'น้ำประปา',
   flood: 'น้ำท่วม/ระบายน้ำ', tree: 'ตัดต้นไม้',
@@ -42,7 +42,7 @@ const CATEGORY_LABEL = {
   other: 'อื่นๆ',
 }
 
-const CATEGORY_EMOJI = {
+let CATEGORY_EMOJI = {
   road: '🛣️', light: '💡', trash: '🗑️', water: '🚰',
   flood: '🌊', tree: '🌳', noise: '📢', drain: '🕳️',
   waste_water: '💧', suction: '🚛', manhole: '⚙️', vendor: '🏪',
@@ -501,6 +501,22 @@ export default function TechnicianDashboard() {
   const [selected, setSelected] = useState(null)
   const [myName, setMyName] = useState('')
   const [seenIds, setSeenIds] = useState(getSeenIds)
+
+  // ดึงหมวดหมู่ที่ Admin สร้างเอง merge เข้า CATEGORY_LABEL/EMOJI
+  const [, setCatVer] = useState(0)
+  useEffect(() => {
+    if (!tenant?.id) return
+    supabase.from('complaint_categories').select('value, label, emoji').eq('municipality_id', tenant.id)
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          for (const c of data) {
+            CATEGORY_LABEL[c.value] = c.label
+            if (c.emoji) CATEGORY_EMOJI[c.value] = c.emoji
+          }
+          setCatVer(v => v + 1)
+        }
+      })
+  }, [tenant?.id])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {

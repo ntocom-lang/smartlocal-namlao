@@ -73,7 +73,7 @@ function ImageStrip({ images, active, onSelect }) {
 }
 
 // ─── Detail Sheet ────────────────────────────────────────────────────────────
-function DetailSheet({ reg, onClose, onApprove, onReject, acting }) {
+function DetailSheet({ reg, onClose, onApprove, onReject, onDelete, acting }) {
   const [imgIdx, setImgIdx] = useState(0)
   const [form, setForm] = useState({
     name:           reg.business_name,
@@ -87,6 +87,7 @@ function DetailSheet({ reg, onClose, onApprove, onReject, acting }) {
     has_delivery:   reg.has_delivery ?? false,
   })
   const [confirmReject, setConfirmReject] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const images = reg.images ?? []
   const set = (f) => (e) => setForm(p => ({ ...p, [f]: e.target.value }))
@@ -277,9 +278,9 @@ function DetailSheet({ reg, onClose, onApprove, onReject, acting }) {
         </div>
 
         {/* Footer actions */}
-        {reg.status === 'pending' && (
-          <div className="px-4 pb-6 pt-3 border-t border-gray-100 space-y-2 shrink-0">
-            {!confirmReject ? (
+        <div className="px-4 pb-6 pt-3 border-t border-gray-100 space-y-2 shrink-0">
+          {reg.status === 'pending' ? (
+            !confirmReject && !confirmDelete ? (
               <>
                 <button onClick={() => onApprove(form)} disabled={acting || !form.name.trim()}
                   className="w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95 transition-transform text-sm"
@@ -291,8 +292,12 @@ function DetailSheet({ reg, onClose, onApprove, onReject, acting }) {
                   className="w-full py-3 rounded-2xl font-semibold text-red-500 border border-red-200 text-sm active:scale-95 transition-transform">
                   ปฏิเสธคำขอ
                 </button>
+                <button onClick={() => setConfirmDelete(true)} disabled={acting}
+                  className="w-full py-2 rounded-xl text-xs font-semibold text-red-500 hover:text-red-700 transition-colors flex items-center justify-center gap-1">
+                  🗑️ ลบคำขอลงทะเบียน
+                </button>
               </>
-            ) : (
+            ) : confirmReject ? (
               <div className="bg-red-50 rounded-2xl p-4 space-y-3">
                 <p className="text-sm font-semibold text-red-700 text-center">ยืนยันการปฏิเสธ?</p>
                 <p className="text-xs text-red-500 text-center">ข้อมูลจะไม่ถูกเผยแพร่และจะถูกทำเครื่องหมายว่าปฏิเสธ</p>
@@ -308,9 +313,34 @@ function DetailSheet({ reg, onClose, onApprove, onReject, acting }) {
                   </button>
                 </div>
               </div>
-            )}
-          </div>
-        )}
+            ) : null
+          ) : (
+            !confirmDelete && (
+              <button onClick={() => setConfirmDelete(true)} disabled={acting}
+                className="w-full py-3.5 rounded-2xl font-semibold text-red-500 border border-red-200 hover:bg-red-50 text-sm active:scale-95 transition-transform flex items-center justify-center gap-2">
+                🗑️ ลบคำขอนี้
+              </button>
+            )
+          )}
+
+          {confirmDelete && (
+            <div className="bg-red-50 rounded-2xl p-4 space-y-3">
+              <p className="text-sm font-semibold text-red-700 text-center">ยืนยันการลบคำขอนี้?</p>
+              <p className="text-xs text-red-500 text-center">ข้อมูลคำขอนี้จะถูกลบออกจากระบบอย่างถาวรและไม่สามารถกู้คืนได้</p>
+              <div className="flex gap-2">
+                <button onClick={() => setConfirmDelete(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600 font-semibold">
+                  ยกเลิก
+                </button>
+                <button onClick={onDelete} disabled={acting}
+                  className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-semibold flex items-center justify-center gap-1 disabled:opacity-50">
+                  {acting ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
+                  ยืนยันการลบ
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -390,6 +420,20 @@ export default function BusinessRegistrationAdmin({ tenant }) {
       approved_at: new Date().toISOString(),
     }).eq('id', selected.id)
     setRegs(prev => prev.map(r => r.id === selected.id ? { ...r, status: 'rejected' } : r))
+    setActing(false)
+    setSelected(null)
+  }
+
+  async function handleDelete() {
+    if (!selected || acting) return
+    setActing(true)
+    const { error } = await supabase.from('business_registrations').delete().eq('id', selected.id)
+    if (error) {
+      setActing(false)
+      alert('เกิดข้อผิดพลาดในการลบ: ' + error.message)
+      return
+    }
+    setRegs(prev => prev.filter(r => r.id !== selected.id))
     setActing(false)
     setSelected(null)
   }
@@ -485,6 +529,7 @@ export default function BusinessRegistrationAdmin({ tenant }) {
           onClose={() => setSelected(null)}
           onApprove={handleApprove}
           onReject={handleReject}
+          onDelete={handleDelete}
           acting={acting}
         />
       )}
