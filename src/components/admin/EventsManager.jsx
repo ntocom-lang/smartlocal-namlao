@@ -149,6 +149,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
   const [calToken, setCalToken] = useState(null)
   const [copied, setCopied] = useState(false)
   const topRef = useRef(null)
+  const formErrorRef = useRef(null)
 
   useEffect(() => { setCurrentPage(1) }, [activeTab, searchQuery, filterMonth, filterCategory, filterAudience, pageSize])
   useEffect(() => { fetchEvents() }, [tenant?.id, currentUserRole])
@@ -231,49 +232,56 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
     if (!form.event_date) { setFormError('กรุณาระบุวันที่กิจกรรม'); return }
     setFormError('')
     setSaving(true)
-    let attachmentUrl = form.attachment_url || null
-    if (form.attachment_file) {
-      const file = form.attachment_file
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-      const path = `${tenant.id}/${Date.now()}_${safeName}`
-      const toUpload = await compressImage(file, 1200)
-      const { error: upErr } = await supabase.storage.from('event-attachments').upload(path, toUpload, { upsert: false })
-      if (upErr) { setSaving(false); setFormError('อัปโหลดไฟล์ไม่สำเร็จ: ' + upErr.message); return }
-      const { data: { publicUrl } } = supabase.storage.from('event-attachments').getPublicUrl(path)
-      attachmentUrl = publicUrl
+    try {
+      let attachmentUrl = form.attachment_url || null
+      if (form.attachment_file) {
+        const file = form.attachment_file
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+        const path = `${tenant.id}/${Date.now()}_${safeName}`
+        const toUpload = await compressImage(file, 1200)
+        const { error: upErr } = await supabase.storage.from('event-attachments').upload(path, toUpload, { upsert: false })
+        if (upErr) throw new Error('อัปโหลดไฟล์ไม่สำเร็จ: ' + upErr.message)
+        const { data: { publicUrl } } = supabase.storage.from('event-attachments').getPublicUrl(path)
+        attachmentUrl = publicUrl
+      }
+      const payload = {
+        municipality_id: tenant.id, title: form.title.trim(),
+        description: form.description.trim() || null, event_date: form.event_date,
+        event_time: form.event_time || null,
+        end_time: form.end_time || null,
+        end_date: form.end_date || null, location: form.location.trim() || null,
+        category: form.category === 'อื่นๆ' ? (form.customCategory.trim() || 'อื่นๆ') : form.category,
+        is_all_day: false, audience: form.audience,
+        attachment_url: attachmentUrl, updated_at: new Date().toISOString(),
+      }
+      if (editingEvent) {
+        const { error: updErr } = await supabase.from('events').update(payload).eq('id', editingEvent.id)
+        if (updErr) throw new Error('บันทึกไม่สำเร็จ: ' + updErr.message)
+      } else {
+        const { data: { user } } = await supabase.auth.getUser()
+        const { error: insErr } = await supabase.from('events').insert({ ...payload, created_by: user?.id ?? null })
+        if (insErr) throw new Error('บันทึกไม่สำเร็จ: ' + insErr.message)
+        const dateStr = payload.event_date
+          ? new Date(payload.event_date + 'T00:00:00').toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+          : ''
+        const timeStr = payload.event_time
+          ? `⏰ ${payload.event_time.slice(0, 5)}${payload.end_time ? ` – ${payload.end_time.slice(0, 5)}` : ''} น.`
+          : ''
+        const audLabel = AUDIENCE_OPTIONS.find(a => a.value === payload.audience)?.label ?? payload.audience
+        notifyTelegram(
+          tenant.telegram_group_id,
+          `📅 <b>กิจกรรมใหม่</b> [${audLabel}]\n<b>${payload.title}</b>${dateStr ? `\n📆 ${dateStr}` : ''}${timeStr ? `\n${timeStr}` : ''}${payload.location ? `\n📍 ${payload.location}` : ''}${payload.description ? `\n📝 ${payload.description.slice(0, 120)}` : ''}`
+        )
+      }
+      setShowForm(false)
+      fetchEvents()
+    } catch (e) {
+      const msg = e?.message ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง'
+      setFormError(msg)
+      setTimeout(() => formErrorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
+    } finally {
+      setSaving(false)
     }
-    const payload = {
-      municipality_id: tenant.id, title: form.title.trim(),
-      description: form.description.trim() || null, event_date: form.event_date,
-      event_time: form.event_time || null,
-      end_time: form.end_time || null,
-      end_date: form.end_date || null, location: form.location.trim() || null,
-      category: form.category === 'อื่นๆ' ? (form.customCategory.trim() || 'อื่นๆ') : form.category,
-      is_all_day: false, audience: form.audience,
-      attachment_url: attachmentUrl, updated_at: new Date().toISOString(),
-    }
-    if (editingEvent) {
-      const { error: updErr } = await supabase.from('events').update(payload).eq('id', editingEvent.id)
-      if (updErr) { setSaving(false); setFormError('บันทึกไม่สำเร็จ: ' + updErr.message); return }
-    } else {
-      const { data: { user } } = await supabase.auth.getUser()
-      const { error: insErr } = await supabase.from('events').insert({ ...payload, created_by: user?.id ?? null })
-      if (insErr) { setSaving(false); setFormError('บันทึกไม่สำเร็จ: ' + insErr.message); return }
-      const dateStr = payload.event_date
-        ? new Date(payload.event_date + 'T00:00:00').toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-        : ''
-      const timeStr = payload.event_time
-        ? `⏰ ${payload.event_time.slice(0, 5)}${payload.end_time ? ` – ${payload.end_time.slice(0, 5)}` : ''} น.`
-        : ''
-      const audLabel = AUDIENCE_OPTIONS.find(a => a.value === payload.audience)?.label ?? payload.audience
-      notifyTelegram(
-        tenant.telegram_group_id,
-        `📅 <b>กิจกรรมใหม่</b> [${audLabel}]\n<b>${payload.title}</b>${dateStr ? `\n📆 ${dateStr}` : ''}${timeStr ? `\n${timeStr}` : ''}${payload.location ? `\n📍 ${payload.location}` : ''}${payload.description ? `\n📝 ${payload.description.slice(0, 120)}` : ''}`
-      )
-    }
-    setSaving(false)
-    setShowForm(false)
-    fetchEvents()
   }
 
   async function handleDelete(id) {
@@ -560,6 +568,12 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
             </div>
             <div className="flex-1 overflow-y-auto">
               <div className="px-6 py-4 space-y-4">
+                {formError && (
+                  <div ref={formErrorRef} className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                    <span className="text-red-500 font-bold text-sm shrink-0">⚠️</span>
+                    <p className="text-sm text-red-600 font-medium">{formError}</p>
+                  </div>
+                )}
                 <div>
                   <label className="text-xs font-semibold text-gray-500 mb-1 block">ชื่อกิจกรรม *</label>
                   <input value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
@@ -676,7 +690,6 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
                     </label>
                   )}
                 </div>
-                {formError && <p className="text-xs text-red-500">{formError}</p>}
               </div>
             </div>
             <div className="border-t border-gray-100 shrink-0">
