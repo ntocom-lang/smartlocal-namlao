@@ -10,20 +10,53 @@ const MINUTES = ['00', '15', '30', '45']
 
 function TimeSelect({ value, onChange, required }) {
   const [h, m] = value ? value.split(':') : ['', '']
-  const set = (nh, nm) => onChange(nh && nm !== undefined ? `${nh}:${nm ?? '00'}` : '')
+  const isCustomM = !!m && !MINUTES.includes(m)
+  const [customMode, setCustomMode] = useState(false)
+  const showCustom = customMode || isCustomM
+
+  const set = (nh, nm) => {
+    if (!nh) return onChange('')
+    onChange(`${nh}:${nm || '00'}`)
+  }
+
   return (
     <div className="flex items-center gap-1">
-      <select value={h ?? ''} onChange={e => set(e.target.value, m ?? '00')} required={required}
+      <select value={h || ''} onChange={e => set(e.target.value, m)} required={required}
         className="flex-1 px-2 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400">
         <option value="">ชม.</option>
         {HOURS.map(v => <option key={v} value={v}>{v}</option>)}
       </select>
       <span className="text-gray-400 text-sm font-bold">:</span>
-      <select value={m ?? ''} onChange={e => set(h ?? '08', e.target.value)} required={required}
-        className="flex-1 px-2 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400">
-        <option value="">นาที</option>
-        {MINUTES.map(v => <option key={v} value={v}>{v}</option>)}
-      </select>
+      {showCustom ? (
+        <div className="flex items-center gap-1 flex-1">
+          <input
+            type="number" min="0" max="59"
+            value={m || ''}
+            onChange={e => {
+              const n = Number(e.target.value)
+              if (e.target.value === '' || (n >= 0 && n <= 59))
+                set(h || '08', String(n).padStart(2, '0'))
+            }}
+            placeholder="00"
+            className="w-full px-2 py-2.5 rounded-xl border border-blue-300 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400"
+          />
+          <button type="button" title="กลับ"
+            onClick={() => { setCustomMode(false); set(h || '08', '00') }}
+            className="text-gray-400 hover:text-gray-600 text-lg leading-none px-0.5">↩</button>
+        </div>
+      ) : (
+        <select value={m || ''}
+          onChange={e => {
+            if (e.target.value === '__custom__') { setCustomMode(true); return }
+            set(h || '08', e.target.value)
+          }}
+          required={required}
+          className="flex-1 px-2 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400">
+          <option value="">นาที</option>
+          {MINUTES.map(v => <option key={v} value={v}>{v}</option>)}
+          <option value="__custom__">ระบุ...</option>
+        </select>
+      )}
     </div>
   )
 }
@@ -148,6 +181,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
   const [showScrollTop, setShowScrollTop] = useState(false)
   const [calToken, setCalToken] = useState(null)
   const [copied, setCopied] = useState(false)
+  const [viewingEvent, setViewingEvent] = useState(null)
   const topRef = useRef(null)
   const formErrorRef = useRef(null)
 
@@ -236,11 +270,15 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
       let attachmentUrl = form.attachment_url || null
       if (form.attachment_file) {
         const file = form.attachment_file
+        if (file.size > 20 * 1024 * 1024) throw new Error('ไฟล์ใหญ่เกินไป (สูงสุด 20 MB)')
         const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
         const path = `${tenant.id}/${Date.now()}_${safeName}`
         const toUpload = await compressImage(file, 1200)
-        const { error: upErr } = await supabase.storage.from('event-attachments').upload(path, toUpload, { upsert: false })
-        if (upErr) throw new Error('อัปโหลดไฟล์ไม่สำเร็จ: ' + upErr.message)
+        const uploadResult = await Promise.race([
+          supabase.storage.from('event-attachments').upload(path, toUpload, { upsert: false }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('อัปโหลดไฟล์หมดเวลา (30 วินาที) กรุณาลองใหม่')), 30_000)),
+        ])
+        if (uploadResult?.error) throw new Error('อัปโหลดไฟล์ไม่สำเร็จ: ' + uploadResult.error.message)
         const { data: { publicUrl } } = supabase.storage.from('event-attachments').getPublicUrl(path)
         attachmentUrl = publicUrl
       }
@@ -557,6 +595,105 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
       </div>
 
 
+      {viewingEvent && (() => {
+        const ev = viewingEvent
+        const color = EVENTS_CATEGORY_COLOR[ev.category] ?? '#6b7280'
+        const aud = AUDIENCE_OPTIONS.find(a => a.value === ev.audience)
+        const d = ev.event_date ? new Date(ev.event_date + 'T00:00:00') : null
+        const dEnd = ev.end_date && ev.end_date !== ev.event_date ? new Date(ev.end_date + 'T00:00:00') : null
+        const fmtDate = (dt) => dt.toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+            onClick={() => setViewingEvent(null)}>
+            <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden"
+              onClick={e => e.stopPropagation()}>
+              {/* Header bar */}
+              <div className="h-1.5 w-full" style={{ backgroundColor: color }} />
+              <div className="px-6 pt-5 pb-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold text-white"
+                        style={{ backgroundColor: color }}>{ev.category}</span>
+                      {aud && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border"
+                          style={{ color: aud.color, borderColor: aud.color, backgroundColor: aud.color + '18' }}>
+                          {ev.audience !== 'public' ? '🔒 ' : '👥 '}{aud.label}
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="text-base font-bold text-gray-900 leading-snug">{ev.title}</h3>
+                  </div>
+                  <button onClick={() => setViewingEvent(null)}
+                    className="p-1.5 rounded-xl hover:bg-gray-100 shrink-0 mt-0.5">
+                    <X size={17} className="text-gray-400" />
+                  </button>
+                </div>
+
+                <div className="mt-4 space-y-2.5">
+                  {/* Date */}
+                  <div className="flex items-start gap-2.5 text-sm text-gray-700">
+                    <span className="text-base shrink-0">📅</span>
+                    <div>
+                      <p>{d ? fmtDate(d) : 'ยังไม่ระบุวันที่'}</p>
+                      {dEnd && <p className="text-gray-500 text-xs mt-0.5">ถึง {fmtDate(dEnd)}</p>}
+                    </div>
+                  </div>
+                  {/* Time */}
+                  {ev.event_time && (
+                    <div className="flex items-center gap-2.5 text-sm text-gray-700">
+                      <span className="text-base shrink-0">⏰</span>
+                      <span>{ev.event_time.slice(0, 5)}{ev.end_time ? ` – ${ev.end_time.slice(0, 5)}` : ''} น.</span>
+                    </div>
+                  )}
+                  {/* Location */}
+                  {ev.location && (
+                    <div className="flex items-start gap-2.5 text-sm text-gray-700">
+                      <span className="text-base shrink-0">📍</span>
+                      <span>{ev.location}</span>
+                    </div>
+                  )}
+                  {/* Description */}
+                  {ev.description && (
+                    <div className="flex items-start gap-2.5 text-sm text-gray-700">
+                      <span className="text-base shrink-0">📝</span>
+                      <p className="leading-relaxed whitespace-pre-wrap">{ev.description}</p>
+                    </div>
+                  )}
+                  {/* Attachment */}
+                  {ev.attachment_url && (
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-base shrink-0">📎</span>
+                      <a href={ev.attachment_url} target="_blank" rel="noopener noreferrer"
+                        className="text-sm text-blue-600 hover:underline font-medium">
+                        ดูไฟล์แนบ
+                      </a>
+                    </div>
+                  )}
+                  {/* Creator */}
+                  {ev.creator?.full_name && (
+                    <div className="flex items-center gap-2.5 text-sm text-gray-500">
+                      <span className="text-base shrink-0">✍️</span>
+                      <span>{ev.creator.full_name}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Actions */}
+                {canManage && (['admin', 'superadmin'].includes(currentUserRole) || ev.created_by === currentUserId) && (
+                  <div className="flex gap-2 mt-5 pt-4 border-t border-gray-100">
+                    <button onClick={() => { setViewingEvent(null); openEdit(ev) }}
+                      className="flex-1 py-2.5 rounded-xl border border-blue-300 text-blue-600 text-sm font-bold hover:bg-blue-50 transition-colors">
+                      แก้ไข
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/50 px-4 pb-4 md:p-6">
           <div className="w-full max-w-md md:max-w-2xl bg-white rounded-t-3xl md:rounded-2xl shadow-2xl flex flex-col max-h-[90vh] md:max-h-[88vh] overflow-hidden">
@@ -772,6 +909,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
                         <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">สถานที่</th>
                         <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">กลุ่มเป้าหมาย</th>
                         <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ผู้เพิ่ม</th>
+                        <th className="px-3 py-2.5 text-center text-[11px] font-bold text-white border-r border-white/10 w-12">ไฟล์</th>
                         {canManage && <th className="px-3 py-2.5 text-center text-[11px] font-bold text-white">จัดการ</th>}
                       </tr>
                     </thead>
@@ -791,8 +929,11 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
                             onMouseLeave={e => e.currentTarget.style.backgroundColor = i % 2 === 0 ? '#fff' : '#f5f8fc'}>
                             <td className="px-3 py-2 text-center text-xs text-gray-400 border-r border-gray-200">{i + 1}</td>
                             <td className="px-3 py-2 border-r border-gray-200">
-                              <p className="font-semibold text-gray-800 text-xs leading-snug">{ev.title}</p>
-                              {ev.description && <p className="text-[11px] text-gray-400 truncate max-w-[220px]">{ev.description}</p>}
+                              <button type="button" onClick={() => setViewingEvent(ev)}
+                                className="text-left group w-full">
+                                <p className="font-semibold text-blue-700 text-xs leading-snug group-hover:underline">{ev.title}</p>
+                                {ev.description && <p className="text-[11px] text-gray-400 truncate max-w-[220px]">{ev.description}</p>}
+                              </button>
                             </td>
                             <td className="px-3 py-2 border-r border-gray-200">
                               <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold text-white"
@@ -813,6 +954,15 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
                             </td>
                             <td className="px-3 py-2 text-xs text-gray-600 border-r border-gray-200 whitespace-nowrap">
                               {ev.creator?.full_name ?? <span className="text-gray-300">—</span>}
+                            </td>
+                            <td className="px-3 py-2 text-center border-r border-gray-200">
+                              {ev.attachment_url
+                                ? <a href={ev.attachment_url} target="_blank" rel="noopener noreferrer"
+                                    title="เปิดไฟล์แนบ"
+                                    className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-blue-50 hover:bg-blue-100 transition-colors">
+                                    <Paperclip size={13} className="text-blue-500" />
+                                  </a>
+                                : <span className="text-gray-300 text-xs">—</span>}
                             </td>
                             {canManage && (
                               <td className="px-3 py-2 text-center" onClick={e => e.stopPropagation()}>
