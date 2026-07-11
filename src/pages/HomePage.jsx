@@ -10,6 +10,7 @@ import ShortcutBand from '../components/home/ShortcutBand'
 import BannerSlider from '../components/home/BannerSlider'
 import { Info, ChevronRight, Briefcase, Megaphone, LayoutDashboard, Wrench, Newspaper, CalendarDays, ChevronLeft } from 'lucide-react'
 import WeatherWidget from '../components/home/WeatherWidget'
+import StaffSection from '../components/home/StaffSection'
 
 const MARQUEE_TEXT = 'บริการประชาชนออนไลน์ ตลอด 24 ชั่วโมง เพื่อใช้เป็นช่องทางในการติดตามข่าวสาร แจ้งเรื่องร้องเรียน และรับบริการต่างๆได้อย่างสะดวก รวดเร็ว และเข้าถึงได้ทุกที่ทุกเวลา'
 
@@ -27,10 +28,10 @@ const AUD_LABEL = { public: 'ประชาชน', staff: 'เจ้าหน�
 
 // ── section order per layout ──────────────────────────────────────────
 const LAYOUT_ORDER = {
-  classic:       ['banner', 'eservice', 'marquee', 'complaint', 'shortcut'],
-  modern:        ['shortcut', 'banner', 'eservice', 'complaint'],
-  service_first: ['eservice', 'complaint', 'banner', 'shortcut'],
-  news_first:    ['banner', 'complaint', 'shortcut', 'eservice'],
+  classic:       ['banner', 'staff', 'eservice', 'marquee', 'complaint', 'shortcut'],
+  modern:        ['shortcut', 'banner', 'staff', 'eservice', 'complaint'],
+  service_first: ['eservice', 'complaint', 'banner', 'staff', 'shortcut'],
+  news_first:    ['banner', 'staff', 'complaint', 'shortcut', 'eservice'],
 }
 const LAYOUT_RIGHT = {
   classic:       ['weather', 'news', 'activities', 'calendar'],
@@ -358,6 +359,7 @@ export default function HomePage() {
   // ── section map ──────────────────────────────────────────────────
   const SECTION = {
     banner:    <BannerSlider key="banner" />,
+    staff:     <StaffSection key="staff" />,
     eservice:  <EServiceBlock key="eservice" docTypes={topDocTypes} layout={layout} />,
     marquee:   <MarqueeBar key="marquee" />,
     complaint: <ComplaintBand key="complaint" />,

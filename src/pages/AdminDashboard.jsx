@@ -12,7 +12,7 @@ import {
   CheckCircle2, XCircle, AlertCircle, ChevronRight, ChevronLeft,
   Filter, Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical,
   X, FileText, AlignLeft, Image, Calendar, Hash, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera,
-  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, BellOff, ExternalLink, BarChart2, Settings, Download, Banknote, Star, MessageSquare, Car
+  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, BellOff, ExternalLink, BarChart2, Settings, Download, Banknote, Star, MessageSquare, Car, Palette
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { compressImage } from '../lib/imageUtils'
@@ -29,6 +29,7 @@ import ReportManagerComponent from '../components/admin/ReportManager'
 import ModuleManager from '../components/admin/ModuleManager'
 import AuditLogViewer from '../components/admin/AuditLogViewer'
 import FleetSetup from '../components/fleet/FleetSetup'
+import ThemeSettingsAdmin from '../components/admin/ThemeSettingsAdmin'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS = {
@@ -1992,7 +1993,7 @@ const STAFF_ROLE_LABEL = {
   staff: 'เจ้าหน้าที่',
 }
 
-const EMPTY_STAFF_FORM = { name: '', title: '', role: 'mayor' }
+const EMPTY_STAFF_FORM = { name: '', title: '', role: 'mayor', phone: '' }
 
 function StaffManager({ tenant }) {
   const [staff, setStaff] = useState([])
@@ -2024,12 +2025,13 @@ function StaffManager({ tenant }) {
   async function addStaff() {
     const name = form.name.trim()
     const title = form.title.trim()
+    const phone = form.phone?.trim() || null
     if (!name || !title || !tenant?.id) return
     setSaving(true)
     setError(null)
     const { data, error: err } = await supabase
       .from('staff')
-      .insert({ municipality_id: tenant.id, name, title, role: form.role, display_order: staff.length })
+      .insert({ municipality_id: tenant.id, name, title, role: form.role, phone, display_order: staff.length })
       .select()
       .single()
     if (err) {
@@ -2045,13 +2047,14 @@ function StaffManager({ tenant }) {
   async function saveEdit(id) {
     const name = editForm.name.trim()
     const title = editForm.title.trim()
+    const phone = editForm.phone?.trim() || null
     if (!name || !title) { setEditingId(null); return }
     const { error: err } = await supabase
       .from('staff')
-      .update({ name, title, role: editForm.role })
+      .update({ name, title, role: editForm.role, phone })
       .eq('id', id)
     if (err) { setError('แก้ไขไม่สำเร็จ: ' + err.message); return }
-    setStaff((prev) => prev.map((s) => s.id === id ? { ...s, name, title, role: editForm.role } : s))
+    setStaff((prev) => prev.map((s) => s.id === id ? { ...s, name, title, role: editForm.role, phone } : s))
     setEditingId(null)
   }
 
@@ -2128,7 +2131,7 @@ function StaffManager({ tenant }) {
       {showAddForm && (
         <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 space-y-3">
           <p className="text-sm font-semibold text-blue-800">เพิ่มบุคลากรใหม่</p>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid gap-2 sm:grid-cols-3">
             <div>
               <label className="text-xs text-gray-500 mb-1 block">ชื่อ-นามสกุล *</label>
               <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -2140,6 +2143,13 @@ function StaffManager({ tenant }) {
               <label className="text-xs text-gray-500 mb-1 block">ตำแหน่ง *</label>
               <input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
                 placeholder="เช่น นายกเทศมนตรีตำบลน้ำเลา"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2"
+                style={{ '--tw-ring-color': 'var(--color-primary)' }} />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">เบอร์โทรศัพท์ติดต่อ</label>
+              <input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                placeholder="เช่น โทร. 053-276491 ต่อ 886"
                 className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2"
                 style={{ '--tw-ring-color': 'var(--color-primary)' }} />
             </div>
@@ -2183,7 +2193,7 @@ function StaffManager({ tenant }) {
               <div key={person.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
                 {editingId === person.id ? (
                   <div className="space-y-3">
-                    <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="grid gap-2 sm:grid-cols-3">
                       <div>
                         <label className="text-xs text-gray-500 mb-1 block">ชื่อ-นามสกุล</label>
                         <input value={editForm.name} onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
@@ -2193,6 +2203,12 @@ function StaffManager({ tenant }) {
                       <div>
                         <label className="text-xs text-gray-500 mb-1 block">ตำแหน่ง</label>
                         <input value={editForm.title} onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))}
+                          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2"
+                          style={{ '--tw-ring-color': 'var(--color-primary)' }} />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500 mb-1 block">เบอร์ติดต่อ</label>
+                        <input value={editForm.phone} onChange={(e) => setEditForm((f) => ({ ...f, phone: e.target.value }))}
                           className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2"
                           style={{ '--tw-ring-color': 'var(--color-primary)' }} />
                       </div>
@@ -2234,7 +2250,7 @@ function StaffManager({ tenant }) {
                           disabled={uploading === person.id}
                           onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(person.id, f) }} />
                       </label>
-                      <button onClick={() => { setEditingId(person.id); setEditForm({ name: person.name, title: person.title, role: person.role }) }}
+                      <button onClick={() => { setEditingId(person.id); setEditForm({ name: person.name, title: person.title, role: person.role, phone: person.phone || '' }) }}
                         className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-xl font-medium text-gray-600 border border-gray-200 hover:bg-gray-50">
                         <Pencil size={11} /> แก้ไข
                       </button>
@@ -2262,53 +2278,99 @@ function StaffManager({ tenant }) {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-16">รูป</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ชื่อ-นามสกุล</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ตำแหน่ง</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">เบอร์ติดต่อ</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ประเภท</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500">จัดการ</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {staff.map((person, i) => (
-                  <tr key={person.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3 text-xs text-gray-400">{i + 1}</td>
-                    <td className="px-4 py-3">
-                      {person.photo_url ? (
-                        <img src={person.photo_url} alt={person.name} className="w-9 h-9 rounded-full object-cover object-top ring-1 ring-gray-200" />
-                      ) : (
-                        <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-white text-xs"
-                          style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
-                          {person.name.trim().split(' ').map((w) => w[0]).join('').slice(0, 2)}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 font-medium text-gray-800">{person.name}</td>
-                    <td className="px-4 py-3 text-gray-600">{person.title}</td>
-                    <td className="px-4 py-3">
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: 'var(--color-primary)' }}>
-                        {STAFF_ROLE_LABEL[person.role] ?? person.role}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end items-center gap-1.5">
-                        <label className={`cursor-pointer flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg font-medium text-white ${uploading === person.id ? 'opacity-60 cursor-wait' : ''}`}
-                          style={{ backgroundColor: 'var(--color-primary)' }} title={person.photo_url ? 'เปลี่ยนรูป' : 'อัปโหลดรูป'}>
-                          {uploading === person.id ? <Loader2 size={11} className="animate-spin" /> : <Camera size={11} />}
-                          รูป
-                          <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
-                            disabled={uploading === person.id}
-                            onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(person.id, f) }} />
-                        </label>
-                        <button onClick={() => { setEditingId(person.id); setEditForm({ name: person.name, title: person.title, role: person.role }) }}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="แก้ไข">
-                          <Pencil size={14} />
-                        </button>
-                        <button onClick={() => deleteStaff(person.id, person.name)} disabled={deleting === person.id}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50" title="ลบ">
-                          {deleting === person.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {staff.map((person, i) => {
+                  const isEditing = editingId === person.id
+                  return (
+                    <tr key={person.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3 text-xs text-gray-400">{i + 1}</td>
+                      <td className="px-4 py-3">
+                        {person.photo_url ? (
+                          <img src={person.photo_url} alt={person.name} className="w-9 h-9 rounded-full object-cover object-top ring-1 ring-gray-200" />
+                        ) : (
+                          <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-white text-xs"
+                            style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
+                            {person.name.trim().split(' ').map((w) => w[0]).join('').slice(0, 2)}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isEditing ? (
+                          <input value={editForm.name} onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+                            className="border border-gray-200 rounded-lg px-2 py-1 text-sm bg-white focus:outline-none" />
+                        ) : (
+                          <span className="font-medium text-gray-800">{person.name}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isEditing ? (
+                          <input value={editForm.title} onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))}
+                            className="border border-gray-200 rounded-lg px-2 py-1 text-sm bg-white focus:outline-none" />
+                        ) : (
+                          <span className="text-gray-600">{person.title}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isEditing ? (
+                          <input value={editForm.phone} onChange={(e) => setEditForm((f) => ({ ...f, phone: e.target.value }))}
+                            className="border border-gray-200 rounded-lg px-2 py-1 text-sm bg-white focus:outline-none" />
+                        ) : (
+                          <span className="text-gray-600 font-mono text-xs">{person.phone || '-'}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isEditing ? (
+                          <select value={editForm.role} onChange={(e) => setEditForm((f) => ({ ...f, role: e.target.value }))}
+                            className="border border-gray-200 rounded-lg px-2 py-1 text-sm bg-white focus:outline-none">
+                            {Object.entries(STAFF_ROLE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                          </select>
+                        ) : (
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: 'var(--color-primary)' }}>
+                            {STAFF_ROLE_LABEL[person.role] ?? person.role}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isEditing ? (
+                          <div className="flex justify-end items-center gap-1.5">
+                            <button onClick={() => saveEdit(person.id)}
+                              className="px-2 py-1 rounded bg-green-600 text-white text-xs font-semibold hover:bg-green-700">
+                              บันทึก
+                            </button>
+                            <button onClick={() => setEditingId(null)}
+                              className="px-2 py-1 rounded bg-gray-400 text-white text-xs font-semibold hover:bg-gray-500">
+                              ยกเลิก
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex justify-end items-center gap-1.5">
+                            <label className={`cursor-pointer flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg font-medium text-white ${uploading === person.id ? 'opacity-60 cursor-wait' : ''}`}
+                              style={{ backgroundColor: 'var(--color-primary)' }} title={person.photo_url ? 'เปลี่ยนรูป' : 'อัปโหลดรูป'}>
+                              {uploading === person.id ? <Loader2 size={11} className="animate-spin" /> : <Camera size={11} />}
+                              รูป
+                              <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+                                disabled={uploading === person.id}
+                                onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(person.id, f) }} />
+                            </label>
+                            <button onClick={() => { setEditingId(person.id); setEditForm({ name: person.name, title: person.title, role: person.role, phone: person.phone || '' }) }}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="แก้ไข">
+                              <Pencil size={14} />
+                            </button>
+                            <button onClick={() => deleteStaff(person.id, person.name)} disabled={deleting === person.id}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50" title="ลบ">
+                              {deleting === person.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -4838,6 +4900,7 @@ export default function AdminDashboard() {
                 { key: 'emergency',   label: 'สายด่วน',       Icon: Phone,    color: '#ef4444', show: currentUserRole !== 'viewer' },
                 { key: 'locations',   label: 'สถานที่เกิดเหตุ', Icon: MapPin, color: '#0891b2', show: currentUserRole !== 'viewer' },
                 { key: 'fleet-setup', label: 'ตั้งค่ายานพาหนะ', Icon: Car,    color: '#0369a1', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                { key: 'theme-settings', label: 'ธีมและรูปแบบ', Icon: Palette, color: '#a855f7', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 { key: 'system-settings', label: 'ตั้งค่าระบบ',  Icon: Settings,    color: '#3b82f6', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 { key: 'users',           label: 'จัดการผู้ใช้', Icon: Shield,      color: '#7c3aed', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 { key: 'modules',         label: 'จัดการโมดูล', Icon: LayoutGrid,   color: '#7c3aed', show: currentUserRole === 'superadmin' },
@@ -5247,6 +5310,8 @@ export default function AdminDashboard() {
           onEditProject={() => navigate('/staff', { state: { module: 'projects' } })} />
       ) : activePage === 'fee-settings' ? (
         <FeeSettingsAdmin tenant={tenant} />
+      ) : activePage === 'theme-settings' ? (
+        <ThemeSettingsAdmin />
       ) : activePage === 'system-settings' ? (
         <SystemSettingsAdmin tenant={tenant} onUpdateTenant={(updated) => window.location.reload()} />
       ) : activePage === 'audit-log' ? (
@@ -5329,6 +5394,18 @@ export default function AdminDashboard() {
               </button>
             )}
             {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
+              <button onClick={() => setActivePage('theme-settings')}
+                className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#fae8ff' }}>
+                  <Palette size={24} style={{ color: '#a855f7' }} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-800">ธีมและรูปแบบ</p>
+                  <p className="text-[13px] text-gray-400 mt-0.5">สีระบบ / หน้าแรก</p>
+                </div>
+              </button>
+            )}
+            {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
               <button onClick={() => setActivePage('system-settings')}
                 className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
                 <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#dbeafe' }}>
@@ -5369,8 +5446,9 @@ export default function AdminDashboard() {
                   { key: 'emergency',   Icon: Phone,       color: '#ef4444', bg: '#fee2e2', label: 'สายด่วนฉุกเฉิน',  desc: 'จัดการรายชื่อและเบอร์ติดต่อ',     show: currentUserRole !== 'viewer' },
                   { key: 'locations',   Icon: MapPin,      color: '#0891b2', bg: '#e0f2fe', label: 'สถานที่เกิดเหตุ', desc: 'จัดการหมู่บ้าน / ตำบลในพื้นที่',  show: currentUserRole !== 'viewer' },
                   { key: 'staff',            Icon: UserCircle2, color: '#7c3aed', bg: '#ede9fe', label: 'รูปผู้บริหาร',       desc: 'อัปโหลดรูปนายก/รองนายก/ทีมงาน',       show: currentUserRole !== 'viewer' },
-                  { key: 'fleet-setup',     Icon: Car,         color: '#0369a1', bg: '#e0f2fe', label: 'ตั้งค่ายานพาหนะ', desc: 'กอง/หน่วยงาน งบประมาณ สิทธิ์ผู้ใช้', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                  { key: 'system-settings', Icon: Settings,    color: '#3b82f6', bg: '#dbeafe', label: 'ตั้งค่าระบบ',    desc: 'ตั้งค่าชื่อระบบและข้อมูลพื้นฐาน',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                  { key: 'fleet-setup',      Icon: Car,         color: '#0369a1', bg: '#e0f2fe', label: 'ตั้งค่ายานพาหนะ', desc: 'กอง/หน่วยงาน งบประมาณ สิทธิ์ผู้ใช้', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                  { key: 'theme-settings',   Icon: Palette,     color: '#a855f7', bg: '#fae8ff', label: 'ธีมและรูปแบบ',   desc: 'ปรับสีระบบและรูปแบบหน้าแรก',        show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                  { key: 'system-settings',  Icon: Settings,    color: '#3b82f6', bg: '#dbeafe', label: 'ตั้งค่าระบบ',    desc: 'ตั้งค่าชื่อระบบและข้อมูลพื้นฐาน',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'users',           Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', label: 'จัดการผู้ใช้',    desc: 'สิทธิ์การเข้าถึงและบทบาท',        show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 ].filter(r => r.show).map(({ key, Icon, color, bg, label, desc }) => (
                   <tr key={key} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => setActivePage(key)}>
