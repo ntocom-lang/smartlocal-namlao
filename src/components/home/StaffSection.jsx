@@ -6,12 +6,12 @@ import { UserCircle2 } from 'lucide-react'
 // Premium Executive Card matching the mockup style (Vertical layout for clean fit)
 function ExecutivePremiumCard({ person }) {
   return (
-    <div className="flex flex-col items-center text-center bg-white/70 backdrop-blur-sm rounded-2xl md:rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all p-3 md:p-5 relative overflow-hidden dark:bg-slate-900/50 dark:border-slate-800/80 animate-fade-in">
+    <div className="flex flex-col items-center text-center bg-white/70 backdrop-blur-sm rounded-2xl md:rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all p-2.5 md:p-5 relative overflow-hidden dark:bg-slate-900/50 dark:border-slate-800/80 animate-fade-in">
       {/* Glow background behind image */}
       <div className="absolute top-12 left-1/2 -translate-x-1/2 w-24 h-24 md:w-40 md:h-40 rounded-full pointer-events-none opacity-40 blur-lg md:blur-xl bg-gradient-to-tr from-lime-300/40 to-emerald-300/40" />
 
-      {/* Top: Image */}
-      <div className="relative shrink-0 z-10 w-full h-36 md:h-52 flex items-end justify-center mb-3">
+      {/* Top: Image (Enlarged) */}
+      <div className="relative shrink-0 z-10 w-full h-40 md:h-56 flex items-end justify-center mb-2">
         {person.photo_url ? (
           <img
             src={person.photo_url}
@@ -25,23 +25,23 @@ function ExecutivePremiumCard({ person }) {
         )}
       </div>
 
-      {/* Bottom: Information */}
-      <div className="relative z-10 w-full min-w-0">
-        {/* Name and Phone box - using primary theme color for dynamic matching */}
-        <div className="w-full bg-[var(--color-primary)] text-white rounded-xl md:rounded-2xl py-2 md:py-3 px-2 md:px-3 shadow-sm border border-[var(--color-primary-dark)]/10 flex flex-col items-center justify-center space-y-1">
+      {/* Bottom: Information (More compact box) */}
+      <div className="relative z-10 w-full flex flex-col items-center min-w-0">
+        {/* Name and Phone box - using primary theme color for dynamic matching, made more compact */}
+        <div className="w-[92%] bg-[var(--color-primary)] text-white rounded-xl md:rounded-2xl py-1 md:py-2 px-1.5 md:px-3 shadow-sm border border-[var(--color-primary-dark)]/10 flex flex-col items-center justify-center space-y-0.5">
           {/* Line 1: Name */}
-          <p className="font-bold text-[11px] md:text-base leading-snug">
+          <p className="font-bold text-[10px] md:text-base leading-snug">
             {person.name}
           </p>
 
           {/* Line 2: Position */}
-          <p className="text-[10px] md:text-sm text-white/90 font-semibold leading-tight">
+          <p className="text-[9px] md:text-xs text-white/90 font-semibold leading-tight">
             {person.title}
           </p>
 
           {/* Line 3: Phone */}
           {person.phone && (
-            <p className="text-[9px] md:text-xs text-white/80 font-medium">
+            <p className="text-[8px] md:text-[11px] text-white/80 font-medium">
               {person.phone.startsWith('โทร') ? person.phone : `โทร. ${person.phone}`}
             </p>
           )}
