@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Palette, LayoutTemplate, Save, Loader2, CheckCircle2 } from 'lucide-react'
+import { Palette, LayoutTemplate, Save, Loader2, CheckCircle2, Plus, Trash2, Star } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 
@@ -48,19 +48,52 @@ const LAYOUTS = [
   },
 ]
 
+function applyColorToDOM(hex) {
+  const r = parseInt(hex.slice(1,3), 16)
+  const g = parseInt(hex.slice(3,5), 16)
+  const b = parseInt(hex.slice(5,7), 16)
+  const dk = v => Math.max(0, Math.floor(v * 0.85)).toString(16).padStart(2, '0')
+  document.documentElement.style.setProperty('--color-primary', hex)
+  document.documentElement.style.setProperty('--color-primary-dark', `#${dk(r)}${dk(g)}${dk(b)}`)
+  document.documentElement.style.setProperty('--color-primary-rgb', `${r}, ${g}, ${b}`)
+}
+
+function LayoutMiniPreview({ bars, color }) {
+  return (
+    <div className="w-full bg-gray-100 rounded-lg p-2 flex gap-1.5">
+      <div className="flex flex-col gap-1 flex-1">
+        {bars.map((bg, i) => (
+          <div key={i} className="rounded" style={{
+            height: i === 0 ? 10 : i === 2 ? 4 : 7,
+            background: bg === 'primary' ? (color || 'var(--color-primary,#1c7cd6)') : bg,
+            borderRadius: 4,
+          }} />
+        ))}
+      </div>
+      <div className="flex flex-col gap-1 w-6">
+        {[8, 14, 6, 10].map((h, i) => (
+          <div key={i} className="rounded bg-gray-300" style={{ height: h, borderRadius: 3 }} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function ThemeSettingsAdmin() {
   const { tenant, patchTenant } = useTenant()
 
-  const [themeColor, setThemeColor]   = useState(() => tenant?.theme_color   || '#1c7cd6')
-  const [layoutTheme, setLayoutTheme] = useState(() => tenant?.layout_theme  || 'classic')
-  const [colorSaving, setColorSaving] = useState(false)
+  const [themeColor,   setThemeColor]   = useState(() => tenant?.theme_color   || '#1c7cd6')
+  const [layoutTheme,  setLayoutTheme]  = useState(() => tenant?.layout_theme  || 'classic')
+  const [presets,      setPresets]      = useState(() => tenant?.theme_presets || [])
+  const [colorSaving,  setColorSaving]  = useState(false)
   const [layoutSaving, setLayoutSaving] = useState(false)
-  const [saved, setSaved] = useState(null)
+  const [presetName,   setPresetName]   = useState('')
+  const [presetSaving, setPresetSaving] = useState(false)
+  const [applying,     setApplying]     = useState(null)
+  const [deleting,     setDeleting]     = useState(null)
+  const [saved,        setSaved]        = useState(null)
 
-  function flash(key) {
-    setSaved(key)
-    setTimeout(() => setSaved(null), 2500)
-  }
+  function flash(key) { setSaved(key); setTimeout(() => setSaved(null), 2500) }
 
   async function saveColor(e) {
     e.preventDefault()
@@ -70,19 +103,10 @@ export default function ThemeSettingsAdmin() {
         .from('municipalities').update({ theme_color: themeColor }).eq('id', tenant.id)
       if (error) throw error
       patchTenant({ theme_color: themeColor })
-      const r = parseInt(themeColor.slice(1,3), 16)
-      const g = parseInt(themeColor.slice(3,5), 16)
-      const b = parseInt(themeColor.slice(5,7), 16)
-      const dk = v => Math.max(0, Math.floor(v * 0.85)).toString(16).padStart(2, '0')
-      document.documentElement.style.setProperty('--color-primary', themeColor)
-      document.documentElement.style.setProperty('--color-primary-dark', `#${dk(r)}${dk(g)}${dk(b)}`)
-      document.documentElement.style.setProperty('--color-primary-rgb', `${r}, ${g}, ${b}`)
+      applyColorToDOM(themeColor)
       flash('color')
-    } catch (err) {
-      alert('บันทึกไม่สำเร็จ: ' + err.message)
-    } finally {
-      setColorSaving(false)
-    }
+    } catch (err) { alert('บันทึกไม่สำเร็จ: ' + err.message) }
+    finally { setColorSaving(false) }
   }
 
   async function saveLayout(e) {
@@ -94,12 +118,60 @@ export default function ThemeSettingsAdmin() {
       if (error) throw error
       patchTenant({ layout_theme: layoutTheme })
       flash('layout')
-    } catch (err) {
-      alert('บันทึกไม่สำเร็จ: ' + err.message)
-    } finally {
-      setLayoutSaving(false)
-    }
+    } catch (err) { alert('บันทึกไม่สำเร็จ: ' + err.message) }
+    finally { setLayoutSaving(false) }
   }
+
+  async function savePreset(e) {
+    e.preventDefault()
+    const name = presetName.trim()
+    if (!name) return
+    setPresetSaving(true)
+    try {
+      const newPreset = { id: Date.now(), name, color: themeColor, layout: layoutTheme }
+      const next = [...presets, newPreset]
+      const { error } = await supabase
+        .from('municipalities').update({ theme_presets: next }).eq('id', tenant.id)
+      if (error) throw error
+      setPresets(next)
+      patchTenant({ theme_presets: next })
+      setPresetName('')
+      flash('preset-save')
+    } catch (err) { alert('บันทึกไม่สำเร็จ: ' + err.message) }
+    finally { setPresetSaving(false) }
+  }
+
+  async function applyPreset(preset) {
+    setApplying(preset.id)
+    try {
+      const { error } = await supabase
+        .from('municipalities')
+        .update({ theme_color: preset.color, layout_theme: preset.layout })
+        .eq('id', tenant.id)
+      if (error) throw error
+      setThemeColor(preset.color)
+      setLayoutTheme(preset.layout)
+      patchTenant({ theme_color: preset.color, layout_theme: preset.layout })
+      applyColorToDOM(preset.color)
+      flash('apply-' + preset.id)
+    } catch (err) { alert('ใช้ธีมไม่สำเร็จ: ' + err.message) }
+    finally { setApplying(null) }
+  }
+
+  async function deletePreset(id) {
+    setDeleting(id)
+    try {
+      const next = presets.filter(p => p.id !== id)
+      const { error } = await supabase
+        .from('municipalities').update({ theme_presets: next }).eq('id', tenant.id)
+      if (error) throw error
+      setPresets(next)
+      patchTenant({ theme_presets: next })
+    } catch (err) { alert('ลบไม่สำเร็จ: ' + err.message) }
+    finally { setDeleting(null) }
+  }
+
+  const currentLayoutData = LAYOUTS.find(l => l.id === layoutTheme) || LAYOUTS[0]
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -116,13 +188,66 @@ export default function ThemeSettingsAdmin() {
         </div>
       </div>
 
+      {/* ── Preset ที่บันทึกไว้ ── */}
+      {presets.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+          <h2 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
+            <Star size={15} /> ธีมที่บันทึกไว้
+          </h2>
+          <div className="space-y-2">
+            {presets.map(p => {
+              const layoutData = LAYOUTS.find(l => l.id === p.layout) || LAYOUTS[0]
+              const isActive = tenant?.theme_color === p.color && tenant?.layout_theme === p.layout
+              const isApplying = applying === p.id
+              const justApplied = saved === 'apply-' + p.id
+              return (
+                <div key={p.id}
+                  className="flex items-center gap-3 p-3 rounded-xl border transition-all"
+                  style={{
+                    borderColor: isActive ? p.color : '#f3f4f6',
+                    backgroundColor: isActive ? p.color + '08' : '#fafafa',
+                  }}>
+                  {/* color dot */}
+                  <div className="w-8 h-8 rounded-lg shrink-0 shadow-sm border border-white/60"
+                    style={{ background: `linear-gradient(135deg, #0a1628 0%, ${p.color} 100%)` }} />
+                  {/* info */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-gray-800 truncate">{p.name}</p>
+                    <p className="text-[11px] text-gray-400">{layoutData.name} · {p.color.toUpperCase()}</p>
+                  </div>
+                  {/* actions */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {isActive && !justApplied && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white"
+                        style={{ backgroundColor: p.color }}>ใช้งานอยู่</span>
+                    )}
+                    {!isActive && (
+                      <button onClick={() => applyPreset(p)} disabled={!!applying}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition-all disabled:opacity-50"
+                        style={{ backgroundColor: p.color }}>
+                        {isApplying ? <Loader2 size={12} className="animate-spin" /> : justApplied ? <CheckCircle2 size={12} /> : null}
+                        {justApplied ? 'ใช้แล้ว' : 'ใช้ธีมนี้'}
+                      </button>
+                    )}
+                    <button onClick={() => deletePreset(p.id)} disabled={deleting === p.id}
+                      className="p-1.5 rounded-lg text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors">
+                      {deleting === p.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* ── ธีมสี ── */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         <h2 className="text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
           <Palette size={15} /> ธีมสีระบบ
         </h2>
         <p className="text-xs text-gray-400 mb-5 leading-relaxed">
-          สีหลักที่ใช้ทั่วทั้งระบบ — ปุ่ม, header gradient, active state · เปลี่ยนแล้วเห็นผลทันทีโดยไม่ต้อง reload
+          สีหลักที่ใช้ทั่วทั้งระบบ — เปลี่ยนแล้วเห็นผลทันทีโดยไม่ต้อง reload
         </p>
         <form onSubmit={saveColor} className="space-y-4">
           <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
@@ -155,7 +280,6 @@ export default function ThemeSettingsAdmin() {
               )
             })}
           </div>
-
           <div className="flex items-center gap-3 pt-1">
             <label className="text-xs font-semibold text-gray-500 shrink-0">สีกำหนดเอง</label>
             <div className="flex items-center gap-2 border border-gray-200 rounded-xl px-3 py-1.5">
@@ -164,7 +288,6 @@ export default function ThemeSettingsAdmin() {
               <span className="text-xs font-mono text-gray-500">{themeColor.toUpperCase()}</span>
             </div>
           </div>
-
           <button type="submit" disabled={colorSaving}
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-all"
             style={{ backgroundColor: 'var(--color-primary)' }}>
@@ -193,23 +316,7 @@ export default function ThemeSettingsAdmin() {
                     borderColor: active ? 'var(--color-primary)' : '#e5e7eb',
                     backgroundColor: active ? 'rgba(var(--color-primary-rgb,28,124,214),0.06)' : '#fafafa',
                   }}>
-                  {/* mini mockup */}
-                  <div className="w-full bg-gray-100 rounded-lg p-2 flex gap-1.5">
-                    <div className="flex flex-col gap-1 flex-1">
-                      {opt.bars.map((bg, i) => (
-                        <div key={i} className="rounded" style={{
-                          height: i === 0 ? 10 : i === 2 ? 4 : 7,
-                          background: bg === 'primary' ? 'var(--color-primary,#1c7cd6)' : bg,
-                          borderRadius: 4,
-                        }} />
-                      ))}
-                    </div>
-                    <div className="flex flex-col gap-1 w-6">
-                      {[8, 14, 6, 10].map((h, i) => (
-                        <div key={i} className="rounded bg-gray-300" style={{ height: h, borderRadius: 3 }} />
-                      ))}
-                    </div>
-                  </div>
+                  <LayoutMiniPreview bars={opt.bars} color={themeColor} />
                   <div>
                     <p className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
                       {active && <span style={{ color: 'var(--color-primary)' }}>✓</span>}
@@ -221,12 +328,51 @@ export default function ThemeSettingsAdmin() {
               )
             })}
           </div>
-
           <button type="submit" disabled={layoutSaving}
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-all"
             style={{ backgroundColor: 'var(--color-primary)' }}>
             {layoutSaving ? <Loader2 size={15} className="animate-spin" /> : saved === 'layout' ? <CheckCircle2 size={15} /> : <Save size={15} />}
             {saved === 'layout' ? 'บันทึกสำเร็จ' : 'บันทึกรูปแบบ'}
+          </button>
+        </form>
+      </div>
+
+      {/* ── บันทึกเป็น Preset ── */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <h2 className="text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
+          <Plus size={15} /> บันทึกการตั้งค่านี้เป็นธีม
+        </h2>
+        <p className="text-xs text-gray-400 mb-4 leading-relaxed">
+          บันทึกสีและรูปแบบที่เลือกอยู่ตอนนี้เป็น preset ตั้งชื่อไว้ — เรียกใช้ได้ทันทีในอนาคต
+        </p>
+
+        {/* Preview ของ preset ที่จะบันทึก */}
+        <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100 mb-4">
+          <div className="w-8 h-8 rounded-lg shrink-0 shadow-sm"
+            style={{ background: `linear-gradient(135deg, #0a1628 0%, ${themeColor} 100%)` }} />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-gray-700">{currentLayoutData.name}</p>
+            <p className="text-[11px] text-gray-400">{themeColor.toUpperCase()}</p>
+          </div>
+          <div className="w-28 shrink-0">
+            <LayoutMiniPreview bars={currentLayoutData.bars} color={themeColor} />
+          </div>
+        </div>
+
+        <form onSubmit={savePreset} className="flex gap-2">
+          <input
+            type="text"
+            value={presetName}
+            onChange={e => setPresetName(e.target.value)}
+            placeholder="ตั้งชื่อธีม เช่น ธีม แบบที่ 1"
+            maxLength={40}
+            className="flex-1 px-4 py-2.5 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 transition-all"
+          />
+          <button type="submit" disabled={presetSaving || !presetName.trim()}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-40 active:scale-95 transition-all shrink-0"
+            style={{ backgroundColor: 'var(--color-primary)' }}>
+            {presetSaving ? <Loader2 size={15} className="animate-spin" /> : saved === 'preset-save' ? <CheckCircle2 size={15} /> : <Plus size={15} />}
+            {saved === 'preset-save' ? 'บันทึกแล้ว' : 'บันทึก'}
           </button>
         </form>
       </div>

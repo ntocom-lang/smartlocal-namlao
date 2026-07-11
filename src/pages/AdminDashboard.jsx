@@ -22,6 +22,7 @@ import MapDashboardAdmin from '../components/admin/MapDashboardAdmin'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 import CivilProjectReport from '../components/admin/CivilProjectReport'
 import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
+import ThemeSettingsAdmin from '../components/admin/ThemeSettingsAdmin'
 import FeeSettingsAdmin from '../components/admin/FeeSettingsAdmin'
 import EventsManagerComponent from '../components/admin/EventsManager'
 import { InboxModule } from './StaffDashboard'
@@ -4441,6 +4442,7 @@ const PAGE_LABELS = {
   emergency: 'สายด่วน',
   locations: 'สถานที่เกิดเหตุ',
   'system-settings': 'ตั้งค่าระบบ',
+  'theme-settings':  'ธีมและรูปแบบ',
   users: 'จัดการผู้ใช้',
   modules: 'จัดการโมดูล',
   map: 'แผนที่คำร้อง',
