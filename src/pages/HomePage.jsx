@@ -34,7 +34,7 @@ const LAYOUT_ORDER = {
   news_first:    ['banner', 'staff', 'complaint', 'shortcut', 'eservice'],
 }
 const LAYOUT_RIGHT = {
-  classic:       ['weather', 'news', 'activities', 'calendar'],
+  classic:       ['weather', 'calendar'],
   modern:        ['calendar', 'news', 'weather'],
   service_first: ['weather', 'calendar', 'activities'],
   news_first:    ['news', 'activities', 'calendar', 'weather'],
@@ -294,7 +294,6 @@ export default function HomePage() {
   const { role }   = useAuth()
   const layout = tenant?.layout_theme || 'classic'
 
-  const isAdmin           = role === 'admin' || role === 'superadmin' || role === 'officer'
   const isStaff           = role === 'staff'
   const isTechnician      = role === 'technician'
   const isViewerOrCouncil = role === 'viewer' || role === 'council'
