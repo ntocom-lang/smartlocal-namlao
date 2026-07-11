@@ -25,6 +25,31 @@ const AUD_COLOR = {
 }
 const AUD_LABEL = { public: 'ประชาชน', staff: 'เจ้าหน้าที่', management: 'ผู้บริหาร', council: 'สภาเทศบาล' }
 
+// ── section order per layout ──────────────────────────────────────────
+const LAYOUT_ORDER = {
+  classic:       ['banner', 'eservice', 'marquee', 'complaint', 'shortcut'],
+  modern:        ['shortcut', 'banner', 'eservice', 'complaint'],
+  service_first: ['eservice', 'complaint', 'banner', 'shortcut'],
+  news_first:    ['banner', 'complaint', 'shortcut', 'eservice'],
+}
+const LAYOUT_RIGHT = {
+  classic:       ['weather', 'news', 'activities', 'calendar'],
+  modern:        ['calendar', 'news', 'weather'],
+  service_first: ['weather', 'calendar', 'activities'],
+  news_first:    ['news', 'activities', 'calendar', 'weather'],
+}
+
+const BASE_DOC_TYPES = [
+  { value: 'residence_cert',   label: 'ใบรับรองการอยู่อาศัย',           emoji: '🏠' },
+  { value: 'personal_cert',    label: 'หนังสือรับรองบุคคล',              emoji: '👤' },
+  { value: 'conduct_cert',     label: 'หนังสือรับรองความประพฤติ',        emoji: '✅' },
+  { value: 'tax_notice',       label: 'ชำระภาษีที่ดินและสิ่งปลูกสร้าง', emoji: '🏦' },
+  { value: 'waste_collection', label: 'ชำระค่าธรรมเนียมขยะ',            emoji: '🗑️' },
+  { value: 'other',            label: 'คำขออื่นๆ',                       emoji: '📝' },
+]
+
+// ── sub-components ────────────────────────────────────────────────────
+
 function MiniCalendar({ events }) {
   const navigate  = useNavigate()
   const todayRef  = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d }, [])
@@ -62,7 +87,6 @@ function MiniCalendar({ events }) {
 
   return (
     <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-4">
-      {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <CalendarDays size={14} style={{ color: 'var(--color-primary)' }} className="shrink-0" />
@@ -73,8 +97,6 @@ function MiniCalendar({ events }) {
           ทั้งหมด <ChevronRight size={11} />
         </Link>
       </div>
-
-      {/* Month nav */}
       <div className="flex items-center justify-between mb-2">
         <button onClick={prevMonth} className="p-1 rounded-lg hover:bg-gray-100 transition-colors text-gray-400">
           <ChevronLeft size={14} />
@@ -84,8 +106,6 @@ function MiniCalendar({ events }) {
           <ChevronRight size={14} />
         </button>
       </div>
-
-      {/* Day headers */}
       <div className="grid grid-cols-7 mb-0.5">
         {DAY_TH.map((d, i) => (
           <div key={d} className={`text-center text-[10px] font-bold py-0.5 ${
@@ -93,8 +113,6 @@ function MiniCalendar({ events }) {
           }`}>{d}</div>
         ))}
       </div>
-
-      {/* Grid */}
       <div className="grid grid-cols-7 gap-px bg-gray-100 rounded-xl overflow-hidden border border-gray-100">
         {cells.map((day, i) => {
           if (!day) return <div key={i} className="bg-gray-50 min-h-9" />
@@ -123,8 +141,6 @@ function MiniCalendar({ events }) {
           )
         })}
       </div>
-
-      {/* Legend */}
       <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2.5">
         {Object.entries(AUD_LABEL).map(([k, v]) => (
           <div key={k} className="flex items-center gap-1">
@@ -155,7 +171,6 @@ function NewsSlider({ posts, label = 'ข่าวสำคัญ', href = '/new
   return (
     <div className="rounded-2xl bg-white border border-gray-100 shadow-sm overflow-hidden"
       onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
-      {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
         <div className="flex items-center gap-2">
           <Newspaper size={14} className="shrink-0" style={{ color: 'var(--color-primary)' }} />
@@ -167,8 +182,6 @@ function NewsSlider({ posts, label = 'ข่าวสำคัญ', href = '/new
           ทั้งหมด <ChevronRight size={11} />
         </Link>
       </div>
-
-      {/* Image */}
       <div className="relative aspect-video bg-gray-100 cursor-pointer overflow-hidden"
         onClick={() => next()}>
         {post.image_url
@@ -178,7 +191,6 @@ function NewsSlider({ posts, label = 'ข่าวสำคัญ', href = '/new
           : <div className="w-full h-full flex items-center justify-center">
               <Newspaper size={36} className="text-gray-300" strokeWidth={1.5} />
             </div>}
-        {/* Dots */}
         {posts.length > 1 && (
           <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5">
             {posts.map((_, i) => (
@@ -192,27 +204,98 @@ function NewsSlider({ posts, label = 'ข่าวสำคัญ', href = '/new
           </div>
         )}
       </div>
-
     </div>
   )
 }
 
-const BASE_DOC_TYPES = [
-  { value: 'residence_cert',   label: 'ใบรับรองการอยู่อาศัย',           emoji: '🏠' },
-  { value: 'personal_cert',    label: 'หนังสือรับรองบุคคล',              emoji: '👤' },
-  { value: 'conduct_cert',     label: 'หนังสือรับรองความประพฤติ',        emoji: '✅' },
-  { value: 'tax_notice',       label: 'ชำระภาษีที่ดินและสิ่งปลูกสร้าง', emoji: '🏦' },
-  { value: 'waste_collection', label: 'ชำระค่าธรรมเนียมขยะ',            emoji: '🗑️' },
-  { value: 'other',            label: 'คำขออื่นๆ',                       emoji: '📝' },
-]
+// ── E-Service block (layout-aware) ────────────────────────────────────
+function EServiceBlock({ docTypes, layout }) {
+  const isClassic = layout === 'classic'
+  const isServiceFirst = layout === 'service_first'
 
+  const gradient = isClassic
+    ? 'linear-gradient(135deg, #0369a1 0%, #0ea5e9 50%, #7dd3fc 100%)'
+    : `linear-gradient(135deg, var(--color-primary-dark, #0f2a4a) 0%, var(--color-primary) 55%, rgba(var(--color-primary-rgb,28,124,214),0.65) 100%)`
+
+  return (
+    <div className="rounded-2xl shadow-md px-4 py-4 relative overflow-hidden"
+      style={{ background: gradient }}>
+      <div className="absolute -top-6 -right-6 w-32 h-32 rounded-full pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.18) 0%, transparent 70%)' }} />
+      <div className="absolute -bottom-8 -left-4 w-36 h-36 rounded-full pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%)' }} />
+
+      <div className="relative z-10">
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-white text-[11px] font-bold tracking-widest uppercase drop-shadow">
+            ✦ E-Service ✦ <span className="normal-case font-medium opacity-80">งานบริการประชาชน</span>
+          </p>
+          <Link to="/doc-request"
+            className="flex items-center gap-0.5 text-white/80 text-[11px] font-semibold hover:text-white transition-colors">
+            ทั้งหมด <ChevronRight size={13} />
+          </Link>
+        </div>
+
+        {/* Mobile: horizontal scroll */}
+        <div className="flex gap-3 overflow-x-auto pb-1 md:hidden" style={{ scrollbarWidth: 'none' }}>
+          {docTypes.map(({ value, label, emoji }) => (
+            <Link key={value} to={`/doc-request?type=${value}`}
+              className="flex flex-col items-center gap-2 shrink-0 active:scale-95 transition-transform">
+              <div className={`${isServiceFirst ? 'w-16 h-16' : 'w-14 h-14'} rounded-2xl flex items-center justify-center shadow-lg`}
+                style={{ fontSize: isServiceFirst ? 26 : 22, background: 'linear-gradient(135deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.08) 100%)', border: '1px solid rgba(255,255,255,0.2)' }}>
+                {emoji}
+              </div>
+              <p className="text-white text-[10px] font-semibold text-center leading-tight w-16">{label}</p>
+            </Link>
+          ))}
+        </div>
+
+        {/* Desktop: grid — service_first ใช้ 4 คอลัมน์ + icons ใหญ่กว่า */}
+        <div className={`hidden md:grid gap-2 ${isServiceFirst ? 'grid-cols-4' : 'grid-cols-6'}`}>
+          {(isServiceFirst ? docTypes.slice(0, 8) : docTypes).map(({ value, label, emoji }) => (
+            <Link key={value} to={`/doc-request?type=${value}`}
+              className="flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all hover:scale-105 hover:bg-white/10 active:scale-95">
+              <div className={`${isServiceFirst ? 'w-14 h-14 text-2xl' : 'w-10 h-10 text-xl'} rounded-xl flex items-center justify-center shadow-md`}
+                style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0.08) 100%)', border: '1px solid rgba(255,255,255,0.25)' }}>
+                {emoji}
+              </div>
+              <p className="text-white text-[10px] font-semibold text-center leading-snug">{label}</p>
+            </Link>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Marquee (classic/modern only) ─────────────────────────────────────
+function MarqueeBar() {
+  return (
+    <div className="flex items-center overflow-hidden rounded-xl shadow-sm"
+      style={{ background: 'linear-gradient(90deg, #0ea5e9 0%, #38bdf8 40%, #fbbf24 80%, #f59e0b 100%)', height: 36 }}>
+      <div className="shrink-0 flex items-center justify-center px-3 h-full"
+        style={{ background: 'rgba(255,255,255,0.25)' }}>
+        <Megaphone size={16} className="text-white" />
+      </div>
+      <div className="flex-1 overflow-hidden">
+        <span className="whitespace-nowrap text-white text-xs font-medium inline-block"
+          style={{ animation: 'marquee 40s linear infinite' }}>
+          {MARQUEE_TEXT}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{MARQUEE_TEXT}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────
 export default function HomePage() {
   const { tenant } = useTenant()
   const { role }   = useAuth()
+  const layout = tenant?.layout_theme || 'classic'
 
-  const isAdmin       = role === 'admin' || role === 'superadmin' || role === 'officer'
-  const isStaff       = role === 'staff'
-  const isTechnician  = role === 'technician'
+  const isAdmin           = role === 'admin' || role === 'superadmin' || role === 'officer'
+  const isStaff           = role === 'staff'
+  const isTechnician      = role === 'technician'
   const isViewerOrCouncil = role === 'viewer' || role === 'council'
 
   const docTypes = useMemo(() => {
@@ -272,19 +355,39 @@ export default function HomePage() {
     [...docTypes].sort((a, b) => (docCounts[b.value] ?? 0) - (docCounts[a.value] ?? 0))
   , [docTypes, docCounts])
 
+  // ── section map ──────────────────────────────────────────────────
+  const SECTION = {
+    banner:    <BannerSlider key="banner" />,
+    eservice:  <EServiceBlock key="eservice" docTypes={topDocTypes} layout={layout} />,
+    marquee:   <MarqueeBar key="marquee" />,
+    complaint: <ComplaintBand key="complaint" />,
+    shortcut:  <ShortcutBand key="shortcut" />,
+  }
+
+  const RIGHT_SECTION = {
+    weather:    <WeatherWidget key="weather" />,
+    news:       <NewsSlider key="news" posts={sidebarNews} />,
+    activities: <NewsSlider key="activities" posts={sidebarActivities} label="กิจกรรม" href="/news?tab=activity" />,
+    calendar:   <MiniCalendar key="calendar" events={calEvents} />,
+  }
+
+  const leftOrder  = LAYOUT_ORDER[layout]  || LAYOUT_ORDER.classic
+  const rightOrder = LAYOUT_RIGHT[layout]  || LAYOUT_RIGHT.classic
+
   return (
     <div className="bg-gray-50">
       <style>{marqueeStyle}</style>
 
-      {/* ── Main Layout ───────────────────────────────────────────────── */}
       <div className="px-4 md:px-6 py-4 max-w-6xl mx-auto">
 
-        {/* Mobile-only: weather widget (desktop จะอยู่ใน right column) */}
-        <div className="md:hidden mb-3">
-          <WeatherWidget />
-        </div>
+        {/* Mobile weather */}
+        {layout !== 'news_first' && (
+          <div className="md:hidden mb-3">
+            <WeatherWidget />
+          </div>
+        )}
 
-        {/* Role-specific shortcuts */}
+        {/* Role shortcuts (mobile only) */}
         {isStaff && (
           <Link to="/staff"
             className="md:hidden flex items-center gap-3 rounded-2xl px-4 py-3.5 shadow-md mb-4 transition-all hover:shadow-lg hover:-translate-y-0.5"
@@ -327,7 +430,6 @@ export default function HomePage() {
             <ChevronRight size={18} className="text-white/60" />
           </Link>
         )}
-
         {!role && (
           <div className="md:hidden flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800 mb-4">
             <Info size={16} className="shrink-0 mt-0.5" />
@@ -335,92 +437,17 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* ── Desktop 2-column grid / Mobile single column ─────────── */}
+        {/* ── Main 2-col grid ─────────────────────────────────────── */}
         <div className="md:grid md:grid-cols-3 md:gap-6">
 
-          {/* Left: main content (2/3) */}
+          {/* Left col */}
           <div className="md:col-span-2 flex flex-col gap-4 md:gap-3">
-
-            {/* Banner Slider */}
-            <BannerSlider />
-
-            {/* E-Service */}
-            <div className="rounded-2xl shadow-md px-4 py-4 relative overflow-hidden"
-              style={{ background: 'linear-gradient(135deg, #0369a1 0%, #0ea5e9 50%, #7dd3fc 100%)' }}>
-              {/* Decorative blobs */}
-              <div className="absolute -top-6 -right-6 w-32 h-32 rounded-full pointer-events-none"
-                style={{ background: 'radial-gradient(circle, rgba(186,230,253,0.5) 0%, transparent 70%)' }} />
-              <div className="absolute -bottom-8 -left-4 w-36 h-36 rounded-full pointer-events-none"
-                style={{ background: 'radial-gradient(circle, rgba(14,165,233,0.35) 0%, transparent 70%)' }} />
-
-              <div className="relative z-10">
-                <div className="flex items-center justify-between mb-4">
-                  <p className="text-white text-[11px] font-bold tracking-widest uppercase drop-shadow">
-                    ✦ E-Service ✦ <span className="normal-case font-medium opacity-80">งานบริการประชาชน</span>
-                  </p>
-                  <Link to="/doc-request"
-                    className="flex items-center gap-0.5 text-white/80 text-[11px] font-semibold hover:text-white transition-colors">
-                    ทั้งหมด <ChevronRight size={13} />
-                  </Link>
-                </div>
-
-                {/* Mobile: horizontal scroll / Desktop: grid */}
-                <div className="flex gap-3 overflow-x-auto pb-1 md:hidden" style={{ scrollbarWidth: 'none' }}>
-                  {topDocTypes.map(({ value, label, emoji }) => (
-                    <Link key={value} to={`/doc-request?type=${value}`}
-                      className="flex flex-col items-center gap-2 shrink-0 active:scale-95 transition-transform">
-                      <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-lg"
-                        style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.08) 100%)', border: '1px solid rgba(255,255,255,0.2)' }}>
-                        {emoji}
-                      </div>
-                      <p className="text-white text-[10px] font-semibold text-center leading-tight w-16">{label}</p>
-                    </Link>
-                  ))}
-                </div>
-                <div className="hidden md:grid grid-cols-6 gap-2">
-                  {topDocTypes.map(({ value, label, emoji }) => (
-                    <Link key={value} to={`/doc-request?type=${value}`}
-                      className="flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all hover:scale-105 hover:bg-white/10 active:scale-95">
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shadow-md"
-                        style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0.08) 100%)', border: '1px solid rgba(255,255,255,0.25)' }}>
-                        {emoji}
-                      </div>
-                      <p className="text-white text-[10px] font-semibold text-center leading-snug">{label}</p>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Marquee */}
-            <div className="flex items-center overflow-hidden rounded-xl shadow-sm"
-              style={{ background: 'linear-gradient(90deg, #0ea5e9 0%, #38bdf8 40%, #fbbf24 80%, #f59e0b 100%)', height: 36 }}>
-              <div className="shrink-0 flex items-center justify-center px-3 h-full"
-                style={{ background: 'rgba(255,255,255,0.25)' }}>
-                <Megaphone size={16} className="text-white" />
-              </div>
-              <div className="flex-1 overflow-hidden">
-                <span className="whitespace-nowrap text-white text-xs font-medium inline-block"
-                  style={{ animation: 'marquee 40s linear infinite' }}>
-                  {MARQUEE_TEXT}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{MARQUEE_TEXT}
-                </span>
-              </div>
-            </div>
-
-            <ComplaintBand />
-            <ShortcutBand />
+            {leftOrder.map(key => SECTION[key] ?? null)}
           </div>
 
-          {/* Right: widget column (desktop only, 1/3) */}
+          {/* Right col (desktop) */}
           <div className="hidden md:flex flex-col gap-3">
-
-            {/* Weather */}
-            <WeatherWidget />
-
-            <NewsSlider posts={sidebarNews} />
-            <NewsSlider posts={sidebarActivities} label="กิจกรรม" href="/news?tab=activity" />
-            <MiniCalendar events={calEvents} />
-
+            {rightOrder.map(key => RIGHT_SECTION[key] ?? null)}
           </div>
         </div>
 

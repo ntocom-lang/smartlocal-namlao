@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2, Wallpaper, Palette } from 'lucide-react'
+import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2, Wallpaper, Palette, LayoutTemplate } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 
@@ -30,6 +30,8 @@ export default function SystemSettingsAdmin() {
   const [subtitle, setSubtitle] = useState(() => tenant?.system_subtitle || '')
   const [themeColor, setThemeColor] = useState(() => tenant?.theme_color || '#1c7cd6')
   const [themeSaving, setThemeSaving] = useState(false)
+  const [layoutTheme, setLayoutTheme] = useState(() => tenant?.layout_theme || 'classic')
+  const [layoutSaving, setLayoutSaving] = useState(false)
   const [loading, setLoading] = useState(false)
   const [savedSection, setSavedSection] = useState(null)
   const [logoUploading, setLogoUploading] = useState(false)
@@ -223,6 +225,25 @@ export default function SystemSettingsAdmin() {
       alert('บันทึกไม่สำเร็จ: ' + err.message)
     } finally {
       setThemeSaving(false)
+    }
+  }
+
+  async function saveLayout(e) {
+    e.preventDefault()
+    setLayoutSaving(true)
+    try {
+      const { error } = await supabase
+        .from('municipalities')
+        .update({ layout_theme: layoutTheme })
+        .eq('id', tenant.id)
+      if (error) throw error
+      patchTenant({ layout_theme: layoutTheme })
+      setSavedSection('layout')
+      setTimeout(() => setSavedSection(null), 2500)
+    } catch (err) {
+      alert('บันทึกไม่สำเร็จ: ' + err.message)
+    } finally {
+      setLayoutSaving(false)
     }
   }
 
@@ -529,6 +550,107 @@ export default function SystemSettingsAdmin() {
             style={{ backgroundColor: 'var(--color-primary)' }}>
             {themeSaving ? <Loader2 size={15} className="animate-spin" /> : savedSection === 'theme' ? <CheckCircle2 size={15} /> : <Save size={15} />}
             {savedSection === 'theme' ? 'บันทึกสำเร็จ' : 'บันทึกธีม'}
+          </button>
+        </form>
+      </div>
+
+      {/* ── รูปแบบหน้าแรก ── */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <h2 className="text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
+          <LayoutTemplate size={15} /> รูปแบบหน้าแรก
+        </h2>
+        <p className="text-xs text-gray-400 mb-5 leading-relaxed">
+          เลือกการจัดวาง sections ในหน้าแรก — แต่ละรูปแบบจะเรียงลำดับเนื้อหาต่างกัน
+        </p>
+        <form onSubmit={saveLayout} className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              {
+                id: 'classic',
+                name: 'Classic',
+                desc: 'Banner → บริการ → แจ้งซ่อม → ทางลัด',
+                preview: [
+                  { w: '100%', h: 10, bg: '#94a3b8', r: 6 },
+                  { w: '100%', h: 7,  bg: '#0ea5e9', r: 4 },
+                  { w: '100%', h: 4,  bg: '#fbbf24', r: 4 },
+                  { w: '100%', h: 6,  bg: '#d1fae5', r: 4 },
+                  { w: '100%', h: 5,  bg: '#e0e7ff', r: 4 },
+                ],
+              },
+              {
+                id: 'modern',
+                name: 'Modern',
+                desc: 'ทางลัด → Banner → บริการ → แจ้งซ่อม',
+                preview: [
+                  { w: '100%', h: 5,  bg: '#e0e7ff', r: 4 },
+                  { w: '100%', h: 10, bg: '#94a3b8', r: 6 },
+                  { w: '100%', h: 7,  bg: 'var(--color-primary,#1c7cd6)', r: 4 },
+                  { w: '100%', h: 6,  bg: '#d1fae5', r: 4 },
+                ],
+              },
+              {
+                id: 'service_first',
+                name: 'บริการก่อน',
+                desc: 'บริการโต → แจ้งซ่อม → Banner → ทางลัด',
+                preview: [
+                  { w: '100%', h: 12, bg: 'var(--color-primary,#1c7cd6)', r: 6 },
+                  { w: '100%', h: 6,  bg: '#d1fae5', r: 4 },
+                  { w: '100%', h: 8,  bg: '#94a3b8', r: 5 },
+                  { w: '100%', h: 5,  bg: '#e0e7ff', r: 4 },
+                ],
+              },
+              {
+                id: 'news_first',
+                name: 'ข่าวก่อน',
+                desc: 'Banner → แจ้งซ่อม → ทางลัด → บริการ',
+                preview: [
+                  { w: '100%', h: 10, bg: '#94a3b8', r: 6 },
+                  { w: '100%', h: 6,  bg: '#d1fae5', r: 4 },
+                  { w: '100%', h: 5,  bg: '#e0e7ff', r: 4 },
+                  { w: '100%', h: 7,  bg: 'var(--color-primary,#1c7cd6)', r: 4 },
+                ],
+              },
+            ].map(opt => {
+              const active = layoutTheme === opt.id
+              return (
+                <button key={opt.id} type="button" onClick={() => setLayoutTheme(opt.id)}
+                  className="flex flex-col gap-2 p-3 rounded-xl border-2 text-left transition-all"
+                  style={{
+                    borderColor: active ? 'var(--color-primary)' : '#e5e7eb',
+                    backgroundColor: active ? 'rgba(var(--color-primary-rgb,28,124,214),0.06)' : '#fafafa',
+                  }}>
+                  {/* mini mockup */}
+                  <div className="w-full bg-gray-100 rounded-lg p-2 flex gap-1.5">
+                    {/* left col */}
+                    <div className="flex flex-col gap-1 flex-1">
+                      {opt.preview.map((bar, i) => (
+                        <div key={i} className="rounded" style={{ width: bar.w, height: bar.h, background: bar.bg, borderRadius: bar.r }} />
+                      ))}
+                    </div>
+                    {/* right col (compact) */}
+                    <div className="flex flex-col gap-1 w-6">
+                      {[8, 14, 6, 10].map((h, i) => (
+                        <div key={i} className="rounded bg-gray-300" style={{ height: h, borderRadius: 3 }} />
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+                      {active && <span style={{ color: 'var(--color-primary)' }}>✓</span>}
+                      {opt.name}
+                    </p>
+                    <p className="text-[10px] text-gray-400 leading-relaxed mt-0.5">{opt.desc}</p>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+
+          <button type="submit" disabled={layoutSaving}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-all"
+            style={{ backgroundColor: 'var(--color-primary)' }}>
+            {layoutSaving ? <Loader2 size={15} className="animate-spin" /> : savedSection === 'layout' ? <CheckCircle2 size={15} /> : <Save size={15} />}
+            {savedSection === 'layout' ? 'บันทึกสำเร็จ' : 'บันทึกรูปแบบ'}
           </button>
         </form>
       </div>
