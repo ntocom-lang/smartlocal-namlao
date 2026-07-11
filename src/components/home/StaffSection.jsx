@@ -4,7 +4,7 @@ import { useTenant } from '../../contexts/TenantContext'
 import { UserCircle2 } from 'lucide-react'
 
 // Premium Executive Card matching the mockup style (Vertical layout for clean fit)
-function ExecutivePremiumCard({ person, logoUrl }) {
+function ExecutivePremiumCard({ person }) {
   return (
     <div className="flex flex-col items-center text-center bg-white/70 backdrop-blur-sm rounded-2xl md:rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all p-3 md:p-5 relative overflow-hidden dark:bg-slate-900/50 dark:border-slate-800/80 animate-fade-in">
       {/* Glow background behind image */}
@@ -26,27 +26,23 @@ function ExecutivePremiumCard({ person, logoUrl }) {
       </div>
 
       {/* Bottom: Information */}
-      <div className="flex-1 flex flex-col items-center z-10 space-y-2.5 w-full min-w-0">
-        {/* Municipality Logo & Position */}
-        <div className="flex flex-col items-center gap-1">
-          {logoUrl ? (
-            <img src={logoUrl} alt="Municipality Logo" className="w-6 h-6 md:w-10 md:h-10 object-contain" />
-          ) : (
-            <div className="w-6 h-6 md:w-10 md:h-10 rounded-full bg-gray-100 flex items-center justify-center text-[8px] text-gray-400">🏢</div>
-          )}
-          <p className="text-[10px] md:text-sm font-bold text-gray-800 dark:text-slate-100 leading-tight">
-            {person.title}
-          </p>
-        </div>
-
+      <div className="relative z-10 w-full min-w-0">
         {/* Name and Phone box - using primary theme color for dynamic matching */}
-        <div className="w-full bg-[var(--color-primary)] text-white rounded-xl md:rounded-2xl py-1.5 md:py-2 px-2 md:px-3 shadow-sm border border-[var(--color-primary-dark)]/10">
-          <p className="font-bold text-[10px] md:text-base leading-snug">
+        <div className="w-full bg-[var(--color-primary)] text-white rounded-xl md:rounded-2xl py-2 md:py-3 px-2 md:px-3 shadow-sm border border-[var(--color-primary-dark)]/10 flex flex-col items-center justify-center space-y-1">
+          {/* Line 1: Name */}
+          <p className="font-bold text-[11px] md:text-base leading-snug">
             {person.name}
           </p>
+
+          {/* Line 2: Position */}
+          <p className="text-[10px] md:text-sm text-white/90 font-semibold leading-tight">
+            {person.title}
+          </p>
+
+          {/* Line 3: Phone */}
           {person.phone && (
-            <p className="text-[9px] md:text-xs text-white/90 font-medium mt-0.5 md:mt-1">
-              {person.phone}
+            <p className="text-[9px] md:text-xs text-white/80 font-medium">
+              {person.phone.startsWith('โทร') ? person.phone : `โทร. ${person.phone}`}
             </p>
           )}
         </div>
@@ -118,7 +114,7 @@ export default function StaffSection() {
       {topLeaders.length > 0 && (
         <div className="grid grid-cols-2 gap-2 md:gap-4">
           {topLeaders.map((p) => (
-            <ExecutivePremiumCard key={p.id} person={p} logoUrl={tenant?.logo_url} />
+            <ExecutivePremiumCard key={p.id} person={p} />
           ))}
         </div>
       )}
