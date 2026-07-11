@@ -452,6 +452,13 @@ export default function HomePage() {
           </div>
         </div>
 
+        {/* Right col (mobile) — แสดงหลัง main sections, ข้าม weather ที่โชว์บน top อยู่แล้ว */}
+        <div className="md:hidden flex flex-col gap-4 mt-4">
+          {rightOrder
+            .filter(key => layout === 'news_first' || key !== 'weather')
+            .map(key => RIGHT_SECTION[key] ?? null)}
+        </div>
+
         {/* Full-width sections */}
         <div className="mt-6">
           <PostsHighlight />
