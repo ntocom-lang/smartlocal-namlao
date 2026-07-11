@@ -92,6 +92,9 @@ export default function ThemeSettingsAdmin() {
   const [applying,     setApplying]     = useState(null)
   const [deleting,     setDeleting]     = useState(null)
   const [saved,        setSaved]        = useState(null)
+  const [activePresetId, setActivePresetId] = useState(() => {
+    try { return localStorage.getItem(`sl_active_preset_${tenant?.id}`) } catch { return null }
+  })
 
   function flash(key) { setSaved(key); setTimeout(() => setSaved(null), 2500) }
 
@@ -153,6 +156,8 @@ export default function ThemeSettingsAdmin() {
       setLayoutTheme(preset.layout)
       patchTenant({ theme_color: preset.color, layout_theme: preset.layout })
       applyColorToDOM(preset.color)
+      try { localStorage.setItem(`sl_active_preset_${tenant.id}`, String(preset.id)) } catch {}
+      setActivePresetId(String(preset.id))
       flash('apply-' + preset.id)
     } catch (err) { alert('ใช้ธีมไม่สำเร็จ: ' + err.message) }
     finally { setApplying(null) }
@@ -197,7 +202,7 @@ export default function ThemeSettingsAdmin() {
           <div className="space-y-2">
             {presets.map(p => {
               const layoutData = LAYOUTS.find(l => l.id === p.layout) || LAYOUTS[0]
-              const isActive = tenant?.theme_color === p.color && tenant?.layout_theme === p.layout
+              const isActive = activePresetId === String(p.id)
               const isApplying = applying === p.id
               const justApplied = saved === 'apply-' + p.id
               return (
