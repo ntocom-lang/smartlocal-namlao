@@ -1,7 +1,26 @@
 import { useState, useEffect, useRef } from 'react'
-import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2, Wallpaper } from 'lucide-react'
+import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2, Wallpaper, Palette } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
+
+const THEMES = [
+  { id: 'blue',       name: 'น้ำเงินราชการ', color: '#1c7cd6' },
+  { id: 'navy',       name: 'กรมท่าทหาร',    color: '#1e3a5f' },
+  { id: 'sky',        name: 'ฟ้าสดใส',       color: '#0284c7' },
+  { id: 'teal',       name: 'เขียวมรกต',     color: '#0d9488' },
+  { id: 'cyan',       name: 'น้ำทะเล',       color: '#0e7490' },
+  { id: 'green',      name: 'เขียวป่าไม้',   color: '#166534' },
+  { id: 'emerald',    name: 'เขียวมรกตอ่อน', color: '#059669' },
+  { id: 'purple',     name: 'ม่วงราชภัฏ',    color: '#7c3aed' },
+  { id: 'indigo',     name: 'คราม',          color: '#4338ca' },
+  { id: 'rose',       name: 'แดงกุหลาบ',     color: '#be185d' },
+  { id: 'red',        name: 'แดงอิฐ',        color: '#b91c1c' },
+  { id: 'orange',     name: 'ส้มสด',         color: '#c2410c' },
+  { id: 'amber',      name: 'ทองเหลือง',     color: '#b45309' },
+  { id: 'slate',      name: 'เทาราชการ',     color: '#475569' },
+  { id: 'zinc',       name: 'เทาเข้ม',       color: '#52525b' },
+  { id: 'custom',     name: 'กำหนดเอง',      color: null },
+]
 
 const inputCls = 'w-full px-4 py-2.5 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent transition-all'
 
@@ -9,6 +28,8 @@ export default function SystemSettingsAdmin() {
   const { tenant, patchTenant } = useTenant()
   const [pwaShortName, setPwaShortName] = useState(() => tenant?.pwa_short_name || '')
   const [subtitle, setSubtitle] = useState(() => tenant?.system_subtitle || '')
+  const [themeColor, setThemeColor] = useState(() => tenant?.theme_color || '#1c7cd6')
+  const [themeSaving, setThemeSaving] = useState(false)
   const [loading, setLoading] = useState(false)
   const [savedSection, setSavedSection] = useState(null)
   const [logoUploading, setLogoUploading] = useState(false)
@@ -176,6 +197,33 @@ export default function SystemSettingsAdmin() {
     if (error) { alert('ลบไม่สำเร็จ: ' + error.message); return }
     setHeaderPreview(null)
     patchTenant({ header_image_url: null })
+  }
+
+  async function saveTheme(e) {
+    e.preventDefault()
+    setThemeSaving(true)
+    try {
+      const { error } = await supabase
+        .from('municipalities')
+        .update({ theme_color: themeColor })
+        .eq('id', tenant.id)
+      if (error) throw error
+      patchTenant({ theme_color: themeColor })
+      // apply ทันทีโดยไม่ต้อง reload
+      const r = parseInt(themeColor.slice(1, 3), 16)
+      const g = parseInt(themeColor.slice(3, 5), 16)
+      const b = parseInt(themeColor.slice(5, 7), 16)
+      const dk = (v) => Math.max(0, Math.floor(v * 0.85)).toString(16).padStart(2, '0')
+      document.documentElement.style.setProperty('--color-primary', themeColor)
+      document.documentElement.style.setProperty('--color-primary-dark', `#${dk(r)}${dk(g)}${dk(b)}`)
+      document.documentElement.style.setProperty('--color-primary-rgb', `${r}, ${g}, ${b}`)
+      setSavedSection('theme')
+      setTimeout(() => setSavedSection(null), 2500)
+    } catch (err) {
+      alert('บันทึกไม่สำเร็จ: ' + err.message)
+    } finally {
+      setThemeSaving(false)
+    }
   }
 
   async function saveQrLabel(e) {
@@ -416,6 +464,72 @@ export default function SystemSettingsAdmin() {
               {savedSection === 'qrLabel' ? 'บันทึกแล้ว' : 'บันทึก'}
             </button>
           </div>
+        </form>
+      </div>
+
+      {/* ── ธีมสี ── */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <h2 className="text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
+          <Palette size={15} /> ธีมสีระบบ
+        </h2>
+        <p className="text-xs text-gray-400 mb-5 leading-relaxed">
+          สีหลักที่ใช้ทั่วทั้งระบบ — ปุ่ม, header gradient, active state · เปลี่ยนแล้วเห็นผลทันทีโดยไม่ต้อง reload
+        </p>
+        <form onSubmit={saveTheme} className="space-y-4">
+          {/* Preset grid */}
+          <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
+            {THEMES.filter(t => t.id !== 'custom').map(t => {
+              const active = themeColor === t.color
+              return (
+                <button key={t.id} type="button"
+                  onClick={() => setThemeColor(t.color)}
+                  className="flex flex-col items-center gap-1.5 p-2 rounded-xl border-2 transition-all"
+                  style={{
+                    borderColor: active ? t.color : 'transparent',
+                    backgroundColor: active ? t.color + '12' : '#f9fafb',
+                  }}>
+                  {/* Mini header preview */}
+                  <div className="w-full h-8 rounded-lg overflow-hidden relative shrink-0"
+                    style={{ background: `linear-gradient(135deg, #0a1628 0%, ${t.color} 60%, ${t.color}bb 100%)` }}>
+                    <div className="absolute bottom-1 left-1.5 flex gap-0.5">
+                      <div className="w-3 h-3 rounded-full bg-white/30" />
+                      <div className="flex flex-col gap-0.5 justify-center">
+                        <div className="w-6 h-0.5 rounded bg-white/60" />
+                        <div className="w-4 h-0.5 rounded bg-white/40" />
+                      </div>
+                    </div>
+                    {active && (
+                      <div className="absolute top-1 right-1 w-3 h-3 rounded-full bg-white flex items-center justify-center">
+                        <CheckCircle2 size={8} style={{ color: t.color }} />
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-[10px] font-medium text-gray-600 text-center leading-tight">{t.name}</span>
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Custom color */}
+          <div className="flex items-center gap-3 pt-1">
+            <label className="text-xs font-semibold text-gray-500 shrink-0">สีกำหนดเอง</label>
+            <div className="flex items-center gap-2 border border-gray-200 rounded-xl px-3 py-1.5">
+              <input
+                type="color"
+                value={themeColor}
+                onChange={e => setThemeColor(e.target.value)}
+                className="w-7 h-7 rounded-lg border-0 cursor-pointer bg-transparent p-0"
+              />
+              <span className="text-xs font-mono text-gray-500">{themeColor.toUpperCase()}</span>
+            </div>
+          </div>
+
+          <button type="submit" disabled={themeSaving}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-all"
+            style={{ backgroundColor: 'var(--color-primary)' }}>
+            {themeSaving ? <Loader2 size={15} className="animate-spin" /> : savedSection === 'theme' ? <CheckCircle2 size={15} /> : <Save size={15} />}
+            {savedSection === 'theme' ? 'บันทึกสำเร็จ' : 'บันทึกธีม'}
+          </button>
         </form>
       </div>
 
