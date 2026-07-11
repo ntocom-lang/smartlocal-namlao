@@ -223,7 +223,7 @@ export default function SystemSettingsAdmin() {
           <div>
             <label className="block text-xs font-semibold text-gray-500 mb-1">คำอธิบายระบบ (Subtitle)</label>
             <p className="text-xs text-gray-400 mb-2 leading-relaxed">
-              แสดงใต้ชื่อหน่วยงานใน Header — ถ้าไม่กำหนดจะใช้ค่าเริ่มต้น "ระบบศูนย์รวมข้อมูลดิจิทัลเพื่อการพัฒนาอย่างยั่งยืน"
+              แสดงใต้ชื่อหน่วยงานใน Header — ถ้าไม่กำหนดจะใช้ค่าเริ่มต้น "✦ E-Service ✦ งานบริการประชาชน"
             </p>
             <input
               type="text"

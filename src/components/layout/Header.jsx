@@ -43,7 +43,7 @@ export default function Header() {
         <Phone size={11} className="text-sky-300/70" />
         <span className="font-semibold tracking-wide text-sky-100">{tenant?.name}</span>
         <span className="text-white/20">|</span>
-        <span className="text-white/60">{tenant?.system_subtitle || 'ระบบศูนย์รวมข้อมูลดิจิทัลเพื่อการพัฒนาอย่างยั่งยืน'}</span>
+        <span className="text-white/60">{tenant?.system_subtitle || '✦ E-Service ✦ งานบริการประชาชน'}</span>
         <span className="text-white/20">|</span>
         <a href="/manual-citizen.html" target="_blank" rel="noopener noreferrer"
           className="text-sky-300/80 hover:text-sky-200 transition-colors underline underline-offset-2">
@@ -92,7 +92,7 @@ export default function Header() {
             <h1 className="font-bold text-sm md:text-base leading-tight drop-shadow">
               {tenant?.name}
             </h1>
-            <p className="text-white/80 text-[10px] md:text-xs line-clamp-1 mt-0.5 drop-shadow">{tenant?.system_subtitle || 'ระบบศูนย์รวมข้อมูลดิจิทัลเพื่อการพัฒนาอย่างยั่งยืน'}</p>
+            <p className="text-white/80 text-[10px] md:text-xs line-clamp-1 mt-0.5 drop-shadow">{tenant?.system_subtitle || '✦ E-Service ✦ งานบริการประชาชน'}</p>
           </div>
 
           {/* Desktop nav — technician เท่านั้น (citizen ใช้ CitizenSidebar แทน) */}
