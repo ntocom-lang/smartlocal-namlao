@@ -459,8 +459,8 @@ export default function HomePage() {
             .map(key => RIGHT_SECTION[key] ?? null)}
         </div>
 
-        {/* Full-width sections — ซ่อนข่าว/กิจกรรมสำหรับ classic ตามที่กำหนดธีม */}
-        {layout !== 'classic' && (
+        {/* Full-width sections — ควบคุมโดย show_posts_highlight ใน admin ธีมและรูปแบบ */}
+        {tenant?.show_posts_highlight !== false && (
           <div className="mt-6">
             <PostsHighlight />
           </div>

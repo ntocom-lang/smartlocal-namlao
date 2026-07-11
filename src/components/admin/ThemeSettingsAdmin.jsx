@@ -84,6 +84,7 @@ export default function ThemeSettingsAdmin() {
 
   const [themeColor,   setThemeColor]   = useState(() => tenant?.theme_color   || '#1c7cd6')
   const [layoutTheme,  setLayoutTheme]  = useState(() => tenant?.layout_theme  || 'classic')
+  const [showPosts,    setShowPosts]    = useState(() => tenant?.show_posts_highlight !== false)
   const [presets,      setPresets]      = useState(() => tenant?.theme_presets || [])
   const [colorSaving,  setColorSaving]  = useState(false)
   const [layoutSaving, setLayoutSaving] = useState(false)
@@ -117,9 +118,9 @@ export default function ThemeSettingsAdmin() {
     setLayoutSaving(true)
     try {
       const { error } = await supabase
-        .from('municipalities').update({ layout_theme: layoutTheme }).eq('id', tenant.id)
+        .from('municipalities').update({ layout_theme: layoutTheme, show_posts_highlight: showPosts }).eq('id', tenant.id)
       if (error) throw error
-      patchTenant({ layout_theme: layoutTheme })
+      patchTenant({ layout_theme: layoutTheme, show_posts_highlight: showPosts })
       flash('layout')
     } catch (err) { alert('บันทึกไม่สำเร็จ: ' + err.message) }
     finally { setLayoutSaving(false) }
@@ -131,7 +132,7 @@ export default function ThemeSettingsAdmin() {
     if (!name) return
     setPresetSaving(true)
     try {
-      const newPreset = { id: Date.now(), name, color: themeColor, layout: layoutTheme }
+      const newPreset = { id: Date.now(), name, color: themeColor, layout: layoutTheme, showPosts }
       const next = [...presets, newPreset]
       const { error } = await supabase
         .from('municipalities').update({ theme_presets: next }).eq('id', tenant.id)
@@ -147,14 +148,16 @@ export default function ThemeSettingsAdmin() {
   async function applyPreset(preset) {
     setApplying(preset.id)
     try {
+      const presetShowPosts = preset.showPosts !== false
       const { error } = await supabase
         .from('municipalities')
-        .update({ theme_color: preset.color, layout_theme: preset.layout })
+        .update({ theme_color: preset.color, layout_theme: preset.layout, show_posts_highlight: presetShowPosts })
         .eq('id', tenant.id)
       if (error) throw error
       setThemeColor(preset.color)
       setLayoutTheme(preset.layout)
-      patchTenant({ theme_color: preset.color, layout_theme: preset.layout })
+      setShowPosts(presetShowPosts)
+      patchTenant({ theme_color: preset.color, layout_theme: preset.layout, show_posts_highlight: presetShowPosts })
       applyColorToDOM(preset.color)
       try { localStorage.setItem(`sl_active_preset_${tenant.id}`, String(preset.id)) } catch {}
       setActivePresetId(String(preset.id))
@@ -333,6 +336,17 @@ export default function ThemeSettingsAdmin() {
               )
             })}
           </div>
+          {/* toggle show posts */}
+          <label className="flex items-center gap-3 cursor-pointer select-none py-1">
+            <div onClick={() => setShowPosts(v => !v)}
+              className="relative w-10 h-5.5 rounded-full transition-colors shrink-0"
+              style={{ backgroundColor: showPosts ? 'var(--color-primary)' : '#d1d5db', height: 22 }}>
+              <div className="absolute top-0.5 w-4.5 h-4.5 bg-white rounded-full shadow transition-all"
+                style={{ width: 18, height: 18, left: showPosts ? 'calc(100% - 20px)' : 2 }} />
+            </div>
+            <span className="text-sm text-gray-700 font-medium">แสดงข่าวสำคัญและกิจกรรมในหน้าแรก</span>
+          </label>
+
           <button type="submit" disabled={layoutSaving}
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-all"
             style={{ backgroundColor: 'var(--color-primary)' }}>
