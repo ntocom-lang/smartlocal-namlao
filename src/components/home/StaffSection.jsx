@@ -3,23 +3,26 @@ import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import { UserCircle2 } from 'lucide-react'
 
-// Premium Executive Card matching the mockup style (Vertical layout for clean fit)
+// Premium Executive Card matching the mockup style (Vertical layout with interactive hover effects)
 function ExecutivePremiumCard({ person }) {
   return (
-    <div className="flex flex-col items-center text-center bg-white/70 backdrop-blur-sm rounded-2xl md:rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all p-2.5 md:p-5 relative overflow-hidden dark:bg-slate-900/50 dark:border-slate-800/80 animate-fade-in">
-      {/* Glow background behind image */}
-      <div className="absolute top-12 left-1/2 -translate-x-1/2 w-24 h-24 md:w-40 md:h-40 rounded-full pointer-events-none opacity-40 blur-lg md:blur-xl bg-gradient-to-tr from-lime-300/40 to-emerald-300/40" />
+    <div className="flex flex-col items-center text-center bg-white/75 backdrop-blur-md rounded-2xl md:rounded-3xl border border-gray-100/80 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 p-2.5 md:p-5 relative overflow-hidden dark:bg-slate-900/50 dark:border-slate-800/80 animate-fade-in group">
+      {/* Premium diagonal shine/sweep effect on card hover */}
+      <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-out bg-gradient-to-r from-transparent via-white/25 to-transparent pointer-events-none z-20" />
 
-      {/* Top: Image (Enlarged) */}
+      {/* Glow background behind image - shifts color and expands on hover */}
+      <div className="absolute top-12 left-1/2 -translate-x-1/2 w-24 h-24 md:w-40 md:h-40 rounded-full pointer-events-none opacity-40 blur-lg md:blur-xl bg-gradient-to-tr from-lime-300/40 to-emerald-300/40 transition-all duration-700 group-hover:scale-125 group-hover:opacity-70 group-hover:from-cyan-300/50 group-hover:to-emerald-400/50" />
+
+      {/* Top: Image (Enlarged and lifts up on card hover) */}
       <div className="relative shrink-0 z-10 w-full h-40 md:h-56 flex items-end justify-center mb-2">
         {person.photo_url ? (
           <img
             src={person.photo_url}
             alt={person.name}
-            className="h-full object-contain drop-shadow-md hover:scale-105 transition-transform duration-300 origin-bottom"
+            className="h-full object-contain drop-shadow-md transition-all duration-300 origin-bottom group-hover:scale-108 group-hover:-translate-y-1 group-hover:drop-shadow-2xl"
           />
         ) : (
-          <div className="w-16 h-16 md:w-28 md:h-28 rounded-full flex items-center justify-center font-bold text-white text-xs md:text-2xl bg-gradient-to-tr from-lime-400 to-emerald-600 shadow-inner">
+          <div className="w-16 h-16 md:w-28 md:h-28 rounded-full flex items-center justify-center font-bold text-white text-xs md:text-2xl bg-gradient-to-tr from-lime-400 to-emerald-600 shadow-inner transition-transform duration-300 group-hover:scale-105">
             {person.name.trim().split(' ').map((w) => w[0]).join('').slice(0, 2)}
           </div>
         )}
@@ -28,7 +31,7 @@ function ExecutivePremiumCard({ person }) {
       {/* Bottom: Information (More compact box) */}
       <div className="relative z-10 w-full flex flex-col items-center min-w-0">
         {/* Name and Phone box - using primary theme color for dynamic matching, made more compact */}
-        <div className="w-[92%] bg-[var(--color-primary)] text-white rounded-xl md:rounded-2xl py-1 md:py-2 px-1.5 md:px-3 shadow-sm border border-[var(--color-primary-dark)]/10 flex flex-col items-center justify-center space-y-0.5">
+        <div className="w-[92%] bg-[var(--color-primary)] text-white rounded-xl md:rounded-2xl py-1 md:py-2 px-1.5 md:px-3 shadow-sm border border-[var(--color-primary-dark)]/10 flex flex-col items-center justify-center space-y-0.5 transition-transform duration-300 group-hover:scale-[1.02]">
           {/* Line 1: Name */}
           <p className="font-bold text-[10px] md:text-base leading-snug">
             {person.name}
