@@ -1,9 +1,9 @@
 // Supabase Edge Function: send-push
 // Deploy: supabase functions deploy send-push
-// Secrets required (set via Supabase Dashboard → Settings → Edge Functions secrets):
-//   VAPID_PUBLIC_KEY   = BBH-3E4L9jXf1s8ks2bj3QyihvN9GUs75AioPx4Gzb-61ispg0aM5kpE6mH_LdhSXZwEAvWRO-2xTocvNyuBejg
-//   VAPID_PRIVATE_KEY  = RvfQKafR0pk8QuYrdcGlWJUfs8lGdYd1eFglVzjLkL8
-//   VAPID_SUBJECT      = mailto:ntocom@gmail.com
+// Secrets required (Supabase Dashboard → Settings → Edge Functions → Secrets):
+//   VAPID_PUBLIC_KEY  — generate ด้วย: npx web-push generate-vapid-keys
+//   VAPID_PRIVATE_KEY — (ต้อง rotate ถ้าเคย hardcode ไว้ก่อนหน้า)
+//   VAPID_SUBJECT     — mailto:your@email.com
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -15,11 +15,13 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-webpush.setVapidDetails(
-  'mailto:ntocom@gmail.com',
-  'BBH-3E4L9jXf1s8ks2bj3QyihvN9GUs75AioPx4Gzb-61ispg0aM5kpE6mH_LdhSXZwEAvWRO-2xTocvNyuBejg',
-  'RvfQKafR0pk8QuYrdcGlWJUfs8lGdYd1eFglVzjLkL8',
-)
+const VAPID_PUBLIC  = Deno.env.get('VAPID_PUBLIC_KEY')
+const VAPID_PRIVATE = Deno.env.get('VAPID_PRIVATE_KEY')
+const VAPID_SUBJECT = Deno.env.get('VAPID_SUBJECT') ?? 'mailto:admin@smartlocal.app'
+
+if (VAPID_PUBLIC && VAPID_PRIVATE) {
+  webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE)
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -32,6 +34,13 @@ serve(async (req) => {
       title: string
       body: string
       url?: string
+    }
+
+    if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
+      return new Response(JSON.stringify({ error: 'VAPID keys not configured' }), {
+        status: 503,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
     if (!municipality_id || !title || !body) {

@@ -15,6 +15,29 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  // ตรวจ JWT — ต้อง authenticated (ไม่รับ anon เพราะใช้ service role bypass RLS)
+  const authHeader = req.headers.get('authorization') ?? ''
+  const token = authHeader.replace('Bearer ', '').trim()
+  if (!token) {
+    return new Response(JSON.stringify({ error: 'unauthorized' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
+
+  // ตรวจว่าเป็น user จริง (ไม่ใช่ anon key)
+  const authClient = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_ANON_KEY')!,
+  )
+  const { data: { user }, error: authErr } = await authClient.auth.getUser(token)
+  if (authErr || !user) {
+    return new Response(JSON.stringify({ error: 'unauthorized' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
+
   try {
     const { path, data: base64Data, contentType } = await req.json() as {
       path: string
@@ -22,8 +45,26 @@ serve(async (req) => {
       contentType: string
     }
 
+    // ป้องกัน path traversal และจำกัดเฉพาะ complaint attachment paths
     if (!path || !base64Data) {
       return new Response(JSON.stringify({ error: 'missing path or data' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // block paths ที่ sensitive
+    if (path.includes('..') || path.startsWith('municipality-qr/')) {
+      return new Response(JSON.stringify({ error: 'invalid path' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // จำกัด content type
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+    if (contentType && !allowedTypes.includes(contentType)) {
+      return new Response(JSON.stringify({ error: 'invalid content type' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
