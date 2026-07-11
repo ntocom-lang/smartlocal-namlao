@@ -3,14 +3,15 @@ import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import { UserCircle2 } from 'lucide-react'
 
+// Premium Executive Card matching the mockup style (Vertical layout for clean fit)
 function ExecutivePremiumCard({ person, logoUrl }) {
   return (
-    <div className="flex flex-row items-center gap-1 md:gap-4 bg-white/70 backdrop-blur-sm rounded-2xl md:rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all p-1.5 md:p-5 relative overflow-hidden dark:bg-slate-900/50 dark:border-slate-800/80">
+    <div className="flex flex-col items-center text-center bg-white/70 backdrop-blur-sm rounded-2xl md:rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all p-3 md:p-5 relative overflow-hidden dark:bg-slate-900/50 dark:border-slate-800/80 animate-fade-in">
       {/* Glow background behind image */}
-      <div className="absolute top-1/2 left-2 -translate-y-1/2 w-24 h-24 md:w-40 md:h-40 rounded-full pointer-events-none opacity-40 blur-lg md:blur-xl bg-gradient-to-tr from-lime-300/40 to-emerald-300/40" />
+      <div className="absolute top-12 left-1/2 -translate-x-1/2 w-24 h-24 md:w-40 md:h-40 rounded-full pointer-events-none opacity-40 blur-lg md:blur-xl bg-gradient-to-tr from-lime-300/40 to-emerald-300/40" />
 
-      {/* Left side: Image */}
-      <div className="relative shrink-0 z-10 w-20 h-28 md:w-36 md:h-48 flex items-end justify-center">
+      {/* Top: Image */}
+      <div className="relative shrink-0 z-10 w-full h-36 md:h-52 flex items-end justify-center mb-3">
         {person.photo_url ? (
           <img
             src={person.photo_url}
@@ -24,27 +25,27 @@ function ExecutivePremiumCard({ person, logoUrl }) {
         )}
       </div>
 
-      {/* Right side: Information */}
-      <div className="flex-1 flex flex-col items-center text-center z-10 space-y-0.5 md:space-y-2.5 min-w-0 w-full">
-        {/* Municipality Logo */}
-        {logoUrl ? (
-          <img src={logoUrl} alt="Municipality Logo" className="w-6 h-6 md:w-12 md:h-12 object-contain" />
-        ) : (
-          <div className="w-6 h-6 md:w-12 md:h-12 rounded-full bg-gray-100 flex items-center justify-center text-[8px] text-gray-400">🏢</div>
-        )}
-
-        {/* Position Title */}
-        <p className="text-[9px] md:text-sm font-bold text-gray-800 dark:text-slate-100 leading-tight truncate w-full">
-          {person.title}
-        </p>
+      {/* Bottom: Information */}
+      <div className="flex-1 flex flex-col items-center z-10 space-y-2.5 w-full min-w-0">
+        {/* Municipality Logo & Position */}
+        <div className="flex flex-col items-center gap-1">
+          {logoUrl ? (
+            <img src={logoUrl} alt="Municipality Logo" className="w-6 h-6 md:w-10 md:h-10 object-contain" />
+          ) : (
+            <div className="w-6 h-6 md:w-10 md:h-10 rounded-full bg-gray-100 flex items-center justify-center text-[8px] text-gray-400">🏢</div>
+          )}
+          <p className="text-[10px] md:text-sm font-bold text-gray-800 dark:text-slate-100 leading-tight">
+            {person.title}
+          </p>
+        </div>
 
         {/* Name and Phone box - using primary theme color for dynamic matching */}
-        <div className="w-full bg-[var(--color-primary)] text-white rounded-xl md:rounded-2xl py-1 md:py-2 px-1 md:px-3 shadow-sm border border-[var(--color-primary-dark)]/10">
-          <p className="font-bold text-[9px] md:text-base leading-tight truncate">
+        <div className="w-full bg-[var(--color-primary)] text-white rounded-xl md:rounded-2xl py-1.5 md:py-2 px-2 md:px-3 shadow-sm border border-[var(--color-primary-dark)]/10">
+          <p className="font-bold text-[10px] md:text-base leading-snug">
             {person.name}
           </p>
           {person.phone && (
-            <p className="text-[8px] md:text-xs text-white/90 font-medium mt-0.5 md:mt-1 truncate">
+            <p className="text-[9px] md:text-xs text-white/90 font-medium mt-0.5 md:mt-1">
               {person.phone}
             </p>
           )}
