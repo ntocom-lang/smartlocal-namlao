@@ -79,9 +79,9 @@ export default function Header() {
           <Link to={role === 'technician' ? '/technician' : '/'} className="shrink-0">
             {tenant?.logo_url ? (
               <img src={tenant.logo_url} alt="โลโก้"
-                className="w-10 h-10 md:w-14 md:h-14 rounded-full object-contain hover:opacity-85 transition-opacity" />
+                className="w-14 h-14 md:w-18 md:h-18 rounded-full object-contain bg-white/10 p-0.5 border border-white/20 shadow-inner hover:opacity-85 transition-opacity" />
             ) : (
-              <div className="w-10 h-10 md:w-14 md:h-14 rounded-full border-2 border-white/40 bg-white/20 flex items-center justify-center text-xl font-bold hover:bg-white/30 transition-colors">
+              <div className="w-14 h-14 md:w-18 md:h-18 rounded-full border-2 border-white/40 bg-white/20 flex items-center justify-center text-xl md:text-2xl font-bold hover:bg-white/30 transition-colors">
                 {tenant?.name?.[0] ?? '?'}
               </div>
             )}
