@@ -459,10 +459,12 @@ export default function HomePage() {
             .map(key => RIGHT_SECTION[key] ?? null)}
         </div>
 
-        {/* Full-width sections */}
-        <div className="mt-6">
-          <PostsHighlight />
-        </div>
+        {/* Full-width sections — ซ่อนข่าว/กิจกรรมสำหรับ classic ตามที่กำหนดธีม */}
+        {layout !== 'classic' && (
+          <div className="mt-6">
+            <PostsHighlight />
+          </div>
+        )}
       </div>
 
       <div className="px-4 md:px-6 pb-8 max-w-6xl mx-auto">
