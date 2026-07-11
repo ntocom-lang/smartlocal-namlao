@@ -8,6 +8,7 @@ const inputCls = 'w-full px-4 py-2.5 text-sm text-gray-900 bg-white border borde
 export default function SystemSettingsAdmin() {
   const { tenant, patchTenant } = useTenant()
   const [pwaShortName, setPwaShortName] = useState(() => tenant?.pwa_short_name || '')
+  const [subtitle, setSubtitle] = useState(() => tenant?.system_subtitle || '')
   const [loading, setLoading] = useState(false)
   const [savedSection, setSavedSection] = useState(null)
   const [logoUploading, setLogoUploading] = useState(false)
@@ -27,15 +28,16 @@ export default function SystemSettingsAdmin() {
     setLoading(true)
     try {
       const newPwaShortName = pwaShortName.trim() || null
+      const newSubtitle = subtitle.trim() || null
       if (!tenant?.id) throw new Error('ไม่พบ tenant.id — กรุณา refresh หน้า')
       const { error } = await supabase.rpc('update_municipality_settings', {
         p_municipality_id: tenant.id,
         p_system_name:     tenant.system_name || tenant.name,
-        p_system_subtitle: null,
+        p_system_subtitle: newSubtitle,
         p_pwa_short_name:  newPwaShortName,
       })
       if (error) throw error
-      patchTenant({ pwa_short_name: newPwaShortName })
+      patchTenant({ pwa_short_name: newPwaShortName, system_subtitle: newSubtitle })
       setSavedSection('name')
       setTimeout(() => setSavedSection(null), 2500)
     } catch (err) {
@@ -215,9 +217,23 @@ export default function SystemSettingsAdmin() {
       {/* ── ชื่อแอปบนมือถือ ── */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         <h2 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
-          <Settings size={15} /> ชื่อแอปบนมือถือ
+          <Settings size={15} /> ชื่อและคำอธิบายระบบ
         </h2>
         <form onSubmit={saveSystemName} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">คำอธิบายระบบ (Subtitle)</label>
+            <p className="text-xs text-gray-400 mb-2 leading-relaxed">
+              แสดงใต้ชื่อหน่วยงานใน Header — ถ้าไม่กำหนดจะใช้ค่าเริ่มต้น "ระบบศูนย์รวมข้อมูลดิจิทัลเพื่อการพัฒนาอย่างยั่งยืน"
+            </p>
+            <input
+              type="text"
+              value={subtitle}
+              onChange={e => setSubtitle(e.target.value)}
+              placeholder="เช่น ระบบบริการประชาชนออนไลน์ หรือ E-Service เทศบาลตำบลน้ำเลา"
+              maxLength={80}
+              className={inputCls}
+            />
+          </div>
           <div>
             <label className="block text-xs font-semibold text-gray-500 mb-1">PWA Short Name</label>
             <p className="text-xs text-gray-400 mb-2 leading-relaxed">
