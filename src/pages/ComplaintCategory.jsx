@@ -1,43 +1,38 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Loader2 } from 'lucide-react'
-import {
-  LightbulbFilamentIcon, RoadHorizonIcon, BugIcon, TreeIcon, TrashIcon,
-  DropIcon, WavesIcon, CloudRainIcon, ToolboxIcon, ShieldWarningIcon,
-  MegaphoneSimpleIcon, SpeakerHighIcon, BuildingsIcon, ReceiptIcon,
-  ShovelIcon, PawPrintIcon, FireIcon, PhoneCallIcon, QuestionIcon,
-} from '@phosphor-icons/react'
+import { 
+  ArrowLeft, Loader2, Lightbulb, Hammer, Bug, Trees, 
+  Trash2, Droplets, Waves, CloudRain, Package, ShieldAlert, 
+  Megaphone, VolumeX, Building2, Receipt, Pickaxe, Dog, 
+  Flame, PhoneCall, HelpCircle
+} from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 
+const FALLBACK_EMOJI = {
+  light: "data:image/svg+xml;utf8,%3Csvg viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='50' cy='50' r='45' fill='%23fde047' stroke='%23171717' stroke-width='5'/%3E%3Cpolygon points='50,20 85,78 15,78' fill='none' stroke='%23ca8a04' stroke-width='6' transform='translate(2,2)'/%3E%3Cpolygon points='50,20 85,78 15,78' fill='%23fde047' stroke='%23171717' stroke-width='5'/%3E%3Cpolygon points='55,30 35,63 50,63 45,85 70,48 50,48' fill='%23171717'/%3E%3C/svg%3E",
+  road: '🛣️', mosquito: '🦟', tree: '🌲',
+  trash: '🗑️', water_supply: '🚿', drain: '🌀', flood: '🌊',
+  borrow_equipment: '📦', corruption: '⚖️', grievance: '📢',
+  noise: '🔊', building: '🏢', tax: '💳', canal: '⛏️',
+  animals: '🐕', fire: '🔥', phone_complaint: '📞',
+  waste_water: '💧', other: '❓',
+}
+
 const FALLBACK_ICON = {
-  light:            LightbulbFilamentIcon,
-  road:             RoadHorizonIcon,
-  mosquito:         BugIcon,
-  tree:             TreeIcon,
-  trash:            TrashIcon,
-  water_supply:     DropIcon,
-  drain:            WavesIcon,
-  flood:            CloudRainIcon,
-  borrow_equipment: ToolboxIcon,
-  corruption:       ShieldWarningIcon,
-  grievance:        MegaphoneSimpleIcon,
-  noise:            SpeakerHighIcon,
-  building:         BuildingsIcon,
-  tax:              ReceiptIcon,
-  canal:            ShovelIcon,
-  animals:          PawPrintIcon,
-  fire:             FireIcon,
-  phone_complaint:  PhoneCallIcon,
-  waste_water:      WavesIcon,
-  other:            QuestionIcon,
+  light: Lightbulb, road: Hammer, mosquito: Bug, tree: Trees,
+  trash: Trash2, water_supply: Droplets, drain: Waves, flood: CloudRain,
+  borrow_equipment: Package, corruption: ShieldAlert, grievance: Megaphone,
+  noise: VolumeX, building: Building2, tax: Receipt, canal: Pickaxe,
+  animals: Dog, fire: Flame, phone_complaint: PhoneCall,
+  waste_water: Droplets, other: HelpCircle,
 }
 
 const FALLBACK_COLOR = {
-  light: '#f59e0b', road: '#3b82f6', mosquito: '#10b981', tree: '#22c55e',
-  trash: '#6b7280', water_supply: '#06b6d4', drain: '#8b5cf6', flood: '#0ea5e9',
-  borrow_equipment: '#f97316', corruption: '#ef4444', grievance: '#ec4899',
-  noise: '#a855f7', building: '#64748b', tax: '#14b8a6', canal: '#78716c',
+  light: '#f59e0b', road: '#64748b', mosquito: '#10b981', tree: '#22c55e',
+  trash: '#94a3b8', water_supply: '#3b82f6', drain: '#8b5cf6', flood: '#0ea5e9',
+  borrow_equipment: '#d97706', corruption: '#ef4444', grievance: '#f59e0b',
+  noise: '#a855f7', building: '#475569', tax: '#14b8a6', canal: '#78716c',
   animals: '#f97316', fire: '#ef4444', phone_complaint: '#3b82f6',
   waste_water: '#06b6d4', other: '#9ca3af',
 }
@@ -89,7 +84,7 @@ export default function ComplaintCategory() {
   }
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#eef2f7' }}>
+    <div className="min-h-screen" style={{ backgroundColor: '#f4f7f6' }}>
 
       {/* PC header */}
       <div className="hidden md:flex items-center justify-between px-8 py-4 bg-white border-b border-gray-200 shadow-sm">
@@ -103,7 +98,7 @@ export default function ComplaintCategory() {
 
       {/* Mobile header */}
       <div className="md:hidden sticky top-0 z-10 flex items-center gap-3 px-4 py-3 shadow-md"
-        style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
+        style={{ background: 'linear-gradient(135deg, #059669 0%, #064e3b 100%)' }}>
         <button onClick={() => navigate(-1)}
           className="p-1.5 rounded-xl bg-white/20 hover:bg-white/30 transition-colors">
           <ArrowLeft size={20} className="text-white" />
@@ -111,46 +106,44 @@ export default function ComplaintCategory() {
         <h1 className="font-bold text-white text-base flex-1 text-center pr-8">แจ้งเรื่องร้องเรียน</h1>
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 pt-5 pb-28 md:pb-8">
+      <div className="max-w-2xl mx-auto px-4 pt-6 pb-28 md:pb-8">
 
         {/* Prompt text */}
-        <h2 className="text-gray-800 text-base font-bold mb-4 text-left">
+        <h2 className="text-[#0f172a] text-[15px] font-bold mb-4 text-left">
           เลือกหมวดหมู่เพื่อแจ้งเรื่อง
         </h2>
 
         {/* Grid */}
         {loading ? (
           <div className="flex justify-center py-20">
-            <Loader2 size={28} className="animate-spin text-blue-300" />
+            <Loader2 size={28} className="animate-spin text-blue-500" />
           </div>
         ) : (
-          <div className="grid grid-cols-3 md:grid-cols-4 gap-3 md:gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4">
             {categories.map((cat) => {
-              const emoji = cat.emoji || ''
-              const baseColor = cat.color || FALLBACK_COLOR[cat.value] || '#6b7280'
-              // Strip any alpha channel from color to ensure it's fully opaque for the icon
+              const baseColor = cat.color || FALLBACK_COLOR[cat.value] || '#0f172a'
               const color = baseColor.length > 7 ? baseColor.substring(0, 7) : baseColor
-              const isImageUrl = emoji.startsWith('http') || emoji.startsWith('/')
-              const IconComponent = FALLBACK_ICON[cat.value] || QuestionIcon
+              
+              const dbEmoji = cat.emoji || ''
+              const isImageUrl = dbEmoji.startsWith('http') || dbEmoji.startsWith('/') || dbEmoji.startsWith('data:')
+              const displayEmoji = isImageUrl ? dbEmoji : (dbEmoji || FALLBACK_EMOJI[cat.value] || '📋')
+              const IconComponent = FALLBACK_ICON[cat.value] || HelpCircle
 
               return (
                 <button key={cat.value} onClick={() => handleSelect(cat.value)}
-                  className="flex flex-col items-center gap-2.5 p-3 bg-white rounded-2xl active:scale-95 transition-all group hover:-translate-y-0.5"
-                  style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.07)', border: `1.5px solid ${color}25` }}>
+                  className="flex flex-col items-center justify-start pt-5 pb-4 px-3 gap-3 active:scale-95 transition-all group bg-white rounded-[14px] border border-gray-200 shadow-sm hover:shadow-md hover:border-blue-200">
+                  
+                  {isImageUrl ? (
+                    <div className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center shrink-0 transition-transform duration-300 group-hover:scale-110">
+                      <img src={displayEmoji} alt={cat.label} className="w-full h-full object-contain drop-shadow-sm" />
+                    </div>
+                  ) : (
+                    <div className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center shrink-0 transition-transform duration-300 group-hover:scale-110">
+                      <span className="text-[2.5rem] leading-none select-none drop-shadow-sm">{displayEmoji}</span>
+                    </div>
+                  )}
 
-                  {/* Icon box — solid background, white icon */}
-                  <div className="w-14 h-14 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105"
-                    style={{ background: `linear-gradient(135deg, ${color} 0%, ${color}cc 100%)` }}>
-                    {isImageUrl ? (
-                      <img src={emoji} alt={cat.label} className="w-8 h-8 object-contain" />
-                    ) : emoji ? (
-                      <span className="text-2xl">{emoji}</span>
-                    ) : (
-                      <IconComponent size={30} color="white" weight="fill" />
-                    )}
-                  </div>
-
-                  <span className="text-[12px] font-bold text-gray-800 text-center leading-snug w-full line-clamp-2">
+                  <span className="text-[12px] font-bold text-[#1e3a8a] text-center leading-snug w-full px-0.5 line-clamp-3 mt-1 group-hover:text-blue-600 transition-colors">
                     {cat.label}
                   </span>
                 </button>

@@ -8,7 +8,7 @@ const isStandalone = () =>
 
 function IOSGuide({ onClose }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 px-4 pb-4"
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 px-4 pb-4"
          onClick={onClose}>
       <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl"
            onClick={e => e.stopPropagation()}>
@@ -88,6 +88,15 @@ export default function InstallPrompt() {
     return () => window.removeEventListener('beforeinstallprompt', handler)
   }, [])
 
+  useEffect(() => {
+    if (visible) {
+      document.body.classList.add('has-install-prompt')
+    } else {
+      document.body.classList.remove('has-install-prompt')
+    }
+    return () => document.body.classList.remove('has-install-prompt')
+  }, [visible])
+
   function dismiss() {
     sessionStorage.setItem('pwa-dismissed', '1')
     setVisible(false)
@@ -105,7 +114,7 @@ export default function InstallPrompt() {
   return (
     <>
       {showGuide && <IOSGuide onClose={() => setShowGuide(false)} />}
-      <div className="md:hidden fixed bottom-20 left-4 right-4 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 px-3 py-2.5 flex items-center gap-2.5"
+      <div className="md:hidden fixed bottom-20 left-4 right-4 z-[60] bg-white rounded-2xl shadow-xl border border-gray-100 px-3 py-2.5 flex items-center gap-2.5"
            style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.12)' }}>
         <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
              style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>

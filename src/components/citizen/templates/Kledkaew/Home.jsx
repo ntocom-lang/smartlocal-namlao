@@ -8,15 +8,15 @@ export default function Home() {
   const { tenant } = useTenant()
 
   return (
-    <div className="bg-[#f4f7fb] min-h-screen pb-28 font-sans">
+    <div className="bg-[#f0fdf4] min-h-screen pb-28 font-sans">
       {/* Wave transition from header */}
-      <div className="w-full h-12" style={{ background: 'linear-gradient(180deg, #004080 0%, transparent 100%)' }}></div>
+      <div className="w-full h-12" style={{ background: 'linear-gradient(180deg, #064e3b 0%, transparent 100%)' }}></div>
 
       {/* Services Dropdown styled section */}
       <div className="px-4 -mt-10 relative z-20 max-w-6xl mx-auto">
-        <h2 className="text-[17px] font-black text-blue-900 mb-3 px-2 drop-shadow-sm">บริการยอดนิยม</h2>
+        <h2 className="text-[17px] font-black text-emerald-900 mb-3 px-2 drop-shadow-sm">บริการยอดนิยม</h2>
         
-        <div className="flex justify-between items-center bg-blue-900/10 backdrop-blur-sm rounded-3xl p-4 shadow-inner overflow-x-auto gap-4 hide-scrollbar border border-blue-200/50">
+        <div className="flex justify-between items-center bg-emerald-900/10 backdrop-blur-sm rounded-3xl p-4 shadow-inner overflow-x-auto gap-4 hide-scrollbar border border-emerald-200/50">
           {[
             { label: 'ร้องเรียน\nร้องทุกข์', icon: <HelpCircle size={28} className="text-pink-500" /> },
             { label: 'สถานที่\nออกกำลังกาย', icon: <span className="text-3xl drop-shadow-sm">🏃</span> },
@@ -24,18 +24,18 @@ export default function Home() {
             { label: 'ชำระภาษี', icon: <span className="text-3xl drop-shadow-sm">💰</span> },
           ].map((srv, i) => (
             <Link to="/complaint" key={i} className="flex flex-col items-center shrink-0 w-[72px] group">
-              <div className="w-[60px] h-[60px] flex items-center justify-center shadow-lg relative bg-gradient-to-br from-white to-blue-50 transition-transform group-active:scale-95"
+              <div className="w-[60px] h-[60px] flex items-center justify-center shadow-lg relative bg-gradient-to-br from-white to-emerald-50 transition-transform group-active:scale-95"
                    style={{
                      borderRadius: '50% 50% 50% 0',
                      transform: 'rotate(-45deg)',
-                     border: '2px solid #7dd3fc',
-                     boxShadow: '0 4px 15px rgba(2, 132, 199, 0.2)'
+                     border: '2px solid #6ee7b7',
+                     boxShadow: '0 4px 15px rgba(5, 150, 105, 0.2)'
                    }}>
                 <div style={{ transform: 'rotate(45deg)' }}>
                   {srv.icon}
                 </div>
               </div>
-              <span className="text-[11px] font-bold text-blue-950 mt-3 text-center whitespace-pre-line leading-tight">
+              <span className="text-[11px] font-bold text-emerald-950 mt-3 text-center whitespace-pre-line leading-tight">
                 {srv.label}
               </span>
             </Link>
@@ -45,38 +45,56 @@ export default function Home() {
 
       {/* Recommended for you */}
       <div className="px-4 mt-8 max-w-6xl mx-auto">
-        <h2 className="text-[17px] font-black text-blue-900 mb-3 px-2">แนะนำสำหรับคุณ</h2>
+        <h2 className="text-[17px] font-black text-emerald-900 mb-3 px-2">แนะนำสำหรับคุณ</h2>
         <div className="grid grid-cols-2 gap-3">
-           <div className="rounded-2xl overflow-hidden shadow-sm relative h-32 bg-blue-50 border border-blue-100/50">
-             <div className="absolute top-0 left-0 bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-br-lg z-10 shadow-sm">รายงานพยากรณ์อากาศ</div>
-             <div className="absolute inset-0 pt-4 scale-[0.85] origin-top">
-               <WeatherWidget />
+           <Link to="/weather" className="rounded-2xl overflow-hidden shadow-sm relative h-32 border border-gray-100 block transition-transform active:scale-95 group">
+             <img src="https://images.unsplash.com/photo-1584267385494-9fdd9a71ad75?auto=format&fit=crop&w=400&q=80" alt="Weather Radar" className="w-full h-full object-cover opacity-90 transition-transform duration-500 group-hover:scale-105" />
+             <div className="absolute top-2 right-0 bg-[#f97316] text-white text-[11px] font-bold px-2.5 py-1 rounded-l-md z-10 shadow-md border-l-2 border-[#ea580c]">รายงานพยากรณ์อากาศ</div>
+           </Link>
+           <a href="https://air4thai.pcd.go.th/webV3/#/Home" target="_blank" rel="noopener noreferrer" className="rounded-2xl overflow-hidden shadow-sm relative h-32 border border-gray-100 block transition-transform active:scale-95 group">
+             <img src="https://images.unsplash.com/photo-1611273426858-450d8e3c9fce?auto=format&fit=crop&w=400&q=80" alt="Air4Thai PM 2.5" className="w-full h-full object-cover opacity-90 transition-transform duration-500 group-hover:scale-105" />
+             <div className="absolute top-2 left-0 bg-[#38bdf8] text-white text-[11px] font-bold px-2.5 py-1 rounded-r-md z-10 shadow-md border-r-2 border-[#0284c7]">เช็คฝุ่น PM 2.5</div>
+             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent flex items-end p-3">
+               <p className="text-white text-xs font-bold leading-snug drop-shadow-md">Air4Thai<br/>รายงานสถานการณ์<br/>มลพิษทางอากาศ</p>
              </div>
-           </div>
-           <div className="rounded-2xl overflow-hidden shadow-sm relative h-32 border border-gray-100">
-             <img src="https://images.unsplash.com/photo-1576091160550-2173ff9e5ee5?auto=format&fit=crop&w=400&q=80" alt="Health" className="w-full h-full object-cover" />
-             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent flex items-end p-3">
-               <p className="text-white text-xs font-bold leading-snug drop-shadow-md">กองทุน<br/>หลักประกันสุขภาพ<br/>{tenant?.name}</p>
+           </a>
+           <Link to="/doc-request" className="rounded-2xl overflow-hidden shadow-sm relative h-32 col-span-2 block transition-transform active:scale-95 group bg-white border border-gray-100">
+             {/* Background Image */}
+             <img src="https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=800&q=80" alt="e-Service Background" className="w-full h-full object-cover opacity-60 transition-transform duration-500 group-hover:scale-105" />
+             
+             {/* Inner Black Border */}
+             <div className="absolute inset-[6px] border border-black z-10 pointer-events-none"></div>
+             
+             {/* Text Content */}
+             <div className="absolute inset-0 flex flex-col items-center justify-center z-20 pointer-events-none drop-shadow-md">
+               <h3 className="text-4xl font-black tracking-wide"
+                   style={{ 
+                     color: '#003b5c', 
+                     WebkitTextStroke: '2px white',
+                     paintOrder: 'stroke fill'
+                   }}>
+                 e-Service
+               </h3>
+               <p className="text-3xl font-black mt-[-4px]"
+                  style={{ 
+                     color: '#003b5c', 
+                     WebkitTextStroke: '2px white',
+                     paintOrder: 'stroke fill'
+                   }}>
+                 เพื่อประชาชน
+               </p>
              </div>
-           </div>
-           <div className="rounded-2xl overflow-hidden shadow-sm relative h-32 col-span-2 border border-gray-100">
-             <img src="https://images.unsplash.com/photo-1516302752625-fcc3c50ae61f?auto=format&fit=crop&w=800&q=80" alt="Elderly" className="w-full h-full object-cover" />
-             <div className="absolute inset-0 bg-gradient-to-r from-blue-900/60 to-transparent flex items-center p-4">
-               <div className="bg-[#0ea5e9] text-white p-3 rounded-full font-black text-sm text-center shadow-xl w-[100px] h-[100px] flex items-center justify-center border-4 border-white/20">
-                 ลงทะเบียน<br/>รับเบี้ย<br/>ผู้สูงอายุ
-               </div>
-             </div>
-           </div>
+           </Link>
         </div>
       </div>
 
       {/* Complaints Grid */}
       <div className="px-4 mt-10 max-w-6xl mx-auto">
         <div className="bg-white rounded-[24px] shadow-sm border border-gray-100 p-4 relative overflow-hidden">
-          <div className="absolute top-0 left-0 right-0 h-14 bg-gradient-to-b from-[#f0f9ff] to-transparent rounded-t-[24px]"></div>
+          <div className="absolute top-0 left-0 right-0 h-14 bg-gradient-to-b from-[#f0fdf4] to-transparent rounded-t-[24px]"></div>
           
           <div className="relative z-10 flex justify-between items-start mb-5">
-            <h2 className="text-[17px] font-black text-[#1e3a8a] leading-tight">แจ้งเรื่องร้องเรียน<br/>/ร้องทุกข์</h2>
+            <h2 className="text-[17px] font-black text-emerald-900 leading-tight">แจ้งเรื่องร้องเรียน<br/>/ร้องทุกข์</h2>
             <Link to="/complaint" className="bg-yellow-400 text-yellow-900 text-[11px] font-black px-4 py-1.5 rounded-full shadow-sm hover:bg-yellow-300 transition-colors">
               ดูทั้งหมด
             </Link>
@@ -103,13 +121,13 @@ export default function Home() {
           </div>
 
           <div className="mt-5 relative overflow-hidden rounded-l-md rounded-r-full inline-block">
-             <Link to="/my-complaints" className="block bg-[#38bdf8] hover:bg-[#0284c7] transition-colors text-white text-xs font-bold px-5 py-2.5 shadow-md relative z-10">
+             <Link to="/my-complaints" className="block bg-[#10b981] hover:bg-[#059669] transition-colors text-white text-xs font-bold px-5 py-2.5 shadow-md relative z-10">
                ติดตามเรื่องร้องเรียน &gt;
              </Link>
           </div>
           
-          <div className="mt-6 pt-4 border-t border-blue-50">
-             <h3 className="text-sm font-bold text-blue-900">บรรเทาความเดือดร้อนล่าสุด</h3>
+          <div className="mt-6 pt-4 border-t border-emerald-50">
+             <h3 className="text-sm font-bold text-emerald-900">บรรเทาความเดือดร้อนล่าสุด</h3>
              {/* Can embed recent resolved complaints here in future */}
           </div>
         </div>
@@ -117,10 +135,10 @@ export default function Home() {
 
       {/* Local Products & Tourism */}
       <div className="mt-10 relative">
-        <div className="bg-gradient-to-b from-[#e0f2fe] to-transparent pt-6 pb-6 px-4">
+        <div className="bg-gradient-to-b from-[#d1fae5] to-transparent pt-6 pb-6 px-4">
           <div className="text-center mb-5">
-            <h2 className="text-2xl font-black text-[#0284c7] drop-shadow-sm">ชาวบ้านฝากขาย</h2>
-            <p className="text-sm font-black text-blue-900 mt-0.5">{tenant?.name}</p>
+            <h2 className="text-2xl font-black text-[#059669] drop-shadow-sm">ชาวบ้านฝากขาย</h2>
+            <p className="text-sm font-black text-emerald-900 mt-0.5">{tenant?.name}</p>
           </div>
           
           <div className="bg-white/60 backdrop-blur-md rounded-[24px] p-3 shadow-sm border border-white flex gap-4 overflow-x-auto hide-scrollbar">
@@ -130,7 +148,7 @@ export default function Home() {
                 <h3 className="font-bold text-gray-800 text-sm">ผลไม้สด</h3>
                 <p className="text-[10px] text-gray-500 mt-1">ผลไม้ส่งตรงจากสวน</p>
                 <div className="flex items-center gap-1.5 mt-2.5 text-[10px] font-medium text-gray-400">
-                  <MapPin size={12} className="text-[#0284c7]" /> บ้านพร้อมชัย
+                  <MapPin size={12} className="text-[#059669]" /> บ้านพร้อมชัย
                 </div>
                 <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-gray-400">
                   <Eye size={12} /> 91
@@ -144,8 +162,8 @@ export default function Home() {
           </div>
           
           <div className="flex justify-center gap-3 mt-5">
-            <button className="bg-[#3b82f6] text-white text-xs font-bold px-5 py-2.5 rounded-full shadow-md hover:bg-blue-600 transition-colors">สมัครขายสินค้า &gt;</button>
-            <button className="bg-[#1e3a8a] text-white text-xs font-bold px-5 py-2.5 rounded-full shadow-md hover:bg-blue-900 transition-colors">ดูทั้งหมด &gt;</button>
+            <button className="bg-[#10b981] text-white text-xs font-bold px-5 py-2.5 rounded-full shadow-md hover:bg-emerald-600 transition-colors">สมัครขายสินค้า &gt;</button>
+            <button className="bg-[#064e3b] text-white text-xs font-bold px-5 py-2.5 rounded-full shadow-md hover:bg-emerald-900 transition-colors">ดูทั้งหมด &gt;</button>
           </div>
         </div>
       </div>
@@ -193,8 +211,8 @@ export default function Home() {
       </div>
 
       {/* Today section */}
-      <div className="mt-12 bg-gradient-to-b from-[#e0f2fe] to-[#bae6fd] pt-8 pb-10 rounded-t-[40px] border-t-4 border-white relative shadow-[0_-10px_30px_rgba(2,132,199,0.1)]">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-[#38bdf8] text-white px-8 py-2 rounded-full font-black text-lg shadow-lg border-2 border-white">
+      <div className="mt-12 bg-gradient-to-b from-[#d1fae5] to-[#a7f3d0] pt-8 pb-10 rounded-t-[40px] border-t-4 border-white relative shadow-[0_-10px_30px_rgba(5,150,105,0.1)]">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-[#10b981] text-white px-8 py-2 rounded-full font-black text-lg shadow-lg border-2 border-white">
           {tenant?.name}วันนี้
         </div>
         

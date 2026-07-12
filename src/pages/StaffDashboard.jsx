@@ -2256,9 +2256,6 @@ export default function StaffDashboard() {
           <div className="flex-1 min-w-0">
             <p className="text-sm font-bold text-gray-800 truncate">{tenant?.name ?? 'Staff Portal'}</p>
           </div>
-          <button onClick={handleLogout} className="p-2 rounded-xl text-gray-400 hover:bg-gray-100 transition-colors">
-            <LogOut size={18} />
-          </button>
         </header>
 
         {/* PC header — government style */}
