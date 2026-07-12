@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
-import PostsHighlight from '../components/home/PostsHighlight'
+
 import TourismSection from '../components/home/TourismSection'
 import ComplaintBand from '../components/home/ComplaintBand'
 import ShortcutBand from '../components/home/ShortcutBand'
@@ -459,10 +459,6 @@ export default function HomePage() {
             .map(key => RIGHT_SECTION[key] ?? null)}
         </div>
 
-        {/* Full-width sections — ข่าวสำคัญและกิจกรรม */}
-        <div className="mt-6">
-          <PostsHighlight />
-        </div>
       </div>
 
       <div className="px-4 md:px-6 pb-8 max-w-6xl mx-auto">
