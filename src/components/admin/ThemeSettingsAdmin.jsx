@@ -84,6 +84,7 @@ export default function ThemeSettingsAdmin() {
 
   const [themeColor,   setThemeColor]   = useState(() => tenant?.theme_color   || '#1c7cd6')
   const [layoutTheme,  setLayoutTheme]  = useState(() => tenant?.layout_theme  || 'classic')
+  const [uiStyle,      setUiStyle]      = useState(() => tenant?.ui_style      || 'default')
   const [showPosts,    setShowPosts]    = useState(() => tenant?.show_posts_highlight !== false)
   const [presets,      setPresets]      = useState(() => tenant?.theme_presets || [])
   const [colorSaving,  setColorSaving]  = useState(false)
@@ -132,14 +133,14 @@ export default function ThemeSettingsAdmin() {
     e.preventDefault()
     setLayoutSaving(true)
     try {
-      // ถ้ามี preset active อยู่ → อัปเดต layout + showPosts ใน preset นั้นด้วย
+      // ถ้ามี preset active อยู่ → อัปเดต layout + showPosts + uiStyle ใน preset นั้นด้วย
       let updatedPresets = presets
       if (activePresetId) {
         updatedPresets = presets.map(p =>
-          String(p.id) === activePresetId ? { ...p, layout: layoutTheme, showPosts } : p
+          String(p.id) === activePresetId ? { ...p, layout: layoutTheme, showPosts, uiStyle } : p
         )
       }
-      const updatePayload = { layout_theme: layoutTheme, show_posts_highlight: showPosts }
+      const updatePayload = { layout_theme: layoutTheme, ui_style: uiStyle, show_posts_highlight: showPosts }
       if (activePresetId) updatePayload.theme_presets = updatedPresets
 
       const { error } = await supabase
@@ -147,9 +148,9 @@ export default function ThemeSettingsAdmin() {
       if (error) throw error
       if (activePresetId) {
         setPresets(updatedPresets)
-        patchTenant({ layout_theme: layoutTheme, show_posts_highlight: showPosts, theme_presets: updatedPresets })
+        patchTenant({ layout_theme: layoutTheme, ui_style: uiStyle, show_posts_highlight: showPosts, theme_presets: updatedPresets })
       } else {
-        patchTenant({ layout_theme: layoutTheme, show_posts_highlight: showPosts })
+        patchTenant({ layout_theme: layoutTheme, ui_style: uiStyle, show_posts_highlight: showPosts })
       }
       flash('layout')
     } catch (err) { alert('บันทึกไม่สำเร็จ: ' + err.message) }
@@ -162,7 +163,7 @@ export default function ThemeSettingsAdmin() {
     if (!name) return
     setPresetSaving(true)
     try {
-      const newPreset = { id: Date.now(), name, color: themeColor, layout: layoutTheme, showPosts }
+      const newPreset = { id: Date.now(), name, color: themeColor, layout: layoutTheme, uiStyle, showPosts }
       const next = [...presets, newPreset]
       const { error } = await supabase
         .from('municipalities').update({ theme_presets: next }).eq('id', tenant.id)
@@ -181,8 +182,9 @@ export default function ThemeSettingsAdmin() {
       // ถ้า preset มี showPosts อย่างชัดเจน → ใช้ค่านั้น, ถ้าไม่มี → คงค่าเดิมของหน่วยงาน
       const hasShowPosts = 'showPosts' in preset
       const presetShowPosts = hasShowPosts ? preset.showPosts : showPosts
+      const presetUiStyle = preset.uiStyle || 'default'
 
-      const updatePayload = { theme_color: preset.color, layout_theme: preset.layout }
+      const updatePayload = { theme_color: preset.color, layout_theme: preset.layout, ui_style: presetUiStyle }
       if (hasShowPosts) updatePayload.show_posts_highlight = presetShowPosts
 
       const { error } = await supabase
@@ -192,8 +194,9 @@ export default function ThemeSettingsAdmin() {
       if (error) throw error
       setThemeColor(preset.color)
       setLayoutTheme(preset.layout)
+      setUiStyle(presetUiStyle)
       setShowPosts(presetShowPosts)
-      patchTenant({ theme_color: preset.color, layout_theme: preset.layout, ...(hasShowPosts ? { show_posts_highlight: presetShowPosts } : {}) })
+      patchTenant({ theme_color: preset.color, layout_theme: preset.layout, ui_style: presetUiStyle, ...(hasShowPosts ? { show_posts_highlight: presetShowPosts } : {}) })
       applyColorToDOM(preset.color)
       try { localStorage.setItem(`sl_active_preset_${tenant.id}`, String(preset.id)) } catch {}
       setActivePresetId(String(preset.id))
@@ -373,6 +376,36 @@ export default function ThemeSettingsAdmin() {
               )
             })}
           </div>
+
+          {/* สไตล์การแสดงผล */}
+          <div className="pt-3 pb-1 border-t border-gray-100">
+            <h3 className="text-xs font-bold text-gray-700 mb-3">สไตล์หน้าจอ (เฉพาะฝั่งประชาชน)</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { id: 'default', name: 'มาตรฐาน', icon: '◻️', desc: 'ขอบมนเล็กน้อย' },
+                { id: 'rounded', name: 'โค้งมน', icon: '🔵', desc: 'โค้งมนนุ่มนวล' },
+                { id: 'glass', name: 'โปร่งแสง', icon: '🧊', desc: 'สไตล์กระจก' },
+                { id: 'minimal', name: 'มินิมอล', icon: '🔳', desc: 'เหลี่ยมเรียบง่าย' }
+              ].map(style => {
+                const active = uiStyle === style.id
+                return (
+                  <button key={style.id} type="button" onClick={() => setUiStyle(style.id)}
+                    className="flex flex-col items-center gap-2 p-3 rounded-xl border-2 text-center transition-all"
+                    style={{
+                      borderColor: active ? 'var(--color-primary)' : '#e5e7eb',
+                      backgroundColor: active ? 'rgba(var(--color-primary-rgb,28,124,214),0.06)' : '#fafafa',
+                    }}>
+                    <span className="text-xl mb-1">{style.icon}</span>
+                    <p className="text-xs font-bold text-gray-700 leading-tight">
+                      {style.name}
+                    </p>
+                    <p className="text-[10px] text-gray-400 leading-tight">{style.desc}</p>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
           {/* toggle show posts */}
           <label className="flex items-center gap-3 cursor-pointer select-none py-1">
             <div onClick={() => setShowPosts(v => !v)}

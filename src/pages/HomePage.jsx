@@ -170,7 +170,14 @@ function NewsSlider({ posts, label = 'ข่าวสำคัญ', href = '/new
   const post = posts[idx]
 
   return (
-    <div className="rounded-2xl bg-white border border-gray-100 shadow-sm overflow-hidden"
+    <div className="overflow-hidden"
+      style={{
+        backgroundColor: 'var(--bg-card, #ffffff)',
+        borderRadius: 'var(--radius-card, 1rem)',
+        boxShadow: 'var(--shadow-card, 0 1px 2px 0 rgba(0,0,0,0.05))',
+        border: 'var(--border-card, 1px solid #f3f4f6)',
+        backdropFilter: 'var(--blur-card, none)'
+      }}
       onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
         <div className="flex items-center gap-2">

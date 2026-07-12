@@ -61,7 +61,14 @@ function NewsCard({ post, onClick }) {
   const date = fmtDate(post.event_date ?? post.created_at?.slice(0, 10))
   return (
     <div onClick={onClick}
-         className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col hover:shadow-md transition-shadow cursor-pointer active:scale-[0.98]">
+         className="overflow-hidden flex flex-col hover:-translate-y-0.5 transition-all cursor-pointer active:scale-[0.98]"
+         style={{
+           backgroundColor: 'var(--bg-card, #ffffff)',
+           borderRadius: 'var(--radius-card, 1rem)',
+           boxShadow: 'var(--shadow-card, 0 1px 2px 0 rgba(0,0,0,0.05))',
+           border: 'var(--border-card, 1px solid #f3f4f6)',
+           backdropFilter: 'var(--blur-card, none)'
+         }}>
       <div className="aspect-4/3 bg-gray-100 overflow-hidden shrink-0">
         {post.image_url
           ? <img src={post.image_url} alt={post.title}
@@ -81,7 +88,14 @@ function NewsCard({ post, onClick }) {
 function ActivityCard({ post, onClick }) {
   return (
     <div onClick={onClick}
-         className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col hover:shadow-md transition-shadow cursor-pointer active:scale-[0.98]">
+         className="overflow-hidden flex flex-col hover:-translate-y-0.5 transition-all cursor-pointer active:scale-[0.98]"
+         style={{
+           backgroundColor: 'var(--bg-card, #ffffff)',
+           borderRadius: 'var(--radius-card, 1rem)',
+           boxShadow: 'var(--shadow-card, 0 1px 2px 0 rgba(0,0,0,0.05))',
+           border: 'var(--border-card, 1px solid #f3f4f6)',
+           backdropFilter: 'var(--blur-card, none)'
+         }}>
       <div className="aspect-4/3 bg-gray-100 overflow-hidden shrink-0">
         {post.image_url
           ? <img src={post.image_url} alt={post.title}

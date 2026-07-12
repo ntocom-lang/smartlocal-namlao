@@ -100,7 +100,7 @@ function injectPWAManifest(tenant) {
   }
 }
 
-function applyTheme(hexColor) {
+function applyTheme(hexColor, uiStyle = 'default') {
   const root = document.documentElement
   root.style.setProperty('--color-primary', hexColor)
 
@@ -111,6 +111,43 @@ function applyTheme(hexColor) {
   const darken = (v) => Math.max(0, Math.floor(v * 0.85)).toString(16).padStart(2, '0')
   root.style.setProperty('--color-primary-dark', `#${darken(r)}${darken(g)}${darken(b)}`)
   root.style.setProperty('--color-primary-rgb', `${r}, ${g}, ${b}`)
+
+  // กำหนดตัวแปรสำหรับ Component Style (ui_style)
+  switch (uiStyle) {
+    case 'rounded':
+      root.style.setProperty('--radius-card', '1.5rem')
+      root.style.setProperty('--radius-btn', '9999px')
+      root.style.setProperty('--shadow-card', '0 4px 14px 0 rgba(0,0,0,0.05)')
+      root.style.setProperty('--bg-card', '#ffffff')
+      root.style.setProperty('--border-card', '1px solid #f3f4f6')
+      root.style.setProperty('--blur-card', 'none')
+      break
+    case 'glass':
+      root.style.setProperty('--radius-card', '1rem')
+      root.style.setProperty('--radius-btn', '0.75rem')
+      root.style.setProperty('--shadow-card', '0 8px 32px 0 rgba(31, 38, 135, 0.07)')
+      root.style.setProperty('--bg-card', 'rgba(255, 255, 255, 0.7)')
+      root.style.setProperty('--border-card', '1px solid rgba(255, 255, 255, 0.5)')
+      root.style.setProperty('--blur-card', 'blur(12px)')
+      break
+    case 'minimal':
+      root.style.setProperty('--radius-card', '0px')
+      root.style.setProperty('--radius-btn', '0px')
+      root.style.setProperty('--shadow-card', 'none')
+      root.style.setProperty('--bg-card', '#ffffff')
+      root.style.setProperty('--border-card', '1px solid #e5e7eb')
+      root.style.setProperty('--blur-card', 'none')
+      break
+    case 'default':
+    default:
+      root.style.setProperty('--radius-card', '1rem')
+      root.style.setProperty('--radius-btn', '0.5rem')
+      root.style.setProperty('--shadow-card', '0 1px 2px 0 rgba(0, 0, 0, 0.05)')
+      root.style.setProperty('--bg-card', '#ffffff')
+      root.style.setProperty('--border-card', '1px solid #f3f4f6')
+      root.style.setProperty('--blur-card', 'none')
+      break
+  }
 }
 
 export function TenantProvider({ children }) {
@@ -139,7 +176,7 @@ export function TenantProvider({ children }) {
       try {
         const { data, error: dbError } = await supabase
           .from('municipalities')
-          .select('id, slug, name, org_type, province, theme_color, layout_theme, theme_presets, show_posts_highlight, logo_url, header_image_url, developer_name, website_url, facebook_url, line_oa_url, phone, address, latitude, longitude, system_name, system_subtitle, pwa_short_name, enabled_modules, telegram_group_id, promptpay_id, fee_schedule, qr_code_url, qr_label, bank_name, bank_account_no, bank_account_name')
+          .select('id, slug, name, org_type, province, theme_color, layout_theme, ui_style, theme_presets, show_posts_highlight, logo_url, header_image_url, developer_name, website_url, facebook_url, line_oa_url, phone, address, latitude, longitude, system_name, system_subtitle, pwa_short_name, enabled_modules, telegram_group_id, promptpay_id, fee_schedule, qr_code_url, qr_label, bank_name, bank_account_no, bank_account_name')
           .eq('slug', slug)
           .single()
 
@@ -154,7 +191,7 @@ export function TenantProvider({ children }) {
 
         setTenant(data)
         setTerminology(TERMINOLOGY[data.org_type] ?? TERMINOLOGY['อบต.'])
-        applyTheme(data.theme_color ?? '#1d4ed8')
+        applyTheme(data.theme_color ?? '#1d4ed8', data.ui_style)
         document.title = data.name
         try { injectPWAManifest(data) } catch (_) {}
         try {

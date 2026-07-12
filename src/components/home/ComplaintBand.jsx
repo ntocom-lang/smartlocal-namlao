@@ -65,9 +65,10 @@ export default function ComplaintBand() {
               <button key={cat.value}
                 onClick={() => navigate(`/request?category=${cat.value}`)}
                 className="flex flex-col items-center gap-1.5 shrink-0 active:scale-95 transition-transform">
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-md"
+                <div className="w-14 h-14 flex items-center justify-center shadow-md"
                   style={{
                     backgroundColor: color + '22',
+                    borderRadius: 'var(--radius-btn, 1rem)',
                     border: `1.5px solid ${color}55`,
                     backdropFilter: 'blur(4px)',
                     boxShadow: `0 3px 10px ${color}30, inset 0 1px 0 rgba(255,255,255,0.5)`,
@@ -89,9 +90,10 @@ export default function ComplaintBand() {
               <button key={cat.value}
                 onClick={() => navigate(`/request?category=${cat.value}`)}
                 className="flex flex-col items-center gap-1.5 p-1.5 rounded-xl hover:bg-white/15 active:scale-95 transition-all">
-                <div className="w-11 h-11 rounded-2xl flex items-center justify-center"
+                <div className="w-11 h-11 flex items-center justify-center"
                   style={{
                     backgroundColor: color + '22',
+                    borderRadius: 'var(--radius-btn, 1rem)',
                     border: `1.5px solid ${color}55`,
                     backdropFilter: 'blur(4px)',
                     boxShadow: `0 2px 8px ${color}25, inset 0 1px 0 rgba(255,255,255,0.5)`,

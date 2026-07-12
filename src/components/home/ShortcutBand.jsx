@@ -29,8 +29,8 @@ function IconBox({ item, sizeCls, iconSizeMd }) {
   const bg = item.bgColor ?? 'rgba(255,255,255,0.92)'
   const border = item.bgColor ? 'none' : `1.5px solid ${item.color}55`
   return (
-    <div className={`${sizeCls} rounded-2xl flex items-center justify-center overflow-hidden`}
-         style={{ backgroundColor: bg, border, boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
+    <div className={`${sizeCls} flex items-center justify-center overflow-hidden`}
+         style={{ backgroundColor: bg, border, boxShadow: '0 2px 8px rgba(0,0,0,0.15)', borderRadius: 'var(--radius-btn, 1rem)' }}>
       {item.render
         ? item.render(iconSizeMd)
         : item.emoji
