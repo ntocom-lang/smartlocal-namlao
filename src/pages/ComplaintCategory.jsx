@@ -1,16 +1,21 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Loader2 } from 'lucide-react'
+import { 
+  ArrowLeft, Loader2, Lightbulb, Hammer, Bug, Trees, 
+  Trash2, Droplets, Waves, CloudRain, Package, ShieldAlert, 
+  Megaphone, VolumeX, Building2, Receipt, Pickaxe, Dog, 
+  Flame, PhoneCall, HelpCircle, FileQuestion
+} from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 
-const FALLBACK_EMOJI = {
-  light: '💡', road: '🔧', mosquito: '🦟', tree: '✂️',
-  trash: '🗑️', water_supply: '💧', drain: '🌀', flood: '🌊',
-  borrow_equipment: '📦', corruption: '🛡️', grievance: '📢',
-  noise: '🔊', building: '🏢', tax: '💳', canal: '⛏️',
-  animals: '🐕', fire: '🔥', phone_complaint: '📞',
-  waste_water: '💧', other: '❓',
+const FALLBACK_ICON = {
+  light: Lightbulb, road: Hammer, mosquito: Bug, tree: Trees,
+  trash: Trash2, water_supply: Droplets, drain: Waves, flood: CloudRain,
+  borrow_equipment: Package, corruption: ShieldAlert, grievance: Megaphone,
+  noise: VolumeX, building: Building2, tax: Receipt, canal: Pickaxe,
+  animals: Dog, fire: Flame, phone_complaint: PhoneCall,
+  waste_water: Droplets, other: FileQuestion,
 }
 
 const FALLBACK_COLOR = {
@@ -73,7 +78,7 @@ export default function ComplaintCategory() {
 
       {/* PC header */}
       <div className="hidden md:flex items-center justify-between px-8 py-4 bg-white border-b border-gray-200 shadow-sm">
-        <h1 className="text-lg font-bold text-gray-800">แจ้งเหตุ/แจ้งซ่อม</h1>
+        <h1 className="text-lg font-bold text-gray-800">แจ้งเรื่องร้องเรียน</h1>
         <button onClick={() => navigate(-1)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors">
           <ArrowLeft size={15} />
@@ -88,17 +93,15 @@ export default function ComplaintCategory() {
           className="p-1.5 rounded-xl bg-white/20 hover:bg-white/30 transition-colors">
           <ArrowLeft size={20} className="text-white" />
         </button>
-        <h1 className="font-bold text-white text-base flex-1 text-center pr-8">แจ้งเหตุ/แจ้งซ่อม</h1>
+        <h1 className="font-bold text-white text-base flex-1 text-center pr-8">แจ้งเรื่องร้องเรียน</h1>
       </div>
 
       <div className="max-w-2xl mx-auto px-4 pt-5 pb-28 md:pb-8">
 
-        {/* Prompt button */}
-        <button onClick={() => {}} disabled
-          className="w-full py-3.5 rounded-full font-semibold text-white text-sm mb-5 shadow"
-          style={{ backgroundColor: '#1e3a5f' }}>
-          เลือกหมวดหมู่
-        </button>
+        {/* Prompt text */}
+        <h2 className="text-gray-800 text-base font-bold mb-4 text-left">
+          เลือกหมวดหมู่เพื่อแจ้งเรื่อง
+        </h2>
 
         {/* Grid */}
         {loading ? (
@@ -106,22 +109,33 @@ export default function ComplaintCategory() {
             <Loader2 size={28} className="animate-spin text-blue-300" />
           </div>
         ) : (
-          <div className="grid grid-cols-4 md:grid-cols-5 gap-x-3 gap-y-5">
+          <div className="grid grid-cols-3 md:grid-cols-4 gap-3 md:gap-4">
             {categories.map((cat) => {
-              const emoji = cat.emoji || FALLBACK_EMOJI[cat.value] || '📋'
-              const color = cat.color || FALLBACK_COLOR[cat.value] || '#6b7280'
+              const emoji = cat.emoji || ''
+              const baseColor = cat.color || FALLBACK_COLOR[cat.value] || '#6b7280'
+              // Strip any alpha channel from color to ensure it's fully opaque for the icon
+              const color = baseColor.length > 7 ? baseColor.substring(0, 7) : baseColor
+              const isImageUrl = emoji.startsWith('http') || emoji.startsWith('/')
+              const IconComponent = FALLBACK_ICON[cat.value] || FileQuestion
+
               return (
                 <button key={cat.value} onClick={() => handleSelect(cat.value)}
-                  className="flex flex-col items-center gap-2 active:scale-95 transition-transform group">
-                  <div className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-sm transition-shadow group-hover:shadow-md"
-                    style={{
-                      backgroundColor: color + '18',
-                      border: `1.5px solid ${color}45`,
-                      boxShadow: `0 2px 8px ${color}20`,
-                    }}>
-                    <span className="text-[2rem] leading-none select-none">{emoji}</span>
+                  className="flex flex-col items-center gap-2.5 p-3 bg-white rounded-2xl active:scale-95 transition-all group hover:-translate-y-0.5"
+                  style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.07)', border: `1.5px solid ${color}25` }}>
+
+                  {/* Icon box — solid background, white icon */}
+                  <div className="w-14 h-14 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105"
+                    style={{ background: `linear-gradient(135deg, ${color} 0%, ${color}cc 100%)` }}>
+                    {isImageUrl ? (
+                      <img src={emoji} alt={cat.label} className="w-8 h-8 object-contain" />
+                    ) : emoji ? (
+                      <span className="text-2xl">{emoji}</span>
+                    ) : (
+                      <IconComponent size={28} color="white" strokeWidth={2} />
+                    )}
                   </div>
-                  <span className="text-[11px] font-medium text-gray-600 text-center leading-tight w-full px-0.5 line-clamp-2">
+
+                  <span className="text-[12px] font-bold text-gray-800 text-center leading-snug w-full line-clamp-2">
                     {cat.label}
                   </span>
                 </button>
