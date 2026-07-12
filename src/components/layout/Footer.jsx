@@ -44,7 +44,7 @@ export default function Footer() {
         {/* Copyright */}
         <div className="flex flex-col items-center gap-1">
           <span className="text-xs font-medium" style={{ color: 'rgba(186,230,253,0.8)' }}>
-            Copyright © 2026 : {tenant?.name}
+            ©สงวนลิขสิทธิ์ 2026 โดย {tenant?.name}
           </span>
           {tenant?.developer_name && (
             <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>

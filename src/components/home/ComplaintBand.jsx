@@ -15,7 +15,8 @@ const FALLBACK_EMOJI = {
 
 const DEFAULT_CATEGORIES = [
   { value: 'light',      label: 'ไฟฟ้าสาธารณะ', emoji: '💡' },
-  { value: 'road',       label: 'ซ่อมแซมถนน', emoji: '🔧' },
+  { value: 'disease',    label: 'ควบคุมโรคติดต่อ', emoji: '🏥' },
+  { value: 'road',       label: 'ซ่อมแซมถนน', emoji: '🛣️' },
   { value: 'mosquito',   label: 'พ่นยุง', emoji: '🦟' },
   { value: 'tree',       label: 'ตัดต้นไม้', emoji: '🌳' },
   { value: 'trash',      label: 'ขยะ / ความสะอาด', emoji: '🗑️' },
@@ -59,16 +60,16 @@ export default function ComplaintBand() {
           </button>
         </div>
 
-        {/* Mobile: horizontal scroll */}
-        <div className="flex gap-4 overflow-x-auto pb-1 md:hidden" style={{ scrollbarWidth: 'none' }}>
-          {topCats.map(cat => {
+        {/* Mobile: 5 items grid */}
+        <div className="grid grid-cols-5 gap-1 md:hidden pb-1">
+          {topCats.slice(0, 5).map(cat => {
             const emoji = cat.emoji || FALLBACK_EMOJI[cat.value] || '📋'
             const color = cat.color || '#ffffff'
             return (
               <button key={cat.value}
                 onClick={() => navigate(`/request?category=${cat.value}`)}
-                className="flex flex-col items-center gap-1.5 shrink-0 active:scale-95 transition-transform">
-                <div className="w-14 h-14 flex items-center justify-center shadow-md"
+                className="flex flex-col items-center gap-1.5 active:scale-95 transition-transform">
+                <div className="w-[52px] h-[52px] flex items-center justify-center shadow-md"
                   style={{
                     backgroundColor: color + '22',
                     borderRadius: 'var(--radius-btn, 1rem)',
@@ -76,9 +77,9 @@ export default function ComplaintBand() {
                     backdropFilter: 'blur(4px)',
                     boxShadow: `0 3px 10px ${color}30, inset 0 1px 0 rgba(255,255,255,0.5)`,
                   }}>
-                  <span className="text-[1.75rem] leading-none select-none">{emoji}</span>
+                  <span className="text-[1.6rem] leading-none select-none">{emoji}</span>
                 </div>
-                <p className="text-amber-900 text-[10px] font-semibold text-center w-14 leading-tight">{cat.label}</p>
+                <p className="text-amber-900 text-[9px] font-semibold text-center w-full leading-tight drop-shadow-sm line-clamp-2">{cat.label}</p>
               </button>
             )
           })}

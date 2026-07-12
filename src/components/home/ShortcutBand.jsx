@@ -89,14 +89,14 @@ export default function ShortcutBand() {
       label: 'Line OA',
       bgColor: '#06C755',
       color: '#06C755',
-      render: (size) => <LineOAIcon size={size === '1.4rem' ? 28 : 24} />,
+      render: (size) => <LineOAIcon size={size === '1.1rem' ? 22 : 24} />,
       action: () => window.open(tenant.line_oa_url, '_blank', 'noopener,noreferrer'),
     },
     tenant?.facebook_url && {
       label: 'Facebook',
       bgColor: '#1877F2',
       color: '#1877F2',
-      render: (size) => <FacebookSVGIcon size={size === '1.4rem' ? 28 : 24} />,
+      render: (size) => <FacebookSVGIcon size={size === '1.1rem' ? 22 : 24} />,
       action: () => window.open(tenant.facebook_url, '_blank', 'noopener,noreferrer'),
     },
     tenant?.website_url && {
@@ -115,19 +115,18 @@ export default function ShortcutBand() {
       <div className="absolute -bottom-8 -left-4 w-36 h-36 rounded-full pointer-events-none"
            style={{ background: 'radial-gradient(circle, rgba(14,165,233,0.35) 0%, transparent 70%)' }} />
 
-      <div className="relative z-10 px-4 pt-3 pb-3">
-        <p className="text-white/90 font-bold text-[11px] tracking-widest uppercase mb-2.5">
+      <div className="relative z-10 px-3 pt-2 pb-2.5">
+        <p className="text-white/90 font-bold text-[11px] tracking-widest uppercase mb-1.5">
           🔗 ลิงก์ลัด
         </p>
 
-        {/* Mobile: 2 rows */}
-        <div className="md:hidden grid grid-rows-2 grid-flow-col gap-x-1 gap-y-2"
-             style={{ gridTemplateColumns: `repeat(${Math.ceil(items.length / 2)}, 1fr)` }}>
+        {/* Mobile: 2 rows (5 columns per row) */}
+        <div className="md:hidden grid grid-cols-5 gap-y-1.5 gap-x-1">
           {items.map((item) => (
             <button key={item.label} onClick={item.action}
-                    className="flex flex-col items-center gap-1 active:scale-95 transition-transform">
-              <IconBox item={item} sizeCls="w-11 h-11" iconSizeMd="1.4rem" />
-              <p className="text-white/90 text-[9px] font-semibold text-center w-full leading-tight drop-shadow">{item.label}</p>
+                    className="flex flex-col items-center gap-0.5 active:scale-95 transition-transform">
+              <IconBox item={item} sizeCls="w-9 h-9" iconSizeMd="1.1rem" />
+              <p className="text-white/90 text-[8.5px] font-semibold text-center w-full leading-tight drop-shadow line-clamp-1">{item.label}</p>
             </button>
           ))}
         </div>

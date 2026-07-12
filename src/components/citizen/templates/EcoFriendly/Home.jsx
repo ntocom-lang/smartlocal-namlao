@@ -41,9 +41,9 @@ const LAYOUT_RIGHT = {
 }
 
 const BASE_DOC_TYPES = [
-  { value: 'tax_notice',       label: 'ชำระภาษีที่ดินและสิ่งปลูกสร้าง', emoji: '🏦' },
   { value: 'waste_collection', label: 'ชำระค่าธรรมเนียมขยะ',            emoji: '🗑️' },
   { value: 'residence_cert',   label: 'ใบรับรองการอยู่อาศัย',           emoji: '🏠' },
+  { value: 'tax_notice',       label: 'ชำระภาษีที่ดินและสิ่งปลูกสร้าง', emoji: '🏛️' },
   { value: 'personal_cert',    label: 'หนังสือรับรองบุคคล',              emoji: '👤' },
   { value: 'conduct_cert',     label: 'หนังสือรับรองความประพฤติ',        emoji: '✅' },
   { value: 'other',            label: 'คำขออื่นๆ',                       emoji: '📝' },
@@ -235,15 +235,15 @@ function EServiceBlock({ docTypes }) {
           </Link>
         </div>
 
-        <div className="flex gap-4 overflow-x-auto pb-1 md:grid md:grid-cols-6 md:overflow-visible" style={{ scrollbarWidth: 'none' }}>
-          {docTypes.map(({ value, label, emoji }) => (
+        <div className="grid grid-cols-5 gap-2 md:grid-cols-6 md:gap-4 pb-1 md:pb-0">
+          {docTypes.map(({ value, label, emoji }, i) => (
             <Link key={value} to={`/doc-request?type=${value}`}
-              className="flex flex-col items-center gap-1.5 shrink-0 active:scale-95 transition-transform group md:w-auto w-[60px]">
-              <div className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-md bg-white/20 border border-white/30 backdrop-blur-sm group-hover:bg-white/30 transition-colors"
-                style={{ fontSize: 28, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+              className={`${i >= 5 ? 'hidden md:flex' : 'flex'} flex-col items-center gap-1.5 active:scale-95 transition-transform group`}>
+              <div className="w-[52px] h-[52px] md:w-14 md:h-14 rounded-2xl flex items-center justify-center shadow-md bg-white/20 border border-white/30 backdrop-blur-sm group-hover:bg-white/30 transition-colors"
+                style={{ fontSize: 26, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
                 {emoji}
               </div>
-              <p className="text-white/95 text-[10px] font-semibold text-center leading-tight w-full drop-shadow-sm">{label}</p>
+              <p className="text-white/95 text-[9px] md:text-[10px] font-semibold text-center leading-tight w-full drop-shadow-sm line-clamp-2">{label}</p>
             </Link>
           ))}
         </div>
@@ -334,9 +334,7 @@ export default function HomePage() {
       })
   }, [tenant?.id])
 
-  const topDocTypes = useMemo(() =>
-    [...docTypes].sort((a, b) => (docCounts[b.value] ?? 0) - (docCounts[a.value] ?? 0))
-  , [docTypes, docCounts])
+  const topDocTypes = useMemo(() => docTypes, [docTypes])
 
   // ── section map ──────────────────────────────────────────────────
   const SECTION = {

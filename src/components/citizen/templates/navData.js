@@ -2,7 +2,7 @@ import { Home, ClipboardList, FileSearch, Bell, LayoutGrid, Wrench, CalendarDays
 
 export const NAV_CITIZEN = [
   { label: 'หน้าแรก',      icon: Home,          href: '/' },
-  { label: 'ร้องเรียน',    icon: ClipboardList, href: '/complaint' },
+  { label: 'ยื่นคำร้อง',    icon: ClipboardList, href: '/complaint' },
   { label: 'คำร้อง',      icon: FileSearch,    href: '/my-complaints' },
   { label: 'ปฏิทิน',       icon: CalendarDays, href: '/events' },
   { label: 'เมนูอื่นๆ',    icon: LayoutGrid,    href: '/more' },
