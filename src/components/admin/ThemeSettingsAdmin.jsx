@@ -103,10 +103,25 @@ export default function ThemeSettingsAdmin() {
     e.preventDefault()
     setColorSaving(true)
     try {
+      // ถ้ามี preset active อยู่ → อัปเดตสีใน preset นั้นด้วย
+      let updatedPresets = presets
+      if (activePresetId) {
+        updatedPresets = presets.map(p =>
+          String(p.id) === activePresetId ? { ...p, color: themeColor } : p
+        )
+      }
+      const updatePayload = { theme_color: themeColor }
+      if (activePresetId) updatePayload.theme_presets = updatedPresets
+
       const { error } = await supabase
-        .from('municipalities').update({ theme_color: themeColor }).eq('id', tenant.id)
+        .from('municipalities').update(updatePayload).eq('id', tenant.id)
       if (error) throw error
-      patchTenant({ theme_color: themeColor })
+      if (activePresetId) {
+        setPresets(updatedPresets)
+        patchTenant({ theme_color: themeColor, theme_presets: updatedPresets })
+      } else {
+        patchTenant({ theme_color: themeColor })
+      }
       applyColorToDOM(themeColor)
       flash('color')
     } catch (err) { alert('บันทึกไม่สำเร็จ: ' + err.message) }
@@ -117,10 +132,25 @@ export default function ThemeSettingsAdmin() {
     e.preventDefault()
     setLayoutSaving(true)
     try {
+      // ถ้ามี preset active อยู่ → อัปเดต layout + showPosts ใน preset นั้นด้วย
+      let updatedPresets = presets
+      if (activePresetId) {
+        updatedPresets = presets.map(p =>
+          String(p.id) === activePresetId ? { ...p, layout: layoutTheme, showPosts } : p
+        )
+      }
+      const updatePayload = { layout_theme: layoutTheme, show_posts_highlight: showPosts }
+      if (activePresetId) updatePayload.theme_presets = updatedPresets
+
       const { error } = await supabase
-        .from('municipalities').update({ layout_theme: layoutTheme, show_posts_highlight: showPosts }).eq('id', tenant.id)
+        .from('municipalities').update(updatePayload).eq('id', tenant.id)
       if (error) throw error
-      patchTenant({ layout_theme: layoutTheme, show_posts_highlight: showPosts })
+      if (activePresetId) {
+        setPresets(updatedPresets)
+        patchTenant({ layout_theme: layoutTheme, show_posts_highlight: showPosts, theme_presets: updatedPresets })
+      } else {
+        patchTenant({ layout_theme: layoutTheme, show_posts_highlight: showPosts })
+      }
       flash('layout')
     } catch (err) { alert('บันทึกไม่สำเร็จ: ' + err.message) }
     finally { setLayoutSaving(false) }
@@ -148,16 +178,22 @@ export default function ThemeSettingsAdmin() {
   async function applyPreset(preset) {
     setApplying(preset.id)
     try {
-      const presetShowPosts = preset.showPosts !== false
+      // ถ้า preset มี showPosts อย่างชัดเจน → ใช้ค่านั้น, ถ้าไม่มี → คงค่าเดิมของหน่วยงาน
+      const hasShowPosts = 'showPosts' in preset
+      const presetShowPosts = hasShowPosts ? preset.showPosts : showPosts
+
+      const updatePayload = { theme_color: preset.color, layout_theme: preset.layout }
+      if (hasShowPosts) updatePayload.show_posts_highlight = presetShowPosts
+
       const { error } = await supabase
         .from('municipalities')
-        .update({ theme_color: preset.color, layout_theme: preset.layout, show_posts_highlight: presetShowPosts })
+        .update(updatePayload)
         .eq('id', tenant.id)
       if (error) throw error
       setThemeColor(preset.color)
       setLayoutTheme(preset.layout)
       setShowPosts(presetShowPosts)
-      patchTenant({ theme_color: preset.color, layout_theme: preset.layout, show_posts_highlight: presetShowPosts })
+      patchTenant({ theme_color: preset.color, layout_theme: preset.layout, ...(hasShowPosts ? { show_posts_highlight: presetShowPosts } : {}) })
       applyColorToDOM(preset.color)
       try { localStorage.setItem(`sl_active_preset_${tenant.id}`, String(preset.id)) } catch {}
       setActivePresetId(String(preset.id))
@@ -165,6 +201,7 @@ export default function ThemeSettingsAdmin() {
     } catch (err) { alert('ใช้ธีมไม่สำเร็จ: ' + err.message) }
     finally { setApplying(null) }
   }
+
 
   async function deletePreset(id) {
     setDeleting(id)
