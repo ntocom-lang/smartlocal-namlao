@@ -61,9 +61,9 @@ export default function BannerSlider() {
       </Tag>
     )
   }
-
   return (
-    <div className="rounded-2xl overflow-hidden shadow-md select-none">
+    <div className="overflow-hidden select-none"
+         style={{ borderRadius: 'var(--radius-card, 1rem)', boxShadow: 'var(--shadow-card, 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06))', border: 'var(--border-card, none)' }}>
       <div className="relative w-full overflow-hidden aspect-video md:aspect-21/9"
         onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
         {banners.map((b, i) => (
@@ -71,7 +71,8 @@ export default function BannerSlider() {
         ))}
       </div>
       {n > 1 && (
-        <div className="flex justify-center gap-1.5 py-2.5 bg-white">
+        <div className="flex justify-center gap-1.5 py-2.5"
+             style={{ backgroundColor: 'var(--bg-card, #ffffff)' }}>
           {banners.map((_, i) => (
             <button key={i} onClick={() => goTo(i)}
               className="rounded-full transition-all duration-300"

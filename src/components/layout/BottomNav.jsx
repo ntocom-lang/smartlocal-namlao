@@ -47,7 +47,7 @@ export default function BottomNav() {
         className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex items-stretch justify-around px-1 shadow-[0_-1px_0_rgba(0,0,0,0.08),0_-4px_24px_rgba(0,0,0,0.12)]"
         style={{
           background: 'linear-gradient(160deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)',
-          borderRadius: '1.25rem 1.25rem 0 0',
+          borderRadius: 'var(--radius-card, 1.25rem) var(--radius-card, 1.25rem) 0 0',
           paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 12px)',
           paddingTop: '6px',
         }}

@@ -71,9 +71,8 @@ export default function WeatherWidget() {
 
   if (loading) {
     return (
-      <div className="w-full flex items-center gap-2 bg-white/85 dark:bg-gray-800/85 backdrop-blur-sm
-                      border border-gray-200/70 dark:border-gray-700/60 rounded-2xl px-4 py-3
-                      shadow-sm text-gray-400 text-sm">
+      <div className="w-full flex items-center gap-2 px-4 py-3 text-gray-400 text-sm"
+           style={{ backgroundColor: 'var(--bg-card, rgba(255,255,255,0.85))', borderRadius: 'var(--radius-card, 1rem)', border: 'var(--border-card, 1px solid rgba(229,231,235,0.7))', boxShadow: 'var(--shadow-card, 0 1px 2px 0 rgba(0,0,0,0.05))', backdropFilter: 'var(--blur-card, blur(4px))' }}>
         <div className="w-3.5 h-3.5 border-2 border-gray-300 border-t-transparent rounded-full animate-spin" />
         <span>กำลังโหลดข้อมูลอากาศ...</span>
       </div>
@@ -82,9 +81,8 @@ export default function WeatherWidget() {
 
   if (!weather && pm25 == null) {
     return (
-      <div className="w-full flex items-center justify-center bg-white/85 dark:bg-gray-800/85 backdrop-blur-sm
-                      border border-gray-200/70 dark:border-gray-700/60 rounded-2xl px-4 py-3
-                      shadow-sm text-gray-500 text-sm">
+      <div className="w-full flex items-center justify-center px-4 py-3 text-gray-500 text-sm"
+           style={{ backgroundColor: 'var(--bg-card, rgba(255,255,255,0.85))', borderRadius: 'var(--radius-card, 1rem)', border: 'var(--border-card, 1px solid rgba(229,231,235,0.7))', boxShadow: 'var(--shadow-card, 0 1px 2px 0 rgba(0,0,0,0.05))', backdropFilter: 'var(--blur-card, blur(4px))' }}>
         <span>ไม่สามารถโหลดข้อมูลสภาพอากาศได้</span>
       </div>
     )
@@ -93,9 +91,8 @@ export default function WeatherWidget() {
   return (
     <Link
       to="/weather"
-      className="w-full flex items-stretch bg-white/85 dark:bg-gray-800/85 backdrop-blur-sm
-                 border border-gray-200/70 dark:border-gray-700/60 rounded-2xl shadow-sm
-                 hover:shadow-md active:scale-[0.99] transition-all overflow-hidden group"
+      className="w-full flex items-stretch hover:shadow-md active:scale-[0.99] transition-all overflow-hidden group"
+      style={{ backgroundColor: 'var(--bg-card, rgba(255,255,255,0.85))', borderRadius: 'var(--radius-card, 1rem)', border: 'var(--border-card, 1px solid rgba(229,231,235,0.7))', boxShadow: 'var(--shadow-card, 0 1px 2px 0 rgba(0,0,0,0.05))', backdropFilter: 'var(--blur-card, blur(4px))' }}
     >
       {/* คอลัมน์ 1 — ฝุ่น PM2.5 */}
       <div className="flex-1 flex items-center justify-center px-3 py-2">

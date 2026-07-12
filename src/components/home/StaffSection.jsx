@@ -6,7 +6,8 @@ import { UserCircle2 } from 'lucide-react'
 // Premium Executive Card matching the mockup style (Vertical layout with interactive hover effects)
 function ExecutivePremiumCard({ person }) {
   return (
-    <div className="flex flex-col items-center text-center bg-white/75 backdrop-blur-md rounded-2xl md:rounded-3xl border border-gray-100/80 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 p-2.5 md:p-5 relative overflow-hidden dark:bg-slate-900/50 dark:border-slate-800/80 animate-fade-in group">
+    <div className="flex flex-col items-center text-center hover:-translate-y-1 transition-all duration-300 p-2.5 md:p-5 relative overflow-hidden animate-fade-in group"
+         style={{ backgroundColor: 'var(--bg-card, rgba(255,255,255,0.75))', borderRadius: 'var(--radius-card, 1.5rem)', border: 'var(--border-card, 1px solid rgba(243,244,246,0.8))', boxShadow: 'var(--shadow-card, 0 1px 2px 0 rgba(0,0,0,0.05))', backdropFilter: 'var(--blur-card, blur(12px))' }}>
       {/* Premium diagonal shine/sweep effect on card hover */}
       <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-out bg-gradient-to-r from-transparent via-white/25 to-transparent pointer-events-none z-20" />
 
@@ -56,7 +57,8 @@ function ExecutivePremiumCard({ person }) {
 
 function StaffCard({ person }) {
   return (
-    <div className="flex items-center gap-4 bg-white rounded-2xl shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow dark:bg-white/10 dark:border-white/10 dark:shadow-none dark:hover:shadow-none">
+    <div className="flex items-center gap-4 p-4 transition-shadow dark:bg-white/10 dark:border-white/10 dark:shadow-none dark:hover:shadow-none"
+         style={{ backgroundColor: 'var(--bg-card, #ffffff)', borderRadius: 'var(--radius-card, 1rem)', border: 'var(--border-card, 1px solid #f3f4f6)', boxShadow: 'var(--shadow-card, 0 1px 2px 0 rgba(0,0,0,0.05))', backdropFilter: 'var(--blur-card, none)' }}>
       <div className="rounded-full overflow-hidden shrink-0 ring-2 ring-gray-100 dark:ring-white/10">
         {person.photo_url ? (
           <img src={person.photo_url} alt={person.name}
