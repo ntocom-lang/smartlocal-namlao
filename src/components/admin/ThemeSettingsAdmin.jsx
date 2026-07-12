@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Palette, LayoutTemplate, Save, Loader2, CheckCircle2, Plus, Trash2, Star } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { useTenant } from '../../contexts/TenantContext'
+import { useTenant, applyTheme } from '../../contexts/TenantContext'
 
 const THEMES = [
   { id: 'blue',    name: 'น้ำเงินราชการ', color: '#1c7cd6' },
@@ -48,15 +48,6 @@ const LAYOUTS = [
   },
 ]
 
-function applyColorToDOM(hex) {
-  const r = parseInt(hex.slice(1,3), 16)
-  const g = parseInt(hex.slice(3,5), 16)
-  const b = parseInt(hex.slice(5,7), 16)
-  const dk = v => Math.max(0, Math.floor(v * 0.85)).toString(16).padStart(2, '0')
-  document.documentElement.style.setProperty('--color-primary', hex)
-  document.documentElement.style.setProperty('--color-primary-dark', `#${dk(r)}${dk(g)}${dk(b)}`)
-  document.documentElement.style.setProperty('--color-primary-rgb', `${r}, ${g}, ${b}`)
-}
 
 function LayoutMiniPreview({ bars, color }) {
   return (
@@ -123,7 +114,7 @@ export default function ThemeSettingsAdmin() {
       } else {
         patchTenant({ theme_color: themeColor })
       }
-      applyColorToDOM(themeColor)
+      applyTheme(themeColor, uiStyle)
       flash('color')
     } catch (err) { alert('บันทึกไม่สำเร็จ: ' + err.message) }
     finally { setColorSaving(false) }
@@ -152,6 +143,7 @@ export default function ThemeSettingsAdmin() {
       } else {
         patchTenant({ layout_theme: layoutTheme, ui_style: uiStyle, show_posts_highlight: showPosts })
       }
+      applyTheme(themeColor, uiStyle)
       flash('layout')
     } catch (err) { alert('บันทึกไม่สำเร็จ: ' + err.message) }
     finally { setLayoutSaving(false) }
@@ -197,7 +189,7 @@ export default function ThemeSettingsAdmin() {
       setUiStyle(presetUiStyle)
       setShowPosts(presetShowPosts)
       patchTenant({ theme_color: preset.color, layout_theme: preset.layout, ui_style: presetUiStyle, ...(hasShowPosts ? { show_posts_highlight: presetShowPosts } : {}) })
-      applyColorToDOM(preset.color)
+      applyTheme(preset.color, presetUiStyle)
       try { localStorage.setItem(`sl_active_preset_${tenant.id}`, String(preset.id)) } catch {}
       setActivePresetId(String(preset.id))
       flash('apply-' + preset.id)
@@ -302,7 +294,10 @@ export default function ThemeSettingsAdmin() {
             {THEMES.map(t => {
               const active = themeColor === t.color
               return (
-                <button key={t.id} type="button" onClick={() => setThemeColor(t.color)}
+                <button key={t.id} type="button" onClick={() => {
+                  setThemeColor(t.color)
+                  applyTheme(t.color, uiStyle)
+                }}
                   className="flex flex-col items-center gap-1.5 p-2 rounded-xl border-2 transition-all"
                   style={{
                     borderColor: active ? t.color : 'transparent',
@@ -331,7 +326,10 @@ export default function ThemeSettingsAdmin() {
           <div className="flex items-center gap-3 pt-1">
             <label className="text-xs font-semibold text-gray-500 shrink-0">สีกำหนดเอง</label>
             <div className="flex items-center gap-2 border border-gray-200 rounded-xl px-3 py-1.5">
-              <input type="color" value={themeColor} onChange={e => setThemeColor(e.target.value)}
+              <input type="color" value={themeColor} onChange={e => {
+                setThemeColor(e.target.value)
+                applyTheme(e.target.value, uiStyle)
+              }}
                 className="w-7 h-7 rounded-lg border-0 cursor-pointer bg-transparent p-0" />
               <span className="text-xs font-mono text-gray-500">{themeColor.toUpperCase()}</span>
             </div>
@@ -389,7 +387,10 @@ export default function ThemeSettingsAdmin() {
               ].map(style => {
                 const active = uiStyle === style.id
                 return (
-                  <button key={style.id} type="button" onClick={() => setUiStyle(style.id)}
+                  <button key={style.id} type="button" onClick={() => {
+                    setUiStyle(style.id)
+                    applyTheme(themeColor, style.id)
+                  }}
                     className="flex flex-col items-center gap-2 p-3 rounded-xl border-2 text-center transition-all"
                     style={{
                       borderColor: active ? 'var(--color-primary)' : '#e5e7eb',

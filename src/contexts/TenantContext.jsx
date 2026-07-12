@@ -100,7 +100,7 @@ function injectPWAManifest(tenant) {
   }
 }
 
-function applyTheme(hexColor, uiStyle = 'default') {
+export function applyTheme(hexColor, uiStyle = 'default') {
   const root = document.documentElement
   root.style.setProperty('--color-primary', hexColor)
 
