@@ -41,6 +41,16 @@ export default function Footer() {
 
       <div className="relative z-10 max-w-6xl mx-auto px-4 py-5 flex flex-col items-center gap-3">
 
+        {/* Contact Info */}
+        <div className="flex flex-col items-center gap-1 text-center mb-2">
+          <p className="text-[11px] text-white/90 font-medium">
+            {tenant?.name} {tenant?.address || 'เลขที่ 101 หมู่ที่ 5 ตำบลน้ำเลา อำเภอร้องกวาง จังหวัดแพร่ 54140'}
+          </p>
+          <p className="text-[10px] text-white/60">
+            โทรศัพท์ / แฟกซ์ {tenant?.phone || '054-546-092'} เว็บไซต์ : {tenant?.website_url?.replace(/^https?:\/\//, '') || 'www.namlao.go.th'} อีเมลกลาง : {tenant?.email || 'phrae_namlao101@hotmail.co.th'}
+          </p>
+        </div>
+
         {/* Copyright */}
         <div className="flex flex-col items-center gap-1">
           <span className="text-xs font-medium" style={{ color: 'rgba(186,230,253,0.8)' }}>
@@ -48,7 +58,7 @@ export default function Footer() {
           </span>
           {tenant?.developer_name && (
             <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>
-              พัฒนาโดย {tenant.developer_name}
+              {tenant.developer_name}
             </span>
           )}
         </div>

@@ -75,52 +75,11 @@ function IOSGuide({ onClose }) {
 
 function QRShareCard({ tenant }) {
   const [copied, setCopied] = useState(false)
-  const [installPrompt, setInstallPrompt] = useState(null)
-  const [installState, setInstallState] = useState('unknown') // 'unknown' | 'installable' | 'installed'
-  const [showIOSGuide, setShowIOSGuide] = useState(false)
   const url = window.location.origin
 
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream
   const isAndroid = /Android/i.test(navigator.userAgent)
   const isMobile = isIOS || isAndroid
-
-  useEffect(() => {
-    const isStandalone =
-      window.matchMedia('(display-mode: standalone)').matches ||
-      window.navigator.standalone === true
-    if (isStandalone) {
-      setInstallState('installed')
-      return
-    }
-
-    // iOS Safari ไม่มี beforeinstallprompt — ต้องแนะนำ manual
-    if (isIOS) {
-      setInstallState('installable')
-      return
-    }
-
-    const handler = (e) => {
-      e.preventDefault()
-      setInstallPrompt(e)
-      setInstallState('installable')
-    }
-    window.addEventListener('beforeinstallprompt', handler)
-    return () => window.removeEventListener('beforeinstallprompt', handler)
-  }, [isIOS])
-
-  async function handleInstall() {
-    if (isIOS) {
-      setShowIOSGuide(true)
-      return
-    }
-    if (!installPrompt) return
-    await installPrompt.prompt()
-    const { outcome } = await installPrompt.userChoice
-    if (outcome === 'accepted') {
-      setInstallState('installed')
-      setInstallPrompt(null)
-    }
-  }
 
   async function handleCopy() {
     await navigator.clipboard.writeText(url)
@@ -158,7 +117,6 @@ function QRShareCard({ tenant }) {
 
   return (
     <>
-    {showIOSGuide && <IOSGuide onClose={() => setShowIOSGuide(false)} />}
     <div className="rounded-3xl overflow-hidden shadow-lg"
          style={{ background: 'linear-gradient(145deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)' }}>
       <div className="px-5 pt-6 pb-5 flex flex-col items-center gap-4">
@@ -177,21 +135,6 @@ function QRShareCard({ tenant }) {
             <p className="text-xs font-semibold text-gray-600 text-center leading-snug px-1">{tenant.qr_label}</p>
           )}
         </div>
-
-        {/* Install button */}
-        {installState === 'installed' ? (
-          <div className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-white/10 border border-white/20">
-            <Check size={16} className="text-green-300" />
-            <span className="text-sm text-white/80 font-semibold">มีในหน้าจอหลักแล้ว</span>
-          </div>
-        ) : installState === 'installable' ? (
-          <button onClick={handleInstall}
-            className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-white font-bold text-sm transition-opacity hover:opacity-90 active:opacity-80"
-            style={{ color: 'var(--color-primary)' }}>
-            {isIOS ? <UploadIcon size={18} /> : <Monitor size={18} />}
-            {isIOS ? 'เพิ่มไปยังหน้าจอโฮม' : 'เพิ่มลงในหน้าจอหลัก'}
-          </button>
-        ) : null}
 
         {/* Buttons */}
         <div className={`grid gap-2.5 w-full ${isMobile ? 'grid-cols-2' : 'grid-cols-3'}`}>
@@ -284,6 +227,49 @@ export default function MorePage() {
   const [satComplaintId, setSatComplaintId] = useState(null)
   const [showSat, setShowSat] = useState(false)
 
+  // PWA Install State
+  const [installPrompt, setInstallPrompt] = useState(null)
+  const [installState, setInstallState] = useState('unknown') // 'unknown' | 'installable' | 'installed'
+  const [showIOSGuide, setShowIOSGuide] = useState(false)
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream
+
+  useEffect(() => {
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true
+    if (isStandalone) {
+      setInstallState('installed')
+      return
+    }
+
+    if (isIOS) {
+      setInstallState('installable')
+      return
+    }
+
+    const handler = (e) => {
+      e.preventDefault()
+      setInstallPrompt(e)
+      setInstallState('installable')
+    }
+    window.addEventListener('beforeinstallprompt', handler)
+    return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [isIOS])
+
+  async function handleInstall() {
+    if (isIOS) {
+      setShowIOSGuide(true)
+      return
+    }
+    if (!installPrompt) return
+    await installPrompt.prompt()
+    const { outcome } = await installPrompt.userChoice
+    if (outcome === 'accepted') {
+      setInstallState('installed')
+      setInstallPrompt(null)
+    }
+  }
+
   useEffect(() => {
     if (!session?.user?.id || !tenant?.id) return
     supabase
@@ -326,6 +312,7 @@ export default function MorePage() {
         }}
       />
     )}
+    {showIOSGuide && <IOSGuide onClose={() => setShowIOSGuide(false)} />}
     <div className="max-w-4xl mx-auto">
 
       {/* Mobile header */}
@@ -569,6 +556,24 @@ export default function MorePage() {
 
         {/* ─── บริการ ─── */}
         <Section title="บริการอื่นๆ">
+          {installState === 'installed' ? (
+            <MenuRow
+              icon={Check}
+              iconBg="bg-green-50"
+              iconColor="text-green-500"
+              label="ติดตั้งแอปพลิเคชันแล้ว"
+              desc="คุณมีแอปพลิเคชันบนหน้าจอหลักของคุณแล้ว"
+            />
+          ) : installState === 'installable' ? (
+            <MenuRow
+              icon={isIOS ? UploadIcon : Monitor}
+              iconBg="bg-blue-50"
+              iconColor="text-blue-500"
+              label={isIOS ? 'เพิ่มไปยังหน้าจอโฮม' : 'ติดตั้งแอปพลิเคชัน'}
+              desc={isIOS ? 'เพิ่มหน้าเว็บนี้ไปยังหน้าจอโฮม' : 'ติดตั้งระบบลงในเครื่องเพื่อเข้าถึงอย่างรวดเร็ว'}
+              onClick={handleInstall}
+            />
+          ) : null}
           <MenuRow
             icon={Star}
             iconBg="bg-yellow-50"
