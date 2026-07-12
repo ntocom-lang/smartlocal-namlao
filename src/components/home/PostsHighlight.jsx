@@ -148,7 +148,7 @@ export default function PostsHighlight() {
 
   return (
     <>
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-4">
 
         {/* ข่าวสำคัญ — desktop แสดงใน right column แล้ว */}
         {news.length > 0 && (

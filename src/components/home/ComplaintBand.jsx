@@ -15,12 +15,15 @@ const FALLBACK_EMOJI = {
 
 const DEFAULT_CATEGORIES = [
   { value: 'light',      label: 'ไฟฟ้าสาธารณะ', emoji: '💡' },
-  { value: 'road',       label: 'ถนน / ทางเท้า', emoji: '🔧' },
-  { value: 'trash',      label: 'ขยะ / ความสะอาด', emoji: '🗑️' },
-  { value: 'drain',      label: 'ท่อระบายน้ำ', emoji: '🌀' },
+  { value: 'road',       label: 'ซ่อมแซมถนน', emoji: '🔧' },
   { value: 'mosquito',   label: 'พ่นยุง', emoji: '🦟' },
-  { value: 'corruption', label: 'แจ้งทุจริต', emoji: '🛡️' },
-  { value: 'other',      label: 'อื่นๆ', emoji: '❓' },
+  { value: 'tree',       label: 'ตัดต้นไม้', emoji: '🌳' },
+  { value: 'trash',      label: 'ขยะ / ความสะอาด', emoji: '🗑️' },
+  { value: 'water_supply',label: 'สนับสนุนน้ำอุปโภค', emoji: '🚿' },
+  { value: 'borrow',     label: 'ยืมพัสดุ', emoji: '📦' },
+  { value: 'corruption', label: 'แจ้งการทุจริต', emoji: '⚖️' },
+  { value: 'grievance',  label: 'แจ้งเรื่องร้องทุกข์', emoji: '📢' },
+  { value: 'other',      label: 'อื่นๆ', emoji: '📝' },
 ]
 
 export default function ComplaintBand() {

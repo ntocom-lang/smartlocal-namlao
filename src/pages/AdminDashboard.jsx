@@ -4441,7 +4441,7 @@ const PAGE_LABELS = {
   emergency: 'สายด่วน',
   locations: 'สถานที่เกิดเหตุ',
   'system-settings': 'ตั้งค่าระบบ',
-  'theme-settings':  'ธีมและรูปแบบ',
+  'theme-settings':  'ธีมโครงสร้างแอป',
   users: 'จัดการผู้ใช้',
   modules: 'จัดการโมดูล',
   map: 'แผนที่คำร้อง',
@@ -4901,7 +4901,7 @@ export default function AdminDashboard() {
                 { key: 'emergency',   label: 'สายด่วน',       Icon: Phone,    color: '#ef4444', show: currentUserRole !== 'viewer' },
                 { key: 'locations',   label: 'สถานที่เกิดเหตุ', Icon: MapPin, color: '#0891b2', show: currentUserRole !== 'viewer' },
                 { key: 'fleet-setup', label: 'ตั้งค่ายานพาหนะ', Icon: Car,    color: '#0369a1', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                { key: 'theme-settings', label: 'ธีมและรูปแบบ', Icon: Palette, color: '#a855f7', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                { key: 'theme-settings', label: 'ธีมโครงสร้างแอป', Icon: Palette, color: '#a855f7', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 { key: 'system-settings', label: 'ตั้งค่าระบบ',  Icon: Settings,    color: '#3b82f6', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 { key: 'users',           label: 'จัดการผู้ใช้', Icon: Shield,      color: '#7c3aed', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 { key: 'modules',         label: 'จัดการโมดูล', Icon: LayoutGrid,   color: '#7c3aed', show: currentUserRole === 'superadmin' },
@@ -4912,6 +4912,7 @@ export default function AdminDashboard() {
               group: 'ทรัพยากร',
               items: [
                 { key: 'manual', label: 'คู่มือผู้ดูแล', Icon: BookOpen, color: '#059669', show: true, isExternal: true, href: '/manual-admin.html' },
+                { key: 'manual-citizen', label: 'คู่มือประชาชน', Icon: BookOpen, color: '#059669', show: true, isExternal: true, href: '/manual-citizen.html' },
               ],
             },
           ].map(({ group, items }) => {
@@ -5401,7 +5402,7 @@ export default function AdminDashboard() {
                   <Palette size={24} style={{ color: '#a855f7' }} />
                 </div>
                 <div>
-                  <p className="text-sm font-bold text-gray-800">ธีมและรูปแบบ</p>
+                  <p className="text-sm font-bold text-gray-800">ธีมโครงสร้างแอป</p>
                   <p className="text-[13px] text-gray-400 mt-0.5">สีระบบ / หน้าแรก</p>
                 </div>
               </button>
@@ -5428,6 +5429,16 @@ export default function AdminDashboard() {
                 <p className="text-[13px] text-gray-400 mt-0.5">คู่มือการใช้งานระบบ</p>
               </div>
             </a>
+            <a href="/manual-citizen.html" target="_blank" rel="noopener noreferrer"
+              className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#d1fae5' }}>
+                <BookOpen size={24} style={{ color: '#059669' }} />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-gray-800">คู่มือประชาชน</p>
+                <p className="text-[13px] text-gray-400 mt-0.5">คู่มือสำหรับประชาชน</p>
+              </div>
+            </a>
           </div>
 
           {/* Desktop: settings table */}
@@ -5448,7 +5459,7 @@ export default function AdminDashboard() {
                   { key: 'locations',   Icon: MapPin,      color: '#0891b2', bg: '#e0f2fe', label: 'สถานที่เกิดเหตุ', desc: 'จัดการหมู่บ้าน / ตำบลในพื้นที่',  show: currentUserRole !== 'viewer' },
                   { key: 'staff',            Icon: UserCircle2, color: '#7c3aed', bg: '#ede9fe', label: 'รูปผู้บริหาร',       desc: 'อัปโหลดรูปนายก/รองนายก/ทีมงาน',       show: currentUserRole !== 'viewer' },
                   { key: 'fleet-setup',      Icon: Car,         color: '#0369a1', bg: '#e0f2fe', label: 'ตั้งค่ายานพาหนะ', desc: 'กอง/หน่วยงาน งบประมาณ สิทธิ์ผู้ใช้', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                  { key: 'theme-settings',   Icon: Palette,     color: '#a855f7', bg: '#fae8ff', label: 'ธีมและรูปแบบ',   desc: 'ปรับสีระบบและรูปแบบหน้าแรก',        show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                  { key: 'theme-settings',   Icon: Palette,     color: '#a855f7', bg: '#fae8ff', label: 'ธีมโครงสร้างแอป',   desc: 'เลือกโครงสร้างและดีไซน์หลักของระบบ',        show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'system-settings',  Icon: Settings,    color: '#3b82f6', bg: '#dbeafe', label: 'ตั้งค่าระบบ',    desc: 'ตั้งค่าชื่อระบบและข้อมูลพื้นฐาน',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'users',           Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', label: 'จัดการผู้ใช้',    desc: 'สิทธิ์การเข้าถึงและบทบาท',        show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 ].filter(r => r.show).map(({ key, Icon, color, bg, label, desc }) => (
@@ -5481,6 +5492,23 @@ export default function AdminDashboard() {
                   <td className="px-5 py-3.5 text-gray-500">เอกสารการใช้งานระบบสำหรับเจ้าหน้าที่</td>
                   <td className="px-5 py-3.5 text-right">
                     <a href="/manual-admin.html" target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 ml-auto text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors w-fit">
+                      เปิด <ExternalLink size={11} />
+                    </a>
+                  </td>
+                </tr>
+                <tr className="hover:bg-gray-50 transition-colors">
+                  <td className="px-5 py-3.5">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: '#d1fae5' }}>
+                        <BookOpen size={16} style={{ color: '#059669' }} />
+                      </div>
+                      <span className="font-semibold text-gray-800">คู่มือประชาชน</span>
+                    </div>
+                  </td>
+                  <td className="px-5 py-3.5 text-gray-500">เอกสารการใช้งานระบบสำหรับประชาชน</td>
+                  <td className="px-5 py-3.5 text-right">
+                    <a href="/manual-citizen.html" target="_blank" rel="noopener noreferrer"
                       className="flex items-center gap-1.5 ml-auto text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors w-fit">
                       เปิด <ExternalLink size={11} />
                     </a>

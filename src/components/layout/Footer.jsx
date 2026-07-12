@@ -8,7 +8,7 @@ export default function Footer() {
   if (location.pathname.startsWith('/staff') || location.pathname.startsWith('/admin')) return null
 
   return (
-    <footer className="relative mt-12 text-white overflow-hidden"
+    <footer className="relative mt-6 text-white overflow-hidden"
       style={{
         background: 'linear-gradient(135deg, #0a1628 0%, #0f2a4a 25%, #0d3a6b 50%, #0a2d5c 75%, #0a1628 100%)',
       }}>
@@ -40,22 +40,6 @@ export default function Footer() {
       ))}
 
       <div className="relative z-10 max-w-6xl mx-auto px-4 py-5 flex flex-col items-center gap-3">
-
-        {/* Manual link */}
-        <a href="/manual-citizen.html" target="_blank" rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 text-xs font-semibold px-4 py-2 rounded-xl transition-all hover:scale-105"
-          style={{
-            background: 'rgba(255,255,255,0.12)',
-            border: '1px solid rgba(255,255,255,0.2)',
-            color: 'rgba(255,255,255,0.9)',
-            backdropFilter: 'blur(4px)',
-          }}>
-          📋 คู่มือการใช้งานสำหรับประชาชน
-        </a>
-
-        {/* Divider line */}
-        <div className="w-24 h-px"
-          style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent)' }} />
 
         {/* Copyright */}
         <div className="flex flex-col items-center gap-1">

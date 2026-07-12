@@ -1,100 +1,28 @@
-import { useEffect, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
-import { Home, ClipboardList, FileSearch, Bell, LayoutGrid, Wrench, CalendarDays } from 'lucide-react'
-import { useNotifications } from '../../contexts/NotificationsContext'
-import { useAuth } from '../../contexts/AuthContext'
-
-const NAV_CITIZEN = [
-  { label: 'หน้าแรก',      icon: Home,          href: '/' },
-  { label: 'ร้องเรียน',    icon: ClipboardList, href: '/complaint' },
-  { label: 'คำร้อง',      icon: FileSearch,    href: '/my-complaints' },
-  { label: 'ปฏิทิน',       icon: CalendarDays, href: '/events' },
-  { label: 'เมนูอื่นๆ',    icon: LayoutGrid,    href: '/more' },
-]
-
-const NAV_TECH = [
-  { label: 'หน้าแรก',      icon: Home,          href: '/' },
-  { label: 'งานของฉัน',    icon: Wrench,        href: '/technician' },
-  { label: 'คำร้องของฉัน', icon: FileSearch,    href: '/my-complaints' },
-  { label: 'การแจ้งเตือน', icon: Bell,          href: '/notifications' },
-  { label: 'เมนูอื่นๆ',    icon: LayoutGrid,    href: '/more' },
-]
-
+import { useTenant } from '../../contexts/TenantContext'
+import EcoFriendlyBottomNav from '../citizen/templates/EcoFriendly/BottomNav'
+import CleanMinimalBottomNav from '../citizen/templates/CleanMinimal/BottomNav'
+import WaveFluidBottomNav from '../citizen/templates/WaveFluid/BottomNav'
+import CivicFriendlyBottomNav from '../citizen/templates/CivicFriendly/BottomNav'
+import SmartModernBottomNav from '../citizen/templates/SmartModern/BottomNav'
+import KledkaewBottomNav from '../citizen/templates/Kledkaew/BottomNav'
 
 export default function BottomNav() {
-  const location = useLocation()
-  const navigate = useNavigate()
-  const { unreadCount } = useNotifications()
-  const { role } = useAuth()
-  const [techNewCount, setTechNewCount] = useState(
-    () => parseInt(localStorage.getItem('sl_tech_new') ?? '0', 10)
-  )
+  const { tenant } = useTenant()
+  const uiStyle = tenant?.ui_style || 'default'
 
-  useEffect(() => {
-    const handler = (e) => setTechNewCount(e.detail)
-    window.addEventListener('tech-badge-update', handler)
-    return () => window.removeEventListener('tech-badge-update', handler)
-  }, [])
-
-  if (location.pathname.startsWith('/admin') || location.pathname.startsWith('/staff')) return null
-
-  const NAV_ITEMS = role === 'technician' ? NAV_TECH : NAV_CITIZEN
-
-  return (
-    <>
-      {/* Bottom bar */}
-      <div
-        className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex items-stretch justify-around px-1 shadow-[0_-1px_0_rgba(0,0,0,0.08),0_-4px_24px_rgba(0,0,0,0.12)]"
-        style={{
-          background: 'linear-gradient(160deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)',
-          borderRadius: 'var(--radius-card, 1.25rem) var(--radius-card, 1.25rem) 0 0',
-          paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 12px)',
-          paddingTop: '6px',
-        }}
-      >
-        {NAV_ITEMS.map((item) => {
-          const Icon = item.icon
-          const isActive = item.href
-            ? (location.pathname === item.href || (item.href !== '/' && location.pathname.startsWith(item.href)))
-            : false
-
-          return (
-            <button
-              key={item.label}
-              onClick={() => navigate(item.href)}
-              className="flex-1 flex flex-col items-center gap-0.5 py-1.5 transition-transform active:scale-90 relative"
-            >
-              {isActive && (
-                <span className="absolute inset-x-2 top-0.5 h-8 rounded-xl bg-white/20 pointer-events-none" />
-              )}
-
-              <div className="relative z-10">
-                <Icon
-                  size={20}
-                  className={`transition-all ${isActive ? 'text-white' : 'text-white/55'}`}
-                  strokeWidth={isActive ? 2.5 : 1.8}
-                />
-                {item.href === '/notifications' && unreadCount > 0 && (
-                  <span className="absolute -top-1.5 -right-2 min-w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-1 shadow-sm ring-1 ring-white/30">
-                    {unreadCount > 9 ? '9+' : unreadCount}
-                  </span>
-                )}
-                {item.href === '/technician' && techNewCount > 0 && (
-                  <span className="absolute -top-1.5 -right-2 min-w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-1 shadow-sm ring-1 ring-white/30">
-                    {techNewCount > 9 ? '9+' : techNewCount}
-                  </span>
-                )}
-              </div>
-
-              <span className={`relative z-10 text-[13px] font-medium transition-all ${isActive ? 'text-white' : 'text-white/55'}`}>
-                {item.label}
-              </span>
-            </button>
-          )
-        })}
-      </div>
-
-      <div className="md:hidden" style={{ height: 'calc(4rem + max(env(safe-area-inset-bottom, 0px), 12px))' }} />
-    </>
-  )
+  switch (uiStyle) {
+    case 'clean_minimal':
+      return <CleanMinimalBottomNav />
+    case 'wave_fluid':
+      return <WaveFluidBottomNav />
+    case 'civic_friendly':
+      return <CivicFriendlyBottomNav />
+    case 'smart_modern':
+      return <SmartModernBottomNav />
+    case 'kledkaew':
+      return <KledkaewBottomNav />
+    case 'eco_friendly':
+    default:
+      return <EcoFriendlyBottomNav />
+  }
 }
