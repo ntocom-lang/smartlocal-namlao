@@ -1,21 +1,36 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { 
-  ArrowLeft, Loader2, Lightbulb, Hammer, Bug, Trees, 
-  Trash2, Droplets, Waves, CloudRain, Package, ShieldAlert, 
-  Megaphone, VolumeX, Building2, Receipt, Pickaxe, Dog, 
-  Flame, PhoneCall, HelpCircle, FileQuestion
-} from 'lucide-react'
+import { ArrowLeft, Loader2 } from 'lucide-react'
+import {
+  LightbulbFilament, RoadHorizon, Bug, Tree, Trash,
+  Drop, Waves, CloudRain, Toolbox, ShieldWarning,
+  MegaphoneSimple, SpeakerHigh, Buildings, Receipt,
+  Shovel, Paw, Fire, Phone, Question,
+} from '@phosphor-icons/react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 
 const FALLBACK_ICON = {
-  light: Lightbulb, road: Hammer, mosquito: Bug, tree: Trees,
-  trash: Trash2, water_supply: Droplets, drain: Waves, flood: CloudRain,
-  borrow_equipment: Package, corruption: ShieldAlert, grievance: Megaphone,
-  noise: VolumeX, building: Building2, tax: Receipt, canal: Pickaxe,
-  animals: Dog, fire: Flame, phone_complaint: PhoneCall,
-  waste_water: Droplets, other: FileQuestion,
+  light:           LightbulbFilament,
+  road:            RoadHorizon,
+  mosquito:        Bug,
+  tree:            Tree,
+  trash:           Trash,
+  water_supply:    Drop,
+  drain:           Waves,
+  flood:           CloudRain,
+  borrow_equipment:Toolbox,
+  corruption:      ShieldWarning,
+  grievance:       MegaphoneSimple,
+  noise:           SpeakerHigh,
+  building:        Buildings,
+  tax:             Receipt,
+  canal:           Shovel,
+  animals:         Paw,
+  fire:            Fire,
+  phone_complaint: Phone,
+  waste_water:     Waves,
+  other:           Question,
 }
 
 const FALLBACK_COLOR = {
@@ -116,7 +131,7 @@ export default function ComplaintCategory() {
               // Strip any alpha channel from color to ensure it's fully opaque for the icon
               const color = baseColor.length > 7 ? baseColor.substring(0, 7) : baseColor
               const isImageUrl = emoji.startsWith('http') || emoji.startsWith('/')
-              const IconComponent = FALLBACK_ICON[cat.value] || FileQuestion
+              const IconComponent = FALLBACK_ICON[cat.value] || Question
 
               return (
                 <button key={cat.value} onClick={() => handleSelect(cat.value)}
@@ -131,7 +146,7 @@ export default function ComplaintCategory() {
                     ) : emoji ? (
                       <span className="text-2xl">{emoji}</span>
                     ) : (
-                      <IconComponent size={28} color="white" strokeWidth={2} />
+                      <IconComponent size={30} color="white" weight="fill" />
                     )}
                   </div>
 
