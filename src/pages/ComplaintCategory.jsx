@@ -2,35 +2,35 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import {
-  LightbulbFilament, RoadHorizon, Bug, Tree, Trash,
-  Drop, Waves, CloudRain, Toolbox, ShieldWarning,
-  MegaphoneSimple, SpeakerHigh, Buildings, Receipt,
-  Shovel, Paw, Fire, Phone, Question,
+  LightbulbFilamentIcon, RoadHorizonIcon, BugIcon, TreeIcon, TrashIcon,
+  DropIcon, WavesIcon, CloudRainIcon, ToolboxIcon, ShieldWarningIcon,
+  MegaphoneSimpleIcon, SpeakerHighIcon, BuildingsIcon, ReceiptIcon,
+  ShovelIcon, PawPrintIcon, FireIcon, PhoneCallIcon, QuestionIcon,
 } from '@phosphor-icons/react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 
 const FALLBACK_ICON = {
-  light:           LightbulbFilament,
-  road:            RoadHorizon,
-  mosquito:        Bug,
-  tree:            Tree,
-  trash:           Trash,
-  water_supply:    Drop,
-  drain:           Waves,
-  flood:           CloudRain,
-  borrow_equipment:Toolbox,
-  corruption:      ShieldWarning,
-  grievance:       MegaphoneSimple,
-  noise:           SpeakerHigh,
-  building:        Buildings,
-  tax:             Receipt,
-  canal:           Shovel,
-  animals:         Paw,
-  fire:            Fire,
-  phone_complaint: Phone,
-  waste_water:     Waves,
-  other:           Question,
+  light:            LightbulbFilamentIcon,
+  road:             RoadHorizonIcon,
+  mosquito:         BugIcon,
+  tree:             TreeIcon,
+  trash:            TrashIcon,
+  water_supply:     DropIcon,
+  drain:            WavesIcon,
+  flood:            CloudRainIcon,
+  borrow_equipment: ToolboxIcon,
+  corruption:       ShieldWarningIcon,
+  grievance:        MegaphoneSimpleIcon,
+  noise:            SpeakerHighIcon,
+  building:         BuildingsIcon,
+  tax:              ReceiptIcon,
+  canal:            ShovelIcon,
+  animals:          PawPrintIcon,
+  fire:             FireIcon,
+  phone_complaint:  PhoneCallIcon,
+  waste_water:      WavesIcon,
+  other:            QuestionIcon,
 }
 
 const FALLBACK_COLOR = {
@@ -131,7 +131,7 @@ export default function ComplaintCategory() {
               // Strip any alpha channel from color to ensure it's fully opaque for the icon
               const color = baseColor.length > 7 ? baseColor.substring(0, 7) : baseColor
               const isImageUrl = emoji.startsWith('http') || emoji.startsWith('/')
-              const IconComponent = FALLBACK_ICON[cat.value] || Question
+              const IconComponent = FALLBACK_ICON[cat.value] || QuestionIcon
 
               return (
                 <button key={cat.value} onClick={() => handleSelect(cat.value)}
