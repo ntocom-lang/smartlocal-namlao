@@ -64,7 +64,7 @@ export default function BannerSlider() {
   return (
     <div className="overflow-hidden select-none"
          style={{ borderRadius: 'var(--radius-card, 1rem)', boxShadow: 'var(--shadow-card, 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06))', border: 'var(--border-card, none)' }}>
-      <div className="relative w-full overflow-hidden aspect-video md:aspect-21/9"
+      <div className="relative w-full overflow-hidden aspect-video md:aspect-[21/9] lg:aspect-[24/9]"
         onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
         {banners.map((b, i) => (
           <SlotImg key={b.id} b={b} visible={i === idx} />

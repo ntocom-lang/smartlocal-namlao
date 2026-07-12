@@ -86,7 +86,7 @@ export default function ComplaintBand() {
 
         {/* Desktop: compact grid */}
         <div className="hidden md:grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(topCats.length, 8)}, minmax(0, 1fr))` }}>
-          {topCats.map(cat => {
+          {topCats.slice(0, 8).map(cat => {
             const emoji = cat.emoji || FALLBACK_EMOJI[cat.value] || '📋'
             const color = cat.color || '#ffffff'
             return (

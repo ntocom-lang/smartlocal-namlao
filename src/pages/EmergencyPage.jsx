@@ -32,7 +32,7 @@ export default function EmergencyPage() {
   }, [tenant?.id])
 
   return (
-    <div className="max-w-4xl mx-auto pb-28 md:pb-8">
+    <div className="max-w-lg mx-auto pb-28 md:pb-8">
 
       {/* Mobile header */}
       <div className="md:hidden sticky top-0 z-30 px-4 pt-3 pb-2 bg-gray-50/95 backdrop-blur-md">
@@ -73,21 +73,21 @@ export default function EmergencyPage() {
         </div>
 
         {/* Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-3">
           {contacts.map(({ id, label, number, emoji, color, bg }) => (
             <a key={id} href={`tel:${number}`}
-               className="flex flex-col items-center gap-2.5 p-4 rounded-2xl bg-white border border-gray-100 shadow-sm active:scale-95 transition-transform text-center">
-              <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl"
+               className="flex flex-col items-center gap-2 p-3 md:p-4 rounded-2xl bg-white border border-gray-100 shadow-sm active:scale-95 transition-transform text-center">
+              <div className="w-12 h-12 md:w-14 md:h-14 rounded-2xl flex items-center justify-center text-2xl md:text-3xl"
                    style={{ backgroundColor: bg }}>
                 {emoji}
               </div>
               <div>
-                <p className="text-2xl font-extrabold leading-none tracking-wide" style={{ color }}>
+                <p className="text-xl md:text-2xl font-extrabold leading-none tracking-wide" style={{ color }}>
                   {number}
                 </p>
-                <p className="text-sm text-gray-500 mt-1">{label}</p>
+                <p className="text-xs md:text-sm text-gray-500 mt-1">{label}</p>
               </div>
-              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-white text-xs font-semibold"
+              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-white text-[10px] md:text-xs font-semibold"
                     style={{ backgroundColor: color }}>
                 <Phone size={12} />
                 โทรเลย

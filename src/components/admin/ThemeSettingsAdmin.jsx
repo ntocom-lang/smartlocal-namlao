@@ -45,8 +45,8 @@ export default function ThemeSettingsAdmin() {
         <form onSubmit={saveSettings} className="space-y-6">
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             {[
-              { id: 'eco_friendly', name: 'Namlao', icon: '🟢', desc: 'เทศบาลตำบลน้ำเลา' },
-              { id: 'kledkaew', name: 'Kledkaew', icon: '🦕', desc: 'เทศบาลตำบลเกล็ดแก้ว' }
+              { id: 'eco_friendly', name: 'NamlaoTheme', icon: '🟢', desc: 'เรียบง่าย สบายตา' },
+              { id: 'kledkaew', name: 'Theme2', icon: '🦕', desc: 'สดใส สนุกสนาน' }
             ].map(style => {
               const active = uiStyle === style.id
               return (

@@ -334,7 +334,9 @@ export default function HomePage() {
       })
   }, [tenant?.id])
 
-  const topDocTypes = docTypes
+  const topDocTypes = useMemo(() =>
+    [...docTypes].sort((a, b) => (docCounts[b.value] ?? 0) - (docCounts[a.value] ?? 0))
+  , [docTypes, docCounts])
 
   // ── section map ──────────────────────────────────────────────────
   const SECTION = {
@@ -413,21 +415,22 @@ export default function HomePage() {
           </Link>
         )}
         {!role && (
-          <div className="md:hidden flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800">
+          <div className="md:hidden flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800 mb-2">
             <Info size={16} className="shrink-0 mt-0.5" />
             <p>สมัครสมาชิกเพื่อติดตามสถานะคำร้องของท่าน และรับการแจ้งเตือนทันที</p>
           </div>
         )}
 
-        {/* Desktop: 2 columns, Mobile: 1 column */}
-        <div className="flex flex-col lg:flex-row gap-3">
-          {/* Left Column (Main Content) */}
-          <div className="flex-1 flex flex-col gap-2">
+        {/* ── Main 2-col grid ─────────────────────────────────────── */}
+        <div className="md:grid md:grid-cols-3 md:gap-6">
+
+          {/* Left col */}
+          <div className="md:col-span-2 flex flex-col gap-2 md:gap-3">
             {leftOrder.map(key => SECTION[key] ?? null)}
           </div>
 
           {/* Right col (desktop) */}
-          <div className="hidden md:flex flex-col gap-2">
+          <div className="hidden md:flex flex-col gap-3">
             {rightOrder.map(key => RIGHT_SECTION[key] ?? null)}
           </div>
         </div>

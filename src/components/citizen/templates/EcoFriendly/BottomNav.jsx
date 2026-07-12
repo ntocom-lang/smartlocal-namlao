@@ -4,7 +4,7 @@ import { useNotifications } from '../../../../contexts/NotificationsContext'
 import { useAuth } from '../../../../contexts/AuthContext'
 import { NAV_CITIZEN, NAV_TECH } from '../navData'
 
-export default function CleanMinimalBottomNav() {
+export default function EcoFriendlyBottomNav() {
   const location = useLocation()
   const navigate = useNavigate()
   const { unreadCount } = useNotifications()
@@ -26,9 +26,10 @@ export default function CleanMinimalBottomNav() {
   return (
     <>
       <div
-        className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex items-stretch justify-around px-1 shadow-[0_-4px_24px_rgba(0,0,0,0.06)] bg-white"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex items-stretch justify-around px-1 shadow-[0_-1px_0_rgba(0,0,0,0.08),0_-4px_24px_rgba(0,0,0,0.12)]"
         style={{
-          borderTop: '1px solid #f3f4f6',
+          background: 'linear-gradient(160deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)',
+          borderRadius: 'var(--radius-card, 1.25rem) var(--radius-card, 1.25rem) 0 0',
           paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 12px)',
           paddingTop: '6px',
         }}
@@ -43,33 +44,38 @@ export default function CleanMinimalBottomNav() {
             <button
               key={item.label}
               onClick={() => navigate(item.href)}
-              className="flex-1 flex flex-col items-center gap-1 py-1.5 transition-transform active:scale-95 relative"
+              className="flex-1 flex flex-col items-center gap-0.5 py-1.5 transition-transform active:scale-90 relative"
             >
+              {isActive && (
+                <span className="absolute inset-x-2 top-0.5 h-8 rounded-xl bg-white/20 pointer-events-none" />
+              )}
+
               <div className="relative z-10">
                 <Icon
-                  size={22}
-                  className={`transition-all ${isActive ? 'text-[var(--color-primary)]' : 'text-gray-400'}`}
-                  strokeWidth={isActive ? 2.5 : 1.5}
+                  size={20}
+                  className={`transition-all ${isActive ? 'text-white' : 'text-white/55'}`}
+                  strokeWidth={isActive ? 2.5 : 1.8}
                 />
                 {item.href === '/notifications' && unreadCount > 0 && (
-                  <span className="absolute -top-1.5 -right-2 min-w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-1 shadow-sm ring-1 ring-white">
+                  <span className="absolute -top-1.5 -right-2 min-w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-1 shadow-sm ring-1 ring-white/30">
                     {unreadCount > 9 ? '9+' : unreadCount}
                   </span>
                 )}
                 {item.href === '/technician' && techNewCount > 0 && (
-                  <span className="absolute -top-1.5 -right-2 min-w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-1 shadow-sm ring-1 ring-white">
+                  <span className="absolute -top-1.5 -right-2 min-w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-1 shadow-sm ring-1 ring-white/30">
                     {techNewCount > 9 ? '9+' : techNewCount}
                   </span>
                 )}
               </div>
-              <span className={`relative z-10 text-[11px] font-medium transition-all ${isActive ? 'text-[var(--color-primary)] font-bold' : 'text-gray-400'}`}>
+
+              <span className={`relative z-10 text-[13px] font-medium transition-all ${isActive ? 'text-white' : 'text-white/55'}`}>
                 {item.label}
               </span>
             </button>
           )
         })}
       </div>
-      <div className="md:hidden" style={{ height: 'calc(4.5rem + max(env(safe-area-inset-bottom, 0px), 12px))' }} />
+      <div className="md:hidden" style={{ height: 'calc(4rem + max(env(safe-area-inset-bottom, 0px), 12px))' }} />
     </>
   )
 }
