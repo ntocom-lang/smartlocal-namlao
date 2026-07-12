@@ -34,7 +34,7 @@ const LAYOUT_ORDER = {
   news_first:    ['banner', 'staff', 'complaint', 'shortcut', 'eservice'],
 }
 const LAYOUT_RIGHT = {
-  classic:       ['weather', 'calendar'],
+  classic:       ['weather', 'news', 'activities', 'calendar'],
   modern:        ['calendar', 'news', 'weather'],
   service_first: ['weather', 'calendar', 'activities'],
   news_first:    ['news', 'activities', 'calendar', 'weather'],

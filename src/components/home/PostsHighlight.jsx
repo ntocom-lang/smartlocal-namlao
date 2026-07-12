@@ -136,9 +136,9 @@ export default function PostsHighlight() {
     <>
       <div className="flex flex-col gap-6">
 
-        {/* ข่าวสำคัญ */}
+        {/* ข่าวสำคัญ — desktop แสดงใน right column แล้ว */}
         {news.length > 0 && (
-          <section>
+          <section className="md:hidden">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <div className="w-1 h-6 rounded-full shrink-0" style={{ backgroundColor: 'var(--color-primary)' }} />
@@ -165,9 +165,9 @@ export default function PostsHighlight() {
           </section>
         )}
 
-        {/* กิจกรรม */}
+        {/* กิจกรรม — desktop แสดงใน right column แล้ว */}
         {activities.length > 0 && (
-          <section>
+          <section className="md:hidden">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <div className="w-1 h-6 rounded-full shrink-0" style={{ backgroundColor: 'var(--color-primary)' }} />
