@@ -459,12 +459,10 @@ export default function HomePage() {
             .map(key => RIGHT_SECTION[key] ?? null)}
         </div>
 
-        {/* Full-width sections — ควบคุมโดย show_posts_highlight ใน admin ธีมและรูปแบบ */}
-        {tenant?.show_posts_highlight !== false && (
-          <div className="mt-6">
-            <PostsHighlight />
-          </div>
-        )}
+        {/* Full-width sections — ข่าวสำคัญและกิจกรรม */}
+        <div className="mt-6">
+          <PostsHighlight />
+        </div>
       </div>
 
       <div className="px-4 md:px-6 pb-8 max-w-6xl mx-auto">
