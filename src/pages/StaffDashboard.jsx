@@ -70,7 +70,7 @@ const MODULE_GROUPS = [
     group: 'เนื้อหาและชุมชน',
     items: [
       { key: 'posts',            label: 'ข่าวสาร / กิจกรรม',  Icon: Images,  color: '#059669' },
-      { key: 'tourism',          label: 'เที่ยว กิน พัก ชอบ', Icon: Luggage, color: '#d97706' },
+      { key: 'tourism',          label: 'เที่ยว กิน พัก OTOP', Icon: Luggage, color: '#d97706' },
       { key: 'tourism-reviews',  label: 'รีวิวสถานที่',        Icon: Star,    color: '#f59e0b' },
     ],
   },
@@ -2319,48 +2319,52 @@ export default function StaffDashboard() {
 
         </main>
 
-        {/* Mobile bottom nav — horizontal scroll, 72px per item */}
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 shadow-lg z-20 safe-bottom">
-          <div className="flex">
-            {/* หน้าหลัก */}
-            {[
-              { key: 'home',       label: 'หน้าหลัก',    Icon: Home,        color: '#3b82f6' },
-              { key: 'inbox',      label: 'คำขอเอกสาร',  Icon: FileText,    color: '#8b5cf6' },
-              { key: 'complaints', label: 'คำร้อง',       Icon: BarChart2,   color: '#ef4444' },
-              { key: 'events',     label: 'กิจกรรม',      Icon: CalendarDays,color: '#10b981' },
-            ].filter(({ key }) => key === 'home' || visibleModules.some(m => m.key === key)).map(({ key, label, Icon, color }) => {
-              const isActive = activeModule === key
-              const badge = key === 'inbox' && pendingCount > 0 ? pendingCount : null
-              return (
-                <button key={key}
-                  onClick={() => { setShowMoreMenu(false); setActiveModule(key) }}
-                  className="flex-1 flex flex-col items-center gap-1 pt-2 pb-3 relative transition-colors">
-                  {isActive && (
-                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full"
-                      style={{ backgroundColor: color }} />
+        {/* Mobile bottom nav */}
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-20 flex items-stretch"
+          style={{
+            background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
+            borderTop: '1px solid rgba(255,255,255,0.07)',
+            boxShadow: '0 -8px 32px rgba(0,0,0,0.35)',
+            paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 6px)',
+          }}>
+          {[
+            { key: 'home',       label: 'หน้าหลัก',   Icon: Home,        bg: '#3b82f6' },
+            { key: 'inbox',      label: 'คำขอเอกสาร', Icon: FileText,    bg: '#8b5cf6' },
+            { key: 'complaints', label: 'คำร้อง',      Icon: BarChart2,   bg: '#f59e0b' },
+            { key: 'events',     label: 'กิจกรรม',     Icon: CalendarDays,bg: '#10b981' },
+          ].filter(({ key }) => key === 'home' || visibleModules.some(m => m.key === key)).map(({ key, label, Icon, bg }) => {
+            const isActive = activeModule === key
+            const badge = key === 'inbox' && pendingCount > 0 ? pendingCount : null
+            return (
+              <button key={key}
+                onClick={() => { setShowMoreMenu(false); setActiveModule(key) }}
+                className="flex-1 flex flex-col items-center justify-center gap-0.5 pt-2 pb-1 transition-all active:scale-90">
+                <div className="w-10 h-9 rounded-xl flex items-center justify-center transition-all duration-200 relative"
+                  style={{ backgroundColor: isActive ? bg : 'transparent' }}>
+                  <Icon size={20} strokeWidth={isActive ? 2.2 : 1.6}
+                    style={{ color: isActive ? '#fff' : 'rgba(255,255,255,0.3)' }} />
+                  {badge && (
+                    <span className="absolute -top-1 -right-1 min-w-[16px] h-4 rounded-full text-[9px] font-bold text-white flex items-center justify-center px-1 bg-amber-400">
+                      {badge > 9 ? '9+' : badge}
+                    </span>
                   )}
-                  <div className="relative">
-                    <Icon size={21} strokeWidth={isActive ? 2.2 : 1.5}
-                      style={{ color: isActive ? color : '#94a3b8' }} />
-                    {badge && (
-                      <span className="absolute -top-1 -right-2.5 min-w-[16px] h-4 rounded-full text-[9px] font-bold text-white flex items-center justify-center px-1 bg-amber-400">
-                        {badge > 9 ? '9+' : badge}
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-[10px] font-semibold" style={{ color: isActive ? color : '#94a3b8' }}>{label}</span>
-                </button>
-              )
-            })}
-            {/* อื่นๆ */}
-            <button onClick={() => setShowMoreMenu(v => !v)}
-              className="flex-1 flex flex-col items-center gap-1 pt-2 pb-3 relative transition-colors">
-              {showMoreMenu && <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full bg-gray-400" />}
-              <MoreHorizontal size={21} strokeWidth={showMoreMenu ? 2.2 : 1.5}
-                style={{ color: showMoreMenu ? '#64748b' : '#94a3b8' }} />
-              <span className="text-[10px] font-semibold" style={{ color: showMoreMenu ? '#64748b' : '#94a3b8' }}>อื่นๆ</span>
-            </button>
-          </div>
+                </div>
+                <span className="text-[10px] font-bold leading-tight"
+                  style={{ color: isActive ? '#fff' : 'rgba(255,255,255,0.3)' }}>{label}</span>
+              </button>
+            )
+          })}
+          {/* อื่นๆ */}
+          <button onClick={() => setShowMoreMenu(v => !v)}
+            className="flex-1 flex flex-col items-center justify-center gap-0.5 pt-2 pb-1 transition-all active:scale-90">
+            <div className="w-10 h-9 rounded-xl flex items-center justify-center transition-all duration-200"
+              style={{ backgroundColor: showMoreMenu ? '#64748b' : 'transparent' }}>
+              <MoreHorizontal size={20} strokeWidth={showMoreMenu ? 2.2 : 1.6}
+                style={{ color: showMoreMenu ? '#fff' : 'rgba(255,255,255,0.3)' }} />
+            </div>
+            <span className="text-[10px] font-bold leading-tight"
+              style={{ color: showMoreMenu ? '#fff' : 'rgba(255,255,255,0.3)' }}>อื่นๆ</span>
+          </button>
         </nav>
 
         {/* More menu drawer */}

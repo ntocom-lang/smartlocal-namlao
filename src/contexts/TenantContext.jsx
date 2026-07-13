@@ -102,12 +102,16 @@ function injectPWAManifest(tenant) {
 
 export function applyTheme(hexColor, uiStyle = 'default') {
   const root = document.documentElement
-  root.style.setProperty('--color-primary', hexColor)
+
+  // kledkaew theme ใช้เขียวเสมอ ไม่ว่า DB จะกำหนดสีอะไร
+  const effectiveColor = uiStyle === 'kledkaew' ? '#059669' : hexColor
+
+  root.style.setProperty('--color-primary', effectiveColor)
 
   // สร้าง hover shade (darken ~15%) โดยไม่ต้องพึ่ง library
-  const r = parseInt(hexColor.slice(1, 3), 16)
-  const g = parseInt(hexColor.slice(3, 5), 16)
-  const b = parseInt(hexColor.slice(5, 7), 16)
+  const r = parseInt(effectiveColor.slice(1, 3), 16)
+  const g = parseInt(effectiveColor.slice(3, 5), 16)
+  const b = parseInt(effectiveColor.slice(5, 7), 16)
   const darken = (v) => Math.max(0, Math.floor(v * 0.85)).toString(16).padStart(2, '0')
   root.style.setProperty('--color-primary-dark', `#${darken(r)}${darken(g)}${darken(b)}`)
   root.style.setProperty('--color-primary-rgb', `${r}, ${g}, ${b}`)

@@ -8,7 +8,7 @@ const CAT_LABEL = {
   travel:  '🏛️ เที่ยว',
   food:    '🍽️ กิน',
   stay:    '🏨 พัก',
-  shop:    '🛍️ ชอบ',
+  shop:    '🛍️ OTOP',
   service: '🔧 บริการ',
 }
 

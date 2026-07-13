@@ -211,7 +211,7 @@ export default function NotificationsPage() {
                         <p className="text-sm font-bold text-gray-800 leading-tight">{catLabel}</p>
                         <div className="flex items-center gap-1.5 shrink-0">
                           {n._unread && (
-                            <span className="w-2 h-2 rounded-full shrink-0 mt-1 bg-red-500" />
+                            <span className="w-2 h-2 rounded-full shrink-0 mt-1" style={{ backgroundColor: 'var(--color-primary)' }} />
                           )}
                           <ChevronRight size={14} className="text-gray-300 mt-0.5" />
                         </div>

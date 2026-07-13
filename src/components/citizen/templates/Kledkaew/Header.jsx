@@ -1,12 +1,14 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { Menu, Bell } from 'lucide-react'
+import { Bell, User } from 'lucide-react'
 import { useTenant } from '../../../../contexts/TenantContext'
 import { useNotifications } from '../../../../contexts/NotificationsContext'
+import { useAuth } from '../../../../contexts/AuthContext'
 
 export default function Header() {
   const { tenant } = useTenant()
   const navigate = useNavigate()
   const { unreadCount } = useNotifications()
+  const { session, displayName } = useAuth()
 
   const name = tenant?.name || ''
   let prefix = ''
@@ -30,8 +32,20 @@ export default function Header() {
       <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-[#064e3b] via-[#064e3b]/80 to-transparent pointer-events-none"></div>
       
       <div className="relative z-10 px-4 pt-3 pb-1 flex justify-between items-center max-w-6xl mx-auto">
-        <button className="p-2 text-white/90 hover:text-white transition-colors -ml-2">
-          <Menu size={26} />
+        <button onClick={() => navigate('/profile')} className="p-1.5 text-white hover:bg-white/10 rounded-full transition-colors -ml-1">
+          {session ? (
+            <div className="w-8 h-8 rounded-full bg-emerald-700/50 border border-white/60 flex items-center justify-center font-bold text-white shadow-sm overflow-hidden">
+              {session.user.user_metadata?.avatar_url ? (
+                <img src={session.user.user_metadata.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-sm">{displayName?.[0] ?? <User size={18} />}</span>
+              )}
+            </div>
+          ) : (
+            <div className="w-8 h-8 rounded-full bg-emerald-700/50 border border-white/60 flex items-center justify-center shadow-sm text-white">
+              <User size={18} />
+            </div>
+          )}
         </button>
         
         <Link to="/" className="flex flex-col items-center">
@@ -49,7 +63,7 @@ export default function Header() {
         <button onClick={() => navigate('/notifications')} className="relative p-2 text-white/90 hover:text-white transition-colors -mr-2">
           <Bell size={24} />
           {unreadCount > 0 && (
-            <span className="absolute top-1.5 right-1.5 min-w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-0.5 border border-white shadow-sm">
+            <span className="absolute top-1.5 right-1.5 min-w-4 h-4 bg-amber-400 text-amber-900 text-[9px] font-bold rounded-full flex items-center justify-center px-0.5 border border-white shadow-sm">
               {unreadCount > 9 ? '9+' : unreadCount}
             </span>
           )}

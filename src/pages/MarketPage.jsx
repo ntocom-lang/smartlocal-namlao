@@ -52,7 +52,7 @@ export default function MarketPage() {
             className="p-2 -ml-1 rounded-xl hover:bg-white/20 text-white transition-colors">
             <ArrowLeft size={20} />
           </button>
-          <h1 className="text-base font-bold text-white">เที่ยว กิน พัก ชอบ</h1>
+          <h1 className="text-base font-bold text-white">เที่ยว กิน พัก OTOP</h1>
         </div>
         <div className="flex gap-2 px-4 pb-3 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
           {TYPE_FILTER.map(({ key, label }) => (
@@ -76,7 +76,7 @@ export default function MarketPage() {
               🏪
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-800">เที่ยว กิน พัก ชอบ</h1>
+              <h1 className="text-2xl font-bold text-gray-800">เที่ยว กิน พัก OTOP</h1>
               <p className="text-sm text-gray-500 mt-0.5">ร้านค้า OTOP ที่พัก และสถานที่ท่องเที่ยวในชุมชน</p>
             </div>
           </div>

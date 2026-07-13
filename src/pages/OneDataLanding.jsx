@@ -42,7 +42,7 @@ const FORMS = [
     color: '#f59e0b',
     bg:    'from-amber-400 to-amber-600',
     label: 'ลงทะเบียนร้านค้า / ท่องเที่ยว',
-    sub:   'เที่ยว กิน พัก ชอบ',
+    sub:   'เที่ยว กิน พัก OTOP',
     desc:  'OTOP · ร้านอาหาร · โฮมสเตย์ · สถานที่ท่องเที่ยวใหม่ในชุมชน',
     badge: 'รอการอนุมัติ',
     route: '/business-register',

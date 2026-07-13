@@ -200,7 +200,7 @@ function MenuRow({ icon: Icon, iconBg, iconColor = 'text-gray-500', label, desc,
         {desc && <p className="text-xs text-gray-400 mt-0.5 leading-snug">{desc}</p>}
       </div>
       {badge != null && badge > 0 && (
-        <span className="min-w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1.5 shrink-0">
+        <span className="min-w-5 h-5 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1.5 shrink-0" style={{ backgroundColor: 'var(--color-primary)' }}>
           {badge > 99 ? '99+' : badge}
         </span>
       )}
@@ -540,7 +540,7 @@ export default function MorePage() {
             icon={Store}
             iconBg="bg-amber-50"
             iconColor="text-amber-500"
-            label="เที่ยว กิน พัก ชอบ"
+            label="เที่ยว กิน พัก OTOP"
             desc="ร้านค้า OTOP ที่พัก สถานที่ท่องเที่ยวในชุมชน"
             href="/market"
           />
@@ -549,7 +549,7 @@ export default function MorePage() {
             iconBg="bg-orange-50"
             iconColor="text-orange-500"
             label="ลงทะเบียนร้านค้า / ท่องเที่ยว"
-            desc="เที่ยว กิน พัก ชอบ — ส่งข้อมูลให้เจ้าหน้าที่อนุมัติ"
+            desc="เที่ยว กิน พัก OTOP — ส่งข้อมูลให้เจ้าหน้าที่อนุมัติ"
             href="/business-register"
           />
         </Section>

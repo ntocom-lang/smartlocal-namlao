@@ -9,7 +9,7 @@ const TOUR_CATS = [
   { key: 'travel',  label: 'เที่ยว', emoji: '🏛️', color: '#d97706' },
   { key: 'food',    label: 'กิน',    emoji: '🍽️', color: '#10b981' },
   { key: 'stay',    label: 'พัก',    emoji: '🏨', color: '#3b82f6' },
-  { key: 'shop',    label: 'ชอบ',   emoji: '🛍️', color: '#ec4899' },
+  { key: 'shop',    label: 'OTOP',  emoji: '🛍️', color: '#15803d' },
   { key: 'service', label: 'บริการ', emoji: '🔧', color: '#dc2626' },
 ]
 

@@ -1,31 +1,30 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { 
-  ArrowLeft, Loader2, Lightbulb, Hammer, Bug, Trees, 
-  Trash2, Droplets, Waves, CloudRain, Package, ShieldAlert, 
-  Megaphone, VolumeX, Building2, Receipt, Pickaxe, Dog, 
+import {
+  ArrowLeft, Loader2, Lightbulb, Hammer, Trees,
+  Trash2, Droplets, Waves, CloudRain, Package, ShieldAlert,
+  Megaphone, VolumeX, Building2, Receipt, Pickaxe, Dog,
   Flame, PhoneCall, HelpCircle
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 
-const FALLBACK_EMOJI = {
-  light: "data:image/svg+xml;utf8,%3Csvg viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='50' cy='50' r='45' fill='%23fde047' stroke='%23171717' stroke-width='5'/%3E%3Cpolygon points='50,20 85,78 15,78' fill='none' stroke='%23ca8a04' stroke-width='6' transform='translate(2,2)'/%3E%3Cpolygon points='50,20 85,78 15,78' fill='%23fde047' stroke='%23171717' stroke-width='5'/%3E%3Cpolygon points='55,30 35,63 50,63 45,85 70,48 50,48' fill='%23171717'/%3E%3C/svg%3E",
-  road: '🛣️', mosquito: '🦟', tree: '🌲',
-  trash: '🗑️', water_supply: '🚿', drain: '🌀', flood: '🌊',
-  borrow_equipment: '📦', corruption: '⚖️', grievance: '📢',
-  noise: '🔊', building: '🏢', tax: '💳', canal: '⛏️',
-  animals: '🐕', fire: '🔥', phone_complaint: '📞',
-  waste_water: '💧', other: '❓',
-}
 
 const FALLBACK_ICON = {
-  light: Lightbulb, road: Hammer, mosquito: Bug, tree: Trees,
+  light: Lightbulb, road: Hammer, tree: Trees,
   trash: Trash2, water_supply: Droplets, drain: Waves, flood: CloudRain,
   borrow_equipment: Package, corruption: ShieldAlert, grievance: Megaphone,
   noise: VolumeX, building: Building2, tax: Receipt, canal: Pickaxe,
   animals: Dog, fire: Flame, phone_complaint: PhoneCall,
   waste_water: Droplets, other: HelpCircle,
+}
+
+const EMOJI_OVERRIDE = {
+  light: '⚡', drain: '🚧', trash: '♻️', waste_water: '💧',
+  canal: '🚽', road: '🛤️', noise: '🔊', flood: '🪣',
+  building: '🏢', mosquito: '🧴', grievance: '🌫️', corruption: '🚨',
+  tax: '🧾', tree: '🌲', water_supply: '💧', animals: '🐾',
+  phone_complaint: '☎️', borrow_equipment: '🔧', fire: '🔥', other: '❓',
 }
 
 const FALLBACK_COLOR = {
@@ -121,27 +120,28 @@ export default function ComplaintCategory() {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4">
             {categories.map((cat) => {
-              const baseColor = cat.color || FALLBACK_COLOR[cat.value] || '#0f172a'
-              const color = baseColor.length > 7 ? baseColor.substring(0, 7) : baseColor
-              
               const dbEmoji = cat.emoji || ''
               const isImageUrl = dbEmoji.startsWith('http') || dbEmoji.startsWith('/') || dbEmoji.startsWith('data:')
-              const displayEmoji = isImageUrl ? dbEmoji : (dbEmoji || FALLBACK_EMOJI[cat.value] || '📋')
+              const hasDbEmoji = !isImageUrl && dbEmoji.trim() !== ''
               const IconComponent = FALLBACK_ICON[cat.value] || HelpCircle
+              const iconBg = FALLBACK_COLOR[cat.value] || '#475569'
 
               return (
                 <button key={cat.value} onClick={() => handleSelect(cat.value)}
                   className="flex flex-col items-center justify-start pt-5 pb-4 px-3 gap-3 active:scale-95 transition-all group bg-white rounded-[14px] border border-gray-200 shadow-sm hover:shadow-md hover:border-blue-200">
-                  
-                  {isImageUrl ? (
-                    <div className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center shrink-0 transition-transform duration-300 group-hover:scale-110">
-                      <img src={displayEmoji} alt={cat.label} className="w-full h-full object-contain drop-shadow-sm" />
-                    </div>
-                  ) : (
-                    <div className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center shrink-0 transition-transform duration-300 group-hover:scale-110">
-                      <span className="text-[2.5rem] leading-none select-none drop-shadow-sm">{displayEmoji}</span>
-                    </div>
-                  )}
+
+                  <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 transition-transform duration-300 group-hover:scale-110"
+                    style={{ backgroundColor: iconBg }}>
+                    {isImageUrl ? (
+                      <img src={dbEmoji} alt={cat.label} className="w-9 h-9 object-contain" />
+                    ) : hasDbEmoji ? (
+                      <span className="text-[1.8rem] leading-none select-none">{dbEmoji}</span>
+                    ) : EMOJI_OVERRIDE[cat.value] ? (
+                      <span className="text-[1.8rem] leading-none select-none">{EMOJI_OVERRIDE[cat.value]}</span>
+                    ) : (
+                      <IconComponent size={32} color="white" strokeWidth={2} />
+                    )}
+                  </div>
 
                   <span className="text-[12px] font-bold text-[#1e3a8a] text-center leading-snug w-full px-0.5 line-clamp-3 mt-1 group-hover:text-blue-600 transition-colors">
                     {cat.label}

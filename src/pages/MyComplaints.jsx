@@ -582,7 +582,11 @@ export default function MyComplaints() {
     setSearching(false)
   }
 
-  if (session === undefined) return null
+  if (session === undefined) return (
+    <div className="flex justify-center py-24">
+      <Loader2 size={28} className="animate-spin text-gray-300" />
+    </div>
+  )
 
   // ── Anon: show search UI ───────────────────────────────────────────────────
   if (!session) {

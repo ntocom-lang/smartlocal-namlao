@@ -25,7 +25,7 @@ function SuccessScreen({ onBack }) {
       <h2 className="text-xl font-bold text-gray-800 mb-2">ส่งข้อมูลสำเร็จ!</h2>
       <p className="text-gray-500 text-sm leading-relaxed mb-2 max-w-xs">
         เจ้าหน้าที่จะตรวจสอบและอนุมัติข้อมูลของคุณ
-        เมื่ออนุมัติแล้วจะแสดงบนหน้าเที่ยว กิน พัก ชอบโดยอัตโนมัติ
+        เมื่ออนุมัติแล้วจะแสดงบนหน้าเที่ยว กิน พัก OTOPโดยอัตโนมัติ
       </p>
       <p className="text-xs text-gray-400 mb-8">โดยปกติใช้เวลาไม่เกิน 3 วันทำการ</p>
       <button onClick={onBack}
@@ -164,7 +164,7 @@ export default function BusinessRegisterPage() {
         </button>
         <div>
           <h1 className="font-bold text-white text-base leading-tight">ลงทะเบียนร้านค้า / ท่องเที่ยว</h1>
-          <p className="text-white/70 text-xs">เที่ยว กิน พัก ชอบ · {tenant?.system_name || `${tenant?.name} One Data`}</p>
+          <p className="text-white/70 text-xs">เที่ยว กิน พัก OTOP · {tenant?.system_name || `${tenant?.name} One Data`}</p>
         </div>
       </div>
 
@@ -176,7 +176,7 @@ export default function BusinessRegisterPage() {
         </div>
         <div className="flex-1">
           <h1 className="text-2xl font-bold text-gray-800">ลงทะเบียนร้านค้า / ท่องเที่ยว</h1>
-          <p className="text-sm text-gray-500 mt-0.5">เที่ยว กิน พัก ชอบ · หลังอนุมัติจะแสดงบนหน้าเที่ยว กิน พัก ชอบ</p>
+          <p className="text-sm text-gray-500 mt-0.5">เที่ยว กิน พัก OTOP · หลังอนุมัติจะแสดงบนหน้าเที่ยว กิน พัก OTOP</p>
         </div>
         <span className="text-xs font-bold px-3 py-1 rounded-full bg-amber-50 text-amber-700">
           📍 GPS บังคับ
@@ -239,7 +239,7 @@ export default function BusinessRegisterPage() {
           )}
           {!geo.lat && (
             <p className="text-xs text-amber-600 mt-1.5 px-1">
-              ⚠️ พิกัดนี้จะใช้แสดงหมุดบนแผนที่เที่ยว กิน พัก ชอบ
+              ⚠️ พิกัดนี้จะใช้แสดงหมุดบนแผนที่เที่ยว กิน พัก OTOP
             </p>
           )}
         </div>

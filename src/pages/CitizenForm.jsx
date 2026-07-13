@@ -194,7 +194,7 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
           {hasFailed && !uploading && (
             <button onClick={uploadAll}
               className="mt-2 w-full py-2 rounded-xl text-xs font-semibold text-white"
-              style={{ backgroundColor: '#ef4444' }}>
+              style={{ backgroundColor: primaryColor }}>
               ลองอัปโหลดใหม่อีกครั้ง ({failCount} รายการ)
             </button>
           )}
@@ -267,6 +267,9 @@ const FORM_TYPE_CONFIG = {
 
 export default function CitizenForm() {
   const { tenant } = useTenant()
+  const isKledkaew = tenant?.ui_style === 'kledkaew'
+  const primaryBg = isKledkaew ? 'linear-gradient(135deg, #059669 0%, #064e3b 100%)' : 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)'
+  const primaryColor = isKledkaew ? '#059669' : 'var(--color-primary)'
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const preCategory = searchParams.get('category') ?? ''
@@ -529,7 +532,7 @@ export default function CitizenForm() {
 
       {/* Mobile header */}
       <div className="md:hidden sticky top-0 z-10 flex items-center gap-3 px-4 py-3 shadow-sm"
-        style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
+        style={{ background: primaryBg }}>
         <button onClick={() => navigate(-1)}
           className="p-1.5 rounded-xl bg-white/20 hover:bg-white/30 transition-colors">
           <ArrowLeft size={20} className="text-white" />
@@ -634,7 +637,7 @@ export default function CitizenForm() {
         {/* Map pin */}
         <button type="button" onClick={() => setShowMap(true)}
           className="w-full flex items-center justify-center gap-2 py-2.5 rounded-full font-semibold text-white text-sm transition-all active:scale-95 shadow-sm"
-          style={{ backgroundColor: geoStatus === GEO_STATUS.ok ? '#16a34a' : 'var(--color-primary)' }}>
+          style={{ backgroundColor: geoStatus === GEO_STATUS.ok ? '#16a34a' : primaryColor }}>
           {geoStatus === GEO_STATUS.ok
             ? <CheckCircle2 size={18} />
             : <MapPin size={18} />}

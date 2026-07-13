@@ -2560,6 +2560,107 @@ function LocationManager({ tenant }) {
 }
 
 // ─── Category Manager ─────────────────────────────────────────────────────────
+const EMOJI_GROUPS = [
+  { label: 'สาธารณูปโภค', emojis: ['💡','⚡','🔌','🛣️','🛤️','🏗️','🚧','🏢','🏠','🌉','🚿','🔧','🔨','⛏️','🪛','🔩','🪜','🪝'] },
+  { label: 'น้ำ / สิ่งแวดล้อม', emojis: ['💧','🌊','🌧️','☔','🚰','🪣','🌬️','💨','🌫️','🔥','🌱','🌳','🌲','🌿','🍃','🌾','🌵','🪴'] },
+  { label: 'ความสะอาด', emojis: ['🗑️','♻️','🧹','🚽','🪠','🚛','💩','🧺','🧴','🧼','🪥','🛁','🚮'] },
+  { label: 'สัตว์', emojis: ['🐕','🐾','🐈','🦟','🦗','🐛','🐝','🦂','🐀','🦎','🐓','🐟','🦆'] },
+  { label: 'เสียง / ร้องเรียน', emojis: ['🔊','📣','📢','🔔','🔕','💬','😤','🤬','📞','☎️','🗣️'] },
+  { label: 'บริการสาธารณะ', emojis: ['🚒','🚑','🚔','👮','🛡️','📋','📝','🧾','💰','⚖️','📦','🏥','🚦','📌','📍','🗺️'] },
+  { label: 'ทั่วไป', emojis: ['❓','✅','❗','⚠️','🚨','🚩','🔴','🟡','🟢','⭐','🔹','🔸','📊','💼','📮','🏷️','🎫','📮'] },
+]
+
+function EmojiPickerModal({ cat, onSelect, onClose }) {
+  const [search, setSearch] = useState('')
+  const [customInput, setCustomInput] = useState(cat?.emoji || '')
+
+  const allEmojis = EMOJI_GROUPS.flatMap(g => g.emojis)
+  const searchResult = search.trim()
+    ? allEmojis.filter(e => e.includes(search.trim()))
+    : null
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white w-full sm:max-w-sm rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[80vh] flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">{customInput || cat?.emoji || '📝'}</span>
+            <div>
+              <p className="text-sm font-bold text-gray-800">เลือกไอคอน</p>
+              <p className="text-xs text-gray-400">{cat?.label}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Search */}
+        <div className="px-4 pt-3 pb-2">
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="ค้นหา emoji หรือพิมพ์เอง..."
+            className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"
+          />
+        </div>
+
+        {/* Emoji grid */}
+        <div className="flex-1 overflow-y-auto px-4 pb-3 space-y-3">
+          {searchResult ? (
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {searchResult.length > 0
+                ? searchResult.map((e, i) => (
+                    <button key={i} onClick={() => { setCustomInput(e); onSelect(cat.id, e) }}
+                      className="w-10 h-10 text-xl rounded-xl hover:bg-blue-50 flex items-center justify-center transition-colors active:scale-90">
+                      {e}
+                    </button>
+                  ))
+                : <p className="text-xs text-gray-400 py-4 w-full text-center">ไม่พบ emoji ที่ตรงกัน</p>
+              }
+            </div>
+          ) : (
+            EMOJI_GROUPS.map((group) => (
+              <div key={group.label}>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">{group.label}</p>
+                <div className="flex flex-wrap gap-1">
+                  {group.emojis.map((e, i) => (
+                    <button key={i} onClick={() => { setCustomInput(e); onSelect(cat.id, e) }}
+                      className={`w-10 h-10 text-xl rounded-xl flex items-center justify-center transition-colors active:scale-90 ${cat?.emoji === e ? 'bg-blue-100 ring-2 ring-blue-400' : 'hover:bg-gray-100'}`}>
+                      {e}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Custom input + save */}
+        <div className="border-t border-gray-100 px-4 py-3 flex items-center gap-2 bg-gray-50">
+          <span className="text-xs text-gray-500 shrink-0">พิมพ์เอง:</span>
+          <input
+            type="text"
+            value={customInput}
+            onChange={e => setCustomInput(e.target.value)}
+            placeholder="emoji หรือ URL รูป"
+            className="flex-1 text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-300"
+          />
+          <button
+            onClick={() => onSelect(cat.id, customInput)}
+            disabled={!customInput.trim()}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-40 transition-colors">
+            บันทึก
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const COLOR_PRESETS = [
   { color: '#FEF3C7', textColor: '#D97706' },
   { color: '#DBEAFE', textColor: '#2563EB' },
@@ -2643,7 +2744,7 @@ function SlaInput({ value, onCommit }) {
   )
 }
 
-function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleActive, techs = [], techId = '', slaDays = 3, onTechChange, onSlaChange, savingAssign = false }) {
+function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleActive, onEditEmoji, techs = [], techId = '', slaDays = 3, onTechChange, onSlaChange, savingAssign = false }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(cat.label)
@@ -2685,8 +2786,12 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
             <ChevronDown size={13} />
           </button>
         </div>
-        <span className="w-8 h-8 rounded-xl flex items-center justify-center text-base shrink-0"
-          style={{ backgroundColor: cat.color }}>{cat.emoji}</span>
+        <button
+          onClick={() => onEditEmoji?.(cat)}
+          title="เปลี่ยนไอคอน"
+          className="w-8 h-8 rounded-xl flex items-center justify-center text-base shrink-0 hover:ring-2 hover:ring-blue-400 transition-all active:scale-90"
+          style={{ backgroundColor: cat.color }}
+        >{cat.emoji}</button>
 
         {/* label — inline edit */}
         {isEditing ? (
@@ -2742,7 +2847,7 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
   )
 }
 
-function SortableDesktopRow({ cat, idx, draft, assign, isSaving, techs, onSetDraft, onSaveRow, onCancelRow, onStartLabelEdit, onToggleActive, onDeleteCat }) {
+function SortableDesktopRow({ cat, idx, draft, assign, isSaving, techs, onSetDraft, onSaveRow, onCancelRow, onStartLabelEdit, onToggleActive, onDeleteCat, onEditEmoji }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
   const color = COLOR_PRESETS[cat.color_idx ?? 0] ?? COLOR_PRESETS[0]
   const editingLabel = !!draft?.editingLabel
@@ -2779,7 +2884,14 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, techs, onSetDra
             className="w-full text-sm text-gray-800 bg-white border border-amber-300 rounded-lg px-2 py-1 focus:outline-none"
           />
         ) : (
-          <span className="font-medium text-gray-800">{cat.emoji} {cat.label}</span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onEditEmoji?.(cat)}
+              title="เปลี่ยนไอคอน"
+              className="text-xl hover:bg-gray-100 rounded-lg p-1 transition-colors active:scale-90 shrink-0"
+            >{cat.emoji}</button>
+            <span className="font-medium text-gray-800">{cat.label}</span>
+          </div>
         )}
       </td>
       <td className="px-4 py-3">
@@ -2865,6 +2977,15 @@ function CategoryManager({ tenant }) {
   const [form, setForm] = useState({ label: '', emoji: '📝', colorIdx: 6, emojiTouched: false })
   const [rowDrafts, setRowDrafts] = useState({}) // { catValue: { label?, technician_id?, sla_days?, editingLabel? } }
   const [savingAll, setSavingAll] = useState(false)
+  const [iconPickerCat, setIconPickerCat] = useState(null)
+
+  async function updateCatEmoji(catId, emoji) {
+    if (!emoji?.trim()) return
+    const { error: err } = await supabase.from('complaint_categories').update({ emoji: emoji.trim() }).eq('id', catId)
+    if (err) { setError('บันทึกไม่สำเร็จ: ' + err.message); return }
+    setCats((prev) => prev.map((c) => c.id === catId ? { ...c, emoji: emoji.trim() } : c))
+    setIconPickerCat(null)
+  }
 
   function setDraft(catValue, patch) {
     setRowDrafts((prev) => ({ ...prev, [catValue]: { ...(prev[catValue] ?? {}), ...patch } }))
@@ -3059,6 +3180,13 @@ function CategoryManager({ tenant }) {
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
+      {iconPickerCat && (
+        <EmojiPickerModal
+          cat={iconPickerCat}
+          onSelect={updateCatEmoji}
+          onClose={() => setIconPickerCat(null)}
+        />
+      )}
       <div className="flex items-center justify-between">
         <h2 className="font-semibold text-gray-700">จัดการประเภทคำร้อง</h2>
         {cats.length === 0 && !loading && (
@@ -3179,6 +3307,7 @@ function CategoryManager({ tenant }) {
                 {cats.map((cat, idx) => (
                   <SortableCatItem key={cat.id} cat={cat} idx={idx} total={cats.length}
                     onDelete={deleteCat} onMove={moveCat} onEdit={editCat} onToggleActive={toggleActive}
+                    onEditEmoji={setIconPickerCat}
                     techs={techs}
                     techId={assignMap[cat.value]?.technician_id ?? ''}
                     slaDays={assignMap[cat.value]?.sla_days ?? 3}
@@ -3223,6 +3352,7 @@ function CategoryManager({ tenant }) {
                         onStartLabelEdit={startLabelEdit}
                         onToggleActive={toggleActive}
                         onDeleteCat={deleteCat}
+                        onEditEmoji={setIconPickerCat}
                       />
                     ))}
                   </tbody>
@@ -5130,27 +5260,30 @@ export default function AdminDashboard() {
       </div>
 
       {/* ─── Mobile Admin Bottom Tab Bar ─── */}
-      <div
-        className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-100 shadow-[0_-4px_24px_rgba(0,0,0,0.10)] flex items-stretch"
-        style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 8px)' }}
-      >
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex items-stretch"
+        style={{
+          background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
+          borderTop: '1px solid rgba(255,255,255,0.07)',
+          boxShadow: '0 -8px 32px rgba(0,0,0,0.35)',
+          paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 6px)',
+        }}>
         {[
-          { key: 'dashboard',  label: 'ภาพรวม',  Icon: BarChart2,     activeColor: '#3b82f6',              show: true },
-          { key: 'map',        label: 'แผนที่',  Icon: MapPin,        activeColor: '#3b82f6',              show: currentUserRole !== 'council' },
-          { key: 'more',       label: 'อื่นๆ',   Icon: LayoutGrid,    activeColor: '#6b7280',              show: true },
-        ].filter(i => i.show).map(({ key, label, Icon, activeColor }) => {
+          { key: 'dashboard',  label: 'ภาพรวม', Icon: BarChart2,    bg: '#3b82f6', show: true },
+          { key: 'complaints', label: 'คำร้อง',  Icon: ClipboardList, bg: '#f59e0b', show: true },
+          { key: 'map',        label: 'แผนที่',  Icon: MapPin,       bg: '#10b981', show: currentUserRole !== 'council' },
+          { key: 'more',       label: 'อื่นๆ',   Icon: LayoutGrid,   bg: '#8b5cf6', show: true },
+        ].filter(i => i.show).map(({ key, label, Icon, bg }) => {
           const isActive = activePage === key
           return (
-            <button
-              key={key}
-              onClick={() => setActivePage(key)}
-              className="relative flex-1 flex flex-col items-center justify-center gap-0.5 pt-2 pb-1 transition-transform active:scale-90"
-            >
-              {isActive && (
-                <span className="absolute top-0 h-0.5 w-8 rounded-full" style={{ backgroundColor: activeColor }} />
-              )}
-              <Icon size={22} style={{ color: isActive ? activeColor : '#9ca3af' }} strokeWidth={isActive ? 2.5 : 1.8} />
-              <span className="text-[11px] font-semibold leading-tight" style={{ color: isActive ? activeColor : '#9ca3af' }}>
+            <button key={key} onClick={() => setActivePage(key)}
+              className="flex-1 flex flex-col items-center justify-center gap-0.5 pt-2 pb-1 transition-all active:scale-90">
+              <div className="w-10 h-9 rounded-xl flex items-center justify-center transition-all duration-200"
+                style={{ backgroundColor: isActive ? bg : 'transparent' }}>
+                <Icon size={20} strokeWidth={isActive ? 2.2 : 1.6}
+                  style={{ color: isActive ? '#fff' : 'rgba(255,255,255,0.3)' }} />
+              </div>
+              <span className="text-[10px] font-bold leading-tight"
+                style={{ color: isActive ? '#fff' : 'rgba(255,255,255,0.3)' }}>
                 {label}
               </span>
             </button>

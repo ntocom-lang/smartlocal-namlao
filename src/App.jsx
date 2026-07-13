@@ -141,6 +141,8 @@ function AppShell() {
   const { loading, error, tenant } = useTenant()
   const [showPhoneReminder, setShowPhoneReminder] = useState(false)
   const navigate = useNavigate()
+  const location = useLocation()
+  const isBackOffice = ['/admin', '/staff', '/technician'].some(p => location.pathname.startsWith(p))
 
   async function checkAndFixProfile(uid, userMeta = {}) {
     const { data: profile } = await supabase
@@ -331,7 +333,7 @@ function AppShell() {
           <Footer />
           </main>
         </div>
-        <BottomNav />
+        {!isBackOffice && <BottomNav />}
         <InstallPrompt />
         <ScrollToTopButton />
       </NotificationsProvider>

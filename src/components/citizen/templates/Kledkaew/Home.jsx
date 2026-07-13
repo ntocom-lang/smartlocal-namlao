@@ -1,11 +1,49 @@
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useTenant } from '../../../../contexts/TenantContext'
-import WeatherWidget from '../../../../components/home/WeatherWidget'
+import { supabase } from '../../../../lib/supabase'
 import PostsHighlight from '../../../../components/home/PostsHighlight'
-import { Megaphone, ChevronRight, Map, Utensils, Bed, ShoppingBag, Eye, HelpCircle, Droplets, MapPin, Trash2, Lightbulb } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Megaphone, ChevronRight, Map, Utensils, Bed, ShoppingBag, AlertCircle } from 'lucide-react'
+
+const CAT_FALLBACK_EMOJI = {
+  light: '💡', road: '🛤️', mosquito: '🧴', tree: '🌲',
+  trash: '♻️', water_supply: '💧', drain: '🚧', flood: '🪣',
+  borrow_equipment: '🔧', corruption: '🚨', grievance: '🌫️',
+  noise: '🔊', building: '🏢', tax: '🧾', canal: '🚽',
+  animals: '🐾', fire: '🔥', phone_complaint: '☎️',
+  waste_water: '💧', other: '❓',
+}
+
+const DEFAULT_CATS = [
+  { value: 'light',       label: 'ไฟฟ้าสาธารณะ',    emoji: '💡' },
+  { value: 'drain',       label: 'ท่อระบายน้ำ',      emoji: '🚧' },
+  { value: 'road',        label: 'ถนน/ทางเท้า',      emoji: '🛤️' },
+  { value: 'waste_water', label: 'น้ำเสีย',           emoji: '💧' },
+  { value: 'canal',       label: 'ดูดสิ่งปฏิกูล',    emoji: '🚽' },
+  { value: 'trash',       label: 'ขยะ/แจ้งเก็บ',     emoji: '♻️' },
+]
+
+const TOUR_TABS = [
+  { key: 'travel', label: 'เที่ยว', icon: Map },
+  { key: 'food',   label: 'กิน',    icon: Utensils },
+  { key: 'stay',   label: 'พัก',    icon: Bed },
+  { key: 'shop',   label: 'OTOP',   icon: ShoppingBag },
+]
 
 export default function Home() {
   const { tenant } = useTenant()
+  const navigate = useNavigate()
+  const [cats, setCats] = useState(DEFAULT_CATS)
+  const [activeTab, setActiveTab] = useState('travel')
+
+  useEffect(() => {
+    if (!tenant?.id) return
+    supabase.from('complaint_categories').select('value, label, emoji, color')
+      .eq('municipality_id', tenant.id).eq('is_active', true).order('sort_order')
+      .then(({ data }) => { if (data?.length) setCats(data) })
+      .catch(() => {})
+  }, [tenant?.id])
 
   return (
     <div className="bg-[#f0fdf4] min-h-screen pb-28 font-sans">
@@ -18,13 +56,13 @@ export default function Home() {
         
         <div className="flex justify-between items-center bg-emerald-900/10 backdrop-blur-sm rounded-3xl p-4 shadow-inner overflow-x-auto gap-4 hide-scrollbar border border-emerald-200/50">
           {[
-            { label: 'ร้องเรียน\nร้องทุกข์', icon: <HelpCircle size={28} className="text-pink-500" /> },
-            { label: 'สถานที่\nออกกำลังกาย', icon: <span className="text-3xl drop-shadow-sm">🏃</span> },
-            { label: 'ชำระ\nค่าเก็บขยะ', icon: <Trash2 size={28} className="text-red-500" /> },
-            { label: 'ชำระภาษี', icon: <span className="text-3xl drop-shadow-sm">💰</span> },
+            { label: 'ร้องเรียน\nร้องทุกข์', icon: <span className="text-3xl drop-shadow-sm">🙋</span>, path: '/complaint' },
+            { label: 'E-Service', icon: <span className="text-3xl drop-shadow-sm">🌐</span>, path: '/doc-request' },
+            { label: 'ติดตาม\nคำร้อง', icon: <span className="text-3xl drop-shadow-sm">🔎</span>, path: '/my-complaints' },
+            { label: 'ติดตาม\nเอกสาร', icon: <span className="text-3xl drop-shadow-sm">📄</span>, path: '/my-docs' },
           ].map((srv, i) => (
-            <Link to="/complaint" key={i} className="flex flex-col items-center shrink-0 w-[72px] group">
-              <div className="w-[60px] h-[60px] flex items-center justify-center shadow-lg relative bg-gradient-to-br from-white to-emerald-50 transition-transform group-active:scale-95"
+            <Link to={srv.path || '/'} key={i} className="flex flex-col items-center shrink-0 w-[72px] group">
+              <div className="w-[60px] h-[60px] flex items-center justify-center shadow-lg relative bg-linear-to-br from-white to-emerald-50 transition-transform group-active:scale-95"
                    style={{
                      borderRadius: '50% 50% 50% 0',
                      transform: 'rotate(-45deg)',
@@ -91,7 +129,7 @@ export default function Home() {
       {/* Complaints Grid */}
       <div className="px-4 mt-10 max-w-6xl mx-auto">
         <div className="bg-white rounded-[24px] shadow-sm border border-gray-100 p-4 relative overflow-hidden">
-          <div className="absolute top-0 left-0 right-0 h-14 bg-gradient-to-b from-[#f0fdf4] to-transparent rounded-t-[24px]"></div>
+          <div className="absolute top-0 left-0 right-0 h-14 bg-linear-to-b from-[#f0fdf4] to-transparent rounded-t-[24px]"></div>
           
           <div className="relative z-10 flex justify-between items-start mb-5">
             <h2 className="text-[17px] font-black text-emerald-900 leading-tight">แจ้งเรื่องร้องเรียน<br/>/ร้องทุกข์</h2>
@@ -101,23 +139,21 @@ export default function Home() {
           </div>
           
           <div className="grid grid-cols-3 gap-3 relative z-10">
-            {[
-              { label: 'ไฟฟ้าสาธารณะ', icon: <Lightbulb size={32} className="text-[#0284c7]" strokeWidth={1.5} />, bg: 'from-blue-50 to-blue-100' },
-              { label: 'ท่อระบายน้ำ', icon: <Droplets size={32} className="text-[#059669]" strokeWidth={1.5} />, bg: 'from-green-50 to-green-100' },
-              { label: 'ถนน/ทางเท้า', icon: <MapPin size={32} className="text-[#0284c7]" strokeWidth={1.5} />, bg: 'from-blue-50 to-blue-100' },
-              { label: 'น้ำเสีย', icon: <Droplets size={32} className="text-[#0284c7]" strokeWidth={1.5} />, bg: 'from-blue-50 to-blue-100' },
-              { label: 'ดูดสิ่งปฏิกูล', icon: <Trash2 size={32} className="text-[#059669]" strokeWidth={1.5} />, bg: 'from-green-50 to-green-100' },
-              { label: 'ขอถังขยะ/แจ้งเก็บ', icon: <Trash2 size={32} className="text-[#0ea5e9]" strokeWidth={1.5} />, bg: 'from-sky-50 to-sky-100' },
-            ].map((item, i) => (
-              <Link to={`/complaint?type=${i}`} key={i} className="flex flex-col items-center group">
-                <div className="w-full aspect-square rounded-2xl bg-white shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-2 transition-transform group-active:scale-95 p-1.5">
-                  <div className={`w-full h-full bg-gradient-to-b ${item.bg} rounded-xl flex items-center justify-center shadow-inner`}>
-                    {item.icon}
+            {cats.slice(0, 6).map((cat) => {
+              const emoji = cat.emoji || CAT_FALLBACK_EMOJI[cat.value] || '📋'
+              const isImageUrl = emoji.startsWith('http') || emoji.startsWith('/') || emoji.startsWith('data:')
+              return (
+                <Link to={`/request?category=${cat.value}`} key={cat.value} className="flex flex-col items-center group">
+                  <div className="w-full h-20 rounded-2xl bg-linear-to-b from-emerald-50 to-emerald-100 border border-emerald-100 shadow-sm flex items-center justify-center transition-transform group-active:scale-95">
+                    {isImageUrl
+                      ? <img src={emoji} alt={cat.label} className="w-14 h-14 object-contain" />
+                      : <span className="text-[3rem] leading-none select-none">{emoji}</span>
+                    }
                   </div>
-                </div>
-                <span className="text-[11px] font-bold text-gray-700 mt-2 text-center leading-tight">{item.label}</span>
-              </Link>
-            ))}
+                  <span className="text-[11px] font-bold text-gray-700 mt-2 text-center leading-tight line-clamp-2">{cat.label}</span>
+                </Link>
+              )
+            })}
           </div>
 
           <div className="mt-5 relative overflow-hidden rounded-l-md rounded-r-full inline-block">
@@ -126,46 +162,11 @@ export default function Home() {
              </Link>
           </div>
           
-          <div className="mt-6 pt-4 border-t border-emerald-50">
-             <h3 className="text-sm font-bold text-emerald-900">บรรเทาความเดือดร้อนล่าสุด</h3>
-             {/* Can embed recent resolved complaints here in future */}
-          </div>
         </div>
       </div>
 
-      {/* Local Products & Tourism */}
-      <div className="mt-10 relative">
-        <div className="bg-gradient-to-b from-[#d1fae5] to-transparent pt-6 pb-6 px-4">
-          <div className="text-center mb-5">
-            <h2 className="text-2xl font-black text-[#059669] drop-shadow-sm">ชาวบ้านฝากขาย</h2>
-            <p className="text-sm font-black text-emerald-900 mt-0.5">{tenant?.name}</p>
-          </div>
-          
-          <div className="bg-white/60 backdrop-blur-md rounded-[24px] p-3 shadow-sm border border-white flex gap-4 overflow-x-auto hide-scrollbar">
-            <div className="shrink-0 w-44 rounded-[20px] overflow-hidden shadow-sm border border-gray-100 relative bg-white pb-2">
-              <img src="https://images.unsplash.com/photo-1610832958506-aa56368176cf?auto=format&fit=crop&w=400&q=80" alt="Fruit" className="w-full h-28 object-cover rounded-t-[20px]" />
-              <div className="p-3">
-                <h3 className="font-bold text-gray-800 text-sm">ผลไม้สด</h3>
-                <p className="text-[10px] text-gray-500 mt-1">ผลไม้ส่งตรงจากสวน</p>
-                <div className="flex items-center gap-1.5 mt-2.5 text-[10px] font-medium text-gray-400">
-                  <MapPin size={12} className="text-[#059669]" /> บ้านพร้อมชัย
-                </div>
-                <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-gray-400">
-                  <Eye size={12} /> 91
-                </div>
-              </div>
-            </div>
-            {/* Add more mockup cards if desired */}
-            <div className="shrink-0 w-44 rounded-[20px] overflow-hidden shadow-sm border border-gray-100 relative bg-white pb-2 flex items-center justify-center">
-              <span className="text-sm font-bold text-gray-400">ดูสินค้าเพิ่มเติม &gt;</span>
-            </div>
-          </div>
-          
-          <div className="flex justify-center gap-3 mt-5">
-            <button className="bg-[#10b981] text-white text-xs font-bold px-5 py-2.5 rounded-full shadow-md hover:bg-emerald-600 transition-colors">สมัครขายสินค้า &gt;</button>
-            <button className="bg-[#064e3b] text-white text-xs font-bold px-5 py-2.5 rounded-full shadow-md hover:bg-emerald-900 transition-colors">ดูทั้งหมด &gt;</button>
-          </div>
-        </div>
+      <div className="px-4 mt-10 max-w-6xl mx-auto">
+        <PostsHighlight />
       </div>
 
       {/* Tour tabs */}
@@ -179,54 +180,36 @@ export default function Home() {
         </div>
         
         <div className="bg-white rounded-2xl shadow-xl -mt-10 mx-3 flex justify-between p-2 relative z-10 border border-gray-100">
-          {[
-            { label: 'เที่ยว', icon: <Map size={24} strokeWidth={2} />, active: true },
-            { label: 'กิน', icon: <Utensils size={24} strokeWidth={2} /> },
-            { label: 'พัก', icon: <Bed size={24} strokeWidth={2} /> },
-            { label: 'OTOP', icon: <ShoppingBag size={24} strokeWidth={2} /> },
-          ].map((tab, i) => (
-            <button key={i} className={`flex flex-col items-center p-2.5 flex-1 rounded-xl transition-all ${tab.active ? 'bg-[#e11d48] text-white shadow-lg transform -translate-y-6 relative' : 'text-gray-700 hover:bg-gray-50'}`}>
-              {tab.active && (
-                <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-[#e11d48] rotate-45"></div>
-              )}
-              {tab.icon}
-              <span className="text-xs font-bold mt-1.5">{tab.label}</span>
-            </button>
-          ))}
+          {TOUR_TABS.map((tab) => {
+            const isActive = activeTab === tab.key
+            const Icon = tab.icon
+            return (
+              <button key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`flex flex-col items-center p-2.5 flex-1 rounded-xl transition-all relative ${isActive ? 'bg-[#059669] text-white shadow-lg -translate-y-6' : 'text-gray-700 hover:bg-gray-50'}`}>
+                {isActive && (
+                  <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-[#059669] rotate-45" />
+                )}
+                <Icon size={24} strokeWidth={2} />
+                <span className="text-xs font-bold mt-1.5">{tab.label}</span>
+              </button>
+            )
+          })}
         </div>
-        
-        <div className="grid grid-cols-2 gap-3 mt-5">
-          <div className="rounded-[20px] overflow-hidden shadow-sm bg-white pb-3 border border-gray-100">
-            <img src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=400&q=80" alt="Place" className="w-full h-28 object-cover" />
-            <p className="text-[13px] font-bold text-gray-800 px-3 pt-3 truncate">หาดทรายแก้ว</p>
-          </div>
-          <div className="rounded-[20px] overflow-hidden shadow-sm bg-white pb-3 border border-gray-100">
-            <img src="https://images.unsplash.com/photo-1510414842594-a61c69b5ae57?auto=format&fit=crop&w=400&q=80" alt="Place" className="w-full h-28 object-cover" />
-            <p className="text-[13px] font-bold text-gray-800 px-3 pt-3 truncate">สวนนงนุชพัทยา</p>
-          </div>
-        </div>
-        <div className="flex justify-end mt-4">
-          <button className="bg-yellow-400 text-yellow-900 text-[11px] font-black px-5 py-2 rounded-full shadow-sm hover:bg-yellow-300 transition-colors">ดูทั้งหมด</button>
+
+        <div className="mt-5 flex flex-col items-center gap-3">
+          <p className="text-sm text-gray-500">
+            ดูสถานที่หมวด <span className="font-bold text-emerald-700">{TOUR_TABS.find(t => t.key === activeTab)?.label}</span> ทั้งหมด
+          </p>
+          <button
+            onClick={() => navigate(`/tourism?cat=${activeTab}`)}
+            className="bg-yellow-400 text-yellow-900 text-[12px] font-black px-6 py-2.5 rounded-full shadow-sm hover:bg-yellow-300 active:scale-95 transition-all">
+            ดูทั้งหมด →
+          </button>
         </div>
       </div>
 
-      {/* Today section */}
-      <div className="mt-12 bg-gradient-to-b from-[#d1fae5] to-[#a7f3d0] pt-8 pb-10 rounded-t-[40px] border-t-4 border-white relative shadow-[0_-10px_30px_rgba(5,150,105,0.1)]">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-[#10b981] text-white px-8 py-2 rounded-full font-black text-lg shadow-lg border-2 border-white">
-          {tenant?.name}วันนี้
-        </div>
-        
-        <div className="px-4 max-w-6xl mx-auto mt-4">
-          <div className="bg-[#fef3c7] rounded-r-full rounded-l-full shadow-sm border border-yellow-200 flex items-center p-1.5 mb-6">
-             <div className="bg-[#e11d48] text-white w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-md">
-               <Megaphone size={18} />
-             </div>
-             <p className="flex-1 text-center font-bold text-gray-800 text-[15px] pr-4">"ยินดีต้อนรับ"</p>
-          </div>
-          
-          <PostsHighlight hideHeader={true} />
-        </div>
-      </div>
+
     </div>
   )
 }

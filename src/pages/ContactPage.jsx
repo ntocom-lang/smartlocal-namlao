@@ -78,7 +78,7 @@ export default function ContactPage() {
 
             {/* Email */}
             <a href="mailto:phrae_namlao101@hotmail.co.th" className="p-4 flex items-center gap-4 hover:bg-gray-50 transition-colors">
-              <div className="text-red-500">
+              <div style={{ color: 'var(--color-primary)' }}>
                 <Mail size={22} />
               </div>
               <div className="flex-1 min-w-0">

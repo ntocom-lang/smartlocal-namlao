@@ -31,7 +31,7 @@ const TOURISM_CATS = [
   { value: 'travel',  label: '🏛️ เที่ยว' },
   { value: 'food',    label: '🍽️ กิน' },
   { value: 'stay',    label: '🏨 พัก' },
-  { value: 'shop',    label: '🛍️ ชอบ / OTOP' },
+  { value: 'shop',    label: '🛍️ OTOP' },
   { value: 'service', label: '🔧 บริการ' },
 ]
 
