@@ -37,6 +37,7 @@ import LpaDocStats from './pages/LpaDocStats'
 import PostsPage from './pages/PostsPage'
 import MapPage from './pages/MapPage'
 import FleetPage from './pages/FleetPage'
+import ChatbotPage from './pages/ChatbotPage'
 import { supabase } from './lib/supabase'
 import { Phone, X } from 'lucide-react'
 
@@ -263,6 +264,7 @@ function AppShell() {
           <main className="flex-1 min-w-0 overflow-y-auto">
           <Routes>
           <Route path="/" element={<HomeOrTechRedirect />} />
+          <Route path="/search" element={<ChatbotPage />} />
           <Route path="/complaint" element={<ComplaintCategory />} />
           <Route path="/complaint-legacy" element={<OneDataLanding />} />
           <Route path="/business-register" element={

@@ -9,6 +9,10 @@ export default function SystemSettingsAdmin() {
   const { tenant, patchTenant } = useTenant()
   const [pwaShortName, setPwaShortName] = useState(() => tenant?.pwa_short_name || '')
   const [subtitle, setSubtitle] = useState(() => tenant?.system_subtitle || '')
+  const [address, setAddress] = useState(() => tenant?.address || '')
+  const [phone, setPhone] = useState(() => tenant?.phone || '')
+  const [websiteUrl, setWebsiteUrl] = useState(() => tenant?.website_url || '')
+  const [email, setEmail] = useState(() => tenant?.email || '')
   const [loading, setLoading] = useState(false)
   const [savedSection, setSavedSection] = useState(null)
   const [logoUploading, setLogoUploading] = useState(false)
@@ -39,6 +43,49 @@ export default function SystemSettingsAdmin() {
       if (error) throw error
       patchTenant({ pwa_short_name: newPwaShortName, system_subtitle: newSubtitle })
       setSavedSection('name')
+      setTimeout(() => setSavedSection(null), 2500)
+    } catch (err) {
+      alert('บันทึกไม่สำเร็จ: ' + err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function saveContactInfo(e) {
+    e.preventDefault()
+    setLoading(true)
+    try {
+      const newAddress = address.trim() || null
+      const newPhone = phone.trim() || null
+      const newWebsiteUrl = websiteUrl.trim() || null
+      const newEmail = email.trim() || null
+
+      if (!tenant?.id) throw new Error('ไม่พบ tenant.id — กรุณา refresh หน้า')
+      
+      const payload = {
+        address: newAddress,
+        phone: newPhone,
+        website_url: newWebsiteUrl,
+        email: newEmail,
+      }
+      
+      const { data, error } = await supabase
+        .from('municipalities')
+        .update(payload)
+        .eq('id', tenant.id)
+        .select('id')
+
+      if (error) throw error
+      if (!data?.length) throw new Error('RLS block — ไม่มีสิทธิ์ update municipalities')
+
+      patchTenant({
+        address: newAddress,
+        phone: newPhone,
+        website_url: newWebsiteUrl,
+        email: newEmail
+      })
+      
+      setSavedSection('contact')
       setTimeout(() => setSavedSection(null), 2500)
     } catch (err) {
       alert('บันทึกไม่สำเร็จ: ' + err.message)
@@ -253,14 +300,82 @@ export default function SystemSettingsAdmin() {
               className={inputCls}
             />
           </div>
-          <button type="submit" disabled={loading}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-all"
-            style={{ backgroundColor: 'var(--color-primary)' }}>
-            {loading ? <Loader2 size={15} className="animate-spin" /> : savedSection === 'name' ? <CheckCircle2 size={15} /> : <Save size={15} />}
-            {savedSection === 'name' ? 'บันทึกสำเร็จ' : 'บันทึก'}
-          </button>
-        </form>
-      </div>
+            <div className="flex justify-end pt-2">
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-6 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-xl shadow-sm hover:shadow transition-all flex items-center gap-2 disabled:opacity-50"
+              >
+                {savedSection === 'name' ? <CheckCircle2 size={16} /> : <Save size={16} />}
+                {savedSection === 'name' ? 'บันทึกแล้ว' : 'บันทึก'}
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {/* ── ข้อมูลหน่วยงานและการติดต่อ ── */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+          <h2 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
+            <Building2 size={15} /> ข้อมูลหน่วยงานและการติดต่อ
+          </h2>
+          <form onSubmit={saveContactInfo} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">ที่อยู่หน่วยงาน</label>
+              <textarea
+                value={address}
+                onChange={e => setAddress(e.target.value)}
+                placeholder="เช่น เลขที่ 101 หมู่ที่ 5 ตำบลน้ำเลา อำเภอร้องกวาง จังหวัดแพร่ 54140"
+                rows={2}
+                className={inputCls}
+              />
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">เบอร์โทรศัพท์ / แฟกซ์</label>
+                <input
+                  type="text"
+                  value={phone}
+                  onChange={e => setPhone(e.target.value)}
+                  placeholder="เช่น 054-546-092"
+                  className={inputCls}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">เว็บไซต์</label>
+                <input
+                  type="text"
+                  value={websiteUrl}
+                  onChange={e => setWebsiteUrl(e.target.value)}
+                  placeholder="เช่น www.namlao.go.th"
+                  className={inputCls}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">อีเมลกลาง</label>
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="เช่น phrae_namlao101@hotmail.co.th"
+                className={inputCls}
+              />
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-6 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-xl shadow-sm hover:shadow transition-all flex items-center gap-2 disabled:opacity-50"
+              >
+                {savedSection === 'contact' ? <CheckCircle2 size={16} /> : <Save size={16} />}
+                {savedSection === 'contact' ? 'บันทึกแล้ว' : 'บันทึกข้อมูลติดต่อ'}
+              </button>
+            </div>
+          </form>
+        </div>
 
       {/* ── โลโก้หน่วยงาน ── */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">

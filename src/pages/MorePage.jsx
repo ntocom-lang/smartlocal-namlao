@@ -14,6 +14,7 @@ import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useNotifications } from '../contexts/NotificationsContext'
 import SatisfactionModal from '../components/SatisfactionModal'
+import KledkaewMore from '../components/citizen/templates/Kledkaew/More'
 
 // ─── QR Share Card ────────────────────────────────────────────────────────
 
@@ -222,6 +223,11 @@ function MenuRow({ icon: Icon, iconBg, iconColor = 'text-gray-500', label, desc,
 export default function MorePage() {
   const navigate = useNavigate()
   const { tenant } = useTenant()
+
+  if (tenant?.ui_style === 'kledkaew') {
+    return <KledkaewMore />
+  }
+
   const { unreadCount } = useNotifications()
   const { session, role, displayName } = useAuth()
   const [satComplaintId, setSatComplaintId] = useState(null)

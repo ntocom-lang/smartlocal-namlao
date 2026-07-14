@@ -43,12 +43,18 @@ export default function Footer() {
 
         {/* Contact Info */}
         <div className="flex flex-col items-center gap-1 text-center mb-2">
-          <p className="text-[11px] text-white/90 font-medium">
-            {tenant?.name} {tenant?.address || 'เลขที่ 101 หมู่ที่ 5 ตำบลน้ำเลา อำเภอร้องกวาง จังหวัดแพร่ 54140'}
-          </p>
-          <p className="text-[10px] text-white/60">
-            โทรศัพท์ / แฟกซ์ {tenant?.phone || '054-546-092'} เว็บไซต์ : {tenant?.website_url?.replace(/^https?:\/\//, '') || 'www.namlao.go.th'} อีเมลกลาง : {tenant?.email || 'phrae_namlao101@hotmail.co.th'}
-          </p>
+          {tenant?.address && (
+            <p className="text-[11px] text-white/90 font-medium">
+              {tenant?.name} {tenant.address}
+            </p>
+          )}
+          {(tenant?.phone || tenant?.website_url || tenant?.email) && (
+            <p className="text-[10px] text-white/60 flex flex-wrap justify-center gap-x-2 gap-y-1">
+              {tenant?.phone && <span>โทรศัพท์ / แฟกซ์ {tenant.phone}</span>}
+              {tenant?.website_url && <span>เว็บไซต์ : {tenant.website_url.replace(/^https?:\/\//, '')}</span>}
+              {tenant?.email && <span>อีเมลกลาง : {tenant.email}</span>}
+            </p>
+          )}
         </div>
 
         {/* Copyright */}

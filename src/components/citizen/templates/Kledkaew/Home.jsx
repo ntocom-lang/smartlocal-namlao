@@ -4,7 +4,7 @@ import { useTenant } from '../../../../contexts/TenantContext'
 import { supabase } from '../../../../lib/supabase'
 import PostsHighlight from '../../../../components/home/PostsHighlight'
 import { useNavigate } from 'react-router-dom'
-import { Megaphone, ChevronRight, Map, Utensils, Bed, ShoppingBag, AlertCircle } from 'lucide-react'
+
 
 const CAT_FALLBACK_EMOJI = {
   light: '💡', road: '🛤️', mosquito: '🧴', tree: '🌲',
@@ -25,10 +25,10 @@ const DEFAULT_CATS = [
 ]
 
 const TOUR_TABS = [
-  { key: 'travel', label: 'เที่ยว', icon: Map },
-  { key: 'food',   label: 'กิน',    icon: Utensils },
-  { key: 'stay',   label: 'พัก',    icon: Bed },
-  { key: 'shop',   label: 'OTOP',   icon: ShoppingBag },
+  { key: 'travel', label: 'เที่ยว', emoji: '🏔️' },
+  { key: 'food',   label: 'กิน',    emoji: '🍜' },
+  { key: 'stay',   label: 'พัก',    emoji: '🏨' },
+  { key: 'shop',   label: 'OTOP',   emoji: '🛒' },
 ]
 
 export default function Home() {
@@ -172,17 +172,37 @@ export default function Home() {
       {/* Tour tabs */}
       <div className="mt-8 px-4 max-w-6xl mx-auto relative">
         <div className="relative rounded-[24px] overflow-hidden shadow-sm h-48">
-           <img src="https://images.unsplash.com/photo-1542259009477-d625272157b7?auto=format&fit=crop&w=1000&q=80" alt="Tour banner" className="w-full h-full object-cover" />
-           <div className="absolute inset-0 bg-black/10"></div>
-           <div className="absolute top-4 right-4 bg-black/40 backdrop-blur-sm text-white text-[10px] px-3 py-1.5 rounded-full flex items-center gap-1 font-medium">
-             พยากรณ์อากาศ <ChevronRight size={12} />
+           <img src="/kledkaew-tour-banner.png" alt="Tour banner" className="w-full h-full object-cover" style={{ objectPosition: 'center 30%' }} />
+           <div className="absolute inset-0 bg-linear-to-r from-black/60 via-black/20 to-transparent"></div>
+           <div className="absolute left-4" style={{ top: '16px' }}>
+             <div className="flex flex-col gap-0.5"
+               style={{ borderLeft: '4px solid #fde047', paddingLeft: '10px' }}>
+               <div className="flex items-baseline gap-2">
+                 <span className="text-base font-black"
+                   style={{ color: 'rgba(255,255,255,0.9)', textShadow: '0 1px 6px rgba(0,0,0,0.8)' }}>
+                   มา
+                 </span>
+                 <span className="font-black leading-none"
+                   style={{
+                     fontSize: '1.75rem',
+                     color: '#fde047',
+                     textShadow: '0 0 20px rgba(253,224,71,0.8), 0 2px 8px rgba(0,0,0,0.9)',
+                     WebkitTextStroke: '0.5px #92400e',
+                   }}>
+                   {(tenant?.name || '').replace(/^(องค์การบริหารส่วนจังหวัด|องค์การบริหารส่วนตำบล|เทศบาลนคร|เทศบาลเมือง|เทศบาลตำบล|เทศบาล|อบต\.|อบต|ทต\.|ทต|ทน\.|ทม\.)\s*/u, '') || 'ตำบลเรา'}
+                 </span>
+               </div>
+               <span className="text-base font-black tracking-wide"
+                 style={{ color: '#6ee7b7', textShadow: '0 0 12px rgba(110,231,183,0.7), 0 2px 6px rgba(0,0,0,0.8)' }}>
+                 ต้องไม่พลาด ✨
+               </span>
+             </div>
            </div>
         </div>
         
         <div className="bg-white rounded-2xl shadow-xl -mt-10 mx-3 flex justify-between p-2 relative z-10 border border-gray-100">
           {TOUR_TABS.map((tab) => {
             const isActive = activeTab === tab.key
-            const Icon = tab.icon
             return (
               <button key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
@@ -190,7 +210,7 @@ export default function Home() {
                 {isActive && (
                   <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-[#059669] rotate-45" />
                 )}
-                <Icon size={24} strokeWidth={2} />
+                <span className="text-2xl leading-none">{tab.emoji}</span>
                 <span className="text-xs font-bold mt-1.5">{tab.label}</span>
               </button>
             )
