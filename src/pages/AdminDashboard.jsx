@@ -5291,7 +5291,7 @@ export default function AdminDashboard() {
                   { key: 'system-settings',label: 'ตั้งค่าระบบ',     Icon: Settings,    color: '#3b82f6', bg: '#dbeafe', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'users',          label: 'จัดการผู้ใช้',    Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'modules',        label: 'จัดการโมดูล',     Icon: LayoutGrid,  color: '#7c3aed', bg: '#ede9fe', show: currentUserRole === 'superadmin' },
-                  { key: 'audit-log',      label: 'บันทึกกิจกรรม',  Icon: Shield,      color: '#ef4444', bg: '#fee2e2', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                  { key: 'audit-log',      label: 'บันทึกกิจกรรม',  Icon: BookOpen,    color: '#ef4444', bg: '#fee2e2', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 ],
               },
               {

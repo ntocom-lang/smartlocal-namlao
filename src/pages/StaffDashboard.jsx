@@ -2058,7 +2058,6 @@ export default function StaffDashboard() {
   const location = useLocation()
   const { tenant } = useTenant()
   const [activeModule, setActiveModule] = useState(location.state?.module ?? 'home')
-  const [showMoreMenu, setShowMoreMenu] = useState(false)
   const [mapOpenComplaintId, setMapOpenComplaintId] = useState(location.state?.openComplaintId ?? null)
   const [profile, setProfile]           = useState(null)
   const [pendingCount, setPendingCount] = useState(0)
@@ -2271,7 +2270,7 @@ export default function StaffDashboard() {
             const badge = key === 'inbox' && pendingCount > 0 ? pendingCount : null
             return (
               <button key={key}
-                onClick={() => { setShowMoreMenu(false); setActiveModule(key) }}
+                onClick={() => setActiveModule(key)}
                 className="flex-1 flex flex-col items-center justify-center gap-0.5 pt-2 pb-1 transition-all active:scale-90">
                 <div className="relative w-10 h-9 rounded-xl flex items-center justify-center transition-all duration-200"
                   style={{ backgroundColor: isActive ? 'rgba(255,255,255,0.2)' : 'transparent' }}>
@@ -2295,7 +2294,7 @@ export default function StaffDashboard() {
           {(() => {
             const isActive = activeModule === 'report'
             return (
-              <button onClick={() => { setShowMoreMenu(false); setActiveModule('report') }}
+              <button onClick={() => setActiveModule('report')}
                 className="flex-1 flex flex-col items-center justify-center gap-0.5 pt-2 pb-1 transition-all active:scale-90">
                 <div className="relative w-10 h-9 rounded-xl flex items-center justify-center transition-all duration-200"
                   style={{ backgroundColor: isActive ? 'rgba(255,255,255,0.2)' : 'transparent' }}>
@@ -2312,45 +2311,6 @@ export default function StaffDashboard() {
           })()}
         </nav>
 
-        {/* More menu drawer */}
-        {showMoreMenu && (
-          <div className="md:hidden fixed inset-0 z-30" onClick={() => setShowMoreMenu(false)}>
-            <div className="absolute bottom-16 left-0 right-0 bg-white border-t border-gray-100 shadow-2xl rounded-t-2xl"
-              onClick={(e) => e.stopPropagation()}>
-              <div className="flex justify-center pt-2 pb-1">
-                <div className="w-10 h-1 rounded-full bg-gray-200" />
-              </div>
-              <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest px-5 pt-2 pb-3">เมนูทั้งหมด</p>
-              {visibleGroups.map(({ group, items }) => {
-                const extraItems = items.filter(m => !['inbox', 'complaints', 'events'].includes(m.key))
-                if (!extraItems.length) return null
-                return (
-                  <div key={group} className="mb-2">
-                    <p className="text-[10px] font-bold text-gray-300 uppercase tracking-widest px-5 mb-1">{group}</p>
-                    <div className="grid grid-cols-4 gap-1 px-3 pb-2">
-                      {extraItems.map(({ key, label, Icon, color, externalUrl, navTo }) => {
-                        const isActive = activeModule === key
-                        return (
-                          <button key={key}
-                            onClick={() => { navTo ? navigate(navTo) : externalUrl ? window.open(externalUrl, '_blank') : setActiveModule(key); setShowMoreMenu(false) }}
-                            className="flex flex-col items-center gap-1.5 p-2 rounded-2xl transition-colors"
-                            style={{ backgroundColor: isActive ? `${color}18` : 'transparent' }}>
-                            <div className="w-11 h-11 rounded-2xl flex items-center justify-center"
-                              style={{ backgroundColor: `${color}20` }}>
-                              <Icon size={20} style={{ color }} />
-                            </div>
-                            <span className="text-[10px] font-semibold text-center leading-tight text-gray-700">{label}</span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )
-              })}
-              <div className="h-4" />
-            </div>
-          </div>
-        )}
     </div>
   )
 }
