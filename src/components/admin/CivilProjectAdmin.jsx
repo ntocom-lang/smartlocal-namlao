@@ -1246,7 +1246,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
                   style={{ background: 'conic-gradient(red,yellow,lime,cyan,blue,magenta,red)' }}>
                   <input type="color" value={form.route_color || '#3b82f6'}
                     onChange={e => setForm(p => ({ ...p, route_color: e.target.value }))}
-                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
+                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" />
                 </label>
                 <span className="text-xs font-mono text-gray-400">{form.route_color}</span>
               </div>

@@ -1894,8 +1894,15 @@ function ComplaintsStaffModule({ tenant, staffId }) {
 
   async function advanceStatus(id, next) {
     setUpdating(id)
-    await supabase.from('complaints').update({ status: next, updated_at: new Date().toISOString() }).eq('id', id)
-    setComplaints(prev => prev.map(c => c.id === id ? { ...c, status: next } : c))
+    const { error } = await supabase.from('complaints').update({ status: next, updated_at: new Date().toISOString() }).eq('id', id)
+    if (!error) {
+      setComplaints(prev => prev.map(c => c.id === id ? { ...c, status: next } : c))
+      const c = complaints.find(x => x.id === id)
+      const catLabel = C_CAT[c?.category] ?? c?.category ?? ''
+      notifyTelegram(tenant?.telegram_group_id,
+        `🔄 <b>อัปเดตสถานะคำร้อง</b>\nประเภท: ${catLabel}\nสถานะ: ${C_STATUS[next]?.label ?? next}`
+      )
+    }
     setUpdating(null)
   }
 

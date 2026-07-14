@@ -674,7 +674,7 @@ export default function CitizenForm() {
                 {photos.length > 0 && <span className="ml-auto text-gray-400">{photos.length}/{MAX_PHOTOS}</span>}
               </div>
               <input type="file" accept="image/*" multiple onChange={handlePhotoPick}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
             </div>
           )}
         </div>

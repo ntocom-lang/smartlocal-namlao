@@ -404,7 +404,7 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange, catLabel = DE
                     <ImagePlus size={14} /> แนบรูปภาพ
                   </div>
                   <input type="file" accept="image/*" multiple onChange={handlePhotoPick}
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
                 </div>
               )}
 

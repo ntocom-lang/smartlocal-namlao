@@ -959,7 +959,7 @@ ${photoSectionHtml}
                   {wpUploading
                     ? <><Loader2 size={12} className="animate-spin" /> กำลังอัปโหลด...</>
                     : <><Camera size={12} /> เพิ่มรูปหลักฐาน</>}
-                  <input type="file" accept="image/*" multiple className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                  <input type="file" accept="image/*" multiple className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
                     disabled={wpUploading}
                     onChange={(e) => { handleAddWorkPhotos(Array.from(e.target.files)); e.target.value = '' }} />
                 </label>
@@ -1260,12 +1260,10 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
           if (data) setComplaints(prev => [data, ...prev])
         })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'complaints' },
-        async ({ new: row }) => {
+        ({ new: row }) => {
           if (row.municipality_id !== tenant.id) return
-          const { data } = await supabase.from('complaints').select(SELECT).eq('id', row.id).single()
-          if (!data) return
-          setComplaints(prev => prev.map(c => c.id === data.id ? data : c))
-          setSelectedComplaint(prev => prev?.id === data.id ? data : prev)
+          setComplaints(prev => prev.map(c => c.id === row.id ? { ...c, ...row } : c))
+          setSelectedComplaint(prev => prev?.id === row.id ? { ...prev, ...row } : prev)
         })
       .subscribe()
     return () => supabase.removeChannel(ch)
