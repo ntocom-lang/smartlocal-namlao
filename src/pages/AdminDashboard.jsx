@@ -822,14 +822,28 @@ function UserManager({ tenant, currentUserRole }) {
   const [filterRole, setFilterRole] = useState('')
 
   const fetchUsers = useCallback(async () => {
+    if (!['admin', 'superadmin', 'officer'].includes(currentUserRole)) return
+    if (currentUserRole !== 'superadmin' && !tenant?.id) return
     setLoading(true)
-    const { data } = await supabase.rpc('get_users_with_email', { p_municipality_id: tenant?.id ?? null })
-    let list = data ?? []
-    setUsers(list)
-    setLoading(false)
+    try {
+      // superadmin ส่ง null → SQL คืน users ทุก municipality, แล้ว filter ใน JS
+      const p_muni = currentUserRole === 'superadmin' ? null : tenant?.id
+      const { data, error } = await supabase.rpc('get_users_with_email', { p_municipality_id: p_muni })
+      if (error) { console.error('get_users_with_email:', error.message); return }
+      const filtered = tenant?.id
+        ? (data ?? []).filter(u => u.municipality_id === tenant.id || u.municipality_id === null)
+        : (data ?? [])
+      setUsers(filtered)
+    } finally {
+      setLoading(false)
+    }
   }, [tenant?.id, currentUserRole])
 
-  useEffect(() => { fetchUsers() }, [fetchUsers])
+  useEffect(() => {
+    fetchUsers()
+    const safety = setTimeout(() => setLoading(false), 12000)
+    return () => clearTimeout(safety)
+  }, [fetchUsers])
 
   async function updateName(userId) {
     const name = editingNameValue.trim()
@@ -1633,16 +1647,23 @@ function EmergencyManager({ tenant }) {
   const fetchContacts = useCallback(async () => {
     if (!tenant?.id) return
     setLoading(true)
-    const { data } = await supabase
-      .from('emergency_contacts')
-      .select('*')
-      .eq('municipality_id', tenant.id)
-      .order('display_order')
-    setContacts(data ?? [])
-    setLoading(false)
+    try {
+      const { data } = await supabase
+        .from('emergency_contacts')
+        .select('*')
+        .eq('municipality_id', tenant.id)
+        .order('display_order')
+      setContacts(data ?? [])
+    } finally {
+      setLoading(false)
+    }
   }, [tenant?.id])
 
-  useEffect(() => { fetchContacts() }, [fetchContacts])
+  useEffect(() => {
+    fetchContacts()
+    const safety = setTimeout(() => setLoading(false), 12000)
+    return () => clearTimeout(safety)
+  }, [fetchContacts])
 
   async function saveOrder(ordered) {
     await Promise.all(
@@ -1880,6 +1901,7 @@ function AssignmentManager({ tenant, readOnly = false }) {
 
   useEffect(() => {
     if (!tenant?.id) return
+    const safety = setTimeout(() => setLoading(false), 12000)
     Promise.all([
       supabase.from('complaint_categories').select('value,label,emoji').eq('municipality_id', tenant.id).order('sort_order'),
       supabase.from('profiles').select('id,full_name,email').eq('municipality_id', tenant.id).eq('role', 'technician').order('full_name'),
@@ -1895,8 +1917,7 @@ function AssignmentManager({ tenant, readOnly = false }) {
       }
       setAssignments(map)
       setSlaMap(slaM)
-      setLoading(false)
-    })
+    }).finally(() => { clearTimeout(safety); setLoading(false) })
   }, [tenant?.id])
 
   async function handleChange(category, technicianId) {
@@ -2010,6 +2031,7 @@ function StaffManager({ tenant }) {
   useEffect(() => {
     if (!tenant?.id) return
     setLoading(true)
+    const safety = setTimeout(() => setLoading(false), 12000)
     supabase
       .from('staff')
       .select('*')
@@ -2018,8 +2040,8 @@ function StaffManager({ tenant }) {
       .then(({ data, error: err }) => {
         if (err) setError(err.message)
         setStaff(data ?? [])
-        setLoading(false)
       })
+      .finally(() => { clearTimeout(safety); setLoading(false) })
   }, [tenant?.id])
 
   async function addStaff() {
@@ -2394,14 +2416,17 @@ function LocationManager({ tenant }) {
     if (!tenant?.id) return
     setLoading(true)
     setError(null)
-    const { data, error: err } = await supabase
-      .from('locations')
-      .select('*')
-      .eq('municipality_id', tenant.id)
-      .order('sort_order')
-    if (err) setError('ไม่สามารถโหลดข้อมูลได้: ' + err.message)
-    setLocations(data ?? [])
-    setLoading(false)
+    try {
+      const { data, error: err } = await supabase
+        .from('locations')
+        .select('*')
+        .eq('municipality_id', tenant.id)
+        .order('sort_order')
+      if (err) setError('ไม่สามารถโหลดข้อมูลได้: ' + err.message)
+      setLocations(data ?? [])
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { fetchLocations() }, [tenant?.id])
@@ -3058,21 +3083,28 @@ function CategoryManager({ tenant }) {
     if (!tenant?.id) return
     setLoading(true)
     setError(null)
-    const [catsRes, assignRes] = await Promise.all([
-      supabase.from('complaint_categories').select('*').eq('municipality_id', tenant.id).order('sort_order'),
-      supabase.from('category_assignments').select('category,technician_id,sla_days').eq('municipality_id', tenant.id),
-    ])
-    if (catsRes.error) setError('โหลดข้อมูลไม่ได้: ' + catsRes.error.message)
-    setCats(catsRes.data ?? [])
-    const aMap = {}
-    for (const a of assignRes.data ?? []) {
-      aMap[a.category] = { technician_id: a.technician_id ?? '', sla_days: a.sla_days ?? 3 }
+    try {
+      const [catsRes, assignRes] = await Promise.all([
+        supabase.from('complaint_categories').select('*').eq('municipality_id', tenant.id).order('sort_order'),
+        supabase.from('category_assignments').select('category,technician_id,sla_days').eq('municipality_id', tenant.id),
+      ])
+      if (catsRes.error) setError('โหลดข้อมูลไม่ได้: ' + catsRes.error.message)
+      setCats(catsRes.data ?? [])
+      const aMap = {}
+      for (const a of assignRes.data ?? []) {
+        aMap[a.category] = { technician_id: a.technician_id ?? '', sla_days: a.sla_days ?? 3 }
+      }
+      setAssignMap(aMap)
+    } finally {
+      setLoading(false)
     }
-    setAssignMap(aMap)
-    setLoading(false)
   }
 
-  useEffect(() => { fetchCats() }, [tenant?.id])
+  useEffect(() => {
+    fetchCats()
+    const safety = setTimeout(() => setLoading(false), 12000)
+    return () => clearTimeout(safety)
+  }, [tenant?.id])
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -4081,17 +4113,20 @@ function EventsManager({ tenant, currentUserRole }) {
 
   async function fetchEvents() {
     setLoading(true)
-    let query = supabase
-      .from('events')
-      .select('*, creator:profiles!events_created_by_fkey(full_name)')
-      .eq('municipality_id', tenant.id)
-      .order('event_date', { ascending: true })
-    if (currentUserRole === 'council') {
-      query = query.in('audience', ['public', 'staff', 'council'])
+    try {
+      let query = supabase
+        .from('events')
+        .select('*, creator:profiles!events_created_by_fkey(full_name)')
+        .eq('municipality_id', tenant.id)
+        .order('event_date', { ascending: true })
+      if (currentUserRole === 'council') {
+        query = query.in('audience', ['public', 'staff', 'council'])
+      }
+      const { data } = await query
+      setEvents(data ?? [])
+    } finally {
+      setLoading(false)
     }
-    const { data } = await query
-    setEvents(data ?? [])
-    setLoading(false)
   }
 
   function openAdd() {
@@ -4559,7 +4594,7 @@ function EventsManager({ tenant, currentUserRole }) {
 
 // ─── Main page ─────────────────────────────────────────────────────────────────
 const PAGE_LABELS = {
-  dashboard: 'ภาพรวม',
+  dashboard: 'หน้าหลัก',
   complaints: 'รายการคำร้อง',
   staff: 'รูปผู้บริหาร',
   events: 'กิจกรรม',
@@ -4827,17 +4862,24 @@ export default function AdminDashboard() {
   const fetchComplaints = useCallback(async () => {
     if (!tenant?.id || currentUserRole === null) return
     setLoading(true)
-    const { data, error } = await supabase
-      .from('complaints')
-      .select('*, profiles(full_name, email, phone)')
-      .eq('municipality_id', tenant.id)
-      .order('created_at', { ascending: false })
-    if (error) console.error('fetch complaints error:', error.message)
-    setComplaints(data ?? [])
-    setLoading(false)
+    try {
+      const { data, error } = await supabase
+        .from('complaints')
+        .select('*, profiles(full_name, email, phone)')
+        .eq('municipality_id', tenant.id)
+        .order('created_at', { ascending: false })
+      if (error) console.error('fetch complaints error:', error.message)
+      setComplaints(data ?? [])
+    } finally {
+      setLoading(false)
+    }
   }, [tenant?.id, currentUserRole])
 
-  useEffect(() => { fetchComplaints() }, [fetchComplaints])
+  useEffect(() => {
+    fetchComplaints()
+    const safety = setTimeout(() => setLoading(false), 12000)
+    return () => clearTimeout(safety)
+  }, [fetchComplaints])
 
   async function updateStatus(id, nextStatus, workPhotos = [], techNote = null) {
     setUpdating(id)
@@ -4988,128 +5030,8 @@ export default function AdminDashboard() {
 
 
   return (
-    <div className="md:flex md:min-h-screen" style={{ backgroundColor: '#eef2f7' }}>
+    <div className="min-h-full" style={{ backgroundColor: '#eef2f7' }}>
 
-      {/* ─── Desktop Sidebar — government style ─── */}
-      <aside className="hidden md:flex flex-col w-60 shrink-0 sticky top-0 self-start h-screen overflow-y-auto shadow-lg"
-        style={{ backgroundColor: '#1a3a5c', borderRight: '1px solid #12293f' }}>
-        {/* Brand */}
-        <div className="px-4 py-4 border-b shrink-0" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-          <p className="text-[10px] font-semibold" style={{ color: 'rgba(147,197,253,0.85)' }}>แผงควบคุม Admin</p>
-        </div>
-
-        {/* Nav items */}
-        <nav className="flex-1 px-2 py-3 overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
-          {[
-            {
-              group: null,
-              items: [
-                { key: 'dashboard',   label: 'ภาพรวม',             Icon: BarChart2, color: '#3b82f6', show: true },
-                { key: 'goto-staff',  label: 'หน้างานเจ้าหน้าที่', Icon: Users,     color: '#0891b2', show: currentUserRole === 'admin' || currentUserRole === 'superadmin', isLink: true, navTo: '/staff' },
-                { key: 'home',        label: 'กลับเว็บหลัก',       Icon: Home,      color: '#64748b', show: true, isLink: true },
-              ],
-            },
-            {
-              group: 'ดูแลและรายงาน',
-              items: [
-                { key: 'report',       label: 'รายงาน',           Icon: TrendingUp, color: '#059669', show: true },
-                { key: 'satisfaction', label: 'ผลการประเมิน',    Icon: Star,       color: '#f59e0b', show: true },
-              ],
-            },
-            {
-              group: 'จัดการเนื้อหา',
-              items: [
-                { key: 'staff',  label: 'รูปผู้บริหาร', Icon: UserCircle2,  color: '#7c3aed', show: currentUserRole !== 'viewer' },
-              ],
-            },
-            {
-              group: 'ตั้งค่าระบบ',
-              items: [
-                { key: 'categories',  label: 'ประเภทคำร้อง', Icon: Tag,      color: '#d97706', show: currentUserRole !== 'viewer' },
-                { key: 'fee-settings', label: 'ค่าธรรมเนียม', Icon: Banknote, color: '#10b981', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                { key: 'assignments', label: 'ผู้รับผิดชอบ', Icon: Wrench,   color: '#d97706', show: false },
-                { key: 'emergency',   label: 'สายด่วน',       Icon: Phone,    color: '#ef4444', show: currentUserRole !== 'viewer' },
-                { key: 'locations',   label: 'สถานที่เกิดเหตุ', Icon: MapPin, color: '#0891b2', show: currentUserRole !== 'viewer' },
-                { key: 'fleet-setup', label: 'ตั้งค่ายานพาหนะ', Icon: Car,    color: '#0369a1', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                { key: 'theme-settings', label: 'ธีมโครงสร้างแอป', Icon: Palette, color: '#a855f7', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                { key: 'system-settings', label: 'ตั้งค่าระบบ',  Icon: Settings,    color: '#3b82f6', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                { key: 'users',           label: 'จัดการผู้ใช้', Icon: Shield,      color: '#7c3aed', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                { key: 'modules',         label: 'จัดการโมดูล', Icon: LayoutGrid,   color: '#7c3aed', show: currentUserRole === 'superadmin' },
-                { key: 'audit-log',       label: 'บันทึกกิจกรรม', Icon: Shield,     color: '#ef4444', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-              ],
-            },
-            {
-              group: 'ทรัพยากร',
-              items: [
-                { key: 'manual', label: 'คู่มือผู้ดูแล', Icon: BookOpen, color: '#059669', show: true, isExternal: true, href: '/manual-admin.html' },
-                { key: 'manual-citizen', label: 'คู่มือประชาชน', Icon: BookOpen, color: '#059669', show: true, isExternal: true, href: '/manual-citizen.html' },
-              ],
-            },
-          ].map(({ group, items }) => {
-            const visible = items.filter(i => i.show)
-            if (visible.length === 0) return null
-            return (
-              <div key={group ?? '_top'} className="mb-3">
-                {group && (
-                  <p className="text-[10px] font-bold uppercase tracking-widest px-3 pt-1 pb-1.5"
-                    style={{ color: 'rgba(255,255,255,0.35)' }}>
-                    {group}
-                  </p>
-                )}
-                <div className="space-y-0.5">
-                  {visible.map(({ key, label, Icon, color, isLink, isExternal, href, navTo }) => {
-                    const isActive = activePage === key
-                    const baseCls = 'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors'
-                    if (isExternal) return (
-                      <a key={key} href={href} target="_blank" rel="noopener noreferrer"
-                        className={`${baseCls} font-medium hover:bg-white/10`}
-                        style={{ color: 'rgba(255,255,255,0.55)' }}>
-                        <Icon size={16} />
-                        <span className="flex-1 text-left">{label}</span>
-                        <ExternalLink size={11} style={{ color: 'rgba(255,255,255,0.3)' }} />
-                      </a>
-                    )
-                    if (isLink) return (
-                      <button key={key} onClick={() => navigate(navTo ?? '/')}
-                        className={`${baseCls} font-medium hover:bg-white/10`}
-                        style={{ color: 'rgba(255,255,255,0.55)' }}>
-                        <Icon size={16} />
-                        {label}
-                      </button>
-                    )
-                    return (
-                      <button key={key} onClick={() => setActivePage(key)}
-                        className={`${baseCls} font-semibold`}
-                        style={isActive
-                          ? { backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff' }
-                          : { color: 'rgba(255,255,255,0.6)' }}
-                        onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)' }}
-                        onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = '' }}>
-                        <Icon size={16} style={isActive ? { color: '#fff' } : { color: 'rgba(255,255,255,0.55)' }} />
-                        <span className="flex-1 text-left">{label}</span>
-                        {isActive && <span className="w-1 h-4 rounded-full shrink-0" style={{ backgroundColor: 'rgba(255,255,255,0.6)' }} />}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )
-          })}
-        </nav>
-
-        {/* Logout */}
-        <div className="px-2 py-3 shrink-0 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-          <button onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors hover:bg-white/10"
-            style={{ color: 'rgba(255,255,255,0.55)' }}>
-            <LogOut size={16} />
-            ออกจากระบบ
-          </button>
-        </div>
-      </aside>
-
-      {/* ─── Main content ─── */}
-      <div className="flex-1 min-w-0 px-4 py-4 pb-24 md:py-6 md:pb-8 md:px-8 space-y-4 md:space-y-6">
       {/* Detail modal */}
       {selectedComplaint && (
         <ComplaintDetailModal
@@ -5124,41 +5046,81 @@ export default function AdminDashboard() {
         />
       )}
 
-      {/* PC header — government style */}
-      <div className="hidden md:block shrink-0 -mx-8 -mt-6 mb-6">
-        {/* Breadcrumb strip */}
-        <div className="px-8 py-1.5 flex items-center justify-between border-b"
-          style={{ backgroundColor: '#dce8f5', borderColor: '#b8cfea' }}>
-          <p className="text-[11px] text-gray-600">
-            ระบบบริการอิเล็กทรอนิกส์ › {tenant?.name ?? ''} ›{' '}
-            <span className="font-semibold text-gray-700">
-              {PAGE_LABELS[activePage] ?? activePage}
-            </span>
-          </p>
-          <p className="text-[11px] text-gray-500">
-            {new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-          </p>
-        </div>
-        {/* Title bar */}
-        <div className="px-8 py-3 flex items-center justify-between bg-white border-b border-gray-200 shadow-sm">
-          <div>
-            <h1 className="text-base font-bold text-gray-800">{PAGE_LABELS[activePage] ?? 'แผงควบคุม'}</h1>
-            <p className="text-[11px] text-gray-400 mt-0.5">{tenant?.name} — แผงควบคุมผู้ดูแลระบบ</p>
-          </div>
+      {/* PC header — Kledkaew emerald gradient */}
+      <header className="hidden md:block relative w-full text-white overflow-hidden"
+        style={{ background: 'linear-gradient(180deg, #059669 0%, #064e3b 100%)' }}>
+        <div className="absolute inset-0 opacity-25 pointer-events-none"
+          style={{ backgroundImage: `url("${tenant?.header_image_url || 'https://images.unsplash.com/photo-1511497584788-876760111969?auto=format&fit=crop&q=80&w=1000'}")`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+        <div className="absolute bottom-0 inset-x-0 h-12 pointer-events-none"
+          style={{ background: 'linear-gradient(to top, #064e3b, transparent)' }} />
+
+        {/* Top row */}
+        <div className="relative z-10 flex items-center justify-between px-6 py-3">
           <div className="flex items-center gap-3">
-            {activePage === 'complaints' && (
-              <button onClick={fetchComplaints} disabled={loading}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 bg-white hover:bg-gray-50 transition-colors disabled:opacity-50">
-                <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-                รีเฟรช
-              </button>
-            )}
-            <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
-              style={{ backgroundColor: '#1a3a5c' }}>
-              A
+            <button onClick={() => navigate('/')} className="shrink-0 active:opacity-70 hover:scale-105 transition-transform">
+              {tenant?.logo_url
+                ? <img src={tenant.logo_url} alt="" className="w-10 h-10 rounded-full border-2 border-white/40 bg-white/10 object-cover" />
+                : <div className="w-10 h-10 rounded-full bg-white/20 border-2 border-white/40 flex items-center justify-center text-lg font-bold">🏛️</div>}
+            </button>
+            <div>
+              <span className="text-[10px] font-black bg-white/20 text-white px-2 py-0.5 rounded-full tracking-widest uppercase">แผงควบคุม Admin</span>
+              <p className="text-sm font-bold text-white mt-0.5 leading-tight">{tenant?.name}</p>
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            <div className="text-right">
+              <p className="text-xs font-bold text-white">{ROLE_LABELS[currentUserRole]?.label ?? 'ผู้ดูแลระบบ'}</p>
+            </div>
+            <div className="w-8 h-8 rounded-full bg-white/20 border border-white/40 flex items-center justify-center text-sm font-bold text-white shrink-0">A</div>
+            <button onClick={() => navigate('/')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/10 hover:bg-white/20 transition-colors border border-white/20">
+              <Home size={13} />
+              เว็บหลัก
+            </button>
+            <button onClick={handleLogout}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/10 hover:bg-white/20 transition-colors border border-white/20">
+              <LogOut size={13} />
+              ออกจากระบบ
+            </button>
+          </div>
         </div>
+
+        {/* Nav tabs */}
+        <nav className="relative z-10 flex items-center gap-1 px-6 pb-3 flex-wrap">
+          {[
+            { key: 'dashboard',      label: 'หน้าหลัก',      Icon: Home,          show: true },
+            { key: 'report',         label: 'รายงาน',         Icon: TrendingUp,    show: true },
+            { key: 'map',            label: 'แผนที่',          Icon: MapPin,        show: currentUserRole !== 'council' },
+            { key: 'events',         label: 'กิจกรรม',        Icon: CalendarDays,  show: currentUserRole !== 'viewer' },
+            { key: 'users',          label: 'จัดการผู้ใช้',   Icon: Users,         show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+            { key: 'system-settings',label: 'ตั้งค่าระบบ',    Icon: Settings,      show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+          ].filter(i => i.show).map(({ key, label, Icon }) => {
+            const isActive = activePage === key
+            return (
+              <button key={key} onClick={() => setActivePage(key)}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-bold transition-all"
+                style={isActive
+                  ? { backgroundColor: 'rgba(255,255,255,0.25)', color: '#fff' }
+                  : { color: 'rgba(255,255,255,0.7)' }}>
+                <Icon size={14} />
+                {label}
+              </button>
+            )
+          })}
+        </nav>
+      </header>
+
+      {/* ─── Content ─── */}
+      <div className="px-4 py-4 pb-24 md:py-6 md:pb-8 md:px-6 space-y-4 md:space-y-6 max-w-5xl mx-auto">
+
+      {/* Org banner — top of every page */}
+      <div className="flex items-center gap-3 bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3">
+        <button onClick={() => navigate('/')} className="shrink-0 active:opacity-70 hover:scale-105 transition-transform">
+          {tenant?.logo_url
+            ? <img src={tenant.logo_url} alt="" className="w-10 h-10 rounded-full object-cover" />
+            : <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-xl">🏛️</div>}
+        </button>
+        <p className="font-bold text-gray-800 text-sm leading-tight">{tenant?.name}</p>
       </div>
 
       {/* Page header — mobile only */}
@@ -5262,28 +5224,33 @@ export default function AdminDashboard() {
       {/* ─── Mobile Admin Bottom Tab Bar ─── */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex items-stretch"
         style={{
-          background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
-          borderTop: '1px solid rgba(255,255,255,0.07)',
-          boxShadow: '0 -8px 32px rgba(0,0,0,0.35)',
+          background: 'linear-gradient(180deg, #059669 0%, #064e3b 100%)',
+          borderTop: '2px solid rgba(255,255,255,0.15)',
+          boxShadow: '0 -4px 20px rgba(6,78,59,0.5)',
+          borderTopLeftRadius: '20px',
+          borderTopRightRadius: '20px',
           paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 6px)',
         }}>
         {[
-          { key: 'dashboard',  label: 'ภาพรวม', Icon: BarChart2,    bg: '#3b82f6', show: true },
-          { key: 'complaints', label: 'คำร้อง',  Icon: ClipboardList, bg: '#f59e0b', show: true },
-          { key: 'map',        label: 'แผนที่',  Icon: MapPin,       bg: '#10b981', show: currentUserRole !== 'council' },
-          { key: 'more',       label: 'อื่นๆ',   Icon: LayoutGrid,   bg: '#8b5cf6', show: true },
+          { key: 'dashboard',   label: 'หน้าหลัก',        Icon: Home,        bg: '#fbbf24', show: true },
+          { key: 'report',      label: 'รายงาน',           Icon: TrendingUp,  bg: '#fbbf24', show: true },
+          { key: 'satisfaction',label: 'ประเมิน',          Icon: Star,        bg: '#fbbf24', show: true },
+          { key: 'audit-log',   label: 'บันทึกกิจกรรม',   Icon: BookOpen,    bg: '#fbbf24', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
         ].filter(i => i.show).map(({ key, label, Icon, bg }) => {
           const isActive = activePage === key
           return (
             <button key={key} onClick={() => setActivePage(key)}
               className="flex-1 flex flex-col items-center justify-center gap-0.5 pt-2 pb-1 transition-all active:scale-90">
-              <div className="w-10 h-9 rounded-xl flex items-center justify-center transition-all duration-200"
-                style={{ backgroundColor: isActive ? bg : 'transparent' }}>
+              <div className="relative w-10 h-9 rounded-xl flex items-center justify-center transition-all duration-200"
+                style={{ backgroundColor: isActive ? 'rgba(255,255,255,0.2)' : 'transparent' }}>
+                {isActive && (
+                  <span className="absolute -top-0.5 left-1/2 -translate-x-1/2 w-4 h-[3px] rounded-full" style={{ backgroundColor: bg }} />
+                )}
                 <Icon size={20} strokeWidth={isActive ? 2.2 : 1.6}
-                  style={{ color: isActive ? '#fff' : 'rgba(255,255,255,0.3)' }} />
+                  style={{ color: isActive ? '#fff' : 'rgba(255,255,255,0.45)' }} />
               </div>
               <span className="text-[10px] font-bold leading-tight"
-                style={{ color: isActive ? '#fff' : 'rgba(255,255,255,0.3)' }}>
+                style={{ color: isActive ? '#fff' : 'rgba(255,255,255,0.45)' }}>
                 {label}
               </span>
             </button>
@@ -5293,112 +5260,78 @@ export default function AdminDashboard() {
 
       {activePage === 'dashboard' ? (
         <div className="space-y-6">
-          {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {/* All menu items */}
+          <div className="space-y-4">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">รายการทั้งหมด</p>
             {[
-              { label: 'คำร้องทั้งหมด', value: complaints.length,                                              color: '#1a3a5c', bg: '#dce8f5', Icon: ClipboardList },
-              { label: 'รอดำเนินการ',    value: complaints.filter(c => c.status === 'pending').length,          color: '#f59e0b', bg: '#fef3c7', Icon: Clock },
-              { label: 'กำลังดำเนินการ', value: complaints.filter(c => ['received', 'in_progress', 'done'].includes(c.status)).length, color: '#8b5cf6', bg: '#ede9fe', Icon: RefreshCw },
-              { label: 'ปิดเรื่องแล้ว',  value: complaints.filter(c => c.status === 'completed' || c.status === 'closed').length, color: '#10b981', bg: '#d1fae5', Icon: CheckCircle2 },
-            ].map(({ label, value, color, bg, Icon }) => (
-              <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: bg }}>
-                  <Icon size={20} style={{ color }} />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-800 leading-none">{value}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{label}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Quick nav */}
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-2.5">ทางลัด</p>
-            <div className="grid grid-cols-3 md:grid-cols-6 gap-2.5">
-              {[
-                { key: 'report',       label: 'รายงาน',        Icon: TrendingUp, color: '#059669', bg: '#d1fae5', show: true },
-                { key: 'satisfaction', label: 'ผลการประเมิน', Icon: Star,       color: '#d97706', bg: '#fef3c7', show: true },
-                { key: 'categories', label: 'ประเภทคำร้อง',      Icon: Tag,           color: '#d97706', bg: '#fef3c7', show: currentUserRole !== 'viewer' },
-                { key: 'users',      label: 'จัดการผู้ใช้',      Icon: Shield,        color: '#7c3aed', bg: '#ede9fe', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                { key: 'audit-log',  label: 'บันทึกกิจกรรม',    Icon: Bell,          color: '#ef4444', bg: '#fee2e2', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-              ].filter(i => i.show).map(({ key, label, Icon, color, bg }) => (
-                <button key={key} onClick={() => setActivePage(key)}
-                  className="flex flex-col items-center gap-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-4 hover:shadow-md active:scale-95 transition-all">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: bg }}>
-                    <Icon size={20} style={{ color }} />
-                  </div>
-                  <p className="text-xs font-semibold text-gray-700 text-center leading-tight">{label}</p>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Recent complaints */}
-          {currentUserRole !== 'viewer' && complaints.length > 0 && (
-            <div>
-              <div className="flex items-center justify-between mb-2.5">
-                <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">คำร้องล่าสุด</p>
-                <button onClick={() => setActivePage('complaints')}
-                  className="text-xs font-semibold text-blue-600 hover:underline">
-                  ดูทั้งหมด →
-                </button>
-              </div>
-              {/* Mobile list */}
-              <div className="md:hidden space-y-2">
-                {complaints.slice(0, 5).map(c => {
-                  const s = STATUS[c.status] ?? STATUS.pending
-                  return (
-                    <button key={c.id} onClick={() => setSelectedComplaint(c)}
-                      className="w-full flex items-center gap-3 bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3 text-left">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-800 truncate">{CATEGORY_LABEL[c.category] ?? c.category}</p>
-                        <p className="text-xs text-gray-400 truncate mt-0.5">{c.detail}</p>
-                      </div>
-                      <span className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium"
-                        style={{ backgroundColor: s.bg, color: s.text }}>{s.label}</span>
-                    </button>
-                  )
-                })}
-              </div>
-              {/* PC table */}
-              <div className="hidden md:block bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr style={{ backgroundColor: '#1a3a5c' }}>
-                      <th className="px-5 py-3 text-left text-xs font-semibold text-white/80">ประเภท</th>
-                      <th className="px-5 py-3 text-left text-xs font-semibold text-white/80">รายละเอียด</th>
-                      <th className="px-5 py-3 text-left text-xs font-semibold text-white/80">สถานะ</th>
-                      <th className="px-5 py-3 text-left text-xs font-semibold text-white/80">วันที่</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {complaints.slice(0, 5).map((c, i) => {
-                      const s = STATUS[c.status] ?? STATUS.pending
-                      return (
-                        <tr key={c.id} onClick={() => setSelectedComplaint(c)}
-                          className="cursor-pointer transition-colors"
-                          style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#f5f8fc' }}
-                          onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#dbeafe' }}
-                          onMouseLeave={e => { e.currentTarget.style.backgroundColor = i % 2 === 0 ? '#fff' : '#f5f8fc' }}>
-                          <td className="px-5 py-3.5 font-semibold text-gray-800">{CATEGORY_LABEL[c.category] ?? c.category}</td>
-                          <td className="px-5 py-3.5 text-gray-500 max-w-xs truncate">{c.detail}</td>
-                          <td className="px-5 py-3.5">
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
-                              style={{ backgroundColor: s.bg, color: s.text }}>{s.label}</span>
-                          </td>
-                          <td className="px-5 py-3.5 text-gray-400 text-xs">
-                            {new Date(c.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
-                          </td>
-                        </tr>
+              {
+                group: 'รายงานและสถิติ',
+                items: [
+                  { key: 'map',          label: 'แผนที่',           Icon: MapPin,        color: '#0891b2', bg: '#e0f2fe', show: currentUserRole !== 'council' },
+                  { key: 'report',       label: 'รายงาน',           Icon: TrendingUp,    color: '#059669', bg: '#d1fae5', show: true },
+                  { key: 'satisfaction', label: 'ผลการประเมิน',     Icon: Star,          color: '#d97706', bg: '#fef3c7', show: true },
+                ],
+              },
+              {
+                group: 'จัดการเนื้อหา',
+                items: [
+                  { key: 'staff',        label: 'รูปผู้บริหาร',    Icon: UserCircle2,   color: '#7c3aed', bg: '#ede9fe', show: currentUserRole !== 'viewer' },
+                  { key: 'events',       label: 'กิจกรรม',          Icon: Bell,          color: '#f59e0b', bg: '#fef3c7', show: currentUserRole !== 'viewer' },
+                ],
+              },
+              {
+                group: 'ตั้งค่าระบบ',
+                items: [
+                  { key: 'categories',     label: 'ประเภทคำร้อง',   Icon: Tag,         color: '#d97706', bg: '#fef3c7', show: currentUserRole !== 'viewer' },
+                  { key: 'emergency',      label: 'สายด่วน',         Icon: Phone,       color: '#ef4444', bg: '#fee2e2', show: currentUserRole !== 'viewer' },
+                  { key: 'locations',      label: 'สถานที่เกิดเหตุ', Icon: MapPin,      color: '#0891b2', bg: '#e0f2fe', show: currentUserRole !== 'viewer' },
+                  { key: 'fee-settings',   label: 'ค่าธรรมเนียม',   Icon: Banknote,    color: '#10b981', bg: '#d1fae5', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                  { key: 'fleet-setup',    label: 'ยานพาหนะ',        Icon: Car,         color: '#0369a1', bg: '#e0f2fe', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                  { key: 'theme-settings', label: 'ธีมแอป',          Icon: Palette,     color: '#a855f7', bg: '#faf5ff', show: currentUserRole === 'superadmin' },
+                  { key: 'system-settings',label: 'ตั้งค่าระบบ',     Icon: Settings,    color: '#3b82f6', bg: '#dbeafe', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                  { key: 'users',          label: 'จัดการผู้ใช้',    Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                  { key: 'modules',        label: 'จัดการโมดูล',     Icon: LayoutGrid,  color: '#7c3aed', bg: '#ede9fe', show: currentUserRole === 'superadmin' },
+                  { key: 'audit-log',      label: 'บันทึกกิจกรรม',  Icon: Shield,      color: '#ef4444', bg: '#fee2e2', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                ],
+              },
+              {
+                group: 'ทรัพยากร',
+                items: [
+                  { key: 'manual',         label: 'คู่มือผู้ดูแล',  Icon: BookOpen,    color: '#059669', bg: '#d1fae5', show: true, isExternal: true, href: '/manual-admin.html' },
+                  { key: 'manual-citizen', label: 'คู่มือประชาชน',  Icon: BookOpen,    color: '#059669', bg: '#d1fae5', show: true, isExternal: true, href: '/manual-citizen.html' },
+                ],
+              },
+            ].map(({ group, items }) => {
+              const visible = items.filter(i => i.show)
+              if (!visible.length) return null
+              return (
+                <div key={group}>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">{group}</p>
+                  <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
+                    {visible.map(({ key, label, Icon, color, bg, isExternal, href }) =>
+                      isExternal ? (
+                        <a key={key} href={href} target="_blank" rel="noopener noreferrer"
+                          className="flex flex-col items-center gap-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-3 hover:shadow-md active:scale-95 transition-all">
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: bg }}>
+                            <Icon size={18} style={{ color }} />
+                          </div>
+                          <p className="text-[11px] font-semibold text-gray-700 text-center leading-tight">{label}</p>
+                        </a>
+                      ) : (
+                        <button key={key} onClick={() => setActivePage(key)}
+                          className="flex flex-col items-center gap-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-3 hover:shadow-md active:scale-95 transition-all">
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: bg }}>
+                            <Icon size={18} style={{ color }} />
+                          </div>
+                          <p className="text-[11px] font-semibold text-gray-700 text-center leading-tight">{label}</p>
+                        </button>
                       )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
 
           {loading && (
             <div className="flex items-center justify-center py-10">
@@ -5445,7 +5378,7 @@ export default function AdminDashboard() {
           onEditProject={() => navigate('/staff', { state: { module: 'projects' } })} />
       ) : activePage === 'fee-settings' ? (
         <FeeSettingsAdmin tenant={tenant} />
-      ) : activePage === 'theme-settings' ? (
+      ) : activePage === 'theme-settings' && currentUserRole === 'superadmin' ? (
         <ThemeSettingsAdmin />
       ) : activePage === 'system-settings' ? (
         <SystemSettingsAdmin tenant={tenant} onUpdateTenant={(updated) => window.location.reload()} />
@@ -5528,7 +5461,7 @@ export default function AdminDashboard() {
                 </div>
               </button>
             )}
-            {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
+            {currentUserRole === 'superadmin' && (
               <button onClick={() => setActivePage('theme-settings')}
                 className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
                 <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#fae8ff' }}>
@@ -5592,7 +5525,7 @@ export default function AdminDashboard() {
                   { key: 'locations',   Icon: MapPin,      color: '#0891b2', bg: '#e0f2fe', label: 'สถานที่เกิดเหตุ', desc: 'จัดการหมู่บ้าน / ตำบลในพื้นที่',  show: currentUserRole !== 'viewer' },
                   { key: 'staff',            Icon: UserCircle2, color: '#7c3aed', bg: '#ede9fe', label: 'รูปผู้บริหาร',       desc: 'อัปโหลดรูปนายก/รองนายก/ทีมงาน',       show: currentUserRole !== 'viewer' },
                   { key: 'fleet-setup',      Icon: Car,         color: '#0369a1', bg: '#e0f2fe', label: 'ตั้งค่ายานพาหนะ', desc: 'กอง/หน่วยงาน งบประมาณ สิทธิ์ผู้ใช้', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                  { key: 'theme-settings',   Icon: Palette,     color: '#a855f7', bg: '#fae8ff', label: 'ธีมโครงสร้างแอป',   desc: 'เลือกโครงสร้างและดีไซน์หลักของระบบ',        show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                  { key: 'theme-settings',   Icon: Palette,     color: '#a855f7', bg: '#fae8ff', label: 'ธีมโครงสร้างแอป',   desc: 'เลือกโครงสร้างและดีไซน์หลักของระบบ',        show: currentUserRole === 'superadmin' },
                   { key: 'system-settings',  Icon: Settings,    color: '#3b82f6', bg: '#dbeafe', label: 'ตั้งค่าระบบ',    desc: 'ตั้งค่าชื่อระบบและข้อมูลพื้นฐาน',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'users',           Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', label: 'จัดการผู้ใช้',    desc: 'สิทธิ์การเข้าถึงและบทบาท',        show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 ].filter(r => r.show).map(({ key, Icon, color, bg, label, desc }) => (

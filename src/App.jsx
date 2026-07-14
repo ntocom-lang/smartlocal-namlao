@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState, Component } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { TenantProvider, useTenant } from './contexts/TenantContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
@@ -106,8 +106,35 @@ function PhoneReminderModal({ onClose }) {
   )
 }
 
-const AdminDashboard = lazy(() => import('./pages/AdminDashboard'))
-const StaffDashboard  = lazy(() => import('./pages/StaffDashboard'))
+// retry once on ChunkLoadError (iOS network instability)
+function lazyWithRetry(fn) {
+  return lazy(() => fn().catch(() => new Promise(r => setTimeout(r, 800)).then(() => fn())))
+}
+
+const AdminDashboard = lazyWithRetry(() => import('./pages/AdminDashboard'))
+const StaffDashboard  = lazyWithRetry(() => import('./pages/StaffDashboard'))
+
+class SuspenseErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null } }
+  static getDerivedStateFromError(error) { return { error } }
+  componentDidCatch() { this.setState({ error: true }) }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 p-6 text-center">
+          <span className="text-4xl">📶</span>
+          <p className="text-gray-500 text-sm">โหลดหน้าไม่สำเร็จ<br/>อาจเกิดจากสัญญาณขาดช่วง</p>
+          <button onClick={() => window.location.reload()}
+            className="px-5 py-2.5 rounded-xl text-sm font-bold text-white"
+            style={{ backgroundColor: 'var(--color-primary)' }}>
+            กดเพื่อลองใหม่
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 function HomeOrTechRedirect() {
   return <HomePage />
@@ -178,6 +205,25 @@ function AppShell() {
 
     if (!profile?.phone?.trim()) setShowPhoneReminder(true)
   }
+
+  // iOS Safari ตัด WebSocket เมื่อแอปไป background — reconnect ทุกครั้งที่กลับมา
+  useEffect(() => {
+    let reconnectTimer = null
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        clearTimeout(reconnectTimer)
+        reconnectTimer = setTimeout(() => {
+          supabase.realtime.disconnect()
+          setTimeout(() => supabase.realtime.connect(), 300)
+        }, 200)
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility)
+      clearTimeout(reconnectTimer)
+    }
+  }, [])
 
   useEffect(() => {
     // ดัก OAuth error callback เช่น LINE/Google login ล้มเหลวฝั่ง provider
@@ -258,9 +304,9 @@ function AppShell() {
         <PhoneReminderModal onClose={() => setShowPhoneReminder(false)} />
       )}
       <NotificationsProvider>
-        <Header />
+        {!isBackOffice && <Header />}
         <div className="flex flex-1 min-h-0 overflow-hidden">
-          <CitizenSidebar />
+          {!isBackOffice && <CitizenSidebar />}
           <main className="flex-1 min-w-0 overflow-y-auto">
           <Routes>
           <Route path="/" element={<HomeOrTechRedirect />} />
@@ -304,14 +350,16 @@ function AppShell() {
           <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/staff" element={
             <RequireAuth staffOnly>
-              <Suspense fallback={
-                <div className="flex items-center justify-center min-h-full h-full">
-                  <div className="w-6 h-6 border-4 border-gray-200 rounded-full animate-spin"
-                       style={{ borderTopColor: '#3b82f6' }} />
-                </div>
-              }>
-                <StaffDashboard />
-              </Suspense>
+              <SuspenseErrorBoundary>
+                <Suspense fallback={
+                  <div className="flex items-center justify-center min-h-full h-full">
+                    <div className="w-6 h-6 border-4 border-gray-200 rounded-full animate-spin"
+                         style={{ borderTopColor: '#3b82f6' }} />
+                  </div>
+                }>
+                  <StaffDashboard />
+                </Suspense>
+              </SuspenseErrorBoundary>
             </RequireAuth>
           } />
           <Route path="/technician" element={
@@ -321,14 +369,16 @@ function AppShell() {
           } />
           <Route path="/admin" element={
             <RequireAuth adminOnly>
-              <Suspense fallback={
-                <div className="flex items-center justify-center py-20 text-gray-400">
-                  <div className="w-6 h-6 border-4 border-gray-200 rounded-full animate-spin"
-                       style={{ borderTopColor: 'var(--color-primary)' }} />
-                </div>
-              }>
-                <AdminDashboard />
-              </Suspense>
+              <SuspenseErrorBoundary>
+                <Suspense fallback={
+                  <div className="flex items-center justify-center py-20 text-gray-400">
+                    <div className="w-6 h-6 border-4 border-gray-200 rounded-full animate-spin"
+                         style={{ borderTopColor: 'var(--color-primary)' }} />
+                  </div>
+                }>
+                  <AdminDashboard />
+                </Suspense>
+              </SuspenseErrorBoundary>
             </RequireAuth>
           } />
         </Routes>

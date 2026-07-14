@@ -5,7 +5,7 @@ import {
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, AlignLeft, Calendar, Hash, RefreshCw,
   Printer, PenLine, Search, Download, Wrench, Home, CalendarDays, TrendingUp, Images, Camera,
-  CreditCard, BadgeCheck, Banknote, Luggage, Star, Store, MoreHorizontal, Car,
+  CreditCard, BadgeCheck, Banknote, Luggage, Star, MoreHorizontal, Car,
 } from 'lucide-react'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 import InfraWorkAdmin from '../components/admin/InfraWorkAdmin'
@@ -45,33 +45,33 @@ const MODULE_GROUPS = [
   {
     group: 'บริการประชาชน',
     items: [
-      { key: 'inbox',      label: 'คำขอเอกสาร', Icon: FileText,     color: '#8b5cf6' },
-      { key: 'complaints', label: 'คำร้อง',      Icon: BarChart2,    color: '#ef4444' },
+      { key: 'inbox',      label: 'คำขอเอกสาร', Icon: FileText,     color: '#8b5cf6', bg: '#ede9fe' },
+      { key: 'complaints', label: 'คำร้อง',      Icon: BarChart2,    color: '#ef4444', bg: '#fee2e2' },
     ],
   },
   {
     group: 'งานภายใน',
     items: [
-      { key: 'events',   label: 'กิจกรรม',          Icon: CalendarDays, color: '#10b981' },
-      { key: 'projects',     label: 'แผนงาน/โครงการ',    Icon: Wrench,    color: '#7c3aed' },
-      { key: 'infra',        label: 'บันทึกงานซ่อม',    Icon: MapPin,    color: '#0891b2' },
-      { key: 'fleet',    label: 'ยานพาหนะ/น้ำมัน',  Icon: Car,          color: '#0369a1' },
+      { key: 'events',      label: 'กิจกรรม',          Icon: CalendarDays, color: '#10b981', bg: '#d1fae5' },
+      { key: 'projects',    label: 'แผนงาน/โครงการ',   Icon: Wrench,       color: '#7c3aed', bg: '#ede9fe' },
+      { key: 'infra',       label: 'บันทึกงานซ่อม',   Icon: MapPin,       color: '#0891b2', bg: '#e0f2fe' },
+      { key: 'fleet',       label: 'ยานพาหนะ/น้ำมัน', Icon: Car,          color: '#0369a1', bg: '#e0f2fe' },
     ],
   },
   {
     group: 'ข้อมูลและรายงาน',
     items: [
-      { key: 'map',          label: 'แผนที่',          Icon: MapPin,     color: '#0891b2' },
-      { key: 'report',       label: 'รายงาน',          Icon: TrendingUp, color: '#f59e0b' },
-      { key: 'civil-report', label: 'รายงานโครงการ',  Icon: Printer,    color: '#7c3aed' },
+      { key: 'map',         label: 'แผนที่',         Icon: MapPin,     color: '#0891b2', bg: '#e0f2fe' },
+      { key: 'report',      label: 'รายงาน',         Icon: TrendingUp, color: '#f59e0b', bg: '#fef3c7' },
+      { key: 'civil-report',label: 'รายงานโครงการ', Icon: Printer,    color: '#7c3aed', bg: '#ede9fe' },
     ],
   },
   {
     group: 'เนื้อหาและชุมชน',
     items: [
-      { key: 'posts',            label: 'ข่าวสาร / กิจกรรม',  Icon: Images,  color: '#059669' },
-      { key: 'tourism',          label: 'เที่ยว กิน พัก OTOP', Icon: Luggage, color: '#d97706' },
-      { key: 'tourism-reviews',  label: 'รีวิวสถานที่',        Icon: Star,    color: '#f59e0b' },
+      { key: 'posts',           label: 'ข่าวสาร/กิจกรรม',   Icon: Images,  color: '#059669', bg: '#d1fae5' },
+      { key: 'tourism',         label: 'เที่ยว กิน พัก OTOP', Icon: Luggage, color: '#d97706', bg: '#fef3c7' },
+      { key: 'tourism-reviews', label: 'รีวิวสถานที่',        Icon: Star,    color: '#f59e0b', bg: '#fef3c7' },
     ],
   },
 ]
@@ -2010,70 +2010,38 @@ function StaffHomeModule({ visibleGroups, setActiveModule, pendingCount, staffNa
   const todayTH = new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
   return (
     <div className="space-y-5">
-      {/* Mobile greeting */}
-      <div className="md:hidden">
-        <h1 className="text-xl font-bold text-gray-800">ระบบเจ้าหน้าที่</h1>
-        <p className="text-sm text-gray-400 mt-0.5">สวัสดี{staffName ? `, ${staffName}` : ''} 👋</p>
-      </div>
-
-      {/* PC welcome bar */}
-      <div className="hidden md:flex items-center justify-between px-5 py-3 border border-gray-200 bg-white shadow-sm">
+      {/* Greeting */}
+      <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs text-gray-400">{todayTH}</p>
-          <p className="text-sm font-bold text-gray-700 mt-0.5">
-            สวัสดี{staffName ? `, ${staffName}` : ''} — ยินดีต้อนรับเข้าสู่ระบบบริการอิเล็กทรอนิกส์
-          </p>
+          <h1 className="text-base font-bold text-gray-800">ระบบเจ้าหน้าที่</h1>
+          <p className="text-xs text-gray-400 mt-0.5">สวัสดี{staffName ? `, ${staffName}` : ''} 👋  {todayTH}</p>
         </div>
         {pendingCount > 0 && (
-          <div className="flex items-center gap-2 px-4 py-2 border rounded"
-            style={{ backgroundColor: '#fef3c7', borderColor: '#f59e0b' }}>
-            <span className="text-lg font-bold" style={{ color: '#b45309' }}>{pendingCount}</span>
-            <span className="text-xs font-semibold" style={{ color: '#92400e' }}>รายการรอดำเนินการ</span>
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl"
+            style={{ backgroundColor: '#fef3c7' }}>
+            <span className="text-sm font-bold" style={{ color: '#b45309' }}>{pendingCount}</span>
+            <span className="text-[11px] font-semibold" style={{ color: '#92400e' }}>รายการรอ</span>
           </div>
         )}
       </div>
 
       {visibleGroups.map(({ group, items }) => (
         <div key={group}>
-          <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-3 md:mb-2">{group}</p>
-          {/* Mobile cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:hidden">
-            {items.map(({ key, label, Icon, color, externalUrl, navTo }) => (
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">{group}</p>
+          <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
+            {items.map(({ key, label, Icon, color, bg, externalUrl, navTo }) => (
               <button key={key}
                 onClick={() => navTo ? navigate(navTo) : externalUrl ? window.open(externalUrl, '_blank') : setActiveModule(key)}
-                className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col items-start gap-3 text-left hover:shadow-md active:scale-95 transition-all">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                  style={{ backgroundColor: color + '18' }}>
-                  <Icon size={20} style={{ color }} />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-gray-700">{label}</p>
-                  {key === 'inbox' && pendingCount > 0 && (
-                    <p className="text-xs font-semibold mt-0.5" style={{ color: '#ef4444' }}>{pendingCount} รายการรอ</p>
-                  )}
-                  {externalUrl && <p className="text-[10px] text-gray-400 mt-0.5">เปิดใน Facebook ↗</p>}
-                </div>
-              </button>
-            ))}
-          </div>
-          {/* PC formal grid */}
-          <div className="hidden md:grid grid-cols-3 gap-0 border border-gray-200 bg-white shadow-sm">
-            {items.map(({ key, label, Icon, color, externalUrl, navTo }, idx) => (
-              <button key={key}
-                onClick={() => navTo ? navigate(navTo) : externalUrl ? window.open(externalUrl, '_blank') : setActiveModule(key)}
-                className="flex items-center gap-3 px-5 py-4 text-left transition-colors border-r border-b border-gray-200 hover:bg-blue-50 last:border-r-0"
-                style={{ borderRight: (idx + 1) % 3 === 0 ? 'none' : undefined }}>
-                <div className="w-9 h-9 rounded flex items-center justify-center shrink-0"
-                  style={{ backgroundColor: color + '20' }}>
+                className="flex flex-col items-center gap-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-3 hover:shadow-md active:scale-95 transition-all relative">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: bg ?? (color + '18') }}>
                   <Icon size={18} style={{ color }} />
                 </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-bold text-gray-700 leading-tight">{label}</p>
-                  {key === 'inbox' && pendingCount > 0 && (
-                    <p className="text-[11px] font-bold mt-0.5" style={{ color: '#ef4444' }}>{pendingCount} รายการรอ</p>
-                  )}
-                  {externalUrl && <p className="text-[10px] text-gray-400 mt-0.5">เปิดใน Facebook ↗</p>}
-                </div>
+                {key === 'inbox' && pendingCount > 0 && (
+                  <span className="absolute top-2 right-2 min-w-[16px] h-4 rounded-full text-[9px] font-bold bg-red-500 text-white flex items-center justify-center px-1">
+                    {pendingCount > 9 ? '9+' : pendingCount}
+                  </span>
+                )}
+                <p className="text-[11px] font-semibold text-gray-700 text-center leading-tight">{label}</p>
               </button>
             ))}
           </div>
@@ -2165,86 +2133,9 @@ export default function StaffDashboard() {
   }
 
   return (
-    <div className="flex h-full overflow-hidden" style={{ backgroundColor: '#eef2f7' }}>
+    <div className="min-h-full" style={{ backgroundColor: '#eef2f7' }}>
 
-      {/* ── Desktop Sidebar — government style ─────────────────────────────── */}
-      <aside className="hidden md:flex flex-col w-60 shrink-0 shadow-lg"
-        style={{ backgroundColor: '#1a3a5c', borderRight: '1px solid #12293f' }}>
-
-        {/* Brand */}
-        <div className="px-5 py-4 border-b" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-          <button onClick={() => navigate('/')} className="flex items-center w-full text-left hover:opacity-80 transition-opacity">
-            <div className="min-w-0">
-              <p className="text-[10px] font-semibold" style={{ color: 'rgba(147,197,253,0.85)' }}>สำหรับเจ้าหน้าที่</p>
-            </div>
-          </button>
-        </div>
-
-        {/* Nav */}
-        <nav className="flex-1 px-3 py-2 overflow-y-auto sidebar-nav">
-          <button onClick={() => setActiveModule('home')}
-            className="w-full flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all mb-1"
-            style={activeModule === 'home'
-              ? { backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff' }
-              : { color: 'rgba(255,255,255,0.6)' }}>
-            <Home size={15} strokeWidth={activeModule === 'home' ? 2.2 : 1.5} />
-            <span className="flex-1 text-left text-xs">หน้าหลัก</span>
-          </button>
-          {visibleGroups.map(({ group, items }) => (
-            <div key={group} className="mb-2">
-              <p className="px-3 mb-0.5 text-[9px] font-bold uppercase tracking-widest"
-                style={{ color: 'rgba(255,255,255,0.35)', letterSpacing: '0.12em' }}>{group}</p>
-              <div className="space-y-0.5">
-                {items.map(({ key, label, Icon, color, externalUrl, navTo }) => {
-                  const isActive = activeModule === key
-                  const badge    = key === 'inbox' && pendingCount > 0 ? pendingCount : null
-                  return (
-                    <button key={key} onClick={() => navTo ? navigate(navTo) : externalUrl ? window.open(externalUrl, '_blank') : setActiveModule(key)}
-                      className="w-full flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all"
-                      style={isActive
-                        ? { backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff' }
-                        : { color: 'rgba(255,255,255,0.6)' }}>
-                      <Icon size={17} strokeWidth={isActive ? 2.2 : 1.5} />
-                      <span className="flex-1 text-left">{label}</span>
-                      {badge && (
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white bg-amber-400">
-                          {badge > 99 ? '99+' : badge}
-                        </span>
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
-        </nav>
-
-        {/* Profile + logout */}
-        <div className="px-3 py-4 space-y-1 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-          {profile && (
-            <div className="flex items-center gap-2.5 px-3 py-2">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-                style={{ backgroundColor: 'rgba(255,255,255,0.18)', color: '#fff' }}>
-                {profile.full_name?.[0]?.toUpperCase() ?? '?'}
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-semibold truncate" style={{ color: '#fff' }}>{profile.full_name ?? 'เจ้าหน้าที่'}</p>
-                <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.45)' }}>{ROLE_TH[profile.role] ?? profile.role}</p>
-              </div>
-            </div>
-          )}
-          <button onClick={handleLogout}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors hover:bg-white/10"
-            style={{ color: 'rgba(255,255,255,0.55)' }}>
-            <LogOut size={15} /> ออกจากระบบ
-          </button>
-        </div>
-      </aside>
-
-      {/* ── Content ────────────────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-
-        {/* Mobile header */}
+      {/* Mobile header */}
         <header className="md:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-100 shadow-sm shrink-0">
           <button onClick={() => navigate('/')}
             className="w-8 h-8 rounded-xl overflow-hidden shrink-0 active:opacity-70 transition-opacity"
@@ -2258,46 +2149,87 @@ export default function StaffDashboard() {
           </div>
         </header>
 
-        {/* PC header — government style */}
-        <div className="hidden md:block shrink-0">
-          {/* Breadcrumb strip */}
-          <div className="px-6 py-1.5 flex items-center justify-between border-b"
-            style={{ backgroundColor: '#dce8f5', borderColor: '#b8cfea' }}>
-            <p className="text-[11px] text-gray-600">
-              ระบบบริการอิเล็กทรอนิกส์ › {tenant?.name ?? ''} ›{' '}
-              <span className="font-semibold text-gray-700">
-                {activeModule === 'home' ? 'หน้าหลัก' : visibleModules.find(m => m.key === activeModule)?.label ?? activeModule}
-              </span>
-            </p>
-            <p className="text-[11px] text-gray-500">
-              {new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-            </p>
-          </div>
-          {/* Title bar */}
-          <div className="px-6 py-3 flex items-center justify-between bg-white border-b border-gray-200 shadow-sm">
-            <div>
-              <h1 className="text-base font-bold text-gray-800">
-                {activeModule === 'home' ? 'หน้าหลัก' : visibleModules.find(m => m.key === activeModule)?.label}
-              </h1>
-              <p className="text-[11px] text-gray-400 mt-0.5">{tenant?.name} — ระบบบริการอิเล็กทรอนิกส์สำหรับเจ้าหน้าที่</p>
+        {/* PC header — staff themed */}
+        <header className="hidden md:block relative w-full text-white overflow-hidden"
+          style={{ background: 'linear-gradient(180deg, #059669 0%, #064e3b 100%)' }}>
+          <div className="absolute inset-0 opacity-25 pointer-events-none"
+            style={{ backgroundImage: `url("${tenant?.header_image_url || 'https://images.unsplash.com/photo-1511497584788-876760111969?auto=format&fit=crop&q=80&w=1000'}")`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+          <div className="absolute bottom-0 inset-x-0 h-12 pointer-events-none"
+            style={{ background: 'linear-gradient(to top, #064e3b, transparent)' }} />
+
+          {/* Top row */}
+          <div className="relative z-10 flex items-center justify-between px-6 py-3">
+            <div className="flex items-center gap-3">
+              <button onClick={() => navigate('/')} className="shrink-0 active:opacity-70 transition-opacity hover:scale-105 transition-transform">
+                {tenant?.logo_url
+                  ? <img src={tenant.logo_url} alt="" className="w-10 h-10 rounded-full border-2 border-white/40 bg-white/10 object-cover" />
+                  : <div className="w-10 h-10 rounded-full bg-white/20 border-2 border-white/40 flex items-center justify-center text-lg font-bold">🏛️</div>}
+              </button>
+              <div>
+                <span className="text-[10px] font-black bg-white/20 text-white px-2 py-0.5 rounded-full tracking-widest uppercase">ระบบเจ้าหน้าที่</span>
+                <p className="text-sm font-bold text-white mt-0.5 leading-tight">{tenant?.name}</p>
+              </div>
             </div>
             {profile && (
-              <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-2">
                 <div className="text-right">
-                  <p className="text-xs font-semibold text-gray-700">{profile.full_name}</p>
-                  <p className="text-[10px] text-gray-400">{ROLE_TH[profile.role] ?? profile.role}</p>
+                  <p className="text-xs font-bold text-white">{profile.full_name}</p>
+                  <p className="text-[10px] text-emerald-200">{ROLE_TH[profile.role] ?? profile.role}</p>
                 </div>
-                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-700">
+                <div className="w-8 h-8 rounded-full bg-white/20 border border-white/40 flex items-center justify-center text-sm font-bold text-white shrink-0">
                   {profile.full_name?.[0]?.toUpperCase() ?? '?'}
                 </div>
+                <button onClick={() => navigate('/')}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/10 hover:bg-white/20 transition-colors border border-white/20">
+                  <Home size={13} />
+                  เว็บหลัก
+                </button>
+                <button onClick={handleLogout}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/10 hover:bg-white/20 transition-colors border border-white/20">
+                  <LogOut size={13} />
+                  ออกจากระบบ
+                </button>
               </div>
             )}
           </div>
-        </div>
+
+          {/* Nav tabs */}
+          <nav className="relative z-10 flex items-center gap-1 px-6 pb-3 flex-wrap">
+            {[
+              { key: 'home',       label: 'หน้าหลัก',   Icon: Home },
+              { key: 'inbox',      label: 'คำขอเอกสาร', Icon: FileText },
+              { key: 'complaints', label: 'คำร้อง',      Icon: BarChart2 },
+              { key: 'events',     label: 'กิจกรรม',     Icon: CalendarDays },
+              { key: 'posts',      label: 'ข่าวสาร',     Icon: Images },
+              { key: 'report',     label: 'รายงาน',      Icon: TrendingUp },
+              { key: 'map',        label: 'แผนที่',      Icon: MapPin },
+              { key: 'tourism',    label: 'ท่องเที่ยว',  Icon: Luggage },
+            ].map(({ key, label, Icon }) => {
+              const isActive = activeModule === key
+              const badge = key === 'inbox' && pendingCount > 0 ? pendingCount : null
+              return (
+                <button key={key} onClick={() => setActiveModule(key)}
+                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-bold transition-all relative"
+                  style={isActive
+                    ? { backgroundColor: 'rgba(255,255,255,0.25)', color: '#fff' }
+                    : { color: 'rgba(255,255,255,0.7)' }}>
+                  <Icon size={14} />
+                  {label}
+                  {badge && (
+                    <span className="absolute -top-1 -right-1 min-w-4 h-4 bg-amber-400 text-amber-900 text-[9px] font-bold rounded-full flex items-center justify-center px-0.5">
+                      {badge > 9 ? '9+' : badge}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </nav>
+        </header>
 
         {/* Main */}
-        <main className="flex-1 overflow-y-auto px-4 md:px-6 py-5 pb-24 md:pb-6">
-          {activeModule === 'home'       && <StaffHomeModule visibleGroups={visibleGroups} setActiveModule={setActiveModule} pendingCount={pendingCount} staffName={profile?.full_name} navigate={navigate} />}
+        <main className="px-4 md:px-6 py-5 pb-24 md:pb-6">
+          <div className="max-w-5xl mx-auto space-y-4">
+          {activeModule === 'home'       && <StaffHomeModule visibleGroups={MODULE_GROUPS} setActiveModule={setActiveModule} pendingCount={pendingCount} staffName={profile?.full_name} navigate={navigate} />}
           {activeModule === 'inbox'      && <InboxModule tenant={tenant} staffId={profile?.id} />}
           {activeModule === 'complaints' && (
             ['admin', 'superadmin'].includes(profile?.role)
@@ -2316,22 +2248,24 @@ export default function StaffDashboard() {
           {activeModule === 'tourism'          && <TourismManager tenant={tenant} />}
           {activeModule === 'tourism-reviews'  && <TourismReviewsAdmin tenant={tenant} />}
           {activeModule === 'fleet' && <FleetPage onBack={() => setActiveModule('home')} />}
-
+          </div>
         </main>
 
         {/* Mobile bottom nav */}
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-20 flex items-stretch"
           style={{
-            background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
-            borderTop: '1px solid rgba(255,255,255,0.07)',
-            boxShadow: '0 -8px 32px rgba(0,0,0,0.35)',
+            background: 'linear-gradient(180deg, #059669 0%, #064e3b 100%)',
+            borderTop: '2px solid rgba(255,255,255,0.15)',
+            boxShadow: '0 -4px 20px rgba(6,78,59,0.5)',
+            borderTopLeftRadius: '20px',
+            borderTopRightRadius: '20px',
             paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 6px)',
           }}>
           {[
-            { key: 'home',       label: 'หน้าหลัก',   Icon: Home,        bg: '#3b82f6' },
-            { key: 'inbox',      label: 'คำขอเอกสาร', Icon: FileText,    bg: '#8b5cf6' },
-            { key: 'complaints', label: 'คำร้อง',      Icon: BarChart2,   bg: '#f59e0b' },
-            { key: 'events',     label: 'กิจกรรม',     Icon: CalendarDays,bg: '#10b981' },
+            { key: 'home',       label: 'หน้าหลัก',   Icon: Home,         bg: '#fbbf24' },
+            { key: 'inbox',      label: 'คำขอเอกสาร', Icon: FileText,     bg: '#fbbf24' },
+            { key: 'complaints', label: 'คำร้อง',      Icon: BarChart2,    bg: '#fbbf24' },
+            { key: 'events',     label: 'กิจกรรม',     Icon: CalendarDays, bg: '#fbbf24' },
           ].filter(({ key }) => key === 'home' || visibleModules.some(m => m.key === key)).map(({ key, label, Icon, bg }) => {
             const isActive = activeModule === key
             const badge = key === 'inbox' && pendingCount > 0 ? pendingCount : null
@@ -2339,32 +2273,43 @@ export default function StaffDashboard() {
               <button key={key}
                 onClick={() => { setShowMoreMenu(false); setActiveModule(key) }}
                 className="flex-1 flex flex-col items-center justify-center gap-0.5 pt-2 pb-1 transition-all active:scale-90">
-                <div className="w-10 h-9 rounded-xl flex items-center justify-center transition-all duration-200 relative"
-                  style={{ backgroundColor: isActive ? bg : 'transparent' }}>
+                <div className="relative w-10 h-9 rounded-xl flex items-center justify-center transition-all duration-200"
+                  style={{ backgroundColor: isActive ? 'rgba(255,255,255,0.2)' : 'transparent' }}>
+                  {isActive && (
+                    <span className="absolute -top-0.5 left-1/2 -translate-x-1/2 w-4 h-[3px] rounded-full" style={{ backgroundColor: bg }} />
+                  )}
                   <Icon size={20} strokeWidth={isActive ? 2.2 : 1.6}
-                    style={{ color: isActive ? '#fff' : 'rgba(255,255,255,0.3)' }} />
+                    style={{ color: isActive ? '#fff' : 'rgba(255,255,255,0.45)' }} />
                   {badge && (
-                    <span className="absolute -top-1 -right-1 min-w-[16px] h-4 rounded-full text-[9px] font-bold text-white flex items-center justify-center px-1 bg-amber-400">
+                    <span className="absolute -top-1 -right-1 min-w-[16px] h-4 rounded-full text-[9px] font-bold text-amber-900 flex items-center justify-center px-1 bg-amber-400">
                       {badge > 9 ? '9+' : badge}
                     </span>
                   )}
                 </div>
                 <span className="text-[10px] font-bold leading-tight"
-                  style={{ color: isActive ? '#fff' : 'rgba(255,255,255,0.3)' }}>{label}</span>
+                  style={{ color: isActive ? '#fff' : 'rgba(255,255,255,0.45)' }}>{label}</span>
               </button>
             )
           })}
-          {/* อื่นๆ */}
-          <button onClick={() => setShowMoreMenu(v => !v)}
-            className="flex-1 flex flex-col items-center justify-center gap-0.5 pt-2 pb-1 transition-all active:scale-90">
-            <div className="w-10 h-9 rounded-xl flex items-center justify-center transition-all duration-200"
-              style={{ backgroundColor: showMoreMenu ? '#64748b' : 'transparent' }}>
-              <MoreHorizontal size={20} strokeWidth={showMoreMenu ? 2.2 : 1.6}
-                style={{ color: showMoreMenu ? '#fff' : 'rgba(255,255,255,0.3)' }} />
-            </div>
-            <span className="text-[10px] font-bold leading-tight"
-              style={{ color: showMoreMenu ? '#fff' : 'rgba(255,255,255,0.3)' }}>อื่นๆ</span>
-          </button>
+          {/* รายงาน */}
+          {(() => {
+            const isActive = activeModule === 'report'
+            return (
+              <button onClick={() => { setShowMoreMenu(false); setActiveModule('report') }}
+                className="flex-1 flex flex-col items-center justify-center gap-0.5 pt-2 pb-1 transition-all active:scale-90">
+                <div className="relative w-10 h-9 rounded-xl flex items-center justify-center transition-all duration-200"
+                  style={{ backgroundColor: isActive ? 'rgba(255,255,255,0.2)' : 'transparent' }}>
+                  {isActive && (
+                    <span className="absolute -top-0.5 left-1/2 -translate-x-1/2 w-4 h-[3px] rounded-full bg-amber-400" />
+                  )}
+                  <TrendingUp size={20} strokeWidth={isActive ? 2.2 : 1.6}
+                    style={{ color: isActive ? '#fff' : 'rgba(255,255,255,0.45)' }} />
+                </div>
+                <span className="text-[10px] font-bold leading-tight"
+                  style={{ color: isActive ? '#fff' : 'rgba(255,255,255,0.45)' }}>รายงาน</span>
+              </button>
+            )
+          })()}
         </nav>
 
         {/* More menu drawer */}
@@ -2406,7 +2351,6 @@ export default function StaffDashboard() {
             </div>
           </div>
         )}
-      </div>
     </div>
   )
 }
