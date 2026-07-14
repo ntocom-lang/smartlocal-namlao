@@ -1,17 +1,17 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { 
+import {
   Bell, FileSearch, ClipboardList, ShieldCheck,
-  Phone, MessageCircle, AlertTriangle, Cloud, 
+  Phone, AlertTriangle, Cloud,
   Store, FileText, CalendarDays, Luggage, Info,
-  UserCircle, LogOut, BookOpen, Globe, UserCog, Settings
+  UserCircle, LogOut, Globe, UserCog, Settings
 } from 'lucide-react'
-import { useTenant } from '../../../../contexts/TenantContext'
 import { useAuth } from '../../../../contexts/AuthContext'
+import { useNotifications } from '../../../../contexts/NotificationsContext'
 import { supabase } from '../../../../lib/supabase'
 
 export default function KledkaewMore() {
-  const { tenant } = useTenant()
   const { session, role } = useAuth()
+  const { unreadCount } = useNotifications()
   const navigate = useNavigate()
 
   async function handleLogout() {
@@ -38,6 +38,7 @@ export default function KledkaewMore() {
         { label: 'บริการเอกสารออนไลน์', icon: FileText, href: '/doc-request', color: 'text-emerald-500' },
         { label: 'เอกสารของฉัน', icon: FileSearch, href: '/my-docs', color: 'text-emerald-500' },
         { label: 'แจ้งเหตุ/แจ้งซ่อม', icon: ClipboardList, href: '/complaint', color: 'text-emerald-500' },
+        { label: 'คำร้องของฉัน', icon: FileSearch, href: '/my-complaints', color: 'text-emerald-500' },
         { label: 'เหตุฉุกเฉิน', icon: AlertTriangle, href: '/emergency', color: 'text-red-500' },
         { label: 'ปฏิทินกิจกรรม', icon: CalendarDays, href: '/events', color: 'text-emerald-500' },
         { label: 'สภาพอากาศ', icon: Cloud, href: '/weather', color: 'text-emerald-500' },
@@ -56,6 +57,7 @@ export default function KledkaewMore() {
       id: 'info',
       title: 'ข้อมูลและบัญชีผู้ใช้',
       items: [
+        { label: 'การแจ้งเตือน', icon: Bell, href: '/notifications', color: 'text-emerald-500', badge: unreadCount },
         { label: 'รายงานการออกเอกสาร', icon: ShieldCheck, href: '/doc-stats', color: 'text-emerald-500' },
         { label: 'ประเมินความพึงพอใจ', icon: Info, href: '/satisfaction', color: 'text-emerald-500' },
         { label: 'ติดต่อเรา', icon: Phone, href: '/contact', color: 'text-emerald-500' },
@@ -68,8 +70,6 @@ export default function KledkaewMore() {
       ]
     }
   ]
-
-  const bgImage = tenant?.banner_url || 'https://images.unsplash.com/photo-1518599904199-0ca897819ddb?auto=format&fit=crop&w=800&q=80'
 
   return (
     <div className="min-h-screen bg-gray-50 pb-28 font-sans pt-6">
@@ -122,7 +122,12 @@ export default function KledkaewMore() {
                 const inner = (
                   <>
                     <item.icon size={22} className={item.color} />
-                    <span className="text-gray-700 font-medium text-[15px] flex-1">{item.label}</span>
+                    <span className={`font-medium text-[15px] flex-1 ${item.color === 'text-red-500' ? 'text-red-500' : 'text-gray-700'}`}>{item.label}</span>
+                    {item.badge > 0 && (
+                      <span className="min-w-5 h-5 text-[10px] font-bold rounded-full flex items-center justify-center px-1.5 bg-amber-400 text-amber-900">
+                        {item.badge > 99 ? '99+' : item.badge}
+                      </span>
+                    )}
                   </>
                 )
                 const className = "flex items-center gap-3 px-4 py-2 border-b border-gray-100 hover:bg-gray-50 active:bg-gray-100 transition-colors w-full text-left"

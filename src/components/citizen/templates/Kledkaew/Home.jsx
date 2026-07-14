@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useTenant } from '../../../../contexts/TenantContext'
 import { supabase } from '../../../../lib/supabase'
 import PostsHighlight from '../../../../components/home/PostsHighlight'
+import MiniEventCalendar from '../../../../components/MiniEventCalendar'
 import { useNavigate } from 'react-router-dom'
 
 
@@ -82,7 +83,7 @@ export default function Home() {
       </div>
 
       {/* Recommended for you */}
-      <div className="px-4 mt-8 max-w-6xl mx-auto">
+      <div className="px-4 mt-4 max-w-6xl mx-auto">
         <h2 className="text-[17px] font-black text-emerald-900 mb-3 px-2">แนะนำสำหรับคุณ</h2>
         <div className="grid grid-cols-2 gap-3">
            <Link to="/weather" className="rounded-2xl overflow-hidden shadow-sm relative h-32 border border-gray-100 block transition-transform active:scale-95 group">
@@ -92,7 +93,7 @@ export default function Home() {
            <a href="https://air4thai.pcd.go.th/webV3/#/Home" target="_blank" rel="noopener noreferrer" className="rounded-2xl overflow-hidden shadow-sm relative h-32 border border-gray-100 block transition-transform active:scale-95 group">
              <img src="https://images.unsplash.com/photo-1611273426858-450d8e3c9fce?auto=format&fit=crop&w=400&q=80" alt="Air4Thai PM 2.5" className="w-full h-full object-cover opacity-90 transition-transform duration-500 group-hover:scale-105" />
              <div className="absolute top-2 left-0 bg-[#38bdf8] text-white text-[11px] font-bold px-2.5 py-1 rounded-r-md z-10 shadow-md border-r-2 border-[#0284c7]">เช็คฝุ่น PM 2.5</div>
-             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent flex items-end p-3">
+             <div className="absolute inset-0 bg-linear-to-t from-black/70 via-black/10 to-transparent flex items-end p-3">
                <p className="text-white text-xs font-bold leading-snug drop-shadow-md">Air4Thai<br/>รายงานสถานการณ์<br/>มลพิษทางอากาศ</p>
              </div>
            </a>
@@ -127,7 +128,7 @@ export default function Home() {
       </div>
 
       {/* Complaints Grid */}
-      <div className="px-4 mt-10 max-w-6xl mx-auto">
+      <div className="px-4 mt-4 max-w-6xl mx-auto">
         <div className="bg-white rounded-[24px] shadow-sm border border-gray-100 p-4 relative overflow-hidden">
           <div className="absolute top-0 left-0 right-0 h-14 bg-linear-to-b from-[#f0fdf4] to-transparent rounded-t-[24px]"></div>
           
@@ -165,12 +166,12 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="px-4 mt-10 max-w-6xl mx-auto">
-        <PostsHighlight />
+      <div className="px-4 mt-4 max-w-6xl mx-auto">
+        <PostsHighlight showOnDesktop />
       </div>
 
       {/* Tour tabs */}
-      <div className="mt-8 px-4 max-w-6xl mx-auto relative">
+      <div className="mt-4 px-4 max-w-6xl mx-auto relative">
         <div className="relative rounded-[24px] overflow-hidden shadow-sm h-48">
            <img src="/kledkaew-tour-banner.png" alt="Tour banner" className="w-full h-full object-cover" style={{ objectPosition: 'center 30%' }} />
            <div className="absolute inset-0 bg-linear-to-r from-black/60 via-black/20 to-transparent"></div>
@@ -229,6 +230,14 @@ export default function Home() {
         </div>
       </div>
 
+      {/* ปฏิทินกิจกรรม */}
+      <div className="px-4 mt-4 max-w-6xl mx-auto">
+        <div className="flex items-center justify-between mb-3 px-1">
+          <h2 className="text-[17px] font-black text-emerald-900">📅 ปฏิทินกิจกรรม</h2>
+          <Link to="/events" className="text-xs font-bold text-emerald-700 hover:text-emerald-900">ดูทั้งหมด →</Link>
+        </div>
+        <MiniEventCalendar />
+      </div>
 
     </div>
   )

@@ -112,7 +112,7 @@ function ActivityCard({ post, onClick }) {
   )
 }
 
-export default function PostsHighlight() {
+export default function PostsHighlight({ showOnDesktop = false }) {
   const { tenant } = useTenant()
   const [news, setNews]             = useState([])
   const [activities, setActivities] = useState([])
@@ -148,11 +148,11 @@ export default function PostsHighlight() {
 
   return (
     <>
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2">
 
-        {/* ข่าวสำคัญ — desktop แสดงใน right column แล้ว */}
+        {/* ข่าวสำคัญ */}
         {news.length > 0 && (
-          <section className="md:hidden">
+          <section className={showOnDesktop ? '' : 'md:hidden'}>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <div className="w-1 h-6 rounded-full shrink-0" style={{ backgroundColor: 'var(--color-primary)' }} />
@@ -169,9 +169,9 @@ export default function PostsHighlight() {
                 </Link>
               )}
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {news.slice(0, 3).map((post, i) => (
-                <div key={post.id} className={i === 2 ? 'hidden md:block' : ''}>
+            <div className={`grid gap-3 ${showOnDesktop ? 'grid-cols-2 md:grid-cols-4' : 'grid-cols-2 md:grid-cols-3'}`}>
+              {news.slice(0, showOnDesktop ? 4 : 3).map((post, i) => (
+                <div key={post.id} className={!showOnDesktop && i === 2 ? 'hidden md:block' : ''}>
                   <NewsCard post={post} onClick={() => setSelected(post)} />
                 </div>
               ))}
@@ -179,9 +179,9 @@ export default function PostsHighlight() {
           </section>
         )}
 
-        {/* กิจกรรม — desktop แสดงใน right column แล้ว */}
+        {/* กิจกรรม */}
         {activities.length > 0 && (
-          <section className="md:hidden">
+          <section className={showOnDesktop ? '' : 'md:hidden'}>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <div className="w-1 h-6 rounded-full shrink-0" style={{ backgroundColor: 'var(--color-primary)' }} />
@@ -195,9 +195,9 @@ export default function PostsHighlight() {
                 </Link>
               )}
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {activities.slice(0, 3).map((post, i) => (
-                <div key={post.id} className={i === 2 ? 'hidden md:block' : ''}>
+            <div className={`grid gap-3 ${showOnDesktop ? 'grid-cols-2 md:grid-cols-4' : 'grid-cols-2 md:grid-cols-3'}`}>
+              {activities.slice(0, showOnDesktop ? 4 : 3).map((post, i) => (
+                <div key={post.id} className={!showOnDesktop && i === 2 ? 'hidden md:block' : ''}>
                   <ActivityCard post={post} onClick={() => setSelected(post)} />
                 </div>
               ))}

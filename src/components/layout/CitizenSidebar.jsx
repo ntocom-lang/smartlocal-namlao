@@ -56,6 +56,7 @@ export default function CitizenSidebar() {
   const { unreadCount }  = useNotifications()
 
   if (HIDDEN_PATHS.some(p => location.pathname.startsWith(p))) return null
+  if (tenant?.ui_style === 'kledkaew') return null
 
   function isActive(href, exact) {
     return exact ? location.pathname === href : location.pathname.startsWith(href)
