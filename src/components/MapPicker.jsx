@@ -160,7 +160,7 @@ export default function MapPicker({ initialPos, fallbackPos, onConfirm, onClose 
             value={searchQuery}
             onChange={handleSearchChange}
             placeholder="ค้นหาสถานที่..."
-            className="flex-1 text-sm text-gray-900 bg-white placeholder-gray-400 outline-none"
+            className="flex-1 text-base text-gray-900 bg-white placeholder-gray-400 outline-none"
           />
           {searchQuery && (
             <button onClick={() => { setSearchQuery(''); setSearchResults([]) }}>

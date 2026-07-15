@@ -82,7 +82,7 @@ const CATEGORY_DEPT = {
 
 const GEO_STATUS = { idle: 'idle', ok: 'ok' }
 
-function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, complaintId, photoFiles }) {
+function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, complaintId, photoFiles, primaryColor }) {
   const [items, setItems] = useState(() =>
     (photoFiles ?? []).map(f => ({ file: f, status: 'pending' }))
   )
@@ -467,7 +467,7 @@ export default function CitizenForm() {
     }
   }
 
-  if (success) return <SuccessScreen onBack={() => navigate('/')} onMyComplaints={() => navigate('/my-complaints')} complaintNumber={complaintNumber} isLoggedIn={isLoggedIn} complaintId={savedComplaintId} photoFiles={savedPhotoFiles} />
+  if (success) return <SuccessScreen onBack={() => navigate('/')} onMyComplaints={() => navigate('/my-complaints')} complaintNumber={complaintNumber} isLoggedIn={isLoggedIn} complaintId={savedComplaintId} photoFiles={savedPhotoFiles} primaryColor={primaryColor} />
 
   const allCatsDisplay = [...(ftConfig?.categories ?? []), ...categories]
   const catLabel = allCatsDisplay.find((c) => c.value === form.category)?.label?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category
@@ -597,7 +597,7 @@ export default function CitizenForm() {
             onChange={isLoggedIn ? undefined : set('reporter_name')}
             readOnly={isLoggedIn}
             placeholder="ชื่อ-นามสกุล *"
-            className={`w-full px-4 py-2.5 pl-10 rounded-xl border text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:border-blue-400 ${isLoggedIn ? 'bg-gray-50 border-gray-200 text-gray-500' : 'bg-white border-gray-300'}`} />
+            className={`w-full px-4 py-2.5 pl-10 rounded-xl border text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-blue-400 ${isLoggedIn ? 'bg-gray-50 border-gray-200 text-gray-500' : 'bg-white border-gray-300'}`} />
           <User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           {isLoggedIn && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-emerald-500 font-semibold">จากโปรไฟล์</span>}
         </div>
@@ -605,17 +605,17 @@ export default function CitizenForm() {
         {/* Detail */}
         <textarea value={form.detail} onChange={set('detail')} rows={4} required
           placeholder={ftConfig?.placeholder ?? 'รายละเอียด'}
-          className="w-full px-4 py-3.5 rounded-xl border border-gray-300 bg-white text-gray-900 text-sm placeholder-gray-400 resize-none focus:outline-none focus:border-blue-400" />
+          className="w-full px-4 py-3.5 rounded-xl border border-gray-300 bg-white text-gray-900 text-base placeholder-gray-400 resize-none focus:outline-none focus:border-blue-400" />
 
         {/* Village */}
         {locations.length === 0 ? (
           <input type="text" value={form.village} onChange={set('village')}
             placeholder="สถานที่"
-            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 bg-white text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:border-blue-400" />
+            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 bg-white text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-blue-400" />
         ) : (
           <div className="relative">
             <select value={form.village} onChange={set('village')}
-              className="w-full px-4 py-2.5 pr-10 rounded-xl border border-gray-300 bg-white text-gray-900 text-sm focus:outline-none focus:border-blue-400 appearance-none">
+              className="w-full px-4 py-2.5 pr-10 rounded-xl border border-gray-300 bg-white text-gray-900 text-base focus:outline-none focus:border-blue-400 appearance-none">
               <option value="">— เลือกสถานที่ —</option>
               {locations.map((l) => <option key={l.id} value={l.name}>{l.name}</option>)}
             </select>
@@ -629,7 +629,7 @@ export default function CitizenForm() {
             onChange={isLoggedIn && form.phone ? undefined : set('phone')}
             readOnly={isLoggedIn && !!form.phone}
             placeholder="เบอร์ติดต่อ *"
-            className={`w-full px-4 py-2.5 pl-10 rounded-xl border text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:border-blue-400 ${isLoggedIn && form.phone ? 'bg-gray-50 border-gray-200 text-gray-500' : 'bg-white border-gray-300'}`} />
+            className={`w-full px-4 py-2.5 pl-10 rounded-xl border text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-blue-400 ${isLoggedIn && form.phone ? 'bg-gray-50 border-gray-200 text-gray-500' : 'bg-white border-gray-300'}`} />
           <Phone size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           {isLoggedIn && form.phone && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-emerald-500 font-semibold">จากโปรไฟล์</span>}
         </div>

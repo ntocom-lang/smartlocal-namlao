@@ -1,22 +1,30 @@
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   Bell, FileSearch, ClipboardList, ShieldCheck,
   Phone, AlertTriangle, Cloud,
   Store, FileText, CalendarDays, Luggage, Info,
-  UserCircle, LogOut, Globe, UserCog, Settings
+  UserCircle, LogOut, Globe, UserCog, Settings, RefreshCw
 } from 'lucide-react'
 import { useAuth } from '../../../../contexts/AuthContext'
 import { useNotifications } from '../../../../contexts/NotificationsContext'
 import { supabase } from '../../../../lib/supabase'
+import { clearCacheAndReload } from '../../../../lib/clearCache'
 
 export default function KledkaewMore() {
   const { session, role } = useAuth()
   const { unreadCount } = useNotifications()
   const navigate = useNavigate()
+  const [clearingCache, setClearingCache] = useState(false)
 
   async function handleLogout() {
     await supabase.auth.signOut()
     navigate('/')
+  }
+
+  function handleClearCache() {
+    setClearingCache(true)
+    clearCacheAndReload()
   }
 
   // Define our story (the menus from the app) grouped by accordion
@@ -61,6 +69,7 @@ export default function KledkaewMore() {
         { label: 'รายงานการออกเอกสาร', icon: ShieldCheck, href: '/doc-stats', color: 'text-emerald-500' },
         { label: 'ประเมินความพึงพอใจ', icon: Info, href: '/satisfaction', color: 'text-emerald-500' },
         { label: 'ติดต่อเรา', icon: Phone, href: '/contact', color: 'text-emerald-500' },
+        { label: clearingCache ? 'กำลังล้างแคช...' : 'ล้างแคช / อัปเดตเวอร์ชั่นล่าสุด', icon: RefreshCw, action: handleClearCache, color: 'text-emerald-500' },
         ...(session ? [
           { label: 'บัญชีของฉัน', icon: UserCircle, href: '/profile', color: 'text-emerald-500' },
           { label: 'ออกจากระบบ', icon: LogOut, action: handleLogout, color: 'text-red-500' },

@@ -6,10 +6,11 @@ import {
   Phone, MapPin, Globe, Share2, MessageCircle,
   ChevronRight, Star, Copy, Download, Check, Monitor, X,
   UploadIcon, PlusSquare, BookOpen, Store, FileText, Briefcase,
-  CalendarDays, Luggage, AlertTriangle, Cloud,
+  CalendarDays, Luggage, AlertTriangle, Cloud, RefreshCw,
 } from 'lucide-react'
 import qrCodeImage from '../assets/qr-code.png'
 import { supabase } from '../lib/supabase'
+import { clearCacheAndReload } from '../lib/clearCache'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useNotifications } from '../contexts/NotificationsContext'
@@ -237,7 +238,13 @@ export default function MorePage() {
   const [installPrompt, setInstallPrompt] = useState(null)
   const [installState, setInstallState] = useState('unknown') // 'unknown' | 'installable' | 'installed'
   const [showIOSGuide, setShowIOSGuide] = useState(false)
+  const [clearingCache, setClearingCache] = useState(false)
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream
+
+  function handleClearCache() {
+    setClearingCache(true)
+    clearCacheAndReload()
+  }
 
   useEffect(() => {
     const isStandalone =
@@ -580,6 +587,14 @@ export default function MorePage() {
               onClick={handleInstall}
             />
           ) : null}
+          <MenuRow
+            icon={RefreshCw}
+            iconBg="bg-teal-50"
+            iconColor="text-teal-500"
+            label={clearingCache ? 'กำลังล้างแคช...' : 'ล้างแคช / อัปเดตเวอร์ชั่นล่าสุด'}
+            desc="กดถ้าแอปไม่อัปเดตข้อมูล/ฟีเจอร์ใหม่ ระบบจะโหลดเวอร์ชั่นล่าสุดให้ทันที"
+            onClick={clearingCache ? undefined : handleClearCache}
+          />
           <MenuRow
             icon={Star}
             iconBg="bg-yellow-50"
