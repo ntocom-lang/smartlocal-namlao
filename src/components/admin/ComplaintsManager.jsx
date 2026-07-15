@@ -12,6 +12,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { notifyTelegram } from '../../lib/notifyTelegram'
 import { compressImage } from '../../lib/imageUtils'
 import { logAction } from '../../lib/auditLog'
+import { attachReporterProfiles } from '../../lib/attachReporterProfiles'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const STATUS = {
@@ -710,8 +711,8 @@ ${photoSectionHtml}
         <div className="shrink-0 px-5 pt-6 pb-5 relative"
           style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 60%, color-mix(in srgb, var(--color-primary) 70%, #7c3aed) 100%)' }}>
           <button onClick={onClose}
-            className="absolute top-4 right-4 p-2 rounded-xl bg-white/20 hover:bg-white/30 text-white transition-colors">
-            <X size={16} />
+            className="absolute top-4 right-4 w-9 h-9 flex items-center justify-center rounded-full bg-white shadow-lg hover:bg-gray-100 active:scale-95 transition-all">
+            <X size={20} className="text-gray-700" strokeWidth={2.5} />
           </button>
           <div className="flex items-start gap-3">
             <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-2xl shrink-0">
@@ -1238,11 +1239,11 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
     setLoading(true)
     const { data, error } = await supabase
       .from('complaints')
-      .select('*, profiles(full_name, email, phone, role, created_at, avatar_url)')
+      .select('*')
       .eq('municipality_id', tenant.id)
       .order('created_at', { ascending: false })
     if (error) console.error('fetch complaints error:', error.message)
-    setComplaints(data ?? [])
+    setComplaints(data ? await attachReporterProfiles(data) : [])
     setLoading(false)
   }, [tenant?.id])
 
@@ -1251,13 +1252,15 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
 
   useEffect(() => {
     if (!tenant?.id) return
-    const SELECT = '*, profiles(full_name, email, phone, role, created_at, avatar_url)'
     const ch = supabase.channel(`complaints-mgr-${tenant.id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'complaints' },
         async ({ new: row }) => {
           if (row.municipality_id !== tenant.id) return
-          const { data } = await supabase.from('complaints').select(SELECT).eq('id', row.id).single()
-          if (data) setComplaints(prev => [data, ...prev])
+          const { data } = await supabase.from('complaints').select('*').eq('id', row.id).single()
+          if (data) {
+            const [withProfile] = await attachReporterProfiles([data])
+            setComplaints(prev => [withProfile, ...prev])
+          }
         })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'complaints' },
         ({ new: row }) => {

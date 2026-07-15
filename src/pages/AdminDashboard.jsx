@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { compressImage } from '../lib/imageUtils'
+import { attachReporterProfiles } from '../lib/attachReporterProfiles'
 import { useTenant } from '../contexts/TenantContext'
 import { usePushNotification } from '../hooks/usePushNotification'
 import MapDashboardAdmin from '../components/admin/MapDashboardAdmin'
@@ -475,8 +476,8 @@ ${photoSectionHtml}
         <div className="shrink-0 px-5 pt-6 pb-5 relative"
              style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 60%, color-mix(in srgb, var(--color-primary) 70%, #7c3aed) 100%)' }}>
           <button onClick={onClose}
-            className="absolute top-4 right-4 p-2 rounded-xl bg-white/20 hover:bg-white/30 text-white transition-colors">
-            <X size={16} />
+            className="absolute top-4 right-4 w-9 h-9 flex items-center justify-center rounded-full bg-white shadow-lg hover:bg-gray-100 active:scale-95 transition-all">
+            <X size={20} className="text-gray-700" strokeWidth={2.5} />
           </button>
 
           <div className="flex items-start gap-3">
@@ -2324,7 +2325,7 @@ function StaffManager({ tenant }) {
                       <td className="px-4 py-3">
                         {isEditing ? (
                           <input value={editForm.name} onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
-                            className="border border-gray-200 rounded-lg px-2 py-1 text-sm bg-white focus:outline-none" />
+                            className="border border-gray-200 rounded-lg px-2 py-1 text-sm text-gray-900 bg-white focus:outline-none" />
                         ) : (
                           <span className="font-medium text-gray-800">{person.name}</span>
                         )}
@@ -2332,7 +2333,7 @@ function StaffManager({ tenant }) {
                       <td className="px-4 py-3">
                         {isEditing ? (
                           <input value={editForm.title} onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))}
-                            className="border border-gray-200 rounded-lg px-2 py-1 text-sm bg-white focus:outline-none" />
+                            className="border border-gray-200 rounded-lg px-2 py-1 text-sm text-gray-900 bg-white focus:outline-none" />
                         ) : (
                           <span className="text-gray-600">{person.title}</span>
                         )}
@@ -2340,7 +2341,7 @@ function StaffManager({ tenant }) {
                       <td className="px-4 py-3">
                         {isEditing ? (
                           <input value={editForm.phone} onChange={(e) => setEditForm((f) => ({ ...f, phone: e.target.value }))}
-                            className="border border-gray-200 rounded-lg px-2 py-1 text-sm bg-white focus:outline-none" />
+                            className="border border-gray-200 rounded-lg px-2 py-1 text-sm text-gray-900 bg-white focus:outline-none" />
                         ) : (
                           <span className="text-gray-600 font-mono text-xs">{person.phone || '-'}</span>
                         )}
@@ -2348,7 +2349,7 @@ function StaffManager({ tenant }) {
                       <td className="px-4 py-3">
                         {isEditing ? (
                           <select value={editForm.role} onChange={(e) => setEditForm((f) => ({ ...f, role: e.target.value }))}
-                            className="border border-gray-200 rounded-lg px-2 py-1 text-sm bg-white focus:outline-none">
+                            className="border border-gray-200 rounded-lg px-2 py-1 text-sm text-gray-900 bg-white focus:outline-none">
                             {Object.entries(STAFF_ROLE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                           </select>
                         ) : (
@@ -4778,6 +4779,8 @@ export default function AdminDashboard() {
   const [activePage, setActivePage] = useState(location.state?.page ?? 'dashboard')
   const [currentUserRole, setCurrentUserRole] = useState(null)
   const [currentUserId, setCurrentUserId] = useState(null)
+  const [currentUserAvatar, setCurrentUserAvatar] = useState(null)
+  const [currentUserName, setCurrentUserName] = useState(null)
   const [selectedComplaint, setSelectedComplaint] = useState(null)
   const [technicians, setTechnicians] = useState([])
 
@@ -4805,10 +4808,12 @@ export default function AdminDashboard() {
     supabase.auth.getSession().then(({ data }) => {
       if (!data.session) return
       setCurrentUserId(data.session.user.id)
-      supabase.from('profiles').select('role').eq('id', data.session.user.id).single()
+      supabase.from('profiles').select('role, avatar_url, full_name').eq('id', data.session.user.id).single()
         .then(({ data: p }) => {
           const r = p?.role ?? 'citizen'
           setCurrentUserRole(r)
+          setCurrentUserAvatar(p?.avatar_url ?? null)
+          setCurrentUserName(p?.full_name ?? null)
           if (r === 'viewer' && !location.state?.page) setActivePage('dashboard')
           if (r === 'council' && !location.state?.page) setActivePage('dashboard')
           return r
@@ -4865,11 +4870,11 @@ export default function AdminDashboard() {
     try {
       const { data, error } = await supabase
         .from('complaints')
-        .select('*, profiles(full_name, email, phone)')
+        .select('*')
         .eq('municipality_id', tenant.id)
         .order('created_at', { ascending: false })
       if (error) console.error('fetch complaints error:', error.message)
-      setComplaints(data ?? [])
+      setComplaints(data ? await attachReporterProfiles(data, 'id, full_name, email, phone') : [])
     } finally {
       setLoading(false)
     }
@@ -5046,13 +5051,13 @@ export default function AdminDashboard() {
         />
       )}
 
-      {/* PC header — Kledkaew emerald gradient */}
+      {/* PC header */}
       <header className="hidden md:block relative w-full text-white overflow-hidden"
-        style={{ background: 'linear-gradient(180deg, #059669 0%, #064e3b 100%)' }}>
+        style={{ background: 'linear-gradient(180deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
         <div className="absolute inset-0 opacity-25 pointer-events-none"
           style={{ backgroundImage: `url("${tenant?.header_image_url || 'https://images.unsplash.com/photo-1511497584788-876760111969?auto=format&fit=crop&q=80&w=1000'}")`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
         <div className="absolute bottom-0 inset-x-0 h-12 pointer-events-none"
-          style={{ background: 'linear-gradient(to top, #064e3b, transparent)' }} />
+          style={{ background: 'linear-gradient(to top, var(--color-primary-dark), transparent)' }} />
 
         {/* Top row */}
         <div className="relative z-10 flex items-center justify-between px-6 py-3">
@@ -5110,11 +5115,39 @@ export default function AdminDashboard() {
         </nav>
       </header>
 
+      {/* Mobile header — เหมือนหน้าหลักประชาชน กันสับสนตอนสลับโหมด */}
+      <header className="md:hidden text-white px-4 pt-3 pb-4 relative overflow-hidden"
+        style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)' }}>
+        <div className="flex items-center gap-3 relative z-10">
+          <button onClick={() => navigate('/')} className="shrink-0 active:opacity-70 transition-opacity">
+            {tenant?.logo_url
+              ? <img src={tenant.logo_url} alt="โลโก้" className="w-11 h-11 rounded-full object-contain bg-white/10 p-0.5 border border-white/20" />
+              : <div className="w-11 h-11 rounded-full border-2 border-white/40 bg-white/20 flex items-center justify-center text-lg font-bold">{tenant?.name?.[0] ?? '?'}</div>}
+          </button>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-sm leading-tight truncate">{tenant?.name}</p>
+            <p className="text-white/70 text-[11px] mt-0.5">แผงควบคุม Admin</p>
+          </div>
+          <button onClick={() => navigate('/notifications')} aria-label="การแจ้งเตือน" className="p-1.5 text-white/85 hover:text-white transition-colors shrink-0">
+            <Bell size={19} />
+          </button>
+          <button onClick={() => navigate('/profile')} className="p-1 shrink-0">
+            {currentUserAvatar ? (
+              <img src={currentUserAvatar} alt="โปรไฟล์" className="w-7 h-7 rounded-full object-cover border-2 border-white/60" />
+            ) : (
+              <div className="w-7 h-7 rounded-full bg-white/20 border-2 border-white/60 flex items-center justify-center text-white text-xs font-bold">
+                {(currentUserName || '?')[0].toUpperCase()}
+              </div>
+            )}
+          </button>
+        </div>
+      </header>
+
       {/* ─── Content ─── */}
       <div className="px-4 py-4 pb-24 md:py-6 md:pb-8 md:px-6 space-y-4 md:space-y-6 max-w-5xl mx-auto">
 
-      {/* Org banner — top of every page */}
-      <div className="flex items-center gap-3 bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3">
+      {/* Org banner — desktop only (mobile ใช้ gradient header ด้านบนแทน) */}
+      <div className="hidden md:flex items-center gap-3 bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3">
         <button onClick={() => navigate('/')} className="shrink-0 active:opacity-70 hover:scale-105 transition-transform">
           {tenant?.logo_url
             ? <img src={tenant.logo_url} alt="" className="w-10 h-10 rounded-full object-cover" />
@@ -5125,10 +5158,7 @@ export default function AdminDashboard() {
 
       {/* Page header — mobile only */}
       <div className="md:hidden flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-gray-800">แผงควบคุมผู้ดูแลระบบ</h1>
-          <p className="text-sm text-gray-400 md:hidden">{tenant?.name}</p>
-        </div>
+        <h1 className="text-xl font-bold text-gray-800">แผงควบคุมผู้ดูแลระบบ</h1>
         <div className="flex items-center gap-2">
           {activePage === 'complaints' && (
             <button onClick={fetchComplaints} disabled={loading}
@@ -5224,19 +5254,19 @@ export default function AdminDashboard() {
       {/* ─── Mobile Admin Bottom Tab Bar ─── */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex items-stretch"
         style={{
-          background: 'linear-gradient(180deg, #059669 0%, #064e3b 100%)',
+          background: 'linear-gradient(180deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)',
           borderTop: '2px solid rgba(255,255,255,0.15)',
-          boxShadow: '0 -4px 20px rgba(6,78,59,0.5)',
+          boxShadow: '0 -4px 20px rgba(0,0,0,0.3)',
           borderTopLeftRadius: '20px',
           borderTopRightRadius: '20px',
           paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 6px)',
         }}>
         {[
-          { key: 'dashboard',   label: 'หน้าหลัก',        Icon: Home,        bg: '#fbbf24', show: true },
-          { key: 'report',      label: 'รายงาน',           Icon: TrendingUp,  bg: '#fbbf24', show: true },
-          { key: 'satisfaction',label: 'ประเมิน',          Icon: Star,        bg: '#fbbf24', show: true },
-          { key: 'audit-log',   label: 'บันทึกกิจกรรม',   Icon: BookOpen,    bg: '#fbbf24', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-        ].filter(i => i.show).map(({ key, label, Icon, bg }) => {
+          { key: 'dashboard',   label: 'หน้าหลัก',        Icon: Home,        show: true },
+          { key: 'report',      label: 'รายงาน',           Icon: TrendingUp,  show: true },
+          { key: 'satisfaction',label: 'ประเมิน',          Icon: Star,        show: true },
+          { key: 'audit-log',   label: 'บันทึกกิจกรรม',   Icon: BookOpen,    show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+        ].filter(i => i.show).map(({ key, label, Icon }) => {
           const isActive = activePage === key
           return (
             <button key={key} onClick={() => setActivePage(key)}
@@ -5244,7 +5274,7 @@ export default function AdminDashboard() {
               <div className="relative w-10 h-9 rounded-xl flex items-center justify-center transition-all duration-200"
                 style={{ backgroundColor: isActive ? 'rgba(255,255,255,0.2)' : 'transparent' }}>
                 {isActive && (
-                  <span className="absolute -top-0.5 left-1/2 -translate-x-1/2 w-4 h-[3px] rounded-full" style={{ backgroundColor: bg }} />
+                  <span className="absolute -top-0.5 left-1/2 -translate-x-1/2 w-4 h-[3px] rounded-full bg-white" />
                 )}
                 <Icon size={20} strokeWidth={isActive ? 2.2 : 1.6}
                   style={{ color: isActive ? '#fff' : 'rgba(255,255,255,0.45)' }} />

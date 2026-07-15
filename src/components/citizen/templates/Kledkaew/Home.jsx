@@ -4,6 +4,7 @@ import { useTenant } from '../../../../contexts/TenantContext'
 import { supabase } from '../../../../lib/supabase'
 import PostsHighlight from '../../../../components/home/PostsHighlight'
 import MiniEventCalendar from '../../../../components/MiniEventCalendar'
+import StaffSection from '../../../../components/home/StaffSection'
 import { useNavigate } from 'react-router-dom'
 
 
@@ -80,6 +81,11 @@ export default function Home() {
             </Link>
           ))}
         </div>
+      </div>
+
+      {/* รูปผู้บริหาร — นายก & ปลัด */}
+      <div className="px-4 mt-4 max-w-6xl mx-auto">
+        <StaffSection />
       </div>
 
       {/* Recommended for you */}

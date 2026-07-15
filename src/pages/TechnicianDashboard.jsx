@@ -132,6 +132,9 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenantName, te
   const [photos, setPhotos] = useState(c.work_photos ?? [])
   const [uploading, setUploading] = useState(false)
   const [savingNote, setSavingNote] = useState(false)
+  const [mapPos, setMapPos] = useState(c.latitude ? { lat: c.latitude, lng: c.longitude } : null)
+  const [locationName, setLocationName] = useState(c.location_name || c.village || '')
+  const [showMapEdit, setShowMapEdit] = useState(false)
 
   const action = NEXT_ACTION[c.status]
   const catLabel = CATEGORY_LABEL[c.category] ?? c.category
@@ -271,6 +274,16 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenantName, te
       const newPhotos = [...photos, data.publicUrl]
       setPhotos(newPhotos)
       await supabase.from('complaints').update({ work_photos: newPhotos }).eq('id', c.id)
+      if (c.user_id) {
+        supabase.functions.invoke('send-push', {
+          body: {
+            user_id: c.user_id,
+            title: 'มีรูปหลักฐานการทำงานใหม่',
+            body: `เจ้าหน้าที่เพิ่มรูปความคืบหน้าในคำร้อง${CATEGORY_LABEL[c.category] ?? c.category ?? ''}`,
+            url: '/my-complaints',
+          },
+        }).catch(() => {})
+      }
     }
     setUploading(false)
     e.target.value = ''
@@ -280,6 +293,17 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenantName, te
     setSavingNote(true)
     await supabase.from('complaints').update({ technician_note: note }).eq('id', c.id)
     setSavingNote(false)
+  }
+
+  async function handleMapConfirm({ lat, lng, address }) {
+    const updates = { latitude: lat, longitude: lng }
+    if (address) updates.location_name = address
+    const { error } = await supabase.from('complaints').update(updates).eq('id', c.id)
+    if (!error) {
+      setMapPos({ lat, lng })
+      if (address) setLocationName(address)
+    }
+    setShowMapEdit(false)
   }
 
   const needsPhoto = false
@@ -362,14 +386,23 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenantName, te
           )}
 
           {/* สถานที่ + โทร */}
-          {(c.location_name || c.village || c.phone || c.latitude) && (
-            <div className="space-y-2">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">จุดเกิดเหตุ</p>
+              {c.status !== 'completed' && c.status !== 'rejected' && (
+                <button onClick={() => setShowMapEdit(true)}
+                  className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-orange-50 text-orange-600 hover:bg-orange-100 transition-colors">
+                  <MapPin size={13} />
+                  {mapPos ? 'แก้ไขหมุด' : 'ปักหมุดตำแหน่ง'}
+                </button>
+              )}
+            </div>
+            {(locationName || c.phone || mapPos) && (
               <div className="bg-gray-50 rounded-2xl divide-y divide-gray-100 overflow-hidden border border-gray-100">
-                {(c.location_name || c.village) && (
+                {locationName && (
                   <div className="flex items-center gap-3 px-4 py-3">
                     <MapPin size={15} className="text-orange-400 shrink-0" />
-                    <p className="text-sm text-gray-700">{c.location_name ?? c.village}</p>
+                    <p className="text-sm text-gray-700">{locationName}</p>
                   </div>
                 )}
                 {c.phone && (
@@ -380,19 +413,28 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenantName, te
                     <span className="text-xs font-semibold px-2 py-1 bg-green-100 text-green-700 rounded-lg">โทรออก</span>
                   </a>
                 )}
-                {c.latitude && (
-                  <a href={`https://maps.google.com/?q=${c.latitude},${c.longitude}`}
+                {mapPos && (
+                  <a href={`https://maps.google.com/?q=${mapPos.lat},${mapPos.lng}`}
                      target="_blank" rel="noreferrer"
                      className="flex items-center gap-3 px-4 py-3 hover:bg-gray-100 transition-colors">
                     <MapPin size={15} className="text-blue-500 shrink-0" />
                     <p className="text-sm text-gray-700 flex-1">
-                      {c.latitude.toFixed(5)}, {c.longitude.toFixed(5)}
+                      {mapPos.lat.toFixed(5)}, {mapPos.lng.toFixed(5)}
                     </p>
                     <span className="text-xs font-semibold px-2 py-1 bg-blue-100 text-blue-700 rounded-lg">แผนที่</span>
                   </a>
                 )}
               </div>
-            </div>
+            )}
+          </div>
+
+          {showMapEdit && (
+            <MapPicker
+              initialPos={mapPos}
+              fallbackPos={mapPos}
+              onConfirm={handleMapConfirm}
+              onClose={() => setShowMapEdit(false)}
+            />
           )}
 
           {/* รูปหลักฐานช่าง */}
@@ -406,8 +448,8 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenantName, te
                   {uploading
                     ? <Loader2 size={13} className="animate-spin" />
                     : <Image size={13} />}
-                  {uploading ? 'กำลังอัปโหลด...' : 'ถ่ายรูป / เพิ่มรูป'}
-                  <input type="file" accept="image/*" capture="environment"
+                  {uploading ? 'กำลังอัปโหลด...' : 'เพิ่มรูป'}
+                  <input type="file" accept="image/*"
                          className="hidden" onChange={uploadPhoto} disabled={uploading} />
                 </label>
               )}

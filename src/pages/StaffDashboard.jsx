@@ -5,8 +5,9 @@ import {
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, AlignLeft, Calendar, Hash, RefreshCw,
   Printer, PenLine, Search, Download, Wrench, Home, CalendarDays, TrendingUp, Images, Camera,
-  CreditCard, BadgeCheck, Banknote, Luggage, Star, MoreHorizontal, Car,
+  CreditCard, BadgeCheck, Banknote, Luggage, Star, MoreHorizontal, Car, Bell,
 } from 'lucide-react'
+import MapPicker from '../components/MapPicker'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 import InfraWorkAdmin from '../components/admin/InfraWorkAdmin'
 import CivilProjectReport from '../components/admin/CivilProjectReport'
@@ -18,6 +19,8 @@ import TourismManager, { TourismReviewsAdmin } from '../components/admin/Tourism
 import PostsManager from '../components/staff/PostsManager'
 import FleetPage from './FleetPage'
 import { supabase } from '../lib/supabase'
+import { attachReporterProfiles } from '../lib/attachReporterProfiles'
+import { compressImage } from '../lib/imageUtils'
 import { useTenant } from '../contexts/TenantContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
 
@@ -1828,6 +1831,244 @@ let C_CAT = {
   noise: 'เหตุรำคาญ', other: 'อื่นๆ',
 }
 
+// ── badge helpers (คำร้องที่มอบหมายแล้วแต่เจ้าหน้าที่ยังไม่เคยเปิดดู) ──────
+function getStaffSeenIds() {
+  try { return new Set(JSON.parse(localStorage.getItem('sl_staff_seen') ?? '[]')) }
+  catch { return new Set() }
+}
+function markStaffSeen(id) {
+  const seen = getStaffSeenIds()
+  seen.add(id)
+  localStorage.setItem('sl_staff_seen', JSON.stringify([...seen]))
+  window.dispatchEvent(new Event('staff-badge-update'))
+}
+
+function ComplaintDetailSheetStaff({ complaint: c, onClose, onUpdate, updating }) {
+  const [note, setNote] = useState(c.technician_note ?? '')
+  const [photos, setPhotos] = useState(c.work_photos ?? [])
+  const [uploading, setUploading] = useState(false)
+  const [savingNote, setSavingNote] = useState(false)
+  const [mapPos, setMapPos] = useState(c.latitude ? { lat: c.latitude, lng: c.longitude } : null)
+  const [locationName, setLocationName] = useState(c.location_name || c.village || '')
+  const [showMapEdit, setShowMapEdit] = useState(false)
+
+  const st = C_STATUS[c.status]
+  const nx = C_NEXT[c.status]
+  const isDone = c.status === 'completed' || c.status === 'closed' || c.status === 'rejected'
+
+  async function uploadPhoto(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    const path = `${c.id}/work_${Date.now()}.${file.name.split('.').pop()}`
+    const compressed = await compressImage(file, 1200)
+    const { error: upErr } = await supabase.storage
+      .from('complaint-attachments')
+      .upload(path, compressed, { upsert: false })
+    if (!upErr) {
+      const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
+      const newPhotos = [...photos, data.publicUrl]
+      setPhotos(newPhotos)
+      await supabase.from('complaints').update({ work_photos: newPhotos }).eq('id', c.id)
+      if (c.user_id) {
+        supabase.functions.invoke('send-push', {
+          body: {
+            user_id: c.user_id,
+            title: 'มีรูปหลักฐานการทำงานใหม่',
+            body: `เจ้าหน้าที่เพิ่มรูปความคืบหน้าในคำร้อง${C_CAT[c.category] ?? c.category ?? ''}`,
+            url: '/my-complaints',
+          },
+        }).catch(() => {})
+      }
+    }
+    setUploading(false)
+    e.target.value = ''
+  }
+
+  async function saveNote() {
+    setSavingNote(true)
+    await supabase.from('complaints').update({ technician_note: note }).eq('id', c.id)
+    setSavingNote(false)
+  }
+
+  async function handleMapConfirm({ lat, lng, address }) {
+    const updates = { latitude: lat, longitude: lng }
+    if (address) updates.location_name = address
+    const { error } = await supabase.from('complaints').update(updates).eq('id', c.id)
+    if (!error) {
+      setMapPos({ lat, lng })
+      if (address) setLocationName(address)
+    }
+    setShowMapEdit(false)
+  }
+
+  return (
+    <div className="fixed inset-0 z-60 flex items-end sm:items-center justify-center">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full sm:max-w-lg bg-white sm:rounded-2xl rounded-t-3xl shadow-2xl max-h-[92dvh] flex flex-col overflow-hidden">
+
+        {/* Header */}
+        <div className="shrink-0 px-5 pt-6 pb-5 relative"
+             style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)' }}>
+          <button onClick={onClose}
+            className="absolute top-4 right-4 w-9 h-9 flex items-center justify-center rounded-full bg-white shadow-lg hover:bg-gray-100 active:scale-95 transition-all">
+            <X size={20} className="text-gray-700" strokeWidth={2.5} />
+          </button>
+          <div className="flex-1 min-w-0 pr-12">
+            <p className="text-white/70 text-xs">งานที่ได้รับมอบหมาย</p>
+            <p className="text-white font-bold text-base mt-0.5">{C_CAT[c.category] ?? c.category}</p>
+            {c.profiles?.full_name && <p className="text-white/60 text-xs mt-1">ผู้แจ้ง: {c.profiles.full_name}</p>}
+          </div>
+          <div className="mt-4 pt-4 border-t border-white/20 flex justify-between items-center">
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: st?.bg, color: st?.color }}>
+              {st?.label}
+            </span>
+            <p className="text-white/70 text-xs">
+              {new Date(c.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: 'numeric' })}
+            </p>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5 bg-white">
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">รายละเอียดปัญหา</p>
+            <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{c.description || c.detail}</p>
+            </div>
+          </div>
+
+          {(c.attachments ?? []).length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">รูปภาพจากผู้แจ้ง ({c.attachments.length})</p>
+              <div className="grid grid-cols-3 gap-2">
+                {c.attachments.map((url, i) => (
+                  <a key={i} href={url} target="_blank" rel="noreferrer" className="aspect-square rounded-xl overflow-hidden border border-blue-200 bg-blue-50">
+                    <img src={url} alt={`แนบ ${i + 1}`} className="w-full h-full object-cover" />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">จุดเกิดเหตุ</p>
+              {!isDone && (
+                <button onClick={() => setShowMapEdit(true)}
+                  className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-orange-50 text-orange-600 hover:bg-orange-100 transition-colors">
+                  <MapPin size={13} />
+                  {mapPos ? 'แก้ไขหมุด' : 'ปักหมุดตำแหน่ง'}
+                </button>
+              )}
+            </div>
+            {(locationName || c.phone || mapPos) && (
+              <div className="bg-gray-50 rounded-2xl divide-y divide-gray-100 overflow-hidden border border-gray-100">
+                {locationName && (
+                  <div className="flex items-center gap-3 px-4 py-3">
+                    <MapPin size={15} className="text-orange-400 shrink-0" />
+                    <p className="text-sm text-gray-700">{locationName}</p>
+                  </div>
+                )}
+                {c.phone && (
+                  <a href={`tel:${c.phone}`} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-100 transition-colors">
+                    <Phone size={15} className="text-green-500 shrink-0" />
+                    <p className="text-sm font-bold text-gray-800 flex-1">{c.phone}</p>
+                    <span className="text-xs font-semibold px-2 py-1 bg-green-100 text-green-700 rounded-lg">โทรออก</span>
+                  </a>
+                )}
+                {mapPos && (
+                  <a href={`https://maps.google.com/?q=${mapPos.lat},${mapPos.lng}`} target="_blank" rel="noreferrer"
+                     className="flex items-center gap-3 px-4 py-3 hover:bg-gray-100 transition-colors">
+                    <MapPin size={15} className="text-blue-500 shrink-0" />
+                    <p className="text-sm text-gray-700 flex-1">{mapPos.lat.toFixed(5)}, {mapPos.lng.toFixed(5)}</p>
+                    <span className="text-xs font-semibold px-2 py-1 bg-blue-100 text-blue-700 rounded-lg">แผนที่</span>
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+
+          {showMapEdit && (
+            <MapPicker
+              initialPos={mapPos}
+              fallbackPos={mapPos}
+              onConfirm={handleMapConfirm}
+              onClose={() => setShowMapEdit(false)}
+            />
+          )}
+
+          {/* รูปหลักฐานการทำงาน */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                รูปหลักฐานการทำงาน {photos.length > 0 && `(${photos.length})`}
+              </p>
+              {!isDone && (
+                <label className="cursor-pointer flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors">
+                  {uploading ? <Loader2 size={13} className="animate-spin" /> : <Camera size={13} />}
+                  {uploading ? 'กำลังอัปโหลด...' : 'เพิ่มรูป'}
+                  <input type="file" accept="image/*" className="hidden" onChange={uploadPhoto} disabled={uploading} />
+                </label>
+              )}
+            </div>
+            {photos.length > 0 ? (
+              <div className="grid grid-cols-3 gap-2">
+                {photos.map((url, i) => (
+                  <a key={i} href={url} target="_blank" rel="noreferrer" className="aspect-square rounded-xl overflow-hidden border border-blue-200 bg-blue-50">
+                    <img src={url} alt="" className="w-full h-full object-cover" />
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <div className="flex items-center justify-center py-6 rounded-2xl border-2 border-dashed border-gray-200 text-gray-400">
+                <div className="text-center">
+                  <Camera size={24} className="mx-auto mb-1 opacity-50" />
+                  <p className="text-xs">ยังไม่มีรูปหลักฐาน</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* บันทึกการดำเนินการ */}
+          {!isDone ? (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">บันทึกการดำเนินการ</p>
+              <div className="flex gap-2">
+                <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3}
+                  placeholder="บันทึกรายละเอียดการดำเนินการ..."
+                  className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-800 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-blue-100" />
+                <button onClick={saveNote} disabled={savingNote}
+                  className="self-end px-3 py-2 rounded-xl text-xs font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors disabled:opacity-50">
+                  {savingNote ? <Loader2 size={13} className="animate-spin" /> : 'บันทึก'}
+                </button>
+              </div>
+            </div>
+          ) : c.technician_note && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">บันทึกการดำเนินการ</p>
+              <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                <p className="text-sm text-gray-700 whitespace-pre-wrap">{c.technician_note}</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        {nx && (
+          <div className="px-5 py-4 border-t border-gray-100 bg-gray-50 shrink-0">
+            <button onClick={() => onUpdate(c.id, nx.next, photos, note)} disabled={updating === c.id}
+              className="w-full py-3 rounded-2xl text-sm font-bold text-white transition-all active:scale-98 disabled:opacity-50"
+              style={{ backgroundColor: nx.next === 'done' ? '#10b981' : 'var(--color-primary)' }}>
+              {updating === c.id ? <Loader2 size={16} className="animate-spin mx-auto" /> : `${nx.label} →`}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function ComplaintsStaffModule({ tenant, staffId }) {
   const [complaints, setComplaints] = useState([])
   const [loading, setLoading]       = useState(true)
@@ -1847,6 +2088,7 @@ function ComplaintsStaffModule({ tenant, staffId }) {
   const [search, setSearch]         = useState('')
   const [filterStatus, setFilterStatus] = useState('all')
   const [updating, setUpdating]     = useState(null)
+  const [selected, setSelected]     = useState(null)
 
   useEffect(() => { fetchAll() }, [tenant?.id])
 
@@ -1857,19 +2099,23 @@ function ComplaintsStaffModule({ tenant, staffId }) {
         async ({ new: row }) => {
           if (row.municipality_id !== tenant.id || row.assigned_to !== staffId) return
           const { data } = await supabase.from('complaints')
-            .select('*, profiles(full_name, phone)').eq('id', row.id).single()
-          if (data) setComplaints(prev => [data, ...prev])
+            .select('*').eq('id', row.id).single()
+          if (data) {
+            const [withProfile] = await attachReporterProfiles([data], 'id, full_name, phone')
+            setComplaints(prev => [withProfile, ...prev])
+          }
         })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'complaints' },
         async ({ new: row }) => {
           if (row.municipality_id !== tenant.id) return
           const { data } = await supabase.from('complaints')
-            .select('*, profiles(full_name, phone)').eq('id', row.id).single()
+            .select('*').eq('id', row.id).single()
           if (!data) return
           if (data.assigned_to === staffId) {
+            const [withProfile] = await attachReporterProfiles([data], 'id, full_name, phone')
             setComplaints(prev => {
-              const exists = prev.find(c => c.id === data.id)
-              return exists ? prev.map(c => c.id === data.id ? data : c) : [data, ...prev]
+              const exists = prev.find(c => c.id === withProfile.id)
+              return exists ? prev.map(c => c.id === withProfile.id ? withProfile : c) : [withProfile, ...prev]
             })
           } else {
             setComplaints(prev => prev.filter(c => c.id !== data.id))
@@ -1883,25 +2129,29 @@ function ComplaintsStaffModule({ tenant, staffId }) {
     if (!tenant?.id || !staffId) return
     setLoading(true)
     const { data } = await supabase.from('complaints')
-      .select('*, profiles(full_name, phone)')
+      .select('*')
       .eq('municipality_id', tenant.id)
       .eq('assigned_to', staffId)
       .neq('status', 'pending')
       .order('created_at', { ascending: false })
-    setComplaints(data ?? [])
+    setComplaints(data ? await attachReporterProfiles(data, 'id, full_name, phone') : [])
     setLoading(false)
   }
 
-  async function advanceStatus(id, next) {
+  async function advanceStatus(id, next, workPhotos = null, techNote = null) {
     setUpdating(id)
-    const { error } = await supabase.from('complaints').update({ status: next, updated_at: new Date().toISOString() }).eq('id', id)
+    const payload = { status: next, updated_at: new Date().toISOString() }
+    if (workPhotos?.length > 0) payload.work_photos = workPhotos
+    if (techNote !== null) payload.technician_note = techNote
+    const { error } = await supabase.from('complaints').update(payload).eq('id', id)
     if (!error) {
-      setComplaints(prev => prev.map(c => c.id === id ? { ...c, status: next } : c))
+      setComplaints(prev => prev.map(c => c.id === id ? { ...c, ...payload } : c))
       const c = complaints.find(x => x.id === id)
       const catLabel = C_CAT[c?.category] ?? c?.category ?? ''
       notifyTelegram(tenant?.telegram_group_id,
         `🔄 <b>อัปเดตสถานะคำร้อง</b>\nประเภท: ${catLabel}\nสถานะ: ${C_STATUS[next]?.label ?? next}`
       )
+      setSelected(null)
     }
     setUpdating(null)
   }
@@ -1957,7 +2207,8 @@ function ComplaintsStaffModule({ tenant, staffId }) {
             const nx = C_NEXT[c.status]
             const date = new Date(c.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
             return (
-              <div key={c.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+              <div key={c.id} onClick={() => { markStaffSeen(c.id); setSelected(c) }}
+                className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 cursor-pointer hover:border-gray-200 transition-colors">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -1976,7 +2227,7 @@ function ComplaintsStaffModule({ tenant, staffId }) {
                     {c.profiles?.full_name && <p className="text-xs text-gray-400 mt-1">👤 {c.profiles.full_name}</p>}
                   </div>
                   {nx && (
-                    <button onClick={() => advanceStatus(c.id, nx.next)} disabled={updating === c.id}
+                    <button onClick={(e) => { e.stopPropagation(); advanceStatus(c.id, nx.next) }} disabled={updating === c.id}
                       className="shrink-0 text-xs font-bold px-3 py-1.5 rounded-xl text-white disabled:opacity-50"
                       style={{ backgroundColor: 'var(--color-primary)' }}>
                       {updating === c.id ? '...' : nx.label}
@@ -1987,6 +2238,11 @@ function ComplaintsStaffModule({ tenant, staffId }) {
             )
           })}
         </div>
+      )}
+
+      {selected && (
+        <ComplaintDetailSheetStaff complaint={selected} onClose={() => setSelected(null)}
+          onUpdate={advanceStatus} updating={updating} />
       )}
     </div>
   )
@@ -1999,10 +2255,10 @@ function StaffReportWrapper({ tenant }) {
   useEffect(() => {
     if (!tenant?.id) return
     Promise.all([
-      supabase.from('complaints').select('*, profiles(full_name, phone)').eq('municipality_id', tenant.id).order('created_at', { ascending: false }),
+      supabase.from('complaints').select('*').eq('municipality_id', tenant.id).order('created_at', { ascending: false }),
       supabase.from('profiles').select('id, full_name, email').eq('municipality_id', tenant.id).eq('role', 'technician'),
-    ]).then(([{ data: c }, { data: t }]) => {
-      setComplaints(c ?? [])
+    ]).then(async ([{ data: c }, { data: t }]) => {
+      setComplaints(c ? await attachReporterProfiles(c, 'id, full_name, phone') : [])
       setTechnicians(t ?? [])
       setLoading(false)
     })
@@ -2068,6 +2324,7 @@ export default function StaffDashboard() {
   const [mapOpenComplaintId, setMapOpenComplaintId] = useState(location.state?.openComplaintId ?? null)
   const [profile, setProfile]           = useState(null)
   const [pendingCount, setPendingCount] = useState(0)
+  const [newComplaintCount, setNewComplaintCount] = useState(0)
 
   const allModuleKeys = MODULES.map(m => m.key)
   // keys ที่เคยอยู่ใน ModuleManager — ถ้า key ใหม่ยังไม่เคยถูก manage ให้ default เป็น enabled
@@ -2133,6 +2390,37 @@ export default function StaffDashboard() {
     return () => supabase.removeChannel(ch)
   }, [tenant?.id])
 
+  useEffect(() => {
+    if (!tenant?.id || !profile?.id) return
+
+    const refreshComplaintBadge = () =>
+      supabase.from('complaints')
+        .select('id, status')
+        .eq('municipality_id', tenant.id)
+        .eq('assigned_to', profile.id)
+        .neq('status', 'pending')
+        .then(({ data }) => {
+          const seen = getStaffSeenIds()
+          const count = (data ?? []).filter(c =>
+            c.status !== 'completed' && c.status !== 'closed' && c.status !== 'rejected' && !seen.has(c.id)
+          ).length
+          setNewComplaintCount(count)
+        })
+
+    refreshComplaintBadge()
+    window.addEventListener('staff-badge-update', refreshComplaintBadge)
+
+    const ch = supabase.channel(`staff-complaint-badge-${tenant.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'complaints' },
+        ({ new: row }) => { if (row?.municipality_id === tenant.id && row?.assigned_to === profile.id) refreshComplaintBadge() })
+      .subscribe()
+
+    return () => {
+      window.removeEventListener('staff-badge-update', refreshComplaintBadge)
+      supabase.removeChannel(ch)
+    }
+  }, [tenant?.id, profile?.id])
+
   async function handleLogout() {
     await supabase.auth.signOut()
     navigate('/')
@@ -2141,27 +2429,41 @@ export default function StaffDashboard() {
   return (
     <div className="min-h-full" style={{ backgroundColor: '#eef2f7' }}>
 
-      {/* Mobile header */}
-        <header className="md:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-100 shadow-sm shrink-0">
-          <button onClick={() => navigate('/')}
-            className="w-8 h-8 rounded-xl overflow-hidden shrink-0 active:opacity-70 transition-opacity"
-            style={!tenant?.logo_url ? { background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)' } : {}}>
+      {/* Mobile header — เหมือนหน้าหลักประชาชน กันสับสนตอนสลับโหมด */}
+      <header className="md:hidden text-white px-4 pt-3 pb-4 relative overflow-hidden shrink-0"
+        style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)' }}>
+        <div className="flex items-center gap-3 relative z-10">
+          <button onClick={() => navigate('/')} className="shrink-0 active:opacity-70 transition-opacity">
             {tenant?.logo_url
-              ? <img src={tenant.logo_url} alt="" className="w-full h-full object-cover" />
-              : <span className="flex items-center justify-center w-full h-full text-white">🏛️</span>}
+              ? <img src={tenant.logo_url} alt="โลโก้" className="w-11 h-11 rounded-full object-contain bg-white/10 p-0.5 border border-white/20" />
+              : <div className="w-11 h-11 rounded-full border-2 border-white/40 bg-white/20 flex items-center justify-center text-lg font-bold">{tenant?.name?.[0] ?? '?'}</div>}
           </button>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-bold text-gray-800 truncate">{tenant?.name ?? 'Staff Portal'}</p>
+            <p className="font-bold text-sm leading-tight truncate">{tenant?.name ?? 'Staff Portal'}</p>
+            <p className="text-white/70 text-[11px] mt-0.5">สำหรับเจ้าหน้าที่</p>
           </div>
-        </header>
+          <button onClick={() => navigate('/notifications')} aria-label="การแจ้งเตือน" className="p-1.5 text-white/85 hover:text-white transition-colors shrink-0">
+            <Bell size={19} />
+          </button>
+          <button onClick={() => navigate('/profile')} className="p-1 shrink-0">
+            {profile?.avatar_url ? (
+              <img src={profile.avatar_url} alt="โปรไฟล์" className="w-7 h-7 rounded-full object-cover border-2 border-white/60" />
+            ) : (
+              <div className="w-7 h-7 rounded-full bg-white/20 border-2 border-white/60 flex items-center justify-center text-white text-xs font-bold">
+                {(profile?.full_name || '?')[0].toUpperCase()}
+              </div>
+            )}
+          </button>
+        </div>
+      </header>
 
         {/* PC header — staff themed */}
         <header className="hidden md:block relative w-full text-white overflow-hidden"
-          style={{ background: 'linear-gradient(180deg, #059669 0%, #064e3b 100%)' }}>
+          style={{ background: 'linear-gradient(180deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
           <div className="absolute inset-0 opacity-25 pointer-events-none"
             style={{ backgroundImage: `url("${tenant?.header_image_url || 'https://images.unsplash.com/photo-1511497584788-876760111969?auto=format&fit=crop&q=80&w=1000'}")`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
           <div className="absolute bottom-0 inset-x-0 h-12 pointer-events-none"
-            style={{ background: 'linear-gradient(to top, #064e3b, transparent)' }} />
+            style={{ background: 'linear-gradient(to top, var(--color-primary-dark), transparent)' }} />
 
           {/* Top row */}
           <div className="relative z-10 flex items-center justify-between px-6 py-3">
@@ -2212,7 +2514,9 @@ export default function StaffDashboard() {
               { key: 'tourism',    label: 'ท่องเที่ยว',  Icon: Luggage },
             ].map(({ key, label, Icon }) => {
               const isActive = activeModule === key
-              const badge = key === 'inbox' && pendingCount > 0 ? pendingCount : null
+              const badge = key === 'inbox' && pendingCount > 0 ? pendingCount
+              : key === 'complaints' && newComplaintCount > 0 ? newComplaintCount
+              : null
               return (
                 <button key={key} onClick={() => setActiveModule(key)}
                   className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-bold transition-all relative"
@@ -2260,21 +2564,23 @@ export default function StaffDashboard() {
         {/* Mobile bottom nav */}
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-20 flex items-stretch"
           style={{
-            background: 'linear-gradient(180deg, #059669 0%, #064e3b 100%)',
+            background: 'linear-gradient(180deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)',
             borderTop: '2px solid rgba(255,255,255,0.15)',
-            boxShadow: '0 -4px 20px rgba(6,78,59,0.5)',
+            boxShadow: '0 -4px 20px rgba(0,0,0,0.3)',
             borderTopLeftRadius: '20px',
             borderTopRightRadius: '20px',
             paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 6px)',
           }}>
           {[
-            { key: 'home',       label: 'หน้าหลัก',   Icon: Home,         bg: '#fbbf24' },
-            { key: 'inbox',      label: 'คำขอเอกสาร', Icon: FileText,     bg: '#fbbf24' },
-            { key: 'complaints', label: 'คำร้อง',      Icon: BarChart2,    bg: '#fbbf24' },
-            { key: 'events',     label: 'กิจกรรม',     Icon: CalendarDays, bg: '#fbbf24' },
-          ].filter(({ key }) => key === 'home' || visibleModules.some(m => m.key === key)).map(({ key, label, Icon, bg }) => {
+            { key: 'home',       label: 'หน้าหลัก',   Icon: Home },
+            { key: 'inbox',      label: 'คำขอเอกสาร', Icon: FileText },
+            { key: 'complaints', label: 'คำร้อง',      Icon: BarChart2 },
+            { key: 'events',     label: 'กิจกรรม',     Icon: CalendarDays },
+          ].filter(({ key }) => key === 'home' || visibleModules.some(m => m.key === key)).map(({ key, label, Icon }) => {
             const isActive = activeModule === key
-            const badge = key === 'inbox' && pendingCount > 0 ? pendingCount : null
+            const badge = key === 'inbox' && pendingCount > 0 ? pendingCount
+              : key === 'complaints' && newComplaintCount > 0 ? newComplaintCount
+              : null
             return (
               <button key={key}
                 onClick={() => setActiveModule(key)}
@@ -2282,7 +2588,7 @@ export default function StaffDashboard() {
                 <div className="relative w-10 h-9 rounded-xl flex items-center justify-center transition-all duration-200"
                   style={{ backgroundColor: isActive ? 'rgba(255,255,255,0.2)' : 'transparent' }}>
                   {isActive && (
-                    <span className="absolute -top-0.5 left-1/2 -translate-x-1/2 w-4 h-[3px] rounded-full" style={{ backgroundColor: bg }} />
+                    <span className="absolute -top-0.5 left-1/2 -translate-x-1/2 w-4 h-[3px] rounded-full bg-white" />
                   )}
                   <Icon size={20} strokeWidth={isActive ? 2.2 : 1.6}
                     style={{ color: isActive ? '#fff' : 'rgba(255,255,255,0.45)' }} />
