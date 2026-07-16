@@ -13,6 +13,7 @@ import { notifyTelegram } from '../../lib/notifyTelegram'
 import { compressImage } from '../../lib/imageUtils'
 import { logAction } from '../../lib/auditLog'
 import { attachReporterProfiles } from '../../lib/attachReporterProfiles'
+import { buildCouncilComplaintHtml } from '../../lib/councilFormPrint'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const STATUS = {
@@ -517,7 +518,7 @@ function ReporterCard({ c }) {
 }
 
 function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, onPriority, currentUserRole, currentUserId, onDelete, onPinSave }) {
-  const { tenant } = useTenant()
+  const { tenant, terminology } = useTenant()
   const isAdminRole = ['admin', 'superadmin'].includes(currentUserRole)
   const isTechAssigned = currentUserRole === 'technician' && c.assigned_to === currentUserId
   const canAct = isAdminRole || isTechAssigned
@@ -600,7 +601,7 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
 
   if (!c) return null
 
-  function handlePrintComplaint() {
+  async function handlePrintComplaint() {
     const d = new Date(c.created_at)
     const thDate = d.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
     const num = c.ref_no ?? '—'
@@ -610,6 +611,21 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
     const statusLabel = STATUS[c.status]?.label ?? c.status
     const location = [c.location_name, c.village].filter(Boolean).join(', ') || '—'
     const nowTH = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
+
+    // ผู้แจ้งเป็นสมาชิกสภาเทศบาล — ใช้แบบฟอร์ม "คำร้อง" ทางการแทนใบบันทึกออนไลน์ทั่วไป
+    if (c.profiles?.role === 'council') {
+      const { data: staffList } = await supabase
+        .from('staff')
+        .select('name, title, role')
+        .eq('municipality_id', tenant?.id)
+        .eq('is_active', true)
+      const html = buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate, cat, phone, staffList })
+      const w = window.open('', '_blank', 'width=900,height=700')
+      w.document.write(html)
+      w.document.close()
+      setTimeout(() => w.print(), 500)
+      return
+    }
 
     const hasWorkPhotos = (c.work_photos ?? []).length > 0
     const imgStyle = 'width:calc(25% - 5px);height:90px;object-fit:cover;border-radius:5px;border:1px solid #e5e7eb;display:inline-block;vertical-align:top'

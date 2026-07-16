@@ -17,6 +17,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { compressImage } from '../lib/imageUtils'
 import { attachReporterProfiles } from '../lib/attachReporterProfiles'
+import { buildCouncilComplaintHtml } from '../lib/councilFormPrint'
 import { useTenant } from '../contexts/TenantContext'
 import { usePushNotification } from '../hooks/usePushNotification'
 import MapDashboardAdmin from '../components/admin/MapDashboardAdmin'
@@ -333,7 +334,7 @@ function FixedSelect({ value, onChange, options }) {
 
 // ─── Complaint Detail Modal ───────────────────────────────────────────────────
 function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, currentUserRole, onDelete }) {
-  const { tenant } = useTenant()
+  const { tenant, terminology } = useTenant()
   const [assigning, setAssigning] = useState(false)
   const [showCloseJob, setShowCloseJob] = useState(false)
   const [pendingPhotos, setPendingPhotos] = useState([])
@@ -354,7 +355,7 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
 
   if (!c) return null
 
-  function handlePrintComplaint() {
+  async function handlePrintComplaint() {
     const d = new Date(c.created_at)
     const thDate = d.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
     const yy = String(d.getFullYear() + 543).slice(-2)
@@ -367,6 +368,21 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
     const location = [c.location_name, c.village].filter(Boolean).join(', ') || '—'
     const assignee = c.assigned_to_name || '—'
     const nowTH = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
+
+    // ผู้แจ้งเป็นสมาชิกสภาเทศบาล — ใช้แบบฟอร์ม "คำร้อง" ทางการแทนใบบันทึกออนไลน์ทั่วไป
+    if (c.profiles?.role === 'council') {
+      const { data: staffList } = await supabase
+        .from('staff')
+        .select('name, title, role')
+        .eq('municipality_id', tenant?.id)
+        .eq('is_active', true)
+      const html = buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate, cat, phone, staffList })
+      const w = window.open('', '_blank', 'width=900,height=700')
+      w.document.write(html)
+      w.document.close()
+      setTimeout(() => w.print(), 500)
+      return
+    }
 
     const hasWorkPhotos = (c.work_photos ?? []).length > 0
 
@@ -2012,6 +2028,7 @@ const STAFF_ROLE_LABEL = {
   mayor: 'นายกเทศมนตรี',
   deputy_mayor: 'รองนายกเทศมนตรี',
   clerk: 'ปลัดเทศบาล',
+  dept_head: 'หัวหน้าส่วนราชการ/ผู้อำนวยการกอง',
   staff: 'เจ้าหน้าที่',
 }
 
@@ -4874,7 +4891,7 @@ export default function AdminDashboard() {
         .eq('municipality_id', tenant.id)
         .order('created_at', { ascending: false })
       if (error) console.error('fetch complaints error:', error.message)
-      setComplaints(data ? await attachReporterProfiles(data, 'id, full_name, email, phone') : [])
+      setComplaints(data ? await attachReporterProfiles(data, 'id, full_name, email, phone, role') : [])
     } finally {
       setLoading(false)
     }

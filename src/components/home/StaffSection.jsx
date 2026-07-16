@@ -107,7 +107,7 @@ export default function StaffSection() {
   const mayors = staff.filter((s) => s.role === 'mayor')
   const clerks = staff.filter((s) => s.role === 'clerk')
   const deputies = staff.filter((s) => s.role === 'deputy_mayor')
-  const teamMembers = staff.filter((s) => s.role === 'staff')
+  const teamMembers = staff.filter((s) => s.role === 'staff' || s.role === 'dept_head')
 
   // รวมบอร์ดบริหารระดับสูง (นายก และ ปลัด)
   const topLeaders = [...mayors, ...clerks]
