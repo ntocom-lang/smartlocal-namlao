@@ -227,7 +227,7 @@ function EServiceBlock({ docTypes }) {
       
       <div className="relative z-10">
         <div className="flex items-center justify-between mb-3">
-          <p className="text-white font-bold text-[13px] tracking-wide uppercase flex items-center gap-1.5">
+          <p className="text-white font-extrabold text-[15px] md:text-base tracking-wide uppercase flex items-center gap-1.5 drop-shadow-sm">
             ✦ E-SERVICE ✦ <span className="text-white/90">งานบริการประชาชน</span>
           </p>
           <Link to="/doc-request" className="flex items-center gap-0.5 text-white/90 text-[11px] font-semibold hover:text-white transition-colors">

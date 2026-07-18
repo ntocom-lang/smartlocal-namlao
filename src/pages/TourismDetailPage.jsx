@@ -352,7 +352,7 @@ export default function TourismDetailPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.from('tourism_places').select('*').eq('id', id).single()
+    supabase.from('tourism_places').select('*').eq('id', id).maybeSingle()
       .then(({ data }) => setPlace(data))
       .catch(() => {})
       .finally(() => setLoading(false))

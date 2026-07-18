@@ -53,7 +53,7 @@ export default function ComplaintBand() {
 
       <div className="relative z-10 px-4 pt-3 pb-4">
         <div className="flex items-center justify-between mb-3">
-          <p className="text-amber-900 font-bold text-sm tracking-wide">🚨 แจ้งเหตุ / แจ้งซ่อม</p>
+          <p className="text-amber-900 font-extrabold text-[15px] md:text-base tracking-wide drop-shadow-sm">🚨 แจ้งเหตุ / แจ้งซ่อม</p>
           <button onClick={() => navigate('/complaint')}
             className="flex items-center gap-0.5 text-amber-900/70 text-xs bg-white/30 px-2 py-1 rounded-full hover:bg-white/50 transition-colors">
             ทั้งหมด <ChevronRight size={13} />
