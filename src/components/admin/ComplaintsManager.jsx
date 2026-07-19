@@ -602,91 +602,28 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
   if (!c) return null
 
   async function handlePrintComplaint() {
-    const d = new Date(c.created_at)
-    const thDate = d.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
-    const num = c.ref_no ?? '—'
-    const reporter = c.reporter_name || c.profiles?.full_name || '—'
-    const phone = c.phone || c.profiles?.phone || '—'
-    const cat = CATEGORY_LABEL[c.category] ?? c.category ?? '—'
-    const statusLabel = STATUS[c.status]?.label ?? c.status
-    const location = [c.location_name, c.village].filter(Boolean).join(', ') || '—'
-    const nowTH = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
-
-    // ผู้แจ้งเป็นสมาชิกสภาเทศบาล — ใช้แบบฟอร์ม "คำร้อง" ทางการแทนใบบันทึกออนไลน์ทั่วไป
-    if (c.profiles?.role === 'council') {
-      const { data: staffList } = await supabase
-        .from('staff')
-        .select('name, title, role')
-        .eq('municipality_id', tenant?.id)
-        .eq('is_active', true)
-      const html = buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate, cat, phone, staffList })
-      const w = window.open('', '_blank', 'width=900,height=700')
-      w.document.write(html)
-      w.document.close()
-      setTimeout(() => w.print(), 500)
+    // ต้องเปิดหน้าต่างทันทีแบบ sync ในตอนคลิก ก่อน await ใดๆ — ถ้าเปิดหลัง await
+    // เบราว์เซอร์จะตัดขาดจาก user gesture แล้ว popup blocker จะบล็อกเงียบๆ (ไม่ error
+    // ให้เห็น) ครั้งแรกอาจหลุดผ่านมาได้ แต่ครั้งต่อไปจะกดไม่ติดเลย
+    const w = window.open('', '_blank', 'width=900,height=700')
+    if (!w) {
+      alert('เบราว์เซอร์บล็อกป๊อปอัพ กรุณาอนุญาตป๊อปอัพสำหรับเว็บไซต์นี้แล้วลองใหม่')
       return
     }
 
-    const hasWorkPhotos = (c.work_photos ?? []).length > 0
-    const imgStyle = 'width:calc(25% - 5px);height:90px;object-fit:cover;border-radius:5px;border:1px solid #e5e7eb;display:inline-block;vertical-align:top'
-    const renderPhotos = (urls) =>
-      `<div style="display:flex;flex-wrap:wrap;gap:6px">${urls.map(u => `<img src="${u}" style="${imgStyle}">`).join('')}</div>`
+    const d = new Date(c.created_at)
+    const thDate = d.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
+    const num = c.ref_no ?? '—'
+    const phone = c.phone || c.profiles?.phone || '—'
+    const cat = CATEGORY_LABEL[c.category] ?? c.category ?? '—'
 
-    const photoSectionHtml = hasWorkPhotos ? `
-<p style="margin:16px 0 6px;font-weight:600;font-size:14px">ภาพประกอบ</p>
-${hasWorkPhotos ? `<div>
-  <div style="font-weight:600;font-size:12px;margin-bottom:4px;color:#374151">หลังดำเนินการ (${c.work_photos.length} รูป)</div>
-  ${renderPhotos(c.work_photos)}
-</div>` : ''}` : ''
-
-    const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
-<title>ใบคำร้อง ${num}</title>
-<style>
-  @page { size: A4 portrait; margin: 2cm 2cm 2cm 2.5cm; }
-  body { font-family: 'Sarabun', sans-serif; font-size: 15px; color: #111; line-height: 1.7; }
-  .center { text-align: center; }
-  .bold { font-weight: 700; }
-  .title { font-size: 18px; font-weight: 700; margin-bottom: 2px; }
-  .sub { font-size: 14px; color: #555; margin-bottom: 20px; }
-  table.info { width: 100%; border-collapse: collapse; margin-top: 12px; }
-  table.info td { padding: 5px 10px; font-size: 14px; }
-  table.info td:first-child { width: 160px; font-weight: 600; color: #374151; }
-  .detail-box { border: 1px solid #d1d5db; border-radius: 8px; padding: 12px 16px; margin-top: 8px; font-size: 14px; line-height: 1.8; background: #f9fafb; }
-  .badge { display:inline-block; padding:2px 10px; border-radius:99px; font-size:12px; font-weight:700; }
-  .footer { margin-top:40px; display:flex; justify-content:flex-end; }
-  .sign-block { text-align:center; width:220px; }
-  .sign-line { border-top:1px solid #374151; margin-top:48px; padding-top:6px; font-size:13px; }
-  @media print { button { display:none; } }
-</style></head><body>
-<div class="center">
-  <div class="title">${tenant?.name ?? 'หน่วยงาน'}</div>
-  <div class="sub">ใบบันทึกคำร้องออนไลน์ &nbsp;|&nbsp; เลขที่ ${num}</div>
-</div>
-<hr style="border:none;border-top:2px solid #1d4ed8;margin:0 0 16px">
-<table class="info">
-  <tr><td>ประเภทคำร้อง</td><td class="bold">${cat}</td></tr>
-  ${c.subject ? `<tr><td>เรื่อง</td><td>${c.subject}</td></tr>` : ''}
-  <tr><td>ผู้แจ้ง</td><td>${reporter}</td></tr>
-  <tr><td>เบอร์ติดต่อ</td><td>${phone}</td></tr>
-  <tr><td>วันที่ยื่นคำร้อง</td><td>${thDate}</td></tr>
-  <tr><td>จุดเกิดเหตุ</td><td>${location}</td></tr>
-  ${c.latitude ? `<tr><td>พิกัด GPS</td><td>${Number(c.latitude).toFixed(6)}, ${Number(c.longitude).toFixed(6)}</td></tr>` : ''}
-  <tr><td>สถานะ</td><td><span class="badge" style="background:${STATUS[c.status]?.bg ?? '#f3f4f6'};color:${STATUS[c.status]?.text ?? '#374151'}">${statusLabel}</span></td></tr>
-</table>
-<p style="margin:20px 0 6px;font-weight:600">รายละเอียดคำร้อง</p>
-<div class="detail-box">${(c.detail ?? '—').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}</div>
-${photoSectionHtml}
-<div class="footer">
-  <div class="sign-block">
-    <div class="sign-line">
-      <div>(............................................)</div>
-      <div style="margin-top:2px">ผู้รับคำร้อง</div>
-      <div style="color:#555;font-size:12px">วันที่ ${nowTH}</div>
-    </div>
-  </div>
-</div>
-</body></html>`
-    const w = window.open('', '_blank', 'width=900,height=700')
+    // ใบคำร้องทางการ — ใช้แบบเดียวกันทุกคำร้อง ไม่ว่าผู้แจ้งจะเป็นประชาชนหรือสมาชิกสภา
+    const { data: staffList } = await supabase
+      .from('staff')
+      .select('name, title, role')
+      .eq('municipality_id', tenant?.id)
+      .eq('is_active', true)
+    const html = buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate, cat, phone, staffList })
     w.document.write(html)
     w.document.close()
     setTimeout(() => w.print(), 500)
@@ -1217,6 +1154,38 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   const [filterDepartment, setFilterDepartment]   = useState('')
   const [selectedComplaint, setSelectedComplaint] = useState(null)
   const [technicians, setTechnicians]             = useState([])
+  const [selectedIds, setSelectedIds]             = useState(() => new Set())
+  const [bulkDeleting, setBulkDeleting]           = useState(false)
+  const canBulkDelete = ['admin', 'superadmin'].includes(currentUserRole)
+
+  function toggleSelect(id) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAllVisible(ids) {
+    setSelectedIds(prev => {
+      const allSelected = ids.length > 0 && ids.every(id => prev.has(id))
+      if (allSelected) return new Set()
+      return new Set(ids)
+    })
+  }
+
+  async function handleBulkDelete() {
+    const ids = [...selectedIds]
+    if (ids.length === 0) return
+    if (!window.confirm(`ลบคำร้อง ${ids.length} รายการที่เลือกไว้ออกจากระบบ?\n\nการลบไม่สามารถย้อนกลับได้`)) return
+    setBulkDeleting(true)
+    const { error } = await supabase.from('complaints').delete().in('id', ids)
+    setBulkDeleting(false)
+    if (error) { alert('ลบไม่สำเร็จ: ' + error.message); return }
+    setComplaints(prev => prev.filter(c => !selectedIds.has(c.id)))
+    if (selectedComplaint && selectedIds.has(selectedComplaint.id)) setSelectedComplaint(null)
+    setSelectedIds(new Set())
+  }
 
   function handlePinSave(complaintId, lat, lng) {
     setComplaints(prev => prev.map(comp => comp.id === complaintId ? { ...comp, latitude: lat, longitude: lng } : comp))
@@ -1640,6 +1609,24 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
           </div>
         </div>
 
+        {/* Bulk selection toolbar */}
+        {canBulkDelete && selectedIds.size > 0 && (
+          <div className="flex items-center justify-between gap-3 px-5 py-2.5 bg-red-50 border-y border-red-200">
+            <span className="text-xs font-semibold text-red-700">เลือกไว้ {selectedIds.size} รายการ</span>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setSelectedIds(new Set())}
+                className="text-xs font-medium text-gray-500 hover:text-gray-700 px-2 py-1">
+                ยกเลิกเลือก
+              </button>
+              <button onClick={handleBulkDelete} disabled={bulkDeleting}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white bg-red-500 hover:bg-red-600 transition-colors disabled:opacity-50">
+                {bulkDeleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                {bulkDeleting ? 'กำลังลบ...' : `ลบที่เลือก (${selectedIds.size})`}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* List */}
         {loading ? (
           <div className="flex items-center justify-center py-16 text-gray-400">
@@ -1655,8 +1642,14 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
             {/* Mobile card list */}
             <div className="md:hidden divide-y divide-gray-100">
               {paginatedFiltered.map((c, i) => (
-                <div key={c.id} className="px-4 py-3.5 space-y-2 cursor-pointer"
+                <div key={c.id} className="px-4 py-3.5 space-y-2 cursor-pointer flex items-start gap-2"
                      onClick={() => setSelectedComplaint(c)}>
+                  {canBulkDelete && (
+                    <input type="checkbox" checked={selectedIds.has(c.id)} onChange={() => toggleSelect(c.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-4 h-4 mt-1 shrink-0 cursor-pointer" />
+                  )}
+                  <div className="flex-1 min-w-0 space-y-2">
                   <div className="flex items-start justify-between gap-2">
                     <span className="font-semibold text-gray-800 text-sm leading-snug flex items-center gap-1.5 flex-wrap">
                       <span className="text-gray-400 font-mono font-normal mr-1">{complaintStartIdx + i + 1}.</span>
@@ -1703,6 +1696,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                       </div>
                     )}
                   </div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1712,6 +1706,14 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr style={{ backgroundColor: '#2c5282' }}>
+                    {canBulkDelete && (
+                      <th className="px-3 py-2.5 text-center border-r border-white/10 w-8">
+                        <input type="checkbox"
+                          checked={paginatedFiltered.length > 0 && paginatedFiltered.every(c => selectedIds.has(c.id))}
+                          onChange={() => toggleSelectAllVisible(paginatedFiltered.map(c => c.id))}
+                          className="w-3.5 h-3.5 cursor-pointer" />
+                      </th>
+                    )}
                     <th className="px-3 py-2.5 text-center text-[11px] font-bold text-white border-r border-white/10 w-10">ที่</th>
                     <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10 w-20">เลขที่</th>
                     <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ประเภทคำร้อง</th>
@@ -1732,6 +1734,12 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                       onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'}
                       onMouseLeave={e => e.currentTarget.style.backgroundColor = i % 2 === 0 ? '#fff' : '#f5f8fc'}
                       onClick={() => setSelectedComplaint(c)}>
+                      {canBulkDelete && (
+                        <td className="px-3 py-2 text-center border-r border-gray-200" onClick={(e) => e.stopPropagation()}>
+                          <input type="checkbox" checked={selectedIds.has(c.id)} onChange={() => toggleSelect(c.id)}
+                            className="w-3.5 h-3.5 cursor-pointer" />
+                        </td>
+                      )}
                       <td className="px-3 py-2 text-center text-xs text-gray-500 border-r border-gray-200">{complaintStartIdx + i + 1}</td>
                       <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap border-r border-gray-200">
                         {c.ref_no ? c.ref_no.replace(/^[A-Z]+-/, '') : <span className="text-gray-300">—</span>}

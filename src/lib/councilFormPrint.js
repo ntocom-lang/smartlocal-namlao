@@ -19,20 +19,30 @@ function locationName(tenant) {
   return tenant.name.replace(strip, '').trim()
 }
 
-// แบบฟอร์ม "คำร้อง" ทางการ — ใช้เมื่อผู้แจ้งเป็นสมาชิกสภา (role: council)
+// ใบคำร้องทางการ — ใช้กับคำร้องทุกประเภท ไม่ว่าผู้แจ้งจะเป็นประชาชนทั่วไปหรือสมาชิกสภา
 // อ้างอิงจากแบบฟอร์มกระดาษจริงที่เทศบาลตำบลน้ำเลาใช้งานอยู่
 // terminology มาจาก useTenant() — ให้คำเรียกตำแหน่งถูกต้องตาม org_type ของแต่ละหน่วยงาน
 export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate, cat, phone, staffList }) {
-  const d = new Date(c.created_at)
-  const dayNum = d.toLocaleDateString('th-TH', { day: 'numeric' })
-  const monthName = d.toLocaleDateString('th-TH', { month: 'long' })
-  const yearBE = d.getFullYear() + 543
   const loc = locationName(tenant)
   const reporter = c.reporter_name || c.profiles?.full_name || '.................................................'
 
   const mayorTitle = (terminology?.mayor ?? 'นายก') + loc
   const clerkTitle = (terminology?.clerk ?? 'ปลัด') + loc
   const councilTitle = (terminology?.council ?? 'สมาชิกสภา') + loc
+
+  // ตำแหน่ง/ที่อยู่ผู้ร้อง — ดึงจากข้อมูลส่วนตัวโปรไฟล์ (หน้าจัดการผู้ใช้ของแอดมิน) ถ้ามี
+  // ไม่มีก็เว้นบรรทัดจุดไข่ปลาให้กรอกมือ — แต่ "เขตที่ ..." เฉพาะสมาชิกสภาเท่านั้น
+  // (ประชาชนทั่วไปไม่มีเขตเลือกตั้ง ใส่ให้ผิดความหมาย)
+  const p = c.profiles
+  const positionLine = p?.job_title
+    || (c.profiles?.role === 'council' ? `${councilTitle} เขตที่ .................` : '')
+  const addrParts = [
+    p?.address_detail,
+    p?.address_moo ? `หมู่ที่ ${p.address_moo}` : null,
+    `ตำบล${p?.address_subdistrict || '.................'}`,
+    `อำเภอ${p?.address_district || '.................'}`,
+    `จังหวัด${p?.address_province || tenant?.province || '.................'}`,
+  ].filter(Boolean)
 
   const mayor = staffList?.find((s) => s.role === 'mayor')
   const clerk = staffList?.find((s) => s.role === 'clerk')
@@ -41,20 +51,22 @@ export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate,
   const location1 = [c.location_name, c.village].filter(Boolean).join(', ')
   const point1 = [location1, c.detail].filter(Boolean).join(' — ') || '.................................................................................................'
 
-  const signBlock = (person, fallbackTitle) => `
-    <div style="width:45%;text-align:center;">
+  // อ้างอิงตำแหน่งจากแบบฟอร์มกระดาษจริง: แถวบน กองช่าง+ปลัด สองคอลัมน์ / แถวล่าง นายก อยู่กึ่งกลาง-ขวา
+  const signBlock = (person, fallbackTitle, width = '45%') => `
+    <div style="width:${width};text-align:center;">
       <div>ลงชื่อ.................................................</div>
-      <div style="margin-top:38px;">(${esc(person?.name) || '.........................................................'})</div>
+      <div style="margin-top:26px;">(${esc(person?.name) || '.........................................................'})</div>
       <div>${esc(person?.title) || esc(fallbackTitle)}</div>
     </div>`
 
   return `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
 <title>คำร้อง ${num}</title>
 <style>
-  @page { size: A4 portrait; margin: 2cm 2.5cm; }
-  body { font-family: 'Sarabun', sans-serif; font-size: 15px; color: #111; line-height: 1.9; position: relative; }
+  @page { size: A4 portrait; margin: 1.6cm 2.5cm; }
+  body { font-family: 'Sarabun', sans-serif; font-size: 15px; color: #111; line-height: 1.5; }
+  p { margin: 0; }
   .center { text-align: center; }
-  .req-no { position: absolute; top: 0; right: 0; border: 1px solid #000; padding: 6px 14px; font-size: 13px; line-height: 1.8; }
+  .req-no { text-align: right; padding: 0; font-size: 12px; line-height: 1.4; }
   .indent { text-indent: 2em; }
   .points div { margin: 4px 0; }
   @media print { button { display: none; } }
@@ -64,42 +76,39 @@ export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate,
   <div>ลงวันที่ ${esc(thDate)}</div>
 </div>
 
-<p class="center" style="font-size:19px;font-weight:700;margin-top:8px;">คำร้อง</p>
-<p class="center">วันที่ ${esc(dayNum)} เดือน ${esc(monthName)} พ.ศ. ${yearBE}</p>
+<p class="center" style="font-size:18px;font-weight:700;margin-top:10px;">คำร้อง</p>
+<p class="center" style="margin-top:2px;">ผ่านระบบ E-Service ${esc(tenant?.name ?? '')}</p>
 
-<p style="margin-top:24px;">เรื่อง &nbsp;&nbsp;แจ้งซ่อมแซม${esc(cat)}</p>
-<p>เรียน &nbsp;&nbsp;${esc(mayorTitle)}</p>
+<p style="margin-top:16px;">เรื่อง &nbsp;&nbsp;แจ้งซ่อมแซม${esc(cat)}</p>
+<p style="margin-top:4px;">เรียน &nbsp;&nbsp;${esc(mayorTitle)}</p>
 
-<p class="indent">ข้าพเจ้า ${esc(reporter)} ${esc(councilTitle)} เขตที่ .................</p>
-<p>${esc(loc)} อำเภอ................. จังหวัด${tenant?.province ? esc(tenant.province) : ' .................'} โทรศัพท์ ${esc(phone)}</p>
+<p class="indent" style="margin-top:8px;">ข้าพเจ้า ${esc(reporter)} ${esc(positionLine)}</p>
+<p style="margin-top:2px;">${esc(addrParts.join(' '))} โทรศัพท์ ${esc(phone)}</p>
 
-<p class="indent" style="margin-top:12px;">
+<p class="indent" style="margin-top:10px;">
   มีความประสงค์แจ้งซ่อมแซม${esc(cat)} เพื่อความปลอดภัยในชีวิตและทรัพย์สินของราษฎรในพื้นที่
   จึงขอความอนุเคราะห์${esc(tenant?.name ?? '')}ให้ความอนุเคราะห์ในการซ่อมแซม${esc(cat)}ให้ใช้งานได้ตามปกติ
 </p>
 
-<div class="points" style="margin-top:16px;">
-  <div>จุดที่ 1 &nbsp;${esc(point1)}</div>
-  <div>จุดที่ 2 &nbsp;.................................................................................................</div>
-  <div>จุดที่ 3 &nbsp;.................................................................................................</div>
-  <div>จุดที่ 4 &nbsp;.................................................................................................</div>
+<div class="points indent" style="margin-top:10px;">
+  <div>สถานที่ &nbsp;${esc(point1)}</div>
 </div>
 
-<p style="margin-top:20px;">จึงเรียนมาเพื่อโปรดพิจารณาดำเนินการ</p>
+<p class="indent" style="margin-top:12px;">จึงเรียนมาเพื่อโปรดพิจารณาดำเนินการ</p>
 
-<p class="center" style="margin-top:24px;">ขอแสดงความนับถือ</p>
-<p class="center" style="margin-top:44px;">.................................................</p>
-<p class="center">(...........................................)</p>
+<div style="page-break-inside:avoid;margin-top:16px;">
+  <p class="center">ขอแสดงความนับถือ</p>
+  <p class="center" style="margin-top:26px;">${esc(reporter)}</p>
+  <p class="center" style="margin-top:2px;">(${esc(reporter)})</p>
 
-<div style="display:flex;justify-content:space-between;margin-top:40px;">
-  ${signBlock(deptHead, 'ผู้อำนวยการกองช่าง')}
-  ${signBlock(clerk, clerkTitle)}
-</div>
+  <div style="display:flex;justify-content:space-between;margin-top:24px;">
+    ${signBlock(deptHead, 'ผู้อำนวยการกองช่าง')}
+    ${signBlock(clerk, clerkTitle)}
+  </div>
 
-<div style="text-align:center;margin-top:44px;">
-  <div>ลงชื่อ.................................................</div>
-  <div style="margin-top:38px;">(${esc(mayor?.name) || '.........................................................'})</div>
-  <div>${esc(mayor?.title) || esc(mayorTitle)}</div>
+  <div style="display:flex;justify-content:flex-end;margin-top:28px;">
+    ${signBlock(mayor, mayorTitle, '45%')}
+  </div>
 </div>
 
 </body></html>`

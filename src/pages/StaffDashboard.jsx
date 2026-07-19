@@ -609,7 +609,7 @@ function NewRequestSheet({ tenant, staffId, onClose, onCreated }) {
 export function InboxModule({ tenant, staffId }) {
   const [requests, setRequests]   = useState([])
   const [loading, setLoading]     = useState(true)
-  const [activeTab, setActiveTab] = useState('pending')
+  const [activeTab, setActiveTab] = useState('all')
   const [selected, setSelected]   = useState(null)
   const [acting, setActing]       = useState(false)
   const [showAdd, setShowAdd]     = useState(false)
@@ -683,10 +683,10 @@ export function InboxModule({ tenant, staffId }) {
   }
 
   const TABS = [
+    { key: 'all',        label: 'ทั้งหมด' },
     { key: 'pending',    label: 'รอดำเนินการ' },
     { key: 'processing', label: 'กำลังดำเนินการ' },
     { key: 'completed',  label: 'เสร็จสิ้น' },
-    { key: 'all',        label: 'ทั้งหมด' },
   ]
   const counts = {
     pending:    requests.filter(r => r.status === 'pending').length,
