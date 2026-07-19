@@ -261,27 +261,35 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
     setShowForm(true)
   }
 
+  // อัปโหลดไฟล์แนบแยกเป็นขั้นหลังบันทึกกิจกรรมเสร็จแล้ว (ไม่บล็อกการบันทึกข้อมูลหลัก)
+  // เหมือนแพตเทิร์นที่ CitizenForm.jsx ใช้กับรูปแนบคำร้อง — ถ้าอัปโหลดมีปัญหา
+  // กิจกรรมก็ยังถูกบันทึกอยู่ ไม่หายไปพร้อมกัน
+  async function uploadEventAttachment(eventId, file) {
+    try {
+      if (file.size > 20 * 1024 * 1024) throw new Error('ไฟล์ใหญ่เกินไป (สูงสุด 20 MB)')
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const path = `${tenant.id}/${Date.now()}_${safeName}`
+      const toUpload = await compressImage(file, undefined)
+      const contentType = toUpload.type || (/\.pdf$/i.test(toUpload.name ?? '') ? 'application/pdf' : 'application/octet-stream')
+      const { error: uploadError } = await supabase.storage
+        .from('event-attachments')
+        .upload(path, toUpload, { upsert: false, contentType })
+      if (uploadError) throw new Error(uploadError.message)
+      const { data: { publicUrl } } = supabase.storage.from('event-attachments').getPublicUrl(path)
+      const { error: updErr } = await supabase.from('events').update({ attachment_url: publicUrl }).eq('id', eventId)
+      if (updErr) throw new Error(updErr.message)
+      fetchEvents()
+    } catch (err) {
+      alert('บันทึกกิจกรรมสำเร็จ แต่แนบไฟล์ไม่สำเร็จ: ' + (err?.message ?? 'เกิดข้อผิดพลาด') + '\n\nเปิดแก้ไขกิจกรรมนี้แล้วลองแนบไฟล์ใหม่อีกครั้ง')
+    }
+  }
+
   async function handleSave() {
     if (!form.title.trim()) { setFormError('กรุณากรอกชื่อกิจกรรม'); return }
     if (!form.event_date) { setFormError('กรุณาระบุวันที่กิจกรรม'); return }
     setFormError('')
     setSaving(true)
     try {
-      let attachmentUrl = form.attachment_url || null
-      if (form.attachment_file) {
-        const file = form.attachment_file
-        if (file.size > 20 * 1024 * 1024) throw new Error('ไฟล์ใหญ่เกินไป (สูงสุด 20 MB)')
-        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-        const path = `${tenant.id}/${Date.now()}_${safeName}`
-        const toUpload = await compressImage(file, undefined)
-        const contentType = toUpload.type || (/\.pdf$/i.test(toUpload.name ?? '') ? 'application/pdf' : 'application/octet-stream')
-        const { error: uploadError } = await supabase.storage
-          .from('event-attachments')
-          .upload(path, toUpload, { upsert: false, contentType })
-        if (uploadError) throw new Error('อัปโหลดไฟล์ไม่สำเร็จ: ' + uploadError.message)
-        const { data: { publicUrl } } = supabase.storage.from('event-attachments').getPublicUrl(path)
-        attachmentUrl = publicUrl
-      }
       const payload = {
         municipality_id: tenant.id, title: form.title.trim(),
         description: form.description.trim() || null, event_date: form.event_date,
@@ -290,8 +298,9 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
         end_date: form.end_date || null, location: form.location.trim() || null,
         category: form.category === 'อื่นๆ' ? (form.customCategory.trim() || 'อื่นๆ') : form.category,
         is_all_day: false, audience: form.audience,
-        attachment_url: attachmentUrl, updated_at: new Date().toISOString(),
+        attachment_url: form.attachment_url || null, updated_at: new Date().toISOString(),
       }
+      let eventId = editingEvent?.id ?? null
       if (editingEvent) {
         const { data: updData, error: updErr } = await supabase.from('events').update(payload).eq('id', editingEvent.id).select('id')
         if (updErr) throw new Error('บันทึกไม่สำเร็จ: ' + updErr.message)
@@ -300,8 +309,10 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
         }
       } else {
         const { data: { user } } = await supabase.auth.getUser()
-        const { error: insErr } = await supabase.from('events').insert({ ...payload, created_by: user?.id ?? null })
+        const { data: insData, error: insErr } = await supabase.from('events')
+          .insert({ ...payload, created_by: user?.id ?? null }).select('id').single()
         if (insErr) throw new Error('บันทึกไม่สำเร็จ: ' + insErr.message)
+        eventId = insData?.id ?? null
         const dateStr = payload.event_date
           ? new Date(payload.event_date + 'T00:00:00').toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
           : ''
@@ -316,6 +327,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
       }
       setShowForm(false)
       fetchEvents()
+      if (form.attachment_file && eventId) uploadEventAttachment(eventId, form.attachment_file)
     } catch (e) {
       const msg = e?.message ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง'
       setFormError(msg)

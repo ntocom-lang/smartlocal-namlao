@@ -3791,13 +3791,9 @@ function EventsManager({ tenant, currentUserRole }) {
     setShowForm(true)
   }
 
-  async function handleSave() {
-    if (!form.title.trim() || !form.event_date) return
-    setSaving(true)
-
-    let attachmentUrl = form.attachment_url || null
-    if (form.attachment_file) {
-      const file = form.attachment_file
+  // อัปโหลดไฟล์แนบแยกเป็นขั้นหลังบันทึกกิจกรรมเสร็จแล้ว (ไม่บล็อกการบันทึกข้อมูลหลัก)
+  async function uploadEventAttachment(eventId, file) {
+    try {
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
       const path = `${tenant.id}/${Date.now()}_${safeName}`
       const toUpload = await compressImage(file, undefined)
@@ -3805,14 +3801,19 @@ function EventsManager({ tenant, currentUserRole }) {
       const { error: upErr } = await supabase.storage
         .from('event-attachments')
         .upload(path, toUpload, { upsert: false, contentType })
-      if (upErr) {
-        setSaving(false)
-        setFormError('อัปโหลดไฟล์ไม่สำเร็จ: ' + upErr.message)
-        return
-      }
+      if (upErr) throw new Error(upErr.message)
       const { data: { publicUrl } } = supabase.storage.from('event-attachments').getPublicUrl(path)
-      attachmentUrl = publicUrl
+      const { error: updErr } = await supabase.from('events').update({ attachment_url: publicUrl }).eq('id', eventId)
+      if (updErr) throw new Error(updErr.message)
+      fetchEvents()
+    } catch (err) {
+      alert('บันทึกกิจกรรมสำเร็จ แต่แนบไฟล์ไม่สำเร็จ: ' + (err?.message ?? 'เกิดข้อผิดพลาด') + '\n\nเปิดแก้ไขกิจกรรมนี้แล้วลองแนบไฟล์ใหม่อีกครั้ง')
     }
+  }
+
+  async function handleSave() {
+    if (!form.title.trim() || !form.event_date) return
+    setSaving(true)
 
     const payload = {
       municipality_id: tenant.id,
@@ -3826,18 +3827,22 @@ function EventsManager({ tenant, currentUserRole }) {
       category: form.category,
       is_all_day: form.is_all_day,
       audience: form.audience,
-      attachment_url: attachmentUrl,
+      attachment_url: form.attachment_url || null,
       updated_at: new Date().toISOString(),
     }
+    let eventId = editingEvent?.id ?? null
     if (editingEvent) {
       await supabase.from('events').update(payload).eq('id', editingEvent.id)
     } else {
       const { data: { user } } = await supabase.auth.getUser()
-      await supabase.from('events').insert({ ...payload, created_by: user?.id ?? null })
+      const { data: insData } = await supabase.from('events')
+        .insert({ ...payload, created_by: user?.id ?? null }).select('id').single()
+      eventId = insData?.id ?? null
     }
     setSaving(false)
     setShowForm(false)
     fetchEvents()
+    if (form.attachment_file && eventId) uploadEventAttachment(eventId, form.attachment_file)
   }
 
   async function handleDelete(id) {
