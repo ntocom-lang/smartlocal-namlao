@@ -3793,20 +3793,33 @@ function EventsManager({ tenant, currentUserRole }) {
 
   // อัปโหลดไฟล์แนบแยกเป็นขั้นหลังบันทึกกิจกรรมเสร็จแล้ว (ไม่บล็อกการบันทึกข้อมูลหลัก)
   async function uploadEventAttachment(eventId, file) {
+    if (!file || !eventId) return
     try {
+      if (file.size > 20 * 1024 * 1024) throw new Error('ไฟล์ใหญ่เกินไป (สูงสุด 20 MB)')
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
       const path = `${tenant.id}/${Date.now()}_${safeName}`
       const toUpload = await compressImage(file, undefined)
       const contentType = toUpload.type || (/\.pdf$/i.test(toUpload.name ?? '') ? 'application/pdf' : 'application/octet-stream')
-      const { error: upErr } = await supabase.storage
-        .from('event-attachments')
+
+      let storageBucket = 'event-attachments'
+      let uploadRes = await supabase.storage
+        .from(storageBucket)
         .upload(path, toUpload, { upsert: false, contentType })
-      if (upErr) throw new Error(upErr.message)
-      const { data: { publicUrl } } = supabase.storage.from('event-attachments').getPublicUrl(path)
+
+      if (uploadRes.error) {
+        console.warn('Failed upload to event-attachments, trying complaint-attachments:', uploadRes.error)
+        storageBucket = 'complaint-attachments'
+        uploadRes = await supabase.storage
+          .from(storageBucket)
+          .upload(path, toUpload, { upsert: false, contentType })
+      }
+
+      if (uploadRes.error) throw new Error(uploadRes.error.message)
+      const { data: { publicUrl } } = supabase.storage.from(storageBucket).getPublicUrl(path)
       const { error: updErr } = await supabase.from('events').update({ attachment_url: publicUrl }).eq('id', eventId)
       if (updErr) throw new Error(updErr.message)
-      fetchEvents()
     } catch (err) {
+      console.error('uploadEventAttachment error:', err)
       alert('บันทึกกิจกรรมสำเร็จ แต่แนบไฟล์ไม่สำเร็จ: ' + (err?.message ?? 'เกิดข้อผิดพลาด') + '\n\nเปิดแก้ไขกิจกรรมนี้แล้วลองแนบไฟล์ใหม่อีกครั้ง')
     }
   }
@@ -3815,34 +3828,39 @@ function EventsManager({ tenant, currentUserRole }) {
     if (!form.title.trim() || !form.event_date) return
     setSaving(true)
 
-    const payload = {
-      municipality_id: tenant.id,
-      title: form.title.trim(),
-      description: form.description.trim() || null,
-      event_date: form.event_date,
-      event_time: form.is_all_day ? null : (form.event_time || null),
-      end_time: form.is_all_day ? null : (form.end_time || null),
-      end_date: form.end_date || null,
-      location: form.location.trim() || null,
-      category: form.category,
-      is_all_day: form.is_all_day,
-      audience: form.audience,
-      attachment_url: form.attachment_url || null,
-      updated_at: new Date().toISOString(),
+    try {
+      const payload = {
+        municipality_id: tenant.id,
+        title: form.title.trim(),
+        description: form.description.trim() || null,
+        event_date: form.event_date,
+        event_time: form.is_all_day ? null : (form.event_time || null),
+        end_time: form.is_all_day ? null : (form.end_time || null),
+        end_date: form.end_date || null,
+        location: form.location.trim() || null,
+        category: form.category,
+        is_all_day: form.is_all_day,
+        audience: form.audience,
+        attachment_url: form.attachment_url || null,
+        updated_at: new Date().toISOString(),
+      }
+      let eventId = editingEvent?.id ?? null
+      if (editingEvent) {
+        await supabase.from('events').update(payload).eq('id', editingEvent.id)
+      } else {
+        const { data: { user } } = await supabase.auth.getUser()
+        const { data: insData } = await supabase.from('events')
+          .insert({ ...payload, created_by: user?.id ?? null }).select('id').single()
+        eventId = insData?.id ?? null
+      }
+      if (form.attachment_file && eventId) {
+        await uploadEventAttachment(eventId, form.attachment_file)
+      }
+      setShowForm(false)
+      fetchEvents()
+    } finally {
+      setSaving(false)
     }
-    let eventId = editingEvent?.id ?? null
-    if (editingEvent) {
-      await supabase.from('events').update(payload).eq('id', editingEvent.id)
-    } else {
-      const { data: { user } } = await supabase.auth.getUser()
-      const { data: insData } = await supabase.from('events')
-        .insert({ ...payload, created_by: user?.id ?? null }).select('id').single()
-      eventId = insData?.id ?? null
-    }
-    setSaving(false)
-    setShowForm(false)
-    fetchEvents()
-    if (form.attachment_file && eventId) uploadEventAttachment(eventId, form.attachment_file)
   }
 
   async function handleDelete(id) {
@@ -4117,7 +4135,7 @@ function EventsManager({ tenant, currentUserRole }) {
                     <label className="flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-gray-200 cursor-pointer hover:border-blue-300 hover:bg-blue-50/50 transition-colors">
                       <Paperclip size={15} className="text-gray-400 shrink-0" />
                       <span className="text-sm text-gray-400">แนบ PDF หรือรูปภาพ (สูงสุด 20 MB)</span>
-                      <input type="file" accept=".pdf,image/*" className="hidden"
+                      <input type="file" accept="image/*,application/pdf,.pdf" className="hidden"
                         onChange={(e) => setForm((p) => ({ ...p, attachment_file: e.target.files?.[0] ?? null }))} />
                     </label>
                   )}

@@ -265,21 +265,33 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
   // เหมือนแพตเทิร์นที่ CitizenForm.jsx ใช้กับรูปแนบคำร้อง — ถ้าอัปโหลดมีปัญหา
   // กิจกรรมก็ยังถูกบันทึกอยู่ ไม่หายไปพร้อมกัน
   async function uploadEventAttachment(eventId, file) {
+    if (!file || !eventId) return
     try {
       if (file.size > 20 * 1024 * 1024) throw new Error('ไฟล์ใหญ่เกินไป (สูงสุด 20 MB)')
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
       const path = `${tenant.id}/${Date.now()}_${safeName}`
       const toUpload = await compressImage(file, undefined)
       const contentType = toUpload.type || (/\.pdf$/i.test(toUpload.name ?? '') ? 'application/pdf' : 'application/octet-stream')
-      const { error: uploadError } = await supabase.storage
-        .from('event-attachments')
+
+      let storageBucket = 'event-attachments'
+      let uploadRes = await supabase.storage
+        .from(storageBucket)
         .upload(path, toUpload, { upsert: false, contentType })
-      if (uploadError) throw new Error(uploadError.message)
-      const { data: { publicUrl } } = supabase.storage.from('event-attachments').getPublicUrl(path)
+
+      if (uploadRes.error) {
+        console.warn('Failed upload to event-attachments, trying complaint-attachments:', uploadRes.error)
+        storageBucket = 'complaint-attachments'
+        uploadRes = await supabase.storage
+          .from(storageBucket)
+          .upload(path, toUpload, { upsert: false, contentType })
+      }
+
+      if (uploadRes.error) throw new Error(uploadRes.error.message)
+      const { data: { publicUrl } } = supabase.storage.from(storageBucket).getPublicUrl(path)
       const { error: updErr } = await supabase.from('events').update({ attachment_url: publicUrl }).eq('id', eventId)
       if (updErr) throw new Error(updErr.message)
-      fetchEvents()
     } catch (err) {
+      console.error('uploadEventAttachment error:', err)
       alert('บันทึกกิจกรรมสำเร็จ แต่แนบไฟล์ไม่สำเร็จ: ' + (err?.message ?? 'เกิดข้อผิดพลาด') + '\n\nเปิดแก้ไขกิจกรรมนี้แล้วลองแนบไฟล์ใหม่อีกครั้ง')
     }
   }
@@ -325,9 +337,13 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
           `📅 <b>กิจกรรมใหม่</b> [${audLabel}]\n<b>${payload.title}</b>${dateStr ? `\n📆 ${dateStr}` : ''}${timeStr ? `\n${timeStr}` : ''}${payload.location ? `\n📍 ${payload.location}` : ''}${payload.description ? `\n📝 ${payload.description.slice(0, 120)}` : ''}`
         )
       }
+
+      if (form.attachment_file && eventId) {
+        await uploadEventAttachment(eventId, form.attachment_file)
+      }
+
       setShowForm(false)
       fetchEvents()
-      if (form.attachment_file && eventId) uploadEventAttachment(eventId, form.attachment_file)
     } catch (e) {
       const msg = e?.message ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง'
       setFormError(msg)
@@ -837,7 +853,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
                     <label className="flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-gray-200 cursor-pointer hover:border-blue-300 hover:bg-blue-50/50 transition-colors">
                       <Paperclip size={15} className="text-gray-400 shrink-0" />
                       <span className="text-sm text-gray-400">แนบ PDF หรือรูปภาพ (สูงสุด 20 MB)</span>
-                      <input type="file" accept=".pdf,image/*" className="hidden"
+                      <input type="file" accept="image/*,application/pdf,.pdf" className="hidden"
                         onChange={(e) => setForm((p) => ({ ...p, attachment_file: e.target.files?.[0] ?? null }))} />
                     </label>
                   )}
@@ -846,14 +862,21 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
             </div>
             <div className="border-t border-gray-100 shrink-0">
               <div className="px-6 py-4 flex gap-3">
-                <button onClick={() => setShowForm(false)}
-                  className="flex-1 py-3 rounded-2xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50">
+                <button onClick={() => setShowForm(false)} disabled={saving}
+                  className="flex-1 py-3 rounded-2xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50">
                   ยกเลิก
                 </button>
                 <button onClick={handleSave} disabled={saving || !form.title.trim() || !form.event_date}
-                  className="flex-1 py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-50"
+                  className="flex-1 py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-50 flex items-center justify-center gap-2"
                   style={{ backgroundColor: 'var(--color-primary)' }}>
-                  {saving ? 'กำลังบันทึก...' : 'บันทึก'}
+                  {saving ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      <span>{form.attachment_file ? 'กำลังอัปโหลด...' : 'กำลังบันทึก...'}</span>
+                    </>
+                  ) : (
+                    'บันทึก'
+                  )}
                 </button>
               </div>
             </div>

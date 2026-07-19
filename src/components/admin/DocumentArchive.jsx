@@ -264,7 +264,7 @@ function UploadModal({ tenantId, uploaderId, allowedDepts, onClose, onSuccess })
                 {form.file ? form.file.name : 'แตะเพื่อเลือกไฟล์'}
               </span>
               {form.file && <span className="text-xs text-gray-400">{formatBytes(form.file.size)}</span>}
-              <input type="file" accept=".pdf,image/*" className="hidden"
+              <input type="file" accept="image/*,application/pdf,.pdf" className="hidden"
                 onChange={e => setForm(p => ({ ...p, file: e.target.files?.[0] ?? null }))} />
             </label>
           </div>
