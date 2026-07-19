@@ -4111,7 +4111,7 @@ function EventsManager({ tenant, currentUserRole }) {
                     <label className="flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-gray-200 cursor-pointer hover:border-blue-300 hover:bg-blue-50/50 transition-colors">
                       <Paperclip size={15} className="text-gray-400 shrink-0" />
                       <span className="text-sm text-gray-400">แนบ PDF หรือรูปภาพ (สูงสุด 20 MB)</span>
-                      <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden"
+                      <input type="file" accept=".pdf,image/*" className="hidden"
                         onChange={(e) => setForm((p) => ({ ...p, attachment_file: e.target.files?.[0] ?? null }))} />
                     </label>
                   )}
