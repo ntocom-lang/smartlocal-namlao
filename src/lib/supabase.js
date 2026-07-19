@@ -23,8 +23,17 @@ function fetchWithTimeout(input, init = {}) {
   return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer))
 }
 
+// กัน navigator.locks ค้างแบบไม่มี timeout ในตัว SDK (บั๊กที่รู้จักของ
+// supabase-js บนมือถือ — เช่น ตอนหน้าต่างเลือกไฟล์ของระบบเปิดคลุมหน้าเว็บ
+// ทำให้ lock ค้างไม่ถูกปล่อย แล้ว request ที่ต้องใช้ token ทุกตัวค้างตามไปด้วย
+// ไม่มี error ไม่มี timeout เอง) ปิดการใช้ lock นี้ตามคำแนะนำทางการของ Supabase
+async function noOpLock(_name, _acquireTimeout, fn) {
+  return await fn()
+}
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   global: { fetch: fetchWithTimeout },
+  auth: { lock: noOpLock },
 })
 
 supabase.auth.onAuthStateChange((event) => {
