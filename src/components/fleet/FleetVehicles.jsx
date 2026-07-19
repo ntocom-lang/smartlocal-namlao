@@ -41,7 +41,7 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
   useEffect(() => {
     if (!tenant?.id) return
     Promise.all([
-      supabase.from('fleet_vehicles').select('*, fleet_departments(name,short_name)')
+      supabase.from('fleet_vehicles').select('*, departments(name,short_name)')
         .eq('municipality_id', tenant.id).order('name'),
       supabase.from('fleet_vehicle_types').select('value,label')
         .eq('municipality_id', tenant.id).order('sort_order'),
@@ -54,7 +54,7 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
   /* ── Realtime ── */
   useEffect(() => {
     if (!tenant?.id) return
-    const SELECT = '*, fleet_departments(name,short_name)'
+    const SELECT = '*, departments(name,short_name)'
     const channel = supabase.channel(`fleet-vehicles-${tenant.id}-${crypto.randomUUID()}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'fleet_vehicles' },
         async ({ new: row }) => {
@@ -107,12 +107,12 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
     }
     if (modal === 'add') {
       const { data, error } = await supabase.from('fleet_vehicles').insert(payload)
-        .select('*, fleet_departments(name,short_name)').single()
+        .select('*, departments(name,short_name)').single()
       if (!error) setVehicles(prev => [...prev, data].sort((a,b) => a.name.localeCompare(b.name, 'th')))
       else alert(error.message)
     } else {
       const { data, error } = await supabase.from('fleet_vehicles').update(payload)
-        .eq('id', modal.id).select('*, fleet_departments(name,short_name)').single()
+        .eq('id', modal.id).select('*, departments(name,short_name)').single()
       if (!error) setVehicles(prev => prev.map(v => v.id === modal.id ? data : v))
       else alert(error.message)
     }
@@ -202,7 +202,7 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
                       </td>
                       <td className="px-4 py-2.5 text-gray-600 text-xs border-r border-gray-200 whitespace-nowrap">{v.license_plate}</td>
                       <td className="px-4 py-2.5 text-gray-600 text-xs border-r border-gray-200">{vehicleTypes.find(t => t.value === v.vehicle_type)?.label ?? v.vehicle_type}</td>
-                      <td className="px-4 py-2.5 text-gray-500 text-xs border-r border-gray-200">{v.fleet_departments?.name ?? '—'}</td>
+                      <td className="px-4 py-2.5 text-gray-500 text-xs border-r border-gray-200">{v.departments?.name ?? '—'}</td>
                       <td className="px-4 py-2.5 text-gray-500 text-xs border-r border-gray-200">{FUEL_TH[v.fuel_type]}</td>
                       <td className="px-4 py-2.5 text-center border-r border-gray-200">
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
@@ -273,8 +273,8 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
                         )}
                       </div>
                       <p className="text-xs text-gray-500 mt-0.5">{v.license_plate} · {FUEL_TH[v.fuel_type]}</p>
-                      {v.fleet_departments && (
-                        <p className="text-[10px] text-gray-400 mt-0.5">{v.fleet_departments.name}</p>
+                      {v.departments && (
+                        <p className="text-[10px] text-gray-400 mt-0.5">{v.departments.name}</p>
                       )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">

@@ -8,11 +8,11 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
 } from 'recharts'
 import {
-  RefreshCw, ClipboardList, Clock, Loader2,
+  RefreshCw, ClipboardList, Clock, Loader2, Check,
   CheckCircle2, XCircle, AlertCircle, ChevronRight, ChevronLeft,
   Filter, Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical,
   X, FileText, AlignLeft, Image, Calendar, Hash, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera,
-  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, BellOff, ExternalLink, BarChart2, Settings, Download, Banknote, Star, MessageSquare, Car, Palette
+  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, BellOff, ExternalLink, BarChart2, Settings, Download, Banknote, Star, MessageSquare, Car, Palette, Building2, ShieldCheck
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { compressImage } from '../lib/imageUtils'
@@ -28,10 +28,9 @@ import FeeSettingsAdmin from '../components/admin/FeeSettingsAdmin'
 import EventsManagerComponent from '../components/admin/EventsManager'
 import { InboxModule } from './StaffDashboard'
 import ReportManagerComponent from '../components/admin/ReportManager'
-import ModuleManager from '../components/admin/ModuleManager'
 import AuditLogViewer from '../components/admin/AuditLogViewer'
 import FleetSetup from '../components/fleet/FleetSetup'
-import ThemeSettingsAdmin from '../components/admin/ThemeSettingsAdmin'
+import SuperAdminPanel from '../components/admin/SuperAdminPanel'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS = {
@@ -818,8 +817,12 @@ const ROLE_LABELS = {
   citizen:     { label: 'ประชาชน',       color: '#374151', bg: '#f3f4f6' },
 }
 
+const NON_CITIZEN_ROLES = ['staff', 'officer', 'technician', 'admin', 'superadmin', 'council', 'viewer']
+
 function UserManager({ tenant, currentUserRole }) {
+  const [subTab, setSubTab] = useState('staff') // 'staff' | 'citizen'
   const [users, setUsers] = useState([])
+  const [depts, setDepts] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(null)
   const [editingNameId, setEditingNameId] = useState(null)
@@ -830,7 +833,9 @@ function UserManager({ tenant, currentUserRole }) {
   const [editingAddressValue, setEditingAddressValue] = useState('')
   const [editingRoleId, setEditingRoleId] = useState(null)
   const [editingRoleValue, setEditingRoleValue] = useState('')
-  const [viewingUser, setViewingUser] = useState(null)
+  const [viewingUserId, setViewingUserId] = useState(null)
+  // derive จาก users list เสมอ (ไม่เก็บ snapshot แยก) กัน UI ค้างข้อมูลเก่าหลังแก้ไขในหน้ารายละเอียด
+  const viewingUser = viewingUserId ? users.find(u => u.id === viewingUserId) : null
   const [deletingUser, setDeletingUser] = useState(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [sortConfig, setSortConfig] = useState({ key: 'created_at', direction: 'desc' })
@@ -838,14 +843,29 @@ function UserManager({ tenant, currentUserRole }) {
   const [search, setSearch] = useState('')
   const [filterRole, setFilterRole] = useState('')
 
-  const fetchUsers = useCallback(async () => {
+  useEffect(() => {
+    if (!tenant?.id) return
+    supabase.from('departments').select('id, name, short_name')
+      .eq('municipality_id', tenant.id).eq('is_active', true).order('sort_order')
+      .then(({ data }) => setDepts(data ?? []))
+  }, [tenant?.id])
+
+  const fetchUsers = useCallback(async (opts = {}) => {
     if (!['admin', 'superadmin', 'officer'].includes(currentUserRole)) return
     if (currentUserRole !== 'superadmin' && !tenant?.id) return
+    const searchTerm = (opts.search ?? '').trim()
+    // แท็บประชาชน: ไม่โหลดจนกว่าจะพิมพ์ค้นหา (กันโหลดผู้ใช้เป็นพันคนมาทีเดียว)
+    if (subTab === 'citizen' && !searchTerm) { setUsers([]); setLoading(false); return }
     setLoading(true)
     try {
       // superadmin ส่ง null → SQL คืน users ทุก municipality, แล้ว filter ใน JS
       const p_muni = currentUserRole === 'superadmin' ? null : tenant?.id
-      const { data, error } = await supabase.rpc('get_users_with_email', { p_municipality_id: p_muni })
+      const { data, error } = await supabase.rpc('get_users_with_email', {
+        p_municipality_id: p_muni,
+        p_roles: subTab === 'citizen' ? ['citizen'] : NON_CITIZEN_ROLES,
+        p_search: subTab === 'citizen' ? searchTerm : null,
+        p_limit: subTab === 'citizen' ? 50 : null,
+      })
       if (error) { console.error('get_users_with_email:', error.message); return }
       const filtered = tenant?.id
         ? (data ?? []).filter(u => u.municipality_id === tenant.id || u.municipality_id === null)
@@ -854,13 +874,29 @@ function UserManager({ tenant, currentUserRole }) {
     } finally {
       setLoading(false)
     }
-  }, [tenant?.id, currentUserRole])
+  }, [tenant?.id, currentUserRole, subTab])
 
   useEffect(() => {
-    fetchUsers()
+    setSearch('')
+    setFilterRole('')
+    if (subTab === 'staff') {
+      fetchUsers()
+    } else {
+      setUsers([])
+      setLoading(false)
+    }
     const safety = setTimeout(() => setLoading(false), 12000)
     return () => clearTimeout(safety)
-  }, [fetchUsers])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subTab])
+
+  // แท็บประชาชน: ค้นหาแบบ debounce (พิมพ์แล้วรอ 400ms ค่อยยิง query กันสแปมทุกตัวอักษร)
+  useEffect(() => {
+    if (subTab !== 'citizen') return
+    if (!search.trim()) { setUsers([]); return }
+    const t = setTimeout(() => fetchUsers({ search }), 400)
+    return () => clearTimeout(t)
+  }, [search, subTab, fetchUsers])
 
   async function updateName(userId) {
     const name = editingNameValue.trim()
@@ -906,6 +942,58 @@ function UserManager({ tenant, currentUserRole }) {
     setSaving(null)
   }
 
+  async function updateAddress(userId) {
+    const val = editingAddressValue.trim()
+    setSaving(userId)
+    const { error } = await supabase.from('profiles').update({ address: val || null }).eq('id', userId)
+    if (error) {
+      alert(`บันทึกไม่สำเร็จ: ${error.message}`)
+    } else {
+      setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, address: val || null } : u))
+      setEditingAddressId(null)
+    }
+    setSaving(null)
+  }
+
+  async function updateDepartment(userId, deptId) {
+    setSaving(userId)
+    const dept = depts.find(d => d.id === deptId)
+    const { error } = await supabase.from('profiles').update({ department_id: deptId || null }).eq('id', userId)
+    if (error) {
+      alert(`บันทึกไม่สำเร็จ: ${error.message}`)
+    } else {
+      setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, department_id: deptId || null, department_name: dept?.name ?? null } : u))
+    }
+    setSaving(null)
+  }
+
+  async function toggleDeptHead(userId, current) {
+    setSaving(userId)
+    const { error } = await supabase.from('profiles').update({ is_dept_head: !current }).eq('id', userId)
+    if (error) {
+      alert(`บันทึกไม่สำเร็จ: ${error.message}`)
+    } else {
+      setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, is_dept_head: !current } : u))
+    }
+    setSaving(null)
+  }
+
+  // บันทึกทุกแท็บ (บัญชี/ส่วนตัว/สังกัด) ในหน้ารายละเอียดพร้อมกันครั้งเดียว แทนการกดบันทึกทีละฟิลด์
+  async function saveUserEdits(user, changes) {
+    setSaving(user.id)
+    const needsMuni = ['admin', 'staff', 'technician', 'officer', 'viewer', 'council'].includes(changes.role)
+    const payload = { ...changes, municipality_id: needsMuni ? (user.municipality_id || tenant?.id) : null }
+    const { error } = await supabase.from('profiles').update(payload).eq('id', user.id)
+    setSaving(null)
+    if (error) {
+      const msg = error.code === '23505' ? 'เลขบัตรประชาชนนี้ถูกใช้กับบัญชีอื่นแล้ว' : error.message
+      return { ok: false, error: msg }
+    }
+    const dept = depts.find(d => d.id === changes.department_id)
+    setUsers((prev) => prev.map((u) => u.id === user.id ? { ...u, ...payload, department_name: dept?.name ?? null } : u))
+    return { ok: true }
+  }
+
   async function deleteUser(userId) {
     setDeleteLoading(true)
     const { error } = await supabase.rpc('delete_user_by_id', { p_user_id: userId })
@@ -915,6 +1003,7 @@ function UserManager({ tenant, currentUserRole }) {
     } else {
       setUsers((prev) => prev.filter((u) => u.id !== userId))
       setDeletingUser(null)
+      if (viewingUserId === userId) setViewingUserId(null) // กันหน้ารายละเอียดค้างชี้ user ที่ลบไปแล้ว
     }
   }
 
@@ -954,6 +1043,26 @@ function UserManager({ tenant, currentUserRole }) {
     return 0;
   })
 
+  if (viewingUser) {
+    return (
+      <UserDetailPage
+        user={viewingUser}
+        onBack={() => setViewingUserId(null)}
+        currentUserRole={currentUserRole}
+        tenant={tenant}
+        depts={depts}
+        saving={saving}
+        editingNameId={editingNameId} editingNameValue={editingNameValue} setEditingNameId={setEditingNameId} setEditingNameValue={setEditingNameValue} updateName={updateName}
+        editingPositionId={editingPositionId} editingPositionValue={editingPositionValue} setEditingPositionId={setEditingPositionId} setEditingPositionValue={setEditingPositionValue} updatePosition={updatePosition}
+        editingAddressId={editingAddressId} editingAddressValue={editingAddressValue} setEditingAddressId={setEditingAddressId} setEditingAddressValue={setEditingAddressValue} updateAddress={updateAddress}
+        updateDepartment={updateDepartment} toggleDeptHead={toggleDeptHead}
+        editingRoleId={editingRoleId} editingRoleValue={editingRoleValue} setEditingRoleId={setEditingRoleId} setEditingRoleValue={setEditingRoleValue} updateRole={updateRole}
+        deletingUser={deletingUser} setDeletingUser={setDeletingUser} deleteLoading={deleteLoading} deleteUser={deleteUser}
+        saveUserEdits={saveUserEdits}
+      />
+    )
+  }
+
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
       <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
@@ -963,9 +1072,25 @@ function UserManager({ tenant, currentUserRole }) {
             <span className="text-xs font-normal text-gray-400">({users.length} คน)</span>
           )}
         </h3>
-        <button onClick={fetchUsers} className="text-gray-400 hover:text-gray-600 transition-colors">
+        <button onClick={() => fetchUsers(subTab === 'citizen' ? { search } : {})} className="text-gray-400 hover:text-gray-600 transition-colors">
           <RefreshCw size={15} />
         </button>
+      </div>
+
+      {/* แท็บย่อย: เจ้าหน้าที่ / ประชาชน — แยก query กันโหลดผู้ใช้ทั้งหมดมาทีเดียว */}
+      <div className="px-4 pt-3 flex gap-2">
+        {[
+          { key: 'staff',   label: 'เจ้าหน้าที่' },
+          { key: 'citizen', label: 'ผู้ใช้งานประชาชน' },
+        ].map(({ key, label }) => (
+          <button key={key} onClick={() => setSubTab(key)}
+            className={`px-3.5 py-1.5 rounded-xl text-sm font-semibold transition-colors ${
+              subTab === key ? 'text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+            }`}
+            style={subTab === key ? { backgroundColor: '#7c3aed' } : {}}>
+            {label}
+          </button>
+        ))}
       </div>
 
       {/* ตัวกรอง */}
@@ -975,10 +1100,11 @@ function UserManager({ tenant, currentUserRole }) {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="ค้นหาชื่อ, อีเมล, เบอร์..."
+            placeholder={subTab === 'citizen' ? 'พิมพ์ชื่อ, เบอร์โทร, เลขบัตร เพื่อค้นหา...' : 'ค้นหาชื่อ, อีเมล, เบอร์...'}
             className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-blue-400 text-gray-900 bg-white"
           />
         </div>
+        {subTab === 'staff' && (
         <select
           value={filterRole}
           onChange={(e) => setFilterRole(e.target.value)}
@@ -986,7 +1112,6 @@ function UserManager({ tenant, currentUserRole }) {
         >
           <option value="">ทุกตำแหน่ง ({users.length})</option>
           {[
-            { value: 'citizen',    label: 'ประชาชน' },
             { value: 'staff',      label: 'เจ้าหน้าที่' },
             { value: 'viewer',     label: 'ผู้บริหาร' },
             { value: 'council',    label: 'สภาเทศบาล' },
@@ -999,6 +1124,7 @@ function UserManager({ tenant, currentUserRole }) {
             return count > 0 ? <option key={value} value={value}>{label} ({count})</option> : null
           })}
         </select>
+        )}
         {(search || filterRole) && (
           <button
             onClick={() => { setSearch(''); setFilterRole('') }}
@@ -1014,7 +1140,11 @@ function UserManager({ tenant, currentUserRole }) {
           <Loader2 size={20} className="animate-spin" />
         </div>
       ) : filtered.length === 0 ? (
-        <p className="text-center py-10 text-gray-400 text-sm">{users.length === 0 ? 'ยังไม่มีผู้ใช้งาน' : 'ไม่พบผู้ใช้ที่ค้นหา'}</p>
+        <p className="text-center py-10 text-gray-400 text-sm">
+          {subTab === 'citizen' && !search.trim()
+            ? 'พิมพ์ชื่อ, เบอร์โทร หรือเลขบัตรประชาชน เพื่อค้นหาผู้ใช้งาน'
+            : users.length === 0 ? 'ยังไม่มีผู้ใช้งาน' : 'ไม่พบผู้ใช้ที่ค้นหา'}
+        </p>
       ) : (
         <>
         <div className="md:hidden divide-y divide-gray-50">
@@ -1022,7 +1152,8 @@ function UserManager({ tenant, currentUserRole }) {
             const rs = ROLE_LABELS[u.role] ?? ROLE_LABELS.citizen
             const isSelf = false
             return (
-              <div key={u.id} className="flex flex-col px-4 py-3 gap-2">
+              <div key={u.id} className="flex flex-col px-4 py-3 gap-2 cursor-pointer hover:bg-gray-50/70 transition-colors"
+                onClick={(e) => { if (e.target.closest('button, select, input, a, label')) return; setViewingUserId(u.id) }}>
                 {/* แถว 1: avatar + ชื่อ + badge */}
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-gray-400 font-mono w-5 text-right shrink-0">{i + 1}</span>
@@ -1032,7 +1163,10 @@ function UserManager({ tenant, currentUserRole }) {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <p className="font-medium text-gray-800 text-sm">{u.full_name || '—'}</p>
+                      <p className="font-medium text-gray-800 text-sm">
+                        {u.full_name || '—'}
+                        {u.staff_title && <span className="text-gray-400 font-normal"> ({u.staff_title})</span>}
+                      </p>
                       {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && u.role !== 'superadmin' && (
                         <button
                           onClick={() => { setEditingNameId(u.id); setEditingNameValue(u.full_name || '') }}
@@ -1112,8 +1246,30 @@ function UserManager({ tenant, currentUserRole }) {
                     )}
                   </div>
                 )}
+                {subTab === 'staff' && (
+                  <div className="flex items-center gap-2 pl-[68px] mt-1 flex-wrap">
+                    {(currentUserRole === 'admin' || currentUserRole === 'superadmin') ? (
+                      <select value={u.department_id ?? ''} disabled={saving === u.id}
+                        onChange={(e) => updateDepartment(u.id, e.target.value)}
+                        className="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-600 focus:outline-none bg-gray-50">
+                        <option value="">— ไม่ระบุกอง —</option>
+                        {depts.map(d => <option key={d.id} value={d.id}>{d.short_name || d.name}</option>)}
+                      </select>
+                    ) : (
+                      <span className="text-xs text-gray-400">{u.department_name || 'ไม่ระบุกอง'}</span>
+                    )}
+                    {u.department_id && (currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
+                      <label className="flex items-center gap-1 text-[11px] text-gray-400 cursor-pointer">
+                        <input type="checkbox" checked={!!u.is_dept_head} disabled={saving === u.id}
+                          onChange={() => toggleDeptHead(u.id, u.is_dept_head)}
+                          className="w-3.5 h-3.5" />
+                        หัวหน้ากอง
+                      </label>
+                    )}
+                  </div>
+                )}
                 <div className="flex items-center gap-2 pl-[68px] mt-1">
-                  <button onClick={() => setViewingUser(u)} className="text-[11px] text-blue-500 hover:text-blue-700 font-medium px-2 py-1 bg-blue-50 hover:bg-blue-100 rounded transition-colors">
+                  <button onClick={() => setViewingUserId(u.id)} className="text-[11px] text-blue-500 hover:text-blue-700 font-medium px-2 py-1 bg-blue-50 hover:bg-blue-100 rounded transition-colors">
                     ดูรายละเอียด
                   </button>
                   {(currentUserRole === 'superadmin' || currentUserRole === 'admin') && u.role !== 'superadmin' && (
@@ -1206,42 +1362,37 @@ function UserManager({ tenant, currentUserRole }) {
           })}
         </div>
         
-        <div className="hidden md:block overflow-x-auto">
-          <table className="w-full text-sm text-left text-gray-600">
-            <thead className="text-xs text-gray-500 uppercase bg-gray-50/80 border-b border-gray-100">
-              <tr>
-                <th className="px-4 py-3 font-medium">ลำดับ</th>
-                <th className="px-4 py-3 font-medium cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('full_name')}>
+        <div className="hidden md:block overflow-x-auto border border-gray-200">
+          <table className="w-full text-sm text-left text-gray-600 table-fixed border-collapse">
+            <thead>
+              <tr style={{ backgroundColor: '#2c5282' }}>
+                <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 w-[5%]">ลำดับ</th>
+                <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 w-[18%] cursor-pointer hover:bg-white/10 transition-colors" onClick={() => handleSort('full_name')}>
                   <div className="flex items-center gap-1">ชื่อ-นามสกุล {sortConfig.key === 'full_name' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
                 </th>
-                <th className="px-4 py-3 font-medium">เลขบัตรประชาชน</th>
-                <th className="px-4 py-3 font-medium cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('phone')}>
-                  <div className="flex items-center gap-1">เบอร์โทรศัพท์ {sortConfig.key === 'phone' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
+                <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 w-[20%]">อีเมล</th>
+                <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 w-[15%] cursor-pointer hover:bg-white/10 transition-colors" onClick={() => handleSort('role')}>
+                  <div className="flex items-center gap-1">บทบาท/สิทธิ์ {sortConfig.key === 'role' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
                 </th>
-                <th className="px-4 py-3 font-medium min-w-[140px] cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('address')}>
-                  <div className="flex items-center gap-1">ที่อยู่ {sortConfig.key === 'address' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
+                <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 w-[17%]">สังกัด</th>
+                <th className="px-2 py-2.5 text-[11px] font-bold text-white w-[25%] cursor-pointer hover:bg-white/10 transition-colors" onClick={() => handleSort('job_title')}>
+                  <div className="flex items-center gap-1">ตำแหน่งงาน {sortConfig.key === 'job_title' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
                 </th>
-                <th className="px-4 py-3 font-medium cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('job_title')}>
-                  <div className="flex items-center gap-1">ตำแหน่ง {sortConfig.key === 'job_title' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
-                </th>
-                <th className="px-4 py-3 font-medium cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('created_at')}>
-                  <div className="flex items-center gap-1">วันที่ลงทะเบียน {sortConfig.key === 'created_at' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
-                </th>
-                <th className="px-4 py-3 font-medium min-w-[180px]">จัดการ</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-200">
               {filtered.map((u, i) => {
                 const rs = ROLE_LABELS[u.role] ?? ROLE_LABELS.citizen
                 return (
-                  <tr key={u.id} className="hover:bg-gray-50/50 transition-colors">
-                    <td className="px-4 py-3 text-xs text-gray-400 font-mono">{i + 1}</td>
-                    <td className="px-4 py-3 min-w-[200px]">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
-                             style={{ backgroundColor: rs.color }}>
-                          {(u.full_name || u.email || '?')[0].toUpperCase()}
-                        </div>
+                  <tr key={u.id}
+                    className="transition-colors cursor-pointer"
+                    style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#f5f8fc' }}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'}
+                    onMouseLeave={e => e.currentTarget.style.backgroundColor = i % 2 === 0 ? '#fff' : '#f5f8fc'}
+                    onClick={(e) => { if (e.target.closest('button, select, input, a, label')) return; setViewingUserId(u.id) }}>
+                    <td className="px-2 py-3 text-xs text-gray-400 font-mono border-r border-gray-200">{i + 1}</td>
+                    <td className="px-2 py-3 border-r border-gray-200">
+                      <div className="flex items-center gap-2 min-w-0">
                         <div className="flex flex-col min-w-0">
                           {editingNameId === u.id ? (
                             <div className="flex items-center gap-2">
@@ -1257,137 +1408,81 @@ function UserManager({ tenant, currentUserRole }) {
                               <button onClick={() => setEditingNameId(null)} className="text-xs text-gray-400">ยกเลิก</button>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-medium text-gray-800">{u.full_name || '—'}</span>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="font-medium text-gray-800 truncate">{u.full_name || '—'}</span>
+                              {u.staff_title && <span className="text-xs text-gray-400 shrink-0">({u.staff_title})</span>}
                               {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && u.role !== 'superadmin' && (
-                                <button onClick={() => { setEditingNameId(u.id); setEditingNameValue(u.full_name || '') }} className="text-gray-300 hover:text-gray-500">
+                                <button onClick={() => { setEditingNameId(u.id); setEditingNameValue(u.full_name || '') }} className="text-gray-300 hover:text-gray-500 shrink-0">
                                   <Pencil size={12} />
                                 </button>
                               )}
                             </div>
                           )}
-                          <span className="text-xs text-gray-400 truncate">{u.email || u.phone || '—'}</span>
                         </div>
                       </div>
                     </td>
-                    {/* เลขบัตรประชาชน */}
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {u.id_card ? (
-                        <span className="text-xs font-mono text-gray-600 tracking-wide">
-                          {u.id_card.replace(/(\d{1})(\d{4})(\d{5})(\d{2})(\d{1})/, '$1-$2-$3-$4-$5')}
-                        </span>
+                    {/* อีเมล */}
+                    <td className="px-2 py-3 overflow-hidden border-r border-gray-200">
+                      <span className="text-xs text-gray-600 break-all">{u.email || <span className="italic text-gray-300">ยังไม่ระบุ</span>}</span>
+                    </td>
+                    {/* บทบาท/สิทธิ์: role badge เท่านั้น */}
+                    <td className="px-2 py-3 overflow-hidden border-r border-gray-200">
+                      <span className="text-[10px] font-medium px-2 py-0.5 rounded-full inline-block" style={{ backgroundColor: rs.bg, color: rs.color }}>
+                        {rs.label}
+                      </span>
+                    </td>
+                    {/* สังกัด: กอง + หัวหน้ากอง — stopPropagation กันคลิกในคอลัมน์นี้เด้งเข้าหน้ารายละเอียดโดยไม่ตั้งใจ (มี select/checkbox ที่ต้องเลือกละเอียด) */}
+                    <td className="px-2 py-3 overflow-hidden border-r border-gray-200" onClick={(e) => e.stopPropagation()}>
+                      {subTab === 'staff' ? (
+                        <div className="flex flex-col items-start gap-1 w-full">
+                          {(currentUserRole === 'admin' || currentUserRole === 'superadmin') ? (
+                            <select value={u.department_id ?? ''} disabled={saving === u.id}
+                              onChange={(e) => updateDepartment(u.id, e.target.value)}
+                              className="text-[11px] border border-gray-200 rounded px-1.5 py-0.5 text-gray-600 focus:outline-none bg-white max-w-full">
+                              <option value="">— ไม่ระบุกอง —</option>
+                              {depts.map(d => <option key={d.id} value={d.id}>{d.short_name || d.name}</option>)}
+                            </select>
+                          ) : (
+                            <span className="text-[11px] text-gray-400 truncate">{u.department_name || 'ไม่ระบุกอง'}</span>
+                          )}
+                          {u.department_id && (currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
+                            <label className="flex items-center gap-1 text-[10px] text-gray-400 shrink-0 cursor-pointer">
+                              <input type="checkbox" checked={!!u.is_dept_head} disabled={saving === u.id}
+                                onChange={() => toggleDeptHead(u.id, u.is_dept_head)}
+                                className="w-3 h-3" />
+                              หัวหน้ากอง
+                            </label>
+                          )}
+                        </div>
                       ) : (
-                        <span className="text-xs italic text-gray-300">ยังไม่ยืนยัน</span>
+                        <span className="text-xs text-gray-300">—</span>
                       )}
                     </td>
-                    {/* เบอร์โทรศัพท์ */}
-                    <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-600">
-                      {u.phone || <span className="italic text-gray-300">ยังไม่ระบุ</span>}
-                    </td>
-                    {/* ที่อยู่ */}
-                    <td className="px-4 py-3">
-                      {editingAddressId === u.id ? (
+                    {/* ตำแหน่งงาน (job_title) — ย้ายมาจากคอลัมน์บทบาท/สิทธิ์เดิม — stopPropagation เหมือนคอลัมน์สังกัด เพราะมีช่องกรอกข้อความที่ต้องพิมพ์เอง */}
+                    <td className="px-2 py-3 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                      {editingPositionId === u.id ? (
                         <div className="flex items-center gap-2">
                           <input
                             autoFocus
-                            value={editingAddressValue}
-                            onChange={(e) => setEditingAddressValue(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === 'Enter') updateAddress(u.id); if (e.key === 'Escape') setEditingAddressId(null) }}
-                            placeholder="ที่อยู่"
-                            className="flex-1 text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400 bg-white text-gray-900"
+                            value={editingPositionValue}
+                            onChange={(e) => setEditingPositionValue(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') updatePosition(u.id); if (e.key === 'Escape') setEditingPositionId(null) }}
+                            placeholder="ตำแหน่งงาน"
+                            className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400 bg-white text-gray-900"
                           />
-                          <button onClick={() => updateAddress(u.id)} disabled={saving === u.id} className="text-xs text-blue-600 font-medium">บันทึก</button>
-                          <button onClick={() => setEditingAddressId(null)} className="text-xs text-gray-400">ยกเลิก</button>
+                          <button onClick={() => updatePosition(u.id)} disabled={saving === u.id} className="text-xs text-blue-600 font-medium">บันทึก</button>
+                          <button onClick={() => setEditingPositionId(null)} className="text-xs text-gray-400">ยกเลิก</button>
                         </div>
                       ) : (
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs">{u.address || <span className="italic text-gray-300">ยังไม่ระบุ</span>}</span>
+                        <div className="flex items-center gap-1.5 text-xs text-gray-500 min-w-0 w-full">
+                          <span className="truncate">{u.job_title || <span className="italic text-gray-300">ไม่มีตำแหน่ง</span>}</span>
                           {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && u.role !== 'superadmin' && (
-                            <button onClick={() => { setEditingAddressId(u.id); setEditingAddressValue(u.address || '') }} className="text-gray-300 hover:text-gray-500">
+                            <button onClick={() => { setEditingPositionId(u.id); setEditingPositionValue(u.job_title || '') }} className="text-gray-300 hover:text-gray-500 shrink-0">
                               <Pencil size={11} />
                             </button>
                           )}
                         </div>
                       )}
-                    </td>
-                    <td className="px-4 py-3 min-w-[180px]">
-                      <div className="flex flex-col items-start gap-1">
-                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: rs.bg, color: rs.color }}>
-                          {rs.label}
-                        </span>
-                        {editingPositionId === u.id ? (
-                          <div className="flex items-center gap-2 mt-1">
-                            <input
-                              autoFocus
-                              value={editingPositionValue}
-                              onChange={(e) => setEditingPositionValue(e.target.value)}
-                              onKeyDown={(e) => { if (e.key === 'Enter') updatePosition(u.id); if (e.key === 'Escape') setEditingPositionId(null) }}
-                              placeholder="ตำแหน่งงาน"
-                              className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400 bg-white text-gray-900"
-                            />
-                            <button onClick={() => updatePosition(u.id)} disabled={saving === u.id} className="text-xs text-blue-600 font-medium">บันทึก</button>
-                            <button onClick={() => setEditingPositionId(null)} className="text-xs text-gray-400">ยกเลิก</button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                            <span>{u.job_title || <span className="italic text-gray-300">ไม่มีตำแหน่ง</span>}</span>
-                            {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && u.role !== 'superadmin' && (
-                              <button onClick={() => { setEditingPositionId(u.id); setEditingPositionValue(u.job_title || '') }} className="text-gray-300 hover:text-gray-500">
-                                <Pencil size={11} />
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-400">
-                      {u.created_at ? new Date(u.created_at).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <button onClick={() => setViewingUser(u)} className="text-xs text-blue-500 hover:text-blue-700 font-medium px-2 py-1 bg-blue-50 hover:bg-blue-100 rounded transition-colors whitespace-nowrap">
-                          ดูรายละเอียด
-                        </button>
-                        {u.role !== 'superadmin' && (currentUserRole === 'superadmin' || currentUserRole === 'admin') && (
-                          <div className="flex items-center gap-2">
-                            {editingRoleId === u.id ? (
-                              <>
-                                <select
-                                  value={editingRoleValue}
-                                  disabled={saving === u.id}
-                                  onChange={(e) => setEditingRoleValue(e.target.value)}
-                                  className="text-xs border border-gray-200 rounded px-2 py-1 text-gray-700 focus:outline-none bg-white cursor-pointer"
-                                >
-                                  <option value="citizen">ประชาชน</option>
-                                  <option value="staff">เจ้าหน้าที่</option>
-                                  <option value="viewer">ผู้บริหาร</option>
-                                  <option value="council">สภาเทศบาล</option>
-                                  <option value="officer">แอดมินกอง</option>
-                                  <option value="technician">ปฏิบัติงาน</option>
-                                  <option value="admin">แอดมินระบบ</option>
-                                  {currentUserRole === 'superadmin' && <option value="superadmin">Super Admin</option>}
-                                </select>
-                                <button onClick={() => updateRole(u.id, editingRoleValue, u.municipality_id)} disabled={saving === u.id} className="text-xs text-blue-600 font-medium">ยืนยัน</button>
-                                <button onClick={() => setEditingRoleId(null)} className="text-xs text-gray-400">ยกเลิก</button>
-                                {saving === u.id && <Loader2 size={12} className="animate-spin text-gray-400" />}
-                              </>
-                            ) : (
-                              <button onClick={() => { setEditingRoleId(u.id); setEditingRoleValue(u.role) }} className="text-xs text-gray-500 hover:text-gray-700 font-medium px-2 py-1 bg-gray-50 hover:bg-gray-100 rounded transition-colors whitespace-nowrap">
-                                เปลี่ยนบทบาท
-                              </button>
-                            )}
-                          </div>
-                        )}
-                        {(currentUserRole === 'superadmin' || currentUserRole === 'admin') && u.role !== 'superadmin' && (
-                          <button
-                            onClick={() => setDeletingUser(u)}
-                            className="p-1.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
-                            title="ลบผู้ใช้งาน"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </div>
                     </td>
                   </tr>
                 )
@@ -1398,160 +1493,417 @@ function UserManager({ tenant, currentUserRole }) {
       </>
       )}
 
-      {/* Delete Confirmation Modal */}
-      {deletingUser && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4" onClick={() => !deleteLoading && setDeletingUser(null)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex flex-col items-center text-center gap-3">
-              <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center">
-                <Trash2 size={24} className="text-red-500" />
-              </div>
-              <h3 className="text-lg font-semibold text-gray-800">ยืนยันการลบผู้ใช้งาน</h3>
-              <p className="text-sm text-gray-500 leading-relaxed">
-                คุณกำลังจะลบ <strong className="text-gray-800">{deletingUser.full_name || deletingUser.email || 'ผู้ใช้นี้'}</strong> ออกจากระบบถาวร<br />
-                ข้อมูลทั้งหมดจะหายไปและไม่สามารถกู้คืนได้
-              </p>
-              <div className="flex gap-3 w-full mt-2">
-                <button
-                  onClick={() => setDeletingUser(null)}
-                  disabled={deleteLoading}
-                  className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  onClick={() => deleteUser(deletingUser.id)}
-                  disabled={deleteLoading}
-                  className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {deleteLoading ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
-                  {deleteLoading ? 'กำลังลบ...' : 'ลบออกจากระบบ'}
-                </button>
-              </div>
-            </div>
+      <DeleteUserConfirmModal deletingUser={deletingUser} setDeletingUser={setDeletingUser} deleteLoading={deleteLoading} deleteUser={deleteUser} />
+
+    </div>
+  )
+}
+
+// ─── User Detail Page (แท็บ, ต่อเพิ่มได้เรื่อยๆ แค่เพิ่ม entry ใน USER_DETAIL_TABS) ─────
+
+// ใช้ร่วมกันทั้งจากตารางและหน้ารายละเอียด กันเขียนซ้ำ
+function DeleteUserConfirmModal({ deletingUser, setDeletingUser, deleteLoading, deleteUser }) {
+  if (!deletingUser) return null
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4" onClick={() => !deleteLoading && setDeletingUser(null)}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex flex-col items-center text-center gap-3">
+          <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center">
+            <Trash2 size={24} className="text-red-500" />
           </div>
+          <h3 className="text-lg font-semibold text-gray-800">ยืนยันการลบผู้ใช้งาน</h3>
+          <p className="text-sm text-gray-500 leading-relaxed">
+            คุณกำลังจะลบ <strong className="text-gray-800">{deletingUser.full_name || deletingUser.email || 'ผู้ใช้นี้'}</strong> ออกจากระบบถาวร<br />
+            ข้อมูลทั้งหมดจะหายไปและไม่สามารถกู้คืนได้
+          </p>
+          <div className="flex gap-3 w-full mt-2">
+            <button
+              onClick={() => setDeletingUser(null)}
+              disabled={deleteLoading}
+              className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50"
+            >
+              ยกเลิก
+            </button>
+            <button
+              onClick={() => deleteUser(deletingUser.id)}
+              disabled={deleteLoading}
+              className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {deleteLoading ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+              {deleteLoading ? 'กำลังลบ...' : 'ลบออกจากระบบ'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AccountInfoTab(props) {
+  const { user, currentUserRole, isEditing, draft, setDraft } = props
+  const rs = ROLE_LABELS[(isEditing ? draft.role : user.role)] || ROLE_LABELS.citizen
+  const providerBadge = {
+    'email':       { label: 'Email/Password', bg: '#f3f4f6', color: '#374151', icon: '✉️' },
+    'google':      { label: 'Google',          bg: '#fef9c3', color: '#854d0e', icon: '🔵' },
+    'custom:line': { label: 'LINE',             bg: '#dcfce7', color: '#166534', icon: '💚' },
+  }
+  const providers = user.providers || []
+  return (
+    <div className="space-y-5">
+      <div>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">บทบาท</p>
+        {isEditing ? (
+          <select
+            value={draft.role}
+            onChange={(e) => setDraft(d => ({ ...d, role: e.target.value }))}
+            className="text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-700 focus:outline-none bg-white"
+          >
+            <option value="citizen">ประชาชน</option>
+            <option value="staff">เจ้าหน้าที่</option>
+            <option value="viewer">ผู้บริหาร</option>
+            <option value="council">สภาเทศบาล</option>
+            <option value="officer">แอดมินกอง</option>
+            <option value="technician">ปฏิบัติงาน</option>
+            <option value="admin">แอดมินระบบ</option>
+            {currentUserRole === 'superadmin' && <option value="superadmin">Super Admin</option>}
+          </select>
+        ) : (
+          <span className="text-sm font-medium px-3 py-1 rounded-full inline-block" style={{ backgroundColor: rs.bg, color: rs.color }}>{rs.label}</span>
+        )}
+      </div>
+      <div>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">อีเมล</p>
+        <p className="text-sm text-gray-800 break-all">{user.email || '—'}</p>
+      </div>
+      <div>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ช่องทางเชื่อมต่อบัญชี</p>
+        {providers.length === 0 ? (
+          <p className="text-xs text-gray-300 italic">ไม่พบข้อมูล</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {providers.map((p) => {
+              const b = providerBadge[p] ?? { label: p, bg: '#f3f4f6', color: '#374151', icon: '🔗' }
+              return (
+                <span key={p} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
+                      style={{ backgroundColor: b.bg, color: b.color }}>
+                  {b.icon} {b.label}
+                </span>
+              )
+            })}
+          </div>
+        )}
+      </div>
+      <div className="flex gap-6 text-xs text-gray-400 border-t border-gray-100 pt-4">
+        <div>
+          <span className="block text-gray-300 mb-0.5">ลงทะเบียน</span>
+          <span className="text-gray-500">
+            {user.created_at ? new Date(user.created_at).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
+          </span>
+        </div>
+        <div>
+          <span className="block text-gray-300 mb-0.5">เข้าสู่ระบบล่าสุด</span>
+          <span className="text-gray-500">
+            {user.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PersonalInfoField({ label, isEditing, displayValue, editValue, onChange, mono, placeholder, whitespacePre }) {
+  return (
+    <div>
+      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">{label}</p>
+      {isEditing ? (
+        <input
+          value={editValue}
+          onChange={onChange}
+          placeholder={placeholder}
+          className={`w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400 bg-white text-gray-900 ${mono ? 'font-mono tracking-wide' : ''}`}
+        />
+      ) : (
+        <p className={`text-sm text-gray-800 ${mono ? 'font-mono tracking-wide' : ''} ${whitespacePre ? 'whitespace-pre-wrap' : ''}`}>
+          {displayValue || <span className="italic text-gray-300">—</span>}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function formatStructuredAddress(u) {
+  const parts = []
+  if (u.address_detail) parts.push(u.address_detail)
+  if (u.address_moo) parts.push(`หมู่ ${u.address_moo}`)
+  if (u.address_subdistrict) parts.push(`ต.${u.address_subdistrict}`)
+  if (u.address_district) parts.push(`อ.${u.address_district}`)
+  if (u.address_province) parts.push(`จ.${u.address_province}`)
+  return parts.join(' ') || null
+}
+
+function AddressField({ user, isEditing, draft, setDraft }) {
+  if (!isEditing) {
+    return (
+      <div>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ที่อยู่</p>
+        <p className="text-sm text-gray-800 whitespace-pre-wrap">
+          {formatStructuredAddress(user) || user.address || <span className="italic text-gray-300">—</span>}
+        </p>
+      </div>
+    )
+  }
+  const set = (key) => (e) => setDraft(d => ({ ...d, [key]: e.target.value }))
+  return (
+    <div>
+      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ที่อยู่</p>
+      <div className="grid grid-cols-2 gap-2 mb-2">
+        <input value={draft.address_province} onChange={set('address_province')} placeholder="จังหวัด"
+          className="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400 bg-white text-gray-900" />
+        <input value={draft.address_district} onChange={set('address_district')} placeholder="อำเภอ"
+          className="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400 bg-white text-gray-900" />
+        <input value={draft.address_subdistrict} onChange={set('address_subdistrict')} placeholder="ตำบล"
+          className="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400 bg-white text-gray-900" />
+        <input value={draft.address_moo} onChange={(e) => setDraft(d => ({ ...d, address_moo: e.target.value.replace(/\D/g, '').slice(0, 2) }))} placeholder="หมู่ที่"
+          className="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400 bg-white text-gray-900" />
+      </div>
+      <input value={draft.address_detail} onChange={set('address_detail')} placeholder="บ้านเลขที่ / รายละเอียดที่อยู่อื่นๆ"
+        className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400 bg-white text-gray-900" />
+    </div>
+  )
+}
+
+function PersonalInfoTab(props) {
+  const { user, isEditing, draft, setDraft } = props
+  return (
+    <div className="space-y-5">
+      <PersonalInfoField
+        label="ชื่อ-นามสกุล"
+        isEditing={isEditing}
+        displayValue={user.full_name}
+        editValue={draft?.full_name ?? ''}
+        onChange={(e) => setDraft(d => ({ ...d, full_name: e.target.value }))}
+      />
+      <PersonalInfoField
+        label="เบอร์โทรศัพท์"
+        isEditing={isEditing}
+        displayValue={user.phone}
+        editValue={draft?.phone ?? ''}
+        placeholder="0812345678"
+        onChange={(e) => setDraft(d => ({ ...d, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
+      />
+      <PersonalInfoField
+        label="เลขบัตรประชาชน"
+        isEditing={isEditing}
+        mono
+        displayValue={user.id_card ? user.id_card.replace(/(\d{1})(\d{4})(\d{5})(\d{2})(\d{1})/, '$1-$2-$3-$4-$5') : null}
+        editValue={draft?.id_card ?? ''}
+        placeholder="1234567890123"
+        onChange={(e) => setDraft(d => ({ ...d, id_card: e.target.value.replace(/\D/g, '').slice(0, 13) }))}
+      />
+      <AddressField user={user} isEditing={isEditing} draft={draft} setDraft={setDraft} />
+      <PersonalInfoField
+        label="ตำแหน่งงาน"
+        isEditing={isEditing}
+        displayValue={user.job_title}
+        editValue={draft?.job_title ?? ''}
+        placeholder="เช่น นายกเทศมนตรีตำบลน้ำเลา, ช่างโยธา"
+        onChange={(e) => setDraft(d => ({ ...d, job_title: e.target.value }))}
+      />
+    </div>
+  )
+}
+
+function DepartmentTab({ user, depts, isEditing, draft, setDraft }) {
+  const activeDeptId = isEditing ? draft.department_id : (user.department_id ?? '')
+  return (
+    <div className="space-y-5">
+      <div>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">กอง/หน่วยงาน</p>
+        {isEditing ? (
+          <select value={draft.department_id}
+            onChange={(e) => setDraft(d => ({ ...d, department_id: e.target.value }))}
+            className="text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-700 focus:outline-none bg-white">
+            <option value="">— ไม่ระบุกอง —</option>
+            {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select>
+        ) : (
+          <p className="text-sm text-gray-800">{user.department_name || 'ไม่ระบุกอง'}</p>
+        )}
+      </div>
+      {activeDeptId && (
+        <div>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">หัวหน้ากอง</p>
+          {isEditing ? (
+            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+              <input type="checkbox" checked={!!draft.is_dept_head}
+                onChange={() => setDraft(d => ({ ...d, is_dept_head: !d.is_dept_head }))} className="w-4 h-4" />
+              เป็นหัวหน้ากอง
+            </label>
+          ) : (
+            <p className="text-sm text-gray-800">{user.is_dept_head ? 'ใช่' : 'ไม่ใช่'}</p>
+          )}
         </div>
       )}
+      {user.staff_name && (
+        <div className="border-t border-gray-100 pt-4">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ผูกกับข้อมูลสาธารณะ (หน้าเว็บ)</p>
+          <p className="text-sm text-gray-800">{user.staff_name}{user.staff_title ? ` (${user.staff_title})` : ''}</p>
+        </div>
+      )}
+    </div>
+  )
+}
 
-      {/* View User Details Modal */}
-      {viewingUser && (() => {
-        const rs = ROLE_LABELS[viewingUser.role] || ROLE_LABELS.citizen
-        const providerBadge = {
-          'email':       { label: 'Email/Password', bg: '#f3f4f6', color: '#374151', icon: '✉️' },
-          'google':      { label: 'Google',          bg: '#fef9c3', color: '#854d0e', icon: '🔵' },
-          'custom:line': { label: 'LINE',             bg: '#dcfce7', color: '#166534', icon: '💚' },
-        }
-        const providers = viewingUser.providers || []
-        return (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4" onClick={() => setViewingUser(null)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-4 border-b border-gray-100">
-              <h3 className="font-semibold text-gray-800">รายละเอียดผู้ใช้งาน</h3>
-              <button onClick={() => setViewingUser(null)} className="text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100 transition-colors">
-                <X size={20} />
-              </button>
-            </div>
-            <div className="p-5 overflow-y-auto space-y-5">
+// เพิ่มแท็บใหม่ในอนาคต: เพิ่ม entry ตรงนี้ + เขียน component ใหม่ ไม่ต้องแก้โครงสร้าง UserDetailPage เลย
+const USER_DETAIL_TABS = [
+  { key: 'account',    label: 'ข้อมูลบัญชี',   Component: AccountInfoTab },
+  { key: 'personal',   label: 'ข้อมูลส่วนตัว',  Component: PersonalInfoTab },
+  { key: 'department', label: 'สังกัด',         Component: DepartmentTab },
+]
 
-              {/* Avatar + ชื่อ + role */}
-              <div className="flex items-center gap-4">
-                {viewingUser.avatar_url ? (
-                  <img src={viewingUser.avatar_url} alt="avatar"
-                       className="w-16 h-16 rounded-full object-cover shrink-0 border-2 border-gray-100" />
-                ) : (
-                  <div className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold text-white shrink-0"
-                       style={{ backgroundColor: rs.color }}>
-                    {(viewingUser.full_name || viewingUser.email || '?')[0].toUpperCase()}
-                  </div>
-                )}
-                <div className="min-w-0">
-                  <h4 className="text-lg font-semibold text-gray-900 truncate">{viewingUser.full_name || '—'}</h4>
-                  <span className="text-xs font-medium px-2 py-0.5 rounded-full inline-block mt-1"
-                        style={{ backgroundColor: rs.bg, color: rs.color }}>
-                    {rs.label}
-                  </span>
-                  {viewingUser.job_title && (
-                    <p className="text-xs text-gray-400 mt-0.5 truncate">{viewingUser.job_title}</p>
-                  )}
-                </div>
+// ตำบลของ tenant อนุมานจากชื่อได้เฉพาะ เทศบาลตำบล/อบต. เท่านั้น (เทศบาลเมือง/นคร มักคลุมหลายตำบล เลยไม่เดาให้)
+function tenantDefaultSubdistrict(tenant) {
+  if (!tenant?.name) return ''
+  if (tenant.org_type === 'เทศบาลตำบล' && tenant.name.startsWith('เทศบาลตำบล')) {
+    return tenant.name.replace(/^เทศบาลตำบล/, '')
+  }
+  if (tenant.org_type === 'อบต.' && tenant.name.startsWith('องค์การบริหารส่วนตำบล')) {
+    return tenant.name.replace(/^องค์การบริหารส่วนตำบล/, '')
+  }
+  return ''
+}
+
+function UserDetailPage(props) {
+  const { user, onBack, currentUserRole, tenant, saving, deletingUser, setDeletingUser, deleteLoading, deleteUser, saveUserEdits } = props
+  const [activeTab, setActiveTab] = useState('account')
+  const [isEditing, setIsEditing] = useState(false)
+  const [draft, setDraft] = useState(null)
+  const [saveError, setSaveError] = useState('')
+  const rs = ROLE_LABELS[user.role] || ROLE_LABELS.citizen
+  const ActiveComponent = USER_DETAIL_TABS.find(t => t.key === activeTab)?.Component ?? AccountInfoTab
+  const canDelete = (currentUserRole === 'superadmin' || currentUserRole === 'admin') && user.role !== 'superadmin'
+  const canEdit = canDelete // เงื่อนไขสิทธิ์เดียวกัน: admin/superadmin แก้ไข/ลบได้ ยกเว้นบัญชี superadmin
+  const isSaving = saving === user.id
+
+  function startEdit() {
+    setDraft({
+      full_name: user.full_name || '',
+      phone: user.phone || '',
+      id_card: user.id_card || '',
+      address_province: user.address_province || tenant?.province || '',
+      address_district: user.address_district || tenant?.district || '',
+      address_subdistrict: user.address_subdistrict || tenantDefaultSubdistrict(tenant),
+      address_moo: user.address_moo || '',
+      address_detail: user.address_detail || '',
+      job_title: user.job_title || '',
+      role: user.role,
+      department_id: user.department_id || '',
+      is_dept_head: !!user.is_dept_head,
+    })
+    setSaveError('')
+    setIsEditing(true)
+  }
+
+  function cancelEdit() {
+    setIsEditing(false)
+    setDraft(null)
+    setSaveError('')
+  }
+
+  async function confirmSave() {
+    if (draft.id_card && !/^\d{13}$/.test(draft.id_card)) {
+      setSaveError('เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก')
+      return
+    }
+    const changes = {
+      full_name: draft.full_name.trim() || null,
+      phone: draft.phone.trim() || null,
+      id_card: draft.id_card.trim() || null,
+      address_province: draft.address_province.trim() || null,
+      address_district: draft.address_district.trim() || null,
+      address_subdistrict: draft.address_subdistrict.trim() || null,
+      address_moo: draft.address_moo.trim() || null,
+      address_detail: draft.address_detail.trim() || null,
+      job_title: draft.job_title.trim() || null,
+      role: draft.role,
+      department_id: draft.department_id || null,
+      is_dept_head: draft.is_dept_head,
+    }
+    const result = await saveUserEdits(user, changes)
+    if (result.ok) {
+      setIsEditing(false)
+      setDraft(null)
+      setSaveError('')
+    } else {
+      setSaveError(result.error)
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 font-medium px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors shrink-0">
+            <ChevronLeft size={16} /> ย้อนกลับ
+          </button>
+          <div className="flex items-center gap-3 min-w-0">
+            {user.avatar_url ? (
+              <img src={user.avatar_url} alt="avatar" className="w-9 h-9 rounded-full object-cover shrink-0 border border-gray-100" />
+            ) : (
+              <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0" style={{ backgroundColor: rs.color }}>
+                {(user.full_name || user.email || '?')[0].toUpperCase()}
               </div>
-
-              {/* ข้อมูลบัญชี */}
-              <div>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ข้อมูลบัญชี</p>
-                <div className="space-y-2">
-                  {[
-                    { label: 'อีเมล',           value: viewingUser.email,   cls: 'break-all' },
-                    { label: 'เบอร์โทรศัพท์',    value: viewingUser.phone },
-                    {
-                      label: 'เลขบัตรประชาชน',
-                      value: viewingUser.id_card
-                        ? viewingUser.id_card.replace(/(\d{1})(\d{4})(\d{5})(\d{2})(\d{1})/, '$1-$2-$3-$4-$5')
-                        : null,
-                      mono: true,
-                    },
-                    { label: 'ที่อยู่', value: viewingUser.address, pre: true },
-                  ].map(({ label, value, cls = '', mono, pre }) => (
-                    <div key={label} className="flex gap-2">
-                      <span className="text-xs text-gray-400 shrink-0 w-28 pt-1">{label}</span>
-                      <span className={`text-sm text-right flex-1 ${mono ? 'font-mono tracking-wide' : ''} ${pre ? 'whitespace-pre-wrap' : ''} ${cls} ${value ? 'text-gray-800' : 'text-gray-300 italic'}`}>
-                        {value || '—'}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* การเชื่อมต่อ */}
-              <div>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">การเชื่อมต่อบัญชี</p>
-                {providers.length === 0 ? (
-                  <p className="text-xs text-gray-300 italic">ไม่พบข้อมูล</p>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {providers.map((p) => {
-                      const b = providerBadge[p] ?? { label: p, bg: '#f3f4f6', color: '#374151', icon: '🔗' }
-                      return (
-                        <span key={p} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
-                              style={{ backgroundColor: b.bg, color: b.color }}>
-                          {b.icon} {b.label}
-                        </span>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* วันที่ */}
-              <div className="flex gap-4 text-xs text-gray-400 border-t border-gray-50 pt-3">
-                <div>
-                  <span className="block text-gray-300 mb-0.5">ลงทะเบียน</span>
-                  <span className="text-gray-500">
-                    {viewingUser.created_at
-                      ? new Date(viewingUser.created_at).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' })
-                      : '—'}
-                  </span>
-                </div>
-                <div>
-                  <span className="block text-gray-300 mb-0.5">เข้าสู่ระบบล่าสุด</span>
-                  <span className="text-gray-500">
-                    {viewingUser.last_sign_in_at
-                      ? new Date(viewingUser.last_sign_in_at).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-                      : '—'}
-                  </span>
-                </div>
-              </div>
-
-            </div>
-            <div className="p-4 border-t border-gray-100 flex justify-end">
-              <button onClick={() => setViewingUser(null)} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors text-sm">
-                ปิด
-              </button>
-            </div>
+            )}
+            <h3 className="font-semibold text-gray-800 truncate">รายละเอียดข้อมูลผู้ใช้งาน: {user.full_name || user.email || '—'}</h3>
           </div>
         </div>
-        )
-      })()}
+        <div className="flex items-center gap-2 shrink-0">
+          {isEditing ? (
+            <>
+              <button onClick={cancelEdit} disabled={isSaving} className="text-xs font-medium text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50">
+                ยกเลิก
+              </button>
+              <button onClick={confirmSave} disabled={isSaving} className="flex items-center gap-1.5 text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 px-4 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                {isSaving ? 'กำลังบันทึก...' : 'บันทึก'}
+              </button>
+            </>
+          ) : (
+            <>
+              {canEdit && (
+                <button onClick={startEdit} className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors">
+                  <Pencil size={14} /> แก้ไข
+                </button>
+              )}
+              {canDelete && (
+                <button
+                  onClick={() => setDeletingUser(user)}
+                  className="flex items-center gap-1.5 text-xs font-medium text-red-500 hover:text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  <Trash2 size={14} /> ลบผู้ใช้งาน
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+      <div className="px-5 border-b border-gray-100 flex gap-1 overflow-x-auto">
+        {USER_DETAIL_TABS.map(t => (
+          <button key={t.key} onClick={() => setActiveTab(t.key)}
+            className={`px-4 py-3 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${
+              activeTab === t.key ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'
+            }`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <div className="p-6 max-w-xl">
+        {saveError && (
+          <div className="mb-4 text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{saveError}</div>
+        )}
+        <ActiveComponent {...props} isEditing={isEditing} draft={draft} setDraft={setDraft} />
+      </div>
+      <DeleteUserConfirmModal deletingUser={deletingUser} setDeletingUser={setDeletingUser} deleteLoading={deleteLoading} deleteUser={deleteUser} />
     </div>
   )
 }
@@ -4624,9 +4976,8 @@ const PAGE_LABELS = {
   emergency: 'สายด่วน',
   locations: 'สถานที่เกิดเหตุ',
   'system-settings': 'ตั้งค่าระบบ',
-  'theme-settings':  'ธีมโครงสร้างแอป',
+  superadmin: 'SuperAdmin',
   users: 'จัดการผู้ใช้',
-  modules: 'จัดการโมดูล',
   map: 'แผนที่คำร้อง',
   'civil-project': 'โครงการโยธา',
   'civil-report': 'รายงานโยธา',
@@ -5116,6 +5467,7 @@ export default function AdminDashboard() {
             { key: 'events',         label: 'กิจกรรม',        Icon: CalendarDays,  show: currentUserRole !== 'viewer' },
             { key: 'users',          label: 'จัดการผู้ใช้',   Icon: Users,         show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
             { key: 'system-settings',label: 'ตั้งค่าระบบ',    Icon: Settings,      show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+            { key: 'superadmin',     label: 'SuperAdmin',    Icon: ShieldCheck,   show: currentUserRole === 'superadmin' },
           ].filter(i => i.show).map(({ key, label, Icon }) => {
             const isActive = activePage === key
             return (
@@ -5334,10 +5686,9 @@ export default function AdminDashboard() {
                   { key: 'locations',      label: 'สถานที่เกิดเหตุ', Icon: MapPin,      color: '#0891b2', bg: '#e0f2fe', show: currentUserRole !== 'viewer' },
                   { key: 'fee-settings',   label: 'ค่าธรรมเนียม',   Icon: Banknote,    color: '#10b981', bg: '#d1fae5', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'fleet-setup',    label: 'ยานพาหนะ',        Icon: Car,         color: '#0369a1', bg: '#e0f2fe', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                  { key: 'theme-settings', label: 'ธีมแอป',          Icon: Palette,     color: '#a855f7', bg: '#faf5ff', show: currentUserRole === 'superadmin' },
                   { key: 'system-settings',label: 'ตั้งค่าระบบ',     Icon: Settings,    color: '#3b82f6', bg: '#dbeafe', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'users',          label: 'จัดการผู้ใช้',    Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                  { key: 'modules',        label: 'จัดการโมดูล',     Icon: LayoutGrid,  color: '#7c3aed', bg: '#ede9fe', show: currentUserRole === 'superadmin' },
+                  { key: 'superadmin',     label: 'SuperAdmin',      Icon: ShieldCheck, color: '#a855f7', bg: '#faf5ff', show: currentUserRole === 'superadmin' },
                   { key: 'audit-log',      label: 'บันทึกกิจกรรม',  Icon: BookOpen,    color: '#ef4444', bg: '#fee2e2', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 ],
               },
@@ -5425,8 +5776,8 @@ export default function AdminDashboard() {
           onEditProject={() => navigate('/staff', { state: { module: 'projects' } })} />
       ) : activePage === 'fee-settings' ? (
         <FeeSettingsAdmin tenant={tenant} />
-      ) : activePage === 'theme-settings' && currentUserRole === 'superadmin' ? (
-        <ThemeSettingsAdmin />
+      ) : activePage === 'superadmin' && currentUserRole === 'superadmin' ? (
+        <SuperAdminPanel tenant={tenant} />
       ) : activePage === 'system-settings' ? (
         <SystemSettingsAdmin tenant={tenant} onUpdateTenant={(updated) => window.location.reload()} />
       ) : activePage === 'audit-log' ? (
@@ -5509,14 +5860,14 @@ export default function AdminDashboard() {
               </button>
             )}
             {currentUserRole === 'superadmin' && (
-              <button onClick={() => setActivePage('theme-settings')}
+              <button onClick={() => setActivePage('superadmin')}
                 className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
                 <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#fae8ff' }}>
-                  <Palette size={24} style={{ color: '#a855f7' }} />
+                  <ShieldCheck size={24} style={{ color: '#a855f7' }} />
                 </div>
                 <div>
-                  <p className="text-sm font-bold text-gray-800">ธีมโครงสร้างแอป</p>
-                  <p className="text-[13px] text-gray-400 mt-0.5">สีระบบ / หน้าแรก</p>
+                  <p className="text-sm font-bold text-gray-800">SuperAdmin</p>
+                  <p className="text-[13px] text-gray-400 mt-0.5">ธีมแอป / จัดการโมดูล</p>
                 </div>
               </button>
             )}
@@ -5572,9 +5923,9 @@ export default function AdminDashboard() {
                   { key: 'locations',   Icon: MapPin,      color: '#0891b2', bg: '#e0f2fe', label: 'สถานที่เกิดเหตุ', desc: 'จัดการหมู่บ้าน / ตำบลในพื้นที่',  show: currentUserRole !== 'viewer' },
                   { key: 'staff',            Icon: UserCircle2, color: '#7c3aed', bg: '#ede9fe', label: 'รูปผู้บริหาร',       desc: 'อัปโหลดรูปนายก/รองนายก/ทีมงาน',       show: currentUserRole !== 'viewer' },
                   { key: 'fleet-setup',      Icon: Car,         color: '#0369a1', bg: '#e0f2fe', label: 'ตั้งค่ายานพาหนะ', desc: 'กอง/หน่วยงาน งบประมาณ สิทธิ์ผู้ใช้', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                  { key: 'theme-settings',   Icon: Palette,     color: '#a855f7', bg: '#fae8ff', label: 'ธีมโครงสร้างแอป',   desc: 'เลือกโครงสร้างและดีไซน์หลักของระบบ',        show: currentUserRole === 'superadmin' },
                   { key: 'system-settings',  Icon: Settings,    color: '#3b82f6', bg: '#dbeafe', label: 'ตั้งค่าระบบ',    desc: 'ตั้งค่าชื่อระบบและข้อมูลพื้นฐาน',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'users',           Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', label: 'จัดการผู้ใช้',    desc: 'สิทธิ์การเข้าถึงและบทบาท',        show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                  { key: 'superadmin',      Icon: ShieldCheck, color: '#a855f7', bg: '#fae8ff', label: 'SuperAdmin',    desc: 'ธีมแอป และจัดการโมดูล',            show: currentUserRole === 'superadmin' },
                 ].filter(r => r.show).map(({ key, Icon, color, bg, label, desc }) => (
                   <tr key={key} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => setActivePage(key)}>
                     <td className="px-5 py-3.5">
@@ -5631,8 +5982,6 @@ export default function AdminDashboard() {
             </table>
           </div>
         </div>
-      ) : activePage === 'modules' ? (
-        <ModuleManager tenant={tenant} />
       ) : (
         <>
 

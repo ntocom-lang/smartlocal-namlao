@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { MapContainer, TileLayer, Marker, Popup, Tooltip, Polyline, CircleMarker, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, Tooltip, Polyline, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { supabase } from '../../lib/supabase'
@@ -929,8 +929,8 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
             />
             <FullscreenResizer />
 
-            {/* ── คำร้อง (3 ประเภทฟอร์ม) ── */}
-            {[...filteredRepair, ...filteredWater, ...filteredEnv].map((c) => (
+            {/* ── คำร้อง (3 ประเภทฟอร์ม) — เป็นจุดเสมอ ไม่แสดงตอนโหมดเส้นทาง ── */}
+            {projViewMode === 'pin' && [...filteredRepair, ...filteredWater, ...filteredEnv].map((c) => (
               <Marker
                 key={c.id}
                 position={[c.latitude, c.longitude]}
@@ -982,8 +982,8 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
               </Marker>
             ))}
 
-            {/* ── ร้านค้า/ท่องเที่ยว ── */}
-            {filteredBiz.map((b) => (
+            {/* ── ร้านค้า/ท่องเที่ยว — เป็นจุดเสมอ ไม่แสดงตอนโหมดเส้นทาง ── */}
+            {projViewMode === 'pin' && filteredBiz.map((b) => (
               <Marker
                 key={b.id}
                 position={[b.latitude, b.longitude]}
@@ -1039,7 +1039,10 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
             ))}
 
             {/* ── โครงการ (polyline หรือ marker ขึ้นกับ route_points) ── */}
-            {filteredProj.map((w) => {
+            {/* แยกแสดงเด็ดขาดตามโหมด: ปักหมุด = เฉพาะที่ไม่มีเส้นทาง / เส้นทาง = เฉพาะที่มีเส้นทาง ไม่ปนกัน */}
+            {filteredProj
+              .filter(w => (w.route_points?.length >= 2) === (projViewMode === 'route'))
+              .map((w) => {
               const statusColor = CIVIL_STATUS_COLOR[w.status] ?? '#9ca3af'
               const routeStyle  = ROUTE_STYLE[w.project_type]
               const lineColor   = w.route_color || routeStyle?.color || statusColor
@@ -1095,39 +1098,19 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
               )
 
               if (hasRoute && projViewMode === 'route') {
-                const rStart = w.route_points[0]
-                const rEnd   = w.route_points[w.route_points.length - 1]
                 return (
-                  <React.Fragment key={w.id}>
-                    <Polyline
-                      positions={w.route_points.map(p => [p.lat, p.lng])}
-                      pathOptions={{ color: lineColor, weight: lineWeight, opacity: 0.9, ...(dashArray && { dashArray }) }}
-                      eventHandlers={{ click: () => setSelectedItem({ type: 'civil', data: w }) }}>
-                      {showLabels && (
-                        <Tooltip sticky
-                          className="bg-white! text-gray-700! text-[10px]! font-semibold! border-gray-200! shadow-sm! px-1.5! py-0.5! rounded-lg!">
-                          {w.title.length > 24 ? w.title.slice(0, 24) + '…' : w.title}
-                        </Tooltip>
-                      )}
-                      {popup}
-                    </Polyline>
-                    <CircleMarker center={[rStart.lat, rStart.lng]} radius={7} pathOptions={{ color: '#fff', weight: 2, fillColor: '#22c55e', fillOpacity: 1 }}>
-                      {showLabels && (
-                        <Tooltip permanent direction="top" offset={[0, -8]}
-                          className="bg-white! border! border-gray-200! shadow-sm! rounded-lg! px-1.5! py-0.5! text-[10px]! font-semibold! text-gray-700!">
-                          จุดเริ่มต้น
-                        </Tooltip>
-                      )}
-                    </CircleMarker>
-                    <CircleMarker center={[rEnd.lat, rEnd.lng]} radius={7} pathOptions={{ color: '#fff', weight: 2, fillColor: '#ef4444', fillOpacity: 1 }}>
-                      {showLabels && (
-                        <Tooltip permanent direction="top" offset={[0, -8]}
-                          className="bg-white! border! border-gray-200! shadow-sm! rounded-lg! px-1.5! py-0.5! text-[10px]! font-semibold! text-gray-700!">
-                          จุดสิ้นสุด
-                        </Tooltip>
-                      )}
-                    </CircleMarker>
-                  </React.Fragment>
+                  <Polyline key={w.id}
+                    positions={w.route_points.map(p => [p.lat, p.lng])}
+                    pathOptions={{ color: lineColor, weight: lineWeight, opacity: 0.9, ...(dashArray && { dashArray }) }}
+                    eventHandlers={{ click: () => setSelectedItem({ type: 'civil', data: w }) }}>
+                    {showLabels && (
+                      <Tooltip sticky
+                        className="bg-white! text-gray-700! text-[10px]! font-semibold! border-gray-200! shadow-sm! px-1.5! py-0.5! rounded-lg!">
+                        {w.title.length > 24 ? w.title.slice(0, 24) + '…' : w.title}
+                      </Tooltip>
+                    )}
+                    {popup}
+                  </Polyline>
                 )
               }
 
@@ -1160,6 +1143,8 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
       <div className="flex flex-wrap gap-x-5 gap-y-2 px-1">
         {LEGEND
           .filter(({ layer, status }) => {
+            // โหมดเส้นทาง: มีแต่เส้นทางบนแผนที่ ไม่มีหมุดคำร้อง/ร้านค้า/โครงการแบบจุดเลย ซ่อน legend หมุดทั้งหมด
+            if (projViewMode === 'route') return false
             if (layer === 'complaint') {
               if (!showRepair && !showWater && !showEnv) return false
               return filterStatus === 'all' || filterStatus === status
@@ -1185,8 +1170,8 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
               <span className="text-xs text-gray-500">{label}</span>
             </div>
           ))}
-        {/* Route legend — ใช้ ROUTE_STYLE */}
-        {showProj && Object.entries(ROUTE_STYLE)
+        {/* Route legend — ใช้ ROUTE_STYLE, แสดงเฉพาะโหมดเส้นทาง */}
+        {projViewMode === 'route' && showProj && Object.entries(ROUTE_STYLE)
           .filter(([type, v]) => v.linear && (filterProjType === 'all' || filterProjType === type))
           .map(([type, { color, dashArray, label, weight }]) => (
             <div key={type} className="flex items-center gap-1.5">

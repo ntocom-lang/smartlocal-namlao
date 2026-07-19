@@ -293,8 +293,11 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
         attachment_url: attachmentUrl, updated_at: new Date().toISOString(),
       }
       if (editingEvent) {
-        const { error: updErr } = await supabase.from('events').update(payload).eq('id', editingEvent.id)
+        const { data: updData, error: updErr } = await supabase.from('events').update(payload).eq('id', editingEvent.id).select('id')
         if (updErr) throw new Error('บันทึกไม่สำเร็จ: ' + updErr.message)
+        if (!updData || updData.length === 0) {
+          throw new Error('บันทึกไม่สำเร็จ: คุณไม่มีสิทธิ์แก้ไขกิจกรรมนี้ (แก้ไขได้เฉพาะกิจกรรมที่ตัวเองสร้าง หรือต้องเป็นแอดมิน)')
+        }
       } else {
         const { data: { user } } = await supabase.auth.getUser()
         const { error: insErr } = await supabase.from('events').insert({ ...payload, created_by: user?.id ?? null })

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2, Wallpaper } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
+import DepartmentManager from './DepartmentManager'
 
 const inputCls = 'w-full px-4 py-2.5 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent transition-all'
 
@@ -250,6 +251,17 @@ export default function SystemSettingsAdmin() {
     }
   }
 
+  const [activeTab, setActiveTab] = useState('general')
+  const props = {
+    tenant, inputCls, loading, savedSection,
+    subtitle, setSubtitle, pwaShortName, setPwaShortName, saveSystemName,
+    address, setAddress, phone, setPhone, websiteUrl, setWebsiteUrl, email, setEmail, saveContactInfo,
+    logoPreview, logoUploading, logoRef, handleLogoUpload,
+    headerPreview, headerUploading, headerRef, handleHeaderUpload, removeHeaderImage,
+    qrPreview, qrUploading, qrRef, handleQrUpload, qrLabel, setQrLabel, qrLabelSaving, saveQrLabel,
+  }
+  const ActiveComponent = SETTINGS_TABS.find(t => t.key === activeTab)?.Component ?? GeneralInfoTab
+
   return (
     <div className="space-y-6 max-w-2xl">
 
@@ -265,6 +277,46 @@ export default function SystemSettingsAdmin() {
         </div>
       </div>
 
+      {/* Tab bar */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-2 flex gap-1 overflow-x-auto">
+        {SETTINGS_TABS.map(t => (
+          <button key={t.key} onClick={() => setActiveTab(t.key)}
+            className={`px-4 py-3 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5 ${
+              activeTab === t.key ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'
+            }`}>
+            <t.icon size={15} /> {t.label}
+          </button>
+        ))}
+      </div>
+
+      <ActiveComponent {...props} />
+    </div>
+  )
+}
+
+// เพิ่มแท็บใหม่ในอนาคต: เพิ่ม entry ตรงนี้ + เขียน component ใหม่ ไม่ต้องแก้โครงสร้าง SystemSettingsAdmin เลย
+const SETTINGS_TABS = [
+  { key: 'general',     label: 'ข้อมูลทั่วไป',       icon: Settings,  Component: GeneralInfoTab },
+  { key: 'branding',    label: 'แบรนด์และรูปภาพ',    icon: Wallpaper, Component: BrandingTab },
+  { key: 'qr',          label: 'โลโก้/QR Code',      icon: QrCode,    Component: QrCodeTab },
+  { key: 'departments', label: 'กอง/หน่วยงาน',      icon: Building2, Component: DepartmentsTab },
+]
+
+function DepartmentsTab({ tenant }) {
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+      <DepartmentManager tenant={tenant} />
+    </div>
+  )
+}
+
+function GeneralInfoTab({
+  tenant, inputCls, loading, savedSection,
+  subtitle, setSubtitle, pwaShortName, setPwaShortName, saveSystemName,
+  address, setAddress, phone, setPhone, websiteUrl, setWebsiteUrl, email, setEmail, saveContactInfo,
+}) {
+  return (
+    <div className="space-y-6">
       {/* ── ชื่อแอปบนมือถือ ── */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         <h2 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
@@ -300,124 +352,92 @@ export default function SystemSettingsAdmin() {
               className={inputCls}
             />
           </div>
-            <div className="flex justify-end pt-2">
-              <button
-                type="submit"
-                disabled={loading}
-                className="px-6 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-xl shadow-sm hover:shadow transition-all flex items-center gap-2 disabled:opacity-50"
-              >
-                {savedSection === 'name' ? <CheckCircle2 size={16} /> : <Save size={16} />}
-                {savedSection === 'name' ? 'บันทึกแล้ว' : 'บันทึก'}
-              </button>
-            </div>
-          </form>
-        </div>
-
-        {/* ── ข้อมูลหน่วยงานและการติดต่อ ── */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-          <h2 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
-            <Building2 size={15} /> ข้อมูลหน่วยงานและการติดต่อ
-          </h2>
-          <form onSubmit={saveContactInfo} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">ที่อยู่หน่วยงาน</label>
-              <textarea
-                value={address}
-                onChange={e => setAddress(e.target.value)}
-                placeholder="เช่น เลขที่ 101 หมู่ที่ 5 ตำบลน้ำเลา อำเภอร้องกวาง จังหวัดแพร่ 54140"
-                rows={2}
-                className={inputCls}
-              />
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">เบอร์โทรศัพท์ / แฟกซ์</label>
-                <input
-                  type="text"
-                  value={phone}
-                  onChange={e => setPhone(e.target.value)}
-                  placeholder="เช่น 054-546-092"
-                  className={inputCls}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">เว็บไซต์</label>
-                <input
-                  type="text"
-                  value={websiteUrl}
-                  onChange={e => setWebsiteUrl(e.target.value)}
-                  placeholder="เช่น www.namlao.go.th"
-                  className={inputCls}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">อีเมลกลาง</label>
-              <input
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="เช่น phrae_namlao101@hotmail.co.th"
-                className={inputCls}
-              />
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <button
-                type="submit"
-                disabled={loading}
-                className="px-6 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-xl shadow-sm hover:shadow transition-all flex items-center gap-2 disabled:opacity-50"
-              >
-                {savedSection === 'contact' ? <CheckCircle2 size={16} /> : <Save size={16} />}
-                {savedSection === 'contact' ? 'บันทึกแล้ว' : 'บันทึกข้อมูลติดต่อ'}
-              </button>
-            </div>
-          </form>
-        </div>
-
-      {/* ── โลโก้หน่วยงาน ── */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-        <h2 className="text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
-          <Building2 size={15} /> โลโก้หน่วยงาน
-        </h2>
-        <p className="text-xs text-gray-400 mb-5 leading-relaxed">
-          แสดงในแอปและ link preview เมื่อแชร์ลิ้งก์ใน LINE / WhatsApp · แนะนำ PNG สี่เหลี่ยม ขนาด 512×512px
-        </p>
-        <div className="flex items-center gap-5">
-          <div className="shrink-0">
-            <div className="w-24 h-24 rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden">
-              {logoPreview
-                ? <img src={logoPreview} alt="โลโก้" className="w-full h-full object-contain p-1" />
-                : <div className="flex flex-col items-center gap-1 text-gray-300">
-                    <ImageIcon size={24} />
-                    <span className="text-[10px]">ยังไม่มีโลโก้</span>
-                  </div>
-              }
-            </div>
-            {savedSection === 'logo' && (
-              <p className="flex items-center gap-1 text-xs text-emerald-600 mt-2 justify-center">
-                <CheckCircle2 size={12} /> บันทึกสำเร็จ
-              </p>
-            )}
-          </div>
-          <div className="flex-1">
-            <p className="text-xs text-gray-500 mb-3 leading-relaxed">
-              โลโก้จะปรากฏใน link preview และ PWA icon<br />
-              <span className="text-gray-400">รองรับ PNG · JPG · WebP</span>
-            </p>
-            <input ref={logoRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleLogoUpload} />
-            <button onClick={() => logoRef.current?.click()} disabled={logoUploading}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-all"
-              style={{ backgroundColor: 'var(--color-primary)' }}>
-              {logoUploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
-              {logoUploading ? 'กำลังอัปโหลด...' : 'อัปโหลดโลโก้'}
+          <div className="flex justify-end pt-2">
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-6 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-xl shadow-sm hover:shadow transition-all flex items-center gap-2 disabled:opacity-50"
+            >
+              {savedSection === 'name' ? <CheckCircle2 size={16} /> : <Save size={16} />}
+              {savedSection === 'name' ? 'บันทึกแล้ว' : 'บันทึก'}
             </button>
           </div>
-        </div>
+        </form>
       </div>
 
+      {/* ── ข้อมูลหน่วยงานและการติดต่อ ── */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <h2 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
+          <Building2 size={15} /> ข้อมูลหน่วยงานและการติดต่อ
+        </h2>
+        <form onSubmit={saveContactInfo} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">ที่อยู่หน่วยงาน</label>
+            <textarea
+              value={address}
+              onChange={e => setAddress(e.target.value)}
+              placeholder="เช่น เลขที่ 101 หมู่ที่ 5 ตำบลน้ำเลา อำเภอร้องกวาง จังหวัดแพร่ 54140"
+              rows={2}
+              className={inputCls}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">เบอร์โทรศัพท์ / แฟกซ์</label>
+              <input
+                type="text"
+                value={phone}
+                onChange={e => setPhone(e.target.value)}
+                placeholder="เช่น 054-546-092"
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">เว็บไซต์</label>
+              <input
+                type="text"
+                value={websiteUrl}
+                onChange={e => setWebsiteUrl(e.target.value)}
+                placeholder="เช่น www.namlao.go.th"
+                className={inputCls}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">อีเมลกลาง</label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="เช่น phrae_namlao101@hotmail.co.th"
+              className={inputCls}
+            />
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-6 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-xl shadow-sm hover:shadow transition-all flex items-center gap-2 disabled:opacity-50"
+            >
+              {savedSection === 'contact' ? <CheckCircle2 size={16} /> : <Save size={16} />}
+              {savedSection === 'contact' ? 'บันทึกแล้ว' : 'บันทึกข้อมูลติดต่อ'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function BrandingTab({
+  tenant, savedSection,
+  headerPreview, headerUploading, headerRef, handleHeaderUpload, removeHeaderImage,
+}) {
+  return (
+    <div className="space-y-6">
       {/* ── ภาพพื้นหลัง Header ── */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         <h2 className="text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
@@ -458,6 +478,60 @@ export default function SystemSettingsAdmin() {
                 ลบภาพออก
               </button>
             )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Banner Slider ── */}
+      <BannerManager tenant={tenant} />
+    </div>
+  )
+}
+
+function QrCodeTab({
+  tenant, savedSection,
+  logoPreview, logoUploading, logoRef, handleLogoUpload,
+  qrPreview, qrUploading, qrRef, handleQrUpload, qrLabel, setQrLabel, qrLabelSaving, saveQrLabel, inputCls,
+}) {
+  return (
+    <div className="space-y-6">
+      {/* ── โลโก้หน่วยงาน ── */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <h2 className="text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
+          <Building2 size={15} /> โลโก้หน่วยงาน
+        </h2>
+        <p className="text-xs text-gray-400 mb-5 leading-relaxed">
+          แสดงในแอปและ link preview เมื่อแชร์ลิ้งก์ใน LINE / WhatsApp · แนะนำ PNG สี่เหลี่ยม ขนาด 512×512px
+        </p>
+        <div className="flex items-center gap-5">
+          <div className="shrink-0">
+            <div className="w-24 h-24 rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden">
+              {logoPreview
+                ? <img src={logoPreview} alt="โลโก้" className="w-full h-full object-contain p-1" />
+                : <div className="flex flex-col items-center gap-1 text-gray-300">
+                    <ImageIcon size={24} />
+                    <span className="text-[10px]">ยังไม่มีโลโก้</span>
+                  </div>
+              }
+            </div>
+            {savedSection === 'logo' && (
+              <p className="flex items-center gap-1 text-xs text-emerald-600 mt-2 justify-center">
+                <CheckCircle2 size={12} /> บันทึกสำเร็จ
+              </p>
+            )}
+          </div>
+          <div className="flex-1">
+            <p className="text-xs text-gray-500 mb-3 leading-relaxed">
+              โลโก้จะปรากฏใน link preview และ PWA icon<br />
+              <span className="text-gray-400">รองรับ PNG · JPG · WebP</span>
+            </p>
+            <input ref={logoRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleLogoUpload} />
+            <button onClick={() => logoRef.current?.click()} disabled={logoUploading}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-all"
+              style={{ backgroundColor: 'var(--color-primary)' }}>
+              {logoUploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+              {logoUploading ? 'กำลังอัปโหลด...' : 'อัปโหลดโลโก้'}
+            </button>
           </div>
         </div>
       </div>
@@ -537,10 +611,6 @@ export default function SystemSettingsAdmin() {
           </div>
         </form>
       </div>
-
-      {/* ── Banner Slider ── */}
-      <BannerManager tenant={tenant} />
-
     </div>
   )
 }

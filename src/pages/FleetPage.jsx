@@ -46,7 +46,7 @@ function MobileGrid({ setTab, fleetInfo, depts, tenant }) {
     fleetInfo?.fleet_role === 'fleet_admin'  ? 'ผู้ดูแลระบบยานพาหนะ' :
     fleetInfo?.fleet_role === 'fleet_staff'  ? 'เจ้าหน้าที่ยานพาหนะ' :
     fleetInfo?.fleet_role === 'fleet_viewer' ? 'ผู้ดูรายงาน' : 'ผู้ใช้งาน'
-  const deptName = depts.find(d => d.id === fleetInfo?.fleet_department_id)?.name ?? ''
+  const deptName = depts.find(d => d.id === fleetInfo?.department_id)?.name ?? ''
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
@@ -151,13 +151,13 @@ export default function FleetPage({ onBack } = {}) {
     if (!tenant?.id || !user?.id) return
     Promise.all([
       supabase.from('profiles')
-        .select('fleet_role, fleet_department_id')
+        .select('fleet_role, department_id')
         .eq('id', user.id).single(),
-      supabase.from('fleet_departments')
+      supabase.from('departments')
         .select('id, code, name, short_name')
         .eq('municipality_id', tenant.id).eq('is_active', true).order('sort_order'),
     ]).then(([{ data: p }, { data: d }]) => {
-      setFleetInfo(p ?? { fleet_role: null, fleet_department_id: null })
+      setFleetInfo(p ?? { fleet_role: null, department_id: null })
       setDepts(d ?? [])
     }).finally(() => setLoading(false))
   }, [tenant?.id, user?.id])
@@ -260,8 +260,8 @@ export default function FleetPage({ onBack } = {}) {
                 {fleetInfo?.fleet_role === 'fleet_admin' ? 'ผู้ดูแลระบบ'
                  : fleetInfo?.fleet_role === 'fleet_staff' ? 'เจ้าหน้าที่'
                  : 'ผู้ดูรายงาน'}
-                {depts.find(d => d.id === fleetInfo?.fleet_department_id)
-                  ? ` · ${depts.find(d => d.id === fleetInfo.fleet_department_id).name}` : ''}
+                {depts.find(d => d.id === fleetInfo?.department_id)
+                  ? ` · ${depts.find(d => d.id === fleetInfo.department_id).name}` : ''}
               </p>
             </div>
           </div>
