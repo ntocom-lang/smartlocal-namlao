@@ -273,12 +273,12 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
         if (file.size > 20 * 1024 * 1024) throw new Error('ไฟล์ใหญ่เกินไป (สูงสุด 20 MB)')
         const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
         const path = `${tenant.id}/${Date.now()}_${safeName}`
-        const toUpload = await compressImage(file, 1200)
-        const uploadResult = await Promise.race([
-          supabase.storage.from('event-attachments').upload(path, toUpload, { upsert: false }),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('อัปโหลดไฟล์หมดเวลา (30 วินาที) กรุณาลองใหม่')), 30_000)),
-        ])
-        if (uploadResult?.error) throw new Error('อัปโหลดไฟล์ไม่สำเร็จ: ' + uploadResult.error.message)
+        const toUpload = await compressImage(file, undefined)
+        const contentType = toUpload.type || (/\.pdf$/i.test(toUpload.name ?? '') ? 'application/pdf' : 'application/octet-stream')
+        const { error: uploadError } = await supabase.storage
+          .from('event-attachments')
+          .upload(path, toUpload, { upsert: false, contentType })
+        if (uploadError) throw new Error('อัปโหลดไฟล์ไม่สำเร็จ: ' + uploadError.message)
         const { data: { publicUrl } } = supabase.storage.from('event-attachments').getPublicUrl(path)
         attachmentUrl = publicUrl
       }

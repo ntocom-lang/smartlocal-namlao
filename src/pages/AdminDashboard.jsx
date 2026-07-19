@@ -3800,10 +3800,11 @@ function EventsManager({ tenant, currentUserRole }) {
       const file = form.attachment_file
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
       const path = `${tenant.id}/${Date.now()}_${safeName}`
-      const toUpload = await compressImage(file, 1200)
+      const toUpload = await compressImage(file, undefined)
+      const contentType = toUpload.type || (/\.pdf$/i.test(toUpload.name ?? '') ? 'application/pdf' : 'application/octet-stream')
       const { error: upErr } = await supabase.storage
         .from('event-attachments')
-        .upload(path, toUpload, { upsert: false })
+        .upload(path, toUpload, { upsert: false, contentType })
       if (upErr) {
         setSaving(false)
         setFormError('อัปโหลดไฟล์ไม่สำเร็จ: ' + upErr.message)
