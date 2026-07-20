@@ -3798,34 +3798,16 @@ function EventsManager({ tenant, currentUserRole }) {
       if (file.size > 20 * 1024 * 1024) throw new Error('ไฟล์ใหญ่เกินไป (สูงสุด 20 MB)')
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
       const path = `${tenant.id}/${Date.now()}_${safeName}`
+      const contentType = file.type || (/\.pdf$/i.test(file.name ?? '') ? 'application/pdf' : 'application/octet-stream')
 
-      const doUpload = async () => {
-        const toUpload = await compressImage(file, undefined)
-        const contentType = toUpload.type || (/\.pdf$/i.test(toUpload.name ?? '') ? 'application/pdf' : 'application/octet-stream')
+      const { error: uploadError } = await supabase.storage
+        .from('event-attachments')
+        .upload(path, file, { contentType })
+      if (uploadError) throw new Error(uploadError.message)
 
-        let storageBucket = 'event-attachments'
-        let uploadRes = await supabase.storage
-          .from(storageBucket)
-          .upload(path, toUpload, { upsert: false, contentType })
-
-        if (uploadRes.error) {
-          console.warn('Failed upload to event-attachments, trying complaint-attachments:', uploadRes.error)
-          storageBucket = 'complaint-attachments'
-          uploadRes = await supabase.storage
-            .from(storageBucket)
-            .upload(path, toUpload, { upsert: false, contentType })
-        }
-
-        if (uploadRes.error) throw new Error(uploadRes.error.message)
-        const { data: { publicUrl } } = supabase.storage.from(storageBucket).getPublicUrl(path)
-        const { error: updErr } = await supabase.from('events').update({ attachment_url: publicUrl }).eq('id', eventId)
-        if (updErr) throw new Error(updErr.message)
-      }
-
-      await Promise.race([
-        doUpload(),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('หมดเวลาอัปโหลด (20 วินาที)')), 20_000)),
-      ])
+      const { data: { publicUrl } } = supabase.storage.from('event-attachments').getPublicUrl(path)
+      const { error: updErr } = await supabase.from('events').update({ attachment_url: publicUrl }).eq('id', eventId)
+      if (updErr) throw new Error(updErr.message)
       fetchEvents()
     } catch (err) {
       console.error('uploadEventAttachment error:', err)
