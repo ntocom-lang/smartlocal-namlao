@@ -3818,6 +3818,7 @@ function EventsManager({ tenant, currentUserRole }) {
       const { data: { publicUrl } } = supabase.storage.from(storageBucket).getPublicUrl(path)
       const { error: updErr } = await supabase.from('events').update({ attachment_url: publicUrl }).eq('id', eventId)
       if (updErr) throw new Error(updErr.message)
+      fetchEvents()
     } catch (err) {
       console.error('uploadEventAttachment error:', err)
       alert('บันทึกกิจกรรมสำเร็จ แต่แนบไฟล์ไม่สำเร็จ: ' + (err?.message ?? 'เกิดข้อผิดพลาด') + '\n\nเปิดแก้ไขกิจกรรมนี้แล้วลองแนบไฟล์ใหม่อีกครั้ง')
@@ -3853,11 +3854,9 @@ function EventsManager({ tenant, currentUserRole }) {
           .insert({ ...payload, created_by: user?.id ?? null }).select('id').single()
         eventId = insData?.id ?? null
       }
-      if (form.attachment_file && eventId) {
-        await uploadEventAttachment(eventId, form.attachment_file)
-      }
       setShowForm(false)
       fetchEvents()
+      if (form.attachment_file && eventId) uploadEventAttachment(eventId, form.attachment_file)
     } finally {
       setSaving(false)
     }
