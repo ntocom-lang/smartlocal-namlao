@@ -610,6 +610,7 @@ export default function TechnicianDashboard() {
       const statusMsg = {
         received:    'ช่างรับงานแล้ว',
         in_progress: 'ช่างเริ่มลงพื้นที่ดำเนินการ',
+        done:        'ช่างปิดงานแล้ว — รอเจ้าหน้าที่ตรวจสอบและปิดเรื่อง',
         completed:   'ช่างปิดงานแล้ว — รอเจ้าหน้าที่ตรวจสอบและปิดเรื่อง',
       }[nextStatus]
       if (statusMsg) {
