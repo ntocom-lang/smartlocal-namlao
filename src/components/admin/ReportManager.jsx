@@ -14,11 +14,11 @@ let CATEGORY_LABEL = {
   road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าส่องสว่าง',
   trash: 'ขยะ/ความสะอาด', water: 'น้ำประปา',
   flood: 'น้ำท่วม/ระบายน้ำ', tree: 'ต้นไม้/สวนสาธารณะ',
-  noise: 'เหตุรำคาญ', other: 'อื่นๆ',
+  noise: 'เหตุรำคาญ', disease: 'ควบคุมโรคติดต่อ', other: 'อื่นๆ',
 }
 let CATEGORY_EMOJI = {
   road: '🛣️', light: '💡', trash: '🗑️', water: '💧',
-  flood: '🌊', tree: '🌳', noise: '📢', drain: '🕳️',
+  flood: '🌊', tree: '🌳', noise: '📢', drain: '🕳️', disease: '🏥',
 }
 const MONTHS_TH = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
 const MONTHS_FULL_TH = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',

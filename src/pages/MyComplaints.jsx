@@ -70,7 +70,7 @@ const DEFAULT_CATEGORY_LABEL = {
   building: 'ตรวจสอบอาคาร', mosquito: 'พ่นยุง',
   pollution: 'กลิ่นควัน/มลพิษ', corruption: 'แจ้งการทุจริต',
   tax: 'ภาษีและค่าธรรมเนียม', canal: 'ลอกคลอง',
-  animals: 'สุนัขและแมวจรจัด', other: 'อื่นๆ',
+  animals: 'สุนัขและแมวจรจัด', disease: 'ควบคุมโรคติดต่อ', other: 'อื่นๆ',
 }
 
 const DEFAULT_CATEGORY_EMOJI = {
@@ -78,7 +78,7 @@ const DEFAULT_CATEGORY_EMOJI = {
   flood: '🌊', tree: '🌳', noise: '📢', drain: '🕳️',
   waste_water: '💧', suction: '🚛', manhole: '⚙️', vendor: '🏪',
   building: '🏗️', mosquito: '🦟', pollution: '🌫️', corruption: '⚖️',
-  tax: '📋', canal: '🏞️', animals: '🐕', other: '📝',
+  tax: '📋', canal: '🏞️', animals: '🐕', disease: '🏥', other: '📝',
 }
 
 function StatusBadge({ status }) {

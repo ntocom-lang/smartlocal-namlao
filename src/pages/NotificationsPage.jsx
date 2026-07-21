@@ -38,7 +38,7 @@ let CATEGORY_LABEL = {
   tax: 'ภาษีและค่าธรรมเนียม', canal: 'ลอกคลอง',
   animals: 'สุนัขจรจัด', water_supply: 'สนับสนุนน้ำอุปโภค',
   borrow_equipment: 'ยืมพัสดุ', grievance: 'ร้องทุกข์/ร้องเรียน',
-  other: 'อื่นๆ',
+  disease: 'ควบคุมโรคติดต่อ', other: 'อื่นๆ',
 }
 
 let CATEGORY_EMOJI = {
@@ -47,7 +47,7 @@ let CATEGORY_EMOJI = {
   waste_water: '💧', suction: '🚛', manhole: '⚙️', vendor: '🏪',
   building: '🏗️', mosquito: '🦟', pollution: '🌫️', corruption: '⚖️',
   tax: '📋', canal: '🏞️', animals: '🐕', water_supply: '🚿',
-  borrow_equipment: '📦', grievance: '📣', other: '📝',
+  borrow_equipment: '📦', grievance: '📣', disease: '🏥', other: '📝',
 }
 
 function timeAgo(dateStr) {

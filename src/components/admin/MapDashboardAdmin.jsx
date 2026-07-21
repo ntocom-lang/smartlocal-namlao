@@ -109,7 +109,7 @@ let CATEGORY_LABEL = {
   road: 'ถนน/สะพาน', light: 'ไฟฟ้า', drain: 'ท่อระบายน้ำ', canal: 'ลำเหมือง',
   building: 'สิ่งก่อสร้าง', water_drought: 'ขอน้ำแล้ง', water_tank: 'ถังน้ำหมด',
   water_flood: 'ขอน้ำอุทกภัย', trash: 'ขยะ', tree: 'ต้นไม้', env_hazard: 'จุดเสี่ยง',
-  env_fire: 'ควันไฟ', mosquito: 'ยุง', pollution: 'มลพิษ', other: 'อื่นๆ',
+  env_fire: 'ควันไฟ', mosquito: 'ยุง', pollution: 'มลพิษ', disease: 'ควบคุมโรคติดต่อ', other: 'อื่นๆ',
 }
 
 const BIZ_TYPE_LABEL = {
