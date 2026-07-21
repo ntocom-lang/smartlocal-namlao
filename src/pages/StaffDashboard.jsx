@@ -79,8 +79,6 @@ const MODULE_GROUPS = [
   },
 ]
 const MODULES = MODULE_GROUPS.flatMap(g => g.items)
-// โมดูลที่ใช้บ่อยที่สุด แสดงเป็นการ์ดใหญ่บนหน้าแรก ที่เหลือพับไว้หลัง "เมนูอื่นๆ"
-const PRIMARY_MODULE_KEYS = ['inbox', 'complaints', 'events', 'infra']
 
 
 const APPROVAL_TYPES = [
@@ -2271,126 +2269,47 @@ function StaffReportWrapper({ tenant }) {
 
 // ─── Staff Home Dashboard ─────────────────────────────────────────────────────
 
-function StaffHomeModule({ visibleGroups, setActiveModule, pendingCount, newComplaintCount, todayEventsCount, staffName, navigate, onOpenMore }) {
+function StaffHomeModule({ visibleGroups, setActiveModule, pendingCount, staffName, navigate }) {
   const todayTH = new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-  const visibleModules = visibleGroups.flatMap(g => g.items)
-  const primaryItems = PRIMARY_MODULE_KEYS
-    .map(key => visibleModules.find(m => m.key === key))
-    .filter(Boolean)
-  const otherGroups = visibleGroups
-    .map(g => ({ ...g, items: g.items.filter(m => !PRIMARY_MODULE_KEYS.includes(m.key)) }))
-    .filter(g => g.items.length > 0)
-  const otherCount = otherGroups.reduce((n, g) => n + g.items.length, 0)
-
-  const badgeFor = (key) =>
-    key === 'inbox' ? pendingCount :
-    key === 'complaints' ? newComplaintCount :
-    key === 'events' ? todayEventsCount :
-    0
-
   return (
     <div className="space-y-5">
       {/* Greeting */}
-      <div>
-        <h1 className="text-base font-bold text-gray-800">ระบบเจ้าหน้าที่</h1>
-        <p className="text-xs text-gray-400 mt-0.5">สวัสดี{staffName ? `, ${staffName}` : ''} 👋  {todayTH}</p>
-      </div>
-
-      {/* วันนี้ */}
-      <div>
-        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">วันนี้</p>
-        <div className="grid grid-cols-3 gap-2">
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 text-center">
-            <p className="text-lg font-bold" style={{ color: pendingCount > 0 ? '#b45309' : '#374151' }}>{pendingCount}</p>
-            <p className="text-[10px] font-semibold text-gray-400 mt-0.5">คำขอรอ</p>
-          </div>
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 text-center">
-            <p className="text-lg font-bold" style={{ color: newComplaintCount > 0 ? '#dc2626' : '#374151' }}>{newComplaintCount}</p>
-            <p className="text-[10px] font-semibold text-gray-400 mt-0.5">คำร้องใหม่</p>
-          </div>
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 text-center">
-            <p className="text-lg font-bold" style={{ color: todayEventsCount > 0 ? '#059669' : '#374151' }}>{todayEventsCount}</p>
-            <p className="text-[10px] font-semibold text-gray-400 mt-0.5">กิจกรรมวันนี้</p>
-          </div>
-        </div>
-      </div>
-
-      {/* งานของฉัน — โมดูลหลัก */}
-      {primaryItems.length > 0 && (
+      <div className="flex items-center justify-between">
         <div>
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">งานของฉัน</p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            {primaryItems.map(({ key, label, Icon, color, bg }) => {
-              const badge = badgeFor(key)
-              return (
-                <button key={key}
-                  onClick={() => setActiveModule(key)}
-                  className="flex flex-col items-start gap-3 bg-white rounded-2xl border border-gray-100 shadow-sm p-3.5 hover:shadow-md active:scale-95 transition-all relative text-left">
-                  <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ backgroundColor: bg ?? (color + '18') }}>
-                    <Icon size={16} style={{ color }} />
-                  </div>
-                  <div>
-                    {badge > 0 && <p className="text-lg font-bold text-gray-800 leading-none">{badge}</p>}
-                    <p className={`text-[11px] font-semibold text-gray-600 leading-tight ${badge > 0 ? 'mt-1' : ''}`}>{label}</p>
-                  </div>
-                </button>
-              )
-            })}
+          <h1 className="text-base font-bold text-gray-800">ระบบเจ้าหน้าที่</h1>
+          <p className="text-xs text-gray-400 mt-0.5">สวัสดี{staffName ? `, ${staffName}` : ''} 👋  {todayTH}</p>
+        </div>
+        {pendingCount > 0 && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl"
+            style={{ backgroundColor: '#fef3c7' }}>
+            <span className="text-sm font-bold" style={{ color: '#b45309' }}>{pendingCount}</span>
+            <span className="text-[11px] font-semibold" style={{ color: '#92400e' }}>รายการรอ</span>
+          </div>
+        )}
+      </div>
+
+      {visibleGroups.map(({ group, items }) => (
+        <div key={group}>
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">{group}</p>
+          <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
+            {items.map(({ key, label, Icon, color, bg, externalUrl, navTo }) => (
+              <button key={key}
+                onClick={() => navTo ? navigate(navTo) : externalUrl ? window.open(externalUrl, '_blank') : setActiveModule(key)}
+                className="flex flex-col items-center gap-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-3 hover:shadow-md active:scale-95 transition-all relative">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: bg ?? (color + '18') }}>
+                  <Icon size={18} style={{ color }} />
+                </div>
+                {key === 'inbox' && pendingCount > 0 && (
+                  <span className="absolute top-2 right-2 min-w-[16px] h-4 rounded-full text-[9px] font-bold bg-red-500 text-white flex items-center justify-center px-1">
+                    {pendingCount > 9 ? '9+' : pendingCount}
+                  </span>
+                )}
+                <p className="text-[11px] font-semibold text-gray-700 text-center leading-tight">{label}</p>
+              </button>
+            ))}
           </div>
         </div>
-      )}
-
-      {/* โมดูลอื่นๆ */}
-      {otherCount > 0 && (
-        <button onClick={onOpenMore}
-          className="w-full flex items-center justify-between bg-white rounded-2xl border border-dashed border-gray-200 px-4 py-3 active:scale-95 transition-all">
-          <span className="text-xs font-semibold text-gray-500">
-            โมดูลอื่นๆ · {otherGroups.map(g => g.items.map(i => i.label).join(' / ')).join(' / ')}
-          </span>
-          <span className="flex items-center gap-1 text-xs font-bold text-gray-400 shrink-0 ml-2">
-            {otherCount} <ChevronRight size={14} />
-          </span>
-        </button>
-      )}
-    </div>
-  )
-}
-
-function StaffMoreSheet({ groups, setActiveModule, navigate, onClose }) {
-  return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-end md:items-center justify-center">
-      <div className="bg-white w-full md:max-w-xl md:rounded-3xl rounded-t-3xl max-h-[80vh] flex flex-col overflow-hidden shadow-2xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
-          <h3 className="text-sm font-bold text-gray-800">เมนูอื่นๆ</h3>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
-            <X size={18} />
-          </button>
-        </div>
-        <div className="overflow-y-auto px-5 py-4 space-y-5">
-          {groups.map(({ group, items }) => (
-            <div key={group}>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">{group}</p>
-              <div className="grid grid-cols-3 gap-2">
-                {items.map(({ key, label, Icon, color, bg, externalUrl, navTo }) => (
-                  <button key={key}
-                    onClick={() => {
-                      if (navTo) navigate(navTo)
-                      else if (externalUrl) window.open(externalUrl, '_blank')
-                      else setActiveModule(key)
-                      onClose()
-                    }}
-                    className="flex flex-col items-center gap-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-3 hover:shadow-md active:scale-95 transition-all">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: bg ?? (color + '18') }}>
-                      <Icon size={18} style={{ color }} />
-                    </div>
-                    <p className="text-[11px] font-semibold text-gray-700 text-center leading-tight">{label}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      ))}
     </div>
   )
 }
@@ -2406,8 +2325,6 @@ export default function StaffDashboard() {
   const [profile, setProfile]           = useState(null)
   const [pendingCount, setPendingCount] = useState(0)
   const [newComplaintCount, setNewComplaintCount] = useState(0)
-  const [todayEventsCount, setTodayEventsCount] = useState(0)
-  const [showMoreSheet, setShowMoreSheet] = useState(false)
 
   const allModuleKeys = MODULES.map(m => m.key)
   // keys ที่เคยอยู่ใน ModuleManager — ถ้า key ใหม่ยังไม่เคยถูก manage ให้ default เป็น enabled
@@ -2440,16 +2357,6 @@ export default function StaffDashboard() {
         .then(({ data: p }) => setProfile(p))
     })
   }, [])
-
-  useEffect(() => {
-    if (!tenant?.id) return
-    const todayStr = new Date().toISOString().split('T')[0]
-    supabase.from('events')
-      .select('id', { count: 'exact', head: true })
-      .eq('municipality_id', tenant.id)
-      .eq('event_date', todayStr)
-      .then(({ count }) => setTodayEventsCount(count ?? 0))
-  }, [tenant?.id])
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -2522,15 +2429,6 @@ export default function StaffDashboard() {
   return (
     <div className="min-h-full" style={{ backgroundColor: '#eef2f7' }}>
 
-      {showMoreSheet && (
-        <StaffMoreSheet
-          groups={visibleGroups.map(g => ({ ...g, items: g.items.filter(m => !PRIMARY_MODULE_KEYS.includes(m.key)) })).filter(g => g.items.length > 0)}
-          setActiveModule={setActiveModule}
-          navigate={navigate}
-          onClose={() => setShowMoreSheet(false)}
-        />
-      )}
-
       {/* Mobile header — เหมือนหน้าหลักประชาชน กันสับสนตอนสลับโหมด */}
       <header className="md:hidden text-white px-4 pt-3 pb-4 relative overflow-hidden shrink-0"
         style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)' }}>
@@ -2542,9 +2440,7 @@ export default function StaffDashboard() {
           </button>
           <div className="flex-1 min-w-0">
             <p className="font-bold text-sm leading-tight truncate">{tenant?.name ?? 'Staff Portal'}</p>
-            <p className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/20 mt-1">
-              🧭 โหมดเจ้าหน้าที่
-            </p>
+            <p className="text-white/70 text-[11px] mt-0.5">สำหรับเจ้าหน้าที่</p>
           </div>
           <button onClick={() => navigate('/notifications')} aria-label="การแจ้งเตือน" className="p-1.5 text-white/85 hover:text-white transition-colors shrink-0">
             <Bell size={19} />
@@ -2643,7 +2539,7 @@ export default function StaffDashboard() {
         {/* Main */}
         <main className="px-4 md:px-6 py-5 pb-24 md:pb-6">
           <div className="max-w-5xl mx-auto space-y-4">
-          {activeModule === 'home'       && <StaffHomeModule visibleGroups={visibleGroups} setActiveModule={setActiveModule} pendingCount={pendingCount} newComplaintCount={newComplaintCount} todayEventsCount={todayEventsCount} staffName={profile?.full_name} navigate={navigate} onOpenMore={() => setShowMoreSheet(true)} />}
+          {activeModule === 'home'       && <StaffHomeModule visibleGroups={MODULE_GROUPS} setActiveModule={setActiveModule} pendingCount={pendingCount} staffName={profile?.full_name} navigate={navigate} />}
           {activeModule === 'inbox'      && <InboxModule tenant={tenant} staffId={profile?.id} />}
           {activeModule === 'complaints' && (
             ['admin', 'superadmin'].includes(profile?.role)
@@ -2707,14 +2603,25 @@ export default function StaffDashboard() {
               </button>
             )
           })}
-          {/* เมนูอื่นๆ — เปิดชีตรวมโมดูลที่เหลือ แทนการ hardcode ไว้ที่ "รายงาน" อย่างเดียว */}
-          <button onClick={() => setShowMoreSheet(true)}
-            className="flex-1 flex flex-col items-center justify-center gap-0.5 pt-2 pb-1 transition-all active:scale-90">
-            <div className="relative w-10 h-9 rounded-xl flex items-center justify-center transition-all duration-200">
-              <MoreHorizontal size={20} strokeWidth={1.6} style={{ color: 'rgba(255,255,255,0.45)' }} />
-            </div>
-            <span className="text-[10px] font-bold leading-tight" style={{ color: 'rgba(255,255,255,0.45)' }}>เมนูอื่นๆ</span>
-          </button>
+          {/* รายงาน */}
+          {(() => {
+            const isActive = activeModule === 'report'
+            return (
+              <button onClick={() => setActiveModule('report')}
+                className="flex-1 flex flex-col items-center justify-center gap-0.5 pt-2 pb-1 transition-all active:scale-90">
+                <div className="relative w-10 h-9 rounded-xl flex items-center justify-center transition-all duration-200"
+                  style={{ backgroundColor: isActive ? 'rgba(255,255,255,0.2)' : 'transparent' }}>
+                  {isActive && (
+                    <span className="absolute -top-0.5 left-1/2 -translate-x-1/2 w-4 h-[3px] rounded-full bg-amber-400" />
+                  )}
+                  <TrendingUp size={20} strokeWidth={isActive ? 2.2 : 1.6}
+                    style={{ color: isActive ? '#fff' : 'rgba(255,255,255,0.45)' }} />
+                </div>
+                <span className="text-[10px] font-bold leading-tight"
+                  style={{ color: isActive ? '#fff' : 'rgba(255,255,255,0.45)' }}>รายงาน</span>
+              </button>
+            )
+          })()}
         </nav>
 
     </div>
