@@ -542,6 +542,7 @@ export default function TechnicianDashboard() {
   const [updating, setUpdating] = useState(null)
   const [selected, setSelected] = useState(null)
   const [myName, setMyName] = useState('')
+  const [myAvatar, setMyAvatar] = useState(null)
   const [seenIds, setSeenIds] = useState(getSeenIds)
 
   // ดึงหมวดหมู่ที่ Admin สร้างเอง merge เข้า CATEGORY_LABEL/EMOJI
@@ -563,10 +564,11 @@ export default function TechnicianDashboard() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (!data.session) return
-      supabase.from('profiles').select('full_name, role').eq('id', data.session.user.id).single()
+      supabase.from('profiles').select('full_name, role, avatar_url').eq('id', data.session.user.id).single()
         .then(({ data: p }) => {
           if (p?.role !== 'technician') navigate('/')
           setMyName(p?.full_name ?? 'ช่าง')
+          setMyAvatar(p?.avatar_url ?? null)
         })
     })
   }, [navigate])
@@ -705,6 +707,20 @@ export default function TechnicianDashboard() {
   const pending = complaints.filter((c) => c.status !== 'completed')
   const done = complaints.filter((c) => c.status === 'completed')
 
+  // ระดับความเร่งด่วนตาม due_date ที่ระบบกำหนดให้อัตโนมัติตอนมอบหมายงาน (auto_assign_complaint)
+  const todayStr = new Date().toISOString().split('T')[0]
+  const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0]
+  function slaLevel(c) {
+    if (!c.due_date) return null
+    if (c.due_date < todayStr) return 'crit'
+    if (c.due_date <= tomorrowStr) return 'warn'
+    return 'ok'
+  }
+  const dueSoonCount = pending.filter((c) => { const l = slaLevel(c); return l === 'crit' || l === 'warn' }).length
+  const doneTodayCount = complaints.filter((c) =>
+    (c.status === 'completed' || c.status === 'closed') && c.closed_at?.slice(0, 10) === todayStr
+  ).length
+
   async function handleLogout() {
     await supabase.auth.signOut()
     navigate('/')
@@ -769,27 +785,58 @@ export default function TechnicianDashboard() {
       {/* Content */}
       <div className="px-4 py-4 pb-8 md:py-6 md:px-8 md:flex md:gap-6 md:items-start">
 
-        {/* Mobile header */}
-        <div className="md:hidden flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-xl font-bold text-gray-800">งานของฉัน</h1>
-            <p className="text-sm text-gray-400">{myName} · {tenant?.name}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={fetchComplaints} disabled={loading}
-              className="p-2 rounded-xl border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition-colors disabled:opacity-50">
-              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+        {/* Mobile header — โทนส้ม สื่อ "โหมดช่าง" ต่างจากโหมดเจ้าหน้าที่/ประชาชน */}
+        <div className="md:hidden -mx-4 -mt-4 mb-4 text-white px-4 pt-4 pb-5 relative overflow-hidden"
+          style={{ background: 'linear-gradient(135deg, #8F3E17 0%, #D9622B 100%)' }}>
+          <div className="flex items-center gap-3 relative z-10">
+            <button onClick={() => navigate('/')} className="shrink-0 active:opacity-70 transition-opacity">
+              {tenant?.logo_url
+                ? <img src={tenant.logo_url} alt="โลโก้" className="w-11 h-11 rounded-full object-contain bg-white/10 p-0.5 border border-white/20" />
+                : <div className="w-11 h-11 rounded-full border-2 border-white/40 bg-white/20 flex items-center justify-center text-lg font-bold">{tenant?.name?.[0] ?? '?'}</div>}
             </button>
-            <button onClick={handleLogout}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border border-red-200 text-red-500 bg-white hover:bg-red-50 transition-colors">
-              <LogOut size={14} />
-              ออก
+            <div className="flex-1 min-w-0">
+              <p className="font-bold text-sm leading-tight truncate">{tenant?.name ?? 'ระบบช่าง'}</p>
+              <p className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/20 mt-1">
+                🔧 โหมดช่าง
+              </p>
+            </div>
+            <button onClick={fetchComplaints} disabled={loading} aria-label="รีเฟรช"
+              className="p-1.5 text-white/85 hover:text-white transition-colors shrink-0 disabled:opacity-50">
+              <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+            </button>
+            <button onClick={() => navigate('/profile')} className="p-1 shrink-0">
+              {myAvatar ? (
+                <img src={myAvatar} alt="โปรไฟล์" className="w-7 h-7 rounded-full object-cover border-2 border-white/60" />
+              ) : (
+                <div className="w-7 h-7 rounded-full bg-white/20 border-2 border-white/60 flex items-center justify-center text-white text-xs font-bold">
+                  {(myName || '?')[0].toUpperCase()}
+                </div>
+              )}
             </button>
           </div>
+          <p className="text-white/70 text-[11px] mt-2 relative z-10">{myName}</p>
         </div>
 
         {/* ─── Left: รายการงาน ─── */}
         <div className="flex-1 min-w-0 space-y-4">
+          {/* สรุปงานวันนี้ — ใช้ due_date/priority ที่ระบบมีอยู่แล้ว ยังไม่เคยถูกโชว์ที่หน้าช่างมาก่อน */}
+          {!loading && complaints.length > 0 && (
+            <div className="md:hidden grid grid-cols-3 gap-2">
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 text-center">
+                <p className="text-lg font-bold text-gray-800">{pending.length}</p>
+                <p className="text-[10px] font-semibold text-gray-400 mt-0.5">ค้างอยู่</p>
+              </div>
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 text-center">
+                <p className="text-lg font-bold" style={{ color: doneTodayCount > 0 ? '#059669' : '#374151' }}>{doneTodayCount}</p>
+                <p className="text-[10px] font-semibold text-gray-400 mt-0.5">เสร็จวันนี้</p>
+              </div>
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 text-center">
+                <p className="text-lg font-bold" style={{ color: dueSoonCount > 0 ? '#dc2626' : '#374151' }}>{dueSoonCount}</p>
+                <p className="text-[10px] font-semibold text-gray-400 mt-0.5">ใกล้ครบกำหนด</p>
+              </div>
+            </div>
+          )}
+
           {loading ? (
             <div className="flex justify-center py-16">
               <Loader2 size={24} className="animate-spin text-gray-300" />
@@ -812,9 +859,13 @@ export default function TechnicianDashboard() {
                   <div className="md:hidden bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                     {pending.map((c, i) => {
                       const s = STATUS[c.status]
+                      const level = slaLevel(c)
+                      const stripeColor = level === 'crit' ? '#dc2626' : level === 'warn' ? '#d97706' : level === 'ok' ? '#059669' : 'transparent'
+                      const dueHint = level === 'crit' ? 'เลยกำหนดแล้ว' : level === 'warn' ? (c.due_date === todayStr ? 'ครบกำหนดวันนี้' : 'ครบกำหนดพรุ่งนี้') : null
                       return (
                         <button key={c.id} onClick={() => handleOpenComplaint(c)}
-                          className={`w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-gray-50 transition-colors active:bg-gray-100 ${i < pending.length - 1 ? 'border-b border-gray-50' : ''}`}>
+                          style={{ borderLeft: `3px solid ${stripeColor}` }}
+                          className={`w-full flex items-center gap-3 pl-3 pr-4 py-3.5 text-left hover:bg-gray-50 transition-colors active:bg-gray-100 ${i < pending.length - 1 ? 'border-b border-gray-50' : ''}`}>
                           <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 bg-gray-100">
                             {CATEGORY_EMOJI[c.category] ?? '📄'}
                           </div>
@@ -824,7 +875,7 @@ export default function TechnicianDashboard() {
                               {CATEGORY_LABEL[c.category] ?? c.category}
                             </p>
                             <p className="text-xs text-gray-500 mt-0.5 truncate font-medium">
-                              {c.location_name || c.village || '—'}
+                              {c.location_name || c.village || '—'}{dueHint ? ` · ${dueHint}` : ''}
                             </p>
                             <p className="text-xs text-gray-400 truncate">{c.detail}</p>
                           </div>
