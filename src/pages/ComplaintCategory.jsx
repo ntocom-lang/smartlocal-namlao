@@ -4,7 +4,7 @@ import {
   ArrowLeft, Loader2, Lightbulb, Hammer, Trees,
   Trash2, Droplets, Waves, CloudRain, Package, ShieldAlert,
   Megaphone, VolumeX, Building2, Receipt, Pickaxe, Dog,
-  Flame, PhoneCall, HelpCircle
+  Flame, PhoneCall, HelpCircle, Truck, CircleDot, Wind, Stethoscope
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
@@ -16,15 +16,17 @@ const FALLBACK_ICON = {
   borrow_equipment: Package, corruption: ShieldAlert, grievance: Megaphone,
   noise: VolumeX, building: Building2, tax: Receipt, canal: Pickaxe,
   animals: Dog, fire: Flame, phone_complaint: PhoneCall,
-  waste_water: Droplets, other: HelpCircle,
+  waste_water: Droplets, suction: Truck, manhole: CircleDot,
+  pollution: Wind, disease: Stethoscope, other: HelpCircle,
 }
 
 const EMOJI_OVERRIDE = {
   light: '⚡', drain: '🚧', trash: '♻️', waste_water: '💧',
-  canal: '🚽', road: '🛤️', noise: '🔊', flood: '🪣',
-  building: '🏢', mosquito: '🧴', grievance: '🌫️', corruption: '🚨',
+  canal: '🏞️', road: '🛤️', noise: '🔊', flood: '🌊',
+  building: '🏢', mosquito: '🧴', grievance: '📣', corruption: '🚨',
   tax: '🧾', tree: '🌲', water_supply: '💧', animals: '🐾',
-  phone_complaint: '☎️', borrow_equipment: '🔧', fire: '🔥', other: '❓',
+  phone_complaint: '☎️', borrow_equipment: '🔧', fire: '🔥',
+  suction: '🚽', manhole: '⚙️', pollution: '🌫️', disease: '🏥', other: '❓',
 }
 
 const FALLBACK_COLOR = {
@@ -33,25 +35,30 @@ const FALLBACK_COLOR = {
   borrow_equipment: '#d97706', corruption: '#ef4444', grievance: '#f59e0b',
   noise: '#a855f7', building: '#475569', tax: '#14b8a6', canal: '#78716c',
   animals: '#f97316', fire: '#ef4444', phone_complaint: '#3b82f6',
-  waste_water: '#06b6d4', other: '#9ca3af',
+  waste_water: '#06b6d4', suction: '#0891b2', manhole: '#71717a',
+  pollution: '#6b7280', disease: '#ec4899', other: '#9ca3af',
 }
 
 const DEFAULT_CATEGORIES = [
   { value: 'light',            label: 'ไฟฟ้าสาธารณะ' },
   { value: 'drain',            label: 'ท่อระบายน้ำ' },
+  { value: 'manhole',          label: 'ฝาท่อระบายน้ำ' },
   { value: 'trash',            label: 'ขยะ / ความสะอาด' },
   { value: 'waste_water',      label: 'น้ำเสีย' },
-  { value: 'canal',            label: 'ดูดสิ่งปฏิกูล' },
+  { value: 'suction',          label: 'ดูดสิ่งปฏิกูล' },
+  { value: 'canal',            label: 'ลอกคลอง' },
   { value: 'road',             label: 'ถนน / ทางเท้า' },
   { value: 'noise',            label: 'แจ้งเหตุรำคาญ' },
-  { value: 'flood',            label: 'ฝาท่อระบายน้ำ' },
+  { value: 'flood',            label: 'น้ำท่วม / ระบายน้ำ' },
   { value: 'building',         label: 'ตรวจสอบอาคาร' },
-  { value: 'mosquito',         label: 'พ่นยุง / โรคระบาด' },
-  { value: 'grievance',        label: 'กลิ่น / ควัน / เสียง' },
+  { value: 'mosquito',         label: 'พ่นยุง' },
+  { value: 'disease',          label: 'ควบคุมโรคติดต่อ' },
+  { value: 'pollution',        label: 'กลิ่น / ควัน / มลพิษ' },
+  { value: 'grievance',        label: 'แจ้งเรื่องร้องทุกข์ร้องเรียน' },
   { value: 'corruption',       label: 'แจ้งการทุจริต' },
   { value: 'tax',              label: 'ภาษีและค่าธรรมเนียม' },
   { value: 'tree',             label: 'ตัดต้นไม้' },
-  { value: 'water_supply',     label: 'ลอกคลอง' },
+  { value: 'water_supply',     label: 'สนับสนุนน้ำอุปโภค' },
   { value: 'animals',          label: 'สุนัขจรจัด' },
   { value: 'phone_complaint',  label: 'ร้องเรียนเสียง' },
   { value: 'other',            label: 'อื่นๆ' },
