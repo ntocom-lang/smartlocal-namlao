@@ -171,6 +171,8 @@ function AppShell() {
   const navigate = useNavigate()
   const location = useLocation()
   const isBackOffice = ['/admin', '/staff', '/technician'].some(p => location.pathname.startsWith(p))
+  // ช่างยังใช้เมนูล่างของแอป (NAV_TECH) ได้ ต่างจาก /admin กับ /staff ที่ไม่มีเมนูล่างเลย
+  const hideBottomNav = ['/admin', '/staff'].some(p => location.pathname.startsWith(p))
 
   async function checkAndFixProfile(uid, userMeta = {}) {
     const { data: profile } = await supabase
@@ -385,7 +387,7 @@ function AppShell() {
           <Footer />
           </main>
         </div>
-        {!isBackOffice && <BottomNav />}
+        {!hideBottomNav && <BottomNav />}
         <InstallPrompt />
         <ScrollToTopButton />
       </NotificationsProvider>

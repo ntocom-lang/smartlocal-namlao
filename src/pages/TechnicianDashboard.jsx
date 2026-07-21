@@ -711,7 +711,7 @@ export default function TechnicianDashboard() {
   }
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#eef2f7' }}>
+    <div className="min-h-screen" style={{ backgroundColor: '#eef2f7', paddingBottom: 'calc(5rem + max(env(safe-area-inset-bottom, 0px), 12px))' }}>
       {selected && (
         <DetailSheet
           complaint={selected}
