@@ -3636,6 +3636,12 @@ const AUDIENCE_OPTIONS = [
   { value: 'council',    label: 'สภาเทศบาล',                  color: '#f59e0b' },
 ]
 
+// backward-compat: event เก่าเก็บไฟล์แนบเดียวใน attachment_url, ของใหม่เก็บหลายไฟล์ใน attachment_urls
+function eventAttachments(ev) {
+  if (ev.attachment_urls?.length > 0) return ev.attachment_urls
+  return ev.attachment_url ? [ev.attachment_url] : []
+}
+
 function EventCard({ ev, onEdit, onDelete, deleting }) {
   const [confirmDel, setConfirmDel] = useState(false)
   const color = EVENTS_CATEGORY_COLOR[ev.category] ?? '#6b7280'
@@ -3667,7 +3673,7 @@ function EventCard({ ev, onEdit, onDelete, deleting }) {
             </div>
             <div className="flex items-center gap-1.5">
               <p className="text-sm font-bold text-gray-800 leading-tight">{ev.title}</p>
-              {ev.attachment_url && <Paperclip size={12} className="text-gray-400 shrink-0" />}
+              {eventAttachments(ev).length > 0 && <Paperclip size={12} className="text-gray-400 shrink-0" />}
             </div>
             <p className="text-xs text-gray-500 mt-0.5">
               {dateStr}
@@ -3731,7 +3737,8 @@ function EventsManager({ tenant, currentUserRole }) {
   const [deleting, setDeleting] = useState(null)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
-  const emptyForm = { title: '', description: '', event_date: '', event_time: '', end_time: '', end_date: '', location: '', category: 'อื่นๆ', is_all_day: true, audience: 'public', attachment_url: '', attachment_file: null }
+  const MAX_ATTACHMENTS = 3
+  const emptyForm = { title: '', description: '', event_date: '', event_time: '', end_time: '', end_date: '', location: '', category: 'อื่นๆ', is_all_day: true, audience: 'public', attachment_urls: [], attachment_files: [] }
   const [form, setForm] = useState(emptyForm)
   const [filterMonth, setFilterMonth] = useState('all')
   const [filterCategory, setFilterCategory] = useState('all')
@@ -3783,8 +3790,8 @@ function EventsManager({ tenant, currentUserRole }) {
       category: ev.category ?? 'อื่นๆ',
       is_all_day: ev.is_all_day ?? true,
       audience: ev.audience ?? 'public',
-      attachment_url: ev.attachment_url ?? '',
-      attachment_file: null,
+      attachment_urls: ev.attachment_urls?.length > 0 ? ev.attachment_urls : (ev.attachment_url ? [ev.attachment_url] : []),
+      attachment_files: [],
       end_time: ev.end_time ?? '',
     })
     setEditingEvent(ev)
@@ -3792,25 +3799,33 @@ function EventsManager({ tenant, currentUserRole }) {
   }
 
   // อัปโหลดไฟล์แนบแยกเป็นขั้นหลังบันทึกกิจกรรมเสร็จแล้ว (ไม่บล็อกการบันทึกข้อมูลหลัก)
-  async function uploadEventAttachment(eventId, file) {
-    if (!file || !eventId) return
+  async function uploadEventAttachments(eventId, files, existingUrls) {
+    if (!files?.length || !eventId) return
     try {
-      if (file.size > 20 * 1024 * 1024) throw new Error('ไฟล์ใหญ่เกินไป (สูงสุด 20 MB)')
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-      const path = `${tenant.id}/${Date.now()}_${safeName}`
-      const contentType = file.type || (/\.pdf$/i.test(file.name ?? '') ? 'application/pdf' : 'application/octet-stream')
+      const newUrls = []
+      for (const file of files) {
+        if (file.size > 20 * 1024 * 1024) throw new Error(`ไฟล์ "${file.name}" ใหญ่เกินไป (สูงสุด 20 MB)`)
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+        const path = `${tenant.id}/${Date.now()}_${safeName}`
+        const contentType = file.type || (/\.pdf$/i.test(file.name ?? '') ? 'application/pdf' : 'application/octet-stream')
 
-      const { error: uploadError } = await supabase.storage
-        .from('event-attachments')
-        .upload(path, file, { contentType })
-      if (uploadError) throw new Error(uploadError.message)
+        const { error: uploadError } = await supabase.storage
+          .from('event-attachments')
+          .upload(path, file, { contentType })
+        if (uploadError) throw new Error(uploadError.message)
 
-      const { data: { publicUrl } } = supabase.storage.from('event-attachments').getPublicUrl(path)
-      const { error: updErr } = await supabase.from('events').update({ attachment_url: publicUrl }).eq('id', eventId)
+        const { data: { publicUrl } } = supabase.storage.from('event-attachments').getPublicUrl(path)
+        newUrls.push(publicUrl)
+      }
+
+      const allUrls = [...existingUrls, ...newUrls]
+      const { error: updErr } = await supabase.from('events')
+        .update({ attachment_urls: allUrls, attachment_url: allUrls[0] ?? null })
+        .eq('id', eventId)
       if (updErr) throw new Error(updErr.message)
       fetchEvents()
     } catch (err) {
-      console.error('uploadEventAttachment error:', err)
+      console.error('uploadEventAttachments error:', err)
       alert('บันทึกกิจกรรมสำเร็จ แต่แนบไฟล์ไม่สำเร็จ: ' + (err?.message ?? 'เกิดข้อผิดพลาด') + '\n\nเปิดแก้ไขกิจกรรมนี้แล้วลองแนบไฟล์ใหม่อีกครั้ง')
     }
   }
@@ -3832,7 +3847,7 @@ function EventsManager({ tenant, currentUserRole }) {
         category: form.category,
         is_all_day: form.is_all_day,
         audience: form.audience,
-        attachment_url: form.attachment_url || null,
+        attachment_urls: form.attachment_urls, attachment_url: form.attachment_urls[0] ?? null,
         updated_at: new Date().toISOString(),
       }
       let eventId = editingEvent?.id ?? null
@@ -3846,7 +3861,7 @@ function EventsManager({ tenant, currentUserRole }) {
       }
       setShowForm(false)
       fetchEvents()
-      if (form.attachment_file && eventId) uploadEventAttachment(eventId, form.attachment_file)
+      if (form.attachment_files.length > 0 && eventId) uploadEventAttachments(eventId, form.attachment_files, form.attachment_urls)
     } finally {
       setSaving(false)
     }
@@ -4096,49 +4111,64 @@ function EventsManager({ tenant, currentUserRole }) {
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-gray-500 mb-1.5 block">เอกสารแนบ</label>
-                  {form.attachment_url && !form.attachment_file ? (
-                    <div className="flex items-center gap-2 px-3 py-2.5 bg-blue-50 border border-blue-100 rounded-xl">
-                      <Paperclip size={14} className="text-blue-500 shrink-0" />
-                      <a href={form.attachment_url} target="_blank" rel="noopener noreferrer"
-                        className="flex-1 text-xs text-blue-600 font-medium truncate hover:underline">
-                        ดูไฟล์แนบปัจจุบัน
-                      </a>
-                      <button type="button"
-                        onClick={() => setForm((p) => ({ ...p, attachment_url: '' }))}
-                        className="p-1 rounded-lg hover:bg-blue-100 text-red-400 transition-colors">
-                        <X size={13} />
-                      </button>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-gray-500 block">เอกสารแนบ</label>
+                    <span className="text-[11px] text-gray-400">{form.attachment_urls.length + form.attachment_files.length}/{MAX_ATTACHMENTS}</span>
+                  </div>
+                  {(form.attachment_urls.length > 0 || form.attachment_files.length > 0) && (
+                    <div className="space-y-1.5 mb-2">
+                      {form.attachment_urls.map((url, i) => (
+                        <div key={url} className="flex items-center gap-2 px-3 py-2.5 bg-blue-50 border border-blue-100 rounded-xl">
+                          <Paperclip size={14} className="text-blue-500 shrink-0" />
+                          <a href={url} target="_blank" rel="noopener noreferrer"
+                            className="flex-1 text-xs text-blue-600 font-medium truncate hover:underline">
+                            ดูไฟล์แนบเดิม {form.attachment_urls.length > 1 ? i + 1 : ''}
+                          </a>
+                          <button type="button"
+                            onClick={() => setForm((p) => ({ ...p, attachment_urls: p.attachment_urls.filter((u) => u !== url) }))}
+                            className="p-1 rounded-lg hover:bg-blue-100 text-red-400 transition-colors">
+                            <X size={13} />
+                          </button>
+                        </div>
+                      ))}
+                      {form.attachment_files.map((file, i) => (
+                        <div key={`${file.name}-${i}`} className="flex items-center gap-2 px-3 py-2.5 bg-green-50 border border-green-100 rounded-xl">
+                          <Paperclip size={14} className="text-green-500 shrink-0" />
+                          <span className="flex-1 text-xs text-green-700 font-medium truncate">{file.name}</span>
+                          <button type="button"
+                            onClick={() => setForm((p) => ({ ...p, attachment_files: p.attachment_files.filter((_, idx) => idx !== i) }))}
+                            className="p-1 rounded-lg hover:bg-green-100 text-red-400 transition-colors">
+                            <X size={13} />
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                  ) : form.attachment_file ? (
-                    <div className="flex items-center gap-2 px-3 py-2.5 bg-green-50 border border-green-100 rounded-xl">
-                      <Paperclip size={14} className="text-green-500 shrink-0" />
-                      <span className="flex-1 text-xs text-green-700 font-medium truncate">{form.attachment_file.name}</span>
-                      <button type="button"
-                        onClick={() => setForm((p) => ({ ...p, attachment_file: null }))}
-                        className="p-1 rounded-lg hover:bg-green-100 text-red-400 transition-colors">
-                        <X size={13} />
-                      </button>
-                    </div>
-                  ) : (
+                  )}
+                  {form.attachment_urls.length + form.attachment_files.length < MAX_ATTACHMENTS && (
                     <div className="flex gap-2">
                       <label className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border-2 border-dashed border-gray-200 cursor-pointer hover:border-blue-300 hover:bg-blue-50/50 transition-colors">
                         <Image size={15} className="text-gray-400 shrink-0" />
                         <span className="text-xs text-gray-400">แนบรูปภาพ</span>
                         <input type="file" accept="image/*" className="hidden"
-                          onChange={(e) => setForm((p) => ({ ...p, attachment_file: e.target.files?.[0] ?? null }))} />
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            if (file) setForm((p) => ({ ...p, attachment_files: [...p.attachment_files, file] }))
+                            e.target.value = ''
+                          }} />
                       </label>
                       <label className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border-2 border-dashed border-gray-200 cursor-pointer hover:border-blue-300 hover:bg-blue-50/50 transition-colors">
                         <FileText size={15} className="text-gray-400 shrink-0" />
                         <span className="text-xs text-gray-400">แนบไฟล์ (PDF)</span>
                         <input type="file" accept="application/pdf" className="hidden"
-                          onChange={(e) => setForm((p) => ({ ...p, attachment_file: e.target.files?.[0] ?? null }))} />
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            if (file) setForm((p) => ({ ...p, attachment_files: [...p.attachment_files, file] }))
+                            e.target.value = ''
+                          }} />
                       </label>
                     </div>
                   )}
-                  {!form.attachment_url && !form.attachment_file && (
-                    <p className="text-[11px] text-gray-400 mt-1">ไฟล์สูงสุด 20 MB</p>
-                  )}
+                  <p className="text-[11px] text-gray-400 mt-1">รวมกันได้สูงสุด {MAX_ATTACHMENTS} ไฟล์ (ไฟล์ละไม่เกิน 20 MB)</p>
                 </div>
 
                 {formError && <p className="text-xs text-red-500">{formError}</p>}

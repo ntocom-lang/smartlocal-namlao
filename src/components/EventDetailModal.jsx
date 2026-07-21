@@ -35,8 +35,7 @@ export default function EventDetailModal({ ev, onClose }) {
     dateRange += ' – ' + d2.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
   }
 
-  const hasAttachment = !!ev.attachment_url
-  const attachmentIsPdf = isPdf(ev.attachment_url)
+  const attachments = ev.attachment_urls?.length > 0 ? ev.attachment_urls : (ev.attachment_url ? [ev.attachment_url] : [])
 
   return (
     <div
@@ -142,45 +141,53 @@ export default function EventDetailModal({ ev, onClose }) {
             </div>
           )}
 
-          {/* Attachment */}
-          {hasAttachment && (
+          {/* Attachments */}
+          {attachments.length > 0 && (
             <div className="pt-2 border-t border-gray-100">
-              <p className="text-xs font-semibold text-gray-400 mb-2">เอกสารแนบ</p>
-              {attachmentIsPdf ? (
-                <a
-                  href={ev.attachment_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-3 p-3.5 rounded-2xl border border-red-100 bg-red-50 hover:bg-red-100 transition-colors active:scale-98"
-                >
-                  <div className="w-10 h-10 rounded-xl bg-red-500 flex items-center justify-center shrink-0">
-                    <FileText size={18} className="text-white" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-red-700">เอกสาร PDF</p>
-                    <p className="text-xs text-red-400">แตะเพื่อเปิด</p>
-                  </div>
-                  <ExternalLink size={16} className="text-red-400 shrink-0" />
-                </a>
-              ) : (
-                <a
-                  href={ev.attachment_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block rounded-2xl overflow-hidden border border-gray-100 hover:opacity-90 transition-opacity active:scale-98"
-                >
-                  <img
-                    src={ev.attachment_url}
-                    alt="เอกสารแนบ"
-                    className="w-full max-h-64 object-contain bg-gray-50"
-                  />
-                  <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border-t border-gray-100">
-                    <Paperclip size={12} className="text-gray-400" />
-                    <span className="text-xs text-gray-500">แตะเพื่อดูขนาดเต็ม</span>
-                    <ExternalLink size={12} className="text-gray-400 ml-auto" />
-                  </div>
-                </a>
-              )}
+              <p className="text-xs font-semibold text-gray-400 mb-2">
+                เอกสารแนบ{attachments.length > 1 ? ` (${attachments.length})` : ''}
+              </p>
+              <div className="space-y-2">
+                {attachments.map((url) =>
+                  isPdf(url) ? (
+                    <a
+                      key={url}
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-3.5 rounded-2xl border border-red-100 bg-red-50 hover:bg-red-100 transition-colors active:scale-98"
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-red-500 flex items-center justify-center shrink-0">
+                        <FileText size={18} className="text-white" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-red-700">เอกสาร PDF</p>
+                        <p className="text-xs text-red-400">แตะเพื่อเปิด</p>
+                      </div>
+                      <ExternalLink size={16} className="text-red-400 shrink-0" />
+                    </a>
+                  ) : (
+                    <a
+                      key={url}
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block rounded-2xl overflow-hidden border border-gray-100 hover:opacity-90 transition-opacity active:scale-98"
+                    >
+                      <img
+                        src={url}
+                        alt="เอกสารแนบ"
+                        className="w-full max-h-64 object-contain bg-gray-50"
+                      />
+                      <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border-t border-gray-100">
+                        <Paperclip size={12} className="text-gray-400" />
+                        <span className="text-xs text-gray-500">แตะเพื่อดูขนาดเต็ม</span>
+                        <ExternalLink size={12} className="text-gray-400 ml-auto" />
+                      </div>
+                    </a>
+                  )
+                )}
+              </div>
             </div>
           )}
         </div>
