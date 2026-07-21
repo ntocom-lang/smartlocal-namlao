@@ -171,6 +171,9 @@ function AppShell() {
   const navigate = useNavigate()
   const location = useLocation()
   const isBackOffice = ['/admin', '/staff', '/technician'].some(p => location.pathname.startsWith(p))
+  // ช่างมีเมนูบนสุด/แถบข้างมาตรฐานอยู่แล้วในทุกธีม (NAV_TECH) แต่ต้องเปิดเฉพาะจอ PC
+  // มือถือยังใช้หัวจอ/เมนูล่างของ TechnicianDashboard เองตามเดิม กันซ้อนกับของที่มีอยู่แล้ว
+  const isTechnician = location.pathname.startsWith('/technician')
   // ช่างยังใช้เมนูล่างของแอป (NAV_TECH) ได้ ต่างจาก /admin กับ /staff ที่ไม่มีเมนูล่างเลย
   const hideBottomNav = ['/admin', '/staff'].some(p => location.pathname.startsWith(p))
 
@@ -307,8 +310,9 @@ function AppShell() {
       )}
       <NotificationsProvider>
         {!isBackOffice && <Header />}
+        {isTechnician && <div className="hidden md:block"><Header /></div>}
         <div className="flex flex-1 min-h-0 overflow-hidden">
-          {!isBackOffice && <CitizenSidebar />}
+          {(!isBackOffice || isTechnician) && <CitizenSidebar />}
           <main className="flex-1 min-w-0 overflow-y-auto">
           <Routes>
           <Route path="/" element={<HomeOrTechRedirect />} />

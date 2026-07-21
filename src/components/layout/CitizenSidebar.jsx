@@ -40,7 +40,8 @@ const NAV_GROUPS = [
   },
 ]
 
-const HIDDEN_PATHS = ['/admin', '/staff', '/technician']
+// /technician ไม่อยู่ในนี้ตั้งใจ — ช่างใช้แถบข้างนี้บนจอ PC ด้วย (ดู App.jsx)
+const HIDDEN_PATHS = ['/admin', '/staff']
 
 const BG       = '#1a3a5c'
 const BORDER   = '#12293f'

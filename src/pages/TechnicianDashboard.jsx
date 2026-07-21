@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Loader2, LogOut, MapPin, Phone, X, RefreshCw,
+  Loader2, MapPin, Phone, X, RefreshCw,
   CheckCircle2, ChevronRight, Wrench, Printer,
   Plus, ChevronDown, Image,
 } from 'lucide-react'
@@ -721,11 +721,6 @@ export default function TechnicianDashboard() {
     (c.status === 'completed' || c.status === 'closed') && c.closed_at?.slice(0, 10) === todayStr
   ).length
 
-  async function handleLogout() {
-    await supabase.auth.signOut()
-    navigate('/')
-  }
-
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#eef2f7', paddingBottom: 'calc(5rem + max(env(safe-area-inset-bottom, 0px), 12px))' }}>
       {selected && (
@@ -772,11 +767,6 @@ export default function TechnicianDashboard() {
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 bg-white hover:bg-gray-50 transition-colors disabled:opacity-50">
               <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
               รีเฟรช
-            </button>
-            <button onClick={handleLogout}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-red-200 text-red-500 bg-white hover:bg-red-50 transition-colors">
-              <LogOut size={13} />
-              ออกจากระบบ
             </button>
           </div>
         </div>
