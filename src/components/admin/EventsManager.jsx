@@ -166,6 +166,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
   const [confirmDelId, setConfirmDelId] = useState(null)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
+  const [debugStep, setDebugStep] = useState('')
   const emptyForm = { title: '', description: '', event_date: '', event_time: '', end_time: '', end_date: '', location: '', category: 'ประชุม', customCategory: '', is_all_day: false, audience: 'public', attachment_url: '', attachment_file: null }
   const [form, setForm] = useState(emptyForm)
   const [multiDay, setMultiDay] = useState(false)
@@ -266,22 +267,28 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
   async function uploadEventAttachment(eventId, file) {
     if (!file || !eventId) return
     try {
+      setDebugStep('5/8 เช็คขนาดไฟล์...')
       if (file.size > 20 * 1024 * 1024) throw new Error('ไฟล์ใหญ่เกินไป (สูงสุด 20 MB)')
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
       const path = `${tenant.id}/${Date.now()}_${safeName}`
       const contentType = file.type || (/\.pdf$/i.test(file.name ?? '') ? 'application/pdf' : 'application/octet-stream')
 
+      setDebugStep('6/8 กำลังส่งไฟล์ขึ้น storage...')
       const { error: uploadError } = await supabase.storage
         .from('event-attachments')
         .upload(path, file, { contentType })
       if (uploadError) throw new Error(uploadError.message)
 
+      setDebugStep('7/8 ส่งไฟล์สำเร็จ กำลังผูกกับกิจกรรม...')
       const { data: { publicUrl } } = supabase.storage.from('event-attachments').getPublicUrl(path)
       const { error: updErr } = await supabase.from('events').update({ attachment_url: publicUrl }).eq('id', eventId)
       if (updErr) throw new Error(updErr.message)
+      setDebugStep('8/8 เสร็จสมบูรณ์ — รีเฟรชรายการ...')
       fetchEvents()
+      setDebugStep('เสร็จสมบูรณ์ทุกขั้นตอน ✅')
     } catch (err) {
       console.error('uploadEventAttachment error:', err)
+      setDebugStep('พังที่ขั้นแนบไฟล์ ❌ ' + (err?.message ?? ''))
       alert('บันทึกกิจกรรมสำเร็จ แต่แนบไฟล์ไม่สำเร็จ: ' + (err?.message ?? 'เกิดข้อผิดพลาด') + '\n\nเปิดแก้ไขกิจกรรมนี้แล้วลองแนบไฟล์ใหม่อีกครั้ง')
     }
   }
@@ -291,6 +298,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
     if (!form.event_date) { setFormError('กรุณาระบุวันที่กิจกรรม'); return }
     setFormError('')
     setSaving(true)
+    setDebugStep('1/8 เริ่มบันทึก...')
     try {
       const payload = {
         municipality_id: tenant.id, title: form.title.trim(),
@@ -304,17 +312,22 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
       }
       let eventId = editingEvent?.id ?? null
       if (editingEvent) {
+        setDebugStep('2/8 กำลังอัปเดตข้อมูลกิจกรรม (UPDATE)...')
         const { data: updData, error: updErr } = await supabase.from('events').update(payload).eq('id', editingEvent.id).select('id')
         if (updErr) throw new Error('บันทึกไม่สำเร็จ: ' + updErr.message)
         if (!updData || updData.length === 0) {
           throw new Error('บันทึกไม่สำเร็จ: คุณไม่มีสิทธิ์แก้ไขกิจกรรมนี้ (แก้ไขได้เฉพาะกิจกรรมที่ตัวเองสร้าง หรือต้องเป็นแอดมิน)')
         }
+        setDebugStep('3/8 อัปเดตข้อมูลสำเร็จ')
       } else {
+        setDebugStep('2/8 กำลังตรวจสอบผู้ใช้ (getUser)...')
         const { data: { user } } = await supabase.auth.getUser()
+        setDebugStep('2.5/8 กำลังสร้างกิจกรรมใหม่ (INSERT)...')
         const { data: insData, error: insErr } = await supabase.from('events')
           .insert({ ...payload, created_by: user?.id ?? null }).select('id').single()
         if (insErr) throw new Error('บันทึกไม่สำเร็จ: ' + insErr.message)
         eventId = insData?.id ?? null
+        setDebugStep('3/8 สร้างกิจกรรมสำเร็จ')
         const dateStr = payload.event_date
           ? new Date(payload.event_date + 'T00:00:00').toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
           : ''
@@ -328,11 +341,14 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
         )
       }
 
+      setDebugStep('4/8 ปิดฟอร์ม + รีเฟรชรายการ...')
       setShowForm(false)
       fetchEvents()
       if (form.attachment_file && eventId) uploadEventAttachment(eventId, form.attachment_file)
+      else setDebugStep('เสร็จสมบูรณ์ (ไม่มีไฟล์แนบ) ✅')
     } catch (e) {
       const msg = e?.message ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง'
+      setDebugStep('พังตอนบันทึกข้อมูลหลัก ❌ ' + msg)
       setFormError(msg)
       setTimeout(() => formErrorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
     } finally {
@@ -848,6 +864,11 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
               </div>
             </div>
             <div className="border-t border-gray-100 shrink-0">
+              {debugStep && (
+                <div className="px-6 pt-3 text-xs font-mono text-gray-500 bg-yellow-50 border-b border-yellow-100 py-2">
+                  DEBUG: {debugStep}
+                </div>
+              )}
               <div className="px-6 py-4 flex gap-3">
                 <button onClick={() => setShowForm(false)} disabled={saving}
                   className="flex-1 py-3 rounded-2xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50">

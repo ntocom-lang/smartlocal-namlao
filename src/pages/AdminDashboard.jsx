@@ -3731,6 +3731,7 @@ function EventsManager({ tenant, currentUserRole }) {
   const [deleting, setDeleting] = useState(null)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
+  const [debugStep, setDebugStep] = useState('')
   const emptyForm = { title: '', description: '', event_date: '', event_time: '', end_time: '', end_date: '', location: '', category: 'อื่นๆ', is_all_day: true, audience: 'public', attachment_url: '', attachment_file: null }
   const [form, setForm] = useState(emptyForm)
   const [filterMonth, setFilterMonth] = useState('all')
@@ -3795,22 +3796,28 @@ function EventsManager({ tenant, currentUserRole }) {
   async function uploadEventAttachment(eventId, file) {
     if (!file || !eventId) return
     try {
+      setDebugStep('5/8 เช็คขนาดไฟล์...')
       if (file.size > 20 * 1024 * 1024) throw new Error('ไฟล์ใหญ่เกินไป (สูงสุด 20 MB)')
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
       const path = `${tenant.id}/${Date.now()}_${safeName}`
       const contentType = file.type || (/\.pdf$/i.test(file.name ?? '') ? 'application/pdf' : 'application/octet-stream')
 
+      setDebugStep('6/8 กำลังส่งไฟล์ขึ้น storage...')
       const { error: uploadError } = await supabase.storage
         .from('event-attachments')
         .upload(path, file, { contentType })
       if (uploadError) throw new Error(uploadError.message)
 
+      setDebugStep('7/8 ส่งไฟล์สำเร็จ กำลังผูกกับกิจกรรม...')
       const { data: { publicUrl } } = supabase.storage.from('event-attachments').getPublicUrl(path)
       const { error: updErr } = await supabase.from('events').update({ attachment_url: publicUrl }).eq('id', eventId)
       if (updErr) throw new Error(updErr.message)
+      setDebugStep('8/8 เสร็จสมบูรณ์ — รีเฟรชรายการ...')
       fetchEvents()
+      setDebugStep('เสร็จสมบูรณ์ทุกขั้นตอน ✅')
     } catch (err) {
       console.error('uploadEventAttachment error:', err)
+      setDebugStep('พังที่ขั้นแนบไฟล์ ❌ ' + (err?.message ?? ''))
       alert('บันทึกกิจกรรมสำเร็จ แต่แนบไฟล์ไม่สำเร็จ: ' + (err?.message ?? 'เกิดข้อผิดพลาด') + '\n\nเปิดแก้ไขกิจกรรมนี้แล้วลองแนบไฟล์ใหม่อีกครั้ง')
     }
   }
@@ -3818,6 +3825,7 @@ function EventsManager({ tenant, currentUserRole }) {
   async function handleSave() {
     if (!form.title.trim() || !form.event_date) return
     setSaving(true)
+    setDebugStep('1/8 เริ่มบันทึก...')
 
     try {
       const payload = {
@@ -3837,16 +3845,25 @@ function EventsManager({ tenant, currentUserRole }) {
       }
       let eventId = editingEvent?.id ?? null
       if (editingEvent) {
+        setDebugStep('2/8 กำลังอัปเดตข้อมูลกิจกรรม (UPDATE)...')
         await supabase.from('events').update(payload).eq('id', editingEvent.id)
+        setDebugStep('3/8 อัปเดตข้อมูลสำเร็จ')
       } else {
+        setDebugStep('2/8 กำลังตรวจสอบผู้ใช้ (getUser)...')
         const { data: { user } } = await supabase.auth.getUser()
+        setDebugStep('2.5/8 กำลังสร้างกิจกรรมใหม่ (INSERT)...')
         const { data: insData } = await supabase.from('events')
           .insert({ ...payload, created_by: user?.id ?? null }).select('id').single()
         eventId = insData?.id ?? null
+        setDebugStep('3/8 สร้างกิจกรรมสำเร็จ')
       }
+      setDebugStep('4/8 ปิดฟอร์ม + รีเฟรชรายการ...')
       setShowForm(false)
       fetchEvents()
       if (form.attachment_file && eventId) uploadEventAttachment(eventId, form.attachment_file)
+      else setDebugStep('เสร็จสมบูรณ์ (ไม่มีไฟล์แนบ) ✅')
+    } catch (e) {
+      setDebugStep('พังตอนบันทึกข้อมูลหลัก ❌ ' + (e?.message ?? ''))
     } finally {
       setSaving(false)
     }
@@ -4136,10 +4153,16 @@ function EventsManager({ tenant, currentUserRole }) {
 
             {/* Footer */}
             <div className="border-t border-gray-100 shrink-0">
+              {debugStep && (
+                <div className="px-6 pt-3 text-xs font-mono text-gray-500 bg-yellow-50 border-b border-yellow-100 py-2">
+                  DEBUG: {debugStep}
+                </div>
+              )}
               <div className="px-6 py-4 flex gap-3">
                 <button
                   onClick={() => setShowForm(false)}
-                  className="flex-1 py-3 rounded-2xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+                  disabled={saving}
+                  className="flex-1 py-3 rounded-2xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
                 >
                   ยกเลิก
                 </button>
