@@ -235,14 +235,9 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
       .eq('municipality_id', tenant.id)
       .order('event_date', { ascending: true })
 
-    // staff/officer/technician → เห็นทุก event เพื่อป้องกันสร้างซ้ำ
-    //   แต่ edit/delete ได้เฉพาะ event ที่ตัวเองสร้าง (ดูในส่วน render)
-    // council → เห็นเฉพาะ public + council
-    // admin, superadmin → ไม่ filter
-    if (currentUserRole === 'council') {
-      if (userId) query = query.or(`audience.in.(public,council),created_by.eq.${userId}`)
-      else query = query.in('audience', ['public', 'council'])
-    }
+    // ทุกบทบาทเห็นทุก event ในรายการ (กันสร้างซ้ำ + ให้เช็ควันว่างของกลุ่มอื่นได้)
+    //   แต่กดดูรายละเอียดเต็มได้เฉพาะคนมีสิทธิ์ตาม audience (ดู canViewEventDetail)
+    //   แก้ไข/ลบได้เฉพาะ event ที่ตัวเองสร้าง หรือแอดมิน (ดูในส่วน render)
     const { data } = await query
     const sorted = (data ?? []).sort((a, b) => {
       if (a.event_date < b.event_date) return -1

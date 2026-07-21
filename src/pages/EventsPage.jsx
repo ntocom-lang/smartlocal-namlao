@@ -33,7 +33,13 @@ function audienceFilter(role) {
   return ['public']
 }
 
-function CalendarView({ events, onSelectEvent }) {
+// ทุกคนเห็นกิจกรรมในรายการ/ปฏิทินได้หมด (เช็ควันว่างของกลุ่มอื่นได้) แต่กดดูรายละเอียดเต็มได้เฉพาะคนมีสิทธิ์
+function canViewEventDetail(ev, role) {
+  const allowed = audienceFilter(role)
+  return allowed === null || allowed.includes(ev.audience)
+}
+
+function CalendarView({ events, onSelectEvent, role }) {
   const todayRef = new Date()
   todayRef.setHours(0, 0, 0, 0)
 
@@ -202,11 +208,12 @@ function CalendarView({ events, onSelectEvent }) {
                 const color    = CATEGORY_COLOR[ev.category] ?? '#6b7280'
                 const audColor = AUDIENCE_COLOR[ev.audience] ?? '#6b7280'
                 const audLabel = AUDIENCE_LABEL[ev.audience] ?? ev.audience
+                const canView  = canViewEventDetail(ev, role)
                 return (
                   <button
                     key={ev.id}
-                    onClick={() => onSelectEvent(ev)}
-                    className="w-full text-left bg-white dark:bg-white/5 rounded-2xl border border-gray-100 dark:border-white/10 shadow-sm p-4 flex gap-3 active:scale-98 transition-transform"
+                    onClick={canView ? () => onSelectEvent(ev) : undefined}
+                    className={`w-full text-left bg-white dark:bg-white/5 rounded-2xl border border-gray-100 dark:border-white/10 shadow-sm p-4 flex gap-3 transition-transform${canView ? ' active:scale-98' : ' cursor-default opacity-70'}`}
                     style={{ borderLeftColor: color, borderLeftWidth: 3 }}
                   >
                     <div className="flex-1 min-w-0">
@@ -263,6 +270,10 @@ export default function EventsPage() {
   const [selectedAudience, setSelectedAudience] = useState(null) // null = ทั้งหมด
   const [activeTab, setActiveTab] = useState('upcoming') // 'upcoming' | 'past'
 
+  function handleSelectEvent(ev) {
+    if (canViewEventDetail(ev, role)) setSelected(ev)
+  }
+
   useEffect(() => {
     document.querySelector('main')?.scrollTo(0, 0)
   }, [])
@@ -291,9 +302,8 @@ export default function EventsPage() {
       .gte('event_date', threeMonthsAgo.toISOString().split('T')[0])
       .order('event_date', { ascending: true })
 
-    const allowed = audienceFilter(role)
-    if (allowed !== null) query = query.in('audience', allowed)
-
+    // ทุกคนดึงกิจกรรมมาแสดงในรายการ/ปฏิทินได้หมด (เช็ควันว่างของกลุ่มอื่นได้)
+    // กดดูรายละเอียดเต็มได้เฉพาะคนมีสิทธิ์ตาม audience — ดู canViewEventDetail
     query.then(({ data }) => {
       const sorted = (data ?? []).sort((a, b) => {
         if (a.event_date < b.event_date) return -1
@@ -317,8 +327,8 @@ export default function EventsPage() {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
-  // audience ที่ role นี้มีสิทธิ์เห็น (null = ทุกอย่าง เช่น admin)
-  const allowedAudiences = audienceFilter(role)
+  // ตัวกรอง "กลุ่ม" ให้เลือกได้ทุกกลุ่มเสมอ (ดูแค่ว่าวันไหนไม่ว่างได้ แม้ดูรายละเอียดไม่ได้)
+  const allAudienceKeys = Object.keys(AUDIENCE_LABEL)
 
   // กรองตาม chip ที่เลือก
   const filteredEvents = selectedAudience
@@ -412,12 +422,15 @@ export default function EventsPage() {
               const hasEndDate  = ev.end_date && ev.end_date !== ev.event_date
               const dEnd        = hasEndDate ? new Date(ev.end_date + 'T00:00:00') : null
               const sameMonth   = dEnd && d.getMonth() === dEnd.getMonth()
+              const canView     = canViewEventDetail(ev, role)
               return (
                 <button
                   key={ev.id}
-                  onClick={() => setSelected(ev)}
-                  className={`w-full text-left bg-white dark:bg-white/5 rounded-2xl border shadow-sm p-4 flex gap-4 active:scale-98 transition-transform ${
-                    isPast
+                  onClick={canView ? () => handleSelectEvent(ev) : undefined}
+                  className={`w-full text-left bg-white dark:bg-white/5 rounded-2xl border shadow-sm p-4 flex gap-4 transition-transform ${
+                    canView ? 'active:scale-98' : 'cursor-default'
+                  } ${
+                    isPast || !canView
                       ? 'opacity-50 border-gray-100 dark:border-white/10'
                       : 'border-gray-100 dark:border-white/10'
                   }`}
@@ -563,7 +576,7 @@ export default function EventsPage() {
       </div>
 
       {/* Audience filter chips */}
-      {!loading && (allowedAudiences === null || allowedAudiences.length > 1) && (
+      {!loading && (
         <div className="flex flex-wrap gap-2 mt-3 pb-1">
           <button
             onClick={() => setSelectedAudience(null)}
@@ -575,7 +588,7 @@ export default function EventsPage() {
           >
             ทั้งหมด
           </button>
-          {(allowedAudiences ?? Object.keys(AUDIENCE_LABEL)).map(key => (
+          {allAudienceKeys.map(key => (
             <button
               key={key}
               onClick={() => setSelectedAudience(selectedAudience === key ? null : key)}
@@ -619,7 +632,7 @@ export default function EventsPage() {
                   <p className="text-sm">ยังไม่มีกิจกรรม</p>
                 </div>
               ) : (
-                <CalendarView events={filteredEvents} onSelectEvent={setSelected} />
+                <CalendarView events={filteredEvents} onSelectEvent={handleSelectEvent} role={role} />
               )}
             </div>
 
