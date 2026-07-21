@@ -12,7 +12,7 @@ import {
   CheckCircle2, ChevronRight, ChevronLeft,
   Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical,
   X, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera,
-  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, ExternalLink, Settings, Download, Banknote, Star, MessageSquare, Car, ShieldCheck
+  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, Paperclip, BookOpen, Bell, ExternalLink, Settings, Download, Banknote, Star, MessageSquare, Car, ShieldCheck, Image, FileText
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { compressImage } from '../lib/imageUtils'
@@ -4121,12 +4121,23 @@ function EventsManager({ tenant, currentUserRole }) {
                       </button>
                     </div>
                   ) : (
-                    <label className="flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-gray-200 cursor-pointer hover:border-blue-300 hover:bg-blue-50/50 transition-colors">
-                      <Paperclip size={15} className="text-gray-400 shrink-0" />
-                      <span className="text-sm text-gray-400">แนบ PDF หรือรูปภาพ (สูงสุด 20 MB)</span>
-                      <input type="file" accept="image/*,application/pdf,.pdf" className="hidden"
-                        onChange={(e) => setForm((p) => ({ ...p, attachment_file: e.target.files?.[0] ?? null }))} />
-                    </label>
+                    <div className="flex gap-2">
+                      <label className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border-2 border-dashed border-gray-200 cursor-pointer hover:border-blue-300 hover:bg-blue-50/50 transition-colors">
+                        <Image size={15} className="text-gray-400 shrink-0" />
+                        <span className="text-xs text-gray-400">แนบรูปภาพ</span>
+                        <input type="file" accept="image/*" className="hidden"
+                          onChange={(e) => setForm((p) => ({ ...p, attachment_file: e.target.files?.[0] ?? null }))} />
+                      </label>
+                      <label className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border-2 border-dashed border-gray-200 cursor-pointer hover:border-blue-300 hover:bg-blue-50/50 transition-colors">
+                        <FileText size={15} className="text-gray-400 shrink-0" />
+                        <span className="text-xs text-gray-400">แนบไฟล์ (PDF)</span>
+                        <input type="file" accept="application/pdf" className="hidden"
+                          onChange={(e) => setForm((p) => ({ ...p, attachment_file: e.target.files?.[0] ?? null }))} />
+                      </label>
+                    </div>
+                  )}
+                  {!form.attachment_url && !form.attachment_file && (
+                    <p className="text-[11px] text-gray-400 mt-1">ไฟล์สูงสุด 20 MB</p>
                   )}
                 </div>
 
