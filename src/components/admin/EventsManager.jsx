@@ -78,7 +78,20 @@ function eventAttachments(ev) {
   return ev.attachment_url ? [ev.attachment_url] : []
 }
 
-function EventCard({ ev, onEdit, onDelete, deleting }) {
+// สิทธิ์ดูรายละเอียดกิจกรรมตาม audience — ใช้กฎเดียวกับหน้า /events ฝั่งประชาชน (EventsPage.jsx)
+// เห็นในรายการได้ทุกคน (กันสร้างซ้ำ) แต่กดดูรายละเอียดได้เฉพาะคนที่มีสิทธิ์ตาม audience เท่านั้น
+function audienceFilter(role) {
+  if (role === 'admin' || role === 'superadmin' || role === 'viewer') return null
+  if (role === 'council') return ['public', 'council']
+  if (role === 'staff' || role === 'technician' || role === 'officer') return ['public', 'staff']
+  return ['public']
+}
+function canViewEventDetail(ev, role) {
+  const allowed = audienceFilter(role)
+  return allowed === null || allowed.includes(ev.audience)
+}
+
+function EventCard({ ev, onEdit, onDelete, onView, deleting }) {
   const [confirmDel, setConfirmDel] = useState(false)
   const color = EVENTS_CATEGORY_COLOR[ev.category] ?? '#6b7280'
   const d = ev.event_date ? new Date(ev.event_date + 'T00:00:00') : null
@@ -92,7 +105,8 @@ function EventCard({ ev, onEdit, onDelete, deleting }) {
     : d.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' })
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex gap-3">
+    <div className={`bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex gap-3${onView ? ' cursor-pointer hover:border-blue-200 active:scale-[0.99] transition-all' : ''}`}
+      onClick={onView ? () => onView(ev) : undefined}>
       <div className="w-1 rounded-full shrink-0" style={{ backgroundColor: color }} />
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-2">
@@ -131,7 +145,7 @@ function EventCard({ ev, onEdit, onDelete, deleting }) {
             )}
           </div>
           {onEdit && (
-            <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
               <button onClick={() => onEdit(ev)}
                 className="p-1.5 rounded-xl hover:bg-gray-100 text-gray-400 transition-colors">
                 <Pencil size={14} />
@@ -962,6 +976,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
                       <EventCard key={ev.id} ev={ev}
                         onEdit={canManage && isOwner ? openEdit : null}
                         onDelete={canManage && isOwner ? handleDelete : null}
+                        onView={canViewEventDetail(ev, currentUserRole) ? setViewingEvent : null}
                         deleting={deleting} />
                     )
                   })}
@@ -991,6 +1006,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
                         const timeStr = ev.event_time ? ev.event_time.slice(0, 5) + (ev.end_time ? `–${ev.end_time.slice(0, 5)}` : '') + ' น.' : '—'
                         const aud = AUDIENCE_OPTIONS.find(a => a.value === ev.audience)
                         const isOwner = ['admin', 'superadmin'].includes(currentUserRole) || ev.created_by === currentUserId
+                        const canView = canViewEventDetail(ev, currentUserRole)
                         return (
                           <tr key={ev.id}
                             className="transition-colors"
@@ -999,11 +1015,18 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
                             onMouseLeave={e => e.currentTarget.style.backgroundColor = i % 2 === 0 ? '#fff' : '#f5f8fc'}>
                             <td className="px-3 py-2 text-center text-xs text-gray-400 border-r border-gray-200">{i + 1}</td>
                             <td className="px-3 py-2 border-r border-gray-200">
-                              <button type="button" onClick={() => setViewingEvent(ev)}
-                                className="text-left group w-full">
-                                <p className="font-semibold text-blue-700 text-xs leading-snug group-hover:underline">{ev.title}</p>
-                                {ev.description && <p className="text-[11px] text-gray-400 truncate max-w-[220px]">{ev.description}</p>}
-                              </button>
+                              {canView ? (
+                                <button type="button" onClick={() => setViewingEvent(ev)}
+                                  className="text-left group w-full">
+                                  <p className="font-semibold text-blue-700 text-xs leading-snug group-hover:underline">{ev.title}</p>
+                                  {ev.description && <p className="text-[11px] text-gray-400 truncate max-w-[220px]">{ev.description}</p>}
+                                </button>
+                              ) : (
+                                <div className="text-left w-full">
+                                  <p className="font-semibold text-gray-500 text-xs leading-snug">{ev.title}</p>
+                                  {ev.description && <p className="text-[11px] text-gray-400 truncate max-w-[220px]">{ev.description}</p>}
+                                </div>
+                              )}
                             </td>
                             <td className="px-3 py-2 border-r border-gray-200">
                               <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold text-white"
