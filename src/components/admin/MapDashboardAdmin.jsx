@@ -765,75 +765,91 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                   cmpStatusCounts[s] = (cmpStatusCounts[s] || 0) + 1
                 })
 
+                const showCmpGroup  = showRepair || showWater || showEnv || showBiz
+                const showProjGroup = showProj
+
                 return (
-              <div className="grid grid-cols-4 gap-2">
-                {(showRepair || showEnv) && (
-                  <MobileFilterPill id="cmpCat" icon="📋" label="ประเภทคำร้อง" color="#f59e0b"
-                    value={filterCmpCat} onChange={setFilterCmpCat}
-                    openFilter={openFilter} setOpenFilter={setOpenFilter}
-                    options={[
-                      { v: 'all', icon: '📋', label: 'ทั้งหมด', count: cmpCategoryAll.length },
-                      ...mapCategoryOptions
-                        .filter(opt => opt.count > 0)
-                        .map(opt => ({
-                          v: opt.value,
-                          icon: CATEGORY_EMOJI[opt.value] ?? '📄',
-                          label: opt.label,
-                          count: opt.count
-                        }))
-                    ]} />
+              <div className="flex flex-wrap items-start gap-2">
+                {showCmpGroup && (
+                  <div className="flex gap-2 flex-1 min-w-42">
+                    {(showRepair || showEnv) && (
+                      <div className="flex-1">
+                        <MobileFilterPill id="cmpCat" icon="📋" label="ประเภทคำร้อง" color="#f59e0b"
+                          value={filterCmpCat} onChange={setFilterCmpCat}
+                          openFilter={openFilter} setOpenFilter={setOpenFilter}
+                          options={[
+                            { v: 'all', icon: '📋', label: 'ทั้งหมด', count: cmpCategoryAll.length },
+                            ...mapCategoryOptions
+                              .filter(opt => opt.count > 0)
+                              .map(opt => ({
+                                v: opt.value,
+                                icon: CATEGORY_EMOJI[opt.value] ?? '📄',
+                                label: opt.label,
+                                count: opt.count
+                              }))
+                          ]} />
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <MobileFilterPill id="status" icon="⏳" label="สถานะคำร้อง" color="#3b82f6"
+                        value={filterStatus} onChange={setFilterStatus}
+                        openFilter={openFilter} setOpenFilter={setOpenFilter}
+                        options={[
+                          { v: 'all',         icon: '📋', label: 'ทั้งหมด',         count: totalList.length },
+                          { v: 'pending',     icon: '⏳', label: 'รอดำเนินการ',    color: '#ef4444', count: cmpStatusCounts['pending'] ?? 0 },
+                          { v: 'received',    icon: '📬', label: 'รับเรื่องแล้ว',  color: '#f97316', count: cmpStatusCounts['received'] ?? 0 },
+                          { v: 'in_progress', icon: '⚙️', label: 'กำลังดำเนินการ',color: '#f97316', count: cmpStatusCounts['in_progress'] ?? 0 },
+                          { v: 'completed',   icon: '✅', label: 'เสร็จสิ้น',      color: '#10b981', count: cmpStatusCounts['completed'] ?? 0 },
+                          { v: 'rejected',    icon: '❌', label: 'ปฏิเสธ',         color: '#9ca3af', count: cmpStatusCounts['rejected'] ?? 0 },
+                        ].filter(opt => opt.v === 'all' || opt.count > 0)} />
+                    </div>
+                  </div>
                 )}
-                {(showRepair || showWater || showEnv || showBiz) && (
-                  <MobileFilterPill id="status" icon="⏳" label="สถานะคำร้อง" color="#3b82f6"
-                    value={filterStatus} onChange={setFilterStatus}
-                    openFilter={openFilter} setOpenFilter={setOpenFilter}
-                    options={[
-                      { v: 'all',         icon: '📋', label: 'ทั้งหมด',         count: totalList.length },
-                      { v: 'pending',     icon: '⏳', label: 'รอดำเนินการ',    color: '#ef4444', count: cmpStatusCounts['pending'] ?? 0 },
-                      { v: 'received',    icon: '📬', label: 'รับเรื่องแล้ว',  color: '#f97316', count: cmpStatusCounts['received'] ?? 0 },
-                      { v: 'in_progress', icon: '⚙️', label: 'กำลังดำเนินการ',color: '#f97316', count: cmpStatusCounts['in_progress'] ?? 0 },
-                      { v: 'completed',   icon: '✅', label: 'เสร็จสิ้น',      color: '#10b981', count: cmpStatusCounts['completed'] ?? 0 },
-                      { v: 'rejected',    icon: '❌', label: 'ปฏิเสธ',         color: '#9ca3af', count: cmpStatusCounts['rejected'] ?? 0 },
-                    ].filter(opt => opt.v === 'all' || opt.count > 0)} />
+                {showCmpGroup && showProjGroup && (
+                  <div className="w-px self-stretch bg-gray-100 my-1" />
                 )}
-                {showProj && (
-                  <MobileFilterPill id="projType" icon="🔨" label="ประเภทโครงการ" color="#10b981"
-                    value={filterProjType} onChange={setFilterProjType}
-                    openFilter={openFilter} setOpenFilter={setOpenFilter}
-                    options={[
-                      { v: 'all',           icon: '🔨', label: 'ทั้งหมด',          count: projTypeCounts.all },
-                      { v: 'road_concrete', icon: '🛣️', label: 'ค.ส.ล.',           count: projTypeCounts['road_concrete'] ?? 0 },
-                      { v: 'road_asphalt',  icon: '🛣️', label: 'ลาดยาง',           count: projTypeCounts['road_asphalt'] ?? 0 },
-                      { v: 'road_slurry',   icon: '🛣️', label: 'สเลอรี่ซิล',       count: projTypeCounts['road_slurry'] ?? 0 },
-                      { v: 'road_gravel',   icon: '🛣️', label: 'หินคลุก',           count: projTypeCounts['road_gravel'] ?? 0 },
-                      { v: 'road',          icon: '🛣️', label: 'ถนน (เก่า)',        count: projTypeCounts['road'] ?? 0 },
-                      { v: 'drain',         icon: '🌊', label: 'รางระบายน้ำ',       count: projTypeCounts['drain'] ?? 0 },
-                      { v: 'dredge',        icon: '⛏️', label: 'ขุดลอก',            count: projTypeCounts['dredge'] ?? 0 },
-                      { v: 'canal',         icon: '💧', label: 'รางน้ำ/ลำเหมือง',  count: projTypeCounts['canal'] ?? 0 },
-                      { v: 'pipe_water',    icon: '🚰', label: 'ท่อน้ำประปา',       count: projTypeCounts['pipe_water'] ?? 0 },
-                      { v: 'waterway',      icon: '💧', label: 'รางส่งน้ำ',         count: projTypeCounts['waterway'] ?? 0 },
-                      { v: 'building',      icon: '🏗️', label: 'อาคาร',             count: projTypeCounts['building'] ?? 0 },
-                      { v: 'light',         icon: '💡', label: 'ไฟฟ้า',             count: projTypeCounts['light'] ?? 0 },
-                      { v: 'park',          icon: '🌳', label: 'สวนสาธารณะ',        count: projTypeCounts['park'] ?? 0 },
-                      { v: 'other',         icon: '📝', label: 'อื่น ๆ',            count: projTypeCounts['other'] ?? 0 },
-                    ].filter(opt => opt.v === 'all' || opt.count > 0)} />
-                )}
-                {showProj && (
-                  <MobileFilterPill id="projStatus" icon="📐" label="สถานะโครงการ" color="#8b5cf6"
-                    value={filterProjStatus} onChange={setFilterProjStatus}
-                    openFilter={openFilter} setOpenFilter={setOpenFilter}
-                    options={[
-                      { v: 'all',         icon: '🔨', label: 'ทั้งหมด',          count: projStatusCounts.all },
-                      { v: 'planned',     icon: '📐', label: 'วางแผน',          color: '#9ca3af', count: projStatusCounts['planned'] ?? 0 },
-                      { v: 'approved',    icon: '📌', label: 'อนุมัติแล้ว',     color: '#3b82f6', count: projStatusCounts['approved'] ?? 0 },
-                      { v: 'in_progress', icon: '⚙️', label: 'กำลังดำเนินการ', color: '#f97316', count: projStatusCounts['in_progress'] ?? 0 },
-                      { v: 'completed',   icon: '🏆', label: 'เสร็จสิ้น',       color: '#10b981', count: projStatusCounts['completed'] ?? 0 },
-                      { v: 'cancelled',   icon: '🚫', label: 'ยกเลิก',          color: '#9ca3af', count: projStatusCounts['cancelled'] ?? 0 },
-                      { v: 'suspended',   icon: '⏸️', label: 'ระงับชั่วคราว',  color: '#f59e0b', count: projStatusCounts['suspended'] ?? 0 },
-                    ].filter(opt => opt.v === 'all' || opt.count > 0)} />
+                {showProjGroup && (
+                  <div className="flex gap-2 flex-1 min-w-42">
+                    <div className="flex-1">
+                      <MobileFilterPill id="projType" icon="🔨" label="ประเภทโครงการ" color="#10b981"
+                        value={filterProjType} onChange={setFilterProjType}
+                        openFilter={openFilter} setOpenFilter={setOpenFilter}
+                        options={[
+                          { v: 'all',           icon: '🔨', label: 'ทั้งหมด',          count: projTypeCounts.all },
+                          { v: 'road_concrete', icon: '🛣️', label: 'ค.ส.ล.',           count: projTypeCounts['road_concrete'] ?? 0 },
+                          { v: 'road_asphalt',  icon: '🛣️', label: 'ลาดยาง',           count: projTypeCounts['road_asphalt'] ?? 0 },
+                          { v: 'road_slurry',   icon: '🛣️', label: 'สเลอรี่ซิล',       count: projTypeCounts['road_slurry'] ?? 0 },
+                          { v: 'road_gravel',   icon: '🛣️', label: 'หินคลุก',           count: projTypeCounts['road_gravel'] ?? 0 },
+                          { v: 'road',          icon: '🛣️', label: 'ถนน (เก่า)',        count: projTypeCounts['road'] ?? 0 },
+                          { v: 'drain',         icon: '🌊', label: 'รางระบายน้ำ',       count: projTypeCounts['drain'] ?? 0 },
+                          { v: 'dredge',        icon: '⛏️', label: 'ขุดลอก',            count: projTypeCounts['dredge'] ?? 0 },
+                          { v: 'canal',         icon: '💧', label: 'รางน้ำ/ลำเหมือง',  count: projTypeCounts['canal'] ?? 0 },
+                          { v: 'pipe_water',    icon: '🚰', label: 'ท่อน้ำประปา',       count: projTypeCounts['pipe_water'] ?? 0 },
+                          { v: 'waterway',      icon: '💧', label: 'รางส่งน้ำ',         count: projTypeCounts['waterway'] ?? 0 },
+                          { v: 'building',      icon: '🏗️', label: 'อาคาร',             count: projTypeCounts['building'] ?? 0 },
+                          { v: 'light',         icon: '💡', label: 'ไฟฟ้า',             count: projTypeCounts['light'] ?? 0 },
+                          { v: 'park',          icon: '🌳', label: 'สวนสาธารณะ',        count: projTypeCounts['park'] ?? 0 },
+                          { v: 'other',         icon: '📝', label: 'อื่น ๆ',            count: projTypeCounts['other'] ?? 0 },
+                        ].filter(opt => opt.v === 'all' || opt.count > 0)} />
+                    </div>
+                    <div className="flex-1">
+                      <MobileFilterPill id="projStatus" icon="📐" label="สถานะโครงการ" color="#8b5cf6"
+                        value={filterProjStatus} onChange={setFilterProjStatus}
+                        openFilter={openFilter} setOpenFilter={setOpenFilter}
+                        options={[
+                          { v: 'all',         icon: '🔨', label: 'ทั้งหมด',          count: projStatusCounts.all },
+                          { v: 'planned',     icon: '📐', label: 'วางแผน',          color: '#9ca3af', count: projStatusCounts['planned'] ?? 0 },
+                          { v: 'approved',    icon: '📌', label: 'อนุมัติแล้ว',     color: '#3b82f6', count: projStatusCounts['approved'] ?? 0 },
+                          { v: 'in_progress', icon: '⚙️', label: 'กำลังดำเนินการ', color: '#f97316', count: projStatusCounts['in_progress'] ?? 0 },
+                          { v: 'completed',   icon: '🏆', label: 'เสร็จสิ้น',       color: '#10b981', count: projStatusCounts['completed'] ?? 0 },
+                          { v: 'cancelled',   icon: '🚫', label: 'ยกเลิก',          color: '#9ca3af', count: projStatusCounts['cancelled'] ?? 0 },
+                          { v: 'suspended',   icon: '⏸️', label: 'ระงับชั่วคราว',  color: '#f59e0b', count: projStatusCounts['suspended'] ?? 0 },
+                        ].filter(opt => opt.v === 'all' || opt.count > 0)} />
+                    </div>
+                  </div>
                 )}
                 {isFiltered && (
-                  <div className="flex items-end pb-1">
+                  <div className="w-full flex justify-center pt-1">
                     <button type="button" onClick={clearFilters}
                       className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border-2 transition-all"
                       style={{ borderColor: '#ef4444', backgroundColor: '#ef444415' }}>
