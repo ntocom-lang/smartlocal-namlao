@@ -158,7 +158,7 @@ export default function BusinessRegisterPage() {
 
       {/* Mobile header */}
       <div className="md:hidden sticky top-0 z-10 flex items-center gap-3 px-4 py-3 text-white shadow-sm"
-           style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}>
+           style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
         <button onClick={() => navigate(-1)} className="p-1.5 rounded-xl bg-white/20 hover:bg-white/30 transition-colors">
           <ArrowLeft size={20} className="text-white" />
         </button>

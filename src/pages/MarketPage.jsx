@@ -46,7 +46,8 @@ export default function MarketPage() {
     <div className="max-w-6xl mx-auto pb-28 md:pb-8">
 
       {/* Mobile header */}
-      <div className="md:hidden sticky top-0 z-30 bg-amber-600/95 backdrop-blur-md">
+      <div className="md:hidden sticky top-0 z-30 backdrop-blur-md"
+        style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 95%, transparent)' }}>
         <div className="flex items-center gap-2 px-4 pt-3 pb-2">
           <button onClick={() => navigate(-1)}
             className="p-2 -ml-1 rounded-xl hover:bg-white/20 text-white transition-colors">
@@ -59,7 +60,7 @@ export default function MarketPage() {
             <button key={key ?? 'all'} onClick={() => setActiveType(key)}
               className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full transition-colors"
               style={activeType === key
-                ? { backgroundColor: '#fff', color: '#d97706' }
+                ? { backgroundColor: '#fff', color: 'var(--color-primary)' }
                 : { backgroundColor: 'rgba(255,255,255,0.2)', color: '#fff' }}>
               {label}
             </button>
