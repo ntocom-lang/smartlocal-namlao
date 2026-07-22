@@ -177,7 +177,7 @@ function makeDivIcon(emoji, color, size = 32) {
 
 const CIVIL_STATUS_TH = {
   planned: 'วางแผน', approved: 'อนุมัติแล้ว', in_progress: 'กำลังดำเนินการ',
-  completed: 'แล้วเสร็จ', cancelled: 'ยกเลิก', suspended: 'ระงับชั่วคราว',
+  completed: 'เสร็จสิ้น', cancelled: 'ยกเลิก', suspended: 'ระงับชั่วคราว',
 }
 
 const STATUS_TH = {
@@ -194,7 +194,7 @@ const LEGEND = [
   { layer: 'biz',       status: 'approved',    color: '#f59e0b', emoji: '🏪', label: 'ร้านค้า — อนุมัติแล้ว' },
   { layer: 'proj',      status: 'planned',     color: '#9ca3af', emoji: '🔨', label: 'โครงการ — วางแผน' },
   { layer: 'proj',      status: 'in_progress', color: '#f97316', emoji: '🔨', label: 'โครงการ — กำลังดำเนินการ' },
-  { layer: 'proj',      status: 'completed',   color: '#10b981', emoji: '🔨', label: 'โครงการ — แล้วเสร็จ' },
+  { layer: 'proj',      status: 'completed',   color: '#10b981', emoji: '🔨', label: 'โครงการ — เสร็จสิ้น' },
 ]
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -301,7 +301,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
   const [showProj,   setShowProj]   = useState(true)  // โครงการ (civil_projects)
   const [filterStatus,     setFilterStatus]     = useState('all')
   const [filterCmpCat,     setFilterCmpCat]     = useState('all')
-  const [filterProjStatus, setFilterProjStatus] = useState('all')
+  const [filterProjStatus, setFilterProjStatus] = useState('completed')
   const [filterProjType,   setFilterProjType]   = useState('all')
   const [showLabels, setShowLabels] = useState(false)
   const [projViewMode, setProjViewMode] = useState('pin') // 'route' | 'pin'
@@ -710,7 +710,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                     {projStatusCounts.planned > 0 && <option value="planned">วางแผน ({projStatusCounts.planned})</option>}
                     {projStatusCounts.approved > 0 && <option value="approved">อนุมัติแล้ว ({projStatusCounts.approved})</option>}
                     {projStatusCounts.in_progress > 0 && <option value="in_progress">กำลังดำเนินการ ({projStatusCounts.in_progress})</option>}
-                    {projStatusCounts.completed > 0 && <option value="completed">แล้วเสร็จ ({projStatusCounts.completed})</option>}
+                    {projStatusCounts.completed > 0 && <option value="completed">เสร็จสิ้น ({projStatusCounts.completed})</option>}
                     {projStatusCounts.cancelled > 0 && <option value="cancelled">ยกเลิก ({projStatusCounts.cancelled})</option>}
                     {projStatusCounts.suspended > 0 && <option value="suspended">ระงับชั่วคราว ({projStatusCounts.suspended})</option>}
                   </select>
@@ -827,7 +827,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                       { v: 'planned',     icon: '📐', label: 'วางแผน',          color: '#9ca3af', count: projStatusCounts['planned'] ?? 0 },
                       { v: 'approved',    icon: '📌', label: 'อนุมัติแล้ว',     color: '#3b82f6', count: projStatusCounts['approved'] ?? 0 },
                       { v: 'in_progress', icon: '⚙️', label: 'กำลังดำเนินการ', color: '#f97316', count: projStatusCounts['in_progress'] ?? 0 },
-                      { v: 'completed',   icon: '🏆', label: 'แล้วเสร็จ',       color: '#10b981', count: projStatusCounts['completed'] ?? 0 },
+                      { v: 'completed',   icon: '🏆', label: 'เสร็จสิ้น',       color: '#10b981', count: projStatusCounts['completed'] ?? 0 },
                       { v: 'cancelled',   icon: '🚫', label: 'ยกเลิก',          color: '#9ca3af', count: projStatusCounts['cancelled'] ?? 0 },
                       { v: 'suspended',   icon: '⏸️', label: 'ระงับชั่วคราว',  color: '#f59e0b', count: projStatusCounts['suspended'] ?? 0 },
                     ].filter(opt => opt.v === 'all' || opt.count > 0)} />
