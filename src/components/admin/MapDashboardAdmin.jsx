@@ -1079,14 +1079,20 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
               const popup = (
                 <Popup>
                   <div className="text-sm min-w-[200px]">
-                    <button
-                      onClick={() => setSelectedItem({ type: 'civil', data: w })}
-                      className="font-bold text-left w-full mb-0.5 hover:underline flex items-center gap-1"
-                      style={{ color: 'var(--color-primary)' }}>
-                      🏗️ {w.title}
-                      <span className="text-[10px] font-normal opacity-70">(รายละเอียด)</span>
-                      <span className="text-[10px] opacity-60">→</span>
-                    </button>
+                    {currentUserRole === 'citizen' ? (
+                      <div className="font-bold w-full mb-0.5" style={{ color: 'var(--color-primary)' }}>
+                        🏗️ {w.title}
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setSelectedItem({ type: 'civil', data: w })}
+                        className="font-bold text-left w-full mb-0.5 hover:underline flex items-center gap-1"
+                        style={{ color: 'var(--color-primary)' }}>
+                        🏗️ {w.title}
+                        <span className="text-[10px] font-normal opacity-70">(รายละเอียด)</span>
+                        <span className="text-[10px] opacity-60">→</span>
+                      </button>
+                    )}
                     <div className="text-gray-500 text-xs mt-0.5">{PROJECT_TYPE_LABEL[w.project_type] ?? w.project_type}</div>
                     {w.progress_pct > 0 && (
                       <div className="mt-1">
