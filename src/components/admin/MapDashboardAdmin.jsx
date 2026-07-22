@@ -971,6 +971,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                       className="font-bold text-left w-full mb-1 hover:underline flex items-center gap-1"
                       style={{ color: 'var(--color-primary)' }}>
                       {FORM_TYPE_LABEL[c.form_type] ?? '📝 คำร้อง'}
+                      <span className="text-[10px] font-normal opacity-70">(รายละเอียด)</span>
                       <span className="text-[10px] opacity-60">→</span>
                     </button>
                     <div className="text-gray-700 font-medium leading-snug">{CATEGORY_LABEL[c.category] ?? c.category}</div>
@@ -1077,6 +1078,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                       className="font-bold text-left w-full mb-0.5 hover:underline flex items-center gap-1"
                       style={{ color: 'var(--color-primary)' }}>
                       🏗️ {w.title}
+                      <span className="text-[10px] font-normal opacity-70">(รายละเอียด)</span>
                       <span className="text-[10px] opacity-60">→</span>
                     </button>
                     <div className="text-gray-500 text-xs mt-0.5">{PROJECT_TYPE_LABEL[w.project_type] ?? w.project_type}</div>
