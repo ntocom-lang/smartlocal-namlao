@@ -424,12 +424,12 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
   function clearFilters() {
     setShowRepair(true); setShowWater(true); setShowEnv(true)
     setShowBiz(true);    setShowProj(true)
-    setFilterStatus('all'); setFilterCmpCat('all')
-    setFilterProjStatus('all'); setFilterProjType('all')
+    setFilterStatus('completed'); setFilterCmpCat('all')
+    setFilterProjStatus('completed'); setFilterProjType('all')
   }
   const isFiltered = !showRepair || !showWater || !showEnv || !showBiz || !showProj
-    || filterStatus !== 'all' || filterCmpCat !== 'all'
-    || filterProjStatus !== 'all' || filterProjType !== 'all'
+    || filterStatus !== 'completed' || filterCmpCat !== 'all'
+    || filterProjStatus !== 'completed' || filterProjType !== 'all'
 
   const [selectedItem, setSelectedItem] = useState(null) // { type: 'civil'|'complaint', data }
   const [quickStatus, setQuickStatus]   = useState(null)
