@@ -46,9 +46,9 @@ function MobileFilterPill({ id, icon, label, color, value, onChange, options, op
   return (
     <div>
       <button ref={btnRef} type="button" onClick={() => setOpenFilter(isOpen ? null : id)}
-        className="flex flex-col items-center justify-center gap-1 rounded-2xl border-2 transition-all duration-200 active:scale-95"
+        className="mx-auto flex flex-col items-center justify-center gap-1 rounded-2xl border-2 transition-all duration-200 active:scale-95"
         style={{
-          width: '100%', height: 70,
+          width: '100%', maxWidth: 84, height: 70,
           borderColor: active ? pillColor : '#f0f0f0',
           backgroundColor: active ? pillColor + '12' : '#fafafa',
           boxShadow: active ? `0 3px 10px ${pillColor}30` : 'none',
@@ -586,7 +586,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
       <div className="bg-white rounded-2xl overflow-hidden shadow-md border border-gray-100">
 
         {/* ชั้นข้อมูล 5 ประเภท */}
-        <div className="flex gap-2 px-3 py-3 border-b border-gray-100 overflow-x-auto scrollbar-none">
+        <div className="flex gap-2 px-3 py-3 border-b border-gray-100 overflow-x-auto scrollbar-none justify-center md:justify-start">
           {[
             {
               key: 'all',
@@ -604,7 +604,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
             { key: 'proj',   active: showProj,   toggle: () => setShowProj(v => !v),   color: '#8b5cf6', count: civilProjects.length, icon: '🔨', label: 'โครงการ' },
           ].filter(card => card.key === 'all' || card.count > 0).map(({ key, active, toggle, color, count, icon, label }) => (
             <button key={key} type="button" onClick={toggle}
-              className={`flex-1 min-w-[68px] flex flex-col items-center gap-1.5 py-2.5 rounded-2xl border-2 transition-all duration-200 select-none ${key === 'all' ? '' : 'active:scale-95'}`}
+              className={`w-20 shrink-0 flex flex-col items-center gap-1.5 py-2.5 rounded-2xl border-2 transition-all duration-200 select-none ${key === 'all' ? '' : 'active:scale-95'}`}
               style={{
                 ...(active
                   ? { borderColor: color, backgroundColor: color + '15', boxShadow: `0 4px 12px ${color}30` }
