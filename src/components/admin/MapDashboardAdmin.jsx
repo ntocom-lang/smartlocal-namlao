@@ -1094,11 +1094,6 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                         </div>
                       </div>
                     )}
-                    {w.budget_amount && (
-                      <div className="text-xs text-violet-600 mt-1">
-                        💰 {Number(w.budget_amount).toLocaleString('th-TH')} บาท
-                      </div>
-                    )}
                     <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-gray-100">
                       <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
                         style={{ backgroundColor: statusColor + '20', color: statusColor }}>
