@@ -1131,7 +1131,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                     positions={w.route_points.map(p => [p.lat, p.lng])}
                     pathOptions={{ color: lineColor, weight: lineWeight, opacity: 0.9, ...(dashArray && { dashArray }) }}>
                     {showLabels && (
-                      <Tooltip sticky
+                      <Tooltip permanent
                         className="bg-white! text-gray-700! text-[10px]! font-semibold! border-gray-200! shadow-sm! px-1.5! py-0.5! rounded-lg!">
                         {w.title.length > 24 ? w.title.slice(0, 24) + '…' : w.title}
                       </Tooltip>
