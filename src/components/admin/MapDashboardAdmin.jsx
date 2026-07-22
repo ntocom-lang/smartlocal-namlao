@@ -299,7 +299,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
   const [showEnv,    setShowEnv]    = useState(true)  // สิ่งแวดล้อม
   const [showBiz,    setShowBiz]    = useState(true)  // ร้านค้า/ท่องเที่ยว
   const [showProj,   setShowProj]   = useState(true)  // โครงการ (civil_projects)
-  const [filterStatus,     setFilterStatus]     = useState('all')
+  const [filterStatus,     setFilterStatus]     = useState('completed')
   const [filterCmpCat,     setFilterCmpCat]     = useState('all')
   const [filterProjStatus, setFilterProjStatus] = useState('completed')
   const [filterProjType,   setFilterProjType]   = useState('all')
