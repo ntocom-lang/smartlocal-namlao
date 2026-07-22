@@ -946,14 +946,16 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
             <FullscreenResizer />
 
             {/* ── คำร้อง (3 ประเภทฟอร์ม) — เป็นจุดเสมอ ไม่แสดงตอนโหมดเส้นทาง ── */}
-            {projViewMode === 'pin' && [...filteredRepair, ...filteredWater, ...filteredEnv].map((c) => (
+            {projViewMode === 'pin' && [...filteredRepair, ...filteredWater, ...filteredEnv].map((c) => {
+              const status = normalizeStatus(c.status)
+              return (
               <Marker
                 key={c.id}
                 position={[c.latitude, c.longitude]}
                 icon={makeDivIcon(
                   CATEGORY_EMOJI[c.category] ?? FORM_TYPE_EMOJI[c.form_type] ?? '📋',
-                  COMPLAINT_STATUS_COLOR[c.status] ?? '#ef4444',
-                  c.status === 'completed' ? 28 : 32,
+                  COMPLAINT_STATUS_COLOR[status] ?? '#ef4444',
+                  status === 'completed' ? 28 : 32,
                 )}
               >
                 {showLabels && (
@@ -978,10 +980,10 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                     <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
                       <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
                         style={{
-                          backgroundColor: COMPLAINT_STATUS_COLOR[c.status] + '20',
-                          color: COMPLAINT_STATUS_COLOR[c.status],
+                          backgroundColor: COMPLAINT_STATUS_COLOR[status] + '20',
+                          color: COMPLAINT_STATUS_COLOR[status],
                         }}>
-                        {STATUS_TH[c.status] ?? c.status}
+                        {STATUS_TH[status] ?? status}
                       </span>
                       <span className="text-xs text-gray-400">
                         {new Date(c.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'short' })}
@@ -996,7 +998,8 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                   </div>
                 </Popup>
               </Marker>
-            ))}
+              )
+            })}
 
             {/* ── ร้านค้า/ท่องเที่ยว — เป็นจุดเสมอ ไม่แสดงตอนโหมดเส้นทาง ── */}
             {projViewMode === 'pin' && filteredBiz.map((b) => (
@@ -1248,12 +1251,13 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
       {selectedItem && (() => {
         const iscivil = selectedItem.type === 'civil'
         const d = selectedItem.data
+        const cmpStatus = normalizeStatus(d.status)
         const statusColor = iscivil
           ? (CIVIL_STATUS_COLOR[d.status] ?? '#9ca3af')
-          : (COMPLAINT_STATUS_COLOR[d.status] ?? '#9ca3af')
+          : (COMPLAINT_STATUS_COLOR[cmpStatus] ?? '#9ca3af')
         const statusLabel = iscivil
           ? (CIVIL_STATUS_TH[d.status] ?? d.status)
-          : (STATUS_TH[d.status] ?? d.status)
+          : (STATUS_TH[cmpStatus] ?? cmpStatus)
         const effectivePct = iscivil
           ? (!d.progress_pct && d.status === 'completed' ? 100 : d.progress_pct ?? 0)
           : 0
