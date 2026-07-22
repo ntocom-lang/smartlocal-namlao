@@ -230,7 +230,7 @@ export default function MorePage() {
   }
 
   const { unreadCount } = useNotifications()
-  const { session, role, displayName } = useAuth()
+  const { session, role, displayName, avatarUrl } = useAuth()
   const [satComplaintId, setSatComplaintId] = useState(null)
   const [showSat, setShowSat] = useState(false)
 
@@ -308,7 +308,6 @@ export default function MorePage() {
   const isStaff   = role === 'staff'
   const isViewer  = role === 'viewer'
   const isCouncil = role === 'council'
-  const avatarUrl = session?.user?.user_metadata?.avatar_url || session?.user?.user_metadata?.picture
   const initials  = (displayName[0] || '?').toUpperCase()
 
   const hasSocial = tenant?.website_url || tenant?.facebook_url || tenant?.line_oa_url

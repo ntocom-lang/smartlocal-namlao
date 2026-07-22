@@ -18,7 +18,7 @@ export default function Header() {
   const navigate = useNavigate()
   const location = useLocation()
   const { unreadCount } = useNotifications()
-  const { session, displayName } = useAuth()
+  const { session, displayName, avatarUrl } = useAuth()
 
   const name = tenant?.name || ''
   let prefix = ''
@@ -45,8 +45,8 @@ export default function Header() {
         <button onClick={() => navigate('/profile')} className="p-1.5 text-white hover:bg-white/10 rounded-full transition-colors -ml-1">
           {session ? (
             <div className="w-8 h-8 rounded-full bg-emerald-700/50 border border-white/60 flex items-center justify-center font-bold text-white shadow-sm overflow-hidden">
-              {session.user.user_metadata?.avatar_url ? (
-                <img src={session.user.user_metadata.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="Profile" className="w-full h-full object-cover" />
               ) : (
                 <span className="text-sm">{displayName?.[0] ?? <User size={18} />}</span>
               )}

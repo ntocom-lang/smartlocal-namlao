@@ -28,7 +28,7 @@ export default function Header() {
   const location = useLocation()
   const navigate = useNavigate()
   const { unreadCount } = useNotifications()
-  const { session, role, displayName } = useAuth()
+  const { session, role, displayName, avatarUrl } = useAuth()
 
   async function logout() {
     await supabase.auth.signOut()
@@ -153,9 +153,9 @@ export default function Header() {
             {/* ขวา: Avatar */}
             {session ? (
               <Link to="/profile" className="p-1 shrink-0">
-                {(session.user?.user_metadata?.avatar_url || session.user?.user_metadata?.picture) ? (
+                {avatarUrl ? (
                   <img
-                    src={session.user.user_metadata.avatar_url || session.user.user_metadata.picture}
+                    src={avatarUrl}
                     alt="avatar"
                     className="w-10 h-10 rounded-full object-cover border-2 border-white/60"
                   />
