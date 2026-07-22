@@ -966,14 +966,20 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                 )}
                 <Popup>
                   <div className="text-sm min-w-[200px]">
-                    <button
-                      onClick={() => setSelectedItem({ type: 'complaint', data: c })}
-                      className="font-bold text-left w-full mb-1 hover:underline flex items-center gap-1"
-                      style={{ color: 'var(--color-primary)' }}>
-                      {FORM_TYPE_LABEL[c.form_type] ?? '📝 คำร้อง'}
-                      <span className="text-[10px] font-normal opacity-70">(รายละเอียด)</span>
-                      <span className="text-[10px] opacity-60">→</span>
-                    </button>
+                    {currentUserRole === 'citizen' ? (
+                      <div className="font-bold w-full mb-1" style={{ color: 'var(--color-primary)' }}>
+                        {FORM_TYPE_LABEL[c.form_type] ?? '📝 คำร้อง'}
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setSelectedItem({ type: 'complaint', data: c })}
+                        className="font-bold text-left w-full mb-1 hover:underline flex items-center gap-1"
+                        style={{ color: 'var(--color-primary)' }}>
+                        {FORM_TYPE_LABEL[c.form_type] ?? '📝 คำร้อง'}
+                        <span className="text-[10px] font-normal opacity-70">(รายละเอียด)</span>
+                        <span className="text-[10px] opacity-60">→</span>
+                      </button>
+                    )}
                     <div className="text-gray-700 font-medium leading-snug">{CATEGORY_LABEL[c.category] ?? c.category}</div>
                     {c.detail && (
                       <div className="text-gray-500 text-xs mt-0.5 leading-snug line-clamp-2">{c.detail}</div>
