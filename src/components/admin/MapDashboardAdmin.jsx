@@ -208,7 +208,7 @@ function GmapsBtn({ lat, lng }) {
       href={gmapsUrl(lat, lng)}
       target="_blank"
       rel="noopener noreferrer"
-      className="mt-2 flex items-center justify-center gap-1.5 w-full py-1.5 rounded-lg text-xs font-semibold border transition-colors"
+      className="mt-1.5 flex items-center justify-center gap-1.5 w-full py-1.5 rounded-lg text-xs font-semibold border transition-colors"
       style={{ color: '#1a73e8', borderColor: '#dadce0', backgroundColor: '#f8f9fa' }}
       onClick={e => e.stopPropagation()}
     >
@@ -973,11 +973,11 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                       {FORM_TYPE_LABEL[c.form_type] ?? '📝 คำร้อง'}
                       <span className="text-[10px] opacity-60">→</span>
                     </button>
-                    <p className="text-gray-600">{CATEGORY_LABEL[c.category] ?? c.category}</p>
+                    <div className="text-gray-700 font-medium leading-snug">{CATEGORY_LABEL[c.category] ?? c.category}</div>
                     {c.detail && (
-                      <p className="text-gray-500 text-xs mt-1 leading-relaxed line-clamp-3">{c.detail}</p>
+                      <div className="text-gray-500 text-xs mt-0.5 leading-snug line-clamp-2">{c.detail}</div>
                     )}
-                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
+                    <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-gray-100">
                       <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
                         style={{
                           backgroundColor: COMPLAINT_STATUS_COLOR[status] + '20',
@@ -990,9 +990,9 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                       </span>
                     </div>
                     {(c.location_name || c.village) && (
-                      <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                      <div className="text-xs text-gray-400 mt-1 flex items-center gap-1 leading-snug">
                         <MapPin size={10} /> {c.location_name ?? c.village}
-                      </p>
+                      </div>
                     )}
                     <GmapsBtn lat={c.latitude} lng={c.longitude} />
                   </div>
@@ -1019,13 +1019,13 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                 )}
                 <Popup>
                   <div className="text-sm min-w-[200px]">
-                    <p className="font-bold text-gray-800 mb-0.5">{b.business_name}</p>
-                    <p className="text-gray-500 text-xs">{BIZ_TYPE_LABEL[b.business_type] ?? b.business_type}</p>
+                    <div className="font-bold text-gray-800 leading-snug">{b.business_name}</div>
+                    <div className="text-gray-500 text-xs mt-0.5">{BIZ_TYPE_LABEL[b.business_type] ?? b.business_type}</div>
                     {b.description && (
-                      <p className="text-gray-500 text-xs mt-1 line-clamp-2">{b.description}</p>
+                      <div className="text-gray-500 text-xs mt-0.5 leading-snug line-clamp-2">{b.description}</div>
                     )}
-                    {b.phone && <p className="text-xs text-gray-600 mt-1">📞 {b.phone}</p>}
-                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
+                    {b.phone && <div className="text-xs text-gray-600 mt-0.5">📞 {b.phone}</div>}
+                    <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-gray-100">
                       <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
                         style={{
                           backgroundColor: b.status === 'approved' ? '#fef3c7' : b.status === 'rejected' ? '#f3f4f6' : '#dbeafe',
@@ -1035,7 +1035,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                       </span>
                     </div>
                     {b.status === 'pending' && (currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
-                      <div className="flex gap-1.5 mt-2">
+                      <div className="flex gap-1.5 mt-1.5">
                         <button
                           onClick={() => approveBiz(b.id, true)}
                           disabled={approving === b.id}
@@ -1079,9 +1079,9 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                       🏗️ {w.title}
                       <span className="text-[10px] opacity-60">→</span>
                     </button>
-                    <p className="text-gray-500 text-xs mb-1">{PROJECT_TYPE_LABEL[w.project_type] ?? w.project_type}</p>
+                    <div className="text-gray-500 text-xs mt-0.5">{PROJECT_TYPE_LABEL[w.project_type] ?? w.project_type}</div>
                     {w.progress_pct > 0 && (
-                      <div className="mb-1.5">
+                      <div className="mt-1">
                         <div className="flex justify-between text-[10px] text-gray-400 mb-0.5">
                           <span>ความคืบหน้า</span>
                           <span>{w.progress_pct}%</span>
@@ -1093,11 +1093,11 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                       </div>
                     )}
                     {w.budget_amount && (
-                      <p className="text-xs text-violet-600 mb-1">
+                      <div className="text-xs text-violet-600 mt-1">
                         💰 {Number(w.budget_amount).toLocaleString('th-TH')} บาท
-                      </p>
+                      </div>
                     )}
-                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
+                    <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-gray-100">
                       <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
                         style={{ backgroundColor: statusColor + '20', color: statusColor }}>
                         {CIVIL_STATUS_TH[w.status] ?? w.status}
@@ -1107,9 +1107,9 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                       )}
                     </div>
                     {w.village && (
-                      <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                      <div className="text-xs text-gray-400 mt-1 flex items-center gap-1 leading-snug">
                         <MapPin size={10} /> {w.village}
-                      </p>
+                      </div>
                     )}
                     <GmapsBtn lat={w.latitude} lng={w.longitude} />
                   </div>
