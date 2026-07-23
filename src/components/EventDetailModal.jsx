@@ -25,10 +25,23 @@ function eventAttachments(ev) {
   return ev.attachment_url ? [ev.attachment_url] : []
 }
 
+function daysUntil(dateStr) {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const d = new Date(dateStr + 'T00:00:00')
+  const diff = Math.round((d - today) / 86400000)
+  if (diff === 0) return 'วันนี้'
+  if (diff === 1) return 'พรุ่งนี้'
+  if (diff < 0) return `${Math.abs(diff)} วันที่แล้ว`
+  return `อีก ${diff} วัน`
+}
+
 export default function EventDetailModal({ ev, onClose, canEdit }) {
   const navigate = useNavigate()
   const color = CATEGORY_COLOR[ev.category] ?? '#6b7280'
   const aud = AUDIENCE_LABEL[ev.audience] ? { label: AUDIENCE_LABEL[ev.audience], color: AUDIENCE_COLOR[ev.audience] } : null
+  const days = ev.event_date ? daysUntil(ev.event_date) : null
+  const daysColor = days === 'วันนี้' ? '#ef4444' : days?.includes('ที่แล้ว') ? '#9ca3af' : days === 'พรุ่งนี้' ? '#f97316' : '#3b82f6'
   const d = ev.event_date ? new Date(ev.event_date + 'T00:00:00') : null
   const dEnd = ev.end_date && ev.end_date !== ev.event_date ? new Date(ev.end_date + 'T00:00:00') : null
   const fmtDate = (dt) => dt.toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
@@ -56,6 +69,12 @@ export default function EventDetailModal({ ev, onClose, canEdit }) {
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border"
                     style={{ color: aud.color, borderColor: aud.color, backgroundColor: aud.color + '18' }}>
                     {ev.audience !== 'public' ? '🔒 ' : '👥 '}{aud.label}
+                  </span>
+                )}
+                {days && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold text-white"
+                    style={{ backgroundColor: daysColor }}>
+                    {days}
                   </span>
                 )}
               </div>
