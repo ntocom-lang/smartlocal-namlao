@@ -2,8 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Send, Sparkles, ChevronRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useTenant } from '../../contexts/TenantContext'
-
-const GEMINI_MODEL = 'gemini-3.5-flash'
+import { askGemini } from '../../lib/geminiChat'
 
 const QUICK_PROMPTS = [
   { emoji: '🗑️', text: 'แจ้งปัญหาขยะ' },
@@ -34,32 +33,8 @@ export default function AISearchCard() {
     setLoading(true)
 
     try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY
-      if (!apiKey) throw new Error('No key')
-
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: q }] }],
-            systemInstruction: {
-              parts: [{
-                text: `คุณคือ "น้องสมายล์" 🦖 ผู้ช่วย AI ของ ${tenant?.name || 'เทศบาล/อบต.'}
-ตอบคำถามอย่างสุภาพ กระชับ ไม่เกิน 3 ประโยค ใช้ภาษาไทยที่อ่านง่าย
-หากถามเรื่องร้องเรียน/ร้องทุกข์ แนะนำเมนู "ร้องเรียน/ร้องทุกข์"
-หากถามเรื่องเอกสาร/E-Service แนะนำเมนู "E-Service"
-หากถามเรื่องเที่ยว/กิน/พัก แนะนำเมนู "ท่องเที่ยว"
-ลงท้ายด้วย emoji 🦖 เสมอ`
-              }]
-            }
-          })
-        }
-      )
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      setAnswer(data.candidates?.[0]?.content?.parts?.[0]?.text || 'ขออภัยค่ะ ลองถามใหม่นะคะ 🦖')
+      const reply = await askGemini([], q, tenant?.name)
+      setAnswer(reply)
     } catch {
       setAnswer('ขออภัยค่ะ เกิดข้อผิดพลาด ลองถามใหม่อีกครั้งนะคะ 🦖')
     } finally {

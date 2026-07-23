@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Send, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTenant } from '../contexts/TenantContext';
+import { askGemini } from '../lib/geminiChat';
 
 export default function ChatbotPage() {
   const navigate = useNavigate();
@@ -31,56 +32,7 @@ export default function ChatbotPage() {
     setIsLoading(true);
 
     try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) {
-        throw new Error('API Key is missing');
-      }
-
-      // เตรียมประวัติการสนทนาส่งให้ Gemini
-      const contents = messages
-        .filter(msg => msg.id !== 1) // ข้ามข้อความต้อนรับเริ่มต้น
-        .map(msg => ({
-          role: msg.sender === 'user' ? 'user' : 'model',
-          parts: [{ text: msg.text }]
-        }));
-
-      contents.push({
-        role: 'user',
-        parts: [{ text: userText }]
-      });
-
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            contents: contents,
-            systemInstruction: {
-              parts: [{
-                text: `คุณคือ "น้องสมายล์" 🦖 ผู้ช่วย AI อัจฉเชิงบวกที่คอยช่วยเหลือและให้ข้อมูลประชาชนของ ${tenant?.name || 'เทศบาล/อบต.'}
-กรุณาตอบคำถามอย่างสุภาพ อ่อนน้อม เป็นกันเอง และมีประโยชน์ โดยใช้ภาษาไทยที่อ่านง่ายและกระชับ
-หากผู้ใช้สอบถามเกี่ยวกับการร้องเรียน/ร้องทุกข์ ปัญหาขยะ น้ำท่วม ไฟฟ้าถนน หรืออื่นๆ ให้แนะนำให้ไปที่เมนู "ร้องเรียน/ร้องทุกข์" บนหน้าแรก
-หากผู้ใช้ต้องการขอเอกสารหรือยื่นเรื่อง ขอ E-Service ให้แนะนำให้ไปที่เมนู "E-Service" หรือ "บริการประชาชน" บนหน้าแรก
-หากถามเรื่องการเดินทาง ท่องเที่ยว ที่พัก แนะนำให้ไปที่เมนู "ท่องเที่ยว" หรือ "เที่ยว กิน พัก OTOP" บนหน้าแรก
-ลงท้ายด้วยคำพูดที่น่ารัก และใส่ emoji 🦖 เสมอ`
-              }]
-            }
-          })
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('Gemini API Error:', errorData);
-        throw new Error(errorData?.error?.message || `HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      const replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'ขออภัยค่ะ น้องสมายล์ไม่เข้าใจคำถามนี้ ลองถามใหม่อีกครั้งนะคะ 🦖';
-
+      const replyText = await askGemini(messages, userText, tenant?.name);
       setMessages(prev => [...prev, { id: Date.now(), sender: 'bot', text: replyText }]);
     } catch (error) {
       console.error('Error calling Gemini:', error);
@@ -104,7 +56,7 @@ export default function ChatbotPage() {
       } else if (text.includes('เที่ยว') || text.includes('ที่พัก') || text.includes('ร้านอาหาร')) {
         reply += 'แหล่งท่องเที่ยว ที่พัก และร้านอาหารเด็ดๆ ดูได้ที่หมวด "เที่ยว กิน พัก OTOP" หน้าแรกเลยค่ะ แนะนำเพียบ! 🦖';
       } else {
-        reply = `ขออภัยค่ะ เกิดข้อผิดพลาดในการเชื่อมต่อกับ Gemini AI 🦖\n\nกรุณาตั้งค่าคีย์ของคุณในไฟล์ \`.env.local\` โดยระบุ:\n\`VITE_GEMINI_API_KEY=คีย์_Gemini_จริง_ของคุณ\``;
+        reply = 'ขออภัยค่ะ ระบบ AI ไม่พร้อมใช้งานชั่วคราว ลองใหม่อีกครั้งในภายหลังนะคะ 🦖';
       }
 
       setMessages(prev => [...prev, { id: Date.now(), sender: 'bot', text: reply }]);
