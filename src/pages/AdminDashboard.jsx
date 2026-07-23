@@ -3730,6 +3730,8 @@ function EventCard({ ev, onEdit, onDelete, deleting }) {
 }
 
 function EventsManager({ tenant, currentUserRole }) {
+  const orgLabel = tenant?.org_type === 'อบต.' ? 'อบต.' : 'เทศบาล'
+  const LOCATION_PRESETS = ['ห้องประชุมสภา', `ห้องประชุม${orgLabel}`, `โดมหลัง${orgLabel}`]
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -4090,12 +4092,33 @@ function EventsManager({ tenant, currentUserRole }) {
                 <div className="md:grid md:grid-cols-2 md:gap-6 space-y-4 md:space-y-0">
                   <div>
                     <label className="text-xs font-semibold text-gray-500 mb-1 block">สถานที่</label>
-                    <input
-                      value={form.location}
-                      onChange={(e) => setForm((p) => ({ ...p, location: e.target.value }))}
-                      placeholder="เช่น ห้องประชุมสภา"
-                      className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400"
-                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      {LOCATION_PRESETS.map((loc) => (
+                        <button key={loc} type="button" onClick={() => setForm((p) => ({ ...p, location: loc }))}
+                          className="px-3 py-2 rounded-xl text-xs font-semibold text-left transition-colors border"
+                          style={form.location === loc
+                            ? { backgroundColor: 'var(--color-primary)', color: 'white', borderColor: 'var(--color-primary)' }
+                            : { backgroundColor: 'white', color: '#374151', borderColor: '#e5e7eb' }}>
+                          {loc}
+                        </button>
+                      ))}
+                      <button type="button" onClick={() => setForm((p) => ({ ...p, location: '' }))}
+                        className="px-3 py-2 rounded-xl text-xs font-semibold text-left transition-colors border"
+                        style={!LOCATION_PRESETS.includes(form.location)
+                          ? { backgroundColor: 'var(--color-primary)', color: 'white', borderColor: 'var(--color-primary)' }
+                          : { backgroundColor: 'white', color: '#374151', borderColor: '#e5e7eb' }}>
+                        อื่นๆ (ระบุ)
+                      </button>
+                    </div>
+                    {!LOCATION_PRESETS.includes(form.location) && (
+                      <input
+                        value={form.location}
+                        onChange={(e) => setForm((p) => ({ ...p, location: e.target.value }))}
+                        placeholder="ระบุสถานที่..."
+                        className="mt-2 w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400"
+                        autoFocus
+                      />
+                    )}
                   </div>
 
                   <div>
