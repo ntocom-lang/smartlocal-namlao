@@ -1,199 +1,133 @@
-import { X, Clock, CalendarDays, MapPin, Paperclip, FileText, ExternalLink } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { X } from 'lucide-react'
 
 const CATEGORY_COLOR = {
   'ประชาสัมพันธ์': '#10b981', 'ประชุม': '#3b82f6', 'กำหนดการ': '#f97316',
   'อบรม': '#8b5cf6', 'อื่นๆ': '#6b7280',
 }
 
-function daysUntil(dateStr) {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const d = new Date(dateStr + 'T00:00:00')
-  const diff = Math.round((d - today) / 86400000)
-  if (diff === 0) return 'วันนี้'
-  if (diff === 1) return 'พรุ่งนี้'
-  if (diff < 0) return `${Math.abs(diff)} วันที่แล้ว`
-  return `อีก ${diff} วัน`
+const AUDIENCE_LABEL = {
+  public:     'ประชาชน',
+  staff:      'เจ้าหน้าที่',
+  management: 'ผู้บริหาร',
+  council:    'สภาเทศบาล',
 }
 
-function isPdf(url) {
-  return url?.toLowerCase().includes('.pdf') || url?.toLowerCase().includes('%2fpdf') || url?.toLowerCase().includes('pdf')
+const AUDIENCE_COLOR = {
+  public:     '#10b981',
+  staff:      '#3b82f6',
+  management: '#8b5cf6',
+  council:    '#f59e0b',
 }
 
-export default function EventDetailModal({ ev, onClose }) {
+function eventAttachments(ev) {
+  if (ev.attachment_urls?.length > 0) return ev.attachment_urls
+  return ev.attachment_url ? [ev.attachment_url] : []
+}
+
+export default function EventDetailModal({ ev, onClose, canEdit }) {
+  const navigate = useNavigate()
   const color = CATEGORY_COLOR[ev.category] ?? '#6b7280'
-  const d = new Date(ev.event_date + 'T00:00:00')
-  const dateStr = d.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
-  const days = daysUntil(ev.event_date)
-  const isToday = days === 'วันนี้'
-  const isPast = days.includes('ที่แล้ว')
-  const activeColor = isPast ? '#9ca3af' : isToday ? '#ef4444' : color
+  const aud = AUDIENCE_LABEL[ev.audience] ? { label: AUDIENCE_LABEL[ev.audience], color: AUDIENCE_COLOR[ev.audience] } : null
+  const d = ev.event_date ? new Date(ev.event_date + 'T00:00:00') : null
+  const dEnd = ev.end_date && ev.end_date !== ev.event_date ? new Date(ev.end_date + 'T00:00:00') : null
+  const fmtDate = (dt) => dt.toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+  const attachments = eventAttachments(ev)
 
-  let dateRange = dateStr
-  if (ev.end_date && ev.end_date !== ev.event_date) {
-    const d2 = new Date(ev.end_date + 'T00:00:00')
-    dateRange += ' – ' + d2.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
+  function goEdit() {
+    onClose()
+    navigate('/staff', { state: { module: 'events', editEventId: ev.id } })
   }
 
-  const attachments = ev.attachment_urls?.length > 0 ? ev.attachment_urls : (ev.attachment_url ? [ev.attachment_url] : [])
-
   return (
-    <div
-      className="fixed inset-0 z-60 flex items-end justify-center bg-black/50 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-lg bg-white rounded-t-3xl shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-        style={{ maxHeight: '92vh', minHeight: '60vh' }}
-      >
-        {/* Drag handle */}
-        <div className="flex justify-center pt-3 pb-1">
-          <div className="w-10 h-1 rounded-full bg-gray-200" />
-        </div>
-
-        {/* Color banner */}
-        <div className="px-6 pt-4 pb-6" style={{ background: `linear-gradient(135deg, ${activeColor}22, ${activeColor}08)` }}>
+    <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/50 px-4"
+      onClick={onClose}>
+      <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden"
+        onClick={e => e.stopPropagation()}>
+        {/* Header bar */}
+        <div className="h-1.5 w-full" style={{ backgroundColor: color }} />
+        <div className="px-6 pt-5 pb-4 max-h-[85vh] overflow-y-auto">
           <div className="flex items-start justify-between gap-3">
-            <div className="flex items-center gap-4">
-              <div
-                className="shrink-0 w-16 h-16 rounded-2xl flex flex-col items-center justify-center text-white shadow-md"
-                style={{ backgroundColor: activeColor }}
-              >
-                <span className="text-xs font-bold leading-none">
-                  {d.toLocaleDateString('th-TH', { month: 'short' })}
-                </span>
-                <span className="text-3xl font-black leading-tight">{d.getDate()}</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold text-white"
+                  style={{ backgroundColor: color }}>{ev.category}</span>
+                {aud && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border"
+                    style={{ color: aud.color, borderColor: aud.color, backgroundColor: aud.color + '18' }}>
+                    {ev.audience !== 'public' ? '🔒 ' : '👥 '}{aud.label}
+                  </span>
+                )}
               </div>
-              <div className="flex-1 min-w-0">
-                <span
-                  className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold text-white mb-2"
-                  style={{ backgroundColor: activeColor }}
-                >
-                  {ev.category}
-                </span>
-                <p className="text-lg font-bold text-gray-900 leading-snug">{ev.title}</p>
-              </div>
+              <h3 className="text-base font-bold text-gray-900 leading-snug">{ev.title}</h3>
             </div>
-            <button
-              onClick={onClose}
-              className="shrink-0 p-2 rounded-xl hover:bg-black/10 text-gray-500 transition-colors"
-            >
-              <X size={20} />
+            <button onClick={onClose}
+              className="p-1.5 rounded-xl hover:bg-gray-100 shrink-0 mt-0.5">
+              <X size={17} className="text-gray-400" />
             </button>
           </div>
 
-          {/* Days badge */}
-          <div className="mt-4">
-            <span
-              className="inline-flex px-4 py-1.5 rounded-full text-sm font-bold"
-              style={{ backgroundColor: activeColor, color: 'white' }}
-            >
-              {days}
-            </span>
+          <div className="mt-4 space-y-2.5">
+            {/* Date */}
+            <div className="flex items-start gap-2.5 text-sm text-gray-700">
+              <span className="text-base shrink-0">📅</span>
+              <div>
+                <p>{d ? fmtDate(d) : 'ยังไม่ระบุวันที่'}</p>
+                {dEnd && <p className="text-gray-500 text-xs mt-0.5">ถึง {fmtDate(dEnd)}</p>}
+              </div>
+            </div>
+            {/* Time */}
+            {!ev.is_all_day && ev.event_time && (
+              <div className="flex items-center gap-2.5 text-sm text-gray-700">
+                <span className="text-base shrink-0">⏰</span>
+                <span>{ev.event_time.slice(0, 5)}{ev.end_time ? ` – ${ev.end_time.slice(0, 5)}` : ''} น.</span>
+              </div>
+            )}
+            {/* Location */}
+            {ev.location && (
+              <div className="flex items-start gap-2.5 text-sm text-gray-700">
+                <span className="text-base shrink-0">📍</span>
+                <span>{ev.location}</span>
+              </div>
+            )}
+            {/* Description */}
+            {ev.description && (
+              <div className="flex items-start gap-2.5 text-sm text-gray-700">
+                <span className="text-base shrink-0">📝</span>
+                <p className="leading-relaxed whitespace-pre-wrap">{ev.description}</p>
+              </div>
+            )}
+            {/* Attachment */}
+            {attachments.length > 0 && (
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <span className="text-base shrink-0">📎</span>
+                {attachments.map((url, i) => (
+                  <a key={url} href={url} target="_blank" rel="noopener noreferrer"
+                    className="text-sm text-blue-600 hover:underline font-medium">
+                    ดูไฟล์แนบ{attachments.length > 1 ? ` ${i + 1}` : ''}
+                  </a>
+                ))}
+              </div>
+            )}
+            {/* Creator */}
+            {ev.creator?.full_name && (
+              <div className="flex items-center gap-2.5 text-sm text-gray-500">
+                <span className="text-base shrink-0">✍️</span>
+                <span>{ev.creator.full_name}</span>
+              </div>
+            )}
           </div>
-        </div>
 
-        {/* Details */}
-        <div className="px-6 py-5 space-y-4 overflow-y-auto" style={{ maxHeight: 'calc(92vh - 280px)' }}>
-          {/* Date */}
-          <div className="flex items-start gap-4">
-            <div
-              className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center"
-              style={{ backgroundColor: `${activeColor}18` }}
-            >
-              <CalendarDays size={18} style={{ color: activeColor }} />
-            </div>
-            <div className="pt-1">
-              <p className="text-xs font-semibold text-gray-400 mb-0.5">วันที่</p>
-              <p className="text-sm font-semibold text-gray-800">{dateRange}</p>
-              {!ev.is_all_day && ev.event_time && (
-                <p className="text-sm text-gray-600 flex items-center gap-1.5 mt-0.5">
-                  <Clock size={13} />
-                  {ev.event_time.slice(0, 5)}
-                  {ev.end_time ? ` – ${ev.end_time.slice(0, 5)}` : ''} น.
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* Location */}
-          {ev.location && (
-            <div className="flex items-start gap-4">
-              <div
-                className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center"
-                style={{ backgroundColor: `${activeColor}18` }}
-              >
-                <MapPin size={18} style={{ color: activeColor }} />
-              </div>
-              <div className="pt-1">
-                <p className="text-xs font-semibold text-gray-400 mb-0.5">สถานที่</p>
-                <p className="text-sm font-semibold text-gray-800">{ev.location}</p>
-              </div>
-            </div>
-          )}
-
-          {/* Description */}
-          {ev.description && (
-            <div className="pt-2 border-t border-gray-100">
-              <p className="text-xs font-semibold text-gray-400 mb-2">รายละเอียด</p>
-              <p className="text-sm text-gray-700 leading-relaxed">{ev.description}</p>
-            </div>
-          )}
-
-          {/* Attachments */}
-          {attachments.length > 0 && (
-            <div className="pt-2 border-t border-gray-100">
-              <p className="text-xs font-semibold text-gray-400 mb-2">
-                เอกสารแนบ{attachments.length > 1 ? ` (${attachments.length})` : ''}
-              </p>
-              <div className="space-y-2">
-                {attachments.map((url) =>
-                  isPdf(url) ? (
-                    <a
-                      key={url}
-                      href={url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-3 p-3.5 rounded-2xl border border-red-100 bg-red-50 hover:bg-red-100 transition-colors active:scale-98"
-                    >
-                      <div className="w-10 h-10 rounded-xl bg-red-500 flex items-center justify-center shrink-0">
-                        <FileText size={18} className="text-white" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-red-700">เอกสาร PDF</p>
-                        <p className="text-xs text-red-400">แตะเพื่อเปิด</p>
-                      </div>
-                      <ExternalLink size={16} className="text-red-400 shrink-0" />
-                    </a>
-                  ) : (
-                    <a
-                      key={url}
-                      href={url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block rounded-2xl overflow-hidden border border-gray-100 hover:opacity-90 transition-opacity active:scale-98"
-                    >
-                      <img
-                        src={url}
-                        alt="เอกสารแนบ"
-                        className="w-full max-h-64 object-contain bg-gray-50"
-                      />
-                      <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border-t border-gray-100">
-                        <Paperclip size={12} className="text-gray-400" />
-                        <span className="text-xs text-gray-500">แตะเพื่อดูขนาดเต็ม</span>
-                        <ExternalLink size={12} className="text-gray-400 ml-auto" />
-                      </div>
-                    </a>
-                  )
-                )}
-              </div>
+          {/* Actions */}
+          {canEdit && (
+            <div className="flex gap-2 mt-5 pt-4 border-t border-gray-100">
+              <button onClick={goEdit}
+                className="flex-1 py-2.5 rounded-xl border border-blue-300 text-blue-600 text-sm font-bold hover:bg-blue-50 transition-colors">
+                แก้ไข
+              </button>
             </div>
           )}
         </div>
-
-        {/* Safe area spacer */}
-        <div style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 20px)' }} />
       </div>
     </div>
   )

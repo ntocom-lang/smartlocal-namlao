@@ -2322,6 +2322,7 @@ export default function StaffDashboard() {
   const { tenant } = useTenant()
   const [activeModule, setActiveModule] = useState(location.state?.module ?? 'home')
   const [mapOpenComplaintId, setMapOpenComplaintId] = useState(location.state?.openComplaintId ?? null)
+  const [autoEditEventId, setAutoEditEventId] = useState(location.state?.editEventId ?? null)
   const [profile, setProfile]           = useState(null)
   const [pendingCount, setPendingCount] = useState(0)
   const [newComplaintCount, setNewComplaintCount] = useState(0)
@@ -2546,7 +2547,7 @@ export default function StaffDashboard() {
               ? <ComplaintsManager tenant={tenant} currentUserRole={profile?.role} openComplaintId={mapOpenComplaintId} />
               : <ComplaintsStaffModule tenant={tenant} staffId={profile?.id} />
           )}
-          {activeModule === 'events'     && <EventsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
+          {activeModule === 'events'     && <EventsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} autoEditEventId={autoEditEventId} onAutoEditHandled={() => setAutoEditEventId(null)} />}
           {activeModule === 'projects'      && <CivilProjectAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
           {activeModule === 'infra'      && <InfraWorkAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
           {activeModule === 'map'        && <MapDashboardAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} onNavigate={() => {}}

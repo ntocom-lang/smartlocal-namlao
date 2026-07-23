@@ -297,7 +297,7 @@ export default function EventsPage() {
     threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
     let query = supabase
       .from('events')
-      .select('*')
+      .select('*, creator:profiles!events_created_by_fkey(full_name)')
       .eq('municipality_id', tenant.id)
       .gte('event_date', threeMonthsAgo.toISOString().split('T')[0])
       .order('event_date', { ascending: true })
@@ -513,7 +513,7 @@ export default function EventsPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 pb-24 md:pb-8">
-      {selected && <EventDetailModal ev={selected} onClose={() => setSelected(null)} />}
+      {selected && <EventDetailModal ev={selected} onClose={() => setSelected(null)} canEdit={canEdit} />}
 
       {/* Mobile sticky header */}
       <div className="md:hidden sticky top-0 z-30 bg-gray-50/95 dark:bg-transparent backdrop-blur-md pt-3 pb-2 -mx-4 px-4">

@@ -175,7 +175,7 @@ function EventCard({ ev, onEdit, onDelete, onView, deleting }) {
   )
 }
 
-export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
+export default function EventsManager({ tenant, currentUserRole = 'staff', autoEditEventId, onAutoEditHandled }) {
   const canManage = ['admin', 'superadmin', 'staff', 'officer', 'viewer', 'council'].includes(currentUserRole)
   const orgLabel = tenant?.org_type === 'อบต.' ? 'อบต.' : 'เทศบาล'
   const LOCATION_PRESETS = ['ห้องประชุมสภา', `ห้องประชุม${orgLabel}`, `โดมหลัง${orgLabel}`]
@@ -209,6 +209,14 @@ export default function EventsManager({ tenant, currentUserRole = 'staff' }) {
 
   useEffect(() => { setCurrentPage(1) }, [activeTab, searchQuery, filterMonth, filterCategory, filterAudience, pageSize])
   useEffect(() => { fetchEvents() }, [tenant?.id, currentUserRole])
+
+  // เปิดฟอร์มแก้ไขอัตโนมัติ ถ้ามากดปุ่ม "แก้ไข" จากหน้ารายละเอียดกิจกรรมฝั่งประชาชน (/events)
+  useEffect(() => {
+    if (!autoEditEventId || events.length === 0) return
+    const match = events.find(e => e.id === autoEditEventId)
+    if (match) openEdit(match)
+    onAutoEditHandled?.()
+  }, [autoEditEventId, events])
 
   useEffect(() => {
     if (!tenant?.id || !['admin', 'superadmin'].includes(currentUserRole)) return
