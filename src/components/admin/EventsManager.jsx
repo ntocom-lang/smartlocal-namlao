@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
-import { Loader2, Plus, X, Pencil, Trash2, ChevronLeft, ChevronRight, Paperclip, CalendarDays, Tag, Users, Check, ChevronUp, Link2, Copy, CheckCheck, Image, FileText } from 'lucide-react'
+import { Loader2, Plus, X, Pencil, Trash2, ChevronLeft, ChevronRight, Paperclip, CalendarDays, Tag, Users, Check, ChevronUp, Link2, Copy, CheckCheck, Image, FileText, Sparkles } from 'lucide-react'
 import { supabase, supabaseUrl } from '../../lib/supabase'
 import { notifyTelegram } from '../../lib/notifyTelegram'
 import { logAction } from '../../lib/auditLog'
+import { extractEventFromFile } from '../../lib/geminiChat'
 
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
 const MINUTES = ['00', '15', '30', '45']
@@ -105,6 +106,8 @@ function canViewEventDetail(ev, role) {
 function EventCard({ ev, onEdit, onDelete, onView, deleting }) {
   const [confirmDel, setConfirmDel] = useState(false)
   const color = EVENTS_CATEGORY_COLOR[ev.category] ?? '#6b7280'
+  const days = ev.event_date ? daysUntil(ev.event_date) : null
+  const daysColor = days === 'วันนี้' ? '#ef4444' : days?.includes('ที่แล้ว') ? '#9ca3af' : days === 'พรุ่งนี้' ? '#f97316' : '#3b82f6'
   const d = ev.event_date ? new Date(ev.event_date + 'T00:00:00') : null
   const hasEndDate = ev.end_date && ev.end_date !== ev.event_date
   const dEnd = hasEndDate ? new Date(ev.end_date + 'T00:00:00') : null
@@ -136,6 +139,12 @@ function EventCard({ ev, onEdit, onDelete, onView, deleting }) {
                   </span>
                 ) : null
               })()}
+              {days && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold text-white"
+                  style={{ backgroundColor: daysColor }}>
+                  {days}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-1.5">
               <p className="text-sm font-bold text-gray-800 leading-tight">{ev.title}</p>
@@ -199,6 +208,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
   const [confirmDelId, setConfirmDelId] = useState(null)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
+  const [extracting, setExtracting] = useState(false)
   const MAX_ATTACHMENTS = 3
   const emptyForm = { title: '', description: '', event_date: '', event_time: '', end_time: '', end_date: '', location: '', category: 'ประชุม', customCategory: '', is_all_day: false, audience: 'public', attachment_urls: [], attachment_files: [] }
   const [form, setForm] = useState(emptyForm)
@@ -329,6 +339,35 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
     } catch (err) {
       console.error('uploadEventAttachments error:', err)
       alert('บันทึกกิจกรรมสำเร็จ แต่แนบไฟล์ไม่สำเร็จ: ' + (err?.message ?? 'เกิดข้อผิดพลาด') + '\n\nเปิดแก้ไขกิจกรรมนี้แล้วลองแนบไฟล์ใหม่อีกครั้ง')
+    }
+  }
+
+  async function handleAIExtract() {
+    const file = form.attachment_files[0]
+    if (!file || extracting) return
+    setExtracting(true)
+    setFormError('')
+    try {
+      const categories = [...EVENTS_CATEGORIES]
+      const result = await extractEventFromFile(file, categories, form.event_date || new Date().toISOString().split('T')[0])
+      setForm((p) => ({
+        ...p,
+        title: result.title || p.title,
+        description: result.description || p.description,
+        location: result.location || p.location,
+        category: EVENTS_CATEGORIES.includes(result.category) ? result.category : 'อื่นๆ',
+        customCategory: EVENTS_CATEGORIES.includes(result.category) ? '' : (result.category || p.customCategory),
+        event_date: result.event_date || p.event_date,
+        event_time: result.event_time || p.event_time,
+        end_time: result.end_time || p.end_time,
+        end_date: result.end_date || p.end_date,
+      }))
+      if (result.end_date && result.end_date !== (form.event_date || result.event_date)) setMultiDay(true)
+    } catch (err) {
+      console.error('AI extract error:', err)
+      setFormError('ให้ AI ช่วยกรอกไม่สำเร็จ: ' + (err?.message ?? 'เกิดข้อผิดพลาด'))
+    } finally {
+      setExtracting(false)
     }
   }
 
@@ -921,6 +960,17 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                             className="p-1 rounded-lg hover:bg-green-100 text-red-400 transition-colors"><X size={13} /></button>
                         </div>
                       ))}
+                    </div>
+                  )}
+                  {form.attachment_files.length > 0 && (
+                    <div className="mb-2">
+                      <button type="button" onClick={handleAIExtract} disabled={extracting}
+                        className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors disabled:opacity-60"
+                        style={{ background: 'linear-gradient(135deg, #7c3aed, #4f46e5)' }}>
+                        {extracting
+                          ? <><Loader2 size={15} className="animate-spin" /> กำลังอ่านไฟล์... (อาจใช้เวลาถึง 2 นาที)</>
+                          : <><Sparkles size={15} /> ให้ AI ช่วยกรอก</>}
+                      </button>
                     </div>
                   )}
                   {form.attachment_urls.length + form.attachment_files.length < MAX_ATTACHMENTS && (

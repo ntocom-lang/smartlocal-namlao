@@ -32,7 +32,7 @@ export default function FloatingAIChat() {
     setMessages(p => [...p, { id: Date.now(), sender: 'user', text }])
     setLoading(true)
     try {
-      const reply = await askGemini(messages, text, tenant?.name)
+      const reply = await askGemini(messages, text, tenant?.name, tenant?.id)
       setMessages(p => [...p, { id: Date.now() + 1, sender: 'bot', text: reply }])
     } catch {
       setMessages(p => [...p, { id: Date.now() + 1, sender: 'bot', text: 'ขออภัยค่ะ เกิดข้อผิดพลาด ลองใหม่อีกครั้งนะคะ 🦖' }])

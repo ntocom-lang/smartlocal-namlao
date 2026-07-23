@@ -32,7 +32,7 @@ export default function ChatbotPage() {
     setIsLoading(true);
 
     try {
-      const replyText = await askGemini(messages, userText, tenant?.name);
+      const replyText = await askGemini(messages, userText, tenant?.name, tenant?.id);
       setMessages(prev => [...prev, { id: Date.now(), sender: 'bot', text: replyText }]);
     } catch (error) {
       console.error('Error calling Gemini:', error);

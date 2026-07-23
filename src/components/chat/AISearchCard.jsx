@@ -33,7 +33,7 @@ export default function AISearchCard() {
     setLoading(true)
 
     try {
-      const reply = await askGemini([], q, tenant?.name)
+      const reply = await askGemini([], q, tenant?.name, tenant?.id)
       setAnswer(reply)
     } catch {
       setAnswer('ขออภัยค่ะ เกิดข้อผิดพลาด ลองถามใหม่อีกครั้งนะคะ 🦖')

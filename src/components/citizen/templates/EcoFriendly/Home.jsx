@@ -11,7 +11,6 @@ import WeatherWidget from '../../../../components/home/WeatherWidget'
 import StaffSection from '../../../../components/home/StaffSection'
 import ComplaintBand from '../../../../components/home/ComplaintBand'
 import ShortcutBand from '../../../../components/home/ShortcutBand'
-import AISearchCard from '../../../../components/chat/AISearchCard'
 
 const MARQUEE_TEXT = 'เรียน และรับบริการต่างๆได้อย่างสะดวก รวดเร็ว และเข้าถึงได้ทุกที่ทุกเวลา บริการประชาชนออนไลน์ ตลอด 24 ชั่วโมง เพื่อใช้เป็นช่องทางในการติดตามข่าวสาร แจ้งเรื่องร้องเรียน และรับบริการต่างๆได้อย่างสะดวก รวดเร็ว และเข้าถึงได้ทุกที่ทุกเวลา'
 
@@ -416,11 +415,6 @@ export default function HomePage() {
             <p>สมัครสมาชิกเพื่อติดตามสถานะคำร้องของท่าน และรับการแจ้งเตือนทันที</p>
           </div>
         )}
-        {/* ── AI ถาม-ตอบ น้องสมายล์ ────────────────────────────── */}
-        <div className="md:hidden mb-2">
-          <AISearchCard />
-        </div>
-
         {/* ── Main 2-col grid ─────────────────────────────────────── */}
         <div className="md:grid md:grid-cols-3 md:gap-6">
 
