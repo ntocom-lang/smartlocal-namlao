@@ -4,7 +4,7 @@ import {
   ClipboardList, Clock, Loader2, CheckCircle2, XCircle, AlertCircle,
   ChevronRight, ChevronLeft, Filter, Search, Phone, Trash2, Wrench,
   MapPin, X, FileText, AlignLeft, Camera, ChevronDown,
-  Shield, Printer, Users, RefreshCw, AlertTriangle,
+  Shield, Printer, Users, RefreshCw, AlertTriangle, Building2,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
@@ -1505,103 +1505,129 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
             {filtered.length} รายการ
           </span>
         </div>
-        <div className="px-5 pt-4 pb-3 border-b border-gray-200 md:bg-[#f5f8fc]">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-            <h2 className="font-semibold text-gray-700 flex-1 md:hidden">รายการคำร้อง</h2>
-            <div className="relative">
+        <div className="px-4 sm:px-5 pt-4 pb-4 border-b border-gray-200 md:bg-[#f5f8fc] space-y-3.5">
+          <div className="flex items-center gap-2">
+            <h2 className="font-semibold text-gray-700 md:hidden shrink-0">รายการคำร้อง</h2>
+            <div className="relative flex-1 min-w-0 md:max-w-xs">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input value={search} onChange={(e) => setSearch(e.target.value)}
                 placeholder="ค้นหาคำร้อง..."
-                className="pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent w-52 text-gray-900 bg-white"
+                className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent text-gray-900 bg-white"
                 style={{ '--tw-ring-color': 'var(--color-primary)' }} />
             </div>
-            <button onClick={handlePrintComplaints}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border border-gray-200 bg-white hover:bg-gray-50 transition-colors shrink-0">
-              <Printer size={15} className="text-gray-500" />
-              พิมพ์
+            <button onClick={handlePrintComplaints} title="พิมพ์"
+              className="shrink-0 flex items-center justify-center w-10 h-10 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 transition-colors">
+              <Printer size={16} className="text-gray-500" />
             </button>
-            <button onClick={fetchComplaints} disabled={loading}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border border-gray-200 bg-white hover:bg-gray-50 transition-colors disabled:opacity-50 shrink-0">
-              <RefreshCw size={14} className={`text-gray-500 ${loading ? 'animate-spin' : ''}`} />
-              รีเฟรช
+            <button onClick={fetchComplaints} disabled={loading} title="รีเฟรช"
+              className="shrink-0 flex items-center justify-center w-10 h-10 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 transition-colors disabled:opacity-50">
+              <RefreshCw size={15} className={`text-gray-500 ${loading ? 'animate-spin' : ''}`} />
             </button>
           </div>
 
           {/* Filter tabs */}
-          <div className="flex flex-wrap gap-1 mt-3">
-            {FILTER_TABS.map((tab, i) => (
-              <button key={i} onClick={() => setFilterTab(i)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  filterTab === i ? 'text-white' : 'text-gray-500 bg-gray-100 hover:bg-gray-200'
-                }`}
-                style={filterTab === i ? { backgroundColor: 'var(--color-primary)' } : {}}>
-                <span className="flex items-center gap-1">
-                  <Filter size={10} />
+          <div className="flex gap-1.5 overflow-x-auto scrollbar-none -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap">
+            {FILTER_TABS.map((tab, i) => {
+              const key = FILTER_KEYS[i]
+              const active = filterTab === i
+              const dotColor = key ? (STATUS[key]?.color ?? '#94a3b8') : '#64748b'
+              return (
+                <button key={i} onClick={() => setFilterTab(i)}
+                  className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors ${
+                    active ? 'text-white border-transparent' : 'text-gray-600 bg-white border-gray-200 hover:bg-gray-50'
+                  }`}
+                  style={active ? { backgroundColor: 'var(--color-primary)' } : {}}>
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: active ? 'rgba(255,255,255,0.85)' : dotColor }} />
                   {tab}
                   {i > 0 && (
-                    <span className={`ml-1 px-1.5 rounded-full text-[13px] font-bold ${
-                      filterTab === i ? 'bg-white/25' : 'bg-gray-200 text-gray-600'
+                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none ${
+                      active ? 'bg-white/25' : 'bg-gray-100 text-gray-500'
                     }`}>
-                      {complaints.filter((c) => normalizeStatus(c.status) === FILTER_KEYS[i]).length}
+                      {complaints.filter((c) => normalizeStatus(c.status) === key).length}
                     </span>
                   )}
-                </span>
-              </button>
-            ))}
+                </button>
+              )
+            })}
           </div>
 
-          {/* Extra filters */}
-          <div className="flex flex-wrap gap-2 mt-2">
-            <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}
-              className="px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-600 focus:outline-none focus:ring-2 focus:border-transparent cursor-pointer"
-              style={{ '--tw-ring-color': 'var(--color-primary)' }}>
-              <option value="">ประเภททั้งหมด ({baseFiltered.length})</option>
-              {categoryOptions.map(([cat, count]) => (
-                <option key={cat} value={cat}>{CATEGORY_LABEL[cat] ?? cat} ({count})</option>
-              ))}
-            </select>
+          {/* Advanced filters */}
+          <div>
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+              <Filter size={11} /> ตัวกรองเพิ่มเติม
+            </p>
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
+              <div className="relative">
+                <FileText size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}
+                  className="w-full appearance-none pl-7 pr-7 py-2 rounded-xl border border-gray-200 bg-white text-xs font-medium text-gray-600 focus:outline-none focus:ring-2 focus:border-transparent cursor-pointer"
+                  style={{ '--tw-ring-color': 'var(--color-primary)' }}>
+                  <option value="">ประเภททั้งหมด ({baseFiltered.length})</option>
+                  {categoryOptions.map(([cat, count]) => (
+                    <option key={cat} value={cat}>{CATEGORY_LABEL[cat] ?? cat} ({count})</option>
+                  ))}
+                </select>
+              </div>
 
-            <select value={filterVillage} onChange={(e) => setFilterVillage(e.target.value)}
-              className="px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-600 focus:outline-none focus:ring-2 focus:border-transparent cursor-pointer"
-              style={{ '--tw-ring-color': 'var(--color-primary)' }}>
-              <option value="">สถานที่ทั้งหมด ({baseFiltered.length})</option>
-              {villageOptions.map(([v, count]) => (
-                <option key={v} value={v}>{v} ({count})</option>
-              ))}
-            </select>
+              <div className="relative">
+                <MapPin size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <select value={filterVillage} onChange={(e) => setFilterVillage(e.target.value)}
+                  className="w-full appearance-none pl-7 pr-7 py-2 rounded-xl border border-gray-200 bg-white text-xs font-medium text-gray-600 focus:outline-none focus:ring-2 focus:border-transparent cursor-pointer"
+                  style={{ '--tw-ring-color': 'var(--color-primary)' }}>
+                  <option value="">สถานที่ทั้งหมด ({baseFiltered.length})</option>
+                  {villageOptions.map(([v, count]) => (
+                    <option key={v} value={v}>{v} ({count})</option>
+                  ))}
+                </select>
+              </div>
 
-            <select value={filterTechnician} onChange={(e) => setFilterTechnician(e.target.value)}
-              className="px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-600 focus:outline-none focus:ring-2 focus:border-transparent cursor-pointer"
-              style={{ '--tw-ring-color': 'var(--color-primary)' }}>
-              <option value="">ผู้รับผิดชอบทั้งหมด ({baseFiltered.length})</option>
-              <option value="__none__">ยังไม่มอบหมาย ({techOptions.unassignedCount})</option>
-              {techOptions.opts.map(t => (
-                <option key={t.id} value={t.id}>{t.name} ({t.count})</option>
-              ))}
-            </select>
+              <div className="relative">
+                <Users size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <select value={filterTechnician} onChange={(e) => setFilterTechnician(e.target.value)}
+                  className="w-full appearance-none pl-7 pr-7 py-2 rounded-xl border border-gray-200 bg-white text-xs font-medium text-gray-600 focus:outline-none focus:ring-2 focus:border-transparent cursor-pointer"
+                  style={{ '--tw-ring-color': 'var(--color-primary)' }}>
+                  <option value="">ผู้รับผิดชอบทั้งหมด ({baseFiltered.length})</option>
+                  <option value="__none__">ยังไม่มอบหมาย ({techOptions.unassignedCount})</option>
+                  {techOptions.opts.map(t => (
+                    <option key={t.id} value={t.id}>{t.name} ({t.count})</option>
+                  ))}
+                </select>
+              </div>
 
-            <select value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)}
-              className="px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-600 focus:outline-none focus:ring-2 focus:border-transparent cursor-pointer"
-              style={{ '--tw-ring-color': 'var(--color-primary)' }}>
-              <option value="">ทุกกอง</option>
-              {DEPARTMENTS.map((d) => (
-                <option key={d} value={d}>{d} ({complaints.filter(c => c.department === d).length})</option>
-              ))}
-            </select>
+              <div className="relative">
+                <Building2 size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <select value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)}
+                  className="w-full appearance-none pl-7 pr-7 py-2 rounded-xl border border-gray-200 bg-white text-xs font-medium text-gray-600 focus:outline-none focus:ring-2 focus:border-transparent cursor-pointer"
+                  style={{ '--tw-ring-color': 'var(--color-primary)' }}>
+                  <option value="">ทุกกอง ({complaints.length})</option>
+                  {DEPARTMENTS.map((d) => (
+                    <option key={d} value={d}>{d} ({complaints.filter(c => c.department === d).length})</option>
+                  ))}
+                </select>
+              </div>
 
-            <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)}
-              className="px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-600 focus:outline-none focus:ring-2 focus:border-transparent cursor-pointer"
-              style={{ '--tw-ring-color': 'var(--color-primary)' }}>
-              <option value="">ความเร่งด่วนทั้งหมด</option>
-              {Object.entries(PRIORITY).map(([k, p]) => (
-                <option key={k} value={k}>{p.short} ({complaints.filter(c => (c.priority ?? 'normal') === k).length})</option>
-              ))}
-            </select>
+              <div className="relative">
+                <AlertTriangle size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)}
+                  className="w-full appearance-none pl-7 pr-7 py-2 rounded-xl border border-gray-200 bg-white text-xs font-medium text-gray-600 focus:outline-none focus:ring-2 focus:border-transparent cursor-pointer"
+                  style={{ '--tw-ring-color': 'var(--color-primary)' }}>
+                  <option value="">ความเร่งด่วนทั้งหมด</option>
+                  {Object.entries(PRIORITY).map(([k, p]) => (
+                    <option key={k} value={k}>{p.short} ({complaints.filter(c => (c.priority ?? 'normal') === k).length})</option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
             {(filterCategory || filterVillage || filterTechnician || filterPriority || filterDepartment || filterTab !== 0 || search) && (
               <button
                 onClick={() => { setFilterCategory(''); setFilterVillage(''); setFilterTechnician(''); setFilterPriority(''); setFilterDepartment(''); setFilterTab(0); setSearch('') }}
-                className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-500 bg-red-50 hover:bg-red-100 transition-colors flex items-center gap-1">
+                className="mt-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-500 bg-red-50 hover:bg-red-100 transition-colors flex items-center gap-1 w-fit">
                 <X size={12} />
                 ล้างตัวกรองทั้งหมด
               </button>

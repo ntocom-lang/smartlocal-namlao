@@ -19,6 +19,19 @@ function locationName(tenant) {
   return tenant.name.replace(strip, '').trim()
 }
 
+// ชื่อพื้นที่ล้วนๆ ไม่มีคำนำหน้าติดมา (ต่างจาก locationName ที่ตั้งใจเหลือ "ตำบล/เมือง/นคร"
+// ติดไว้สำหรับประกอบตำแหน่งนายก) ใช้ได้เฉพาะ เทศบาลตำบล/อบต. เพราะสองแบบนี้เท่านั้นที่ปกครอง
+// พื้นที่ตรงกับชื่อตำบลเดียวกันเป๊ะ — เทศบาลเมือง/นครมักคาบเกี่ยวหลายตำบล เดาไม่ได้ ปล่อยว่างไว้ดีกว่า
+const SUBDISTRICT_STRIP = {
+  'เทศบาลตำบล': 'เทศบาลตำบล',
+  'อบต.': 'องค์การบริหารส่วนตำบล',
+}
+function bareSubdistrictName(tenant) {
+  const strip = SUBDISTRICT_STRIP[tenant?.org_type]
+  if (!strip || !tenant?.name) return ''
+  return tenant.name.replace(strip, '').trim()
+}
+
 // ใบคำร้องทางการ — ใช้กับคำร้องทุกประเภท ไม่ว่าผู้แจ้งจะเป็นประชาชนทั่วไปหรือสมาชิกสภา
 // อ้างอิงจากแบบฟอร์มกระดาษจริงที่เทศบาลตำบลน้ำเลาใช้งานอยู่
 // terminology มาจาก useTenant() — ให้คำเรียกตำแหน่งถูกต้องตาม org_type ของแต่ละหน่วยงาน
@@ -31,16 +44,16 @@ export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate,
   const councilTitle = (terminology?.council ?? 'สมาชิกสภา') + loc
 
   // ตำแหน่ง/ที่อยู่ผู้ร้อง — ดึงจากข้อมูลส่วนตัวโปรไฟล์ (หน้าจัดการผู้ใช้ของแอดมิน) ถ้ามี
-  // ไม่มีก็เว้นบรรทัดจุดไข่ปลาให้กรอกมือ — แต่ "เขตที่ ..." เฉพาะสมาชิกสภาเท่านั้น
-  // (ประชาชนทั่วไปไม่มีเขตเลือกตั้ง ใส่ให้ผิดความหมาย)
+  // ตำบล/อำเภอ/จังหวัด ถ้าโปรไฟล์ไม่มีข้อมูล ให้ใช้ของหน่วยงาน (tenant) แทนแล้วค่อยเว้นจุดไข่ปลา
+  // เป็นทางเลือกสุดท้าย — แต่ "เขตที่ ..." เฉพาะสมาชิกสภาเท่านั้น (ประชาชนทั่วไปไม่มีเขตเลือกตั้ง ใส่ให้ผิดความหมาย)
   const p = c.profiles
   const positionLine = p?.job_title
     || (c.profiles?.role === 'council' ? `${councilTitle} เขตที่ .................` : '')
   const addrParts = [
     p?.address_detail,
     p?.address_moo ? `หมู่ที่ ${p.address_moo}` : null,
-    `ตำบล${p?.address_subdistrict || '.................'}`,
-    `อำเภอ${p?.address_district || '.................'}`,
+    `ตำบล${p?.address_subdistrict || bareSubdistrictName(tenant) || '.................'}`,
+    `อำเภอ${p?.address_district || tenant?.district || '.................'}`,
     `จังหวัด${p?.address_province || tenant?.province || '.................'}`,
   ].filter(Boolean)
 
