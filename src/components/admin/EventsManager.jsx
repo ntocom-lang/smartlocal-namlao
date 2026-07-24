@@ -210,9 +210,10 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
   const [formError, setFormError] = useState('')
   const [extracting, setExtracting] = useState(false)
   const MAX_ATTACHMENTS = 3
-  const emptyForm = { title: '', description: '', event_date: '', event_time: '', end_time: '', end_date: '', location: '', category: 'ประชุม', customCategory: '', is_all_day: false, audiences: ['public'], attachment_urls: [], attachment_files: [] }
+  const emptyForm = { title: '', description: '', event_date: '', event_time: '', end_time: '', end_date: '', location: '', category: '', customCategory: '', is_all_day: false, audiences: [], attachment_urls: [], attachment_files: [] }
   const [form, setForm] = useState(emptyForm)
   const [multiDay, setMultiDay] = useState(false)
+  const [locationCustom, setLocationCustom] = useState(false)
   const [filterMonth, setFilterMonth] = useState('all')
   const [filterCategory, setFilterCategory] = useState('all')
   const [filterAudience, setFilterAudience] = useState('all')
@@ -287,12 +288,14 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
     const today = new Date().toISOString().split('T')[0]
     setForm({ ...emptyForm, event_date: today })
     setMultiDay(false)
+    setLocationCustom(false)
     setEditingEvent(null)
     setShowForm(true)
   }
 
   function openEdit(ev) {
     const hasMultiDay = !!(ev.end_date && ev.end_date !== ev.event_date)
+    setLocationCustom(!!ev.location && !LOCATION_PRESETS.includes(ev.location))
     setForm({
       title: ev.title, description: ev.description ?? '', event_date: ev.event_date,
       event_time: ev.event_time ?? '', end_date: ev.end_date ?? '', location: ev.location ?? '',
@@ -374,6 +377,9 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
   async function handleSave() {
     if (!form.title.trim()) { setFormError('กรุณากรอกชื่อกิจกรรม'); return }
     if (!form.event_date) { setFormError('กรุณาระบุวันที่กิจกรรม'); return }
+    if (!form.category) { setFormError('กรุณาเลือกประเภทกิจกรรม'); return }
+    if (form.category === 'อื่นๆ' && !form.customCategory.trim()) { setFormError('กรุณาระบุประเภทกิจกรรม'); return }
+    if (!form.audiences.length) { setFormError('กรุณาเลือกกลุ่มเป้าหมายอย่างน้อย 1 กลุ่ม'); return }
     setFormError('')
     setSaving(true)
     try {
@@ -914,23 +920,23 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                     <label className="text-xs font-semibold text-gray-500 mb-1 block">สถานที่</label>
                     <div className="grid grid-cols-2 gap-2">
                       {LOCATION_PRESETS.map((loc) => (
-                        <button key={loc} type="button" onClick={() => setForm((p) => ({ ...p, location: loc }))}
+                        <button key={loc} type="button" onClick={() => { setLocationCustom(false); setForm((p) => ({ ...p, location: loc })) }}
                           className="px-3 py-2 rounded-xl text-xs font-semibold text-left transition-colors border"
-                          style={form.location === loc
+                          style={!locationCustom && form.location === loc
                             ? { backgroundColor: 'var(--color-primary)', color: 'white', borderColor: 'var(--color-primary)' }
                             : { backgroundColor: 'white', color: '#374151', borderColor: '#e5e7eb' }}>
                           {loc}
                         </button>
                       ))}
-                      <button type="button" onClick={() => setForm((p) => ({ ...p, location: '' }))}
+                      <button type="button" onClick={() => { setLocationCustom(true); setForm((p) => ({ ...p, location: '' })) }}
                         className="px-3 py-2 rounded-xl text-xs font-semibold text-left transition-colors border"
-                        style={!LOCATION_PRESETS.includes(form.location)
+                        style={locationCustom
                           ? { backgroundColor: 'var(--color-primary)', color: 'white', borderColor: 'var(--color-primary)' }
                           : { backgroundColor: 'white', color: '#374151', borderColor: '#e5e7eb' }}>
                         อื่นๆ (ระบุ)
                       </button>
                     </div>
-                    {!LOCATION_PRESETS.includes(form.location) && (
+                    {locationCustom && (
                       <input value={form.location} onChange={(e) => setForm((p) => ({ ...p, location: e.target.value }))}
                         placeholder="ระบุสถานที่..."
                         className="mt-2 w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400"

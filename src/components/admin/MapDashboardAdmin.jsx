@@ -306,9 +306,11 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
   const [showLabels, setShowLabels] = useState(false)
   const [projViewMode, setProjViewMode] = useState('pin') // 'route' | 'pin'
 
-  // คำร้องทั้งหมดที่อยู่ในกลุ่ม Layer ที่เปิดใช้งานอยู่
+  // คำร้องทั้งหมดที่อยู่ในกลุ่ม Layer ที่เปิดใช้งานอยู่ — ต้องมีพิกัดถึงจะนับ
+  // (ไม่งั้นตัวเลขในการ์ด/ตัวกรองจะไม่ตรงกับจำนวนหมุดที่ขึ้นจริงบนแผนที่)
   const activeComplaints = useMemo(() => {
     return complaints.filter(c => {
+      if (!c.latitude || !c.longitude) return false
       if (showRepair && (c.form_type === 'infrastructure' || c.form_type === 'legacy')) return true
       if (showWater && c.form_type === 'water_support') return true
       if (showEnv && c.form_type === 'environment') return true
@@ -319,6 +321,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
   // คำร้องทั้งหมดในเลเยอร์ที่มีหมวดหมู่ (คำร้อง และ สิ่งแวดล้อม)
   const activeCategoryComplaints = useMemo(() => {
     return complaints.filter(c => {
+      if (!c.latitude || !c.longitude) return false
       if (showRepair && (c.form_type === 'infrastructure' || c.form_type === 'legacy')) return true
       if (showEnv && c.form_type === 'environment') return true
       return false
@@ -381,11 +384,16 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
     }
   }, [activeComplaints, bizRegs, filterCmpCat, showBiz])
 
+  // โครงการที่ปักหมุด/วาดเส้นทางบนแผนที่ได้จริง (มีพิกัดหรือมีเส้นทาง)
+  const civilProjectsPlottable = useMemo(() => {
+    return civilProjects.filter(p => (p.latitude && p.longitude) || p.route_points?.length >= 2)
+  }, [civilProjects])
+
   // คำนวณสถิติประเภทโครงการตามสถานะที่เลือก
   const projTypeCounts = useMemo(() => {
     const list = filterProjStatus === 'all'
-      ? civilProjects
-      : civilProjects.filter(p => p.status === filterProjStatus)
+      ? civilProjectsPlottable
+      : civilProjectsPlottable.filter(p => p.status === filterProjStatus)
 
     return {
       all: list.length,
@@ -402,13 +410,13 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
       park: list.filter(p => p.project_type === 'park').length,
       other: list.filter(p => p.project_type === 'other').length,
     }
-  }, [civilProjects, filterProjStatus])
+  }, [civilProjectsPlottable, filterProjStatus])
 
   // คำนวณสถิติสถานะโครงการตามประเภทที่เลือก
   const projStatusCounts = useMemo(() => {
     const list = filterProjType === 'all'
-      ? civilProjects
-      : civilProjects.filter(p => p.project_type === filterProjType)
+      ? civilProjectsPlottable
+      : civilProjectsPlottable.filter(p => p.project_type === filterProjType)
 
     return {
       all: list.length,
@@ -419,7 +427,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
       cancelled: list.filter(p => p.status === 'cancelled').length,
       suspended: list.filter(p => p.status === 'suspended').length,
     }
-  }, [civilProjects, filterProjType])
+  }, [civilProjectsPlottable, filterProjType])
 
   function clearFilters() {
     setShowRepair(true); setShowWater(true); setShowEnv(true)
@@ -523,14 +531,45 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
     setApproving(null)
   }
 
-  // count ต้นฉบับสำหรับ badge บน card
-  const repairCount = complaints.filter(c => c.form_type === 'infrastructure' || c.form_type === 'legacy').length
-  const waterCount  = complaints.filter(c => c.form_type === 'water_support').length
-  const envCount    = complaints.filter(c => c.form_type === 'environment').length
+  // count สำหรับ badge บน card — ต้องนับด้วยเงื่อนไขเดียวกับหมุดที่ขึ้นจริงบนแผนที่
+  // (สถานะ/ประเภทที่กรองอยู่ + ต้องมีพิกัดถึงจะปักหมุดได้จริง) แต่ไม่ผูกกับ showX
+  // (เปิด/ปิดเลเยอร์) เพราะถ้าปิดเลเยอร์แล้ว count เป็น 0 ปุ่มจะหายไปเลย กดเปิดกลับไม่ได้
+  const hasCoords = (o) => !!o.latitude && !!o.longitude
+  const repairCount = complaints.filter(c => {
+    if (c.form_type !== 'infrastructure' && c.form_type !== 'legacy') return false
+    if (!hasCoords(c)) return false
+    if (filterStatus !== 'all' && normalizeStatus(c.status) !== filterStatus) return false
+    if (filterCmpCat !== 'all' && c.category !== filterCmpCat) return false
+    return true
+  }).length
+  const waterCount = complaints.filter(c => {
+    if (c.form_type !== 'water_support') return false
+    if (!hasCoords(c)) return false
+    if (filterStatus !== 'all' && normalizeStatus(c.status) !== filterStatus) return false
+    return true
+  }).length
+  const envCount = complaints.filter(c => {
+    if (c.form_type !== 'environment') return false
+    if (!hasCoords(c)) return false
+    if (filterStatus !== 'all' && normalizeStatus(c.status) !== filterStatus) return false
+    return true
+  }).length
+  const bizCount = bizRegs.filter(b => {
+    if (!b.latitude) return false
+    if (filterStatus !== 'all' && b.status !== filterStatus) return false
+    return true
+  }).length
+  const projCount = civilProjects.filter(w => {
+    if (!hasCoords(w) && !(w.route_points?.length >= 2)) return false
+    if (filterProjStatus !== 'all' && w.status       !== filterProjStatus) return false
+    if (filterProjType   !== 'all' && w.project_type !== filterProjType)   return false
+    return true
+  }).length
 
   const filteredRepair = complaints.filter(c => {
     if (!showRepair) return false
     if (c.form_type !== 'infrastructure' && c.form_type !== 'legacy') return false
+    if (!hasCoords(c)) return false
     if (filterStatus !== 'all' && normalizeStatus(c.status) !== filterStatus) return false
     if (filterCmpCat !== 'all' && c.category !== filterCmpCat) return false
     return true
@@ -538,12 +577,14 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
   const filteredWater = complaints.filter(c => {
     if (!showWater) return false
     if (c.form_type !== 'water_support') return false
+    if (!hasCoords(c)) return false
     if (filterStatus !== 'all' && normalizeStatus(c.status) !== filterStatus) return false
     return true
   })
   const filteredEnv = complaints.filter(c => {
     if (!showEnv) return false
     if (c.form_type !== 'environment') return false
+    if (!hasCoords(c)) return false
     if (filterStatus !== 'all' && normalizeStatus(c.status) !== filterStatus) return false
     return true
   })
@@ -554,6 +595,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
   })
   const filteredProj = civilProjects.filter(w => {
     if (!showProj) return false
+    if (!hasCoords(w) && !(w.route_points?.length >= 2)) return false
     if (filterProjStatus !== 'all' && w.status       !== filterProjStatus) return false
     if (filterProjType   !== 'all' && w.project_type !== filterProjType)   return false
     return true
@@ -600,8 +642,8 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
             { key: 'repair', active: showRepair, toggle: () => setShowRepair(v => !v), color: '#ef4444', count: repairCount,         icon: '📋', label: 'คำร้อง' },
             { key: 'water',  active: showWater,  toggle: () => setShowWater(v => !v),  color: '#3b82f6', count: waterCount,           icon: '💧', label: 'ขอน้ำ' },
             { key: 'env',    active: showEnv,    toggle: () => setShowEnv(v => !v),    color: '#10b981', count: envCount,             icon: '🌿', label: 'สิ่งแวดล้อม' },
-            { key: 'biz',    active: showBiz,    toggle: () => setShowBiz(v => !v),    color: '#f59e0b', count: bizRegs.length,       icon: '🏪', label: 'ร้านค้า' },
-            { key: 'proj',   active: showProj,   toggle: () => setShowProj(v => !v),   color: '#8b5cf6', count: civilProjects.length, icon: '🔨', label: 'โครงการ' },
+            { key: 'biz',    active: showBiz,    toggle: () => setShowBiz(v => !v),    color: '#f59e0b', count: bizCount,             icon: '🏪', label: 'ร้านค้า' },
+            { key: 'proj',   active: showProj,   toggle: () => setShowProj(v => !v),   color: '#8b5cf6', count: projCount,            icon: '🔨', label: 'โครงการ' },
           ].filter(card => card.key === 'all' || card.count > 0).map(({ key, active, toggle, color, count, icon, label }) => (
             <button key={key} type="button" onClick={toggle}
               className={`w-20 shrink-0 flex flex-col items-center gap-1.5 py-2.5 rounded-2xl border-2 transition-all duration-200 select-none ${key === 'all' ? '' : 'active:scale-95'}`}
