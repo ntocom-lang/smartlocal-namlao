@@ -55,7 +55,7 @@ export default function EventsSection() {
       .limit(3)
 
     const allowed = audienceFilter(role)
-    if (allowed !== null) query = query.in('audience', allowed)
+    if (allowed !== null) query = query.overlaps('audiences', allowed)
 
     query.then(({ data }) => {
       setEvents(data ?? [])

@@ -41,7 +41,7 @@ serve(async (req) => {
     .from('events')
     .select('id, title, description, event_date, end_date, event_time, end_time, is_all_day, location, category')
     .eq('municipality_id', mun.id)
-    .eq('audience', 'public')
+    .contains('audiences', ['public'])
     .not('event_date', 'is', null)
     .order('event_date', { ascending: true })
     .limit(500)

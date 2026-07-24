@@ -100,7 +100,7 @@ function audienceFilter(role) {
 }
 function canViewEventDetail(ev, role) {
   const allowed = audienceFilter(role)
-  return allowed === null || allowed.includes(ev.audience)
+  return allowed === null || (ev.audiences ?? []).some(a => allowed.includes(a))
 }
 
 function EventCard({ ev, onEdit, onDelete, onView, deleting }) {
@@ -130,15 +130,15 @@ function EventCard({ ev, onEdit, onDelete, onView, deleting }) {
                 style={{ backgroundColor: color }}>
                 {ev.category}
               </span>
-              {ev.audience && (() => {
-                const aud = AUDIENCE_OPTIONS.find(a => a.value === ev.audience)
+              {(ev.audiences ?? []).map(v => {
+                const aud = AUDIENCE_OPTIONS.find(a => a.value === v)
                 return aud ? (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border"
+                  <span key={v} className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border"
                     style={{ color: aud.color, borderColor: aud.color, backgroundColor: aud.color + '18' }}>
-                    {ev.audience !== 'public' ? '🔒 ' : '👥 '}{aud.label}
+                    {v !== 'public' ? '🔒 ' : '👥 '}{aud.label}
                   </span>
                 ) : null
-              })()}
+              })}
               {days && (
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold text-white"
                   style={{ backgroundColor: daysColor }}>
@@ -210,7 +210,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
   const [formError, setFormError] = useState('')
   const [extracting, setExtracting] = useState(false)
   const MAX_ATTACHMENTS = 3
-  const emptyForm = { title: '', description: '', event_date: '', event_time: '', end_time: '', end_date: '', location: '', category: 'ประชุม', customCategory: '', is_all_day: false, audience: 'public', attachment_urls: [], attachment_files: [] }
+  const emptyForm = { title: '', description: '', event_date: '', event_time: '', end_time: '', end_date: '', location: '', category: 'ประชุม', customCategory: '', is_all_day: false, audiences: ['public'], attachment_urls: [], attachment_files: [] }
   const [form, setForm] = useState(emptyForm)
   const [multiDay, setMultiDay] = useState(false)
   const [filterMonth, setFilterMonth] = useState('all')
@@ -299,7 +299,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
       category: EVENTS_CATEGORIES.includes(ev.category ?? '') ? ev.category : 'อื่นๆ',
       customCategory: EVENTS_CATEGORIES.includes(ev.category ?? '') ? '' : (ev.category ?? ''),
       is_all_day: false,
-      audience: ev.audience ?? 'public',
+      audiences: ev.audiences?.length ? ev.audiences : ['public'],
       attachment_urls: ev.attachment_urls?.length > 0 ? ev.attachment_urls : (ev.attachment_url ? [ev.attachment_url] : []),
       attachment_files: [], end_time: ev.end_time ?? '',
     })
@@ -384,7 +384,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
         end_time: form.end_time || null,
         end_date: form.end_date || null, location: form.location.trim() || null,
         category: form.category === 'อื่นๆ' ? (form.customCategory.trim() || 'อื่นๆ') : form.category,
-        is_all_day: false, audience: form.audience,
+        is_all_day: false, audiences: form.audiences,
         attachment_urls: form.attachment_urls, attachment_url: form.attachment_urls[0] ?? null,
         updated_at: new Date().toISOString(),
       }
@@ -407,7 +407,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
         const timeStr = payload.event_time
           ? `⏰ ${payload.event_time.slice(0, 5)}${payload.end_time ? ` – ${payload.end_time.slice(0, 5)}` : ''} น.`
           : ''
-        const audLabel = AUDIENCE_OPTIONS.find(a => a.value === payload.audience)?.label ?? payload.audience
+        const audLabel = payload.audiences.map(v => AUDIENCE_OPTIONS.find(a => a.value === v)?.label ?? v).join(', ')
         notifyTelegram(
           tenant.telegram_group_id,
           `📅 <b>กิจกรรมใหม่</b> [${audLabel}]\n<b>${payload.title}</b>${dateStr ? `\n📆 ${dateStr}` : ''}${timeStr ? `\n${timeStr}` : ''}${payload.location ? `\n📍 ${payload.location}` : ''}${payload.description ? `\n📝 ${payload.description.slice(0, 120)}` : ''}`
@@ -434,7 +434,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
       resourceId: id,
       resourceLabel: ev?.title,
       municipalityId: tenant.id,
-      metadata: { event_date: ev?.event_date, category: ev?.category, audience: ev?.audience },
+      metadata: { event_date: ev?.event_date, category: ev?.category, audiences: ev?.audiences },
     })
     const { error } = await supabase.from('events').delete().eq('id', id)
     setDeleting(null)
@@ -446,7 +446,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
   let filteredEvents = events
   if (filterMonth !== 'all') filteredEvents = filteredEvents.filter(e => e.event_date?.startsWith(filterMonth))
   if (filterCategory !== 'all') filteredEvents = filteredEvents.filter(e => e.category === filterCategory)
-  if (filterAudience !== 'all') filteredEvents = filteredEvents.filter(e => e.audience === filterAudience)
+  if (filterAudience !== 'all') filteredEvents = filteredEvents.filter(e => e.audiences?.includes(filterAudience))
   if (searchQuery.trim()) {
     const q = searchQuery.trim().toLowerCase()
     filteredEvents = filteredEvents.filter(e => e.title.toLowerCase().includes(q) || (e.description && e.description.toLowerCase().includes(q)))
@@ -461,7 +461,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
   // counts excluding each respective filter so numbers reflect the other active filters
   const eventsForMonthCount = events
     .filter(e => filterCategory === 'all' || e.category === filterCategory)
-    .filter(e => filterAudience === 'all' || e.audience === filterAudience)
+    .filter(e => filterAudience === 'all' || e.audiences?.includes(filterAudience))
     .filter(matchSearch)
   const monthCounts = eventsForMonthCount.reduce((acc, e) => {
     const ym = e.event_date?.slice(0, 7)
@@ -472,7 +472,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
 
   const eventsForCatCount = events
     .filter(e => filterMonth === 'all' || e.event_date?.startsWith(filterMonth))
-    .filter(e => filterAudience === 'all' || e.audience === filterAudience)
+    .filter(e => filterAudience === 'all' || e.audiences?.includes(filterAudience))
     .filter(matchSearch)
   const categoryCounts = Object.fromEntries(
     EVENTS_CATEGORIES.map(cat => [cat, eventsForCatCount.filter(e => e.category === cat).length])
@@ -483,7 +483,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
     .filter(e => filterCategory === 'all' || e.category === filterCategory)
     .filter(matchSearch)
   const audienceCounts = Object.fromEntries(
-    AUDIENCE_OPTIONS.map(opt => [opt.value, eventsForAudienceCount.filter(e => e.audience === opt.value).length])
+    AUDIENCE_OPTIONS.map(opt => [opt.value, eventsForAudienceCount.filter(e => e.audiences?.includes(opt.value)).length])
   )
 
   const now = new Date()
@@ -702,7 +702,6 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
       {viewingEvent && (() => {
         const ev = viewingEvent
         const color = EVENTS_CATEGORY_COLOR[ev.category] ?? '#6b7280'
-        const aud = AUDIENCE_OPTIONS.find(a => a.value === ev.audience)
         const days = ev.event_date ? daysUntil(ev.event_date) : null
         const daysColor = days === 'วันนี้' ? '#ef4444' : days?.includes('ที่แล้ว') ? '#9ca3af' : days === 'พรุ่งนี้' ? '#f97316' : '#3b82f6'
         const d = ev.event_date ? new Date(ev.event_date + 'T00:00:00') : null
@@ -721,12 +720,15 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                     <div className="flex flex-wrap gap-1.5 mb-2">
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold text-white"
                         style={{ backgroundColor: color }}>{ev.category}</span>
-                      {aud && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border"
-                          style={{ color: aud.color, borderColor: aud.color, backgroundColor: aud.color + '18' }}>
-                          {ev.audience !== 'public' ? '🔒 ' : '👥 '}{aud.label}
-                        </span>
-                      )}
+                      {(ev.audiences ?? []).map(v => {
+                        const aud = AUDIENCE_OPTIONS.find(a => a.value === v)
+                        return aud ? (
+                          <span key={v} className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border"
+                            style={{ color: aud.color, borderColor: aud.color, backgroundColor: aud.color + '18' }}>
+                            {v !== 'public' ? '🔒 ' : '👥 '}{aud.label}
+                          </span>
+                        ) : null
+                      })}
                       {days && (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold text-white"
                           style={{ backgroundColor: daysColor }}>
@@ -887,17 +889,23 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                     )}
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-gray-500 mb-1 block">กลุ่มเป้าหมาย</label>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">กลุ่มเป้าหมาย (เลือกได้หลายกลุ่ม)</label>
                     <div className="grid grid-cols-2 gap-2">
-                      {AUDIENCE_OPTIONS.filter(opt => currentUserRole === 'council' ? opt.value !== 'management' : true).map((opt) => (
-                        <button key={opt.value} onClick={() => setForm((p) => ({ ...p, audience: opt.value }))}
-                          className="px-3 py-2 rounded-xl text-xs font-semibold text-left transition-colors border"
-                          style={form.audience === opt.value
-                            ? { backgroundColor: opt.color, color: 'white', borderColor: opt.color }
-                            : { backgroundColor: 'white', color: '#374151', borderColor: '#e5e7eb' }}>
-                          {opt.value !== 'public' && '🔒 '}{opt.label}
-                        </button>
-                      ))}
+                      {AUDIENCE_OPTIONS.filter(opt => currentUserRole === 'council' ? opt.value !== 'management' : true).map((opt) => {
+                        const selected = form.audiences.includes(opt.value)
+                        return (
+                          <button key={opt.value} type="button" onClick={() => setForm((p) => {
+                            const next = selected ? p.audiences.filter(v => v !== opt.value) : [...p.audiences, opt.value]
+                            return { ...p, audiences: next.length ? next : p.audiences }
+                          })}
+                            className="px-3 py-2 rounded-xl text-xs font-semibold text-left transition-colors border"
+                            style={selected
+                              ? { backgroundColor: opt.color, color: 'white', borderColor: opt.color }
+                              : { backgroundColor: 'white', color: '#374151', borderColor: '#e5e7eb' }}>
+                            {opt.value !== 'public' && '🔒 '}{opt.label}{selected && ' ✓'}
+                          </button>
+                        )
+                      })}
                     </div>
                   </div>
                 </div>
@@ -1099,7 +1107,6 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                         const d = ev.event_date ? new Date(ev.event_date + 'T00:00:00') : null
                         const dateStr = d ? d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : 'ยังไม่ระบุ'
                         const timeStr = ev.event_time ? ev.event_time.slice(0, 5) + (ev.end_time ? `–${ev.end_time.slice(0, 5)}` : '') + ' น.' : '—'
-                        const aud = AUDIENCE_OPTIONS.find(a => a.value === ev.audience)
                         const isOwner = ['admin', 'superadmin'].includes(currentUserRole) || ev.created_by === currentUserId
                         const canView = canViewEventDetail(ev, currentUserRole)
                         return (
@@ -1133,12 +1140,17 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                             </td>
                             <td className="px-3 py-2 text-xs text-gray-500 border-r border-gray-200">{ev.location || '—'}</td>
                             <td className="px-3 py-2 border-r border-gray-200">
-                              {aud && (
-                                <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-semibold border"
-                                  style={{ color: aud.color, borderColor: aud.color, backgroundColor: aud.color + '15' }}>
-                                  {aud.label}
-                                </span>
-                              )}
+                              <div className="flex flex-wrap gap-1">
+                                {(ev.audiences ?? []).map(v => {
+                                  const aud = AUDIENCE_OPTIONS.find(a => a.value === v)
+                                  return aud ? (
+                                    <span key={v} className="inline-flex px-2 py-0.5 rounded text-[10px] font-semibold border"
+                                      style={{ color: aud.color, borderColor: aud.color, backgroundColor: aud.color + '15' }}>
+                                      {aud.label}
+                                    </span>
+                                  ) : null
+                                })}
+                              </div>
                             </td>
                             <td className="px-3 py-2 text-xs text-gray-600 border-r border-gray-200 whitespace-nowrap">
                               {ev.creator?.full_name ?? <span className="text-gray-300">—</span>}

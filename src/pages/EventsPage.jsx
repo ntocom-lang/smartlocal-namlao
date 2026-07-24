@@ -36,7 +36,7 @@ function audienceFilter(role) {
 // ทุกคนเห็นกิจกรรมในรายการ/ปฏิทินได้หมด (เช็ควันว่างของกลุ่มอื่นได้) แต่กดดูรายละเอียดเต็มได้เฉพาะคนมีสิทธิ์
 function canViewEventDetail(ev, role) {
   const allowed = audienceFilter(role)
-  return allowed === null || allowed.includes(ev.audience)
+  return allowed === null || (ev.audiences ?? []).some(a => allowed.includes(a))
 }
 
 function CalendarView({ events, onSelectEvent, role }) {
@@ -163,7 +163,7 @@ function CalendarView({ events, onSelectEvent, role }) {
                   <span
                     key={i}
                     className="w-2 h-2 rounded-full shadow-sm"
-                    style={{ backgroundColor: AUDIENCE_COLOR[ev.audience] ?? '#6b7280' }}
+                    style={{ backgroundColor: AUDIENCE_COLOR[ev.audiences?.[0]] ?? '#6b7280' }}
                   />
                 ))}
                 {dayEvs.length > 3 && (
@@ -206,8 +206,6 @@ function CalendarView({ events, onSelectEvent, role }) {
             <div className="space-y-2">
               {selectedEvents.map(ev => {
                 const color    = CATEGORY_COLOR[ev.category] ?? '#6b7280'
-                const audColor = AUDIENCE_COLOR[ev.audience] ?? '#6b7280'
-                const audLabel = AUDIENCE_LABEL[ev.audience] ?? ev.audience
                 const canView  = canViewEventDetail(ev, role)
                 return (
                   <button
@@ -224,12 +222,17 @@ function CalendarView({ events, onSelectEvent, role }) {
                         >
                           {ev.category}
                         </span>
-                        <span
-                          className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
-                          style={{ backgroundColor: audColor + '20', color: audColor }}
-                        >
-                          {ev.audience !== 'public' && '🔒 '}{audLabel}
-                        </span>
+                        {(ev.audiences ?? []).map(v => {
+                          const audColor = AUDIENCE_COLOR[v] ?? '#6b7280'
+                          return (
+                            <span key={v}
+                              className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
+                              style={{ backgroundColor: audColor + '20', color: audColor }}
+                            >
+                              {v !== 'public' && '🔒 '}{AUDIENCE_LABEL[v] ?? v}
+                            </span>
+                          )
+                        })}
                       </div>
                       <p className="text-sm font-bold text-gray-800 dark:text-slate-200 leading-tight">
                         {ev.title}
@@ -241,7 +244,7 @@ function CalendarView({ events, onSelectEvent, role }) {
                           {ev.end_time ? ` – ${ev.end_time.slice(0, 5)}` : ''} น.
                         </p>
                       )}
-                      {ev.location && (
+                      {canView && ev.location && (
                         <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
                           <MapPin size={11} /> {ev.location}
                         </p>
@@ -332,7 +335,7 @@ export default function EventsPage() {
 
   // กรองตาม chip ที่เลือก
   const filteredEvents = selectedAudience
-    ? events.filter(ev => ev.audience === selectedAudience)
+    ? events.filter(ev => ev.audiences?.includes(selectedAudience))
     : events
 
   const upcomingEvents = useMemo(() => {
@@ -414,8 +417,6 @@ export default function EventsPage() {
           <div className="space-y-2">
             {evs.map((ev) => {
               const color       = CATEGORY_COLOR[ev.category] ?? '#6b7280'
-              const audColor    = AUDIENCE_COLOR[ev.audience] ?? '#6b7280'
-              const audLabel    = AUDIENCE_LABEL[ev.audience] ?? ev.audience
               const d           = new Date(ev.event_date + 'T00:00:00')
               const isPast      = d < today
               const diffDays    = Math.round((d - today) / (1000 * 60 * 60 * 24))
@@ -461,12 +462,17 @@ export default function EventsPage() {
                       >
                         {ev.category}
                       </span>
-                      <span
-                        className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
-                        style={{ backgroundColor: audColor + '20', color: audColor }}
-                      >
-                        {ev.audience !== 'public' && '🔒 '}{audLabel}
-                      </span>
+                      {(ev.audiences ?? []).map(v => {
+                        const audColor = AUDIENCE_COLOR[v] ?? '#6b7280'
+                        return (
+                          <span key={v}
+                            className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
+                            style={{ backgroundColor: audColor + '20', color: audColor }}
+                          >
+                            {v !== 'public' && '🔒 '}{AUDIENCE_LABEL[v] ?? v}
+                          </span>
+                        )
+                      })}
                       {isPast ? (
                         <span className="text-[11px] text-gray-400 font-medium">ผ่านไปแล้ว</span>
                       ) : (
@@ -493,12 +499,12 @@ export default function EventsPage() {
                         {` (${Math.round((dEnd - d) / 86400000) + 1} วัน)`}
                       </p>
                     )}
-                    {ev.location && (
+                    {canView && ev.location && (
                       <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
                         <MapPin size={11} /> {ev.location}
                       </p>
                     )}
-                    {ev.description && (
+                    {canView && ev.description && (
                       <p className="text-xs text-gray-400 mt-1.5 leading-relaxed line-clamp-2">{ev.description}</p>
                     )}
                   </div>

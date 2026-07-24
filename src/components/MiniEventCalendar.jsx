@@ -35,7 +35,7 @@ export default function MiniEventCalendar() {
     const from = new Date(calYear, calMonth - 1, 1).toISOString().split('T')[0]
     const to   = new Date(calYear, calMonth + 2, 0).toISOString().split('T')[0]
     supabase.from('events')
-      .select('id, title, event_date, event_time, is_all_day, location, audience, category')
+      .select('id, title, event_date, event_time, is_all_day, location, audiences, category')
       .eq('municipality_id', tenant.id)
       .gte('event_date', from)
       .lte('event_date', to)
@@ -132,7 +132,7 @@ export default function MiniEventCalendar() {
               <div className="flex flex-wrap justify-center gap-px max-w-full">
                 {dayEvs.slice(0, 3).map((ev, i) => (
                   <span key={i} className="w-1.5 h-1.5 rounded-full"
-                    style={{ backgroundColor: AUDIENCE_COLOR[ev.audience] ?? '#6b7280' }} />
+                    style={{ backgroundColor: AUDIENCE_COLOR[ev.audiences?.[0]] ?? '#6b7280' }} />
                 ))}
                 {dayEvs.length > 3 && (
                   <span className="text-[8px] text-gray-400 font-semibold">+{dayEvs.length - 3}</span>
@@ -169,7 +169,7 @@ export default function MiniEventCalendar() {
           ) : (
             <div className="space-y-2">
               {selectedEvents.map(ev => {
-                const audColor = AUDIENCE_COLOR[ev.audience] ?? '#6b7280'
+                const audColor = AUDIENCE_COLOR[ev.audiences?.[0]] ?? '#6b7280'
                 return (
                   <div key={ev.id}
                     className="bg-gray-50 rounded-xl p-3 border-l-4"

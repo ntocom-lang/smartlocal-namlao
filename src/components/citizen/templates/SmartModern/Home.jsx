@@ -133,7 +133,7 @@ function MiniCalendar({ events }) {
               <div className="flex flex-wrap justify-center gap-px">
                 {evs.slice(0, 3).map((ev, j) => (
                   <span key={j} className="w-1.5 h-1.5 rounded-full"
-                    style={{ backgroundColor: AUD_COLOR[ev.audience] ?? '#6b7280' }} />
+                    style={{ backgroundColor: AUD_COLOR[ev.audiences?.[0]] ?? '#6b7280' }} />
                 ))}
               </div>
             </button>
@@ -391,7 +391,7 @@ export default function HomePage() {
     const threeMonthsAhead = new Date()
     threeMonthsAhead.setMonth(threeMonthsAhead.getMonth() + 2)
     supabase.from('events')
-      .select('id,event_date,audience,title')
+      .select('id,event_date,audiences,title')
       .eq('municipality_id', tenant.id)
       .gte('event_date', threeMonthsAgo.toISOString().split('T')[0])
       .lte('event_date', threeMonthsAhead.toISOString().split('T')[0])

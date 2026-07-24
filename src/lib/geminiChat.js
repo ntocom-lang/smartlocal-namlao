@@ -30,7 +30,7 @@ async function buildContext(tenantId) {
 
   const { data: events } = await supabase.from('events')
     .select('title, event_date, event_time, location')
-    .eq('municipality_id', tenantId).eq('audience', 'public')
+    .eq('municipality_id', tenantId).contains('audiences', ['public'])
     .gte('event_date', today).order('event_date', { ascending: true }).limit(5)
   if (events?.length) {
     lines.push('กิจกรรมที่จะถึงเร็วๆ นี้ (เปิดให้ประชาชนทั่วไป):')

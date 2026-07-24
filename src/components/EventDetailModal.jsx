@@ -39,7 +39,6 @@ function daysUntil(dateStr) {
 export default function EventDetailModal({ ev, onClose, canEdit }) {
   const navigate = useNavigate()
   const color = CATEGORY_COLOR[ev.category] ?? '#6b7280'
-  const aud = AUDIENCE_LABEL[ev.audience] ? { label: AUDIENCE_LABEL[ev.audience], color: AUDIENCE_COLOR[ev.audience] } : null
   const days = ev.event_date ? daysUntil(ev.event_date) : null
   const daysColor = days === 'วันนี้' ? '#ef4444' : days?.includes('ที่แล้ว') ? '#9ca3af' : days === 'พรุ่งนี้' ? '#f97316' : '#3b82f6'
   const d = ev.event_date ? new Date(ev.event_date + 'T00:00:00') : null
@@ -65,12 +64,14 @@ export default function EventDetailModal({ ev, onClose, canEdit }) {
               <div className="flex flex-wrap gap-1.5 mb-2">
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold text-white"
                   style={{ backgroundColor: color }}>{ev.category}</span>
-                {aud && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border"
-                    style={{ color: aud.color, borderColor: aud.color, backgroundColor: aud.color + '18' }}>
-                    {ev.audience !== 'public' ? '🔒 ' : '👥 '}{aud.label}
-                  </span>
-                )}
+                {(ev.audiences ?? []).map(v => (
+                  AUDIENCE_LABEL[v] && (
+                    <span key={v} className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border"
+                      style={{ color: AUDIENCE_COLOR[v], borderColor: AUDIENCE_COLOR[v], backgroundColor: AUDIENCE_COLOR[v] + '18' }}>
+                      {v !== 'public' ? '🔒 ' : '👥 '}{AUDIENCE_LABEL[v]}
+                    </span>
+                  )
+                ))}
                 {days && (
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold text-white"
                     style={{ backgroundColor: daysColor }}>
