@@ -2502,65 +2502,78 @@ export default function StaffDashboard() {
             )}
           </div>
 
-          {/* Nav tabs */}
-          <nav className="relative z-10 flex items-center gap-1 px-6 pb-3 flex-wrap">
-            {[
-              { key: 'home',       label: 'หน้าหลัก',   Icon: Home },
-              { key: 'inbox',      label: 'คำขอเอกสาร', Icon: FileText },
-              { key: 'complaints', label: 'คำร้อง',      Icon: BarChart2 },
-              { key: 'events',     label: 'กิจกรรม',     Icon: CalendarDays },
-              { key: 'posts',      label: 'ข่าวสาร',     Icon: Images },
-              { key: 'report',     label: 'รายงาน',      Icon: TrendingUp },
-              { key: 'map',        label: 'แผนที่',      Icon: MapPin },
-              { key: 'tourism',    label: 'ท่องเที่ยว',  Icon: Luggage },
-            ].map(({ key, label, Icon }) => {
-              const isActive = activeModule === key
-              const badge = key === 'inbox' && pendingCount > 0 ? pendingCount
-              : key === 'complaints' && newComplaintCount > 0 ? newComplaintCount
-              : null
-              return (
-                <button key={key} onClick={() => setActiveModule(key)}
-                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-bold transition-all relative"
-                  style={isActive
-                    ? { backgroundColor: 'rgba(255,255,255,0.25)', color: '#fff' }
-                    : { color: 'rgba(255,255,255,0.7)' }}>
-                  <Icon size={14} />
-                  {label}
-                  {badge && (
-                    <span className="absolute -top-1 -right-1 min-w-4 h-4 bg-amber-400 text-amber-900 text-[9px] font-bold rounded-full flex items-center justify-center px-0.5">
-                      {badge > 9 ? '9+' : badge}
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-          </nav>
         </header>
 
-        {/* Main */}
-        <main className="px-4 md:px-6 py-5 pb-24 md:pb-6">
-          <div className="max-w-5xl mx-auto space-y-4">
-          {activeModule === 'home'       && <StaffHomeModule visibleGroups={MODULE_GROUPS} setActiveModule={setActiveModule} pendingCount={pendingCount} staffName={profile?.full_name} navigate={navigate} />}
-          {activeModule === 'inbox'      && <InboxModule tenant={tenant} staffId={profile?.id} />}
-          {activeModule === 'complaints' && (
-            ['admin', 'superadmin'].includes(profile?.role)
-              ? <ComplaintsManager tenant={tenant} currentUserRole={profile?.role} openComplaintId={mapOpenComplaintId} />
-              : <ComplaintsStaffModule tenant={tenant} staffId={profile?.id} />
-          )}
-          {activeModule === 'events'     && <EventsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} autoEditEventId={autoEditEventId} onAutoEditHandled={() => setAutoEditEventId(null)} />}
-          {activeModule === 'projects'      && <CivilProjectAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
-          {activeModule === 'infra'      && <InfraWorkAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
-          {activeModule === 'map'        && <MapDashboardAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} onNavigate={() => {}}
-            onEditComplaint={(id) => { setMapOpenComplaintId(id); setActiveModule('complaints') }}
-            onEditProject={() => setActiveModule('projects')} />}
-          {activeModule === 'report'       && <StaffReportWrapper tenant={tenant} />}
-          {activeModule === 'civil-report'      && <CivilProjectReport tenant={tenant} />}
-          {activeModule === 'posts'            && <PostsManager />}
-          {activeModule === 'tourism'          && <TourismManager tenant={tenant} />}
-          {activeModule === 'tourism-reviews'  && <TourismReviewsAdmin tenant={tenant} />}
-          {activeModule === 'fleet' && <FleetPage onBack={() => setActiveModule('home')} />}
-          </div>
-        </main>
+        {/* Desktop sidebar + main */}
+        <div className="md:flex">
+          <aside className="hidden md:flex flex-col w-60 shrink-0 shadow-lg"
+            style={{ backgroundColor: '#1a3a5c' }}>
+            <nav className="flex-1 px-3 py-4 overflow-y-auto">
+              <button onClick={() => setActiveModule('home')}
+                className="w-full flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all mb-2"
+                style={activeModule === 'home'
+                  ? { backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff' }
+                  : { color: 'rgba(255,255,255,0.6)' }}>
+                <Home size={15} strokeWidth={activeModule === 'home' ? 2.2 : 1.5} />
+                <span className="flex-1 text-left text-xs">หน้าหลัก</span>
+              </button>
+              {visibleGroups.map(({ group, items }) => (
+                <div key={group} className="mb-3">
+                  <p className="px-3 mb-0.5 text-[9px] font-bold uppercase tracking-widest"
+                    style={{ color: 'rgba(255,255,255,0.35)', letterSpacing: '0.12em' }}>{group}</p>
+                  <div className="space-y-0.5">
+                    {items.map(({ key, label, Icon }) => {
+                      const isActive = activeModule === key
+                      const badge = key === 'inbox' && pendingCount > 0 ? pendingCount
+                        : key === 'complaints' && newComplaintCount > 0 ? newComplaintCount
+                        : null
+                      return (
+                        <button key={key} onClick={() => setActiveModule(key)}
+                          className="w-full flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all"
+                          style={isActive
+                            ? { backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff' }
+                            : { color: 'rgba(255,255,255,0.6)' }}>
+                          <Icon size={16} strokeWidth={isActive ? 2.2 : 1.5} />
+                          <span className="flex-1 text-left text-xs">{label}</span>
+                          {badge && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white bg-amber-400">
+                              {badge > 99 ? '99+' : badge}
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </nav>
+          </aside>
+
+          {/* Main */}
+          <main className="flex-1 min-w-0 px-4 md:px-6 py-5 pb-24 md:pb-6">
+            <div className="max-w-5xl mx-auto space-y-4">
+            {activeModule === 'home'       && <StaffHomeModule visibleGroups={MODULE_GROUPS} setActiveModule={setActiveModule} pendingCount={pendingCount} staffName={profile?.full_name} navigate={navigate} />}
+            {activeModule === 'inbox'      && <InboxModule tenant={tenant} staffId={profile?.id} />}
+            {activeModule === 'complaints' && (
+              ['admin', 'superadmin', 'staff'].includes(profile?.role)
+                ? <ComplaintsManager tenant={tenant} currentUserRole={profile?.role} openComplaintId={mapOpenComplaintId} />
+                : <ComplaintsStaffModule tenant={tenant} staffId={profile?.id} />
+            )}
+            {activeModule === 'events'     && <EventsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} autoEditEventId={autoEditEventId} onAutoEditHandled={() => setAutoEditEventId(null)} />}
+            {activeModule === 'projects'      && <CivilProjectAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
+            {activeModule === 'infra'      && <InfraWorkAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
+            {activeModule === 'map'        && <MapDashboardAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} onNavigate={() => {}}
+              onEditComplaint={(id) => { setMapOpenComplaintId(id); setActiveModule('complaints') }}
+              onEditProject={() => setActiveModule('projects')} />}
+            {activeModule === 'report'       && <StaffReportWrapper tenant={tenant} />}
+            {activeModule === 'civil-report'      && <CivilProjectReport tenant={tenant} />}
+            {activeModule === 'posts'            && <PostsManager />}
+            {activeModule === 'tourism'          && <TourismManager tenant={tenant} />}
+            {activeModule === 'tourism-reviews'  && <TourismReviewsAdmin tenant={tenant} />}
+            {activeModule === 'fleet' && <FleetPage onBack={() => setActiveModule('home')} />}
+            </div>
+          </main>
+        </div>
 
         {/* Mobile bottom nav */}
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-20 flex items-stretch"

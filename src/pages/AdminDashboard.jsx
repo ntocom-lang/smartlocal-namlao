@@ -3919,30 +3919,6 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Nav tabs */}
-        <nav className="relative z-10 flex items-center gap-1 px-6 pb-3 flex-wrap">
-          {[
-            { key: 'dashboard',      label: 'หน้าหลัก',      Icon: Home,          show: true },
-            { key: 'report',         label: 'รายงาน',         Icon: TrendingUp,    show: true },
-            { key: 'map',            label: 'แผนที่',          Icon: MapPin,        show: currentUserRole !== 'council' },
-            { key: 'events',         label: 'กิจกรรม',        Icon: CalendarDays,  show: currentUserRole !== 'viewer' },
-            { key: 'users',          label: 'จัดการผู้ใช้',   Icon: Users,         show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-            { key: 'system-settings',label: 'ตั้งค่าระบบ',    Icon: Settings,      show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-            { key: 'superadmin',     label: 'SuperAdmin',    Icon: ShieldCheck,   show: currentUserRole === 'superadmin' },
-          ].filter(i => i.show).map(({ key, label, Icon }) => {
-            const isActive = activePage === key
-            return (
-              <button key={key} onClick={() => setActivePage(key)}
-                className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-bold transition-all"
-                style={isActive
-                  ? { backgroundColor: 'rgba(255,255,255,0.25)', color: '#fff' }
-                  : { color: 'rgba(255,255,255,0.7)' }}>
-                <Icon size={14} />
-                {label}
-              </button>
-            )
-          })}
-        </nav>
       </header>
 
       {/* Mobile header — เหมือนหน้าหลักประชาชน กันสับสนตอนสลับโหมด */}
@@ -3973,8 +3949,111 @@ export default function AdminDashboard() {
         </div>
       </header>
 
+      {/* Desktop sidebar + content */}
+      <div className="md:flex">
+        <aside className="hidden md:flex flex-col w-60 shrink-0 shadow-lg"
+          style={{ backgroundColor: '#1a3a5c' }}>
+          <nav className="flex-1 px-2 py-3 overflow-y-auto">
+            <button onClick={() => setActivePage('dashboard')}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold transition-colors mb-1"
+              style={activePage === 'dashboard'
+                ? { backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff' }
+                : { color: 'rgba(255,255,255,0.6)' }}>
+              <LayoutGrid size={16} />
+              <span className="flex-1 text-left">หน้าหลัก</span>
+            </button>
+            {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
+              <button onClick={() => navigate('/staff')}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-3 hover:bg-white/10"
+                style={{ color: 'rgba(255,255,255,0.55)' }}>
+                <Users size={16} />
+                หน้างานเจ้าหน้าที่
+              </button>
+            )}
+            {[
+              {
+                group: 'รายงานและสถิติ',
+                items: [
+                  { key: 'map',          label: 'แผนที่',           Icon: MapPin,        show: currentUserRole !== 'council' },
+                  { key: 'report',       label: 'รายงาน',           Icon: TrendingUp,    show: true },
+                  { key: 'satisfaction', label: 'ผลการประเมิน',     Icon: Star,          show: true },
+                ],
+              },
+              {
+                group: 'จัดการเนื้อหา',
+                items: [
+                  { key: 'staff',        label: 'รูปผู้บริหาร',    Icon: UserCircle2,   show: currentUserRole !== 'viewer' },
+                  { key: 'events',       label: 'กิจกรรม',          Icon: CalendarDays,  show: currentUserRole !== 'viewer' },
+                ],
+              },
+              {
+                group: 'ตั้งค่าระบบ',
+                items: [
+                  { key: 'categories',     label: 'ประเภทคำร้อง',   Icon: Tag,         show: currentUserRole !== 'viewer' },
+                  { key: 'emergency',      label: 'สายด่วน',         Icon: Phone,       show: currentUserRole !== 'viewer' },
+                  { key: 'locations',      label: 'สถานที่เกิดเหตุ', Icon: MapPin,      show: currentUserRole !== 'viewer' },
+                  { key: 'fee-settings',   label: 'ค่าธรรมเนียม',   Icon: Banknote,    show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                  { key: 'fleet-setup',    label: 'ยานพาหนะ',        Icon: Car,         show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                  { key: 'system-settings',label: 'ตั้งค่าระบบ',     Icon: Settings,    show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                  { key: 'users',          label: 'จัดการผู้ใช้',    Icon: Shield,      show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                  { key: 'superadmin',     label: 'SuperAdmin',      Icon: ShieldCheck, show: currentUserRole === 'superadmin' },
+                  { key: 'audit-log',      label: 'บันทึกกิจกรรม',  Icon: BookOpen,    show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                ],
+              },
+              {
+                group: 'ทรัพยากร',
+                items: [
+                  { key: 'manual',         label: 'คู่มือผู้ดูแล',  Icon: BookOpen, show: true, isExternal: true, href: '/manual-admin.html' },
+                  { key: 'manual-citizen', label: 'คู่มือประชาชน',  Icon: BookOpen, show: true, isExternal: true, href: '/manual-citizen.html' },
+                ],
+              },
+            ].map(({ group, items }) => {
+              const visible = items.filter(i => i.show)
+              if (visible.length === 0) return null
+              return (
+                <div key={group} className="mb-3">
+                  <p className="text-[10px] font-bold uppercase tracking-widest px-3 pt-1 pb-1.5"
+                    style={{ color: 'rgba(255,255,255,0.35)' }}>{group}</p>
+                  <div className="space-y-0.5">
+                    {visible.map(({ key, label, Icon, isExternal, href }) => {
+                      const isActive = activePage === key
+                      if (isExternal) return (
+                        <a key={key} href={href} target="_blank" rel="noopener noreferrer"
+                          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-white/10"
+                          style={{ color: 'rgba(255,255,255,0.55)' }}>
+                          <Icon size={16} />
+                          <span className="flex-1 text-left">{label}</span>
+                          <ExternalLink size={11} style={{ color: 'rgba(255,255,255,0.3)' }} />
+                        </a>
+                      )
+                      return (
+                        <button key={key} onClick={() => setActivePage(key)}
+                          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold transition-colors"
+                          style={isActive
+                            ? { backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff' }
+                            : { color: 'rgba(255,255,255,0.6)' }}>
+                          <Icon size={16} />
+                          <span className="flex-1 text-left">{label}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </nav>
+          <div className="px-2 py-3 shrink-0 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+            <button onClick={handleLogout}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-white/10"
+              style={{ color: 'rgba(255,255,255,0.55)' }}>
+              <LogOut size={16} />
+              ออกจากระบบ
+            </button>
+          </div>
+        </aside>
+
       {/* ─── Content ─── */}
-      <div className="px-4 py-4 pb-24 md:py-6 md:pb-8 md:px-6 space-y-4 md:space-y-6 max-w-5xl mx-auto">
+      <div className="flex-1 min-w-0 px-4 py-4 pb-24 md:py-6 md:pb-8 md:px-6 space-y-4 md:space-y-6 max-w-5xl mx-auto">
 
       {/* Org banner — desktop only (mobile ใช้ gradient header ด้านบนแทน) */}
       <div className="hidden md:flex items-center gap-3 bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3">
@@ -4406,6 +4485,7 @@ export default function AdminDashboard() {
           </div>
         </div>
       ) : null}
+      </div>
       </div>
     </div>
   )

@@ -39,7 +39,26 @@
       "Bash(grep -v \"//\\\\|CATEGORY\\\\|formType\\\\|form\\\\.\")",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(git --version)",
+      "Bash(pip show *)",
+      "Bash(where python *)",
+      "Bash(git commit *)",
+      "Bash(git ls-remote *)",
+      "Bash(npx eslint *)",
+      "Bash(supabase --version)",
+      "Bash(npx supabase *)",
+      "Bash(curl -s -i -X OPTIONS \"https://umxssfahtuprnztlytdd.supabase.co/functions/v1/gemini-chat\" -H \"Origin: http://localhost:5173\" -H \"Access-Control-Request-Method: POST\" -H \"Access-Control-Request-Headers: authorization,content-type,apikey,x-client-info\")",
+      "Bash(awk '/^function EventsManager\\\\\\(/{print NR\": \"$0; start=NR} start && /^}$/{print NR\": \"$0; if\\(NR>start+5\\){exit}}' src/pages/AdminDashboard.jsx)",
+      "Bash(awk 'NR==3645,NR==3660' src/pages/AdminDashboard.jsx)",
+      "Bash(pkill -f \"vite\")",
+      "Bash(cd \"d:/VS Code/E-Service/SmartLocal v1.1\" && git show 7b3ab9f^:src/pages/StaffDashboard.jsx > /tmp/staff_before.jsx && wc -l /tmp/staff_before.jsx && sed -n '2140,2240p' /tmp/staff_before.jsx)",
+      "Bash(npm install *)",
+      "Bash(npm audit *)",
+      "Bash(powershell -c \"Get-Item '.playwright-mcp/OS-69-0001-draft.pdf' | Select-Object Length\")"
+    ],
+    "additionalDirectories": [
+      "\\tmp"
     ]
   }
 }

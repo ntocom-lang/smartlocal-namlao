@@ -433,6 +433,7 @@ export default function CitizenForm() {
             latitude:        geo.lat,
             longitude:       geo.lng,
             user_id:         userId,
+            channel:         'citizen_online',
             department:      CATEGORY_DEPT[form.category] ?? 'สำนักปลัด',
           }).select('id, ref_no').single()
             .abortSignal(abortCtrl.signal),

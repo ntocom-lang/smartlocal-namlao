@@ -39,7 +39,7 @@ function canViewEventDetail(ev, role) {
   return allowed === null || (ev.audiences ?? []).some(a => allowed.includes(a))
 }
 
-function CalendarView({ events, onSelectEvent, role }) {
+function CalendarView({ events, dotEvents, onSelectEvent, role }) {
   const todayRef = new Date()
   todayRef.setHours(0, 0, 0, 0)
 
@@ -55,6 +55,18 @@ function CalendarView({ events, onSelectEvent, role }) {
     })
     return map
   }, [events])
+
+  // จุดในตารางเดือนมาจาก dotEvents (วันที่ + กลุ่มเป้าหมายเท่านั้น ไม่มีเนื้อหา) ที่ทุกคน
+  // เห็นได้หมดไม่ว่าจะมีสิทธิ์ดูรายละเอียดหรือไม่ — ต่างจาก eventMap ด้านบนที่ใช้กับ
+  // รายการรายละเอียดด้านล่าง ซึ่งยังกรองตามสิทธิ์ตามปกติ
+  const dotMap = useMemo(() => {
+    const map = {}
+    ;(dotEvents ?? []).forEach(ev => {
+      if (!map[ev.event_date]) map[ev.event_date] = []
+      map[ev.event_date].push(ev)
+    })
+    return map
+  }, [dotEvents])
 
   const firstDow  = new Date(calYear, calMonth, 1).getDay()
   const totalDays = new Date(calYear, calMonth + 1, 0).getDate()
@@ -128,7 +140,7 @@ function CalendarView({ events, onSelectEvent, role }) {
             )
           }
           const key       = dayKey(day)
-          const dayEvs    = eventMap[key] ?? []
+          const dayEvs    = dotMap[key] ?? []
           const dow       = (firstDow + day - 1) % 7
           const isToday   = calYear === todayRef.getFullYear() && calMonth === todayRef.getMonth() && day === todayRef.getDate()
           const isSelected = day === selectedDay
@@ -265,6 +277,7 @@ export default function EventsPage() {
   const { tenant } = useTenant()
   const navigate   = useNavigate()
   const [events, setEvents]   = useState([])
+  const [dotEvents, setDotEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [role, setRole]       = useState(null)
   const [selected, setSelected] = useState(null)
@@ -323,6 +336,23 @@ export default function EventsPage() {
       .finally(() => setLoading(false))
   }, [tenant?.id, role])
 
+  // จุดปฏิทิน (วันที่ + กลุ่มเป้าหมายเท่านั้น ไม่มีชื่อ/สถานที่/รายละเอียด) — ดึงผ่าน RPC
+  // ที่เปิดให้ทุกคนเรียกได้โดยไม่ต้องมีสิทธิ์ตาม audience เพื่อให้เห็นว่า "มีกิจกรรมวันไหนบ้าง"
+  // ได้ครบทุกกลุ่ม ส่วนรายละเอียดจริงยังกรองตามสิทธิ์ปกติผ่าน `events` ด้านบน
+  useEffect(() => {
+    if (!tenant?.id) return
+    const from = new Date()
+    from.setMonth(from.getMonth() - 3)
+    const to = new Date()
+    to.setMonth(to.getMonth() + 12)
+    supabase.rpc('get_event_dots', {
+      p_municipality_id: tenant.id,
+      p_from: from.toISOString().split('T')[0],
+      p_to: to.toISOString().split('T')[0],
+    }).then(({ data }) => setDotEvents(data ?? []))
+      .catch(() => {})
+  }, [tenant?.id])
+
   function goToAddEvent() {
     navigate('/staff', { state: { module: 'events' } })
   }
@@ -337,6 +367,10 @@ export default function EventsPage() {
   const filteredEvents = selectedAudience
     ? events.filter(ev => ev.audiences?.includes(selectedAudience))
     : events
+
+  const filteredDotEvents = selectedAudience
+    ? dotEvents.filter(ev => ev.audiences?.includes(selectedAudience))
+    : dotEvents
 
   const upcomingEvents = useMemo(() => {
     return filteredEvents.filter(ev => {
@@ -638,7 +672,7 @@ export default function EventsPage() {
                   <p className="text-sm">ยังไม่มีกิจกรรม</p>
                 </div>
               ) : (
-                <CalendarView events={filteredEvents} onSelectEvent={handleSelectEvent} role={role} />
+                <CalendarView events={filteredEvents} dotEvents={filteredDotEvents} onSelectEvent={handleSelectEvent} role={role} />
               )}
             </div>
 

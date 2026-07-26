@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 
 const TABS = [
-  { key: 'news',     label: 'ข่าวสำคัญ',  Icon: Newspaper },
+  { key: 'news',     label: 'ข่าวสาร',  Icon: Newspaper },
   { key: 'activity', label: 'กิจกรรม', Icon: Camera },
 ]
 

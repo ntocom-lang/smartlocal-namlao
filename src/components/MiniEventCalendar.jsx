@@ -28,10 +28,12 @@ export default function MiniEventCalendar() {
   const [calMonth, setCalMonth] = useState(today.getMonth())
   const [selectedDay, setSelectedDay] = useState(today.getDate())
   const [events, setEvents] = useState([])
+  const [dotEvents, setDotEvents] = useState([])
 
   useEffect(() => {
     if (!tenant?.id) return
-    // ดึงกิจกรรม 3 เดือนย้อนหลัง ถึง 3 เดือนข้างหน้า
+    // ดึงกิจกรรม 3 เดือนย้อนหลัง ถึง 3 เดือนข้างหน้า — เห็นเฉพาะที่ตัวเองมีสิทธิ์ (RLS)
+    // ใช้กับรายการรายละเอียดของวันที่เลือกเท่านั้น
     const from = new Date(calYear, calMonth - 1, 1).toISOString().split('T')[0]
     const to   = new Date(calYear, calMonth + 2, 0).toISOString().split('T')[0]
     supabase.from('events')
@@ -41,6 +43,12 @@ export default function MiniEventCalendar() {
       .lte('event_date', to)
       .order('event_date', { ascending: true })
       .then(({ data }) => setEvents(data ?? []))
+      .catch(() => {})
+
+    // จุดในตารางเดือน — ดึงผ่าน RPC สาธารณะ (วันที่ + กลุ่มเป้าหมายเท่านั้น ไม่มีเนื้อหา)
+    // ให้เห็นได้ทุกกลุ่มไม่ว่าจะมีสิทธิ์ดูรายละเอียดหรือไม่
+    supabase.rpc('get_event_dots', { p_municipality_id: tenant.id, p_from: from, p_to: to })
+      .then(({ data }) => setDotEvents(data ?? []))
       .catch(() => {})
   }, [tenant?.id, calYear, calMonth])
 
@@ -52,6 +60,15 @@ export default function MiniEventCalendar() {
     })
     return map
   }, [events])
+
+  const dotMap = useMemo(() => {
+    const map = {}
+    dotEvents.forEach(ev => {
+      if (!map[ev.event_date]) map[ev.event_date] = []
+      map[ev.event_date].push(ev)
+    })
+    return map
+  }, [dotEvents])
 
   const firstDow  = new Date(calYear, calMonth, 1).getDay()
   const totalDays = new Date(calYear, calMonth + 1, 0).getDate()
@@ -109,7 +126,7 @@ export default function MiniEventCalendar() {
           if (!day) return <div key={idx} className="bg-gray-50 min-h-[52px]" />
 
           const key        = dayKey(day)
-          const dayEvs     = eventMap[key] ?? []
+          const dayEvs     = dotMap[key] ?? []
           const dow        = (firstDow + day - 1) % 7
           const isToday    = calYear === today.getFullYear() && calMonth === today.getMonth() && day === today.getDate()
           const isSelected = day === selectedDay

@@ -158,7 +158,7 @@ export default function PostsHighlight({ showOnDesktop = false }) {
                 <div className="w-1 h-6 rounded-full shrink-0" style={{ backgroundColor: 'var(--color-primary)' }} />
                 <div>
                   {shortName && <p className="text-[10px] text-gray-400 leading-none">{shortName} อัปเดต</p>}
-                  <h2 className="text-base font-bold text-gray-800 leading-tight">ข่าวสำคัญ</h2>
+                  <h2 className="text-base font-bold text-gray-800 leading-tight">ข่าวสาร</h2>
                 </div>
               </div>
               {news.length > 2 && (

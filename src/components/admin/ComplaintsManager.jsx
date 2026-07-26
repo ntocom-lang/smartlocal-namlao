@@ -14,6 +14,8 @@ import { compressImage } from '../../lib/imageUtils'
 import { logAction } from '../../lib/auditLog'
 import { attachReporterProfiles } from '../../lib/attachReporterProfiles'
 import { buildCouncilComplaintHtml } from '../../lib/councilFormPrint'
+import { generateDraftPdfBlob } from '../../lib/generateDraftPdf'
+import OssIntakeForm from './OssIntakeForm'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const STATUS = {
@@ -517,11 +519,14 @@ function ReporterCard({ c }) {
   )
 }
 
-function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, onPriority, currentUserRole, currentUserId, onDelete, onPinSave }) {
+function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, onPriority, currentUserRole, currentUserId, onDelete, onPinSave, onDocumentUpdate }) {
   const { tenant, terminology } = useTenant()
   const isAdminRole = ['admin', 'superadmin'].includes(currentUserRole)
   const isTechAssigned = currentUserRole === 'technician' && c.assigned_to === currentUserId
   const canAct = isAdminRole || isTechAssigned
+  // staff เห็นหน้าคำร้องเต็มรูปแบบและจัดการเอกสาร GDCC ได้ แต่เปลี่ยนสถานะ/มอบหมายงานไม่ได้
+  // (ทุกจุดที่เปลี่ยนสถานะยังผูกกับ canAct/isAdminRole เหมือนเดิม ไม่ได้แก้)
+  const canManageDocs = isAdminRole || currentUserRole === 'staff'
   const [assigning, setAssigning] = useState(false)
   const [showCloseJob, setShowCloseJob] = useState(false)
   const [pendingPhotos, setPendingPhotos] = useState([])
@@ -536,6 +541,10 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
   const [pendingPriority, setPendingPriority] = useState(null)
   const [extraWorkPhotos, setExtraWorkPhotos] = useState([])
   const [wpUploading, setWpUploading] = useState(false)
+  const [docBusy, setDocBusy] = useState(false)
+  const [docError, setDocError] = useState(null)
+  const [finalDocFile, setFinalDocFile] = useState(null)
+  const [receiptNo, setReceiptNo] = useState('')
 
   async function handleAddWorkPhotos(files) {
     if (!files.length || wpUploading) return
@@ -629,6 +638,81 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
     setTimeout(() => w.print(), 500)
   }
 
+  async function handleExportDraftPdf() {
+    setDocBusy(true)
+    setDocError(null)
+    try {
+      const d = new Date(c.created_at)
+      const thDate = d.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
+      const num = c.ref_no ?? '—'
+      const phone = c.phone || c.profiles?.phone || '—'
+      const cat = CATEGORY_LABEL[c.category] ?? c.category ?? '—'
+      const { data: staffList } = await supabase
+        .from('staff')
+        .select('name, title, role')
+        .eq('municipality_id', tenant?.id)
+        .eq('is_active', true)
+      const html = buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate, cat, phone, staffList })
+
+      const blob = await generateDraftPdfBlob(html)
+      const path = `${tenant.id}/${c.id}/draft_${Date.now()}.pdf`
+      const { error: upErr } = await supabase.storage.from('official-documents')
+        .upload(path, blob, { contentType: 'application/pdf' })
+      if (upErr) throw upErr
+
+      const { error: dbErr } = await supabase.from('complaints').update({ draft_pdf_path: path }).eq('id', c.id)
+      if (dbErr) throw dbErr
+
+      onDocumentUpdate?.(c.id, { draft_pdf_path: path })
+
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `${num}_draft.pdf`
+      a.click()
+      URL.revokeObjectURL(a.href)
+    } catch (err) {
+      setDocError(err?.message ?? 'สร้าง PDF ไม่สำเร็จ')
+    } finally {
+      setDocBusy(false)
+    }
+  }
+
+  async function handleUploadFinalDoc() {
+    if (!finalDocFile) { setDocError('กรุณาแนบไฟล์ PDF ฉบับสมบูรณ์'); return }
+    if (!receiptNo.trim()) { setDocError('กรุณากรอกเลขรับหนังสือ'); return }
+    setDocBusy(true)
+    setDocError(null)
+    try {
+      const path = `${tenant.id}/${c.id}/final_${Date.now()}.pdf`
+      const { error: upErr } = await supabase.storage.from('official-documents')
+        .upload(path, finalDocFile, { contentType: 'application/pdf' })
+      if (upErr) throw upErr
+
+      const patch = {
+        final_document_path: path,
+        official_receipt_no: receiptNo.trim(),
+        document_uploaded_at: new Date().toISOString(),
+        document_uploaded_by: currentUserId ?? null,
+      }
+      const { error: dbErr } = await supabase.from('complaints').update(patch).eq('id', c.id)
+      if (dbErr) throw dbErr
+
+      onDocumentUpdate?.(c.id, patch)
+      setFinalDocFile(null)
+    } catch (err) {
+      setDocError(err?.message ?? 'บันทึกเอกสารไม่สำเร็จ')
+    } finally {
+      setDocBusy(false)
+    }
+  }
+
+  async function handleDownloadFinalDoc() {
+    const { data, error } = await supabase.storage.from('official-documents')
+      .createSignedUrl(c.final_document_path, 1800)
+    if (error || !data?.signedUrl) { alert('เปิดไฟล์ไม่สำเร็จ: ' + (error?.message ?? '')); return }
+    window.open(data.signedUrl, '_blank')
+  }
+
   async function handleCloseJob() {
     setCloseUploading(true)
     const urls = []
@@ -702,6 +786,61 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">ความคืบหน้า</p>
             <StatusStepper status={c.status} note={c.technician_note} />
           </div>
+
+          {canManageDocs && ['new', 'received'].includes(normalizeActionStatus(c.status)) && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">เอกสารทางการ (GDCC e-Office)</p>
+              <div className="bg-indigo-50 rounded-2xl p-4 border border-indigo-100 space-y-3">
+                {docError && <p className="text-xs text-red-600 font-medium">{docError}</p>}
+
+                {!c.draft_pdf_path && (
+                  <div>
+                    <p className="text-xs text-gray-500 mb-2">Export PDF ฉบับร่างเพื่อนำไปยื่นลงนามที่ GDCC e-Office</p>
+                    <button type="button" onClick={handleExportDraftPdf} disabled={docBusy}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-white transition-colors disabled:opacity-50"
+                      style={{ backgroundColor: '#6366f1' }}>
+                      {docBusy ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
+                      Export คำร้องเป็น Draft PDF
+                    </button>
+                  </div>
+                )}
+
+                {c.draft_pdf_path && !c.final_document_path && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-gray-500">Draft PDF ถูกดาวน์โหลดไปแล้ว — หลังได้ PDF ที่ลงนามแล้วจาก GDCC ให้แนบกลับที่นี่</p>
+                    <input value={receiptNo} onChange={(e) => setReceiptNo(e.target.value)}
+                      placeholder="เลขรับหนังสือ (เลขรับ นล.)"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-xs text-gray-900 bg-white focus:outline-none focus:border-indigo-400" />
+                    <input type="file" accept="application/pdf"
+                      onChange={(e) => setFinalDocFile(e.target.files?.[0] ?? null)}
+                      className="w-full text-xs text-gray-500" />
+                    <button type="button" onClick={handleUploadFinalDoc} disabled={docBusy}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-white transition-colors disabled:opacity-50"
+                      style={{ backgroundColor: '#6366f1' }}>
+                      {docBusy ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
+                      บันทึกเอกสารฉบับสมบูรณ์
+                    </button>
+                  </div>
+                )}
+
+                {c.final_document_path && (
+                  <div className="space-y-1">
+                    <p className="text-xs text-gray-500">เลขรับหนังสือ: <span className="font-semibold text-gray-700">{c.official_receipt_no}</span></p>
+                    {c.document_uploaded_at && (
+                      <p className="text-[11px] text-gray-400">
+                        แนบเมื่อ {new Date(c.document_uploaded_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </p>
+                    )}
+                    <button type="button" onClick={handleDownloadFinalDoc}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-indigo-600 bg-white border border-indigo-200 hover:bg-indigo-50 transition-colors">
+                      <FileText size={13} />
+                      ดาวน์โหลดเอกสารฉบับสมบูรณ์
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {technicians?.length > 0 && c.status !== 'closed' && c.status !== 'completed' && c.status !== 'rejected' && (
             <div className="space-y-2">
@@ -1153,6 +1292,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   const [filterPriority, setFilterPriority]       = useState('')
   const [filterDepartment, setFilterDepartment]   = useState('')
   const [selectedComplaint, setSelectedComplaint] = useState(null)
+  const [showOssIntake, setShowOssIntake]         = useState(false)
   const [technicians, setTechnicians]             = useState([])
   const [selectedIds, setSelectedIds]             = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting]           = useState(false)
@@ -1190,6 +1330,11 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   function handlePinSave(complaintId, lat, lng) {
     setComplaints(prev => prev.map(comp => comp.id === complaintId ? { ...comp, latitude: lat, longitude: lng } : comp))
     setSelectedComplaint(prev => prev?.id === complaintId ? { ...prev, latitude: lat, longitude: lng } : prev)
+  }
+
+  function handleDocumentPatch(complaintId, patch) {
+    setComplaints(prev => prev.map(comp => comp.id === complaintId ? { ...comp, ...patch } : comp))
+    setSelectedComplaint(prev => prev?.id === complaintId ? { ...prev, ...patch } : prev)
   }
 
   // ดึงหมวดหมู่คำร้องที่ Admin สร้างเอง merge เข้า CATEGORY_LABEL/EMOJI
@@ -1264,6 +1409,12 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   }, [complaints, openComplaintId])
 
   async function assignTechnician(complaintId, technicianId) {
+    if (technicianId) {
+      const target = complaints.find((c) => c.id === complaintId)
+      if (target && !target.final_document_path) {
+        if (!window.confirm('ยังไม่ได้แนบ PDF ฉบับสมบูรณ์จาก GDCC e-Office\n\nต้องการจ่ายงานต่อเลยหรือไม่?')) return
+      }
+    }
     const newStatus = technicianId ? 'in_progress' : 'new'
     const { error } = await supabase
       .from('complaints')
@@ -1523,6 +1674,14 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
               className="shrink-0 flex items-center justify-center w-10 h-10 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 transition-colors disabled:opacity-50">
               <RefreshCw size={15} className={`text-gray-500 ${loading ? 'animate-spin' : ''}`} />
             </button>
+            {['admin', 'superadmin', 'staff'].includes(currentUserRole) && (
+              <button onClick={() => setShowOssIntake(true)}
+                className="shrink-0 flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors"
+                style={{ backgroundColor: 'var(--color-primary)' }}>
+                <ClipboardList size={15} />
+                รับแจ้งที่เคาน์เตอร์
+              </button>
+            )}
           </div>
 
           {/* Filter tabs */}
@@ -1912,6 +2071,15 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
           currentUserId={currentUserId}
           onDelete={handleDeleteComplaint}
           onPinSave={handlePinSave}
+          onDocumentUpdate={handleDocumentPatch}
+        />
+      )}
+
+      {showOssIntake && (
+        <OssIntakeForm
+          tenant={tenant}
+          categoryLabels={CATEGORY_LABEL}
+          onClose={() => { setShowOssIntake(false); fetchComplaints() }}
         />
       )}
     </div>

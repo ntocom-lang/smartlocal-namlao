@@ -152,7 +152,7 @@ function MiniCalendar({ events }) {
   )
 }
 
-function NewsSlider({ posts, label = 'ข่าวสำคัญ', href = '/news' }) {
+function NewsSlider({ posts, label = 'ข่าวสาร', href = '/news' }) {
   const [idx, setIdx] = useState(0)
   const [paused, setPaused] = useState(false)
 
@@ -376,12 +376,11 @@ export default function HomePage() {
     threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 1)
     const threeMonthsAhead = new Date()
     threeMonthsAhead.setMonth(threeMonthsAhead.getMonth() + 2)
-    supabase.from('events')
-      .select('id,event_date,audiences,title')
-      .eq('municipality_id', tenant.id)
-      .gte('event_date', threeMonthsAgo.toISOString().split('T')[0])
-      .lte('event_date', threeMonthsAhead.toISOString().split('T')[0])
-      .then(({ data }) => setCalEvents(data ?? []))
+    supabase.rpc('get_event_dots', {
+      p_municipality_id: tenant.id,
+      p_from: threeMonthsAgo.toISOString().split('T')[0],
+      p_to: threeMonthsAhead.toISOString().split('T')[0],
+    }).then(({ data }) => setCalEvents(data ?? []))
   }, [tenant?.id])
 
   const [sidebarNews, setSidebarNews] = useState([])
@@ -522,7 +521,7 @@ export default function HomePage() {
             .map(key => RIGHT_SECTION[key] ?? null)}
         </div>
 
-        {/* Full-width sections — ข่าวสำคัญและกิจกรรม */}
+        {/* Full-width sections — ข่าวสารและกิจกรรม */}
         <div className="mt-6">
           <PostsHighlight />
         </div>

@@ -7,7 +7,7 @@ import SatisfactionModal from '../components/SatisfactionModal'
 import {
   ClipboardList, Loader2, ChevronRight, X, MapPin,
   Phone, ArrowLeft, Check, XCircle, Navigation, Camera, AlignLeft,
-  ChevronLeft, Clock, Search, ImagePlus, Upload,
+  ChevronLeft, Clock, Search, ImagePlus, Upload, FileText,
 } from 'lucide-react'
 
 const MAX_CITIZEN_PHOTOS = 3
@@ -171,6 +171,7 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange, catLabel = DE
   const [newPhotos, setNewPhotos] = useState([]) // { file, preview }
   const [uploading, setUploading] = useState(false)
   const [freshAttachments, setFreshAttachments] = useState(null) // null = not fetched yet
+  const [finalDocUrl, setFinalDocUrl] = useState(null)
   const photosRef = useRef([])
   useEffect(() => { photosRef.current = newPhotos }, [newPhotos])
   useEffect(() => () => photosRef.current.forEach(p => URL.revokeObjectURL(p.preview)), [])
@@ -182,6 +183,15 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange, catLabel = DE
     supabase.from('complaints').select('attachments').eq('id', c.id).single()
       .then(({ data }) => { if (data) setFreshAttachments(data.attachments ?? []) })
   }, [c?.id])
+
+  // เอกสารฉบับสมบูรณ์ (ลงนามจาก GDCC e-Office แล้ว) — แสดงเฉพาะฉบับนี้เท่านั้น
+  // draft_pdf_path เป็นไฟล์ภายในสำหรับแอดมินไปยื่นเซ็นเท่านั้น ไม่โชว์ให้ประชาชนเห็น
+  useEffect(() => {
+    setFinalDocUrl(null)
+    if (!c?.final_document_path) return
+    supabase.storage.from('official-documents').createSignedUrl(c.final_document_path, 1800)
+      .then(({ data }) => setFinalDocUrl(data?.signedUrl ?? null))
+  }, [c?.final_document_path])
 
   function handlePhotoPick(e) {
     const existing = (c?.attachments ?? []).length
@@ -303,6 +313,23 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange, catLabel = DE
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">ความคืบหน้า</p>
             <StatusStepper status={c.status} />
           </div>
+
+          {/* เอกสารฉบับสมบูรณ์ (ลงนามจาก GDCC e-Office แล้ว) */}
+          {c.final_document_path && (
+            <div className="bg-indigo-50 rounded-2xl p-4 border border-indigo-100 space-y-1.5">
+              <p className="text-xs font-semibold text-indigo-700">เอกสารฉบับสมบูรณ์</p>
+              {c.official_receipt_no && (
+                <p className="text-xs text-gray-500">เลขรับหนังสือ: <span className="font-semibold text-gray-700">{c.official_receipt_no}</span></p>
+              )}
+              <a href={finalDocUrl ?? '#'} target="_blank" rel="noopener noreferrer"
+                onClick={(e) => { if (!finalDocUrl) e.preventDefault() }}
+                className="inline-flex items-center gap-1.5 mt-1 px-3 py-2 rounded-xl text-xs font-semibold text-white transition-colors"
+                style={{ backgroundColor: '#6366f1', opacity: finalDocUrl ? 1 : 0.5 }}>
+                <FileText size={13} />
+                {finalDocUrl ? 'ดูเอกสารฉบับสมบูรณ์' : 'กำลังโหลด...'}
+              </a>
+            </div>
+          )}
 
           {/* location + phone */}
           {(c.location_name || c.village || c.phone || c.latitude) && (
