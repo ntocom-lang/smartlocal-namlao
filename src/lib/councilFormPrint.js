@@ -35,7 +35,12 @@ function bareSubdistrictName(tenant) {
 // ใบคำร้องทางการ — ใช้กับคำร้องทุกประเภท ไม่ว่าผู้แจ้งจะเป็นประชาชนทั่วไปหรือสมาชิกสภา
 // อ้างอิงจากแบบฟอร์มกระดาษจริงที่เทศบาลตำบลน้ำเลาใช้งานอยู่
 // terminology มาจาก useTenant() — ให้คำเรียกตำแหน่งถูกต้องตาม org_type ของแต่ละหน่วยงาน
-export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate, cat, phone, staffList }) {
+//
+// includeStaffSignatures: false สำหรับ Draft PDF ที่จะเอาไปยื่นลงนามจริงที่ GDCC e-Office —
+// ต้องไม่มีบล็อกลงชื่อ (กองช่าง/ปลัด/นายก) ในไฟล์ draft เลย เพราะผู้มีอำนาจจะลงนามที่ GDCC
+// โดยตรง ถ้าใส่บล็อกลงชื่อเปล่าไปด้วยจะสับสนว่าต้องเซ็นในไฟล์นี้หรือเซ็นที่ GDCC — ปุ่ม
+// "พิมพ์" ยังคงบล็อกลงชื่อไว้ตามเดิม (ใช้เป็นแบบฟอร์มกระดาษเวียนเซ็นในสำนักงานได้)
+export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate, cat, phone, staffList, includeStaffSignatures = true }) {
   const loc = locationName(tenant)
   const reporter = c.reporter_name || c.profiles?.full_name || '.................................................'
 
@@ -114,6 +119,7 @@ export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate,
   <p class="center" style="margin-top:26px;">${esc(reporter)}</p>
   <p class="center" style="margin-top:2px;">(${esc(reporter)})</p>
 
+  ${includeStaffSignatures ? `
   <div style="display:flex;justify-content:space-between;margin-top:24px;">
     ${signBlock(deptHead, 'ผู้อำนวยการกองช่าง')}
     ${signBlock(clerk, clerkTitle)}
@@ -121,7 +127,7 @@ export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate,
 
   <div style="display:flex;justify-content:flex-end;margin-top:28px;">
     ${signBlock(mayor, mayorTitle, '45%')}
-  </div>
+  </div>` : ''}
 </div>
 
 </body></html>`

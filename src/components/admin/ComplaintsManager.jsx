@@ -652,7 +652,7 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
         .select('name, title, role')
         .eq('municipality_id', tenant?.id)
         .eq('is_active', true)
-      const html = buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate, cat, phone, staffList })
+      const html = buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate, cat, phone, staffList, includeStaffSignatures: false })
 
       const blob = await generateDraftPdfBlob(html)
       const path = `${tenant.id}/${c.id}/draft_${Date.now()}.pdf`
