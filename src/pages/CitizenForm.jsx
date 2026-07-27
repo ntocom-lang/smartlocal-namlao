@@ -13,6 +13,7 @@ import { notifyTelegram } from '../lib/notifyTelegram'
 import { useTenant } from '../contexts/TenantContext'
 import { compressImage } from '../lib/imageUtils'
 import MapPicker from '../components/MapPicker'
+import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
 
 const MAX_PHOTOS = 3
 
@@ -277,7 +278,7 @@ export default function CitizenForm() {
   const ftConfig = FORM_TYPE_CONFIG[formType] ?? null
 
   const defaultCategory = ftConfig?.categories?.[0]?.value ?? preCategory
-  const [form, setForm] = useState({ category: defaultCategory, village: '', detail: '', phone: '', reporter_name: '' })
+  const [form, setForm] = useState({ category: defaultCategory, village: '', detail: '', phone: '', name_title: '', name_first: '', name_last: '' })
   const [geo, setGeo] = useState({ lat: null, lng: null, address: null })
   const [geoStatus, setGeoStatus] = useState(GEO_STATUS.idle)
   const [showMap, setShowMap] = useState(false)
@@ -322,16 +323,18 @@ export default function CitizenForm() {
       const metaPhone = meta.phone || ''
       supabase.from('profiles').select('full_name, phone').eq('id', session.user.id).single()
         .then(({ data }) => {
+          const { title, first, last } = splitThaiFullName(data?.full_name || metaName)
           setForm((prev) => ({
             ...prev,
-            ...(data?.full_name || metaName ? { reporter_name: data?.full_name || metaName } : {}),
+            ...(data?.full_name || metaName ? { name_title: title, name_first: first, name_last: last } : {}),
             ...(data?.phone || metaPhone ? { phone: data?.phone || metaPhone } : {}),
           }))
         })
         .catch(() => {
+          const { title, first, last } = splitThaiFullName(metaName)
           setForm((prev) => ({
             ...prev,
-            ...(metaName ? { reporter_name: metaName } : {}),
+            ...(metaName ? { name_title: title, name_first: first, name_last: last } : {}),
             ...(metaPhone ? { phone: metaPhone } : {}),
           }))
         })
@@ -384,6 +387,7 @@ export default function CitizenForm() {
 
 
   const set = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }))
+  const reporterFullName = joinThaiFullName(form.name_title, form.name_first, form.name_last)
 
   function handleMapConfirm({ lat, lng, address }) {
     setGeo({ lat, lng, address })
@@ -394,7 +398,7 @@ export default function CitizenForm() {
   async function handleSubmit(e) {
     e?.preventDefault()
     if (!form.category) { setError('กรุณาเลือกประเภทคำร้อง'); return }
-    if (!form.reporter_name.trim()) { setError('กรุณากรอกชื่อ-นามสกุล'); return }
+    if (!form.name_first.trim() || !form.name_last.trim()) { setError('กรุณากรอกชื่อ-นามสกุล'); return }
 
     if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
     if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
@@ -429,7 +433,7 @@ export default function CitizenForm() {
             village:         form.village || null,
             detail:          form.detail.trim(),
             phone:           form.phone.trim(),
-            reporter_name:   form.reporter_name.trim(),
+            reporter_name:   reporterFullName,
             latitude:        geo.lat,
             longitude:       geo.lng,
             user_id:         userId,
@@ -457,7 +461,7 @@ export default function CitizenForm() {
         body: { municipality_id: tenant.id, title: `คำร้องใหม่: ${catLabel}`, body: form.detail.trim().slice(0, 100), url: '/admin' },
       }).catch(() => {})
       notifyTelegram(tenant.telegram_group_id,
-        `📋 <b>คำร้องใหม่</b>\nประเภท: ${catLabel}\nผู้แจ้ง: ${form.reporter_name.trim()}\nเบอร์: ${form.phone.trim()}\nรายละเอียด: ${form.detail.trim().slice(0, 120)}`
+        `📋 <b>คำร้องใหม่</b>\nประเภท: ${catLabel}\nผู้แจ้ง: ${reporterFullName}\nเบอร์: ${form.phone.trim()}\nรายละเอียด: ${form.detail.trim().slice(0, 120)}`
       )
     } catch (err) {
       const isNetworkErr = err?.message?.toLowerCase().includes('fetch') || err?.message?.toLowerCase().includes('network')
@@ -593,15 +597,28 @@ export default function CitizenForm() {
         )}
 
         {/* Reporter name */}
-        <div className="relative">
-          <input type="text" value={form.reporter_name}
-            onChange={isLoggedIn ? undefined : set('reporter_name')}
-            readOnly={isLoggedIn}
-            placeholder="ชื่อ-นามสกุล *"
-            className={`w-full px-4 py-2.5 pl-10 rounded-xl border text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-blue-400 ${isLoggedIn ? 'bg-gray-50 border-gray-200 text-gray-500' : 'bg-white border-gray-300'}`} />
-          <User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-          {isLoggedIn && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-emerald-500 font-semibold">จากโปรไฟล์</span>}
-        </div>
+        {isLoggedIn ? (
+          <div className="relative">
+            <input type="text" value={reporterFullName} readOnly
+              className="w-full px-4 py-2.5 pl-10 rounded-xl border text-base placeholder-gray-400 focus:outline-none bg-gray-50 border-gray-200 text-gray-500" />
+            <User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-emerald-500 font-semibold">จากโปรไฟล์</span>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <select value={form.name_title} onChange={set('name_title')}
+              className="w-24 shrink-0 px-3 py-2.5 rounded-xl border border-gray-300 bg-white text-gray-900 text-base focus:outline-none focus:border-blue-400">
+              <option value="">คำนำหน้า</option>
+              {NAME_TITLES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <input type="text" value={form.name_first} onChange={set('name_first')}
+              placeholder="ชื่อ *"
+              className="flex-1 min-w-0 px-4 py-2.5 rounded-xl border border-gray-300 bg-white text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-blue-400" />
+            <input type="text" value={form.name_last} onChange={set('name_last')}
+              placeholder="นามสกุล *"
+              className="flex-1 min-w-0 px-4 py-2.5 rounded-xl border border-gray-300 bg-white text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-blue-400" />
+          </div>
+        )}
 
         {/* Detail */}
         <textarea value={form.detail} onChange={set('detail')} rows={4} required
@@ -691,7 +708,7 @@ export default function CitizenForm() {
         <button type="button" onClick={() => {
           setError(null)
           if (!form.category) { setError('กรุณาเลือกประเภทคำร้อง'); return }
-          if (!form.reporter_name.trim()) { setError('กรุณากรอกชื่อ-นามสกุล'); return }
+          if (!form.name_first.trim() || !form.name_last.trim()) { setError('กรุณากรอกชื่อ-นามสกุล'); return }
 
           if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
           if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }

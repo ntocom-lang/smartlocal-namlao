@@ -4,7 +4,30 @@ import { ArrowLeft, FileText, CheckCircle2, Loader2, Copy, Check, ChevronRight, 
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
+import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
 
+// ที่อยู่ผู้ยื่นคำขอ = ที่อยู่ในเขตของหน่วยงานเสมอ (ระบบนี้แยกตามหน่วยงาน ใครหน่วยงานนั้น)
+// เลยไม่ต้องให้ประชาชนพิมพ์ตำบล/อำเภอ/จังหวัดเอง ให้กรอกแค่บ้านเลขที่ แล้วต่อท้ายด้วย
+// ตำบล/อำเภอ/จังหวัดของหน่วยงานที่ fix ไว้ — logic แกะชื่อตำบลจาก tenant.name เหมือนกับ
+// bareSubdistrictName ใน src/lib/councilFormPrint.js (ใช้ได้เฉพาะ เทศบาลตำบล/อบต. เพราะ
+// สองแบบนี้เท่านั้นที่ปกครองพื้นที่ตรงกับชื่อตำบลเดียวกันเป๊ะ)
+const SUBDISTRICT_STRIP = {
+  'เทศบาลตำบล': 'เทศบาลตำบล',
+  'อบต.': 'องค์การบริหารส่วนตำบล',
+}
+function bareSubdistrictName(tenant) {
+  const strip = SUBDISTRICT_STRIP[tenant?.org_type]
+  if (!strip || !tenant?.name) return ''
+  return tenant.name.replace(strip, '').trim()
+}
+function tenantAddressSuffix(tenant) {
+  const subdistrict = bareSubdistrictName(tenant)
+  return [
+    subdistrict  ? `ตำบล${subdistrict}`     : null,
+    tenant?.district ? `อำเภอ${tenant.district}` : null,
+    tenant?.province ? `จังหวัด${tenant.province}` : null,
+  ].filter(Boolean).join(' ')
+}
 
 const BASE_DOC_TYPES = [
   {
@@ -18,21 +41,12 @@ const BASE_DOC_TYPES = [
   },
   {
     value:   'waste_collection',
-    label:   'ชำระค่าธรรมเนียมเก็บขนขยะ',
+    label:   'ค่าธรรมเนียมเก็บขนขยะ',
     emoji:   '🗑️',
-    desc:    'ชำระค่าธรรมเนียมเก็บและขนขยะมูลฝอยผ่านระบบออนไลน์',
+    desc:    'สอบถามค่าธรรมเนียมเก็บและขนขยะมูลฝอยผ่านระบบออนไลน์',
     color:   '#0891b2',
     bg:      '#ecfeff',
     border:  '#a5f3fc',
-  },
-  {
-    value:   'other',
-    label:   'คำขออื่นๆ',
-    emoji:   '📝',
-    desc:    'เอกสารอื่นๆ ระบุรายละเอียดในแบบฟอร์ม',
-    color:   '#64748b',
-    bg:      '#f8fafc',
-    border:  '#e2e8f0',
   },
 ]
 
@@ -60,7 +74,7 @@ export default function CitizenDocRequest() {
     const t = searchParams.get('type')
     return t ? (BASE_DOC_TYPES.find(d => d.value === t) ?? null) : null
   })
-  const [form, setForm]           = useState({ requester_name: '', requester_id_card: '', requester_phone: '', requester_address: '', purpose: '' })
+  const [form, setForm]           = useState({ name_title: '', name_first: '', name_last: '', requester_id_card: '', requester_phone: '', requester_address: '', purpose: '' })
   const [saving, setSaving]       = useState(false)
   const [done, setDone]           = useState(null)
   const [copied, setCopied]       = useState(false)
@@ -80,9 +94,12 @@ export default function CitizenDocRequest() {
         supabase.from('profiles').select('full_name, phone, id_card').eq('id', data.session.user.id).single()
           .then(({ data: p }) => {
             if (p) {
+              const { title, first, last } = splitThaiFullName(p.full_name)
               setForm(f => ({
                 ...f,
-                requester_name:    p.full_name ?? '',
+                name_title:        title,
+                name_first:        first,
+                name_last:         last,
                 requester_phone:   p.phone     ?? '',
                 requester_id_card: p.id_card   ?? '',
               }))
@@ -117,12 +134,20 @@ export default function CitizenDocRequest() {
   // ผ่านแอปเด็ดขาดทุกประเภทเอกสาร ประชาชนต้องไปชำระที่เทศบาลเองเสมอ (ไม่มีหน้าชำระ/
   // สแกน QR/แนบสลิปในระบบนี้อีกต่อไป)
   const feeAmount = selected ? ((tenant?.fee_schedule ?? {})[selected.value] ?? 0) : 0
-  // tax_notice ไม่ใช่การขอออกเอกสารเหมือนประเภทอื่น เป็นแค่ "สอบถามยอด" — ข้อความในฟอร์ม
-  // (หัวข้อ, ขั้นตอน, ปุ่ม) ต้องไม่พูดถึงการออกเอกสาร/โอนเงินผ่านแอป
-  const isFeeInquiry = selected?.value === 'tax_notice'
+  // tax_notice/waste_collection ไม่ใช่การขอออกเอกสารเหมือนประเภทอื่น เป็นแค่ "สอบถามยอด" —
+  // ข้อความในฟอร์ม (หัวข้อ, ขั้นตอน, ปุ่ม) ต้องไม่พูดถึงการออกเอกสาร/โอนเงินผ่านแอป
+  const isFeeInquiry = selected?.value === 'tax_notice' || selected?.value === 'waste_collection'
+  // tax_notice มี 2 เรื่องย่อยให้เลือก (ภาษีที่ดินฯ / ภาษีป้าย) เลยต้องมี dropdown —
+  // waste_collection มีเรื่องเดียว ไม่ต้องให้กรอก/เลือกเลย ระบุให้ตรงๆ ไปเลย
+  const hasInquiryOptions = selected?.value === 'tax_notice'
+  const isSingleTopicInquiry = selected?.value === 'waste_collection'
+  const WASTE_PURPOSE = 'สอบถามค่าธรรมเนียมเก็บและขนขยะมูลฝอย'
+  const addressSuffix = tenantAddressSuffix(tenant)
+  const fullName = joinThaiFullName(form.name_title, form.name_first, form.name_last)
 
   function handleFormNext() {
-    if (!form.requester_name.trim() || !form.requester_phone.trim()) return
+    if (!form.name_first.trim() || !form.name_last.trim() || !form.requester_phone.trim()) return
+    if (isFeeInquiry && !isSingleTopicInquiry && !form.purpose.trim()) return
     handleSubmit()
   }
 
@@ -131,11 +156,11 @@ export default function CitizenDocRequest() {
     const { data, error } = await supabase.from('document_requests').insert({
       municipality_id:   tenant?.id,
       document_type:     selected.value,
-      requester_name:    form.requester_name.trim(),
+      requester_name:    fullName,
       requester_id_card: form.requester_id_card.trim() || null,
       requester_phone:   form.requester_phone.trim() || null,
-      requester_address: form.requester_address.trim() || null,
-      purpose:           form.purpose.trim() || null,
+      requester_address: [form.requester_address.trim(), addressSuffix].filter(Boolean).join(' ') || null,
+      purpose:           isSingleTopicInquiry ? WASTE_PURPOSE : (form.purpose.trim() || null),
       status:            'pending',
       user_id:           session?.user?.id ?? null,
       fee_amount:        feeAmount || null,
@@ -146,7 +171,7 @@ export default function CitizenDocRequest() {
     if (error) { alert('ส่งคำขอไม่สำเร็จ: ' + error.message); return }
     if (data) {
       notifyTelegram(tenant?.telegram_group_id,
-        `📄 <b>คำขอเอกสารใหม่</b>\nประเภท: ${selected.label}\nผู้ขอ: ${form.requester_name.trim()}\nเบอร์: ${form.requester_phone?.trim() || '-'}${feeAmount > 0 ? `\n💰 ค่าธรรมเนียมโดยประมาณ: ${feeAmount} บาท (ชำระที่เทศบาล)` : ''}`
+        `📄 <b>คำขอเอกสารใหม่</b>\nประเภท: ${selected.label}\nผู้ขอ: ${fullName}\nเบอร์: ${form.requester_phone?.trim() || '-'}${feeAmount > 0 ? `\n💰 ค่าธรรมเนียมโดยประมาณ: ${feeAmount} บาท (ชำระที่เทศบาล)` : ''}`
       )
       setDone({ ref: data.id.slice(0, 8).toUpperCase() })
     }
@@ -250,7 +275,7 @@ export default function CitizenDocRequest() {
             <ArrowLeft size={18} />
           </button>
           <div>
-            <p className="font-bold text-gray-800">สอบถามยอดชำระเรื่องนั้นๆ</p>
+            <p className="font-bold text-gray-800">E-SERVICE งานบริการประชาชน</p>
             <p className="text-xs text-gray-400">เลือกประเภทเอกสารที่ต้องการ</p>
           </div>
         </div>
@@ -261,14 +286,14 @@ export default function CitizenDocRequest() {
             style={{ backgroundColor: '#dce8f5', borderColor: '#b8cfea' }}>
             <p className="text-[11px] text-gray-600">
               ระบบบริการอิเล็กทรอนิกส์ › {tenant?.name ?? ''} ›{' '}
-              <span className="font-semibold text-gray-700">สอบถามยอดชำระเรื่องนั้นๆ</span>
+              <span className="font-semibold text-gray-700">E-SERVICE งานบริการประชาชน</span>
             </p>
             <p className="text-[11px] text-gray-500">
               {new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
             </p>
           </div>
           <div className="px-8 py-3 bg-white border-b border-gray-200 shadow-sm">
-            <h1 className="text-base font-bold text-gray-800">สอบถามยอดชำระเรื่องนั้นๆ</h1>
+            <h1 className="text-base font-bold text-gray-800">E-SERVICE งานบริการประชาชน</h1>
             <p className="text-[11px] text-gray-400 mt-0.5">{tenant?.name} — เลือกประเภทเอกสารที่ต้องการ</p>
           </div>
         </div>
@@ -372,11 +397,25 @@ export default function CitizenDocRequest() {
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3.5">
             <p className="text-sm font-bold text-gray-700">ข้อมูลผู้ยื่นคำขอ</p>
 
-            {/* ชื่อ-สกุล */}
-            <div>
-              <label className="text-xs font-semibold text-gray-500 mb-1 block">ชื่อ-สกุล *</label>
-              <input type="text" value={form.requester_name} onChange={set('requester_name')}
-                placeholder="นายสมชาย ใจดี" className={inputCls} />
+            {/* คำนำหน้า / ชื่อ / นามสกุล — แถวเดียวกัน */}
+            <div className="flex gap-2">
+              <div className="w-20 shrink-0">
+                <label className="text-xs font-semibold text-gray-500 mb-1 block">คำนำหน้า *</label>
+                <select value={form.name_title} onChange={set('name_title')} className={inputCls}>
+                  <option value="">เลือก</option>
+                  {NAME_TITLES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div className="flex-1 min-w-0">
+                <label className="text-xs font-semibold text-gray-500 mb-1 block">ชื่อ *</label>
+                <input type="text" value={form.name_first} onChange={set('name_first')}
+                  placeholder="สมชาย" className={inputCls} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <label className="text-xs font-semibold text-gray-500 mb-1 block">นามสกุล *</label>
+                <input type="text" value={form.name_last} onChange={set('name_last')}
+                  placeholder="ใจดี" className={inputCls} />
+              </div>
             </div>
 
             {/* เลขบัตรประชาชน */}
@@ -410,24 +449,39 @@ export default function CitizenDocRequest() {
 
             <div>
               <label className="text-xs font-semibold text-gray-500 mb-1 block">ที่อยู่ปัจจุบัน</label>
-              <textarea value={form.requester_address} onChange={set('requester_address')} rows={2}
-                placeholder="บ้านเลขที่ หมู่ที่ ตำบล อำเภอ จังหวัด..."
-                className={inputCls + ' resize-none'} />
+              <div className="flex items-center gap-2">
+                <input type="text" value={form.requester_address} onChange={set('requester_address')}
+                  placeholder="บ้านเลขที่"
+                  className={inputCls.replace('w-full', 'w-28 shrink-0')} />
+                {addressSuffix && (
+                  <p className="text-xs text-gray-400 truncate">{addressSuffix}</p>
+                )}
+              </div>
             </div>
 
-            <div>
-              <label className="text-xs font-semibold text-gray-500 mb-1 block">
-                {isFeeInquiry ? 'รายละเอียดที่ต้องการสอบถาม' : 'วัตถุประสงค์'}
-              </label>
-              <input type="text" value={form.purpose} onChange={set('purpose')}
-                placeholder={isFeeInquiry ? 'เช่น เลขที่ดิน, ทะเบียนป้าย หรือรายละเอียดอื่นๆ' : 'เช่น เพื่อยื่นกู้ธนาคาร, สมัครงาน, เรียนต่อ'}
-                className={inputCls} />
-            </div>
+            {!isSingleTopicInquiry && (
+              <div>
+                <label className="text-xs font-semibold text-gray-500 mb-1 block">
+                  {isFeeInquiry ? 'รายละเอียดที่ต้องการสอบถาม *' : 'วัตถุประสงค์'}
+                </label>
+                {hasInquiryOptions ? (
+                  <select value={form.purpose} onChange={set('purpose')} className={inputCls}>
+                    <option value="">— เลือกรายการที่ต้องการสอบถาม —</option>
+                    <option value="สอบถามยอดภาษีที่ดินและสิ่งปลูกสร้าง">สอบถามยอดภาษีที่ดินและสิ่งปลูกสร้าง</option>
+                    <option value="สอบถามยอดภาษีป้าย">สอบถามยอดภาษีป้าย</option>
+                  </select>
+                ) : (
+                  <input type="text" value={form.purpose} onChange={set('purpose')}
+                    placeholder="เช่น เพื่อยื่นกู้ธนาคาร, สมัครงาน, เรียนต่อ"
+                    className={inputCls} />
+                )}
+              </div>
+            )}
           </div>
 
           {/* Submit */}
           <button onClick={handleFormNext}
-            disabled={saving || !form.requester_name.trim() || !form.requester_phone.trim()}
+            disabled={saving || !form.name_first.trim() || !form.name_last.trim() || !form.requester_phone.trim() || (isFeeInquiry && !form.purpose.trim())}
             className="w-full py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-all"
             style={{ backgroundColor: 'var(--color-primary)' }}>
             {saving ? <Loader2 size={18} className="animate-spin" /> : <FileText size={18} />}
@@ -436,21 +490,29 @@ export default function CitizenDocRequest() {
 
           <p className="text-xs text-gray-400 text-center leading-relaxed">
             {isFeeInquiry
-              ? <>เจ้าหน้าที่จะตรวจสอบยอดและแจ้งกลับทางโทรศัพท์<br />ภายใน 1–3 วันทำการ — ชำระได้ที่เทศบาลเท่านั้น</>
-              : <>เจ้าหน้าที่จะดำเนินการและแจ้งผลทางโทรศัพท์<br />ภายใน 1–3 วันทำการ</>}
+              ? (session
+                  ? <>ติดตามสถานะและรับการแจ้งเตือนได้ที่เมนู เอกสารของฉัน<br />ภายใน 1–3 วันทำการ — ชำระได้ที่เทศบาลเท่านั้น</>
+                  : <>เจ้าหน้าที่จะตรวจสอบยอดและแจ้งกลับทางโทรศัพท์<br />ภายใน 1–3 วันทำการ — ชำระได้ที่เทศบาลเท่านั้น</>)
+              : (session
+                  ? <>ติดตามสถานะและรับการแจ้งเตือนได้ที่เมนู เอกสารของฉัน<br />ภายใน 1–3 วันทำการ</>
+                  : <>เจ้าหน้าที่จะดำเนินการและแจ้งผลทางโทรศัพท์<br />ภายใน 1–3 วันทำการ</>)}
           </p>
         </div>
 
         {/* Right column — info panel (PC only) */}
         <div className="hidden md:flex flex-col gap-4">
           {/* Fee info */}
-          {feeAmount > 0 ? (
+          {isFeeInquiry ? (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 space-y-1">
+              <p className="text-xs font-bold text-emerald-700 uppercase tracking-wide">ค่าธรรมเนียม</p>
+              <p className="text-2xl font-bold text-emerald-800">ฟรี</p>
+              <p className="text-xs text-emerald-600">แจ้งยอด แล้วชำระที่เทศบาล</p>
+            </div>
+          ) : feeAmount > 0 ? (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-2">
               <p className="text-xs font-bold text-amber-700 uppercase tracking-wide">ค่าธรรมเนียม</p>
               <p className="text-2xl font-bold text-amber-800">{feeAmount.toLocaleString()} <span className="text-base font-normal">บาท</span></p>
-              <p className="text-xs text-amber-600">
-                {isFeeInquiry ? 'ยอดโดยประมาณ — เจ้าหน้าที่จะแจ้งยอดจริงอีกครั้ง ชำระได้ที่เทศบาลเท่านั้น' : 'โอนเงินผ่านบัญชีธนาคาร หลังยื่นคำขอ'}
-              </p>
+              <p className="text-xs text-amber-600">โอนเงินผ่านบัญชีธนาคาร หลังยื่นคำขอ</p>
             </div>
           ) : (
             <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
@@ -465,7 +527,7 @@ export default function CitizenDocRequest() {
             {(isFeeInquiry ? [
               { step: '1', label: 'ส่งคำถาม', desc: 'กรอกแบบฟอร์มและส่งข้อมูล' },
               { step: '2', label: 'เจ้าหน้าที่ตรวจสอบ', desc: 'ตรวจสอบยอดภาษี/ค่าธรรมเนียม' },
-              { step: '3', label: 'แจ้งยอดชำระ', desc: 'โทรแจ้งยอด แล้วชำระที่เทศบาล' },
+              { step: '3', label: 'แจ้งยอดชำระ', desc: 'แจ้งยอด แล้วชำระที่เทศบาล' },
             ] : [
               { step: '1', label: 'ยื่นคำขอ', desc: 'กรอกแบบฟอร์มและส่งเอกสาร' },
               { step: '2', label: 'เจ้าหน้าที่รับเรื่อง', desc: 'ตรวจสอบและดำเนินการ' },
@@ -486,7 +548,9 @@ export default function CitizenDocRequest() {
           <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4">
             <p className="text-xs font-bold text-blue-700 mb-1">ระยะเวลาดำเนินการ</p>
             <p className="text-sm font-semibold text-blue-800">1–3 วันทำการ</p>
-            <p className="text-xs text-blue-500 mt-1">เจ้าหน้าที่จะติดต่อกลับผ่านเบอร์โทรที่ท่านให้ไว้</p>
+            <p className="text-xs text-blue-500 mt-1">
+              {session ? 'ติดตามสถานะ และรับการแจ้งเตือนได้ที่เมนู เอกสารของฉัน' : 'เจ้าหน้าที่จะติดต่อกลับผ่านเบอร์โทรที่ท่านให้ไว้'}
+            </p>
           </div>
         </div>
       </div>

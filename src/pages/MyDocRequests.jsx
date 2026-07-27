@@ -14,8 +14,7 @@ const BASE_DOC_TYPES = {
   residence_cert:   'ใบรับรองการอยู่อาศัย',
   personal_cert:    'หนังสือรับรองบุคคล',
   tax_notice:       'ค่าธรรมเนียม/ภาษี',
-  waste_collection: 'ชำระค่าธรรมเนียมเก็บขนขยะ',
-  other:            'คำขออื่นๆ',
+  waste_collection: 'ค่าธรรมเนียมเก็บขนขยะ',
 }
 let _customDocLabels = {}
 function docTypeLabel(key) {

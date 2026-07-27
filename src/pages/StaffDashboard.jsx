@@ -30,8 +30,7 @@ const DOC_TYPES = [
   { value: 'residence_cert',   label: '🏠 ใบรับรองการอยู่อาศัย' },
   { value: 'personal_cert',    label: '👤 หนังสือรับรองบุคคล' },
   { value: 'tax_notice',       label: '🏦 ค่าธรรมเนียม/ภาษี' },
-  { value: 'waste_collection', label: '🗑️ ชำระค่าธรรมเนียมเก็บขนขยะ' },
-  { value: 'other',            label: '📝 คำขออื่นๆ' },
+  { value: 'waste_collection', label: '🗑️ ค่าธรรมเนียมเก็บขนขยะ' },
 ]
 let _customDocTypes = []
 function getAllDocTypes() { return [...DOC_TYPES, ..._customDocTypes] }

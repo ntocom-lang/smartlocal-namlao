@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { ChevronLeft, Pencil, Loader2 } from 'lucide-react'
 import { compressImage } from '../lib/imageUtils'
 import { useAuth } from '../contexts/AuthContext'
+import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
 
 const ROLE_LABEL = {
   superadmin: 'Super Admin',
@@ -21,6 +22,7 @@ export default function ProfilePage() {
   const { role: contextRole } = useAuth()
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState({ full_name: '', phone: '', role: '', id_card: '' })
+  const [nameParts, setNameParts] = useState({ title: '', first: '', last: '' })
   const [avatarUrl, setAvatarUrl] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -52,23 +54,37 @@ export default function ProfilePage() {
         .single()
 
       if (p) {
+        const fullName = p.full_name || meta?.full_name || ''
         setProfile({
-          full_name: p.full_name || meta?.full_name || '',
+          full_name: fullName,
           phone: p.phone || meta?.phone || '',
           role: p.role || '',
           id_card: p.id_card || '',
         })
+        setNameParts(splitThaiFullName(fullName))
         setAvatarUrl(p.avatar_url || meta?.avatar_url || meta?.picture || null)
       } else {
+        const fullName = meta?.full_name || ''
         setProfile({
-          full_name: meta?.full_name || '',
+          full_name: fullName,
           phone: meta?.phone || '',
           role: '',
         })
+        setNameParts(splitThaiFullName(fullName))
       }
       setLoading(false)
     }).catch(() => setLoading(false))
   }, [navigate])
+
+  // คำนำหน้า/ชื่อ/นามสกุล เก็บแยกไว้แก้ในฟอร์ม แต่ profile.full_name ต้อง sync ตามตลอด
+  // เพราะที่อื่นในหน้านี้ (เช่น displayName, ตัวอักษรย่อ avatar) ยังอ่านจาก full_name เฉยๆ
+  function setNamePart(key, value) {
+    setNameParts(prev => {
+      const next = { ...prev, [key]: value }
+      setProfile(p => ({ ...p, full_name: joinThaiFullName(next.title, next.first, next.last) }))
+      return next
+    })
+  }
 
   async function handleSave() {
     setSaving(true)
@@ -207,21 +223,38 @@ export default function ProfilePage() {
         {/* Fields */}
         <div className="bg-white rounded-2xl divide-y divide-gray-100 shadow-sm overflow-hidden">
           {/* ชื่อ-สกุล */}
-          <div className="flex items-center px-5 py-4 gap-3">
-            <span className="text-sm text-gray-700 flex-1">ชื่อ-สกุล</span>
+          <div className="px-5 py-4">
             {editName ? (
-              <input
-                value={profile.full_name}
-                onChange={(e) => setProfile((p) => ({ ...p, full_name: e.target.value }))}
-                className="text-sm text-gray-800 bg-white border-b border-gray-300 outline-none text-right flex-1 max-w-40"
-                autoFocus
-              />
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-700">ชื่อ-สกุล</span>
+                  <button onClick={() => setEditName(false)} className="text-blue-400">
+                    <Pencil size={16} />
+                  </button>
+                </div>
+                <div className="flex gap-1.5">
+                  <select value={nameParts.title} onChange={(e) => setNamePart('title', e.target.value)}
+                    className="w-20 shrink-0 text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 outline-none">
+                    <option value="">เลือก</option>
+                    {NAME_TITLES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <input value={nameParts.first} onChange={(e) => setNamePart('first', e.target.value)}
+                    placeholder="ชื่อ" autoFocus
+                    className="flex-1 min-w-0 text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 outline-none" />
+                  <input value={nameParts.last} onChange={(e) => setNamePart('last', e.target.value)}
+                    placeholder="นามสกุล"
+                    className="flex-1 min-w-0 text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 outline-none" />
+                </div>
+              </div>
             ) : (
-              <span className="text-sm text-gray-500 flex-1 text-right truncate">{profile.full_name || 'ยังไม่ได้ระบุ'}</span>
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-gray-700 flex-1">ชื่อ-สกุล</span>
+                <span className="text-sm text-gray-500 flex-1 text-right truncate">{profile.full_name || 'ยังไม่ได้ระบุ'}</span>
+                <button onClick={() => setEditName(true)} className="ml-2 text-blue-400">
+                  <Pencil size={16} />
+                </button>
+              </div>
             )}
-            <button onClick={() => setEditName((v) => !v)} className="ml-2 text-blue-400">
-              <Pencil size={16} />
-            </button>
           </div>
 
           {/* ตำแหน่ง (read-only — map จาก role) */}

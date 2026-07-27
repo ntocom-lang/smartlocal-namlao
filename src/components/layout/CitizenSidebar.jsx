@@ -15,7 +15,7 @@ const NAV_GROUPS = [
     items: [
       { label: 'หน้าแรก',          href: '/',            Icon: Home,          exact: true },
       { label: 'แจ้งเหตุ/แจ้งซ่อม', href: '/complaint',   Icon: ClipboardList },
-      { label: 'สอบถามยอดชำระเรื่องนั้นๆ', href: '/doc-request', Icon: FileText },
+      { label: 'งานบริการประชาชน', href: '/doc-request', Icon: FileText },
       { label: 'ปฏิทินกิจกรรม',   href: '/events',      Icon: CalendarDays },
       { label: 'ข่าวสาร/ประกาศ',  href: '/news',        Icon: Newspaper },
       { label: 'แหล่งท่องเที่ยว', href: '/tourism',     Icon: MapPin },

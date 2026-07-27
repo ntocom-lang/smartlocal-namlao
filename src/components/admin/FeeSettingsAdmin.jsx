@@ -7,12 +7,11 @@ const DOC_FEE_LABELS = [
   { value: 'residence_cert',   label: '🏠 ใบรับรองการอยู่อาศัย' },
   { value: 'personal_cert',    label: '👤 หนังสือรับรองบุคคล' },
   { value: 'waste_collection', label: '🗑️ ค่าธรรมเนียมเก็บขนขยะ (ต่อปี)', hint: 'ใช้เป็นค่าเริ่มต้นเมื่อเจ้าหน้าที่แจ้งยอด' },
-  { value: 'other',            label: '📝 คำขออื่นๆ' },
 ]
 // tax_notice (ค่าธรรมเนียม/ภาษี) ไม่มีในนี้โดยตั้งใจ — ป้องกันการทุจริต ห้ามเก็บเงินผ่านแอป
 // เด็ดขาด เป็นแค่ช่องทางสอบถามยอด ประชาชนต้องไปชำระที่เทศบาลเอง ตั้งค่าธรรมเนียมล่วงหน้า
 // ไม่ได้ (ดู CitizenDocRequest.jsx ที่บังคับ feeAmount เป็น 0 ให้ประเภทนี้เสมอ)
-const DEFAULT_FEE = { residence_cert: 0, personal_cert: 0, waste_collection: 0, other: 0 }
+const DEFAULT_FEE = { residence_cert: 0, personal_cert: 0, waste_collection: 0 }
 const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
 
 export default function FeeSettingsAdmin({ tenant }) {

@@ -6,7 +6,7 @@ import { supabase } from '../../../../lib/supabase'
 import PostsHighlight from '../../../../components/home/PostsHighlight'
 import TourismSection from '../../../../components/home/TourismSection'
 import BannerSlider from '../../../../components/home/BannerSlider'
-import { Info, ChevronRight, Briefcase, Megaphone, LayoutDashboard, Wrench, Newspaper, CalendarDays, ChevronLeft, Landmark, Trash2, FileText, Lightbulb, Hospital, Route, Bug, Droplets, Map } from 'lucide-react'
+import { Info, ChevronRight, Briefcase, Megaphone, LayoutDashboard, Wrench, Newspaper, CalendarDays, ChevronLeft, Landmark, Trash2, Lightbulb, Hospital, Route, Bug, Droplets, Map } from 'lucide-react'
 import WeatherWidget from '../../../../components/home/WeatherWidget'
 import StaffSection from '../../../../components/home/StaffSection'
 
@@ -41,7 +41,6 @@ const LAYOUT_RIGHT = {
 const BASE_DOC_TYPES = [
   { value: 'tax_notice',       label: 'ค่าธรรมเนียม/ภาษี', emoji: <Landmark size={32} strokeWidth={3} className="text-black" /> },
   { value: 'waste_collection', label: 'ชำระค่าธรรมเนียมขยะ',            emoji: <Trash2 size={32} strokeWidth={3} className="text-black" /> },
-  { value: 'other',            label: 'คำขออื่นๆ',                       emoji: <FileText size={32} strokeWidth={3} className="text-black" /> },
 ]
 
 // ── sub-components ────────────────────────────────────────────────────

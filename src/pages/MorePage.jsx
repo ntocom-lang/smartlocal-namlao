@@ -529,7 +529,7 @@ export default function MorePage() {
             iconBg="bg-blue-50"
             iconColor="text-blue-500"
             label="สอบถามยอดชำระเรื่องนั้นๆ"
-            desc="ค่าธรรมเนียม / ภาษี / ค่าธรรมเนียมขยะ และคำขออื่นๆ"
+            desc="สอบถามค่าธรรมเนียม / ภาษี / ค่าขยะ"
             href="/doc-request"
           />
           <MenuRow

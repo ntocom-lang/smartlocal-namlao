@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
-import { Mail, Lock, User, Loader2, UserCircle2, Phone, Eye, EyeOff, ExternalLink, ArrowLeft } from 'lucide-react'
+import { Mail, Lock, Loader2, UserCircle2, Phone, Eye, EyeOff, ExternalLink, ArrowLeft } from 'lucide-react'
+import { NAME_TITLES, joinThaiFullName } from '../lib/thaiName'
 
 const PHONE_EMAIL_DOMAIN = 'phone.smartlocal.app'
 
@@ -28,7 +29,7 @@ export default function AuthPage() {
   const inAppBrowser = detectInAppBrowser()
 
   const [mode, setMode] = useState('login') // 'login' | 'register' | 'forgot'
-  const [form, setForm] = useState({ email: '', password: '', name: '', phone: '' })
+  const [form, setForm] = useState({ email: '', password: '', name_title: '', name_first: '', name_last: '', phone: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -115,8 +116,10 @@ export default function AuthPage() {
   async function handleRegister(e) {
     e.preventDefault()
     setError('')
+    if (!form.name_first.trim() || !form.name_last.trim()) { setError('กรุณากรอกชื่อและนามสกุล'); return }
     if (form.password.length < 6) { setError('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร'); return }
 
+    const fullName = joinThaiFullName(form.name_title, form.name_first, form.name_last)
     const hasEmail = form.email.trim().length > 0
     const phoneDigits = form.phone.replace(/\D/g, '')
     if (!hasEmail && phoneDigits.length < 9) {
@@ -131,7 +134,7 @@ export default function AuthPage() {
       password: form.password,
       options: {
         data: {
-          full_name: form.name.trim(),
+          full_name: fullName,
           phone: form.phone.trim(),
           municipality_id: tenant?.id ?? null,
         },
@@ -156,7 +159,7 @@ export default function AuthPage() {
     if (userId && tenant?.id) {
       await supabase.from('profiles').upsert({
         id: userId,
-        full_name: form.name.trim(),
+        full_name: fullName,
         phone: form.phone.trim() || null,
         municipality_id: tenant.id,
         role: 'citizen',
@@ -305,12 +308,20 @@ export default function AuthPage() {
         <>
         <form onSubmit={mode === 'login' ? handleLogin : handleRegister} className="space-y-3" autoComplete="on">
           {mode === 'register' && (
-            <div className="relative">
-              <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input value={form.name} onChange={set('name')} required
-                type="text" placeholder="ชื่อ-นามสกุล"
-                autoComplete="name"
-                className="w-full pl-9 pr-3 py-3 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:border-transparent"
+            <div className="flex gap-2">
+              <select value={form.name_title} onChange={set('name_title')}
+                className="w-24 shrink-0 px-2 py-3 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:border-transparent"
+                style={{ '--tw-ring-color': 'var(--color-primary)' }}>
+                <option value="">คำนำหน้า</option>
+                {NAME_TITLES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <input value={form.name_first} onChange={set('name_first')} required
+                type="text" placeholder="ชื่อ" autoComplete="given-name"
+                className="flex-1 min-w-0 px-3 py-3 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:border-transparent"
+                style={{ '--tw-ring-color': 'var(--color-primary)' }} />
+              <input value={form.name_last} onChange={set('name_last')} required
+                type="text" placeholder="นามสกุล" autoComplete="family-name"
+                className="flex-1 min-w-0 px-3 py-3 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:border-transparent"
                 style={{ '--tw-ring-color': 'var(--color-primary)' }} />
             </div>
           )}
