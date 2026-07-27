@@ -235,15 +235,15 @@ function EServiceBlock({ docTypes }) {
           </Link>
         </div>
 
-        <div className="grid grid-cols-5 gap-2 md:grid-cols-6 md:gap-4 pb-1 md:pb-0">
+        <div className="grid grid-cols-4 gap-2 md:grid-cols-6 md:gap-4 pb-1 md:pb-0">
           {docTypes.map(({ value, label, emoji }, i) => (
             <Link key={value} to={`/doc-request?type=${value}`}
-              className={`${i >= 5 ? 'hidden md:flex' : 'flex'} flex-col items-center gap-1.5 active:scale-95 transition-transform group`}>
+              className={`${i >= 4 ? 'hidden md:flex' : 'flex'} flex-col items-center gap-1.5 active:scale-95 transition-transform group`}>
               <div className="w-[52px] h-[52px] md:w-14 md:h-14 rounded-2xl flex items-center justify-center shadow-md bg-white/20 border border-white/30 backdrop-blur-sm group-hover:bg-white/30 transition-colors"
                 style={{ fontSize: 26, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
                 {emoji}
               </div>
-              <p className="text-white/95 text-[11px] md:text-[12px] font-semibold text-center leading-tight w-full drop-shadow-sm line-clamp-2">{label}</p>
+              <p className="text-white/95 text-[13px] md:text-[13px] font-semibold text-center leading-tight w-full drop-shadow-sm line-clamp-2">{label}</p>
             </Link>
           ))}
         </div>

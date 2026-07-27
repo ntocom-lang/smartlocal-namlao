@@ -60,9 +60,9 @@ export default function ComplaintBand() {
           </button>
         </div>
 
-        {/* Mobile: 5 items grid */}
-        <div className="grid grid-cols-5 gap-1 md:hidden pb-1">
-          {topCats.slice(0, 5).map(cat => {
+        {/* Mobile: 4 items grid — ที่เหลือกด "ทั้งหมด" แทน กันแออัดเกินไปบนจอเล็ก */}
+        <div className="grid grid-cols-4 gap-1 md:hidden pb-1">
+          {topCats.slice(0, 4).map(cat => {
             const emoji = cat.emoji || FALLBACK_EMOJI[cat.value] || '📋'
             const color = cat.color || '#ffffff'
             return (
@@ -79,7 +79,7 @@ export default function ComplaintBand() {
                   }}>
                   <span className="text-[1.6rem] leading-none select-none">{emoji}</span>
                 </div>
-                <p className="text-amber-900 text-[9px] font-semibold text-center w-full leading-tight drop-shadow-sm line-clamp-2">{cat.label}</p>
+                <p className="text-amber-900 text-[11px] font-semibold text-center w-full leading-tight drop-shadow-sm line-clamp-2">{cat.label}</p>
               </button>
             )
           })}
@@ -104,7 +104,7 @@ export default function ComplaintBand() {
                   }}>
                   <span className="text-[1.4rem] leading-none select-none">{emoji}</span>
                 </div>
-                <p className="text-amber-900 text-[10px] font-semibold text-center leading-tight">{cat.label}</p>
+                <p className="text-amber-900 text-[12px] font-semibold text-center leading-tight">{cat.label}</p>
               </button>
             )
           })}

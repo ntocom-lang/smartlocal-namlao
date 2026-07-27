@@ -239,7 +239,7 @@ function EServiceBlock({ docTypes }) {
                 style={{ fontSize: 28 }}>
                 {emoji}
               </div>
-              <p className="text-black text-[13px] font-bold text-center leading-snug">{label}</p>
+              <p className="text-black text-sm font-bold text-center leading-snug">{label}</p>
             </Link>
           ))}
         </div>

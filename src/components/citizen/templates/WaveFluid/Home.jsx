@@ -233,7 +233,7 @@ function EServiceBlock({ docTypes }) {
                 style={{ fontSize: 28, background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(4px)', border: '1px solid rgba(255,255,255,0.3)' }}>
                 {emoji}
               </div>
-              <p className="text-white text-[12px] font-bold text-center leading-snug drop-shadow-sm">{label}</p>
+              <p className="text-white text-[13px] font-bold text-center leading-snug drop-shadow-sm">{label}</p>
             </Link>
           ))}
         </div>

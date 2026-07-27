@@ -222,7 +222,7 @@ function EServiceBlock({ docTypes, layout }) {
     <div className="rounded-2xl shadow-sm border border-gray-100 px-4 py-4 relative bg-white">
       <div className="relative z-10">
         <div className="flex items-center justify-between mb-4">
-          <p className="text-gray-800 text-[11px] font-bold tracking-widest uppercase">
+          <p className="text-gray-800 text-[13px] font-bold tracking-widest uppercase">
             ✦ E-Service ✦ <span className="normal-case font-medium text-gray-500">งานบริการประชาชน</span>
           </p>
           <Link to="/doc-request"
@@ -240,7 +240,7 @@ function EServiceBlock({ docTypes, layout }) {
                 style={{ fontSize: isServiceFirst ? 26 : 22 }}>
                 {emoji}
               </div>
-              <p className="text-gray-600 text-[12px] font-semibold text-center leading-tight w-16 group-hover:text-[var(--color-primary)]">{label}</p>
+              <p className="text-gray-600 text-[13px] font-semibold text-center leading-tight w-16 group-hover:text-[var(--color-primary)]">{label}</p>
             </Link>
           ))}
         </div>
