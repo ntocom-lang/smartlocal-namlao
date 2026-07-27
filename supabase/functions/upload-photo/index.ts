@@ -53,9 +53,33 @@ serve(async (req) => {
       })
     }
 
-    // block paths ที่ sensitive
-    if (path.includes('..') || path.startsWith('municipality-qr/')) {
+    // เดิมกันแค่ ".." กับ "municipality-qr/" (denylist) — ตรวจแล้ว user ผ่าน auth ยังเขียน
+    // ไปโฟลเดอร์คำร้อง/เทศบาลอื่นได้เพราะ service role bypass RLS ตรงๆ ไม่มีการเช็คความ
+    // เป็นเจ้าของ path เลย แก้เป็น allowlist: path ต้องขึ้นต้นด้วย <complaint_id>/ ที่มีจริง
+    // และผู้เรียกต้องเป็นเจ้าของคำร้องนั้น หรือเป็นเจ้าหน้าที่ municipality เดียวกัน
+    const pathMatch = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\//i.exec(path)
+    if (!pathMatch) {
       return new Response(JSON.stringify({ error: 'invalid path' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    )
+    const { data: complaint } = await supabase
+      .from('complaints').select('user_id, municipality_id').eq('id', pathMatch[1]).maybeSingle()
+    const { data: callerProfile } = await supabase
+      .from('profiles').select('role, municipality_id').eq('id', user.id).maybeSingle()
+
+    const ownsComplaint = complaint?.user_id === user.id
+    const isSameMuniStaff = complaint && callerProfile?.municipality_id === complaint.municipality_id
+      && ['superadmin','admin','officer','staff','technician'].includes(callerProfile?.role ?? '')
+
+    if (!complaint || (!ownsComplaint && !isSameMuniStaff)) {
+      return new Response(JSON.stringify({ error: 'forbidden' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -77,12 +101,7 @@ serve(async (req) => {
       bytes[i] = binaryStr.charCodeAt(i)
     }
 
-    // อัปโหลดฝั่ง server ด้วย service role (bypass RLS)
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-    )
-
+    // อัปโหลดฝั่ง server ด้วย service role (bypass RLS) — path/สิทธิ์ตรวจผ่านแล้วด้านบน
     const { error: upErr } = await supabase.storage
       .from('complaint-attachments')
       .upload(path, bytes, { contentType: contentType || 'image/jpeg', upsert: false })

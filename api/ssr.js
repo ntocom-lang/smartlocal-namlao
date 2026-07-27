@@ -34,7 +34,9 @@ function detectSlug(host) {
 }
 
 function escapeHtml(str) {
-  return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return String(str)
+    .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 module.exports = async (req, res) => {
@@ -65,8 +67,12 @@ module.exports = async (req, res) => {
           const shortName = escapeHtml(autoShortName(tenant))
           const fullName  = escapeHtml(tenant.name)
           const desc      = 'ระบบศูนย์รวมข้อมูลดิจิทัลเพื่อการพัฒนาอย่างยั่งยืน'
-          const siteUrl   = `https://${req.headers.host}/`
-          const logoUrl   = tenant.logo_url || ''
+          const siteUrl   = escapeHtml(`https://${req.headers.host}/`)
+          // vercel.json rewrite ทุก route มาที่ ssr.js นี้ — HTML นี้ถูกส่งให้ผู้เข้าชม
+          // ทุกคนทุกหน้า ไม่ใช่แค่ crawler ดังนั้น logo_url (ค่าที่ผู้ดูแลตั้งได้) ต้อง
+          // escape + จำกัดเป็น http(s) URL เท่านั้นก่อนแปะใน attribute เสมอ
+          const logoUrl   = typeof tenant.logo_url === 'string' && /^https?:\/\//.test(tenant.logo_url)
+            ? escapeHtml(tenant.logo_url) : ''
 
           const ogTags = [
             `<title>${fullName}</title>`,

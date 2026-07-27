@@ -896,11 +896,20 @@ const DOC_TITLES = {
   other:            'หนังสือรับรอง',
 }
 
+// req.* เป็นข้อมูลที่ประชาชนกรอกเองตอนยื่นคำขอเอกสาร (CitizenDocRequest.jsx) — ต้อง escape
+// ก่อนแปะใน HTML เสมอ เพราะไฟล์นี้ถูกเปิดตรงใน window.open และอัปโหลดเป็นไฟล์ .html
+// สาธารณะใน bucket document-certs ถ้าไม่ escape จะเป็นช่องโหว่ stored XSS/HTML injection
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]))
+}
+
 function buildDocBody(req, orgName) {
-  const name    = `<strong>${req.requester_name}</strong>`
-  const idCard  = req.requester_id_card ? ` เลขบัตรประจำตัวประชาชน ${req.requester_id_card}` : ''
-  const addr    = req.requester_address ?? '......................................................................'
-  const purpose = req.purpose ? `เพื่อ${req.purpose}` : 'เพื่อใช้เป็นหลักฐาน'
+  const name    = `<strong>${escapeHtml(req.requester_name)}</strong>`
+  const idCard  = req.requester_id_card ? ` เลขบัตรประจำตัวประชาชน ${escapeHtml(req.requester_id_card)}` : ''
+  const addr    = req.requester_address ? escapeHtml(req.requester_address) : '......................................................................'
+  const purpose = req.purpose ? `เพื่อ${escapeHtml(req.purpose)}` : 'เพื่อใช้เป็นหลักฐาน'
 
   switch (req.document_type) {
     case 'residence_cert':
@@ -919,7 +928,7 @@ function buildDocBody(req, orgName) {
                 จำนวนเงิน: <strong>${req.fee_amount ? req.fee_amount.toLocaleString() + ' บาท' : '...............................................'}</strong><br/>
                 วันที่รับชำระ: ${thaiDate(new Date().toISOString().slice(0, 10))}
               </p>
-              ${req.staff_notes ? `<p>หมายเหตุ: ${req.staff_notes}</p>` : ''}`
+              ${req.staff_notes ? `<p>หมายเหตุ: ${escapeHtml(req.staff_notes)}</p>` : ''}`
     case 'waste_collection':
       return `<p>ได้รับเงินจาก ${name}${idCard} ที่อยู่ ${addr}</p>
               <p class="no-indent" style="margin-left:3em; margin-top:6pt">
@@ -927,17 +936,19 @@ function buildDocBody(req, orgName) {
                 จำนวนเงิน: <strong>${req.fee_amount ? req.fee_amount.toLocaleString() + ' บาท' : '...............................................'}</strong><br/>
                 วันที่รับชำระ: ${thaiDate(new Date().toISOString().slice(0, 10))}
               </p>
-              ${req.staff_notes ? `<p>หมายเหตุ: ${req.staff_notes}</p>` : ''}`
+              ${req.staff_notes ? `<p>หมายเหตุ: ${escapeHtml(req.staff_notes)}</p>` : ''}`
     default:
-      return `<p>${req.purpose ?? 'ตามที่ได้รับการร้องขอ'}</p>
-              ${req.staff_notes ? `<p>รายละเอียดเพิ่มเติม: ${req.staff_notes}</p>` : ''}`
+      return `<p>${escapeHtml(req.purpose) || 'ตามที่ได้รับการร้องขอ'}</p>
+              ${req.staff_notes ? `<p>รายละเอียดเพิ่มเติม: ${escapeHtml(req.staff_notes)}</p>` : ''}`
   }
 }
 
 function buildDocHTML({ req, tenant, docDate }) {
-  const orgName  = tenant?.name ?? 'หน่วยงาน'
+  const orgName  = escapeHtml(tenant?.name ?? 'หน่วยงาน')
   const title    = DOC_TITLES[req.document_type] ?? DOC_TITLES.other
   const isReceipt = ['tax_notice', 'waste_collection'].includes(req.document_type)
+  const logoUrl  = typeof tenant?.logo_url === 'string' && /^https?:\/\//.test(tenant.logo_url)
+    ? escapeHtml(tenant.logo_url) : null
 
   return `<!DOCTYPE html>
 <html lang="th"><head>
@@ -945,8 +956,8 @@ function buildDocHTML({ req, tenant, docDate }) {
 <style>${DOC_CSS}</style>
 </head><body>
 <div class="header">
-  ${tenant?.logo_url
-    ? `<img src="${tenant.logo_url}" class="emblem-img" alt="โลโก้" />`
+  ${logoUrl
+    ? `<img src="${logoUrl}" class="emblem-img" alt="โลโก้" />`
     : `<span class="emblem">🏛️</span>`}
   <h1>${orgName}</h1>
 </div>
