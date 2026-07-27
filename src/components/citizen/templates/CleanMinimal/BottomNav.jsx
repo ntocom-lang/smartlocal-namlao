@@ -62,7 +62,7 @@ export default function CleanMinimalBottomNav() {
                   </span>
                 )}
               </div>
-              <span className={`relative z-10 text-[11px] font-medium transition-all ${isActive ? 'text-[var(--color-primary)] font-bold' : 'text-gray-400'}`}>
+              <span className={`relative z-10 text-[13px] font-medium transition-all ${isActive ? 'text-[var(--color-primary)] font-bold' : 'text-gray-400'}`}>
                 {item.label}
               </span>
             </button>

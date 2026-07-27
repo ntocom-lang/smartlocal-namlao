@@ -18,11 +18,11 @@ export default function BottomNav() {
       <div className="flex justify-around items-end h-[60px] px-2 relative z-10 pb-1.5">
         <Link to="/" className={`flex flex-col items-center gap-1 p-2 ${location.pathname === '/' ? 'text-white drop-shadow-md' : 'text-emerald-200 hover:text-white'}`}>
           <Home size={22} strokeWidth={location.pathname === '/' ? 2.5 : 2} />
-          <span className="text-[10px] font-bold tracking-wide">หน้าแรก</span>
+          <span className="text-[12px] font-bold tracking-wide">หน้าแรก</span>
         </Link>
         <Link to="/news" className={`flex flex-col items-center gap-1 p-2 ${location.pathname.startsWith('/news') ? 'text-white drop-shadow-md' : 'text-emerald-200 hover:text-white'}`}>
           <Newspaper size={22} strokeWidth={location.pathname.startsWith('/news') ? 2.5 : 2} />
-          <span className="text-[10px] font-bold tracking-wide">ข่าว</span>
+          <span className="text-[12px] font-bold tracking-wide">ข่าว</span>
         </Link>
 
         {/* Center Teardrop Button */}
@@ -36,17 +36,17 @@ export default function BottomNav() {
               }}>
           <div style={{ transform: 'rotate(45deg)' }} className="flex flex-col items-center mt-1">
             <Search size={22} className="text-white drop-shadow-md" strokeWidth={2.5} />
-            <span className="text-[9px] text-white font-black mt-0.5 drop-shadow-md">ค้นหา</span>
+            <span className="text-[11px] text-white font-black mt-0.5 drop-shadow-md">ค้นหา</span>
           </div>
         </Link>
 
         <a href="https://www.google.com/maps" target="_blank" rel="noopener noreferrer" className="flex flex-col items-center gap-1 p-2 text-emerald-200 hover:text-white">
           <MapPin size={22} strokeWidth={2} />
-          <span className="text-[10px] font-bold tracking-wide">ใกล้ฉัน</span>
+          <span className="text-[12px] font-bold tracking-wide">ใกล้ฉัน</span>
         </a>
         <Link to="/more" className={`flex flex-col items-center gap-1 p-2 ${location.pathname === '/more' ? 'text-white drop-shadow-md' : 'text-emerald-200 hover:text-white'}`}>
           <Menu size={22} strokeWidth={location.pathname === '/more' ? 2.5 : 2} />
-          <span className="text-[10px] font-bold tracking-wide">เมนูอื่น</span>
+          <span className="text-[12px] font-bold tracking-wide">เมนูอื่น</span>
         </Link>
       </div>
     </div>

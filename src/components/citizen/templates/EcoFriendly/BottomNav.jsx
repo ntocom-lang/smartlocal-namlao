@@ -68,7 +68,7 @@ export default function EcoFriendlyBottomNav() {
                 )}
               </div>
 
-              <span className={`relative z-10 text-[13px] font-medium transition-all ${isActive ? 'text-white' : 'text-white/55'}`}>
+              <span className={`relative z-10 text-sm font-medium transition-all ${isActive ? 'text-white' : 'text-white/55'}`}>
                 {item.label}
               </span>
             </button>

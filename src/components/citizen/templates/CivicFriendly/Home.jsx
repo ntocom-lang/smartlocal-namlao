@@ -91,7 +91,7 @@ function MiniCalendar({ events }) {
           <CalendarDays size={14} style={{ color: 'var(--color-primary)' }} className="shrink-0" />
           <p className="text-xs font-bold text-gray-700">ปฏิทินกิจกรรม</p>
         </div>
-        <Link to="/events" className="text-[11px] font-medium flex items-center gap-0.5 hover:underline"
+        <Link to="/events" className="text-[13px] font-medium flex items-center gap-0.5 hover:underline"
           style={{ color: 'var(--color-primary)' }}>
           ทั้งหมด <ChevronRight size={11} />
         </Link>
@@ -124,7 +124,7 @@ function MiniCalendar({ events }) {
           return (
             <button key={i} onClick={() => navigate('/events')}
               className="min-h-9 px-0.5 pt-1 pb-0.5 flex flex-col items-center bg-white hover:bg-gray-50 transition-colors">
-              <span className={`text-[11px] font-bold w-5 h-5 flex items-center justify-center rounded-full mb-0.5 ${
+              <span className={`text-[13px] font-bold w-5 h-5 flex items-center justify-center rounded-full mb-0.5 ${
                 isToday ? 'bg-red-500 text-white'
                   : dow === 0 ? 'text-red-400'
                   : dow === 6 ? 'text-blue-400'
@@ -183,7 +183,7 @@ function NewsSlider({ posts, label = 'ข่าวสาร', href = '/news' }) 
           <p className="text-xs font-bold text-gray-700">{label}</p>
         </div>
         <Link to={href}
-          className="text-[11px] font-medium flex items-center gap-0.5 hover:underline"
+          className="text-[13px] font-medium flex items-center gap-0.5 hover:underline"
           style={{ color: 'var(--color-primary)' }}>
           ทั้งหมด <ChevronRight size={11} />
         </Link>
@@ -225,7 +225,7 @@ function EServiceBlock({ docTypes }) {
             E-Service บริการประชาชน
           </p>
           <Link to="/doc-request"
-            className="flex items-center gap-0.5 text-black text-[12px] font-bold hover:underline transition-colors border-[2px] border-black px-2 py-0.5 rounded-lg bg-white">
+            className="flex items-center gap-0.5 text-black text-sm font-bold hover:underline transition-colors border-[2px] border-black px-2 py-0.5 rounded-lg bg-white">
             ทั้งหมด <ChevronRight size={13} strokeWidth={3} />
           </Link>
         </div>
@@ -239,7 +239,7 @@ function EServiceBlock({ docTypes }) {
                 style={{ fontSize: 28 }}>
                 {emoji}
               </div>
-              <p className="text-black text-[11px] font-bold text-center leading-snug">{label}</p>
+              <p className="text-black text-[13px] font-bold text-center leading-snug">{label}</p>
             </Link>
           ))}
         </div>
@@ -252,7 +252,7 @@ function EServiceBlock({ docTypes }) {
               <div className="w-16 h-16 text-3xl rounded-2xl flex items-center justify-center bg-white border-[3px] border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all cursor-pointer">
                 {emoji}
               </div>
-              <p className="text-black text-[12px] font-bold text-center leading-snug mt-1">{label}</p>
+              <p className="text-black text-sm font-bold text-center leading-snug mt-1">{label}</p>
             </Link>
           ))}
         </div>
@@ -298,7 +298,7 @@ function CustomComplaintBand() {
           🚨 แจ้งเหตุ / แจ้งซ่อม
         </p>
         <Link to="/complaint"
-          className="flex items-center gap-0.5 text-black text-[12px] font-bold bg-white px-3 py-1 rounded-lg border-[2px] border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] transition-all">
+          className="flex items-center gap-0.5 text-black text-sm font-bold bg-white px-3 py-1 rounded-lg border-[2px] border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] transition-all">
           ทั้งหมด <ChevronRight size={14} strokeWidth={3} />
         </Link>
       </div>
@@ -311,7 +311,7 @@ function CustomComplaintBand() {
               style={{ fontSize: 32 }}>
               {emoji}
             </div>
-            <p className="text-black text-[11px] font-bold text-center leading-tight w-16">{value}</p>
+            <p className="text-black text-[13px] font-bold text-center leading-tight w-16">{value}</p>
           </Link>
         ))}
       </div>
@@ -349,7 +349,7 @@ function CustomShortcutBand() {
               style={{ fontSize: 26 }}>
               {sc.icon}
             </div>
-            <p className="text-black text-[10px] font-bold text-center mt-0.5">{sc.label}</p>
+            <p className="text-black text-[12px] font-bold text-center mt-0.5">{sc.label}</p>
           </a>
         ))}
       </div>

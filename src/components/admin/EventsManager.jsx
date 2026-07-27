@@ -633,7 +633,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                     ? { backgroundColor: '#fee2e2', borderColor: '#ef4444' }
                     : { backgroundColor: '#f9fafb', borderColor: '#e5e7eb', opacity: 0.4, pointerEvents: 'none' }}>
                   <X size={20} style={{ color: hasFilter ? '#ef4444' : '#94a3b8' }} />
-                  <span className="text-[11px] font-semibold" style={{ color: hasFilter ? '#ef4444' : '#94a3b8' }}>ล้าง</span>
+                  <span className="text-[13px] font-semibold" style={{ color: hasFilter ? '#ef4444' : '#94a3b8' }}>ล้าง</span>
                 </button>
               </div>
 
@@ -1182,22 +1182,22 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                                     {confirmDelId === ev.id ? (
                                       <>
                                         <button onClick={() => { handleDelete(ev.id); setConfirmDelId(null) }} disabled={deleting === ev.id}
-                                          className="px-2.5 py-1 rounded bg-red-500 text-white text-[11px] font-bold disabled:opacity-40">
+                                          className="px-2.5 py-1 rounded bg-red-500 text-white text-[13px] font-bold disabled:opacity-40">
                                           {deleting === ev.id ? '...' : 'ยืนยัน'}
                                         </button>
                                         <button onClick={() => setConfirmDelId(null)}
-                                          className="px-2.5 py-1 rounded bg-gray-100 text-gray-600 text-[11px] font-semibold hover:bg-gray-200">
+                                          className="px-2.5 py-1 rounded bg-gray-100 text-gray-600 text-[13px] font-semibold hover:bg-gray-200">
                                           ยกเลิก
                                         </button>
                                       </>
                                     ) : (
                                       <>
                                         <button onClick={() => openEdit(ev)}
-                                          className="px-2.5 py-1 rounded border border-blue-400 text-blue-600 text-[11px] font-bold hover:bg-blue-600 hover:text-white transition-colors">
+                                          className="px-2.5 py-1 rounded border border-blue-400 text-blue-600 text-[13px] font-bold hover:bg-blue-600 hover:text-white transition-colors">
                                           แก้ไข
                                         </button>
                                         <button onClick={() => setConfirmDelId(ev.id)}
-                                          className="px-2.5 py-1 rounded border border-red-300 text-red-500 text-[11px] font-bold hover:bg-red-500 hover:text-white transition-colors">
+                                          className="px-2.5 py-1 rounded border border-red-300 text-red-500 text-[13px] font-bold hover:bg-red-500 hover:text-white transition-colors">
                                           ลบ
                                         </button>
                                       </>

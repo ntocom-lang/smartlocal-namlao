@@ -58,7 +58,7 @@ export default function AISearchCard() {
           <p className="text-white/60 text-[10px] truncate">ผู้ช่วยอัจฉริยะ · ตอบทันที 24 ชม.</p>
         </div>
         <button onClick={() => navigate('/search')}
-          className="text-[10px] text-white/70 hover:text-white flex items-center gap-0.5 shrink-0 transition-colors">
+          className="text-[12px] text-white/70 hover:text-white flex items-center gap-0.5 shrink-0 transition-colors">
           เต็มจอ <ChevronRight size={11} />
         </button>
       </div>
@@ -70,7 +70,7 @@ export default function AISearchCard() {
           <div className="flex flex-wrap gap-1.5">
             {QUICK_PROMPTS.map(p => (
               <button key={p.text} onClick={() => ask(p.text)}
-                className="flex items-center gap-1 px-2.5 py-1.5 bg-gray-50 hover:bg-gray-100 rounded-full text-[11px] text-gray-600 font-medium transition-colors border border-gray-100">
+                className="flex items-center gap-1 px-2.5 py-1.5 bg-gray-50 hover:bg-gray-100 rounded-full text-[13px] text-gray-600 font-medium transition-colors border border-gray-100">
                 <span>{p.emoji}</span> {p.text}
               </button>
             ))}

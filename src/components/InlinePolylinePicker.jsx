@@ -241,7 +241,7 @@ export default function InlinePolylinePicker({ value = [], onChange, defaultCent
               <div className="flex items-center gap-1 flex-wrap mb-1.5">
                 {[1.0, 1.1, 1.15, 1.2, 1.5].map(m => (
                   <button key={m} type="button" onClick={() => setMultiplier(m)}
-                    className="text-[10px] px-1.5 py-0.5 rounded font-medium transition-colors"
+                    className="text-[12px] px-1.5 py-0.5 rounded font-medium transition-colors"
                     style={Math.abs(multiplier - m) < 0.001
                       ? { backgroundColor: '#3b82f6', color: 'white' }
                       : { backgroundColor: '#f1f5f9', color: '#475569' }}>

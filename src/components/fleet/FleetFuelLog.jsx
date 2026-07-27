@@ -229,7 +229,7 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts, isAdmin, isStaf
                     )}
                     {isAdmin && (
                       <button onClick={() => handleDelete(r)}
-                        className="text-[10px] font-bold px-2 py-0.5 rounded border border-red-300 text-red-400 hover:bg-red-400 hover:text-white transition-colors mt-1">
+                        className="text-[12px] font-bold px-2 py-0.5 rounded border border-red-300 text-red-400 hover:bg-red-400 hover:text-white transition-colors mt-1">
                         ลบ
                       </button>
                     )}

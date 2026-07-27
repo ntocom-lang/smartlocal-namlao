@@ -993,7 +993,7 @@ export default function TechnicianDashboard() {
                 {GPS_TYPES.map(t => (
                   <button key={t.value} type="button"
                     onClick={() => setGpsForm(p => ({ ...p, project_type: t.value }))}
-                    className="text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all"
+                    className="text-[13px] font-semibold px-2.5 py-1 rounded-full border transition-all"
                     style={gpsForm.project_type === t.value
                       ? { backgroundColor: '#7c3aed', color: '#fff', borderColor: '#7c3aed' }
                       : { backgroundColor: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' }}>

@@ -267,7 +267,7 @@ function QuickStatusChange({ id, currentStatus, onUpdate, loading }) {
 const LEGACY_STATUS = { pending: 'new', completed: 'done', received: 'received' }
 function normalizeActionStatus(s) { return LEGACY_STATUS[s] ?? s ?? 'new' }
 
-function ActionButton({ status, id, onUpdate, loading }) {
+function ActionButton({ status, id, onUpdate, loading, size = 'sm' }) {
   const action = NEXT_ACTION[normalizeActionStatus(status)]
   const [confirm, setConfirm] = useState(false)
   const [note, setNote] = useState('')
@@ -304,9 +304,11 @@ function ActionButton({ status, id, onUpdate, loading }) {
   return (
     <>
       <button onClick={() => setConfirm(true)} disabled={loading === id}
-        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-white whitespace-nowrap transition-all active:scale-95 disabled:opacity-50"
+        className={size === 'lg'
+          ? 'inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white whitespace-nowrap shadow-sm transition-all active:scale-95 disabled:opacity-50'
+          : 'inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[13px] font-semibold text-white whitespace-nowrap transition-all active:scale-95 disabled:opacity-50'}
         style={{ backgroundColor: 'var(--color-primary)' }}>
-        {loading === id ? <Loader2 size={12} className="animate-spin" /> : <ChevronRight size={12} />}
+        {loading === id ? <Loader2 size={size === 'lg' ? 15 : 12} className="animate-spin" /> : <ChevronRight size={size === 'lg' ? 15 : 12} />}
         {action.label}
       </button>
       {confirm && (
@@ -327,7 +329,7 @@ function ActionButton({ status, id, onUpdate, loading }) {
                       <div key={i} className="relative">
                         <img src={URL.createObjectURL(f)} alt="" className="w-14 h-14 object-cover rounded-lg" />
                         <button onClick={() => setPendingFiles(prev => prev.filter((_, j) => j !== i))}
-                          className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-white leading-none text-[10px]">×</button>
+                          className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-white leading-none text-[11px]">×</button>
                       </div>
                     ))}
                   </div>
@@ -894,7 +896,7 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
                       return (
                         <button key={k} type="button"
                           onClick={() => { if ((c.priority ?? 'normal') !== k) setPendingPriority(k) }}
-                          className="px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all border"
+                          className="px-2.5 py-1 rounded-xl text-[13px] font-bold transition-all border"
                           style={active
                             ? { backgroundColor: p.bg, color: p.text, borderColor: p.color }
                             : { backgroundColor: '#f9fafb', color: '#9ca3af', borderColor: '#e5e7eb' }}>
@@ -1168,10 +1170,10 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
                   </div>
                 </div>
               )}
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex gap-2 flex-wrap items-center">
               <ActionButton status={c.status} id={c.id}
                 onUpdate={(id, next, wp = [], note = null) => { onUpdate(id, next, wp, note); onClose() }}
-                loading={updating} />
+                loading={updating} size="lg" />
               <RejectButton status={c.status} id={c.id}
                 onUpdate={(id, next, wp = [], note = null) => { onUpdate(id, next, wp, note); onClose() }}
                 loading={updating} />
@@ -1971,7 +1973,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                                 : <span className="text-gray-300 text-xs">ไม่ระบุ</span>}
                               {phone && (
                                 <a href={`tel:${phone}`} onClick={e => e.stopPropagation()}
-                                  className="text-[10px] text-blue-500 hover:underline">{phone}</a>
+                                  className="text-[12px] text-blue-500 hover:underline">{phone}</a>
                               )}
                             </div>
                           )

@@ -91,7 +91,7 @@ function MiniCalendar({ events }) {
           <CalendarDays size={14} style={{ color: 'var(--color-primary)' }} className="shrink-0" />
           <p className="text-xs font-bold text-gray-700">ปฏิทินกิจกรรม</p>
         </div>
-        <Link to="/events" className="text-[11px] font-medium flex items-center gap-0.5 hover:underline"
+        <Link to="/events" className="text-[13px] font-medium flex items-center gap-0.5 hover:underline"
           style={{ color: 'var(--color-primary)' }}>
           ทั้งหมด <ChevronRight size={11} />
         </Link>
@@ -124,7 +124,7 @@ function MiniCalendar({ events }) {
           return (
             <button key={i} onClick={() => navigate('/events')}
               className="min-h-9 px-0.5 pt-1 pb-0.5 flex flex-col items-center bg-white hover:bg-gray-50 transition-colors">
-              <span className={`text-[11px] font-bold w-5 h-5 flex items-center justify-center rounded-full mb-0.5 ${
+              <span className={`text-[13px] font-bold w-5 h-5 flex items-center justify-center rounded-full mb-0.5 ${
                 isToday ? 'bg-red-500 text-white'
                   : dow === 0 ? 'text-red-400'
                   : dow === 6 ? 'text-blue-400'
@@ -183,7 +183,7 @@ function NewsSlider({ posts, label = 'ข่าวสาร', href = '/news' }) 
           <p className="text-xs font-bold text-gray-700">{label}</p>
         </div>
         <Link to={href}
-          className="text-[11px] font-medium flex items-center gap-0.5 hover:underline"
+          className="text-[13px] font-medium flex items-center gap-0.5 hover:underline"
           style={{ color: 'var(--color-primary)' }}>
           ทั้งหมด <ChevronRight size={11} />
         </Link>
@@ -233,7 +233,7 @@ function EServiceBlock({ docTypes }) {
                 style={{ fontSize: 28, background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(4px)', border: '1px solid rgba(255,255,255,0.3)' }}>
                 {emoji}
               </div>
-              <p className="text-white text-[10px] font-bold text-center leading-snug drop-shadow-sm">{label}</p>
+              <p className="text-white text-[12px] font-bold text-center leading-snug drop-shadow-sm">{label}</p>
             </Link>
           ))}
         </div>
@@ -247,7 +247,7 @@ function EServiceBlock({ docTypes }) {
                 style={{ background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(4px)', border: '1px solid rgba(255,255,255,0.3)' }}>
                 {emoji}
               </div>
-              <p className="text-white text-[11px] font-bold text-center leading-snug drop-shadow-sm">{label}</p>
+              <p className="text-white text-[13px] font-bold text-center leading-snug drop-shadow-sm">{label}</p>
             </Link>
           ))}
         </div>
@@ -294,7 +294,7 @@ function CustomComplaintBand() {
           🚨 แจ้งเหตุ / แจ้งซ่อม
         </p>
         <Link to="/complaint"
-          className="flex items-center gap-0.5 text-[#8c5a14] text-[11px] font-bold bg-white/20 px-2.5 py-1 rounded-full hover:bg-white/30 transition-colors">
+          className="flex items-center gap-0.5 text-[#8c5a14] text-[13px] font-bold bg-white/20 px-2.5 py-1 rounded-full hover:bg-white/30 transition-colors">
           ทั้งหมด <ChevronRight size={13} />
         </Link>
       </div>
@@ -307,7 +307,7 @@ function CustomComplaintBand() {
               style={{ fontSize: 32, background: 'rgba(255,255,255,0.2)', backdropFilter: 'blur(4px)', border: '1px solid rgba(255,255,255,0.4)' }}>
               {emoji}
             </div>
-            <p className="text-[#8c5a14] text-[10px] font-bold text-center leading-tight drop-shadow-sm w-16">{value}</p>
+            <p className="text-[#8c5a14] text-[12px] font-bold text-center leading-tight drop-shadow-sm w-16">{value}</p>
           </Link>
         ))}
       </div>
@@ -345,7 +345,7 @@ function CustomShortcutBand() {
               style={{ fontSize: 26, border: '1px solid rgba(255,255,255,0.9)' }}>
               {sc.icon}
             </div>
-            <p className="text-white text-[9px] font-bold text-center drop-shadow-sm">{sc.label}</p>
+            <p className="text-white text-[11px] font-bold text-center drop-shadow-sm">{sc.label}</p>
           </a>
         ))}
       </div>

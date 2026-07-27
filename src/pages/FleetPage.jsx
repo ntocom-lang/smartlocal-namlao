@@ -27,7 +27,7 @@ function TabBar({ tab, setTab }) {
          style={{ scrollbarWidth: 'none' }}>
       {TABS.map(({ id, label, Icon }) => (
         <button key={id} onClick={() => setTab(id)}
-          className="flex items-center gap-1.5 px-4 py-2.5 text-[11px] font-bold shrink-0 border-b-2 transition-colors"
+          className="flex items-center gap-1.5 px-4 py-2.5 text-[13px] font-bold shrink-0 border-b-2 transition-colors"
           style={{
             borderColor: tab === id ? 'var(--color-primary)' : 'transparent',
             color:       tab === id ? 'var(--color-primary)' : '#9ca3af',

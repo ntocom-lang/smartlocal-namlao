@@ -93,7 +93,7 @@ function MiniCalendar({ events }) {
           <CalendarDays size={14} style={{ color: 'var(--color-primary)' }} className="shrink-0" />
           <p className="text-xs font-bold text-gray-700">ปฏิทินกิจกรรม</p>
         </div>
-        <Link to="/events" className="text-[11px] font-medium flex items-center gap-0.5 hover:underline"
+        <Link to="/events" className="text-[13px] font-medium flex items-center gap-0.5 hover:underline"
           style={{ color: 'var(--color-primary)' }}>
           ทั้งหมด <ChevronRight size={11} />
         </Link>
@@ -126,7 +126,7 @@ function MiniCalendar({ events }) {
           return (
             <button key={i} onClick={() => navigate('/events')}
               className="min-h-9 px-0.5 pt-1 pb-0.5 flex flex-col items-center bg-white hover:bg-gray-50 transition-colors">
-              <span className={`text-[11px] font-bold w-5 h-5 flex items-center justify-center rounded-full mb-0.5 ${
+              <span className={`text-[13px] font-bold w-5 h-5 flex items-center justify-center rounded-full mb-0.5 ${
                 isToday ? 'bg-red-500 text-white'
                   : dow === 0 ? 'text-red-400'
                   : dow === 6 ? 'text-blue-400'
@@ -185,7 +185,7 @@ function NewsSlider({ posts, label = 'ข่าวสาร', href = '/news' }) 
           <p className="text-xs font-bold text-gray-700">{label}</p>
         </div>
         <Link to={href}
-          className="text-[11px] font-medium flex items-center gap-0.5 hover:underline"
+          className="text-[13px] font-medium flex items-center gap-0.5 hover:underline"
           style={{ color: 'var(--color-primary)' }}>
           ทั้งหมด <ChevronRight size={11} />
         </Link>
@@ -230,7 +230,7 @@ function EServiceBlock({ docTypes }) {
           <p className="text-white font-extrabold text-[15px] md:text-base tracking-wide uppercase flex items-center gap-1.5 drop-shadow-sm">
             ✦ E-SERVICE ✦ <span className="text-white/90">งานบริการประชาชน</span>
           </p>
-          <Link to="/doc-request" className="flex items-center gap-0.5 text-white/90 text-[11px] font-semibold hover:text-white transition-colors">
+          <Link to="/doc-request" className="flex items-center gap-0.5 text-white/90 text-[13px] font-semibold hover:text-white transition-colors">
             ทั้งหมด <ChevronRight size={13} />
           </Link>
         </div>
@@ -243,7 +243,7 @@ function EServiceBlock({ docTypes }) {
                 style={{ fontSize: 26, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
                 {emoji}
               </div>
-              <p className="text-white/95 text-[9px] md:text-[10px] font-semibold text-center leading-tight w-full drop-shadow-sm line-clamp-2">{label}</p>
+              <p className="text-white/95 text-[11px] md:text-[12px] font-semibold text-center leading-tight w-full drop-shadow-sm line-clamp-2">{label}</p>
             </Link>
           ))}
         </div>

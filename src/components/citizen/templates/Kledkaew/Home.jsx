@@ -75,7 +75,7 @@ export default function Home() {
                   {srv.icon}
                 </div>
               </div>
-              <span className="text-[11px] font-bold text-emerald-950 mt-3 text-center whitespace-pre-line leading-tight">
+              <span className="text-[13px] font-bold text-emerald-950 mt-3 text-center whitespace-pre-line leading-tight">
                 {srv.label}
               </span>
             </Link>
@@ -94,11 +94,11 @@ export default function Home() {
         <div className="grid grid-cols-2 gap-3">
            <Link to="/weather" className="rounded-2xl overflow-hidden shadow-sm relative h-32 border border-gray-100 block transition-transform active:scale-95 group">
              <img src="https://images.unsplash.com/photo-1584267385494-9fdd9a71ad75?auto=format&fit=crop&w=400&q=80" alt="Weather Radar" className="w-full h-full object-cover opacity-90 transition-transform duration-500 group-hover:scale-105" />
-             <div className="absolute top-2 right-0 bg-[#f97316] text-white text-[11px] font-bold px-2.5 py-1 rounded-l-md z-10 shadow-md border-l-2 border-[#ea580c]">รายงานพยากรณ์อากาศ</div>
+             <div className="absolute top-2 right-0 bg-[#f97316] text-white text-[13px] font-bold px-2.5 py-1 rounded-l-md z-10 shadow-md border-l-2 border-[#ea580c]">รายงานพยากรณ์อากาศ</div>
            </Link>
            <a href="https://air4thai.pcd.go.th/webV3/#/Home" target="_blank" rel="noopener noreferrer" className="rounded-2xl overflow-hidden shadow-sm relative h-32 border border-gray-100 block transition-transform active:scale-95 group">
              <img src="https://images.unsplash.com/photo-1611273426858-450d8e3c9fce?auto=format&fit=crop&w=400&q=80" alt="Air4Thai PM 2.5" className="w-full h-full object-cover opacity-90 transition-transform duration-500 group-hover:scale-105" />
-             <div className="absolute top-2 left-0 bg-[#38bdf8] text-white text-[11px] font-bold px-2.5 py-1 rounded-r-md z-10 shadow-md border-r-2 border-[#0284c7]">เช็คฝุ่น PM 2.5</div>
+             <div className="absolute top-2 left-0 bg-[#38bdf8] text-white text-[13px] font-bold px-2.5 py-1 rounded-r-md z-10 shadow-md border-r-2 border-[#0284c7]">เช็คฝุ่น PM 2.5</div>
              <div className="absolute inset-0 bg-linear-to-t from-black/70 via-black/10 to-transparent flex items-end p-3">
                <p className="text-white text-xs font-bold leading-snug drop-shadow-md">Air4Thai<br/>รายงานสถานการณ์<br/>มลพิษทางอากาศ</p>
              </div>
@@ -140,7 +140,7 @@ export default function Home() {
           
           <div className="relative z-10 flex justify-between items-start mb-5">
             <h2 className="text-[17px] font-black text-emerald-900 leading-tight">แจ้งเรื่องร้องเรียน<br/>/ร้องทุกข์</h2>
-            <Link to="/complaint" className="bg-yellow-400 text-yellow-900 text-[11px] font-black px-4 py-1.5 rounded-full shadow-sm hover:bg-yellow-300 transition-colors">
+            <Link to="/complaint" className="bg-yellow-400 text-yellow-900 text-[13px] font-black px-4 py-1.5 rounded-full shadow-sm hover:bg-yellow-300 transition-colors">
               ดูทั้งหมด
             </Link>
           </div>
@@ -157,7 +157,7 @@ export default function Home() {
                       : <span className="text-[3rem] leading-none select-none">{emoji}</span>
                     }
                   </div>
-                  <span className="text-[11px] font-bold text-gray-700 mt-2 text-center leading-tight line-clamp-2">{cat.label}</span>
+                  <span className="text-[13px] font-bold text-gray-700 mt-2 text-center leading-tight line-clamp-2">{cat.label}</span>
                 </Link>
               )
             })}
@@ -230,7 +230,7 @@ export default function Home() {
           </p>
           <button
             onClick={() => navigate(`/tourism?cat=${activeTab}`)}
-            className="bg-yellow-400 text-yellow-900 text-[12px] font-black px-6 py-2.5 rounded-full shadow-sm hover:bg-yellow-300 active:scale-95 transition-all">
+            className="bg-yellow-400 text-yellow-900 text-sm font-black px-6 py-2.5 rounded-full shadow-sm hover:bg-yellow-300 active:scale-95 transition-all">
             ดูทั้งหมด →
           </button>
         </div>

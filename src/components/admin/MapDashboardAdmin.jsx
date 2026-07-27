@@ -73,7 +73,7 @@ function MobileFilterPill({ id, icon, label, color, value, onChange, options, op
           ].map(({ v, label: optLabel, count }) => (
             <button key={v} type="button"
               onClick={() => { onChange(v); setOpenFilter(null) }}
-              className="w-full text-left px-4 py-1.5 text-[10px] border-b border-gray-50 last:border-0 transition-colors"
+              className="w-full text-left px-4 py-1.5 text-[12px] border-b border-gray-50 last:border-0 transition-colors"
               style={{
                 color:           value === v ? pillColor : '#374151',
                 fontWeight:      value === v ? '600' : '400',
@@ -898,7 +898,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round">
                         <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                       </svg>
-                      <span className="text-[10px] font-semibold" style={{ color: '#ef4444' }}>ล้าง</span>
+                      <span className="text-[12px] font-semibold" style={{ color: '#ef4444' }}>ล้าง</span>
                     </button>
                   </div>
                 )}
@@ -1018,8 +1018,8 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                         className="font-bold text-left w-full mb-1 hover:underline flex items-center gap-1"
                         style={{ color: 'var(--color-primary)' }}>
                         {FORM_TYPE_LABEL[c.form_type] ?? '📝 คำร้อง'}
-                        <span className="text-[10px] font-normal opacity-70">(รายละเอียด)</span>
-                        <span className="text-[10px] opacity-60">→</span>
+                        <span className="text-[12px] font-normal opacity-70">(รายละเอียด)</span>
+                        <span className="text-[12px] opacity-60">→</span>
                       </button>
                     )}
                     <div className="text-gray-700 font-medium leading-snug">{CATEGORY_LABEL[c.category] ?? c.category}</div>
@@ -1131,8 +1131,8 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                         className="font-bold text-left w-full mb-0.5 hover:underline flex items-center gap-1"
                         style={{ color: 'var(--color-primary)' }}>
                         🏗️ {w.title}
-                        <span className="text-[10px] font-normal opacity-70">(รายละเอียด)</span>
-                        <span className="text-[10px] opacity-60">→</span>
+                        <span className="text-[12px] font-normal opacity-70">(รายละเอียด)</span>
+                        <span className="text-[12px] opacity-60">→</span>
                       </button>
                     )}
                     <div className="text-gray-500 text-xs mt-0.5">{PROJECT_TYPE_LABEL[w.project_type] ?? w.project_type}</div>
@@ -1378,7 +1378,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                         )}
                         {d.latitude && d.longitude && (
                           <a href={gmapsUrl(d.latitude, d.longitude)} target="_blank" rel="noreferrer"
-                            className="inline-flex items-center gap-1 mt-1.5 text-[11px] font-mono text-blue-600 hover:underline">
+                            className="inline-flex items-center gap-1 mt-1.5 text-[13px] font-mono text-blue-600 hover:underline">
                             <svg width="10" height="10" viewBox="0 0 24 24" fill="#1a73e8"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
                             {d.latitude.toFixed(6)}, {d.longitude.toFixed(6)}
                           </a>

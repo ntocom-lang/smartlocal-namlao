@@ -578,16 +578,16 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
           <div className="flex gap-1 justify-center flex-wrap">
             {canApprove && <>
               <button onClick={() => handleApprove(t)}
-                className="px-2 py-1 rounded-lg bg-green-500 text-white text-[10px] font-bold">อนุมัติ</button>
+                className="px-2 py-1 rounded-lg bg-green-500 text-white text-[12px] font-bold">อนุมัติ</button>
               <button onClick={() => handleReject(t)}
-                className="px-2 py-1 rounded-lg border border-red-200 text-red-500 text-[10px] font-bold">ปฏิเสธ</button>
+                className="px-2 py-1 rounded-lg border border-red-200 text-red-500 text-[12px] font-bold">ปฏิเสธ</button>
             </>}
             {canDepart && (
               <button onClick={() => {
                 setSelTrip(t)
                 setForm({ started_at: toLocalDT(new Date()), odometer_start: '' })
                 setModal('depart')
-              }} className="px-2 py-1 rounded-lg text-white text-[10px] font-bold whitespace-nowrap"
+              }} className="px-2 py-1 rounded-lg text-white text-[12px] font-bold whitespace-nowrap"
                 style={{ backgroundColor: 'var(--color-primary)' }}>
                 🚀 ออก
               </button>
@@ -597,13 +597,13 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
                 setSelTrip(t)
                 setForm({ returned_at: toLocalDT(new Date()), odometer_end: '', notes: '' })
                 setModal('return')
-              }} className="px-2 py-1 rounded-lg bg-green-600 text-white text-[10px] font-bold whitespace-nowrap">
+              }} className="px-2 py-1 rounded-lg bg-green-600 text-white text-[12px] font-bold whitespace-nowrap">
                 🏁 กลับ
               </button>
             )}
             {isAdmin && (
               <button onClick={() => handleDelete(t)}
-                className="px-2 py-1 rounded-lg border border-red-300 text-red-400 hover:bg-red-400 hover:text-white text-[10px] font-bold transition-colors">
+                className="px-2 py-1 rounded-lg border border-red-300 text-red-400 hover:bg-red-400 hover:text-white text-[12px] font-bold transition-colors">
                 ลบ
               </button>
             )}
@@ -665,7 +665,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
             การจองและการเดินทาง{active.length > 0 && <span className="text-blue-500 normal-case ml-1">({active.length})</span>}
           </p>
           <button onClick={() => setShowCal(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors">
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[13px] font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors">
             <Calendar size={13} /> ปฏิทินการจอง
           </button>
         </div>

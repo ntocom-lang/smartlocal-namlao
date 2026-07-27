@@ -57,7 +57,7 @@ export default function WaveFluidBottomNav() {
                     className={`transition-all ${isActive ? 'text-white' : 'text-white/60'}`}
                     strokeWidth={isActive ? 2.5 : 1.5}
                   />
-                  <span className={`text-[11px] font-medium transition-all ${isActive ? 'text-white font-bold' : 'text-white/60'}`}>
+                  <span className={`text-[13px] font-medium transition-all ${isActive ? 'text-white font-bold' : 'text-white/60'}`}>
                     {item.label}
                   </span>
                 </div>

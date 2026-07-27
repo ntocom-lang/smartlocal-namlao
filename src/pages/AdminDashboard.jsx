@@ -525,7 +525,7 @@ function UserManager({ tenant, currentUserRole }) {
                       <span className="text-xs text-gray-400">{u.department_name || 'ไม่ระบุกอง'}</span>
                     )}
                     {u.department_id && (currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
-                      <label className="flex items-center gap-1 text-[11px] text-gray-400 cursor-pointer">
+                      <label className="flex items-center gap-1 text-[13px] text-gray-400 cursor-pointer">
                         <input type="checkbox" checked={!!u.is_dept_head} disabled={saving === u.id}
                           onChange={() => toggleDeptHead(u.id, u.is_dept_head)}
                           className="w-3.5 h-3.5" />
@@ -535,7 +535,7 @@ function UserManager({ tenant, currentUserRole }) {
                   </div>
                 )}
                 <div className="flex items-center gap-2 pl-[68px] mt-1">
-                  <button onClick={() => setViewingUserId(u.id)} className="text-[11px] text-blue-500 hover:text-blue-700 font-medium px-2 py-1 bg-blue-50 hover:bg-blue-100 rounded transition-colors">
+                  <button onClick={() => setViewingUserId(u.id)} className="text-[13px] text-blue-500 hover:text-blue-700 font-medium px-2 py-1 bg-blue-50 hover:bg-blue-100 rounded transition-colors">
                     ดูรายละเอียด
                   </button>
                   {(currentUserRole === 'superadmin' || currentUserRole === 'admin') && u.role !== 'superadmin' && (
@@ -633,15 +633,15 @@ function UserManager({ tenant, currentUserRole }) {
             <thead>
               <tr style={{ backgroundColor: '#2c5282' }}>
                 <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 w-[5%]">ลำดับ</th>
-                <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 w-[18%] cursor-pointer hover:bg-white/10 transition-colors" onClick={() => handleSort('full_name')}>
+                <th className="px-2 py-2.5 text-[13px] font-bold text-white border-r border-white/10 w-[18%] cursor-pointer hover:bg-white/10 transition-colors" onClick={() => handleSort('full_name')}>
                   <div className="flex items-center gap-1">ชื่อ-นามสกุล {sortConfig.key === 'full_name' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
                 </th>
                 <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 w-[20%]">อีเมล</th>
-                <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 w-[15%] cursor-pointer hover:bg-white/10 transition-colors" onClick={() => handleSort('role')}>
+                <th className="px-2 py-2.5 text-[13px] font-bold text-white border-r border-white/10 w-[15%] cursor-pointer hover:bg-white/10 transition-colors" onClick={() => handleSort('role')}>
                   <div className="flex items-center gap-1">บทบาท/สิทธิ์ {sortConfig.key === 'role' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
                 </th>
                 <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 w-[17%]">สังกัด</th>
-                <th className="px-2 py-2.5 text-[11px] font-bold text-white w-[25%] cursor-pointer hover:bg-white/10 transition-colors" onClick={() => handleSort('job_title')}>
+                <th className="px-2 py-2.5 text-[13px] font-bold text-white w-[25%] cursor-pointer hover:bg-white/10 transition-colors" onClick={() => handleSort('job_title')}>
                   <div className="flex items-center gap-1">ตำแหน่งงาน {sortConfig.key === 'job_title' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
                 </th>
               </tr>
@@ -704,7 +704,7 @@ function UserManager({ tenant, currentUserRole }) {
                           {(currentUserRole === 'admin' || currentUserRole === 'superadmin') ? (
                             <select value={u.department_id ?? ''} disabled={saving === u.id}
                               onChange={(e) => updateDepartment(u.id, e.target.value)}
-                              className="text-[11px] border border-gray-200 rounded px-1.5 py-0.5 text-gray-600 focus:outline-none bg-white max-w-full">
+                              className="text-[13px] border border-gray-200 rounded px-1.5 py-0.5 text-gray-600 focus:outline-none bg-white max-w-full">
                               <option value="">— ไม่ระบุกอง —</option>
                               {depts.map(d => <option key={d.id} value={d.id}>{d.short_name || d.name}</option>)}
                             </select>
@@ -712,7 +712,7 @@ function UserManager({ tenant, currentUserRole }) {
                             <span className="text-[11px] text-gray-400 truncate">{u.department_name || 'ไม่ระบุกอง'}</span>
                           )}
                           {u.department_id && (currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
-                            <label className="flex items-center gap-1 text-[10px] text-gray-400 shrink-0 cursor-pointer">
+                            <label className="flex items-center gap-1 text-[12px] text-gray-400 shrink-0 cursor-pointer">
                               <input type="checkbox" checked={!!u.is_dept_head} disabled={saving === u.id}
                                 onChange={() => toggleDeptHead(u.id, u.is_dept_head)}
                                 className="w-3 h-3" />
@@ -2477,7 +2477,7 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
 
         <button
           onClick={() => onToggleActive?.(cat.id, cat.is_active !== false)}
-          className={`px-2 py-1 rounded-full text-[10px] font-bold shrink-0 transition-colors ${cat.is_active === false ? 'bg-gray-200 text-gray-500 hover:bg-green-100 hover:text-green-700' : 'bg-green-100 text-green-700 hover:bg-gray-200 hover:text-gray-500'}`}
+          className={`px-2 py-1 rounded-full text-[12px] font-bold shrink-0 transition-colors ${cat.is_active === false ? 'bg-gray-200 text-gray-500 hover:bg-green-100 hover:text-green-700' : 'bg-green-100 text-green-700 hover:bg-gray-200 hover:text-gray-500'}`}
         >
           {cat.is_active === false ? 'ปิด' : 'เปิด'}
         </button>

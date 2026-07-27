@@ -1,6 +1,16 @@
 @import "tailwindcss";
 @variant dark (&:where(.dark, .dark *));
 
+/* ยกขนาด text-xs จาก 12px (ค่า default ของ Tailwind) เป็น 13px ทั่วทั้งแอปในจุดเดียว —
+   staff บ่นว่าตัวหนังสือปุ่ม/label เล็กไป สำรวจแล้วพบว่า text-xs ถูกใช้กับปุ่ม/label
+   ที่ต้องกดจริงกว่า 400 จุดทั่วแอป การไล่แก้ทีละจุดไม่คุ้ม ยกทั้ง scale จุดเดียวตรงนี้
+   คุ้มกว่า (ดู PHASE 2: จุดที่ใช้ text-[9px]/[10px]/[11px] แบบ custom ไม่ผูกกับ scale นี้
+   ต้องไล่แก้แยกเป็นจุดๆ เพราะ override ตรงนี้จะไม่มีผลกับพวกนั้น) */
+@theme {
+  --text-xs: 0.8125rem; /* 13px, เดิม 12px */
+  --text-xs--line-height: calc(1.25 / 0.8125);
+}
+
 :root {
   --color-primary: #1c7cd6;
   --color-primary-dark: #1565b3;

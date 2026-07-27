@@ -534,7 +534,7 @@ export default function PostsManager() {
                 <div className="flex items-center gap-1.5 pt-1">
                   {/* Toggle publish */}
                   <button onClick={() => togglePublish(p)} disabled={toggleSet.has(p.id)}
-                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors disabled:opacity-50 ${
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[13px] font-medium transition-colors disabled:opacity-50 ${
                       p.is_published
                         ? 'bg-green-50 text-green-700 hover:bg-green-100'
                         : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
@@ -548,7 +548,7 @@ export default function PostsManager() {
 
                   {/* Edit */}
                   <button onClick={() => openEdit(p)}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-blue-50 text-blue-600 hover:bg-blue-100">
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[13px] font-medium bg-blue-50 text-blue-600 hover:bg-blue-100">
                     <Pencil size={11} /> แก้ไข
                   </button>
 
@@ -556,12 +556,12 @@ export default function PostsManager() {
                   {delConfirm === p.id ? (
                     <div className="flex items-center gap-1 relative z-10">
                       <button onClick={() => handleDelete(p.id)} disabled={deleting}
-                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-red-500 text-white hover:bg-red-600 disabled:opacity-50">
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[13px] font-medium bg-red-500 text-white hover:bg-red-600 disabled:opacity-50">
                         {deleting ? <Loader2 size={10} className="animate-spin" /> : <Trash2 size={10} />}
                         ยืนยันลบ
                       </button>
                       <button onClick={() => { setDelConfirm(null); setDeleteError(null) }} disabled={deleting}
-                        className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-gray-100 text-gray-500 hover:bg-gray-200">
+                        className="px-2.5 py-1 rounded-lg text-[13px] font-medium bg-gray-100 text-gray-500 hover:bg-gray-200">
                         ยกเลิก
                       </button>
                     </div>

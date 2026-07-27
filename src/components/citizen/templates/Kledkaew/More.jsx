@@ -92,22 +92,22 @@ export default function KledkaewMore() {
                 <ClipboardList size={32} className="text-amber-400 drop-shadow-sm" strokeWidth={1.5} />
                 <div className="absolute -top-1 -right-1 w-4 h-4 bg-amber-400 rounded-full flex items-center justify-center text-[#064e3b] text-[10px] font-bold">?</div>
               </div>
-              <span className="text-white/90 text-[11px] font-medium leading-tight">ร้องเรียน<br/>ร้องทุกข์</span>
+              <span className="text-white/90 text-[13px] font-medium leading-tight">ร้องเรียน<br/>ร้องทุกข์</span>
             </Link>
             <Link to="/doc-request" className="flex-1 flex flex-col items-center justify-start gap-2 border-r border-white/10 px-1">
               <Globe size={32} className="text-amber-400 drop-shadow-sm" strokeWidth={1.5} />
-              <span className="text-white/90 text-[11px] font-medium leading-tight">E-Service</span>
+              <span className="text-white/90 text-[13px] font-medium leading-tight">E-Service</span>
             </Link>
             <Link to="/my-complaints" className="flex-1 flex flex-col items-center justify-start gap-2 border-r border-white/10 px-1">
               <FileSearch size={32} className="text-amber-400 drop-shadow-sm" strokeWidth={1.5} />
-              <span className="text-white/90 text-[11px] font-medium leading-tight">ติดตาม<br/>คำร้อง</span>
+              <span className="text-white/90 text-[13px] font-medium leading-tight">ติดตาม<br/>คำร้อง</span>
             </Link>
             <Link to="/my-docs" className="flex-1 flex flex-col items-center justify-start gap-2 px-1">
               <div className="relative">
                 <FileText size={32} className="text-amber-400 drop-shadow-sm" strokeWidth={1.5} />
                 <div className="absolute -top-1 -right-1 w-4 h-4 border-2 border-[#064e3b] rounded-full bg-amber-400"></div>
               </div>
-              <span className="text-white/90 text-[11px] font-medium leading-tight">ติดตาม<br/>เอกสาร</span>
+              <span className="text-white/90 text-[13px] font-medium leading-tight">ติดตาม<br/>เอกสาร</span>
             </Link>
           </div>
         </div>

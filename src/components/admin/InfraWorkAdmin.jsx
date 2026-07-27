@@ -405,7 +405,7 @@ export default function InfraWorkAdmin({ tenant, currentUserRole }) {
                     {INFRA_CATEGORIES.map((cat) => (
                       <button key={cat.value} type="button"
                         onClick={() => setNewForm(p => ({ ...p, category: cat.value }))}
-                        className="text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all"
+                        className="text-[13px] font-semibold px-2.5 py-1 rounded-full border transition-all"
                         style={newForm.category === cat.value
                           ? { backgroundColor: '#7c3aed', color: '#fff', borderColor: '#7c3aed' }
                           : { backgroundColor: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' }}>
@@ -527,7 +527,7 @@ export default function InfraWorkAdmin({ tenant, currentUserRole }) {
                     {INFRA_CATEGORIES.map((cat) => (
                       <button key={cat.value} type="button"
                         onClick={() => setRepairForm(p => ({ ...p, category: cat.value }))}
-                        className="text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all"
+                        className="text-[13px] font-semibold px-2.5 py-1 rounded-full border transition-all"
                         style={repairForm.category === cat.value
                           ? { backgroundColor: '#0891b2', color: '#fff', borderColor: '#0891b2' }
                           : { backgroundColor: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' }}>
@@ -632,7 +632,7 @@ export default function InfraWorkAdmin({ tenant, currentUserRole }) {
           <div className="flex gap-1">
             {['all', 'new_project', 'repair'].map((tab) => (
               <button key={tab} onClick={() => setFilterTab(tab)}
-                className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
+                className={`text-[13px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
                   filterTab === tab ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-500 border-gray-200'
                 }`}>
                 {tab === 'all' ? 'ทั้งหมด' : tab === 'new_project' ? '🏗️ ใหม่' : '🔧 ซ่อม'}
