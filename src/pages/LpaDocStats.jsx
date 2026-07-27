@@ -10,8 +10,7 @@ import { useTenant } from '../contexts/TenantContext'
 const DOC_LABELS = {
   residence_cert: 'ใบรับรองการอยู่อาศัย',
   personal_cert:  'หนังสือรับรองบุคคล',
-  conduct_cert:   'หนังสือรับรองความประพฤติ',
-  tax_notice:       'ชำระภาษีที่ดินและสิ่งปลูกสร้าง',
+  tax_notice:       'ค่าธรรมเนียม/ภาษี',
   waste_collection: 'ชำระค่าธรรมเนียมเก็บขนขยะ',
   other:          'คำขออื่นๆ',
 }

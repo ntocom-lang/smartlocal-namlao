@@ -528,8 +528,8 @@ export default function MorePage() {
             icon={FileText}
             iconBg="bg-blue-50"
             iconColor="text-blue-500"
-            label="บริการออนไลน์"
-            desc="ใบรับรองการอยู่อาศัย / หนังสือรับรองบุคคล และอื่นๆ"
+            label="สอบถามยอดชำระเรื่องนั้นๆ"
+            desc="ค่าธรรมเนียม / ภาษี / ค่าธรรมเนียมขยะ และคำขออื่นๆ"
             href="/doc-request"
           />
           <MenuRow

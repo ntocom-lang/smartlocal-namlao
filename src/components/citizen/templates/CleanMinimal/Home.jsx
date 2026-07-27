@@ -6,7 +6,7 @@ import { supabase } from '../../../../lib/supabase'
 import PostsHighlight from '../../../../components/home/PostsHighlight'
 import TourismSection from '../../../../components/home/TourismSection'
 import BannerSlider from '../../../../components/home/BannerSlider'
-import { Info, ChevronRight, Briefcase, Megaphone, LayoutDashboard, Wrench, Newspaper, CalendarDays, ChevronLeft, Home, User, FileCheck, Landmark, Trash2, FileText, Lightbulb, Hospital, Route, Bug, Droplets, Map } from 'lucide-react'
+import { Info, ChevronRight, Briefcase, Megaphone, LayoutDashboard, Wrench, Newspaper, CalendarDays, ChevronLeft, Landmark, Trash2, FileText, Lightbulb, Hospital, Route, Bug, Droplets, Map } from 'lucide-react'
 import WeatherWidget from '../../../../components/home/WeatherWidget'
 import StaffSection from '../../../../components/home/StaffSection'
 
@@ -39,10 +39,7 @@ const LAYOUT_RIGHT = {
 }
 
 const BASE_DOC_TYPES = [
-  { value: 'residence_cert',   label: 'ใบรับรองการอยู่อาศัย',           emoji: <Home size={26} strokeWidth={1.5} className="text-gray-500 group-hover:text-[var(--color-primary)] transition-colors" /> },
-  { value: 'personal_cert',    label: 'หนังสือรับรองบุคคล',              emoji: <User size={26} strokeWidth={1.5} className="text-gray-500 group-hover:text-[var(--color-primary)] transition-colors" /> },
-  { value: 'conduct_cert',     label: 'หนังสือรับรองความประพฤติ',        emoji: <FileCheck size={26} strokeWidth={1.5} className="text-gray-500 group-hover:text-[var(--color-primary)] transition-colors" /> },
-  { value: 'tax_notice',       label: 'ชำระภาษีที่ดินและสิ่งปลูกสร้าง', emoji: <Landmark size={26} strokeWidth={1.5} className="text-gray-500 group-hover:text-[var(--color-primary)] transition-colors" /> },
+  { value: 'tax_notice',       label: 'ค่าธรรมเนียม/ภาษี', emoji: <Landmark size={26} strokeWidth={1.5} className="text-gray-500 group-hover:text-[var(--color-primary)] transition-colors" /> },
   { value: 'waste_collection', label: 'ชำระค่าธรรมเนียมขยะ',            emoji: <Trash2 size={26} strokeWidth={1.5} className="text-gray-500 group-hover:text-[var(--color-primary)] transition-colors" /> },
   { value: 'other',            label: 'คำขออื่นๆ',                       emoji: <FileText size={26} strokeWidth={1.5} className="text-gray-500 group-hover:text-[var(--color-primary)] transition-colors" /> },
 ]

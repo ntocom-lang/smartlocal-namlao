@@ -13,8 +13,7 @@ import { compressImage } from '../lib/imageUtils'
 const BASE_DOC_TYPES = {
   residence_cert:   'ใบรับรองการอยู่อาศัย',
   personal_cert:    'หนังสือรับรองบุคคล',
-  conduct_cert:     'หนังสือรับรองความประพฤติ',
-  tax_notice:       'ชำระภาษีที่ดินและสิ่งปลูกสร้าง',
+  tax_notice:       'ค่าธรรมเนียม/ภาษี',
   waste_collection: 'ชำระค่าธรรมเนียมเก็บขนขยะ',
   other:            'คำขออื่นๆ',
 }
@@ -532,7 +531,7 @@ export default function MyDocRequests() {
                 <button onClick={() => navigate('/doc-request')}
                   className="px-6 py-3 rounded-2xl font-bold text-white text-sm active:scale-95 transition-all"
                   style={{ backgroundColor: 'var(--color-primary)' }}>
-                  บริการออนไลน์
+                  สอบถามยอดชำระเรื่องนั้นๆ
                 </button>
               </div>
             ) : (

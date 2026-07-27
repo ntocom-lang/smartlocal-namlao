@@ -29,8 +29,7 @@ import { notifyTelegram } from '../lib/notifyTelegram'
 const DOC_TYPES = [
   { value: 'residence_cert',   label: '🏠 ใบรับรองการอยู่อาศัย' },
   { value: 'personal_cert',    label: '👤 หนังสือรับรองบุคคล' },
-  { value: 'conduct_cert',     label: '✅ หนังสือรับรองความประพฤติ' },
-  { value: 'tax_notice',       label: '🏦 ชำระภาษีที่ดินและสิ่งปลูกสร้าง' },
+  { value: 'tax_notice',       label: '🏦 ค่าธรรมเนียม/ภาษี' },
   { value: 'waste_collection', label: '🗑️ ชำระค่าธรรมเนียมเก็บขนขยะ' },
   { value: 'other',            label: '📝 คำขออื่นๆ' },
 ]
@@ -890,7 +889,6 @@ const DOC_CSS = `
 const DOC_TITLES = {
   residence_cert:   'หนังสือรับรองการอยู่อาศัย',
   personal_cert:    'หนังสือรับรองบุคคล',
-  conduct_cert:     'หนังสือรับรองความประพฤติ',
   tax_notice:       'ใบเสร็จรับเงินภาษีที่ดินและสิ่งปลูกสร้าง',
   waste_collection: 'ใบเสร็จรับเงินค่าธรรมเนียมเก็บขนขยะ',
   other:            'หนังสือรับรอง',
@@ -917,9 +915,6 @@ function buildDocBody(req, orgName) {
               <p>เอกสารฉบับนี้ออกให้${purpose}</p>`
     case 'personal_cert':
       return `<p>ขอรับรองว่า ${name}${idCard} เป็นบุคคลที่อยู่ในทะเบียนราษฎรของ${orgName} และเป็นผู้มีตัวตนอยู่จริง</p>
-              <p>เอกสารฉบับนี้ออกให้${purpose}</p>`
-    case 'conduct_cert':
-      return `<p>ขอรับรองว่า ${name}${idCard} เป็นผู้มีความประพฤติเรียบร้อย ไม่มีพฤติกรรมเสื่อมเสียหรือประวัติอาชญากรรมแต่อย่างใด ตามที่ปรากฏในทะเบียนของ${orgName}</p>
               <p>เอกสารฉบับนี้ออกให้${purpose}</p>`
     case 'tax_notice':
       return `<p>ได้รับเงินจาก ${name}${idCard} ที่อยู่ ${addr}</p>

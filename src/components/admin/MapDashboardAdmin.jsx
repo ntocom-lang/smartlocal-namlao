@@ -772,7 +772,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
             </div>
 
             {/* Mobile */}
-            <div className="md:hidden px-4 py-3 border-b border-gray-100">
+            <div className="md:hidden px-4 pt-4 pb-3 border-b border-gray-100">
               {openFilter && <div className="fixed inset-0 z-40" onClick={() => setOpenFilter(null)} />}
               {(() => {
                 const cmpAll = complaints.filter(c => {

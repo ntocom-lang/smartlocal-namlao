@@ -6,7 +6,7 @@ import { supabase } from '../../../../lib/supabase'
 import PostsHighlight from '../../../../components/home/PostsHighlight'
 import TourismSection from '../../../../components/home/TourismSection'
 import BannerSlider from '../../../../components/home/BannerSlider'
-import { Info, ChevronRight, Briefcase, Megaphone, LayoutDashboard, Wrench, Newspaper, CalendarDays, ChevronLeft, Home, User, FileCheck, Landmark, Trash2, FileText, Lightbulb, Hospital, Route, Bug, Droplets, Map } from 'lucide-react'
+import { Info, ChevronRight, Briefcase, Megaphone, LayoutDashboard, Wrench, Newspaper, CalendarDays, ChevronLeft, FileCheck, Landmark, Trash2, FileText, Lightbulb, Hospital, Route, Bug, Droplets, Map } from 'lucide-react'
 import WeatherWidget from '../../../../components/home/WeatherWidget'
 import StaffSection from '../../../../components/home/StaffSection'
 import ComplaintBand from '../../../../components/home/ComplaintBand'
@@ -42,10 +42,7 @@ const LAYOUT_RIGHT = {
 
 const BASE_DOC_TYPES = [
   { value: 'waste_collection', label: 'ชำระค่าธรรมเนียมขยะ',            emoji: '🗑️' },
-  { value: 'residence_cert',   label: 'ใบรับรองการอยู่อาศัย',           emoji: '🏠' },
-  { value: 'tax_notice',       label: 'ชำระภาษีที่ดินและสิ่งปลูกสร้าง', emoji: '🏛️' },
-  { value: 'personal_cert',    label: 'หนังสือรับรองบุคคล',              emoji: '👤' },
-  { value: 'conduct_cert',     label: 'หนังสือรับรองความประพฤติ',        emoji: '✅' },
+  { value: 'tax_notice',       label: 'ค่าธรรมเนียม/ภาษี', emoji: '🏛️' },
   { value: 'other',            label: 'คำขออื่นๆ',                       emoji: '📝' },
 ]
 
