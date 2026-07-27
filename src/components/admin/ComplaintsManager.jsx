@@ -713,6 +713,13 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
     window.open(data.signedUrl, '_blank')
   }
 
+  async function handleDownloadDraftPdf() {
+    const { data, error } = await supabase.storage.from('official-documents')
+      .createSignedUrl(c.draft_pdf_path, 1800)
+    if (error || !data?.signedUrl) { alert('เปิดไฟล์ไม่สำเร็จ: ' + (error?.message ?? '')); return }
+    window.open(data.signedUrl, '_blank')
+  }
+
   async function handleCloseJob() {
     setCloseUploading(true)
     const urls = []
@@ -808,6 +815,11 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
                 {c.draft_pdf_path && !c.final_document_path && (
                   <div className="space-y-2">
                     <p className="text-xs text-gray-500">Draft PDF ถูกดาวน์โหลดไปแล้ว — หลังได้ PDF ที่ลงนามแล้วจาก GDCC ให้แนบกลับที่นี่</p>
+                    <button type="button" onClick={handleDownloadDraftPdf}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-indigo-600 bg-white border border-indigo-200 hover:bg-indigo-50 transition-colors">
+                      <RefreshCw size={13} />
+                      ดาวน์โหลด Draft PDF ซ้ำ
+                    </button>
                     <input value={receiptNo} onChange={(e) => setReceiptNo(e.target.value)}
                       placeholder="เลขรับหนังสือ (เลขรับ นล.)"
                       className="w-full px-3 py-2 rounded-xl border border-gray-200 text-xs text-gray-900 bg-white focus:outline-none focus:border-indigo-400" />
