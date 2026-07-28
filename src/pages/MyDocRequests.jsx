@@ -3,18 +3,22 @@ import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, FileText, Clock, CheckCircle2, XCircle,
   RefreshCw, Loader2, ChevronRight, X, Search, Download,
-  CreditCard, Upload, ImageIcon, Share2, Copy, Check, Plus,
+  CreditCard, Upload, ImageIcon, Share2, Copy, Check, Plus, Printer,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { compressImage } from '../lib/imageUtils'
+import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
+import { generateDraftPdfBlob } from '../lib/generateDraftPdf'
+import { thaiDate } from '../lib/thaiDate'
 
 const BASE_DOC_TYPES = {
   residence_cert:   'ใบรับรองการอยู่อาศัย',
   personal_cert:    'หนังสือรับรองบุคคล',
   tax_notice:       'ค่าธรรมเนียม/ภาษี',
-  waste_collection: 'ค่าธรรมเนียมเก็บขนขยะ',
+  waste_collection: 'ค่าธรรมเนียมขยะ',
+  building_permit:  'ขออนุญาตก่อสร้างบ้าน',
 }
 let _customDocLabels = {}
 function docTypeLabel(key) {
@@ -151,6 +155,7 @@ function DocDetailSheet({ req, onClose, tenant, onRefresh }) {
   const [slipPreview, setSlipPreview] = useState(null)
   const [uploading, setUploading]     = useState(false)
   const [slipSignedUrl, setSlipSignedUrl] = useState(null)
+  const [pdfBusy, setPdfBusy]         = useState(false)
 
   useEffect(() => {
     if (!req.payment_slip_url) return
@@ -202,6 +207,31 @@ function DocDetailSheet({ req, onClose, tenant, onRefresh }) {
       alert('อัปโหลดไม่สำเร็จ: ' + err.message)
     } finally {
       setUploading(false)
+    }
+  }
+
+  function handlePrintPermit() {
+    const html = buildBuildingPermitHtml({ form: req.permit_form_data, tenant, thDate: thaiDate(req.created_at) })
+    const w = window.open('', '_blank', 'width=860,height=1100')
+    if (!w) return
+    w.document.write(html)
+    w.document.close()
+    setTimeout(() => { w.focus(); w.print() }, 400)
+  }
+
+  async function handleDownloadPermitPdf() {
+    setPdfBusy(true)
+    try {
+      const html = buildBuildingPermitHtml({ form: req.permit_form_data, tenant, thDate: thaiDate(req.created_at) })
+      const blob = await generateDraftPdfBlob(html)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `แบบ-ข1-${req.id.slice(0, 8).toUpperCase()}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      setPdfBusy(false)
     }
   }
 
@@ -396,6 +426,22 @@ function DocDetailSheet({ req, onClose, tenant, onRefresh }) {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* พิมพ์/ดาวน์โหลดแบบ ข.๑ ซ้ำ — เฉพาะคำขอที่ยื่นผ่าน wizard เต็มรูปแบบ (มี permit_form_data) */}
+          {req.document_type === 'building_permit' && req.permit_form_data && (
+            <div className="space-y-2">
+              <button onClick={handlePrintPermit}
+                className="w-full py-3 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+                style={{ backgroundColor: '#7c3aed' }}>
+                <Printer size={15} /> พิมพ์แบบร่าง ข.๑
+              </button>
+              <button onClick={handleDownloadPermitPdf} disabled={pdfBusy}
+                className="w-full py-3 rounded-2xl font-semibold text-violet-700 bg-violet-50 border border-violet-200 text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-all">
+                {pdfBusy ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+                {pdfBusy ? 'กำลังสร้างไฟล์...' : 'ดาวน์โหลด PDF'}
+              </button>
             </div>
           )}
 

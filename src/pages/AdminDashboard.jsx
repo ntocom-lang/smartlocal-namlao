@@ -18,7 +18,6 @@ import { supabase } from '../lib/supabase'
 import { compressImage } from '../lib/imageUtils'
 import { attachReporterProfiles } from '../lib/attachReporterProfiles'
 import { useTenant } from '../contexts/TenantContext'
-import MapDashboardAdmin from '../components/admin/MapDashboardAdmin'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 import CivilProjectReport from '../components/admin/CivilProjectReport'
 import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
@@ -3639,7 +3638,6 @@ const PAGE_LABELS = {
   'system-settings': 'ตั้งค่าระบบ',
   superadmin: 'SuperAdmin',
   users: 'จัดการผู้ใช้',
-  map: 'แผนที่คำร้อง',
   'civil-project': 'โครงการโยธา',
   'civil-report': 'รายงานโยธา',
   'audit-log': 'บันทึกกิจกรรม',
@@ -3974,7 +3972,6 @@ export default function AdminDashboard() {
               {
                 group: 'รายงานและสถิติ',
                 items: [
-                  { key: 'map',          label: 'แผนที่',           Icon: MapPin,        show: currentUserRole !== 'council' },
                   { key: 'report',       label: 'รายงาน',           Icon: TrendingUp,    show: true },
                   { key: 'satisfaction', label: 'ผลการประเมิน',     Icon: Star,          show: true },
                 ],
@@ -4168,7 +4165,6 @@ export default function AdminDashboard() {
               {
                 group: 'รายงานและสถิติ',
                 items: [
-                  { key: 'map',          label: 'แผนที่',           Icon: MapPin,        color: '#0891b2', bg: '#e0f2fe', show: currentUserRole !== 'council' },
                   { key: 'report',       label: 'รายงาน',           Icon: TrendingUp,    color: '#059669', bg: '#d1fae5', show: true },
                   { key: 'satisfaction', label: 'ผลการประเมิน',     Icon: Star,          color: '#d97706', bg: '#fef3c7', show: true },
                 ],
@@ -4271,11 +4267,6 @@ export default function AdminDashboard() {
         </div>
       ) : activePage === 'civil-report' ? (
         <CivilProjectReport tenant={tenant} />
-      ) : activePage === 'map' ? (
-        <MapDashboardAdmin tenant={tenant} currentUserRole={currentUserRole}
-          onNavigate={(page) => setActivePage(page)}
-          onEditComplaint={(id) => navigate('/staff', { state: { module: 'complaints', openComplaintId: id } })}
-          onEditProject={() => navigate('/staff', { state: { module: 'projects' } })} />
       ) : activePage === 'fee-settings' ? (
         <FeeSettingsAdmin tenant={tenant} />
       ) : activePage === 'superadmin' && currentUserRole === 'superadmin' ? (

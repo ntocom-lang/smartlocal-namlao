@@ -16,7 +16,8 @@ const CATEGORY_LABEL = {
 const DOC_TYPE_LABEL = {
   residence_cert: 'ใบรับรองการอยู่อาศัย', personal_cert: 'หนังสือรับรองบุคคล',
   tax_notice: 'ค่าธรรมเนียม/ภาษี',
-  waste_collection: 'ค่าธรรมเนียมเก็บขนขยะ',
+  waste_collection: 'ค่าธรรมเนียมขยะ',
+  building_permit: 'ขออนุญาตก่อสร้างบ้าน',
 }
 const thDate = (s) => new Date(s).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
 

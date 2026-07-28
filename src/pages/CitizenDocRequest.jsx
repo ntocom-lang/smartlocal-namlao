@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
+import BuildingPermitWizard from './BuildingPermitWizard'
 
 // ที่อยู่ผู้ยื่นคำขอ = ที่อยู่ในเขตของหน่วยงานเสมอ (ระบบนี้แยกตามหน่วยงาน ใครหน่วยงานนั้น)
 // เลยไม่ต้องให้ประชาชนพิมพ์ตำบล/อำเภอ/จังหวัดเอง ให้กรอกแค่บ้านเลขที่ แล้วต่อท้ายด้วย
@@ -41,12 +42,21 @@ const BASE_DOC_TYPES = [
   },
   {
     value:   'waste_collection',
-    label:   'ค่าธรรมเนียมเก็บขนขยะ',
+    label:   'ค่าธรรมเนียมขยะ',
     emoji:   '🗑️',
-    desc:    'สอบถามค่าธรรมเนียมเก็บและขนขยะมูลฝอยผ่านระบบออนไลน์',
+    desc:    'สอบถามค่าธรรมเนียมขยะผ่านระบบออนไลน์',
     color:   '#0891b2',
     bg:      '#ecfeff',
     border:  '#a5f3fc',
+  },
+  {
+    value:   'building_permit',
+    label:   'ขออนุญาตก่อสร้างบ้าน',
+    emoji:   '🏗️',
+    desc:    'แจ้งความประสงค์ขออนุญาตก่อสร้าง (บ้านพักอาศัยไม่เกิน 2 ชั้น พื้นที่ไม่เกิน 150 ตร.ม.)',
+    color:   '#7c3aed',
+    bg:      '#f5f3ff',
+    border:  '#ddd6fe',
   },
 ]
 
@@ -141,7 +151,11 @@ export default function CitizenDocRequest() {
   // waste_collection มีเรื่องเดียว ไม่ต้องให้กรอก/เลือกเลย ระบุให้ตรงๆ ไปเลย
   const hasInquiryOptions = selected?.value === 'tax_notice'
   const isSingleTopicInquiry = selected?.value === 'waste_collection'
-  const WASTE_PURPOSE = 'สอบถามค่าธรรมเนียมเก็บและขนขยะมูลฝอย'
+  const WASTE_PURPOSE = 'สอบถามค่าธรรมเนียมขยะ'
+  // ขออนุญาตก่อสร้าง — ไม่ใช่คำขอที่มีผลทางกฎหมายทันทีผ่านแอป (ยังไม่มีช่องแนบไฟล์เอกสาร
+  // ในระบบนี้) เป็นแค่ "แจ้งความประสงค์เบื้องต้น" ให้เจ้าหน้าที่ติดต่อนัดวันมายื่นเอกสาร
+  // ตัวจริงที่กองช่าง — ต้องเขียนข้อความให้ชัดว่าไม่ใช่การยื่นขออนุญาตที่สมบูรณ์แล้ว
+  const isPermitIntent = selected?.value === 'building_permit'
   const addressSuffix = tenantAddressSuffix(tenant)
   const fullName = joinThaiFullName(form.name_title, form.name_first, form.name_last)
 
@@ -153,7 +167,15 @@ export default function CitizenDocRequest() {
 
   async function handleSubmit() {
     setSaving(true)
-    const { data, error } = await supabase.from('document_requests').insert({
+    // สร้าง id เองฝั่ง client แล้ว insert แบบไม่ .select() กลับ — RLS SELECT policy ของ
+    // document_requests อ่านคืนได้เฉพาะแถวที่ user_id = auth.uid() เท่านั้น ผู้ยื่นแบบ guest
+    // (ไม่ล็อกอิน) ไม่มี auth.uid() ถ้าใช้ .select().single() แบบเดิมจะโดน RLS บล็อกตอนอ่านคืน
+    // ทำให้ transaction rollback ทั้งก้อนและได้ error ทั้งที่ข้อมูลถูกต้องทุกอย่าง — ยืนยันด้วยการ
+    // ยิง REST ตรงด้วย anon key จริงระหว่างทดสอบ flow ขออนุญาตก่อสร้าง (บั๊กนี้กระทบทุกประเภท
+    // เอกสารที่ยื่นแบบไม่ล็อกอิน ไม่ใช่แค่ building_permit)
+    const id = crypto.randomUUID()
+    const { error } = await supabase.from('document_requests').insert({
+      id,
       municipality_id:   tenant?.id,
       document_type:     selected.value,
       requester_name:    fullName,
@@ -166,15 +188,13 @@ export default function CitizenDocRequest() {
       fee_amount:        feeAmount || null,
       payment_status:    'not_required', // ป้องกันการทุจริต — ไม่เก็บเงินผ่านแอป ไปชำระที่เทศบาลเสมอ
       payment_slip_url:  null,
-    }).select().single()
+    })
     setSaving(false)
     if (error) { alert('ส่งคำขอไม่สำเร็จ: ' + error.message); return }
-    if (data) {
-      notifyTelegram(tenant?.telegram_group_id,
-        `📄 <b>คำขอเอกสารใหม่</b>\nประเภท: ${selected.label}\nผู้ขอ: ${fullName}\nเบอร์: ${form.requester_phone?.trim() || '-'}${feeAmount > 0 ? `\n💰 ค่าธรรมเนียมโดยประมาณ: ${feeAmount} บาท (ชำระที่เทศบาล)` : ''}`
-      )
-      setDone({ ref: data.id.slice(0, 8).toUpperCase() })
-    }
+    notifyTelegram(tenant?.telegram_group_id,
+      `📄 <b>คำขอเอกสารใหม่</b>\nประเภท: ${selected.label}\nผู้ขอ: ${fullName}\nเบอร์: ${form.requester_phone?.trim() || '-'}${feeAmount > 0 ? `\n💰 ค่าธรรมเนียมโดยประมาณ: ${feeAmount} บาท (ชำระที่เทศบาล)` : ''}`
+    )
+    setDone({ ref: id.slice(0, 8).toUpperCase() })
   }
 
   if (session === undefined || needsIdCard === null) return null
@@ -337,6 +357,12 @@ export default function CitizenDocRequest() {
         </div>
       </div>
     )
+  }
+
+  // ─── Step 2a: ขออนุญาตก่อสร้าง — ใช้ wizard เต็มรูปแบบ (แบบ ข.๑) แยกต่างหาก
+  // เพราะฟิลด์เยอะกว่าฟอร์มทั่วไปมาก และต้องสร้างไฟล์พิมพ์ที่ตรงกับฟอร์มราชการจริง
+  if (isPermitIntent) {
+    return <BuildingPermitWizard tenant={tenant} session={session} onBack={() => setSelected(null)} />
   }
 
   // ─── Step 2: Form ──────────────────────────────────────────────────────────

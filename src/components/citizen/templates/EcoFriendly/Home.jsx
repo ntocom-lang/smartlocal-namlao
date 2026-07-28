@@ -41,7 +41,7 @@ const LAYOUT_RIGHT = {
 }
 
 const BASE_DOC_TYPES = [
-  { value: 'waste_collection', label: 'ชำระค่าธรรมเนียมขยะ',            emoji: '🗑️' },
+  { value: 'waste_collection', label: 'ค่าธรรมเนียมขยะ',            emoji: '🗑️' },
   { value: 'tax_notice',       label: 'ค่าธรรมเนียม/ภาษี', emoji: '🏛️' },
 ]
 

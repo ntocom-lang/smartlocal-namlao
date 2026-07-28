@@ -11,7 +11,8 @@ const DOC_LABELS = {
   residence_cert: 'ใบรับรองการอยู่อาศัย',
   personal_cert:  'หนังสือรับรองบุคคล',
   tax_notice:       'ค่าธรรมเนียม/ภาษี',
-  waste_collection: 'ค่าธรรมเนียมเก็บขนขยะ',
+  waste_collection: 'ค่าธรรมเนียมขยะ',
+  building_permit:  'ขออนุญาตก่อสร้างบ้าน',
 }
 
 const STATUS_META = {

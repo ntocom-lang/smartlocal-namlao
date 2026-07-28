@@ -5,7 +5,7 @@ import {
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, AlignLeft, Calendar, Hash, RefreshCw,
   Printer, PenLine, Search, Download, Wrench, Home, CalendarDays, TrendingUp, Images, Camera,
-  CreditCard, BadgeCheck, Banknote, Luggage, Star, MoreHorizontal, Car, Bell,
+  CreditCard, BadgeCheck, Banknote, Luggage, Star, MoreHorizontal, Car, Bell, Trash2,
 } from 'lucide-react'
 import MapPicker from '../components/MapPicker'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
@@ -23,6 +23,8 @@ import { attachReporterProfiles } from '../lib/attachReporterProfiles'
 import { compressImage } from '../lib/imageUtils'
 import { useTenant } from '../contexts/TenantContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
+import { thaiDate } from '../lib/thaiDate'
+import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -30,7 +32,8 @@ const DOC_TYPES = [
   { value: 'residence_cert',   label: '🏠 ใบรับรองการอยู่อาศัย' },
   { value: 'personal_cert',    label: '👤 หนังสือรับรองบุคคล' },
   { value: 'tax_notice',       label: '🏦 ค่าธรรมเนียม/ภาษี' },
-  { value: 'waste_collection', label: '🗑️ ค่าธรรมเนียมเก็บขนขยะ' },
+  { value: 'waste_collection', label: '🗑️ ค่าธรรมเนียมขยะ' },
+  { value: 'building_permit',  label: '🏗️ ขออนุญาตก่อสร้างบ้าน' },
 ]
 let _customDocTypes = []
 function getAllDocTypes() { return [...DOC_TYPES, ..._customDocTypes] }
@@ -183,10 +186,11 @@ function TaskCard({ req, onClick }) {
 
 const SET_FEE_TYPES = ['tax_notice', 'waste_collection']
 
-function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpdate }) {
+function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpdate, currentUserRole, onDelete }) {
   const [staffNote, setStaffNote]         = useState(req.staff_notes || '')
   const [confirmReject, setConfirmReject] = useState(false)
   const [rejectReason, setRejectReason]   = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const [payActing, setPayActing]         = useState(false)
   const [slipSignedUrl, setSlipSignedUrl] = useState(null)
   const defaultFee = tenant?.fee_schedule?.[req.document_type] ?? 0
@@ -458,9 +462,45 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpda
               </div>
             </div>
           )}
+
+          {/* Delete confirm — Super Admin เท่านั้น ลบถาวร ไม่มีการกู้คืน */}
+          {confirmDelete && (
+            <div className="bg-red-50 border border-red-300 rounded-2xl p-4 space-y-3">
+              <p className="text-sm font-bold text-red-700">ยืนยันลบคำขอนี้ถาวร?</p>
+              <p className="text-xs text-red-500 leading-relaxed">
+                ข้อมูลคำขอ ({req.requester_name}) จะถูกลบออกจากระบบทันที กู้คืนไม่ได้
+              </p>
+              <div className="flex gap-2">
+                <button onClick={() => setConfirmDelete(false)}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-600 transition-colors hover:bg-gray-50">
+                  ยกเลิก
+                </button>
+                <button onClick={() => onDelete(req.id)} disabled={acting}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-red-600 text-white disabled:opacity-50 transition-opacity">
+                  {acting ? <Loader2 size={14} className="animate-spin mx-auto" /> : 'ลบถาวร'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer actions */}
+        {req.document_type === 'building_permit' && req.permit_form_data && (
+          <div className="px-4 pb-2 pt-3 border-t border-gray-100 shrink-0">
+            <button onClick={() => {
+              const html = buildBuildingPermitHtml({ form: req.permit_form_data, tenant, thDate: thaiDate(req.created_at) })
+              const w = window.open('', '_blank', 'width=860,height=1100')
+              if (!w) return
+              w.document.write(html)
+              w.document.close()
+              setTimeout(() => { w.focus(); w.print() }, 400)
+            }}
+              className="w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 text-sm active:scale-[0.98] transition-all"
+              style={{ backgroundColor: '#7c3aed' }}>
+              <Printer size={16} /> พิมพ์แบบ ข.๑ ฉบับเต็ม
+            </button>
+          </div>
+        )}
         {req.status === 'completed' && (
           <div className="px-4 pb-6 pt-3 border-t border-gray-100 shrink-0">
             <button onClick={() => {
@@ -501,6 +541,14 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpda
             <button onClick={() => setConfirmReject(true)} disabled={acting}
               className="w-full py-2.5 rounded-2xl font-semibold text-red-500 bg-red-50 hover:bg-red-100 flex items-center justify-center gap-2 text-sm transition-colors">
               <XCircle size={16} /> ปฏิเสธคำขอ
+            </button>
+          </div>
+        )}
+        {currentUserRole === 'superadmin' && !confirmDelete && (
+          <div className="px-4 pb-6 pt-2 shrink-0">
+            <button onClick={() => setConfirmDelete(true)} disabled={acting}
+              className="w-full py-2 rounded-xl font-semibold text-red-400 hover:text-red-600 hover:bg-red-50 flex items-center justify-center gap-1.5 text-xs transition-colors">
+              <Trash2 size={13} /> ลบคำขอนี้ถาวร (Super Admin)
             </button>
           </div>
         )}
@@ -604,7 +652,7 @@ function NewRequestSheet({ tenant, staffId, onClose, onCreated }) {
 
 // ─── Inbox Module ─────────────────────────────────────────────────────────────
 
-export function InboxModule({ tenant, staffId }) {
+export function InboxModule({ tenant, staffId, currentUserRole }) {
   const [requests, setRequests]   = useState([])
   const [loading, setLoading]     = useState(true)
   const [activeTab, setActiveTab] = useState('all')
@@ -677,6 +725,17 @@ export function InboxModule({ tenant, staffId }) {
       `🔄 <b>อัปเดตสถานะคำขอเอกสาร</b>\nประเภท: ${docLabel}\nผู้ขอ: ${req?.requester_name ?? ''}\nสถานะ: ${STATUS[newStatus]?.label ?? newStatus}${staffNote ? `\nหมายเหตุ: ${staffNote}` : ''}`
     )
     setActing(false)
+    setSelected(null)
+  }
+
+  // ลบถาวร — จำกัดเฉพาะ superadmin เท่านั้น (บังคับจริงด้วย RLS policy ในฐานข้อมูล
+  // ไม่ใช่แค่ซ่อนปุ่มฝั่ง UI) ใช้เมื่อคำขอผิดพลาด/สแปม/ทดสอบ ไม่ใช่ทางเลือกแทนการปฏิเสธคำขอปกติ
+  async function handleDelete(id) {
+    setActing(true)
+    const { error } = await supabase.from('document_requests').delete().eq('id', id)
+    setActing(false)
+    if (error) { alert('ลบไม่สำเร็จ: ' + error.message); return }
+    setRequests(prev => prev.filter(r => r.id !== id))
     setSelected(null)
   }
 
@@ -820,7 +879,21 @@ export function InboxModule({ tenant, staffId }) {
                       <td className="px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap border-r border-gray-200">{dateTH(req.created_at)}</td>
                       <td className="px-4 py-2.5 text-center border-r border-gray-200"><StatusBadge status={req.status} /></td>
                       <td className="px-4 py-2.5 text-center">
-                        <button className="text-xs font-bold px-3 py-1 rounded border border-blue-600 text-blue-700 hover:bg-blue-600 hover:text-white transition-colors">ดำเนินการ</button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button className="text-xs font-bold px-3 py-1 rounded border border-blue-600 text-blue-700 hover:bg-blue-600 hover:text-white transition-colors">ดำเนินการ</button>
+                          {currentUserRole === 'superadmin' && (
+                            <button
+                              onClick={e => {
+                                e.stopPropagation()
+                                if (!window.confirm(`ลบคำขอนี้ (${req.requester_name}) ออกจากระบบ?\n\nการลบไม่สามารถย้อนกลับได้`)) return
+                                handleDelete(req.id)
+                              }}
+                              title="ลบถาวร (Super Admin)"
+                              className="p-1.5 rounded border border-red-200 text-red-500 hover:bg-red-500 hover:text-white transition-colors">
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )
@@ -841,7 +914,8 @@ export function InboxModule({ tenant, staffId }) {
       {selected && (
         <TaskDetailSheet req={selected} onClose={() => setSelected(null)}
           onUpdate={handleUpdate} acting={acting} tenant={tenant}
-          onPaymentUpdate={() => { setSelected(null); setRefreshKey(k => k + 1) }} />
+          onPaymentUpdate={() => { setSelected(null); setRefreshKey(k => k + 1) }}
+          currentUserRole={currentUserRole} onDelete={handleDelete} />
       )}
       {showAdd && (
         <NewRequestSheet tenant={tenant} staffId={staffId}
@@ -853,14 +927,6 @@ export function InboxModule({ tenant, staffId }) {
 }
 
 // ─── Document Templates ───────────────────────────────────────────────────────
-
-const MONTHS_TH = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
-  'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
-
-function thaiDate(dateStr) {
-  const d = new Date(dateStr)
-  return `${d.getDate()} ${MONTHS_TH[d.getMonth()]} พ.ศ. ${d.getFullYear() + 543}`
-}
 
 const DOC_CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Sarabun:ital,wght@0,400;0,600;0,700;1,400&display=swap');
@@ -889,7 +955,7 @@ const DOC_TITLES = {
   residence_cert:   'หนังสือรับรองการอยู่อาศัย',
   personal_cert:    'หนังสือรับรองบุคคล',
   tax_notice:       'ใบเสร็จรับเงินภาษีที่ดินและสิ่งปลูกสร้าง',
-  waste_collection: 'ใบเสร็จรับเงินค่าธรรมเนียมเก็บขนขยะ',
+  waste_collection: 'ใบเสร็จรับเงินค่าธรรมเนียมขยะ',
   other:            'หนังสือรับรอง',
 }
 
@@ -926,7 +992,7 @@ function buildDocBody(req, orgName) {
     case 'waste_collection':
       return `<p>ได้รับเงินจาก ${name}${idCard} ที่อยู่ ${addr}</p>
               <p class="no-indent" style="margin-left:3em; margin-top:6pt">
-                รายการ: ค่าธรรมเนียมเก็บและขนขยะมูลฝอย<br/>
+                รายการ: ค่าธรรมเนียมขยะ<br/>
                 จำนวนเงิน: <strong>${req.fee_amount ? req.fee_amount.toLocaleString() + ' บาท' : '...............................................'}</strong><br/>
                 วันที่รับชำระ: ${thaiDate(new Date().toISOString().slice(0, 10))}
               </p>
@@ -2558,7 +2624,7 @@ export default function StaffDashboard() {
           <main className="flex-1 min-w-0 px-4 md:px-6 py-5 pb-24 md:pb-6">
             <div className="max-w-5xl mx-auto space-y-4">
             {activeModule === 'home'       && <StaffHomeModule visibleGroups={MODULE_GROUPS} setActiveModule={setActiveModule} pendingCount={pendingCount} staffName={profile?.full_name} navigate={navigate} />}
-            {activeModule === 'inbox'      && <InboxModule tenant={tenant} staffId={profile?.id} />}
+            {activeModule === 'inbox'      && <InboxModule tenant={tenant} staffId={profile?.id} currentUserRole={profile?.role} />}
             {activeModule === 'complaints' && (
               ['admin', 'superadmin', 'staff'].includes(profile?.role)
                 ? <ComplaintsManager tenant={tenant} currentUserRole={profile?.role} openComplaintId={mapOpenComplaintId} />

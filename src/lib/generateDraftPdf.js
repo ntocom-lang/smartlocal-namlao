@@ -27,6 +27,23 @@ export async function generateDraftPdfBlob(html) {
   document.body.appendChild(container)
 
   try {
+    // เอกสารหลายหน้าที่ระบุ data-pdf-page มีขนาด A4 และจุดตัดหน้าของตัวเอง
+    // จับภาพทีละหน้าเพื่อไม่ให้ jsPDF ตัดบรรทัดคาบระหว่างหน้า
+    const explicitPages = [...container.querySelectorAll('[data-pdf-page]')]
+    if (explicitPages.length > 0) {
+      const pdf = new jsPDF({ unit: 'mm', format: 'a4' })
+      for (let index = 0; index < explicitPages.length; index += 1) {
+        const canvas = await html2canvas(explicitPages[index], {
+          scale: 2,
+          backgroundColor: '#ffffff',
+          useCORS: true,
+        })
+        if (index > 0) pdf.addPage()
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, 210, 297)
+      }
+      return pdf.output('blob')
+    }
+
     const canvas = await html2canvas(container, { scale: 2, backgroundColor: '#ffffff' })
 
     const pdf = new jsPDF({ unit: 'mm', format: 'a4' })

@@ -40,7 +40,7 @@ const LAYOUT_RIGHT = {
 
 const BASE_DOC_TYPES = [
   { value: 'tax_notice',       label: 'ค่าธรรมเนียม/ภาษี', emoji: <Landmark size={30} strokeWidth={2.5} className="text-white drop-shadow-md" /> },
-  { value: 'waste_collection', label: 'ชำระค่าธรรมเนียมขยะ',            emoji: <Trash2 size={30} strokeWidth={2.5} className="text-white drop-shadow-md" /> },
+  { value: 'waste_collection', label: 'ค่าธรรมเนียมขยะ',            emoji: <Trash2 size={30} strokeWidth={2.5} className="text-white drop-shadow-md" /> },
 ]
 
 // ── sub-components ────────────────────────────────────────────────────
