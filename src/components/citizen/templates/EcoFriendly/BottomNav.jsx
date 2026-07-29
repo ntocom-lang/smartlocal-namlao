@@ -26,7 +26,7 @@ export default function EcoFriendlyBottomNav() {
   return (
     <>
       <div
-        className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex items-stretch justify-around px-1 shadow-[0_-1px_0_rgba(0,0,0,0.08),0_-4px_24px_rgba(0,0,0,0.12)]"
+        className="lg:hidden fixed bottom-0 left-0 right-0 z-50 flex items-stretch justify-around px-1 shadow-[0_-1px_0_rgba(0,0,0,0.08),0_-4px_24px_rgba(0,0,0,0.12)]"
         style={{
           background: 'linear-gradient(160deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)',
           borderRadius: 'var(--radius-card, 1.25rem) var(--radius-card, 1.25rem) 0 0',
@@ -68,14 +68,14 @@ export default function EcoFriendlyBottomNav() {
                 )}
               </div>
 
-              <span className={`relative z-10 text-sm font-medium transition-all ${isActive ? 'text-white' : 'text-white/55'}`}>
+              <span className={`relative z-10 min-h-7 flex items-center justify-center text-center text-[11px] leading-tight font-semibold transition-all ${isActive ? 'text-white' : 'text-white/70'}`}>
                 {item.label}
               </span>
             </button>
           )
         })}
       </div>
-      <div className="md:hidden" style={{ height: 'calc(4rem + max(env(safe-area-inset-bottom, 0px), 12px))' }} />
+      <div className="lg:hidden" style={{ height: 'calc(4rem + max(env(safe-area-inset-bottom, 0px), 12px))' }} />
     </>
   )
 }

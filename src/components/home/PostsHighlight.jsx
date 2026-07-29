@@ -186,13 +186,13 @@ export default function PostsHighlight({ showOnDesktop = false }) {
           </section>
         )}
 
-        {/* กิจกรรม */}
+        {/* ภาพกิจกรรม/ผลงาน */}
         {activities.length > 0 && (
           <section className={showOnDesktop ? '' : 'md:hidden'}>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <div className="w-1 h-6 rounded-full shrink-0" style={{ backgroundColor: 'var(--color-primary)' }} />
-                <h2 className="text-base font-bold text-gray-800">กิจกรรม</h2>
+                <h2 className="text-base font-bold text-gray-800">ภาพกิจกรรม/ผลงาน</h2>
               </div>
               {activities.length > 2 && (
                 <Link to="/news?tab=activity"

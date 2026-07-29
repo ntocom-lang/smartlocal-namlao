@@ -61,7 +61,7 @@ export default function ComplaintBand() {
         </div>
 
         {/* Mobile: 4 items grid — ที่เหลือกด "ทั้งหมด" แทน กันแออัดเกินไปบนจอเล็ก */}
-        <div className="grid grid-cols-4 gap-1 md:hidden pb-1">
+        <div className="grid grid-cols-4 gap-1 lg:hidden pb-1">
           {topCats.slice(0, 4).map(cat => {
             const emoji = cat.emoji || FALLBACK_EMOJI[cat.value] || '📋'
             const color = cat.color || '#ffffff'
@@ -86,7 +86,7 @@ export default function ComplaintBand() {
         </div>
 
         {/* Desktop: compact grid */}
-        <div className="hidden md:grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(topCats.length, 8)}, minmax(0, 1fr))` }}>
+        <div className="hidden lg:grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(topCats.length, 8)}, minmax(0, 1fr))` }}>
           {topCats.slice(0, 8).map(cat => {
             const emoji = cat.emoji || FALLBACK_EMOJI[cat.value] || '📋'
             const color = cat.color || '#ffffff'

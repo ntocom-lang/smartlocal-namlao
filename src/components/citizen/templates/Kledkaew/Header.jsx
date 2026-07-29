@@ -7,7 +7,7 @@ import { useAuth } from '../../../../contexts/AuthContext'
 const PC_NAV = [
   { href: '/',           label: 'หน้าแรก',     Icon: Home,          exact: true },
   { href: '/news',       label: 'ข่าวสาร',      Icon: Newspaper },
-  { href: '/events',     label: 'กิจกรรม',      Icon: CalendarDays },
+  { href: '/events',     label: 'ปฏิทินกิจกรรม', Icon: CalendarDays },
   { href: '/complaint',  label: 'ร้องเรียน',    Icon: ClipboardList },
   { href: '/tourism',    label: 'ท่องเที่ยว',   Icon: Luggage },
   { href: '/more',       label: 'เมนูทั้งหมด',  Icon: LayoutGrid },

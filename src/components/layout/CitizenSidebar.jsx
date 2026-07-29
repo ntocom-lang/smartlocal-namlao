@@ -66,7 +66,7 @@ export default function CitizenSidebar() {
   async function logout() { await supabase.auth.signOut() }
 
   return (
-    <aside className="hidden md:flex flex-col w-56 shrink-0 shadow-lg self-start sticky top-0 max-h-screen overflow-y-auto"
+    <aside className="hidden lg:flex flex-col w-56 shrink-0 shadow-lg self-start sticky top-0 max-h-screen overflow-y-auto"
       style={{ backgroundColor: BG, borderRight: `1px solid ${BORDER}` }}>
 
       {/* Brand */}

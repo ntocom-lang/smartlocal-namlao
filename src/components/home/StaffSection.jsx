@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
-import { UserCircle2 } from 'lucide-react'
 
 // Premium Executive Card matching the mockup style (Vertical layout with interactive hover effects)
 function ExecutivePremiumCard({ person }) {
@@ -34,18 +33,18 @@ function ExecutivePremiumCard({ person }) {
         {/* Name and Phone box - using primary theme color for dynamic matching, made more compact */}
         <div className="w-[92%] bg-[var(--color-primary)] text-white rounded-xl md:rounded-2xl py-1 md:py-2 px-1.5 md:px-3 shadow-sm border border-[var(--color-primary-dark)]/10 flex flex-col items-center justify-center space-y-0.5 transition-transform duration-300 group-hover:scale-[1.02]">
           {/* Line 1: Name */}
-          <p className="font-bold text-[10px] md:text-base leading-snug">
+          <p className="font-bold text-[13px] md:text-base leading-snug">
             {person.name}
           </p>
 
           {/* Line 2: Position */}
-          <p className="text-[9px] md:text-xs text-white/90 font-semibold leading-tight">
+          <p className="text-[12px] text-white/90 font-semibold leading-tight">
             {person.title}
           </p>
 
           {/* Line 3: Phone */}
           {person.phone && (
-            <p className="text-[8px] md:text-[11px] text-white/80 font-medium">
+            <p className="text-[11px] text-white/85 font-medium">
               {person.phone.startsWith('โทร') ? person.phone : `โทร. ${person.phone}`}
             </p>
           )}
@@ -150,4 +149,3 @@ export default function StaffSection() {
     </section>
   )
 }
-

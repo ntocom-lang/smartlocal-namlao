@@ -5,15 +5,6 @@ import { useAuth } from '../../../../contexts/AuthContext'
 import { supabase } from '../../../../lib/supabase'
 import { useNotifications } from '../../../../contexts/NotificationsContext'
 
-const NAV_CITIZEN = [
-  { label: 'หน้าแรก',       href: '/' },
-  { label: 'แจ้งเหตุ/แจ้งซ่อม', href: '/complaint' },
-  { label: 'คำร้องของฉัน',  href: '/my-complaints' },
-  { label: 'ปฏิทินกิจกรรม', href: '/events' },
-  { label: 'การแจ้งเตือน',  href: '/notifications' },
-  { label: 'เมนูอื่นๆ',     href: '/more' },
-]
-
 const NAV_TECH = [
   { label: 'หน้าแรก',          href: '/' },
   { label: 'งานของฉัน',        href: '/technician' },
@@ -38,7 +29,7 @@ export default function Header() {
   return (
     <header className="shadow-xl" style={tenant?.header_image_url ? { position: 'relative', zIndex: 2 } : {}}>
       {/* Top strip — hidden on mobile */}
-      <div className="hidden md:flex text-white text-xs py-1.5 px-4 justify-end items-center gap-3"
+      <div className="hidden lg:flex text-white text-xs py-1.5 px-4 justify-end items-center gap-3"
            style={{ background: 'linear-gradient(90deg, #0a1628 0%, #0f2044 50%, #0a1628 100%)', borderBottom: '1px solid rgba(99,179,237,0.15)' }}>
         <Phone size={11} className="text-sky-300/70" />
         <span className="font-semibold tracking-wide text-sky-100">{tenant?.name}</span>
@@ -97,7 +88,7 @@ export default function Header() {
 
           {/* Desktop nav — technician เท่านั้น (citizen ใช้ CitizenSidebar แทน) */}
           {role === 'technician' && (
-            <nav className="hidden md:flex items-center gap-0.5">
+            <nav className="hidden lg:flex items-center gap-0.5">
               {NAV_TECH.map((l) => {
                 const isActive = l.href === '/'
                   ? location.pathname === '/'
@@ -122,14 +113,14 @@ export default function Header() {
           )}
           {role === 'viewer' && (
             <Link to="/admin"
-              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-colors hover:opacity-90"
+              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-colors hover:opacity-90"
               style={{ backgroundColor: 'white', color: 'var(--color-primary)' }}>
               <LayoutDashboard size={13} /> รายงาน
             </Link>
           )}
 
           {session ? (
-            <div className="hidden md:flex items-center gap-2">
+            <div className="hidden lg:flex items-center gap-2">
               {(isAdmin || role === 'staff' || role === 'officer') && (
                 <Link to="/staff"
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-colors hover:opacity-90"
@@ -154,13 +145,13 @@ export default function Header() {
             </div>
           ) : (
             <Link to="/auth"
-              className="hidden md:flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs bg-white/20 hover:bg-white/30 text-white transition-colors font-medium">
+              className="hidden lg:flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs bg-white/20 hover:bg-white/30 text-white transition-colors font-medium">
               <LogIn size={14} /> เข้าสู่ระบบ
             </Link>
           )}
 
           {/* Mobile: 2-column layout — icons left, avatar right */}
-          <div className="md:hidden flex items-center gap-1">
+          <div className="lg:hidden flex items-center gap-1">
             {/* Bell */}
             <button onClick={() => navigate('/notifications')} aria-label="การแจ้งเตือน"
               className="relative p-2 text-white/85 hover:text-white transition-colors">

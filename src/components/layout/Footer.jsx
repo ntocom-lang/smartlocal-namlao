@@ -40,23 +40,6 @@ export default function Footer() {
       ))}
 
       <div className="relative z-10 max-w-6xl mx-auto px-4 py-5 flex flex-col items-center gap-3">
-
-        {/* Contact Info */}
-        <div className="flex flex-col items-center gap-1 text-center mb-2">
-          {tenant?.address && (
-            <p className="text-[11px] text-white/90 font-medium">
-              {tenant?.name} {tenant.address}
-            </p>
-          )}
-          {(tenant?.phone || tenant?.website_url || tenant?.email) && (
-            <p className="text-[10px] text-white/60 flex flex-wrap justify-center gap-x-2 gap-y-1">
-              {tenant?.phone && <span>โทรศัพท์ / แฟกซ์ {tenant.phone}</span>}
-              {tenant?.website_url && <span>เว็บไซต์ : {tenant.website_url.replace(/^https?:\/\//, '')}</span>}
-              {tenant?.email && <span>อีเมลกลาง : {tenant.email}</span>}
-            </p>
-          )}
-        </div>
-
         {/* Copyright */}
         <div className="flex flex-col items-center gap-1">
           <span className="text-xs font-medium" style={{ color: 'rgba(186,230,253,0.8)' }}>
