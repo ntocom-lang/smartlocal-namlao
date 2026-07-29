@@ -22,8 +22,8 @@ export default function SuperAdminPanel({ tenant }) {
           <ShieldCheck size={20} />
         </div>
         <div>
-          <h1 className="text-xl font-bold text-gray-800">SuperAdmin</h1>
-          <p className="text-sm text-gray-500">ตั้งค่าระดับ Super Admin เท่านั้น</p>
+          <h1 className="text-xl font-bold text-gray-800">จัดการโมดูล</h1>
+          <p className="text-sm text-gray-500">ตั้งค่าธีมและโมดูลสำหรับ Super Admin</p>
         </div>
       </div>
 

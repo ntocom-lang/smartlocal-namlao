@@ -12,7 +12,7 @@ import {
   CheckCircle2, ChevronRight, ChevronLeft,
   Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical,
   X, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera,
-  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, BookOpen, Bell, ExternalLink, Settings, Download, Banknote, Star, MessageSquare, Car, ShieldCheck, Terminal
+  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, BookOpen, Bell, ExternalLink, Settings, Download, Banknote, Star, MessageSquare, Car, Terminal
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { compressImage } from '../lib/imageUtils'
@@ -32,7 +32,6 @@ const DEV_USER_ID = 'b3e7c083-05ee-4664-ba42-e866729923ef'
 import ReportManagerComponent from '../components/admin/ReportManager'
 import AuditLogViewer from '../components/admin/AuditLogViewer'
 import FleetSetup from '../components/fleet/FleetSetup'
-import SuperAdminPanel from '../components/admin/SuperAdminPanel'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS = {
@@ -93,6 +92,7 @@ function UserManager({ tenant, currentUserRole }) {
   const [subTab, setSubTab] = useState('staff') // 'staff' | 'citizen'
   const [users, setUsers] = useState([])
   const [depts, setDepts] = useState([])
+  const [positionsRef, setPositionsRef] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(null)
   const [editingNameId, setEditingNameId] = useState(null)
@@ -119,6 +119,12 @@ function UserManager({ tenant, currentUserRole }) {
       .eq('municipality_id', tenant.id).eq('is_active', true).order('sort_order')
       .then(({ data }) => setDepts(data ?? []))
   }, [tenant?.id])
+
+  // ตำแหน่งกลาง (positions) ใช้ร่วมกันทุกเทศบาล ไม่ผูก municipality_id — โหลดครั้งเดียวพอ
+  useEffect(() => {
+    supabase.from('positions').select('id, name').order('sort_order')
+      .then(({ data }) => setPositionsRef(data ?? []))
+  }, [])
 
   const fetchUsers = useCallback(async (opts = {}) => {
     if (!['admin', 'superadmin', 'officer'].includes(currentUserRole)) return
@@ -233,6 +239,19 @@ function UserManager({ tenant, currentUserRole }) {
       alert(`บันทึกไม่สำเร็จ: ${error.message}`)
     } else {
       setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, department_id: deptId || null, department_name: dept?.name ?? null } : u))
+    }
+    setSaving(null)
+  }
+
+  // ผูก/ถอดตำแหน่งกลาง (positions) ให้ผู้ใช้ — คนละคอลัมน์กับ job_title (ข้อความอิสระ) เดิม
+  async function updatePositionRef(userId, positionId) {
+    setSaving(userId)
+    const pos = positionsRef.find(p => p.id === positionId)
+    const { error } = await supabase.from('profiles').update({ position_id: positionId || null }).eq('id', userId)
+    if (error) {
+      alert(`บันทึกไม่สำเร็จ: ${error.message}`)
+    } else {
+      setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, position_id: positionId || null, position_name: pos?.name ?? null } : u))
     }
     setSaving(null)
   }
@@ -536,6 +555,16 @@ function UserManager({ tenant, currentUserRole }) {
                         หัวหน้ากอง
                       </label>
                     )}
+                    {(currentUserRole === 'admin' || currentUserRole === 'superadmin') ? (
+                      <select value={u.position_id ?? ''} disabled={saving === u.id}
+                        onChange={(e) => updatePositionRef(u.id, e.target.value)}
+                        className="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-600 focus:outline-none bg-gray-50">
+                        <option value="">— ไม่ระบุตำแหน่ง —</option>
+                        {positionsRef.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    ) : (
+                      <span className="text-xs text-gray-400">{u.position_name || 'ไม่ระบุตำแหน่ง'}</span>
+                    )}
                   </div>
                 )}
                 <div className="flex items-center gap-2 pl-[68px] mt-1">
@@ -722,6 +751,16 @@ function UserManager({ tenant, currentUserRole }) {
                                 className="w-3 h-3" />
                               หัวหน้ากอง
                             </label>
+                          )}
+                          {(currentUserRole === 'admin' || currentUserRole === 'superadmin') ? (
+                            <select value={u.position_id ?? ''} disabled={saving === u.id}
+                              onChange={(e) => updatePositionRef(u.id, e.target.value)}
+                              className="text-[13px] border border-gray-200 rounded px-1.5 py-0.5 text-gray-600 focus:outline-none bg-white max-w-full">
+                              <option value="">— ไม่ระบุตำแหน่ง —</option>
+                              {positionsRef.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                          ) : (
+                            <span className="text-[11px] text-gray-400 truncate">{u.position_name || 'ไม่ระบุตำแหน่ง'}</span>
                           )}
                         </div>
                       ) : (
@@ -3641,13 +3680,70 @@ const PAGE_LABELS = {
   emergency: 'สายด่วน',
   locations: 'สถานที่เกิดเหตุ',
   'system-settings': 'ตั้งค่าระบบ',
-  superadmin: 'SuperAdmin',
   users: 'จัดการผู้ใช้',
   'civil-project': 'โครงการโยธา',
   'civil-report': 'รายงานโยธา',
   'audit-log': 'บันทึกกิจกรรม',
   'satisfaction': 'ผลการประเมิน',
   'fleet-setup': 'ตั้งค่ายานพาหนะ',
+}
+
+function getAdminMenuGroups(currentUserRole, currentUserId) {
+  const canManageContent = currentUserRole !== 'viewer'
+  const canManageSystem = currentUserRole === 'admin' || currentUserRole === 'superadmin'
+
+  return [
+    {
+      group: 'ติดตามผลและประเมินบริการ',
+      description: 'รายงานผลการให้บริการและเสียงสะท้อนจากประชาชน',
+      accent: '#22c55e',
+      items: [
+        { key: 'report', label: 'รายงาน', Icon: TrendingUp, color: '#059669', bg: '#d1fae5', show: true },
+        { key: 'satisfaction', label: 'ผลการประเมิน', Icon: Star, color: '#d97706', bg: '#fef3c7', show: true },
+      ],
+    },
+    {
+      group: 'ข้อมูลเผยแพร่และกำหนดการ',
+      description: 'ข้อมูลที่นำไปแสดงต่อประชาชนและหน่วยงาน',
+      accent: '#8b5cf6',
+      items: [
+        { key: 'staff', label: 'รูปผู้บริหาร', Icon: UserCircle2, color: '#7c3aed', bg: '#ede9fe', show: canManageContent },
+        { key: 'events', label: 'ปฏิทินกิจกรรม', Icon: CalendarDays, color: '#f59e0b', bg: '#fef3c7', show: canManageContent },
+      ],
+    },
+    {
+      group: 'ข้อมูลบริการประชาชน',
+      description: 'ข้อมูลอ้างอิงที่ใช้รับเรื่อง คิดค่าธรรมเนียม และติดต่อฉุกเฉิน',
+      accent: '#0ea5e9',
+      items: [
+        { key: 'categories', label: 'ประเภทคำร้อง', Icon: Tag, color: '#d97706', bg: '#fef3c7', show: canManageContent },
+        { key: 'emergency', label: 'สายด่วน', Icon: Phone, color: '#ef4444', bg: '#fee2e2', show: canManageContent },
+        { key: 'locations', label: 'สถานที่เกิดเหตุ', Icon: MapPin, color: '#0891b2', bg: '#e0f2fe', show: canManageContent },
+        { key: 'fee-settings', label: 'ค่าธรรมเนียม', Icon: Banknote, color: '#10b981', bg: '#d1fae5', show: canManageSystem },
+        { key: 'fleet-setup', label: 'ยานพาหนะ', Icon: Car, color: '#0369a1', bg: '#e0f2fe', show: canManageSystem },
+      ],
+    },
+    {
+      group: 'ระบบ สิทธิ์ และการตรวจสอบ',
+      description: 'การตั้งค่าหลัก บัญชีผู้ใช้ สิทธิ์ และประวัติการดำเนินการ',
+      accent: '#6366f1',
+      items: [
+        { key: 'system-settings', label: 'ตั้งค่าระบบ', Icon: Settings, color: '#3b82f6', bg: '#dbeafe', show: canManageSystem },
+        { key: 'users', label: 'จัดการผู้ใช้', Icon: Shield, color: '#7c3aed', bg: '#ede9fe', show: canManageSystem },
+        { key: 'audit-log', label: 'บันทึกกิจกรรม', Icon: BookOpen, color: '#ef4444', bg: '#fee2e2', show: canManageSystem },
+      ],
+    },
+    {
+      group: 'คู่มือและเครื่องมือ',
+      description: 'เอกสารช่วยเหลือและพื้นที่สำหรับดูแลการพัฒนาระบบ',
+      accent: '#64748b',
+      items: [
+        { key: 'manual', label: 'คู่มือผู้ดูแล', Icon: BookOpen, color: '#059669', bg: '#d1fae5', show: true, isExternal: true, href: '/manual-admin.html' },
+        { key: 'manual-citizen', label: 'คู่มือประชาชน', Icon: BookOpen, color: '#059669', bg: '#d1fae5', show: true, isExternal: true, href: '/manual-citizen.html' },
+        { key: 'dev-journal', label: 'ผู้พัฒนาระบบ', Icon: Terminal, color: '#1e293b', bg: '#f1f5f9', show: currentUserId === DEV_USER_ID, isDevLink: true },
+      ],
+    },
+  ]
 }
 
 // ─── SatisfactionAdmin ────────────────────────────────────────────────────────
@@ -3880,6 +3976,10 @@ export default function AdminDashboard() {
     return () => clearTimeout(safety)
   }, [fetchComplaints])
 
+  const adminMenuGroups = getAdminMenuGroups(currentUserRole, currentUserId)
+    .map(group => ({ ...group, items: group.items.filter(item => item.show) }))
+    .filter(group => group.items.length > 0)
+
   return (
     <div className="min-h-full" style={{ backgroundColor: '#eef2f7' }}>
 
@@ -3954,104 +4054,70 @@ export default function AdminDashboard() {
 
       {/* Desktop sidebar + content */}
       <div className="md:flex">
-        <aside className="hidden md:flex flex-col w-60 shrink-0 shadow-lg"
-          style={{ backgroundColor: '#1a3a5c' }}>
-          <nav className="flex-1 px-2 py-3 overflow-y-auto">
+        <aside className="hidden md:flex flex-col w-64 shrink-0 shadow-xl"
+          style={{ background: 'linear-gradient(180deg, #173a5e 0%, #102a45 100%)' }}>
+          <nav className="flex-1 px-3 py-3 overflow-y-auto">
             <button onClick={() => setActivePage('dashboard')}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold transition-colors mb-1"
+              className="relative w-full flex min-h-10 items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all mb-1 overflow-hidden"
               style={activePage === 'dashboard'
-                ? { backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff' }
-                : { color: 'rgba(255,255,255,0.6)' }}>
+                ? { backgroundColor: 'rgba(255,255,255,0.16)', color: '#fff', boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }
+                : { color: 'rgba(255,255,255,0.72)' }}>
+              {activePage === 'dashboard' && <span className="absolute inset-y-2 left-0 w-1 rounded-r-full bg-cyan-300" />}
               <LayoutGrid size={16} />
               <span className="flex-1 text-left">หน้าหลัก</span>
             </button>
             {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
               <button onClick={() => navigate('/staff')}
-                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-3 hover:bg-white/10"
-                style={{ color: 'rgba(255,255,255,0.55)' }}>
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors mb-4 hover:bg-white/10"
+                style={{ color: 'rgba(255,255,255,0.62)' }}>
                 <Users size={16} />
-                หน้างานเจ้าหน้าที่
+                <span className="flex-1 text-left">แดชบอร์ดสำหรับเจ้าหน้าที่</span>
+                <ExternalLink size={11} className="opacity-40" />
               </button>
             )}
-            {[
-              {
-                group: 'รายงานและสถิติ',
-                items: [
-                  { key: 'report',       label: 'รายงาน',           Icon: TrendingUp,    show: true },
-                  { key: 'satisfaction', label: 'ผลการประเมิน',     Icon: Star,          show: true },
-                ],
-              },
-              {
-                group: 'จัดการเนื้อหา',
-                items: [
-                  { key: 'staff',        label: 'รูปผู้บริหาร',    Icon: UserCircle2,   show: currentUserRole !== 'viewer' },
-                  { key: 'events',       label: 'ปฏิทินกิจกรรม',    Icon: CalendarDays,  show: currentUserRole !== 'viewer' },
-                ],
-              },
-              {
-                group: 'ตั้งค่าระบบ',
-                items: [
-                  { key: 'categories',     label: 'ประเภทคำร้อง',   Icon: Tag,         show: currentUserRole !== 'viewer' },
-                  { key: 'emergency',      label: 'สายด่วน',         Icon: Phone,       show: currentUserRole !== 'viewer' },
-                  { key: 'locations',      label: 'สถานที่เกิดเหตุ', Icon: MapPin,      show: currentUserRole !== 'viewer' },
-                  { key: 'fee-settings',   label: 'ค่าธรรมเนียม',   Icon: Banknote,    show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                  { key: 'fleet-setup',    label: 'ยานพาหนะ',        Icon: Car,         show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                  { key: 'system-settings',label: 'ตั้งค่าระบบ',     Icon: Settings,    show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                  { key: 'users',          label: 'จัดการผู้ใช้',    Icon: Shield,      show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                  { key: 'superadmin',     label: 'SuperAdmin',      Icon: ShieldCheck, show: currentUserRole === 'superadmin' },
-                  { key: 'audit-log',      label: 'บันทึกกิจกรรม',  Icon: BookOpen,    show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                ],
-              },
-              {
-                group: 'ทรัพยากร',
-                items: [
-                  { key: 'manual',         label: 'คู่มือผู้ดูแล',  Icon: BookOpen, show: true, isExternal: true, href: '/manual-admin.html' },
-                  { key: 'manual-citizen', label: 'คู่มือประชาชน',  Icon: BookOpen, show: true, isExternal: true, href: '/manual-citizen.html' },
-                  { key: 'dev-journal',    label: 'ผู้พัฒนาระบบ',   Icon: Terminal, show: currentUserId === DEV_USER_ID, isDevLink: true },
-                ],
-              },
-            ].map(({ group, items }) => {
-              const visible = items.filter(i => i.show)
-              if (visible.length === 0) return null
-              return (
-                <div key={group} className="mb-3">
-                  <p className="text-[10px] font-bold uppercase tracking-widest px-3 pt-1 pb-1.5"
-                    style={{ color: 'rgba(255,255,255,0.35)' }}>{group}</p>
+            {adminMenuGroups.map(({ group, accent, items }) => (
+                <section key={group} className="mb-4">
+                  <div className="flex items-center gap-2 px-3 pt-1 pb-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: accent }} />
+                    <p className="text-[10px] font-bold uppercase tracking-[0.12em]"
+                      style={{ color: 'rgba(255,255,255,0.42)' }}>{group}</p>
+                  </div>
                   <div className="space-y-0.5">
-                    {visible.map(({ key, label, Icon, isExternal, href, isDevLink }) => {
+                    {items.map(({ key, label, Icon, color, isExternal, href, isDevLink }) => {
                       const isActive = activePage === key
                       if (isExternal) return (
                         <a key={key} href={href} target="_blank" rel="noopener noreferrer"
-                          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-white/10"
-                          style={{ color: 'rgba(255,255,255,0.55)' }}>
-                          <Icon size={16} />
+                          className="w-full flex min-h-9 items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-colors hover:bg-white/10"
+                          style={{ color: 'rgba(255,255,255,0.62)' }}>
+                          <Icon size={15} style={{ color }} />
                           <span className="flex-1 text-left">{label}</span>
-                          <ExternalLink size={11} style={{ color: 'rgba(255,255,255,0.3)' }} />
+                          <ExternalLink size={11} className="opacity-40" />
                         </a>
                       )
                       if (isDevLink) return (
                         <button key={key} onClick={() => navigate('/dev-journal')}
-                          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-white/10"
-                          style={{ color: 'rgba(255,255,255,0.55)' }}>
-                          <Icon size={16} />
+                          className="w-full flex min-h-9 items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-colors hover:bg-white/10"
+                          style={{ color: 'rgba(255,255,255,0.62)' }}>
+                          <Icon size={15} className="text-slate-300" />
                           <span className="flex-1 text-left">{label}</span>
+                          <ChevronRight size={12} className="opacity-35" />
                         </button>
                       )
                       return (
                         <button key={key} onClick={() => setActivePage(key)}
-                          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold transition-colors"
+                          className="relative w-full flex min-h-9 items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all overflow-hidden hover:bg-white/10"
                           style={isActive
-                            ? { backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff' }
-                            : { color: 'rgba(255,255,255,0.6)' }}>
-                          <Icon size={16} />
+                            ? { backgroundColor: 'rgba(255,255,255,0.16)', color: '#fff', boxShadow: '0 6px 18px rgba(0,0,0,0.1)' }
+                            : { color: 'rgba(255,255,255,0.7)' }}>
+                          {isActive && <span className="absolute inset-y-2 left-0 w-1 rounded-r-full" style={{ backgroundColor: accent }} />}
+                          <Icon size={15} style={isActive ? { color } : undefined} />
                           <span className="flex-1 text-left">{label}</span>
                         </button>
                       )
                     })}
                   </div>
-                </div>
-              )
-            })}
+                </section>
+              ))}
           </nav>
           <div className="px-2 py-3 shrink-0 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
             <button onClick={handleLogout}
@@ -4176,54 +4242,20 @@ export default function AdminDashboard() {
           {/* All menu items */}
           <div className="space-y-4">
             <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">รายการทั้งหมด</p>
-            {[
-              {
-                group: 'รายงานและสถิติ',
-                items: [
-                  { key: 'report',       label: 'รายงาน',           Icon: TrendingUp,    color: '#059669', bg: '#d1fae5', show: true },
-                  { key: 'satisfaction', label: 'ผลการประเมิน',     Icon: Star,          color: '#d97706', bg: '#fef3c7', show: true },
-                ],
-              },
-              {
-                group: 'จัดการเนื้อหา',
-                items: [
-                  { key: 'staff',        label: 'รูปผู้บริหาร',    Icon: UserCircle2,   color: '#7c3aed', bg: '#ede9fe', show: currentUserRole !== 'viewer' },
-                  { key: 'events',       label: 'ปฏิทินกิจกรรม',    Icon: Bell,          color: '#f59e0b', bg: '#fef3c7', show: currentUserRole !== 'viewer' },
-                ],
-              },
-              {
-                group: 'ตั้งค่าระบบ',
-                items: [
-                  { key: 'categories',     label: 'ประเภทคำร้อง',   Icon: Tag,         color: '#d97706', bg: '#fef3c7', show: currentUserRole !== 'viewer' },
-                  { key: 'emergency',      label: 'สายด่วน',         Icon: Phone,       color: '#ef4444', bg: '#fee2e2', show: currentUserRole !== 'viewer' },
-                  { key: 'locations',      label: 'สถานที่เกิดเหตุ', Icon: MapPin,      color: '#0891b2', bg: '#e0f2fe', show: currentUserRole !== 'viewer' },
-                  { key: 'fee-settings',   label: 'ค่าธรรมเนียม',   Icon: Banknote,    color: '#10b981', bg: '#d1fae5', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                  { key: 'fleet-setup',    label: 'ยานพาหนะ',        Icon: Car,         color: '#0369a1', bg: '#e0f2fe', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                  { key: 'system-settings',label: 'ตั้งค่าระบบ',     Icon: Settings,    color: '#3b82f6', bg: '#dbeafe', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                  { key: 'users',          label: 'จัดการผู้ใช้',    Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                  { key: 'superadmin',     label: 'SuperAdmin',      Icon: ShieldCheck, color: '#a855f7', bg: '#faf5ff', show: currentUserRole === 'superadmin' },
-                  { key: 'audit-log',      label: 'บันทึกกิจกรรม',  Icon: BookOpen,    color: '#ef4444', bg: '#fee2e2', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                ],
-              },
-              {
-                group: 'ทรัพยากร',
-                items: [
-                  { key: 'manual',         label: 'คู่มือผู้ดูแล',  Icon: BookOpen,    color: '#059669', bg: '#d1fae5', show: true, isExternal: true, href: '/manual-admin.html' },
-                  { key: 'manual-citizen', label: 'คู่มือประชาชน',  Icon: BookOpen,    color: '#059669', bg: '#d1fae5', show: true, isExternal: true, href: '/manual-citizen.html' },
-                  { key: 'dev-journal',    label: 'ผู้พัฒนาระบบ',   Icon: Terminal,    color: '#1e293b', bg: '#f1f5f9', show: currentUserId === DEV_USER_ID, isDevLink: true },
-                ],
-              },
-            ].map(({ group, items }) => {
-              const visible = items.filter(i => i.show)
-              if (!visible.length) return null
-              return (
-                <div key={group}>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">{group}</p>
+            {adminMenuGroups.map(({ group, description, accent, items }) => (
+                <section key={group} className="rounded-2xl border border-gray-200/80 bg-white/60 p-3 md:p-4">
+                  <div className="mb-3 flex items-start gap-2.5">
+                    <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: accent }} />
+                    <div>
+                      <h2 className="text-sm font-bold text-gray-800">{group}</h2>
+                      <p className="mt-0.5 text-[11px] text-gray-400">{description}</p>
+                    </div>
+                  </div>
                   <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
-                    {visible.map(({ key, label, Icon, color, bg, isExternal, href, isDevLink }) =>
+                    {items.map(({ key, label, Icon, color, bg, isExternal, href, isDevLink }) =>
                       isExternal ? (
                         <a key={key} href={href} target="_blank" rel="noopener noreferrer"
-                          className="flex flex-col items-center gap-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-3 hover:shadow-md active:scale-95 transition-all">
+                          className="group flex min-h-24 flex-col items-center justify-center gap-2 rounded-2xl border border-gray-100 bg-white p-3 shadow-sm transition-all hover:-translate-y-0.5 hover:border-gray-200 hover:shadow-md active:scale-95">
                           <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: bg }}>
                             <Icon size={18} style={{ color }} />
                           </div>
@@ -4231,7 +4263,7 @@ export default function AdminDashboard() {
                         </a>
                       ) : isDevLink ? (
                         <button key={key} onClick={() => navigate('/dev-journal')}
-                          className="flex flex-col items-center gap-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-3 hover:shadow-md active:scale-95 transition-all">
+                          className="group flex min-h-24 flex-col items-center justify-center gap-2 rounded-2xl border border-gray-100 bg-white p-3 shadow-sm transition-all hover:-translate-y-0.5 hover:border-gray-200 hover:shadow-md active:scale-95">
                           <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: bg }}>
                             <Icon size={18} style={{ color }} />
                           </div>
@@ -4239,7 +4271,7 @@ export default function AdminDashboard() {
                         </button>
                       ) : (
                         <button key={key} onClick={() => setActivePage(key)}
-                          className="flex flex-col items-center gap-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-3 hover:shadow-md active:scale-95 transition-all">
+                          className="group flex min-h-24 flex-col items-center justify-center gap-2 rounded-2xl border border-gray-100 bg-white p-3 shadow-sm transition-all hover:-translate-y-0.5 hover:border-gray-200 hover:shadow-md active:scale-95">
                           <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: bg }}>
                             <Icon size={18} style={{ color }} />
                           </div>
@@ -4248,9 +4280,8 @@ export default function AdminDashboard() {
                       )
                     )}
                   </div>
-                </div>
-              )
-            })}
+                </section>
+              ))}
           </div>
 
           {loading && (
@@ -4293,8 +4324,6 @@ export default function AdminDashboard() {
         <CivilProjectReport tenant={tenant} />
       ) : activePage === 'fee-settings' ? (
         <FeeSettingsAdmin tenant={tenant} />
-      ) : activePage === 'superadmin' && currentUserRole === 'superadmin' ? (
-        <SuperAdminPanel tenant={tenant} />
       ) : activePage === 'system-settings' ? (
         <SystemSettingsAdmin tenant={tenant} onUpdateTenant={(updated) => window.location.reload()} />
       ) : activePage === 'audit-log' ? (
@@ -4376,18 +4405,6 @@ export default function AdminDashboard() {
                 </div>
               </button>
             )}
-            {currentUserRole === 'superadmin' && (
-              <button onClick={() => setActivePage('superadmin')}
-                className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
-                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#fae8ff' }}>
-                  <ShieldCheck size={24} style={{ color: '#a855f7' }} />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-gray-800">SuperAdmin</p>
-                  <p className="text-[13px] text-gray-400 mt-0.5">ธีมแอป / จัดการโมดูล</p>
-                </div>
-              </button>
-            )}
             {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
               <button onClick={() => setActivePage('system-settings')}
                 className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
@@ -4442,7 +4459,6 @@ export default function AdminDashboard() {
                   { key: 'fleet-setup',      Icon: Car,         color: '#0369a1', bg: '#e0f2fe', label: 'ตั้งค่ายานพาหนะ', desc: 'กอง/หน่วยงาน งบประมาณ สิทธิ์ผู้ใช้', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'system-settings',  Icon: Settings,    color: '#3b82f6', bg: '#dbeafe', label: 'ตั้งค่าระบบ',    desc: 'ตั้งค่าชื่อระบบและข้อมูลพื้นฐาน',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'users',           Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', label: 'จัดการผู้ใช้',    desc: 'สิทธิ์การเข้าถึงและบทบาท',        show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                  { key: 'superadmin',      Icon: ShieldCheck, color: '#a855f7', bg: '#fae8ff', label: 'SuperAdmin',    desc: 'ธีมแอป และจัดการโมดูล',            show: currentUserRole === 'superadmin' },
                 ].filter(r => r.show).map(({ key, Icon, color, bg, label, desc }) => (
                   <tr key={key} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => setActivePage(key)}>
                     <td className="px-5 py-3.5">

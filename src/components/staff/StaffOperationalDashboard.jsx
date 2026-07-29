@@ -231,12 +231,14 @@ export default function StaffOperationalDashboard({
             <Clock3 size={17} className="text-slate-400" />
           </div>
           {loading ? (
-            <div className="flex min-h-48 items-center justify-center"><Loader2 size={22} className="animate-spin text-blue-500" /></div>
+            <div className="flex min-h-24 items-center justify-center"><Loader2 size={22} className="animate-spin text-blue-500" /></div>
           ) : workQueue.length === 0 ? (
-            <div className="flex min-h-48 flex-col items-center justify-center px-4 text-center">
-              <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-full bg-emerald-50"><Inbox size={19} className="text-emerald-600" /></div>
-              <p className="text-sm font-bold text-slate-700">ไม่มีงานรอรับเรื่อง</p>
-              <p className="mt-1 text-xs text-slate-400">รายการใหม่จะแสดงที่นี่โดยไม่เปิดเผยข้อมูลส่วนบุคคล</p>
+            <div className="flex min-h-24 items-center justify-center gap-3 px-4 py-4 text-left sm:justify-start">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50"><Inbox size={18} className="text-emerald-600" /></div>
+              <div>
+                <p className="text-sm font-bold text-slate-700">ไม่มีงานรอรับเรื่อง</p>
+                <p className="mt-0.5 text-[11px] text-slate-400">เมื่อมีรายการใหม่ ระบบจะแสดงที่นี่โดยไม่เปิดเผยข้อมูลส่วนบุคคล</p>
+              </div>
             </div>
           ) : (
             <div className="divide-y divide-slate-100 md:grid md:grid-cols-3 md:divide-x md:divide-y-0">
@@ -269,7 +271,11 @@ export default function StaffOperationalDashboard({
 
       </div>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm">
+      <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="mb-3">
+          <h2 className="text-sm font-bold text-slate-800">เครื่องมือที่ใช้งานได้</h2>
+          <p className="text-[10px] text-slate-400">แสดงตามโมดูลและสิทธิ์ของบัญชีนี้</p>
+        </div>
         <div className="space-y-2.5">
           {visibleGroups.map(({ group, items }) => (
             <div key={group}>

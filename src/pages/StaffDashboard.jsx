@@ -5,7 +5,7 @@ import {
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, AlignLeft, Calendar, Hash, RefreshCw,
   Printer, Search, ClipboardList, Hammer, Home, CalendarDays, TrendingUp, Images, Camera,
-  CreditCard, BadgeCheck, Banknote, Luggage, Star, Car, Bell, Trash2,
+  CreditCard, BadgeCheck, Banknote, Luggage, Star, Car, Bell, Trash2, Briefcase,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
@@ -26,6 +26,7 @@ const ReportManager = lazy(() => import('../components/admin/ReportManager'))
 const TourismManager = lazy(() => import('../components/admin/TourismManager'))
 const TourismReviewsAdmin = lazy(() => import('../components/admin/TourismManager').then(module => ({ default: module.TourismReviewsAdmin })))
 const PostsManager = lazy(() => import('../components/staff/PostsManager'))
+const PositionsManager = lazy(() => import('../components/staff/PositionsManager'))
 const StaffOperationalDashboard = lazy(() => import('../components/staff/StaffOperationalDashboard'))
 const FleetPage = lazy(() => import('./FleetPage'))
 const BuildingPermitWizard = lazy(() => import('./BuildingPermitWizard'))
@@ -49,41 +50,58 @@ const STATUS = {
   rejected:   { label: 'ปฏิเสธ',         color: '#ef4444', bg: '#fee2e2', Icon: XCircle },
 }
 
-const MODULE_GROUPS = [
+// เมนูที่ข้ามกอง (ใช้ร่วมกันทุกกอง ไม่ผูกกับกองใดกองหนึ่ง) — จัดเป็นกลุ่มย่อยตามลักษณะงาน
+// เพื่อให้หาเจอง่าย แทนที่จะเป็นลิสต์ยาวไม่มีหัวข้อ
+const STANDALONE_GROUPS = [
   {
-    group: 'บริการประชาชน',
+    group: 'งานบริการประชาชน',
     items: [
-      { key: 'inbox',      label: 'คำขอเอกสาร', Icon: FileText,     color: '#8b5cf6', bg: '#ede9fe' },
-      { key: 'complaints', label: 'คำร้อง',      Icon: MessageSquareWarning, color: '#ef4444', bg: '#fee2e2' },
+      { key: 'complaints', label: 'คำร้อง',     Icon: MessageSquareWarning, color: '#ef4444', bg: '#fee2e2' },
+      { key: 'inbox',      label: 'คำขอเอกสาร', Icon: FileText,             color: '#8b5cf6', bg: '#ede9fe' },
     ],
   },
   {
-    group: 'งานภายใน',
+    group: 'ประชาสัมพันธ์และท่องเที่ยว',
     items: [
-      { key: 'events',      label: 'ปฏิทินกิจกรรม',    Icon: CalendarDays, color: '#10b981', bg: '#d1fae5' },
-      { key: 'projects',    label: 'แผนงาน/โครงการ',   Icon: ClipboardList, color: '#7c3aed', bg: '#ede9fe' },
-      { key: 'infra',       label: 'บันทึกงานซ่อม',   Icon: Hammer,        color: '#0891b2', bg: '#e0f2fe' },
-      { key: 'fleet',       label: 'ยานพาหนะ/น้ำมัน', Icon: Car,          color: '#0369a1', bg: '#e0f2fe' },
+      { key: 'events',          label: 'ปฏิทินกิจกรรม',       Icon: CalendarDays, color: '#10b981', bg: '#d1fae5' },
+      { key: 'posts',           label: 'ข่าวสาร/ภาพกิจกรรม',  Icon: Images,       color: '#059669', bg: '#d1fae5' },
+      { key: 'tourism',         label: 'เที่ยว กิน พัก OTOP', Icon: Luggage,      color: '#d97706', bg: '#fef3c7' },
+      { key: 'tourism-reviews', label: 'รีวิวสถานที่',        Icon: Star,         color: '#f59e0b', bg: '#fef3c7' },
     ],
   },
   {
-    group: 'ข้อมูลและรายงาน',
+    group: 'แผนงานและทรัพยากรกลาง',
     items: [
-      { key: 'map',         label: 'แผนที่',         Icon: MapPin,     color: '#0891b2', bg: '#e0f2fe' },
-      { key: 'report',      label: 'รายงาน',         Icon: TrendingUp, color: '#f59e0b', bg: '#fef3c7' },
-      { key: 'civil-report',label: 'รายงานโครงการ', Icon: Printer,    color: '#7c3aed', bg: '#ede9fe' },
+      { key: 'projects',      label: 'แผนงาน/โครงการ',  Icon: ClipboardList, color: '#7c3aed', bg: '#ede9fe' },
+      { key: 'civil-report',  label: 'รายงานโครงการ',   Icon: Printer,       color: '#7c3aed', bg: '#ede9fe' },
+      { key: 'report',        label: 'รายงาน',           Icon: TrendingUp,    color: '#f59e0b', bg: '#fef3c7' },
+      { key: 'map',      label: 'แผนที่',           Icon: MapPin,        color: '#0891b2', bg: '#e0f2fe' },
+      { key: 'fleet',    label: 'ยานพาหนะ/น้ำมัน',  Icon: Car,           color: '#0369a1', bg: '#e0f2fe' },
     ],
   },
   {
-    group: 'เนื้อหาและชุมชน',
+    group: 'บุคลากร',
     items: [
-      { key: 'posts',           label: 'ข่าวสาร/ภาพกิจกรรม', Icon: Images, color: '#059669', bg: '#d1fae5' },
-      { key: 'tourism',         label: 'เที่ยว กิน พัก OTOP', Icon: Luggage, color: '#d97706', bg: '#fef3c7' },
-      { key: 'tourism-reviews', label: 'รีวิวสถานที่',        Icon: Star,    color: '#f59e0b', bg: '#fef3c7' },
+      { key: 'positions', label: 'ตำแหน่งและบุคลากร', Icon: Briefcase, color: '#4338ca', bg: '#e0e7ff' },
     ],
   },
 ]
-const MODULES = MODULE_GROUPS.flatMap(g => g.items)
+
+// จัดกลุ่มเมนูตามโครงสร้างส่วนราชการจริง (สำนักปลัด/กองคลัง/กองช่าง/กองการศึกษา/ตรวจสอบภายใน)
+// กองที่ยังไม่มีเมนูงาน (alwaysShow) ยังคงโชว์หัวข้อไว้ให้ครบทุกกอง ไม่ซ่อน
+const MODULE_GROUPS = [
+  { group: 'สำนักปลัด', items: [], alwaysShow: true },
+  { group: 'กองคลัง', items: [], alwaysShow: true },
+  {
+    group: 'กองช่าง',
+    items: [
+      { key: 'infra', label: 'บันทึกงานซ่อม', Icon: Hammer, color: '#0891b2', bg: '#e0f2fe' },
+    ],
+  },
+  { group: 'กองการศึกษา', items: [], alwaysShow: true },
+  { group: 'ตรวจสอบภายใน', items: [], alwaysShow: true },
+]
+const MODULES = [...STANDALONE_GROUPS.flatMap(g => g.items), ...MODULE_GROUPS.flatMap(g => g.items)]
 
 
 const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
@@ -1539,10 +1557,17 @@ export default function StaffDashboard() {
   const alwaysEnabled = ['events']
   if (role === 'council') alwaysEnabled.push('map', 'civil-report', 'report')
   const enabledKeys = Array.from(new Set([...baseEnabledKeys, ...alwaysEnabled]))
-  const visibleGroups = MODULE_GROUPS
+  const visibleStandaloneGroups = STANDALONE_GROUPS
     .map(g => ({ ...g, items: g.items.filter(m => enabledKeys.includes(m.key)) }))
     .filter(g => g.items.length > 0)
-  const visibleModules = visibleGroups.flatMap(g => g.items)
+  const visibleGroups = MODULE_GROUPS
+    .map(g => ({ ...g, items: g.items.filter(m => enabledKeys.includes(m.key)) }))
+    .filter(g => g.items.length > 0 || g.alwaysShow)
+  // หน้า Dashboard ต้องเห็นทุกงานที่เปิดใช้จริง ไม่ใช่เฉพาะเมนูที่ผูกกับกอง
+  // และไม่ส่งกลุ่มว่างไปแสดง เพราะทำให้หน้าแรกดูเหมือนไม่มีเครื่องมือให้ใช้งาน
+  const visibleHomeGroups = [...visibleStandaloneGroups, ...visibleGroups]
+    .filter(group => group.items.length > 0)
+  const visibleModules = visibleHomeGroups.flatMap(group => group.items)
 
   useEffect(() => {
     _customDocTypes = (tenant?.fee_schedule?._custom_types || []).map(t => ({
@@ -1698,11 +1723,39 @@ export default function StaffDashboard() {
                 <Home size={16} strokeWidth={activeModule === 'home' ? 2.2 : 1.8} />
                 <span className="flex-1 text-left text-xs">หน้าหลัก</span>
               </button>
-              {visibleGroups.map(({ group, items }) => (
+              {visibleStandaloneGroups.map(({ group, items }) => (
                 <div key={group} className="mb-3">
                   <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-widest text-white/55">{group}</p>
                   <div className="space-y-0.5">
                     {items.map(({ key, label, Icon }) => {
+                      const isActive = activeModule === key
+                      const badge = key === 'inbox' && pendingCount > 0 ? pendingCount
+                        : key === 'complaints' && newComplaintCount > 0 ? newComplaintCount
+                        : null
+                      return (
+                        <button key={key} onClick={() => setActiveModule(key)}
+                          className={`flex min-h-9 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${isActive ? 'bg-white/20 text-white shadow-sm' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}>
+                          <Icon size={16} strokeWidth={isActive ? 2.2 : 1.8} />
+                          <span className="flex-1 text-left text-xs">{label}</span>
+                          {badge && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white bg-amber-400">
+                              {badge > 99 ? '99+' : badge}
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+              <div className="my-2 border-t" style={{ borderColor: 'rgba(255,255,255,0.1)' }} />
+              {visibleGroups.map(({ group, items }) => (
+                <div key={group} className="mb-3">
+                  <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-widest text-white/55">{group}</p>
+                  <div className="space-y-0.5">
+                    {items.length === 0 ? (
+                      <p className="px-3 py-1.5 text-[11px] italic text-white/35">ยังไม่มีเมนูงานในกองนี้</p>
+                    ) : items.map(({ key, label, Icon }) => {
                       const isActive = activeModule === key
                       const badge = key === 'inbox' && pendingCount > 0 ? pendingCount
                         : key === 'complaints' && newComplaintCount > 0 ? newComplaintCount
@@ -1737,7 +1790,7 @@ export default function StaffDashboard() {
             {activeModule === 'home' && (
               <StaffOperationalDashboard
                 key={tenant?.id}
-                visibleGroups={visibleGroups}
+                visibleGroups={visibleHomeGroups}
                 setActiveModule={setActiveModule}
                 tenant={tenant}
                 profile={profile}
@@ -1770,6 +1823,7 @@ export default function StaffDashboard() {
             {activeModule === 'tourism'          && <TourismManager tenant={tenant} />}
             {activeModule === 'tourism-reviews'  && <TourismReviewsAdmin tenant={tenant} />}
             {activeModule === 'fleet' && <FleetPage onBack={() => setActiveModule('home')} />}
+            {activeModule === 'positions' && <PositionsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
             </Suspense>
             </div>
           </main>
