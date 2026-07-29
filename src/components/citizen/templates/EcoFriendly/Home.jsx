@@ -190,7 +190,7 @@ export default function HomePage() {
   const leftOrder  = LAYOUT_ORDER[layout]  || LAYOUT_ORDER.classic
   return (
     <div className="bg-gray-50">
-      <div className="px-3 sm:px-4 lg:px-6 pt-3 pb-4 max-w-[1440px] mx-auto">
+      <div className="px-3 sm:px-4 lg:px-6 pt-2 lg:pt-3 pb-4 max-w-[1440px] mx-auto">
 
         {/* Role shortcuts (mobile only) */}
         {isStaff && (
@@ -222,7 +222,7 @@ export default function HomePage() {
           </Link>
         )}
         {/* Mobile: สภาพอากาศอยู่ก่อนแบนเนอร์ / Desktop: แบนเนอร์ซ้าย ข้อมูลเมืองขวา */}
-        <div className="grid lg:grid-cols-12 gap-3 lg:gap-4">
+        <div className="grid lg:grid-cols-12 gap-2 lg:gap-4">
           <div className="order-2 lg:order-1 lg:col-span-8">
             <BannerSlider />
           </div>
@@ -236,8 +236,8 @@ export default function HomePage() {
         </div>
 
         {/* บริการประชาชนและข้อมูลประกอบ */}
-        <div className="grid lg:grid-cols-12 gap-3 lg:gap-4 mt-3">
-          <div className="lg:col-span-8 flex flex-col gap-3">
+        <div className="grid lg:grid-cols-12 gap-2 lg:gap-4 mt-2 lg:mt-3">
+          <div className="lg:col-span-8 flex flex-col gap-2 lg:gap-3">
             {leftOrder.map(key => SECTION[key] ?? null)}
           </div>
 
