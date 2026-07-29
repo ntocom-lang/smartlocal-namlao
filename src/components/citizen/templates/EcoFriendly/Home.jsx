@@ -7,33 +7,10 @@ import PostsHighlight from '../../../../components/home/PostsHighlight'
 import TourismSection from '../../../../components/home/TourismSection'
 import BannerSlider from '../../../../components/home/BannerSlider'
 import {
-  ChevronRight, Briefcase, Wrench, Newspaper, Map, Megaphone,
+  ChevronRight, Briefcase, Wrench, Newspaper, Map,
 } from 'lucide-react'
 import WeatherWidget from '../../../../components/home/WeatherWidget'
 import ComplaintBand from '../../../../components/home/ComplaintBand'
-
-const MARQUEE_TEXT = 'บริการประชาชนออนไลน์ ตลอด 24 ชั่วโมง เพื่อใช้เป็นช่องทางในการติดตามข่าวสาร แจ้งเรื่องร้องเรียน และรับบริการต่างๆ ได้อย่างสะดวก รวดเร็ว และเข้าถึงได้ทุกที่ทุกเวลา'
-
-const marqueeStyle = `
-@keyframes citizen-marquee {
-  0%   { transform: translateX(0); }
-  100% { transform: translateX(-50%); }
-}
-.citizen-marquee-track {
-  animation: citizen-marquee 40s linear infinite;
-}
-.citizen-marquee-track:hover {
-  animation-play-state: paused;
-}
-@media (prefers-reduced-motion: reduce) {
-  .citizen-marquee-track {
-    animation: none;
-    transform: none;
-  }
-  .citizen-marquee-repeat {
-    display: none;
-  }
-}`
 
 // ── section order per layout ──────────────────────────────────────────
 const LAYOUT_ORDER = {
@@ -110,25 +87,6 @@ function NewsSlider({ posts, label = 'ข่าวสาร', href = '/news' }) 
     </div>
   )
 }
-
-function MarqueeBar() {
-  return (
-    <section className="flex items-center overflow-hidden rounded-xl shadow-md"
-      style={{ background: 'linear-gradient(90deg, #38bdf8 0%, #34d399 50%, #fbbf24 100%)', height: 44 }}
-      aria-label="ข้อมูลประชาสัมพันธ์">
-      <div className="shrink-0 flex items-center justify-center px-4 h-full bg-black/10 border-r border-white/20">
-        <Megaphone size={18} className="text-white" />
-      </div>
-      <div className="flex-1 overflow-hidden ml-3">
-        <div className="citizen-marquee-track whitespace-nowrap text-white text-sm font-bold inline-block drop-shadow-sm">
-          <span className="inline-block pr-12">{MARQUEE_TEXT}</span>
-          <span className="citizen-marquee-repeat inline-block pr-12" aria-hidden="true">{MARQUEE_TEXT}</span>
-        </div>
-      </div>
-    </section>
-  )
-}
-
 
 // ── E-Service block (layout-aware) ────────────────────────────────────
 function EServiceBlock({ docTypes }) {
@@ -232,7 +190,6 @@ export default function HomePage() {
   const leftOrder  = LAYOUT_ORDER[layout]  || LAYOUT_ORDER.classic
   return (
     <div className="bg-gray-50">
-      <style>{marqueeStyle}</style>
       <div className="px-3 sm:px-4 lg:px-6 pt-3 pb-4 max-w-[1440px] mx-auto">
 
         {/* Role shortcuts (mobile only) */}
@@ -287,10 +244,6 @@ export default function HomePage() {
           <aside className="hidden lg:flex lg:col-span-4 flex-col gap-3" aria-label="ภาพกิจกรรมและผลงาน">
             {RIGHT_SECTION.activities}
           </aside>
-        </div>
-
-        <div className="mt-3">
-          <MarqueeBar />
         </div>
 
         {/* Full-width sections — ข่าวสารและกิจกรรม */}

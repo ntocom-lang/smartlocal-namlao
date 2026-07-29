@@ -9,7 +9,6 @@ import BottomNav from './components/layout/BottomNav'
 import CitizenSidebar from './components/layout/CitizenSidebar'
 import InstallPrompt from './components/InstallPrompt'
 import ScrollToTopButton from './components/ScrollToTopButton'
-import FloatingAIChat from './components/chat/FloatingAIChat'
 import InAppBrowserGate from './components/InAppBrowserGate'
 import { supabase } from './lib/supabase'
 import { Phone } from 'lucide-react'
@@ -411,7 +410,6 @@ function AppShell() {
         {!hideBottomNav && <BottomNav />}
         <InstallPrompt />
         <ScrollToTopButton />
-        <FloatingAIChat />
       </NotificationsProvider>
     </div>
   )
