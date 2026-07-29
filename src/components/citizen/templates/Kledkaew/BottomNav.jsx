@@ -5,12 +5,14 @@ export default function BottomNav() {
   const location = useLocation()
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden"
+    <>
+      <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden"
          style={{
            background: 'linear-gradient(180deg, #059669 0%, #064e3b 100%)',
            borderTopLeftRadius: '20px',
            borderTopRightRadius: '20px',
-           boxShadow: '0 -4px 10px rgba(0,0,0,0.1)'
+           boxShadow: '0 -4px 10px rgba(0,0,0,0.1)',
+           paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 8px)',
          }}>
       {/* Wave overlay background */}
       <div className="absolute inset-0 opacity-20 pointer-events-none" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 1440 320\'%3E%3Cpath fill=\'%23ffffff\' fill-opacity=\'1\' d=\'M0,160L48,170.7C96,181,192,203,288,208C384,213,480,203,576,170.7C672,139,768,85,864,80C960,75,1056,117,1152,149.3C1248,181,1344,203,1392,213.3L1440,224L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z\'%3E%3C/path%3E%3C/svg%3E")', backgroundSize: 'cover', backgroundPosition: 'bottom' }}></div>
@@ -48,7 +50,13 @@ export default function BottomNav() {
           <Menu size={22} strokeWidth={location.pathname === '/more' ? 2.5 : 2} />
           <span className="text-[12px] font-bold tracking-wide">เมนูอื่น</span>
         </Link>
+        </div>
       </div>
-    </div>
+      <div
+        className="md:hidden shrink-0"
+        style={{ height: 'calc(60px + max(env(safe-area-inset-bottom, 0px), 8px))' }}
+        aria-hidden="true"
+      />
+    </>
   )
 }

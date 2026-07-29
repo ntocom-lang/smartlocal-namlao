@@ -15,7 +15,7 @@ const ALL_MODULES = [
   {
     group: 'งานภายใน',
     items: [
-      { key: 'events',   label: 'กิจกรรม',  desc: 'ปฏิทินกิจกรรมของหน่วยงาน' },
+      { key: 'events',   label: 'ปฏิทินกิจกรรม', desc: 'กำหนดการและปฏิทินกิจกรรมของหน่วยงาน' },
       { key: 'approve',  label: 'อนุมัติ',   desc: 'คำขออนุมัติภายใน' },
       { key: 'projects', label: 'โครงการ',   desc: 'ติดตามโครงการก่อสร้าง' },
     ],

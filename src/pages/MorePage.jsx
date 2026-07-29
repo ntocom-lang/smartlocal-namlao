@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft, UserCircle2, Pencil, LogIn, LogOut,
   Bell, FileSearch, ClipboardList, ShieldCheck,
-  Phone, MapPin, Globe, Share2, MessageCircle,
+  Phone, Globe, Share2, MessageCircle,
   ChevronRight, Star, Copy, Download, Check, Monitor, X,
   UploadIcon, PlusSquare, BookOpen, Store, FileText, Briefcase,
   CalendarDays, Luggage, AlertTriangle, Cloud, RefreshCw,
@@ -222,12 +222,18 @@ function MenuRow({ icon: Icon, iconBg, iconColor = 'text-gray-500', label, desc,
 // ─── Page ──────────────────────────────────────────────────────────────────
 
 export default function MorePage() {
-  const navigate = useNavigate()
   const { tenant } = useTenant()
 
   if (tenant?.ui_style === 'kledkaew') {
     return <KledkaewMore />
   }
+
+  return <NamlaoMorePage />
+}
+
+function NamlaoMorePage() {
+  const navigate = useNavigate()
+  const { tenant } = useTenant()
 
   const { unreadCount } = useNotifications()
   const { session, role, displayName, avatarUrl } = useAuth()
@@ -235,11 +241,18 @@ export default function MorePage() {
   const [showSat, setShowSat] = useState(false)
 
   // PWA Install State
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream
   const [installPrompt, setInstallPrompt] = useState(null)
-  const [installState, setInstallState] = useState('unknown') // 'unknown' | 'installable' | 'installed'
+  const [installState, setInstallState] = useState(() => {
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true
+    if (isStandalone) return 'installed'
+    if (isIOS) return 'installable'
+    return 'unknown'
+  }) // 'unknown' | 'installable' | 'installed'
   const [showIOSGuide, setShowIOSGuide] = useState(false)
   const [clearingCache, setClearingCache] = useState(false)
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream
 
   function handleClearCache() {
     setClearingCache(true)
@@ -247,18 +260,7 @@ export default function MorePage() {
   }
 
   useEffect(() => {
-    const isStandalone =
-      window.matchMedia('(display-mode: standalone)').matches ||
-      window.navigator.standalone === true
-    if (isStandalone) {
-      setInstallState('installed')
-      return
-    }
-
-    if (isIOS) {
-      setInstallState('installable')
-      return
-    }
+    if (installState !== 'unknown') return
 
     const handler = (e) => {
       e.preventDefault()
@@ -267,7 +269,7 @@ export default function MorePage() {
     }
     window.addEventListener('beforeinstallprompt', handler)
     return () => window.removeEventListener('beforeinstallprompt', handler)
-  }, [isIOS])
+  }, [installState])
 
   async function handleInstall() {
     if (isIOS) {
@@ -351,11 +353,11 @@ export default function MorePage() {
         </div>
       </div>
 
-      <div className="px-4 pt-2 md:pt-4 md:max-w-2xl md:mx-auto space-y-5">
+      <div className="px-4 pt-2 md:pt-4 md:max-w-6xl md:mx-auto space-y-5 md:space-y-0 md:grid md:grid-cols-2 md:gap-5 md:items-start">
 
         {/* ─── User card ─── */}
         {session ? (
-          <div className="rounded-3xl overflow-hidden shadow-md"
+          <div className="rounded-3xl overflow-hidden shadow-md md:col-span-2"
                style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 60%, color-mix(in srgb, var(--color-primary) 70%, #7c3aed) 100%)' }}>
             <div className="px-5 py-5 flex items-center gap-4">
               {/* Avatar */}
@@ -394,7 +396,7 @@ export default function MorePage() {
           </div>
         ) : (
           /* Login CTA */
-          <div className="rounded-3xl overflow-hidden shadow-md"
+          <div className="rounded-3xl overflow-hidden shadow-md md:col-span-2"
                style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)' }}>
             <div className="px-5 py-5 flex items-center gap-4">
               <div className="w-14 h-14 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
@@ -706,7 +708,7 @@ export default function MorePage() {
         <QRShareCard tenant={tenant} />
 
         {/* ─── Footer ─── */}
-        <div className="text-center pb-2">
+        <div className="text-center pb-2 md:col-span-2">
           <p className="text-xs text-gray-300 font-medium">{tenant?.name}</p>
           <p className="text-[13px] text-gray-300 mt-0.5">{tenant?.system_name || `${tenant?.name} One Data`} · ระบบข้อมูลเพื่อการพัฒนาที่ยั่งยืน</p>
         </div>

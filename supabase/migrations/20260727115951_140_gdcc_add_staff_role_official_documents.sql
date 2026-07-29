@@ -23,3 +23,4 @@ create policy "official documents select staff"
     and get_my_role() in ('admin', 'superadmin', 'officer', 'technician', 'staff')
     and (storage.foldername(name))[1] = get_my_municipality_id()::text
   );
+-- History version aligned with linked Supabase project.

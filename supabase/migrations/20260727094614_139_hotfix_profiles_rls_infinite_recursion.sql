@@ -50,3 +50,4 @@ CREATE POLICY "technician read profiles" ON public.profiles
       OR (municipality_id IS NULL AND profile_linked_to_municipality(profiles.id, get_my_municipality_id()))
     )
   );
+-- History version aligned with linked Supabase project.

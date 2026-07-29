@@ -50,3 +50,4 @@ CREATE POLICY "authenticated full access approval_requests"
   ON approval_requests
   USING (auth.role() = 'authenticated')
   WITH CHECK (auth.role() = 'authenticated');
+-- Archived: this legacy file had no migration version and was ignored by Supabase CLI.

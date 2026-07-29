@@ -65,3 +65,4 @@ CREATE POLICY "authenticated can update document_requests"
 -- (รันแยกต่างหากสำหรับ user ที่ต้องการให้เป็นเจ้าหน้าที่)
 -- ============================================================
 -- UPDATE profiles SET role = 'staff' WHERE id = '<user-uuid>';
+-- Archived: this legacy file had no migration version and was ignored by Supabase CLI.

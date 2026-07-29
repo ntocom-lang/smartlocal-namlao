@@ -16,3 +16,4 @@ alter table profiles
 update municipalities set district = 'ร้องกวาง' where slug = 'namlao';
 update municipalities set district = 'หนองม่วงไข่' where slug = 'tamnaktham';
 update municipalities set district = 'เมืองแพร่' where slug = 'muangphrae';
+-- History version aligned with linked Supabase project.

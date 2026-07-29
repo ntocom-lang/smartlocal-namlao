@@ -50,3 +50,4 @@ DROP POLICY IF EXISTS "anyone can submit complaint" ON public.complaints;
 CREATE POLICY "anyone can submit complaint" ON public.complaints
   FOR INSERT TO anon, authenticated
   WITH CHECK (user_id IS NULL OR user_id = auth.uid());
+-- History version aligned with linked Supabase project.

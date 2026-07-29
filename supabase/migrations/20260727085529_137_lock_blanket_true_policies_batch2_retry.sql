@@ -172,3 +172,4 @@ CREATE POLICY "faudit_read" ON public.fleet_audit_log FOR SELECT USING (
   OR (get_my_role() IN ('admin','superadmin') AND (get_my_role() = 'superadmin' OR municipality_id = get_my_municipality_id()))
 );
 -- faudit_insert ของเดิม (108) scope ถูกต้องอยู่แล้ว (ตรวจสอบแล้วบน live DB) ไม่ต้องสร้างซ้ำ
+-- History version aligned with linked Supabase project.

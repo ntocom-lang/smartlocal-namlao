@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Loader2, Plus, X, Pencil, Trash2, ChevronLeft, ChevronRight, Paperclip, CalendarDays, Tag, Users, Check, ChevronUp, Link2, Copy, CheckCheck, Image, FileText, Sparkles } from 'lucide-react'
+import { Loader2, Plus, X, Pencil, Trash2, ChevronLeft, ChevronRight, Paperclip, CalendarDays, Tag, Users, Check, ChevronUp, Link2, CheckCheck, Image, FileText, Sparkles } from 'lucide-react'
 import { supabase, supabaseUrl } from '../../lib/supabase'
 import { notifyTelegram } from '../../lib/notifyTelegram'
 import { logAction } from '../../lib/auditLog'
@@ -83,6 +83,7 @@ const AUDIENCE_OPTIONS = [
   { value: 'management', label: 'ผู้บริหาร',                color: '#8b5cf6' },
   { value: 'council',    label: 'สภาเทศบาล',               color: '#f59e0b' },
 ]
+const EMPTY_EVENT_FORM = { title: '', description: '', event_date: '', event_time: '', end_time: '', end_date: '', location: '', category: '', customCategory: '', is_all_day: false, audiences: [], attachment_urls: [], attachment_files: [] }
 
 // backward-compat: event เก่าเก็บไฟล์แนบเดียวใน attachment_url, ของใหม่เก็บหลายไฟล์ใน attachment_urls
 function eventAttachments(ev) {
@@ -195,7 +196,7 @@ function EventCard({ ev, onEdit, onDelete, onView, deleting }) {
   )
 }
 
-export default function EventsManager({ tenant, currentUserRole = 'staff', autoEditEventId, onAutoEditHandled }) {
+export default function EventsManager({ tenant, currentUserRole = 'staff', autoEditEventId, onAutoEditHandled, autoCreateSignal = 0, autoCreateAudience = null, onAutoCreateHandled }) {
   const canManage = ['admin', 'superadmin', 'staff', 'officer', 'viewer', 'council'].includes(currentUserRole)
   const orgLabel = tenant?.org_type === 'อบต.' ? 'อบต.' : 'เทศบาล'
   const LOCATION_PRESETS = ['ห้องประชุมสภา', `ห้องประชุม${orgLabel}`, `โดมหลัง${orgLabel}`]
@@ -210,8 +211,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
   const [formError, setFormError] = useState('')
   const [extracting, setExtracting] = useState(false)
   const MAX_ATTACHMENTS = 10
-  const emptyForm = { title: '', description: '', event_date: '', event_time: '', end_time: '', end_date: '', location: '', category: '', customCategory: '', is_all_day: false, audiences: [], attachment_urls: [], attachment_files: [] }
-  const [form, setForm] = useState(emptyForm)
+  const [form, setForm] = useState(EMPTY_EVENT_FORM)
   const [multiDay, setMultiDay] = useState(false)
   const [locationCustom, setLocationCustom] = useState(false)
   const [filterMonth, setFilterMonth] = useState('all')
@@ -229,8 +229,28 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
   const topRef = useRef(null)
   const formErrorRef = useRef(null)
 
-  useEffect(() => { setCurrentPage(1) }, [activeTab, searchQuery, filterMonth, filterCategory, filterAudience, pageSize])
+  useEffect(() => {
+    const timer = window.setTimeout(() => setCurrentPage(1), 0)
+    return () => window.clearTimeout(timer)
+  }, [activeTab, searchQuery, filterMonth, filterCategory, filterAudience, pageSize])
   useEffect(() => { fetchEvents() }, [tenant?.id, currentUserRole])
+
+  useEffect(() => {
+    if (!autoCreateSignal) return undefined
+    const timer = window.setTimeout(() => {
+      const today = new Date().toISOString().split('T')[0]
+      const audienceAllowed = AUDIENCE_OPTIONS.some(option => option.value === autoCreateAudience)
+        && !(currentUserRole === 'council' && autoCreateAudience === 'management')
+      setForm({ ...EMPTY_EVENT_FORM, event_date: today, audiences: audienceAllowed ? [autoCreateAudience] : [] })
+      setMultiDay(false)
+      setLocationCustom(false)
+      setEditingEvent(null)
+      setFormError('')
+      setShowForm(true)
+      onAutoCreateHandled?.()
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [autoCreateAudience, autoCreateSignal, currentUserRole, onAutoCreateHandled])
 
   // เปิดฟอร์มแก้ไขอัตโนมัติ ถ้ามากดปุ่ม "แก้ไข" จากหน้ารายละเอียดกิจกรรมฝั่งประชาชน (/events)
   useEffect(() => {
@@ -286,7 +306,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
 
   function openAdd() {
     const today = new Date().toISOString().split('T')[0]
-    setForm({ ...emptyForm, event_date: today })
+    setForm({ ...EMPTY_EVENT_FORM, event_date: today })
     setMultiDay(false)
     setLocationCustom(false)
     setEditingEvent(null)
@@ -541,7 +561,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
             <button onClick={openAdd}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white"
               style={{ backgroundColor: 'var(--color-primary)' }}>
-              <Plus size={16} /> เพิ่มกิจกรรม
+              <Plus size={16} /> เพิ่มกิจกรรมในปฏิทิน
             </button>
           )}
         </div>
@@ -560,7 +580,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
             <button onClick={openAdd}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold border transition-colors hover:bg-white/20"
               style={{ backgroundColor: 'rgba(255,255,255,0.12)', color: '#fff', borderColor: 'rgba(255,255,255,0.3)' }}>
-              <Plus size={13} /> เพิ่มกิจกรรม
+              <Plus size={13} /> เพิ่มกิจกรรมในปฏิทิน
             </button>
           )}
         </div>
@@ -820,7 +840,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/50 px-4 pb-4 md:p-6">
           <div className="w-full max-w-md md:max-w-2xl bg-white rounded-t-3xl md:rounded-2xl shadow-2xl flex flex-col max-h-[90vh] md:max-h-[88vh] overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
-              <h3 className="font-bold text-gray-800">{editingEvent ? 'แก้ไขกิจกรรม' : 'เพิ่มกิจกรรม'}</h3>
+              <h3 className="font-bold text-gray-800">{editingEvent ? 'แก้ไขกิจกรรมในปฏิทิน' : 'เพิ่มกิจกรรมในปฏิทิน'}</h3>
               <button onClick={() => setShowForm(false)} className="p-1.5 rounded-xl hover:bg-gray-100">
                 <X size={18} className="text-gray-500" />
               </button>
@@ -1073,7 +1093,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
           <div>
             {paginatedList.length === 0 ? (
               <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center text-gray-400 text-sm">
-                {activeTab === 'upcoming' ? 'ยังไม่มีกิจกรรม กด "เพิ่มกิจกรรม" เพื่อเริ่มต้น' : 'ยังไม่มีกิจกรรมที่ผ่านมา'}
+                {activeTab === 'upcoming' ? 'ยังไม่มีกิจกรรม กด "เพิ่มกิจกรรมในปฏิทิน" เพื่อเริ่มต้น' : 'ยังไม่มีกิจกรรมที่ผ่านมา'}
               </div>
             ) : (
               <>

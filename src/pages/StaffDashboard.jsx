@@ -1,30 +1,34 @@
-import { useState, useEffect, useRef } from 'react'
+import { lazy, Suspense, useState, useEffect, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
-  Inbox, FileText, CheckSquare, BarChart2, LogOut,
+  Inbox, FileText, MessageSquareWarning, LogOut,
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, AlignLeft, Calendar, Hash, RefreshCw,
-  Printer, PenLine, Search, Download, Wrench, Home, CalendarDays, TrendingUp, Images, Camera,
-  CreditCard, BadgeCheck, Banknote, Luggage, Star, MoreHorizontal, Car, Bell, Trash2,
+  Printer, Search, ClipboardList, Hammer, Home, CalendarDays, TrendingUp, Images, Camera,
+  CreditCard, BadgeCheck, Banknote, Luggage, Star, Car, Bell, Trash2,
 } from 'lucide-react'
-import MapPicker from '../components/MapPicker'
-import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
-import InfraWorkAdmin from '../components/admin/InfraWorkAdmin'
-import CivilProjectReport from '../components/admin/CivilProjectReport'
-import MapDashboardAdmin from '../components/admin/MapDashboardAdmin'
-import EventsManager from '../components/admin/EventsManager'
-import ComplaintsManager from '../components/admin/ComplaintsManager'
-import ReportManager from '../components/admin/ReportManager'
-import TourismManager, { TourismReviewsAdmin } from '../components/admin/TourismManager'
-import PostsManager from '../components/staff/PostsManager'
-import FleetPage from './FleetPage'
 import { supabase } from '../lib/supabase'
-import { attachReporterProfiles } from '../lib/attachReporterProfiles'
+import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
 import { compressImage } from '../lib/imageUtils'
 import { useTenant } from '../contexts/TenantContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { thaiDate } from '../lib/thaiDate'
 import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
+
+const MapPicker = lazy(() => import('../components/MapPicker'))
+const CivilProjectAdmin = lazy(() => import('../components/admin/CivilProjectAdmin'))
+const InfraWorkAdmin = lazy(() => import('../components/admin/InfraWorkAdmin'))
+const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectReport'))
+const MapDashboardAdmin = lazy(() => import('../components/admin/MapDashboardAdmin'))
+const EventsManager = lazy(() => import('../components/admin/EventsManager'))
+const ComplaintsManager = lazy(() => import('../components/admin/ComplaintsManager'))
+const ReportManager = lazy(() => import('../components/admin/ReportManager'))
+const TourismManager = lazy(() => import('../components/admin/TourismManager'))
+const TourismReviewsAdmin = lazy(() => import('../components/admin/TourismManager').then(module => ({ default: module.TourismReviewsAdmin })))
+const PostsManager = lazy(() => import('../components/staff/PostsManager'))
+const StaffOperationalDashboard = lazy(() => import('../components/staff/StaffOperationalDashboard'))
+const FleetPage = lazy(() => import('./FleetPage'))
+const BuildingPermitWizard = lazy(() => import('./BuildingPermitWizard'))
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -50,15 +54,15 @@ const MODULE_GROUPS = [
     group: 'บริการประชาชน',
     items: [
       { key: 'inbox',      label: 'คำขอเอกสาร', Icon: FileText,     color: '#8b5cf6', bg: '#ede9fe' },
-      { key: 'complaints', label: 'คำร้อง',      Icon: BarChart2,    color: '#ef4444', bg: '#fee2e2' },
+      { key: 'complaints', label: 'คำร้อง',      Icon: MessageSquareWarning, color: '#ef4444', bg: '#fee2e2' },
     ],
   },
   {
     group: 'งานภายใน',
     items: [
-      { key: 'events',      label: 'กิจกรรม',          Icon: CalendarDays, color: '#10b981', bg: '#d1fae5' },
-      { key: 'projects',    label: 'แผนงาน/โครงการ',   Icon: Wrench,       color: '#7c3aed', bg: '#ede9fe' },
-      { key: 'infra',       label: 'บันทึกงานซ่อม',   Icon: MapPin,       color: '#0891b2', bg: '#e0f2fe' },
+      { key: 'events',      label: 'ปฏิทินกิจกรรม',    Icon: CalendarDays, color: '#10b981', bg: '#d1fae5' },
+      { key: 'projects',    label: 'แผนงาน/โครงการ',   Icon: ClipboardList, color: '#7c3aed', bg: '#ede9fe' },
+      { key: 'infra',       label: 'บันทึกงานซ่อม',   Icon: Hammer,        color: '#0891b2', bg: '#e0f2fe' },
       { key: 'fleet',       label: 'ยานพาหนะ/น้ำมัน', Icon: Car,          color: '#0369a1', bg: '#e0f2fe' },
     ],
   },
@@ -73,7 +77,7 @@ const MODULE_GROUPS = [
   {
     group: 'เนื้อหาและชุมชน',
     items: [
-      { key: 'posts',           label: 'ข่าวสาร/กิจกรรม',   Icon: Images,  color: '#059669', bg: '#d1fae5' },
+      { key: 'posts',           label: 'ข่าวสาร/ภาพกิจกรรม', Icon: Images, color: '#059669', bg: '#d1fae5' },
       { key: 'tourism',         label: 'เที่ยว กิน พัก OTOP', Icon: Luggage, color: '#d97706', bg: '#fef3c7' },
       { key: 'tourism-reviews', label: 'รีวิวสถานที่',        Icon: Star,    color: '#f59e0b', bg: '#fef3c7' },
     ],
@@ -81,16 +85,6 @@ const MODULE_GROUPS = [
 ]
 const MODULES = MODULE_GROUPS.flatMap(g => g.items)
 
-
-const APPROVAL_TYPES = [
-  { value: 'expense_claim',  label: '💰 เบิกจ่ายค่าใช้จ่าย',        requiresSign: true  },
-  { value: 'budget_request', label: '📊 ขออนุมัติงบประมาณ',          requiresSign: true  },
-  { value: 'procurement',    label: '🛒 จัดซื้อจัดจ้าง',             requiresSign: true  },
-  { value: 'leave_request',  label: '📅 คำขอลา',                     requiresSign: false },
-  { value: 'overtime',       label: '⏰ ขออนุมัติทำงานล่วงเวลา',      requiresSign: false },
-  { value: 'other_quick',    label: '📝 อื่นๆ (ไม่ต้องลงนาม)',        requiresSign: false },
-  { value: 'other_sign',     label: '✍️ อื่นๆ (ต้องลงนาม)',           requiresSign: true  },
-]
 
 const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
 
@@ -565,7 +559,7 @@ const EMPTY_REQ = {
   requester_phone: '', requester_address: '', purpose: '',
 }
 
-function NewRequestSheet({ tenant, staffId, onClose, onCreated }) {
+function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuildingPermit }) {
   const [form, setForm] = useState(EMPTY_REQ)
   const [saving, setSaving] = useState(false)
   const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }))
@@ -604,7 +598,7 @@ function NewRequestSheet({ tenant, staffId, onClose, onCreated }) {
                 const isSel = form.document_type === d.value
                 return (
                   <button key={d.value} type="button"
-                    onClick={() => setForm(p => ({ ...p, document_type: d.value }))}
+                    onClick={() => d.value === 'building_permit' ? onSelectBuildingPermit() : setForm(p => ({ ...p, document_type: d.value }))}
                     className="flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left text-xs font-semibold transition-all active:scale-95"
                     style={isSel
                       ? { borderColor: '#3b82f6', backgroundColor: '#eff6ff', color: '#1d4ed8' }
@@ -659,20 +653,24 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
   const [selected, setSelected]   = useState(null)
   const [acting, setActing]       = useState(false)
   const [showAdd, setShowAdd]     = useState(false)
+  const [showPermitWizard, setShowPermitWizard] = useState(false)
   const [search, setSearch]       = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
 
-  function reload() {
+  useEffect(() => {
     if (!tenant?.id) return
-    setLoading(true)
+    let cancelled = false
     supabase.from('document_requests')
       .select('*')
       .eq('municipality_id', tenant.id)
       .order('created_at', { ascending: false })
-      .then(({ data }) => { setRequests(data ?? []); setLoading(false) })
-  }
-
-  useEffect(() => { reload() }, [tenant?.id, refreshKey])
+      .then(({ data }) => {
+        if (cancelled) return
+        setRequests(data ?? [])
+        setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [tenant?.id, refreshKey])
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -920,7 +918,17 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
       {showAdd && (
         <NewRequestSheet tenant={tenant} staffId={staffId}
           onClose={() => setShowAdd(false)}
-          onCreated={r => setRequests(prev => [r, ...prev])} />
+          onCreated={r => setRequests(prev => [r, ...prev])}
+          onSelectBuildingPermit={() => { setShowAdd(false); setShowPermitWizard(true) }} />
+      )}
+      {/* ขออนุญาตก่อสร้างบ้าน — ใช้ wizard เต็มรูปแบบเดียวกับฝั่งประชาชน (แบบ ข.๑ จริง)
+          แทนฟอร์มสั้นทั่วไปใน NewRequestSheet เพราะฟิลด์ไม่พอสำหรับพิมพ์แบบร่างที่ถูกต้อง */}
+      {showPermitWizard && (
+        <div className="fixed inset-0 z-[60] bg-white overflow-y-auto">
+          <BuildingPermitWizard tenant={tenant} session={null} staffId={staffId}
+            onBack={() => setShowPermitWizard(false)}
+            onDone={() => { setShowPermitWizard(false); setRefreshKey(k => k + 1) }} />
+        </div>
       )}
     </div>
   )
@@ -1037,848 +1045,6 @@ function buildDocHTML({ req, tenant, docDate }) {
   หมายเลขอ้างอิง: ${req.id?.slice(0, 8)?.toUpperCase() ?? '-'} &nbsp;|&nbsp; ออกโดย ${orgName} &nbsp;|&nbsp; วันที่ ${thaiDate(docDate)}
 </div>
 </body></html>`
-}
-
-// ─── Doc Card ─────────────────────────────────────────────────────────────────
-
-function DocCard({ req, onClick }) {
-  const docType  = getAllDocTypes().find(d => d.value === req.document_type)
-  const emoji    = docType?.label.match(/^(\S+)/)?.[1] ?? '📄'
-  const docLabel = docType?.label.replace(/^\S+\s*/, '') ?? req.document_type
-  return (
-    <button onClick={onClick}
-      className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-4 text-left hover:shadow-md active:scale-[0.99] transition-all flex items-center gap-3">
-      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-xl bg-purple-50">
-        {emoji}
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-bold text-gray-800 truncate">{req.requester_name}</p>
-        <p className="text-xs text-gray-500 truncate">{docLabel}</p>
-        {req.purpose && <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{req.purpose}</p>}
-        <p className="text-[11px] text-gray-300 mt-1">{dateTH(req.updated_at)}</p>
-      </div>
-      <div className="flex items-center gap-1 shrink-0">
-        <Printer size={14} className="text-purple-400" />
-        <ChevronRight size={16} className="text-gray-300" />
-      </div>
-    </button>
-  )
-}
-
-// ─── Doc Preview Sheet ────────────────────────────────────────────────────────
-
-function DocPreviewSheet({ req, tenant, onClose }) {
-  const [docDate, setDocDate] = useState(new Date().toISOString().slice(0, 10))
-  const docType = getAllDocTypes().find(d => d.value === req.document_type)
-
-  function handlePrint() {
-    const html = buildDocHTML({ req, tenant, docDate })
-    const w = window.open('', '_blank', 'width=860,height=1100')
-    if (!w) return
-    w.document.write(html)
-    w.document.close()
-    setTimeout(() => { w.focus(); w.print() }, 400)
-  }
-
-  const previewHTML = buildDocHTML({ req, tenant, docDate })
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-end md:items-center justify-center">
-      <div className="bg-white w-full md:max-w-2xl md:rounded-3xl rounded-t-3xl max-h-[96vh] flex flex-col overflow-hidden shadow-2xl">
-
-        {/* Header */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 shrink-0">
-          <button onClick={onClose} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500 transition-colors">
-            <X size={18} />
-          </button>
-          <div className="flex-1 min-w-0">
-            <p className="font-bold text-gray-800 truncate">{docType?.label ?? req.document_type}</p>
-            <p className="text-xs text-gray-400 truncate">{req.requester_name}</p>
-          </div>
-        </div>
-
-        {/* Date picker */}
-        <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center gap-3 shrink-0">
-          <label className="text-xs font-semibold text-gray-500 shrink-0">วันที่ออกเอกสาร</label>
-          <input type="date" value={docDate} onChange={e => setDocDate(e.target.value)}
-            className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-purple-200" />
-        </div>
-
-        {/* Preview */}
-        <div className="flex-1 overflow-hidden bg-gray-200 p-3 min-h-0">
-          <iframe
-            srcDoc={previewHTML}
-            className="w-full h-full bg-white rounded-xl shadow-inner border-0"
-            title="Document Preview"
-            sandbox="allow-same-origin"
-          />
-        </div>
-
-        {/* Print button */}
-        <div className="px-4 pb-6 pt-3 border-t border-gray-100 shrink-0">
-          <button onClick={handlePrint}
-            className="w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 text-sm active:scale-[0.98] transition-all"
-            style={{ backgroundColor: '#8b5cf6' }}>
-            <Printer size={16} /> พิมพ์ / บันทึก PDF
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── Docs Module ──────────────────────────────────────────────────────────────
-
-function DocsModule({ tenant }) {
-  const [requests, setRequests]   = useState([])
-  const [loading, setLoading]     = useState(true)
-  const [filterType, setFilterType] = useState('all')
-  const [selected, setSelected]   = useState(null)
-
-  useEffect(() => {
-    if (!tenant?.id) return
-    setLoading(true)
-    supabase.from('document_requests')
-      .select('*')
-      .eq('municipality_id', tenant.id)
-      .eq('status', 'completed')
-      .order('updated_at', { ascending: false })
-      .then(({ data }) => { setRequests(data ?? []); setLoading(false) })
-  }, [tenant?.id])
-
-  const filtered = filterType === 'all'
-    ? requests
-    : requests.filter(r => r.document_type === filterType)
-
-  return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-bold text-gray-800">เอกสารออนไลน์</h2>
-        <p className="text-xs text-gray-400 mt-0.5">ออกใบรับรองจากคำขอที่เสร็จสิ้นแล้ว</p>
-      </div>
-
-      {/* Filter */}
-      <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-        {[{ value: 'all', label: 'ทั้งหมด' }, ...getAllDocTypes()].map(d => (
-          <button key={d.value} onClick={() => setFilterType(d.value)}
-            className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full transition-all"
-            style={filterType === d.value
-              ? { backgroundColor: '#8b5cf6', color: '#fff' }
-              : { backgroundColor: '#f1f5f9', color: '#64748b' }}>
-            {d.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Tip */}
-      <div className="flex items-start gap-2 bg-purple-50 rounded-2xl px-4 py-3">
-        <Printer size={14} className="text-purple-400 mt-0.5 shrink-0" />
-        <p className="text-xs text-purple-700 leading-relaxed">
-          กดที่รายการเพื่อดูตัวอย่างและพิมพ์ใบรับรอง — รองรับเฉพาะคำขอที่ <strong>เสร็จสิ้น</strong> แล้ว
-        </p>
-      </div>
-
-      {loading ? (
-        <div className="flex justify-center py-16">
-          <Loader2 size={28} className="animate-spin text-gray-200" />
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-          <FileText size={44} className="mb-3 opacity-20" />
-          <p className="text-sm font-semibold text-gray-400">ไม่มีคำขอที่เสร็จสิ้น</p>
-          <p className="text-xs text-gray-300 mt-1">คำขอสถานะ "เสร็จสิ้น" จะแสดงที่นี่</p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {filtered.map(req => (
-            <DocCard key={req.id} req={req} onClick={() => setSelected(req)} />
-          ))}
-        </div>
-      )}
-
-      {selected && (
-        <DocPreviewSheet req={selected} tenant={tenant} onClose={() => setSelected(null)} />
-      )}
-    </div>
-  )
-}
-
-// ─── Signature Pad ────────────────────────────────────────────────────────────
-
-function SignaturePad({ onConfirm, onCancel }) {
-  const canvasRef = useRef(null)
-  const [isDrawing, setIsDrawing] = useState(false)
-  const [hasContent, setHasContent] = useState(false)
-
-  function getPos(e, canvas) {
-    const rect = canvas.getBoundingClientRect()
-    const src  = e.touches ? e.touches[0] : e
-    return {
-      x: (src.clientX - rect.left) * (canvas.width  / rect.width),
-      y: (src.clientY - rect.top)  * (canvas.height / rect.height),
-    }
-  }
-  function startDraw(e) {
-    e.preventDefault()
-    const canvas = canvasRef.current
-    const pos = getPos(e, canvas)
-    const ctx = canvas.getContext('2d')
-    ctx.beginPath()
-    ctx.moveTo(pos.x, pos.y)
-    setIsDrawing(true)
-    setHasContent(true)
-  }
-  function continueDraw(e) {
-    if (!isDrawing) return
-    e.preventDefault()
-    const canvas = canvasRef.current
-    const ctx = canvas.getContext('2d')
-    const pos = getPos(e, canvas)
-    ctx.lineTo(pos.x, pos.y)
-    ctx.strokeStyle = '#0f172a'
-    ctx.lineWidth = 2.5
-    ctx.lineCap = 'round'
-    ctx.lineJoin = 'round'
-    ctx.stroke()
-  }
-  function endDraw() { setIsDrawing(false) }
-  function clearPad() {
-    canvasRef.current.getContext('2d').clearRect(0, 0, 600, 180)
-    setHasContent(false)
-  }
-
-  return (
-    <div className="space-y-3">
-      <p className="text-xs font-semibold text-gray-500 text-center">ลงลายมือชื่อในกรอบด้านล่าง</p>
-      <div className="border-2 border-dashed border-gray-300 rounded-2xl overflow-hidden relative bg-white">
-        <canvas ref={canvasRef} width={600} height={180}
-          className="w-full touch-none cursor-crosshair block"
-          onMouseDown={startDraw} onMouseMove={continueDraw} onMouseUp={endDraw} onMouseLeave={endDraw}
-          onTouchStart={startDraw} onTouchMove={continueDraw} onTouchEnd={endDraw} />
-        {!hasContent && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <p className="text-xs text-gray-400">ลากเพื่อเขียนลายเซ็น</p>
-          </div>
-        )}
-      </div>
-      <div className="flex gap-2">
-        <button onClick={clearPad}
-          className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">
-          ล้าง
-        </button>
-        <button onClick={onCancel}
-          className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors">
-          ยกเลิก
-        </button>
-        <button onClick={() => onConfirm(canvasRef.current.toDataURL('image/png'))} disabled={!hasContent}
-          className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 transition-opacity flex items-center justify-center gap-1.5"
-          style={{ backgroundColor: '#10b981' }}>
-          <PenLine size={14} /> ยืนยันลงนาม
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ─── Approval Card ────────────────────────────────────────────────────────────
-
-function ApprovalCard({ req, onClick }) {
-  const type = APPROVAL_TYPES.find(t => t.value === req.request_type)
-  const emoji = type?.label.match(/^(\S+)/)?.[1] ?? '📋'
-  const typeLabel = type?.label.replace(/^\S+\s*/, '') ?? req.request_type
-  const ASTATUS = {
-    pending:  { label: 'รออนุมัติ',   color: '#f59e0b', bg: '#fef3c7' },
-    approved: { label: 'อนุมัติแล้ว', color: '#10b981', bg: '#d1fae5' },
-    rejected: { label: 'ไม่อนุมัติ',  color: '#ef4444', bg: '#fee2e2' },
-  }
-  const s = ASTATUS[req.status] ?? ASTATUS.pending
-  return (
-    <button onClick={onClick}
-      className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-4 text-left hover:shadow-md active:scale-[0.99] transition-all flex items-start gap-3">
-      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-emerald-50 text-xl">{emoji}</div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-start justify-between gap-2 mb-0.5">
-          <p className="text-sm font-bold text-gray-800 truncate">{req.title}</p>
-          <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap"
-            style={{ backgroundColor: s.bg, color: s.color }}>{s.label}</span>
-        </div>
-        <p className="text-xs text-gray-500 truncate">{typeLabel}</p>
-        {req.amount != null && (
-          <p className="text-xs font-semibold text-emerald-600 mt-0.5">
-            {Number(req.amount).toLocaleString()} บาท
-          </p>
-        )}
-        <div className="flex items-center gap-2 mt-1.5">
-          {req.requires_signature && (
-            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-600">
-              <PenLine size={9} /> ต้องลงนาม
-            </span>
-          )}
-          <p className="text-[11px] text-gray-300">{dateTH(req.created_at)}</p>
-        </div>
-      </div>
-      <ChevronRight size={16} className="text-gray-300 shrink-0 mt-1" />
-    </button>
-  )
-}
-
-// ─── Approve Sheet ────────────────────────────────────────────────────────────
-
-function ApproveSheet({ req, approverProfile, onClose, onApproved }) {
-  const [note, setNote]           = useState('')
-  const [step, setStep]           = useState('confirm') // 'confirm' | 'sign'
-  const [acting, setActing]       = useState(false)
-  const [showReject, setShowReject] = useState(false)
-  const [rejectReason, setRejectReason] = useState('')
-
-  const type = APPROVAL_TYPES.find(t => t.value === req.request_type)
-  const isActive = req.status === 'pending'
-
-  async function doApprove(signatureData) {
-    setActing(true)
-    const now = new Date().toISOString()
-    await supabase.from('approval_requests').update({
-      status:         'approved',
-      approved_by:    approverProfile?.id   ?? null,
-      approver_name:  approverProfile?.full_name ?? null,
-      approved_at:    now,
-      approver_note:  note || null,
-      signature_data: signatureData ?? null,
-      updated_at:     now,
-    }).eq('id', req.id)
-    setActing(false)
-    onApproved(req.id, 'approved')
-    onClose()
-  }
-
-  async function doReject() {
-    if (!rejectReason.trim()) return
-    setActing(true)
-    const now = new Date().toISOString()
-    await supabase.from('approval_requests').update({
-      status:        'rejected',
-      approved_by:   approverProfile?.id ?? null,
-      approver_name: approverProfile?.full_name ?? null,
-      approved_at:   now,
-      approver_note: rejectReason,
-      updated_at:    now,
-    }).eq('id', req.id)
-    setActing(false)
-    onApproved(req.id, 'rejected')
-    onClose()
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-end md:items-center justify-center">
-      <div className="bg-white w-full md:max-w-xl md:rounded-3xl rounded-t-3xl max-h-[93vh] flex flex-col overflow-hidden shadow-2xl">
-
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 shrink-0">
-          <button onClick={onClose} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500"><X size={18} /></button>
-          <div className="flex-1 min-w-0">
-            <p className="font-bold text-gray-800 truncate">{req.title}</p>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-xs text-gray-400 truncate">{type?.label ?? req.request_type}</span>
-              {req.requires_signature && (
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-600 flex items-center gap-1 shrink-0">
-                  <PenLine size={9} /> ต้องลงนาม
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-          <div className="bg-gray-50 rounded-2xl p-4 space-y-2.5">
-            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">รายละเอียดคำขอ</p>
-            {req.description && <InfoRow icon={<AlignLeft size={14} />} label="รายละเอียด"    value={req.description} />}
-            {req.amount != null && <InfoRow icon={<Hash size={14} />}   label="จำนวนเงิน"   value={`${Number(req.amount).toLocaleString()} บาท`} />}
-            {req.department && <InfoRow icon={<User size={14} />}       label="หน่วยงาน"    value={req.department} />}
-            {req.requester_name && <InfoRow icon={<User size={14} />}   label="ผู้ขออนุมัติ" value={req.requester_name} />}
-            <InfoRow icon={<Calendar size={14} />} label="วันที่" value={dateTH(req.created_at)} />
-          </div>
-
-          {isActive && step === 'confirm' && !showReject && (
-            <div>
-              <label className="text-xs font-semibold text-gray-500 mb-1.5 block">บันทึกผู้อนุมัติ</label>
-              <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
-                placeholder="เงื่อนไข หมายเหตุ หรือข้อสังเกต..."
-                className={inputCls + ' resize-none'} />
-            </div>
-          )}
-
-          {step === 'sign' && (
-            <SignaturePad
-              onConfirm={doApprove}
-              onCancel={() => setStep('confirm')} />
-          )}
-
-          {isActive && showReject && (
-            <div className="bg-red-50 border border-red-200 rounded-2xl p-4 space-y-3">
-              <p className="text-sm font-bold text-red-700">ระบุเหตุผลที่ไม่อนุมัติ</p>
-              <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={2}
-                placeholder="งบเกินวงเงิน / เอกสารไม่ครบ / อื่นๆ..."
-                className="w-full border border-red-200 rounded-xl px-3 py-2 text-sm text-gray-900 bg-white resize-none focus:outline-none" />
-              <div className="flex gap-2">
-                <button onClick={() => setShowReject(false)}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-600">
-                  ยกเลิก
-                </button>
-                <button onClick={doReject} disabled={acting || !rejectReason.trim()}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-red-500 text-white disabled:opacity-50">
-                  {acting ? <Loader2 size={14} className="animate-spin mx-auto" /> : 'ยืนยัน'}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {!isActive && req.approver_note && (
-            <div className={`rounded-xl p-3.5 ${req.status === 'rejected' ? 'bg-red-50' : 'bg-emerald-50'}`}>
-              <p className="text-[11px] font-bold uppercase tracking-wide mb-1"
-                style={{ color: req.status === 'rejected' ? '#dc2626' : '#059669' }}>
-                {req.status === 'rejected' ? 'เหตุผลที่ไม่อนุมัติ' : 'บันทึกผู้อนุมัติ'}
-              </p>
-              <p className="text-sm leading-relaxed"
-                style={{ color: req.status === 'rejected' ? '#b91c1c' : '#047857' }}>
-                {req.approver_note}
-              </p>
-              {req.approver_name && (
-                <p className="text-xs mt-1.5" style={{ color: req.status === 'rejected' ? '#ef4444' : '#10b981' }}>
-                  โดย {req.approver_name} · {dateTH(req.approved_at)}
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Show signature image if signed */}
-          {req.signature_data && (
-            <div>
-              <p className="text-xs font-semibold text-gray-500 mb-2">ลายมือชื่อผู้อนุมัติ</p>
-              <div className="border border-gray-200 rounded-xl overflow-hidden bg-gray-50 p-2">
-                <img src={req.signature_data} alt="ลายเซ็น" className="max-h-24 mx-auto" />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {isActive && step === 'confirm' && !showReject && (
-          <div className="px-4 pb-6 pt-3 border-t border-gray-100 space-y-2 shrink-0">
-            {req.requires_signature ? (
-              <button onClick={() => setStep('sign')}
-                className="w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 text-sm active:scale-[0.98] transition-all"
-                style={{ backgroundColor: '#10b981' }}>
-                <PenLine size={16} /> ลงนามอนุมัติ
-              </button>
-            ) : (
-              <button onClick={() => doApprove(null)} disabled={acting}
-                className="w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 text-sm active:scale-[0.98] transition-all disabled:opacity-50"
-                style={{ backgroundColor: '#10b981' }}>
-                {acting ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-                อนุมัติ
-              </button>
-            )}
-            <button onClick={() => setShowReject(true)}
-              className="w-full py-2.5 rounded-2xl font-semibold text-red-500 bg-red-50 hover:bg-red-100 text-sm transition-colors flex items-center justify-center gap-2">
-              <XCircle size={16} /> ไม่อนุมัติ
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ─── New Approval Sheet ───────────────────────────────────────────────────────
-
-const EMPTY_APPR = { request_type: 'expense_claim', title: '', description: '', amount: '', department: '' }
-
-function NewApprovalSheet({ tenant, staffProfile, onClose, onCreated }) {
-  const [form, setForm] = useState(EMPTY_APPR)
-  const [saving, setSaving] = useState(false)
-  const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }))
-  const reqType = APPROVAL_TYPES.find(t => t.value === form.request_type)
-
-  async function handleCreate() {
-    if (!form.title.trim()) return
-    setSaving(true)
-    const { data } = await supabase.from('approval_requests').insert({
-      municipality_id:    tenant.id,
-      request_type:       form.request_type,
-      requires_signature: reqType?.requiresSign ?? false,
-      title:              form.title.trim(),
-      description:        form.description.trim() || null,
-      amount:             form.amount ? Number(form.amount) : null,
-      department:         form.department.trim() || null,
-      created_by:         staffProfile?.id ?? null,
-      requester_name:     staffProfile?.full_name ?? null,
-      status:             'pending',
-    }).select().single()
-    setSaving(false)
-    if (data) { onCreated(data); onClose() }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-end md:items-center justify-center">
-      <div className="bg-white w-full md:max-w-xl md:rounded-3xl rounded-t-3xl max-h-[93vh] flex flex-col overflow-hidden shadow-2xl">
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 shrink-0">
-          <button onClick={onClose} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500"><X size={18} /></button>
-          <p className="font-bold text-gray-800">สร้างคำขออนุมัติ</p>
-        </div>
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-          <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">ประเภทคำขอ</label>
-            <select value={form.request_type} onChange={set('request_type')} className={inputCls}>
-              {APPROVAL_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-            </select>
-          </div>
-          {reqType && (
-            <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold ${reqType.requiresSign ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
-              {reqType.requiresSign
-                ? <><PenLine size={12} /> ต้องผู้บริหารลงนาม</>
-                : <><CheckCircle2 size={12} /> กดอนุมัติได้เลย — ไม่ต้องลงนาม</>}
-            </div>
-          )}
-          <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">หัวข้อ / เรื่อง *</label>
-            <input type="text" value={form.title} onChange={set('title')}
-              placeholder="เช่น เบิกค่าน้ำมัน เดือนมิถุนายน 2568" className={inputCls} />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">รายละเอียด</label>
-            <textarea value={form.description} onChange={set('description')} rows={3}
-              placeholder="รายละเอียดเพิ่มเติม รายการ เหตุผล..." className={inputCls + ' resize-none'} />
-          </div>
-          {reqType?.requiresSign && (
-            <div>
-              <label className="text-xs font-semibold text-gray-500 mb-1 block">จำนวนเงิน (บาท)</label>
-              <input type="number" min="0" value={form.amount} onChange={set('amount')}
-                placeholder="0.00" className={inputCls} />
-            </div>
-          )}
-          <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">กอง / หน่วยงาน</label>
-            <input type="text" value={form.department} onChange={set('department')}
-              placeholder="กองคลัง, กองช่าง, สำนักปลัด..." className={inputCls} />
-          </div>
-        </div>
-        <div className="px-4 pb-6 pt-3 border-t border-gray-100 shrink-0">
-          <button onClick={handleCreate} disabled={saving || !form.title.trim()}
-            className="w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50 text-sm active:scale-[0.98] transition-all"
-            style={{ backgroundColor: '#10b981' }}>
-            {saving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-            สร้างคำขออนุมัติ
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── Approve Module ───────────────────────────────────────────────────────────
-
-function ApproveModule({ tenant, staffProfile }) {
-  const [requests, setRequests]     = useState([])
-  const [loading, setLoading]       = useState(true)
-  const [filterStatus, setFilterStatus] = useState('pending')
-  const [selected, setSelected]     = useState(null)
-  const [showAdd, setShowAdd]       = useState(false)
-
-  useEffect(() => {
-    if (!tenant?.id) return
-    setLoading(true)
-    supabase.from('approval_requests')
-      .select('*')
-      .eq('municipality_id', tenant.id)
-      .order('created_at', { ascending: false })
-      .then(({ data }) => { setRequests(data ?? []); setLoading(false) })
-  }, [tenant?.id])
-
-  function handleApproved(id, newStatus) {
-    setRequests(prev => prev.map(r => r.id === id ? { ...r, status: newStatus } : r))
-  }
-
-  const TABS = [
-    { key: 'pending',  label: 'รออนุมัติ' },
-    { key: 'approved', label: 'อนุมัติแล้ว' },
-    { key: 'all',      label: 'ทั้งหมด' },
-  ]
-  const counts = {
-    pending:  requests.filter(r => r.status === 'pending').length,
-    approved: requests.filter(r => r.status === 'approved').length,
-    all:      requests.length,
-  }
-  const filtered      = filterStatus === 'all' ? requests : requests.filter(r => r.status === filterStatus)
-  const pendingList   = filtered.filter(r => r.status === 'pending')
-  const needsSign     = pendingList.filter(r => r.requires_signature)
-  const quickApprove  = pendingList.filter(r => !r.requires_signature)
-  const donePending   = filtered.filter(r => r.status !== 'pending')
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-gray-800">อนุมัติ</h2>
-          <p className="text-xs text-gray-400 mt-0.5">คำขออนุมัติและลงนาม</p>
-        </div>
-        <button onClick={() => setShowAdd(true)}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-white shadow-sm active:scale-95 transition-all"
-          style={{ backgroundColor: '#10b981' }}>
-          <Plus size={14} /> สร้างคำขอ
-        </button>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-2">
-        {TABS.map(t => (
-          <button key={t.key} onClick={() => setFilterStatus(t.key)}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-all"
-            style={filterStatus === t.key
-              ? { backgroundColor: '#10b981', color: '#fff' }
-              : { backgroundColor: '#f1f5f9', color: '#64748b' }}>
-            {t.label}
-            {counts[t.key] > 0 && (
-              <span className="text-[10px] font-bold px-1 rounded-full"
-                style={filterStatus === t.key
-                  ? { backgroundColor: 'rgba(255,255,255,0.25)', color: '#fff' }
-                  : { backgroundColor: '#e2e8f0', color: '#64748b' }}>
-                {counts[t.key]}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {loading ? (
-        <div className="flex justify-center py-16">
-          <Loader2 size={28} className="animate-spin text-gray-200" />
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-          <CheckSquare size={44} className="mb-3 opacity-20" />
-          <p className="text-sm font-semibold text-gray-400">ไม่มีคำขออนุมัติ</p>
-          <p className="text-xs text-gray-300 mt-1">กด "+ สร้างคำขอ" เพื่อเพิ่มรายการ</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {filterStatus === 'pending' && needsSign.length > 0 && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 px-1">
-                <PenLine size={13} className="text-amber-500" />
-                <p className="text-xs font-bold text-amber-600">ต้องลงนาม ({needsSign.length})</p>
-              </div>
-              {needsSign.map(req => (
-                <ApprovalCard key={req.id} req={req} onClick={() => setSelected(req)} />
-              ))}
-            </div>
-          )}
-          {filterStatus === 'pending' && quickApprove.length > 0 && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 px-1">
-                <CheckCircle2 size={13} className="text-emerald-500" />
-                <p className="text-xs font-bold text-emerald-600">กดอนุมัติได้เลย ({quickApprove.length})</p>
-              </div>
-              {quickApprove.map(req => (
-                <ApprovalCard key={req.id} req={req} onClick={() => setSelected(req)} />
-              ))}
-            </div>
-          )}
-          {filterStatus !== 'pending' && (
-            <div className="space-y-2">
-              {filtered.map(req => <ApprovalCard key={req.id} req={req} onClick={() => setSelected(req)} />)}
-            </div>
-          )}
-          {filterStatus === 'pending' && donePending.length > 0 && (
-            <div className="space-y-2">
-              {donePending.map(req => <ApprovalCard key={req.id} req={req} onClick={() => setSelected(req)} />)}
-            </div>
-          )}
-        </div>
-      )}
-
-      {selected && (
-        <ApproveSheet req={selected} approverProfile={staffProfile}
-          onClose={() => setSelected(null)} onApproved={handleApproved} />
-      )}
-      {showAdd && (
-        <NewApprovalSheet tenant={tenant} staffProfile={staffProfile}
-          onClose={() => setShowAdd(false)}
-          onCreated={r => setRequests(prev => [r, ...prev])} />
-      )}
-    </div>
-  )
-}
-
-// ─── Report Module ────────────────────────────────────────────────────────────
-
-function ReportModule({ tenant }) {
-  const [rows, setRows]       = useState([])
-  const [loading, setLoading] = useState(true)
-  const [period, setPeriod]   = useState('month')
-
-  useEffect(() => {
-    if (!tenant?.id) return
-    setLoading(true)
-    let query = supabase
-      .from('document_requests')
-      .select('document_type, status, created_at')
-      .eq('municipality_id', tenant.id)
-    if (period !== 'all') {
-      const since = new Date()
-      if (period === 'week') since.setDate(since.getDate() - 7)
-      else { since.setDate(1); since.setHours(0, 0, 0, 0) }
-      query = query.gte('created_at', since.toISOString())
-    }
-    query.then(({ data }) => { setRows(data ?? []); setLoading(false) })
-  }, [tenant?.id, period])
-
-  const total    = rows.length
-  const byStatus = rows.reduce((acc, r) => { acc[r.status] = (acc[r.status] ?? 0) + 1; return acc }, {})
-  const byType   = rows.reduce((acc, r) => { acc[r.document_type] = (acc[r.document_type] ?? 0) + 1; return acc }, {})
-
-  function exportCSV() {
-    if (!rows.length) return
-    const BOM = '﻿'
-    const headers = ['ประเภทเอกสาร', 'สถานะ', 'วันที่ยื่น']
-    const lines = rows.map(r => {
-      const typeLabel   = getAllDocTypes().find(d => d.value === r.document_type)?.label.replace(/^\S+\s*/, '') ?? r.document_type
-      const statusLabel = STATUS[r.status]?.label ?? r.status
-      const date        = new Date(r.created_at).toLocaleDateString('th-TH')
-      return [typeLabel, statusLabel, date].map(v => `"${v}"`).join(',')
-    })
-    const csv  = BOM + [headers.join(','), ...lines].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const url  = URL.createObjectURL(blob)
-    const a    = document.createElement('a')
-    a.href     = url
-    a.download = `รายงาน-${period}-${new Date().toISOString().slice(0, 10)}.csv`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-  }
-
-  const PERIODS = [
-    { key: 'week',  label: '7 วัน' },
-    { key: 'month', label: 'เดือนนี้' },
-    { key: 'all',   label: 'ทั้งหมด' },
-  ]
-  const statCards = [
-    { label: 'ทั้งหมด',     count: total,                    color: '#64748b', bg: '#f1f5f9' },
-    { label: 'รอดำเนินการ', count: byStatus.pending    ?? 0, color: '#f59e0b', bg: '#fef3c7' },
-    { label: 'กำลังดำเนิน', count: byStatus.processing ?? 0, color: '#3b82f6', bg: '#dbeafe' },
-    { label: 'เสร็จสิ้น',   count: byStatus.completed  ?? 0, color: '#10b981', bg: '#d1fae5' },
-  ]
-
-  return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-gray-800">รายงาน</h2>
-          <p className="text-xs text-gray-400 mt-0.5">สรุปสถิติการออกเอกสาร</p>
-        </div>
-        <button onClick={exportCSV} disabled={!rows.length}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-amber-50 text-amber-600 hover:bg-amber-100 disabled:opacity-40 transition-colors">
-          <Download size={13} /> Export CSV
-        </button>
-      </div>
-
-      {/* Period picker */}
-      <div className="flex gap-2">
-        {PERIODS.map(p => (
-          <button key={p.key} onClick={() => setPeriod(p.key)}
-            className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all"
-            style={period === p.key
-              ? { backgroundColor: '#f59e0b', color: '#fff' }
-              : { backgroundColor: '#f1f5f9', color: '#64748b' }}>
-            {p.label}
-          </button>
-        ))}
-      </div>
-
-      {loading ? (
-        <div className="flex justify-center py-16">
-          <Loader2 size={28} className="animate-spin text-gray-200" />
-        </div>
-      ) : (
-        <>
-          {/* Stat cards */}
-          <div className="grid grid-cols-2 gap-2.5">
-            {statCards.map(s => (
-              <div key={s.label} className="rounded-2xl p-4 shadow-sm border border-gray-100"
-                style={{ backgroundColor: s.bg }}>
-                <p className="text-3xl font-bold" style={{ color: s.color }}>{s.count}</p>
-                <p className="text-xs font-semibold mt-1" style={{ color: s.color }}>{s.label}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Breakdown by type */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-            <p className="text-sm font-bold text-gray-700 mb-3">แยกตามประเภทเอกสาร</p>
-            {total === 0 ? (
-              <p className="text-xs text-gray-400 text-center py-4">ไม่มีข้อมูลในช่วงเวลานี้</p>
-            ) : (
-              <div className="space-y-3">
-                {getAllDocTypes()
-                  .filter(d => byType[d.value])
-                  .sort((a, b) => (byType[b.value] ?? 0) - (byType[a.value] ?? 0))
-                  .map(d => {
-                    const count = byType[d.value] ?? 0
-                    const pct   = total > 0 ? (count / total * 100) : 0
-                    return (
-                      <div key={d.value}>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-xs text-gray-600 truncate max-w-[72%]">{d.label}</span>
-                          <span className="text-xs font-bold text-gray-800">{count} ครั้ง</span>
-                        </div>
-                        <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                          <div className="h-full rounded-full transition-all duration-500"
-                            style={{ width: `${pct}%`, backgroundColor: '#f59e0b' }} />
-                        </div>
-                      </div>
-                    )
-                  })}
-              </div>
-            )}
-          </div>
-
-          {/* Completion rate */}
-          {total > 0 && (
-            <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 flex items-center gap-4">
-              <div>
-                <p className="text-3xl font-bold text-emerald-600">
-                  {Math.round((byStatus.completed ?? 0) / total * 100)}%
-                </p>
-                <p className="text-xs font-semibold text-emerald-500 mt-0.5">อัตราดำเนินการสำเร็จ</p>
-              </div>
-              <div className="flex-1 text-right">
-                <p className="text-xs text-emerald-600">{byStatus.completed ?? 0} จาก {total} คำขอ</p>
-                {(byStatus.rejected ?? 0) > 0 && (
-                  <p className="text-xs text-red-400 mt-0.5">ปฏิเสธ {byStatus.rejected} ครั้ง</p>
-                )}
-              </div>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  )
-}
-
-// ─── Placeholder ──────────────────────────────────────────────────────────────
-
-function Placeholder({ title, desc, Icon }) {
-  return (
-    <div className="flex flex-col items-center justify-center min-h-[50vh] text-center px-6">
-      <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
-        <Icon size={28} className="text-gray-300" />
-      </div>
-      <h2 className="text-lg font-bold text-gray-500 mb-1">{title}</h2>
-      <p className="text-sm text-gray-400 mb-4">{desc}</p>
-      <span className="text-xs font-semibold px-3 py-1.5 rounded-full bg-blue-50 text-blue-500">
-        กำลังพัฒนา
-      </span>
-    </div>
-  )
 }
 
 // ─── Complaints Module (staff-side) ───────────────────────────────────────────
@@ -2141,6 +1307,7 @@ function ComplaintDetailSheetStaff({ complaint: c, onClose, onUpdate, updating }
 }
 
 function ComplaintsStaffModule({ tenant, staffId }) {
+  const tenantId = tenant?.id
   const [complaints, setComplaints] = useState([])
   const [loading, setLoading]       = useState(true)
 
@@ -2160,53 +1327,60 @@ function ComplaintsStaffModule({ tenant, staffId }) {
   const [filterStatus, setFilterStatus] = useState('all')
   const [updating, setUpdating]     = useState(null)
   const [selected, setSelected]     = useState(null)
+  const [openingComplaintId, setOpeningComplaintId] = useState(null)
 
-  useEffect(() => { fetchAll() }, [tenant?.id])
+  const loadAssignedComplaints = useCallback(async () => {
+    if (!tenantId || !staffId) return
+    const { data, error } = await fetchRoleScopedComplaints(tenantId)
+    if (error) console.error('fetch assigned complaints error:', error.message)
+    setComplaints((data ?? []).filter((c) => c.assigned_to === staffId && c.status !== 'pending'))
+    setLoading(false)
+  }, [tenantId, staffId])
+
+  async function openAssignedComplaint(complaint) {
+    if (!complaint?.id || openingComplaintId === complaint.id) return
+    setOpeningComplaintId(complaint.id)
+    const { data, error } = await fetchComplaintPrivateDetail(
+      complaint.id,
+      'เปิดรายละเอียดงานที่ได้รับมอบหมาย',
+    )
+    setOpeningComplaintId(null)
+    if (error) {
+      console.error('fetch assigned complaint detail error:', error.message)
+      alert('ไม่มีสิทธิ์เปิดรายละเอียดคำร้องนี้')
+      return
+    }
+    if (data) {
+      markStaffSeen(complaint.id)
+      setSelected(data)
+    }
+  }
+
+  useEffect(() => {
+    if (!tenant?.id || !staffId) return
+    queueMicrotask(loadAssignedComplaints)
+  }, [tenant?.id, staffId, loadAssignedComplaints])
 
   useEffect(() => {
     if (!tenant?.id || !staffId) return
     const ch = supabase.channel(`complaints-staff-${tenant.id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'complaints' },
-        async ({ new: row }) => {
+        ({ new: row }) => {
           if (row.municipality_id !== tenant.id || row.assigned_to !== staffId) return
-          const { data } = await supabase.from('complaints')
-            .select('*').eq('id', row.id).single()
-          if (data) {
-            const [withProfile] = await attachReporterProfiles([data], 'id, full_name, phone')
-            setComplaints(prev => [withProfile, ...prev])
-          }
+          loadAssignedComplaints()
         })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'complaints' },
-        async ({ new: row }) => {
+        ({ new: row }) => {
           if (row.municipality_id !== tenant.id) return
-          const { data } = await supabase.from('complaints')
-            .select('*').eq('id', row.id).single()
-          if (!data) return
-          if (data.assigned_to === staffId) {
-            const [withProfile] = await attachReporterProfiles([data], 'id, full_name, phone')
-            setComplaints(prev => {
-              const exists = prev.find(c => c.id === withProfile.id)
-              return exists ? prev.map(c => c.id === withProfile.id ? withProfile : c) : [withProfile, ...prev]
-            })
-          } else {
-            setComplaints(prev => prev.filter(c => c.id !== data.id))
-          }
+          loadAssignedComplaints()
         })
       .subscribe()
     return () => supabase.removeChannel(ch)
-  }, [tenant?.id, staffId])
+  }, [tenant?.id, staffId, loadAssignedComplaints])
 
   async function fetchAll() {
-    if (!tenant?.id || !staffId) return
     setLoading(true)
-    const { data } = await supabase.from('complaints')
-      .select('*')
-      .eq('municipality_id', tenant.id)
-      .eq('assigned_to', staffId)
-      .neq('status', 'pending')
-      .order('created_at', { ascending: false })
-    setComplaints(data ? await attachReporterProfiles(data, 'id, full_name, phone') : [])
-    setLoading(false)
+    await loadAssignedComplaints()
   }
 
   async function advanceStatus(id, next, workPhotos = null, techNote = null) {
@@ -2278,7 +1452,7 @@ function ComplaintsStaffModule({ tenant, staffId }) {
             const nx = C_NEXT[c.status]
             const date = new Date(c.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
             return (
-              <div key={c.id} onClick={() => { markStaffSeen(c.id); setSelected(c) }}
+              <div key={c.id} onClick={() => openAssignedComplaint(c)} aria-busy={openingComplaintId === c.id}
                 className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 cursor-pointer hover:border-gray-200 transition-colors">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
@@ -2326,63 +1500,17 @@ function StaffReportWrapper({ tenant }) {
   useEffect(() => {
     if (!tenant?.id) return
     Promise.all([
-      supabase.from('complaints').select('*').eq('municipality_id', tenant.id).order('created_at', { ascending: false }),
+      fetchRoleScopedComplaints(tenant.id),
       supabase.from('profiles').select('id, full_name, email').eq('municipality_id', tenant.id).eq('role', 'technician'),
-    ]).then(async ([{ data: c }, { data: t }]) => {
-      setComplaints(c ? await attachReporterProfiles(c, 'id, full_name, phone') : [])
+    ]).then(([{ data: c, error }, { data: t }]) => {
+      if (error) console.error('fetch complaint report data error:', error.message)
+      setComplaints(c ?? [])
       setTechnicians(t ?? [])
       setLoading(false)
     })
   }, [tenant?.id])
   if (loading) return <div className="flex justify-center py-16"><Loader2 size={24} className="animate-spin text-gray-300" /></div>
   return <ReportManager complaints={complaints} tenant={tenant} technicians={technicians} />
-}
-
-// ─── Staff Home Dashboard ─────────────────────────────────────────────────────
-
-function StaffHomeModule({ visibleGroups, setActiveModule, pendingCount, staffName, navigate }) {
-  const todayTH = new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-  return (
-    <div className="space-y-5">
-      {/* Greeting */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-base font-bold text-gray-800">ระบบเจ้าหน้าที่</h1>
-          <p className="text-xs text-gray-400 mt-0.5">สวัสดี{staffName ? `, ${staffName}` : ''} 👋  {todayTH}</p>
-        </div>
-        {pendingCount > 0 && (
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl"
-            style={{ backgroundColor: '#fef3c7' }}>
-            <span className="text-sm font-bold" style={{ color: '#b45309' }}>{pendingCount}</span>
-            <span className="text-[11px] font-semibold" style={{ color: '#92400e' }}>รายการรอ</span>
-          </div>
-        )}
-      </div>
-
-      {visibleGroups.map(({ group, items }) => (
-        <div key={group}>
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">{group}</p>
-          <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
-            {items.map(({ key, label, Icon, color, bg, externalUrl, navTo }) => (
-              <button key={key}
-                onClick={() => navTo ? navigate(navTo) : externalUrl ? window.open(externalUrl, '_blank') : setActiveModule(key)}
-                className="flex flex-col items-center gap-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-3 hover:shadow-md active:scale-95 transition-all relative">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: bg ?? (color + '18') }}>
-                  <Icon size={18} style={{ color }} />
-                </div>
-                {key === 'inbox' && pendingCount > 0 && (
-                  <span className="absolute top-2 right-2 min-w-[16px] h-4 rounded-full text-[9px] font-bold bg-red-500 text-white flex items-center justify-center px-1">
-                    {pendingCount > 9 ? '9+' : pendingCount}
-                  </span>
-                )}
-                <p className="text-[11px] font-semibold text-gray-700 text-center leading-tight">{label}</p>
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -2394,6 +1522,7 @@ export default function StaffDashboard() {
   const [activeModule, setActiveModule] = useState(location.state?.module ?? 'home')
   const [mapOpenComplaintId, setMapOpenComplaintId] = useState(location.state?.openComplaintId ?? null)
   const [autoEditEventId, setAutoEditEventId] = useState(location.state?.editEventId ?? null)
+  const [autoCreateEventSignal, setAutoCreateEventSignal] = useState(0)
   const [profile, setProfile]           = useState(null)
   const [pendingCount, setPendingCount] = useState(0)
   const [newComplaintCount, setNewComplaintCount] = useState(0)
@@ -2428,35 +1557,19 @@ export default function StaffDashboard() {
       supabase.from('profiles').select('*').eq('id', data.session.user.id).single()
         .then(({ data: p }) => setProfile(p))
     })
-  }, [])
+  }, [navigate])
 
   useEffect(() => {
     if (!tenant?.id) return
-    Promise.all([
-      supabase.from('document_requests')
-        .select('id', { count: 'exact', head: true })
-        .eq('municipality_id', tenant.id)
-        .eq('status', 'pending'),
-      supabase.from('approval_requests')
-        .select('id', { count: 'exact', head: true })
-        .eq('municipality_id', tenant.id)
-        .eq('status', 'pending'),
-    ]).then(([docs, approvals]) => {
-      setPendingCount((docs.count ?? 0) + (approvals.count ?? 0))
-    })
-
     const refreshBadge = () =>
-      Promise.all([
-        supabase.from('document_requests').select('id', { count: 'exact', head: true })
-          .eq('municipality_id', tenant.id).eq('status', 'pending'),
-        supabase.from('approval_requests').select('id', { count: 'exact', head: true })
-          .eq('municipality_id', tenant.id).eq('status', 'pending'),
-      ]).then(([d, a]) => setPendingCount((d.count ?? 0) + (a.count ?? 0)))
+      supabase.from('document_requests').select('id', { count: 'exact', head: true })
+        .eq('municipality_id', tenant.id).eq('status', 'pending')
+        .then(({ count }) => setPendingCount(count ?? 0))
+
+    refreshBadge()
 
     const ch = supabase.channel(`pending-badge-${tenant.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'document_requests' },
-        ({ new: row }) => { if (row?.municipality_id === tenant.id) refreshBadge() })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'approval_requests' },
         ({ new: row }) => { if (row?.municipality_id === tenant.id) refreshBadge() })
       .subscribe()
     return () => supabase.removeChannel(ch)
@@ -2581,17 +1694,13 @@ export default function StaffDashboard() {
             style={{ backgroundColor: '#1a3a5c' }}>
             <nav className="flex-1 px-3 py-4 overflow-y-auto">
               <button onClick={() => setActiveModule('home')}
-                className="w-full flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all mb-2"
-                style={activeModule === 'home'
-                  ? { backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff' }
-                  : { color: 'rgba(255,255,255,0.6)' }}>
-                <Home size={15} strokeWidth={activeModule === 'home' ? 2.2 : 1.5} />
+                className={`mb-2 flex min-h-9 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${activeModule === 'home' ? 'bg-white/20 text-white shadow-sm' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}>
+                <Home size={16} strokeWidth={activeModule === 'home' ? 2.2 : 1.8} />
                 <span className="flex-1 text-left text-xs">หน้าหลัก</span>
               </button>
               {visibleGroups.map(({ group, items }) => (
                 <div key={group} className="mb-3">
-                  <p className="px-3 mb-0.5 text-[9px] font-bold uppercase tracking-widest"
-                    style={{ color: 'rgba(255,255,255,0.35)', letterSpacing: '0.12em' }}>{group}</p>
+                  <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-widest text-white/55">{group}</p>
                   <div className="space-y-0.5">
                     {items.map(({ key, label, Icon }) => {
                       const isActive = activeModule === key
@@ -2600,11 +1709,8 @@ export default function StaffDashboard() {
                         : null
                       return (
                         <button key={key} onClick={() => setActiveModule(key)}
-                          className="w-full flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all"
-                          style={isActive
-                            ? { backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff' }
-                            : { color: 'rgba(255,255,255,0.6)' }}>
-                          <Icon size={16} strokeWidth={isActive ? 2.2 : 1.5} />
+                          className={`flex min-h-9 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${isActive ? 'bg-white/20 text-white shadow-sm' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}>
+                          <Icon size={16} strokeWidth={isActive ? 2.2 : 1.8} />
                           <span className="flex-1 text-left text-xs">{label}</span>
                           {badge && (
                             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white bg-amber-400">
@@ -2621,16 +1727,38 @@ export default function StaffDashboard() {
           </aside>
 
           {/* Main */}
-          <main className="flex-1 min-w-0 px-4 md:px-6 py-5 pb-24 md:pb-6">
+          <main className={`flex-1 min-w-0 px-4 md:px-6 pb-24 md:pb-6 ${activeModule === 'home' ? 'pt-2 md:pt-5' : 'pt-5'}`}>
             <div className="max-w-5xl mx-auto space-y-4">
-            {activeModule === 'home'       && <StaffHomeModule visibleGroups={MODULE_GROUPS} setActiveModule={setActiveModule} pendingCount={pendingCount} staffName={profile?.full_name} navigate={navigate} />}
+            <Suspense fallback={
+              <div className="flex min-h-64 items-center justify-center" role="status" aria-label="กำลังโหลดโมดูลเจ้าหน้าที่">
+                <Loader2 size={28} className="animate-spin text-blue-500" />
+              </div>
+            }>
+            {activeModule === 'home' && (
+              <StaffOperationalDashboard
+                key={tenant?.id}
+                visibleGroups={visibleGroups}
+                setActiveModule={setActiveModule}
+                tenant={tenant}
+                profile={profile}
+                pendingCount={pendingCount}
+                newComplaintCount={newComplaintCount}
+                navigate={navigate}
+                docTypes={getAllDocTypes()}
+                complaintLabels={C_CAT}
+                onCreateManagementEvent={() => {
+                  setAutoCreateEventSignal(signal => signal + 1)
+                  setActiveModule('events')
+                }}
+              />
+            )}
             {activeModule === 'inbox'      && <InboxModule tenant={tenant} staffId={profile?.id} currentUserRole={profile?.role} />}
             {activeModule === 'complaints' && (
               ['admin', 'superadmin', 'staff'].includes(profile?.role)
                 ? <ComplaintsManager tenant={tenant} currentUserRole={profile?.role} openComplaintId={mapOpenComplaintId} />
                 : <ComplaintsStaffModule tenant={tenant} staffId={profile?.id} />
             )}
-            {activeModule === 'events'     && <EventsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} autoEditEventId={autoEditEventId} onAutoEditHandled={() => setAutoEditEventId(null)} />}
+            {activeModule === 'events'     && <EventsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} autoEditEventId={autoEditEventId} onAutoEditHandled={() => setAutoEditEventId(null)} autoCreateSignal={autoCreateEventSignal} autoCreateAudience="management" onAutoCreateHandled={() => setAutoCreateEventSignal(0)} />}
             {activeModule === 'projects'      && <CivilProjectAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
             {activeModule === 'infra'      && <InfraWorkAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
             {activeModule === 'map'        && <MapDashboardAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} onNavigate={() => {}}
@@ -2642,6 +1770,7 @@ export default function StaffDashboard() {
             {activeModule === 'tourism'          && <TourismManager tenant={tenant} />}
             {activeModule === 'tourism-reviews'  && <TourismReviewsAdmin tenant={tenant} />}
             {activeModule === 'fleet' && <FleetPage onBack={() => setActiveModule('home')} />}
+            </Suspense>
             </div>
           </main>
         </div>
@@ -2659,8 +1788,8 @@ export default function StaffDashboard() {
           {[
             { key: 'home',       label: 'หน้าหลัก',   Icon: Home },
             { key: 'inbox',      label: 'คำขอเอกสาร', Icon: FileText },
-            { key: 'complaints', label: 'คำร้อง',      Icon: BarChart2 },
-            { key: 'events',     label: 'กิจกรรม',     Icon: CalendarDays },
+            { key: 'complaints', label: 'คำร้อง',      Icon: MessageSquareWarning },
+            { key: 'events',     label: 'ปฏิทินกิจกรรม', Icon: CalendarDays },
           ].filter(({ key }) => key === 'home' || visibleModules.some(m => m.key === key)).map(({ key, label, Icon }) => {
             const isActive = activeModule === key
             const badge = key === 'inbox' && pendingCount > 0 ? pendingCount

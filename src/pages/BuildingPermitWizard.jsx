@@ -32,7 +32,7 @@ function Field({ label, required, children, className = '' }) {
   )
 }
 
-export default function BuildingPermitWizard({ tenant, session, onBack }) {
+export default function BuildingPermitWizard({ tenant, session, onBack, staffId, onDone }) {
   const navigate = useNavigate()
   const [step, setStep]       = useState(1)
   const [saving, setSaving]   = useState(false)
@@ -144,6 +144,7 @@ export default function BuildingPermitWizard({ tenant, session, onBack }) {
       purpose:             `${form.building.kind || 'อาคาร'} — ${form.request_type}`,
       status:              'pending',
       user_id:             session?.user?.id ?? null,
+      assigned_to:         staffId ?? null,
       fee_amount:          null,
       payment_status:      'not_required',
       payment_slip_url:    null,
@@ -240,9 +241,9 @@ export default function BuildingPermitWizard({ tenant, session, onBack }) {
               {pdfBusy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
               {pdfBusy ? 'กำลังสร้างไฟล์...' : 'ดาวน์โหลด PDF'}
             </button>
-            <button onClick={() => navigate('/')}
+            <button onClick={() => (onDone ? onDone() : navigate('/'))}
               className="w-full py-3 rounded-2xl font-semibold text-gray-500 text-sm">
-              กลับหน้าหลัก
+              {onDone ? 'เสร็จสิ้น — กลับไปที่คำขอเอกสาร' : 'กลับหน้าหลัก'}
             </button>
           </div>
         </div>

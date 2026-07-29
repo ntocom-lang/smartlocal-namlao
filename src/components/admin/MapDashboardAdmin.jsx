@@ -1,93 +1,9 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
-import { createPortal } from 'react-dom'
 import { MapContainer, TileLayer, Marker, Popup, Tooltip, Polyline, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { supabase } from '../../lib/supabase'
 import { RefreshCw, Loader2, CheckCircle2, XCircle, MapPin, Maximize2, Minimize2, Layers } from 'lucide-react'
-
-// ─── FilterPills (used inside mobile dropdown popup) ─────────────────────────
-function FilterPills({ value, onChange, options }) {
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {options.map(({ v, icon, label, color }) => {
-        const active = value === v
-        const activeColor = color ?? 'var(--color-primary)'
-        return (
-          <button key={v} type="button" onClick={() => onChange(v)}
-            className="flex flex-col items-center gap-0.5 min-w-[52px] px-2.5 py-2 rounded-2xl border-2 transition-all"
-            style={active
-              ? { borderColor: activeColor, backgroundColor: activeColor + (color ? '22' : '18'), color: activeColor }
-              : { borderColor: '#e5e7eb', backgroundColor: '#fff', color: '#9ca3af' }}>
-            <span className="text-base leading-none">{icon}</span>
-            <span className="text-[10px] font-bold leading-tight text-center">{label}</span>
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-function MobileFilterPill({ id, icon, label, color, value, onChange, options, openFilter, setOpenFilter }) {
-  const active = value !== 'all'
-  const current = options.find(o => o.v === value) ?? options[0]
-  const isOpen = openFilter === id
-  const pillColor = active ? (current.color ?? color) : color
-  const btnRef = useRef(null)
-  const [dropPos, setDropPos] = useState({ top: 0, left: 0 })
-
-  useEffect(() => {
-    if (isOpen && btnRef.current) {
-      const r = btnRef.current.getBoundingClientRect()
-      setDropPos({ top: r.bottom + 4, left: r.left })
-    }
-  }, [isOpen])
-
-  return (
-    <div>
-      <button ref={btnRef} type="button" onClick={() => setOpenFilter(isOpen ? null : id)}
-        className="mx-auto flex flex-col items-center justify-center gap-1 rounded-2xl border-2 transition-all duration-200 active:scale-95"
-        style={{
-          width: '100%', maxWidth: 84, height: 70,
-          borderColor: active ? pillColor : '#f0f0f0',
-          backgroundColor: active ? pillColor + '12' : '#fafafa',
-          boxShadow: active ? `0 3px 10px ${pillColor}30` : 'none',
-        }}>
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xl shadow-sm"
-          style={{ background: active ? `linear-gradient(135deg, ${pillColor}35, ${pillColor}18)` : '#f0f0f0', border: active ? `1px solid ${pillColor}40` : 'none' }}>
-          <span>{active ? current.icon : icon}</span>
-        </div>
-        <span className="text-[10px] font-bold leading-tight text-center px-1"
-          style={{ color: active ? pillColor : '#9ca3af' }}>
-          {label}
-        </span>
-      </button>
-      {isOpen && createPortal(
-        <div className="fixed bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden"
-          style={{ top: dropPos.top, left: dropPos.left, width: 200, maxHeight: 280, overflowY: 'auto', zIndex: 9999 }}>
-          {[
-            options[0],
-            ...[...options.slice(1)]
-              .filter(o => o.count == null || o.count > 0)
-              .sort((a, b) => (b.count ?? 0) - (a.count ?? 0)),
-          ].map(({ v, label: optLabel, count }) => (
-            <button key={v} type="button"
-              onClick={() => { onChange(v); setOpenFilter(null) }}
-              className="w-full text-left px-4 py-1.5 text-[12px] border-b border-gray-50 last:border-0 transition-colors"
-              style={{
-                color:           value === v ? pillColor : '#374151',
-                fontWeight:      value === v ? '600' : '400',
-                backgroundColor: value === v ? pillColor + '15' : 'transparent',
-              }}>
-              {optLabel}{count != null ? ` (${count})` : ''}
-            </button>
-          ))}
-        </div>,
-        document.body
-      )}
-    </div>
-  )
-}
 
 // ─── pin config ──────────────────────────────────────────────────────────────
 const COMPLAINT_STATUS_COLOR = {
@@ -221,7 +137,31 @@ function GmapsBtn({ lat, lng }) {
 }
 
 
-// ─── Fit to all markers on first load ────────────────────────────────────────
+function fitMapToPoints(map, points, fallbackLat, fallbackLng, animate = true) {
+  const valid = points
+    .map(([lat, lng]) => [Number(lat), Number(lng)])
+    .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng))
+
+  if (valid.length === 0) {
+    const lat = Number(fallbackLat)
+    const lng = Number(fallbackLng)
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      map.setView([lat, lng], 13, { animate })
+    }
+    return
+  }
+  if (valid.length === 1) {
+    map.setView(valid[0], 14, { animate })
+    return
+  }
+  map.fitBounds(L.latLngBounds(valid), {
+    padding: [48, 48],
+    maxZoom: 15,
+    animate,
+  })
+}
+
+// ─── Fit to all visible map data on first load ───────────────────────────────
 function FitBoundsOnLoad({ points, fallbackLat, fallbackLng }) {
   const map = useMap()
   const fitted = useRef(false)
@@ -229,28 +169,97 @@ function FitBoundsOnLoad({ points, fallbackLat, fallbackLng }) {
   useEffect(() => {
     if (fitted.current || points.length === 0) return
     fitted.current = true
-    const valid = points.filter(([lat, lng]) => lat && lng)
-    if (valid.length === 0) {
-      if (fallbackLat && fallbackLng) map.setView([fallbackLat, fallbackLng], 13)
-      return
-    }
-    if (valid.length === 1) {
-      map.setView(valid[0], 14)
-      return
-    }
-    map.fitBounds(L.latLngBounds(valid), { padding: [48, 48], maxZoom: 15 })
+    fitMapToPoints(map, points, fallbackLat, fallbackLng, false)
   }, [points.length])  // eslint-disable-line react-hooks/exhaustive-deps
 
   return null
 }
 
-// ─── Fullscreen resize helper ─────────────────────────────────────────────────
+// ─── Reset visible bounds control — rendered below Leaflet +/- ───────────────
+function ResetMapViewControl({ points, fallbackLat, fallbackLng }) {
+  const map = useMap()
+  const pointsRef = useRef(points)
+
+  useEffect(() => {
+    pointsRef.current = points
+  }, [points])
+
+  useEffect(() => {
+    const control = L.control({ position: 'topleft' })
+    let button
+
+    control.onAdd = () => {
+      const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control')
+      button = L.DomUtil.create('button', '', container)
+      button.type = 'button'
+      button.title = 'ปรับตำแหน่งศูนย์กลางให้เห็นข้อมูลทั้งหมด'
+      button.setAttribute('aria-label', 'ปรับตำแหน่งศูนย์กลางให้เห็นข้อมูลทั้งหมด')
+      button.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path><circle cx="12" cy="12" r="8"></circle></svg>'
+      Object.assign(button.style, {
+        width: '30px',
+        height: '30px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '0',
+        border: '0',
+        borderRadius: '2px',
+        backgroundColor: '#fff',
+        color: '#374151',
+        cursor: 'pointer',
+      })
+
+      L.DomEvent.disableClickPropagation(container)
+      L.DomEvent.disableScrollPropagation(container)
+      L.DomEvent.on(button, 'click', L.DomEvent.stop)
+      L.DomEvent.on(button, 'click', () => {
+        map.invalidateSize({ pan: false })
+        fitMapToPoints(map, pointsRef.current, fallbackLat, fallbackLng)
+      })
+      return container
+    }
+
+    control.addTo(map)
+    return () => {
+      if (button) L.DomEvent.off(button)
+      control.remove()
+    }
+  }, [map, fallbackLat, fallbackLng])
+
+  return null
+}
+
+// ─── Map resize helper ────────────────────────────────────────────────────────
 function FullscreenResizer() {
   const map = useMap()
   useEffect(() => {
-    function onFsChange() { setTimeout(() => map.invalidateSize(), 150) }
+    let frameId
+    let fullscreenTimer
+    const container = map.getContainer()
+    const invalidate = () => {
+      cancelAnimationFrame(frameId)
+      frameId = requestAnimationFrame(() => map.invalidateSize({ pan: false }))
+    }
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(invalidate)
+      : null
+
+    resizeObserver?.observe(container)
+    window.addEventListener('resize', invalidate)
+    function onFsChange() {
+      clearTimeout(fullscreenTimer)
+      fullscreenTimer = setTimeout(invalidate, 150)
+    }
     document.addEventListener('fullscreenchange', onFsChange)
-    return () => document.removeEventListener('fullscreenchange', onFsChange)
+    invalidate()
+
+    return () => {
+      cancelAnimationFrame(frameId)
+      clearTimeout(fullscreenTimer)
+      resizeObserver?.disconnect()
+      window.removeEventListener('resize', invalidate)
+      document.removeEventListener('fullscreenchange', onFsChange)
+    }
   }, [map])
   return null
 }
@@ -262,7 +271,14 @@ const normalizeStatus = (s) => {
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate, onEditComplaint, onEditProject }) {
+export default function MapDashboardAdmin({
+  tenant,
+  currentUserRole,
+  onNavigate,
+  onEditComplaint,
+  onEditProject,
+  fitViewport = false,
+}) {
   const [complaints, setComplaints] = useState([])
   const [bizRegs, setBizRegs] = useState([])
   const [civilProjects, setCivilProjects] = useState([])
@@ -389,11 +405,17 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
     return civilProjects.filter(p => (p.latitude && p.longitude) || p.route_points?.length >= 2)
   }, [civilProjects])
 
+  // สถิติ/ตัวกรองต้องสะท้อนเฉพาะโครงการที่ถูกวาดในโหมดปัจจุบัน
+  const civilProjectsInCurrentView = useMemo(() => {
+    const routeMode = projViewMode === 'route'
+    return civilProjectsPlottable.filter(p => (p.route_points?.length >= 2) === routeMode)
+  }, [civilProjectsPlottable, projViewMode])
+
   // คำนวณสถิติประเภทโครงการตามสถานะที่เลือก
   const projTypeCounts = useMemo(() => {
     const list = filterProjStatus === 'all'
-      ? civilProjectsPlottable
-      : civilProjectsPlottable.filter(p => p.status === filterProjStatus)
+      ? civilProjectsInCurrentView
+      : civilProjectsInCurrentView.filter(p => p.status === filterProjStatus)
 
     return {
       all: list.length,
@@ -410,13 +432,13 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
       park: list.filter(p => p.project_type === 'park').length,
       other: list.filter(p => p.project_type === 'other').length,
     }
-  }, [civilProjectsPlottable, filterProjStatus])
+  }, [civilProjectsInCurrentView, filterProjStatus])
 
   // คำนวณสถิติสถานะโครงการตามประเภทที่เลือก
   const projStatusCounts = useMemo(() => {
     const list = filterProjType === 'all'
-      ? civilProjectsPlottable
-      : civilProjectsPlottable.filter(p => p.project_type === filterProjType)
+      ? civilProjectsInCurrentView
+      : civilProjectsInCurrentView.filter(p => p.project_type === filterProjType)
 
     return {
       all: list.length,
@@ -427,7 +449,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
       cancelled: list.filter(p => p.status === 'cancelled').length,
       suspended: list.filter(p => p.status === 'suspended').length,
     }
-  }, [civilProjectsPlottable, filterProjType])
+  }, [civilProjectsInCurrentView, filterProjType])
 
   function clearFilters() {
     setShowRepair(true); setShowWater(true); setShowEnv(true)
@@ -442,7 +464,6 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
   const [selectedItem, setSelectedItem] = useState(null) // { type: 'civil'|'complaint', data }
   const [quickStatus, setQuickStatus]   = useState(null)
   const [savingQuick, setSavingQuick]   = useState(false)
-  const [openFilter,  setOpenFilter]    = useState(null)
   const [mapType, setMapType] = useState('normal')
   const [isFullscreen, setIsFullscreen] = useState(false)
   const mapWrapRef = useRef(null)
@@ -474,14 +495,18 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
   useEffect(() => {
     if (!tenantId) return
     let cancelled = false
+    const complaintRequest = ['citizen', 'viewer', 'council'].includes(currentUserRole)
+      ? supabase.rpc('get_public_complaint_map_pins', { p_municipality_id: tenantId })
+      : supabase
+          .from('complaints')
+          .select('id, latitude, longitude, category, form_type, status, detail, created_at, location_name, village, reporter_name')
+          .eq('municipality_id', tenantId)
+          .not('latitude', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(500)
+
     Promise.all([
-      supabase
-        .from('complaints')
-        .select('id, latitude, longitude, category, form_type, status, detail, created_at, location_name, village, reporter_name')
-        .eq('municipality_id', tenantId)
-        .not('latitude', 'is', null)
-        .order('created_at', { ascending: false })
-        .limit(500),
+      complaintRequest,
       supabase
         .from('business_registrations')
         .select('*')
@@ -496,14 +521,17 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
         .limit(500),
     ]).then(([cmpRes, bizRes, infraRes]) => {
       if (!cancelled) {
-        setComplaints(cmpRes.data ?? [])
+        setComplaints((cmpRes.data ?? []).map((complaint) => ({
+          ...complaint,
+          id: complaint.id ?? `public-pin-${complaint.map_key}`,
+        })))
         setBizRegs(bizRes.data ?? [])
         setCivilProjects(infraRes.data ?? [])
         setLoading(false)
       }
     })
     return () => { cancelled = true }
-  }, [tenantId, refreshTick])
+  }, [tenantId, refreshTick, currentUserRole])
 
   useEffect(() => { setQuickStatus(null) }, [selectedItem?.data?.id])
 
@@ -535,32 +563,31 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
   // (สถานะ/ประเภทที่กรองอยู่ + ต้องมีพิกัดถึงจะปักหมุดได้จริง) แต่ไม่ผูกกับ showX
   // (เปิด/ปิดเลเยอร์) เพราะถ้าปิดเลเยอร์แล้ว count เป็น 0 ปุ่มจะหายไปเลย กดเปิดกลับไม่ได้
   const hasCoords = (o) => !!o.latitude && !!o.longitude
-  const repairCount = complaints.filter(c => {
+  const repairCount = projViewMode === 'route' ? 0 : complaints.filter(c => {
     if (c.form_type !== 'infrastructure' && c.form_type !== 'legacy') return false
     if (!hasCoords(c)) return false
     if (filterStatus !== 'all' && normalizeStatus(c.status) !== filterStatus) return false
     if (filterCmpCat !== 'all' && c.category !== filterCmpCat) return false
     return true
   }).length
-  const waterCount = complaints.filter(c => {
+  const waterCount = projViewMode === 'route' ? 0 : complaints.filter(c => {
     if (c.form_type !== 'water_support') return false
     if (!hasCoords(c)) return false
     if (filterStatus !== 'all' && normalizeStatus(c.status) !== filterStatus) return false
     return true
   }).length
-  const envCount = complaints.filter(c => {
+  const envCount = projViewMode === 'route' ? 0 : complaints.filter(c => {
     if (c.form_type !== 'environment') return false
     if (!hasCoords(c)) return false
     if (filterStatus !== 'all' && normalizeStatus(c.status) !== filterStatus) return false
     return true
   }).length
-  const bizCount = bizRegs.filter(b => {
+  const bizCount = projViewMode === 'route' ? 0 : bizRegs.filter(b => {
     if (!b.latitude) return false
     if (filterStatus !== 'all' && b.status !== filterStatus) return false
     return true
   }).length
-  const projCount = civilProjects.filter(w => {
-    if (!hasCoords(w) && !(w.route_points?.length >= 2)) return false
+  const projCount = civilProjectsInCurrentView.filter(w => {
     if (filterProjStatus !== 'all' && w.status       !== filterProjStatus) return false
     if (filterProjType   !== 'all' && w.project_type !== filterProjType)   return false
     return true
@@ -601,21 +628,41 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
     return true
   })
 
-  const totalPins = filteredRepair.length + filteredWater.length + filteredEnv.length
-    + filteredBiz.length + filteredProj.length
+  const visibleProjects = filteredProj.filter(
+    w => (w.route_points?.length >= 2) === (projViewMode === 'route')
+  )
+
+  const visibleMapPoints = projViewMode === 'route'
+    ? visibleProjects.flatMap(w => w.route_points.map(p => [p.lat, p.lng]))
+    : [
+        ...filteredRepair.map(c => [c.latitude, c.longitude]),
+        ...filteredWater.map(c => [c.latitude, c.longitude]),
+        ...filteredEnv.map(c => [c.latitude, c.longitude]),
+        ...filteredBiz.map(b => [b.latitude, b.longitude]),
+        ...visibleProjects.map(w => [w.latitude, w.longitude]),
+      ]
+
+  const totalVisibleItems = projViewMode === 'route'
+    ? visibleProjects.length
+    : filteredRepair.length + filteredWater.length + filteredEnv.length
+      + filteredBiz.length + visibleProjects.length
   const pendingBiz = bizRegs.filter(b => b.status === 'pending')
 
   return (
-    <div className="space-y-3">
+    <div className={fitViewport
+      ? 'h-full min-h-0 flex flex-col gap-2 overflow-hidden'
+      : 'space-y-3'}>
       {/* Header */}
-      <div className="relative rounded-2xl overflow-hidden px-4 py-3 flex items-center justify-between"
+      <div className={`relative rounded-2xl overflow-hidden flex items-center justify-between shrink-0 ${fitViewport ? 'px-3 py-2' : 'px-4 py-3'}`}
            style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 60%, color-mix(in srgb, var(--color-primary) 70%, #60a5fa) 100%)' }}>
         <div className="absolute -top-4 -right-4 w-24 h-24 rounded-full bg-white/10 pointer-events-none" />
         <div className="absolute bottom-0 left-1/3 w-16 h-16 rounded-full bg-white/5 pointer-events-none" />
         <div className="relative">
           <h2 className="text-base font-black text-white drop-shadow">🗺️ แผนที่ข้อมูลพื้นที่</h2>
           <p className="text-xs text-white/70 mt-0.5">
-            {loading ? 'กำลังโหลด...' : `${totalPins} หมุดบนแผนที่`}
+            {loading
+              ? 'กำลังโหลด...'
+              : `${totalVisibleItems} ${projViewMode === 'route' ? 'เส้นทาง' : 'หมุด'}บนแผนที่`}
           </p>
         </div>
         <button onClick={fetchAll} disabled={loading}
@@ -625,17 +672,17 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
       </div>
 
       {/* Filter panel */}
-      <div className="bg-white rounded-2xl overflow-hidden shadow-md border border-gray-100">
+      <div className="bg-white rounded-2xl overflow-hidden shadow-md border border-gray-100 shrink-0">
 
         {/* ชั้นข้อมูล 5 ประเภท */}
-        <div className="flex gap-2 px-3 py-3 border-b border-gray-100 overflow-x-auto scrollbar-none justify-center md:justify-start">
+        <div className={`flex border-b border-gray-100 overflow-x-auto scrollbar-none justify-center md:justify-start ${fitViewport ? 'gap-1.5 px-2 py-2' : 'gap-2 px-3 py-3'}`}>
           {[
             {
               key: 'all',
               active: true,
               toggle: () => {},
               color: '#374151',
-              count: totalPins,
+              count: totalVisibleItems,
               icon: '🌐',
               label: 'ทั้งหมด'
             },
@@ -646,14 +693,14 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
             { key: 'proj',   active: showProj,   toggle: () => setShowProj(v => !v),   color: '#8b5cf6', count: projCount,            icon: '🔨', label: 'โครงการ' },
           ].filter(card => card.key === 'all' || card.count > 0).map(({ key, active, toggle, color, count, icon, label }) => (
             <button key={key} type="button" onClick={toggle}
-              className={`w-20 shrink-0 flex flex-col items-center gap-1.5 py-2.5 rounded-2xl border-2 transition-all duration-200 select-none ${key === 'all' ? '' : 'active:scale-95'}`}
+              className={`${fitViewport ? 'w-16 gap-0.5 py-1.5' : 'w-20 gap-1.5 py-2.5'} shrink-0 flex flex-col items-center rounded-2xl border-2 transition-all duration-200 select-none ${key === 'all' ? '' : 'active:scale-95'}`}
               style={{
                 ...(active
                   ? { borderColor: color, backgroundColor: color + '15', boxShadow: `0 4px 12px ${color}30` }
                   : { borderColor: '#f3f4f6', backgroundColor: '#fafafa' }),
                 ...(key === 'all' ? { cursor: 'default' } : {})
               }}>
-              <div className="w-10 h-10 rounded-2xl flex items-center justify-center text-xl leading-none shadow-sm"
+              <div className={`${fitViewport ? 'w-8 h-8 rounded-xl text-base' : 'w-10 h-10 rounded-2xl text-xl'} flex items-center justify-center leading-none shadow-sm`}
                 style={{ background: active ? `linear-gradient(135deg, ${color}30, ${color}18)` : '#f3f4f6', border: active ? `1.5px solid ${color}40` : 'none' }}>
                 {icon}
               </div>
@@ -673,7 +720,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
         {(showRepair || showWater || showEnv || showBiz || showProj) && (
           <>
             {/* Desktop */}
-            <div className="hidden md:flex flex-wrap gap-x-6 gap-y-2.5 px-4 py-3 border-b border-gray-100">
+            <div className={`hidden md:flex flex-wrap border-b border-gray-100 ${fitViewport ? 'gap-x-4 gap-y-1.5 px-3 py-2' : 'gap-x-6 gap-y-2.5 px-4 py-3'}`}>
               {(showRepair || showEnv) && (
                 <div className="flex items-center gap-2.5">
                   <span className="text-[11px] font-bold text-gray-600 shrink-0 w-24">ประเภทคำร้อง</span>
@@ -771,140 +818,76 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
               )}
             </div>
 
-            {/* Mobile */}
-            <div className="md:hidden px-4 pt-4 pb-3 border-b border-gray-100">
-              {openFilter && <div className="fixed inset-0 z-40" onClick={() => setOpenFilter(null)} />}
-              {(() => {
-                const cmpAll = complaints.filter(c => {
-                  if (showRepair && (c.form_type === 'infrastructure' || c.form_type === 'legacy')) return true
-                  if (showWater && c.form_type === 'water_support') return true
-                  if (showEnv && c.form_type === 'environment') return true
-                  return false
-                })
-                const cmpCategoryAll = complaints.filter(c => {
-                  if (showRepair && (c.form_type === 'infrastructure' || c.form_type === 'legacy')) return true
-                  if (showEnv && c.form_type === 'environment') return true
-                  return false
-                })
-                const cmpCatCounts = {}
-                cmpAll.forEach(c => { cmpCatCounts[c.category] = (cmpCatCounts[c.category] || 0) + 1 })
-                
-                const cmpFilteredForStatus = filterCmpCat === 'all' ? cmpAll : cmpAll.filter(c => c.category === filterCmpCat)
-                
-                const activeBiz = showBiz ? bizRegs.filter(b => b.latitude) : []
-                const normalizeBizStatus = (s) => {
-                  if (s === 'approved') return 'completed'
-                  return s
-                }
-
-                const totalList = [
-                  ...cmpFilteredForStatus.map(c => normalizeStatus(c.status)),
-                  ...activeBiz.map(b => normalizeBizStatus(b.status))
-                ]
-
-                const cmpStatusCounts = {}
-                totalList.forEach(s => {
-                  cmpStatusCounts[s] = (cmpStatusCounts[s] || 0) + 1
-                })
-
-                const showCmpGroup  = showRepair || showWater || showEnv || showBiz
-                const showProjGroup = showProj
-
-                return (
-              <div className="flex flex-wrap items-start gap-2">
-                {showCmpGroup && (
-                  <div className="flex gap-2 flex-1 min-w-42">
-                    {(showRepair || showEnv) && (
-                      <div className="flex-1">
-                        <MobileFilterPill id="cmpCat" icon="📋" label="ประเภทคำร้อง" color="#f59e0b"
-                          value={filterCmpCat} onChange={setFilterCmpCat}
-                          openFilter={openFilter} setOpenFilter={setOpenFilter}
-                          options={[
-                            { v: 'all', icon: '📋', label: 'ทั้งหมด', count: cmpCategoryAll.length },
-                            ...mapCategoryOptions
-                              .filter(opt => opt.count > 0)
-                              .map(opt => ({
-                                v: opt.value,
-                                icon: CATEGORY_EMOJI[opt.value] ?? '📄',
-                                label: opt.label,
-                                count: opt.count
-                              }))
-                          ]} />
-                      </div>
-                    )}
-                    <div className="flex-1">
-                      <MobileFilterPill id="status" icon="⏳" label="สถานะคำร้อง" color="#3b82f6"
-                        value={filterStatus} onChange={setFilterStatus}
-                        openFilter={openFilter} setOpenFilter={setOpenFilter}
-                        options={[
-                          { v: 'all',         icon: '📋', label: 'ทั้งหมด',         count: totalList.length },
-                          { v: 'pending',     icon: '⏳', label: 'รอดำเนินการ',    color: '#ef4444', count: cmpStatusCounts['pending'] ?? 0 },
-                          { v: 'received',    icon: '📬', label: 'รับเรื่องแล้ว',  color: '#f97316', count: cmpStatusCounts['received'] ?? 0 },
-                          { v: 'in_progress', icon: '⚙️', label: 'กำลังดำเนินการ',color: '#f97316', count: cmpStatusCounts['in_progress'] ?? 0 },
-                          { v: 'completed',   icon: '✅', label: 'เสร็จสิ้น',      color: '#10b981', count: cmpStatusCounts['completed'] ?? 0 },
-                          { v: 'rejected',    icon: '❌', label: 'ปฏิเสธ',         color: '#9ca3af', count: cmpStatusCounts['rejected'] ?? 0 },
-                        ].filter(opt => opt.v === 'all' || opt.count > 0)} />
-                    </div>
-                  </div>
+            {/* Mobile: two-column grid keeps every filter visible without horizontal scrolling */}
+            <div className="md:hidden border-b border-gray-100">
+              <div className="grid grid-cols-2 gap-x-1.5 gap-y-1 px-1.5 py-1">
+                {(showRepair || showEnv) && (
+                  <label className="flex min-w-0 flex-col gap-0.5">
+                    <span className="text-[10px] font-bold leading-none text-gray-600">ประเภทคำร้อง</span>
+                    <select value={filterCmpCat} onChange={e => setFilterCmpCat(e.target.value)}
+                      className="h-8 w-full min-w-0 border border-gray-300 bg-white px-1.5 py-0 text-[11px] font-medium text-gray-800 focus:outline-none">
+                      <option value="all">— ทุกประเภท ({activeCategoryComplaints.length}) —</option>
+                      {mapCategoryOptions.filter(opt => opt.count > 0).map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label} ({opt.count})</option>
+                      ))}
+                    </select>
+                  </label>
                 )}
-                {showCmpGroup && showProjGroup && (
-                  <div className="w-px self-stretch bg-gray-100 my-1" />
+                {(showRepair || showWater || showEnv || showBiz) && (
+                  <label className="flex min-w-0 flex-col gap-0.5">
+                    <span className="text-[10px] font-bold leading-none text-gray-600">สถานะคำร้อง</span>
+                    <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+                      className="h-8 w-full min-w-0 border border-gray-300 bg-white px-1.5 py-0 text-[11px] font-medium text-gray-800 focus:outline-none">
+                      <option value="all">— ทุกสถานะ ({statusCounts.all}) —</option>
+                      {statusCounts.pending > 0 && <option value="pending">รอดำเนินการ ({statusCounts.pending})</option>}
+                      {statusCounts.received > 0 && <option value="received">รับเรื่องแล้ว ({statusCounts.received})</option>}
+                      {statusCounts.in_progress > 0 && <option value="in_progress">กำลังดำเนินการ ({statusCounts.in_progress})</option>}
+                      {statusCounts.completed > 0 && <option value="completed">เสร็จสิ้น ({statusCounts.completed})</option>}
+                      {statusCounts.rejected > 0 && <option value="rejected">ปฏิเสธ ({statusCounts.rejected})</option>}
+                      {statusCounts.cancelled > 0 && <option value="cancelled">ยกเลิก ({statusCounts.cancelled})</option>}
+                      {statusCounts.suspended > 0 && <option value="suspended">ระงับชั่วคราว ({statusCounts.suspended})</option>}
+                    </select>
+                  </label>
                 )}
-                {showProjGroup && (
-                  <div className="flex gap-2 flex-1 min-w-42">
-                    <div className="flex-1">
-                      <MobileFilterPill id="projType" icon="🔨" label="ประเภทโครงการ" color="#10b981"
-                        value={filterProjType} onChange={setFilterProjType}
-                        openFilter={openFilter} setOpenFilter={setOpenFilter}
-                        options={[
-                          { v: 'all',           icon: '🔨', label: 'ทั้งหมด',          count: projTypeCounts.all },
-                          { v: 'road_concrete', icon: '🛣️', label: 'ค.ส.ล.',           count: projTypeCounts['road_concrete'] ?? 0 },
-                          { v: 'road_asphalt',  icon: '🛣️', label: 'ลาดยาง',           count: projTypeCounts['road_asphalt'] ?? 0 },
-                          { v: 'road_slurry',   icon: '🛣️', label: 'สเลอรี่ซิล',       count: projTypeCounts['road_slurry'] ?? 0 },
-                          { v: 'road_gravel',   icon: '🛣️', label: 'หินคลุก',           count: projTypeCounts['road_gravel'] ?? 0 },
-                          { v: 'road',          icon: '🛣️', label: 'ถนน (เก่า)',        count: projTypeCounts['road'] ?? 0 },
-                          { v: 'drain',         icon: '🌊', label: 'รางระบายน้ำ',       count: projTypeCounts['drain'] ?? 0 },
-                          { v: 'dredge',        icon: '⛏️', label: 'ขุดลอก',            count: projTypeCounts['dredge'] ?? 0 },
-                          { v: 'canal',         icon: '💧', label: 'รางน้ำ/ลำเหมือง',  count: projTypeCounts['canal'] ?? 0 },
-                          { v: 'pipe_water',    icon: '🚰', label: 'ท่อน้ำประปา',       count: projTypeCounts['pipe_water'] ?? 0 },
-                          { v: 'waterway',      icon: '💧', label: 'รางส่งน้ำ',         count: projTypeCounts['waterway'] ?? 0 },
-                          { v: 'building',      icon: '🏗️', label: 'อาคาร',             count: projTypeCounts['building'] ?? 0 },
-                          { v: 'light',         icon: '💡', label: 'ไฟฟ้า',             count: projTypeCounts['light'] ?? 0 },
-                          { v: 'park',          icon: '🌳', label: 'สวนสาธารณะ',        count: projTypeCounts['park'] ?? 0 },
-                          { v: 'other',         icon: '📝', label: 'อื่น ๆ',            count: projTypeCounts['other'] ?? 0 },
-                        ].filter(opt => opt.v === 'all' || opt.count > 0)} />
-                    </div>
-                    <div className="flex-1">
-                      <MobileFilterPill id="projStatus" icon="📐" label="สถานะโครงการ" color="#8b5cf6"
-                        value={filterProjStatus} onChange={setFilterProjStatus}
-                        openFilter={openFilter} setOpenFilter={setOpenFilter}
-                        options={[
-                          { v: 'all',         icon: '🔨', label: 'ทั้งหมด',          count: projStatusCounts.all },
-                          { v: 'planned',     icon: '📐', label: 'วางแผน',          color: '#9ca3af', count: projStatusCounts['planned'] ?? 0 },
-                          { v: 'approved',    icon: '📌', label: 'อนุมัติแล้ว',     color: '#3b82f6', count: projStatusCounts['approved'] ?? 0 },
-                          { v: 'in_progress', icon: '⚙️', label: 'กำลังดำเนินการ', color: '#f97316', count: projStatusCounts['in_progress'] ?? 0 },
-                          { v: 'completed',   icon: '🏆', label: 'เสร็จสิ้น',       color: '#10b981', count: projStatusCounts['completed'] ?? 0 },
-                          { v: 'cancelled',   icon: '🚫', label: 'ยกเลิก',          color: '#9ca3af', count: projStatusCounts['cancelled'] ?? 0 },
-                          { v: 'suspended',   icon: '⏸️', label: 'ระงับชั่วคราว',  color: '#f59e0b', count: projStatusCounts['suspended'] ?? 0 },
-                        ].filter(opt => opt.v === 'all' || opt.count > 0)} />
-                    </div>
-                  </div>
+                {showProj && (
+                  <label className="flex min-w-0 flex-col gap-0.5">
+                    <span className="text-[10px] font-bold leading-none text-gray-600">ประเภทโครงการ</span>
+                    <select value={filterProjType} onChange={e => setFilterProjType(e.target.value)}
+                      className="h-8 w-full min-w-0 border border-gray-300 bg-white px-1.5 py-0 text-[11px] font-medium text-gray-800 focus:outline-none">
+                      <option value="all">— ทุกประเภท ({projTypeCounts.all}) —</option>
+                      {Object.entries({
+                        road_concrete: 'ถนน ค.ส.ล.', road_asphalt: 'ลาดยางแอสฟัลท์', road_slurry: 'ฉาบผิวสเลอรี่ซิล',
+                        road_gravel: 'หินคลุก', road: 'ถนน (เก่า)', drain: 'รางระบายน้ำ', dredge: 'ขุดลอก',
+                        canal: 'รางน้ำ/ลำเหมือง', pipe_water: 'ท่อน้ำประปา', waterway: 'รางส่งน้ำ',
+                        building: 'อาคาร/สิ่งก่อสร้าง', light: 'ไฟฟ้าสาธารณะ', park: 'สวนสาธารณะ', other: 'อื่น ๆ',
+                      }).filter(([type]) => (projTypeCounts[type] ?? 0) > 0).map(([type, label]) => (
+                        <option key={type} value={type}>{label} ({projTypeCounts[type]})</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {showProj && (
+                  <label className="flex min-w-0 flex-col gap-0.5">
+                    <span className="text-[10px] font-bold leading-none text-gray-600">สถานะโครงการ</span>
+                    <select value={filterProjStatus} onChange={e => setFilterProjStatus(e.target.value)}
+                      className="h-8 w-full min-w-0 border border-gray-300 bg-white px-1.5 py-0 text-[11px] font-medium text-gray-800 focus:outline-none">
+                      <option value="all">— ทุกสถานะ ({projStatusCounts.all}) —</option>
+                      {projStatusCounts.planned > 0 && <option value="planned">วางแผน ({projStatusCounts.planned})</option>}
+                      {projStatusCounts.approved > 0 && <option value="approved">อนุมัติแล้ว ({projStatusCounts.approved})</option>}
+                      {projStatusCounts.in_progress > 0 && <option value="in_progress">กำลังดำเนินการ ({projStatusCounts.in_progress})</option>}
+                      {projStatusCounts.completed > 0 && <option value="completed">เสร็จสิ้น ({projStatusCounts.completed})</option>}
+                      {projStatusCounts.cancelled > 0 && <option value="cancelled">ยกเลิก ({projStatusCounts.cancelled})</option>}
+                      {projStatusCounts.suspended > 0 && <option value="suspended">ระงับชั่วคราว ({projStatusCounts.suspended})</option>}
+                    </select>
+                  </label>
                 )}
                 {isFiltered && (
-                  <div className="w-full flex justify-center pt-1">
-                    <button type="button" onClick={clearFilters}
-                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border-2 transition-all"
-                      style={{ borderColor: '#ef4444', backgroundColor: '#ef444415' }}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round">
-                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                      </svg>
-                      <span className="text-[12px] font-semibold" style={{ color: '#ef4444' }}>ล้าง</span>
-                    </button>
-                  </div>
+                  <button type="button" onClick={clearFilters}
+                    className="col-span-2 h-7 border border-red-200 bg-red-50 px-2 py-0 text-[11px] font-semibold text-red-600">
+                    ล้างตัวกรอง
+                  </button>
                 )}
               </div>
-                )
-              })()}
             </div>
           </>
         )}
@@ -912,12 +895,15 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
 
       {/* Map */}
       <div ref={mapWrapRef}
-           className="relative overflow-hidden shadow-sm border border-gray-300 bg-gray-100"
-           style={{ height: isFullscreen ? '100vh' : '520px', borderRadius: isFullscreen ? 0 : '4px' }}>
+           className={`relative overflow-hidden shadow-sm border border-gray-300 bg-gray-100 ${fitViewport && !isFullscreen ? 'flex-1 min-h-0 shrink' : ''}`}
+           style={{
+             height: isFullscreen ? '100vh' : (fitViewport ? undefined : '520px'),
+             borderRadius: isFullscreen ? 0 : '4px',
+           }}>
 
         {/* ── ปุ่มควบคุมแผนที่ ── */}
         {!loading && (
-          <div className="absolute top-3 right-3 z-1000 flex items-center gap-1.5">
+          <div className="absolute top-2 right-2 left-12 z-1000 flex flex-wrap items-center justify-end gap-1.5">
             <button onClick={() => setMapType(m => m === 'normal' ? 'satellite' : 'normal')}
               title={mapType === 'normal' ? 'เปลี่ยนเป็นดาวเทียม' : 'เปลี่ยนเป็นแผนที่'}
               className="flex items-center justify-center shadow-md border border-gray-300 hover:bg-gray-50 transition-colors"
@@ -966,6 +952,9 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
             zoom={13}
             style={{ width: '100%', height: '100%' }}
             scrollWheelZoom
+            dragging
+            doubleClickZoom
+            boxZoom
           >
             <TileLayer
               key={mapType}
@@ -977,11 +966,12 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                 : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'}
             />
             <FitBoundsOnLoad
-              points={[
-                ...complaints.map(c => [c.latitude, c.longitude]),
-                ...civilProjects.map(p => [p.latitude, p.longitude]),
-                ...bizRegs.filter(b => b.latitude).map(b => [b.latitude, b.longitude]),
-              ]}
+              points={visibleMapPoints}
+              fallbackLat={centerLat}
+              fallbackLng={centerLng}
+            />
+            <ResetMapViewControl
+              points={visibleMapPoints}
               fallbackLat={centerLat}
               fallbackLng={centerLng}
             />
@@ -1006,6 +996,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                     {CATEGORY_LABEL[c.category] ?? FORM_TYPE_LABEL[c.form_type] ?? 'คำร้อง'}
                   </Tooltip>
                 )}
+                {currentUserRole !== 'citizen' && (
                 <Popup>
                   <div className="text-sm min-w-[200px]">
                     {currentUserRole === 'citizen' ? (
@@ -1046,6 +1037,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
                     <GmapsBtn lat={c.latitude} lng={c.longitude} />
                   </div>
                 </Popup>
+                )}
               </Marker>
               )
             })}
@@ -1108,9 +1100,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
 
             {/* ── โครงการ (polyline หรือ marker ขึ้นกับ route_points) ── */}
             {/* แยกแสดงเด็ดขาดตามโหมด: ปักหมุด = เฉพาะที่ไม่มีเส้นทาง / เส้นทาง = เฉพาะที่มีเส้นทาง ไม่ปนกัน */}
-            {filteredProj
-              .filter(w => (w.route_points?.length >= 2) === (projViewMode === 'route'))
-              .map((w) => {
+            {visibleProjects.map((w) => {
               const statusColor = CIVIL_STATUS_COLOR[w.status] ?? '#9ca3af'
               const routeStyle  = ROUTE_STYLE[w.project_type]
               const lineColor   = w.route_color || routeStyle?.color || statusColor
@@ -1209,7 +1199,7 @@ export default function MapDashboardAdmin({ tenant, currentUserRole, onNavigate,
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap gap-x-5 gap-y-2 px-1">
+      <div className={`flex flex-wrap shrink-0 px-1 ${fitViewport ? 'gap-x-3 gap-y-1 pb-1' : 'gap-x-5 gap-y-2'}`}>
         {LEGEND
           .filter(({ layer, status }) => {
             // โหมดเส้นทาง: มีแต่เส้นทางบนแผนที่ ไม่มีหมุดคำร้อง/ร้านค้า/โครงการแบบจุดเลย ซ่อน legend หมุดทั้งหมด

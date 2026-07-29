@@ -118,3 +118,4 @@ end;
 $$;
 
 grant execute on function public.get_users_with_email(uuid, text[], text, int, int) to authenticated;
+-- History version aligned with linked Supabase project.

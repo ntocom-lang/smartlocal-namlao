@@ -27,3 +27,4 @@ CREATE POLICY "events select by audience" ON events FOR SELECT USING (
 );
 
 ALTER TABLE events DROP COLUMN audience;
+-- History version aligned with linked Supabase project.

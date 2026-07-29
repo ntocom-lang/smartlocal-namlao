@@ -13,3 +13,4 @@
 -- หลงเหลืออยู่ที่ตารางอื่นในโปรเจกต์
 
 DROP POLICY IF EXISTS "allow upload zt8oac_0" ON storage.objects;
+-- History version aligned with linked Supabase project.

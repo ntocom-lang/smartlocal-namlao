@@ -12,7 +12,7 @@ import {
   CheckCircle2, ChevronRight, ChevronLeft,
   Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical,
   X, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera,
-  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, BookOpen, Bell, ExternalLink, Settings, Download, Banknote, Star, MessageSquare, Car, ShieldCheck
+  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, BookOpen, Bell, ExternalLink, Settings, Download, Banknote, Star, MessageSquare, Car, ShieldCheck, Terminal
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { compressImage } from '../lib/imageUtils'
@@ -24,6 +24,11 @@ import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
 import FeeSettingsAdmin from '../components/admin/FeeSettingsAdmin'
 import EventsManagerComponent from '../components/admin/EventsManager'
 import { InboxModule } from './StaffDashboard'
+
+// ต้องตรงกับ uuid ใน supabase/migrations/147_dev_journal.sql (ntocom@gmail.com) —
+// ใช้กรองเมนู "ผู้พัฒนาระบบ" ให้เห็นเฉพาะบัญชีนี้ ไม่ผูกกับ role เพราะ superadmin
+// ของแต่ละเทศบาลเป็นคนละคนกัน ความปลอดภัยจริงอยู่ที่ RLS ของตาราง dev_journal
+const DEV_USER_ID = 'b3e7c083-05ee-4664-ba42-e866729923ef'
 import ReportManagerComponent from '../components/admin/ReportManager'
 import AuditLogViewer from '../components/admin/AuditLogViewer'
 import FleetSetup from '../components/fleet/FleetSetup'
@@ -3627,7 +3632,7 @@ const PAGE_LABELS = {
   dashboard: 'หน้าหลัก',
   complaints: 'รายการคำร้อง',
   staff: 'รูปผู้บริหาร',
-  events: 'กิจกรรม',
+  events: 'ปฏิทินกิจกรรม',
   'doc-requests': 'คำขอเอกสาร',
   report: 'รายงานสรุป',
   categories: 'ประเภทคำร้อง',
@@ -3980,7 +3985,7 @@ export default function AdminDashboard() {
                 group: 'จัดการเนื้อหา',
                 items: [
                   { key: 'staff',        label: 'รูปผู้บริหาร',    Icon: UserCircle2,   show: currentUserRole !== 'viewer' },
-                  { key: 'events',       label: 'กิจกรรม',          Icon: CalendarDays,  show: currentUserRole !== 'viewer' },
+                  { key: 'events',       label: 'ปฏิทินกิจกรรม',    Icon: CalendarDays,  show: currentUserRole !== 'viewer' },
                 ],
               },
               {
@@ -4002,6 +4007,7 @@ export default function AdminDashboard() {
                 items: [
                   { key: 'manual',         label: 'คู่มือผู้ดูแล',  Icon: BookOpen, show: true, isExternal: true, href: '/manual-admin.html' },
                   { key: 'manual-citizen', label: 'คู่มือประชาชน',  Icon: BookOpen, show: true, isExternal: true, href: '/manual-citizen.html' },
+                  { key: 'dev-journal',    label: 'ผู้พัฒนาระบบ',   Icon: Terminal, show: currentUserId === DEV_USER_ID, isDevLink: true },
                 ],
               },
             ].map(({ group, items }) => {
@@ -4012,7 +4018,7 @@ export default function AdminDashboard() {
                   <p className="text-[10px] font-bold uppercase tracking-widest px-3 pt-1 pb-1.5"
                     style={{ color: 'rgba(255,255,255,0.35)' }}>{group}</p>
                   <div className="space-y-0.5">
-                    {visible.map(({ key, label, Icon, isExternal, href }) => {
+                    {visible.map(({ key, label, Icon, isExternal, href, isDevLink }) => {
                       const isActive = activePage === key
                       if (isExternal) return (
                         <a key={key} href={href} target="_blank" rel="noopener noreferrer"
@@ -4022,6 +4028,14 @@ export default function AdminDashboard() {
                           <span className="flex-1 text-left">{label}</span>
                           <ExternalLink size={11} style={{ color: 'rgba(255,255,255,0.3)' }} />
                         </a>
+                      )
+                      if (isDevLink) return (
+                        <button key={key} onClick={() => navigate('/dev-journal')}
+                          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-white/10"
+                          style={{ color: 'rgba(255,255,255,0.55)' }}>
+                          <Icon size={16} />
+                          <span className="flex-1 text-left">{label}</span>
+                        </button>
                       )
                       return (
                         <button key={key} onClick={() => setActivePage(key)}
@@ -4134,10 +4148,11 @@ export default function AdminDashboard() {
           { key: 'report',      label: 'รายงาน',           Icon: TrendingUp,  show: true },
           { key: 'satisfaction',label: 'ประเมิน',          Icon: Star,        show: true },
           { key: 'audit-log',   label: 'บันทึกกิจกรรม',   Icon: BookOpen,    show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-        ].filter(i => i.show).map(({ key, label, Icon }) => {
+          { key: 'dev-journal', label: 'ผู้พัฒนา',         Icon: Terminal,    show: currentUserId === DEV_USER_ID, isDevLink: true },
+        ].filter(i => i.show).map(({ key, label, Icon, isDevLink }) => {
           const isActive = activePage === key
           return (
-            <button key={key} onClick={() => setActivePage(key)}
+            <button key={key} onClick={() => isDevLink ? navigate('/dev-journal') : setActivePage(key)}
               className="flex-1 flex flex-col items-center justify-center gap-0.5 pt-2 pb-1 transition-all active:scale-90">
               <div className="relative w-10 h-9 rounded-xl flex items-center justify-center transition-all duration-200"
                 style={{ backgroundColor: isActive ? 'rgba(255,255,255,0.2)' : 'transparent' }}>
@@ -4173,7 +4188,7 @@ export default function AdminDashboard() {
                 group: 'จัดการเนื้อหา',
                 items: [
                   { key: 'staff',        label: 'รูปผู้บริหาร',    Icon: UserCircle2,   color: '#7c3aed', bg: '#ede9fe', show: currentUserRole !== 'viewer' },
-                  { key: 'events',       label: 'กิจกรรม',          Icon: Bell,          color: '#f59e0b', bg: '#fef3c7', show: currentUserRole !== 'viewer' },
+                  { key: 'events',       label: 'ปฏิทินกิจกรรม',    Icon: Bell,          color: '#f59e0b', bg: '#fef3c7', show: currentUserRole !== 'viewer' },
                 ],
               },
               {
@@ -4195,6 +4210,7 @@ export default function AdminDashboard() {
                 items: [
                   { key: 'manual',         label: 'คู่มือผู้ดูแล',  Icon: BookOpen,    color: '#059669', bg: '#d1fae5', show: true, isExternal: true, href: '/manual-admin.html' },
                   { key: 'manual-citizen', label: 'คู่มือประชาชน',  Icon: BookOpen,    color: '#059669', bg: '#d1fae5', show: true, isExternal: true, href: '/manual-citizen.html' },
+                  { key: 'dev-journal',    label: 'ผู้พัฒนาระบบ',   Icon: Terminal,    color: '#1e293b', bg: '#f1f5f9', show: currentUserId === DEV_USER_ID, isDevLink: true },
                 ],
               },
             ].map(({ group, items }) => {
@@ -4204,7 +4220,7 @@ export default function AdminDashboard() {
                 <div key={group}>
                   <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">{group}</p>
                   <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
-                    {visible.map(({ key, label, Icon, color, bg, isExternal, href }) =>
+                    {visible.map(({ key, label, Icon, color, bg, isExternal, href, isDevLink }) =>
                       isExternal ? (
                         <a key={key} href={href} target="_blank" rel="noopener noreferrer"
                           className="flex flex-col items-center gap-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-3 hover:shadow-md active:scale-95 transition-all">
@@ -4213,6 +4229,14 @@ export default function AdminDashboard() {
                           </div>
                           <p className="text-[11px] font-semibold text-gray-700 text-center leading-tight">{label}</p>
                         </a>
+                      ) : isDevLink ? (
+                        <button key={key} onClick={() => navigate('/dev-journal')}
+                          className="flex flex-col items-center gap-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-3 hover:shadow-md active:scale-95 transition-all">
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: bg }}>
+                            <Icon size={18} style={{ color }} />
+                          </div>
+                          <p className="text-[11px] font-semibold text-gray-700 text-center leading-tight">{label}</p>
+                        </button>
                       ) : (
                         <button key={key} onClick={() => setActivePage(key)}
                           className="flex flex-col items-center gap-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-3 hover:shadow-md active:scale-95 transition-all">

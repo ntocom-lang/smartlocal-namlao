@@ -50,3 +50,4 @@ create policy "admin update municipality assets" on storage.objects
 create policy "admin upload municipality assets" on storage.objects
   for insert to authenticated
   with check (bucket_id = 'municipality-assets' and get_my_role() in ('admin','superadmin'));
+-- History version aligned with linked Supabase project.

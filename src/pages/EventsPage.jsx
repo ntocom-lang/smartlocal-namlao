@@ -610,7 +610,7 @@ export default function EventsPage() {
             className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-white shadow-sm transition-all hover:opacity-90"
             style={{ backgroundColor: 'var(--color-primary)' }}
           >
-            <Plus size={16} /> เพิ่มกิจกรรม
+            <Plus size={16} /> เพิ่มกิจกรรมในปฏิทิน
           </button>
         )}
       </div>

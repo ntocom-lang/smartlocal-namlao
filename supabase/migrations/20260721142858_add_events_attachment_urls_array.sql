@@ -7,3 +7,4 @@ SET attachment_urls = ARRAY[attachment_url]
 WHERE attachment_url IS NOT NULL
   AND attachment_url <> ''
   AND attachment_urls = '{}'::text[];
+-- History version aligned with linked Supabase project.

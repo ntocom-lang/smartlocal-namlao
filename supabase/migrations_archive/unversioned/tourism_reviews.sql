@@ -47,3 +47,4 @@ DROP POLICY IF EXISTS "authenticated can delete own tourism_reviews" ON tourism_
 CREATE POLICY "authenticated can delete own tourism_reviews"
   ON tourism_reviews FOR DELETE
   USING (auth.uid() = user_id);
+-- Archived: this legacy file had no migration version and was ignored by Supabase CLI.

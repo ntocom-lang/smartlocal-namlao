@@ -263,8 +263,8 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
               ...viewData.map(c => [
                 c.id.slice(0,8).toUpperCase(),
                 new Date(c.created_at).toLocaleDateString('th-TH'),
-                c.profiles?.full_name ?? '',
-                c.profiles?.phone ?? c.phone ?? '',
+                c.reporter_name ?? c.profiles?.full_name ?? '',
+                c.phone ?? c.profiles?.phone ?? '',
                 CATEGORY_LABEL[c.category] ?? c.category ?? '',
                 (c.description ?? '').replace(/\n/g,' '),
                 [c.location_name, c.village].filter(Boolean).join(', '),

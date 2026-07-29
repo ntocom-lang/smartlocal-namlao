@@ -12,7 +12,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { notifyTelegram } from '../../lib/notifyTelegram'
 import { compressImage } from '../../lib/imageUtils'
 import { logAction } from '../../lib/auditLog'
-import { attachReporterProfiles } from '../../lib/attachReporterProfiles'
+import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../../lib/complaintPrivacy'
 import { buildCouncilComplaintHtml } from '../../lib/councilFormPrint'
 import { generateDraftPdfBlob } from '../../lib/generateDraftPdf'
 import OssIntakeForm from './OssIntakeForm'
@@ -1292,9 +1292,12 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function ComplaintsManager({ tenant, currentUserRole, openComplaintId }) {
   const { session } = useAuth()
+  const tenantId = tenant?.id
   const currentUserId = session?.user?.id
   const [complaints, setComplaints] = useState([])
   const [loading, setLoading]       = useState(true)
+  const [openingComplaintId, setOpeningComplaintId] = useState(null)
+  const openedExternalComplaintIdRef = useRef(null)
   const [updating, setUpdating]     = useState(null)
   const [filterTab, setFilterTab]   = useState(0)
   const [search, setSearch]         = useState('')
@@ -1368,59 +1371,72 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   }, [tenant?.id])
 
   const fetchTechnicians = useCallback(async () => {
-    if (!tenant?.id) return
+    if (!tenantId) return
     const { data } = await supabase
       .from('profiles')
       .select('id, full_name, email, department, is_dept_head')
-      .eq('municipality_id', tenant.id)
+      .eq('municipality_id', tenantId)
       .in('role', ['technician', 'officer'])
       .order('full_name')
     setTechnicians(data ?? [])
-  }, [tenant?.id])
+  }, [tenantId])
 
   const fetchComplaints = useCallback(async () => {
-    if (!tenant?.id) return
-    setLoading(true)
-    const { data, error } = await supabase
-      .from('complaints')
-      .select('*')
-      .eq('municipality_id', tenant.id)
-      .order('created_at', { ascending: false })
+    if (!tenantId) return
+    const { data, error } = await fetchRoleScopedComplaints(tenantId)
     if (error) console.error('fetch complaints error:', error.message)
-    setComplaints(data ? await attachReporterProfiles(data) : [])
+    setComplaints(data ?? [])
     setLoading(false)
-  }, [tenant?.id])
+  }, [tenantId])
 
-  useEffect(() => { fetchTechnicians() }, [fetchTechnicians])
-  useEffect(() => { fetchComplaints() }, [fetchComplaints])
+  const openComplaint = useCallback(async (complaint) => {
+    if (!complaint?.id || openingComplaintId === complaint.id) return
+    setOpeningComplaintId(complaint.id)
+    const { data, error } = await fetchComplaintPrivateDetail(
+      complaint.id,
+      'เปิดรายละเอียดจากหน้าจัดการคำร้อง',
+    )
+    setOpeningComplaintId(null)
+    if (error) {
+      console.error('fetch complaint private detail error:', error.message)
+      alert('ไม่มีสิทธิ์เปิดข้อมูลส่วนบุคคลของคำร้องนี้')
+      return
+    }
+    if (data) setSelectedComplaint(data)
+  }, [openingComplaintId])
+
+  useEffect(() => { queueMicrotask(fetchTechnicians) }, [fetchTechnicians])
+  useEffect(() => { queueMicrotask(fetchComplaints) }, [fetchComplaints])
 
   useEffect(() => {
-    if (!tenant?.id) return
-    const ch = supabase.channel(`complaints-mgr-${tenant.id}`)
+    if (!tenantId) return
+    const ch = supabase.channel(`complaints-mgr-${tenantId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'complaints' },
-        async ({ new: row }) => {
-          if (row.municipality_id !== tenant.id) return
-          const { data } = await supabase.from('complaints').select('*').eq('id', row.id).single()
-          if (data) {
-            const [withProfile] = await attachReporterProfiles([data])
-            setComplaints(prev => [withProfile, ...prev])
-          }
+        ({ new: row }) => {
+          if (row.municipality_id !== tenantId) return
+          fetchComplaints()
         })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'complaints' },
         ({ new: row }) => {
-          if (row.municipality_id !== tenant.id) return
-          setComplaints(prev => prev.map(c => c.id === row.id ? { ...c, ...row } : c))
-          setSelectedComplaint(prev => prev?.id === row.id ? { ...prev, ...row } : prev)
+          if (row.municipality_id !== tenantId) return
+          fetchComplaints()
         })
       .subscribe()
     return () => supabase.removeChannel(ch)
-  }, [tenant?.id])
+  }, [tenantId, fetchComplaints])
 
   useEffect(() => {
-    if (!openComplaintId || complaints.length === 0) return
+    if (!openComplaintId) {
+      openedExternalComplaintIdRef.current = null
+      return
+    }
+    if (complaints.length === 0 || openedExternalComplaintIdRef.current === openComplaintId) return
     const found = complaints.find(c => c.id === openComplaintId)
-    if (found) setSelectedComplaint(found)
-  }, [complaints, openComplaintId])
+    if (found) {
+      openedExternalComplaintIdRef.current = openComplaintId
+      queueMicrotask(() => openComplaint(found))
+    }
+  }, [complaints, openComplaintId, openComplaint])
 
   async function assignTechnician(complaintId, technicianId) {
     if (technicianId) {
@@ -1842,7 +1858,8 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
             <div className="md:hidden divide-y divide-gray-100">
               {paginatedFiltered.map((c, i) => (
                 <div key={c.id} className="px-4 py-3.5 space-y-2 cursor-pointer flex items-start gap-2"
-                     onClick={() => setSelectedComplaint(c)}>
+                     aria-busy={openingComplaintId === c.id}
+                     onClick={() => openComplaint(c)}>
                   {canBulkDelete && (
                     <input type="checkbox" checked={selectedIds.has(c.id)} onChange={() => toggleSelect(c.id)}
                       onClick={(e) => e.stopPropagation()}
@@ -1932,7 +1949,8 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                       style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#f5f8fc' }}
                       onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'}
                       onMouseLeave={e => e.currentTarget.style.backgroundColor = i % 2 === 0 ? '#fff' : '#f5f8fc'}
-                      onClick={() => setSelectedComplaint(c)}>
+                      aria-busy={openingComplaintId === c.id}
+                      onClick={() => openComplaint(c)}>
                       {canBulkDelete && (
                         <td className="px-3 py-2 text-center border-r border-gray-200" onClick={(e) => e.stopPropagation()}>
                           <input type="checkbox" checked={selectedIds.has(c.id)} onChange={() => toggleSelect(c.id)}

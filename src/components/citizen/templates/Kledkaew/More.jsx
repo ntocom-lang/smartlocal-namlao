@@ -4,7 +4,7 @@ import {
   Bell, FileSearch, ClipboardList, ShieldCheck,
   Phone, AlertTriangle, Cloud,
   Store, FileText, CalendarDays, Luggage, Info,
-  UserCircle, LogOut, Globe, UserCog, Settings, RefreshCw
+  UserCircle, LogOut, Globe, UserCog, Settings, RefreshCw, ChevronDown
 } from 'lucide-react'
 import { useAuth } from '../../../../contexts/AuthContext'
 import { useNotifications } from '../../../../contexts/NotificationsContext'
@@ -16,6 +16,16 @@ export default function KledkaewMore() {
   const { unreadCount } = useNotifications()
   const navigate = useNavigate()
   const [clearingCache, setClearingCache] = useState(false)
+  const [openSections, setOpenSections] = useState(() => new Set(['services']))
+
+  function toggleSection(id) {
+    setOpenSections(current => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -81,9 +91,10 @@ export default function KledkaewMore() {
   ]
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-28 font-sans pt-6">
+    <div className="min-h-screen bg-gray-50 pb-28 md:pb-8 font-sans pt-6 md:pt-8">
+      <div className="max-w-6xl mx-auto px-4 md:grid md:grid-cols-[20rem_minmax(0,1fr)] md:gap-6 md:items-start">
       {/* Top Menu Card */}
-      <div className="relative z-20 px-4 max-w-lg mx-auto mb-4 mt-2">
+      <div className="relative z-20 w-full max-w-lg mx-auto mb-4 mt-2 md:mx-0 md:mb-0 md:sticky md:top-6">
         <div className="bg-[#10b981] rounded-2xl p-4 shadow-xl border border-emerald-400/30">
           <h3 className="text-white font-bold text-[16px] mb-3 px-1 drop-shadow-sm">ติดต่อ/แจ้งเรื่องร้องเรียน</h3>
           <div className="bg-[#064e3b] rounded-xl py-4 px-1 flex justify-between items-stretch text-center shadow-inner">
@@ -114,19 +125,30 @@ export default function KledkaewMore() {
       </div>
 
       {/* Accordions */}
-      <div className="flex flex-col w-full max-w-lg mx-auto shadow-sm bg-white">
-        {accordions.map((acc, index) => (
-          <div key={acc.id} className="mb-0">
-            <div
-              className="w-full bg-[#059669] text-white flex justify-between items-center px-4 py-2"
-              style={{
-                borderBottom: index < accordions.length - 1 ? '1px solid rgba(255,255,255,0.3)' : 'none'
-              }}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-5 w-full max-w-lg mx-auto md:max-w-none md:mx-0">
+        {accordions.map((acc) => (
+          <div key={acc.id} className="overflow-hidden rounded-2xl shadow-sm border border-emerald-100 bg-white">
+            <button
+              type="button"
+              onClick={() => toggleSection(acc.id)}
+              aria-expanded={openSections.has(acc.id)}
+              aria-controls={`more-section-${acc.id}`}
+              className="w-full min-h-11 bg-[#059669] text-white flex justify-between items-center gap-3 px-4 py-3 text-left md:hidden"
             >
+              <span className="font-bold text-[16px] drop-shadow-sm">{acc.title}</span>
+              <ChevronDown
+                size={19}
+                className={`shrink-0 transition-transform md:hidden ${openSections.has(acc.id) ? 'rotate-180' : ''}`}
+              />
+            </button>
+            <div className="hidden min-h-11 bg-[#059669] text-white md:flex items-center px-4 py-3">
               <span className="font-bold text-[16px] drop-shadow-sm">{acc.title}</span>
             </div>
             
-            <div className="bg-white">
+            <div
+              id={`more-section-${acc.id}`}
+              className={`bg-white ${openSections.has(acc.id) ? 'block' : 'hidden'} md:block`}
+            >
               {acc.items.map((item, i) => {
                 const inner = (
                   <>
@@ -139,7 +161,7 @@ export default function KledkaewMore() {
                     )}
                   </>
                 )
-                const className = "flex items-center gap-3 px-4 py-2 border-b border-gray-100 hover:bg-gray-50 active:bg-gray-100 transition-colors w-full text-left"
+                const className = "flex min-h-12 items-center gap-3 px-4 py-3 border-b border-gray-100 hover:bg-gray-50 active:bg-gray-100 transition-colors w-full text-left"
                 
                 if (item.action) {
                   return <button key={i} onClick={item.action} className={className}>{inner}</button>
@@ -156,6 +178,7 @@ export default function KledkaewMore() {
             </div>
           </div>
         ))}
+      </div>
       </div>
     </div>
   )

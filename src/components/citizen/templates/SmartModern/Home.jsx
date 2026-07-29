@@ -6,7 +6,7 @@ import { supabase } from '../../../../lib/supabase'
 import PostsHighlight from '../../../../components/home/PostsHighlight'
 import TourismSection from '../../../../components/home/TourismSection'
 import BannerSlider from '../../../../components/home/BannerSlider'
-import { Info, ChevronRight, Briefcase, Megaphone, LayoutDashboard, Wrench, Newspaper, CalendarDays, ChevronLeft, Landmark, Trash2, Lightbulb, Hospital, Route, Bug, Droplets, Map } from 'lucide-react'
+import { Info, ChevronRight, Briefcase, Megaphone, Wrench, Newspaper, CalendarDays, ChevronLeft, Landmark, Trash2, Lightbulb, Hospital, Route, Bug, Droplets, Map } from 'lucide-react'
 import WeatherWidget from '../../../../components/home/WeatherWidget'
 import StaffSection from '../../../../components/home/StaffSection'
 
@@ -161,7 +161,8 @@ function NewsSlider({ posts, label = 'ข่าวสาร', href = '/news' }) 
   }, [next, paused, posts.length])
 
   if (!posts.length) return null
-  const post = posts[idx]
+  const safeIdx = idx % posts.length
+  const post = posts[safeIdx]
 
   return (
     <div className="overflow-hidden"
@@ -199,8 +200,8 @@ function NewsSlider({ posts, label = 'ข่าวสาร', href = '/news' }) 
               <button key={i} onClick={e => { e.stopPropagation(); setIdx(i) }}
                 className="rounded-full transition-all"
                 style={{
-                  width: i === idx ? 16 : 6, height: 6,
-                  backgroundColor: i === idx ? 'white' : 'rgba(255,255,255,0.5)',
+                  width: i === safeIdx ? 16 : 6, height: 6,
+                  backgroundColor: i === safeIdx ? 'white' : 'rgba(255,255,255,0.5)',
                 }} />
             ))}
           </div>

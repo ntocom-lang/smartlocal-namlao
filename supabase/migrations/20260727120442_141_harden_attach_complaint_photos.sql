@@ -28,3 +28,4 @@ BEGIN
   RETURN v_rows > 0;
 END;
 $$;
+-- History version aligned with linked Supabase project.

@@ -6,3 +6,4 @@ ALTER TABLE municipalities
 
 COMMENT ON COLUMN municipalities.theme_presets IS
   'array of {name, color, layout} — preset ธีมที่ admin บันทึกไว้';
+-- Unique timestamp assigned while repairing duplicate local version 111.

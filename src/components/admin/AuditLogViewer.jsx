@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Shield, Trash2, RefreshCw, User, Clock, ChevronDown, ChevronUp, Search } from 'lucide-react'
+import { Shield, Trash2, RefreshCw, User, Clock, ChevronDown, ChevronUp, Search, Eye } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
 const ACTION_INFO = {
@@ -8,6 +8,7 @@ const ACTION_INFO = {
   approve:       { label: 'อนุมัติ',          bg: '#d1fae5', color: '#065f46', Icon: Shield },
   reject:        { label: 'ปฏิเสธ',           bg: '#fee2e2', color: '#991b1b', Icon: Shield },
   assign:        { label: 'มอบหมาย',          bg: '#ede9fe', color: '#5b21b6', Icon: User },
+  view_pii:      { label: 'เปิดดูข้อมูลส่วนบุคคล', bg: '#fef3c7', color: '#92400e', Icon: Eye },
 }
 
 const RESOURCE_LABEL = {
@@ -171,6 +172,7 @@ export default function AuditLogViewer({ tenant }) {
           <option value="all">ทุก action</option>
           <option value="delete">ลบ</option>
           <option value="update_status">อัปเดตสถานะ</option>
+          <option value="view_pii">เปิดดูข้อมูลส่วนบุคคล</option>
           <option value="approve">อนุมัติ</option>
           <option value="reject">ปฏิเสธ</option>
         </select>

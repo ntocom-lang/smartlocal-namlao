@@ -22,13 +22,15 @@ function PostDetailModal({ post, onClose }) {
   const date = fmtDate(post.event_date ?? post.created_at?.slice(0, 10))
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col md:items-center md:justify-center md:bg-black/60"
+    <div role="dialog" aria-modal="true" aria-labelledby="post-detail-title"
+         className="fixed inset-0 z-50 flex flex-col md:items-center md:justify-center md:bg-black/60"
          onClick={onClose}>
       <div className="bg-white flex flex-col h-full md:h-auto md:max-h-[85vh] md:w-full md:max-w-lg md:rounded-2xl overflow-hidden shadow-2xl"
            onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
           <span className="text-sm font-semibold text-gray-700">รายละเอียด</span>
-          <button onClick={onClose} className="p-1.5 rounded-full hover:bg-gray-100 transition-colors">
+          <button type="button" onClick={onClose} aria-label="ปิดรายละเอียด"
+                  className="p-1.5 rounded-full hover:bg-gray-100 transition-colors">
             <X size={18} className="text-gray-500" />
           </button>
         </div>
@@ -46,7 +48,7 @@ function PostDetailModal({ post, onClose }) {
                 <CalendarDays size={12} /> {date}
               </p>
             )}
-            <h2 className="text-lg font-bold text-gray-800 leading-snug mb-3">{post.title}</h2>
+            <h2 id="post-detail-title" className="text-lg font-bold text-gray-800 leading-snug mb-3">{post.title}</h2>
             {post.excerpt
               ? <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{post.excerpt}</p>
               : <p className="text-sm text-gray-400 italic">ไม่มีรายละเอียดเพิ่มเติม</p>}
@@ -60,8 +62,8 @@ function PostDetailModal({ post, onClose }) {
 function NewsCard({ post, onClick }) {
   const date = fmtDate(post.event_date ?? post.created_at?.slice(0, 10))
   return (
-    <div onClick={onClick}
-         className="overflow-hidden flex flex-col hover:-translate-y-0.5 transition-all cursor-pointer active:scale-[0.98]"
+    <button type="button" onClick={onClick}
+         className="w-full text-left overflow-hidden flex flex-col hover:-translate-y-0.5 transition-all cursor-pointer active:scale-[0.98]"
          style={{
            backgroundColor: 'var(--bg-card, #ffffff)',
            borderRadius: 'var(--radius-card, 1rem)',
@@ -79,16 +81,21 @@ function NewsCard({ post, onClick }) {
             </div>}
       </div>
       <div className="px-3 py-2">
+        {date && (
+          <p className="text-[11px] text-gray-400 flex items-center gap-1 mb-1">
+            <CalendarDays size={11} aria-hidden="true" /> {date}
+          </p>
+        )}
         <p className="text-[13px] font-semibold text-gray-800 leading-snug line-clamp-2">{post.title}</p>
       </div>
-    </div>
+    </button>
   )
 }
 
 function ActivityCard({ post, onClick }) {
   return (
-    <div onClick={onClick}
-         className="overflow-hidden flex flex-col hover:-translate-y-0.5 transition-all cursor-pointer active:scale-[0.98]"
+    <button type="button" onClick={onClick}
+         className="w-full text-left overflow-hidden flex flex-col hover:-translate-y-0.5 transition-all cursor-pointer active:scale-[0.98]"
          style={{
            backgroundColor: 'var(--bg-card, #ffffff)',
            borderRadius: 'var(--radius-card, 1rem)',
@@ -108,7 +115,7 @@ function ActivityCard({ post, onClick }) {
       <div className="px-3 py-2">
         <p className="text-[13px] font-semibold text-gray-800 leading-snug line-clamp-2">{post.title}</p>
       </div>
-    </div>
+    </button>
   )
 }
 

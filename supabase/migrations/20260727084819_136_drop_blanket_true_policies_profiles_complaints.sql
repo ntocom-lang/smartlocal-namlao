@@ -14,3 +14,4 @@
 
 DROP POLICY IF EXISTS "allow read profiles for authenticated" ON public.profiles;
 DROP POLICY IF EXISTS "municipality staff can read all complaints" ON public.complaints;
+-- History version aligned with linked Supabase project.

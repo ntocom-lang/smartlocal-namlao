@@ -6,7 +6,7 @@ import { supabase } from '../../../../lib/supabase'
 import PostsHighlight from '../../../../components/home/PostsHighlight'
 import TourismSection from '../../../../components/home/TourismSection'
 import BannerSlider from '../../../../components/home/BannerSlider'
-import { Info, ChevronRight, Briefcase, Megaphone, LayoutDashboard, Wrench, Newspaper, CalendarDays, ChevronLeft, FileCheck, Landmark, Trash2, FileText, Lightbulb, Hospital, Route, Bug, Droplets, Map } from 'lucide-react'
+import { Info, ChevronRight, Briefcase, Megaphone, Wrench, Newspaper, CalendarDays, ChevronLeft, Map } from 'lucide-react'
 import WeatherWidget from '../../../../components/home/WeatherWidget'
 import StaffSection from '../../../../components/home/StaffSection'
 import ComplaintBand from '../../../../components/home/ComplaintBand'
@@ -43,6 +43,7 @@ const LAYOUT_RIGHT = {
 const BASE_DOC_TYPES = [
   { value: 'waste_collection', label: 'ค่าธรรมเนียมขยะ',            emoji: '🗑️' },
   { value: 'tax_notice',       label: 'ค่าธรรมเนียม/ภาษี', emoji: '🏛️' },
+  { value: 'building_permit',  label: 'ขออนุญาตก่อสร้างบ้าน',       emoji: '🏗️' },
 ]
 
 // ── sub-components ────────────────────────────────────────────────────
@@ -163,7 +164,8 @@ function NewsSlider({ posts, label = 'ข่าวสาร', href = '/news' }) 
   }, [next, paused, posts.length])
 
   if (!posts.length) return null
-  const post = posts[idx]
+  const safeIdx = idx % posts.length
+  const post = posts[safeIdx]
 
   return (
     <div className="overflow-hidden"
@@ -201,8 +203,8 @@ function NewsSlider({ posts, label = 'ข่าวสาร', href = '/news' }) 
               <button key={i} onClick={e => { e.stopPropagation(); setIdx(i) }}
                 className="rounded-full transition-all"
                 style={{
-                  width: i === idx ? 16 : 6, height: 6,
-                  backgroundColor: i === idx ? 'white' : 'rgba(255,255,255,0.5)',
+                  width: i === safeIdx ? 16 : 6, height: 6,
+                  backgroundColor: i === safeIdx ? 'white' : 'rgba(255,255,255,0.5)',
                 }} />
             ))}
           </div>
@@ -315,20 +317,7 @@ export default function HomePage() {
       .then(({ data }) => setSidebarActivities(data ?? []))
   }, [tenant?.id])
 
-  const [docCounts, setDocCounts] = useState({})
-  useEffect(() => {
-    if (!tenant?.id) return
-    supabase.from('document_requests').select('document_type')
-      .eq('municipality_id', tenant.id)
-      .order('created_at', { ascending: false }).limit(300)
-      .then(({ data }) => {
-        const c = {}
-        ;(data ?? []).forEach(r => { c[r.document_type] = (c[r.document_type] ?? 0) + 1 })
-        setDocCounts(c)
-      })
-  }, [tenant?.id])
-
-  const topDocTypes = useMemo(() => docTypes, [docTypes])
+  const topDocTypes = docTypes
 
   // ── section map ──────────────────────────────────────────────────
   const SECTION = {

@@ -1,23 +1,13 @@
--- SmartLocal 120: แยกหน้า "จัดการเจ้าหน้าที่" ออกจาก "ผู้ใช้งานประชาชน"
--- 1. เพิ่ม profiles.staff_id เชื่อมบัญชี login เข้ากับแถวข้อมูลสาธารณะในตาราง staff
---    (แก้ปัญหา: บัญชี viewer ของนายกกับข้อมูล "นายก" ที่โชว์หน้าเว็บเป็นคนละแถวไม่เชื่อมกัน)
--- 2. ต่อยอด get_users_with_email() เดิม เพิ่ม role filter + search + pagination
---    กัน "จัดการเจ้าหน้าที่" โหลดผู้ใช้ทุกคน (citizen+staff ปน) มาทีเดียวไม่มี limit
+-- SmartLocal 122: เพิ่มข้อมูลกอง (department_id + ชื่อกอง) ใน get_users_with_email()
+-- ให้หน้า "จัดการเจ้าหน้าที่" แสดง/แก้ไขกองของเจ้าหน้าที่แต่ละคนได้
 
--- ─── 1. เชื่อม profiles ↔ staff ───────────────────────────────────────────────
-alter table profiles
-  add column if not exists staff_id uuid references staff(id) on delete set null;
-
--- ─── 2. ขยาย get_users_with_email() ───────────────────────────────────────────
--- ต้อง drop signature เดิม (1 arg) ก่อน ไม่งั้น Postgres จะมองเป็นคนละ overload
--- แล้วเรียกแบบ 1 arg เดิมจะ ambiguous ระหว่าง 2 ฟังก์ชัน
-drop function if exists public.get_users_with_email(uuid);
+drop function if exists public.get_users_with_email(uuid, text[], text, int, int);
 
 create or replace function public.get_users_with_email(
   p_municipality_id uuid default null,
-  p_roles           text[] default null,   -- null = ทุก role, ['citizen'] เฉพาะประชาชน, ฯลฯ
-  p_search          text default null,     -- ค้นหาชื่อ/เบอร์/เลขบัตร (ILIKE)
-  p_limit           int default null,      -- null = ไม่จำกัด (ใช้กับหน้าเจ้าหน้าที่ dataset เล็ก)
+  p_roles           text[] default null,
+  p_search          text default null,
+  p_limit           int default null,
   p_offset          int default 0
 )
 returns table (
@@ -37,7 +27,10 @@ returns table (
   created_at        timestamptz,
   staff_id          uuid,
   staff_name        text,
-  staff_title       text
+  staff_title       text,
+  department_id     uuid,
+  department_name   text,
+  is_dept_head      boolean
 )
 language plpgsql
 security definer
@@ -79,11 +72,15 @@ begin
     p.created_at,
     s.id   as staff_id,
     s.name as staff_name,
-    s.title as staff_title
+    s.title as staff_title,
+    p.department_id,
+    dep.name as department_name,
+    p.is_dept_head
   from public.profiles p
   left join auth.users        u on u.id = p.id
   left join public.municipalities m on m.id = p.municipality_id
   left join public.staff      s on s.id = p.staff_id
+  left join public.departments dep on dep.id = p.department_id
   where
     (
       (p_municipality_id is null and v_role = 'superadmin')
@@ -111,3 +108,4 @@ end;
 $$;
 
 grant execute on function public.get_users_with_email(uuid, text[], text, int, int) to authenticated;
+-- History version aligned with linked Supabase project.

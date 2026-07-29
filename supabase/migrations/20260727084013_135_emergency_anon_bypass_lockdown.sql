@@ -261,3 +261,4 @@ GRANT  EXECUTE ON FUNCTION public.complaints_near(double precision, double preci
 
 REVOKE EXECUTE ON FUNCTION public.complaints_heatmap(uuid, int) FROM PUBLIC, anon;
 GRANT  EXECUTE ON FUNCTION public.complaints_heatmap(uuid, int) TO authenticated;
+-- History version aligned with linked Supabase project.

@@ -8,3 +8,4 @@ on public.document_requests
 for delete
 to authenticated
 using (get_my_role() = 'superadmin');
+-- History version aligned with linked Supabase project.

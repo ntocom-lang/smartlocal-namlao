@@ -5,3 +5,4 @@
 
 alter table public.document_requests
   add column if not exists permit_form_data jsonb;
+-- History version aligned with linked Supabase project.

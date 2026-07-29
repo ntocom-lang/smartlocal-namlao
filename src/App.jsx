@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState, Component } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState, Component } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { TenantProvider, useTenant } from './contexts/TenantContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
@@ -11,36 +11,38 @@ import InstallPrompt from './components/InstallPrompt'
 import ScrollToTopButton from './components/ScrollToTopButton'
 import FloatingAIChat from './components/chat/FloatingAIChat'
 import InAppBrowserGate from './components/InAppBrowserGate'
-import HomePage from './pages/HomePage'
-import CitizenForm from './pages/CitizenForm'
-import ComplaintCategory from './pages/ComplaintCategory'
-import OneDataLanding from './pages/OneDataLanding'
-import BusinessRegisterPage from './pages/BusinessRegisterPage'
-import MarketPage from './pages/MarketPage'
-import AdminLogin from './pages/AdminLogin'
-import AuthPage from './pages/AuthPage'
-import ResetPasswordPage from './pages/ResetPasswordPage'
-import SatisfactionPage from './pages/SatisfactionPage'
-import TechnicianDashboard from './pages/TechnicianDashboard'
-import ProfilePage from './pages/ProfilePage'
-import MyComplaints from './pages/MyComplaints'
-import MorePage from './pages/MorePage'
-import NotificationsPage from './pages/NotificationsPage'
-import WeatherPage from './pages/WeatherPage'
-import EventsPage from './pages/EventsPage'
-import EmergencyPage from './pages/EmergencyPage'
-import TourismPage from './pages/TourismPage'
-import TourismDetailPage from './pages/TourismDetailPage'
-import ContactPage from './pages/ContactPage'
-import CitizenDocRequest from './pages/CitizenDocRequest'
-import MyDocRequests from './pages/MyDocRequests'
-import LpaDocStats from './pages/LpaDocStats'
-import PostsPage from './pages/PostsPage'
-import MapPage from './pages/MapPage'
-import FleetPage from './pages/FleetPage'
-import ChatbotPage from './pages/ChatbotPage'
 import { supabase } from './lib/supabase'
-import { Phone, X } from 'lucide-react'
+import { Phone } from 'lucide-react'
+
+const HomePage = lazyWithRetry(() => import('./pages/HomePage'))
+const CitizenForm = lazyWithRetry(() => import('./pages/CitizenForm'))
+const ComplaintCategory = lazyWithRetry(() => import('./pages/ComplaintCategory'))
+const OneDataLanding = lazyWithRetry(() => import('./pages/OneDataLanding'))
+const BusinessRegisterPage = lazyWithRetry(() => import('./pages/BusinessRegisterPage'))
+const MarketPage = lazyWithRetry(() => import('./pages/MarketPage'))
+const AdminLogin = lazyWithRetry(() => import('./pages/AdminLogin'))
+const DevJournal = lazyWithRetry(() => import('./pages/DevJournal'))
+const AuthPage = lazyWithRetry(() => import('./pages/AuthPage'))
+const ResetPasswordPage = lazyWithRetry(() => import('./pages/ResetPasswordPage'))
+const SatisfactionPage = lazyWithRetry(() => import('./pages/SatisfactionPage'))
+const TechnicianDashboard = lazyWithRetry(() => import('./pages/TechnicianDashboard'))
+const ProfilePage = lazyWithRetry(() => import('./pages/ProfilePage'))
+const MyComplaints = lazyWithRetry(() => import('./pages/MyComplaints'))
+const MorePage = lazyWithRetry(() => import('./pages/MorePage'))
+const NotificationsPage = lazyWithRetry(() => import('./pages/NotificationsPage'))
+const WeatherPage = lazyWithRetry(() => import('./pages/WeatherPage'))
+const EventsPage = lazyWithRetry(() => import('./pages/EventsPage'))
+const EmergencyPage = lazyWithRetry(() => import('./pages/EmergencyPage'))
+const TourismPage = lazyWithRetry(() => import('./pages/TourismPage'))
+const TourismDetailPage = lazyWithRetry(() => import('./pages/TourismDetailPage'))
+const ContactPage = lazyWithRetry(() => import('./pages/ContactPage'))
+const CitizenDocRequest = lazyWithRetry(() => import('./pages/CitizenDocRequest'))
+const MyDocRequests = lazyWithRetry(() => import('./pages/MyDocRequests'))
+const LpaDocStats = lazyWithRetry(() => import('./pages/LpaDocStats'))
+const PostsPage = lazyWithRetry(() => import('./pages/PostsPage'))
+const MapPage = lazyWithRetry(() => import('./pages/MapPage'))
+const FleetPage = lazyWithRetry(() => import('./pages/FleetPage'))
+const ChatbotPage = lazyWithRetry(() => import('./pages/ChatbotPage'))
 
 function PhoneReminderModal({ onClose }) {
   const [phone, setPhone] = useState('')
@@ -168,17 +170,19 @@ function RequireAuth({ children, adminOnly = false, techOnly = false, staffOnly 
 
 function AppShell() {
   const { loading, error, tenant } = useTenant()
+  const tenantId = tenant?.id
   const [showPhoneReminder, setShowPhoneReminder] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
-  const isBackOffice = ['/admin', '/staff', '/technician'].some(p => location.pathname.startsWith(p))
+  const isBackOffice = ['/admin', '/staff', '/technician', '/dev-journal'].some(p => location.pathname.startsWith(p))
   // ช่างมีเมนูบนสุด/แถบข้างมาตรฐานอยู่แล้วในทุกธีม (NAV_TECH) แต่ต้องเปิดเฉพาะจอ PC
   // มือถือยังใช้หัวจอ/เมนูล่างของ TechnicianDashboard เองตามเดิม กันซ้อนกับของที่มีอยู่แล้ว
   const isTechnician = location.pathname.startsWith('/technician')
   // ช่างยังใช้เมนูล่างของแอป (NAV_TECH) ได้ ต่างจาก /admin กับ /staff ที่ไม่มีเมนูล่างเลย
-  const hideBottomNav = ['/admin', '/staff'].some(p => location.pathname.startsWith(p))
+  const hideBottomNav = ['/admin', '/staff', '/dev-journal'].some(p => location.pathname.startsWith(p))
+  const isMapPage = location.pathname === '/map'
 
-  async function checkAndFixProfile(uid, userMeta = {}) {
+  const checkAndFixProfile = useCallback(async (uid, userMeta = {}) => {
     const { data: profile } = await supabase
       .from('profiles')
       .select('phone, municipality_id, full_name, avatar_url, role')
@@ -187,8 +191,8 @@ function AppShell() {
 
     const updates = {}
 
-    if (tenant?.id && !profile?.municipality_id && profile?.role === 'citizen') {
-      updates.municipality_id = tenant.id
+    if (tenantId && !profile?.municipality_id && profile?.role === 'citizen') {
+      updates.municipality_id = tenantId
     }
 
     // LINE/Google OAuth — ชื่ออยู่ใน 'name', รูปอยู่ใน 'picture'
@@ -210,7 +214,7 @@ function AppShell() {
     }
 
     if (!profile?.phone?.trim()) setShowPhoneReminder(true)
-  }
+  }, [tenantId])
 
   // iOS Safari ตัด WebSocket เมื่อแอปไป background — reconnect ทุกครั้งที่กลับมา
   useEffect(() => {
@@ -229,7 +233,7 @@ function AppShell() {
       document.removeEventListener('visibilitychange', handleVisibility)
       clearTimeout(reconnectTimer)
     }
-  }, [])
+  }, [navigate])
 
   useEffect(() => {
     // ดัก OAuth error callback เช่น LINE/Google login ล้มเหลวฝั่ง provider
@@ -241,10 +245,10 @@ function AppShell() {
       window.history.replaceState({}, '', window.location.pathname)
       navigate('/auth', { replace: true, state: { oauthError: oauthErrorDesc || oauthError } })
     }
-  }, [])
+  }, [navigate])
 
   useEffect(() => {
-    if (!tenant?.id) return
+    if (!tenantId) return
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) checkAndFixProfile(data.session.user.id, data.session.user.user_metadata)
     })
@@ -267,7 +271,9 @@ function AppShell() {
                 { onConflict: 'id' }
               )
             }
-          } catch {}
+          } catch {
+            // ข้อมูล merge เก่าที่เสียรูปต้องไม่ขัดขวางขั้นตอนเข้าสู่ระบบ
+          }
         }
 
         const returnTo = sessionStorage.getItem('oauth_from')
@@ -278,7 +284,7 @@ function AppShell() {
       }
     })
     return () => subscription.unsubscribe()
-  }, [tenant?.id])
+  }, [checkAndFixProfile, navigate, tenantId])
 
   if (loading) {
     return (
@@ -310,11 +316,18 @@ function AppShell() {
         <PhoneReminderModal onClose={() => setShowPhoneReminder(false)} />
       )}
       <NotificationsProvider>
-        {!isBackOffice && <Header />}
+        {!isBackOffice && !isMapPage && <Header />}
         {isTechnician && <div className="hidden md:block"><Header /></div>}
         <div className="flex flex-1 min-h-0 overflow-hidden">
           {(!isBackOffice || isTechnician) && <CitizenSidebar />}
-          <main className="flex-1 min-w-0 overflow-y-auto">
+          <main className={`flex-1 min-w-0 ${isMapPage ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+          <SuspenseErrorBoundary>
+          <Suspense fallback={
+            <div className="flex items-center justify-center min-h-[50vh]" role="status" aria-label="กำลังโหลดหน้า">
+              <div className="w-6 h-6 border-4 border-gray-200 rounded-full animate-spin"
+                   style={{ borderTopColor: 'var(--color-primary)' }} />
+            </div>
+          }>
           <Routes>
           <Route path="/" element={<HomeOrTechRedirect />} />
           <Route path="/search" element={<ChatbotPage />} />
@@ -355,6 +368,7 @@ function AppShell() {
             </RequireAuth>
           } />
           <Route path="/admin/login" element={<AdminLogin />} />
+          <Route path="/dev-journal" element={<DevJournal />} />
           <Route path="/staff" element={
             <RequireAuth staffOnly>
               <SuspenseErrorBoundary>
@@ -388,8 +402,10 @@ function AppShell() {
               </SuspenseErrorBoundary>
             </RequireAuth>
           } />
-        </Routes>
-          <Footer />
+          </Routes>
+          </Suspense>
+          </SuspenseErrorBoundary>
+          {!isMapPage && <Footer />}
           </main>
         </div>
         {!hideBottomNav && <BottomNav />}

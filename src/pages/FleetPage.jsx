@@ -1,15 +1,16 @@
-import { useState, useEffect } from 'react'
+import { lazy, Suspense, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, LayoutDashboard, Car, Fuel, Route, Wrench, BarChart2, ChevronRight } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
-import FleetDashboard   from '../components/fleet/FleetDashboard'
-import FleetVehicles    from '../components/fleet/FleetVehicles'
-import FleetFuelLog     from '../components/fleet/FleetFuelLog'
-import FleetTrips       from '../components/fleet/FleetTrips'
-import FleetMaintenance from '../components/fleet/FleetMaintenance'
-import FleetReport      from '../components/fleet/FleetReport'
+
+const FleetDashboard = lazy(() => import('../components/fleet/FleetDashboard'))
+const FleetVehicles = lazy(() => import('../components/fleet/FleetVehicles'))
+const FleetFuelLog = lazy(() => import('../components/fleet/FleetFuelLog'))
+const FleetTrips = lazy(() => import('../components/fleet/FleetTrips'))
+const FleetMaintenance = lazy(() => import('../components/fleet/FleetMaintenance'))
+const FleetReport = lazy(() => import('../components/fleet/FleetReport'))
 
 const TABS = [
   { id: 'dashboard',   label: 'ภาพรวม',     sub: 'สถิติและสรุปรวม',     Icon: LayoutDashboard, color: '#1a3a5c', grad: 'linear-gradient(135deg,#1a3a5c,#2d5f8a)' },
@@ -192,14 +193,19 @@ export default function FleetPage({ onBack } = {}) {
   const activeTab = tab ?? 'dashboard'
 
   const contentNode = (
-    <>
+    <Suspense fallback={
+      <div className="flex min-h-48 items-center justify-center" role="status" aria-label="กำลังโหลดโมดูลยานพาหนะ">
+        <div className="w-6 h-6 border-4 border-gray-200 rounded-full animate-spin"
+             style={{ borderTopColor: 'var(--color-primary)' }} />
+      </div>
+    }>
       {activeTab === 'dashboard'   && <FleetDashboard   {...ctx} />}
       {activeTab === 'vehicles'    && <FleetVehicles    {...ctx} />}
       {activeTab === 'fuel'        && <FleetFuelLog     {...ctx} />}
       {activeTab === 'trips'       && <FleetTrips       {...ctx} />}
       {activeTab === 'maintenance' && <FleetMaintenance {...ctx} />}
       {activeTab === 'report'      && <FleetReport      tenant={tenant} depts={depts} />}
-    </>
+    </Suspense>
   )
 
   const embedded = !!onBack

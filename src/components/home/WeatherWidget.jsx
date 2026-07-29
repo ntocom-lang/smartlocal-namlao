@@ -6,12 +6,19 @@ import { useTenant } from '../../contexts/TenantContext'
 
 export default function WeatherWidget() {
   const { tenant } = useTenant()
-  const [weather, setWeather] = useState(null)
-  const [pm25, setPm25] = useState(null)
-  const [loading, setLoading] = useState(true)
 
   const lat = tenant?.latitude  ?? WEATHER_LAT
   const lon = tenant?.longitude ?? WEATHER_LON
+  const tenantId = tenant?.id
+  const requestKey = `${tenantId ?? 'loading'}:${lat}:${lon}`
+  const [result, setResult] = useState({
+    requestKey: null,
+    weather: null,
+    pm25: null,
+  })
+  const loading = result.requestKey !== requestKey
+  const weather = loading ? null : result.weather
+  const pm25 = loading ? null : result.pm25
 
   // ตัดคำนำหน้าหน่วยงานออก เหลือแค่ชื่อสั้นๆ
   const shortName = tenant?.name
@@ -19,52 +26,58 @@ export default function WeatherWidget() {
     ?? 'ท้องถิ่น'
 
   useEffect(() => {
-    if (!tenant) return
-    setLoading(true)
-    
+    if (!tenantId) return
+    const controller = new AbortController()
+
     const fetchWeather = fetch(
       `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-      `&current=temperature_2m,weather_code&timezone=Asia%2FBangkok`
+      `&current=temperature_2m,weather_code&timezone=Asia%2FBangkok`,
+      { signal: controller.signal }
     ).then(r => {
       if (!r.ok) throw new Error('Weather fetch failed')
       return r.json()
     }).catch(err => {
-      console.warn("Weather API Error:", err)
+      if (err.name !== 'AbortError') console.warn('Weather API Error:', err)
       return null
     })
 
     const fetchAQI = fetch(
       `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}` +
-      `&current=pm2_5&timezone=Asia%2FBangkok`
+      `&current=pm2_5&timezone=Asia%2FBangkok`,
+      { signal: controller.signal }
     ).then(r => {
       if (!r.ok) throw new Error('AQI fetch failed')
       return r.json()
     }).catch(err => {
-      console.warn("AQI API Error:", err)
+      if (err.name !== 'AbortError') console.warn('AQI API Error:', err)
       return null
     })
 
     Promise.all([fetchWeather, fetchAQI])
       .then(([wData, aqData]) => {
-        if (wData && wData.current) {
-          setWeather({
+        if (controller.signal.aborted) return
+        const nextWeather = wData?.current
+          ? {
             temp: Math.round(wData.current.temperature_2m * 10) / 10,
             code: wData.current.weather_code,
-          })
-        } else {
-          setWeather(null)
-        }
-        
+          }
+          : null
         const raw = aqData?.current?.pm2_5
-        if (raw != null) {
-          setPm25(Math.round(raw * 10) / 10)
-        } else {
-          setPm25(null)
+        setResult({
+          requestKey,
+          weather: nextWeather,
+          pm25: raw != null ? Math.round(raw * 10) / 10 : null,
+        })
+      })
+      .catch(err => {
+        if (!controller.signal.aborted) {
+          console.warn('Weather widget error:', err)
+          setResult({ requestKey, weather: null, pm25: null })
         }
       })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [lat, lon, tenant])
+
+    return () => controller.abort()
+  }, [lat, lon, requestKey, tenantId])
 
   const info   = weather ? getWeatherInfo(weather.code) : null
   const pmInfo = pm25 != null ? getPm25Info(pm25) : null

@@ -24,3 +24,4 @@ BEGIN
   ON CONFLICT (municipality_id, code) DO NOTHING;
 END;
 $$;
+-- History version aligned with linked Supabase project.
