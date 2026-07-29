@@ -255,24 +255,8 @@ export default function DevJournal() {
         </div>
 
         <div className="max-w-2xl mx-auto px-4 py-5 space-y-4">
-          {/* เมนูรอง: หัวข้อ — เฉพาะหัวข้อที่มีอยู่ในส่วนของระบบ (เมนูหลัก) ที่เลือกอยู่ */}
-          {TOPIC_ITEMS.length > 1 && (
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1.5 px-0.5">หัวข้อ</p>
-              <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-                {TOPIC_ITEMS.map(({ key, label, count }) => (
-                  <button key={key} onClick={() => setActiveTopic(key)}
-                    className="shrink-0 flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full transition-all"
-                    style={activeTopic === key
-                      ? { backgroundColor: '#4f46e5', color: '#fff' }
-                      : { backgroundColor: '#eef2ff', color: '#4f46e5' }}>
-                    {label} {count > 0 && <span className="opacity-70">{count}</span>}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
+          {/* ช่องค้นหาอยู่บนสุดเสมอ ต่อจากหัวข้อ module ด้านบน — หาเรื่องที่ต้องการได้ทันที
+              ไม่ต้องไล่ผ่านแถบหัวข้อก่อน */}
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
@@ -291,6 +275,25 @@ export default function DevJournal() {
               <Plus size={14} /> ใหม่
             </button>
           </div>
+
+          {/* เมนูรอง: หัวข้อ — โชว์แค่ตอนอยู่หน้าสารบัญ (ยังไม่เลือกหัวข้อ) เพื่อไม่ให้หัวข้ออื่น
+              ของ module เดียวกันมาปนกับหน้าที่กำลังดูอยู่ (เช่น ดูหัวข้อ A ไม่ควรเห็นแท็บหัวข้อ B) */}
+          {activeTopic === 'all' && TOPIC_ITEMS.length > 1 && (
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1.5 px-0.5">หัวข้อ</p>
+              <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+                {TOPIC_ITEMS.map(({ key, label, count }) => (
+                  <button key={key} onClick={() => setActiveTopic(key)}
+                    className="shrink-0 flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full transition-all"
+                    style={activeTopic === key
+                      ? { backgroundColor: '#4f46e5', color: '#fff' }
+                      : { backgroundColor: '#eef2ff', color: '#4f46e5' }}>
+                    {label} {count > 0 && <span className="opacity-70">{count}</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {loading ? (
             <div className="flex justify-center py-16"><Loader2 size={28} className="animate-spin text-gray-200" /></div>
