@@ -2,7 +2,7 @@ import { Link, useLocation } from 'react-router-dom'
 import {
   Home, ClipboardList, FileText, CalendarDays, Newspaper,
   MapPin, Map, FileSearch, FolderOpen, Bell,
-  Phone, AlertCircle, LogIn, LogOut, LayoutGrid,
+  Phone, AlertCircle, LogIn, LogOut, LayoutGrid, Database,
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTenant } from '../../contexts/TenantContext'
@@ -20,6 +20,7 @@ const NAV_GROUPS = [
       { label: 'ข่าวสาร/ประกาศ',  href: '/news',        Icon: Newspaper },
       { label: 'แหล่งท่องเที่ยว', href: '/tourism',     Icon: MapPin },
       { label: 'แผนที่',           href: '/map',         Icon: Map },
+      { label: 'ศูนย์ข้อมูลดิจิทัล', href: '/data-center', Icon: Database, newTab: true },
     ],
   },
   {
@@ -86,14 +87,10 @@ export default function CitizenSidebar() {
               {group.label}
             </p>
             <div className="space-y-0.5">
-              {group.items.map(({ label, href, Icon, exact, badge }) => {
+              {group.items.map(({ label, href, Icon, exact, badge, newTab }) => {
                 const active = isActive(href, exact)
-                return (
-                  <Link key={href} to={href}
-                    className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all"
-                    style={active
-                      ? { backgroundColor: ACTIVE, color: '#fff' }
-                      : { color: INACTIVE }}>
+                const content = (
+                  <>
                     <Icon size={15} strokeWidth={active ? 2.2 : 1.5} className="shrink-0" />
                     <span className="flex-1 truncate text-xs">{label}</span>
                     {badge && unreadCount > 0 && (
@@ -101,6 +98,22 @@ export default function CitizenSidebar() {
                         {unreadCount > 9 ? '9+' : unreadCount}
                       </span>
                     )}
+                  </>
+                )
+                if (newTab) return (
+                  <a key={href} href={href} target="_blank" rel="noopener noreferrer"
+                    className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all"
+                    style={{ color: INACTIVE }}>
+                    {content}
+                  </a>
+                )
+                return (
+                  <Link key={href} to={href}
+                    className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all"
+                    style={active
+                      ? { backgroundColor: ACTIVE, color: '#fff' }
+                      : { color: INACTIVE }}>
+                    {content}
                   </Link>
                 )
               })}

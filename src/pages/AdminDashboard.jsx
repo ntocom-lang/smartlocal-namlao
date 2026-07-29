@@ -12,7 +12,7 @@ import {
   CheckCircle2, ChevronRight, ChevronLeft,
   Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical,
   X, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera,
-  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, BookOpen, Bell, ExternalLink, Settings, Download, Banknote, Star, MessageSquare, Car, Terminal
+  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, BookOpen, Bell, ExternalLink, Settings, Download, Banknote, Star, MessageSquare, Car, Terminal, Database
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { compressImage } from '../lib/imageUtils'
@@ -3740,6 +3740,7 @@ function getAdminMenuGroups(currentUserRole, currentUserId) {
       items: [
         { key: 'manual', label: 'คู่มือผู้ดูแล', Icon: BookOpen, color: '#059669', bg: '#d1fae5', show: true, isExternal: true, href: '/manual-admin.html' },
         { key: 'manual-citizen', label: 'คู่มือประชาชน', Icon: BookOpen, color: '#059669', bg: '#d1fae5', show: true, isExternal: true, href: '/manual-citizen.html' },
+        { key: 'data-center', label: 'ศูนย์รวมข้อมูลดิจิทัล', Icon: Database, color: '#4338ca', bg: '#e0e7ff', show: true, navTo: '/data-center', newTab: true },
         { key: 'dev-journal', label: 'ผู้พัฒนาระบบ', Icon: Terminal, color: '#1e293b', bg: '#f1f5f9', show: currentUserId === DEV_USER_ID, isDevLink: true },
       ],
     },
@@ -4083,7 +4084,7 @@ export default function AdminDashboard() {
                       style={{ color: 'rgba(255,255,255,0.42)' }}>{group}</p>
                   </div>
                   <div className="space-y-0.5">
-                    {items.map(({ key, label, Icon, color, isExternal, href, isDevLink }) => {
+                    {items.map(({ key, label, Icon, color, isExternal, href, isDevLink, navTo, newTab }) => {
                       const isActive = activePage === key
                       if (isExternal) return (
                         <a key={key} href={href} target="_blank" rel="noopener noreferrer"
@@ -4094,8 +4095,8 @@ export default function AdminDashboard() {
                           <ExternalLink size={11} className="opacity-40" />
                         </a>
                       )
-                      if (isDevLink) return (
-                        <button key={key} onClick={() => navigate('/dev-journal')}
+                      if (isDevLink || navTo) return (
+                        <button key={key} onClick={() => newTab ? window.open(navTo, '_blank') : navigate(navTo ?? '/dev-journal')}
                           className="w-full flex min-h-9 items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-colors hover:bg-white/10"
                           style={{ color: 'rgba(255,255,255,0.62)' }}>
                           <Icon size={15} className="text-slate-300" />
@@ -4214,11 +4215,12 @@ export default function AdminDashboard() {
           { key: 'report',      label: 'รายงาน',           Icon: TrendingUp,  show: true },
           { key: 'satisfaction',label: 'ประเมิน',          Icon: Star,        show: true },
           { key: 'audit-log',   label: 'บันทึกกิจกรรม',   Icon: BookOpen,    show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+          { key: 'data-center', label: 'ข้อมูลดิจิทัล',   Icon: Database,    show: true, navTo: '/data-center', newTab: true },
           { key: 'dev-journal', label: 'ผู้พัฒนา',         Icon: Terminal,    show: currentUserId === DEV_USER_ID, isDevLink: true },
-        ].filter(i => i.show).map(({ key, label, Icon, isDevLink }) => {
+        ].filter(i => i.show).map(({ key, label, Icon, isDevLink, navTo, newTab }) => {
           const isActive = activePage === key
           return (
-            <button key={key} onClick={() => isDevLink ? navigate('/dev-journal') : setActivePage(key)}
+            <button key={key} onClick={() => newTab ? window.open(navTo, '_blank') : (isDevLink || navTo) ? navigate(navTo ?? '/dev-journal') : setActivePage(key)}
               className="flex-1 flex flex-col items-center justify-center gap-0.5 pt-2 pb-1 transition-all active:scale-90">
               <div className="relative w-10 h-9 rounded-xl flex items-center justify-center transition-all duration-200"
                 style={{ backgroundColor: isActive ? 'rgba(255,255,255,0.2)' : 'transparent' }}>
@@ -4252,7 +4254,7 @@ export default function AdminDashboard() {
                     </div>
                   </div>
                   <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
-                    {items.map(({ key, label, Icon, color, bg, isExternal, href, isDevLink }) =>
+                    {items.map(({ key, label, Icon, color, bg, isExternal, href, isDevLink, navTo, newTab }) =>
                       isExternal ? (
                         <a key={key} href={href} target="_blank" rel="noopener noreferrer"
                           className="group flex min-h-24 flex-col items-center justify-center gap-2 rounded-2xl border border-gray-100 bg-white p-3 shadow-sm transition-all hover:-translate-y-0.5 hover:border-gray-200 hover:shadow-md active:scale-95">
@@ -4261,8 +4263,8 @@ export default function AdminDashboard() {
                           </div>
                           <p className="text-[11px] font-semibold text-gray-700 text-center leading-tight">{label}</p>
                         </a>
-                      ) : isDevLink ? (
-                        <button key={key} onClick={() => navigate('/dev-journal')}
+                      ) : (isDevLink || navTo) ? (
+                        <button key={key} onClick={() => newTab ? window.open(navTo, '_blank') : navigate(navTo ?? '/dev-journal')}
                           className="group flex min-h-24 flex-col items-center justify-center gap-2 rounded-2xl border border-gray-100 bg-white p-3 shadow-sm transition-all hover:-translate-y-0.5 hover:border-gray-200 hover:shadow-md active:scale-95">
                           <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: bg }}>
                             <Icon size={18} style={{ color }} />

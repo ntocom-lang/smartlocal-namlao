@@ -6,7 +6,7 @@ import {
   Phone, Globe, Share2, MessageCircle,
   ChevronRight, Star, Copy, Download, Check, Monitor, X,
   UploadIcon, PlusSquare, BookOpen, Store, FileText, Briefcase,
-  CalendarDays, Luggage, AlertTriangle, Cloud, RefreshCw,
+  CalendarDays, Luggage, AlertTriangle, Cloud, RefreshCw, Database,
 } from 'lucide-react'
 import qrCodeImage from '../assets/qr-code.png'
 import { supabase } from '../lib/supabase'
@@ -565,6 +565,15 @@ function NamlaoMorePage() {
             label="ลงทะเบียนร้านค้า / ท่องเที่ยว"
             desc="เที่ยว กิน พัก OTOP — ส่งข้อมูลให้เจ้าหน้าที่อนุมัติ"
             href="/business-register"
+          />
+          <MenuRow
+            icon={Database}
+            iconBg="bg-indigo-50"
+            iconColor="text-indigo-500"
+            label="ศูนย์ข้อมูลดิจิทัล"
+            desc="แผนที่รวมพิกัด/สถานที่สำคัญทุกชนิดในเขตเทศบาล"
+            href="/data-center"
+            external
           />
         </Section>
 

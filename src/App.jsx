@@ -115,6 +115,9 @@ function lazyWithRetry(fn) {
 
 const AdminDashboard = lazyWithRetry(() => import('./pages/AdminDashboard'))
 const StaffDashboard  = lazyWithRetry(() => import('./pages/StaffDashboard'))
+const DataCenterDashboard = lazyWithRetry(() => import('./pages/DataCenterDashboard'))
+const DataCenterLanding = lazyWithRetry(() => import('./pages/DataCenterLanding'))
+const DataCenterPublicMap = lazyWithRetry(() => import('./pages/DataCenterPublicMap'))
 
 class SuspenseErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null } }
@@ -173,12 +176,12 @@ function AppShell() {
   const [showPhoneReminder, setShowPhoneReminder] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
-  const isBackOffice = ['/admin', '/staff', '/technician', '/dev-journal'].some(p => location.pathname.startsWith(p))
+  const isBackOffice = ['/admin', '/staff', '/technician', '/dev-journal', '/data-center'].some(p => location.pathname.startsWith(p))
   // ช่างมีเมนูบนสุด/แถบข้างมาตรฐานอยู่แล้วในทุกธีม (NAV_TECH) แต่ต้องเปิดเฉพาะจอ PC
   // มือถือยังใช้หัวจอ/เมนูล่างของ TechnicianDashboard เองตามเดิม กันซ้อนกับของที่มีอยู่แล้ว
   const isTechnician = location.pathname.startsWith('/technician')
   // ช่างยังใช้เมนูล่างของแอป (NAV_TECH) ได้ ต่างจาก /admin กับ /staff ที่ไม่มีเมนูล่างเลย
-  const hideBottomNav = ['/admin', '/staff', '/dev-journal'].some(p => location.pathname.startsWith(p))
+  const hideBottomNav = ['/admin', '/staff', '/dev-journal', '/data-center'].some(p => location.pathname.startsWith(p))
   const isMapPage = location.pathname === '/map'
 
   const checkAndFixProfile = useCallback(async (uid, userMeta = {}) => {
@@ -385,6 +388,44 @@ function AppShell() {
           <Route path="/technician" element={
             <RequireAuth techOnly>
               <TechnicianDashboard />
+            </RequireAuth>
+          } />
+          <Route path="/data-center" element={
+            <SuspenseErrorBoundary>
+              <Suspense fallback={
+                <div className="flex items-center justify-center min-h-full h-full">
+                  <div className="w-6 h-6 border-4 border-gray-200 rounded-full animate-spin"
+                       style={{ borderTopColor: '#3b82f6' }} />
+                </div>
+              }>
+                <DataCenterLanding />
+              </Suspense>
+            </SuspenseErrorBoundary>
+          } />
+          <Route path="/data-center/public" element={
+            <SuspenseErrorBoundary>
+              <Suspense fallback={
+                <div className="flex items-center justify-center min-h-full h-full">
+                  <div className="w-6 h-6 border-4 border-gray-200 rounded-full animate-spin"
+                       style={{ borderTopColor: '#3b82f6' }} />
+                </div>
+              }>
+                <DataCenterPublicMap />
+              </Suspense>
+            </SuspenseErrorBoundary>
+          } />
+          <Route path="/data-center/staff" element={
+            <RequireAuth staffOnly>
+              <SuspenseErrorBoundary>
+                <Suspense fallback={
+                  <div className="flex items-center justify-center min-h-full h-full">
+                    <div className="w-6 h-6 border-4 border-gray-200 rounded-full animate-spin"
+                         style={{ borderTopColor: '#3b82f6' }} />
+                  </div>
+                }>
+                  <DataCenterDashboard />
+                </Suspense>
+              </SuspenseErrorBoundary>
             </RequireAuth>
           } />
           <Route path="/admin" element={

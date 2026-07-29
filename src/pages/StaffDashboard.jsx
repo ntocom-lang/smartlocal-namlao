@@ -5,7 +5,7 @@ import {
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, AlignLeft, Calendar, Hash, RefreshCw,
   Printer, Search, ClipboardList, Hammer, Home, CalendarDays, TrendingUp, Images, Camera,
-  CreditCard, BadgeCheck, Banknote, Luggage, Star, Car, Bell, Trash2, Briefcase,
+  CreditCard, BadgeCheck, Banknote, Luggage, Star, Car, Bell, Trash2, Briefcase, Database,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
@@ -1652,6 +1652,9 @@ export default function StaffDashboard() {
             <p className="font-bold text-sm leading-tight truncate">{tenant?.name ?? 'Staff Portal'}</p>
             <p className="text-white/70 text-[11px] mt-0.5">สำหรับเจ้าหน้าที่</p>
           </div>
+          <button onClick={() => window.open('/data-center', '_blank')} aria-label="ศูนย์รวมข้อมูลดิจิทัล" className="p-1.5 text-white/85 hover:text-white transition-colors shrink-0">
+            <Database size={19} />
+          </button>
           <button onClick={() => navigate('/notifications')} aria-label="การแจ้งเตือน" className="p-1.5 text-white/85 hover:text-white transition-colors shrink-0">
             <Bell size={19} />
           </button>
@@ -1722,6 +1725,11 @@ export default function StaffDashboard() {
                 className={`mb-2 flex min-h-9 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${activeModule === 'home' ? 'bg-white/20 text-white shadow-sm' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}>
                 <Home size={16} strokeWidth={activeModule === 'home' ? 2.2 : 1.8} />
                 <span className="flex-1 text-left text-xs">หน้าหลัก</span>
+              </button>
+              <button onClick={() => window.open('/data-center', '_blank')}
+                className="mb-2 flex min-h-9 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-all text-white/80 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60">
+                <Database size={16} strokeWidth={1.8} />
+                <span className="flex-1 text-left text-xs">ศูนย์รวมข้อมูลดิจิทัล</span>
               </button>
               {visibleStandaloneGroups.map(({ group, items }) => (
                 <div key={group} className="mb-3">
