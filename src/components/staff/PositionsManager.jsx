@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Briefcase, Plus, Pencil, Trash2, X, Loader2, ChevronDown, ChevronRight, Users } from 'lucide-react'
+import { Briefcase, Plus, Pencil, Trash2, X, Loader2, ChevronDown, ChevronRight, Users, UserPlus, UserMinus } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
 // ต้องตรงกับ CHECK constraint ใน supabase/migrations (positions_personnel)
@@ -11,7 +11,6 @@ const CATEGORIES = [
   { value: 'operating_staff',  label: 'เจ้าหน้าที่ปฏิบัติงาน' },
   { value: 'field_technician', label: 'ช่างเทคนิค/ปฏิบัติการภาคสนาม' },
 ]
-const catLabel = v => CATEGORIES.find(c => c.value === v)?.label ?? v
 
 const ROLE_TH = {
   superadmin: 'Super Admin', admin: 'แอดมินระบบ', officer: 'แอดมินกอง',
@@ -21,7 +20,7 @@ const ROLE_TH = {
 const EMPTY_FORM = { name: '', category: 'operating_staff', role: 'staff', department_hint: '', sort_order: 0 }
 const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
 
-export default function PositionsManager({ tenant, currentUserRole }) {
+export default function PositionsManager({ tenant, currentUserRole, currentUserId }) {
   const [positions, setPositions] = useState([])
   const [profiles, setProfiles] = useState([])
   const [loading, setLoading] = useState(true)
@@ -29,15 +28,22 @@ export default function PositionsManager({ tenant, currentUserRole }) {
   const [editing, setEditing] = useState(null) // null=ปิด, {}=สร้างใหม่, {...position}=แก้ไข
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
+  const [activeCategory, setActiveCategory] = useState(CATEGORIES[0].value)
+  const [assigningPositionId, setAssigningPositionId] = useState(null) // ตำแหน่งที่กำลังเปิด dropdown มอบหมายอยู่
+  const [assignTargetId, setAssignTargetId] = useState('')
+  const [assignBusyId, setAssignBusyId] = useState(null) // profile id ที่กำลังบันทึกอยู่ (กันกดซ้ำ)
 
   const isSuperadmin = currentUserRole === 'superadmin'
+  // มอบหมาย/ถอดตำแหน่งให้คนอื่นใช้สิทธิ์เดียวกับหน้า "จัดการผู้ใช้" (admin ขึ้นไป) — ตัว RPC เองบังคับ
+  // ขอบเขตเทศบาล/ห้ามยุ่งบัญชี superadmin อยู่แล้ว ที่นี่แค่คุม UI ให้ตรงระดับสิทธิ์เดียวกัน
+  const canAssign = ['admin', 'superadmin'].includes(currentUserRole)
 
   function reload() {
     setLoading(true)
     Promise.all([
       supabase.from('positions').select('*').order('sort_order'),
       tenant?.id
-        ? supabase.from('profiles').select('id, full_name, avatar_url, position_id').eq('municipality_id', tenant.id)
+        ? supabase.from('profiles').select('id, full_name, avatar_url, position_id, role').eq('municipality_id', tenant.id).order('full_name')
         : Promise.resolve({ data: [] }),
     ]).then(([{ data: pos }, { data: prof }]) => {
       setPositions(pos ?? [])
@@ -47,6 +53,44 @@ export default function PositionsManager({ tenant, currentUserRole }) {
   }
   useEffect(reload, [tenant?.id])
 
+  // เขียนทาง RPC เดียวกับหน้า "จัดการผู้ใช้" (admin_update_user) — เป็นจุดเขียน profiles.position_id/role
+  // จุดเดียวของทั้งระบบ กัน RLS trigger บล็อก (guard_profile_privileged_update) และได้ audit log ฟรี
+  async function assignPosition(profile, position) {
+    if (!canAssign || profile.id === currentUserId) return
+    if (profile.position_id && profile.position_id !== position.id) {
+      const prevName = positions.find(p => p.id === profile.position_id)?.name ?? 'ตำแหน่งเดิม'
+      if (!window.confirm(`${profile.full_name} มีตำแหน่ง "${prevName}" อยู่แล้ว\n\nจะเปลี่ยนเป็น "${position.name}" แทนหรือไม่?`)) return
+    }
+    setAssignBusyId(profile.id)
+    const { error } = await supabase.rpc('admin_update_user', { p_user_id: profile.id, p_changes: { position_id: position.id } })
+    if (error) {
+      alert('มอบหมายตำแหน่งไม่สำเร็จ: ' + error.message)
+      setAssignBusyId(null)
+      return
+    }
+    let nextRole = profile.role
+    if (position.role && position.role !== profile.role
+        && window.confirm(`ตำแหน่ง "${position.name}" ควรได้สิทธิ์ระบบ "${ROLE_TH[position.role] ?? position.role}" (ปัจจุบัน: ${ROLE_TH[profile.role] ?? profile.role})\n\nปรับสิทธิ์ตามตำแหน่งเลยหรือไม่?`)) {
+      const { error: roleErr } = await supabase.rpc('admin_update_user', { p_user_id: profile.id, p_changes: { role: position.role } })
+      if (roleErr) alert('ปรับสิทธิ์ไม่สำเร็จ: ' + roleErr.message)
+      else nextRole = position.role
+    }
+    setProfiles(prev => prev.map(p => p.id === profile.id ? { ...p, position_id: position.id, role: nextRole } : p))
+    setAssignBusyId(null)
+    setAssigningPositionId(null)
+    setAssignTargetId('')
+  }
+
+  async function unassignPosition(profile) {
+    if (!canAssign || profile.id === currentUserId) return
+    if (!window.confirm(`ถอดตำแหน่งของ ${profile.full_name} หรือไม่?`)) return
+    setAssignBusyId(profile.id)
+    const { error } = await supabase.rpc('admin_update_user', { p_user_id: profile.id, p_changes: { position_id: null } })
+    setAssignBusyId(null)
+    if (error) { alert('ถอดตำแหน่งไม่สำเร็จ: ' + error.message); return }
+    setProfiles(prev => prev.map(p => p.id === profile.id ? { ...p, position_id: null } : p))
+  }
+
   function toggleExpand(id) {
     setExpanded(prev => {
       const next = new Set(prev)
@@ -55,7 +99,10 @@ export default function PositionsManager({ tenant, currentUserRole }) {
     })
   }
 
-  function openCreate() { setForm(EMPTY_FORM); setEditing({}) }
+  function openCreate() {
+    setForm({ ...EMPTY_FORM, category: activeCategory })
+    setEditing({})
+  }
   function openEdit(p) {
     setForm({ name: p.name, category: p.category, role: p.role, department_hint: p.department_hint ?? '', sort_order: p.sort_order })
     setEditing(p)
@@ -76,6 +123,7 @@ export default function PositionsManager({ tenant, currentUserRole }) {
       : await supabase.from('positions').insert(payload)
     setSaving(false)
     if (error) { alert('บันทึกไม่สำเร็จ: ' + error.message); return }
+    setActiveCategory(payload.category)
     setEditing(null)
     reload()
   }
@@ -89,10 +137,11 @@ export default function PositionsManager({ tenant, currentUserRole }) {
 
   if (loading) return <div className="flex justify-center py-16"><Loader2 size={28} className="animate-spin text-gray-200" /></div>
 
-  const grouped = CATEGORIES.map(c => ({
+  const categoryCards = CATEGORIES.map(c => ({
     ...c,
     items: positions.filter(p => p.category === c.value),
-  })).filter(g => g.items.length > 0)
+  }))
+  const activeGroup = categoryCards.find(g => g.value === activeCategory) ?? categoryCards[0]
 
   return (
     <div className="max-w-3xl mx-auto space-y-4">
@@ -110,11 +159,60 @@ export default function PositionsManager({ tenant, currentUserRole }) {
         )}
       </div>
 
-      {grouped.map(g => (
-        <div key={g.value} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <p className="px-4 pt-3 pb-2 text-[11px] font-bold uppercase tracking-widest text-gray-400">{g.label}</p>
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-3" aria-label="กลุ่มตำแหน่ง">
+        {categoryCards.map(category => {
+            const isActive = category.value === activeGroup.value
+            return (
+              <button
+                key={category.value}
+                type="button"
+                aria-pressed={isActive}
+                onClick={() => setActiveCategory(category.value)}
+                className={`flex min-h-16 w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 ${
+                  isActive
+                    ? 'border-indigo-400 bg-indigo-50 shadow-sm'
+                    : 'border-gray-200 bg-white hover:border-indigo-200 hover:bg-indigo-50/40'
+                }`}
+              >
+                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                  isActive ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-500'
+                }`}>
+                  <Briefcase size={18} />
+                </span>
+                <span className={`min-w-0 flex-1 text-xs font-semibold leading-5 ${
+                  isActive ? 'text-indigo-800' : 'text-gray-700'
+                }`}>
+                  {category.label}
+                </span>
+                <span className={`min-w-6 shrink-0 rounded-full px-1.5 py-0.5 text-center text-[10px] font-bold ${
+                  isActive ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-400'
+                }`}>
+                  {category.items.length}
+                </span>
+              </button>
+            )
+        })}
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="flex items-center justify-between gap-3 px-4 pt-3 pb-2">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{activeGroup.label}</p>
+          <p className="text-[11px] font-semibold text-gray-300">{activeGroup.items.length} ตำแหน่ง</p>
+        </div>
+        {activeGroup.items.length === 0 ? (
+          <div className="flex flex-col items-center justify-center px-4 py-12 text-center border-t border-gray-50">
+            <Briefcase size={28} className="text-gray-200" />
+            <p className="mt-3 text-sm font-semibold text-gray-500">ยังไม่มีตำแหน่งในกลุ่มนี้</p>
+            {isSuperadmin && (
+              <button type="button" onClick={openCreate}
+                className="mt-3 flex items-center gap-1.5 rounded-xl bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-200 transition-colors">
+                <Plus size={13} /> เพิ่มตำแหน่งในกลุ่มนี้
+              </button>
+            )}
+          </div>
+        ) : (
           <div className="divide-y divide-gray-50">
-            {g.items.map(p => {
+            {activeGroup.items.map(p => {
               const holders = profiles.filter(pr => pr.position_id === p.id)
               const isOpen = expanded.has(p.id)
               return (
@@ -147,7 +245,7 @@ export default function PositionsManager({ tenant, currentUserRole }) {
                     )}
                   </div>
                   {isOpen && (
-                    <div className="px-4 pb-3 pl-11">
+                    <div className="px-4 pb-3 pl-11 space-y-2.5">
                       {holders.length === 0 ? (
                         <p className="text-xs text-gray-300 italic">ยังไม่มีใครถือตำแหน่งนี้ในเทศบาลนี้</p>
                       ) : (
@@ -161,10 +259,42 @@ export default function PositionsManager({ tenant, currentUserRole }) {
                                   {(h.full_name || '?')[0]?.toUpperCase()}
                                 </div>
                               )}
-                              {h.full_name}
+                              <span className="flex-1 min-w-0 truncate">{h.full_name}</span>
+                              {canAssign && h.id !== currentUserId && (
+                                <button onClick={() => unassignPosition(h)} disabled={assignBusyId === h.id}
+                                  className="p-1 rounded hover:bg-red-50 text-gray-300 hover:text-red-500 transition-colors shrink-0" title="ถอดตำแหน่ง">
+                                  {assignBusyId === h.id ? <Loader2 size={12} className="animate-spin" /> : <UserMinus size={12} />}
+                                </button>
+                              )}
                             </div>
                           ))}
                         </div>
+                      )}
+                      {canAssign && (
+                        assigningPositionId === p.id ? (
+                          <div className="flex items-center gap-1.5">
+                            <select autoFocus value={assignTargetId} onChange={e => setAssignTargetId(e.target.value)}
+                              className="flex-1 min-w-0 text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-700 focus:outline-none bg-white">
+                              <option value="">— เลือกบุคลากร —</option>
+                              {profiles.filter(pr => pr.id !== currentUserId).map(pr => (
+                                <option key={pr.id} value={pr.id}>
+                                  {pr.full_name}{pr.position_id && pr.position_id !== p.id ? ` (เดิม: ${positions.find(x => x.id === pr.position_id)?.name ?? '—'})` : ''}
+                                </option>
+                              ))}
+                            </select>
+                            <button onClick={() => { const pr = profiles.find(x => x.id === assignTargetId); if (pr) assignPosition(pr, p) }}
+                              disabled={!assignTargetId || assignBusyId === assignTargetId}
+                              className="text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 px-2.5 py-1.5 rounded-lg shrink-0">
+                              {assignBusyId === assignTargetId ? <Loader2 size={12} className="animate-spin" /> : 'มอบหมาย'}
+                            </button>
+                            <button onClick={() => { setAssigningPositionId(null); setAssignTargetId('') }} className="text-xs text-gray-400 shrink-0">ยกเลิก</button>
+                          </div>
+                        ) : (
+                          <button onClick={() => { setAssigningPositionId(p.id); setAssignTargetId('') }}
+                            className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-700">
+                            <UserPlus size={13} /> มอบหมายตำแหน่งนี้ให้บุคลากร
+                          </button>
+                        )
                       )}
                     </div>
                   )}
@@ -172,8 +302,8 @@ export default function PositionsManager({ tenant, currentUserRole }) {
               )
             })}
           </div>
-        </div>
-      ))}
+        )}
+      </div>
 
       {editing !== null && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-end md:items-center justify-center">

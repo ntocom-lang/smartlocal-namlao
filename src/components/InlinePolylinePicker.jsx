@@ -2,12 +2,20 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { MapContainer, TileLayer, Polyline, CircleMarker, useMapEvents, useMap } from 'react-leaflet'
 import L from 'leaflet'
-import { Search, X, LocateFixed, Layers, Maximize2, Minimize2, Undo2, Trash2 } from 'lucide-react'
+import { Search, X, LocateFixed, Layers, Maximize2, Minimize2, Undo2, Redo2, Trash2 } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
 
 const TILES = {
-  street:    { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: '&copy; OpenStreetMap' },
-  satellite: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attribution: '&copy; Esri' },
+  street: {
+    url: 'https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+    subdomains: ['0', '1', '2', '3'],
+    attribution: '&copy; Google Maps',
+  },
+  satellite: {
+    url: 'https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+    subdomains: ['0', '1', '2', '3'],
+    attribution: '&copy; Google Maps',
+  },
 }
 
 function haversine(a, b) {
@@ -129,6 +137,8 @@ export default function InlinePolylinePicker({ value = [], onChange, defaultCent
   const [tileMode, setTileMode]     = useState('street')
   const [fullscreen, setFullscreen] = useState(false)
   const [flyTarget, setFlyTarget]   = useState(null)
+  const [redoStack, setRedoStack]   = useState([])
+  const initialValueRef             = useRef(value)
 
   const [multiplier, setMultiplier] = useState(1.0)
 
@@ -138,10 +148,52 @@ export default function InlinePolylinePicker({ value = [], onChange, defaultCent
   const start      = value[0]
   const end        = value.length > 1 ? value[value.length - 1] : null
 
-  function addPoint(pt)    { onChange([...value, pt]) }
-  function removePoint(i)  { onChange(value.filter((_, j) => j !== i)) }
-  function undo()          { if (value.length > 0) onChange(value.slice(0, -1)) }
-  function clear()         { onChange([]) }
+  function openFullscreen() {
+    initialValueRef.current = [...value]
+    setFullscreen(true)
+  }
+
+  function handleCancelFullscreen() {
+    onChange(initialValueRef.current)
+    setRedoStack([])
+    setFullscreen(false)
+  }
+
+  function handleConfirmFullscreen() {
+    setFullscreen(false)
+  }
+
+  function addPoint(pt) {
+    setRedoStack([])
+    onChange([...value, pt])
+  }
+
+  function removePoint(i) {
+    setRedoStack([])
+    onChange(value.filter((_, j) => j !== i))
+  }
+
+  function undo() {
+    if (value.length > 0) {
+      const lastPoint = value[value.length - 1]
+      setRedoStack(prev => [...prev, lastPoint])
+      onChange(value.slice(0, -1))
+    }
+  }
+
+  function redo() {
+    if (redoStack.length > 0) {
+      const nextPoint = redoStack[redoStack.length - 1]
+      setRedoStack(prev => prev.slice(0, -1))
+      onChange([...value, nextPoint])
+    }
+  }
+
+  function clear() {
+    setRedoStack([])
+    onChange([])
+  }
+
   function handleSearch(pt){ setFlyTarget(pt) }
 
   function handleMyLocation() {
@@ -159,7 +211,7 @@ export default function InlinePolylinePicker({ value = [], onChange, defaultCent
 
   const mapCore = (
     <>
-      <TileLayer key={tileMode} url={tile.url} attribution={tile.attribution} />
+      <TileLayer key={tileMode} url={tile.url} attribution={tile.attribution} subdomains={tile.subdomains || ['0', '1', '2', '3']} />
       <RouteHandler onAdd={addPoint} onUndo={undo} />
       <FlyController target={flyTarget} />
       {value.length >= 2 && (
@@ -172,15 +224,16 @@ export default function InlinePolylinePicker({ value = [], onChange, defaultCent
 
   const controls = (isFS) => (
     <div className="absolute right-2 top-2 z-1000 flex flex-col gap-1.5">
-      <button type="button" onClick={() => setFullscreen(!isFS)}
-        className="w-8 h-8 bg-white rounded-lg shadow border border-gray-100 flex items-center justify-center hover:bg-gray-50 transition-colors">
+      <button type="button" onClick={() => { if (!fullscreen) openFullscreen(); else setFullscreen(false); }}
+        className="w-8 h-8 bg-white rounded-lg shadow border border-gray-100 flex items-center justify-center hover:bg-gray-50 transition-colors"
+        title={isFS ? 'ย่อแผนที่' : 'ขยายเต็มจอ'}>
         {isFS ? <Minimize2 size={15} className="text-gray-600" /> : <Maximize2 size={15} className="text-gray-600" />}
       </button>
-      <button type="button" onClick={handleMyLocation}
+      <button type="button" onClick={handleMyLocation} title="ตำแหน่งของฉัน"
         className="w-8 h-8 bg-white rounded-lg shadow border border-gray-100 flex items-center justify-center hover:bg-gray-50 transition-colors">
         <LocateFixed size={15} className="text-gray-600" />
       </button>
-      <button type="button" onClick={() => setTileMode(m => m === 'street' ? 'satellite' : 'street')}
+      <button type="button" onClick={() => setTileMode(m => m === 'street' ? 'satellite' : 'street')} title="สลับชั้นแผนที่"
         className="w-8 h-8 bg-white rounded-lg shadow border border-gray-100 flex items-center justify-center hover:bg-gray-50 transition-colors">
         <Layers size={15} className="text-gray-600" />
       </button>
@@ -192,12 +245,16 @@ export default function InlinePolylinePicker({ value = [], onChange, defaultCent
       {/* Action bar */}
       <div className="flex items-center gap-2 bg-blue-50 rounded-xl px-3 py-2 text-xs text-blue-700 flex-wrap">
         <span className="flex-1">คลิกซ้ายบนแผนที่เพื่อเพิ่มจุด | คลิกขวาเพื่อลบจุดล่าสุด ({value.length} จุด)</span>
-        <button type="button" onClick={undo} disabled={!value.length}
-          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-gray-200 text-gray-600 disabled:opacity-40 hover:bg-gray-50 shrink-0">
+        <button type="button" onClick={undo} disabled={!value.length} title="ย้อนกลับ (Undo)"
+          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-gray-200 text-gray-600 disabled:opacity-40 hover:bg-gray-50 shrink-0 transition-colors">
           <Undo2 size={12} /> ย้อนกลับ
         </button>
-        <button type="button" onClick={clear} disabled={!value.length}
-          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-50 border border-red-200 text-red-600 disabled:opacity-40 hover:bg-red-100 shrink-0">
+        <button type="button" onClick={redo} disabled={!redoStack.length} title="ทำต่อ (Redo)"
+          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-gray-200 text-gray-600 disabled:opacity-40 hover:bg-gray-50 shrink-0 transition-colors">
+          <Redo2 size={12} /> ทำต่อ
+        </button>
+        <button type="button" onClick={clear} disabled={!value.length} title="ล้างทั้งหมด"
+          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-50 border border-red-200 text-red-600 disabled:opacity-40 hover:bg-red-100 shrink-0 transition-colors">
           <Trash2 size={12} /> ล้าง
         </button>
       </div>
@@ -272,15 +329,19 @@ export default function InlinePolylinePicker({ value = [], onChange, defaultCent
           <div className="flex items-center justify-between px-4 py-3 bg-gray-900 text-white shrink-0 gap-3">
             <span className="text-sm font-semibold">🛣️ วาดแนวเส้นทางโครงการ</span>
             <div className="flex items-center gap-2 shrink-0">
-              <button type="button" onClick={undo} disabled={!value.length}
+              <button type="button" onClick={undo} disabled={!value.length} title="ย้อนกลับการปักหมุดล่าสุด (Undo)"
                 className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm disabled:opacity-40 transition-colors">
                 <Undo2 size={13} /> ย้อนกลับ
               </button>
-              <button type="button" onClick={clear} disabled={!value.length}
+              <button type="button" onClick={redo} disabled={!redoStack.length} title="ทำต่อ / นำจุดที่ย้อนกลับคืนมา (Redo)"
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm disabled:opacity-40 transition-colors">
+                <Redo2 size={13} /> ทำต่อ
+              </button>
+              <button type="button" onClick={clear} disabled={!value.length} title="ล้างเส้นทางทั้งหมด"
                 className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-500/30 hover:bg-red-500/50 text-red-200 text-sm disabled:opacity-40 transition-colors">
                 <Trash2 size={13} /> ล้าง
               </button>
-              <button type="button" onClick={() => setFullscreen(false)}
+              <button type="button" onClick={handleCancelFullscreen} title="ย่อแผนที่"
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm transition-colors">
                 <Minimize2 size={14} /> ย่อ
               </button>
@@ -297,18 +358,28 @@ export default function InlinePolylinePicker({ value = [], onChange, defaultCent
             </div>
             {controls(true)}
           </div>
-          {value.length >= 2 && (
-            <div className="shrink-0 bg-gray-900 text-white px-4 py-2.5 flex items-center gap-4 text-xs">
-              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" />{start.lat.toFixed(6)}, {start.lng.toFixed(6)}</span>
-              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" />{end.lat.toFixed(6)}, {end.lng.toFixed(6)}</span>
-              <span className="ml-auto font-bold text-blue-400">{fmtDist(dist)}</span>
-              <button type="button" onClick={() => setFullscreen(false)}
-                className="px-4 py-1.5 rounded-lg text-sm font-bold text-white"
+          <div className="shrink-0 bg-gray-900 text-white px-4 py-2.5 flex items-center gap-4 text-xs flex-wrap">
+            {value.length >= 2 ? (
+              <>
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" />{start.lat.toFixed(6)}, {start.lng.toFixed(6)}</span>
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" />{end.lat.toFixed(6)}, {end.lng.toFixed(6)}</span>
+                <span className="ml-auto font-bold text-blue-400">{fmtDist(dist)}</span>
+              </>
+            ) : (
+              <span className="text-gray-400">คลิกบนแผนที่อย่างน้อย 2 จุดเพื่อสร้างแนวเส้นทาง ({value.length} จุด)</span>
+            )}
+            <div className="flex items-center gap-2 ml-auto">
+              <button type="button" onClick={handleCancelFullscreen}
+                className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors">
+                ยกเลิก
+              </button>
+              <button type="button" onClick={handleConfirmFullscreen} disabled={value.length < 2}
+                className="px-4 py-1.5 rounded-lg text-sm font-bold text-white disabled:opacity-50 transition-colors"
                 style={{ backgroundColor: '#7c3aed' }}>
                 ยืนยัน
               </button>
             </div>
-          )}
+          </div>
         </div>,
         document.body
       )}

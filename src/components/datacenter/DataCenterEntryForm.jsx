@@ -1,7 +1,13 @@
 import { useState, useEffect } from 'react'
-import { MapPin, Loader2, X, Image as ImageIcon } from 'lucide-react'
+import { MapPin, Loader2, X, Image as ImageIcon, Trash2, Route } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { compressImage } from '../../lib/imageUtils'
+
+const ROUTE_COLORS = [
+  { hex: '#3b82f6', label: 'น้ำเงิน' }, { hex: '#22c55e', label: 'เขียว' },
+  { hex: '#ef4444', label: 'แดง' }, { hex: '#f97316', label: 'ส้ม' },
+  { hex: '#a855f7', label: 'ม่วง' }, { hex: '#eab308', label: 'เหลือง' },
+]
 
 // ตัวอย่างกลุ่ม/ประเภทเริ่มต้น — ไม่ตายตัว พิมพ์ชื่อใหม่ในฟอร์มก็สร้างหมวดใหม่ได้ทันที
 const SEED_GROUPS = {
@@ -16,13 +22,35 @@ const SEED_GROUPS = {
 
 const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
 
-export default function DataCenterEntryForm({ tenant, profile, initialGroup, onSaved, onCancel }) {
+export default function DataCenterEntryForm({ tenant, profile, initialGroup, editingEntry, onSaved, onCancel }) {
+  const isEditing = !!editingEntry
+  const canDelete = isEditing && (profile?.role === 'admin' || profile?.role === 'superadmin')
+
   const [existing, setExisting] = useState([]) // {group_name, category} ที่เคยมีจริงในเทศบาลนี้
-  const [form, setForm] = useState({ group_name: initialGroup ?? '', category: '', name: '', description: '', latitude: '', longitude: '', address: '' })
-  const [images, setImages] = useState([])
+  const [form, setForm] = useState(() => editingEntry
+    ? {
+        group_name: editingEntry.group_name ?? '', category: editingEntry.category ?? '', name: editingEntry.name ?? '',
+        description: editingEntry.description ?? '', latitude: editingEntry.latitude ?? '', longitude: editingEntry.longitude ?? '', address: '',
+      }
+    : { group_name: initialGroup ?? '', category: '', name: '', description: '', latitude: '', longitude: '', address: '' })
+  const [existingPhotoUrls, setExistingPhotoUrls] = useState(editingEntry?.photo_urls ?? [])
+  const [images, setImages] = useState([]) // รูปใหม่ที่เพิ่งเลือกในเซสชันนี้ ยังไม่อัปโหลด
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [showPicker, setShowPicker] = useState(false)
   const [PickerComp, setPickerComp] = useState(null)
+
+  // โหมด "เส้นทาง" (เช่น ถนนสายหลัก) — วาดเป็นเส้นแทนปักหมุดจุดเดียว
+  const [isRoute, setIsRoute] = useState(() => (editingEntry?.route_points?.length ?? 0) >= 2)
+  const [routePoints, setRoutePoints] = useState(editingEntry?.route_points ?? [])
+  const [routeColor, setRouteColor] = useState(editingEntry?.route_color ?? '#3b82f6')
+  const [PolylinePickerComp, setPolylinePickerComp] = useState(null)
+
+  useEffect(() => {
+    if (isRoute && !PolylinePickerComp) {
+      import('../InlinePolylinePicker').then(mod => setPolylinePickerComp(() => mod.default))
+    }
+  }, [isRoute, PolylinePickerComp])
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -46,14 +74,16 @@ export default function DataCenterEntryForm({ tenant, profile, initialGroup, onS
   async function handleImageChange(e) {
     const files = Array.from(e.target.files || [])
     if (!files.length) return
-    const items = await Promise.all(files.slice(0, 5 - images.length).map(async file => {
+    const room = 5 - existingPhotoUrls.length - images.length
+    const items = await Promise.all(files.slice(0, room).map(async file => {
       const compressed = await compressImage(file, 1600)
       return { file: compressed, preview: URL.createObjectURL(compressed) }
     }))
-    setImages(prev => [...prev, ...items].slice(0, 5))
+    setImages(prev => [...prev, ...items].slice(0, room))
     e.target.value = ''
   }
-  function removeImage(i) { setImages(prev => prev.filter((_, idx) => idx !== i)) }
+  function removeNewImage(i) { setImages(prev => prev.filter((_, idx) => idx !== i)) }
+  function removeExistingPhoto(url) { setExistingPhotoUrls(prev => prev.filter(u => u !== url)) }
 
   async function uploadImages(entryId) {
     const urls = []
@@ -72,22 +102,39 @@ export default function DataCenterEntryForm({ tenant, profile, initialGroup, onS
     ...existing.filter(e => e.group_name === form.group_name).map(e => e.category),
   ])).sort((a, b) => a.localeCompare(b, 'th'))
 
-  const canSave = form.group_name.trim() && form.category.trim() && form.name.trim() && form.latitude !== '' && form.longitude !== ''
+  const canSave = form.group_name.trim() && form.category.trim() && form.name.trim()
+    && (isRoute ? routePoints.length >= 2 : form.latitude !== '' && form.longitude !== '')
+  const photoCount = existingPhotoUrls.length + images.length
 
   async function handleSave() {
     if (!canSave || !tenant?.id) return
     setSaving(true)
+    // เส้นทาง: เก็บจุดกึ่งกลางไว้ที่ latitude/longitude เดิม ให้ fitBounds/popup positioning ที่มีอยู่แล้วใช้ได้ต่อ
+    const routeMid = isRoute ? routePoints[Math.floor(routePoints.length / 2)] : null
     const payload = {
       municipality_id: tenant.id,
       group_name: form.group_name.trim(),
       category: form.category.trim(),
       name: form.name.trim(),
       description: form.description.trim() || null,
-      latitude: Number(form.latitude),
-      longitude: Number(form.longitude),
-      created_by: profile?.id ?? null,
+      latitude: isRoute ? routeMid.lat : Number(form.latitude),
+      longitude: isRoute ? routeMid.lng : Number(form.longitude),
+      route_points: isRoute ? routePoints : null,
+      route_color: isRoute ? routeColor : null,
     }
-    const { data, error } = await supabase.from('data_center_entries').insert(payload).select('id').single()
+
+    if (isEditing) {
+      const newUrls = images.length > 0 ? await uploadImages(editingEntry.id) : []
+      const { error } = await supabase.from('data_center_entries')
+        .update({ ...payload, photo_urls: [...existingPhotoUrls, ...newUrls], updated_at: new Date().toISOString() })
+        .eq('id', editingEntry.id)
+      setSaving(false)
+      if (error) { alert('บันทึกไม่สำเร็จ: ' + error.message); return }
+      onSaved?.()
+      return
+    }
+
+    const { data, error } = await supabase.from('data_center_entries').insert({ ...payload, created_by: profile?.id ?? null }).select('id').single()
     if (error) { alert('บันทึกไม่สำเร็จ: ' + error.message); setSaving(false); return }
     if (images.length > 0) {
       const urls = await uploadImages(data.id)
@@ -97,10 +144,20 @@ export default function DataCenterEntryForm({ tenant, profile, initialGroup, onS
     onSaved?.()
   }
 
+  async function handleDelete() {
+    if (!editingEntry || deleting) return
+    if (!window.confirm(`ลบ "${editingEntry.name}" ออกจากศูนย์ข้อมูลดิจิทัล? การลบนี้ย้อนกลับไม่ได้`)) return
+    setDeleting(true)
+    const { error } = await supabase.from('data_center_entries').delete().eq('id', editingEntry.id)
+    setDeleting(false)
+    if (error) { alert('ลบไม่สำเร็จ: ' + error.message); return }
+    onSaved?.()
+  }
+
   return (
     <div className="max-w-xl mx-auto space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-bold text-gray-800">เพิ่มข้อมูลใหม่</h1>
+        <h1 className="text-lg font-bold text-gray-800">{isEditing ? 'แก้ไขข้อมูล' : 'เพิ่มข้อมูลใหม่'}</h1>
         <button onClick={onCancel} className="text-xs text-gray-400 hover:text-gray-600 font-semibold">ยกเลิก</button>
       </div>
 
@@ -135,8 +192,38 @@ export default function DataCenterEntryForm({ tenant, profile, initialGroup, onS
         </div>
 
         <div>
-          <label className="text-xs font-semibold text-gray-500 mb-1 block">พิกัด *</label>
-          {form.latitude !== '' ? (
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-xs font-semibold text-gray-500 block">พิกัด *</label>
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 cursor-pointer">
+              <input type="checkbox" checked={isRoute}
+                onChange={e => { setIsRoute(e.target.checked); setRoutePoints(editingEntry?.route_points ?? []) }}
+                className="rounded border-gray-300" />
+              <Route size={13} /> เป็นเส้นทาง (ถนน)
+            </label>
+          </div>
+
+          {isRoute ? (
+            PolylinePickerComp ? (
+              <>
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <span className="text-xs text-gray-500 shrink-0">สีเส้นทาง:</span>
+                  {ROUTE_COLORS.map(({ hex, label }) => (
+                    <button key={hex} type="button" title={label} onClick={() => setRouteColor(hex)}
+                      className="w-6 h-6 rounded-full transition-all"
+                      style={{ backgroundColor: hex, outline: routeColor === hex ? `3px solid ${hex}` : '2px solid transparent', outlineOffset: '2px' }} />
+                  ))}
+                </div>
+                <PolylinePickerComp
+                  value={routePoints}
+                  onChange={setRoutePoints}
+                  color={routeColor}
+                  defaultCenter={tenant?.latitude && tenant?.longitude ? { lat: tenant.latitude, lng: tenant.longitude } : null}
+                />
+              </>
+            ) : (
+              <div className="flex justify-center py-8"><Loader2 size={20} className="animate-spin text-gray-300" /></div>
+            )
+          ) : form.latitude !== '' ? (
             <div className="flex items-center justify-between bg-indigo-50 rounded-xl px-3 py-2.5 text-xs text-indigo-700 font-semibold">
               <span>{Number(form.latitude).toFixed(6)}, {Number(form.longitude).toFixed(6)}{form.address && ` — ${form.address}`}</span>
               <button onClick={openPicker} className="text-indigo-500 underline shrink-0 ml-2">แก้ไข</button>
@@ -152,15 +239,23 @@ export default function DataCenterEntryForm({ tenant, profile, initialGroup, onS
         <div>
           <label className="text-xs font-semibold text-gray-500 mb-1 block">รูปภาพ (สูงสุด 5 รูป)</label>
           <div className="flex flex-wrap gap-2">
-            {images.map((img, i) => (
-              <div key={i} className="relative w-16 h-16 rounded-xl overflow-hidden border border-gray-200">
-                <img src={img.preview} alt="" className="w-full h-full object-cover" />
-                <button onClick={() => removeImage(i)} className="absolute top-0.5 right-0.5 bg-black/50 rounded-full p-0.5">
+            {existingPhotoUrls.map(url => (
+              <div key={url} className="relative w-16 h-16 rounded-xl overflow-hidden border border-gray-200">
+                <img src={url} alt="" className="w-full h-full object-cover" />
+                <button onClick={() => removeExistingPhoto(url)} className="absolute top-0.5 right-0.5 bg-black/50 rounded-full p-0.5">
                   <X size={10} className="text-white" />
                 </button>
               </div>
             ))}
-            {images.length < 5 && (
+            {images.map((img, i) => (
+              <div key={i} className="relative w-16 h-16 rounded-xl overflow-hidden border border-gray-200">
+                <img src={img.preview} alt="" className="w-full h-full object-cover" />
+                <button onClick={() => removeNewImage(i)} className="absolute top-0.5 right-0.5 bg-black/50 rounded-full p-0.5">
+                  <X size={10} className="text-white" />
+                </button>
+              </div>
+            ))}
+            {photoCount < 5 && (
               <label className="w-16 h-16 rounded-xl border border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:bg-gray-50 transition-colors">
                 <ImageIcon size={18} className="text-gray-300" />
                 <input type="file" accept="image/*" multiple className="hidden" onChange={handleImageChange} />
@@ -174,13 +269,22 @@ export default function DataCenterEntryForm({ tenant, profile, initialGroup, onS
         className="w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50 text-sm active:scale-[0.98] transition-all"
         style={{ backgroundColor: '#1e293b' }}>
         {saving ? <Loader2 size={16} className="animate-spin" /> : <MapPin size={16} />}
-        บันทึก
+        {isEditing ? 'บันทึกการแก้ไข' : 'บันทึก'}
       </button>
+
+      {canDelete && (
+        <button onClick={handleDelete} disabled={deleting}
+          className="w-full py-3 rounded-2xl font-semibold text-red-600 border border-red-200 flex items-center justify-center gap-2 disabled:opacity-50 text-sm hover:bg-red-50 transition-colors">
+          {deleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={15} />}
+          ลบข้อมูลนี้
+        </button>
+      )}
 
       {showPicker && PickerComp && (
         <PickerComp
           initialPos={form.latitude !== '' ? { lat: Number(form.latitude), lng: Number(form.longitude) } : null}
           fallbackPos={tenant?.latitude && tenant?.longitude ? { lat: tenant.latitude, lng: tenant.longitude } : null}
+          skipGeolocation
           onConfirm={handlePickerConfirm}
           onClose={() => setShowPicker(false)}
         />

@@ -87,16 +87,26 @@ const ROLE_LABELS = {
 }
 
 const NON_CITIZEN_ROLES = ['staff', 'officer', 'technician', 'admin', 'superadmin', 'council', 'viewer']
+const USER_PAGE_SIZE = 50
 
-function UserManager({ tenant, currentUserRole }) {
+function canManageUser(currentUserRole, currentUserId, targetUser) {
+  if (!targetUser || !currentUserId || targetUser.id === currentUserId) return false
+  if (currentUserRole === 'superadmin') return targetUser.role !== 'superadmin'
+  if (currentUserRole === 'admin') return !['admin', 'superadmin'].includes(targetUser.role)
+  return false
+}
+
+function UserManager({ tenant, currentUserRole, currentUserId }) {
   const [subTab, setSubTab] = useState('staff') // 'staff' | 'citizen'
   const [users, setUsers] = useState([])
   const [depts, setDepts] = useState([])
-  const [positionsRef, setPositionsRef] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(null)
   const [editingNameId, setEditingNameId] = useState(null)
   const [editingNameValue, setEditingNameValue] = useState('')
+  // job_title = ข้อความเสริมที่พิมพ์เอง คนละคอลัมน์กับ position_id (ตำแหน่งจากทำเนียบกลาง)
+  // การผูก/ถอด position_id ย้ายไปทำที่หน้า "ตำแหน่งและบุคลากร" (/staff) ทั้งหมดแล้ว
+  // เพื่อไม่ให้มี 2 จุดเขียนทับกัน — ที่นี่แสดง position_name แบบอ่านอย่างเดียว
   const [editingPositionId, setEditingPositionId] = useState(null)
   const [editingPositionValue, setEditingPositionValue] = useState('')
   const [editingAddressId, setEditingAddressId] = useState(null)
@@ -112,6 +122,9 @@ function UserManager({ tenant, currentUserRole }) {
 
   const [search, setSearch] = useState('')
   const [filterRole, setFilterRole] = useState('')
+  const [page, setPage] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
+  const fetchSequence = useRef(0)
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -120,65 +133,56 @@ function UserManager({ tenant, currentUserRole }) {
       .then(({ data }) => setDepts(data ?? []))
   }, [tenant?.id])
 
-  // ตำแหน่งกลาง (positions) ใช้ร่วมกันทุกเทศบาล ไม่ผูก municipality_id — โหลดครั้งเดียวพอ
-  useEffect(() => {
-    supabase.from('positions').select('id, name').order('sort_order')
-      .then(({ data }) => setPositionsRef(data ?? []))
-  }, [])
-
   const fetchUsers = useCallback(async (opts = {}) => {
-    if (!['admin', 'superadmin', 'officer'].includes(currentUserRole)) return
-    if (currentUserRole !== 'superadmin' && !tenant?.id) return
+    if (!['admin', 'superadmin'].includes(currentUserRole) || !tenant?.id) return
     const searchTerm = (opts.search ?? '').trim()
+    const requestedPage = Math.max(0, opts.page ?? 0)
     // แท็บประชาชน: ไม่โหลดจนกว่าจะพิมพ์ค้นหา (กันโหลดผู้ใช้เป็นพันคนมาทีเดียว)
     if (subTab === 'citizen' && !searchTerm) { setUsers([]); setLoading(false); return }
+    const requestId = ++fetchSequence.current
     setLoading(true)
     try {
-      // superadmin ส่ง null → SQL คืน users ทุก municipality, แล้ว filter ใน JS
-      const p_muni = currentUserRole === 'superadmin' ? null : tenant?.id
       const { data, error } = await supabase.rpc('get_users_with_email', {
-        p_municipality_id: p_muni,
-        p_roles: subTab === 'citizen' ? ['citizen'] : NON_CITIZEN_ROLES,
-        p_search: subTab === 'citizen' ? searchTerm : null,
-        p_limit: subTab === 'citizen' ? 50 : null,
+        p_municipality_id: tenant.id,
+        p_roles: subTab === 'citizen' ? ['citizen'] : (filterRole ? [filterRole] : NON_CITIZEN_ROLES),
+        p_search: searchTerm || null,
+        p_limit: USER_PAGE_SIZE + 1,
+        p_offset: requestedPage * USER_PAGE_SIZE,
       })
-      if (error) { console.error('get_users_with_email:', error.message); return }
-      const filtered = tenant?.id
-        ? (data ?? []).filter(u => u.municipality_id === tenant.id || u.municipality_id === null)
-        : (data ?? [])
-      setUsers(filtered)
+      if (requestId !== fetchSequence.current) return
+      if (error) {
+        console.error('get_users_with_email:', error.message)
+        setUsers([])
+        setHasMore(false)
+        return
+      }
+      const rows = data ?? []
+      setUsers(rows.slice(0, USER_PAGE_SIZE))
+      setHasMore(rows.length > USER_PAGE_SIZE)
     } finally {
-      setLoading(false)
+      if (requestId === fetchSequence.current) setLoading(false)
     }
-  }, [tenant?.id, currentUserRole, subTab])
+  }, [tenant?.id, currentUserRole, subTab, filterRole])
 
+  // ค้นหา/กรอง/แบ่งหน้าใน SQL เพื่อไม่ดึง PII ทั้งหมดมาที่ Browser
   useEffect(() => {
-    setSearch('')
-    setFilterRole('')
-    if (subTab === 'staff') {
-      fetchUsers()
-    } else {
-      setUsers([])
-      setLoading(false)
+    if (subTab === 'citizen' && !search.trim()) {
+      fetchSequence.current += 1
+      return
     }
-    const safety = setTimeout(() => setLoading(false), 12000)
-    return () => clearTimeout(safety)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [subTab])
-
-  // แท็บประชาชน: ค้นหาแบบ debounce (พิมพ์แล้วรอ 400ms ค่อยยิง query กันสแปมทุกตัวอักษร)
-  useEffect(() => {
-    if (subTab !== 'citizen') return
-    if (!search.trim()) { setUsers([]); return }
-    const t = setTimeout(() => fetchUsers({ search }), 400)
+    const t = setTimeout(() => fetchUsers({ search, page }), search.trim() ? 400 : 0)
     return () => clearTimeout(t)
-  }, [search, subTab, fetchUsers])
+  }, [search, subTab, page, filterRole, fetchUsers])
+
+  async function updateManagedUser(userId, changes) {
+    return supabase.rpc('admin_update_user', { p_user_id: userId, p_changes: changes })
+  }
 
   async function updateName(userId) {
     const name = editingNameValue.trim()
     if (!name) return
     setSaving(userId)
-    const { error } = await supabase.from('profiles').update({ full_name: name }).eq('id', userId)
+    const { error } = await updateManagedUser(userId, { full_name: name })
     if (error) {
       alert(`บันทึกไม่สำเร็จ: ${error.message}`)
     } else {
@@ -192,13 +196,24 @@ function UserManager({ tenant, currentUserRole }) {
     setSaving(userId)
     const needsMuni = ['admin', 'staff', 'technician', 'officer', 'viewer', 'council'].includes(newRole)
     const muni = needsMuni ? (municipalityId || tenant?.id) : null
-    const { error } = await supabase.from('profiles').update({ role: newRole, municipality_id: muni }).eq('id', userId)
+    const { error } = await updateManagedUser(userId, { role: newRole, municipality_id: muni })
     if (error) {
       console.error('updateRole failed:', error.message)
       alert(`บันทึกไม่สำเร็จ: ${error.message}`)
     } else {
       setUsers((prev) => prev.map((u) =>
-        u.id === userId ? { ...u, role: newRole, municipality_id: muni } : u
+        u.id === userId ? {
+          ...u,
+          role: newRole,
+          municipality_id: muni,
+          ...(['citizen', 'superadmin'].includes(newRole) ? {
+            department_id: null,
+            department_name: null,
+            position_id: null,
+            position_name: null,
+            is_dept_head: false,
+          } : {}),
+        } : u
       ))
       setEditingRoleId(null)
     }
@@ -208,7 +223,7 @@ function UserManager({ tenant, currentUserRole }) {
   async function updatePosition(userId) {
     const val = editingPositionValue.trim()
     setSaving(userId)
-    const { error } = await supabase.from('profiles').update({ job_title: val || null }).eq('id', userId)
+    const { error } = await updateManagedUser(userId, { job_title: val || null })
     if (error) {
       alert(`บันทึกไม่สำเร็จ: ${error.message}`)
     } else {
@@ -221,7 +236,7 @@ function UserManager({ tenant, currentUserRole }) {
   async function updateAddress(userId) {
     const val = editingAddressValue.trim()
     setSaving(userId)
-    const { error } = await supabase.from('profiles').update({ address: val || null }).eq('id', userId)
+    const { error } = await updateManagedUser(userId, { address: val || null })
     if (error) {
       alert(`บันทึกไม่สำเร็จ: ${error.message}`)
     } else {
@@ -234,7 +249,7 @@ function UserManager({ tenant, currentUserRole }) {
   async function updateDepartment(userId, deptId) {
     setSaving(userId)
     const dept = depts.find(d => d.id === deptId)
-    const { error } = await supabase.from('profiles').update({ department_id: deptId || null }).eq('id', userId)
+    const { error } = await updateManagedUser(userId, { department_id: deptId || null })
     if (error) {
       alert(`บันทึกไม่สำเร็จ: ${error.message}`)
     } else {
@@ -243,22 +258,9 @@ function UserManager({ tenant, currentUserRole }) {
     setSaving(null)
   }
 
-  // ผูก/ถอดตำแหน่งกลาง (positions) ให้ผู้ใช้ — คนละคอลัมน์กับ job_title (ข้อความอิสระ) เดิม
-  async function updatePositionRef(userId, positionId) {
-    setSaving(userId)
-    const pos = positionsRef.find(p => p.id === positionId)
-    const { error } = await supabase.from('profiles').update({ position_id: positionId || null }).eq('id', userId)
-    if (error) {
-      alert(`บันทึกไม่สำเร็จ: ${error.message}`)
-    } else {
-      setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, position_id: positionId || null, position_name: pos?.name ?? null } : u))
-    }
-    setSaving(null)
-  }
-
   async function toggleDeptHead(userId, current) {
     setSaving(userId)
-    const { error } = await supabase.from('profiles').update({ is_dept_head: !current }).eq('id', userId)
+    const { error } = await updateManagedUser(userId, { is_dept_head: !current })
     if (error) {
       alert(`บันทึกไม่สำเร็จ: ${error.message}`)
     } else {
@@ -272,14 +274,23 @@ function UserManager({ tenant, currentUserRole }) {
     setSaving(user.id)
     const needsMuni = ['admin', 'staff', 'technician', 'officer', 'viewer', 'council'].includes(changes.role)
     const payload = { ...changes, municipality_id: needsMuni ? (user.municipality_id || tenant?.id) : null }
-    const { error } = await supabase.from('profiles').update(payload).eq('id', user.id)
+    const { error } = await updateManagedUser(user.id, payload)
     setSaving(null)
     if (error) {
       const msg = error.code === '23505' ? 'เลขบัตรประชาชนนี้ถูกใช้กับบัญชีอื่นแล้ว' : error.message
       return { ok: false, error: msg }
     }
-    const dept = depts.find(d => d.id === changes.department_id)
-    setUsers((prev) => prev.map((u) => u.id === user.id ? { ...u, ...payload, department_name: dept?.name ?? null } : u))
+    const clearsAssignment = ['citizen', 'superadmin'].includes(changes.role)
+    const effectivePayload = clearsAssignment
+      ? { ...payload, department_id: null, position_id: null, is_dept_head: false }
+      : payload
+    const dept = depts.find(d => d.id === effectivePayload.department_id)
+    setUsers((prev) => prev.map((u) => u.id === user.id ? {
+      ...u,
+      ...effectivePayload,
+      department_name: dept?.name ?? null,
+      ...(clearsAssignment ? { position_name: null } : {}),
+    } : u))
     return { ok: true }
   }
 
@@ -338,6 +349,7 @@ function UserManager({ tenant, currentUserRole }) {
         user={viewingUser}
         onBack={() => setViewingUserId(null)}
         currentUserRole={currentUserRole}
+        currentUserId={currentUserId}
         tenant={tenant}
         depts={depts}
         saving={saving}
@@ -361,7 +373,7 @@ function UserManager({ tenant, currentUserRole }) {
             <span className="text-xs font-normal text-gray-400">({users.length} คน)</span>
           )}
         </h3>
-        <button onClick={() => fetchUsers(subTab === 'citizen' ? { search } : {})} className="text-gray-400 hover:text-gray-600 transition-colors">
+        <button onClick={() => fetchUsers({ search, page })} className="text-gray-400 hover:text-gray-600 transition-colors">
           <RefreshCw size={15} />
         </button>
       </div>
@@ -372,7 +384,16 @@ function UserManager({ tenant, currentUserRole }) {
           { key: 'staff',   label: 'เจ้าหน้าที่' },
           { key: 'citizen', label: 'ผู้ใช้งานประชาชน' },
         ].map(({ key, label }) => (
-          <button key={key} onClick={() => setSubTab(key)}
+          <button key={key} onClick={() => {
+            fetchSequence.current += 1
+            setSubTab(key)
+            setSearch('')
+            setFilterRole('')
+            setPage(0)
+            setUsers([])
+            setHasMore(false)
+            setLoading(key === 'staff')
+          }}
             className={`px-3.5 py-1.5 rounded-xl text-sm font-semibold transition-colors ${
               subTab === key ? 'text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
             }`}
@@ -388,7 +409,17 @@ function UserManager({ tenant, currentUserRole }) {
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           <input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              const nextSearch = e.target.value
+              setSearch(nextSearch)
+              setPage(0)
+              if (subTab === 'citizen' && !nextSearch.trim()) {
+                fetchSequence.current += 1
+                setUsers([])
+                setHasMore(false)
+                setLoading(false)
+              }
+            }}
             placeholder={subTab === 'citizen' ? 'พิมพ์ชื่อ, เบอร์โทร, เลขบัตร เพื่อค้นหา...' : 'ค้นหาชื่อ, อีเมล, เบอร์...'}
             className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-blue-400 text-gray-900 bg-white"
           />
@@ -396,10 +427,10 @@ function UserManager({ tenant, currentUserRole }) {
         {subTab === 'staff' && (
         <select
           value={filterRole}
-          onChange={(e) => setFilterRole(e.target.value)}
+          onChange={(e) => { setFilterRole(e.target.value); setPage(0) }}
           className="text-xs border border-gray-200 rounded-xl px-2 py-2 text-gray-600 focus:outline-none shrink-0"
         >
-          <option value="">ทุกตำแหน่ง ({users.length})</option>
+          <option value="">ทุกตำแหน่ง</option>
           {[
             { value: 'staff',      label: 'เจ้าหน้าที่' },
             { value: 'viewer',     label: 'ผู้บริหาร' },
@@ -408,15 +439,22 @@ function UserManager({ tenant, currentUserRole }) {
             { value: 'technician', label: 'ปฏิบัติงาน' },
             { value: 'admin',      label: 'แอดมินระบบ' },
             ...(currentUserRole === 'superadmin' ? [{ value: 'superadmin', label: 'Super Admin' }] : []),
-          ].map(({ value, label }) => {
-            const count = users.filter((u) => u.role === value).length
-            return count > 0 ? <option key={value} value={value}>{label} ({count})</option> : null
-          })}
+          ].map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
         </select>
         )}
         {(search || filterRole) && (
           <button
-            onClick={() => { setSearch(''); setFilterRole('') }}
+            onClick={() => {
+              fetchSequence.current += 1
+              setSearch('')
+              setFilterRole('')
+              setPage(0)
+              if (subTab === 'citizen') {
+                setUsers([])
+                setHasMore(false)
+                setLoading(false)
+              }
+            }}
             className="flex items-center gap-1 text-xs text-gray-400 hover:text-red-500 border border-gray-200 rounded-xl px-2.5 py-2 transition-colors shrink-0"
           >
             <X size={12} /> ล้าง
@@ -439,7 +477,7 @@ function UserManager({ tenant, currentUserRole }) {
         <div className="md:hidden divide-y divide-gray-50">
           {filtered.map((u, i) => {
             const rs = ROLE_LABELS[u.role] ?? ROLE_LABELS.citizen
-            const isSelf = false
+            const canManage = canManageUser(currentUserRole, currentUserId, u)
             return (
               <div key={u.id} className="flex flex-col px-4 py-3 gap-2 cursor-pointer hover:bg-gray-50/70 transition-colors"
                 onClick={(e) => { if (e.target.closest('button, select, input, a, label')) return; setViewingUserId(u.id) }}>
@@ -456,7 +494,7 @@ function UserManager({ tenant, currentUserRole }) {
                         {u.full_name || '—'}
                         {u.staff_title && <span className="text-gray-400 font-normal"> ({u.staff_title})</span>}
                       </p>
-                      {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && u.role !== 'superadmin' && (
+                      {canManage && (
                         <button
                           onClick={() => { setEditingNameId(u.id); setEditingNameValue(u.full_name || '') }}
                           className="text-gray-300 hover:text-gray-500 transition-colors"
@@ -472,11 +510,11 @@ function UserManager({ tenant, currentUserRole }) {
                         🪪 {u.id_card.replace(/(\d{1})(\d{4})(\d{5})(\d{2})(\d{1})/, '$1-$2-$3-$4-$5')}
                       </p>
                     )}
-                    {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && u.role !== 'superadmin' && (
+                    {canManage && (
                       <div className="flex flex-col gap-0.5 mt-0.5">
                         <div className="flex items-center gap-1">
                           <p className="text-xs text-gray-400">
-                            {u.job_title || <span className="italic text-gray-300">ยังไม่ระบุตำแหน่งงาน</span>}
+                            {u.job_title || <span className="italic text-gray-300">ไม่มีหมายเหตุตำแหน่ง</span>}
                           </p>
                           <button
                             onClick={() => { setEditingPositionId(u.id); setEditingPositionValue(u.job_title || '') }}
@@ -505,7 +543,7 @@ function UserManager({ tenant, currentUserRole }) {
                   </span>
                 </div>
                 {/* แถว 2: dropdown เปลี่ยน role (เฉพาะ admin/superadmin) */}
-                {u.role !== 'superadmin' && (currentUserRole === 'superadmin' || currentUserRole === 'admin') && (
+                {canManage && (
                   <div className="flex items-center gap-2 pl-[68px] mt-1 justify-start">
                     {editingRoleId === u.id ? (
                       <>
@@ -521,7 +559,7 @@ function UserManager({ tenant, currentUserRole }) {
                           <option value="council">สภาเทศบาล</option>
                           <option value="officer">แอดมินกอง</option>
                           <option value="technician">ปฏิบัติงาน</option>
-                          <option value="admin">แอดมินระบบ</option>
+                          {currentUserRole === 'superadmin' && <option value="admin">แอดมินระบบ</option>}
                           {currentUserRole === 'superadmin' && <option value="superadmin">Super Admin</option>}
                         </select>
                         <button onClick={() => updateRole(u.id, editingRoleValue, u.municipality_id)} disabled={saving === u.id} className="text-xs text-blue-600 font-medium px-2">ยืนยัน</button>
@@ -537,7 +575,7 @@ function UserManager({ tenant, currentUserRole }) {
                 )}
                 {subTab === 'staff' && (
                   <div className="flex items-center gap-2 pl-[68px] mt-1 flex-wrap">
-                    {(currentUserRole === 'admin' || currentUserRole === 'superadmin') ? (
+                    {canManage ? (
                       <select value={u.department_id ?? ''} disabled={saving === u.id}
                         onChange={(e) => updateDepartment(u.id, e.target.value)}
                         className="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-600 focus:outline-none bg-gray-50">
@@ -547,7 +585,7 @@ function UserManager({ tenant, currentUserRole }) {
                     ) : (
                       <span className="text-xs text-gray-400">{u.department_name || 'ไม่ระบุกอง'}</span>
                     )}
-                    {u.department_id && (currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
+                    {u.department_id && canManage && (
                       <label className="flex items-center gap-1 text-[13px] text-gray-400 cursor-pointer">
                         <input type="checkbox" checked={!!u.is_dept_head} disabled={saving === u.id}
                           onChange={() => toggleDeptHead(u.id, u.is_dept_head)}
@@ -555,23 +593,17 @@ function UserManager({ tenant, currentUserRole }) {
                         หัวหน้ากอง
                       </label>
                     )}
-                    {(currentUserRole === 'admin' || currentUserRole === 'superadmin') ? (
-                      <select value={u.position_id ?? ''} disabled={saving === u.id}
-                        onChange={(e) => updatePositionRef(u.id, e.target.value)}
-                        className="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-600 focus:outline-none bg-gray-50">
-                        <option value="">— ไม่ระบุตำแหน่ง —</option>
-                        {positionsRef.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                      </select>
-                    ) : (
-                      <span className="text-xs text-gray-400">{u.position_name || 'ไม่ระบุตำแหน่ง'}</span>
-                    )}
+                    {/* ตำแหน่งจากทำเนียบกลาง (position_id) — อ่านอย่างเดียว แก้ที่หน้า "ตำแหน่งและบุคลากร" เท่านั้น กันเขียนทับกัน 2 จุด */}
+                    <span className="text-xs text-gray-400">
+                      {u.position_name || <span className="italic text-gray-300">ไม่ระบุตำแหน่งในทำเนียบ</span>}
+                    </span>
                   </div>
                 )}
                 <div className="flex items-center gap-2 pl-[68px] mt-1">
                   <button onClick={() => setViewingUserId(u.id)} className="text-[13px] text-blue-500 hover:text-blue-700 font-medium px-2 py-1 bg-blue-50 hover:bg-blue-100 rounded transition-colors">
                     ดูรายละเอียด
                   </button>
-                  {(currentUserRole === 'superadmin' || currentUserRole === 'admin') && u.role !== 'superadmin' && (
+                  {canManage && (
                     <button
                       onClick={() => setDeletingUser(u)}
                       className="p-1.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
@@ -638,7 +670,7 @@ function UserManager({ tenant, currentUserRole }) {
                       value={editingPositionValue}
                       onChange={(e) => setEditingPositionValue(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') updatePosition(u.id); if (e.key === 'Escape') setEditingPositionId(null) }}
-                      placeholder="เช่น นายกเทศมนตรีตำบลน้ำเลา, ช่างโยธา"
+                      placeholder="ใช้เฉพาะกรณีไม่มีในทำเนียบตำแหน่ง เช่น รักษาการแทน"
                       className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-blue-400 bg-white text-gray-900"
                     />
                     <button
@@ -675,13 +707,14 @@ function UserManager({ tenant, currentUserRole }) {
                 </th>
                 <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 w-[17%]">สังกัด</th>
                 <th className="px-2 py-2.5 text-[13px] font-bold text-white w-[25%] cursor-pointer hover:bg-white/10 transition-colors" onClick={() => handleSort('job_title')}>
-                  <div className="flex items-center gap-1">ตำแหน่งงาน {sortConfig.key === 'job_title' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
+                  <div className="flex items-center gap-1">หมายเหตุตำแหน่ง (พิมพ์เอง) {sortConfig.key === 'job_title' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {filtered.map((u, i) => {
                 const rs = ROLE_LABELS[u.role] ?? ROLE_LABELS.citizen
+                const canManage = canManageUser(currentUserRole, currentUserId, u)
                 return (
                   <tr key={u.id}
                     className="transition-colors cursor-pointer"
@@ -710,7 +743,7 @@ function UserManager({ tenant, currentUserRole }) {
                             <div className="flex items-center gap-1.5 min-w-0">
                               <span className="font-medium text-gray-800 truncate">{u.full_name || '—'}</span>
                               {u.staff_title && <span className="text-xs text-gray-400 shrink-0">({u.staff_title})</span>}
-                              {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && u.role !== 'superadmin' && (
+                              {canManage && (
                                 <button onClick={() => { setEditingNameId(u.id); setEditingNameValue(u.full_name || '') }} className="text-gray-300 hover:text-gray-500 shrink-0">
                                   <Pencil size={12} />
                                 </button>
@@ -734,7 +767,7 @@ function UserManager({ tenant, currentUserRole }) {
                     <td className="px-2 py-3 overflow-hidden border-r border-gray-200" onClick={(e) => e.stopPropagation()}>
                       {subTab === 'staff' ? (
                         <div className="flex flex-col items-start gap-1 w-full">
-                          {(currentUserRole === 'admin' || currentUserRole === 'superadmin') ? (
+                          {canManage ? (
                             <select value={u.department_id ?? ''} disabled={saving === u.id}
                               onChange={(e) => updateDepartment(u.id, e.target.value)}
                               className="text-[13px] border border-gray-200 rounded px-1.5 py-0.5 text-gray-600 focus:outline-none bg-white max-w-full">
@@ -744,7 +777,7 @@ function UserManager({ tenant, currentUserRole }) {
                           ) : (
                             <span className="text-[11px] text-gray-400 truncate">{u.department_name || 'ไม่ระบุกอง'}</span>
                           )}
-                          {u.department_id && (currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
+                          {u.department_id && canManage && (
                             <label className="flex items-center gap-1 text-[12px] text-gray-400 shrink-0 cursor-pointer">
                               <input type="checkbox" checked={!!u.is_dept_head} disabled={saving === u.id}
                                 onChange={() => toggleDeptHead(u.id, u.is_dept_head)}
@@ -752,16 +785,8 @@ function UserManager({ tenant, currentUserRole }) {
                               หัวหน้ากอง
                             </label>
                           )}
-                          {(currentUserRole === 'admin' || currentUserRole === 'superadmin') ? (
-                            <select value={u.position_id ?? ''} disabled={saving === u.id}
-                              onChange={(e) => updatePositionRef(u.id, e.target.value)}
-                              className="text-[13px] border border-gray-200 rounded px-1.5 py-0.5 text-gray-600 focus:outline-none bg-white max-w-full">
-                              <option value="">— ไม่ระบุตำแหน่ง —</option>
-                              {positionsRef.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                            </select>
-                          ) : (
-                            <span className="text-[11px] text-gray-400 truncate">{u.position_name || 'ไม่ระบุตำแหน่ง'}</span>
-                          )}
+                          {/* ตำแหน่งจากทำเนียบกลาง — อ่านอย่างเดียว แก้ที่หน้า "ตำแหน่งและบุคลากร" (เมนูเจ้าหน้าที่) */}
+                          <span className="text-[11px] text-gray-400 truncate">{u.position_name || 'ไม่ระบุตำแหน่งในทำเนียบ'}</span>
                         </div>
                       ) : (
                         <span className="text-xs text-gray-300">—</span>
@@ -784,8 +809,8 @@ function UserManager({ tenant, currentUserRole }) {
                         </div>
                       ) : (
                         <div className="flex items-center gap-1.5 text-xs text-gray-500 min-w-0 w-full">
-                          <span className="truncate">{u.job_title || <span className="italic text-gray-300">ไม่มีตำแหน่ง</span>}</span>
-                          {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && u.role !== 'superadmin' && (
+                          <span className="truncate">{u.job_title || <span className="italic text-gray-300">ไม่มีหมายเหตุตำแหน่ง</span>}</span>
+                          {canManage && (
                             <button onClick={() => { setEditingPositionId(u.id); setEditingPositionValue(u.job_title || '') }} className="text-gray-300 hover:text-gray-500 shrink-0">
                               <Pencil size={11} />
                             </button>
@@ -800,6 +825,28 @@ function UserManager({ tenant, currentUserRole }) {
           </table>
         </div>
       </>
+      )}
+
+      {!loading && users.length > 0 && (
+        <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between">
+          <span className="text-xs text-gray-400">หน้า {page + 1} · แสดงไม่เกิน {USER_PAGE_SIZE} รายการ</span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 disabled:opacity-40"
+            >
+              ก่อนหน้า
+            </button>
+            <button
+              onClick={() => setPage(p => p + 1)}
+              disabled={!hasMore}
+              className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 disabled:opacity-40"
+            >
+              ถัดไป
+            </button>
+          </div>
+        </div>
       )}
 
       <DeleteUserConfirmModal deletingUser={deletingUser} setDeletingUser={setDeletingUser} deleteLoading={deleteLoading} deleteUser={deleteUser} />
@@ -873,7 +920,7 @@ function AccountInfoTab(props) {
             <option value="council">สภาเทศบาล</option>
             <option value="officer">แอดมินกอง</option>
             <option value="technician">ปฏิบัติงาน</option>
-            <option value="admin">แอดมินระบบ</option>
+            {currentUserRole === 'superadmin' && <option value="admin">แอดมินระบบ</option>}
             {currentUserRole === 'superadmin' && <option value="superadmin">Super Admin</option>}
           </select>
         ) : (
@@ -1011,11 +1058,11 @@ function PersonalInfoTab(props) {
       />
       <AddressField user={user} isEditing={isEditing} draft={draft} setDraft={setDraft} />
       <PersonalInfoField
-        label="ตำแหน่งงาน"
+        label="หมายเหตุตำแหน่ง (พิมพ์เอง)"
         isEditing={isEditing}
         displayValue={user.job_title}
         editValue={draft?.job_title ?? ''}
-        placeholder="เช่น นายกเทศมนตรีตำบลน้ำเลา, ช่างโยธา"
+        placeholder="ใช้เฉพาะกรณีไม่มีในทำเนียบตำแหน่ง เช่น รักษาการแทน"
         onChange={(e) => setDraft(d => ({ ...d, job_title: e.target.value }))}
       />
     </div>
@@ -1053,6 +1100,11 @@ function DepartmentTab({ user, depts, isEditing, draft, setDraft }) {
           )}
         </div>
       )}
+      <div className="border-t border-gray-100 pt-4">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ตำแหน่ง (ทำเนียบกลาง)</p>
+        <p className="text-sm text-gray-800">{user.position_name || <span className="italic text-gray-300">ไม่ระบุตำแหน่งในทำเนียบ</span>}</p>
+        <p className="text-xs text-gray-400 mt-1">แก้ไข/มอบหมายตำแหน่งได้ที่หน้า "ตำแหน่งและบุคลากร" (เมนูเจ้าหน้าที่) เท่านั้น</p>
+      </div>
       {user.staff_name && (
         <div className="border-t border-gray-100 pt-4">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ผูกกับข้อมูลสาธารณะ (หน้าเว็บ)</p>
@@ -1083,15 +1135,15 @@ function tenantDefaultSubdistrict(tenant) {
 }
 
 function UserDetailPage(props) {
-  const { user, onBack, currentUserRole, tenant, saving, deletingUser, setDeletingUser, deleteLoading, deleteUser, saveUserEdits } = props
+  const { user, onBack, currentUserRole, currentUserId, tenant, saving, deletingUser, setDeletingUser, deleteLoading, deleteUser, saveUserEdits } = props
   const [activeTab, setActiveTab] = useState('account')
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(null)
   const [saveError, setSaveError] = useState('')
   const rs = ROLE_LABELS[user.role] || ROLE_LABELS.citizen
   const ActiveComponent = USER_DETAIL_TABS.find(t => t.key === activeTab)?.Component ?? AccountInfoTab
-  const canDelete = (currentUserRole === 'superadmin' || currentUserRole === 'admin') && user.role !== 'superadmin'
-  const canEdit = canDelete // เงื่อนไขสิทธิ์เดียวกัน: admin/superadmin แก้ไข/ลบได้ ยกเว้นบัญชี superadmin
+  const canEdit = canManageUser(currentUserRole, currentUserId, user)
+  const canDelete = canEdit
   const isSaving = saving === user.id
 
   function startEdit() {
@@ -4305,7 +4357,7 @@ export default function AdminDashboard() {
       ) : activePage === 'emergency' ? (
         <EmergencyManager tenant={tenant} />
       ) : activePage === 'users' ? (
-        <UserManager tenant={tenant} currentUserRole={currentUserRole} />
+        <UserManager tenant={tenant} currentUserRole={currentUserRole} currentUserId={currentUserId} />
       ) : activePage === 'locations' ? (
         <LocationManager tenant={tenant} />
       ) : activePage === 'categories' ? (

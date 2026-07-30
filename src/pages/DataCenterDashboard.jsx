@@ -25,6 +25,8 @@ export default function DataCenterDashboard() {
   const [refreshKey, setRefreshKey] = useState(0)
   // กดปุ่ม + ที่การ์ดกลุ่มใน "ภาพรวม" จะพกกลุ่มหลักติดไปเติมในฟอร์มให้เลย ไม่ต้องพิมพ์ซ้ำ
   const [prefillGroup, setPrefillGroup] = useState(null)
+  // กดรายการในหน้า "ภาพรวม" เพื่อแก้ไข — เก็บ entry ที่กำลังแก้ไว้ ส่งให้ฟอร์มเดียวกันแต่สลับเป็นโหมดแก้ไข
+  const [editingEntry, setEditingEntry] = useState(null)
   // เมนูซ้ายพับอัตโนมัติเฉพาะตอนอยู่หน้าแผนที่ (ขอพื้นที่เต็มจอ) หน้าอื่นแสดงปกติเสมอ
   const [mapSidebarOpen, setMapSidebarOpen] = useState(false)
   const sidebarHidden = activeModule === 'map' && !mapSidebarOpen
@@ -40,6 +42,7 @@ export default function DataCenterDashboard() {
   function handleSaved() {
     setRefreshKey(k => k + 1)
     setPrefillGroup(null)
+    setEditingEntry(null)
     setActiveModule('overview')
   }
 
@@ -147,9 +150,10 @@ export default function DataCenterDashboard() {
                 </div>
               }>
                 {activeModule === 'overview' && <DataCenterOverview key={refreshKey} tenant={tenant}
-                  onAddNew={group => { setPrefillGroup(group ?? null); setActiveModule('add') }} />}
-                {activeModule === 'add' && <DataCenterEntryForm tenant={tenant} profile={profile} initialGroup={prefillGroup}
-                  onSaved={handleSaved} onCancel={() => { setPrefillGroup(null); setActiveModule('overview') }} />}
+                  onAddNew={group => { setPrefillGroup(group ?? null); setActiveModule('add') }}
+                  onEditEntry={entry => { setEditingEntry(entry); setActiveModule('add') }} />}
+                {activeModule === 'add' && <DataCenterEntryForm tenant={tenant} profile={profile} initialGroup={prefillGroup} editingEntry={editingEntry}
+                  onSaved={handleSaved} onCancel={() => { setPrefillGroup(null); setEditingEntry(null); setActiveModule('overview') }} />}
                 {activeModule === 'categories' && isManager && <DataCenterCategoryManager key={refreshKey} tenant={tenant} />}
               </Suspense>
             </div>

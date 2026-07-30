@@ -22,12 +22,18 @@ const INFRA_CATEGORIES = [
 
 const EMPTY_FORM = { title: '', category: 'road', budget: '', location_name: '', work_date: TODAY, description: '' }
 
-export default function InfraWorkAdmin({ tenant, currentUserRole }) {
+export default function InfraWorkAdmin({ tenant, currentUserRole, myDepartmentId }) {
   const [infraTab, setInfraTab]         = useState('repair')
   const [showInfraMap, setShowInfraMap] = useState(false)
   const [infraWorks, setInfraWorks]     = useState([])
   const [loading, setLoading]           = useState(false)
   const [filterTab, setFilterTab]       = useState('all')
+  // งานโครงสร้างพื้นฐานทุกหมวด (ถนน/ระบายน้ำ/ไฟฟ้า/ฯลฯ) เป็นงานสายกองช่างล้วน — ไม่ต้องให้เลือกกองตอนบันทึก
+  // แค่ resolve id กองช่างของเทศบาลนี้ไว้ใช้ backfill department_id อัตโนมัติทุกรายการใหม่
+  const [engineeringDeptId, setEngineeringDeptId] = useState(null)
+  const [showAllDepts, setShowAllDepts] = useState(false)
+  const canScopeByDept = ['officer', 'staff'].includes(currentUserRole) && !!myDepartmentId
+  const scopingByDept = canScopeByDept && !showAllDepts
 
   // ─── Create form state ───────────────────────────────────────────────────
   const [showNewForm, setShowNewForm]     = useState(false)
@@ -61,20 +67,23 @@ export default function InfraWorkAdmin({ tenant, currentUserRole }) {
     if (!tenant?.id) return
     supabase.from('locations').select('name').eq('municipality_id', tenant.id).order('sort_order')
       .then(({ data }) => setLocationOptions((data ?? []).map(l => l.name)))
+    supabase.from('departments').select('id').eq('municipality_id', tenant.id).eq('code', 'engineering').maybeSingle()
+      .then(({ data }) => setEngineeringDeptId(data?.id ?? null))
   }, [tenant?.id])
 
   const fetchWorks = useCallback(async () => {
     if (!tenant?.id) return
     setLoading(true)
-    const { data } = await supabase
+    let q = supabase
       .from('infrastructure_works')
       .select('*')
       .eq('municipality_id', tenant.id)
-      .order('work_date', { ascending: false })
-      .limit(200)
+    // department_id เป็น NULL (ยังไม่ระบุกอง) ให้ผ่านตัวกรองเสมอ กันงานเก่าที่ยังไม่ backfill หายไปจากสายตา
+    if (scopingByDept) q = q.or(`department_id.is.null,department_id.eq.${myDepartmentId}`)
+    const { data } = await q.order('work_date', { ascending: false }).limit(200)
     setInfraWorks(data ?? [])
     setLoading(false)
-  }, [tenant?.id])
+  }, [tenant?.id, scopingByDept, myDepartmentId])
 
   useEffect(() => { fetchWorks() }, [fetchWorks])
 
@@ -125,6 +134,7 @@ export default function InfraWorkAdmin({ tenant, currentUserRole }) {
       longitude:       geo.lng,
       photos:          photoUrls,
       status:          'completed',
+      department_id:   engineeringDeptId,
     })
     setSubmitting(false)
     if (dbErr) { setError(`บันทึกไม่สำเร็จ: ${dbErr.message}`); return }
@@ -628,8 +638,16 @@ export default function InfraWorkAdmin({ tenant, currentUserRole }) {
         <div className="flex items-center justify-between flex-wrap gap-2">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
             รายการบันทึกงานซ่อม ({displayed.length})
+            {scopingByDept && <span className="text-amber-600 font-medium normal-case"> · เฉพาะกองของฉัน</span>}
           </p>
-          <div className="flex gap-1">
+          <div className="flex gap-1 items-center">
+            {canScopeByDept && (
+              <button onClick={() => setShowAllDepts(v => !v)}
+                className="text-[13px] font-semibold px-2.5 py-1 rounded-full border transition-all"
+                style={showAllDepts ? { backgroundColor: '#eef2ff', color: '#4338ca', borderColor: '#c7d2fe' } : { backgroundColor: '#fff', color: '#6b7280', borderColor: '#e5e7eb' }}>
+                {showAllDepts ? 'ดูทุกกอง' : 'ดูเฉพาะกองฉัน'}
+              </button>
+            )}
             {['all', 'new_project', 'repair'].map((tab) => (
               <button key={tab} onClick={() => setFilterTab(tab)}
                 className={`text-[13px] font-semibold px-2.5 py-1 rounded-full border transition-all ${

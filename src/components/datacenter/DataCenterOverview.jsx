@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Loader2, Plus, MapPinned } from 'lucide-react'
+import { Loader2, Plus, MapPinned, ChevronDown, Pencil, ChevronLeft, ChevronRight } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+
+const PAGE_SIZE = 8 // จำนวนรายการต่อหน้าตอนกางดูรายชื่อในแต่ละประเภทย่อย — บางประเภทมีเป็นร้อยรายการ ต้องแบ่งหน้า
 
 // ไอคอน/สี ต่อกลุ่มหลัก — เป็นแค่ค่า default ถ้าเจอกลุ่มใหม่ที่ไม่อยู่ในนี้จะใช้ค่า fallback
 // ไม่ได้จำกัดว่าต้องมีแค่กลุ่มเหล่านี้ — เพิ่มกลุ่มใหม่ได้อิสระผ่านฟอร์ม
@@ -17,14 +19,17 @@ const GROUP_META = {
 const FALLBACK_META = { emoji: '📌', color: '#475569', bg: '#f1f5f9' }
 const groupMeta = g => GROUP_META[g] ?? FALLBACK_META
 
-export default function DataCenterOverview({ tenant, onAddNew }) {
+export default function DataCenterOverview({ tenant, onAddNew, onEditEntry }) {
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(true)
+  const [openCategory, setOpenCategory] = useState(null) // `${group}::${category}` ที่กางอยู่ตอนนี้
+  const [pageByCategory, setPageByCategory] = useState({}) // เลขหน้าปัจจุบันของแต่ละประเภทย่อย
 
   useEffect(() => {
     if (!tenant?.id) return
     setLoading(true)
-    supabase.from('data_center_entries').select('id, group_name, category, status')
+    supabase.from('data_center_entries')
+      .select('id, name, group_name, category, status, latitude, longitude, description, photo_urls, external_url, route_points, route_color')
       .eq('municipality_id', tenant.id).eq('status', 'active')
       .then(({ data }) => { setEntries(data ?? []); setLoading(false) })
   }, [tenant?.id])
@@ -32,6 +37,17 @@ export default function DataCenterOverview({ tenant, onAddNew }) {
   if (loading) return <div className="flex justify-center py-16"><Loader2 size={28} className="animate-spin text-gray-200" /></div>
 
   const groups = Array.from(new Set(entries.map(e => e.group_name))).sort((a, b) => a.localeCompare(b, 'th'))
+
+  function toggleCategory(key) {
+    setOpenCategory(prev => {
+      const next = prev === key ? null : key
+      if (next) setPageByCategory(p => ({ ...p, [key]: 1 })) // เปิดใหม่ทุกครั้งเริ่มที่หน้า 1 เสมอ
+      return next
+    })
+  }
+  function goToPage(key, page) {
+    setPageByCategory(p => ({ ...p, [key]: page }))
+  }
 
   return (
     <div className="space-y-4">
@@ -77,13 +93,53 @@ export default function DataCenterOverview({ tenant, onAddNew }) {
                     </button>
                   </div>
                 </div>
-                <div className="space-y-1.5">
-                  {byCategory.map(c => (
-                    <div key={c} className="flex items-center justify-between text-xs text-gray-500">
-                      <span>{c}</span>
-                      <span className="font-semibold text-gray-700">{inGroup.filter(e => e.category === c).length} แห่ง</span>
-                    </div>
-                  ))}
+                <div className="space-y-1">
+                  {byCategory.map(c => {
+                    const key = `${g}::${c}`
+                    const isOpen = openCategory === key
+                    const inCategory = inGroup.filter(e => e.category === c)
+                    return (
+                      <div key={c}>
+                        <button onClick={() => toggleCategory(key)}
+                          className="w-full flex items-center justify-between text-xs rounded-lg px-1.5 py-1.5 hover:bg-gray-50 transition-colors">
+                          <span className="flex items-center gap-1 text-gray-500">
+                            <ChevronDown size={12} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                            {c}
+                          </span>
+                          <span className="font-semibold text-gray-700">{inCategory.length} แห่ง</span>
+                        </button>
+                        {isOpen && (() => {
+                          const page = pageByCategory[key] ?? 1
+                          const totalPages = Math.max(1, Math.ceil(inCategory.length / PAGE_SIZE))
+                          const pageItems = inCategory.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+                          return (
+                            <div className="pl-5 pb-1 space-y-0.5">
+                              {pageItems.map(entry => (
+                                <button key={entry.id} onClick={() => onEditEntry(entry)}
+                                  className="w-full flex items-center justify-between text-left text-xs px-2 py-1.5 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors group">
+                                  <span className="truncate">{entry.name}</span>
+                                  <Pencil size={11} className="shrink-0 ml-2 text-gray-300 group-hover:text-gray-500" />
+                                </button>
+                              ))}
+                              {totalPages > 1 && (
+                                <div className="flex items-center justify-center gap-3 pt-1.5">
+                                  <button onClick={() => goToPage(key, page - 1)} disabled={page <= 1}
+                                    aria-label="หน้าก่อนหน้า" className="p-1 rounded-md hover:bg-gray-100 text-gray-400 disabled:opacity-30 disabled:hover:bg-transparent">
+                                    <ChevronLeft size={13} />
+                                  </button>
+                                  <span className="text-[11px] font-semibold text-gray-400">หน้า {page}/{totalPages}</span>
+                                  <button onClick={() => goToPage(key, page + 1)} disabled={page >= totalPages}
+                                    aria-label="หน้าถัดไป" className="p-1 rounded-md hover:bg-gray-100 text-gray-400 disabled:opacity-30 disabled:hover:bg-transparent">
+                                    <ChevronRight size={13} />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })()}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )

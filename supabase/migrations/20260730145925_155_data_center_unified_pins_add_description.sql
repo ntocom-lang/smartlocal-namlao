@@ -1,0 +1,62 @@
+-- 155_data_center_unified_pins_add_description.sql
+-- เพิ่มคอลัมน์ description เข้า data_center_unified_pins ให้ป๊อปอัพหมุดบนแผนที่ (ฝั่งเจ้าหน้าที่)
+-- โชว์รายละเอียดจริงแทนสถานะดิบ — ต้อง DROP ก่อน CREATE เพราะ Postgres ไม่ให้เปลี่ยนรายการคอลัมน์
+-- ของ RETURNS TABLE ด้วย CREATE OR REPLACE
+
+DROP FUNCTION IF EXISTS public.data_center_unified_pins(uuid);
+
+CREATE FUNCTION public.data_center_unified_pins(_municipality_id uuid DEFAULT NULL)
+RETURNS TABLE (
+  source_table text, source_id uuid, group_name text, category text, title text,
+  status text, latitude double precision, longitude double precision, created_at timestamptz,
+  description text
+)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
+declare v_muni uuid; v_role text;
+begin
+  v_role := public.get_my_role();
+
+  if v_role is not null and v_role not in ('superadmin','admin','officer','staff','technician','viewer','council') then
+    raise exception 'Permission denied';
+  end if;
+
+  v_muni := case
+    when v_role = 'superadmin' then _municipality_id
+    when v_role is null then _municipality_id
+    else public.get_my_municipality_id()
+  end;
+
+  return query
+  select 'complaints'::text, c.id, 'คำร้อง'::text, c.category, c.subject, c.status,
+         c.latitude::double precision, c.longitude::double precision, c.created_at,
+         c.detail
+    from public.complaints c
+    where c.latitude is not null and (v_muni is null or c.municipality_id = v_muni)
+  union all
+  select 'business_registrations', b.id, 'สถานประกอบการ', b.business_type, b.business_name, b.status,
+         b.latitude::double precision, b.longitude::double precision, b.created_at,
+         b.description
+    from public.business_registrations b
+    where v_muni is null or b.municipality_id = v_muni
+  union all
+  select 'infrastructure_works', i.id, 'โครงสร้างพื้นฐาน', i.category, i.title, i.status,
+         i.latitude::double precision, i.longitude::double precision, i.created_at,
+         i.description
+    from public.infrastructure_works i
+    where v_muni is null or i.municipality_id = v_muni
+  union all
+  select 'civil_projects', p.id, 'โครงการก่อสร้าง', p.project_type, p.title, p.status,
+         p.latitude::double precision, p.longitude::double precision, p.created_at,
+         p.description
+    from public.civil_projects p
+    where p.latitude is not null and (v_muni is null or p.municipality_id = v_muni)
+  union all
+  select 'data_center_entries', d.id, d.group_name, d.category, d.name, d.status,
+         d.latitude::double precision, d.longitude::double precision, d.created_at,
+         d.description
+    from public.data_center_entries d
+    where v_muni is null or d.municipality_id = v_muni;
+end;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.data_center_unified_pins(uuid) TO anon, authenticated;

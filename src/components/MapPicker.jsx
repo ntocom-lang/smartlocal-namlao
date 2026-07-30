@@ -62,7 +62,7 @@ async function searchPlace(query) {
   }))
 }
 
-export default function MapPicker({ initialPos, fallbackPos, onConfirm, onClose }) {
+export default function MapPicker({ initialPos, fallbackPos, skipGeolocation, onConfirm, onClose }) {
   const defaultPos = initialPos ?? fallbackPos ?? { lat: 18.1448, lng: 100.1167 }
   const [center, setCenter] = useState(defaultPos)
   const [flyTarget, setFlyTarget] = useState(null)
@@ -91,7 +91,9 @@ export default function MapPicker({ initialPos, fallbackPos, onConfirm, onClose 
   }
 
   useEffect(() => {
-    if (!initialPos && navigator.geolocation) {
+    // skipGeolocation: ใช้ fallbackPos (เช่น พิกัดเทศบาล) เป็นจุดเริ่มเสมอ ไม่ดึง GPS เครื่องมาตั้งต้นให้
+    // ใช้ตอนเจ้าหน้าที่ปักหมุดสถานที่ทั่วไปในเขต ต่างจากฟอร์มแจ้งเหตุของประชาชนที่อยากได้ตำแหน่งจริงของผู้แจ้งเป็นค่าเริ่มต้น
+    if (!initialPos && !skipGeolocation && navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         ({ coords }) => {
           const target = { lat: coords.latitude, lng: coords.longitude }

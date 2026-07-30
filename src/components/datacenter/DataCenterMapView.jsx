@@ -1,9 +1,41 @@
 import { useEffect, useState, useRef } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, GeoJSON, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, GeoJSON, Polyline, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { Loader2, Database, MessageSquareWarning, Construction, Minimize2, Maximize2, X, PersonStanding } from 'lucide-react'
+import { Loader2, Database, MessageSquareWarning, Construction, Minimize2, Maximize2, X, MapPin, Route, Layers } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+
+const LONGDO_KEY = import.meta.env.VITE_LONGDO_KEY
+
+// โหมดชั้นแผนที่ — รองรับ Google Maps (ถนนแบบละเอียดภาษาไทย), Google Hybrid, Longdo Map และ OpenStreetMap
+const TILE_MODES = {
+  google_street: {
+    label: 'Google Maps (ถนนละเอียด)',
+    url: 'https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+    subdomains: ['0', '1', '2', '3'],
+    attribution: '&copy; Google Maps',
+  },
+  google_hybrid: {
+    label: 'Google Hybrid (ดาวเทียม+ถนน)',
+    url: 'https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+    subdomains: ['0', '1', '2', '3'],
+    attribution: '&copy; Google Maps',
+  },
+  ...(LONGDO_KEY ? {
+    longdo: {
+      label: 'Longdo Map (ภาษาไทย)',
+      url: `https://ms.longdo.com/mmmap/tile.php?zoom={z}&x={x}&y={y}&key=${LONGDO_KEY}`,
+      subdomains: ['a'],
+      attribution: '&copy; Longdo Map',
+    }
+  } : {}),
+  osm: {
+    label: 'OpenStreetMap',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    subdomains: ['a', 'b', 'c'],
+    attribution: '&copy; OpenStreetMap',
+  },
+}
 
 // แผนที่รวมพิกัดชุดเดียวกัน ใช้ทั้งฝั่งเจ้าหน้าที่และฝั่งประชาชน ไม่ต้องแก้ 2 ที่
 
@@ -26,6 +58,15 @@ const GROUP_META = {
 }
 const FALLBACK = { emoji: '📌', color: '#475569' }
 const groupMeta = g => GROUP_META[g] ?? FALLBACK
+
+// ไอคอนเฉพาะประเภทย่อย (key ตรงกับ e.category ที่พิมพ์ในฟอร์มเป๊ะๆ) — ใส่เฉพาะที่อยากแยกให้ต่างจากไอคอนกลุ่มหลัก
+// ไม่ต้องใส่ครบทุกประเภท ถ้าไม่มีในนี้จะ fallback ไปใช้ไอคอนของกลุ่มหลัก (meta.emoji) แทนอัตโนมัติ
+const CATEGORY_EMOJI_OVERRIDE = {
+  'โรงเรียน': '🏫',
+  'แหล่งเรียนรู้ภูมิปัญญาท้องถิ่น': '🏺',
+  'แหล่งเรียนรู้พอเพียง': '🌾',
+}
+const markerEmoji = e => CATEGORY_EMOJI_OVERRIDE[e.category] ?? groupMeta(e.group_name).emoji
 
 // ฝั่งประชาชนบังคับเห็นเฉพาะ "คำร้อง"/"โครงการ" ที่เสร็จสิ้น/จบงานแล้วเท่านั้น (ไม่มีตัวเลือกสถานะ)
 // ฝั่งเจ้าหน้าที่ (allowStatusFilter=true) เลือกดูสถานะอื่นได้ด้วยผ่านตัวกรองสถานะ — ค่าเริ่มต้นยังเป็น "เสร็จสิ้นแล้ว" เหมือนกัน
@@ -78,11 +119,8 @@ const categoryLabel = e => {
 // กุญแจสำหรับกรองระดับ "ประเภทย่อยในกลุ่ม" — ผูกกับกลุ่มด้วย เพราะป้ายชื่อประเภทอาจซ้ำกันข้ามกลุ่มได้
 const categoryKey = e => `${e.group_name}::${categoryLabel(e)}`
 
-// ลิงก์ออกไปเปิด Google Maps ตรงพิกัด พร้อมเลเยอร์ภาพสตรีทวิว (เส้นสีฟ้า = ถนนที่มีภาพ) — ไม่ต้องใช้ API key/ผูกบัตรเครดิต
-// หมายเหตุ: เคยลองใช้ ?api=1&map_action=pano&viewpoint= (เปิดเข้าโหมดพาโนรามาตรงๆ) แต่พื้นที่ชนบทที่ไม่มีถนน/ภาพ
-// ในรัศมีใกล้ๆ เลย จะเจอจอดำ "ที่นี่ไม่มีภาพ" เป็นทางตัน — แบบ layer=c นี้เปิดเป็นแผนที่ปกติแทน เห็นเส้นทางที่มีภาพ
-// ใกล้เคียงให้กดเข้าไปเองได้ ไม่ตัน แม้จุดที่ปักหมุดไว้เป๊ะจะไม่มีภาพพอดีก็ตาม
-const streetViewUrl = (lat, lng) => `https://www.google.com/maps?layer=c&cbll=${lat},${lng}`
+// ลิงก์ออกไปเปิด Google Maps พร้อมปักหมุดตรงพิกัดเป๊ะๆ (URL scheme ทางการของ Google, ไม่ต้องใช้ API key/ผูกบัตรเครดิต)
+const googleMapsUrl = (lat, lng) => `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
 
 function makeDivIcon(emoji, color, size = 30) {
   return L.divIcon({
@@ -107,22 +145,6 @@ function MunicipalityBoundary({ slug }) {
   return (
     <GeoJSON data={geojson} interactive={false}
       style={{ color: '#f97316', weight: 2, dashArray: '4 6', fillColor: '#86efac', fillOpacity: 0.25 }} />
-  )
-}
-
-// ปุ่มลอยเปิด Street View ตรงจุดกึ่งกลางแผนที่ที่กำลังดูอยู่ตอนนี้ — ให้เห็นเด่นชัดบนแผนที่เสมอ
-// ไม่ต้องรอคลิกหมุดก่อนแบบปุ่มในกรอบข้อมูล เลื่อน/ซูมแผนที่ไปจุดไหนก็กดดูได้เลย
-function StreetViewButton() {
-  const map = useMap()
-  return (
-    <button type="button" title="เปิด Google Street View ตรงกึ่งกลางแผนที่ตอนนี้"
-      onClick={() => {
-        const c = map.getCenter()
-        window.open(streetViewUrl(c.lat, c.lng), '_blank', 'noopener,noreferrer')
-      }}
-      className="absolute z-1000 bottom-7 right-2.5 flex items-center gap-1.5 bg-white shadow-md rounded-full pl-2 pr-3 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 transition-colors">
-      <PersonStanding size={16} className="text-orange-500" /> สตรีทวิว
-    </button>
   )
 }
 
@@ -160,7 +182,7 @@ function buildGroupSummary(list) {
 // เนื้อหาแท็บ + การ์ดสรุป — ใช้ร่วมกันทั้งแถบขวาบน PC และแผงล่างบนมือถือ ไม่ต้องแก้ 2 ที่
 // showSourceTabs=false (ฝั่งประชาชน): ซ่อนเฉพาะปุ่ม "คำร้อง"/"โครงการ" — แถบ "ศูนย์ข้อมูลดิจิทัล" ยังต้องอยู่เสมอ
 // (เดิมซ่อนทั้งแถบไปด้วยโดยไม่ตั้งใจ ทำให้ประชาชนไม่เห็นหัวข้ออะไรเลย)
-function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, toggleGroup, activeCategories, toggleCategory, showSourceTabs }) {
+function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, toggleGroup, activeCategories, toggleCategory, showSourceTabs, routeCategoryKeys, showRoutes, setShowRoutes }) {
   return (
     <>
       <div className="flex border-b border-gray-100 shrink-0">
@@ -196,34 +218,52 @@ function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, to
           <p className="text-xs text-gray-300 text-center py-10">ยังไม่มีข้อมูลในหมวดนี้</p>
         ) : activeSummary.map(({ group, total, categories }) => {
           const meta = groupMeta(group)
-          const on = activeGroups === null || activeGroups.has(group)
+          // กลุ่มที่ตอนนี้เป็นเส้นทาง (ถนน) ล้วน 100% (ไม่มีจุดปักหมุดแบบอื่นปนอยู่เลย) ให้หัวการ์ดกลุ่ม
+          // สะท้อน/สั่งงาน showRoutes เหมือนแถวประเภทย่อยข้างล่าง กันปุ่มกดแล้วไม่มีผล (activeGroups
+          // ไม่มีผลกับ entry ที่เป็นเส้นทางอยู่แล้ว) ถ้ามีจุดปนอยู่ด้วยยังใช้ toggleGroup ตามปกติ
+          const isRouteOnlyGroup = categories.length > 0 && categories.every(c => routeCategoryKeys.has(`${group}::${c.category}`))
+          const on = isRouteOnlyGroup ? showRoutes : (activeGroups === null || activeGroups.has(group))
+          const onGroupToggle = isRouteOnlyGroup ? () => setShowRoutes(v => !v) : () => toggleGroup(group)
+          // ฝั่งประชาชนไม่ต้องเห็นรายประเภทของถนน (สายหลัก/สายรอง) ซ้ำกับปุ่มลอย 🛣️ — มีปุ่มเดียวพอ
+          // ฝั่งเจ้าหน้าที่ (showSourceTabs=true) ยังเห็นไว้เผื่อเช็คจำนวนข้อมูลที่กรอกครบ/ไม่ครบ
+          const visibleCategories = categories.filter(c => showSourceTabs || !routeCategoryKeys.has(`${group}::${c.category}`))
           return (
             <div key={group} className="rounded-2xl border border-gray-100 overflow-hidden">
-              <button onClick={() => toggleGroup(group)}
+              <button onClick={onGroupToggle}
                 className="w-full flex items-center justify-between px-3 py-2.5 transition-colors"
                 style={{ backgroundColor: on ? meta.color : '#f3f4f6' }}>
                 <span className="flex items-center gap-2 text-sm font-bold" style={{ color: on ? '#fff' : '#9ca3af' }}>
                   <span>{meta.emoji}</span> {group}
                 </span>
-                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-white/25"
-                  style={{ color: on ? '#fff' : '#9ca3af' }}>{total} แห่ง</span>
+                {/* ไม่มีรายประเภทให้กางดู (ฝั่งประชาชนถูกซ่อนไว้) ก็ไม่ต้องโชว์จำนวนรวม กันงงว่านับอะไรบ้าง */}
+                {visibleCategories.length > 0 && (
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-white/25"
+                    style={{ color: on ? '#fff' : '#9ca3af' }}>{total} แห่ง</span>
+                )}
               </button>
-              <div className="px-3 py-2 space-y-1">
-                {categories.map(({ category, count }) => {
-                  const key = `${group}::${category}`
-                  const catOn = activeCategories.has(key)
-                  return (
-                    <button key={category} onClick={() => toggleCategory(key)}
-                      className="w-full flex items-center justify-between text-xs rounded-lg px-2 py-1.5 transition-colors"
-                      style={catOn
-                        ? { backgroundColor: `${meta.color}1a`, color: meta.color }
-                        : { backgroundColor: 'transparent', color: '#4b5563' }}>
-                      <span className="font-medium">{category}</span>
-                      <span className="font-semibold">{count} แห่ง</span>
-                    </button>
-                  )
-                })}
-              </div>
+              {visibleCategories.length > 0 && (
+                <div className="px-3 py-2 space-y-1">
+                  {visibleCategories.map(({ category, count }) => {
+                    const key = `${group}::${category}`
+                    // ประเภทที่เป็นเส้นทาง (ถนน) ควบคุมด้วยปุ่ม 🛣️ ลอยบนแผนที่ตัวเดียวกัน ไม่ผ่านระบบ
+                    // activeCategories ปกติ (ดู DataCenterMapView visible filter) — แถวนี้เลยต้องสะท้อน/สั่งงาน
+                    // showRoutes แทน ไม่งั้นจะกดแล้วแผนที่ไม่ขยับ (ดูเหมือน toggle ติดแต่ไม่มีผลจริง)
+                    const isRouteCategory = routeCategoryKeys.has(key)
+                    const catOn = isRouteCategory ? showRoutes : activeCategories.has(key)
+                    const onToggle = isRouteCategory ? () => setShowRoutes(v => !v) : () => toggleCategory(key)
+                    return (
+                      <button key={category} onClick={onToggle}
+                        className="w-full flex items-center justify-between text-xs rounded-lg px-2 py-1.5 transition-colors"
+                        style={catOn
+                          ? { backgroundColor: `${meta.color}1a`, color: meta.color }
+                          : { backgroundColor: 'transparent', color: '#4b5563' }}>
+                        <span className="font-medium">{category}</span>
+                        <span className="font-semibold">{count} แห่ง</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )
         })}
@@ -244,6 +284,9 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false })
   // ฝั่งประชาชนไม่มีปุ่มเลือก บังคับ 'completed' เสมอ — ฝั่งเจ้าหน้าที่เลือกเปลี่ยนได้ผ่าน allowStatusFilter
   const [statusFilter, setStatusFilter] = useState('completed')
   const effectiveStatusFilter = allowStatusFilter ? statusFilter : 'completed'
+  // ปุ่มลอยเปิด/ปิดเส้นทาง (ถนน) ทั้งหมดพร้อมกัน — ไม่ต้องไปติ๊กทีละประเภทในแถบขวา
+  const [showRoutes, setShowRoutes] = useState(true)
+  const [tileMode, setTileMode] = useState('google_street')
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -260,7 +303,15 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false })
 
   const entries = allRows.filter(e => matchesStatusFilter(e, effectiveStatusFilter))
   const groups = Array.from(new Set(entries.map(e => e.group_name))).sort((a, b) => a.localeCompare(b, 'th'))
-  const visible = entries.filter(e => (activeGroups === null || activeGroups.has(e.group_name)) && activeCategories.has(categoryKey(e)))
+  // เส้นทาง (ถนน) คุมด้วยปุ่ม showRoutes เดี่ยวๆ เลย ไม่ผ่านระบบกรุ๊ป/ประเภทย่อยแบบจุดทั่วไป
+  // เพราะอยากให้กดปุ่มเดียวเห็นถนนทันที ไม่ต้องไปกดติ๊กประเภทในแถบขวาเพิ่มอีกที
+  const visible = entries.filter(e => {
+    if (e.route_points?.length >= 2) return showRoutes
+    return (activeGroups === null || activeGroups.has(e.group_name)) && activeCategories.has(categoryKey(e))
+  })
+  // ประเภทย่อยไหนที่เป็นเส้นทางล้วน (ถนนสายหลัก/สายรอง) ใช้บอก SummaryPanel ว่าแถวนี้ต้องผูกกับ
+  // showRoutes แทน activeCategories ปกติ — กันปุ่มในแถบขวาโชว์ toggle หลอกๆ ที่ไม่มีผลกับแผนที่จริง
+  const routeCategoryKeys = new Set(entries.filter(e => e.route_points?.length >= 2).map(categoryKey))
   const fallbackCenter = tenant?.latitude && tenant?.longitude ? [tenant.latitude, tenant.longitude] : [13.7563, 100.5018]
 
   // แถบขวา: แยก 3 แท็บตามแหล่งข้อมูล — ศูนย์ข้อมูลดิจิทัล (กรอกเอง) / คำร้อง / โครงการ แยกกันคนละแถบ
@@ -291,6 +342,8 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false })
     })
   }
 
+  const currentTile = TILE_MODES[tileMode] || TILE_MODES.google_street
+
   return (
     <div className="flex flex-col flex-1 min-h-0">
       {/* ตัวกรองสถานะ — เฉพาะฝั่งเจ้าหน้าที่ (allowStatusFilter) เท่านั้น มีผลแค่รายการคำร้อง/โครงการ */}
@@ -320,33 +373,70 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false })
           ) : (
             <MapContainer center={fallbackCenter} zoom={13} style={{ width: '100%', height: '100%', minHeight: '70vh' }} scrollWheelZoom>
               <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org">OpenStreetMap</a>'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                key={tileMode}
+                attribution={currentTile.attribution}
+                url={currentTile.url}
+                subdomains={currentTile.subdomains || ['0', '1', '2', '3']}
               />
               <MunicipalityBoundary slug={tenant?.slug} />
               <FitBoundsOnLoad points={visible} fallback={fallbackCenter} />
-              <StreetViewButton />
+              {/* ปุ่มลอยมุมขวาบน: สลับชั้นแผนที่ Google / Hybrid / Longdo / OSM */}
+              <div className="absolute z-1000 top-2.5 right-2.5 flex flex-col gap-2">
+                <button type="button"
+                  title={`สลับชั้นแผนที่ (ปัจจุบัน: ${currentTile.label})`}
+                  onClick={() => setTileMode(m => {
+                    if (m === 'google_street') return 'google_hybrid'
+                    if (m === 'google_hybrid') return LONGDO_KEY ? 'longdo' : 'osm'
+                    if (m === 'longdo') return 'osm'
+                    return 'google_street'
+                  })}
+                  className="px-3 py-1.5 rounded-full shadow-md border flex items-center gap-1.5 bg-white text-xs font-bold text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  <Layers size={14} className="text-blue-600" />
+                  <span>{currentTile.label}</span>
+                </button>
+                {entries.some(e => e.route_points?.length >= 2) && (
+                  <button type="button" title={showRoutes ? 'ซ่อนเส้นทางถนนทั้งหมด' : 'แสดงเส้นทางถนนทั้งหมด'}
+                    onClick={() => setShowRoutes(v => !v)}
+                    className="w-9 h-9 rounded-full shadow-md border flex items-center justify-center transition-colors"
+                    style={showRoutes
+                      ? { backgroundColor: '#1e88c7', borderColor: '#1e88c7', color: '#fff' }
+                      : { backgroundColor: '#fff', borderColor: '#e5e7eb', color: '#9ca3af' }}>
+                    <Route size={16} />
+                  </button>
+                )}
+              </div>
               {visible.map(e => {
                 const meta = groupMeta(e.group_name)
-                return (
-                  <Marker key={`${e.source_table}-${e.source_id}`} position={[e.latitude, e.longitude]} icon={makeDivIcon(meta.emoji, meta.pinColor ?? meta.color)}>
-                    <Popup>
-                      <div className="text-xs">
-                        <p className="font-bold text-gray-800">{e.title || categoryLabel(e) || e.group_name}</p>
-                        {/* ฝั่งประชาชนเห็นแค่ชื่อ — กลุ่ม/ประเภท/สถานะภายในเป็นรายละเอียดสำหรับเจ้าหน้าที่เท่านั้น */}
-                        {allowStatusFilter && (
-                          <>
-                            <p className="text-gray-500 mt-0.5">{e.group_name}{e.category ? ` · ${categoryLabel(e)}` : ''}</p>
-                            {e.status && <p className="text-gray-400 mt-1">สถานะ: {e.status}</p>}
-                          </>
-                        )}
-                        <a href={streetViewUrl(e.latitude, e.longitude)} target="_blank" rel="noopener noreferrer"
-                          className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full"
-                          style={{ backgroundColor: '#eef2f7', color: '#1e88c7' }}>
-                          <PersonStanding size={12} /> ดูสตรีทวิว
-                        </a>
-                      </div>
-                    </Popup>
+                const isRoute = e.route_points?.length >= 2
+                const popupContent = (
+                  <Popup>
+                    <div className="text-xs">
+                      <p className="font-bold text-gray-800">{e.title || categoryLabel(e) || e.group_name}</p>
+                      {/* ฝั่งประชาชนเห็นแค่ชื่อ — กลุ่ม/ประเภท/รายละเอียด/พิกัดเป็นข้อมูลสำหรับเจ้าหน้าที่เท่านั้น */}
+                      {allowStatusFilter && (
+                        <>
+                          <p className="text-gray-500 mt-0.5">{e.group_name}{e.category ? ` · ${categoryLabel(e)}` : ''}</p>
+                          {e.description && <p className="text-gray-400 mt-1">{e.description}</p>}
+                          <p className="text-gray-400 mt-1 font-mono">{e.latitude.toFixed(6)}, {e.longitude.toFixed(6)}</p>
+                        </>
+                      )}
+                      <a href={googleMapsUrl(e.latitude, e.longitude)} target="_blank" rel="noopener noreferrer"
+                        className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full"
+                        style={{ backgroundColor: '#eef2f7', color: '#1e88c7' }}>
+                        <MapPin size={12} /> แสดงบน Google Maps
+                      </a>
+                    </div>
+                  </Popup>
+                )
+                return isRoute ? (
+                  <Polyline key={`${e.source_table}-${e.source_id}`} positions={e.route_points.map(p => [p.lat, p.lng])}
+                    pathOptions={{ color: e.route_color || meta.color, weight: e.category === 'ถนนสายหลัก' ? 5 : 2, opacity: 0.85 }}>
+                    {popupContent}
+                  </Polyline>
+                ) : (
+                  <Marker key={`${e.source_table}-${e.source_id}`} position={[e.latitude, e.longitude]} icon={makeDivIcon(markerEmoji(e), meta.pinColor ?? meta.color)}>
+                    {popupContent}
                   </Marker>
                 )
               })}
@@ -379,7 +469,8 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false })
                 <div className="overflow-y-auto min-h-0 border-t border-gray-100">
                   <SummaryPanel activeTab={effectiveTab} setActiveTab={setActiveTab} activeSummary={activeSummary}
                     activeGroups={activeGroups} toggleGroup={toggleGroup}
-                    activeCategories={activeCategories} toggleCategory={toggleCategory} showSourceTabs={allowStatusFilter} />
+                    activeCategories={activeCategories} toggleCategory={toggleCategory} showSourceTabs={allowStatusFilter}
+                    routeCategoryKeys={routeCategoryKeys} showRoutes={showRoutes} setShowRoutes={setShowRoutes} />
                 </div>
               )}
             </div>
@@ -390,7 +481,8 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false })
         <aside className="hidden lg:flex lg:flex-col lg:w-[380px] shrink-0 border-l border-gray-200 bg-white overflow-y-auto">
           <SummaryPanel activeTab={effectiveTab} setActiveTab={setActiveTab} activeSummary={activeSummary}
             activeGroups={activeGroups} toggleGroup={toggleGroup}
-            activeCategories={activeCategories} toggleCategory={toggleCategory} showSourceTabs={allowStatusFilter} />
+            activeCategories={activeCategories} toggleCategory={toggleCategory} showSourceTabs={allowStatusFilter}
+            routeCategoryKeys={routeCategoryKeys} showRoutes={showRoutes} setShowRoutes={setShowRoutes} />
         </aside>
       </div>
     </div>

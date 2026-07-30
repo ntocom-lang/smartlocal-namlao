@@ -122,7 +122,7 @@ export function TourismReviewsAdmin({ tenant }) {
   )
 }
 
-export default function TourismManager({ tenant }) {
+export default function TourismManager({ tenant, currentUserRole, myDepartmentId }) {
   const [places, setPlaces]             = useState([])
   const [loading, setLoading]           = useState(true)
   const [sheet, setSheet]               = useState(null)
@@ -279,7 +279,7 @@ export default function TourismManager({ tenant }) {
       </div>
 
       {mgTab === 'requests' ? (
-        <BusinessRegistrationAdmin tenant={tenant} />
+        <BusinessRegistrationAdmin tenant={tenant} currentUserRole={currentUserRole} myDepartmentId={myDepartmentId} />
       ) : loading ? (
         <div className="flex justify-center py-8"><Loader2 className="animate-spin text-gray-300" size={28} /></div>
       ) : places.length === 0 ? (

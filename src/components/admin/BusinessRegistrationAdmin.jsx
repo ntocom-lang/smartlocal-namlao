@@ -73,8 +73,9 @@ function ImageStrip({ images, active, onSelect }) {
 }
 
 // ─── Detail Sheet ────────────────────────────────────────────────────────────
-function DetailSheet({ reg, onClose, onApprove, onReject, onDelete, acting }) {
+function DetailSheet({ reg, onClose, onApprove, onReject, onDelete, acting, departments, onDepartmentChange }) {
   const [imgIdx, setImgIdx] = useState(0)
+  const [savingDept, setSavingDept] = useState(false)
   const [form, setForm] = useState({
     name:           reg.business_name,
     category:       BIZ_TO_CAT[reg.business_type] ?? 'shop',
@@ -114,6 +115,26 @@ function DetailSheet({ reg, onClose, onApprove, onReject, onDelete, acting }) {
 
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+
+          {/* กองที่รับผิดชอบ — ตั้งได้ทุกสถานะ ใช้กรอง "งานของกองฉัน" ในรายการ ไม่ต้องรออนุมัติก่อนถึงจะตั้งได้ */}
+          {departments?.length > 0 && (
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">กองที่รับผิดชอบ (สำหรับกรองรายการ)</label>
+              <div className="flex items-center gap-2">
+                <select defaultValue={reg.department_id ?? ''} disabled={savingDept}
+                  onChange={async (e) => {
+                    setSavingDept(true)
+                    await onDepartmentChange(reg.id, e.target.value || null)
+                    setSavingDept(false)
+                  }}
+                  className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200">
+                  <option value="">— ไม่ระบุกอง —</option>
+                  {departments.map(d => <option key={d.id} value={d.id}>{d.short_name || d.name}</option>)}
+                </select>
+                {savingDept && <Loader2 size={14} className="animate-spin text-gray-400 shrink-0" />}
+              </div>
+            </div>
+          )}
 
           {/* Images */}
           {images.length > 0 ? (
@@ -347,23 +368,39 @@ function DetailSheet({ reg, onClose, onApprove, onReject, onDelete, acting }) {
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
-export default function BusinessRegistrationAdmin({ tenant }) {
+export default function BusinessRegistrationAdmin({ tenant, currentUserRole, myDepartmentId }) {
   const [regs, setRegs]     = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab]       = useState('pending')
   const [selected, setSelected] = useState(null)
   const [acting, setActing] = useState(false)
+  const [departments, setDepartments] = useState([])
+  // ยังไม่เคย backfill department_id ให้แถวเก่าไว้เลย (ไม่มีข้อมูลอ้างอิงที่เชื่อถือได้ว่าเดิมกองไหนดูแล)
+  // ตัวกรองนี้จึงมีผลจริงหลังเจ้าหน้าที่เริ่มตั้งกองทีละรายการในชีทรายละเอียดเท่านั้น
+  const [showAllDepts, setShowAllDepts] = useState(false)
+  const canScopeByDept = ['officer', 'staff'].includes(currentUserRole) && !!myDepartmentId
+  const scopingByDept = canScopeByDept && !showAllDepts
 
   useEffect(() => {
     if (!tenant?.id) return
     setLoading(true)
-    supabase
+    let q = supabase
       .from('business_registrations')
       .select('*')
       .eq('municipality_id', tenant.id)
-      .order('created_at', { ascending: false })
+    if (scopingByDept) q = q.or(`department_id.is.null,department_id.eq.${myDepartmentId}`)
+    q.order('created_at', { ascending: false })
       .then(({ data }) => { setRegs(data ?? []); setLoading(false) })
-  }, [tenant?.id])
+    supabase.from('departments').select('id, name, short_name').eq('municipality_id', tenant.id).eq('is_active', true).order('sort_order')
+      .then(({ data }) => setDepartments(data ?? []))
+  }, [tenant?.id, scopingByDept, myDepartmentId])
+
+  async function handleDepartmentChange(regId, departmentId) {
+    const { error } = await supabase.from('business_registrations').update({ department_id: departmentId }).eq('id', regId)
+    if (error) { alert('บันทึกกองไม่สำเร็จ: ' + error.message); return }
+    setRegs(prev => prev.map(r => r.id === regId ? { ...r, department_id: departmentId } : r))
+    setSelected(prev => prev && prev.id === regId ? { ...prev, department_id: departmentId } : prev)
+  }
 
   async function handleApprove(form) {
     if (!selected || acting) return
@@ -453,12 +490,19 @@ export default function BusinessRegistrationAdmin({ tenant }) {
           style={{ backgroundColor: '#fef3c7' }}>
           <Store size={18} style={{ color: '#d97706' }} />
         </div>
-        <div>
+        <div className="flex-1">
           <h2 className="font-bold text-gray-800">คำขอลงทะเบียนธุรกิจ/ท่องเที่ยว</h2>
           {counts.pending > 0 && (
             <p className="text-xs text-amber-600 font-semibold">{counts.pending} รายการรอดำเนินการ</p>
           )}
         </div>
+        {canScopeByDept && (
+          <button onClick={() => setShowAllDepts(v => !v)}
+            className="shrink-0 text-[13px] font-semibold px-2.5 py-1.5 rounded-full border transition-all"
+            style={showAllDepts ? { backgroundColor: '#eef2ff', color: '#4338ca', borderColor: '#c7d2fe' } : { backgroundColor: '#fff', color: '#6b7280', borderColor: '#e5e7eb' }}>
+            {showAllDepts ? 'ดูทุกกอง' : 'ดูเฉพาะกองฉัน'}
+          </button>
+        )}
       </div>
 
       {/* Tabs */}
@@ -531,6 +575,8 @@ export default function BusinessRegistrationAdmin({ tenant }) {
           onReject={handleReject}
           onDelete={handleDelete}
           acting={acting}
+          departments={departments}
+          onDepartmentChange={handleDepartmentChange}
         />
       )}
     </div>

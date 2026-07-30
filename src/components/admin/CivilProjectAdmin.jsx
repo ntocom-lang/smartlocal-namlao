@@ -90,6 +90,9 @@ const DEPARTMENTS = [
   { value: 'finance', label: 'กองคลัง' },
   { value: 'other',   label: 'หน่วยงานอื่น' },
 ]
+// เดิม department เป็นข้อความอิสระคนละชุดกับ departments.code จริง (ดู 159_add_department_id_...) — map ให้ตรงกัน
+// ตอนบันทึก เพื่อให้ตัวกรอง "งานกองฉัน" ใช้ department_id (FK จริง) ได้ถูกต้อง ไม่ต้องเดา 'other' จึงไม่ map (NULL)
+const DEPARTMENT_CODE_TO_DB_CODE = { civil: 'engineering', sp: 'general', edu: 'education', finance: 'finance' }
 
 const EMPTY_FORM = {
   project_no: '', fiscal_year: String(THIS_YEAR), title: '', description: '',
@@ -364,7 +367,7 @@ function DetailMap({ lat, lng, title, routePoints, routeColor = '#3b82f6', proje
 const inputCls = 'w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-200 focus:border-violet-300'
 const selectCls = inputCls
 
-export default function CivilProjectAdmin({ tenant, currentUserRole }) {
+export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmentId }) {
   const [view, setView]     = useState('list')   // 'list' | 'detail' | 'form'
   const [editId, setEditId] = useState(null)
   const [projects, setProjects] = useState(null) // null = กำลังโหลด
@@ -373,6 +376,11 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
   const [filterYear, setFilterYear]     = useState('all')
   const [filterType, setFilterType]     = useState('all')
   const [searchQuery, setSearchQuery]   = useState('')
+  const [departments, setDepartments]   = useState([]) // จาก ตาราง departments จริง ใช้ resolve department_id + ตัวกรอง
+  // ค่าเริ่มต้น: officer/staff ที่มีสังกัดกอง เห็นเฉพาะงานกองตัวเอง (+ งานที่ยังไม่ระบุกอง กันข้อมูลเก่าหาย) กดดูทั้งหมดได้
+  const [showAllDepts, setShowAllDepts] = useState(false)
+  const canScopeByDept = ['officer', 'staff'].includes(currentUserRole) && !!myDepartmentId
+  const scopingByDept = canScopeByDept && !showAllDepts
 
   const [selectedProject, setSelectedProject] = useState(null)
 
@@ -417,17 +425,22 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
     if (filterYear  !== 'all') q = q.eq('fiscal_year', filterYear)
     if (filterType  !== 'all') q = q.eq('project_type', filterType)
     if (searchQuery.trim()) q = q.ilike('title', `%${searchQuery.trim()}%`)
+    // department_id เป็น NULL (ยังไม่ระบุกอง) ให้ผ่านตัวกรองเสมอ กันงานเก่าที่ยังไม่ backfill หายไปจากสายตา
+    if (scopingByDept) q = q.or(`department_id.is.null,department_id.eq.${myDepartmentId}`)
     q.order('created_at', { ascending: false }).limit(200).then(({ data }) => {
       if (!cancelled) setProjects(data ?? [])
     })
-    
+
     // Fetch locations for village dropdown
     supabase.from('locations').select('id, name').eq('municipality_id', tenantId).order('sort_order').then(({ data }) => {
       if (!cancelled) setLocations(data ?? [])
     })
+    supabase.from('departments').select('id, code, name, short_name').eq('municipality_id', tenantId).eq('is_active', true).then(({ data }) => {
+      if (!cancelled) setDepartments(data ?? [])
+    })
 
     return () => { cancelled = true }
-  }, [tenantId, filterStatus, filterYear, filterType, searchQuery, refreshTick])
+  }, [tenantId, filterStatus, filterYear, filterType, searchQuery, scopingByDept, myDepartmentId, refreshTick])
 
   function handleStatusChange(newStatus) {
     const cfg = STATUS_CFG[newStatus]
@@ -552,6 +565,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
       project_type:    form.project_type,
       status:          form.status,
       department:      form.department,
+      department_id:   departments.find(d => d.code === DEPARTMENT_CODE_TO_DB_CODE[form.department])?.id ?? null,
       progress_pct:    Number(form.progress_pct),
       village:         form.village?.trim()         || null,
       subdistrict:     form.subdistrict?.trim()     || null,
@@ -686,8 +700,19 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-gray-800">รายการโครงการ</h2>
-          <p className="text-sm text-gray-400 mt-0.5">ทั้งหมด {(projects ?? []).length} โครงการ</p>
+          <p className="text-sm text-gray-400 mt-0.5">
+            ทั้งหมด {(projects ?? []).length} โครงการ
+            {scopingByDept && <span className="text-amber-600 font-medium"> · แสดงเฉพาะกองของฉัน (+ ยังไม่ระบุกอง)</span>}
+          </p>
         </div>
+        <div className="flex items-center gap-2">
+          {canScopeByDept && (
+            <button onClick={() => setShowAllDepts(v => !v)}
+              className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-semibold border transition-colors"
+              style={showAllDepts ? { backgroundColor: '#eef2ff', borderColor: '#c7d2fe', color: '#4338ca' } : { backgroundColor: '#fff', borderColor: '#e5e7eb', color: '#6b7280' }}>
+              {showAllDepts ? 'ดูทุกกอง' : 'ดูเฉพาะกองฉัน'}
+            </button>
+          )}
         {!isReadOnly && (
           <button onClick={openCreate}
             className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-white"
@@ -695,6 +720,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole }) {
             <Plus size={14} /> เพิ่มโครงการ
           </button>
         )}
+        </div>
       </div>
 
       {/* Filter row */}

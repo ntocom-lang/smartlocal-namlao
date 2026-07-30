@@ -7,12 +7,14 @@ import 'leaflet/dist/leaflet.css'
 
 const TILES = {
   street: {
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; OpenStreetMap',
+    url: 'https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+    subdomains: ['0', '1', '2', '3'],
+    attribution: '&copy; Google Maps',
   },
   satellite: {
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    attribution: '&copy; Esri',
+    url: 'https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+    subdomains: ['0', '1', '2', '3'],
+    attribution: '&copy; Google Maps',
   },
 }
 
@@ -157,7 +159,7 @@ export default function InlineMapPicker({ value, onChange, defaultCenter }) {
         {/* MapContainer only gets Leaflet layers — no DOM overlays inside */}
         <div className="absolute inset-0 rounded-2xl overflow-hidden">
           <MapContainer center={mapCenter} zoom={13} style={{ width: '100%', height: '100%' }} zoomControl>
-            <TileLayer key={tileMode} url={tile.url} attribution={tile.attribution} />
+            <TileLayer key={tileMode} url={tile.url} attribution={tile.attribution} subdomains={tile.subdomains || ['0', '1', '2', '3']} />
             <ClickHandler onPin={handlePin} />
             <FlyTo target={flyTarget} />
             {value?.lat && <Marker position={[value.lat, value.lng]} icon={pinIcon} />}
@@ -183,7 +185,7 @@ export default function InlineMapPicker({ value, onChange, defaultCenter }) {
           <div className="relative flex-1">
             <div className="absolute inset-0">
               <MapContainer center={mapCenter} zoom={15} style={{ width: '100%', height: '100%' }} zoomControl>
-                <TileLayer key={tileMode} url={tile.url} attribution={tile.attribution} />
+                <TileLayer key={tileMode} url={tile.url} attribution={tile.attribution} subdomains={tile.subdomains || ['0', '1', '2', '3']} />
                 <ClickHandler onPin={handlePin} />
                 <FlyTo target={flyTarget} />
                 {value?.lat && <Marker position={[value.lat, value.lng]} icon={pinIcon} />}
