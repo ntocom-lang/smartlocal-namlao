@@ -5,7 +5,7 @@ export default function Footer() {
   const { tenant } = useTenant()
   const location = useLocation()
 
-  if (location.pathname.startsWith('/staff') || location.pathname.startsWith('/admin')) return null
+  if (location.pathname.startsWith('/staff') || location.pathname.startsWith('/admin') || location.pathname.startsWith('/data-center')) return null
 
   return (
     <footer className="relative mt-6 text-white overflow-hidden"

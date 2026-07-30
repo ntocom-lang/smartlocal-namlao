@@ -1,18 +1,21 @@
 import { lazy, Suspense, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LayoutGrid, MapPin, Plus, Bell, Database, X, PanelLeftOpen, PanelLeftClose } from 'lucide-react'
+import { LayoutGrid, MapPin, Plus, Bell, Database, X, PanelLeftOpen, PanelLeftClose, Tags } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 
 const DataCenterOverview = lazy(() => import('../components/datacenter/DataCenterOverview'))
 const DataCenterMap = lazy(() => import('../components/datacenter/DataCenterMap'))
 const DataCenterEntryForm = lazy(() => import('../components/datacenter/DataCenterEntryForm'))
+const DataCenterCategoryManager = lazy(() => import('../components/datacenter/DataCenterCategoryManager'))
 
-const MODULES = [
+const BASE_MODULES = [
   { key: 'overview', label: 'ภาพรวม',       Icon: LayoutGrid },
   { key: 'map',      label: 'แผนที่',        Icon: MapPin },
   { key: 'add',      label: 'เพิ่มข้อมูลใหม่', Icon: Plus },
 ]
+// จัดการหมวดหมู่ (รวม/แก้ชื่อกลุ่ม-ประเภทที่พิมพ์ไม่ตรงกัน) — เฉพาะ admin/superadmin เพราะเป็นการแก้ข้อมูลย้อนหลังทีเดียวหลายรายการ
+const CATEGORY_MANAGER_MODULE = { key: 'categories', label: 'จัดการหมวดหมู่', Icon: Tags }
 
 export default function DataCenterDashboard() {
   const navigate = useNavigate()
@@ -20,6 +23,8 @@ export default function DataCenterDashboard() {
   const [profile, setProfile] = useState(null)
   const [activeModule, setActiveModule] = useState('overview')
   const [refreshKey, setRefreshKey] = useState(0)
+  // กดปุ่ม + ที่การ์ดกลุ่มใน "ภาพรวม" จะพกกลุ่มหลักติดไปเติมในฟอร์มให้เลย ไม่ต้องพิมพ์ซ้ำ
+  const [prefillGroup, setPrefillGroup] = useState(null)
   // เมนูซ้ายพับอัตโนมัติเฉพาะตอนอยู่หน้าแผนที่ (ขอพื้นที่เต็มจอ) หน้าอื่นแสดงปกติเสมอ
   const [mapSidebarOpen, setMapSidebarOpen] = useState(false)
   const sidebarHidden = activeModule === 'map' && !mapSidebarOpen
@@ -34,6 +39,7 @@ export default function DataCenterDashboard() {
 
   function handleSaved() {
     setRefreshKey(k => k + 1)
+    setPrefillGroup(null)
     setActiveModule('overview')
   }
 
@@ -42,6 +48,8 @@ export default function DataCenterDashboard() {
   }
 
   const isMapModule = activeModule === 'map'
+  const isManager = profile?.role === 'admin' || profile?.role === 'superadmin'
+  const MODULES = isManager ? [...BASE_MODULES, CATEGORY_MANAGER_MODULE] : BASE_MODULES
 
   return (
     <div className={isMapModule ? 'min-h-screen flex flex-col' : 'min-h-full'} style={{ backgroundColor: '#eef2f7' }}>
@@ -138,8 +146,11 @@ export default function DataCenterDashboard() {
                   <div className="w-6 h-6 border-4 border-gray-200 rounded-full animate-spin" style={{ borderTopColor: '#3b82f6' }} />
                 </div>
               }>
-                {activeModule === 'overview' && <DataCenterOverview key={refreshKey} tenant={tenant} onAddNew={() => setActiveModule('add')} />}
-                {activeModule === 'add' && <DataCenterEntryForm tenant={tenant} profile={profile} onSaved={handleSaved} onCancel={() => setActiveModule('overview')} />}
+                {activeModule === 'overview' && <DataCenterOverview key={refreshKey} tenant={tenant}
+                  onAddNew={group => { setPrefillGroup(group ?? null); setActiveModule('add') }} />}
+                {activeModule === 'add' && <DataCenterEntryForm tenant={tenant} profile={profile} initialGroup={prefillGroup}
+                  onSaved={handleSaved} onCancel={() => { setPrefillGroup(null); setActiveModule('overview') }} />}
+                {activeModule === 'categories' && isManager && <DataCenterCategoryManager key={refreshKey} tenant={tenant} />}
               </Suspense>
             </div>
           )}

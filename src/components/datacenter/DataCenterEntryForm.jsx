@@ -16,9 +16,9 @@ const SEED_GROUPS = {
 
 const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
 
-export default function DataCenterEntryForm({ tenant, profile, onSaved, onCancel }) {
+export default function DataCenterEntryForm({ tenant, profile, initialGroup, onSaved, onCancel }) {
   const [existing, setExisting] = useState([]) // {group_name, category} ที่เคยมีจริงในเทศบาลนี้
-  const [form, setForm] = useState({ group_name: '', category: '', name: '', description: '', latitude: '', longitude: '', address: '' })
+  const [form, setForm] = useState({ group_name: initialGroup ?? '', category: '', name: '', description: '', latitude: '', longitude: '', address: '' })
   const [images, setImages] = useState([])
   const [saving, setSaving] = useState(false)
   const [showPicker, setShowPicker] = useState(false)

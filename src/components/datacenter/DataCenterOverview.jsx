@@ -9,7 +9,7 @@ const GROUP_META = {
   'สถานที่สำคัญ':      { emoji: '📍', color: '#059669', bg: '#f0fdf4' },
   'สถานประกอบการ':     { emoji: '🏢', color: '#d97706', bg: '#fffbeb' },
   'การจัดการขยะ':      { emoji: '🗑️', color: '#7c3aed', bg: '#f5f3ff' },
-  'สถานศึกษา':         { emoji: '🎓', color: '#2563eb', bg: '#eff6ff' },
+  'สถานศึกษา':         { emoji: '🏫', color: '#2563eb', bg: '#eff6ff' },
   'โครงสร้างพื้นฐาน':   { emoji: '🏗️', color: '#0891b2', bg: '#ecfeff' },
   'สถานที่หลบภัย':     { emoji: '⛺', color: '#b91c1c', bg: '#fef2f2' },
   'พื้นที่สีเขียว':     { emoji: '🌳', color: '#16a34a', bg: '#f0fdf4' },
@@ -42,7 +42,7 @@ export default function DataCenterOverview({ tenant, onAddNew }) {
           </h1>
           <p className="text-xs text-gray-400 mt-0.5">รวมพิกัด/สถานที่ทุกชนิดในเขตเทศบาล — {entries.length} รายการ</p>
         </div>
-        <button onClick={onAddNew}
+        <button onClick={() => onAddNew()}
           className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-white shadow-sm active:scale-95 transition-all"
           style={{ backgroundColor: '#1e293b' }}>
           <Plus size={14} /> เพิ่มข้อมูล
@@ -67,9 +67,15 @@ export default function DataCenterOverview({ tenant, onAddNew }) {
                   <p className="font-bold text-gray-800 flex items-center gap-2">
                     <span>{meta.emoji}</span> {g}
                   </p>
-                  <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: meta.bg, color: meta.color }}>
-                    {inGroup.length} แห่ง
-                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: meta.bg, color: meta.color }}>
+                      {inGroup.length} แห่ง
+                    </span>
+                    <button onClick={() => onAddNew(g)} aria-label={`เพิ่มข้อมูลในกลุ่ม ${g}`}
+                      className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-gray-100 text-gray-400 transition-colors">
+                      <Plus size={14} />
+                    </button>
+                  </div>
                 </div>
                 <div className="space-y-1.5">
                   {byCategory.map(c => (
