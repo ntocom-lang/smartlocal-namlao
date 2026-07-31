@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2, Wallpaper } from 'lucide-react'
+import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2, Wallpaper, Globe, Key, Mail, ShieldCheck } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import DepartmentManager from './DepartmentManager'
@@ -296,10 +296,11 @@ export default function SystemSettingsAdmin() {
 
 // เพิ่มแท็บใหม่ในอนาคต: เพิ่ม entry ตรงนี้ + เขียน component ใหม่ ไม่ต้องแก้โครงสร้าง SystemSettingsAdmin เลย
 const SETTINGS_TABS = [
-  { key: 'general',     label: 'ข้อมูลทั่วไป',       icon: Settings,  Component: GeneralInfoTab },
-  { key: 'branding',    label: 'แบรนด์และรูปภาพ',    icon: Wallpaper, Component: BrandingTab },
-  { key: 'qr',          label: 'โลโก้/QR Code',      icon: QrCode,    Component: QrCodeTab },
-  { key: 'departments', label: 'กอง/หน่วยงาน',      icon: Building2, Component: DepartmentsTab },
+  { key: 'general',      label: 'ข้อมูลทั่วไป',       icon: Settings,  Component: GeneralInfoTab },
+  { key: 'branding',     label: 'แบรนด์และรูปภาพ',    icon: Wallpaper, Component: BrandingTab },
+  { key: 'qr',           label: 'โลโก้/QR Code',      icon: QrCode,    Component: QrCodeTab },
+  { key: 'departments',  label: 'กอง/หน่วยงาน',      icon: Building2, Component: DepartmentsTab },
+  { key: 'google_cloud', label: 'Google Cloud API',  icon: Globe,     Component: GoogleCloudTab },
 ]
 
 function DepartmentsTab({ tenant }) {
@@ -799,6 +800,129 @@ function BannerManager({ tenant }) {
         {uploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
         {uploading ? 'กำลังอัปโหลด...' : 'เพิ่มรูป Banner'}
       </button>
+    </div>
+  )
+}
+
+function GoogleCloudTab({ tenant, patchTenant, inputCls }) {
+  const [googleCloudEmail, setGoogleCloudEmail] = useState(() => tenant?.google_cloud_email || '')
+  const [googleProjectId, setGoogleProjectId] = useState(() => tenant?.google_project_id || '')
+  const [googleMapsKey, setGoogleMapsKey] = useState(() => tenant?.google_maps_api_key || '')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  async function handleSave(e) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      if (!tenant?.id) throw new Error('ไม่พบ tenant.id')
+
+      const payload = {
+        google_cloud_email: googleCloudEmail.trim() || null,
+        google_project_id: googleProjectId.trim() || null,
+        google_maps_api_key: googleMapsKey.trim() || null,
+      }
+
+      const { data, error } = await supabase
+        .from('municipalities')
+        .update(payload)
+        .eq('id', tenant.id)
+        .select('id')
+
+      if (error) throw error
+      if (!data?.length) throw new Error('ไม่มีสิทธิ์ปรับปรุงข้อมูล (RLS Lock)')
+
+      patchTenant(payload)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch (err) {
+      alert('บันทึกการตั้งค่าไม่สำเร็จ: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Badge สถาปัตยกรรม 1 อปท. 1 Google Account */}
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-5 space-y-2">
+        <div className="flex items-center gap-2 font-bold text-blue-900 text-sm">
+          <ShieldCheck size={18} className="text-blue-600" />
+          <span>สถาปัตยกรรม 1 หน่วยงาน = 1 บัญชี Google Cloud = 1 อีเมลองค์กร</span>
+        </div>
+        <p className="text-xs text-blue-700 leading-relaxed">
+          แยก Google Cloud Project และ API Key ตามหน่วยงานเพื่อควบคุมสิทธิ์ โควตา และค่าใช้จ่ายอย่างตรวจสอบได้ Google Maps Platform คิดค่าบริการแบบ Pay-as-you-go และมี Free Usage Cap แยกตาม SKU จึงต้องตั้ง Budget Alert และ Quota Limit ก่อนเปิดใช้งานจริง
+        </p>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-5">
+        <h2 className="text-sm font-bold text-gray-700 flex items-center gap-2">
+          <Globe size={16} className="text-blue-600" /> ตั้งค่าบัญชี Google Cloud & Google Maps Platform
+        </h2>
+
+        <form onSubmit={handleSave} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center gap-1.5">
+              <Mail size={14} className="text-gray-400" /> อีเมลบัญชี Google Cloud องค์กร
+            </label>
+            <input
+              type="email"
+              value={googleCloudEmail}
+              onChange={e => setGoogleCloudEmail(e.target.value)}
+              placeholder="เช่น gis@namlao.go.th หรือ admin@namlao.go.th"
+              className={inputCls}
+            />
+            <p className="text-[11px] text-gray-400 mt-1">ใช้ระบุบัญชีองค์กรและผู้รับผิดชอบ Google Cloud Project ของหน่วยงาน</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center gap-1.5">
+              <Globe size={14} className="text-gray-400" /> Google Cloud Project ID
+            </label>
+            <input
+              type="text"
+              value={googleProjectId}
+              onChange={e => setGoogleProjectId(e.target.value)}
+              placeholder="เช่น smartlocal-namlao-gis"
+              className={inputCls}
+            />
+            <p className="text-[11px] text-gray-400 mt-1">ระบุชื่อ Project บน Google Cloud Console ของ อปท.</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center gap-1.5">
+              <Key size={14} className="text-gray-400" /> Google Maps API Key
+            </label>
+            <input
+              type="text"
+              value={googleMapsKey}
+              onChange={e => setGoogleMapsKey(e.target.value)}
+              placeholder="AIzaSy..."
+              className={`${inputCls} font-mono text-xs`}
+            />
+            <p className="text-[11px] text-gray-400 mt-1">
+              คำแนะนำ: กำหนด HTTP Referrer Restrictions บน GCP Console เฉพาะโดเมนของ อปท. (เช่น <code className="bg-gray-100 px-1 py-0.5 rounded text-gray-600">*.smartlocal.go.th/*</code>)
+            </p>
+          </div>
+
+          <div className="pt-2 flex items-center gap-3">
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-5 py-2.5 rounded-xl text-sm font-bold text-white flex items-center gap-2 disabled:opacity-50 active:scale-95 transition-all shadow-sm"
+              style={{ backgroundColor: 'var(--color-primary)' }}
+            >
+              {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+              {saving ? 'กำลังบันทึก...' : 'บันทึกการตั้งค่า Google Cloud'}
+            </button>
+            {saved && (
+              <span className="text-xs font-semibold text-emerald-600 flex items-center gap-1">
+                <CheckCircle2 size={16} /> บันทึกสำเร็จ!
+              </span>
+            )}
+          </div>
+        </form>
+      </div>
     </div>
   )
 }

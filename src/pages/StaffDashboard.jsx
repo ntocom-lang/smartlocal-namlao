@@ -74,9 +74,10 @@ const STANDALONE_GROUPS = [
       { key: 'projects',      label: 'แผนงาน/โครงการ',  Icon: ClipboardList, color: '#7c3aed', bg: '#ede9fe' },
       { key: 'civil-report',  label: 'รายงานโครงการ',   Icon: Printer,       color: '#7c3aed', bg: '#ede9fe' },
       { key: 'report',        label: 'รายงาน',           Icon: TrendingUp,    color: '#f59e0b', bg: '#fef3c7' },
-      // รวมกับศูนย์ข้อมูลดิจิทัลแล้ว — กดแล้ว navigate ไป /data-center ในแท็บเดิมแทนที่จะสลับโมดูลในหน้านี้
+      // รวมกับศูนย์ข้อมูลดิจิทัลแล้ว — กดแล้ว navigate ไป /data-center/staff ตรงๆ ในแท็บเดิม (ข้าม
+      // หน้าเลือกโหมด "เจ้าหน้าที่/ประชาชน" ของ /data-center เพราะรู้อยู่แล้วว่าเป็นฝั่งเจ้าหน้าที่)
       // (ปุ่ม externalUrl เช็คใน StaffOperationalDashboard.openTask และตัว sidebar เองด้านล่าง)
-      { key: 'data-center', label: 'แผนที่',         Icon: MapPin,        color: '#0891b2', bg: '#e0f2fe', externalUrl: '/data-center' },
+      { key: 'data-center', label: 'แผนที่',         Icon: MapPin,        color: '#0891b2', bg: '#e0f2fe', externalUrl: '/data-center/staff' },
       { key: 'fleet',    label: 'ยานพาหนะ/น้ำมัน',  Icon: Car,           color: '#0369a1', bg: '#e0f2fe' },
     ],
   },
@@ -1654,7 +1655,7 @@ export default function StaffDashboard() {
             <p className="text-white/70 text-[11px] mt-0.5">สำหรับเจ้าหน้าที่</p>
           </div>
           {enabledKeys.includes('data-center') && (
-            <button onClick={() => navigate('/data-center')} aria-label="ศูนย์รวมข้อมูลดิจิทัล" className="p-1.5 text-white/85 hover:text-white transition-colors shrink-0">
+            <button onClick={() => navigate('/data-center/staff')} aria-label="ศูนย์รวมข้อมูลดิจิทัล" className="p-1.5 text-white/85 hover:text-white transition-colors shrink-0">
               <Database size={19} />
             </button>
           )}
@@ -1730,7 +1731,7 @@ export default function StaffDashboard() {
                 <span className="flex-1 text-left text-xs">หน้าหลัก</span>
               </button>
               {enabledKeys.includes('data-center') && (
-                <button onClick={() => navigate('/data-center')}
+                <button onClick={() => navigate('/data-center/staff')}
                   className="mb-2 flex min-h-9 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-all text-white/80 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60">
                   <Database size={16} strokeWidth={1.8} />
                   <span className="flex-1 text-left text-xs">ศูนย์รวมข้อมูลดิจิทัล</span>

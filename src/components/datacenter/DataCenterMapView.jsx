@@ -1,41 +1,7 @@
-import { useEffect, useState, useRef } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, GeoJSON, Polyline, useMap } from 'react-leaflet'
-import L from 'leaflet'
-import 'leaflet/dist/leaflet.css'
-import { Loader2, Database, MessageSquareWarning, Construction, Minimize2, Maximize2, X, MapPin, Route, Layers } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Loader2, Database, MessageSquareWarning, Construction, Minimize2, Maximize2, X, Route } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-
-const LONGDO_KEY = import.meta.env.VITE_LONGDO_KEY
-
-// โหมดชั้นแผนที่ — รองรับ Google Maps (ถนนแบบละเอียดภาษาไทย), Google Hybrid, Longdo Map และ OpenStreetMap
-const TILE_MODES = {
-  google_street: {
-    label: 'Google Maps (ถนนละเอียด)',
-    url: 'https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
-    subdomains: ['0', '1', '2', '3'],
-    attribution: '&copy; Google Maps',
-  },
-  google_hybrid: {
-    label: 'Google Hybrid (ดาวเทียม+ถนน)',
-    url: 'https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
-    subdomains: ['0', '1', '2', '3'],
-    attribution: '&copy; Google Maps',
-  },
-  ...(LONGDO_KEY ? {
-    longdo: {
-      label: 'Longdo Map (ภาษาไทย)',
-      url: `https://ms.longdo.com/mmmap/tile.php?zoom={z}&x={x}&y={y}&key=${LONGDO_KEY}`,
-      subdomains: ['a'],
-      attribution: '&copy; Longdo Map',
-    }
-  } : {}),
-  osm: {
-    label: 'OpenStreetMap',
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    subdomains: ['a', 'b', 'c'],
-    attribution: '&copy; OpenStreetMap',
-  },
-}
+import GoogleMapCanvas from '../common/GoogleMapCanvas'
 
 // แผนที่รวมพิกัดชุดเดียวกัน ใช้ทั้งฝั่งเจ้าหน้าที่และฝั่งประชาชน ไม่ต้องแก้ 2 ที่
 
@@ -119,49 +85,16 @@ const categoryLabel = e => {
 // กุญแจสำหรับกรองระดับ "ประเภทย่อยในกลุ่ม" — ผูกกับกลุ่มด้วย เพราะป้ายชื่อประเภทอาจซ้ำกันข้ามกลุ่มได้
 const categoryKey = e => `${e.group_name}::${categoryLabel(e)}`
 
-// ลิงก์ออกไปเปิด Google Maps พร้อมปักหมุดตรงพิกัดเป๊ะๆ (URL scheme ทางการของ Google, ไม่ต้องใช้ API key/ผูกบัตรเครดิต)
-const googleMapsUrl = (lat, lng) => `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
-
-function makeDivIcon(emoji, color, size = 30) {
-  return L.divIcon({
-    className: '',
-    html: `<div style="width:${size}px;height:${size}px;background:${color};border:2px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:${size * 0.5}px;box-shadow:0 2px 8px rgba(0,0,0,0.28)">${emoji}</div>`,
-    iconSize: [size, size], iconAnchor: [size / 2, size / 2], popupAnchor: [0, -(size / 2)],
-  })
-}
-
-// เส้นเขตปกครองระดับตำบล/เทศบาล — ไฟล์ static ต่อเทศบาล (public/boundaries/{slug}.geojson)
-// ที่มา: HDX COD-AB Thailand (แปลงจากข้อมูลกรมแผนที่ทหาร) ไม่มีไฟล์ก็แค่ไม่แสดง ไม่ error
-function MunicipalityBoundary({ slug }) {
-  const [geojson, setGeojson] = useState(null)
-  useEffect(() => {
-    if (!slug) { setGeojson(null); return }
-    fetch(`/boundaries/${slug}.geojson`)
-      .then(res => (res.ok ? res.json() : null))
-      .then(setGeojson)
-      .catch(() => setGeojson(null))
-  }, [slug])
-  if (!geojson) return null
-  return (
-    <GeoJSON data={geojson} interactive={false}
-      style={{ color: '#f97316', weight: 2, dashArray: '4 6', fillColor: '#86efac', fillOpacity: 0.25 }} />
-  )
-}
-
-function FitBoundsOnLoad({ points, fallback }) {
-  const map = useMap()
-  const fitted = useRef(false)
-  useEffect(() => {
-    if (fitted.current) return
-    fitted.current = true
-    if (points.length > 0) {
-      map.fitBounds(L.latLngBounds(points.map(p => [p.latitude, p.longitude])), { padding: [40, 40], maxZoom: 16 })
-    } else if (fallback) {
-      map.setView(fallback, 13)
-    }
-  }, [points.length]) // eslint-disable-line react-hooks/exhaustive-deps
-  return null
-}
+// ตัวเลือกสถานะโครงการสำหรับปุ่ม "ปรับสถานะแบบเร็ว" ในป๊อปอัพ — อ้างอิงจาก STATUS_CFG เดิมใน
+// CivilProjectAdmin.jsx (ต้องตรงกันทุกคำ ไม่งั้นสถานะที่ตั้งจากแผนที่จะอ่านค่าไม่ตรงกับหน้าโครงการหลัก)
+const CIVIL_PROJECT_STATUS_OPTIONS = [
+  { value: 'planned',     label: 'วางแผน' },
+  { value: 'approved',    label: 'อนุมัติแล้ว' },
+  { value: 'in_progress', label: 'กำลังดำเนินการ' },
+  { value: 'completed',   label: 'แล้วเสร็จ' },
+  { value: 'cancelled',   label: 'ยกเลิก' },
+  { value: 'suspended',   label: 'ระงับชั่วคราว' },
+]
 
 // จัดกลุ่ม entries ที่กรองมาแล้วเป็น [{ group, total, categories: [{category, count}] }] เรียงตามตัวอักษรไทย
 // ใช้ป้ายชื่อไทย (categoryLabel) แทนรหัส category ดิบ แล้วรวมจำนวนตามป้ายชื่อ (กันชื่อซ้ำเวลามีหลายรหัสแปลผลเดียวกัน)
@@ -222,11 +155,12 @@ function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, to
           // สะท้อน/สั่งงาน showRoutes เหมือนแถวประเภทย่อยข้างล่าง กันปุ่มกดแล้วไม่มีผล (activeGroups
           // ไม่มีผลกับ entry ที่เป็นเส้นทางอยู่แล้ว) ถ้ามีจุดปนอยู่ด้วยยังใช้ toggleGroup ตามปกติ
           const isRouteOnlyGroup = categories.length > 0 && categories.every(c => routeCategoryKeys.has(`${group}::${c.category}`))
-          const on = isRouteOnlyGroup ? showRoutes : (activeGroups === null || activeGroups.has(group))
-          const onGroupToggle = isRouteOnlyGroup ? () => setShowRoutes(v => !v) : () => toggleGroup(group)
-          // ฝั่งประชาชนไม่ต้องเห็นรายประเภทของถนน (สายหลัก/สายรอง) ซ้ำกับปุ่มลอย 🛣️ — มีปุ่มเดียวพอ
-          // ฝั่งเจ้าหน้าที่ (showSourceTabs=true) ยังเห็นไว้เผื่อเช็คจำนวนข้อมูลที่กรอกครบ/ไม่ครบ
-          const visibleCategories = categories.filter(c => showSourceTabs || !routeCategoryKeys.has(`${group}::${c.category}`))
+          // กลุ่มที่เป็นเส้นทาง (ถนน) ล้วน ไม่ต้องขึ้นเป็นการ์ดในแถบสรุปเลย ทั้งฝั่งเจ้าหน้าที่และประชาชน
+          // เพราะควบคุมด้วยปุ่มลอย 🛣️ บนแผนที่แล้วจุดเดียวพอ ไม่ต้องมีอีกจุดควบคุม/แสดงผลซ้ำกัน
+          if (isRouteOnlyGroup) return null
+          const on = activeGroups === null || activeGroups.has(group)
+          const onGroupToggle = () => toggleGroup(group)
+          const visibleCategories = categories.filter(c => !routeCategoryKeys.has(`${group}::${c.category}`))
           return (
             <div key={group} className="rounded-2xl border border-gray-100 overflow-hidden">
               <button onClick={onGroupToggle}
@@ -272,8 +206,15 @@ function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, to
   )
 }
 
-export default function DataCenterMapView({ tenant, allowStatusFilter = false }) {
+export default function DataCenterMapView({ tenant, allowStatusFilter = false, currentUserRole }) {
   const [allRows, setAllRows] = useState([])
+  // งานเขียนข้อมูลที่รวมมาจาก "แผนที่" เดิม (ยุบรวมเป็นแผนที่เดียวแล้ว) — อนุมัติ/ปฏิเสธคำขอธุรกิจ
+  // (เฉพาะ admin/superadmin ตรงกับสิทธิ์เดิมของ MapDashboardAdmin) และปรับสถานะโครงการก่อสร้างแบบเร็ว
+  const [approvingBizId, setApprovingBizId] = useState(null)
+  const [savingProjectId, setSavingProjectId] = useState(null)
+  const [quickStatusDraft, setQuickStatusDraft] = useState({}) // { [projectId]: draftStatus }
+  const [selectedEntry, setSelectedEntry] = useState(null)
+  const [boundaryGeoJson, setBoundaryGeoJson] = useState(null)
   const [loading, setLoading] = useState(true)
   const [activeGroups, setActiveGroups] = useState(null) // null = เปิดไว้ทั้งหมดตั้งแต่แรก (หัวข้อหลัก เช่น คำร้อง/โครงการ)
   // หัวข้อรอง (ประเภทย่อยในการ์ด) เริ่มต้นปิดไว้ก่อน (Set ว่าง) ต้องกดเปิดเองทีละประเภท
@@ -286,11 +227,9 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false })
   const effectiveStatusFilter = allowStatusFilter ? statusFilter : 'completed'
   // ปุ่มลอยเปิด/ปิดเส้นทาง (ถนน) ทั้งหมดพร้อมกัน — ไม่ต้องไปติ๊กทีละประเภทในแถบขวา
   const [showRoutes, setShowRoutes] = useState(true)
-  const [tileMode, setTileMode] = useState('google_street')
 
   useEffect(() => {
     if (!tenant?.id) return
-    setLoading(true)
     // RPC เดียวกันทั้งฝั่งเจ้าหน้าที่และประชาชน — รวมพิกัดจากทั้งศูนย์ข้อมูลดิจิทัลเอง และฟีเจอร์เดิม
     // (คำร้อง/สถานประกอบการ/โครงสร้างพื้นฐาน/โครงการก่อสร้าง) — กรองสถานะทำที่ฝั่ง client แทน เพื่อสลับได้ทันทีไม่ต้อง fetch ใหม่
     supabase.rpc('data_center_unified_pins', { _municipality_id: tenant.id })
@@ -300,6 +239,43 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false })
         setLoading(false)
       })
   }, [tenant?.id])
+
+  useEffect(() => {
+    if (!tenant?.slug) return
+    let active = true
+    fetch(`/boundaries/${tenant.slug}.geojson`)
+      .then(response => response.ok ? response.json() : null)
+      .then(data => { if (active) setBoundaryGeoJson(data) })
+      .catch(() => { if (active) setBoundaryGeoJson(null) })
+    return () => { active = false }
+  }, [tenant?.slug])
+
+  // อนุมัติ/ปฏิเสธคำขอลงทะเบียนธุรกิจแบบเร็วจากป๊อปอัพ (ย้ายมาจาก MapDashboardAdmin เดิม) — แค่ปรับสถานะ
+  // ไม่ได้สร้างรายการ tourism_places ให้อัตโนมัติ (พฤติกรรมเดิมของปุ่มด่วนนี้เป็นแบบนี้อยู่แล้ว) ถ้าต้องการ
+  // แก้รายละเอียด/รูปก่อนเผยแพร่ ต้องไปที่หน้า "เที่ยว กิน พัก OTOP" > "คำขอลงทะเบียน" เหมือนเดิม
+  async function approveBiz(id, approved) {
+    setApprovingBizId(id)
+    const { data: { session } } = await supabase.auth.getSession()
+    const { error } = await supabase.from('business_registrations').update({
+      status: approved ? 'approved' : 'rejected',
+      approved_by: session?.user?.id,
+      approved_at: new Date().toISOString(),
+    }).eq('id', id)
+    if (error) { alert('บันทึกไม่สำเร็จ: ' + error.message); setApprovingBizId(null); return }
+    setAllRows(prev => prev.map(e => (e.source_table === 'business_registrations' && e.source_id === id)
+      ? { ...e, status: approved ? 'approved' : 'rejected' } : e))
+    setApprovingBizId(null)
+  }
+
+  async function saveQuickStatus(id, newStatus) {
+    setSavingProjectId(id)
+    const { error } = await supabase.from('civil_projects').update({ status: newStatus }).eq('id', id)
+    if (error) { alert('บันทึกไม่สำเร็จ: ' + error.message); setSavingProjectId(null); return }
+    setAllRows(prev => prev.map(e => (e.source_table === 'civil_projects' && e.source_id === id)
+      ? { ...e, status: newStatus } : e))
+    setQuickStatusDraft(prev => { const next = { ...prev }; delete next[id]; return next })
+    setSavingProjectId(null)
+  }
 
   const entries = allRows.filter(e => matchesStatusFilter(e, effectiveStatusFilter))
   const groups = Array.from(new Set(entries.map(e => e.group_name))).sort((a, b) => a.localeCompare(b, 'th'))
@@ -312,7 +288,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false })
   // ประเภทย่อยไหนที่เป็นเส้นทางล้วน (ถนนสายหลัก/สายรอง) ใช้บอก SummaryPanel ว่าแถวนี้ต้องผูกกับ
   // showRoutes แทน activeCategories ปกติ — กันปุ่มในแถบขวาโชว์ toggle หลอกๆ ที่ไม่มีผลกับแผนที่จริง
   const routeCategoryKeys = new Set(entries.filter(e => e.route_points?.length >= 2).map(categoryKey))
-  const fallbackCenter = tenant?.latitude && tenant?.longitude ? [tenant.latitude, tenant.longitude] : [13.7563, 100.5018]
+  const fallbackCenter = tenant?.latitude && tenant?.longitude ? { lat: Number(tenant.latitude), lng: Number(tenant.longitude) } : { lat: 13.7563, lng: 100.5018 }
 
   // แถบขวา: แยก 3 แท็บตามแหล่งข้อมูล — ศูนย์ข้อมูลดิจิทัล (กรอกเอง) / คำร้อง / โครงการ แยกกันคนละแถบ
   const dceEntries = entries.filter(e => e.source_table === 'data_center_entries')
@@ -342,8 +318,6 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false })
     })
   }
 
-  const currentTile = TILE_MODES[tileMode] || TILE_MODES.google_street
-
   return (
     <div className="flex flex-col flex-1 min-h-0">
       {/* ตัวกรองสถานะ — เฉพาะฝั่งเจ้าหน้าที่ (allowStatusFilter) เท่านั้น มีผลแค่รายการคำร้อง/โครงการ */}
@@ -371,76 +345,74 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false })
               <Loader2 size={28} className="animate-spin text-gray-300" />
             </div>
           ) : (
-            <MapContainer center={fallbackCenter} zoom={13} style={{ width: '100%', height: '100%', minHeight: '70vh' }} scrollWheelZoom>
-              <TileLayer
-                key={tileMode}
-                attribution={currentTile.attribution}
-                url={currentTile.url}
-                subdomains={currentTile.subdomains || ['0', '1', '2', '3']}
-              />
-              <MunicipalityBoundary slug={tenant?.slug} />
-              <FitBoundsOnLoad points={visible} fallback={fallbackCenter} />
-              {/* ปุ่มลอยมุมขวาบน: สลับชั้นแผนที่ Google / Hybrid / Longdo / OSM */}
-              <div className="absolute z-1000 top-2.5 right-2.5 flex flex-col gap-2">
-                <button type="button"
-                  title={`สลับชั้นแผนที่ (ปัจจุบัน: ${currentTile.label})`}
-                  onClick={() => setTileMode(m => {
-                    if (m === 'google_street') return 'google_hybrid'
-                    if (m === 'google_hybrid') return LONGDO_KEY ? 'longdo' : 'osm'
-                    if (m === 'longdo') return 'osm'
-                    return 'google_street'
-                  })}
-                  className="px-3 py-1.5 rounded-full shadow-md border flex items-center gap-1.5 bg-white text-xs font-bold text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  <Layers size={14} className="text-blue-600" />
-                  <span>{currentTile.label}</span>
-                </button>
-                {entries.some(e => e.route_points?.length >= 2) && (
-                  <button type="button" title={showRoutes ? 'ซ่อนเส้นทางถนนทั้งหมด' : 'แสดงเส้นทางถนนทั้งหมด'}
-                    onClick={() => setShowRoutes(v => !v)}
-                    className="w-9 h-9 rounded-full shadow-md border flex items-center justify-center transition-colors"
-                    style={showRoutes
-                      ? { backgroundColor: '#1e88c7', borderColor: '#1e88c7', color: '#fff' }
-                      : { backgroundColor: '#fff', borderColor: '#e5e7eb', color: '#9ca3af' }}>
-                    <Route size={16} />
-                  </button>
-                )}
-              </div>
-              {visible.map(e => {
+            <GoogleMapCanvas
+              center={fallbackCenter}
+              zoom={13}
+              mapTypeId="roadmap"
+              boundaryGeoJson={boundaryGeoJson}
+              className="w-full h-full min-h-[70vh]"
+              markers={visible.filter(e => !(e.route_points?.length >= 2)).map(e => {
                 const meta = groupMeta(e.group_name)
-                const isRoute = e.route_points?.length >= 2
-                const popupContent = (
-                  <Popup>
-                    <div className="text-xs">
-                      <p className="font-bold text-gray-800">{e.title || categoryLabel(e) || e.group_name}</p>
-                      {/* ฝั่งประชาชนเห็นแค่ชื่อ — กลุ่ม/ประเภท/รายละเอียด/พิกัดเป็นข้อมูลสำหรับเจ้าหน้าที่เท่านั้น */}
-                      {allowStatusFilter && (
-                        <>
-                          <p className="text-gray-500 mt-0.5">{e.group_name}{e.category ? ` · ${categoryLabel(e)}` : ''}</p>
-                          {e.description && <p className="text-gray-400 mt-1">{e.description}</p>}
-                          <p className="text-gray-400 mt-1 font-mono">{e.latitude.toFixed(6)}, {e.longitude.toFixed(6)}</p>
-                        </>
-                      )}
-                      <a href={googleMapsUrl(e.latitude, e.longitude)} target="_blank" rel="noopener noreferrer"
-                        className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full"
-                        style={{ backgroundColor: '#eef2f7', color: '#1e88c7' }}>
-                        <MapPin size={12} /> แสดงบน Google Maps
-                      </a>
-                    </div>
-                  </Popup>
-                )
-                return isRoute ? (
-                  <Polyline key={`${e.source_table}-${e.source_id}`} positions={e.route_points.map(p => [p.lat, p.lng])}
-                    pathOptions={{ color: e.route_color || meta.color, weight: e.category === 'ถนนสายหลัก' ? 5 : 2, opacity: 0.85 }}>
-                    {popupContent}
-                  </Polyline>
-                ) : (
-                  <Marker key={`${e.source_table}-${e.source_id}`} position={[e.latitude, e.longitude]} icon={makeDivIcon(markerEmoji(e), meta.pinColor ?? meta.color)}>
-                    {popupContent}
-                  </Marker>
-                )
+                return {
+                  id: `${e.source_table}-${e.source_id}`,
+                  position: { lat: Number(e.latitude), lng: Number(e.longitude) },
+                  title: e.title || categoryLabel(e) || e.group_name,
+                  color: meta.pinColor ?? meta.color,
+                  label: markerEmoji(e),
+                  entry: e,
+                }
               })}
-            </MapContainer>
+              polylines={visible.filter(e => e.route_points?.length >= 2).map(e => ({
+                id: `${e.source_table}-${e.source_id}`,
+                path: e.route_points,
+                color: e.route_color || groupMeta(e.group_name).color,
+                weight: e.category === 'ถนนสายหลัก' ? 5 : 3,
+                opacity: 0.88,
+                entry: e,
+              }))}
+              onFeatureClick={feature => setSelectedEntry(feature.entry)}
+            />
+          )}
+
+          {entries.some(e => e.route_points?.length >= 2) && (
+            <button type="button" title={showRoutes ? 'ซ่อนเส้นทางถนนทั้งหมด' : 'แสดงเส้นทางถนนทั้งหมด'}
+              onClick={() => setShowRoutes(v => !v)}
+              className="absolute right-3 top-14 z-20 w-10 h-10 rounded-full shadow-md border flex items-center justify-center transition-colors"
+              style={showRoutes
+                ? { backgroundColor: '#1e88c7', borderColor: '#1e88c7', color: '#fff' }
+                : { backgroundColor: '#fff', borderColor: '#e5e7eb', color: '#9ca3af' }}>
+              <Route size={17} />
+            </button>
+          )}
+
+          {selectedEntry && (selectedEntry.source_table === 'business_registrations' || selectedEntry.source_table === 'civil_projects') && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 w-[min(340px,calc(100%-32px))] rounded-2xl border border-gray-200 bg-white p-3 text-xs shadow-2xl backdrop-blur-xs">
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <p className="font-bold text-gray-800 truncate">{selectedEntry.title || categoryLabel(selectedEntry) || selectedEntry.group_name}</p>
+                <button type="button" onClick={() => setSelectedEntry(null)} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100"><X size={14} /></button>
+              </div>
+              {selectedEntry.source_table === 'business_registrations' && selectedEntry.status === 'pending'
+                && ['admin', 'superadmin'].includes(currentUserRole) && (
+                <div className="flex gap-1.5">
+                  <button type="button" disabled={approvingBizId === selectedEntry.source_id} onClick={() => approveBiz(selectedEntry.source_id, true)}
+                    className="flex-1 rounded-xl bg-green-600 py-1.5 font-bold text-white shadow-xs active:scale-95 disabled:opacity-50">{approvingBizId === selectedEntry.source_id ? 'กำลังบันทึก...' : 'อนุมัติ'}</button>
+                  <button type="button" disabled={approvingBizId === selectedEntry.source_id} onClick={() => approveBiz(selectedEntry.source_id, false)}
+                    className="flex-1 rounded-xl bg-red-600 py-1.5 font-bold text-white shadow-xs active:scale-95 disabled:opacity-50">ปฏิเสธ</button>
+                </div>
+              )}
+              {selectedEntry.source_table === 'civil_projects' && currentUserRole && currentUserRole !== 'citizen' && (
+                <div className="flex items-center gap-1.5">
+                  <select value={quickStatusDraft[selectedEntry.source_id] ?? selectedEntry.status} disabled={savingProjectId === selectedEntry.source_id}
+                    onChange={event => setQuickStatusDraft(prev => ({ ...prev, [selectedEntry.source_id]: event.target.value }))}
+                    className="flex-1 rounded-xl border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-700 outline-none">
+                    {CIVIL_PROJECT_STATUS_OPTIONS.map(status => <option key={status.value} value={status.value}>{status.label}</option>)}
+                  </select>
+                  <button type="button" disabled={savingProjectId === selectedEntry.source_id || (quickStatusDraft[selectedEntry.source_id] ?? selectedEntry.status) === selectedEntry.status}
+                    onClick={() => saveQuickStatus(selectedEntry.source_id, quickStatusDraft[selectedEntry.source_id] ?? selectedEntry.status)}
+                    className="rounded-xl bg-sky-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs disabled:opacity-40">บันทึก</button>
+                </div>
+              )}
+            </div>
           )}
 
           {/* มือถือ/แท็บเล็ต: แผงสรุปแบบ bottom sheet ลอยเหนือแผนที่ (ตาม layout เทศบาลนครนนทบุรี) — absolute

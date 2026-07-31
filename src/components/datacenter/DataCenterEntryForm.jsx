@@ -285,6 +285,7 @@ export default function DataCenterEntryForm({ tenant, profile, initialGroup, edi
           initialPos={form.latitude !== '' ? { lat: Number(form.latitude), lng: Number(form.longitude) } : null}
           fallbackPos={tenant?.latitude && tenant?.longitude ? { lat: tenant.latitude, lng: tenant.longitude } : null}
           skipGeolocation
+          fixedCenterPin={false}
           onConfirm={handlePickerConfirm}
           onClose={() => setShowPicker(false)}
         />

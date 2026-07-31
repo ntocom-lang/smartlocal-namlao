@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LayoutGrid, MapPin, Plus, Bell, Database, ArrowLeft, PanelLeftOpen, PanelLeftClose, Tags } from 'lucide-react'
+import { LayoutGrid, MapPin, Plus, Bell, ArrowLeft, PanelLeftOpen, PanelLeftClose, Tags } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 
@@ -80,9 +80,9 @@ export default function DataCenterDashboard() {
         style={{ background: 'linear-gradient(180deg, #1e293b 0%, #0f172a 100%)' }}>
         <div className="relative z-10 flex items-center justify-between px-6 py-3">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate('/data-center')} className="shrink-0 active:opacity-70 transition-opacity hover:scale-105 transition-transform">
+            <button onClick={handleBackToStaff} aria-label="กลับหน้าเจ้าหน้าที่" className="shrink-0 active:opacity-70 transition-opacity hover:scale-105 transition-transform">
               <div className="w-10 h-10 rounded-full bg-white/10 border-2 border-white/25 flex items-center justify-center">
-                <Database size={18} />
+                <ArrowLeft size={18} />
               </div>
             </button>
             <div>

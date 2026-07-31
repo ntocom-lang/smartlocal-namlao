@@ -134,8 +134,9 @@ export default function StaffOperationalDashboard({
 
   const taskCopy = {
     events: { label: 'เพิ่มกิจกรรมในปฏิทิน', description: 'ส่งกำหนดการให้ผู้บริหารทราบ' },
-    report: { label: 'รายงาน', description: 'ดูและจัดทำรายงานสรุป' },
-    map: { label: 'แผนที่', description: 'ดูข้อมูลและตำแหน่งงานบนแผนที่' },
+    report: { label: 'รายงานการทำงาน', description: 'ดูและจัดทำรายงานสรุป' },
+    map: { label: 'แผนที่ระบบ GIS', description: 'ดูข้อมูลและตำแหน่งงานบนแผนที่' },
+    'data-center': { label: 'ศูนย์รวมข้อมูลดิจิทัล', description: 'ดูภาพรวมและสถิติข้อมูลของหน่วยงาน' },
   }
   const visibleItems = visibleGroups.flatMap(group => group.items)
   const taskActions = ['events', 'report', 'data-center']
@@ -177,6 +178,8 @@ export default function StaffOperationalDashboard({
             const { key, Icon, color, bg } = item
             const copy = taskCopy[key]
             const isManagementEvent = key === 'events'
+            const itemLabel = copy?.label || item?.label || 'เมนูใช้งาน'
+            const itemDesc = copy?.description || item?.description || ''
             return (
               <button key={key} type="button"
                 onClick={() => openTask(item)}
@@ -186,10 +189,10 @@ export default function StaffOperationalDashboard({
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <p className="text-xs font-black text-slate-800">{copy.label}</p>
+                    <p className="text-xs font-black text-slate-800">{itemLabel}</p>
                     {isManagementEvent && <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[9px] font-bold text-violet-700">แจ้งกำหนดการต่างๆ</span>}
                   </div>
-                  <p className="mt-0.5 hidden truncate text-[10px] text-slate-400 sm:block">{copy.description}</p>
+                  {itemDesc && <p className="mt-0.5 hidden truncate text-[10px] text-slate-400 sm:block">{itemDesc}</p>}
                 </div>
                 <ChevronRight size={15} className="shrink-0 text-slate-300" />
               </button>

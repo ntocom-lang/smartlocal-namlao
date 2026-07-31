@@ -193,14 +193,23 @@ export function TenantProvider({ children }) {
           return
         }
 
-        setTenant(data)
-        setTerminology(TERMINOLOGY[data.org_type] ?? TERMINOLOGY['อบต.'])
-        applyTheme(data.theme_color ?? '#1d4ed8', data.ui_style)
-        document.title = data.name
-        try { injectPWAManifest(data) } catch (_) {}
+        // Google fields and optional columns were added later than the core tenant schema. Read them separately so an
+        // environment that has not applied the optional migration can still load the whole app.
+        const { data: googleConfig, error: googleConfigError } = await supabase
+          .from('municipalities')
+          .select('google_maps_api_key, google_cloud_email, google_project_id')
+          .eq('id', data.id)
+          .maybeSingle()
+        const resolvedTenant = googleConfigError ? data : { ...data, ...googleConfig }
+
+        setTenant(resolvedTenant)
+        setTerminology(TERMINOLOGY[resolvedTenant.org_type] ?? TERMINOLOGY['อบต.'])
+        applyTheme(resolvedTenant.theme_color ?? '#1d4ed8', resolvedTenant.ui_style)
+        document.title = resolvedTenant.name
+        try { injectPWAManifest(resolvedTenant) } catch (_) {}
         try {
-          localStorage.setItem('sl_slug', data.slug)
-          localStorage.setItem('sl_tenant_name', data.name)
+          localStorage.setItem('sl_slug', resolvedTenant.slug)
+          localStorage.setItem('sl_tenant_name', resolvedTenant.name)
         } catch (_) {}
         setLoading(false)
       } catch (err) {

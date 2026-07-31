@@ -3,28 +3,14 @@ import { createPortal } from 'react-dom'
 import {
   MapPin, Plus, X, Loader2, Trash2, Pencil, ChevronLeft,
   Image, AlertTriangle, CheckCircle2, Calendar, Banknote, Building2,
-  Search, Clock, Upload, ChevronRight, Camera, Navigation, Copy, Check, Layers, Maximize2, Minimize2,
+  Search, Clock, Upload, ChevronRight, Camera, Navigation, Copy, Check, Maximize2, Minimize2,
 } from 'lucide-react'
-import { MapContainer, TileLayer, Marker, Tooltip, Polyline, CircleMarker } from 'react-leaflet'
-import L from 'leaflet'
-import 'leaflet/dist/leaflet.css'
+import GoogleMapCanvas from '../common/GoogleMapCanvas'
 import { supabase } from '../../lib/supabase'
 import { compressImage } from '../../lib/imageUtils'
 import { logAction } from '../../lib/auditLog'
-import MapPicker from '../MapPicker'
 import InlineMapPicker from '../InlineMapPicker'
 import InlinePolylinePicker from '../InlinePolylinePicker'
-
-// Fix leaflet default marker icon
-const defaultIcon = L.icon({
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41],
-})
 
 const THIS_YEAR = new Date().getFullYear() + 543
 const ROUTE_STYLE = {
@@ -152,213 +138,104 @@ function InfoRow({ label, value }) {
   )
 }
 
-/* ── Detail Map with layer switcher ── */
-const TILE_STREET = {
-  url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-}
-const TILE_SATELLITE = {
-  url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-  attribution: '&copy; Esri',
-}
-const TILE_LABELS = {
-  url: 'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png',
-  subdomains: 'abcd',
-}
-
-function LayerControl({ mode, setMode, onExpand, isFullscreen }) {
-  return (
-    <div className="absolute top-2 right-2 z-1000 flex flex-col gap-1.5">
-      <button type="button" onClick={onExpand}
-        className="w-8 h-8 bg-white rounded-lg shadow border border-gray-100 flex items-center justify-center hover:bg-gray-50 transition-colors">
-        {isFullscreen ? <Minimize2 size={15} className="text-gray-600" /> : <Maximize2 size={15} className="text-gray-600" />}
-      </button>
-      <button type="button" onClick={() => setMode(m => m === 'street' ? 'satellite' : 'street')}
-        className="w-8 h-8 bg-white rounded-lg shadow border border-gray-100 flex items-center justify-center hover:bg-gray-50 transition-colors"
-        title={mode === 'street' ? 'เปลี่ยนเป็นดาวเทียม' : 'เปลี่ยนเป็นแผนที่ปกติ'}>
-        <Layers size={15} className="text-gray-600" />
-      </button>
-    </div>
-  )
-}
-
+/* ── Detail Map — Native Google Maps ── */
 function DetailMap({ lat, lng, title, routePoints, routeColor = '#3b82f6', projectType }) {
-  const [tileMode, setTileMode]   = useState('street')
-  const [copied, setCopied]       = useState(false)
+  const [copied, setCopied] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
-  const [viewMode, setViewMode]   = useState('route') // 'route' | 'pin'
-  const tile = tileMode === 'satellite' ? TILE_SATELLITE : TILE_STREET
+  const [viewMode, setViewMode] = useState('route')
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(`${lat.toFixed(6)}, ${lng.toFixed(6)}`)
+  const hasRoute = routePoints?.length >= 2
+  const navLat = hasRoute ? Number(routePoints[0].lat) : Number(lat)
+  const navLng = hasRoute ? Number(routePoints[0].lng) : Number(lng)
+  const middle = hasRoute ? routePoints[Math.floor(routePoints.length / 2)] : null
+  const pinPoint = middle ? { lat: Number(middle.lat), lng: Number(middle.lng) } : { lat: navLat, lng: navLng }
+  const center = hasRoute && viewMode === 'route' ? pinPoint : { lat: navLat, lng: navLng }
+
+  function handleCopy() {
+    navigator.clipboard.writeText(`${navLat.toFixed(6)}, ${navLng.toFixed(6)}`)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const hasRoute = routePoints?.length >= 2
+  function haversineKm(a, b) {
+    const radius = 6371
+    const dLat = (b.lat - a.lat) * Math.PI / 180
+    const dLng = (b.lng - a.lng) * Math.PI / 180
+    const value = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2
+    return radius * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value))
+  }
 
-  const navLat = hasRoute ? routePoints[0].lat : lat
-  const navLng = hasRoute ? routePoints[0].lng : lng
-  const pinMid = hasRoute ? routePoints[Math.floor(routePoints.length / 2)] : null
-  const pinLat = pinMid ? pinMid.lat : navLat
-  const pinLng = pinMid ? pinMid.lng : navLng
+  const totalDistanceKm = hasRoute
+    ? routePoints.reduce((sum, point, index) => index === 0 ? 0 : sum + haversineKm(routePoints[index - 1], point), 0)
+    : 0
+  const distanceLabel = totalDistanceKm >= 1 ? `${totalDistanceKm.toFixed(2)} กม.` : `${Math.round(totalDistanceKm * 1000)} ม.`
 
-  const navButtons = (
-    <div className="absolute bottom-3 left-3 z-1000 flex items-center gap-2">
-      <a href={`https://www.google.com/maps/dir/?api=1&destination=${navLat},${navLng}`}
-        target="_blank" rel="noopener noreferrer"
-        className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl shadow-lg text-sm font-bold transition-colors">
+  const markers = hasRoute && viewMode === 'route'
+    ? [
+        { id: 'start', position: routePoints[0], color: '#22c55e', label: 'A', scale: 11, title: 'จุดเริ่มต้น' },
+        { id: 'end', position: routePoints[routePoints.length - 1], color: '#ef4444', label: 'B', scale: 11, title: 'จุดสิ้นสุด' },
+      ]
+    : [{ id: 'project', position: pinPoint, color: '#ef4444', scale: 16, title }]
+  const polylines = hasRoute && viewMode === 'route'
+    ? [{ id: 'project-route', path: routePoints, color: routeColor, weight: 5, dashArray: ROUTE_DASH[projectType] }]
+    : []
+
+  const navigationButtons = (
+    <div className="absolute bottom-3 left-3 z-20 flex items-center gap-2">
+      <a href={`https://www.google.com/maps/dir/?api=1&destination=${navLat},${navLng}`} target="_blank" rel="noopener noreferrer"
+        className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-sm font-bold text-white shadow-lg hover:bg-blue-700">
         <Navigation size={14} /> นำทาง
       </a>
-      <a href={`https://www.google.com/maps?q=${navLat},${navLng}`}
-        target="_blank" rel="noopener noreferrer"
-        className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-gray-50 text-gray-700 rounded-xl shadow-lg border border-gray-200 text-sm font-bold transition-colors">
-        <MapPin size={14} /> แสดงบน Google Maps
+      <a href={`https://www.google.com/maps/search/?api=1&query=${navLat},${navLng}`} target="_blank" rel="noopener noreferrer"
+        className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3.5 py-2 text-sm font-bold text-gray-700 shadow-lg hover:bg-gray-50">
+        <MapPin size={14} /> เปิดใน Google Maps
       </a>
     </div>
   )
 
-  function haversineKm(a, b) {
-    const R = 6371
-    const dLat = (b.lat - a.lat) * Math.PI / 180
-    const dLng = (b.lng - a.lng) * Math.PI / 180
-    const s = Math.sin(dLat / 2) ** 2 +
-      Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) *
-      Math.sin(dLng / 2) ** 2
-    return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s))
-  }
-
-  const totalDistanceKm = hasRoute
-    ? routePoints.reduce((sum, p, i) => i === 0 ? 0 : sum + haversineKm(routePoints[i - 1], p), 0)
-    : 0
-
-  const distanceLabel = totalDistanceKm >= 1
-    ? `${totalDistanceKm.toFixed(2)} กม.`
-    : `${Math.round(totalDistanceKm * 1000)} ม.`
-
-  const startIcon = L.divIcon({
-    html: `<div style="width:14px;height:14px;border-radius:50%;background:#22c55e;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.4)"></div>`,
-    className: '', iconAnchor: [7, 7],
-  })
-  const endIcon = L.divIcon({
-    html: `<div style="width:14px;height:14px;border-radius:50%;background:#ef4444;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.4)"></div>`,
-    className: '', iconAnchor: [7, 7],
-  })
-
-  const center = hasRoute && viewMode === 'route'
-    ? [routePoints[Math.floor(routePoints.length / 2)].lat, routePoints[Math.floor(routePoints.length / 2)].lng]
-    : [navLat, navLng]
-
-  const mapContent = (zoom) => (
-    <>
-      <TileLayer key={tileMode} url={tile.url} attribution={tile.attribution} />
-      {tileMode === 'satellite' && (
-        <TileLayer key="labels" url={TILE_LABELS.url} subdomains={TILE_LABELS.subdomains} attribution="" />
-      )}
-      {hasRoute && viewMode === 'route' ? (
-        <>
-          <Polyline positions={routePoints.map(p => [p.lat, p.lng])}
-            pathOptions={{ color: routeColor, weight: 5, opacity: 0.85, ...(ROUTE_DASH[projectType] && { dashArray: ROUTE_DASH[projectType] }) }} />
-          <Marker position={[routePoints[0].lat, routePoints[0].lng]} icon={startIcon}>
-            <Tooltip permanent direction="top" offset={[0, -10]}
-              className="bg-white! border! border-green-300! shadow-md! rounded-lg! px-2! py-1! text-xs! font-bold! text-green-700!">
-              จุดเริ่มต้น
-            </Tooltip>
-          </Marker>
-          <Marker position={[routePoints[routePoints.length - 1].lat, routePoints[routePoints.length - 1].lng]} icon={endIcon}>
-            <Tooltip permanent direction="top" offset={[0, -10]}
-              className="bg-white! border! border-red-300! shadow-md! rounded-lg! px-2! py-1! text-xs! font-bold! text-red-700!">
-              จุดสิ้นสุด
-            </Tooltip>
-          </Marker>
-        </>
-      ) : (
-        <Marker position={[pinLat, pinLng]} icon={defaultIcon}>
-          <Tooltip permanent direction="top" offset={[0, -36]}
-            className="bg-white! border! border-gray-200! shadow-md! rounded-lg! px-3! py-1.5! text-sm! font-medium! text-gray-700!">
-            {title}
-          </Tooltip>
-        </Marker>
-      )}
-    </>
+  const map = className => (
+    <div className="relative h-full w-full">
+      <GoogleMapCanvas center={center} zoom={15} mapTypeId="hybrid" markers={markers} polylines={polylines}
+        fitBounds={hasRoute && viewMode === 'route'} className={className} />
+      {navigationButtons}
+    </div>
   )
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-      <div className="flex items-center gap-2 px-5 py-3">
+    <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+      <div className="flex flex-wrap items-center gap-2 px-5 py-3">
         <MapPin size={16} className="text-blue-500" />
-        <h3 className="font-bold text-gray-700">ที่ตั้งบนแผนที่</h3>
+        <h3 className="font-bold text-gray-700">ที่ตั้งบน Google Maps</h3>
         {hasRoute ? (
-          <div className="ml-auto flex items-center bg-gray-100 rounded-xl p-0.5 gap-0.5">
-            <button onClick={() => setViewMode('route')}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${viewMode === 'route' ? 'bg-white shadow-sm text-blue-700' : 'text-gray-500'}`}>
-              〰 แนวเส้นทางโครงการ
-            </button>
-            <button onClick={() => setViewMode('pin')}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${viewMode === 'pin' ? 'bg-white shadow-sm text-blue-700' : 'text-gray-500'}`}>
-              📍 ปักหมุด
-            </button>
+          <div className="ml-auto flex items-center gap-0.5 rounded-xl bg-gray-100 p-0.5">
+            <button onClick={() => setViewMode('route')} className={`rounded-lg px-2.5 py-1 text-xs font-bold ${viewMode === 'route' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500'}`}>〰 แนวเส้นทาง</button>
+            <button onClick={() => setViewMode('pin')} className={`rounded-lg px-2.5 py-1 text-xs font-bold ${viewMode === 'pin' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500'}`}>📍 ปักหมุด</button>
           </div>
         ) : (
-          <button onClick={handleCopy}
-            className="ml-auto flex items-center gap-1.5 text-sm font-mono font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-xl border border-blue-100 transition-colors"
-            title="คัดลอกพิกัด">
-            {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
-            {copied ? 'คัดลอกแล้ว' : `${lat.toFixed(6)}, ${lng.toFixed(6)}`}
+          <button onClick={handleCopy} className="ml-auto flex items-center gap-1.5 rounded-xl border border-blue-100 bg-blue-50 px-3 py-1 font-mono text-sm font-semibold text-blue-600">
+            {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}{copied ? 'คัดลอกแล้ว' : `${navLat.toFixed(6)}, ${navLng.toFixed(6)}`}
           </button>
         )}
+        <button type="button" onClick={() => setFullscreen(true)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-600" title="ขยายเต็มจอ"><Maximize2 size={15} /></button>
       </div>
       {hasRoute && viewMode === 'route' && (
-        <div className="flex items-center gap-3 px-5 pb-3 text-xs">
-          <span className="flex items-center gap-1.5 bg-green-50 border border-green-200 text-green-700 font-semibold px-2.5 py-1 rounded-lg">
-            <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" /> จุดเริ่มต้น {routePoints[0].lat.toFixed(5)}, {routePoints[0].lng.toFixed(5)}
-          </span>
-          <span className="flex items-center gap-1.5 bg-red-50 border border-red-200 text-red-700 font-semibold px-2.5 py-1 rounded-lg">
-            <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" /> จุดสิ้นสุด {routePoints[routePoints.length - 1].lat.toFixed(5)}, {routePoints[routePoints.length - 1].lng.toFixed(5)}
-          </span>
-          <span className="ml-auto flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-700 font-bold px-2.5 py-1 rounded-lg">
-            ระยะทางรวม {distanceLabel}
-          </span>
+        <div className="flex flex-wrap items-center gap-2 px-5 pb-3 text-xs">
+          <span className="rounded-lg border border-green-200 bg-green-50 px-2.5 py-1 font-semibold text-green-700">● จุดเริ่มต้น {Number(routePoints[0].lat).toFixed(5)}, {Number(routePoints[0].lng).toFixed(5)}</span>
+          <span className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 font-semibold text-red-700">● จุดสิ้นสุด {Number(routePoints[routePoints.length - 1].lat).toFixed(5)}, {Number(routePoints[routePoints.length - 1].lng).toFixed(5)}</span>
+          <strong className="ml-auto rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-blue-700">ระยะทางรวม {distanceLabel}</strong>
         </div>
       )}
-      {hasRoute && viewMode === 'pin' && (
-        <div className="flex items-center gap-3 px-5 pb-3 text-xs">
-          <span className="flex items-center gap-1.5 bg-green-50 border border-green-200 text-green-700 font-semibold px-2.5 py-1 rounded-lg">
-            <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" /> จุดเริ่มต้น {routePoints[0].lat.toFixed(5)}, {routePoints[0].lng.toFixed(5)}
-          </span>
-          <button onClick={handleCopy}
-            className="ml-auto flex items-center gap-1.5 text-xs font-mono font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-lg border border-blue-100 transition-colors">
-            {copied ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
-            {copied ? 'คัดลอกแล้ว' : `${navLat.toFixed(6)}, ${navLng.toFixed(6)}`}
-          </button>
-        </div>
-      )}
-      <div style={{ height: 300, position: 'relative' }}>
-        <MapContainer center={center} zoom={15} style={{ width: '100%', height: '100%' }} scrollWheelZoom zoomControl>
-          {mapContent(15)}
-        </MapContainer>
-        <LayerControl mode={tileMode} setMode={setTileMode} onExpand={() => setFullscreen(true)} isFullscreen={false} />
-        {navButtons}
-      </div>
+      <div className="relative h-[300px]">{map('w-full h-full min-h-[300px]')}</div>
 
       {fullscreen && createPortal(
-        <div className="fixed inset-0 z-9999 flex flex-col bg-black">
-          <div className="flex items-center justify-between px-4 py-3 bg-gray-900 text-white shrink-0">
-            <span className="text-sm font-semibold truncate">{title}</span>
-            <button type="button" onClick={() => setFullscreen(false)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm font-medium transition-colors shrink-0">
-              <Minimize2 size={14} /> ย่อแผนที่
-            </button>
+        <div className="fixed inset-0 z-9999 flex flex-col bg-white">
+          <div className="flex shrink-0 items-center justify-between bg-gray-900 px-4 py-3 text-white">
+            <span className="truncate text-sm font-semibold">{title}</span>
+            <button type="button" onClick={() => setFullscreen(false)} className="flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-sm font-medium hover:bg-white/20"><Minimize2 size={14} /> ย่อแผนที่</button>
           </div>
-          <div className="relative flex-1">
-            <MapContainer center={center} zoom={16} style={{ width: '100%', height: '100%' }} scrollWheelZoom zoomControl>
-              {mapContent(16)}
-            </MapContainer>
-            <LayerControl mode={tileMode} setMode={setTileMode} onExpand={() => setFullscreen(false)} isFullscreen />
-            {navButtons}
-          </div>
+          <div className="min-h-0 flex-1">{map('w-full h-full min-h-[420px]')}</div>
         </div>,
-        document.body
+        document.body,
       )}
     </div>
   )
@@ -389,7 +266,6 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
   const [routePoints, setRoutePoints]   = useState([])
   const [photos, setPhotos]             = useState([])
   const [existingPhotos, setExisting]   = useState([])
-  const [showMap, setShowMap]           = useState(false)
   const [locations, setLocations]       = useState([])
   const [submitting, setSubmitting]     = useState(false)
   const [formError, setFormError]       = useState(null)
