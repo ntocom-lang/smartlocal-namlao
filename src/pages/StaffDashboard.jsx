@@ -19,7 +19,6 @@ const MapPicker = lazy(() => import('../components/MapPicker'))
 const CivilProjectAdmin = lazy(() => import('../components/admin/CivilProjectAdmin'))
 const InfraWorkAdmin = lazy(() => import('../components/admin/InfraWorkAdmin'))
 const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectReport'))
-const MapDashboardAdmin = lazy(() => import('../components/admin/MapDashboardAdmin'))
 const EventsManager = lazy(() => import('../components/admin/EventsManager'))
 const ComplaintsManager = lazy(() => import('../components/admin/ComplaintsManager'))
 const ReportManager = lazy(() => import('../components/admin/ReportManager'))
@@ -75,7 +74,9 @@ const STANDALONE_GROUPS = [
       { key: 'projects',      label: 'แผนงาน/โครงการ',  Icon: ClipboardList, color: '#7c3aed', bg: '#ede9fe' },
       { key: 'civil-report',  label: 'รายงานโครงการ',   Icon: Printer,       color: '#7c3aed', bg: '#ede9fe' },
       { key: 'report',        label: 'รายงาน',           Icon: TrendingUp,    color: '#f59e0b', bg: '#fef3c7' },
-      { key: 'map',      label: 'แผนที่',           Icon: MapPin,        color: '#0891b2', bg: '#e0f2fe' },
+      // รวมกับศูนย์ข้อมูลดิจิทัลแล้ว — กดแล้ว navigate ไป /data-center ในแท็บเดิมแทนที่จะสลับโมดูลในหน้านี้
+      // (ปุ่ม externalUrl เช็คใน StaffOperationalDashboard.openTask และตัว sidebar เองด้านล่าง)
+      { key: 'data-center', label: 'แผนที่',         Icon: MapPin,        color: '#0891b2', bg: '#e0f2fe', externalUrl: '/data-center' },
       { key: 'fleet',    label: 'ยานพาหนะ/น้ำมัน',  Icon: Car,           color: '#0369a1', bg: '#e0f2fe' },
     ],
   },
@@ -1547,7 +1548,7 @@ export default function StaffDashboard() {
 
   const allModuleKeys = MODULES.map(m => m.key)
   // keys ที่เคยอยู่ใน ModuleManager — ถ้า key ใหม่ยังไม่เคยถูก manage ให้ default เป็น enabled
-  const managedKeys = ['inbox', 'docs', 'complaints', 'events', 'projects', 'map', 'report']
+  const managedKeys = ['inbox', 'docs', 'complaints', 'events', 'projects', 'data-center', 'report']
   const baseEnabledKeys = tenant?.enabled_modules
     ? [...tenant.enabled_modules, ...allModuleKeys.filter(k => !managedKeys.includes(k))]
     : allModuleKeys
@@ -1555,7 +1556,7 @@ export default function StaffDashboard() {
   // council ได้โมดูลเพิ่มเติม: map, civil-report, report
   const role = profile?.role
   const alwaysEnabled = ['events']
-  if (role === 'council') alwaysEnabled.push('map', 'civil-report', 'report')
+  if (role === 'council') alwaysEnabled.push('data-center', 'civil-report', 'report')
   const enabledKeys = Array.from(new Set([...baseEnabledKeys, ...alwaysEnabled]))
   const visibleStandaloneGroups = STANDALONE_GROUPS
     .map(g => ({ ...g, items: g.items.filter(m => enabledKeys.includes(m.key)) }))
@@ -1652,9 +1653,11 @@ export default function StaffDashboard() {
             <p className="font-bold text-sm leading-tight truncate">{tenant?.name ?? 'Staff Portal'}</p>
             <p className="text-white/70 text-[11px] mt-0.5">สำหรับเจ้าหน้าที่</p>
           </div>
-          <button onClick={() => window.open('/data-center', '_blank')} aria-label="ศูนย์รวมข้อมูลดิจิทัล" className="p-1.5 text-white/85 hover:text-white transition-colors shrink-0">
-            <Database size={19} />
-          </button>
+          {enabledKeys.includes('data-center') && (
+            <button onClick={() => navigate('/data-center')} aria-label="ศูนย์รวมข้อมูลดิจิทัล" className="p-1.5 text-white/85 hover:text-white transition-colors shrink-0">
+              <Database size={19} />
+            </button>
+          )}
           <button onClick={() => navigate('/notifications')} aria-label="การแจ้งเตือน" className="p-1.5 text-white/85 hover:text-white transition-colors shrink-0">
             <Bell size={19} />
           </button>
@@ -1726,22 +1729,24 @@ export default function StaffDashboard() {
                 <Home size={16} strokeWidth={activeModule === 'home' ? 2.2 : 1.8} />
                 <span className="flex-1 text-left text-xs">หน้าหลัก</span>
               </button>
-              <button onClick={() => window.open('/data-center', '_blank')}
-                className="mb-2 flex min-h-9 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-all text-white/80 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60">
-                <Database size={16} strokeWidth={1.8} />
-                <span className="flex-1 text-left text-xs">ศูนย์รวมข้อมูลดิจิทัล</span>
-              </button>
+              {enabledKeys.includes('data-center') && (
+                <button onClick={() => navigate('/data-center')}
+                  className="mb-2 flex min-h-9 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-all text-white/80 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60">
+                  <Database size={16} strokeWidth={1.8} />
+                  <span className="flex-1 text-left text-xs">ศูนย์รวมข้อมูลดิจิทัล</span>
+                </button>
+              )}
               {visibleStandaloneGroups.map(({ group, items }) => (
                 <div key={group} className="mb-3">
                   <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-widest text-white/55">{group}</p>
                   <div className="space-y-0.5">
-                    {items.map(({ key, label, Icon }) => {
+                    {items.map(({ key, label, Icon, externalUrl }) => {
                       const isActive = activeModule === key
                       const badge = key === 'inbox' && pendingCount > 0 ? pendingCount
                         : key === 'complaints' && newComplaintCount > 0 ? newComplaintCount
                         : null
                       return (
-                        <button key={key} onClick={() => setActiveModule(key)}
+                        <button key={key} onClick={() => externalUrl ? navigate(externalUrl) : setActiveModule(key)}
                           className={`flex min-h-9 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${isActive ? 'bg-white/20 text-white shadow-sm' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}>
                           <Icon size={16} strokeWidth={isActive ? 2.2 : 1.8} />
                           <span className="flex-1 text-left text-xs">{label}</span>
@@ -1763,13 +1768,13 @@ export default function StaffDashboard() {
                   <div className="space-y-0.5">
                     {items.length === 0 ? (
                       <p className="px-3 py-1.5 text-[11px] italic text-white/35">ยังไม่มีเมนูงานในกองนี้</p>
-                    ) : items.map(({ key, label, Icon }) => {
+                    ) : items.map(({ key, label, Icon, externalUrl }) => {
                       const isActive = activeModule === key
                       const badge = key === 'inbox' && pendingCount > 0 ? pendingCount
                         : key === 'complaints' && newComplaintCount > 0 ? newComplaintCount
                         : null
                       return (
-                        <button key={key} onClick={() => setActiveModule(key)}
+                        <button key={key} onClick={() => externalUrl ? navigate(externalUrl) : setActiveModule(key)}
                           className={`flex min-h-9 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${isActive ? 'bg-white/20 text-white shadow-sm' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}>
                           <Icon size={16} strokeWidth={isActive ? 2.2 : 1.8} />
                           <span className="flex-1 text-left text-xs">{label}</span>
@@ -1822,9 +1827,6 @@ export default function StaffDashboard() {
             {activeModule === 'events'     && <EventsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} autoEditEventId={autoEditEventId} onAutoEditHandled={() => setAutoEditEventId(null)} autoCreateSignal={autoCreateEventSignal} autoCreateAudience="management" onAutoCreateHandled={() => setAutoCreateEventSignal(0)} />}
             {activeModule === 'projects'      && <CivilProjectAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} myDepartmentId={profile?.department_id ?? null} />}
             {activeModule === 'infra'      && <InfraWorkAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} myDepartmentId={profile?.department_id ?? null} />}
-            {activeModule === 'map'        && <MapDashboardAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} onNavigate={() => {}}
-              onEditComplaint={(id) => { setMapOpenComplaintId(id); setActiveModule('complaints') }}
-              onEditProject={() => setActiveModule('projects')} />}
             {activeModule === 'report'       && <StaffReportWrapper tenant={tenant} />}
             {activeModule === 'civil-report'      && <CivilProjectReport tenant={tenant} />}
             {activeModule === 'posts'            && <PostsManager />}

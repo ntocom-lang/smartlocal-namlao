@@ -138,14 +138,14 @@ export default function StaffOperationalDashboard({
     map: { label: 'แผนที่', description: 'ดูข้อมูลและตำแหน่งงานบนแผนที่' },
   }
   const visibleItems = visibleGroups.flatMap(group => group.items)
-  const taskActions = ['events', 'report', 'map']
+  const taskActions = ['events', 'report', 'data-center']
     .map(key => visibleItems.find(item => item.key === key))
     .filter(Boolean)
 
   function openTask(item) {
     if (item.key === 'events' && onCreateManagementEvent) onCreateManagementEvent()
     else if (item.navTo) navigate(item.navTo)
-    else if (item.externalUrl) window.open(item.externalUrl, '_blank', 'noopener,noreferrer')
+    else if (item.externalUrl) navigate(item.externalUrl)
     else setActiveModule(item.key)
   }
 
@@ -283,7 +283,7 @@ export default function StaffOperationalDashboard({
               <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 xl:grid-cols-4">
                 {items.map(({ key, label, Icon, color, bg, externalUrl, navTo }) => (
                   <button key={key} type="button"
-                    onClick={() => navTo ? navigate(navTo) : externalUrl ? window.open(externalUrl, '_blank', 'noopener,noreferrer') : setActiveModule(key)}
+                    onClick={() => navTo ? navigate(navTo) : externalUrl ? navigate(externalUrl) : setActiveModule(key)}
                     className="flex min-h-14 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left hover:bg-slate-50 active:scale-[0.99]">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: bg ?? `${color}18` }}><Icon size={18} style={{ color }} /></div>
                     <p className="min-w-0 flex-1 text-xs font-bold leading-tight text-slate-700">{label}</p>

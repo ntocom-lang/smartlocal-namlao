@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LayoutGrid, MapPin, Plus, Bell, Database, X, PanelLeftOpen, PanelLeftClose, Tags } from 'lucide-react'
+import { LayoutGrid, MapPin, Plus, Bell, Database, ArrowLeft, PanelLeftOpen, PanelLeftClose, Tags } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 
@@ -46,8 +46,8 @@ export default function DataCenterDashboard() {
     setActiveModule('overview')
   }
 
-  function handleCloseTab() {
-    window.close()
+  function handleBackToStaff() {
+    navigate('/staff')
   }
 
   const isMapModule = activeModule === 'map'
@@ -60,10 +60,10 @@ export default function DataCenterDashboard() {
       <header className="md:hidden text-white px-4 pt-3 pb-4 relative overflow-hidden shrink-0"
         style={{ background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)' }}>
         <div className="flex items-center gap-3 relative z-10">
-          <button onClick={() => navigate('/data-center')} className="shrink-0 active:opacity-70 transition-opacity">
-            {tenant?.logo_url
-              ? <img src={tenant.logo_url} alt="โลโก้" className="w-11 h-11 rounded-full object-contain bg-white/10 p-0.5 border border-white/20" />
-              : <div className="w-11 h-11 rounded-full border-2 border-white/40 bg-white/20 flex items-center justify-center"><Database size={18} /></div>}
+          <button onClick={handleBackToStaff} aria-label="กลับหน้าเจ้าหน้าที่" className="shrink-0 active:opacity-70 transition-opacity">
+            <div className="w-11 h-11 rounded-full border-2 border-white/40 bg-white/20 flex items-center justify-center">
+              <ArrowLeft size={18} />
+            </div>
           </button>
           <div className="flex-1 min-w-0">
             <p className="font-bold text-sm leading-tight truncate">ศูนย์รวมข้อมูลดิจิทัล</p>
@@ -95,9 +95,9 @@ export default function DataCenterDashboard() {
               <div className="text-right">
                 <p className="text-xs font-bold text-white">{profile.full_name}</p>
               </div>
-              <button onClick={handleCloseTab} aria-label="ปิดหน้าต่าง"
+              <button onClick={handleBackToStaff} aria-label="กลับหน้าเจ้าหน้าที่"
                 className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors border border-white/20">
-                <X size={15} />
+                <ArrowLeft size={15} />
               </button>
             </div>
           )}
@@ -140,7 +140,7 @@ export default function DataCenterDashboard() {
                 <div className="w-6 h-6 border-4 border-gray-200 rounded-full animate-spin" style={{ borderTopColor: '#3b82f6' }} />
               </div>
             }>
-              <DataCenterMap key={refreshKey} tenant={tenant} />
+              <DataCenterMap key={refreshKey} tenant={tenant} currentUserRole={profile?.role} />
             </Suspense>
           ) : (
             <div className="max-w-5xl mx-auto">
