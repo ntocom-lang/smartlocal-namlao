@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { Loader2, Database, MessageSquareWarning, Construction, Minimize2, Maximize2, X, Route } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import GoogleMapCanvas from '../common/GoogleMapCanvas'
@@ -230,14 +230,18 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
 
   useEffect(() => {
     if (!tenant?.id) return
-    // RPC เดียวกันทั้งฝั่งเจ้าหน้าที่และประชาชน — รวมพิกัดจากทั้งศูนย์ข้อมูลดิจิทัลเอง และฟีเจอร์เดิม
-    // (คำร้อง/สถานประกอบการ/โครงสร้างพื้นฐาน/โครงการก่อสร้าง) — กรองสถานะทำที่ฝั่ง client แทน เพื่อสลับได้ทันทีไม่ต้อง fetch ใหม่
+    let active = true
+
     supabase.rpc('data_center_unified_pins', { _municipality_id: tenant.id })
       .then(({ data, error }) => {
+        if (!active) return
         if (error) { console.error('data_center_unified_pins:', error.message); setAllRows([]); setLoading(false); return }
-        setAllRows((data ?? []).filter(p => p.latitude != null && p.longitude != null))
+        const clean = (data ?? []).filter(p => p.latitude != null && p.longitude != null)
+        setAllRows(clean)
         setLoading(false)
       })
+
+    return () => { active = false }
   }, [tenant?.id])
 
   useEffect(() => {
@@ -277,12 +281,34 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
     setSavingProjectId(null)
   }
 
+  const boundaryBbox = useMemo(() => {
+    const coords = boundaryGeoJson?.features?.[0]?.geometry?.coordinates?.[0]
+    if (!Array.isArray(coords) || coords.length < 3) return null
+    let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity
+    coords.forEach(pt => {
+      const lng = Number(pt[0]), lat = Number(pt[1])
+      if (lat < minLat) minLat = lat
+      if (lat > maxLat) maxLat = lat
+      if (lng < minLng) minLng = lng
+      if (lng > maxLng) maxLng = lng
+    })
+    return { minLat: minLat - 0.015, maxLat: maxLat + 0.015, minLng: minLng - 0.015, maxLng: maxLng + 0.015 }
+  }, [boundaryGeoJson])
+
   const entries = allRows.filter(e => matchesStatusFilter(e, effectiveStatusFilter))
   const groups = Array.from(new Set(entries.map(e => e.group_name))).sort((a, b) => a.localeCompare(b, 'th'))
-  // เส้นทาง (ถนน) คุมด้วยปุ่ม showRoutes เดี่ยวๆ เลย ไม่ผ่านระบบกรุ๊ป/ประเภทย่อยแบบจุดทั่วไป
-  // เพราะอยากให้กดปุ่มเดียวเห็นถนนทันที ไม่ต้องไปกดติ๊กประเภทในแถบขวาเพิ่มอีกที
   const visible = entries.filter(e => {
-    if (e.route_points?.length >= 2) return showRoutes
+    if (e.route_points?.length >= 2) {
+      if (!showRoutes) return false
+      if (boundaryBbox) {
+        const hasPointInBounds = e.route_points.some(pt =>
+          pt.lat >= boundaryBbox.minLat && pt.lat <= boundaryBbox.maxLat &&
+          pt.lng >= boundaryBbox.minLng && pt.lng <= boundaryBbox.maxLng
+        )
+        if (!hasPointInBounds) return false
+      }
+      return true
+    }
     return (activeGroups === null || activeGroups.has(e.group_name)) && activeCategories.has(categoryKey(e))
   })
   // ประเภทย่อยไหนที่เป็นเส้นทางล้วน (ถนนสายหลัก/สายรอง) ใช้บอก SummaryPanel ว่าแถวนี้ต้องผูกกับ

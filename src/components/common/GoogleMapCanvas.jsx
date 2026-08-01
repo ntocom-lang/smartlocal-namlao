@@ -5,38 +5,7 @@ import { loadGoogleMaps } from '../../lib/googleMaps'
 
 const isPoint = point => Number.isFinite(Number(point?.lat)) && Number.isFinite(Number(point?.lng))
 
-const NAMLAO_DEFAULT_BOUNDARY_GEOJSON = {
-  type: 'FeatureCollection',
-  features: [
-    {
-      type: 'Feature',
-      properties: { name: 'ขอบเขตตำบลน้ำเลา' },
-      geometry: {
-        type: 'Polygon',
-        coordinates: [[
-          [100.282, 18.262],
-          [100.285, 18.272],
-          [100.290, 18.281],
-          [100.302, 18.288],
-          [100.318, 18.292],
-          [100.334, 18.293],
-          [100.348, 18.289],
-          [100.358, 18.281],
-          [100.365, 18.268],
-          [100.362, 18.254],
-          [100.355, 18.242],
-          [100.342, 18.231],
-          [100.328, 18.224],
-          [100.312, 18.221],
-          [100.298, 18.225],
-          [100.288, 18.232],
-          [100.282, 18.245],
-          [100.282, 18.262],
-        ]],
-      },
-    },
-  ],
-}
+
 
 /**
  * Native Google Maps canvas used by every map surface in SmartLocal.
@@ -51,7 +20,9 @@ export default function GoogleMapCanvas({
   boundaryGeoJson = null,
   fitBounds = false,
   onMapClick,
+  onMapRightClick,
   onFeatureClick,
+  onMarkerDragEnd,
   onMapReady,
   className = 'w-full h-full min-h-[320px]',
   options = {},
@@ -64,7 +35,7 @@ export default function GoogleMapCanvas({
   const dataFeaturesRef = useRef([])
   const boundaryPolylineRef = useRef(null)
   const infoWindowRef = useRef(null)
-  const callbacksRef = useRef({ onMapClick, onFeatureClick, onMapReady })
+  const callbacksRef = useRef({ onMapClick, onMapRightClick, onFeatureClick, onMarkerDragEnd, onMapReady })
   const lastFitSignatureRef = useRef('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -87,17 +58,29 @@ export default function GoogleMapCanvas({
         lng: Number(tenant?.longitude) || 100.1167,
       }, [center, tenant?.latitude, tenant?.longitude])
 
+  const [fetchedBoundary, setFetchedBoundary] = useState(null)
+
+  useEffect(() => {
+    if (boundaryGeoJson === false || boundaryGeoJson === 'none' || boundaryGeoJson) return
+    const slug = tenant?.slug || 'namlao'
+    let active = true
+    fetch(`/boundaries/${slug}.geojson`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => { if (active) setFetchedBoundary(data) })
+      .catch(() => { if (active) setFetchedBoundary(null) })
+    return () => { active = false }
+  }, [boundaryGeoJson, tenant?.slug])
+
   const effectiveBoundaryGeoJson = useMemo(() => {
     if (boundaryGeoJson === false || boundaryGeoJson === 'none') return null
     if (boundaryGeoJson) return boundaryGeoJson
     if (tenant?.boundary_geojson) return tenant.boundary_geojson
-    if (tenant?.slug === 'namlao' || !tenant?.slug) return NAMLAO_DEFAULT_BOUNDARY_GEOJSON
-    return null
-  }, [boundaryGeoJson, tenant])
+    return fetchedBoundary
+  }, [boundaryGeoJson, tenant, fetchedBoundary])
 
   useEffect(() => {
-    callbacksRef.current = { onMapClick, onFeatureClick, onMapReady }
-  }, [onMapClick, onFeatureClick, onMapReady])
+    callbacksRef.current = { onMapClick, onMapRightClick, onFeatureClick, onMarkerDragEnd, onMapReady }
+  }, [onMapClick, onMapRightClick, onFeatureClick, onMarkerDragEnd, onMapReady])
   
   useEffect(() => {
     let active = true
@@ -128,6 +111,9 @@ export default function GoogleMapCanvas({
       mapRef.current = map
       map.addListener('click', event => {
         callbacksRef.current.onMapClick?.({ lat: event.latLng.lat(), lng: event.latLng.lng() })
+      })
+      map.addListener('rightclick', event => {
+        callbacksRef.current.onMapRightClick?.({ lat: event.latLng.lat(), lng: event.latLng.lng() })
       })
       callbacksRef.current.onMapReady?.(map, google)
       setError('')
@@ -186,8 +172,12 @@ export default function GoogleMapCanvas({
 
     overlaysRef.current.forEach(overlay => {
       google.maps.event.clearInstanceListeners(overlay)
-      if ('map' in overlay) overlay.map = null
-      else overlay.setMap?.(null)
+      if (typeof overlay.setMap === 'function') {
+        overlay.setMap(null)
+      }
+      if ('map' in overlay) {
+        overlay.map = null
+      }
     })
     overlaysRef.current = []
 
@@ -196,12 +186,14 @@ export default function GoogleMapCanvas({
       const PinElement = google.maps.marker?.PinElement
       if (!AdvancedMarkerElement) return
 
+      const isDraggable = Boolean(markerData.draggable)
       const marker = new AdvancedMarkerElement({
         map,
         position: { lat: Number(markerData.position.lat), lng: Number(markerData.position.lng) },
         title: markerData.title || '',
         zIndex: markerData.zIndex,
         gmpClickable: true,
+        gmpDraggable: isDraggable,
       })
 
       if (PinElement) {
@@ -212,6 +204,27 @@ export default function GoogleMapCanvas({
           glyphText: markerData.label ? String(markerData.label) : '',
           scale: markerData.scale ? (markerData.scale / 10) : 1.6,
         }))
+      }
+
+      if (isDraggable) {
+        const handleDragEnd = (event) => {
+          let pos = null
+          if (event.latLng) {
+            pos = { lat: event.latLng.lat(), lng: event.latLng.lng() }
+          } else if (marker.position) {
+            const p = marker.position
+            pos = {
+              lat: typeof p.lat === 'function' ? p.lat() : Number(p.lat),
+              lng: typeof p.lng === 'function' ? p.lng() : Number(p.lng),
+            }
+          }
+          if (pos) {
+            markerData.onDragEnd?.(pos)
+            callbacksRef.current.onMarkerDragEnd?.(markerData, pos)
+          }
+        }
+        marker.addListener('dragend', handleDragEnd)
+        marker.addListener('gmp-dragend', handleDragEnd)
       }
 
       marker.addListener('click', () => {
@@ -239,6 +252,10 @@ export default function GoogleMapCanvas({
         }
         callbacksRef.current.onFeatureClick?.(markerData)
       })
+      marker.addListener('rightclick', event => {
+        const point = event.latLng ? { lat: event.latLng.lat(), lng: event.latLng.lng() } : markerData.position
+        callbacksRef.current.onMapRightClick?.(point)
+      })
       overlaysRef.current.push(marker)
     })
 
@@ -264,6 +281,10 @@ export default function GoogleMapCanvas({
         }] : undefined,
       })
       line.addListener('click', () => callbacksRef.current.onFeatureClick?.(lineData))
+      line.addListener('rightclick', event => {
+        const point = event.latLng ? { lat: event.latLng.lat(), lng: event.latLng.lng() } : null
+        callbacksRef.current.onMapRightClick?.(point)
+      })
       overlaysRef.current.push(line)
     })
 
@@ -347,7 +368,14 @@ export default function GoogleMapCanvas({
   }, [])
 
   return (
-    <div className={`relative overflow-hidden bg-gray-100 ${className}`}>
+    <div
+      className={`relative overflow-hidden bg-gray-100 ${className}`}
+      onContextMenu={(e) => {
+        if (callbacksRef.current.onMapRightClick) {
+          e.preventDefault()
+        }
+      }}
+    >
       <div ref={containerRef} className="absolute inset-0" aria-label="Google Maps" />
 
       {!loading && !error && (

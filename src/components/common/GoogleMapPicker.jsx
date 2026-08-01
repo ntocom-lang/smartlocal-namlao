@@ -256,11 +256,8 @@ export default function GoogleMapPicker({
           boundaryGeoJson={showBoundary ? undefined : false}
           className={isModal ? 'w-full h-full min-h-[360px]' : mapClassName}
           onMapClick={readOnly ? undefined : (point) => {
-            if (!fixedCenterPin) {
-              reverseGeocode(point)
-            } else {
-              mapRef.current?.panTo(point)
-            }
+            mapRef.current?.panTo(point)
+            reverseGeocode(point)
           }}
           onMapReady={handleMapReady}
           markers={(readOnly || !fixedCenterPin) && validPoint(selected) ? [{ id: 'selected-location', position: selected, color: '#ef4444', scale: 17, title: 'ตำแหน่งที่เลือก' }] : []}

@@ -24,23 +24,28 @@ export default function InlinePolylinePicker({ value = [], onChange, defaultCent
   const [fullscreen, setFullscreen] = useState(false)
   const [redoStack, setRedoStack] = useState([])
 
-  const center = useMemo(() => value.length
-    ? value[Math.floor(value.length / 2)]
-    : (defaultCenter || { lat: 18.1448, lng: 100.1167 }), [value, defaultCenter])
+  const initialCenter = useMemo(() => {
+    if (value.length) return value[0]
+    if (defaultCenter) return defaultCenter
+    return { lat: 18.1448, lng: 100.1167 }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const commit = useCallback(next => {
     onChange?.(next)
   }, [onChange])
 
   function addPoint(point) {
-    commit([...value, { lat: Number(point.lat), lng: Number(point.lng) }])
+    const pt = { lat: Number(point.lat), lng: Number(point.lng) }
+    commit([...value, pt])
     setRedoStack([])
   }
 
   function undo() {
     if (!value.length) return
+    const remaining = value.slice(0, -1)
     setRedoStack(stack => [value[value.length - 1], ...stack])
-    commit(value.slice(0, -1))
+    commit(remaining)
   }
 
   function redo() {
@@ -80,17 +85,28 @@ export default function InlinePolylinePicker({ value = [], onChange, defaultCent
 
   useEffect(() => () => autocompleteListenerRef.current?.remove?.(), [])
 
+  const handleMarkerDragEnd = useCallback((markerData, newPos) => {
+    const idx = markerData.index
+    if (typeof idx === 'number' && idx >= 0 && idx < value.length) {
+      const next = [...value]
+      next[idx] = { lat: Number(newPos.lat), lng: Number(newPos.lng) }
+      commit(next)
+    }
+  }, [value, commit])
+
   const distance = totalDistance(value)
   const distanceLabel = distance >= 1000 ? `${(distance / 1000).toFixed(2)} กม.` : `${Math.round(distance)} ม.`
   const markers = value.map((point, index) => ({
     id: `route-point-${index}`,
     position: point,
+    index,
+    draggable: true,
     color: index === 0 ? '#22c55e' : index === value.length - 1 ? '#ef4444' : '#ffffff',
     labelColor: index === 0 || index === value.length - 1 ? '#ffffff' : '#2563eb',
     label: String(index + 1),
     labelSize: '10px',
     scale: index === 0 || index === value.length - 1 ? 11 : 8,
-    title: index === 0 ? 'จุดเริ่มต้น' : index === value.length - 1 ? 'จุดสิ้นสุด' : `จุดที่ ${index + 1}`,
+    title: index === 0 ? 'จุดเริ่มต้น (ลากเพื่อขยับย้ายตำแหน่งได้)' : index === value.length - 1 ? 'จุดสิ้นสุด (ลากเพื่อขยับย้ายตำแหน่งได้)' : `จุดที่ ${index + 1} (ลากเพื่อขยับย้ายตำแหน่งได้)`,
   }))
   const polylines = value.length >= 2 ? [{ id: 'editing-route', path: value, color, weight: 5, dashArray }] : []
 
@@ -110,18 +126,32 @@ export default function InlinePolylinePicker({ value = [], onChange, defaultCent
           {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
         </button>
       </div>
-      <div className="flex items-center justify-between bg-blue-50 px-3 py-2 text-xs text-blue-800">
-        <span>คลิกบนแผนที่ตามแนวเส้นทาง · {value.length} จุด</span>
-        <strong>ระยะทาง {distanceLabel}</strong>
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-blue-50 px-3.5 py-2 text-xs text-blue-900">
+        <div className="flex flex-wrap items-center gap-1.5 font-medium">
+          <span className="inline-flex items-center rounded-md bg-blue-600 px-2 py-0.5 font-bold text-white shadow-xs">คลิกซ้าย</span>
+          <span>เพิ่มจุด</span>
+          <span className="mx-0.5 text-blue-300">|</span>
+          <span className="inline-flex items-center rounded-md bg-amber-600 px-2 py-0.5 font-bold text-white shadow-xs">คลิกขวา</span>
+          <span>ยกเลิก</span>
+          <span className="mx-0.5 text-blue-300">|</span>
+          <span className="inline-flex items-center rounded-md bg-emerald-600 px-2 py-0.5 font-bold text-white shadow-xs">กดลากหมุด</span>
+          <span>ย้ายตำแหน่งจุด</span>
+          <span className="ml-1 rounded-full bg-blue-100 px-2 py-0.5 font-bold text-blue-700">({value.length} จุด)</span>
+        </div>
+        <div className="font-bold text-blue-950">
+          ระยะทางรวม <span className="font-mono text-sm text-blue-700">{distanceLabel}</span>
+        </div>
       </div>
       <GoogleMapCanvas
-        center={center}
-        zoom={15}
+        center={initialCenter}
+        zoom={17}
         mapTypeId="hybrid"
         markers={markers}
         polylines={polylines}
-        fitBounds={value.length > 0}
+        fitBounds={false}
         onMapClick={addPoint}
+        onMapRightClick={undo}
+        onMarkerDragEnd={handleMarkerDragEnd}
         onMapReady={handleMapReady}
         className={fullscreen ? 'w-full min-h-0 flex-1' : 'w-full h-[420px] min-h-[360px]'}
       />
