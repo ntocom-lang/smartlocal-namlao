@@ -14,25 +14,24 @@ const NAMLAO_DEFAULT_BOUNDARY_GEOJSON = {
       geometry: {
         type: 'Polygon',
         coordinates: [[
-          [100.272, 18.258],
-          [100.268, 18.265],
-          [100.275, 18.280],
-          [100.292, 18.290],
-          [100.318, 18.296],
-          [100.345, 18.298],
-          [100.368, 18.292],
-          [100.388, 18.280],
-          [100.398, 18.265],
-          [100.390, 18.248],
-          [100.370, 18.240],
-          [100.355, 18.232],
-          [100.335, 18.225],
-          [100.320, 18.221],
-          [100.300, 18.228],
-          [100.282, 18.224],
-          [100.270, 18.228],
-          [100.268, 18.242],
-          [100.272, 18.258],
+          [100.282, 18.262],
+          [100.285, 18.272],
+          [100.290, 18.281],
+          [100.302, 18.288],
+          [100.318, 18.292],
+          [100.334, 18.293],
+          [100.348, 18.289],
+          [100.358, 18.281],
+          [100.365, 18.268],
+          [100.362, 18.254],
+          [100.355, 18.242],
+          [100.342, 18.231],
+          [100.328, 18.224],
+          [100.312, 18.221],
+          [100.298, 18.225],
+          [100.288, 18.232],
+          [100.282, 18.245],
+          [100.282, 18.262],
         ]],
       },
     },
@@ -89,6 +88,7 @@ export default function GoogleMapCanvas({
       }, [center, tenant?.latitude, tenant?.longitude])
 
   const effectiveBoundaryGeoJson = useMemo(() => {
+    if (boundaryGeoJson === false || boundaryGeoJson === 'none') return null
     if (boundaryGeoJson) return boundaryGeoJson
     if (tenant?.boundary_geojson) return tenant.boundary_geojson
     if (tenant?.slug === 'namlao' || !tenant?.slug) return NAMLAO_DEFAULT_BOUNDARY_GEOJSON
@@ -98,7 +98,7 @@ export default function GoogleMapCanvas({
   useEffect(() => {
     callbacksRef.current = { onMapClick, onFeatureClick, onMapReady }
   }, [onMapClick, onFeatureClick, onMapReady])
-
+  
   useEffect(() => {
     let active = true
 
@@ -118,7 +118,7 @@ export default function GoogleMapCanvas({
         mapTypeId: activeMapType,
         mapId: effectiveMapId,
         mapTypeControl: false,
-        streetViewControl: true,
+        streetViewControl: false,
         fullscreenControl: true,
         zoomControl: true,
         gestureHandling: 'greedy',
@@ -153,12 +153,27 @@ export default function GoogleMapCanvas({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiKey, effectiveMapId])
 
+  const prevZoomRef = useRef(zoom)
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    if (prevZoomRef.current !== zoom) {
+      map.setZoom(zoom)
+      prevZoomRef.current = zoom
+    }
+  }, [zoom])
+
   useEffect(() => {
     const map = mapRef.current
     if (!map || !isPoint(safeCenter)) return
-    map.setCenter(safeCenter)
-    map.setZoom(zoom)
-  }, [safeCenter, zoom])
+    const currentCenter = map.getCenter()
+    if (currentCenter) {
+      const dist = Math.hypot(safeCenter.lat - currentCenter.lat(), safeCenter.lng - currentCenter.lng())
+      if (dist > 0.0003) {
+        map.setCenter(safeCenter)
+      }
+    }
+  }, [safeCenter])
 
   useEffect(() => {
     mapRef.current?.setMapTypeId(mapTypeId)

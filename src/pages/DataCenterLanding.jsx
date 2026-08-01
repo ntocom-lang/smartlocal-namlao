@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { Users2, MapPin, X } from 'lucide-react'
+import { ArrowLeft, Users2, MapPin } from 'lucide-react'
 import { useTenant } from '../contexts/TenantContext'
 
 // silhouette ตึก/ต้นไม้ ง่ายๆ ด้วย SVG ล้วน ไม่พึ่งไฟล์รูปภายนอก
@@ -40,9 +40,9 @@ export default function DataCenterLanding() {
   return (
     <div className="min-h-screen flex flex-col justify-between overflow-hidden relative"
       style={{ background: 'linear-gradient(180deg, #1e88c7 0%, #2196d8 45%, #4db8e8 100%)' }}>
-      <button onClick={() => window.close()} aria-label="ปิดหน้าต่าง"
+      <button onClick={() => navigate(-1)} aria-label="ย้อนกลับ"
         className="absolute top-4 right-4 z-10 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors border border-white/20 text-white">
-        <X size={15} />
+        <ArrowLeft size={15} />
       </button>
       <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-16">
         <div className="w-16 h-16 rounded-full bg-white/15 border-2 border-white/30 flex items-center justify-center mb-5 overflow-hidden">

@@ -34,6 +34,40 @@ const SEED_MODULES = ['โครงสร้าง', 'ข้อมูลระ�
 const EMPTY_FORM = { module: '', topic: '', category: 'bug', title: '', body: '', status: 'open', municipality_id: '' }
 const inputCls = 'w-full border border-slate-200 rounded-xl px-3.5 py-3 text-sm text-slate-900 bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-300 transition-all'
 
+const BUILTIN_DEV_ENTRIES = [
+  {
+    id: 'centralized-google-maps-picker-spec',
+    module: 'ข้อมูลระบบ',
+    topic: 'ระบบแผนที่ & พิกัดตำแหน่ง (Google Maps JS API)',
+    category: 'story',
+    title: 'มาตรฐานการตั้งค่าระบบปักหมุดตำแหน่งกลาง (Centralized Google Maps Picker)',
+    status: 'done',
+    created_at: '2026-08-01T14:40:00.000Z',
+    body: `### 📍 มาตรฐานการตั้งค่าระบบปักหมุดตำแหน่งกลาง (Centralized Google Maps Picker)
+
+---
+
+#### 1. 🏛️ สถาปัตยกรรมแบบรวมศูนย์ (Single Source of Truth)
+- **ศูนย์กลางของระบบ**: รวมศูนย์การตั้งค่าระบบปักหมุดตำแหน่งทั้งหมดไว้ที่ \`GoogleMapPicker.jsx\` (\`src/components/common/GoogleMapPicker.jsx\`)
+- **การใช้ซ้ำทั่วทั้งแอปพลิเคชัน**: หน้าแจ้งเรื่องร้องเรียนของประชาชน (\`CitizenForm.jsx\`), หน้าเพิ่ม/แก้ไขข้อมูล Data Center ของเจ้าหน้าที่ (\`DataCenterEntryForm.jsx\`), และฟอร์มปักหมุดตำแหน่งทั้งหมดในระบบ จะดึงคอนฟิกกลางไปใช้งานอัตโนมัติ ไม่ต้องแยกแก้หลายจุด
+
+---
+
+#### 2. ⚙️ มาตรฐานพฤติกรรมแผนที่ (Standard Map Picker Specs)
+- **หมุดตรึงกลางหน้าจอ (\`fixedCenterPin = true\`)**: หมุดสีแดงตรึงอยู่ตรงกลางหน้าจอเป๊ะๆ ให้ผู้ใช้เลื่อน/ลากแผนที่เพื่อเลือกตำแหน่งได้อย่างแม่นยำและเป็นธรรมชาติ
+- **ซ่อนเส้นขอบเขตปกครอง (\`showBoundary = false\`)**: ซ่อนเส้นประสีแดงขอบเขตตำบลบนแผนที่ปักหมุด เพื่อให้หน้าจอแผนที่ภาพถ่ายดาวเทียมสะอาด เคลียร์ 100%
+- **แถบสลับประเภทแผนที่ 1 คลิก**: แถบปุ่ม \`[ 🗺️ แผนที่ | 🛰️ ดาวเทียม ]\` บริเวณมุมขวาบน ใช้งานง่าย เข้าถึงได้เร็ว
+- **ระบบซูมธรรมชาติ (\`+\` / \`-\`)**: ปรับปรุงการทำงานของระดับการซูม (Zoom Level) และลูกกลิ้งเมาส์/สัมผัส ไม่ให้เด้งกลับที่เดิม
+- **ซ่อน Street View**: ปิดการแสดงผลการ์ตูน Pegman (Street View) เพื่อไม่ให้บดบังพื้นที่ปักหมุด
+
+---
+
+#### 3. 🛡️ ความมั่นคงปลอดภัยและการจัดการ API Key
+- **Environment Key Isolation**: ดึง \`VITE_GOOGLE_MAPS_API_KEY\` จากไฟล์ \`.env.local\` หรือคอนฟิกของเทศบาล (\`tenant.google_maps_api_key\`)
+- **Fallback Engine**: หากยังไม่ใส่ API Key หรือ Key มีปัญหา ระบบจะสลับไปใช้ OpenStreetMap / Esri World Imagery (Leaflet Fallback) อัตโนมัติ ป้องกันหน้าจอสีดำหรือแอปพลิเคชันล่ม`,
+  },
+]
+
 export default function DevJournal() {
   const { tenant } = useTenant()
   const navigate = useNavigate()
@@ -43,15 +77,12 @@ export default function DevJournal() {
   const [entries, setEntries] = useState([])
   const [municipalities, setMunicipalities] = useState([])
   const [loading, setLoading] = useState(true)
-  // เมนูหลัก = ส่วนของระบบ (module) — งอกจากข้อมูลจริงที่กรอก ไม่ fix รายการล่วงหน้า
   const [activeModule, setActiveModule] = useState('all')
-  // เมนูรอง = หัวข้อ (topic) — งอกจากข้อมูลภายในส่วนของระบบที่เลือกอยู่ เช่น
-  // module "ข้อมูลระบบ" -> topic "แผนที่ Leaflet + Longdo Map (ไทย)"
   const [activeTopic, setActiveTopic] = useState('all')
   const [activeEntryId, setActiveEntryId] = useState(null)
   const [search, setSearch] = useState('')
 
-  const [editing, setEditing] = useState(null) // null=ปิด, {}=สร้างใหม่, {...entry}=แก้ไข
+  const [editing, setEditing] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [showModuleManager, setShowModuleManager] = useState(false)
@@ -78,7 +109,17 @@ export default function DevJournal() {
   function reload() {
     setLoading(true)
     supabase.from('dev_journal').select('*').order('created_at', { ascending: false })
-      .then(({ data }) => { setEntries(data ?? []); setLoading(false) })
+      .then(({ data }) => {
+        const fetched = data ?? []
+        const merged = [...fetched]
+        BUILTIN_DEV_ENTRIES.forEach(b => {
+          if (!merged.some(e => e.title === b.title || e.id === b.id)) {
+            merged.push(b)
+          }
+        })
+        setEntries(merged)
+        setLoading(false)
+      })
   }
 
   function openCreate() {

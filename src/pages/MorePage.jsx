@@ -573,7 +573,6 @@ function NamlaoMorePage() {
             label="ศูนย์ข้อมูลดิจิทัล"
             desc="แผนที่รวมพิกัด/สถานที่สำคัญทุกชนิดในเขตเทศบาล"
             href="/data-center"
-            external
           />
         </Section>
 

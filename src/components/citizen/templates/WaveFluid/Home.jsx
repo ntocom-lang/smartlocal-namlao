@@ -6,7 +6,7 @@ import { supabase } from '../../../../lib/supabase'
 import PostsHighlight from '../../../../components/home/PostsHighlight'
 import TourismSection from '../../../../components/home/TourismSection'
 import BannerSlider from '../../../../components/home/BannerSlider'
-import { Info, ChevronRight, Briefcase, Megaphone, Wrench, Newspaper, CalendarDays, ChevronLeft, Landmark, Trash2, Lightbulb, Hospital, Route, Bug, Droplets, Map } from 'lucide-react'
+import { Info, ChevronRight, Briefcase, Megaphone, Wrench, Newspaper, CalendarDays, ChevronLeft, Landmark, Trash2, Lightbulb, Hospital, Route, Bug, Droplets } from 'lucide-react'
 import WeatherWidget from '../../../../components/home/WeatherWidget'
 import StaffSection from '../../../../components/home/StaffSection'
 
@@ -320,7 +320,6 @@ const SHORTCUTS = [
   { label: 'Line OA', icon: '💬', href: '#' },
   { label: 'เว็บไซต์', icon: '🌐', href: '#' },
   { label: 'เจ้าหน้าที่', icon: '💼', href: '/staff' },
-  { label: 'แผนที่', icon: '🗺️', href: '/map' },
   { label: 'เหตุฉุกเฉิน', icon: '🚨', href: '/emergency' },
   { label: 'Facebook', icon: '📘', href: '#' },
 ]
@@ -477,18 +476,6 @@ export default function HomePage() {
             <ChevronRight size={18} className="text-white/60" />
           </Link>
         )}
-        <Link to="/map"
-          className="md:hidden flex items-center gap-3 rounded-2xl px-4 py-3.5 shadow-md mb-4 transition-all hover:shadow-lg hover:-translate-y-0.5"
-          style={{ background: 'linear-gradient(135deg, #2563eb 0%, #0891b2 100%)' }}>
-          <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-            <Map size={18} className="text-white" />
-          </div>
-          <div className="flex-1">
-            <p className="text-white font-bold text-sm">แผนที่ข้อมูลดิจิทัล</p>
-            <p className="text-white/70 text-xs">ดูคำร้อง โครงการ ร้านค้าบนแผนที่</p>
-          </div>
-          <ChevronRight size={18} className="text-white/60" />
-        </Link>
         {!role && (
           <div className="md:hidden flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800 mb-4">
             <Info size={16} className="shrink-0 mt-0.5" />

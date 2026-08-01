@@ -39,7 +39,6 @@ const CitizenDocRequest = lazyWithRetry(() => import('./pages/CitizenDocRequest'
 const MyDocRequests = lazyWithRetry(() => import('./pages/MyDocRequests'))
 const LpaDocStats = lazyWithRetry(() => import('./pages/LpaDocStats'))
 const PostsPage = lazyWithRetry(() => import('./pages/PostsPage'))
-const MapPage = lazyWithRetry(() => import('./pages/MapPage'))
 const FleetPage = lazyWithRetry(() => import('./pages/FleetPage'))
 const ChatbotPage = lazyWithRetry(() => import('./pages/ChatbotPage'))
 
@@ -182,7 +181,6 @@ function AppShell() {
   const isTechnician = location.pathname.startsWith('/technician')
   // ช่างยังใช้เมนูล่างของแอป (NAV_TECH) ได้ ต่างจาก /admin กับ /staff ที่ไม่มีเมนูล่างเลย
   const hideBottomNav = ['/admin', '/staff', '/dev-journal', '/data-center'].some(p => location.pathname.startsWith(p))
-  const isMapPage = location.pathname === '/map'
 
   const checkAndFixProfile = useCallback(async (uid, userMeta = {}) => {
     const { data: profile } = await supabase
@@ -318,11 +316,11 @@ function AppShell() {
         <PhoneReminderModal onClose={() => setShowPhoneReminder(false)} />
       )}
       <NotificationsProvider>
-        {!isBackOffice && !isMapPage && <Header />}
+        {!isBackOffice && <Header />}
         {isTechnician && <div className="hidden md:block"><Header /></div>}
         <div className="flex flex-1 min-h-0 overflow-hidden">
           {(!isBackOffice || isTechnician) && <CitizenSidebar />}
-          <main className={`flex-1 min-w-0 ${isMapPage ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+          <main className="flex-1 min-w-0 overflow-y-auto">
           <SuspenseErrorBoundary>
           <Suspense fallback={
             <div className="flex items-center justify-center min-h-[50vh]" role="status" aria-label="กำลังโหลดหน้า">
@@ -363,7 +361,7 @@ function AppShell() {
           <Route path="/doc-stats" element={<LpaDocStats />} />
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/news" element={<PostsPage />} />
-          <Route path="/map" element={<MapPage />} />
+          <Route path="/map" element={<Navigate to="/data-center/public" replace />} />
           <Route path="/fleet" element={
             <RequireAuth staffOnly>
               <FleetPage />
@@ -445,7 +443,7 @@ function AppShell() {
           </Routes>
           </Suspense>
           </SuspenseErrorBoundary>
-          {!isMapPage && <Footer />}
+          <Footer />
           </main>
         </div>
         {!hideBottomNav && <BottomNav />}

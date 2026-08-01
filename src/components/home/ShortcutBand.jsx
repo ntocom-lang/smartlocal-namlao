@@ -1,29 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 
-function FacebookSVGIcon({ size = 28 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path
-        d="M16.5 2H14C11.8 2 10 3.8 10 6v2H7v3h3v9h3v-9h2.5l.5-3H13V6c0-.6.4-1 1-1h2.5V2z"
-        fill="white"
-      />
-    </svg>
-  )
-}
-
-function LineOAIcon({ size = 28 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 56 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path
-        d="M8 2 Q1 2 1 9 L1 44 Q1 49 5 52 L28 63 L51 52 Q55 49 55 44 L55 9 Q55 2 48 2 Z"
-        fill="white"
-      />
-      <text x="15" y="46" fontFamily="Arial Black, Arial, sans-serif" fontWeight="900" fontSize="30" fill="#06C755">L</text>
-    </svg>
-  )
-}
-
 function IconBox({ item, sizeCls, iconSizeMd }) {
   const bg = item.bgColor ?? 'rgba(255,255,255,0.92)'
   const border = item.bgColor ? 'none' : `1.5px solid ${item.color}55`
@@ -64,12 +41,6 @@ export default function ShortcutBand() {
       emoji: '⭐',
       color: '#d97706',
       action: () => navigate('/satisfaction'),
-    },
-    {
-      label: 'แผนที่',
-      emoji: '🗺️',
-      color: '#059669',
-      action: () => navigate('/map'),
     },
     // เอา ยานพาหนะ/เหตุฉุกเฉิน/Line OA/Facebook/เว็บไซต์ ออกไปก่อนตามคำขอ (2026-07-27)
     // ยังไม่ลบ logic ทิ้งทั้งหมด เผื่อเอากลับมาใช้ทีหลัง — แค่ไม่ใส่เข้า items array

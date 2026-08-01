@@ -3792,7 +3792,7 @@ function getAdminMenuGroups(currentUserRole, currentUserId) {
       items: [
         { key: 'manual', label: 'คู่มือผู้ดูแล', Icon: BookOpen, color: '#059669', bg: '#d1fae5', show: true, isExternal: true, href: '/manual-admin.html' },
         { key: 'manual-citizen', label: 'คู่มือประชาชน', Icon: BookOpen, color: '#059669', bg: '#d1fae5', show: true, isExternal: true, href: '/manual-citizen.html' },
-        { key: 'data-center', label: 'ศูนย์รวมข้อมูลดิจิทัล', Icon: Database, color: '#4338ca', bg: '#e0e7ff', show: true, navTo: '/data-center', newTab: true },
+        { key: 'data-center', label: 'ศูนย์รวมข้อมูลดิจิทัล', Icon: Database, color: '#4338ca', bg: '#e0e7ff', show: true, navTo: '/data-center/staff' },
         { key: 'dev-journal', label: 'ผู้พัฒนาระบบ', Icon: Terminal, color: '#1e293b', bg: '#f1f5f9', show: currentUserId === DEV_USER_ID, isDevLink: true },
       ],
     },
@@ -4267,7 +4267,7 @@ export default function AdminDashboard() {
           { key: 'report',      label: 'รายงาน',           Icon: TrendingUp,  show: true },
           { key: 'satisfaction',label: 'ประเมิน',          Icon: Star,        show: true },
           { key: 'audit-log',   label: 'บันทึกกิจกรรม',   Icon: BookOpen,    show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-          { key: 'data-center', label: 'ข้อมูลดิจิทัล',   Icon: Database,    show: true, navTo: '/data-center', newTab: true },
+          { key: 'data-center', label: 'ข้อมูลดิจิทัล',   Icon: Database,    show: true, navTo: '/data-center/staff' },
           { key: 'dev-journal', label: 'ผู้พัฒนา',         Icon: Terminal,    show: currentUserId === DEV_USER_ID, isDevLink: true },
         ].filter(i => i.show).map(({ key, label, Icon, isDevLink, navTo, newTab }) => {
           const isActive = activePage === key

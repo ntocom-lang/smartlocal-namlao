@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, X } from 'lucide-react'
+import { ArrowLeft, Home } from 'lucide-react'
 import { useTenant } from '../contexts/TenantContext'
 import DataCenterMapView from '../components/datacenter/DataCenterMapView'
 
@@ -18,9 +18,9 @@ export default function DataCenterPublicMap() {
           <p className="font-bold text-sm leading-tight">แผนที่ข้อมูล{tenant?.name ? ` — ${tenant.name}` : ''}</p>
           <p className="text-white/70 text-[11px]">สำหรับประชาชน — ดูข้อมูลสถานที่ในเขตเทศบาล</p>
         </div>
-        <button onClick={() => window.close()} aria-label="ปิดหน้าต่าง"
+        <button onClick={() => navigate('/')} aria-label="กลับหน้าหลัก"
           className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors border border-white/20 shrink-0">
-          <X size={15} />
+          <Home size={15} />
         </button>
       </header>
 

@@ -1,7 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
 import {
   Home, ClipboardList, FileText, CalendarDays, Newspaper,
-  MapPin, Map, FileSearch, FolderOpen, Bell,
+  MapPin, FileSearch, FolderOpen, Bell,
   Phone, AlertCircle, LogIn, LogOut, LayoutGrid, Database,
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
@@ -19,8 +19,7 @@ const NAV_GROUPS = [
       { label: 'ปฏิทินกิจกรรม',   href: '/events',      Icon: CalendarDays },
       { label: 'ข่าวสาร/ประกาศ',  href: '/news',        Icon: Newspaper },
       { label: 'แหล่งท่องเที่ยว', href: '/tourism',     Icon: MapPin },
-      { label: 'แผนที่',           href: '/map',         Icon: Map },
-      { label: 'ศูนย์ข้อมูลดิจิทัล', href: '/data-center', Icon: Database, newTab: true },
+      { label: 'ศูนย์ข้อมูลดิจิทัล', href: '/data-center', Icon: Database },
     ],
   },
   {

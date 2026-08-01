@@ -17,7 +17,8 @@ export default function GoogleMapPicker({
   onClose,
   readOnly = false,
   modal,
-  fixedCenterPin = false,
+  fixedCenterPin = true,
+  showBoundary = false,
   mapClassName = 'w-full h-80 min-h-[320px]',
   placeholder = 'ค้นหาบ้านเลขที่ ชื่อสถานที่ หรือถนน...',
 }) {
@@ -71,6 +72,11 @@ export default function GoogleMapPicker({
     }
   }, [commitSelection])
 
+  const selectedRef = useRef(selected)
+  useEffect(() => {
+    selectedRef.current = selected
+  }, [selected])
+
   const handleMapReady = useCallback((map, google) => {
     mapRef.current = map
     googleRef.current = google
@@ -85,12 +91,35 @@ export default function GoogleMapPicker({
     }
 
     if (fixedCenterPin) {
+      let lastZoom = map.getZoom()
+
+      map.addListener('zoom_changed', () => {
+        const prev = selectedRef.current
+        if (prev && Number.isFinite(prev.lat) && Number.isFinite(prev.lng)) {
+          map.setCenter({ lat: prev.lat, lng: prev.lng })
+        }
+      })
+
       map.addListener('idle', () => {
+        const currentZoom = map.getZoom()
         const center = map.getCenter()
         if (!center) return
+
+        // If zoom level changed, anchor to exact selected coordinate and skip reverseGeocode
+        if (currentZoom !== lastZoom) {
+          lastZoom = currentZoom
+          const prev = selectedRef.current
+          if (prev && Number.isFinite(prev.lat) && Number.isFinite(prev.lng)) {
+            map.setCenter({ lat: prev.lat, lng: prev.lng })
+          }
+          return
+        }
+
+        // Only update coordinate when user actually pans/drags the map
         const point = { lat: center.lat(), lng: center.lng() }
-        const distanceMoved = Math.hypot(point.lat - selected.lat, point.lng - selected.lng)
-        if (distanceMoved > 0.00005) {
+        const prev = selectedRef.current
+        const distanceMoved = Math.hypot(point.lat - prev.lat, point.lng - prev.lng)
+        if (distanceMoved > 0.00008) {
           reverseGeocode(point)
         }
       })
@@ -145,7 +174,7 @@ export default function GoogleMapPicker({
     } catch (err) {
       console.warn('[GoogleMapPicker] PlaceAutocompleteElement init warning:', err)
     }
-  }, [commitSelection, readOnly, reverseGeocode, selected.lat, selected.lng, initialPos?.address, fixedCenterPin, placeholder])
+  }, [commitSelection, readOnly, reverseGeocode, initialPos?.address, fixedCenterPin, placeholder])
 
   useEffect(() => () => autocompleteListenerRef.current?.remove?.(), [])
 
@@ -224,6 +253,7 @@ export default function GoogleMapPicker({
           center={selected}
           zoom={zoom}
           mapTypeId="hybrid"
+          boundaryGeoJson={showBoundary ? undefined : false}
           className={isModal ? 'w-full h-full min-h-[360px]' : mapClassName}
           onMapClick={readOnly ? undefined : (point) => {
             if (!fixedCenterPin) {
@@ -237,9 +267,6 @@ export default function GoogleMapPicker({
         />
         {!readOnly && fixedCenterPin && (
           <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-full flex-col items-center">
-            <div className="mb-1.5 flex items-center gap-1.5 rounded-full bg-gray-900/90 px-3 py-1 text-xs font-bold text-white shadow-lg backdrop-blur-xs">
-              <span>เลื่อนแผนที่ให้หมุดตรงตำแหน่ง</span>
-            </div>
             <div className="relative text-red-600 transition-transform active:scale-110 drop-shadow-xl">
               <MapPin size={42} className="fill-red-600 text-white" />
             </div>

@@ -7,7 +7,7 @@ import PostsHighlight from '../../../../components/home/PostsHighlight'
 import TourismSection from '../../../../components/home/TourismSection'
 import BannerSlider from '../../../../components/home/BannerSlider'
 import {
-  ChevronRight, Briefcase, Wrench, Newspaper, Map,
+  ChevronRight, Briefcase, Wrench, Newspaper,
 } from 'lucide-react'
 import WeatherWidget from '../../../../components/home/WeatherWidget'
 import ComplaintBand from '../../../../components/home/ComplaintBand'
@@ -256,20 +256,6 @@ export default function HomePage() {
         <TourismSection />
       </div>
 
-      <div className="lg:hidden px-3 sm:px-4 pb-6 max-w-[1440px] mx-auto">
-        <Link to="/map"
-          className="flex items-center gap-3 rounded-2xl px-4 py-3.5 shadow-md transition-all hover:shadow-lg hover:-translate-y-0.5 active:scale-[0.99]"
-          style={{ background: 'linear-gradient(135deg, #2563eb 0%, #0891b2 100%)' }}>
-          <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-            <Map size={20} className="text-white" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-white font-bold text-sm sm:text-base">แผนที่ข้อมูลดิจิทัล</p>
-            <p className="text-white/75 text-xs sm:text-sm">ดูคำร้อง โครงการ ร้านค้าบนแผนที่</p>
-          </div>
-          <ChevronRight size={20} className="text-white/70 shrink-0" />
-        </Link>
-      </div>
     </div>
   )
 }

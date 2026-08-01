@@ -42,10 +42,10 @@ export default function BottomNav() {
           </div>
         </Link>
 
-        <a href="https://www.google.com/maps" target="_blank" rel="noopener noreferrer" className="flex flex-col items-center gap-1 p-2 text-emerald-200 hover:text-white">
-          <MapPin size={22} strokeWidth={2} />
-          <span className="text-[12px] font-bold tracking-wide">ใกล้ฉัน</span>
-        </a>
+        <Link to="/data-center/public" className={`flex flex-col items-center gap-1 p-2 ${location.pathname.startsWith('/data-center') ? 'text-white drop-shadow-md' : 'text-emerald-200 hover:text-white'}`}>
+          <MapPin size={22} strokeWidth={location.pathname.startsWith('/data-center') ? 2.5 : 2} />
+          <span className="text-[12px] font-bold tracking-wide">ข้อมูลพื้นที่</span>
+        </Link>
         <Link to="/more" className={`flex flex-col items-center gap-1 p-2 ${location.pathname === '/more' ? 'text-white drop-shadow-md' : 'text-emerald-200 hover:text-white'}`}>
           <Menu size={22} strokeWidth={location.pathname === '/more' ? 2.5 : 2} />
           <span className="text-[12px] font-bold tracking-wide">เมนูอื่น</span>
