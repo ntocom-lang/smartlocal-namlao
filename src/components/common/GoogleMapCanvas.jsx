@@ -79,7 +79,7 @@ export default function GoogleMapCanvas({
     }
   }
 
-  const apiKey = tenant?.google_maps_api_key || import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
+  const apiKey = (tenant?.google_maps_api_key && tenant.google_maps_api_key.trim()) || import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
   const safeCenter = useMemo(() => isPoint(center)
     ? { lat: Number(center.lat), lng: Number(center.lng) }
     : {
