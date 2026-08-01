@@ -309,7 +309,7 @@ function NamlaoMorePage() {
   const isAdmin   = role === 'admin' || role === 'superadmin' || role === 'officer'
   const isStaff   = role === 'staff'
   const isViewer  = role === 'viewer'
-  const isCouncil = role === 'council'
+  const isInternal = ['superadmin', 'admin', 'viewer', 'council', 'officer', 'staff', 'technician', 'kamnan'].includes(role)
   const initials  = (displayName[0] || '?').toUpperCase()
 
   const hasSocial = tenant?.website_url || tenant?.facebook_url || tenant?.line_oa_url
@@ -495,15 +495,15 @@ function NamlaoMorePage() {
             />
           </Section>
         )}
-        {isCouncil && (
-          <Section title="สภาเทศบาล">
+        {isInternal && (
+          <Section title="ปฏิทินสำหรับเจ้าหน้าที่">
             <MenuRow
-              icon={ShieldCheck}
-              iconBg="bg-amber-50"
-              iconColor="text-amber-500"
-              label="ปฏิทินกิจกรรม"
-              desc="จัดการกิจกรรมของสภาเทศบาล"
-              onClick={() => navigate('/staff', { state: { module: 'events' } })}
+              icon={CalendarDays}
+              iconBg="bg-emerald-50"
+              iconColor="text-emerald-600"
+              label="จัดการปฏิทินกิจกรรม"
+              desc="เพิ่มกำหนดการและแจ้งกลุ่มผู้เกี่ยวข้อง"
+              href="/events/manage"
             />
           </Section>
         )}

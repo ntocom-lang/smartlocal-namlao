@@ -31,6 +31,7 @@ const MorePage = lazyWithRetry(() => import('./pages/MorePage'))
 const NotificationsPage = lazyWithRetry(() => import('./pages/NotificationsPage'))
 const WeatherPage = lazyWithRetry(() => import('./pages/WeatherPage'))
 const EventsPage = lazyWithRetry(() => import('./pages/EventsPage'))
+const EventsManager = lazyWithRetry(() => import('./components/admin/EventsManager'))
 const EmergencyPage = lazyWithRetry(() => import('./pages/EmergencyPage'))
 const TourismPage = lazyWithRetry(() => import('./pages/TourismPage'))
 const TourismDetailPage = lazyWithRetry(() => import('./pages/TourismDetailPage'))
@@ -145,7 +146,9 @@ function HomeOrTechRedirect() {
 }
 
 
-function RequireAuth({ children, adminOnly = false, techOnly = false, staffOnly = false }) {
+const INTERNAL_EVENT_ROLES = ['superadmin', 'admin', 'viewer', 'council', 'officer', 'staff', 'technician', 'kamnan']
+
+function RequireAuth({ children, adminOnly = false, techOnly = false, staffOnly = false, eventManagerOnly = false }) {
   const { session, role, profileLoading } = useAuth()
   const location = useLocation()
 
@@ -166,7 +169,32 @@ function RequireAuth({ children, adminOnly = false, techOnly = false, staffOnly 
     return <Navigate to="/" replace />
   }
   if (staffOnly && role === null) return null
+  if (eventManagerOnly && role !== null && !INTERNAL_EVENT_ROLES.includes(role)) {
+    return <Navigate to="/events" replace />
+  }
+  if (eventManagerOnly && role === null) return null
   return children
+}
+
+function EventManagementPage() {
+  const { tenant } = useTenant()
+  const { role } = useAuth()
+
+  return (
+    <main className="min-h-screen bg-slate-50 px-3 py-4 pb-24 sm:px-6 sm:py-6">
+      <div className="mx-auto w-full max-w-7xl">
+        <EventsManager tenant={tenant} currentUserRole={role} />
+      </div>
+    </main>
+  )
+}
+
+function EventsEntryPage() {
+  const { session, role, profileLoading } = useAuth()
+
+  if (session && profileLoading) return null
+  if (session && INTERNAL_EVENT_ROLES.includes(role)) return <EventManagementPage />
+  return <EventsPage />
 }
 
 function AppShell() {
@@ -351,7 +379,12 @@ function AppShell() {
           <Route path="/my-complaints" element={<MyComplaints />} />
           <Route path="/more" element={<MorePage />} />
           <Route path="/weather" element={<WeatherPage />} />
-          <Route path="/events" element={<EventsPage />} />
+          <Route path="/events/manage" element={
+            <RequireAuth eventManagerOnly>
+              <EventManagementPage />
+            </RequireAuth>
+          } />
+          <Route path="/events" element={<EventsEntryPage />} />
           <Route path="/emergency" element={<EmergencyPage />} />
           <Route path="/tourism" element={<TourismPage />} />
           <Route path="/tourism/:id" element={<TourismDetailPage />} />

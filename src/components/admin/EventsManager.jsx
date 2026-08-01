@@ -83,6 +83,7 @@ const AUDIENCE_OPTIONS = [
   { value: 'management', label: 'ผู้บริหาร',                color: '#8b5cf6' },
   { value: 'council',    label: 'สภาเทศบาล',               color: '#f59e0b' },
 ]
+const EVENT_MANAGER_ROLES = ['superadmin', 'admin', 'viewer', 'council', 'officer', 'staff', 'technician', 'kamnan']
 const EMPTY_EVENT_FORM = { title: '', description: '', event_date: '', event_time: '', end_time: '', end_date: '', location: '', category: '', customCategory: '', is_all_day: false, audiences: [], attachment_urls: [], attachment_files: [] }
 
 // backward-compat: event เก่าเก็บไฟล์แนบเดียวใน attachment_url, ของใหม่เก็บหลายไฟล์ใน attachment_urls
@@ -91,15 +92,13 @@ function eventAttachments(ev) {
   return ev.attachment_url ? [ev.attachment_url] : []
 }
 
-// สิทธิ์ดูรายละเอียดกิจกรรมตาม audience — ใช้กฎเดียวกับหน้า /events ฝั่งประชาชน (EventsPage.jsx)
-// เห็นในรายการได้ทุกคน (กันสร้างซ้ำ) แต่กดดูรายละเอียดได้เฉพาะคนที่มีสิทธิ์ตาม audience เท่านั้น
+// บุคลากรภายในเทศบาลเดียวกันเห็นรายละเอียดปฏิทินร่วมกัน ส่วน citizen เห็นเฉพาะรายการ public
 function audienceFilter(role) {
-  if (role === 'admin' || role === 'superadmin' || role === 'viewer') return null
-  if (role === 'council') return ['public', 'council']
-  if (role === 'staff' || role === 'technician' || role === 'officer') return ['public', 'staff']
+  if (EVENT_MANAGER_ROLES.includes(role)) return null
   return ['public']
 }
-function canViewEventDetail(ev, role) {
+function canViewEventDetail(ev, role, currentUserId) {
+  if (currentUserId && ev.created_by === currentUserId) return true
   const allowed = audienceFilter(role)
   return allowed === null || (ev.audiences ?? []).some(a => allowed.includes(a))
 }
@@ -197,10 +196,11 @@ function EventCard({ ev, onEdit, onDelete, onView, deleting }) {
 }
 
 export default function EventsManager({ tenant, currentUserRole = 'staff', autoEditEventId, onAutoEditHandled, autoCreateSignal = 0, autoCreateAudience = null, onAutoCreateHandled }) {
-  const canManage = ['admin', 'superadmin', 'staff', 'officer', 'viewer', 'council'].includes(currentUserRole)
+  const canManage = EVENT_MANAGER_ROLES.includes(currentUserRole)
   const orgLabel = tenant?.org_type === 'อบต.' ? 'อบต.' : 'เทศบาล'
   const LOCATION_PRESETS = ['ห้องประชุมสภา', `ห้องประชุม${orgLabel}`, `โดมหลัง${orgLabel}`]
   const [currentUserId, setCurrentUserId] = useState(null)
+  const [currentUserScope, setCurrentUserScope] = useState(null)
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -280,6 +280,16 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
     const { data: { user } } = await supabase.auth.getUser()
     const userId = user?.id
     setCurrentUserId(userId ?? null)
+    if (userId) {
+      const { data: scope } = await supabase
+        .from('profiles')
+        .select('department_id, is_dept_head')
+        .eq('id', userId)
+        .maybeSingle()
+      setCurrentUserScope(scope ?? null)
+    } else {
+      setCurrentUserScope(null)
+    }
 
     let query = supabase
       .from('events')
@@ -287,9 +297,8 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
       .eq('municipality_id', tenant.id)
       .order('event_date', { ascending: true })
 
-    // ทุกบทบาทเห็นทุก event ในรายการ (กันสร้างซ้ำ + ให้เช็ควันว่างของกลุ่มอื่นได้)
-    //   แต่กดดูรายละเอียดเต็มได้เฉพาะคนมีสิทธิ์ตาม audience (ดู canViewEventDetail)
-    //   แก้ไข/ลบได้เฉพาะ event ที่ตัวเองสร้าง หรือแอดมิน (ดูในส่วน render)
+    // บุคลากรภายในเห็นปฏิทินทั้งหมดของเทศบาลเดียวกัน
+    // เจ้าของแก้ไข/ลบของตนเองได้ หัวหน้ากองแก้ไขงานในกอง และ Admin/SuperAdmin จัดการตามขอบเขตเดิม
     const { data } = await query
     const sorted = (data ?? []).sort((a, b) => {
       if (a.event_date < b.event_date) return -1
@@ -337,11 +346,13 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
   async function uploadEventAttachments(eventId, files, existingUrls) {
     if (!files?.length || !eventId) return
     try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      if (authError || !user) throw new Error('ไม่พบข้อมูลการเข้าสู่ระบบ กรุณาเข้าสู่ระบบใหม่')
       const newUrls = []
       for (const file of files) {
         if (file.size > 20 * 1024 * 1024) throw new Error(`ไฟล์ "${file.name}" ใหญ่เกินไป (สูงสุด 20 MB)`)
         const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-        const path = `${tenant.id}/${Date.now()}_${safeName}`
+        const path = `${tenant.id}/${user.id}/${Date.now()}_${safeName}`
         const contentType = file.type || (/\.pdf$/i.test(file.name ?? '') ? 'application/pdf' : 'application/octet-stream')
 
         const { error: uploadError } = await supabase.storage
@@ -395,6 +406,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
   }
 
   async function handleSave() {
+    if (!canManage) { setFormError('บัญชีนี้ไม่มีสิทธิ์เพิ่มกิจกรรมในปฏิทิน'); return }
     if (!form.title.trim()) { setFormError('กรุณากรอกชื่อกิจกรรม'); return }
     if (!form.event_date) { setFormError('กรุณาระบุวันที่กิจกรรม'); return }
     if (!form.category) { setFormError('กรุณาเลือกประเภทกิจกรรม'); return }
@@ -403,6 +415,21 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
     setFormError('')
     setSaving(true)
     try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      if (authError || !user) throw new Error('ไม่พบข้อมูลการเข้าสู่ระบบ กรุณาเข้าสู่ระบบใหม่')
+
+      const { data: writerProfile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role, municipality_id, department_id, is_dept_head')
+        .eq('id', user.id)
+        .single()
+      if (profileError || !writerProfile) throw new Error('ไม่พบข้อมูลสิทธิ์ของบัญชี กรุณาติดต่อผู้ดูแลระบบ')
+      if (!EVENT_MANAGER_ROLES.includes(writerProfile.role)) {
+        throw new Error('บัญชีนี้ไม่มีสิทธิ์เพิ่มกิจกรรมในปฏิทิน')
+      }
+      if (writerProfile.role !== 'superadmin' && writerProfile.municipality_id !== tenant?.id) {
+        throw new Error('บัญชียังไม่ได้ผูกกับเทศบาลนี้ กรุณาให้ผู้ดูแลระบบตรวจข้อมูลหน่วยงานของบัญชี')
+      }
       const payload = {
         municipality_id: tenant.id, title: form.title.trim(),
         description: form.description.trim() || null, event_date: form.event_date,
@@ -419,12 +446,11 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
         const { data: updData, error: updErr } = await supabase.from('events').update(payload).eq('id', editingEvent.id).select('id')
         if (updErr) throw new Error('บันทึกไม่สำเร็จ: ' + updErr.message)
         if (!updData || updData.length === 0) {
-          throw new Error('บันทึกไม่สำเร็จ: คุณไม่มีสิทธิ์แก้ไขกิจกรรมนี้ (แก้ไขได้เฉพาะกิจกรรมที่ตัวเองสร้าง หรือต้องเป็นแอดมิน)')
+          throw new Error('บันทึกไม่สำเร็จ: แก้ไขได้เฉพาะกิจกรรมของตนเอง กิจกรรมในกองที่ตนเป็นหัวหน้ากอง หรือบัญชี Admin/SuperAdmin')
         }
       } else {
-        const { data: { user } } = await supabase.auth.getUser()
         const { data: insData, error: insErr } = await supabase.from('events')
-          .insert({ ...payload, created_by: user?.id ?? null }).select('id').single()
+          .insert({ ...payload, created_by: user.id, department_id: writerProfile.department_id ?? null }).select('id').single()
         if (insErr) throw new Error('บันทึกไม่สำเร็จ: ' + insErr.message)
         eventId = insData?.id ?? null
         const dateStr = payload.event_date
@@ -1100,12 +1126,15 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                 {/* Mobile cards */}
                 <div className={`md:hidden space-y-2 ${activeTab === 'past' ? 'opacity-80' : ''}`}>
                   {paginatedList.map((ev) => {
-                    const isOwner = ['admin', 'superadmin'].includes(currentUserRole) || ev.created_by === currentUserId
+                    const isAdminManager = ['admin', 'superadmin'].includes(currentUserRole)
+                    const isDepartmentHeadForEvent = !!currentUserScope?.is_dept_head && !!currentUserScope?.department_id && ev.department_id === currentUserScope.department_id
+                    const canEditRow = isAdminManager || ev.created_by === currentUserId || isDepartmentHeadForEvent
+                    const canDeleteRow = isAdminManager || ev.created_by === currentUserId || isDepartmentHeadForEvent
                     return (
                       <EventCard key={ev.id} ev={ev}
-                        onEdit={canManage && isOwner ? openEdit : null}
-                        onDelete={canManage && isOwner ? handleDelete : null}
-                        onView={canViewEventDetail(ev, currentUserRole) ? setViewingEvent : null}
+                        onEdit={canManage && canEditRow ? openEdit : null}
+                        onDelete={canManage && canDeleteRow ? handleDelete : null}
+                        onView={canViewEventDetail(ev, currentUserRole, currentUserId) ? setViewingEvent : null}
                         deleting={deleting} />
                     )
                   })}
@@ -1133,8 +1162,11 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                         const d = ev.event_date ? new Date(ev.event_date + 'T00:00:00') : null
                         const dateStr = d ? d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : 'ยังไม่ระบุ'
                         const timeStr = ev.event_time ? ev.event_time.slice(0, 5) + (ev.end_time ? `–${ev.end_time.slice(0, 5)}` : '') + ' น.' : '—'
-                        const isOwner = ['admin', 'superadmin'].includes(currentUserRole) || ev.created_by === currentUserId
-                        const canView = canViewEventDetail(ev, currentUserRole)
+                        const isAdminManager = ['admin', 'superadmin'].includes(currentUserRole)
+                        const isDepartmentHeadForEvent = !!currentUserScope?.is_dept_head && !!currentUserScope?.department_id && ev.department_id === currentUserScope.department_id
+                        const canEditRow = isAdminManager || ev.created_by === currentUserId || isDepartmentHeadForEvent
+                        const canDeleteRow = isAdminManager || ev.created_by === currentUserId || isDepartmentHeadForEvent
+                        const canView = canViewEventDetail(ev, currentUserRole, currentUserId)
                         return (
                           <tr key={ev.id}
                             className="transition-colors"
@@ -1197,7 +1229,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                             </td>
                             {canManage && (
                               <td className="px-3 py-2 text-center" onClick={e => e.stopPropagation()}>
-                                {isOwner ? (
+                                {canEditRow ? (
                                   <div className="flex items-center justify-center gap-1.5">
                                     {confirmDelId === ev.id ? (
                                       <>
@@ -1216,10 +1248,12 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                                           className="px-2.5 py-1 rounded border border-blue-400 text-blue-600 text-[13px] font-bold hover:bg-blue-600 hover:text-white transition-colors">
                                           แก้ไข
                                         </button>
-                                        <button onClick={() => setConfirmDelId(ev.id)}
-                                          className="px-2.5 py-1 rounded border border-red-300 text-red-500 text-[13px] font-bold hover:bg-red-500 hover:text-white transition-colors">
-                                          ลบ
-                                        </button>
+                                        {canDeleteRow && (
+                                          <button onClick={() => setConfirmDelId(ev.id)}
+                                            className="px-2.5 py-1 rounded border border-red-300 text-red-500 text-[13px] font-bold hover:bg-red-500 hover:text-white transition-colors">
+                                            ลบ
+                                          </button>
+                                        )}
                                       </>
                                     )}
                                   </div>

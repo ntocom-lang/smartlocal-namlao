@@ -3,12 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Plus, X, Loader2, Search, Pencil, Trash2, Bug, Wrench, BookOpen, Map,
   LayoutGrid, LogOut, Folder, Activity, Database, Cpu, ShieldCheck, Sparkles,
-  Clock3, CheckCircle2, CircleDot, Layers3, Command, ChevronRight,
+  Clock3, CheckCircle2, CircleDot, Layers3, Command, ChevronRight, KeyRound,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { thaiDate } from '../lib/thaiDate'
 import { useTenant } from '../contexts/TenantContext'
 import SuperAdminPanel from '../components/admin/SuperAdminPanel'
+import GoogleMapsSettings from '../components/admin/GoogleMapsSettings'
 
 // ต้องตรงกับ uuid ใน supabase/migrations/147_dev_journal.sql (ntocom@gmail.com) —
 // เช็คฝั่ง client แค่เพื่อ UX (กันไม่ให้เห็นหน้าเปล่า/redirect เร็ว) ความปลอดภัยจริงอยู่ที่ RLS
@@ -86,6 +87,7 @@ export default function DevJournal() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [showModuleManager, setShowModuleManager] = useState(false)
+  const [showGoogleMapsSettings, setShowGoogleMapsSettings] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -288,6 +290,14 @@ export default function DevJournal() {
             <span className="flex-1 text-left">จัดการโมดูล</span>
             <ChevronRight size={13} className="opacity-40" />
           </button>
+          <button onClick={() => setShowGoogleMapsSettings(true)}
+            className="group w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-cyan-200 bg-cyan-400/10 border border-cyan-300/10 hover:text-white hover:bg-cyan-400/20 hover:border-cyan-300/20 transition-all">
+            <span className="w-8 h-8 rounded-lg bg-cyan-400/15 flex items-center justify-center text-cyan-300 group-hover:text-white transition-colors">
+              <KeyRound size={16} />
+            </span>
+            <span className="flex-1 text-left">Google Maps API</span>
+            <ChevronRight size={13} className="opacity-40" />
+          </button>
           {MODULE_ITEMS.map(({ key, label, Icon, count }) => {
             const isActive = activeModule === key
             const subTopics = key === 'all' ? [] : topicsByModule(key)
@@ -349,6 +359,11 @@ export default function DevJournal() {
           <p className="font-black text-white">Developer Console</p>
           <p className="text-[11px] text-cyan-200/60">SmartLocal System Workspace</p>
         </div>
+        <button onClick={() => setShowGoogleMapsSettings(true)}
+          aria-label="เปิดการตั้งค่า Google Maps API" title="Google Maps API"
+          className="w-9 h-9 rounded-xl bg-cyan-400/15 border border-cyan-300/20 text-cyan-200 flex items-center justify-center active:scale-90 transition-all">
+          <KeyRound size={17} />
+        </button>
         <button onClick={() => setShowModuleManager(true)}
           aria-label="เปิดหน้าจัดการโมดูล" title="จัดการโมดูล"
           className="w-9 h-9 rounded-xl bg-violet-400/15 border border-violet-300/20 text-violet-200 flex items-center justify-center active:scale-90 transition-all">
@@ -656,6 +671,13 @@ export default function DevJournal() {
             </button>
           )
         })}
+        <button onClick={() => setShowGoogleMapsSettings(true)}
+          className="flex-1 min-w-[86px] flex flex-col items-center justify-center gap-0.5 pt-2 pb-1 transition-all active:scale-90">
+          <div className="relative w-10 h-9 rounded-xl flex items-center justify-center bg-cyan-400/15">
+            <KeyRound size={19} strokeWidth={1.8} className="text-cyan-300" />
+          </div>
+          <span className="text-[10px] font-bold leading-tight text-cyan-200">Maps API</span>
+        </button>
         <button onClick={() => setShowModuleManager(true)}
           className="flex-1 min-w-[86px] flex flex-col items-center justify-center gap-0.5 pt-2 pb-1 transition-all active:scale-90">
           <div className="relative w-10 h-9 rounded-xl flex items-center justify-center bg-violet-400/15">
@@ -690,6 +712,36 @@ export default function DevJournal() {
           <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
             <div className="mx-auto w-full max-w-5xl rounded-3xl border border-slate-200 bg-white p-4 shadow-xl shadow-slate-900/5 md:p-6">
               <SuperAdminPanel tenant={tenant} />
+            </div>
+          </main>
+        </div>
+      )}
+
+      {showGoogleMapsSettings && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-slate-100 md:left-72">
+          <header className="shrink-0 border-b border-white/10 px-4 py-3 text-white shadow-lg md:px-6"
+            style={{ background: 'linear-gradient(135deg, #0f172a 0%, #172554 55%, #164e63 100%)' }}>
+            <div className="mx-auto flex w-full max-w-7xl items-center gap-3">
+              <button onClick={() => setShowGoogleMapsSettings(false)} aria-label="กลับหน้าผู้พัฒนาระบบ"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/10 text-white/75 transition-all hover:bg-white/20 hover:text-white active:scale-90">
+                <ArrowLeft size={18} />
+              </button>
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-400/15 text-cyan-200">
+                <KeyRound size={19} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-black">Google Maps API</p>
+                <p className="truncate text-[11px] text-cyan-100/55">Developer Console · Map Platform Configuration</p>
+              </div>
+              <button onClick={() => setShowGoogleMapsSettings(false)} aria-label="ปิดการตั้งค่า Google Maps"
+                className="hidden h-9 w-9 items-center justify-center rounded-xl text-white/50 transition-colors hover:bg-white/10 hover:text-white md:flex">
+                <X size={17} />
+              </button>
+            </div>
+          </header>
+          <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
+            <div className="mx-auto w-full max-w-4xl">
+              <GoogleMapsSettings />
             </div>
           </main>
         </div>
