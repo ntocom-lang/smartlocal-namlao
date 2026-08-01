@@ -17,12 +17,13 @@ export default function GoogleMapPicker({
   onClose,
   readOnly = false,
   modal,
-  fixedCenterPin = true,
+  fixedCenterPin = false,
   mapClassName = 'w-full h-80 min-h-[320px]',
   placeholder = 'ค้นหาบ้านเลขที่ ชื่อสถานที่ หรือถนน...',
 }) {
   const { tenant } = useTenant()
   const inputRef = useRef(null)
+  const autocompleteHostRef = useRef(null)
   const mapRef = useRef(null)
   const googleRef = useRef(null)
   const autocompleteListenerRef = useRef(null)
@@ -52,9 +53,22 @@ export default function GoogleMapPicker({
       commitSelection({ ...point, address: '' })
       return
     }
-    new google.maps.Geocoder().geocode({ location: point, language: 'th', region: 'TH' }, (results, status) => {
-      commitSelection({ ...point, address: status === 'OK' ? (results?.[0]?.formatted_address || '') : '' })
-    })
+    try {
+      if (google.maps?.Geocoder) {
+        new google.maps.Geocoder().geocode({ location: point, language: 'th', region: 'TH' }, (results, status) => {
+          if (status === 'OK' && results?.[0]?.formatted_address) {
+            commitSelection({ ...point, address: results[0].formatted_address })
+          } else {
+            commitSelection({ ...point, address: `${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}` })
+          }
+        })
+      } else {
+        commitSelection({ ...point, address: `${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}` })
+      }
+    } catch (err) {
+      console.warn('[GoogleMapPicker] Geocoding service fallback:', err)
+      commitSelection({ ...point, address: `${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}` })
+    }
   }, [commitSelection])
 
   const handleMapReady = useCallback((map, google) => {
@@ -82,28 +96,56 @@ export default function GoogleMapPicker({
       })
     }
 
-    if (!inputRef.current) return
+    if (!autocompleteHostRef.current) return
 
-    autocompleteListenerRef.current?.remove?.()
-    const autocomplete = new google.maps.places.Autocomplete(inputRef.current, {
-      componentRestrictions: { country: 'th' },
-      fields: ['geometry', 'name', 'formatted_address'],
-    })
-    autocomplete.bindTo('bounds', map)
-    autocompleteListenerRef.current = autocomplete.addListener('place_changed', () => {
-      const place = autocomplete.getPlace()
-      const location = place?.geometry?.location
-      if (!location) return
-      const next = {
-        lat: location.lat(),
-        lng: location.lng(),
-        address: place.formatted_address || place.name || '',
+    try {
+      const PlaceAutocompleteElement = google.maps?.places?.PlaceAutocompleteElement
+      if (PlaceAutocompleteElement) {
+        autocompleteListenerRef.current?.remove?.()
+        const autocomplete = new PlaceAutocompleteElement({
+          includedRegionCodes: ['th'],
+          requestedLanguage: 'th',
+          requestedRegion: 'TH',
+        })
+        autocomplete.placeholder = placeholder
+        autocomplete.className = 'block w-full'
+        autocomplete.style.width = '100%'
+        autocomplete.style.colorScheme = 'light'
+
+        const handleSelect = async event => {
+          const place = event.placePrediction?.toPlace()
+          if (!place) return
+          await place.fetchFields({ fields: ['displayName', 'formattedAddress', 'location', 'viewport'] })
+          const location = place.location
+          if (!location) return
+          const next = {
+            lat: location.lat(),
+            lng: location.lng(),
+            address: place.formattedAddress || place.displayName || '',
+          }
+          if (place.viewport) map.fitBounds(place.viewport)
+          else {
+            map.panTo(next)
+            map.setZoom(17)
+          }
+          commitSelection(next)
+        }
+
+        autocomplete.addEventListener('gmp-select', handleSelect)
+        autocompleteHostRef.current.replaceChildren(autocomplete)
+        inputRef.current = autocomplete
+        autocompleteListenerRef.current = {
+          remove: () => {
+            autocomplete.removeEventListener('gmp-select', handleSelect)
+            autocomplete.remove()
+            if (inputRef.current === autocomplete) inputRef.current = null
+          },
+        }
       }
-      map.panTo(next)
-      map.setZoom(17)
-      commitSelection(next)
-    })
-  }, [commitSelection, readOnly, reverseGeocode, selected.lat, selected.lng, initialPos?.address, fixedCenterPin])
+    } catch (err) {
+      console.warn('[GoogleMapPicker] PlaceAutocompleteElement init warning:', err)
+    }
+  }, [commitSelection, readOnly, reverseGeocode, selected.lat, selected.lng, initialPos?.address, fixedCenterPin, placeholder])
 
   useEffect(() => () => autocompleteListenerRef.current?.remove?.(), [])
 
@@ -126,34 +168,41 @@ export default function GoogleMapPicker({
     if (e) e.preventDefault()
     const query = inputRef.current?.value?.trim()
     if (!query || !googleRef.current) return
-    new googleRef.current.maps.Geocoder().geocode({ address: query, region: 'TH' }, (results, status) => {
-      if (status === 'OK' && results?.[0]?.geometry?.location) {
-        const location = results[0].geometry.location
-        const next = {
-          lat: location.lat(),
-          lng: location.lng(),
-          address: results[0].formatted_address || query,
-        }
-        mapRef.current?.panTo(next)
-        mapRef.current?.setZoom(17)
-        commitSelection(next)
-      } else {
-        alert('ไม่พบสถานที่ดังกล่าว กรุณาลองค้นหาด้วยชื่อถนน หรือสถานที่ใกล้เคียง')
+    try {
+      if (googleRef.current.maps?.Geocoder) {
+        new googleRef.current.maps.Geocoder().geocode({ address: query, region: 'TH' }, (results, status) => {
+          if (status === 'OK' && results?.[0]?.geometry?.location) {
+            const location = results[0].geometry.location
+            const next = {
+              lat: location.lat(),
+              lng: location.lng(),
+              address: results[0].formatted_address || query,
+            }
+            mapRef.current?.panTo(next)
+            mapRef.current?.setZoom(17)
+            commitSelection(next)
+          } else {
+            alert('ไม่พบสถานที่ดังกล่าว กรุณาลองค้นหาด้วยชื่อถนน หรือสถานที่ใกล้เคียง')
+          }
+        })
       }
-    })
+    } catch (err) {
+      console.warn('[GoogleMapPicker] Search geocode error:', err)
+      alert('ไม่สามารถเชื่อมต่อบริการค้นหาที่อยู่ได้ในขณะนี้')
+    }
   }
 
   const picker = (
     <div className={isModal ? 'flex h-full min-h-0 flex-col bg-white' : 'w-full space-y-3'}>
       <div className={`flex items-center gap-2 ${isModal ? 'shrink-0 border-b border-gray-100 p-3' : ''}`}>
         {!readOnly && (
-          <form onSubmit={handleSearchSubmit} className="relative flex-1">
-            <button type="submit" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-blue-600" title="ค้นหา">
+          <form onSubmit={handleSearchSubmit} className="flex min-w-0 flex-1 items-center gap-2">
+            <div ref={autocompleteHostRef} className="min-h-10 min-w-0 flex-1 rounded-xl border border-gray-200 bg-white shadow-sm" />
+            <button type="submit"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-500 shadow-sm hover:text-blue-600"
+              title="ค้นหาข้อความที่พิมพ์">
               <Search size={17} />
             </button>
-            <input ref={inputRef} type="search" placeholder={placeholder}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleSearchSubmit(e) }}
-              className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-sm font-medium text-gray-900 placeholder:text-gray-400 shadow-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
           </form>
         )}
         {!readOnly && (
@@ -195,11 +244,6 @@ export default function GoogleMapPicker({
               <MapPin size={42} className="fill-red-600 text-white" />
             </div>
             <div className="mt-[-6px] h-2 w-4 rounded-full bg-black/35 blur-[1px]" />
-          </div>
-        )}
-        {!readOnly && !fixedCenterPin && (
-          <div className="pointer-events-none absolute left-3 top-3 z-10 flex items-center gap-1.5 rounded-full bg-slate-900/85 px-3.5 py-1.5 text-xs font-bold text-white shadow-lg backdrop-blur-xs">
-            <span>👇 แตะบนแผนที่ตรงจุดที่ต้องการเพื่อปักหมุด</span>
           </div>
         )}
       </div>

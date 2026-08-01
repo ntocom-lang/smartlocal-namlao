@@ -41,12 +41,12 @@ const NAMLAO_DEFAULT_BOUNDARY_GEOJSON = {
 
 /**
  * Native Google Maps canvas used by every map surface in SmartLocal.
- * Markers and polylines are plain data so feature pages remain React-driven.
  */
 export default function GoogleMapCanvas({
   center,
   zoom = 15,
   mapTypeId = 'roadmap',
+  mapId,
   markers = [],
   polylines = [],
   boundaryGeoJson = null,
@@ -80,6 +80,7 @@ export default function GoogleMapCanvas({
   }
 
   const apiKey = (tenant?.google_maps_api_key && tenant.google_maps_api_key.trim()) || import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
+  const effectiveMapId = mapId || import.meta.env.VITE_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID'
   const safeCenter = useMemo(() => isPoint(center)
     ? { lat: Number(center.lat), lng: Number(center.lng) }
     : {
@@ -100,7 +101,11 @@ export default function GoogleMapCanvas({
 
   useEffect(() => {
     let active = true
-    if (!apiKey) return undefined
+
+    if (!apiKey) {
+      return () => { active = false }
+    }
+
     loadGoogleMaps(apiKey).then(res => {
       if (!active || !containerRef.current) return
       const google = res?.google || window.google
@@ -111,6 +116,7 @@ export default function GoogleMapCanvas({
         center: safeCenter,
         zoom,
         mapTypeId: activeMapType,
+        mapId: effectiveMapId,
         mapTypeControl: false,
         streetViewControl: true,
         fullscreenControl: true,
@@ -129,21 +135,23 @@ export default function GoogleMapCanvas({
       setMapReadyState(prev => prev + 1)
     }).catch(err => {
       if (!active) return
-      console.error('[GoogleMapCanvas] Google Maps load failed:', err)
-      setError('โหลด Google Maps ไม่สำเร็จ กรุณาตรวจ API Key, Billing และ HTTP Referrer restriction')
+      console.error('[GoogleMapCanvas] Google Maps API unavailable:', err)
+      setError('โหลด Google Maps ไม่สำเร็จ กรุณาตรวจ API Key, Billing, API ที่เปิดใช้งาน และ HTTP Referrer restriction')
       setLoading(false)
     })
 
     return () => {
       active = false
-      overlaysRef.current.forEach(overlay => overlay.setMap?.(null))
+      overlaysRef.current.forEach(overlay => {
+        if ('map' in overlay) overlay.map = null
+        else overlay.setMap?.(null)
+      })
       overlaysRef.current = []
       mapRef.current = null
       googleRef.current = null
     }
-  // Map options are intentionally applied at creation; feature updates are handled below.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiKey])
+  }, [apiKey, effectiveMapId])
 
   useEffect(() => {
     const map = mapRef.current
@@ -163,34 +171,34 @@ export default function GoogleMapCanvas({
 
     overlaysRef.current.forEach(overlay => {
       google.maps.event.clearInstanceListeners(overlay)
-      overlay.setMap?.(null)
+      if ('map' in overlay) overlay.map = null
+      else overlay.setMap?.(null)
     })
     overlaysRef.current = []
 
     markers.filter(marker => isPoint(marker.position)).forEach(markerData => {
-      const marker = new google.maps.Marker({
+      const AdvancedMarkerElement = google.maps.marker?.AdvancedMarkerElement
+      const PinElement = google.maps.marker?.PinElement
+      if (!AdvancedMarkerElement) return
+
+      const marker = new AdvancedMarkerElement({
         map,
         position: { lat: Number(markerData.position.lat), lng: Number(markerData.position.lng) },
         title: markerData.title || '',
         zIndex: markerData.zIndex,
-        icon: markerData.icon || {
-          path: 'M 12,2 C 8.13,2 5,5.13 5,9 C 5,14.25 12,22 12,22 C 12,22 19,14.25 19,9 C 19,5.13 15.87,2 12,2 Z',
-          fillColor: markerData.color || '#ef4444',
-          fillOpacity: 1,
-          strokeColor: '#ffffff',
-          strokeOpacity: 1,
-          strokeWeight: 2,
-          scale: markerData.scale ? (markerData.scale / 10) : 1.6,
-          anchor: google.maps ? new google.maps.Point(12, 22) : undefined,
-          labelOrigin: google.maps ? new google.maps.Point(12, 9) : undefined,
-        },
-        label: markerData.label ? {
-          text: String(markerData.label),
-          fontSize: markerData.labelSize || '15px',
-          color: markerData.labelColor || '#ffffff',
-          fontWeight: '700',
-        } : undefined,
+        gmpClickable: true,
       })
+
+      if (PinElement) {
+        marker.append(new PinElement({
+          background: markerData.color || '#ef4444',
+          borderColor: '#ffffff',
+          glyphColor: markerData.labelColor || '#ffffff',
+          glyphText: markerData.label ? String(markerData.label) : '',
+          scale: markerData.scale ? (markerData.scale / 10) : 1.6,
+        }))
+      }
+
       marker.addListener('click', () => {
         if (markerData.title || markerData.infoHtml) {
           const infoWindow = infoWindowRef.current || new google.maps.InfoWindow()

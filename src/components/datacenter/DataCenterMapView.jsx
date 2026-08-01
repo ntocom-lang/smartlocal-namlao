@@ -417,7 +417,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
 
           {/* มือถือ/แท็บเล็ต: แผงสรุปแบบ bottom sheet ลอยเหนือแผนที่ (ตาม layout เทศบาลนครนนทบุรี) — absolute
               ผูกกับกรอบแผนที่ ไม่ใช่ fixed กับจอ กันชนกับแถบเมนูล่างของแดชบอร์ดเจ้าหน้าที่ตอนฝังในหน้านั้น */}
-          {/* z-1001: ต้องสูงกว่า z-index ของ control ในตัว Leaflet เอง (~1000) ไม่งั้นแผงจะโดนบังแบบเงียบๆ */}
+          {/* วาง bottom sheet เหนือ Google Maps และ controls เพื่อให้แตะใช้งานได้เสมอ */}
           {groups.length > 0 && (
             <div className="lg:hidden absolute bottom-0 left-0 right-0 z-1001 bg-white rounded-t-2xl overflow-hidden flex flex-col"
               style={{ boxShadow: '0 -6px 24px rgba(0,0,0,0.18)', maxHeight: sheetExpanded ? '55%' : 'auto' }}>
