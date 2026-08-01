@@ -84,7 +84,7 @@ const STANDALONE_GROUPS = [
   {
     group: 'บุคลากร',
     items: [
-      { key: 'positions', label: 'ตำแหน่งและบุคลากร', Icon: Briefcase, color: '#4338ca', bg: '#e0e7ff' },
+      { key: 'positions', label: 'ทำเนียบตำแหน่ง', Icon: Briefcase, color: '#4338ca', bg: '#e0e7ff' },
     ],
   },
 ]
@@ -1834,7 +1834,7 @@ export default function StaffDashboard() {
             {activeModule === 'tourism'          && <TourismManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} myDepartmentId={profile?.department_id ?? null} />}
             {activeModule === 'tourism-reviews'  && <TourismReviewsAdmin tenant={tenant} />}
             {activeModule === 'fleet' && <FleetPage onBack={() => setActiveModule('home')} />}
-            {activeModule === 'positions' && <PositionsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} currentUserId={profile?.id} />}
+            {activeModule === 'positions' && <PositionsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
             </Suspense>
             </div>
           </main>

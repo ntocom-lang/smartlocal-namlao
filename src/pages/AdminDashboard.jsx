@@ -10,7 +10,7 @@ import {
 import {
   RefreshCw, Clock, Loader2, Check,
   CheckCircle2, ChevronRight, ChevronLeft,
-  Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical,
+  Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical, Briefcase,
   X, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera,
   TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, BookOpen, Bell, ExternalLink, Settings, Download, Banknote, Star, MessageSquare, Car, Terminal, Database
 } from 'lucide-react'
@@ -86,6 +86,15 @@ const ROLE_LABELS = {
   citizen:     { label: 'ประชาชน',       color: '#374151', bg: '#f3f4f6' },
 }
 
+const POSITION_CATEGORIES = [
+  { value: 'political_exec',   label: 'ฝ่ายบริหาร (การเมือง)' },
+  { value: 'council',          label: 'สภาท้องถิ่น' },
+  { value: 'top_admin',        label: 'ผู้บริหารสูงสุดฝ่ายประจำ' },
+  { value: 'dept_head',        label: 'หัวหน้าส่วนราชการ/ผู้อำนวยการกอง' },
+  { value: 'operating_staff',  label: 'เจ้าหน้าที่ปฏิบัติงาน' },
+  { value: 'field_technician', label: 'ช่างเทคนิค/ปฏิบัติการภาคสนาม' },
+]
+
 const NON_CITIZEN_ROLES = ['staff', 'officer', 'technician', 'admin', 'superadmin', 'council', 'viewer']
 const USER_PAGE_SIZE = 50
 
@@ -100,19 +109,14 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
   const [subTab, setSubTab] = useState('staff') // 'staff' | 'citizen'
   const [users, setUsers] = useState([])
   const [depts, setDepts] = useState([])
+  const [positions, setPositions] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(null)
   const [editingNameId, setEditingNameId] = useState(null)
   const [editingNameValue, setEditingNameValue] = useState('')
-  // job_title = ข้อความเสริมที่พิมพ์เอง คนละคอลัมน์กับ position_id (ตำแหน่งจากทำเนียบกลาง)
-  // การผูก/ถอด position_id ย้ายไปทำที่หน้า "ตำแหน่งและบุคลากร" (/staff) ทั้งหมดแล้ว
-  // เพื่อไม่ให้มี 2 จุดเขียนทับกัน — ที่นี่แสดง position_name แบบอ่านอย่างเดียว
-  const [editingPositionId, setEditingPositionId] = useState(null)
-  const [editingPositionValue, setEditingPositionValue] = useState('')
+  // การแต่งตั้งบุคลากรทำที่หน้ารายละเอียดผู้ใช้เพียงจุดเดียว
   const [editingAddressId, setEditingAddressId] = useState(null)
   const [editingAddressValue, setEditingAddressValue] = useState('')
-  const [editingRoleId, setEditingRoleId] = useState(null)
-  const [editingRoleValue, setEditingRoleValue] = useState('')
   const [viewingUserId, setViewingUserId] = useState(null)
   // derive จาก users list เสมอ (ไม่เก็บ snapshot แยก) กัน UI ค้างข้อมูลเก่าหลังแก้ไขในหน้ารายละเอียด
   const viewingUser = viewingUserId ? users.find(u => u.id === viewingUserId) : null
@@ -122,15 +126,21 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
 
   const [search, setSearch] = useState('')
   const [filterRole, setFilterRole] = useState('')
+  const [filterCategory, setFilterCategory] = useState('')
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(false)
   const fetchSequence = useRef(0)
 
   useEffect(() => {
     if (!tenant?.id) return
-    supabase.from('departments').select('id, name, short_name')
-      .eq('municipality_id', tenant.id).eq('is_active', true).order('sort_order')
-      .then(({ data }) => setDepts(data ?? []))
+    Promise.all([
+      supabase.from('departments').select('id, name, short_name')
+        .eq('municipality_id', tenant.id).eq('is_active', true).order('sort_order'),
+      supabase.from('positions').select('id, name, role, category, department_hint').order('sort_order'),
+    ]).then(([{ data: departmentRows }, { data: positionRows }]) => {
+      setDepts(departmentRows ?? [])
+      setPositions(positionRows ?? [])
+    })
   }, [tenant?.id])
 
   const fetchUsers = useCallback(async (opts = {}) => {
@@ -175,7 +185,12 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
   }, [search, subTab, page, filterRole, fetchUsers])
 
   async function updateManagedUser(userId, changes) {
-    return supabase.rpc('admin_update_user', { p_user_id: userId, p_changes: changes })
+    const res = await supabase.rpc('admin_update_user', { p_user_id: userId, p_changes: changes })
+    if (res.error && (res.error.code === 'PGRST202' || res.error.message?.includes('Could not find the function') || res.status === 404)) {
+      console.warn('[AdminDashboard] admin_update_user RPC not found on DB, falling back to direct profiles table update:', res.error.message)
+      return supabase.from('profiles').update(changes).eq('id', userId)
+    }
+    return res
   }
 
   async function updateName(userId) {
@@ -188,47 +203,6 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
     } else {
       setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, full_name: name } : u))
       setEditingNameId(null)
-    }
-    setSaving(null)
-  }
-
-  async function updateRole(userId, newRole, municipalityId) {
-    setSaving(userId)
-    const needsMuni = ['admin', 'staff', 'technician', 'officer', 'viewer', 'council'].includes(newRole)
-    const muni = needsMuni ? (municipalityId || tenant?.id) : null
-    const { error } = await updateManagedUser(userId, { role: newRole, municipality_id: muni })
-    if (error) {
-      console.error('updateRole failed:', error.message)
-      alert(`บันทึกไม่สำเร็จ: ${error.message}`)
-    } else {
-      setUsers((prev) => prev.map((u) =>
-        u.id === userId ? {
-          ...u,
-          role: newRole,
-          municipality_id: muni,
-          ...(['citizen', 'superadmin'].includes(newRole) ? {
-            department_id: null,
-            department_name: null,
-            position_id: null,
-            position_name: null,
-            is_dept_head: false,
-          } : {}),
-        } : u
-      ))
-      setEditingRoleId(null)
-    }
-    setSaving(null)
-  }
-
-  async function updatePosition(userId) {
-    const val = editingPositionValue.trim()
-    setSaving(userId)
-    const { error } = await updateManagedUser(userId, { job_title: val || null })
-    if (error) {
-      alert(`บันทึกไม่สำเร็จ: ${error.message}`)
-    } else {
-      setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, job_title: val || null } : u))
-      setEditingPositionId(null)
     }
     setSaving(null)
   }
@@ -246,50 +220,28 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
     setSaving(null)
   }
 
-  async function updateDepartment(userId, deptId) {
-    setSaving(userId)
-    const dept = depts.find(d => d.id === deptId)
-    const { error } = await updateManagedUser(userId, { department_id: deptId || null })
-    if (error) {
-      alert(`บันทึกไม่สำเร็จ: ${error.message}`)
-    } else {
-      setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, department_id: deptId || null, department_name: dept?.name ?? null } : u))
-    }
-    setSaving(null)
-  }
-
-  async function toggleDeptHead(userId, current) {
-    setSaving(userId)
-    const { error } = await updateManagedUser(userId, { is_dept_head: !current })
-    if (error) {
-      alert(`บันทึกไม่สำเร็จ: ${error.message}`)
-    } else {
-      setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, is_dept_head: !current } : u))
-    }
-    setSaving(null)
-  }
-
-  // บันทึกทุกแท็บ (บัญชี/ส่วนตัว/สังกัด) ในหน้ารายละเอียดพร้อมกันครั้งเดียว แทนการกดบันทึกทีละฟิลด์
+  // บันทึกทุกแท็บ (บัญชี/ส่วนตัว/การแต่งตั้ง) ในหน้ารายละเอียดพร้อมกันครั้งเดียว
   async function saveUserEdits(user, changes) {
     setSaving(user.id)
     const needsMuni = ['admin', 'staff', 'technician', 'officer', 'viewer', 'council'].includes(changes.role)
     const payload = { ...changes, municipality_id: needsMuni ? (user.municipality_id || tenant?.id) : null }
-    const { error } = await updateManagedUser(user.id, payload)
+    const clearsAssignment = ['citizen', 'superadmin'].includes(changes.role)
+    const effectivePayload = clearsAssignment
+      ? { ...payload, department_id: null, position_id: null, is_dept_head: false }
+      : payload
+    const { error } = await updateManagedUser(user.id, effectivePayload)
     setSaving(null)
     if (error) {
       const msg = error.code === '23505' ? 'เลขบัตรประชาชนนี้ถูกใช้กับบัญชีอื่นแล้ว' : error.message
       return { ok: false, error: msg }
     }
-    const clearsAssignment = ['citizen', 'superadmin'].includes(changes.role)
-    const effectivePayload = clearsAssignment
-      ? { ...payload, department_id: null, position_id: null, is_dept_head: false }
-      : payload
     const dept = depts.find(d => d.id === effectivePayload.department_id)
+    const position = positions.find(p => p.id === effectivePayload.position_id)
     setUsers((prev) => prev.map((u) => u.id === user.id ? {
       ...u,
       ...effectivePayload,
       department_name: dept?.name ?? null,
-      ...(clearsAssignment ? { position_name: null } : {}),
+      position_name: clearsAssignment ? null : (position?.name ?? null),
     } : u))
     return { ok: true }
   }
@@ -314,25 +266,33 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
     }))
   }
 
+  const getUserCategory = useCallback((u) => {
+    if (u.position_id) {
+      const pos = positions.find(p => p.id === u.position_id)
+      if (pos?.category) return pos.category
+    }
+    if (u.role === 'council') return 'council'
+    if (u.role === 'viewer') return 'political_exec'
+    if (u.is_dept_head) return 'dept_head'
+    if (u.role === 'technician') return 'field_technician'
+    return 'operating_staff'
+  }, [positions])
+
+  const categoryCards = POSITION_CATEGORIES.map(c => {
+    const count = users.filter(u => getUserCategory(u) === c.value).length
+    return { ...c, count }
+  })
+
   const filtered = users.filter((u) => {
     const q = search.toLowerCase()
     const matchSearch = !q || (u.full_name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q) || (u.phone || '').includes(q)
     const matchRole = !filterRole || u.role === filterRole
-    return matchSearch && matchRole
+    const matchCategory = !filterCategory || getUserCategory(u) === filterCategory
+    return matchSearch && matchRole && matchCategory
   }).sort((a, b) => {
     const { key, direction } = sortConfig;
-    let aVal = '';
-    let bVal = '';
-
-    if (key === 'job_title') {
-      const aRoleLabel = (ROLE_LABELS[a.role] ?? ROLE_LABELS.citizen).label;
-      const bRoleLabel = (ROLE_LABELS[b.role] ?? ROLE_LABELS.citizen).label;
-      aVal = aRoleLabel + (a.job_title || '');
-      bVal = bRoleLabel + (b.job_title || '');
-    } else {
-      aVal = a[key] || '';
-      bVal = b[key] || '';
-    }
+    let aVal = a[key] || '';
+    let bVal = b[key] || '';
     
     // Sort logically for text, case insensitive
     if (typeof aVal === 'string') aVal = aVal.toLowerCase();
@@ -352,12 +312,8 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
         currentUserId={currentUserId}
         tenant={tenant}
         depts={depts}
+        positions={positions}
         saving={saving}
-        editingNameId={editingNameId} editingNameValue={editingNameValue} setEditingNameId={setEditingNameId} setEditingNameValue={setEditingNameValue} updateName={updateName}
-        editingPositionId={editingPositionId} editingPositionValue={editingPositionValue} setEditingPositionId={setEditingPositionId} setEditingPositionValue={setEditingPositionValue} updatePosition={updatePosition}
-        editingAddressId={editingAddressId} editingAddressValue={editingAddressValue} setEditingAddressId={setEditingAddressId} setEditingAddressValue={setEditingAddressValue} updateAddress={updateAddress}
-        updateDepartment={updateDepartment} toggleDeptHead={toggleDeptHead}
-        editingRoleId={editingRoleId} editingRoleValue={editingRoleValue} setEditingRoleId={setEditingRoleId} setEditingRoleValue={setEditingRoleValue} updateRole={updateRole}
         deletingUser={deletingUser} setDeletingUser={setDeletingUser} deleteLoading={deleteLoading} deleteUser={deleteUser}
         saveUserEdits={saveUserEdits}
       />
@@ -368,7 +324,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
       <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
         <h3 className="font-semibold text-gray-700 flex items-center gap-2">
-          <Users size={16} /> จัดการผู้ใช้งาน
+          <Users size={16} /> จัดการผู้ใช้และการแต่งตั้ง
           {!loading && users.length > 0 && (
             <span className="text-xs font-normal text-gray-400">({users.length} คน)</span>
           )}
@@ -392,6 +348,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
             setPage(0)
             setUsers([])
             setHasMore(false)
+            setFilterCategory('')
             setLoading(key === 'staff')
           }}
             className={`px-3.5 py-1.5 rounded-xl text-sm font-semibold transition-colors ${
@@ -402,6 +359,43 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
           </button>
         ))}
       </div>
+
+      {/* การ์ดกลุ่มตำแหน่ง 6 การ์ด (เฉพาะแท็บเจ้าหน้าที่) */}
+      {subTab === 'staff' && (
+        <div className="px-4 pt-3 pb-1 grid grid-cols-2 md:grid-cols-3 gap-2.5">
+          {categoryCards.map(c => {
+            const isActive = filterCategory === c.value
+            return (
+              <button
+                key={c.value}
+                type="button"
+                onClick={() => setFilterCategory(prev => prev === c.value ? '' : c.value)}
+                className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-all active:scale-[0.98] ${
+                  isActive
+                    ? 'border-blue-400 bg-blue-50/80 shadow-xs'
+                    : 'border-gray-200 bg-white hover:border-blue-200 hover:bg-blue-50/40'
+                }`}
+              >
+                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors ${
+                  isActive ? 'bg-blue-600 text-white shadow-xs' : 'bg-blue-50 text-blue-600'
+                }`}>
+                  <Briefcase size={17} />
+                </span>
+                <span className={`min-w-0 flex-1 text-xs font-semibold leading-snug ${
+                  isActive ? 'text-blue-950 font-bold' : 'text-gray-700'
+                }`}>
+                  {c.label}
+                </span>
+                <span className={`min-w-6 shrink-0 rounded-full px-2 py-0.5 text-center text-[11px] font-extrabold transition-colors ${
+                  isActive ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-400'
+                }`}>
+                  {c.count}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {/* ตัวกรอง */}
       <div className="px-4 py-3 border-b border-gray-50 flex gap-2 flex-wrap">
@@ -442,12 +436,13 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
           ].map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
         </select>
         )}
-        {(search || filterRole) && (
+        {(search || filterRole || filterCategory) && (
           <button
             onClick={() => {
               fetchSequence.current += 1
               setSearch('')
               setFilterRole('')
+              setFilterCategory('')
               setPage(0)
               if (subTab === 'citizen') {
                 setUsers([])
@@ -494,14 +489,6 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
                         {u.full_name || '—'}
                         {u.staff_title && <span className="text-gray-400 font-normal"> ({u.staff_title})</span>}
                       </p>
-                      {canManage && (
-                        <button
-                          onClick={() => { setEditingNameId(u.id); setEditingNameValue(u.full_name || '') }}
-                          className="text-gray-300 hover:text-gray-500 transition-colors"
-                        >
-                          <Pencil size={12} />
-                        </button>
-                      )}
                     </div>
                     <p className="text-xs text-gray-400 break-all mt-0.5">{u.email || '—'}</p>
                     {u.phone && <p className="text-xs text-gray-500 mt-0.5">📞 {u.phone}</p>}
@@ -511,29 +498,10 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
                       </p>
                     )}
                     {canManage && (
-                      <div className="flex flex-col gap-0.5 mt-0.5">
-                        <div className="flex items-center gap-1">
-                          <p className="text-xs text-gray-400">
-                            {u.job_title || <span className="italic text-gray-300">ไม่มีหมายเหตุตำแหน่ง</span>}
-                          </p>
-                          <button
-                            onClick={() => { setEditingPositionId(u.id); setEditingPositionValue(u.job_title || '') }}
-                            className="text-gray-300 hover:text-gray-500 transition-colors"
-                          >
-                            <Pencil size={11} />
-                          </button>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <p className="text-xs text-gray-400">
-                            {u.address || <span className="italic text-gray-300">ยังไม่ระบุที่อยู่</span>}
-                          </p>
-                          <button
-                            onClick={() => { setEditingAddressId(u.id); setEditingAddressValue(u.address || '') }}
-                            className="text-gray-300 hover:text-gray-500 transition-colors"
-                          >
-                            <Pencil size={11} />
-                          </button>
-                        </div>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <p className="text-xs text-gray-400">
+                          {u.address || <span className="italic text-gray-300">ยังไม่ระบุที่อยู่</span>}
+                        </p>
                       </div>
                     )}
                   </div>
@@ -542,58 +510,10 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
                     {rs.label}
                   </span>
                 </div>
-                {/* แถว 2: dropdown เปลี่ยน role (เฉพาะ admin/superadmin) */}
-                {canManage && (
-                  <div className="flex items-center gap-2 pl-[68px] mt-1 justify-start">
-                    {editingRoleId === u.id ? (
-                      <>
-                        <select
-                          value={editingRoleValue}
-                          disabled={saving === u.id}
-                          onChange={(e) => setEditingRoleValue(e.target.value)}
-                          className="text-xs border border-gray-200 rounded-xl px-2 py-1.5 text-gray-700 focus:outline-none bg-gray-50"
-                        >
-                          <option value="citizen">ประชาชน</option>
-                          <option value="staff">เจ้าหน้าที่</option>
-                          <option value="viewer">ผู้บริหาร</option>
-                          <option value="council">สภาเทศบาล</option>
-                          <option value="officer">แอดมินกอง</option>
-                          <option value="technician">ปฏิบัติงาน</option>
-                          {currentUserRole === 'superadmin' && <option value="admin">แอดมินระบบ</option>}
-                          {currentUserRole === 'superadmin' && <option value="superadmin">Super Admin</option>}
-                        </select>
-                        <button onClick={() => updateRole(u.id, editingRoleValue, u.municipality_id)} disabled={saving === u.id} className="text-xs text-blue-600 font-medium px-2">ยืนยัน</button>
-                        <button onClick={() => setEditingRoleId(null)} className="text-xs text-gray-400">ยกเลิก</button>
-                        {saving === u.id && <Loader2 size={14} className="animate-spin text-gray-400 shrink-0" />}
-                      </>
-                    ) : (
-                      <button onClick={() => { setEditingRoleId(u.id); setEditingRoleValue(u.role) }} className="text-xs text-gray-500 hover:text-gray-700 font-medium px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors whitespace-nowrap">
-                        เปลี่ยนบทบาท
-                      </button>
-                    )}
-                  </div>
-                )}
                 {subTab === 'staff' && (
                   <div className="flex items-center gap-2 pl-[68px] mt-1 flex-wrap">
-                    {canManage ? (
-                      <select value={u.department_id ?? ''} disabled={saving === u.id}
-                        onChange={(e) => updateDepartment(u.id, e.target.value)}
-                        className="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-600 focus:outline-none bg-gray-50">
-                        <option value="">— ไม่ระบุกอง —</option>
-                        {depts.map(d => <option key={d.id} value={d.id}>{d.short_name || d.name}</option>)}
-                      </select>
-                    ) : (
-                      <span className="text-xs text-gray-400">{u.department_name || 'ไม่ระบุกอง'}</span>
-                    )}
-                    {u.department_id && canManage && (
-                      <label className="flex items-center gap-1 text-[13px] text-gray-400 cursor-pointer">
-                        <input type="checkbox" checked={!!u.is_dept_head} disabled={saving === u.id}
-                          onChange={() => toggleDeptHead(u.id, u.is_dept_head)}
-                          className="w-3.5 h-3.5" />
-                        หัวหน้ากอง
-                      </label>
-                    )}
-                    {/* ตำแหน่งจากทำเนียบกลาง (position_id) — อ่านอย่างเดียว แก้ที่หน้า "ตำแหน่งและบุคลากร" เท่านั้น กันเขียนทับกัน 2 จุด */}
+                    <span className="text-xs text-gray-500">{u.department_name || 'ไม่ระบุกอง'}</span>
+                    {u.is_dept_head && <span className="text-[11px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">หัวหน้ากอง</span>}
                     <span className="text-xs text-gray-400">
                       {u.position_name || <span className="italic text-gray-300">ไม่ระบุตำแหน่งในทำเนียบ</span>}
                     </span>
@@ -601,7 +521,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
                 )}
                 <div className="flex items-center gap-2 pl-[68px] mt-1">
                   <button onClick={() => setViewingUserId(u.id)} className="text-[13px] text-blue-500 hover:text-blue-700 font-medium px-2 py-1 bg-blue-50 hover:bg-blue-100 rounded transition-colors">
-                    ดูรายละเอียด
+                    {canManage ? 'แต่งตั้ง / แก้ไขข้อมูล' : 'ดูรายละเอียด'}
                   </button>
                   {canManage && (
                     <button
@@ -663,31 +583,6 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
                     </button>
                   </div>
                 )}
-                {editingPositionId === u.id && (
-                  <div className="flex items-center gap-2 pl-12">
-                    <input
-                      autoFocus
-                      value={editingPositionValue}
-                      onChange={(e) => setEditingPositionValue(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') updatePosition(u.id); if (e.key === 'Escape') setEditingPositionId(null) }}
-                      placeholder="ใช้เฉพาะกรณีไม่มีในทำเนียบตำแหน่ง เช่น รักษาการแทน"
-                      className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-blue-400 bg-white text-gray-900"
-                    />
-                    <button
-                      onClick={() => updatePosition(u.id)}
-                      disabled={saving === u.id}
-                      className="text-xs bg-blue-500 text-white px-3 py-1.5 rounded-lg font-medium disabled:opacity-50"
-                    >
-                      บันทึก
-                    </button>
-                    <button
-                      onClick={() => setEditingPositionId(null)}
-                      className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5"
-                    >
-                      ยกเลิก
-                    </button>
-                  </div>
-                )}
               </div>
             )
           })}
@@ -697,18 +592,15 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
           <table className="w-full text-sm text-left text-gray-600 table-fixed border-collapse">
             <thead>
               <tr style={{ backgroundColor: '#2c5282' }}>
-                <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 w-[5%]">ลำดับ</th>
-                <th className="px-2 py-2.5 text-[13px] font-bold text-white border-r border-white/10 w-[18%] cursor-pointer hover:bg-white/10 transition-colors" onClick={() => handleSort('full_name')}>
+                <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 w-[6%]">ลำดับ</th>
+                <th className="px-2 py-2.5 text-[13px] font-bold text-white border-r border-white/10 w-[24%] cursor-pointer hover:bg-white/10 transition-colors" onClick={() => handleSort('full_name')}>
                   <div className="flex items-center gap-1">ชื่อ-นามสกุล {sortConfig.key === 'full_name' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
                 </th>
-                <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 w-[20%]">อีเมล</th>
-                <th className="px-2 py-2.5 text-[13px] font-bold text-white border-r border-white/10 w-[15%] cursor-pointer hover:bg-white/10 transition-colors" onClick={() => handleSort('role')}>
+                <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 w-[26%]">อีเมล</th>
+                <th className="px-2 py-2.5 text-[13px] font-bold text-white border-r border-white/10 w-[18%] cursor-pointer hover:bg-white/10 transition-colors" onClick={() => handleSort('role')}>
                   <div className="flex items-center gap-1">บทบาท/สิทธิ์ {sortConfig.key === 'role' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
                 </th>
-                <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 w-[17%]">สังกัด</th>
-                <th className="px-2 py-2.5 text-[13px] font-bold text-white w-[25%] cursor-pointer hover:bg-white/10 transition-colors" onClick={() => handleSort('job_title')}>
-                  <div className="flex items-center gap-1">หมายเหตุตำแหน่ง (พิมพ์เอง) {sortConfig.key === 'job_title' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
-                </th>
+                <th className="px-2 py-2.5 text-[11px] font-bold text-white w-[26%]">สังกัดและตำแหน่ง</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
@@ -743,18 +635,13 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
                             <div className="flex items-center gap-1.5 min-w-0">
                               <span className="font-medium text-gray-800 truncate">{u.full_name || '—'}</span>
                               {u.staff_title && <span className="text-xs text-gray-400 shrink-0">({u.staff_title})</span>}
-                              {canManage && (
-                                <button onClick={() => { setEditingNameId(u.id); setEditingNameValue(u.full_name || '') }} className="text-gray-300 hover:text-gray-500 shrink-0">
-                                  <Pencil size={12} />
-                                </button>
-                              )}
                             </div>
                           )}
                         </div>
                       </div>
                     </td>
                     {/* อีเมล */}
-                    <td className="px-2 py-3 overflow-hidden border-r border-gray-200">
+                    <td className="px-2 py-3 overflow-hidden">
                       <span className="text-xs text-gray-600 break-all">{u.email || <span className="italic text-gray-300">ยังไม่ระบุ</span>}</span>
                     </td>
                     {/* บทบาท/สิทธิ์: role badge เท่านั้น */}
@@ -763,59 +650,16 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
                         {rs.label}
                       </span>
                     </td>
-                    {/* สังกัด: กอง + หัวหน้ากอง — stopPropagation กันคลิกในคอลัมน์นี้เด้งเข้าหน้ารายละเอียดโดยไม่ตั้งใจ (มี select/checkbox ที่ต้องเลือกละเอียด) */}
-                    <td className="px-2 py-3 overflow-hidden border-r border-gray-200" onClick={(e) => e.stopPropagation()}>
+                    {/* สังกัดและตำแหน่งเป็นข้อมูลสรุป การแต่งตั้ง/แก้สิทธิ์ทำในหน้ารายละเอียดเพียงจุดเดียว */}
+                    <td className="px-2 py-3 overflow-hidden border-r border-gray-200">
                       {subTab === 'staff' ? (
                         <div className="flex flex-col items-start gap-1 w-full">
-                          {canManage ? (
-                            <select value={u.department_id ?? ''} disabled={saving === u.id}
-                              onChange={(e) => updateDepartment(u.id, e.target.value)}
-                              className="text-[13px] border border-gray-200 rounded px-1.5 py-0.5 text-gray-600 focus:outline-none bg-white max-w-full">
-                              <option value="">— ไม่ระบุกอง —</option>
-                              {depts.map(d => <option key={d.id} value={d.id}>{d.short_name || d.name}</option>)}
-                            </select>
-                          ) : (
-                            <span className="text-[11px] text-gray-400 truncate">{u.department_name || 'ไม่ระบุกอง'}</span>
-                          )}
-                          {u.department_id && canManage && (
-                            <label className="flex items-center gap-1 text-[12px] text-gray-400 shrink-0 cursor-pointer">
-                              <input type="checkbox" checked={!!u.is_dept_head} disabled={saving === u.id}
-                                onChange={() => toggleDeptHead(u.id, u.is_dept_head)}
-                                className="w-3 h-3" />
-                              หัวหน้ากอง
-                            </label>
-                          )}
-                          {/* ตำแหน่งจากทำเนียบกลาง — อ่านอย่างเดียว แก้ที่หน้า "ตำแหน่งและบุคลากร" (เมนูเจ้าหน้าที่) */}
+                          <span className="text-[11px] text-gray-500 truncate">{u.department_name || 'ไม่ระบุกอง'}</span>
+                          {u.is_dept_head && <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-full">หัวหน้ากอง</span>}
                           <span className="text-[11px] text-gray-400 truncate">{u.position_name || 'ไม่ระบุตำแหน่งในทำเนียบ'}</span>
                         </div>
                       ) : (
                         <span className="text-xs text-gray-300">—</span>
-                      )}
-                    </td>
-                    {/* ตำแหน่งงาน (job_title) — ย้ายมาจากคอลัมน์บทบาท/สิทธิ์เดิม — stopPropagation เหมือนคอลัมน์สังกัด เพราะมีช่องกรอกข้อความที่ต้องพิมพ์เอง */}
-                    <td className="px-2 py-3 overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                      {editingPositionId === u.id ? (
-                        <div className="flex items-center gap-2">
-                          <input
-                            autoFocus
-                            value={editingPositionValue}
-                            onChange={(e) => setEditingPositionValue(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === 'Enter') updatePosition(u.id); if (e.key === 'Escape') setEditingPositionId(null) }}
-                            placeholder="ตำแหน่งงาน"
-                            className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400 bg-white text-gray-900"
-                          />
-                          <button onClick={() => updatePosition(u.id)} disabled={saving === u.id} className="text-xs text-blue-600 font-medium">บันทึก</button>
-                          <button onClick={() => setEditingPositionId(null)} className="text-xs text-gray-400">ยกเลิก</button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1.5 text-xs text-gray-500 min-w-0 w-full">
-                          <span className="truncate">{u.job_title || <span className="italic text-gray-300">ไม่มีหมายเหตุตำแหน่ง</span>}</span>
-                          {canManage && (
-                            <button onClick={() => { setEditingPositionId(u.id); setEditingPositionValue(u.job_title || '') }} className="text-gray-300 hover:text-gray-500 shrink-0">
-                              <Pencil size={11} />
-                            </button>
-                          )}
-                        </div>
                       )}
                     </td>
                   </tr>
@@ -896,8 +740,7 @@ function DeleteUserConfirmModal({ deletingUser, setDeletingUser, deleteLoading, 
 }
 
 function AccountInfoTab(props) {
-  const { user, currentUserRole, isEditing, draft, setDraft } = props
-  const rs = ROLE_LABELS[(isEditing ? draft.role : user.role)] || ROLE_LABELS.citizen
+  const { user } = props
   const providerBadge = {
     'email':       { label: 'Email/Password', bg: '#f3f4f6', color: '#374151', icon: '✉️' },
     'google':      { label: 'Google',          bg: '#fef9c3', color: '#854d0e', icon: '🔵' },
@@ -906,27 +749,6 @@ function AccountInfoTab(props) {
   const providers = user.providers || []
   return (
     <div className="space-y-5">
-      <div>
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">บทบาท</p>
-        {isEditing ? (
-          <select
-            value={draft.role}
-            onChange={(e) => setDraft(d => ({ ...d, role: e.target.value }))}
-            className="text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-700 focus:outline-none bg-white"
-          >
-            <option value="citizen">ประชาชน</option>
-            <option value="staff">เจ้าหน้าที่</option>
-            <option value="viewer">ผู้บริหาร</option>
-            <option value="council">สภาเทศบาล</option>
-            <option value="officer">แอดมินกอง</option>
-            <option value="technician">ปฏิบัติงาน</option>
-            {currentUserRole === 'superadmin' && <option value="admin">แอดมินระบบ</option>}
-            {currentUserRole === 'superadmin' && <option value="superadmin">Super Admin</option>}
-          </select>
-        ) : (
-          <span className="text-sm font-medium px-3 py-1 rounded-full inline-block" style={{ backgroundColor: rs.bg, color: rs.color }}>{rs.label}</span>
-        )}
-      </div>
       <div>
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">อีเมล</p>
         <p className="text-sm text-gray-800 break-all">{user.email || '—'}</p>
@@ -1057,22 +879,53 @@ function PersonalInfoTab(props) {
         onChange={(e) => setDraft(d => ({ ...d, id_card: e.target.value.replace(/\D/g, '').slice(0, 13) }))}
       />
       <AddressField user={user} isEditing={isEditing} draft={draft} setDraft={setDraft} />
-      <PersonalInfoField
-        label="หมายเหตุตำแหน่ง (พิมพ์เอง)"
-        isEditing={isEditing}
-        displayValue={user.job_title}
-        editValue={draft?.job_title ?? ''}
-        placeholder="ใช้เฉพาะกรณีไม่มีในทำเนียบตำแหน่ง เช่น รักษาการแทน"
-        onChange={(e) => setDraft(d => ({ ...d, job_title: e.target.value }))}
-      />
     </div>
   )
 }
 
-function DepartmentTab({ user, depts, isEditing, draft, setDraft }) {
+function AppointmentTab({ user, depts, positions, currentUserRole, isEditing, draft, setDraft }) {
   const activeDeptId = isEditing ? draft.department_id : (user.department_id ?? '')
+  const activePositionId = isEditing ? draft.position_id : (user.position_id ?? '')
+  const selectedPosition = positions.find(position => position.id === activePositionId)
+
+  function handlePositionChange(positionId) {
+    const position = positions.find(item => item.id === positionId)
+    setDraft(current => {
+      const mayApplySuggestedRole = position?.role
+        && (!['admin', 'superadmin'].includes(position.role) || currentUserRole === 'superadmin')
+        && !['admin', 'superadmin'].includes(current.role)
+      return {
+        ...current,
+        position_id: positionId,
+        role: mayApplySuggestedRole ? position.role : current.role,
+      }
+    })
+  }
+
   return (
     <div className="space-y-5">
+      <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3">
+        <p className="text-sm font-bold text-indigo-800">แต่งตั้งจากหน้านี้เพียงจุดเดียว</p>
+        <p className="mt-1 text-xs leading-5 text-indigo-600">เลือกตำแหน่ง กอง หัวหน้ากอง และบทบาทระบบ แล้วกดบันทึกครั้งเดียว</p>
+      </div>
+      <div>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ตำแหน่ง (ทำเนียบกลาง)</p>
+        {isEditing ? (
+          <select value={draft.position_id} onChange={(e) => handlePositionChange(e.target.value)}
+            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-700 focus:outline-none bg-white">
+            <option value="">— ยังไม่แต่งตั้งตำแหน่ง —</option>
+            {positions.map(position => <option key={position.id} value={position.id}>{position.name}</option>)}
+          </select>
+        ) : (
+          <p className="text-sm text-gray-800">{user.position_name || 'ยังไม่แต่งตั้งตำแหน่ง'}</p>
+        )}
+        {selectedPosition?.department_hint && (
+          <p className="mt-1 text-xs text-gray-400">กองที่มักสังกัด: {selectedPosition.department_hint}</p>
+        )}
+        {selectedPosition?.role && (
+          <p className="mt-1 text-xs text-indigo-500">บทบาทแนะนำ: {ROLE_LABELS[selectedPosition.role]?.label ?? selectedPosition.role}</p>
+        )}
+      </div>
       <div>
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">กอง/หน่วยงาน</p>
         {isEditing ? (
@@ -1101,9 +954,23 @@ function DepartmentTab({ user, depts, isEditing, draft, setDraft }) {
         </div>
       )}
       <div className="border-t border-gray-100 pt-4">
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ตำแหน่ง (ทำเนียบกลาง)</p>
-        <p className="text-sm text-gray-800">{user.position_name || <span className="italic text-gray-300">ไม่ระบุตำแหน่งในทำเนียบ</span>}</p>
-        <p className="text-xs text-gray-400 mt-1">แก้ไข/มอบหมายตำแหน่งได้ที่หน้า "ตำแหน่งและบุคลากร" (เมนูเจ้าหน้าที่) เท่านั้น</p>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">บทบาทและสิทธิ์ระบบ</p>
+        {isEditing ? (
+          <select value={draft.role} onChange={(e) => setDraft(current => ({ ...current, role: e.target.value }))}
+            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-700 focus:outline-none bg-white">
+            <option value="citizen">ประชาชน — ใช้บริการประชาชนเท่านั้น</option>
+            <option value="staff">เจ้าหน้าที่</option>
+            <option value="viewer">ผู้บริหาร</option>
+            <option value="council">สภาเทศบาล</option>
+            <option value="officer">แอดมินกอง</option>
+            <option value="technician">ปฏิบัติงาน</option>
+            {currentUserRole === 'superadmin' && <option value="admin">แอดมินระบบ</option>}
+            {currentUserRole === 'superadmin' && <option value="superadmin">Super Admin</option>}
+          </select>
+        ) : (
+          <p className="text-sm text-gray-800">{ROLE_LABELS[user.role]?.label ?? user.role}</p>
+        )}
+        <p className="mt-1 text-xs text-gray-400">ระบบเสนอค่าตามตำแหน่ง แต่ผู้ดูแลตรวจและปรับได้ก่อนบันทึก</p>
       </div>
       {user.staff_name && (
         <div className="border-t border-gray-100 pt-4">
@@ -1119,7 +986,7 @@ function DepartmentTab({ user, depts, isEditing, draft, setDraft }) {
 const USER_DETAIL_TABS = [
   { key: 'account',    label: 'ข้อมูลบัญชี',   Component: AccountInfoTab },
   { key: 'personal',   label: 'ข้อมูลส่วนตัว',  Component: PersonalInfoTab },
-  { key: 'department', label: 'สังกัด',         Component: DepartmentTab },
+  { key: 'appointment', label: 'การแต่งตั้งและสิทธิ์', Component: AppointmentTab },
 ]
 
 // ตำบลของ tenant อนุมานจากชื่อได้เฉพาะ เทศบาลตำบล/อบต. เท่านั้น (เทศบาลเมือง/นคร มักคลุมหลายตำบล เลยไม่เดาให้)
@@ -1136,7 +1003,7 @@ function tenantDefaultSubdistrict(tenant) {
 
 function UserDetailPage(props) {
   const { user, onBack, currentUserRole, currentUserId, tenant, saving, deletingUser, setDeletingUser, deleteLoading, deleteUser, saveUserEdits } = props
-  const [activeTab, setActiveTab] = useState('account')
+  const [activeTab, setActiveTab] = useState('appointment')
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(null)
   const [saveError, setSaveError] = useState('')
@@ -1156,8 +1023,8 @@ function UserDetailPage(props) {
       address_subdistrict: user.address_subdistrict || tenantDefaultSubdistrict(tenant),
       address_moo: user.address_moo || '',
       address_detail: user.address_detail || '',
-      job_title: user.job_title || '',
       role: user.role,
+      position_id: user.position_id || '',
       department_id: user.department_id || '',
       is_dept_head: !!user.is_dept_head,
     })
@@ -1185,10 +1052,10 @@ function UserDetailPage(props) {
       address_subdistrict: draft.address_subdistrict.trim() || null,
       address_moo: draft.address_moo.trim() || null,
       address_detail: draft.address_detail.trim() || null,
-      job_title: draft.job_title.trim() || null,
       role: draft.role,
+      position_id: draft.position_id || null,
       department_id: draft.department_id || null,
-      is_dept_head: draft.is_dept_head,
+      is_dept_head: draft.department_id ? draft.is_dept_head : false,
     }
     const result = await saveUserEdits(user, changes)
     if (result.ok) {
@@ -1233,7 +1100,7 @@ function UserDetailPage(props) {
             <>
               {canEdit && (
                 <button onClick={startEdit} className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors">
-                  <Pencil size={14} /> แก้ไข
+                  <Pencil size={14} /> {activeTab === 'appointment' ? 'แก้ไขการแต่งตั้ง' : 'แก้ไขข้อมูล'}
                 </button>
               )}
               {canDelete && (
@@ -1678,7 +1545,7 @@ function AssignmentManager({ tenant, readOnly = false }) {
   if (techs.length === 0) return (
     <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 text-sm text-amber-800 space-y-1">
       <p className="font-semibold">ยังไม่มีช่างในระบบ</p>
-      <p className="text-amber-600">ไปที่ "จัดการผู้ใช้" → เปลี่ยน role ผู้ใช้เป็น "ช่าง" ก่อน แล้วกลับมาตั้งค่าที่นี่</p>
+      <p className="text-amber-600">ไปที่ “จัดการผู้ใช้และการแต่งตั้ง” → เปิดบุคลากร → แท็บ “การแต่งตั้งและสิทธิ์” แล้วกำหนดบทบาทปฏิบัติงาน</p>
     </div>
   )
 
@@ -3732,7 +3599,7 @@ const PAGE_LABELS = {
   emergency: 'สายด่วน',
   locations: 'สถานที่เกิดเหตุ',
   'system-settings': 'ตั้งค่าระบบ',
-  users: 'จัดการผู้ใช้',
+  users: 'จัดการผู้ใช้และการแต่งตั้ง',
   'civil-project': 'โครงการโยธา',
   'civil-report': 'รายงานโยธา',
   'audit-log': 'บันทึกกิจกรรม',
@@ -3781,7 +3648,7 @@ function getAdminMenuGroups(currentUserRole, currentUserId) {
       accent: '#6366f1',
       items: [
         { key: 'system-settings', label: 'ตั้งค่าระบบ', Icon: Settings, color: '#3b82f6', bg: '#dbeafe', show: canManageSystem },
-        { key: 'users', label: 'จัดการผู้ใช้', Icon: Shield, color: '#7c3aed', bg: '#ede9fe', show: canManageSystem },
+        { key: 'users', label: 'จัดการผู้ใช้และการแต่งตั้ง', Icon: Shield, color: '#7c3aed', bg: '#ede9fe', show: canManageSystem },
         { key: 'audit-log', label: 'บันทึกกิจกรรม', Icon: BookOpen, color: '#ef4444', bg: '#fee2e2', show: canManageSystem },
       ],
     },
@@ -4233,7 +4100,7 @@ export default function AdminDashboard() {
           <button onClick={() => setActivePage('users')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activePage === 'users' ? 'text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
             style={activePage === 'users' ? { backgroundColor: '#7c3aed' } : {}}>
-            <Shield size={15} /> จัดการผู้ใช้
+            <Shield size={15} /> จัดการผู้ใช้และการแต่งตั้ง
           </button>
         )}
         {currentUserRole !== 'viewer' && currentUserRole !== 'council' && (
@@ -4379,7 +4246,7 @@ export default function AdminDashboard() {
       ) : activePage === 'fee-settings' ? (
         <FeeSettingsAdmin tenant={tenant} />
       ) : activePage === 'system-settings' ? (
-        <SystemSettingsAdmin tenant={tenant} onUpdateTenant={(updated) => window.location.reload()} />
+        <SystemSettingsAdmin tenant={tenant} onUpdateTenant={() => window.location.reload()} />
       ) : activePage === 'audit-log' ? (
         <AuditLogViewer tenant={tenant} />
       ) : activePage === 'fleet-setup' ? (
@@ -4410,8 +4277,8 @@ export default function AdminDashboard() {
                   <Shield size={24} style={{ color: '#7c3aed' }} />
                 </div>
                 <div>
-                  <p className="text-sm font-bold text-gray-800">จัดการผู้ใช้</p>
-                  <p className="text-[13px] text-gray-400 mt-0.5">สิทธิ์และบทบาท</p>
+                  <p className="text-sm font-bold text-gray-800">จัดการผู้ใช้และการแต่งตั้ง</p>
+                  <p className="text-[13px] text-gray-400 mt-0.5">ตำแหน่ง สังกัด บทบาท และสิทธิ์</p>
                 </div>
               </button>
             )}
@@ -4512,7 +4379,7 @@ export default function AdminDashboard() {
                   { key: 'staff',            Icon: UserCircle2, color: '#7c3aed', bg: '#ede9fe', label: 'รูปผู้บริหาร',       desc: 'อัปโหลดรูปนายก/รองนายก/ทีมงาน',       show: currentUserRole !== 'viewer' },
                   { key: 'fleet-setup',      Icon: Car,         color: '#0369a1', bg: '#e0f2fe', label: 'ตั้งค่ายานพาหนะ', desc: 'กอง/หน่วยงาน งบประมาณ สิทธิ์ผู้ใช้', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'system-settings',  Icon: Settings,    color: '#3b82f6', bg: '#dbeafe', label: 'ตั้งค่าระบบ',    desc: 'ตั้งค่าชื่อระบบและข้อมูลพื้นฐาน',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
-                  { key: 'users',           Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', label: 'จัดการผู้ใช้',    desc: 'สิทธิ์การเข้าถึงและบทบาท',        show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                  { key: 'users',           Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', label: 'จัดการผู้ใช้และการแต่งตั้ง', desc: 'ตำแหน่ง สังกัด บทบาท และสิทธิ์', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 ].filter(r => r.show).map(({ key, Icon, color, bg, label, desc }) => (
                   <tr key={key} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => setActivePage(key)}>
                     <td className="px-5 py-3.5">

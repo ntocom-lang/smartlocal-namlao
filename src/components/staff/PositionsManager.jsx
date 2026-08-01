@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Briefcase, Plus, Pencil, Trash2, X, Loader2, ChevronDown, ChevronRight, Users, UserPlus, UserMinus } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Briefcase, Plus, Pencil, Trash2, X, Loader2, ChevronDown, ChevronRight, Users } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
 // ต้องตรงกับ CHECK constraint ใน supabase/migrations (positions_personnel)
@@ -20,7 +20,7 @@ const ROLE_TH = {
 const EMPTY_FORM = { name: '', category: 'operating_staff', role: 'staff', department_hint: '', sort_order: 0 }
 const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
 
-export default function PositionsManager({ tenant, currentUserRole, currentUserId }) {
+export default function PositionsManager({ tenant, currentUserRole }) {
   const [positions, setPositions] = useState([])
   const [profiles, setProfiles] = useState([])
   const [loading, setLoading] = useState(true)
@@ -29,17 +29,10 @@ export default function PositionsManager({ tenant, currentUserRole, currentUserI
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [activeCategory, setActiveCategory] = useState(CATEGORIES[0].value)
-  const [assigningPositionId, setAssigningPositionId] = useState(null) // ตำแหน่งที่กำลังเปิด dropdown มอบหมายอยู่
-  const [assignTargetId, setAssignTargetId] = useState('')
-  const [assignBusyId, setAssignBusyId] = useState(null) // profile id ที่กำลังบันทึกอยู่ (กันกดซ้ำ)
 
   const isSuperadmin = currentUserRole === 'superadmin'
-  // มอบหมาย/ถอดตำแหน่งให้คนอื่นใช้สิทธิ์เดียวกับหน้า "จัดการผู้ใช้" (admin ขึ้นไป) — ตัว RPC เองบังคับ
-  // ขอบเขตเทศบาล/ห้ามยุ่งบัญชี superadmin อยู่แล้ว ที่นี่แค่คุม UI ให้ตรงระดับสิทธิ์เดียวกัน
-  const canAssign = ['admin', 'superadmin'].includes(currentUserRole)
 
-  function reload() {
-    setLoading(true)
+  const reload = useCallback(() => {
     Promise.all([
       supabase.from('positions').select('*').order('sort_order'),
       tenant?.id
@@ -50,46 +43,11 @@ export default function PositionsManager({ tenant, currentUserRole, currentUserI
       setProfiles(prof ?? [])
       setLoading(false)
     })
-  }
-  useEffect(reload, [tenant?.id])
+  }, [tenant])
 
-  // เขียนทาง RPC เดียวกับหน้า "จัดการผู้ใช้" (admin_update_user) — เป็นจุดเขียน profiles.position_id/role
-  // จุดเดียวของทั้งระบบ กัน RLS trigger บล็อก (guard_profile_privileged_update) และได้ audit log ฟรี
-  async function assignPosition(profile, position) {
-    if (!canAssign || profile.id === currentUserId) return
-    if (profile.position_id && profile.position_id !== position.id) {
-      const prevName = positions.find(p => p.id === profile.position_id)?.name ?? 'ตำแหน่งเดิม'
-      if (!window.confirm(`${profile.full_name} มีตำแหน่ง "${prevName}" อยู่แล้ว\n\nจะเปลี่ยนเป็น "${position.name}" แทนหรือไม่?`)) return
-    }
-    setAssignBusyId(profile.id)
-    const { error } = await supabase.rpc('admin_update_user', { p_user_id: profile.id, p_changes: { position_id: position.id } })
-    if (error) {
-      alert('มอบหมายตำแหน่งไม่สำเร็จ: ' + error.message)
-      setAssignBusyId(null)
-      return
-    }
-    let nextRole = profile.role
-    if (position.role && position.role !== profile.role
-        && window.confirm(`ตำแหน่ง "${position.name}" ควรได้สิทธิ์ระบบ "${ROLE_TH[position.role] ?? position.role}" (ปัจจุบัน: ${ROLE_TH[profile.role] ?? profile.role})\n\nปรับสิทธิ์ตามตำแหน่งเลยหรือไม่?`)) {
-      const { error: roleErr } = await supabase.rpc('admin_update_user', { p_user_id: profile.id, p_changes: { role: position.role } })
-      if (roleErr) alert('ปรับสิทธิ์ไม่สำเร็จ: ' + roleErr.message)
-      else nextRole = position.role
-    }
-    setProfiles(prev => prev.map(p => p.id === profile.id ? { ...p, position_id: position.id, role: nextRole } : p))
-    setAssignBusyId(null)
-    setAssigningPositionId(null)
-    setAssignTargetId('')
-  }
-
-  async function unassignPosition(profile) {
-    if (!canAssign || profile.id === currentUserId) return
-    if (!window.confirm(`ถอดตำแหน่งของ ${profile.full_name} หรือไม่?`)) return
-    setAssignBusyId(profile.id)
-    const { error } = await supabase.rpc('admin_update_user', { p_user_id: profile.id, p_changes: { position_id: null } })
-    setAssignBusyId(null)
-    if (error) { alert('ถอดตำแหน่งไม่สำเร็จ: ' + error.message); return }
-    setProfiles(prev => prev.map(p => p.id === profile.id ? { ...p, position_id: null } : p))
-  }
+  useEffect(() => {
+    reload()
+  }, [reload])
 
   function toggleExpand(id) {
     setExpanded(prev => {
@@ -147,8 +105,8 @@ export default function PositionsManager({ tenant, currentUserRole, currentUserI
     <div className="max-w-3xl mx-auto space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Briefcase size={18} className="text-indigo-500" /> ตำแหน่งและบุคลากร</h1>
-          <p className="text-xs text-gray-400 mt-0.5">ตารางตำแหน่งมาตรฐานกลาง ใช้ร่วมกันทุกเทศบาล — รายชื่อที่แสดงคือบุคลากรของเทศบาลนี้เท่านั้น</p>
+          <h1 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Briefcase size={18} className="text-indigo-500" /> ทำเนียบตำแหน่ง</h1>
+          <p className="text-xs text-gray-400 mt-0.5">ใช้กำหนดแบบตำแหน่งมาตรฐานและตรวจรายชื่อผู้ดำรงตำแหน่งเท่านั้น</p>
         </div>
         {isSuperadmin && (
           <button onClick={openCreate}
@@ -157,6 +115,10 @@ export default function PositionsManager({ tenant, currentUserRole, currentUserI
             <Plus size={14} /> เพิ่มตำแหน่ง
           </button>
         )}
+      </div>
+
+      <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs leading-5 text-blue-700">
+        การแต่งตั้งหรือเปลี่ยนตำแหน่งบุคลากร ให้ทำที่ <strong>Admin → จัดการผู้ใช้และการแต่งตั้ง → การแต่งตั้งและสิทธิ์</strong> เพียงจุดเดียว
       </div>
 
       <div className="grid grid-cols-2 gap-2 md:grid-cols-3" aria-label="กลุ่มตำแหน่ง">
@@ -260,41 +222,9 @@ export default function PositionsManager({ tenant, currentUserRole, currentUserI
                                 </div>
                               )}
                               <span className="flex-1 min-w-0 truncate">{h.full_name}</span>
-                              {canAssign && h.id !== currentUserId && (
-                                <button onClick={() => unassignPosition(h)} disabled={assignBusyId === h.id}
-                                  className="p-1 rounded hover:bg-red-50 text-gray-300 hover:text-red-500 transition-colors shrink-0" title="ถอดตำแหน่ง">
-                                  {assignBusyId === h.id ? <Loader2 size={12} className="animate-spin" /> : <UserMinus size={12} />}
-                                </button>
-                              )}
                             </div>
                           ))}
                         </div>
-                      )}
-                      {canAssign && (
-                        assigningPositionId === p.id ? (
-                          <div className="flex items-center gap-1.5">
-                            <select autoFocus value={assignTargetId} onChange={e => setAssignTargetId(e.target.value)}
-                              className="flex-1 min-w-0 text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-700 focus:outline-none bg-white">
-                              <option value="">— เลือกบุคลากร —</option>
-                              {profiles.filter(pr => pr.id !== currentUserId).map(pr => (
-                                <option key={pr.id} value={pr.id}>
-                                  {pr.full_name}{pr.position_id && pr.position_id !== p.id ? ` (เดิม: ${positions.find(x => x.id === pr.position_id)?.name ?? '—'})` : ''}
-                                </option>
-                              ))}
-                            </select>
-                            <button onClick={() => { const pr = profiles.find(x => x.id === assignTargetId); if (pr) assignPosition(pr, p) }}
-                              disabled={!assignTargetId || assignBusyId === assignTargetId}
-                              className="text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 px-2.5 py-1.5 rounded-lg shrink-0">
-                              {assignBusyId === assignTargetId ? <Loader2 size={12} className="animate-spin" /> : 'มอบหมาย'}
-                            </button>
-                            <button onClick={() => { setAssigningPositionId(null); setAssignTargetId('') }} className="text-xs text-gray-400 shrink-0">ยกเลิก</button>
-                          </div>
-                        ) : (
-                          <button onClick={() => { setAssigningPositionId(p.id); setAssignTargetId('') }}
-                            className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-700">
-                            <UserPlus size={13} /> มอบหมายตำแหน่งนี้ให้บุคลากร
-                          </button>
-                        )
                       )}
                     </div>
                   )}
