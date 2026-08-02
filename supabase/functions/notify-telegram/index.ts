@@ -303,7 +303,7 @@ serve(async (req) => {
 
     const spec = notificationSpecs[notificationType]
     const selectColumns = spec.table === 'events'
-      ? 'id,municipality_id,created_by,created_at,updated_at,title,description,event_date,event_time,end_time,location,audiences,is_all_day'
+      ? 'id,municipality_id,created_by,created_at,title,description,event_date,event_time,end_time,location,audiences,is_all_day'
       : spec.table === 'complaints'
         ? 'id,municipality_id,user_id,created_at,updated_at,status,assigned_to'
         : 'id,municipality_id,user_id,created_at,updated_at,status,document_type,fee_amount'
