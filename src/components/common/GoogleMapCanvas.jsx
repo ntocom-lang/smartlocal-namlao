@@ -238,12 +238,12 @@ export default function GoogleMapCanvas({
           const gmapsUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
 
           const htmlContent = markerData.infoHtml || `
-            <div style="padding: 6px 8px; font-family: 'Sarabun', sans-serif; min-width: 170px; max-width: 250px;">
-              <div style="font-weight: 800; font-size: 14px; color: #0f172a; margin-bottom: 2px; line-height: 1.3;">${titleText}</div>
-              ${subtitleText ? `<div style="font-size: 11px; font-weight: 600; color: #64748b; margin-bottom: 8px;">${subtitleText}</div>` : ''}
+            <div style="font-family: 'Sarabun', system-ui, sans-serif; padding: 2px 2px 0 0; min-width: 175px; max-width: 240px; box-sizing: border-box;">
+              <div style="font-weight: 800; font-size: 14px; color: #0f172a; line-height: 1.35; margin-bottom: 2px; padding-right: 18px;">${titleText}</div>
+              ${subtitleText ? `<div style="font-size: 11px; font-weight: 600; color: #64748b; margin-bottom: 10px; line-height: 1.3;">${subtitleText}</div>` : '<div style="margin-bottom: 8px;"></div>'}
               <a href="${gmapsUrl}" target="_blank" rel="noopener noreferrer"
-                style="display: inline-flex; align-items: center; gap: 4px; border-radius: 9999px; background-color: #eff6ff; color: #2563eb; padding: 5px 10px; font-size: 11px; font-weight: 700; text-decoration: none;">
-                📍 เปิดใน Google Maps
+                style="display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: 12px; background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: #ffffff; padding: 7px 12px; font-size: 11px; font-weight: 700; text-decoration: none; box-shadow: 0 2px 8px rgba(37,99,235,0.22); text-align: center; transition: all 0.15s ease;">
+                <span>📍 เปิดใน Google Maps</span>
               </a>
             </div>
           `
