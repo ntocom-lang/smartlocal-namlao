@@ -8,7 +8,7 @@ export default function ChatbotPage() {
   const navigate = useNavigate();
   const { tenant } = useTenant();
   const [messages, setMessages] = useState([
-    { id: 1, sender: 'bot', text: `สวัสดีครับ... วันนี้มีอะไรให้ช่วยครับ ถามมาได้เลย น้องใจดี ยินดีให้บริการครับ 🤖` }
+    { id: 1, sender: 'bot', text: `สวัสดีครับ... วันนี้มีอะไรให้ช่วยครับ ถามมาได้เลย น้ำเลาใจดี ยินดีให้บริการครับ 🤖` }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -37,11 +37,11 @@ export default function ChatbotPage() {
     } catch (error) {
       console.error('Error calling Gemini:', error);
       
-      let reply = 'ตอนนี้ระบบเชื่อมต่อ AI ขัดข้องชั่วคราว น้องใจดีขอตอบแบบจำลองให้นะครับ: ';
+      let reply = 'ตอนนี้ระบบเชื่อมต่อ AI ขัดข้องชั่วคราว น้ำเลาใจดีขอตอบแบบจำลองให้นะครับ: ';
       
       const text = userText.toLowerCase();
       if (text.includes('สวัสดี') || text.includes('ทักทาย') || text.includes('ดีจ้า') || text.includes('หวัดดี')) {
-        reply += 'สวัสดีครับ! มีอะไรให้น้องใจดีดูแลและช่วยเหลือไหมครับ? 🤖';
+        reply += 'สวัสดีครับ! มีอะไรให้น้ำเลาใจดีดูแลและช่วยเหลือไหมครับ? 🤖';
       } else if (text.includes('ขยะ') || text.includes('ทิ้งขยะ') || text.includes('เก็บขยะ') || text.includes('ถังขยะ')) {
         reply += 'เรื่องขยะ แจ้งได้เลยครับ! สามารถไปที่เมนู "แจ้งเรื่องร้องเรียน" แล้วเลือกหมวดหมู่ "ขยะ / ความสะอาด" ได้เลยนะครับ 🤖';
       } else if (text.includes('เอกสาร') || text.includes('ทะเบียน') || text.includes('ใบอนุญาต')) {
@@ -51,7 +51,7 @@ export default function ChatbotPage() {
       } else if (text.includes('ร้องเรียน') || text.includes('ร้องทุกข์') || text.includes('ปัญหา') || text.includes('เดือดร้อน')) {
         reply += 'พบเจอปัญหาเดือดร้อน แจ้งเราได้ทันทีครับ! กดที่ปุ่ม "ร้องเรียน/ร้องทุกข์" บนหน้าแรก เจ้าหน้าที่จะรับเรื่องและแก้ไขให้ไวที่สุดครับ 🤖';
       } else if (text.includes('ขอบคุณ') || text.includes('ขอบใจ')) {
-        reply += 'ยินดีให้บริการเสมอครับ! ถ้านึกถึงความช่วยเหลือ นึกถึงน้องใจดีนะครับ 🤖';
+        reply += 'ยินดีให้บริการเสมอครับ! ถ้านึกถึงความช่วยเหลือ นึกถึงน้ำเลาใจดีนะครับ 🤖';
       } else if (text.includes('เที่ยว') || text.includes('ที่พัก') || text.includes('ร้านอาหาร')) {
         reply += 'แหล่งท่องเที่ยว ที่พัก และร้านอาหารเด็ดๆ ดูได้ที่หมวด "เที่ยว กิน พัก OTOP" หน้าแรกเลยครับ แนะนำเพียบ! 🤖';
       } else {
@@ -74,7 +74,7 @@ export default function ChatbotPage() {
         <div className="flex items-center gap-3">
           <img
             src="/images/nong-jaidee.png"
-            alt="น้องใจดี"
+            alt="น้ำเลาใจดี"
             className="w-9 h-9 rounded-full object-cover border-2 border-yellow-400 bg-white p-0.5"
             onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }}
           />
@@ -82,7 +82,7 @@ export default function ChatbotPage() {
             🤖
           </div>
           <div>
-            <h1 className="font-bold text-base leading-tight">น้องใจดี ยินดีให้บริการ</h1>
+            <h1 className="font-bold text-base leading-tight">น้ำเลาใจดี ยินดีให้บริการ</h1>
             <p className="text-[11px] text-blue-100">{tenant?.name || 'เทศบาล/อบต.'}</p>
           </div>
         </div>
@@ -92,7 +92,7 @@ export default function ChatbotPage() {
       <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3 relative z-0">
         {/* Background Mascot Watermark */}
         <div className="fixed inset-0 pointer-events-none flex items-center justify-center opacity-[0.07]">
-          <img src="/images/nong-jaidee.png" alt="น้องใจดี" className="w-56 h-56 object-contain pointer-events-none" />
+          <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="w-56 h-56 object-contain pointer-events-none" />
         </div>
 
         {messages.map((msg) => (
@@ -100,7 +100,7 @@ export default function ChatbotPage() {
             {msg.sender === 'bot' && (
               <img
                 src="/images/nong-jaidee.png"
-                alt="น้องใจดี"
+                alt="น้ำเลาใจดี"
                 className="w-7 h-7 rounded-full object-cover mr-2 shrink-0 border border-yellow-400 bg-white p-0.5 shadow-xs"
                 onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }}
               />
@@ -120,7 +120,7 @@ export default function ChatbotPage() {
           <div className="flex justify-start relative z-10">
             <img
               src="/images/nong-jaidee.png"
-              alt="น้องใจดี"
+              alt="น้ำเลาใจดี"
               className="w-7 h-7 rounded-full object-cover mr-2 shrink-0 border border-yellow-400 bg-white p-0.5 shadow-xs"
               onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }}
             />
