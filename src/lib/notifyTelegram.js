@@ -15,8 +15,36 @@ const TELEGRAM_EVENT_TYPES = [
   { marker: '<b>ช่างปิดงานแล้ว', text: '🔧 <b>ผู้ปฏิบัติงานปิดงานแล้ว</b>' },
 ]
 
+function cleanTelegramLine(value) {
+  return String(value ?? '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/\p{Cc}/gu, '')
+    .trim()
+}
+
+function sanitizeEventMessage(message) {
+  const lines = String(message ?? '')
+    .split(/\r?\n/)
+    .map(cleanTelegramLine)
+    .filter(Boolean)
+
+  const heading = lines[0] ?? ''
+  const audience = heading.match(/\[[^\]\r\n]{1,120}\]/)?.[0] ?? ''
+  const title = lines[1]?.slice(0, 300) ?? 'ไม่ระบุชื่อกิจกรรม'
+  const details = lines.slice(2, 8).map(line => line.slice(0, 500))
+
+  return [
+    `📅 <b>กิจกรรมใหม่</b>${audience ? ` ${audience}` : ''}`,
+    `<b>${title}</b>`,
+    ...details,
+  ].join('\n').slice(0, 1800)
+}
+
 export function sanitizeTelegramMessage(message) {
   const firstLine = String(message ?? '').split(/\r?\n/, 1)[0]
+  if (firstLine.includes('<b>กิจกรรมใหม่</b>')) {
+    return sanitizeEventMessage(message)
+  }
   const eventType = TELEGRAM_EVENT_TYPES.find(({ marker }) => firstLine.includes(marker))
   const heading = eventType?.text ?? '🔔 <b>มีรายการแจ้งเตือนใหม่</b>'
   return `${heading}\nกรุณาเข้าสู่ระบบ SmartLocal เพื่อดูรายละเอียดตามสิทธิ์`

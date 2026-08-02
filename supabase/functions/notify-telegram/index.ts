@@ -13,14 +13,22 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+function sanitizeTelegramHtml(value: unknown) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/&lt;b&gt;/gi, '<b>')
+    .replace(/&lt;\/b&gt;/gi, '</b>')
+}
+
 // เดิมยิงไป Telegram ตรงๆ ด้วย group_id/message ที่ client ส่งมาแบบไม่ตรวจสอบอะไรเลย
 // ทำให้ใครก็ยิง POST เข้ามาตรงๆ พร้อม chat_id ใดๆ ก็ได้ (ใช้บอทตัวเดียวส่งสแปม/ฟิชชิ่ง
 // ไปยังกลุ่มไหนก็ได้ที่บอทอยู่) — แก้โดยยอมรับเฉพาะ group_id ที่ตรงกับ telegram_group_id
 // ที่ลงทะเบียนไว้จริงในตาราง municipalities เท่านั้น (public data อยู่แล้ว ไม่ใช่ secret
 // แต่ป้องกันไม่ให้ใช้บอทยิงไปยัง chat อื่นที่ไม่ใช่กลุ่มเทศบาลที่ลงทะเบียน)
-// และตัด parse_mode: 'HTML' ออกเพราะ message มีข้อความที่ประชาชนกรอกเอง (เช่น รายละเอียด
-// คำร้อง) ปนอยู่แบบไม่ escape — ถ้าเปิด HTML parse mode จะฝัง <a href="..."> ลิงก์ฟิชชิ่ง
-// เข้ากลุ่มทางการได้
+// เปิด HTML เฉพาะตัวหนา <b> โดย escape HTML ทั้งหมดที่ Edge Function ก่อนส่ง
+// จึงไม่สามารถฝังลิงก์หรือ HTML จากข้อมูลที่ผู้ใช้กรอกเข้ากลุ่มทางการได้
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -63,7 +71,8 @@ serve(async (req) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: group_id,
-        text: String(message).slice(0, 2000),
+        text: sanitizeTelegramHtml(message).slice(0, 2000),
+        parse_mode: 'HTML',
       }),
     })
 
