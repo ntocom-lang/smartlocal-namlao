@@ -722,17 +722,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
           .insert({ ...payload, created_by: user.id, department_id: writerProfile.department_id ?? null }).select('id').single()
         if (insErr) throw new Error('บันทึกไม่สำเร็จ: ' + insErr.message)
         eventId = insData?.id ?? null
-        const dateStr = payload.event_date
-          ? new Date(payload.event_date + 'T00:00:00').toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-          : ''
-        const timeStr = payload.event_time
-          ? `⏰ ${payload.event_time.slice(0, 5)}${payload.end_time ? ` – ${payload.end_time.slice(0, 5)}` : ''} น.`
-          : ''
-        const audLabel = payload.audiences.map(v => AUDIENCE_OPTIONS.find(a => a.value === v)?.label ?? v).join(', ')
-        notifyTelegram(
-          tenant.telegram_group_id,
-          `📅 <b>กิจกรรมใหม่</b> [${audLabel}]\n<b>${payload.title}</b>${dateStr ? `\n📆 ${dateStr}` : ''}${timeStr ? `\n${timeStr}` : ''}${payload.location ? `\n📍 ${payload.location}` : ''}${payload.description ? `\n📝 ${payload.description.slice(0, 120)}` : ''}`
-        )
+        notifyTelegram('event_created', eventId)
       }
 
       setShowForm(false)

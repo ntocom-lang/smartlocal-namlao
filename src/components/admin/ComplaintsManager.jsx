@@ -1514,10 +1514,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
         }).catch(() => {})
       }
 
-      const catLabel = CATEGORY_LABEL[c?.category] ?? c?.category ?? ''
-      notifyTelegram(tenant?.telegram_group_id,
-        `🔄 <b>อัปเดตสถานะคำร้อง</b>\nประเภท: ${catLabel}\nสถานะ: ${STATUS[nextStatus]?.label ?? nextStatus}${techNote ? `\nหมายเหตุ: ${techNote}` : ''}`
-      )
+      notifyTelegram('complaint_status_updated', id)
     }
     setUpdating(null)
   }

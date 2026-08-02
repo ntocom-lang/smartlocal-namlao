@@ -152,9 +152,7 @@ export default function BuildingPermitWizard({ tenant, session, onBack, staffId,
     })
     setSaving(false)
     if (error) { alert('ส่งคำขอไม่สำเร็จ: ' + error.message); return }
-    notifyTelegram(tenant?.telegram_group_id,
-      `🏗️ <b>คำขอ ข.๑ ใหม่ (${form.request_type})</b>\nผู้ขอ: ${applicantName}\nเบอร์: ${form.applicant.phone || '-'}\nอาคาร: ${form.building.kind || '-'}`
-    )
+    notifyTelegram('building_permit_created', id)
     setDone({ ref: id.slice(0, 8).toUpperCase(), form })
   }
 

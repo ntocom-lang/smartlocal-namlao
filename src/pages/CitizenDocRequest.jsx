@@ -191,9 +191,7 @@ export default function CitizenDocRequest() {
     })
     setSaving(false)
     if (error) { alert('ส่งคำขอไม่สำเร็จ: ' + error.message); return }
-    notifyTelegram(tenant?.telegram_group_id,
-      `📄 <b>คำขอเอกสารใหม่</b>\nประเภท: ${selected.label}\nผู้ขอ: ${fullName}\nเบอร์: ${form.requester_phone?.trim() || '-'}${feeAmount > 0 ? `\n💰 ค่าธรรมเนียมโดยประมาณ: ${feeAmount} บาท (ชำระที่เทศบาล)` : ''}`
-    )
+    notifyTelegram('document_request_created', id)
     setDone({ ref: id.slice(0, 8).toUpperCase() })
   }
 

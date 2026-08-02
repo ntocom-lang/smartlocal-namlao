@@ -607,19 +607,13 @@ export default function TechnicianDashboard() {
       setComplaints(updated)
       emitTechBadge(updated)
 
-      const c = complaints.find(x => x.id === id)
-      const catLabel = CATEGORY_LABEL[c?.category] ?? c?.category ?? ''
-      const statusMsg = {
-        received:    'ช่างรับงานแล้ว',
-        in_progress: 'ช่างเริ่มลงพื้นที่ดำเนินการ',
-        done:        'ช่างปิดงานแล้ว — รอเจ้าหน้าที่ตรวจสอบและปิดเรื่อง',
-        completed:   'ช่างปิดงานแล้ว — รอเจ้าหน้าที่ตรวจสอบและปิดเรื่อง',
+      const notificationType = {
+        received: 'technician_received',
+        in_progress: 'technician_in_progress',
+        done: 'technician_closed',
+        completed: 'technician_closed',
       }[nextStatus]
-      if (statusMsg) {
-        notifyTelegram(tenant?.telegram_group_id,
-          `🔧 <b>${statusMsg}</b>\nประเภท: ${catLabel}${c?.subject ? `\nเรื่อง: ${c.subject}` : ''}${myName ? `\nช่าง: ${myName}` : ''}${techNote ? `\nหมายเหตุ: ${techNote}` : ''}`
-        )
-      }
+      if (notificationType) notifyTelegram(notificationType, id)
 
       setSelected(null)
     }

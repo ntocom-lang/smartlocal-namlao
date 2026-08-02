@@ -209,10 +209,7 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onInquiryUpda
         .update({ fee_amount: amount, payment_status: 'not_required', payment_slip_url: null })
         .eq('id', req.id)
       if (error) throw error
-      const docLabel = getAllDocTypes().find(d => d.value === req.document_type)?.label ?? req.document_type
-      notifyTelegram(tenant?.telegram_group_id,
-        `📋 <b>แจ้งผลยอดที่ตรวจสอบ</b>\nประเภท: ${docLabel}\nผู้ขอ: ${req.requester_name}\nยอด: <b>${amount.toLocaleString()} บาท</b>\nชำระที่สำนักงานเทศบาลเท่านั้น`
-      )
+      notifyTelegram('fee_verified', req.id)
       onInquiryUpdate?.()
       onClose()
     } catch (err) {
@@ -598,10 +595,7 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
     setRequests(prev => prev.map(r =>
       r.id === id ? { ...r, status: newStatus, staff_notes: staffNote || null, document_url } : r
     ))
-    const docLabel = getAllDocTypes().find(d => d.value === req?.document_type)?.label ?? req?.document_type ?? ''
-    notifyTelegram(tenant?.telegram_group_id,
-      `🔄 <b>อัปเดตสถานะคำขอเอกสาร</b>\nประเภท: ${docLabel}\nผู้ขอ: ${req?.requester_name ?? ''}\nสถานะ: ${STATUS[newStatus]?.label ?? newStatus}${staffNote ? `\nหมายเหตุ: ${staffNote}` : ''}`
-    )
+    notifyTelegram('document_request_status_updated', id)
     setActing(false)
     setSelected(null)
   }
@@ -1271,11 +1265,7 @@ function ComplaintsStaffModule({ tenant, staffId }) {
     const { error } = await supabase.from('complaints').update(payload).eq('id', id)
     if (!error) {
       setComplaints(prev => prev.map(c => c.id === id ? { ...c, ...payload } : c))
-      const c = complaints.find(x => x.id === id)
-      const catLabel = C_CAT[c?.category] ?? c?.category ?? ''
-      notifyTelegram(tenant?.telegram_group_id,
-        `🔄 <b>อัปเดตสถานะคำร้อง</b>\nประเภท: ${catLabel}\nสถานะ: ${C_STATUS[next]?.label ?? next}`
-      )
+      notifyTelegram('complaint_status_updated', id)
       setSelected(null)
     }
     setUpdating(null)
