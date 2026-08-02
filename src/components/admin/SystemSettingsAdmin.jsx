@@ -58,7 +58,10 @@ export default function SystemSettingsAdmin() {
     try {
       const newAddress = address.trim() || null
       const newPhone = phone.trim() || null
-      const newWebsiteUrl = websiteUrl.trim() || null
+      // เติม https:// ให้อัตโนมัติถ้าแอดมินพิมพ์แค่ "www.xxx.go.th" มา — ไม่งั้น <a href> จะตีความเป็น
+      // relative path ต่อท้าย URL แอปเอง (เช่น localhost:5173/www.xxx.go.th) แทนที่จะออกเว็บจริง
+      const trimmedWebsiteUrl = websiteUrl.trim()
+      const newWebsiteUrl = trimmedWebsiteUrl ? (/^https?:\/\//i.test(trimmedWebsiteUrl) ? trimmedWebsiteUrl : `https://${trimmedWebsiteUrl}`) : null
       const newEmail = email.trim() || null
 
       if (!tenant?.id) throw new Error('ไม่พบ tenant.id — กรุณา refresh หน้า')
@@ -85,7 +88,8 @@ export default function SystemSettingsAdmin() {
         website_url: newWebsiteUrl,
         email: newEmail
       })
-      
+      setWebsiteUrl(newWebsiteUrl || '')
+
       setSavedSection('contact')
       setTimeout(() => setSavedSection(null), 2500)
     } catch (err) {
