@@ -21,32 +21,66 @@ const DOC_TYPE_LABEL = {
 }
 const thDate = (s) => new Date(s).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
 
-// ดึงข้อมูลจริงมาสรุปให้ AI ใช้ตอบ — กิจกรรมสาธารณะ (ทุกคนดูได้) และคำร้อง/เอกสาร
-// เฉพาะของผู้ใช้ที่ล็อกอินอยู่เท่านั้น (ห้ามหลุดข้อมูลของคนอื่น) เหมือนกฎเดียวกับ
-// MyComplaints.jsx / MyDocRequests.jsx
+// ดึงข้อมูลจริงจากระบบมาสรุปให้ AI ใช้ตอบ — รองรับฟีเจอร์และข้อมูลใหม่ๆ ของแอปพลิเคชันโดยอัตโนมัติ
 async function buildContext(tenantId) {
   if (!tenantId) return ''
   const today = new Date().toISOString().split('T')[0]
   const lines = []
 
+  // 1. ข่าวสาร/ประกาศล่าสุด (Posts)
+  const { data: posts } = await supabase.from('posts')
+    .select('title, category, created_at')
+    .eq('municipality_id', tenantId)
+    .order('created_at', { ascending: false }).limit(4).catch(() => ({ data: null }))
+  if (posts?.length) {
+    lines.push('ข่าวสาร/ประกาศล่าสุดของเทศบาล:')
+    for (const p of posts) {
+      lines.push(`- ${p.title} (หมวด: ${p.category || 'ทั่วไป'})`)
+    }
+  }
+
+  // 2. กิจกรรมสาธารณะ (Events)
   const { data: events } = await supabase.from('events')
     .select('title, event_date, event_time, location')
     .eq('municipality_id', tenantId).contains('audiences', ['public'])
-    .gte('event_date', today).order('event_date', { ascending: true }).limit(5)
+    .gte('event_date', today).order('event_date', { ascending: true }).limit(4).catch(() => ({ data: null }))
   if (events?.length) {
-    lines.push('กิจกรรมที่จะถึงเร็วๆ นี้ (เปิดให้ประชาชนทั่วไป):')
+    lines.push('กิจกรรมที่จะถึงเร็วๆ นี้:')
     for (const e of events) {
       const d = new Date(e.event_date + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })
       lines.push(`- ${d}${e.event_time ? ' ' + e.event_time.slice(0, 5) + ' น.' : ''} ${e.title}${e.location ? ' ที่ ' + e.location : ''}`)
     }
   }
 
-  const { data: { session } } = await supabase.auth.getSession()
+  // 3. เบอร์โทรฉุกเฉินประจำท้องถิ่น (Emergency Contacts)
+  const { data: emergency } = await supabase.from('emergency_contacts')
+    .select('name, phone_number')
+    .eq('municipality_id', tenantId).limit(5).catch(() => ({ data: null }))
+  if (emergency?.length) {
+    lines.push('เบอร์โทรฉุกเฉินประจำท้องถิ่น:')
+    for (const em of emergency) {
+      lines.push(`- ${em.name}: ${em.phone_number}`)
+    }
+  }
+
+  // 4. สถานที่ท่องเที่ยว/OTOP เด่น (Tourism Spots)
+  const { data: spots } = await supabase.from('tourism_spots')
+    .select('name, category')
+    .eq('municipality_id', tenantId).limit(5).catch(() => ({ data: null }))
+  if (spots?.length) {
+    lines.push('แหล่งท่องเที่ยว/ร้านอาหาร/OTOP ในพื้นที่:')
+    for (const s of spots) {
+      lines.push(`- ${s.name} (${s.category || 'ท่องเที่ยว/OTOP'})`)
+    }
+  }
+
+  // 5. ข้อมูลส่วนบุคคลของผู้ใช้ที่ล็อกอินอยู่ (คำร้องเรียน + ขอเอกสาร)
+  const { data: { session } } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }))
   if (session?.user?.id) {
     const { data: complaints } = await supabase.from('complaints')
       .select('id, category, status, created_at')
       .eq('municipality_id', tenantId).eq('user_id', session.user.id)
-      .order('created_at', { ascending: false }).limit(5)
+      .order('created_at', { ascending: false }).limit(5).catch(() => ({ data: null }))
     if (complaints?.length) {
       lines.push('คำร้องเรียนของผู้ใช้คนนี้ (ล่าสุด):')
       for (const c of complaints) {
@@ -57,7 +91,7 @@ async function buildContext(tenantId) {
     const { data: docs } = await supabase.from('document_requests')
       .select('id, document_type, status, created_at')
       .eq('municipality_id', tenantId).eq('user_id', session.user.id)
-      .order('created_at', { ascending: false }).limit(5)
+      .order('created_at', { ascending: false }).limit(5).catch(() => ({ data: null }))
     if (docs?.length) {
       lines.push('คำขอเอกสาร/E-Service ของผู้ใช้คนนี้ (ล่าสุด):')
       for (const r of docs) {
@@ -65,7 +99,7 @@ async function buildContext(tenantId) {
       }
     }
   } else {
-    lines.push('หมายเหตุ: ผู้ใช้คนนี้ยังไม่ได้ล็อกอิน ถ้าถามเรื่องสถานะคำร้อง/เอกสารส่วนตัว ให้แนะนำให้ล็อกอินก่อนแล้วเข้าเมนู "คำร้องของฉัน" หรือ "คำขอเอกสารของฉัน"')
+    lines.push('หมายเหตุ: ผู้ใช้คนนี้ยังไม่ได้ล็อกอิน หากถามเรื่องสถานะคำร้อง/เอกสารส่วนตัว ให้แนะนำให้ล็อกอินก่อนแล้วเข้าเมนู "คำร้องของฉัน" หรือ "คำขอเอกสารของฉัน"')
   }
 
   return lines.join('\n')
