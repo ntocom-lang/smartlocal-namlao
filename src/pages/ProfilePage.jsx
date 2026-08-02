@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { ChevronLeft, Pencil, Loader2 } from 'lucide-react'
+import { ChevronLeft, Pencil, Loader2, User } from 'lucide-react'
 import { compressImage } from '../lib/imageUtils'
 import { useAuth } from '../contexts/AuthContext'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
@@ -76,8 +76,6 @@ export default function ProfilePage() {
     }).catch(() => setLoading(false))
   }, [navigate])
 
-  // คำนำหน้า/ชื่อ/นามสกุล เก็บแยกไว้แก้ในฟอร์ม แต่ profile.full_name ต้อง sync ตามตลอด
-  // เพราะที่อื่นในหน้านี้ (เช่น displayName, ตัวอักษรย่อ avatar) ยังอ่านจาก full_name เฉยๆ
   function setNamePart(key, value) {
     setNameParts(prev => {
       const next = { ...prev, [key]: value }
@@ -126,7 +124,7 @@ export default function ProfilePage() {
     setMsg('')
     setError('')
 
-    const ext = file.name.split('.').pop()
+    const ext = file.name.split('.').pop() || 'jpg'
     const path = `${session.user.id}/avatar.${ext}`
 
     const compressed = await compressImage(file, 400)
@@ -187,7 +185,7 @@ export default function ProfilePage() {
       </div>
 
       {/* PC header */}
-      <div className="hidden md:flex items-center justify-between px-8 py-4 bg-white border-b border-gray-200 shadow-sm">
+      <div className="hidden md:flex items-center justify-between px-8 py-4 bg-white border-b border-gray-200 shadow-xs">
         <div>
           <h1 className="text-lg font-bold text-gray-800">ข้อมูลบัญชีของฉัน</h1>
           <p className="text-xs text-gray-400 mt-0.5">จัดการข้อมูลส่วนตัวและความปลอดภัย</p>
@@ -204,24 +202,27 @@ export default function ProfilePage() {
         <div className="flex flex-col items-center gap-2 mb-2">
           <div className="relative">
             {avatarUrl ? (
-              <img src={avatarUrl} alt="avatar"
+              <img src={avatarUrl} alt=""
+                onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling.style.display = 'flex'; }}
                 className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-md" />
-            ) : (
-              <div className="w-24 h-24 rounded-full bg-gray-200 flex items-center justify-center text-3xl font-bold text-gray-400 border-4 border-white shadow-md">
-                {displayName[0]?.toUpperCase()}
-              </div>
-            )}
+            ) : null}
+            <div className={`w-24 h-24 rounded-full bg-blue-100 text-blue-600 border-4 border-white shadow-md ${avatarUrl ? 'hidden' : 'flex'} items-center justify-center text-3xl font-bold`}>
+              {(displayName || '?')[0]?.toUpperCase()}
+            </div>
             <button onClick={() => fileRef.current?.click()}
-              className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-white shadow flex items-center justify-center border border-gray-200">
-              <Pencil size={13} className="text-gray-600" />
+              className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center border border-gray-200 hover:bg-gray-50 active:scale-95 transition-all">
+              <Pencil size={14} className="text-blue-600" />
             </button>
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
           </div>
-          <span className="text-sm font-medium text-gray-700">แก้ไข</span>
+          <span className="text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 px-3 py-1 rounded-full cursor-pointer hover:bg-blue-100 transition-colors"
+                onClick={() => fileRef.current?.click()}>
+            คลิกเพื่อเปลี่ยนรูปโปรไฟล์
+          </span>
         </div>
 
         {/* Fields */}
-        <div className="bg-white rounded-2xl divide-y divide-gray-100 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-2xl divide-y divide-gray-100 shadow-xs overflow-hidden">
           {/* ชื่อ-สกุล */}
           <div className="px-5 py-4">
             {editName ? (
@@ -298,19 +299,18 @@ export default function ProfilePage() {
             {editIdCard ? (
               <input
                 value={profile.id_card}
-                onChange={(e) => setProfile((p) => ({ ...p, id_card: e.target.value.replace(/\D/g, '').slice(0, 13) }))}
-                className="text-sm text-gray-800 bg-white border-b border-gray-300 outline-none text-right flex-1 max-w-44 tracking-widest"
+                onChange={(e) => setProfile((p) => ({ ...p, id_card: e.target.value }))}
+                className="text-sm text-gray-800 bg-white border-b border-gray-300 outline-none text-right flex-1 max-w-44 font-mono"
                 type="text"
-                inputMode="numeric"
-                placeholder="x-xxxx-xxxxx-xx-x"
                 maxLength={13}
+                placeholder="13 หลัก"
                 autoFocus
               />
             ) : (
-              <span className="text-sm flex-1 text-right" style={{ color: profile.id_card ? '#6b7280' : '#f59e0b' }}>
+              <span className="text-sm text-gray-500 font-mono text-right">
                 {profile.id_card
-                  ? profile.id_card.replace(/(\d{1})(\d{4})(\d{5})(\d{2})(\d{1})/, '$1-$2-$3-$4-$5')
-                  : 'ยังไม่ได้ยืนยัน'}
+                  ? `${profile.id_card.slice(0, 1)}-${profile.id_card.slice(1, 5)}-${profile.id_card.slice(5, 10)}-${profile.id_card.slice(10, 12)}-${profile.id_card.slice(12)}`
+                  : 'ยังไม่ได้ระบุ'}
               </span>
             )}
             <button onClick={() => setEditIdCard((v) => !v)} className="ml-2 text-blue-400">
@@ -319,67 +319,81 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Social links */}
-        <div className="bg-white rounded-2xl divide-y divide-gray-100 shadow-sm overflow-hidden">
-          <div className="flex items-center px-5 py-4 gap-3">
-            <svg width="22" height="22" viewBox="0 0 48 48" fill="none">
-              <path d="M47.5 24.5c0-1.6-.1-3.2-.4-4.7H24v8.9h13.2c-.6 3-2.3 5.6-4.9 7.3v6h7.9c4.6-4.3 7.3-10.6 7.3-17.5z" fill="#4285F4"/>
-              <path d="M24 48c6.6 0 12.2-2.2 16.2-5.9l-7.9-6c-2.2 1.5-5 2.3-8.3 2.3-6.4 0-11.8-4.3-13.7-10.1H2.1v6.2C6.1 42.7 14.5 48 24 48z" fill="#34A853"/>
-              <path d="M10.3 28.3c-.5-1.5-.8-3-.8-4.3s.3-2.8.8-4.3v-6.2H2.1C.8 16.2 0 19.9 0 24s.8 7.8 2.1 10.5l8.2-6.2z" fill="#FBBC05"/>
-              <path d="M24 9.5c3.6 0 6.8 1.2 9.3 3.6l6.9-6.9C36.2 2.3 30.6 0 24 0 14.5 0 6.1 5.3 2.1 13.5l8.2 6.2C12.2 13.8 17.6 9.5 24 9.5z" fill="#EA4335"/>
-            </svg>
-            <span className="text-sm text-gray-700 flex-1">Google</span>
+        {/* บัญชีที่เชื่อมต่อ */}
+        <div className="bg-white rounded-2xl divide-y divide-gray-100 shadow-xs overflow-hidden">
+          <div className="flex items-center px-5 py-4 justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-6 h-6 rounded-full bg-red-100 text-red-500 flex items-center justify-center font-bold text-xs">
+                G
+              </div>
+              <span className="text-sm text-gray-700">Google</span>
+            </div>
             {isGoogleLinked ? (
-              <span className="text-xs text-green-600 bg-green-50 px-3 py-1 rounded-full font-medium">เชื่อมต่อแล้ว</span>
+              <span className="text-xs text-emerald-600 font-semibold bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
+                เชื่อมต่อแล้ว
+              </span>
             ) : (
-              <button onClick={handleGoogleLink}
-                className="text-xs text-white bg-green-500 hover:bg-green-600 px-4 py-1.5 rounded-full font-medium transition-colors">
+              <button
+                onClick={handleGoogleLink}
+                className="text-xs text-gray-500 border border-gray-200 px-3 py-1 rounded-full hover:bg-gray-50 transition-colors"
+              >
                 เชื่อมต่อ
               </button>
             )}
           </div>
 
-          {/* LINE */}
-          <div className="flex items-center px-5 py-4 gap-3">
-            <svg width="22" height="22" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <rect width="24" height="24" rx="6" fill="#06C755"/>
-              <path d="M12 2.5C6.753 2.5 2.5 6.314 2.5 11.027c0 4.218 3.739 7.749 8.79 8.369.342.074.808.226.926.519.106.268.07.686.034.956l-.15.898c-.046.267-.21 1.043.914.569 1.124-.474 6.063-3.572 8.274-6.117C22.413 14.598 21.5 12.9 21.5 11.027c0-4.713-4.253-8.527-9.5-8.527z" fill="white"/>
-              <path d="M9.807 9.2H8.8a.2.2 0 0 0-.2.2v3.2c0 .11.09.2.2.2h1.007a.2.2 0 0 0 .2-.2V9.4a.2.2 0 0 0-.2-.2zm5.593 0h-1.007a.2.2 0 0 0-.2.2v1.9l-1.463-2.007A.2.2 0 0 0 12.567 9.2h-1.007a.2.2 0 0 0-.2.2v3.2c0 .11.09.2.2.2H12.567a.2.2 0 0 0 .2-.2v-1.9l1.465 2.008a.2.2 0 0 0 .168.092H15.4a.2.2 0 0 0 .2-.2V9.4a.2.2 0 0 0-.2-.2zm-7.2 0H7a.2.2 0 0 0-.2.2v3.2c0 .11.09.2.2.2h2.2a.2.2 0 0 0 .2-.2v-.8a.2.2 0 0 0-.2-.2H7.8v-2.2a.2.2 0 0 0-.2-.2H7.2zm10 2.4h-1.4v-2.2a.2.2 0 0 0-.2-.2h-.8a.2.2 0 0 0-.2.2v3.2c0 .11.09.2.2.2H17.4a.2.2 0 0 0 .2-.2v-.8a.2.2 0 0 0-.2-.2z" fill="#06C755"/>
-            </svg>
-            <span className="text-sm text-gray-700 flex-1">LINE</span>
+          <div className="flex items-center px-5 py-4 justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-[10px]">
+                LINE
+              </div>
+              <span className="text-sm text-gray-700">LINE</span>
+            </div>
             {isLineLinked ? (
-              <span className="text-xs text-green-600 bg-green-50 px-3 py-1 rounded-full font-medium">เชื่อมต่อแล้ว</span>
+              <span className="text-xs text-emerald-600 font-semibold bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
+                เชื่อมต่อแล้ว
+              </span>
             ) : (
-              <button onClick={handleLineLink}
-                className="text-xs text-white px-4 py-1.5 rounded-full font-medium transition-colors active:scale-95"
-                style={{ backgroundColor: '#06C755' }}>
+              <button
+                onClick={handleLineLink}
+                className="text-xs text-gray-500 border border-gray-200 px-3 py-1 rounded-full hover:bg-gray-50 transition-colors"
+              >
                 เชื่อมต่อ
               </button>
             )}
           </div>
 
-          {/* อีเมล */}
-          <div className="flex items-center px-5 py-4 gap-3">
-            <span className="text-sm text-gray-700 flex-1">อีเมล</span>
-            <span className="text-sm text-gray-500 text-right truncate max-w-45">{session?.user?.email || '-'}</span>
+          <div className="flex items-center px-5 py-4 justify-between">
+            <span className="text-sm text-gray-700">อีเมล</span>
+            <span className="text-sm text-gray-500 text-right truncate max-w-56">{session?.user?.email}</span>
           </div>
         </div>
 
-        {/* Feedback */}
-        {msg && <p className="text-sm text-green-600 text-center">{msg}</p>}
-        {error && <p className="text-sm text-red-500 text-center">{error}</p>}
+        {/* Message */}
+        {msg && <p className="text-xs text-emerald-600 text-center font-semibold bg-emerald-50 border border-emerald-200 p-2.5 rounded-xl">{msg}</p>}
+        {error && <p className="text-xs text-red-500 text-center font-semibold bg-red-50 border border-red-200 p-2.5 rounded-xl">{error}</p>}
 
-        {/* Buttons */}
-        <button onClick={handleSave} disabled={saving}
-          className="w-full py-3.5 rounded-2xl text-white font-semibold text-sm transition-all disabled:opacity-60 active:scale-95"
-          style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
-          {saving ? <span className="flex items-center justify-center gap-2"><Loader2 size={16} className="animate-spin" /> กำลังบันทึก...</span> : 'บันทึก'}
-        </button>
+        {/* Actions */}
+        <div className="space-y-2 pt-2">
+          {(editName || editPhone || editIdCard) && (
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="w-full py-3 rounded-xl font-semibold text-white shadow-md transition-opacity disabled:opacity-50 flex items-center justify-center gap-2 text-sm"
+              style={{ backgroundColor: 'var(--color-primary)' }}
+            >
+              {saving && <Loader2 size={16} className="animate-spin" />}
+              บันทึกการเปลี่ยนแปลง
+            </button>
+          )}
 
-        <button onClick={handleLogout}
-          className="w-full py-3.5 rounded-2xl text-white font-semibold text-sm bg-red-400 hover:bg-red-500 active:scale-95 transition-all">
-          ออกจากระบบ
-        </button>
+          <button
+            onClick={handleLogout}
+            className="w-full py-3 rounded-xl font-semibold text-red-600 bg-red-50 border border-red-200 hover:bg-red-100 transition-colors text-sm"
+          >
+            ออกจากระบบ
+          </button>
+        </div>
       </div>
     </div>
   )

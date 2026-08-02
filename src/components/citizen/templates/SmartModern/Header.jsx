@@ -153,17 +153,17 @@ export default function Header() {
             {/* ขวา: Avatar */}
             {session ? (
               <Link to="/profile" className="p-1 shrink-0">
-                {avatarUrl ? (
+                {avatarUrl && (
                   <img
                     src={avatarUrl}
-                    alt="avatar"
+                    alt=""
+                    onError={(e) => { e.currentTarget.style.display = 'none'; if (e.currentTarget.nextElementSibling) e.currentTarget.nextElementSibling.style.display = 'flex'; }}
                     className="w-10 h-10 rounded-full object-cover border-2 border-white/60"
                   />
-                ) : (
-                  <div className="w-10 h-10 rounded-full bg-white/20 border-2 border-white/60 flex items-center justify-center text-white text-sm font-bold">
-                    {(displayName || session.user?.email || '?')[0].toUpperCase()}
-                  </div>
                 )}
+                <div className={`w-10 h-10 rounded-full bg-white/20 border-2 border-white/60 ${avatarUrl ? 'hidden' : 'flex'} items-center justify-center text-white text-sm font-bold`}>
+                  {(displayName || session.user?.email || '?')[0].toUpperCase()}
+                </div>
               </Link>
             ) : (
               <Link to="/auth" className="p-2 text-white/85 hover:text-white transition-colors">
