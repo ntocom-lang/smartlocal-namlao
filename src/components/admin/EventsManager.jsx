@@ -482,7 +482,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
   const [form, setForm] = useState(EMPTY_EVENT_FORM)
   const [multiDay, setMultiDay] = useState(false)
   const [locationCustom, setLocationCustom] = useState(false)
-  const [viewMode, setViewMode] = useState('list') // 'list' | 'calendar'
+  const [viewMode, setViewMode] = useState(() => (typeof window !== 'undefined' && window.innerWidth < 768 ? 'calendar' : 'list'))
   const [filterMonth, setFilterMonth] = useState('all')
   const [filterCategory, setFilterCategory] = useState('all')
   const [filterAudience, setFilterAudience] = useState('all')

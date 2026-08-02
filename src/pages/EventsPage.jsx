@@ -282,7 +282,7 @@ export default function EventsPage() {
   const [role, setRole]       = useState(null)
   const [selected, setSelected] = useState(null)
   const [canEdit, setCanEdit] = useState(false)
-  const [view, setView]       = useState('calendar') // 'list' | 'calendar'
+  const [view, setView]       = useState(() => (typeof window !== 'undefined' && window.innerWidth < 768 ? 'calendar' : 'list'))
   const [selectedAudience, setSelectedAudience] = useState(null) // null = ทั้งหมด
   const [activeTab, setActiveTab] = useState('upcoming') // 'upcoming' | 'past'
 
