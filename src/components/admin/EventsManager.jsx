@@ -860,14 +860,6 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
               <><List size={13} /> รายการ</>
             )}
           </button>
-          {icsUrl && (
-            <button onClick={copyIcsUrl}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold border border-gray-200 text-gray-600 bg-white shadow-xs hover:bg-gray-50 active:scale-95 transition-all"
-              title="คัดลอกลิงก์ปฏิทินเพื่อซิงก์ลง Google Calendar / iPhone">
-              {copied ? <CheckCheck size={13} className="text-green-500" /> : <Link2 size={13} />}
-              {copied ? 'คัดลอกลิงก์แล้ว!' : 'ซิงก์ปฏิทิน'}
-            </button>
-          )}
           {canManage && (
             <button onClick={openAdd}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white shadow-xs"
