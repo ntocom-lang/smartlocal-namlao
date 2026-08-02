@@ -24,7 +24,15 @@ const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm t
 
 export default function DataCenterEntryForm({ tenant, profile, initialGroup, editingEntry, onSaved, onCancel }) {
   const isEditing = !!editingEntry
-  const canDelete = isEditing && (profile?.role === 'admin' || profile?.role === 'superadmin')
+  const canDelete = isEditing && (
+    profile?.role === 'admin'
+    || profile?.role === 'superadmin'
+    || (
+      profile?.role === 'officer'
+      && !!profile?.department_id
+      && editingEntry?.department_id === profile.department_id
+    )
+  )
 
   const [existing, setExisting] = useState([]) // {group_name, category} ที่เคยมีจริงในเทศบาลนี้
   const [form, setForm] = useState(() => editingEntry
@@ -134,7 +142,11 @@ export default function DataCenterEntryForm({ tenant, profile, initialGroup, edi
       return
     }
 
-    const { data, error } = await supabase.from('data_center_entries').insert({ ...payload, created_by: profile?.id ?? null }).select('id').single()
+    const { data, error } = await supabase.from('data_center_entries').insert({
+      ...payload,
+      created_by: profile?.id ?? null,
+      department_id: profile?.department_id ?? null,
+    }).select('id').single()
     if (error) { alert('บันทึกไม่สำเร็จ: ' + error.message); setSaving(false); return }
     if (images.length > 0) {
       const urls = await uploadImages(data.id)

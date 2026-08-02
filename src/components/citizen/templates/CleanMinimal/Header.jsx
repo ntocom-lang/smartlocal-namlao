@@ -33,7 +33,7 @@ export default function Header() {
   async function logout() {
     await supabase.auth.signOut()
   }
-  const isAdmin = role === 'admin' || role === 'superadmin' || role === 'officer'
+  const isAdmin = role === 'admin' || role === 'superadmin'
 
   return (
     <header className="shadow-xl" style={tenant?.header_image_url ? { position: 'relative', zIndex: 2 } : {}}>

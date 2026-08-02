@@ -122,7 +122,7 @@ export function TourismReviewsAdmin({ tenant }) {
   )
 }
 
-export default function TourismManager({ tenant, currentUserRole, myDepartmentId }) {
+export default function TourismManager({ tenant, currentUserRole, currentUserId, myDepartmentId }) {
   const [places, setPlaces]             = useState([])
   const [loading, setLoading]           = useState(true)
   const [sheet, setSheet]               = useState(null)
@@ -152,8 +152,21 @@ export default function TourismManager({ tenant, currentUserRole, myDepartmentId
   const sheetPlace = sheet && sheet !== 'add' ? places.find(p => p.id === sheet) : null
   const sheetAllImgs = sheetPlace ? [sheetPlace.image_url, ...(sheetPlace.gallery ?? [])].filter(Boolean) : []
 
+  function canManagePlace(place) {
+    if (!place) return false
+    if (currentUserRole === 'admin' || currentUserRole === 'superadmin') return true
+    if (currentUserRole === 'officer') {
+      return !!myDepartmentId && place.department_id === myDepartmentId
+    }
+    return currentUserRole === 'staff' && !!currentUserId && place.created_by === currentUserId
+  }
+
   function openAdd() { setForm(EMPTY_FORM); setSheet('add') }
-  function openEdit(place) { setForm({ name: place.name, category: place.category, description: place.description || '', phone: place.phone || '', address: place.address || '', maps_url: place.maps_url || '', service_type: place.service_type || 'offline', online_service: place.online_service || 'order', online_url: place.online_url || '', has_delivery: place.has_delivery ?? false }); setSheet(place.id) }
+  function openEdit(place) {
+    if (!canManagePlace(place)) return
+    setForm({ name: place.name, category: place.category, description: place.description || '', phone: place.phone || '', address: place.address || '', maps_url: place.maps_url || '', service_type: place.service_type || 'offline', online_service: place.online_service || 'order', online_url: place.online_url || '', has_delivery: place.has_delivery ?? false })
+    setSheet(place.id)
+  }
   function closeSheet() { setSheet(null) }
 
   async function handleSave() {
@@ -163,19 +176,31 @@ export default function TourismManager({ tenant, currentUserRole, myDepartmentId
       ? { service_type: form.service_type, online_service: form.online_service, online_url: form.online_url.trim() || null, has_delivery: form.has_delivery }
       : { service_type: 'offline', online_service: null, online_url: null, has_delivery: false }
     if (sheet === 'add') {
-      const { data } = await supabase.from('tourism_places').insert({
+      const { data, error } = await supabase.from('tourism_places').insert({
         municipality_id: tenant.id, name: form.name.trim(), category: form.category,
         description: form.description.trim() || null, phone: form.phone.trim() || null,
         address: form.address.trim() || null, maps_url: form.maps_url.trim() || null,
-        is_active: true, display_order: places.length, gallery: [], ...onlineFields,
+        is_active: true, display_order: places.length, gallery: [],
+        created_by: currentUserId, department_id: myDepartmentId, ...onlineFields,
       }).select().single()
+      if (error) {
+        window.alert('เพิ่มรายการไม่สำเร็จ: ' + error.message)
+        setSaving(false)
+        return
+      }
       if (data) { setPlaces(prev => [...prev, data]); setSheet(data.id) }
     } else {
-      await supabase.from('tourism_places').update({
+      if (!canManagePlace(sheetPlace)) { setSaving(false); return }
+      const { error } = await supabase.from('tourism_places').update({
         name: form.name.trim(), category: form.category,
         description: form.description.trim() || null, phone: form.phone.trim() || null,
         address: form.address.trim() || null, maps_url: form.maps_url.trim() || null, ...onlineFields,
       }).eq('id', sheet)
+      if (error) {
+        window.alert('บันทึกไม่สำเร็จ: ' + error.message)
+        setSaving(false)
+        return
+      }
       setPlaces(prev => prev.map(p => p.id === sheet ? { ...p, ...form, ...onlineFields } : p))
       closeSheet()
     }
@@ -184,12 +209,14 @@ export default function TourismManager({ tenant, currentUserRole, myDepartmentId
 
   async function toggleActive(place, e) {
     e.stopPropagation()
-    await supabase.from('tourism_places').update({ is_active: !place.is_active }).eq('id', place.id)
+    if (!canManagePlace(place)) return
+    const { error } = await supabase.from('tourism_places').update({ is_active: !place.is_active }).eq('id', place.id)
+    if (error) { window.alert('เปลี่ยนสถานะไม่สำเร็จ: ' + error.message); return }
     setPlaces(prev => prev.map(p => p.id === place.id ? { ...p, is_active: !p.is_active } : p))
   }
 
   async function handleDelete() {
-    if (!sheetPlace || !window.confirm(`ลบ "${sheetPlace.name}" ออกจากรายการ?`)) return
+    if (!sheetPlace || !canManagePlace(sheetPlace) || !window.confirm(`ลบ "${sheetPlace.name}" ออกจากรายการ?`)) return
     await logAction({
       action: 'delete', resourceType: 'tourism_place',
       resourceId: sheetPlace.id,
@@ -291,6 +318,7 @@ export default function TourismManager({ tenant, currentUserRole, myDepartmentId
             {places.map(place => {
               const cat = TOUR_CATS.find(c => c.key === place.category)
               const imgCount = [place.image_url, ...(place.gallery ?? [])].filter(Boolean).length
+              const canManage = canManagePlace(place)
               return (
                 <div key={place.id}
                   className={`bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden transition-opacity ${!place.is_active ? 'opacity-50' : ''}`}>
@@ -307,12 +335,12 @@ export default function TourismManager({ tenant, currentUserRole, myDepartmentId
                       <p className="text-xs text-gray-400">{imgCount} รูป · {place.is_active ? 'แสดงอยู่' : 'ซ่อนอยู่'}</p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <button onClick={e => toggleActive(place, e)}
+                      <button onClick={e => toggleActive(place, e)} disabled={!canManage}
                         className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${place.is_active ? 'bg-green-400' : 'bg-gray-300'}`}>
                         {place.is_active ? '✓' : '—'}
                       </button>
-                      <button onClick={() => openEdit(place)}
-                        className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center">
+                      <button onClick={() => openEdit(place)} disabled={!canManage}
+                        className={`w-8 h-8 rounded-full flex items-center justify-center ${canManage ? 'bg-blue-50' : 'bg-gray-50 opacity-40 cursor-not-allowed'}`}>
                         <Pencil size={14} className="text-blue-500" />
                       </button>
                     </div>
@@ -338,6 +366,7 @@ export default function TourismManager({ tenant, currentUserRole, myDepartmentId
                 {places.map((place, i) => {
                   const cat = TOUR_CATS.find(c => c.key === place.category)
                   const imgCount = [place.image_url, ...(place.gallery ?? [])].filter(Boolean).length
+                  const canManage = canManagePlace(place)
                   return (
                     <tr key={place.id} className={`hover:bg-gray-50 transition-colors ${!place.is_active ? 'opacity-50' : ''}`}>
                       <td className="px-4 py-3 text-xs text-gray-400">{i + 1}</td>
@@ -357,15 +386,15 @@ export default function TourismManager({ tenant, currentUserRole, myDepartmentId
                       </td>
                       <td className="px-4 py-3 text-center text-xs text-gray-500">{imgCount} รูป</td>
                       <td className="px-4 py-3 text-center">
-                        <button onClick={e => toggleActive(place, e)}
+                        <button onClick={e => toggleActive(place, e)} disabled={!canManage}
                           className={`text-xs font-semibold px-2.5 py-1 rounded-full ${place.is_active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                           {place.is_active ? 'แสดงอยู่' : 'ซ่อนอยู่'}
                         </button>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-1.5">
-                          <button onClick={() => openEdit(place)}
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="แก้ไข">
+                          <button onClick={() => openEdit(place)} disabled={!canManage}
+                            className={`p-1.5 rounded-lg transition-colors ${canManage ? 'text-gray-400 hover:text-blue-600 hover:bg-blue-50' : 'text-gray-200 cursor-not-allowed'}`} title={canManage ? 'แก้ไข' : 'ดูได้อย่างเดียว'}>
                             <Pencil size={14} />
                           </button>
                         </div>

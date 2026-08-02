@@ -1,14 +1,12 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, FileText, Clock, CheckCircle2, XCircle,
   RefreshCw, Loader2, ChevronRight, X, Search, Download,
-  CreditCard, Upload, ImageIcon, Share2, Copy, Check, Plus, Printer,
+  Share2, Copy, Check, Plus, Printer,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
-import { notifyTelegram } from '../lib/notifyTelegram'
-import { compressImage } from '../lib/imageUtils'
 import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
 import { generateDraftPdfBlob } from '../lib/generateDraftPdf'
 import { thaiDate } from '../lib/thaiDate'
@@ -50,22 +48,10 @@ function StatusBadge({ status }) {
   )
 }
 
-const PAY_BADGE = {
-  pending:  { label: '💳 รอชำระค่าธรรมเนียม', cls: 'text-amber-600 bg-amber-50 border-amber-200' },
-  uploaded: { label: '⏳ รอเจ้าหน้าที่ยืนยัน',  cls: 'text-orange-600 bg-orange-50 border-orange-200' },
-  verified: { label: '✅ ชำระแล้ว',             cls: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
-  waived:   { label: '✅ ยกเว้นค่าธรรมเนียม',   cls: 'text-gray-500 bg-gray-50 border-gray-200' },
-}
-
-const SET_FEE_TYPES = ['tax_notice', 'waste_collection']
+const FEE_INQUIRY_TYPES = ['tax_notice', 'waste_collection']
 
 function DocCard({ req, onClick }) {
   const docLabel = docTypeLabel(req.document_type)
-  const awaitingFee = SET_FEE_TYPES.includes(req.document_type) && req.payment_status === 'not_required'
-  const payBadge = awaitingFee
-    ? { label: '⏳ รอแจ้งยอดค่าชำระ', cls: 'text-amber-600 bg-amber-50 border-amber-200' }
-    : req.payment_status && req.payment_status !== 'not_required'
-      ? PAY_BADGE[req.payment_status] : null
   return (
     <button onClick={onClick}
       className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-4 text-left hover:shadow-md active:scale-[0.99] transition-all flex items-center gap-3">
@@ -78,11 +64,6 @@ function DocCard({ req, onClick }) {
           <StatusBadge status={req.status} />
           <span className="text-xs text-gray-400 font-mono">{req.id.slice(0,8).toUpperCase()}</span>
         </div>
-        {payBadge && (
-          <span className={`inline-flex items-center text-[11px] font-bold px-2 py-0.5 rounded-full border mt-1 ${payBadge.cls}`}>
-            {payBadge.label}
-          </span>
-        )}
         {req.purpose && <p className="text-xs text-gray-400 mt-0.5 truncate">{req.purpose}</p>}
         <p className="text-[11px] text-gray-300 mt-0.5">{dateTH(req.created_at)}</p>
         {req.document_url && req.status === 'completed' && (
@@ -98,27 +79,55 @@ function DocCard({ req, onClick }) {
 
 function DocDownloadShare({ url, docLabel }) {
   const [copied, setCopied] = useState(false)
+  const [signedResult, setSignedResult] = useState({ path: null, url: null, error: '' })
+  const isLegacyPublicUrl = url?.startsWith('http')
+  const accessUrl = isLegacyPublicUrl
+    ? url
+    : (signedResult.path === url ? signedResult.url : null)
+  const urlError = signedResult.path === url ? signedResult.error : ''
+
+  useEffect(() => {
+    let cancelled = false
+    if (!url || url.startsWith('http')) return undefined
+
+    supabase.storage.from('document-certs').createSignedUrl(url, 3600)
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (error || !data?.signedUrl) {
+          setSignedResult({ path: url, url: null, error: 'ไม่สามารถสร้างลิงก์ดาวน์โหลดได้ กรุณาลองใหม่' })
+          return
+        }
+        setSignedResult({ path: url, url: data.signedUrl, error: '' })
+      })
+    return () => { cancelled = true }
+  }, [url])
 
   async function handleShare() {
+    if (!accessUrl) return
     if (navigator.share) {
       try {
         await navigator.share({
           title: docLabel ?? 'เอกสารราชการ',
           text: 'เอกสารดิจิทัลจากระบบ SmartLocal',
-          url,
+          url: accessUrl,
         })
-      } catch (_) {}
+      } catch {
+        return
+      }
     } else {
       handleCopy()
     }
   }
 
   async function handleCopy() {
+    if (!accessUrl) return
     try {
-      await navigator.clipboard.writeText(url)
+      await navigator.clipboard.writeText(accessUrl)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
-    } catch (_) {}
+    } catch {
+      return
+    }
   }
 
   return (
@@ -131,84 +140,31 @@ function DocDownloadShare({ url, docLabel }) {
         </div>
       </div>
       <div className="flex gap-2">
-        <a href={url} target="_blank" rel="noopener noreferrer" download
-          className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-white text-sm active:scale-[0.98] transition-all"
+        <a href={accessUrl || undefined} target="_blank" rel="noopener noreferrer" download
+          aria-disabled={!accessUrl}
+          className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-white text-sm active:scale-[0.98] transition-all ${!accessUrl ? 'pointer-events-none opacity-50' : ''}`}
           style={{ backgroundColor: '#10b981' }}>
-          <Download size={15} /> ดาวน์โหลด
+          {accessUrl ? <Download size={15} /> : <Loader2 size={15} className="animate-spin" />}
+          {accessUrl ? 'ดาวน์โหลด' : 'กำลังเตรียมลิงก์'}
         </a>
-        <button onClick={handleShare}
+        <button onClick={handleShare} disabled={!accessUrl}
           className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm active:scale-[0.98] transition-all border-2 border-emerald-400 text-emerald-700 bg-white">
           <Share2 size={15} /> แชร์
         </button>
-        <button onClick={handleCopy} title="คัดลอกลิงก์"
+        <button onClick={handleCopy} disabled={!accessUrl} title="คัดลอกลิงก์"
           className="w-12 flex items-center justify-center rounded-xl border-2 border-gray-200 text-gray-500 bg-white active:scale-[0.98] transition-all">
           {copied ? <Check size={15} className="text-emerald-500" /> : <Copy size={15} />}
         </button>
       </div>
+      {urlError && <p className="text-xs font-semibold text-red-500">{urlError}</p>}
+      {accessUrl && <p className="text-[11px] text-emerald-600">ลิงก์ดาวน์โหลดมีอายุ 1 ชั่วโมงเพื่อป้องกันการเปิดเอกสารโดยไม่ได้รับอนุญาต</p>}
     </div>
   )
 }
 
-function DocDetailSheet({ req, onClose, tenant, onRefresh }) {
+function DocDetailSheet({ req, onClose, tenant }) {
   const docLabel = docTypeLabel(req.document_type)
-  const [slipFile, setSlipFile]       = useState(null)
-  const [slipPreview, setSlipPreview] = useState(null)
-  const [uploading, setUploading]     = useState(false)
-  const [slipSignedUrl, setSlipSignedUrl] = useState(null)
   const [pdfBusy, setPdfBusy]         = useState(false)
-
-  useEffect(() => {
-    if (!req.payment_slip_url) return
-    let cancelled = false
-    async function resolve() {
-      if (!req.payment_slip_url.startsWith('http')) {
-        const { data } = await supabase.storage.from('payment-slips')
-          .createSignedUrl(req.payment_slip_url, 3600)
-        if (!cancelled && data?.signedUrl) setSlipSignedUrl(data.signedUrl)
-      } else {
-        if (!cancelled) setSlipSignedUrl(req.payment_slip_url)
-      }
-    }
-    resolve()
-    return () => { cancelled = true }
-  }, [req.payment_slip_url])
-
-  const hasPayment     = req.payment_status && req.payment_status !== 'not_required'
-  const needsPayment   = req.payment_status === 'pending'
-  const hasBankAccount = needsPayment && !!tenant?.bank_account_no
-
-  function handleSlipChange(e) {
-    const f = e.target.files?.[0]
-    if (!f) return
-    setSlipFile(f)
-    if (slipPreview) URL.revokeObjectURL(slipPreview)
-    setSlipPreview(URL.createObjectURL(f))
-  }
-
-  async function handleUploadSlip() {
-    if (!slipFile) return
-    setUploading(true)
-    try {
-      const ext  = slipFile.name.split('.').pop()
-      const path = `${req.municipality_id}/${req.id}/slip.${ext}`
-      const toUpload = await compressImage(slipFile, 1200, 0.85)
-      const { error: upErr } = await supabase.storage
-        .from('payment-slips').upload(path, toUpload, { upsert: true })
-      if (upErr) throw upErr
-      const { error: dbErr } = await supabase.from('document_requests')
-        .update({ payment_status: 'uploaded', payment_slip_url: path }).eq('id', req.id)
-      if (dbErr) throw dbErr
-      notifyTelegram(tenant?.telegram_group_id,
-        `📎 <b>สลิปชำระเงินใหม่</b>\nประเภท: ${docLabel}\nผู้ขอ: ${req.requester_name}\nยอด: ${(req.fee_amount ?? 0).toLocaleString()} บาท\nรอเจ้าหน้าที่ตรวจสอบ`
-      )
-      onRefresh?.()
-      onClose()
-    } catch (err) {
-      alert('อัปโหลดไม่สำเร็จ: ' + err.message)
-    } finally {
-      setUploading(false)
-    }
-  }
 
   function handlePrintPermit() {
     const html = buildBuildingPermitHtml({ form: req.permit_form_data, tenant, thDate: thaiDate(req.created_at) })
@@ -318,114 +274,19 @@ function DocDetailSheet({ req, onClose, tenant, onRefresh }) {
             ))}
           </div>
 
-          {/* Awaiting fee calculation for tax/waste types */}
-          {SET_FEE_TYPES.includes(req.document_type) && (!req.payment_status || req.payment_status === 'not_required') && (
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
-              <Clock size={18} className="text-amber-500 shrink-0 mt-0.5" />
+          {FEE_INQUIRY_TYPES.includes(req.document_type) && (
+            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex items-start gap-3">
+              <Clock size={18} className="text-blue-500 shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-bold text-amber-800">รอเจ้าหน้าที่แจ้งยอดค่าชำระ</p>
-                <p className="text-xs text-amber-600 mt-1 leading-relaxed">
-                  เจ้าหน้าที่กำลังคำนวณยอดจากระบบ อปท. เมื่อแจ้งยอดแล้ว ข้อมูลบัญชีธนาคารสำหรับชำระจะแสดงที่นี่
+                <p className="text-sm font-bold text-blue-800">
+                  {req.fee_amount > 0
+                    ? `ยอดที่เจ้าหน้าที่แจ้ง ${(req.fee_amount ?? 0).toLocaleString()} บาท`
+                    : 'รอเจ้าหน้าที่ตรวจสอบยอด'}
+                </p>
+                <p className="text-xs text-blue-600 mt-1 leading-relaxed">
+                  ระบบนี้ใช้สอบถามข้อมูลเท่านั้น ไม่มีการรับชำระเงินหรือแนบสลิป กรุณาชำระที่สำนักงานเทศบาล
                 </p>
               </div>
-            </div>
-          )}
-
-          {/* Payment section */}
-          {hasPayment && (
-            <div className="space-y-3">
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">ค่าธรรมเนียม</p>
-
-              {/* Status banner */}
-              {req.payment_status === 'pending' && (
-                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-4">
-                  <div className="flex items-center gap-3">
-                    <CreditCard size={20} className="text-amber-500 shrink-0" />
-                    <div>
-                      <p className="text-sm font-bold text-amber-800">กรุณาชำระค่าธรรมเนียม</p>
-                      <p className="text-xl font-black text-amber-700">{(req.fee_amount ?? 0).toLocaleString()} บาท</p>
-                    </div>
-                  </div>
-
-                  {hasBankAccount && (
-                    <div className="bg-white rounded-xl border border-amber-100 p-3 space-y-1.5">
-                      <p className="text-xs text-amber-700 font-semibold mb-2">โอนเงินเข้าบัญชีธนาคาร</p>
-
-                      {/* QR Code */}
-                      {tenant.qr_code_url && (
-                        <div className="flex flex-col items-center gap-1 py-2 border-b border-amber-50 mb-2">
-                          <img src={tenant.qr_code_url} alt="QR ชำระเงิน"
-                            className="w-36 h-36 object-contain rounded-xl border border-gray-100 p-1 bg-white" />
-                          <p className="text-[11px] text-gray-500 text-center leading-relaxed">
-                            สแกน QR ด้วยแอปธนาคาร<br />
-                            แล้วกรอกยอด <span className="font-bold text-amber-700">{(req.fee_amount ?? 0).toLocaleString()} บาท</span>
-                          </p>
-                        </div>
-                      )}
-
-                      <div className="flex justify-between">
-                        <span className="text-xs text-gray-500">ธนาคาร</span>
-                        <span className="text-xs font-bold text-gray-800">{tenant.bank_name || '-'}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-xs text-gray-500">เลขบัญชี</span>
-                        <span className="text-xs font-bold text-gray-800 font-mono tracking-wider">{tenant.bank_account_no}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-xs text-gray-500">ชื่อบัญชี</span>
-                        <span className="text-xs font-bold text-gray-800 text-right">{tenant.bank_account_name || '-'}</span>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold text-amber-700">อัปโหลดสลิปเพื่อยืนยัน</p>
-                    <label className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 border-dashed cursor-pointer transition-colors ${slipFile ? 'border-emerald-300 bg-emerald-50' : 'border-amber-200 hover:border-amber-300 bg-white'}`}>
-                      {slipPreview
-                        ? <img src={slipPreview} alt="slip" className="max-h-32 rounded-lg object-contain" />
-                        : <><ImageIcon size={22} className="text-amber-300" /><p className="text-xs text-amber-600">แตะเพื่อเลือกรูปสลิป</p></>
-                      }
-                      <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handleSlipChange} />
-                    </label>
-                    {slipFile && (
-                      <button onClick={handleUploadSlip} disabled={uploading}
-                        className="w-full py-3 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95 transition-all"
-                        style={{ backgroundColor: '#f59e0b' }}>
-                        {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                        {uploading ? 'กำลังส่ง...' : 'ส่งหลักฐานการชำระ'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {req.payment_status === 'uploaded' && (
-                <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 flex items-start gap-3">
-                  <CreditCard size={18} className="text-orange-500 shrink-0 mt-0.5" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-orange-800">ส่งสลิปแล้ว — รอเจ้าหน้าที่ยืนยัน</p>
-                    <p className="text-xs text-orange-500 mt-0.5">ค่าธรรมเนียม {(req.fee_amount ?? 0).toLocaleString()} บาท</p>
-                    {slipSignedUrl && (
-                      <a href={slipSignedUrl} target="_blank" rel="noopener noreferrer"
-                        className="text-xs text-blue-500 underline mt-1 block">ดูสลิปที่ส่ง</a>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {(req.payment_status === 'verified' || req.payment_status === 'waived') && (
-                <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3.5 flex items-center gap-3">
-                  <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />
-                  <div>
-                    <p className="text-sm font-bold text-emerald-700">
-                      {req.payment_status === 'verified' ? 'ยืนยันการชำระเรียบร้อย' : 'ได้รับการยกเว้นค่าธรรมเนียม'}
-                    </p>
-                    {req.payment_status === 'verified' && (
-                      <p className="text-xs text-emerald-500">{(req.fee_amount ?? 0).toLocaleString()} บาท</p>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
@@ -474,7 +335,6 @@ export default function MyDocRequests() {
   const [searching, setSearching]   = useState(false)
   const [searchResult, setSearchResult] = useState(null)
   const [searched, setSearched]     = useState(false)
-  const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
     _customDocLabels = (tenant?.fee_schedule?._custom_types || []).reduce((acc, t) => {
@@ -502,7 +362,7 @@ export default function MyDocRequests() {
       .then(({ data }) => setRequests(data ?? []))
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [session, tenant?.id, refreshKey])
+  }, [session, tenant?.id])
 
   async function handleSearch() {
     const ref = searchRef.trim().toLowerCase()
@@ -603,21 +463,12 @@ export default function MyDocRequests() {
                         <th className="text-center text-white/80 text-xs font-semibold px-4 py-2.5 border-r border-white/10">เลขอ้างอิง</th>
                         <th className="text-left text-white/80 text-xs font-semibold px-4 py-2.5 border-r border-white/10">ประเภทเอกสาร</th>
                         <th className="text-center text-white/80 text-xs font-semibold px-4 py-2.5 border-r border-white/10">สถานะ</th>
-                        <th className="text-center text-white/80 text-xs font-semibold px-4 py-2.5 border-r border-white/10">การชำระเงิน</th>
                         <th className="text-left text-white/80 text-xs font-semibold px-4 py-2.5">วันที่ยื่น</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {requests.map((req, i) => {
                         const docLabel = docTypeLabel(req.document_type)
-                        const awaitingFee = SET_FEE_TYPES.includes(req.document_type) && req.payment_status === 'not_required'
-                        const payBadge = awaitingFee
-                          ? { label: 'รอแจ้งยอด',  cls: 'text-amber-700 bg-amber-50' }
-                          : req.payment_status === 'pending'  ? { label: 'รอชำระ',   cls: 'text-amber-700 bg-amber-50' }
-                          : req.payment_status === 'uploaded' ? { label: 'รอยืนยัน', cls: 'text-orange-700 bg-orange-50' }
-                          : req.payment_status === 'verified' ? { label: 'ชำระแล้ว', cls: 'text-emerald-700 bg-emerald-50' }
-                          : req.payment_status === 'waived'   ? { label: 'ยกเว้น',   cls: 'text-gray-500 bg-gray-100' }
-                          : null
                         return (
                           <tr key={req.id}
                             className="cursor-pointer transition-colors hover:bg-[#dbeafe]"
@@ -627,11 +478,6 @@ export default function MyDocRequests() {
                             <td className="px-4 py-3 text-center text-xs font-mono font-bold text-gray-600 border-r border-gray-100">{req.id.slice(0,8).toUpperCase()}</td>
                             <td className="px-4 py-3 font-medium text-gray-800 border-r border-gray-100">{docLabel}</td>
                             <td className="px-4 py-3 text-center border-r border-gray-100"><StatusBadge status={req.status} /></td>
-                            <td className="px-4 py-3 text-center border-r border-gray-100">
-                              {payBadge
-                                ? <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${payBadge.cls}`}>{payBadge.label}</span>
-                                : <span className="text-xs text-gray-300">—</span>}
-                            </td>
                             <td className="px-4 py-3 text-xs text-gray-500">{dateTH(req.created_at)}</td>
                           </tr>
                         )
@@ -687,7 +533,6 @@ export default function MyDocRequests() {
           req={selected}
           tenant={tenant}
           onClose={() => setSelected(null)}
-          onRefresh={() => setRefreshKey(k => k + 1)}
         />
       )}
     </div>

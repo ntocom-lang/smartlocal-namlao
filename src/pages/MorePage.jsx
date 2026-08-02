@@ -306,8 +306,8 @@ function NamlaoMorePage() {
     navigate('/')
   }
 
-  const isAdmin   = role === 'admin' || role === 'superadmin' || role === 'officer'
-  const isStaff   = role === 'staff'
+  const isAdmin   = role === 'admin' || role === 'superadmin'
+  const isStaff   = role === 'staff' || role === 'officer'
   const isViewer  = role === 'viewer'
   const isInternal = ['superadmin', 'admin', 'viewer', 'council', 'officer', 'staff', 'technician', 'kamnan'].includes(role)
   const initials  = (displayName[0] || '?').toUpperCase()

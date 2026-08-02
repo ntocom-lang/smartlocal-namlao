@@ -5,7 +5,7 @@ import {
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, AlignLeft, Calendar, Hash, RefreshCw,
   Printer, Search, ClipboardList, Hammer, Home, CalendarDays, TrendingUp, Images, Camera,
-  CreditCard, BadgeCheck, Banknote, Luggage, Star, Car, Bell, Trash2, Briefcase, Database,
+  Banknote, Luggage, Star, Car, Bell, Trash2, Briefcase, Database,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
@@ -152,19 +152,10 @@ function InfoRow({ icon, label, value }) {
 
 // ─── Task Card ────────────────────────────────────────────────────────────────
 
-const PAYMENT_BADGE = {
-  pending:  { label: 'รอชำระ',   cls: 'bg-amber-50 text-amber-600 border-amber-200' },
-  uploaded: { label: 'รอยืนยัน', cls: 'bg-orange-50 text-orange-600 border-orange-200' },
-  verified: { label: 'ชำระแล้ว', cls: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
-  waived:   { label: 'ยกเว้นค่า', cls: 'bg-gray-50 text-gray-500 border-gray-200' },
-}
-
 function TaskCard({ req, onClick }) {
   const docType = getAllDocTypes().find(d => d.value === req.document_type)
   const emoji = docType?.label.match(/^(\S+)/)?.[1] ?? '📄'
   const docLabel = docType?.label.replace(/^\S+\s*/, '') ?? req.document_type
-  const payBadge = req.payment_status && req.payment_status !== 'not_required'
-    ? PAYMENT_BADGE[req.payment_status] : null
 
   return (
     <button onClick={onClick}
@@ -184,11 +175,6 @@ function TaskCard({ req, onClick }) {
         <div className="flex items-center gap-2 mt-1.5">
           <p className="text-[11px] text-gray-300">{dateTH(req.created_at)}</p>
           <p className="text-[11px] font-mono text-gray-300">#{req.id?.slice(0, 8)?.toUpperCase()}</p>
-          {payBadge && (
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${payBadge.cls}`}>
-              💳 {payBadge.label}
-            </span>
-          )}
         </div>
       </div>
       <ChevronRight size={16} className="text-gray-300 shrink-0 mt-1" />
@@ -198,39 +184,21 @@ function TaskCard({ req, onClick }) {
 
 // ─── Task Detail Sheet ────────────────────────────────────────────────────────
 
-const SET_FEE_TYPES = ['tax_notice', 'waste_collection']
+const FEE_INQUIRY_TYPES = ['tax_notice', 'waste_collection']
 
-function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpdate, currentUserRole, onDelete }) {
+function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onInquiryUpdate, currentUserRole, onDelete }) {
   const [staffNote, setStaffNote]         = useState(req.staff_notes || '')
   const [confirmReject, setConfirmReject] = useState(false)
   const [rejectReason, setRejectReason]   = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [payActing, setPayActing]         = useState(false)
-  const [slipSignedUrl, setSlipSignedUrl] = useState(null)
   const defaultFee = tenant?.fee_schedule?.[req.document_type] ?? 0
-  const [feeInput, setFeeInput]           = useState(defaultFee > 0 ? String(defaultFee) : '')
+  const initialFee = req.fee_amount ?? defaultFee
+  const [feeInput, setFeeInput]           = useState(initialFee > 0 ? String(initialFee) : '')
   const [settingFee, setSettingFee]       = useState(false)
-
-  useEffect(() => {
-    if (!req.payment_slip_url) return
-    let cancelled = false
-    async function resolve() {
-      if (!req.payment_slip_url.startsWith('http')) {
-        const { data } = await supabase.storage.from('payment-slips')
-          .createSignedUrl(req.payment_slip_url, 3600)
-        if (!cancelled && data?.signedUrl) setSlipSignedUrl(data.signedUrl)
-      } else {
-        if (!cancelled) setSlipSignedUrl(req.payment_slip_url)
-      }
-    }
-    resolve()
-    return () => { cancelled = true }
-  }, [req.payment_slip_url])
 
   const docType     = getAllDocTypes().find(d => d.value === req.document_type)
   const isActive    = req.status === 'pending' || req.status === 'processing'
-  const hasPayment  = req.payment_status && req.payment_status !== 'not_required'
-  const needsFeeSet = SET_FEE_TYPES.includes(req.document_type) && req.payment_status === 'not_required'
+  const isFeeInquiry = FEE_INQUIRY_TYPES.includes(req.document_type)
 
   async function handleSetFee() {
     const amount = parseInt(feeInput)
@@ -238,71 +206,19 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpda
     setSettingFee(true)
     try {
       const { error } = await supabase.from('document_requests')
-        .update({ fee_amount: amount, payment_status: 'pending' })
+        .update({ fee_amount: amount, payment_status: 'not_required', payment_slip_url: null })
         .eq('id', req.id)
       if (error) throw error
       const docLabel = getAllDocTypes().find(d => d.value === req.document_type)?.label ?? req.document_type
       notifyTelegram(tenant?.telegram_group_id,
-        `💳 <b>แจ้งยอดค่าชำระ</b>\nประเภท: ${docLabel}\nผู้ขอ: ${req.requester_name}\nยอด: <b>${amount.toLocaleString()} บาท</b>\nรอประชาชนชำระผ่านบัญชีธนาคาร`
+        `📋 <b>แจ้งผลยอดที่ตรวจสอบ</b>\nประเภท: ${docLabel}\nผู้ขอ: ${req.requester_name}\nยอด: <b>${amount.toLocaleString()} บาท</b>\nชำระที่สำนักงานเทศบาลเท่านั้น`
       )
-      onPaymentUpdate?.()
+      onInquiryUpdate?.()
       onClose()
     } catch (err) {
       alert('เกิดข้อผิดพลาด: ' + err.message)
     } finally {
       setSettingFee(false)
-    }
-  }
-
-  async function handlePaymentVerify(action) {
-    setPayActing(true)
-    try {
-      const now = new Date().toISOString()
-
-      if (SET_FEE_TYPES.includes(req.document_type)) {
-        // Auto-generate receipt + mark completed in one step
-        const docDate = now.slice(0, 10)
-        const html = buildDocHTML({ req, tenant, docDate })
-        const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-        const path = `${tenant?.id ?? 'org'}/${req.id}.html`
-        let document_url = null
-        const { error: upErr } = await supabase.storage
-          .from('document-certs').upload(path, blob, { upsert: true, contentType: 'text/html' })
-        if (!upErr) {
-          const { data: urlData } = supabase.storage.from('document-certs').getPublicUrl(path)
-          document_url = urlData?.publicUrl ?? null
-        }
-        const { error } = await supabase.from('document_requests').update({
-          payment_status:      action === 'verify' ? 'verified' : 'waived',
-          payment_verified_at: now,
-          status:              'completed',
-          issued_at:           now,
-          ...(document_url ? { document_url } : {}),
-        }).eq('id', req.id)
-        if (error) throw error
-        const docLabel2 = getAllDocTypes().find(d => d.value === req.document_type)?.label ?? req.document_type
-        notifyTelegram(tenant?.telegram_group_id,
-          `✅ <b>${action === 'verify' ? 'ยืนยันการชำระเงิน' : 'ยกเว้นค่าธรรมเนียม'}</b>\nประเภท: ${docLabel2}\nผู้ขอ: ${req.requester_name}\n${action === 'verify' ? `จำนวน: ${(req.fee_amount ?? 0).toLocaleString()} บาท\n` : ''}ออกใบเสร็จแล้ว — รอประชาชนดาวน์โหลด`
-        )
-      } else {
-        const updates = action === 'verify'
-          ? { payment_status: 'verified', payment_verified_at: now }
-          : { payment_status: 'waived',   payment_verified_at: now }
-        const { error } = await supabase.from('document_requests')
-          .update(updates).eq('id', req.id)
-        if (error) throw error
-        const docLabel3 = getAllDocTypes().find(d => d.value === req.document_type)?.label ?? req.document_type
-        notifyTelegram(tenant?.telegram_group_id,
-          `✅ <b>${action === 'verify' ? 'ยืนยันการชำระเงิน' : 'ยกเว้นค่าธรรมเนียม'}</b>\nประเภท: ${docLabel3}\nผู้ขอ: ${req.requester_name}`
-        )
-      }
-
-      onPaymentUpdate?.()
-      onClose()
-    } catch (err) {
-      alert('เกิดข้อผิดพลาด: ' + err.message)
-    } finally {
-      setPayActing(false)
     }
   }
 
@@ -348,16 +264,15 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpda
             <InfoRow icon={<Calendar size={14} />}  label="วันที่ยื่น"     value={dateTH(req.created_at)} />
           </div>
 
-          {/* Set fee for tax/waste types */}
-          {needsFeeSet && (
-            <div className="rounded-2xl border border-amber-200 overflow-hidden">
-              <div className="px-4 py-2.5 bg-amber-50 flex items-center gap-2">
-                <Banknote size={14} className="text-amber-600 shrink-0" />
-                <p className="text-xs font-bold text-amber-800">แจ้งยอดค่าชำระให้ประชาชน</p>
+          {isFeeInquiry && isActive && (
+            <div className="rounded-2xl border border-blue-200 overflow-hidden">
+              <div className="px-4 py-2.5 bg-blue-50 flex items-center gap-2">
+                <Banknote size={14} className="text-blue-600 shrink-0" />
+                <p className="text-xs font-bold text-blue-800">แจ้งผลยอดที่ตรวจสอบ</p>
               </div>
               <div className="px-4 py-3 bg-white space-y-3">
                 <p className="text-xs text-gray-500 leading-relaxed">
-                  คำนวณยอดจากระบบ อปท. แล้วระบุที่นี่ ระบบจะแสดงบัญชีธนาคารให้ประชาชนชำระ
+                  ตรวจสอบยอดจากระบบงานของเทศบาลแล้วระบุที่นี่ ประชาชนจะเห็นเฉพาะยอดและคำแนะนำให้ชำระที่สำนักงานเทศบาล
                 </p>
                 <div className="flex gap-2">
                   <div className="flex-1 relative">
@@ -365,7 +280,7 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpda
                       type="number" min={1} max={999999}
                       value={feeInput}
                       onChange={e => setFeeInput(e.target.value)}
-                      placeholder="ระบุยอดที่ต้องชำระ"
+                      placeholder="ระบุยอดที่ตรวจสอบได้"
                       className={inputCls + ' pr-10'}
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">บาท</span>
@@ -374,63 +289,12 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpda
                     onClick={handleSetFee}
                     disabled={settingFee || !feeInput || parseInt(feeInput) <= 0}
                     className="px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-all flex items-center gap-1.5 shrink-0"
-                    style={{ backgroundColor: '#f59e0b' }}>
+                    style={{ backgroundColor: '#2563eb' }}>
                     {settingFee ? <Loader2 size={14} className="animate-spin" /> : <Banknote size={14} />}
                     แจ้งยอด
                   </button>
                 </div>
               </div>
-            </div>
-          )}
-
-          {/* Payment section */}
-          {hasPayment && (
-            <div className="rounded-2xl border overflow-hidden"
-              style={{ borderColor: req.payment_status === 'verified' ? '#6ee7b7' : req.payment_status === 'uploaded' ? '#fed7aa' : '#fde68a' }}>
-              <div className="px-4 py-2.5 flex items-center gap-2"
-                style={{ backgroundColor: req.payment_status === 'verified' ? '#f0fdf4' : req.payment_status === 'uploaded' ? '#fff7ed' : '#fffbeb' }}>
-                <CreditCard size={14} className="shrink-0" style={{ color: req.payment_status === 'verified' ? '#059669' : req.payment_status === 'uploaded' ? '#ea580c' : '#d97706' }} />
-                <p className="text-xs font-bold" style={{ color: req.payment_status === 'verified' ? '#065f46' : req.payment_status === 'uploaded' ? '#9a3412' : '#92400e' }}>
-                  ค่าธรรมเนียม {req.fee_amount?.toLocaleString()} บาท
-                  {' · '}
-                  {req.payment_status === 'pending'  && 'รอการชำระเงิน'}
-                  {req.payment_status === 'uploaded' && 'อัปโหลดสลิปแล้ว — รอยืนยัน'}
-                  {req.payment_status === 'verified' && '✅ ยืนยันการชำระแล้ว'}
-                  {req.payment_status === 'waived'   && '✅ ยกเว้นค่าธรรมเนียม'}
-                </p>
-              </div>
-
-              {req.payment_slip_url && (
-                <div className="px-4 py-3 bg-white border-t border-gray-100 space-y-2">
-                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">หลักฐานการชำระ</p>
-                  {slipSignedUrl ? (
-                    <a href={slipSignedUrl} target="_blank" rel="noopener noreferrer"
-                      className="block rounded-xl overflow-hidden border border-gray-100 hover:opacity-90 transition-opacity">
-                      <img src={slipSignedUrl} alt="slip" className="w-full max-h-52 object-contain bg-gray-50" />
-                    </a>
-                  ) : (
-                    <div className="flex items-center justify-center h-20 bg-gray-50 rounded-xl">
-                      <Loader2 size={18} className="animate-spin text-gray-300" />
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {(req.payment_status === 'uploaded' || req.payment_status === 'pending') && (
-                <div className="px-4 py-3 bg-white border-t border-gray-100 flex gap-2">
-                  <button onClick={() => handlePaymentVerify('verify')} disabled={payActing}
-                    className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-1.5 disabled:opacity-50 transition-opacity active:scale-95"
-                    style={{ backgroundColor: '#10b981' }}>
-                    {payActing ? <Loader2 size={14} className="animate-spin" /> : <BadgeCheck size={14} />}
-                    ยืนยันการชำระ
-                  </button>
-                  <button onClick={() => handlePaymentVerify('waive')} disabled={payActing}
-                    className="flex-1 py-2.5 rounded-xl text-sm font-bold text-gray-600 bg-gray-100 flex items-center justify-center gap-1.5 disabled:opacity-50 transition-opacity active:scale-95">
-                    {payActing ? <Loader2 size={14} className="animate-spin" /> : <Banknote size={14} />}
-                    ยกเว้นค่าธรรมเนียม
-                  </button>
-                </div>
-              )}
             </div>
           )}
 
@@ -541,10 +405,7 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onPaymentUpda
                 รับเรื่อง — เริ่มดำเนินการ
               </button>
             )}
-            {req.status === 'processing' &&
-             (!SET_FEE_TYPES.includes(req.document_type) ||
-              req.payment_status === 'verified' ||
-              req.payment_status === 'waived') && (
+            {req.status === 'processing' && (
               <button onClick={() => onUpdate(req.id, 'completed', staffNote, '')} disabled={acting}
                 className="w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-all text-sm"
                 style={{ backgroundColor: '#10b981' }}>
@@ -721,8 +582,7 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
       const path = `${tenant?.id ?? 'org'}/${id}.html`
       const { error: upErr } = await supabase.storage.from('document-certs').upload(path, blob, { upsert: true, contentType: 'text/html' })
       if (!upErr) {
-        const { data: urlData } = supabase.storage.from('document-certs').getPublicUrl(path)
-        document_url = urlData?.publicUrl ?? null
+        document_url = path
       }
     }
 
@@ -932,7 +792,7 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
       {selected && (
         <TaskDetailSheet req={selected} onClose={() => setSelected(null)}
           onUpdate={handleUpdate} acting={acting} tenant={tenant}
-          onPaymentUpdate={() => { setSelected(null); setRefreshKey(k => k + 1) }}
+          onInquiryUpdate={() => { setSelected(null); setRefreshKey(k => k + 1) }}
           currentUserRole={currentUserRole} onDelete={handleDelete} />
       )}
       {showAdd && (
@@ -982,14 +842,14 @@ const DOC_CSS = `
 const DOC_TITLES = {
   residence_cert:   'หนังสือรับรองการอยู่อาศัย',
   personal_cert:    'หนังสือรับรองบุคคล',
-  tax_notice:       'ใบเสร็จรับเงินภาษีที่ดินและสิ่งปลูกสร้าง',
-  waste_collection: 'ใบเสร็จรับเงินค่าธรรมเนียมขยะ',
+  tax_notice:       'ผลการตรวจสอบยอดภาษีที่ดินและสิ่งปลูกสร้าง',
+  waste_collection: 'ผลการตรวจสอบค่าธรรมเนียมขยะ',
   other:            'หนังสือรับรอง',
 }
 
 // req.* เป็นข้อมูลที่ประชาชนกรอกเองตอนยื่นคำขอเอกสาร (CitizenDocRequest.jsx) — ต้อง escape
 // ก่อนแปะใน HTML เสมอ เพราะไฟล์นี้ถูกเปิดตรงใน window.open และอัปโหลดเป็นไฟล์ .html
-// สาธารณะใน bucket document-certs ถ้าไม่ escape จะเป็นช่องโหว่ stored XSS/HTML injection
+// ใน bucket document-certs แม้เป็น private ก็ต้อง escape กัน stored XSS/HTML injection
 function escapeHtml(str) {
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -1010,20 +870,20 @@ function buildDocBody(req, orgName) {
       return `<p>ขอรับรองว่า ${name}${idCard} เป็นบุคคลที่อยู่ในทะเบียนราษฎรของ${orgName} และเป็นผู้มีตัวตนอยู่จริง</p>
               <p>เอกสารฉบับนี้ออกให้${purpose}</p>`
     case 'tax_notice':
-      return `<p>ได้รับเงินจาก ${name}${idCard} ที่อยู่ ${addr}</p>
+      return `<p>ตามที่ ${name}${idCard} ที่อยู่ ${addr} ขอสอบถามข้อมูลภาษีที่ดินและสิ่งปลูกสร้าง</p>
               <p class="no-indent" style="margin-left:3em; margin-top:6pt">
-                รายการ: ค่าภาษีที่ดินและสิ่งปลูกสร้างประจำปี<br/>
-                จำนวนเงิน: <strong>${req.fee_amount ? req.fee_amount.toLocaleString() + ' บาท' : '...............................................'}</strong><br/>
-                วันที่รับชำระ: ${thaiDate(new Date().toISOString().slice(0, 10))}
+                ยอดที่ตรวจสอบได้: <strong>${req.fee_amount ? req.fee_amount.toLocaleString() + ' บาท' : 'ยังไม่ระบุยอด'}</strong><br/>
+                วันที่ตรวจสอบ: ${thaiDate(new Date().toISOString().slice(0, 10))}
               </p>
+              <p>กรุณาติดต่อชำระที่สำนักงานเทศบาล เอกสารนี้ไม่ใช่ใบเสร็จรับเงินหรือหลักฐานการชำระเงิน</p>
               ${req.staff_notes ? `<p>หมายเหตุ: ${escapeHtml(req.staff_notes)}</p>` : ''}`
     case 'waste_collection':
-      return `<p>ได้รับเงินจาก ${name}${idCard} ที่อยู่ ${addr}</p>
+      return `<p>ตามที่ ${name}${idCard} ที่อยู่ ${addr} ขอสอบถามข้อมูลค่าธรรมเนียมขยะ</p>
               <p class="no-indent" style="margin-left:3em; margin-top:6pt">
-                รายการ: ค่าธรรมเนียมขยะ<br/>
-                จำนวนเงิน: <strong>${req.fee_amount ? req.fee_amount.toLocaleString() + ' บาท' : '...............................................'}</strong><br/>
-                วันที่รับชำระ: ${thaiDate(new Date().toISOString().slice(0, 10))}
+                ยอดที่ตรวจสอบได้: <strong>${req.fee_amount ? req.fee_amount.toLocaleString() + ' บาท' : 'ยังไม่ระบุยอด'}</strong><br/>
+                วันที่ตรวจสอบ: ${thaiDate(new Date().toISOString().slice(0, 10))}
               </p>
+              <p>กรุณาติดต่อชำระที่สำนักงานเทศบาล เอกสารนี้ไม่ใช่ใบเสร็จรับเงินหรือหลักฐานการชำระเงิน</p>
               ${req.staff_notes ? `<p>หมายเหตุ: ${escapeHtml(req.staff_notes)}</p>` : ''}`
     default:
       return `<p>${escapeHtml(req.purpose) || 'ตามที่ได้รับการร้องขอ'}</p>
@@ -1034,7 +894,7 @@ function buildDocBody(req, orgName) {
 function buildDocHTML({ req, tenant, docDate }) {
   const orgName  = escapeHtml(tenant?.name ?? 'หน่วยงาน')
   const title    = DOC_TITLES[req.document_type] ?? DOC_TITLES.other
-  const isReceipt = ['tax_notice', 'waste_collection'].includes(req.document_type)
+  const isFeeInquiry = FEE_INQUIRY_TYPES.includes(req.document_type)
   const logoUrl  = typeof tenant?.logo_url === 'string' && /^https?:\/\//.test(tenant.logo_url)
     ? escapeHtml(tenant.logo_url) : null
 
@@ -1054,11 +914,11 @@ function buildDocHTML({ req, tenant, docDate }) {
 <div class="body">
   ${buildDocBody(req, orgName)}
 </div>
-<p class="closing">${isReceipt ? 'ใบเสร็จนี้ออกโดยระบบอิเล็กทรอนิกส์ ถือเป็นหลักฐานการรับชำระเงิน' : 'จึงออกหนังสือรับรองฉบับนี้ให้เพื่อเป็นหลักฐาน'}</p>
+<p class="closing">${isFeeInquiry ? 'ข้อมูลนี้ใช้แจ้งผลการตรวจสอบเบื้องต้น ไม่ใช่ใบเสร็จรับเงินหรือหลักฐานการชำระเงิน' : 'จึงออกหนังสือรับรองฉบับนี้ให้เพื่อเป็นหลักฐาน'}</p>
 <div class="signature">
   <div class="sig-line"></div>
   <p>(...............................................)</p>
-  <p>${isReceipt ? 'ผู้รับเงิน' : 'ผู้มีอำนาจลงนาม'}</p>
+  <p>${isFeeInquiry ? 'เจ้าหน้าที่ผู้ตรวจสอบข้อมูล' : 'ผู้มีอำนาจลงนาม'}</p>
   <p>${orgName}</p>
 </div>
 <div class="footer-note">
@@ -1831,7 +1691,7 @@ export default function StaffDashboard() {
             {activeModule === 'report'       && <StaffReportWrapper tenant={tenant} />}
             {activeModule === 'civil-report'      && <CivilProjectReport tenant={tenant} />}
             {activeModule === 'posts'            && <PostsManager currentUserRole={profile?.role ?? 'staff'} myDepartmentId={profile?.department_id ?? null} />}
-            {activeModule === 'tourism'          && <TourismManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} myDepartmentId={profile?.department_id ?? null} />}
+            {activeModule === 'tourism'          && <TourismManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} currentUserId={profile?.id ?? null} myDepartmentId={profile?.department_id ?? null} />}
             {activeModule === 'tourism-reviews'  && <TourismReviewsAdmin tenant={tenant} />}
             {activeModule === 'fleet' && <FleetPage onBack={() => setActiveModule('home')} />}
             {activeModule === 'positions' && <PositionsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}

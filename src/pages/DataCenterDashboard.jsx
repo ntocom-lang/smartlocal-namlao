@@ -50,6 +50,24 @@ export default function DataCenterDashboard() {
     navigate('/staff')
   }
 
+  function canManageEntry(entry) {
+    if (!entry || !profile) return false
+    if (profile.role === 'admin' || profile.role === 'superadmin') return true
+    if (profile.role === 'officer') {
+      return !!profile.department_id && entry.department_id === profile.department_id
+    }
+    return ['staff', 'technician'].includes(profile.role) && entry.created_by === profile.id
+  }
+
+  function handleEditEntry(entry) {
+    if (!canManageEntry(entry)) {
+      window.alert('รายการนี้เป็นของกองอื่นหรือผู้สร้างรายอื่น คุณเปิดดูบนแผนที่ได้แต่แก้ไขไม่ได้')
+      return
+    }
+    setEditingEntry(entry)
+    setActiveModule('add')
+  }
+
   const isMapModule = activeModule === 'map'
   const isManager = profile?.role === 'admin' || profile?.role === 'superadmin'
   const MODULES = isManager ? [...BASE_MODULES, CATEGORY_MANAGER_MODULE] : BASE_MODULES
@@ -151,7 +169,7 @@ export default function DataCenterDashboard() {
               }>
                 {activeModule === 'overview' && <DataCenterOverview key={refreshKey} tenant={tenant}
                   onAddNew={group => { setPrefillGroup(group ?? null); setActiveModule('add') }}
-                  onEditEntry={entry => { setEditingEntry(entry); setActiveModule('add') }} />}
+                  onEditEntry={handleEditEntry} />}
                 {activeModule === 'add' && <DataCenterEntryForm tenant={tenant} profile={profile} initialGroup={prefillGroup} editingEntry={editingEntry}
                   onSaved={handleSaved} onCancel={() => { setPrefillGroup(null); setEditingEntry(null); setActiveModule('overview') }} />}
                 {activeModule === 'categories' && isManager && <DataCenterCategoryManager key={refreshKey} tenant={tenant} />}
