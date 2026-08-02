@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
-import { Loader2, Plus, X, Pencil, Trash2, ChevronLeft, ChevronRight, Paperclip, CalendarDays, Tag, Users, Check, ChevronUp, Link2, CheckCheck, Image, FileText, Sparkles } from 'lucide-react'
+import { useState, useEffect, useRef, useMemo } from 'react'
+import { Loader2, Plus, X, Pencil, Trash2, ChevronLeft, ChevronRight, Paperclip, CalendarDays, Tag, Users, Check, ChevronUp, Link2, CheckCheck, Image, FileText, Sparkles, Clock, MapPin, List } from 'lucide-react'
 import { supabase, supabaseUrl } from '../../lib/supabase'
 import { notifyTelegram } from '../../lib/notifyTelegram'
 import { logAction } from '../../lib/auditLog'
@@ -195,6 +195,274 @@ function EventCard({ ev, onEdit, onDelete, onView, deleting }) {
   )
 }
 
+function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage, openAdd }) {
+  const todayRef = useMemo(() => {
+    const t = new Date()
+    t.setHours(0, 0, 0, 0)
+    return t
+  }, [])
+
+  const [calYear, setCalYear]   = useState(todayRef.getFullYear())
+  const [calMonth, setCalMonth] = useState(todayRef.getMonth())
+  const [selectedDay, setSelectedDay] = useState(todayRef.getDate())
+
+  const eventMap = useMemo(() => {
+    const map = {}
+    events.forEach(ev => {
+      if (!ev.event_date) return
+      if (!map[ev.event_date]) map[ev.event_date] = []
+      map[ev.event_date].push(ev)
+    })
+    return map
+  }, [events])
+
+  const firstDow  = new Date(calYear, calMonth, 1).getDay()
+  const totalDays = new Date(calYear, calMonth + 1, 0).getDate()
+
+  const cells = []
+  for (let i = 0; i < firstDow; i++) cells.push(null)
+  for (let d = 1; d <= totalDays; d++) cells.push(d)
+  while (cells.length % 7 !== 0) cells.push(null)
+
+  const prevMonth = () => {
+    setSelectedDay(null)
+    if (calMonth === 0) { setCalMonth(11); setCalYear(y => y - 1) }
+    else setCalMonth(m => m - 1)
+  }
+  const nextMonth = () => {
+    setSelectedDay(null)
+    if (calMonth === 11) { setCalMonth(0); setCalYear(y => y + 1) }
+    else setCalMonth(m => m + 1)
+  }
+
+  const dayKey = (d) =>
+    `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+
+  const selectedEvents = selectedDay ? (eventMap[dayKey(selectedDay)] ?? []) : []
+
+  const monthName = new Date(calYear, calMonth, 1)
+    .toLocaleDateString('th-TH', { year: 'numeric', month: 'long' })
+
+  const AUDIENCE_COLOR = {
+    public:     '#10b981',
+    staff:      '#3b82f6',
+    management: '#8b5cf6',
+    council:    '#f59e0b',
+  }
+  const AUDIENCE_LABEL = {
+    public:     'ประชาชน',
+    staff:      'เจ้าหน้าที่',
+    management: 'ผู้บริหาร',
+    council:    'สภาเทศบาล',
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 space-y-4">
+      {/* Month navigation */}
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={prevMonth}
+          className="p-2 rounded-xl hover:bg-gray-100 text-gray-500 transition-colors"
+        >
+          <ChevronLeft size={20} />
+        </button>
+        <p className="text-base font-bold text-gray-800">{monthName}</p>
+        <button
+          type="button"
+          onClick={nextMonth}
+          className="p-2 rounded-xl hover:bg-gray-100 text-gray-500 transition-colors"
+        >
+          <ChevronRight size={20} />
+        </button>
+      </div>
+
+      {/* Day-of-week header */}
+      <div className="grid grid-cols-7 mb-1">
+        {['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'].map((label, i) => (
+          <div
+            key={label}
+            className={`text-center text-xs font-semibold py-1 ${
+              i === 0 ? 'text-red-400' : i === 6 ? 'text-blue-400' : 'text-gray-400'
+            }`}
+          >
+            {label}
+          </div>
+        ))}
+      </div>
+
+      {/* Calendar grid */}
+      <div className="grid grid-cols-7 gap-px bg-gray-100 rounded-2xl overflow-hidden border border-gray-100">
+        {cells.map((day, idx) => {
+          if (!day) {
+            return (
+              <div
+                key={idx}
+                className="bg-gray-50 min-h-12"
+              />
+            )
+          }
+          const key       = dayKey(day)
+          const dayEvs    = eventMap[key] ?? []
+          const dow       = (firstDow + day - 1) % 7
+          const isToday   = calYear === todayRef.getFullYear() && calMonth === todayRef.getMonth() && day === todayRef.getDate()
+          const isSelected = day === selectedDay
+
+          return (
+            <button
+              key={idx}
+              type="button"
+              onClick={() => setSelectedDay(day === selectedDay ? null : day)}
+              className={`min-h-12 p-1 flex flex-col items-center transition-colors ${
+                isSelected
+                  ? 'bg-blue-50'
+                  : 'bg-white hover:bg-gray-50'
+              }`}
+            >
+              <span
+                className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full mb-0.5 ${
+                  isToday
+                    ? 'bg-red-500 text-white'
+                    : isSelected
+                    ? 'text-blue-600 font-extrabold'
+                    : dow === 0
+                    ? 'text-red-400'
+                    : dow === 6
+                    ? 'text-blue-400'
+                    : 'text-gray-700'
+                }`}
+              >
+                {day}
+              </span>
+              <div className="flex flex-wrap justify-center gap-px max-w-full">
+                {dayEvs.slice(0, 3).map((ev, i) => (
+                  <span
+                    key={i}
+                    className="w-2 h-2 rounded-full shadow-xs"
+                    style={{ backgroundColor: AUDIENCE_COLOR[ev.audiences?.[0]] ?? '#6b7280' }}
+                  />
+                ))}
+                {dayEvs.length > 3 && (
+                  <span className="text-[9px] text-gray-400 leading-none font-semibold">
+                    +{dayEvs.length - 3}
+                  </span>
+                )}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Legend */}
+      <div className="flex flex-wrap gap-x-4 gap-y-1.5 pt-1 px-1">
+        {Object.entries(AUDIENCE_COLOR).map(([key, color]) => (
+          <div key={key} className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+            <span className="text-[11px] text-gray-500">
+              {AUDIENCE_LABEL[key] ?? key}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Selected-day events list */}
+      {selectedDay && (
+        <div className="mt-4 pt-3 border-t border-gray-100">
+          <div className="flex items-center justify-between mb-3 px-1">
+            <p className="text-xs font-bold text-gray-600">
+              {new Date(calYear, calMonth, selectedDay).toLocaleDateString('th-TH', {
+                weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+              })}
+            </p>
+            {canManage && (
+              <button
+                type="button"
+                onClick={openAdd}
+                className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1"
+              >
+                <Plus size={13} /> เพิ่มกิจกรรมวันนี้
+              </button>
+            )}
+          </div>
+          {selectedEvents.length === 0 ? (
+            <div className="flex flex-col items-center py-6 text-gray-400">
+              <CalendarDays size={28} strokeWidth={1.2} className="mb-1 text-gray-300" />
+              <p className="text-xs">ไม่มีกิจกรรมในวันนี้</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {selectedEvents.map(ev => {
+                const color = EVENTS_CATEGORY_COLOR[ev.category] ?? '#6b7280'
+                return (
+                  <div
+                    key={ev.id}
+                    className="w-full text-left bg-white rounded-xl border border-gray-200 shadow-xs p-3.5 flex items-start justify-between gap-3"
+                    style={{ borderLeftColor: color, borderLeftWidth: 3 }}
+                  >
+                    <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onSelectEvent(ev)}>
+                      <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                        <span
+                          className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white"
+                          style={{ backgroundColor: color }}
+                        >
+                          {ev.category}
+                        </span>
+                        {(ev.audiences ?? []).map(v => {
+                          const audColor = AUDIENCE_COLOR[v] ?? '#6b7280'
+                          return (
+                            <span key={v}
+                              className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                              style={{ backgroundColor: audColor + '20', color: audColor }}
+                            >
+                              {v !== 'public' && '🔒 '}{AUDIENCE_LABEL[v] ?? v}
+                            </span>
+                          )
+                        })}
+                      </div>
+                      <p className="text-sm font-bold text-gray-800 leading-tight">{ev.title}</p>
+                      {!ev.is_all_day && ev.event_time && (
+                        <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+                          <Clock size={11} />
+                          {ev.event_time.slice(0, 5)}{ev.end_time ? ` – ${ev.end_time.slice(0, 5)}` : ''} น.
+                        </p>
+                      )}
+                      {ev.location && (
+                        <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
+                          <MapPin size={11} /> {ev.location}
+                        </p>
+                      )}
+                    </div>
+                    {canManage && (
+                      <div className="flex items-center gap-1 shrink-0 pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => onEdit(ev)}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                          title="แก้ไข"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onDelete(ev.id)}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                          title="ลบ"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function EventsManager({ tenant, currentUserRole = 'staff', autoEditEventId, onAutoEditHandled, autoCreateSignal = 0, autoCreateAudience = null, onAutoCreateHandled }) {
   const canManage = EVENT_MANAGER_ROLES.includes(currentUserRole)
   const orgLabel = tenant?.org_type === 'อบต.' ? 'อบต.' : 'เทศบาล'
@@ -214,6 +482,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
   const [form, setForm] = useState(EMPTY_EVENT_FORM)
   const [multiDay, setMultiDay] = useState(false)
   const [locationCustom, setLocationCustom] = useState(false)
+  const [viewMode, setViewMode] = useState('list') // 'list' | 'calendar'
   const [filterMonth, setFilterMonth] = useState('all')
   const [filterCategory, setFilterCategory] = useState('all')
   const [filterAudience, setFilterAudience] = useState('all')
@@ -573,21 +842,36 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
         </button>
       )}
       {/* Mobile header */}
-      <div className="md:hidden flex items-center justify-between">
-        <h2 className="font-bold text-gray-700">ปฏิทินกิจกรรม</h2>
-        <div className="flex items-center gap-2">
+      <div className="md:hidden flex items-center justify-between gap-2">
+        <h2 className="font-bold text-gray-700 shrink-0">ปฏิทินกิจกรรม</h2>
+        <div className="flex items-center gap-1.5 flex-wrap justify-end">
+          <button
+            type="button"
+            onClick={() => setViewMode(v => v === 'list' ? 'calendar' : 'list')}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all active:scale-95 shadow-xs"
+            style={viewMode === 'calendar'
+              ? { backgroundColor: '#3b82f6', color: '#ffffff', borderColor: '#2563eb' }
+              : { backgroundColor: '#eff6ff', color: '#1d4ed8', borderColor: '#bfdbfe' }
+            }
+          >
+            {viewMode === 'list' ? (
+              <><CalendarDays size={13} /> ตาราง</>
+            ) : (
+              <><List size={13} /> รายการ</>
+            )}
+          </button>
           {icsUrl && (
             <button onClick={copyIcsUrl}
-              className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold border border-gray-200 text-gray-600 bg-white">
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold border border-gray-200 text-gray-600 bg-white">
               {copied ? <CheckCheck size={13} className="text-green-500" /> : <Link2 size={13} />}
               {copied ? 'คัดลอก!' : 'Subscribe'}
             </button>
           )}
           {canManage && (
             <button onClick={openAdd}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white shadow-xs"
               style={{ backgroundColor: 'var(--color-primary)' }}>
-              <Plus size={16} /> เพิ่มกิจกรรมในปฏิทิน
+              <Plus size={14} /> เพิ่มกิจกรรมในปฏิทิน
             </button>
           )}
         </div>
@@ -598,9 +882,21 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
         style={{ backgroundColor: '#1a3a5c' }}>
         <h2 className="text-[13px] font-bold text-white tracking-wide">ปฏิทินกิจกรรม</h2>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setViewMode(v => v === 'list' ? 'calendar' : 'list')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold border transition-colors hover:bg-white/20"
+            style={{ backgroundColor: 'rgba(255,255,255,0.18)', color: '#fff', borderColor: 'rgba(255,255,255,0.4)' }}
+          >
+            {viewMode === 'list' ? (
+              <><CalendarDays size={13} /> ตาราง</>
+            ) : (
+              <><List size={13} /> รายการ</>
+            )}
+          </button>
           <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded"
             style={{ backgroundColor: 'rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.9)' }}>
-            {filteredEvents.length} รายการ
+            {upcoming.length} รายการ
           </span>
           {canManage && (
             <button onClick={openAdd}
@@ -1089,18 +1385,29 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
         <div className="flex justify-center py-10 text-gray-400">
           <Loader2 size={24} className="animate-spin" />
         </div>
+      ) : viewMode === 'calendar' ? (
+        <AdminCalendarView
+          events={filteredEvents}
+          onSelectEvent={setViewingEvent}
+          onEdit={openEdit}
+          onDelete={handleDelete}
+          canManage={canManage}
+          openAdd={openAdd}
+        />
       ) : (
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex bg-gray-100 p-1 rounded-xl w-fit">
-              <button onClick={() => setActiveTab('upcoming')}
-                className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'upcoming' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-                กิจกรรมที่จะมาถึง ({upcoming.length})
-              </button>
-              <button onClick={() => setActiveTab('past')}
-                className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'past' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-                กิจกรรมที่ผ่านมา ({past.length})
-              </button>
+            <div className="flex items-center justify-between w-full sm:w-auto gap-2">
+              <div className="flex bg-gray-100 p-1 rounded-xl w-fit">
+                <button onClick={() => setActiveTab('upcoming')}
+                  className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'upcoming' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                  กิจกรรมที่จะมาถึง ({upcoming.length})
+                </button>
+                <button onClick={() => setActiveTab('past')}
+                  className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'past' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                  กิจกรรมที่ผ่านมา ({past.length})
+                </button>
+              </div>
             </div>
             {paginatedList.length > 0 && (
               <div className="flex items-center gap-2 text-sm text-gray-500">

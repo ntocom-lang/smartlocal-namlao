@@ -6,7 +6,7 @@ import {
 import { supabase } from '../../lib/supabase'
 
 const ROLE_LABELS = {
-  superadmin: 'Super Admin', admin: 'แอดมินระบบ', officer: 'แอดมินกอง',
+  superadmin: 'Super Admin', admin: 'แอดมินระบบ', officer: 'ธุรการกอง',
   technician: 'ผู้ปฏิบัติงาน', staff: 'เจ้าหน้าที่', viewer: 'ผู้บริหาร', council: 'สภาเทศบาล',
 }
 

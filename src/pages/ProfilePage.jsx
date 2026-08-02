@@ -9,7 +9,7 @@ import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiNam
 const ROLE_LABEL = {
   superadmin: 'Super Admin',
   admin:      'แอดมินระบบ',
-  officer:    'แอดมินกอง',
+  officer:    'ธุรการกอง',
   technician: 'ปฏิบัติงาน',
   staff:      'เจ้าหน้าที่',
   viewer:     'ผู้บริหาร',

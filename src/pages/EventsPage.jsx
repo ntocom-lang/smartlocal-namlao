@@ -308,7 +308,6 @@ export default function EventsPage() {
 
   useEffect(() => {
     if (!tenant?.id) return
-    setLoading(true)
     const threeMonthsAgo = new Date()
     threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
     let query = supabase
@@ -574,7 +573,7 @@ export default function EventsPage() {
               title={view === 'list' ? 'มุมมองปฏิทิน' : 'มุมมองรายการ'}
             >
               {view === 'list' ? (
-                <><CalendarDays size={16} /><span className="text-sm font-bold">ปฏิทิน</span></>
+                <><CalendarDays size={16} /><span className="text-sm font-bold">ตาราง</span></>
               ) : (
                 <><List size={16} /><span className="text-sm font-bold">รายการ</span></>
               )}
@@ -656,12 +655,6 @@ export default function EventsPage() {
         </div>
       ) : (
         <>
-          {/* Mobile: Tab switcher (only in list view) */}
-          {view === 'list' && (
-            <div className="md:hidden mt-3">{tabSwitcher}</div>
-          )}
-
-          {/* Content: mobile=single view toggle; PC=side-by-side */}
           <div className="md:grid md:grid-cols-[1fr_1.3fr] md:gap-8 md:mt-4">
 
             {/* Calendar column */}
@@ -676,10 +669,9 @@ export default function EventsPage() {
               )}
             </div>
 
-            {/* List column */}
-            <div className={view === 'list' ? 'mt-4 md:mt-0' : 'hidden md:block md:mt-0'}>
-              {/* PC: tab switcher inside list column */}
-              <div className="hidden md:block mb-4">{tabSwitcher}</div>
+            {/* List / Table column */}
+            <div className="mt-4 md:mt-0">
+              <div className="mb-4">{tabSwitcher}</div>
               {eventList}
             </div>
 

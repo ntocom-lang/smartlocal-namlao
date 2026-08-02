@@ -111,7 +111,7 @@ const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm t
 const ROLE_TH = {
   superadmin: 'Super Admin',
   admin:      'แอดมินระบบ',
-  officer:    'แอดมินกอง',
+  officer:    'ธุรการกอง',
   technician: 'ปฏิบัติงาน',
   staff:      'เจ้าหน้าที่',
   viewer:     'ผู้บริหาร',
@@ -1830,7 +1830,7 @@ export default function StaffDashboard() {
             {activeModule === 'infra'      && <InfraWorkAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} myDepartmentId={profile?.department_id ?? null} />}
             {activeModule === 'report'       && <StaffReportWrapper tenant={tenant} />}
             {activeModule === 'civil-report'      && <CivilProjectReport tenant={tenant} />}
-            {activeModule === 'posts'            && <PostsManager />}
+            {activeModule === 'posts'            && <PostsManager currentUserRole={profile?.role ?? 'staff'} myDepartmentId={profile?.department_id ?? null} />}
             {activeModule === 'tourism'          && <TourismManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} myDepartmentId={profile?.department_id ?? null} />}
             {activeModule === 'tourism-reviews'  && <TourismReviewsAdmin tenant={tenant} />}
             {activeModule === 'fleet' && <FleetPage onBack={() => setActiveModule('home')} />}

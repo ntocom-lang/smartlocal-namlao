@@ -46,7 +46,7 @@ export default function EventsSection() {
   useEffect(() => {
     if (!tenant?.id) return
     const today = new Date().toISOString().split('T')[0]
-    let query = supabase
+    const baseQuery = supabase
       .from('events')
       .select('*')
       .eq('municipality_id', tenant.id)
@@ -55,9 +55,16 @@ export default function EventsSection() {
       .limit(3)
 
     const allowed = audienceFilter(role)
-    if (allowed !== null) query = query.overlaps('audiences', allowed)
+    const query = allowed !== null ? baseQuery.overlaps('audiences', allowed) : baseQuery
 
-    query.then(({ data }) => {
+    query.then(({ data, error }) => {
+      if (error) {
+        baseQuery.then(({ data: fallbackData }) => {
+          setEvents(fallbackData ?? [])
+          setLoading(false)
+        })
+        return
+      }
       setEvents(data ?? [])
       setLoading(false)
     })

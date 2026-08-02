@@ -19,7 +19,7 @@ const EMPTY_FORM = {
   event_date: '', is_published: true,
 }
 
-export default function PostsManager() {
+export default function PostsManager({ currentUserRole = 'staff', myDepartmentId = null }) {
   const { tenant } = useTenant()
   const { session } = useAuth()
 
@@ -54,7 +54,7 @@ export default function PostsManager() {
     setFetchError(null)
     const { data, error } = await supabase
       .from('posts')
-      .select('id,title,excerpt,image_url,image_position,event_date,is_published,created_at,updated_at')
+      .select('id,title,excerpt,image_url,image_position,event_date,is_published,created_at,updated_at,created_by,department_id')
       .eq('municipality_id', tenant.id)
       .eq('type', tab)
       .order('created_at', { ascending: false })
@@ -187,6 +187,7 @@ export default function PostsManager() {
         event_date:      form.event_date      || null,
         is_published:    form.is_published,
         created_by:      session?.user?.id   ?? null,
+        department_id:   myDepartmentId      ?? null,
       }
       const q = editing
         ? supabase.from('posts').update(payload).eq('id', editing)
@@ -246,6 +247,15 @@ export default function PostsManager() {
     : ''
 
   const isNews = tab === 'news'
+  const canCreate = ['superadmin', 'admin', 'staff'].includes(currentUserRole)
+    || (currentUserRole === 'officer' && !!myDepartmentId)
+  const canManagePost = (post) => {
+    if (['superadmin', 'admin'].includes(currentUserRole)) return true
+    if (currentUserRole === 'officer') {
+      return !!myDepartmentId && post.department_id === myDepartmentId
+    }
+    return currentUserRole === 'staff' && post.created_by === session?.user?.id
+  }
 
   function parseFocal(pos = '50% 50%') {
     const [x = '50%', y = '50%'] = pos.split(' ')
@@ -267,12 +277,21 @@ export default function PostsManager() {
             <Icon size={14} /> {label}
           </button>
         ))}
-        <button onClick={openNew}
-          className="ml-auto flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white shadow-sm"
-          style={{ backgroundColor: 'var(--color-primary)' }}>
-          <Plus size={14} /> เพิ่ม{isNews ? 'ข่าว' : 'กิจกรรม'}
-        </button>
+        {canCreate && (
+          <button onClick={openNew}
+            className="ml-auto flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white shadow-sm"
+            style={{ backgroundColor: 'var(--color-primary)' }}>
+            <Plus size={14} /> เพิ่ม{isNews ? 'ข่าว' : 'กิจกรรม'}
+          </button>
+        )}
       </div>
+
+      {currentUserRole === 'officer' && !myDepartmentId && (
+        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          <AlertCircle size={15} className="mt-0.5 shrink-0" />
+          บัญชีธุรการกองยังไม่ได้กำหนดกอง จึงดูข้อมูลได้อย่างเดียว กรุณาให้ผู้ดูแลระบบเทศบาลแต่งตั้งกองก่อน
+        </div>
+      )}
 
       {/* Fetch error */}
       {fetchError && (
@@ -484,15 +503,19 @@ export default function PostsManager() {
             <p className="text-sm font-medium">ยังไม่มี{isNews ? 'ข่าว' : 'กิจกรรม'}</p>
             <p className="text-xs mt-0.5">กด "เพิ่ม{isNews ? 'ข่าว' : 'กิจกรรม'}" เพื่อเริ่มต้นได้เลย</p>
           </div>
-          <button onClick={openNew}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white shadow-sm"
-            style={{ backgroundColor: 'var(--color-primary)' }}>
-            <Plus size={14} /> เพิ่ม{isNews ? 'ข่าว' : 'กิจกรรม'}
-          </button>
+          {canCreate && (
+            <button onClick={openNew}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white shadow-sm"
+              style={{ backgroundColor: 'var(--color-primary)' }}>
+              <Plus size={14} /> เพิ่ม{isNews ? 'ข่าว' : 'กิจกรรม'}
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {posts.map(p => (
+          {posts.map(p => {
+            const canManage = canManagePost(p)
+            return (
             <div key={p.id}
               className={`bg-white rounded-2xl border shadow-sm overflow-hidden transition-opacity ${
                 !p.is_published ? 'opacity-55 border-gray-100' : 'border-gray-100'
@@ -530,8 +553,12 @@ export default function PostsManager() {
                   </p>
                 )}
 
+                {currentUserRole === 'officer' && !canManage && (
+                  <p className="text-[11px] font-medium text-gray-400">ข้อมูลกองอื่น · ดูอย่างเดียว</p>
+                )}
+
                 {/* Actions */}
-                <div className="flex items-center gap-1.5 pt-1">
+                {canManage && <div className="flex items-center gap-1.5 pt-1">
                   {/* Toggle publish */}
                   <button onClick={() => togglePublish(p)} disabled={toggleSet.has(p.id)}
                     className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[13px] font-medium transition-colors disabled:opacity-50 ${
@@ -571,10 +598,11 @@ export default function PostsManager() {
                       <Trash2 size={13} />
                     </button>
                   )}
-                </div>
+                </div>}
               </div>
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
 

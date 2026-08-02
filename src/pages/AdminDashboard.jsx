@@ -78,12 +78,23 @@ let CATEGORY_EMOJI = {
 const ROLE_LABELS = {
   superadmin:  { label: 'Super Admin',   color: '#7c3aed', bg: '#ede9fe' },
   admin:       { label: 'แอดมินระบบ',   color: '#1d4ed8', bg: '#dbeafe' },
-  officer:     { label: 'แอดมินกอง',    color: '#0891b2', bg: '#e0f2fe' },
+  officer:     { label: 'ธุรการกอง',     color: '#0891b2', bg: '#e0f2fe' },
   technician:  { label: 'ปฏิบัติงาน',   color: '#d97706', bg: '#fef3c7' },
   staff:       { label: 'เจ้าหน้าที่',  color: '#0ea5e9', bg: '#e0f2fe' },
   viewer:      { label: 'ผู้บริหาร',    color: '#059669', bg: '#d1fae5' },
   council:     { label: 'สภาเทศบาล',    color: '#f59e0b', bg: '#fff7ed' },
   citizen:     { label: 'ประชาชน',       color: '#374151', bg: '#f3f4f6' },
+}
+
+const ROLE_DESCRIPTIONS = {
+  citizen: 'ใช้บริการประชาชน ไม่มีสิทธิ์จัดการงานภายใน',
+  staff: 'เจ้าหน้าที่ทั่วไป ใช้เฉพาะเมนูงานที่ได้รับมอบหมาย',
+  viewer: 'ผู้บริหาร ดูข้อมูลและภาพรวมเพื่อประกอบการตัดสินใจ',
+  council: 'สมาชิกสภา ดูข้อมูลและงานที่เกี่ยวข้องกับสภาเทศบาล',
+  officer: 'ธุรการประจำกอง จัดการงานและเอกสารของกองที่สังกัด ไม่จัดการข้ามกอง',
+  technician: 'เจ้าหน้าที่ปฏิบัติงานหรือภาคสนาม บันทึกและอัปเดตงานที่รับผิดชอบ',
+  admin: 'ผู้ดูแลระบบของเทศบาล จัดการผู้ใช้ การตั้งค่า และงานทุกกองในเทศบาล',
+  superadmin: 'ผู้พัฒนาระบบ จัดการได้ทุกเทศบาลและทุกโมดูล',
 }
 
 const POSITION_CATEGORIES = [
@@ -222,6 +233,9 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
 
   // บันทึกทุกแท็บ (บัญชี/ส่วนตัว/การแต่งตั้ง) ในหน้ารายละเอียดพร้อมกันครั้งเดียว
   async function saveUserEdits(user, changes) {
+    if (changes.role === 'officer' && !changes.department_id) {
+      return { ok: false, error: 'ธุรการกองต้องระบุกอง/หน่วยงานที่สังกัดก่อนบันทึก' }
+    }
     setSaving(user.id)
     const needsMuni = ['admin', 'staff', 'technician', 'officer', 'viewer', 'council'].includes(changes.role)
     const payload = { ...changes, municipality_id: needsMuni ? (user.municipality_id || tenant?.id) : null }
@@ -422,18 +436,15 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
         <select
           value={filterRole}
           onChange={(e) => { setFilterRole(e.target.value); setPage(0) }}
+          aria-label="กรองตามบทบาทและสิทธิ์ระบบ"
+          title="บทบาทและสิทธิ์ระบบ"
           className="text-xs border border-gray-200 rounded-xl px-2 py-2 text-gray-600 focus:outline-none shrink-0"
         >
-          <option value="">ทุกตำแหน่ง</option>
+          <option value="">บทบาททั้งหมด</option>
           {[
-            { value: 'staff',      label: 'เจ้าหน้าที่' },
-            { value: 'viewer',     label: 'ผู้บริหาร' },
-            { value: 'council',    label: 'สภาเทศบาล' },
-            { value: 'officer',    label: 'แอดมินกอง' },
-            { value: 'technician', label: 'ปฏิบัติงาน' },
-            { value: 'admin',      label: 'แอดมินระบบ' },
-            ...(currentUserRole === 'superadmin' ? [{ value: 'superadmin', label: 'Super Admin' }] : []),
-          ].map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+            'staff', 'viewer', 'council', 'officer', 'technician', 'admin',
+            ...(currentUserRole === 'superadmin' ? ['superadmin'] : []),
+          ].map((role) => <option key={role} value={role}>บทบาท: {ROLE_LABELS[role].label}</option>)}
         </select>
         )}
         {(search || filterRole || filterCategory) && (
@@ -959,18 +970,25 @@ function AppointmentTab({ user, depts, positions, currentUserRole, isEditing, dr
           <select value={draft.role} onChange={(e) => setDraft(current => ({ ...current, role: e.target.value }))}
             className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-700 focus:outline-none bg-white">
             <option value="citizen">ประชาชน — ใช้บริการประชาชนเท่านั้น</option>
-            <option value="staff">เจ้าหน้าที่</option>
-            <option value="viewer">ผู้บริหาร</option>
-            <option value="council">สภาเทศบาล</option>
-            <option value="officer">แอดมินกอง</option>
-            <option value="technician">ปฏิบัติงาน</option>
-            {currentUserRole === 'superadmin' && <option value="admin">แอดมินระบบ</option>}
-            {currentUserRole === 'superadmin' && <option value="superadmin">Super Admin</option>}
+            <option value="staff">เจ้าหน้าที่ — ใช้เมนูงานที่ได้รับมอบหมาย</option>
+            <option value="viewer">ผู้บริหาร — ดูภาพรวมและข้อมูลประกอบการตัดสินใจ</option>
+            <option value="council">สภาเทศบาล — ดูงานที่เกี่ยวข้องกับสภา</option>
+            <option value="officer">ธุรการกอง — จัดการงานของกองที่สังกัด</option>
+            <option value="technician">ปฏิบัติงาน — บันทึกงานที่รับผิดชอบ</option>
+            {currentUserRole === 'superadmin' && <option value="admin">แอดมินระบบ — ดูแลทั้งเทศบาล</option>}
+            {currentUserRole === 'superadmin' && <option value="superadmin">Super Admin — ดูแลทุกเทศบาล</option>}
           </select>
         ) : (
           <p className="text-sm text-gray-800">{ROLE_LABELS[user.role]?.label ?? user.role}</p>
         )}
-        <p className="mt-1 text-xs text-gray-400">ระบบเสนอค่าตามตำแหน่ง แต่ผู้ดูแลตรวจและปรับได้ก่อนบันทึก</p>
+        <p className="mt-1 text-xs leading-5 text-gray-500">
+          {ROLE_DESCRIPTIONS[isEditing ? draft.role : user.role] ?? 'ระบบเสนอค่าตามตำแหน่ง แต่ผู้ดูแลตรวจและปรับได้ก่อนบันทึก'}
+        </p>
+        {isEditing && draft.role === 'officer' && !draft.department_id && (
+          <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+            ต้องเลือกกอง/หน่วยงานก่อนแต่งตั้งเป็นธุรการกอง
+          </p>
+        )}
       </div>
       {user.staff_name && (
         <div className="border-t border-gray-100 pt-4">
