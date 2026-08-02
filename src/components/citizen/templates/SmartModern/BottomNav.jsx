@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useNotifications } from '../../../../contexts/NotificationsContext'
 import { useAuth } from '../../../../contexts/AuthContext'
-import { NAV_CITIZEN, NAV_TECH } from '../navData'
+import { getNavItems } from '../navData'
 
 export default function SmartModernBottomNav() {
   const location = useLocation()
@@ -21,7 +21,7 @@ export default function SmartModernBottomNav() {
 
   if (location.pathname.startsWith('/admin') || location.pathname.startsWith('/staff')) return null
 
-  const NAV_ITEMS = role === 'technician' ? NAV_TECH : NAV_CITIZEN
+  const NAV_ITEMS = getNavItems(role)
 
   return (
     <>

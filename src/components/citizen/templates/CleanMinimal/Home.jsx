@@ -450,35 +450,6 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Role shortcuts (mobile only) */}
-        {isStaff && (
-          <Link to="/staff"
-            className="md:hidden flex items-center gap-3 rounded-2xl px-4 py-3.5 shadow-md mb-4 transition-all hover:shadow-lg hover:-translate-y-0.5"
-            style={{ background: 'linear-gradient(135deg, #0369a1 0%, #0ea5e9 100%)' }}>
-            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-              <Briefcase size={18} className="text-white" />
-            </div>
-            <div className="flex-1">
-              <p className="text-white font-bold text-sm">ระบบเจ้าหน้าที่</p>
-              <p className="text-white/70 text-xs">กล่องงาน เอกสาร อนุมัติ รายงาน</p>
-            </div>
-            <ChevronRight size={18} className="text-white/60" />
-          </Link>
-        )}
-        {isTechnician && (
-          <Link to="/technician"
-            className="md:hidden flex items-center gap-3 rounded-2xl px-4 py-3.5 shadow-md mb-4 transition-all hover:shadow-lg hover:-translate-y-0.5"
-            style={{ background: 'linear-gradient(135deg, #065f46 0%, #10b981 100%)' }}>
-            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-              <Wrench size={18} className="text-white" />
-            </div>
-            <div className="flex-1">
-              <p className="text-white font-bold text-sm">งานซ่อมของฉัน</p>
-              <p className="text-white/70 text-xs">คิวงาน สถานะ อัปเดต</p>
-            </div>
-            <ChevronRight size={18} className="text-white/60" />
-          </Link>
-        )}
         {!role && (
           <div className="md:hidden flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800 mb-4">
             <Info size={16} className="shrink-0 mt-0.5" />

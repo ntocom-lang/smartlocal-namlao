@@ -193,35 +193,6 @@ export default function HomePage() {
     <div className="bg-gray-50">
       <div className="px-3 sm:px-4 lg:px-6 pt-2 lg:pt-3 pb-4 max-w-[1440px] mx-auto">
 
-        {/* Role shortcuts (mobile only) */}
-        {isStaff && (
-          <Link to="/staff"
-            className="lg:hidden flex items-center gap-3 rounded-2xl px-4 py-3 shadow-md mb-2 transition-all hover:shadow-lg hover:-translate-y-0.5"
-            style={{ background: 'linear-gradient(135deg, #0369a1 0%, #0ea5e9 100%)' }}>
-            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-              <Briefcase size={18} className="text-white" />
-            </div>
-            <div className="flex-1">
-              <p className="text-white font-bold text-sm">ระบบเจ้าหน้าที่</p>
-              <p className="text-white/70 text-xs">กล่องงาน เอกสาร อนุมัติ รายงาน</p>
-            </div>
-            <ChevronRight size={18} className="text-white/60" />
-          </Link>
-        )}
-        {isTechnician && (
-          <Link to="/technician"
-            className="lg:hidden flex items-center gap-3 rounded-2xl px-4 py-3 shadow-md mb-2 transition-all hover:shadow-lg hover:-translate-y-0.5"
-            style={{ background: 'linear-gradient(135deg, #065f46 0%, #10b981 100%)' }}>
-            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-              <Wrench size={18} className="text-white" />
-            </div>
-            <div className="flex-1">
-              <p className="text-white font-bold text-sm">งานซ่อมของฉัน</p>
-              <p className="text-white/70 text-xs">คิวงาน สถานะ อัปเดต</p>
-            </div>
-            <ChevronRight size={18} className="text-white/60" />
-          </Link>
-        )}
         {/* Mobile: สภาพอากาศอยู่ก่อนแบนเนอร์ / Desktop: แบนเนอร์ซ้าย ข้อมูลเมืองขวา */}
         <div className="grid lg:grid-cols-12 gap-2 lg:gap-4">
           <div className="order-2 lg:order-1 lg:col-span-8 space-y-2">
