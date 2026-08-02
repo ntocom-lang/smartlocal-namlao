@@ -55,13 +55,13 @@ async function buildContext(tenantId) {
     }
 
     const { data: docs } = await supabase.from('document_requests')
-      .select('id, doc_type, status, created_at')
+      .select('id, document_type, status, created_at')
       .eq('municipality_id', tenantId).eq('user_id', session.user.id)
       .order('created_at', { ascending: false }).limit(5)
     if (docs?.length) {
       lines.push('คำขอเอกสาร/E-Service ของผู้ใช้คนนี้ (ล่าสุด):')
       for (const r of docs) {
-        lines.push(`- #${r.id.slice(0, 8)} ${DOC_TYPE_LABEL[r.doc_type] ?? r.doc_type} — สถานะ: ${STATUS_LABEL[r.status] ?? r.status} (ยื่นเมื่อ ${thDate(r.created_at)})`)
+        lines.push(`- #${r.id.slice(0, 8)} ${DOC_TYPE_LABEL[r.document_type] ?? r.document_type} — สถานะ: ${STATUS_LABEL[r.status] ?? r.status} (ยื่นเมื่อ ${thDate(r.created_at)})`)
       }
     }
   } else {
