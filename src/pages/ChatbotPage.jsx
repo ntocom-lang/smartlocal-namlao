@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Send, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTenant } from '../contexts/TenantContext';
@@ -66,38 +66,38 @@ export default function ChatbotPage() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-blue-50/50 min-h-screen relative" style={{ paddingBottom: '70px' }}>
+    <div className="flex flex-col h-full w-full bg-blue-50/50 relative overflow-hidden flex-1 pb-16 md:pb-2">
       {/* Header */}
-      <div className="bg-blue-600 text-white p-4 shadow-md flex items-center gap-3 relative z-10 rounded-b-3xl">
+      <div className="bg-blue-600 text-white p-3.5 shadow-md flex items-center gap-3 relative z-10 rounded-b-2xl shrink-0">
         <button onClick={() => navigate(-1)} className="p-1 hover:bg-white/20 rounded-full transition-colors">
-          <ArrowLeft size={24} />
+          <ArrowLeft size={22} />
         </button>
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm text-2xl border-2 border-yellow-400">
+          <div className="w-9 h-9 bg-white rounded-full flex items-center justify-center shadow-sm text-xl border-2 border-yellow-400">
             🦖
           </div>
           <div>
-            <h1 className="font-bold text-lg leading-tight">น้องสมายล์ ยินดีให้บริการ</h1>
-            <p className="text-xs text-blue-100">{tenant?.name || 'เทศบาล/อบต.'}</p>
+            <h1 className="font-bold text-base leading-tight">น้องสมายล์ ยินดีให้บริการ</h1>
+            <p className="text-[11px] text-blue-100">{tenant?.name || 'เทศบาล/อบต.'}</p>
           </div>
         </div>
       </div>
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 relative z-0">
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3 relative z-0">
         {/* Background Mascot Watermark */}
         <div className="fixed inset-0 pointer-events-none flex items-center justify-center opacity-5">
-           <span className="text-[200px]">🦖</span>
+          <span className="text-[180px]">🦖</span>
         </div>
 
         {messages.map((msg) => (
           <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'} relative z-10`}>
             {msg.sender === 'bot' && (
-              <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-sm mr-2 shrink-0 border border-yellow-400 text-lg">
+              <div className="w-7 h-7 rounded-full bg-white flex items-center justify-center shadow-sm mr-2 shrink-0 border border-yellow-400 text-base">
                 🦖
               </div>
             )}
-            <div className={`max-w-[75%] p-3 shadow-sm ${msg.sender === 'user' ? 'bg-emerald-500 text-white rounded-2xl rounded-tr-sm' : 'bg-white text-gray-800 rounded-2xl rounded-tl-sm border border-gray-100'}`}>
+            <div className={`max-w-[78%] p-3 shadow-xs ${msg.sender === 'user' ? 'bg-emerald-500 text-white rounded-2xl rounded-tr-xs' : 'bg-white text-gray-800 rounded-2xl rounded-tl-xs border border-gray-100'}`}>
               <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p>
             </div>
           </div>
@@ -105,10 +105,10 @@ export default function ChatbotPage() {
 
         {isLoading && (
           <div className="flex justify-start relative z-10">
-             <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-sm mr-2 shrink-0 border border-yellow-400 text-lg">
-                🦖
-              </div>
-            <div className="bg-white p-4 rounded-2xl rounded-tl-sm border border-gray-100 shadow-sm flex items-center gap-1">
+            <div className="w-7 h-7 rounded-full bg-white flex items-center justify-center shadow-sm mr-2 shrink-0 border border-yellow-400 text-base">
+              🦖
+            </div>
+            <div className="bg-white p-3.5 rounded-2xl rounded-tl-xs border border-gray-100 shadow-xs flex items-center gap-1">
               <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
               <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
               <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
@@ -118,23 +118,23 @@ export default function ChatbotPage() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Area */}
-      <div className="fixed bottom-16 md:bottom-[70px] left-0 right-0 bg-transparent px-4 py-2 z-20">
-        <form onSubmit={handleSend} className="flex gap-2 bg-white p-1.5 rounded-full shadow-lg border border-blue-100 relative max-w-md mx-auto">
+      {/* Input Area anchored right above bottom nav */}
+      <div className="shrink-0 px-3 py-2 z-20">
+        <form onSubmit={handleSend} className="flex gap-2 bg-white p-1.5 rounded-full shadow-lg border border-blue-200 relative max-w-xl mx-auto">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="พิมพ์ข้อความที่นี่..."
-            className="flex-1 bg-transparent px-4 py-2 outline-none text-gray-700 text-sm placeholder-gray-400"
+            className="flex-1 bg-transparent px-4 py-1.5 outline-none text-gray-700 text-sm placeholder-gray-400"
             disabled={isLoading}
           />
           <button
             type="submit"
             disabled={!input.trim() || isLoading}
-            className="w-10 h-10 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 text-white rounded-full flex items-center justify-center transition-colors shadow-sm shrink-0"
+            className="w-9 h-9 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 text-white rounded-full flex items-center justify-center transition-colors shadow-sm shrink-0"
           >
-            <Send size={18} className="ml-1" />
+            <Send size={17} className="ml-0.5" />
           </button>
         </form>
       </div>

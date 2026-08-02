@@ -348,7 +348,7 @@ function AppShell() {
         {isTechnician && <div className="hidden md:block"><Header /></div>}
         <div className="flex flex-1 min-h-0 overflow-hidden">
           {(!isBackOffice || isTechnician) && <CitizenSidebar />}
-          <main className="flex-1 min-w-0 overflow-y-auto">
+          <main className={`flex-1 min-w-0 ${location.pathname === '/search' || location.pathname === '/chatbot' ? 'overflow-hidden flex flex-col h-full' : 'overflow-y-auto'}`}>
           <SuspenseErrorBoundary>
           <Suspense fallback={
             <div className="flex items-center justify-center min-h-[50vh]" role="status" aria-label="กำลังโหลดหน้า">
