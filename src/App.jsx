@@ -359,6 +359,7 @@ function AppShell() {
           <Routes>
           <Route path="/" element={<HomeOrTechRedirect />} />
           <Route path="/search" element={<ChatbotPage />} />
+          <Route path="/chatbot" element={<ChatbotPage />} />
           <Route path="/complaint" element={<ComplaintCategory />} />
           <Route path="/complaint-legacy" element={<OneDataLanding />} />
           <Route path="/business-register" element={
@@ -476,7 +477,7 @@ function AppShell() {
           </Routes>
           </Suspense>
           </SuspenseErrorBoundary>
-          <Footer />
+          {location.pathname !== '/search' && location.pathname !== '/chatbot' && <Footer />}
           </main>
         </div>
         {!hideBottomNav && <BottomNav />}
