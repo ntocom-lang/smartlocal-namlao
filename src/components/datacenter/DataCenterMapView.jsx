@@ -1,7 +1,20 @@
 import { useEffect, useState, useMemo } from 'react'
-import { Loader2, Database, MessageSquareWarning, Construction, Minimize2, Maximize2, X, Route } from 'lucide-react'
+import { Loader2, Database, MessageSquareWarning, Construction, Minimize2, Maximize2, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import GoogleMapCanvas from '../common/GoogleMapCanvas'
+
+function TrafficLightIcon({ size = 20, className = "" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <rect x="8" y="2.5" width="8" height="19" rx="2" fill="none" stroke="currentColor" strokeWidth="2" />
+      <circle cx="12" cy="6" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="18" r="1.5" fill="currentColor" stroke="none" />
+      <path d="M5 4.5h3M5 12h3M5 19.5h3" strokeWidth="2.2" strokeLinecap="round" />
+      <path d="M16 4.5h3M16 12h3M16 19.5h3" strokeWidth="2.2" strokeLinecap="round" />
+    </svg>
+  )
+}
 
 // แผนที่รวมพิกัดชุดเดียวกัน ใช้ทั้งฝั่งเจ้าหน้าที่และฝั่งประชาชน ไม่ต้องแก้ 2 ที่
 
@@ -403,11 +416,11 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
           {entries.some(e => e.route_points?.length >= 2) && (
             <button type="button" title={showRoutes ? 'ซ่อนเส้นทางถนนทั้งหมด' : 'แสดงเส้นทางถนนทั้งหมด'}
               onClick={() => setShowRoutes(v => !v)}
-              className="absolute right-3 top-14 z-20 w-10 h-10 rounded-full shadow-md border flex items-center justify-center transition-colors"
+              className="absolute right-3 top-14 z-20 w-10 h-10 rounded-full shadow-md border flex items-center justify-center transition-all active:scale-95"
               style={showRoutes
-                ? { backgroundColor: '#1e88c7', borderColor: '#1e88c7', color: '#fff' }
-                : { backgroundColor: '#fff', borderColor: '#e5e7eb', color: '#9ca3af' }}>
-              <Route size={17} />
+                ? { backgroundColor: '#1e88c7', borderColor: '#1e88c7', color: '#ffffff' }
+                : { backgroundColor: '#ffffff', borderColor: '#e5e7eb', color: '#1e88c7' }}>
+              <TrafficLightIcon size={20} />
             </button>
           )}
 
