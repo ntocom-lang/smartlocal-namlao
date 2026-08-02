@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 
-const TELEGRAM_NOTIFICATIONS_DISABLED = false
+// ปิดชั่วคราวจากจุดกลาง: ทุก workflow ยังบันทึกข้อมูลตามปกติ แต่ไม่เรียก Edge Function
+const TELEGRAM_NOTIFICATIONS_DISABLED = true
 
 export function notifyTelegram(groupId, message) {
   if (TELEGRAM_NOTIFICATIONS_DISABLED) return
