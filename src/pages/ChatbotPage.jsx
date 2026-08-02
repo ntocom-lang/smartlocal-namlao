@@ -67,25 +67,25 @@ export default function ChatbotPage() {
   return (
     <div className="flex flex-col h-full w-full bg-blue-50/50 relative overflow-hidden flex-1 pb-16 md:pb-2">
       {/* Header */}
-      <div className="bg-blue-600 text-white p-3.5 shadow-md flex items-center gap-3 relative z-10 rounded-b-2xl shrink-0">
-        <button onClick={() => navigate(-1)} className="p-1 hover:bg-white/20 rounded-full transition-colors">
+      <div className="bg-blue-600 text-white p-3.5 shadow-md flex items-center gap-3 relative z-10 rounded-b-2xl shrink-0 overflow-hidden">
+        <button onClick={() => navigate(-1)} className="p-1 hover:bg-white/20 rounded-full transition-colors relative z-10">
           <ArrowLeft size={22} />
         </button>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3.5 relative z-10">
           <img
             src="/images/nong-jaidee.png"
             alt="น้ำเลาใจดี"
-            className="h-11 w-auto object-contain drop-shadow-[0_4px_8px_rgba(0,0,0,0.3)] shrink-0"
+            className="h-16 md:h-20 w-auto object-contain drop-shadow-[0_6px_12px_rgba(0,0,0,0.35)] shrink-0 -my-2.5 hover:scale-105 transition-transform"
             onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }}
           />
-          <div className="w-9 h-9 bg-white/20 rounded-full hidden items-center justify-center text-xl">
+          <div className="w-10 h-10 bg-white/20 rounded-full hidden items-center justify-center text-2xl">
             🤖
           </div>
           <div>
-            <h1 className="font-bold text-base leading-tight flex items-center gap-1.5">
+            <h1 className="font-bold text-lg md:text-xl leading-tight flex items-center gap-1.5">
               น้ำเลาใจดี ยินดีให้บริการ
             </h1>
-            <p className="text-[11px] text-blue-100">{tenant?.name || 'เทศบาล/อบต.'}</p>
+            <p className="text-xs text-blue-100">{tenant?.name || 'เทศบาล/อบต.'}</p>
           </div>
         </div>
       </div>
@@ -93,8 +93,8 @@ export default function ChatbotPage() {
       {/* Messages Area */}
       <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3 relative z-0">
         {/* Background Mascot Watermark */}
-        <div className="fixed inset-0 pointer-events-none flex items-center justify-center opacity-[0.08]">
-          <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="w-64 h-64 object-contain pointer-events-none drop-shadow-2xl" />
+        <div className="fixed inset-0 pointer-events-none flex items-center justify-center opacity-10">
+          <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="w-80 md:w-96 h-80 md:h-96 object-contain pointer-events-none drop-shadow-2xl" />
         </div>
 
         {messages.map((msg) => (
@@ -103,12 +103,12 @@ export default function ChatbotPage() {
               <img
                 src="/images/nong-jaidee.png"
                 alt="น้ำเลาใจดี"
-                className="h-9 w-auto object-contain mr-1.5 shrink-0 drop-shadow-sm mb-0.5"
+                className="h-12 w-auto object-contain mr-2 shrink-0 drop-shadow-md mb-0.5"
                 onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }}
               />
             )}
             {msg.sender === 'bot' && (
-              <div className="w-7 h-7 rounded-full bg-white hidden items-center justify-center shadow-xs mr-2 shrink-0 text-base">
+              <div className="w-8 h-8 rounded-full bg-white hidden items-center justify-center shadow-xs mr-2 shrink-0 text-lg">
                 🤖
               </div>
             )}
@@ -123,10 +123,10 @@ export default function ChatbotPage() {
             <img
               src="/images/nong-jaidee.png"
               alt="น้ำเลาใจดี"
-              className="h-9 w-auto object-contain mr-1.5 shrink-0 drop-shadow-sm mb-0.5"
+              className="h-12 w-auto object-contain mr-2 shrink-0 drop-shadow-md mb-0.5"
               onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }}
             />
-            <div className="w-7 h-7 rounded-full bg-white hidden items-center justify-center shadow-xs mr-2 shrink-0 text-base">
+            <div className="w-8 h-8 rounded-full bg-white hidden items-center justify-center shadow-xs mr-2 shrink-0 text-lg">
               🤖
             </div>
             <div className="bg-white p-3.5 rounded-2xl rounded-tl-xs border border-gray-100 shadow-xs flex items-center gap-1">

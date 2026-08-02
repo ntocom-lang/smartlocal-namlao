@@ -45,16 +45,16 @@ export default function AISearchCard() {
   return (
     <div className="rounded-2xl shadow-lg border border-gray-100 overflow-hidden bg-white">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3"
+      <div className="flex items-center gap-3.5 px-4 py-3.5 overflow-hidden"
            style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, var(--color-primary-dark, #1e40af) 100%)' }}>
-        <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-11 w-auto object-contain drop-shadow-md shrink-0" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }} />
+        <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-14 w-auto object-contain drop-shadow-md shrink-0 -my-2" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }} />
         <div className="w-9 h-9 rounded-full bg-white/15 hidden items-center justify-center text-xl shrink-0">
           🤖
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
-            <p className="text-white font-bold text-sm">ถามน้ำเลาใจดี AI</p>
-            <Sparkles size={12} className="text-yellow-300" />
+            <p className="text-white font-bold text-base">ถามน้ำเลาใจดี AI</p>
+            <Sparkles size={13} className="text-yellow-300 animate-pulse" />
           </div>
           <p className="text-white/60 text-[10px] truncate">ผู้ช่วยอัจฉริยะ · ตอบทันที 24 ชม.</p>
         </div>
@@ -113,8 +113,8 @@ export default function AISearchCard() {
                 <span>น้ำเลาใจดีกำลังคิด...</span>
               </div>
             ) : (
-              <div className="flex gap-2 items-start">
-                <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-8 w-auto object-contain shrink-0 drop-shadow-xs" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'inline' }} />
+              <div className="flex gap-2.5 items-start">
+                <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-10 w-auto object-contain shrink-0 drop-shadow-sm" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'inline' }} />
                 <span className="text-lg shrink-0 hidden">🤖</span>
                 <p className="text-[13px] text-gray-700 leading-relaxed whitespace-pre-wrap">{answer}</p>
               </div>

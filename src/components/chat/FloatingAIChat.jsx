@@ -53,12 +53,11 @@ export default function FloatingAIChat() {
              style={{ height: 'min(480px, calc(100dvh - 160px))' }}>
 
           {/* header */}
-          <div className="flex items-center gap-3 px-4 py-3 text-white shrink-0"
-               style={{ background: 'linear-gradient(135deg, var(--color-primary-dark, #1e40af) 0%, var(--color-primary, #2563eb) 100%)' }}>
-            <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-10 w-auto object-contain drop-shadow-md shrink-0" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }} />
+          <div className="flex items-center gap-3 px-4 py-3 text-white shrink-0 overflow-hidden">
+            <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-14 w-auto object-contain drop-shadow-md shrink-0 -my-2" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }} />
             <div className="w-9 h-9 rounded-full bg-white/20 hidden items-center justify-center text-xl shrink-0">🤖</div>
             <div className="flex-1 min-w-0">
-              <p className="font-bold text-sm leading-tight">น้ำเลาใจดี AI</p>
+              <p className="font-bold text-base leading-tight">น้ำเลาใจดี AI</p>
               <p className="text-[10px] text-white/70 truncate">{tenant?.name || 'ผู้ช่วยอัจฉริยะ'}</p>
             </div>
             <button onClick={() => setOpen(false)} className="p-1.5 rounded-xl hover:bg-white/20 transition-colors">
@@ -71,7 +70,7 @@ export default function FloatingAIChat() {
             {messages.map(msg => (
               <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'} items-end`}>
                 {msg.sender === 'bot' && (
-                  <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-7 w-auto object-contain mr-1 shrink-0 drop-shadow-xs mb-0.5" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }} />
+                  <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-10 w-auto object-contain mr-1.5 shrink-0 drop-shadow-sm mb-0.5" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }} />
                 )}
                 {msg.sender === 'bot' && (
                   <div className="w-6 h-6 rounded-full bg-white hidden items-center justify-center shadow-xs mr-1.5 shrink-0 text-sm">🤖</div>
@@ -87,7 +86,7 @@ export default function FloatingAIChat() {
             ))}
             {loading && (
               <div className="flex justify-start items-end">
-                <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-7 w-auto object-contain mr-1 shrink-0 drop-shadow-xs mb-0.5" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }} />
+                <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-10 w-auto object-contain mr-1.5 shrink-0 drop-shadow-sm mb-0.5" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }} />
                 <div className="w-6 h-6 rounded-full bg-white hidden items-center justify-center shadow-xs mr-1.5 shrink-0 text-sm">🤖</div>
                 <div className="bg-white px-4 py-3 rounded-2xl rounded-tl-sm border border-gray-100 shadow-sm flex items-center gap-1">
                   <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
@@ -122,7 +121,7 @@ export default function FloatingAIChat() {
       {/* ── FAB Button ── */}
       <button
         onClick={() => setOpen(o => !o)}
-        className={`fixed z-[61] bottom-[76px] md:bottom-6 left-3 md:left-6 w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-all duration-300 active:scale-90 group ${
+        className={`fixed z-[61] bottom-[76px] md:bottom-6 left-3 md:left-6 w-16 h-16 rounded-full shadow-2xl flex items-center justify-center transition-all duration-300 active:scale-90 group ${
           open ? 'rotate-0' : 'hover:scale-110'
         }`}
         style={{
@@ -133,10 +132,10 @@ export default function FloatingAIChat() {
         aria-label={open ? 'ปิดแชท' : 'เปิดแชท AI'}
       >
         {open
-          ? <X size={22} className="text-white" />
+          ? <X size={24} className="text-white" />
           : (
             <>
-              <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-11 w-auto object-contain drop-shadow-md" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'inline' }} />
+              <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-14 w-auto object-contain drop-shadow-lg" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'inline' }} />
               <span className="text-2xl hidden">🤖</span>
               {/* pulse ring */}
               <span className="absolute inset-0 rounded-full animate-ping opacity-20"
