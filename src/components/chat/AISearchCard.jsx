@@ -45,22 +45,22 @@ export default function AISearchCard() {
   return (
     <div className="rounded-2xl shadow-lg border border-gray-100 overflow-hidden bg-white">
       {/* Header */}
-      <div className="flex items-center gap-3.5 px-4 py-3.5 overflow-hidden"
+      <div className="flex items-center gap-3.5 px-4 py-3.5 overflow-visible"
            style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, var(--color-primary-dark, #1e40af) 100%)' }}>
-        <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-14 w-auto object-contain drop-shadow-md shrink-0 -my-2" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }} />
-        <div className="w-9 h-9 rounded-full bg-white/15 hidden items-center justify-center text-xl shrink-0">
+        <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-18 w-auto object-contain drop-shadow-lg shrink-0 -my-4" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }} />
+        <div className="w-10 h-10 rounded-full bg-white/15 hidden items-center justify-center text-2xl shrink-0">
           🤖
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
-            <p className="text-white font-bold text-base">ถามน้ำเลาใจดี AI</p>
-            <Sparkles size={13} className="text-yellow-300 animate-pulse" />
+            <p className="text-white font-bold text-lg">ถามน้ำเลาใจดี AI</p>
+            <Sparkles size={14} className="text-yellow-300 animate-pulse" />
           </div>
-          <p className="text-white/60 text-[10px] truncate">ผู้ช่วยอัจฉริยะ · ตอบทันที 24 ชม.</p>
+          <p className="text-white/60 text-xs truncate">ผู้ช่วยอัจฉริยะ · ตอบทันที 24 ชม.</p>
         </div>
         <button onClick={() => navigate('/search')}
-          className="text-[12px] text-white/70 hover:text-white flex items-center gap-0.5 shrink-0 transition-colors">
-          เต็มจอ <ChevronRight size={11} />
+          className="text-xs text-white/70 hover:text-white flex items-center gap-0.5 shrink-0 transition-colors">
+          เต็มจอ <ChevronRight size={12} />
         </button>
       </div>
 
@@ -102,7 +102,7 @@ export default function AISearchCard() {
         {/* Answer */}
         {(answer || loading) && (
           <div ref={answerRef}
-            className="bg-gradient-to-br from-blue-50 to-sky-50 rounded-xl p-3 border border-blue-100 transition-all">
+            className="bg-gradient-to-br from-blue-50 to-sky-50 rounded-xl p-3.5 border border-blue-100 transition-all">
             {loading ? (
               <div className="flex items-center gap-2 text-sm text-gray-400">
                 <div className="flex gap-1">
@@ -113,10 +113,10 @@ export default function AISearchCard() {
                 <span>น้ำเลาใจดีกำลังคิด...</span>
               </div>
             ) : (
-              <div className="flex gap-2.5 items-start">
-                <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-10 w-auto object-contain shrink-0 drop-shadow-sm" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'inline' }} />
+              <div className="flex gap-3 items-start">
+                <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-12 w-auto object-contain shrink-0 drop-shadow-md" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'inline' }} />
                 <span className="text-lg shrink-0 hidden">🤖</span>
-                <p className="text-[13px] text-gray-700 leading-relaxed whitespace-pre-wrap">{answer}</p>
+                <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{answer}</p>
               </div>
             )}
           </div>

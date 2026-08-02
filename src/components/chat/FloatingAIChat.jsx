@@ -53,12 +53,12 @@ export default function FloatingAIChat() {
              style={{ height: 'min(480px, calc(100dvh - 160px))' }}>
 
           {/* header */}
-          <div className="flex items-center gap-3 px-4 py-3 text-white shrink-0 overflow-hidden">
-            <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-14 w-auto object-contain drop-shadow-md shrink-0 -my-2" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }} />
-            <div className="w-9 h-9 rounded-full bg-white/20 hidden items-center justify-center text-xl shrink-0">🤖</div>
+          <div className="flex items-center gap-3 px-4 py-3 text-white shrink-0 overflow-visible">
+            <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-18 w-auto object-contain drop-shadow-lg shrink-0 -my-4" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }} />
+            <div className="w-10 h-10 rounded-full bg-white/20 hidden items-center justify-center text-2xl shrink-0">🤖</div>
             <div className="flex-1 min-w-0">
-              <p className="font-bold text-base leading-tight">น้ำเลาใจดี AI</p>
-              <p className="text-[10px] text-white/70 truncate">{tenant?.name || 'ผู้ช่วยอัจฉริยะ'}</p>
+              <p className="font-bold text-lg leading-tight">น้ำเลาใจดี AI</p>
+              <p className="text-xs text-white/70 truncate">{tenant?.name || 'ผู้ช่วยอัจฉริยะ'}</p>
             </div>
             <button onClick={() => setOpen(false)} className="p-1.5 rounded-xl hover:bg-white/20 transition-colors">
               <Minimize2 size={16} />
@@ -70,12 +70,12 @@ export default function FloatingAIChat() {
             {messages.map(msg => (
               <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'} items-end`}>
                 {msg.sender === 'bot' && (
-                  <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-10 w-auto object-contain mr-1.5 shrink-0 drop-shadow-sm mb-0.5" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }} />
+                  <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-12 w-auto object-contain mr-2 shrink-0 drop-shadow-md mb-0.5" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }} />
                 )}
                 {msg.sender === 'bot' && (
-                  <div className="w-6 h-6 rounded-full bg-white hidden items-center justify-center shadow-xs mr-1.5 shrink-0 text-sm">🤖</div>
+                  <div className="w-7 h-7 rounded-full bg-white hidden items-center justify-center shadow-xs mr-1.5 shrink-0 text-base">🤖</div>
                 )}
-                <div className={`max-w-[80%] px-3 py-2 shadow-sm ${
+                <div className={`max-w-[80%] px-3.5 py-2.5 shadow-sm ${
                   msg.sender === 'user'
                     ? 'bg-emerald-500 text-white rounded-2xl rounded-tr-sm'
                     : 'bg-white text-gray-700 rounded-2xl rounded-tl-sm border border-gray-100'
@@ -86,8 +86,8 @@ export default function FloatingAIChat() {
             ))}
             {loading && (
               <div className="flex justify-start items-end">
-                <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-10 w-auto object-contain mr-1.5 shrink-0 drop-shadow-sm mb-0.5" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }} />
-                <div className="w-6 h-6 rounded-full bg-white hidden items-center justify-center shadow-xs mr-1.5 shrink-0 text-sm">🤖</div>
+                <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-12 w-auto object-contain mr-2 shrink-0 drop-shadow-md mb-0.5" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }} />
+                <div className="w-7 h-7 rounded-full bg-white hidden items-center justify-center shadow-xs mr-1.5 shrink-0 text-base">🤖</div>
                 <div className="bg-white px-4 py-3 rounded-2xl rounded-tl-sm border border-gray-100 shadow-sm flex items-center gap-1">
                   <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
                   <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
@@ -121,7 +121,7 @@ export default function FloatingAIChat() {
       {/* ── FAB Button ── */}
       <button
         onClick={() => setOpen(o => !o)}
-        className={`fixed z-[61] bottom-[76px] md:bottom-6 left-3 md:left-6 w-16 h-16 rounded-full shadow-2xl flex items-center justify-center transition-all duration-300 active:scale-90 group ${
+        className={`fixed z-[61] bottom-[76px] md:bottom-6 left-3 md:left-6 w-20 h-20 rounded-full shadow-2xl flex items-center justify-center transition-all duration-300 active:scale-90 group ${
           open ? 'rotate-0' : 'hover:scale-110'
         }`}
         style={{
@@ -132,11 +132,11 @@ export default function FloatingAIChat() {
         aria-label={open ? 'ปิดแชท' : 'เปิดแชท AI'}
       >
         {open
-          ? <X size={24} className="text-white" />
+          ? <X size={26} className="text-white" />
           : (
             <>
-              <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-14 w-auto object-contain drop-shadow-lg" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'inline' }} />
-              <span className="text-2xl hidden">🤖</span>
+              <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-18 w-auto object-contain drop-shadow-xl hover:scale-110 transition-transform" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'inline' }} />
+              <span className="text-3xl hidden">🤖</span>
               {/* pulse ring */}
               <span className="absolute inset-0 rounded-full animate-ping opacity-20"
                 style={{ backgroundColor: 'var(--color-primary, #2563eb)' }} />
