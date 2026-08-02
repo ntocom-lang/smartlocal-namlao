@@ -73,7 +73,10 @@ function ImageStrip({ images, active, onSelect }) {
 }
 
 // ─── Detail Sheet ────────────────────────────────────────────────────────────
-function DetailSheet({ reg, onClose, onApprove, onReject, onDelete, acting, departments, onDepartmentChange }) {
+function DetailSheet({
+  reg, onClose, onApprove, onReject, onDelete, acting, departments, onDepartmentChange,
+  canManage, canDelete, canAssignAnyDepartment, canClaimDepartment, myDepartmentId,
+}) {
   const [imgIdx, setImgIdx] = useState(0)
   const [savingDept, setSavingDept] = useState(false)
   const [form, setForm] = useState({
@@ -116,11 +119,19 @@ function DetailSheet({ reg, onClose, onApprove, onReject, onDelete, acting, depa
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
 
-          {/* กองที่รับผิดชอบ — ตั้งได้ทุกสถานะ ใช้กรอง "งานของกองฉัน" ในรายการ ไม่ต้องรออนุมัติก่อนถึงจะตั้งได้ */}
+          {!canManage && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-500">
+              {canClaimDepartment
+                ? 'รายการนี้ยังไม่มีกองรับผิดชอบ กดรับเป็นงานกองฉันก่อนดำเนินการ'
+                : 'ข้อมูลของกองอื่น แสดงได้อย่างเดียว'}
+            </div>
+          )}
+
+          {/* Admin ย้ายกองได้; ธุรการกองรับได้เฉพาะรายการที่ยังไม่มีกอง */}
           {departments?.length > 0 && (
             <div>
               <label className="text-xs text-gray-500 mb-1 block">กองที่รับผิดชอบ (สำหรับกรองรายการ)</label>
-              <div className="flex items-center gap-2">
+              {canAssignAnyDepartment ? <div className="flex items-center gap-2">
                 <select defaultValue={reg.department_id ?? ''} disabled={savingDept}
                   onChange={async (e) => {
                     setSavingDept(true)
@@ -132,7 +143,23 @@ function DetailSheet({ reg, onClose, onApprove, onReject, onDelete, acting, depa
                   {departments.map(d => <option key={d.id} value={d.id}>{d.short_name || d.name}</option>)}
                 </select>
                 {savingDept && <Loader2 size={14} className="animate-spin text-gray-400 shrink-0" />}
-              </div>
+              </div> : canClaimDepartment ? (
+                <button type="button" disabled={savingDept}
+                  onClick={async () => {
+                    setSavingDept(true)
+                    await onDepartmentChange(reg.id, myDepartmentId)
+                    setSavingDept(false)
+                  }}
+                  className="w-full rounded-xl bg-cyan-600 px-3 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
+                  {savingDept ? 'กำลังรับงาน...' : 'รับเป็นงานกองฉัน'}
+                </button>
+              ) : (
+                <p className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-700">
+                  {departments.find(department => department.id === reg.department_id)?.short_name
+                    || departments.find(department => department.id === reg.department_id)?.name
+                    || 'ยังไม่ระบุกอง'}
+                </p>
+              )}
             </div>
           )}
 
@@ -300,7 +327,11 @@ function DetailSheet({ reg, onClose, onApprove, onReject, onDelete, acting, depa
 
         {/* Footer actions */}
         <div className="px-4 pb-6 pt-3 border-t border-gray-100 space-y-2 shrink-0">
-          {reg.status === 'pending' ? (
+          {!canManage ? (
+            <p className="py-2 text-center text-xs font-medium text-gray-400">
+              ไม่มีสิทธิ์ดำเนินการกับรายการนี้
+            </p>
+          ) : reg.status === 'pending' ? (
             !confirmReject && !confirmDelete ? (
               <>
                 <button onClick={() => onApprove(form)} disabled={acting || !form.name.trim()}
@@ -313,10 +344,12 @@ function DetailSheet({ reg, onClose, onApprove, onReject, onDelete, acting, depa
                   className="w-full py-3 rounded-2xl font-semibold text-red-500 border border-red-200 text-sm active:scale-95 transition-transform">
                   ปฏิเสธคำขอ
                 </button>
-                <button onClick={() => setConfirmDelete(true)} disabled={acting}
-                  className="w-full py-2 rounded-xl text-xs font-semibold text-red-500 hover:text-red-700 transition-colors flex items-center justify-center gap-1">
-                  🗑️ ลบคำขอลงทะเบียน
-                </button>
+                {canDelete && (
+                  <button onClick={() => setConfirmDelete(true)} disabled={acting}
+                    className="w-full py-2 rounded-xl text-xs font-semibold text-red-500 hover:text-red-700 transition-colors flex items-center justify-center gap-1">
+                    🗑️ ลบคำขอลงทะเบียน
+                  </button>
+                )}
               </>
             ) : confirmReject ? (
               <div className="bg-red-50 rounded-2xl p-4 space-y-3">
@@ -336,7 +369,7 @@ function DetailSheet({ reg, onClose, onApprove, onReject, onDelete, acting, depa
               </div>
             ) : null
           ) : (
-            !confirmDelete && (
+            canDelete && !confirmDelete && (
               <button onClick={() => setConfirmDelete(true)} disabled={acting}
                 className="w-full py-3.5 rounded-2xl font-semibold text-red-500 border border-red-200 hover:bg-red-50 text-sm active:scale-95 transition-transform flex items-center justify-center gap-2">
                 🗑️ ลบคำขอนี้
@@ -344,7 +377,7 @@ function DetailSheet({ reg, onClose, onApprove, onReject, onDelete, acting, depa
             )
           )}
 
-          {confirmDelete && (
+          {canDelete && confirmDelete && (
             <div className="bg-red-50 rounded-2xl p-4 space-y-3">
               <p className="text-sm font-semibold text-red-700 text-center">ยืนยันการลบคำขอนี้?</p>
               <p className="text-xs text-red-500 text-center">ข้อมูลคำขอนี้จะถูกลบออกจากระบบอย่างถาวรและไม่สามารถกู้คืนได้</p>
@@ -380,6 +413,15 @@ export default function BusinessRegistrationAdmin({ tenant, currentUserRole, myD
   const [showAllDepts, setShowAllDepts] = useState(false)
   const canScopeByDept = ['officer', 'staff'].includes(currentUserRole) && !!myDepartmentId
   const scopingByDept = canScopeByDept && !showAllDepts
+  const isMunicipalityAdmin = currentUserRole === 'admin' || currentUserRole === 'superadmin'
+  const canManageRegistration = (registration) => (
+    isMunicipalityAdmin
+    || (
+      currentUserRole === 'officer'
+      && !!myDepartmentId
+      && registration?.department_id === myDepartmentId
+    )
+  )
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -396,6 +438,19 @@ export default function BusinessRegistrationAdmin({ tenant, currentUserRole, myD
   }, [tenant?.id, scopingByDept, myDepartmentId])
 
   async function handleDepartmentChange(regId, departmentId) {
+    const registration = regs.find(item => item.id === regId)
+    if (currentUserRole === 'officer') {
+      const canClaim = !!myDepartmentId
+        && registration?.department_id == null
+        && departmentId === myDepartmentId
+      if (!canClaim) {
+        alert('ธุรการกองรับงานได้เฉพาะรายการที่ยังไม่มีกอง และรับเข้ากองตนเองเท่านั้น')
+        return
+      }
+    } else if (!isMunicipalityAdmin) {
+      alert('บัญชีนี้ไม่มีสิทธิ์เปลี่ยนกองที่รับผิดชอบ')
+      return
+    }
     const { error } = await supabase.from('business_registrations').update({ department_id: departmentId }).eq('id', regId)
     if (error) { alert('บันทึกกองไม่สำเร็จ: ' + error.message); return }
     setRegs(prev => prev.map(r => r.id === regId ? { ...r, department_id: departmentId } : r))
@@ -403,7 +458,7 @@ export default function BusinessRegistrationAdmin({ tenant, currentUserRole, myD
   }
 
   async function handleApprove(form) {
-    if (!selected || acting) return
+    if (!selected || acting || !canManageRegistration(selected)) return
     setActing(true)
     const images = selected.images ?? []
     const [image_url, ...gallery] = images
@@ -448,7 +503,7 @@ export default function BusinessRegistrationAdmin({ tenant, currentUserRole, myD
   }
 
   async function handleReject() {
-    if (!selected || acting) return
+    if (!selected || acting || !canManageRegistration(selected)) return
     setActing(true)
     const { data: { session } } = await supabase.auth.getSession()
     await supabase.from('business_registrations').update({
@@ -462,7 +517,7 @@ export default function BusinessRegistrationAdmin({ tenant, currentUserRole, myD
   }
 
   async function handleDelete() {
-    if (!selected || acting) return
+    if (!selected || acting || !isMunicipalityAdmin) return
     setActing(true)
     const { error } = await supabase.from('business_registrations').delete().eq('id', selected.id)
     if (error) {
@@ -577,6 +632,11 @@ export default function BusinessRegistrationAdmin({ tenant, currentUserRole, myD
           acting={acting}
           departments={departments}
           onDepartmentChange={handleDepartmentChange}
+          canManage={canManageRegistration(selected)}
+          canDelete={isMunicipalityAdmin}
+          canAssignAnyDepartment={isMunicipalityAdmin}
+          canClaimDepartment={currentUserRole === 'officer' && !!myDepartmentId && selected.department_id == null}
+          myDepartmentId={myDepartmentId}
         />
       )}
     </div>

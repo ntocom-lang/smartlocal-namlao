@@ -31,6 +31,7 @@ export default function InfraWorkAdmin({ tenant, currentUserRole, myDepartmentId
   // งานโครงสร้างพื้นฐานทุกหมวด (ถนน/ระบายน้ำ/ไฟฟ้า/ฯลฯ) เป็นงานสายกองช่างล้วน — ไม่ต้องให้เลือกกองตอนบันทึก
   // แค่ resolve id กองช่างของเทศบาลนี้ไว้ใช้ backfill department_id อัตโนมัติทุกรายการใหม่
   const [engineeringDeptId, setEngineeringDeptId] = useState(null)
+  const [currentUserId, setCurrentUserId] = useState(null)
   const [showAllDepts, setShowAllDepts] = useState(false)
   const canScopeByDept = ['officer', 'staff'].includes(currentUserRole) && !!myDepartmentId
   const scopingByDept = canScopeByDept && !showAllDepts
@@ -62,6 +63,24 @@ export default function InfraWorkAdmin({ tenant, currentUserRole, myDepartmentId
 
   const isReadOnly = currentUserRole === 'viewer' || currentUserRole === 'council'
   const canDelete  = currentUserRole === 'admin' || currentUserRole === 'superadmin'
+  const isMunicipalityAdmin = currentUserRole === 'admin' || currentUserRole === 'superadmin'
+  const belongsToEngineering = !!myDepartmentId && !!engineeringDeptId && myDepartmentId === engineeringDeptId
+  const canCreate = !isReadOnly && (
+    isMunicipalityAdmin
+    || (['officer', 'staff', 'technician'].includes(currentUserRole) && belongsToEngineering)
+  )
+  const canManageWork = (work) => {
+    if (!work || isReadOnly) return false
+    if (isMunicipalityAdmin) return true
+    if (currentUserRole === 'officer') {
+      return !!myDepartmentId && work.department_id === myDepartmentId
+    }
+    return ['staff', 'technician'].includes(currentUserRole) && work.created_by === currentUserId
+  }
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setCurrentUserId(data.session?.user?.id ?? null))
+  }, [])
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -112,6 +131,7 @@ export default function InfraWorkAdmin({ tenant, currentUserRole, myDepartmentId
   }
 
   async function submitWork(workType, form, geo, photos, setSubmitting, setError, resetForm, resetGeo, resetPhotos, closeForm) {
+    if (!canCreate) { setError('บัญชีนี้ไม่มีสิทธิ์บันทึกงานของกองช่าง'); return }
     if (!form.title.trim()) { setError('กรุณาระบุชื่องาน / โครงการ'); return }
     if (!geo.lat)           { setError('กรุณาเลือกพิกัดตำแหน่งบนแผนที่ก่อนบันทึก'); return }
     setError(null)
@@ -147,6 +167,7 @@ export default function InfraWorkAdmin({ tenant, currentUserRole, myDepartmentId
 
   // ─── Edit existing record (ธุรการเพิ่มรายละเอียด) ────────────────────────
   function openEdit(w) {
+    if (!canManageWork(w)) return
     setEditWork(w)
     setEditForm({
       title:         w.title,
@@ -359,16 +380,22 @@ export default function InfraWorkAdmin({ tenant, currentUserRole, myDepartmentId
         </button>
       </div>
 
+      {currentUserRole === 'officer' && !belongsToEngineering && (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+          หน้านี้เป็นงานกองช่าง บัญชีธุรการกองอื่นสามารถดูข้อมูลได้ แต่เพิ่มหรือแก้ไขไม่ได้
+        </div>
+      )}
+
       {/* รายการที่รอเพิ่มรายละเอียด (alert) */}
-      {!isReadOnly && infraWorks.some(needsDetail) && (
+      {infraWorks.some(w => canManageWork(w) && needsDetail(w)) && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-800">
-          <span className="font-bold">⚠️ มี {infraWorks.filter(needsDetail).length} รายการ</span> ที่ช่างปักหมุดไว้แต่ยังไม่มีรายละเอียด
+          <span className="font-bold">⚠️ มี {infraWorks.filter(w => canManageWork(w) && needsDetail(w)).length} รายการ</span> ที่ช่างปักหมุดไว้แต่ยังไม่มีรายละเอียด
           — กดปุ่ม ✏️ เพื่อเพิ่มงบประมาณ รายละเอียด และรูปภาพ
         </div>
       )}
 
       {/* New record form — สำหรับธุรการที่ต้องการบันทึกเองทั้งหมด */}
-      {!isReadOnly && (
+      {canCreate && (
         <>
           <div className="flex bg-gray-100 rounded-2xl p-1">
             <button
@@ -695,7 +722,7 @@ export default function InfraWorkAdmin({ tenant, currentUserRole, myDepartmentId
                     )}
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
-                    {!isReadOnly && (
+                    {canManageWork(w) && (
                       <button onClick={() => openEdit(w)}
                         className="p-1.5 rounded-lg hover:bg-violet-50 text-gray-400 hover:text-violet-600 transition-colors">
                         <Pencil size={13} />

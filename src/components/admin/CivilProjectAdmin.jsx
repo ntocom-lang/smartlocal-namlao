@@ -79,6 +79,7 @@ const DEPARTMENTS = [
 // เดิม department เป็นข้อความอิสระคนละชุดกับ departments.code จริง (ดู 159_add_department_id_...) — map ให้ตรงกัน
 // ตอนบันทึก เพื่อให้ตัวกรอง "งานกองฉัน" ใช้ department_id (FK จริง) ได้ถูกต้อง ไม่ต้องเดา 'other' จึงไม่ map (NULL)
 const DEPARTMENT_CODE_TO_DB_CODE = { civil: 'engineering', sp: 'general', edu: 'education', finance: 'finance' }
+const DB_CODE_TO_DEPARTMENT_CODE = { engineering: 'civil', general: 'sp', education: 'edu', finance: 'finance' }
 
 const EMPTY_FORM = {
   project_no: '', fiscal_year: String(THIS_YEAR), title: '', description: '',
@@ -254,6 +255,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
   const [filterType, setFilterType]     = useState('all')
   const [searchQuery, setSearchQuery]   = useState('')
   const [departments, setDepartments]   = useState([]) // จาก ตาราง departments จริง ใช้ resolve department_id + ตัวกรอง
+  const [currentUserId, setCurrentUserId] = useState(null)
   // ค่าเริ่มต้น: officer/staff ที่มีสังกัดกอง เห็นเฉพาะงานกองตัวเอง (+ งานที่ยังไม่ระบุกอง กันข้อมูลเก่าหาย) กดดูทั้งหมดได้
   const [showAllDepts, setShowAllDepts] = useState(false)
   const canScopeByDept = ['officer', 'staff'].includes(currentUserRole) && !!myDepartmentId
@@ -285,12 +287,29 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
 
   const isReadOnly = currentUserRole === 'viewer' || currentUserRole === 'council'
   const canDelete  = currentUserRole === 'admin' || currentUserRole === 'superadmin'
+  const isMunicipalityAdmin = currentUserRole === 'admin' || currentUserRole === 'superadmin'
+  const canCreate = !isReadOnly && (
+    isMunicipalityAdmin
+    || (['officer', 'staff', 'technician'].includes(currentUserRole) && !!myDepartmentId)
+  )
+  const canManageProject = (project) => {
+    if (!project || isReadOnly) return false
+    if (isMunicipalityAdmin) return true
+    if (currentUserRole === 'officer') {
+      return !!myDepartmentId && project.department_id === myDepartmentId
+    }
+    return ['staff', 'technician'].includes(currentUserRole) && project.created_by === currentUserId
+  }
 
   const tenantId = tenant?.id
   const [refreshTick, setRefreshTick] = useState(0)
   const fetchProjects = useCallback(() => {
     setProjects(null)
     setRefreshTick(n => n + 1)
+  }, [])
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setCurrentUserId(data.session?.user?.id ?? null))
   }, [])
 
   useEffect(() => {
@@ -328,7 +347,12 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
   }
 
   function openCreate() {
+    if (!canCreate) return
     let sd = '', dt = '', pv = tenant?.province || ''
+    const myDepartment = departments.find(department => department.id === myDepartmentId)
+    const defaultDepartment = !isMunicipalityAdmin
+      ? (DB_CODE_TO_DEPARTMENT_CODE[myDepartment?.code] ?? 'other')
+      : EMPTY_FORM.department
     
     const addressStr = tenant?.address || 'เลขที่ 101 หมู่ที่ 5 ตำบลน้ำเลา\nอำเภอร้องกวาง จังหวัดแพร่ 54140'
     const s = addressStr.match(/ตำบล\s*([^\s\n]+)/)
@@ -344,7 +368,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
     }
 
     setEditId(null)
-    setForm({ ...EMPTY_FORM, subdistrict: sd, district: dt, province: pv })
+    setForm({ ...EMPTY_FORM, department: defaultDepartment, subdistrict: sd, district: dt, province: pv })
     setGeo({ lat: null, lng: null })
     setRoutePoints([])
     setPhotos([])
@@ -354,6 +378,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
   }
 
   function openEdit(p) {
+    if (!canManageProject(p)) return
     setEditId(p.id)
     setForm({
       project_no: p.project_no ?? '', fiscal_year: p.fiscal_year, title: p.title,
@@ -431,17 +456,27 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
       primaryLng = mid.lng
     }
 
+    const selectedDepartment = departments.find(d => d.code === DEPARTMENT_CODE_TO_DB_CODE[form.department])
+    const myDepartment = departments.find(d => d.id === myDepartmentId)
+    const existingProject = editId ? projects?.find(project => project.id === editId) : null
+    const locksDepartment = !isMunicipalityAdmin && ['officer', 'staff', 'technician'].includes(currentUserRole)
+    const scopedDepartmentId = editId && locksDepartment
+      ? (existingProject?.department_id ?? null)
+      : locksDepartment
+        ? (myDepartmentId ?? null)
+        : (selectedDepartment?.id ?? null)
+    const scopedDepartmentCode = !editId && locksDepartment
+      ? (DB_CODE_TO_DEPARTMENT_CODE[myDepartment?.code] ?? 'other')
+      : form.department
     const record = {
-      municipality_id: tenant.id,
-      created_by:      session.user.id,
       project_no:      form.project_no?.trim()      || null,
       fiscal_year:     form.fiscal_year,
       title:           form.title.trim(),
       description:     form.description?.trim()     || null,
       project_type:    form.project_type,
       status:          form.status,
-      department:      form.department,
-      department_id:   departments.find(d => d.code === DEPARTMENT_CODE_TO_DB_CODE[form.department])?.id ?? null,
+      department:      scopedDepartmentCode,
+      department_id:   scopedDepartmentId,
       progress_pct:    Number(form.progress_pct),
       village:         form.village?.trim()         || null,
       subdistrict:     form.subdistrict?.trim()     || null,
@@ -469,7 +504,12 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
       const { error } = await supabase.from('civil_projects').update(record).eq('id', editId)
       dbErr = error
     } else {
-      const { error } = await supabase.from('civil_projects').insert({ id, ...record })
+      const { error } = await supabase.from('civil_projects').insert({
+        id,
+        municipality_id: tenant.id,
+        created_by: session.user.id,
+        ...record,
+      })
       dbErr = error
     }
     setSubmitting(false)
@@ -589,7 +629,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
               {showAllDepts ? 'ดูทุกกอง' : 'ดูเฉพาะกองฉัน'}
             </button>
           )}
-        {!isReadOnly && (
+        {canCreate && (
           <button onClick={openCreate}
             className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-white"
             style={{ backgroundColor: '#3b82f6' }}>
@@ -598,6 +638,12 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
         )}
         </div>
       </div>
+
+      {currentUserRole === 'officer' && !myDepartmentId && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          บัญชีธุรการกองยังไม่ได้กำหนดกอง จึงดูข้อมูลได้อย่างเดียว กรุณาให้แอดมินระบบกำหนดกองก่อน
+        </div>
+      )}
 
       {/* Filter row */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
@@ -756,7 +802,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {!isReadOnly && (
+            {canManageProject(p) && (
               <button onClick={() => openEdit(p)}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium text-blue-600 border border-blue-200 bg-white hover:bg-blue-50 transition-colors">
                 <Pencil size={14} /> แก้ไข
@@ -880,7 +926,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
           </div>
 
           {/* Upload row */}
-          {!isReadOnly && (
+          {canManageProject(p) && (
             <div className="flex flex-wrap items-center gap-2 mb-4">
               <select value={detailPhotoPhase} onChange={e => setDetailPhotoPhase(e.target.value)}
                 className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none">
@@ -937,7 +983,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
             <h3 className="font-bold text-gray-700">บันทึกความคืบหน้า</h3>
           </div>
 
-          {!isReadOnly && (
+          {canManageProject(p) && (
             <div className="space-y-3">
               <textarea
                 value={progressNote}
@@ -1045,7 +1091,9 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
                 className={inputCls + ' resize-none'} />
             </Field>
             <Field label="กอง/หน่วยงาน" required half>
-              <select value={form.department} onChange={e => setForm(p => ({ ...p, department: e.target.value }))} className={selectCls}>
+              <select value={form.department} onChange={e => setForm(p => ({ ...p, department: e.target.value }))}
+                disabled={!isMunicipalityAdmin && ['officer', 'staff', 'technician'].includes(currentUserRole)}
+                className={selectCls + (!isMunicipalityAdmin && ['officer', 'staff', 'technician'].includes(currentUserRole) ? ' opacity-60 cursor-not-allowed' : '')}>
                 {DEPARTMENTS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
               </select>
             </Field>

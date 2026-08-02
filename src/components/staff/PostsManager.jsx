@@ -186,12 +186,14 @@ export default function PostsManager({ currentUserRole = 'staff', myDepartmentId
         image_position:  form.image_position,
         event_date:      form.event_date      || null,
         is_published:    form.is_published,
-        created_by:      session?.user?.id   ?? null,
-        department_id:   myDepartmentId      ?? null,
       }
       const q = editing
         ? supabase.from('posts').update(payload).eq('id', editing)
-        : supabase.from('posts').insert(payload)
+        : supabase.from('posts').insert({
+            ...payload,
+            created_by: session?.user?.id ?? null,
+            department_id: myDepartmentId ?? null,
+          })
       const { error: err } = await q.abortSignal(ctrl.signal)
       clearTimeout(timer)
       if (err) { setSaveError(err.message); return }
