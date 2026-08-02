@@ -306,7 +306,9 @@ function ActionButton({ status, id, onUpdate, loading, size = 'sm' }) {
       <button onClick={() => setConfirm(true)} disabled={loading === id}
         className={size === 'lg'
           ? 'inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white whitespace-nowrap shadow-sm transition-all active:scale-95 disabled:opacity-50'
-          : 'inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[13px] font-semibold text-white whitespace-nowrap transition-all active:scale-95 disabled:opacity-50'}
+          : size === 'xs'
+            ? 'inline-flex items-center gap-0.5 px-2 py-1 rounded-lg text-[11px] font-semibold text-white whitespace-nowrap transition-all active:scale-95 disabled:opacity-50'
+            : 'inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[13px] font-semibold text-white whitespace-nowrap transition-all active:scale-95 disabled:opacity-50'}
         style={{ backgroundColor: 'var(--color-primary)' }}>
         {loading === id ? <Loader2 size={size === 'lg' ? 15 : 12} className="animate-spin" /> : <ChevronRight size={size === 'lg' ? 15 : 12} />}
         {action.label}
@@ -357,7 +359,7 @@ function ActionButton({ status, id, onUpdate, loading, size = 'sm' }) {
   )
 }
 
-function RejectButton({ status, id, onUpdate, loading }) {
+function RejectButton({ status, id, onUpdate, loading, compact = false }) {
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState('')
   const [err, setErr] = useState('')
@@ -372,8 +374,10 @@ function RejectButton({ status, id, onUpdate, loading }) {
   return (
     <>
       <button onClick={() => setOpen(true)} disabled={loading === id}
-        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition-colors disabled:opacity-50">
-        <XCircle size={12} /> ปฏิเสธ
+        className={compact
+          ? 'inline-flex items-center gap-0.5 px-2 py-1 rounded-lg text-[11px] font-medium text-red-600 bg-red-50 hover:bg-red-100 transition-colors disabled:opacity-50 whitespace-nowrap'
+          : 'inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition-colors disabled:opacity-50'}>
+        <XCircle size={compact ? 11 : 12} /> ปฏิเสธ
       </button>
       {open && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40"
@@ -1399,7 +1403,11 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
     setOpeningComplaintId(null)
     if (error) {
       console.error('fetch complaint private detail error:', error.message)
-      alert('ไม่มีสิทธิ์เปิดข้อมูลส่วนบุคคลของคำร้องนี้')
+      const permissionDenied = error.code === '42501'
+        || /permission denied|complaint access denied|authenticated profile required/i.test(error.message ?? '')
+      alert(permissionDenied
+        ? 'ไม่มีสิทธิ์เปิดข้อมูลส่วนบุคคลของคำร้องนี้'
+        : `เปิดรายละเอียดคำร้องไม่สำเร็จ${import.meta.env.DEV && error.message ? `\n${error.message}` : ' กรุณาลองใหม่อีกครั้ง'}`)
       return
     }
     if (data) setSelectedComplaint(data)
@@ -1918,28 +1926,41 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
             </div>
 
             {/* Desktop table */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-sm border-collapse">
+            <div className="hidden md:block w-full max-w-full overflow-x-auto overscroll-x-contain">
+              <table className="w-full min-w-[980px] table-fixed text-sm border-collapse">
+                <colgroup>
+                  {canBulkDelete && <col style={{ width: 30 }} />}
+                  <col style={{ width: 30 }} />
+                  <col style={{ width: 72 }} />
+                  <col style={{ width: 122 }} />
+                  <col style={{ width: 138 }} />
+                  <col style={{ width: 76 }} />
+                  <col style={{ width: 124 }} />
+                  <col style={{ width: 108 }} />
+                  <col style={{ width: 68 }} />
+                  <col style={{ width: 94 }} />
+                  <col style={{ width: 134 }} />
+                </colgroup>
                 <thead>
                   <tr style={{ backgroundColor: '#2c5282' }}>
                     {canBulkDelete && (
-                      <th className="px-3 py-2.5 text-center border-r border-white/10 w-8">
+                      <th className="px-2 py-2.5 text-center border-r border-white/10">
                         <input type="checkbox"
                           checked={paginatedFiltered.length > 0 && paginatedFiltered.every(c => selectedIds.has(c.id))}
                           onChange={() => toggleSelectAllVisible(paginatedFiltered.map(c => c.id))}
                           className="w-3.5 h-3.5 cursor-pointer" />
                       </th>
                     )}
-                    <th className="px-3 py-2.5 text-center text-[11px] font-bold text-white border-r border-white/10 w-10">ที่</th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10 w-20">เลขที่</th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ประเภทคำร้อง</th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">สถานที่</th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">วันที่ยื่น</th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ผู้แจ้ง</th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ผู้รับผิดชอบ</th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ความเร่งด่วน</th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">สถานะ</th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white">การดำเนินการ</th>
+                    <th className="px-2 py-2.5 text-center text-[11px] font-bold text-white border-r border-white/10">ที่</th>
+                    <th className="px-2 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">เลขที่</th>
+                    <th className="px-2 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ประเภทคำร้อง</th>
+                    <th className="px-2 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">สถานที่</th>
+                    <th className="px-2 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">วันที่ยื่น</th>
+                    <th className="px-2 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ผู้แจ้ง</th>
+                    <th className="px-2 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ผู้รับผิดชอบ</th>
+                    <th className="px-2 py-2.5 text-left text-[11px] leading-tight font-bold text-white border-r border-white/10">ความเร่งด่วน</th>
+                    <th className="px-2 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">สถานะ</th>
+                    <th className="px-2 py-2.5 text-center text-[11px] font-bold text-white">การดำเนินการ</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -1952,18 +1973,18 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                       aria-busy={openingComplaintId === c.id}
                       onClick={() => openComplaint(c)}>
                       {canBulkDelete && (
-                        <td className="px-3 py-2 text-center border-r border-gray-200" onClick={(e) => e.stopPropagation()}>
+                        <td className="px-2 py-2 text-center border-r border-gray-200" onClick={(e) => e.stopPropagation()}>
                           <input type="checkbox" checked={selectedIds.has(c.id)} onChange={() => toggleSelect(c.id)}
                             className="w-3.5 h-3.5 cursor-pointer" />
                         </td>
                       )}
-                      <td className="px-3 py-2 text-center text-xs text-gray-500 border-r border-gray-200">{complaintStartIdx + i + 1}</td>
-                      <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap border-r border-gray-200">
+                      <td className="px-2 py-2 text-center text-xs text-gray-500 border-r border-gray-200">{complaintStartIdx + i + 1}</td>
+                      <td className="px-2 py-2 text-xs text-gray-500 whitespace-nowrap border-r border-gray-200 overflow-hidden text-ellipsis">
                         {c.ref_no ? c.ref_no.replace(/^[A-Z]+-/, '') : <span className="text-gray-300">—</span>}
                       </td>
-                      <td className="px-3 py-2 font-medium text-gray-800 text-xs whitespace-nowrap border-r border-gray-200">
-                        <div className="flex items-center gap-1.5">
-                          <span>{CATEGORY_LABEL[c.category] ?? c.category}</span>
+                      <td className="px-2 py-2 font-medium text-gray-800 text-xs border-r border-gray-200 overflow-hidden">
+                        <div className="flex min-w-0 items-center gap-1">
+                          <span className="truncate" title={CATEGORY_LABEL[c.category] ?? c.category}>{CATEGORY_LABEL[c.category] ?? c.category}</span>
                           {c.latitude && (
                             <span className="text-orange-500 shrink-0" title="มีพิกัด GPS"><MapPin size={11} /></span>
                           )}
@@ -1972,37 +1993,37 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                           )}
                         </div>
                       </td>
-                      <td className="px-3 py-2 text-gray-500 text-xs whitespace-nowrap border-r border-gray-200">
+                      <td className="px-2 py-2 text-gray-500 text-xs border-r border-gray-200 overflow-hidden">
                         {(c.village || c.location_name)
-                          ? <span className="flex items-center gap-1"><MapPin size={10} className="text-gray-400 shrink-0" />{c.village || c.location_name}</span>
+                          ? <span className="flex min-w-0 items-center gap-1" title={c.village || c.location_name}><MapPin size={10} className="text-gray-400 shrink-0" /><span className="truncate">{c.village || c.location_name}</span></span>
                           : <span className="text-gray-300">—</span>}
                       </td>
-                      <td className="px-3 py-2 text-gray-500 text-xs whitespace-nowrap border-r border-gray-200">
+                      <td className="px-2 py-2 text-gray-500 text-xs whitespace-nowrap border-r border-gray-200">
                         {new Date(c.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}
                       </td>
-                      <td className="px-3 py-2 border-r border-gray-200 min-w-[110px]">
+                      <td className="px-2 py-2 border-r border-gray-200 overflow-hidden">
                         {(() => {
                           const name = c.reporter_name || c.profiles?.full_name
                           const phone = c.phone || c.profiles?.phone
                           return (
                             <div className="flex flex-col gap-0.5">
                               {name
-                                ? <span className="text-xs font-medium text-gray-700 truncate max-w-[120px]">{name}</span>
+                                ? <span className="text-xs font-medium text-gray-700 truncate" title={name}>{name}</span>
                                 : <span className="text-gray-300 text-xs">ไม่ระบุ</span>}
                               {phone && (
                                 <a href={`tel:${phone}`} onClick={e => e.stopPropagation()}
-                                  className="text-[12px] text-blue-500 hover:underline">{phone}</a>
+                                  className="text-[11px] text-blue-500 hover:underline truncate">{phone}</a>
                               )}
                             </div>
                           )
                         })()}
                       </td>
-                      <td className="px-3 py-2 text-xs whitespace-nowrap border-r border-gray-200">
+                      <td className="px-2 py-2 text-xs border-r border-gray-200 overflow-hidden">
                         {c.assigned_to
-                          ? <span className="flex items-center gap-1 text-blue-700 font-medium"><Wrench size={10} className="shrink-0" />{technicians.find((t) => t.id === c.assigned_to)?.full_name ?? 'ผู้รับผิดชอบ'}</span>
+                          ? <span className="flex min-w-0 items-center gap-1 text-blue-700 font-medium" title={technicians.find((t) => t.id === c.assigned_to)?.full_name ?? 'ผู้รับผิดชอบ'}><Wrench size={10} className="shrink-0" /><span className="truncate">{technicians.find((t) => t.id === c.assigned_to)?.full_name ?? 'ผู้รับผิดชอบ'}</span></span>
                           : <span className="text-gray-300">—</span>}
                       </td>
-                      <td className="px-3 py-2 border-r border-gray-200">
+                      <td className="px-2 py-2 border-r border-gray-200 overflow-hidden">
                         {c.priority && c.priority !== 'normal'
                           ? <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap border"
                               style={{ backgroundColor: PRIORITY[c.priority]?.bg, color: PRIORITY[c.priority]?.text, borderColor: PRIORITY[c.priority]?.color + '40' }}>
@@ -2010,15 +2031,15 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                             </span>
                           : <span className="text-gray-300 text-xs">ปกติ</span>}
                       </td>
-                      <td className="px-3 py-2 border-r border-gray-200">
+                      <td className="px-2 py-2 border-r border-gray-200 overflow-hidden">
                         <StatusBadge status={c.status} />
                       </td>
-                      <td className="px-3 py-2 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center gap-1.5">
+                      <td className="px-2 py-2 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-center gap-1">
                           {(['admin', 'superadmin'].includes(currentUserRole) || (currentUserRole === 'technician' && c.assigned_to === currentUserId)) && (
                             <>
-                              <ActionButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} />
-                              <RejectButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} />
+                              <ActionButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} size="xs" />
+                              <RejectButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} compact />
                             </>
                           )}
                         </div>

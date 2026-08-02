@@ -11,7 +11,7 @@ export function getNavItems(role) {
   } else if (isStaff) {
     roleNavItem = { label: 'ระบบเจ้าหน้าที่', icon: Briefcase, href: '/staff' }
   } else if (isAdmin) {
-    roleNavItem = { label: 'แอดมิน', icon: ShieldCheck, href: '/admin' }
+    roleNavItem = { label: 'ระบบเจ้าหน้าที่', icon: ShieldCheck, href: '/admin' }
   }
 
   return [
