@@ -167,9 +167,10 @@ export default function DataCenterDashboard() {
                   <div className="w-6 h-6 border-4 border-gray-200 rounded-full animate-spin" style={{ borderTopColor: '#3b82f6' }} />
                 </div>
               }>
-                {activeModule === 'overview' && <DataCenterOverview key={refreshKey} tenant={tenant}
+                {activeModule === 'overview' && <DataCenterOverview key={refreshKey} tenant={tenant} profile={profile}
                   onAddNew={group => { setPrefillGroup(group ?? null); setActiveModule('add') }}
-                  onEditEntry={handleEditEntry} />}
+                  onEditEntry={handleEditEntry}
+                  onImportSuccess={() => setRefreshKey(k => k + 1)} />}
                 {activeModule === 'add' && <DataCenterEntryForm tenant={tenant} profile={profile} initialGroup={prefillGroup} editingEntry={editingEntry}
                   onSaved={handleSaved} onCancel={() => { setPrefillGroup(null); setEditingEntry(null); setActiveModule('overview') }} />}
                 {activeModule === 'categories' && isManager && <DataCenterCategoryManager key={refreshKey} tenant={tenant} />}

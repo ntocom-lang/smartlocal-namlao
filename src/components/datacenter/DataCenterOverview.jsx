@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Loader2, Plus, MapPinned, ChevronDown, Pencil, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Loader2, Plus, MapPinned, ChevronDown, Pencil, ChevronLeft, ChevronRight, Upload } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import DataCenterImportModal from './DataCenterImportModal'
 
 const PAGE_SIZE = 8 // จำนวนรายการต่อหน้าตอนกางดูรายชื่อในแต่ละประเภทย่อย — บางประเภทมีเป็นร้อยรายการ ต้องแบ่งหน้า
 
@@ -19,19 +20,24 @@ const GROUP_META = {
 const FALLBACK_META = { emoji: '📌', color: '#475569', bg: '#f1f5f9' }
 const groupMeta = g => GROUP_META[g] ?? FALLBACK_META
 
-export default function DataCenterOverview({ tenant, onAddNew, onEditEntry }) {
+export default function DataCenterOverview({ tenant, profile, onAddNew, onEditEntry, onImportSuccess }) {
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(true)
   const [openCategory, setOpenCategory] = useState(null) // `${group}::${category}` ที่กางอยู่ตอนนี้
   const [pageByCategory, setPageByCategory] = useState({}) // เลขหน้าปัจจุบันของแต่ละประเภทย่อย
+  const [showImportModal, setShowImportModal] = useState(false)
 
-  useEffect(() => {
+  const fetchEntries = () => {
     if (!tenant?.id) return
     setLoading(true)
     supabase.from('data_center_entries')
       .select('id, name, group_name, category, status, latitude, longitude, description, photo_urls, external_url, route_points, route_color')
       .eq('municipality_id', tenant.id).eq('status', 'active')
       .then(({ data }) => { setEntries(data ?? []); setLoading(false) })
+  }
+
+  useEffect(() => {
+    fetchEntries()
   }, [tenant?.id])
 
   if (loading) return <div className="flex justify-center py-16"><Loader2 size={28} className="animate-spin text-gray-200" /></div>
@@ -51,18 +57,37 @@ export default function DataCenterOverview({ tenant, onAddNew, onEditEntry }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between gap-3">
+      {showImportModal && (
+        <DataCenterImportModal
+          tenant={tenant}
+          profile={profile}
+          onClose={() => setShowImportModal(false)}
+          onImportComplete={() => {
+            setShowImportModal(false)
+            fetchEntries()
+            onImportSuccess?.()
+          }}
+        />
+      )}
+
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-bold text-gray-800 flex items-center gap-2">
             <MapPinned size={18} className="text-indigo-500" /> ศูนย์รวมข้อมูลดิจิทัล
           </h1>
           <p className="text-xs text-gray-400 mt-0.5">รวมพิกัด/สถานที่ทุกชนิดในเขตเทศบาล — {entries.length} รายการ</p>
         </div>
-        <button onClick={() => onAddNew()}
-          className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-white shadow-sm active:scale-95 transition-all"
-          style={{ backgroundColor: '#1e293b' }}>
-          <Plus size={14} /> เพิ่มข้อมูล
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button onClick={() => setShowImportModal(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 shadow-xs active:scale-95 transition-all">
+            <Upload size={14} className="text-blue-600" /> นำเข้าไฟล์ KML / GIS
+          </button>
+          <button onClick={() => onAddNew()}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-white shadow-sm active:scale-95 transition-all"
+            style={{ backgroundColor: '#1e293b' }}>
+            <Plus size={14} /> เพิ่มข้อมูล
+          </button>
+        </div>
       </div>
 
       {groups.length === 0 ? (
