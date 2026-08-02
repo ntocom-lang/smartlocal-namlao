@@ -5,7 +5,7 @@ export function getNavItems(role) {
   const isStaff = ['staff', 'officer', 'council', 'kamnan'].includes(role)
   const isTech  = role === 'technician'
 
-  let roleNavItem = { label: 'ยื่นคำร้อง', icon: ClipboardList, href: '/doc-request' }
+  let roleNavItem = { label: 'ยื่นคำร้อง', icon: ClipboardList, href: '/complaint' }
   if (isTech) {
     roleNavItem = { label: 'งานของฉัน', icon: Wrench, href: '/technician' }
   } else if (isStaff) {
