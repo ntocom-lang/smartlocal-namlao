@@ -47,8 +47,8 @@ export default function AISearchCard() {
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3"
            style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, var(--color-primary-dark, #1e40af) 100%)' }}>
-        <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="w-10 h-10 rounded-xl object-cover border border-white/20 bg-white p-0.5 shrink-0 shadow-inner" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }} />
-        <div className="w-10 h-10 rounded-xl bg-white/15 border border-white/20 hidden items-center justify-center text-xl shrink-0 shadow-inner">
+        <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-11 w-auto object-contain drop-shadow-md shrink-0" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }} />
+        <div className="w-9 h-9 rounded-full bg-white/15 hidden items-center justify-center text-xl shrink-0">
           🤖
         </div>
         <div className="flex-1 min-w-0">
@@ -113,8 +113,8 @@ export default function AISearchCard() {
                 <span>น้ำเลาใจดีกำลังคิด...</span>
               </div>
             ) : (
-              <div className="flex gap-2">
-                <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="w-6 h-6 rounded-full object-cover shrink-0 border border-yellow-300 bg-white p-0.5" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'inline' }} />
+              <div className="flex gap-2 items-start">
+                <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="h-8 w-auto object-contain shrink-0 drop-shadow-xs" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'inline' }} />
                 <span className="text-lg shrink-0 hidden">🤖</span>
                 <p className="text-[13px] text-gray-700 leading-relaxed whitespace-pre-wrap">{answer}</p>
               </div>

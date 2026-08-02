@@ -75,14 +75,16 @@ export default function ChatbotPage() {
           <img
             src="/images/nong-jaidee.png"
             alt="น้ำเลาใจดี"
-            className="w-9 h-9 rounded-full object-cover border-2 border-yellow-400 bg-white p-0.5"
+            className="h-11 w-auto object-contain drop-shadow-[0_4px_8px_rgba(0,0,0,0.3)] shrink-0"
             onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }}
           />
-          <div className="w-9 h-9 bg-white rounded-full hidden items-center justify-center shadow-sm text-xl border-2 border-yellow-400">
+          <div className="w-9 h-9 bg-white/20 rounded-full hidden items-center justify-center text-xl">
             🤖
           </div>
           <div>
-            <h1 className="font-bold text-base leading-tight">น้ำเลาใจดี ยินดีให้บริการ</h1>
+            <h1 className="font-bold text-base leading-tight flex items-center gap-1.5">
+              น้ำเลาใจดี ยินดีให้บริการ
+            </h1>
             <p className="text-[11px] text-blue-100">{tenant?.name || 'เทศบาล/อบต.'}</p>
           </div>
         </div>
@@ -91,22 +93,22 @@ export default function ChatbotPage() {
       {/* Messages Area */}
       <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3 relative z-0">
         {/* Background Mascot Watermark */}
-        <div className="fixed inset-0 pointer-events-none flex items-center justify-center opacity-[0.07]">
-          <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="w-56 h-56 object-contain pointer-events-none" />
+        <div className="fixed inset-0 pointer-events-none flex items-center justify-center opacity-[0.08]">
+          <img src="/images/nong-jaidee.png" alt="น้ำเลาใจดี" className="w-64 h-64 object-contain pointer-events-none drop-shadow-2xl" />
         </div>
 
         {messages.map((msg) => (
-          <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'} relative z-10`}>
+          <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'} relative z-10 items-end`}>
             {msg.sender === 'bot' && (
               <img
                 src="/images/nong-jaidee.png"
                 alt="น้ำเลาใจดี"
-                className="w-7 h-7 rounded-full object-cover mr-2 shrink-0 border border-yellow-400 bg-white p-0.5 shadow-xs"
+                className="h-9 w-auto object-contain mr-1.5 shrink-0 drop-shadow-sm mb-0.5"
                 onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }}
               />
             )}
             {msg.sender === 'bot' && (
-              <div className="w-7 h-7 rounded-full bg-white hidden items-center justify-center shadow-xs mr-2 shrink-0 border border-yellow-400 text-base">
+              <div className="w-7 h-7 rounded-full bg-white hidden items-center justify-center shadow-xs mr-2 shrink-0 text-base">
                 🤖
               </div>
             )}
@@ -117,20 +119,20 @@ export default function ChatbotPage() {
         ))}
 
         {isLoading && (
-          <div className="flex justify-start relative z-10">
+          <div className="flex justify-start relative z-10 items-end">
             <img
               src="/images/nong-jaidee.png"
               alt="น้ำเลาใจดี"
-              className="w-7 h-7 rounded-full object-cover mr-2 shrink-0 border border-yellow-400 bg-white p-0.5 shadow-xs"
+              className="h-9 w-auto object-contain mr-1.5 shrink-0 drop-shadow-sm mb-0.5"
               onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }}
             />
-            <div className="w-7 h-7 rounded-full bg-white hidden items-center justify-center shadow-xs mr-2 shrink-0 border border-yellow-400 text-base">
+            <div className="w-7 h-7 rounded-full bg-white hidden items-center justify-center shadow-xs mr-2 shrink-0 text-base">
               🤖
             </div>
             <div className="bg-white p-3.5 rounded-2xl rounded-tl-xs border border-gray-100 shadow-xs flex items-center gap-1">
-              <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-              <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-              <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+              <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+              <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+              <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
             </div>
           </div>
         )}
