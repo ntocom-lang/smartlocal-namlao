@@ -901,11 +901,11 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl md:rounded-none border border-gray-100 md:border-gray-200 shadow-sm p-4 md:bg-[#f5f8fc] space-y-3">
+      <div className="bg-white rounded-2xl md:rounded-none border border-gray-100 md:border-gray-200 shadow-xs p-3 md:p-4 md:bg-[#f5f8fc] space-y-2.5">
         {/* Search — always visible */}
         <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
           placeholder="ค้นหาชื่อหรือรายละเอียดกิจกรรม..."
-          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-200" />
+          className="w-full bg-gray-50/80 border border-gray-200/80 rounded-xl px-3.5 py-2 text-xs md:text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-200 transition-all" />
 
         {/* Mobile: chip buttons + inline dropdown */}
         {(() => {
@@ -948,28 +948,27 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
 
           return (
             <div className="md:hidden relative">
-              <div className="flex gap-2">
+              <div className="flex items-center gap-1.5">
                 {chipDefs.map(({ key, Icon, label, active, color }) => (
                   <button key={key}
                     onClick={() => setOpenSheet(openSheet === key ? null : key)}
-                    className="flex-1 flex flex-col items-center gap-1.5 py-3 rounded-2xl border transition-all"
+                    className="flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-xl border text-xs font-semibold transition-all active:scale-95 shrink-0"
                     style={active || openSheet === key
-                      ? { backgroundColor: color + '15', borderColor: color }
-                      : { backgroundColor: '#f9fafb', borderColor: '#e5e7eb' }}>
-                    <Icon size={20} style={{ color: active || openSheet === key ? color : '#94a3b8' }} />
-                    <span className="text-[11px] font-semibold truncate max-w-[72px] text-center leading-tight"
-                      style={{ color: active || openSheet === key ? color : '#64748b' }}>{label}</span>
+                      ? { backgroundColor: color + '15', borderColor: color, color: color }
+                      : { backgroundColor: '#f8fafc', borderColor: '#e2e8f0', color: '#475569' }}>
+                    <Icon size={14} className="shrink-0" style={{ color: active || openSheet === key ? color : '#64748b' }} />
+                    <span className="truncate max-w-[62px] leading-tight">{label}</span>
                   </button>
                 ))}
-                <button
-                  onClick={() => { setSearchQuery(''); setFilterMonth('all'); setFilterCategory('all'); setFilterAudience('all'); setOpenSheet(null) }}
-                  className="flex flex-col items-center gap-1.5 py-3 px-3 rounded-2xl border transition-all"
-                  style={hasFilter
-                    ? { backgroundColor: '#fee2e2', borderColor: '#ef4444' }
-                    : { backgroundColor: '#f9fafb', borderColor: '#e5e7eb', opacity: 0.4, pointerEvents: 'none' }}>
-                  <X size={20} style={{ color: hasFilter ? '#ef4444' : '#94a3b8' }} />
-                  <span className="text-[13px] font-semibold" style={{ color: hasFilter ? '#ef4444' : '#94a3b8' }}>ล้าง</span>
-                </button>
+                {hasFilter && (
+                  <button
+                    onClick={() => { setSearchQuery(''); setFilterMonth('all'); setFilterCategory('all'); setFilterAudience('all'); setOpenSheet(null) }}
+                    className="flex items-center justify-center py-1.5 px-2.5 rounded-xl border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-all active:scale-95 shrink-0 text-xs font-semibold gap-1"
+                    title="ล้างตัวกรอง">
+                    <X size={14} />
+                    <span className="leading-tight">ล้าง</span>
+                  </button>
+                )}
               </div>
 
               {openSheet && dropdownMap[openSheet] && (() => {
