@@ -36,7 +36,7 @@ export default function AISearchCard() {
       const reply = await askGemini([], q, tenant?.name, tenant?.id)
       setAnswer(reply)
     } catch {
-      setAnswer('ขออภัยค่ะ เกิดข้อผิดพลาด ลองถามใหม่อีกครั้งนะคะ 🦖')
+      setAnswer('ขออภัยครับ เกิดข้อผิดพลาด ลองถามใหม่อีกครั้งนะครับ 🤖')
     } finally {
       setLoading(false)
     }
@@ -47,12 +47,13 @@ export default function AISearchCard() {
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3"
            style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, var(--color-primary-dark, #1e40af) 100%)' }}>
-        <div className="w-10 h-10 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center text-xl shrink-0 shadow-inner">
-          🦖
+        <img src="/images/nong-jaidee.png" alt="น้องใจดี" className="w-10 h-10 rounded-xl object-cover border border-white/20 bg-white p-0.5 shrink-0 shadow-inner" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }} />
+        <div className="w-10 h-10 rounded-xl bg-white/15 border border-white/20 hidden items-center justify-center text-xl shrink-0 shadow-inner">
+          🤖
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
-            <p className="text-white font-bold text-sm">ถามน้องสมายล์ AI</p>
+            <p className="text-white font-bold text-sm">ถามน้องใจดี AI</p>
             <Sparkles size={12} className="text-yellow-300" />
           </div>
           <p className="text-white/60 text-[10px] truncate">ผู้ช่วยอัจฉริยะ · ตอบทันที 24 ชม.</p>
@@ -109,11 +110,12 @@ export default function AISearchCard() {
                   <div className="w-1.5 h-1.5 bg-blue-300 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
                   <div className="w-1.5 h-1.5 bg-blue-300 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                 </div>
-                <span>น้องสมายล์กำลังคิด...</span>
+                <span>น้องใจดีกำลังคิด...</span>
               </div>
             ) : (
               <div className="flex gap-2">
-                <span className="text-lg shrink-0">🦖</span>
+                <img src="/images/nong-jaidee.png" alt="น้องใจดี" className="w-6 h-6 rounded-full object-cover shrink-0 border border-yellow-300 bg-white p-0.5" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'inline' }} />
+                <span className="text-lg shrink-0 hidden">🤖</span>
                 <p className="text-[13px] text-gray-700 leading-relaxed whitespace-pre-wrap">{answer}</p>
               </div>
             )}

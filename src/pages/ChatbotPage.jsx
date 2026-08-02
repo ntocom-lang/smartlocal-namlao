@@ -8,7 +8,7 @@ export default function ChatbotPage() {
   const navigate = useNavigate();
   const { tenant } = useTenant();
   const [messages, setMessages] = useState([
-    { id: 1, sender: 'bot', text: `สวัสดีค่ะ... วันนี้มีอะไรให้ช่วยคะ ถามมาได้เลย น้องสมายล์ ยินดีให้บริการค่ะ 🦖` }
+    { id: 1, sender: 'bot', text: `สวัสดีครับ... วันนี้มีอะไรให้ช่วยครับ ถามมาได้เลย น้องใจดี ยินดีให้บริการครับ 🤖` }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -37,26 +37,25 @@ export default function ChatbotPage() {
     } catch (error) {
       console.error('Error calling Gemini:', error);
       
-      // กรณีคีย์ยังไม่พร้อมใช้งานหรือเกิดข้อผิดพลาด ให้ใช้วิธีจำลองระบบเดิมเพื่อความปลอดภัย
-      let reply = 'ตอนนี้น้องสมายล์กำลังปรับปรุงระบบการเชื่อมต่อ AI ขอจำลองคำตอบให้ชั่วคราวนะคะ: ';
+      let reply = 'ตอนนี้ระบบเชื่อมต่อ AI ขัดข้องชั่วคราว น้องใจดีขอตอบแบบจำลองให้นะครับ: ';
       
       const text = userText.toLowerCase();
       if (text.includes('สวัสดี') || text.includes('ทักทาย') || text.includes('ดีจ้า') || text.includes('หวัดดี')) {
-        reply += 'สวัสดีค่ะ! มีอะไรให้น้องสมายล์ดูแลและช่วยเหลือไหมคะ? 🦖';
+        reply += 'สวัสดีครับ! มีอะไรให้น้องใจดีดูแลและช่วยเหลือไหมครับ? 🤖';
       } else if (text.includes('ขยะ') || text.includes('ทิ้งขยะ') || text.includes('เก็บขยะ') || text.includes('ถังขยะ')) {
-        reply += 'เรื่องขยะ แจ้งได้เลยค่ะ! สามารถไปที่เมนู "แจ้งเรื่องร้องเรียน" แล้วเลือกหมวดหมู่ "ขยะ / ความสะอาด" ได้เลยนะคะ 🦖';
+        reply += 'เรื่องขยะ แจ้งได้เลยครับ! สามารถไปที่เมนู "แจ้งเรื่องร้องเรียน" แล้วเลือกหมวดหมู่ "ขยะ / ความสะอาด" ได้เลยนะครับ 🤖';
       } else if (text.includes('เอกสาร') || text.includes('ทะเบียน') || text.includes('ใบอนุญาต')) {
-        reply += 'คุณสามารถยื่นขอเอกสารต่างๆ หรือ E-Service ได้ที่หน้าแรก ตรงเมนู "E-Service" ค่ะ สะดวกและรวดเร็วมากๆ 🦖';
+        reply += 'คุณสามารถยื่นขอเอกสารต่างๆ หรือ E-Service ได้ที่หน้าแรก ตรงเมนู "E-Service" ครับ สะดวกและรวดเร็วมากๆ 🤖';
       } else if (text.includes('อากาศ') || text.includes('ฝน') || text.includes('พยากรณ์')) {
-        reply += 'อยากทราบสภาพอากาศ สามารถกดดูได้ที่แบนเนอร์ "รายงานพยากรณ์อากาศ" ที่หน้าแรกได้เลยนะคะ 🦖';
+        reply += 'อยากทราบสภาพอากาศ สามารถกดดูได้ที่แบนเนอร์ "รายงานพยากรณ์อากาศ" ที่หน้าแรกได้เลยนะครับ 🤖';
       } else if (text.includes('ร้องเรียน') || text.includes('ร้องทุกข์') || text.includes('ปัญหา') || text.includes('เดือดร้อน')) {
-        reply += 'พบเจอปัญหาเดือดร้อน แจ้งเราได้ทันทีค่ะ! กดที่ปุ่ม "ร้องเรียน/ร้องทุกข์" บนหน้าแรก เจ้าหน้าที่จะรับเรื่องและแก้ไขให้ไวที่สุดค่ะ 🦖';
+        reply += 'พบเจอปัญหาเดือดร้อน แจ้งเราได้ทันทีครับ! กดที่ปุ่ม "ร้องเรียน/ร้องทุกข์" บนหน้าแรก เจ้าหน้าที่จะรับเรื่องและแก้ไขให้ไวที่สุดครับ 🤖';
       } else if (text.includes('ขอบคุณ') || text.includes('ขอบใจ')) {
-        reply += 'ยินดีให้บริการเสมอค่ะ! ถ้านึกถึงความช่วยเหลือ นึกถึงน้องสมายล์นะคะ 🦖';
+        reply += 'ยินดีให้บริการเสมอครับ! ถ้านึกถึงความช่วยเหลือ นึกถึงน้องใจดีนะครับ 🤖';
       } else if (text.includes('เที่ยว') || text.includes('ที่พัก') || text.includes('ร้านอาหาร')) {
-        reply += 'แหล่งท่องเที่ยว ที่พัก และร้านอาหารเด็ดๆ ดูได้ที่หมวด "เที่ยว กิน พัก OTOP" หน้าแรกเลยค่ะ แนะนำเพียบ! 🦖';
+        reply += 'แหล่งท่องเที่ยว ที่พัก และร้านอาหารเด็ดๆ ดูได้ที่หมวด "เที่ยว กิน พัก OTOP" หน้าแรกเลยครับ แนะนำเพียบ! 🤖';
       } else {
-        reply = 'ขออภัยค่ะ ระบบ AI ไม่พร้อมใช้งานชั่วคราว ลองใหม่อีกครั้งในภายหลังนะคะ 🦖';
+        reply = 'ขออภัยครับ ระบบ AI ไม่พร้อมใช้งานชั่วคราว ลองใหม่อีกครั้งในภายหลังนะครับ 🤖';
       }
 
       setMessages(prev => [...prev, { id: Date.now(), sender: 'bot', text: reply }]);
@@ -73,11 +72,17 @@ export default function ChatbotPage() {
           <ArrowLeft size={22} />
         </button>
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-white rounded-full flex items-center justify-center shadow-sm text-xl border-2 border-yellow-400">
-            🦖
+          <img
+            src="/images/nong-jaidee.png"
+            alt="น้องใจดี"
+            className="w-9 h-9 rounded-full object-cover border-2 border-yellow-400 bg-white p-0.5"
+            onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }}
+          />
+          <div className="w-9 h-9 bg-white rounded-full hidden items-center justify-center shadow-sm text-xl border-2 border-yellow-400">
+            🤖
           </div>
           <div>
-            <h1 className="font-bold text-base leading-tight">น้องสมายล์ ยินดีให้บริการ</h1>
+            <h1 className="font-bold text-base leading-tight">น้องใจดี ยินดีให้บริการ</h1>
             <p className="text-[11px] text-blue-100">{tenant?.name || 'เทศบาล/อบต.'}</p>
           </div>
         </div>
@@ -86,15 +91,23 @@ export default function ChatbotPage() {
       {/* Messages Area */}
       <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3 relative z-0">
         {/* Background Mascot Watermark */}
-        <div className="fixed inset-0 pointer-events-none flex items-center justify-center opacity-5">
-          <span className="text-[180px]">🦖</span>
+        <div className="fixed inset-0 pointer-events-none flex items-center justify-center opacity-[0.07]">
+          <img src="/images/nong-jaidee.png" alt="น้องใจดี" className="w-56 h-56 object-contain pointer-events-none" />
         </div>
 
         {messages.map((msg) => (
           <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'} relative z-10`}>
             {msg.sender === 'bot' && (
-              <div className="w-7 h-7 rounded-full bg-white flex items-center justify-center shadow-sm mr-2 shrink-0 border border-yellow-400 text-base">
-                🦖
+              <img
+                src="/images/nong-jaidee.png"
+                alt="น้องใจดี"
+                className="w-7 h-7 rounded-full object-cover mr-2 shrink-0 border border-yellow-400 bg-white p-0.5 shadow-xs"
+                onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }}
+              />
+            )}
+            {msg.sender === 'bot' && (
+              <div className="w-7 h-7 rounded-full bg-white hidden items-center justify-center shadow-xs mr-2 shrink-0 border border-yellow-400 text-base">
+                🤖
               </div>
             )}
             <div className={`max-w-[78%] p-3 shadow-xs ${msg.sender === 'user' ? 'bg-emerald-500 text-white rounded-2xl rounded-tr-xs' : 'bg-white text-gray-800 rounded-2xl rounded-tl-xs border border-gray-100'}`}>
@@ -105,8 +118,14 @@ export default function ChatbotPage() {
 
         {isLoading && (
           <div className="flex justify-start relative z-10">
-            <div className="w-7 h-7 rounded-full bg-white flex items-center justify-center shadow-sm mr-2 shrink-0 border border-yellow-400 text-base">
-              🦖
+            <img
+              src="/images/nong-jaidee.png"
+              alt="น้องใจดี"
+              className="w-7 h-7 rounded-full object-cover mr-2 shrink-0 border border-yellow-400 bg-white p-0.5 shadow-xs"
+              onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }}
+            />
+            <div className="w-7 h-7 rounded-full bg-white hidden items-center justify-center shadow-xs mr-2 shrink-0 border border-yellow-400 text-base">
+              🤖
             </div>
             <div className="bg-white p-3.5 rounded-2xl rounded-tl-xs border border-gray-100 shadow-xs flex items-center gap-1">
               <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
