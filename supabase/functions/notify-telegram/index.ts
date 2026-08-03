@@ -61,16 +61,39 @@ const AUDIENCE_LABELS: Record<string, string> = {
   council: 'สภาเทศบาล',
 }
 
+// ต้องตรงกับ CATEGORY_LABEL ใน src/components/admin/ComplaintsManager.jsx ทุกคำ — ไม่งั้นข้อความ
+// แจ้งเตือนใน Telegram กับหน้าเว็บจะขึ้นชื่อประเภทคำร้องไม่ตรงกัน
+const COMPLAINT_CATEGORY_LABEL: Record<string, string> = {
+  road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าสาธารณะ',
+  trash: 'ขยะ/ความสะอาด', water: 'น้ำประปา',
+  flood: 'น้ำท่วม/ระบายน้ำ', tree: 'ต้นไม้/สวนสาธารณะ',
+  noise: 'เหตุรำคาญ', drain: 'ท่อระบายน้ำ',
+  waste_water: 'น้ำเสีย', building: 'ตรวจสอบอาคาร',
+  mosquito: 'พ่นยุง', canal: 'ลอกคลอง',
+  animals: 'สุนัขจรจัด', water_supply: 'สนับสนุนน้ำอุปโภค',
+  borrow_equipment: 'ยืมพัสดุ', grievance: 'ร้องทุกข์/ร้องเรียน',
+  corruption: 'แจ้งการทุจริต', tax: 'ภาษีและค่าธรรมเนียม',
+  disease: 'ควบคุมโรคติดต่อ', other: 'อื่นๆ',
+}
+
+// ต้องตรงกับ STATUS ใน src/components/admin/ComplaintsManager.jsx ทุกคำ
+const COMPLAINT_STATUS_LABEL: Record<string, string> = {
+  new: 'คำร้องใหม่', pending: 'คำร้องใหม่',
+  received: 'รับเรื่องแล้ว',
+  in_progress: 'กำลังดำเนินการ',
+  done: 'ดำเนินการแล้ว', completed: 'ดำเนินการแล้ว',
+  closed: 'ปิดเรื่องแล้ว',
+  rejected: 'ปฏิเสธ',
+}
+
+// complaint_status_updated/technician_* ไม่อยู่ในนี้แล้ว — ใช้ buildComplaintStatusMessage() แทน
+// เพื่อโชว์ประเภท/สถานะจริงในข้อความ (ดู notificationType selection ด้านล่าง)
 const STATIC_MESSAGES: Partial<Record<NotificationType, string>> = {
   complaint_created: '📋 <b>มีคำร้องใหม่</b>\nกรุณาเข้าสู่ระบบ SmartLocal เพื่อดูรายละเอียดตามสิทธิ์',
-  complaint_status_updated: '🔄 <b>มีการอัปเดตสถานะคำร้อง</b>\nกรุณาเข้าสู่ระบบ SmartLocal เพื่อดูรายละเอียดตามสิทธิ์',
   document_request_created: '📄 <b>มีคำขอเอกสารใหม่</b>\nกรุณาเข้าสู่ระบบ SmartLocal เพื่อดูรายละเอียดตามสิทธิ์',
   document_request_status_updated: '🔄 <b>มีการอัปเดตสถานะคำขอเอกสาร</b>\nกรุณาเข้าสู่ระบบ SmartLocal เพื่อดูรายละเอียดตามสิทธิ์',
   building_permit_created: '🏗️ <b>มีคำขออนุญาตก่อสร้างใหม่</b>\nกรุณาเข้าสู่ระบบ SmartLocal เพื่อดูรายละเอียดตามสิทธิ์',
   fee_verified: '💰 <b>มีการตรวจสอบค่าธรรมเนียมแล้ว</b>\nกรุณาเข้าสู่ระบบ SmartLocal เพื่อดูรายละเอียดตามสิทธิ์',
-  technician_received: '🔧 <b>ผู้ปฏิบัติงานรับงานแล้ว</b>\nกรุณาเข้าสู่ระบบ SmartLocal เพื่อดูรายละเอียดตามสิทธิ์',
-  technician_in_progress: '🔧 <b>ผู้ปฏิบัติงานเริ่มดำเนินการแล้ว</b>\nกรุณาเข้าสู่ระบบ SmartLocal เพื่อดูรายละเอียดตามสิทธิ์',
-  technician_closed: '🔧 <b>ผู้ปฏิบัติงานปิดงานแล้ว</b>\nกรุณาเข้าสู่ระบบ SmartLocal เพื่อดูรายละเอียดตามสิทธิ์',
 }
 
 function json(body: unknown, status = 200) {
@@ -129,6 +152,16 @@ function buildEventMessage(event: Record<string, unknown>) {
     event.location ? `📍 ${escapeHtml(event.location, 200)}` : '',
     event.description ? `📝 ${escapeHtml(event.description, 120)}` : '',
   ].filter(Boolean).join('\n').slice(0, 1800)
+}
+
+function buildComplaintStatusMessage(complaint: Record<string, unknown>) {
+  const category = COMPLAINT_CATEGORY_LABEL[String(complaint.category)] ?? (cleanText(complaint.category, 60) || 'อื่นๆ')
+  const status = COMPLAINT_STATUS_LABEL[String(complaint.status)] ?? cleanText(complaint.status, 60)
+  return [
+    '🔄 <b>อัปเดตสถานะคำร้อง</b>',
+    `ประเภท: ${escapeHtml(category, 60)}`,
+    `สถานะ: ${escapeHtml(status, 60)}`,
+  ].join('\n')
 }
 
 function isRecent(createdAt: unknown, minutes = 15) {
@@ -305,7 +338,7 @@ serve(async (req) => {
     const selectColumns = spec.table === 'events'
       ? 'id,municipality_id,created_by,created_at,title,description,event_date,event_time,end_time,location,audiences,is_all_day'
       : spec.table === 'complaints'
-        ? 'id,municipality_id,user_id,created_at,updated_at,status,assigned_to'
+        ? 'id,municipality_id,user_id,created_at,updated_at,status,category,assigned_to'
         : 'id,municipality_id,user_id,created_at,updated_at,status,document_type,fee_amount'
     const { data: resource, error: resourceError } = await admin
       .from(spec.table)
@@ -360,7 +393,9 @@ serve(async (req) => {
 
     const message = notificationType === 'event_created'
       ? buildEventMessage(resource)
-      : STATIC_MESSAGES[notificationType]
+      : notificationType === 'complaint_status_updated' || notificationType.startsWith('technician_')
+        ? buildComplaintStatusMessage(resource)
+        : STATIC_MESSAGES[notificationType]
     if (!message) {
       await finish('failed', { last_error: 'Notification template is not configured' })
       return json({ ok: false, error: 'notification template is not configured' }, 500)
