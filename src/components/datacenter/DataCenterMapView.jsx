@@ -414,7 +414,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
           )}
 
           {entries.some(e => e.route_points?.length >= 2) && (
-            <button type="button" title={showRoutes ? 'ซ่อนเส้นทางถนนทั้งหมด' : 'แสดงเส้นทางถนนทั้งหมด'}
+            <button type="button" title={showRoutes ? 'ซ่อนเส้นทางถนน' : 'แสดงเส้นทางถนน'}
               onClick={() => setShowRoutes(v => !v)}
               className="absolute right-3 top-14 z-20 w-10 h-10 rounded-full shadow-md border flex items-center justify-center transition-all active:scale-95"
               style={showRoutes
