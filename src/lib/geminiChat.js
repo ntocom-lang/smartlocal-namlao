@@ -1,27 +1,67 @@
 import { supabase, supabaseUrl, supabaseAnonKey } from './supabase'
 
-// label ย่อยเฉพาะสำหรับสรุปให้ AI อ่าน (ชุดเดียวกับที่ใช้แสดงผลใน MyComplaints.jsx / MyDocRequests.jsx)
-const STATUS_LABEL = {
-  new: 'คำร้องใหม่', pending: 'คำร้องใหม่', received: 'รับเรื่องแล้ว',
-  in_progress: 'กำลังดำเนินการ', processing: 'กำลังดำเนินการ',
-  done: 'ดำเนินการแล้ว', completed: 'เสร็จสิ้น/ปิดเรื่องแล้ว', closed: 'ปิดเรื่องแล้ว',
-  rejected: 'ปฏิเสธ',
-}
-const CATEGORY_LABEL = {
-  road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าส่องสว่าง', trash: 'ขยะ/ความสะอาด',
-  water: 'น้ำประปา', flood: 'น้ำท่วม/ระบายน้ำ', tree: 'ตัดต้นไม้', noise: 'แจ้งเหตุรำคาญ',
-  drain: 'ท่อระบายน้ำ', waste_water: 'น้ำเสีย', suction: 'ดูดสิ่งปฏิกูล',
-  manhole: 'ฝาท่อระบายน้ำ', vendor: 'ขายของบนทางสาธารณะ', building: 'ตรวจสอบอาคาร', mosquito: 'พ่นยุง',
-}
-const DOC_TYPE_LABEL = {
-  residence_cert: 'ใบรับรองการอยู่อาศัย', personal_cert: 'หนังสือรับรองบุคคล',
-  tax_notice: 'ค่าธรรมเนียม/ภาษี',
-  waste_collection: 'ค่าธรรมเนียมขยะ',
-  building_permit: 'ขออนุญาตก่อสร้างบ้าน',
-}
-const thDate = (s) => new Date(s).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
+const PERSONNEL_IDENTITY_QUERY = /(?:ใคร|ชื่อ|รายชื่อ|คนไหน|ผู้ใด|ปัจจุบัน|ดำรงตำแหน่ง|ตำแหน่งอะไร)/
+const OFFICIAL_POSITION_QUERY = /(?:นายก|รองนายก|ปลัด|รองปลัด|ประธานสภา|รองประธานสภา|สมาชิกสภา|เลขานุการสภา|ผู้บริหาร|ผู้อำนวยการ|หัวหน้ากอง|หัวหน้าสำนัก|หัวหน้าหน่วย|บุคลากร)/
 
-// ดึงข้อมูลจริงจากระบบมาสรุปให้ AI ใช้ตอบ — รองรับฟีเจอร์และข้อมูลใหม่ๆ ของแอปพลิเคชันโดยอัตโนมัติ
+function isOfficialDirectoryQuestion(text) {
+  return PERSONNEL_IDENTITY_QUERY.test(text) && OFFICIAL_POSITION_QUERY.test(text)
+}
+
+function filterDirectoryByQuestion(rows, question) {
+  const includesPosition = (pattern) => rows.filter((row) => pattern.test(row.position_name || ''))
+  const namedPerson = rows.filter((row) => row.full_name && question.includes(row.full_name))
+  if (namedPerson.length) return namedPerson
+  if (/รอง\s*นายก/.test(question)) return includesPosition(/รองนายก/)
+  if (/นายก/.test(question)) return rows.filter((row) => /^(นายกเทศมนตรี|นายกองค์การบริหารส่วนตำบล)/.test(row.position_name || ''))
+  if (/รอง\s*ปลัด/.test(question)) return includesPosition(/รองปลัด/)
+  if (/ปลัด/.test(question)) return rows.filter((row) => /^(ปลัดเทศบาล|ปลัดองค์การบริหารส่วนตำบล)/.test(row.position_name || ''))
+  if (/รอง\s*ประธานสภา/.test(question)) return includesPosition(/รองประธานสภา/)
+  if (/ประธานสภา/.test(question)) return rows.filter((row) => /^ประธานสภา/.test(row.position_name || ''))
+  if (/สมาชิกสภา/.test(question)) return includesPosition(/สมาชิกสภา/)
+  if (/เลขานุการสภา/.test(question)) return includesPosition(/เลขานุการสภา/)
+
+  const departmentMatch = rows.filter((row) => {
+    const department = (row.position_name || '').match(/(?:กอง|สำนัก|หน่วย)[^/]+/)?.[0]?.trim()
+    return department && question.includes(department)
+  })
+  if (departmentMatch.length) return departmentMatch
+  if (/ผู้อำนวยการ|หัวหน้ากอง|หัวหน้าสำนัก|หัวหน้าหน่วย/.test(question)) {
+    return rows.filter((row) => row.position_category === 'dept_head')
+  }
+  if (/ผู้บริหาร/.test(question)) {
+    return rows.filter((row) => ['political_exec', 'top_admin'].includes(row.position_category))
+  }
+  return rows
+}
+
+function positionNameForTenant(positionName, tenantName) {
+  const choices = String(positionName || '').split('/').map((choice) => choice.trim()).filter(Boolean)
+  if (choices.length < 2) return choices[0] || 'ไม่ระบุตำแหน่ง'
+  const isMunicipality = String(tenantName || '').includes('เทศบาล')
+  return isMunicipality ? choices[0] : choices[1]
+}
+
+async function answerOfficialDirectoryQuestion(tenantId, tenantName, question) {
+  if (!tenantId) return 'ยังไม่สามารถระบุหน่วยงานเพื่อค้นหาข้อมูลการแต่งตั้งได้ครับ 🤖'
+  const { data, error } = await supabase.rpc('get_public_official_directory', {
+    p_municipality_id: tenantId,
+  })
+  if (error) {
+    console.error('official directory lookup failed:', error)
+    return 'ขณะนี้ตรวจสอบข้อมูลการแต่งตั้งจากระบบไม่ได้ กรุณาลองใหม่อีกครั้งครับ 🤖'
+  }
+
+  const matched = filterDirectoryByQuestion(data || [], question).slice(0, 12)
+  if (!matched.length) {
+    return 'ยังไม่พบข้อมูลการแต่งตั้งตำแหน่งนี้ในระบบ กรุณาตรวจสอบกับเทศบาลโดยตรงครับ 🤖'
+  }
+  if (matched.length === 1) {
+    return `${positionNameForTenant(matched[0].position_name, tenantName)} คือ ${matched[0].full_name} ครับ 🤖`
+  }
+  return `ข้อมูลการแต่งตั้งในระบบครับ\n${matched.map((row) => `• ${positionNameForTenant(row.position_name, tenantName)}: ${row.full_name}`).join('\n')} 🤖`
+}
+
+// ส่งให้ AI เฉพาะข้อมูลสาธารณะ ห้ามรวมข้อมูลบัญชีหรือข้อมูลคำร้องส่วนบุคคล
 async function buildContext(tenantId) {
   if (!tenantId) return ''
   const today = new Date().toISOString().split('T')[0]
@@ -29,13 +69,14 @@ async function buildContext(tenantId) {
 
   // 1. ข่าวสาร/ประกาศล่าสุด (Posts)
   const { data: posts } = await supabase.from('posts')
-    .select('title, category, created_at')
+    .select('title, type, created_at')
     .eq('municipality_id', tenantId)
+    .eq('is_published', true)
     .order('created_at', { ascending: false }).limit(4).catch(() => ({ data: null }))
   if (posts?.length) {
     lines.push('ข่าวสาร/ประกาศล่าสุดของเทศบาล:')
     for (const p of posts) {
-      lines.push(`- ${p.title} (หมวด: ${p.category || 'ทั่วไป'})`)
+      lines.push(`- ${p.title} (หมวด: ${p.type || 'ทั่วไป'})`)
     }
   }
 
@@ -74,42 +115,18 @@ async function buildContext(tenantId) {
     }
   }
 
-  // 5. ข้อมูลส่วนบุคคลของผู้ใช้ที่ล็อกอินอยู่ (คำร้องเรียน + ขอเอกสาร)
-  const { data: { session } } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }))
-  if (session?.user?.id) {
-    const { data: complaints } = await supabase.from('complaints')
-      .select('id, category, status, created_at')
-      .eq('municipality_id', tenantId).eq('user_id', session.user.id)
-      .order('created_at', { ascending: false }).limit(5).catch(() => ({ data: null }))
-    if (complaints?.length) {
-      lines.push('คำร้องเรียนของผู้ใช้คนนี้ (ล่าสุด):')
-      for (const c of complaints) {
-        lines.push(`- #${c.id.slice(0, 8)} ${CATEGORY_LABEL[c.category] ?? c.category} — สถานะ: ${STATUS_LABEL[c.status] ?? c.status} (แจ้งเมื่อ ${thDate(c.created_at)})`)
-      }
-    }
-
-    const { data: docs } = await supabase.from('document_requests')
-      .select('id, document_type, status, created_at')
-      .eq('municipality_id', tenantId).eq('user_id', session.user.id)
-      .order('created_at', { ascending: false }).limit(5).catch(() => ({ data: null }))
-    if (docs?.length) {
-      lines.push('คำขอเอกสาร/E-Service ของผู้ใช้คนนี้ (ล่าสุด):')
-      for (const r of docs) {
-        lines.push(`- #${r.id.slice(0, 8)} ${DOC_TYPE_LABEL[r.document_type] ?? r.document_type} — สถานะ: ${STATUS_LABEL[r.status] ?? r.status} (ยื่นเมื่อ ${thDate(r.created_at)})`)
-      }
-    }
-  } else {
-    lines.push('หมายเหตุ: ผู้ใช้คนนี้ยังไม่ได้ล็อกอิน หากถามเรื่องสถานะคำร้อง/เอกสารส่วนตัว ให้แนะนำให้ล็อกอินก่อนแล้วเข้าเมนู "คำร้องของฉัน" หรือ "คำขอเอกสารของฉัน"')
-  }
-
   return lines.join('\n')
 }
 
 export async function askGemini(messages, userText, tenantName, tenantId) {
-  const context = await buildContext(tenantId).catch(() => '')
+  // ชื่อและตำแหน่งตอบตรงจากฐานข้อมูล ไม่ส่งชื่อบุคลากรไปยัง Gemini
+  if (isOfficialDirectoryQuestion(userText)) {
+    return answerOfficialDirectoryQuestion(tenantId, tenantName, userText)
+  }
+  const publicContext = await buildContext(tenantId).catch(() => '')
 
   const { data, error } = await supabase.functions.invoke('gemini-chat', {
-    body: { messages, userText, tenantName, context },
+    body: { messages, userText, tenantName, context: publicContext },
   })
 
   if (error) throw error
