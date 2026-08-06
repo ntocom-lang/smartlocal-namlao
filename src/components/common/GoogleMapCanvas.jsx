@@ -22,6 +22,8 @@ export default function GoogleMapCanvas({
   onMapClick,
   onMapRightClick,
   onFeatureClick,
+  onFeatureRightClick,
+  onPolylineRightClick,
   onMarkerDragEnd,
   onMapReady,
   className = 'w-full h-full min-h-[320px]',
@@ -35,7 +37,7 @@ export default function GoogleMapCanvas({
   const dataFeaturesRef = useRef([])
   const boundaryPolylineRef = useRef(null)
   const infoWindowRef = useRef(null)
-  const callbacksRef = useRef({ onMapClick, onMapRightClick, onFeatureClick, onMarkerDragEnd, onMapReady })
+  const callbacksRef = useRef({ onMapClick, onMapRightClick, onFeatureClick, onFeatureRightClick, onPolylineRightClick, onMarkerDragEnd, onMapReady })
   const lastFitSignatureRef = useRef('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -79,8 +81,8 @@ export default function GoogleMapCanvas({
   }, [boundaryGeoJson, tenant, fetchedBoundary])
 
   useEffect(() => {
-    callbacksRef.current = { onMapClick, onMapRightClick, onFeatureClick, onMarkerDragEnd, onMapReady }
-  }, [onMapClick, onMapRightClick, onFeatureClick, onMarkerDragEnd, onMapReady])
+    callbacksRef.current = { onMapClick, onMapRightClick, onFeatureClick, onFeatureRightClick, onPolylineRightClick, onMarkerDragEnd, onMapReady }
+  }, [onMapClick, onMapRightClick, onFeatureClick, onFeatureRightClick, onPolylineRightClick, onMarkerDragEnd, onMapReady])
   
   useEffect(() => {
     let active = true
@@ -113,7 +115,10 @@ export default function GoogleMapCanvas({
         callbacksRef.current.onMapClick?.({ lat: event.latLng.lat(), lng: event.latLng.lng() })
       })
       map.addListener('rightclick', event => {
-        callbacksRef.current.onMapRightClick?.({ lat: event.latLng.lat(), lng: event.latLng.lng() })
+        const point = { lat: event.latLng.lat(), lng: event.latLng.lng() }
+        const screen = event.domEvent ? { clientX: event.domEvent.clientX, clientY: event.domEvent.clientY } : null
+        event.domEvent?.preventDefault?.()
+        callbacksRef.current.onMapRightClick?.(point, screen)
       })
       callbacksRef.current.onMapReady?.(map, google)
       setError('')
@@ -252,9 +257,19 @@ export default function GoogleMapCanvas({
         }
         callbacksRef.current.onFeatureClick?.(markerData)
       })
-      marker.addListener('rightclick', event => {
-        const point = event.latLng ? { lat: event.latLng.lat(), lng: event.latLng.lng() } : markerData.position
-        callbacksRef.current.onMapRightClick?.(point)
+      // AdvancedMarkerElement เป็น DOM element จริง ไม่ใช่ MVCObject แบบ Marker คลาสสิก — 'rightclick' ผ่าน
+      // marker.addListener() ใช้ไม่ได้ (ไม่มี event ชื่อนี้ให้ ไม่ error แค่ไม่ยิงเงียบๆ) ต้องผูกผ่าน
+      // native addEventListener('contextmenu', ...) บนตัว element โดยตรงแทน
+      marker.addEventListener('contextmenu', event => {
+        event.preventDefault()
+        const screen = { clientX: event.clientX, clientY: event.clientY }
+        if (callbacksRef.current.onFeatureRightClick) {
+          callbacksRef.current.onFeatureRightClick(markerData, screen)
+          return
+        }
+        // ไม่มี onFeatureRightClick เจาะจง — เข้ากันได้กับโค้ดเดิมที่คลิกขวาบนหมุดก็ยังนับเป็น
+        // คลิกขวาบนแผนที่ทั่วไป (ส่งพิกัดของหมุดนั้นแทนพิกัดจริงจาก event ซึ่งไม่มี latLng ให้)
+        callbacksRef.current.onMapRightClick?.(markerData.position, screen)
       })
       overlaysRef.current.push(marker)
     })
@@ -283,7 +298,16 @@ export default function GoogleMapCanvas({
       line.addListener('click', () => callbacksRef.current.onFeatureClick?.(lineData))
       line.addListener('rightclick', event => {
         const point = event.latLng ? { lat: event.latLng.lat(), lng: event.latLng.lng() } : null
-        callbacksRef.current.onMapRightClick?.(point)
+        const screen = event.domEvent ? { clientX: event.domEvent.clientX, clientY: event.domEvent.clientY } : null
+        event.domEvent?.preventDefault?.()
+        // event.edge (ดัชนีช่วงเส้นที่คลิกโดน) ใช้ได้เฉพาะ Polyline ที่ตั้ง editable: true เท่านั้น — เส้นนี้ตั้งใจ
+        // ไม่เปิด editable (กันมือจับลาก/แทรกจุดของ Google เองมาซ้อนกับหมุดเลขกำกับที่ทำเองอยู่แล้ว) จึง
+        // undefined เสมอ ปล่อยให้ผู้เรียกใช้ (เช่น InlinePolylinePicker) คำนวณช่วงที่ใกล้ที่สุดเองจากพิกัดแทน
+        if (callbacksRef.current.onPolylineRightClick && point) {
+          callbacksRef.current.onPolylineRightClick(lineData, point, screen)
+          return
+        }
+        callbacksRef.current.onMapRightClick?.(point, screen)
       })
       overlaysRef.current.push(line)
     })

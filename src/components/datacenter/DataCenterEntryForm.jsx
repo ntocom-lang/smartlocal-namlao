@@ -22,7 +22,7 @@ const SEED_GROUPS = {
 
 const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
 
-export default function DataCenterEntryForm({ tenant, profile, initialGroup, editingEntry, onSaved, onCancel }) {
+export default function DataCenterEntryForm({ tenant, profile, initialGroup, initialCategory, editingEntry, onSaved, onCancel }) {
   const isEditing = !!editingEntry
   const canDelete = isEditing && (
     profile?.role === 'admin'
@@ -40,7 +40,7 @@ export default function DataCenterEntryForm({ tenant, profile, initialGroup, edi
         group_name: editingEntry.group_name ?? '', category: editingEntry.category ?? '', name: editingEntry.name ?? '',
         description: editingEntry.description ?? '', latitude: editingEntry.latitude ?? '', longitude: editingEntry.longitude ?? '', address: '',
       }
-    : { group_name: initialGroup ?? '', category: '', name: '', description: '', latitude: '', longitude: '', address: '' })
+    : { group_name: initialGroup ?? '', category: initialCategory ?? '', name: '', description: '', latitude: '', longitude: '', address: '' })
   const [existingPhotoUrls, setExistingPhotoUrls] = useState(editingEntry?.photo_urls ?? [])
   const [images, setImages] = useState([]) // รูปใหม่ที่เพิ่งเลือกในเซสชันนี้ ยังไม่อัปโหลด
   const [saving, setSaving] = useState(false)

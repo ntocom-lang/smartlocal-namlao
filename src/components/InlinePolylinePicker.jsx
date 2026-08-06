@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { LocateFixed, Maximize2, Minimize2, Redo2, Search, Trash2, Undo2 } from 'lucide-react'
+import { LocateFixed, MapPin, Maximize2, Minimize2, Redo2, Search, Trash2, Undo2, X } from 'lucide-react'
 import GoogleMapCanvas from './common/GoogleMapCanvas'
 
 function haversine(a, b) {
@@ -17,12 +17,36 @@ function totalDistance(points) {
   return points.reduce((total, point, index) => index ? total + haversine(points[index - 1], point) : 0, 0)
 }
 
+// ระยะจากจุด p ถึงช่วงเส้น a-b — โปรเจกต์ lat/lng แบบระนาบตรงๆ (ไม่ทำ geodesic) แม่นพอสำหรับหาช่วงที่
+// ใกล้ที่สุดในระยะทางระดับตำบล/อำเภอที่เส้นทางพวกนี้ยาวไม่เกินหลักสิบกิโล คลาดเคลื่อนน้อยมากจนไม่มีผล
+function distanceToSegment(p, a, b) {
+  const dx = b.lng - a.lng, dy = b.lat - a.lat
+  const lenSq = dx * dx + dy * dy
+  if (lenSq === 0) return haversine(p, a)
+  let t = ((p.lng - a.lng) * dx + (p.lat - a.lat) * dy) / lenSq
+  t = Math.max(0, Math.min(1, t))
+  return haversine(p, { lat: a.lat + t * dy, lng: a.lng + t * dx })
+}
+
+// หาว่าจุดที่คลิกขวาโดนใกล้ "ช่วงเส้น" ไหนที่สุด (ดัชนี 0 = ช่วงระหว่างจุดที่ 1-2) — ใช้แทนตำแหน่ง
+// event.edge ของ Google ที่ใช้ไม่ได้เพราะเส้นไม่ได้เปิด editable
+function nearestSegmentIndex(point, path) {
+  let best = 0, bestDist = Infinity
+  for (let i = 0; i < path.length - 1; i++) {
+    const d = distanceToSegment(point, path[i], path[i + 1])
+    if (d < bestDist) { bestDist = d; best = i }
+  }
+  return best
+}
+
 export default function InlinePolylinePicker({ value = [], onChange, defaultCenter, color = '#3b82f6', dashArray = null }) {
   const inputRef = useRef(null)
   const mapRef = useRef(null)
   const autocompleteListenerRef = useRef(null)
   const [fullscreen, setFullscreen] = useState(false)
   const [redoStack, setRedoStack] = useState([])
+  // เมนูคำสั่งตอนคลิกขวา — คลิกขวาพื้นที่ว่าง = เมนู "เพิ่มจุดตรงนี้", คลิกขวาที่หมุดเดิม = เมนู "ลบจุดนี้"
+  const [contextMenu, setContextMenu] = useState(null) // { x, y, type: 'add'|'delete', point?, index? } | null
 
   const initialCenter = useMemo(() => {
     if (value.length) return value[0]
@@ -94,6 +118,50 @@ export default function InlinePolylinePicker({ value = [], onChange, defaultCent
     }
   }, [value, commit])
 
+  // คลิกขวาพื้นที่ว่าง → เมนู "เพิ่มจุดต่อท้าย" | คลิกขวาที่หมุดเดิม → เมนู "ลบจุดนี้" | คลิกขวาบนเส้นทาง
+  // (ระหว่างจุดสองจุด) → เมนู "แทรกจุดตรงนี้" กลางเส้น — เดิมคลิกขวาทำ "ย้อนกลับ" ทันทีโดยไม่ถาม
+  // ลบได้แค่จุดสุดท้าย เปลี่ยนมาเป็นเมนูให้เลือกชัดเจน ลบ/แทรกจุดกลางๆ ได้ด้วย
+  const handleMapRightClick = useCallback((point, screen) => {
+    if (!screen) return
+    setContextMenu({ x: screen.clientX, y: screen.clientY, type: 'add', point })
+  }, [])
+
+  const handleFeatureRightClick = useCallback((markerData, screen) => {
+    if (!screen || typeof markerData.index !== 'number') return
+    setContextMenu({ x: screen.clientX, y: screen.clientY, type: 'delete', index: markerData.index })
+  }, [])
+
+  // หาช่วงเส้น (0 = ระหว่างจุดที่ 1-2, 1 = ระหว่างจุดที่ 2-3 ฯลฯ) ที่ใกล้จุดคลิกที่สุดเอง (Google ไม่บอก
+  // ให้ตรงๆ เพราะเส้นไม่ได้เปิด editable) แทรกจุดใหม่ที่ตำแหน่ง segIdx+1 คือหลังจุดต้นของช่วงนั้นพอดี
+  const handlePolylineRightClick = useCallback((_lineData, point, screen) => {
+    if (!screen || !point || value.length < 2) return
+    const segIdx = nearestSegmentIndex(point, value)
+    setContextMenu({ x: screen.clientX, y: screen.clientY, type: 'insert', index: segIdx + 1, point })
+  }, [value])
+
+  function confirmContextMenu() {
+    if (!contextMenu) return
+    if (contextMenu.type === 'add') {
+      addPoint(contextMenu.point)
+    } else if (contextMenu.type === 'insert') {
+      const pt = { lat: Number(contextMenu.point.lat), lng: Number(contextMenu.point.lng) }
+      const next = [...value]
+      next.splice(contextMenu.index, 0, pt)
+      commit(next)
+      setRedoStack([])
+    } else {
+      commit(value.filter((_, i) => i !== contextMenu.index))
+    }
+    setContextMenu(null)
+  }
+
+  useEffect(() => {
+    if (!contextMenu) return
+    const onKeyDown = e => { if (e.key === 'Escape') setContextMenu(null) }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [contextMenu])
+
   const distance = totalDistance(value)
   const distanceLabel = distance >= 1000 ? `${(distance / 1000).toFixed(2)} กม.` : `${Math.round(distance)} ม.`
   const markers = value.map((point, index) => ({
@@ -106,7 +174,7 @@ export default function InlinePolylinePicker({ value = [], onChange, defaultCent
     label: String(index + 1),
     labelSize: '10px',
     scale: index === 0 || index === value.length - 1 ? 11 : 8,
-    title: index === 0 ? 'จุดเริ่มต้น (ลากเพื่อขยับย้ายตำแหน่งได้)' : index === value.length - 1 ? 'จุดสิ้นสุด (ลากเพื่อขยับย้ายตำแหน่งได้)' : `จุดที่ ${index + 1} (ลากเพื่อขยับย้ายตำแหน่งได้)`,
+    title: index === 0 ? 'จุดเริ่มต้น (ลากเพื่อย้าย, คลิกขวาเพื่อลบ)' : index === value.length - 1 ? 'จุดสิ้นสุด (ลากเพื่อย้าย, คลิกขวาเพื่อลบ)' : `จุดที่ ${index + 1} (ลากเพื่อย้าย, คลิกขวาเพื่อลบ)`,
   }))
   const polylines = value.length >= 2 ? [{ id: 'editing-route', path: value, color, weight: 5, dashArray }] : []
 
@@ -132,7 +200,7 @@ export default function InlinePolylinePicker({ value = [], onChange, defaultCent
           <span>เพิ่มจุด</span>
           <span className="mx-0.5 text-blue-300">|</span>
           <span className="inline-flex items-center rounded-md bg-amber-600 px-2 py-0.5 font-bold text-white shadow-xs">คลิกขวา</span>
-          <span>ยกเลิก</span>
+          <span>เมนูเพิ่ม/แทรก/ลบจุด (คลิกขวาบนเส้น = แทรกจุดกลางเส้น)</span>
           <span className="mx-0.5 text-blue-300">|</span>
           <span className="inline-flex items-center rounded-md bg-emerald-600 px-2 py-0.5 font-bold text-white shadow-xs">กดลากหมุด</span>
           <span>ย้ายตำแหน่งจุด</span>
@@ -150,7 +218,9 @@ export default function InlinePolylinePicker({ value = [], onChange, defaultCent
         polylines={polylines}
         fitBounds={false}
         onMapClick={addPoint}
-        onMapRightClick={undo}
+        onMapRightClick={handleMapRightClick}
+        onFeatureRightClick={handleFeatureRightClick}
+        onPolylineRightClick={handlePolylineRightClick}
         onMarkerDragEnd={handleMarkerDragEnd}
         onMapReady={handleMapReady}
         className={fullscreen ? 'w-full min-h-0 flex-1' : 'w-full h-[420px] min-h-[360px]'}
@@ -158,6 +228,39 @@ export default function InlinePolylinePicker({ value = [], onChange, defaultCent
     </div>
   )
 
-  if (!fullscreen) return content
-  return createPortal(<div className="fixed inset-0 z-9999 bg-white">{content}</div>, document.body)
+  // เมนูคำสั่งลอยตรงจุดคลิกขวา — portal ไป document.body เสมอ กันโดน overflow/z-index ของฟอร์มที่ครอบอยู่บัง
+  const menu = contextMenu && createPortal(
+    <>
+      <div className="fixed inset-0 z-9998" onClick={() => setContextMenu(null)} onContextMenu={e => { e.preventDefault(); setContextMenu(null) }} />
+      <div className="fixed z-9999 min-w-42.5 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl"
+        style={{ left: contextMenu.x, top: contextMenu.y }}>
+        {contextMenu.type === 'add' && (
+          <button type="button" onClick={confirmContextMenu}
+            className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-xs font-semibold text-gray-700 hover:bg-blue-50">
+            <MapPin size={14} className="text-blue-600" /> เพิ่มจุดต่อท้าย
+          </button>
+        )}
+        {contextMenu.type === 'insert' && (
+          <button type="button" onClick={confirmContextMenu}
+            className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-xs font-semibold text-emerald-700 hover:bg-emerald-50">
+            <MapPin size={14} className="text-emerald-600" /> แทรกจุดตรงนี้ (ระหว่างจุดที่ {contextMenu.index} และ {contextMenu.index + 1})
+          </button>
+        )}
+        {contextMenu.type === 'delete' && (
+          <button type="button" onClick={confirmContextMenu}
+            className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-xs font-semibold text-red-600 hover:bg-red-50">
+            <Trash2 size={14} /> ลบจุดที่ {contextMenu.index + 1}
+          </button>
+        )}
+        <button type="button" onClick={() => setContextMenu(null)}
+          className="flex w-full items-center gap-2 border-t border-gray-100 px-3.5 py-2 text-left text-xs font-medium text-gray-400 hover:bg-gray-50">
+          <X size={14} /> ยกเลิก
+        </button>
+      </div>
+    </>,
+    document.body,
+  )
+
+  if (!fullscreen) return <>{content}{menu}</>
+  return <>{createPortal(<div className="fixed inset-0 z-9999 bg-white">{content}</div>, document.body)}{menu}</>
 }
