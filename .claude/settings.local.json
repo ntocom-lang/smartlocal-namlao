@@ -217,7 +217,11 @@
       "Bash(node find_5093.mjs)",
       "Bash(curl -s -X POST \"https://overpass-api.de/api/interpreter\" --data-urlencode \"data@overpass_1134_extend.txt\" -o overpass_1134_extend.json -w \"HTTP:%{http_code} SIZE:%{size_download}\\\\n\" --max-time 60)",
       "Bash(curl -s -X POST \"https://overpass-api.de/api/interpreter\" --data-urlencode \"data@overpass_1134_gap.txt\" -o overpass_1134_gap.json -w \"HTTP:%{http_code} SIZE:%{size_download}\\\\n\" --max-time 60)",
-      "Bash(curl -s -X POST \"https://overpass-api.de/api/interpreter\" --data-urlencode \"data@overpass_1343_search.txt\" -o overpass_1343.json -w \"HTTP:%{http_code} SIZE:%{size_download}\\\\n\" --max-time 60)"
+      "Bash(curl -s -X POST \"https://overpass-api.de/api/interpreter\" --data-urlencode \"data@overpass_1343_search.txt\" -o overpass_1343.json -w \"HTTP:%{http_code} SIZE:%{size_download}\\\\n\" --max-time 60)",
+      "mcp__claude_ai_Supabase__get_edge_function",
+      "mcp__claude_ai_Supabase__deploy_edge_function",
+      "Bash(git ls-remote *)",
+      "Bash(grep -v \"^src/lib/r2Storage.js$\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\RKnetwork\\.claude\\plans"
