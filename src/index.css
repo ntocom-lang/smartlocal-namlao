@@ -145,3 +145,42 @@ body {
   height: 16px !important;
 }
 
+/* Cyber Data Center Styles */
+.cyber-glass-panel {
+  background: rgba(13, 21, 38, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(0, 240, 255, 0.15);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+.cyber-card-glow {
+  position: relative;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.cyber-card-glow:hover {
+  transform: translateY(-3px) scale(1.01);
+  border-color: rgba(0, 240, 255, 0.4);
+  box-shadow: 0 10px 30px -5px rgba(0, 240, 255, 0.25), 0 0 15px 0 rgba(0, 240, 255, 0.15);
+}
+
+.cyber-text-glow {
+  text-shadow: 0 0 12px rgba(0, 240, 255, 0.6), 0 0 20px rgba(0, 240, 255, 0.3);
+}
+
+.cyber-border-glow {
+  box-shadow: inset 0 0 15px rgba(0, 240, 255, 0.15), 0 0 12px rgba(0, 240, 255, 0.2);
+}
+
+@keyframes cyber-radar-pulse {
+  0% { transform: scale(0.95); opacity: 0.8; }
+  50% { transform: scale(1.08); opacity: 0.3; }
+  100% { transform: scale(0.95); opacity: 0.8; }
+}
+
+.animate-cyber-pulse {
+  animation: cyber-radar-pulse 3s infinite ease-in-out;
+}
+
+

@@ -53,11 +53,8 @@ export default function DataCenterLanding() {
         <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-wide">
           {tenant?.name ?? 'เทศบาล'} GIS Portal
         </h1>
-        <p className="text-white/85 text-sm mt-3 max-w-md">
-          ระบบสารสนเทศภูมิศาสตร์เพื่อบูรณาการข้อมูล
-        </p>
-        <p className="text-white/85 text-sm">
-          {tenant?.name ?? ''}
+        <p className="text-white/90 text-sm mt-3 max-w-md font-medium">
+          ระบบศูนย์รวมข้อมูลดิจิทัล เพื่อการพัฒนาอย่างยั่งยืน
         </p>
 
         <div className="flex flex-col gap-3 mt-8 w-full max-w-xs">
