@@ -6,7 +6,7 @@ import { compressImage } from '../lib/imageUtils'
 import { useAuth } from '../contexts/AuthContext'
 import { useTenant } from '../contexts/TenantContext'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
-import { THAI_PROVINCES, thaiDistrictsOf, thaiSubdistrictsOf } from '../lib/thaiAddress'
+import { THAI_PROVINCES, thaiDistrictsOf, thaiSubdistrictsOf, tenantDefaultSubdistrict } from '../lib/thaiAddress'
 
 const ROLE_LABEL = {
   superadmin: 'Super Admin',
@@ -65,9 +65,10 @@ export default function ProfilePage() {
         .eq('id', s.user.id)
         .single()
 
-      // ยังไม่เคยตั้งที่อยู่มาก่อน (บัญชีใหม่/ยังไม่ได้กรอก) — ตั้งค่าเริ่มต้นจากจังหวัด/อำเภอของเทศบาล
-      // เจ้าของเว็บเอง (tenant.province/district) เพราะผู้ใช้ส่วนใหญ่ของแต่ละเทศบาลมักอยู่ในพื้นที่นั้นจริง
-      // — ไม่ได้ hardcode ชื่อจังหวัดตายตัว เทศบาลอื่นที่ใช้ระบบเดียวกันจะได้ค่าเริ่มต้นถูกต้องตามพื้นที่ตัวเอง
+      // ยังไม่เคยตั้งที่อยู่มาก่อน (บัญชีใหม่/ยังไม่ได้กรอก) — ตั้งค่าเริ่มต้นจากจังหวัด/อำเภอ/ตำบลของ
+      // เทศบาลเจ้าของเว็บเอง (tenant.province/district + tenantDefaultSubdistrict) เพราะผู้ใช้ส่วนใหญ่
+      // ของแต่ละเทศบาลมักอยู่ในพื้นที่นั้นจริง — ไม่ได้ hardcode ชื่อจังหวัดตายตัว เทศบาลอื่นที่ใช้ระบบ
+      // เดียวกันจะได้ค่าเริ่มต้นถูกต้องตามพื้นที่ตัวเอง (สูตรเดียวกับที่ AdminDashboard.jsx ใช้)
       if (p) {
         const fullName = p.full_name || meta?.full_name || ''
         setProfile({
@@ -77,7 +78,7 @@ export default function ProfilePage() {
           id_card: p.id_card || '',
           address_province: p.address_province || tenant?.province || '',
           address_district: p.address_district || tenant?.district || '',
-          address_subdistrict: p.address_subdistrict || '',
+          address_subdistrict: p.address_subdistrict || tenantDefaultSubdistrict(tenant),
           address_moo: p.address_moo || '',
           address_detail: p.address_detail || '',
         })
@@ -91,7 +92,7 @@ export default function ProfilePage() {
           role: '',
           id_card: '',
           address_province: tenant?.province || '', address_district: tenant?.district || '',
-          address_subdistrict: '', address_moo: '', address_detail: '',
+          address_subdistrict: tenantDefaultSubdistrict(tenant), address_moo: '', address_detail: '',
         })
         setNameParts(splitThaiFullName(fullName))
       }

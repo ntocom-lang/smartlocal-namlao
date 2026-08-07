@@ -18,6 +18,7 @@ import { supabase } from '../lib/supabase'
 import { compressImage } from '../lib/imageUtils'
 import { attachReporterProfiles } from '../lib/attachReporterProfiles'
 import { uploadFile } from '../lib/driveStorage'
+import { tenantDefaultSubdistrict } from '../lib/thaiAddress'
 import { useTenant } from '../contexts/TenantContext'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 import CivilProjectReport from '../components/admin/CivilProjectReport'
@@ -1008,17 +1009,8 @@ const USER_DETAIL_TABS = [
   { key: 'appointment', label: 'การแต่งตั้งและสิทธิ์', Component: AppointmentTab },
 ]
 
-// ตำบลของ tenant อนุมานจากชื่อได้เฉพาะ เทศบาลตำบล/อบต. เท่านั้น (เทศบาลเมือง/นคร มักคลุมหลายตำบล เลยไม่เดาให้)
-function tenantDefaultSubdistrict(tenant) {
-  if (!tenant?.name) return ''
-  if (tenant.org_type === 'เทศบาลตำบล' && tenant.name.startsWith('เทศบาลตำบล')) {
-    return tenant.name.replace(/^เทศบาลตำบล/, '')
-  }
-  if (tenant.org_type === 'อบต.' && tenant.name.startsWith('องค์การบริหารส่วนตำบล')) {
-    return tenant.name.replace(/^องค์การบริหารส่วนตำบล/, '')
-  }
-  return ''
-}
+// tenantDefaultSubdistrict ย้ายไป src/lib/thaiAddress.js แล้ว (ใช้ร่วมกับ ProfilePage.jsx) — import ไว้
+// ด้านบนของไฟล์แทน กันตรรกะเพี้ยนไปคนละแบบระหว่าง 2 หน้าที่ต้องเดาตำบลของ tenant เหมือนกัน
 
 function UserDetailPage(props) {
   const { user, onBack, currentUserRole, currentUserId, tenant, saving, deletingUser, setDeletingUser, deleteLoading, deleteUser, saveUserEdits } = props

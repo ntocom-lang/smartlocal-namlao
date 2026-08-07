@@ -22,3 +22,18 @@ export function thaiSubdistrictsOf(province, district) {
     .map((r) => r.subdistrict)
     .sort((a, b) => a.localeCompare(b, 'th'))
 }
+
+// ตำบลของ tenant อนุมานจากชื่อได้เฉพาะ เทศบาลตำบล/อบต. เท่านั้น (ชื่อหน่วยงานตรงกับชื่อตำบลเป๊ะ) —
+// เทศบาลเมือง/นครมักคลุมหลายตำบล เดาไม่ได้ว่าเป็นตำบลไหน เลยคืนค่าว่างไว้ ให้ผู้ใช้เลือกเอง
+// ใช้ที่เดียวกันทั้ง ProfilePage.jsx (สมาชิกกรอกที่อยู่ตัวเอง) และ AdminDashboard.jsx (แอดมินแก้ที่อยู่
+// สมาชิกคนอื่น) กันสูตรเพี้ยนไปคนละแบบ
+export function tenantDefaultSubdistrict(tenant) {
+  if (!tenant?.name) return ''
+  if (tenant.org_type === 'เทศบาลตำบล' && tenant.name.startsWith('เทศบาลตำบล')) {
+    return tenant.name.replace(/^เทศบาลตำบล/, '')
+  }
+  if (tenant.org_type === 'อบต.' && tenant.name.startsWith('องค์การบริหารส่วนตำบล')) {
+    return tenant.name.replace(/^องค์การบริหารส่วนตำบล/, '')
+  }
+  return ''
+}
