@@ -7,6 +7,7 @@ import {
 import { supabase } from '../../lib/supabase'
 import { compressImage } from '../../lib/imageUtils'
 import { logAction } from '../../lib/auditLog'
+import { uploadFile, deleteFile, resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef } from '../../lib/driveStorage'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -113,6 +114,9 @@ function DocCard({ doc, onOpen, onDelete, deleting, role }) {
 function ViewerModal({ item, onClose }) {
   const { doc, signedUrl } = item
   const isPdf = doc.file_type === 'pdf'
+  // signedUrl อาจเป็น blob: URL (เอกสารจาก Drive) — ต้อง revoke ตอนปิด/เปลี่ยนเอกสาร กัน memory leak
+  // (Supabase signed URL ธรรมดาไม่ต้อง revoke แต่เรียกเฉยๆ ก็ไม่มีผลเสีย ไม่ใช่ blob: URL)
+  useEffect(() => () => { if (signedUrl?.startsWith('blob:')) URL.revokeObjectURL(signedUrl) }, [signedUrl])
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black/80" onClick={onClose}>
@@ -153,7 +157,7 @@ const emptyForm = {
   tags: '', description: '', file: null,
 }
 
-function UploadModal({ tenantId, uploaderId, allowedDepts, onClose, onSuccess }) {
+function UploadModal({ tenantId, tenantSlug, uploaderId, allowedDepts, onClose, onSuccess }) {
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
   const [err, setErr]     = useState('')
@@ -177,10 +181,13 @@ function UploadModal({ tenantId, uploaderId, allowedDepts, onClose, onSuccess })
     setErr('')
 
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-    const path = `${tenantId}/${form.department}/${Date.now()}_${safeName}`
 
     const toUpload = await compressImage(file, 1200)
-    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, toUpload, { upsert: false })
+    const { url: driveRef, fileId, error: upErr } = await uploadFile(BUCKET, toUpload, {
+      subject: `${tenantId}/${form.department}`,
+      filename: `${Date.now()}_${safeName}`,
+      municipality: tenantSlug,
+    })
     if (upErr) { setSaving(false); setErr('อัปโหลดไฟล์ไม่สำเร็จ: ' + upErr.message); return }
 
     const tags = form.tags.split(/[,\s]+/).map(t => t.replace(/^#/, '').trim()).filter(Boolean)
@@ -193,7 +200,7 @@ function UploadModal({ tenantId, uploaderId, allowedDepts, onClose, onSuccess })
       department:      form.department,
       tags,
       description:     form.description.trim() || null,
-      file_path:       path,
+      file_path:       driveRef,
       file_name:       file.name,
       file_type:       isPdf ? 'pdf' : 'image',
       file_size:       file.size,
@@ -201,7 +208,7 @@ function UploadModal({ tenantId, uploaderId, allowedDepts, onClose, onSuccess })
     })
 
     if (dbErr) {
-      await supabase.storage.from(BUCKET).remove([path])
+      await deleteFile(fileId)
       setSaving(false)
       setErr('บันทึกข้อมูลไม่สำเร็จ: ' + dbErr.message)
       return
@@ -405,8 +412,12 @@ export default function DocumentArchive({ tenant, profile }) {
       user_id:         profile.id,
       municipality_id: tenant.id,
     })
-    const { data } = await supabase.storage.from(BUCKET).createSignedUrl(doc.file_path, 1800)
-    setViewerItem({ doc, signedUrl: data?.signedUrl ?? '' })
+    // file_path อาจเป็น Supabase Storage path เดิม (เอกสารเก่าก่อนย้ายระบบ) หรือ marker 'drive:fileId'
+    // ของใหม่ ต้องเช็คแล้วดึงคนละทาง
+    const { url } = isPrivateDriveRef(doc.file_path)
+      ? await resolvePrivateFileUrl(driveFileIdFromRef(doc.file_path))
+      : (await supabase.storage.from(BUCKET).createSignedUrl(doc.file_path, 1800)).data ?? {}
+    setViewerItem({ doc, signedUrl: url ?? '' })
     setViewerLoading(false)
   }
 
@@ -421,7 +432,11 @@ export default function DocumentArchive({ tenant, profile }) {
       municipalityId: tenant.id,
       metadata: { department: doc?.department, file_type: doc?.file_type, file_path: doc?.file_path },
     })
-    await supabase.storage.from(BUCKET).remove([doc.file_path])
+    if (isPrivateDriveRef(doc.file_path)) {
+      await deleteFile(driveFileIdFromRef(doc.file_path))
+    } else {
+      await supabase.storage.from(BUCKET).remove([doc.file_path])
+    }
     await supabase.from('documents').delete().eq('id', id)
     setDocs(p => p.filter(d => d.id !== id))
     setDeleting(null)
@@ -518,6 +533,7 @@ export default function DocumentArchive({ tenant, profile }) {
       {showUpload && (
         <UploadModal
           tenantId={tenant.id}
+          tenantSlug={tenant.slug}
           uploaderId={profile.id}
           allowedDepts={allowed.filter(k => k !== 'all')}
           onClose={() => setShowUpload(false)}

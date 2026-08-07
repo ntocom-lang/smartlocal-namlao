@@ -70,6 +70,18 @@ export async function resolvePrivateFileUrl(fileId) {
   return { url: URL.createObjectURL(blob), error: null }
 }
 
+// ลบไฟล์ (จริงๆ คือย้ายลงถังขยะ Drive — ดูเหตุผลใน drive-delete/_shared.ts) ใช้ได้กับทั้งไฟล์ public/
+// private เพราะเช็คสิทธิ์จากตาราง drive_files ฝั่งเซิร์ฟเวอร์เอง ไม่ใช่จาก URL — ต้อง login เสมอ
+export async function deleteFile(fileId) {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session?.access_token) return { error: new Error('ยังไม่ได้เข้าสู่ระบบ') }
+
+  const { data, error } = await supabase.functions.invoke('drive-delete', { body: { fileId } })
+  if (error) return { error }
+  if (data?.error) return { error: new Error(data.error) }
+  return { error: null }
+}
+
 // ตัวช่วยแยกว่า url ที่เก็บไว้เป็นไฟล์ private ของ Drive หรือเป็น URL ปกติ (public/ของเดิมจาก Supabase)
 export function isPrivateDriveRef(url) {
   return typeof url === 'string' && url.startsWith('drive:')
