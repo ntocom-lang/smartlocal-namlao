@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { ChevronLeft, Pencil, Loader2, User } from 'lucide-react'
+import { ChevronLeft, Pencil, Loader2, X, Eye, EyeOff } from 'lucide-react'
 import { compressImage } from '../lib/imageUtils'
 import { useAuth } from '../contexts/AuthContext'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
@@ -33,6 +33,11 @@ export default function ProfilePage() {
   const [editIdCard, setEditIdCard] = useState(false)
   const [isGoogleLinked, setIsGoogleLinked] = useState(false)
   const [isLineLinked, setIsLineLinked] = useState(false)
+  const [showChangePassword, setShowChangePassword] = useState(false)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [showNewPassword, setShowNewPassword] = useState(false)
+  const [changingPassword, setChangingPassword] = useState(false)
   const fileRef = useRef()
 
   useEffect(() => {
@@ -107,6 +112,25 @@ export default function ProfilePage() {
     setEditName(false)
     setEditPhone(false)
     setEditIdCard(false)
+  }
+
+  // ใช้ supabase.auth.updateUser({password}) แบบเดียวกับ ResetPasswordPage.jsx — ต้องมี session ที่
+  // login อยู่แล้วเท่านั้น (หน้านี้เช็ค session ตอนโหลดอยู่แล้ว ไม่มี session เด้งไป /auth ก่อนถึงตรงนี้)
+  // ไม่ได้บังคับให้กรอกรหัสผ่านเดิมก่อน (Supabase ไม่มี endpoint ยืนยันรหัสเดิมแบบตรงๆ ให้ใช้ ต้องทำ
+  // reauth flow เพิ่มเองถ้าต้องการเข้มกว่านี้) — พฤติกรรมเดียวกับหน้า "ลืมรหัสผ่าน" เดิมที่มีอยู่แล้ว
+  async function handleChangePassword() {
+    setError('')
+    setMsg('')
+    if (newPassword.length < 6) { setError('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร'); return }
+    if (newPassword !== confirmPassword) { setError('รหัสผ่านไม่ตรงกัน กรุณาตรวจสอบอีกครั้ง'); return }
+    setChangingPassword(true)
+    const { error: err } = await supabase.auth.updateUser({ password: newPassword })
+    setChangingPassword(false)
+    if (err) { setError('เปลี่ยนรหัสผ่านไม่สำเร็จ: ' + err.message); return }
+    setMsg('เปลี่ยนรหัสผ่านสำเร็จแล้ว')
+    setShowChangePassword(false)
+    setNewPassword('')
+    setConfirmPassword('')
   }
 
   async function handleLogout() {
@@ -366,6 +390,60 @@ export default function ProfilePage() {
           <div className="flex items-center px-5 py-4 justify-between">
             <span className="text-sm text-gray-700">อีเมล</span>
             <span className="text-sm text-gray-500 text-right truncate max-w-56">{session?.user?.email}</span>
+          </div>
+
+          {/* เปลี่ยนรหัสผ่าน */}
+          <div className="px-5 py-4">
+            {showChangePassword ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-700">เปลี่ยนรหัสผ่าน</span>
+                  <button onClick={() => { setShowChangePassword(false); setNewPassword(''); setConfirmPassword(''); setError('') }} className="text-blue-400">
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    type={showNewPassword ? 'text' : 'password'}
+                    placeholder="รหัสผ่านใหม่ (อย่างน้อย 6 ตัว)"
+                    autoComplete="new-password"
+                    autoFocus
+                    className="w-full text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 pr-9 outline-none"
+                  />
+                  <button type="button" onClick={() => setShowNewPassword((v) => !v)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400">
+                    {showNewPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+                <input
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  type={showNewPassword ? 'text' : 'password'}
+                  placeholder="ยืนยันรหัสผ่านใหม่"
+                  autoComplete="new-password"
+                  className="w-full text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 outline-none"
+                />
+                <button
+                  onClick={handleChangePassword}
+                  disabled={changingPassword}
+                  className="w-full py-2.5 rounded-xl font-semibold text-white text-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                  style={{ backgroundColor: 'var(--color-primary)' }}
+                >
+                  {changingPassword && <Loader2 size={14} className="animate-spin" />}
+                  ยืนยันเปลี่ยนรหัสผ่าน
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-700">รหัสผ่าน</span>
+                <button onClick={() => setShowChangePassword(true)}
+                  className="text-xs text-blue-600 font-semibold border border-blue-200 px-3 py-1 rounded-full hover:bg-blue-50 transition-colors">
+                  เปลี่ยนรหัสผ่าน
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
