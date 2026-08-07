@@ -5,6 +5,7 @@ import {
 import { supabase } from '../../lib/supabase'
 import { compressImage } from '../../lib/imageUtils'
 import { logAction } from '../../lib/auditLog'
+import { uploadFile } from '../../lib/driveStorage'
 import MapPicker from '../MapPicker'
 
 const TODAY = new Date().toISOString().slice(0, 10)
@@ -110,13 +111,13 @@ export default function InfraWorkAdmin({ tenant, currentUserRole, myDepartmentId
     const urls = []
     for (const item of photos) {
       const ext = item.file.name.split('.').pop()
-      const path = `infra/${id}/${Date.now()}.${ext}`
       const compressed = await compressImage(item.file, 1200)
-      const { error } = await supabase.storage.from('complaint-attachments').upload(path, compressed)
-      if (!error) {
-        const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
-        urls.push(data.publicUrl)
-      }
+      const { url, error } = await uploadFile('complaint-attachments', compressed, {
+        subject: `infra/${id}`,
+        filename: `${Date.now()}.${ext}`,
+        municipality: tenant?.slug,
+      })
+      if (!error) urls.push(url)
     }
     return urls
   }

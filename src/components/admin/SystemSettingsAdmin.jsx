@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2, Wallpaper } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { uploadFile } from '../../lib/driveStorage'
 import { useTenant } from '../../contexts/TenantContext'
 import DepartmentManager from './DepartmentManager'
 
@@ -121,13 +122,15 @@ export default function SystemSettingsAdmin() {
     setLogoUploading(true)
     try {
       const blob = await resizeImage(file, 512)
-      const path = `logos/logo-${tenant.slug}.png`
-      const { error: upErr } = await supabase.storage
-        .from('municipality-assets')
-        .upload(path, blob, { upsert: true, contentType: 'image/png' })
+      const { url, error: upErr } = await uploadFile('municipality-assets', blob, {
+        subject: 'logos',
+        filename: `logo-${tenant.slug}.png`,
+        municipality: tenant?.slug,
+      })
       if (upErr) throw upErr
-      const { data: { publicUrl } } = supabase.storage.from('municipality-assets').getPublicUrl(path)
-      const bustedUrl = `${publicUrl}?v=${Date.now()}`
+      // url จาก Drive มี query string (?id=...) อยู่แล้ว ต้องต่อด้วย & ไม่ใช่ ? (ผิดกับ Supabase Storage
+      // getPublicUrl เดิมที่ไม่มี query string มาก่อน)
+      const bustedUrl = `${url}&v=${Date.now()}`
       const { error: dbErr } = await supabase.rpc('update_municipality_logo', {
         p_municipality_id: tenant.id,
         p_logo_url: bustedUrl,
@@ -153,13 +156,13 @@ export default function SystemSettingsAdmin() {
     setQrUploading(true)
     try {
       const blob = await resizeImage(file, 600)
-      const path = `qr/${tenant.slug}.png`
-      const { error: upErr } = await supabase.storage
-        .from('municipality-assets')
-        .upload(path, blob, { upsert: true, contentType: 'image/png' })
+      const { url, error: upErr } = await uploadFile('municipality-assets', blob, {
+        subject: 'qr',
+        filename: `${tenant.slug}.png`,
+        municipality: tenant?.slug,
+      })
       if (upErr) throw upErr
-      const { data: { publicUrl } } = supabase.storage.from('municipality-assets').getPublicUrl(path)
-      const bustedUrl = `${publicUrl}?v=${Date.now()}`
+      const bustedUrl = `${url}&v=${Date.now()}`
       const { error: dbErr } = await supabase.rpc('update_municipality_qr', {
         p_municipality_id: tenant.id,
         p_qr_code_url:     bustedUrl,
@@ -187,14 +190,14 @@ export default function SystemSettingsAdmin() {
     let publicUrl = null
     try {
       const blob = await resizeImage(file, 1600)
-      const path = `headers/header-${tenant.slug}.jpg`
-      const { error: upErr } = await supabase.storage
-        .from('municipality-assets')
-        .upload(path, blob, { upsert: true, contentType: 'image/jpeg' })
+      const { url, error: upErr } = await uploadFile('municipality-assets', blob, {
+        subject: 'headers',
+        filename: `header-${tenant.slug}.jpg`,
+        municipality: tenant?.slug,
+      })
       if (upErr) throw upErr
-      const { data: { publicUrl: url } } = supabase.storage.from('municipality-assets').getPublicUrl(path)
-      // เพิ่ม timestamp ป้องกัน browser cache รูปเก่า
-      publicUrl = `${url}?v=${Date.now()}`
+      // เพิ่ม timestamp ป้องกัน browser cache รูปเก่า — & ไม่ใช่ ? เพราะ url จาก Drive มี ?id= อยู่แล้ว
+      publicUrl = `${url}&v=${Date.now()}`
       const { data: updatedRows, error: dbErr } = await supabase
         .from('municipalities')
         .update({ header_image_url: publicUrl })
@@ -645,14 +648,14 @@ function BannerManager({ tenant }) {
     try {
       for (const file of files) {
         const ext  = file.name.split('.').pop() || 'jpg'
-        const path = `banners/${tenant.slug}/${crypto.randomUUID()}.${ext}`
-        const { error: upErr } = await supabase.storage
-          .from('municipality-assets')
-          .upload(path, file, { upsert: false, contentType: file.type || 'image/jpeg' })
+        const { url, error: upErr } = await uploadFile('municipality-assets', file, {
+          subject: `banners/${tenant.slug}`,
+          filename: `${crypto.randomUUID()}.${ext}`,
+          municipality: tenant?.slug,
+        })
         if (upErr) throw upErr
-        const { data: { publicUrl } } = supabase.storage.from('municipality-assets').getPublicUrl(path)
         const { data: row, error: dbErr } = await supabase.from('banners')
-          .insert({ municipality_id: tenant.id, image_url: publicUrl, sort_order: banners.length + 1, object_position: 'center' })
+          .insert({ municipality_id: tenant.id, image_url: url, sort_order: banners.length + 1, object_position: 'center' })
           .select('id, image_url, sort_order, object_position').single()
         if (dbErr) throw dbErr
         setBanners(prev => [...prev, row])

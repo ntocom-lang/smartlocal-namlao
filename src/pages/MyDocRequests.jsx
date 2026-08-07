@@ -10,6 +10,7 @@ import { useTenant } from '../contexts/TenantContext'
 import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
 import { generateDraftPdfBlob } from '../lib/generateDraftPdf'
 import { thaiDate } from '../lib/thaiDate'
+import { resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef } from '../lib/driveStorage'
 
 const BASE_DOC_TYPES = {
   residence_cert:   'ใบรับรองการอยู่อาศัย',
@@ -85,21 +86,42 @@ function DocDownloadShare({ url, docLabel }) {
     ? url
     : (signedResult.path === url ? signedResult.url : null)
   const urlError = signedResult.path === url ? signedResult.error : ''
+  // เอกสารจาก Drive ได้ accessUrl เป็น blob: (อยู่ในหน่วยความจำเบราว์เซอร์ตอนนี้เท่านั้น) ใช้ดาวน์โหลด
+  // ตรงได้ปกติ แต่ "แชร์"/"คัดลอกลิงก์" ใช้ไม่ได้จริง — เอาไปแปะที่อื่น/ส่งให้คนอื่นแล้วเปิดไม่ขึ้นแน่นอน
+  // (ต่างจาก Supabase signed URL เดิมที่เป็นลิงก์ http จริง แชร์/วางที่ไหนก็เปิดได้ภายในเวลาที่กำหนด)
+  // ปิดปุ่มไว้กันหลอกผู้ใช้ว่า "คัดลอกสำเร็จ" ทั้งที่ลิงก์ใช้ไม่ได้จริง
+  const isDriveSourced = isPrivateDriveRef(url)
 
+  // url อาจเป็น Supabase Storage path เดิม (เอกสารเก่าก่อนย้ายระบบ) หรือ marker 'drive:fileId' ของใหม่
+  // (เอกสารที่ออกหลังย้ายไป Google Drive) ต้องเช็คแล้วดึงคนละทาง — isLegacyPublicUrl ด้านบนจับ URL ที่
+  // ขึ้นต้น http ไว้แล้ว (ของเก่าสุดที่ยังไม่มี path แบบมี bucket) เหลือแค่ 2 กรณีนี้ให้ต่อ
   useEffect(() => {
     let cancelled = false
+    let revoke = null
     if (!url || url.startsWith('http')) return undefined
 
-    supabase.storage.from('document-certs').createSignedUrl(url, 3600)
-      .then(({ data, error }) => {
+    if (isPrivateDriveRef(url)) {
+      resolvePrivateFileUrl(driveFileIdFromRef(url)).then(({ url: blobUrl, error }) => {
         if (cancelled) return
-        if (error || !data?.signedUrl) {
+        if (error || !blobUrl) {
           setSignedResult({ path: url, url: null, error: 'ไม่สามารถสร้างลิงก์ดาวน์โหลดได้ กรุณาลองใหม่' })
           return
         }
-        setSignedResult({ path: url, url: data.signedUrl, error: '' })
+        revoke = blobUrl
+        setSignedResult({ path: url, url: blobUrl, error: '' })
       })
-    return () => { cancelled = true }
+    } else {
+      supabase.storage.from('document-certs').createSignedUrl(url, 3600)
+        .then(({ data, error }) => {
+          if (cancelled) return
+          if (error || !data?.signedUrl) {
+            setSignedResult({ path: url, url: null, error: 'ไม่สามารถสร้างลิงก์ดาวน์โหลดได้ กรุณาลองใหม่' })
+            return
+          }
+          setSignedResult({ path: url, url: data.signedUrl, error: '' })
+        })
+    }
+    return () => { cancelled = true; if (revoke) URL.revokeObjectURL(revoke) }
   }, [url])
 
   async function handleShare() {
@@ -147,17 +169,18 @@ function DocDownloadShare({ url, docLabel }) {
           {accessUrl ? <Download size={15} /> : <Loader2 size={15} className="animate-spin" />}
           {accessUrl ? 'ดาวน์โหลด' : 'กำลังเตรียมลิงก์'}
         </a>
-        <button onClick={handleShare} disabled={!accessUrl}
-          className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm active:scale-[0.98] transition-all border-2 border-emerald-400 text-emerald-700 bg-white">
+        <button onClick={handleShare} disabled={!accessUrl || isDriveSourced}
+          className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm active:scale-[0.98] transition-all border-2 border-emerald-400 text-emerald-700 bg-white disabled:opacity-40">
           <Share2 size={15} /> แชร์
         </button>
-        <button onClick={handleCopy} disabled={!accessUrl} title="คัดลอกลิงก์"
-          className="w-12 flex items-center justify-center rounded-xl border-2 border-gray-200 text-gray-500 bg-white active:scale-[0.98] transition-all">
+        <button onClick={handleCopy} disabled={!accessUrl || isDriveSourced} title={isDriveSourced ? 'เอกสารนี้คัดลอกลิงก์ไม่ได้ กรุณากดดาวน์โหลดแทน' : 'คัดลอกลิงก์'}
+          className="w-12 flex items-center justify-center rounded-xl border-2 border-gray-200 text-gray-500 bg-white active:scale-[0.98] transition-all disabled:opacity-40">
           {copied ? <Check size={15} className="text-emerald-500" /> : <Copy size={15} />}
         </button>
       </div>
       {urlError && <p className="text-xs font-semibold text-red-500">{urlError}</p>}
-      {accessUrl && <p className="text-[11px] text-emerald-600">ลิงก์ดาวน์โหลดมีอายุ 1 ชั่วโมงเพื่อป้องกันการเปิดเอกสารโดยไม่ได้รับอนุญาต</p>}
+      {accessUrl && !isDriveSourced && <p className="text-[11px] text-emerald-600">ลิงก์ดาวน์โหลดมีอายุ 1 ชั่วโมงเพื่อป้องกันการเปิดเอกสารโดยไม่ได้รับอนุญาต</p>}
+      {accessUrl && isDriveSourced && <p className="text-[11px] text-gray-400">กดดาวน์โหลดเพื่อบันทึกเอกสารไว้ในเครื่อง (แชร์/คัดลอกลิงก์ใช้กับเอกสารนี้ไม่ได้)</p>}
     </div>
   )
 }

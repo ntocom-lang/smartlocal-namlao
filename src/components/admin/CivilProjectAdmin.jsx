@@ -9,6 +9,7 @@ import GoogleMapCanvas from '../common/GoogleMapCanvas'
 import { supabase } from '../../lib/supabase'
 import { compressImage } from '../../lib/imageUtils'
 import { logAction } from '../../lib/auditLog'
+import { uploadFile } from '../../lib/driveStorage'
 import InlineMapPicker from '../InlineMapPicker'
 import InlinePolylinePicker from '../InlinePolylinePicker'
 
@@ -415,13 +416,13 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
     const urls = []
     for (const item of newPhotos) {
       const ext  = item.file.name.split('.').pop()
-      const path = `civil/${id}/${Date.now()}.${ext}`
       const compressed = await compressImage(item.file, 1200)
-      const { error } = await supabase.storage.from('complaint-attachments').upload(path, compressed)
-      if (!error) {
-        const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
-        urls.push(data.publicUrl)
-      }
+      const { url, error } = await uploadFile('complaint-attachments', compressed, {
+        subject: `civil/${id}`,
+        filename: `${Date.now()}.${ext}`,
+        municipality: tenant?.slug,
+      })
+      if (!error) urls.push(url)
     }
     return urls
   }
@@ -551,12 +552,14 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
     if (!detailPhotoFile || !selectedProject) return
     setUploadingPhoto(true)
     const ext = detailPhotoFile.name.split('.').pop()
-    const path = `civil/${selectedProject.id}/${Date.now()}.${ext}`
     const compressed = await compressImage(detailPhotoFile, 1200)
-    const { error } = await supabase.storage.from('complaint-attachments').upload(path, compressed)
+    const { url, error } = await uploadFile('complaint-attachments', compressed, {
+      subject: `civil/${selectedProject.id}`,
+      filename: `${Date.now()}.${ext}`,
+      municipality: tenant?.slug,
+    })
     if (!error) {
-      const { data: urlData } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
-      const newPhotos = [...(selectedProject.photos ?? []), urlData.publicUrl]
+      const newPhotos = [...(selectedProject.photos ?? []), url]
       await supabase.from('civil_projects').update({ photos: newPhotos, updated_at: new Date().toISOString() }).eq('id', selectedProject.id)
       setSelectedProject(p => ({ ...p, photos: newPhotos }))
       setDetailPhotoFile(null)

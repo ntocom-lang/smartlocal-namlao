@@ -17,6 +17,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { compressImage } from '../lib/imageUtils'
 import { attachReporterProfiles } from '../lib/attachReporterProfiles'
+import { uploadFile } from '../lib/driveStorage'
 import { useTenant } from '../contexts/TenantContext'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 import CivilProjectReport from '../components/admin/CivilProjectReport'
@@ -1710,25 +1711,25 @@ function StaffManager({ tenant }) {
     setUploading(staffId)
     setError(null)
     const ext = file.name.split('.').pop().toLowerCase()
-    const path = `staff/${staffId}/photo_${Date.now()}.${ext}`
     const compressed = await compressImage(file, 400)
-    const { error: uploadErr } = await supabase.storage
-      .from('complaint-attachments')
-      .upload(path, compressed, { upsert: true })
+    const { url, error: uploadErr } = await uploadFile('complaint-attachments', compressed, {
+      subject: `staff/${staffId}`,
+      filename: `photo_${Date.now()}.${ext}`,
+      municipality: tenant?.slug,
+    })
     if (uploadErr) {
       setError('อัปโหลดรูปไม่สำเร็จ: ' + uploadErr.message)
       setUploading(null)
       return
     }
-    const { data: urlData } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
     const { error: updateErr } = await supabase
       .from('staff')
-      .update({ photo_url: urlData.publicUrl })
+      .update({ photo_url: url })
       .eq('id', staffId)
     if (updateErr) {
       setError('บันทึกข้อมูลไม่สำเร็จ: ' + updateErr.message)
     } else {
-      setStaff((prev) => prev.map((s) => s.id === staffId ? { ...s, photo_url: urlData.publicUrl } : s))
+      setStaff((prev) => prev.map((s) => s.id === staffId ? { ...s, photo_url: url } : s))
     }
     setUploading(null)
   }

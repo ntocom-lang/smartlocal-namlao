@@ -4,6 +4,7 @@ import { supabase, supabaseUrl } from '../../lib/supabase'
 import { notifyTelegram } from '../../lib/notifyTelegram'
 import { logAction } from '../../lib/auditLog'
 import { extractEventFromFile } from '../../lib/geminiChat'
+import { uploadFile } from '../../lib/driveStorage'
 
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
 const MINUTES = ['00', '15', '30', '45']
@@ -621,16 +622,14 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
       for (const file of files) {
         if (file.size > 20 * 1024 * 1024) throw new Error(`ไฟล์ "${file.name}" ใหญ่เกินไป (สูงสุด 20 MB)`)
         const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-        const path = `${tenant.id}/${user.id}/${Date.now()}_${safeName}`
-        const contentType = file.type || (/\.pdf$/i.test(file.name ?? '') ? 'application/pdf' : 'application/octet-stream')
 
-        const { error: uploadError } = await supabase.storage
-          .from('event-attachments')
-          .upload(path, file, { contentType })
+        const { url, error: uploadError } = await uploadFile('event-attachments', file, {
+          subject: `${tenant.id}/${user.id}`,
+          filename: `${Date.now()}_${safeName}`,
+          municipality: tenant?.slug,
+        })
         if (uploadError) throw new Error(uploadError.message)
-
-        const { data: { publicUrl } } = supabase.storage.from('event-attachments').getPublicUrl(path)
-        newUrls.push(publicUrl)
+        newUrls.push(url)
       }
 
       const allUrls = [...existingUrls, ...newUrls]

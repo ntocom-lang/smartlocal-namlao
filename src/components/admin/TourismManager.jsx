@@ -3,6 +3,7 @@ import { Luggage, Store, Star, RefreshCw, Loader2, Plus, Camera, Pencil, Trash2,
 import { supabase } from '../../lib/supabase'
 import { compressImage } from '../../lib/imageUtils'
 import { logAction } from '../../lib/auditLog'
+import { uploadFile } from '../../lib/driveStorage'
 import BusinessRegistrationAdmin from './BusinessRegistrationAdmin'
 
 const TOUR_CATS = [
@@ -240,11 +241,12 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
     setUploadingFor(placeId)
     for (const rawFile of allowed) {
       const compressed = await compressImage(rawFile)
-      const path = `tourism/${placeId}/photo_${Date.now()}.jpg`
-      const { error } = await supabase.storage.from('complaint-attachments').upload(path, compressed, { upsert: true })
+      const { url, error } = await uploadFile('complaint-attachments', compressed, {
+        subject: `tourism/${placeId}`,
+        filename: `photo_${Date.now()}.jpg`,
+        municipality: tenant?.slug,
+      })
       if (error) continue
-      const { data: urlData } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
-      const url = urlData.publicUrl
       await supabase.from('tourism_places').select('image_url, gallery').eq('id', placeId).single()
         .then(async ({ data: fresh }) => {
           if (!fresh?.image_url) {

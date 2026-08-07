@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { MapPin, Loader2, X, Image as ImageIcon, Trash2, Route } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { compressImage } from '../../lib/imageUtils'
+import { uploadFile } from '../../lib/driveStorage'
 
 const ROUTE_COLORS = [
   { hex: '#3b82f6', label: 'น้ำเงิน' }, { hex: '#22c55e', label: 'เขียว' },
@@ -97,9 +98,12 @@ export default function DataCenterEntryForm({ tenant, profile, initialGroup, ini
     const urls = []
     for (const item of images) {
       const ext = item.file.name?.split('.').pop() || 'jpg'
-      const path = `data-center/${entryId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
-      const { error } = await supabase.storage.from('complaint-attachments').upload(path, item.file, { upsert: false })
-      if (!error) urls.push(supabase.storage.from('complaint-attachments').getPublicUrl(path).data.publicUrl)
+      const { url, error } = await uploadFile('complaint-attachments', item.file, {
+        subject: `data-center/${entryId}`,
+        filename: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`,
+        municipality: tenant?.slug,
+      })
+      if (!error) urls.push(url)
     }
     return urls
   }

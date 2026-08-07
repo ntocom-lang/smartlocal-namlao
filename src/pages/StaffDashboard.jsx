@@ -14,6 +14,7 @@ import { useTenant } from '../contexts/TenantContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { thaiDate } from '../lib/thaiDate'
 import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
+import { uploadFile } from '../lib/driveStorage'
 
 const MapPicker = lazy(() => import('../components/MapPicker'))
 const CivilProjectAdmin = lazy(() => import('../components/admin/CivilProjectAdmin'))
@@ -576,10 +577,13 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
       const docDate = new Date().toISOString().slice(0, 10)
       const html = buildDocHTML({ req: { ...req, staff_notes: staffNote || req.staff_notes }, tenant, docDate })
       const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-      const path = `${tenant?.id ?? 'org'}/${id}.html`
-      const { error: upErr } = await supabase.storage.from('document-certs').upload(path, blob, { upsert: true, contentType: 'text/html' })
+      const { url, error: upErr } = await uploadFile('document-certs', blob, {
+        subject: id,
+        filename: `${id}.html`,
+        municipality: tenant?.slug,
+      })
       if (!upErr) {
-        document_url = path
+        document_url = url
       }
     }
 
@@ -954,7 +958,7 @@ function markStaffSeen(id) {
   window.dispatchEvent(new Event('staff-badge-update'))
 }
 
-function ComplaintDetailSheetStaff({ complaint: c, onClose, onUpdate, updating }) {
+function ComplaintDetailSheetStaff({ complaint: c, onClose, onUpdate, updating, tenant }) {
   const [note, setNote] = useState(c.technician_note ?? '')
   const [photos, setPhotos] = useState(c.work_photos ?? [])
   const [uploading, setUploading] = useState(false)
@@ -971,14 +975,14 @@ function ComplaintDetailSheetStaff({ complaint: c, onClose, onUpdate, updating }
     const file = e.target.files?.[0]
     if (!file) return
     setUploading(true)
-    const path = `${c.id}/work_${Date.now()}.${file.name.split('.').pop()}`
     const compressed = await compressImage(file, 1200)
-    const { error: upErr } = await supabase.storage
-      .from('complaint-attachments')
-      .upload(path, compressed, { upsert: false })
+    const { url, error: upErr } = await uploadFile('complaint-attachments', compressed, {
+      subject: c.id,
+      filename: `work_${Date.now()}.${file.name.split('.').pop()}`,
+      municipality: tenant?.slug,
+    })
     if (!upErr) {
-      const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
-      const newPhotos = [...photos, data.publicUrl]
+      const newPhotos = [...photos, url]
       setPhotos(newPhotos)
       await supabase.from('complaints').update({ work_photos: newPhotos }).eq('id', c.id)
       if (c.user_id) {
@@ -1357,7 +1361,7 @@ function ComplaintsStaffModule({ tenant, staffId }) {
 
       {selected && (
         <ComplaintDetailSheetStaff complaint={selected} onClose={() => setSelected(null)}
-          onUpdate={advanceStatus} updating={updating} />
+          onUpdate={advanceStatus} updating={updating} tenant={tenant} />
       )}
     </div>
   )

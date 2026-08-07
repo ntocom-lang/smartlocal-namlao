@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { compressImage } from '../../lib/imageUtils'
 import MapPicker from '../MapPicker'
 import { buildCouncilComplaintHtml } from '../../lib/councilFormPrint'
+import { uploadFile } from '../../lib/driveStorage'
 
 const MAX_PHOTOS = 3
 
@@ -72,12 +73,13 @@ export default function OssIntakeForm({ tenant, categoryLabels, onClose }) {
             let compressed
             try { compressed = await compressImage(file, undefined, 0.85) }
             catch { try { compressed = await compressImage(file, 480, 0.60) } catch { compressed = file } }
-            const path = `${inserted.id}/${crypto.randomUUID()}.jpg`
-            const { error: upErr } = await supabase.storage.from('complaint-attachments')
-              .upload(path, compressed, { upsert: false, contentType: 'image/jpeg' })
+            const { url, error: upErr } = await uploadFile('complaint-attachments', compressed, {
+              subject: inserted.id,
+              filename: `${crypto.randomUUID()}.jpg`,
+              municipality: tenant?.slug,
+            })
             if (upErr) throw upErr
-            const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
-            urls.push(data.publicUrl)
+            urls.push(url)
           } catch (err) {
             console.error('[oss-intake] photo upload failed:', err?.message ?? err)
           }

@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { compressImage } from '../../lib/imageUtils'
+import { uploadFile } from '../../lib/driveStorage'
 import {
   Plus, Trash2, Loader2, Newspaper, Camera, X, Upload,
   Eye, EyeOff, CalendarDays, Pencil, Check, Move, AlertCircle,
@@ -117,14 +118,15 @@ export default function PostsManager({ currentUserRole = 'staff', myDepartmentId
     try {
       const compressed = await compressImage(file, 1200)
       const ext = file.name.split('.').pop()
-      const path = `posts/${tenant.id}/${Date.now()}.${ext}`
-      const { error: upErr } = await supabase.storage
-        .from('complaint-attachments').upload(path, compressed, { upsert: false })
+      const { url, error: upErr } = await uploadFile('complaint-attachments', compressed, {
+        subject: `posts/${tenant.id}`,
+        filename: `${Date.now()}.${ext}`,
+        municipality: tenant?.slug,
+      })
       if (upErr) {
         setUploadError('อัปโหลดไม่สำเร็จ: ' + upErr.message)
       } else {
-        const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
-        setForm(f => ({ ...f, image_url: data.publicUrl, image_position: '50% 50%' }))
+        setForm(f => ({ ...f, image_url: url, image_position: '50% 50%' }))
       }
     } catch (e) {
       setUploadError('เกิดข้อผิดพลาด: ' + (e?.message ?? 'ลองใหม่อีกครั้ง'))

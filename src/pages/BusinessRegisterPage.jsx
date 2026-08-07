@@ -4,6 +4,7 @@ import { ArrowLeft, MapPin, Phone, Store, Image, AlignLeft, CheckCircle2, Loader
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { compressImage } from '../lib/imageUtils'
+import { uploadFile } from '../lib/driveStorage'
 import MapPicker from '../components/MapPicker'
 
 const BUSINESS_TYPES = [
@@ -83,14 +84,12 @@ export default function BusinessRegisterPage() {
     const urls = []
     for (const item of images) {
       const ext = item.file.name.split('.').pop()
-      const path = `business/${id}/${Date.now()}.${ext}`
-      const { error } = await supabase.storage
-        .from('complaint-attachments')
-        .upload(path, item.file, { upsert: false })
-      if (!error) {
-        const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
-        urls.push(data.publicUrl)
-      }
+      const { url, error } = await uploadFile('complaint-attachments', item.file, {
+        subject: `business/${id}`,
+        filename: `${Date.now()}.${ext}`,
+        municipality: tenant?.slug,
+      })
+      if (!error) urls.push(url)
     }
     return urls
   }

@@ -113,7 +113,8 @@ serve(async (req) => {
   } catch {
     return json({ error: 'invalid base64 data' }, 400)
   }
-  if (bytes.length > 15 * 1024 * 1024) return json({ error: 'ไฟล์ใหญ่เกิน 15MB' }, 413)
+  // 25MB (ไม่ใช่ 15MB เดิม) — EventsManager.jsx อนุญาตไฟล์แนบกิจกรรมสูงสุด 20MB ต้องเผื่อ headroom
+  if (bytes.length > 25 * 1024 * 1024) return json({ error: 'ไฟล์ใหญ่เกิน 25MB' }, 413)
 
   try {
     const accessToken = await getDriveAccessToken()

@@ -10,6 +10,7 @@ import { useTenant } from '../contexts/TenantContext'
 import { fmtNo } from '../lib/formatComplaintNo'
 import { compressImage } from '../lib/imageUtils'
 import { notifyTelegram } from '../lib/notifyTelegram'
+import { uploadFile } from '../lib/driveStorage'
 import MapPicker from '../components/MapPicker'
 
 const STATUS = {
@@ -127,7 +128,7 @@ function StatusStepper({ status }) {
 }
 
 
-function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenantName, tenantLogo }) {
+function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenantName, tenantLogo, tenant }) {
   const [note, setNote] = useState(c.technician_note ?? '')
   const [photos, setPhotos] = useState(c.work_photos ?? [])
   const [uploading, setUploading] = useState(false)
@@ -264,14 +265,14 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenantName, te
     const file = e.target.files?.[0]
     if (!file) return
     setUploading(true)
-    const path = `${c.id}/work_${Date.now()}.${file.name.split('.').pop()}`
     const compressed = await compressImage(file, 1200)
-    const { error: upErr } = await supabase.storage
-      .from('complaint-attachments')
-      .upload(path, compressed, { upsert: false })
+    const { url, error: upErr } = await uploadFile('complaint-attachments', compressed, {
+      subject: c.id,
+      filename: `work_${Date.now()}.${file.name.split('.').pop()}`,
+      municipality: tenant?.slug,
+    })
     if (!upErr) {
-      const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
-      const newPhotos = [...photos, data.publicUrl]
+      const newPhotos = [...photos, url]
       setPhotos(newPhotos)
       await supabase.from('complaints').update({ work_photos: newPhotos }).eq('id', c.id)
       if (c.user_id) {
@@ -725,6 +726,7 @@ export default function TechnicianDashboard() {
           updating={updating}
           tenantName={tenant?.name}
           tenantLogo={tenant?.logo_url}
+          tenant={tenant}
         />
       )}
 
