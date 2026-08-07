@@ -1,7 +1,9 @@
 // Supabase Edge Function: drive-upload
-// รับไฟล์ (base64) จาก client → อัปโหลดขึ้น Google Drive ผ่าน Service Account (credential ฝั่งเซิร์ฟเวอร์
-// เท่านั้น ไม่เคยส่งออกไปฝั่งไคลเอนต์) → จัดเก็บในโครงสร้างโฟลเดอร์ หน่วยงาน/ปี(พ.ศ.)/ประเภท/เรื่อง
-// Secret ที่ต้องตั้งก่อนใช้งาน: GOOGLE_SERVICE_ACCOUNT_KEY (JSON key ทั้งก้อน), GOOGLE_DRIVE_ROOT_FOLDER_ID
+// รับไฟล์ (base64) จาก client → อัปโหลดขึ้น Google Drive ในนามบัญชี Google จริงของผู้ดูแล (OAuth
+// refresh token, credential ฝั่งเซิร์ฟเวอร์เท่านั้น ไม่เคยส่งออกไปฝั่งไคลเอนต์) → จัดเก็บในโครงสร้าง
+// โฟลเดอร์ หน่วยงาน/ปี(พ.ศ.)/ประเภท/เรื่อง — ตั้งค่า refresh token ครั้งแรกผ่าน drive-oauth-callback
+// Secret ที่ต้องตั้งก่อนใช้งาน: GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET,
+// GOOGLE_OAUTH_REFRESH_TOKEN, GOOGLE_DRIVE_ROOT_FOLDER_ID
 // Deploy: supabase functions deploy drive-upload
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
@@ -45,14 +47,6 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405)
 
-  const authHeader = req.headers.get('authorization') ?? ''
-  const token = authHeader.replace('Bearer ', '').trim()
-  if (!token) return json({ error: 'unauthorized' }, 401)
-
-  const authClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!)
-  const { data: { user }, error: authErr } = await authClient.auth.getUser(token)
-  if (authErr || !user) return json({ error: 'unauthorized' }, 401)
-
   let body: Record<string, unknown>
   try {
     body = await req.json()
@@ -68,12 +62,45 @@ serve(async (req) => {
   if (!ALLOWED_BUCKETS.has(bucket)) return json({ error: 'invalid bucket' }, 400)
   if (!filename || typeof base64Data !== 'string') return json({ error: 'missing filename or data' }, 400)
 
-  const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
-  const { data: profile } = await admin.from('profiles').select('role, municipality_id').eq('id', user.id).maybeSingle()
-  if (!profile?.municipality_id) return json({ error: 'ไม่พบเทศบาลของผู้ใช้' }, 403)
+  // complaint-attachments เท่านั้นที่อนุญาตให้ "ไม่ login" อัปโหลดได้ — ต้องตรงกับ RLS policy เดิมของ
+  // Supabase Storage bucket เดียวกันเป๊ะๆ ("allow upload complaint-attachments", roles: anon,authenticated)
+  // ไม่ได้เปิดสิทธิ์ใหม่ แค่รักษาพฤติกรรมเดิม (ประชาชนยื่นคำร้องแนบรูปได้โดยไม่ต้องล็อกอิน) ตอนย้ายจาก
+  // Storage มา Drive — บัคเก็ตอื่นทั้งหมดยังคง "ต้อง login" เหมือนเดิมทุกประการ ห้ามขยาย allowAnon เพิ่ม
+  const allowAnon = bucket === 'complaint-attachments'
 
-  const { data: municipality } = await admin.from('municipalities').select('slug').eq('id', profile.municipality_id).single()
-  if (!municipality) return json({ error: 'municipality not found' }, 404)
+  const authHeader = req.headers.get('authorization') ?? ''
+  const token = authHeader.replace('Bearer ', '').trim()
+  let user: { id: string } | null = null
+  if (token) {
+    const authClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!)
+    const { data } = await authClient.auth.getUser(token)
+    user = data?.user ?? null
+  }
+  if (!user && !allowAnon) return json({ error: 'unauthorized' }, 401)
+
+  const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+
+  // superadmin ไม่ผูกกับเทศบาลใดเทศบาลหนึ่ง (municipality_id เป็น null ปกติ เพราะดูแลได้ทุกที่) จึงต้อง
+  // ให้ระบุ municipality (slug) มาใน body เอง — user ทั่วไปใช้ municipality_id ของตัวเองเสมอ ห้าม
+  // override จาก body เด็ดขาด (กันสวมรอยอัปโหลดเข้าเทศบาลอื่นที่ตัวเองไม่ได้สังกัด)
+  // ผู้ใช้ไม่ login (ประชาชนยื่นคำร้องแบบไม่ล็อกอิน) ไม่มี profile ให้ดูเทศบาลจาก DB ได้เลย ต้องรับ slug
+  // จาก client เสมอ (client รู้จาก useTenant() ของโดเมนที่เปิดอยู่ ณ ตอนนั้น)
+  let municipalityId: string
+  let municipalitySlug: string
+  const profile = user ? (await admin.from('profiles').select('role, municipality_id').eq('id', user.id).maybeSingle()).data : null
+  if (profile?.municipality_id) {
+    const { data: municipality } = await admin.from('municipalities').select('id, slug').eq('id', profile.municipality_id).single()
+    if (!municipality) return json({ error: 'municipality not found' }, 404)
+    municipalityId = municipality.id
+    municipalitySlug = municipality.slug
+  } else if ((!user || profile?.role === 'superadmin') && typeof body.municipality === 'string' && body.municipality) {
+    const { data: municipality } = await admin.from('municipalities').select('id, slug').eq('slug', body.municipality).maybeSingle()
+    if (!municipality) return json({ error: 'ไม่พบเทศบาลตาม slug ที่ระบุ' }, 404)
+    municipalityId = municipality.id
+    municipalitySlug = municipality.slug
+  } else {
+    return json({ error: 'ไม่พบเทศบาล (ต้องระบุ municipality slug มาใน body)' }, 403)
+  }
 
   const rootFolderId = Deno.env.get('GOOGLE_DRIVE_ROOT_FOLDER_ID')
   if (!rootFolderId) return json({ error: 'GOOGLE_DRIVE_ROOT_FOLDER_ID is not configured' }, 500)
@@ -92,7 +119,7 @@ serve(async (req) => {
     const accessToken = await getDriveAccessToken()
     const yearBE = String(new Date().getFullYear() + 543) // ปี พ.ศ. ตามธรรมเนียมราชการไทย
     const folderId = await resolveFolderChain(accessToken, rootFolderId, [
-      sanitizeSegment(municipality.slug),
+      sanitizeSegment(municipalitySlug),
       yearBE,
       BUCKET_LABELS[bucket],
       sanitizeSegment(subject || 'ทั่วไป'),
@@ -105,8 +132,8 @@ serve(async (req) => {
     const { error: insertErr } = await admin.from('drive_files').insert({
       id: uploaded.id,
       bucket,
-      municipality_id: profile.municipality_id,
-      owner_user_id: user.id,
+      municipality_id: municipalityId,
+      owner_user_id: user?.id ?? null,
       is_public: isPublic,
       filename: sanitizeSegment(filename),
       content_type: contentType,

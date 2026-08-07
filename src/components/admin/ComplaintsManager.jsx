@@ -15,6 +15,7 @@ import { logAction } from '../../lib/auditLog'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../../lib/complaintPrivacy'
 import { buildCouncilComplaintHtml } from '../../lib/councilFormPrint'
 import { generateDraftPdfBlob } from '../../lib/generateDraftPdf'
+import { uploadFile, resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef } from '../../lib/driveStorage'
 import OssIntakeForm from './OssIntakeForm'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -267,7 +268,7 @@ function QuickStatusChange({ id, currentStatus, onUpdate, loading }) {
 const LEGACY_STATUS = { pending: 'new', completed: 'done', received: 'received' }
 function normalizeActionStatus(s) { return LEGACY_STATUS[s] ?? s ?? 'new' }
 
-function ActionButton({ status, id, onUpdate, loading, size = 'sm' }) {
+function ActionButton({ status, id, onUpdate, loading, size = 'sm', tenant }) {
   const action = NEXT_ACTION[normalizeActionStatus(status)]
   const [confirm, setConfirm] = useState(false)
   const [note, setNote] = useState('')
@@ -282,13 +283,13 @@ function ActionButton({ status, id, onUpdate, loading, size = 'sm' }) {
       const urls = []
       for (const f of pendingFiles) {
         const ext = f.name.split('.').pop()
-        const path = `${id}/work_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
         const compressed = await compressImage(f, 1200)
-        const { error } = await supabase.storage.from('complaint-attachments').upload(path, compressed, { upsert: false })
-        if (!error) {
-          const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
-          urls.push(data.publicUrl)
-        }
+        const { url, error } = await uploadFile('complaint-attachments', compressed, {
+          subject: id,
+          filename: `work_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`,
+          municipality: tenant?.slug,
+        })
+        if (!error) urls.push(url)
       }
       setUploading(false)
       onUpdate(id, action.next, urls, note.trim() || null)
@@ -558,13 +559,13 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
     const urls = []
     for (const f of files) {
       const ext = f.name.split('.').pop()
-      const path = `${c.id}/work_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
       const compressed = await compressImage(f, 1200)
-      const { error } = await supabase.storage.from('complaint-attachments').upload(path, compressed, { upsert: false })
-      if (!error) {
-        const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
-        urls.push(data.publicUrl)
-      }
+      const { url, error } = await uploadFile('complaint-attachments', compressed, {
+        subject: c.id,
+        filename: `work_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`,
+        municipality: tenant?.slug,
+      })
+      if (!error) urls.push(url)
     }
     if (urls.length > 0) {
       const allPhotos = [...(c.work_photos ?? []), ...extraWorkPhotos, ...urls]
@@ -661,15 +662,17 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
       const html = buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate, cat, phone, staffList, includeStaffSignatures: false })
 
       const blob = await generateDraftPdfBlob(html)
-      const path = `${tenant.id}/${c.id}/draft_${Date.now()}.pdf`
-      const { error: upErr } = await supabase.storage.from('official-documents')
-        .upload(path, blob, { contentType: 'application/pdf' })
+      const { url: driveRef, error: upErr } = await uploadFile('official-documents', blob, {
+        subject: c.id,
+        filename: `draft_${Date.now()}.pdf`,
+        municipality: tenant?.slug,
+      })
       if (upErr) throw upErr
 
-      const { error: dbErr } = await supabase.from('complaints').update({ draft_pdf_path: path }).eq('id', c.id)
+      const { error: dbErr } = await supabase.from('complaints').update({ draft_pdf_path: driveRef }).eq('id', c.id)
       if (dbErr) throw dbErr
 
-      onDocumentUpdate?.(c.id, { draft_pdf_path: path })
+      onDocumentUpdate?.(c.id, { draft_pdf_path: driveRef })
 
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
@@ -689,13 +692,15 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
     setDocBusy(true)
     setDocError(null)
     try {
-      const path = `${tenant.id}/${c.id}/final_${Date.now()}.pdf`
-      const { error: upErr } = await supabase.storage.from('official-documents')
-        .upload(path, finalDocFile, { contentType: 'application/pdf' })
+      const { url: driveRef, error: upErr } = await uploadFile('official-documents', finalDocFile, {
+        subject: c.id,
+        filename: `final_${Date.now()}.pdf`,
+        municipality: tenant?.slug,
+      })
       if (upErr) throw upErr
 
       const patch = {
-        final_document_path: path,
+        final_document_path: driveRef,
         official_receipt_no: receiptNo.trim(),
         document_uploaded_at: new Date().toISOString(),
         document_uploaded_by: currentUserId ?? null,
@@ -712,34 +717,38 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
     }
   }
 
-  async function handleDownloadFinalDoc() {
-    const { data, error } = await supabase.storage.from('official-documents')
-      .createSignedUrl(c.final_document_path, 1800)
-    if (error || !data?.signedUrl) { alert('เปิดไฟล์ไม่สำเร็จ: ' + (error?.message ?? '')); return }
-    window.open(data.signedUrl, '_blank')
+  // เอกสารส่วนตัว (official-documents) — path อาจเป็น Supabase Storage path เดิม (คำร้องเก่าก่อนย้าย
+  // ระบบ) หรือ marker 'drive:fileId' ของใหม่ ต้องเช็คแล้วดึงคนละทาง
+  // เปิดแท็บเปล่าไว้ก่อน sync กับ click event เอง (ไม่รอ await) กัน popup blocker บล็อก — ถ้าเปิดแท็บ
+  // หลัง await resolvePrivateFileUrl เบราว์เซอร์จะไม่นับว่ามาจาก user gesture แล้ว
+  async function openOfficialDoc(path) {
+    const w = window.open('', '_blank')
+    if (isPrivateDriveRef(path)) {
+      const { url, error } = await resolvePrivateFileUrl(driveFileIdFromRef(path))
+      if (error || !url) { w?.close(); alert('เปิดไฟล์ไม่สำเร็จ: ' + (error?.message ?? '')); return }
+      if (w) w.location.href = url
+      return
+    }
+    const { data, error } = await supabase.storage.from('official-documents').createSignedUrl(path, 1800)
+    if (error || !data?.signedUrl) { w?.close(); alert('เปิดไฟล์ไม่สำเร็จ: ' + (error?.message ?? '')); return }
+    if (w) w.location.href = data.signedUrl
   }
 
-  async function handleDownloadDraftPdf() {
-    const { data, error } = await supabase.storage.from('official-documents')
-      .createSignedUrl(c.draft_pdf_path, 1800)
-    if (error || !data?.signedUrl) { alert('เปิดไฟล์ไม่สำเร็จ: ' + (error?.message ?? '')); return }
-    window.open(data.signedUrl, '_blank')
-  }
+  async function handleDownloadFinalDoc() { await openOfficialDoc(c.final_document_path) }
+  async function handleDownloadDraftPdf() { await openOfficialDoc(c.draft_pdf_path) }
 
   async function handleCloseJob() {
     setCloseUploading(true)
     const urls = []
     for (const item of pendingPhotos) {
       const ext = item.file.name.split('.').pop()
-      const path = `${c.id}/work_${Date.now()}.${ext}`
       const compressed = await compressImage(item.file, 1200)
-      const { error } = await supabase.storage
-        .from('complaint-attachments')
-        .upload(path, compressed, { upsert: false })
-      if (!error) {
-        const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
-        urls.push(data.publicUrl)
-      }
+      const { url, error } = await uploadFile('complaint-attachments', compressed, {
+        subject: c.id,
+        filename: `work_${Date.now()}.${ext}`,
+        municipality: tenant?.slug,
+      })
+      if (!error) urls.push(url)
     }
     setCloseUploading(false)
     onUpdate(c.id, 'done', urls, closeNote.trim() || null)
@@ -1177,7 +1186,7 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
             <div className="flex gap-2 flex-wrap items-center">
               <ActionButton status={c.status} id={c.id}
                 onUpdate={(id, next, wp = [], note = null) => { onUpdate(id, next, wp, note); onClose() }}
-                loading={updating} size="lg" />
+                loading={updating} size="lg" tenant={tenant} />
               <RejectButton status={c.status} id={c.id}
                 onUpdate={(id, next, wp = [], note = null) => { onUpdate(id, next, wp, note); onClose() }}
                 loading={updating} />
@@ -1913,7 +1922,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                     </div>
                     {NEXT_ACTION[c.status] && (['admin', 'superadmin'].includes(currentUserRole) || (currentUserRole === 'technician' && c.assigned_to === currentUserId)) && (
                       <div onClick={(e) => e.stopPropagation()}>
-                        <ActionButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} />
+                        <ActionButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} tenant={tenant} />
                       </div>
                     )}
                   </div>
@@ -2035,7 +2044,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                         <div className="flex items-center justify-center gap-1">
                           {(['admin', 'superadmin'].includes(currentUserRole) || (currentUserRole === 'technician' && c.assigned_to === currentUserId)) && (
                             <>
-                              <ActionButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} size="xs" />
+                              <ActionButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} size="xs" tenant={tenant} />
                               <RejectButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} compact />
                             </>
                           )}

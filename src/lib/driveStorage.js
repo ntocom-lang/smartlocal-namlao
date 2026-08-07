@@ -24,7 +24,9 @@ function fileToBase64(file) {
 /**
  * @param {string} bucket - ต้องตรงกับ Supabase Storage bucket เดิม เช่น 'complaint-attachments'
  * @param {File|Blob} file
- * @param {{ subject?: string, filename?: string }} [options]
+ * @param {{ subject?: string, filename?: string, municipality?: string }} [options] - municipality:
+ *   slug ของเทศบาล ต้องส่งมาด้วยเสมอถ้าผู้ใช้ไม่ได้ login (เช่นประชาชนยื่นคำร้องแบบไม่ล็อกอิน) เพราะฝั่ง
+ *   Edge Function ไม่มี profile ให้ดูเทศบาลจาก DB ได้ ต้องรู้จาก useTenant() ของโดเมนที่เปิดอยู่แทน
  * @returns {Promise<{ url: string|null, fileId: string|null, error: any }>}
  */
 export async function uploadFile(bucket, file, options = {}) {
@@ -42,6 +44,7 @@ export async function uploadFile(bucket, file, options = {}) {
       filename: options.filename || file.name || `file-${Date.now()}`,
       contentType: file.type || 'application/octet-stream',
       data: base64Data,
+      ...(options.municipality ? { municipality: options.municipality } : {}),
     },
   })
   if (error) return { url: null, fileId: null, error }

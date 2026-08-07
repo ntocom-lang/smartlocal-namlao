@@ -2,7 +2,7 @@
 // สตรีมไฟล์ที่เป็น "private" (ไม่แชร์สาธารณะ) จาก Google Drive กลับให้ client — Drive เองไม่มีแนวคิด
 // สิทธิ์แบบเทศบาล/เจ้าของ จึงต้องเช็คผ่านตาราง drive_files (mapping ที่ drive-upload บันทึกไว้) ก่อนทุกครั้ง
 // ไฟล์ public (complaint-attachments ฯลฯ) ไม่ต้องผ่าน function นี้ เปิดลิงก์ Drive ตรงได้เลย
-// Secret ที่ต้องตั้งก่อนใช้งาน: GOOGLE_SERVICE_ACCOUNT_KEY (เหมือน drive-upload)
+// Secret ที่ต้องตั้งก่อนใช้งาน: GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REFRESH_TOKEN (เหมือน drive-upload)
 // Deploy: supabase functions deploy drive-file
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'

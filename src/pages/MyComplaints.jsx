@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { compressImage } from '../lib/imageUtils'
+import { uploadFile, resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef } from '../lib/driveStorage'
 import SatisfactionModal from '../components/SatisfactionModal'
 import {
   ClipboardList, Loader2, ChevronRight, X, MapPin,
@@ -168,6 +169,7 @@ function StatusStepper({ status }) {
 }
 
 function DetailSheet({ complaint: c, onClose, onAttachmentsChange, catLabel = DEFAULT_CATEGORY_LABEL, catEmoji = DEFAULT_CATEGORY_EMOJI }) {
+  const { tenant } = useTenant()
   const [newPhotos, setNewPhotos] = useState([]) // { file, preview }
   const [uploading, setUploading] = useState(false)
   const [freshAttachments, setFreshAttachments] = useState(null) // null = not fetched yet
@@ -186,11 +188,20 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange, catLabel = DE
 
   // เอกสารฉบับสมบูรณ์ (ลงนามจาก GDCC e-Office แล้ว) — แสดงเฉพาะฉบับนี้เท่านั้น
   // draft_pdf_path เป็นไฟล์ภายในสำหรับแอดมินไปยื่นเซ็นเท่านั้น ไม่โชว์ให้ประชาชนเห็น
+  // final_document_path อาจเป็น path เก่าของ Supabase Storage (คำร้องเก่าก่อนย้ายระบบ) หรือ
+  // marker 'drive:fileId' ของใหม่ (คำร้องที่อัปโหลดหลังย้ายไป Google Drive) ต้องเช็คแล้วดึงคนละทาง
   useEffect(() => {
     setFinalDocUrl(null)
     if (!c?.final_document_path) return
-    supabase.storage.from('official-documents').createSignedUrl(c.final_document_path, 1800)
-      .then(({ data }) => setFinalDocUrl(data?.signedUrl ?? null))
+    let revoke = null
+    if (isPrivateDriveRef(c.final_document_path)) {
+      resolvePrivateFileUrl(driveFileIdFromRef(c.final_document_path))
+        .then(({ url }) => { if (url) { revoke = url; setFinalDocUrl(url) } })
+    } else {
+      supabase.storage.from('official-documents').createSignedUrl(c.final_document_path, 1800)
+        .then(({ data }) => setFinalDocUrl(data?.signedUrl ?? null))
+    }
+    return () => { if (revoke) URL.revokeObjectURL(revoke) }
   }, [c?.final_document_path])
 
   function handlePhotoPick(e) {
@@ -224,13 +235,13 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange, catLabel = DE
         } catch {
           compressed = await compressImage(file, 640, 0.65)
         }
-        const path = `${c.id}/${crypto.randomUUID()}.jpg`
-        const { error } = await supabase.storage
-          .from('complaint-attachments')
-          .upload(path, compressed, { upsert: false, contentType: 'image/jpeg' })
+        const { url, error } = await uploadFile('complaint-attachments', compressed, {
+          subject: c.id,
+          filename: `${crypto.randomUUID()}.jpg`,
+          municipality: tenant?.slug,
+        })
         if (error) throw error
-        const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
-        uploaded.push(data.publicUrl)
+        uploaded.push(url)
       } catch {}
     }
     if (uploaded.length > 0) {

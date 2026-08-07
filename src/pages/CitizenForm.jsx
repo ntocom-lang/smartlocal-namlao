@@ -14,6 +14,7 @@ import { useTenant } from '../contexts/TenantContext'
 import { compressImage } from '../lib/imageUtils'
 import MapPicker from '../components/MapPicker'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
+import { uploadFile } from '../lib/driveStorage'
 
 const MAX_PHOTOS = 3
 
@@ -84,6 +85,7 @@ const CATEGORY_DEPT = {
 const GEO_STATUS = { idle: 'idle', ok: 'ok' }
 
 function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, complaintId, photoFiles, primaryColor }) {
+  const { tenant } = useTenant()
   const [items, setItems] = useState(() =>
     (photoFiles ?? []).map(f => ({ file: f, status: 'pending' }))
   )
@@ -116,13 +118,13 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
           let compressed
           try { compressed = await compressImage(file, undefined, 0.85) }
           catch { try { compressed = await compressImage(file, 480, 0.60) } catch { compressed = file } }
-          const path = `${complaintId}/${crypto.randomUUID()}.jpg`
-          const { error } = await supabase.storage
-            .from('complaint-attachments')
-            .upload(path, compressed, { upsert: false, contentType: 'image/jpeg' })
+          const { url, error } = await uploadFile('complaint-attachments', compressed, {
+            subject: complaintId,
+            filename: `${crypto.randomUUID()}.jpg`,
+            municipality: tenant?.slug,
+          })
           if (error) throw error
-          const { data } = supabase.storage.from('complaint-attachments').getPublicUrl(path)
-          collected.push(data.publicUrl)
+          collected.push(url)
           setItems(prev => prev.map((p, i) => i === idx ? { ...p, status: 'ok' } : p))
         } catch (err) {
           console.error('[upload]', file.name, err?.message ?? err)
@@ -421,25 +423,28 @@ export default function CitizenForm() {
       const complaintId = crypto.randomUUID()
 
       // INSERT ก่อน — ไม่รอ upload (upload ค้างบน mobile ทำให้ connection เย็นลง INSERT ก็ stall ด้วย)
+      // ใช้ RPC (SECURITY DEFINER) แทน .insert().select() ตรงๆ เพราะ PostgREST ต้องผ่าน SELECT RLS
+      // policy ด้วยตอนคืนแถวที่เพิ่ง insert กลับมา (เอาไปโชว์เลขที่คำร้อง) แต่ SELECT policy ของ
+      // complaints ไม่อนุญาต anon อ่านแถวตัวเองได้เลย — ทำให้คนไม่ login ยื่นคำร้องไม่ได้เลย (ดู
+      // migration 20260807150000_fix_anon_complaint_submit_rls.sql สำหรับรายละเอียดเต็ม)
       let insertResult
       try {
         insertResult = await raceTimeout(
-          supabase.from('complaints').insert({
-            id:              complaintId,
-            municipality_id: tenant.id,
-            category:        form.category,
-            form_type:       formType !== 'legacy' ? formType : 'legacy',
-
-            village:         form.village || null,
-            detail:          form.detail.trim(),
-            phone:           form.phone.trim(),
-            reporter_name:   reporterFullName,
-            latitude:        geo.lat,
-            longitude:       geo.lng,
-            user_id:         userId,
-            channel:         'citizen_online',
-            department:      CATEGORY_DEPT[form.category] ?? 'สำนักปลัด',
-          }).select('id, ref_no').single()
+          supabase.rpc('submit_citizen_complaint', {
+            p_id:              complaintId,
+            p_municipality_id: tenant.id,
+            p_category:        form.category,
+            p_form_type:       formType !== 'legacy' ? formType : 'legacy',
+            p_village:         form.village || null,
+            p_detail:          form.detail.trim(),
+            p_phone:           form.phone.trim(),
+            p_reporter_name:   reporterFullName,
+            p_latitude:        geo.lat,
+            p_longitude:       geo.lng,
+            p_user_id:         userId,
+            p_channel:         'citizen_online',
+            p_department:      CATEGORY_DEPT[form.category] ?? 'สำนักปลัด',
+          }).single()
             .abortSignal(abortCtrl.signal),
           20_000,
         )

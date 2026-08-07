@@ -2,77 +2,36 @@
 // แต่ละตัว deploy แยกกัน ไม่ได้แชร์ dependency ข้าม function อัตโนมัติ) — ห้ามแก้ไฟล์นี้แค่ที่เดียว
 // ต้องแก้ทั้งคู่ให้ตรงกันเสมอ
 
-interface ServiceAccountKey {
-  client_email: string
-  private_key: string
-  token_uri?: string
-}
-
+// ใช้ OAuth refresh token ของบัญชี Google จริง (ไม่ใช่ Service Account) — เพราะ Service Account
+// ไม่มีโควตาพื้นที่เก็บไฟล์เป็นของตัวเองเลย เขียนไฟล์ลง Drive ปกติไม่ได้ (ต้องใช้ Shared Drive ซึ่งเป็น
+// ฟีเจอร์ Google Workspace เท่านั้น) วิธีนี้ทำให้ใช้โควตาจริงของบัญชี (เช่น Google One 5TB) ได้เต็มที่
+// refresh_token ได้มาจากการยินยอมครั้งเดียวผ่าน drive-oauth-callback function (ดูไฟล์นั้น)
 let cachedToken: { token: string; expiresAt: number } | null = null
 
-function base64UrlEncodeBytes(bytes: Uint8Array): string {
-  let str = ''
-  for (const b of bytes) str += String.fromCharCode(b)
-  return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
-
-function base64UrlEncodeString(s: string): string {
-  return base64UrlEncodeBytes(new TextEncoder().encode(s))
-}
-
-function pemToArrayBuffer(pem: string): ArrayBuffer {
-  const b64 = pem
-    .replace('-----BEGIN PRIVATE KEY-----', '')
-    .replace('-----END PRIVATE KEY-----', '')
-    .replace(/\s+/g, '')
-  const binary = atob(b64)
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-  return bytes.buffer
-}
-
-// ขอ access token จาก Service Account ผ่าน JWT bearer flow (เซ็นเองด้วย Web Crypto ไม่พึ่ง googleapis
-// npm package ซึ่งหนักและใช้กับ Deno Edge Function ไม่ค่อยลื่น) แคชไว้ในตัวแปรระดับโมดูล ใช้ซ้ำได้
-// ระหว่าง request ถ้า instance เดียวกันยังอุ่นอยู่ (ไม่ต้องขอใหม่ทุกครั้ง)
 export async function getDriveAccessToken(): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
   if (cachedToken && cachedToken.expiresAt > now + 60) return cachedToken.token
 
-  const keyJson = Deno.env.get('GOOGLE_SERVICE_ACCOUNT_KEY')
-  if (!keyJson) throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY is not configured')
-  const key = JSON.parse(keyJson) as ServiceAccountKey
-
-  const header = { alg: 'RS256', typ: 'JWT' }
-  const claim = {
-    iss: key.client_email,
-    scope: 'https://www.googleapis.com/auth/drive',
-    aud: key.token_uri || 'https://oauth2.googleapis.com/token',
-    exp: now + 3600,
-    iat: now,
+  const clientId = Deno.env.get('GOOGLE_OAUTH_CLIENT_ID')
+  const clientSecret = Deno.env.get('GOOGLE_OAUTH_CLIENT_SECRET')
+  const refreshToken = Deno.env.get('GOOGLE_OAUTH_REFRESH_TOKEN')
+  if (!clientId || !clientSecret || !refreshToken) {
+    throw new Error('GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET / GOOGLE_OAUTH_REFRESH_TOKEN is not configured')
   }
-  const unsigned = `${base64UrlEncodeString(JSON.stringify(header))}.${base64UrlEncodeString(JSON.stringify(claim))}`
 
-  const cryptoKey = await crypto.subtle.importKey(
-    'pkcs8',
-    pemToArrayBuffer(key.private_key),
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  )
-  const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', cryptoKey, new TextEncoder().encode(unsigned))
-  const jwt = `${unsigned}.${base64UrlEncodeBytes(new Uint8Array(signature))}`
-
-  const response = await fetch(key.token_uri || 'https://oauth2.googleapis.com/token', {
+  const response = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-      assertion: jwt,
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: clientId,
+      client_secret: clientSecret,
     }),
   })
   const data = await response.json()
   if (!response.ok || !data.access_token) {
-    throw new Error(`Google token exchange failed: ${JSON.stringify(data)}`)
+    throw new Error(`Google token refresh failed: ${JSON.stringify(data)}`)
   }
   cachedToken = { token: data.access_token, expiresAt: now + (data.expires_in ?? 3600) }
   return data.access_token
