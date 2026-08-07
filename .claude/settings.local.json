@@ -221,10 +221,39 @@
       "mcp__claude_ai_Supabase__get_edge_function",
       "mcp__claude_ai_Supabase__deploy_edge_function",
       "Bash(git ls-remote *)",
-      "Bash(grep -v \"^src/lib/r2Storage.js$\")"
+      "Bash(grep -v \"^src/lib/r2Storage.js$\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173)",
+      "Bash(python -c ' *)",
+      "Bash(mkdir -p \"/c/Users/ntoco/AppData/Local/Temp/claude/d--VS-Code-E-Service-SmartLocal-v1-1/44d58a7b-5852-4c4a-b179-f348998abf30/scratchpad\" && echo \"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=\" | base64 -d > \"/c/Users/ntoco/AppData/Local/Temp/claude/d--VS-Code-E-Service-SmartLocal-v1-1/44d58a7b-5852-4c4a-b179-f348998abf30/scratchpad/e2e-test-photo.png\" && ls -la \"/c/Users/ntoco/AppData/Local/Temp/claude/d--VS-Code-E-Service-SmartLocal-v1-1/44d58a7b-5852-4c4a-b179-f348998abf30/scratchpad/e2e-test-photo.png\")",
+      "Read(//c/Users/ntoco/AppData/Local/Temp/claude/d--VS-Code-E-Service-SmartLocal-v1-1/44d58a7b-5852-4c4a-b179-f348998abf30/scratchpad/**)",
+      "Bash(cp \"/c/Users/ntoco/AppData/Local/Temp/claude/d--VS-Code-E-Service-SmartLocal-v1-1/44d58a7b-5852-4c4a-b179-f348998abf30/scratchpad/e2e-test-photo.png\" \"/d/VS Code/E-Service/SmartLocal v1.1/.playwright-mcp/e2e-test-photo.png\" && ls -la \"/d/VS Code/E-Service/SmartLocal v1.1/.playwright-mcp/e2e-test-photo.png\")",
+      "Bash(curl -s -i -X POST https://umxssfahtuprnztlytdd.supabase.co/rest/v1/complaints -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVteHNzZmFodHVwcm56dGx5dGRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0NDI0MzAsImV4cCI6MjA5NDAxODQzMH0.SeQTZHWIAPx0XdQ_xK_BNhHjDVd8CeDdwK2NyXdof7E' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVteHNzZmFodHVwcm56dGx5dGRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0NDI0MzAsImV4cCI6MjA5NDAxODQzMH0.SeQTZHWIAPx0XdQ_xK_BNhHjDVd8CeDdwK2NyXdof7E' -H 'Content-Type: application/json' -H 'Prefer: return=representation' --data-raw '{\"municipality_id\":\"b7394bd8-70de-4c67-889e-8e62d1a6f299\",\"category\":\"trash\",\"form_type\":\"legacy\",\"detail\":\"curl anon insert test\",\"phone\":\"0800000000\",\"reporter_name\":\"curl test\",\"latitude\":18.1,\"longitude\":100.1,\"user_id\":null,\"channel\":\"citizen_online\",\"department\":\"สำนักปลัด\"}')",
+      "Bash(curl -s -i 'https://umxssfahtuprnztlytdd.supabase.co/rest/v1/municipalities?slug=eq.namlao&select=id,slug' -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVteHNzZmFodHVwcm56dGx5dGRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0NDI0MzAsImV4cCI6MjA5NDAxODQzMH0.SeQTZHWIAPx0XdQ_xK_BNhHjDVd8CeDdwK2NyXdof7E' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVteHNzZmFodHVwcm56dGx5dGRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0NDI0MzAsImV4cCI6MjA5NDAxODQzMH0.SeQTZHWIAPx0XdQ_xK_BNhHjDVd8CeDdwK2NyXdof7E')",
+      "Bash(git status *)",
+      "Bash(git merge *)",
+      "Bash(ls -la '/c/Users/ntoco/.claude/projects/d--VS-Code-E-Service-SmartLocal-v1-1/memory/')",
+      "Read(//c/Users/ntoco/.claude/projects/d--VS-Code-E-Service-SmartLocal-v1-1/memory//**)",
+      "Bash(grep -rn \"subject: \\\\`\" src/pages src/components)",
+      "Bash(grep -E \"subject: \\\\`[a-z-]+/\\\\\\\\\\\\$\\\\{\")",
+      "Bash(curl -s -i -X OPTIONS https://umxssfahtuprnztlytdd.supabase.co/functions/v1/drive-upload -H 'Origin: http://localhost:5173' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: content-type,apikey')",
+      "WebFetch(domain:supabase.com)",
+      "Bash(python3 -c \"print\\('check'\\)\")",
+      "Bash(curl -s -o /dev/null -w '%{http_code}\\\\n' -X OPTIONS https://umxssfahtuprnztlytdd.supabase.co/functions/v1/drive-upload -H 'Origin: http://localhost:5173' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: content-type,apikey')",
+      "Bash(npm view *)",
+      "Bash(npm search *)",
+      "Bash(npm audit *)",
+      "Bash(rm -rf /tmp/thai-addr-check)",
+      "PowerShell($conn = Get-NetTCPConnection -LocalPort 5174 -ErrorAction SilentlyContinue; if \\($conn\\) { Stop-Process -Id $conn.OwningProcess -Force; \"stopped\" } else { \"no process on 5174\" })",
+      "PowerShell(Get-NetTCPConnection -LocalPort 5174 -ErrorAction SilentlyContinue)",
+      "Bash(powershell -Command \"Get-Process node -ErrorAction SilentlyContinue | Select-Object Id,ProcessName,StartTime\")",
+      "PowerShell(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object {$_.LocalPort -in 5173,5174,5175} | Select-Object LocalPort,OwningProcess)",
+      "PowerShell(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object {$_.LocalPort -ge 5170 -and $_.LocalPort -le 5180} | Select-Object LocalPort,OwningProcess)",
+      "PowerShell(Stop-Process -Id 16936 -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 500; Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object {$_.LocalPort -ge 5170 -and $_.LocalPort -le 5180})"
     ],
     "additionalDirectories": [
-      "C:\\Users\\RKnetwork\\.claude\\plans"
+      "C:\\Users\\RKnetwork\\.claude\\plans",
+      "C:\\Users\\ntoco\\AppData\\Local\\Temp\\claude\\d--VS-Code-E-Service-SmartLocal-v1-1\\44d58a7b-5852-4c4a-b179-f348998abf30\\scratchpad",
+      "\\tmp"
     ]
   }
 }
