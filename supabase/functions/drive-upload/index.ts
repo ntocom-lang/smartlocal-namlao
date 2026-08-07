@@ -5,6 +5,10 @@
 // Secret ที่ต้องตั้งก่อนใช้งาน: GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET,
 // GOOGLE_OAUTH_REFRESH_TOKEN, GOOGLE_DRIVE_ROOT_FOLDER_ID
 // Deploy: supabase functions deploy drive-upload
+//
+// subject อาจส่งมาเป็นหลายระดับคั่นด้วย '/' เช่น 'civil/{id}' หรือ 'staff/{staffId}' — เจตนาให้เป็น
+// โฟลเดอร์ซ้อนกันจริงๆ (ประเภท/รายการ) sanitizeSegment แต่ละท่อนแยกกันก่อนส่งเข้า resolveFolderChain
+// (เคยมีบั๊ก: sanitize ทั้งก้อนเป็น segment เดียว ทำให้ได้โฟลเดอร์แบนราบชื่อ "civil_{id}" แทนที่จะซ้อน)
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -64,8 +68,7 @@ serve(async (req) => {
 
   // complaint-attachments เท่านั้นที่อนุญาตให้ "ไม่ login" อัปโหลดได้ — ต้องตรงกับ RLS policy เดิมของ
   // Supabase Storage bucket เดียวกันเป๊ะๆ ("allow upload complaint-attachments", roles: anon,authenticated)
-  // ไม่ได้เปิดสิทธิ์ใหม่ แค่รักษาพฤติกรรมเดิม (ประชาชนยื่นคำร้องแนบรูปได้โดยไม่ต้องล็อกอิน) ตอนย้ายจาก
-  // Storage มา Drive — บัคเก็ตอื่นทั้งหมดยังคง "ต้อง login" เหมือนเดิมทุกประการ ห้ามขยาย allowAnon เพิ่ม
+  // บัคเก็ตอื่นทั้งหมดยังคง "ต้อง login" เหมือนเดิมทุกประการ ห้ามขยาย allowAnon เพิ่ม
   const allowAnon = bucket === 'complaint-attachments'
 
   const authHeader = req.headers.get('authorization') ?? ''
@@ -80,11 +83,9 @@ serve(async (req) => {
 
   const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
 
-  // superadmin ไม่ผูกกับเทศบาลใดเทศบาลหนึ่ง (municipality_id เป็น null ปกติ เพราะดูแลได้ทุกที่) จึงต้อง
-  // ให้ระบุ municipality (slug) มาใน body เอง — user ทั่วไปใช้ municipality_id ของตัวเองเสมอ ห้าม
-  // override จาก body เด็ดขาด (กันสวมรอยอัปโหลดเข้าเทศบาลอื่นที่ตัวเองไม่ได้สังกัด)
-  // ผู้ใช้ไม่ login (ประชาชนยื่นคำร้องแบบไม่ล็อกอิน) ไม่มี profile ให้ดูเทศบาลจาก DB ได้เลย ต้องรับ slug
-  // จาก client เสมอ (client รู้จาก useTenant() ของโดเมนที่เปิดอยู่ ณ ตอนนั้น)
+  // superadmin ไม่ผูกกับเทศบาลใดเทศบาลหนึ่ง (municipality_id เป็น null ปกติ) จึงต้องให้ระบุ municipality
+  // (slug) มาใน body เอง — user ทั่วไปใช้ municipality_id ของตัวเองเสมอ ห้าม override จาก body เด็ดขาด
+  // ผู้ใช้ไม่ login ไม่มี profile ให้ดูเทศบาลจาก DB ได้เลย ต้องรับ slug จาก client เสมอ
   let municipalityId: string
   let municipalitySlug: string
   const profile = user ? (await admin.from('profiles').select('role, municipality_id').eq('id', user.id).maybeSingle()).data : null
@@ -113,17 +114,18 @@ serve(async (req) => {
   } catch {
     return json({ error: 'invalid base64 data' }, 400)
   }
-  // 25MB (ไม่ใช่ 15MB เดิม) — EventsManager.jsx อนุญาตไฟล์แนบกิจกรรมสูงสุด 20MB ต้องเผื่อ headroom
+  // 25MB — EventsManager.jsx อนุญาตไฟล์แนบกิจกรรมสูงสุด 20MB ต้องเผื่อ headroom (เดิม 15MB)
   if (bytes.length > 25 * 1024 * 1024) return json({ error: 'ไฟล์ใหญ่เกิน 25MB' }, 413)
 
   try {
     const accessToken = await getDriveAccessToken()
     const yearBE = String(new Date().getFullYear() + 543) // ปี พ.ศ. ตามธรรมเนียมราชการไทย
+    const subjectSegments = String(subject || 'ทั่วไป').split('/').map((s) => sanitizeSegment(s)).filter(Boolean)
     const folderId = await resolveFolderChain(accessToken, rootFolderId, [
       sanitizeSegment(municipalitySlug),
       yearBE,
       BUCKET_LABELS[bucket],
-      sanitizeSegment(subject || 'ทั่วไป'),
+      ...(subjectSegments.length ? subjectSegments : ['ทั่วไป']),
     ])
     const uploaded = await uploadFileToDrive(accessToken, folderId, sanitizeSegment(filename), contentType, bytes)
 

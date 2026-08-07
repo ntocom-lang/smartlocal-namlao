@@ -9,6 +9,21 @@ import { supabase, supabaseUrl } from './supabase'
 // bucket ต้องอยู่ใน whitelist ที่ตรงกับ Supabase Storage bucket เดิม (เช็คซ้ำอีกทีฝั่ง Edge Function)
 // subject = หัวเรื่อง ใช้ตั้งชื่อโฟลเดอร์ย่อยสุดท้าย (เช่น เลขที่คำร้อง/ชื่อกิจกรรม) ไม่ใส่ก็ได้ จะตกไปที่ "ทั่วไป"
 
+// เดา content type จากนามสกุลไฟล์ ใช้เฉพาะตอน file.type ว่าง — กล้องมือถือ Android/iOS บางรุ่นคืน
+// file.type="" มาเปล่าๆ (ปัญหาที่รู้กันแล้วใน compressImage ของ imageUtils.js) ถ้าไม่มี fallback
+// contentType จะตกไปเป็น 'application/octet-stream' ทำให้ <img>/<iframe> บางเบราว์เซอร์ไม่ยอมเรนเดอร์
+// ไฟล์ตรงๆ ทั้งที่จริงเป็นรูป/PDF ปกติ
+const EXT_CONTENT_TYPES = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif',
+  webp: 'image/webp', heic: 'image/heic', heif: 'image/heif', bmp: 'image/bmp',
+  pdf: 'application/pdf', html: 'text/html', htm: 'text/html',
+}
+function guessContentType(file) {
+  if (file.type) return file.type
+  const ext = (file.name ?? '').split('.').pop()?.toLowerCase()
+  return EXT_CONTENT_TYPES[ext] || 'application/octet-stream'
+}
+
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -42,7 +57,7 @@ export async function uploadFile(bucket, file, options = {}) {
       bucket,
       subject: options.subject ?? '',
       filename: options.filename || file.name || `file-${Date.now()}`,
-      contentType: file.type || 'application/octet-stream',
+      contentType: guessContentType(file),
       data: base64Data,
       ...(options.municipality ? { municipality: options.municipality } : {}),
     },
