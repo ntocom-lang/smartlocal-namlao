@@ -4,7 +4,9 @@ import { supabase } from '../lib/supabase'
 import { ChevronLeft, Pencil, Loader2, X, Eye, EyeOff } from 'lucide-react'
 import { compressImage } from '../lib/imageUtils'
 import { useAuth } from '../contexts/AuthContext'
+import { useTenant } from '../contexts/TenantContext'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
+import { THAI_PROVINCES, thaiDistrictsOf, thaiSubdistrictsOf } from '../lib/thaiAddress'
 
 const ROLE_LABEL = {
   superadmin: 'Super Admin',
@@ -20,6 +22,7 @@ const ROLE_LABEL = {
 export default function ProfilePage() {
   const navigate = useNavigate()
   const { role: contextRole } = useAuth()
+  const { tenant } = useTenant()
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState({
     full_name: '', phone: '', role: '', id_card: '',
@@ -62,6 +65,9 @@ export default function ProfilePage() {
         .eq('id', s.user.id)
         .single()
 
+      // ยังไม่เคยตั้งที่อยู่มาก่อน (บัญชีใหม่/ยังไม่ได้กรอก) — ตั้งค่าเริ่มต้นจากจังหวัด/อำเภอของเทศบาล
+      // เจ้าของเว็บเอง (tenant.province/district) เพราะผู้ใช้ส่วนใหญ่ของแต่ละเทศบาลมักอยู่ในพื้นที่นั้นจริง
+      // — ไม่ได้ hardcode ชื่อจังหวัดตายตัว เทศบาลอื่นที่ใช้ระบบเดียวกันจะได้ค่าเริ่มต้นถูกต้องตามพื้นที่ตัวเอง
       if (p) {
         const fullName = p.full_name || meta?.full_name || ''
         setProfile({
@@ -69,8 +75,8 @@ export default function ProfilePage() {
           phone: p.phone || meta?.phone || '',
           role: p.role || '',
           id_card: p.id_card || '',
-          address_province: p.address_province || '',
-          address_district: p.address_district || '',
+          address_province: p.address_province || tenant?.province || '',
+          address_district: p.address_district || tenant?.district || '',
           address_subdistrict: p.address_subdistrict || '',
           address_moo: p.address_moo || '',
           address_detail: p.address_detail || '',
@@ -84,13 +90,14 @@ export default function ProfilePage() {
           phone: meta?.phone || '',
           role: '',
           id_card: '',
-          address_province: '', address_district: '', address_subdistrict: '', address_moo: '', address_detail: '',
+          address_province: tenant?.province || '', address_district: tenant?.district || '',
+          address_subdistrict: '', address_moo: '', address_detail: '',
         })
         setNameParts(splitThaiFullName(fullName))
       }
       setLoading(false)
     }).catch(() => setLoading(false))
-  }, [navigate])
+  }, [navigate, tenant?.province, tenant?.district])
 
   function setNamePart(key, value) {
     setNameParts(prev => {
@@ -382,15 +389,29 @@ export default function ProfilePage() {
                   </button>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <input value={profile.address_province} onChange={(e) => setProfile((p) => ({ ...p, address_province: e.target.value }))}
-                    placeholder="จังหวัด"
-                    className="text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 outline-none" />
-                  <input value={profile.address_district} onChange={(e) => setProfile((p) => ({ ...p, address_district: e.target.value }))}
-                    placeholder="อำเภอ"
-                    className="text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 outline-none" />
-                  <input value={profile.address_subdistrict} onChange={(e) => setProfile((p) => ({ ...p, address_subdistrict: e.target.value }))}
-                    placeholder="ตำบล"
-                    className="text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 outline-none" />
+                  {/* จังหวัด → อำเภอ → ตำบล เลือกเป็นลำดับชั้นจากข้อมูลจริงทั้งประเทศ (77 จังหวัด) กัน
+                      พิมพ์ชื่อผิด/ไม่ตรงชื่อทางการ — เปลี่ยนจังหวัดแล้วต้องล้างอำเภอ/ตำบลเดิมทิ้งเสมอ
+                      (อำเภอเดิมอาจไม่มีอยู่ในจังหวัดใหม่) เปลี่ยนอำเภอก็ต้องล้างตำบลเดิมทิ้งเช่นกัน */}
+                  <select value={profile.address_province}
+                    onChange={(e) => setProfile((p) => ({ ...p, address_province: e.target.value, address_district: '', address_subdistrict: '' }))}
+                    className="text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 outline-none">
+                    <option value="">เลือกจังหวัด</option>
+                    {THAI_PROVINCES.map((prov) => <option key={prov} value={prov}>{prov}</option>)}
+                  </select>
+                  <select value={profile.address_district}
+                    onChange={(e) => setProfile((p) => ({ ...p, address_district: e.target.value, address_subdistrict: '' }))}
+                    disabled={!profile.address_province}
+                    className="text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 outline-none disabled:opacity-50">
+                    <option value="">เลือกอำเภอ</option>
+                    {thaiDistrictsOf(profile.address_province).map((d) => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                  <select value={profile.address_subdistrict}
+                    onChange={(e) => setProfile((p) => ({ ...p, address_subdistrict: e.target.value }))}
+                    disabled={!profile.address_district}
+                    className="text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 outline-none disabled:opacity-50">
+                    <option value="">เลือกตำบล</option>
+                    {thaiSubdistrictsOf(profile.address_province, profile.address_district).map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
                   <input value={profile.address_moo}
                     onChange={(e) => setProfile((p) => ({ ...p, address_moo: e.target.value.replace(/\D/g, '').slice(0, 2) }))}
                     placeholder="หมู่ที่"

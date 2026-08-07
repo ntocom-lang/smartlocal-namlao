@@ -19,6 +19,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@googlemaps/js-api-loader": "^2.1.1",
     "@phosphor-icons/react": "^2.1.10",
+    "@riz007/thai-address-data": "^0.1.4",
     "@supabase/supabase-js": "^2.105.4",
     "@tailwindcss/vite": "^4.3.0",
     "autoprefixer": "^10.5.0",
