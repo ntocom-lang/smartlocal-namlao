@@ -21,7 +21,10 @@ export default function ProfilePage() {
   const navigate = useNavigate()
   const { role: contextRole } = useAuth()
   const [session, setSession] = useState(null)
-  const [profile, setProfile] = useState({ full_name: '', phone: '', role: '', id_card: '' })
+  const [profile, setProfile] = useState({
+    full_name: '', phone: '', role: '', id_card: '',
+    address_province: '', address_district: '', address_subdistrict: '', address_moo: '', address_detail: '',
+  })
   const [nameParts, setNameParts] = useState({ title: '', first: '', last: '' })
   const [avatarUrl, setAvatarUrl] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -31,6 +34,7 @@ export default function ProfilePage() {
   const [editName, setEditName] = useState(false)
   const [editPhone, setEditPhone] = useState(false)
   const [editIdCard, setEditIdCard] = useState(false)
+  const [editAddress, setEditAddress] = useState(false)
   const [isGoogleLinked, setIsGoogleLinked] = useState(false)
   const [isLineLinked, setIsLineLinked] = useState(false)
   const [showChangePassword, setShowChangePassword] = useState(false)
@@ -54,7 +58,7 @@ export default function ProfilePage() {
 
       const { data: p } = await supabase
         .from('profiles')
-        .select('full_name, phone, avatar_url, role, id_card')
+        .select('full_name, phone, avatar_url, role, id_card, address_province, address_district, address_subdistrict, address_moo, address_detail')
         .eq('id', s.user.id)
         .single()
 
@@ -65,6 +69,11 @@ export default function ProfilePage() {
           phone: p.phone || meta?.phone || '',
           role: p.role || '',
           id_card: p.id_card || '',
+          address_province: p.address_province || '',
+          address_district: p.address_district || '',
+          address_subdistrict: p.address_subdistrict || '',
+          address_moo: p.address_moo || '',
+          address_detail: p.address_detail || '',
         })
         setNameParts(splitThaiFullName(fullName))
         setAvatarUrl(p.avatar_url || meta?.avatar_url || meta?.picture || null)
@@ -74,6 +83,8 @@ export default function ProfilePage() {
           full_name: fullName,
           phone: meta?.phone || '',
           role: '',
+          id_card: '',
+          address_province: '', address_district: '', address_subdistrict: '', address_moo: '', address_detail: '',
         })
         setNameParts(splitThaiFullName(fullName))
       }
@@ -105,6 +116,11 @@ export default function ProfilePage() {
         full_name: profile.full_name,
         phone: profile.phone,
         id_card: profile.id_card || null,
+        address_province: profile.address_province || null,
+        address_district: profile.address_district || null,
+        address_subdistrict: profile.address_subdistrict || null,
+        address_moo: profile.address_moo || null,
+        address_detail: profile.address_detail || null,
       })
     setSaving(false)
     if (err) { setError('บันทึกไม่สำเร็จ: ' + err.message); return }
@@ -112,6 +128,19 @@ export default function ProfilePage() {
     setEditName(false)
     setEditPhone(false)
     setEditIdCard(false)
+    setEditAddress(false)
+  }
+
+  // แสดงที่อยู่รวมเป็นบรรทัดเดียว รูปแบบเดียวกับ formatStructuredAddress ใน AdminDashboard.jsx
+  // (หน้าแอดมินที่แก้ที่อยู่สมาชิกแทนได้) — คงรูปแบบให้ตรงกันทั้งสองที่
+  function formatAddress(p) {
+    const parts = []
+    if (p.address_detail) parts.push(p.address_detail)
+    if (p.address_moo) parts.push(`หมู่ ${p.address_moo}`)
+    if (p.address_subdistrict) parts.push(`ต.${p.address_subdistrict}`)
+    if (p.address_district) parts.push(`อ.${p.address_district}`)
+    if (p.address_province) parts.push(`จ.${p.address_province}`)
+    return parts.join(' ') || null
   }
 
   // ใช้ supabase.auth.updateUser({password}) แบบเดียวกับ ResetPasswordPage.jsx — ต้องมี session ที่
@@ -341,6 +370,46 @@ export default function ProfilePage() {
               <Pencil size={16} />
             </button>
           </div>
+
+          {/* ที่อยู่ */}
+          <div className="px-5 py-4">
+            {editAddress ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm text-gray-700">ที่อยู่</span>
+                  <button onClick={() => setEditAddress(false)} className="text-blue-400">
+                    <Pencil size={16} />
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input value={profile.address_province} onChange={(e) => setProfile((p) => ({ ...p, address_province: e.target.value }))}
+                    placeholder="จังหวัด"
+                    className="text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 outline-none" />
+                  <input value={profile.address_district} onChange={(e) => setProfile((p) => ({ ...p, address_district: e.target.value }))}
+                    placeholder="อำเภอ"
+                    className="text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 outline-none" />
+                  <input value={profile.address_subdistrict} onChange={(e) => setProfile((p) => ({ ...p, address_subdistrict: e.target.value }))}
+                    placeholder="ตำบล"
+                    className="text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 outline-none" />
+                  <input value={profile.address_moo}
+                    onChange={(e) => setProfile((p) => ({ ...p, address_moo: e.target.value.replace(/\D/g, '').slice(0, 2) }))}
+                    placeholder="หมู่ที่"
+                    className="text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 outline-none" />
+                </div>
+                <input value={profile.address_detail} onChange={(e) => setProfile((p) => ({ ...p, address_detail: e.target.value }))}
+                  placeholder="บ้านเลขที่ / รายละเอียดที่อยู่อื่นๆ"
+                  className="w-full text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 outline-none" />
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-gray-700 flex-1">ที่อยู่</span>
+                <span className="text-sm text-gray-500 flex-1 text-right truncate">{formatAddress(profile) || 'ยังไม่ได้ระบุ'}</span>
+                <button onClick={() => setEditAddress(true)} className="ml-2 text-blue-400">
+                  <Pencil size={16} />
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* บัญชีที่เชื่อมต่อ */}
@@ -453,7 +522,7 @@ export default function ProfilePage() {
 
         {/* Actions */}
         <div className="space-y-2 pt-2">
-          {(editName || editPhone || editIdCard) && (
+          {(editName || editPhone || editIdCard || editAddress) && (
             <button
               onClick={handleSave}
               disabled={saving}
