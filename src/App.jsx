@@ -11,7 +11,8 @@ import InstallPrompt from './components/InstallPrompt'
 import ScrollToTopButton from './components/ScrollToTopButton'
 import InAppBrowserGate from './components/InAppBrowserGate'
 import { supabase } from './lib/supabase'
-import { Phone } from 'lucide-react'
+import { Phone, UserRound } from 'lucide-react'
+import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from './lib/thaiName'
 
 const HomePage = lazyWithRetry(() => import('./pages/HomePage'))
 const CitizenForm = lazyWithRetry(() => import('./pages/CitizenForm'))
@@ -98,6 +99,88 @@ function PhoneReminderModal({ onClose }) {
             className="w-full py-4 rounded-2xl font-bold text-white text-base mt-1 disabled:opacity-50 transition-opacity"
             style={{ backgroundColor: 'var(--color-primary)' }}>
             {saving ? 'กำลังบันทึก...' : 'บันทึกเบอร์มือถือ'}
+          </button>
+          <button onClick={onClose} className="text-sm text-gray-400 hover:text-gray-600 py-1">
+            ข้ามไปก่อน
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function NameReminderModal({ initialFullName, onClose }) {
+  const initial = splitThaiFullName(initialFullName)
+  const [title, setTitle] = useState(initial.title)
+  const [first, setFirst] = useState(initial.first)
+  const [last, setLast] = useState(initial.last)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleSave() {
+    if (!first.trim() || !last.trim()) {
+      setError('กรุณากรอกทั้งชื่อและนามสกุล')
+      return
+    }
+    setSaving(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) { setSaving(false); return }
+    const { error: err } = await supabase
+      .from('profiles')
+      .upsert({ id: session.user.id, full_name: joinThaiFullName(title, first, last) }, { onConflict: 'id' })
+    setSaving(false)
+    if (err) { setError(`บันทึกไม่สำเร็จ: ${err.message}`); return }
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-999 flex items-center justify-center px-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+        <div className="flex flex-col items-center text-center gap-3">
+          <div className="w-16 h-16 rounded-full flex items-center justify-center"
+               style={{ backgroundColor: 'var(--color-primary)' }}>
+            <UserRound size={30} className="text-white" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-800">กรอกชื่อ-นามสกุลให้ครบ</h2>
+          <p className="text-sm text-gray-500 leading-relaxed">
+            เจ้าหน้าที่ต้องใช้ชื่อ-นามสกุลที่ครบถ้วน<br />
+            เพื่อออกเอกสาร/ติดตามคำร้องของท่านให้ถูกต้อง
+          </p>
+
+          <div className="w-full flex gap-2">
+            <select value={title} onChange={(e) => { setTitle(e.target.value); setError('') }}
+              className="w-24 shrink-0 px-2 py-3 border-2 rounded-xl text-sm focus:outline-none transition-colors"
+              style={{ borderColor: '#e5e7eb', color: '#000', backgroundColor: '#fff' }}>
+              <option value="">คำนำหน้า</option>
+              {NAME_TITLES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <input
+              type="text"
+              value={first}
+              onChange={(e) => { setFirst(e.target.value); setError('') }}
+              placeholder="ชื่อ"
+              className="flex-1 min-w-0 px-3 py-3 border-2 rounded-xl text-sm focus:outline-none transition-colors"
+              style={{ borderColor: error && !first.trim() ? '#ef4444' : '#e5e7eb', color: '#000', backgroundColor: '#fff' }}
+              autoFocus
+            />
+          </div>
+          <input
+            type="text"
+            value={last}
+            onChange={(e) => { setLast(e.target.value); setError('') }}
+            placeholder="นามสกุล"
+            className="w-full px-3 py-3 border-2 rounded-xl text-sm focus:outline-none transition-colors"
+            style={{ borderColor: error && !last.trim() ? '#ef4444' : '#e5e7eb', color: '#000', backgroundColor: '#fff' }}
+          />
+          {error && <p className="text-xs text-red-500">{error}</p>}
+
+          <button
+            onClick={handleSave}
+            disabled={saving || !first.trim() || !last.trim()}
+            className="w-full py-4 rounded-2xl font-bold text-white text-base mt-1 disabled:opacity-50 transition-opacity"
+            style={{ backgroundColor: 'var(--color-primary)' }}>
+            {saving ? 'กำลังบันทึก...' : 'บันทึกชื่อ-นามสกุล'}
           </button>
           <button onClick={onClose} className="text-sm text-gray-400 hover:text-gray-600 py-1">
             ข้ามไปก่อน
@@ -201,6 +284,8 @@ function AppShell() {
   const { loading, error, tenant } = useTenant()
   const tenantId = tenant?.id
   const [showPhoneReminder, setShowPhoneReminder] = useState(false)
+  const [showNameReminder, setShowNameReminder] = useState(false)
+  const [nameReminderInitial, setNameReminderInitial] = useState('')
   const navigate = useNavigate()
   const location = useLocation()
   const isBackOffice = ['/admin', '/staff', '/technician', '/dev-journal', '/data-center'].some(p => location.pathname.startsWith(p))
@@ -239,6 +324,15 @@ function AppShell() {
         { id: uid, ...updates },
         { onConflict: 'id' }
       )
+    }
+
+    // เช็คชื่อ-นามสกุลครบไม๊ (นับรวมค่าที่เพิ่งเติมจาก OAuth metadata ข้างบนด้วย) — ต้องมีทั้งชื่อและ
+    // นามสกุลถึงจะถือว่าครบ เอกสารราชการ/แจ้งเตือนคำร้องต้องใช้ชื่อเต็ม
+    const effectiveFullName = updates.full_name ?? profile?.full_name ?? ''
+    const { first, last } = splitThaiFullName(effectiveFullName)
+    if (!first.trim() || !last.trim()) {
+      setNameReminderInitial(effectiveFullName)
+      setShowNameReminder(true)
     }
 
     if (!profile?.phone?.trim()) setShowPhoneReminder(true)
@@ -340,7 +434,9 @@ function AppShell() {
 
   return (
     <div className="h-dvh bg-gray-50 dark:bg-transparent flex flex-col">
-      {showPhoneReminder && (
+      {showNameReminder ? (
+        <NameReminderModal initialFullName={nameReminderInitial} onClose={() => setShowNameReminder(false)} />
+      ) : showPhoneReminder && (
         <PhoneReminderModal onClose={() => setShowPhoneReminder(false)} />
       )}
       <NotificationsProvider>
