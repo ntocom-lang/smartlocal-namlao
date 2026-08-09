@@ -1140,15 +1140,15 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
       })()}
 
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/50 px-4 pb-4 md:p-6">
-          <div className="w-full max-w-md md:max-w-2xl bg-white rounded-t-3xl md:rounded-2xl shadow-2xl flex flex-col max-h-[90vh] md:max-h-[88vh] overflow-hidden">
+        <div className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center bg-black/50 px-2 pt-2 md:p-6">
+          <div className="w-full max-w-md md:max-w-2xl bg-white rounded-t-3xl md:rounded-2xl shadow-2xl flex flex-col h-[calc(100dvh-0.5rem)] max-h-[calc(100dvh-0.5rem)] md:h-auto md:max-h-[88vh] overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
               <h3 className="font-bold text-gray-800">{editingEvent ? 'แก้ไขกิจกรรมในปฏิทิน' : 'เพิ่มกิจกรรมในปฏิทิน'}</h3>
               <button onClick={() => setShowForm(false)} className="p-1.5 rounded-xl hover:bg-gray-100">
                 <X size={18} className="text-gray-500" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
               <div className="px-6 py-4 space-y-4">
                 {formError && (
                   <div ref={formErrorRef} className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
@@ -1338,8 +1338,8 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                 </div>
               </div>
             </div>
-            <div className="border-t border-gray-100 shrink-0">
-              <div className="px-6 py-4 flex gap-3">
+            <div className="border-t border-gray-100 bg-white shrink-0 shadow-[0_-8px_24px_rgba(15,23,42,0.08)]">
+              <div className="px-6 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex gap-3">
                 <button onClick={() => setShowForm(false)} disabled={saving}
                   className="flex-1 py-3 rounded-2xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50">
                   ยกเลิก
