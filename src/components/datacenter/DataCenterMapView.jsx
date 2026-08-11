@@ -46,6 +46,15 @@ const CATEGORY_EMOJI_OVERRIDE = {
   'แหล่งเรียนรู้พอเพียง': '🌾',
 }
 const markerEmoji = e => CATEGORY_EMOJI_OVERRIDE[e.category] ?? groupMeta(e.group_name).emoji
+const isIconUrl = value => typeof value === 'string'
+  && (value.startsWith('http://') || value.startsWith('https://') || value.startsWith('/') || value.startsWith('data:image/'))
+
+function CategoryIcon({ value, alt = '' }) {
+  if (!value) return null
+  return isIconUrl(value)
+    ? <img src={value} alt={alt} className="w-4 h-4 object-contain shrink-0" />
+    : <span className="leading-none shrink-0">{value}</span>
+}
 
 // ฝั่งประชาชนบังคับเห็นเฉพาะ "คำร้อง"/"โครงการ" ที่เสร็จสิ้น/จบงานแล้วเท่านั้น (ไม่มีตัวเลือกสถานะ)
 // ฝั่งเจ้าหน้าที่ (allowStatusFilter=true) เลือกดูสถานะอื่นได้ด้วยผ่านตัวกรองสถานะ — ค่าเริ่มต้นยังเป็น "เสร็จสิ้นแล้ว" เหมือนกัน
@@ -96,7 +105,7 @@ const categoryLabel = e => {
   return e.category
 }
 // กุญแจสำหรับกรองระดับ "ประเภทย่อยในกลุ่ม" — ผูกกับกลุ่มด้วย เพราะป้ายชื่อประเภทอาจซ้ำกันข้ามกลุ่มได้
-const categoryKey = e => `${e.group_name}::${categoryLabel(e)}`
+const categoryKey = (e, resolveLabel = categoryLabel) => `${e.group_name}::${resolveLabel(e)}`
 
 // ตัวเลือกสถานะโครงการสำหรับปุ่ม "ปรับสถานะแบบเร็ว" ในป๊อปอัพ — อ้างอิงจาก STATUS_CFG เดิมใน
 // CivilProjectAdmin.jsx (ต้องตรงกันทุกคำ ไม่งั้นสถานะที่ตั้งจากแผนที่จะอ่านค่าไม่ตรงกับหน้าโครงการหลัก)
@@ -111,16 +120,27 @@ const CIVIL_PROJECT_STATUS_OPTIONS = [
 
 // จัดกลุ่ม entries ที่กรองมาแล้วเป็น [{ group, total, categories: [{category, count}] }] เรียงตามตัวอักษรไทย
 // ใช้ป้ายชื่อไทย (categoryLabel) แทนรหัส category ดิบ แล้วรวมจำนวนตามป้ายชื่อ (กันชื่อซ้ำเวลามีหลายรหัสแปลผลเดียวกัน)
-function buildGroupSummary(list) {
+function buildGroupSummary(list, resolveLabel = categoryLabel, resolveIcon = markerEmoji) {
   const gs = Array.from(new Set(list.map(e => e.group_name))).sort((a, b) => a.localeCompare(b, 'th'))
   return gs.map(g => {
     const inGroup = list.filter(e => e.group_name === g)
-    const labeled = inGroup.map(e => categoryLabel(e)).filter(Boolean)
-    const cats = Array.from(new Set(labeled)).sort((a, b) => a.localeCompare(b, 'th'))
+    const categoryMap = new Map()
+    inGroup.forEach(e => {
+      const label = resolveLabel(e)
+      if (!label) return
+      const current = categoryMap.get(label)
+      categoryMap.set(label, {
+        category: label,
+        count: (current?.count ?? 0) + 1,
+        icon: current?.icon || resolveIcon(e),
+      })
+    })
+    const categories = Array.from(categoryMap.values())
+      .sort((a, b) => a.category.localeCompare(b.category, 'th'))
     return {
       group: g,
       total: inGroup.length,
-      categories: cats.map(c => ({ category: c, count: labeled.filter(l => l === c).length })),
+      categories,
     }
   })
 }
@@ -190,7 +210,7 @@ function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, to
               </button>
               {visibleCategories.length > 0 && (
                 <div className="px-3 py-2 space-y-1">
-                  {visibleCategories.map(({ category, count }) => {
+                  {visibleCategories.map(({ category, count, icon }) => {
                     const key = `${group}::${category}`
                     // ประเภทที่เป็นเส้นทาง (ถนน) ควบคุมด้วยปุ่ม 🛣️ ลอยบนแผนที่ตัวเดียวกัน ไม่ผ่านระบบ
                     // activeCategories ปกติ (ดู DataCenterMapView visible filter) — แถวนี้เลยต้องสะท้อน/สั่งงาน
@@ -204,7 +224,10 @@ function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, to
                         style={catOn
                           ? { backgroundColor: `${meta.color}1a`, color: meta.color }
                           : { backgroundColor: 'transparent', color: '#4b5563' }}>
-                        <span className="font-medium">{category}</span>
+                        <span className="font-medium flex items-center gap-1.5 min-w-0">
+                          <CategoryIcon value={icon} alt="" />
+                          <span className="truncate">{category}</span>
+                        </span>
                         <span className="font-semibold">{count} แห่ง</span>
                       </button>
                     )
@@ -221,6 +244,7 @@ function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, to
 
 export default function DataCenterMapView({ tenant, allowStatusFilter = false, currentUserRole }) {
   const [allRows, setAllRows] = useState([])
+  const [complaintCategoryMeta, setComplaintCategoryMeta] = useState({})
   // งานเขียนข้อมูลที่รวมมาจาก "แผนที่" เดิม (ยุบรวมเป็นแผนที่เดียวแล้ว) — อนุมัติ/ปฏิเสธคำขอธุรกิจ
   // (เฉพาะ admin/superadmin ตรงกับสิทธิ์เดิมของ MapDashboardAdmin) และปรับสถานะโครงการก่อสร้างแบบเร็ว
   const [approvingBizId, setApprovingBizId] = useState(null)
@@ -252,6 +276,20 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
         const clean = (data ?? []).filter(p => p.latitude != null && p.longitude != null)
         setAllRows(clean)
         setLoading(false)
+      })
+
+    supabase.from('complaint_categories')
+      .select('value, label, emoji, color, text_color')
+      .eq('municipality_id', tenant.id)
+      .eq('is_active', true)
+      .then(({ data, error }) => {
+        if (!active) return
+        if (error) {
+          console.error('complaint_categories:', error.message)
+          setComplaintCategoryMeta({})
+          return
+        }
+        setComplaintCategoryMeta(Object.fromEntries((data ?? []).map(category => [category.value, category])))
       })
 
     return () => { active = false }
@@ -308,6 +346,12 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
     return { minLat: minLat - 0.015, maxLat: maxLat + 0.015, minLng: minLng - 0.015, maxLng: maxLng + 0.015 }
   }, [boundaryGeoJson])
 
+  const resolveCategoryLabel = e => e.source_table === 'complaints'
+    ? (complaintCategoryMeta[e.category]?.label || categoryLabel(e))
+    : categoryLabel(e)
+  const resolveMarkerIcon = e => e.source_table === 'complaints'
+    ? (complaintCategoryMeta[e.category]?.emoji || markerEmoji(e))
+    : markerEmoji(e)
   const entries = allRows.filter(e => matchesStatusFilter(e, effectiveStatusFilter))
   const groups = Array.from(new Set(entries.map(e => e.group_name))).sort((a, b) => a.localeCompare(b, 'th'))
   const visible = entries.filter(e => {
@@ -322,20 +366,23 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
       }
       return true
     }
-    return (activeGroups === null || activeGroups.has(e.group_name)) && activeCategories.has(categoryKey(e))
+    return (activeGroups === null || activeGroups.has(e.group_name))
+      && activeCategories.has(categoryKey(e, resolveCategoryLabel))
   })
   // ประเภทย่อยไหนที่เป็นเส้นทางล้วน (ถนนสายหลัก/สายรอง) ใช้บอก SummaryPanel ว่าแถวนี้ต้องผูกกับ
   // showRoutes แทน activeCategories ปกติ — กันปุ่มในแถบขวาโชว์ toggle หลอกๆ ที่ไม่มีผลกับแผนที่จริง
-  const routeCategoryKeys = new Set(entries.filter(e => e.route_points?.length >= 2).map(categoryKey))
+  const routeCategoryKeys = new Set(
+    entries.filter(e => e.route_points?.length >= 2).map(e => categoryKey(e, resolveCategoryLabel)),
+  )
   const fallbackCenter = tenant?.latitude && tenant?.longitude ? { lat: Number(tenant.latitude), lng: Number(tenant.longitude) } : { lat: 13.7563, lng: 100.5018 }
 
   // แถบขวา: แยก 3 แท็บตามแหล่งข้อมูล — ศูนย์ข้อมูลดิจิทัล (กรอกเอง) / คำร้อง / โครงการ แยกกันคนละแถบ
   const dceEntries = entries.filter(e => e.source_table === 'data_center_entries')
   const complaintEntries = entries.filter(e => e.source_table === 'complaints')
   const projectEntries = entries.filter(e => e.source_table === 'civil_projects')
-  const dceSummary = buildGroupSummary(dceEntries)
-  const complaintSummary = buildGroupSummary(complaintEntries)
-  const projectSummary = buildGroupSummary(projectEntries)
+  const dceSummary = buildGroupSummary(dceEntries, resolveCategoryLabel, resolveMarkerIcon)
+  const complaintSummary = buildGroupSummary(complaintEntries, resolveCategoryLabel, resolveMarkerIcon)
+  const projectSummary = buildGroupSummary(projectEntries, resolveCategoryLabel, resolveMarkerIcon)
   // ฝั่งประชาชน (allowStatusFilter=false) ไม่มีแท็บคำร้อง/โครงการให้กด ล็อกไว้ที่ dce เสมอไม่ว่า activeTab จะเป็นอะไร
   const effectiveTab = allowStatusFilter ? activeTab : 'dce'
   const activeSummary = effectiveTab === 'dce' ? dceSummary : effectiveTab === 'complaints' ? complaintSummary : projectSummary
@@ -392,12 +439,14 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
               className="w-full h-full min-h-[70vh]"
               markers={visible.filter(e => !(e.route_points?.length >= 2)).map(e => {
                 const meta = groupMeta(e.group_name)
+                const icon = resolveMarkerIcon(e)
                 return {
                   id: `${e.source_table}-${e.source_id}`,
                   position: { lat: Number(e.latitude), lng: Number(e.longitude) },
-                  title: e.title || categoryLabel(e) || e.group_name,
+                  title: e.title || resolveCategoryLabel(e) || e.group_name,
                   color: meta.pinColor ?? meta.color,
-                  label: markerEmoji(e),
+                  label: isIconUrl(icon) ? '' : icon,
+                  iconUrl: isIconUrl(icon) ? icon : null,
                   entry: e,
                 }
               })}
@@ -427,7 +476,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
           {selectedEntry && (selectedEntry.source_table === 'business_registrations' || selectedEntry.source_table === 'civil_projects') && (
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 w-[min(340px,calc(100%-32px))] rounded-2xl border border-gray-200 bg-white p-3 text-xs shadow-2xl backdrop-blur-xs">
               <div className="flex items-center justify-between gap-2 mb-1.5">
-                <p className="font-bold text-gray-800 truncate">{selectedEntry.title || categoryLabel(selectedEntry) || selectedEntry.group_name}</p>
+                <p className="font-bold text-gray-800 truncate">{selectedEntry.title || resolveCategoryLabel(selectedEntry) || selectedEntry.group_name}</p>
                 <button type="button" onClick={() => setSelectedEntry(null)} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100"><X size={14} /></button>
               </div>
               {selectedEntry.source_table === 'business_registrations' && selectedEntry.status === 'pending'

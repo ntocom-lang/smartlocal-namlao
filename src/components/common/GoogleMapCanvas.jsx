@@ -201,7 +201,33 @@ export default function GoogleMapCanvas({
         gmpDraggable: isDraggable,
       })
 
-      if (PinElement) {
+      if (markerData.iconUrl) {
+        const iconWrapper = document.createElement('div')
+        const iconSize = markerData.scale ? Math.max(34, markerData.scale * 3) : 44
+        iconWrapper.style.width = String(iconSize) + 'px'
+        iconWrapper.style.height = String(iconSize) + 'px'
+        iconWrapper.style.display = 'flex'
+        iconWrapper.style.alignItems = 'center'
+        iconWrapper.style.justifyContent = 'center'
+        iconWrapper.style.borderRadius = '50%'
+        iconWrapper.style.background = markerData.color || '#ef4444'
+        iconWrapper.style.border = '3px solid #ffffff'
+        iconWrapper.style.boxShadow = '0 3px 10px rgba(15, 23, 42, 0.3)'
+        iconWrapper.style.overflow = 'hidden'
+
+        const iconImage = document.createElement('img')
+        iconImage.src = markerData.iconUrl
+        iconImage.alt = ''
+        iconImage.style.width = '72%'
+        iconImage.style.height = '72%'
+        iconImage.style.objectFit = 'contain'
+        iconImage.addEventListener('error', () => {
+          iconImage.remove()
+          iconWrapper.textContent = markerData.label || '📍'
+        })
+        iconWrapper.append(iconImage)
+        marker.append(iconWrapper)
+      } else if (PinElement) {
         marker.append(new PinElement({
           background: markerData.color || '#ef4444',
           borderColor: '#ffffff',
