@@ -4,12 +4,17 @@ import { Wrench, TrendingUp, AlertTriangle, Printer, X, Clock, CheckCircle2, Dow
 import { supabase } from '../../lib/supabase'
 
 const STATUS = {
+  new:         { label: 'คำร้องใหม่',      color: '#f59e0b', bg: '#fef3c7', text: '#92400e' },
   pending:     { label: 'รอดำเนินการ',    color: '#f59e0b', bg: '#fef3c7', text: '#92400e' },
   received:    { label: 'รับเรื่องแล้ว',   color: '#3b82f6', bg: '#dbeafe', text: '#1e40af' },
   in_progress: { label: 'กำลังดำเนินการ', color: '#8b5cf6', bg: '#ede9fe', text: '#5b21b6' },
+  done:        { label: 'รอปิดเรื่อง',     color: '#f97316', bg: '#ffedd5', text: '#9a3412' },
   completed:   { label: 'เสร็จสิ้น',      color: '#10b981', bg: '#d1fae5', text: '#065f46' },
+  closed:      { label: 'ปิดเรื่องแล้ว',   color: '#10b981', bg: '#d1fae5', text: '#065f46' },
   rejected:    { label: 'ปฏิเสธ',         color: '#ef4444', bg: '#fee2e2', text: '#991b1b' },
 }
+const CLOSED_STATUSES = new Set(['completed', 'closed'])
+const isClosedStatus = status => CLOSED_STATUSES.has(status)
 let CATEGORY_LABEL = {
   road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าส่องสว่าง',
   trash: 'ขยะ/ความสะอาด', water: 'น้ำประปา',
@@ -24,7 +29,7 @@ const MONTHS_TH = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.',
 const MONTHS_FULL_TH = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
   'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
 
-function handlePrint({ view, month, year, viewLabel, total, completed, rejected, active, rate, avgDays, catData, trend, tenant }) {
+function handlePrint({ view, viewLabel, total, completed, rejected, active, rate, avgDays, catData, trend, tenant }) {
   const today = new Date()
   const thaiDate = `${today.getDate()} ${MONTHS_FULL_TH[today.getMonth()]} ${today.getFullYear() + 543}`
   const trendRows = trend.map(t => `
@@ -135,13 +140,13 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
   })
 
   const total     = viewData.length
-  const completed = viewData.filter(c => c.status === 'completed').length
+  const completed = viewData.filter(c => isClosedStatus(c.status)).length
   const rejected  = viewData.filter(c => c.status === 'rejected').length
   const active    = total - completed - rejected
   const rate      = total > 0 ? Math.round(completed / total * 100) : 0
 
   const closedData = complaints.filter(c => {
-    if (c.status !== 'completed') return false
+    if (!isClosedStatus(c.status)) return false
     const d = new Date(c.updated_at)
     if (view === 'month') return d.getMonth() === month && d.getFullYear() === year
     if (view === 'year')  return d.getFullYear() === year
@@ -157,10 +162,10 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
     ? complaints.filter(c => { const d = new Date(c.created_at); return d.getMonth() === prevMonth && d.getFullYear() === prevYear })
     : []
   const prevTotal     = prevData.length
-  const prevCompleted = prevData.filter(c => c.status === 'completed').length
+  const prevCompleted = prevData.filter(c => isClosedStatus(c.status)).length
   const prevRate      = prevTotal > 0 ? Math.round(prevCompleted / prevTotal * 100) : 0
   const prevClosedData = complaints.filter(c => {
-    if (c.status !== 'completed') return false
+    if (!isClosedStatus(c.status)) return false
     const d = new Date(c.updated_at)
     return d.getMonth() === prevMonth && d.getFullYear() === prevYear
   })
@@ -175,7 +180,7 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
   const slaRate7  = closedData.length > 0 ? Math.round(slaIn7 / closedData.length * 100) : null
 
   const techMap = {}
-  complaints.filter(c => c.status === 'completed' && c.assigned_to).forEach(c => {
+  complaints.filter(c => isClosedStatus(c.status) && c.assigned_to).forEach(c => {
     const tech = technicians.find(t => t.id === c.assigned_to)
     const name = tech?.full_name || tech?.email || null
     if (!name) return
@@ -190,18 +195,18 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
   const trend = view === 'all'
     ? years.slice().reverse().map(y => {
         const cs = complaints.filter(c => new Date(c.created_at).getFullYear() === y)
-        return { label: String(y + 543), submitted: cs.length, completed: cs.filter(c => c.status === 'completed').length }
+        return { label: String(y + 543), submitted: cs.length, completed: cs.filter(c => isClosedStatus(c.status)).length }
       })
     : view === 'year'
     ? Array.from({ length: 12 }, (_, i) => {
         const cs = complaints.filter(c => { const d = new Date(c.created_at); return d.getMonth() === i && d.getFullYear() === year })
-        return { label: MONTHS_TH[i], submitted: cs.length, completed: cs.filter(c => c.status === 'completed').length }
+        return { label: MONTHS_TH[i], submitted: cs.length, completed: cs.filter(c => isClosedStatus(c.status)).length }
       })
     : Array.from({ length: 4 }, (_, i) => {
         const weekStart = i * 7 + 1
         const weekEnd   = i === 3 ? 31 : weekStart + 6
         const cs = complaints.filter(c => { const d = new Date(c.created_at); return d.getMonth() === month && d.getFullYear() === year && d.getDate() >= weekStart && d.getDate() <= weekEnd })
-        return { label: `สัปดาห์ ${i + 1}`, submitted: cs.length, completed: cs.filter(c => c.status === 'completed').length }
+        return { label: `สัปดาห์ ${i + 1}`, submitted: cs.length, completed: cs.filter(c => isClosedStatus(c.status)).length }
       })
 
   const catCount = {}
@@ -216,7 +221,7 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
 
   const nowMs = now.getTime()
   const overdue = complaints
-    .filter(c => !['completed','rejected'].includes(c.status) && (nowMs - new Date(c.created_at)) > 15 * 86400000)
+    .filter(c => !['completed', 'closed', 'rejected'].includes(c.status) && (nowMs - new Date(c.created_at)) > 15 * 86400000)
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).slice(0, 6)
   const noTechAction = complaints
     .filter(c => c.status === 'received' && (nowMs - new Date(c.updated_at)) > 7 * 86400000)
@@ -225,86 +230,104 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
   const rateColor = rate >= 70 ? '#10b981' : rate >= 40 ? '#f59e0b' : '#ef4444'
   const viewLabel = view === 'month' ? `${MONTHS_FULL_TH[month]} ${year + 543}` : view === 'year' ? `ปี ${year + 543}` : 'ทั้งหมด'
 
+  function exportCsv() {
+    const rows = [
+      ['เลขที่', 'วันที่', 'ผู้ร้อง', 'โทรศัพท์', 'ประเภท', 'รายละเอียด', 'สถานที่', 'สถานะ'],
+      ...viewData.map(c => [
+        c.ref_no || c.complaint_number || c.id.slice(0, 8).toUpperCase(),
+        new Date(c.created_at).toLocaleDateString('th-TH'),
+        c.reporter_name ?? c.profiles?.full_name ?? '',
+        c.phone ?? c.profiles?.phone ?? '',
+        CATEGORY_LABEL[c.category] ?? c.category ?? '',
+        (c.description ?? '').replace(/\n/g, ' '),
+        [c.location_name, c.village].filter(Boolean).join(', '),
+        STATUS[c.status]?.label ?? c.status,
+      ]),
+    ]
+    const csv = '﻿' + rows.map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\n')
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
+    link.href = url
+    link.download = `คำร้อง_${viewLabel}_${tenant?.name ?? ''}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
-    <div className="space-y-5 pb-32">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h2 className="text-base font-bold text-gray-800 flex items-center gap-2">
-            <TrendingUp size={18} style={{ color: 'var(--color-primary)' }} />
-            รายงานสรุป
-          </h2>
-          <p className="text-xs text-gray-400 mt-0.5">{viewLabel} · {tenant?.name}</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex rounded-xl border border-gray-200 overflow-hidden bg-white text-xs font-medium">
-            {[['month','รายเดือน'],['year','รายปี'],['all','ทั้งหมด']].map(([v, label]) => (
-              <button key={v} onClick={() => setView(v)}
-                className={`px-3 py-2 transition-colors ${view === v ? 'text-white' : 'text-gray-600 hover:bg-gray-50'}`}
-                style={view === v ? { backgroundColor: 'var(--color-primary)' } : {}}>
-                {label}
-              </button>
-            ))}
+    <div className="space-y-4 pb-24 md:space-y-5 md:pb-8">
+      <section className="relative overflow-hidden rounded-3xl px-5 py-5 text-white shadow-lg shadow-blue-900/10 md:px-6 md:py-6"
+        style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 56%, #06b6d4 135%)' }}>
+        <div className="absolute -right-10 -top-14 h-40 w-40 rounded-full bg-white/10" />
+        <div className="absolute -bottom-14 left-1/3 h-32 w-32 rounded-full bg-cyan-300/10" />
+        <div className="relative flex items-start gap-3">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/20 bg-white/15 shadow-sm backdrop-blur">
+            <TrendingUp size={23} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-white/70">Staff Analytics</p>
+            <h2 className="mt-0.5 text-xl font-extrabold tracking-tight">รายงานผลการดำเนินงาน</h2>
+            <p className="mt-1 truncate text-xs text-white/75">{viewLabel} · {tenant?.name}</p>
           </div>
-          {view !== 'all' && (
-            <select value={year} onChange={e => setYear(+e.target.value)}
-              className="text-sm border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none">
-              {years.map(y => <option key={y} value={y}>{y + 543}</option>)}
-            </select>
-          )}
-          {view === 'month' && (
-            <select value={month} onChange={e => setMonth(+e.target.value)}
-              className="text-sm border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none">
-              {MONTHS_TH.map((m, i) => <option key={i} value={i}>{m}</option>)}
-            </select>
-          )}
-          <button onClick={() => {
-            const rows = [
-              ['เลขที่','วันที่','ผู้ร้อง','โทรศัพท์','ประเภท','รายละเอียด','สถานที่','สถานะ'],
-              ...viewData.map(c => [
-                c.id.slice(0,8).toUpperCase(),
-                new Date(c.created_at).toLocaleDateString('th-TH'),
-                c.reporter_name ?? c.profiles?.full_name ?? '',
-                c.phone ?? c.profiles?.phone ?? '',
-                CATEGORY_LABEL[c.category] ?? c.category ?? '',
-                (c.description ?? '').replace(/\n/g,' '),
-                [c.location_name, c.village].filter(Boolean).join(', '),
-                STATUS[c.status]?.label ?? c.status,
-              ])
-            ]
-            const csv = '﻿' + rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n')
-            const a = document.createElement('a')
-            a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
-            a.download = `คำร้อง_${viewLabel}_${tenant?.name ?? ''}.csv`
-            a.click()
-          }} className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
-            <Download size={15} /> Export CSV
+        </div>
+        <div className="relative mt-4 grid grid-cols-2 gap-2 sm:flex sm:justify-end">
+          <button onClick={exportCsv}
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/15 px-3 text-xs font-bold text-white backdrop-blur transition hover:bg-white/25 active:scale-[0.98]">
+            <Download size={15} /> ดาวน์โหลด CSV
           </button>
           <button onClick={() => handlePrint({ view, month, year, viewLabel, total, completed, rejected, active, rate, avgDays, catData, trend, tenant })}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
-            <Printer size={15} /> พิมพ์
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-white px-3 text-xs font-extrabold text-blue-700 shadow-sm transition hover:bg-blue-50 active:scale-[0.98]">
+            <Printer size={15} /> พิมพ์รายงาน
           </button>
-          {(view !== 'month' || month !== now.getMonth() || year !== now.getFullYear()) && (
-            <button onClick={() => { setView('month'); setMonth(now.getMonth()); setYear(now.getFullYear()) }}
-              className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-medium bg-white border border-gray-200 text-gray-400 hover:text-red-500 transition-colors">
-              <X size={12} /> ล้าง
-            </button>
-          )}
         </div>
-      </div>
+      </section>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <section className="rounded-2xl border border-slate-100 bg-white p-3 shadow-sm">
+        <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1">
+          {[['month', 'รายเดือน'], ['year', 'รายปี'], ['all', 'ทั้งหมด']].map(([value, label]) => (
+            <button key={value} onClick={() => setView(value)}
+              className={`min-h-9 rounded-lg px-2 text-xs font-bold transition-all ${view === value ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {view !== 'all' && (
+          <div className="mt-3 flex items-center gap-2">
+            {view === 'month' && (
+              <select value={month} onChange={event => setMonth(+event.target.value)}
+                className="min-h-10 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-blue-400">
+                {MONTHS_TH.map((label, index) => <option key={label} value={index}>{label}</option>)}
+              </select>
+            )}
+            <select value={year} onChange={event => setYear(+event.target.value)}
+              className="min-h-10 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-blue-400">
+              {years.map(value => <option key={value} value={value}>พ.ศ. {value + 543}</option>)}
+            </select>
+            {(view !== 'month' || month !== now.getMonth() || year !== now.getFullYear()) && (
+              <button onClick={() => { setView('month'); setMonth(now.getMonth()); setYear(now.getFullYear()) }}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-400 transition hover:bg-red-50 hover:text-red-500"
+                aria-label="กลับไปเดือนปัจจุบัน" title="กลับไปเดือนปัจจุบัน">
+                <X size={15} />
+              </button>
+            )}
+          </div>
+        )}
+      </section>
+
+      <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3">
         {[
-          { label: 'คำร้องที่รับเข้า', value: total,    color: '#64748b', sub: 'รายการ',           delta: view === 'month' ? total - prevTotal : null, unit: '' },
-          { label: 'ปิดงานแล้ว',       value: completed, color: '#10b981', sub: 'รายการ',           delta: view === 'month' ? completed - prevCompleted : null, unit: '' },
-          { label: 'อัตราปิดงาน',      value: `${rate}%`, color: rateColor, sub: rate >= 70 ? '✅ ดี' : rate >= 40 ? '⚠️ ปานกลาง' : '🔴 ต่ำ', delta: view === 'month' && prevTotal > 0 ? rate - prevRate : null, unit: '%' },
-          { label: 'เฉลี่ยวันปิดงาน',  value: avgDays !== null ? avgDays : '—', color: '#8b5cf6', sub: avgDays !== null ? 'วัน' : 'ไม่มีข้อมูล', delta: view === 'month' && avgDays !== null && prevAvgDays !== null ? prevAvgDays - avgDays : null, unit: 'วัน' },
-        ].map(({ label, value, color, sub, delta, unit }) => (
-          <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-            <p className="text-2xl font-black leading-none" style={{ color }}>{value}</p>
-            <p className="text-[13px] text-gray-400 mt-1">{sub}</p>
-            <p className="text-xs font-medium text-gray-600 mt-0.5">{label}</p>
+          { label: 'คำร้องที่รับเข้า', value: total, color: '#2563eb', bg: '#eff6ff', sub: 'รายการ', delta: view === 'month' ? total - prevTotal : null, unit: '' },
+          { label: 'ปิดเรื่องแล้ว', value: completed, color: '#059669', bg: '#ecfdf5', sub: 'รายการ', delta: view === 'month' ? completed - prevCompleted : null, unit: '' },
+          { label: 'อัตราปิดเรื่อง', value: `${rate}%`, color: rateColor, bg: rate >= 70 ? '#ecfdf5' : rate >= 40 ? '#fffbeb' : '#fef2f2', sub: rate >= 70 ? 'ผลการดำเนินงานดี' : rate >= 40 ? 'ควรติดตาม' : 'ต้องเร่งดำเนินการ', delta: view === 'month' && prevTotal > 0 ? rate - prevRate : null, unit: '%' },
+          { label: 'เวลาเฉลี่ยปิดเรื่อง', value: avgDays !== null ? avgDays : '—', color: '#7c3aed', bg: '#f5f3ff', sub: avgDays !== null ? 'วัน' : 'ไม่มีข้อมูล', delta: view === 'month' && avgDays !== null && prevAvgDays !== null ? prevAvgDays - avgDays : null, unit: 'วัน' },
+        ].map(({ label, value, color, bg, sub, delta, unit }) => (
+          <div key={label} className="relative overflow-hidden rounded-2xl border border-white p-3.5 shadow-sm md:p-4"
+            style={{ background: `linear-gradient(145deg, #ffffff 20%, ${bg} 125%)` }}>
+            <span className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full shadow-sm" style={{ backgroundColor: color }} />
+            <p className="text-2xl font-black leading-none md:text-3xl" style={{ color }}>{value}</p>
+            <p className="mt-1 text-[10px] font-semibold text-slate-400">{sub}</p>
+            <p className="mt-1 text-[11px] font-bold leading-tight text-slate-700 md:text-xs">{label}</p>
             {delta !== null && (
-              <p className={`text-[11px] font-semibold mt-1.5 ${delta > 0 ? 'text-green-500' : delta < 0 ? 'text-red-400' : 'text-gray-400'}`}>
+              <p className={`mt-1.5 text-[10px] font-semibold ${delta > 0 ? 'text-emerald-600' : delta < 0 ? 'text-red-500' : 'text-slate-400'}`}>
                 {delta > 0 ? '↑' : delta < 0 ? '↓' : '='} {delta !== 0 ? `${Math.abs(delta)}${unit} จากเดือนก่อน` : 'เท่าเดิม'}
               </p>
             )}
@@ -313,29 +336,30 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
       </div>
 
       {closedData.length > 0 && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-            <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-              <Clock size={14} className="text-blue-500" /> SLA — ระยะเวลาแก้ไขปัญหา
+        <div className="rounded-3xl border border-blue-100 bg-white p-4 shadow-sm md:p-5">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="flex items-center gap-2 text-sm font-extrabold text-slate-800">
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><Clock size={15} /></span>
+              ระยะเวลาปิดเรื่อง
             </h3>
             {slaRate7 !== null && (
-              <span className={`text-sm font-bold px-3 py-1 rounded-full ${slaRate7 >= 70 ? 'bg-green-50 text-green-600' : slaRate7 >= 40 ? 'bg-yellow-50 text-yellow-600' : 'bg-red-50 text-red-500'}`}>
-                {slaRate7 >= 70 ? '✅' : slaRate7 >= 40 ? '⚠️' : '🔴'} {slaRate7}% แก้ภายใน 7 วัน
+              <span className={`rounded-full px-3 py-1 text-xs font-extrabold ${slaRate7 >= 70 ? 'bg-emerald-50 text-emerald-700' : slaRate7 >= 40 ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-600'}`}>
+                {slaRate7}% ภายใน 7 วัน
               </span>
             )}
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-4 gap-2">
             {[
               { label: '0–3 วัน',  count: slaIn3,            color: '#10b981', bg: '#d1fae5', emoji: '🟢' },
               { label: '4–7 วัน',  count: slaIn7 - slaIn3,   color: '#3b82f6', bg: '#dbeafe', emoji: '🔵' },
               { label: '8–14 วัน', count: slaIn14 - slaIn7,  color: '#f59e0b', bg: '#fef3c7', emoji: '🟡' },
               { label: '15+ วัน',  count: slaOver14,          color: '#ef4444', bg: '#fee2e2', emoji: '🔴' },
             ].map(({ label, count, color, bg, emoji }) => (
-              <div key={label} className="rounded-2xl p-4 text-center" style={{ backgroundColor: bg }}>
-                <p className="text-xs mb-1">{emoji}</p>
-                <p className="text-2xl font-black" style={{ color }}>{count}</p>
-                <p className="text-xs font-semibold mt-1" style={{ color }}>{label}</p>
-                <p className="text-[11px] mt-0.5" style={{ color, opacity: 0.7 }}>
+              <div key={label} className="rounded-2xl px-1.5 py-3 text-center" style={{ backgroundColor: bg }}>
+                <p className="mb-1 text-[9px]">{emoji}</p>
+                <p className="text-xl font-black leading-none md:text-2xl" style={{ color }}>{count}</p>
+                <p className="mt-1 text-[10px] font-bold" style={{ color }}>{label}</p>
+                <p className="mt-0.5 text-[9px]" style={{ color, opacity: 0.7 }}>
                   {closedData.length > 0 ? `${Math.round(count / closedData.length * 100)}%` : '—'}
                 </p>
               </div>
@@ -344,14 +368,15 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
         </div>
       )}
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-        <h3 className="text-sm font-semibold text-gray-700 mb-4">
+      <div className="grid gap-4 xl:grid-cols-[1.25fr_.75fr]">
+      <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm md:p-5">
+        <h3 className="mb-4 text-sm font-extrabold text-slate-800">
           {view === 'all' ? 'แนวโน้มรายปี' : view === 'year' ? `แนวโน้มรายเดือน ปี ${year + 543}` : `แนวโน้มรายสัปดาห์ ${MONTHS_FULL_TH[month]} ${year + 543}`}
         </h3>
         {complaints.length === 0 ? (
           <div className="flex items-center justify-center h-40 text-gray-400 text-sm">ยังไม่มีข้อมูล</div>
         ) : (
-          <ResponsiveContainer width="100%" height={200}>
+          <ResponsiveContainer width="100%" height={220}>
             <BarChart data={trend} barGap={4} barSize={16}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
               <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#9ca3af' }} />
@@ -360,15 +385,15 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
                 contentStyle={{ borderRadius: 12, border: '1px solid #f3f4f6', fontSize: 12 }} />
               <Legend iconType="circle" iconSize={8}
                 formatter={v => <span className="text-xs text-gray-600">{v === 'submitted' ? 'รับเข้า' : 'เสร็จสิ้น'}</span>} />
-              <Bar dataKey="submitted" name="submitted" fill="var(--color-primary)" radius={[4,4,0,0]} opacity={0.75} />
-              <Bar dataKey="completed" name="completed" fill="#10b981" radius={[4,4,0,0]} opacity={0.85} />
+              <Bar dataKey="submitted" name="submitted" fill="var(--color-primary)" radius={[7,7,0,0]} opacity={0.78} />
+              <Bar dataKey="completed" name="completed" fill="#10b981" radius={[7,7,0,0]} opacity={0.9} />
             </BarChart>
           </ResponsiveContainer>
         )}
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-        <h3 className="text-sm font-semibold text-gray-700 mb-4">
+      <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm md:p-5">
+        <h3 className="mb-4 text-sm font-extrabold text-slate-800">
           {view === 'all' ? 'ประเภทคำร้องทั้งหมด' : view === 'year' ? `ประเภทคำร้องปี ${year + 543}` : `ประเภทคำร้อง${MONTHS_FULL_TH[month]}นี้`}
         </h3>
         {catData.length === 0 ? (
@@ -411,6 +436,7 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
             </div>
           </>
         )}
+      </div>
       </div>
 
       {techLeaderboard.length > 0 && (

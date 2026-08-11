@@ -1527,22 +1527,48 @@ function ComplaintsStaffModule({ tenant, staffId }) {
 }
 
 function StaffReportWrapper({ tenant }) {
+  const tenantId = tenant?.id
   const [complaints, setComplaints] = useState([])
   const [technicians, setTechnicians] = useState([])
   const [loading, setLoading] = useState(true)
+
+  const loadReportData = useCallback(async () => {
+    if (!tenantId) return
+    const [{ data: complaintData, error }, { data: technicianData }] = await Promise.all([
+      fetchRoleScopedComplaints(tenantId),
+      supabase.from('profiles').select('id, full_name, email').eq('municipality_id', tenantId).eq('role', 'technician'),
+    ])
+    if (error) console.error('fetch complaint report data error:', error.message)
+    setComplaints(complaintData ?? [])
+    setTechnicians(technicianData ?? [])
+    setLoading(false)
+  }, [tenantId])
+
   useEffect(() => {
-    if (!tenant?.id) return
-    Promise.all([
-      fetchRoleScopedComplaints(tenant.id),
-      supabase.from('profiles').select('id, full_name, email').eq('municipality_id', tenant.id).eq('role', 'technician'),
-    ]).then(([{ data: c, error }, { data: t }]) => {
-      if (error) console.error('fetch complaint report data error:', error.message)
-      setComplaints(c ?? [])
-      setTechnicians(t ?? [])
-      setLoading(false)
-    })
-  }, [tenant?.id])
-  if (loading) return <div className="flex justify-center py-16"><Loader2 size={24} className="animate-spin text-gray-300" /></div>
+    if (!tenantId) return
+    queueMicrotask(loadReportData)
+  }, [tenantId, loadReportData])
+
+  useEffect(() => {
+    if (!tenantId) return
+    const channel = supabase
+      .channel(`staff-report-${tenantId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'complaints',
+        filter: `municipality_id=eq.${tenantId}`,
+      }, loadReportData)
+      .subscribe()
+    return () => supabase.removeChannel(channel)
+  }, [tenantId, loadReportData])
+
+  if (loading) return (
+    <div className="flex min-h-72 flex-col items-center justify-center rounded-3xl bg-white text-slate-400 shadow-sm">
+      <Loader2 size={28} className="animate-spin text-blue-500" />
+      <p className="mt-3 text-xs font-semibold">กำลังประมวลผลรายงานล่าสุด...</p>
+    </div>
+  )
   return <ReportManager complaints={complaints} tenant={tenant} technicians={technicians} />
 }
 
@@ -1835,7 +1861,21 @@ export default function StaffDashboard() {
             {activeModule === 'inbox'      && <InboxModule tenant={tenant} staffId={profile?.id} currentUserRole={profile?.role} />}
             {activeModule === 'complaints' && (
               ['admin', 'superadmin', 'staff'].includes(profile?.role)
-                ? <ComplaintsManager tenant={tenant} currentUserRole={profile?.role} openComplaintId={mapOpenComplaintId} />
+                ? (
+                  <div className="space-y-4">
+                    <header className="flex items-center gap-3 px-1">
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-400 text-white shadow-md shadow-blue-500/20">
+                        <MessageSquareWarning size={21} strokeWidth={2.2} />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-blue-600">ระบบเจ้าหน้าที่</p>
+                        <h1 className="truncate text-lg font-extrabold tracking-tight text-slate-900">จัดการคำร้องประชาชน</h1>
+                        <p className="text-[11px] text-slate-500">รับเรื่อง ตรวจสอบ มอบหมาย และติดตามผล</p>
+                      </div>
+                    </header>
+                    <ComplaintsManager tenant={tenant} currentUserRole={profile?.role} openComplaintId={mapOpenComplaintId} />
+                  </div>
+                )
                 : <ComplaintsStaffModule tenant={tenant} staffId={profile?.id} />
             )}
             {activeModule === 'events'     && <EventsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} autoEditEventId={autoEditEventId} onAutoEditHandled={() => setAutoEditEventId(null)} autoCreateSignal={autoCreateEventSignal} autoCreateAudience="management" onAutoCreateHandled={() => setAutoCreateEventSignal(0)} />}

@@ -447,6 +447,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
                   color: meta.pinColor ?? meta.color,
                   label: isIconUrl(icon) ? '' : icon,
                   iconUrl: isIconUrl(icon) ? icon : null,
+                  scale: 10,
                   entry: e,
                 }
               })}

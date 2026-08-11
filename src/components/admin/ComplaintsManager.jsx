@@ -114,14 +114,14 @@ const PRIORITY = {
 // ─── Sub-components ───────────────────────────────────────────────────────────
 function StatCard({ label, value, icon: Icon, color }) {
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex items-center gap-4">
-      <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+    <div className="flex min-h-16 items-center gap-2.5 rounded-2xl border border-slate-100 bg-white p-2.5 shadow-sm">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
            style={{ backgroundColor: `${color}20` }}>
-        <Icon size={22} style={{ color }} />
+        <Icon size={18} strokeWidth={2.1} style={{ color }} />
       </div>
-      <div>
-        <p className="text-2xl font-bold text-gray-800 leading-none">{value}</p>
-        <p className="text-xs text-gray-500 mt-0.5">{label}</p>
+      <div className="min-w-0">
+        <p className="text-xl font-extrabold leading-none text-slate-800">{value}</p>
+        <p className="mt-1 truncate text-[10px] font-medium leading-none text-slate-500">{label}</p>
       </div>
     </div>
   )
@@ -1665,7 +1665,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
     <div className="space-y-4">
 
       {/* Stat cards — mobile grid / PC formal bar */}
-      <div className="grid grid-cols-2 md:hidden gap-3">
+      <div className="grid grid-cols-2 gap-2 md:hidden">
         <StatCard label="ทั้งหมด"         value={complaints.length}         icon={ClipboardList} color="#64748b" />
         <StatCard label="คำร้องใหม่"      value={counts.new ?? 0}           icon={Clock}         color="#f59e0b" />
         <StatCard label="กำลังดำเนินการ"  value={counts.in_progress ?? 0}   icon={AlertCircle}   color="#8b5cf6" />
@@ -1700,9 +1700,9 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
           </span>
         </div>
         <div className="px-4 sm:px-5 pt-4 pb-4 border-b border-gray-200 md:bg-[#f5f8fc] space-y-3.5">
-          <div className="flex items-center gap-2">
-            <h2 className="font-semibold text-gray-700 md:hidden shrink-0">รายการคำร้อง</h2>
-            <div className="relative flex-1 min-w-0 md:max-w-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="w-full shrink-0 font-semibold text-gray-700 md:hidden">รายการคำร้อง</h2>
+            <div className="relative min-w-0 flex-1 basis-0 md:max-w-xs">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input value={search} onChange={(e) => setSearch(e.target.value)}
                 placeholder="ค้นหาคำร้อง..."
@@ -1719,7 +1719,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
             </button>
             {['admin', 'superadmin', 'staff'].includes(currentUserRole) && (
               <button onClick={() => setShowOssIntake(true)}
-                className="shrink-0 flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors"
+                className="flex min-h-10 w-full shrink-0 items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-semibold text-white transition-colors md:w-auto"
                 style={{ backgroundColor: 'var(--color-primary)' }}>
                 <ClipboardList size={15} />
                 รับแจ้งที่เคาน์เตอร์
