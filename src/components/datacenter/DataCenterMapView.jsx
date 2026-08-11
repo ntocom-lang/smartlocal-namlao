@@ -242,7 +242,10 @@ function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, to
   )
 }
 
-export default function DataCenterMapView({ tenant, allowStatusFilter = false, currentUserRole }) {
+// props initialGroup/initialCategory/focusLat/focusLng: ใช้ตอนกระโดดมาจากปุ่ม "ดูบนแผนที่" ใน Overview
+// เท่านั้น (ไม่มีใครส่งมาก็ทำงานเหมือนเดิมทุกประการ) — เปิดกลุ่ม/ประเภทเป้าหมายให้อัตโนมัติ (ปกติต้องกดเปิด
+// เองทีละประเภทตามพฤติกรรมเดิม) และ pan กล้องไปที่พิกัดจริงของรายการนั้น
+export default function DataCenterMapView({ tenant, allowStatusFilter = false, currentUserRole, initialGroup, initialCategory, focusLat, focusLng }) {
   const [allRows, setAllRows] = useState([])
   const [complaintCategoryMeta, setComplaintCategoryMeta] = useState({})
   // งานเขียนข้อมูลที่รวมมาจาก "แผนที่" เดิม (ยุบรวมเป็นแผนที่เดียวแล้ว) — อนุมัติ/ปฏิเสธคำขอธุรกิจ
@@ -253,9 +256,11 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   const [selectedEntry, setSelectedEntry] = useState(null)
   const [boundaryGeoJson, setBoundaryGeoJson] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [activeGroups, setActiveGroups] = useState(null) // null = เปิดไว้ทั้งหมดตั้งแต่แรก (หัวข้อหลัก เช่น คำร้อง/โครงการ)
-  // หัวข้อรอง (ประเภทย่อยในการ์ด) เริ่มต้นปิดไว้ก่อน (Set ว่าง) ต้องกดเปิดเองทีละประเภท
-  const [activeCategories, setActiveCategories] = useState(() => new Set())
+  const [activeGroups, setActiveGroups] = useState(() => initialGroup ? new Set([initialGroup]) : null) // null = เปิดไว้ทั้งหมดตั้งแต่แรก (หัวข้อหลัก เช่น คำร้อง/โครงการ)
+  // หัวข้อรอง (ประเภทย่อยในการ์ด) เริ่มต้นปิดไว้ก่อน (Set ว่าง) ต้องกดเปิดเองทีละประเภท — ยกเว้นกระโดดมาจาก
+  // ปุ่ม "ดูบนแผนที่" ที่ต้องเปิดประเภทเป้าหมายให้เห็นหมุดทันที ไม่งั้นกดมาแล้วแผนที่จะว่างเปล่า
+  const [activeCategories, setActiveCategories] = useState(() =>
+    initialGroup && initialCategory ? new Set([`${initialGroup}::${initialCategory}`]) : new Set())
   const [activeTab, setActiveTab] = useState('dce') // 'dce' | 'complaints' | 'projects'
   // แผงสรุปแบบ bottom sheet บนมือถือ — เริ่มกางไว้ก่อน กดย่อ/ปิดได้ (ไม่มีผลกับ PC ที่ใช้แถบขวาแทน)
   const [sheetExpanded, setSheetExpanded] = useState(true)
@@ -375,6 +380,10 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
     entries.filter(e => e.route_points?.length >= 2).map(e => categoryKey(e, resolveCategoryLabel)),
   )
   const fallbackCenter = tenant?.latitude && tenant?.longitude ? { lat: Number(tenant.latitude), lng: Number(tenant.longitude) } : { lat: 13.7563, lng: 100.5018 }
+  // มีพิกัดจุดโฟกัส (มาจากปุ่ม "ดูบนแผนที่") ใช้ pan กล้องไปจุดนั้นแทนศูนย์กลางเทศบาลเดิม พร้อมซูมเข้าใกล้ขึ้น
+  const hasFocusPoint = Number.isFinite(focusLat) && Number.isFinite(focusLng)
+  const mapCenter = hasFocusPoint ? { lat: focusLat, lng: focusLng } : fallbackCenter
+  const mapZoom = hasFocusPoint ? 17 : 13
 
   // แถบขวา: แยก 3 แท็บตามแหล่งข้อมูล — ศูนย์ข้อมูลดิจิทัล (กรอกเอง) / คำร้อง / โครงการ แยกกันคนละแถบ
   const dceEntries = entries.filter(e => e.source_table === 'data_center_entries')
@@ -432,9 +441,9 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
             </div>
           ) : (
             <GoogleMapCanvas
-              center={fallbackCenter}
-              zoom={13}
-              mapTypeId="roadmap"
+              center={mapCenter}
+              zoom={mapZoom}
+              mapTypeId="hybrid"
               boundaryGeoJson={boundaryGeoJson}
               className="w-full h-full min-h-[70vh]"
               markers={visible.filter(e => !(e.route_points?.length >= 2)).map(e => {

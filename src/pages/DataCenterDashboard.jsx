@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LayoutGrid, MapPin, Plus, Bell, ArrowLeft, PanelLeftOpen, PanelLeftClose, Tags, ChevronRight, Activity, Cpu, ShieldCheck, Sun, Moon } from 'lucide-react'
+import { LayoutGrid, MapPin, Plus, Bell, ArrowLeft, PanelLeftOpen, PanelLeftClose, Tags, ChevronRight, Activity, Cpu, ShieldCheck, Sun, Moon, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import DataCenter3DCanvas from '../components/datacenter/DataCenter3DCanvas'
@@ -32,6 +32,12 @@ export default function DataCenterDashboard() {
   const [sidebarFilter, setSidebarFilter] = useState({ group: null, category: null })
   const [collapsedGroups, setCollapsedGroups] = useState(() => new Set())
   const [theme, setTheme] = useState('light') // Default to Light Mode per user request
+  // ทรี "หมวดหมู่ข้อมูล" อยู่ใน sidebar ฝั่ง desktop เท่านั้น (hidden md:flex) — มือถือไม่มีทางเปลี่ยนหมวดเลย
+  // ต้องมี bottom sheet แยกให้กดเลือกหมวด/ประเภทย่อยแบบเดียวกับเมนูซ้าย
+  const [showMobileCategorySheet, setShowMobileCategorySheet] = useState(false)
+  // ปุ่ม "ดูบนแผนที่" จากรายการ — เก็บกลุ่ม/ประเภท+พิกัดของรายการที่กดไว้ ส่งต่อให้ DataCenterMap ไปกรอง+
+  // pan กล้องไปที่จุดนั้นให้เลย (ไม่ต้องให้ผู้ใช้ไปกรองหมวดเองซ้ำอีกรอบบนแผนที่)
+  const [mapFocus, setMapFocus] = useState(null)
 
   const isLight = theme === 'light'
 
@@ -83,6 +89,18 @@ export default function DataCenterDashboard() {
     setPrefillGroup(group ?? null)
     setPrefillCategory(category ?? null)
     setActiveModule('add')
+  }
+
+  // ปุ่ม "ดูบนแผนที่" จากรายการใน Overview — เด้งไปแท็บแผนที่พร้อมกรองเฉพาะกลุ่ม/ประเภทของรายการนั้น
+  // และ pan กล้องไปที่พิกัดจริงให้เลย (data_center_entries บังคับมี lat/lng เสมอ ต่อให้เป็นเส้นทางก็มีจุดอ้างอิง)
+  function goToMapFocus(entry) {
+    setMapFocus({
+      group: entry.group_name ?? null,
+      category: entry.category ?? null,
+      lat: entry.latitude != null ? Number(entry.latitude) : null,
+      lng: entry.longitude != null ? Number(entry.longitude) : null,
+    })
+    setActiveModule('map')
   }
 
   function handleSaved() {
@@ -142,6 +160,12 @@ export default function DataCenterDashboard() {
             <p className="text-cyan-200/80 text-[11px] mt-0.5 truncate">{tenant?.name ?? 'Digital Data Center'}</p>
           </div>
 
+          {activeModule === 'overview' && categoryTree.length > 0 && (
+            <button onClick={() => setShowMobileCategorySheet(true)} aria-label="เปลี่ยนหมวดหมู่ข้อมูล"
+              className="p-2 rounded-xl bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 hover:text-white transition-all active:scale-90 shrink-0">
+              <Tags size={18} />
+            </button>
+          )}
           <button onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')} aria-label="เปลี่ยนธีม" className="p-2 rounded-xl bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 hover:text-white transition-all active:scale-90 shrink-0">
             {isLight ? <Moon size={18} /> : <Sun size={18} className="text-amber-400" />}
           </button>
@@ -150,6 +174,65 @@ export default function DataCenterDashboard() {
           </button>
         </div>
       </header>
+
+      {/* Mobile Category Sheet — เวอร์ชันมือถือของทรี "หมวดหมู่ข้อมูล" ในเมนูซ้าย desktop */}
+      {showMobileCategorySheet && (
+        <div className="md:hidden fixed inset-0 z-50 flex flex-col justify-end" onClick={() => setShowMobileCategorySheet(false)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div onClick={e => e.stopPropagation()}
+            className={`relative rounded-t-3xl max-h-[75vh] overflow-y-auto p-4 shadow-2xl ${
+              isLight ? 'bg-white text-slate-800' : 'bg-[#0b1329] text-slate-100 border-t border-cyan-500/30'
+            }`}
+            style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 16px)' }}>
+            <div className="flex items-center justify-between mb-3">
+              <p className={`text-xs font-black uppercase tracking-widest ${isLight ? 'text-sky-700' : 'text-cyan-400/80'}`}>เลือกหมวดหมู่ข้อมูล</p>
+              <button onClick={() => setShowMobileCategorySheet(false)} aria-label="ปิด"
+                className={`p-1.5 rounded-lg ${isLight ? 'text-slate-500 bg-slate-100' : 'text-slate-400 bg-slate-800'}`}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <button onClick={() => { goToCategory(null, null); setShowMobileCategorySheet(false) }}
+              className={`w-full flex items-center justify-between rounded-xl px-3.5 py-3 mb-2 text-sm font-bold transition-colors ${
+                !sidebarFilter.group
+                  ? (isLight ? 'bg-sky-100 text-sky-800 border border-sky-300' : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40')
+                  : (isLight ? 'bg-slate-50 text-slate-700 border border-slate-200' : 'bg-slate-800/50 text-slate-300 border border-transparent')
+              }`}>
+              <span>ภาพรวมทั้งหมด</span>
+              <span className="font-mono text-xs">{categoryTree.reduce((acc, g) => acc + g.total, 0)}</span>
+            </button>
+
+            {categoryTree.map(({ group, total, categories }) => (
+              <div key={group} className="mb-2">
+                <button onClick={() => { goToCategory(group, null); setShowMobileCategorySheet(false) }}
+                  className={`w-full flex items-center justify-between rounded-xl px-3.5 py-3 text-sm font-bold transition-colors ${
+                    sidebarFilter.group === group && !sidebarFilter.category
+                      ? (isLight ? 'bg-sky-100 text-sky-800 border border-sky-300' : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40')
+                      : (isLight ? 'bg-slate-50 text-slate-700 border border-slate-200' : 'bg-slate-800/40 text-slate-200 border border-transparent')
+                  }`}>
+                  <span>{group}</span>
+                  <span className="font-mono text-xs opacity-80">{total}</span>
+                </button>
+                {categories.length > 0 && (
+                  <div className="pl-3 mt-1 space-y-1">
+                    {categories.map(({ category, count }) => (
+                      <button key={category} onClick={() => { goToCategory(group, category); setShowMobileCategorySheet(false) }}
+                        className={`w-full flex items-center justify-between rounded-lg px-3 py-2 text-xs transition-colors ${
+                          sidebarFilter.group === group && sidebarFilter.category === category
+                            ? (isLight ? 'bg-sky-50 text-sky-700 font-bold' : 'bg-cyan-500/15 text-cyan-300 font-bold')
+                            : (isLight ? 'text-slate-500' : 'text-slate-400')
+                        }`}>
+                        <span className="truncate">{category}</span>
+                        <span className="font-mono shrink-0 ml-2">{count}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Desktop Cyber Command Header */}
       <header className={`hidden md:block relative w-full overflow-hidden shrink-0 border-b ${isLight ? 'bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white border-cyan-400/30' : 'bg-gradient-to-b from-[#0b1120] to-[#070a12] text-white border-cyan-500/20'}`}>
@@ -215,7 +298,7 @@ export default function DataCenterDashboard() {
       <div className={isMapModule ? 'md:flex relative flex-1 min-h-0' : 'md:flex relative'}>
         {!sidebarHidden && (
           <aside className="hidden md:flex flex-col w-60 shrink-0 shadow-2xl bg-[#0b1329]/95 border-r border-cyan-500/25 backdrop-blur-xl text-slate-100">
-            <nav className="flex-1 px-3 py-4 overflow-y-auto space-y-1.5 sidebar-nav">
+            <nav className="flex-1 px-3 py-4 overflow-y-auto space-y-1 sidebar-nav">
               <div className="px-3 pb-2 text-[10px] font-black uppercase tracking-widest text-cyan-400/60 flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
                 SYSTEM NAVIGATION
@@ -226,8 +309,9 @@ export default function DataCenterDashboard() {
                   <button key={key} onClick={() => {
                     setActiveModule(key)
                     if (key === 'overview') setSidebarFilter({ group: null, category: null })
+                    if (key === 'map') setMapFocus(null)
                   }}
-                    className={`group relative flex min-h-10 w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-xs font-extrabold transition-all duration-200 focus-visible:outline-none ${
+                    className={`group relative flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2 text-sm font-extrabold transition-all duration-200 focus-visible:outline-none ${
                       isActive
                         ? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-300 border border-cyan-500/40 shadow-lg shadow-cyan-500/10'
                         : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200 border border-transparent'
@@ -269,7 +353,7 @@ export default function DataCenterDashboard() {
                               goToCategory(group, null)
                               setCollapsedGroups(prev => { if (!prev.has(group)) return prev; const next = new Set(prev); next.delete(group); return next })
                             }}
-                            className={`flex-1 min-w-0 flex items-center justify-between gap-2 py-2 text-xs font-semibold text-left transition-colors ${
+                            className={`flex-1 min-w-0 flex items-center justify-between gap-2 py-1.5 text-[13px] font-semibold text-left transition-colors ${
                               isGroupActive
                                 ? 'text-cyan-200 font-bold'
                                 : 'text-slate-300 hover:text-cyan-200'
@@ -294,7 +378,7 @@ export default function DataCenterDashboard() {
                                   : 'hover:bg-slate-800/40'
                               }`}>
                               <button type="button" onClick={() => goToCategory(group, category)}
-                                className={`flex-1 min-w-0 flex items-center justify-between gap-2 pl-7 py-1.5 text-[11px] text-left transition-colors ${
+                                className={`flex-1 min-w-0 flex items-center justify-between gap-2 pl-7 py-1.5 text-xs text-left transition-colors ${
                                   isCatActive
                                     ? 'text-cyan-300 font-bold'
                                     : 'text-slate-400 group-hover:text-slate-200'
@@ -336,7 +420,10 @@ export default function DataCenterDashboard() {
                 <div className="w-8 h-8 border-4 border-cyan-500/20 border-t-cyan-400 rounded-full animate-spin" />
               </div>
             }>
-              <DataCenterMap key={refreshKey} tenant={tenant} currentUserRole={profile?.role} />
+              <DataCenterMap key={`${refreshKey}-${mapFocus?.group ?? ''}-${mapFocus?.category ?? ''}-${mapFocus?.lat ?? ''}-${mapFocus?.lng ?? ''}`}
+                tenant={tenant} currentUserRole={profile?.role}
+                initialGroup={mapFocus?.group} initialCategory={mapFocus?.category}
+                focusLat={mapFocus?.lat} focusLng={mapFocus?.lng} />
             </Suspense>
           ) : (
             <div className="max-w-6xl mx-auto">
@@ -349,6 +436,8 @@ export default function DataCenterDashboard() {
                   initialFilterGroup={sidebarFilter.group} initialFilterCategory={sidebarFilter.category}
                   onAddNew={(group, category) => goToAddEntry(group, category)}
                   onEditEntry={handleEditEntry}
+                  onSelectCategory={(group, category) => goToCategory(group, category)}
+                  onViewOnMap={goToMapFocus}
                   onImportSuccess={() => setRefreshKey(k => k + 1)} />}
                 {activeModule === 'add' && <DataCenterEntryForm tenant={tenant} profile={profile}
                   initialGroup={prefillGroup} initialCategory={prefillCategory} editingEntry={editingEntry}
@@ -372,7 +461,11 @@ export default function DataCenterDashboard() {
         {MODULES.map(({ key, label, Icon }) => {
           const isActive = activeModule === key
           return (
-            <button key={key} onClick={() => setActiveModule(key)}
+            <button key={key} onClick={() => {
+              setActiveModule(key)
+              if (key === 'overview') setSidebarFilter({ group: null, category: null })
+              if (key === 'map') setMapFocus(null)
+            }}
               className="flex-1 flex flex-col items-center justify-center gap-1 pt-2 pb-1 transition-all active:scale-95">
               <div className={`relative w-10 h-8 rounded-xl flex items-center justify-center transition-all duration-300 ${isActive ? 'bg-gradient-to-r from-cyan-500/30 to-blue-500/30 border border-cyan-400/50 shadow-md shadow-cyan-500/20' : ''}`}>
                 {isActive && <span className="absolute -top-1 left-1/2 -translate-x-1/2 w-4 h-[3px] rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(0,240,255,0.8)]" />}

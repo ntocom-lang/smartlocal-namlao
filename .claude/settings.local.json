@@ -248,7 +248,12 @@
       "Bash(powershell -Command \"Get-Process node -ErrorAction SilentlyContinue | Select-Object Id,ProcessName,StartTime\")",
       "PowerShell(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object {$_.LocalPort -in 5173,5174,5175} | Select-Object LocalPort,OwningProcess)",
       "PowerShell(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object {$_.LocalPort -ge 5170 -and $_.LocalPort -le 5180} | Select-Object LocalPort,OwningProcess)",
-      "PowerShell(Stop-Process -Id 16936 -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 500; Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object {$_.LocalPort -ge 5170 -and $_.LocalPort -le 5180})"
+      "PowerShell(Stop-Process -Id 16936 -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 500; Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object {$_.LocalPort -ge 5170 -and $_.LocalPort -le 5180})",
+      "Bash(cd \"d:/VS Code/E-Service/SmartLocal v1.1\" && git show 946b66f:src/components/datacenter/DataCenterOverview.jsx > /tmp/old_overview.jsx && wc -l /tmp/old_overview.jsx)",
+      "Bash(mkdir -p \"/c/Users/ntoco/AppData/Local/Temp/claude/d--VS-Code-E-Service-SmartLocal-v1-1/44d58a7b-5852-4c4a-b179-f348998abf30/scratchpad\")",
+      "Bash(git show *)",
+      "mcp__claude_ai_Supabase__list_tables",
+      "Bash(npx vite *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\RKnetwork\\.claude\\plans",

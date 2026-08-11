@@ -5,6 +5,11 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
   base: '/',
+  server: {
+    watch: {
+      ignored: ['**/android/**', '**/dist/**', '**/dev-dist/**']
+    }
+  },
   plugins: [
     react(),
     tailwindcss(),
