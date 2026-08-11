@@ -48,23 +48,43 @@ export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate,
   const clerkTitle = (terminology?.clerk ?? 'ปลัด') + loc
   const councilTitle = (terminology?.council ?? 'สมาชิกสภา') + loc
 
-  // ตำแหน่ง/ที่อยู่ผู้ร้อง — ดึงจากข้อมูลส่วนตัวโปรไฟล์ (หน้าจัดการผู้ใช้ของแอดมิน) ถ้ามี
-  // ตำบล/อำเภอ/จังหวัด ถ้าโปรไฟล์ไม่มีข้อมูล ให้ใช้ของหน่วยงาน (tenant) แทนแล้วค่อยเว้นจุดไข่ปลา
+  // ตำแหน่ง/ที่อยู่ผู้ร้อง — ใช้ข้อมูลบัญชีของผู้ยื่นก่อนเสมอ
+  // รองรับทั้งที่อยู่แบบแยกช่องใน "ข้อมูลบัญชีของฉัน" และช่อง address เดิมของระบบ
+  // เมื่อบัญชีไม่มีที่อยู่จึงใช้พื้นที่ของหน่วยงาน (tenant) แล้วค่อยเว้นจุดไข่ปลา
   // เป็นทางเลือกสุดท้าย — แต่ "เขตที่ ..." เฉพาะสมาชิกสภาเท่านั้น (ประชาชนทั่วไปไม่มีเขตเลือกตั้ง ใส่ให้ผิดความหมาย)
   const p = c.profiles
   const positionLine = p?.job_title
     || (c.profiles?.role === 'council' ? `${councilTitle} เขตที่ .................` : '')
-  const addrParts = [
+  const hasStructuredProfileAddress = [
     p?.address_detail,
-    p?.address_moo ? `หมู่ที่ ${p.address_moo}` : null,
-    `ตำบล${p?.address_subdistrict || bareSubdistrictName(tenant) || '.................'}`,
-    `อำเภอ${p?.address_district || tenant?.district || '.................'}`,
-    `จังหวัด${p?.address_province || tenant?.province || '.................'}`,
-  ].filter(Boolean)
+    p?.address_moo,
+    p?.address_subdistrict,
+    p?.address_district,
+    p?.address_province,
+  ].some(Boolean)
+  const addrParts = hasStructuredProfileAddress
+    ? [
+        p?.address_detail,
+        p?.address_moo ? `หมู่ที่ ${p.address_moo}` : null,
+        `ตำบล${p?.address_subdistrict || bareSubdistrictName(tenant) || '.................'}`,
+        `อำเภอ${p?.address_district || tenant?.district || '.................'}`,
+        `จังหวัด${p?.address_province || tenant?.province || '.................'}`,
+      ].filter(Boolean)
+    : p?.address
+      ? [p.address]
+      : [
+          `ตำบล${bareSubdistrictName(tenant) || '.................'}`,
+          `อำเภอ${tenant?.district || '.................'}`,
+          `จังหวัด${tenant?.province || '.................'}`,
+        ]
 
   const mayor = staffList?.find((s) => s.role === 'mayor')
   const clerk = staffList?.find((s) => s.role === 'clerk')
-  const deptHead = staffList?.find((s) => s.role === 'dept_head' && c.department && s.title?.includes(c.department))
+  const engineeringDirector = staffList?.find((s) => s.title?.includes('ผู้อำนวยการกองช่าง'))
+    || staffList?.find((s) => s.role === 'dept_head' && c.department && s.title?.includes(c.department))
+    || (tenant?.slug === 'namlao'
+      ? { name: 'นายชัยศักดิ์ ชัยธรรม', title: 'ผู้อำนวยการกองช่าง' }
+      : null)
 
   const location1 = [c.location_name, c.village].filter(Boolean).join(', ')
   const point1 = [location1, c.detail].filter(Boolean).join(' — ') || '.................................................................................................'
@@ -84,14 +104,19 @@ export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate,
   body { font-family: 'Sarabun', sans-serif; font-size: 15px; color: #111; line-height: 1.5; }
   p { margin: 0; }
   .center { text-align: center; }
-  .req-no { text-align: right; padding: 0; font-size: 12px; line-height: 1.4; }
+  .request-refs { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding: 0; font-size: 12px; line-height: 1.4; }
+  .e-service-ref { text-align: left; }
+  .official-ref { min-width: 220px; text-align: right; white-space: nowrap; }
   .indent { text-indent: 2em; }
   .points div { margin: 4px 0; }
   @media print { button { display: none; } }
 </style></head><body>
-<div class="req-no">
-  <div>คำร้องเลขที่ ${esc(num)}</div>
-  <div>ลงวันที่ ${esc(thDate)}</div>
+<div class="request-refs">
+  <div class="e-service-ref">
+    <div>คำร้องผ่าน E-Service ${esc(num)}</div>
+    <div>ลงวันที่ ${esc(thDate)}</div>
+  </div>
+  <div class="official-ref">คำร้องเลขที่........................................</div>
 </div>
 
 <p class="center" style="font-size:18px;font-weight:700;margin-top:10px;">คำร้อง</p>
@@ -100,8 +125,7 @@ export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate,
 <p style="margin-top:16px;">เรื่อง &nbsp;&nbsp;แจ้งซ่อมแซม${esc(cat)}</p>
 <p style="margin-top:4px;">เรียน &nbsp;&nbsp;${esc(mayorTitle)}</p>
 
-<p class="indent" style="margin-top:8px;">ข้าพเจ้า ${esc(reporter)} ${esc(positionLine)}</p>
-<p style="margin-top:2px;">${esc(addrParts.join(' '))} โทรศัพท์ ${esc(phone)}</p>
+<p class="indent" style="margin-top:8px;">ข้าพเจ้า ${esc(reporter)} ${esc(positionLine)} ${esc(addrParts.join(' '))} <span style="white-space:nowrap;">โทรศัพท์ ${esc(phone)}</span></p>
 
 <p class="indent" style="margin-top:10px;">
   มีความประสงค์แจ้งซ่อมแซม${esc(cat)} เพื่อความปลอดภัยในชีวิตและทรัพย์สินของราษฎรในพื้นที่
@@ -121,7 +145,7 @@ export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate,
 
   ${includeStaffSignatures ? `
   <div style="display:flex;justify-content:space-between;margin-top:24px;">
-    ${signBlock(deptHead, 'ผู้อำนวยการกองช่าง')}
+    ${signBlock(engineeringDirector, 'ผู้อำนวยการกองช่าง')}
     ${signBlock(clerk, clerkTitle)}
   </div>
 

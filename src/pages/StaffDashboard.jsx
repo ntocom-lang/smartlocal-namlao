@@ -14,6 +14,7 @@ import { useTenant } from '../contexts/TenantContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { thaiDate } from '../lib/thaiDate'
 import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
+import { buildCouncilComplaintHtml } from '../lib/councilFormPrint'
 import { uploadFile } from '../lib/driveStorage'
 
 const MapPicker = lazy(() => import('../components/MapPicker'))
@@ -959,6 +960,7 @@ function markStaffSeen(id) {
 }
 
 function ComplaintDetailSheetStaff({ complaint: c, onClose, onUpdate, updating, tenant }) {
+  const { terminology } = useTenant()
   const [note, setNote] = useState(c.technician_note ?? '')
   const [photos, setPhotos] = useState(c.work_photos ?? [])
   const [uploading, setUploading] = useState(false)
@@ -970,6 +972,40 @@ function ComplaintDetailSheetStaff({ complaint: c, onClose, onUpdate, updating, 
   const st = C_STATUS[c.status]
   const nx = C_NEXT[c.status]
   const isDone = c.status === 'completed' || c.status === 'closed' || c.status === 'rejected'
+
+  async function handlePrint() {
+    const popup = window.open('', '_blank', 'width=900,height=700')
+    if (!popup) {
+      alert('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ กรุณาอนุญาตป๊อปอัพสำหรับเว็บไซต์นี้แล้วลองใหม่')
+      return
+    }
+
+    const createdAt = new Date(c.created_at)
+    const thDate = createdAt.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
+    const num = c.ref_no || c.complaint_number || '—'
+    const phone = c.phone || c.profiles?.phone || '—'
+    const { data: staffList } = await supabase
+      .from('staff')
+      .select('name, title, role')
+      .eq('municipality_id', tenant?.id)
+      .eq('is_active', true)
+
+    popup.document.write(buildCouncilComplaintHtml({
+      c,
+      tenant,
+      terminology,
+      num,
+      thDate,
+      cat: C_CAT[c.category] ?? c.category,
+      phone,
+      staffList,
+    }))
+    popup.document.close()
+    setTimeout(() => {
+      popup.focus()
+      popup.print()
+    }, 500)
+  }
 
   async function uploadPhoto(e) {
     const file = e.target.files?.[0]
@@ -1025,11 +1061,18 @@ function ComplaintDetailSheetStaff({ complaint: c, onClose, onUpdate, updating, 
         {/* Header */}
         <div className="shrink-0 px-5 pt-6 pb-5 relative"
              style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)' }}>
-          <button onClick={onClose}
-            className="absolute top-4 right-4 w-9 h-9 flex items-center justify-center rounded-full bg-white shadow-lg hover:bg-gray-100 active:scale-95 transition-all">
-            <X size={20} className="text-gray-700" strokeWidth={2.5} />
-          </button>
-          <div className="flex-1 min-w-0 pr-12">
+          <div className="absolute top-4 right-4 flex items-center gap-2">
+            <button onClick={handlePrint}
+              className="inline-flex items-center gap-1.5 px-3 h-9 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold transition-colors"
+              title="พิมพ์แบบคำร้องเดิมของหน่วยงาน">
+              <Printer size={15} /> พิมพ์แบบคำร้อง
+            </button>
+            <button onClick={onClose}
+              className="w-9 h-9 flex items-center justify-center rounded-full bg-white shadow-lg hover:bg-gray-100 active:scale-95 transition-all">
+              <X size={20} className="text-gray-700" strokeWidth={2.5} />
+            </button>
+          </div>
+          <div className="flex-1 min-w-0 pr-40">
             <p className="text-white/70 text-xs">งานที่ได้รับมอบหมาย</p>
             <p className="text-white font-bold text-base mt-0.5">{C_CAT[c.category] ?? c.category}</p>
             {c.profiles?.full_name && <p className="text-white/60 text-xs mt-1">ผู้แจ้ง: {c.profiles.full_name}</p>}
@@ -1170,15 +1213,19 @@ function ComplaintDetailSheetStaff({ complaint: c, onClose, onUpdate, updating, 
         </div>
 
         {/* Footer */}
-        {nx && (
-          <div className="px-5 py-4 border-t border-gray-100 bg-gray-50 shrink-0">
+        <div className="px-5 py-4 border-t border-gray-100 bg-gray-50 shrink-0 flex gap-2">
+          <button onClick={handlePrint}
+            className="inline-flex items-center justify-center gap-1.5 px-4 py-3 rounded-2xl border border-blue-200 bg-white text-blue-700 text-sm font-bold hover:bg-blue-50 transition-colors">
+            <Printer size={16} /> พิมพ์แบบคำร้อง
+          </button>
+          {nx && (
             <button onClick={() => onUpdate(c.id, nx.next, photos, note)} disabled={updating === c.id}
-              className="w-full py-3 rounded-2xl text-sm font-bold text-white transition-all active:scale-98 disabled:opacity-50"
+              className="flex-1 py-3 rounded-2xl text-sm font-bold text-white transition-all active:scale-98 disabled:opacity-50"
               style={{ backgroundColor: nx.next === 'done' ? '#10b981' : 'var(--color-primary)' }}>
               {updating === c.id ? <Loader2 size={16} className="animate-spin mx-auto" /> : `${nx.label} →`}
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   )

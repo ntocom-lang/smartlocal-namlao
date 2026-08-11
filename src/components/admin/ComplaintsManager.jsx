@@ -1462,17 +1462,16 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
         if (!window.confirm('ยังไม่ได้แนบ PDF ฉบับสมบูรณ์จาก GDCC e-Office\n\nต้องการจ่ายงานต่อเลยหรือไม่?')) return
       }
     }
-    const newStatus = technicianId ? 'in_progress' : 'new'
     const { error } = await supabase
       .from('complaints')
-      .update({ assigned_to: technicianId, status: newStatus })
+      .update({ assigned_to: technicianId })
       .eq('id', complaintId)
     if (!error) {
       setComplaints((prev) => prev.map((c) =>
-        c.id === complaintId ? { ...c, assigned_to: technicianId, status: newStatus } : c
+        c.id === complaintId ? { ...c, assigned_to: technicianId } : c
       ))
       if (selectedComplaint?.id === complaintId)
-        setSelectedComplaint((prev) => ({ ...prev, assigned_to: technicianId, status: newStatus }))
+        setSelectedComplaint((prev) => ({ ...prev, assigned_to: technicianId }))
     }
   }
 

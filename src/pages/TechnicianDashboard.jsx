@@ -6,11 +6,12 @@ import {
   Plus, ChevronDown, Image,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { fetchComplaintPrivateDetail } from '../lib/complaintPrivacy'
 import { useTenant } from '../contexts/TenantContext'
-import { fmtNo } from '../lib/formatComplaintNo'
 import { compressImage } from '../lib/imageUtils'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { uploadFile } from '../lib/driveStorage'
+import { buildCouncilComplaintHtml } from '../lib/councilFormPrint'
 import MapPicker from '../components/MapPicker'
 
 const STATUS = {
@@ -128,7 +129,8 @@ function StatusStepper({ status }) {
 }
 
 
-function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenantName, tenantLogo, tenant }) {
+function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant }) {
+  const { terminology } = useTenant()
   const [note, setNote] = useState(c.technician_note ?? '')
   const [photos, setPhotos] = useState(c.work_photos ?? [])
   const [uploading, setUploading] = useState(false)
@@ -141,124 +143,46 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenantName, te
   const catLabel = CATEGORY_LABEL[c.category] ?? c.category
   const catEmoji = CATEGORY_EMOJI[c.category] ?? '📄'
 
-  function handlePrint() {
-    const dateStr = new Date(c.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'long', year: 'numeric' })
-    const printDateStr = new Date().toLocaleDateString('th-TH', { day: '2-digit', month: 'long', year: 'numeric' })
-    const complaintNo = fmtNo(c.complaint_number, c.created_at)
-    const location = c.location_name || c.village || '—'
+  async function handlePrint() {
+    const popup = window.open('', '_blank', 'width=900,height=700')
+    if (!popup) {
+      alert('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ กรุณาอนุญาตป๊อปอัพสำหรับเว็บไซต์นี้แล้วลองใหม่')
+      return
+    }
 
-    // สร้าง row สำหรับตาราง fields
-    const tr = (label, value) => `
-      <tr>
-        <td style="padding:5px 8px;font-weight:bold;white-space:nowrap;width:170px;vertical-align:top;border:1px solid #999;">${label}</td>
-        <td style="padding:5px 8px;border:1px solid #999;">${value ?? '—'}</td>
-      </tr>`
+    const { data: privateComplaint, error: privateDetailError } = await fetchComplaintPrivateDetail(
+      c.id,
+      'พิมพ์แบบคำร้องพร้อมที่อยู่จากข้อมูลบัญชีผู้ยื่น',
+    )
+    if (privateDetailError) {
+      console.error('fetch complaint print detail error:', privateDetailError.message)
+    }
+    const printableComplaint = privateComplaint ?? c
+    const createdAt = new Date(printableComplaint.created_at)
+    const thDate = createdAt.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
+    const num = printableComplaint.ref_no || printableComplaint.complaint_number || '—'
+    const phone = printableComplaint.phone || printableComplaint.profiles?.phone || '—'
+    const { data: staffList } = await supabase
+      .from('staff')
+      .select('name, title, role')
+      .eq('municipality_id', tenant?.id)
+      .eq('is_active', true)
 
-    const html = `<!DOCTYPE html>
-<html lang="th">
-<head>
-<meta charset="UTF-8"/>
-<title>คำร้อง ${complaintNo}</title>
-<style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family: 'TH Sarabun New', 'Sarabun', 'Tahoma', sans-serif; font-size:16pt; color:#000; background:#fff; }
-  @page { size:A4; margin:15mm 18mm 15mm 18mm; }
-  @media print { body { font-size:14pt; } }
-  table { border-collapse:collapse; width:100%; }
-</style>
-</head>
-<body style="padding:12mm 16mm 10mm;">
-
-  <!-- เลขที่ + วันที่ มุมขวา -->
-  <div style="text-align:right; font-size:13pt; margin-bottom:6px; line-height:1.7;">
-    <span>เลขที่คำร้อง&nbsp;&nbsp;<strong>${complaintNo}</strong></span><br/>
-    <span>วันที่รับแจ้ง&nbsp;&nbsp;${dateStr}</span>
-  </div>
-
-  <!-- หัวเอกสาร -->
-  <table style="border:none; margin-bottom:0;">
-    <tr>
-      <td style="border:none; width:80px; text-align:center; vertical-align:middle;">
-        ${tenantLogo ? `<img src="${tenantLogo}" style="width:68px;height:68px;object-fit:contain;" alt=""/>` : ''}
-      </td>
-      <td style="border:none; text-align:center; vertical-align:middle; padding-bottom:4px;">
-        <div style="font-size:18pt; font-weight:bold; line-height:1.4;">${tenantName ?? 'หน่วยงานปกครองส่วนท้องถิ่น'}</div>
-        <div style="font-size:15pt; font-weight:bold; margin-top:2px;">แบบรับแจ้งปัญหา / คำร้องทั่วไป</div>
-      </td>
-      <td style="border:none; width:80px;"></td>
-    </tr>
-  </table>
-  <hr style="border:none;border-top:3px solid #000;margin:6px 0 10px;"/>
-
-  <!-- ส่วนที่ 1 -->
-  <div style="background:#000;color:#fff;font-weight:bold;font-size:13pt;padding:3px 10px;margin-bottom:6px;">
-    ส่วนที่ ๑ &nbsp;ข้อมูลผู้แจ้ง
-  </div>
-  <table style="margin-bottom:10px;">
-    ${tr('ชื่อ – นามสกุล', c.reporter_name)}
-    ${tr('หมายเลขโทรศัพท์', c.phone)}
-  </table>
-
-  <!-- ส่วนที่ 2 -->
-  <div style="background:#000;color:#fff;font-weight:bold;font-size:13pt;padding:3px 10px;margin-bottom:6px;">
-    ส่วนที่ ๒ &nbsp;รายละเอียดคำร้อง
-  </div>
-  <table style="margin-bottom:6px;">
-    ${tr('ประเภทปัญหา', catLabel)}
-    ${c.subject ? tr('เรื่อง', c.subject) : ''}
-    ${tr('จุดเกิดเหตุ / สถานที่', location)}
-    ${c.latitude ? tr('พิกัด GPS', `${c.latitude.toFixed(5)}, ${c.longitude.toFixed(5)}`) : ''}
-  </table>
-  <div style="font-weight:bold;margin-bottom:4px;">รายละเอียดปัญหา</div>
-  <div style="border:1px solid #000;min-height:64px;padding:6px 10px;line-height:1.8;white-space:pre-wrap;margin-bottom:10px;">${c.detail}</div>
-
-  <!-- ส่วนที่ 3 -->
-  <div style="background:#000;color:#fff;font-weight:bold;font-size:12pt;padding:2px 10px;margin-bottom:5px;">
-    ส่วนที่ ๓ &nbsp;สำหรับเจ้าหน้าที่
-  </div>
-  <table style="margin-bottom:5px;font-size:13pt;">
-    <tr>
-      <td style="padding:3px 8px;font-weight:bold;white-space:nowrap;width:170px;border:1px solid #999;">วันที่รับเรื่อง</td>
-      <td style="padding:3px 8px;border:1px solid #999;"></td>
-    </tr>
-    <tr>
-      <td style="padding:3px 8px;font-weight:bold;white-space:nowrap;border:1px solid #999;">ผู้รับผิดชอบ / ช่าง</td>
-      <td style="padding:3px 8px;border:1px solid #999;"></td>
-    </tr>
-  </table>
-  <div style="font-weight:bold;font-size:13pt;margin-bottom:3px;">บันทึกการดำเนินการ</div>
-  <div style="border:1px solid #000;min-height:56px;padding:5px 10px;font-size:13pt;line-height:1.7;white-space:pre-wrap;margin-bottom:14px;">${c.technician_note ?? ''}</div>
-
-  <!-- ลายมือชื่อ เฉพาะเจ้าหน้าที่ -->
-  <table style="border:none;margin-top:4px;font-size:13pt;">
-    <tr>
-      <td style="border:none;width:50%;padding:0 8px 0 0;">
-        <div style="border-bottom:1px solid #000;height:36px;margin-bottom:5px;"></div>
-        <div style="text-align:center;">(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</div>
-        <div style="text-align:center;font-weight:bold;">เจ้าหน้าที่ผู้รับเรื่อง</div>
-        <div style="text-align:center;">วันที่ .................................</div>
-      </td>
-      <td style="border:none;width:50%;padding:0 0 0 8px;">
-        <div style="border-bottom:1px solid #000;height:36px;margin-bottom:5px;"></div>
-        <div style="text-align:center;">(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</div>
-        <div style="text-align:center;font-weight:bold;">ผู้อนุมัติ / หัวหน้างาน</div>
-        <div style="text-align:center;">วันที่ .................................</div>
-      </td>
-    </tr>
-  </table>
-
-  <hr style="border:none;border-top:1px solid #ccc;margin-top:14px;margin-bottom:4px;"/>
-  <div style="text-align:center;font-size:11pt;color:#666;">
-    พิมพ์เมื่อ ${printDateStr} &nbsp;·&nbsp; SmartLocal E-Service &nbsp;·&nbsp; ${tenantName ?? ''}
-  </div>
-
-<script>window.onload = () => { window.print(); }</script>
-</body>
-</html>`
-
-    const w = window.open('', '_blank', 'width=820,height=1100')
-    w.document.write(html)
-    w.document.close()
+    popup.document.write(buildCouncilComplaintHtml({
+      c: printableComplaint,
+      tenant,
+      terminology,
+      num,
+      thDate,
+      cat: catLabel,
+      phone,
+      staffList,
+    }))
+    popup.document.close()
+    setTimeout(() => {
+      popup.focus()
+      popup.print()
+    }, 500)
   }
 
   async function uploadPhoto(e) {
@@ -319,9 +243,9 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenantName, te
              style={{ background: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)' }}>
           <div className="absolute top-4 right-4 flex gap-2">
             <button onClick={handlePrint}
-              className="p-2 rounded-xl bg-white/20 hover:bg-white/30 text-white transition-colors"
-              title="พิมพ์">
-              <Printer size={16} />
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold transition-colors"
+              title="พิมพ์แบบคำร้องเดิมของหน่วยงาน">
+              <Printer size={16} /> พิมพ์แบบคำร้อง
             </button>
             <button onClick={onClose}
               className="p-2 rounded-xl bg-white/20 hover:bg-white/30 text-white transition-colors">
@@ -332,7 +256,7 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenantName, te
             <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-2xl shrink-0">
               {catEmoji}
             </div>
-            <div className="flex-1 min-w-0 pr-10">
+            <div className="flex-1 min-w-0 pr-36">
               <p className="text-white/70 text-xs">งานที่ได้รับมอบหมาย</p>
               <p className="text-white font-bold text-base mt-0.5">{catLabel}</p>
               {c.subject && <p className="text-white/80 text-sm mt-1">{c.subject}</p>}
@@ -724,8 +648,6 @@ export default function TechnicianDashboard() {
           onClose={() => setSelected(null)}
           onUpdate={updateStatus}
           updating={updating}
-          tenantName={tenant?.name}
-          tenantLogo={tenant?.logo_url}
           tenant={tenant}
         />
       )}
