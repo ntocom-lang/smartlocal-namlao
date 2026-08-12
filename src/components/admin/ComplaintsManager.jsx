@@ -15,7 +15,7 @@ import { logAction } from '../../lib/auditLog'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../../lib/complaintPrivacy'
 import { buildCouncilComplaintHtml } from '../../lib/councilFormPrint'
 import { generateDraftPdfBlob } from '../../lib/generateDraftPdf'
-import { uploadFile, resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef } from '../../lib/driveStorage'
+import { uploadFile, resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef, toReliableImageUrl } from '../../lib/driveStorage'
 import OssIntakeForm from './OssIntakeForm'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -147,6 +147,15 @@ function PriorityBadge({ priority }) {
       {p.short}
     </span>
   )
+}
+
+// ไฟล์ที่อัปโหลดขึ้น Google Drive (uc?id=... เดิม หรือ lh3.googleusercontent.com/d/... ใหม่) ไม่มีนามสกุล
+// ไฟล์ต่อท้าย URL เลย เช็คจาก .jpg/.png ท้าย URL แบบเดิมเลยพังใช้ไม่ได้กับไฟล์เหล่านี้ (เข้าเงื่อนไข "ไม่ใช่
+// รูป" เสมอ ทั้งที่จริงเป็นรูป) — ให้เบราว์เซอร์ลองโหลดเป็นรูปดูก่อนเลย พังค่อย fallback เป็นไอคอนไฟล์แทน
+function AttachmentThumb({ url, alt, iconClassName }) {
+  const [failed, setFailed] = useState(false)
+  if (failed) return <FileText size={22} className={iconClassName} />
+  return <img src={toReliableImageUrl(url)} alt={alt} className="w-full h-full object-cover" onError={() => setFailed(true)} />
 }
 
 function StatusStepper({ status, note }) {
@@ -1046,11 +1055,9 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
               </p>
               <div className="grid grid-cols-3 gap-2">
                 {c.attachments.map((url, i) => (
-                  <a key={i} href={url} target="_blank" rel="noreferrer"
+                  <a key={i} href={toReliableImageUrl(url)} target="_blank" rel="noreferrer"
                     className="aspect-square rounded-xl overflow-hidden border border-blue-100 bg-blue-50 flex items-center justify-center">
-                    {/\.(jpg|jpeg|png|gif|webp)$/i.test(url.split('?')[0])
-                      ? <img src={url} alt={`แนบ ${i + 1}`} className="w-full h-full object-cover" />
-                      : <FileText size={22} className="text-blue-400" />}
+                    <AttachmentThumb url={url} alt={`แนบ ${i + 1}`} iconClassName="text-blue-400" />
                   </a>
                 ))}
               </div>
@@ -1065,11 +1072,9 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
               {[...(c.work_photos ?? []), ...extraWorkPhotos].length > 0 && (
                 <div className="grid grid-cols-3 gap-2">
                   {[...(c.work_photos ?? []), ...extraWorkPhotos].map((url, i) => (
-                    <a key={i} href={url} target="_blank" rel="noreferrer"
+                    <a key={i} href={toReliableImageUrl(url)} target="_blank" rel="noreferrer"
                       className="aspect-square rounded-xl overflow-hidden border border-green-200 bg-green-50 flex items-center justify-center">
-                      {/\.(jpg|jpeg|png|gif|webp)$/i.test(url)
-                        ? <img src={url} alt={`ผลงาน ${i + 1}`} className="w-full h-full object-cover" />
-                        : <FileText size={22} className="text-green-400" />}
+                      <AttachmentThumb url={url} alt={`ผลงาน ${i + 1}`} iconClassName="text-green-400" />
                     </a>
                   ))}
                 </div>

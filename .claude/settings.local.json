@@ -253,7 +253,8 @@
       "Bash(mkdir -p \"/c/Users/ntoco/AppData/Local/Temp/claude/d--VS-Code-E-Service-SmartLocal-v1-1/44d58a7b-5852-4c4a-b179-f348998abf30/scratchpad\")",
       "Bash(git show *)",
       "mcp__claude_ai_Supabase__list_tables",
-      "Bash(npx vite *)"
+      "Bash(npx vite *)",
+      "Bash(git stash *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\RKnetwork\\.claude\\plans",

@@ -97,6 +97,17 @@ export async function deleteFile(fileId) {
   return { error: null }
 }
 
+// ไฟล์รูปที่อัปโหลดขึ้น Drive ก่อนหน้านี้ (public bucket) ถูกบันทึก URL แบบ https://drive.google.com/uc?id=
+// ไว้ตรงๆ ใน DB — Google เปลี่ยนพฤติกรรม endpoint นี้ไปแล้ว เปิดจากมือถือบางเครื่องเด้งไปหน้า "เลือกบัญชี
+// Google" แทนที่จะโชว์รูป (uc?id= ไม่ใช่ endpoint ที่ตั้งใจให้ hotlink ตรงๆ) — เขียน URL รูปแบบใหม่ให้เมื่อ
+// อัปโหลดแล้ว (ดู drive-upload/index.ts) แต่ของเก่าที่เก็บไว้ใน DB ยังเป็นรูปแบบเดิม แก้ทันทีที่แสดงผลแทน
+// การไล่แก้ข้อมูลเก่าทีละแถว — ปลอดภัยเรียกซ้ำได้ (URL ที่ไม่เข้าเงื่อนไขจะคืนค่าเดิมกลับไปเฉยๆ)
+export function toReliableImageUrl(url) {
+  if (typeof url !== 'string') return url
+  const match = url.match(/^https:\/\/drive\.google\.com\/uc\?id=([^&]+)/)
+  return match ? `https://lh3.googleusercontent.com/d/${match[1]}=s0` : url
+}
+
 // ตัวช่วยแยกว่า url ที่เก็บไว้เป็นไฟล์ private ของ Drive หรือเป็น URL ปกติ (public/ของเดิมจาก Supabase)
 export function isPrivateDriveRef(url) {
   return typeof url === 'string' && url.startsWith('drive:')

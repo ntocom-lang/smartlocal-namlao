@@ -144,7 +144,13 @@ serve(async (req) => {
     })
     if (insertErr) console.error('drive_files insert failed (ไฟล์ขึ้น Drive แล้วแต่บันทึก mapping ไม่สำเร็จ):', insertErr.message)
 
-    const url = isPublic ? `https://drive.google.com/uc?id=${uploaded.id}` : `drive:${uploaded.id}`
+    // uc?id= เดิมเปิดตรงจากมือถือแล้วบางทีเด้งไปหน้า "เลือกบัญชี Google" แทนที่จะโชว์รูป (Google เปลี่ยน
+    // พฤติกรรม endpoint นี้ ไม่ใช่ endpoint ที่ตั้งใจให้ hotlink โดยตรง) — รูปภาพใช้ lh3.googleusercontent.com
+    // (CDN รูปของ Google เอง เสถียรกว่าสำหรับ hotlink ตรงมาก) แทน ไฟล์ที่ไม่ใช่รูป (PDF ฯลฯ) ยังใช้ uc?id=
+    // เหมือนเดิมไปก่อน (ยังไม่มีปัญหารายงานเข้ามาสำหรับไฟล์ประเภทนี้)
+    const url = isPublic
+      ? (contentType.startsWith('image/') ? `https://lh3.googleusercontent.com/d/${uploaded.id}=s0` : `https://drive.google.com/uc?id=${uploaded.id}`)
+      : `drive:${uploaded.id}`
     return json({ fileId: uploaded.id, url })
   } catch (err) {
     console.error('drive-upload failed:', err)
