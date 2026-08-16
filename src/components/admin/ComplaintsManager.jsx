@@ -17,6 +17,7 @@ import { buildCouncilComplaintHtml } from '../../lib/councilFormPrint'
 import { generateDraftPdfBlob } from '../../lib/generateDraftPdf'
 import { uploadFile, resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef, toReliableImageUrl } from '../../lib/driveStorage'
 import { fetchAssignableStaff, groupStaffByDepartment, ROLE_LABELS } from '../../lib/staffRoster'
+import { fetchPersonnelSignatories } from '../../lib/personnelDirectory'
 import OssIntakeForm from './OssIntakeForm'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -222,56 +223,6 @@ function StatusStepper({ status, note }) {
         )
       })}
     </div>
-  )
-}
-
-function QuickStatusChange({ id, currentStatus, onUpdate, loading }) {
-  const [open, setOpen] = useState(false)
-  const [sel, setSel] = useState(currentStatus)
-  const [note, setNote] = useState('')
-
-  function handleOpen() { setSel(currentStatus || 'new'); setNote(''); setOpen(true) }
-  function handleSave() {
-    if (sel !== currentStatus) onUpdate(id, sel, [], note.trim() || null)
-    setOpen(false)
-  }
-
-  return (
-    <>
-      <button onClick={handleOpen} disabled={loading === id}
-        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors disabled:opacity-50">
-        <ChevronDown size={11} /> สถานะ
-      </button>
-      {open && (
-        <div className="fixed inset-0 z-9999 flex items-center justify-center bg-black/40"
-             onClick={() => setOpen(false)}>
-          <div className="bg-white rounded-2xl p-5 shadow-xl w-80 mx-4" onClick={(e) => e.stopPropagation()}>
-            <p className="text-sm font-semibold text-gray-800 mb-1">ยืนยันการเปลี่ยนสถานะ</p>
-            <p className="text-xs text-gray-500 mb-3">เลือกสถานะที่ต้องการเปลี่ยนเป็น</p>
-            <select value={sel} onChange={(e) => setSel(e.target.value)}
-              className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-200 mb-3">
-              {STATUS_MAIN.map(key => ({ key, s: STATUS[key] })).map(({ key, s }) => (
-                <option key={key} value={key}>{s.label}</option>
-              ))}
-            </select>
-            <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2}
-              placeholder="หมายเหตุ (ไม่บังคับ)"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-blue-200 mb-3" />
-            <div className="flex gap-2">
-              <button onClick={handleSave} disabled={loading === id}
-                className="flex-1 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
-                style={{ backgroundColor: 'var(--color-primary)' }}>
-                ยืนยัน
-              </button>
-              <button onClick={() => setOpen(false)}
-                className="flex-1 py-2 rounded-xl text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
-                ยกเลิก
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
   )
 }
 
@@ -553,6 +504,7 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
   const [closeUploading, setCloseUploading] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [overrideConfirm, setOverrideConfirm] = useState(null)
+  const [overrideNote, setOverrideNote] = useState('')
   const [nearbyList, setNearbyList] = useState([])
   const [showPinEdit, setShowPinEdit] = useState(false)
   const [savingPin, setSavingPin] = useState(false)
@@ -646,11 +598,7 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
     const cat = CATEGORY_LABEL[c.category] ?? c.category ?? '—'
 
     // ใบคำร้องทางการ — ใช้แบบเดียวกันทุกคำร้อง ไม่ว่าผู้แจ้งจะเป็นประชาชนหรือสมาชิกสภา
-    const { data: staffList } = await supabase
-      .from('staff')
-      .select('name, title, role')
-      .eq('municipality_id', tenant?.id)
-      .eq('is_active', true)
+    const { data: staffList } = await fetchPersonnelSignatories(tenant?.id)
     const html = buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate, cat, phone, staffList })
     w.document.write(html)
     w.document.close()
@@ -666,11 +614,7 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
       const num = c.ref_no ?? '—'
       const phone = c.phone || c.profiles?.phone || '—'
       const cat = CATEGORY_LABEL[c.category] ?? c.category ?? '—'
-      const { data: staffList } = await supabase
-        .from('staff')
-        .select('name, title, role')
-        .eq('municipality_id', tenant?.id)
-        .eq('is_active', true)
+      const { data: staffList } = await fetchPersonnelSignatories(tenant?.id)
       const html = buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate, cat, phone, staffList, includeStaffSignatures: false })
 
       const blob = await generateDraftPdfBlob(html)
@@ -1229,7 +1173,7 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
               <div className="flex items-center gap-2">
                 <FixedSelect
                   value={c.status}
-                  onChange={(val) => setOverrideConfirm(val)}
+                  onChange={(val) => { setOverrideNote(''); setOverrideConfirm(val) }}
                   options={STATUS_MAIN.map(key => ({ value: key, label: STATUS[key].label }))}
                 />
               </div>
@@ -1242,16 +1186,19 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40" onClick={() => setOverrideConfirm(null)}>
           <div className="bg-white rounded-2xl p-5 shadow-xl w-72 mx-4" onClick={(e) => e.stopPropagation()}>
             <p className="text-sm font-semibold text-gray-800 mb-1">ยืนยันการเปลี่ยนสถานะ</p>
-            <p className="text-xs text-gray-500 mb-4">
+            <p className="text-xs text-gray-500 mb-3">
               เปลี่ยนเป็น <span className="font-medium text-gray-800">"{STATUS[overrideConfirm]?.label}"</span> ใช่หรือไม่?
             </p>
+            <textarea value={overrideNote} onChange={(e) => setOverrideNote(e.target.value)} rows={2}
+              placeholder="หมายเหตุ (ไม่บังคับ)"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-blue-200 mb-3" />
             <div className="flex gap-2">
-              <button onClick={() => { onUpdate(c.id, overrideConfirm, []); setOverrideConfirm(null); onClose() }}
+              <button onClick={() => { onUpdate(c.id, overrideConfirm, [], overrideNote.trim() || null); setOverrideConfirm(null); setOverrideNote(''); onClose() }}
                 className="flex-1 py-2 rounded-xl text-sm font-semibold text-white"
                 style={{ backgroundColor: 'var(--color-primary)' }}>
                 ยืนยัน
               </button>
-              <button onClick={() => setOverrideConfirm(null)}
+              <button onClick={() => { setOverrideConfirm(null); setOverrideNote('') }}
                 className="flex-1 py-2 rounded-xl text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
                 ยกเลิก
               </button>
@@ -1528,6 +1475,17 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
             user_id: c.user_id,
             title: 'คำร้องของคุณปิดเรื่องแล้ว',
             body: `คำร้อง${CATEGORY_LABEL[c?.category] ?? c?.category ?? ''} ดำเนินการเสร็จสิ้นแล้ว`,
+            url: '/my-complaints',
+          },
+        }).catch(() => {})
+      } else if (techNote && techNote !== (c?.technician_note ?? '') && c?.user_id) {
+        // แจ้งประชาชนเมื่อเจ้าหน้าที่บันทึกข้อความใหม่ (เดิมไม่มี push เลย ต้องเข้าแอปมาเช็คเอง)
+        // ไม่แจ้งซ้ำตอนปิดเรื่อง เพราะ branch ด้านบนมี push ของตัวเองอยู่แล้ว
+        supabase.functions.invoke('send-push', {
+          body: {
+            user_id: c.user_id,
+            title: 'เจ้าหน้าที่บันทึกข้อความถึงคุณ',
+            body: `มีบันทึกใหม่ในคำร้อง${CATEGORY_LABEL[c?.category] ?? c?.category ?? ''}`,
             url: '/my-complaints',
           },
         }).catch(() => {})

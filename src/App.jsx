@@ -40,6 +40,8 @@ const ContactPage = lazyWithRetry(() => import('./pages/ContactPage'))
 const CitizenDocRequest = lazyWithRetry(() => import('./pages/CitizenDocRequest'))
 const MyDocRequests = lazyWithRetry(() => import('./pages/MyDocRequests'))
 const LpaDocStats = lazyWithRetry(() => import('./pages/LpaDocStats'))
+const ComplaintStats = lazyWithRetry(() => import('./pages/ComplaintStats'))
+const ReportsHub = lazyWithRetry(() => import('./pages/ReportsHub'))
 const PostsPage = lazyWithRetry(() => import('./pages/PostsPage'))
 const FleetPage = lazyWithRetry(() => import('./pages/FleetPage'))
 const ChatbotPage = lazyWithRetry(() => import('./pages/ChatbotPage'))
@@ -489,6 +491,8 @@ function AppShell() {
           <Route path="/doc-request" element={<CitizenDocRequest />} />
           <Route path="/my-docs" element={<MyDocRequests />} />
           <Route path="/doc-stats" element={<LpaDocStats />} />
+          <Route path="/reports/complaints" element={<ComplaintStats />} />
+          <Route path="/reports" element={<ReportsHub />} />
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/news" element={<PostsPage />} />
           <Route path="/map" element={<Navigate to="/data-center/public" replace />} />

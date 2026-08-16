@@ -255,6 +255,9 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
   const [filterYear, setFilterYear]     = useState('all')
   const [filterType, setFilterType]     = useState('all')
   const [searchQuery, setSearchQuery]   = useState('')
+  const [page, setPage]           = useState(0)
+  const [pageSize, setPageSize]   = useState(20)
+  const [totalCount, setTotalCount] = useState(0)
   const [departments, setDepartments]   = useState([]) // จาก ตาราง departments จริง ใช้ resolve department_id + ตัวกรอง
   const [currentUserId, setCurrentUserId] = useState(null)
   // ค่าเริ่มต้น: officer/staff ที่มีสังกัดกอง เห็นเฉพาะงานกองตัวเอง (+ งานที่ยังไม่ระบุกอง กันข้อมูลเก่าหาย) กดดูทั้งหมดได้
@@ -316,15 +319,17 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
   useEffect(() => {
     if (!tenantId) return
     let cancelled = false
-    let q = supabase.from('civil_projects').select('*').eq('municipality_id', tenantId)
+    let q = supabase.from('civil_projects').select('*', { count: 'exact' }).eq('municipality_id', tenantId)
     if (filterStatus !== 'all') q = q.eq('status', filterStatus)
     if (filterYear  !== 'all') q = q.eq('fiscal_year', filterYear)
     if (filterType  !== 'all') q = q.eq('project_type', filterType)
     if (searchQuery.trim()) q = q.ilike('title', `%${searchQuery.trim()}%`)
     // department_id เป็น NULL (ยังไม่ระบุกอง) ให้ผ่านตัวกรองเสมอ กันงานเก่าที่ยังไม่ backfill หายไปจากสายตา
     if (scopingByDept) q = q.or(`department_id.is.null,department_id.eq.${myDepartmentId}`)
-    q.order('created_at', { ascending: false }).limit(200).then(({ data }) => {
-      if (!cancelled) setProjects(data ?? [])
+    q = q.order('created_at', { ascending: false })
+    if (pageSize !== 'all') q = q.range(page * pageSize, page * pageSize + pageSize - 1)
+    q.then(({ data, count }) => {
+      if (!cancelled) { setProjects(data ?? []); setTotalCount(count ?? 0) }
     })
 
     // Fetch locations for village dropdown
@@ -336,7 +341,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
     })
 
     return () => { cancelled = true }
-  }, [tenantId, filterStatus, filterYear, filterType, searchQuery, scopingByDept, myDepartmentId, refreshTick])
+  }, [tenantId, filterStatus, filterYear, filterType, searchQuery, scopingByDept, myDepartmentId, refreshTick, page, pageSize])
 
   function handleStatusChange(newStatus) {
     const cfg = STATUS_CFG[newStatus]
@@ -620,13 +625,13 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
         <div>
           <h2 className="text-xl font-bold text-gray-800">รายการโครงการ</h2>
           <p className="text-sm text-gray-400 mt-0.5">
-            ทั้งหมด {(projects ?? []).length} โครงการ
+            ทั้งหมด {totalCount} โครงการ
             {scopingByDept && <span className="text-amber-600 font-medium"> · แสดงเฉพาะกองของฉัน (+ ยังไม่ระบุกอง)</span>}
           </p>
         </div>
         <div className="flex items-center gap-2">
           {canScopeByDept && (
-            <button onClick={() => setShowAllDepts(v => !v)}
+            <button onClick={() => { setShowAllDepts(v => !v); setPage(0) }}
               className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-semibold border transition-colors"
               style={showAllDepts ? { backgroundColor: '#eef2ff', borderColor: '#c7d2fe', color: '#4338ca' } : { backgroundColor: '#fff', borderColor: '#e5e7eb', color: '#6b7280' }}>
               {showAllDepts ? 'ดูทุกกอง' : 'ดูเฉพาะกองฉัน'}
@@ -655,20 +660,20 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
             <input
               type="text"
               value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
+              onChange={e => { setSearchQuery(e.target.value); setPage(0) }}
               placeholder="ค้นหาชื่อโครงการ..."
               className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300"
             />
           </div>
           <div className="min-w-[140px]">
-            <select value={filterYear} onChange={e => setFilterYear(e.target.value)}
+            <select value={filterYear} onChange={e => { setFilterYear(e.target.value); setPage(0) }}
               className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200">
               <option value="all">ทุกปีงบประมาณ</option>
               {FISCAL_YEARS.map(y => <option key={y} value={y}>พ.ศ. {y}</option>)}
             </select>
           </div>
           <div className="min-w-[140px]">
-            <select value={filterType} onChange={e => setFilterType(e.target.value)}
+            <select value={filterType} onChange={e => { setFilterType(e.target.value); setPage(0) }}
               className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200">
               <option value="all">ทุกประเภท</option>
               <optgroup label="ถนน">
@@ -683,7 +688,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
             </select>
           </div>
           <div className="min-w-[130px]">
-            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+            <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(0) }}
               className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200">
               <option value="all">ทุกสถานะ</option>
               {Object.entries(STATUS_CFG).map(([v, c]) => <option key={v} value={v}>{c.label}</option>)}
@@ -764,6 +769,34 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
           </div>
         )}
       </div>
+
+      {/* Pagination */}
+      {totalCount > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-1 py-2 text-xs text-gray-500">
+          <div className="flex items-center gap-2">
+            <span>แสดง</span>
+            <select value={pageSize}
+              onChange={e => { setPageSize(e.target.value === 'all' ? 'all' : Number(e.target.value)); setPage(0) }}
+              className="bg-white border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-200">
+              {[10, 20, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+              <option value="all">ทั้งหมด</option>
+            </select>
+            <span>รายการ</span>
+            <span className="text-gray-400">
+              ({pageSize === 'all' ? 1 : page * pageSize + 1}–{pageSize === 'all' ? totalCount : Math.min((page + 1) * pageSize, totalCount)} จาก {totalCount})
+            </span>
+          </div>
+          {pageSize !== 'all' && totalCount > pageSize && (
+            <div className="flex items-center gap-2">
+              <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
+                className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white font-semibold disabled:opacity-40">ก่อนหน้า</button>
+              <span>หน้า {page + 1} / {Math.max(1, Math.ceil(totalCount / pageSize))}</span>
+              <button onClick={() => setPage(p => p + 1)} disabled={(page + 1) * pageSize >= totalCount}
+                className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white font-semibold disabled:opacity-40">ถัดไป</button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 

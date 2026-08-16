@@ -7,7 +7,7 @@ import {
 import { supabase } from '../../lib/supabase'
 import DataCenterImportModal from './DataCenterImportModal'
 
-const TABLE_PAGE_SIZES = [20, 50, 100]
+const TABLE_PAGE_SIZES = [10, 20, 50, 100]
 
 // bg เดิมของ getGroupMeta เป็นสีทึบ (ใช้กับแท่ง/ป้าย #อันดับ) — ตารางรายการต้องการป้ายกลุ่มแบบโปร่งแสง
 // (bg จาง + ตัวอักษรสีทึบ) แปลง hex → rgba(alpha) เอาเอง กันต้องผูกชุดสีที่สองแยกจาก getGroupMeta
@@ -145,7 +145,7 @@ export default function DataCenterOverview({
   const [tableSortKey, setTableSortKey] = useState('name')
   const [tableSortDir, setTableSortDir] = useState('asc')
   const [tablePage, setTablePage] = useState(1)
-  const [tablePageSize, setTablePageSize] = useState(TABLE_PAGE_SIZES[0])
+  const [tablePageSize, setTablePageSize] = useState(20) // ค่าเริ่มต้นเดิม — TABLE_PAGE_SIZES เพิ่ม 10 เข้ามาแค่เป็นตัวเลือก ไม่ใช่ default ใหม่
   const [exporting, setExporting] = useState(false)
 
   // แถวจริงของหน้าปัจจุบัน (ตาราง desktop + การ์ด mobile) — ต่างจาก entries ด้านบน
@@ -216,9 +216,12 @@ export default function DataCenterOverview({
     if (tableFilterCategory !== 'all') query = query.eq('category', tableFilterCategory)
     if (tableFilterStatus !== 'all') query = query.eq('status', tableFilterStatus)
     if (debouncedSearch) query = query.ilike('name', `%${escapeIlikeTerm(debouncedSearch)}%`)
-    query = query
-      .order(tableSortKey, { ascending: tableSortDir === 'asc' })
-      .range((tablePage - 1) * tablePageSize, tablePage * tablePageSize - 1)
+    query = query.order(tableSortKey, { ascending: tableSortDir === 'asc' })
+    // "ทั้งหมด" ไม่ใส่ .range() เลย — ให้ limit เริ่มต้นของ PostgREST (โดยปกติ 1000 แถว) เป็นเพดานกันเผื่อ
+    // ไม่ใช่การดึงไม่จำกัดจริงๆ ผู้ใช้ต้องกดเลือกเองด้วย ไม่ใช่ค่าเริ่มต้นของหน้า
+    if (tablePageSize !== 'all') {
+      query = query.range((tablePage - 1) * tablePageSize, tablePage * tablePageSize - 1)
+    }
     query.then(({ data, count, error }) => {
       if (requestId !== listRequestRef.current) return // มี request ใหม่กว่าแทรกไปแล้ว ทิ้ง response นี้
       if (error) { setListError(error.message); setListRows([]); setListTotal(0) }
@@ -349,7 +352,9 @@ export default function DataCenterOverview({
   )).sort((a, b) => a.localeCompare(b, 'th'))
 
   // กรอง/เรียง/แบ่งหน้าแล้วที่ server (fetchListPage) — เหลือแค่ derive ตัวเลขหน้าไว้แสดงผล
-  const tableTotalPages = Math.max(1, Math.ceil(listTotal / tablePageSize))
+  // effectivePageSize กัน tablePageSize === 'all' (string) เข้าไปคำนวณเลขคณิตตรงๆ แล้วได้ NaN
+  const effectivePageSize = tablePageSize === 'all' ? Math.max(listTotal, 1) : tablePageSize
+  const tableTotalPages = Math.max(1, Math.ceil(listTotal / effectivePageSize))
   const tableCurrentPage = Math.min(tablePage, tableTotalPages)
   const tablePageItems = listRows
 
@@ -777,7 +782,7 @@ export default function DataCenterOverview({
                     return (
                       <tr key={entry.id} className={`transition-colors group ${isLight ? 'hover:bg-sky-50/60' : 'hover:bg-cyan-500/5'}`}>
                         <td className={`px-3.5 py-3 text-center font-mono font-bold ${isLight ? 'text-slate-400' : 'text-slate-500'}`}>
-                          {(tableCurrentPage - 1) * tablePageSize + i + 1}
+                          {(tableCurrentPage - 1) * effectivePageSize + i + 1}
                         </td>
                         <td className={`px-3.5 py-3 font-semibold transition-colors ${isLight ? 'text-slate-900 group-hover:text-sky-700' : 'text-slate-100 group-hover:text-cyan-300'}`}>
                           <div className="flex items-center gap-2">
@@ -845,9 +850,10 @@ export default function DataCenterOverview({
               <div className="flex items-center gap-2">
                 <span className="font-mono text-[11px] opacity-70">ROWS PER PAGE:</span>
                 <select value={tablePageSize}
-                  onChange={e => { setTablePageSize(Number(e.target.value)); setTablePage(1) }}
+                  onChange={e => { setTablePageSize(e.target.value === 'all' ? 'all' : Number(e.target.value)); setTablePage(1) }}
                   className={`text-xs px-2 py-1 rounded-lg border font-mono focus:outline-none ${isLight ? 'bg-white border-slate-300 text-sky-800 focus:border-sky-500' : 'bg-slate-900 border-slate-700 text-cyan-300 focus:border-cyan-400'}`}>
                   {TABLE_PAGE_SIZES.map(n => <option key={n} value={n}>{n}</option>)}
+                  <option value="all">ทั้งหมด</option>
                 </select>
               </div>
               <div className="flex items-center gap-3">

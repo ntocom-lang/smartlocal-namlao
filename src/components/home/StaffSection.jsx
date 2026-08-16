@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
+import { fetchPublicPersonnel } from '../../lib/personnelDirectory'
 
 // Premium Executive Card matching the mockup style (Vertical layout with interactive hover effects)
 function ExecutivePremiumCard({ person }) {
@@ -88,12 +88,7 @@ export default function StaffSection() {
 
   useEffect(() => {
     if (!tenant?.id) return
-    supabase
-      .from('staff')
-      .select('*')
-      .eq('municipality_id', tenant.id)
-      .eq('is_active', true)
-      .order('display_order')
+    fetchPublicPersonnel(tenant.id)
       .then(({ data }) => {
         setStaff(data ?? [])
         setLoading(false)

@@ -12,6 +12,7 @@ import { compressImage } from '../lib/imageUtils'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { uploadFile } from '../lib/driveStorage'
 import { buildCouncilComplaintHtml } from '../lib/councilFormPrint'
+import { fetchPersonnelSignatories } from '../lib/personnelDirectory'
 import MapPicker from '../components/MapPicker'
 
 const STATUS = {
@@ -162,11 +163,7 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant }) {
     const thDate = createdAt.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
     const num = printableComplaint.ref_no || printableComplaint.complaint_number || '—'
     const phone = printableComplaint.phone || printableComplaint.profiles?.phone || '—'
-    const { data: staffList } = await supabase
-      .from('staff')
-      .select('name, title, role')
-      .eq('municipality_id', tenant?.id)
-      .eq('is_active', true)
+    const { data: staffList } = await fetchPersonnelSignatories(tenant?.id)
 
     popup.document.write(buildCouncilComplaintHtml({
       c: printableComplaint,

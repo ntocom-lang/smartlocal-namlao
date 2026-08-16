@@ -22,6 +22,8 @@ export function TourismReviewsAdmin({ tenant }) {
   const [loading, setLoading] = useState(true)
   const [filterRating, setFilterRating] = useState(0)
   const [deleting, setDeleting] = useState(null)
+  const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(20)
 
   async function fetchData() {
     if (!tenant?.id) return
@@ -59,6 +61,9 @@ export function TourismReviewsAdmin({ tenant }) {
   const avgRating = reviews.length > 0
     ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1)
     : '—'
+  const totalPages = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(filtered.length / pageSize))
+  const currentPage = Math.min(page, totalPages - 1)
+  const paged = pageSize === 'all' ? filtered : filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
 
   if (loading) return <div className="flex items-center justify-center py-16"><Loader2 size={24} className="animate-spin text-gray-400" /></div>
 
@@ -74,7 +79,7 @@ export function TourismReviewsAdmin({ tenant }) {
         </div>
         <div className="flex items-center gap-1 flex-wrap">
           {[0,5,4,3,2,1].map(r => (
-            <button key={r} onClick={() => setFilterRating(r)}
+            <button key={r} onClick={() => { setFilterRating(r); setPage(0) }}
               className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors ${filterRating === r ? 'text-white border-amber-500' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
               style={filterRating === r ? { backgroundColor: '#f59e0b' } : {}}>
               {r === 0 ? 'ทั้งหมด' : `${r}★`}
@@ -92,7 +97,7 @@ export function TourismReviewsAdmin({ tenant }) {
         </div>
       ) : (
         <div className="space-y-2">
-          {filtered.map(r => {
+          {paged.map(r => {
             const date = new Date(r.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
             return (
               <div key={r.id} className="bg-white rounded-2xl border border-gray-100 px-4 py-3 flex items-start gap-3">
@@ -119,6 +124,34 @@ export function TourismReviewsAdmin({ tenant }) {
           })}
         </div>
       )}
+
+      {/* Pagination */}
+      {filtered.length > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-1 py-2 text-xs text-gray-500">
+          <div className="flex items-center gap-2">
+            <span>แสดง</span>
+            <select value={pageSize}
+              onChange={e => { setPageSize(e.target.value === 'all' ? 'all' : Number(e.target.value)); setPage(0) }}
+              className="bg-white border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-200">
+              {[10, 20, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+              <option value="all">ทั้งหมด</option>
+            </select>
+            <span>รายการ</span>
+            <span className="text-gray-400">
+              ({pageSize === 'all' ? 1 : currentPage * pageSize + 1}–{pageSize === 'all' ? filtered.length : Math.min((currentPage + 1) * pageSize, filtered.length)} จาก {filtered.length})
+            </span>
+          </div>
+          {pageSize !== 'all' && filtered.length > pageSize && (
+            <div className="flex items-center gap-2">
+              <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={currentPage === 0}
+                className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white font-semibold disabled:opacity-40">ก่อนหน้า</button>
+              <span>หน้า {currentPage + 1} / {totalPages}</span>
+              <button onClick={() => setPage(p => p + 1)} disabled={currentPage >= totalPages - 1}
+                className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white font-semibold disabled:opacity-40">ถัดไป</button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -132,6 +165,8 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
   const [uploadingFor, setUploadingFor] = useState(null)
   const [mgTab, setMgTab]               = useState('places')
   const [pendingCount, setPendingCount]  = useState(0)
+  const [placesPage, setPlacesPage]         = useState(0)
+  const [placesPageSize, setPlacesPageSize] = useState(20)
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -281,6 +316,12 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
   const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
   const isAdd = sheet === 'add'
 
+  const placesTotalPages = placesPageSize === 'all' ? 1 : Math.max(1, Math.ceil(places.length / placesPageSize))
+  const placesCurrentPage = Math.min(placesPage, placesTotalPages - 1)
+  const pagedPlaces = placesPageSize === 'all'
+    ? places
+    : places.slice(placesCurrentPage * placesPageSize, (placesCurrentPage + 1) * placesPageSize)
+
   return (
     <div className="space-y-4">
       {/* ── Tab bar ── */}
@@ -317,7 +358,7 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
         <>
           {/* Mobile: card list */}
           <div className="md:hidden space-y-2">
-            {places.map(place => {
+            {pagedPlaces.map(place => {
               const cat = TOUR_CATS.find(c => c.key === place.category)
               const imgCount = [place.image_url, ...(place.gallery ?? [])].filter(Boolean).length
               const canManage = canManagePlace(place)
@@ -365,13 +406,13 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {places.map((place, i) => {
+                {pagedPlaces.map((place, i) => {
                   const cat = TOUR_CATS.find(c => c.key === place.category)
                   const imgCount = [place.image_url, ...(place.gallery ?? [])].filter(Boolean).length
                   const canManage = canManagePlace(place)
                   return (
                     <tr key={place.id} className={`hover:bg-gray-50 transition-colors ${!place.is_active ? 'opacity-50' : ''}`}>
-                      <td className="px-4 py-3 text-xs text-gray-400">{i + 1}</td>
+                      <td className="px-4 py-3 text-xs text-gray-400">{placesCurrentPage * (placesPageSize === 'all' ? 0 : placesPageSize) + i + 1}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2.5">
                           <div className="w-9 h-9 rounded-lg overflow-hidden shrink-0 bg-gray-100 flex items-center justify-center text-base">
@@ -407,6 +448,34 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
               </tbody>
             </table>
           </div>
+
+          {/* Pagination */}
+          {places.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-1 py-2 text-xs text-gray-500">
+              <div className="flex items-center gap-2">
+                <span>แสดง</span>
+                <select value={placesPageSize}
+                  onChange={e => { setPlacesPageSize(e.target.value === 'all' ? 'all' : Number(e.target.value)); setPlacesPage(0) }}
+                  className="bg-white border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-200">
+                  {[10, 20, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+                  <option value="all">ทั้งหมด</option>
+                </select>
+                <span>รายการ</span>
+                <span className="text-gray-400">
+                  ({placesPageSize === 'all' ? 1 : placesCurrentPage * placesPageSize + 1}–{placesPageSize === 'all' ? places.length : Math.min((placesCurrentPage + 1) * placesPageSize, places.length)} จาก {places.length})
+                </span>
+              </div>
+              {placesPageSize !== 'all' && places.length > placesPageSize && (
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setPlacesPage(p => Math.max(0, p - 1))} disabled={placesCurrentPage === 0}
+                    className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white font-semibold disabled:opacity-40">ก่อนหน้า</button>
+                  <span>หน้า {placesCurrentPage + 1} / {placesTotalPages}</span>
+                  <button onClick={() => setPlacesPage(p => p + 1)} disabled={placesCurrentPage >= placesTotalPages - 1}
+                    className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white font-semibold disabled:opacity-40">ถัดไป</button>
+                </div>
+              )}
+            </div>
+          )}
         </>
       )}
 

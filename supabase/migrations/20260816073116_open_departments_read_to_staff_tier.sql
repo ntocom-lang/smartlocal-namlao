@@ -26,3 +26,4 @@ CREATE POLICY "fdept_read" ON public.departments FOR SELECT USING (
 );
 
 COMMIT;
+;

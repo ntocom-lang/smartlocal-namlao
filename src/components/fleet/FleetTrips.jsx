@@ -259,6 +259,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
   const [saving,    setSaving]    = useState(false)
   const [conflict,  setConflict]  = useState(false)
   const [showCal,   setShowCal]   = useState(false)
+  const [historyPage, setHistoryPage] = useState(0)
+  const [historyPageSize, setHistoryPageSize] = useState(20)
 
   /* ── Load ── */
   function loadTrips() {
@@ -480,6 +482,15 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
   const active  = trips.filter(t => ['pending', 'approved', 'in_progress'].includes(t.status))
   const history = trips.filter(t => ['completed', 'rejected', 'cancelled'].includes(t.status))
   const isOwner = t => t.driver_id === user?.id
+
+  // แบ่งหน้าฝั่ง client เพราะ trips ถูกดันเข้ามาจาก realtime subscription (postgres_changes) ตรงๆ
+  // แบ่งหน้าแบบ server-range จะชนกับ logic prepend ของ realtime ยุ่งยากเกินจำเป็น — ข้อมูลต้นทางยัง
+  // จำกัดที่ .limit(300) เหมือนเดิม (ไม่ใช่ไม่จำกัดจริง) แค่เพิ่ม UI แบ่งหน้าคลุมของที่โหลดมาแล้ว
+  const historyTotalPages = historyPageSize === 'all' ? 1 : Math.max(1, Math.ceil(history.length / historyPageSize))
+  const historyCurrentPage = Math.min(historyPage, historyTotalPages - 1)
+  const pagedHistory = historyPageSize === 'all'
+    ? history
+    : history.slice(historyCurrentPage * historyPageSize, (historyCurrentPage + 1) * historyPageSize)
 
   /* ── Trip Card (mobile) ── */
   function renderTripCard(t) {
@@ -711,9 +722,33 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
         {history.length === 0 ? (
           <p className="text-center text-sm text-gray-400 py-8">ยังไม่มีรายการ</p>
         ) : <>
-          {renderTripsTable(history)}
+          {renderTripsTable(pagedHistory)}
           <div className="md:hidden space-y-1.5">
-            {history.map(renderTripCard)}
+            {pagedHistory.map(renderTripCard)}
+          </div>
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-1 py-2 text-xs text-gray-500">
+            <div className="flex items-center gap-2">
+              <span>แสดง</span>
+              <select value={historyPageSize}
+                onChange={e => { setHistoryPageSize(e.target.value === 'all' ? 'all' : Number(e.target.value)); setHistoryPage(0) }}
+                className="bg-white border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-200">
+                {[10, 20, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+                <option value="all">ทั้งหมด</option>
+              </select>
+              <span>รายการ</span>
+              <span className="text-gray-400">
+                ({historyPageSize === 'all' ? 1 : historyCurrentPage * historyPageSize + 1}–{historyPageSize === 'all' ? history.length : Math.min((historyCurrentPage + 1) * historyPageSize, history.length)} จาก {history.length})
+              </span>
+            </div>
+            {historyPageSize !== 'all' && history.length > historyPageSize && (
+              <div className="flex items-center gap-2">
+                <button onClick={() => setHistoryPage(p => Math.max(0, p - 1))} disabled={historyCurrentPage === 0}
+                  className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white font-semibold disabled:opacity-40">ก่อนหน้า</button>
+                <span>หน้า {historyCurrentPage + 1} / {historyTotalPages}</span>
+                <button onClick={() => setHistoryPage(p => p + 1)} disabled={historyCurrentPage >= historyTotalPages - 1}
+                  className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white font-semibold disabled:opacity-40">ถัดไป</button>
+              </div>
+            )}
           </div>
         </>}
       </div>

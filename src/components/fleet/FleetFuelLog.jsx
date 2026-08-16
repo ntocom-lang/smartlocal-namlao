@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, X, AlertTriangle, FileText, Paperclip } from 'lucide-react'
+import { Plus, X, AlertTriangle, FileText, Paperclip, Pencil } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import {
@@ -39,6 +39,7 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
   const [staffList, setStaffList] = useState([])
   const [loading,   setLoading]   = useState(true)
   const [modal,     setModal]     = useState(false)
+  const [editingId, setEditingId] = useState(null)
   const [form,      setForm]      = useState(EMPTY_FORM)
   const [receiptFile, setReceiptFile] = useState(null)
   const [saving,    setSaving]    = useState(false)
@@ -46,9 +47,14 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
   const [dateFrom,  setDateFrom]  = useState('')
   const [dateTo,    setDateTo]    = useState('')
   const [page, setPage] = useState(0)
-  const PER_PAGE = 20
+  const [pageSize, setPageSize] = useState(20)
+  const [totalCount, setTotalCount] = useState(0)
 
   const canWrite = isAdmin || isStaff
+
+  const SELECT_Q = '*, fleet_vehicles(name, license_plate, asset_code, asset_kind, meter_unit), ' +
+    'driver:profiles!fleet_fuel_records_driver_id_fkey(id,full_name), ' +
+    'editor:profiles!fleet_fuel_records_updated_by_fkey(id,full_name)'
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -65,16 +71,22 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
 
   useEffect(() => {
     if (!tenant?.id) return
-    let q = supabase.from('fleet_fuel_records')
-      .select('*, fleet_vehicles(name, license_plate, asset_code, asset_kind, meter_unit), driver:profiles!fleet_fuel_records_driver_id_fkey(id,full_name)', { count: 'exact' })
-      .eq('municipality_id', tenant.id)
-      .order('filled_at', { ascending: false })
-      .range(page * PER_PAGE, (page + 1) * PER_PAGE - 1)
-    if (filterVeh !== 'all') q = q.eq('vehicle_id', filterVeh)
-    if (dateFrom) q = q.gte('filled_at', dateFrom)
-    if (dateTo)   q = q.lte('filled_at', dateTo)
-    q.then(({ data }) => setRecords(data ?? [])).finally(() => setLoading(false))
-  }, [tenant?.id, filterVeh, dateFrom, dateTo, page])
+    // setState เรียกผ่าน queueMicrotask กันเข้าเงื่อนไข effect เรียก setState ตรงๆ ในตัว effect
+    queueMicrotask(() => {
+      setLoading(true)
+      let q = supabase.from('fleet_fuel_records')
+        .select(SELECT_Q, { count: 'exact' })
+        .eq('municipality_id', tenant.id)
+        .order('filled_at', { ascending: false })
+      if (filterVeh !== 'all') q = q.eq('vehicle_id', filterVeh)
+      if (dateFrom) q = q.gte('filled_at', dateFrom)
+      if (dateTo)   q = q.lte('filled_at', dateTo)
+      if (pageSize !== 'all') q = q.range(page * pageSize, (page + 1) * pageSize - 1)
+      q.then(({ data, count }) => { setRecords(data ?? []); setTotalCount(count ?? 0) }).finally(() => setLoading(false))
+    })
+    // SELECT_Q เป็นค่าคงที่ต่อ render ไม่ต้องอยู่ใน dependency array
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant?.id, filterVeh, dateFrom, dateTo, page, pageSize])
 
   const set = k => e => setForm(f => ({
     ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value
@@ -85,9 +97,35 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
   const selectedAsset = vehicles.find(asset => asset.id === form.vehicle_id)
 
   function openModal() {
+    setEditingId(null)
     setForm({ ...EMPTY_FORM, driver_id: user?.id ?? '' })
     setReceiptFile(null)
     setModal(true)
+  }
+
+  function openEditModal(r) {
+    setEditingId(r.id)
+    setForm({
+      vehicle_id: r.vehicle_id ?? '',
+      driver_id: r.driver_id ?? '',
+      filled_at: r.filled_at ?? new Date().toISOString().slice(0,10),
+      odometer: r.odometer ?? '',
+      liters: r.liters ?? '',
+      price_per_liter: r.price_per_liter ?? '',
+      fuel_type: r.fuel_type ?? 'diesel',
+      fuel_other_name: r.fuel_other_name ?? '',
+      full_tank: r.full_tank ?? true,
+      fuel_station: r.fuel_station ?? '',
+      receipt_no: r.receipt_no ?? '',
+      notes: r.notes ?? '',
+    })
+    setReceiptFile(null)
+    setModal(true)
+  }
+
+  function closeModal() {
+    setModal(false)
+    setEditingId(null)
   }
 
   async function handleSave() {
@@ -108,8 +146,22 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
     if (fileError) return alert(fileError)
 
     setSaving(true)
-    const { data, error } = await supabase.from('fleet_fuel_records').insert({
-      municipality_id: tenant.id,
+    const oldReceiptUrl = editingId ? records.find(x => x.id === editingId)?.receipt_url : null
+    const recordId = editingId ?? crypto.randomUUID()
+
+    // อัปโหลดเอกสารก่อน insert/update เสมอ แล้วใส่ receipt_url ไปในคำสั่งเดียวกัน
+    // (เดิมทำ insert ก่อนแล้วค่อย update receipt_url ทีหลัง — ทำให้ระเบียนที่เพิ่งสร้างใหม่โดนนับเป็น "แก้ไข" ผิดๆ จาก trigger updated_at)
+    let receiptPath = null
+    let attachmentWarning = ''
+    if (receiptFile) {
+      try {
+        receiptPath = await uploadFleetDocument({ tenantId: tenant.id, scope: 'fuel', recordId, file: receiptFile })
+      } catch (uploadError) {
+        attachmentWarning = 'แนบเอกสารไม่สำเร็จ: ' + uploadError.message + ' — บันทึกรายการต่อโดยไม่มีเอกสารแนบ'
+      }
+    }
+
+    const payload = {
       vehicle_id:      form.vehicle_id,
       driver_id:       form.driver_id || user?.id,
       filled_at:       form.filled_at,
@@ -122,39 +174,26 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
       fuel_station:    form.fuel_station || null,
       receipt_no:      form.receipt_no   || null,
       notes:           form.notes        || null,
-      created_by:      user?.id,
-    }).select('*, fleet_vehicles(name, license_plate, asset_code, asset_kind, meter_unit), driver:profiles!fleet_fuel_records_driver_id_fkey(id,full_name)').single()
+      ...(receiptPath ? { receipt_url: receiptPath } : {}),
+    }
+    // updated_at/updated_by ไม่ต้องส่งเอง — ตั้งอัตโนมัติจาก trigger ฝั่ง DB (trg_fleet_fuel_records_updated_at) เพื่อกันปลอมแปลงร่องรอยแก้ไข
+    const query = editingId
+      ? supabase.from('fleet_fuel_records').update(payload).eq('id', editingId)
+      : supabase.from('fleet_fuel_records').insert({ id: recordId, ...payload, municipality_id: tenant.id, created_by: user?.id })
+    const { data, error } = await query.select(SELECT_Q).single()
     if (!error) {
-      let savedRecord = data
-      let attachmentWarning = ''
-      if (receiptFile) {
-        try {
-          const path = await uploadFleetDocument({
-            tenantId: tenant.id,
-            scope: 'fuel',
-            recordId: data.id,
-            file: receiptFile,
-          })
-          const { data: updated, error: updateError } = await supabase.from('fleet_fuel_records')
-            .update({ receipt_url: path })
-            .eq('id', data.id)
-            .select('*, fleet_vehicles(name, license_plate, asset_code, asset_kind, meter_unit), driver:profiles!fleet_fuel_records_driver_id_fkey(id,full_name)')
-            .single()
-          if (updateError) {
-            await removeFleetDocument(path).catch(() => {})
-            throw updateError
-          }
-          savedRecord = updated
-        } catch (uploadError) {
-          attachmentWarning = 'บันทึกรายการแล้ว แต่แนบเอกสารไม่สำเร็จ: ' + uploadError.message
-        }
-      }
-      setRecords(prev => [savedRecord, ...prev])
-      setModal(false)
+      // แนบไฟล์ใหม่แทนที่เอกสารเดิมสำเร็จแล้ว (กรณีแก้ไข) — ลบไฟล์เก่าทิ้งกันขยะค้าง storage
+      if (receiptPath && oldReceiptUrl && oldReceiptUrl !== receiptPath) removeFleetDocument(oldReceiptUrl).catch(() => {})
+      setRecords(prev => editingId ? prev.map(x => x.id === editingId ? data : x) : [data, ...prev])
+      closeModal()
       setForm(EMPTY_FORM)
       setReceiptFile(null)
       if (attachmentWarning) alert(attachmentWarning)
-    } else alert(error.message)
+    } else {
+      // insert/update ล้มเหลว แต่ไฟล์อัปโหลดไปแล้ว (ถ้ามี) ต้องลบทิ้งกันขยะค้าง storage
+      if (receiptPath) removeFleetDocument(receiptPath).catch(() => {})
+      alert(error.message)
+    }
     setSaving(false)
   }
 
@@ -216,7 +255,7 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr style={{ backgroundColor: '#1a3a5c' }}>
-                  {[...['ที่','วันที่','ทรัพย์สิน','ผู้เติม','เชื้อเพลิง','ลิตร','ราคา/ล.','รวม (฿)','ประสิทธิภาพ','มิเตอร์','ปั๊ม','เอกสาร'], ...(isAdmin ? [''] : [])].map((h, i) => (
+                  {[...['ที่','วันที่','ทรัพย์สิน','ผู้เติม','เชื้อเพลิง','ลิตร','ราคา/ล.','รวม (฿)','ประสิทธิภาพ','มิเตอร์','ปั๊ม','เอกสาร'], ...(canWrite ? [''] : [])].map((h, i) => (
                     <th key={i} className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10 last:border-r-0 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -236,6 +275,9 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
                         {!r.full_tank && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">ไม่เต็ม</span>}
                       </div>
                       <p className="text-[10px] text-gray-400">{assetIdentifier(r.fleet_vehicles)}</p>
+                      {r.updated_by && (
+                        <p className="text-[9px] text-amber-500">แก้ไข {thDate(r.updated_at)}{r.editor?.full_name ? ` · ${r.editor.full_name}` : ''}</p>
+                      )}
                     </td>
                     <td className="px-4 py-2.5 text-gray-600 text-xs border-r border-gray-200 whitespace-nowrap">
                       {r.driver?.full_name ?? '—'}
@@ -256,18 +298,26 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
                         </button>
                       ) : <span className="text-gray-300">—</span>}
                     </td>
-                    {isAdmin && (
+                    {canWrite && (
                       <td className="px-4 py-2.5 text-center">
-                        <button onClick={() => handleDelete(r)}
-                          className="text-xs font-bold px-3 py-1 rounded border border-red-400 text-red-500 hover:bg-red-500 hover:text-white transition-colors">
-                          ลบ
-                        </button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button onClick={() => openEditModal(r)}
+                            className="text-xs font-bold px-2.5 py-1 rounded border border-blue-400 text-blue-500 hover:bg-blue-500 hover:text-white transition-colors">
+                            แก้ไข
+                          </button>
+                          {isAdmin && (
+                            <button onClick={() => handleDelete(r)}
+                              className="text-xs font-bold px-2.5 py-1 rounded border border-red-400 text-red-500 hover:bg-red-500 hover:text-white transition-colors">
+                              ลบ
+                            </button>
+                          )}
+                        </div>
                       </td>
                     )}
                   </tr>
                 ))}
                 {!records.length && (
-                  <tr><td colSpan={isAdmin ? 13 : 12} className="text-center py-10 text-gray-400 text-sm">ยังไม่มีรายการเชื้อเพลิง</td></tr>
+                  <tr><td colSpan={canWrite ? 13 : 12} className="text-center py-10 text-gray-400 text-sm">ยังไม่มีรายการเชื้อเพลิง</td></tr>
                 )}
               </tbody>
             </table>
@@ -308,17 +358,28 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
                         <FileText size={11} /> เปิดเอกสาร
                       </button>
                     )}
+                    {r.updated_by && (
+                      <p className="text-[9px] text-amber-500 mt-0.5">แก้ไข {thDate(r.updated_at)}{r.editor?.full_name ? ` · ${r.editor.full_name}` : ''}</p>
+                    )}
                   </div>
                   <div className="text-right shrink-0 flex flex-col items-end gap-1">
                     <p className="text-base font-black text-gray-800">{r.total_cost == null ? '—' : fmtB(r.total_cost)}</p>
                     {r.efficiency_kml && (
                       <p className="text-[10px] text-emerald-600 font-semibold">{r.efficiency_kml} กม./ล.</p>
                     )}
-                    {isAdmin && (
-                      <button onClick={() => handleDelete(r)}
-                        className="text-[12px] font-bold px-2 py-0.5 rounded border border-red-300 text-red-400 hover:bg-red-400 hover:text-white transition-colors mt-1">
-                        ลบ
-                      </button>
+                    {canWrite && (
+                      <div className="flex items-center gap-1 mt-1">
+                        <button onClick={() => openEditModal(r)}
+                          className="text-[12px] font-bold px-2 py-0.5 rounded border border-blue-300 text-blue-400 hover:bg-blue-400 hover:text-white transition-colors">
+                          แก้ไข
+                        </button>
+                        {isAdmin && (
+                          <button onClick={() => handleDelete(r)}
+                            className="text-[12px] font-bold px-2 py-0.5 rounded border border-red-300 text-red-400 hover:bg-red-400 hover:text-white transition-colors">
+                            ลบ
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -332,21 +393,44 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
       )}
 
       {/* Pagination */}
-      {records.length === PER_PAGE && (
-        <button onClick={() => setPage(p => p + 1)}
-          className="w-full py-2.5 text-sm font-semibold text-gray-500 bg-white border border-gray-200 rounded-xl hover:bg-gray-50">
-          โหลดเพิ่มเติม
-        </button>
+      {totalCount > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-1 py-2 text-xs text-gray-500">
+          <div className="flex items-center gap-2">
+            <span>แสดง</span>
+            <select value={pageSize}
+              onChange={e => { setPageSize(e.target.value === 'all' ? 'all' : Number(e.target.value)); setPage(0) }}
+              className="bg-white border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-200">
+              {[10, 20, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+              <option value="all">ทั้งหมด</option>
+            </select>
+            <span>รายการ</span>
+            <span className="text-gray-400">
+              ({pageSize === 'all' ? 1 : page * pageSize + 1}–{pageSize === 'all' ? totalCount : Math.min((page + 1) * pageSize, totalCount)} จาก {totalCount})
+            </span>
+          </div>
+          {pageSize !== 'all' && totalCount > pageSize && (
+            <div className="flex items-center gap-2">
+              <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
+                className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white font-semibold disabled:opacity-40">ก่อนหน้า</button>
+              <span>หน้า {page + 1} / {Math.max(1, Math.ceil(totalCount / pageSize))}</span>
+              <button onClick={() => setPage(p => p + 1)} disabled={(page + 1) * pageSize >= totalCount}
+                className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white font-semibold disabled:opacity-40">ถัดไป</button>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Modal */}
       {modal && (
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setModal(false)} />
+          <div className="absolute inset-0 bg-black/50" onClick={closeModal} />
           <div className="relative bg-white rounded-t-3xl md:rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
             <div className="shrink-0 bg-white px-4 py-3 md:px-5 md:pt-5 md:pb-3 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="font-bold text-gray-800">บันทึกเชื้อเพลิง</h3>
-              <button onClick={() => setModal(false)} className="p-1.5 rounded-lg hover:bg-gray-100">
+              <h3 className="font-bold text-gray-800 flex items-center gap-1.5">
+                {editingId && <Pencil size={14} className="text-blue-500" />}
+                {editingId ? 'แก้ไขรายการเชื้อเพลิง' : 'บันทึกเชื้อเพลิง'}
+              </h3>
+              <button onClick={closeModal} className="p-1.5 rounded-lg hover:bg-gray-100">
                 <X size={16} />
               </button>
             </div>
@@ -463,7 +547,7 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
               <button onClick={handleSave} disabled={saving}
                 className="sticky bottom-0 z-10 w-full py-3 rounded-xl font-bold text-white text-sm disabled:opacity-50 shadow-lg"
                 style={{ backgroundColor: 'var(--color-primary)' }}>
-                {saving ? 'กำลังบันทึก...' : 'บันทึก'}
+                {saving ? 'กำลังบันทึก...' : (editingId ? 'บันทึกการแก้ไข' : 'บันทึก')}
               </button>
             </div>
           </div>
