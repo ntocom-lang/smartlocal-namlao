@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>คู่มือเจ้าหน้าที่ SmartLocal — ระบบยานพาหนะและเชื้อเพลิง</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  html { scroll-behavior: smooth; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --primary: #0369a1;
+    --primary-dark: #075985;
+    --primary-light: #e0f2fe;
+    --blue: #1976d2;
+    --blue-light: #e3f2fd;
+    --purple: #7c3aed;
+    --amber: #d97706;
+    --red: #dc2626;
+    --gray-50: #f9fafb;
+    --gray-100: #f3f4f6;
+    --gray-200: #e5e7eb;
+    --gray-300: #d1d5db;
+    --gray-400: #9ca3af;
+    --gray-500: #6b7280;
+    --gray-700: #374151;
+    --gray-800: #1f2937;
+  }
+
+  body { font-family: 'Sarabun', sans-serif; font-size: 15px; line-height: 1.7; color: var(--gray-800); background: #fff; }
+
+  .page { width: 210mm; max-width: 100%; min-height: 297mm; margin: 0 auto 20px; padding: 0; background: #fff; box-shadow: 0 2px 20px rgba(0,0,0,0.12); }
+
+  @media print {
+    body { background: #fff; }
+    .page { width: 210mm; max-width: 210mm; box-shadow: none; margin: 0; page-break-after: always; }
+    .content-page { padding: 20mm 18mm 16mm; min-height: 270mm; }
+    .cover { min-height: 270mm; }
+    .no-print { display: none; }
+  }
+
+  /* Cover */
+  .cover {
+    background: linear-gradient(160deg, #0c4a6e 0%, #075985 50%, #0ea5e9 100%);
+    min-height: 297mm; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; color: #fff; padding: 40px; position: relative; overflow: hidden;
+  }
+  .cover::before { content: ''; position: absolute; width: 400px; height: 400px; border-radius: 50%; border: 60px solid rgba(255,255,255,0.06); top: -100px; right: -100px; }
+  .cover::after  { content: ''; position: absolute; width: 300px; height: 300px; border-radius: 50%; border: 50px solid rgba(255,255,255,0.05); bottom: -80px; left: -80px; }
+
+  .cover-badge { background: rgba(255,255,255,0.18); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.3); border-radius: 99px; padding: 6px 20px; font-size: 13px; font-weight: 500; letter-spacing: .5px; margin-bottom: 28px; }
+  .cover-logo { width: 100px; height: 100px; border-radius: 50%; background: rgba(255,255,255,0.25); border: 3px solid rgba(255,255,255,0.5); display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; font-size: 48px; }
+  .cover h1 { font-size: 34px; font-weight: 800; line-height: 1.25; margin-bottom: 12px; }
+  .cover p  { font-size: 17px; color: rgba(255,255,255,0.8); max-width: 380px; margin: 0 auto 36px; }
+  .cover-divider { width: 60px; height: 3px; background: rgba(255,255,255,0.5); border-radius: 99px; margin: 0 auto 36px; }
+  .cover-steps { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 40px; }
+  .cover-step { background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.3); border-radius: 16px; padding: 12px 16px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; min-width: 120px; }
+  .cover-step-num { width: 24px; height: 24px; background: rgba(255,255,255,0.3); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; }
+  .cover-footer { position: absolute; bottom: 28px; font-size: 12px; color: rgba(255,255,255,0.55); letter-spacing: .3px; }
+
+  /* Content */
+  .content-page { padding: 36px 28px 28px; min-height: 297mm; }
+  .page-header { display: flex; align-items: center; gap: 12px; padding-bottom: 16px; border-bottom: 2px solid var(--primary); margin-bottom: 28px; }
+  .page-header-icon { width: 40px; height: 40px; border-radius: 12px; background: linear-gradient(135deg, var(--primary-dark), var(--primary)); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 20px; flex-shrink: 0; }
+  .page-header h2 { font-size: 22px; font-weight: 800; color: var(--primary-dark); }
+  .page-header p  { font-size: 13px; color: var(--gray-500); margin-top: 1px; }
+
+  .step-section { display: grid; grid-template-columns: 1fr 200px; gap: 28px; align-items: start; margin-bottom: 36px; page-break-inside: avoid; }
+  .step-section.reverse { grid-template-columns: 200px 1fr; }
+  .step-section.reverse .phone-col { order: -1; }
+
+  .step-num { display: inline-flex; align-items: center; gap: 10px; background: linear-gradient(135deg, var(--primary-dark), var(--primary)); color: #fff; border-radius: 99px; padding: 4px 14px 4px 4px; font-size: 13px; font-weight: 700; margin-bottom: 10px; }
+  .step-num-circle { width: 28px; height: 28px; background: rgba(255,255,255,0.25); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 14px; }
+  h3 { font-size: 18px; font-weight: 800; color: var(--gray-800); margin-bottom: 10px; }
+  .step-desc { font-size: 14px; color: var(--gray-700); margin-bottom: 14px; line-height: 1.75; }
+
+  .tips { background: var(--primary-light); border-left: 4px solid var(--primary); border-radius: 0 10px 10px 0; padding: 10px 14px; font-size: 13px; color: var(--primary-dark); margin-top: 12px; }
+  .tips strong { display: block; font-weight: 700; margin-bottom: 3px; }
+  .note-box { background: #fff8e1; border: 1px solid #ffd54f; border-radius: 10px; padding: 10px 14px; font-size: 13px; color: #7c5c00; margin-top: 10px; }
+  .audit-box { background: #f0fdf4; border: 1px solid #86efac; border-radius: 10px; padding: 10px 14px; font-size: 13px; color: #166534; margin-top: 10px; }
+
+  ul.steps-list { list-style: none; margin: 0; padding: 0; }
+  ul.steps-list li { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 8px; font-size: 14px; color: var(--gray-700); }
+  ul.steps-list li::before { content: attr(data-n); min-width: 22px; height: 22px; background: var(--primary); color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 2px; }
+
+  /* Phone */
+  .phone-wrap { display: flex; flex-direction: column; align-items: center; }
+  .phone { width: 190px; background: #1a1a2e; border-radius: 32px; padding: 10px; box-shadow: 0 12px 40px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(255,255,255,0.08); position: relative; }
+  .phone-notch { width: 60px; height: 6px; background: #0d0d1a; border-radius: 99px; margin: 0 auto 6px; }
+  .phone-screen { background: var(--gray-50); border-radius: 22px; overflow: hidden; min-height: 340px; }
+  .phone-caption { margin-top: 10px; font-size: 12px; color: var(--gray-500); text-align: center; font-weight: 600; }
+
+  /* Section divider */
+  .section-divider { display: flex; align-items: center; gap: 10px; margin: 24px 0 20px; }
+  .section-divider-line { flex: 1; height: 1px; background: var(--gray-200); }
+  .section-divider-text { font-size: 12px; font-weight: 700; color: var(--gray-400); white-space: nowrap; }
+
+  /* Info table */
+  .info-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+  .info-table th { background: var(--primary); color: #fff; padding: 8px 12px; text-align: left; font-weight: 700; font-size: 13px; }
+  .info-table td { padding: 8px 12px; border-bottom: 1px solid var(--gray-100); vertical-align: top; }
+  .info-table tr:nth-child(even) td { background: var(--gray-50); }
+
+  /* TOC */
+  .toc { background: var(--gray-50); border-radius: 16px; padding: 20px 24px; margin-bottom: 20px; }
+  .toc h3 { font-size: 16px; font-weight: 800; color: var(--primary-dark); margin-bottom: 14px; }
+  .toc-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-bottom: 1px solid var(--gray-200); border-radius: 10px; font-size: 14px; color: var(--gray-700); text-decoration: none; transition: background .15s, color .15s; cursor: pointer; }
+  a.toc-item:hover { background: var(--primary-light); color: var(--primary-dark); }
+  .toc-item:last-child { border-bottom: none; }
+  .toc-num { min-width: 28px; height: 28px; background: linear-gradient(135deg, var(--primary-dark), var(--primary)); color: #fff; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; }
+  .toc-dots { flex: 1; border-bottom: 2px dotted var(--gray-300); height: 1px; margin: 0 6px; }
+  .toc-page { font-size: 13px; color: var(--gray-400); font-weight: 600; }
+
+  /* Status flow */
+  .status-flow { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 16px 0; flex-wrap: wrap; }
+  .status-chip { padding: 6px 14px; border-radius: 99px; font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 5px; }
+  .status-arrow { font-size: 18px; color: var(--gray-400); }
+
+  @media (max-width: 640px) {
+    body { background: #f1f5f9; font-size: 14px; }
+    .page { width: 100%; min-height: unset; margin: 0 0 10px; box-shadow: none; border-radius: 0; }
+    .cover { min-height: unset; padding: 48px 24px 40px; }
+    .cover h1 { font-size: 24px; } .cover p { font-size: 15px; }
+    .cover-steps { gap: 8px; display: grid; grid-template-columns: 1fr 1fr; }
+    .cover-step { min-width: unset; font-size: 12px; padding: 10px 12px; }
+    .cover-footer { position: static; margin-top: 24px; }
+    .content-page { padding: 24px 16px 24px; min-height: unset; }
+    .step-section, .step-section.reverse { grid-template-columns: 1fr; gap: 20px; }
+    .step-section.reverse .phone-col { order: 1; }
+    .phone-wrap { margin: 0 auto; } .phone { width: 220px; }
+    .page-header h2 { font-size: 19px; }
+    .toc-dots { display: none; } .toc-page { margin-left: auto; }
+    .info-table { font-size: 12px; display: block; overflow-x: auto; }
+    .section-divider { margin: 18px 0 16px; }
+    h3 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════ COVER ═══════════════════════ -->
+<div class="page">
+  <div class="cover">
+    <div class="cover-badge">🚗 คู่มือสำหรับเจ้าหน้าที่</div>
+    <div class="cover-logo">🚗</div>
+    <h1>ระบบยานพาหนะและเชื้อเพลิง</h1>
+    <p>บันทึกการเติมเชื้อเพลิง ซ่อมบำรุง และดูสถิติการใช้งานรถแต่ละคัน</p>
+    <div class="cover-divider"></div>
+    <div class="cover-steps">
+      <div class="cover-step"><div class="cover-step-num">1</div>บันทึกเชื้อเพลิง</div>
+      <div class="cover-step"><div class="cover-step-num">2</div>บันทึกซ่อมบำรุง</div>
+      <div class="cover-step"><div class="cover-step-num">3</div>แก้ไขรายการ</div>
+      <div class="cover-step"><div class="cover-step-num">4</div>ดูสถิติรายคัน</div>
+    </div>
+    <div class="cover-footer">SmartLocal e-Service Platform · คู่มือฉบับเจ้าหน้าที่</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ TOC ═══════════════════════ -->
+<div class="page" id="toc">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">📋</div>
+      <div><h2>สารบัญ</h2><p>Table of Contents</p></div>
+    </div>
+
+    <div class="toc">
+      <h3>เนื้อหาในคู่มือ</h3>
+      <a class="toc-item" href="#overview">
+        <div class="toc-num">1</div>
+        <span>ภาพรวมระบบยานพาหนะ — เข้าใช้งานและแท็บต่างๆ</span>
+        <div class="toc-dots"></div><span class="toc-page">→</span>
+      </a>
+      <a class="toc-item" href="#vehicles">
+        <div class="toc-num">2</div>
+        <span>รถและเครื่องยนต์ — ดูสถิติการใช้งานรายคัน</span>
+        <div class="toc-dots"></div><span class="toc-page">→</span>
+      </a>
+      <a class="toc-item" href="#fuel">
+        <div class="toc-num">3</div>
+        <span>บันทึกและแก้ไขการเติมเชื้อเพลิง</span>
+        <div class="toc-dots"></div><span class="toc-page">→</span>
+      </a>
+      <a class="toc-item" href="#maintenance" style="border-bottom:none;">
+        <div class="toc-num">4</div>
+        <span>บันทึกและแก้ไขการซ่อมบำรุง</span>
+        <div class="toc-dots"></div><span class="toc-page">→</span>
+      </a>
+    </div>
+
+    <div style="background:linear-gradient(135deg,#e0f2fe,#bae6fd);border-radius:14px;padding:16px 20px;margin-top:20px;">
+      <p style="font-size:13.5px;color:#075985;font-weight:700;margin-bottom:8px;">🔑 วิธีเข้าสู่ระบบยานพาหนะ</p>
+      <div class="status-flow">
+        <div class="status-chip" style="background:#fff;color:#0369a1;">🔐 เข้าสู่ระบบ</div>
+        <div class="status-arrow">→</div>
+        <div class="status-chip" style="background:#fff;color:#0369a1;">แดชบอร์ดเจ้าหน้าที่</div>
+        <div class="status-arrow">→</div>
+        <div class="status-chip" style="background:#fff;color:#0369a1;">🚗 ยานพาหนะ/น้ำมัน</div>
+      </div>
+      <p style="font-size:12px;color:#0369a1;text-align:center;margin-top:4px;">หรือไปที่ URL: <strong>/fleet</strong> โดยตรง (ต้องเข้าสู่ระบบด้วยบัญชีเจ้าหน้าที่)</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ PAGE 1 — ภาพรวม ═══════════════════════ -->
+<div id="overview" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">🚗</div>
+      <div><h2>ภาพรวมระบบยานพาหนะ</h2><p>6 แท็บหลักในระบบ</p></div>
+    </div>
+
+    <p class="step-desc">ระบบยานพาหนะแบ่งเป็น 6 แท็บ เข้าถึงได้จากแถบเมนูด้านบนของหน้า <strong>ยานพาหนะและเชื้อเพลิง</strong></p>
+
+    <table class="info-table">
+      <thead><tr><th>แท็บ</th><th>ใช้ทำอะไร</th></tr></thead>
+      <tbody>
+        <tr><td>📊 ภาพรวม</td><td>สรุปค่าเชื้อเพลิงเดือนนี้ ระยะทางรวม อัตราสิ้นเปลืองเฉลี่ยของทั้งกอง</td></tr>
+        <tr><td>🚙 รถและเครื่องยนต์</td><td>ทะเบียนรถ/เครื่องยนต์ทั้งหมด — คลิกชื่อคันดูสถิติการใช้งานรายคันได้</td></tr>
+        <tr><td>⛽ เชื้อเพลิง</td><td>บันทึกและแก้ไขรายการเติมน้ำมัน/ของเหลว</td></tr>
+        <tr><td>🗓️ การเดินทาง</td><td>จองรถล่วงหน้า หรือบันทึกออกเดินทาง/กลับถึง พร้อมเลขไมล์</td></tr>
+        <tr><td>🔧 ซ่อมบำรุง</td><td>บันทึกและแก้ไขประวัติซ่อมบำรุง แจ้งเตือนซ่อมครั้งถัดไป</td></tr>
+        <tr><td>📄 รายงาน</td><td>สรุปรายงานการใช้รถและเชื้อเพลิงทั้งกอง</td></tr>
+      </tbody>
+    </table>
+
+    <div class="tips" style="margin-top:20px;">
+      💡 <strong>สิทธิ์การใช้งาน:</strong> เจ้าหน้าที่กอง (fleet_staff) บันทึก/แก้ไขได้เฉพาะรถของกองตัวเอง (หรือรถส่วนกลาง) ส่วนผู้ดูแลระบบยานพาหนะ (fleet_admin) จัดการได้ทุกกอง และเป็นคนเดียวที่ <strong>ลบ</strong> รายการได้
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ PAGE 2 — รถและเครื่องยนต์ ═══════════════════════ -->
+<div id="vehicles" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">🚙</div>
+      <div><h2>รถและเครื่องยนต์</h2><p>ดูสถิติการใช้งานรายคัน (ฟีเจอร์ใหม่)</p></div>
+    </div>
+
+    <div class="step-section">
+      <div>
+        <div class="step-num"><div class="step-num-circle">1</div>คลิกดูสถิติ</div>
+        <h3>คลิกชื่อรถเพื่อดูสถิติสะสม</h3>
+        <p class="step-desc">ที่แท็บ <strong>"รถและเครื่องยนต์"</strong> คลิกที่ชื่อ/ไอคอนรถแถวใดก็ได้ ระบบจะเปิดหน้าต่างสรุปสถิติของ <strong>คันนั้นโดยเฉพาะ</strong></p>
+        <ul class="steps-list">
+          <li data-n="1"><strong>ระยะทางสะสม</strong> และจำนวนเที่ยวเดินทาง ตั้งแต่ต้นปีงบประมาณ</li>
+          <li data-n="2"><strong>เชื้อเพลิงสะสม</strong> (บาท + ลิตร) และ <strong>อัตราสิ้นเปลืองเฉลี่ย</strong> (กม./ล.)</li>
+          <li data-n="3"><strong>ค่าซ่อมบำรุงสะสม</strong></li>
+          <li data-n="4"><strong>สถิติรายเดือน</strong> เรียงตามปีงบประมาณ (ต.ค.–ก.ย.) แสดงเฉพาะเดือนที่มีการใช้งาน</li>
+        </ul>
+        <div class="tips">
+          💡 ปีงบประมาณนับตามปฏิทินราชการไทย เริ่ม 1 ตุลาคม ถึง 30 กันยายนปีถัดไป ไม่ใช่ปีปฏิทิน ม.ค.–ธ.ค.
+        </div>
+      </div>
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen" style="min-height:400px;">
+              <div style="background:linear-gradient(135deg,#075985,#0369a1);padding:10px 12px;display:flex;justify-content:space-between;align-items:center;">
+                <span style="color:#fff;font-size:11px;font-weight:700;">002</span>
+                <div style="width:16px;height:16px;background:rgba(255,255,255,.2);border-radius:5px;font-size:9px;color:#fff;text-align:center;">✕</div>
+              </div>
+              <div style="padding:8px;display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:8px;">
+                  <div style="font-size:8px;color:#3b82f6;font-weight:700;">📏 ระยะทางสะสม</div>
+                  <div style="font-size:16px;font-weight:800;color:#1f2937;">129 <span style="font-size:9px;">กม.</span></div>
+                  <div style="font-size:7px;color:#9ca3af;">4 เที่ยว</div>
+                </div>
+                <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:8px;">
+                  <div style="font-size:8px;color:#d97706;font-weight:700;">⛽ เชื้อเพลิงสะสม</div>
+                  <div style="font-size:16px;font-weight:800;color:#1f2937;">฿800</div>
+                  <div style="font-size:7px;color:#9ca3af;">40 ลิตร</div>
+                </div>
+                <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:8px;">
+                  <div style="font-size:8px;color:#ef4444;font-weight:700;">🔧 ซ่อมบำรุงสะสม</div>
+                  <div style="font-size:16px;font-weight:800;color:#1f2937;">฿0</div>
+                </div>
+                <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:8px;">
+                  <div style="font-size:8px;color:#10b981;font-weight:700;">⚡ อัตราสิ้นเปลือง</div>
+                  <div style="font-size:16px;font-weight:800;color:#1f2937;">3.2 <span style="font-size:9px;">กม./ล.</span></div>
+                </div>
+              </div>
+              <div style="padding:0 8px;">
+                <div style="font-size:8px;color:#6b7280;font-weight:700;text-transform:uppercase;margin-bottom:4px;">สถิติรายเดือน</div>
+                <div style="background:#f9fafb;border-radius:8px;padding:6px 8px;font-size:8px;color:#374151;display:flex;justify-content:space-between;">
+                  <span style="font-weight:700;">ก.ค. 2569</span><span style="color:#9ca3af;">4 เที่ยว · 129 กม.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-caption">สถิติรถรายคัน</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ PAGE 3 — เชื้อเพลิง ═══════════════════════ -->
+<div id="fuel" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">⛽</div>
+      <div><h2>บันทึกและแก้ไขการเติมเชื้อเพลิง</h2><p>รวมช่องราคา/ลิตร คำนวณยอดรวมอัตโนมัติ</p></div>
+    </div>
+
+    <div class="step-section">
+      <div>
+        <div class="step-num"><div class="step-num-circle">1</div>บันทึกใหม่</div>
+        <h3>กด "บันทึกเชื้อเพลิง"</h3>
+        <ul class="steps-list">
+          <li data-n="1">เลือก <strong>ยานพาหนะ/เครื่องยนต์</strong> ที่เติม</li>
+          <li data-n="2">กรอก วันที่, เลขไมล์, <strong>ปริมาณ (ลิตร)</strong>, <strong>ราคา/ลิตร</strong> — ระบบคำนวณยอดรวมให้อัตโนมัติ</li>
+          <li data-n="3">เลือกชนิดเชื้อเพลิง และติ๊ก "เติมเต็มถัง" ถ้าเติมเต็ม</li>
+          <li data-n="4">แนบใบเสร็จได้ (ไม่บังคับ) — รองรับ JPG/PNG/PDF ไม่เกิน 10 MB</li>
+        </ul>
+
+        <div class="step-num" style="margin-top:16px;"><div class="step-num-circle">2</div>แก้ไขรายการ</div>
+        <h3>แก้ไขรายการที่บันทึกผิด</h3>
+        <p class="step-desc">กดปุ่ม <strong>"แก้ไข"</strong> ที่แถวรายการ (เจ้าหน้าที่แก้ได้เฉพาะรถกองตัวเอง/รถส่วนกลาง) ฟอร์มเดิมจะเปิดขึ้นพร้อมข้อมูลเดิมให้แก้ไข</p>
+        <div class="audit-box">
+          🔒 <strong>ร่องรอยตรวจสอบ (Audit Trail):</strong> ทุกครั้งที่แก้ไข ระบบจะบันทึก <strong>วันที่แก้ไขและชื่อผู้แก้</strong> ไว้อัตโนมัติที่ระดับฐานข้อมูล (แก้ปลอมแปลงไม่ได้) แสดงเป็นตัวหนังสือสีเหลืองใต้ชื่อรถในตาราง เช่น "แก้ไข 16 ส.ค. 69 · ชื่อผู้แก้" — รายการที่ไม่เคยแก้จะไม่มีข้อความนี้
+        </div>
+        <div class="note-box">
+          ⚠️ มีแต่ <strong>ผู้ดูแลระบบยานพาหนะ (fleet_admin)</strong> เท่านั้นที่ลบรายการได้ เจ้าหน้าที่ทั่วไปแก้ไขได้แต่ลบไม่ได้
+        </div>
+      </div>
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen" style="min-height:400px;">
+              <div style="background:linear-gradient(135deg,#075985,#0369a1);padding:8px 10px;display:flex;justify-content:space-between;align-items:center;">
+                <span style="color:#fff;font-size:10px;font-weight:700;">✏️ แก้ไขรายการเชื้อเพลิง</span>
+              </div>
+              <div style="padding:8px;">
+                <div style="font-size:8px;color:#6b7280;margin-bottom:2px;">ปริมาณ (ลิตร)</div>
+                <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:6px 8px;font-size:10px;color:#1f2937;margin-bottom:6px;">15</div>
+                <div style="font-size:8px;color:#6b7280;margin-bottom:2px;">ราคา/ลิตร</div>
+                <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:6px 8px;font-size:10px;color:#1f2937;margin-bottom:6px;">11</div>
+                <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:6px 8px;display:flex;justify-content:space-between;margin-bottom:8px;">
+                  <span style="font-size:8px;color:#92400e;font-weight:700;">ยอดรวม</span>
+                  <span style="font-size:12px;color:#92400e;font-weight:800;">฿165</span>
+                </div>
+                <div style="background:#0369a1;border-radius:8px;padding:7px;text-align:center;font-size:9px;color:#fff;font-weight:700;">บันทึกการแก้ไข</div>
+              </div>
+              <div style="padding:6px 8px;border-top:1px solid #f3f4f6;">
+                <div style="font-size:7px;color:#d97706;">🟡 แก้ไข 16 ส.ค. 69 · ยุทธศักดิ์ กาศเกษม</div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-caption">ฟอร์มแก้ไข + ร่องรอยตรวจสอบ</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ PAGE 4 — ซ่อมบำรุง ═══════════════════════ -->
+<div id="maintenance" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">🔧</div>
+      <div><h2>บันทึกและแก้ไขการซ่อมบำรุง</h2><p>ยอดรวมคำนวณจากทุกรายการที่ตรงตัวกรองเสมอ</p></div>
+    </div>
+
+    <div class="step-section">
+      <div>
+        <div class="step-num"><div class="step-num-circle">1</div>บันทึกใหม่</div>
+        <h3>กด "บันทึกซ่อมบำรุง"</h3>
+        <ul class="steps-list">
+          <li data-n="1">เลือกยานพาหนะ, ประเภทงานซ่อม (บำรุงรักษา/เปลี่ยนถ่ายน้ำมัน/ซ่อมแซม/ยาง/แบตเตอรี่/อื่นๆ)</li>
+          <li data-n="2">กรอกรายละเอียด, ค่าใช้จ่าย, อู่/ผู้รับจ้าง</li>
+          <li data-n="3">ระบุ <strong>วันที่หรือเลขไมล์ซ่อมครั้งถัดไป</strong> — ระบบจะเตือนอัตโนมัติเมื่อใกล้ถึงกำหนด</li>
+          <li data-n="4">แนบใบเสร็จได้เช่นเดียวกับเชื้อเพลิง</li>
+        </ul>
+
+        <div class="step-num" style="margin-top:16px;"><div class="step-num-circle">2</div>แก้ไขรายการ</div>
+        <h3>แก้ไขได้เหมือนกับเชื้อเพลิง</h3>
+        <p class="step-desc">กด <strong>"แก้ไข"</strong> ที่แถวรายการ มีร่องรอยตรวจสอบ (วันที่/ผู้แก้) เหมือนหน้าเชื้อเพลิงทุกประการ</p>
+        <div class="tips">
+          💡 <strong>การ์ดสรุปด้านบนตาราง</strong> ("ค่าซ่อมบำรุงรวม") จะคำนวณจาก <strong>ทุกรายการที่ตรงกับตัวกรองปัจจุบัน</strong> เสมอ (ไม่ใช่แค่หน้าที่กำลังแสดงอยู่) เปลี่ยนตัวกรองหรือแก้ไข/ลบรายการ ยอดรวมจะอัปเดตให้อัตโนมัติทันที
+        </div>
+      </div>
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen" style="min-height:400px;">
+              <div style="background:linear-gradient(135deg,#075985,#0369a1);padding:8px 10px;">
+                <span style="color:#fff;font-size:10px;font-weight:700;">🔧 ซ่อมบำรุง</span>
+              </div>
+              <div style="padding:8px;display:flex;align-items:center;gap:8px;background:#fef2f2;border-radius:0 0 12px 12px;">
+                <div style="width:26px;height:26px;background:#fee2e2;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;">🔧</div>
+                <div>
+                  <div style="font-size:14px;font-weight:800;color:#1f2937;">฿250</div>
+                  <div style="font-size:8px;color:#6b7280;">ค่าซ่อมบำรุงรวม</div>
+                </div>
+              </div>
+              <div style="padding:8px;">
+                <div style="background:#fff;border:1px solid #f3f4f6;border-radius:10px;padding:8px;">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+                    <span style="font-size:9px;font-weight:700;color:#1f2937;">001001</span>
+                    <span style="font-size:10px;font-weight:800;color:#1f2937;">฿250</span>
+                  </div>
+                  <div style="font-size:7px;color:#d97706;">🟡 แก้ไข 16 ส.ค. 69 · ยุทธศักดิ์ กาศเกษม</div>
+                  <div style="display:flex;gap:4px;margin-top:5px;">
+                    <div style="border:1px solid #93c5fd;color:#3b82f6;border-radius:6px;padding:2px 8px;font-size:8px;font-weight:700;">แก้ไข</div>
+                    <div style="border:1px solid #fca5a5;color:#ef4444;border-radius:6px;padding:2px 8px;font-size:8px;font-weight:700;">ลบ</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-caption">รายการซ่อมบำรุง + ยอดรวม</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-divider">
+      <div class="section-divider-line"></div>
+      <div class="section-divider-text">สิทธิ์แก้ไข/ลบ ตามบทบาท</div>
+      <div class="section-divider-line"></div>
+    </div>
+
+    <table class="info-table">
+      <thead><tr><th>บทบาท</th><th>บันทึกใหม่</th><th>แก้ไข</th><th>ลบ</th><th>ขอบเขต</th></tr></thead>
+      <tbody>
+        <tr><td>fleet_admin (ผู้ดูแลยานพาหนะ)</td><td style="text-align:center;">✅</td><td style="text-align:center;">✅</td><td style="text-align:center;">✅</td><td>ทุกกอง</td></tr>
+        <tr><td>fleet_staff (เจ้าหน้าที่กอง)</td><td style="text-align:center;">✅</td><td style="text-align:center;">✅</td><td style="text-align:center;">—</td><td>เฉพาะกองตัวเอง + รถส่วนกลาง</td></tr>
+        <tr><td>fleet_viewer (ดูรายงาน)</td><td style="text-align:center;">—</td><td style="text-align:center;">—</td><td style="text-align:center;">—</td><td>ดูอย่างเดียว</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</body>
+</html>

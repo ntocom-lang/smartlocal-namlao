@@ -5,7 +5,7 @@ import {
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, AlignLeft, Calendar, Hash, RefreshCw,
   Printer, Search, ClipboardList, Hammer, Home, CalendarDays, TrendingUp, Images, Camera,
-  Banknote, Luggage, Star, Car, Bell, Trash2, Briefcase, Database,
+  Banknote, Luggage, Star, Car, Bell, Trash2, Briefcase, Database, BookOpen,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
@@ -88,6 +88,14 @@ const STANDALONE_GROUPS = [
     group: 'บุคลากร',
     items: [
       { key: 'positions', label: 'ทำเนียบตำแหน่ง', Icon: Briefcase, color: '#4338ca', bg: '#e0e7ff' },
+    ],
+  },
+  {
+    group: 'คู่มือ',
+    items: [
+      // newTab: เปิดเอกสารคงที่ (static HTML) แท็บใหม่ — ต่างจาก externalUrl ที่ navigate() ในแท็บเดิม
+      // (ใช้กับ route ภายในแอปเท่านั้น เพราะไฟล์ static ไม่มี route จับใน App.jsx)
+      { key: 'manual-staff', label: 'คู่มือเจ้าหน้าที่ (ยานพาหนะ)', Icon: BookOpen, color: '#0369a1', bg: '#e0f2fe', newTab: '/manual-staff.html' },
     ],
   },
 ]
@@ -1845,13 +1853,13 @@ export default function StaffDashboard() {
                 <div key={group} className="mb-3">
                   <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-widest text-white/55">{group}</p>
                   <div className="space-y-0.5">
-                    {items.map(({ key, label, Icon, externalUrl }) => {
+                    {items.map(({ key, label, Icon, externalUrl, newTab }) => {
                       const isActive = activeModule === key
                       const badge = key === 'inbox' && pendingCount > 0 ? pendingCount
                         : key === 'complaints' && newComplaintCount > 0 ? newComplaintCount
                         : null
                       return (
-                        <button key={key} onClick={() => externalUrl ? navigate(externalUrl) : setActiveModule(key)}
+                        <button key={key} onClick={() => newTab ? window.open(newTab, "_blank", "noopener,noreferrer") : externalUrl ? navigate(externalUrl) : setActiveModule(key)}
                           className={`flex min-h-9 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${isActive ? 'bg-white/20 text-white shadow-sm' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}>
                           <Icon size={16} strokeWidth={isActive ? 2.2 : 1.8} />
                           <span className="flex-1 text-left text-xs">{label}</span>
@@ -1873,13 +1881,13 @@ export default function StaffDashboard() {
                   <div className="space-y-0.5">
                     {items.length === 0 ? (
                       <p className="px-3 py-1.5 text-[11px] italic text-white/35">ยังไม่มีเมนูงานในกองนี้</p>
-                    ) : items.map(({ key, label, Icon, externalUrl }) => {
+                    ) : items.map(({ key, label, Icon, externalUrl, newTab }) => {
                       const isActive = activeModule === key
                       const badge = key === 'inbox' && pendingCount > 0 ? pendingCount
                         : key === 'complaints' && newComplaintCount > 0 ? newComplaintCount
                         : null
                       return (
-                        <button key={key} onClick={() => externalUrl ? navigate(externalUrl) : setActiveModule(key)}
+                        <button key={key} onClick={() => newTab ? window.open(newTab, "_blank", "noopener,noreferrer") : externalUrl ? navigate(externalUrl) : setActiveModule(key)}
                           className={`flex min-h-9 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${isActive ? 'bg-white/20 text-white shadow-sm' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}>
                           <Icon size={16} strokeWidth={isActive ? 2.2 : 1.8} />
                           <span className="flex-1 text-left text-xs">{label}</span>
