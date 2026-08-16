@@ -41,16 +41,38 @@ function thDate(iso) {
 }
 
 function StatCard({ label, value, sub, Icon, iconBg, border }) {
+  // ค่า 0 ให้ตัวเลขจางลง ตัวที่มีนัยสำคัญ (>0) เด่นขึ้น — ช่วยกวาดสายตาหาจุดที่ต้องสนใจได้เร็วกว่า
+  const isZero = value === 0
   return (
     <div className={`bg-white rounded-2xl border p-4 flex flex-col gap-1 ${border}`}>
       <div className="flex items-center gap-2 mb-1">
-        <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${iconBg}`}>
+        <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${iconBg} ${isZero ? 'opacity-50' : ''}`}>
           <Icon size={16} className="text-white" />
         </div>
         <p className="text-xs font-semibold text-gray-500">{label}</p>
       </div>
-      <p className="text-3xl font-black text-gray-800 leading-none">{value}</p>
+      <p className={`text-3xl font-black leading-none ${isZero ? 'text-gray-300' : 'text-gray-800'}`}>{value}</p>
       {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+    </div>
+  )
+}
+
+function CompletionRing({ percent, size = 132, stroke = 13 }) {
+  const radius = (size - stroke) / 2
+  const circumference = 2 * Math.PI * radius
+  const dash = (Math.min(100, Math.max(0, percent)) / 100) * circumference
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size} className="-rotate-90">
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#eef2f7" strokeWidth={stroke} />
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--color-primary)" strokeWidth={stroke}
+          strokeDasharray={`${dash} ${circumference}`} strokeLinecap="round"
+          className="transition-all duration-700 ease-out" />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-3xl font-black text-gray-800 leading-none">{percent}%</span>
+        <span className="text-[11px] font-semibold text-gray-400 mt-1">เสร็จสิ้น</span>
+      </div>
     </div>
   )
 }
@@ -132,24 +154,31 @@ export default function ComplaintStats() {
 
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-5">
 
-        {/* ── Stats grid ── */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          <StatCard
-            label="รวมเรื่องร้องเรียนทั้งหมด"
-            value={stats?.total ?? 0}
-            sub={`เดือนนี้ ${stats?.this_month ?? 0} เรื่อง`}
-            Icon={ClipboardList}
-            iconBg="bg-blue-500"
-            border="border-blue-100"
-          />
-          <StatCard
-            label="เสร็จสิ้น"
-            value={stats?.resolved ?? 0}
-            sub={`คิดเป็น ${completionRate}% ของทั้งหมด`}
-            Icon={CheckCircle2}
-            iconBg="bg-emerald-500"
-            border="border-emerald-100"
-          />
+        {/* ── Hero: อัตราเสร็จสิ้น + ตัวเลขหลัก ── */}
+        <div className="bg-white rounded-2xl border border-gray-100 p-5 md:p-6">
+          <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-8">
+            <CompletionRing percent={completionRate} />
+            <div className="w-full grid grid-cols-2 gap-5 sm:gap-8 sm:border-l sm:border-gray-100 sm:pl-8">
+              <div>
+                <p className="text-xs font-semibold text-gray-500 flex items-center gap-1.5">
+                  <ClipboardList size={14} className="text-blue-500" /> เรื่องร้องเรียนทั้งหมด
+                </p>
+                <p className="text-3xl font-black text-gray-800 mt-1.5 leading-none">{stats?.total ?? 0}</p>
+                <p className="text-xs text-gray-400 mt-1.5">+{stats?.this_month ?? 0} เรื่องใหม่เดือนนี้</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-gray-500 flex items-center gap-1.5">
+                  <CheckCircle2 size={14} className="text-emerald-500" /> เสร็จสิ้นแล้ว
+                </p>
+                <p className="text-3xl font-black text-emerald-600 mt-1.5 leading-none">{stats?.resolved ?? 0}</p>
+                <p className="text-xs text-gray-400 mt-1.5">จากทั้งหมด {stats?.total ?? 0} เรื่อง</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── สถานะอื่นๆ ── */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <StatCard
             label="กำลังดำเนินการ"
             value={stats?.in_progress ?? 0}
@@ -167,7 +196,7 @@ export default function ComplaintStats() {
           <StatCard
             label="ระยะเวลาเฉลี่ย"
             value={stats?.avg_days != null ? `${stats.avg_days} วัน` : '—'}
-            sub="วันแจ้ง → วันปิดเรื่อง (เฉพาะที่เสร็จแล้ว)"
+            sub="วันแจ้ง → วันปิดเรื่อง"
             Icon={TrendingUp}
             iconBg="bg-purple-500"
             border="border-purple-100"
@@ -179,23 +208,6 @@ export default function ComplaintStats() {
             iconBg="bg-red-400"
             border="border-red-100"
           />
-        </div>
-
-        {/* ── Completion bar ── */}
-        <div className="bg-white rounded-2xl border border-gray-100 p-4">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-sm font-bold text-gray-700">อัตราการเสร็จสิ้น</p>
-            <p className="text-sm font-black text-emerald-600">{completionRate}%</p>
-          </div>
-          <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all duration-700"
-              style={{ width: `${completionRate}%`, backgroundColor: 'var(--color-primary)' }}
-            />
-          </div>
-          <p className="text-xs text-gray-400 mt-2 text-right">
-            เสร็จสิ้น {stats?.resolved ?? 0} จาก {stats?.total ?? 0} เรื่อง
-          </p>
         </div>
 
         {/* ── Recent complaints ── */}
