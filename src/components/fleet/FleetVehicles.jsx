@@ -177,20 +177,20 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
   return (
     <div className="space-y-3 md:space-y-4">
       {/* Toolbar */}
-      <div className="grid grid-cols-3 md:flex md:flex-wrap gap-1.5 md:gap-2 items-center">
+      <div className="grid grid-cols-3 md:flex md:flex-wrap gap-2 items-center">
         <select value={filterDept} onChange={e => setFilterDept(e.target.value)}
-          className="w-full min-w-0 text-[11px] md:text-xs border border-gray-200 rounded-xl px-1.5 md:px-3 py-1.5 md:py-2 bg-white text-gray-700 focus:outline-none truncate">
+          className="w-full md:w-auto min-w-0 md:min-w-35 text-xs border border-gray-200 rounded-xl px-2 md:px-3 py-2 md:py-2.5 bg-gray-50 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200 truncate">
           <option value="all">ทุกกอง</option>
           <option value="pool">รถกลาง</option>
           {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-          className="w-full min-w-0 text-[11px] md:text-xs border border-gray-200 rounded-xl px-1.5 md:px-3 py-1.5 md:py-2 bg-white text-gray-700 focus:outline-none truncate">
+          className="w-full md:w-auto min-w-0 md:min-w-35 text-xs border border-gray-200 rounded-xl px-2 md:px-3 py-2 md:py-2.5 bg-gray-50 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200 truncate">
           <option value="all">ทุกสถานะ</option>
           {Object.entries(STATUS_TH).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
         </select>
         <select value={filterKind} onChange={e => setFilterKind(e.target.value)}
-          className="w-full min-w-0 text-[11px] md:text-xs border border-gray-200 rounded-xl px-1.5 md:px-3 py-1.5 md:py-2 bg-white text-gray-700 focus:outline-none truncate">
+          className="w-full md:w-auto min-w-0 md:min-w-35 text-xs border border-gray-200 rounded-xl px-2 md:px-3 py-2 md:py-2.5 bg-gray-50 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200 truncate">
           <option value="all">ทุกชนิด</option>
           {ASSET_KIND_OPTIONS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
         </select>
