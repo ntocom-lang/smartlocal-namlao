@@ -7,16 +7,16 @@ const fmtB = (n) => `฿${fmt(Math.round(n ?? 0))}`
 
 function KpiCard({ icon: Icon, label, value, sub, color }) {
   return (
-    <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-      <div className="flex items-start justify-between mb-3">
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+    <div className="bg-white rounded-xl md:rounded-2xl p-3 md:p-4 shadow-sm border border-gray-100">
+      <div className="flex items-start justify-between mb-1.5 md:mb-3">
+        <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl flex items-center justify-center"
              style={{ backgroundColor: color + '18' }}>
-          <Icon size={18} style={{ color }} />
+          <Icon size={16} className="md:w-[18px] md:h-[18px]" style={{ color }} />
         </div>
       </div>
-      <p className="text-xl font-black text-gray-800">{value}</p>
-      <p className="text-xs font-semibold text-gray-500 mt-0.5">{label}</p>
-      {sub && <p className="text-[10px] text-gray-400 mt-1">{sub}</p>}
+      <p className="text-lg md:text-xl font-black text-gray-800 leading-tight">{value}</p>
+      <p className="text-[11px] md:text-xs font-semibold text-gray-500 mt-0.5 leading-tight">{label}</p>
+      {sub && <p className="text-[9px] md:text-[10px] text-gray-400 mt-0.5 md:mt-1 truncate">{sub}</p>}
     </div>
   )
 }
@@ -43,14 +43,14 @@ function ExpiryAlert({ vehicles }) {
   alerts.sort((a, b) => a.days - b.days)
 
   if (!alerts.length) return (
-    <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 rounded-xl px-4 py-3 text-sm">
+    <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 rounded-xl px-3 py-2 md:px-4 md:py-3 text-xs md:text-sm">
       ✅ เอกสารยานพาหนะยังไม่หมดอายุใน 60 วัน
     </div>
   )
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
+      <div className="flex items-center gap-2 px-3 py-2 md:px-4 md:py-3 border-b border-gray-100">
         <AlertTriangle size={15} className="text-amber-500" />
         <span className="text-sm font-bold text-gray-700">เอกสารใกล้หมดอายุ</span>
         <span className="ml-auto text-xs font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
@@ -59,7 +59,7 @@ function ExpiryAlert({ vehicles }) {
       </div>
       <div className="divide-y divide-gray-50">
         {alerts.slice(0, 5).map((a, i) => (
-          <div key={i} className="flex items-center justify-between px-4 py-2.5">
+          <div key={i} className="flex items-center justify-between px-3 py-2 md:px-4 md:py-2.5">
             <div>
               <p className="text-xs font-semibold text-gray-700">{a.name}</p>
               <p className="text-[10px] text-gray-400">{a.label}</p>
@@ -86,7 +86,7 @@ function BudgetBar({ depts, budgets, fuelByDept }) {
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
+      <div className="flex items-center gap-2 px-3 py-2 md:px-4 md:py-3 border-b border-gray-100">
         <Wallet size={15} className="text-purple-500" />
         <span className="text-sm font-bold text-gray-700">งบเชื้อเพลิงเดือนนี้</span>
         <span className="text-[10px] text-gray-400 ml-1">เดือน {month}/{year}</span>
@@ -98,7 +98,7 @@ function BudgetBar({ depts, budgets, fuelByDept }) {
           const pct    = budget > 0 ? Math.min((used / budget) * 100, 100) : 0
           if (!budget && !used) return null
           return (
-            <div key={dept.id} className="px-4 py-3">
+            <div key={dept.id} className="px-3 py-2.5 md:px-4 md:py-3">
               <div className="flex justify-between mb-1.5">
                 <span className="text-xs font-semibold text-gray-700">{dept.name}</span>
                 <span className="text-[10px] text-gray-500">
@@ -206,9 +206,9 @@ export default function FleetDashboard({ tenant, depts, isAdmin }) {
     ? (thisMonth.distance_km / thisMonth.vehicle_fuel_liters).toFixed(1) : '-'
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 md:space-y-4">
       {/* KPI grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3">
         <KpiCard icon={Car}       label="ทรัพย์สินทั้งหมด" value={vehicles.length}
           sub={`รถ ${vehicleCount} · เครื่องยนต์ ${engineCount} · ซ่อม ${repairVeh}`} color="#3b82f6" />
         <KpiCard icon={Fuel}      label="ค่าเชื้อเพลิงเดือนนี้" value={fmtB(thisMonth.fuel_cost)}
@@ -220,9 +220,9 @@ export default function FleetDashboard({ tenant, depts, isAdmin }) {
       </div>
 
       {isAdmin && pendingCnt > 0 && (
-        <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+        <div className="flex items-center gap-2 md:gap-3 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 md:px-4 md:py-3">
           <CalendarClock size={16} className="text-blue-500 shrink-0" />
-          <p className="text-sm text-blue-700">
+          <p className="text-xs md:text-sm text-blue-700">
             มีการเดินทางรอการอนุมัติ <strong>{pendingCnt}</strong> รายการ
           </p>
         </div>

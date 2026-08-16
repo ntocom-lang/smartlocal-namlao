@@ -1398,6 +1398,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                   <option value={10}>10</option>
                   <option value={20}>20</option>
                   <option value={50}>50</option>
+                  <option value={100}>100</option>
                   <option value="all">ทั้งหมด</option>
                 </select>
                 <span>รายการ</span>

@@ -123,7 +123,9 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
   const [filterRole, setFilterRole] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
   const [page, setPage] = useState(0)
-  const [hasMore, setHasMore] = useState(false)
+  const [pageSize, setPageSize] = useState(USER_PAGE_SIZE)
+  const [citizenCount, setCitizenCount] = useState(null)
+  const [staffCount, setStaffCount] = useState(null)
   const fetchSequence = useRef(0)
 
   useEffect(() => {
@@ -138,43 +140,53 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
     })
   }, [tenant?.id])
 
+  // จำนวนจริงทั้งหมดของแต่ละแท็บ (ไม่ใช่แค่ users.length ที่จำกัดแค่หน้าละ USER_PAGE_SIZE คน — ถ้ามีเกินนั้น
+  // ตัวเลขในรายการจะน้อยกว่าความจริง) — ใช้ RPC get_user_role_counts แทนนับตรงจาก client เพราะต้อง mirror
+  // เงื่อนไขเดียวกับ get_users_with_email (รวมบัญชี municipality_id เป็น NULL ที่ผูกผ่านคำร้อง) ไม่งั้น
+  // ตัวเลข badge จะไม่ตรงกับรายการจริงที่กดเข้าไปดู (เจอจริงตอนทดสอบ: นับตรงได้ 37 แต่รายการจริงมี 38)
+  useEffect(() => {
+    if (!tenant?.id || !['admin', 'superadmin'].includes(currentUserRole)) return
+    supabase.rpc('get_user_role_counts', { p_municipality_id: tenant.id })
+      .then(({ data, error }) => {
+        if (error) return
+        setStaffCount(data?.staff ?? 0)
+        setCitizenCount(data?.citizen ?? 0)
+      })
+  }, [tenant?.id, currentUserRole])
+
   const fetchUsers = useCallback(async (opts = {}) => {
     if (!['admin', 'superadmin'].includes(currentUserRole) || !tenant?.id) return
     const searchTerm = (opts.search ?? '').trim()
     const requestedPage = Math.max(0, opts.page ?? 0)
-    // แท็บประชาชน: ไม่โหลดจนกว่าจะพิมพ์ค้นหา (กันโหลดผู้ใช้เป็นพันคนมาทีเดียว)
-    if (subTab === 'citizen' && !searchTerm) { setUsers([]); setLoading(false); return }
     const requestId = ++fetchSequence.current
     setLoading(true)
     try {
+      // p_limit ไม่ใส่ +1 แบบเดิม เพราะ get_users_with_email clamp ค่าไว้ที่ 100 สูงสุดในตัว RPC เอง
+      // (LEAST(GREATEST(p_limit,1),100)) — ถ้า pageSize=100 แล้วขอ 101 จะโดน clamp เหลือ 100 เสมอ ทำให้
+      // ตรวจ "มีหน้าถัดไปไหม" ด้วยการเทียบจำนวนที่ได้คืนมาผิดพลาดได้ ใช้ staffCount/citizenCount ที่มีอยู่แล้ว
+      // (นับจริงจาก get_user_role_counts) เป็นตัวคำนวณจำนวนหน้าแทน แม่นกว่าและไม่ต้อง query ซ้ำ
       const { data, error } = await supabase.rpc('get_users_with_email', {
         p_municipality_id: tenant.id,
         p_roles: subTab === 'citizen' ? ['citizen'] : (filterRole ? [filterRole] : NON_CITIZEN_ROLES),
         p_search: searchTerm || null,
-        p_limit: USER_PAGE_SIZE + 1,
-        p_offset: requestedPage * USER_PAGE_SIZE,
+        p_limit: pageSize,
+        p_offset: requestedPage * pageSize,
       })
       if (requestId !== fetchSequence.current) return
       if (error) {
         console.error('get_users_with_email:', error.message)
         setUsers([])
-        setHasMore(false)
         return
       }
-      const rows = data ?? []
-      setUsers(rows.slice(0, USER_PAGE_SIZE))
-      setHasMore(rows.length > USER_PAGE_SIZE)
+      setUsers(data ?? [])
     } finally {
       if (requestId === fetchSequence.current) setLoading(false)
     }
-  }, [tenant?.id, currentUserRole, subTab, filterRole])
+  }, [tenant?.id, currentUserRole, subTab, filterRole, pageSize])
 
-  // ค้นหา/กรอง/แบ่งหน้าใน SQL เพื่อไม่ดึง PII ทั้งหมดมาที่ Browser
+  // ค้นหา/กรอง/แบ่งหน้าใน SQL เพื่อไม่ดึง PII ทั้งหมดมาที่ Browser — RPC จำกัดหน้าละ
+  // USER_PAGE_SIZE อยู่แล้ว ทั้งสองแท็บจึงโหลดหน้าแรกได้ทันทีโดยไม่ต้องรอพิมพ์ค้นหาก่อน
   useEffect(() => {
-    if (subTab === 'citizen' && !search.trim()) {
-      fetchSequence.current += 1
-      return
-    }
     const t = setTimeout(() => fetchUsers({ search, page }), search.trim() ? 400 : 0)
     return () => clearTimeout(t)
   }, [search, subTab, page, filterRole, fetchUsers])
@@ -332,12 +344,12 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
         </button>
       </div>
 
-      {/* แท็บย่อย: เจ้าหน้าที่ / ประชาชน — แยก query กันโหลดผู้ใช้ทั้งหมดมาทีเดียว */}
+      {/* แท็บย่อย: เจ้าหน้าที่ / ประชาชน — แยก query กันโหลดผู้ใช้ทั้งหมดมาทีเดียว (แต่ละแท็บโหลดหน้าแรกทันที) */}
       <div className="px-4 pt-3 flex gap-2">
         {[
-          { key: 'staff',   label: 'เจ้าหน้าที่' },
-          { key: 'citizen', label: 'ผู้ใช้งานประชาชน' },
-        ].map(({ key, label }) => (
+          { key: 'staff',   label: 'เจ้าหน้าที่', count: staffCount },
+          { key: 'citizen', label: 'ผู้ใช้งานประชาชน', count: citizenCount },
+        ].map(({ key, label, count }) => (
           <button key={key} onClick={() => {
             fetchSequence.current += 1
             setSubTab(key)
@@ -345,15 +357,17 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
             setFilterRole('')
             setPage(0)
             setUsers([])
-            setHasMore(false)
             setFilterCategory('')
-            setLoading(key === 'staff')
+            setLoading(true)
           }}
             className={`px-3.5 py-1.5 rounded-xl text-sm font-semibold transition-colors ${
               subTab === key ? 'text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
             }`}
             style={subTab === key ? { backgroundColor: '#7c3aed' } : {}}>
             {label}
+            {count != null && (
+              <span className={subTab === key ? 'ml-1 text-white/80' : 'ml-1 text-gray-400'}>({count})</span>
+            )}
           </button>
         ))}
       </div>
@@ -367,7 +381,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
               <button
                 key={c.value}
                 type="button"
-                onClick={() => setFilterCategory(prev => prev === c.value ? '' : c.value)}
+                onClick={() => { setFilterCategory(prev => prev === c.value ? '' : c.value); setPage(0) }}
                 className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-all active:scale-[0.98] ${
                   isActive
                     ? 'border-blue-400 bg-blue-50/80 shadow-xs'
@@ -402,17 +416,10 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
           <input
             value={search}
             onChange={(e) => {
-              const nextSearch = e.target.value
-              setSearch(nextSearch)
+              setSearch(e.target.value)
               setPage(0)
-              if (subTab === 'citizen' && !nextSearch.trim()) {
-                fetchSequence.current += 1
-                setUsers([])
-                setHasMore(false)
-                setLoading(false)
-              }
             }}
-            placeholder={subTab === 'citizen' ? 'พิมพ์ชื่อ, เบอร์โทร, เลขบัตร เพื่อค้นหา...' : 'ค้นหาชื่อ, อีเมล, เบอร์...'}
+            placeholder={subTab === 'citizen' ? 'ค้นหาชื่อ, เบอร์โทร, เลขบัตร (ไม่บังคับ)...' : 'ค้นหาชื่อ, อีเมล, เบอร์...'}
             className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-blue-400 text-gray-900 bg-white"
           />
         </div>
@@ -434,16 +441,10 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
         {(search || filterRole || filterCategory) && (
           <button
             onClick={() => {
-              fetchSequence.current += 1
               setSearch('')
               setFilterRole('')
               setFilterCategory('')
               setPage(0)
-              if (subTab === 'citizen') {
-                setUsers([])
-                setHasMore(false)
-                setLoading(false)
-              }
             }}
             className="flex items-center gap-1 text-xs text-gray-400 hover:text-red-500 border border-gray-200 rounded-xl px-2.5 py-2 transition-colors shrink-0"
           >
@@ -458,9 +459,9 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
         </div>
       ) : filtered.length === 0 ? (
         <p className="text-center py-10 text-gray-400 text-sm">
-          {subTab === 'citizen' && !search.trim()
-            ? 'พิมพ์ชื่อ, เบอร์โทร หรือเลขบัตรประชาชน เพื่อค้นหาผู้ใช้งาน'
-            : users.length === 0 ? 'ยังไม่มีผู้ใช้งาน' : 'ไม่พบผู้ใช้ที่ค้นหา'}
+          {users.length === 0
+            ? (subTab === 'citizen' ? 'ยังไม่มีประชาชนสมัครใช้งาน' : 'ยังไม่มีผู้ใช้งาน')
+            : 'ไม่พบผู้ใช้ที่ค้นหา'}
         </p>
       ) : (
         <>
@@ -666,27 +667,43 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
       </>
       )}
 
-      {!loading && users.length > 0 && (
-        <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between">
-          <span className="text-xs text-gray-400">หน้า {page + 1} · แสดงไม่เกิน {USER_PAGE_SIZE} รายการ</span>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setPage(p => Math.max(0, p - 1))}
-              disabled={page === 0}
-              className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 disabled:opacity-40"
-            >
-              ก่อนหน้า
-            </button>
-            <button
-              onClick={() => setPage(p => p + 1)}
-              disabled={!hasMore}
-              className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 disabled:opacity-40"
-            >
-              ถัดไป
-            </button>
+      {!loading && users.length > 0 && (() => {
+        // มี count ที่แม่นยำ (จาก get_user_role_counts) เฉพาะตอนไม่มีตัวกรองแคบผลลัพธ์ลง —
+        // ถ้ากรองอยู่ ไม่รู้จำนวนจริงหลังกรอง เลยใช้ heuristic "ได้ครบหน้าพอดีไหม" แทนแค่เปิด/ปิดปุ่มถัดไป
+        const filtersActive = Boolean(search.trim() || filterRole || (subTab === 'staff' && filterCategory))
+        const tabTotal = subTab === 'citizen' ? citizenCount : staffCount
+        const totalPages = !filtersActive && tabTotal != null ? Math.max(1, Math.ceil(tabTotal / pageSize)) : null
+        const canGoNext = totalPages != null ? page + 1 < totalPages : users.length === pageSize
+        return (
+          <div className="px-4 py-3 border-t border-gray-100 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-xs text-gray-400">
+              <span>แสดง</span>
+              <select value={pageSize}
+                onChange={e => { setPageSize(Number(e.target.value)); setPage(0) }}
+                className="bg-white border border-gray-200 rounded-lg px-2 py-1 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200">
+                {[10, 20, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+              <span>รายการ · หน้า {page + 1}{totalPages != null ? ` / ${totalPages}` : ''}</span>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPage(p => Math.max(0, p - 1))}
+                disabled={page === 0}
+                className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 disabled:opacity-40"
+              >
+                ก่อนหน้า
+              </button>
+              <button
+                onClick={() => setPage(p => p + 1)}
+                disabled={!canGoNext}
+                className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 disabled:opacity-40"
+              >
+                ถัดไป
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       <DeleteUserConfirmModal deletingUser={deletingUser} setDeletingUser={setDeletingUser} deleteLoading={deleteLoading} deleteUser={deleteUser} />
 
@@ -1468,6 +1485,10 @@ function EmergencyManager({ tenant }) {
 }
 
 // ─── Staff Manager ───────────────────────────────────────────────────────────
+// เก็บคอมโพเนนต์เดิมไว้ชั่วคราวเป็น rollback ระหว่าง migration เท่านั้น
+// ไม่มีเมนูหรือ route ให้ผู้ใช้เปิด และห้ามเปิดกลับหลังตรวจ migration ผ่าน
+const LEGACY_STAFF_PAGE_ENABLED = false
+
 const STAFF_ROLE_LABEL = {
   mayor: 'นายกเทศมนตรี',
   deputy_mayor: 'รองนายกเทศมนตรี',
@@ -3463,7 +3484,6 @@ function ReportManager({ complaints, tenant, technicians = [] }) {
 const PAGE_LABELS = {
   dashboard: 'หน้าหลัก',
   complaints: 'รายการคำร้อง',
-  staff: 'รูปผู้บริหาร',
   events: 'ปฏิทินกิจกรรม',
   'doc-requests': 'คำขอเอกสาร',
   report: 'รายงานสรุป',
@@ -3499,7 +3519,6 @@ function getAdminMenuGroups(currentUserRole, currentUserId) {
       description: 'ข้อมูลที่นำไปแสดงต่อประชาชนและหน่วยงาน',
       accent: '#8b5cf6',
       items: [
-        { key: 'staff', label: 'รูปผู้บริหาร', Icon: UserCircle2, color: '#7c3aed', bg: '#ede9fe', show: canManageContent },
         { key: 'events', label: 'ปฏิทินกิจกรรม', Icon: CalendarDays, color: '#f59e0b', bg: '#fef3c7', show: canManageContent },
       ],
     },
@@ -4093,7 +4112,9 @@ export default function AdminDashboard() {
       ) : activePage === 'report' ? (
         <ReportManagerComponent complaints={complaints} tenant={tenant} technicians={technicians} />
       ) : activePage === 'staff' ? (
-        <StaffManager tenant={tenant} />
+        LEGACY_STAFF_PAGE_ENABLED
+          ? <StaffManager tenant={tenant} />
+          : <UserManager tenant={tenant} currentUserRole={currentUserRole} currentUserId={currentUserId} />
       ) : activePage === 'emergency' ? (
         <EmergencyManager tenant={tenant} />
       ) : activePage === 'users' ? (
@@ -4166,18 +4187,6 @@ export default function AdminDashboard() {
                 <p className="text-[13px] text-gray-400 mt-0.5">จัดการหมู่บ้าน / ตำบล</p>
               </div>
             </button>
-            {currentUserRole !== 'viewer' && (
-              <button onClick={() => setActivePage('staff')}
-                className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
-                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#ede9fe' }}>
-                  <UserCircle2 size={24} style={{ color: '#7c3aed' }} />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-gray-800">รูปผู้บริหาร</p>
-                  <p className="text-[13px] text-gray-400 mt-0.5">อัปโหลดรูปนายก/ทีมงาน</p>
-                </div>
-              </button>
-            )}
             {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
               <button onClick={() => setActivePage('fleet-setup')}
                 className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
@@ -4239,7 +4248,6 @@ export default function AdminDashboard() {
                   { key: 'categories',  Icon: Tag,    color: '#d97706', bg: '#fef3c7', label: 'ประเภทคำร้อง', desc: 'จัดการหมวดหมู่ + ผู้รับผิดชอบ', show: currentUserRole !== 'viewer' },
                   { key: 'emergency',   Icon: Phone,       color: '#ef4444', bg: '#fee2e2', label: 'สายด่วนฉุกเฉิน',  desc: 'จัดการรายชื่อและเบอร์ติดต่อ',     show: currentUserRole !== 'viewer' },
                   { key: 'locations',   Icon: MapPin,      color: '#0891b2', bg: '#e0f2fe', label: 'สถานที่เกิดเหตุ', desc: 'จัดการหมู่บ้าน / ตำบลในพื้นที่',  show: currentUserRole !== 'viewer' },
-                  { key: 'staff',            Icon: UserCircle2, color: '#7c3aed', bg: '#ede9fe', label: 'รูปผู้บริหาร',       desc: 'อัปโหลดรูปนายก/รองนายก/ทีมงาน',       show: currentUserRole !== 'viewer' },
                   { key: 'fleet-setup',      Icon: Car,         color: '#0369a1', bg: '#e0f2fe', label: 'ตั้งค่ายานพาหนะ', desc: 'กอง/หน่วยงาน งบประมาณ สิทธิ์ผู้ใช้', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'system-settings',  Icon: Settings,    color: '#3b82f6', bg: '#dbeafe', label: 'ตั้งค่าระบบ',    desc: 'ตั้งค่าชื่อระบบและข้อมูลพื้นฐาน',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'users',           Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', label: 'จัดการผู้ใช้และการแต่งตั้ง', desc: 'ตำแหน่ง สังกัด บทบาท และสิทธิ์', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },

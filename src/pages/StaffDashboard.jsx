@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect, useCallback } from 'react'
+import { lazy, Suspense, useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Inbox, FileText, MessageSquareWarning, LogOut,
@@ -16,6 +16,7 @@ import { thaiDate } from '../lib/thaiDate'
 import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
 import { buildCouncilComplaintHtml } from '../lib/councilFormPrint'
 import { uploadFile } from '../lib/driveStorage'
+import { fetchPersonnelSignatories } from '../lib/personnelDirectory'
 
 const MapPicker = lazy(() => import('../components/MapPicker'))
 const CivilProjectAdmin = lazy(() => import('../components/admin/CivilProjectAdmin'))
@@ -941,10 +942,19 @@ const C_NEXT = {
   received:    { label: 'เริ่มดำเนินการ', next: 'in_progress' },
   in_progress: { label: 'ปิดงาน',        next: 'done' },
 }
+// fallback ก่อน complaint_categories ของเทศบาลจะโหลดเสร็จ (หรือถ้าโหลดพลาด) — ครอบคลุม
+// ค่าเดียวกับ DEFAULT_CATEGORIES ใน ComplaintCategory.jsx (ฟอร์มแจ้งเรื่องฝั่งประชาชน) กัน
+// หมวดที่ไม่ได้ override ในตาราง (เช่น grievance) โผล่เป็นค่าดิบภาษาอังกฤษในแดชบอร์ดเจ้าหน้าที่
 let C_CAT = {
   road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าส่องสว่าง', trash: 'ขยะ/ความสะอาด',
   water: 'น้ำประปา', flood: 'น้ำท่วม/ระบายน้ำ', tree: 'ต้นไม้/สวนสาธารณะ',
   noise: 'เหตุรำคาญ', other: 'อื่นๆ',
+  drain: 'ท่อระบายน้ำ', manhole: 'ฝาท่อระบายน้ำ', waste_water: 'น้ำเสีย',
+  suction: 'ดูดสิ่งปฏิกูล', canal: 'ลอกคลอง', building: 'ตรวจสอบอาคาร',
+  mosquito: 'พ่นยุง', disease: 'ควบคุมโรคติดต่อ', pollution: 'กลิ่น/ควัน/มลพิษ',
+  grievance: 'แจ้งเรื่องร้องทุกข์ร้องเรียน', corruption: 'แจ้งการทุจริต',
+  tax: 'ภาษีและค่าธรรมเนียม', water_supply: 'สนับสนุนน้ำอุปโภค',
+  animals: 'สุนัขจรจัด', phone_complaint: 'ร้องเรียนเสียง',
 }
 let C_CAT_META = {
   road:  { emoji: '🛣️', color: '#f1f5f9', textColor: '#475569' },
@@ -955,6 +965,21 @@ let C_CAT_META = {
   tree:  { emoji: '🌳', color: '#d1fae5', textColor: '#059669' },
   noise: { emoji: '📢', color: '#f3e8ff', textColor: '#9333ea' },
   other: { emoji: '📝', color: '#f3f4f6', textColor: '#6b7280' },
+  drain: { emoji: '🚰', color: '#dbeafe', textColor: '#2563eb' },
+  manhole: { emoji: '🕳️', color: '#f1f5f9', textColor: '#475569' },
+  waste_water: { emoji: '🚱', color: '#cffafe', textColor: '#0891b2' },
+  suction: { emoji: '🚛', color: '#f1f5f9', textColor: '#475569' },
+  canal: { emoji: '🌊', color: '#cffafe', textColor: '#0891b2' },
+  building: { emoji: '🏗️', color: '#fef3c7', textColor: '#d97706' },
+  mosquito: { emoji: '🦟', color: '#dcfce7', textColor: '#16a34a' },
+  disease: { emoji: '🏥', color: '#fee2e2', textColor: '#dc2626' },
+  pollution: { emoji: '🏭', color: '#f3f4f6', textColor: '#6b7280' },
+  grievance: { emoji: '📣', color: '#fee2e2', textColor: '#dc2626' },
+  corruption: { emoji: '⚖️', color: '#fee2e2', textColor: '#dc2626' },
+  tax: { emoji: '💰', color: '#fef3c7', textColor: '#d97706' },
+  water_supply: { emoji: '🚰', color: '#dbeafe', textColor: '#2563eb' },
+  animals: { emoji: '🐕', color: '#f3e8ff', textColor: '#9333ea' },
+  phone_complaint: { emoji: '📞', color: '#f3e8ff', textColor: '#9333ea' },
 }
 
 function StaffComplaintCategoryIcon({ category, size = 'md' }) {
@@ -1011,11 +1036,7 @@ function ComplaintDetailSheetStaff({ complaint: c, onClose, onUpdate, updating, 
     const thDate = createdAt.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
     const num = c.ref_no || c.complaint_number || '—'
     const phone = c.phone || c.profiles?.phone || '—'
-    const { data: staffList } = await supabase
-      .from('staff')
-      .select('name, title, role')
-      .eq('municipality_id', tenant?.id)
-      .eq('is_active', true)
+    const { data: staffList } = await fetchPersonnelSignatories(tenant?.id)
 
     popup.document.write(buildCouncilComplaintHtml({
       c,
@@ -1065,7 +1086,20 @@ function ComplaintDetailSheetStaff({ complaint: c, onClose, onUpdate, updating, 
 
   async function saveNote() {
     setSavingNote(true)
-    await supabase.from('complaints').update({ technician_note: note }).eq('id', c.id)
+    const noteChanged = note.trim() && note !== (c.technician_note ?? '')
+    const { error } = await supabase.from('complaints').update({ technician_note: note }).eq('id', c.id)
+    // push แจ้งประชาชนเฉพาะตอนมีข้อความใหม่จริง (กัน spam ตอนกด "บันทึกข้อความ" ซ้ำโดยไม่ได้แก้อะไร)
+    // pattern เดียวกับตอนอัปโหลดรูปหลังดำเนินการด้านบน
+    if (!error && noteChanged && c.user_id) {
+      supabase.functions.invoke('send-push', {
+        body: {
+          user_id: c.user_id,
+          title: 'เจ้าหน้าที่บันทึกข้อความถึงคุณ',
+          body: `มีบันทึกใหม่ในคำร้อง${C_CAT[c.category] ?? c.category ?? ''}`,
+          url: '/my-complaints',
+        },
+      }).catch(() => {})
+    }
     setSavingNote(false)
   }
 
@@ -1585,6 +1619,13 @@ export default function StaffDashboard() {
   const [profile, setProfile]           = useState(null)
   const [pendingCount, setPendingCount] = useState(0)
   const [newComplaintCount, setNewComplaintCount] = useState(0)
+  // C_CAT/C_CAT_META เป็น module-level object ที่ ComplaintsStaffModule mutate ในตัวเองอยู่แล้ว
+  // (ไม่ reassign ทั้งก้อน) แต่หน้า overview (StaffOperationalDashboard) เคย render ก่อนที่ผู้ใช้
+  // จะเปิดแท็บคำร้องเลยสักครั้ง จึงเห็นแค่ 8 หมวดเดิมที่ hardcode ไว้ (ทำให้ประเภทอื่นเช่น
+  // "grievance" โผล่เป็นค่าดิบภาษาอังกฤษ) — ดึงซ้ำที่ root ให้พร้อมตั้งแต่โหลดแดชบอร์ดครั้งแรก
+  // แล้ว bump version เพื่อ spread C_CAT เป็น object ใหม่ ไม่งั้น useMemo ปลายทางจะไม่เห็นว่าเปลี่ยน
+  // (mutate in place ที่เดิม reference เดิม เทียบด้วย Object.is แล้วดูเหมือนไม่เปลี่ยน)
+  const [complaintCatVersion, setComplaintCatVersion] = useState(0)
 
   const allModuleKeys = MODULES.map(m => m.key)
   // keys ที่เคยอยู่ใน ModuleManager — ถ้า key ใหม่ยังไม่เคยถูก manage ให้ default เป็น enabled
@@ -1616,6 +1657,30 @@ export default function StaffDashboard() {
       label: `${t.emoji || '📋'} ${t.label}`,
     }))
   }, [tenant?.fee_schedule?._custom_types])
+
+  useEffect(() => {
+    if (!tenant?.id) return
+    supabase.from('complaint_categories').select('value, label, emoji, color, text_color').eq('municipality_id', tenant.id)
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          for (const c of data) {
+            C_CAT[c.value] = c.label
+            C_CAT_META[c.value] = {
+              emoji: c.emoji || C_CAT_META[c.value]?.emoji || '📝',
+              color: c.color || C_CAT_META[c.value]?.color || '#f3f4f6',
+              textColor: c.text_color || C_CAT_META[c.value]?.textColor || '#6b7280',
+            }
+          }
+          setComplaintCatVersion(v => v + 1)
+        }
+      })
+  }, [tenant?.id])
+
+  // spread เป็น object ใหม่เฉพาะตอน version เปลี่ยนจริง (ไม่ใช่ทุก re-render ของ StaffDashboard
+  // ที่เกิดถี่จาก pendingCount/newComplaintCount polling) กัน workQueue useMemo ปลายทางคำนวณทิ้งเปล่าๆ
+  // complaintCatVersion เป็นแค่ตัวกระตุ้นให้ spread C_CAT ใหม่ตอนดึงข้อมูลเสร็จ ไม่ได้ใช้ค่าจริงในนี้
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const complaintLabelsSnapshot = useMemo(() => ({ ...C_CAT }), [complaintCatVersion])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -1851,7 +1916,7 @@ export default function StaffDashboard() {
                 newComplaintCount={newComplaintCount}
                 navigate={navigate}
                 docTypes={getAllDocTypes()}
-                complaintLabels={C_CAT}
+                complaintLabels={complaintLabelsSnapshot}
                 onCreateManagementEvent={() => {
                   setAutoCreateEventSignal(signal => signal + 1)
                   setActiveModule('events')

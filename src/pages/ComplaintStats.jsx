@@ -1,25 +1,36 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  FileText, CheckCircle2, Clock, RefreshCw, XCircle,
+  ClipboardList, CheckCircle2, RefreshCw, XCircle, Inbox,
   TrendingUp, Printer, ArrowLeft,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 
-const DOC_LABELS = {
-  residence_cert: 'ใบรับรองการอยู่อาศัย',
-  personal_cert:  'หนังสือรับรองบุคคล',
-  tax_notice:       'ค่าธรรมเนียม/ภาษี',
-  waste_collection: 'ค่าธรรมเนียมขยะ',
-  building_permit:  'ขออนุญาตก่อสร้างบ้าน',
+// สำรองไว้กรณีเทศบาลยังไม่ตั้งค่า complaint_categories ของตัวเอง (ตรงกับ DEFAULT_CATEGORIES ใน ComplaintCategory.jsx)
+const FALLBACK_CATEGORY_LABELS = {
+  light: 'ไฟฟ้าสาธารณะ', drain: 'ท่อระบายน้ำ', manhole: 'ฝาท่อระบายน้ำ',
+  trash: 'ขยะ / ความสะอาด', waste_water: 'น้ำเสีย', suction: 'ดูดสิ่งปฏิกูล',
+  canal: 'ลอกคลอง', road: 'ถนน / ทางเท้า', noise: 'แจ้งเหตุรำคาญ',
+  flood: 'น้ำท่วม / ระบายน้ำ', building: 'ตรวจสอบอาคาร', mosquito: 'พ่นยุง',
+  disease: 'ควบคุมโรคติดต่อ', pollution: 'กลิ่น / ควัน / มลพิษ',
+  grievance: 'แจ้งเรื่องร้องทุกข์ร้องเรียน', corruption: 'แจ้งการทุจริต',
+  tax: 'ภาษีและค่าธรรมเนียม', tree: 'ตัดต้นไม้', water_supply: 'สนับสนุนน้ำอุปโภค',
+  animals: 'สุนัขจรจัด', phone_complaint: 'ร้องเรียนเสียง', other: 'อื่นๆ',
 }
 
+// ครอบคลุมทั้ง 8 ค่าที่ constraint จริงบน production อนุญาต (ตรวจกับ pg_constraint ก่อนเขียน
+// ไม่ใช่แค่ 5 ค่าตามไฟล์ 002_create_complaints.sql เดิม — new/done/closed ยังมีข้อมูลจริงค้างอยู่)
+// จัดกลุ่มภาพให้ตรงกับ 4 bucket ที่ RPC complaint_stats คืนมา (open/in_progress/resolved/rejected)
 const STATUS_META = {
-  pending:    { label: 'รอดำเนินการ',    cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-  processing: { label: 'กำลังดำเนินการ', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
-  completed:  { label: 'เสร็จสิ้น',      cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  rejected:   { label: 'ปฏิเสธ',         cls: 'bg-red-50 text-red-700 border-red-200' },
+  new:         { label: 'รอรับเรื่อง',      cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  pending:     { label: 'รอรับเรื่อง',      cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  received:    { label: 'รับเรื่องแล้ว',    cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  in_progress: { label: 'กำลังดำเนินการ', cls: 'bg-sky-50 text-sky-700 border-sky-200' },
+  done:        { label: 'เสร็จสิ้น',       cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  closed:      { label: 'เสร็จสิ้น',       cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  completed:   { label: 'เสร็จสิ้น',       cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  rejected:    { label: 'ยกเลิก/ไม่รับ',   cls: 'bg-red-50 text-red-700 border-red-200' },
 }
 
 function thDate(iso) {
@@ -44,11 +55,12 @@ function StatCard({ label, value, sub, Icon, iconBg, border }) {
   )
 }
 
-export default function LpaDocStats() {
+export default function ComplaintStats() {
   const { tenant } = useTenant()
-  const [stats, setStats]   = useState(null)
-  const [rows, setRows]     = useState([])
-  const [loading, setLoading] = useState(true)
+  const [stats, setStats]         = useState(null)
+  const [rows, setRows]           = useState([])
+  const [categoryLabels, setCategoryLabels] = useState({})
+  const [loading, setLoading]     = useState(true)
 
   const now = new Date().toLocaleDateString('th-TH', {
     year: 'numeric', month: 'long', day: 'numeric',
@@ -57,19 +69,27 @@ export default function LpaDocStats() {
   useEffect(() => {
     if (!tenant?.id) return
     Promise.all([
-      supabase.rpc('doc_request_stats',   { _municipality_id: tenant.id }),
-      supabase.rpc('doc_requests_public', { _municipality_id: tenant.id, _limit: 30 }),
-    ]).then(([{ data: s }, { data: r }]) => {
+      supabase.rpc('complaint_stats',  { _municipality_id: tenant.id }),
+      supabase.rpc('complaints_public', { _municipality_id: tenant.id, _limit: 30 }),
+      supabase.from('complaint_categories').select('value, label').eq('municipality_id', tenant.id).eq('is_active', true),
+    ]).then(([{ data: s }, { data: r }, { data: cats }]) => {
       setStats(s)
       setRows(r ?? [])
+      const map = {}
+      ;(cats ?? []).forEach(c => { map[c.value] = c.label })
+      setCategoryLabels(map)
     })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [tenant?.id])
 
   const completionRate = stats?.total > 0
-    ? Math.round((stats.completed / stats.total) * 100)
+    ? Math.round((stats.resolved / stats.total) * 100)
     : 0
+
+  function categoryLabel(value) {
+    return categoryLabels[value] ?? FALLBACK_CATEGORY_LABELS[value] ?? value
+  }
 
   if (loading) {
     return (
@@ -86,17 +106,17 @@ export default function LpaDocStats() {
       {/* ── Header ── */}
       <div className="bg-white border-b border-gray-100 shadow-sm print:shadow-none px-4 py-5">
         <div className="max-w-4xl mx-auto">
-          <Link to="/more"
+          <Link to="/reports"
             className="print:hidden inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-600 mb-4">
             <ArrowLeft size={14} /> กลับ
           </Link>
           <div className="flex items-start justify-between gap-4">
             <div>
-              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                ความโปร่งใสด้านบริการดิจิทัล
+              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                ความโปร่งใสด้านการจัดการเรื่องร้องเรียน
               </span>
               <h1 className="text-xl font-black text-gray-800 leading-tight mt-2">
-                รายงานการให้บริการออกเอกสาร
+                รายงานการจัดการเรื่องร้องเรียน/แจ้งซ่อม
               </h1>
               <p className="text-sm text-gray-500 mt-0.5">{tenant?.name ?? 'หน่วยงาน'}</p>
               <p className="text-xs text-gray-400 mt-1">ข้อมูล ณ วันที่ {now}</p>
@@ -115,16 +135,16 @@ export default function LpaDocStats() {
         {/* ── Stats grid ── */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           <StatCard
-            label="รวมคำขอทั้งหมด"
+            label="รวมเรื่องร้องเรียนทั้งหมด"
             value={stats?.total ?? 0}
-            sub={`เดือนนี้ ${stats?.this_month ?? 0} คำขอ`}
-            Icon={FileText}
+            sub={`เดือนนี้ ${stats?.this_month ?? 0} เรื่อง`}
+            Icon={ClipboardList}
             iconBg="bg-blue-500"
             border="border-blue-100"
           />
           <StatCard
             label="เสร็จสิ้น"
-            value={stats?.completed ?? 0}
+            value={stats?.resolved ?? 0}
             sub={`คิดเป็น ${completionRate}% ของทั้งหมด`}
             Icon={CheckCircle2}
             iconBg="bg-emerald-500"
@@ -132,28 +152,28 @@ export default function LpaDocStats() {
           />
           <StatCard
             label="กำลังดำเนินการ"
-            value={stats?.processing ?? 0}
+            value={stats?.in_progress ?? 0}
             Icon={RefreshCw}
             iconBg="bg-sky-400"
             border="border-sky-100"
           />
           <StatCard
-            label="รอดำเนินการ"
-            value={stats?.pending ?? 0}
-            Icon={Clock}
+            label="รอรับเรื่อง / รับเรื่องแล้ว"
+            value={stats?.open ?? 0}
+            Icon={Inbox}
             iconBg="bg-amber-400"
             border="border-amber-100"
           />
           <StatCard
             label="ระยะเวลาเฉลี่ย"
             value={stats?.avg_days != null ? `${stats.avg_days} วัน` : '—'}
-            sub="วันยื่น → วันเสร็จ (เฉพาะที่เสร็จแล้ว)"
+            sub="วันแจ้ง → วันปิดเรื่อง (เฉพาะที่เสร็จแล้ว)"
             Icon={TrendingUp}
             iconBg="bg-purple-500"
             border="border-purple-100"
           />
           <StatCard
-            label="ปฏิเสธ / ยกเลิก"
+            label="ยกเลิก / ไม่รับเรื่อง"
             value={stats?.rejected ?? 0}
             Icon={XCircle}
             iconBg="bg-red-400"
@@ -174,18 +194,18 @@ export default function LpaDocStats() {
             />
           </div>
           <p className="text-xs text-gray-400 mt-2 text-right">
-            เสร็จสิ้น {stats?.completed ?? 0} จาก {stats?.total ?? 0} คำขอ
+            เสร็จสิ้น {stats?.resolved ?? 0} จาก {stats?.total ?? 0} เรื่อง
           </p>
         </div>
 
-        {/* ── Recent requests ── */}
+        {/* ── Recent complaints ── */}
         <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
           <div className="px-4 py-3.5 border-b border-gray-100">
             <p className="font-bold text-gray-800">
-              รายการคำขอเอกสาร ({rows.length} รายการล่าสุด)
+              รายการเรื่องร้องเรียนล่าสุด ({rows.length} รายการ)
             </p>
             <p className="text-xs text-gray-400 mt-0.5">
-              ข้อมูลส่วนบุคคลถูกปกปิดตาม พ.ร.บ. คุ้มครองข้อมูลส่วนบุคคล พ.ศ. ๒๕๖๒
+              ข้อมูลส่วนบุคคลของผู้แจ้ง (ชื่อ/เบอร์โทร/รายละเอียด/พิกัด) ถูกปกปิดตาม พ.ร.บ. คุ้มครองข้อมูลส่วนบุคคล พ.ศ. ๒๕๖๒
             </p>
           </div>
 
@@ -194,7 +214,7 @@ export default function LpaDocStats() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
-                  {['#', 'ประเภทเอกสาร', 'วัตถุประสงค์', 'วันที่ยื่น', 'วันที่เสร็จ', 'ใช้เวลา', 'สถานะ'].map(h => (
+                  {['#', 'หมายเลขอ้างอิง', 'ประเภทเรื่อง', 'วันที่แจ้ง', 'วันที่ปิดเรื่อง', 'ใช้เวลา', 'สถานะ'].map(h => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
                       {h}
                     </th>
@@ -205,7 +225,7 @@ export default function LpaDocStats() {
                 {rows.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-400">
-                      ยังไม่มีข้อมูลคำขอเอกสาร
+                      ยังไม่มีข้อมูลเรื่องร้องเรียน
                     </td>
                   </tr>
                 ) : rows.map((r, i) => {
@@ -213,17 +233,15 @@ export default function LpaDocStats() {
                   return (
                     <tr key={r.ref_id + i} className="hover:bg-gray-50/70 transition-colors">
                       <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">{rows.length - i}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-gray-600 whitespace-nowrap">{r.ref_id}</td>
                       <td className="px-4 py-3 font-medium text-gray-800">
-                        {DOC_LABELS[r.doc_type] ?? r.doc_type}
-                      </td>
-                      <td className="px-4 py-3 text-gray-500 max-w-[160px] truncate">
-                        {r.purpose || '—'}
+                        {categoryLabel(r.category)}
                       </td>
                       <td className="px-4 py-3 text-gray-600 whitespace-nowrap tabular-nums">
                         {thDate(r.created_at)}
                       </td>
                       <td className="px-4 py-3 text-gray-600 whitespace-nowrap tabular-nums">
-                        {thDate(r.issued_at)}
+                        {thDate(r.closed_at)}
                       </td>
                       <td className="px-4 py-3 text-center">
                         {r.days_taken != null
@@ -256,12 +274,9 @@ export default function LpaDocStats() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-gray-800">
-                      {DOC_LABELS[r.doc_type] ?? r.doc_type}
+                      {categoryLabel(r.category)}
                     </p>
-                    <p className="text-xs text-gray-400 mt-0.5">ยื่น {thDate(r.created_at)}</p>
-                    {r.purpose && (
-                      <p className="text-xs text-gray-500 mt-0.5 truncate">{r.purpose}</p>
-                    )}
+                    <p className="text-xs text-gray-400 mt-0.5 font-mono">{r.ref_id} • แจ้ง {thDate(r.created_at)}</p>
                   </div>
                   <div className="flex flex-col items-end gap-1.5 shrink-0">
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${sm.cls}`}>

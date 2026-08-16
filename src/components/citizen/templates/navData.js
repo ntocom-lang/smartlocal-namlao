@@ -1,4 +1,4 @@
-import { Home, ClipboardList, Bot, CalendarDays, LayoutGrid, Wrench, Briefcase, ShieldCheck } from 'lucide-react'
+import { Home, ClipboardList, FileBarChart, CalendarDays, LayoutGrid, Wrench, Briefcase, ShieldCheck } from 'lucide-react'
 
 export function getNavItems(role) {
   const isAdmin = ['admin', 'superadmin', 'viewer'].includes(role)
@@ -17,7 +17,7 @@ export function getNavItems(role) {
   return [
     { label: 'หน้าแรก',       icon: Home,         href: '/' },
     roleNavItem,
-    { label: 'ถาม AI',        icon: Bot,          href: '/chatbot' },
+    { label: 'รายงาน',        icon: FileBarChart, href: '/reports' },
     { label: 'ปฏิทินกิจกรรม', icon: CalendarDays, href: '/events' },
     { label: 'เมนูอื่นๆ',    icon: LayoutGrid,   href: '/more' },
   ]

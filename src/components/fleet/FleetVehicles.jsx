@@ -173,33 +173,33 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
   })
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 md:space-y-4">
       {/* Toolbar */}
-      <div className="flex flex-wrap gap-2 items-center">
+      <div className="grid grid-cols-2 md:flex md:flex-wrap gap-2 items-center">
         <select value={filterDept} onChange={e => setFilterDept(e.target.value)}
-          className="text-xs border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none">
+          className="w-full text-xs border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none">
           <option value="all">ทุกกอง</option>
           <option value="pool">รถกลาง</option>
           {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-          className="text-xs border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none">
+          className="w-full text-xs border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none">
           <option value="all">ทุกสถานะ</option>
           {Object.entries(STATUS_TH).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
         </select>
         <select value={filterKind} onChange={e => setFilterKind(e.target.value)}
-          className="text-xs border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none">
+          className="col-span-2 md:col-span-1 w-full text-xs border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none">
           <option value="all">ทุกชนิดทรัพย์สิน</option>
           {ASSET_KIND_OPTIONS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
         </select>
         {isAdmin && (
-          <div className="ml-auto flex items-center gap-2">
+          <div className="col-span-2 grid grid-cols-2 gap-2 md:ml-auto md:flex md:items-center">
             <button onClick={() => setImportOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border border-emerald-200 text-emerald-700 bg-emerald-50">
+              className="justify-center flex items-center gap-1.5 px-2 md:px-3 py-2 rounded-xl text-[11px] md:text-xs font-bold border border-emerald-200 text-emerald-700 bg-emerald-50">
               <Upload size={14} /> นำเข้า CSV/XLSX
             </button>
             <button onClick={openAdd}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white"
+              className="justify-center flex items-center gap-1.5 px-2 md:px-4 py-2 rounded-xl text-[11px] md:text-sm font-bold text-white"
               style={{ backgroundColor: 'var(--color-primary)' }}>
               <Plus size={15} /> เพิ่มทรัพย์สิน
             </button>
@@ -293,7 +293,7 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
           </div>
 
           {/* Mobile Cards */}
-          <div className="md:hidden grid grid-cols-1 gap-3">
+          <div className="md:hidden grid grid-cols-1 gap-2">
             {filtered.map(v => {
               const expiries = [
                 { label:'ประกัน',    days: daysTo(v.insurance_expiry) },
@@ -303,13 +303,13 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
               ].filter(e => e.days !== null && e.days <= 60)
 
               return (
-                <div key={v.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="w-11 h-11 rounded-xl flex items-center justify-center text-2xl bg-gray-50 shrink-0">
+                <div key={v.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
+                  <div className="flex items-start gap-2.5">
+                    <div className="w-9 h-9 rounded-lg flex items-center justify-center text-xl bg-gray-50 shrink-0">
                       {assetEmoji(v)}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <h3 className="text-sm font-bold text-gray-800 truncate">{v.name}</h3>
                         {v.is_pool && (
                           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600">
@@ -317,12 +317,12 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-gray-500 mt-0.5">{assetIdentifier(v)} · {FUEL_LABEL[v.fuel_type] ?? v.fuel_type} · มิเตอร์ {meterUnitShort(v)}</p>
+                      <p className="text-[11px] text-gray-500 mt-0.5 truncate">{assetIdentifier(v)} · {FUEL_LABEL[v.fuel_type] ?? v.fuel_type} · มิเตอร์ {meterUnitShort(v)}</p>
                       {v.departments && (
                         <p className="text-[10px] text-gray-400 mt-0.5">{v.departments.name}</p>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-0.5 shrink-0">
                       <span className="text-[10px] font-bold px-2 py-1 rounded-full"
                             style={{ backgroundColor: STATUS_CLR[v.status] + '18', color: STATUS_CLR[v.status] }}>
                         {STATUS_TH[v.status]}
@@ -343,7 +343,7 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
                   </div>
 
                   {expiries.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-1.5">
+                    <div className="mt-2 flex flex-wrap gap-1">
                       {expiries.map(e => (
                         <span key={e.label}
                               className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
@@ -371,14 +371,14 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
       {modal && (
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center">
           <div className="absolute inset-0 bg-black/50" onClick={() => setModal(null)} />
-          <div className="relative bg-white rounded-t-3xl md:rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
-            <div className="sticky top-0 bg-white px-5 pt-5 pb-3 border-b border-gray-100 flex items-center justify-between">
+          <div className="relative bg-white rounded-t-3xl md:rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="shrink-0 bg-white px-4 py-3 md:px-5 md:pt-5 md:pb-3 border-b border-gray-100 flex items-center justify-between">
               <h3 className="font-bold text-gray-800">{modal === 'add' ? 'เพิ่มยานพาหนะ/เครื่องยนต์' : 'แก้ไขข้อมูล'}</h3>
               <button onClick={() => setModal(null)} className="p-1.5 rounded-lg hover:bg-gray-100">
                 <X size={16} />
               </button>
             </div>
-            <div className="p-5 space-y-4">
+            <div className="overflow-y-auto p-4 md:p-5 space-y-3 md:space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2">
                   <label className="text-xs font-semibold text-gray-600 mb-1 block">ชนิดทรัพย์สิน *</label>
@@ -489,7 +489,7 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
               </div>}
 
               <button onClick={handleSave} disabled={saving}
-                className="w-full py-3 rounded-xl font-bold text-white text-sm disabled:opacity-50"
+                className="sticky bottom-0 z-10 w-full py-3 rounded-xl font-bold text-white text-sm disabled:opacity-50 shadow-lg"
                 style={{ backgroundColor: 'var(--color-primary)' }}>
                 {saving ? 'กำลังบันทึก...' : 'บันทึก'}
               </button>

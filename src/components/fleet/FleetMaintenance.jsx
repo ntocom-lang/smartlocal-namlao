@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, X, Wrench, AlertTriangle, FileText, Paperclip } from 'lucide-react'
+import { Plus, X, Wrench, AlertTriangle, FileText, Paperclip, Pencil } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import {
@@ -50,13 +50,13 @@ function DueSoonAlert({ records }) {
   }))
   if (!alerts.length) return null
   return (
-    <div className="bg-amber-50 border border-amber-200 rounded-2xl overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-amber-100">
+    <div className="bg-amber-50 border border-amber-200 rounded-xl md:rounded-2xl overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 md:px-4 md:py-3 border-b border-amber-100">
         <AlertTriangle size={14} className="text-amber-500" />
         <span className="text-sm font-bold text-amber-700">ต้องซ่อมบำรุงเร็วๆ นี้</span>
       </div>
       {alerts.map(a => (
-        <div key={a.id} className="flex justify-between items-center px-4 py-2.5 border-b border-amber-50 last:border-0">
+        <div key={a.id} className="flex justify-between items-center px-3 py-2 md:px-4 md:py-2.5 border-b border-amber-50 last:border-0">
           <div>
             <p className="text-xs font-semibold text-amber-800">{a.fleet_vehicles?.name}</p>
             <p className="text-[10px] text-amber-600">{a.description}</p>
@@ -80,12 +80,17 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
   const [staffList, setStaffList] = useState([])
   const [loading,   setLoading]   = useState(true)
   const [modal,     setModal]     = useState(false)
+  const [editingId, setEditingId] = useState(null)
   const [form,      setForm]      = useState(EMPTY)
   const [receiptFile, setReceiptFile] = useState(null)
   const [saving,    setSaving]    = useState(false)
   const [filterType, setFilterType] = useState('all')
   const [dateFrom,   setDateFrom]   = useState('')
   const [dateTo,     setDateTo]     = useState('')
+  const [page,       setPage]       = useState(0)
+  const [pageSize,   setPageSize]   = useState(20)
+  const [totalCount, setTotalCount] = useState(0)
+  const [totalCost,  setTotalCost]  = useState(0)
 
   const canWrite = isAdmin || isStaff
 
@@ -102,19 +107,29 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
     })
   }, [tenant?.id])
 
-  const SELECT_Q = '*, fleet_vehicles(name, license_plate, asset_code, asset_kind, meter_unit), technician:profiles!fleet_maintenance_technician_id_fkey(id,full_name)'
+  const SELECT_Q = '*, fleet_vehicles(name, license_plate, asset_code, asset_kind, meter_unit), ' +
+    'technician:profiles!fleet_maintenance_technician_id_fkey(id,full_name), ' +
+    'editor:profiles!fleet_maintenance_updated_by_fkey(id,full_name)'
 
   function loadRecords() {
     if (!tenant?.id) return
     setLoading(true)
-    let q = supabase.from('fleet_maintenance').select(SELECT_Q)
+    let q = supabase.from('fleet_maintenance').select(SELECT_Q, { count: 'exact' })
       .eq('municipality_id', tenant.id)
       .order('service_date', { ascending: false })
-      .limit(100)
     if (filterType !== 'all') q = q.eq('maintenance_type', filterType)
     if (dateFrom) q = q.gte('service_date', dateFrom)
     if (dateTo)   q = q.lte('service_date', dateTo)
-    q.then(({ data }) => setRecords(data ?? [])).finally(() => setLoading(false))
+    if (pageSize !== 'all') q = q.range(page * pageSize, page * pageSize + pageSize - 1)
+    q.then(({ data, count }) => { setRecords(data ?? []); setTotalCount(count ?? 0) }).finally(() => setLoading(false))
+
+    // ยอดรวมค่าซ่อมบำรุงต้องคิดจากทุกรายการที่ตรงตัวกรอง ไม่ใช่แค่หน้าที่กำลังแสดง (records ถูกจำกัดด้วย pageSize แล้ว)
+    let costQ = supabase.from('fleet_maintenance').select('cost')
+      .eq('municipality_id', tenant.id)
+    if (filterType !== 'all') costQ = costQ.eq('maintenance_type', filterType)
+    if (dateFrom) costQ = costQ.gte('service_date', dateFrom)
+    if (dateTo)   costQ = costQ.lte('service_date', dateTo)
+    costQ.then(({ data }) => setTotalCost((data ?? []).reduce((s, r) => s + (r.cost ?? 0), 0)))
   }
 
   useEffect(() => {
@@ -122,14 +137,46 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
     return () => window.clearTimeout(timer)
     // loadRecords ใช้ค่าตัวกรองชุดเดียวกับ dependency ด้านล่าง
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenant?.id, filterType, dateFrom, dateTo])
+  }, [tenant?.id, filterType, dateFrom, dateTo, page, pageSize])
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
   function openModal() {
+    setEditingId(null)
     setForm({ ...EMPTY, technician_id: user?.id ?? '' })
     setReceiptFile(null)
     setModal(true)
+  }
+
+  function openEditModal(r) {
+    setEditingId(r.id)
+    // description ของประเภท "อื่นๆ" ถูกเก็บรวมเป็น "[other_type] description" ตอนบันทึก — ต้องแยกกลับตอนแก้ไข
+    let description = r.description ?? ''
+    let otherType = ''
+    if (r.maintenance_type === 'other') {
+      const m = description.match(/^\[(.+?)\]\s*(.*)$/)
+      if (m) { otherType = m[1]; description = m[2] } else { otherType = description; description = '' }
+    }
+    setForm({
+      vehicle_id: r.vehicle_id ?? '',
+      technician_id: r.technician_id ?? '',
+      service_date: r.service_date ?? new Date().toISOString().slice(0,10),
+      maintenance_type: r.maintenance_type ?? 'routine',
+      other_type: otherType,
+      description,
+      cost: r.cost != null ? String(r.cost) : '',
+      vendor: r.vendor ?? '',
+      odometer: r.odometer != null ? String(r.odometer) : '',
+      next_service_meter: (r.next_service_meter ?? r.next_service_km) != null ? String(r.next_service_meter ?? r.next_service_km) : '',
+      next_service_date: r.next_service_date ?? '',
+    })
+    setReceiptFile(null)
+    setModal(true)
+  }
+
+  function closeModal() {
+    setModal(false)
+    setEditingId(null)
   }
 
   const selectedAsset = vehicles.find(asset => asset.id === form.vehicle_id)
@@ -144,8 +191,22 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
     const fileError = validateFleetDocument(receiptFile)
     if (fileError) return alert(fileError)
     setSaving(true)
-    const { data, error } = await supabase.from('fleet_maintenance').insert({
-      municipality_id:   tenant.id,
+    const oldReceiptUrl = editingId ? records.find(x => x.id === editingId)?.receipt_url : null
+    const recordId = editingId ?? crypto.randomUUID()
+
+    // อัปโหลดเอกสารก่อน insert/update เสมอ แล้วใส่ receipt_url ไปในคำสั่งเดียวกัน
+    // (เดิมทำ insert ก่อนแล้วค่อย update receipt_url ทีหลัง — ทำให้ระเบียนที่เพิ่งสร้างใหม่โดนนับเป็น "แก้ไข" ผิดๆ จาก trigger updated_at)
+    let receiptPath = null
+    let attachmentWarning = ''
+    if (receiptFile) {
+      try {
+        receiptPath = await uploadFleetDocument({ tenantId: tenant.id, scope: 'maintenance', recordId, file: receiptFile })
+      } catch (uploadError) {
+        attachmentWarning = 'แนบเอกสารไม่สำเร็จ: ' + uploadError.message + ' — บันทึกรายการต่อโดยไม่มีเอกสารแนบ'
+      }
+    }
+
+    const payload = {
       vehicle_id:        form.vehicle_id,
       technician_id:     form.technician_id || null,
       service_date:      form.service_date,
@@ -161,39 +222,25 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
       next_service_km:   form.next_service_meter ? parseFloat(form.next_service_meter) : null,
       next_service_meter: form.next_service_meter ? parseFloat(form.next_service_meter) : null,
       next_service_date: form.next_service_date || null,
-      created_by:        user?.id ?? null,
-    }).select(SELECT_Q).single()
+      ...(receiptPath ? { receipt_url: receiptPath } : {}),
+    }
+    // updated_at/updated_by ไม่ต้องส่งเอง — ตั้งอัตโนมัติจาก trigger ฝั่ง DB (trg_fleet_maintenance_updated_at)
+    const query = editingId
+      ? supabase.from('fleet_maintenance').update(payload).eq('id', editingId)
+      : supabase.from('fleet_maintenance').insert({ id: recordId, ...payload, municipality_id: tenant.id, created_by: user?.id ?? null })
+    const { error } = await query.select(SELECT_Q).single()
     if (!error) {
-      let savedRecord = data
-      let attachmentWarning = ''
-      if (receiptFile) {
-        try {
-          const path = await uploadFleetDocument({
-            tenantId: tenant.id,
-            scope: 'maintenance',
-            recordId: data.id,
-            file: receiptFile,
-          })
-          const { data: updated, error: updateError } = await supabase.from('fleet_maintenance')
-            .update({ receipt_url: path })
-            .eq('id', data.id)
-            .select(SELECT_Q)
-            .single()
-          if (updateError) {
-            await removeFleetDocument(path).catch(() => {})
-            throw updateError
-          }
-          savedRecord = updated
-        } catch (uploadError) {
-          attachmentWarning = 'บันทึกรายการแล้ว แต่แนบเอกสารไม่สำเร็จ: ' + uploadError.message
-        }
-      }
-      setRecords(previous => [savedRecord, ...previous])
-      setModal(false)
+      if (receiptPath && oldReceiptUrl && oldReceiptUrl !== receiptPath) removeFleetDocument(oldReceiptUrl).catch(() => {})
+      // โหลดใหม่ทั้งหน้าปัจจุบันและยอดรวม (totalCost) แทนการแทรก/แก้ state เอง เพื่อให้ยอดรวมไม่ค้างข้อมูลเก่า
+      loadRecords()
+      closeModal()
       setForm(EMPTY)
       setReceiptFile(null)
       if (attachmentWarning) alert(attachmentWarning)
-    } else alert(error.message)
+    } else {
+      if (receiptPath) removeFleetDocument(receiptPath).catch(() => {})
+      alert(error.message)
+    }
     setSaving(false)
   }
 
@@ -201,8 +248,9 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
     if (!confirm(`ลบรายการซ่อมบำรุง "${r.description}"?`)) return
     const { error } = await supabase.from('fleet_maintenance').delete().eq('id', r.id)
     if (!error) {
-      setRecords(prev => prev.filter(x => x.id !== r.id))
       if (r.receipt_url) removeFleetDocument(r.receipt_url).catch(() => {})
+      // โหลดใหม่แทนการตัด state เอง เพื่อให้ totalCost/totalCount (แยก query จากตารางที่แสดง) ไม่ค้างข้อมูลเก่า
+      loadRecords()
     }
     else alert('ลบไม่สำเร็จ: ' + error.message)
   }
@@ -215,42 +263,40 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
     }
   }
 
-  const totalCost = records.reduce((s, r) => s + (r.cost ?? 0), 0)
-
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 md:space-y-4">
       {/* Summary */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: '#ef444418' }}>
+      <div className="bg-white rounded-xl md:rounded-2xl border border-gray-100 shadow-sm p-3 md:p-4 flex items-center gap-2.5 md:gap-3">
+        <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl flex items-center justify-center" style={{ backgroundColor: '#ef444418' }}>
           <Wrench size={18} className="text-red-500" />
         </div>
         <div>
-          <p className="text-lg font-black text-gray-800">{fmtB(totalCost)}</p>
-          <p className="text-xs text-gray-500">ค่าซ่อมบำรุงรวม (100 รายการล่าสุด)</p>
+          <p className="text-base md:text-lg font-black text-gray-800">{fmtB(totalCost)}</p>
+          <p className="text-[11px] md:text-xs text-gray-500">ค่าซ่อมบำรุงรวม{(filterType !== 'all' || dateFrom || dateTo) ? ' (ตามตัวกรอง)' : ''}</p>
         </div>
       </div>
 
       <DueSoonAlert records={records} />
 
       {/* Toolbar */}
-      <div className="flex flex-wrap gap-2 items-center">
-        <select value={filterType} onChange={e => setFilterType(e.target.value)}
-          className="text-xs border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none appearance-none">
+      <div className="grid grid-cols-2 md:flex md:flex-wrap gap-2 items-center">
+        <select value={filterType} onChange={e => { setFilterType(e.target.value); setPage(0) }}
+          className={`${canWrite ? '' : 'col-span-2'} order-1 md:order-none min-w-0 w-full md:w-auto text-xs border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none appearance-none`}>
           <option value="all">ทุกประเภท</option>
           {Object.entries(TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
-        <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-          className="text-xs border border-gray-200 rounded-xl px-3 py-1.5 bg-white text-gray-700 focus:outline-none" />
-        <span className="text-xs text-gray-400">–</span>
-        <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-          className="text-xs border border-gray-200 rounded-xl px-3 py-1.5 bg-white text-gray-700 focus:outline-none" />
+        <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(0) }}
+          className="order-3 md:order-none min-w-0 w-full md:w-auto text-[11px] md:text-xs border border-gray-200 rounded-xl px-2 md:px-3 py-2 bg-white text-gray-700 focus:outline-none" />
+        <span className="hidden md:inline text-xs text-gray-400">–</span>
+        <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(0) }}
+          className="order-4 md:order-none min-w-0 w-full md:w-auto text-[11px] md:text-xs border border-gray-200 rounded-xl px-2 md:px-3 py-2 bg-white text-gray-700 focus:outline-none" />
         {(dateFrom || dateTo) && (
-          <button onClick={() => { setDateFrom(''); setDateTo('') }}
-            className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded-lg border border-gray-200">ล้าง</button>
+          <button onClick={() => { setDateFrom(''); setDateTo(''); setPage(0) }}
+            className="order-5 md:order-none col-span-2 md:col-span-1 justify-self-end text-[11px] md:text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded-lg border border-gray-200">ล้าง</button>
         )}
         {canWrite && (
           <button onClick={openModal}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white ml-auto"
+            className="order-2 md:order-none justify-center flex items-center gap-1.5 px-2 md:px-4 py-2 rounded-xl text-[11px] md:text-sm font-bold text-white md:ml-auto"
             style={{ backgroundColor: 'var(--color-primary)' }}>
             <Plus size={15} /> บันทึกซ่อมบำรุง
           </button>
@@ -270,7 +316,7 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr style={{ backgroundColor: '#1a3a5c' }}>
-                  {[...['ที่','วันที่','ทรัพย์สิน','ประเภท','รายละเอียด','ค่าใช้จ่าย','อู่/ผู้รับจ้าง','ผู้รับผิดชอบ','ซ่อมถัดไป','เอกสาร'], ...(isAdmin ? [''] : [])].map(h => (
+                  {[...['ที่','วันที่','ทรัพย์สิน','ประเภท','รายละเอียด','ค่าใช้จ่าย','อู่/ผู้รับจ้าง','ผู้รับผิดชอบ','ซ่อมถัดไป','เอกสาร'], ...(canWrite ? [''] : [])].map(h => (
                     <th key={h} className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900 last:border-r-0 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -288,6 +334,9 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
                       <td className="px-4 py-2.5 border-r border-gray-200">
                         <p className="font-semibold text-gray-800 text-sm">{r.fleet_vehicles?.name ?? '—'}</p>
                         <p className="text-[10px] text-gray-400">{assetIdentifier(r.fleet_vehicles)}</p>
+                        {r.updated_by && (
+                          <p className="text-[9px] text-amber-500">แก้ไข {thDate(r.updated_at)}{r.editor?.full_name ? ` · ${r.editor.full_name}` : ''}</p>
+                        )}
                       </td>
                       <td className="px-4 py-2.5 border-r border-gray-200">
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
@@ -315,49 +364,57 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
                           </button>
                         ) : <span className="text-gray-300">—</span>}
                       </td>
-                      {isAdmin && (
+                      {canWrite && (
                         <td className="px-4 py-2.5 text-center">
-                          <button onClick={() => handleDelete(r)}
-                            className="text-xs font-bold px-3 py-1 rounded border border-red-400 text-red-500 hover:bg-red-500 hover:text-white transition-colors">
-                            ลบ
-                          </button>
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button onClick={() => openEditModal(r)}
+                              className="text-xs font-bold px-2.5 py-1 rounded border border-blue-400 text-blue-500 hover:bg-blue-500 hover:text-white transition-colors">
+                              แก้ไข
+                            </button>
+                            {isAdmin && (
+                              <button onClick={() => handleDelete(r)}
+                                className="text-xs font-bold px-2.5 py-1 rounded border border-red-400 text-red-500 hover:bg-red-500 hover:text-white transition-colors">
+                                ลบ
+                              </button>
+                            )}
+                          </div>
                         </td>
                       )}
                     </tr>
                   )
                 })}
                 {!records.length && (
-                  <tr><td colSpan={isAdmin ? 11 : 10} className="text-center py-10 text-gray-400 text-sm">ไม่พบรายการ</td></tr>
+                  <tr><td colSpan={canWrite ? 11 : 10} className="text-center py-10 text-gray-400 text-sm">ไม่พบรายการ</td></tr>
                 )}
               </tbody>
             </table>
           </div>
 
           {/* Mobile Cards */}
-          <div className="md:hidden space-y-2">
+          <div className="md:hidden space-y-1.5">
             {records.map(r => {
               const t = TYPES[r.maintenance_type] ?? TYPES.other
               return (
-                <div key={r.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-                  <div className="flex items-start justify-between gap-3">
+                <div key={r.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
+                  <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
                         <span className="text-sm font-bold text-gray-800">{r.fleet_vehicles?.name ?? '—'}</span>
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
                               style={{ backgroundColor: t.color + '18', color: t.color }}>
                           {t.label}
                         </span>
                       </div>
-                      <p className="text-[10px] text-gray-400 mb-1">{assetIdentifier(r.fleet_vehicles)}</p>
-                      <p className="text-xs text-gray-700">{r.description}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">
+                      <p className="text-[10px] text-gray-400">{assetIdentifier(r.fleet_vehicles)}</p>
+                      <p className="text-[11px] text-gray-700 line-clamp-2">{r.description}</p>
+                      <p className="text-[10px] text-gray-400 mt-0.5 truncate">
                         {thDate(r.service_date)}{r.vendor ? ` · ${r.vendor}` : ''}
                       </p>
                       {r.technician?.full_name && (
                         <p className="text-[10px] text-gray-400 mt-0.5">👤 {r.technician.full_name}</p>
                       )}
                       {(r.next_service_date || (r.next_service_meter ?? r.next_service_km) != null) && (
-                        <p className="text-[10px] text-blue-500 mt-1">
+                        <p className="text-[10px] text-blue-500 mt-0.5 truncate">
                           ซ่อมบำรุงครั้งถัดไป: {r.next_service_date ? thDate(r.next_service_date) : ''}
                           {r.next_service_date && (r.next_service_meter ?? r.next_service_km) != null ? ' หรือ ' : ''}
                           {(r.next_service_meter ?? r.next_service_km) != null
@@ -365,14 +422,31 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
                             : ''}
                         </p>
                       )}
+                      {r.updated_by && (
+                        <p className="text-[9px] text-amber-500 mt-0.5">แก้ไข {thDate(r.updated_at)}{r.editor?.full_name ? ` · ${r.editor.full_name}` : ''}</p>
+                      )}
                     </div>
-                    <div className="text-right shrink-0">
+                    <div className="text-right shrink-0 flex flex-col items-end gap-1">
                       <p className="text-sm font-black text-gray-800">{fmtB(r.cost)}</p>
                       {r.receipt_url && (
                         <button onClick={() => handleOpenDocument(r.receipt_url)}
-                          className="mt-2 ml-auto text-[10px] font-bold text-blue-600 flex items-center gap-1">
+                          className="ml-auto text-[10px] font-bold text-blue-600 flex items-center gap-1">
                           <FileText size={11} /> เอกสาร
                         </button>
+                      )}
+                      {canWrite && (
+                        <div className="flex items-center gap-1 mt-1">
+                          <button onClick={() => openEditModal(r)}
+                            className="text-[12px] font-bold px-2 py-0.5 rounded border border-blue-300 text-blue-400 hover:bg-blue-400 hover:text-white transition-colors">
+                            แก้ไข
+                          </button>
+                          {isAdmin && (
+                            <button onClick={() => handleDelete(r)}
+                              className="text-[12px] font-bold px-2 py-0.5 rounded border border-red-300 text-red-400 hover:bg-red-400 hover:text-white transition-colors">
+                              ลบ
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -384,16 +458,47 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
         </>
       )}
 
+      {/* Pagination */}
+      {totalCount > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-1 py-2 text-xs text-gray-500">
+          <div className="flex items-center gap-2">
+            <span>แสดง</span>
+            <select value={pageSize}
+              onChange={e => { setPageSize(e.target.value === 'all' ? 'all' : Number(e.target.value)); setPage(0) }}
+              className="bg-white border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-200">
+              {[10, 20, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+              <option value="all">ทั้งหมด</option>
+            </select>
+            <span>รายการ</span>
+            <span className="text-gray-400">
+              ({pageSize === 'all' ? 1 : page * pageSize + 1}–{pageSize === 'all' ? totalCount : Math.min((page + 1) * pageSize, totalCount)} จาก {totalCount})
+            </span>
+          </div>
+          {pageSize !== 'all' && totalCount > pageSize && (
+            <div className="flex items-center gap-2">
+              <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
+                className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white font-semibold disabled:opacity-40">ก่อนหน้า</button>
+              <span>หน้า {page + 1} / {Math.max(1, Math.ceil(totalCount / pageSize))}</span>
+              <button onClick={() => setPage(p => p + 1)} disabled={(page + 1) * pageSize >= totalCount}
+                className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white font-semibold disabled:opacity-40">ถัดไป</button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Modal */}
       {modal && (
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setModal(false)} />
-          <div className="relative bg-white rounded-t-3xl md:rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
-            <div className="sticky top-0 bg-white px-5 pt-5 pb-3 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="font-bold text-gray-800">บันทึกซ่อมบำรุง</h3>
-              <button onClick={() => setModal(false)} className="p-1.5 rounded-lg hover:bg-gray-100"><X size={16} /></button>
+          <div className="absolute inset-0 bg-black/50" onClick={closeModal} />
+          <div className="relative bg-white rounded-t-3xl md:rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="shrink-0 bg-white px-4 py-3 md:px-5 md:pt-5 md:pb-3 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="font-bold text-gray-800 flex items-center gap-1.5">
+                {editingId && <Pencil size={14} className="text-blue-500" />}
+                {editingId ? 'แก้ไขรายการซ่อมบำรุง' : 'บันทึกซ่อมบำรุง'}
+              </h3>
+              <button onClick={closeModal} className="p-1.5 rounded-lg hover:bg-gray-100"><X size={16} /></button>
             </div>
-            <div className="p-5 space-y-3">
+            <div className="overflow-y-auto p-4 md:p-5 space-y-3">
               <div>
                 <label className="text-xs font-semibold text-gray-600 mb-1 block">ยานพาหนะ/เครื่องยนต์ *</label>
                 <select value={form.vehicle_id} onChange={set('vehicle_id')} className={sel}>
@@ -480,9 +585,9 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
                 <p className="text-[10px] text-gray-400 mt-1">Private Storage · ขนาดไม่เกิน 10 MB</p>
               </div>
               <button onClick={handleSave} disabled={saving}
-                className="w-full py-3 rounded-xl font-bold text-white text-sm disabled:opacity-50"
+                className="sticky bottom-0 z-10 w-full py-3 rounded-xl font-bold text-white text-sm disabled:opacity-50 shadow-lg"
                 style={{ backgroundColor: 'var(--color-primary)' }}>
-                {saving ? 'กำลังบันทึก...' : 'บันทึก'}
+                {saving ? 'กำลังบันทึก...' : (editingId ? 'บันทึกการแก้ไข' : 'บันทึก')}
               </button>
             </div>
           </div>

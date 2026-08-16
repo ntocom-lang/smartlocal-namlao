@@ -36,7 +36,6 @@ export default function EcoFriendlyBottomNav() {
       >
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon
-          const isAI = item.href === '/chatbot'
           const isActive = item.href
             ? (location.pathname === item.href || (item.href !== '/' && location.pathname.startsWith(item.href)))
             : false
@@ -47,32 +46,18 @@ export default function EcoFriendlyBottomNav() {
               onClick={() => navigate(item.href)}
               aria-label={item.label}
               aria-current={isActive ? 'page' : undefined}
-              className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 transition-transform active:scale-90 relative ${isAI ? 'z-20' : ''}`}
+              className="flex-1 flex flex-col items-center gap-0.5 py-1.5 transition-transform active:scale-90 relative"
             >
-              {isActive && !isAI && (
+              {isActive && (
                 <span className="absolute inset-x-2 top-0.5 h-8 rounded-xl bg-white/20 pointer-events-none" />
               )}
 
-              <div className={`relative z-10 ${isAI ? '-mt-3 mb-0.5' : ''}`}>
-                {isAI && (
-                  <>
-                    <span className="absolute -inset-2 rounded-2xl bg-linear-to-br from-cyan-300 via-blue-500 to-violet-500 opacity-70 blur-md motion-safe:animate-pulse pointer-events-none" />
-                    <span className="absolute -top-1.5 -right-1.5 z-20 h-4 min-w-4 px-1 rounded-full bg-linear-to-r from-amber-200 to-yellow-400 text-[9px] leading-4 font-black text-amber-950 shadow-[0_2px_8px_rgba(250,204,21,0.65)] ring-1 ring-white/80 pointer-events-none">
-                      ✦
-                    </span>
-                  </>
-                )}
-                <span
-                  className={isAI
-                    ? `relative flex h-11 w-11 items-center justify-center rounded-2xl bg-linear-to-br from-cyan-300 via-blue-500 to-violet-600 text-white ring-2 ring-white/90 shadow-[0_8px_22px_rgba(67,56,202,0.55),inset_0_1px_0_rgba(255,255,255,0.55)] transition-all ${isActive ? 'scale-110 rotate-3' : 'hover:scale-105'}`
-                    : ''}
-                >
-                  <Icon
-                    size={isAI ? 25 : 20}
-                    className={`transition-all ${isAI || isActive ? 'text-white' : 'text-white/55'}`}
-                    strokeWidth={isAI || isActive ? 2.5 : 1.8}
-                  />
-                </span>
+              <div className="relative z-10">
+                <Icon
+                  size={20}
+                  className={`transition-all ${isActive ? 'text-white' : 'text-white/55'}`}
+                  strokeWidth={isActive ? 2.5 : 1.8}
+                />
                 {item.href === '/notifications' && unreadCount > 0 && (
                   <span className="absolute -top-1.5 -right-2 min-w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-1 shadow-sm ring-1 ring-white/30">
                     {unreadCount > 9 ? '9+' : unreadCount}
@@ -85,7 +70,7 @@ export default function EcoFriendlyBottomNav() {
                 )}
               </div>
 
-              <span className={`relative z-10 min-h-7 flex items-center justify-center text-center leading-tight transition-all ${isAI ? '-mt-0.5 text-[11px] font-black text-white drop-shadow-[0_2px_5px_rgba(15,23,42,0.65)]' : `text-[11px] font-semibold ${isActive ? 'text-white' : 'text-white/70'}`}`}>
+              <span className={`relative z-10 min-h-7 flex items-center justify-center text-center leading-tight transition-all text-[11px] font-semibold ${isActive ? 'text-white' : 'text-white/70'}`}>
                 {item.label}
               </span>
             </button>

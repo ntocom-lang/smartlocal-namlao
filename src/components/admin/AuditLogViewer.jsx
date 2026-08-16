@@ -110,28 +110,30 @@ export default function AuditLogViewer({ tenant }) {
   const [filterType, setFilterType] = useState('all')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
-  const PAGE = 50
+  const [pageSize, setPageSize] = useState(50)
+  const [totalCount, setTotalCount] = useState(0)
 
   const fetchLogs = useCallback(async () => {
     if (!tenant?.id) return
     setLoading(true)
     let q = supabase
       .from('audit_logs')
-      .select('*')
+      .select('*', { count: 'exact' })
       .eq('municipality_id', tenant.id)
       .order('created_at', { ascending: false })
-      .range(page * PAGE, page * PAGE + PAGE - 1)
 
     if (filterAction !== 'all') q = q.eq('action', filterAction)
     if (filterType !== 'all')   q = q.eq('resource_type', filterType)
+    if (pageSize !== 'all') q = q.range(page * pageSize, page * pageSize + pageSize - 1)
 
-    const { data } = await q
+    const { data, count } = await q
     setLogs(data ?? [])
+    setTotalCount(count ?? 0)
     setLoading(false)
-  }, [tenant?.id, filterAction, filterType, page])
+  }, [tenant?.id, filterAction, filterType, page, pageSize])
 
   useEffect(() => { fetchLogs() }, [fetchLogs])
-  useEffect(() => { setPage(0) }, [filterAction, filterType, search])
+  useEffect(() => { setPage(0) }, [filterAction, filterType, search, pageSize])
 
   const filtered = search.trim()
     ? logs.filter(l =>
@@ -205,19 +207,34 @@ export default function AuditLogViewer({ tenant }) {
       </div>
 
       {/* Pagination */}
-      {!search && (
-        <div className="flex items-center justify-between text-xs text-gray-400">
-          <span>{page * PAGE + 1}–{page * PAGE + filtered.length} รายการ</span>
-          <div className="flex gap-2">
-            <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
-              className="px-3 py-1.5 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50 transition-colors">
-              ก่อนหน้า
-            </button>
-            <button onClick={() => setPage(p => p + 1)} disabled={filtered.length < PAGE}
-              className="px-3 py-1.5 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50 transition-colors">
-              ถัดไป
-            </button>
+      {!search && totalCount > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-400">
+          <div className="flex items-center gap-2">
+            <span>แสดง</span>
+            <select value={pageSize}
+              onChange={e => setPageSize(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+              className="bg-white border border-gray-200 rounded-lg px-2 py-1 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200">
+              {[10, 20, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+              <option value="all">ทั้งหมด</option>
+            </select>
+            <span>รายการ</span>
+            <span>
+              ({pageSize === 'all' ? 1 : page * pageSize + 1}–{pageSize === 'all' ? totalCount : Math.min((page + 1) * pageSize, totalCount)} จาก {totalCount})
+            </span>
           </div>
+          {pageSize !== 'all' && totalCount > pageSize && (
+            <div className="flex gap-2">
+              <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
+                className="px-3 py-1.5 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50 transition-colors">
+                ก่อนหน้า
+              </button>
+              <span className="px-1 py-1.5">หน้า {page + 1} / {Math.max(1, Math.ceil(totalCount / pageSize))}</span>
+              <button onClick={() => setPage(p => p + 1)} disabled={(page + 1) * pageSize >= totalCount}
+                className="px-3 py-1.5 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50 transition-colors">
+                ถัดไป
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
