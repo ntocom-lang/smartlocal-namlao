@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Plus, X, Pencil, AlertTriangle, Upload } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import FleetImportModal from './FleetImportModal'
+import FleetVehicleDetail from './FleetVehicleDetail'
 import {
   ASSET_KIND_LABEL,
   ASSET_KIND_OPTIONS,
@@ -50,6 +51,7 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
   const [filterStatus, setFilterStatus] = useState('active')
   const [filterKind,   setFilterKind]   = useState('all')
   const [importOpen,   setImportOpen]   = useState(false)
+  const [detailVeh,    setDetailVeh]    = useState(null)
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -175,25 +177,25 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
   return (
     <div className="space-y-3 md:space-y-4">
       {/* Toolbar */}
-      <div className="grid grid-cols-2 md:flex md:flex-wrap gap-2 items-center">
+      <div className="grid grid-cols-3 md:flex md:flex-wrap gap-1.5 md:gap-2 items-center">
         <select value={filterDept} onChange={e => setFilterDept(e.target.value)}
-          className="w-full text-xs border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none">
+          className="w-full min-w-0 text-[11px] md:text-xs border border-gray-200 rounded-xl px-1.5 md:px-3 py-1.5 md:py-2 bg-white text-gray-700 focus:outline-none truncate">
           <option value="all">ทุกกอง</option>
           <option value="pool">รถกลาง</option>
           {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-          className="w-full text-xs border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none">
+          className="w-full min-w-0 text-[11px] md:text-xs border border-gray-200 rounded-xl px-1.5 md:px-3 py-1.5 md:py-2 bg-white text-gray-700 focus:outline-none truncate">
           <option value="all">ทุกสถานะ</option>
           {Object.entries(STATUS_TH).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
         </select>
         <select value={filterKind} onChange={e => setFilterKind(e.target.value)}
-          className="col-span-2 md:col-span-1 w-full text-xs border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none">
-          <option value="all">ทุกชนิดทรัพย์สิน</option>
+          className="w-full min-w-0 text-[11px] md:text-xs border border-gray-200 rounded-xl px-1.5 md:px-3 py-1.5 md:py-2 bg-white text-gray-700 focus:outline-none truncate">
+          <option value="all">ทุกชนิด</option>
           {ASSET_KIND_OPTIONS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
         </select>
         {isAdmin && (
-          <div className="col-span-2 grid grid-cols-2 gap-2 md:ml-auto md:flex md:items-center">
+          <div className="col-span-3 grid grid-cols-2 gap-2 md:ml-auto md:flex md:items-center">
             <button onClick={() => setImportOpen(true)}
               className="justify-center flex items-center gap-1.5 px-2 md:px-3 py-2 rounded-xl text-[11px] md:text-xs font-bold border border-emerald-200 text-emerald-700 bg-emerald-50">
               <Upload size={14} /> นำเข้า CSV/XLSX
@@ -245,11 +247,13 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
                       onMouseLeave={e => e.currentTarget.style.backgroundColor = idx % 2 === 0 ? '#fff' : '#f5f8fc'}>
                       <td className="px-4 py-2.5 text-gray-400 text-xs border-r border-gray-200">{idx + 1}</td>
                       <td className="px-4 py-2.5 border-r border-gray-200">
-                        <div className="flex items-center gap-1.5">
+                        <button onClick={() => setDetailVeh(v)}
+                          className="flex items-center gap-1.5 hover:underline decoration-dotted underline-offset-2"
+                          title="ดูสถิติการใช้งาน">
                           <span className="font-semibold text-gray-800 text-sm">{v.name}</span>
                           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600">{ASSET_KIND_LABEL[v.asset_kind ?? 'vehicle']}</span>
                           {v.is_pool && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600">ส่วนกลาง</span>}
-                        </div>
+                        </button>
                       </td>
                       <td className="px-4 py-2.5 text-gray-600 text-xs border-r border-gray-200 whitespace-nowrap">{assetIdentifier(v)}</td>
                       <td className="px-4 py-2.5 text-gray-600 text-xs border-r border-gray-200">{vehicleTypes.find(t => t.value === v.vehicle_type)?.label ?? v.vehicle_type}</td>
@@ -305,12 +309,14 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
               return (
                 <div key={v.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
                   <div className="flex items-start gap-2.5">
-                    <div className="w-9 h-9 rounded-lg flex items-center justify-center text-xl bg-gray-50 shrink-0">
+                    <button onClick={() => setDetailVeh(v)}
+                      className="w-9 h-9 rounded-lg flex items-center justify-center text-xl bg-gray-50 shrink-0"
+                      title="ดูสถิติการใช้งาน">
                       {assetEmoji(v)}
-                    </div>
-                    <div className="flex-1 min-w-0">
+                    </button>
+                    <button onClick={() => setDetailVeh(v)} className="flex-1 min-w-0 text-left">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <h3 className="text-sm font-bold text-gray-800 truncate">{v.name}</h3>
+                        <h3 className="text-sm font-bold text-gray-800 truncate hover:underline decoration-dotted underline-offset-2">{v.name}</h3>
                         {v.is_pool && (
                           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600">
                             ส่วนกลาง
@@ -321,7 +327,7 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
                       {v.departments && (
                         <p className="text-[10px] text-gray-400 mt-0.5">{v.departments.name}</p>
                       )}
-                    </div>
+                    </button>
                     <div className="flex items-center gap-0.5 shrink-0">
                       <span className="text-[10px] font-bold px-2 py-1 rounded-full"
                             style={{ backgroundColor: STATUS_CLR[v.status] + '18', color: STATUS_CLR[v.status] }}>
@@ -509,6 +515,9 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
             return [...merged.values()].sort((a, b) => a.name.localeCompare(b.name, 'th'))
           })}
         />
+      )}
+      {detailVeh && (
+        <FleetVehicleDetail vehicle={detailVeh} tenant={tenant} onClose={() => setDetailVeh(null)} />
       )}
     </div>
   )
