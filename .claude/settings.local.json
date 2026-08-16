@@ -254,7 +254,8 @@
       "Bash(git show *)",
       "mcp__claude_ai_Supabase__list_tables",
       "Bash(npx vite *)",
-      "Bash(git stash *)"
+      "Bash(git stash *)",
+      "Bash(git commit -m 'fix\\(complaints\\): include staff/admin roles in per-complaint assignment dropdown *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\RKnetwork\\.claude\\plans",

@@ -1394,7 +1394,11 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
       .from('profiles')
       .select('id, full_name, email, department, is_dept_head')
       .eq('municipality_id', tenantId)
-      .in('role', ['technician', 'officer'])
+      // ต้องตรงกับ pool ที่หน้า "จัดการประเภทคำร้อง" (AdminDashboard.jsx) ใช้ตั้ง category_assignments.
+      // technician_id ('technician','staff','admin') — เดิมขาด staff/admin ทำให้คนที่ตั้งเป็นผู้รับผิดชอบ
+      // หมวดไว้ (role staff/admin) ไม่โผล่ใน dropdown มอบหมายของคำร้องรายตัว ทั้งที่ auto-assign trigger
+      // (ฝั่ง DB) ผูกให้ถูกอยู่แล้ว — เก็บ 'officer' ไว้ด้วยเพราะเป็น role ผู้ปฏิบัติงานจริงเช่นกัน
+      .in('role', ['technician', 'officer', 'staff', 'admin'])
       .order('full_name')
     setTechnicians(data ?? [])
   }, [tenantId])
