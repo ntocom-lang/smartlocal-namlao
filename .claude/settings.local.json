@@ -255,7 +255,11 @@
       "mcp__claude_ai_Supabase__list_tables",
       "Bash(npx vite *)",
       "Bash(git stash *)",
-      "Bash(git commit -m 'fix\\(complaints\\): include staff/admin roles in per-complaint assignment dropdown *)"
+      "Bash(git commit -m 'fix\\(complaints\\): include staff/admin roles in per-complaint assignment dropdown *)",
+      "Bash(awk 'NR==1495,NR==1520{print NR\": \"$0}' src/pages/AdminDashboard.jsx)",
+      "Bash(grep -n \"^function \\\\|^const.*= \\(\\\\|^const.*=>.*{$\" src/pages/AdminDashboard.jsx)",
+      "Bash(awk -F: '$1<2650 && $1>1400')",
+      "Bash(grep -n \"function CategoryManager\\\\|const \\\\[techs, setTechs\\\\]\\\\|in\\('role', \\\\['technician', 'staff', 'admin'\\\\]\\\\|techs={techs}\\\\|function SortableCatItem\\\\|function SortableDesktopRow\" src/pages/AdminDashboard.jsx)"
     ],
     "additionalDirectories": [
       "C:\\Users\\RKnetwork\\.claude\\plans",

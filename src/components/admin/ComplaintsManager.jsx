@@ -16,6 +16,7 @@ import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../../li
 import { buildCouncilComplaintHtml } from '../../lib/councilFormPrint'
 import { generateDraftPdfBlob } from '../../lib/generateDraftPdf'
 import { uploadFile, resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef, toReliableImageUrl } from '../../lib/driveStorage'
+import { fetchAssignableStaff, groupStaffByDepartment, ROLE_LABELS } from '../../lib/staffRoster'
 import OssIntakeForm from './OssIntakeForm'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -543,6 +544,8 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
   // staff เห็นหน้าคำร้องเต็มรูปแบบและจัดการเอกสาร GDCC ได้ แต่เปลี่ยนสถานะ/มอบหมายงานไม่ได้
   // (ทุกจุดที่เปลี่ยนสถานะยังผูกกับ canAct/isAdminRole เหมือนเดิม ไม่ได้แก้)
   const canManageDocs = isAdminRole || currentUserRole === 'staff'
+  // จัดกลุ่มตามกอง ใช้ render dropdown มอบหมายเป็น <optgroup> — คนหลักสิบ/ร้อยคนจะได้ไม่ต้องไล่หาในลิสต์แบนราบ
+  const technicianGroups = groupStaffByDepartment(technicians ?? [])
   const [assigning, setAssigning] = useState(false)
   const [showCloseJob, setShowCloseJob] = useState(false)
   const [pendingPhotos, setPendingPhotos] = useState([])
@@ -896,8 +899,14 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
                         disabled={assigning}
                         className="text-xs border border-orange-200 rounded-xl px-2 py-1.5 bg-white text-gray-700 focus:outline-none">
                         <option value="">— เลือกผู้รับผิดชอบ —</option>
-                        {technicians.map((t) => (
-                          <option key={t.id} value={t.id}>{t.full_name || t.email}</option>
+                        {technicianGroups.map((g) => (
+                          <optgroup key={g.department_name} label={g.department_name}>
+                            {g.members.map((t) => (
+                              <option key={t.id} value={t.id}>
+                                {(t.full_name || t.email) + (t.is_dept_head ? ' ⭐' : '')} · {ROLE_LABELS[t.role]?.label ?? t.role}
+                              </option>
+                            ))}
+                          </optgroup>
                         ))}
                       </select>
                       {assigning && <Loader2 size={14} className="animate-spin text-orange-400 shrink-0" />}
@@ -1390,17 +1399,10 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
 
   const fetchTechnicians = useCallback(async () => {
     if (!tenantId) return
-    const { data } = await supabase
-      .from('profiles')
-      .select('id, full_name, email, department, is_dept_head')
-      .eq('municipality_id', tenantId)
-      // ต้องตรงกับ pool ที่หน้า "จัดการประเภทคำร้อง" (AdminDashboard.jsx) ใช้ตั้ง category_assignments.
-      // technician_id ('technician','staff','admin') — เดิมขาด staff/admin ทำให้คนที่ตั้งเป็นผู้รับผิดชอบ
-      // หมวดไว้ (role staff/admin) ไม่โผล่ใน dropdown มอบหมายของคำร้องรายตัว ทั้งที่ auto-assign trigger
-      // (ฝั่ง DB) ผูกให้ถูกอยู่แล้ว — เก็บ 'officer' ไว้ด้วยเพราะเป็น role ผู้ปฏิบัติงานจริงเช่นกัน
-      .in('role', ['technician', 'officer', 'staff', 'admin'])
-      .order('full_name')
-    setTechnicians(data ?? [])
+    // ใช้ helper กลางร่วมกับหน้า "จัดการประเภทคำร้อง" (AdminDashboard.jsx) กัน pool คนไม่ตรงกันแบบที่
+    // เคยเป็นบั๊กมาก่อน (คนที่ตั้งเป็นผู้รับผิดชอบหมวดไว้ไม่โผล่ใน dropdown มอบหมายรายคำร้อง)
+    const data = await fetchAssignableStaff(tenantId)
+    setTechnicians(data)
   }, [tenantId])
 
   const fetchComplaints = useCallback(async () => {

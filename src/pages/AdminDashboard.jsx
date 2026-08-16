@@ -33,6 +33,7 @@ import { InboxModule } from './StaffDashboard'
 const DEV_USER_ID = 'b3e7c083-05ee-4664-ba42-e866729923ef'
 import ReportManagerComponent from '../components/admin/ReportManager'
 import AuditLogViewer from '../components/admin/AuditLogViewer'
+import { ROLE_LABELS, ROLE_DESCRIPTIONS, fetchAssignableStaff, groupStaffByDepartment } from '../lib/staffRoster'
 import FleetSetup from '../components/fleet/FleetSetup'
 
 // ─── Status config ────────────────────────────────────────────────────────────
@@ -77,27 +78,8 @@ let CATEGORY_EMOJI = {
 
 
 // ─── User Manager ─────────────────────────────────────────────────────────────
-const ROLE_LABELS = {
-  superadmin:  { label: 'Super Admin',   color: '#7c3aed', bg: '#ede9fe' },
-  admin:       { label: 'แอดมินระบบ',   color: '#1d4ed8', bg: '#dbeafe' },
-  officer:     { label: 'ธุรการกอง',     color: '#0891b2', bg: '#e0f2fe' },
-  technician:  { label: 'ปฏิบัติงาน',   color: '#d97706', bg: '#fef3c7' },
-  staff:       { label: 'เจ้าหน้าที่',  color: '#0ea5e9', bg: '#e0f2fe' },
-  viewer:      { label: 'ผู้บริหาร',    color: '#059669', bg: '#d1fae5' },
-  council:     { label: 'สภาเทศบาล',    color: '#f59e0b', bg: '#fff7ed' },
-  citizen:     { label: 'ประชาชน',       color: '#374151', bg: '#f3f4f6' },
-}
-
-const ROLE_DESCRIPTIONS = {
-  citizen: 'ใช้บริการประชาชน ไม่มีสิทธิ์จัดการงานภายใน',
-  staff: 'เจ้าหน้าที่ทั่วไป ใช้เฉพาะเมนูงานที่ได้รับมอบหมาย',
-  viewer: 'ผู้บริหาร ดูข้อมูลและภาพรวมเพื่อประกอบการตัดสินใจ',
-  council: 'สมาชิกสภา ดูข้อมูลและงานที่เกี่ยวข้องกับสภาเทศบาล',
-  officer: 'ธุรการประจำกอง จัดการงานและเอกสารของกองที่สังกัด ไม่จัดการข้ามกอง',
-  technician: 'เจ้าหน้าที่ปฏิบัติงานหรือภาคสนาม บันทึกและอัปเดตงานที่รับผิดชอบ',
-  admin: 'ผู้ดูแลระบบของเทศบาล จัดการผู้ใช้ การตั้งค่า และงานทุกกองในเทศบาล',
-  superadmin: 'ผู้พัฒนาระบบ จัดการได้ทุกเทศบาลและทุกโมดูล',
-}
+// ROLE_LABELS/ROLE_DESCRIPTIONS ย้ายไป src/lib/staffRoster.js แล้ว (import ด้านบน) — ใช้ร่วมกับ
+// ComplaintsManager.jsx กัน role label เพี้ยนกันคนละจุดเหมือนที่เคยเป็นมาก่อน
 
 const POSITION_CATEGORIES = [
   { value: 'political_exec',   label: 'ฝ่ายบริหาร (การเมือง)' },
@@ -1485,135 +1467,6 @@ function EmergencyManager({ tenant }) {
   )
 }
 
-// ─── Assignment Manager ───────────────────────────────────────────────────────
-const DEFAULT_CATS = [
-  { value: 'light',            label: 'ไฟฟ้าสาธารณะ',           emoji: '💡' },
-  { value: 'road',             label: 'ซ่อมแซมถนน',             emoji: '🛣️' },
-  { value: 'mosquito',         label: 'พ่นยุง',                 emoji: '🦟' },
-  { value: 'tree',             label: 'ตัดต้นไม้',              emoji: '🌳' },
-  { value: 'trash',            label: 'ขยะ / ความสะอาด',       emoji: '🗑️' },
-  { value: 'water_supply',     label: 'สนับสนุนน้ำอุปโภค',      emoji: '🚿' },
-  { value: 'borrow_equipment', label: 'ยืมพัสดุ',               emoji: '📦' },
-  { value: 'corruption',       label: 'แจ้งการทุจริต',          emoji: '⚖️' },
-  { value: 'grievance',        label: 'ร้องทุกข์/ร้องเรียน',    emoji: '📣' },
-  { value: 'other',            label: 'อื่นๆ',                  emoji: '📝' },
-]
-
-function AssignmentManager({ tenant, readOnly = false }) {
-  const [cats, setCats] = useState(DEFAULT_CATS)
-  const [techs, setTechs] = useState([])
-  const [assignments, setAssignments] = useState({}) // { category: technician_id }
-  const [slaMap, setSlaMap] = useState({})            // { category: sla_days }
-  const [saving, setSaving] = useState(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    if (!tenant?.id) return
-    const safety = setTimeout(() => setLoading(false), 12000)
-    Promise.all([
-      supabase.from('complaint_categories').select('value,label,emoji').eq('municipality_id', tenant.id).order('sort_order'),
-      supabase.from('profiles').select('id,full_name,email').eq('municipality_id', tenant.id).eq('role', 'technician').order('full_name'),
-      supabase.from('category_assignments').select('category,technician_id,sla_days').eq('municipality_id', tenant.id),
-    ]).then(([catsRes, techsRes, assignRes]) => {
-      if (catsRes.data?.length > 0) setCats(catsRes.data)
-      setTechs(techsRes.data ?? [])
-      const map = {}
-      const slaM = {}
-      for (const a of assignRes.data ?? []) {
-        map[a.category] = a.technician_id ?? ''
-        slaM[a.category] = a.sla_days ?? 3
-      }
-      setAssignments(map)
-      setSlaMap(slaM)
-    }).finally(() => { clearTimeout(safety); setLoading(false) })
-  }, [tenant?.id])
-
-  async function handleChange(category, technicianId) {
-    setSaving(category)
-    setAssignments((prev) => ({ ...prev, [category]: technicianId }))
-    await supabase.from('category_assignments').upsert({
-      municipality_id: tenant.id,
-      category,
-      technician_id: technicianId || null,
-    }, { onConflict: 'municipality_id,category' })
-    setSaving(null)
-  }
-
-  async function handleSlaChange(category, rawDays) {
-    const days = Math.max(1, parseInt(rawDays) || 1)
-    setSlaMap((prev) => ({ ...prev, [category]: days }))
-    setSaving(category)
-    await supabase.from('category_assignments').upsert({
-      municipality_id: tenant.id,
-      category,
-      sla_days: days,
-    }, { onConflict: 'municipality_id,category' })
-    setSaving(null)
-  }
-
-  if (loading) return <div className="flex justify-center py-12"><Loader2 size={22} className="animate-spin text-gray-300" /></div>
-
-  if (techs.length === 0) return (
-    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 text-sm text-amber-800 space-y-1">
-      <p className="font-semibold">ยังไม่มีช่างในระบบ</p>
-      <p className="text-amber-600">ไปที่ “จัดการผู้ใช้และการแต่งตั้ง” → เปิดบุคลากร → แท็บ “การแต่งตั้งและสิทธิ์” แล้วกำหนดบทบาทปฏิบัติงาน</p>
-    </div>
-  )
-
-  return (
-    <div className="space-y-3">
-      <div className="bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3 text-xs text-blue-700">
-        เมื่อประชาชนส่งคำร้อง ระบบจะ <strong>มอบหมายให้ช่างที่ตั้งไว้อัตโนมัติ</strong> — กำหนด <strong>ระยะเวลาดำเนินการ</strong> (วัน) แต่ละประเภทสำหรับการประเมิน LPA
-      </div>
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        {cats.map((cat, i) => {
-          const currentTech = assignments[cat.value] ?? ''
-          const currentSla = slaMap[cat.value] ?? 3
-          const isSaving = saving === cat.value
-          return (
-            <div key={cat.value}
-                 className={`flex items-center gap-3 px-4 py-3.5 ${i < cats.length - 1 ? 'border-b border-gray-50' : ''}`}>
-              <div className="w-9 h-9 rounded-xl bg-gray-50 flex items-center justify-center text-lg shrink-0">
-                {cat.emoji}
-              </div>
-              <p className="flex-1 text-sm font-medium text-gray-700 min-w-0 truncate">{cat.label}</p>
-              <div className="flex items-center gap-2 shrink-0">
-                {isSaving && <Loader2 size={13} className="animate-spin text-gray-300" />}
-                <div className="flex items-center gap-1">
-                  <input
-                    type="number"
-                    min="1"
-                    max="365"
-                    value={currentSla}
-                    onChange={(e) => !readOnly && setSlaMap((prev) => ({ ...prev, [cat.value]: e.target.value }))}
-                    onBlur={(e) => !readOnly && handleSlaChange(cat.value, e.target.value)}
-                    disabled={isSaving || readOnly}
-                    className={`w-12 text-xs border border-gray-200 rounded-xl px-2 py-1.5 bg-white text-gray-900 text-center focus:outline-none focus:border-amber-400 ${readOnly ? 'opacity-60 cursor-not-allowed' : ''}`}
-                  />
-                  <span className="text-xs text-gray-400">วัน</span>
-                </div>
-                <select
-                  value={currentTech}
-                  onChange={(e) => !readOnly && handleChange(cat.value, e.target.value)}
-                  disabled={isSaving || readOnly}
-                  className={`text-xs border border-gray-200 rounded-xl px-2 py-1.5 bg-white text-gray-700 focus:outline-none max-w-32 ${readOnly ? 'opacity-60 cursor-not-allowed' : ''}`}
-                >
-                  <option value="">— ไม่ระบุ —</option>
-                  {techs.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.full_name ? `${t.full_name} (${t.email || ''})` : t.email}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
 // ─── Staff Manager ───────────────────────────────────────────────────────────
 const STAFF_ROLE_LABEL = {
   mayor: 'นายกเทศมนตรี',
@@ -2378,7 +2231,7 @@ function SlaInput({ value, onCommit }) {
   )
 }
 
-function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleActive, onEditEmoji, techs = [], techId = '', slaDays = 3, onTechChange, onSlaChange, savingAssign = false }) {
+function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleActive, onEditEmoji, techGroups = [], techId = '', slaDays = 3, onTechChange, onSlaChange, savingAssign = false }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(cat.label)
@@ -2469,10 +2322,14 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
           className="flex-1 min-w-0 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none"
         >
           <option value="">— ไม่ระบุ —</option>
-          {techs.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.full_name || t.email}{t.role === 'staff' ? ' (เจ้าหน้าที่)' : t.role === 'admin' ? ' (แอดมิน)' : ' (ช่าง)'}
-            </option>
+          {techGroups.map((g) => (
+            <optgroup key={g.department_name} label={g.department_name}>
+              {g.members.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {(t.full_name || t.email) + (t.is_dept_head ? ' ⭐' : '')} · {ROLE_LABELS[t.role]?.label ?? t.role}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
         <SlaInput value={slaDays} onCommit={onSlaChange} />
@@ -2481,7 +2338,7 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
   )
 }
 
-function SortableDesktopRow({ cat, idx, draft, assign, isSaving, techs, onSetDraft, onSaveRow, onCancelRow, onStartLabelEdit, onToggleActive, onDeleteCat, onEditEmoji }) {
+function SortableDesktopRow({ cat, idx, draft, assign, isSaving, techGroups = [], onSetDraft, onSaveRow, onCancelRow, onStartLabelEdit, onToggleActive, onDeleteCat, onEditEmoji }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
   const color = COLOR_PRESETS[cat.color_idx ?? 0] ?? COLOR_PRESETS[0]
   const editingLabel = !!draft?.editingLabel
@@ -2543,10 +2400,14 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, techs, onSetDra
             className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none max-w-40"
           >
             <option value="">— ไม่ระบุ —</option>
-            {techs.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.full_name || t.email}{t.role === 'staff' ? ' (เจ้าหน้าที่)' : t.role === 'admin' ? ' (แอดมิน)' : ' (ช่าง)'}
-              </option>
+            {techGroups.map((g) => (
+              <optgroup key={g.department_name} label={g.department_name}>
+                {g.members.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {(t.full_name || t.email) + (t.is_dept_head ? ' ⭐' : '')} · {ROLE_LABELS[t.role]?.label ?? t.role}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </div>
@@ -2717,9 +2578,11 @@ function CategoryManager({ tenant }) {
 
   useEffect(() => {
     if (!tenant?.id) return
-    supabase.from('profiles').select('id,full_name,email,role').eq('municipality_id', tenant.id).in('role', ['technician', 'staff', 'admin']).order('full_name')
-      .then(({ data }) => setTechs(data ?? []))
+    // ใช้ helper กลางร่วมกับ dropdown มอบหมายรายคำร้องใน ComplaintsManager.jsx กัน pool คนไม่ตรงกัน
+    fetchAssignableStaff(tenant.id).then(setTechs)
   }, [tenant?.id])
+  // จัดกลุ่มตามกอง ใช้ render เป็น <optgroup> — คนหลักสิบ/ร้อยคนจะได้ไม่ต้องไล่หาในลิสต์แบนราบยาวๆ
+  const techGroups = groupStaffByDepartment(techs)
 
   async function handleTechChange(catValue, techId) {
     setSavingAssign(catValue)
@@ -2949,7 +2812,7 @@ function CategoryManager({ tenant }) {
                   <SortableCatItem key={cat.id} cat={cat} idx={idx} total={cats.length}
                     onDelete={deleteCat} onMove={moveCat} onEdit={editCat} onToggleActive={toggleActive}
                     onEditEmoji={setIconPickerCat}
-                    techs={techs}
+                    techGroups={techGroups}
                     techId={assignMap[cat.value]?.technician_id ?? ''}
                     slaDays={assignMap[cat.value]?.sla_days ?? 3}
                     onTechChange={(tid) => handleTechChange(cat.value, tid)}
@@ -2986,7 +2849,7 @@ function CategoryManager({ tenant }) {
                         draft={rowDrafts[cat.value]}
                         assign={assignMap[cat.value]}
                         isSaving={savingAssign === cat.value || savingAll}
-                        techs={techs}
+                        techGroups={techGroups}
                         onSetDraft={setDraft}
                         onSaveRow={saveRow}
                         onCancelRow={cancelRow}
@@ -3606,7 +3469,6 @@ const PAGE_LABELS = {
   report: 'รายงานสรุป',
   categories: 'ประเภทคำร้อง',
   'fee-settings': 'ค่าธรรมเนียม',
-  assignments: 'ผู้รับผิดชอบ',
   emergency: 'สายด่วน',
   locations: 'สถานที่เกิดเหตุ',
   'system-settings': 'ตั้งค่าระบบ',
@@ -4239,19 +4101,10 @@ export default function AdminDashboard() {
       ) : activePage === 'locations' ? (
         <LocationManager tenant={tenant} />
       ) : activePage === 'categories' ? (
+        // หน้า "ผู้รับผิดชอบแต่ละประเภทคำร้อง" (activePage 'assignments', AssignmentManager component)
+        // ถูกลบไปแล้ว — เป็น UI ซ้ำซ้อนกับส่วนตั้งผู้รับผิดชอบ+SLA ที่ฝังอยู่ใน CategoryManager นี้อยู่แล้ว
+        // (เขียนตาราง category_assignments ตัวเดียวกัน) เมนูไปหน้านั้นถูกปิด (show:false) มานานแล้วด้วย
         <CategoryManager tenant={tenant} />
-      ) : activePage === 'assignments' ? (
-        <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            {currentUserRole !== 'viewer' && (
-              <button onClick={() => setActivePage('more')} className="p-1.5 rounded-xl hover:bg-gray-100 text-gray-400 transition-colors">
-                <ChevronRight size={16} className="rotate-180" />
-              </button>
-            )}
-            <h2 className="font-bold text-gray-700">ผู้รับผิดชอบแต่ละประเภทคำร้อง</h2>
-          </div>
-          <AssignmentManager tenant={tenant} readOnly={currentUserRole === 'viewer'} />
-        </div>
       ) : activePage === 'civil-report' ? (
         <CivilProjectReport tenant={tenant} />
       ) : activePage === 'fee-settings' ? (
@@ -4383,8 +4236,7 @@ export default function AdminDashboard() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {[
-                  { key: 'categories',  Icon: Tag,    color: '#d97706', bg: '#fef3c7', label: 'ประเภทคำร้อง', desc: 'จัดการหมวดหมู่คำร้อง',       show: currentUserRole !== 'viewer' },
-                  { key: 'assignments', Icon: Wrench, color: '#d97706', bg: '#fef3c7', label: 'ผู้รับผิดชอบ', desc: 'มอบหมายงานตามประเภทคำร้อง', show: false },
+                  { key: 'categories',  Icon: Tag,    color: '#d97706', bg: '#fef3c7', label: 'ประเภทคำร้อง', desc: 'จัดการหมวดหมู่ + ผู้รับผิดชอบ', show: currentUserRole !== 'viewer' },
                   { key: 'emergency',   Icon: Phone,       color: '#ef4444', bg: '#fee2e2', label: 'สายด่วนฉุกเฉิน',  desc: 'จัดการรายชื่อและเบอร์ติดต่อ',     show: currentUserRole !== 'viewer' },
                   { key: 'locations',   Icon: MapPin,      color: '#0891b2', bg: '#e0f2fe', label: 'สถานที่เกิดเหตุ', desc: 'จัดการหมู่บ้าน / ตำบลในพื้นที่',  show: currentUserRole !== 'viewer' },
                   { key: 'staff',            Icon: UserCircle2, color: '#7c3aed', bg: '#ede9fe', label: 'รูปผู้บริหาร',       desc: 'อัปโหลดรูปนายก/รองนายก/ทีมงาน',       show: currentUserRole !== 'viewer' },
