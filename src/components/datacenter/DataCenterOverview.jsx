@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Database, Layers, Radio, Globe, Sparkles, Upload, Plus, BarChart3, MapPin,
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Pencil, Eye, EyeOff, Search, Filter, AlertCircle,
+  Download, AlertTriangle, RefreshCw, Loader2, Building2,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import DataCenterImportModal from './DataCenterImportModal'
@@ -16,6 +17,29 @@ function withAlpha(hex, alpha) {
   const g = parseInt(h.substring(2, 4), 16)
   const b = parseInt(h.substring(4, 6), 16)
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+function formatThaiDate(iso) {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
+// ตัวกรอง ilike ของ PostgREST ตีความ % และ _ เป็น wildcard — escape กันคำค้นที่มีอักขระนี้
+// ไปแมตช์ผิดขอบเขตที่ผู้ใช้ตั้งใจพิมพ์ (ไม่ใช่ช่องโหว่ SQL injection เพราะ parameterized อยู่แล้ว)
+function escapeIlikeTerm(term) {
+  return term.replace(/[%_\\]/g, m => '\\' + m)
+}
+
+// pattern เดียวกับ src/components/fleet/FleetReport.jsx — BOM นำหน้ากัน Excel ไทยอ่านเพี้ยน
+function downloadCSV(rows, filename) {
+  const csv = '﻿' + rows.map(r =>
+    r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')
+  ).join('\n')
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })),
+    download: filename,
+  })
+  document.body.appendChild(a); a.click(); document.body.removeChild(a)
 }
 
 function SortHeader({ label, sortKey, activeKey, dir, onSort, className = '' }) {
@@ -104,12 +128,17 @@ export default function DataCenterOverview({
 }) {
   const isLight = theme === 'light'
   const tenantId = tenant?.id
+  const hasActiveFilter = Boolean(initialFilterGroup || initialFilterCategory)
+
   const [entries, setEntries] = useState([])
+  const [entriesFetchedAt, setEntriesFetchedAt] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [fetchError, setFetchError] = useState(null)
   const [showImportModal, setShowImportModal] = useState(false)
 
   // desktop table: ค้นหา/กรอง/เรียง/แบ่งหน้าอิสระจากสไลด์เมนูซ้าย (sync ค่าเริ่มต้นมาจากมันตอน filter เปลี่ยน)
   const [tableSearch, setTableSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [tableFilterGroup, setTableFilterGroup] = useState(initialFilterGroup ?? 'all')
   const [tableFilterCategory, setTableFilterCategory] = useState(initialFilterCategory ?? 'all')
   const [tableFilterStatus, setTableFilterStatus] = useState('all')
@@ -117,19 +146,50 @@ export default function DataCenterOverview({
   const [tableSortDir, setTableSortDir] = useState('asc')
   const [tablePage, setTablePage] = useState(1)
   const [tablePageSize, setTablePageSize] = useState(TABLE_PAGE_SIZES[0])
+  const [exporting, setExporting] = useState(false)
+
+  // แถวจริงของหน้าปัจจุบัน (ตาราง desktop + การ์ด mobile) — ต่างจาก entries ด้านบน
+  // ตรงที่กรอง/เรียง/แบ่งหน้าที่ server ไม่ใช่ในเบราว์เซอร์ กันโหลดข้อมูลหนัก (photo_urls/description ฯลฯ)
+  // ของทั้งเทศบาลมาทั้งก้อนเวลามีเป็นพันแถว
+  const [listRows, setListRows] = useState([])
+  const [listTotal, setListTotal] = useState(0)
+  const [listLoading, setListLoading] = useState(false)
+  const [listError, setListError] = useState(null)
 
   const fetchEntries = useCallback(() => {
     if (!tenantId) return
     setLoading(true)
+    setFetchError(null)
+    // สถิติ/การ์ดเลือกหมวด/ตัวเลือกกรอง ต้องนับจากทุกแถวของเทศบาล แต่ไม่ต้องใช้คอลัมน์หนัก
+    // (description/photo_urls/external_url/route_color ดึงเฉพาะหน้ารายการจริงใน fetchListPage ด้านล่าง)
     supabase.from('data_center_entries')
-      .select('id, name, group_name, category, status, latitude, longitude, description, photo_urls, external_url, route_points, route_color, department_id, created_by')
+      .select('id, name, group_name, category, status, latitude, longitude, route_points, department_id, created_at')
       .eq('municipality_id', tenantId)
-      .then(({ data }) => { setEntries(data ?? []); setLoading(false) })
+      .then(({ data, error }) => {
+        if (error) { setFetchError(error.message); setEntries([]) }
+        else { setEntries(data ?? []); setEntriesFetchedAt(Date.now()) }
+        setLoading(false)
+      })
   }, [tenantId])
 
   useEffect(() => {
     queueMicrotask(fetchEntries)
   }, [fetchEntries])
+
+  // ชื่อกอง/สำนัก สำหรับ breakdown — ยังไม่มีตอน entries.department_id เพียวๆ (เป็นแค่ uuid)
+  // ล้มเหลวได้แบบ soft: breakdown จะ fallback ไปโชว์ "ไม่ทราบชื่อกอง" แทน ไม่ต้อง block dashboard ทั้งหน้า
+  const [departments, setDepartments] = useState([])
+  useEffect(() => {
+    if (!tenantId) return
+    supabase.from('departments').select('id, name').eq('municipality_id', tenantId)
+      .then(({ data, error }) => { if (!error) setDepartments(data ?? []) })
+  }, [tenantId])
+
+  // debounce คำค้นก่อนยิง query กันยิงรัวทุกตัวอักษรที่พิมพ์
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(tableSearch.trim()), 300)
+    return () => clearTimeout(t)
+  }, [tableSearch])
 
   // เมนูซ้ายเปลี่ยนหมวด → sync ตารางให้กรองตามทันที (ไม่งั้นกดเมนูซ้ายแล้วตารางยังโชว์ของเดิม)
   // ปรับ state ระหว่าง render ตามแพทเทิร์นที่ React แนะนำ (ไม่ใช้ useEffect ตั้ง state ตรงๆ กันเรนเดอร์ซ้อน)
@@ -141,11 +201,43 @@ export default function DataCenterOverview({
     setTablePage(1)
   }
 
+  // หน้ารายการจริง (เฉพาะตอนเจาะเข้าโหมดดูรายการ) — กรอง/เรียง/แบ่งหน้าที่ server ทั้งหมด
+  // listRequestRef กัน race condition: เปลี่ยนตัวกรองรัวๆ แล้ว response เก่ามาถึงทีหลัง response ใหม่ จะไม่ทับข้อมูลล่าสุด
+  const listRequestRef = useRef(0)
+  const fetchListPage = useCallback(() => {
+    if (!tenantId || !hasActiveFilter || !onEditEntry) { setListRows([]); setListTotal(0); return }
+    const requestId = ++listRequestRef.current
+    setListLoading(true)
+    setListError(null)
+    let query = supabase.from('data_center_entries')
+      .select('id, name, group_name, category, status, latitude, longitude, description, photo_urls, external_url, route_points, route_color, department_id, created_by, created_at', { count: 'exact' })
+      .eq('municipality_id', tenantId)
+    if (tableFilterGroup !== 'all') query = query.eq('group_name', tableFilterGroup)
+    if (tableFilterCategory !== 'all') query = query.eq('category', tableFilterCategory)
+    if (tableFilterStatus !== 'all') query = query.eq('status', tableFilterStatus)
+    if (debouncedSearch) query = query.ilike('name', `%${escapeIlikeTerm(debouncedSearch)}%`)
+    query = query
+      .order(tableSortKey, { ascending: tableSortDir === 'asc' })
+      .range((tablePage - 1) * tablePageSize, tablePage * tablePageSize - 1)
+    query.then(({ data, count, error }) => {
+      if (requestId !== listRequestRef.current) return // มี request ใหม่กว่าแทรกไปแล้ว ทิ้ง response นี้
+      if (error) { setListError(error.message); setListRows([]); setListTotal(0) }
+      else { setListRows(data ?? []); setListTotal(count ?? 0) }
+      setListLoading(false)
+    })
+  }, [tenantId, hasActiveFilter, onEditEntry, tableFilterGroup, tableFilterCategory, tableFilterStatus, debouncedSearch, tableSortKey, tableSortDir, tablePage, tablePageSize])
+
+  useEffect(() => {
+    queueMicrotask(fetchListPage)
+  }, [fetchListPage])
+
   async function toggleStatus(entry) {
     const nextStatus = entry.status === 'active' ? 'archived' : 'active'
+    setListRows(prev => prev.map(e => e.id === entry.id ? { ...e, status: nextStatus } : e))
     setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, status: nextStatus } : e))
     const { error } = await supabase.from('data_center_entries').update({ status: nextStatus }).eq('id', entry.id)
     if (error) {
+      setListRows(prev => prev.map(e => e.id === entry.id ? { ...e, status: entry.status } : e))
       setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, status: entry.status } : e))
       alert('บันทึกไม่สำเร็จ: ' + error.message)
     }
@@ -154,6 +246,35 @@ export default function DataCenterOverview({
   function sortByColumn(key) {
     if (tableSortKey === key) setTableSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setTableSortKey(key); setTableSortDir('asc') }
+    setTablePage(1)
+  }
+
+  // ส่งออก CSV ตามตัวกรอง/คำค้น/การเรียงปัจจุบันของตาราง (ไม่ใช่แค่หน้าที่กำลังโชว์) จำกัด 5,000 แถวกันไฟล์บวมเกินจำเป็น
+  async function handleExportCSV() {
+    if (!tenantId || exporting) return
+    setExporting(true)
+    let query = supabase.from('data_center_entries')
+      .select('name, group_name, category, status, latitude, longitude, route_points, created_at')
+      .eq('municipality_id', tenantId)
+    if (tableFilterGroup !== 'all') query = query.eq('group_name', tableFilterGroup)
+    if (tableFilterCategory !== 'all') query = query.eq('category', tableFilterCategory)
+    if (tableFilterStatus !== 'all') query = query.eq('status', tableFilterStatus)
+    if (debouncedSearch) query = query.ilike('name', `%${escapeIlikeTerm(debouncedSearch)}%`)
+    query = query.order(tableSortKey, { ascending: tableSortDir === 'asc' }).limit(5000)
+    const { data, error } = await query
+    setExporting(false)
+    if (error) { alert('ส่งออกไม่สำเร็จ: ' + error.message); return }
+    downloadCSV([
+      ['ชื่อสถานที่', 'กลุ่มหลัก', 'ประเภทย่อย', 'สถานะ', 'พิกัด/เส้นทาง', 'บันทึกเมื่อ'],
+      ...(data ?? []).map(e => [
+        e.name ?? '',
+        e.group_name ?? '',
+        e.category ?? '',
+        e.status === 'archived' ? 'ไม่ใช้งาน' : 'ใช้งาน',
+        e.route_points?.length ? `เส้นทาง ${e.route_points.length} จุด` : (e.latitude != null ? `${e.latitude}, ${e.longitude}` : ''),
+        formatThaiDate(e.created_at),
+      ]),
+    ], `ศูนย์ข้อมูลดิจิทัล_${filterLabel}_${new Date().toISOString().slice(0, 10)}.csv`)
   }
 
   if (loading) return (
@@ -166,7 +287,6 @@ export default function DataCenterOverview({
     </div>
   )
 
-  const hasActiveFilter = Boolean(initialFilterGroup || initialFilterCategory)
   const filteredEntries = entries.filter(entry => {
     if (initialFilterGroup && entry.group_name !== initialFilterGroup) return false
     if (initialFilterCategory && entry.category !== initialFilterCategory) return false
@@ -176,6 +296,9 @@ export default function DataCenterOverview({
   const totalEntries = filteredEntries.length
   const activeEntriesCount = filteredEntries.filter(e => e.status !== 'archived').length
   const activeRate = totalEntries ? Math.round((activeEntriesCount / totalEntries) * 100) : 100
+  const recentCount = entriesFetchedAt
+    ? filteredEntries.filter(e => e.created_at && (entriesFetchedAt - new Date(e.created_at).getTime()) <= 30 * 24 * 60 * 60 * 1000).length
+    : 0
 
   // GIS Types
   const polylineEntries = filteredEntries.filter(e => e.route_points && e.route_points.length > 0)
@@ -204,29 +327,31 @@ export default function DataCenterOverview({
     meta: getGroupMeta(g)
   })).sort((a, b) => b.count - a.count)
 
+  // Department breakdown — นับจาก department_id ดิบ (มีในทั้ง filteredEntries) แล้วแปลงเป็นชื่อทีหลัง
+  // กัน N+1: join ชื่อกองแค่ตอนสร้าง list นี้ ไม่ใช่ตอน filter/loop หลัก
+  const departmentNameMap = new Map(departments.map(d => [d.id, d.name]))
+  const deptMap = {}
+  filteredEntries.forEach(e => {
+    const key = e.department_id || 'none'
+    deptMap[key] = (deptMap[key] || 0) + 1
+  })
+  const deptStatsList = Object.entries(deptMap).map(([id, count]) => ({
+    id,
+    name: id === 'none' ? 'ไม่ระบุกอง' : (departmentNameMap.get(id) || 'ไม่ทราบชื่อกอง'),
+    count,
+    percent: totalEntries ? Math.round((count / totalEntries) * 100) : 0,
+  })).sort((a, b) => b.count - a.count)
+
   // รายการจริง (ตาราง desktop + การ์ด mobile) — อิสระจากตัวกรองเมนูซ้าย ผู้ใช้เปลี่ยนเป็น "ทุกกลุ่ม" ดูทั้งหมดได้เอง
   const allGroups = Array.from(new Set(entries.map(e => e.group_name))).sort((a, b) => a.localeCompare(b, 'th'))
   const tableCategoryOptions = Array.from(new Set(
     entries.filter(e => tableFilterGroup === 'all' || e.group_name === tableFilterGroup).map(e => e.category)
   )).sort((a, b) => a.localeCompare(b, 'th'))
 
-  const tableFiltered = entries.filter(e => {
-    if (tableFilterGroup !== 'all' && e.group_name !== tableFilterGroup) return false
-    if (tableFilterCategory !== 'all' && e.category !== tableFilterCategory) return false
-    if (tableFilterStatus !== 'all' && (e.status ?? 'active') !== tableFilterStatus) return false
-    if (tableSearch.trim() && !(e.name ?? '').toLowerCase().includes(tableSearch.trim().toLowerCase())) return false
-    return true
-  })
-  const tableSorted = [...tableFiltered].sort((a, b) => {
-    let av = a[tableSortKey] ?? '', bv = b[tableSortKey] ?? ''
-    if (typeof av === 'string') av = av.toLowerCase()
-    if (typeof bv === 'string') bv = bv.toLowerCase()
-    const cmp = av < bv ? -1 : av > bv ? 1 : 0
-    return tableSortDir === 'asc' ? cmp : -cmp
-  })
-  const tableTotalPages = Math.max(1, Math.ceil(tableSorted.length / tablePageSize))
+  // กรอง/เรียง/แบ่งหน้าแล้วที่ server (fetchListPage) — เหลือแค่ derive ตัวเลขหน้าไว้แสดงผล
+  const tableTotalPages = Math.max(1, Math.ceil(listTotal / tablePageSize))
   const tableCurrentPage = Math.min(tablePage, tableTotalPages)
-  const tablePageItems = tableSorted.slice((tableCurrentPage - 1) * tablePageSize, tableCurrentPage * tablePageSize)
+  const tablePageItems = listRows
 
   return (
     <div className="space-y-6">
@@ -287,6 +412,23 @@ export default function DataCenterOverview({
         </div>
       </div>
 
+      {fetchError && (
+        <div className={`flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl border backdrop-blur-xl ${
+          isLight ? 'bg-red-50 border-red-200 text-red-800' : 'bg-red-950/40 border-red-500/40 text-red-200'
+        }`}>
+          <div className="flex items-center gap-2 text-xs font-bold">
+            <AlertTriangle size={16} className="shrink-0" />
+            <span>โหลดข้อมูลไม่สำเร็จ: {fetchError}</span>
+          </div>
+          <button onClick={fetchEntries}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors shrink-0 ${
+              isLight ? 'bg-white border-red-300 text-red-700 hover:bg-red-100' : 'bg-red-900/40 border-red-500/40 text-red-200 hover:bg-red-900/60'
+            }`}>
+            <RefreshCw size={13} /> ลองใหม่
+          </button>
+        </div>
+      )}
+
       {/* Cyber HUD Stats Panel */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
         {/* Stat 1: Total Data Points */}
@@ -306,6 +448,11 @@ export default function DataCenterOverview({
           <p className={`text-[10px] mt-0.5 flex items-center gap-1 ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
             <Sparkles size={10} className={isLight ? 'text-sky-600' : 'text-cyan-400'} /> ข้อมูลสถานที่และโครงสร้าง
           </p>
+          {recentCount > 0 && (
+            <p className={`text-[9px] mt-1 font-bold ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`}>
+              +{recentCount} รายการใหม่ใน 30 วันล่าสุด
+            </p>
+          )}
         </div>
 
         {/* Stat 2: Active Groups */}
@@ -366,7 +513,7 @@ export default function DataCenterOverview({
         </div>
       </div>
 
-      {entries.length === 0 && (
+      {entries.length === 0 && !fetchError && (
         <div className={`flex flex-col items-center justify-center py-20 rounded-2xl border backdrop-blur-xl ${
           isLight ? 'bg-white/90 border-slate-200 text-slate-600' : 'bg-slate-900/70 border-cyan-500/20 text-slate-400'
         }`}>
@@ -403,6 +550,9 @@ export default function DataCenterOverview({
                   </div>
                   <p className="text-xs font-bold truncate pr-6">{g.name}</p>
                   <p className={`text-[10px] mt-0.5 ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>{g.catCount} ประเภทย่อย</p>
+                  <div className="mt-2 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: withAlpha(g.meta.bg, 0.15) }} title={`${g.percent}% ของข้อมูลทั้งหมด`}>
+                    <div className="h-full rounded-full" style={{ width: `${g.percent}%`, backgroundColor: g.meta.bg }} />
+                  </div>
                 </button>
                 <button type="button" onClick={() => onAddNew(g.name)} aria-label={`เพิ่มข้อมูลในกลุ่ม ${g.name}`} title={`เพิ่มข้อมูลในกลุ่ม ${g.name}`}
                   className={`absolute top-3 right-3 p-1 rounded-lg border opacity-0 group-hover:opacity-100 transition-opacity ${
@@ -410,6 +560,31 @@ export default function DataCenterOverview({
                   }`}>
                   <Plus size={12} />
                 </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Department breakdown — เสริมมุมมองความรับผิดชอบต่อกอง/สำนัก แยกจากกลุ่มข้อมูล (group_name) ด้านบน */}
+      {entries.length > 0 && !hasActiveFilter && deptStatsList.length > 0 && (
+        <div className={`rounded-2xl border p-5 backdrop-blur-xl shadow-xl ${
+          isLight ? 'bg-white/95 border-slate-200 text-slate-800' : 'bg-slate-900/90 border-cyan-500/30 text-white'
+        }`}>
+          <div className="flex items-center gap-2 mb-4">
+            <Building2 size={16} className={isLight ? 'text-sky-600' : 'text-cyan-400'} />
+            <h2 className="text-sm font-extrabold tracking-wide">แยกตามกอง/สำนักที่บันทึก</h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3">
+            {deptStatsList.map(d => (
+              <div key={d.id} className="min-w-0">
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className="text-xs font-semibold truncate">{d.name}</span>
+                  <span className={`text-[11px] font-mono font-bold shrink-0 ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>{d.count} รายการ</span>
+                </div>
+                <div className={`h-1.5 rounded-full overflow-hidden ${isLight ? 'bg-sky-100' : 'bg-slate-800'}`} title={`${d.percent}% ของข้อมูลทั้งหมด`}>
+                  <div className={`h-full rounded-full ${isLight ? 'bg-sky-500' : 'bg-cyan-400'}`} style={{ width: `${d.percent}%` }} />
+                </div>
               </div>
             ))}
           </div>
@@ -460,8 +635,15 @@ export default function DataCenterOverview({
                 <option value="archived">ไม่ใช้งาน (Archived)</option>
               </select>
             </div>
+            <button onClick={handleExportCSV} disabled={exporting}
+              className={`ml-auto flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold border transition-all active:scale-95 shrink-0 disabled:opacity-50 ${
+                isLight ? 'text-slate-700 bg-slate-50 border-slate-200 hover:bg-slate-100' : 'text-slate-200 bg-slate-800 border-slate-700 hover:bg-slate-700'
+              }`}>
+              {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              <span>{exporting ? 'กำลังส่งออก...' : 'ส่งออก CSV'}</span>
+            </button>
             <button onClick={() => onAddNew(initialFilterGroup, initialFilterCategory)}
-              className="ml-auto flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-slate-950 bg-gradient-to-r from-cyan-400 via-teal-300 to-emerald-400 hover:from-cyan-300 hover:to-emerald-300 shadow-lg shadow-cyan-500/25 active:scale-95 transition-all shrink-0">
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-slate-950 bg-gradient-to-r from-cyan-400 via-teal-300 to-emerald-400 hover:from-cyan-300 hover:to-emerald-300 shadow-lg shadow-cyan-500/25 active:scale-95 transition-all shrink-0">
               <Plus size={14} strokeWidth={2.5} /> เพิ่มในหมวดนี้
             </button>
           </div>
@@ -470,7 +652,20 @@ export default function DataCenterOverview({
           <div className={`md:hidden rounded-2xl border backdrop-blur-xl shadow-xl overflow-hidden ${
             isLight ? 'bg-white/95 border-slate-200 text-slate-800' : 'bg-slate-900/90 border-cyan-500/30 text-white'
           }`}>
-            {tablePageItems.length === 0 ? (
+            {listLoading ? (
+              <div className={`text-center py-14 ${isLight ? 'text-slate-400' : 'text-slate-500'}`}>
+                <Loader2 size={22} className={`mx-auto mb-2 animate-spin ${isLight ? 'text-sky-500' : 'text-cyan-400'}`} />
+                <p className="font-mono text-xs">กำลังโหลด...</p>
+              </div>
+            ) : listError ? (
+              <div className={`text-center py-14 ${isLight ? 'text-red-500' : 'text-red-300'}`}>
+                <AlertTriangle size={26} className="mx-auto mb-2 opacity-70" />
+                <p className="font-mono text-xs mb-2">โหลดรายการไม่สำเร็จ: {listError}</p>
+                <button onClick={fetchListPage} className={`inline-flex items-center gap-1 px-3 py-1 rounded-lg border text-xs font-bold ${isLight ? 'bg-white border-red-300 text-red-700' : 'bg-red-900/40 border-red-500/40 text-red-200'}`}>
+                  <RefreshCw size={12} /> ลองใหม่
+                </button>
+              </div>
+            ) : tablePageItems.length === 0 ? (
               <div className={`text-center py-14 ${isLight ? 'text-slate-400' : 'text-slate-500'}`}>
                 <AlertCircle size={26} className={`mx-auto mb-2 opacity-40 ${isLight ? 'text-sky-500' : 'text-cyan-400'}`} />
                 <p className="font-mono text-xs">ไม่พบข้อมูลตามเงื่อนไขที่กรอง</p>
@@ -487,7 +682,7 @@ export default function DataCenterOverview({
                           <span>{meta.emoji}</span>
                           <span className="truncate">{entry.name || '(ไม่มีชื่อ)'}</span>
                         </p>
-                        <p className={`text-[10px] mt-0.5 truncate ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>{entry.category}</p>
+                        <p className={`text-[10px] mt-0.5 truncate ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>{entry.category} · {formatThaiDate(entry.created_at)}</p>
                       </button>
                       <div className="flex items-center gap-1 shrink-0">
                         {onViewOnMap && (
@@ -515,7 +710,7 @@ export default function DataCenterOverview({
               </div>
             )}
             <div className={`flex items-center justify-between gap-3 px-3.5 py-2.5 border-t text-xs ${isLight ? 'bg-slate-50 border-slate-200 text-slate-600' : 'bg-slate-950/80 border-cyan-500/20 text-slate-300'}`}>
-              <span className="font-mono text-[11px]">{tableSorted.length} รายการ</span>
+              <span className="font-mono text-[11px]">{listTotal} รายการ</span>
               <div className="flex items-center gap-2">
                 <span className="font-mono text-[11px]">หน้า {tableCurrentPage}/{tableTotalPages}</span>
                 <button onClick={() => setTablePage(p => Math.max(1, p - 1))} disabled={tableCurrentPage <= 1}
@@ -535,7 +730,7 @@ export default function DataCenterOverview({
             isLight ? 'bg-white/95 border-slate-200 text-slate-800' : 'bg-slate-900/90 border-cyan-500/30 text-white'
           }`}>
             <div className={`flex items-center justify-end px-4 py-2 border-b text-xs font-mono ${isLight ? 'bg-slate-50/90 border-slate-200 text-slate-600' : 'bg-slate-950/60 border-cyan-500/20 text-cyan-400/80'}`}>
-              FOUND: <span className={`font-bold ml-1 ${isLight ? 'text-sky-700' : 'text-cyan-300'}`}>{tableSorted.length}</span>&nbsp;/ {entries.length}
+              FOUND: <span className={`font-bold ml-1 ${isLight ? 'text-sky-700' : 'text-cyan-300'}`}>{listTotal}</span>&nbsp;/ {entries.length}
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
@@ -547,13 +742,31 @@ export default function DataCenterOverview({
                     <SortHeader label="ประเภทย่อย" sortKey="category" activeKey={tableSortKey} dir={tableSortDir} onSort={sortByColumn} />
                     <th className="px-3.5 py-3 font-extrabold uppercase tracking-wider text-[11px]">พิกัด GIS</th>
                     <SortHeader label="สถานะ" sortKey="status" activeKey={tableSortKey} dir={tableSortDir} onSort={sortByColumn} className="text-center" />
+                    <SortHeader label="บันทึกเมื่อ" sortKey="created_at" activeKey={tableSortKey} dir={tableSortDir} onSort={sortByColumn} />
                     <th className="w-32 px-3.5 py-3 font-extrabold uppercase tracking-wider text-[11px] text-center">จัดการ</th>
                   </tr>
                 </thead>
                 <tbody className={`divide-y ${isLight ? 'divide-slate-200/70' : 'divide-slate-800/60'}`}>
-                  {tablePageItems.length === 0 ? (
+                  {listLoading ? (
                     <tr>
-                      <td colSpan={7} className={`text-center py-16 ${isLight ? 'text-slate-400' : 'text-slate-500'}`}>
+                      <td colSpan={8} className={`text-center py-16 ${isLight ? 'text-slate-400' : 'text-slate-500'}`}>
+                        <Loader2 size={26} className={`mx-auto mb-2 animate-spin ${isLight ? 'text-sky-500' : 'text-cyan-400'}`} />
+                        <p className="font-mono text-xs">กำลังโหลด...</p>
+                      </td>
+                    </tr>
+                  ) : listError ? (
+                    <tr>
+                      <td colSpan={8} className={`text-center py-16 ${isLight ? 'text-red-500' : 'text-red-300'}`}>
+                        <AlertTriangle size={26} className="mx-auto mb-2 opacity-70" />
+                        <p className="font-mono text-xs mb-2">โหลดรายการไม่สำเร็จ: {listError}</p>
+                        <button onClick={fetchListPage} className={`inline-flex items-center gap-1 px-3 py-1 rounded-lg border text-xs font-bold ${isLight ? 'bg-white border-red-300 text-red-700' : 'bg-red-900/40 border-red-500/40 text-red-200'}`}>
+                          <RefreshCw size={12} /> ลองใหม่
+                        </button>
+                      </td>
+                    </tr>
+                  ) : tablePageItems.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className={`text-center py-16 ${isLight ? 'text-slate-400' : 'text-slate-500'}`}>
                         <AlertCircle size={28} className={`mx-auto mb-2 opacity-40 ${isLight ? 'text-sky-500' : 'text-cyan-400'}`} />
                         <p className="font-mono text-xs">ไม่พบข้อมูลตามเงื่อนไขที่กรอง</p>
                       </td>
@@ -594,6 +807,7 @@ export default function DataCenterOverview({
                             {isActive ? 'ใช้งาน' : 'ไม่ใช้งาน'}
                           </span>
                         </td>
+                        <td className={`px-3.5 py-3 font-mono text-[11px] ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>{formatThaiDate(entry.created_at)}</td>
                         <td className="px-3.5 py-3">
                           <div className="flex items-center justify-center gap-1.5">
                             {onViewOnMap && (
