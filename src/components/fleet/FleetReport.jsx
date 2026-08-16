@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
+import { assetIdentifier, assetOptionLabel, FUEL_LABEL, meterUnitShort } from '../../lib/fleetAssets'
 
 const fmt  = n => (n ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 2 })
 const fmtB = n => `฿${Math.round(n ?? 0).toLocaleString('th-TH')}`
 const thDate = d => d ? new Date(d).toLocaleDateString('th-TH', { dateStyle: 'short' }) : '—'
+const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+})[char])
 
 function nextDay(dateStr) {
   const d = new Date(dateStr + 'T00:00:00Z')
@@ -68,7 +72,7 @@ export default function FleetReport({ tenant }) {
 
   useEffect(() => {
     if (!tenant?.id) return
-    supabase.from('fleet_vehicles').select('id,name,license_plate')
+    supabase.from('fleet_vehicles').select('id,name,license_plate,asset_code,asset_kind,meter_unit')
       .eq('municipality_id', tenant.id).order('name')
       .then(({ data: v }) => setVehicles(v ?? []))
   }, [tenant?.id])
@@ -78,20 +82,30 @@ export default function FleetReport({ tenant }) {
     const vq = q => selVehicle ? q.eq('vehicle_id', selVehicle) : q
     const endDay = nextDay(dateTo) // ใช้ .lt(nextDay) แทน .lte(T23:59:59) เพื่อหลีกเลี่ยง format tz
 
-    const [{ data: trips }, { data: fuel }, { data: maint }] = await Promise.all([
+    const [tripResult, fuelResult, maintResult] = await Promise.all([
       vq(supabase.from('fleet_trips')
-        .select('*, vehicle:fleet_vehicles(id,name,license_plate), driver:profiles!fleet_trips_driver_id_fkey(id,full_name)')
+        .select('*, vehicle:fleet_vehicles(id,name,license_plate,asset_code,asset_kind,meter_unit), driver:profiles!fleet_trips_driver_id_fkey(id,full_name)')
         .eq('municipality_id', tenant.id).eq('status', 'completed')
         .gte('trip_date', dateFrom).lt('trip_date', endDay)).order('trip_date'),
       vq(supabase.from('fleet_fuel_records')
-        .select('*, fleet_vehicles(name, license_plate)')
+        .select('*, fleet_vehicles(name, license_plate, asset_code, asset_kind, meter_unit)')
         .eq('municipality_id', tenant.id)
         .gte('filled_at', dateFrom).lte('filled_at', dateTo)).order('filled_at'),
       vq(supabase.from('fleet_maintenance')
-        .select('*, fleet_vehicles(name, license_plate)')
+        .select('*, fleet_vehicles(name, license_plate, asset_code, asset_kind, meter_unit)')
         .eq('municipality_id', tenant.id)
         .gte('service_date', dateFrom).lte('service_date', dateTo)).order('service_date'),
     ])
+    const loadError = tripResult.error || fuelResult.error || maintResult.error
+    if (loadError) {
+      setData(null)
+      setLoading(false)
+      alert('โหลดรายงานไม่สำเร็จ: ' + loadError.message)
+      return
+    }
+    const { data: trips } = tripResult
+    const { data: fuel } = fuelResult
+    const { data: maint } = maintResult
     setData({ trips: trips ?? [], fuel: fuel ?? [], maint: maint ?? [] })
     setLoading(false)
   }
@@ -99,11 +113,11 @@ export default function FleetReport({ tenant }) {
   /* ── Summaries ── */
   const totalKm       = data?.trips.reduce((s, t) => s + (t.odometer_end && t.odometer_start ? t.odometer_end - t.odometer_start : 0), 0) ?? 0
   const totalLiters   = data?.fuel.reduce((s, f) => s + (f.liters ?? 0), 0) ?? 0
-  const totalFuelCost = data?.fuel.reduce((s, f) => s + ((f.liters ?? 0) * (f.price_per_liter ?? 0)), 0) ?? 0
+  const totalFuelCost = data?.fuel.reduce((s, f) => s + (f.total_cost ?? ((f.liters ?? 0) * (f.price_per_liter ?? 0))), 0) ?? 0
   const totalMaintCost = data?.maint.reduce((s, m) => s + (m.cost ?? 0), 0) ?? 0
 
-  const selVehicleName = selVehicle ? (vehicles.find(v => v.id === selVehicle)?.name ?? '') : 'ทุกคัน'
-  const reportTitle = `รายงานยานพาหนะ — ${selVehicleName} | ${dateFrom} ถึง ${dateTo}`
+  const selVehicleName = selVehicle ? (vehicles.find(v => v.id === selVehicle)?.name ?? '') : 'ทุกทรัพย์สิน'
+  const reportTitle = `รายงานรถ เครื่องยนต์ และเชื้อเพลิง — ${selVehicleName} | ${dateFrom} ถึง ${dateTo}`
 
   /* ── PDF ── */
   function exportPDF() {
@@ -111,29 +125,29 @@ export default function FleetReport({ tenant }) {
       const km = t.odometer_end && t.odometer_start ? t.odometer_end - t.odometer_start : ''
       return `<tr style="background:${i%2?'#f5f8fc':'#fff'}">
         <td>${i+1}</td><td>${thDate(t.trip_date)}</td>
-        <td>${t.vehicle?.name??''} ${t.vehicle?.license_plate??''}</td>
-        <td>${t.destination}</td><td>${t.purpose}</td>
-        <td>${t.driver?.full_name??''}</td>
+        <td>${escapeHtml(t.vehicle?.name)} ${escapeHtml(assetIdentifier(t.vehicle))}</td>
+        <td>${escapeHtml(t.destination)}</td><td>${escapeHtml(t.purpose)}</td>
+        <td>${escapeHtml(t.driver?.full_name)}</td>
         <td align="right">${km ? km.toLocaleString()+'&nbsp;กม.' : '—'}</td></tr>`
     }).join('')
     const fuelRows = (data?.fuel ?? []).map((f, i) => {
-      const cost = (f.liters??0)*(f.price_per_liter??0)
+      const cost = f.total_cost ?? (f.liters??0)*(f.price_per_liter??0)
       return `<tr style="background:${i%2?'#f5f8fc':'#fff'}">
         <td>${i+1}</td><td>${thDate(f.filled_at)}</td>
-        <td>${f.fleet_vehicles?.name??''}</td>
+        <td>${escapeHtml(f.fleet_vehicles?.name)} ${escapeHtml(assetIdentifier(f.fleet_vehicles))}</td>
         <td align="right">${fmt(f.liters)}</td>
         <td align="right">${fmt(f.price_per_liter)}</td>
         <td align="right">${fmtB(cost)}</td>
-        <td>${f.fuel_station??'—'}</td></tr>`
+        <td>${escapeHtml(f.fuel_station ?? '—')}</td></tr>`
     }).join('')
     const maintRows = (data?.maint ?? []).map((m, i) =>
       `<tr style="background:${i%2?'#f5f8fc':'#fff'}">
         <td>${i+1}</td><td>${thDate(m.service_date)}</td>
-        <td>${m.fleet_vehicles?.name??''}</td>
-        <td>${MAINT_TH[m.maintenance_type]??m.maintenance_type}</td>
-        <td>${m.description}</td>
+        <td>${escapeHtml(m.fleet_vehicles?.name)} ${escapeHtml(assetIdentifier(m.fleet_vehicles))}</td>
+        <td>${escapeHtml(MAINT_TH[m.maintenance_type]??m.maintenance_type)}</td>
+        <td>${escapeHtml(m.description)}</td>
         <td align="right">${fmtB(m.cost)}</td>
-        <td>${m.vendor??'—'}</td></tr>`
+        <td>${escapeHtml(m.vendor ?? '—')}</td></tr>`
     ).join('')
 
     const win = window.open('', '_blank')
@@ -185,10 +199,10 @@ export default function FleetReport({ tenant }) {
   /* ── CSV exports ── */
   function exportTripCSV() {
     downloadCSV([
-      ['ที่','วันที่','ยานพาหนะ','ทะเบียน','ปลายทาง','วัตถุประสงค์','ผู้ขับ','เลขไมล์ก่อน','เลขไมล์หลัง','ระยะทาง (กม.)'],
+      ['ที่','วันที่','ยานพาหนะ','ทะเบียน/รหัส','ปลายทาง','วัตถุประสงค์','ผู้ขับ','เลขไมล์ก่อน','เลขไมล์หลัง','ระยะทาง (กม.)'],
       ...(data?.trips ?? []).map((t, i) => {
         const km = t.odometer_end && t.odometer_start ? t.odometer_end - t.odometer_start : ''
-        return [i+1, thDate(t.trip_date), t.vehicle?.name??'', t.vehicle?.license_plate??'',
+        return [i+1, thDate(t.trip_date), t.vehicle?.name??'', assetIdentifier(t.vehicle),
           t.destination, t.purpose, t.driver?.full_name??'',
           t.odometer_start??'', t.odometer_end??'', km]
       }),
@@ -197,23 +211,24 @@ export default function FleetReport({ tenant }) {
 
   function exportFuelCSV() {
     downloadCSV([
-      ['ที่','วันที่','ยานพาหนะ','ทะเบียน','ลิตร','ราคา/ลิตร','รวม (บาท)','เลขไมล์','ปั๊ม','ใบเสร็จ'],
+      ['ที่','วันที่','ทรัพย์สิน','ทะเบียน/รหัส','ชนิดเชื้อเพลิง','ลิตร','ราคา/ลิตร','รวม (บาท)','ค่ามิเตอร์','หน่วย','ปั๊ม','ใบเสร็จ'],
       ...(data?.fuel ?? []).map((f, i) => [
-        i+1, thDate(f.filled_at), f.fleet_vehicles?.name??'', f.fleet_vehicles?.license_plate??'',
+        i+1, thDate(f.filled_at), f.fleet_vehicles?.name??'', assetIdentifier(f.fleet_vehicles),
+        f.fuel_type === 'other' ? f.fuel_other_name || 'อื่นๆ' : FUEL_LABEL[f.fuel_type] || f.fuel_type || '',
         f.liters??'', f.price_per_liter??'',
-        Math.round((f.liters??0)*(f.price_per_liter??0)),
-        f.odometer??'', f.fuel_station??'', f.receipt_no??'',
+        Math.round(f.total_cost ?? (f.liters??0)*(f.price_per_liter??0)),
+        f.odometer??'', meterUnitShort(f.fleet_vehicles), f.fuel_station??'', f.receipt_no??'',
       ]),
     ], `น้ำมัน_${dateFrom}_${dateTo}.csv`)
   }
 
   function exportMaintCSV() {
     downloadCSV([
-      ['ที่','วันที่','ยานพาหนะ','ทะเบียน','ประเภท','รายละเอียด','ค่าใช้จ่าย (บาท)','อู่/ผู้รับจ้าง','เลขไมล์'],
+      ['ที่','วันที่','ทรัพย์สิน','ทะเบียน/รหัส','ประเภท','รายละเอียด','ค่าใช้จ่าย (บาท)','อู่/ผู้รับจ้าง','ค่ามิเตอร์','หน่วย'],
       ...(data?.maint ?? []).map((m, i) => [
-        i+1, thDate(m.service_date), m.fleet_vehicles?.name??'', m.fleet_vehicles?.license_plate??'',
+        i+1, thDate(m.service_date), m.fleet_vehicles?.name??'', assetIdentifier(m.fleet_vehicles),
         MAINT_TH[m.maintenance_type]??m.maintenance_type, m.description, m.cost??0,
-        m.vendor??'', m.odometer??'',
+        m.vendor??'', m.odometer??'', meterUnitShort(m.fleet_vehicles),
       ]),
     ], `ซ่อมบำรุง_${dateFrom}_${dateTo}.csv`)
   }
@@ -243,11 +258,11 @@ export default function FleetReport({ tenant }) {
         <p className="text-sm font-bold text-gray-700">🔍 เลือกข้อมูลที่ต้องการดู</p>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">ยานพาหนะ</label>
+            <label className="text-xs font-semibold text-gray-500 mb-1 block">รถ/เครื่องยนต์/ครุภัณฑ์</label>
             <select value={selVehicle} onChange={e => setSelVehicle(e.target.value)}
               className="w-full px-3 py-2 text-sm text-gray-700 bg-white border border-gray-200 rounded-xl focus:outline-none">
-              <option value="">ทุกคัน</option>
-              {vehicles.map(v => <option key={v.id} value={v.id}>{v.name} ({v.license_plate})</option>)}
+              <option value="">ทุกทรัพย์สิน</option>
+              {vehicles.map(v => <option key={v.id} value={v.id}>{assetOptionLabel(v)}</option>)}
             </select>
           </div>
           <div>
@@ -315,8 +330,8 @@ export default function FleetReport({ tenant }) {
             {[
               { label: 'การเดินทาง', val: `${data.trips.length} ครั้ง`, clr: '#3b82f6' },
               { label: 'ระยะทางรวม', val: `${totalKm.toLocaleString()} กม.`, clr: '#8b5cf6' },
-              { label: 'น้ำมันรวม',   val: `${fmt(totalLiters)} ล.`, clr: '#f59e0b' },
-              { label: 'ค่าน้ำมัน',   val: fmtB(totalFuelCost), clr: '#ef4444' },
+              { label: 'เชื้อเพลิงรวม', val: `${fmt(totalLiters)} ล.`, clr: '#f59e0b' },
+              { label: 'ค่าเชื้อเพลิง', val: fmtB(totalFuelCost), clr: '#ef4444' },
               { label: 'ค่าซ่อมบำรุง', val: fmtB(totalMaintCost), clr: '#10b981' },
             ].map(c => (
               <div key={c.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 text-center">
@@ -360,15 +375,16 @@ export default function FleetReport({ tenant }) {
           {/* ── Fuel table ── */}
           <ReportSection title={`บันทึกน้ำมัน (${data.fuel.length} รายการ)`} empty={data.fuel.length === 0}>
             <table className="w-full text-sm border-collapse">
-              <THdr cols={['ที่','วันที่','ยานพาหนะ','ลิตร','ราคา/ล.','รวม (บาท)','ปั๊ม']} />
+              <THdr cols={['ที่','วันที่','ทรัพย์สิน','เชื้อเพลิง','ลิตร','ราคา/ล.','รวม (บาท)','ปั๊ม']} />
               <tbody>
                 {data.fuel.map((f, i) => {
-                  const cost = (f.liters ?? 0) * (f.price_per_liter ?? 0)
+                  const cost = f.total_cost ?? (f.liters ?? 0) * (f.price_per_liter ?? 0)
                   return (
                     <tr key={f.id} style={{ backgroundColor: i%2===0?'#fff':'#f5f8fc' }}>
                       <td className="px-3 py-2 text-xs text-gray-400 border-r border-gray-200 text-center">{i+1}</td>
                       <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-200 whitespace-nowrap">{thDate(f.filled_at)}</td>
-                      <td className="px-3 py-2 text-xs font-semibold text-gray-700 border-r border-gray-200 whitespace-nowrap">{f.fleet_vehicles?.name}</td>
+                      <td className="px-3 py-2 text-xs font-semibold text-gray-700 border-r border-gray-200 whitespace-nowrap">{f.fleet_vehicles?.name}<span className="block text-[10px] text-gray-400">{assetIdentifier(f.fleet_vehicles)}</span></td>
+                      <td className="px-3 py-2 text-xs text-gray-600 border-r border-gray-200 whitespace-nowrap">{f.fuel_type === 'other' ? f.fuel_other_name || 'อื่นๆ' : FUEL_LABEL[f.fuel_type] || f.fuel_type || '—'}</td>
                       <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-200 text-right">{fmt(f.liters)}</td>
                       <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-200 text-right">{fmt(f.price_per_liter)}</td>
                       <td className="px-3 py-2 text-xs font-semibold text-gray-700 border-r border-gray-200 text-right">{fmtB(cost)}</td>
@@ -378,7 +394,7 @@ export default function FleetReport({ tenant }) {
                 })}
                 {data.fuel.length > 0 && (
                   <tr style={{ backgroundColor: '#eef2f7' }}>
-                    <td colSpan={3} className="px-3 py-2 text-xs font-bold text-gray-700 text-right border-r border-gray-200">รวม</td>
+                    <td colSpan={4} className="px-3 py-2 text-xs font-bold text-gray-700 text-right border-r border-gray-200">รวม</td>
                     <td className="px-3 py-2 text-xs font-bold text-gray-800 text-right border-r border-gray-200">{fmt(totalLiters)} ล.</td>
                     <td className="px-3 py-2 border-r border-gray-200" />
                     <td className="px-3 py-2 text-xs font-bold text-gray-800 text-right border-r border-gray-200">{fmtB(totalFuelCost)}</td>
@@ -392,13 +408,13 @@ export default function FleetReport({ tenant }) {
           {/* ── Maintenance table ── */}
           <ReportSection title={`ซ่อมบำรุง (${data.maint.length} รายการ)`} empty={data.maint.length === 0}>
             <table className="w-full text-sm border-collapse">
-              <THdr cols={['ที่','วันที่','ยานพาหนะ','ประเภท','รายละเอียด','ค่าใช้จ่าย','อู่/ผู้รับจ้าง']} />
+              <THdr cols={['ที่','วันที่','ทรัพย์สิน','ประเภท','รายละเอียด','ค่าใช้จ่าย','อู่/ผู้รับจ้าง']} />
               <tbody>
                 {data.maint.map((m, i) => (
                   <tr key={m.id} style={{ backgroundColor: i%2===0?'#fff':'#f5f8fc' }}>
                     <td className="px-3 py-2 text-xs text-gray-400 border-r border-gray-200 text-center">{i+1}</td>
                     <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-200 whitespace-nowrap">{thDate(m.service_date)}</td>
-                    <td className="px-3 py-2 text-xs font-semibold text-gray-700 border-r border-gray-200 whitespace-nowrap">{m.fleet_vehicles?.name}</td>
+                    <td className="px-3 py-2 text-xs font-semibold text-gray-700 border-r border-gray-200 whitespace-nowrap">{m.fleet_vehicles?.name}<span className="block text-[10px] text-gray-400">{assetIdentifier(m.fleet_vehicles)}</span></td>
                     <td className="px-3 py-2 text-xs text-gray-600 border-r border-gray-200 whitespace-nowrap">{MAINT_TH[m.maintenance_type] ?? m.maintenance_type}</td>
                     <td className="px-3 py-2 text-xs text-gray-600 border-r border-gray-200">{m.description}</td>
                     <td className="px-3 py-2 text-xs font-semibold text-gray-700 border-r border-gray-200 text-right">{fmtB(m.cost)}</td>

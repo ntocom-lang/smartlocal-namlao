@@ -1,7 +1,19 @@
 import { useState, useEffect } from 'react'
-import { Plus, X, Wrench, AlertTriangle } from 'lucide-react'
+import { Plus, X, Wrench, AlertTriangle, FileText, Paperclip } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import {
+  assetIdentifier,
+  assetOptionLabel,
+  meterLabel,
+  meterUnitShort,
+} from '../../lib/fleetAssets'
+import {
+  openFleetDocument,
+  removeFleetDocument,
+  uploadFleetDocument,
+  validateFleetDocument,
+} from '../../lib/fleetDocuments'
 
 const inp = 'w-full px-3 py-2.5 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent'
 const sel = inp + ' appearance-none'
@@ -23,7 +35,7 @@ const EMPTY = {
   vehicle_id: '', technician_id: '',
   service_date: new Date().toISOString().slice(0,10),
   maintenance_type: 'routine', other_type: '', description: '', cost: '',
-  vendor: '', odometer: '', next_service_km: '', next_service_date: '',
+  vendor: '', odometer: '', next_service_meter: '', next_service_date: '',
 }
 
 function DueSoonAlert({ records }) {
@@ -69,6 +81,7 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
   const [loading,   setLoading]   = useState(true)
   const [modal,     setModal]     = useState(false)
   const [form,      setForm]      = useState(EMPTY)
+  const [receiptFile, setReceiptFile] = useState(null)
   const [saving,    setSaving]    = useState(false)
   const [filterType, setFilterType] = useState('all')
   const [dateFrom,   setDateFrom]   = useState('')
@@ -79,7 +92,7 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
   useEffect(() => {
     if (!tenant?.id) return
     Promise.all([
-      supabase.from('fleet_vehicles').select('id, name, license_plate')
+      supabase.from('fleet_vehicles').select('id, name, license_plate, asset_code, asset_kind, meter_unit')
         .eq('municipality_id', tenant.id).order('name'),
       supabase.from('profiles').select('id, full_name')
         .eq('municipality_id', tenant.id).eq('fleet_role', 'fleet_staff').order('full_name'),
@@ -89,7 +102,7 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
     })
   }, [tenant?.id])
 
-  const SELECT_Q = '*, fleet_vehicles(name, license_plate), technician:profiles!fleet_maintenance_technician_id_fkey(id,full_name)'
+  const SELECT_Q = '*, fleet_vehicles(name, license_plate, asset_code, asset_kind, meter_unit), technician:profiles!fleet_maintenance_technician_id_fkey(id,full_name)'
 
   function loadRecords() {
     if (!tenant?.id) return
@@ -104,21 +117,34 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
     q.then(({ data }) => setRecords(data ?? [])).finally(() => setLoading(false))
   }
 
-  useEffect(() => { loadRecords() }, [tenant?.id, filterType, dateFrom, dateTo])
+  useEffect(() => {
+    const timer = window.setTimeout(loadRecords, 0)
+    return () => window.clearTimeout(timer)
+    // loadRecords ใช้ค่าตัวกรองชุดเดียวกับ dependency ด้านล่าง
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant?.id, filterType, dateFrom, dateTo])
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
   function openModal() {
     setForm({ ...EMPTY, technician_id: user?.id ?? '' })
+    setReceiptFile(null)
     setModal(true)
   }
+
+  const selectedAsset = vehicles.find(asset => asset.id === form.vehicle_id)
 
   async function handleSave() {
     const needDesc = form.maintenance_type !== 'other' || !form.other_type.trim()
     if (!form.vehicle_id || (needDesc && !form.description)) return alert('กรุณากรอกข้อมูลที่จำเป็น')
     if (form.maintenance_type === 'other' && !form.other_type.trim()) return alert('กรุณาระบุประเภท')
+    if (form.cost !== '' && Number(form.cost) < 0) return alert('ค่าใช้จ่ายต้องไม่ติดลบ')
+    if (form.odometer !== '' && Number(form.odometer) < 0) return alert('ค่ามิเตอร์ต้องไม่ติดลบ')
+    if (form.next_service_meter !== '' && Number(form.next_service_meter) < 0) return alert('มิเตอร์ซ่อมครั้งถัดไปต้องไม่ติดลบ')
+    const fileError = validateFleetDocument(receiptFile)
+    if (fileError) return alert(fileError)
     setSaving(true)
-    const { error } = await supabase.from('fleet_maintenance').insert({
+    const { data, error } = await supabase.from('fleet_maintenance').insert({
       municipality_id:   tenant.id,
       vehicle_id:        form.vehicle_id,
       technician_id:     form.technician_id || null,
@@ -132,20 +158,61 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
       cost:              parseFloat(form.cost) || 0,
       vendor:            form.vendor           || null,
       odometer:          form.odometer ? parseFloat(form.odometer) : null,
-      next_service_km:   form.next_service_km  ? parseFloat(form.next_service_km) : null,
+      next_service_km:   form.next_service_meter ? parseFloat(form.next_service_meter) : null,
+      next_service_meter: form.next_service_meter ? parseFloat(form.next_service_meter) : null,
       next_service_date: form.next_service_date || null,
       created_by:        user?.id ?? null,
-    })
-    if (!error) { setModal(false); setForm(EMPTY); loadRecords() }
-    else alert(error.message)
+    }).select(SELECT_Q).single()
+    if (!error) {
+      let savedRecord = data
+      let attachmentWarning = ''
+      if (receiptFile) {
+        try {
+          const path = await uploadFleetDocument({
+            tenantId: tenant.id,
+            scope: 'maintenance',
+            recordId: data.id,
+            file: receiptFile,
+          })
+          const { data: updated, error: updateError } = await supabase.from('fleet_maintenance')
+            .update({ receipt_url: path })
+            .eq('id', data.id)
+            .select(SELECT_Q)
+            .single()
+          if (updateError) {
+            await removeFleetDocument(path).catch(() => {})
+            throw updateError
+          }
+          savedRecord = updated
+        } catch (uploadError) {
+          attachmentWarning = 'บันทึกรายการแล้ว แต่แนบเอกสารไม่สำเร็จ: ' + uploadError.message
+        }
+      }
+      setRecords(previous => [savedRecord, ...previous])
+      setModal(false)
+      setForm(EMPTY)
+      setReceiptFile(null)
+      if (attachmentWarning) alert(attachmentWarning)
+    } else alert(error.message)
     setSaving(false)
   }
 
   async function handleDelete(r) {
     if (!confirm(`ลบรายการซ่อมบำรุง "${r.description}"?`)) return
     const { error } = await supabase.from('fleet_maintenance').delete().eq('id', r.id)
-    if (!error) setRecords(prev => prev.filter(x => x.id !== r.id))
+    if (!error) {
+      setRecords(prev => prev.filter(x => x.id !== r.id))
+      if (r.receipt_url) removeFleetDocument(r.receipt_url).catch(() => {})
+    }
     else alert('ลบไม่สำเร็จ: ' + error.message)
+  }
+
+  async function handleOpenDocument(path) {
+    try {
+      await openFleetDocument(path)
+    } catch (error) {
+      alert('เปิดเอกสารไม่สำเร็จ: ' + error.message)
+    }
   }
 
   const totalCost = records.reduce((s, r) => s + (r.cost ?? 0), 0)
@@ -203,7 +270,7 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr style={{ backgroundColor: '#1a3a5c' }}>
-                  {[...['ที่','วันที่','ยานพาหนะ','ประเภท','รายละเอียด','ค่าใช้จ่าย','อู่/ผู้รับจ้าง','ผู้รับผิดชอบ','ซ่อมถัดไป'], ...(isAdmin ? [''] : [])].map((h, i) => (
+                  {[...['ที่','วันที่','ทรัพย์สิน','ประเภท','รายละเอียด','ค่าใช้จ่าย','อู่/ผู้รับจ้าง','ผู้รับผิดชอบ','ซ่อมถัดไป','เอกสาร'], ...(isAdmin ? [''] : [])].map(h => (
                     <th key={h} className="px-4 py-2.5 text-left text-white font-bold text-[11px] border-r border-blue-900 last:border-r-0 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -220,7 +287,7 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
                       <td className="px-4 py-2.5 text-gray-600 text-xs border-r border-gray-200 whitespace-nowrap">{thDate(r.service_date)}</td>
                       <td className="px-4 py-2.5 border-r border-gray-200">
                         <p className="font-semibold text-gray-800 text-sm">{r.fleet_vehicles?.name ?? '—'}</p>
-                        <p className="text-[10px] text-gray-400">{r.fleet_vehicles?.license_plate}</p>
+                        <p className="text-[10px] text-gray-400">{assetIdentifier(r.fleet_vehicles)}</p>
                       </td>
                       <td className="px-4 py-2.5 border-r border-gray-200">
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
@@ -235,9 +302,18 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
                         {r.technician?.full_name ?? '—'}
                       </td>
                       <td className="px-4 py-2.5 text-xs">
-                        {r.next_service_date
-                          ? <span className="text-blue-500">{thDate(r.next_service_date)}</span>
-                          : <span className="text-gray-300">—</span>}
+                        {r.next_service_date && <span className="text-blue-500 block">{thDate(r.next_service_date)}</span>}
+                        {(r.next_service_meter ?? r.next_service_km) != null && (
+                          <span className="text-gray-500 block">{fmt(r.next_service_meter ?? r.next_service_km)} {meterUnitShort(r.fleet_vehicles)}</span>
+                        )}
+                        {!r.next_service_date && (r.next_service_meter ?? r.next_service_km) == null && <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-4 py-2.5 text-center border-r border-gray-200">
+                        {r.receipt_url ? (
+                          <button onClick={() => handleOpenDocument(r.receipt_url)} className="text-blue-600 hover:text-blue-800" title="เปิดเอกสาร">
+                            <FileText size={15} />
+                          </button>
+                        ) : <span className="text-gray-300">—</span>}
                       </td>
                       {isAdmin && (
                         <td className="px-4 py-2.5 text-center">
@@ -251,7 +327,7 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
                   )
                 })}
                 {!records.length && (
-                  <tr><td colSpan={9} className="text-center py-10 text-gray-400 text-sm">ไม่พบรายการ</td></tr>
+                  <tr><td colSpan={isAdmin ? 11 : 10} className="text-center py-10 text-gray-400 text-sm">ไม่พบรายการ</td></tr>
                 )}
               </tbody>
             </table>
@@ -272,6 +348,7 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
                           {t.label}
                         </span>
                       </div>
+                      <p className="text-[10px] text-gray-400 mb-1">{assetIdentifier(r.fleet_vehicles)}</p>
                       <p className="text-xs text-gray-700">{r.description}</p>
                       <p className="text-xs text-gray-400 mt-0.5">
                         {thDate(r.service_date)}{r.vendor ? ` · ${r.vendor}` : ''}
@@ -279,15 +356,24 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
                       {r.technician?.full_name && (
                         <p className="text-[10px] text-gray-400 mt-0.5">👤 {r.technician.full_name}</p>
                       )}
-                      {r.next_service_date && (
+                      {(r.next_service_date || (r.next_service_meter ?? r.next_service_km) != null) && (
                         <p className="text-[10px] text-blue-500 mt-1">
-                          ซ่อมบำรุงครั้งถัดไป: {thDate(r.next_service_date)}
-                          {r.next_service_km ? ` หรือ ${r.next_service_km.toLocaleString('th-TH')} กม.` : ''}
+                          ซ่อมบำรุงครั้งถัดไป: {r.next_service_date ? thDate(r.next_service_date) : ''}
+                          {r.next_service_date && (r.next_service_meter ?? r.next_service_km) != null ? ' หรือ ' : ''}
+                          {(r.next_service_meter ?? r.next_service_km) != null
+                            ? [fmt(r.next_service_meter ?? r.next_service_km), meterUnitShort(r.fleet_vehicles)].join(' ')
+                            : ''}
                         </p>
                       )}
                     </div>
                     <div className="text-right shrink-0">
                       <p className="text-sm font-black text-gray-800">{fmtB(r.cost)}</p>
+                      {r.receipt_url && (
+                        <button onClick={() => handleOpenDocument(r.receipt_url)}
+                          className="mt-2 ml-auto text-[10px] font-bold text-blue-600 flex items-center gap-1">
+                          <FileText size={11} /> เอกสาร
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -309,10 +395,10 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
             </div>
             <div className="p-5 space-y-3">
               <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1 block">ยานพาหนะ *</label>
+                <label className="text-xs font-semibold text-gray-600 mb-1 block">ยานพาหนะ/เครื่องยนต์ *</label>
                 <select value={form.vehicle_id} onChange={set('vehicle_id')} className={sel}>
-                  <option value="">— เลือกรถ —</option>
-                  {vehicles.map(v => <option key={v.id} value={v.id}>{v.name} ({v.license_plate})</option>)}
+                  <option value="">— เลือกทรัพย์สิน —</option>
+                  {vehicles.map(asset => <option key={asset.id} value={asset.id}>{assetOptionLabel(asset)}</option>)}
                 </select>
               </div>
 
@@ -370,17 +456,28 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
                   <input value={form.vendor} onChange={set('vendor')} className={inp} />
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-gray-600 mb-1 block">เลขไมล์ (กม.)</label>
+                  <label className="text-xs font-semibold text-gray-600 mb-1 block">{meterLabel(selectedAsset)}</label>
                   <input type="number" value={form.odometer} onChange={set('odometer')} className={inp} />
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-gray-600 mb-1 block">ซ่อมถัดไป (กม.)</label>
-                  <input type="number" value={form.next_service_km} onChange={set('next_service_km')} className={inp} />
+                  <label className="text-xs font-semibold text-gray-600 mb-1 block">ซ่อมถัดไป ({meterUnitShort(selectedAsset)})</label>
+                  <input type="number" value={form.next_service_meter} onChange={set('next_service_meter')} className={inp} />
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs font-semibold text-gray-600 mb-1 block">วันซ่อมถัดไป</label>
                   <input type="date" value={form.next_service_date} onChange={set('next_service_date')} className={inp} />
                 </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1 block">ใบเสร็จ/เอกสารซ่อม (ถ้ามี)</label>
+                <label className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-gray-300 bg-gray-50 cursor-pointer text-xs text-gray-600">
+                  <Paperclip size={14} />
+                  <span className="truncate">{receiptFile?.name || 'แนบ PDF หรือรูปภาพ'}</span>
+                  <input type="file" className="hidden"
+                    accept=".jpg,.jpeg,.png,.webp,.pdf,.csv,.xlsx"
+                    onChange={event => setReceiptFile(event.target.files?.[0] ?? null)} />
+                </label>
+                <p className="text-[10px] text-gray-400 mt-1">Private Storage · ขนาดไม่เกิน 10 MB</p>
               </div>
               <button onClick={handleSave} disabled={saving}
                 className="w-full py-3 rounded-xl font-bold text-white text-sm disabled:opacity-50"

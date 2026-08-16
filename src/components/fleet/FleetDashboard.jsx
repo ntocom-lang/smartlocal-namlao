@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Car, Fuel, Route, Wrench, AlertTriangle, TrendingUp, Wallet, CalendarClock } from 'lucide-react'
+import { Car, Fuel, Route, AlertTriangle, TrendingUp, Wallet, CalendarClock } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
 const fmt = (n) => (n ?? 0).toLocaleString('th-TH')
@@ -26,7 +26,7 @@ function ExpiryAlert({ vehicles }) {
   const in60  = new Date(today); in60.setDate(in60.getDate() + 60)
 
   const alerts = []
-  vehicles.forEach(v => {
+  vehicles.filter(v => (v.asset_kind ?? 'vehicle') === 'vehicle').forEach(v => {
     const checks = [
       { field: 'insurance_expiry',    label: 'ประกันภัย' },
       { field: 'act_expiry',          label: 'พรบ.' },
@@ -44,7 +44,7 @@ function ExpiryAlert({ vehicles }) {
 
   if (!alerts.length) return (
     <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 rounded-xl px-4 py-3 text-sm">
-      ✅ เอกสารยานพาหนะทุกคันยังไม่หมดอายุใน 60 วัน
+      ✅ เอกสารยานพาหนะยังไม่หมดอายุใน 60 วัน
     </div>
   )
 
@@ -88,7 +88,7 @@ function BudgetBar({ depts, budgets, fuelByDept }) {
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
       <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
         <Wallet size={15} className="text-purple-500" />
-        <span className="text-sm font-bold text-gray-700">งบน้ำมันเดือนนี้</span>
+        <span className="text-sm font-bold text-gray-700">งบเชื้อเพลิงเดือนนี้</span>
         <span className="text-[10px] text-gray-400 ml-1">เดือน {month}/{year}</span>
       </div>
       <div className="divide-y divide-gray-50">
@@ -123,7 +123,7 @@ function BudgetBar({ depts, budgets, fuelByDept }) {
 
 export default function FleetDashboard({ tenant, depts, isAdmin }) {
   const [vehicles,   setVehicles]   = useState([])
-  const [thisMonth,  setThisMonth]  = useState({ fuel_cost: 0, distance_km: 0, fuel_liters: 0 })
+  const [thisMonth,  setThisMonth]  = useState({ fuel_cost: 0, distance_km: 0, fuel_liters: 0, vehicle_fuel_liters: 0 })
   const [budgets,    setBudgets]    = useState([])
   const [fuelByDept, setFuelByDept] = useState({})
   const [pendingCnt, setPendingCnt] = useState(0)
@@ -139,7 +139,7 @@ export default function FleetDashboard({ tenant, depts, isAdmin }) {
 
     Promise.all([
       supabase.from('fleet_vehicles').select('*').eq('municipality_id', tenant.id),
-      supabase.from('fleet_fuel_records').select('total_cost, liters, vehicle_id')
+      supabase.from('fleet_fuel_records').select('total_cost, liters, vehicle_id, fleet_vehicles(asset_kind)')
         .eq('municipality_id', tenant.id).gte('filled_at', from).lte('filled_at', to),
       supabase.from('fleet_trips').select('distance_km, department_id')
         .eq('municipality_id', tenant.id).gte('trip_date', from).lte('trip_date', to),
@@ -154,6 +154,8 @@ export default function FleetDashboard({ tenant, depts, isAdmin }) {
       setThisMonth({
         fuel_cost:   (f ?? []).reduce((s, r) => s + (r.total_cost ?? 0), 0),
         fuel_liters: (f ?? []).reduce((s, r) => s + (r.liters ?? 0), 0),
+        vehicle_fuel_liters: (f ?? []).reduce((s, r) =>
+          s + ((r.fleet_vehicles?.asset_kind ?? 'vehicle') === 'vehicle' ? (r.liters ?? 0) : 0), 0),
         distance_km: (t ?? []).reduce((s, r) => s + (r.distance_km ?? 0), 0),
       })
       setBudgets(b ?? [])
@@ -197,18 +199,19 @@ export default function FleetDashboard({ tenant, depts, isAdmin }) {
     </div>
   )
 
-  const activeVeh  = vehicles.filter(v => v.status === 'active').length
   const repairVeh  = vehicles.filter(v => v.status === 'under_repair').length
-  const efficiency = thisMonth.fuel_liters > 0
-    ? (thisMonth.distance_km / thisMonth.fuel_liters).toFixed(1) : '-'
+  const vehicleCount = vehicles.filter(v => (v.asset_kind ?? 'vehicle') === 'vehicle').length
+  const engineCount = vehicles.filter(v => v.asset_kind === 'engine').length
+  const efficiency = thisMonth.vehicle_fuel_liters > 0
+    ? (thisMonth.distance_km / thisMonth.vehicle_fuel_liters).toFixed(1) : '-'
 
   return (
     <div className="space-y-4">
       {/* KPI grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KpiCard icon={Car}       label="รถทั้งหมด"     value={vehicles.length}
-          sub={`ใช้งานได้ ${activeVeh} คัน · ซ่อม ${repairVeh} คัน`} color="#3b82f6" />
-        <KpiCard icon={Fuel}      label="ค่าน้ำมันเดือนนี้" value={fmtB(thisMonth.fuel_cost)}
+        <KpiCard icon={Car}       label="ทรัพย์สินทั้งหมด" value={vehicles.length}
+          sub={`รถ ${vehicleCount} · เครื่องยนต์ ${engineCount} · ซ่อม ${repairVeh}`} color="#3b82f6" />
+        <KpiCard icon={Fuel}      label="ค่าเชื้อเพลิงเดือนนี้" value={fmtB(thisMonth.fuel_cost)}
           sub={`${fmt(thisMonth.fuel_liters.toFixed(0))} ลิตร`} color="#f59e0b" />
         <KpiCard icon={Route}     label="ระยะทางรวม"    value={`${fmt(Math.round(thisMonth.distance_km))} กม.`}
           sub="เดือนนี้" color="#10b981" />

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Plus, Calendar, X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { assetIdentifier, assetOptionLabel } from '../../lib/fleetAssets'
 
 const STATUS_LABEL = {
   pending:     'รอการอนุมัติ',
@@ -23,7 +24,7 @@ const STATUS_CLR = {
 const inp = 'w-full px-3 py-2.5 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent'
 const sel = inp + ' appearance-none'
 
-const SELECT = `*, vehicle:fleet_vehicles(id,name,license_plate), driver:profiles!fleet_trips_driver_id_fkey(id,full_name), approver:profiles!fleet_trips_approved_by_fkey(full_name), departments(name,short_name)`
+const SELECT = `*, vehicle:fleet_vehicles(id,name,license_plate,asset_code,asset_kind,meter_unit), driver:profiles!fleet_trips_driver_id_fkey(id,full_name), approver:profiles!fleet_trips_approved_by_fkey(full_name), departments(name,short_name)`
 
 function toLocalDT(date) {
   const d = new Date(date)
@@ -112,8 +113,6 @@ function BookingCalendar({ trips, onClose }) {
   }
 
   const today = now.toISOString().slice(0, 10)
-  const todayStr = `${yr}-${String(mo + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-
   // build grid cells: blanks + days
   const cells = Array(firstDow).fill(null).concat(
     Array.from({ length: daysInMonth }, (_, i) => i + 1)
@@ -284,8 +283,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
       supabase.from('profiles').select('id,full_name,department_id')
         .eq('municipality_id', tenant.id)
         .eq('fleet_role', 'fleet_staff'),
-      supabase.from('fleet_vehicles').select('id,name,license_plate')
-        .eq('municipality_id', tenant.id).eq('status', 'active').order('name'),
+      supabase.from('fleet_vehicles').select('id,name,license_plate,asset_code,asset_kind,meter_unit')
+        .eq('municipality_id', tenant.id).eq('asset_kind', 'vehicle')
+        .eq('status', 'active').order('name'),
     ]).then(([{ data: t, error: te }, { data: s }, { data: v }]) => {
       if (te) console.error('fleet_trips load error:', te)
       setTrips(t ?? [])
@@ -382,6 +382,16 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
   async function submitDirect() {
     if (!form.vehicle_id || !form.started_at || !form.destination || !form.purpose)
       return alert('กรุณากรอกข้อมูลให้ครบ')
+    if (form.returned_at && new Date(form.returned_at) < new Date(form.started_at))
+      return alert('เวลากลับต้องไม่ก่อนเวลาออก')
+    const startMeter = form.odometer_start === '' ? null : Number(form.odometer_start)
+    const endMeter = form.odometer_end === '' ? null : Number(form.odometer_end)
+    if (startMeter !== null && (!Number.isFinite(startMeter) || startMeter < 0))
+      return alert('เลขไมล์ก่อนออกต้องเป็น 0 หรือมากกว่า')
+    if (endMeter !== null && (!Number.isFinite(endMeter) || endMeter < 0))
+      return alert('เลขไมล์หลังกลับต้องเป็น 0 หรือมากกว่า')
+    if (startMeter !== null && endMeter !== null && endMeter < startMeter)
+      return alert('เลขไมล์หลังกลับต้องไม่น้อยกว่าเลขไมล์ก่อนออก')
     setSaving(true)
     const { error } = await supabase.from('fleet_trips').insert({
       municipality_id: tenant.id,
@@ -392,8 +402,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
       trip_date: form.started_at.slice(0, 10),
       started_at: form.started_at,
       returned_at: form.returned_at || null,
-      odometer_start: form.odometer_start ? Number(form.odometer_start) : null,
-      odometer_end: form.odometer_end ? Number(form.odometer_end) : null,
+      odometer_start: startMeter,
+      odometer_end: endMeter,
       destination: form.destination,
       purpose: form.purpose,
       notes: form.notes || null,
@@ -408,23 +418,28 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
   /* ── Admin approve/reject ── */
   async function handleApprove(t) {
     if (!confirm(`อนุมัติการจองรถ "${t.vehicle?.name}" ให้ ${t.driver?.full_name}?`)) return
-    await supabase.from('fleet_trips').update({ status: 'approved', approved_by: user?.id }).eq('id', t.id)
+    const { error } = await supabase.from('fleet_trips').update({ status: 'approved', approved_by: user?.id }).eq('id', t.id)
+    if (error) return alert('อนุมัติไม่สำเร็จ: ' + error.message)
     loadTrips()
   }
   async function handleReject(t) {
     if (!confirm(`ปฏิเสธการจองรถ "${t.vehicle?.name}"?`)) return
-    await supabase.from('fleet_trips').update({ status: 'rejected' }).eq('id', t.id)
+    const { error } = await supabase.from('fleet_trips').update({ status: 'rejected' }).eq('id', t.id)
+    if (error) return alert('ปฏิเสธไม่สำเร็จ: ' + error.message)
     loadTrips()
   }
 
   /* ── Depart / Return ── */
   async function submitDepart() {
     if (!form.started_at) return alert('กรุณาระบุเวลาออก')
+    const startMeter = form.odometer_start === '' ? null : Number(form.odometer_start)
+    if (startMeter !== null && (!Number.isFinite(startMeter) || startMeter < 0))
+      return alert('เลขไมล์ก่อนออกต้องเป็น 0 หรือมากกว่า')
     setSaving(true)
     const { error } = await supabase.from('fleet_trips').update({
       status: 'in_progress',
       started_at: form.started_at,
-      odometer_start: form.odometer_start ? Number(form.odometer_start) : null,
+      odometer_start: startMeter,
     }).eq('id', selTrip.id)
     setSaving(false)
     if (error) return alert(error.message)
@@ -434,11 +449,18 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
 
   async function submitReturn() {
     if (!form.returned_at) return alert('กรุณาระบุเวลากลับ')
+    if (selTrip.started_at && new Date(form.returned_at) < new Date(selTrip.started_at))
+      return alert('เวลากลับต้องไม่ก่อนเวลาออก')
+    const endMeter = form.odometer_end === '' ? null : Number(form.odometer_end)
+    if (endMeter !== null && (!Number.isFinite(endMeter) || endMeter < 0))
+      return alert('เลขไมล์หลังกลับต้องเป็น 0 หรือมากกว่า')
+    if (selTrip.odometer_start != null && endMeter !== null && endMeter < Number(selTrip.odometer_start))
+      return alert('เลขไมล์หลังกลับต้องไม่น้อยกว่าเลขไมล์ก่อนออก')
     setSaving(true)
     const { error } = await supabase.from('fleet_trips').update({
       status: 'completed',
       returned_at: form.returned_at,
-      odometer_end: form.odometer_end ? Number(form.odometer_end) : null,
+      odometer_end: endMeter,
       notes: form.notes || null,
     }).eq('id', selTrip.id)
     setSaving(false)
@@ -460,14 +482,14 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
   const isOwner = t => t.driver_id === user?.id
 
   /* ── Trip Card (mobile) ── */
-  function TripCard({ t }) {
+  function renderTripCard(t) {
     const clr = STATUS_CLR[t.status]
     const canApprove = t.status === 'pending' && isAdmin
     const canDepart  = t.status === 'approved' && (isOwner(t) || isAdmin)
     const canReturn  = t.status === 'in_progress' && (isOwner(t) || isAdmin)
     const dist = t.distance_km ?? null
     return (
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-2">
+      <div key={t.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-2">
         <div className="flex items-start gap-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
@@ -482,7 +504,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
               )}
             </div>
             <h3 className="text-sm font-bold text-gray-800 mt-1">
-              {t.vehicle?.name} · {t.vehicle?.license_plate}
+              {t.vehicle?.name} · {assetIdentifier(t.vehicle)}
             </h3>
             <p className="text-xs text-gray-600">📍 {t.destination} — {t.purpose}</p>
           </div>
@@ -542,7 +564,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
   }
 
   /* ── Trip Row (desktop) ── */
-  function TripRow({ t, idx }) {
+  function renderTripRow(t, idx) {
     const clr = STATUS_CLR[t.status]
     const canApprove = t.status === 'pending' && isAdmin
     const canDepart  = t.status === 'approved' && (isOwner(t) || isAdmin)
@@ -550,7 +572,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
     const dateStr = t.planned_departure ? fmtDate(t.planned_departure) : fmtDate(t.trip_date || t.started_at)
     const dist = t.distance_km ?? null
     return (
-      <tr style={{ backgroundColor: idx % 2 === 0 ? '#fff' : '#f5f8fc' }}
+      <tr key={t.id} style={{ backgroundColor: idx % 2 === 0 ? '#fff' : '#f5f8fc' }}
           className="hover:bg-blue-50 transition-colors">
         <td className="px-3 py-2.5 text-center text-xs text-gray-400 border-r border-gray-200">{idx + 1}</td>
         <td className="px-4 py-2.5 text-xs border-r border-gray-200">
@@ -614,7 +636,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
   }
 
   /* ── Table wrapper ── */
-  function TripsTable({ rows }) {
+  function renderTripsTable(rows) {
     return (
       <div className="hidden md:block overflow-x-auto rounded-xl border border-gray-300 shadow-sm">
         <table className="w-full text-sm border-collapse">
@@ -628,7 +650,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((t, i) => <TripRow key={t.id} t={t} idx={i} />)}
+            {rows.map((t, i) => renderTripRow(t, i))}
           </tbody>
         </table>
       </div>
@@ -674,9 +696,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
             ยังไม่มีรายการจองหรือการเดินทางที่ดำเนินการอยู่ — กด <strong>จองรถ</strong> เพื่อส่งคำขอ
           </div>
         ) : <>
-          <TripsTable rows={active} />
+          {renderTripsTable(active)}
           <div className="md:hidden space-y-2">
-            {active.map(t => <TripCard key={t.id} t={t} />)}
+            {active.map(renderTripCard)}
           </div>
         </>}
       </div>
@@ -689,9 +711,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
         {history.length === 0 ? (
           <p className="text-center text-sm text-gray-400 py-8">ยังไม่มีรายการ</p>
         ) : <>
-          <TripsTable rows={history} />
+          {renderTripsTable(history)}
           <div className="md:hidden space-y-2">
-            {history.map(t => <TripCard key={t.id} t={t} />)}
+            {history.map(renderTripCard)}
           </div>
         </>}
       </div>
@@ -709,7 +731,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
             <select value={form.vehicle_id}
               onChange={e => { set('vehicle_id')(e); setConflict(false) }} className={sel}>
               <option value="">— เลือกรถ —</option>
-              {vehicles.map(v => <option key={v.id} value={v.id}>{v.name} ({v.license_plate})</option>)}
+              {vehicles.map(v => <option key={v.id} value={v.id}>{assetOptionLabel(v)}</option>)}
             </select>
           </div>
           {conflict && (
@@ -765,7 +787,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
             <label className="text-xs font-semibold text-gray-600 mb-1 block">ยานพาหนะ *</label>
             <select value={form.vehicle_id} onChange={set('vehicle_id')} className={sel}>
               <option value="">— เลือกรถ —</option>
-              {vehicles.map(v => <option key={v.id} value={v.id}>{v.name} ({v.license_plate})</option>)}
+              {vehicles.map(v => <option key={v.id} value={v.id}>{assetOptionLabel(v)}</option>)}
             </select>
           </div>
           <div>
@@ -834,7 +856,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
                onSave={submitDepart} saveLabel="ยืนยันออกเดินทาง" saving={saving}>
           <div className="bg-blue-50 rounded-xl p-3">
             <p className="text-sm font-bold text-gray-800">
-              {selTrip.vehicle?.name} · {selTrip.vehicle?.license_plate}
+              {selTrip.vehicle?.name} · {assetIdentifier(selTrip.vehicle)}
             </p>
             <p className="text-xs text-gray-600">{selTrip.destination} — {selTrip.purpose}</p>
             <p className="text-xs text-blue-500 mt-1">👤 {selTrip.driver?.full_name}</p>
@@ -858,7 +880,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
                onSave={submitReturn} saveLabel="ยืนยันกลับถึง" saving={saving}>
           <div className="bg-green-50 rounded-xl p-3">
             <p className="text-sm font-bold text-gray-800">
-              {selTrip.vehicle?.name} · {selTrip.vehicle?.license_plate}
+              {selTrip.vehicle?.name} · {assetIdentifier(selTrip.vehicle)}
             </p>
             <p className="text-xs text-gray-600">{selTrip.destination} — {selTrip.purpose}</p>
             {selTrip.odometer_start && (
