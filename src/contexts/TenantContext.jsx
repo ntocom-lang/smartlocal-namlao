@@ -193,11 +193,16 @@ export function TenantProvider({ children }) {
           return
         }
 
-        // Google fields and optional columns were added later than the core tenant schema. Read them separately so an
-        // environment that has not applied the optional migration can still load the whole app.
+        // Google fields were added later than the core tenant schema. Read separately so an environment that
+        // hasn't applied that migration can still load the whole app.
+        // เฉพาะ google_maps_api_key เท่านั้นที่ต้องส่งให้ browser จริง (Google Maps JS SDK ต้องใช้ฝั่ง client
+        // ป้องกันด้วย HTTP referrer restriction บน Google Cloud Console ไม่ใช่การซ่อน) — ส่วน
+        // google_cloud_email/google_project_id เป็นข้อมูลอ้างอิงสำหรับแอดมินเท่านั้น ไม่ต้องส่งให้ผู้เยี่ยมชมทุกคน
+        // (เดิมดึงมาด้วย ทำให้ทุกคนที่เปิดเว็บเห็นอีเมล/project id ของ Google Cloud ผ่าน Network tab — แก้แล้ว
+        // ดู GoogleMapsSettings.jsx ซึ่งดึง 2 ฟิลด์นี้เองตอนแอดมินเปิดหน้าตั้งค่าแทน)
         const { data: googleConfig, error: googleConfigError } = await supabase
           .from('municipalities')
-          .select('google_maps_api_key, google_cloud_email, google_project_id')
+          .select('google_maps_api_key')
           .eq('id', data.id)
           .maybeSingle()
         const resolvedTenant = googleConfigError ? data : { ...data, ...googleConfig }
