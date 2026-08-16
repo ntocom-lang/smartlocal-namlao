@@ -116,7 +116,7 @@ function MobileContent({ tab, setTab, children }) {
     <div className="flex flex-col min-h-screen bg-gray-50">
       <div className="sticky top-0 z-30 shadow-sm"
            style={{ background: t.grad }}>
-        <div className="flex items-center gap-3 px-4 py-3.5">
+        <div className="flex items-center gap-2.5 px-3 py-2.5">
           <button onClick={() => setTab(null)}
             className="w-8 h-8 rounded-xl bg-white/15 flex items-center justify-center shrink-0 active:bg-white/25">
             <ArrowLeft size={18} className="text-white" />
@@ -130,7 +130,7 @@ function MobileContent({ tab, setTab, children }) {
           </div>
         </div>
       </div>
-      <div className="flex-1 p-4">{children}</div>
+      <div className="flex-1 px-3 py-3">{children}</div>
     </div>
   )
 }

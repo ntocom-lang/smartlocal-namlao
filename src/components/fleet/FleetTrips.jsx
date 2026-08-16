@@ -489,52 +489,48 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
     const canReturn  = t.status === 'in_progress' && (isOwner(t) || isAdmin)
     const dist = t.distance_km ?? null
     return (
-      <div key={t.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-2">
-        <div className="flex items-start gap-2">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                    style={{ backgroundColor: clr + '18', color: clr }}>
-                {STATUS_LABEL[t.status]}
-              </span>
-              {t.planned_departure && (
-                <span className="text-[10px] font-semibold bg-blue-50 text-blue-500 px-2 py-0.5 rounded-full">
-                  📅 จอง
-                </span>
-              )}
-            </div>
-            <h3 className="text-sm font-bold text-gray-800 mt-1">
-              {t.vehicle?.name} · {assetIdentifier(t.vehicle)}
-            </h3>
-            <p className="text-xs text-gray-600">📍 {t.destination} — {t.purpose}</p>
+      <div key={t.id} className="bg-white rounded-xl border border-gray-100 shadow-sm p-3 space-y-1.5">
+        <div className="flex items-center gap-2 min-w-0">
+          <h3 className="flex-1 min-w-0 truncate text-[13px] font-black text-gray-800">
+            {t.vehicle?.name} <span className="font-semibold text-gray-400">· {assetIdentifier(t.vehicle)}</span>
+          </h3>
+          <div className="flex items-center gap-1 shrink-0">
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                  style={{ backgroundColor: clr + '18', color: clr }}>
+              {STATUS_LABEL[t.status]}
+            </span>
+            {t.planned_departure && (
+              <span className="text-[9px] font-semibold bg-blue-50 text-blue-500 px-1.5 py-0.5 rounded-full">จอง</span>
+            )}
           </div>
         </div>
-        <div className="text-[11px] text-gray-500 space-y-0.5 border-t border-gray-50 pt-2">
-          <div>👤 {t.driver?.full_name}{t.departments?.short_name ? ` · ${t.departments.short_name}` : ''}</div>
-          {t.planned_departure && <div>📅 วางแผน: {fmtDT(t.planned_departure)} – {fmtDT(t.planned_return)}</div>}
-          {t.started_at && (
-            <div>🚀 ออก: {fmtDT(t.started_at)}{t.odometer_start ? ` (${Number(t.odometer_start).toLocaleString()} กม.)` : ''}</div>
-          )}
-          {t.returned_at && (
-            <div>🏁 กลับ: {fmtDT(t.returned_at)}{t.odometer_end ? ` (${Number(t.odometer_end).toLocaleString()} กม.)` : ''}</div>
-          )}
-          {dist != null && <div className="font-semibold text-gray-700">📏 ระยะทาง: {dist.toLocaleString()} กม.</div>}
+        <p className="truncate text-[11px] text-gray-600" title={`${t.destination} — ${t.purpose}`}>
+          📍 {t.destination} — {t.purpose}
+        </p>
+        <div className="border-t border-gray-100 pt-1.5 text-[10px] leading-4 text-gray-500">
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 truncate">👤 {t.driver?.full_name}{t.departments?.short_name ? ` · ${t.departments.short_name}` : ''}</span>
+            {dist != null && <span className="shrink-0 font-bold text-gray-700">📏 {dist.toLocaleString()} กม.</span>}
+          </div>
+          {t.planned_departure && <div>🗓 {fmtDT(t.planned_departure)} – {fmtDT(t.planned_return)}</div>}
+          {t.started_at && <div>🚀 {fmtDT(t.started_at)}{t.odometer_start ? ` · ${Number(t.odometer_start).toLocaleString()} กม.` : ''}</div>}
+          {t.returned_at && <div>🏁 {fmtDT(t.returned_at)}{t.odometer_end ? ` · ${Number(t.odometer_end).toLocaleString()} กม.` : ''}</div>}
         </div>
         {(canApprove || canDepart || canReturn || isAdmin) && (
-          <div className="flex gap-2 pt-1">
+          <div className="flex gap-1.5 pt-0.5">
             {canApprove && <>
               <button onClick={() => handleApprove(t)}
-                className="flex-1 py-2 rounded-xl text-xs font-bold text-white bg-green-500">
+                className="flex-1 py-1.5 rounded-lg text-[11px] font-bold text-white bg-green-500">
                 ✓ อนุมัติ
               </button>
               <button onClick={() => handleReject(t)}
-                className="flex-1 py-2 rounded-xl text-xs font-bold text-red-500 border border-red-200 bg-red-50">
+                className="flex-1 py-1.5 rounded-lg text-[11px] font-bold text-red-500 border border-red-200 bg-red-50">
                 ✕ ปฏิเสธ
               </button>
             </>}
             {isAdmin && (
               <button onClick={() => handleDelete(t)}
-                className="px-3 py-2 rounded-xl text-xs font-bold text-red-500 border border-red-200 bg-red-50 hover:bg-red-500 hover:text-white transition-colors">
+                className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-red-500 border border-red-200 bg-red-50 hover:bg-red-500 hover:text-white transition-colors">
                 ลบ
               </button>
             )}
@@ -543,9 +539,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
                 setSelTrip(t)
                 setForm({ started_at: toLocalDT(new Date()), odometer_start: '' })
                 setModal('depart')
-              }} className="flex-1 py-2 rounded-xl text-xs font-bold text-white"
+              }} className="flex-1 py-1.5 rounded-lg text-[11px] font-bold text-white"
                 style={{ backgroundColor: 'var(--color-primary)' }}>
-                🚀 บันทึกออกเดินทาง
+                🚀 ออกเดินทาง
               </button>
             )}
             {canReturn && (
@@ -553,8 +549,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
                 setSelTrip(t)
                 setForm({ returned_at: toLocalDT(new Date()), odometer_end: '', notes: '' })
                 setModal('return')
-              }} className="flex-1 py-2 rounded-xl text-xs font-bold text-white bg-green-600">
-                🏁 บันทึกกลับถึง
+              }} className="flex-1 py-1.5 rounded-lg text-[11px] font-bold text-white bg-green-600">
+                🏁 กลับถึง
               </button>
             )}
           </div>
@@ -665,29 +661,33 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
   )
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3 md:space-y-5">
 
       {/* ── Action buttons ── */}
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-center gap-1.5 md:gap-2 flex-nowrap md:flex-wrap">
         <button onClick={openReserve}
-          className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold border-2 text-blue-600 border-blue-300 bg-blue-50 hover:bg-blue-100 transition-colors">
+          className="flex items-center gap-1.5 px-3 py-2 md:px-4 md:py-2.5 rounded-lg md:rounded-xl text-[11px] md:text-xs font-bold border-2 text-blue-600 border-blue-300 bg-blue-50 hover:bg-blue-100 transition-colors">
           <Calendar size={13} /> จองรถ
         </button>
         <button onClick={openDirect}
-          className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-white transition-colors"
+          className="flex items-center gap-1.5 px-3 py-2 md:px-4 md:py-2.5 rounded-lg md:rounded-xl text-[11px] md:text-xs font-bold text-white transition-colors"
           style={{ backgroundColor: 'var(--color-primary)' }}>
           <Plus size={13} /> บันทึกการเดินทาง
+        </button>
+        <button onClick={() => setShowCal(true)} aria-label="เปิดปฏิทินการจอง"
+          className="md:hidden ml-auto flex items-center gap-1 px-2.5 py-2 rounded-lg text-[11px] font-bold text-blue-600 bg-blue-50">
+          <Calendar size={13} /> ปฏิทิน
         </button>
       </div>
 
       {/* ── Active trips ── */}
-      <div className="space-y-2">
+      <div className="space-y-1.5 md:space-y-2">
         <div className="flex items-center justify-between">
-          <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">
+          <p className="text-[11px] md:text-xs font-bold text-gray-500 uppercase tracking-wide">
             การจองและการเดินทาง{active.length > 0 && <span className="text-blue-500 normal-case ml-1">({active.length})</span>}
           </p>
           <button onClick={() => setShowCal(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[13px] font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors">
+            className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[13px] font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors">
             <Calendar size={13} /> ปฏิทินการจอง
           </button>
         </div>
@@ -697,22 +697,22 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
           </div>
         ) : <>
           {renderTripsTable(active)}
-          <div className="md:hidden space-y-2">
+          <div className="md:hidden space-y-1.5">
             {active.map(renderTripCard)}
           </div>
         </>}
       </div>
 
       {/* ── History ── */}
-      <div className="space-y-2">
-        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">
+      <div className="space-y-1.5 md:space-y-2">
+        <p className="text-[11px] md:text-xs font-bold text-gray-500 uppercase tracking-wide">
           ประวัติการเดินทาง <span className="text-gray-400 normal-case">({history.length})</span>
         </p>
         {history.length === 0 ? (
           <p className="text-center text-sm text-gray-400 py-8">ยังไม่มีรายการ</p>
         ) : <>
           {renderTripsTable(history)}
-          <div className="md:hidden space-y-2">
+          <div className="md:hidden space-y-1.5">
             {history.map(renderTripCard)}
           </div>
         </>}

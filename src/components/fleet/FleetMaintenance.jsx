@@ -50,13 +50,13 @@ function DueSoonAlert({ records }) {
   }))
   if (!alerts.length) return null
   return (
-    <div className="bg-amber-50 border border-amber-200 rounded-2xl overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-amber-100">
+    <div className="bg-amber-50 border border-amber-200 rounded-xl md:rounded-2xl overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 md:px-4 md:py-3 border-b border-amber-100">
         <AlertTriangle size={14} className="text-amber-500" />
         <span className="text-sm font-bold text-amber-700">ต้องซ่อมบำรุงเร็วๆ นี้</span>
       </div>
       {alerts.map(a => (
-        <div key={a.id} className="flex justify-between items-center px-4 py-2.5 border-b border-amber-50 last:border-0">
+        <div key={a.id} className="flex justify-between items-center px-3 py-2 md:px-4 md:py-2.5 border-b border-amber-50 last:border-0">
           <div>
             <p className="text-xs font-semibold text-amber-800">{a.fleet_vehicles?.name}</p>
             <p className="text-[10px] text-amber-600">{a.description}</p>
@@ -218,39 +218,39 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
   const totalCost = records.reduce((s, r) => s + (r.cost ?? 0), 0)
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 md:space-y-4">
       {/* Summary */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: '#ef444418' }}>
+      <div className="bg-white rounded-xl md:rounded-2xl border border-gray-100 shadow-sm p-3 md:p-4 flex items-center gap-2.5 md:gap-3">
+        <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl flex items-center justify-center" style={{ backgroundColor: '#ef444418' }}>
           <Wrench size={18} className="text-red-500" />
         </div>
         <div>
-          <p className="text-lg font-black text-gray-800">{fmtB(totalCost)}</p>
-          <p className="text-xs text-gray-500">ค่าซ่อมบำรุงรวม (100 รายการล่าสุด)</p>
+          <p className="text-base md:text-lg font-black text-gray-800">{fmtB(totalCost)}</p>
+          <p className="text-[11px] md:text-xs text-gray-500">ค่าซ่อมบำรุงรวม (100 รายการล่าสุด)</p>
         </div>
       </div>
 
       <DueSoonAlert records={records} />
 
       {/* Toolbar */}
-      <div className="flex flex-wrap gap-2 items-center">
+      <div className="grid grid-cols-2 md:flex md:flex-wrap gap-2 items-center">
         <select value={filterType} onChange={e => setFilterType(e.target.value)}
-          className="text-xs border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none appearance-none">
+          className={`${canWrite ? '' : 'col-span-2'} order-1 md:order-none min-w-0 w-full md:w-auto text-xs border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none appearance-none`}>
           <option value="all">ทุกประเภท</option>
           {Object.entries(TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
         <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-          className="text-xs border border-gray-200 rounded-xl px-3 py-1.5 bg-white text-gray-700 focus:outline-none" />
-        <span className="text-xs text-gray-400">–</span>
+          className="order-3 md:order-none min-w-0 w-full md:w-auto text-[11px] md:text-xs border border-gray-200 rounded-xl px-2 md:px-3 py-2 bg-white text-gray-700 focus:outline-none" />
+        <span className="hidden md:inline text-xs text-gray-400">–</span>
         <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-          className="text-xs border border-gray-200 rounded-xl px-3 py-1.5 bg-white text-gray-700 focus:outline-none" />
+          className="order-4 md:order-none min-w-0 w-full md:w-auto text-[11px] md:text-xs border border-gray-200 rounded-xl px-2 md:px-3 py-2 bg-white text-gray-700 focus:outline-none" />
         {(dateFrom || dateTo) && (
           <button onClick={() => { setDateFrom(''); setDateTo('') }}
-            className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded-lg border border-gray-200">ล้าง</button>
+            className="order-5 md:order-none col-span-2 md:col-span-1 justify-self-end text-[11px] md:text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded-lg border border-gray-200">ล้าง</button>
         )}
         {canWrite && (
           <button onClick={openModal}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white ml-auto"
+            className="order-2 md:order-none justify-center flex items-center gap-1.5 px-2 md:px-4 py-2 rounded-xl text-[11px] md:text-sm font-bold text-white md:ml-auto"
             style={{ backgroundColor: 'var(--color-primary)' }}>
             <Plus size={15} /> บันทึกซ่อมบำรุง
           </button>
@@ -334,30 +334,30 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
           </div>
 
           {/* Mobile Cards */}
-          <div className="md:hidden space-y-2">
+          <div className="md:hidden space-y-1.5">
             {records.map(r => {
               const t = TYPES[r.maintenance_type] ?? TYPES.other
               return (
-                <div key={r.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-                  <div className="flex items-start justify-between gap-3">
+                <div key={r.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
+                  <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
                         <span className="text-sm font-bold text-gray-800">{r.fleet_vehicles?.name ?? '—'}</span>
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
                               style={{ backgroundColor: t.color + '18', color: t.color }}>
                           {t.label}
                         </span>
                       </div>
-                      <p className="text-[10px] text-gray-400 mb-1">{assetIdentifier(r.fleet_vehicles)}</p>
-                      <p className="text-xs text-gray-700">{r.description}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">
+                      <p className="text-[10px] text-gray-400">{assetIdentifier(r.fleet_vehicles)}</p>
+                      <p className="text-[11px] text-gray-700 line-clamp-2">{r.description}</p>
+                      <p className="text-[10px] text-gray-400 mt-0.5 truncate">
                         {thDate(r.service_date)}{r.vendor ? ` · ${r.vendor}` : ''}
                       </p>
                       {r.technician?.full_name && (
                         <p className="text-[10px] text-gray-400 mt-0.5">👤 {r.technician.full_name}</p>
                       )}
                       {(r.next_service_date || (r.next_service_meter ?? r.next_service_km) != null) && (
-                        <p className="text-[10px] text-blue-500 mt-1">
+                        <p className="text-[10px] text-blue-500 mt-0.5 truncate">
                           ซ่อมบำรุงครั้งถัดไป: {r.next_service_date ? thDate(r.next_service_date) : ''}
                           {r.next_service_date && (r.next_service_meter ?? r.next_service_km) != null ? ' หรือ ' : ''}
                           {(r.next_service_meter ?? r.next_service_km) != null
@@ -388,12 +388,12 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
       {modal && (
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center">
           <div className="absolute inset-0 bg-black/50" onClick={() => setModal(false)} />
-          <div className="relative bg-white rounded-t-3xl md:rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
-            <div className="sticky top-0 bg-white px-5 pt-5 pb-3 border-b border-gray-100 flex items-center justify-between">
+          <div className="relative bg-white rounded-t-3xl md:rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="shrink-0 bg-white px-4 py-3 md:px-5 md:pt-5 md:pb-3 border-b border-gray-100 flex items-center justify-between">
               <h3 className="font-bold text-gray-800">บันทึกซ่อมบำรุง</h3>
               <button onClick={() => setModal(false)} className="p-1.5 rounded-lg hover:bg-gray-100"><X size={16} /></button>
             </div>
-            <div className="p-5 space-y-3">
+            <div className="overflow-y-auto p-4 md:p-5 space-y-3">
               <div>
                 <label className="text-xs font-semibold text-gray-600 mb-1 block">ยานพาหนะ/เครื่องยนต์ *</label>
                 <select value={form.vehicle_id} onChange={set('vehicle_id')} className={sel}>
@@ -480,7 +480,7 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
                 <p className="text-[10px] text-gray-400 mt-1">Private Storage · ขนาดไม่เกิน 10 MB</p>
               </div>
               <button onClick={handleSave} disabled={saving}
-                className="w-full py-3 rounded-xl font-bold text-white text-sm disabled:opacity-50"
+                className="sticky bottom-0 z-10 w-full py-3 rounded-xl font-bold text-white text-sm disabled:opacity-50 shadow-lg"
                 style={{ backgroundColor: 'var(--color-primary)' }}>
                 {saving ? 'กำลังบันทึก...' : 'บันทึก'}
               </button>

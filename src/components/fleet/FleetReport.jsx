@@ -31,7 +31,7 @@ function downloadCSV(rows, filename) {
   document.body.appendChild(a); a.click(); document.body.removeChild(a)
 }
 
-function ReportSection({ title, empty, children }) {
+function ReportSection({ title, empty, children, mobile }) {
   return (
     <div className="space-y-2">
       <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">{title}</p>
@@ -39,9 +39,10 @@ function ReportSection({ title, empty, children }) {
         <p className="text-center text-sm text-gray-400 py-6 bg-white rounded-2xl border border-gray-100">
           ไม่มีข้อมูลในช่วงนี้
         </p>
-      ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-300 shadow-sm">{children}</div>
-      )}
+      ) : <>
+        <div className="md:hidden">{mobile}</div>
+        <div className="hidden md:block overflow-x-auto rounded-xl border border-gray-300 shadow-sm">{children}</div>
+      </>}
     </div>
   )
 }
@@ -251,13 +252,13 @@ export default function FleetReport({ tenant }) {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3 md:space-y-5">
 
       {/* ── Filter panel ── */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
-        <p className="text-sm font-bold text-gray-700">🔍 เลือกข้อมูลที่ต้องการดู</p>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div>
+      <div className="bg-white rounded-xl md:rounded-2xl border border-gray-100 shadow-sm p-3 md:p-4 space-y-2.5 md:space-y-3">
+        <p className="text-xs md:text-sm font-bold text-gray-700">🔍 เลือกข้อมูลที่ต้องการดู</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3">
+          <div className="col-span-2 md:col-span-1">
             <label className="text-xs font-semibold text-gray-500 mb-1 block">รถ/เครื่องยนต์/ครุภัณฑ์</label>
             <select value={selVehicle} onChange={e => setSelVehicle(e.target.value)}
               className="w-full px-3 py-2 text-sm text-gray-700 bg-white border border-gray-200 rounded-xl focus:outline-none">
@@ -275,7 +276,7 @@ export default function FleetReport({ tenant }) {
             <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
               className="w-full px-3 py-2 text-sm text-gray-700 bg-white border border-gray-200 rounded-xl focus:outline-none" />
           </div>
-          <div className="flex items-end">
+          <div className="col-span-2 md:col-span-1 flex items-end">
             <button onClick={loadReport} disabled={loading}
               className="w-full py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50"
               style={{ backgroundColor: 'var(--color-primary)' }}>
@@ -283,7 +284,7 @@ export default function FleetReport({ tenant }) {
             </button>
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5 md:gap-2 flex-wrap">
           {[['เดือนนี้', setThisMonth], ['เดือนที่แล้ว', setLastMonth], ['ปีนี้', setThisYear]].map(([label, fn]) => (
             <button key={label} onClick={fn}
               className="px-3 py-1 text-[11px] font-semibold text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50">
@@ -306,27 +307,27 @@ export default function FleetReport({ tenant }) {
       {data && (
         <>
           {/* Export buttons */}
-          <div className="flex gap-2 flex-wrap">
+          <div className="grid grid-cols-2 md:flex gap-2">
             <button onClick={exportPDF}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border border-gray-200 text-gray-600 bg-white hover:bg-gray-50">
+              className="justify-center flex items-center gap-1.5 px-2 md:px-3 py-2 rounded-xl text-[11px] md:text-xs font-bold border border-gray-200 text-gray-600 bg-white hover:bg-gray-50">
               🖨️ พิมพ์ / PDF
             </button>
             <button onClick={exportTripCSV}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border border-green-200 text-green-700 bg-green-50 hover:bg-green-100">
+              className="justify-center flex items-center gap-1.5 px-2 md:px-3 py-2 rounded-xl text-[11px] md:text-xs font-bold border border-green-200 text-green-700 bg-green-50 hover:bg-green-100">
               📥 Excel การเดินทาง
             </button>
             <button onClick={exportFuelCSV}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border border-green-200 text-green-700 bg-green-50 hover:bg-green-100">
+              className="justify-center flex items-center gap-1.5 px-2 md:px-3 py-2 rounded-xl text-[11px] md:text-xs font-bold border border-green-200 text-green-700 bg-green-50 hover:bg-green-100">
               📥 Excel น้ำมัน
             </button>
             <button onClick={exportMaintCSV}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border border-green-200 text-green-700 bg-green-50 hover:bg-green-100">
+              className="justify-center flex items-center gap-1.5 px-2 md:px-3 py-2 rounded-xl text-[11px] md:text-xs font-bold border border-green-200 text-green-700 bg-green-50 hover:bg-green-100">
               📥 Excel ซ่อมบำรุง
             </button>
           </div>
 
           {/* Summary cards */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2 md:gap-3">
             {[
               { label: 'การเดินทาง', val: `${data.trips.length} ครั้ง`, clr: '#3b82f6' },
               { label: 'ระยะทางรวม', val: `${totalKm.toLocaleString()} กม.`, clr: '#8b5cf6' },
@@ -334,15 +335,37 @@ export default function FleetReport({ tenant }) {
               { label: 'ค่าเชื้อเพลิง', val: fmtB(totalFuelCost), clr: '#ef4444' },
               { label: 'ค่าซ่อมบำรุง', val: fmtB(totalMaintCost), clr: '#10b981' },
             ].map(c => (
-              <div key={c.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 text-center">
-                <p className="text-lg font-black" style={{ color: c.clr }}>{c.val}</p>
+              <div key={c.label} className="last:col-span-2 md:last:col-span-1 bg-white rounded-xl md:rounded-2xl border border-gray-100 shadow-sm p-3 md:p-4 text-center">
+                <p className="text-base md:text-lg font-black" style={{ color: c.clr }}>{c.val}</p>
                 <p className="text-[11px] text-gray-500 mt-0.5">{c.label}</p>
               </div>
             ))}
           </div>
 
           {/* ── Trips table ── */}
-          <ReportSection title={`การเดินทาง (${data.trips.length} รายการ)`} empty={data.trips.length === 0}>
+          <ReportSection
+            title={`การเดินทาง (${data.trips.length} รายการ)`}
+            empty={data.trips.length === 0}
+            mobile={
+              <div className="space-y-1.5">
+                {data.trips.map(t => {
+                  const km = t.odometer_end && t.odometer_start ? t.odometer_end - t.odometer_start : null
+                  return (
+                    <div key={t.id} className="bg-white rounded-xl border border-gray-100 shadow-sm p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-gray-800 truncate">{t.vehicle?.name ?? '—'}</p>
+                          <p className="text-[10px] text-gray-400">{thDate(t.trip_date)} · {t.driver?.full_name ?? 'ไม่ระบุผู้ขับ'}</p>
+                        </div>
+                        <span className="text-xs font-black text-purple-600 whitespace-nowrap">{km != null ? `${km.toLocaleString()} กม.` : '—'}</span>
+                      </div>
+                      <p className="text-[11px] text-gray-600 mt-1 truncate">{t.destination || 'ไม่ระบุปลายทาง'}</p>
+                      <p className="text-[10px] text-gray-400 truncate">{t.purpose || 'ไม่ระบุวัตถุประสงค์'}</p>
+                    </div>
+                  )
+                })}
+              </div>
+            }>
             <table className="w-full text-sm border-collapse">
               <THdr cols={['ที่','วันที่','ยานพาหนะ','ปลายทาง','วัตถุประสงค์','ผู้ขับ','ระยะทาง']} />
               <tbody>
@@ -373,7 +396,31 @@ export default function FleetReport({ tenant }) {
           </ReportSection>
 
           {/* ── Fuel table ── */}
-          <ReportSection title={`บันทึกน้ำมัน (${data.fuel.length} รายการ)`} empty={data.fuel.length === 0}>
+          <ReportSection
+            title={`บันทึกน้ำมัน (${data.fuel.length} รายการ)`}
+            empty={data.fuel.length === 0}
+            mobile={
+              <div className="space-y-1.5">
+                {data.fuel.map(f => {
+                  const cost = f.total_cost ?? (f.liters ?? 0) * (f.price_per_liter ?? 0)
+                  return (
+                    <div key={f.id} className="bg-white rounded-xl border border-gray-100 shadow-sm p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-gray-800 truncate">{f.fleet_vehicles?.name ?? '—'}</p>
+                          <p className="text-[10px] text-gray-400 truncate">{assetIdentifier(f.fleet_vehicles)} · {thDate(f.filled_at)}</p>
+                        </div>
+                        <span className="text-xs font-black text-red-500 whitespace-nowrap">{fmtB(cost)}</span>
+                      </div>
+                      <p className="text-[11px] text-gray-600 mt-1 truncate">
+                        {f.fuel_type === 'other' ? f.fuel_other_name || 'อื่นๆ' : FUEL_LABEL[f.fuel_type] || f.fuel_type || '—'}
+                        {' · '}{fmt(f.liters)} ลิตร{f.fuel_station ? ` · ${f.fuel_station}` : ''}
+                      </p>
+                    </div>
+                  )
+                })}
+              </div>
+            }>
             <table className="w-full text-sm border-collapse">
               <THdr cols={['ที่','วันที่','ทรัพย์สิน','เชื้อเพลิง','ลิตร','ราคา/ล.','รวม (บาท)','ปั๊ม']} />
               <tbody>
@@ -406,7 +453,26 @@ export default function FleetReport({ tenant }) {
           </ReportSection>
 
           {/* ── Maintenance table ── */}
-          <ReportSection title={`ซ่อมบำรุง (${data.maint.length} รายการ)`} empty={data.maint.length === 0}>
+          <ReportSection
+            title={`ซ่อมบำรุง (${data.maint.length} รายการ)`}
+            empty={data.maint.length === 0}
+            mobile={
+              <div className="space-y-1.5">
+                {data.maint.map(m => (
+                  <div key={m.id} className="bg-white rounded-xl border border-gray-100 shadow-sm p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-gray-800 truncate">{m.fleet_vehicles?.name ?? '—'}</p>
+                        <p className="text-[10px] text-gray-400 truncate">{assetIdentifier(m.fleet_vehicles)} · {thDate(m.service_date)} · {MAINT_TH[m.maintenance_type] ?? m.maintenance_type}</p>
+                      </div>
+                      <span className="text-xs font-black text-emerald-600 whitespace-nowrap">{fmtB(m.cost)}</span>
+                    </div>
+                    <p className="text-[11px] text-gray-600 mt-1 line-clamp-2">{m.description || 'ไม่ระบุรายละเอียด'}</p>
+                    {m.vendor && <p className="text-[10px] text-gray-400 truncate">{m.vendor}</p>}
+                  </div>
+                ))}
+              </div>
+            }>
             <table className="w-full text-sm border-collapse">
               <THdr cols={['ที่','วันที่','ทรัพย์สิน','ประเภท','รายละเอียด','ค่าใช้จ่าย','อู่/ผู้รับจ้าง']} />
               <tbody>

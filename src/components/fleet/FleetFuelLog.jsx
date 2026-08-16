@@ -177,26 +177,26 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 md:space-y-4">
       {/* Toolbar */}
-      <div className="flex flex-wrap gap-2 items-center">
+      <div className="grid grid-cols-2 md:flex md:flex-wrap gap-2 items-center">
         <select value={filterVeh} onChange={e => { setFilterVeh(e.target.value); setPage(0) }}
-          className="text-xs border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none">
+          className={`${canWrite ? '' : 'col-span-2'} order-1 md:order-none min-w-0 w-full md:w-auto text-xs border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none`}>
           <option value="all">ทุกทรัพย์สิน</option>
           {vehicles.map(asset => <option key={asset.id} value={asset.id}>{assetOptionLabel(asset)}</option>)}
         </select>
         <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(0) }}
-          className="text-xs border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none" />
-        <span className="text-xs text-gray-400">–</span>
+          className="order-3 md:order-none min-w-0 w-full md:w-auto text-[11px] md:text-xs border border-gray-200 rounded-xl px-2 md:px-3 py-2 bg-white text-gray-700 focus:outline-none" />
+        <span className="hidden md:inline text-xs text-gray-400">–</span>
         <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(0) }}
-          className="text-xs border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none" />
+          className="order-4 md:order-none min-w-0 w-full md:w-auto text-[11px] md:text-xs border border-gray-200 rounded-xl px-2 md:px-3 py-2 bg-white text-gray-700 focus:outline-none" />
         {(dateFrom || dateTo) && (
           <button onClick={() => { setDateFrom(''); setDateTo(''); setPage(0) }}
-            className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded-lg border border-gray-200">ล้าง</button>
+            className="order-5 md:order-none col-span-2 md:col-span-1 justify-self-end text-[11px] md:text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded-lg border border-gray-200">ล้าง</button>
         )}
         {canWrite && (
           <button onClick={openModal}
-            className="ml-auto flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white"
+            className="order-2 md:order-none justify-center md:ml-auto flex items-center gap-1.5 px-2 md:px-4 py-2 rounded-xl text-[11px] md:text-sm font-bold text-white"
             style={{ backgroundColor: 'var(--color-primary)' }}>
             <Plus size={15} /> บันทึกเชื้อเพลิง
           </button>
@@ -274,12 +274,12 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
           </div>
 
           {/* Mobile Cards */}
-          <div className="md:hidden space-y-2">
+          <div className="md:hidden space-y-1.5">
             {records.map(r => (
-              <div key={r.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-                <div className="flex items-start justify-between gap-3">
+              <div key={r.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
+                <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-sm font-bold text-gray-800">{r.fleet_vehicles?.name ?? '—'}</span>
                       <span className="text-[10px] text-gray-400">{assetIdentifier(r.fleet_vehicles)}</span>
                       {r.is_anomaly && (
@@ -291,17 +291,20 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">เติมไม่เต็ม</span>
                       )}
                     </div>
-                    <p className="text-xs text-gray-500 mt-0.5">
+                    <p className="text-[11px] text-gray-500 mt-0.5 truncate">
                       {thDate(r.filled_at)} · {r.liters} ลิตร{r.price_per_liter == null ? '' : ` @ ${r.price_per_liter} บ./ล.`}
                       {r.fuel_station ? ` · ${r.fuel_station}` : ''}
                     </p>
-                    {r.driver?.full_name && (
-                      <p className="text-[10px] text-gray-400 mt-0.5">👤 {r.driver.full_name}</p>
+                    {(r.driver?.full_name || r.odometer != null) && (
+                      <p className="text-[10px] text-gray-400 mt-0.5 truncate">
+                        {r.driver?.full_name ? `👤 ${r.driver.full_name}` : ''}
+                        {r.driver?.full_name && r.odometer != null ? ' · ' : ''}
+                        {r.odometer != null ? `มิเตอร์ ${fmt(r.odometer)} ${meterUnitShort(r.fleet_vehicles)}` : ''}
+                      </p>
                     )}
-                    {r.odometer != null && <p className="text-[10px] text-gray-400">มิเตอร์ {fmt(r.odometer)} {meterUnitShort(r.fleet_vehicles)}</p>}
                     {r.receipt_url && (
                       <button onClick={() => handleOpenDocument(r.receipt_url)}
-                        className="mt-1 text-[10px] font-bold text-blue-600 flex items-center gap-1">
+                        className="mt-0.5 text-[10px] font-bold text-blue-600 flex items-center gap-1">
                         <FileText size={11} /> เปิดเอกสาร
                       </button>
                     )}
@@ -340,14 +343,14 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
       {modal && (
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center">
           <div className="absolute inset-0 bg-black/50" onClick={() => setModal(false)} />
-          <div className="relative bg-white rounded-t-3xl md:rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
-            <div className="sticky top-0 bg-white px-5 pt-5 pb-3 border-b border-gray-100 flex items-center justify-between">
+          <div className="relative bg-white rounded-t-3xl md:rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="shrink-0 bg-white px-4 py-3 md:px-5 md:pt-5 md:pb-3 border-b border-gray-100 flex items-center justify-between">
               <h3 className="font-bold text-gray-800">บันทึกเชื้อเพลิง</h3>
               <button onClick={() => setModal(false)} className="p-1.5 rounded-lg hover:bg-gray-100">
                 <X size={16} />
               </button>
             </div>
-            <div className="p-5 space-y-3">
+            <div className="overflow-y-auto p-4 md:p-5 space-y-3">
               <div>
                 <label className="text-xs font-semibold text-gray-600 mb-1 block">ยานพาหนะ/เครื่องยนต์ *</label>
                 <select value={form.vehicle_id}
@@ -458,7 +461,7 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
               </div>
 
               <button onClick={handleSave} disabled={saving}
-                className="w-full py-3 rounded-xl font-bold text-white text-sm disabled:opacity-50"
+                className="sticky bottom-0 z-10 w-full py-3 rounded-xl font-bold text-white text-sm disabled:opacity-50 shadow-lg"
                 style={{ backgroundColor: 'var(--color-primary)' }}>
                 {saving ? 'กำลังบันทึก...' : 'บันทึก'}
               </button>
