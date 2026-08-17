@@ -231,6 +231,18 @@ export default function FleetPage({ onBack } = {}) {
   if (embedded) {
     return (
       <div className="-mx-4 md:-mx-6 -mt-5">
+        {/* Desktop title (สำนักงาน embed ไม่มีหัวข้อมาก่อนเลย ต่างจากโหมด standalone /fleet ที่มีอยู่แล้ว) */}
+        <div className="hidden md:block bg-white px-4 md:px-6 pt-4">
+          <h1 className="text-base font-black text-gray-800">🚗 ระบบยานพาหนะและเชื้อเพลิง</h1>
+          <p className="text-[11px] text-gray-400 mb-1">
+            {fleetInfo?.fleet_role === 'fleet_admin' ? 'ผู้ดูแลระบบ'
+             : fleetInfo?.fleet_role === 'fleet_staff' ? 'เจ้าหน้าที่'
+             : 'ผู้ดูรายงาน'}
+            {depts.find(d => d.id === fleetInfo?.department_id)
+              ? ` · ${depts.find(d => d.id === fleetInfo.department_id).name}` : ''}
+          </p>
+        </div>
+
         {/* Desktop tab bar */}
         <TabBar tab={activeTab} setTab={setTab} />
 
