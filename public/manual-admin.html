@@ -200,7 +200,7 @@
       </a>
       <a class="toc-item" href="#users">
         <div class="toc-num">4</div>
-        <span>จัดการผู้ใช้งาน — บทบาทและสิทธิ์</span>
+        <span>จัดการผู้ใช้งาน — บทบาท สิทธิ์ จำนวนบัญชี และแบ่งหน้า</span>
         <div class="toc-dots"></div><span class="toc-page">→</span>
       </a>
       <a class="toc-item" href="#settings" style="border-bottom:none;">
@@ -639,16 +639,20 @@
         <h3>ดูและจัดการบัญชีทั้งหมด</h3>
         <p class="step-desc">กดแท็บ <strong>"จัดการผู้ใช้"</strong> (เฉพาะ admin/superadmin) เพื่อดูรายชื่อบัญชีทั้งหมดในระบบ</p>
         <ul class="steps-list">
-          <li data-n="1">ค้นหาด้วยชื่อหรืออีเมล</li>
-          <li data-n="2">กรองตาม role ด้วย dropdown</li>
-          <li data-n="3">กดปุ่ม <strong>"เปลี่ยน Role"</strong> ที่แต่ละแถวเพื่อเปลี่ยนสิทธิ์</li>
-          <li data-n="4">เลือก role ใหม่ และระบุ <strong>เหตุผล</strong> (บันทึกใน log)</li>
+          <li data-n="1">สลับดูได้ 2 แท็บ: <strong>เจ้าหน้าที่</strong> และ <strong>ผู้ใช้งานประชาชน</strong> — แต่ละแท็บแสดง <strong>จำนวนบัญชี</strong> กำกับไว้ทันที (เช่น "เจ้าหน้าที่ (38)") ไม่ต้องค้นหาก่อนถึงจะรู้ว่ามีกี่คน</li>
+          <li data-n="2">ค้นหาด้วยชื่อหรืออีเมล</li>
+          <li data-n="3">กรองตาม role ด้วย dropdown</li>
+          <li data-n="4">กดปุ่ม <strong>"เปลี่ยน Role"</strong> ที่แต่ละแถวเพื่อเปลี่ยนสิทธิ์</li>
+          <li data-n="5">เลือก role ใหม่ และระบุ <strong>เหตุผล</strong> (บันทึกใน log)</li>
         </ul>
         <div class="tips">
           💡 <strong>มุมมอง PC (เดสก์ท็อป):</strong> หน้าจัดการผู้ใช้จะแสดงผลเป็น <strong>ตาราง (Table)</strong> ที่ดูง่ายและครบถ้วน พร้อมข้อมูล <strong>ที่อยู่</strong> ของผู้ใช้งาน และสามารถเปลี่ยนบทบาทผ่าน Dropdown ได้ทันที
         </div>
+        <div class="note-box">
+          📄 <strong>การแบ่งหน้า (Pagination):</strong> ด้านล่างตารางเลือกจำนวนแสดงต่อหน้าได้ 10 / 20 / 50 / 100 รายการ — <strong>ไม่มีตัวเลือก "ทั้งหมด"</strong> ในหน้านี้ตั้งใจ เพราะตารางแสดงข้อมูลส่วนบุคคล (อีเมล เบอร์โทร เลขบัตรประชาชน) การโหลดทุกคนพร้อมกันเสี่ยงต่อการเปิดเผยข้อมูลเกินจำเป็นตาม พ.ร.บ. คุ้มครองข้อมูลส่วนบุคคล พ.ศ. ๒๕๖๒
+        </div>
 
-        <div class="step-num" style="margin-top:16px;"><div class="step-num-circle">2</div>เพิ่มบัญชีเจ้าหน้าที่ใหม่</div>
+        <div class="step-num" style="margin-top:16px;"><div class="step-num-circle">3</div>เพิ่มบัญชีเจ้าหน้าที่ใหม่</div>
         <h3>สร้างบัญชีสำหรับทีมงาน</h3>
         <ul class="steps-list">
           <li data-n="1">กดปุ่ม <strong>"+ เพิ่มผู้ใช้"</strong></li>
@@ -667,6 +671,11 @@
               <div style="background:linear-gradient(135deg,#5b21b6,#7c3aed);padding:10px 12px;display:flex;justify-content:space-between;align-items:center;">
                 <span style="color:#fff;font-size:11px;font-weight:700;">จัดการผู้ใช้งาน</span>
                 <div style="background:rgba(255,255,255,.2);border-radius:8px;padding:3px 8px;font-size:9px;color:#fff;font-weight:700;">+ เพิ่มผู้ใช้</div>
+              </div>
+              <!-- Tabs with auto-shown counts -->
+              <div style="padding:6px 8px 0;display:flex;gap:4px;">
+                <div style="flex:1;text-align:center;background:#ede9fe;color:#5b21b6;border-radius:8px 8px 0 0;padding:6px 4px;font-size:9px;font-weight:700;">เจ้าหน้าที่ (38)</div>
+                <div style="flex:1;text-align:center;color:#9ca3af;padding:6px 4px;font-size:9px;font-weight:700;">ผู้ใช้งานประชาชน (12)</div>
               </div>
               <!-- Filter -->
               <div style="padding:6px 8px;border-bottom:1px solid #f3f4f6;display:flex;gap:4px;">
@@ -707,6 +716,14 @@
                     <span style="background:#ede9fe;color:#5b21b6;font-size:8px;font-weight:700;padding:2px 6px;border-radius:6px;">council</span>
                     <div style="width:20px;height:20px;background:#f3f4f6;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;">✏️</div>
                   </div>
+                </div>
+              </div>
+              <!-- Pagination footer -->
+              <div style="padding:6px 8px;border-top:1px solid #f3f4f6;display:flex;justify-content:space-between;align-items:center;">
+                <div style="font-size:8px;color:#9ca3af;">แสดง <span style="background:#f3f4f6;border-radius:4px;padding:1px 4px;color:#374151;font-weight:700;">50</span> · หน้า 1/1</div>
+                <div style="display:flex;gap:3px;">
+                  <div style="background:#f3f4f6;border-radius:5px;padding:2px 6px;font-size:8px;color:#c7cbd1;">ก่อนหน้า</div>
+                  <div style="background:#f3f4f6;border-radius:5px;padding:2px 6px;font-size:8px;color:#c7cbd1;">ถัดไป</div>
                 </div>
               </div>
             </div>
