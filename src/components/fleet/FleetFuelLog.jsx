@@ -252,11 +252,11 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
         <>
           {/* Desktop Table */}
           <div className="hidden md:block overflow-x-auto border border-gray-300 shadow-sm" style={{ borderRadius: 4 }}>
-            <table className="w-full text-sm border-collapse">
+            <table className="w-full text-sm border-collapse table-fixed">
               <thead>
                 <tr style={{ backgroundColor: '#1a3a5c' }}>
-                  {[...['ที่','วันที่','ทรัพย์สิน','ผู้เติม','เชื้อเพลิง','ลิตร','ราคา/ล.','รวม (฿)','ประสิทธิภาพ','มิเตอร์','ปั๊ม','เอกสาร'], ...(canWrite ? [''] : [])].map((h, i) => (
-                    <th key={i} className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10 last:border-r-0 whitespace-nowrap">{h}</th>
+                  {[...['ที่','วันที่','ทรัพย์สิน','ผู้เติม','จำนวน','รวม (฿)','มิเตอร์','ปั๊ม/เอกสาร'], ...(canWrite ? ['จัดการ'] : [])].map((h, i) => (
+                    <th key={i} className="px-2 py-2 text-left text-[11px] font-bold text-white whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -266,40 +266,41 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
                     style={{ backgroundColor: idx % 2 === 0 ? '#fff' : '#f5f8fc' }}
                     onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'}
                     onMouseLeave={e => e.currentTarget.style.backgroundColor = idx % 2 === 0 ? '#fff' : '#f5f8fc'}>
-                    <td className="px-4 py-2.5 text-gray-400 text-xs border-r border-gray-200">{idx + 1}</td>
-                    <td className="px-4 py-2.5 text-gray-600 text-xs border-r border-gray-200 whitespace-nowrap">{thDate(r.filled_at)}</td>
-                    <td className="px-4 py-2.5 border-r border-gray-200">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-semibold text-gray-800 text-sm">{r.fleet_vehicles?.name ?? '—'}</span>
-                        {r.is_anomaly && <span className="flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600"><AlertTriangle size={8} />ผิดปกติ</span>}
-                        {!r.full_tank && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">ไม่เต็ม</span>}
+                    <td className="px-2 py-2 text-gray-400 text-xs">{idx + 1}</td>
+                    <td className="px-2 py-2 text-gray-600 text-xs whitespace-nowrap">{thDate(r.filled_at)}</td>
+                    <td className="px-2 py-2 truncate">
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <span className="font-semibold text-gray-800 text-sm truncate">{r.fleet_vehicles?.name ?? '—'}</span>
+                        {r.is_anomaly && <span className="flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 shrink-0"><AlertTriangle size={8} />ผิดปกติ</span>}
+                        {!r.full_tank && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 shrink-0">ไม่เต็ม</span>}
                       </div>
-                      <p className="text-[10px] text-gray-400">{assetIdentifier(r.fleet_vehicles)}</p>
+                      <p className="text-[10px] text-gray-400 truncate">
+                        {assetIdentifier(r.fleet_vehicles)} · {FUEL_OPTIONS.find(item => item.value === r.fuel_type)?.label ?? r.fuel_other_name ?? '—'}
+                      </p>
                       {r.updated_by && (
-                        <p className="text-[9px] text-amber-500">แก้ไข {thDate(r.updated_at)}{r.editor?.full_name ? ` · ${r.editor.full_name}` : ''}</p>
+                        <p className="text-[9px] text-amber-500 truncate">แก้ไข {thDate(r.updated_at)}{r.editor?.full_name ? ` · ${r.editor.full_name}` : ''}</p>
                       )}
                     </td>
-                    <td className="px-4 py-2.5 text-gray-600 text-xs border-r border-gray-200 whitespace-nowrap">
+                    <td className="px-2 py-2 text-gray-600 text-xs truncate">
                       {r.driver?.full_name ?? '—'}
                     </td>
-                    <td className="px-4 py-2.5 text-gray-600 text-xs border-r border-gray-200">{FUEL_OPTIONS.find(item => item.value === r.fuel_type)?.label ?? r.fuel_other_name ?? '—'}</td>
-                    <td className="px-4 py-2.5 text-right text-gray-700 text-sm font-semibold border-r border-gray-200">{r.liters}</td>
-                    <td className="px-4 py-2.5 text-right text-gray-600 text-xs border-r border-gray-200">{r.price_per_liter ?? '—'}</td>
-                    <td className="px-4 py-2.5 text-right font-bold text-gray-800 border-r border-gray-200">{r.total_cost == null ? '—' : fmtB(r.total_cost)}</td>
-                    <td className="px-4 py-2.5 text-right text-xs border-r border-gray-200">
-                      {r.efficiency_kml ? <span className="text-emerald-600 font-semibold">{r.efficiency_kml} กม./ล.</span> : <span className="text-gray-300">—</span>}
+                    <td className="px-2 py-2 text-right text-gray-600 text-xs">
+                      {r.liters} ล. {r.price_per_liter != null ? `× ฿${r.price_per_liter}` : ''}
                     </td>
-                    <td className="px-4 py-2.5 text-gray-500 text-xs border-r border-gray-200">{r.odometer == null ? '—' : [fmt(r.odometer), meterUnitShort(r.fleet_vehicles)].join(' ')}</td>
-                    <td className="px-4 py-2.5 text-gray-500 text-xs border-r border-gray-200">{r.fuel_station || '—'}</td>
-                    <td className="px-4 py-2.5 text-center border-r border-gray-200">
-                      {r.receipt_url ? (
-                        <button onClick={() => handleOpenDocument(r.receipt_url)} className="text-blue-600 hover:text-blue-800" title="เปิดเอกสาร">
-                          <FileText size={15} />
-                        </button>
-                      ) : <span className="text-gray-300">—</span>}
+                    <td className="px-2 py-2 text-right font-bold text-gray-800 whitespace-nowrap">{r.total_cost == null ? '—' : fmtB(r.total_cost)}</td>
+                    <td className="px-2 py-2 text-gray-500 text-xs">{r.odometer == null ? '—' : [fmt(r.odometer), meterUnitShort(r.fleet_vehicles)].join(' ')}</td>
+                    <td className="px-2 py-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-gray-500 text-xs truncate">{r.fuel_station || '—'}</span>
+                        {r.receipt_url && (
+                          <button onClick={() => handleOpenDocument(r.receipt_url)} className="text-blue-600 hover:text-blue-800 shrink-0" title="เปิดเอกสาร">
+                            <FileText size={13} />
+                          </button>
+                        )}
+                      </div>
                     </td>
                     {canWrite && (
-                      <td className="px-4 py-2.5 text-center">
+                      <td className="px-2 py-2 text-center">
                         <div className="flex items-center justify-center gap-1.5">
                           <button onClick={() => openEditModal(r)}
                             className="text-xs font-bold px-2.5 py-1 rounded border border-blue-400 text-blue-500 hover:bg-blue-500 hover:text-white transition-colors">
@@ -317,7 +318,7 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
                   </tr>
                 ))}
                 {!records.length && (
-                  <tr><td colSpan={canWrite ? 13 : 12} className="text-center py-10 text-gray-400 text-sm">ยังไม่มีรายการเชื้อเพลิง</td></tr>
+                  <tr><td colSpan={canWrite ? 9 : 8} className="text-center py-10 text-gray-400 text-sm">ยังไม่มีรายการเชื้อเพลิง</td></tr>
                 )}
               </tbody>
             </table>
