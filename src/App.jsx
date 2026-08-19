@@ -235,9 +235,12 @@ const INTERNAL_EVENT_ROLES = ['superadmin', 'admin', 'viewer', 'council', 'offic
 
 function RequireAuth({ children, adminOnly = false, techOnly = false, staffOnly = false, eventManagerOnly = false }) {
   const { session, role, profileLoading } = useAuth()
+  const { loading: tenantLoading } = useTenant()
   const location = useLocation()
 
-  if (session === undefined || profileLoading) return null
+  // เช็คซ้ำอีกชั้นที่นี่ (นอกจาก AuthContext เอง) — ห้ามเชื่อ role ใดๆ ก่อน tenant resolve เสร็จ กัน
+  // cross-tenant admin access ที่เคยเจอจริง (ดูคอมเมนต์ยาวใน AuthContext.jsx สำหรับรายละเอียด root cause)
+  if (session === undefined || profileLoading || tenantLoading) return null
   if (!session) {
     const redirectTo = adminOnly ? '/admin/login' : '/auth'
     return <Navigate to={redirectTo} state={{ from: location.pathname + location.search }} replace />

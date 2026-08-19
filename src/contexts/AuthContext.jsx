@@ -5,7 +5,7 @@ import { useTenant } from './TenantContext'
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
-  const { tenant } = useTenant()
+  const { tenant, loading: tenantLoading } = useTenant()
   const [session, setSession]       = useState(undefined) // undefined = loading
   const [role, setRole]             = useState(null)
   const [profileName, setProfileName] = useState(null)
@@ -25,6 +25,13 @@ export function AuthProvider({ children }) {
     if (session === undefined) return
     if (!session) { setRole(null); setProfileName(null); setProfileAvatarUrl(null); return }
 
+    // สำคัญ: ห้าม resolve role ใดๆ ก่อน tenant โหลดเสร็จ — เดิมเช็ค municipality mismatch แบบ
+    // `if (tenant?.id && ...)` ซึ่งถ้า tenant ยังโหลดไม่เสร็จ (tenant?.id เป็น falsy ชั่วคราว) เงื่อนไข
+    // ทั้งก้อนจะถูกข้าม แล้วปล่อย role จริงของ user (เช่น admin ของ อปท. อื่น) ออกมาใช้ได้ทันทีโดยไม่เช็ค
+    // อปท. เลย — เป็นช่องโหว่ cross-tenant admin access จริงที่เจอจากการทดสอบ (อปท. ใหม่ tenant resolve
+    // ช้ากว่า session ที่ค้างจาก อปท. เดิม) รอ tenantLoading ให้จบก่อนเสมอ ปลอดภัยกว่าเสี่ยง race condition
+    if (tenantLoading) { setProfileLoading(true); return }
+
     setProfileLoading(true)
     supabase
       .from('profiles')
@@ -43,8 +50,14 @@ export function AuthProvider({ children }) {
           return
         }
 
+        // tenant โหลดไม่สำเร็จเลย (error) — ไม่มี tenant.id ให้เทียบ ปลอดภัยไว้ก่อนด้วยการไม่ให้สิทธิ์พิเศษ
+        if (!tenant?.id) {
+          setRole('citizen')
+          return
+        }
+
         // role อื่น — ถ้า municipality ไม่ตรง → ลดเหลือ citizen
-        if (tenant?.id && profileMuniId && profileMuniId !== tenant.id) {
+        if (profileMuniId && profileMuniId !== tenant.id) {
           setRole('citizen')
           return
         }
@@ -52,7 +65,7 @@ export function AuthProvider({ children }) {
         setRole(profileRole)
       })
       .finally(() => setProfileLoading(false))
-  }, [session?.user?.id, tenant?.id])
+  }, [session?.user?.id, tenant?.id, tenantLoading])
 
   const displayName = profileName
     || session?.user?.user_metadata?.full_name
