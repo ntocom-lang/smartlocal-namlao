@@ -4,6 +4,7 @@
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { sendTelegramMessage, type TelegramSendResult } from '../_shared/telegram.ts'
 
 const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
@@ -45,10 +46,6 @@ type ClaimResult = {
   delivery: DeliveryRow
   claimToken: string | null
 }
-
-type TelegramSendResult =
-  | { ok: true; attempts: number; messageId: unknown }
-  | { ok: false; attempts: number; error: string }
 
 const INTERNAL_ROLES = new Set([
   'superadmin', 'admin', 'officer', 'viewer', 'council', 'staff', 'technician', 'kamnan',
@@ -270,36 +267,7 @@ async function claimDelivery(
 }
 
 async function sendTelegram(chatId: string, text: string): Promise<TelegramSendResult> {
-  let lastError = 'Telegram request failed'
-  let attempts = 0
-
-  for (let index = 0; index < 3; index += 1) {
-    attempts += 1
-    try {
-      const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
-      })
-      const result = await response.json().catch(() => ({})) as Record<string, unknown>
-      if (response.ok && result.ok === true) {
-        const telegramResult = result.result as Record<string, unknown> | undefined
-        return { ok: true, attempts, messageId: telegramResult?.message_id ?? null }
-      }
-
-      lastError = cleanText(result.description ?? `Telegram HTTP ${response.status}`, 500)
-      const retryAfter = Number((result.parameters as Record<string, unknown> | undefined)?.retry_after ?? 0)
-      const transient = response.status === 429 || response.status >= 500
-      if (!transient || index === 2) break
-      const delayMs = retryAfter > 0 ? Math.min(retryAfter, 5) * 1000 : 500 * (2 ** index)
-      await new Promise((resolve) => setTimeout(resolve, delayMs))
-    } catch (error) {
-      lastError = cleanText(error instanceof Error ? error.message : error, 500)
-      if (index < 2) await new Promise((resolve) => setTimeout(resolve, 500 * (2 ** index)))
-    }
-  }
-
-  return { ok: false, attempts, error: lastError }
+  return sendTelegramMessage(chatId, text, BOT_TOKEN as string)
 }
 
 serve(async (req) => {
