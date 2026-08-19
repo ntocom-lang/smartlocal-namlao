@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, LayoutDashboard, Car, Fuel, Route, Wrench, BarChart2, ChevronRight } from 'lucide-react'
+import { ArrowLeft, LayoutDashboard, Car, Fuel, Route, Wrench, BarChart2, ChevronRight, BookOpen } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -21,10 +21,22 @@ const TABS = [
   { id: 'report',      label: 'รายงาน',     sub: 'ส่งออก PDF / Excel',   Icon: BarChart2,       color: '#059669', grad: 'linear-gradient(135deg,#047857,#10b981)' },
 ]
 
+/* ── ปุ่มเปิดคู่มือการใช้งาน (เปิดแท็บใหม่ ไม่ทับหน้าที่กำลังทำงานอยู่) ── */
+function ManualLink({ light, className = '' }) {
+  return (
+    <a href="/manual-staff.html" target="_blank" rel="noopener noreferrer" title="คู่มือการใช้งานยานพาหนะ/น้ำมัน"
+      className={`shrink-0 flex items-center justify-center rounded-xl transition-colors ${
+        light ? 'bg-white/15 hover:bg-white/25 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-500'
+      } ${className}`}>
+      <BookOpen size={16} />
+    </a>
+  )
+}
+
 /* ── Desktop horizontal tab bar ── */
 function TabBar({ tab, setTab }) {
   return (
-    <div className="hidden md:flex overflow-x-auto border-b border-gray-200 bg-white"
+    <div className="hidden md:flex items-center overflow-x-auto border-b border-gray-200 bg-white"
          style={{ scrollbarWidth: 'none' }}>
       {TABS.map(({ id, label, Icon }) => (
         <button key={id} onClick={() => setTab(id)}
@@ -37,6 +49,7 @@ function TabBar({ tab, setTab }) {
           {label}
         </button>
       ))}
+      <ManualLink className="w-8 h-8 ml-auto mr-3" />
     </div>
   )
 }
@@ -59,11 +72,14 @@ function MobileGrid({ setTab, fleetInfo, depts, tenant }) {
         <h1 className="text-xl font-black text-white leading-tight">
           ระบบยานพาหนะ<br />และเชื้อเพลิง
         </h1>
-        <div className="mt-3 inline-flex items-center gap-1.5 bg-white/10 rounded-full px-3 py-1">
-          <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
-          <p className="text-[11px] text-white/80 font-medium">
-            {roleLabel}{deptName ? ` · ${deptName}` : ''}
-          </p>
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <div className="inline-flex items-center gap-1.5 bg-white/10 rounded-full px-3 py-1">
+            <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
+            <p className="text-[11px] text-white/80 font-medium">
+              {roleLabel}{deptName ? ` · ${deptName}` : ''}
+            </p>
+          </div>
+          <ManualLink light className="w-8 h-8" />
         </div>
       </div>
 
@@ -125,7 +141,8 @@ function MobileContent({ tab, setTab, children }) {
             <p className="text-[10px] text-white/60 font-medium">ระบบยานพาหนะ</p>
             <p className="text-[15px] font-black text-white leading-tight">{t.label}</p>
           </div>
-          <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center">
+          <ManualLink light className="w-9 h-9" />
+          <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
             <t.Icon size={18} className="text-white" />
           </div>
         </div>
@@ -214,6 +231,18 @@ export default function FleetPage({ onBack } = {}) {
   if (embedded) {
     return (
       <div className="-mx-4 md:-mx-6 -mt-5">
+        {/* Desktop title (สำนักงาน embed ไม่มีหัวข้อมาก่อนเลย ต่างจากโหมด standalone /fleet ที่มีอยู่แล้ว) */}
+        <div className="hidden md:block bg-white px-4 md:px-6 pt-4">
+          <h1 className="text-base font-black text-gray-800">🚗 ระบบยานพาหนะและเชื้อเพลิง</h1>
+          <p className="text-[11px] text-gray-400 mb-1">
+            {fleetInfo?.fleet_role === 'fleet_admin' ? 'ผู้ดูแลระบบ'
+             : fleetInfo?.fleet_role === 'fleet_staff' ? 'เจ้าหน้าที่'
+             : 'ผู้ดูรายงาน'}
+            {depts.find(d => d.id === fleetInfo?.department_id)
+              ? ` · ${depts.find(d => d.id === fleetInfo.department_id).name}` : ''}
+          </p>
+        </div>
+
         {/* Desktop tab bar */}
         <TabBar tab={activeTab} setTab={setTab} />
 
