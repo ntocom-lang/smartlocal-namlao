@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
-import { X, Route, Fuel, Wrench, Gauge } from 'lucide-react'
+import { X, Route, Fuel, Wrench, Gauge, CalendarClock } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { assetIdentifier, isVehicleAsset } from '../../lib/fleetAssets'
+import FleetEmptyState from './FleetEmptyState'
 
 const fmt  = n => (n ?? 0).toLocaleString('th-TH')
 const fmtB = n => `฿${fmt(Math.round(n ?? 0))}`
@@ -137,7 +138,7 @@ export default function FleetVehicleDetail({ vehicle, tenant, onClose }) {
               <div>
                 <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">สถิติรายเดือน</p>
                 {months.length === 0 ? (
-                  <p className="text-center text-sm text-gray-400 py-8">ยังไม่มีข้อมูลในปีงบประมาณนี้</p>
+                  <FleetEmptyState icon={CalendarClock} title="ยังไม่มีข้อมูลในปีงบประมาณนี้" compact />
                 ) : (
                   <div className="space-y-1.5">
                     {months.map(m => (

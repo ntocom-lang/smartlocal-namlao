@@ -1933,7 +1933,11 @@ export default function StaffDashboard() {
             )}
             {activeModule === 'inbox'      && <InboxModule tenant={tenant} staffId={profile?.id} currentUserRole={profile?.role} />}
             {activeModule === 'complaints' && (
-              ['admin', 'superadmin', 'staff'].includes(profile?.role)
+              // 'staff' ตัดออกจากรายชื่อนี้แล้ว — คำอธิบายบทบาท (ดู ROLE_DESCRIPTIONS ใน AdminDashboard.jsx)
+              // บอกว่า "ใช้เมนูงานที่ได้รับมอบหมาย" แต่โค้ดเดิมให้ staff เห็น/จัดการคำร้องทั้งหมดเหมือน admin
+              // — ไม่ตรงกับคำอธิบาย แก้ให้ staff ตกไปแตะ ComplaintsStaffModule (เฉพาะงานที่มอบหมายให้ตัวเอง)
+              // เหมือนบทบาทอื่นที่ไม่ใช่ admin/superadmin
+              ['admin', 'superadmin'].includes(profile?.role)
                 ? (
                   <div className="space-y-4">
                     <header className="flex items-center gap-3 px-1">

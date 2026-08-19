@@ -1451,6 +1451,10 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                         const d = ev.event_date ? new Date(ev.event_date + 'T00:00:00') : null
                         const dateStr = d ? d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : 'ยังไม่ระบุ'
                         const timeStr = ev.event_time ? ev.event_time.slice(0, 5) + (ev.end_time ? `–${ev.end_time.slice(0, 5)}` : '') + ' น.' : '—'
+                        // ป้ายวันนี้/พรุ่งนี้/อีก N วัน ไม่โชว์ "N วันที่แล้ว" เพราะแท็บ "ผ่านมาแล้ว" บอกอยู่แล้วว่าเป็นอดีต
+                        const relDays = ev.event_date ? daysUntil(ev.event_date) : null
+                        const relDaysColor = relDays === 'วันนี้' ? '#ef4444' : relDays === 'พรุ่งนี้' ? '#f97316'
+                          : relDays?.startsWith('อีก') ? '#3b82f6' : null
                         const isAdminManager = ['admin', 'superadmin'].includes(currentUserRole)
                         const isDepartmentHeadForEvent = !!currentUserScope?.is_dept_head && !!currentUserScope?.department_id && ev.department_id === currentUserScope.department_id
                         const canEditRow = isAdminManager || ev.created_by === currentUserId || isDepartmentHeadForEvent
@@ -1482,7 +1486,13 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                                 style={{ backgroundColor: color }}>{ev.category}</span>
                             </td>
                             <td className="px-3 py-2 text-xs text-gray-600 whitespace-nowrap border-r border-gray-200">
-                              <p>{dateStr}</p>
+                              <div className="flex items-center gap-1.5">
+                                <p>{dateStr}</p>
+                                {relDaysColor && (
+                                  <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold text-white shrink-0"
+                                    style={{ backgroundColor: relDaysColor }}>{relDays}</span>
+                                )}
+                              </div>
                               <p className="text-[11px] text-gray-400">{timeStr}</p>
                             </td>
                             <td className="px-3 py-2 text-xs text-gray-500 border-r border-gray-200">{ev.location || '—'}</td>

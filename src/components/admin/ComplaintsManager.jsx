@@ -1414,12 +1414,8 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   }, [complaints, openComplaintId, openComplaint])
 
   async function assignTechnician(complaintId, technicianId) {
-    if (technicianId) {
-      const target = complaints.find((c) => c.id === complaintId)
-      if (target && !target.final_document_path) {
-        if (!window.confirm('ยังไม่ได้แนบ PDF ฉบับสมบูรณ์จาก GDCC e-Office\n\nต้องการจ่ายงานต่อเลยหรือไม่?')) return
-      }
-    }
+    // เดิมเช็ค final_document_path แล้วเตือน "ยังไม่ได้แนบ PDF จาก GDCC e-Office" ก่อนมอบหมายงาน —
+    // ตัดออกเพราะยังไม่ได้ใช้ระบบ e-Office จริง คำเตือนนี้ไม่เกี่ยวข้อง แค่ทำให้เสียเวลากดยืนยันเปล่าๆ
     const { error } = await supabase
       .from('complaints')
       .update({ assigned_to: technicianId })

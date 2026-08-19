@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { Plus, Calendar, X, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Calendar, X, ChevronLeft, ChevronRight, Route, History } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { assetIdentifier, assetOptionLabel } from '../../lib/fleetAssets'
+import FleetEmptyState from './FleetEmptyState'
 
 const STATUS_LABEL = {
   pending:     'รอการอนุมัติ',
@@ -703,8 +704,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
           </button>
         </div>
         {active.length === 0 ? (
-          <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-400">
-            ยังไม่มีรายการจองหรือการเดินทางที่ดำเนินการอยู่ — กด <strong>จองรถ</strong> เพื่อส่งคำขอ
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
+            <FleetEmptyState icon={Route} title="ยังไม่มีรายการจองหรือการเดินทางที่ดำเนินการอยู่"
+              hint={<>กด <strong className="text-gray-500">จองรถ</strong> เพื่อส่งคำขอ</>} />
           </div>
         ) : <>
           {renderTripsTable(active)}
@@ -720,7 +722,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
           ประวัติการเดินทาง <span className="text-gray-400 normal-case">({history.length})</span>
         </p>
         {history.length === 0 ? (
-          <p className="text-center text-sm text-gray-400 py-8">ยังไม่มีรายการ</p>
+          <FleetEmptyState icon={History} title="ยังไม่มีประวัติการเดินทาง" />
         ) : <>
           {renderTripsTable(pagedHistory)}
           <div className="md:hidden space-y-1.5">

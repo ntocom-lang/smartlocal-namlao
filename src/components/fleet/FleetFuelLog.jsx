@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Plus, X, AlertTriangle, FileText, Paperclip, Pencil } from 'lucide-react'
+import { Plus, X, AlertTriangle, FileText, Paperclip, Pencil, Fuel } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import FleetEmptyState from './FleetEmptyState'
 import {
   FUEL_OPTIONS,
   assetIdentifier,
@@ -318,7 +319,9 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
                   </tr>
                 ))}
                 {!records.length && (
-                  <tr><td colSpan={canWrite ? 9 : 8} className="text-center py-10 text-gray-400 text-sm">ยังไม่มีรายการเชื้อเพลิง</td></tr>
+                  <tr><td colSpan={canWrite ? 9 : 8}>
+                    <FleetEmptyState icon={Fuel} title="ยังไม่มีรายการเชื้อเพลิง" />
+                  </td></tr>
                 )}
               </tbody>
             </table>
@@ -386,9 +389,7 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
                 </div>
               </div>
             ))}
-            {!records.length && (
-              <div className="text-center py-12 text-gray-400 text-sm">ยังไม่มีรายการเติมน้ำมัน</div>
-            )}
+            {!records.length && <FleetEmptyState icon={Fuel} title="ยังไม่มีรายการเติมน้ำมัน" />}
           </div>
         </>
       )}

@@ -19,6 +19,7 @@ import { compressImage } from '../lib/imageUtils'
 import { attachReporterProfiles } from '../lib/attachReporterProfiles'
 import { uploadFile } from '../lib/driveStorage'
 import { tenantDefaultSubdistrict } from '../lib/thaiAddress'
+import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
 import { useTenant } from '../contexts/TenantContext'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 import CivilProjectReport from '../components/admin/CivilProjectReport'
@@ -35,6 +36,7 @@ import ReportManagerComponent from '../components/admin/ReportManager'
 import AuditLogViewer from '../components/admin/AuditLogViewer'
 import { ROLE_LABELS, ROLE_DESCRIPTIONS, fetchAssignableStaff, groupStaffByDepartment } from '../lib/staffRoster'
 import FleetSetup from '../components/fleet/FleetSetup'
+import { adminUpdateUser } from '../lib/adminUpdateUser'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS = {
@@ -81,15 +83,6 @@ let CATEGORY_EMOJI = {
 // ROLE_LABELS/ROLE_DESCRIPTIONS ย้ายไป src/lib/staffRoster.js แล้ว (import ด้านบน) — ใช้ร่วมกับ
 // ComplaintsManager.jsx กัน role label เพี้ยนกันคนละจุดเหมือนที่เคยเป็นมาก่อน
 
-const POSITION_CATEGORIES = [
-  { value: 'political_exec',   label: 'ฝ่ายบริหาร (การเมือง)' },
-  { value: 'council',          label: 'สภาท้องถิ่น' },
-  { value: 'top_admin',        label: 'ผู้บริหารสูงสุดฝ่ายประจำ' },
-  { value: 'dept_head',        label: 'หัวหน้าส่วนราชการ/ผู้อำนวยการกอง' },
-  { value: 'operating_staff',  label: 'เจ้าหน้าที่ปฏิบัติงาน' },
-  { value: 'field_technician', label: 'ช่างเทคนิค/ปฏิบัติการภาคสนาม' },
-]
-
 const NON_CITIZEN_ROLES = ['staff', 'officer', 'technician', 'admin', 'superadmin', 'council', 'viewer']
 const USER_PAGE_SIZE = 50
 
@@ -117,11 +110,13 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
   const viewingUser = viewingUserId ? users.find(u => u.id === viewingUserId) : null
   const [deletingUser, setDeletingUser] = useState(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
-  const [sortConfig, setSortConfig] = useState({ key: 'created_at', direction: 'desc' })
+  // ค่าเริ่มต้นต้องตรงกับ ORDER BY จริงใน get_users_with_email() (full_name ASC) ไม่งั้นลูกศร
+  // บนหัวตารางจะขึ้นผิดทิศทาง (ข้อมูลที่ได้มาเรียงตามชื่อแล้ว แต่ลูกศรจะโชว์ว่ายังไม่ได้กดเรียง)
+  const [sortConfig, setSortConfig] = useState({ key: 'full_name', direction: 'asc' })
 
   const [search, setSearch] = useState('')
   const [filterRole, setFilterRole] = useState('')
-  const [filterCategory, setFilterCategory] = useState('')
+  const [filterDept, setFilterDept] = useState('') // '' = ทั้งหมด, 'none' = ไม่ระบุกอง, มิฉะนั้นคือ department_id
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(USER_PAGE_SIZE)
   const [citizenCount, setCitizenCount] = useState(null)
@@ -191,14 +186,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
     return () => clearTimeout(t)
   }, [search, subTab, page, filterRole, fetchUsers])
 
-  async function updateManagedUser(userId, changes) {
-    const res = await supabase.rpc('admin_update_user', { p_user_id: userId, p_changes: changes })
-    if (res.error && (res.error.code === 'PGRST202' || res.error.message?.includes('Could not find the function') || res.status === 404)) {
-      console.warn('[AdminDashboard] admin_update_user RPC not found on DB, falling back to direct profiles table update:', res.error.message)
-      return supabase.from('profiles').update(changes).eq('id', userId)
-    }
-    return res
-  }
+  const updateManagedUser = adminUpdateUser
 
   async function updateName(userId) {
     const name = editingNameValue.trim()
@@ -256,6 +244,21 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
     return { ok: true }
   }
 
+  // แยกออกจาก saveUserEdits เพราะ auth.users.email เปลี่ยนผ่าน edge function
+  // (Supabase Admin API) เท่านั้น ไม่ใช่ admin_update_user RPC ธรรมดา
+  async function updateUserEmail(user, newEmail) {
+    setSaving(user.id)
+    const { data, error } = await supabase.functions.invoke('admin-update-login-email', {
+      body: { user_id: user.id, email: newEmail },
+    })
+    setSaving(null)
+    if (error || !data?.ok) {
+      return { ok: false, error: data?.error || error?.message || 'unknown error' }
+    }
+    setUsers((prev) => prev.map((u) => u.id === user.id ? { ...u, email: newEmail } : u))
+    return { ok: true }
+  }
+
   async function deleteUser(userId) {
     setDeleteLoading(true)
     const { error } = await supabase.rpc('delete_user_by_id', { p_user_id: userId })
@@ -276,37 +279,35 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
     }))
   }
 
-  const getUserCategory = useCallback((u) => {
-    if (u.position_id) {
-      const pos = positions.find(p => p.id === u.position_id)
-      if (pos?.category) return pos.category
-    }
-    if (u.role === 'council') return 'council'
-    if (u.role === 'viewer') return 'political_exec'
-    if (u.is_dept_head) return 'dept_head'
-    if (u.role === 'technician') return 'field_technician'
-    return 'operating_staff'
-  }, [positions])
-
-  const categoryCards = POSITION_CATEGORIES.map(c => {
-    const count = users.filter(u => getUserCategory(u) === c.value).length
-    return { ...c, count }
-  })
+  // การ์ดกลุ่ม "กอง/หน่วยงาน" แทนกลุ่มตำแหน่งเดิม — เข้าใจง่ายกว่า เพราะตรงกับโครงสร้างหน่วยงานจริง
+  // ที่แอดมินคุ้นเคยอยู่แล้ว (กองคลัง, กองช่าง, สำนักปลัด ฯลฯ) ไม่ต้องแปลจากหมวดตำแหน่งนามธรรม
+  const deptCards = [
+    ...depts.map(d => ({ value: d.id, label: d.name, count: users.filter(u => u.department_id === d.id).length })),
+    { value: 'none', label: 'ไม่ระบุกอง', count: users.filter(u => !u.department_id).length },
+  ]
 
   const filtered = users.filter((u) => {
     const q = search.toLowerCase()
     const matchSearch = !q || (u.full_name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q) || (u.phone || '').includes(q)
     const matchRole = !filterRole || u.role === filterRole
-    const matchCategory = !filterCategory || getUserCategory(u) === filterCategory
-    return matchSearch && matchRole && matchCategory
+    const matchDept = !filterDept || (filterDept === 'none' ? !u.department_id : u.department_id === filterDept)
+    return matchSearch && matchRole && matchDept
   }).sort((a, b) => {
     const { key, direction } = sortConfig;
     let aVal = a[key] || '';
     let bVal = b[key] || '';
-    
+
     // Sort logically for text, case insensitive
     if (typeof aVal === 'string') aVal = aVal.toLowerCase();
     if (typeof bVal === 'string') bVal = bVal.toLowerCase();
+
+    // ชื่อภาษาไทยขึ้นก่อนภาษาอังกฤษเสมอ (ตรงกับที่ get_users_with_email() เรียงมาจาก server) —
+    // ไม่งั้น string comparison ปกติของ JS จะเอาอักษรละตินขึ้นก่อน เพราะ code point ของอักษรไทยสูงกว่า
+    if (key === 'full_name') {
+      const isThai = (s) => /^[ก-๙]/.test(s)
+      const aThai = isThai(aVal), bThai = isThai(bVal)
+      if (aThai !== bThai) return aThai ? -1 : 1
+    }
 
     if (aVal < bVal) return direction === 'asc' ? -1 : 1;
     if (aVal > bVal) return direction === 'asc' ? 1 : -1;
@@ -326,6 +327,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
         saving={saving}
         deletingUser={deletingUser} setDeletingUser={setDeletingUser} deleteLoading={deleteLoading} deleteUser={deleteUser}
         saveUserEdits={saveUserEdits}
+        updateUserEmail={updateUserEmail}
       />
     )
   }
@@ -357,7 +359,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
             setFilterRole('')
             setPage(0)
             setUsers([])
-            setFilterCategory('')
+            setFilterDept('')
             setLoading(true)
           }}
             className={`px-3.5 py-1.5 rounded-xl text-sm font-semibold transition-colors ${
@@ -372,16 +374,16 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
         ))}
       </div>
 
-      {/* การ์ดกลุ่มตำแหน่ง 6 การ์ด (เฉพาะแท็บเจ้าหน้าที่) */}
+      {/* การ์ดกลุ่ม "กอง/หน่วยงาน" (เฉพาะแท็บเจ้าหน้าที่) */}
       {subTab === 'staff' && (
         <div className="px-4 pt-3 pb-1 grid grid-cols-2 md:grid-cols-3 gap-2.5">
-          {categoryCards.map(c => {
-            const isActive = filterCategory === c.value
+          {deptCards.map(c => {
+            const isActive = filterDept === c.value
             return (
               <button
                 key={c.value}
                 type="button"
-                onClick={() => { setFilterCategory(prev => prev === c.value ? '' : c.value); setPage(0) }}
+                onClick={() => { setFilterDept(prev => prev === c.value ? '' : c.value); setPage(0) }}
                 className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-all active:scale-[0.98] ${
                   isActive
                     ? 'border-blue-400 bg-blue-50/80 shadow-xs'
@@ -438,12 +440,12 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
           ].map((role) => <option key={role} value={role}>บทบาท: {ROLE_LABELS[role].label}</option>)}
         </select>
         )}
-        {(search || filterRole || filterCategory) && (
+        {(search || filterRole || filterDept) && (
           <button
             onClick={() => {
               setSearch('')
               setFilterRole('')
-              setFilterCategory('')
+              setFilterDept('')
               setPage(0)
             }}
             className="flex items-center gap-1 text-xs text-gray-400 hover:text-red-500 border border-gray-200 rounded-xl px-2.5 py-2 transition-colors shrink-0"
@@ -670,7 +672,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
       {!loading && users.length > 0 && (() => {
         // มี count ที่แม่นยำ (จาก get_user_role_counts) เฉพาะตอนไม่มีตัวกรองแคบผลลัพธ์ลง —
         // ถ้ากรองอยู่ ไม่รู้จำนวนจริงหลังกรอง เลยใช้ heuristic "ได้ครบหน้าพอดีไหม" แทนแค่เปิด/ปิดปุ่มถัดไป
-        const filtersActive = Boolean(search.trim() || filterRole || (subTab === 'staff' && filterCategory))
+        const filtersActive = Boolean(search.trim() || filterRole || (subTab === 'staff' && filterDept))
         const tabTotal = subTab === 'citizen' ? citizenCount : staffCount
         const totalPages = !filtersActive && tabTotal != null ? Math.max(1, Math.ceil(tabTotal / pageSize)) : null
         const canGoNext = totalPages != null ? page + 1 < totalPages : users.length === pageSize
@@ -752,7 +754,7 @@ function DeleteUserConfirmModal({ deletingUser, setDeletingUser, deleteLoading, 
 }
 
 function AccountInfoTab(props) {
-  const { user } = props
+  const { user, isEditing, draft, setDraft } = props
   const providerBadge = {
     'email':       { label: 'Email/Password', bg: '#f3f4f6', color: '#374151', icon: '✉️' },
     'google':      { label: 'Google',          bg: '#fef9c3', color: '#854d0e', icon: '🔵' },
@@ -761,10 +763,14 @@ function AccountInfoTab(props) {
   const providers = user.providers || []
   return (
     <div className="space-y-5">
-      <div>
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">อีเมล</p>
-        <p className="text-sm text-gray-800 break-all">{user.email || '—'}</p>
-      </div>
+      <PersonalInfoField
+        label="อีเมล (ใช้ login)"
+        isEditing={isEditing}
+        displayValue={user.email}
+        editValue={draft?.email ?? ''}
+        placeholder="name@gmail.com"
+        onChange={(e) => setDraft(d => ({ ...d, email: e.target.value }))}
+      />
       <div>
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ช่องทางเชื่อมต่อบัญชี</p>
         {providers.length === 0 ? (
@@ -864,15 +870,41 @@ function AddressField({ user, isEditing, draft, setDraft }) {
 
 function PersonalInfoTab(props) {
   const { user, isEditing, draft, setDraft } = props
+  // ชื่อที่ auto-fill มาจาก Google/LINE login ไม่มีคำนำหน้าไทยติดมาด้วย — เอกสาร/คำร้องที่พิมพ์
+  // ใช้ full_name ตรงๆ ไม่มีคำนำหน้าก็จะไม่โชว์บนกระดาษ ใช้ตัวแยก/รวมเดียวกับ ProfilePage.jsx
+  // (หน้าแก้โปรไฟล์ของประชาชนเอง) ให้แอดมินกรอกแยกช่องคำนำหน้า/ชื่อ/นามสกุล กันลืมใส่คำนำหน้า
+  const nameParts = splitThaiFullName(draft?.full_name ?? '')
+  function setNamePart(key, value) {
+    const next = { ...nameParts, [key]: value }
+    setDraft(d => ({ ...d, full_name: joinThaiFullName(next.title, next.first, next.last) }))
+  }
+  const missingTitle = !splitThaiFullName(user.full_name ?? '').title && !!(user.full_name ?? '').trim()
   return (
     <div className="space-y-5">
-      <PersonalInfoField
-        label="ชื่อ-นามสกุล"
-        isEditing={isEditing}
-        displayValue={user.full_name}
-        editValue={draft?.full_name ?? ''}
-        onChange={(e) => setDraft(d => ({ ...d, full_name: e.target.value }))}
-      />
+      <div>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ชื่อ-นามสกุล</p>
+        {isEditing ? (
+          <div className="flex gap-1.5">
+            <select value={nameParts.title} onChange={(e) => setNamePart('title', e.target.value)}
+              className="w-20 shrink-0 text-sm text-gray-900 bg-white border border-gray-200 rounded-lg px-2 py-2 focus:outline-none focus:border-blue-400">
+              <option value="">เลือก</option>
+              {NAME_TITLES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <input value={nameParts.first} onChange={(e) => setNamePart('first', e.target.value)} placeholder="ชื่อ"
+              className="flex-1 min-w-0 text-sm text-gray-900 bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400" />
+            <input value={nameParts.last} onChange={(e) => setNamePart('last', e.target.value)} placeholder="นามสกุล"
+              className="flex-1 min-w-0 text-sm text-gray-900 bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400" />
+          </div>
+        ) : (
+          <p className="text-sm text-gray-800">{user.full_name || <span className="italic text-gray-300">—</span>}</p>
+        )}
+        {!isEditing && missingTitle && (
+          <p className="mt-1 text-xs font-semibold text-amber-600">⚠️ ยังไม่มีคำนำหน้า — จะไม่แสดงบนเอกสาร/คำร้องที่พิมพ์</p>
+        )}
+        {isEditing && !nameParts.title && (nameParts.first || nameParts.last) && (
+          <p className="mt-1 text-xs font-semibold text-amber-600">⚠️ ยังไม่ได้เลือกคำนำหน้า</p>
+        )}
+      </div>
       <PersonalInfoField
         label="เบอร์โทรศัพท์"
         isEditing={isEditing}
@@ -917,8 +949,10 @@ function AppointmentTab({ user, depts, positions, currentUserRole, isEditing, dr
   return (
     <div className="space-y-5">
       <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3">
-        <p className="text-sm font-bold text-indigo-800">แต่งตั้งจากหน้านี้เพียงจุดเดียว</p>
-        <p className="mt-1 text-xs leading-5 text-indigo-600">เลือกตำแหน่ง กอง หัวหน้ากอง และบทบาทระบบ แล้วกดบันทึกครั้งเดียว</p>
+        <p className="text-sm font-bold text-indigo-800">การแต่งตั้ง = ตำแหน่งในหน่วยงาน</p>
+        <p className="mt-1 text-xs leading-5 text-indigo-600">
+          ส่วนสิทธิ์การเข้าใช้งานแอป ย้ายไปแท็บ "สิทธิ์การใช้งาน" แล้ว — บันทึกครั้งเดียวรวมทุกแท็บ
+        </p>
       </div>
       <div>
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ตำแหน่ง (ทำเนียบกลาง)</p>
@@ -965,7 +999,29 @@ function AppointmentTab({ user, depts, positions, currentUserRole, isEditing, dr
           )}
         </div>
       )}
-      <div className="border-t border-gray-100 pt-4">
+      {user.staff_name && (
+        <div className="border-t border-gray-100 pt-4">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ผูกกับข้อมูลสาธารณะ (หน้าเว็บ)</p>
+          <p className="text-sm text-gray-800">{user.staff_name}{user.staff_title ? ` (${user.staff_title})` : ''}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// แยกออกจาก AppointmentTab ตามที่ขอ — การแต่งตั้ง (ตำแหน่งในหน่วยงาน) กับสิทธิ์ (การเข้าใช้งานแอป)
+// เป็นคนละเรื่องกัน แอดมินสับสนว่าทำไมอยู่หน้าเดียวกัน ค่า draft.role ยังใช้ร่วมกับ AppointmentTab
+// (การเลือกตำแหน่งมี "บทบาทแนะนำ" เสนอ role มาให้อัตโนมัติ) แต่แก้ไข/แสดงผลแยกกันคนละแท็บ
+function PermissionsTab({ user, currentUserRole, isEditing, draft, setDraft }) {
+  return (
+    <div className="space-y-5">
+      <div className="rounded-xl border border-purple-100 bg-purple-50 px-4 py-3">
+        <p className="text-sm font-bold text-purple-800">สิทธิ์ = การเข้าใช้งานแอป</p>
+        <p className="mt-1 text-xs leading-5 text-purple-600">
+          กำหนดว่าเข้าเมนูไหนได้บ้าง แยกจากตำแหน่งในหน่วยงาน (แท็บ "การแต่งตั้ง") — บันทึกครั้งเดียวรวมทุกแท็บ
+        </p>
+      </div>
+      <div>
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">บทบาทและสิทธิ์ระบบ</p>
         {isEditing ? (
           <select value={draft.role} onChange={(e) => setDraft(current => ({ ...current, role: e.target.value }))}
@@ -987,32 +1043,27 @@ function AppointmentTab({ user, depts, positions, currentUserRole, isEditing, dr
         </p>
         {isEditing && draft.role === 'officer' && !draft.department_id && (
           <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
-            ต้องเลือกกอง/หน่วยงานก่อนแต่งตั้งเป็นธุรการกอง
+            ต้องเลือกกอง/หน่วยงานก่อนแต่งตั้งเป็นธุรการกอง (ไปเลือกที่แท็บ "การแต่งตั้ง")
           </p>
         )}
       </div>
-      {user.staff_name && (
-        <div className="border-t border-gray-100 pt-4">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ผูกกับข้อมูลสาธารณะ (หน้าเว็บ)</p>
-          <p className="text-sm text-gray-800">{user.staff_name}{user.staff_title ? ` (${user.staff_title})` : ''}</p>
-        </div>
-      )}
     </div>
   )
 }
 
 // เพิ่มแท็บใหม่ในอนาคต: เพิ่ม entry ตรงนี้ + เขียน component ใหม่ ไม่ต้องแก้โครงสร้าง UserDetailPage เลย
 const USER_DETAIL_TABS = [
-  { key: 'account',    label: 'ข้อมูลบัญชี',   Component: AccountInfoTab },
-  { key: 'personal',   label: 'ข้อมูลส่วนตัว',  Component: PersonalInfoTab },
-  { key: 'appointment', label: 'การแต่งตั้งและสิทธิ์', Component: AppointmentTab },
+  { key: 'account',     label: 'ข้อมูลบัญชี',    Component: AccountInfoTab },
+  { key: 'personal',    label: 'ข้อมูลส่วนตัว',   Component: PersonalInfoTab },
+  { key: 'appointment', label: 'การแต่งตั้ง',    Component: AppointmentTab },
+  { key: 'permissions', label: 'สิทธิ์การใช้งาน', Component: PermissionsTab },
 ]
 
 // tenantDefaultSubdistrict ย้ายไป src/lib/thaiAddress.js แล้ว (ใช้ร่วมกับ ProfilePage.jsx) — import ไว้
 // ด้านบนของไฟล์แทน กันตรรกะเพี้ยนไปคนละแบบระหว่าง 2 หน้าที่ต้องเดาตำบลของ tenant เหมือนกัน
 
 function UserDetailPage(props) {
-  const { user, onBack, currentUserRole, currentUserId, tenant, saving, deletingUser, setDeletingUser, deleteLoading, deleteUser, saveUserEdits } = props
+  const { user, onBack, currentUserRole, currentUserId, tenant, saving, deletingUser, setDeletingUser, deleteLoading, deleteUser, saveUserEdits, updateUserEmail } = props
   const [activeTab, setActiveTab] = useState('appointment')
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(null)
@@ -1026,6 +1077,7 @@ function UserDetailPage(props) {
   function startEdit() {
     setDraft({
       full_name: user.full_name || '',
+      email: user.email || '',
       phone: user.phone || '',
       id_card: user.id_card || '',
       address_province: user.address_province || tenant?.province || '',
@@ -1053,6 +1105,21 @@ function UserDetailPage(props) {
       setSaveError('เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก')
       return
     }
+
+    // อีเมล login จริง (auth.users.email) เปลี่ยนแยกจากฟิลด์อื่น — ต้องผ่าน edge function
+    // ที่เรียก Supabase Admin API เท่านั้น (admin_update_user ธรรมดาแตะ auth.users ไม่ได้)
+    const newEmail = draft.email.trim().toLowerCase()
+    if (newEmail && newEmail !== (user.email || '').toLowerCase()) {
+      if (!confirm(`ยืนยันเปลี่ยนอีเมลที่ใช้ login ของ "${user.full_name || user.email}" เป็น "${newEmail}"?\n\nอีเมลเดิมจะใช้ login ไม่ได้อีกทันที`)) {
+        return
+      }
+      const emailResult = await updateUserEmail(user, newEmail)
+      if (!emailResult.ok) {
+        setSaveError('เปลี่ยนอีเมลไม่สำเร็จ: ' + emailResult.error)
+        return
+      }
+    }
+
     const changes = {
       full_name: draft.full_name.trim() || null,
       phone: draft.phone.trim() || null,

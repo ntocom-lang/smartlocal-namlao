@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
+import { FileX2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { assetIdentifier, assetOptionLabel, FUEL_LABEL, meterUnitShort } from '../../lib/fleetAssets'
+import FleetEmptyState from './FleetEmptyState'
 
 const fmt  = n => (n ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 2 })
 const fmtB = n => `฿${Math.round(n ?? 0).toLocaleString('th-TH')}`
@@ -36,9 +38,9 @@ function ReportSection({ title, empty, children, mobile }) {
     <div className="space-y-2">
       <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">{title}</p>
       {empty ? (
-        <p className="text-center text-sm text-gray-400 py-6 bg-white rounded-2xl border border-gray-100">
-          ไม่มีข้อมูลในช่วงนี้
-        </p>
+        <div className="bg-white rounded-2xl border border-gray-100">
+          <FleetEmptyState icon={FileX2} title="ไม่มีข้อมูลในช่วงนี้" compact />
+        </div>
       ) : <>
         <div className="md:hidden">{mobile}</div>
         <div className="hidden md:block overflow-x-auto rounded-xl border border-gray-300 shadow-sm">{children}</div>

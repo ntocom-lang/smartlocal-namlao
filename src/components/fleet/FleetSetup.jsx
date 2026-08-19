@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react'
-import { Plus, X, Pencil, Check } from 'lucide-react'
+import { Plus, X, Pencil, Check, Building2, Users, Tag, SearchX, Wallet, Car } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import FleetEmptyState from './FleetEmptyState'
+import { fiscalYearOf, FISCAL_MONTHS_TH } from '../../lib/fiscalYear'
+import { adminUpdateUser } from '../../lib/adminUpdateUser'
 
 const inp = 'w-full px-3 py-2.5 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent'
 
@@ -10,16 +13,14 @@ const ROLES = {
   fleet_viewer: 'ผู้ดูรายงาน (อ่านอย่างเดียว)',
 }
 
-const MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.',
-                 'ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
-
-function Tab({ id, active, label, onClick }) {
+function Tab({ id, active, label, Icon, onClick }) {
   return (
     <button onClick={() => onClick(id)}
-      className={`px-4 py-2 text-sm font-bold rounded-xl transition-colors ${
-        active ? 'text-white' : 'bg-gray-100 text-gray-500'
+      className={`flex items-center gap-1.5 px-4 py-2 text-sm font-bold rounded-xl transition-colors ${
+        active ? 'text-white shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
       }`}
       style={active ? { backgroundColor: 'var(--color-primary)' } : {}}>
+      <Icon size={14} />
       {label}
     </button>
   )
@@ -27,7 +28,7 @@ function Tab({ id, active, label, onClick }) {
 
 /* ── งบประมาณ ──────────────────────────────────────────── */
 function BudgetTab({ tenant, depts }) {
-  const year  = new Date().getFullYear() + 543
+  const year  = fiscalYearOf()
   const [budgets,  setBudgets]  = useState([])
   const [loading,  setLoading]  = useState(true)
   const [editCell, setEditCell] = useState(null) // { dept_id, month }
@@ -71,26 +72,25 @@ function BudgetTab({ tenant, depts }) {
   if (loading) return <div className="flex justify-center py-8"><div className="w-5 h-5 border-4 border-gray-200 rounded-full animate-spin" style={{ borderTopColor: 'var(--color-primary)' }} /></div>
 
   if (depts.length === 0) return (
-    <p className="text-center text-sm text-gray-400 py-10">ยังไม่มีกอง ตั้งค่ากอง/หน่วยงานก่อน</p>
+    <FleetEmptyState icon={Building2} title="ยังไม่มีกอง" hint="ตั้งค่ากอง/หน่วยงานก่อนเริ่มใช้งาน" />
   )
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-gray-500">งบประมาณน้ำมันต่อกอง ปีงบประมาณ {year} (บาท/เดือน)</p>
+      <p className="text-xs text-gray-500">งบประมาณน้ำมันต่อกอง ปีงบประมาณ {year} — ต.ค. {year - 544} ถึง ก.ย. {year - 543} (บาท/เดือน)</p>
       <div className="overflow-x-auto -mx-1">
-        <table className="w-full text-xs min-w-[600px]">
+        <table className="w-full text-xs min-w-150">
           <thead>
             <tr className="text-gray-400 border-b border-gray-100">
               <th className="text-left py-2 px-2 font-semibold">กอง</th>
-              {MONTHS.map((m, i) => <th key={i} className="text-center py-2 px-1 font-semibold">{m}</th>)}
+              {FISCAL_MONTHS_TH.map(({ label }, i) => <th key={i} className="text-center py-2 px-1 font-semibold">{label}</th>)}
             </tr>
           </thead>
           <tbody>
             {depts.map(d => (
               <tr key={d.id} className="border-b border-gray-50">
                 <td className="py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">{d.short_name || d.name}</td>
-                {MONTHS.map((_, i) => {
-                  const m = i + 1
+                {FISCAL_MONTHS_TH.map(({ month: m }) => {
                   const isEditing = editCell?.dept_id === d.id && editCell?.month === m
                   const amt = getAmt(d.id, m)
                   return (
@@ -145,19 +145,22 @@ function UsersTab({ tenant, depts }) {
   }, [tenant?.id])
 
   async function openPicker() {
+    // ต้องกรอง role ตัด 'citizen' ออก ไม่งั้นจะดึงประชาชนทั่วไปทุกคนที่สมัครไว้มาปนในลิสต์
+    // เสี่ยงให้แอดมินกดเพิ่มสิทธิ์ยานพาหนะให้ประชาชนโดยไม่ตั้งใจ
     const { data } = await supabase.from('profiles').select('id, full_name, email')
-      .eq('municipality_id', tenant.id).is('fleet_role', null).order('full_name')
+      .eq('municipality_id', tenant.id).is('fleet_role', null).neq('role', 'citizen').order('full_name')
     setAllProfiles(data ?? [])
     setSearch('')
     setShowPick(true)
   }
 
   async function addUser(profile) {
-    const { data, error } = await supabase.from('profiles')
-      .update({ fleet_role: 'fleet_staff' }).eq('id', profile.id)
-      .select('id, full_name, email, fleet_role, department_id').single()
+    // fleet_role/department_id เป็นฟิลด์ privileged แก้ตรงผ่าน .update() ไม่ได้แล้ว
+    // (ตั้งแต่ trg_guard_profile_privileged_update) ต้องผ่าน RPC admin_update_user เท่านั้น
+    const { error } = await adminUpdateUser(profile.id, { fleet_role: 'fleet_staff' })
     if (!error) {
-      setUsers(prev => [...prev, data].sort((a, b) => (a.full_name ?? '').localeCompare(b.full_name ?? '', 'th')))
+      const added = { ...profile, fleet_role: 'fleet_staff', department_id: null }
+      setUsers(prev => [...prev, added].sort((a, b) => (a.full_name ?? '').localeCompare(b.full_name ?? '', 'th')))
       setAllProfiles(prev => prev.filter(p => p.id !== profile.id))
     } else {
       alert('เพิ่มผู้ใช้ไม่สำเร็จ: ' + error.message)
@@ -167,8 +170,7 @@ function UsersTab({ tenant, depts }) {
   async function removeUser(user) {
     if (!confirm(`ยืนยันลบ "${user.full_name}" ออกจากระบบยานพาหนะ?`)) return
     setSaving(user.id)
-    const { error } = await supabase.from('profiles')
-      .update({ fleet_role: null, department_id: null }).eq('id', user.id)
+    const { error } = await adminUpdateUser(user.id, { fleet_role: null, department_id: null })
     if (!error) {
       setUsers(prev => prev.filter(u => u.id !== user.id))
     } else {
@@ -179,7 +181,7 @@ function UsersTab({ tenant, depts }) {
 
   async function update(id, field, value) {
     setSaving(id + field)
-    const { error } = await supabase.from('profiles').update({ [field]: value || null }).eq('id', id)
+    const { error } = await adminUpdateUser(id, { [field]: value || null })
     if (!error) {
       setUsers(prev => prev.map(u => u.id === id ? { ...u, [field]: value || null } : u))
     } else {
@@ -242,10 +244,10 @@ function UsersTab({ tenant, depts }) {
       </div>
 
       {users.length === 0 && (
-        <div className="text-center py-10 text-gray-400 text-sm">ยังไม่มีผู้ใช้ กด "เพิ่มผู้ใช้" เพื่อเริ่มต้น</div>
+        <FleetEmptyState icon={Users} title="ยังไม่มีผู้ใช้" hint={<>กด <strong className="text-gray-500">เพิ่มผู้ใช้</strong> เพื่อเริ่มต้น</>} />
       )}
       {users.length > 0 && visibleUsers.length === 0 && (
-        <div className="text-center py-6 text-gray-400 text-sm">ไม่มีผู้ใช้ตามเงื่อนไขที่เลือก</div>
+        <FleetEmptyState icon={SearchX} title="ไม่มีผู้ใช้ตามเงื่อนไขที่เลือก" />
       )}
 
       <div className="space-y-2">
@@ -259,8 +261,8 @@ function UsersTab({ tenant, depts }) {
                 <p className="text-sm font-semibold text-gray-800 truncate">{u.full_name ?? '(ไม่มีชื่อ)'}</p>
                 <p className="text-[10px] text-gray-400 truncate">{u.email ?? '—'}</p>
               </div>
-              <button onClick={() => removeUser(u)} disabled={saving === u.id}
-                className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors shrink-0">
+              <button onClick={() => removeUser(u)} disabled={saving === u.id} title="ลบออกจากระบบยานพาหนะ"
+                className="p-1.5 rounded-lg border border-gray-200 hover:bg-red-50 hover:border-red-200 text-gray-400 hover:text-red-500 transition-colors shrink-0 disabled:opacity-50">
                 {saving === u.id
                   ? <div className="w-3.5 h-3.5 border-2 border-red-300 border-t-transparent rounded-full animate-spin" />
                   : <X size={14} />}
@@ -450,7 +452,7 @@ function VehicleTypesTab({ tenant }) {
       </div>
 
       {types.length === 0 && (
-        <p className="text-center text-sm text-gray-400 py-6">ยังไม่มีประเภท กด "+ ค่าเริ่มต้น" เพื่อเพิ่มทั้งหมด</p>
+        <FleetEmptyState icon={Tag} title="ยังไม่มีประเภท" hint={<>กด <strong className="text-gray-500">+ ค่าเริ่มต้น</strong> เพื่อเพิ่มทั้งหมด</>} />
       )}
 
       <div className="space-y-2">
@@ -486,11 +488,19 @@ export default function FleetSetup({ tenant, depts: initDepts }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-gray-400 -mt-1">จัดการรายชื่อกอง/หน่วยงานได้ที่เมนู "ตั้งค่าระบบ" → "กอง/หน่วยงาน"</p>
+      <div className="flex items-center gap-2.5 bg-sky-50 border border-sky-100 rounded-2xl px-4 py-3">
+        <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center shrink-0 shadow-sm">
+          <Car size={17} style={{ color: 'var(--color-primary)' }} />
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-gray-800">ตั้งค่าระบบยานพาหนะ</p>
+          <p className="text-[11px] text-gray-500">งบประมาณ ประเภทรถ และสิทธิ์ผู้ใช้ — จัดการรายชื่อกอง/หน่วยงานได้ที่เมนู "ตั้งค่าระบบ" → "กอง/หน่วยงาน"</p>
+        </div>
+      </div>
       <div className="flex gap-2 flex-wrap">
-        <Tab id="budget" active={activeTab === 'budget'} label="งบประมาณ"     onClick={setActiveTab} />
-        <Tab id="types"  active={activeTab === 'types'}  label="ประเภทรถ"      onClick={setActiveTab} />
-        <Tab id="users"  active={activeTab === 'users'}  label="สิทธิ์ผู้ใช้"   onClick={setActiveTab} />
+        <Tab id="budget" active={activeTab === 'budget'} label="งบประมาณ"    Icon={Wallet} onClick={setActiveTab} />
+        <Tab id="types"  active={activeTab === 'types'}  label="ประเภทรถ"     Icon={Tag}    onClick={setActiveTab} />
+        <Tab id="users"  active={activeTab === 'users'}  label="สิทธิ์ผู้ใช้"  Icon={Users}  onClick={setActiveTab} />
       </div>
 
       {activeTab === 'budget' && <BudgetTab       tenant={tenant} depts={depts} />}

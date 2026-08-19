@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { Plus, X, Pencil, AlertTriangle, Upload } from 'lucide-react'
+import { Plus, X, Pencil, AlertTriangle, Upload, Car } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import FleetImportModal from './FleetImportModal'
 import FleetVehicleDetail from './FleetVehicleDetail'
+import FleetEmptyState from './FleetEmptyState'
 import {
   ASSET_KIND_LABEL,
   ASSET_KIND_OPTIONS,
@@ -290,7 +291,9 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
                   )
                 })}
                 {!filtered.length && (
-                  <tr><td colSpan={isAdmin ? 9 : 8} className="text-center py-10 text-gray-400 text-sm">ไม่พบทรัพย์สิน</td></tr>
+                  <tr><td colSpan={isAdmin ? 9 : 8}>
+                    <FleetEmptyState icon={Car} title="ไม่พบทรัพย์สิน" hint="ลองปรับตัวกรอง หรือเพิ่มทรัพย์สินใหม่" />
+                  </td></tr>
                 )}
               </tbody>
             </table>
@@ -367,7 +370,7 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
               )
             })}
             {!filtered.length && (
-              <div className="text-center py-12 text-gray-400 text-sm">ไม่พบทรัพย์สิน</div>
+              <FleetEmptyState icon={Car} title="ไม่พบทรัพย์สิน" hint="ลองปรับตัวกรอง หรือเพิ่มทรัพย์สินใหม่" />
             )}
           </div>
         </>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Car, Fuel, Route, AlertTriangle, TrendingUp, Wallet, CalendarClock } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { fiscalYearOf, FISCAL_MONTHS_TH } from '../../lib/fiscalYear'
 
 const fmt = (n) => (n ?? 0).toLocaleString('th-TH')
 const fmtB = (n) => `฿${fmt(Math.round(n ?? 0))}`
@@ -82,14 +83,15 @@ function BudgetBar({ depts, budgets, fuelByDept }) {
   if (!budgets.length) return null
   const now = new Date()
   const month = now.getMonth() + 1
-  const year  = now.getFullYear() + 543
+  const year  = fiscalYearOf(now)
+  const monthLabel = FISCAL_MONTHS_TH.find(x => x.month === month)?.label ?? month
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2 md:px-4 md:py-3 border-b border-gray-100">
         <Wallet size={15} className="text-purple-500" />
         <span className="text-sm font-bold text-gray-700">งบเชื้อเพลิงเดือนนี้</span>
-        <span className="text-[10px] text-gray-400 ml-1">เดือน {month}/{year}</span>
+        <span className="text-[10px] text-gray-400 ml-1">{monthLabel} · ปีงบ {year}</span>
       </div>
       <div className="divide-y divide-gray-50">
         {depts.map(dept => {
@@ -144,7 +146,7 @@ export default function FleetDashboard({ tenant, depts, isAdmin }) {
       supabase.from('fleet_trips').select('distance_km, department_id')
         .eq('municipality_id', tenant.id).gte('trip_date', from).lte('trip_date', to),
       supabase.from('fleet_budgets').select('*')
-        .eq('municipality_id', tenant.id).eq('fiscal_year', now.getFullYear() + 543),
+        .eq('municipality_id', tenant.id).eq('fiscal_year', fiscalYearOf(now)),
       supabase.from('fleet_trips').select('id', { count: 'exact', head: true })
         .eq('municipality_id', tenant.id).eq('status', 'pending'),
       supabase.from('fleet_fuel_records').select('total_cost, vehicle_id, fleet_vehicles(department_id)')

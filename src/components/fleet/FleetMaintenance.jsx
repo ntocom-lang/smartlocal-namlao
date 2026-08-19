@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Plus, X, Wrench, AlertTriangle, FileText, Paperclip, Pencil } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import FleetEmptyState from './FleetEmptyState'
 import {
   assetIdentifier,
   assetOptionLabel,
@@ -384,7 +385,9 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
                   )
                 })}
                 {!records.length && (
-                  <tr><td colSpan={canWrite ? 11 : 10} className="text-center py-10 text-gray-400 text-sm">ไม่พบรายการ</td></tr>
+                  <tr><td colSpan={canWrite ? 11 : 10}>
+                    <FleetEmptyState icon={Wrench} title="ไม่พบรายการซ่อมบำรุง" />
+                  </td></tr>
                 )}
               </tbody>
             </table>
@@ -453,7 +456,7 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
                 </div>
               )
             })}
-            {!records.length && <div className="text-center py-12 text-gray-400 text-sm">ไม่พบรายการ</div>}
+            {!records.length && <FleetEmptyState icon={Wrench} title="ไม่พบรายการซ่อมบำรุง" />}
           </div>
         </>
       )}
