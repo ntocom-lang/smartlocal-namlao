@@ -3550,7 +3550,6 @@ function getAdminMenuGroups(currentUserRole, currentUserId) {
       accent: '#64748b',
       items: [
         { key: 'manual', label: 'คู่มือผู้ดูแล', Icon: BookOpen, color: '#059669', bg: '#d1fae5', show: true, isExternal: true, href: '/manual-admin.html' },
-        { key: 'manual-citizen', label: 'คู่มือประชาชน', Icon: BookOpen, color: '#059669', bg: '#d1fae5', show: true, isExternal: true, href: '/manual-citizen.html' },
         { key: 'data-center', label: 'ศูนย์รวมข้อมูลดิจิทัล', Icon: Database, color: '#4338ca', bg: '#e0e7ff', show: true, navTo: '/data-center/staff' },
         { key: 'dev-journal', label: 'ผู้พัฒนาระบบ', Icon: Terminal, color: '#1e293b', bg: '#f1f5f9', show: currentUserId === DEV_USER_ID, isDevLink: true },
       ],
@@ -4221,16 +4220,6 @@ export default function AdminDashboard() {
                 <p className="text-[13px] text-gray-400 mt-0.5">คู่มือการใช้งานระบบ</p>
               </div>
             </a>
-            <a href="/manual-citizen.html" target="_blank" rel="noopener noreferrer"
-              className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#d1fae5' }}>
-                <BookOpen size={24} style={{ color: '#059669' }} />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-gray-800">คู่มือประชาชน</p>
-                <p className="text-[13px] text-gray-400 mt-0.5">คู่มือสำหรับประชาชน</p>
-              </div>
-            </a>
           </div>
 
           {/* Desktop: settings table */}
@@ -4281,23 +4270,6 @@ export default function AdminDashboard() {
                   <td className="px-5 py-3.5 text-gray-500">เอกสารการใช้งานระบบสำหรับเจ้าหน้าที่</td>
                   <td className="px-5 py-3.5 text-right">
                     <a href="/manual-admin.html" target="_blank" rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 ml-auto text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors w-fit">
-                      เปิด <ExternalLink size={11} />
-                    </a>
-                  </td>
-                </tr>
-                <tr className="hover:bg-gray-50 transition-colors">
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: '#d1fae5' }}>
-                        <BookOpen size={16} style={{ color: '#059669' }} />
-                      </div>
-                      <span className="font-semibold text-gray-800">คู่มือประชาชน</span>
-                    </div>
-                  </td>
-                  <td className="px-5 py-3.5 text-gray-500">เอกสารการใช้งานระบบสำหรับประชาชน</td>
-                  <td className="px-5 py-3.5 text-right">
-                    <a href="/manual-citizen.html" target="_blank" rel="noopener noreferrer"
                       className="flex items-center gap-1.5 ml-auto text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors w-fit">
                       เปิด <ExternalLink size={11} />
                     </a>
