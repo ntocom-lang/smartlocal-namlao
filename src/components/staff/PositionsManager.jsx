@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Briefcase, Plus, Pencil, Trash2, X, Loader2, ChevronDown, ChevronRight, Users, Search, Phone, AlertCircle } from 'lucide-react'
+import { Briefcase, Plus, Pencil, Trash2, X, Loader2, ChevronDown, ChevronRight, Users, Search, Phone, AlertCircle, UserPlus, Check } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
 // ต้องตรงกับ CHECK constraint ใน supabase/migrations (positions_personnel)
@@ -21,9 +21,21 @@ const EMPTY_FORM = { name: '', category: 'operating_staff', role: 'staff', depar
 const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
 
 // ใช้ร่วมกันทั้งมุมมองปกติ (ไล่ทีละหมวด) และผลค้นหา (ข้ามหมวด) — กันโค้ด/หน้าตาเพี้ยนกันคนละแบบ
-function PositionRow({ p, holders, isOpen, forceOpen, isSuperadmin, deptName, onToggle, onEdit, onDelete }) {
+function PositionRow({ p, holders, isOpen, forceOpen, isSuperadmin, canManageHolders, deptName, onToggle, onEdit, onDelete, onAddNameOnly, onDeleteNameOnly }) {
+  const [addingName, setAddingName] = useState(false)
+  const [nameDraft, setNameDraft] = useState({ full_name: '', phone: '' })
+  const [savingName, setSavingName] = useState(false)
   const open = forceOpen || isOpen
   const isVacant = holders.length === 0
+
+  async function saveNameOnly() {
+    if (!nameDraft.full_name.trim()) return
+    setSavingName(true)
+    await onAddNameOnly(p.id, { full_name: nameDraft.full_name.trim(), phone: nameDraft.phone.trim() || null })
+    setSavingName(false)
+    setNameDraft({ full_name: '', phone: '' })
+    setAddingName(false)
+  }
   return (
     <div>
       <div role="button" tabIndex={0} onClick={forceOpen ? undefined : onToggle}
@@ -71,12 +83,23 @@ function PositionRow({ p, holders, isOpen, forceOpen, isSuperadmin, deptName, on
                   {h.avatar_url ? (
                     <img src={h.avatar_url} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
                   ) : (
-                    <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center text-[9px] font-bold text-gray-400 shrink-0">
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0 ${
+                      h.hasAccount ? 'bg-gray-100 text-gray-400' : 'bg-amber-50 text-amber-500'
+                    }`}>
                       {(h.full_name || '?')[0]?.toUpperCase()}
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <p className="truncate font-medium text-gray-700">{h.full_name}</p>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <p className="truncate font-medium text-gray-700">{h.full_name}</p>
+                      {h.hasAccount ? (
+                        <span className="shrink-0 inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600">
+                          <Check size={9} /> สมัครใช้งานแล้ว
+                        </span>
+                      ) : (
+                        <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-500">ยังไม่มีบัญชี</span>
+                      )}
+                    </div>
                     {deptName(h.department_id) && (
                       <p className="text-[10px] text-gray-400 truncate">{deptName(h.department_id)}</p>
                     )}
@@ -87,9 +110,37 @@ function PositionRow({ p, holders, isOpen, forceOpen, isSuperadmin, deptName, on
                       <Phone size={11} /> {h.phone}
                     </a>
                   )}
+                  {!h.hasAccount && canManageHolders && (
+                    <button onClick={() => onDeleteNameOnly(h.id)} title="ลบชื่อนี้"
+                      className="shrink-0 p-1 rounded-lg text-gray-300 hover:bg-red-50 hover:text-red-500 transition-colors">
+                      <Trash2 size={11} />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
+          )}
+
+          {canManageHolders && (
+            addingName ? (
+              <div className="flex items-center gap-1.5 pt-1">
+                <input autoFocus value={nameDraft.full_name} onChange={e => setNameDraft(d => ({ ...d, full_name: e.target.value }))}
+                  placeholder="ชื่อ-นามสกุล" onKeyDown={e => e.key === 'Enter' && saveNameOnly()}
+                  className="flex-1 min-w-0 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-400 bg-white text-gray-900" />
+                <input value={nameDraft.phone} onChange={e => setNameDraft(d => ({ ...d, phone: e.target.value }))}
+                  placeholder="เบอร์โทร (ถ้ามี)" onKeyDown={e => e.key === 'Enter' && saveNameOnly()}
+                  className="w-28 shrink-0 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-400 bg-white text-gray-900" />
+                <button onClick={saveNameOnly} disabled={savingName || !nameDraft.full_name.trim()}
+                  className="shrink-0 p-1.5 rounded-lg bg-blue-500 text-white disabled:opacity-50"><Check size={12} /></button>
+                <button onClick={() => { setAddingName(false); setNameDraft({ full_name: '', phone: '' }) }}
+                  className="shrink-0 p-1.5 rounded-lg bg-gray-100 text-gray-500"><X size={12} /></button>
+              </div>
+            ) : (
+              <button onClick={() => setAddingName(true)}
+                className="flex items-center gap-1 text-[11px] font-semibold text-blue-500 hover:text-blue-600 pt-1">
+                <UserPlus size={12} /> เพิ่มชื่อคนที่ยังไม่มีบัญชี
+              </button>
+            )
           )}
         </div>
       )}
@@ -101,6 +152,7 @@ export default function PositionsManager({ tenant, currentUserRole }) {
   const [positions, setPositions] = useState([])
   const [profiles, setProfiles] = useState([])
   const [depts, setDepts] = useState([])
+  const [positionHolders, setPositionHolders] = useState([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState(() => new Set())
   const [editing, setEditing] = useState(null) // null=ปิด, {}=สร้างใหม่, {...position}=แก้ไข
@@ -110,6 +162,8 @@ export default function PositionsManager({ tenant, currentUserRole }) {
   const [search, setSearch] = useState('')
 
   const isSuperadmin = currentUserRole === 'superadmin'
+  // admin/superadmin เพิ่ม-ลบ "ชื่อคนยังไม่มีบัญชี" ได้ (RLS ฝั่ง DB บังคับซ้ำอีกชั้นอยู่แล้ว)
+  const canManageHolders = ['admin', 'superadmin'].includes(currentUserRole)
 
   const reload = useCallback(() => {
     Promise.all([
@@ -120,13 +174,35 @@ export default function PositionsManager({ tenant, currentUserRole }) {
       tenant?.id
         ? supabase.from('departments').select('id, name').eq('municipality_id', tenant.id).eq('is_active', true).order('sort_order')
         : Promise.resolve({ data: [] }),
-    ]).then(([{ data: pos }, { data: prof }, { data: deptRows }]) => {
+      tenant?.id
+        ? supabase.from('position_holders').select('id, position_id, department_id, full_name, phone').eq('municipality_id', tenant.id).order('full_name')
+        : Promise.resolve({ data: [] }),
+    ]).then(([{ data: pos }, { data: prof }, { data: deptRows }, { data: nameOnly }]) => {
       setPositions(pos ?? [])
       setProfiles(prof ?? [])
       setDepts(deptRows ?? [])
+      setPositionHolders(nameOnly ?? [])
       setLoading(false)
     })
   }, [tenant])
+
+  async function addNameOnlyHolder(positionId, { full_name, phone }, departmentId) {
+    if (!tenant?.id) return
+    const { error } = await supabase.from('position_holders').insert({
+      municipality_id: tenant.id, position_id: positionId,
+      department_id: departmentId === 'none' ? null : (departmentId || null),
+      full_name, phone,
+    })
+    if (error) { alert('เพิ่มชื่อไม่สำเร็จ: ' + error.message); return }
+    reload()
+  }
+
+  async function deleteNameOnlyHolder(id) {
+    if (!confirm('ลบชื่อนี้ออกจากทำเนียบ?')) return
+    const { error } = await supabase.from('position_holders').delete().eq('id', id)
+    if (error) { alert('ลบไม่สำเร็จ: ' + error.message); return }
+    setPositionHolders(prev => prev.filter(h => h.id !== id))
+  }
 
   useEffect(() => {
     reload()
@@ -182,25 +258,45 @@ export default function PositionsManager({ tenant, currentUserRole }) {
   // จึงคำนวณจาก "มีคนในกองนี้ถือตำแหน่งนั้นอยู่จริงไหม" แทน
   const inDept = (p, deptValue) => deptValue === 'none' ? !p.department_id : p.department_id === deptValue
   const deptCards = [
-    ...depts.map(d => ({ value: d.id, label: d.name, count: profiles.filter(p => p.department_id === d.id).length })),
-    { value: 'none', label: 'ไม่ระบุกอง', count: profiles.filter(p => !p.department_id).length },
+    ...depts.map(d => ({
+      value: d.id, label: d.name,
+      count: profiles.filter(p => p.department_id === d.id).length + positionHolders.filter(h => h.department_id === d.id).length,
+    })),
+    { value: 'none', label: 'ไม่ระบุกอง', count: profiles.filter(p => !p.department_id).length + positionHolders.filter(h => !h.department_id).length },
   ]
   const activeGroup = deptCards.find(g => g.value === activeDept) ?? deptCards[0]
+  const norm = (s) => (s || '').trim().toLowerCase()
+
+  // รวมคนมีบัญชี (profiles) + คนยังไม่มีบัญชี (position_holders) เข้าด้วยกัน — ถ้าชื่อซ้ำกันเป๊ะกับคนที่
+  // มีบัญชีอยู่แล้วในตำแหน่งเดียวกัน ให้ตัดรายการ "ยังไม่มีบัญชี" ทิ้ง (ถือว่าคนนั้นสมัครใช้งานแล้วจริงๆ)
+  function mergedHolders(positionId, deptValue) {
+    const accountHolders = profiles
+      .filter(pr => pr.position_id === positionId && (deptValue == null || inDept(pr, deptValue)))
+      .map(h => ({ ...h, hasAccount: true }))
+    const accountNames = new Set(accountHolders.map(h => norm(h.full_name)))
+    const nameOnly = positionHolders
+      .filter(ph => ph.position_id === positionId
+        && (deptValue == null || (deptValue === 'none' ? !ph.department_id : ph.department_id === deptValue))
+        && !accountNames.has(norm(ph.full_name)))
+      .map(h => ({ ...h, hasAccount: false }))
+    return [...accountHolders, ...nameOnly]
+  }
+
   const groupPositions = activeGroup
     ? positions
-        .map(p => ({ ...p, holders: profiles.filter(pr => pr.position_id === p.id && inDept(pr, activeGroup.value)) }))
+        .map(p => ({ ...p, holders: mergedHolders(p.id, activeGroup.value) }))
         .filter(p => p.holders.length > 0)
     : []
-  // ตำแหน่งที่ยังไม่มีใครถือเลยทั้งองค์กร (ไม่ผูกกับกองไหนได้ เพราะไม่มีคนถือให้อ้างอิงกอง) — โชว์แยกต่างหาก
-  const vacantPositions = positions.filter(p => !profiles.some(pr => pr.position_id === p.id))
+  // ตำแหน่งที่ยังไม่มีใครถือเลยทั้งองค์กร (ทั้งมีบัญชีและไม่มีบัญชี) — ไม่ผูกกับกองไหนได้ โชว์แยกต่างหาก
+  const vacantPositions = positions.filter(p => mergedHolders(p.id, null).length === 0)
 
   // ค้นหาข้ามทุกกองพร้อมกัน (ชื่อตำแหน่ง หรือ ชื่อคนที่ถือตำแหน่ง) ไม่ต้องไล่กดทีละกองเอง
   const searchQ = search.trim().toLowerCase()
   const isSearching = searchQ.length > 0
   const searchResults = isSearching
     ? positions
-        .map(p => ({ ...p, holders: profiles.filter(pr => pr.position_id === p.id) }))
-        .filter(p => p.name.toLowerCase().includes(searchQ) || p.holders.some(h => (h.full_name || '').toLowerCase().includes(searchQ)))
+        .map(p => ({ ...p, holders: mergedHolders(p.id, null) }))
+        .filter(p => p.name.toLowerCase().includes(searchQ) || p.holders.some(h => norm(h.full_name).includes(searchQ)))
     : []
   const deptName = (id) => depts.find(d => d.id === id)?.name ?? null
 
@@ -245,8 +341,10 @@ export default function PositionsManager({ tenant, currentUserRole }) {
             <div className="divide-y divide-gray-50">
               {searchResults.map(p => (
                 <PositionRow key={p.id} p={p} holders={p.holders} isOpen forceOpen
-                  isSuperadmin={isSuperadmin} deptName={deptName}
-                  onToggle={() => {}} onEdit={openEdit} onDelete={handleDelete} />
+                  isSuperadmin={isSuperadmin} canManageHolders={canManageHolders} deptName={deptName}
+                  onToggle={() => {}} onEdit={openEdit} onDelete={handleDelete}
+                  onAddNameOnly={(posId, vals) => addNameOnlyHolder(posId, vals, null)}
+                  onDeleteNameOnly={deleteNameOnlyHolder} />
               ))}
             </div>
           )}
@@ -302,8 +400,10 @@ export default function PositionsManager({ tenant, currentUserRole }) {
           <div className="divide-y divide-gray-50">
             {groupPositions.map(p => (
               <PositionRow key={p.id} p={p} holders={p.holders}
-                isOpen={expanded.has(p.id)} isSuperadmin={isSuperadmin} deptName={deptName}
-                onToggle={() => toggleExpand(p.id)} onEdit={openEdit} onDelete={handleDelete} />
+                isOpen={expanded.has(p.id)} isSuperadmin={isSuperadmin} canManageHolders={canManageHolders} deptName={deptName}
+                onToggle={() => toggleExpand(p.id)} onEdit={openEdit} onDelete={handleDelete}
+                onAddNameOnly={(posId, vals) => addNameOnlyHolder(posId, vals, activeGroup.value)}
+                onDeleteNameOnly={deleteNameOnlyHolder} />
             ))}
           </div>
         )}
