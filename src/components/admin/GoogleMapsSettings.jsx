@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   CheckCircle2, CircleAlert, CloudCog, Eye, EyeOff, KeyRound,
   Loader2, Mail, RefreshCw, Save, ShieldCheck,
@@ -25,9 +25,24 @@ export default function GoogleMapsSettings() {
   const [editingKey, setEditingKey] = useState(false)
   const [showKey, setShowKey] = useState(false)
   const [newKey, setNewKey] = useState('')
-  const [email, setEmail] = useState(() => tenant?.google_cloud_email || '')
-  const [projectId, setProjectId] = useState(() => tenant?.google_project_id || '')
+  const [email, setEmail] = useState('')
+  const [projectId, setProjectId] = useState('')
   const [saving, setSaving] = useState(false)
+
+  // google_cloud_email/google_project_id ไม่ได้อยู่ใน TenantContext แล้ว (ตั้งใจไม่ส่งให้ผู้เยี่ยมชมทุกคน
+  // ผ่าน public tenant fetch) — หน้าตั้งค่านี้เข้าถึงได้เฉพาะแอดมิน จึงดึง 2 ฟิลด์นี้เองตรงๆ ตอนเปิดหน้า
+  useEffect(() => {
+    if (!tenant?.id) return
+    let cancelled = false
+    supabase.from('municipalities').select('google_cloud_email, google_project_id')
+      .eq('id', tenant.id).maybeSingle()
+      .then(({ data }) => {
+        if (cancelled || !data) return
+        setEmail(data.google_cloud_email || '')
+        setProjectId(data.google_project_id || '')
+      })
+    return () => { cancelled = true }
+  }, [tenant?.id])
   const [saved, setSaved] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState(null)
