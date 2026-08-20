@@ -56,7 +56,8 @@ function HeroBanner({ tenant }) {
 function EServiceGrid() {
   return (
     <div className="rounded-2xl overflow-hidden shadow-sm border border-gray-100">
-      <div className="px-4 py-4 sm:py-5" style={{ background: 'linear-gradient(135deg, #0f172a, #1e3a8a 60%, #1d4ed8)' }}>
+      <div className="px-4 py-4 sm:py-5"
+        style={{ background: 'linear-gradient(135deg, #306eb8 0%, #1d4aa0 100%)' }}>
         <p className="text-white font-black text-xl sm:text-2xl tracking-tight italic">e-Service</p>
         <p className="text-white/70 text-xs sm:text-sm font-semibold mt-0.5">บริการแบบเบ็ดเสร็จ ณ จุดเดียว ด้วยระบบออนไลน์</p>
       </div>
