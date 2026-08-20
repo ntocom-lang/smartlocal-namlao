@@ -34,3 +34,4 @@ api/_template.html
 recovery-codes.txt
 *.recovery-codes*
 *-backup-codes*
+.env*
