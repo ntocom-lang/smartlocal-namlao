@@ -5,6 +5,9 @@ import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import { CategoryIcon } from '../../lib/categoryIcon'
 
+// FALLBACK_EMOJI = ชุดที่แก้ให้ตรงกับไฟล์อื่นๆ ทั้งระบบแล้ว ใช้เฉพาะ clean variant (thungkaew-Theme)
+// LEGACY_FALLBACK_EMOJI = ชุดเดิมก่อนแก้ (เก็บไว้ให้ 6 ธีมเดิมใช้) — ธีมอื่นขอให้ "เหมือนเดิมเป๊ะ" ไม่ต้อง
+// เปลี่ยนแม้แต่ตัว emoji เอง ไม่ใช่แค่วิธี render
 const FALLBACK_EMOJI = {
   light: '💡', road: '🛣️', mosquito: '🦟', tree: '🌳',
   trash: '🗑️', water_supply: '🚿', drain: '🕳️', flood: '🌊',
@@ -12,6 +15,14 @@ const FALLBACK_EMOJI = {
   noise: '📢', building: '🏗️', tax: '📋', canal: '🏞️',
   animals: '🐕', fire: '🔥', phone_complaint: '📞',
   waste_water: '💧', other: '📝',
+}
+const LEGACY_FALLBACK_EMOJI = {
+  light: '💡', road: '🔧', mosquito: '🦟', tree: '✂️',
+  trash: '🗑️', water_supply: '💧', drain: '🌀', flood: '🌊',
+  borrow_equipment: '📦', corruption: '🛡️', grievance: '📢',
+  noise: '🔊', building: '🏢', tax: '💳', canal: '⛏️',
+  animals: '🐕', fire: '🔥', phone_complaint: '📞',
+  waste_water: '💧', other: '❓',
 }
 
 const DEFAULT_CATEGORIES = [
@@ -24,7 +35,7 @@ const DEFAULT_CATEGORIES = [
   { value: 'water_supply',label: 'สนับสนุนน้ำอุปโภค', emoji: '🚿' },
   { value: 'borrow',     label: 'ยืมพัสดุ', emoji: '📦' },
   { value: 'corruption', label: 'แจ้งการทุจริต', emoji: '⚖️' },
-  { value: 'grievance',  label: 'แจ้งเรื่องร้องทุกข์', emoji: '📣' },
+  { value: 'grievance',  label: 'แจ้งเรื่องร้องทุกข์', emoji: '📢' },
   { value: 'other',      label: 'อื่นๆ', emoji: '📝' },
 ]
 
@@ -77,17 +88,23 @@ export default function ComplaintBand({ variant = 'warm' }) {
             )}
             <p className={`${titleColor} font-extrabold text-[15px] md:text-base tracking-wide ${clean ? '' : 'drop-shadow-sm'}`}>{clean ? '' : '🚨 '}แจ้งเหตุ / แจ้งซ่อม</p>
           </div>
-          <button onClick={() => navigate('/my-complaints')} className={chipCls}
-            style={clean ? { background: 'linear-gradient(135deg, var(--color-primary), #0f172a)' } : undefined}>
-            <Search size={12} /> ติดตามคำร้อง
-          </button>
+          {clean ? (
+            <button onClick={() => navigate('/my-complaints')} className={chipCls}
+              style={{ background: 'linear-gradient(135deg, var(--color-primary), #0f172a)' }}>
+              <Search size={12} /> ติดตามคำร้อง
+            </button>
+          ) : (
+            <button onClick={() => navigate('/complaint')} className={chipCls}>
+              ทั้งหมด <ChevronRight size={13} />
+            </button>
+          )}
         </div>
 
         {/* Mobile: clean variant (ServiceHub) โชว์ 6 อัน แถวละ 3 ตามภาพอ้างอิง — ธีมอื่น (warm) คงเดิม 4 อัน
             ที่เหลือกด "ทั้งหมด" แทน กันแออัดเกินไปบนจอเล็ก */}
         <div className={`grid ${clean ? 'grid-cols-3 gap-2' : 'grid-cols-4 gap-1'} lg:hidden pb-1`}>
           {topCats.slice(0, clean ? 6 : 4).map(cat => {
-            const emoji = cat.emoji || FALLBACK_EMOJI[cat.value] || '📋'
+            const emoji = cat.emoji || (clean ? FALLBACK_EMOJI[cat.value] : LEGACY_FALLBACK_EMOJI[cat.value]) || '📋'
             const color = cat.color || (clean ? 'var(--color-primary, #2563eb)' : '#ffffff')
             return (
               <button key={cat.value}
@@ -101,7 +118,9 @@ export default function ComplaintBand({ variant = 'warm' }) {
                     backdropFilter: 'blur(4px)',
                     boxShadow: clean ? `0 2px 6px ${color}20` : `0 3px 10px ${color}30, inset 0 1px 0 rgba(255,255,255,0.5)`,
                   }}>
-                  <CategoryIcon emoji={emoji} size={clean ? 44 : 28} />
+                  {clean
+                    ? <CategoryIcon emoji={emoji} size={44} />
+                    : <span className="text-[1.6rem] leading-none select-none">{emoji}</span>}
                 </div>
                 <p className={`${titleColor} text-[11px] font-semibold text-center w-full leading-tight ${clean ? '' : 'drop-shadow-sm'} line-clamp-2`}>{cat.label}</p>
               </button>
@@ -112,7 +131,7 @@ export default function ComplaintBand({ variant = 'warm' }) {
         {/* Desktop: compact grid */}
         <div className="hidden lg:grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(topCats.length, 8)}, minmax(0, 1fr))` }}>
           {topCats.slice(0, 8).map(cat => {
-            const emoji = cat.emoji || FALLBACK_EMOJI[cat.value] || '📋'
+            const emoji = cat.emoji || (clean ? FALLBACK_EMOJI[cat.value] : LEGACY_FALLBACK_EMOJI[cat.value]) || '📋'
             const color = cat.color || (clean ? 'var(--color-primary, #2563eb)' : '#ffffff')
             return (
               <button key={cat.value}
@@ -126,7 +145,9 @@ export default function ComplaintBand({ variant = 'warm' }) {
                     backdropFilter: 'blur(4px)',
                     boxShadow: clean ? `0 2px 6px ${color}20` : `0 2px 8px ${color}25, inset 0 1px 0 rgba(255,255,255,0.5)`,
                   }}>
-                  <CategoryIcon emoji={emoji} size={24} />
+                  {clean
+                    ? <CategoryIcon emoji={emoji} size={24} />
+                    : <span className="text-[1.4rem] leading-none select-none">{emoji}</span>}
                 </div>
                 <p className={`${titleColor} text-[12px] font-semibold text-center leading-tight`}>{cat.label}</p>
               </button>
@@ -134,13 +155,16 @@ export default function ComplaintBand({ variant = 'warm' }) {
           })}
         </div>
 
-        {/* ทั้งหมด (ดูหมวดหมู่ครบ) อยู่แถวล่างสุด — ติดตามคำร้อง ย้ายกลับไปแถวบนชิดขวาแล้ว */}
-        <div className="flex justify-center mt-3">
-          <button onClick={() => navigate('/complaint')} className={footerBtnCls}
-            style={clean ? { backgroundColor: 'var(--color-primary)' } : undefined}>
-            ทั้งหมด <ChevronRight size={13} />
-          </button>
-        </div>
+        {/* ทั้งหมด (ดูหมวดหมู่ครบ) อยู่แถวล่างสุด — เฉพาะ clean variant (thungkaew-Theme) เท่านั้น
+            ธีมอื่น (warm) ปุ่ม "ทั้งหมด" อยู่แถวบนชิดขวาแบบเดิมแล้ว (ดูด้านบน) ไม่ต้องมีซ้ำ */}
+        {clean && (
+          <div className="flex justify-center mt-3">
+            <button onClick={() => navigate('/complaint')} className={footerBtnCls}
+              style={{ backgroundColor: 'var(--color-primary)' }}>
+              ทั้งหมด <ChevronRight size={13} />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
