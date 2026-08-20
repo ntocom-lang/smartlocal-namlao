@@ -144,12 +144,14 @@ serve(async (req) => {
     })
     if (insertErr) console.error('drive_files insert failed (ไฟล์ขึ้น Drive แล้วแต่บันทึก mapping ไม่สำเร็จ):', insertErr.message)
 
-    // uc?id= เดิมเปิดตรงจากมือถือแล้วบางทีเด้งไปหน้า "เลือกบัญชี Google" แทนที่จะโชว์รูป (Google เปลี่ยน
-    // พฤติกรรม endpoint นี้ ไม่ใช่ endpoint ที่ตั้งใจให้ hotlink โดยตรง) — รูปภาพใช้ lh3.googleusercontent.com
-    // (CDN รูปของ Google เอง เสถียรกว่าสำหรับ hotlink ตรงมาก) แทน ไฟล์ที่ไม่ใช่รูป (PDF ฯลฯ) ยังใช้ uc?id=
-    // เหมือนเดิมไปก่อน (ยังไม่มีปัญหารายงานเข้ามาสำหรับไฟล์ประเภทนี้)
+    // เคยลองทั้ง uc?id= (เด้งไปหน้า "เลือกบัญชี Google" บนมือถือบางเครื่อง) และ lh3.googleusercontent.com
+    // (ถูก Chromium/Edge บล็อกด้วย ORB — net::ERR_BLOCKED_BY_ORB — เวลาฝังเป็น <img> ข้ามโดเมน แม้
+    // response จะถูกต้องทุกอย่างก็ตาม) ทั้งคู่ hotlink ตรงจาก Drive ไม่เสถียรพอ — รูป public ทั้งหมดเลย
+    // proxy ผ่าน drive-file function ของเราเอง (โดเมนเดียวกับแอป ไม่มีปัญหา ORB/redirect) แทน ไฟล์ที่ไม่ใช่
+    // รูป (PDF ฯลฯ) ยังใช้ uc?id= เหมือนเดิมไปก่อน (เปิดผ่าน <a> ไม่ใช่ <img> ยังไม่มีปัญหารายงานเข้ามา)
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const url = isPublic
-      ? (contentType.startsWith('image/') ? `https://lh3.googleusercontent.com/d/${uploaded.id}=s0` : `https://drive.google.com/uc?id=${uploaded.id}`)
+      ? (contentType.startsWith('image/') ? `${supabaseUrl}/functions/v1/drive-file?id=${uploaded.id}` : `https://drive.google.com/uc?id=${uploaded.id}`)
       : `drive:${uploaded.id}`
     return json({ fileId: uploaded.id, url })
   } catch (err) {

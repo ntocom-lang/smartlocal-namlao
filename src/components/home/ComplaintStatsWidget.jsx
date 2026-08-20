@@ -21,35 +21,42 @@ export default function ComplaintStatsWidget() {
   const resolvedPct = stats.total > 0 ? Math.round((stats.resolved / stats.total) * 100) : 0
 
   const BOXES = [
-    { label: 'รอรับเรื่อง',     value: stats.open,        color: '#2563eb' },
-    { label: 'กำลังดำเนินการ',  value: stats.in_progress, color: '#ea580c' },
-    { label: 'เสร็จสิ้น',       value: stats.resolved,    color: '#65a30d' },
+    { label: 'รอรับเรื่อง',     value: stats.open,        gradient: 'linear-gradient(135deg, #1e4f8c 0%, #3d9bc4 100%)' },
+    { label: 'กำลังดำเนินการ',  value: stats.in_progress, gradient: 'linear-gradient(135deg, #d9481f 0%, #f0913f 100%)' },
+    { label: 'เสร็จสิ้น',       value: stats.resolved,    gradient: 'linear-gradient(135deg, #4c8c1f 0%, #8dc63f 100%)' },
   ]
 
   return (
     <div className="rounded-2xl bg-white shadow-sm border border-gray-100 p-4 sm:p-5">
       <p className="text-base font-bold text-gray-800 mb-4">สถิติเรื่องร้องเรียนร้องทุกข์</p>
-      <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
-        <div className="relative w-32 h-32 sm:w-36 sm:h-36 shrink-0 rounded-full flex items-center justify-center"
-          style={{ background: `conic-gradient(var(--color-primary) ${resolvedPct}%, #e5e7eb 0)` }}>
-          <div className="absolute inset-2 rounded-full bg-white flex flex-col items-center justify-center text-center px-2">
-            <span className="text-[11px] text-gray-400 leading-tight">จำนวนเรื่อง<br />ร้องเรียน</span>
-            <span className="text-3xl font-black text-gray-800 leading-none mt-1">{stats.total}</span>
+      {/* ring ซ้าย เป็นคอลัมน์แยกจากกล่อง 3 สี+แถบรวม (ขวา) — ให้แถบ "ทั้งหมด" กว้างเท่าคอลัมน์กล่องเท่านั้น
+          ไม่ยื่นไปทับใต้ ring แบบภาพอ้างอิงเป๊ะๆ — ตั้งใจไม่ใช้ flex-col บนมือถือ (เดิมทำให้ ring ตกลงมา
+          กองอยู่บนสุดแทนที่จะอยู่ข้างกล่อง ไม่ตรงภาพอ้างอิงที่วางเคียงกันเสมอไม่ว่าจอเล็กแค่ไหน) */}
+      <div className="flex items-start gap-3 sm:gap-6">
+        <div className="shrink-0 flex flex-col items-center gap-1.5">
+          <div className="relative w-24 h-24 sm:w-36 sm:h-36 rounded-full flex items-center justify-center"
+            style={{ background: `conic-gradient(#1c5c96 ${resolvedPct}%, #6fb3d9 0)` }}>
+            <div className="absolute inset-2 sm:inset-2.5 rounded-full bg-white flex flex-col items-center justify-center text-center px-1">
+              <span className="text-[9px] sm:text-[11px] text-gray-400 leading-tight">จำนวนเรื่อง<br />ร้องเรียน</span>
+              <span className="text-xl sm:text-3xl font-black text-gray-800 leading-none mt-1">{stats.total}</span>
+            </div>
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-2.5 flex-1 w-full">
-          {BOXES.map(b => (
-            <div key={b.label} className="rounded-xl px-2 py-3 text-center text-white" style={{ backgroundColor: b.color }}>
-              <p className="text-2xl font-black leading-tight">{b.value}</p>
-              <p className="text-[10px] font-semibold leading-tight opacity-90 mt-0.5">{b.label}</p>
-            </div>
-          ))}
+        <div className="flex-1 min-w-0">
+          <div className="grid grid-cols-3 gap-1.5 sm:gap-2.5">
+            {BOXES.map(b => (
+              <div key={b.label} className="rounded-xl px-1 sm:px-2 py-2 sm:py-3 text-center text-white shadow-sm" style={{ background: b.gradient }}>
+                <p className="text-lg sm:text-2xl font-black leading-tight">{b.value}</p>
+                <p className="text-[9px] sm:text-[10px] font-semibold leading-tight opacity-90 mt-0.5">{b.label}</p>
+              </div>
+            ))}
+          </div>
+          <Link to="/reports" className="mt-2.5 flex items-center justify-center text-xs sm:text-sm font-bold py-2.5 sm:py-3 rounded-xl text-white transition-opacity hover:opacity-90"
+            style={{ background: 'linear-gradient(135deg, #1e4f8c 0%, #2f9bb8 100%)' }}>
+            ทั้งหมด {stats.total} เรื่อง
+          </Link>
         </div>
       </div>
-      <Link to="/reports" className="mt-4 flex items-center justify-center gap-2 text-sm font-bold py-3 rounded-xl text-white transition-opacity hover:opacity-90"
-        style={{ backgroundColor: 'var(--color-primary)' }}>
-        ทั้งหมด {stats.total} เรื่อง — ดูรายละเอียด
-      </Link>
     </div>
   )
 }

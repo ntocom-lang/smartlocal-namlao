@@ -22,7 +22,7 @@ let CATEGORY_LABEL = {
   noise: 'เหตุรำคาญ', disease: 'ควบคุมโรคติดต่อ', other: 'อื่นๆ',
 }
 let CATEGORY_EMOJI = {
-  road: '🛣️', light: '💡', trash: '🗑️', water: '💧',
+  road: '🛣️', light: '💡', trash: '🗑️', water: '🚰',
   flood: '🌊', tree: '🌳', noise: '📢', drain: '🕳️', disease: '🏥',
 }
 const MONTHS_TH = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']

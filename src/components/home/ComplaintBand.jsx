@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, Search, Siren } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
+import { CategoryIcon } from '../../lib/categoryIcon'
 
 const FALLBACK_EMOJI = {
-  light: '💡', road: '🔧', mosquito: '🦟', tree: '✂️',
-  trash: '🗑️', water_supply: '💧', drain: '🌀', flood: '🌊',
-  borrow_equipment: '📦', corruption: '🛡️', grievance: '📢',
-  noise: '🔊', building: '🏢', tax: '💳', canal: '⛏️',
+  light: '💡', road: '🛣️', mosquito: '🦟', tree: '🌳',
+  trash: '🗑️', water_supply: '🚿', drain: '🕳️', flood: '🌊',
+  borrow_equipment: '📦', corruption: '⚖️', grievance: '📣',
+  noise: '📢', building: '🏗️', tax: '📋', canal: '🏞️',
   animals: '🐕', fire: '🔥', phone_complaint: '📞',
-  waste_water: '💧', other: '❓',
+  waste_water: '💧', other: '📝',
 }
 
 const DEFAULT_CATEGORIES = [
@@ -23,7 +24,7 @@ const DEFAULT_CATEGORIES = [
   { value: 'water_supply',label: 'สนับสนุนน้ำอุปโภค', emoji: '🚿' },
   { value: 'borrow',     label: 'ยืมพัสดุ', emoji: '📦' },
   { value: 'corruption', label: 'แจ้งการทุจริต', emoji: '⚖️' },
-  { value: 'grievance',  label: 'แจ้งเรื่องร้องทุกข์', emoji: '📢' },
+  { value: 'grievance',  label: 'แจ้งเรื่องร้องทุกข์', emoji: '📣' },
   { value: 'other',      label: 'อื่นๆ', emoji: '📝' },
 ]
 
@@ -45,9 +46,12 @@ export default function ComplaintBand({ variant = 'warm' }) {
 
   const topCats = cats
   const titleColor = clean ? 'text-gray-800' : 'text-amber-900'
+  const footerBtnCls = clean
+    ? 'flex items-center justify-center gap-1 text-white text-xs font-bold px-5 py-1.5 rounded-full transition-opacity hover:opacity-90 active:scale-95'
+    : 'flex items-center justify-center gap-1 text-amber-900 text-xs font-semibold bg-white/40 px-3 py-2 rounded-xl hover:bg-white/60 transition-colors active:scale-95'
   const chipCls = clean
-    ? 'flex items-center gap-0.5 text-gray-500 text-xs bg-gray-100 px-2 py-1 rounded-full hover:bg-gray-200 transition-colors'
-    : 'flex items-center gap-0.5 text-amber-900/70 text-xs bg-white/30 px-2 py-1 rounded-full hover:bg-white/50 transition-colors'
+    ? 'flex items-center gap-1 text-white text-xs font-bold px-2.5 py-1.5 rounded-full transition-opacity hover:opacity-90 shrink-0'
+    : 'flex items-center gap-0.5 text-amber-900/70 text-xs bg-white/30 px-2 py-1 rounded-full hover:bg-white/50 transition-colors shrink-0'
 
   return (
     <div className={`rounded-2xl overflow-hidden relative ${clean ? 'shadow-sm border border-gray-100' : 'shadow-xl'}`}
@@ -63,23 +67,33 @@ export default function ComplaintBand({ variant = 'warm' }) {
       )}
 
       <div className="relative z-10 px-4 pt-3 pb-4">
-        <div className="flex items-center justify-between mb-3">
-          <p className={`${titleColor} font-extrabold text-[15px] md:text-base tracking-wide ${clean ? '' : 'drop-shadow-sm'}`}>🚨 แจ้งเหตุ / แจ้งซ่อม</p>
-          <button onClick={() => navigate('/complaint')} className={chipCls}>
-            ทั้งหมด <ChevronRight size={13} />
+        <div className="flex items-center justify-between mb-3 gap-2">
+          <div className="flex items-center gap-2">
+            {clean && (
+              <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-white"
+                style={{ background: 'linear-gradient(135deg, #f87171, #dc2626)' }}>
+                <Siren size={15} />
+              </span>
+            )}
+            <p className={`${titleColor} font-extrabold text-[15px] md:text-base tracking-wide ${clean ? '' : 'drop-shadow-sm'}`}>{clean ? '' : '🚨 '}แจ้งเหตุ / แจ้งซ่อม</p>
+          </div>
+          <button onClick={() => navigate('/my-complaints')} className={chipCls}
+            style={clean ? { background: 'linear-gradient(135deg, var(--color-primary), #0f172a)' } : undefined}>
+            <Search size={12} /> ติดตามคำร้อง
           </button>
         </div>
 
-        {/* Mobile: 4 items grid — ที่เหลือกด "ทั้งหมด" แทน กันแออัดเกินไปบนจอเล็ก */}
-        <div className="grid grid-cols-4 gap-1 lg:hidden pb-1">
-          {topCats.slice(0, 4).map(cat => {
+        {/* Mobile: clean variant (ServiceHub) โชว์ 6 อัน แถวละ 3 ตามภาพอ้างอิง — ธีมอื่น (warm) คงเดิม 4 อัน
+            ที่เหลือกด "ทั้งหมด" แทน กันแออัดเกินไปบนจอเล็ก */}
+        <div className={`grid ${clean ? 'grid-cols-3 gap-2' : 'grid-cols-4 gap-1'} lg:hidden pb-1`}>
+          {topCats.slice(0, clean ? 6 : 4).map(cat => {
             const emoji = cat.emoji || FALLBACK_EMOJI[cat.value] || '📋'
             const color = cat.color || (clean ? 'var(--color-primary, #2563eb)' : '#ffffff')
             return (
               <button key={cat.value}
                 onClick={() => navigate(`/request?category=${cat.value}`)}
                 className="flex flex-col items-center gap-1.5 active:scale-95 transition-transform">
-                <div className="w-13 h-13 flex items-center justify-center shadow-md"
+                <div className={`${clean ? 'w-20 h-20' : 'w-13 h-13'} flex items-center justify-center shadow-md`}
                   style={{
                     backgroundColor: color + '22',
                     borderRadius: 'var(--radius-btn, 1rem)',
@@ -87,7 +101,7 @@ export default function ComplaintBand({ variant = 'warm' }) {
                     backdropFilter: 'blur(4px)',
                     boxShadow: clean ? `0 2px 6px ${color}20` : `0 3px 10px ${color}30, inset 0 1px 0 rgba(255,255,255,0.5)`,
                   }}>
-                  <span className="text-[1.6rem] leading-none select-none">{emoji}</span>
+                  <CategoryIcon emoji={emoji} size={clean ? 44 : 28} />
                 </div>
                 <p className={`${titleColor} text-[11px] font-semibold text-center w-full leading-tight ${clean ? '' : 'drop-shadow-sm'} line-clamp-2`}>{cat.label}</p>
               </button>
@@ -112,12 +126,20 @@ export default function ComplaintBand({ variant = 'warm' }) {
                     backdropFilter: 'blur(4px)',
                     boxShadow: clean ? `0 2px 6px ${color}20` : `0 2px 8px ${color}25, inset 0 1px 0 rgba(255,255,255,0.5)`,
                   }}>
-                  <span className="text-[1.4rem] leading-none select-none">{emoji}</span>
+                  <CategoryIcon emoji={emoji} size={24} />
                 </div>
                 <p className={`${titleColor} text-[12px] font-semibold text-center leading-tight`}>{cat.label}</p>
               </button>
             )
           })}
+        </div>
+
+        {/* ทั้งหมด (ดูหมวดหมู่ครบ) อยู่แถวล่างสุด — ติดตามคำร้อง ย้ายกลับไปแถวบนชิดขวาแล้ว */}
+        <div className="flex justify-center mt-3">
+          <button onClick={() => navigate('/complaint')} className={footerBtnCls}
+            style={clean ? { backgroundColor: 'var(--color-primary)' } : undefined}>
+            ทั้งหมด <ChevronRight size={13} />
+          </button>
         </div>
       </div>
     </div>

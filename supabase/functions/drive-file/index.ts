@@ -1,9 +1,14 @@
 // Supabase Edge Function: drive-file
-// สตรีมไฟล์ที่เป็น "private" (ไม่แชร์สาธารณะ) จาก Google Drive กลับให้ client — Drive เองไม่มีแนวคิด
-// สิทธิ์แบบเทศบาล/เจ้าของ จึงต้องเช็คผ่านตาราง drive_files (mapping ที่ drive-upload บันทึกไว้) ก่อนทุกครั้ง
-// ไฟล์ public (complaint-attachments ฯลฯ) ไม่ต้องผ่าน function นี้ เปิดลิงก์ Drive ตรงได้เลย
+// สตรีมไฟล์จาก Google Drive กลับให้ client ผ่านโดเมนของเราเอง — ใช้ 2 กรณี:
+//   1) ไฟล์ private (ไม่แชร์สาธารณะ) — ต้อง login และเช็คสิทธิ์เจ้าของ/เทศบาล/superadmin เหมือนเดิม
+//   2) ไฟล์ public (โลโก้/banner/header/รูปกิจกรรม ฯลฯ) — เดิมตั้งใจให้เปิดลิงก์ Drive ตรง
+//      (lh3.googleusercontent.com หรือ drive.google.com/uc?id=) แต่พบว่า Chromium/Edge บล็อกการฝัง
+//      รูปข้ามโดเมนแบบนี้ด้วย ORB (net::ERR_BLOCKED_BY_ORB) แม้ response จะถูกต้องทุกอย่างก็ตาม —
+//      เลยต้อง proxy รูป public ผ่าน function นี้เหมือนกัน แต่ "ไม่บังคับ login" (ต่างจากไฟล์ private)
+//      เพราะเป็นรูปสาธารณะที่ประชาชนทั่วไป (ไม่ล็อกอิน) ต้องเห็นได้ปกติจากหน้าเว็บ
 // Secret ที่ต้องตั้งก่อนใช้งาน: GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REFRESH_TOKEN (เหมือน drive-upload)
-// Deploy: supabase functions deploy drive-file
+// Deploy: supabase functions deploy drive-file --no-verify-jwt (ต้องปิด JWT gate ระดับ gateway ด้วย
+// ไม่งั้นคำขอแบบไม่ login ของไฟล์ public จะโดนบล็อกก่อนถึงโค้ดในนี้เลย)
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -23,14 +28,6 @@ function json(body: unknown, status = 200) {
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
-  const authHeader = req.headers.get('authorization') ?? ''
-  const token = authHeader.replace('Bearer ', '').trim()
-  if (!token) return json({ error: 'unauthorized' }, 401)
-
-  const authClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!)
-  const { data: { user }, error: authErr } = await authClient.auth.getUser(token)
-  if (authErr || !user) return json({ error: 'unauthorized' }, 401)
-
   const url = new URL(req.url)
   const fileId = url.searchParams.get('id')
   if (!fileId) return json({ error: 'missing id' }, 400)
@@ -39,13 +36,21 @@ serve(async (req) => {
   const { data: fileRow } = await admin.from('drive_files').select('*').eq('id', fileId).maybeSingle()
   if (!fileRow) return json({ error: 'not found' }, 404)
 
-  const { data: profile } = await admin.from('profiles').select('role, municipality_id').eq('id', user.id).maybeSingle()
-  const isOwner = fileRow.owner_user_id === user.id
-  const isSameMuniStaff = profile?.municipality_id === fileRow.municipality_id && INTERNAL_ROLES.has(profile?.role ?? '')
-  const isSuperadmin = profile?.role === 'superadmin'
+  // ไฟล์ public: ข้ามการเช็ค login/สิทธิ์ทั้งหมด — ใครก็เปิดดูได้ (เจตนาเดียวกับตอนเคย hotlink Drive ตรง)
+  if (!fileRow.is_public) {
+    const authHeader = req.headers.get('authorization') ?? ''
+    const token = authHeader.replace('Bearer ', '').trim()
+    if (!token) return json({ error: 'unauthorized' }, 401)
 
-  if (!fileRow.is_public && !isOwner && !isSameMuniStaff && !isSuperadmin) {
-    return json({ error: 'forbidden' }, 403)
+    const authClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!)
+    const { data: { user }, error: authErr } = await authClient.auth.getUser(token)
+    if (authErr || !user) return json({ error: 'unauthorized' }, 401)
+
+    const { data: profile } = await admin.from('profiles').select('role, municipality_id').eq('id', user.id).maybeSingle()
+    const isOwner = fileRow.owner_user_id === user.id
+    const isSameMuniStaff = profile?.municipality_id === fileRow.municipality_id && INTERNAL_ROLES.has(profile?.role ?? '')
+    const isSuperadmin = profile?.role === 'superadmin'
+    if (!isOwner && !isSameMuniStaff && !isSuperadmin) return json({ error: 'forbidden' }, 403)
   }
 
   try {
@@ -53,7 +58,13 @@ serve(async (req) => {
     const driveRes = await streamDriveFile(accessToken, fileId)
     if (!driveRes.ok || !driveRes.body) return json({ error: 'ไฟล์ไม่พบใน Drive' }, 404)
     return new Response(driveRes.body, {
-      headers: { ...corsHeaders, 'Content-Type': fileRow.content_type || 'application/octet-stream' },
+      headers: {
+        ...corsHeaders,
+        'Content-Type': fileRow.content_type || 'application/octet-stream',
+        // รูป public เปลี่ยน fileId ใหม่ทุกครั้งที่อัปโหลดอยู่แล้ว (ไม่มีการเขียนทับไฟล์เดิม) จึง cache
+        // ยาวได้อย่างปลอดภัย ลดโหลด Drive API ซ้ำๆ เวลาประชาชนหลายคนเปิดหน้าเดียวกัน
+        ...(fileRow.is_public ? { 'Cache-Control': 'public, max-age=31536000, immutable' } : {}),
+      },
     })
   } catch (err) {
     console.error('drive-file failed:', err)

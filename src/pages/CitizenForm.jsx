@@ -43,12 +43,12 @@ const CATEGORY_ICON = {
 }
 
 const FALLBACK_EMOJI = {
-  light: '💡', road: '🔧', mosquito: '🦟', tree: '✂️',
-  trash: '🗑️', water_supply: '💧', drain: '🌀', flood: '🌊',
-  borrow_equipment: '📦', corruption: '🛡️', grievance: '📢',
-  noise: '🔊', building: '🏢', tax: '💳', canal: '⛏️',
+  light: '💡', road: '🛣️', mosquito: '🦟', tree: '🌳',
+  trash: '🗑️', water_supply: '🚿', drain: '🕳️', flood: '🌊',
+  borrow_equipment: '📦', corruption: '⚖️', grievance: '📣',
+  noise: '📢', building: '🏗️', tax: '📋', canal: '🏞️',
   animals: '🐕', fire: '🔥', phone_complaint: '📞',
-  waste_water: '💧', other: '❓',
+  waste_water: '💧', other: '📝',
 }
 
 const FALLBACK_COLOR = {

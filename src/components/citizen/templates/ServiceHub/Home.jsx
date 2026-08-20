@@ -1,20 +1,22 @@
+import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useTenant } from '../../../../contexts/TenantContext'
-import { MessageSquareWarning, Search, Smile, Wifi, Users, MapPinned, Compass } from 'lucide-react'
+import { Wifi, Users, MapPinned, Compass } from 'lucide-react'
 import BannerSlider from '../../../../components/home/BannerSlider'
-import WeatherWidget from '../../../../components/home/WeatherWidget'
 import ComplaintBand from '../../../../components/home/ComplaintBand'
 import ComplaintStatsWidget from '../../../../components/home/ComplaintStatsWidget'
 import PostsHighlight from '../../../../components/home/PostsHighlight'
 import TourismSection from '../../../../components/home/TourismSection'
 import DataCenterBanner from '../../../../components/home/DataCenterBanner'
+import SmartCityBanner from '../../../../components/home/SmartCityBanner'
 
-// เฉพาะเมนูที่มีระบบจริงรองรับเท่านั้น — ตั้งใจไม่ใส่ "ชำระภาษี/ค่าขยะ/เบี้ยยังชีพ" เพราะยังไม่มี
-// ระบบชำระเงินจริงในแพลตฟอร์มนี้ ใส่ไปจะเป็นปุ่มหลอกที่กดแล้วไม่มีอะไรเกิดขึ้น
-const E_SERVICE_ITEMS = [
-  { label: 'แจ้งเรื่องร้องเรียน',        href: '/complaint',     icon: MessageSquareWarning, color: '#ef4444' },
-  { label: 'ติดตามเรื่องร้องเรียน/ร้องทุกข์', href: '/my-complaints', icon: Search,            color: '#2563eb' },
-  { label: 'ประเมินความพึงพอใจ',        href: '/satisfaction',  icon: Smile,                 color: '#f59e0b' },
+// รายการ "งานบริการประชาชน" จริง — ใช้ชุดข้อมูลเดียวกับ EServiceBlock ของธีมอื่นๆ (EcoFriendly ฯลฯ)
+// คือประเภทคำร้องขอเอกสาร ไม่ใช่เรื่องร้องเรียน (นั่นเป็นของ ComplaintBand คนละส่วนกัน) ผูกกับ
+// /doc-request?type=... เหมือนกันทุกธีม + เพิ่มประเภทที่แอดมินตั้งเองได้ผ่าน fee_schedule._custom_types
+const BASE_DOC_TYPES = [
+  { value: 'waste_collection', label: 'ค่าธรรมเนียมขยะ',      emoji: '🗑️' },
+  { value: 'tax_notice',       label: 'ค่าธรรมเนียม/ภาษี',     emoji: '🏛️' },
+  { value: 'building_permit',  label: 'ขออนุญาตก่อสร้างบ้าน', emoji: '🏗️' },
 ]
 
 // ป้ายลอย 4 มุมทับภาพแบนเนอร์ — ใช้ชื่อฟีเจอร์ของเราเองล้วนๆ (ไม่ได้ยืมข้อความ/โลโก้จากที่ไหน)
@@ -26,13 +28,24 @@ const HERO_BADGES = [
   { icon: Compass,    label: 'แหล่งท่องเที่ยว', pos: 'bottom-3 right-3' },
 ]
 
-function HeroBanner({ tenant }) {
-  // fallback gradient ไว้ใต้ BannerSlider เสมอ — เผื่อ อปท. ยังไม่ได้อัปโหลดรูปแบนเนอร์เลย (BannerSlider
-  // จะ render null ทันที ไม่เหลือความสูงอะไรให้ป้าย/wordmark ทับ) มี min-height กันไม่ให้ยุบจนป้ายหาย
+function HeroBanner({ tenant, rounded = 'rounded-2xl' }) {
+  // ไม่ใช้รูปแบนเนอร์ของแอดมิน (BannerSlider ตัว "สไลด์ Banner หน้าแรก") ตรงนี้ — ย้ายไปไว้ใต้ E-Service
+  // แทนแล้ว ตำแหน่งนี้ใช้ "ภาพพื้นหลัง Header" (tenant.header_image_url) จากแท็บแบรนด์และรูปภาพแทน — ธีมนี้
+  // ไม่มีแถบ header บางๆ ให้ใส่รูปแบบธีมอื่น จึงยืมช่องอัปโหลดเดิมมาใช้กับ hero ใหญ่แทน ไม่มีรูป
+  // ก็ยังใช้ไล่สีเดิม (var(--color-primary) → เข้ม) เป็น fallback ไม่ว่างเปล่า
   return (
-    <div className="relative rounded-2xl overflow-hidden"
+    <div className={`relative overflow-hidden ${rounded}`}
       style={{ minHeight: 200, background: 'linear-gradient(135deg, var(--color-primary), #0f172a)' }}>
-      <BannerSlider />
+      {tenant?.header_image_url && (
+        <>
+          <img src={tenant.header_image_url} alt="" className="absolute inset-0 w-full h-full object-cover" />
+          {/* โหมด 'full' (แอดมินเลือกไว้ในแท็บแบรนด์และรูปภาพ) = โชว์ภาพเต็มสีสัน ไม่คลุมเงา
+              โหมด 'background' (ค่าเริ่มต้น) = คลุมเงาให้ตัวหนังสือ/ป้ายด้านบนอ่านง่าย */}
+          {tenant?.header_image_mode !== 'full' && (
+            <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.15) 50%, rgba(0,0,0,0.45) 100%)' }} />
+          )}
+        </>
+      )}
       <div className="absolute inset-0 pointer-events-none hidden sm:block">
         {HERO_BADGES.map(({ icon: Icon, label, pos }) => (
           <div key={label}
@@ -53,28 +66,34 @@ function HeroBanner({ tenant }) {
   )
 }
 
-function EServiceGrid() {
+function EServiceGrid({ docTypes, rounded = 'rounded-2xl' }) {
   return (
-    <div className="rounded-2xl overflow-hidden shadow-sm border border-gray-100">
-      <div className="px-4 py-4 sm:py-5"
-        style={{ background: 'linear-gradient(135deg, #306eb8 0%, #1d4aa0 100%)' }}>
-        <p className="text-white font-black text-xl sm:text-2xl tracking-tight italic">e-Service</p>
-        <p className="text-white/70 text-xs sm:text-sm font-semibold mt-0.5">บริการแบบเบ็ดเสร็จ ณ จุดเดียว ด้วยระบบออนไลน์</p>
+    <div className={`overflow-hidden shadow-sm p-4 sm:p-5 ${rounded}`}
+      style={{ background: 'linear-gradient(135deg, #306eb8 0%, #1d4aa0 100%)' }}>
+      <p className="relative inline-block font-black text-2xl sm:text-3xl tracking-tight italic overflow-hidden"
+        style={{
+          background: 'linear-gradient(180deg, #fed7aa 0%, #fb923c 35%, #ea580c 70%, #c2410c 100%)',
+          WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
+          filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.35))',
+        }}>
+        e-Service
+        {/* แถบแสงสะท้อนพาดทแยง ให้ความรู้สึกมันวาวแบบโลโก้ 3 มิติตามภาพอ้างอิง */}
+        <span className="absolute inset-0 pointer-events-none"
+          style={{ background: 'linear-gradient(115deg, transparent 35%, rgba(255,255,255,0.85) 48%, transparent 58%)' }} />
+      </p>
+      <p className="text-white/70 text-[11px] sm:text-xs font-semibold mt-0.5 mb-3">บริการแบบเบ็ดเสร็จ ณ จุดเดียว ด้วยระบบออนไลน์</p>
+      <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+        {docTypes.slice(0, 6).map(({ value, label, emoji }) => (
+          <Link key={value} to={`/doc-request?type=${value}`}
+            className="flex flex-col items-center gap-1 p-1.5 sm:p-2 rounded-xl bg-white hover:bg-gray-50 active:scale-95 transition-all shadow-sm">
+            <span className="text-lg sm:text-xl leading-none">{emoji}</span>
+            <p className="text-[10px] sm:text-[11px] font-bold text-gray-700 text-center leading-tight line-clamp-2">{label}</p>
+          </Link>
+        ))}
       </div>
-      <div className="bg-white p-3 sm:p-4">
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-          {E_SERVICE_ITEMS.map(({ label, href, icon: Icon, color }) => (
-            <Link key={href} to={href}
-              className="flex items-center gap-2.5 p-2.5 rounded-2xl border border-gray-100 hover:bg-gray-50 active:scale-95 transition-all">
-              <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: color + '18' }}>
-                <Icon size={18} style={{ color }} />
-              </div>
-              <p className="text-xs font-bold text-gray-700 leading-tight">{label}</p>
-            </Link>
-          ))}
-        </div>
-        <Link to="/complaint"
-          className="mt-3 flex items-center justify-center gap-1.5 py-2 rounded-full text-xs font-bold"
+      <div className="mt-2.5 flex justify-end">
+        <Link to="/doc-request"
+          className="px-3 py-1 rounded-full text-[11px] font-bold"
           style={{ backgroundColor: '#facc15', color: '#78350f' }}>
           ดูทั้งหมด
         </Link>
@@ -86,24 +105,29 @@ function EServiceGrid() {
 export default function ServiceHubHome() {
   const { tenant } = useTenant()
 
+  const docTypes = useMemo(() => {
+    const extras = (tenant?.fee_schedule?._custom_types || []).map(t => ({
+      value: t.value, label: t.label, emoji: t.emoji || '📋',
+    }))
+    return [...BASE_DOC_TYPES, ...extras]
+  }, [tenant])
+
   return (
     <div className="bg-gray-50">
-      <div className="px-3 sm:px-4 lg:px-6 pt-2 lg:pt-3 pb-4 max-w-[1440px] mx-auto space-y-3">
-        <HeroBanner tenant={tenant} />
+      {/* Hero + e-Service ตั้งใจให้ชิดขอบจอเต็ม มุมเหลี่ยม ไม่มีช่องว่างคั่น — ตรงตามภาพอ้างอิงเป๊ะ
+          ต่างจากส่วนอื่นด้านล่างที่ยังเป็นการ์ดโค้งมนมีระยะขอบตามปกติ */}
+      <div className="max-w-[1440px] mx-auto">
+        <HeroBanner tenant={tenant} rounded="rounded-none" />
+        <EServiceGrid docTypes={docTypes} rounded="rounded-none" />
+      </div>
 
-        <div className="grid lg:grid-cols-12 gap-3">
-          <div className="lg:col-span-8">
-            <EServiceGrid />
-          </div>
-          <aside className="lg:col-span-4">
-            <WeatherWidget />
-          </aside>
-        </div>
-
+      <div className="px-3 sm:px-4 lg:px-6 pt-3 pb-4 max-w-[1440px] mx-auto space-y-3">
+        <BannerSlider />
         <ComplaintBand variant="clean" />
         <ComplaintStatsWidget />
-        <DataCenterBanner />
+        <DataCenterBanner variant="violet" />
         <PostsHighlight />
+        <SmartCityBanner />
       </div>
 
       <div className="px-3 sm:px-4 lg:px-6 pb-2 max-w-[1440px] mx-auto">

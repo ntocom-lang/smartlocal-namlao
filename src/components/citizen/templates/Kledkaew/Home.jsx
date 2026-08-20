@@ -9,12 +9,12 @@ import { useNavigate } from 'react-router-dom'
 
 
 const CAT_FALLBACK_EMOJI = {
-  light: '💡', road: '🛤️', mosquito: '🧴', tree: '🌲',
-  trash: '♻️', water_supply: '💧', drain: '🚧', flood: '🪣',
-  borrow_equipment: '🔧', corruption: '🚨', grievance: '🌫️',
-  noise: '🔊', building: '🏢', tax: '🧾', canal: '🚽',
-  animals: '🐾', fire: '🔥', phone_complaint: '☎️',
-  waste_water: '💧', other: '❓',
+  light: '💡', road: '🛣️', mosquito: '🦟', tree: '🌳',
+  trash: '🗑️', water_supply: '🚿', drain: '🕳️', flood: '🌊',
+  borrow_equipment: '📦', corruption: '⚖️', grievance: '📣',
+  noise: '📢', building: '🏗️', tax: '📋', canal: '🏞️',
+  animals: '🐕', fire: '🔥', phone_complaint: '📞',
+  waste_water: '💧', other: '📝',
 }
 
 const DEFAULT_CATS = [

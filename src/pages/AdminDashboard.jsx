@@ -37,6 +37,7 @@ import AuditLogViewer from '../components/admin/AuditLogViewer'
 import { ROLE_LABELS, ROLE_DESCRIPTIONS, fetchAssignableStaff, groupStaffByDepartment } from '../lib/staffRoster'
 import FleetSetup from '../components/fleet/FleetSetup'
 import { adminUpdateUser } from '../lib/adminUpdateUser'
+import { CategoryIcon } from '../lib/categoryIcon'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS = {
@@ -71,11 +72,11 @@ let CATEGORY_LABEL = {
 }
 
 let CATEGORY_EMOJI = {
-  road: '', light: '', trash: '', water: '',
-  flood: '', tree: '', noise: '', drain: '',
-  waste_water: '', suction: '', manhole: '', vendor: '',
-  building: '', mosquito: '', pollution: '', corruption: '',
-  tax: '', canal: '', animals: '', disease: '', other: '',
+  road: '🛣️', light: '💡', trash: '🗑️', water: '🚰',
+  flood: '🌊', tree: '🌳', noise: '📢', drain: '🕳️',
+  waste_water: '💧', suction: '🚛', manhole: '⚙️', vendor: '🏪',
+  building: '🏗️', mosquito: '🦟', pollution: '🌫️', corruption: '⚖️',
+  tax: '📋', canal: '🏞️', animals: '🐕', disease: '🏥', other: '📝',
 }
 
 
@@ -85,6 +86,14 @@ let CATEGORY_EMOJI = {
 
 const NON_CITIZEN_ROLES = ['staff', 'officer', 'technician', 'admin', 'superadmin', 'council', 'viewer']
 const USER_PAGE_SIZE = 50
+const PERSONNEL_CARD_PALETTES = [
+  { color: '#2563eb', soft: '#eff6ff', border: '#bfdbfe' },
+  { color: '#7c3aed', soft: '#f5f3ff', border: '#ddd6fe' },
+  { color: '#0891b2', soft: '#ecfeff', border: '#a5f3fc' },
+  { color: '#059669', soft: '#ecfdf5', border: '#a7f3d0' },
+  { color: '#d97706', soft: '#fffbeb', border: '#fde68a' },
+  { color: '#db2777', soft: '#fdf2f8', border: '#fbcfe8' },
+]
 
 function canManageUser(currentUserRole, currentUserId, targetUser) {
   if (!targetUser || !currentUserId || targetUser.id === currentUserId) return false
@@ -282,9 +291,23 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
   // การ์ดกลุ่ม "กอง/หน่วยงาน" แทนกลุ่มตำแหน่งเดิม — เข้าใจง่ายกว่า เพราะตรงกับโครงสร้างหน่วยงานจริง
   // ที่แอดมินคุ้นเคยอยู่แล้ว (กองคลัง, กองช่าง, สำนักปลัด ฯลฯ) ไม่ต้องแปลจากหมวดตำแหน่งนามธรรม
   const deptCards = [
-    ...depts.map(d => ({ value: d.id, label: d.name, count: users.filter(u => u.department_id === d.id).length })),
-    { value: 'none', label: 'ไม่ระบุกอง', count: users.filter(u => !u.department_id).length },
+    ...depts.map((d, index) => ({
+      value: d.id,
+      label: d.name,
+      shortName: d.short_name,
+      count: users.filter(u => u.department_id === d.id).length,
+      palette: PERSONNEL_CARD_PALETTES[index % PERSONNEL_CARD_PALETTES.length],
+    })),
+    {
+      value: 'none', label: 'ไม่ระบุกอง', shortName: 'รอตรวจสอบ',
+      count: users.filter(u => !u.department_id).length,
+      palette: { color: '#64748b', soft: '#f8fafc', border: '#cbd5e1' },
+    },
   ]
+
+  const activeTabCount = subTab === 'citizen' ? citizenCount : staffCount
+  const assignedOnPage = users.filter(u => u.department_id).length
+  const departmentHeadOnPage = users.filter(u => u.is_dept_head).length
 
   const filtered = users.filter((u) => {
     const q = search.toLowerCase()
@@ -333,25 +356,64 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-        <h3 className="font-semibold text-gray-700 flex items-center gap-2">
-          <Users size={16} /> จัดการผู้ใช้และการแต่งตั้ง
-          {!loading && users.length > 0 && (
-            <span className="text-xs font-normal text-gray-400">({users.length} คน)</span>
-          )}
-        </h3>
-        <button onClick={() => fetchUsers({ search, page })} className="text-gray-400 hover:text-gray-600 transition-colors">
-          <RefreshCw size={15} />
-        </button>
-      </div>
+    <div className="space-y-4">
+      <section className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-slate-950 via-blue-950 to-indigo-800 px-5 py-5 text-white shadow-xl shadow-blue-950/15 md:px-7 md:py-6">
+        <div className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-cyan-400/20 blur-3xl" />
+        <div className="pointer-events-none absolute bottom-0 left-1/3 h-28 w-56 rounded-full bg-violet-500/20 blur-3xl" />
+        <div className="relative flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-start gap-3 pr-10 md:gap-4 md:pr-0">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/20 bg-white/10 shadow-inner backdrop-blur-sm md:h-14 md:w-14">
+              <Users size={25} strokeWidth={1.8} />
+            </div>
+            <div>
+              <div className="mb-1 flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-2.5 py-1 text-[10px] font-bold tracking-[0.16em] text-cyan-100">
+                  PERSONNEL CENTER
+                </span>
+                <span className="text-xs text-blue-100/70">ข้อมูลบุคลากรกลางของหน่วยงาน</span>
+              </div>
+              <h3 className="text-lg font-black leading-snug tracking-tight md:text-2xl">
+                <span className="md:hidden">จัดการผู้ใช้<br />และการแต่งตั้ง</span>
+                <span className="hidden md:inline">จัดการผู้ใช้และการแต่งตั้ง</span>
+              </h3>
+              <p className="mt-1 max-w-2xl text-xs leading-relaxed text-blue-100/75 md:text-sm">
+                จัดสังกัด ตำแหน่ง และสิทธิ์การใช้งานจากจุดเดียว ลดข้อมูลซ้ำและตรวจสอบสายงานได้ชัดเจน
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => fetchUsers({ search, page })}
+            className="group absolute right-0 top-0 flex h-10 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-3 text-xs font-semibold text-white backdrop-blur-sm transition-all hover:bg-white/20 active:scale-95 md:static md:px-3.5"
+            title="รีเฟรชข้อมูล"
+          >
+            <RefreshCw size={15} className="transition-transform duration-500 group-hover:rotate-180" />
+            <span className="hidden md:inline">อัปเดตข้อมูล</span>
+          </button>
+        </div>
+
+        <div className="relative mt-5 grid grid-cols-3 gap-2 md:max-w-xl md:gap-3">
+          {[
+            { label: subTab === 'staff' ? 'เจ้าหน้าที่ทั้งหมด' : 'ประชาชนทั้งหมด', value: activeTabCount ?? '—', color: 'text-cyan-200' },
+            { label: subTab === 'staff' ? 'มีสังกัดในหน้านี้' : 'บัญชีในหน้านี้', value: subTab === 'staff' ? assignedOnPage : users.length, color: 'text-emerald-200' },
+            { label: subTab === 'staff' ? 'หัวหน้ากองในหน้านี้' : 'ผลการค้นหา', value: subTab === 'staff' ? departmentHeadOnPage : filtered.length, color: 'text-violet-200' },
+          ].map(item => (
+            <div key={item.label} className="rounded-2xl border border-white/10 bg-white/[0.08] px-3 py-3 backdrop-blur-sm">
+              <p className={`text-xl font-black leading-none md:text-2xl ${item.color}`}>{item.value}</p>
+              <p className="mt-1.5 text-[9px] font-medium leading-tight text-white/65 md:text-[11px]">{item.label}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="overflow-hidden rounded-[24px] border border-slate-200/80 bg-white shadow-lg shadow-slate-200/60">
 
       {/* แท็บย่อย: เจ้าหน้าที่ / ประชาชน — แยก query กันโหลดผู้ใช้ทั้งหมดมาทีเดียว (แต่ละแท็บโหลดหน้าแรกทันที) */}
-      <div className="px-4 pt-3 flex gap-2">
+      <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50 via-white to-blue-50/60 px-4 py-3 md:px-5">
+        <div className="inline-flex rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
         {[
-          { key: 'staff',   label: 'เจ้าหน้าที่', count: staffCount },
-          { key: 'citizen', label: 'ผู้ใช้งานประชาชน', count: citizenCount },
-        ].map(({ key, label, count }) => (
+          { key: 'staff', label: 'เจ้าหน้าที่', count: staffCount, Icon: Briefcase },
+          { key: 'citizen', label: 'ประชาชน', count: citizenCount, Icon: UserCircle2 },
+        ].map(({ key, label, count, Icon }) => (
           <button key={key} onClick={() => {
             fetchSequence.current += 1
             setSubTab(key)
@@ -362,21 +424,32 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
             setFilterDept('')
             setLoading(true)
           }}
-            className={`px-3.5 py-1.5 rounded-xl text-sm font-semibold transition-colors ${
-              subTab === key ? 'text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-            }`}
-            style={subTab === key ? { backgroundColor: '#7c3aed' } : {}}>
+            className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition-all md:px-4 md:text-sm ${
+              subTab === key
+                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-200'
+                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+            }`}>
+            <Icon size={15} />
             {label}
             {count != null && (
-              <span className={subTab === key ? 'ml-1 text-white/80' : 'ml-1 text-gray-400'}>({count})</span>
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${subTab === key ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-400'}`}>{count}</span>
             )}
           </button>
         ))}
+        </div>
       </div>
 
       {/* การ์ดกลุ่ม "กอง/หน่วยงาน" (เฉพาะแท็บเจ้าหน้าที่) */}
       {subTab === 'staff' && (
-        <div className="px-4 pt-3 pb-1 grid grid-cols-2 md:grid-cols-3 gap-2.5">
+        <div className="px-4 pt-4 md:px-5">
+          <div className="mb-2.5 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-extrabold text-slate-700">เลือกกอง / หน่วยงาน</p>
+              <p className="text-[10px] text-slate-400">กรองรายชื่อจากโครงสร้างหน่วยงานจริง</p>
+            </div>
+            {filterDept && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-600">กำลังกรอง</span>}
+          </div>
+          <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-4">
           {deptCards.map(c => {
             const isActive = filterDept === c.value
             return (
@@ -384,37 +457,37 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
                 key={c.value}
                 type="button"
                 onClick={() => { setFilterDept(prev => prev === c.value ? '' : c.value); setPage(0) }}
-                className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-all active:scale-[0.98] ${
-                  isActive
-                    ? 'border-blue-400 bg-blue-50/80 shadow-xs'
-                    : 'border-gray-200 bg-white hover:border-blue-200 hover:bg-blue-50/40'
-                }`}
+                className="group relative flex min-h-[72px] items-center gap-3 overflow-hidden rounded-2xl border px-3 py-3 text-left transition-all hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98]"
+                style={{
+                  borderColor: isActive ? c.palette.color : c.palette.border,
+                  background: isActive ? c.palette.soft : '#ffffff',
+                  boxShadow: isActive ? `0 8px 24px ${c.palette.color}22` : undefined,
+                }}
               >
-                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors ${
-                  isActive ? 'bg-blue-600 text-white shadow-xs' : 'bg-blue-50 text-blue-600'
-                }`}>
+                <span className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: c.palette.color }} />
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-transform group-hover:scale-105"
+                  style={{ backgroundColor: isActive ? c.palette.color : c.palette.soft, color: isActive ? '#fff' : c.palette.color }}>
                   <Briefcase size={17} />
                 </span>
-                <span className={`min-w-0 flex-1 text-xs font-semibold leading-snug ${
-                  isActive ? 'text-blue-950 font-bold' : 'text-gray-700'
-                }`}>
-                  {c.label}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-xs font-extrabold leading-snug text-slate-800">{c.label}</span>
+                  <span className="mt-1 block truncate text-[9px] font-medium text-slate-400">{c.shortName || 'หน่วยงานภายใน'}</span>
                 </span>
-                <span className={`min-w-6 shrink-0 rounded-full px-2 py-0.5 text-center text-[11px] font-extrabold transition-colors ${
-                  isActive ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-400'
-                }`}>
+                <span className="min-w-7 shrink-0 rounded-full px-2 py-1 text-center text-[11px] font-black"
+                  style={{ backgroundColor: isActive ? c.palette.color : c.palette.soft, color: isActive ? '#fff' : c.palette.color }}>
                   {c.count}
                 </span>
               </button>
             )
           })}
+          </div>
         </div>
       )}
 
       {/* ตัวกรอง */}
-      <div className="px-4 py-3 border-b border-gray-50 flex gap-2 flex-wrap">
-        <div className="relative flex-1">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+      <div className="mx-4 my-4 flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 p-2.5 md:mx-5">
+        <div className="relative w-full md:flex-1">
+          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-blue-500" />
           <input
             value={search}
             onChange={(e) => {
@@ -422,7 +495,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
               setPage(0)
             }}
             placeholder={subTab === 'citizen' ? 'ค้นหาชื่อ, เบอร์โทร, เลขบัตร (ไม่บังคับ)...' : 'ค้นหาชื่อ, อีเมล, เบอร์...'}
-            className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-blue-400 text-gray-900 bg-white"
+            className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
           />
         </div>
         {subTab === 'staff' && (
@@ -431,7 +504,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
           onChange={(e) => { setFilterRole(e.target.value); setPage(0) }}
           aria-label="กรองตามบทบาทและสิทธิ์ระบบ"
           title="บทบาทและสิทธิ์ระบบ"
-          className="text-xs border border-gray-200 rounded-xl px-2 py-2 text-gray-600 focus:outline-none shrink-0"
+          className="w-full shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-600 shadow-sm outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100 md:w-auto md:py-2"
         >
           <option value="">บทบาททั้งหมด</option>
           {[
@@ -448,7 +521,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
               setFilterDept('')
               setPage(0)
             }}
-            className="flex items-center gap-1 text-xs text-gray-400 hover:text-red-500 border border-gray-200 rounded-xl px-2.5 py-2 transition-colors shrink-0"
+            className="flex shrink-0 items-center gap-1 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-500 transition-colors hover:bg-rose-100"
           >
             <X size={12} /> ล้าง
           </button>
@@ -456,29 +529,49 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-10 text-gray-400">
-          <Loader2 size={20} className="animate-spin" />
+        <div className="flex flex-col items-center justify-center gap-3 py-16 text-slate-400">
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+            <Loader2 size={22} className="animate-spin" />
+          </span>
+          <p className="text-xs font-medium">กำลังเรียกข้อมูลบุคลากร...</p>
         </div>
       ) : filtered.length === 0 ? (
-        <p className="text-center py-10 text-gray-400 text-sm">
-          {users.length === 0
-            ? (subTab === 'citizen' ? 'ยังไม่มีประชาชนสมัครใช้งาน' : 'ยังไม่มีผู้ใช้งาน')
-            : 'ไม่พบผู้ใช้ที่ค้นหา'}
-        </p>
+        <div className="mx-4 mb-5 flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-gradient-to-b from-slate-50 to-white px-5 py-12 text-center md:mx-5">
+          <span className="mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-blue-100 to-violet-100 text-blue-600 shadow-inner">
+            <UserCircle2 size={30} strokeWidth={1.7} />
+          </span>
+          <p className="text-sm font-extrabold text-slate-700">
+            {users.length === 0
+              ? (subTab === 'citizen' ? 'ยังไม่มีประชาชนสมัครใช้งาน' : 'ยังไม่มีรายชื่อเจ้าหน้าที่')
+              : 'ไม่พบผู้ใช้ที่ค้นหา'}
+          </p>
+          <p className="mt-1 max-w-sm text-xs leading-relaxed text-slate-400">
+            {users.length === 0
+              ? 'ข้อมูลจะแสดงเมื่อมีบัญชีที่เชื่อมกับหน่วยงานนี้'
+              : 'ลองเปลี่ยนคำค้นหา บทบาท หรือกองที่เลือก'}
+          </p>
+          {(search || filterRole || filterDept) && (
+            <button onClick={() => { setSearch(''); setFilterRole(''); setFilterDept(''); setPage(0) }}
+              className="mt-4 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-blue-700">
+              แสดงรายการทั้งหมด
+            </button>
+          )}
+        </div>
       ) : (
         <>
-        <div className="md:hidden divide-y divide-gray-50">
+        <div className="space-y-2.5 px-3 pb-4 md:hidden">
           {filtered.map((u, i) => {
             const rs = ROLE_LABELS[u.role] ?? ROLE_LABELS.citizen
             const canManage = canManageUser(currentUserRole, currentUserId, u)
             return (
-              <div key={u.id} className="flex flex-col px-4 py-3 gap-2 cursor-pointer hover:bg-gray-50/70 transition-colors"
+              <div key={u.id} className="relative flex cursor-pointer flex-col gap-2 overflow-hidden rounded-2xl border border-slate-200 bg-white px-3.5 py-3 shadow-sm transition-all hover:border-blue-200 hover:shadow-md"
                 onClick={(e) => { if (e.target.closest('button, select, input, a, label')) return; setViewingUserId(u.id) }}>
+                <span className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: rs.color }} />
                 {/* แถว 1: avatar + ชื่อ + badge */}
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-gray-400 font-mono w-5 text-right shrink-0">{i + 1}</span>
-                  <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"
-                       style={{ backgroundColor: rs.color }}>
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-sm font-black text-white shadow-sm"
+                       style={{ background: `linear-gradient(135deg, ${rs.color}, ${rs.color}bb)` }}>
                     {(u.full_name || u.email || '?')[0].toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -503,22 +596,22 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
                       </div>
                     )}
                   </div>
-                  <span className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0"
+                  <span className="shrink-0 rounded-full px-2 py-1 text-[10px] font-bold"
                         style={{ backgroundColor: rs.bg, color: rs.color }}>
                     {rs.label}
                   </span>
                 </div>
                 {subTab === 'staff' && (
-                  <div className="flex items-center gap-2 pl-[68px] mt-1 flex-wrap">
-                    <span className="text-xs text-gray-500">{u.department_name || 'ไม่ระบุกอง'}</span>
+                  <div className="ml-[60px] mt-1 flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 px-2.5 py-2">
+                    <span className="text-xs font-semibold text-slate-600">{u.department_name || 'ไม่ระบุกอง'}</span>
                     {u.is_dept_head && <span className="text-[11px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">หัวหน้ากอง</span>}
                     <span className="text-xs text-gray-400">
                       {u.position_name || <span className="italic text-gray-300">ไม่ระบุตำแหน่งในทำเนียบ</span>}
                     </span>
                   </div>
                 )}
-                <div className="flex items-center gap-2 pl-[68px] mt-1">
-                  <button onClick={() => setViewingUserId(u.id)} className="text-[13px] text-blue-500 hover:text-blue-700 font-medium px-2 py-1 bg-blue-50 hover:bg-blue-100 rounded transition-colors">
+                <div className="ml-[60px] mt-1 flex items-center gap-2">
+                  <button onClick={() => setViewingUserId(u.id)} className="rounded-lg bg-blue-50 px-2.5 py-1.5 text-xs font-bold text-blue-600 transition-colors hover:bg-blue-100 hover:text-blue-700">
                     {canManage ? 'แต่งตั้ง / แก้ไขข้อมูล' : 'ดูรายละเอียด'}
                   </button>
                   {canManage && (
@@ -586,10 +679,11 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
           })}
         </div>
         
-        <div className="hidden md:block overflow-x-auto border border-gray-200">
+        <div className="mx-5 mb-5 hidden overflow-hidden rounded-2xl border border-slate-200 md:block">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm text-left text-gray-600 table-fixed border-collapse">
             <thead>
-              <tr style={{ backgroundColor: '#2c5282' }}>
+              <tr className="bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-900">
                 <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 w-[6%]">ลำดับ</th>
                 <th className="px-2 py-2.5 text-[13px] font-bold text-white border-r border-white/10 w-[24%] cursor-pointer hover:bg-white/10 transition-colors" onClick={() => handleSort('full_name')}>
                   <div className="flex items-center gap-1">ชื่อ-นามสกุล {sortConfig.key === 'full_name' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
@@ -604,13 +698,10 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
             <tbody className="divide-y divide-gray-200">
               {filtered.map((u, i) => {
                 const rs = ROLE_LABELS[u.role] ?? ROLE_LABELS.citizen
-                const canManage = canManageUser(currentUserRole, currentUserId, u)
                 return (
                   <tr key={u.id}
-                    className="transition-colors cursor-pointer"
-                    style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#f5f8fc' }}
-                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'}
-                    onMouseLeave={e => e.currentTarget.style.backgroundColor = i % 2 === 0 ? '#fff' : '#f5f8fc'}
+                    className="cursor-pointer transition-colors hover:bg-blue-50/80"
+                    style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#f8fafc' }}
                     onClick={(e) => { if (e.target.closest('button, select, input, a, label')) return; setViewingUserId(u.id) }}>
                     <td className="px-2 py-3 text-xs text-gray-400 font-mono border-r border-gray-200">{i + 1}</td>
                     <td className="px-2 py-3 border-r border-gray-200">
@@ -665,6 +756,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       </>
       )}
@@ -707,6 +799,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
         )
       })()}
 
+      </section>
       <DeleteUserConfirmModal deletingUser={deletingUser} setDeletingUser={setDeletingUser} deleteLoading={deleteLoading} deleteUser={deleteUser} />
 
     </div>
@@ -2161,7 +2254,7 @@ function EmojiPickerModal({ cat, onSelect, onClose }) {
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
           <div className="flex items-center gap-2">
-            <span className="text-2xl">{customInput || cat?.emoji || '📝'}</span>
+            <CategoryIcon emoji={customInput || cat?.emoji || '📝'} size={26} />
             <div>
               <p className="text-sm font-bold text-gray-800">เลือกไอคอน</p>
               <p className="text-xs text-gray-400">{cat?.label}</p>
@@ -2364,9 +2457,9 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
         <button
           onClick={() => onEditEmoji?.(cat)}
           title="เปลี่ยนไอคอน"
-          className="w-8 h-8 rounded-xl flex items-center justify-center text-base shrink-0 hover:ring-2 hover:ring-blue-400 transition-all active:scale-90"
+          className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 hover:ring-2 hover:ring-blue-400 transition-all active:scale-90"
           style={{ backgroundColor: cat.color }}
-        >{cat.emoji}</button>
+        ><CategoryIcon emoji={cat.emoji} size={18} /></button>
 
         {/* label — inline edit */}
         {isEditing ? (
@@ -2467,16 +2560,16 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, techGroups = []
             <button
               onClick={() => onEditEmoji?.(cat)}
               title="เปลี่ยนไอคอน"
-              className="text-xl hover:bg-gray-100 rounded-lg p-1 transition-colors active:scale-90 shrink-0"
-            >{cat.emoji}</button>
+              className="hover:bg-gray-100 rounded-lg p-1 transition-colors active:scale-90 shrink-0"
+            ><CategoryIcon emoji={cat.emoji} size={22} /></button>
             <span className="font-medium text-gray-800">{cat.label}</span>
           </div>
         )}
       </td>
       <td className="px-4 py-3">
-        <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+        <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full"
           style={{ backgroundColor: color.color, color: color.textColor }}>
-          {cat.emoji} {cat.label}
+          <CategoryIcon emoji={cat.emoji} size={13} /> {cat.label}
         </span>
       </td>
       <td className="px-3 py-2.5">

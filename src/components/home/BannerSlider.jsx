@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
+import { toReliableImageUrl } from '../../lib/driveStorage'
 
 const INTERVAL = 4500
 
-export default function BannerSlider() {
+export default function BannerSlider({ rounded = true }) {
   const { tenant } = useTenant()
   const [banners, setBanners] = useState([])
   const [idx, setIdx] = useState(0)
@@ -19,7 +20,9 @@ export default function BannerSlider() {
       .eq('municipality_id', tenant.id)
       .eq('is_active', true)
       .order('sort_order')
-      .then(({ data }) => { if (data?.length) setBanners(data) })
+      .then(({ data }) => {
+        if (data?.length) setBanners(data.map(b => ({ ...b, image_url: toReliableImageUrl(b.image_url) })))
+      })
       .catch(() => {})
   }, [tenant?.id])
 
@@ -63,7 +66,7 @@ export default function BannerSlider() {
   }
   return (
     <div className="overflow-hidden select-none"
-         style={{ borderRadius: 'var(--radius-card, 1rem)', boxShadow: 'var(--shadow-card, 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06))', border: 'var(--border-card, none)' }}>
+         style={{ borderRadius: rounded ? 'var(--radius-card, 1rem)' : 0, boxShadow: 'var(--shadow-card, 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06))', border: 'var(--border-card, none)' }}>
       <div className="relative w-full overflow-hidden aspect-video md:aspect-[21/9] lg:aspect-[24/9]"
         onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
         {banners.map((b, i) => (

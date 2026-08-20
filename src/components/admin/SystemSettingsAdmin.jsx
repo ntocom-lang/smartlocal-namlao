@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2, Wallpaper } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { uploadFile } from '../../lib/driveStorage'
+import { uploadFile, toReliableImageUrl } from '../../lib/driveStorage'
 import { useTenant } from '../../contexts/TenantContext'
 import DepartmentManager from './DepartmentManager'
 
@@ -25,6 +25,8 @@ export default function SystemSettingsAdmin() {
   const [qrLabelSaving, setQrLabelSaving] = useState(false)
   const [headerUploading, setHeaderUploading] = useState(false)
   const [headerPreview, setHeaderPreview] = useState(() => tenant?.header_image_url || null)
+  const [headerImageMode, setHeaderImageMode] = useState(() => tenant?.header_image_mode || 'background')
+  const [headerModeSaving, setHeaderModeSaving] = useState(false)
   const logoRef = useRef()
   const qrRef = useRef()
   const headerRef = useRef()
@@ -100,18 +102,36 @@ export default function SystemSettingsAdmin() {
     }
   }
 
+  // เดิมไม่มี onerror/timeout เลย — ถ้าเบราว์เซอร์ decode ไฟล์เป็น <img> ไม่ได้ (ไฟล์เสีย, HEIC/WebP
+  // บางรูปแบบที่ไม่รองรับ, ฯลฯ) Promise จะค้างไม่ resolve/reject ตลอดไป ทำให้ handleXxxUpload ที่ await
+  // อยู่หยุดนิ่งเงียบๆ ไม่ error ไม่บันทึก แก้โดยเพิ่ม onerror + timeout กันค้าง แล้ว reject ให้ catch จับได้จริง
   function resizeImage(file, maxPx = 600) {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
+      const objectUrl = URL.createObjectURL(file)
+      const timer = setTimeout(() => {
+        URL.revokeObjectURL(objectUrl)
+        reject(new Error('โหลดไฟล์รูปภาพไม่สำเร็จ (หมดเวลา) — ไฟล์อาจเสียหายหรือเป็นชนิดที่เบราว์เซอร์นี้ไม่รองรับ'))
+      }, 15000)
       const img = new Image()
       img.onload = () => {
+        clearTimeout(timer)
         const scale = Math.min(1, maxPx / Math.max(img.width, img.height))
         const canvas = document.createElement('canvas')
         canvas.width  = Math.round(img.width  * scale)
         canvas.height = Math.round(img.height * scale)
         canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
-        canvas.toBlob(resolve, 'image/png', 0.92)
+        canvas.toBlob(blob => {
+          URL.revokeObjectURL(objectUrl)
+          if (blob) resolve(blob)
+          else reject(new Error('แปลงไฟล์รูปภาพไม่สำเร็จ — ลองไฟล์อื่น (แนะนำ JPG/PNG)'))
+        }, 'image/png', 0.92)
       }
-      img.src = URL.createObjectURL(file)
+      img.onerror = () => {
+        clearTimeout(timer)
+        URL.revokeObjectURL(objectUrl)
+        reject(new Error('เปิดไฟล์รูปภาพไม่สำเร็จ — ไฟล์อาจเสียหายหรือไม่ใช่รูปภาพที่รองรับ (รองรับ JPG/PNG/WebP)'))
+      }
+      img.src = objectUrl
     })
   }
 
@@ -235,6 +255,25 @@ export default function SystemSettingsAdmin() {
     patchTenant({ header_image_url: null })
   }
 
+  // 'background' (เดิม) = มีเงาไล่สีคลุมให้อ่านตัวหนังสือทับได้ · 'full' = โชว์ภาพเต็มสีสัน ไม่มีเงาคลุม
+  // — บางธีม (เช่น thungkaew-Theme) ใช้ภาพนี้เป็นภาพเด่นเต็มจอ ไม่ได้ใช้เป็นพื้นหลังคลุมข้อความ
+  async function setHeaderMode(mode) {
+    if (mode === headerImageMode) return
+    setHeaderModeSaving(true)
+    setHeaderImageMode(mode) // optimistic — เปลี่ยน UI ก่อน ไม่ต้องรอ round-trip
+    try {
+      const { error } = await supabase
+        .from('municipalities').update({ header_image_mode: mode }).eq('id', tenant.id)
+      if (error) throw error
+      patchTenant({ header_image_mode: mode })
+    } catch (err) {
+      setHeaderImageMode(tenant?.header_image_mode || 'background')
+      alert('เปลี่ยนโหมดไม่สำเร็จ: ' + err.message)
+    } finally {
+      setHeaderModeSaving(false)
+    }
+  }
+
 
 
   async function saveQrLabel(e) {
@@ -265,6 +304,7 @@ export default function SystemSettingsAdmin() {
     address, setAddress, phone, setPhone, websiteUrl, setWebsiteUrl, email, setEmail, saveContactInfo,
     logoPreview, logoUploading, logoRef, handleLogoUpload,
     headerPreview, headerUploading, headerRef, handleHeaderUpload, removeHeaderImage,
+    headerImageMode, headerModeSaving, setHeaderMode,
     qrPreview, qrUploading, qrRef, handleQrUpload, qrLabel, setQrLabel, qrLabelSaving, saveQrLabel,
   }
   const ActiveComponent = SETTINGS_TABS.find(t => t.key === activeTab)?.Component ?? GeneralInfoTab
@@ -442,6 +482,7 @@ function GeneralInfoTab({
 function BrandingTab({
   tenant, savedSection,
   headerPreview, headerUploading, headerRef, handleHeaderUpload, removeHeaderImage,
+  headerImageMode, headerModeSaving, setHeaderMode,
 }) {
   return (
     <div className="space-y-6">
@@ -450,9 +491,34 @@ function BrandingTab({
         <h2 className="text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
           <Wallpaper size={15} /> ภาพพื้นหลัง Header
         </h2>
-        <p className="text-xs text-gray-400 mb-5 leading-relaxed">
-          แสดงเป็นพื้นหลังแถบ header บนสุดของแอป · แนะนำรูปแนวนอน 1600×400px ขึ้นไป · ระบบจะเพิ่ม gradient overlay อัตโนมัติให้อ่านข้อความได้
+        <p className="text-xs text-gray-400 mb-4 leading-relaxed">
+          แสดงเป็นพื้นหลังแถบ header บนสุดของแอป · แนะนำรูปแนวนอน 1600×400px ขึ้นไป
         </p>
+
+        {/* โหมดการแสดงผล — บางธีมต้องการภาพเต็มสีสันแทนที่จะเป็นพื้นหลังจางๆ ทับด้วยตัวหนังสือ */}
+        <div className="mb-5">
+          <p className="text-xs font-semibold text-gray-500 mb-1.5">รูปแบบการแสดงผล</p>
+          <div className="inline-flex rounded-xl border border-gray-200 p-1 bg-gray-50">
+            <button type="button" disabled={headerModeSaving} onClick={() => setHeaderMode('background')}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
+              style={headerImageMode === 'background'
+                ? { backgroundColor: 'var(--color-primary)', color: '#fff' }
+                : { color: '#6b7280' }}>
+              พื้นหลัง (มีเงาคลุม)
+            </button>
+            <button type="button" disabled={headerModeSaving} onClick={() => setHeaderMode('full')}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
+              style={headerImageMode === 'full'
+                ? { backgroundColor: 'var(--color-primary)', color: '#fff' }
+                : { color: '#6b7280' }}>
+              ภาพเต็มสีสัน (ไม่มีเงาคลุม)
+            </button>
+          </div>
+          <p className="text-[11px] text-gray-400 mt-1.5 leading-relaxed">
+            "พื้นหลัง" เหมาะกับภาพที่มีตัวหนังสือ/โลโก้ อปท. ทับอยู่ด้านบน · "ภาพเต็มสีสัน" เหมาะกับธีมที่ต้องการโชว์ภาพจริงไม่มีอะไรบัง
+          </p>
+        </div>
+
         <div className="flex items-start gap-5">
           <div className="shrink-0">
             <div className="w-48 h-20 rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden">
@@ -637,7 +703,7 @@ function BannerManager({ tenant }) {
     supabase.from('banners').select('id, image_url, sort_order, object_position')
       .eq('municipality_id', tenant.id).eq('is_active', true)
       .order('sort_order')
-      .then(({ data }) => setBanners(data ?? []))
+      .then(({ data }) => setBanners((data ?? []).map(b => ({ ...b, image_url: toReliableImageUrl(b.image_url) }))))
       .catch(() => {})
   }, [tenant?.id])
 

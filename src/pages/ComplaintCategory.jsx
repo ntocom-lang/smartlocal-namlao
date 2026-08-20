@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import { CategoryIcon } from '../lib/categoryIcon'
 
 
 const FALLBACK_ICON = {
@@ -21,12 +22,12 @@ const FALLBACK_ICON = {
 }
 
 const EMOJI_OVERRIDE = {
-  light: '⚡', drain: '🚧', trash: '♻️', waste_water: '💧',
-  canal: '🏞️', road: '🛤️', noise: '🔊', flood: '🌊',
-  building: '🏢', mosquito: '🧴', grievance: '📣', corruption: '🚨',
-  tax: '🧾', tree: '🌲', water_supply: '💧', animals: '🐾',
-  phone_complaint: '☎️', borrow_equipment: '🔧', fire: '🔥',
-  suction: '🚽', manhole: '⚙️', pollution: '🌫️', disease: '🏥', other: '❓',
+  light: '💡', drain: '🕳️', trash: '🗑️', waste_water: '💧',
+  canal: '🏞️', road: '🛣️', noise: '📢', flood: '🌊',
+  building: '🏗️', mosquito: '🦟', grievance: '📣', corruption: '⚖️',
+  tax: '📋', tree: '🌳', water_supply: '🚿', animals: '🐕',
+  phone_complaint: '📞', borrow_equipment: '📦', fire: '🔥',
+  suction: '🚛', manhole: '⚙️', pollution: '🌫️', disease: '🏥', other: '📝',
 }
 
 const FALLBACK_COLOR = {
@@ -127,9 +128,8 @@ export default function ComplaintCategory() {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4">
             {categories.map((cat) => {
-              const dbEmoji = cat.emoji || ''
-              const isImageUrl = dbEmoji.startsWith('http') || dbEmoji.startsWith('/') || dbEmoji.startsWith('data:')
-              const hasDbEmoji = !isImageUrl && dbEmoji.trim() !== ''
+              const dbEmoji = (cat.emoji || '').trim()
+              const resolvedEmoji = dbEmoji || EMOJI_OVERRIDE[cat.value] || ''
               const IconComponent = FALLBACK_ICON[cat.value] || HelpCircle
               const iconBg = FALLBACK_COLOR[cat.value] || '#475569'
 
@@ -139,12 +139,8 @@ export default function ComplaintCategory() {
 
                   <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 transition-transform duration-300 group-hover:scale-110"
                     style={{ backgroundColor: iconBg }}>
-                    {isImageUrl ? (
-                      <img src={dbEmoji} alt={cat.label} className="w-9 h-9 object-contain" />
-                    ) : hasDbEmoji ? (
-                      <span className="text-[1.8rem] leading-none select-none">{dbEmoji}</span>
-                    ) : EMOJI_OVERRIDE[cat.value] ? (
-                      <span className="text-[1.8rem] leading-none select-none">{EMOJI_OVERRIDE[cat.value]}</span>
+                    {resolvedEmoji ? (
+                      <CategoryIcon emoji={resolvedEmoji} size={36} />
                     ) : (
                       <IconComponent size={32} color="white" strokeWidth={2} />
                     )}

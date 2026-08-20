@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { toReliableImageUrl } from '../lib/driveStorage'
 
 const TenantContext = createContext(null)
 
@@ -180,7 +181,7 @@ export function TenantProvider({ children }) {
       try {
         const { data, error: dbError } = await supabase
           .from('municipalities')
-          .select('id, slug, name, org_type, province, district, theme_color, layout_theme, ui_style, theme_presets, show_posts_highlight, logo_url, header_image_url, developer_name, website_url, facebook_url, line_oa_url, phone, address, email, latitude, longitude, system_name, system_subtitle, pwa_short_name, enabled_modules, telegram_group_id, promptpay_id, fee_schedule, qr_code_url, qr_label, bank_name, bank_account_no, bank_account_name')
+          .select('id, slug, name, org_type, province, district, theme_color, layout_theme, ui_style, theme_presets, show_posts_highlight, logo_url, header_image_url, header_image_mode, developer_name, website_url, facebook_url, line_oa_url, phone, address, email, latitude, longitude, system_name, system_subtitle, pwa_short_name, enabled_modules, telegram_group_id, promptpay_id, fee_schedule, qr_code_url, qr_label, bank_name, bank_account_no, bank_account_name')
           .eq('slug', slug)
           .single()
 
@@ -205,7 +206,16 @@ export function TenantProvider({ children }) {
           .select('google_maps_api_key')
           .eq('id', data.id)
           .maybeSingle()
-        const resolvedTenant = googleConfigError ? data : { ...data, ...googleConfig }
+        const merged = googleConfigError ? data : { ...data, ...googleConfig }
+        // แก้ logo_url/header_image_url ที่อาจเป็น URL Drive แบบเก่า (uc?id= หรือ lh3...=s0) ที่ถูก
+        // Chromium/Edge บล็อกด้วย ORB เวลาฝังเป็น <img> — ดู toReliableImageUrl ใน driveStorage.js
+        // แก้ตรงจุดเดียวตรงนี้ ครอบคลุมทุกที่ในแอปที่อ่าน tenant.logo_url / tenant.header_image_url
+        // จาก useTenant() (Header/BottomNav ของทุกธีม, PWA manifest ฯลฯ) โดยไม่ต้องแก้ทีละไฟล์
+        const resolvedTenant = {
+          ...merged,
+          logo_url: toReliableImageUrl(merged.logo_url),
+          header_image_url: toReliableImageUrl(merged.header_image_url),
+        }
 
         setTenant(resolvedTenant)
         setTerminology(TERMINOLOGY[resolvedTenant.org_type] ?? TERMINOLOGY['อบต.'])
