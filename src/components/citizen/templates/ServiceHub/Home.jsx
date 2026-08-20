@@ -9,6 +9,7 @@ import PostsHighlight from '../../../../components/home/PostsHighlight'
 import TourismSection from '../../../../components/home/TourismSection'
 import DataCenterBanner from '../../../../components/home/DataCenterBanner'
 import SmartCityBanner from '../../../../components/home/SmartCityBanner'
+import { CategoryIcon } from '../../../../lib/categoryIcon'
 
 // รายการ "งานบริการประชาชน" จริง — ใช้ชุดข้อมูลเดียวกับ EServiceBlock ของธีมอื่นๆ (EcoFriendly ฯลฯ)
 // คือประเภทคำร้องขอเอกสาร ไม่ใช่เรื่องร้องเรียน (นั่นเป็นของ ComplaintBand คนละส่วนกัน) ผูกกับ
@@ -67,6 +68,7 @@ function HeroBanner({ tenant, rounded = 'rounded-2xl' }) {
 }
 
 function EServiceGrid({ docTypes, rounded = 'rounded-2xl' }) {
+  const { tenant } = useTenant()
   return (
     <div className={`overflow-hidden shadow-sm p-4 sm:p-5 ${rounded}`}
       style={{ background: 'linear-gradient(135deg, #306eb8 0%, #1d4aa0 100%)' }}>
@@ -86,7 +88,7 @@ function EServiceGrid({ docTypes, rounded = 'rounded-2xl' }) {
         {docTypes.slice(0, 6).map(({ value, label, emoji }) => (
           <Link key={value} to={`/doc-request?type=${value}`}
             className="flex flex-col items-center gap-1 p-1.5 sm:p-2 rounded-xl bg-white hover:bg-gray-50 active:scale-95 transition-all shadow-sm">
-            <span className="text-lg sm:text-xl leading-none">{emoji}</span>
+            <CategoryIcon emoji={emoji} size={22} style={tenant?.category_icon_style} />
             <p className="text-[10px] sm:text-[11px] font-bold text-gray-700 text-center leading-tight line-clamp-2">{label}</p>
           </Link>
         ))}

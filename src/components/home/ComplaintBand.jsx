@@ -119,7 +119,7 @@ export default function ComplaintBand({ variant = 'warm' }) {
                     boxShadow: clean ? `0 2px 6px ${color}20` : `0 3px 10px ${color}30, inset 0 1px 0 rgba(255,255,255,0.5)`,
                   }}>
                   {clean
-                    ? <CategoryIcon emoji={emoji} size={44} />
+                    ? <CategoryIcon emoji={emoji} size={44} style={tenant?.category_icon_style} />
                     : <span className="text-[1.6rem] leading-none select-none">{emoji}</span>}
                 </div>
                 <p className={`${titleColor} text-[11px] font-semibold text-center w-full leading-tight ${clean ? '' : 'drop-shadow-sm'} line-clamp-2`}>{cat.label}</p>
@@ -146,7 +146,7 @@ export default function ComplaintBand({ variant = 'warm' }) {
                     boxShadow: clean ? `0 2px 6px ${color}20` : `0 2px 8px ${color}25, inset 0 1px 0 rgba(255,255,255,0.5)`,
                   }}>
                   {clean
-                    ? <CategoryIcon emoji={emoji} size={24} />
+                    ? <CategoryIcon emoji={emoji} size={24} style={tenant?.category_icon_style} />
                     : <span className="text-[1.4rem] leading-none select-none">{emoji}</span>}
                 </div>
                 <p className={`${titleColor} text-[12px] font-semibold text-center leading-tight`}>{cat.label}</p>

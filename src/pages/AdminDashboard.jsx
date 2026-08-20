@@ -2238,7 +2238,7 @@ const EMOJI_GROUPS = [
   { label: 'ทั่วไป', emojis: ['❓','✅','❗','⚠️','🚨','🚩','🔴','🟡','🟢','⭐','🔹','🔸','📊','💼','📮','🏷️','🎫','📮'] },
 ]
 
-function EmojiPickerModal({ cat, onSelect, onClose }) {
+function EmojiPickerModal({ cat, onSelect, onClose, iconStyle }) {
   const [search, setSearch] = useState('')
   const [customInput, setCustomInput] = useState(cat?.emoji || '')
 
@@ -2254,7 +2254,7 @@ function EmojiPickerModal({ cat, onSelect, onClose }) {
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
           <div className="flex items-center gap-2">
-            <CategoryIcon emoji={customInput || cat?.emoji || '📝'} size={26} />
+            <CategoryIcon emoji={customInput || cat?.emoji || '📝'} size={26} style={iconStyle} />
             <div>
               <p className="text-sm font-bold text-gray-800">เลือกไอคอน</p>
               <p className="text-xs text-gray-400">{cat?.label}</p>
@@ -2412,7 +2412,7 @@ function SlaInput({ value, onCommit }) {
   )
 }
 
-function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleActive, onEditEmoji, techGroups = [], techId = '', slaDays = 3, onTechChange, onSlaChange, savingAssign = false }) {
+function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleActive, onEditEmoji, iconStyle, techGroups = [], techId = '', slaDays = 3, onTechChange, onSlaChange, savingAssign = false }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(cat.label)
@@ -2459,7 +2459,7 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
           title="เปลี่ยนไอคอน"
           className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 hover:ring-2 hover:ring-blue-400 transition-all active:scale-90"
           style={{ backgroundColor: cat.color }}
-        ><CategoryIcon emoji={cat.emoji} size={18} /></button>
+        ><CategoryIcon emoji={cat.emoji} size={18} style={iconStyle} /></button>
 
         {/* label — inline edit */}
         {isEditing ? (
@@ -2519,7 +2519,7 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
   )
 }
 
-function SortableDesktopRow({ cat, idx, draft, assign, isSaving, techGroups = [], onSetDraft, onSaveRow, onCancelRow, onStartLabelEdit, onToggleActive, onDeleteCat, onEditEmoji }) {
+function SortableDesktopRow({ cat, idx, draft, assign, isSaving, techGroups = [], onSetDraft, onSaveRow, onCancelRow, onStartLabelEdit, onToggleActive, onDeleteCat, onEditEmoji, iconStyle }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
   const color = COLOR_PRESETS[cat.color_idx ?? 0] ?? COLOR_PRESETS[0]
   const editingLabel = !!draft?.editingLabel
@@ -2561,7 +2561,7 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, techGroups = []
               onClick={() => onEditEmoji?.(cat)}
               title="เปลี่ยนไอคอน"
               className="hover:bg-gray-100 rounded-lg p-1 transition-colors active:scale-90 shrink-0"
-            ><CategoryIcon emoji={cat.emoji} size={22} /></button>
+            ><CategoryIcon emoji={cat.emoji} size={22} style={iconStyle} /></button>
             <span className="font-medium text-gray-800">{cat.label}</span>
           </div>
         )}
@@ -2569,7 +2569,7 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, techGroups = []
       <td className="px-4 py-3">
         <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full"
           style={{ backgroundColor: color.color, color: color.textColor }}>
-          <CategoryIcon emoji={cat.emoji} size={13} /> {cat.label}
+          <CategoryIcon emoji={cat.emoji} size={13} style={iconStyle} /> {cat.label}
         </span>
       </td>
       <td className="px-3 py-2.5">
@@ -2642,6 +2642,9 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, techGroups = []
 }
 
 function CategoryManager({ tenant }) {
+  const { patchTenant } = useTenant()
+  const [iconStyle, setIconStyle] = useState(tenant?.category_icon_style || 'color')
+  const [iconStyleSaving, setIconStyleSaving] = useState(false)
   const [cats, setCats] = useState([])
   const [techs, setTechs] = useState([])
   const [assignMap, setAssignMap] = useState({}) // { catValue: { technician_id, sla_days } }
@@ -2654,6 +2657,25 @@ function CategoryManager({ tenant }) {
   const [rowDrafts, setRowDrafts] = useState({}) // { catValue: { label?, technician_id?, sla_days?, editingLabel? } }
   const [savingAll, setSavingAll] = useState(false)
   const [iconPickerCat, setIconPickerCat] = useState(null)
+
+  // รูปแบบไอคอนหมวดหมู่ ระดับ อปท. — 'native' emoji ตัวอักษรธรรมดา, 'color' OpenMoji สี (ค่าเริ่มต้น),
+  // 'outline' OpenMoji เส้นขาวดำ (dataset เดียวกับสี คนละโฟลเดอร์ CDN) มีผลกับทุกจุดที่ใช้ CategoryIcon
+  async function setCategoryIconStyle(nextStyle) {
+    if (nextStyle === iconStyle) return
+    setIconStyleSaving(true)
+    setIconStyle(nextStyle) // optimistic
+    try {
+      const { error: err } = await supabase
+        .from('municipalities').update({ category_icon_style: nextStyle }).eq('id', tenant.id)
+      if (err) throw err
+      patchTenant({ category_icon_style: nextStyle })
+    } catch (err) {
+      setIconStyle(tenant?.category_icon_style || 'color')
+      setError('เปลี่ยนรูปแบบไอคอนไม่สำเร็จ: ' + err.message)
+    } finally {
+      setIconStyleSaving(false)
+    }
+  }
 
   async function updateCatEmoji(catId, emoji) {
     if (!emoji?.trim()) return
@@ -2870,6 +2892,7 @@ function CategoryManager({ tenant }) {
           cat={iconPickerCat}
           onSelect={updateCatEmoji}
           onClose={() => setIconPickerCat(null)}
+          iconStyle={iconStyle}
         />
       )}
       <div className="flex items-center justify-between">
@@ -2884,6 +2907,27 @@ function CategoryManager({ tenant }) {
             โหลดค่าเริ่มต้น
           </button>
         )}
+      </div>
+
+      {/* รูปแบบไอคอน — มีผลกับไอคอนหมวดหมู่ทุกจุดที่แสดงผล (ฟอร์มยื่นคำร้อง, หน้าเลือกหมวดหมู่, ที่นี่) */}
+      <div>
+        <p className="text-xs font-semibold text-gray-500 mb-1.5">รูปแบบไอคอน</p>
+        <div className="inline-flex rounded-xl border border-gray-200 p-1 bg-gray-50">
+          {[
+            { key: 'native',  label: 'Emoji ธรรมดา' },
+            { key: 'color',   label: 'สีสัน' },
+            { key: 'outline', label: 'เส้นขอบ' },
+          ].map(opt => (
+            <button key={opt.key} type="button" disabled={iconStyleSaving}
+              onClick={() => setCategoryIconStyle(opt.key)}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
+              style={iconStyle === opt.key
+                ? { backgroundColor: 'var(--color-primary)', color: '#fff' }
+                : { color: '#6b7280' }}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {error && (
@@ -2993,6 +3037,7 @@ function CategoryManager({ tenant }) {
                   <SortableCatItem key={cat.id} cat={cat} idx={idx} total={cats.length}
                     onDelete={deleteCat} onMove={moveCat} onEdit={editCat} onToggleActive={toggleActive}
                     onEditEmoji={setIconPickerCat}
+                    iconStyle={iconStyle}
                     techGroups={techGroups}
                     techId={assignMap[cat.value]?.technician_id ?? ''}
                     slaDays={assignMap[cat.value]?.sla_days ?? 3}
@@ -3038,6 +3083,7 @@ function CategoryManager({ tenant }) {
                         onToggleActive={toggleActive}
                         onDeleteCat={deleteCat}
                         onEditEmoji={setIconPickerCat}
+                        iconStyle={iconStyle}
                       />
                     ))}
                   </tbody>

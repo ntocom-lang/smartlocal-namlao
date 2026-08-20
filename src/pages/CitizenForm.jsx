@@ -11,6 +11,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { useTenant } from '../contexts/TenantContext'
+import { CategoryIcon } from '../lib/categoryIcon'
 import { compressImage } from '../lib/imageUtils'
 import MapPicker from '../components/MapPicker'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
@@ -559,7 +560,7 @@ export default function CitizenForm() {
               border: `1.5px solid ${catColor ? catColor + '45' : '#bfdbfe'}`,
             }}>
             {catEmoji
-              ? <span className="text-xl leading-none select-none">{catEmoji}</span>
+              ? <CategoryIcon emoji={catEmoji} size={24} style={tenant?.category_icon_style} />
               : <CatIcon size={20} strokeWidth={1.5} style={{ color: catColor ?? 'var(--color-primary)' }} />}
           </div>
           <div>

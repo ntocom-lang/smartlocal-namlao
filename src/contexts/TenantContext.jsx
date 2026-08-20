@@ -181,7 +181,7 @@ export function TenantProvider({ children }) {
       try {
         const { data, error: dbError } = await supabase
           .from('municipalities')
-          .select('id, slug, name, org_type, province, district, theme_color, layout_theme, ui_style, theme_presets, show_posts_highlight, logo_url, header_image_url, header_image_mode, developer_name, website_url, facebook_url, line_oa_url, phone, address, email, latitude, longitude, system_name, system_subtitle, pwa_short_name, enabled_modules, telegram_group_id, promptpay_id, fee_schedule, qr_code_url, qr_label, bank_name, bank_account_no, bank_account_name')
+          .select('id, slug, name, org_type, province, district, theme_color, layout_theme, ui_style, theme_presets, show_posts_highlight, logo_url, header_image_url, header_image_mode, category_icon_style, developer_name, website_url, facebook_url, line_oa_url, phone, address, email, latitude, longitude, system_name, system_subtitle, pwa_short_name, enabled_modules, telegram_group_id, promptpay_id, fee_schedule, qr_code_url, qr_label, bank_name, bank_account_no, bank_account_name')
           .eq('slug', slug)
           .single()
 

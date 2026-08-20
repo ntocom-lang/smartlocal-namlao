@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { useNotifications } from '../contexts/NotificationsContext'
 import { useTenant } from '../contexts/TenantContext'
+import { CategoryIcon } from '../lib/categoryIcon'
 import { supabase } from '../lib/supabase'
 
 // ─── constants ────────────────────────────────────────────────────────────────
@@ -200,9 +201,9 @@ export default function NotificationsPage() {
                     }`}
                   >
                     {/* Category icon */}
-                    <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 mt-0.5 text-2xl"
+                    <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 mt-0.5"
                          style={{ backgroundColor: s.bg }}>
-                      {catEmoji}
+                      <CategoryIcon emoji={catEmoji} size={26} style={tenant?.category_icon_style} />
                     </div>
 
                     {/* Content */}

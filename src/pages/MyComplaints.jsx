@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import { CategoryIcon } from '../lib/categoryIcon'
 import { compressImage } from '../lib/imageUtils'
 import { uploadFile, resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef } from '../lib/driveStorage'
 import SatisfactionModal from '../components/SatisfactionModal'
@@ -285,8 +286,8 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange, catLabel = DE
           </button>
 
           <div className="flex items-start gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-2xl shrink-0">
-              {categoryEmoji}
+            <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
+              <CategoryIcon emoji={categoryEmoji} size={28} style={tenant?.category_icon_style} />
             </div>
             <div className="flex-1 min-w-0 pr-10">
               <p className="text-white/70 text-xs font-medium">ประเภทคำร้อง</p>
@@ -682,8 +683,9 @@ export default function MyComplaints() {
                 onClick={() => setSelected(searchResult)}
                 className="bg-gray-50 rounded-2xl border border-gray-100 p-4 cursor-pointer hover:bg-gray-100 transition-colors">
                 <div className="flex items-center justify-between gap-2 mb-1">
-                  <p className="font-bold text-gray-800 text-sm">
-                    {catEmoji[searchResult.category] ?? '📄'} {catLabel[searchResult.category] ?? searchResult.category}
+                  <p className="flex items-center gap-1.5 font-bold text-gray-800 text-sm">
+                    <CategoryIcon emoji={catEmoji[searchResult.category] ?? '📄'} size={16} style={tenant?.category_icon_style} />
+                    {catLabel[searchResult.category] ?? searchResult.category}
                   </p>
                   <StatusBadge status={searchResult.status} />
                 </div>
@@ -763,8 +765,8 @@ export default function MyComplaints() {
                 onClick={() => setSelected(c)}
                 className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 cursor-pointer hover:shadow-md active:scale-[0.99] transition-all">
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 bg-gray-50">
-                    {catEmoji[c.category] ?? '📄'}
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-gray-50">
+                    <CategoryIcon emoji={catEmoji[c.category] ?? '📄'} size={22} style={tenant?.category_icon_style} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2 mb-0.5">

@@ -140,7 +140,7 @@ export default function ComplaintCategory() {
                   <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 transition-transform duration-300 group-hover:scale-110"
                     style={{ backgroundColor: iconBg }}>
                     {resolvedEmoji ? (
-                      <CategoryIcon emoji={resolvedEmoji} size={36} />
+                      <CategoryIcon emoji={resolvedEmoji} size={36} style={tenant?.category_icon_style} />
                     ) : (
                       <IconComponent size={32} color="white" strokeWidth={2} />
                     )}
