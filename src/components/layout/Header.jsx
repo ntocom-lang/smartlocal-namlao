@@ -5,6 +5,7 @@ import WaveFluidHeader from '../citizen/templates/WaveFluid/Header'
 import CivicFriendlyHeader from '../citizen/templates/CivicFriendly/Header'
 import SmartModernHeader from '../citizen/templates/SmartModern/Header'
 import KledkaewHeader from '../citizen/templates/Kledkaew/Header'
+import ServiceHubHeader from '../citizen/templates/ServiceHub/Header'
 
 export default function Header() {
   const { tenant } = useTenant()
@@ -21,6 +22,8 @@ export default function Header() {
       return <SmartModernHeader />
     case 'kledkaew':
       return <KledkaewHeader />
+    case 'service_hub':
+      return <ServiceHubHeader />
     case 'eco_friendly':
     default:
       return <EcoFriendlyHeader />

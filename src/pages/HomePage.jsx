@@ -5,6 +5,7 @@ import WaveFluidHome from '../components/citizen/templates/WaveFluid/Home'
 import CivicFriendlyHome from '../components/citizen/templates/CivicFriendly/Home'
 import SmartModernHome from '../components/citizen/templates/SmartModern/Home'
 import KledkaewHome from '../components/citizen/templates/Kledkaew/Home'
+import ServiceHubHome from '../components/citizen/templates/ServiceHub/Home'
 
 export default function HomePage() {
   const { tenant } = useTenant()
@@ -21,6 +22,8 @@ export default function HomePage() {
       return <SmartModernHome />
     case 'kledkaew':
       return <KledkaewHome />
+    case 'service_hub':
+      return <ServiceHubHome />
     case 'eco_friendly':
     default:
       return <EcoFriendlyHome />

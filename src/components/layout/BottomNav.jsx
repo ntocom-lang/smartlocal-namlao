@@ -5,6 +5,7 @@ import WaveFluidBottomNav from '../citizen/templates/WaveFluid/BottomNav'
 import CivicFriendlyBottomNav from '../citizen/templates/CivicFriendly/BottomNav'
 import SmartModernBottomNav from '../citizen/templates/SmartModern/BottomNav'
 import KledkaewBottomNav from '../citizen/templates/Kledkaew/BottomNav'
+import ServiceHubBottomNav from '../citizen/templates/ServiceHub/BottomNav'
 
 export default function BottomNav() {
   const { tenant } = useTenant()
@@ -21,6 +22,8 @@ export default function BottomNav() {
       return <SmartModernBottomNav />
     case 'kledkaew':
       return <KledkaewBottomNav />
+    case 'service_hub':
+      return <ServiceHubBottomNav />
     case 'eco_friendly':
     default:
       return <EcoFriendlyBottomNav />
