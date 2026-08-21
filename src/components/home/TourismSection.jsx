@@ -117,9 +117,16 @@ export default function TourismSection() {
         </div>
         <div className="backdrop-blur-xl rounded-t-3xl px-4 pt-3 pb-4 border-t border-white/10" style={{ backgroundColor: 'rgba(0,0,0,0.28)' }}>
           {filtered.length === 0 ? (
-            <div className="py-8 text-center">
-              <p className="text-4xl mb-2">{catData?.emoji ?? '🗺️'}</p>
-              <p className="text-white/40 text-sm">ยังไม่มีรายการในหมวดนี้</p>
+            <div className="py-8 flex flex-col items-center text-center">
+              <div className="relative flex items-center justify-center rounded-full mb-3 animate-pulse"
+                   style={{ width: 72, height: 72,
+                            background: `radial-gradient(circle, ${catData?.from ?? '#64748b'}33 0%, transparent 70%)`,
+                            border: `1.5px solid ${catData?.from ?? '#64748b'}55`,
+                            boxShadow: `0 0 28px ${catData?.glow ?? 'rgba(255,255,255,0.1)'}` }}>
+                <span className="text-4xl drop-shadow-lg">{catData?.emoji ?? '🗺️'}</span>
+              </div>
+              <p className="text-white/70 text-sm font-bold">ยังไม่มีข้อมูลในหมวดนี้</p>
+              <p className="text-white/35 text-xs mt-0.5">แอดมินกำลังรวบรวมข้อมูลเพิ่มเติม ✦</p>
             </div>
           ) : (
             <div className="flex flex-col gap-2 mb-3">
@@ -218,8 +225,15 @@ export default function TourismSection() {
         <div className="flex-1 min-w-0">
           {filtered.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center py-6">
-              <p className="text-4xl mb-2">{catData?.emoji ?? '🗺️'}</p>
-              <p className="text-white/40 text-sm">ยังไม่มีรายการในหมวดนี้</p>
+              <div className="relative flex items-center justify-center rounded-full mb-3 animate-pulse"
+                   style={{ width: 80, height: 80,
+                            background: `radial-gradient(circle, ${catData?.from ?? '#64748b'}33 0%, transparent 70%)`,
+                            border: `1.5px solid ${catData?.from ?? '#64748b'}55`,
+                            boxShadow: `0 0 32px ${catData?.glow ?? 'rgba(255,255,255,0.1)'}` }}>
+                <span className="text-5xl drop-shadow-lg">{catData?.emoji ?? '🗺️'}</span>
+              </div>
+              <p className="text-white/70 text-sm font-bold">ยังไม่มีข้อมูลในหมวดนี้</p>
+              <p className="text-white/35 text-xs mt-0.5">แอดมินกำลังรวบรวมข้อมูลเพิ่มเติม ✦</p>
             </div>
           ) : (
             <div className="grid grid-cols-3 gap-2.5 h-full">

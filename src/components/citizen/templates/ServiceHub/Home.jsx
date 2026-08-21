@@ -161,27 +161,6 @@ export default function ServiceHubHome() {
         <TourismSection />
       </div>
 
-      <div className="px-3 sm:px-4 lg:px-6 py-4 max-w-[1440px] mx-auto flex flex-wrap gap-2">
-        {tenant?.facebook_url && (
-          <a href={tenant.facebook_url} target="_blank" rel="noopener noreferrer"
-            className="flex-1 min-w-35 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white"
-            style={{ backgroundColor: '#1877f2' }}>
-            💬 แชทผ่าน Facebook
-          </a>
-        )}
-        {tenant?.line_oa_url && (
-          <a href={tenant.line_oa_url} target="_blank" rel="noopener noreferrer"
-            className="flex-1 min-w-35 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white"
-            style={{ backgroundColor: '#06c755' }}>
-            💬 แชทผ่าน LINE
-          </a>
-        )}
-      </div>
-
-      <div className="text-center text-[11px] text-gray-400 pb-6 px-4">
-        Copyright © {new Date().getFullYear()}.{tenant?.website_url ? ` ${tenant.website_url.replace(/^https?:\/\//, '')}` : ''} สงวนลิขสิทธิ์
-        {tenant?.developer_name && <> · พัฒนาโดย {tenant.developer_name}</>}
-      </div>
     </div>
   )
 }
