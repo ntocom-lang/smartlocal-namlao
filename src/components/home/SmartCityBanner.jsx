@@ -4,7 +4,7 @@ import { MapPin, MapPinned, ChevronRight } from 'lucide-react'
 
 // แบนเนอร์ "[ชื่อ อปท.] SMART CITY" — ภาพแผนที่ผังเมือง isometric 3 มิติ + อาคารเล็กๆ + หมุด วาดเองล้วนๆ
 // ด้วย SVG + ไอคอน MapPin จาก lucide-react (MIT license, เป็น dependency เดิมของโปรเจกต์อยู่แล้ว)
-// ไม่ใช้ภาพสำเร็จรูป/ภาพสต็อกจากที่ไหนเลย เนื้อหา/ลิงก์ชี้ไปที่ระบบ GIS ของเราเองที่มีจริง (/data-center)
+// ไม่ใช้ภาพสำเร็จรูป/ภาพสต็อกจากที่ไหนเลย เนื้อหา/ลิงก์ชี้ไปที่ระบบ GIS ของเราเองที่มีจริง (/data-center/public)
 //
 // ระบบพิกัด isometric มาตรฐาน (2:1): grid cell (col, row) แต่ละใบเป็นสี่เหลี่ยมข้าวหลามตัด (diamond)
 //   isoX = originX + (col - row) * (tileW / 2)
@@ -80,7 +80,7 @@ export default function SmartCityBanner() {
   const photoUrl = tenant?.smart_city_image_url
 
   return (
-    <button onClick={() => navigate('/data-center')}
+    <button onClick={() => navigate('/data-center/public')}
       className="w-full text-left relative rounded-2xl overflow-hidden shadow-lg active:scale-[0.98] transition-transform"
       style={{ background: photoUrl ? undefined : 'linear-gradient(180deg, #0b1a3a 0%, #14285c 55%, #1c3a7a 100%)' }}>
       {photoUrl ? (

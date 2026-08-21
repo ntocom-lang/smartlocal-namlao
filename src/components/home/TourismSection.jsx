@@ -57,11 +57,7 @@ export default function TourismSection() {
   const subs = filtered.slice(1, 3)
 
   const shortName = tenant?.name
-    ?.replace('เทศบาลตำบล', '')
-    ?.replace('เทศบาลเมือง', '')
-    ?.replace('เทศบาลนคร', '')
-    ?.replace('เทศบาล', '')
-    ?.replace('ตำบล', '')
+    ?.replace(/^(องค์การบริหารส่วนตำบล|เทศบาลตำบล|เทศบาลเมือง|เทศบาลนคร|เทศบาล)/, '')
     ?.trim() || 'ของเรา'
 
   return (
