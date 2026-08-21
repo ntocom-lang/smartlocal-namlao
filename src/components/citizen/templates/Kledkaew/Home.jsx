@@ -6,6 +6,7 @@ import PostsHighlight from '../../../../components/home/PostsHighlight'
 import MiniEventCalendar from '../../../../components/MiniEventCalendar'
 import StaffSection from '../../../../components/home/StaffSection'
 import SmartCityBanner from '../../../../components/home/SmartCityBanner'
+import { CategoryIcon } from '../../../../lib/categoryIcon'
 import { useNavigate } from 'react-router-dom'
 
 
@@ -149,14 +150,10 @@ export default function Home() {
           <div className="grid grid-cols-3 gap-3 relative z-10">
             {cats.slice(0, 6).map((cat) => {
               const emoji = cat.emoji || CAT_FALLBACK_EMOJI[cat.value] || '📋'
-              const isImageUrl = emoji.startsWith('http') || emoji.startsWith('/') || emoji.startsWith('data:')
               return (
                 <Link to={`/request?category=${cat.value}`} key={cat.value} className="flex flex-col items-center group">
                   <div className="w-full h-20 rounded-2xl bg-linear-to-b from-emerald-50 to-emerald-100 border border-emerald-100 shadow-sm flex items-center justify-center transition-transform group-active:scale-95">
-                    {isImageUrl
-                      ? <img src={emoji} alt={cat.label} className="w-14 h-14 object-contain" />
-                      : <span className="text-[3rem] leading-none select-none">{emoji}</span>
-                    }
+                    <CategoryIcon emoji={emoji} size={44} style={tenant?.category_icon_style} />
                   </div>
                   <span className="text-[13px] font-bold text-gray-700 mt-2 text-center leading-tight line-clamp-2">{cat.label}</span>
                 </Link>
