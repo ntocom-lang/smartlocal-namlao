@@ -5,6 +5,7 @@ import { supabase } from '../../../../lib/supabase'
 import PostsHighlight from '../../../../components/home/PostsHighlight'
 import MiniEventCalendar from '../../../../components/MiniEventCalendar'
 import StaffSection from '../../../../components/home/StaffSection'
+import SmartCityBanner from '../../../../components/home/SmartCityBanner'
 import { useNavigate } from 'react-router-dom'
 
 
@@ -170,6 +171,10 @@ export default function Home() {
           </div>
           
         </div>
+      </div>
+
+      <div className="px-4 mt-4 max-w-6xl mx-auto">
+        <SmartCityBanner />
       </div>
 
       <div className="px-4 mt-4 max-w-6xl mx-auto">

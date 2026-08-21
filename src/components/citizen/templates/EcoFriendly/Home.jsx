@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import WeatherWidget from '../../../../components/home/WeatherWidget'
 import ComplaintBand from '../../../../components/home/ComplaintBand'
-import DataCenterBanner from '../../../../components/home/DataCenterBanner'
+import SmartCityBanner from '../../../../components/home/SmartCityBanner'
 
 // ── section order per layout ──────────────────────────────────────────
 const LAYOUT_ORDER = {
@@ -197,7 +197,7 @@ export default function HomePage() {
         <div className="grid lg:grid-cols-12 gap-2 lg:gap-4">
           <div className="order-2 lg:order-1 lg:col-span-8 space-y-2">
             <BannerSlider />
-            <DataCenterBanner />
+            <SmartCityBanner />
           </div>
           <aside className="order-1 lg:order-2 lg:col-span-4 flex flex-col gap-3"
             aria-label="คุณภาพอากาศ พยากรณ์อากาศ และข่าวสาร">

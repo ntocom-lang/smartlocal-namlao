@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
-import DataCenterBanner from './DataCenterBanner'
+import SmartCityBanner from './SmartCityBanner'
 
 function IconBox({ item, sizeCls, iconSizeMd }) {
   const bg = item.bgColor ?? 'rgba(255,255,255,0.92)'
@@ -53,8 +53,8 @@ export default function ShortcutBand() {
 
   return (
     <div className="space-y-3">
-      {/* 📊 ศูนย์ข้อมูลดิจิทัล (Digital Data Center) Banner */}
-      <DataCenterBanner />
+      {/* 📊 ศูนย์ข้อมูลดิจิทัล / GIS Banner */}
+      <SmartCityBanner />
 
       <div className="rounded-2xl overflow-hidden shadow-xl relative"
            style={{ background: 'linear-gradient(135deg, #0369a1 0%, #0ea5e9 50%, #7dd3fc 100%)' }}>
