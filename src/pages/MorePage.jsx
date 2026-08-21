@@ -522,7 +522,7 @@ function NamlaoMorePage() {
             icon={ClipboardList}
             iconBg="bg-orange-50"
             iconColor="text-orange-500"
-            label="แจ้งเหตุ/แจ้งซ่อม"
+            label={tenant?.ui_style === 'service_hub' ? 'ร้องเรียน/ร้องทุกข์' : 'แจ้งเหตุ/แจ้งซ่อม'}
             desc="แจ้งซ่อม / ขอน้ำ / แจ้งเหตุสิ่งแวดล้อม"
             href="/complaint"
           />

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2, Wallpaper } from 'lucide-react'
+import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2, Wallpaper, MapPinned } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { uploadFile, toReliableImageUrl } from '../../lib/driveStorage'
 import { useTenant } from '../../contexts/TenantContext'
@@ -27,9 +27,33 @@ export default function SystemSettingsAdmin() {
   const [headerPreview, setHeaderPreview] = useState(() => tenant?.header_image_url || null)
   const [headerImageMode, setHeaderImageMode] = useState(() => tenant?.header_image_mode || 'background')
   const [headerModeSaving, setHeaderModeSaving] = useState(false)
+  const [smartCityUploading, setSmartCityUploading] = useState(false)
+  const [smartCityPreview, setSmartCityPreview] = useState(() => tenant?.smart_city_image_url || null)
+  const [tourismBgUploading, setTourismBgUploading] = useState(false)
+  const [tourismBgPreview, setTourismBgPreview] = useState(() => toReliableImageUrl(tenant?.tourism_background_url) || null)
   const logoRef = useRef()
   const qrRef = useRef()
   const headerRef = useRef()
+  const smartCityRef = useRef()
+  const tourismBgRef = useRef()
+
+  useEffect(() => {
+    let cancelled = false
+    if (!tenant?.id) return undefined
+
+    supabase
+      .from('municipalities')
+      .select('tourism_background_url')
+      .eq('id', tenant.id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!cancelled && !error) {
+          setTourismBgPreview(toReliableImageUrl(data?.tourism_background_url) || null)
+        }
+      })
+
+    return () => { cancelled = true }
+  }, [tenant?.id])
 
   async function saveSystemName(e) {
     e.preventDefault()
@@ -274,7 +298,128 @@ export default function SystemSettingsAdmin() {
     }
   }
 
+  async function handleSmartCityUpload(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const blobUrl = URL.createObjectURL(file)
+    setSmartCityPreview(blobUrl)
+    setSmartCityUploading(true)
+    let publicUrl = null
+    try {
+      const blob = await resizeImage(file, 1600)
+      const { url, error: upErr } = await uploadFile('municipality-assets', blob, {
+        subject: 'smart-city',
+        filename: `smart-city-${tenant.slug}.jpg`,
+        municipality: tenant?.slug,
+      })
+      if (upErr) throw upErr
+      publicUrl = `${url}&v=${Date.now()}`
+      const { data: updatedRows, error: dbErr } = await supabase
+        .from('municipalities')
+        .update({ smart_city_image_url: publicUrl })
+        .eq('id', tenant.id)
+        .select('id')
+      if (dbErr) throw dbErr
+      if (!updatedRows?.length) throw new Error('RLS block — ไม่มีสิทธิ์ update municipalities')
+      setSmartCityPreview(publicUrl)
+      patchTenant({ smart_city_image_url: publicUrl })
+      setSavedSection('smartcity')
+      setTimeout(() => setSavedSection(null), 2500)
+    } catch (err) {
+      if (publicUrl) {
+        setSmartCityPreview(publicUrl)
+        alert('อัปโหลดไฟล์สำเร็จ แต่บันทึกลงฐานข้อมูลไม่ได้: ' + err.message)
+      } else {
+        setSmartCityPreview(tenant?.smart_city_image_url || null)
+        alert('อัปโหลดภาพไม่สำเร็จ: ' + err.message)
+      }
+    } finally {
+      setSmartCityUploading(false)
+      e.target.value = ''
+    }
+  }
 
+  async function removeSmartCityImage() {
+    if (!confirm('ลบภาพพื้นหลัง SMART CITY ออก? (จะกลับไปใช้ภาพผังเมืองที่วาดเองแทน)')) return
+    const { error } = await supabase
+      .from('municipalities')
+      .update({ smart_city_image_url: null })
+      .eq('id', tenant.id)
+    if (error) { alert('ลบไม่สำเร็จ: ' + error.message); return }
+    setSmartCityPreview(null)
+    patchTenant({ smart_city_image_url: null })
+  }
+
+  async function handleTourismBgUpload(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const supportedType = ['image/jpeg', 'image/png', 'image/webp'].includes(file.type)
+      || (!file.type && /\.(jpe?g|png|webp)$/i.test(file.name))
+    if (!supportedType) {
+      alert('รองรับเฉพาะไฟล์ JPG, PNG และ WebP')
+      e.target.value = ''
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('ไฟล์มีขนาดเกิน 5 MB กรุณาลดขนาดรูปก่อนอัปโหลด')
+      e.target.value = ''
+      return
+    }
+
+    const blobUrl = URL.createObjectURL(file)
+    setTourismBgPreview(blobUrl)
+    setTourismBgUploading(true)
+    let publicUrl = null
+    try {
+      const blob = await resizeImage(file, 1600)
+      const { url, error: upErr } = await uploadFile('municipality-assets', blob, {
+        subject: 'tourism-backgrounds',
+        filename: `tourism-background-${tenant.slug}.png`,
+        municipality: tenant?.slug,
+      })
+      if (upErr) throw upErr
+      if (!url) throw new Error('ระบบอัปโหลดไม่ส่ง URL ของรูปภาพกลับมา')
+      publicUrl = `${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}`
+      const { data: updatedRows, error: dbErr } = await supabase
+        .from('municipalities')
+        .update({ tourism_background_url: publicUrl })
+        .eq('id', tenant.id)
+        .select('id')
+      if (dbErr) throw dbErr
+      if (!updatedRows?.length) throw new Error('RLS block — ไม่มีสิทธิ์ update municipalities')
+
+      const reliableUrl = toReliableImageUrl(publicUrl)
+      setTourismBgPreview(reliableUrl)
+      patchTenant({ tourism_background_url: publicUrl })
+      setSavedSection('tourismBg')
+      setTimeout(() => setSavedSection(null), 2500)
+    } catch (err) {
+      if (publicUrl) {
+        setTourismBgPreview(toReliableImageUrl(publicUrl))
+        alert('อัปโหลดไฟล์สำเร็จ แต่บันทึกลงฐานข้อมูลไม่ได้: ' + err.message)
+      } else {
+        setTourismBgPreview(toReliableImageUrl(tenant?.tourism_background_url) || null)
+        alert('อัปโหลดภาพพื้นหลังท่องเที่ยวไม่สำเร็จ: ' + err.message)
+      }
+    } finally {
+      URL.revokeObjectURL(blobUrl)
+      setTourismBgUploading(false)
+      e.target.value = ''
+    }
+  }
+
+  async function removeTourismBgImage() {
+    if (!confirm('ลบภาพพื้นหลังท่องเที่ยวออก? (ระบบจะกลับไปใช้ภาพเริ่มต้น)')) return
+    const { data: updatedRows, error } = await supabase
+      .from('municipalities')
+      .update({ tourism_background_url: null })
+      .eq('id', tenant.id)
+      .select('id')
+    if (error) { alert('ลบไม่สำเร็จ: ' + error.message); return }
+    if (!updatedRows?.length) { alert('ลบไม่สำเร็จ: ไม่มีสิทธิ์แก้ไขข้อมูลเทศบาล'); return }
+    setTourismBgPreview(null)
+    patchTenant({ tourism_background_url: null })
+  }
 
   async function saveQrLabel(e) {
     e.preventDefault()
@@ -305,6 +450,8 @@ export default function SystemSettingsAdmin() {
     logoPreview, logoUploading, logoRef, handleLogoUpload,
     headerPreview, headerUploading, headerRef, handleHeaderUpload, removeHeaderImage,
     headerImageMode, headerModeSaving, setHeaderMode,
+    smartCityPreview, smartCityUploading, smartCityRef, handleSmartCityUpload, removeSmartCityImage,
+    tourismBgPreview, tourismBgUploading, tourismBgRef, handleTourismBgUpload, removeTourismBgImage,
     qrPreview, qrUploading, qrRef, handleQrUpload, qrLabel, setQrLabel, qrLabelSaving, saveQrLabel,
   }
   const ActiveComponent = SETTINGS_TABS.find(t => t.key === activeTab)?.Component ?? GeneralInfoTab
@@ -483,6 +630,8 @@ function BrandingTab({
   tenant, savedSection,
   headerPreview, headerUploading, headerRef, handleHeaderUpload, removeHeaderImage,
   headerImageMode, headerModeSaving, setHeaderMode,
+  smartCityPreview, smartCityUploading, smartCityRef, handleSmartCityUpload, removeSmartCityImage,
+  tourismBgPreview, tourismBgUploading, tourismBgRef, handleTourismBgUpload, removeTourismBgImage,
 }) {
   return (
     <div className="space-y-6">
@@ -549,6 +698,97 @@ function BrandingTab({
               <button onClick={removeHeaderImage}
                 className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-600 transition-colors">
                 ลบภาพออก
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── ภาพพื้นหลัง SMART CITY ── */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <h2 className="text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
+          <MapPinned size={15} /> ภาพพื้นหลัง SMART CITY
+        </h2>
+        <p className="text-xs text-gray-400 mb-5 leading-relaxed">
+          แสดงเป็นพื้นหลังแบนเนอร์ "SMART CITY" ในหน้าแรก (thungkaew-Theme) · ไม่อัปโหลดจะใช้ภาพผังเมืองที่ระบบวาดเองแทน · แนะนำรูปแนวนอน 1200×800px ขึ้นไป
+        </p>
+        <div className="flex items-start gap-5">
+          <div className="shrink-0">
+            <div className="w-40 h-28 rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden">
+              {smartCityPreview
+                ? <img src={smartCityPreview} alt="SMART CITY" className="w-full h-full object-cover" />
+                : <div className="flex flex-col items-center gap-1 text-gray-300">
+                    <MapPinned size={24} />
+                    <span className="text-[10px]">ใช้ภาพวาดเอง</span>
+                  </div>
+              }
+            </div>
+            {savedSection === 'smartcity' && (
+              <p className="flex items-center gap-1 text-xs text-emerald-600 mt-2 justify-center">
+                <CheckCircle2 size={12} /> บันทึกสำเร็จ
+              </p>
+            )}
+          </div>
+          <div className="flex-1 space-y-2">
+            <p className="text-xs text-gray-500 leading-relaxed">รองรับ JPG · PNG · WebP<br /><span className="text-gray-400">ขนาดไฟล์ไม่เกิน 5 MB</span></p>
+            <input ref={smartCityRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleSmartCityUpload} />
+            <button onClick={() => smartCityRef.current?.click()} disabled={smartCityUploading}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-all whitespace-nowrap"
+              style={{ backgroundColor: 'var(--color-primary)' }}>
+              {smartCityUploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+              {smartCityUploading ? 'กำลังอัปโหลด...' : 'อัปโหลดภาพพื้นหลัง'}
+            </button>
+            {smartCityPreview && (
+              <button onClick={removeSmartCityImage}
+                className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-600 transition-colors">
+                ลบภาพออก (กลับไปใช้ภาพวาดเอง)
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── ภาพพื้นหลังส่วนท่องเที่ยว ── */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <h2 className="text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
+          <ImageIcon size={15} /> ภาพพื้นหลังส่วนเที่ยว กิน พัก OTOP
+        </h2>
+        <p className="text-xs text-gray-400 mb-5 leading-relaxed">
+          แสดงเป็นภาพพื้นหลังขนาดใหญ่ด้านหลังการ์ดแนะนำสถานที่ในหน้าแรก · แนะนำรูปแนวนอนที่มีพื้นที่ว่างสำหรับข้อความ
+        </p>
+        <div className="flex flex-col sm:flex-row items-start gap-5">
+          <div className="shrink-0">
+            <div className="relative w-48 h-32 rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 overflow-hidden">
+              <img
+                src={tourismBgPreview || '/tourism-bg.jpg'}
+                alt="ภาพพื้นหลังส่วนท่องเที่ยว"
+                className="w-full h-full object-cover"
+              />
+              {!tourismBgPreview && (
+                <span className="absolute left-2 bottom-2 px-2 py-1 rounded-lg bg-black/60 text-[10px] font-bold text-white">
+                  ภาพเริ่มต้นของระบบ
+                </span>
+              )}
+            </div>
+            {savedSection === 'tourismBg' && (
+              <p className="flex items-center gap-1 text-xs text-emerald-600 mt-2 justify-center">
+                <CheckCircle2 size={12} /> บันทึกสำเร็จ
+              </p>
+            )}
+          </div>
+          <div className="flex-1 space-y-2">
+            <p className="text-xs text-gray-500 leading-relaxed">รองรับ JPG · PNG · WebP<br /><span className="text-gray-400">ขนาดไฟล์ไม่เกิน 5 MB</span></p>
+            <input ref={tourismBgRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleTourismBgUpload} />
+            <button onClick={() => tourismBgRef.current?.click()} disabled={tourismBgUploading}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 active:scale-95 transition-all whitespace-nowrap"
+              style={{ backgroundColor: 'var(--color-primary)' }}>
+              {tourismBgUploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+              {tourismBgUploading ? 'กำลังอัปโหลด...' : 'อัปโหลดพื้นหลังท่องเที่ยว'}
+            </button>
+            {tourismBgPreview && (
+              <button onClick={removeTourismBgImage}
+                className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-600 transition-colors">
+                ลบภาพออก (กลับไปใช้ภาพเริ่มต้น)
               </button>
             )}
           </div>

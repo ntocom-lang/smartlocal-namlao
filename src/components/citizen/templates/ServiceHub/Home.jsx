@@ -7,7 +7,6 @@ import ComplaintBand from '../../../../components/home/ComplaintBand'
 import ComplaintStatsWidget from '../../../../components/home/ComplaintStatsWidget'
 import PostsHighlight from '../../../../components/home/PostsHighlight'
 import TourismSection from '../../../../components/home/TourismSection'
-import DataCenterBanner from '../../../../components/home/DataCenterBanner'
 import SmartCityBanner from '../../../../components/home/SmartCityBanner'
 import { CategoryIcon } from '../../../../lib/categoryIcon'
 
@@ -70,9 +69,37 @@ function HeroBanner({ tenant, rounded = 'rounded-2xl' }) {
 function EServiceGrid({ docTypes, rounded = 'rounded-2xl' }) {
   const { tenant } = useTenant()
   return (
-    <div className={`overflow-hidden shadow-sm p-4 sm:p-5 ${rounded}`}
-      style={{ background: 'linear-gradient(135deg, #306eb8 0%, #1d4aa0 100%)' }}>
-      <p className="relative inline-block font-black text-2xl sm:text-3xl tracking-tight italic overflow-hidden"
+    <div className={`relative isolate overflow-hidden shadow-lg p-4 sm:p-5 ${rounded}`}
+      style={{
+        background: [
+          'radial-gradient(circle at 88% 12%, rgba(34,211,238,0.42) 0%, transparent 26%)',
+          'radial-gradient(circle at 8% 92%, rgba(139,92,246,0.34) 0%, transparent 32%)',
+          'linear-gradient(135deg, #2563ad 0%, #19458f 52%, #312e81 100%)',
+        ].join(', '),
+      }}>
+      {/* ลาย digital grid + วงโคจรบางๆ เพิ่มมิติ โดยไม่แย่งสายตาจากปุ่มบริการ */}
+      <div className="pointer-events-none absolute inset-0 -z-10 opacity-25"
+        style={{
+          backgroundImage: [
+            'linear-gradient(rgba(255,255,255,0.16) 1px, transparent 1px)',
+            'linear-gradient(90deg, rgba(255,255,255,0.16) 1px, transparent 1px)',
+          ].join(', '),
+          backgroundSize: '30px 30px',
+          maskImage: 'linear-gradient(to bottom, black, transparent 78%)',
+          WebkitMaskImage: 'linear-gradient(to bottom, black, transparent 78%)',
+        }} />
+      <div className="pointer-events-none absolute -right-14 -top-20 -z-10 h-52 w-52 rounded-full border border-cyan-100/25" />
+      <div className="pointer-events-none absolute -right-5 -top-10 -z-10 h-32 w-32 rounded-full border border-cyan-100/25" />
+      <div className="pointer-events-none absolute -bottom-24 -left-20 -z-10 h-56 w-56 rounded-full bg-violet-400/20 blur-2xl" />
+      <div className="pointer-events-none absolute left-[12%] top-4 -z-10 h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-200 shadow-[0_0_12px_rgba(165,243,252,0.9)]" />
+      <div className="pointer-events-none absolute right-[28%] top-10 -z-10 h-1 w-1 rounded-full bg-white/80 shadow-[0_0_9px_rgba(255,255,255,0.9)]" />
+      <svg className="pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-24 w-full opacity-[0.09]"
+        viewBox="0 0 600 100" preserveAspectRatio="none" aria-hidden="true">
+        <path fill="white" d="M0 100V76h28V58h18v42h25V67h14v-9h15v42h23V49h18v51h32V73h23v27h31V55h11V40h18v60h35V69h21v31h27V47h13v-8h16v61h30V63h26v37h22V52h21v48h39V72h22v28h28V57h18v43h31V69h19v31h27V61h26v39H600v0z" />
+        <path d="M0 45 C130 6 250 82 388 35 S540 36 620 10" fill="none" stroke="white" strokeWidth="1.5" strokeDasharray="5 8" />
+      </svg>
+
+      <p className="relative z-10 inline-block font-black text-2xl sm:text-3xl tracking-tight italic overflow-hidden"
         style={{
           background: 'linear-gradient(180deg, #fed7aa 0%, #fb923c 35%, #ea580c 70%, #c2410c 100%)',
           WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
@@ -83,21 +110,20 @@ function EServiceGrid({ docTypes, rounded = 'rounded-2xl' }) {
         <span className="absolute inset-0 pointer-events-none"
           style={{ background: 'linear-gradient(115deg, transparent 35%, rgba(255,255,255,0.85) 48%, transparent 58%)' }} />
       </p>
-      <p className="text-white/70 text-[11px] sm:text-xs font-semibold mt-0.5 mb-3">บริการแบบเบ็ดเสร็จ ณ จุดเดียว ด้วยระบบออนไลน์</p>
-      <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+      <p className="relative z-10 text-white/75 text-[11px] sm:text-xs font-semibold mt-0.5 mb-3">บริการแบบเบ็ดเสร็จ ณ จุดเดียว ด้วยระบบออนไลน์</p>
+      <div className="relative z-10 grid grid-cols-3 gap-1.5 sm:gap-2">
         {docTypes.slice(0, 6).map(({ value, label, emoji }) => (
           <Link key={value} to={`/doc-request?type=${value}`}
-            className="flex flex-col items-center gap-1 p-1.5 sm:p-2 rounded-xl bg-white hover:bg-gray-50 active:scale-95 transition-all shadow-sm">
+            className="group flex flex-col items-center gap-1 rounded-xl border border-white/70 bg-white/95 p-1.5 shadow-md shadow-blue-950/10 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:bg-white hover:shadow-lg active:scale-95 sm:p-2">
             <CategoryIcon emoji={emoji} size={22} style={tenant?.category_icon_style} />
-            <p className="text-[10px] sm:text-[11px] font-bold text-gray-700 text-center leading-tight line-clamp-2">{label}</p>
+            <p className="text-[10px] sm:text-[11px] font-bold text-gray-700 text-center leading-tight line-clamp-2 transition-colors group-hover:text-blue-700">{label}</p>
           </Link>
         ))}
       </div>
-      <div className="mt-2.5 flex justify-end">
+      <div className="relative z-10 mt-2.5 flex justify-end">
         <Link to="/doc-request"
-          className="px-3 py-1 rounded-full text-[11px] font-bold"
-          style={{ backgroundColor: '#facc15', color: '#78350f' }}>
-          ดูทั้งหมด
+          className="rounded-full border border-yellow-200/80 bg-gradient-to-r from-yellow-300 to-amber-400 px-3 py-1 text-[11px] font-black text-amber-950 shadow-md shadow-amber-950/15 transition-all hover:-translate-y-0.5 hover:shadow-lg">
+          ดูทั้งหมด ›
         </Link>
       </div>
     </div>
@@ -127,7 +153,6 @@ export default function ServiceHubHome() {
         <BannerSlider />
         <ComplaintBand variant="clean" />
         <ComplaintStatsWidget />
-        <DataCenterBanner variant="violet" />
         <PostsHighlight />
         <SmartCityBanner />
       </div>

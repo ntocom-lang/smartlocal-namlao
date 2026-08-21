@@ -56,6 +56,13 @@ body {
   100% { transform: translateX(100%); }
 }
 
+/* แถบแสงสะท้อนพาดทแยงบนตัวอักษร (เช่น "SMART CITY" ใน SmartCityBanner.jsx) — วนซ้ำเบาๆ ไม่ต้อง hover */
+@keyframes shine {
+  0%   { transform: translateX(-120%); }
+  55%  { transform: translateX(120%); }
+  100% { transform: translateX(120%); }
+}
+
 /* sidebar scrollbar — thin, visible on hover */
 .sidebar-nav { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.15) transparent; }
 .sidebar-nav::-webkit-scrollbar { width: 4px; }

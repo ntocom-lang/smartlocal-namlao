@@ -91,7 +91,9 @@ export default function CitizenSidebar() {
                 const content = (
                   <>
                     <Icon size={15} strokeWidth={active ? 2.2 : 1.5} className="shrink-0" />
-                    <span className="flex-1 truncate text-xs">{label}</span>
+                    <span className="flex-1 truncate text-xs">
+                      {label === 'แจ้งเหตุ/แจ้งซ่อม' && tenant?.ui_style === 'service_hub' ? 'ร้องเรียน/ร้องทุกข์' : label}
+                    </span>
                     {badge && unreadCount > 0 && (
                       <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full text-white bg-amber-400">
                         {unreadCount > 9 ? '9+' : unreadCount}

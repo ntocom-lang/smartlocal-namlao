@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Luggage, Utensils, BedDouble, ShoppingBag, Wrench, ChevronRight, MapPin, Compass } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { toReliableImageUrl } from '../../lib/driveStorage'
 import { useTenant } from '../../contexts/TenantContext'
 
 const CATS = [
@@ -17,6 +18,7 @@ export default function TourismSection() {
   const navigate = useNavigate()
   const [places, setPlaces] = useState([])
   const [activeCat, setActiveCat] = useState('travel')
+  const [backgroundUrl, setBackgroundUrl] = useState(() => toReliableImageUrl(tenant?.tourism_background_url) || '/tourism-bg.jpg')
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -28,6 +30,24 @@ export default function TourismSection() {
       .order('display_order')
       .then(({ data }) => { if (data) setPlaces(data) })
   }, [tenant?.id])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!tenant?.id) return undefined
+
+    supabase
+      .from('municipalities')
+      .select('tourism_background_url')
+      .eq('id', tenant.id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!cancelled && !error) {
+          setBackgroundUrl(toReliableImageUrl(data?.tourism_background_url) || '/tourism-bg.jpg')
+        }
+      })
+
+    return () => { cancelled = true }
+  }, [tenant?.id, tenant?.tourism_background_url])
 
   const filtered = activeCat ? places.filter(p => p.category === activeCat) : places
   const catData  = CATS.find(c => c.key === activeCat)
@@ -49,7 +69,7 @@ export default function TourismSection() {
 
       {/* ── Base background image ── */}
       <div className="absolute inset-0 bg-cover bg-center scale-105"
-           style={{ backgroundImage: "url('/tourism-bg.jpg'), url('https://images.unsplash.com/photo-1552465011-b4e21bf6e79a?auto=format&fit=crop&q=80')" }} />
+           style={{ backgroundImage: backgroundUrl === '/tourism-bg.jpg' ? "url('/tourism-bg.jpg')" : `url("${backgroundUrl}"), url('/tourism-bg.jpg')` }} />
 
       {/* ── Dark base overlay ── */}
       <div className="absolute inset-0 bg-linear-to-b from-black/75 via-black/30 to-black/90" />
@@ -227,7 +247,7 @@ export default function TourismSection() {
               )}
               {/* Subs stacked in 3rd column */}
               <div className="flex flex-col gap-2.5" style={{ height: 180 }}>
-                {filtered.slice(1, 3).map((place, idx) => (
+                {filtered.slice(1, 3).map((place) => (
                   <button key={place.id} onClick={() => navigate(`/tourism/${place.id}`)}
                           className="relative flex-1 rounded-2xl overflow-hidden active:scale-[0.97] transition-transform group">
                     {place.image_url
