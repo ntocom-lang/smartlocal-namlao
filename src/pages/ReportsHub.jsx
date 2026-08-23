@@ -4,7 +4,7 @@ import { useTenant } from '../contexts/TenantContext'
 
 const REPORTS = [
   {
-    label: 'เรื่องร้องเรียน/แจ้งซ่อม',
+    label: 'เรื่องร้องเรียน/ร้องทุกข์',
     desc: 'สถิติการรับเรื่องและระยะเวลาดำเนินการ',
     href: '/reports/complaints',
     Icon: ClipboardList,

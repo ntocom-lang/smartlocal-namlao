@@ -27,7 +27,8 @@ export default function ComplaintStatsWidget() {
   ]
 
   return (
-    <div className="rounded-2xl bg-white shadow-sm border border-gray-100 p-4 sm:p-5">
+    <Link to="/reports/complaints" aria-label="ดูสถิติเรื่องร้องเรียนร้องทุกข์"
+      className="block rounded-2xl bg-white shadow-sm border border-gray-100 p-4 sm:p-5 hover:shadow-md active:scale-[0.99] transition-all">
       <p className="text-base font-bold text-gray-800 mb-4">สถิติเรื่องร้องเรียนร้องทุกข์</p>
       {/* ring ซ้าย เป็นคอลัมน์แยกจากกล่อง 3 สี+แถบรวม (ขวา) — ให้แถบ "ทั้งหมด" กว้างเท่าคอลัมน์กล่องเท่านั้น
           ไม่ยื่นไปทับใต้ ring แบบภาพอ้างอิงเป๊ะๆ — ตั้งใจไม่ใช้ flex-col บนมือถือ (เดิมทำให้ ring ตกลงมา
@@ -51,12 +52,12 @@ export default function ComplaintStatsWidget() {
               </div>
             ))}
           </div>
-          <Link to="/reports" className="mt-2.5 flex items-center justify-center text-xs sm:text-sm font-bold py-2.5 sm:py-3 rounded-xl text-white transition-opacity hover:opacity-90"
+          <div className="mt-2.5 flex items-center justify-center text-xs sm:text-sm font-bold py-2.5 sm:py-3 rounded-xl text-white"
             style={{ background: 'linear-gradient(135deg, #1e4f8c 0%, #2f9bb8 100%)' }}>
             ทั้งหมด {stats.total} เรื่อง
-          </Link>
+          </div>
         </div>
       </div>
-    </div>
+    </Link>
   )
 }

@@ -17,7 +17,7 @@ export function getNavItems(role) {
   return [
     { label: 'หน้าแรก',       icon: Home,         href: '/' },
     roleNavItem,
-    { label: 'รายงาน',        icon: FileBarChart, href: '/reports' },
+    { label: 'รายงาน',        icon: FileBarChart, href: '/reports/complaints' },
     { label: 'ปฏิทินกิจกรรม', icon: CalendarDays, href: '/events' },
     { label: 'เมนูอื่นๆ',    icon: LayoutGrid,   href: '/more' },
   ]
