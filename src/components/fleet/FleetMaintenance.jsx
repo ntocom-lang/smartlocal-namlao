@@ -101,7 +101,7 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
       supabase.from('fleet_vehicles').select('id, name, license_plate, asset_code, asset_kind, meter_unit')
         .eq('municipality_id', tenant.id).order('name'),
       supabase.from('profiles').select('id, full_name')
-        .eq('municipality_id', tenant.id).eq('fleet_role', 'fleet_staff').order('full_name'),
+        .eq('municipality_id', tenant.id).not('fleet_role', 'is', null).order('full_name'),
     ]).then(([{ data: v }, { data: s }]) => {
       setVehicles(v ?? [])
       setStaffList(s ?? [])
@@ -499,7 +499,7 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
                 {editingId && <Pencil size={14} className="text-blue-500" />}
                 {editingId ? 'แก้ไขรายการซ่อมบำรุง' : 'บันทึกซ่อมบำรุง'}
               </h3>
-              <button onClick={closeModal} className="p-1.5 rounded-lg hover:bg-gray-100"><X size={16} /></button>
+              <button onClick={closeModal} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><X size={16} /></button>
             </div>
             <div className="overflow-y-auto p-4 md:p-5 space-y-3">
               <div>

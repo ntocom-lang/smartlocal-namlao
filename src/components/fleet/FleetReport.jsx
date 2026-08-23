@@ -180,7 +180,7 @@ export default function FleetReport({ tenant }) {
         <div class="card"><div class="val">${fmtB(totalMaintCost)}</div><div class="lbl">ค่าซ่อมบำรุง</div></div>
       </div>
       <h2>การเดินทาง (${data?.trips.length??0} รายการ)</h2>
-      <table><tr><th>ที่</th><th>วันที่</th><th>ยานพาหนะ</th><th>ปลายทาง</th><th>วัตถุประสงค์</th><th>ผู้ขับ</th><th>ระยะทาง</th></tr>
+      <table><tr><th>ที่</th><th>วันที่</th><th>ยานพาหนะ</th><th>ปลายทาง</th><th>วัตถุประสงค์</th><th>ผู้ใช้รถ</th><th>ระยะทาง</th></tr>
         ${trRows}
         <tr class="total"><td colspan="6" align="right">รวมระยะทาง</td><td align="right">${totalKm.toLocaleString()} กม.</td></tr>
       </table>
@@ -202,7 +202,7 @@ export default function FleetReport({ tenant }) {
   /* ── CSV exports ── */
   function exportTripCSV() {
     downloadCSV([
-      ['ที่','วันที่','ยานพาหนะ','ทะเบียน/รหัส','ปลายทาง','วัตถุประสงค์','ผู้ขับ','เลขไมล์ก่อน','เลขไมล์หลัง','ระยะทาง (กม.)'],
+      ['ที่','วันที่','ยานพาหนะ','ทะเบียน/รหัส','ปลายทาง','วัตถุประสงค์','ผู้ใช้รถ','เลขไมล์ก่อน','เลขไมล์หลัง','ระยะทาง (กม.)'],
       ...(data?.trips ?? []).map((t, i) => {
         const km = t.odometer_end && t.odometer_start ? t.odometer_end - t.odometer_start : ''
         return [i+1, thDate(t.trip_date), t.vehicle?.name??'', assetIdentifier(t.vehicle),
@@ -357,7 +357,7 @@ export default function FleetReport({ tenant }) {
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="text-xs font-bold text-gray-800 truncate">{t.vehicle?.name ?? '—'}</p>
-                          <p className="text-[10px] text-gray-400">{thDate(t.trip_date)} · {t.driver?.full_name ?? 'ไม่ระบุผู้ขับ'}</p>
+                          <p className="text-[10px] text-gray-400">{thDate(t.trip_date)} · {t.driver?.full_name ?? 'ไม่ระบุผู้ใช้รถ'}</p>
                         </div>
                         <span className="text-xs font-black text-purple-600 whitespace-nowrap">{km != null ? `${km.toLocaleString()} กม.` : '—'}</span>
                       </div>
@@ -369,7 +369,7 @@ export default function FleetReport({ tenant }) {
               </div>
             }>
             <table className="w-full text-sm border-collapse">
-              <THdr cols={['ที่','วันที่','ยานพาหนะ','ปลายทาง','วัตถุประสงค์','ผู้ขับ','ระยะทาง']} />
+              <THdr cols={['ที่','วันที่','ยานพาหนะ','ปลายทาง','วัตถุประสงค์','ผู้ใช้รถ','ระยะทาง']} />
               <tbody>
                 {data.trips.map((t, i) => {
                   const km = t.odometer_end && t.odometer_start ? t.odometer_end - t.odometer_start : null
