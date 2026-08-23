@@ -600,7 +600,14 @@ function computeBasename() {
     return ''
   }
 
-  // Path mode: /namlao/... → basename = '/namlao'
+  // smartlocal-{slug}.vercel.app = deployment เฉพาะ อปท. เดียว (เหมือน custom domain) — slug มาจาก
+  // hostname เองอยู่แล้ว (ดู detectTenantSlug ใน TenantContext.jsx ที่เช็คแพทเทิร์นเดียวกันนี้) ไม่ใช่
+  // path-mode ห้ามเอา path แรกไปตั้งเป็น basename ไม่งั้นเข้าหน้าอื่นที่ไม่ใช่ "/" ตรงๆ (เช่น /auth,
+  // /reports) จะพังทันที เพราะ path นั้นเองจะถูกเข้าใจผิดว่าเป็น basename ทำให้ลิงก์ทุกอันเพี้ยน
+  // (บั๊กจริงที่เจอ: เข้า /auth ตรงๆ แล้วกลายเป็นหน้าแรกซ้อนอยู่ใต้ /auth/auth, /auth/complaint ฯลฯ)
+  if (/^smartlocal-.+$/.test(hostname.split('.')[0])) return ''
+
+  // Path mode: /namlao/... → basename = '/namlao' (เฉพาะ deployment กลางแบบ path-based เท่านั้น)
   const segment = pathname.split('/').filter(Boolean)[0]
   return segment ? `/${segment}` : ''
 }
