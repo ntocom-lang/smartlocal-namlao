@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   Home, ClipboardList, FileText, CalendarDays, Newspaper,
   MapPin, FileSearch, FolderOpen, Bell,
@@ -52,6 +52,7 @@ const LABEL    = 'rgba(255,255,255,0.35)'
 
 export default function CitizenSidebar() {
   const location         = useLocation()
+  const navigate         = useNavigate()
   const { session, displayName } = useAuth()
   const { tenant }       = useTenant()
   const { unreadCount }  = useNotifications()
@@ -63,7 +64,7 @@ export default function CitizenSidebar() {
     return exact ? location.pathname === href : location.pathname.startsWith(href)
   }
 
-  async function logout() { await supabase.auth.signOut() }
+  async function logout() { await supabase.auth.signOut(); navigate('/') }
 
   return (
     <aside className="hidden lg:flex flex-col w-56 shrink-0 shadow-lg self-start sticky top-0 max-h-screen overflow-y-auto"

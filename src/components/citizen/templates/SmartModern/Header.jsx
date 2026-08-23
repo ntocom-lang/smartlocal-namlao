@@ -32,6 +32,7 @@ export default function Header() {
 
   async function logout() {
     await supabase.auth.signOut()
+    navigate('/')
   }
   const isAdmin = role === 'admin' || role === 'superadmin'
 
