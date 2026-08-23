@@ -1027,16 +1027,32 @@ function AppointmentTab({ user, depts, positions, currentUserRole, isEditing, dr
 
   function handlePositionChange(positionId) {
     const position = positions.find(item => item.id === positionId)
-    setDraft(current => {
-      const mayApplySuggestedRole = position?.role
-        && (!['admin', 'superadmin'].includes(position.role) || currentUserRole === 'superadmin')
-        && !['admin', 'superadmin'].includes(current.role)
-      return {
+    const suggestedRole = position?.role
+    const maySuggestRole = suggestedRole
+      && suggestedRole !== draft.role
+      && (!['admin', 'superadmin'].includes(suggestedRole) || currentUserRole === 'superadmin')
+      && !['admin', 'superadmin'].includes(draft.role)
+
+    // เดิม auto-apply บทบาทแนะนำเงียบๆ ทันทีที่เลือกตำแหน่ง (แค่มีข้อความเล็กๆ บอกไว้) ทำให้แอดมิน
+    // ไม่ทันสังเกตว่า "บทบาทและสิทธิ์ระบบ" ที่แท็บอื่นถูกเปลี่ยนไปด้วย กว่าจะรู้ตัวก็หลังบันทึกไปแล้ว
+    // เปลี่ยนเป็นต้องกดยืนยันก่อนเสมอ (แพทเทิร์นเดียวกับ HR-triggered provisioning ของระบบ IAM ทั่วไป
+    // เช่น SAP GRC ที่ตำแหน่งใหม่ "เสนอ" สิทธิ์ได้ แต่ต้องผ่านขั้นตอนอนุมัติ ไม่ auto-apply ทันที)
+    if (maySuggestRole) {
+      const roleLabel = ROLE_LABELS[suggestedRole]?.label ?? suggestedRole
+      const confirmed = confirm(
+        `ตำแหน่ง "${position.name}" มักมีบทบาทและสิทธิ์ระบบเป็น "${roleLabel}"\n\n` +
+        `ต้องการเปลี่ยนบทบาทและสิทธิ์ระบบตามคำแนะนำนี้ด้วยหรือไม่?\n` +
+        `(เลือก "ยกเลิก" เพื่อคงบทบาทเดิมไว้ก่อน ไปปรับเองทีหลังได้ที่แท็บ "สิทธิ์การใช้งาน")`
+      )
+      setDraft(current => ({
         ...current,
         position_id: positionId,
-        role: mayApplySuggestedRole ? position.role : current.role,
-      }
-    })
+        role: confirmed ? suggestedRole : current.role,
+      }))
+      return
+    }
+
+    setDraft(current => ({ ...current, position_id: positionId }))
   }
 
   return (

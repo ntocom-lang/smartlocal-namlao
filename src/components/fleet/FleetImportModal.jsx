@@ -134,11 +134,9 @@ async function parseXlsx(file) {
   }).filter(row => row.some(value => String(value ?? '').trim()))
 }
 
-function mapAssetKind(value, vehicleType) {
-  const normalized = normalizeHeader(value)
-  if (['engine', 'เครื่องยนต์'].includes(normalized)) return 'engine'
-  if (['equipment', 'ครุภัณฑ์', 'เครื่องมือ'].includes(normalized)) return 'equipment'
-  if (['pump', 'generator'].includes(vehicleType)) return 'engine'
+// ระบบนี้ดูแลเฉพาะยานพาหนะแล้ว (ตัด "เครื่องยนต์"/"ครุภัณฑ์" ออก แยกไปคนละเมนู) —
+// ไม่ว่าคอลัมน์ "ชนิด" ในไฟล์นำเข้าจะเขียนว่าอะไรมา ก็ import เป็น vehicle เสมอ
+function mapAssetKind() {
   return 'vehicle'
 }
 
@@ -206,7 +204,7 @@ function buildPreview(matrix, departments, existingAssets) {
 
   const existingKeys = new Set(existingAssets.flatMap(asset => [
     asset.license_plate ? `vehicle:${normalizeAssetIdentifier(asset.license_plate)}` : null,
-    asset.asset_code ? `${asset.asset_kind ?? 'equipment'}:${normalizeAssetIdentifier(asset.asset_code)}` : null,
+    asset.asset_code ? `${asset.asset_kind ?? 'engine'}:${normalizeAssetIdentifier(asset.asset_code)}` : null,
   ].filter(Boolean)))
   const fileKeys = new Set()
 

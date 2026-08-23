@@ -6,7 +6,12 @@ export const NAME_TITLES = ['นาย', 'นาง', 'นางสาว', 'ด
 export function splitThaiFullName(fullName) {
   const trimmed = (fullName ?? '').trim()
   if (!trimmed) return { title: '', first: '', last: '' }
-  const title = NAME_TITLES.find(t => trimmed.startsWith(t)) ?? ''
+  // ต้องหาคำนำหน้าที่ "ยาวที่สุด" ที่ตรงกัน ไม่ใช่ตัวแรกที่เจอตามลำดับ array — "นางสาว" ขึ้นต้นด้วย
+  // "นาง" เอง ถ้าใช้ .find() ธรรมดาจะแมตช์ "นาง" ก่อนเสมอ (เพราะอยู่ก่อนในลิสต์) ตัด "สาว" ไปติด
+  // หน้าชื่อจริงแทน เช่น "นางสาวพรรณทิพา" จะแยกผิดเป็นคำนำหน้า "นาง" + ชื่อ "สาวพรรณทิพา"
+  const title = NAME_TITLES
+    .filter(t => trimmed.startsWith(t))
+    .sort((a, b) => b.length - a.length)[0] ?? ''
   const rest = trimmed.slice(title.length).trim()
   const [first = '', ...restParts] = rest.split(/\s+/)
   return { title, first, last: restParts.join(' ') }

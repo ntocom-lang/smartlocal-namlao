@@ -1,7 +1,8 @@
+// ระบบนี้ดูแลเฉพาะยานพาหนะ (มีทะเบียนรถ) เท่านั้น — "ครุภัณฑ์" ทั่วไปและ "เครื่องยนต์"
+// (ปั๊มน้ำ/เครื่องปั่นไฟ) แยกจัดการอยู่คนละเมนู ไม่เกี่ยวกับระบบยานพาหนะและเชื้อเพลิงนี้
+// เหลือตัวเลือกเดียวไว้เจตนา (ไม่ลบ asset_kind ทั้งคอลัมน์ เพื่อไม่กระทบโค้ด/ฐานข้อมูลจุดอื่นที่อ้างอิงอยู่)
 export const ASSET_KIND_OPTIONS = [
   { value: 'vehicle', label: 'ยานพาหนะ' },
-  { value: 'engine', label: 'เครื่องยนต์' },
-  { value: 'equipment', label: 'ครุภัณฑ์' },
 ]
 
 export const METER_UNIT_OPTIONS = [
@@ -56,7 +57,6 @@ export function normalizeAssetIdentifier(value) {
 
 export function assetEmoji(asset) {
   if ((asset?.asset_kind ?? 'vehicle') === 'engine') return '⚙️'
-  if (asset?.asset_kind === 'equipment') return '🧰'
   if (asset?.vehicle_type === 'pickup') return '🛻'
   if (asset?.vehicle_type === 'truck') return '🚚'
   if (asset?.vehicle_type === 'excavator' || asset?.vehicle_type === 'backhoe') return '🚜'

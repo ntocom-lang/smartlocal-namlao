@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, X, Pencil, Check, Building2, Users, Tag, SearchX, Wallet, Car } from 'lucide-react'
+import { Plus, X, Check, Building2, Users, SearchX, Wallet, Car } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import FleetEmptyState from './FleetEmptyState'
 import { fiscalYearOf, FISCAL_MONTHS_TH } from '../../lib/fiscalYear'
@@ -332,148 +332,6 @@ function UsersTab({ tenant, depts }) {
   )
 }
 
-/* ── ประเภทยานพาหนะ ────────────────────────────────────── */
-const DEFAULT_TYPES = [
-  { value: 'car', label: 'รถยนต์' }, { value: 'pickup', label: 'รถกระบะ' },
-  { value: 'truck', label: 'รถบรรทุก' }, { value: 'van', label: 'รถตู้' },
-  { value: 'excavator', label: 'รถขุด' }, { value: 'backhoe', label: 'แบคโฮ' },
-  { value: 'pump', label: 'เครื่องสูบน้ำ' }, { value: 'generator', label: 'เครื่องยนต์' },
-  { value: 'motorcycle', label: 'มอเตอร์ไซค์' }, { value: 'other', label: 'อื่นๆ' },
-]
-
-function VehicleTypesTab({ tenant }) {
-  const [types,   setTypes]   = useState([])
-  const [loading, setLoading] = useState(true)
-  const [form,    setForm]    = useState({ label: '' })
-  const [saving,  setSaving]  = useState(false)
-  const [editId,  setEditId]  = useState(null)
-
-  useEffect(() => {
-    if (!tenant?.id) return
-    supabase.from('fleet_vehicle_types').select('*')
-      .eq('municipality_id', tenant.id).order('sort_order')
-      .then(({ data }) => setTypes(data ?? []))
-      .finally(() => setLoading(false))
-  }, [tenant?.id])
-
-  async function handleSave() {
-    if (!form.label.trim()) return alert('กรุณากรอกชื่อประเภท')
-    setSaving(true)
-    if (editId) {
-      const { data, error } = await supabase.from('fleet_vehicle_types')
-        .update({ label: form.label.trim() }).eq('id', editId).select().single()
-      if (!error) {
-        setTypes(prev => prev.map(t => t.id === editId ? data : t))
-        setEditId(null)
-        setForm({ label: '' })
-      } else {
-        alert('บันทึกไม่สำเร็จ: ' + error.message)
-      }
-    } else {
-      const { data, error } = await supabase.from('fleet_vehicle_types').insert({
-        municipality_id: tenant.id,
-        value: 'vt_' + Date.now().toString(36),
-        label: form.label.trim(),
-        sort_order: types.length,
-      }).select().single()
-      if (!error) {
-        setTypes(prev => [...prev, data])
-        setForm({ label: '' })
-      } else {
-        alert('เพิ่มไม่สำเร็จ: ' + error.message)
-      }
-    }
-    setSaving(false)
-  }
-
-  async function handleDelete(id) {
-    if (!confirm('ลบประเภทนี้?')) return
-    const { error } = await supabase.from('fleet_vehicle_types').delete().eq('id', id)
-    if (!error) setTypes(prev => prev.filter(t => t.id !== id))
-    else alert('ลบไม่สำเร็จ: ' + error.message)
-  }
-
-  async function seedDefaults() {
-    const label = types.length === 0 ? 'เพิ่มประเภทมาตรฐานทั้งหมด?' : 'เพิ่มประเภทมาตรฐานที่ยังไม่มี?'
-    if (!confirm(label)) return
-    setSaving(true)
-    const rows = DEFAULT_TYPES.map((t, i) => ({
-      municipality_id: tenant.id, value: t.value, label: t.label, sort_order: types.length + i,
-    }))
-    const { data, error } = await supabase.from('fleet_vehicle_types')
-      .upsert(rows, { onConflict: 'municipality_id,value' }).select().order('sort_order')
-    if (!error && data) {
-      setTypes(prev => {
-        const merged = [...prev]
-        data.forEach(d => {
-          const idx = merged.findIndex(t => t.id === d.id)
-          if (idx >= 0) merged[idx] = d
-          else merged.push(d)
-        })
-        return merged.sort((a, b) => a.sort_order - b.sort_order)
-      })
-    } else if (error) {
-      alert(error.message)
-    }
-    setSaving(false)
-  }
-
-  if (loading) return <div className="flex justify-center py-8"><div className="w-5 h-5 border-4 border-gray-200 rounded-full animate-spin" style={{ borderTopColor: 'var(--color-primary)' }} /></div>
-
-  return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
-        <p className="text-sm font-bold text-gray-700">{editId ? 'แก้ไขประเภท' : 'เพิ่มประเภทยานพาหนะ'}</p>
-        <div>
-          <label className="text-xs font-semibold text-gray-600 mb-1 block">ชื่อประเภท *</label>
-          <input value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))}
-            placeholder="เช่น รถกระบะ, รถตู้" className={inp}
-            onKeyDown={e => e.key === 'Enter' && handleSave()} />
-        </div>
-        <div className="flex gap-2">
-          {editId && (
-            <button onClick={() => { setEditId(null); setForm({ label: '' }) }}
-              className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-gray-100 text-gray-600">
-              ยกเลิก
-            </button>
-          )}
-          <button onClick={handleSave} disabled={saving}
-            className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50"
-            style={{ backgroundColor: 'var(--color-primary)' }}>
-            {saving ? 'กำลังบันทึก...' : editId ? 'อัปเดต' : 'เพิ่มประเภท'}
-          </button>
-          {!editId && (
-            <button onClick={seedDefaults} disabled={saving}
-              className="px-4 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50">
-              {types.length === 0 ? '+ ค่าเริ่มต้น' : '+ มาตรฐาน'}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {types.length === 0 && (
-        <FleetEmptyState icon={Tag} title="ยังไม่มีประเภท" hint={<>กด <strong className="text-gray-500">+ ค่าเริ่มต้น</strong> เพื่อเพิ่มทั้งหมด</>} />
-      )}
-
-      <div className="space-y-2">
-        {types.map(t => (
-          <div key={t.id} className={`flex items-center justify-between bg-white rounded-xl border px-4 py-3 transition-colors ${
-            editId === t.id ? 'border-blue-300 bg-blue-50/40' : 'border-gray-100'
-          }`}>
-            <p className="text-sm font-semibold text-gray-800">{t.label}</p>
-            <div className="flex gap-1">
-              <button onClick={() => { setEditId(t.id); setForm({ label: t.label }) }}
-                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><Pencil size={13} /></button>
-              <button onClick={() => handleDelete(t.id)}
-                className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400"><X size={13} /></button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 /* ── Main ──────────────────────────────────────────────── */
 export default function FleetSetup({ tenant, depts: initDepts }) {
   const [depts, setDepts] = useState(initDepts ?? [])
@@ -494,18 +352,19 @@ export default function FleetSetup({ tenant, depts: initDepts }) {
         </div>
         <div className="min-w-0">
           <p className="text-sm font-bold text-gray-800">ตั้งค่าระบบยานพาหนะ</p>
-          <p className="text-[11px] text-gray-500">งบประมาณ ประเภทรถ และสิทธิ์ผู้ใช้ — จัดการรายชื่อกอง/หน่วยงานได้ที่เมนู "ตั้งค่าระบบ" → "กอง/หน่วยงาน"</p>
+          <p className="text-[11px] text-gray-500">
+            งบประมาณและสิทธิ์ผู้ใช้ — จัดการรายชื่อกอง/หน่วยงานได้ที่เมนู "ตั้งค่าระบบ" → "กอง/หน่วยงาน"
+            ส่วนประเภทรถ/เครื่องยนต์ย้ายไปจัดการที่ระบบยานพาหนะ แท็บ "รถและเครื่องยนต์" แล้ว (ผู้มีสิทธิ์ fleet_admin เพิ่มเองได้เลย)
+          </p>
         </div>
       </div>
       <div className="flex gap-2 flex-wrap">
         <Tab id="budget" active={activeTab === 'budget'} label="งบประมาณ"    Icon={Wallet} onClick={setActiveTab} />
-        <Tab id="types"  active={activeTab === 'types'}  label="ประเภทรถ"     Icon={Tag}    onClick={setActiveTab} />
         <Tab id="users"  active={activeTab === 'users'}  label="สิทธิ์ผู้ใช้"  Icon={Users}  onClick={setActiveTab} />
       </div>
 
-      {activeTab === 'budget' && <BudgetTab       tenant={tenant} depts={depts} />}
-      {activeTab === 'types'  && <VehicleTypesTab tenant={tenant} />}
-      {activeTab === 'users'  && <UsersTab        tenant={tenant} depts={depts} />}
+      {activeTab === 'budget' && <BudgetTab tenant={tenant} depts={depts} />}
+      {activeTab === 'users'  && <UsersTab  tenant={tenant} depts={depts} />}
     </div>
   )
 }

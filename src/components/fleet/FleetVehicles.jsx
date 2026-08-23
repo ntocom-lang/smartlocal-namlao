@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, X, Pencil, AlertTriangle, Upload, Car } from 'lucide-react'
+import { Plus, X, Pencil, AlertTriangle, Upload, Car, Tag } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import FleetImportModal from './FleetImportModal'
 import FleetVehicleDetail from './FleetVehicleDetail'
@@ -41,9 +41,147 @@ function daysTo(dateStr) {
   return Math.ceil((new Date(dateStr) - new Date()) / 86400000)
 }
 
+/* ── จัดการประเภทรถ/เครื่องยนต์ — ย้ายมาจากหน้าตั้งค่าแอดมิน มาไว้ตรงนี้แทน
+   เพื่อให้ fleet_admin (ไม่จำเป็นต้องเป็นแอดมินเทศบาลเต็มสิทธิ์) เพิ่ม/แก้เองได้เลย
+   โดยไม่ต้องขอสิทธิ์เข้าหน้าแอดมิน (RLS ยังคุมอยู่: fleet_vehicle_types เขียนได้เฉพาะ
+   fleet_is_manager() = role admin หรือ fleet_role fleet_admin เท่านั้น) ── */
+function VehicleTypeManagerModal({ tenant, types, setTypes, onClose }) {
+  const [form,   setForm]   = useState({ label: '' })
+  const [saving, setSaving] = useState(false)
+  const [editId, setEditId] = useState(null)
+
+  async function handleSave() {
+    if (!form.label.trim()) return alert('กรุณากรอกชื่อประเภท')
+    setSaving(true)
+    if (editId) {
+      const { data, error } = await supabase.from('fleet_vehicle_types')
+        .update({ label: form.label.trim() }).eq('id', editId).select().single()
+      if (!error) {
+        setTypes(prev => prev.map(t => t.id === editId ? data : t))
+        setEditId(null)
+        setForm({ label: '' })
+      } else {
+        alert('บันทึกไม่สำเร็จ: ' + error.message)
+      }
+    } else {
+      const { data, error } = await supabase.from('fleet_vehicle_types').insert({
+        municipality_id: tenant.id,
+        value: 'vt_' + Date.now().toString(36),
+        label: form.label.trim(),
+        sort_order: types.length,
+      }).select().single()
+      if (!error) {
+        setTypes(prev => [...prev, data])
+        setForm({ label: '' })
+      } else {
+        alert('เพิ่มไม่สำเร็จ: ' + error.message)
+      }
+    }
+    setSaving(false)
+  }
+
+  async function handleDelete(id) {
+    if (!confirm('ลบประเภทนี้?')) return
+    const { error } = await supabase.from('fleet_vehicle_types').delete().eq('id', id)
+    if (!error) setTypes(prev => prev.filter(t => t.id !== id))
+    else alert('ลบไม่สำเร็จ: ' + error.message)
+  }
+
+  async function seedDefaults() {
+    const label = types.length === 0 ? 'เพิ่มประเภทมาตรฐานทั้งหมด?' : 'เพิ่มประเภทมาตรฐานที่ยังไม่มี?'
+    if (!confirm(label)) return
+    setSaving(true)
+    const rows = DEFAULT_VEHICLE_TYPES.map((t, i) => ({
+      municipality_id: tenant.id, value: t.value, label: t.label, sort_order: types.length + i,
+    }))
+    const { data, error } = await supabase.from('fleet_vehicle_types')
+      .upsert(rows, { onConflict: 'municipality_id,value' }).select().order('sort_order')
+    if (!error && data) {
+      setTypes(prev => {
+        const merged = [...prev]
+        data.forEach(d => {
+          const idx = merged.findIndex(t => t.id === d.id)
+          if (idx >= 0) merged[idx] = d
+          else merged.push(d)
+        })
+        return merged.sort((a, b) => a.sort_order - b.sort_order)
+      })
+    } else if (error) {
+      alert(error.message)
+    }
+    setSaving(false)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative bg-white rounded-t-3xl md:rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col overflow-hidden shadow-2xl">
+        <div className="shrink-0 px-5 pt-5 pb-3 border-b border-gray-100 flex items-center justify-between">
+          <h3 className="font-bold text-gray-800">จัดการประเภทรถ/เครื่องยนต์</h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><X size={16} /></button>
+        </div>
+        <div className="overflow-y-auto p-4 space-y-4">
+          <div className="bg-gray-50 rounded-2xl border border-gray-100 p-4 space-y-3">
+            <p className="text-sm font-bold text-gray-700">{editId ? 'แก้ไขประเภท' : 'เพิ่มประเภทใหม่'}</p>
+            <div>
+              <input value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))}
+                placeholder="เช่น รถกระบะ, รถตู้" className={inp}
+                onKeyDown={e => e.key === 'Enter' && handleSave()} />
+            </div>
+            <div className="flex gap-2">
+              {editId && (
+                <button onClick={() => { setEditId(null); setForm({ label: '' }) }}
+                  className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-gray-100 text-gray-600">
+                  ยกเลิก
+                </button>
+              )}
+              <button onClick={handleSave} disabled={saving}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50"
+                style={{ backgroundColor: 'var(--color-primary)' }}>
+                {saving ? 'กำลังบันทึก...' : editId ? 'อัปเดต' : 'เพิ่มประเภท'}
+              </button>
+              {!editId && (
+                <button onClick={seedDefaults} disabled={saving}
+                  className="px-4 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-white disabled:opacity-50">
+                  {types.length === 0 ? '+ ค่าเริ่มต้น' : '+ มาตรฐาน'}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {types.length === 0 && (
+            <FleetEmptyState icon={Tag} title="ยังไม่มีประเภท" hint={<>กด <strong className="text-gray-500">+ ค่าเริ่มต้น</strong> เพื่อเพิ่มทั้งหมด</>} />
+          )}
+
+          <div className="space-y-2">
+            {types.map(t => (
+              <div key={t.id ?? t.value} className={`flex items-center justify-between bg-white rounded-xl border px-4 py-3 transition-colors ${
+                editId === t.id ? 'border-blue-300 bg-blue-50/40' : 'border-gray-100'
+              }`}>
+                <p className="text-sm font-semibold text-gray-800">{t.label}</p>
+                {t.id && (
+                  <div className="flex gap-1">
+                    <button onClick={() => { setEditId(t.id); setForm({ label: t.label }) }}
+                      className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><Pencil size={13} /></button>
+                    <button onClick={() => handleDelete(t.id)}
+                      className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400"><X size={13} /></button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function FleetVehicles({ tenant, depts, isAdmin }) {
   const [vehicles,     setVehicles]     = useState([])
-  const [vehicleTypes, setVehicleTypes] = useState(DEFAULT_VEHICLE_TYPES)
+  // เก็บเฉพาะแถวจริงจากฐานข้อมูล (มี id เสมอ) — ใช้เป็นแหล่งข้อมูลตรงให้โมดัล "จัดการประเภท"
+  // ส่วนดรอปดาวน์เพิ่ม/แก้ไขทรัพย์สินค่อยไป fallback เป็นชุดมาตรฐานเองตอนแสดงผล (ดู typeOptions)
+  const [vehicleTypes, setVehicleTypes] = useState([])
+  const typeOptions = vehicleTypes.length ? vehicleTypes : DEFAULT_VEHICLE_TYPES
   const [loading,      setLoading]      = useState(true)
   const [modal,        setModal]        = useState(null)
   const [form,         setForm]         = useState(EMPTY)
@@ -53,17 +191,18 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
   const [filterKind,   setFilterKind]   = useState('all')
   const [importOpen,   setImportOpen]   = useState(false)
   const [detailVeh,    setDetailVeh]    = useState(null)
+  const [typesOpen,    setTypesOpen]    = useState(false)
 
   useEffect(() => {
     if (!tenant?.id) return
     Promise.all([
       supabase.from('fleet_vehicles').select('*, departments(name,short_name)')
         .eq('municipality_id', tenant.id).order('name'),
-      supabase.from('fleet_vehicle_types').select('value,label')
+      supabase.from('fleet_vehicle_types').select('id,value,label,sort_order')
         .eq('municipality_id', tenant.id).order('sort_order'),
     ]).then(([{ data: v }, { data: t }]) => {
       setVehicles(v ?? [])
-      if (t?.length) setVehicleTypes(t)
+      setVehicleTypes(t ?? [])
     }).finally(() => setLoading(false))
   }, [tenant?.id])
 
@@ -196,10 +335,14 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
           {ASSET_KIND_OPTIONS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
         </select>
         {isAdmin && (
-          <div className="col-span-3 grid grid-cols-2 gap-2 md:ml-auto md:flex md:items-center">
+          <div className="col-span-3 grid grid-cols-3 gap-2 md:ml-auto md:flex md:items-center">
             <button onClick={() => setImportOpen(true)}
               className="justify-center flex items-center gap-1.5 px-2 md:px-3 py-2 rounded-xl text-[11px] md:text-xs font-bold border border-emerald-200 text-emerald-700 bg-emerald-50">
               <Upload size={14} /> นำเข้า CSV/XLSX
+            </button>
+            <button onClick={() => setTypesOpen(true)}
+              className="justify-center flex items-center gap-1.5 px-2 md:px-3 py-2 rounded-xl text-[11px] md:text-xs font-bold border border-gray-200 text-gray-600 bg-gray-50">
+              <Tag size={14} /> ประเภทรถ
             </button>
             <button onClick={openAdd}
               className="justify-center flex items-center gap-1.5 px-2 md:px-4 py-2 rounded-xl text-[11px] md:text-sm font-bold text-white"
@@ -257,7 +400,7 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
                         </button>
                       </td>
                       <td className="px-4 py-2.5 text-gray-600 text-xs border-r border-gray-200 whitespace-nowrap">{assetIdentifier(v)}</td>
-                      <td className="px-4 py-2.5 text-gray-600 text-xs border-r border-gray-200">{vehicleTypes.find(t => t.value === v.vehicle_type)?.label ?? v.vehicle_type}</td>
+                      <td className="px-4 py-2.5 text-gray-600 text-xs border-r border-gray-200">{typeOptions.find(t => t.value === v.vehicle_type)?.label ?? v.vehicle_type}</td>
                       <td className="px-4 py-2.5 text-gray-500 text-xs border-r border-gray-200">{v.departments?.name ?? '—'}</td>
                       <td className="px-4 py-2.5 text-gray-500 text-xs border-r border-gray-200">{FUEL_LABEL[v.fuel_type] ?? v.fuel_type}</td>
                       <td className="px-4 py-2.5 text-center border-r border-gray-200">
@@ -390,23 +533,6 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
             <div className="overflow-y-auto p-4 md:p-5 space-y-3 md:space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2">
-                  <label className="text-xs font-semibold text-gray-600 mb-1 block">ชนิดทรัพย์สิน *</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {ASSET_KIND_OPTIONS.map(item => (
-                      <button key={item.value} type="button"
-                        onClick={() => setForm(current => ({
-                          ...current,
-                          asset_kind: item.value,
-                          meter_unit: item.value === 'vehicle' ? 'km' : 'hour',
-                          vehicle_type: item.value === 'engine' && current.vehicle_type === 'car' ? 'generator' : current.vehicle_type,
-                        }))}
-                        className={`px-2 py-2 rounded-xl text-xs font-bold border ${form.asset_kind === item.value ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200'}`}>
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="col-span-2">
                   <label className="text-xs font-semibold text-gray-600 mb-1 block">ชื่อ / รหัส *</label>
                   <input value={form.name} onChange={set('name')} placeholder="เช่น รถกระบะ กข-1234" className={inp} />
                 </div>
@@ -425,7 +551,7 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
                 <div>
                   <label className="text-xs font-semibold text-gray-600 mb-1 block">ประเภท</label>
                   <select value={form.vehicle_type} onChange={set('vehicle_type')} className={sel}>
-                    {vehicleTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    {typeOptions.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                   </select>
                 </div>
                 <div>
@@ -521,6 +647,9 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
       )}
       {detailVeh && (
         <FleetVehicleDetail vehicle={detailVeh} tenant={tenant} onClose={() => setDetailVeh(null)} />
+      )}
+      {typesOpen && (
+        <VehicleTypeManagerModal tenant={tenant} types={vehicleTypes} setTypes={setVehicleTypes} onClose={() => setTypesOpen(false)} />
       )}
     </div>
   )
