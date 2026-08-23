@@ -118,7 +118,7 @@ function VehicleTypeManagerModal({ tenant, types, setTypes, onClose }) {
       <div className="relative bg-white rounded-t-3xl md:rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col overflow-hidden shadow-2xl">
         <div className="shrink-0 px-5 pt-5 pb-3 border-b border-gray-100 flex items-center justify-between">
           <h3 className="font-bold text-gray-800">จัดการประเภทรถ/เครื่องยนต์</h3>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><X size={16} /></button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><X size={16} /></button>
         </div>
         <div className="overflow-y-auto p-4 space-y-4">
           <div className="bg-gray-50 rounded-2xl border border-gray-100 p-4 space-y-3">
@@ -526,7 +526,7 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
           <div className="relative bg-white rounded-t-3xl md:rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
             <div className="shrink-0 bg-white px-4 py-3 md:px-5 md:pt-5 md:pb-3 border-b border-gray-100 flex items-center justify-between">
               <h3 className="font-bold text-gray-800">{modal === 'add' ? 'เพิ่มยานพาหนะ/เครื่องยนต์' : 'แก้ไขข้อมูล'}</h3>
-              <button onClick={() => setModal(null)} className="p-1.5 rounded-lg hover:bg-gray-100">
+              <button onClick={() => setModal(null)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
                 <X size={16} />
               </button>
             </div>

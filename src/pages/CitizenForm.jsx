@@ -282,6 +282,8 @@ export default function CitizenForm() {
 
   const defaultCategory = ftConfig?.categories?.[0]?.value ?? preCategory
   const [form, setForm] = useState({ category: defaultCategory, village: '', detail: '', phone: '', name_title: '', name_first: '', name_last: '' })
+  const [profilePhone, setProfilePhone] = useState('') // เบอร์เดิมจากโปรไฟล์ ไว้เทียบว่าผู้ใช้แก้เบอร์หรือไม่
+  const [syncPhoneToProfile, setSyncPhoneToProfile] = useState(false)
   const [geo, setGeo] = useState({ lat: null, lng: null, address: null })
   const [geoStatus, setGeoStatus] = useState(GEO_STATUS.idle)
   const [showMap, setShowMap] = useState(false)
@@ -327,11 +329,13 @@ export default function CitizenForm() {
       supabase.from('profiles').select('full_name, phone').eq('id', session.user.id).single()
         .then(({ data }) => {
           const { title, first, last } = splitThaiFullName(data?.full_name || metaName)
+          const resolvedPhone = data?.phone || metaPhone
           setForm((prev) => ({
             ...prev,
             ...(data?.full_name || metaName ? { name_title: title, name_first: first, name_last: last } : {}),
-            ...(data?.phone || metaPhone ? { phone: data?.phone || metaPhone } : {}),
+            ...(resolvedPhone ? { phone: resolvedPhone } : {}),
           }))
+          setProfilePhone(resolvedPhone || '')
         })
         .catch(() => {
           const { title, first, last } = splitThaiFullName(metaName)
@@ -340,6 +344,7 @@ export default function CitizenForm() {
             ...(metaName ? { name_title: title, name_first: first, name_last: last } : {}),
             ...(metaPhone ? { phone: metaPhone } : {}),
           }))
+          setProfilePhone(metaPhone || '')
         })
     })
   }, [])
@@ -461,6 +466,14 @@ export default function CitizenForm() {
       setSavedComplaintId(complaintId)
       setSavedPhotoFiles(photos.map(p => p.file))
       photos.forEach(p => URL.revokeObjectURL(p.preview))
+
+      // ผู้ใช้กดยืนยันให้ sync เบอร์ใหม่เข้าโปรไฟล์ — อัปเดตเฉพาะคอลัมน์ phone ไม่แตะฟิลด์อื่น
+      if (syncPhoneToProfile && userId && form.phone.trim() !== profilePhone.trim()) {
+        supabase.from('profiles').upsert({ id: userId, phone: form.phone.trim() }).then(({ error }) => {
+          if (!error) setProfilePhone(form.phone.trim())
+        })
+      }
+
       const allCats = [...(ftConfig?.categories ?? []), ...categories]
       const catLabel = allCats.find((c) => c.value === form.category)?.label?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category
       supabase.functions.invoke('send-push', {
@@ -647,14 +660,24 @@ export default function CitizenForm() {
 
         {/* Phone */}
         <div className="relative">
-          <input type="tel" value={form.phone}
-            onChange={isLoggedIn && form.phone ? undefined : set('phone')}
-            readOnly={isLoggedIn && !!form.phone}
+          <input type="tel" value={form.phone} onChange={set('phone')}
             placeholder="เบอร์ติดต่อ *"
-            className={`w-full px-4 py-2.5 pl-10 rounded-xl border text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-blue-400 ${isLoggedIn && form.phone ? 'bg-gray-50 border-gray-200 text-gray-500' : 'bg-white border-gray-300'}`} />
+            className="w-full px-4 py-2.5 pl-10 rounded-xl border border-gray-300 bg-white text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-blue-400" />
           <Phone size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-          {isLoggedIn && form.phone && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-emerald-500 font-semibold">จากโปรไฟล์</span>}
         </div>
+
+        {/* ถามก่อนว่าจะอัปเดตเบอร์นี้ในโปรไฟล์ด้วยหรือไม่ — เด้งเฉพาะตอนโปรไฟล์มีเบอร์เดิมอยู่แล้ว และผู้ใช้พิมพ์เบอร์อื่นทับ */}
+        {isLoggedIn && profilePhone.trim() && form.phone.trim() && form.phone.trim() !== profilePhone.trim() && (
+          <label className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-xl bg-amber-50 border border-amber-100 cursor-pointer">
+            <input type="checkbox" checked={syncPhoneToProfile}
+              onChange={(e) => setSyncPhoneToProfile(e.target.checked)}
+              className="mt-0.5 shrink-0" />
+            <span className="text-xs text-amber-700 leading-relaxed">
+              เบอร์นี้ต่างจากที่บันทึกไว้ในโปรไฟล์ ({profilePhone})
+              — ต้องการอัปเดตเป็นเบอร์นี้ในโปรไฟล์ของฉันด้วยหรือไม่?
+            </span>
+          </label>
+        )}
 
         {/* Map pin */}
         <button type="button" onClick={() => setShowMap(true)}

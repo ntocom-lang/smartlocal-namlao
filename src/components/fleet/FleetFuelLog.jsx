@@ -63,7 +63,7 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
       supabase.from('fleet_vehicles').select('id, name, license_plate, asset_code, asset_kind, meter_unit, tank_capacity, fuel_type')
         .eq('municipality_id', tenant.id).eq('status', 'active').order('name'),
       supabase.from('profiles').select('id, full_name')
-        .eq('municipality_id', tenant.id).eq('fleet_role', 'fleet_staff').order('full_name'),
+        .eq('municipality_id', tenant.id).not('fleet_role', 'is', null).order('full_name'),
     ]).then(([{ data: v }, { data: s }]) => {
       setVehicles(v ?? [])
       setStaffList(s ?? [])
@@ -256,7 +256,7 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
             <table className="w-full text-sm border-collapse table-fixed">
               <thead>
                 <tr style={{ backgroundColor: '#1a3a5c' }}>
-                  {[...['ที่','วันที่','ทรัพย์สิน','ผู้เติม','จำนวน','รวม (฿)','มิเตอร์','ปั๊ม/เอกสาร'], ...(canWrite ? ['จัดการ'] : [])].map((h, i) => (
+                  {[...['ที่','วันที่','ทรัพย์สิน','ผู้ใช้รถ','จำนวน','รวม (฿)','มิเตอร์','ปั๊ม/เอกสาร'], ...(canWrite ? ['จัดการ'] : [])].map((h, i) => (
                     <th key={i} className="px-2 py-2 text-left text-[11px] font-bold text-white whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -432,7 +432,7 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
                 {editingId && <Pencil size={14} className="text-blue-500" />}
                 {editingId ? 'แก้ไขรายการเชื้อเพลิง' : 'บันทึกเชื้อเพลิง'}
               </h3>
-              <button onClick={closeModal} className="p-1.5 rounded-lg hover:bg-gray-100">
+              <button onClick={closeModal} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
                 <X size={16} />
               </button>
             </div>
@@ -457,10 +457,10 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
                 </select>
               </div>
 
-              {/* ผู้เติม — admin เปลี่ยนได้, staff เห็นแค่ตัวเอง */}
-              {isAdmin && staffList.length > 0 ? (
+              {/* ผู้ใช้รถ (คนเติม/ขับ ณ ตอนนั้น) — เปลี่ยนเป็นเพื่อนร่วมงานคนอื่นได้ เผื่อกรอกแทนกรณีฝากทำให้ */}
+              {staffList.length > 0 ? (
                 <div>
-                  <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้เติม / ผู้ใช้รถ</label>
+                  <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้ใช้รถ</label>
                   <select value={form.driver_id} onChange={set('driver_id')} className={sel}>
                     <option value="">— ไม่ระบุ —</option>
                     {staffList.map(s => (
@@ -470,9 +470,7 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
                 </div>
               ) : (
                 <div className="bg-gray-50 rounded-xl px-3 py-2 text-xs text-gray-500">
-                  👤 ผู้เติม: <span className="font-semibold text-gray-700">
-                    {staffList.find(s => s.id === user?.id)?.full_name ?? 'ฉัน'}
-                  </span>
+                  👤 ผู้ใช้รถ: <span className="font-semibold text-gray-700">ฉัน</span>
                 </div>
               )}
 

@@ -298,7 +298,7 @@ function UsersTab({ tenant, depts }) {
           <div className="relative bg-white rounded-t-3xl md:rounded-2xl w-full max-w-md max-h-[75vh] flex flex-col shadow-2xl">
             <div className="px-5 pt-5 pb-3 border-b border-gray-100 flex items-center justify-between shrink-0">
               <h3 className="font-bold text-gray-800">เลือกผู้ใช้ที่จะเพิ่ม</h3>
-              <button onClick={() => setShowPick(false)} className="p-1.5 rounded-lg hover:bg-gray-100"><X size={16} /></button>
+              <button onClick={() => setShowPick(false)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><X size={16} /></button>
             </div>
             <div className="px-5 py-3 shrink-0">
               <input value={search} onChange={e => setSearch(e.target.value)}

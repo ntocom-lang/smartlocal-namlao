@@ -27,6 +27,11 @@ const sel = inp + ' appearance-none'
 
 const SELECT = `*, vehicle:fleet_vehicles(id,name,license_plate,asset_code,asset_kind,meter_unit), driver:profiles!fleet_trips_driver_id_fkey(id,full_name), approver:profiles!fleet_trips_approved_by_fkey(full_name), departments(name,short_name)`
 
+function userOptionLabel(profile, currentUserId) {
+  const name = profile.full_name?.trim() || profile.email?.trim() || `ผู้ใช้ ${profile.id.slice(0, 8)}`
+  return `${name}${profile.id === currentUserId ? ' (ฉัน)' : ''}`
+}
+
 function toLocalDT(date) {
   const d = new Date(date)
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
@@ -283,9 +288,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
         .eq('municipality_id', tenant.id)
         .order('created_at', { ascending: false })
         .limit(300),
-      supabase.from('profiles').select('id,full_name,department_id')
+      supabase.from('profiles').select('id,full_name,email,department_id')
         .eq('municipality_id', tenant.id)
-        .eq('fleet_role', 'fleet_staff'),
+        .not('fleet_role', 'is', null)
+        .order('full_name'),
       supabase.from('fleet_vehicles').select('id,name,license_plate,asset_code,asset_kind,meter_unit')
         .eq('municipality_id', tenant.id).eq('asset_kind', 'vehicle')
         .eq('status', 'active').order('name'),
@@ -650,7 +656,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr style={{ backgroundColor: '#1a3a5c' }}>
-              {['ที่', 'วันที่', 'ยานพาหนะ', 'ปลายทาง', 'วัตถุประสงค์', 'ผู้ขับ', 'ระยะทาง', 'สถานะ', 'ดำเนินการ'].map(h => (
+              {['ที่', 'วันที่', 'ยานพาหนะ', 'ปลายทาง', 'วัตถุประสงค์', 'ผู้ใช้รถ', 'ระยะทาง', 'สถานะ', 'ดำเนินการ'].map(h => (
                 <th key={h} className="px-3 py-2.5 text-left text-xs font-bold text-white border-r border-white/10 last:border-r-0 whitespace-nowrap">
                   {h}
                 </th>
@@ -789,10 +795,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
             </div>
           </div>
           <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้ขับ / ผู้ใช้รถ</label>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้ใช้รถ</label>
             <select value={form.driver_id} onChange={set('driver_id')} className={sel}>
               {staffList.map(s => (
-                <option key={s.id} value={s.id}>{s.full_name}{s.id === user?.id ? ' (ฉัน)' : ''}</option>
+                <option key={s.id} value={s.id}>{userOptionLabel(s, user?.id)}</option>
               ))}
             </select>
           </div>
@@ -828,10 +834,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
             </select>
           </div>
           <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้ขับ / ผู้ใช้รถ</label>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้ใช้รถ</label>
             <select value={form.driver_id} onChange={set('driver_id')} className={sel}>
               {staffList.map(s => (
-                <option key={s.id} value={s.id}>{s.full_name}{s.id === user?.id ? ' (ฉัน)' : ''}</option>
+                <option key={s.id} value={s.id}>{userOptionLabel(s, user?.id)}</option>
               ))}
             </select>
           </div>
