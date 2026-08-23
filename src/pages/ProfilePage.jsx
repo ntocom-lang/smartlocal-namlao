@@ -319,9 +319,9 @@ export default function ProfilePage() {
             )}
           </div>
 
-          {/* ตำแหน่ง (read-only — map จาก role) */}
+          {/* สิทธิ์ใช้งาน (read-only — map จาก role) */}
           <div className="flex items-center px-5 py-4 gap-3">
-            <span className="text-sm text-gray-700 flex-1">ตำแหน่ง</span>
+            <span className="text-sm text-gray-700 flex-1">สิทธิ์ใช้งาน</span>
             <span className="text-sm font-medium text-right truncate max-w-50"
                   style={{ color: 'var(--color-primary)' }}>
               {roleLabel}
