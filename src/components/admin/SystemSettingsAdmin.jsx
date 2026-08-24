@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2, Wallpaper, MapPinned } from 'lucide-react'
+import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2, Wallpaper, MapPinned, X, Plus } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { uploadFile, toReliableImageUrl } from '../../lib/driveStorage'
 import { useTenant } from '../../contexts/TenantContext'
@@ -13,8 +13,13 @@ export default function SystemSettingsAdmin() {
   const [subtitle, setSubtitle] = useState(() => tenant?.system_subtitle || '')
   const [address, setAddress] = useState(() => tenant?.address || '')
   const [phone, setPhone] = useState(() => tenant?.phone || '')
+  const [fax, setFax] = useState(() => tenant?.fax || '')
   const [websiteUrl, setWebsiteUrl] = useState(() => tenant?.website_url || '')
   const [email, setEmail] = useState(() => tenant?.email || '')
+  // หมายเลขภายในแต่ละกอง — [{name, ext}] ต่างจากฟิลด์อื่นในฟอร์มนี้ตรงที่เป็นลิสต์ยาวไม่เท่ากันได้ จึงแยก
+  // ปุ่มบันทึกออกจาก saveContactInfo (กันพลาดกดบันทึกอันหนึ่งแล้วไปทับอีกอันที่ยังแก้ไม่เสร็จ)
+  const [internalExtensions, setInternalExtensions] = useState(() => tenant?.internal_extensions || [])
+  const [extensionsSaving, setExtensionsSaving] = useState(false)
   const [loading, setLoading] = useState(false)
   const [savedSection, setSavedSection] = useState(null)
   const [logoUploading, setLogoUploading] = useState(false)
@@ -85,6 +90,7 @@ export default function SystemSettingsAdmin() {
     try {
       const newAddress = address.trim() || null
       const newPhone = phone.trim() || null
+      const newFax = fax.trim() || null
       // เติม https:// ให้อัตโนมัติถ้าแอดมินพิมพ์แค่ "www.xxx.go.th" มา — ไม่งั้น <a href> จะตีความเป็น
       // relative path ต่อท้าย URL แอปเอง (เช่น localhost:5173/www.xxx.go.th) แทนที่จะออกเว็บจริง
       const trimmedWebsiteUrl = websiteUrl.trim()
@@ -92,14 +98,15 @@ export default function SystemSettingsAdmin() {
       const newEmail = email.trim() || null
 
       if (!tenant?.id) throw new Error('ไม่พบ tenant.id — กรุณา refresh หน้า')
-      
+
       const payload = {
         address: newAddress,
         phone: newPhone,
+        fax: newFax,
         website_url: newWebsiteUrl,
         email: newEmail,
       }
-      
+
       const { data, error } = await supabase
         .from('municipalities')
         .update(payload)
@@ -112,6 +119,7 @@ export default function SystemSettingsAdmin() {
       patchTenant({
         address: newAddress,
         phone: newPhone,
+        fax: newFax,
         website_url: newWebsiteUrl,
         email: newEmail
       })
@@ -123,6 +131,35 @@ export default function SystemSettingsAdmin() {
       alert('บันทึกไม่สำเร็จ: ' + err.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  // หมายเลขภายใน — กรองแถวว่างทิ้งก่อนบันทึก (ชื่อกอง/เบอร์ต่อ ว่างทั้งคู่ = แถวที่ผู้ใช้เพิ่มมาแล้วไม่ได้กรอก)
+  async function saveInternalExtensions() {
+    setExtensionsSaving(true)
+    try {
+      if (!tenant?.id) throw new Error('ไม่พบ tenant.id — กรุณา refresh หน้า')
+      const cleaned = internalExtensions
+        .map(row => ({ name: row.name.trim(), ext: row.ext.trim() }))
+        .filter(row => row.name || row.ext)
+
+      const { data, error } = await supabase
+        .from('municipalities')
+        .update({ internal_extensions: cleaned })
+        .eq('id', tenant.id)
+        .select('id')
+
+      if (error) throw error
+      if (!data?.length) throw new Error('RLS block — ไม่มีสิทธิ์ update municipalities')
+
+      patchTenant({ internal_extensions: cleaned })
+      setInternalExtensions(cleaned)
+      setSavedSection('extensions')
+      setTimeout(() => setSavedSection(null), 2500)
+    } catch (err) {
+      alert('บันทึกไม่สำเร็จ: ' + err.message)
+    } finally {
+      setExtensionsSaving(false)
     }
   }
 
@@ -446,7 +483,8 @@ export default function SystemSettingsAdmin() {
   const props = {
     tenant, inputCls, loading, savedSection,
     subtitle, setSubtitle, pwaShortName, setPwaShortName, saveSystemName,
-    address, setAddress, phone, setPhone, websiteUrl, setWebsiteUrl, email, setEmail, saveContactInfo,
+    address, setAddress, phone, setPhone, fax, setFax, websiteUrl, setWebsiteUrl, email, setEmail, saveContactInfo,
+    internalExtensions, setInternalExtensions, extensionsSaving, saveInternalExtensions,
     logoPreview, logoUploading, logoRef, handleLogoUpload,
     headerPreview, headerUploading, headerRef, handleHeaderUpload, removeHeaderImage,
     headerImageMode, headerModeSaving, setHeaderMode,
@@ -507,8 +545,18 @@ function DepartmentsTab({ tenant }) {
 function GeneralInfoTab({
   tenant, inputCls, loading, savedSection,
   subtitle, setSubtitle, pwaShortName, setPwaShortName, saveSystemName,
-  address, setAddress, phone, setPhone, websiteUrl, setWebsiteUrl, email, setEmail, saveContactInfo,
+  address, setAddress, phone, setPhone, fax, setFax, websiteUrl, setWebsiteUrl, email, setEmail, saveContactInfo,
+  internalExtensions, setInternalExtensions, extensionsSaving, saveInternalExtensions,
 }) {
+  function addExtensionRow() {
+    setInternalExtensions(prev => [...prev, { name: '', ext: '' }])
+  }
+  function updateExtensionRow(i, field, value) {
+    setInternalExtensions(prev => prev.map((row, idx) => idx === i ? { ...row, [field]: value } : row))
+  }
+  function removeExtensionRow(i) {
+    setInternalExtensions(prev => prev.filter((_, idx) => idx !== i))
+  }
   return (
     <div className="space-y-6">
       {/* ── ชื่อแอปบนมือถือ ── */}
@@ -578,7 +626,7 @@ function GeneralInfoTab({
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">เบอร์โทรศัพท์ / แฟกซ์</label>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">เบอร์โทรศัพท์</label>
               <input
                 type="text"
                 value={phone}
@@ -587,6 +635,19 @@ function GeneralInfoTab({
                 className={inputCls}
               />
             </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">โทรสาร (แฟกซ์) — เว้นว่างได้ถ้าไม่มี</label>
+              <input
+                type="text"
+                value={fax}
+                onChange={e => setFax(e.target.value)}
+                placeholder="เช่น 054-546-092 ต่อ 18"
+                className={inputCls}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-1">เว็บไซต์</label>
               <input
@@ -597,17 +658,16 @@ function GeneralInfoTab({
                 className={inputCls}
               />
             </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1">อีเมลกลาง</label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="เช่น phrae_namlao101@hotmail.co.th"
-              className={inputCls}
-            />
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">อีเมลกลาง</label>
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="เช่น phrae_namlao101@hotmail.co.th"
+                className={inputCls}
+              />
+            </div>
           </div>
 
           <div className="flex justify-end pt-2">
@@ -621,6 +681,57 @@ function GeneralInfoTab({
             </button>
           </div>
         </form>
+      </div>
+
+      {/* ── หมายเลขภายในแต่ละกอง ── แสดงในหน้า "ติดต่อหน่วยงาน" ของประชาชน ถ้าไม่กรอกจะซ่อน section
+          นั้นไปเลย ไม่ต้องกรอกครบทุกกองถ้าไม่มี — เพิ่ม/ลบแถวได้อิสระ ไม่ fix จำนวนกอง */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <h2 className="text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
+          <Building2 size={15} /> หมายเลขภายในแต่ละกอง
+        </h2>
+        <p className="text-xs text-gray-400 mb-4">แสดงในหน้า "ติดต่อหน่วยงาน" — เว้นว่างได้ถ้าไม่ต้องการแสดง</p>
+
+        <div className="space-y-2.5">
+          {internalExtensions.map((row, i) => (
+            <div key={i} className="flex items-center gap-2.5">
+              <input
+                type="text"
+                value={row.name}
+                onChange={e => updateExtensionRow(i, 'name', e.target.value)}
+                placeholder="เช่น กองคลัง"
+                className={`${inputCls} flex-1`}
+              />
+              <input
+                type="text"
+                value={row.ext}
+                onChange={e => updateExtensionRow(i, 'ext', e.target.value)}
+                placeholder="เช่น 11, 14"
+                className={`${inputCls} w-28 shrink-0`}
+              />
+              <button type="button" onClick={() => removeExtensionRow(i)}
+                className="shrink-0 w-9 h-9 flex items-center justify-center rounded-xl text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                <X size={16} />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <button type="button" onClick={addExtensionRow}
+          className="mt-3 px-4 py-2 text-xs font-semibold text-gray-500 border border-dashed border-gray-300 rounded-xl hover:bg-gray-50 hover:text-gray-700 transition-colors flex items-center gap-1.5">
+          <Plus size={14} /> เพิ่มกอง/ฝ่าย
+        </button>
+
+        <div className="flex justify-end pt-4">
+          <button
+            type="button"
+            onClick={saveInternalExtensions}
+            disabled={extensionsSaving}
+            className="px-6 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-xl shadow-sm hover:shadow transition-all flex items-center gap-2 disabled:opacity-50"
+          >
+            {savedSection === 'extensions' ? <CheckCircle2 size={16} /> : <Save size={16} />}
+            {savedSection === 'extensions' ? 'บันทึกแล้ว' : 'บันทึกหมายเลขภายใน'}
+          </button>
+        </div>
       </div>
     </div>
   )
