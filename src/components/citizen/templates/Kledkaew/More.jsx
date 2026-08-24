@@ -77,6 +77,7 @@ export default function KledkaewMore() {
       items: [
         { label: 'การแจ้งเตือน', icon: Bell, href: '/notifications', color: 'text-emerald-500', badge: unreadCount },
         { label: 'รายงานการออกเอกสาร', icon: ShieldCheck, href: '/doc-stats', color: 'text-emerald-500' },
+        { label: 'รายงานการจัดการเรื่องร้องเรียน/ร้องทุกข์', icon: ClipboardList, href: '/reports/complaints', color: 'text-emerald-500' },
         { label: 'ประเมินความพึงพอใจ', icon: Info, href: '/satisfaction', color: 'text-emerald-500' },
         { label: 'ติดต่อเรา', icon: Phone, href: '/contact', color: 'text-emerald-500' },
         { label: clearingCache ? 'กำลังล้างแคช...' : 'ล้างแคช / อัปเดตเวอร์ชั่นล่าสุด', icon: RefreshCw, action: handleClearCache, color: 'text-emerald-500' },

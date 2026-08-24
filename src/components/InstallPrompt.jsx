@@ -63,21 +63,16 @@ function IOSGuide({ onClose }) {
 }
 
 export default function InstallPrompt() {
+  const iosMode = isIOS()
   const [prompt, setPrompt] = useState(null)
-  const [visible, setVisible] = useState(false)
-  const [iosMode, setIosMode] = useState(false)
+  const [visible, setVisible] = useState(() => iosMode && !isStandalone())
   const [showGuide, setShowGuide] = useState(false)
 
   useEffect(() => {
     if (isStandalone()) return
-    if (sessionStorage.getItem('pwa-dismissed')) return
 
     // iOS Safari ไม่มี beforeinstallprompt → แสดง instructions manual
-    if (isIOS()) {
-      setIosMode(true)
-      setVisible(true)
-      return
-    }
+    if (iosMode) return
 
     const handler = (e) => {
       e.preventDefault()
@@ -86,21 +81,7 @@ export default function InstallPrompt() {
     }
     window.addEventListener('beforeinstallprompt', handler)
     return () => window.removeEventListener('beforeinstallprompt', handler)
-  }, [])
-
-  useEffect(() => {
-    if (visible) {
-      document.body.classList.add('has-install-prompt')
-    } else {
-      document.body.classList.remove('has-install-prompt')
-    }
-    return () => document.body.classList.remove('has-install-prompt')
-  }, [visible])
-
-  function dismiss() {
-    sessionStorage.setItem('pwa-dismissed', '1')
-    setVisible(false)
-  }
+  }, [iosMode])
 
   async function install() {
     if (!prompt) return
@@ -114,24 +95,19 @@ export default function InstallPrompt() {
   return (
     <>
       {showGuide && <IOSGuide onClose={() => setShowGuide(false)} />}
-      <div className="md:hidden fixed bottom-20 left-4 right-4 z-[60] bg-white rounded-2xl shadow-xl border border-gray-100 px-3 py-2.5 flex items-center gap-2.5"
-           style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.12)' }}>
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-             style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
-          {iosMode ? <PlusSquare size={18} className="text-white" /> : <Download size={18} className="text-white" />}
-        </div>
-        <p className="flex-1 text-xs font-medium text-gray-700 leading-snug">
-          {iosMode ? 'เพิ่มไปยังหน้าจอโฮม ใช้งานได้เหมือนแอปจริง' : 'ติดตั้งแอป · เข้าถึงได้รวดเร็วขึ้น'}
-        </p>
-        <button onClick={iosMode ? () => setShowGuide(true) : install}
-          className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold text-white active:scale-95 transition-all"
-          style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
-          {iosMode ? 'ดูวิธี' : 'ติดตั้ง'}
-        </button>
-        <button onClick={dismiss} className="shrink-0 p-1 text-gray-300 hover:text-gray-500">
-          <X size={16} />
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={iosMode ? () => setShowGuide(true) : install}
+        aria-label={iosMode ? 'ดูวิธีติดตั้งแอป' : 'ติดตั้งแอป'}
+        className="md:hidden fixed bottom-20 left-3 z-[60] inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-[11px] font-bold text-white shadow-lg motion-safe:animate-pulse active:scale-95 transition-transform"
+        style={{
+          background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)',
+          boxShadow: '0 4px 14px rgba(var(--color-primary-rgb), 0.32)',
+        }}
+      >
+        {iosMode ? <PlusSquare size={15} aria-hidden="true" /> : <Download size={15} aria-hidden="true" />}
+        <span>ติดตั้งแอป</span>
+      </button>
     </>
   )
 }
