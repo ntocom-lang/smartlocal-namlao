@@ -133,6 +133,7 @@ export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate,
 </p>
 
 <div class="points indent" style="margin-top:10px;">
+  ${c.issue_type ? `<div>ลักษณะปัญหา &nbsp;${esc(c.issue_type)}</div>` : ''}
   <div>สถานที่ &nbsp;${esc(point1)}</div>
 </div>
 
