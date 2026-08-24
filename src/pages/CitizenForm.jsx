@@ -61,6 +61,12 @@ const FALLBACK_COLOR = {
   waste_water: '#06b6d4', other: '#9ca3af',
 }
 
+// ตัวเลือก "ลักษณะปัญหา" เฉพาะหมวดที่มีประโยชน์จริง (ตอนนี้มีแค่ไฟฟ้าสาธารณะ) — เพิ่มหมวดอื่นได้โดยเพิ่ม
+// key ใหม่ที่นี่ ไม่ต้องแก้ที่อื่น (การ render/validate เช็คแค่ ISSUE_TYPES_BY_CATEGORY[form.category])
+const ISSUE_TYPES_BY_CATEGORY = {
+  light: ['ไฟดับทั้งดวง', 'ไฟกระพริบ', 'เสาเอียง/ชำรุด', 'สายไฟชำรุด', 'ต้องการติดตั้งเพิ่ม', 'อื่นๆ'],
+}
+
 const DEFAULT_CATEGORIES = [
   { value: 'light',            label: 'ไฟฟ้าสาธารณะ' },
   { value: 'road',             label: 'ซ่อมแซมถนน' },
@@ -281,7 +287,7 @@ export default function CitizenForm() {
   const ftConfig = FORM_TYPE_CONFIG[formType] ?? null
 
   const defaultCategory = ftConfig?.categories?.[0]?.value ?? preCategory
-  const [form, setForm] = useState({ category: defaultCategory, village: '', detail: '', phone: '', name_title: '', name_first: '', name_last: '' })
+  const [form, setForm] = useState({ category: defaultCategory, issue_type: '', village: '', detail: '', phone: '', name_title: '', name_first: '', name_last: '' })
   const [profilePhone, setProfilePhone] = useState('') // เบอร์เดิมจากโปรไฟล์ ไว้เทียบว่าผู้ใช้แก้เบอร์หรือไม่
   const [syncPhoneToProfile, setSyncPhoneToProfile] = useState(false)
   const [geo, setGeo] = useState({ lat: null, lng: null, address: null })
@@ -408,7 +414,7 @@ export default function CitizenForm() {
     if (!form.category) { setError('กรุณาเลือกประเภทคำร้อง'); return }
     if (!form.name_first.trim() || !form.name_last.trim()) { setError('กรุณากรอกชื่อ-นามสกุล'); return }
 
-    if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
+    if (ISSUE_TYPES_BY_CATEGORY[form.category] && !form.issue_type) { setError('กรุณาเลือกลักษณะปัญหา'); return }
     if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
     if (!tenant?.id) { setError('ไม่พบข้อมูลหน่วยงาน'); return }
 
@@ -436,7 +442,7 @@ export default function CitizenForm() {
       let insertResult
       try {
         insertResult = await raceTimeout(
-          supabase.rpc('submit_citizen_complaint', {
+          supabase.rpc('submit_citizen_complaint_v2', {
             p_id:              complaintId,
             p_municipality_id: tenant.id,
             p_category:        form.category,
@@ -450,6 +456,7 @@ export default function CitizenForm() {
             p_user_id:         userId,
             p_channel:         'citizen_online',
             p_department:      CATEGORY_DEPT[form.category] ?? 'สำนักปลัด',
+            p_issue_type:      form.issue_type || null,
           }).single()
             .abortSignal(abortCtrl.signal),
           20_000,
@@ -637,8 +644,23 @@ export default function CitizenForm() {
           </div>
         )}
 
+        {/* ลักษณะปัญหา — เฉพาะหมวดที่มีตัวเลือกกำหนดไว้ใน ISSUE_TYPES_BY_CATEGORY */}
+        {ISSUE_TYPES_BY_CATEGORY[form.category] && (
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">ลักษณะปัญหา *</label>
+            <div className="relative">
+              <select value={form.issue_type} onChange={set('issue_type')} required
+                className="w-full px-4 py-2.5 pr-10 rounded-xl border border-gray-300 bg-white text-gray-900 text-base focus:outline-none focus:border-blue-400 appearance-none">
+                <option value="">— กรุณาเลือก —</option>
+                {ISSUE_TYPES_BY_CATEGORY[form.category].map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <ChevronDown size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            </div>
+          </div>
+        )}
+
         {/* Detail */}
-        <textarea value={form.detail} onChange={set('detail')} rows={4} required
+        <textarea value={form.detail} onChange={set('detail')} rows={2} required
           placeholder={ftConfig?.placeholder ?? 'รายละเอียด'}
           className="w-full px-4 py-3.5 rounded-xl border border-gray-300 bg-white text-gray-900 text-base placeholder-gray-400 resize-none focus:outline-none focus:border-blue-400" />
 
@@ -737,7 +759,7 @@ export default function CitizenForm() {
           if (!form.category) { setError('กรุณาเลือกประเภทคำร้อง'); return }
           if (!form.name_first.trim() || !form.name_last.trim()) { setError('กรุณากรอกชื่อ-นามสกุล'); return }
 
-          if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
+          if (ISSUE_TYPES_BY_CATEGORY[form.category] && !form.issue_type) { setError('กรุณาเลือกลักษณะปัญหา'); return }
           if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
           setShowConsent(true)
         }} disabled={submitting}

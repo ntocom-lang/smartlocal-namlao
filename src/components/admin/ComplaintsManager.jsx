@@ -994,6 +994,15 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
             </div>
           )}
 
+          {c.issue_type && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ลักษณะปัญหา</p>
+              <span className="inline-block text-sm font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-1.5">
+                {c.issue_type}
+              </span>
+            </div>
+          )}
+
           <div className="space-y-2">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">รายละเอียดแนบมา</p>
             <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
