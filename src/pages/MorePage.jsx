@@ -476,12 +476,15 @@ function NamlaoMorePage() {
 
         {/* ─── เมนูที่ใช้บ่อย ─── จัดอันดับจากพฤติกรรมจริงของแต่ละคน (ดู quickItems ด้านบน + src/lib/menuUsage.js)
             ไม่อยู่ใน accordion ด้านล่าง กดใช้ได้ทันทีไม่ต้องขยายหมวดก่อน */}
-        <div className="bg-white rounded-2xl shadow-[0_1px_3px_rgba(15,23,42,0.06),0_1px_2px_rgba(15,23,42,0.04)] border border-gray-100 px-2 py-4">
-          <div className="grid grid-cols-4 gap-1">
-            {quickItems.map(item => (
-              <QuickLink key={item.path} icon={item.icon} iconBg={item.iconBg} iconColor={item.iconColor}
-                label={item.label} href={item.path} />
-            ))}
+        <div>
+          <p className="text-[13px] font-bold text-gray-500 uppercase tracking-wider px-4 mb-2">เมนูที่ใช้งานบ่อย</p>
+          <div className="bg-white rounded-2xl shadow-[0_1px_3px_rgba(15,23,42,0.06),0_1px_2px_rgba(15,23,42,0.04)] border border-gray-100 px-2 py-4">
+            <div className="grid grid-cols-4 gap-1">
+              {quickItems.map(item => (
+                <QuickLink key={item.path} icon={item.icon} iconBg={item.iconBg} iconColor={item.iconColor}
+                  label={item.label} href={item.path} />
+              ))}
+            </div>
           </div>
         </div>
 
