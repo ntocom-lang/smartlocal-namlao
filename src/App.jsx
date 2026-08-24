@@ -13,6 +13,7 @@ import InAppBrowserGate from './components/InAppBrowserGate'
 import { supabase } from './lib/supabase'
 import { Phone, UserRound } from 'lucide-react'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from './lib/thaiName'
+import { recordVisit } from './lib/menuUsage'
 
 const HomePage = lazyWithRetry(() => import('./pages/HomePage'))
 const CitizenForm = lazyWithRetry(() => import('./pages/CitizenForm'))
@@ -297,6 +298,13 @@ function AppShell() {
   // ช่างมีเมนูบนสุด/แถบข้างมาตรฐานอยู่แล้วในทุกธีม (NAV_TECH) แต่ต้องเปิดเฉพาะจอ PC
   // มือถือยังใช้หัวจอ/เมนูล่างของ TechnicianDashboard เองตามเดิม กันซ้อนกับของที่มีอยู่แล้ว
   const isTechnician = location.pathname.startsWith('/technician')
+
+  // นับความถี่เข้าเมนู ไว้จัดอันดับ "เมนูที่ใช้บ่อย" ในหน้า More (ดู src/lib/menuUsage.js) — ต้องอยู่
+  // ที่ AppShell ระดับนี้ ไม่ใช่แค่ในหน้า More เอง เพราะต้องนับทุกทางที่เข้าถึงเมนูนั้น (บอตทอมนาฟ,
+  // ลิงก์ตรง ฯลฯ) ไม่ใช่แค่ตอนกดผ่านหน้า More
+  useEffect(() => {
+    recordVisit(location.pathname)
+  }, [location.pathname])
   // ช่างยังใช้เมนูล่างของแอป (NAV_TECH) ได้ ต่างจาก /admin กับ /staff ที่ไม่มีเมนูล่างเลย
   const hideBottomNav = ['/admin', '/staff', '/dev-journal', '/data-center'].some(p => location.pathname.startsWith(p))
 

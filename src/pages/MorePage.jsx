@@ -11,6 +11,7 @@ import {
 import qrCodeImage from '../assets/qr-code.png'
 import { supabase } from '../lib/supabase'
 import { clearCacheAndReload } from '../lib/clearCache'
+import { getRankedPaths } from '../lib/menuUsage'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useNotifications } from '../contexts/NotificationsContext'
@@ -196,6 +197,19 @@ function Section({ title, id, isOpen, onToggle, children }) {
   )
 }
 
+// ปุ่มลัดเมนูที่ใช้บ่อย — วางไว้นอก accordion ที่ยุบได้ ตั้งใจให้เห็นตลอดไม่ต้องกดขยายหมวดไหนก่อน
+function QuickLink({ icon: Icon, iconBg, iconColor, label, href }) {
+  return (
+    <Link to={href}
+      className="flex flex-col items-center gap-1.5 py-1 rounded-2xl text-center hover:bg-gray-50 active:bg-gray-100 transition-colors">
+      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-sm ${iconBg}`}>
+        <Icon size={22} className={iconColor} />
+      </div>
+      <span className="text-[11px] font-semibold text-gray-600 leading-tight">{label}</span>
+    </Link>
+  )
+}
+
 function MenuRow({ icon: Icon, iconBg, iconColor = 'text-gray-600', label, desc, badge, href, onClick, danger, external }) {
   const inner = (
     <div className={`flex items-center gap-3.5 px-4 py-3.5 transition-colors hover:bg-gray-50 active:bg-gray-100 ${danger ? 'bg-red-50/50 hover:bg-red-50 active:bg-red-100' : ''}`}>
@@ -331,6 +345,34 @@ function NamlaoMorePage() {
 
   const hasSocial = tenant?.website_url || tenant?.facebook_url || tenant?.line_oa_url
 
+  // ─── เมนูที่ใช้บ่อย ─── ต้อง sync path กับ TRACKABLE_PATHS ใน src/lib/menuUsage.js (path ไหนไม่อยู่
+  // ในนั้น จะไม่ถูกนับ ต่อให้ใส่ไว้ในนี้ก็ตาม) DEFAULT_QUICK_PATHS ใช้ตอนยังไม่มีประวัติการใช้งานเลย
+  // (ผู้ใช้ใหม่/เพิ่งล้าง cache) เรียงตามที่คาดว่าจำเป็นที่สุดของงานบริการประชาชนทั่วไป
+  const QUICK_MENU_CATALOG = [
+    { path: '/emergency', icon: AlertTriangle, iconBg: 'bg-red-100', iconColor: 'text-red-600', label: 'เหตุฉุกเฉิน' },
+    { path: '/complaint', icon: ClipboardList, iconBg: 'bg-orange-100', iconColor: 'text-orange-600',
+      label: tenant?.ui_style === 'service_hub' ? 'ร้องเรียน/ร้องทุกข์' : 'แจ้งเหตุ/แจ้งซ่อม' },
+    { path: '/doc-request', icon: FileText, iconBg: 'bg-blue-100', iconColor: 'text-blue-600', label: 'สอบถามยอดชำระ' },
+    { path: '/my-complaints', icon: FileSearch, iconBg: 'bg-sky-100', iconColor: 'text-sky-600', label: 'คำร้องของฉัน' },
+    { path: '/events', icon: CalendarDays, iconBg: 'bg-green-100', iconColor: 'text-green-600', label: 'ปฏิทินกิจกรรม' },
+    { path: '/tourism', icon: Luggage, iconBg: 'bg-orange-100', iconColor: 'text-orange-600', label: 'แหล่งท่องเที่ยว' },
+    { path: '/market', icon: Store, iconBg: 'bg-amber-100', iconColor: 'text-amber-600', label: 'OTOP' },
+    { path: '/data-center', icon: Database, iconBg: 'bg-indigo-100', iconColor: 'text-indigo-600', label: 'ศูนย์ข้อมูลดิจิทัล' },
+    { path: '/my-docs', icon: FileText, iconBg: 'bg-sky-100', iconColor: 'text-sky-600', label: 'เอกสารของฉัน' },
+    { path: '/weather', icon: Cloud, iconBg: 'bg-sky-100', iconColor: 'text-sky-600', label: 'สภาพอากาศ' },
+    { path: '/contact', icon: Phone, iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600', label: 'ติดต่อเรา' },
+    { path: '/notifications', icon: Bell, iconBg: 'bg-purple-100', iconColor: 'text-purple-600', label: 'แจ้งเตือน' },
+  ]
+  const DEFAULT_QUICK_PATHS = ['/complaint', '/emergency', '/doc-request', '/my-complaints']
+  // อ่าน localStorage แบบ lazy initializer ของ useState (sync, ครั้งเดียวตอน mount) แทน useEffect+setState
+  // เพราะไม่ใช่การ subscribe ค่าที่เปลี่ยนได้จากภายนอกระหว่างหน้านี้เปิดอยู่ — ตรง React's "คุณอาจไม่ต้อง
+  // ใช้ Effect" และเลี่ยง react-hooks/set-state-in-effect
+  const [quickPaths] = useState(() => {
+    const ranked = getRankedPaths().filter(p => QUICK_MENU_CATALOG.some(c => c.path === p))
+    return [...ranked, ...DEFAULT_QUICK_PATHS.filter(p => !ranked.includes(p))].slice(0, 4)
+  })
+  const quickItems = quickPaths.map(p => QUICK_MENU_CATALOG.find(c => c.path === p)).filter(Boolean)
+
   return (
     <div className="min-h-screen pb-28 md:pb-8" style={{ backgroundColor: '#eef2f7' }}>
     {showSat && (
@@ -431,6 +473,17 @@ function NamlaoMorePage() {
             </div>
           </div>
         )}
+
+        {/* ─── เมนูที่ใช้บ่อย ─── จัดอันดับจากพฤติกรรมจริงของแต่ละคน (ดู quickItems ด้านบน + src/lib/menuUsage.js)
+            ไม่อยู่ใน accordion ด้านล่าง กดใช้ได้ทันทีไม่ต้องขยายหมวดก่อน */}
+        <div className="bg-white rounded-2xl shadow-[0_1px_3px_rgba(15,23,42,0.06),0_1px_2px_rgba(15,23,42,0.04)] border border-gray-100 px-2 py-4">
+          <div className="grid grid-cols-4 gap-1">
+            {quickItems.map(item => (
+              <QuickLink key={item.path} icon={item.icon} iconBg={item.iconBg} iconColor={item.iconColor}
+                label={item.label} href={item.path} />
+            ))}
+          </div>
+        </div>
 
         {/* เนื้อหาส่วนที่เหลือใช้ CSS multi-column (ไม่ใช่ grid) บน PC — แต่ละ Section สูงไม่เท่ากัน
             grid-cols-2 ปกติจะจัดแถวชนกันดูรก ส่วนนี้ปล่อยให้ไหลจากบนลงล่างทีละคอลัมน์แทน จบสวยเป็นระเบียบ
