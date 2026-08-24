@@ -98,6 +98,14 @@ function injectPWAManifest(tenant) {
       document.head.appendChild(appleIcon)
     }
     appleIcon.href = tenant.logo_url
+
+    // favicon แท็บเบราว์เซอร์ — index.html hardcode /logo.png (โลโก้ namlao ตัวเดิมสมัย single-tenant)
+    // ไว้เป็นค่าเริ่มต้นก่อน JS โหลดเสร็จ ทุก tenant deploy จากโค้ดชุดเดียวกันเลยเห็นโลโก้เดียวกันหมดถ้า
+    // ไม่มาแก้ href ตรงนี้ทับหลัง fetch tenant เสร็จ — แก้ทั้ง rel="icon" และ "shortcut icon" (บาง
+    // เบราว์เซอร์ใช้ tag คนละอันกัน)
+    document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]').forEach(el => {
+      el.href = tenant.logo_url
+    })
   }
 }
 
