@@ -89,6 +89,42 @@ const CATEGORY_DEPT = {
   tax: 'กองคลัง',
 }
 
+const REPAIR_CATEGORIES = new Set([
+  'light', 'road', 'road_concrete', 'road_asphalt', 'road_slurry', 'road_gravel',
+  'drain', 'manhole', 'pipe_water',
+])
+
+function getFormActionCopy(formType, category, categoryLabel = '') {
+  if (formType === 'infrastructure') {
+    return { title: 'แจ้งเหตุ/แจ้งซ่อม', submit: 'ส่งเรื่องแจ้งเหตุ/แจ้งซ่อม' }
+  }
+  if (formType === 'water_support') {
+    return { title: 'ขอสนับสนุนน้ำอุปโภค-บริโภค', submit: 'ส่งคำขอรับบริการ' }
+  }
+  if (category === 'mosquito') {
+    return { title: 'ขอรับบริการควบคุมและกำจัดยุง', submit: 'ส่งคำขอรับบริการ' }
+  }
+  if (category === 'disease') {
+    return { title: 'ขอรับบริการควบคุมโรคติดต่อ', submit: 'ส่งคำขอรับบริการ' }
+  }
+  if (['water_supply', 'borrow_equipment', 'suction'].includes(category)) {
+    return { title: categoryLabel || 'ขอรับบริการ', submit: 'ส่งคำขอรับบริการ' }
+  }
+  if (category === 'grievance') {
+    return { title: 'แจ้งเรื่องร้องทุกข์', submit: 'ส่งเรื่องร้องทุกข์' }
+  }
+  if (category === 'corruption') {
+    return { title: 'แจ้งเบาะแสหรือข้อร้องเรียนทุจริต', submit: 'ส่งเรื่องร้องเรียน' }
+  }
+  if (REPAIR_CATEGORIES.has(category)) {
+    return { title: categoryLabel ? `แจ้ง${categoryLabel}ชำรุด` : 'แจ้งเหตุ/แจ้งซ่อม', submit: 'ส่งเรื่องแจ้งซ่อม' }
+  }
+  if (formType === 'environment') {
+    return { title: 'แจ้งเหตุสิ่งแวดล้อม/ขอรับบริการ', submit: 'ส่งคำร้อง' }
+  }
+  return { title: categoryLabel || 'ยื่นคำร้อง', submit: 'ส่งคำร้อง' }
+}
+
 const GEO_STATUS = { idle: 'idle', ok: 'ok' }
 
 function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, complaintId, photoFiles, primaryColor }) {
@@ -259,7 +295,7 @@ const FORM_TYPE_CONFIG = {
     placeholder: 'อธิบายสถานการณ์ เช่น น้ำในถังกลางหมู่บ้านหมดแล้ว...',
   },
   environment: {
-    label: 'แจ้งเหตุสิ่งแวดล้อม / จุดเสี่ยงภัย',
+    label: 'แจ้งเหตุสิ่งแวดล้อม / ขอรับบริการ',
     icon: '🌿',
     color: '#10b981',
     categories: [
@@ -462,7 +498,7 @@ export default function CitizenForm() {
           20_000,
         )
       } catch {
-        setError('เครือข่ายช้าหรือขาดหาย กรุณาตรวจสอบสัญญาณแล้วกด แจ้งเหตุ/แจ้งซ่อม อีกครั้ง')
+        setError(`เครือข่ายช้าหรือขาดหาย กรุณาตรวจสอบสัญญาณแล้วกด ${getFormActionCopy(formType, form.category).submit} อีกครั้ง`)
         return
       }
       const { data: inserted, error: dbError } = insertResult ?? {}
@@ -504,13 +540,14 @@ export default function CitizenForm() {
   const catDbData = categories.find(c => c.value === form.category)
   const catEmoji = catDbData?.emoji ?? FALLBACK_EMOJI[form.category] ?? null
   const catColor = catDbData?.color ?? FALLBACK_COLOR[form.category] ?? null
+  const actionCopy = getFormActionCopy(formType, form.category, catLabel)
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#eef2f7' }}>
 
       {/* PC header */}
       <div className="hidden md:flex items-center justify-between px-8 py-4 bg-white border-b border-gray-200 shadow-sm">
-        <h1 className="text-lg font-bold text-gray-800">แจ้งเหตุ/แจ้งซ่อม</h1>
+        <h1 className="text-lg font-bold text-gray-800">{actionCopy.title}</h1>
         <button onClick={() => navigate(-1)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors">
           <ArrowLeft size={15} />
@@ -567,7 +604,7 @@ export default function CitizenForm() {
           <ArrowLeft size={20} className="text-white" />
         </button>
         <h1 className="font-bold text-white text-base flex-1 text-center pr-8">
-          {ftConfig ? ftConfig.label : (catLabel || 'แจ้งเหตุ/แจ้งซ่อม')}
+          {actionCopy.title}
         </h1>
       </div>
 
@@ -767,7 +804,7 @@ export default function CitizenForm() {
           style={{ backgroundColor: '#16a34a' }}>
           {submitting
             ? <><Loader2 size={18} className="animate-spin" /> กำลังส่ง...</>
-            : 'แจ้งเหตุ/แจ้งซ่อม'}
+            : actionCopy.submit}
         </button>
 
 

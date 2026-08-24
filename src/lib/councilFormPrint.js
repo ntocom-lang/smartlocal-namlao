@@ -32,6 +32,103 @@ function bareSubdistrictName(tenant) {
   return tenant.name.replace(strip, '').trim()
 }
 
+const REPAIR_CATEGORIES = new Set([
+  'light', 'road', 'road_concrete', 'road_asphalt', 'road_slurry', 'road_gravel',
+  'drain', 'manhole', 'pipe_water',
+])
+
+const INSPECTION_CATEGORIES = new Set([
+  'trash', 'flood', 'noise', 'waste_water', 'pollution', 'animals', 'building',
+])
+
+function buildRequestCopy(category, categoryLabel, tenantName) {
+  const label = categoryLabel || 'เรื่องที่แจ้ง'
+  const org = tenantName || 'หน่วยงาน'
+
+  if (category === 'mosquito') {
+    return {
+      subject: 'ขอความอนุเคราะห์ดำเนินการควบคุมและกำจัดยุง',
+      body: `มีความประสงค์ขอความอนุเคราะห์${org}ตรวจสอบพื้นที่และดำเนินการควบคุมและกำจัดยุงบริเวณที่ระบุด้านล่าง เพื่อป้องกันและลดความเสี่ยงจากโรคที่มียุงเป็นพาหะ`,
+    }
+  }
+
+  if (category === 'disease') {
+    return {
+      subject: 'ขอความอนุเคราะห์ดำเนินการควบคุมโรคติดต่อ',
+      body: `มีความประสงค์ขอความอนุเคราะห์${org}ตรวจสอบและดำเนินการควบคุมโรคติดต่อบริเวณที่ระบุด้านล่างตามความเหมาะสม`,
+    }
+  }
+
+  if (category === 'water_supply') {
+    return {
+      subject: 'ขอรับการสนับสนุนน้ำอุปโภค-บริโภค',
+      body: `มีความประสงค์ขอรับการสนับสนุนน้ำอุปโภค-บริโภคจาก${org} ณ สถานที่และตามรายละเอียดที่ระบุด้านล่าง`,
+    }
+  }
+
+  if (category === 'borrow_equipment') {
+    return {
+      subject: 'ขอยืมใช้พัสดุหรืออุปกรณ์ของทางราชการ',
+      body: `มีความประสงค์ขอยืมใช้พัสดุหรืออุปกรณ์ของ${org} ตามรายการ วัตถุประสงค์ และสถานที่ที่ระบุด้านล่าง`,
+    }
+  }
+
+  if (category === 'suction') {
+    return {
+      subject: 'ขอรับบริการดูดสิ่งปฏิกูล',
+      body: `มีความประสงค์ขอรับบริการดูดสิ่งปฏิกูลจาก${org} ณ สถานที่และตามรายละเอียดที่ระบุด้านล่าง`,
+    }
+  }
+
+  if (category === 'tree' || category === 'canal') {
+    return {
+      subject: `ขอความอนุเคราะห์ดำเนินการเกี่ยวกับ${label}`,
+      body: `มีความประสงค์ขอความอนุเคราะห์${org}ตรวจสอบและพิจารณาดำเนินการเกี่ยวกับ${label} ณ สถานที่และตามรายละเอียดที่ระบุด้านล่าง`,
+    }
+  }
+
+  if (category === 'grievance') {
+    return {
+      subject: 'ขอให้ตรวจสอบและแก้ไขความเดือดร้อน',
+      body: `มีความประสงค์ยื่นเรื่องร้องทุกข์ต่อ${org} เพื่อขอให้ตรวจสอบข้อเท็จจริงและพิจารณาดำเนินการแก้ไขความเดือดร้อนตามรายละเอียดที่ระบุด้านล่าง`,
+    }
+  }
+
+  if (category === 'corruption') {
+    return {
+      subject: 'แจ้งเบาะแสหรือข้อร้องเรียนเกี่ยวกับการทุจริต',
+      body: `มีความประสงค์แจ้งเบาะแสหรือข้อร้องเรียนเกี่ยวกับการทุจริตต่อ${org} เพื่อขอให้ตรวจสอบข้อเท็จจริงและดำเนินการตามอำนาจหน้าที่`,
+    }
+  }
+
+  if (REPAIR_CATEGORIES.has(category)) {
+    return {
+      subject: `แจ้ง${label}ชำรุด`,
+      body: `มีความประสงค์แจ้ง${label}ชำรุด และขอความอนุเคราะห์${org}ตรวจสอบและดำเนินการซ่อมแซม ณ สถานที่และตามรายละเอียดที่ระบุด้านล่าง`,
+    }
+  }
+
+  if (INSPECTION_CATEGORIES.has(category)) {
+    return {
+      subject: `แจ้งปัญหา${label}`,
+      body: `มีความประสงค์แจ้งปัญหา${label} และขอให้${org}ตรวจสอบข้อเท็จจริงและพิจารณาดำเนินการแก้ไขตามอำนาจหน้าที่`,
+    }
+  }
+
+  return {
+    subject: `ขอให้พิจารณาดำเนินการเกี่ยวกับ${label}`,
+    body: `มีความประสงค์ขอให้${org}ตรวจสอบและพิจารณาดำเนินการเกี่ยวกับ${label} ตามสถานที่และรายละเอียดที่ระบุด้านล่าง`,
+  }
+}
+
+function departmentHeadFallback(department) {
+  if (department === 'สำนักปลัด') return 'หัวหน้าสำนักปลัด'
+  if (department?.startsWith('กอง')) return `ผู้อำนวยการ${department}`
+  return department
+    ? `หัวหน้าส่วนราชการผู้รับผิดชอบ (${department})`
+    : 'หัวหน้าส่วนราชการผู้รับผิดชอบ'
+}
+
 // ใบคำร้องทางการ — ใช้กับคำร้องทุกประเภท ไม่ว่าผู้แจ้งจะเป็นประชาชนทั่วไปหรือสมาชิกสภา
 // อ้างอิงจากแบบฟอร์มกระดาษจริงที่เทศบาลตำบลน้ำเลาใช้งานอยู่
 // terminology มาจาก useTenant() — ให้คำเรียกตำแหน่งถูกต้องตาม org_type ของแต่ละหน่วยงาน
@@ -80,11 +177,14 @@ export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate,
 
   const mayor = staffList?.find((s) => s.role === 'mayor')
   const clerk = staffList?.find((s) => s.role === 'clerk')
-  const engineeringDirector = staffList?.find((s) => s.title?.includes('ผู้อำนวยการกองช่าง'))
-    || staffList?.find((s) => s.role === 'dept_head' && c.department && s.title?.includes(c.department))
-    || (tenant?.slug === 'namlao'
+  const departmentHead = staffList?.find((s) => s.role === 'dept_head' && c.department && s.title?.includes(c.department))
+    || staffList?.find((s) => c.department
+      && /หัวหน้า|ผู้อำนวยการ/.test(s.title ?? '')
+      && s.title.includes(c.department))
+    || (c.department === 'กองช่าง' && tenant?.slug === 'namlao'
       ? { name: 'นายชัยศักดิ์ ชัยธรรม', title: 'ผู้อำนวยการกองช่าง' }
       : null)
+  const requestCopy = buildRequestCopy(c.category, cat, tenant?.name)
 
   const location1 = [c.location_name, c.village].filter(Boolean).join(', ')
   const point1 = [location1, c.detail].filter(Boolean).join(' — ') || '.................................................................................................'
@@ -122,14 +222,13 @@ export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate,
 <p class="center" style="font-size:18px;font-weight:700;margin-top:10px;">คำร้อง</p>
 <p class="center" style="margin-top:2px;">ผ่านระบบ E-Service ${esc(tenant?.name ?? '')}</p>
 
-<p style="margin-top:16px;">เรื่อง &nbsp;&nbsp;แจ้งซ่อมแซม${esc(cat)}</p>
+<p style="margin-top:16px;">เรื่อง &nbsp;&nbsp;${esc(requestCopy.subject)}</p>
 <p style="margin-top:4px;">เรียน &nbsp;&nbsp;${esc(mayorTitle)}</p>
 
 <p class="indent" style="margin-top:8px;">ข้าพเจ้า ${esc(reporter)} ${esc(positionLine)} ${esc(addrParts.join(' '))} <span style="white-space:nowrap;">โทรศัพท์ ${esc(phone)}</span></p>
 
 <p class="indent" style="margin-top:10px;">
-  มีความประสงค์แจ้งซ่อมแซม${esc(cat)} เพื่อความปลอดภัยในชีวิตและทรัพย์สินของราษฎรในพื้นที่
-  จึงขอความอนุเคราะห์${esc(tenant?.name ?? '')}ให้ความอนุเคราะห์ในการซ่อมแซม${esc(cat)}ให้ใช้งานได้ตามปกติ
+  ${esc(requestCopy.body)}
 </p>
 
 <div class="points indent" style="margin-top:10px;">
@@ -146,7 +245,7 @@ export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate,
 
   ${includeStaffSignatures ? `
   <div style="display:flex;justify-content:space-between;margin-top:24px;">
-    ${signBlock(engineeringDirector, 'ผู้อำนวยการกองช่าง')}
+    ${signBlock(departmentHead, departmentHeadFallback(c.department))}
     ${signBlock(clerk, clerkTitle)}
   </div>
 
