@@ -71,6 +71,7 @@ const COMPLAINT_CATEGORY_LABEL: Record<string, string> = {
   borrow_equipment: 'ยืมพัสดุ', grievance: 'ร้องทุกข์/ร้องเรียน',
   corruption: 'แจ้งการทุจริต', tax: 'ภาษีและค่าธรรมเนียม',
   disease: 'ควบคุมโรคติดต่อ', other: 'อื่นๆ',
+  odor: 'กลิ่นเหม็นรบกวน (มลพิษทางอากาศ)',
 }
 
 // ต้องตรงกับ STATUS ใน src/components/admin/ComplaintsManager.jsx ทุกคำ
@@ -83,10 +84,9 @@ const COMPLAINT_STATUS_LABEL: Record<string, string> = {
   rejected: 'ปฏิเสธ',
 }
 
-// complaint_status_updated/technician_* ไม่อยู่ในนี้แล้ว — ใช้ buildComplaintStatusMessage() แทน
-// เพื่อโชว์ประเภท/สถานะจริงในข้อความ (ดู notificationType selection ด้านล่าง)
+// complaint_created/complaint_status_updated/technician_* ไม่อยู่ในนี้แล้ว — ใช้ buildComplaintCreatedMessage()/
+// buildComplaintStatusMessage() แทน เพื่อโชว์ประเภท/สถานะจริงในข้อความ (ดู notificationType selection ด้านล่าง)
 const STATIC_MESSAGES: Partial<Record<NotificationType, string>> = {
-  complaint_created: '📋 <b>มีคำร้องใหม่</b>\nกรุณาเข้าสู่ระบบ SmartLocal เพื่อดูรายละเอียดตามสิทธิ์',
   document_request_created: '📄 <b>มีคำขอเอกสารใหม่</b>\nกรุณาเข้าสู่ระบบ SmartLocal เพื่อดูรายละเอียดตามสิทธิ์',
   document_request_status_updated: '🔄 <b>มีการอัปเดตสถานะคำขอเอกสาร</b>\nกรุณาเข้าสู่ระบบ SmartLocal เพื่อดูรายละเอียดตามสิทธิ์',
   building_permit_created: '🏗️ <b>มีคำขออนุญาตก่อสร้างใหม่</b>\nกรุณาเข้าสู่ระบบ SmartLocal เพื่อดูรายละเอียดตามสิทธิ์',
@@ -149,6 +149,16 @@ function buildEventMessage(event: Record<string, unknown>) {
     event.location ? `📍 ${escapeHtml(event.location, 200)}` : '',
     event.description ? `📝 ${escapeHtml(event.description, 120)}` : '',
   ].filter(Boolean).join('\n').slice(0, 1800)
+}
+
+// เดิม complaint_created ใช้ STATIC_MESSAGES ข้อความเดียวกันทุกคำร้อง ไม่บอกประเภท — ผู้ดูแลต้องเปิดระบบ
+// ก่อนถึงจะรู้ว่าเรื่องอะไร เลยเพิ่มประเภทให้เห็นเบื้องต้นในแชทเลย เหมือน buildComplaintStatusMessage()
+function buildComplaintCreatedMessage(complaint: Record<string, unknown>) {
+  const category = COMPLAINT_CATEGORY_LABEL[String(complaint.category)] ?? (cleanText(complaint.category, 60) || 'อื่นๆ')
+  return [
+    '📋 <b>มีคำร้องใหม่</b>',
+    `ประเภท: ${escapeHtml(category, 60)}`,
+  ].join('\n')
 }
 
 function buildComplaintStatusMessage(complaint: Record<string, unknown>) {
@@ -361,9 +371,11 @@ serve(async (req) => {
 
     const message = notificationType === 'event_created'
       ? buildEventMessage(resource)
-      : notificationType === 'complaint_status_updated' || notificationType.startsWith('technician_')
-        ? buildComplaintStatusMessage(resource)
-        : STATIC_MESSAGES[notificationType]
+      : notificationType === 'complaint_created'
+        ? buildComplaintCreatedMessage(resource)
+        : notificationType === 'complaint_status_updated' || notificationType.startsWith('technician_')
+          ? buildComplaintStatusMessage(resource)
+          : STATIC_MESSAGES[notificationType]
     if (!message) {
       await finish('failed', { last_error: 'Notification template is not configured' })
       return json({ ok: false, error: 'notification template is not configured' }, 500)
