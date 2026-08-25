@@ -13,6 +13,7 @@ const ALLOWED_NOTIFICATION_TYPES = new Set([
   'technician_received',
   'technician_in_progress',
   'technician_closed',
+  'fleet_trip_bumped',
 ])
 
 /**

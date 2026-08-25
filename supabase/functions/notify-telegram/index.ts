@@ -27,6 +27,7 @@ const notificationSpecs = {
   technician_received: { table: 'complaints', resourceType: 'complaint', access: 'staff' },
   technician_in_progress: { table: 'complaints', resourceType: 'complaint', access: 'staff' },
   technician_closed: { table: 'complaints', resourceType: 'complaint', access: 'staff' },
+  fleet_trip_bumped: { table: 'fleet_trips', resourceType: 'fleet_trip', access: 'staff' },
 } as const
 
 type NotificationType = keyof typeof notificationSpecs
@@ -171,6 +172,22 @@ function buildComplaintStatusMessage(complaint: Record<string, unknown>) {
   ].join('\n')
 }
 
+// แจ้งเจ้าของการจองรถเดิม เมื่อ admin ใช้สิทธิ์ "จองแทนที่ฉุกเฉิน" ยกเลิกการจองของเขาไปให้ภารกิจด่วนกว่า
+function buildFleetTripBumpedMessage(trip: Record<string, unknown>) {
+  const vehicle = trip.vehicle as { name?: string } | null
+  const driver = trip.driver as { full_name?: string } | null
+  const vehicleName = cleanText(vehicle?.name, 100) || 'ไม่ทราบคัน'
+  const driverName = cleanText(driver?.full_name, 100) || 'ไม่ทราบชื่อ'
+  const reason = cleanText(trip.reject_reason, 400) || 'ไม่ระบุเหตุผล'
+  return [
+    '🚨 <b>การจองรถถูกยกเลิกเพื่อภารกิจฉุกเฉิน</b>',
+    `รถ: ${escapeHtml(vehicleName, 100)}`,
+    `ผู้จองเดิม: ${escapeHtml(driverName, 100)}`,
+    trip.destination ? `ปลายทาง: ${escapeHtml(trip.destination, 200)}` : '',
+    `${escapeHtml(reason, 400)}`,
+  ].filter(Boolean).join('\n')
+}
+
 function isRecent(createdAt: unknown, minutes = 15) {
   const timestamp = new Date(String(createdAt ?? '')).getTime()
   return Number.isFinite(timestamp) && timestamp >= Date.now() - minutes * 60_000
@@ -226,6 +243,7 @@ function notificationMatchesResource(type: NotificationType, resource: Record<st
   if (type === 'technician_received') return resource.status === 'received'
   if (type === 'technician_in_progress') return resource.status === 'in_progress'
   if (type === 'technician_closed') return resource.status === 'done' || resource.status === 'completed'
+  if (type === 'fleet_trip_bumped') return resource.status === 'cancelled'
   return true
 }
 
@@ -317,7 +335,9 @@ serve(async (req) => {
       ? 'id,municipality_id,created_by,created_at,title,description,event_date,event_time,end_time,location,audiences,is_all_day'
       : spec.table === 'complaints'
         ? 'id,municipality_id,user_id,created_at,updated_at,status,category,assigned_to'
-        : 'id,municipality_id,user_id,created_at,updated_at,status,document_type,fee_amount'
+        : spec.table === 'fleet_trips'
+          ? 'id,municipality_id,status,destination,reject_reason,vehicle:fleet_vehicles(name),driver:profiles!fleet_trips_driver_id_fkey(full_name)'
+          : 'id,municipality_id,user_id,created_at,updated_at,status,document_type,fee_amount'
     const { data: resource, error: resourceError } = await admin
       .from(spec.table)
       .select(selectColumns)
@@ -375,7 +395,9 @@ serve(async (req) => {
         ? buildComplaintCreatedMessage(resource)
         : notificationType === 'complaint_status_updated' || notificationType.startsWith('technician_')
           ? buildComplaintStatusMessage(resource)
-          : STATIC_MESSAGES[notificationType]
+          : notificationType === 'fleet_trip_bumped'
+            ? buildFleetTripBumpedMessage(resource)
+            : STATIC_MESSAGES[notificationType]
     if (!message) {
       await finish('failed', { last_error: 'Notification template is not configured' })
       return json({ ok: false, error: 'notification template is not configured' }, 500)

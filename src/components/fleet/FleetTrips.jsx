@@ -3,6 +3,8 @@ import { Plus, Calendar, X, ChevronLeft, ChevronRight, Route, History } from 'lu
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { assetIdentifier, assetOptionLabel } from '../../lib/fleetAssets'
+import { logAction } from '../../lib/auditLog'
+import { notifyTelegram } from '../../lib/notifyTelegram'
 import FleetEmptyState from './FleetEmptyState'
 
 const STATUS_LABEL = {
@@ -263,7 +265,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
   const [selTrip,   setSelTrip]   = useState(null)
   const [form,      setForm]      = useState({})
   const [saving,    setSaving]    = useState(false)
-  const [conflict,  setConflict]  = useState(false)
+  const [conflict,  setConflict]  = useState(null) // null | { trips: [...conflicting fleet_trips], altVehicles: [...vehicles] }
+  const [showOverride,   setShowOverride]   = useState(false)
+  const [overrideReason, setOverrideReason] = useState('')
   const [showCal,   setShowCal]   = useState(false)
   const [historyPage, setHistoryPage] = useState(0)
   const [historyPageSize, setHistoryPageSize] = useState(20)
@@ -322,22 +326,44 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
-  /* ── Conflict check ── */
-  async function checkConflict(vehicleId, from, to) {
-    const { data: busy } = await supabase.from('fleet_trips')
-      .select('id').eq('vehicle_id', vehicleId).eq('status', 'in_progress').limit(1)
-    if (busy?.length) return true
-    const { data: overlap } = await supabase.from('fleet_trips')
-      .select('id').eq('vehicle_id', vehicleId)
+  /* ── Conflict check — คืนรายการทริปที่ชนคิว (ไม่ใช่แค่ true/false) เพื่อเอาไปแสดง
+     ในการ์ดเตือน + ใช้เป็นเป้าหมาย "จองแทนที่ฉุกเฉิน" ── */
+  async function findVehicleConflicts(vehicleId, from, to, excludeId = null) {
+    let busyQ = supabase.from('fleet_trips')
+      .select('id,status,destination,driver:profiles!fleet_trips_driver_id_fkey(full_name)')
+      .eq('vehicle_id', vehicleId).eq('status', 'in_progress')
+    if (excludeId) busyQ = busyQ.neq('id', excludeId)
+    const { data: busy } = await busyQ
+    let overlapQ = supabase.from('fleet_trips')
+      .select('id,status,destination,driver:profiles!fleet_trips_driver_id_fkey(full_name)')
+      .eq('vehicle_id', vehicleId)
       .in('status', ['pending', 'approved'])
       .lt('planned_departure', to).gt('planned_return', from)
-    return (overlap?.length ?? 0) > 0
+    if (excludeId) overlapQ = overlapQ.neq('id', excludeId)
+    const { data: overlap } = await overlapQ
+    return [...(busy ?? []), ...(overlap ?? [])]
+  }
+
+  // หารถคันอื่นที่ว่างช่วงเวลาเดียวกัน — คำนวณจาก trips ที่โหลดมาแล้ว (realtime sync อยู่แล้ว)
+  // ไม่ต้องยิง query เพิ่ม เร็วกว่า แต่ไม่ authoritative เท่า findVehicleConflicts
+  // (ใช้แค่ "แนะนำ" ตัวจริงยังเช็คซ้ำที่ findVehicleConflicts ตอน submit)
+  function computeAvailableVehicles(excludeVehicleId, from, to, excludeTripId = null) {
+    const busy = new Set()
+    trips.forEach(t => {
+      if (t.id === excludeTripId) return
+      if (!['pending', 'approved', 'in_progress'].includes(t.status)) return
+      const overlaps = t.status === 'in_progress'
+        || (t.planned_departure && t.planned_return && t.planned_departure < to && t.planned_return > from)
+      if (overlaps) busy.add(t.vehicle_id)
+    })
+    return vehicles.filter(v => v.id !== excludeVehicleId && !busy.has(v.id))
   }
 
   /* ── Open modals ── */
   function openReserve() {
     const dep = new Date(Date.now() + 3600000)
     const ret = new Date(Date.now() + 7200000)
+    setSelTrip(null)
     setForm({
       ...EMPTY_RESERVE,
       driver_id: user?.id ?? '',
@@ -345,8 +371,33 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
       planned_departure: toLocalDT(dep),
       planned_return: toLocalDT(ret),
     })
-    setConflict(false)
+    setConflict(null)
+    setShowOverride(false)
+    setOverrideReason('')
     setModal('reserve')
+  }
+
+  // แก้ไขการจองที่ยัง pending — เฉพาะเจ้าของหรือ admin (ดู canEdit ใน renderTripRow/Card)
+  function openEditReserve(t) {
+    setSelTrip(t)
+    setForm({
+      vehicle_id: t.vehicle_id || '',
+      driver_id: t.driver_id || '',
+      department_id: t.department_id || '',
+      planned_departure: t.planned_departure ? toLocalDT(t.planned_departure) : '',
+      planned_return: t.planned_return ? toLocalDT(t.planned_return) : '',
+      destination: t.destination || '',
+      purpose: t.purpose || '',
+    })
+    setConflict(null)
+    setShowOverride(false)
+    setOverrideReason('')
+    setModal('reserve')
+  }
+
+  function openDetail(t) {
+    setSelTrip(t)
+    setModal('detail')
   }
 
   function openDirect() {
@@ -359,16 +410,76 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
     setModal('direct')
   }
 
-  /* ── Submit reservation ── */
+  /* ── Submit reservation (สร้างใหม่ หรือแก้ไข selTrip ถ้ามี) ── */
   async function submitReserve() {
     if (!form.vehicle_id || !form.planned_departure || !form.planned_return || !form.destination || !form.purpose)
       return alert('กรุณากรอกข้อมูลให้ครบ')
     if (new Date(form.planned_return) <= new Date(form.planned_departure))
       return alert('เวลากลับต้องหลังเวลาออก')
-    const has = await checkConflict(form.vehicle_id, form.planned_departure, form.planned_return)
-    if (has) { setConflict(true); return }
+    const isEdit = !!selTrip
+    const excludeId = isEdit ? selTrip.id : null
+    const conflicts = await findVehicleConflicts(form.vehicle_id, form.planned_departure, form.planned_return, excludeId)
+    if (conflicts.length) {
+      setConflict({
+        trips: conflicts,
+        altVehicles: computeAvailableVehicles(form.vehicle_id, form.planned_departure, form.planned_return, excludeId),
+      })
+      return
+    }
     setSaving(true)
-    const { error } = await supabase.from('fleet_trips').insert({
+    const payload = {
+      vehicle_id: form.vehicle_id,
+      driver_id: form.driver_id || user?.id,
+      department_id: form.department_id || null,
+      trip_date: form.planned_departure.slice(0, 10),
+      planned_departure: form.planned_departure,
+      planned_return: form.planned_return,
+      destination: form.destination,
+      purpose: form.purpose,
+    }
+    const { error } = isEdit
+      ? await supabase.from('fleet_trips').update(payload).eq('id', selTrip.id)
+      : await supabase.from('fleet_trips').insert({
+          ...payload,
+          municipality_id: tenant.id,
+          created_by: user?.id,
+          status: 'pending',
+        })
+    setSaving(false)
+    if (error) return alert(error.message)
+    if (isEdit) {
+      logAction({
+        action: 'update', resourceType: 'fleet_trip', resourceId: selTrip.id,
+        resourceLabel: `${payload.destination} (${form.vehicle_id})`,
+        municipalityId: tenant.id,
+        metadata: { before: {
+          vehicle_id: selTrip.vehicle_id, planned_departure: selTrip.planned_departure,
+          planned_return: selTrip.planned_return, destination: selTrip.destination, purpose: selTrip.purpose,
+        }, after: payload },
+      })
+    }
+    setModal(null)
+    setSelTrip(null)
+    setConflict(null)
+    loadTrips()
+  }
+
+  /* ── จองแทนที่ฉุกเฉิน (admin เท่านั้น) — ยกเลิกการจองที่ชนคิวทั้งหมด แล้วสร้างการจองใหม่
+     เป็น approved ทันที (admin เป็นผู้ตัดสินใจ/รับผิดชอบเอง) พร้อม audit log + แจ้งเตือนเจ้าของเดิม ── */
+  async function submitOverrideReserve() {
+    if (!isAdmin || !conflict?.trips?.length) return
+    if (!overrideReason.trim()) return alert('กรุณาระบุเหตุผลความจำเป็นเร่งด่วน')
+    setSaving(true)
+    const actorName = staffList.find(s => s.id === user?.id)?.full_name || user?.email || 'ผู้ดูแลระบบ'
+    const reasonNote = `[จองแทนที่ฉุกเฉินโดย ${actorName}] ${overrideReason.trim()}`
+    const bumpedIds = conflict.trips.map(t => t.id)
+
+    const { error: cancelErr } = await supabase.from('fleet_trips')
+      .update({ status: 'cancelled', reject_reason: reasonNote })
+      .in('id', bumpedIds)
+    if (cancelErr) { setSaving(false); return alert('ยกเลิกการจองเดิมไม่สำเร็จ: ' + cancelErr.message) }
+
+    const { data: inserted, error: insertErr } = await supabase.from('fleet_trips').insert({
       municipality_id: tenant.id,
       vehicle_id: form.vehicle_id,
       driver_id: form.driver_id || user?.id,
@@ -379,11 +490,28 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
       planned_return: form.planned_return,
       destination: form.destination,
       purpose: form.purpose,
-      status: 'pending',
-    })
+      status: 'approved',
+      approved_by: user?.id,
+    }).select('id').single()
     setSaving(false)
-    if (error) return alert(error.message)
-    setModal(null)
+    if (insertErr) return alert(insertErr.message)
+
+    bumpedIds.forEach(id => {
+      logAction({
+        action: 'override_cancel', resourceType: 'fleet_trip', resourceId: id,
+        resourceLabel: reasonNote, municipalityId: tenant.id,
+        metadata: { replaced_by: inserted.id, reason: overrideReason.trim() },
+      })
+      notifyTelegram('fleet_trip_bumped', id)
+    })
+    logAction({
+      action: 'create_override', resourceType: 'fleet_trip', resourceId: inserted.id,
+      resourceLabel: `${form.destination} (จองแทนที่ฉุกเฉิน)`, municipalityId: tenant.id,
+      metadata: { bumped: bumpedIds, reason: overrideReason.trim() },
+    })
+
+    setModal(null); setSelTrip(null); setConflict(null)
+    setShowOverride(false); setOverrideReason('')
     loadTrips()
   }
 
@@ -429,12 +557,14 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
     if (!confirm(`อนุมัติการจองรถ "${t.vehicle?.name}" ให้ ${t.driver?.full_name}?`)) return
     const { error } = await supabase.from('fleet_trips').update({ status: 'approved', approved_by: user?.id }).eq('id', t.id)
     if (error) return alert('อนุมัติไม่สำเร็จ: ' + error.message)
+    logAction({ action: 'approve', resourceType: 'fleet_trip', resourceId: t.id, resourceLabel: `${t.vehicle?.name} — ${t.destination}`, municipalityId: tenant.id })
     loadTrips()
   }
   async function handleReject(t) {
     if (!confirm(`ปฏิเสธการจองรถ "${t.vehicle?.name}"?`)) return
     const { error } = await supabase.from('fleet_trips').update({ status: 'rejected' }).eq('id', t.id)
     if (error) return alert('ปฏิเสธไม่สำเร็จ: ' + error.message)
+    logAction({ action: 'reject', resourceType: 'fleet_trip', resourceId: t.id, resourceLabel: `${t.vehicle?.name} — ${t.destination}`, municipalityId: tenant.id })
     loadTrips()
   }
 
@@ -481,8 +611,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
   async function handleDelete(t) {
     if (!confirm(`ลบรายการ "${t.vehicle?.name}" วันที่ ${t.planned_departure ? new Date(t.planned_departure).toLocaleDateString('th-TH') : '—'}?`)) return
     const { error } = await supabase.from('fleet_trips').delete().eq('id', t.id)
-    if (!error) setTrips(prev => prev.filter(x => x.id !== t.id))
-    else alert('ลบไม่สำเร็จ: ' + error.message)
+    if (error) return alert('ลบไม่สำเร็จ: ' + error.message)
+    logAction({ action: 'delete', resourceType: 'fleet_trip', resourceId: t.id, resourceLabel: `${t.vehicle?.name} — ${t.destination}`, municipalityId: tenant.id, metadata: { status: t.status } })
+    setTrips(prev => prev.filter(x => x.id !== t.id))
   }
 
   /* ── Derived ── */
@@ -507,7 +638,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
     const canReturn  = t.status === 'in_progress' && (isOwner(t) || isAdmin)
     const dist = t.distance_km ?? null
     return (
-      <div key={t.id} className="bg-white rounded-xl border border-gray-100 shadow-sm p-3 space-y-1.5">
+      <div key={t.id}
+        onClick={e => { if (e.target.closest('button')) return; openDetail(t) }}
+        className="bg-white rounded-xl border border-gray-100 shadow-sm p-3 space-y-1.5 cursor-pointer active:bg-gray-50">
         <div className="flex items-center gap-2 min-w-0">
           <h3 className="flex-1 min-w-0 truncate text-[13px] font-black text-gray-800">
             {t.vehicle?.name} <span className="font-semibold text-gray-400">· {assetIdentifier(t.vehicle)}</span>
@@ -587,7 +720,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
     const dist = t.distance_km ?? null
     return (
       <tr key={t.id} style={{ backgroundColor: idx % 2 === 0 ? '#fff' : '#f5f8fc' }}
-          className="hover:bg-blue-50 transition-colors">
+          onClick={e => { if (e.target.closest('button')) return; openDetail(t) }}
+          className="hover:bg-blue-50 transition-colors cursor-pointer">
         <td className="px-3 py-2.5 text-center text-xs text-gray-400 border-r border-gray-200">{idx + 1}</td>
         <td className="px-4 py-2.5 text-xs border-r border-gray-200">
           <div className="font-semibold text-gray-700">{dateStr}</div>
@@ -765,33 +899,124 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
 
       {/* ═══ MODALS ═══ */}
 
-      {/* จองรถ */}
+      {/* รายละเอียด (คลิกแถว) */}
+      {modal === 'detail' && selTrip && (() => {
+        const t = selTrip
+        const clr = STATUS_CLR[t.status]
+        const canEdit = t.status === 'pending' && (isOwner(t) || isAdmin)
+        return (
+          <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 p-4">
+            <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                <h2 className="text-base font-black text-gray-800">รายละเอียดการเดินทาง</h2>
+                <button onClick={() => { setModal(null); setSelTrip(null) }}
+                  className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><X size={16} /></button>
+              </div>
+              <div className="overflow-y-auto p-5 space-y-3 flex-1 text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-black text-gray-800">{t.vehicle?.name} · {assetIdentifier(t.vehicle)}</span>
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0"
+                        style={{ backgroundColor: clr + '18', color: clr }}>{STATUS_LABEL[t.status]}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                  <div><p className="text-gray-400">ผู้ใช้รถ</p><p className="font-semibold text-gray-700">{t.driver?.full_name || '—'}</p></div>
+                  <div><p className="text-gray-400">กอง/หน่วยงาน</p><p className="font-semibold text-gray-700">{t.departments?.name || '—'}</p></div>
+                  <div className="col-span-2"><p className="text-gray-400">ปลายทาง</p><p className="font-semibold text-gray-700">{t.destination || '—'}</p></div>
+                  <div className="col-span-2"><p className="text-gray-400">วัตถุประสงค์</p><p className="font-semibold text-gray-700">{t.purpose || '—'}</p></div>
+                  {t.planned_departure && <>
+                    <div><p className="text-gray-400">วันเวลาออก (จอง)</p><p className="font-semibold text-gray-700">{fmtDT(t.planned_departure)}</p></div>
+                    <div><p className="text-gray-400">กลับโดยประมาณ</p><p className="font-semibold text-gray-700">{fmtDT(t.planned_return)}</p></div>
+                  </>}
+                  {t.started_at && <div><p className="text-gray-400">ออกจริง</p><p className="font-semibold text-gray-700">{fmtDT(t.started_at)}{t.odometer_start != null ? ` · ${Number(t.odometer_start).toLocaleString()} กม.` : ''}</p></div>}
+                  {t.returned_at && <div><p className="text-gray-400">กลับจริง</p><p className="font-semibold text-gray-700">{fmtDT(t.returned_at)}{t.odometer_end != null ? ` · ${Number(t.odometer_end).toLocaleString()} กม.` : ''}</p></div>}
+                  {t.distance_km != null && <div><p className="text-gray-400">ระยะทาง</p><p className="font-semibold text-gray-700">{Number(t.distance_km).toLocaleString()} กม.</p></div>}
+                  {t.approver?.full_name && <div><p className="text-gray-400">ผู้อนุมัติ</p><p className="font-semibold text-gray-700">{t.approver.full_name}</p></div>}
+                  {t.reject_reason && <div className="col-span-2"><p className="text-gray-400">เหตุผลปฏิเสธ/ยกเลิก</p><p className="font-semibold text-red-600">{t.reject_reason}</p></div>}
+                  {t.notes && <div className="col-span-2"><p className="text-gray-400">หมายเหตุ</p><p className="font-semibold text-gray-700">{t.notes}</p></div>}
+                </div>
+              </div>
+              {canEdit && (
+                <div className="px-5 pb-5 pt-2 border-t border-gray-100">
+                  <button onClick={() => openEditReserve(t)}
+                    className="w-full py-3 rounded-xl text-sm font-bold text-white"
+                    style={{ backgroundColor: 'var(--color-primary)' }}>
+                    ✏️ แก้ไขการจอง
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* จองรถ / แก้ไขการจอง */}
       {modal === 'reserve' && (
-        <Modal title="📅 จองรถ" onClose={() => setModal(null)} onSave={submitReserve}
-               saveLabel="ส่งคำขอจอง" saving={saving}>
+        <Modal title={selTrip ? '✏️ แก้ไขการจอง' : '📅 จองรถ'}
+               onClose={() => { setModal(null); setSelTrip(null); setConflict(null); setShowOverride(false); setOverrideReason('') }}
+               onSave={submitReserve}
+               saveLabel={selTrip ? 'บันทึกการแก้ไข' : 'ส่งคำขอจอง'} saving={saving}>
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">ยานพาหนะ *</label>
             <select value={form.vehicle_id}
-              onChange={e => { set('vehicle_id')(e); setConflict(false) }} className={sel}>
+              onChange={e => { set('vehicle_id')(e); setConflict(null); setShowOverride(false) }} className={sel}>
               <option value="">— เลือกรถ —</option>
               {vehicles.map(v => <option key={v.id} value={v.id}>{assetOptionLabel(v)}</option>)}
             </select>
           </div>
           {conflict && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-600 font-semibold">
-              ⚠️ รถคันนี้ถูกจองในช่วงเวลาดังกล่าวแล้ว — กรุณาเปลี่ยนเวลาหรือเลือกรถคันอื่น
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-600 space-y-2">
+              <p className="font-semibold">
+                ⚠️ รถคันนี้ถูกจองในช่วงเวลาดังกล่าวแล้ว
+                {conflict.trips[0]?.driver?.full_name ? ` โดย ${conflict.trips[0].driver.full_name}` : ''}
+                {conflict.trips[0]?.destination ? ` (${conflict.trips[0].destination})` : ''}
+              </p>
+              {conflict.altVehicles.length > 0 && (
+                <div>
+                  <p className="text-gray-500 mb-1">รถคันอื่นที่ว่างช่วงเวลานี้ — กดเพื่อเปลี่ยน:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {conflict.altVehicles.map(v => (
+                      <button key={v.id} type="button"
+                        onClick={() => { setForm(f => ({ ...f, vehicle_id: v.id })); setConflict(null); setShowOverride(false) }}
+                        className="px-2 py-1 rounded-lg bg-white border border-green-300 text-green-600 font-semibold hover:bg-green-50">
+                        {assetOptionLabel(v)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {isAdmin && (showOverride ? (
+                <div className="space-y-1.5 pt-1.5 border-t border-red-100">
+                  <label className="text-[11px] font-semibold text-gray-600 block">เหตุผลความจำเป็นเร่งด่วน (บังคับกรอก) *</label>
+                  <textarea value={overrideReason} onChange={e => setOverrideReason(e.target.value)}
+                    rows={2} placeholder="เช่น ผู้บริหารเรียกประชุมด่วนนอกสถานที่"
+                    className="w-full px-2.5 py-2 text-xs text-gray-900 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2" />
+                  <div className="flex gap-2">
+                    <button type="button" onClick={submitOverrideReserve} disabled={saving}
+                      className="flex-1 py-2 rounded-lg text-white text-xs font-bold bg-red-600 disabled:opacity-50">
+                      {saving ? 'กำลังบันทึก...' : 'ยืนยันจองแทนที่ (ยกเลิกการจองเดิม)'}
+                    </button>
+                    <button type="button" onClick={() => { setShowOverride(false); setOverrideReason('') }}
+                      className="px-3 py-2 rounded-lg border border-gray-200 text-gray-500 text-xs font-semibold">ยกเลิก</button>
+                  </div>
+                </div>
+              ) : (
+                <button type="button" onClick={() => setShowOverride(true)}
+                  className="text-red-700 underline font-semibold">
+                  🚨 จำเป็นต้องใช้รถคันนี้จริงๆ — จองแทนที่ฉุกเฉิน (Admin เท่านั้น)
+                </button>
+              ))}
             </div>
           )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold text-gray-600 mb-1 block">วันเวลาออก *</label>
               <input type="datetime-local" value={form.planned_departure}
-                onChange={e => { set('planned_departure')(e); setConflict(false) }} className={inp} />
+                onChange={e => { set('planned_departure')(e); setConflict(null); setShowOverride(false) }} className={inp} />
             </div>
             <div>
               <label className="text-xs font-semibold text-gray-600 mb-1 block">กลับโดยประมาณ *</label>
               <input type="datetime-local" value={form.planned_return}
-                onChange={e => { set('planned_return')(e); setConflict(false) }} className={inp} />
+                onChange={e => { set('planned_return')(e); setConflict(null); setShowOverride(false) }} className={inp} />
             </div>
           </div>
           <div>
