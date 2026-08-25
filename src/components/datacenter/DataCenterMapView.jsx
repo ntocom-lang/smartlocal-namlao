@@ -66,13 +66,25 @@ const COMPLETED_PROJECT_STATUSES = ['completed']
 const STATUS_FILTER_OPTIONS = [
   { value: 'completed',   label: 'เสร็จสิ้นแล้ว' },
   { value: 'in_progress', label: 'กำลังดำเนินการ' },
+  { value: 'adhoc',       label: 'เฉพาะกิจ' },
   { value: 'all',         label: 'ทั้งหมด' },
 ]
+// คำร้องหมวดเฉพาะกิจ (complaint_categories.is_adhoc, เช่น odor) ไม่เคยเปลี่ยน status ออกจาก 'pending'
+// เลย เพราะข้าม status pipeline ปกติทั้งหมด (ใช้ extra_data.acknowledged_at ของตัวเองแทน) — ถ้ากรองด้วย
+// เสร็จสิ้นแล้ว/กำลังดำเนินการแบบเดิม จะไม่มีวันขึ้นแท็บ "เสร็จสิ้นแล้ว" แม้จะรับทราบ/จัดการแล้วจริงก็ตาม
+// จึงแยกเป็นแท็บของตัวเอง ไม่ยุ่งกับ completed/in_progress เลย โชว์ทุกเรื่องเฉพาะกิจไม่ว่า status จะเป็นอะไร
+function isAdhocEntry(entry, categoryMeta) {
+  return entry.source_table === 'complaints' && !!categoryMeta[entry.category]?.is_adhoc
+}
 // ใช้กรองเฉพาะแถวจากตาราง complaints/civil_projects เท่านั้น — แหล่งข้อมูลอื่น (data_center_entries ฯลฯ)
 // ไม่มีแนวคิด "เสร็จสิ้น/กำลังดำเนินการ" แบบนี้ จึงไม่ถูกกรองด้วยตัวเลือกนี้
-function matchesStatusFilter(entry, statusFilter) {
-  if (entry.source_table !== 'complaints' && entry.source_table !== 'civil_projects') return true
+function matchesStatusFilter(entry, statusFilter, categoryMeta) {
+  if (statusFilter === 'adhoc') return isAdhocEntry(entry, categoryMeta)
   if (statusFilter === 'all') return true
+  // แท็บเสร็จสิ้นแล้ว/กำลังดำเนินการ ตัดหมวดเฉพาะกิจออกเสมอ — status ของมันไม่เคยขยับตาม pipeline ปกติ
+  // เข้าไปอยู่ผิดที่ผิดทาง (ค้างเป็น "กำลังดำเนินการ" ตลอดกาล) ไปดูที่แท็บ "เฉพาะกิจ" แทน
+  if (isAdhocEntry(entry, categoryMeta)) return false
+  if (entry.source_table !== 'complaints' && entry.source_table !== 'civil_projects') return true
   const completedSet = entry.source_table === 'complaints' ? COMPLETED_COMPLAINT_STATUSES : COMPLETED_PROJECT_STATUSES
   const isCompleted = completedSet.includes(entry.status)
   return statusFilter === 'completed' ? isCompleted : !isCompleted
@@ -268,7 +280,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   const [statusFilter, setStatusFilter] = useState('completed')
   const effectiveStatusFilter = allowStatusFilter ? statusFilter : 'completed'
   // ปุ่มลอยเปิด/ปิดเส้นทาง (ถนน) ทั้งหมดพร้อมกัน — ไม่ต้องไปติ๊กทีละประเภทในแถบขวา
-  const [showRoutes, setShowRoutes] = useState(true)
+  const [showRoutes, setShowRoutes] = useState(false)
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -284,7 +296,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
       })
 
     supabase.from('complaint_categories')
-      .select('value, label, emoji, color, text_color')
+      .select('value, label, emoji, color, text_color, is_adhoc')
       .eq('municipality_id', tenant.id)
       .eq('is_active', true)
       .then(({ data, error }) => {
@@ -357,7 +369,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   const resolveMarkerIcon = e => e.source_table === 'complaints'
     ? (complaintCategoryMeta[e.category]?.emoji || markerEmoji(e))
     : markerEmoji(e)
-  const entries = allRows.filter(e => matchesStatusFilter(e, effectiveStatusFilter))
+  const entries = allRows.filter(e => matchesStatusFilter(e, effectiveStatusFilter, complaintCategoryMeta))
   const groups = Array.from(new Set(entries.map(e => e.group_name))).sort((a, b) => a.localeCompare(b, 'th'))
   const visible = entries.filter(e => {
     if (e.route_points?.length >= 2) {
