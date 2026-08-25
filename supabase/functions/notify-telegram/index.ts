@@ -158,7 +158,6 @@ function buildComplaintCreatedMessage(complaint: Record<string, unknown>) {
   return [
     '📋 <b>มีคำร้องใหม่</b>',
     `ประเภท: ${escapeHtml(category, 60)}`,
-    'กรุณาเข้าสู่ระบบ SmartLocal เพื่อดูรายละเอียดตามสิทธิ์',
   ].join('\n')
 }
 
