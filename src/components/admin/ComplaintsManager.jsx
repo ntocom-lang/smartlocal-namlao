@@ -3,7 +3,7 @@ import MapPicker from '../MapPicker'
 import {
   ClipboardList, Clock, Loader2, CheckCircle2, XCircle, AlertCircle,
   ChevronRight, ChevronLeft, Filter, Search, Phone, Trash2, Wrench,
-  MapPin, X, FileText, AlignLeft, Camera, ChevronDown,
+  MapPin, X, FileText, AlignLeft, Camera, ChevronDown, ChevronUp,
   Shield, Printer, Users, RefreshCw, AlertTriangle, Building2,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
@@ -137,6 +137,56 @@ function StatusBadge({ status }) {
           style={{ backgroundColor: s.bg, color: s.text }}>
       {s.label}
     </span>
+  )
+}
+
+// หัวคอลัมน์ที่กดเรียงลำดับได้ในตารางเฉพาะกิจ (odor) — ตาม pattern sortConfig/handleSort เดียวกับ
+// ตารางผู้ใช้งานใน AdminDashboard.jsx (cursor-pointer + hover + ลูกศรขึ้น/ลงเมื่อ active)
+function OdorSortTh({ label, sortKey, sortConfig, onSort, align = 'left' }) {
+  const active = sortConfig.key === sortKey
+  return (
+    <th
+      className={`px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 cursor-pointer hover:bg-white/10 transition-colors ${
+        align === 'center' ? 'text-center' : 'text-left'
+      }`}
+      onClick={() => onSort(sortKey)}>
+      <div className={`flex items-center gap-1 ${align === 'center' ? 'justify-center' : ''}`}>
+        {label}
+        {active && (sortConfig.direction === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}
+      </div>
+    </th>
+  )
+}
+
+// มอบหมายใหม่รายเรื่องในแท็ปเฉพาะกิจ (odor) — ใช้ร่วมกันทั้งการ์ดมือถือและตารางเดสก์ท็อป กันเขียนซ้ำ
+// เรื่องที่ acknowledge แล้วห้ามแก้ผู้รับผิดชอบ (รักษาประวัติการปฏิบัติงาน) แสดงข้อความแทน
+function OdorReassignBlock({ complaint: c, canBulkDelete, technicianGroups, onReassign }) {
+  if (!canBulkDelete) return null
+  if (c.extra_data?.acknowledged_at) {
+    return (
+      <p className="text-xs text-gray-400 italic mt-3">
+        รับทราบแล้ว — คงผู้รับผิดชอบเดิมไว้เพื่อรักษาประวัติการปฏิบัติงาน
+      </p>
+    )
+  }
+  return (
+    <div className="flex items-center gap-2 bg-lime-50 rounded-xl p-3 border border-lime-100 mt-3">
+      <span className="text-xs font-semibold text-lime-700 shrink-0">มอบหมายใหม่:</span>
+      <select value={c.assigned_to ?? ''}
+        onChange={(e) => onReassign({ complaintId: c.id, technicianId: e.target.value || null })}
+        className="flex-1 text-xs border border-lime-200 rounded-xl px-2 py-1.5 bg-white text-gray-700 focus:outline-none">
+        <option value="">— เลือกผู้รับผิดชอบ —</option>
+        {technicianGroups.map((g) => (
+          <optgroup key={g.department_name} label={g.department_name}>
+            {g.members.map((t) => (
+              <option key={t.id} value={t.id}>
+                {(t.full_name || t.email) + (t.is_dept_head ? ' ⭐' : '')} · {ROLE_LABELS[t.role]?.label ?? t.role}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+    </div>
   )
 }
 
@@ -1299,6 +1349,27 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   // ไม่ใช้ FILTER_TABS/filterTab เดิมเพราะ array นั้นชี้ enum สถานะ ไม่ใช่หมวดคำร้อง
   const [odorTabActive, setOdorTabActive] = useState(false)
   const [odorExpandedId, setOdorExpandedId] = useState(null)
+  // เบอร์โทร/ชื่อผู้แจ้งใน `complaints` (มาจาก list_complaints_for_staff) ถูก mask ไว้สำหรับ role
+  // ที่ไม่ใช่ admin/superadmin (ดู 150_complaint_pii_role_access.sql) — ผู้รับผิดชอบที่เป็น officer/
+  // staff/technician จะโทรหาผู้แจ้งจากเบอร์ที่ mask ไว้ไม่ได้ ต้องขอข้อมูลเต็มผ่าน
+  // get_complaint_private_detail (audit log ทุกครั้ง) ตอนกางแถวแทน แคชไว้กัน fetch/log ซ้ำตอน
+  // เปิด-ปิดแถวเดิมซ้ำๆ
+  const [odorDetailById, setOdorDetailById] = useState({})
+  const [odorDetailLoadingId, setOdorDetailLoadingId] = useState(null)
+  // เรียงลำดับตารางเฉพาะกิจ (odor) ด้วยการกดหัวคอลัมน์ — pattern เดียวกับ sortConfig/handleSort
+  // ใน UserManager (AdminDashboard.jsx) key ว่างแปลว่ายังไม่เรียง ใช้ลำดับที่ fetch มา (ใหม่สุดก่อน)
+  const [odorSortConfig, setOdorSortConfig] = useState({ key: null, direction: 'asc' })
+  function handleOdorSort(key) {
+    setOdorSortConfig((current) => ({
+      key,
+      direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc',
+    }))
+  }
+  // มอบหมายใหม่รายเรื่องในแท็ปเฉพาะกิจ (odor) — สำหรับกรณีผู้รับผิดชอบเดิมย้าย/พ้นตำแหน่งแล้วเรื่องยังค้าง
+  // ไม่ได้ acknowledge (ดู docs/แผนงาน โอนงานเมื่อเจ้าหน้าที่ย้าย) แยกจาก pendingAssign ของ
+  // ComplaintDetailModal เพราะแท็ปนี้ไม่เปิด modal นั้น (odor เป็น read-only เดิม)
+  const [odorPendingAssign, setOdorPendingAssign] = useState(null) // { complaintId, technicianId }
+  const [odorDeleting, setOdorDeleting] = useState(null) // complaintId ที่กำลังลบอยู่
   const [search, setSearch]         = useState('')
   const [complaintPage, setComplaintPage]         = useState(1)
   const [complaintsPerPage, setComplaintsPerPage] = useState(10)
@@ -1313,6 +1384,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   const [selectedIds, setSelectedIds]             = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting]           = useState(false)
   const canBulkDelete = ['admin', 'superadmin'].includes(currentUserRole)
+  const technicianGroups = groupStaffByDepartment(technicians ?? [])
 
   function toggleSelect(id) {
     setSelectedIds(prev => {
@@ -1404,6 +1476,40 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
     }
     if (data) setSelectedComplaint(data)
   }, [openingComplaintId])
+
+  // เปิดบ็อปอัพรายละเอียดคำร้องเฉพาะกิจ (odor) — โหลดเบอร์โทร/ชื่อผู้แจ้งฉบับเต็ม (ไม่ mask) ผ่าน
+  // get_complaint_private_detail ครั้งแรกที่เปิด แล้วแคชไว้ กันเจ้าหน้าที่โทรหาผู้แจ้งไม่ได้เพราะ
+  // list_complaints_for_staff mask เบอร์ไว้สำหรับ role ที่ไม่ใช่ admin/superadmin — odorExpandedId
+  // ที่ไม่ใช่ null คือ id ของเรื่องที่บ็อปอัพกำลังเปิดอยู่ (ดู openOdorComplaint)
+  async function toggleOdorRow(c) {
+    const willOpen = odorExpandedId !== c.id
+    setOdorExpandedId(willOpen ? c.id : null)
+    if (!willOpen || odorDetailById[c.id]) return
+    setOdorDetailLoadingId(c.id)
+    const { data, error } = await fetchComplaintPrivateDetail(c.id, 'เปิดรายละเอียดคำร้องกลิ่นเหม็นรบกวนเพื่อโทรติดต่อผู้แจ้ง')
+    setOdorDetailLoadingId(null)
+    if (!error && data) setOdorDetailById((prev) => ({ ...prev, [c.id]: data }))
+  }
+
+  // ลบคำร้องเฉพาะกิจ (odor) — กรณีสืบแล้วพบว่าไม่เป็นความจริง ใช้ pattern เดียวกับ handleDelete ใน
+  // ComplaintDetailModal ทุกอย่าง (confirm, audit log, RLS "admin delete complaints" กันไว้อยู่แล้วว่า
+  // ต้องเป็น admin/superadmin ในเทศบาลตัวเอง) แค่ยิงตรงจากบ็อปอัพนี้แทนที่จะเปิด modal เต็มรูปแบบ
+  async function handleDeleteOdorComplaint(c) {
+    if (!window.confirm('ลบคำร้องนี้ออกจากระบบ?\n\nการลบไม่สามารถย้อนกลับได้')) return
+    setOdorDeleting(c.id)
+    await logAction({
+      action: 'delete', resourceType: 'complaint',
+      resourceId: c.id,
+      resourceLabel: `[${c.ref_no ?? c.id.slice(0, 8)}] กลิ่นเหม็นรบกวน`,
+      municipalityId: tenantId,
+      metadata: { category: c.category, reason: 'สืบแล้วพบว่าไม่เป็นความจริง' },
+    })
+    const { error } = await supabase.from('complaints').delete().eq('id', c.id)
+    setOdorDeleting(null)
+    if (error) { alert('ลบไม่สำเร็จ: ' + error.message); return }
+    setComplaints((prev) => prev.filter((x) => x.id !== c.id))
+    setOdorExpandedId(null)
+  }
 
   useEffect(() => { queueMicrotask(fetchTechnicians) }, [fetchTechnicians])
   useEffect(() => { queueMicrotask(fetchComplaints) }, [fetchComplaints])
@@ -1594,6 +1700,29 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   const odorComplaints    = complaints.filter((c) => c.category === 'odor')
   const nonOdorComplaints = complaints.filter((c) => c.category !== 'odor')
 
+  // เรียงลำดับตาราง/การ์ดของแท็ปเฉพาะกิจตาม odorSortConfig — key ว่างคือยังไม่กด เรียงตามที่ fetch มา
+  const odorSortGetters = {
+    location: (c) => (c.location_name || c.village || '').toLowerCase(),
+    created_at: (c) => c.created_at || '',
+    intensity: (c) => c.extra_data?.odor_intensity ?? -1,
+    health: (c) => (c.extra_data?.health_effect || '').toLowerCase(),
+    assignee: (c) => (technicians.find((t) => t.id === c.assigned_to)?.full_name || '').toLowerCase(),
+    status: (c) => c.extra_data?.acknowledged_at || '',
+  }
+  const sortedOdorComplaints = odorSortConfig.key
+    ? [...odorComplaints].sort((a, b) => {
+        const get = odorSortGetters[odorSortConfig.key]
+        const av = get(a), bv = get(b)
+        const dir = odorSortConfig.direction === 'asc' ? 1 : -1
+        if (av < bv) return -1 * dir
+        if (av > bv) return 1 * dir
+        return 0
+      })
+    : odorComplaints
+  // เรื่องที่กำลังกางดูรายละเอียดแบบบ็อปอัพ (คลิกแถว/การ์ดในแท็ปเฉพาะกิจ) — ใช้ค่าฉบับเต็มที่โหลดผ่าน
+  // toggleOdorRow ถ้ามีแล้ว ไม่งั้น fallback ไปแถวจาก list (mask เบอร์ไว้ระหว่างรอโหลด)
+  const openOdorComplaint = odorExpandedId ? odorComplaints.find((c) => c.id === odorExpandedId) : null
+
   const filtered = nonOdorComplaints.filter((c) => {
     const ns = normalizeStatus(c.status)
     const matchStatus = FILTER_KEYS[filterTab] ? ns === FILTER_KEYS[filterTab] : true
@@ -1697,23 +1826,29 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
           <h2 className="text-[13px] font-bold text-white tracking-wide">รายการคำร้องประชาชน</h2>
           <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded"
             style={{ backgroundColor: 'rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.9)' }}>
-            {filtered.length} รายการ
+            {odorTabActive ? odorComplaints.length : filtered.length} รายการ
           </span>
         </div>
         <div className="px-4 sm:px-5 pt-4 pb-4 border-b border-gray-200 md:bg-[#f5f8fc] space-y-3.5">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="w-full shrink-0 font-semibold text-gray-700 md:hidden">รายการคำร้อง</h2>
-            <div className="relative min-w-0 flex-1 basis-0 md:max-w-xs">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input value={search} onChange={(e) => setSearch(e.target.value)}
-                placeholder="ค้นหาคำร้อง..."
-                className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent text-gray-900 bg-white"
-                style={{ '--tw-ring-color': 'var(--color-primary)' }} />
-            </div>
-            <button onClick={handlePrintComplaints} title="พิมพ์"
-              className="shrink-0 flex items-center justify-center w-10 h-10 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 transition-colors">
-              <Printer size={16} className="text-gray-500" />
-            </button>
+            {/* ค้นหา/พิมพ์ ใช้ข้อมูล filtered ที่มาจาก nonOdorComplaints เท่านั้น — ไม่มีผลกับแท็ปเฉพาะกิจ
+                (odorComplaints ไม่ผ่าน search/filter ใดๆ เลย) เลยซ่อนไว้กันหลอกว่าใช้งานได้ */}
+            {!odorTabActive && (
+              <>
+                <div className="relative min-w-0 flex-1 basis-0 md:max-w-xs">
+                  <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input value={search} onChange={(e) => setSearch(e.target.value)}
+                    placeholder="ค้นหาคำร้อง..."
+                    className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent text-gray-900 bg-white"
+                    style={{ '--tw-ring-color': 'var(--color-primary)' }} />
+                </div>
+                <button onClick={handlePrintComplaints} title="พิมพ์"
+                  className="shrink-0 flex items-center justify-center w-10 h-10 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 transition-colors">
+                  <Printer size={16} className="text-gray-500" />
+                </button>
+              </>
+            )}
             <button onClick={fetchComplaints} disabled={loading} title="รีเฟรช"
               className="shrink-0 flex items-center justify-center w-10 h-10 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 transition-colors disabled:opacity-50">
               <RefreshCw size={15} className={`text-gray-500 ${loading ? 'animate-spin' : ''}`} />
@@ -1768,9 +1903,18 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                 </span>
               </button>
             )}
+            {odorTabActive && odorSortConfig.key && (
+              <button onClick={() => setOdorSortConfig({ key: null, direction: 'asc' })}
+                className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium text-red-500 bg-red-50 hover:bg-red-100 transition-colors">
+                <X size={12} />
+                ล้างการเรียงลำดับ
+              </button>
+            )}
           </div>
 
-          {/* Advanced filters */}
+          {/* Advanced filters — กรอง filtered/baseFiltered ที่มาจาก nonOdorComplaints เท่านั้น
+              ไม่มีผลกับแท็ปเฉพาะกิจเลยสักตัว จึงซ่อนไว้ตอนอยู่แท็ปเฉพาะกิจ กันสับสนว่าใช้กรองอะไรได้บ้าง */}
+          {!odorTabActive && (
           <div>
             <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
               <Filter size={11} /> ตัวกรองเพิ่มเติม
@@ -1852,6 +1996,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
               </button>
             )}
           </div>
+          )}
         </div>
 
         {/* Bulk selection toolbar */}
@@ -1874,40 +2019,121 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
 
         {/* List */}
         {odorTabActive ? (
-          /* แท็ปเฉพาะกิจ — ดูอย่างเดียว ไม่มีปุ่มมอบหมาย/เปลี่ยนสถานะ/ลบ ผู้รับผิดชอบกด "รับทราบ" เองที่
-             แดชบอร์ดของตน (OdorAcknowledgePanel) ไม่ใช่หน้านี้ */
+          /* แท็ปเฉพาะกิจ — ไม่มีปุ่มเปลี่ยนสถานะ/ลบเหมือนแท็ปปกติ ผู้รับผิดชอบกด "รับทราบ" เองที่
+             แดชบอร์ดของตน (OdorAcknowledgePanel) ไม่ใช่หน้านี้ แต่แอดมินมอบหมายใหม่ได้ถ้าเรื่องยัง
+             ไม่ acknowledge (เช่นผู้รับผิดชอบเดิมย้าย/พ้นตำแหน่งแล้วเรื่องค้าง) — เรื่องที่ acknowledge
+             แล้วคงผู้รับผิดชอบเดิมไว้เสมอเพื่อรักษาประวัติการปฏิบัติงาน */
           odorComplaints.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-gray-400">
               <ClipboardList size={36} className="mb-2 opacity-30" />
               <p className="text-sm">ยังไม่มีคำร้องหมวดกลิ่นเหม็นรบกวน</p>
             </div>
           ) : (
-            <div className="divide-y divide-gray-100">
-              {odorComplaints.map((c) => {
-                const isOpen = odorExpandedId === c.id
-                const assignee = technicians.find(t => t.id === c.assigned_to)?.full_name
-                return (
-                  <div key={c.id} className="px-4 py-3.5">
-                    <button type="button" onClick={() => setOdorExpandedId(isOpen ? null : c.id)}
-                      className="w-full flex items-center justify-between gap-3 text-left">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-gray-800 truncate">{c.reporter_name || 'ไม่ระบุชื่อผู้แจ้ง'}</p>
-                        <p className="text-xs text-gray-400">
-                          {new Date(c.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}
-                          {' · ผู้รับผิดชอบ: '}{assignee ?? 'ยังไม่ได้ตั้งค่า'}
-                        </p>
-                      </div>
-                      <OdorAckBadge complaint={c} />
-                    </button>
-                    {isOpen && (
-                      <div className="mt-3">
-                        <OdorFieldsDisplay complaint={c} />
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
+            <>
+              {/* Mobile: การ์ดแบบเดิม */}
+              <div className="md:hidden divide-y divide-gray-100">
+                {sortedOdorComplaints.map((c) => {
+                  const assignee = technicians.find(t => t.id === c.assigned_to)?.full_name
+                  const location = c.location_name || c.village || 'ไม่ระบุสถานที่'
+                  return (
+                    <div key={c.id} className="px-4 py-3.5">
+                      <button type="button" onClick={() => toggleOdorRow(c)}
+                        className="w-full flex items-center justify-between gap-3 text-left">
+                        <div className="min-w-0">
+                          {/* ชื่อผู้แจ้งย้ายไปแสดงในบ็อปอัพรายละเอียด (OdorFieldsDisplay) ตอนกดเท่านั้น —
+                              การ์ดปิดใช้สถานที่เป็นตัวระบุหลักแทน ตรงกับตารางเดสก์ท็อปและ
+                              OdorAcknowledgePanel ของฝั่งผู้รับผิดชอบ */}
+                          <p className="text-sm font-medium text-gray-800 truncate flex items-center gap-1.5">
+                            {location}
+                            {c.latitude && <MapPin size={11} className="text-orange-500 shrink-0" />}
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            {new Date(c.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}
+                            {' · ผู้รับผิดชอบ: '}{assignee ?? 'ยังไม่ได้ตั้งค่า'}
+                          </p>
+                        </div>
+                        {odorDetailLoadingId === c.id
+                          ? <Loader2 size={14} className="animate-spin text-lime-500 shrink-0" />
+                          : <OdorAckBadge complaint={c} />}
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Desktop: ตารางแบบเดียวกับตารางคำร้องปกติของแอดมิน สแกนดูรายการเยอะๆ ได้เร็วกว่าการ์ด */}
+              <div className="hidden md:block w-full max-w-full overflow-x-auto overscroll-x-contain">
+                {/* ไม่บังคับ min-width เหมือนตารางคำร้องปกติ (ที่มีคอลัมน์เยอะกว่าจนสกอลได้) — ตารางนี้
+                    คอลัมน์น้อยกว่า ให้ table-fixed หด/ขยายตามความกว้างจริงแทน จะได้เห็นครบไม่ต้องเลื่อน */}
+                <table className="w-full table-fixed text-sm border-collapse">
+                  <colgroup>
+                    <col style={{ width: 40 }} />
+                    <col style={{ width: 320 }} />
+                    <col style={{ width: 110 }} />
+                    <col style={{ width: 90 }} />
+                    <col style={{ width: 150 }} />
+                    <col style={{ width: 170 }} />
+                    <col style={{ width: 120 }} />
+                  </colgroup>
+                  <thead>
+                    <tr style={{ backgroundColor: '#65a30d' }}>
+                      <th className="px-2 py-2.5 text-center text-[11px] font-bold text-white border-r border-white/10">ที่</th>
+                      {/* ผู้แจ้งย้ายไปแสดงในรายละเอียด (OdorFieldsDisplay) ตอนกางแถวแทน — ไม่ใส่เป็น
+                          คอลัมน์แยก ให้สถานที่เป็นตัวระบุหลักในตาราง ตรงกับตาราง OdorAcknowledgePanel */}
+                      <OdorSortTh label="สถานที่" sortKey="location" sortConfig={odorSortConfig} onSort={handleOdorSort} />
+                      <OdorSortTh label="วันที่แจ้ง" sortKey="created_at" sortConfig={odorSortConfig} onSort={handleOdorSort} />
+                      <OdorSortTh label="ความรุนแรง" sortKey="intensity" sortConfig={odorSortConfig} onSort={handleOdorSort} align="center" />
+                      <OdorSortTh label="อาการทางสุขภาพ" sortKey="health" sortConfig={odorSortConfig} onSort={handleOdorSort} />
+                      <OdorSortTh label="ผู้รับผิดชอบ" sortKey="assignee" sortConfig={odorSortConfig} onSort={handleOdorSort} />
+                      <OdorSortTh label="สถานะ" sortKey="status" sortConfig={odorSortConfig} onSort={handleOdorSort} align="center" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {sortedOdorComplaints.map((c, i) => {
+                      const location = c.location_name || c.village || 'ไม่ระบุสถานที่'
+                      const assignee = technicians.find(t => t.id === c.assigned_to)?.full_name
+                      return (
+                          <tr key={c.id} className="cursor-pointer transition-colors"
+                            style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#f7faf0' }}
+                            onMouseEnter={e => e.currentTarget.style.backgroundColor = '#ecfccb'}
+                            onMouseLeave={e => e.currentTarget.style.backgroundColor = i % 2 === 0 ? '#fff' : '#f7faf0'}
+                            onClick={() => toggleOdorRow(c)}>
+                            <td className="px-2 py-2 text-center text-xs text-gray-500 border-r border-gray-200">{i + 1}</td>
+                            <td className="px-2 py-2 text-gray-500 text-xs border-r border-gray-200 overflow-hidden">
+                              <span className="flex min-w-0 items-center gap-1" title={location}>
+                                {c.latitude && <MapPin size={10} className="text-orange-500 shrink-0" />}
+                                <span className="truncate">{location}</span>
+                                {c.attachments && c.attachments.length > 0 && <Camera size={10} className="text-blue-500 shrink-0" />}
+                              </span>
+                            </td>
+                            <td className="px-2 py-2 text-gray-500 text-xs whitespace-nowrap border-r border-gray-200 overflow-hidden">
+                              {new Date(c.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}
+                            </td>
+                            <td className="px-2 py-2 text-center text-gray-600 text-xs border-r border-gray-200 overflow-hidden">{c.extra_data?.odor_intensity ?? '-'} / 5</td>
+                            <td className="px-2 py-2 text-gray-600 text-xs border-r border-gray-200 overflow-hidden">
+                              <span className="truncate block" title={c.extra_data?.health_effect}>
+                                {c.extra_data?.health_effect || <span className="text-gray-300">ไม่มี</span>}
+                              </span>
+                            </td>
+                            <td className="px-2 py-2 text-xs border-r border-gray-200 overflow-hidden">
+                              {assignee
+                                ? <span className="truncate block text-blue-700 font-medium" title={assignee}>{assignee}</span>
+                                : <span className="text-gray-300">ยังไม่ได้ตั้งค่า</span>}
+                            </td>
+                            <td className="px-2 py-2 text-center overflow-hidden">
+                              <div className="flex justify-center min-w-0">
+                                {odorDetailLoadingId === c.id
+                                  ? <Loader2 size={14} className="animate-spin text-lime-500" />
+                                  : <OdorAckBadge complaint={c} compact />}
+                              </div>
+                            </td>
+                          </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )
         ) : loading ? (
           <div className="flex items-center justify-center py-16 text-gray-400">
@@ -2184,6 +2410,75 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
           onPinSave={handlePinSave}
           onDocumentUpdate={handleDocumentPatch}
         />
+      )}
+
+      {openOdorComplaint && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setOdorExpandedId(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[85vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 flex items-center justify-between gap-3 px-5 py-3.5 border-b border-gray-100 bg-white rounded-t-2xl">
+              <h3 className="text-sm font-bold text-lime-800 flex items-center gap-1.5">
+                💨 รายละเอียดคำร้องกลิ่นเหม็นรบกวน
+              </h3>
+              <button onClick={() => setOdorExpandedId(null)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              {odorDetailLoadingId === openOdorComplaint.id ? (
+                <div className="flex items-center justify-center py-10 text-gray-400">
+                  <Loader2 size={22} className="animate-spin mr-2" /> กำลังโหลด...
+                </div>
+              ) : (
+                <>
+                  <OdorFieldsDisplay complaint={odorDetailById[openOdorComplaint.id] ?? openOdorComplaint} />
+                  <OdorReassignBlock complaint={openOdorComplaint} canBulkDelete={canBulkDelete}
+                    technicianGroups={technicianGroups} onReassign={setOdorPendingAssign} />
+                  {/* ลบคำร้อง — กรณีสืบแล้วพบว่าไม่เป็นความจริง เฉพาะแอดมิน/superadmin (เหมือน
+                      RLS "admin delete complaints" ที่กันไว้อยู่แล้ว) แยกจากปุ่มมอบหมายใหม่ข้างบน
+                      ชัดเจนด้วยสีแดง กันกดพลาด */}
+                  {canBulkDelete && (
+                    <button
+                      onClick={() => handleDeleteOdorComplaint(openOdorComplaint)}
+                      disabled={odorDeleting === openOdorComplaint.id}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-red-600 bg-red-50 hover:bg-red-100 transition-colors disabled:opacity-50">
+                      {odorDeleting === openOdorComplaint.id
+                        ? <Loader2 size={15} className="animate-spin" />
+                        : <Trash2 size={15} />}
+                      ลบคำร้อง (สืบแล้วพบว่าไม่เป็นความจริง)
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {odorPendingAssign && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40" onClick={() => setOdorPendingAssign(null)}>
+          <div className="bg-white rounded-2xl p-5 shadow-xl w-72 mx-4" onClick={(e) => e.stopPropagation()}>
+            <p className="text-sm font-semibold text-gray-800 mb-1">ยืนยันการมอบหมาย</p>
+            <p className="text-xs text-gray-500 mb-4">
+              มอบหมายให้ <span className="font-medium text-gray-800">
+                {technicians.find(t => t.id === odorPendingAssign.technicianId)?.full_name ?? 'ผู้รับผิดชอบ'}
+              </span> ใช่หรือไม่?
+            </p>
+            <div className="flex gap-2">
+              <button onClick={async () => { await assignTechnician(odorPendingAssign.complaintId, odorPendingAssign.technicianId); setOdorPendingAssign(null) }}
+                className="flex-1 py-2 rounded-xl text-sm font-semibold text-white"
+                style={{ backgroundColor: 'var(--color-primary)' }}>
+                ยืนยัน
+              </button>
+              <button onClick={() => setOdorPendingAssign(null)}
+                className="flex-1 py-2 rounded-xl text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showOssIntake && (

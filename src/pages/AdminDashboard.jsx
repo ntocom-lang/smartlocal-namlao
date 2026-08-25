@@ -11,7 +11,7 @@ import {
   RefreshCw, Clock, Loader2, Check,
   CheckCircle2, ChevronRight, ChevronLeft,
   Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical, Briefcase,
-  X, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera,
+  X, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Repeat,
   TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, BookOpen, Bell, ExternalLink, Settings, Download, Banknote, Star, MessageSquare, Car, Terminal, Database
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -119,6 +119,10 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
   const viewingUser = viewingUserId ? users.find(u => u.id === viewingUserId) : null
   const [deletingUser, setDeletingUser] = useState(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
+  // ลบไม่สำเร็จเพราะยังมีงานค้าง (guard ใน delete_user_by_id) — โชว์เหตุผลใน modal เดิม
+  // พร้อมทางออกไปหน้าโอนงาน แทนที่จะแค่ alert() เฉยๆ แล้วให้ผู้ใช้เดาเอง
+  const [deleteBlockedReason, setDeleteBlockedReason] = useState('')
+  const [handoverStaff, setHandoverStaff] = useState(null)
   // ค่าเริ่มต้นต้องตรงกับ ORDER BY จริงใน get_users_with_email() (full_name ASC) ไม่งั้นลูกศร
   // บนหัวตารางจะขึ้นผิดทิศทาง (ข้อมูลที่ได้มาเรียงตามชื่อแล้ว แต่ลูกศรจะโชว์ว่ายังไม่ได้กดเรียง)
   const [sortConfig, setSortConfig] = useState({ key: 'full_name', direction: 'asc' })
@@ -273,10 +277,17 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
     const { error } = await supabase.rpc('delete_user_by_id', { p_user_id: userId })
     setDeleteLoading(false)
     if (error) {
-      alert(`ลบไม่สำเร็จ: ${error.message}`)
+      // guard ฝั่ง DB (20260827100000) โยน exception ที่ขึ้นต้นด้วยข้อความนี้เสมอเมื่อบล็อกเพราะมีงาน
+      // ค้าง — แยกออกจาก error อื่น (สิทธิ์ไม่พอ ฯลฯ) เพื่อเสนอทางออก "โอนงานก่อน" แทนแค่ alert()
+      if (error.message?.startsWith('ไม่สามารถลบผู้ใช้นี้ได้ เนื่องจาก')) {
+        setDeleteBlockedReason(error.message)
+      } else {
+        alert(`ลบไม่สำเร็จ: ${error.message}`)
+      }
     } else {
       setUsers((prev) => prev.filter((u) => u.id !== userId))
       setDeletingUser(null)
+      setDeleteBlockedReason('')
       if (viewingUserId === userId) setViewingUserId(null) // กันหน้ารายละเอียดค้างชี้ user ที่ลบไปแล้ว
     }
   }
@@ -349,6 +360,8 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
         positions={positions}
         saving={saving}
         deletingUser={deletingUser} setDeletingUser={setDeletingUser} deleteLoading={deleteLoading} deleteUser={deleteUser}
+        deleteBlockedReason={deleteBlockedReason} setDeleteBlockedReason={setDeleteBlockedReason}
+        handoverStaff={handoverStaff} setHandoverStaff={setHandoverStaff}
         saveUserEdits={saveUserEdits}
         updateUserEmail={updateUserEmail}
       />
@@ -614,6 +627,15 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
                   <button onClick={() => setViewingUserId(u.id)} className="rounded-lg bg-blue-50 px-2.5 py-1.5 text-xs font-bold text-blue-600 transition-colors hover:bg-blue-100 hover:text-blue-700">
                     {canManage ? 'แต่งตั้ง / แก้ไขข้อมูล' : 'ดูรายละเอียด'}
                   </button>
+                  {canManage && subTab === 'staff' && (
+                    <button
+                      onClick={() => setHandoverStaff(u)}
+                      className="p-1.5 rounded text-gray-300 hover:text-orange-500 hover:bg-orange-50 transition-colors"
+                      title="โอนงาน"
+                    >
+                      <Repeat size={13} />
+                    </button>
+                  )}
                   {canManage && (
                     <button
                       onClick={() => setDeletingUser(u)}
@@ -800,7 +822,15 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
       })()}
 
       </section>
-      <DeleteUserConfirmModal deletingUser={deletingUser} setDeletingUser={setDeletingUser} deleteLoading={deleteLoading} deleteUser={deleteUser} />
+      <DeleteUserConfirmModal
+        deletingUser={deletingUser} setDeletingUser={setDeletingUser} deleteLoading={deleteLoading} deleteUser={deleteUser}
+        deleteBlockedReason={deleteBlockedReason}
+        onOpenHandover={(u) => { setHandoverStaff(u); setDeletingUser(null); setDeleteBlockedReason('') }}
+        onClose={() => { setDeletingUser(null); setDeleteBlockedReason('') }}
+      />
+      {handoverStaff && (
+        <HandoverWorkloadModal oldStaff={handoverStaff} tenant={tenant} onClose={() => setHandoverStaff(null)} />
+      )}
 
     </div>
   )
@@ -809,38 +839,164 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
 // ─── User Detail Page (แท็บ, ต่อเพิ่มได้เรื่อยๆ แค่เพิ่ม entry ใน USER_DETAIL_TABS) ─────
 
 // ใช้ร่วมกันทั้งจากตารางและหน้ารายละเอียด กันเขียนซ้ำ
-function DeleteUserConfirmModal({ deletingUser, setDeletingUser, deleteLoading, deleteUser }) {
+// deleteBlockedReason มาจาก guard ฝั่ง DB (delete_user_by_id, 20260827100000) เมื่อผู้ใช้นี้ยังเป็น
+// ผู้รับผิดชอบเริ่มต้นของหมวดคำร้อง หรือยังมีคำร้องที่เปิดอยู่ — สลับปุ่มยืนยันลบเป็นทางลัดไปหน้าโอนงานแทน
+function DeleteUserConfirmModal({ deletingUser, deleteLoading, deleteUser, deleteBlockedReason, onOpenHandover, onClose }) {
   if (!deletingUser) return null
+  const blocked = !!deleteBlockedReason
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4" onClick={() => !deleteLoading && setDeletingUser(null)}>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4" onClick={() => !deleteLoading && onClose()}>
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex flex-col items-center text-center gap-3">
-          <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center">
-            <Trash2 size={24} className="text-red-500" />
+          <div className={`w-14 h-14 rounded-full flex items-center justify-center ${blocked ? 'bg-orange-100' : 'bg-red-100'}`}>
+            {blocked ? <Repeat size={24} className="text-orange-500" /> : <Trash2 size={24} className="text-red-500" />}
           </div>
-          <h3 className="text-lg font-semibold text-gray-800">ยืนยันการลบผู้ใช้งาน</h3>
-          <p className="text-sm text-gray-500 leading-relaxed">
-            คุณกำลังจะลบ <strong className="text-gray-800">{deletingUser.full_name || deletingUser.email || 'ผู้ใช้นี้'}</strong> ออกจากระบบถาวร<br />
-            ข้อมูลทั้งหมดจะหายไปและไม่สามารถกู้คืนได้
-          </p>
+          <h3 className="text-lg font-semibold text-gray-800">
+            {blocked ? 'ยังลบไม่ได้ — มีงานค้างอยู่' : 'ยืนยันการลบผู้ใช้งาน'}
+          </h3>
+          {blocked ? (
+            <p className="text-sm text-orange-700 bg-orange-50 border border-orange-100 rounded-xl px-3 py-2 leading-relaxed text-left">
+              {deleteBlockedReason}
+            </p>
+          ) : (
+            <p className="text-sm text-gray-500 leading-relaxed">
+              คุณกำลังจะลบ <strong className="text-gray-800">{deletingUser.full_name || deletingUser.email || 'ผู้ใช้นี้'}</strong> ออกจากระบบถาวร<br />
+              ข้อมูลทั้งหมดจะหายไปและไม่สามารถกู้คืนได้
+            </p>
+          )}
           <div className="flex gap-3 w-full mt-2">
             <button
-              onClick={() => setDeletingUser(null)}
+              onClick={onClose}
               disabled={deleteLoading}
               className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50"
             >
               ยกเลิก
             </button>
-            <button
-              onClick={() => deleteUser(deletingUser.id)}
-              disabled={deleteLoading}
-              className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {deleteLoading ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
-              {deleteLoading ? 'กำลังลบ...' : 'ลบออกจากระบบ'}
-            </button>
+            {blocked ? (
+              <button
+                onClick={() => onOpenHandover(deletingUser)}
+                className="flex-1 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium transition-colors flex items-center justify-center gap-2"
+              >
+                <Repeat size={15} /> โอนงานก่อนแล้วค่อยลบ
+              </button>
+            ) : (
+              <button
+                onClick={() => deleteUser(deletingUser.id)}
+                disabled={deleteLoading}
+                className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {deleteLoading ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                {deleteLoading ? 'กำลังลบ...' : 'ลบออกจากระบบ'}
+              </button>
+            )}
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// โอนงานทั้งหมด (ผู้รับผิดชอบเริ่มต้นของหมวดคำร้อง + คำร้องที่ยังเปิดอยู่) จาก oldStaff ไปเจ้าหน้าที่คนใหม่
+// ในคลิกเดียว ผ่าน RPC reassign_staff_workload (20260827110000) — ใช้ก่อนลบบัญชีที่ถูก guard บล็อกไว้
+// หรือกดเองล่วงหน้าตอนรู้ว่าจะมีคนย้าย/พ้นตำแหน่งก็ได้ ไม่ต้องรอให้ลบไม่ผ่านก่อน
+function HandoverWorkloadModal({ oldStaff, tenant, onClose }) {
+  const [techs, setTechs] = useState([])
+  const [newStaffId, setNewStaffId] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [result, setResult] = useState(null)
+
+  useEffect(() => {
+    if (!tenant?.id) return
+    fetchAssignableStaff(tenant.id).then((rows) => setTechs(rows.filter((t) => t.id !== oldStaff.id)))
+  }, [tenant?.id, oldStaff.id])
+
+  const techGroups = groupStaffByDepartment(techs)
+
+  async function confirm() {
+    if (!newStaffId) return
+    setBusy(true)
+    setError('')
+    const { data, error: rpcError } = await supabase.rpc('reassign_staff_workload', {
+      p_old_staff_id: oldStaff.id,
+      p_new_staff_id: newStaffId,
+      p_category: null,
+      p_municipality_id: tenant?.id,
+    })
+    setBusy(false)
+    if (rpcError) {
+      setError(rpcError.message)
+    } else {
+      setResult(data)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4" onClick={() => !busy && onClose()}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
+        {result ? (
+          <div className="flex flex-col items-center text-center gap-3">
+            <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center">
+              <Check size={24} className="text-green-500" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-800">โอนงานสำเร็จ</h3>
+            <p className="text-sm text-gray-500 leading-relaxed">
+              อัปเดตหมวดคำร้องเริ่มต้น {result.category_assignments_updated} รายการ<br />
+              โอนคำร้องที่เปิดอยู่ {result.complaints_updated} รายการ
+            </p>
+            <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium transition-colors">
+              เสร็จสิ้น
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center text-center gap-3">
+            <div className="w-14 h-14 rounded-full bg-orange-100 flex items-center justify-center">
+              <Repeat size={24} className="text-orange-500" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-800">โอนงาน</h3>
+            <p className="text-sm text-gray-500 leading-relaxed">
+              โอนงานทั้งหมดของ <strong className="text-gray-800">{oldStaff.full_name || oldStaff.email || 'ผู้ใช้นี้'}</strong> ให้เจ้าหน้าที่คนใหม่
+              — ครอบคลุมทั้งหมวดคำร้องที่ตั้งเป็นผู้รับผิดชอบเริ่มต้น และคำร้องที่ยังเปิดอยู่ (คำร้องที่ปิด/รับทราบแล้วจะไม่ถูกแตะ เพื่อรักษาประวัติ)
+            </p>
+            <select
+              value={newStaffId}
+              onChange={(e) => setNewStaffId(e.target.value)}
+              disabled={busy}
+              className="w-full text-sm border border-orange-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none"
+            >
+              <option value="">— เลือกผู้รับโอนงาน —</option>
+              {techGroups.map((g) => (
+                <optgroup key={g.department_name} label={g.department_name}>
+                  {g.members.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {(t.full_name || t.email) + (t.is_dept_head ? ' ⭐' : '')} · {ROLE_LABELS[t.role]?.label ?? t.role}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            {error && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2 w-full text-left">{error}</p>
+            )}
+            <div className="flex gap-3 w-full mt-1">
+              <button
+                onClick={onClose}
+                disabled={busy}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={confirm}
+                disabled={busy || !newStaffId}
+                className="flex-1 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {busy ? <Loader2 size={15} className="animate-spin" /> : <Repeat size={15} />}
+                {busy ? 'กำลังโอนงาน...' : 'ยืนยันโอนงาน'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1172,7 +1328,11 @@ const USER_DETAIL_TABS = [
 // ด้านบนของไฟล์แทน กันตรรกะเพี้ยนไปคนละแบบระหว่าง 2 หน้าที่ต้องเดาตำบลของ tenant เหมือนกัน
 
 function UserDetailPage(props) {
-  const { user, onBack, currentUserRole, currentUserId, tenant, saving, deletingUser, setDeletingUser, deleteLoading, deleteUser, saveUserEdits, updateUserEmail } = props
+  const {
+    user, onBack, currentUserRole, currentUserId, tenant, saving, deletingUser, setDeletingUser, deleteLoading, deleteUser,
+    deleteBlockedReason, setDeleteBlockedReason, handoverStaff, setHandoverStaff,
+    saveUserEdits, updateUserEmail,
+  } = props
   const [activeTab, setActiveTab] = useState('appointment')
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(null)
@@ -1289,6 +1449,14 @@ function UserDetailPage(props) {
                   <Pencil size={14} /> {activeTab === 'appointment' ? 'แก้ไขการแต่งตั้ง' : 'แก้ไขข้อมูล'}
                 </button>
               )}
+              {canDelete && user.role !== 'citizen' && (
+                <button
+                  onClick={() => setHandoverStaff(user)}
+                  className="flex items-center gap-1.5 text-xs font-medium text-orange-500 hover:text-orange-600 hover:bg-orange-50 px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  <Repeat size={14} /> โอนงานให้ผู้อื่น
+                </button>
+              )}
               {canDelete && (
                 <button
                   onClick={() => setDeletingUser(user)}
@@ -1317,7 +1485,15 @@ function UserDetailPage(props) {
         )}
         <ActiveComponent {...props} isEditing={isEditing} draft={draft} setDraft={setDraft} />
       </div>
-      <DeleteUserConfirmModal deletingUser={deletingUser} setDeletingUser={setDeletingUser} deleteLoading={deleteLoading} deleteUser={deleteUser} />
+      <DeleteUserConfirmModal
+        deletingUser={deletingUser} setDeletingUser={setDeletingUser} deleteLoading={deleteLoading} deleteUser={deleteUser}
+        deleteBlockedReason={deleteBlockedReason}
+        onOpenHandover={(u) => { setHandoverStaff(u); setDeletingUser(null); setDeleteBlockedReason('') }}
+        onClose={() => { setDeletingUser(null); setDeleteBlockedReason('') }}
+      />
+      {handoverStaff && (
+        <HandoverWorkloadModal oldStaff={handoverStaff} tenant={tenant} onClose={() => setHandoverStaff(null)} />
+      )}
     </div>
   )
 }
