@@ -19,6 +19,7 @@ import { uploadFile, resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRe
 import { fetchAssignableStaff, groupStaffByDepartment, ROLE_LABELS } from '../../lib/staffRoster'
 import { fetchPersonnelSignatories } from '../../lib/personnelDirectory'
 import OssIntakeForm from './OssIntakeForm'
+import OdorFieldsDisplay, { OdorAckBadge } from '../complaints/OdorFieldsDisplay'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const STATUS = {
@@ -1003,6 +1004,17 @@ function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, techn
             </div>
           )}
 
+          {c.category === 'odor' && c.extra_data && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">รายละเอียดเพิ่มเติม (กลิ่นเหม็น)</p>
+              <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100 space-y-1.5 text-sm text-gray-700">
+                <p>ระดับความรุนแรง: {c.extra_data.odor_intensity ?? '-'} / 5</p>
+                <p>ทิศทางลม: {c.extra_data.wind_direction ?? '-'}</p>
+                <p>อาการทางสุขภาพ: {c.extra_data.health_effect ?? 'ไม่มี'}</p>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">รายละเอียดแนบมา</p>
             <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
@@ -1283,6 +1295,10 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   const openedExternalComplaintIdRef = useRef(null)
   const [updating, setUpdating]     = useState(null)
   const [filterTab, setFilterTab]   = useState(0)
+  // แท็ปแยกต่างหากสำหรับหมวด "กลิ่นเหม็นรบกวน" (เฉพาะกิจ ส่งตรงผู้รับผิดชอบ ไม่ผ่านแอดมิน) — ดูอย่างเดียว
+  // ไม่ใช้ FILTER_TABS/filterTab เดิมเพราะ array นั้นชี้ enum สถานะ ไม่ใช่หมวดคำร้อง
+  const [odorTabActive, setOdorTabActive] = useState(false)
+  const [odorExpandedId, setOdorExpandedId] = useState(null)
   const [search, setSearch]         = useState('')
   const [complaintPage, setComplaintPage]         = useState(1)
   const [complaintsPerPage, setComplaintsPerPage] = useState(10)
@@ -1418,7 +1434,13 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
     const found = complaints.find(c => c.id === openComplaintId)
     if (found) {
       openedExternalComplaintIdRef.current = openComplaintId
-      queueMicrotask(() => openComplaint(found))
+      if (found.category === 'odor') {
+        // เฉพาะกิจ ดูอย่างเดียว — ห้ามเปิด ComplaintDetailModal เต็มรูปแบบ (มีปุ่มมอบหมาย/เปลี่ยนสถานะ)
+        // ให้สลับไปแท็ปเฉพาะกิจแทน ผู้รับผิดชอบเป็นคนกดรับทราบเอง ไม่ใช่แอดมิน
+        queueMicrotask(() => { setOdorTabActive(true); setOdorExpandedId(found.id) })
+      } else {
+        queueMicrotask(() => openComplaint(found))
+      }
     }
   }, [complaints, openComplaintId, openComplaint])
 
@@ -1567,7 +1589,12 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
     return s
   }
 
-  const filtered = complaints.filter((c) => {
+  // หมวด odor เป็นสายงานเฉพาะกิจ ส่งตรงผู้รับผิดชอบ ไม่ผ่านแอดมิน — กันออกจากแท็ปสถานะ/ตัวนับงานปกติทั้งหมด
+  // เห็นเฉพาะในแท็ป "เฉพาะกิจ" ด้านล่างเท่านั้น
+  const odorComplaints    = complaints.filter((c) => c.category === 'odor')
+  const nonOdorComplaints = complaints.filter((c) => c.category !== 'odor')
+
+  const filtered = nonOdorComplaints.filter((c) => {
     const ns = normalizeStatus(c.status)
     const matchStatus = FILTER_KEYS[filterTab] ? ns === FILTER_KEYS[filterTab] : true
     const matchSearch = search === '' ||
@@ -1589,7 +1616,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
     return pa !== pb ? pa - pb : new Date(b.created_at) - new Date(a.created_at)
   })
 
-  const baseFiltered = complaints.filter((c) => {
+  const baseFiltered = nonOdorComplaints.filter((c) => {
     const matchStatus = FILTER_KEYS[filterTab] ? normalizeStatus(c.status) === FILTER_KEYS[filterTab] : true
     const matchSearch = search === '' ||
       (c.detail ?? '').includes(search) ||
@@ -1630,7 +1657,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   useEffect(() => { setComplaintPage(1) }, [filterTab, search, complaintsPerPage, filterCategory, filterVillage, filterTechnician, filterPriority])
 
   const counts = STATUS_MAIN.reduce((acc, k) => {
-    acc[k] = complaints.filter((c) => normalizeStatus(c.status) === k).length
+    acc[k] = nonOdorComplaints.filter((c) => normalizeStatus(c.status) === k).length
     return acc
   }, {})
 
@@ -1640,7 +1667,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
 
       {/* Stat cards — mobile grid / PC formal bar */}
       <div className="grid grid-cols-2 gap-2 md:hidden">
-        <StatCard label="ทั้งหมด"         value={complaints.length}         icon={ClipboardList} color="#64748b" />
+        <StatCard label="ทั้งหมด"         value={nonOdorComplaints.length}  icon={ClipboardList} color="#64748b" />
         <StatCard label="คำร้องใหม่"      value={counts.new ?? 0}           icon={Clock}         color="#f59e0b" />
         <StatCard label="กำลังดำเนินการ"  value={counts.in_progress ?? 0}   icon={AlertCircle}   color="#8b5cf6" />
         <StatCard label="ปิดเรื่องแล้ว"   value={counts.closed ?? 0}        icon={CheckCircle2}  color="#10b981" />
@@ -1648,7 +1675,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
       {/* PC stat bar */}
       <div className="hidden md:flex border border-gray-200 rounded-none bg-white divide-x divide-gray-200 shadow-sm">
         {[
-          { label: 'คำร้องทั้งหมด',    value: complaints.length,          color: '#1a3a5c', bg: '#eef2f7' },
+          { label: 'คำร้องทั้งหมด',    value: nonOdorComplaints.length,   color: '#1a3a5c', bg: '#eef2f7' },
           { label: 'คำร้องใหม่',       value: counts.new ?? 0,            color: '#b45309', bg: '#fef3c7' },
           { label: 'กำลังดำเนินการ',  value: counts.in_progress ?? 0,    color: '#6d28d9', bg: '#ede9fe' },
           { label: 'ดำเนินการแล้ว',   value: counts.done ?? 0,            color: '#1d4ed8', bg: '#dbeafe' },
@@ -1705,10 +1732,10 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
           <div className="flex gap-1.5 overflow-x-auto scrollbar-none -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap">
             {FILTER_TABS.map((tab, i) => {
               const key = FILTER_KEYS[i]
-              const active = filterTab === i
+              const active = filterTab === i && !odorTabActive
               const dotColor = key ? (STATUS[key]?.color ?? '#94a3b8') : '#64748b'
               return (
-                <button key={i} onClick={() => setFilterTab(i)}
+                <button key={i} onClick={() => { setFilterTab(i); setOdorTabActive(false) }}
                   className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors ${
                     active ? 'text-white border-transparent' : 'text-gray-600 bg-white border-gray-200 hover:bg-gray-50'
                   }`}
@@ -1719,12 +1746,28 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                     <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none ${
                       active ? 'bg-white/25' : 'bg-gray-100 text-gray-500'
                     }`}>
-                      {complaints.filter((c) => normalizeStatus(c.status) === key).length}
+                      {nonOdorComplaints.filter((c) => normalizeStatus(c.status) === key).length}
                     </span>
                   )}
                 </button>
               )
             })}
+            {/* แท็ปเฉพาะกิจ: กลิ่นเหม็นรบกวน — ส่งตรงผู้รับผิดชอบ ไม่ผ่านแอดมิน, ดูอย่างเดียว (ไม่ปนกับ
+                แท็ปสถานะข้างบน ไม่ใช้ FILTER_TABS/filterTab เพราะไม่ใช่สถานะ) */}
+            {odorComplaints.length > 0 && (
+              <button onClick={() => setOdorTabActive(true)}
+                className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors ${
+                  odorTabActive ? 'text-white border-transparent' : 'text-lime-700 bg-lime-50 border-lime-200 hover:bg-lime-100'
+                }`}
+                style={odorTabActive ? { backgroundColor: '#65a30d' } : {}}>
+                💨 กลิ่นเหม็นรบกวน (เฉพาะกิจ)
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none ${
+                  odorTabActive ? 'bg-white/25' : 'bg-lime-200 text-lime-800'
+                }`}>
+                  {odorComplaints.length}
+                </span>
+              </button>
+            )}
           </div>
 
           {/* Advanced filters */}
@@ -1779,9 +1822,9 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                 <select value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)}
                   className="w-full appearance-none pl-7 pr-7 py-2 rounded-xl border border-gray-200 bg-white text-xs font-medium text-gray-600 focus:outline-none focus:ring-2 focus:border-transparent cursor-pointer"
                   style={{ '--tw-ring-color': 'var(--color-primary)' }}>
-                  <option value="">ทุกกอง ({complaints.length})</option>
+                  <option value="">ทุกกอง ({nonOdorComplaints.length})</option>
                   {DEPARTMENTS.map((d) => (
-                    <option key={d} value={d}>{d} ({complaints.filter(c => c.department === d).length})</option>
+                    <option key={d} value={d}>{d} ({nonOdorComplaints.filter(c => c.department === d).length})</option>
                   ))}
                 </select>
               </div>
@@ -1794,7 +1837,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                   style={{ '--tw-ring-color': 'var(--color-primary)' }}>
                   <option value="">ความเร่งด่วนทั้งหมด</option>
                   {Object.entries(PRIORITY).map(([k, p]) => (
-                    <option key={k} value={k}>{p.short} ({complaints.filter(c => (c.priority ?? 'normal') === k).length})</option>
+                    <option key={k} value={k}>{p.short} ({nonOdorComplaints.filter(c => (c.priority ?? 'normal') === k).length})</option>
                   ))}
                 </select>
               </div>
@@ -1830,7 +1873,43 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
         )}
 
         {/* List */}
-        {loading ? (
+        {odorTabActive ? (
+          /* แท็ปเฉพาะกิจ — ดูอย่างเดียว ไม่มีปุ่มมอบหมาย/เปลี่ยนสถานะ/ลบ ผู้รับผิดชอบกด "รับทราบ" เองที่
+             แดชบอร์ดของตน (OdorAcknowledgePanel) ไม่ใช่หน้านี้ */
+          odorComplaints.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+              <ClipboardList size={36} className="mb-2 opacity-30" />
+              <p className="text-sm">ยังไม่มีคำร้องหมวดกลิ่นเหม็นรบกวน</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {odorComplaints.map((c) => {
+                const isOpen = odorExpandedId === c.id
+                const assignee = technicians.find(t => t.id === c.assigned_to)?.full_name
+                return (
+                  <div key={c.id} className="px-4 py-3.5">
+                    <button type="button" onClick={() => setOdorExpandedId(isOpen ? null : c.id)}
+                      className="w-full flex items-center justify-between gap-3 text-left">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-800 truncate">{c.reporter_name || 'ไม่ระบุชื่อผู้แจ้ง'}</p>
+                        <p className="text-xs text-gray-400">
+                          {new Date(c.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}
+                          {' · ผู้รับผิดชอบ: '}{assignee ?? 'ยังไม่ได้ตั้งค่า'}
+                        </p>
+                      </div>
+                      <OdorAckBadge complaint={c} />
+                    </button>
+                    {isOpen && (
+                      <div className="mt-3">
+                        <OdorFieldsDisplay complaint={c} />
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )
+        ) : loading ? (
           <div className="flex items-center justify-center py-16 text-gray-400">
             <Loader2 size={24} className="animate-spin mr-2" /> กำลังโหลด...
           </div>

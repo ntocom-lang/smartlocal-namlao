@@ -8,6 +8,8 @@ import {
 import { supabase } from '../lib/supabase'
 import { fetchComplaintPrivateDetail } from '../lib/complaintPrivacy'
 import { useTenant } from '../contexts/TenantContext'
+import { useAuth } from '../contexts/AuthContext'
+import OdorAcknowledgePanel from '../components/staff/OdorAcknowledgePanel'
 import { compressImage } from '../lib/imageUtils'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { uploadFile } from '../lib/driveStorage'
@@ -458,6 +460,8 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant }) {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function TechnicianDashboard() {
   const { tenant } = useTenant()
+  const { session } = useAuth()
+  const staffId = session?.user?.id
   const navigate = useNavigate()
   const [complaints, setComplaints] = useState([])
   const [loading, setLoading] = useState(true)
@@ -724,6 +728,8 @@ export default function TechnicianDashboard() {
 
         {/* ─── Left: รายการงาน ─── */}
         <div className="flex-1 min-w-0 space-y-4">
+          <OdorAcknowledgePanel tenantId={tenant?.id} staffId={staffId} />
+
           {/* สรุปงานวันนี้ — ใช้ due_date/priority ที่ระบบมีอยู่แล้ว ยังไม่เคยถูกโชว์ที่หน้าช่างมาก่อน */}
           {!loading && complaints.length > 0 && (
             <div className="md:hidden grid grid-cols-3 gap-2">

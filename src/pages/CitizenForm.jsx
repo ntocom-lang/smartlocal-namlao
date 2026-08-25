@@ -40,6 +40,7 @@ const CATEGORY_ICON = {
   fire:             FlameKindling,
   phone_complaint:  Phone,
   waste_water:      Droplets,
+  odor:             Wind,
   other:            HelpCircle,
 }
 
@@ -49,7 +50,7 @@ const FALLBACK_EMOJI = {
   borrow_equipment: '📦', corruption: '⚖️', grievance: '📣',
   noise: '📢', building: '🏗️', tax: '📋', canal: '🏞️',
   animals: '🐕', fire: '🔥', phone_complaint: '📞',
-  waste_water: '💧', other: '📝',
+  waste_water: '💧', odor: '💨', other: '📝',
 }
 
 const FALLBACK_COLOR = {
@@ -58,7 +59,7 @@ const FALLBACK_COLOR = {
   borrow_equipment: '#f97316', corruption: '#ef4444', grievance: '#ec4899',
   noise: '#a855f7', building: '#64748b', tax: '#14b8a6', canal: '#78716c',
   animals: '#f97316', fire: '#ef4444', phone_complaint: '#3b82f6',
-  waste_water: '#06b6d4', other: '#9ca3af',
+  waste_water: '#06b6d4', odor: '#84cc16', other: '#9ca3af',
 }
 
 // ตัวเลือก "ลักษณะปัญหา" เฉพาะหมวดที่มีประโยชน์จริง (ตอนนี้มีแค่ไฟฟ้าสาธารณะ) — เพิ่มหมวดอื่นได้โดยเพิ่ม
@@ -66,6 +67,19 @@ const FALLBACK_COLOR = {
 const ISSUE_TYPES_BY_CATEGORY = {
   light: ['ไฟดับทั้งดวง', 'ไฟกระพริบ', 'เสาเอียง/ชำรุด', 'สายไฟชำรุด', 'ต้องการติดตั้งเพิ่ม', 'อื่นๆ'],
 }
+
+// ฟิลด์เสริมของหมวด "กลิ่นเหม็นรบกวน (มลพิษทางอากาศ)" — เก็บรวมเป็น complaints.extra_data (jsonb) ก้อนเดียว
+// ไม่ใช่คอลัมน์แยกทีละฟิลด์ เพราะยังไม่มีความจำเป็นต้องกรอง/ออกรายงานสถิติแยกรายฟิลด์ในเร็วๆ นี้
+const ODOR_INTENSITY_LEVELS = [
+  { value: 1, label: 'ได้กลิ่นจางๆ' },
+  { value: 2, label: 'ได้กลิ่นชัดเจน' },
+  { value: 3, label: 'รบกวนการใช้ชีวิต' },
+  { value: 4, label: 'แสบจมูก/เวียนหัว' },
+  { value: 5, label: 'รุนแรงจนนอนไม่หลับ' },
+]
+const WIND_DIRECTIONS = ['เหนือ', 'ใต้', 'ตะวันออก', 'ตะวันตก', 'ลมสงบ']
+const HEALTH_EFFECT_NONE = 'ไม่มีอาการทางกาย'
+const HEALTH_EFFECT_OPTIONS = ['เวียนศีรษะ', 'คลื่นไส้', 'ระคายเคืองทางเดินหายใจ', HEALTH_EFFECT_NONE]
 
 const DEFAULT_CATEGORIES = [
   { value: 'light',            label: 'ไฟฟ้าสาธารณะ' },
@@ -77,6 +91,7 @@ const DEFAULT_CATEGORIES = [
   { value: 'borrow_equipment', label: 'ยืมพัสดุ' },
   { value: 'corruption',       label: 'แจ้งการทุจริต' },
   { value: 'grievance',        label: 'แจ้งเรื่องร้องทุกข์' },
+  { value: 'odor',             label: 'กลิ่นเหม็นรบกวน (มลพิษทางอากาศ)' },
   { value: 'other',            label: 'อื่นๆ' },
 ]
 
@@ -115,6 +130,9 @@ function getFormActionCopy(formType, category, categoryLabel = '') {
   }
   if (category === 'corruption') {
     return { title: 'แจ้งเบาะแสหรือข้อร้องเรียนทุจริต', submit: 'ส่งเรื่องร้องเรียน' }
+  }
+  if (category === 'odor') {
+    return { title: 'แจ้งกลิ่นเหม็นรบกวน (มลพิษทางอากาศ)', submit: 'ส่งเรื่องแจ้งกลิ่นเหม็น' }
   }
   if (REPAIR_CATEGORIES.has(category)) {
     return { title: categoryLabel ? `แจ้ง${categoryLabel}ชำรุด` : 'แจ้งเหตุ/แจ้งซ่อม', submit: 'ส่งเรื่องแจ้งซ่อม' }
@@ -305,6 +323,7 @@ const FORM_TYPE_CONFIG = {
       { value: 'env_fire',    label: '🔥  ควันไฟ / เผาป่า' },
       { value: 'mosquito',    label: '🦟  ยุงชุกชุม / น้ำขัง' },
       { value: 'pollution',   label: '🌫️  กลิ่น / มลพิษ' },
+      { value: 'odor',        label: '💨  กลิ่นเหม็นรบกวน (มลพิษทางอากาศ)' },
       { value: 'other',       label: '📝  อื่นๆ' },
     ],
     placeholder: 'อธิบายสถานการณ์ เช่น พบขยะทิ้งเกลื่อนข้างทาง มีกลิ่นเหม็น...',
@@ -323,7 +342,12 @@ export default function CitizenForm() {
   const ftConfig = FORM_TYPE_CONFIG[formType] ?? null
 
   const defaultCategory = ftConfig?.categories?.[0]?.value ?? preCategory
-  const [form, setForm] = useState({ category: defaultCategory, issue_type: '', village: '', detail: '', phone: '', name_title: '', name_first: '', name_last: '' })
+  const [form, setForm] = useState({
+    category: defaultCategory, issue_type: '', village: '', detail: '', phone: '',
+    name_title: '', name_first: '', name_last: '',
+    // ฟิลด์เสริมเฉพาะหมวด odor — ดู buildExtraData()/validateOdorFields() ด้านล่าง
+    odor_intensity: '', wind_direction: '', health_effect: '',
+  })
   const [profilePhone, setProfilePhone] = useState('') // เบอร์เดิมจากโปรไฟล์ ไว้เทียบว่าผู้ใช้แก้เบอร์หรือไม่
   const [syncPhoneToProfile, setSyncPhoneToProfile] = useState(false)
   const [geo, setGeo] = useState({ lat: null, lng: null, address: null })
@@ -439,6 +463,26 @@ export default function CitizenForm() {
   const set = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }))
   const reporterFullName = joinThaiFullName(form.name_title, form.name_first, form.name_last)
 
+  // รวมฟิลด์เสริมของหมวดที่มีเป็น jsonb object เดียว — คืน null ถ้าหมวดนี้ไม่มีฟิลด์เสริม (ไม่ใช่ odor)
+  // ตัด incident_source_suspected/incident_time ออกแล้ว (ใช้ complaints.created_at แทนวันเวลาที่แจ้ง)
+  function buildExtraData(form) {
+    if (form.category !== 'odor') return null
+    return {
+      odor_intensity: form.odor_intensity ? Number(form.odor_intensity) : null,
+      wind_direction: form.wind_direction || null,
+      health_effect:  form.health_effect || null,
+    }
+  }
+
+  // คืนข้อความ error ตัวแรกที่พบ หรือ null ถ้าผ่าน — ใช้ทั้ง 2 จุดที่ validate ก่อนส่ง (ปุ่มกดก่อนเปิด
+  // consent modal และ handleSubmit จริง) เหมือนแพทเทิร์นเดิมของ issue_type
+  function validateOdorFields(form) {
+    if (form.category !== 'odor') return null
+    if (!form.odor_intensity) return 'กรุณาเลือกระดับความรุนแรงของกลิ่น'
+    if (!form.wind_direction) return 'กรุณาเลือกทิศทางลม'
+    return null
+  }
+
   function handleMapConfirm({ lat, lng, address }) {
     setGeo({ lat, lng, address })
     setGeoStatus(GEO_STATUS.ok)
@@ -451,6 +495,8 @@ export default function CitizenForm() {
     if (!form.name_first.trim() || !form.name_last.trim()) { setError('กรุณากรอกชื่อ-นามสกุล'); return }
 
     if (ISSUE_TYPES_BY_CATEGORY[form.category] && !form.issue_type) { setError('กรุณาเลือกลักษณะปัญหา'); return }
+    const odorErr = validateOdorFields(form)
+    if (odorErr) { setError(odorErr); return }
     if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
     if (!tenant?.id) { setError('ไม่พบข้อมูลหน่วยงาน'); return }
 
@@ -478,7 +524,7 @@ export default function CitizenForm() {
       let insertResult
       try {
         insertResult = await raceTimeout(
-          supabase.rpc('submit_citizen_complaint_v2', {
+          supabase.rpc('submit_citizen_complaint_v3', {
             p_id:              complaintId,
             p_municipality_id: tenant.id,
             p_category:        form.category,
@@ -493,6 +539,7 @@ export default function CitizenForm() {
             p_channel:         'citizen_online',
             p_department:      CATEGORY_DEPT[form.category] ?? 'สำนักปลัด',
             p_issue_type:      form.issue_type || null,
+            p_extra_data:      buildExtraData(form),
           }).single()
             .abortSignal(abortCtrl.signal),
           20_000,
@@ -696,6 +743,50 @@ export default function CitizenForm() {
           </div>
         )}
 
+        {/* ฟิลด์เสริมเฉพาะหมวด odor — GPS ใช้ปุ่ม "ปักหมุดจากแผนที่" เดิมด้านล่างของฟอร์ม ไม่ซ้ำที่นี่ */}
+        {form.category === 'odor' && (
+          <div className="space-y-2">
+            {/* ระดับความรุนแรง 1-5 */}
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">ระดับความรุนแรงของกลิ่น *</label>
+              <div className="relative">
+                <select value={form.odor_intensity} onChange={set('odor_intensity')} required
+                  className="w-full px-4 py-2.5 pr-10 rounded-xl border border-gray-300 bg-white text-gray-900 text-base focus:outline-none focus:border-blue-400 appearance-none">
+                  <option value="">— กรุณาเลือก —</option>
+                  {ODOR_INTENSITY_LEVELS.map((lv) => <option key={lv.value} value={lv.value}>{lv.value} — {lv.label}</option>)}
+                </select>
+                <ChevronDown size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              </div>
+            </div>
+
+            {/* อาการทางสุขภาพ — เลือกได้ข้อเดียว (ถ้ามี) */}
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">อาการทางสุขภาพที่พบ (ถ้ามี)</label>
+              <div className="relative">
+                <select value={form.health_effect} onChange={set('health_effect')}
+                  className="w-full px-4 py-2.5 pr-10 rounded-xl border border-gray-300 bg-white text-gray-900 text-base focus:outline-none focus:border-blue-400 appearance-none">
+                  <option value="">— กรุณาเลือก —</option>
+                  {HEALTH_EFFECT_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                </select>
+                <ChevronDown size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              </div>
+            </div>
+
+            {/* ทิศทางลม */}
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">ทิศทางลม *</label>
+              <div className="relative">
+                <select value={form.wind_direction} onChange={set('wind_direction')} required
+                  className="w-full px-4 py-2.5 pr-10 rounded-xl border border-gray-300 bg-white text-gray-900 text-base focus:outline-none focus:border-blue-400 appearance-none">
+                  <option value="">— กรุณาเลือก —</option>
+                  {WIND_DIRECTIONS.map((d) => <option key={d} value={d}>{d}</option>)}
+                </select>
+                <ChevronDown size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Detail */}
         <textarea value={form.detail} onChange={set('detail')} rows={2} required
           placeholder={ftConfig?.placeholder ?? 'รายละเอียด'}
@@ -797,6 +888,8 @@ export default function CitizenForm() {
           if (!form.name_first.trim() || !form.name_last.trim()) { setError('กรุณากรอกชื่อ-นามสกุล'); return }
 
           if (ISSUE_TYPES_BY_CATEGORY[form.category] && !form.issue_type) { setError('กรุณาเลือกลักษณะปัญหา'); return }
+          const odorErr = validateOdorFields(form)
+          if (odorErr) { setError(odorErr); return }
           if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
           setShowConsent(true)
         }} disabled={submitting}

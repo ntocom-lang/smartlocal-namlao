@@ -2365,6 +2365,7 @@ const DEFAULT_SEED = [
   { value: 'borrow_equipment', label: 'ยืมพัสดุ',                 emoji: '📦', color: '#E0E7FF', textColor: '#4338CA' },
   { value: 'corruption',       label: 'แจ้งการทุจริต',            emoji: '⚖️', color: '#FEE2E2', textColor: '#DC2626' },
   { value: 'grievance',        label: 'แจ้งเรื่องร้องทุกข์ร้องเรียน', emoji: '📣', color: '#FEF3C7', textColor: '#D97706' },
+  { value: 'odor',             label: 'กลิ่นเหม็นรบกวน (มลพิษทางอากาศ)', emoji: '💨', color: '#ECFCCB', textColor: '#4D7C0F' },
   { value: 'other',            label: 'อื่นๆ',                    emoji: '📝', color: '#E0E7FF', textColor: '#4338CA' },
 ]
 
@@ -2428,7 +2429,7 @@ function SlaInput({ value, onCommit }) {
   )
 }
 
-function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleActive, onEditEmoji, iconStyle, techGroups = [], techId = '', slaDays = 3, onTechChange, onSlaChange, savingAssign = false }) {
+function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleActive, onToggleAdhoc, onEditEmoji, iconStyle, techGroups = [], techId = '', slaDays = 3, onTechChange, onSlaChange, savingAssign = false }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(cat.label)
@@ -2504,6 +2505,13 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
         >
           {cat.is_active === false ? 'ปิด' : 'เปิด'}
         </button>
+        <button
+          onClick={() => onToggleAdhoc?.(cat.id, !!cat.is_adhoc)}
+          title="สลับปกติ/เฉพาะกิจ"
+          className={`px-2 py-1 rounded-full text-[12px] font-bold shrink-0 transition-colors ${cat.is_adhoc ? 'bg-lime-100 text-lime-700 hover:bg-gray-200 hover:text-gray-500' : 'bg-gray-200 text-gray-500 hover:bg-lime-100 hover:text-lime-700'}`}
+        >
+          {cat.is_adhoc ? '💨 เฉพาะกิจ' : 'ปกติ'}
+        </button>
         <button onClick={() => onDelete(cat.id)}
           className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors shrink-0">
           <Trash2 size={14} />
@@ -2535,7 +2543,7 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
   )
 }
 
-function SortableDesktopRow({ cat, idx, draft, assign, isSaving, techGroups = [], onSetDraft, onSaveRow, onCancelRow, onStartLabelEdit, onToggleActive, onDeleteCat, onEditEmoji, iconStyle }) {
+function SortableDesktopRow({ cat, idx, draft, assign, isSaving, techGroups = [], onSetDraft, onSaveRow, onCancelRow, onStartLabelEdit, onToggleActive, onToggleAdhoc, onDeleteCat, onEditEmoji, iconStyle }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
   const color = COLOR_PRESETS[cat.color_idx ?? 0] ?? COLOR_PRESETS[0]
   const editingLabel = !!draft?.editingLabel
@@ -2628,6 +2636,15 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, techGroups = []
           {cat.is_active === false ? 'ปิด' : 'เปิด'}
         </button>
       </td>
+      <td className="px-4 py-3 text-center">
+        <button
+          onClick={() => onToggleAdhoc(cat.id, !!cat.is_adhoc)}
+          title="สลับปกติ/เฉพาะกิจ"
+          className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${cat.is_adhoc ? 'bg-lime-100 text-lime-700 hover:bg-gray-200 hover:text-gray-500' : 'bg-gray-200 text-gray-500 hover:bg-lime-100 hover:text-lime-700'}`}
+        >
+          {cat.is_adhoc ? '💨 เฉพาะกิจ' : 'ปกติ'}
+        </button>
+      </td>
       <td className="px-4 py-3">
         {editingLabel ? (
           <div className="flex justify-end gap-1.5">
@@ -2673,6 +2690,9 @@ function CategoryManager({ tenant }) {
   const [rowDrafts, setRowDrafts] = useState({}) // { catValue: { label?, technician_id?, sla_days?, editingLabel? } }
   const [savingAll, setSavingAll] = useState(false)
   const [iconPickerCat, setIconPickerCat] = useState(null)
+  // แยกแท็ป "ปกติ" กับ "เฉพาะกิจ" (เช่นหมวดกลิ่นเหม็นรบกวนที่ส่งตรงผู้รับผิดชอบ ไม่ผ่านแอดมิน) — ใช้คอลัมน์
+  // complaint_categories.is_adhoc แยกกลุ่มให้แอดมินตั้งหมวดใหม่เป็นเฉพาะกิจได้เองในอนาคตโดยไม่ต้องแก้โค้ด
+  const [categoryTab, setCategoryTab] = useState('normal') // 'normal' | 'adhoc'
 
   // รูปแบบไอคอนหมวดหมู่ ระดับ อปท. — 'native' emoji ตัวอักษรธรรมดา, 'color' OpenMoji สี (ค่าเริ่มต้น),
   // 'outline' OpenMoji เส้นขาวดำ (dataset เดียวกับสี คนละโฟลเดอร์ CDN) มีผลกับทุกจุดที่ใช้ CategoryIcon
@@ -2802,6 +2822,7 @@ function CategoryManager({ tenant }) {
   }, [tenant?.id])
   // จัดกลุ่มตามกอง ใช้ render เป็น <optgroup> — คนหลักสิบ/ร้อยคนจะได้ไม่ต้องไล่หาในลิสต์แบนราบยาวๆ
   const techGroups = groupStaffByDepartment(techs)
+  const visibleCats = cats.filter((c) => categoryTab === 'adhoc' ? !!c.is_adhoc : !c.is_adhoc)
 
   async function handleTechChange(catValue, techId) {
     setSavingAssign(catValue)
@@ -2842,6 +2863,7 @@ function CategoryManager({ tenant }) {
       color:      preset.color,
       text_color: preset.textColor,
       sort_order: cats.length,
+      is_adhoc:   categoryTab === 'adhoc', // เพิ่มระหว่างอยู่แท็บไหน ก็สร้างเป็นประเภทงานนั้นไปเลย กันงง
     }).select().single()
     if (err) {
       setError('เพิ่มไม่สำเร็จ: ' + err.message)
@@ -2870,6 +2892,12 @@ function CategoryManager({ tenant }) {
     const { error: err } = await supabase.from('complaint_categories').update({ is_active: !current }).eq('id', id)
     if (err) { setError('บันทึกไม่สำเร็จ: ' + err.message); return }
     setCats((prev) => prev.map((c) => c.id === id ? { ...c, is_active: !current } : c))
+  }
+
+  async function toggleAdhoc(id, current) {
+    const { error: err } = await supabase.from('complaint_categories').update({ is_adhoc: !current }).eq('id', id)
+    if (err) { setError('บันทึกไม่สำเร็จ: ' + err.message); return }
+    setCats((prev) => prev.map((c) => c.id === id ? { ...c, is_adhoc: !current } : c))
   }
 
   async function moveCat(idx, dir) {
@@ -3036,6 +3064,24 @@ function CategoryManager({ tenant }) {
         </div>
       )}
 
+      {/* แท็ปแยก "ปกติ"/"เฉพาะกิจ" — เฉพาะกิจ = ส่งตรงผู้รับผิดชอบ ไม่ผ่านแอดมิน (เช่นกลิ่นเหม็นรบกวน) */}
+      <div className="flex gap-1.5">
+        <button onClick={() => setCategoryTab('normal')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors ${
+            categoryTab === 'normal' ? 'text-white border-transparent' : 'text-gray-600 bg-white border-gray-200 hover:bg-gray-50'
+          }`}
+          style={categoryTab === 'normal' ? { backgroundColor: 'var(--color-primary)' } : {}}>
+          ปกติ ({cats.filter((c) => !c.is_adhoc).length})
+        </button>
+        <button onClick={() => setCategoryTab('adhoc')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors ${
+            categoryTab === 'adhoc' ? 'text-white border-transparent' : 'text-lime-700 bg-lime-50 border-lime-200 hover:bg-lime-100'
+          }`}
+          style={categoryTab === 'adhoc' ? { backgroundColor: '#65a30d' } : {}}>
+          💨 เฉพาะกิจ ({cats.filter((c) => c.is_adhoc).length})
+        </button>
+      </div>
+
       {/* List */}
       {loading ? (
         <div className="flex justify-center py-8"><Loader2 size={22} className="animate-spin text-gray-300" /></div>
@@ -3043,15 +3089,20 @@ function CategoryManager({ tenant }) {
         <p className="text-sm text-gray-400 text-center py-6">
           ยังไม่มีประเภทคำร้อง — กด <strong>โหลดค่าเริ่มต้น</strong> หรือเพิ่มเองด้านบน
         </p>
+      ) : visibleCats.length === 0 ? (
+        <p className="text-sm text-gray-400 text-center py-6">
+          {categoryTab === 'adhoc' ? 'ยังไม่มีประเภทคำร้องเฉพาะกิจ' : 'ยังไม่มีประเภทคำร้องปกติ'}
+        </p>
       ) : (
         <>
           {/* Mobile: DnD sortable cards */}
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={cats.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+            <SortableContext items={visibleCats.map((c) => c.id)} strategy={verticalListSortingStrategy}>
               <div className="md:hidden space-y-2">
-                {cats.map((cat, idx) => (
-                  <SortableCatItem key={cat.id} cat={cat} idx={idx} total={cats.length}
+                {visibleCats.map((cat, idx) => (
+                  <SortableCatItem key={cat.id} cat={cat} idx={idx} total={visibleCats.length}
                     onDelete={deleteCat} onMove={moveCat} onEdit={editCat} onToggleActive={toggleActive}
+                    onToggleAdhoc={toggleAdhoc}
                     onEditEmoji={setIconPickerCat}
                     iconStyle={iconStyle}
                     techGroups={techGroups}
@@ -3067,7 +3118,7 @@ function CategoryManager({ tenant }) {
           </DndContext>
           {/* Desktop table — DnD sortable */}
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={cats.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+            <SortableContext items={visibleCats.map((c) => c.id)} strategy={verticalListSortingStrategy}>
               <div className="hidden md:block border border-gray-200 rounded-xl overflow-hidden">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b border-gray-200">
@@ -3079,11 +3130,12 @@ function CategoryManager({ tenant }) {
                       <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ช่างรับผิดชอบ</th>
                       <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 w-24">ระยะเวลา</th>
                       <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 w-20">สถานะ</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 w-24">ประเภทงาน</th>
                       <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 w-20">จัดการ</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {cats.map((cat, idx) => (
+                    {visibleCats.map((cat, idx) => (
                       <SortableDesktopRow
                         key={cat.id}
                         cat={cat}
@@ -3097,6 +3149,7 @@ function CategoryManager({ tenant }) {
                         onCancelRow={cancelRow}
                         onStartLabelEdit={startLabelEdit}
                         onToggleActive={toggleActive}
+                        onToggleAdhoc={toggleAdhoc}
                         onDeleteCat={deleteCat}
                         onEditEmoji={setIconPickerCat}
                         iconStyle={iconStyle}

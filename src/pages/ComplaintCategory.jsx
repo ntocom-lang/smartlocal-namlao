@@ -18,7 +18,7 @@ const FALLBACK_ICON = {
   noise: VolumeX, building: Building2, tax: Receipt, canal: Pickaxe,
   animals: Dog, fire: Flame, phone_complaint: PhoneCall,
   waste_water: Droplets, suction: Truck, manhole: CircleDot,
-  pollution: Wind, disease: Stethoscope, other: HelpCircle,
+  pollution: Wind, disease: Stethoscope, odor: Wind, other: HelpCircle,
 }
 
 const EMOJI_OVERRIDE = {
@@ -27,7 +27,7 @@ const EMOJI_OVERRIDE = {
   building: '🏗️', mosquito: '🦟', grievance: '📣', corruption: '⚖️',
   tax: '📋', tree: '🌳', water_supply: '🚿', animals: '🐕',
   phone_complaint: '📞', borrow_equipment: '📦', fire: '🔥',
-  suction: '🚛', manhole: '⚙️', pollution: '🌫️', disease: '🏥', other: '📝',
+  suction: '🚛', manhole: '⚙️', pollution: '🌫️', disease: '🏥', odor: '💨', other: '📝',
 }
 
 const FALLBACK_COLOR = {
@@ -37,7 +37,7 @@ const FALLBACK_COLOR = {
   noise: '#a855f7', building: '#475569', tax: '#14b8a6', canal: '#78716c',
   animals: '#f97316', fire: '#ef4444', phone_complaint: '#3b82f6',
   waste_water: '#06b6d4', suction: '#0891b2', manhole: '#71717a',
-  pollution: '#6b7280', disease: '#ec4899', other: '#9ca3af',
+  pollution: '#6b7280', disease: '#ec4899', odor: '#84cc16', other: '#9ca3af',
 }
 
 const DEFAULT_CATEGORIES = [
@@ -55,6 +55,7 @@ const DEFAULT_CATEGORIES = [
   { value: 'mosquito',         label: 'พ่นยุง' },
   { value: 'disease',          label: 'ควบคุมโรคติดต่อ' },
   { value: 'pollution',        label: 'กลิ่น / ควัน / มลพิษ' },
+  { value: 'odor',             label: 'กลิ่นเหม็นรบกวน (มลพิษทางอากาศ)' },
   { value: 'grievance',        label: 'แจ้งเรื่องร้องทุกข์ร้องเรียน' },
   { value: 'corruption',       label: 'แจ้งการทุจริต' },
   { value: 'tax',              label: 'ภาษีและค่าธรรมเนียม' },

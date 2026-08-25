@@ -101,6 +101,15 @@ function buildRequestCopy(category, categoryLabel, tenantName) {
     }
   }
 
+  if (category === 'odor') {
+    // "เหตุรำคาญ" เป็นศัพท์ที่ พ.ร.บ.การสาธารณสุข ใช้กับเรื่องกลิ่น/เสียง/ควันรบกวนโดยเฉพาะ — แม่นยำกว่า
+    // คำทั่วไป ไม่อ้างเลขมาตราตรงๆ ในนี้ (ต้องยืนยันกับฉบับปัจจุบันก่อนเสมอถ้าจะอ้างเลขมาตรา)
+    return {
+      subject: 'ขอให้ตรวจสอบและระงับเหตุรำคาญจากกลิ่นเหม็น',
+      body: `มีความประสงค์แจ้งเหตุกลิ่นเหม็นรบกวนอันเป็นเหตุรำคาญ และขอให้${org}ตรวจสอบข้อเท็จจริงและพิจารณาดำเนินการตามอำนาจหน้าที่เพื่อระงับเหตุดังกล่าว`,
+    }
+  }
+
   if (REPAIR_CATEGORIES.has(category)) {
     return {
       subject: `แจ้ง${label}ชำรุด`,
@@ -233,6 +242,11 @@ export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate,
 
 <div class="points indent" style="margin-top:10px;">
   ${c.issue_type ? `<div>ลักษณะปัญหา &nbsp;${esc(c.issue_type)}</div>` : ''}
+  ${c.category === 'odor' && c.extra_data ? `
+  <div>ระดับความรุนแรง &nbsp;${esc(c.extra_data.odor_intensity ?? '-')} / 5</div>
+  <div>ทิศทางลม &nbsp;${esc(c.extra_data.wind_direction ?? '-')}</div>
+  <div>อาการทางสุขภาพ &nbsp;${esc(c.extra_data.health_effect ?? 'ไม่มี')}</div>
+  ` : ''}
   <div>สถานที่ &nbsp;${esc(point1)}</div>
 </div>
 

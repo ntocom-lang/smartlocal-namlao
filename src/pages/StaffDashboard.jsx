@@ -17,6 +17,7 @@ import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
 import { buildCouncilComplaintHtml } from '../lib/councilFormPrint'
 import { uploadFile } from '../lib/driveStorage'
 import { fetchPersonnelSignatories } from '../lib/personnelDirectory'
+import OdorAcknowledgePanel from '../components/staff/OdorAcknowledgePanel'
 
 const MapPicker = lazy(() => import('../components/MapPicker'))
 const CivilProjectAdmin = lazy(() => import('../components/admin/CivilProjectAdmin'))
@@ -1429,6 +1430,8 @@ function ComplaintsStaffModule({ tenant, staffId }) {
 
   return (
     <div className="space-y-4 md:space-y-5">
+      <OdorAcknowledgePanel tenantId={tenantId} staffId={staffId} />
+
       <section className="relative overflow-hidden rounded-3xl px-5 py-5 text-white shadow-lg shadow-blue-900/10 md:rounded-2xl md:px-6"
         style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 58%, #38bdf8 140%)' }}>
         <div className="absolute -right-8 -top-12 h-36 w-36 rounded-full bg-white/10" />
