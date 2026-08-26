@@ -14,10 +14,17 @@ export default function DataCenter3DCanvas({ height = '180px', className = '', t
     let width = (canvas.width = canvas.parentElement?.clientWidth || 800)
     let h = (canvas.height = canvas.parentElement?.clientHeight || 180)
 
+    // ผู้ใช้ที่ตั้งค่าระบบว่าลดการเคลื่อนไหว (เมาง่าย/ไวต่อภาพเคลื่อนไหว) — วาดเฟรมเดียวจบ ไม่วนลูป
+    const prefersReducedMotion = typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
     const handleResize = () => {
       if (!canvas.parentElement) return
       width = canvas.width = canvas.parentElement.clientWidth
       h = canvas.height = canvas.parentElement.clientHeight
+      // โหมดลดการเคลื่อนไหววาดครั้งเดียวแล้วหยุด — การเปลี่ยนขนาดล้าง canvas ทิ้ง จึงต้องสั่งวาดใหม่เอง
+      // (โหมดปกติมีลูป rAF วาดต่อเนื่องอยู่แล้ว ไม่ต้องทำอะไร)
+      if (prefersReducedMotion) render()
     }
     window.addEventListener('resize', handleResize)
 
@@ -80,6 +87,17 @@ export default function DataCenter3DCanvas({ height = '180px', className = '', t
     let angleY = 0
 
     const render = () => {
+      // header มือถือกับ PC ถูก mount พร้อมกันทั้งคู่เสมอ (ซ่อนอีกตัวด้วย CSS md:hidden / hidden md:block
+      // ไม่ใช่ unmount) ตัวที่ถูกซ่อนจะได้ clientWidth/clientHeight = 0 แต่ลูป rAF ยังวิ่งอยู่ ถ้าไม่ตัดตรงนี้
+      // จะเสียแรงคำนวณ 45 โหนด + 30 particle ทุกเฟรมให้กับ canvas ที่ไม่มีใครเห็น (กินแบตมือถือฟรีๆ)
+      // ไม่หยุดลูปถาวรเพราะผู้ใช้หมุนจอ/ปรับขนาดหน้าต่างแล้วมันต้องกลับมาวาดต่อได้เอง
+      if (!width || !h) {
+        // โหมดลดการเคลื่อนไหวไม่ต้อง schedule ต่อ ไม่งั้นจะกลายเป็นลูปเปล่าที่ไม่มีวันจบ —
+        // ตอนมันกลับมามีขนาดจริง handleResize จะสั่งวาดเฟรมเดียวให้เอง
+        if (!prefersReducedMotion) animationFrameId = requestAnimationFrame(render)
+        return
+      }
+
       ctx.clearRect(0, 0, width, h)
 
       // Smooth mouse lerp
@@ -229,7 +247,7 @@ export default function DataCenter3DCanvas({ height = '180px', className = '', t
       }
       ctx.restore()
 
-      animationFrameId = requestAnimationFrame(render)
+      if (!prefersReducedMotion) animationFrameId = requestAnimationFrame(render)
     }
 
     render()
@@ -241,7 +259,10 @@ export default function DataCenter3DCanvas({ height = '180px', className = '', t
         parentElem.removeEventListener('mousemove', handleMouseMove)
       }
     }
-  }, [])
+    // theme ต้องอยู่ใน deps: พาเลตสี (lightColors/darkColors) ถูกเลือกตอนสร้าง nodes ครั้งเดียว
+    // ถ้า deps ว่าง effect จะไม่ re-run ตอนสลับธีม ทำให้ค่า isLight ที่ถูก closure จับไว้ค้างอยู่ที่ธีมแรก
+    // — สลับเป็นโหมดมืดแล้วอนิเมชันยังเป็นสีของโหมดสว่างอยู่
+  }, [theme, isLight])
 
   return (
     <div className={`relative overflow-hidden pointer-events-none select-none ${className}`} style={{ height }}>
