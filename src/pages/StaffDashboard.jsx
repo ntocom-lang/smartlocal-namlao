@@ -1705,10 +1705,14 @@ export default function StaffDashboard() {
 
   useEffect(() => {
     if (!tenant?.id) return
+    // เหตุผลที่ไม่รีเซ็ตเป็น 0 ตอน error — ดูคอมเมนต์ของ refreshComplaintBadge ข้างล่าง
     const refreshBadge = () =>
       supabase.from('document_requests').select('id', { count: 'exact', head: true })
         .eq('municipality_id', tenant.id).eq('status', 'pending')
-        .then(({ count }) => setPendingCount(count ?? 0))
+        .then(({ count, error }) => {
+          if (error) { console.error('document request badge count error:', error.message); return }
+          setPendingCount(count ?? 0)
+        })
 
     refreshBadge()
 
@@ -1724,7 +1728,12 @@ export default function StaffDashboard() {
     if (!tenant?.id) return
     supabase.from('complaint_categories').select('value')
       .eq('municipality_id', tenant.id).eq('is_adhoc', true)
-      .then(({ data, error }) => setAdhocCategories(error ? [] : (data ?? []).map(c => c.value)))
+      .then(({ data, error }) => {
+        // ตอน error ตั้งเป็น [] ไม่ใช่ค้างที่ null — badge จะได้ไม่ดับไปเฉยๆ ผลคือนับเกิน
+        // (รวมหมวดเฉพาะกิจเข้ามา) ซึ่งเป็นทิศที่ปลอดภัยกว่าสำหรับตัวเตือน
+        if (error) console.error('adhoc categories fetch error:', error.message)
+        setAdhocCategories(error ? [] : (data ?? []).map(c => c.value))
+      })
   }, [tenant?.id])
 
   useEffect(() => {
@@ -1757,14 +1766,21 @@ export default function StaffDashboard() {
         : q
     }
 
+    // badge มีหน้าที่เตือน การเดาค่าเป็น 0 ตอน query พังจึงเป็นค่าที่อันตรายที่สุดที่จะเดา —
+    // มันแปลว่า "ไม่มีอะไรต้องทำ" ทั้งที่จริงคือ "ไม่รู้" ตอน error ให้คงค่าเดิมไว้แล้ว log
+    // ตัวเลขค้างยังดีกว่าไฟเขียวปลอม และทำให้แยกออกว่า 0 คือศูนย์จริงหรือ query พัง
     const refreshComplaintBadge = () => isAdmin
-      ? adminPendingQuery().then(({ count }) => setNewComplaintCount(count ?? 0))
+      ? adminPendingQuery().then(({ count, error }) => {
+          if (error) { console.error('admin complaint badge count error:', error.message); return }
+          setNewComplaintCount(count ?? 0)
+        })
       : supabase.from('complaints')
           .select('id, status')
           .eq('municipality_id', tenant.id)
           .eq('assigned_to', profile.id)
           .neq('status', 'pending')
-          .then(({ data }) => {
+          .then(({ data, error }) => {
+            if (error) { console.error('staff complaint badge fetch error:', error.message); return }
             const seen = getStaffSeenIds()
             const count = (data ?? []).filter(c =>
               c.status !== 'completed' && c.status !== 'closed' && c.status !== 'rejected' && !seen.has(c.id)
