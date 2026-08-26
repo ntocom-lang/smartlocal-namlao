@@ -283,6 +283,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
   const [conflict,  setConflict]  = useState(null) // null | { trips: [...conflicting fleet_trips], altVehicles: [...vehicles] }
   const [showOverride,   setShowOverride]   = useState(false)
   const [overrideReason, setOverrideReason] = useState('')
+  const [rejectReason,   setRejectReason]   = useState('')
   const [showCal,   setShowCal]   = useState(false)
   const [historyPage, setHistoryPage] = useState(0)
   const [historyPageSize, setHistoryPageSize] = useState(20)
@@ -605,16 +606,36 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
   /* ── Admin approve/reject ── */
   async function handleApprove(t) {
     if (!confirm(`อนุมัติการจองรถ "${t.vehicle?.name}" ให้ ${t.driver?.full_name}?`)) return
-    const { error } = await supabase.from('fleet_trips').update({ status: 'approved', approved_by: user?.id }).eq('id', t.id)
+    const { error } = await supabase.from('fleet_trips').update({ status: 'approved', approved_by: user?.id, approved_at: new Date().toISOString() }).eq('id', t.id)
     if (error) return alert('อนุมัติไม่สำเร็จ: ' + error.message)
     logAction({ action: 'approve', resourceType: 'fleet_trip', resourceId: t.id, resourceLabel: `${t.vehicle?.name} — ${t.destination}`, municipalityId: tenant.id })
     loadTrips()
   }
-  async function handleReject(t) {
-    if (!confirm(`ปฏิเสธการจองรถ "${t.vehicle?.name}"?`)) return
-    const { error } = await supabase.from('fleet_trips').update({ status: 'rejected' }).eq('id', t.id)
+  // ปฏิเสธต้องระบุเหตุผลเสมอ — ผู้จองต้องรู้ว่าถูกปฏิเสธเพราะอะไร และต้องเหลือร่องรอย
+  // ให้ตรวจสอบย้อนหลังได้ว่าใช้ดุลพินิจปฏิเสธด้วยเหตุใด (เก็บทั้งในตารางและ audit log)
+  function handleReject(t) {
+    setSelTrip(t)
+    setRejectReason('')
+    setModal('reject')
+  }
+  async function submitReject() {
+    const reason = rejectReason.trim()
+    if (reason.length < 5) return alert('กรุณาระบุเหตุผลการปฏิเสธอย่างน้อย 5 ตัวอักษร')
+    setSaving(true)
+    const { error } = await supabase.from('fleet_trips').update({
+      status: 'rejected',
+      reject_reason: reason,
+      // fleet_trips ไม่มีคอลัมน์ผู้แก้ไข — approved_by/approved_at จึงทำหน้าที่ "ผู้พิจารณา/เวลาพิจารณา"
+      // ทั้งกรณีอนุมัติและปฏิเสธ (ป้ายกำกับใน UI เปลี่ยนตาม status)
+      approved_by: user?.id,
+      approved_at: new Date().toISOString(),
+    }).eq('id', selTrip.id)
+    setSaving(false)
     if (error) return alert('ปฏิเสธไม่สำเร็จ: ' + error.message)
-    logAction({ action: 'reject', resourceType: 'fleet_trip', resourceId: t.id, resourceLabel: `${t.vehicle?.name} — ${t.destination}`, municipalityId: tenant.id })
+    logAction({ action: 'reject', resourceType: 'fleet_trip', resourceId: selTrip.id,
+      resourceLabel: `${selTrip.vehicle?.name} — ${selTrip.destination}`,
+      municipalityId: tenant.id, metadata: { reason } })
+    setModal(null); setSelTrip(null); setRejectReason('')
     loadTrips()
   }
 
@@ -985,7 +1006,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
                   {t.started_at && <div><p className="text-gray-400">ออกจริง</p><p className="font-semibold text-gray-700">{fmtDT(t.started_at)}{t.odometer_start != null ? ` · ${Number(t.odometer_start).toLocaleString()} กม.` : ''}</p></div>}
                   {t.returned_at && <div><p className="text-gray-400">กลับจริง</p><p className="font-semibold text-gray-700">{fmtDT(t.returned_at)}{t.odometer_end != null ? ` · ${Number(t.odometer_end).toLocaleString()} กม.` : ''}</p></div>}
                   {t.distance_km != null && <div><p className="text-gray-400">ระยะทาง</p><p className="font-semibold text-gray-700">{Number(t.distance_km).toLocaleString()} กม.</p></div>}
-                  {t.approver?.full_name && <div><p className="text-gray-400">ผู้อนุมัติ</p><p className="font-semibold text-gray-700">{t.approver.full_name}</p></div>}
+                  {t.approver?.full_name && <div>
+                    <p className="text-gray-400">{t.status === 'rejected' ? 'ผู้ปฏิเสธ' : t.status === 'cancelled' ? 'ผู้ดำเนินการ' : 'ผู้อนุมัติ'}</p>
+                    <p className="font-semibold text-gray-700">{t.approver.full_name}{t.approved_at ? ` · ${fmtDT(t.approved_at)}` : ''}</p>
+                  </div>}
                   {t.reject_reason && <div className="col-span-2"><p className="text-gray-400">เหตุผลปฏิเสธ/ยกเลิก</p><p className="font-semibold text-red-600">{t.reject_reason}</p></div>}
                   {t.notes && <div className="col-span-2"><p className="text-gray-400">หมายเหตุ</p><p className="font-semibold text-gray-700">{t.notes}</p></div>}
                 </div>
@@ -1185,6 +1209,30 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
       )}
 
       {/* บันทึกออกเดินทาง */}
+      {/* ปฏิเสธการจอง — บังคับระบุเหตุผล */}
+      {modal === 'reject' && selTrip && (
+        <Modal title="⛔ ปฏิเสธการจองรถ"
+               onClose={() => { setModal(null); setSelTrip(null); setRejectReason('') }}
+               onSave={submitReject} saveLabel="ยืนยันปฏิเสธ" saving={saving}>
+          <div className="bg-red-50 rounded-xl p-3">
+            <p className="text-sm font-bold text-gray-800">
+              {selTrip.vehicle?.name} · {assetIdentifier(selTrip.vehicle)}
+            </p>
+            <p className="text-xs text-gray-600">{selTrip.destination} — {selTrip.purpose}</p>
+            <p className="text-xs text-red-500 mt-1">👤 {selTrip.driver?.full_name}</p>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">เหตุผลการปฏิเสธ (บังคับกรอก) *</label>
+            <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={3}
+              placeholder="เช่น รถติดภารกิจผู้บริหาร / เอกสารขออนุมัติไม่ครบ / ซ้อนกับงานเร่งด่วน"
+              className={inp} />
+            <p className="text-[11px] text-gray-400 mt-1">
+              ผู้จองจะเห็นเหตุผลนี้ในหน้ารายละเอียดการเดินทาง และระบบเก็บไว้ในประวัติการใช้งานเพื่อการตรวจสอบ
+            </p>
+          </div>
+        </Modal>
+      )}
+
       {modal === 'depart' && selTrip && (
         <Modal title="🚀 บันทึกออกเดินทาง"
                onClose={() => { setModal(null); setSelTrip(null) }}

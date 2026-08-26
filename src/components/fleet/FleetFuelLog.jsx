@@ -146,6 +146,29 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
     const fileError = validateFleetDocument(receiptFile)
     if (fileError) return alert(fileError)
 
+    // เตือนเมื่อค่ามิเตอร์ไม่เดินหน้าจากการเติมครั้งก่อนของรถคันเดียวกัน
+    // ไม่บล็อกแข็ง เพราะกรณีเปลี่ยนเรือนไมล์ใหม่มีจริง ถ้าบล็อกเจ้าหน้าที่จะเลี่ยงด้วยการกรอกเลขมั่วให้ผ่าน
+    // ซึ่งแย่กว่า — ฝั่ง DB จะติดธง is_anomaly ให้อีกชั้นไม่ว่าผู้ใช้จะยืนยันหรือไม่
+    let prevQuery = supabase.from('fleet_fuel_records')
+      .select('filled_at, odometer')
+      .eq('municipality_id', tenant.id)
+      .eq('vehicle_id', form.vehicle_id)
+      .lte('filled_at', form.filled_at)
+      .order('filled_at', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(1)
+    if (editingId) prevQuery = prevQuery.neq('id', editingId)
+    const { data: prevRows, error: prevErr } = await prevQuery
+    if (prevErr) console.warn('[FleetFuelLog] ตรวจมิเตอร์ครั้งก่อนไม่สำเร็จ:', prevErr.message)
+    const prev = prevRows?.[0]
+    if (prev && meter <= Number(prev.odometer)) {
+      const unit = meterUnitShort(selectedAsset)
+      const headline = meter < Number(prev.odometer)
+        ? `ค่ามิเตอร์ที่กรอก (${fmt(meter)} ${unit}) น้อยกว่าการเติมครั้งก่อนเมื่อ ${thDate(prev.filled_at)} (${fmt(Number(prev.odometer))} ${unit})`
+        : `ค่ามิเตอร์เท่ากับการเติมครั้งก่อนเมื่อ ${thDate(prev.filled_at)} (${fmt(Number(prev.odometer))} ${unit})`
+      if (!confirm(headline + '\n\nกรอกตัวเลขผิดหรือไม่?\nถ้าเปลี่ยนเรือนไมล์ใหม่จริง กด OK เพื่อบันทึกต่อ ระบบจะทำเครื่องหมาย "ผิดปกติ" ไว้ให้ผู้ตรวจสอบ')) return
+    }
+
     setSaving(true)
     const oldReceiptUrl = editingId ? records.find(x => x.id === editingId)?.receipt_url : null
     const recordId = editingId ?? crypto.randomUUID()
@@ -272,12 +295,15 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
                     <td className="px-2 py-2 truncate">
                       <div className="flex items-center gap-1 flex-wrap">
                         <span className="font-semibold text-gray-800 text-sm truncate">{r.fleet_vehicles?.name ?? '—'}</span>
-                        {r.is_anomaly && <span className="flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 shrink-0"><AlertTriangle size={8} />ผิดปกติ</span>}
+                        {r.is_anomaly && <span title={r.anomaly_reason ?? undefined} className="flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 shrink-0"><AlertTriangle size={8} />ผิดปกติ</span>}
                         {!r.full_tank && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 shrink-0">ไม่เต็ม</span>}
                       </div>
                       <p className="text-[10px] text-gray-400 truncate">
                         {assetIdentifier(r.fleet_vehicles)} · {FUEL_OPTIONS.find(item => item.value === r.fuel_type)?.label ?? r.fuel_other_name ?? '—'}
                       </p>
+                      {r.anomaly_reason && (
+                        <p className="text-[9px] text-red-500 truncate" title={r.anomaly_reason}>⚠ {r.anomaly_reason}</p>
+                      )}
                       {r.updated_by && (
                         <p className="text-[9px] text-amber-500 truncate">แก้ไข {thDate(r.updated_at)}{r.editor?.full_name ? ` · ${r.editor.full_name}` : ''}</p>
                       )}
@@ -289,7 +315,12 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
                       {r.liters} ล. {r.price_per_liter != null ? `× ฿${r.price_per_liter}` : ''}
                     </td>
                     <td className="px-2 py-2 text-right font-bold text-gray-800 whitespace-nowrap">{r.total_cost == null ? '—' : fmtB(r.total_cost)}</td>
-                    <td className="px-2 py-2 text-gray-500 text-xs">{r.odometer == null ? '—' : [fmt(r.odometer), meterUnitShort(r.fleet_vehicles)].join(' ')}</td>
+                    <td className="px-2 py-2 text-gray-500 text-xs">
+                      {r.odometer == null ? '—' : [fmt(r.odometer), meterUnitShort(r.fleet_vehicles)].join(' ')}
+                      {r.efficiency_kml != null && (
+                        <span className="block text-[10px] text-emerald-600 font-semibold">{r.efficiency_kml} กม./ล.</span>
+                      )}
+                    </td>
                     <td className="px-2 py-2">
                       <div className="flex items-center gap-1.5">
                         <span className="text-gray-500 text-xs truncate">{r.fuel_station || '—'}</span>
@@ -337,7 +368,8 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
                       <span className="text-sm font-bold text-gray-800">{r.fleet_vehicles?.name ?? '—'}</span>
                       <span className="text-[10px] text-gray-400">{assetIdentifier(r.fleet_vehicles)}</span>
                       {r.is_anomaly && (
-                        <span className="flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">
+                        <span title={r.anomaly_reason ?? undefined}
+                              className="flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">
                           <AlertTriangle size={9} /> ผิดปกติ
                         </span>
                       )}
@@ -349,6 +381,9 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
                       {thDate(r.filled_at)} · {r.liters} ลิตร{r.price_per_liter == null ? '' : ` @ ${r.price_per_liter} บ./ล.`}
                       {r.fuel_station ? ` · ${r.fuel_station}` : ''}
                     </p>
+                    {r.anomaly_reason && (
+                      <p className="text-[10px] text-red-500 mt-0.5 leading-relaxed">⚠ {r.anomaly_reason}</p>
+                    )}
                     {(r.driver?.full_name || r.odometer != null) && (
                       <p className="text-[10px] text-gray-400 mt-0.5 truncate">
                         {r.driver?.full_name ? `👤 ${r.driver.full_name}` : ''}
@@ -368,7 +403,7 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
                   </div>
                   <div className="text-right shrink-0 flex flex-col items-end gap-1">
                     <p className="text-base font-black text-gray-800">{r.total_cost == null ? '—' : fmtB(r.total_cost)}</p>
-                    {r.efficiency_kml && (
+                    {r.efficiency_kml != null && (
                       <p className="text-[10px] text-emerald-600 font-semibold">{r.efficiency_kml} กม./ล.</p>
                     )}
                     {canWrite && (
