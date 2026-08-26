@@ -4,7 +4,7 @@ import {
   Inbox, FileText, MessageSquareWarning, LogOut,
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, AlignLeft, Calendar, Hash, RefreshCw,
-  Printer, Search, ClipboardList, Hammer, Home, CalendarDays, TrendingUp, Images, Camera,
+  Printer, Search, Hammer, Home, CalendarDays, TrendingUp, Images, Camera,
   Banknote, Luggage, Star, Car, Bell, Trash2, Briefcase, Database, BookOpen,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -77,8 +77,9 @@ const STANDALONE_GROUPS = [
   {
     group: 'แผนงานและทรัพยากรกลาง',
     items: [
-      { key: 'projects',      label: 'แผนงาน/โครงการ',  Icon: ClipboardList, color: '#7c3aed', bg: '#ede9fe' },
-      { key: 'civil-report',  label: 'รายงานโครงการ',   Icon: Printer,       color: '#7c3aed', bg: '#ede9fe' },
+      // 'projects' (แผนงาน/โครงการ) กับ 'civil-report' (รายงานโครงการ) ถอดออกจากเมนูชั่วคราว
+      // รอออกแบบใหม่ — คอมโพเนนต์ CivilProjectAdmin/CivilProjectReport กับ branch ที่ render
+      // มันยังอยู่ครบ เอากลับมาแค่ใส่ 2 บรรทัดนี้คืน
       { key: 'report',        label: 'รายงาน',           Icon: TrendingUp,    color: '#f59e0b', bg: '#fef3c7' },
       // รวมกับศูนย์ข้อมูลดิจิทัลแล้ว — กดแล้ว navigate ไป /data-center/staff ตรงๆ ในแท็บเดิม (ข้าม
       // หน้าเลือกโหมด "เจ้าหน้าที่/ประชาชน" ของ /data-center เพราะรู้อยู่แล้วว่าเป็นฝั่งเจ้าหน้าที่)
@@ -1513,7 +1514,7 @@ export default function StaffDashboard() {
   // council ได้โมดูลเพิ่มเติม: map, civil-report, report
   const role = profile?.role
   const alwaysEnabled = ['events']
-  if (role === 'council') alwaysEnabled.push('data-center', 'civil-report', 'report')
+  if (role === 'council') alwaysEnabled.push('data-center', 'report')
   const enabledKeys = Array.from(new Set([...baseEnabledKeys, ...alwaysEnabled]))
   const visibleStandaloneGroups = STANDALONE_GROUPS
     .map(g => ({ ...g, items: g.items.filter(m => enabledKeys.includes(m.key)) }))
