@@ -1,0 +1,25 @@
+-- 20260828120000_enable_realtime_complaints.sql
+--
+-- ตาราง complaints ไม่เคยอยู่ใน publication supabase_realtime (มีแต่ fleet_trips) ทำให้ subscription
+-- postgres_changes ทุกจุดในแอปเป็น dead code มาตลอด — เจ้าหน้าที่ต้องกด refresh เองถึงจะเห็นคำร้องใหม่
+-- ขัดกับข้อความบนจอของ OdorAcknowledgePanel ที่เขียนว่า "ส่งตรงถึงท่านโดยไม่ผ่านแอดมิน"
+--
+-- จุดที่จะเริ่มทำงานหลังเปิด (ทั้งหมดเขียนไว้อยู่แล้ว ไม่ต้องแก้โค้ด):
+--   src/components/admin/ComplaintsManager.jsx:1543  INSERT/UPDATE -> refetch ตารางแอดมิน
+--   src/components/staff/OdorAcknowledgePanel.jsx:51 INSERT/UPDATE -> คำร้องเฉพาะกิจเด้งถึงผู้รับผิดชอบ
+--   src/contexts/NotificationsContext.jsx:72         UPDATE (user_id=me) -> แจ้งเตือนประชาชน
+--   src/pages/StaffDashboard.jsx:1374/1601/1741      INSERT/UPDATE/* -> รายการ, รายงาน, badge
+--   src/pages/MyComplaints.jsx:594                   UPDATE -> อัปเดตรายการ + popup ให้คะแนน
+--
+-- ความปลอดภัย: INSERT/UPDATE ถูกกรองด้วย RLS ของ complaints ต่อ subscriber แต่ละคนตามปกติ
+-- ข้อจำกัดเฉพาะกิจ (เห็นเฉพาะ assigned_to = auth.uid() หรือ admin) จึงยังมีผลกับ realtime ด้วย
+--
+-- ⚠️ RLS ไม่ถูกใช้กับ DELETE (Postgres ยืนยันสิทธิ์ของแถวที่ลบไปแล้วไม่ได้) แต่ replica identity ของ
+-- ตารางนี้เป็นค่า default อยู่ payload ของ DELETE จึงมีแค่ primary key ไม่มีชื่อ/เบอร์/รายละเอียด
+-- ห้ามตั้ง `alter table public.complaints replica identity full` เด็ดขาด — จะทำให้ข้อมูลเต็มแถว
+-- ของคำร้องที่ถูกลบหลุดไปหา subscriber ทุกคนโดยไม่ผ่าน RLS (PDPA)
+--
+-- ภาระที่เพิ่ม: ทุก event ถูกเช็คสิทธิ์ 1 ครั้งต่อ subscriber 1 คน และประมวลผลด้วย thread เดียว
+-- ที่ปริมาณปัจจุบัน (~1 คำร้อง/วัน, บัญชีเจ้าหน้าที่ 22) ภาระแทบเป็นศูนย์
+-- ย้อนกลับได้ทันทีด้วย: alter publication supabase_realtime drop table public.complaints;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.complaints;

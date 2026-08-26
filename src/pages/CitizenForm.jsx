@@ -366,6 +366,10 @@ export default function CitizenForm() {
   const [photos, setPhotos] = useState([]) // { file, preview }
   const [locations, setLocations] = useState([])
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES)
+  // ค่าที่ "มีแถวในตารางของเทศบาลนี้แต่ is_active=false" เท่านั้น — ค่าที่ไม่มีแถวเลย (env_hazard,
+  // env_fire, pollution, water_flood ที่มีแต่ใน FORM_TYPE_CONFIG) จะไม่อยู่ในนี้และยังแสดงตามเดิม
+  // ตั้งใจไม่ใช้วิธี intersect pills กับตารางตรงๆ เพราะจะทำให้ค่าพวกนั้นหายหมดทุกเทศบาล
+  const [disabledCategoryValues, setDisabledCategoryValues] = useState(() => new Set())
   const abortCtrlRef = useRef(null)
 
   // ถ้า submitting อยู่แล้วกลับมาจาก background นาน > 5s → abort request ทันที
@@ -419,10 +423,17 @@ export default function CitizenForm() {
     if (!tenant?.id) return
     supabase.from('locations').select('id, name').eq('municipality_id', tenant.id).order('sort_order')
       .then(({ data }) => setLocations(data ?? []))
-    supabase.from('complaint_categories').select('value, label, emoji, color').eq('municipality_id', tenant.id).eq('is_active', true).order('sort_order')
+    // ดึงทุกแถวรวมที่ปิดใช้งาน (เดิมกรอง is_active=true มาตั้งแต่ query เลยไม่รู้ว่าหมวดไหนถูกปิด)
+    // เพราะ pills ของ FORM_TYPE_CONFIG เป็น list ที่ hardcode ไว้ในโค้ด ไม่ได้มาจากตารางนี้ ต้องรู้ว่า
+    // เทศบาลนี้ปิดหมวดไหนไว้ถึงจะซ่อน pill ให้ตรงกันได้ — ไม่งั้นแอดมินปิดหมวดใน DB แล้วประชาชน
+    // ยังกดเลือกได้อยู่ผ่านลิงก์ ?form=... (เคสจริง: หมวดเฉพาะกิจ odor ที่ใช้แค่บางเทศบาล)
+    supabase.from('complaint_categories').select('value, label, emoji, color, is_active').eq('municipality_id', tenant.id).order('sort_order')
       .then(({ data }) => {
-        if (data && data.length > 0)
-          setCategories(data.map((c) => ({ value: c.value, label: c.label, emoji: c.emoji, color: c.color })))
+        if (!data) return
+        const active = data.filter((c) => c.is_active)
+        if (active.length > 0)
+          setCategories(active.map((c) => ({ value: c.value, label: c.label, emoji: c.emoji, color: c.color })))
+        setDisabledCategoryValues(new Set(data.filter((c) => !c.is_active).map((c) => c.value)))
       })
   }, [tenant?.id])
 
@@ -480,7 +491,18 @@ export default function CitizenForm() {
     if (form.category !== 'odor') return null
     if (!form.odor_intensity) return 'กรุณาเลือกระดับความรุนแรงของกลิ่น'
     if (!form.wind_direction) return 'กรุณาเลือกทิศทางลม'
+    // พิกัดบังคับเฉพาะหมวดนี้ (หมวดอื่นยังไม่บังคับเหมือนเดิม) — เรื่องกลิ่นไม่มีบ้านเลขที่ให้ยึด
+    // มีแค่ชื่อหมู่บ้านกว้างๆ ถ้าไม่มีพิกัด เจ้าหน้าที่รับทราบไปก็ไม่รู้จะไปตรวจสอบจุดไหน
+    if (geo.lat == null || geo.lng == null) return 'กรุณากดปุ่ม "ปักหมุดจากแผนที่" เพื่อระบุจุดที่ได้กลิ่น'
     return null
+  }
+
+  // ลิงก์เก่าแบบ ?category=xxx ยัง set ค่าเข้าฟอร์มได้แม้หมวดนั้นถูกปิดไปแล้วและ pill ถูกซ่อน
+  // ถ้าปล่อยผ่าน คำร้องจะถูกบันทึกในหมวดที่เทศบาลไม่ได้เปิดใช้ ไม่มีผู้รับผิดชอบ แล้วตกหล่นเงียบ
+  // เรียกทั้ง 2 จุดที่ validate ก่อนส่ง เหมือนแพทเทิร์นของ validateOdorFields()
+  function validateCategoryEnabled(form) {
+    if (!disabledCategoryValues.has(form.category)) return null
+    return 'ประเภทคำร้องนี้ไม่เปิดให้บริการในหน่วยงานนี้แล้ว กรุณาเลือกประเภทอื่น'
   }
 
   function handleMapConfirm({ lat, lng, address }) {
@@ -492,7 +514,9 @@ export default function CitizenForm() {
   async function handleSubmit(e) {
     e?.preventDefault()
     if (!form.category) { setError('กรุณาเลือกประเภทคำร้อง'); return }
-    if (!form.name_first.trim() || !form.name_last.trim()) { setError('กรุณากรอกชื่อ-นามสกุล'); return }
+    const catErr = validateCategoryEnabled(form)
+    if (catErr) { setError(catErr); return }
+          if (!form.name_first.trim() || !form.name_last.trim()) { setError('กรุณากรอกชื่อ-นามสกุล'); return }
 
     if (ISSUE_TYPES_BY_CATEGORY[form.category] && !form.issue_type) { setError('กรุณาเลือกลักษณะปัญหา'); return }
     const odorErr = validateOdorFields(form)
@@ -581,6 +605,8 @@ export default function CitizenForm() {
 
   if (success) return <SuccessScreen onBack={() => navigate('/')} onMyComplaints={() => navigate('/my-complaints')} complaintNumber={complaintNumber} isLoggedIn={isLoggedIn} complaintId={savedComplaintId} photoFiles={savedPhotoFiles} primaryColor={primaryColor} />
 
+  // pills ของ ftConfig ต้องเคารพหมวดที่เทศบาลนี้ปิดไว้ เหมือน dropdown หลักที่อ่านจาก DB อยู่แล้ว
+  const visibleFtCategories = (ftConfig?.categories ?? []).filter((c) => !disabledCategoryValues.has(c.value))
   const allCatsDisplay = [...(ftConfig?.categories ?? []), ...categories]
   const catLabel = allCatsDisplay.find((c) => c.value === form.category)?.label?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category
   const CatIcon = CATEGORY_ICON[form.category] ?? HelpCircle
@@ -678,7 +704,7 @@ export default function CitizenForm() {
       {ftConfig && (
         <div className="bg-white px-4 py-3 border-b border-gray-100">
           <div className="flex flex-wrap gap-2">
-            {ftConfig.categories.map((cat) => (
+            {visibleFtCategories.map((cat) => (
               <button key={cat.value} type="button"
                 onClick={() => setForm((p) => ({ ...p, category: cat.value }))}
                 className="text-xs font-semibold px-3 py-1.5 rounded-full border transition-all"
@@ -839,10 +865,16 @@ export default function CitizenForm() {
           <span className="truncate max-w-[220px]">
             {geoStatus === GEO_STATUS.ok
               ? `${geo.lat?.toFixed(5)}, ${geo.lng?.toFixed(5)}`
-              : 'ปักหมุดจากแผนที่'}
+              : form.category === 'odor' ? 'ปักหมุดจากแผนที่ *' : 'ปักหมุดจากแผนที่'}
           </span>
           {geoStatus !== GEO_STATUS.ok && <ChevronRight size={18} />}
         </button>
+        {/* หมวดกลิ่นบังคับพิกัด — บอกให้รู้ตั้งแต่ก่อนกดส่ง ไม่ใช่ให้ไปเจอ error ตอนกดส่งแล้วงงว่าติดตรงไหน */}
+        {form.category === 'odor' && geoStatus !== GEO_STATUS.ok && (
+          <p className="-mt-1 text-xs text-gray-500 text-center">
+            จำเป็นต้องระบุจุดที่ได้กลิ่น เพื่อให้เจ้าหน้าที่ลงพื้นที่ตรวจสอบได้ถูกจุด
+          </p>
+        )}
 
         {/* Photo picker */}
         <div className="bg-white rounded-2xl border border-gray-200 p-4">
@@ -885,7 +917,9 @@ export default function CitizenForm() {
         <button type="button" onClick={() => {
           setError(null)
           if (!form.category) { setError('กรุณาเลือกประเภทคำร้อง'); return }
-          if (!form.name_first.trim() || !form.name_last.trim()) { setError('กรุณากรอกชื่อ-นามสกุล'); return }
+          const catErr = validateCategoryEnabled(form)
+          if (catErr) { setError(catErr); return }
+    if (!form.name_first.trim() || !form.name_last.trim()) { setError('กรุณากรอกชื่อ-นามสกุล'); return }
 
           if (ISSUE_TYPES_BY_CATEGORY[form.category] && !form.issue_type) { setError('กรุณาเลือกลักษณะปัญหา'); return }
           const odorErr = validateOdorFields(form)
