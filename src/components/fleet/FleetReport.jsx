@@ -93,15 +93,15 @@ export default function FleetReport({ tenant }) {
       fetchAllRows(() => vq(supabase.from('fleet_trips')
         .select('*, vehicle:fleet_vehicles(id,name,license_plate,asset_code,asset_kind,meter_unit), driver:profiles!fleet_trips_driver_id_fkey(id,full_name)')
         .eq('municipality_id', tenant.id).eq('status', 'completed')
-        .gte('trip_date', dateFrom).lt('trip_date', endDay)).order('trip_date')),
+        .gte('trip_date', dateFrom).lt('trip_date', endDay)).order('trip_date').order('id')),
       fetchAllRows(() => vq(supabase.from('fleet_fuel_records')
         .select('*, fleet_vehicles(name, license_plate, asset_code, asset_kind, meter_unit)')
         .eq('municipality_id', tenant.id)
-        .gte('filled_at', dateFrom).lte('filled_at', dateTo)).order('filled_at')),
+        .gte('filled_at', dateFrom).lte('filled_at', dateTo)).order('filled_at').order('id')),
       fetchAllRows(() => vq(supabase.from('fleet_maintenance')
         .select('*, fleet_vehicles(name, license_plate, asset_code, asset_kind, meter_unit)')
         .eq('municipality_id', tenant.id)
-        .gte('service_date', dateFrom).lte('service_date', dateTo)).order('service_date')),
+        .gte('service_date', dateFrom).lte('service_date', dateTo)).order('service_date').order('id')),
     ])
     const loadError = tripResult.error || fuelResult.error || maintResult.error
     if (loadError) {

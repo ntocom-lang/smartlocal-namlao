@@ -149,15 +149,15 @@ export default function FleetDashboard({ tenant, depts, isAdmin }) {
       // 3 ชุดนี้ถูกนำไป reduce เป็นยอดรวมค่าน้ำมัน/ระยะทาง/ยอดใช้จ่ายรายกอง (แถบงบประมาณ)
       // ถ้า PostgREST ตัดแถวตาม db-max-rows ยอดจะต่ำกว่าจริงแบบไม่มีสัญญาณเตือน
       fetchAllRows(() => supabase.from('fleet_fuel_records').select('total_cost, liters, vehicle_id, fleet_vehicles(asset_kind)')
-        .eq('municipality_id', tenant.id).gte('filled_at', from).lte('filled_at', to)),
+        .eq('municipality_id', tenant.id).gte('filled_at', from).lte('filled_at', to).order('id')),
       fetchAllRows(() => supabase.from('fleet_trips').select('distance_km, department_id')
-        .eq('municipality_id', tenant.id).gte('trip_date', from).lte('trip_date', to)),
+        .eq('municipality_id', tenant.id).gte('trip_date', from).lte('trip_date', to).order('id')),
       supabase.from('fleet_budgets').select('*')
         .eq('municipality_id', tenant.id).eq('fiscal_year', fiscalYearOf(now)),
       supabase.from('fleet_trips').select('id', { count: 'exact', head: true })
         .eq('municipality_id', tenant.id).eq('status', 'pending'),
       fetchAllRows(() => supabase.from('fleet_fuel_records').select('total_cost, vehicle_id, fleet_vehicles(department_id)')
-        .eq('municipality_id', tenant.id).gte('filled_at', from).lte('filled_at', to)),
+        .eq('municipality_id', tenant.id).gte('filled_at', from).lte('filled_at', to).order('id')),
     ]).then((results) => {
       // เดิม destructure เอาแต่ data ทิ้ง error ทุกตัว — query พังก็ขึ้น 0 เงียบๆ
       // แยกจาก "เดือนนี้ยังไม่มีข้อมูลจริง" ไม่ได้เลย (ที่มาของบั๊กวันที่ 31 ข้างบน)

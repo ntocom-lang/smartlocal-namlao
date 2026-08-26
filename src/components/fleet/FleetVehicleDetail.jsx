@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { X, Route, Fuel, Wrench, Gauge, CalendarClock } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { assetIdentifier, isVehicleAsset } from '../../lib/fleetAssets'
+import { fetchAllRows } from '../../lib/fetchAllRows'
 import FleetEmptyState from './FleetEmptyState'
 
 const fmt  = n => (n ?? 0).toLocaleString('th-TH')
@@ -39,17 +40,23 @@ export default function FleetVehicleDetail({ vehicle, tenant, onClose }) {
     queueMicrotask(() => {
       setLoading(true)
       const fromStr = isoDate(from), toStr = isoDate(to)
+      // ทั้ง 3 ชุดถูกนำไปรวมเป็นสถิติรายเดือน (ระยะทาง/ลิตร/ค่าน้ำมัน/ค่าซ่อม) ฝั่ง client
+      // จึงต้องได้แถวครบ ไม่ถูก PostgREST ตัดตาม db-max-rows — .order('id') บังคับลำดับ
+      // ให้ชี้ขาด ไม่งั้นการไล่หน้าจะได้แถวซ้ำหรือตกหล่น
       Promise.all([
-        supabase.from('fleet_trips').select('trip_date, distance_km')
+        fetchAllRows(() => supabase.from('fleet_trips').select('trip_date, distance_km')
           .eq('municipality_id', tenant.id).eq('vehicle_id', vehicle.id)
-          .gte('trip_date', fromStr).lte('trip_date', toStr),
-        supabase.from('fleet_fuel_records').select('filled_at, liters, total_cost')
+          .gte('trip_date', fromStr).lte('trip_date', toStr).order('id')),
+        fetchAllRows(() => supabase.from('fleet_fuel_records').select('filled_at, liters, total_cost')
           .eq('municipality_id', tenant.id).eq('vehicle_id', vehicle.id)
-          .gte('filled_at', fromStr).lte('filled_at', toStr),
-        supabase.from('fleet_maintenance').select('service_date, cost')
+          .gte('filled_at', fromStr).lte('filled_at', toStr).order('id')),
+        fetchAllRows(() => supabase.from('fleet_maintenance').select('service_date, cost')
           .eq('municipality_id', tenant.id).eq('vehicle_id', vehicle.id)
-          .gte('service_date', fromStr).lte('service_date', toStr),
-      ]).then(([{ data: trips }, { data: fuel }, { data: maint }]) => {
+          .gte('service_date', fromStr).lte('service_date', toStr).order('id')),
+      ]).then((results) => {
+        const failed = results.filter(r => r && r.error)
+        if (failed.length) console.error('FleetVehicleDetail query error:', failed.map(r => r.error.message))
+        const [{ data: trips }, { data: fuel }, { data: maint }] = results
         const byMonth = {}
         const ensure = key => byMonth[key] ??= { trips: 0, distance: 0, fuelLiters: 0, fuelCost: 0, maintCost: 0 }
 

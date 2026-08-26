@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Plus, X, Wrench, AlertTriangle, FileText, Paperclip, Pencil } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { fetchAllRows } from '../../lib/fetchAllRows'
 import FleetEmptyState from './FleetEmptyState'
 import {
   assetIdentifier,
@@ -125,12 +126,22 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
     q.then(({ data, count }) => { setRecords(data ?? []); setTotalCount(count ?? 0) }).finally(() => setLoading(false))
 
     // ยอดรวมค่าซ่อมบำรุงต้องคิดจากทุกรายการที่ตรงตัวกรอง ไม่ใช่แค่หน้าที่กำลังแสดง (records ถูกจำกัดด้วย pageSize แล้ว)
-    let costQ = supabase.from('fleet_maintenance').select('cost')
-      .eq('municipality_id', tenant.id)
-    if (filterType !== 'all') costQ = costQ.eq('maintenance_type', filterType)
-    if (dateFrom) costQ = costQ.gte('service_date', dateFrom)
-    if (dateTo)   costQ = costQ.lte('service_date', dateTo)
-    costQ.then(({ data }) => setTotalCost((data ?? []).reduce((s, r) => s + (r.cost ?? 0), 0)))
+    // ดึงผ่าน fetchAllRows เพราะ query ที่ไม่ระบุ .range() ถูก PostgREST ตัดแถวตาม db-max-rows
+    // ได้เงียบๆ ทำให้ยอดรวมต่ำกว่าจริงโดยไม่มีสัญญาณเตือน (.order('id') บังคับลำดับให้ชี้ขาด
+    // ไม่งั้นการไล่หน้าจะได้แถวซ้ำ/ตกหล่น)
+    const buildCostQ = () => {
+      let q = supabase.from('fleet_maintenance').select('cost')
+        .eq('municipality_id', tenant.id)
+      if (filterType !== 'all') q = q.eq('maintenance_type', filterType)
+      if (dateFrom) q = q.gte('service_date', dateFrom)
+      if (dateTo)   q = q.lte('service_date', dateTo)
+      return q.order('id')
+    }
+    fetchAllRows(buildCostQ).then(({ data, error }) => {
+      // เดิมทิ้ง error ทั้งหมด ยอดรวมพังก็ขึ้น ฿0 แยกจาก "ไม่มีรายการจริง" ไม่ได้
+      if (error) return console.error('fleet_maintenance total cost error:', error.message)
+      setTotalCost((data ?? []).reduce((s, r) => s + (r.cost ?? 0), 0))
+    })
   }
 
   useEffect(() => {
