@@ -257,7 +257,22 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
   const { session } = useAuth()
   const user = session?.user
 
+  // RLS fleet_trips_insert/update บังคับว่าผู้ที่ไม่ใช่ manager ต้องมี department_id ตรงกับกองตัวเอง
+  // (`department_id = (SELECT fdept_id FROM my_fleet())`) — ถ้าโปรไฟล์ยังไม่ถูกกำหนดกอง ค่าจะเป็น
+  // NULL ทั้งสองฝั่ง ซึ่งใน SQL `NULL = NULL` ให้ NULL ไม่ใช่ TRUE → ถูกปฏิเสธเสมอ
+  // และ FleetSetup เพิ่มเจ้าหน้าที่ใหม่ด้วย department_id: null เป็นค่าเริ่มต้น จึงติดกับดักนี้ทุกคน
+  // แก้โดยล็อกช่องกองให้ตรงกับโปรไฟล์เสมอ และกันไม่ให้เปิดฟอร์มถ้ายังไม่มีกอง พร้อมบอกวิธีแก้
+  const myDeptId = fleetInfo?.department_id ?? ''
+  const myDeptName = depts.find(d => d.id === myDeptId)?.name ?? ''
+  const deptLocked = !isAdmin           // ผู้ที่ไม่ใช่ manager เลือกกองอื่นไม่ได้อยู่แล้วโดย RLS
+  const missingDept = deptLocked && !myDeptId
+
+  // trips = เฉพาะรายการที่ยังดำเนินอยู่ (pending/approved/in_progress) โหลดครบไม่จำกัดจำนวน
+  // เพราะเป็นชุดเล็กและถูกใช้ทั้งตารางบน ปฏิทินจอง และการคำนวณรถว่าง
+  // ส่วนประวัติ (completed/rejected/cancelled) โตไม่จำกัด แยกไปแบ่งหน้าฝั่ง server ด้านล่าง
   const [trips,     setTrips]     = useState([])
+  const [history,      setHistory]      = useState([])
+  const [historyCount, setHistoryCount] = useState(0)
   const [staffList, setStaffList] = useState([])
   const [vehicles,  setVehicles]  = useState([])
   const [loading,   setLoading]   = useState(true)
@@ -273,25 +288,38 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
   const [historyPageSize, setHistoryPageSize] = useState(20)
 
   /* ── Load ── */
-  function loadTrips() {
-    if (!tenant?.id) return
-    supabase.from('fleet_trips').select(SELECT)
+  const ACTIVE_STATUSES  = ['pending', 'approved', 'in_progress']
+  const HISTORY_STATUSES = ['completed', 'rejected', 'cancelled']
+
+  function fetchActive() {
+    return supabase.from('fleet_trips').select(SELECT)
       .eq('municipality_id', tenant.id)
+      .in('status', ACTIVE_STATUSES)
       .order('created_at', { ascending: false })
-      .limit(300)
-      .then(({ data, error }) => {
-        if (error) console.error('fleet_trips SELECT error:', error)
-        setTrips(data ?? [])
-      })
   }
 
+  // ประวัติแบ่งหน้าที่ server — เดิมดึงรวมมา .limit(300) แล้วหั่นหน้าฝั่ง client
+  // ทำให้ อปท. ที่มีทริปเกิน 300 รายการ "ประวัติการเดินทาง" หายถาวรจากหน้าจอ
+  // (นับรวม active ด้วย ยิ่งเหลือประวัติน้อยลงไปอีก)
+  function fetchHistory(page = historyPage, size = historyPageSize) {
+    let q = supabase.from('fleet_trips').select(SELECT, { count: 'exact' })
+      .eq('municipality_id', tenant.id)
+      .in('status', HISTORY_STATUSES)
+      .order('created_at', { ascending: false })
+    if (size !== 'all') q = q.range(page * size, (page + 1) * size - 1)
+    return q
+  }
+
+  // สั่งโหลดใหม่ผ่าน state ไม่ใช่เรียกฟังก์ชันโหลดตรงๆ — ตัวรับ realtime ถูก subscribe ครั้งเดียว
+  // ต่อ tenant ถ้าให้มันเรียก fetchHistory() เอง จะได้ historyPage/historyPageSize จาก closure
+  // ของ render แรกเสมอ (stale) แล้วเด้งผู้ใช้กลับหน้า 1 เงียบๆ ทุกครั้งที่มีคนแก้ข้อมูล
+  const [refreshKey, setRefreshKey] = useState(0)
+  const loadTrips = () => setRefreshKey(k => k + 1)
+
+  // โหลดครั้งเดียวต่อ tenant — รายชื่อเจ้าหน้าที่/รถไม่เปลี่ยนตามการแก้ทริป
   useEffect(() => {
     if (!tenant?.id) return
     Promise.all([
-      supabase.from('fleet_trips').select(SELECT)
-        .eq('municipality_id', tenant.id)
-        .order('created_at', { ascending: false })
-        .limit(300),
       supabase.from('profiles').select('id,full_name,email,department_id')
         .eq('municipality_id', tenant.id)
         .not('fleet_role', 'is', null)
@@ -299,29 +327,48 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
       supabase.from('fleet_vehicles').select('id,name,license_plate,asset_code,asset_kind,meter_unit')
         .eq('municipality_id', tenant.id).eq('asset_kind', 'vehicle')
         .eq('status', 'active').order('name'),
-    ]).then(([{ data: t, error: te }, { data: s }, { data: v }]) => {
-      if (te) console.error('fleet_trips load error:', te)
-      setTrips(t ?? [])
+    ]).then(([{ data: s }, { data: v }]) => {
       setStaffList(s ?? [])
       setVehicles(v ?? [])
-    }).finally(() => setLoading(false))
+    })
   }, [tenant?.id])
+
+  useEffect(() => {
+    if (!tenant?.id) return
+    fetchActive().then(({ data, error }) => {
+      if (error) console.error('fleet_trips active SELECT error:', error)
+      setTrips(data ?? [])
+    }).finally(() => setLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant?.id, refreshKey])
+
+  // ประวัติโหลดใหม่เมื่อเปลี่ยนหน้า/ขนาดหน้า หรือมีข้อมูลเปลี่ยน (server-side range)
+  useEffect(() => {
+    if (!tenant?.id) return
+    fetchHistory().then(({ data, count, error }) => {
+      if (error) console.error('fleet_trips history SELECT error:', error)
+      setHistory(data ?? [])
+      setHistoryCount(count ?? 0)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant?.id, historyPage, historyPageSize, refreshKey])
 
   /* ── Realtime ── */
   useEffect(() => {
     if (!tenant?.id) return
     const ch = supabase.channel(`fleet-trips-${tenant.id}-${crypto.randomUUID()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fleet_trips' },
-        async ({ eventType, new: row, old }) => {
-          if (eventType === 'DELETE') return setTrips(p => p.filter(t => t.id !== old.id))
-          if (row.municipality_id !== tenant.id) return
-          const { data } = await supabase.from('fleet_trips').select(SELECT).eq('id', row.id).single()
-          if (!data) return
-          setTrips(p => p.find(t => t.id === data.id)
-            ? p.map(t => t.id === data.id ? data : t)
-            : [data, ...p])
+        ({ eventType, new: row, old }) => {
+          // เดิม patch อาร์เรย์เดียวในหน่วยความจำได้ เพราะ trips ถือทั้ง active+history รวมกัน
+          // ตอนนี้แยกสองชุด (active ครบ / history แบ่งหน้าที่ server) การเปลี่ยนสถานะทำให้ทริป
+          // "ย้ายชุด" ได้ (อนุมัติ→ยกเลิก→ประวัติ) รวมถึงกระทบ count และลำดับหน้า — โหลดใหม่ทั้งคู่
+          // ตรงไปตรงมาและถูกต้องกว่าไล่ patch เอง (ชุด active เล็ก ต้นทุน query ต่ำ)
+          if (eventType !== 'DELETE' && row?.municipality_id !== tenant.id) return
+          if (eventType === 'DELETE' && old?.municipality_id && old.municipality_id !== tenant.id) return
+          loadTrips()
         }).subscribe()
     return () => supabase.removeChannel(ch)
+    // loadTrips เป็นแค่ setState แบบ functional — ไม่พึ่ง closure จึงไม่ต้องอยู่ใน dependency
   }, [tenant?.id])
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
@@ -361,13 +408,15 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
 
   /* ── Open modals ── */
   function openReserve() {
+    // กันเปิดฟอร์มทั้งที่ยังไม่มีกอง — RLS จะปฏิเสธตอนบันทึกด้วย error ดิบจาก Postgres
+    if (missingDept) return alert('บัญชีของคุณยังไม่ได้กำหนดกอง/หน่วยงาน จึงยังบันทึกการใช้รถไม่ได้ — กรุณาให้ผู้ดูแลระบบกำหนดกองให้ก่อน (ตั้งค่า > เจ้าหน้าที่ยานพาหนะ)')
     const dep = new Date(Date.now() + 3600000)
     const ret = new Date(Date.now() + 7200000)
     setSelTrip(null)
     setForm({
       ...EMPTY_RESERVE,
       driver_id: user?.id ?? '',
-      department_id: fleetInfo?.department_id ?? '',
+      department_id: fleetInfo?.department_id ?? '',   // deptLocked บังคับใช้ค่านี้เสมอตอน submit
       planned_departure: toLocalDT(dep),
       planned_return: toLocalDT(ret),
     })
@@ -401,10 +450,12 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
   }
 
   function openDirect() {
+    // กันเปิดฟอร์มทั้งที่ยังไม่มีกอง — RLS จะปฏิเสธตอนบันทึกด้วย error ดิบจาก Postgres
+    if (missingDept) return alert('บัญชีของคุณยังไม่ได้กำหนดกอง/หน่วยงาน จึงยังบันทึกการใช้รถไม่ได้ — กรุณาให้ผู้ดูแลระบบกำหนดกองให้ก่อน (ตั้งค่า > เจ้าหน้าที่ยานพาหนะ)')
     setForm({
       ...EMPTY_DIRECT,
       driver_id: user?.id ?? '',
-      department_id: fleetInfo?.department_id ?? '',
+      department_id: fleetInfo?.department_id ?? '',   // deptLocked บังคับใช้ค่านี้เสมอตอน submit
       started_at: toLocalDT(new Date()),
     })
     setModal('direct')
@@ -430,7 +481,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
     const payload = {
       vehicle_id: form.vehicle_id,
       driver_id: form.driver_id || user?.id,
-      department_id: form.department_id || null,
+      department_id: deptLocked ? (myDeptId || null) : (form.department_id || null),
       trip_date: form.planned_departure.slice(0, 10),
       planned_departure: form.planned_departure,
       planned_return: form.planned_return,
@@ -470,45 +521,44 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
     if (!isAdmin || !conflict?.trips?.length) return
     if (!overrideReason.trim()) return alert('กรุณาระบุเหตุผลความจำเป็นเร่งด่วน')
     setSaving(true)
-    const actorName = staffList.find(s => s.id === user?.id)?.full_name || user?.email || 'ผู้ดูแลระบบ'
-    const reasonNote = `[จองแทนที่ฉุกเฉินโดย ${actorName}] ${overrideReason.trim()}`
-    const bumpedIds = conflict.trips.map(t => t.id)
 
-    const { error: cancelErr } = await supabase.from('fleet_trips')
-      .update({ status: 'cancelled', reject_reason: reasonNote })
-      .in('id', bumpedIds)
-    if (cancelErr) { setSaving(false); return alert('ยกเลิกการจองเดิมไม่สำเร็จ: ' + cancelErr.message) }
-
-    const { data: inserted, error: insertErr } = await supabase.from('fleet_trips').insert({
-      municipality_id: tenant.id,
-      vehicle_id: form.vehicle_id,
-      driver_id: form.driver_id || user?.id,
-      created_by: user?.id,
-      department_id: form.department_id || null,
-      trip_date: form.planned_departure.slice(0, 10),
-      planned_departure: form.planned_departure,
-      planned_return: form.planned_return,
-      destination: form.destination,
-      purpose: form.purpose,
-      status: 'approved',
-      approved_by: user?.id,
-    }).select('id').single()
+    // ทั้ง "ยกเลิกคิวเดิม" และ "สร้างคิวใหม่" ทำใน RPC เดียว = transaction เดียว
+    // เดิมยิงสองคำสั่งแยกจากที่นี่ ถ้า insert พังหลัง cancel สำเร็จ เจ้าหน้าที่เสียคิวรถฟรี
+    // โดยไม่มีตัวแทนและ rollback ไม่ได้ — RPC ยังเช็คสิทธิ์ manager ซ้ำที่ฝั่ง DB ด้วย
+    const { data, error } = await supabase.rpc('fleet_override_booking', {
+      p_municipality_id:   tenant.id,
+      p_vehicle_id:        form.vehicle_id,
+      p_driver_id:         form.driver_id || user?.id,
+      p_department_id:     form.department_id || null,
+      p_planned_departure: new Date(form.planned_departure).toISOString(),
+      p_planned_return:    new Date(form.planned_return).toISOString(),
+      p_destination:       form.destination,
+      p_purpose:           form.purpose,
+      p_reason:            overrideReason.trim(),
+    })
     setSaving(false)
-    if (insertErr) return alert(insertErr.message)
+    if (error) return alert('จองแทนที่ไม่สำเร็จ: ' + error.message)
+
+    const result = Array.isArray(data) ? data[0] : data
+    const newTripId = result?.new_trip_id
+    // ใช้ id ที่ DB ยกเลิกจริง ไม่ใช่ conflict.trips ฝั่ง client ซึ่งมองไม่เห็นคิวของกองอื่น
+    const bumpedIds = result?.bumped_ids ?? []
 
     bumpedIds.forEach(id => {
       logAction({
         action: 'override_cancel', resourceType: 'fleet_trip', resourceId: id,
-        resourceLabel: reasonNote, municipalityId: tenant.id,
-        metadata: { replaced_by: inserted.id, reason: overrideReason.trim() },
+        resourceLabel: `ยกเลิกเพื่อภารกิจฉุกเฉิน — ${form.destination}`, municipalityId: tenant.id,
+        metadata: { replaced_by: newTripId, reason: overrideReason.trim() },
       })
       notifyTelegram('fleet_trip_bumped', id)
     })
-    logAction({
-      action: 'create_override', resourceType: 'fleet_trip', resourceId: inserted.id,
-      resourceLabel: `${form.destination} (จองแทนที่ฉุกเฉิน)`, municipalityId: tenant.id,
-      metadata: { bumped: bumpedIds, reason: overrideReason.trim() },
-    })
+    if (newTripId) {
+      logAction({
+        action: 'create_override', resourceType: 'fleet_trip', resourceId: newTripId,
+        resourceLabel: `${form.destination} (จองแทนที่ฉุกเฉิน)`, municipalityId: tenant.id,
+        metadata: { bumped: bumpedIds, reason: overrideReason.trim() },
+      })
+    }
 
     setModal(null); setSelTrip(null); setConflict(null)
     setShowOverride(false); setOverrideReason('')
@@ -535,7 +585,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
       vehicle_id: form.vehicle_id,
       driver_id: form.driver_id || user?.id,
       created_by: user?.id,
-      department_id: form.department_id || null,
+      department_id: deptLocked ? (myDeptId || null) : (form.department_id || null),
       trip_date: form.started_at.slice(0, 10),
       started_at: form.started_at,
       returned_at: form.returned_at || null,
@@ -617,18 +667,15 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
   }
 
   /* ── Derived ── */
-  const active  = trips.filter(t => ['pending', 'approved', 'in_progress'].includes(t.status))
-  const history = trips.filter(t => ['completed', 'rejected', 'cancelled'].includes(t.status))
+  const active  = trips   // โหลดมาเฉพาะสถานะที่ยังดำเนินอยู่แล้ว ไม่ต้อง filter ซ้ำ
   const isOwner = t => t.driver_id === user?.id
 
-  // แบ่งหน้าฝั่ง client เพราะ trips ถูกดันเข้ามาจาก realtime subscription (postgres_changes) ตรงๆ
-  // แบ่งหน้าแบบ server-range จะชนกับ logic prepend ของ realtime ยุ่งยากเกินจำเป็น — ข้อมูลต้นทางยัง
-  // จำกัดที่ .limit(300) เหมือนเดิม (ไม่ใช่ไม่จำกัดจริง) แค่เพิ่ม UI แบ่งหน้าคลุมของที่โหลดมาแล้ว
-  const historyTotalPages = historyPageSize === 'all' ? 1 : Math.max(1, Math.ceil(history.length / historyPageSize))
+  // historyCount มาจาก count:'exact' ของ server ไม่ใช่ความยาวอาร์เรย์ที่โหลดมา
+  const historyTotalPages = historyPageSize === 'all'
+    ? 1
+    : Math.max(1, Math.ceil(historyCount / historyPageSize))
   const historyCurrentPage = Math.min(historyPage, historyTotalPages - 1)
-  const pagedHistory = historyPageSize === 'all'
-    ? history
-    : history.slice(historyCurrentPage * historyPageSize, (historyCurrentPage + 1) * historyPageSize)
+  const pagedHistory = history
 
   /* ── Trip Card (mobile) ── */
   function renderTripCard(t) {
@@ -815,6 +862,14 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
   return (
     <div className="space-y-3 md:space-y-5">
 
+      {/* บอกสาเหตุตั้งแต่ต้น ดีกว่าปล่อยให้กดแล้วเจอ error จาก RLS ตอนบันทึก */}
+      {missingDept && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[11px] md:text-xs text-amber-700">
+          ⚠️ บัญชีของคุณยังไม่ได้กำหนด <strong>กอง/หน่วยงาน</strong> จึงยังจองรถหรือบันทึกการเดินทางไม่ได้
+          <span className="text-amber-600"> — แจ้งผู้ดูแลระบบให้กำหนดกองที่ ตั้งค่า &gt; เจ้าหน้าที่ยานพาหนะ</span>
+        </div>
+      )}
+
       {/* ── Action buttons ── */}
       <div className="flex items-center gap-1.5 md:gap-2 flex-nowrap md:flex-wrap">
         <button onClick={openReserve}
@@ -859,9 +914,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
       {/* ── History ── */}
       <div className="space-y-1.5 md:space-y-2">
         <p className="text-[11px] md:text-xs font-bold text-gray-500 uppercase tracking-wide">
-          ประวัติการเดินทาง <span className="text-gray-400 normal-case">({history.length})</span>
+          ประวัติการเดินทาง <span className="text-gray-400 normal-case">({historyCount})</span>
         </p>
-        {history.length === 0 ? (
+        {historyCount === 0 ? (
           <FleetEmptyState icon={History} title="ยังไม่มีประวัติการเดินทาง" />
         ) : <>
           {renderTripsTable(pagedHistory)}
@@ -879,10 +934,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
               </select>
               <span>รายการ</span>
               <span className="text-gray-400">
-                ({historyPageSize === 'all' ? 1 : historyCurrentPage * historyPageSize + 1}–{historyPageSize === 'all' ? history.length : Math.min((historyCurrentPage + 1) * historyPageSize, history.length)} จาก {history.length})
+                ({historyPageSize === 'all' ? 1 : historyCurrentPage * historyPageSize + 1}–{historyPageSize === 'all' ? historyCount : Math.min((historyCurrentPage + 1) * historyPageSize, historyCount)} จาก {historyCount})
               </span>
             </div>
-            {historyPageSize !== 'all' && history.length > historyPageSize && (
+            {historyPageSize !== 'all' && historyCount > historyPageSize && (
               <div className="flex items-center gap-2">
                 <button onClick={() => setHistoryPage(p => Math.max(0, p - 1))} disabled={historyCurrentPage === 0}
                   className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white font-semibold disabled:opacity-40">ก่อนหน้า</button>
@@ -1029,10 +1084,16 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
           </div>
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">กอง/หน่วยงาน</label>
-            <select value={form.department_id} onChange={set('department_id')} className={sel}>
-              <option value="">ทุกกอง</option>
-              {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
+            {deptLocked ? (
+              // ไม่ใช่ manager: RLS ยอมรับเฉพาะกองของตัวเอง แสดงเป็นช่องล็อกไม่ให้เลือกผิดจนโดนปฏิเสธ
+              <input value={myDeptName || '—'} disabled readOnly
+                className={inp + ' bg-gray-50 text-gray-500 cursor-not-allowed'} />
+            ) : (
+              <select value={form.department_id} onChange={set('department_id')} className={sel}>
+                <option value="">ทุกกอง</option>
+                {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            )}
           </div>
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">ปลายทาง *</label>
@@ -1068,10 +1129,16 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
           </div>
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">กอง/หน่วยงาน</label>
-            <select value={form.department_id} onChange={set('department_id')} className={sel}>
-              <option value="">ทุกกอง</option>
-              {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
+            {deptLocked ? (
+              // ไม่ใช่ manager: RLS ยอมรับเฉพาะกองของตัวเอง แสดงเป็นช่องล็อกไม่ให้เลือกผิดจนโดนปฏิเสธ
+              <input value={myDeptName || '—'} disabled readOnly
+                className={inp + ' bg-gray-50 text-gray-500 cursor-not-allowed'} />
+            ) : (
+              <select value={form.department_id} onChange={set('department_id')} className={sel}>
+                <option value="">ทุกกอง</option>
+                {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            )}
           </div>
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">ปลายทาง *</label>

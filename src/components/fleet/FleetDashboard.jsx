@@ -137,7 +137,11 @@ export default function FleetDashboard({ tenant, depts, isAdmin }) {
     const y     = now.getFullYear()
     const m     = String(now.getMonth() + 1).padStart(2, '0')
     const from  = `${y}-${m}-01`
-    const to    = `${y}-${m}-31`
+    // วันสุดท้ายของเดือนจริง — เดิม hardcode 31 ทำให้เดือนที่ไม่มี 31 วัน (ก.พ./เม.ย./มิ.ย./ก.ย./พ.ย.)
+    // ส่งค่าอย่าง 2026-09-31 ที่ Postgres cast เป็น date ไม่ได้ → query error → สถิติเดือนนั้นขึ้น 0 เงียบๆ
+    // ใช้ getDate() ของ day 0 ของเดือนถัดไป แล้วประกอบสตริงเอง (ห้ามใช้ toISOString เพราะเลื่อนตาม timezone)
+    const lastDay = new Date(y, now.getMonth() + 1, 0).getDate()
+    const to    = `${y}-${m}-${String(lastDay).padStart(2, '0')}`
 
     Promise.all([
       supabase.from('fleet_vehicles').select('*').eq('municipality_id', tenant.id),
@@ -151,7 +155,12 @@ export default function FleetDashboard({ tenant, depts, isAdmin }) {
         .eq('municipality_id', tenant.id).eq('status', 'pending'),
       supabase.from('fleet_fuel_records').select('total_cost, vehicle_id, fleet_vehicles(department_id)')
         .eq('municipality_id', tenant.id).gte('filled_at', from).lte('filled_at', to),
-    ]).then(([{ data: v }, { data: f }, { data: t }, { data: b }, { count }, { data: fd }]) => {
+    ]).then((results) => {
+      // เดิม destructure เอาแต่ data ทิ้ง error ทุกตัว — query พังก็ขึ้น 0 เงียบๆ
+      // แยกจาก "เดือนนี้ยังไม่มีข้อมูลจริง" ไม่ได้เลย (ที่มาของบั๊กวันที่ 31 ข้างบน)
+      const failed = results.filter(r => r && r.error)
+      if (failed.length) console.error('FleetDashboard query error:', failed.map(r => r.error.message))
+      const [{ data: v }, { data: f }, { data: t }, { data: b }, { count }, { data: fd }] = results
       setVehicles(v ?? [])
       setThisMonth({
         fuel_cost:   (f ?? []).reduce((s, r) => s + (r.total_cost ?? 0), 0),
