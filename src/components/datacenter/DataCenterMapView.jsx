@@ -1,5 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
-import { Loader2, Database, MessageSquareWarning, Construction, Minimize2, Maximize2, X } from 'lucide-react'
+// Construction ถูกเอาออกจาก import พร้อมกับปุ่มแท็บ "โครงการ" ที่คอมเมนต์ไว้ใน SummaryPanel
+// (ตรงตามที่ commit 79f5a3c ทำกับ ClipboardList ตอนถอดเมนู) เอากลับมาพร้อมกันตอนคืนแท็บ
+import { Loader2, Database, MessageSquareWarning, Minimize2, Maximize2, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import GoogleMapCanvas from '../common/GoogleMapCanvas'
 import { resolveGroupEmoji, resolveEntryEmoji, fetchGroupIconOverrides } from '../../lib/dataCenterGroupIcon'
@@ -182,6 +184,11 @@ function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, to
                 : { color: '#9ca3af' }}>
               <MessageSquareWarning size={14} /> คำร้อง
             </button>
+            {/* แท็บ "โครงการ" ถูกถอดออกชั่วคราว ให้ตรงกับที่ถอดเมนู แผนงาน/โครงการ ออกจาก
+                StaffDashboard ไปแล้ว (commit 79f5a3c) — แผนที่เป็นคนละ surface กับเมนู ตอนนั้นเลย
+                หลุดไป ทำให้หมุดโครงการยังโผล่อยู่ที่นี่ที่เดียว
+                เอากลับมา: ลบคอมเมนต์นี้แล้วใส่ปุ่มคืน + เอา civil_projects ออกจากตัวกรองใน
+                useEffect ที่เรียก data_center_unified_pins (คอมเมนต์กำกับไว้ตรงจุดแล้ว)
             <button onClick={() => setActiveTab('projects')}
               className="flex-1 flex flex-col items-center justify-center gap-1 py-2.5 text-[11px] font-bold transition-colors"
               style={activeTab === 'projects'
@@ -189,6 +196,7 @@ function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, to
                 : { color: '#9ca3af' }}>
               <Construction size={14} /> โครงการ
             </button>
+            */}
           </>
         )}
       </div>
@@ -297,7 +305,13 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
       .then(({ data, error }) => {
         if (!active) return
         if (error) { console.error('data_center_unified_pins:', error.message); setAllRows([]); setLoading(false); return }
-        const clean = (data ?? []).filter(p => p.latitude != null && p.longitude != null)
+        // ตัด civil_projects ทิ้งตั้งแต่ต้นทาง — โมดูล แผนงาน/โครงการ ถูกถอดเมนูออกไปแล้ว
+        // (commit 79f5a3c) รอออกแบบใหม่ แต่ RPC ยัง union ตารางนี้เข้ามาเหมือนเดิม ทำให้หมุด
+        // โครงการยังโผล่บนแผนที่ฝั่งเจ้าหน้าที่อยู่ที่เดียว ตัดที่ client ไม่ใช่ที่ RPC เพราะ
+        // MapDashboardAdmin อาจยังใช้ RPC ตัวเดียวกันอยู่ และแบบนี้ย้อนกลับง่ายกว่า
+        // เอากลับมา: ลบเงื่อนไข source_table ออกจากบรรทัดล่าง + เอาปุ่มแท็บ "โครงการ" คืนใน SummaryPanel
+        const clean = (data ?? []).filter(p =>
+          p.latitude != null && p.longitude != null && p.source_table !== 'civil_projects')
         setAllRows(clean)
         setLoading(false)
       })
