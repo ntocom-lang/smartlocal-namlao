@@ -1630,6 +1630,8 @@ export default function StaffDashboard() {
   const [profile, setProfile]           = useState(null)
   const [pendingCount, setPendingCount] = useState(0)
   const [newComplaintCount, setNewComplaintCount] = useState(0)
+  // null = ยังไม่รู้ ใช้กันไม่ให้ badge ของแอดมินโชว์ตัวเลขผิดระหว่างรอผลหมวดเฉพาะกิจ
+  const [adhocCategories, setAdhocCategories] = useState(null)
   // C_CAT/C_CAT_META เป็น module-level object ที่ ComplaintsStaffModule mutate ในตัวเองอยู่แล้ว
   // (ไม่ reassign ทั้งก้อน) แต่หน้า overview (StaffOperationalDashboard) เคย render ก่อนที่ผู้ใช้
   // จะเปิดแท็บคำร้องเลยสักครั้ง จึงเห็นแค่ 8 หมวดเดิมที่ hardcode ไว้ (ทำให้ประเภทอื่นเช่น
@@ -1717,10 +1719,20 @@ export default function StaffDashboard() {
     return () => supabase.removeChannel(ch)
   }, [tenant?.id])
 
+  // หมวดเฉพาะกิจของเทศบาลนี้ — ใช้ตัดออกจากคิวรับเรื่องของแอดมิน (เหตุผลอยู่ใน badge ข้างล่าง)
+  useEffect(() => {
+    if (!tenant?.id) return
+    supabase.from('complaint_categories').select('value')
+      .eq('municipality_id', tenant.id).eq('is_adhoc', true)
+      .then(({ data, error }) => setAdhocCategories(error ? [] : (data ?? []).map(c => c.value)))
+  }, [tenant?.id])
+
   useEffect(() => {
     if (!tenant?.id || !profile?.id) return
 
     const isAdmin = ['admin', 'superadmin'].includes(profile.role)
+    // แอดมินต้องรอให้รู้รายชื่อหมวดเฉพาะกิจก่อน ไม่งั้น badge จะโชว์ตัวเลขสูงเกินจริงแวบหนึ่ง
+    if (isAdmin && adhocCategories === null) return
 
     // แอดมินไม่เคยถูก assign คำร้อง เงื่อนไข assigned_to จึงทำให้ badge เป็น 0 ตลอดกาล
     // คิวของแอดมินคือคำร้องที่ยัง status='pending' ทั้งเทศบาล — trigger auto_assign_complaint
@@ -1728,12 +1740,25 @@ export default function StaffDashboard() {
     // คำร้องจึงค้างไม่ถึงมือใครเลยจนกว่าแอดมินจะกดรับเรื่อง
     // ฝั่งแอดมินใช้ head:true นับอย่างเดียว ไม่ดึงแถวลง client = ไม่มี PII ติดมา และไม่ต้องใช้
     // seen ids เพราะพอกดรับเรื่องแล้ว status เปลี่ยน ตัวเลขลดเองโดยไม่ต้องจำสถานะบนเครื่อง
+    //
+    // ⚠️ ต้องตัดหมวดเฉพาะกิจ (complaint_categories.is_adhoc) ออกเสมอ — OdorAcknowledgePanel
+    // จงใจแยกขาดจาก status pipeline ผู้รับผิดชอบกด "รับทราบ" แล้วเขียนแค่ extra_data.acknowledged_at
+    // ไม่เคยแตะ status ⇒ คำร้องเฉพาะกิจค้าง pending ตลอดไปแม้จัดการเสร็จแล้ว ถ้านับรวมเข้ามา
+    // badge จะไม่มีวันลงถึง 0 แล้วคนจะเลิกมองมัน ซึ่งแย่กว่าไม่มี badge
+    // อีกทั้งหมวดเฉพาะกิจออกแบบให้ "ส่งตรงถึงผู้รับผิดชอบโดยไม่ผ่านแอดมิน" อยู่แล้ว
+    // (migration 20260827120000) จึงไม่ควรอยู่ในคิวรับเรื่องของแอดมินตั้งแต่แรก
+    const adminPendingQuery = () => {
+      const q = supabase.from('complaints')
+        .select('id', { count: 'exact', head: true })
+        .eq('municipality_id', tenant.id)
+        .eq('status', 'pending')
+      return adhocCategories.length > 0
+        ? q.not('category', 'in', `(${adhocCategories.map(v => `"${v}"`).join(',')})`)
+        : q
+    }
+
     const refreshComplaintBadge = () => isAdmin
-      ? supabase.from('complaints')
-          .select('id', { count: 'exact', head: true })
-          .eq('municipality_id', tenant.id)
-          .eq('status', 'pending')
-          .then(({ count }) => setNewComplaintCount(count ?? 0))
+      ? adminPendingQuery().then(({ count }) => setNewComplaintCount(count ?? 0))
       : supabase.from('complaints')
           .select('id, status')
           .eq('municipality_id', tenant.id)
@@ -1763,7 +1788,7 @@ export default function StaffDashboard() {
       window.removeEventListener('staff-badge-update', refreshComplaintBadge)
       supabase.removeChannel(ch)
     }
-  }, [tenant?.id, profile?.id, profile?.role])
+  }, [tenant?.id, profile?.id, profile?.role, adhocCategories])
 
   async function handleLogout() {
     await supabase.auth.signOut()
