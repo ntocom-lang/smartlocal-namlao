@@ -123,7 +123,7 @@ const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm t
 const ROLE_TH = {
   superadmin: 'Super Admin',
   admin:      'แอดมินระบบ',
-  officer:    'ธุรการกอง',
+  officer:    'หัวหน้ากอง',
   technician: 'ปฏิบัติงาน',
   staff:      'เจ้าหน้าที่',
   viewer:     'ผู้บริหาร',
@@ -1306,16 +1306,23 @@ function ComplaintDetailSheetStaff({ complaint: c, onClose, onUpdate, updating, 
   )
 }
 
-function ComplaintsStaffModule({ tenant, staffId, currentUserRole, isDeptHead = false }) {
+function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
   const tenantId = tenant?.id
   const [complaints, setComplaints] = useState([])
   const [loading, setLoading]       = useState(true)
-  // หัวหน้ากอง (officer + is_dept_head) เห็นคำร้องทั้งกอง ไม่ใช่แค่ที่มอบหมายให้ตัวเอง
+  // role 'officer' = หัวหน้ากอง เห็นคำร้องทั้งกอง ไม่ใช่แค่ที่มอบหมายให้ตัวเอง
+  //
   // ไม่ได้เปิดสิทธิ์ใหม่ — RPC list_complaints_for_staff กับ RLS ให้ officer เห็นคำร้อง
   // หมวดปกติในกองตัวเองอยู่แล้ว (complaint_matches_my_department) แถวพวกนี้ถูกดึงมาถึง
   // client แล้วแต่ถูกกรองทิ้งเฉยๆ ตรงนี้แค่เลิกกรองทิ้ง เบอร์โทร/ชื่อผู้แจ้งยังถูก mask
   // ตาม role เหมือนเดิมเพราะ mask ทำใน RPC ไม่ใช่ที่นี่
-  const seesWholeDepartment = currentUserRole === 'officer' && !!isDeptHead
+  //
+  // ไม่เช็ค is_dept_head — ตำแหน่งมาตรฐานทุกตัวที่ map ไป officer เป็น category
+  // 'dept_head' ทั้งหมด (positions_personnel.sql) role นี้จึงแปลว่าหัวหน้ากองอยู่แล้ว
+  // และ RLS เองก็ไม่เคยดู is_dept_head ถ้าเช็คเพิ่มตรงนี้จะกลายเป็นกับดัก: แอดมินตั้ง role
+  // เป็นหัวหน้ากองแล้วลืมติ๊ก checkbox คนนั้นจะเห็นแค่งานตัวเองทั้งที่ป้ายบอกว่าเป็นหัวหน้ากอง
+  // (is_dept_head ยังใช้อยู่ในโมดูลปฏิทินกิจกรรมและใช้จัดลำดับในลิสต์มอบหมายงาน)
+  const seesWholeDepartment = currentUserRole === 'officer'
 
   // ดึงชื่อ ไอคอน และสีจากประเภทคำร้องที่ Admin กำหนด ใช้เป็นแหล่งเดียวกันทั้งระบบ
   const [, setCatVer] = useState(0)
@@ -2032,7 +2039,7 @@ export default function StaffDashboard() {
                   </div>
                 )
                 : <ComplaintsStaffModule tenant={tenant} staffId={profile?.id}
-                    currentUserRole={profile?.role} isDeptHead={profile?.is_dept_head} />
+                    currentUserRole={profile?.role} />
             )}
             {activeModule === 'events'     && <EventsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} autoEditEventId={autoEditEventId} onAutoEditHandled={() => setAutoEditEventId(null)} autoCreateSignal={autoCreateEventSignal} autoCreateAudience="management" onAutoCreateHandled={() => setAutoCreateEventSignal(0)} />}
             {activeModule === 'projects'      && <CivilProjectAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} myDepartmentId={profile?.department_id ?? null} />}

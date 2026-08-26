@@ -293,7 +293,7 @@ export default function PostsManager({ currentUserRole = 'staff', myDepartmentId
       {currentUserRole === 'officer' && !myDepartmentId && (
         <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
           <AlertCircle size={15} className="mt-0.5 shrink-0" />
-          บัญชีธุรการกองยังไม่ได้กำหนดกอง จึงดูข้อมูลได้อย่างเดียว กรุณาให้ผู้ดูแลระบบเทศบาลแต่งตั้งกองก่อน
+          บัญชีหัวหน้ากองยังไม่ได้กำหนดกอง จึงดูข้อมูลได้อย่างเดียว กรุณาให้ผู้ดูแลระบบเทศบาลแต่งตั้งกองก่อน
         </div>
       )}
 

@@ -231,7 +231,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
   // บันทึกทุกแท็บ (บัญชี/ส่วนตัว/การแต่งตั้ง) ในหน้ารายละเอียดพร้อมกันครั้งเดียว
   async function saveUserEdits(user, changes) {
     if (changes.role === 'officer' && !changes.department_id) {
-      return { ok: false, error: 'ธุรการกองต้องระบุกอง/หน่วยงานที่สังกัดก่อนบันทึก' }
+      return { ok: false, error: 'หัวหน้ากองต้องระบุกอง/หน่วยงานที่สังกัดก่อนบันทึก' }
     }
     setSaving(user.id)
     const needsMuni = ['admin', 'staff', 'technician', 'officer', 'viewer', 'council'].includes(changes.role)
@@ -1254,11 +1254,19 @@ function AppointmentTab({ user, depts, positions, currentUserRole, isEditing, dr
         <div>
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">หัวหน้ากอง</p>
           {isEditing ? (
-            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-              <input type="checkbox" checked={!!draft.is_dept_head}
-                onChange={() => setDraft(d => ({ ...d, is_dept_head: !d.is_dept_head }))} className="w-4 h-4" />
-              เป็นหัวหน้ากอง
-            </label>
+            <>
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input type="checkbox" checked={!!draft.is_dept_head}
+                  onChange={() => setDraft(d => ({ ...d, is_dept_head: !d.is_dept_head }))} className="w-4 h-4" />
+                เป็นหัวหน้ากอง
+              </label>
+              {/* แยกจากบทบาท "หัวหน้ากอง" ชัดๆ กันสับสนหลังเปลี่ยนชื่อ role — ตัวติ๊กนี้ไม่เกี่ยวกับ
+                  สิทธิ์เห็นคำร้อง (บทบาทเป็นตัวกำหนด) ใช้กับปฏิทินกิจกรรมและการเรียงลำดับเท่านั้น */}
+              <p className="mt-1.5 text-[11px] leading-relaxed text-gray-400">
+                ใช้กับการอนุมัติกิจกรรมของกอง และทำให้ชื่อขึ้นก่อนในรายการมอบหมายงาน
+                — สิทธิ์เห็นคำร้องทั้งกองมาจากบทบาท "หัวหน้ากอง" ไม่ได้มาจากช่องนี้
+              </p>
+            </>
           ) : (
             <p className="text-sm text-gray-800">{user.is_dept_head ? 'ใช่' : 'ไม่ใช่'}</p>
           )}
@@ -1295,7 +1303,7 @@ function PermissionsTab({ user, currentUserRole, isEditing, draft, setDraft }) {
             <option value="staff">เจ้าหน้าที่ — ใช้เมนูงานที่ได้รับมอบหมาย</option>
             <option value="viewer">ผู้บริหาร — ดูภาพรวมและข้อมูลประกอบการตัดสินใจ</option>
             <option value="council">สภาเทศบาล — ดูงานที่เกี่ยวข้องกับสภา</option>
-            <option value="officer">ธุรการกอง — จัดการงานของกองที่สังกัด</option>
+            <option value="officer">หัวหน้ากอง — จัดการงานของกองที่สังกัด</option>
             <option value="technician">ปฏิบัติงาน — บันทึกงานที่รับผิดชอบ</option>
             {currentUserRole === 'superadmin' && <option value="admin">แอดมินระบบ — ดูแลทั้งเทศบาล</option>}
             {currentUserRole === 'superadmin' && <option value="superadmin">Super Admin — ดูแลทุกเทศบาล</option>}
@@ -1308,7 +1316,7 @@ function PermissionsTab({ user, currentUserRole, isEditing, draft, setDraft }) {
         </p>
         {isEditing && draft.role === 'officer' && !draft.department_id && (
           <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
-            ต้องเลือกกอง/หน่วยงานก่อนแต่งตั้งเป็นธุรการกอง (ไปเลือกที่แท็บ "การแต่งตั้ง")
+            ต้องเลือกกอง/หน่วยงานก่อนแต่งตั้งเป็นหัวหน้ากอง (ไปเลือกที่แท็บ "การแต่งตั้ง")
           </p>
         )}
       </div>

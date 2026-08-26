@@ -11,7 +11,7 @@ import { THAI_PROVINCES, thaiDistrictsOf, thaiSubdistrictsOf, tenantDefaultSubdi
 const ROLE_LABEL = {
   superadmin: 'Super Admin',
   admin:      'แอดมินระบบ',
-  officer:    'ธุรการกอง',
+  officer:    'หัวหน้ากอง',
   technician: 'ปฏิบัติงาน',
   staff:      'เจ้าหน้าที่',
   viewer:     'ผู้บริหาร',

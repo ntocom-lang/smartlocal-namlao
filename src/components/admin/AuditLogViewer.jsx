@@ -24,7 +24,7 @@ const RESOURCE_LABEL = {
 
 const ROLE_LABEL = {
   admin: 'ผู้ดูแล', superadmin: 'Super Admin', staff: 'เจ้าหน้าที่',
-  officer: 'ธุรการกอง', technician: 'ช่าง', viewer: 'ผู้ชม', council: 'สภา',
+  officer: 'หัวหน้ากอง', technician: 'ช่าง', viewer: 'ผู้ชม', council: 'สภา',
 }
 
 function timeStr(dateStr) {

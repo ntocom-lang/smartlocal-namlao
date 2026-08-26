@@ -1,12 +1,12 @@
 import { supabase } from './supabase'
 
 // Role vocabulary ของทั้งระบบ (profiles.role) — เดิม AdminDashboard.jsx นิยามไว้เอง ส่วน
-// ComplaintsManager.jsx ไม่มีเลย ทำให้แสดง/กรอง role เพี้ยนกันคนละจุด (เช่น "ธุรการกอง" เคยถูก
+// ComplaintsManager.jsx ไม่มีเลย ทำให้แสดง/กรอง role เพี้ยนกันคนละจุด (เช่น "หัวหน้ากอง" เคยถูก
 // hardcode เรียกว่า "ช่าง" ในอีกไฟล์) — ย้ายมารวมที่นี่ที่เดียว ใครต้องใช้ import แทนการนิยามเอง
 export const ROLE_LABELS = {
   superadmin:  { label: 'Super Admin',   color: '#7c3aed', bg: '#ede9fe' },
   admin:       { label: 'แอดมินระบบ',   color: '#1d4ed8', bg: '#dbeafe' },
-  officer:     { label: 'ธุรการกอง',     color: '#0891b2', bg: '#e0f2fe' },
+  officer:     { label: 'หัวหน้ากอง',     color: '#0891b2', bg: '#e0f2fe' },
   technician:  { label: 'ปฏิบัติงาน',   color: '#d97706', bg: '#fef3c7' },
   staff:       { label: 'เจ้าหน้าที่',  color: '#0ea5e9', bg: '#e0f2fe' },
   viewer:      { label: 'ผู้บริหาร',    color: '#059669', bg: '#d1fae5' },
@@ -19,7 +19,7 @@ export const ROLE_DESCRIPTIONS = {
   staff: 'เจ้าหน้าที่ทั่วไป ใช้เฉพาะเมนูงานที่ได้รับมอบหมาย',
   viewer: 'ผู้บริหาร ดูข้อมูลและภาพรวมเพื่อประกอบการตัดสินใจ',
   council: 'สมาชิกสภา ดูข้อมูลและงานที่เกี่ยวข้องกับสภาเทศบาล',
-  officer: 'ธุรการประจำกอง จัดการงานและเอกสารของกองที่สังกัด ไม่จัดการข้ามกอง',
+  officer: 'หัวหน้ากอง ดูแลงานและเอกสารของกองที่สังกัดทั้งกอง ไม่ข้ามกอง',
   technician: 'เจ้าหน้าที่ปฏิบัติงานหรือภาคสนาม บันทึกและอัปเดตงานที่รับผิดชอบ',
   admin: 'ผู้ดูแลระบบของเทศบาล จัดการผู้ใช้ การตั้งค่า และงานทุกกองในเทศบาล',
   superadmin: 'ผู้พัฒนาระบบ จัดการได้ทุกเทศบาลและทุกโมดูล',

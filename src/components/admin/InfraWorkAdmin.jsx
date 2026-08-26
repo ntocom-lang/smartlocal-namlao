@@ -383,7 +383,7 @@ export default function InfraWorkAdmin({ tenant, currentUserRole, myDepartmentId
 
       {currentUserRole === 'officer' && !belongsToEngineering && (
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-          หน้านี้เป็นงานกองช่าง บัญชีธุรการกองอื่นสามารถดูข้อมูลได้ แต่เพิ่มหรือแก้ไขไม่ได้
+          หน้านี้เป็นงานกองช่าง บัญชีหัวหน้ากองอื่นสามารถดูข้อมูลได้ แต่เพิ่มหรือแก้ไขไม่ได้
         </div>
       )}
 

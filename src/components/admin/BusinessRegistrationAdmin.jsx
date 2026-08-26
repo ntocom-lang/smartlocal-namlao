@@ -127,7 +127,7 @@ function DetailSheet({
             </div>
           )}
 
-          {/* Admin ย้ายกองได้; ธุรการกองรับได้เฉพาะรายการที่ยังไม่มีกอง */}
+          {/* Admin ย้ายกองได้; หัวหน้ากองรับได้เฉพาะรายการที่ยังไม่มีกอง */}
           {departments?.length > 0 && (
             <div>
               <label className="text-xs text-gray-500 mb-1 block">กองที่รับผิดชอบ (สำหรับกรองรายการ)</label>
@@ -444,7 +444,7 @@ export default function BusinessRegistrationAdmin({ tenant, currentUserRole, myD
         && registration?.department_id == null
         && departmentId === myDepartmentId
       if (!canClaim) {
-        alert('ธุรการกองรับงานได้เฉพาะรายการที่ยังไม่มีกอง และรับเข้ากองตนเองเท่านั้น')
+        alert('หัวหน้ากองรับงานได้เฉพาะรายการที่ยังไม่มีกอง และรับเข้ากองตนเองเท่านั้น')
         return
       }
     } else if (!isMunicipalityAdmin) {

@@ -649,7 +649,7 @@ export default function CivilProjectAdmin({ tenant, currentUserRole, myDepartmen
 
       {currentUserRole === 'officer' && !myDepartmentId && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-          บัญชีธุรการกองยังไม่ได้กำหนดกอง จึงดูข้อมูลได้อย่างเดียว กรุณาให้แอดมินระบบกำหนดกองก่อน
+          บัญชีหัวหน้ากองยังไม่ได้กำหนดกอง จึงดูข้อมูลได้อย่างเดียว กรุณาให้แอดมินระบบกำหนดกองก่อน
         </div>
       )}
 
