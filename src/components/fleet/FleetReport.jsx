@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { FileX2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { assetIdentifier, assetOptionLabel, FUEL_LABEL, meterUnitShort } from '../../lib/fleetAssets'
+import { fetchAllRows } from '../../lib/fetchAllRows'
 import FleetEmptyState from './FleetEmptyState'
 
 const fmt  = n => (n ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 2 })
@@ -85,19 +86,22 @@ export default function FleetReport({ tenant }) {
     const vq = q => selVehicle ? q.eq('vehicle_id', selVehicle) : q
     const endDay = nextDay(dateTo) // ใช้ .lt(nextDay) แทน .lte(T23:59:59) เพื่อหลีกเลี่ยง format tz
 
+    // ดึงผ่าน fetchAllRows เพราะยอดรวมค่าน้ำมัน/ค่าซ่อมด้านล่างคำนวณฝั่ง client จากแถวที่ได้มา
+    // ถ้า PostgREST ตัดแถวตาม db-max-rows ยอดในรายงานจะต่ำกว่าจริงโดยไม่มีสัญญาณเตือน
+    // ซึ่งเป็นตัวเลขที่ใช้เสนอผู้บริหารและใช้ตรวจสอบ — ยอมจ่ายรอบ request เพิ่มเพื่อความครบถ้วน
     const [tripResult, fuelResult, maintResult] = await Promise.all([
-      vq(supabase.from('fleet_trips')
+      fetchAllRows(() => vq(supabase.from('fleet_trips')
         .select('*, vehicle:fleet_vehicles(id,name,license_plate,asset_code,asset_kind,meter_unit), driver:profiles!fleet_trips_driver_id_fkey(id,full_name)')
         .eq('municipality_id', tenant.id).eq('status', 'completed')
-        .gte('trip_date', dateFrom).lt('trip_date', endDay)).order('trip_date'),
-      vq(supabase.from('fleet_fuel_records')
+        .gte('trip_date', dateFrom).lt('trip_date', endDay)).order('trip_date')),
+      fetchAllRows(() => vq(supabase.from('fleet_fuel_records')
         .select('*, fleet_vehicles(name, license_plate, asset_code, asset_kind, meter_unit)')
         .eq('municipality_id', tenant.id)
-        .gte('filled_at', dateFrom).lte('filled_at', dateTo)).order('filled_at'),
-      vq(supabase.from('fleet_maintenance')
+        .gte('filled_at', dateFrom).lte('filled_at', dateTo)).order('filled_at')),
+      fetchAllRows(() => vq(supabase.from('fleet_maintenance')
         .select('*, fleet_vehicles(name, license_plate, asset_code, asset_kind, meter_unit)')
         .eq('municipality_id', tenant.id)
-        .gte('service_date', dateFrom).lte('service_date', dateTo)).order('service_date'),
+        .gte('service_date', dateFrom).lte('service_date', dateTo)).order('service_date')),
     ])
     const loadError = tripResult.error || fuelResult.error || maintResult.error
     if (loadError) {
@@ -111,6 +115,10 @@ export default function FleetReport({ tenant }) {
     const { data: maint } = maintResult
     setData({ trips: trips ?? [], fuel: fuel ?? [], maint: maint ?? [] })
     setLoading(false)
+    // ชนเพดานกันลูป = ข้อมูลไม่ครบจริง ต้องบอก ห้ามปล่อยให้เข้าใจว่ายอดถูกต้อง
+    if (tripResult.truncated || fuelResult.truncated || maintResult.truncated) {
+      alert('ข้อมูลในช่วงที่เลือกมีจำนวนมากเกินกว่าที่ระบบดึงได้ในครั้งเดียว — ยอดรวมในรายงานนี้ยังไม่ครบ กรุณาแบ่งช่วงวันที่ให้สั้นลง')
+    }
   }
 
   /* ── Summaries ── */
