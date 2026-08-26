@@ -6,6 +6,8 @@ import {
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import DataCenterImportModal from './DataCenterImportModal'
+import GroupIconPicker from './GroupIconPicker'
+import { resolveGroupEmoji, resolveEntryEmoji, fetchGroupIconOverrides, saveGroupIconOverride, iconKey } from '../../lib/dataCenterGroupIcon'
 
 const TABLE_PAGE_SIZES = [10, 20, 50, 100]
 
@@ -76,32 +78,13 @@ const PRESET_PALETTES = [
   { bg: '#14b8a6', border: '#2dd4bf', text: '#ccfbf1' }, // Teal
 ]
 
-const KEYWORD_EMOJIS = [
-  { keywords: ['โครงสร้าง', 'คมนาคม', 'ถนน', 'สะพาน', 'โยธา'], emoji: '🛣️' },
-  { keywords: ['ศึกษา', 'เรียน', 'โรงเรียน', 'ศูนย์เด็ก', 'การศึกษา'], emoji: '🏫' },
-  { keywords: ['สาธารณสุข', 'หมอ', 'พยาบาล', 'อนามัย', 'การแพทย์', 'โรงพยาบาล'], emoji: '🏥' },
-  { keywords: ['เที่ยว', 'ท่องเที่ยว', 'จุดชมวิว', 'สวน'], emoji: '🏞️' },
-  { keywords: ['สิ่งแวดล้อม', 'ขยะ', 'มลพิษ', 'ป่าไม้', 'ทรัพยากร'], emoji: '🌱' },
-  { keywords: ['เกษตร', 'ไร่', 'นา', 'พืช', 'ปศุสัตว์'], emoji: '🌾' },
-  { keywords: ['น้ำ', 'ประปา', 'ชลประทาน', 'คลอง', 'แหล่งน้ำ'], emoji: '💧' },
-  { keywords: ['สวัสดิการ', 'สังคม', 'ชุมชน', 'ผู้สูงอายุ'], emoji: '🤝' },
-  { keywords: ['ปลอดภัย', 'กู้ภัย', 'ป้องกัน', 'ดับเพลิง', 'บรรเทา'], emoji: '🛡️' },
-  { keywords: ['เศรษฐกิจ', 'ตลาด', 'พาณิชย์', 'การค้า'], emoji: '🛒' },
-  { keywords: ['วัฒนธรรม', 'วัด', 'ศาสนา', 'ประเพณี'], emoji: '🛕' },
-]
-
-function getGroupMeta(name) {
-  if (!name) return { bg: '#64748b', border: '#94a3b8', text: '#f1f5f9', emoji: '📍' }
-  if (GROUP_COLORS[name]) return GROUP_COLORS[name]
-
-  // Dynamic emoji selection based on keywords
-  let emoji = '📍'
-  for (const item of KEYWORD_EMOJIS) {
-    if (item.keywords.some(k => name.toLowerCase().includes(k))) {
-      emoji = item.emoji
-      break
-    }
-  }
+// อิโมจิย้ายไปใช้ resolveGroupEmoji() ร่วมกับแผนที่ (src/lib/dataCenterGroupIcon.js) แล้ว — เหลือแค่สี
+// (bg/border/text) ที่ยังคำนวณแยกในไฟล์นี้ เพราะเป็นสไตล์เฉพาะของการ์ด/ป้ายในหน้ารายการ ไม่ต้องตรงกับแผนที่
+// overrides: { [group_name]: emoji } จาก data_center_group_icons ของเทศบาลนี้ (แอดมินตั้งเอง)
+function getGroupMeta(name, overrides = {}) {
+  const emoji = resolveGroupEmoji(name, overrides)
+  if (!name) return { bg: '#64748b', border: '#94a3b8', text: '#f1f5f9', emoji }
+  if (GROUP_COLORS[name]) return { ...GROUP_COLORS[name], emoji }
 
   // Consistent color selection using string hash for any new group added in the future
   let hash = 0
@@ -132,6 +115,13 @@ export default function DataCenterOverview({
 
   const [entries, setEntries] = useState([])
   const [entriesFetchedAt, setEntriesFetchedAt] = useState(0)
+  // ไอคอนกลุ่มหลักที่แอดมินตั้งเอง (data_center_group_icons) — ใช้ร่วมกับแผนที่ผ่าน
+  // resolveGroupEmoji() กันอิโมจิไม่ตรงกันระหว่าง 2 หน้า ดู src/lib/dataCenterGroupIcon.js
+  const [groupIconOverrides, setGroupIconOverrides] = useState({})
+  const canEditGroupIcon = ['admin', 'superadmin'].includes(profile?.role)
+  const [editingGroupIcon, setEditingGroupIcon] = useState(false)
+  const [groupIconDraft, setGroupIconDraft] = useState('')
+  const [savingGroupIcon, setSavingGroupIcon] = useState(false)
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState(null)
   const [showImportModal, setShowImportModal] = useState(false)
@@ -175,6 +165,11 @@ export default function DataCenterOverview({
   useEffect(() => {
     queueMicrotask(fetchEntries)
   }, [fetchEntries])
+
+  useEffect(() => {
+    if (!tenantId) return
+    fetchGroupIconOverrides(supabase, tenantId).then(setGroupIconOverrides)
+  }, [tenantId])
 
   // ชื่อกอง/สำนัก สำหรับ breakdown — ยังไม่มีตอน entries.department_id เพียวๆ (เป็นแค่ uuid)
   // ล้มเหลวได้แบบ soft: breakdown จะ fallback ไปโชว์ "ไม่ทราบชื่อกอง" แทน ไม่ต้อง block dashboard ทั้งหน้า
@@ -296,6 +291,14 @@ export default function DataCenterOverview({
     return true
   })
   const filterLabel = initialFilterCategory || initialFilterGroup || 'ข้อมูลทั้งหมด'
+  // ไอคอนที่ระบบจะเลือกให้กลุ่มนี้ถ้าไม่ตั้งเอง — ตัด override ของกลุ่มนี้ทิ้งก่อนคำนวณ
+  // ใช้โชว์ตัวอย่างในโหมด "อัตโนมัติ" ของ GroupIconPicker
+  const autoGroupEmoji = (() => {
+    if (!initialFilterGroup) return '📍'
+    const withoutSelf = { ...groupIconOverrides }
+    delete withoutSelf[iconKey(initialFilterGroup, '')]
+    return resolveGroupEmoji(initialFilterGroup, withoutSelf)
+  })()
   const totalEntries = filteredEntries.length
   const activeEntriesCount = filteredEntries.filter(e => e.status !== 'archived').length
   const activeRate = totalEntries ? Math.round((activeEntriesCount / totalEntries) * 100) : 100
@@ -327,7 +330,7 @@ export default function DataCenterOverview({
     routes: groupMap[g].routes,
     catCount: groupMap[g].categories.size,
     percent: totalEntries ? Math.round((groupMap[g].count / totalEntries) * 100) : 0,
-    meta: getGroupMeta(g)
+    meta: getGroupMeta(g, groupIconOverrides)
   })).sort((a, b) => b.count - a.count)
 
   // Department breakdown — นับจาก department_id ดิบ (มีในทั้ง filteredEntries) แล้วแปลงเป็นชื่อทีหลัง
@@ -380,11 +383,67 @@ export default function DataCenterOverview({
           : 'bg-slate-900/80 border-cyan-500/30 shadow-cyan-950/40 text-white'
       }`}>
         <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-xl border flex items-center justify-center shadow-inner ${
-            isLight ? 'bg-sky-100 border-sky-300 text-sky-700' : 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300'
-          }`}>
-            <BarChart3 size={21} className={isLight ? 'text-sky-600' : 'drop-shadow-[0_0_8px_rgba(0,240,255,0.6)]'} />
-          </div>
+          {/* ดูข้อมูลเฉพาะกลุ่มหลัก (เช่นกดจากการ์ดหมวดหมู่) — โชว์อิโมจิของกลุ่มนั้นแทนไอคอนแดชบอร์ด
+              ทั่วไป พร้อมปุ่มแก้ไข (admin/superadmin เท่านั้น) แก้แล้วมีผลกับหน้ารายการ+แผนที่ทันที
+              เพราะดึงจากตาราง data_center_group_icons ตัวเดียวกัน */}
+          {hasActiveFilter && initialFilterGroup ? (
+            <div className="relative shrink-0">
+              <div className={`w-10 h-10 rounded-xl border flex items-center justify-center shadow-inner text-xl ${
+                isLight ? 'bg-sky-100 border-sky-300' : 'bg-cyan-500/20 border-cyan-500/40'
+              }`}>
+                {resolveGroupEmoji(initialFilterGroup, groupIconOverrides)}
+              </div>
+              {canEditGroupIcon && (
+                <button type="button" title="แก้ไขไอคอนกลุ่มนี้"
+                  onClick={() => { setGroupIconDraft(groupIconOverrides[iconKey(initialFilterGroup, '')] ?? ''); setEditingGroupIcon((v) => !v) }}
+                  className={`absolute -bottom-1.5 -right-1.5 w-5 h-5 rounded-full border flex items-center justify-center shadow-sm ${
+                    isLight ? 'bg-white border-slate-300 text-slate-500 hover:text-sky-600' : 'bg-slate-800 border-cyan-500/40 text-cyan-300 hover:text-cyan-100'
+                  }`}>
+                  <Pencil size={10} />
+                </button>
+              )}
+              {editingGroupIcon && (
+                <div className={`absolute z-20 top-full left-0 mt-2 w-80 px-3 pb-3 pt-2.5 rounded-xl border shadow-xl ${
+                  isLight ? 'bg-white border-slate-200' : 'bg-slate-800 border-cyan-500/30'
+                }`}>
+                  <p className={`text-[11px] font-bold ${isLight ? 'text-slate-600' : 'text-cyan-200/80'}`}>
+                    ไอคอนกลุ่ม "{initialFilterGroup}"
+                  </p>
+                  <p className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-cyan-200/50'}`}>
+                    แยกไอคอนรายประเภทย่อยได้ที่เมนู "จัดการหมวดหมู่"
+                  </p>
+                  <GroupIconPicker
+                    value={groupIconDraft} saving={savingGroupIcon} isLight={isLight}
+                    autoEmoji={autoGroupEmoji}
+                    onChange={setGroupIconDraft}
+                    onCancel={() => setEditingGroupIcon(false)}
+                    onConfirm={async () => {
+                      setSavingGroupIcon(true)
+                      const { error } = await saveGroupIconOverride(supabase, {
+                        municipalityId: tenantId, groupName: initialFilterGroup,
+                        category: '', emoji: groupIconDraft, userId: profile?.id,
+                      })
+                      setSavingGroupIcon(false)
+                      if (error) { alert('บันทึกไม่สำเร็จ: ' + error.message); return }
+                      setGroupIconOverrides((prev) => {
+                        const next = { ...prev }
+                        const key = iconKey(initialFilterGroup, '')
+                        if (groupIconDraft.trim()) next[key] = groupIconDraft.trim()
+                        else delete next[key]
+                        return next
+                      })
+                      setEditingGroupIcon(false)
+                    }} />
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className={`w-10 h-10 rounded-xl border flex items-center justify-center shadow-inner ${
+              isLight ? 'bg-sky-100 border-sky-300 text-sky-700' : 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300'
+            }`}>
+              <BarChart3 size={21} className={isLight ? 'text-sky-600' : 'drop-shadow-[0_0_8px_rgba(0,240,255,0.6)]'} />
+            </div>
+          )}
           <div>
             <h1 className={`text-lg font-black tracking-wide ${
               isLight ? 'text-slate-900' : 'text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-100 to-cyan-400'
@@ -679,12 +738,13 @@ export default function DataCenterOverview({
               <div className={`divide-y ${isLight ? 'divide-slate-200/70' : 'divide-slate-800/60'}`}>
                 {tablePageItems.map(entry => {
                   const isActive = entry.status !== 'archived'
-                  const meta = getGroupMeta(entry.group_name)
+                  // ไอคอนของแถวใช้ระดับ "ประเภทย่อย" ก่อนเสมอ (ทับไอคอนกลุ่มหลัก)
+                  const entryEmoji = resolveEntryEmoji(entry.group_name, entry.category, groupIconOverrides)
                   return (
                     <div key={entry.id} className="flex items-center gap-2 px-3.5 py-3">
                       <button type="button" onClick={() => onEditEntry(entry)} className="flex-1 min-w-0 text-left">
                         <p className="text-xs font-bold truncate flex items-center gap-1.5">
-                          <span>{meta.emoji}</span>
+                          <span>{entryEmoji}</span>
                           <span className="truncate">{entry.name || '(ไม่มีชื่อ)'}</span>
                         </p>
                         <p className={`text-[10px] mt-0.5 truncate ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>{entry.category} · {formatThaiDate(entry.created_at)}</p>
@@ -778,7 +838,9 @@ export default function DataCenterOverview({
                     </tr>
                   ) : tablePageItems.map((entry, i) => {
                     const isActive = entry.status !== 'archived'
-                    const meta = getGroupMeta(entry.group_name)
+                    const meta = getGroupMeta(entry.group_name, groupIconOverrides)
+                    // ไอคอนของแถวใช้ระดับ "ประเภทย่อย" ก่อนเสมอ (ทับไอคอนกลุ่มหลัก) — meta เหลือไว้ใช้แค่สีป้ายกลุ่ม
+                    const entryEmoji = resolveEntryEmoji(entry.group_name, entry.category, groupIconOverrides)
                     return (
                       <tr key={entry.id} className={`transition-colors group ${isLight ? 'hover:bg-sky-50/60' : 'hover:bg-cyan-500/5'}`}>
                         <td className={`px-3.5 py-3 text-center font-mono font-bold ${isLight ? 'text-slate-400' : 'text-slate-500'}`}>
@@ -786,7 +848,7 @@ export default function DataCenterOverview({
                         </td>
                         <td className={`px-3.5 py-3 font-semibold transition-colors ${isLight ? 'text-slate-900 group-hover:text-sky-700' : 'text-slate-100 group-hover:text-cyan-300'}`}>
                           <div className="flex items-center gap-2">
-                            <span>{meta.emoji}</span>
+                            <span>{entryEmoji}</span>
                             <span>{entry.name || <span className={`italic ${isLight ? 'text-slate-400' : 'text-slate-500'}`}>(ไม่มีชื่อ)</span>}</span>
                           </div>
                         </td>

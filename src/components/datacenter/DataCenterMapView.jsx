@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { Loader2, Database, MessageSquareWarning, Construction, Minimize2, Maximize2, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import GoogleMapCanvas from '../common/GoogleMapCanvas'
+import { resolveGroupEmoji, resolveEntryEmoji, fetchGroupIconOverrides } from '../../lib/dataCenterGroupIcon'
 
 function TrafficLightIcon({ size = 20, className = "" }) {
   return (
@@ -36,16 +37,17 @@ const GROUP_META = {
   'โครงการก่อสร้าง':    { emoji: '🚧', color: '#7c3aed' },
 }
 const FALLBACK = { emoji: '📌', color: '#475569' }
-const groupMeta = g => GROUP_META[g] ?? FALLBACK
-
-// ไอคอนเฉพาะประเภทย่อย (key ตรงกับ e.category ที่พิมพ์ในฟอร์มเป๊ะๆ) — ใส่เฉพาะที่อยากแยกให้ต่างจากไอคอนกลุ่มหลัก
-// ไม่ต้องใส่ครบทุกประเภท ถ้าไม่มีในนี้จะ fallback ไปใช้ไอคอนของกลุ่มหลัก (meta.emoji) แทนอัตโนมัติ
-const CATEGORY_EMOJI_OVERRIDE = {
-  'โรงเรียน': '🏫',
-  'แหล่งเรียนรู้ภูมิปัญญาท้องถิ่น': '🏺',
-  'แหล่งเรียนรู้พอเพียง': '🌾',
+// emoji มาจาก resolveGroupEmoji() ร่วมกับ DataCenterOverview.jsx เสมอ (overrides จากตาราง
+// data_center_group_icons ก่อน แล้วค่อย fallback ตาม GROUP_META/keyword ในนั้น) — สี/pinColor ยังคง
+// เป็นของแผนที่เองเหมือนเดิม ไม่ต้องตรงกับหน้ารายการ
+const groupMeta = (g, overrides = {}) => {
+  const base = GROUP_META[g] ?? FALLBACK
+  return { ...base, emoji: resolveGroupEmoji(g, overrides) }
 }
-const markerEmoji = e => CATEGORY_EMOJI_OVERRIDE[e.category] ?? groupMeta(e.group_name).emoji
+
+// ไอคอนเฉพาะประเภทย่อย ย้ายไปอยู่ใน src/lib/dataCenterGroupIcon.js แล้ว (FIXED_CATEGORY_EMOJI) เพื่อให้
+// หน้ารายการใช้ชุดเดียวกัน + รองรับไอคอนที่แอดมินตั้งเองรายประเภทย่อยผ่านหน้า "จัดการหมวดหมู่"
+const markerEmoji = (e, overrides = {}) => resolveEntryEmoji(e.group_name, e.category, overrides)
 const isIconUrl = value => typeof value === 'string'
   && (value.startsWith('http://') || value.startsWith('https://') || value.startsWith('/') || value.startsWith('data:image/'))
 
@@ -160,7 +162,7 @@ function buildGroupSummary(list, resolveLabel = categoryLabel, resolveIcon = mar
 // เนื้อหาแท็บ + การ์ดสรุป — ใช้ร่วมกันทั้งแถบขวาบน PC และแผงล่างบนมือถือ ไม่ต้องแก้ 2 ที่
 // showSourceTabs=false (ฝั่งประชาชน): ซ่อนเฉพาะปุ่ม "คำร้อง"/"โครงการ" — แถบ "ศูนย์ข้อมูลดิจิทัล" ยังต้องอยู่เสมอ
 // (เดิมซ่อนทั้งแถบไปด้วยโดยไม่ตั้งใจ ทำให้ประชาชนไม่เห็นหัวข้ออะไรเลย)
-function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, toggleGroup, activeCategories, toggleCategory, showSourceTabs, routeCategoryKeys, showRoutes, setShowRoutes }) {
+function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, toggleGroup, activeCategories, toggleCategory, showSourceTabs, routeCategoryKeys, showRoutes, setShowRoutes, groupIconOverrides }) {
   return (
     <>
       <div className="flex border-b border-gray-100 shrink-0">
@@ -195,7 +197,7 @@ function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, to
         {activeSummary.length === 0 ? (
           <p className="text-xs text-gray-300 text-center py-10">ยังไม่มีข้อมูลในหมวดนี้</p>
         ) : activeSummary.map(({ group, total, categories }) => {
-          const meta = groupMeta(group)
+          const meta = groupMeta(group, groupIconOverrides)
           // กลุ่มที่ตอนนี้เป็นเส้นทาง (ถนน) ล้วน 100% (ไม่มีจุดปักหมุดแบบอื่นปนอยู่เลย) ให้หัวการ์ดกลุ่ม
           // สะท้อน/สั่งงาน showRoutes เหมือนแถวประเภทย่อยข้างล่าง กันปุ่มกดแล้วไม่มีผล (activeGroups
           // ไม่มีผลกับ entry ที่เป็นเส้นทางอยู่แล้ว) ถ้ามีจุดปนอยู่ด้วยยังใช้ toggleGroup ตามปกติ
@@ -281,10 +283,15 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   const effectiveStatusFilter = allowStatusFilter ? statusFilter : 'completed'
   // ปุ่มลอยเปิด/ปิดเส้นทาง (ถนน) ทั้งหมดพร้อมกัน — ไม่ต้องไปติ๊กทีละประเภทในแถบขวา
   const [showRoutes, setShowRoutes] = useState(false)
+  // ไอคอนกลุ่มหลักที่แอดมินตั้งเอง (data_center_group_icons) — ตัวเดียวกับที่ DataCenterOverview.jsx
+  // ใช้ กันอิโมจิไม่ตรงกันระหว่างหน้ารายการกับแผนที่ ดู src/lib/dataCenterGroupIcon.js
+  const [groupIconOverrides, setGroupIconOverrides] = useState({})
 
   useEffect(() => {
     if (!tenant?.id) return
     let active = true
+
+    fetchGroupIconOverrides(supabase, tenant.id).then((overrides) => { if (active) setGroupIconOverrides(overrides) })
 
     supabase.rpc('data_center_unified_pins', { _municipality_id: tenant.id })
       .then(({ data, error }) => {
@@ -367,8 +374,8 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
     ? (complaintCategoryMeta[e.category]?.label || categoryLabel(e))
     : categoryLabel(e)
   const resolveMarkerIcon = e => e.source_table === 'complaints'
-    ? (complaintCategoryMeta[e.category]?.emoji || markerEmoji(e))
-    : markerEmoji(e)
+    ? (complaintCategoryMeta[e.category]?.emoji || markerEmoji(e, groupIconOverrides))
+    : markerEmoji(e, groupIconOverrides)
   const entries = allRows.filter(e => matchesStatusFilter(e, effectiveStatusFilter, complaintCategoryMeta))
   const groups = Array.from(new Set(entries.map(e => e.group_name))).sort((a, b) => a.localeCompare(b, 'th'))
   const visible = entries.filter(e => {
@@ -459,7 +466,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
               boundaryGeoJson={boundaryGeoJson}
               className="w-full h-full min-h-[70vh]"
               markers={visible.filter(e => !(e.route_points?.length >= 2)).map(e => {
-                const meta = groupMeta(e.group_name)
+                const meta = groupMeta(e.group_name, groupIconOverrides)
                 const icon = resolveMarkerIcon(e)
                 return {
                   id: `${e.source_table}-${e.source_id}`,
@@ -468,6 +475,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
                   color: meta.pinColor ?? meta.color,
                   label: isIconUrl(icon) ? '' : icon,
                   iconUrl: isIconUrl(icon) ? icon : null,
+                  shape: 'circle',
                   scale: 10,
                   entry: e,
                 }
@@ -475,7 +483,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
               polylines={visible.filter(e => e.route_points?.length >= 2).map(e => ({
                 id: `${e.source_table}-${e.source_id}`,
                 path: e.route_points,
-                color: e.route_color || groupMeta(e.group_name).color,
+                color: e.route_color || groupMeta(e.group_name, groupIconOverrides).color,
                 weight: e.category === 'ถนนสายหลัก' ? 5 : 3,
                 opacity: 0.88,
                 entry: e,
@@ -552,7 +560,8 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
                   <SummaryPanel activeTab={effectiveTab} setActiveTab={setActiveTab} activeSummary={activeSummary}
                     activeGroups={activeGroups} toggleGroup={toggleGroup}
                     activeCategories={activeCategories} toggleCategory={toggleCategory} showSourceTabs={allowStatusFilter}
-                    routeCategoryKeys={routeCategoryKeys} showRoutes={showRoutes} setShowRoutes={setShowRoutes} />
+                    routeCategoryKeys={routeCategoryKeys} showRoutes={showRoutes} setShowRoutes={setShowRoutes}
+                    groupIconOverrides={groupIconOverrides} />
                 </div>
               )}
             </div>
@@ -564,7 +573,8 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
           <SummaryPanel activeTab={effectiveTab} setActiveTab={setActiveTab} activeSummary={activeSummary}
             activeGroups={activeGroups} toggleGroup={toggleGroup}
             activeCategories={activeCategories} toggleCategory={toggleCategory} showSourceTabs={allowStatusFilter}
-            routeCategoryKeys={routeCategoryKeys} showRoutes={showRoutes} setShowRoutes={setShowRoutes} />
+            routeCategoryKeys={routeCategoryKeys} showRoutes={showRoutes} setShowRoutes={setShowRoutes}
+            groupIconOverrides={groupIconOverrides} />
         </aside>
       </div>
     </div>

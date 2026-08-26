@@ -227,6 +227,44 @@ export default function GoogleMapCanvas({
         })
         iconWrapper.append(iconImage)
         marker.append(iconWrapper)
+      } else if (markerData.shape === 'circle') {
+        // หมุดทรงกลม (แทนหยดน้ำของ PinElement) — ใช้กับแผนที่ศูนย์ข้อมูลดิจิทัลที่หมุดกระจุกกันหนาแน่น
+        // ทรงกลมกินพื้นที่แนวตั้งน้อยกว่าและอ่านอิโมจิง่ายกว่าตอนหมุดซ้อนกัน
+        // AdvancedMarkerElement วาง "ขอบล่าง" ของ element ไว้ที่พิกัด (ถูกต้องกับปลายแหลมของหยดน้ำ)
+        // ทรงกลมต้องเลื่อนลงครึ่งหนึ่งเพื่อให้ "จุดศูนย์กลาง" ตรงพิกัดจริง ไม่งั้นหมุดจะลอยเหนือตำแหน่ง
+        // scale 10 = 18px เท่าหมุด POI ของ Google เอง (ร้านค้า/วัด/สถานที่ราชการบน base map)
+        // ตั้งใจให้เท่ากันเพราะหมุดเราวางทับ base map เดียวกัน ถ้าใหญ่กว่าจะบังหลังคาบ้านข้างเคียง
+        // จนดูไม่ออกว่าปักหลังไหน (ของเดิม PinElement ทรงหยดน้ำสูง 32px)
+        const size = Math.max(14, (markerData.scale ?? 10) * 1.8)
+        // 18px ต่ำกว่าเกณฑ์ touch target ขั้นต่ำ 24px ของ WCAG 2.2 — ครอบด้วยกล่องใส 28px
+        // รับการกดแทน เห็นเล็กเท่า Google แต่เจ้าหน้าที่กดบนมือถือไม่พลาด
+        const HIT_AREA = 28
+        const hit = document.createElement('div')
+        hit.style.width = String(HIT_AREA) + 'px'
+        hit.style.height = String(HIT_AREA) + 'px'
+        hit.style.display = 'flex'
+        hit.style.alignItems = 'center'
+        hit.style.justifyContent = 'center'
+        hit.style.cursor = 'pointer'
+        // AdvancedMarkerElement วาง "ขอบล่าง" ของ element ไว้ที่พิกัด (ถูกกับปลายแหลมของหยดน้ำ)
+        // ทรงกลมต้องเลื่อนลงครึ่งหนึ่งให้จุดศูนย์กลางตรงพิกัดจริง ไม่งั้นหมุดจะลอยเหนือตำแหน่ง
+        hit.style.transform = 'translateY(50%)'
+
+        const circle = document.createElement('div')
+        circle.style.width = String(size) + 'px'
+        circle.style.height = String(size) + 'px'
+        circle.style.display = 'flex'
+        circle.style.alignItems = 'center'
+        circle.style.justifyContent = 'center'
+        circle.style.borderRadius = '50%'
+        circle.style.background = markerData.color || '#ef4444'
+        circle.style.border = '1.5px solid #ffffff'
+        circle.style.boxShadow = '0 1px 3px rgba(15, 23, 42, 0.4)'
+        circle.style.fontSize = String(Math.round(size * 0.6)) + 'px'
+        circle.style.lineHeight = '1'
+        circle.textContent = markerData.label ? String(markerData.label) : ''
+        hit.append(circle)
+        marker.append(hit)
       } else if (PinElement) {
         marker.append(new PinElement({
           background: markerData.color || '#ef4444',
