@@ -1306,10 +1306,16 @@ function ComplaintDetailSheetStaff({ complaint: c, onClose, onUpdate, updating, 
   )
 }
 
-function ComplaintsStaffModule({ tenant, staffId }) {
+function ComplaintsStaffModule({ tenant, staffId, currentUserRole, isDeptHead = false }) {
   const tenantId = tenant?.id
   const [complaints, setComplaints] = useState([])
   const [loading, setLoading]       = useState(true)
+  // หัวหน้ากอง (officer + is_dept_head) เห็นคำร้องทั้งกอง ไม่ใช่แค่ที่มอบหมายให้ตัวเอง
+  // ไม่ได้เปิดสิทธิ์ใหม่ — RPC list_complaints_for_staff กับ RLS ให้ officer เห็นคำร้อง
+  // หมวดปกติในกองตัวเองอยู่แล้ว (complaint_matches_my_department) แถวพวกนี้ถูกดึงมาถึง
+  // client แล้วแต่ถูกกรองทิ้งเฉยๆ ตรงนี้แค่เลิกกรองทิ้ง เบอร์โทร/ชื่อผู้แจ้งยังถูก mask
+  // ตาม role เหมือนเดิมเพราะ mask ทำใน RPC ไม่ใช่ที่นี่
+  const seesWholeDepartment = currentUserRole === 'officer' && !!isDeptHead
 
   // ดึงชื่อ ไอคอน และสีจากประเภทคำร้องที่ Admin กำหนด ใช้เป็นแหล่งเดียวกันทั้งระบบ
   const [, setCatVer] = useState(0)
@@ -1340,9 +1346,14 @@ function ComplaintsStaffModule({ tenant, staffId }) {
     if (!tenantId || !staffId) return
     const { data, error } = await fetchRoleScopedComplaints(tenantId)
     if (error) console.error('fetch assigned complaints error:', error.message)
-    setComplaints((data ?? []).filter((c) => c.assigned_to === staffId && c.status !== 'pending'))
+    // ยังกรอง pending ออกทั้งสองกรณี — pending คือคำร้องที่แอดมินยังไม่กดรับเรื่อง
+    // การเปิดให้เห็นเท่ากับรื้อขั้นตอนคัดกรองของแอดมิน (migration 080) ซึ่งเป็นคนละเรื่อง
+    // กับการขยายขอบเขตจาก "งานตัวเอง" เป็น "งานทั้งกอง"
+    setComplaints((data ?? []).filter((c) =>
+      (seesWholeDepartment || c.assigned_to === staffId) && c.status !== 'pending'
+    ))
     setLoading(false)
-  }, [tenantId, staffId])
+  }, [tenantId, staffId, seesWholeDepartment])
 
   async function openAssignedComplaint(complaint) {
     if (!complaint?.id || openingComplaintId === complaint.id) return
@@ -1441,8 +1452,14 @@ function ComplaintsStaffModule({ tenant, staffId }) {
             <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-1 text-[10px] font-bold tracking-wide text-white/90">
               <MessageSquareWarning size={12} /> งานบริการประชาชน
             </div>
-            <h2 className="text-xl font-extrabold tracking-tight">งานคำร้องของฉัน</h2>
-            <p className="mt-1 text-xs leading-relaxed text-white/75">ติดตามและบันทึกผลเฉพาะงานที่ได้รับมอบหมาย</p>
+            <h2 className="text-xl font-extrabold tracking-tight">
+              {seesWholeDepartment ? 'งานคำร้องของกอง' : 'งานคำร้องของฉัน'}
+            </h2>
+            <p className="mt-1 text-xs leading-relaxed text-white/75">
+              {seesWholeDepartment
+                ? 'ในฐานะหัวหน้ากอง เห็นคำร้องที่แอดมินรับเรื่องแล้วทั้งกอง ไม่เฉพาะที่มอบหมายให้ตัวเอง'
+                : 'ติดตามและบันทึกผลเฉพาะงานที่ได้รับมอบหมาย'}
+            </p>
           </div>
           <button onClick={fetchAll} disabled={loading}
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/20 bg-white/15 text-white shadow-sm backdrop-blur transition hover:bg-white/25 active:scale-95 disabled:opacity-60"
@@ -2014,7 +2031,8 @@ export default function StaffDashboard() {
                     <ComplaintsManager tenant={tenant} currentUserRole={profile?.role} openComplaintId={mapOpenComplaintId} />
                   </div>
                 )
-                : <ComplaintsStaffModule tenant={tenant} staffId={profile?.id} />
+                : <ComplaintsStaffModule tenant={tenant} staffId={profile?.id}
+                    currentUserRole={profile?.role} isDeptHead={profile?.is_dept_head} />
             )}
             {activeModule === 'events'     && <EventsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} autoEditEventId={autoEditEventId} onAutoEditHandled={() => setAutoEditEventId(null)} autoCreateSignal={autoCreateEventSignal} autoCreateAudience="management" onAutoCreateHandled={() => setAutoCreateEventSignal(0)} />}
             {activeModule === 'projects'      && <CivilProjectAdmin tenant={tenant} currentUserRole={profile?.role ?? 'staff'} myDepartmentId={profile?.department_id ?? null} />}
