@@ -525,7 +525,7 @@ function ReporterCard({ c }) {
   )
 }
 
-function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, onPriority, currentUserRole, currentUserId, onDelete, onPinSave, onDocumentUpdate }) {
+export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, onPriority, currentUserRole, currentUserId, onDelete, onPinSave, onDocumentUpdate }) {
   const { tenant, terminology } = useTenant()
   const isAdminRole = ['admin', 'superadmin'].includes(currentUserRole)
   const isTechAssigned = currentUserRole === 'technician' && c.assigned_to === currentUserId

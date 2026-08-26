@@ -9,23 +9,24 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
-import { compressImage } from '../lib/imageUtils'
 import { useTenant } from '../contexts/TenantContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { thaiDate } from '../lib/thaiDate'
 import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
-import { buildCouncilComplaintHtml } from '../lib/councilFormPrint'
 import { uploadFile } from '../lib/driveStorage'
-import { fetchPersonnelSignatories } from '../lib/personnelDirectory'
 import { fetchAssignableStaff } from '../lib/staffRoster'
 import OdorAcknowledgePanel from '../components/staff/OdorAcknowledgePanel'
 
-const MapPicker = lazy(() => import('../components/MapPicker'))
 const CivilProjectAdmin = lazy(() => import('../components/admin/CivilProjectAdmin'))
 const InfraWorkAdmin = lazy(() => import('../components/admin/InfraWorkAdmin'))
 const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectReport'))
 const EventsManager = lazy(() => import('../components/admin/EventsManager'))
 const ComplaintsManager = lazy(() => import('../components/admin/ComplaintsManager'))
+// ใช้ modal ตัวเดียวกับหน้าจัดการคำร้องของแอดมิน ไม่ทำของตัวเองซ้ำ — มันคุมทุก action ด้วย
+// currentUserRole อยู่แล้ว (ลบ/มอบหมาย/เปลี่ยนความเร่งด่วน/แก้สถานะ โผล่เฉพาะ admin,
+// จัดการเอกสารเฉพาะ admin กับ staff) เจ้าหน้าที่จึงได้หน้าตาเดียวกันโดยไม่ได้สิทธิ์เพิ่ม
+const ComplaintDetailModal = lazy(() =>
+  import('../components/admin/ComplaintsManager').then(m => ({ default: m.ComplaintDetailModal })))
 const ReportManager = lazy(() => import('../components/admin/ReportManager'))
 const TourismManager = lazy(() => import('../components/admin/TourismManager'))
 const TourismReviewsAdmin = lazy(() => import('../components/admin/TourismManager').then(module => ({ default: module.TourismReviewsAdmin })))
@@ -1020,293 +1021,6 @@ function markStaffSeen(id) {
   window.dispatchEvent(new Event('staff-badge-update'))
 }
 
-function ComplaintDetailSheetStaff({ complaint: c, onClose, onUpdate, updating, tenant }) {
-  const { terminology } = useTenant()
-  const [note, setNote] = useState(c.technician_note ?? '')
-  const [photos, setPhotos] = useState(c.work_photos ?? [])
-  const [uploading, setUploading] = useState(false)
-  const [savingNote, setSavingNote] = useState(false)
-  const [mapPos, setMapPos] = useState(c.latitude ? { lat: c.latitude, lng: c.longitude } : null)
-  const [locationName, setLocationName] = useState(c.location_name || c.village || '')
-  const [showMapEdit, setShowMapEdit] = useState(false)
-
-  const st = C_STATUS[c.status]
-  const nx = C_NEXT[c.status]
-  const isDone = c.status === 'completed' || c.status === 'closed' || c.status === 'rejected'
-  const complaintRef = c.ref_no || c.complaint_number || 'ไม่ระบุเลขที่'
-
-  async function handlePrint() {
-    const popup = window.open('', '_blank', 'width=900,height=700')
-    if (!popup) {
-      alert('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ กรุณาอนุญาตป๊อปอัพสำหรับเว็บไซต์นี้แล้วลองใหม่')
-      return
-    }
-
-    const createdAt = new Date(c.created_at)
-    const thDate = createdAt.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
-    const num = c.ref_no || c.complaint_number || '—'
-    const phone = c.phone || c.profiles?.phone || '—'
-    const { data: staffList } = await fetchPersonnelSignatories(tenant?.id)
-
-    popup.document.write(buildCouncilComplaintHtml({
-      c,
-      tenant,
-      terminology,
-      num,
-      thDate,
-      cat: C_CAT[c.category] ?? c.category,
-      phone,
-      staffList,
-    }))
-    popup.document.close()
-    setTimeout(() => {
-      popup.focus()
-      popup.print()
-    }, 500)
-  }
-
-  async function uploadPhoto(e) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setUploading(true)
-    const compressed = await compressImage(file, 1200)
-    const { url, error: upErr } = await uploadFile('complaint-attachments', compressed, {
-      subject: c.id,
-      filename: `work_${Date.now()}.${file.name.split('.').pop()}`,
-      municipality: tenant?.slug,
-    })
-    if (!upErr) {
-      const newPhotos = [...photos, url]
-      setPhotos(newPhotos)
-      await supabase.from('complaints').update({ work_photos: newPhotos }).eq('id', c.id)
-      if (c.user_id) {
-        supabase.functions.invoke('send-push', {
-          body: {
-            user_id: c.user_id,
-            title: 'มีรูปหลักฐานการทำงานใหม่',
-            body: `เจ้าหน้าที่เพิ่มรูปความคืบหน้าในคำร้อง${C_CAT[c.category] ?? c.category ?? ''}`,
-            url: '/my-complaints',
-          },
-        }).catch(() => {})
-      }
-    }
-    setUploading(false)
-    e.target.value = ''
-  }
-
-  async function saveNote() {
-    setSavingNote(true)
-    const noteChanged = note.trim() && note !== (c.technician_note ?? '')
-    const { error } = await supabase.from('complaints').update({ technician_note: note }).eq('id', c.id)
-    // push แจ้งประชาชนเฉพาะตอนมีข้อความใหม่จริง (กัน spam ตอนกด "บันทึกข้อความ" ซ้ำโดยไม่ได้แก้อะไร)
-    // pattern เดียวกับตอนอัปโหลดรูปหลังดำเนินการด้านบน
-    if (!error && noteChanged && c.user_id) {
-      supabase.functions.invoke('send-push', {
-        body: {
-          user_id: c.user_id,
-          title: 'เจ้าหน้าที่บันทึกข้อความถึงคุณ',
-          body: `มีบันทึกใหม่ในคำร้อง${C_CAT[c.category] ?? c.category ?? ''}`,
-          url: '/my-complaints',
-        },
-      }).catch(() => {})
-    }
-    setSavingNote(false)
-  }
-
-  async function handleMapConfirm({ lat, lng, address }) {
-    const updates = { latitude: lat, longitude: lng }
-    if (address) updates.location_name = address
-    const { error } = await supabase.from('complaints').update(updates).eq('id', c.id)
-    if (!error) {
-      setMapPos({ lat, lng })
-      if (address) setLocationName(address)
-    }
-    setShowMapEdit(false)
-  }
-
-  return (
-    <div className="fixed inset-0 z-60 flex items-end sm:items-center justify-center">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative flex max-h-[96dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-h-[92dvh] sm:max-w-lg sm:rounded-2xl">
-
-        {/* Header */}
-        <div className="relative shrink-0 overflow-hidden px-4 pb-4 pt-5 sm:px-5 sm:pb-5 sm:pt-6"
-             style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)' }}>
-          <div className="absolute -right-10 -top-12 h-36 w-36 rounded-full bg-white/10" />
-          <div className="absolute bottom-0 right-24 h-16 w-16 translate-y-8 rounded-full bg-cyan-300/10" />
-          <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
-            <button onClick={handlePrint}
-              className="hidden h-9 items-center gap-1.5 rounded-xl bg-white/20 px-3 text-xs font-bold text-white transition-colors hover:bg-white/30 sm:inline-flex"
-              title="พิมพ์แบบคำร้องเดิมของหน่วยงาน">
-              <Printer size={15} /> พิมพ์แบบคำร้อง
-            </button>
-            <button onClick={onClose}
-              className="w-9 h-9 flex items-center justify-center rounded-full bg-white shadow-lg hover:bg-gray-100 active:scale-95 transition-all">
-              <X size={20} className="text-gray-700" strokeWidth={2.5} />
-            </button>
-          </div>
-          <div className="relative flex min-w-0 items-center gap-3 pr-12 sm:pr-40">
-            <StaffComplaintCategoryIcon category={c.category} size="lg" />
-            <div className="min-w-0">
-              <p className="text-[11px] font-medium text-white/70">งานที่ได้รับมอบหมาย</p>
-              <p className="mt-0.5 truncate text-base font-extrabold text-white">{C_CAT[c.category] ?? c.category}</p>
-              <p className="mt-1 truncate text-[11px] text-white/65">{complaintRef}{c.profiles?.full_name ? ` · ผู้แจ้ง ${c.profiles.full_name}` : ''}</p>
-            </div>
-          </div>
-          <div className="relative mt-4 flex items-center justify-between border-t border-white/20 pt-3">
-            <span className="inline-flex items-center rounded-full px-3 py-1 text-[11px] font-extrabold shadow-sm" style={{ backgroundColor: st?.bg, color: st?.color }}>
-              {st?.label}
-            </span>
-            <p className="text-[11px] font-medium text-white/70">
-              {new Date(c.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: 'numeric' })}
-            </p>
-          </div>
-        </div>
-
-        {/* Body */}
-        <div className="flex-1 space-y-4 overflow-y-auto bg-slate-50 px-4 py-4 sm:space-y-5 sm:px-5 sm:py-5">
-          <div className="space-y-2">
-            <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">รายละเอียดปัญหา</p>
-            <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{c.description || c.detail}</p>
-            </div>
-          </div>
-
-          {(c.attachments ?? []).length > 0 && (
-            <div className="space-y-2">
-              <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">รูปภาพจากผู้แจ้ง ({c.attachments.length})</p>
-              <div className="grid grid-cols-3 gap-2">
-                {c.attachments.map((url, i) => (
-                  <a key={i} href={url} target="_blank" rel="noreferrer" className="aspect-square overflow-hidden rounded-2xl border-2 border-white bg-blue-50 shadow-sm">
-                    <img src={url} alt={`แนบ ${i + 1}`} className="w-full h-full object-cover" />
-                  </a>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">จุดเกิดเหตุ</p>
-              {!isDone && (
-                <button onClick={() => setShowMapEdit(true)}
-                  className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-orange-50 text-orange-600 hover:bg-orange-100 transition-colors">
-                  <MapPin size={13} />
-                  {mapPos ? 'แก้ไขหมุด' : 'ปักหมุดตำแหน่ง'}
-                </button>
-              )}
-            </div>
-            {(locationName || c.phone || mapPos) && (
-              <div className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
-                {locationName && (
-                  <div className="flex items-center gap-3 px-4 py-3">
-                    <MapPin size={15} className="text-orange-400 shrink-0" />
-                    <p className="text-sm text-slate-700">{locationName}</p>
-                  </div>
-                )}
-                {c.phone && (
-                  <a href={`tel:${c.phone}`} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-slate-50">
-                    <Phone size={15} className="text-green-500 shrink-0" />
-                    <p className="text-sm font-bold text-gray-800 flex-1">{c.phone}</p>
-                    <span className="text-xs font-semibold px-2 py-1 bg-green-100 text-green-700 rounded-lg">โทรออก</span>
-                  </a>
-                )}
-                {mapPos && (
-                  <a href={`https://maps.google.com/?q=${mapPos.lat},${mapPos.lng}`} target="_blank" rel="noreferrer"
-                     className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-slate-50">
-                    <MapPin size={15} className="text-blue-500 shrink-0" />
-                    <p className="text-sm text-gray-700 flex-1">{mapPos.lat.toFixed(5)}, {mapPos.lng.toFixed(5)}</p>
-                    <span className="text-xs font-semibold px-2 py-1 bg-blue-100 text-blue-700 rounded-lg">แผนที่</span>
-                  </a>
-                )}
-              </div>
-            )}
-          </div>
-
-          {showMapEdit && (
-            <MapPicker
-              initialPos={mapPos}
-              fallbackPos={mapPos}
-              onConfirm={handleMapConfirm}
-              onClose={() => setShowMapEdit(false)}
-            />
-          )}
-
-          {/* รูปหลักฐานการทำงาน */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
-                รูปหลักฐานการทำงาน {photos.length > 0 && `(${photos.length})`}
-              </p>
-              {!isDone && (
-                <label className="cursor-pointer flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors">
-                  {uploading ? <Loader2 size={13} className="animate-spin" /> : <Camera size={13} />}
-                  {uploading ? 'กำลังอัปโหลด...' : 'เพิ่มรูป'}
-                  <input type="file" accept="image/*" className="hidden" onChange={uploadPhoto} disabled={uploading} />
-                </label>
-              )}
-            </div>
-            {photos.length > 0 ? (
-              <div className="grid grid-cols-3 gap-2">
-                {photos.map((url, i) => (
-                  <a key={i} href={url} target="_blank" rel="noreferrer" className="aspect-square overflow-hidden rounded-2xl border-2 border-white bg-blue-50 shadow-sm">
-                    <img src={url} alt="" className="w-full h-full object-cover" />
-                  </a>
-                ))}
-              </div>
-            ) : (
-              <div className="flex items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-white/60 py-6 text-slate-400">
-                <div className="text-center">
-                  <Camera size={24} className="mx-auto mb-1 opacity-50" />
-                  <p className="text-xs">ยังไม่มีรูปหลักฐาน</p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* บันทึกการดำเนินการ */}
-          {!isDone ? (
-            <div className="space-y-2">
-              <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">บันทึกการดำเนินการ</p>
-              <div className="rounded-2xl border border-slate-100 bg-white p-3 shadow-sm">
-                <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3}
-                  placeholder="บันทึกรายละเอียดการดำเนินการ..."
-                  className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100" />
-                <button onClick={saveNote} disabled={savingNote}
-                  className="mt-2 inline-flex min-h-10 w-full items-center justify-center rounded-xl bg-slate-800 px-4 py-2 text-xs font-bold text-white transition active:scale-[0.98] disabled:opacity-50 sm:w-auto">
-                  {savingNote ? <Loader2 size={14} className="animate-spin" /> : 'บันทึกข้อความ'}
-                </button>
-              </div>
-            </div>
-          ) : c.technician_note && (
-            <div className="space-y-2">
-              <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">บันทึกการดำเนินการ</p>
-              <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-                <p className="whitespace-pre-wrap text-sm text-slate-700">{c.technician_note}</p>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex shrink-0 gap-2 border-t border-slate-100 bg-white/95 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 shadow-[0_-10px_30px_rgba(15,23,42,0.06)] backdrop-blur sm:px-5 sm:py-4">
-          <button onClick={handlePrint}
-            className="inline-flex min-h-12 items-center justify-center gap-1.5 rounded-2xl border border-blue-200 bg-blue-50 px-3 py-3 text-sm font-bold text-blue-700 transition-colors hover:bg-blue-100 sm:px-4">
-            <Printer size={17} /> <span className="hidden min-[380px]:inline">พิมพ์แบบคำร้อง</span><span className="min-[380px]:hidden">พิมพ์</span>
-          </button>
-          {nx && (
-            <button onClick={() => onUpdate(c.id, nx.next, photos, note)} disabled={updating === c.id}
-              className="min-h-12 flex-1 rounded-2xl py-3 text-sm font-extrabold text-white shadow-md transition-all active:scale-[0.98] disabled:opacity-50"
-              style={{ backgroundColor: nx.next === 'done' ? '#10b981' : 'var(--color-primary)' }}>
-              {updating === c.id ? <Loader2 size={16} className="animate-spin mx-auto" /> : `${nx.label} →`}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
   const tenantId = tenant?.id
   const [complaints, setComplaints] = useState([])
@@ -1704,8 +1418,17 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
       )}
 
       {selected && (
-        <ComplaintDetailSheetStaff complaint={selected} onClose={() => setSelected(null)}
-          onUpdate={advanceStatus} updating={updating} tenant={tenant} />
+        <Suspense fallback={null}>
+          <ComplaintDetailModal
+            complaint={selected}
+            onClose={() => setSelected(null)}
+            onUpdate={advanceStatus}
+            updating={updating}
+            currentUserRole={currentUserRole ?? 'staff'}
+            currentUserId={staffId}
+            onDelete={() => {}}
+          />
+        </Suspense>
       )}
     </div>
   )
