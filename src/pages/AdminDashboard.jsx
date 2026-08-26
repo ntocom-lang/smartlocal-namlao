@@ -4216,9 +4216,11 @@ export default function AdminDashboard() {
     navigate('/admin/login')
   }
 
-  const fetchComplaints = useCallback(async () => {
+  // silent = true สำหรับ realtime refetch — ไม่ยิง setLoading ไม่งั้นหน้ารายงานจะกลับไปขึ้น
+  // สถานะกำลังโหลดทุกครั้งที่มีคำร้องเข้าหรือเจ้าหน้าที่ขยับสถานะ
+  const fetchComplaints = useCallback(async ({ silent = false } = {}) => {
     if (!tenant?.id || currentUserRole === null) return
-    setLoading(true)
+    if (!silent) setLoading(true)
     try {
       const { data, error } = await supabase
         .from('complaints')
@@ -4228,7 +4230,7 @@ export default function AdminDashboard() {
       if (error) console.error('fetch complaints error:', error.message)
       setComplaints(data ? await attachReporterProfiles(data, 'id, full_name, email, phone, role') : [])
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [tenant?.id, currentUserRole])
 
@@ -4237,6 +4239,20 @@ export default function AdminDashboard() {
     const safety = setTimeout(() => setLoading(false), 12000)
     return () => clearTimeout(safety)
   }, [fetchComplaints])
+
+  // Realtime: complaints state ก้อนนี้ป้อนหน้ารายงาน (ReportManagerComponent) เท่านั้น
+  // เดิมไม่มี subscription เลย ตัวเลขจึงค้างจนกว่าจะ reload — ต่างจากหน้ารายงานฝั่ง staff
+  // ที่มี channel staff-report- อยู่แล้ว
+  useEffect(() => {
+    if (!tenant?.id || currentUserRole === null) return
+    const ch = supabase.channel(`admin-report-${tenant.id}-${crypto.randomUUID()}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'complaints',
+        filter: `municipality_id=eq.${tenant.id}`,
+      }, () => fetchComplaints({ silent: true }))
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [tenant?.id, currentUserRole, fetchComplaints])
 
   const adminMenuGroups = getAdminMenuGroups(currentUserRole, currentUserId)
     .map(group => ({ ...group, items: group.items.filter(item => item.show) }))

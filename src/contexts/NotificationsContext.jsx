@@ -68,7 +68,7 @@ export function NotificationsProvider({ children }) {
   useEffect(() => {
     if (!session?.user?.id || !tenant?.id) return
     const channel = supabase
-      .channel('notif-complaints')
+      .channel(`notif-complaints-${session.user.id}-${crypto.randomUUID()}`)
       .on('postgres_changes', {
         event: 'UPDATE',
         schema: 'public',

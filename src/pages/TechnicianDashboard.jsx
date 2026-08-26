@@ -499,9 +499,11 @@ export default function TechnicianDashboard() {
     })
   }, [navigate])
 
-  const fetchComplaints = useCallback(async () => {
+  // silent = true สำหรับ realtime refetch — ไม่ยิง setLoading ไม่งั้นรายการงานจะกระพริบ
+  // spinner ทุกครั้งที่แอดมินขยับสถานะงานใบอื่น
+  const fetchComplaints = useCallback(async ({ silent = false } = {}) => {
     if (!tenant?.id) return
-    setLoading(true)
+    if (!silent) setLoading(true)
     const { data: session } = await supabase.auth.getSession()
     if (!session.session) { setLoading(false); return }
     const { data } = await supabase
@@ -514,10 +516,32 @@ export default function TechnicianDashboard() {
       .order('created_at', { ascending: false })
     setComplaints(data ?? [])
     emitTechBadge(data ?? [])
-    setLoading(false)
+    if (!silent) setLoading(false)
   }, [tenant?.id])
 
   useEffect(() => { fetchComplaints() }, [fetchComplaints])
+
+  // Realtime: งานที่มอบหมายให้ช่างคนนี้ต้องเด้งเองโดยไม่ต้องกดรีเฟรช
+  // (ตาราง complaints เข้า publication supabase_realtime แล้วใน migration 20260828120000)
+  // RLS ของ technician คือ assigned_to = auth.uid() แถวที่ส่งมาถึงจึงเป็นงานของช่างคนนี้เท่านั้น
+  // เช็ค municipality_id/assigned_to ซ้ำเป็น defence-in-depth เผื่อ policy ถูกแก้ในอนาคต
+  // ต่อ randomUUID ท้ายชื่อ channel กัน topic ชนตอน StrictMode remount (pattern เดียวกับ fleet)
+  useEffect(() => {
+    if (!tenant?.id || !staffId) return
+    const ch = supabase.channel(`tech-complaints-${tenant.id}-${crypto.randomUUID()}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'complaints' },
+        ({ new: row }) => {
+          if (row.municipality_id !== tenant.id || row.assigned_to !== staffId) return
+          fetchComplaints({ silent: true })
+        })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'complaints' },
+        ({ new: row }) => {
+          if (row.municipality_id !== tenant.id || row.assigned_to !== staffId) return
+          fetchComplaints({ silent: true })
+        })
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [tenant?.id, staffId, fetchComplaints])
 
   async function updateStatus(id, nextStatus, workPhotos = null, techNote = null) {
     setUpdating(id)
@@ -682,7 +706,7 @@ export default function TechnicianDashboard() {
             <p className="text-[11px] text-gray-400 mt-0.5">{myName} · {tenant?.name} — แผงควบคุมช่าง</p>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={fetchComplaints} disabled={loading}
+            <button onClick={() => fetchComplaints()} disabled={loading}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 bg-white hover:bg-gray-50 transition-colors disabled:opacity-50">
               <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
               รีเฟรช
@@ -709,7 +733,7 @@ export default function TechnicianDashboard() {
                 🔧 โหมดช่าง
               </p>
             </div>
-            <button onClick={fetchComplaints} disabled={loading} aria-label="รีเฟรช"
+            <button onClick={() => fetchComplaints()} disabled={loading} aria-label="รีเฟรช"
               className="p-1.5 text-white/85 hover:text-white transition-colors shrink-0 disabled:opacity-50">
               <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
             </button>

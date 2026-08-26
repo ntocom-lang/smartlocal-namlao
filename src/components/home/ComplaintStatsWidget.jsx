@@ -1,20 +1,27 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTenant } from '../../contexts/TenantContext'
 import { supabase } from '../../lib/supabase'
+import { useVisibleRefresh } from '../../hooks/useVisibleRefresh'
 
 // วงแหวนความคืบหน้าแบบเบาๆ ไม่พึ่ง library ภายนอก (conic-gradient ธรรมดา) — ต้นทุน $0
 // ใช้ RPC complaint_stats() ที่มีอยู่แล้ว (public, ไม่มี PII, ใช้ในหน้า ComplaintStats.jsx ของแอดมินด้วย)
 export default function ComplaintStatsWidget() {
   const { tenant } = useTenant()
+  const tenantId = tenant?.id
   const [stats, setStats] = useState(null)
 
-  useEffect(() => {
-    if (!tenant?.id) return
-    supabase.rpc('complaint_stats', { _municipality_id: tenant.id })
+  const loadStats = useCallback(() => {
+    if (!tenantId) return
+    supabase.rpc('complaint_stats', { _municipality_id: tenantId })
       .then(({ data }) => setStats(data ?? null))
       .catch(() => {})
-  }, [tenant?.id])
+  }, [tenantId])
+
+  useEffect(() => { loadStats() }, [loadStats])
+
+  // RPC เดียว payload เล็ก รีเฟรชถี่ได้ไม่เปลือง
+  useVisibleRefresh(loadStats, { intervalMs: 60_000, enabled: !!tenantId })
 
   if (!stats || !stats.total) return null
 

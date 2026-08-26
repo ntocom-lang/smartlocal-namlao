@@ -1496,7 +1496,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
 
   useEffect(() => {
     if (!tenantId) return
-    const ch = supabase.channel(`complaints-mgr-${tenantId}`)
+    const ch = supabase.channel(`complaints-mgr-${tenantId}-${crypto.randomUUID()}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'complaints' },
         ({ new: row }) => {
           if (row.municipality_id !== tenantId) return
@@ -1506,6 +1506,21 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
         ({ new: row }) => {
           if (row.municipality_id !== tenantId) return
           fetchComplaints()
+        })
+      // DELETE — เช่นแอดมินอีกคนลบคำร้องเฉพาะกิจที่สืบแล้วไม่เป็นความจริง ถ้าไม่ฟังไว้ แถวจะค้าง
+      // บนจอแล้วกดเข้าไปเจอ error
+      // payload ของ DELETE มีแค่ primary key (replica identity เป็น default โดยตั้งใจ ห้ามเปลี่ยน
+      // เป็น full — ข้อมูลเต็มแถวจะหลุดโดยไม่ผ่าน RLS ตาม migration 20260828120000) จึงกรอง
+      // ตามรายการที่ถืออยู่แทน municipality_id ซึ่งไม่มีมาให้ — ปลอดภัยเพราะเป็นแถวที่เห็นอยู่แล้ว
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'complaints' },
+        ({ old }) => {
+          if (!old?.id) return
+          setComplaints((prev) => {
+            if (!prev.some((c) => c.id === old.id)) return prev
+            return prev.filter((c) => c.id !== old.id)
+          })
+          setSelectedComplaint((prev) => (prev?.id === old.id ? null : prev))
+          setOdorExpandedId((prev) => (prev === old.id ? null : prev))
         })
       .subscribe()
     return () => supabase.removeChannel(ch)

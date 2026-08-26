@@ -51,7 +51,7 @@ export default function OdorAcknowledgePanel({ tenantId, staffId }) {
 
   useEffect(() => {
     if (!tenantId || !staffId) return
-    const ch = supabase.channel(`odor-ack-${tenantId}-${staffId}`)
+    const ch = supabase.channel(`odor-ack-${tenantId}-${staffId}-${crypto.randomUUID()}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'complaints' },
         ({ new: row }) => {
           if (row.municipality_id !== tenantId || row.assigned_to !== staffId || row.category !== 'odor') return

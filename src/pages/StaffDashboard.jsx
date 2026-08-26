@@ -564,7 +564,7 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
 
   useEffect(() => {
     if (!tenant?.id) return
-    const ch = supabase.channel(`inbox-${tenant.id}`)
+    const ch = supabase.channel(`inbox-${tenant.id}-${crypto.randomUUID()}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'document_requests' },
         ({ new: row }) => {
           if (row.municipality_id !== tenant.id) return
@@ -1370,7 +1370,7 @@ function ComplaintsStaffModule({ tenant, staffId }) {
 
   useEffect(() => {
     if (!tenant?.id || !staffId) return
-    const ch = supabase.channel(`complaints-staff-${tenant.id}`)
+    const ch = supabase.channel(`complaints-staff-${tenant.id}-${crypto.randomUUID()}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'complaints' },
         ({ new: row }) => {
           if (row.municipality_id !== tenant.id || row.assigned_to !== staffId) return
@@ -1597,7 +1597,7 @@ function StaffReportWrapper({ tenant }) {
   useEffect(() => {
     if (!tenantId) return
     const channel = supabase
-      .channel(`staff-report-${tenantId}`)
+      .channel(`staff-report-${tenantId}-${crypto.randomUUID()}`)
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
@@ -1710,7 +1710,7 @@ export default function StaffDashboard() {
 
     refreshBadge()
 
-    const ch = supabase.channel(`pending-badge-${tenant.id}`)
+    const ch = supabase.channel(`pending-badge-${tenant.id}-${crypto.randomUUID()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'document_requests' },
         ({ new: row }) => { if (row?.municipality_id === tenant.id) refreshBadge() })
       .subscribe()
@@ -1720,33 +1720,50 @@ export default function StaffDashboard() {
   useEffect(() => {
     if (!tenant?.id || !profile?.id) return
 
-    const refreshComplaintBadge = () =>
-      supabase.from('complaints')
-        .select('id, status')
-        .eq('municipality_id', tenant.id)
-        .eq('assigned_to', profile.id)
-        .neq('status', 'pending')
-        .then(({ data }) => {
-          const seen = getStaffSeenIds()
-          const count = (data ?? []).filter(c =>
-            c.status !== 'completed' && c.status !== 'closed' && c.status !== 'rejected' && !seen.has(c.id)
-          ).length
-          setNewComplaintCount(count)
-        })
+    const isAdmin = ['admin', 'superadmin'].includes(profile.role)
+
+    // แอดมินไม่เคยถูก assign คำร้อง เงื่อนไข assigned_to จึงทำให้ badge เป็น 0 ตลอดกาล
+    // คิวของแอดมินคือคำร้องที่ยัง status='pending' ทั้งเทศบาล — trigger auto_assign_complaint
+    // (migration 080) มอบหมายช่างตามหมวดให้แล้วแต่จงใจไม่ขยับ status ส่วนช่างกรอง pending ทิ้ง
+    // คำร้องจึงค้างไม่ถึงมือใครเลยจนกว่าแอดมินจะกดรับเรื่อง
+    // ฝั่งแอดมินใช้ head:true นับอย่างเดียว ไม่ดึงแถวลง client = ไม่มี PII ติดมา และไม่ต้องใช้
+    // seen ids เพราะพอกดรับเรื่องแล้ว status เปลี่ยน ตัวเลขลดเองโดยไม่ต้องจำสถานะบนเครื่อง
+    const refreshComplaintBadge = () => isAdmin
+      ? supabase.from('complaints')
+          .select('id', { count: 'exact', head: true })
+          .eq('municipality_id', tenant.id)
+          .eq('status', 'pending')
+          .then(({ count }) => setNewComplaintCount(count ?? 0))
+      : supabase.from('complaints')
+          .select('id, status')
+          .eq('municipality_id', tenant.id)
+          .eq('assigned_to', profile.id)
+          .neq('status', 'pending')
+          .then(({ data }) => {
+            const seen = getStaffSeenIds()
+            const count = (data ?? []).filter(c =>
+              c.status !== 'completed' && c.status !== 'closed' && c.status !== 'rejected' && !seen.has(c.id)
+            ).length
+            setNewComplaintCount(count)
+          })
 
     refreshComplaintBadge()
     window.addEventListener('staff-badge-update', refreshComplaintBadge)
 
-    const ch = supabase.channel(`staff-complaint-badge-${tenant.id}`)
+    const ch = supabase.channel(`staff-complaint-badge-${tenant.id}-${crypto.randomUUID()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'complaints' },
-        ({ new: row }) => { if (row?.municipality_id === tenant.id && row?.assigned_to === profile.id) refreshComplaintBadge() })
+        ({ new: row }) => {
+          if (row?.municipality_id !== tenant.id) return
+          if (!isAdmin && row?.assigned_to !== profile.id) return
+          refreshComplaintBadge()
+        })
       .subscribe()
 
     return () => {
       window.removeEventListener('staff-badge-update', refreshComplaintBadge)
       supabase.removeChannel(ch)
     }
-  }, [tenant?.id, profile?.id])
+  }, [tenant?.id, profile?.id, profile?.role])
 
   async function handleLogout() {
     await supabase.auth.signOut()

@@ -590,7 +590,7 @@ export default function MyComplaints() {
     if (!tenant?.id || !session?.user?.id) return
     const userId = session.user.id
     const channel = supabase
-      .channel(`complaints-closed-${tenant.id}`)
+      .channel(`complaints-closed-${tenant.id}-${crypto.randomUUID()}`)
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'complaints',
         filter: `municipality_id=eq.${tenant.id}`,

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ClipboardList, CheckCircle2, RefreshCw, XCircle, Inbox,
@@ -10,6 +10,7 @@ import {
 } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 
 // ดึงมาใช้คำนวณกราฟสรุปทั้งหมด (สถานะ/หมวดหมู่/แนวโน้มรายเดือน) — คำร้องเรียนสะสมของ อปท.
 // ทั่วไปไม่เกินหลักพัน จึงพอเป็น "ทั้งหมด" ในทางปฏิบัติ ถ้าเกิน limit จะมีหมายเหตุแจ้งผู้ใช้ (ดู isTruncated ด้านล่าง)
@@ -55,6 +56,7 @@ function StatCard({ label, value, sub, Icon, iconBg, border }) {
 
 export default function ComplaintStats() {
   const { tenant } = useTenant()
+  const tenantId = tenant?.id
   const [stats, setStats]         = useState(null)
   const [rows, setRows]           = useState([])
   const [categoryLabels, setCategoryLabels] = useState({})
@@ -64,22 +66,35 @@ export default function ComplaintStats() {
     year: 'numeric', month: 'long', day: 'numeric',
   })
 
-  useEffect(() => {
-    if (!tenant?.id) return
-    Promise.all([
-      supabase.rpc('complaint_stats',  { _municipality_id: tenant.id }),
-      supabase.rpc('complaints_public', { _municipality_id: tenant.id, _limit: AGGREGATE_LIMIT }),
-      supabase.from('complaint_categories').select('value, label').eq('municipality_id', tenant.id).eq('is_active', true),
-    ]).then(([{ data: s }, { data: r }, { data: cats }]) => {
+  const loadStats = useCallback(() => {
+    if (!tenantId) return Promise.resolve()
+    return Promise.all([
+      supabase.rpc('complaint_stats',  { _municipality_id: tenantId }),
+      supabase.rpc('complaints_public', { _municipality_id: tenantId, _limit: AGGREGATE_LIMIT }),
+    ]).then(([{ data: s }, { data: r }]) => {
       setStats(s)
       setRows(r ?? [])
-      const map = {}
-      ;(cats ?? []).forEach(c => { map[c.value] = c.label })
-      setCategoryLabels(map)
-    })
+    }).catch(() => {})
+  }, [tenantId])
+
+  // ป้ายชื่อหมวดหมู่แยกออกจากรอบรีเฟรช — แอดมินแก้ปีละครั้ง ไม่ต้องดึงซ้ำทุกนาที
+  useEffect(() => {
+    if (!tenantId) return
+    supabase.from('complaint_categories').select('value, label')
+      .eq('municipality_id', tenantId).eq('is_active', true)
+      .then(({ data: cats }) => {
+        const map = {}
+        ;(cats ?? []).forEach(c => { map[c.value] = c.label })
+        setCategoryLabels(map)
+      })
       .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [tenant?.id])
+  }, [tenantId])
+
+  useEffect(() => { loadStats().finally(() => setLoading(false)) }, [loadStats])
+
+  // รอบช้ากว่า widget หน้าแรก — complaints_public ดึงได้ถึง AGGREGATE_LIMIT แถวต่อครั้ง
+  // ถ้าเปิดหน้านี้ค้างไว้ทั้งวันที่ 60 วิ จะเป็นการดึงหลักพันแถวทุกนาทีโดยไม่มีอะไรเปลี่ยน
+  useVisibleRefresh(loadStats, { intervalMs: 180_000, enabled: !!tenantId })
 
   const completionRate = stats?.total > 0
     ? Math.round((stats.resolved / stats.total) * 100)
