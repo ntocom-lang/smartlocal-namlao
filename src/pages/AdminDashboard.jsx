@@ -2700,7 +2700,12 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
         <select
           value={techId}
           onChange={(e) => onTechChange?.(e.target.value)}
-          className="flex-1 min-w-0 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none"
+          title={cat.is_active && !techId ? 'หมวดนี้เปิดให้แจ้งได้แต่ยังไม่มีผู้รับผิดชอบ คำร้องจะไม่ถูกมอบหมายให้ใคร' : undefined}
+          className={`flex-1 min-w-0 text-xs rounded-lg px-2 py-1.5 focus:outline-none ${
+            cat.is_active && !techId
+              ? 'border border-red-400 bg-red-50 text-red-700'
+              : 'border border-gray-200 bg-white text-gray-700'
+          }`}
         >
           <option value="">— ไม่ระบุ —</option>
           {techGroups.map((g) => (
@@ -2778,7 +2783,12 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, techGroups = []
           <select
             value={currentTechId}
             onChange={(e) => onSetDraft(cat.value, { technician_id: e.target.value })}
-            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none max-w-40"
+            title={cat.is_active && !currentTechId ? 'หมวดนี้เปิดให้แจ้งได้แต่ยังไม่มีผู้รับผิดชอบ คำร้องจะไม่ถูกมอบหมายให้ใคร' : undefined}
+            className={`text-xs rounded-lg px-2 py-1.5 focus:outline-none max-w-40 ${
+              cat.is_active && !currentTechId
+                ? 'border border-red-400 bg-red-50 text-red-700'
+                : 'border border-gray-200 bg-white text-gray-700'
+            }`}
           >
             <option value="">— ไม่ระบุ —</option>
             {techGroups.map((g) => (
@@ -2999,6 +3009,9 @@ function CategoryManager({ tenant }) {
   // จัดกลุ่มตามกอง ใช้ render เป็น <optgroup> — คนหลักสิบ/ร้อยคนจะได้ไม่ต้องไล่หาในลิสต์แบนราบยาวๆ
   const techGroups = groupStaffByDepartment(techs)
   const visibleCats = cats.filter((c) => categoryTab === 'adhoc' ? !!c.is_adhoc : !c.is_adhoc)
+  // นับจากทุกหมวดที่ is_active ไม่ใช่แค่แท็บที่เปิดอยู่ — หมวดเฉพาะกิจที่ไม่มีผู้รับผิดชอบ
+  // อันตรายกว่าหมวดปกติด้วยซ้ำ (RLS ให้เห็นเฉพาะ assigned_to ถ้า NULL คือไม่มีใครเห็นเลย)
+  const unassignedActiveCats = cats.filter((c) => c.is_active && !assignMap[c.value]?.technician_id)
 
   async function handleTechChange(catValue, techId) {
     setSavingAssign(catValue)
@@ -3257,6 +3270,27 @@ function CategoryManager({ tenant }) {
           💨 เฉพาะกิจ ({cats.filter((c) => c.is_adhoc).length})
         </button>
       </div>
+
+      {/* เตือนหมวดที่เปิดใช้แต่ยังไม่มีผู้รับผิดชอบ — คำร้องหมวดนั้นจะตกจุดบอดทันที
+          trigger auto_assign_complaint ดึง technician_id จาก category_assignments ถ้าไม่มีแถว
+          assigned_to จะเป็น NULL (ช่าง/staff กรองไม่เห็น) และ due_date ก็เป็น NULL ด้วย
+          (SELECT INTO ที่ไม่ match ทิ้ง v_sla ไว้เป็น NULL แล้ว date + NULL = NULL) จึงไม่ถูก
+          นับเป็นงานเกินกำหนดในจอช่างหรือหน้ารายงานอีก = มองไม่เห็นซ้อนสองชั้น */}
+      {!loading && unassignedActiveCats.length > 0 && (
+        <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5">
+          <p className="text-xs font-bold text-amber-900">
+            ⚠️ มี {unassignedActiveCats.length} หมวดที่เปิดให้ประชาชนแจ้งได้ แต่ยังไม่ได้ตั้งผู้รับผิดชอบ
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-amber-800">
+            คำร้องที่เข้ามาในหมวดเหล่านี้จะไม่ถูกมอบหมายให้ใครโดยอัตโนมัติ เจ้าหน้าที่และช่างจะมองไม่เห็น
+            และจะไม่ถูกนับเป็นงานเกินกำหนดในรายงานด้วย — เลือกผู้รับผิดชอบในช่องที่ขึ้นกรอบแดง
+            หรือปิดหมวดนั้นไปก่อน
+          </p>
+          <p className="mt-1.5 text-[11px] font-semibold text-amber-900">
+            {unassignedActiveCats.map((c) => c.label).join(' · ')}
+          </p>
+        </div>
+      )}
 
       {/* List */}
       {loading ? (
