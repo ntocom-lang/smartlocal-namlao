@@ -17,6 +17,7 @@ import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
 import { buildCouncilComplaintHtml } from '../lib/councilFormPrint'
 import { uploadFile } from '../lib/driveStorage'
 import { fetchPersonnelSignatories } from '../lib/personnelDirectory'
+import { fetchAssignableStaff } from '../lib/staffRoster'
 import OdorAcknowledgePanel from '../components/staff/OdorAcknowledgePanel'
 
 const MapPicker = lazy(() => import('../components/MapPicker'))
@@ -1348,6 +1349,7 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
   const [updating, setUpdating]     = useState(null)
   const [selected, setSelected]     = useState(null)
   const [openingComplaintId, setOpeningComplaintId] = useState(null)
+  const [assigneeNames, setAssigneeNames] = useState({})
 
   const loadAssignedComplaints = useCallback(async () => {
     if (!tenantId || !staffId) return
@@ -1440,6 +1442,17 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
     return true
   })
 
+  // ชื่อผู้รับผิดชอบ — ดึงเฉพาะมุมมองหัวหน้ากอง มุมมองส่วนตัวผู้รับผิดชอบคือตัวเองทุกใบ
+  // ไม่ต้องยิง query เพิ่มให้เปลืองเปล่า
+  useEffect(() => {
+    if (!tenantId || !seesWholeDepartment) return
+    fetchAssignableStaff(tenantId).then((people) => {
+      setAssigneeNames(Object.fromEntries(
+        (people ?? []).map((p) => [p.id, p.full_name || p.email || '—'])
+      ))
+    })
+  }, [tenantId, seesWholeDepartment])
+
   const filterItems = ['all', 'received', 'in_progress', 'done', 'completed', 'closed', 'rejected']
     .filter(status => status === 'all' || complaints.some(c => c.status === status))
   const statusCount = status => status === 'all'
@@ -1514,7 +1527,109 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
           <p className="mt-1 text-xs text-slate-400">{search || filterStatus !== 'all' ? 'ลองเปลี่ยนสถานะหรือคำค้นหา' : 'งานใหม่จะแสดงเมื่อได้รับมอบหมายและรับเรื่องแล้ว'}</p>
         </div>
       ) : (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <>
+        {/* PC: ตารางแบบเดียวกับหน้าจัดการคำร้องของแอดมิน — จอกว้างอ่านทีละใบจากการ์ดไม่ไหว
+            โดยเฉพาะมุมมองหัวหน้ากองที่มีคำร้องทั้งกอง ต้องกวาดตาเทียบหลายใบพร้อมกัน */}
+        <div className="hidden overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 md:block">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[900px] table-fixed border-collapse text-sm">
+              <colgroup>
+                <col style={{ width: 34 }} />
+                <col style={{ width: 78 }} />
+                <col style={{ width: 132 }} />
+                <col style={{ width: 150 }} />
+                <col style={{ width: 78 }} />
+                <col style={{ width: 118 }} />
+                {seesWholeDepartment && <col style={{ width: 112 }} />}
+                <col style={{ width: 96 }} />
+                <col style={{ width: 128 }} />
+              </colgroup>
+              <thead>
+                <tr style={{ backgroundColor: '#2c5282' }}>
+                  <th className="border-r border-white/10 px-2 py-2.5 text-center text-[11px] font-bold text-white">ที่</th>
+                  <th className="border-r border-white/10 px-2 py-2.5 text-left text-[11px] font-bold text-white">เลขที่</th>
+                  <th className="border-r border-white/10 px-2 py-2.5 text-left text-[11px] font-bold text-white">ประเภทคำร้อง</th>
+                  <th className="border-r border-white/10 px-2 py-2.5 text-left text-[11px] font-bold text-white">สถานที่</th>
+                  <th className="border-r border-white/10 px-2 py-2.5 text-left text-[11px] font-bold text-white">วันที่ยื่น</th>
+                  <th className="border-r border-white/10 px-2 py-2.5 text-left text-[11px] font-bold text-white">ผู้แจ้ง</th>
+                  {seesWholeDepartment && (
+                    <th className="border-r border-white/10 px-2 py-2.5 text-left text-[11px] font-bold text-white">ผู้รับผิดชอบ</th>
+                  )}
+                  <th className="border-r border-white/10 px-2 py-2.5 text-left text-[11px] font-bold text-white">สถานะ</th>
+                  <th className="px-2 py-2.5 text-center text-[11px] font-bold text-white">การดำเนินการ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {filtered.map((c, i) => {
+                  const st = C_STATUS[c.status]
+                  const nx = C_NEXT[c.status]
+                  const meta = C_CAT_META[c.category] ?? C_CAT_META.other
+                  const ref = c.ref_no || c.complaint_number || '—'
+                  const location = c.location_name || c.village
+                  return (
+                    <tr key={c.id} onClick={() => openAssignedComplaint(c)}
+                      aria-busy={openingComplaintId === c.id}
+                      className="cursor-pointer transition-colors"
+                      style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#f5f8fc' }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = i % 2 === 0 ? '#fff' : '#f5f8fc'}>
+                      <td className="border-r border-gray-200 px-2 py-2 text-center text-[11px] text-slate-400">{i + 1}</td>
+                      <td className="border-r border-gray-200 px-2 py-2 text-[11px] font-semibold text-slate-600">{ref}</td>
+                      <td className="border-r border-gray-200 px-2 py-2">
+                        <span className="inline-flex min-w-0 items-center gap-1.5">
+                          <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: meta.textColor }} />
+                          <span className="truncate text-xs font-bold text-slate-700">{C_CAT[c.category] ?? c.category}</span>
+                        </span>
+                      </td>
+                      <td className="border-r border-gray-200 px-2 py-2">
+                        {location ? (
+                          <span className="inline-flex min-w-0 items-center gap-1 text-xs text-slate-600">
+                            <MapPin size={11} className="shrink-0 text-orange-500" />
+                            <span className="truncate">{location}</span>
+                          </span>
+                        ) : <span className="text-xs text-slate-300">—</span>}
+                      </td>
+                      <td className="border-r border-gray-200 px-2 py-2 text-[11px] text-slate-500">
+                        {new Date(c.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
+                      </td>
+                      <td className="border-r border-gray-200 px-2 py-2">
+                        <span className="block truncate text-xs text-slate-600">{c.profiles?.full_name || c.reporter_name || '—'}</span>
+                      </td>
+                      {seesWholeDepartment && (
+                        <td className="border-r border-gray-200 px-2 py-2">
+                          <span className="block truncate text-xs text-slate-600">
+                            {c.assigned_to ? (assigneeNames[c.assigned_to] ?? '—') : <span className="text-slate-300">ยังไม่มอบหมาย</span>}
+                          </span>
+                        </td>
+                      )}
+                      <td className="border-r border-gray-200 px-2 py-2">
+                        <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-extrabold"
+                          style={{ backgroundColor: st?.bg, color: st?.color }}>{st?.label ?? c.status}</span>
+                      </td>
+                      <td className="px-2 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+                        {nx ? (
+                          <button onClick={() => advanceStatus(c.id, nx.next)} disabled={updating === c.id}
+                            className="min-h-8 w-full rounded-lg px-2 py-1.5 text-[11px] font-extrabold text-white shadow-sm transition active:scale-[0.98] disabled:opacity-50"
+                            style={{ backgroundColor: nx.next === 'done' ? '#10b981' : 'var(--color-primary)' }}>
+                            {updating === c.id ? <Loader2 size={13} className="mx-auto animate-spin" /> : nx.label}
+                          </button>
+                        ) : (
+                          <button onClick={() => openAssignedComplaint(c)}
+                            className="min-h-8 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-[11px] font-semibold text-slate-500 transition hover:bg-slate-50">
+                            ดูรายละเอียด
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* มือถือ: การ์ดเหมือนเดิม */}
+        <div className="grid gap-3 md:hidden">
           {filtered.map(c => {
             const st = C_STATUS[c.status]
             const nx = C_NEXT[c.status]
@@ -1585,6 +1700,7 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
             )
           })}
         </div>
+        </>
       )}
 
       {selected && (
