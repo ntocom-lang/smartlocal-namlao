@@ -30,7 +30,14 @@ async function legacyStaffFallback(municipalityId, fields = '*') {
 /**
  * สมุดรายชื่อสำหรับหน้าเว็บประชาชน
  * RPC ไม่ส่งเบอร์โทรศัพท์จาก profiles ออกสู่ anonymous users
- * และ fallback ตาราง staff เดิมจะใช้เฉพาะระหว่างช่วง deploy migration
+ * และ fallback ตาราง staff เดิมจะใช้ระหว่างที่ อปท. ยังผูก profiles.position_id ไม่ครบ
+ *
+ * fallback ต้องครอบ 2 กรณี ไม่ใช่แค่กรณีเดียว:
+ *   1. RPC error       — ฟังก์ชันยังไม่ถูก deploy ลง DB
+ *   2. RPC คืน 0 แถว   — deploy แล้วแต่ อปท. นี้ยังไม่ได้ผูก position_id ให้ใคร
+ * เดิมเช็คแค่ข้อ 1 พอฟังก์ชันถูก deploy ขึ้นไป อปท. ที่ยังไม่ได้ผูกตำแหน่งจะได้ 0 แถว
+ * แบบ "สำเร็จ" ระบบเลยเลิกใช้ตาราง staff ทันทีทั้งที่ยังมีข้อมูลอยู่ → หน้าบุคลากรว่างเปล่า
+ * โดยไม่มี error ให้เห็น (ยืนยันแล้วว่าจะเกิดกับ tamnaktham: staff 2 คน แต่ profiles 0)
  */
 export async function fetchPublicPersonnel(municipalityId) {
   if (!municipalityId) return { data: [], error: null, source: 'none' }
@@ -39,10 +46,13 @@ export async function fetchPublicPersonnel(municipalityId) {
     p_municipality_id: municipalityId,
   })
   if (!result.error) {
-    return { data: normalizePersonnel(result.data), error: null, source: 'profiles' }
+    const rows = normalizePersonnel(result.data)
+    if (rows.length > 0) return { data: rows, error: null, source: 'profiles' }
+    console.warn('[personnelDirectory] public RPC returned no rows; using legacy staff fallback')
+  } else {
+    console.warn('[personnelDirectory] public RPC unavailable; using legacy staff fallback:', result.error.message)
   }
 
-  console.warn('[personnelDirectory] public RPC unavailable; using legacy staff fallback:', result.error.message)
   return legacyStaffFallback(municipalityId)
 }
 
@@ -56,10 +66,14 @@ export async function fetchPersonnelSignatories(municipalityId) {
   const result = await supabase.rpc('get_personnel_signatories', {
     p_municipality_id: municipalityId,
   })
+  // ครอบทั้ง error และ 0 แถว ด้วยเหตุผลเดียวกับ fetchPublicPersonnel ข้างบน
   if (!result.error) {
-    return { data: normalizePersonnel(result.data), error: null, source: 'profiles' }
+    const rows = normalizePersonnel(result.data)
+    if (rows.length > 0) return { data: rows, error: null, source: 'profiles' }
+    console.warn('[personnelDirectory] signatory RPC returned no rows; using legacy staff fallback')
+  } else {
+    console.warn('[personnelDirectory] signatory RPC unavailable; using legacy staff fallback:', result.error.message)
   }
 
-  console.warn('[personnelDirectory] signatory RPC unavailable; using legacy staff fallback:', result.error.message)
   return legacyStaffFallback(municipalityId, 'id,name,title,role,photo_url,phone,display_order')
 }
