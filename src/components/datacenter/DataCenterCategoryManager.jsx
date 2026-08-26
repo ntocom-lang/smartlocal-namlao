@@ -9,22 +9,20 @@ import GroupIconPicker from './GroupIconPicker'
 
 // รวมกลุ่มหลัก/ประเภทย่อยที่ "มีอยู่จริง" ในฐานข้อมูล (ไม่ใช่ตัวอย่างเริ่มต้นใน SEED_GROUPS ของฟอร์ม)
 // เพื่อให้ admin/superadmin เจอชื่อที่พนักงานพิมพ์เพี้ยน/สะกดต่างกัน แล้วรวมเข้าด้วยกันได้
-function buildGroups(rows) {
-  const groupNames = Array.from(new Set(rows.map(r => r.group_name))).sort((a, b) => a.localeCompare(b, 'th'))
-  return groupNames.map(group => {
-    const inGroup = rows.filter(r => r.group_name === group)
-    const catNames = Array.from(new Set(inGroup.map(r => r.category))).sort((a, b) => a.localeCompare(b, 'th'))
-    return {
-      group,
-      total: inGroup.length,
-      categories: catNames.map(category => ({ category, count: inGroup.filter(r => r.category === category).length })),
-    }
-  })
+// นับจาก total (รวมรายการที่ปิดใช้งานแล้วด้วย) ตรงกับ logic เดิมที่ดึงทุกแถวมานับโดยไม่กรอง status
+function buildGroups(summary) {
+  return (summary?.groups ?? [])
+    .map(g => ({
+      group: g.group_name,
+      total: g.total,
+      categories: (g.categories ?? [])
+        .map(c => ({ category: c.category, count: c.total }))
+        .sort((a, b) => a.category.localeCompare(b.category, 'th')),
+    }))
+    .sort((a, b) => a.group.localeCompare(b.group, 'th'))
 }
 
-export default function DataCenterCategoryManager({ tenant }) {
-  const [rows, setRows] = useState([])
-  const [loading, setLoading] = useState(true)
+export default function DataCenterCategoryManager({ tenant, summary = null, onDataChanged }) {
   const [editing, setEditing] = useState(null) // { type: 'group'|'category', group, category?, value }
   const [saving, setSaving] = useState(false)
   // ไอคอน: ตั้งได้ทั้งระดับกลุ่มหลักและระดับประเภทย่อย มีผลกับหน้ารายการ+แผนที่ทันที
@@ -34,14 +32,6 @@ export default function DataCenterCategoryManager({ tenant }) {
   const [iconDraft, setIconDraft] = useState('')
   const [savingIcon, setSavingIcon] = useState(false)
 
-  function load() {
-    if (!tenant?.id) return
-    setLoading(true)
-    supabase.from('data_center_entries').select('group_name, category').eq('municipality_id', tenant.id)
-      .then(({ data }) => { setRows(data ?? []); setLoading(false) })
-  }
-  useEffect(load, [tenant?.id])
-
   useEffect(() => {
     let cancelled = false
     const pending = tenant?.id ? fetchGroupIconOverrides(supabase, tenant.id) : Promise.resolve({})
@@ -49,7 +39,8 @@ export default function DataCenterCategoryManager({ tenant }) {
     return () => { cancelled = true }
   }, [tenant?.id])
 
-  const groups = buildGroups(rows)
+  const groups = buildGroups(summary)
+  const loading = summary === null
 
   function startEditGroup(group) { setEditing({ type: 'group', group, value: group }); setIconEditing(null) }
   function startEditCategory(group, category) { setEditing({ type: 'category', group, category, value: category }); setIconEditing(null) }
@@ -89,7 +80,8 @@ export default function DataCenterCategoryManager({ tenant }) {
 
     setSaving(false)
     setEditing(null)
-    load()
+    // เปลี่ยนชื่อกลุ่ม/ประเภทกระทบทั้งรายชื่อในหน้านี้และทรีเมนูซ้าย — ให้ parent ดึง summary ใหม่
+    onDataChanged?.()
   }
 
   // ไอคอนที่ระบบจะเลือกให้ถ้า "ไม่ตั้งเอง" — ตัด override ของเป้าหมายนี้ทิ้งก่อนคำนวณ

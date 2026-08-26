@@ -105,6 +105,12 @@ export default function DataCenterOverview({
   onImportSuccess,
   onSelectCategory,
   onViewOnMap,
+  // สถิติทั้งก้อนมาจาก RPC data_center_summary ที่ DataCenterDashboard เรียกไว้ครั้งเดียว
+  // คอมโพเนนต์นี้ไม่ดึงข้อมูลมานับเองอีกแล้ว (ยกเว้น fetchListPage ที่เป็นหน้ารายการจริง)
+  summary = null,
+  summaryError = null,
+  onDataChanged,
+  onRetrySummary,
   theme = 'dark',
   initialFilterGroup = null,
   initialFilterCategory = null,
@@ -113,8 +119,6 @@ export default function DataCenterOverview({
   const tenantId = tenant?.id
   const hasActiveFilter = Boolean(initialFilterGroup || initialFilterCategory)
 
-  const [entries, setEntries] = useState([])
-  const [entriesFetchedAt, setEntriesFetchedAt] = useState(0)
   // ไอคอนกลุ่มหลักที่แอดมินตั้งเอง (data_center_group_icons) — ใช้ร่วมกับแผนที่ผ่าน
   // resolveGroupEmoji() กันอิโมจิไม่ตรงกันระหว่าง 2 หน้า ดู src/lib/dataCenterGroupIcon.js
   const [groupIconOverrides, setGroupIconOverrides] = useState({})
@@ -122,8 +126,6 @@ export default function DataCenterOverview({
   const [editingGroupIcon, setEditingGroupIcon] = useState(false)
   const [groupIconDraft, setGroupIconDraft] = useState('')
   const [savingGroupIcon, setSavingGroupIcon] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [fetchError, setFetchError] = useState(null)
   const [showImportModal, setShowImportModal] = useState(false)
 
   // desktop table: ค้นหา/กรอง/เรียง/แบ่งหน้าอิสระจากสไลด์เมนูซ้าย (sync ค่าเริ่มต้นมาจากมันตอน filter เปลี่ยน)
@@ -146,38 +148,9 @@ export default function DataCenterOverview({
   const [listLoading, setListLoading] = useState(false)
   const [listError, setListError] = useState(null)
 
-  const fetchEntries = useCallback(() => {
-    if (!tenantId) return
-    setLoading(true)
-    setFetchError(null)
-    // สถิติ/การ์ดเลือกหมวด/ตัวเลือกกรอง ต้องนับจากทุกแถวของเทศบาล แต่ไม่ต้องใช้คอลัมน์หนัก
-    // (description/photo_urls/external_url/route_color ดึงเฉพาะหน้ารายการจริงใน fetchListPage ด้านล่าง)
-    supabase.from('data_center_entries')
-      .select('id, name, group_name, category, status, latitude, longitude, route_points, department_id, created_at')
-      .eq('municipality_id', tenantId)
-      .then(({ data, error }) => {
-        if (error) { setFetchError(error.message); setEntries([]) }
-        else { setEntries(data ?? []); setEntriesFetchedAt(Date.now()) }
-        setLoading(false)
-      })
-  }, [tenantId])
-
-  useEffect(() => {
-    queueMicrotask(fetchEntries)
-  }, [fetchEntries])
-
   useEffect(() => {
     if (!tenantId) return
     fetchGroupIconOverrides(supabase, tenantId).then(setGroupIconOverrides)
-  }, [tenantId])
-
-  // ชื่อกอง/สำนัก สำหรับ breakdown — ยังไม่มีตอน entries.department_id เพียวๆ (เป็นแค่ uuid)
-  // ล้มเหลวได้แบบ soft: breakdown จะ fallback ไปโชว์ "ไม่ทราบชื่อกอง" แทน ไม่ต้อง block dashboard ทั้งหน้า
-  const [departments, setDepartments] = useState([])
-  useEffect(() => {
-    if (!tenantId) return
-    supabase.from('departments').select('id, name').eq('municipality_id', tenantId)
-      .then(({ data, error }) => { if (!error) setDepartments(data ?? []) })
   }, [tenantId])
 
   // debounce คำค้นก่อนยิง query กันยิงรัวทุกตัวอักษรที่พิมพ์
@@ -232,13 +205,15 @@ export default function DataCenterOverview({
   async function toggleStatus(entry) {
     const nextStatus = entry.status === 'active' ? 'archived' : 'active'
     setListRows(prev => prev.map(e => e.id === entry.id ? { ...e, status: nextStatus } : e))
-    setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, status: nextStatus } : e))
     const { error } = await supabase.from('data_center_entries').update({ status: nextStatus }).eq('id', entry.id)
     if (error) {
       setListRows(prev => prev.map(e => e.id === entry.id ? { ...e, status: entry.status } : e))
-      setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, status: entry.status } : e))
       alert('บันทึกไม่สำเร็จ: ' + error.message)
+      return
     }
+    // ตัวเลขบนการ์ดสถิติ/ทรีเมนูซ้ายมาจาก summary ที่ parent ถืออยู่ ต้องบอกให้ดึงใหม่
+    // (ใช้ callback แยก ไม่ใช่ refreshKey เพราะ refreshKey จะ remount แล้วล้างตัวกรอง/หน้าที่ผู้ใช้เปิดค้างไว้)
+    onDataChanged?.()
   }
 
   function sortByColumn(key) {
@@ -275,7 +250,7 @@ export default function DataCenterOverview({
     ], `ศูนย์ข้อมูลดิจิทัล_${filterLabel}_${new Date().toISOString().slice(0, 10)}.csv`)
   }
 
-  if (loading) return (
+  if (!summary && !summaryError) return (
     <div className="flex flex-col items-center justify-center py-24 gap-3">
       <div className="relative w-12 h-12 flex items-center justify-center">
         <div className={`absolute inset-0 rounded-full border-4 ${isLight ? 'border-sky-200 border-t-sky-600' : 'border-cyan-500/20 border-t-cyan-400'} animate-spin`} />
@@ -285,11 +260,22 @@ export default function DataCenterOverview({
     </div>
   )
 
-  const filteredEntries = entries.filter(entry => {
-    if (initialFilterGroup && entry.group_name !== initialFilterGroup) return false
-    if (initialFilterCategory && entry.category !== initialFilterCategory) return false
-    return true
-  })
+  // ── สถิติทั้งหมด derive จาก summary (นับมาจาก server แล้ว) ──────────────────────────
+  // scopedGroups = กลุ่ม/ประเภทที่อยู่ในขอบเขตตัวกรองเมนูซ้ายปัจจุบัน ให้ผลเท่ากับ filteredEntries เดิม
+  //   ไม่มีตัวกรอง        → ทุกกลุ่ม
+  //   กรองกลุ่มหลัก       → เฉพาะกลุ่มนั้น
+  //   กรองถึงประเภทย่อย  → เฉพาะกลุ่มนั้น และยุบตัวเลขให้เหลือของประเภทย่อยนั้นตัวเดียว
+  const allSummaryGroups = summary?.groups ?? []
+  const scopedGroups = (initialFilterGroup
+    ? allSummaryGroups.filter(g => g.group_name === initialFilterGroup)
+    : allSummaryGroups
+  ).map(g => {
+    if (!initialFilterCategory) return g
+    const c = (g.categories ?? []).find(x => x.category === initialFilterCategory)
+    return c ? { ...c, group_name: g.group_name, categories: [c] } : null
+  }).filter(Boolean)
+
+  const sumBy = key => scopedGroups.reduce((acc, g) => acc + (g[key] ?? 0), 0)
   const filterLabel = initialFilterCategory || initialFilterGroup || 'ข้อมูลทั้งหมด'
   // ไอคอนที่ระบบจะเลือกให้กลุ่มนี้ถ้าไม่ตั้งเอง — ตัด override ของกลุ่มนี้ทิ้งก่อนคำนวณ
   // ใช้โชว์ตัวอย่างในโหมด "อัตโนมัติ" ของ GroupIconPicker
@@ -299,59 +285,42 @@ export default function DataCenterOverview({
     delete withoutSelf[iconKey(initialFilterGroup, '')]
     return resolveGroupEmoji(initialFilterGroup, withoutSelf)
   })()
-  const totalEntries = filteredEntries.length
-  const activeEntriesCount = filteredEntries.filter(e => e.status !== 'archived').length
+  const totalEntries = sumBy('total')
+  const activeEntriesCount = sumBy('active')
   const activeRate = totalEntries ? Math.round((activeEntriesCount / totalEntries) * 100) : 100
-  const recentCount = entriesFetchedAt
-    ? filteredEntries.filter(e => e.created_at && (entriesFetchedAt - new Date(e.created_at).getTime()) <= 30 * 24 * 60 * 60 * 1000).length
-    : 0
+  const recentCount = sumBy('recent_30d')
 
-  // GIS Types
-  const polylineEntries = filteredEntries.filter(e => e.route_points && e.route_points.length > 0)
-  const pointEntries = filteredEntries.filter(e => (e.latitude != null || e.longitude != null) && (!e.route_points || e.route_points.length === 0))
+  // GIS Types — latitude/longitude เป็น NOT NULL ทุกแถว "จุดพิกัด" จึงหมายถึงแถวที่ไม่ใช่เส้นทาง
+  const polylineCount = sumBy('routes')
+  const pointCount = sumBy('points')
 
-  // Group stats calculation (Fully Dynamic for any future groups)
-  const groupMap = {}
-  filteredEntries.forEach(e => {
-    const g = e.group_name || 'อื่นๆ'
-    if (!groupMap[g]) groupMap[g] = { count: 0, active: 0, points: 0, routes: 0, categories: new Set() }
-    groupMap[g].count += 1
-    if (e.status !== 'archived') groupMap[g].active += 1
-    if (e.route_points && e.route_points.length > 0) groupMap[g].routes += 1
-    else if (e.latitude != null) groupMap[g].points += 1
-    if (e.category) groupMap[g].categories.add(e.category)
-  })
-
-  const groupStatsList = Object.keys(groupMap).map(g => ({
-    name: g,
-    count: groupMap[g].count,
-    active: groupMap[g].active,
-    points: groupMap[g].points,
-    routes: groupMap[g].routes,
-    catCount: groupMap[g].categories.size,
-    percent: totalEntries ? Math.round((groupMap[g].count / totalEntries) * 100) : 0,
-    meta: getGroupMeta(g, groupIconOverrides)
+  const groupStatsList = scopedGroups.map(g => ({
+    name: g.group_name,
+    count: g.total,
+    active: g.active,
+    points: g.points,
+    routes: g.routes,
+    catCount: (g.categories ?? []).length,
+    percent: totalEntries ? Math.round((g.total / totalEntries) * 100) : 0,
+    meta: getGroupMeta(g.group_name, groupIconOverrides),
   })).sort((a, b) => b.count - a.count)
 
-  // Department breakdown — นับจาก department_id ดิบ (มีในทั้ง filteredEntries) แล้วแปลงเป็นชื่อทีหลัง
-  // กัน N+1: join ชื่อกองแค่ตอนสร้าง list นี้ ไม่ใช่ตอน filter/loop หลัก
-  const departmentNameMap = new Map(departments.map(d => [d.id, d.name]))
-  const deptMap = {}
-  filteredEntries.forEach(e => {
-    const key = e.department_id || 'none'
-    deptMap[key] = (deptMap[key] || 0) + 1
-  })
-  const deptStatsList = Object.entries(deptMap).map(([id, count]) => ({
-    id,
-    name: id === 'none' ? 'ไม่ระบุกอง' : (departmentNameMap.get(id) || 'ไม่ทราบชื่อกอง'),
-    count,
-    percent: totalEntries ? Math.round((count / totalEntries) * 100) : 0,
+  // Department breakdown — RPC join ชื่อกองมาให้แล้ว (name เป็น null ได้ถ้า RLS ของ departments
+  // ไม่ให้เห็นแถวนั้น) ส่วนนี้แสดงเฉพาะตอนไม่มีตัวกรอง จึงใช้ยอดรวมทั้งเทศบาลตรงๆ
+  const deptStatsList = (summary?.departments ?? []).map(d => ({
+    id: d.department_id ?? 'none',
+    name: d.department_id ? (d.name || 'ไม่ทราบชื่อกอง') : 'ไม่ระบุกอง',
+    count: d.total,
+    percent: totalEntries ? Math.round((d.total / totalEntries) * 100) : 0,
   })).sort((a, b) => b.count - a.count)
 
-  // รายการจริง (ตาราง desktop + การ์ด mobile) — อิสระจากตัวกรองเมนูซ้าย ผู้ใช้เปลี่ยนเป็น "ทุกกลุ่ม" ดูทั้งหมดได้เอง
-  const allGroups = Array.from(new Set(entries.map(e => e.group_name))).sort((a, b) => a.localeCompare(b, 'th'))
+  // ตัวเลือกในดรอปดาวน์ของตาราง — อิสระจากตัวกรองเมนูซ้าย ผู้ใช้เปลี่ยนเป็น "ทุกกลุ่ม" ดูทั้งหมดได้เอง
+  // จึงอ่านจาก allSummaryGroups (ทั้งเทศบาล) ไม่ใช่ scopedGroups
+  const allGroups = allSummaryGroups.map(g => g.group_name).sort((a, b) => a.localeCompare(b, 'th'))
   const tableCategoryOptions = Array.from(new Set(
-    entries.filter(e => tableFilterGroup === 'all' || e.group_name === tableFilterGroup).map(e => e.category)
+    allSummaryGroups
+      .filter(g => tableFilterGroup === 'all' || g.group_name === tableFilterGroup)
+      .flatMap(g => (g.categories ?? []).map(c => c.category))
   )).sort((a, b) => a.localeCompare(b, 'th'))
 
   // กรอง/เรียง/แบ่งหน้าแล้วที่ server (fetchListPage) — เหลือแค่ derive ตัวเลขหน้าไว้แสดงผล
@@ -370,7 +339,6 @@ export default function DataCenterOverview({
           onClose={() => setShowImportModal(false)}
           onImportComplete={() => {
             setShowImportModal(false)
-            fetchEntries()
             onImportSuccess?.()
           }}
         />
@@ -476,15 +444,15 @@ export default function DataCenterOverview({
         </div>
       </div>
 
-      {fetchError && (
+      {summaryError && (
         <div className={`flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl border backdrop-blur-xl ${
           isLight ? 'bg-red-50 border-red-200 text-red-800' : 'bg-red-950/40 border-red-500/40 text-red-200'
         }`}>
           <div className="flex items-center gap-2 text-xs font-bold">
             <AlertTriangle size={16} className="shrink-0" />
-            <span>โหลดข้อมูลไม่สำเร็จ: {fetchError}</span>
+            <span>โหลดข้อมูลไม่สำเร็จ: {summaryError}</span>
           </div>
-          <button onClick={fetchEntries}
+          <button onClick={() => onRetrySummary?.()}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors shrink-0 ${
               isLight ? 'bg-white border-red-300 text-red-700 hover:bg-red-100' : 'bg-red-900/40 border-red-500/40 text-red-200 hover:bg-red-900/60'
             }`}>
@@ -570,14 +538,14 @@ export default function DataCenterOverview({
               <Globe size={13} />
             </div>
           </div>
-          <p className={`text-lg font-black mt-1 font-mono tracking-tight ${isLight ? 'text-purple-700' : 'text-purple-300'}`}>{pointEntries.length + polylineEntries.length}</p>
+          <p className={`text-lg font-black mt-1 font-mono tracking-tight ${isLight ? 'text-purple-700' : 'text-purple-300'}`}>{pointCount + polylineCount}</p>
           <p className={`text-[10px] mt-0.5 ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
-            หมุดพิกัด {pointEntries.length} | เส้นทาง {polylineEntries.length}
+            หมุดพิกัด {pointCount} | เส้นทาง {polylineCount}
           </p>
         </div>
       </div>
 
-      {entries.length === 0 && !fetchError && (
+      {(summary?.totals?.total ?? 0) === 0 && !summaryError && (
         <div className={`flex flex-col items-center justify-center py-20 rounded-2xl border backdrop-blur-xl ${
           isLight ? 'bg-white/90 border-slate-200 text-slate-600' : 'bg-slate-900/70 border-cyan-500/20 text-slate-400'
         }`}>
@@ -589,7 +557,7 @@ export default function DataCenterOverview({
 
       {/* โหมดเลือกหมวด — แสดงแค่ "กลุ่ม/จำนวน" เท่านั้น ไม่ดึงรายการมาโชว์เลย ความสูงคงที่ไม่ว่าจะมีกี่ร้อยรายการ
           ก็ไม่ยาวขึ้น (ต่างจากดีไซน์เดิมที่เอาทุกรายการมากางในหน้าเดียว) กดการ์ดแล้วค่อยเจาะเข้ารายการทีหลัง */}
-      {entries.length > 0 && !hasActiveFilter && (
+      {(summary?.totals?.total ?? 0) > 0 && !hasActiveFilter && (
         <div className={`rounded-2xl border p-5 backdrop-blur-xl shadow-xl ${
           isLight ? 'bg-white/95 border-slate-200 text-slate-800' : 'bg-slate-900/90 border-cyan-500/30 text-white'
         }`}>
@@ -631,7 +599,7 @@ export default function DataCenterOverview({
       )}
 
       {/* Department breakdown — เสริมมุมมองความรับผิดชอบต่อกอง/สำนัก แยกจากกลุ่มข้อมูล (group_name) ด้านบน */}
-      {entries.length > 0 && !hasActiveFilter && deptStatsList.length > 0 && (
+      {(summary?.totals?.total ?? 0) > 0 && !hasActiveFilter && deptStatsList.length > 0 && (
         <div className={`rounded-2xl border p-5 backdrop-blur-xl shadow-xl ${
           isLight ? 'bg-white/95 border-slate-200 text-slate-800' : 'bg-slate-900/90 border-cyan-500/30 text-white'
         }`}>
@@ -657,7 +625,7 @@ export default function DataCenterOverview({
 
       {/* โหมดดูรายการ — เจาะเข้ามาจากการ์ดหมวดด้านบน (หรือเมนูซ้าย/bottom sheet มือถือ) จำกัดด้วยตัวกรอง
           group/category เสมอ จึงมีขอบเขตจำนวนรายการที่ต้องแสดงต่อครั้งชัดเจน ไม่มีทางยาวเท่าข้อมูลทั้งระบบ */}
-      {entries.length > 0 && hasActiveFilter && onEditEntry && (
+      {(summary?.totals?.total ?? 0) > 0 && hasActiveFilter && onEditEntry && (
         <>
           <div className={`rounded-2xl border p-3.5 backdrop-blur-xl shadow-xl flex flex-wrap items-center gap-3 ${
             isLight ? 'bg-white/95 border-slate-200 text-slate-800' : 'bg-slate-900/90 border-cyan-500/30 text-white'
@@ -795,7 +763,7 @@ export default function DataCenterOverview({
             isLight ? 'bg-white/95 border-slate-200 text-slate-800' : 'bg-slate-900/90 border-cyan-500/30 text-white'
           }`}>
             <div className={`flex items-center justify-end px-4 py-2 border-b text-xs font-mono ${isLight ? 'bg-slate-50/90 border-slate-200 text-slate-600' : 'bg-slate-950/60 border-cyan-500/20 text-cyan-400/80'}`}>
-              FOUND: <span className={`font-bold ml-1 ${isLight ? 'text-sky-700' : 'text-cyan-300'}`}>{listTotal}</span>&nbsp;/ {entries.length}
+              FOUND: <span className={`font-bold ml-1 ${isLight ? 'text-sky-700' : 'text-cyan-300'}`}>{listTotal}</span>&nbsp;/ {summary?.totals?.total ?? 0}
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">

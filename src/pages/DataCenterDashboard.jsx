@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect } from 'react'
+import { lazy, Suspense, useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { LayoutGrid, MapPin, Plus, Bell, ArrowLeft, PanelLeftOpen, PanelLeftClose, Tags, ChevronRight, Activity, Cpu, ShieldCheck, Sun, Moon, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -17,6 +17,18 @@ const BASE_MODULES = [
 ]
 const CATEGORY_MANAGER_MODULE = { key: 'categories', label: 'จัดการหมวดหมู่', Icon: Tags }
 
+// จำธีมที่ผู้ใช้เลือกไว้ — เดิมเป็น useState('light') เฉยๆ ออกจากหน้าแล้วกลับมาต้องกดสลับใหม่ทุกครั้ง
+// อ่าน/เขียนใน try/catch เพราะ localStorage โยน exception ได้จริงในโหมดส่วนตัว/เบราว์เซอร์ที่บล็อก site data
+const THEME_STORAGE_KEY = 'dataCenterTheme'
+function readStoredTheme() {
+  try {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY)
+    return stored === 'dark' || stored === 'light' ? stored : 'light'
+  } catch {
+    return 'light'
+  }
+}
+
 export default function DataCenterDashboard() {
   const navigate = useNavigate()
   const { tenant } = useTenant()
@@ -28,10 +40,17 @@ export default function DataCenterDashboard() {
   const [editingEntry, setEditingEntry] = useState(null)
   const [mapSidebarOpen, setMapSidebarOpen] = useState(false)
   const sidebarHidden = activeModule === 'map' && !mapSidebarOpen
-  const [categoryTree, setCategoryTree] = useState([])
+  // สถิติทั้งหน้ามาจาก RPC data_center_summary ตัวเดียว (นับที่ server) แล้วส่งต่อเป็น prop ให้ลูกทุกตัว
+  // — เดิมแต่ละคอมโพเนนต์ดึงทั้งตารางมานับเองคนละรอบ รวม 4 รอบต่อการเข้าหน้า 1 ครั้ง และเพี้ยนเงียบๆ
+  // เมื่อข้อมูลเกิน max_rows ของ PostgREST (1000) ดู supabase/migrations/20260829100000_data_center_summary_rpc.sql
+  const [summary, setSummary] = useState(null)
+  const [summaryError, setSummaryError] = useState(null)
+  // แยกจาก refreshKey เพราะ refreshKey ใช้เป็น key ของ Overview/CategoryManager (สั่ง remount ล้างตัวกรอง)
+  // งานที่แค่ทำให้ "ตัวเลขเปลี่ยน" เช่นกดเปิด/ปิดใช้งานรายการ ต้องรีเฟรชสถิติโดยไม่ล้างตัวกรองที่ผู้ใช้ตั้งไว้
+  const [summaryVersion, setSummaryVersion] = useState(0)
   const [sidebarFilter, setSidebarFilter] = useState({ group: null, category: null })
   const [collapsedGroups, setCollapsedGroups] = useState(() => new Set())
-  const [theme, setTheme] = useState('light') // Default to Light Mode per user request
+  const [theme, setTheme] = useState(readStoredTheme) // ค่าเริ่มต้นยังเป็นโหมดสว่างถ้าไม่เคยเลือกไว้
   // ทรี "หมวดหมู่ข้อมูล" อยู่ใน sidebar ฝั่ง desktop เท่านั้น (hidden md:flex) — มือถือไม่มีทางเปลี่ยนหมวดเลย
   // ต้องมี bottom sheet แยกให้กดเลือกหมวด/ประเภทย่อยแบบเดียวกับเมนูซ้าย
   const [showMobileCategorySheet, setShowMobileCategorySheet] = useState(false)
@@ -50,6 +69,14 @@ export default function DataCenterDashboard() {
   }
 
   useEffect(() => {
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, theme)
+    } catch {
+      // เขียนไม่ได้ (โหมดส่วนตัว/บล็อก site data) — ธีมยังใช้ได้ปกติในเซสชันนี้ แค่ไม่ถูกจำข้ามครั้ง
+    }
+  }, [theme])
+
+  useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (!data.session) { navigate('/auth', { state: { from: '/data-center' } }); return }
       supabase.from('profiles').select('*').eq('id', data.session.user.id).single()
@@ -59,26 +86,33 @@ export default function DataCenterDashboard() {
 
   useEffect(() => {
     if (!tenant?.id) return
-    supabase.from('data_center_entries').select('group_name, category, status').eq('municipality_id', tenant.id)
-      .then(({ data }) => {
-        const groupMap = new Map()
-        for (const row of (data ?? []).filter(r => r.status !== 'archived')) {
-          if (!groupMap.has(row.group_name)) groupMap.set(row.group_name, { total: 0, categories: new Map() })
-          const g = groupMap.get(row.group_name)
-          g.total += 1
-          g.categories.set(row.category, (g.categories.get(row.category) ?? 0) + 1)
-        }
-        const tree = Array.from(groupMap.entries())
-          .map(([group, { total, categories }]) => ({
-            group, total,
-            categories: Array.from(categories.entries())
-              .map(([category, count]) => ({ category, count }))
-              .sort((a, b) => a.category.localeCompare(b.category, 'th')),
-          }))
-          .sort((a, b) => a.group.localeCompare(b.group, 'th'))
-        setCategoryTree(tree)
+    let alive = true
+    supabase.rpc('data_center_summary', { _municipality_id: tenant.id })
+      .then(({ data, error }) => {
+        if (!alive) return
+        if (error) { setSummaryError(error.message); setSummary(null); return }
+        setSummaryError(null)
+        setSummary(data ?? null)
       })
-  }, [tenant?.id, refreshKey])
+    return () => { alive = false }
+  }, [tenant?.id, refreshKey, summaryVersion])
+
+  // ทรีหมวดหมู่ในเมนูซ้าย/bottom sheet — นับเฉพาะรายการที่ยัง "ใช้งาน" เท่านั้น ตรงกับ logic เดิม
+  // (เดิมกรอง r.status !== 'archived' ทิ้งก่อนนับ กลุ่ม/ประเภทที่เหลือแต่รายการ archived จึงไม่ขึ้นในทรี)
+  const categoryTree = useMemo(() => {
+    if (!summary?.groups) return []
+    return summary.groups
+      .map(g => ({
+        group: g.group_name,
+        total: g.active,
+        categories: (g.categories ?? [])
+          .filter(c => c.active > 0)
+          .map(c => ({ category: c.category, count: c.active }))
+          .sort((a, b) => a.category.localeCompare(b.category, 'th')),
+      }))
+      .filter(g => g.total > 0)
+      .sort((a, b) => a.group.localeCompare(b.group, 'th'))
+  }, [summary])
 
   function goToCategory(group, category) {
     setSidebarFilter({ group: group ?? null, category: category ?? null })
@@ -433,17 +467,22 @@ export default function DataCenterDashboard() {
                 </div>
               }>
                 {activeModule === 'overview' && <DataCenterOverview key={refreshKey} tenant={tenant} profile={profile} theme={theme}
+                  summary={summary} summaryError={summaryError}
                   initialFilterGroup={sidebarFilter.group} initialFilterCategory={sidebarFilter.category}
                   onAddNew={(group, category) => goToAddEntry(group, category)}
                   onEditEntry={handleEditEntry}
                   onSelectCategory={(group, category) => goToCategory(group, category)}
                   onViewOnMap={goToMapFocus}
+                  onDataChanged={() => setSummaryVersion(v => v + 1)}
+                  onRetrySummary={() => setSummaryVersion(v => v + 1)}
                   onImportSuccess={() => setRefreshKey(k => k + 1)} />}
                 {activeModule === 'add' && <DataCenterEntryForm tenant={tenant} profile={profile}
+                  summary={summary}
                   initialGroup={prefillGroup} initialCategory={prefillCategory} editingEntry={editingEntry}
                   onSaved={handleSaved}
                   onCancel={() => { setPrefillGroup(null); setPrefillCategory(null); setEditingEntry(null); setActiveModule('overview') }} />}
-                {activeModule === 'categories' && isManager && <DataCenterCategoryManager key={refreshKey} tenant={tenant} />}
+                {activeModule === 'categories' && isManager && <DataCenterCategoryManager key={refreshKey} tenant={tenant}
+                  summary={summary} onDataChanged={() => setSummaryVersion(v => v + 1)} />}
               </Suspense>
             </div>
           )}

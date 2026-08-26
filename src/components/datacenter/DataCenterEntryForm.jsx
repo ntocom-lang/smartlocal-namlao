@@ -23,7 +23,7 @@ const SEED_GROUPS = {
 
 const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
 
-export default function DataCenterEntryForm({ tenant, profile, initialGroup, initialCategory, editingEntry, onSaved, onCancel }) {
+export default function DataCenterEntryForm({ tenant, profile, summary = null, initialGroup, initialCategory, editingEntry, onSaved, onCancel }) {
   const isEditing = !!editingEntry
   const canDelete = isEditing && (
     profile?.role === 'admin'
@@ -35,7 +35,6 @@ export default function DataCenterEntryForm({ tenant, profile, initialGroup, ini
     )
   )
 
-  const [existing, setExisting] = useState([]) // {group_name, category} ที่เคยมีจริงในเทศบาลนี้
   const [form, setForm] = useState(() => editingEntry
     ? {
         group_name: editingEntry.group_name ?? '', category: editingEntry.category ?? '', name: editingEntry.name ?? '',
@@ -60,12 +59,6 @@ export default function DataCenterEntryForm({ tenant, profile, initialGroup, ini
       import('../InlinePolylinePicker').then(mod => setPolylinePickerComp(() => mod.default))
     }
   }, [isRoute, PolylinePickerComp])
-
-  useEffect(() => {
-    if (!tenant?.id) return
-    supabase.from('data_center_entries').select('group_name, category').eq('municipality_id', tenant.id)
-      .then(({ data }) => setExisting(data ?? []))
-  }, [tenant?.id])
 
   function openPicker() {
     if (!PickerComp) {
@@ -108,10 +101,16 @@ export default function DataCenterEntryForm({ tenant, profile, initialGroup, ini
     return urls
   }
 
-  const groupOptions = Array.from(new Set([...Object.keys(SEED_GROUPS), ...existing.map(e => e.group_name)])).sort((a, b) => a.localeCompare(b, 'th'))
+  // กลุ่ม/ประเภทที่ "มีอยู่จริง" ในเทศบาลนี้ มาจาก summary (RPC data_center_summary) ที่ parent ถืออยู่
+  // — เดิมฟอร์มนี้ยิง query ดึงทั้งตารางมาเองอีกรอบเพียงเพื่อทำ datalist
+  const summaryGroups = summary?.groups ?? []
+  const groupOptions = Array.from(new Set([
+    ...Object.keys(SEED_GROUPS),
+    ...summaryGroups.map(g => g.group_name),
+  ])).sort((a, b) => a.localeCompare(b, 'th'))
   const categoryOptions = Array.from(new Set([
     ...(SEED_GROUPS[form.group_name] ?? []),
-    ...existing.filter(e => e.group_name === form.group_name).map(e => e.category),
+    ...(summaryGroups.find(g => g.group_name === form.group_name)?.categories ?? []).map(c => c.category),
   ])).sort((a, b) => a.localeCompare(b, 'th'))
 
   const canSave = form.group_name.trim() && form.category.trim() && form.name.trim()
