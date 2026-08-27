@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { isNetworkAuthError } from '../lib/authErrors'
 import { Lock, Mail, Loader2, ShieldCheck, Eye, EyeOff } from 'lucide-react'
 
 export default function AdminLogin() {
@@ -27,7 +28,9 @@ export default function AdminLogin() {
         options: { persistSession: remember },
       })
       if (authError) {
-        setError('อีเมลหรือรหัสผ่านไม่ถูกต้อง')
+        setError(isNetworkAuthError(authError)
+          ? 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — สัญญาณขาดช่วงหรือเซิร์ฟเวอร์ตอบช้า กรุณาลองใหม่'
+          : 'อีเมลหรือรหัสผ่านไม่ถูกต้อง')
         return
       }
       navigate('/admin')

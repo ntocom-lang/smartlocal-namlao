@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { isNetworkAuthError } from '../lib/authErrors'
 import { useTenant } from '../contexts/TenantContext'
 import { Mail, Lock, Loader2, UserCircle2, Phone, Eye, EyeOff, ExternalLink, ArrowLeft } from 'lucide-react'
 import { NAME_TITLES, joinThaiFullName } from '../lib/thaiName'
@@ -130,7 +131,12 @@ export default function AuthPage() {
         password: form.password,
         options: { persistSession: remember },
       })
-      if (err) { setError('เบอร์โทร/อีเมล หรือรหัสผ่านไม่ถูกต้อง'); return }
+      if (err) {
+        setError(isNetworkAuthError(err)
+          ? 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — สัญญาณขาดช่วงหรือเซิร์ฟเวอร์ตอบช้า กรุณาลองใหม่'
+          : 'เบอร์โทร/อีเมล หรือรหัสผ่านไม่ถูกต้อง')
+        return
+      }
       navigate(from, { replace: true })
     } catch (err) {
       console.error('[auth] signInWithPassword ล้มเหลว:', err?.message ?? err)
