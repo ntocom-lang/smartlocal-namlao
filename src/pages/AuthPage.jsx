@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { isNetworkAuthError } from '../lib/authErrors'
 import { useTenant } from '../contexts/TenantContext'
 import { Mail, Lock, Loader2, UserCircle2, Phone, Eye, EyeOff, ExternalLink, ArrowLeft } from 'lucide-react'
 import { NAME_TITLES, joinThaiFullName } from '../lib/thaiName'
@@ -52,30 +53,43 @@ export default function AuthPage() {
     if (from && from !== '/') sessionStorage.setItem('oauth_from', from)
   }
 
+  // ปุ่ม OAuth ต้องปลดล็อกตัวเองได้เสมอเมื่อไปต่อไม่ได้
+  //
+  // เดิมเช็คแค่ `if (err)` ซึ่งครอบเฉพาะกรณี signInWithOAuth คืน error object กลับมา แต่ตัวมัน
+  // "reject" ได้ด้วย (เน็ตหลุด หรือ timeout 25 วิของ fetchWithTimeout สั่ง abort) พอ await โยน
+  // ออกไป บรรทัด setLoadingXxx(false) ไม่มีวันได้รัน ปุ่มเลยค้างเป็นสปินเนอร์ disabled ถาวร
+  // ผู้ใช้กดอะไรไม่ได้อีกเลยจนกว่าจะรีเฟรชหน้าเอง
+  //
+  // หมายเหตุ: ถ้าสำเร็จจริง เบราว์เซอร์จะ redirect ออกไปหน้า provider ตั้งแต่ก่อนถึง finally
+  // สปินเนอร์ที่ยังหมุนอยู่ระหว่างนั้นจึงถูกต้องแล้ว — finally มีผลเฉพาะตอนไปต่อไม่ได้
+  async function startOAuth(provider, { setLoading: setProviderLoading, errorText }) {
+    storeOauthFrom()
+    setProviderLoading(true)
+    setError('')
+    try {
+      const { error: err } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: { redirectTo: window.location.origin },
+      })
+      if (err) setError(errorText)
+      else return // สำเร็จ = กำลัง redirect ออกไป ปล่อยสปินเนอร์ค้างไว้ตามเดิม
+    } catch (err) {
+      console.error(`[auth] signInWithOAuth(${provider}) ล้มเหลว:`, err?.message ?? err)
+      setError(`${errorText} — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง กรุณาลองใหม่`)
+    }
+    setProviderLoading(false)
+  }
+
   async function handleGoogle() {
     if (inAppBrowser) {
       setError('ไม่สามารถเข้าสู่ระบบด้วย Google ในบราวเซอร์นี้ได้ กรุณาเปิดลิงก์ใน Safari ก่อน')
       return
     }
-    storeOauthFrom()
-    setLoadingGoogle(true)
-    setError('')
-    const { error: err } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: window.location.origin },
-    })
-    if (err) { setError('ไม่สามารถเข้าสู่ระบบด้วย Google ได้'); setLoadingGoogle(false) }
+    await startOAuth('google', { setLoading: setLoadingGoogle, errorText: 'ไม่สามารถเข้าสู่ระบบด้วย Google ได้' })
   }
 
   async function handleLine() {
-    storeOauthFrom()
-    setLoadingLine(true)
-    setError('')
-    const { error: err } = await supabase.auth.signInWithOAuth({
-      provider: 'custom:line',
-      options: { redirectTo: window.location.origin },
-    })
-    if (err) { setError('ไม่สามารถเข้าสู่ระบบด้วย LINE ได้'); setLoadingLine(false) }
+    await startOAuth('custom:line', { setLoading: setLoadingLine, errorText: 'ไม่สามารถเข้าสู่ระบบด้วย LINE ได้' })
   }
 
   async function handleForgotPassword(e) {
@@ -87,14 +101,20 @@ export default function AuthPage() {
     }
     setError('')
     setLoading(true)
-    const { error: err } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
-    })
-    setLoading(false)
-    if (err) {
-      setError('ส่งอีเมลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')
-    } else {
-      setSuccess(`ส่งลิงก์รีเซ็ตรหัสผ่านไปที่ ${email} แล้ว\nกรุณาตรวจสอบกล่องขาเข้า (และโฟลเดอร์ Spam)`)
+    try {
+      const { error: err } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      })
+      if (err) {
+        setError('ส่งอีเมลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')
+      } else {
+        setSuccess(`ส่งลิงก์รีเซ็ตรหัสผ่านไปที่ ${email} แล้ว\nกรุณาตรวจสอบกล่องขาเข้า (และโฟลเดอร์ Spam)`)
+      }
+    } catch (err) {
+      console.error('[auth] resetPasswordForEmail ล้มเหลว:', err?.message ?? err)
+      setError('ส่งอีเมลไม่สำเร็จ — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง กรุณาลองใหม่')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -102,14 +122,28 @@ export default function AuthPage() {
     e.preventDefault()
     setError('')
     setLoading(true)
-    const { error: err } = await supabase.auth.signInWithPassword({
-      email: resolveLoginEmail(form.email),
-      password: form.password,
-      options: { persistSession: remember },
-    })
-    setLoading(false)
-    if (err) { setError('เบอร์โทร/อีเมล หรือรหัสผ่านไม่ถูกต้อง'); return }
-    navigate(from, { replace: true })
+    // ต้องมี try/finally: signInWithPassword reject ได้จริงเมื่อเน็ตหลุดหรือชน timeout 25 วิ
+    // ของ fetchWithTimeout ถ้าปล่อยหลุด setLoading(false) ไม่ได้รัน ปุ่ม "เข้าสู่ระบบ" จะค้าง
+    // เป็นสปินเนอร์ disabled ถาวร ผู้ใช้กดซ้ำไม่ได้และไม่มีข้อความบอกว่าเกิดอะไรขึ้น
+    try {
+      const { error: err } = await supabase.auth.signInWithPassword({
+        email: resolveLoginEmail(form.email),
+        password: form.password,
+        options: { persistSession: remember },
+      })
+      if (err) {
+        setError(isNetworkAuthError(err)
+          ? 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — สัญญาณขาดช่วงหรือเซิร์ฟเวอร์ตอบช้า กรุณาลองใหม่'
+          : 'เบอร์โทร/อีเมล หรือรหัสผ่านไม่ถูกต้อง')
+        return
+      }
+      navigate(from, { replace: true })
+    } catch (err) {
+      console.error('[auth] signInWithPassword ล้มเหลว:', err?.message ?? err)
+      setError('เข้าสู่ระบบไม่สำเร็จ — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง กรุณาลองใหม่')
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function handleRegister(e) {
@@ -128,55 +162,63 @@ export default function AuthPage() {
 
     const email = hasEmail ? form.email.trim() : phoneToEmail(form.phone)
     setLoading(true)
-    const { data, error: err } = await supabase.auth.signUp({
-      email,
-      password: form.password,
-      options: {
-        data: {
-          full_name: fullName,
-          phone: form.phone.trim(),
-          municipality_id: tenant?.id ?? null,
+    // ขั้นตอนสมัครยิง network หลายรอบต่อกัน (signUp → upsert profile → auto sign-in) ถ้ารอบไหน
+    // reject กลางทาง (เน็ตหลุด/timeout 25 วิ) โดยไม่มี finally ปุ่มสมัครจะค้างเป็นสปินเนอร์ถาวร
+    // ปล่อย setLoading(false) ไว้ที่ finally จุดเดียว ครอบทุกเส้นทางออกรวมถึง auto sign-in ท้ายสุด
+    try {
+      const { data, error: err } = await supabase.auth.signUp({
+        email,
+        password: form.password,
+        options: {
+          data: {
+            full_name: fullName,
+            phone: form.phone.trim(),
+            municipality_id: tenant?.id ?? null,
+          },
         },
-      },
-    })
-    if (err) {
-      setLoading(false)
-      const msg = err.message?.toLowerCase() ?? ''
-      if (msg.includes('already registered') || msg.includes('already exists') || msg.includes('duplicate')) {
-        const usingPhone = !form.email.trim()
-        setError(usingPhone
-          ? '⚠️ เบอร์มือถือนี้มีบัญชีอยู่แล้ว กรุณาเข้าสู่ระบบแทน'
-          : '⚠️ อีเมลนี้มีบัญชีอยู่แล้ว กรุณาเข้าสู่ระบบแทน หรือใช้อีเมลใหม่'
-        )
-      } else {
-        setError(err.message)
+      })
+      if (err) {
+        const msg = err.message?.toLowerCase() ?? ''
+        if (msg.includes('already registered') || msg.includes('already exists') || msg.includes('duplicate')) {
+          const usingPhone = !form.email.trim()
+          setError(usingPhone
+            ? '⚠️ เบอร์มือถือนี้มีบัญชีอยู่แล้ว กรุณาเข้าสู่ระบบแทน'
+            : '⚠️ อีเมลนี้มีบัญชีอยู่แล้ว กรุณาเข้าสู่ระบบแทน หรือใช้อีเมลใหม่'
+          )
+        } else {
+          setError(err.message)
+        }
+        return
       }
-      return
-    }
 
-    const userId = data.user?.id
-    if (userId && tenant?.id) {
-      await supabase.from('profiles').upsert({
-        id: userId,
-        full_name: fullName,
-        phone: form.phone.trim() || null,
-        municipality_id: tenant.id,
-        role: 'citizen',
-      }, { onConflict: 'id' })
-    }
+      const userId = data.user?.id
+      if (userId && tenant?.id) {
+        await supabase.from('profiles').upsert({
+          id: userId,
+          full_name: fullName,
+          phone: form.phone.trim() || null,
+          municipality_id: tenant.id,
+          role: 'citizen',
+        }, { onConflict: 'id' })
+      }
 
-    setLoading(false)
-    if (data.session) {
-      navigate(from, { replace: true })
-      return
-    }
-    // session อาจ null แม้ปิด confirm email — sign in อัตโนมัติด้วยข้อมูลเดิม
-    const { error: loginErr } = await supabase.auth.signInWithPassword({ email, password: form.password })
-    if (!loginErr) {
-      navigate(from, { replace: true })
-    } else {
-      setSuccess('สมัครสมาชิกสำเร็จ! กรุณาเข้าสู่ระบบ')
-      setMode('login')
+      if (data.session) {
+        navigate(from, { replace: true })
+        return
+      }
+      // session อาจ null แม้ปิด confirm email — sign in อัตโนมัติด้วยข้อมูลเดิม
+      const { error: loginErr } = await supabase.auth.signInWithPassword({ email, password: form.password })
+      if (!loginErr) {
+        navigate(from, { replace: true })
+      } else {
+        setSuccess('สมัครสมาชิกสำเร็จ! กรุณาเข้าสู่ระบบ')
+        setMode('login')
+      }
+    } catch (err) {
+      console.error('[auth] สมัครสมาชิกล้มเหลว:', err?.message ?? err)
+      setError('สมัครสมาชิกไม่สำเร็จ — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง กรุณาลองใหม่')
+    } finally {
+      setLoading(false)
     }
   }
 

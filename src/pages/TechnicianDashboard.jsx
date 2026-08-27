@@ -16,6 +16,7 @@ import { uploadFile } from '../lib/driveStorage'
 import { buildCouncilComplaintHtml } from '../lib/councilFormPrint'
 import { fetchPersonnelSignatories } from '../lib/personnelDirectory'
 import MapPicker from '../components/MapPicker'
+import { toDateStr, todayStr } from '../lib/thaiDate'
 
 const STATUS = {
   pending:     { label: 'รอดำเนินการ',    bg: '#fef3c7', text: '#92400e' },
@@ -504,19 +505,26 @@ export default function TechnicianDashboard() {
   const fetchComplaints = useCallback(async ({ silent = false } = {}) => {
     if (!tenant?.id) return
     if (!silent) setLoading(true)
-    const { data: session } = await supabase.auth.getSession()
-    if (!session.session) { setLoading(false); return }
-    const { data } = await supabase
-      .from('complaints')
-      .select('*')
-      .eq('municipality_id', tenant.id)
-      .eq('assigned_to', session.session.user.id)
-      .neq('status', 'pending')
-      .neq('status', 'rejected')
-      .order('created_at', { ascending: false })
-    setComplaints(data ?? [])
-    emitTechBadge(data ?? [])
-    if (!silent) setLoading(false)
+    try {
+      const { data: session } = await supabase.auth.getSession()
+      if (!session.session) return
+      const { data } = await supabase
+        .from('complaints')
+        .select('*')
+        .eq('municipality_id', tenant.id)
+        .eq('assigned_to', session.session.user.id)
+        .neq('status', 'pending')
+        .neq('status', 'rejected')
+        .order('created_at', { ascending: false })
+      setComplaints(data ?? [])
+      emitTechBadge(data ?? [])
+    } catch (err) {
+      console.error('[technician] โหลดงานที่รับมอบหมายไม่สำเร็จ:', err?.message ?? err)
+    } finally {
+      // ปลด spinner ทุกเส้นทางออก รวมถึงกรณีไม่มี session (เดิมเรียก setLoading(false)
+      // ตรงนั้นแม้อยู่ในโหมด silent ซึ่งไม่ตรงกับเจตนาของ silent)
+      if (!silent) setLoading(false)
+    }
   }, [tenant?.id])
 
   useEffect(() => { fetchComplaints() }, [fetchComplaints])
@@ -579,7 +587,7 @@ export default function TechnicianDashboard() {
   }
 
   // ─── GPS ปักหมุดโครงการ (civil_projects) ────────────────────────────────
-  const GPS_TODAY   = new Date().toISOString().split('T')[0]
+  const GPS_TODAY   = todayStr()
   const THIS_YEAR_BE = String(new Date().getFullYear() + 543)
   const GPS_TYPES = [
     { value: 'road',         label: '🛣️  ถนน/สะพาน' },
@@ -604,17 +612,22 @@ export default function TechnicianDashboard() {
   const fetchMyProjects = useCallback(async () => {
     if (!tenant?.id) return
     setLoadingProjects(true)
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) { setLoadingProjects(false); return }
-    const { data } = await supabase
-      .from('civil_projects')
-      .select('id, title, project_type, status, latitude, longitude, village, start_date, progress_pct, fiscal_year')
-      .eq('municipality_id', tenant.id)
-      .eq('created_by', session.user.id)
-      .order('created_at', { ascending: false })
-      .limit(20)
-    setMyProjects(data ?? [])
-    setLoadingProjects(false)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
+      const { data } = await supabase
+        .from('civil_projects')
+        .select('id, title, project_type, status, latitude, longitude, village, start_date, progress_pct, fiscal_year')
+        .eq('municipality_id', tenant.id)
+        .eq('created_by', session.user.id)
+        .order('created_at', { ascending: false })
+        .limit(20)
+      setMyProjects(data ?? [])
+    } catch (err) {
+      console.error('[technician] โหลดโครงการของฉันไม่สำเร็จ:', err?.message ?? err)
+    } finally {
+      setLoadingProjects(false)
+    }
   }, [tenant?.id])
 
   async function submitGps(e) {
@@ -652,17 +665,19 @@ export default function TechnicianDashboard() {
   const done = complaints.filter((c) => c.status === 'completed')
 
   // ระดับความเร่งด่วนตาม due_date ที่ระบบกำหนดให้อัตโนมัติตอนมอบหมายงาน (auto_assign_complaint)
-  const todayStr = new Date().toISOString().split('T')[0]
-  const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0]
+  const today = todayStr()
+  const tomorrowStr = toDateStr(new Date(Date.now() + 86400000))
   function slaLevel(c) {
     if (!c.due_date) return null
-    if (c.due_date < todayStr) return 'crit'
+    if (c.due_date < today) return 'crit'
     if (c.due_date <= tomorrowStr) return 'warn'
     return 'ok'
   }
   const dueSoonCount = pending.filter((c) => { const l = slaLevel(c); return l === 'crit' || l === 'warn' }).length
+  // closed_at เป็น timestamptz — .slice(0, 10) จะได้วันตาม UTC ซึ่งคนละฐานกับ today ที่เป็นวัน
+  // ตามเครื่อง ต้องแปลงเป็นวันท้องถิ่นก่อนเทียบ ไม่งั้นงานที่ปิดหลังเที่ยงคืนถึงตี 7 จะหล่นออกจากยอด
   const doneTodayCount = complaints.filter((c) =>
-    (c.status === 'completed' || c.status === 'closed') && c.closed_at?.slice(0, 10) === todayStr
+    (c.status === 'completed' || c.status === 'closed') && c.closed_at && toDateStr(new Date(c.closed_at)) === today
   ).length
 
   return (
@@ -796,7 +811,7 @@ export default function TechnicianDashboard() {
                       const s = STATUS[c.status]
                       const level = slaLevel(c)
                       const stripeColor = level === 'crit' ? '#dc2626' : level === 'warn' ? '#d97706' : level === 'ok' ? '#059669' : 'transparent'
-                      const dueHint = level === 'crit' ? 'เลยกำหนดแล้ว' : level === 'warn' ? (c.due_date === todayStr ? 'ครบกำหนดวันนี้' : 'ครบกำหนดพรุ่งนี้') : null
+                      const dueHint = level === 'crit' ? 'เลยกำหนดแล้ว' : level === 'warn' ? (c.due_date === today ? 'ครบกำหนดวันนี้' : 'ครบกำหนดพรุ่งนี้') : null
                       return (
                         <button key={c.id} onClick={() => handleOpenComplaint(c)}
                           style={{ borderLeft: `3px solid ${stripeColor}` }}

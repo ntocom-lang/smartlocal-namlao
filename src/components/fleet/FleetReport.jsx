@@ -83,41 +83,50 @@ export default function FleetReport({ tenant }) {
 
   async function loadReport() {
     setLoading(true)
-    const vq = q => selVehicle ? q.eq('vehicle_id', selVehicle) : q
-    const endDay = nextDay(dateTo) // ใช้ .lt(nextDay) แทน .lte(T23:59:59) เพื่อหลีกเลี่ยง format tz
+    try {
+      const vq = q => selVehicle ? q.eq('vehicle_id', selVehicle) : q
+      const endDay = nextDay(dateTo) // ใช้ .lt(nextDay) แทน .lte(T23:59:59) เพื่อหลีกเลี่ยง format tz
 
-    // ดึงผ่าน fetchAllRows เพราะยอดรวมค่าน้ำมัน/ค่าซ่อมด้านล่างคำนวณฝั่ง client จากแถวที่ได้มา
-    // ถ้า PostgREST ตัดแถวตาม db-max-rows ยอดในรายงานจะต่ำกว่าจริงโดยไม่มีสัญญาณเตือน
-    // ซึ่งเป็นตัวเลขที่ใช้เสนอผู้บริหารและใช้ตรวจสอบ — ยอมจ่ายรอบ request เพิ่มเพื่อความครบถ้วน
-    const [tripResult, fuelResult, maintResult] = await Promise.all([
-      fetchAllRows(() => vq(supabase.from('fleet_trips')
-        .select('*, vehicle:fleet_vehicles(id,name,license_plate,asset_code,asset_kind,meter_unit), driver:profiles!fleet_trips_driver_id_fkey(id,full_name)')
-        .eq('municipality_id', tenant.id).eq('status', 'completed')
-        .gte('trip_date', dateFrom).lt('trip_date', endDay)).order('trip_date').order('id')),
-      fetchAllRows(() => vq(supabase.from('fleet_fuel_records')
-        .select('*, fleet_vehicles(name, license_plate, asset_code, asset_kind, meter_unit)')
-        .eq('municipality_id', tenant.id)
-        .gte('filled_at', dateFrom).lte('filled_at', dateTo)).order('filled_at').order('id')),
-      fetchAllRows(() => vq(supabase.from('fleet_maintenance')
-        .select('*, fleet_vehicles(name, license_plate, asset_code, asset_kind, meter_unit)')
-        .eq('municipality_id', tenant.id)
-        .gte('service_date', dateFrom).lte('service_date', dateTo)).order('service_date').order('id')),
-    ])
-    const loadError = tripResult.error || fuelResult.error || maintResult.error
-    if (loadError) {
+      // ดึงผ่าน fetchAllRows เพราะยอดรวมค่าน้ำมัน/ค่าซ่อมด้านล่างคำนวณฝั่ง client จากแถวที่ได้มา
+      // ถ้า PostgREST ตัดแถวตาม db-max-rows ยอดในรายงานจะต่ำกว่าจริงโดยไม่มีสัญญาณเตือน
+      // ซึ่งเป็นตัวเลขที่ใช้เสนอผู้บริหารและใช้ตรวจสอบ — ยอมจ่ายรอบ request เพิ่มเพื่อความครบถ้วน
+      const [tripResult, fuelResult, maintResult] = await Promise.all([
+        fetchAllRows(() => vq(supabase.from('fleet_trips')
+          .select('*, vehicle:fleet_vehicles(id,name,license_plate,asset_code,asset_kind,meter_unit), driver:profiles!fleet_trips_driver_id_fkey(id,full_name)')
+          .eq('municipality_id', tenant.id).eq('status', 'completed')
+          .gte('trip_date', dateFrom).lt('trip_date', endDay)).order('trip_date').order('id')),
+        fetchAllRows(() => vq(supabase.from('fleet_fuel_records')
+          .select('*, fleet_vehicles(name, license_plate, asset_code, asset_kind, meter_unit)')
+          .eq('municipality_id', tenant.id)
+          .gte('filled_at', dateFrom).lte('filled_at', dateTo)).order('filled_at').order('id')),
+        fetchAllRows(() => vq(supabase.from('fleet_maintenance')
+          .select('*, fleet_vehicles(name, license_plate, asset_code, asset_kind, meter_unit)')
+          .eq('municipality_id', tenant.id)
+          .gte('service_date', dateFrom).lte('service_date', dateTo)).order('service_date').order('id')),
+      ])
+      const loadError = tripResult.error || fuelResult.error || maintResult.error
+      if (loadError) {
+        setData(null)
+        alert('โหลดรายงานไม่สำเร็จ: ' + loadError.message)
+        return
+      }
+      const { data: trips } = tripResult
+      const { data: fuel } = fuelResult
+      const { data: maint } = maintResult
+      setData({ trips: trips ?? [], fuel: fuel ?? [], maint: maint ?? [] })
+      // ชนเพดานกันลูป = ข้อมูลไม่ครบจริง ต้องบอก ห้ามปล่อยให้เข้าใจว่ายอดถูกต้อง
+      if (tripResult.truncated || fuelResult.truncated || maintResult.truncated) {
+        alert('ข้อมูลในช่วงที่เลือกมีจำนวนมากเกินกว่าที่ระบบดึงได้ในครั้งเดียว — ยอดรวมในรายงานนี้ยังไม่ครบ กรุณาแบ่งช่วงวันที่ให้สั้นลง')
+      }
+    } catch (err) {
+      // fetchAllRows คืน { error } เมื่อ PostgREST ตอบ error แต่ "reject" เมื่อ fetch เองล้ม
+      // (เน็ตหลุด / timeout 25 วิ) เส้นทางหลังนี้เดิมไม่มีใครดัก รายงานจึงค้างสปินเนอร์ถาวร
+      // และเพราะเป็นตัวเลขงบประมาณ ต้องบอกให้ชัดว่าโหลดไม่สำเร็จ ห้ามโชว์ยอดเก่าค้างไว้เฉยๆ
+      console.error('[fleet-report] โหลดรายงานไม่สำเร็จ:', err?.message ?? err)
       setData(null)
+      alert('โหลดรายงานไม่สำเร็จ — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง กรุณาลองใหม่')
+    } finally {
       setLoading(false)
-      alert('โหลดรายงานไม่สำเร็จ: ' + loadError.message)
-      return
-    }
-    const { data: trips } = tripResult
-    const { data: fuel } = fuelResult
-    const { data: maint } = maintResult
-    setData({ trips: trips ?? [], fuel: fuel ?? [], maint: maint ?? [] })
-    setLoading(false)
-    // ชนเพดานกันลูป = ข้อมูลไม่ครบจริง ต้องบอก ห้ามปล่อยให้เข้าใจว่ายอดถูกต้อง
-    if (tripResult.truncated || fuelResult.truncated || maintResult.truncated) {
-      alert('ข้อมูลในช่วงที่เลือกมีจำนวนมากเกินกว่าที่ระบบดึงได้ในครั้งเดียว — ยอดรวมในรายงานนี้ยังไม่ครบ กรุณาแบ่งช่วงวันที่ให้สั้นลง')
     }
   }
 

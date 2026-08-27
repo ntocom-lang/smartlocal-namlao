@@ -9,7 +9,7 @@ import {
   CalendarDays, Luggage, AlertTriangle, Cloud, RefreshCw, Database,
 } from 'lucide-react'
 import qrCodeImage from '../assets/qr-code.png'
-import { supabase } from '../lib/supabase'
+import { supabase, signOutSafely } from '../lib/supabase'
 import { clearCacheAndReload } from '../lib/clearCache'
 import { getRankedPaths } from '../lib/menuUsage'
 import { useTenant } from '../contexts/TenantContext'
@@ -333,12 +333,13 @@ function NamlaoMorePage() {
   }, [session?.user?.id, tenant?.id])
 
   async function handleLogout() {
-    await supabase.auth.signOut()
+    await signOutSafely('/')
     navigate('/')
   }
 
   const isAdmin   = role === 'admin' || role === 'superadmin'
-  const isStaff   = role === 'staff' || role === 'officer'
+  // technician นับรวมด้วย — ช่างคือเจ้าหน้าที่กองช่าง เข้าระบบเจ้าหน้าที่ได้เหมือนกอง อื่น
+  const isStaff   = role === 'staff' || role === 'officer' || role === 'technician'
   const isViewer  = role === 'viewer'
   const isInternal = ['superadmin', 'admin', 'viewer', 'council', 'officer', 'staff', 'technician', 'kamnan'].includes(role)
   const initials  = (displayName[0] || '?').toUpperCase()

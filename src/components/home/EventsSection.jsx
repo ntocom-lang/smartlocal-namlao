@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import EventDetailModal from '../EventDetailModal'
+import { todayStr } from '../../lib/thaiDate'
 
 const CATEGORY_COLOR = {
   'ประชาสัมพันธ์': '#10b981', 'ประชุม': '#3b82f6', 'กำหนดการ': '#f97316',
@@ -45,7 +46,7 @@ export default function EventsSection() {
 
   useEffect(() => {
     if (!tenant?.id) return
-    const today = new Date().toISOString().split('T')[0]
+    const today = todayStr()
     const baseQuery = supabase
       .from('events')
       .select('*')

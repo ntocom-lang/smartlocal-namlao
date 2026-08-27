@@ -18,6 +18,7 @@ export default function SatisfactionModal({ onClose, complaintId = null, delayMs
   const [comment, setComment] = useState('')
   const [loading, setLoading] = useState(false)
   const [done, setDone] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), delayMs)
@@ -27,17 +28,27 @@ export default function SatisfactionModal({ onClose, complaintId = null, delayMs
   async function handleSubmit() {
     if (!selected) return
     setLoading(true)
-    await supabase.from('satisfaction_ratings').insert({
-      municipality_id: tenant?.id ?? null,
-      rating: selected,
-      comment: comment.trim() || null,
-    })
-    if (complaintId) {
-      await supabase.from('complaints').update({ rating: selected }).eq('id', complaintId)
+    setError('')
+    try {
+      // เดิมไม่อ่าน error เลย ผู้ใช้เห็น "ขอบคุณ" ทุกครั้งแม้บันทึกไม่สำเร็จ คะแนนหายเงียบ
+      // ข้อมูลชุดนี้ใช้ทำรายงาน LPA ตัวเลขที่ขาดหายแบบมองไม่เห็นร้ายกว่าการขึ้น error
+      const { error: err } = await supabase.from('satisfaction_ratings').insert({
+        municipality_id: tenant?.id ?? null,
+        rating: selected,
+        comment: comment.trim() || null,
+      })
+      if (err) throw err
+      if (complaintId) {
+        await supabase.from('complaints').update({ rating: selected }).eq('id', complaintId)
+      }
+      setDone(true)
+      setTimeout(() => onClose?.(), 1800)
+    } catch (err) {
+      console.error('[satisfaction] บันทึกผลประเมินไม่สำเร็จ:', err?.message ?? err)
+      setError('ส่งคะแนนไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
-    setDone(true)
-    setTimeout(() => onClose?.(), 1800)
   }
 
   if (!visible) return null
@@ -90,6 +101,12 @@ export default function SatisfactionModal({ onClose, complaintId = null, delayMs
                 <textarea value={comment} onChange={e => setComment(e.target.value)} rows={2}
                   placeholder="ความคิดเห็นเพิ่มเติม (ไม่บังคับ)"
                   className="w-full mt-1 border border-gray-200 rounded-2xl px-4 py-2.5 text-sm text-gray-800 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-blue-200" />
+              )}
+
+              {error && (
+                <p className="text-xs text-red-500 text-center bg-red-50 border border-red-100 rounded-xl px-3 py-2 mt-1">
+                  {error}
+                </p>
               )}
             </div>
 

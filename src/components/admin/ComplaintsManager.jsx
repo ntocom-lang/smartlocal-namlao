@@ -546,6 +546,7 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
   const [nearbyList, setNearbyList] = useState([])
   const [showPinEdit, setShowPinEdit] = useState(false)
   const [savingPin, setSavingPin] = useState(false)
+  const [pinError, setPinError] = useState('')
   const [pendingAssign, setPendingAssign] = useState(null)
   const [pendingPriority, setPendingPriority] = useState(null)
   const [extraWorkPhotos, setExtraWorkPhotos] = useState([])
@@ -580,14 +581,22 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
 
   async function handleSavePin({ lat, lng }) {
     setSavingPin(true)
-    const { error } = await supabase
-      .from('complaints')
-      .update({ latitude: lat, longitude: lng })
-      .eq('id', c.id)
-    setSavingPin(false)
-    if (!error) {
+    setPinError('')
+    try {
+      const { error } = await supabase
+        .from('complaints')
+        .update({ latitude: lat, longitude: lng })
+        .eq('id', c.id)
+      if (error) throw error
       setShowPinEdit(false)
       onPinSave?.(c.id, lat, lng)
+    } catch (err) {
+      // เดิมเช็คแค่ `if (!error)` แล้วไม่ทำอะไรต่อเมื่อพลาด — แผนที่ค้างเปิดอยู่เฉยๆ
+      // ไม่มีสปินเนอร์ ไม่มีข้อความ เจ้าหน้าที่กดยืนยันซ้ำแล้วซ้ำอีกโดยไม่รู้ว่าพิกัดไม่ได้ถูกบันทึก
+      console.error('[complaints] บันทึกพิกัดไม่สำเร็จ:', err?.message ?? err)
+      setPinError('บันทึกพิกัดไม่สำเร็จ — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง กรุณากดยืนยันอีกครั้ง')
+    } finally {
+      setSavingPin(false)
     }
   }
 
@@ -1003,8 +1012,23 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
                       initialPos={c.latitude ? { lat: c.latitude, lng: c.longitude } : null}
                       fallbackPos={tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : { lat: 18.1448, lng: 100.1167 }}
                       onConfirm={handleSavePin}
-                      onClose={() => setShowPinEdit(false)}
+                      onClose={() => { setShowPinEdit(false); setPinError('') }}
                     />
+                    {/* แผนที่เป็น overlay เต็มจอ ถ้าไม่ทับสถานะลงไปตรงนี้ ผู้ใช้จะไม่เห็นอะไรเลย
+                        ระหว่างรอบันทึก และไม่รู้ว่าพลาดเมื่อบันทึกไม่สำเร็จ */}
+                    {savingPin && (
+                      <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 backdrop-blur-[1px]">
+                        <div className="flex items-center gap-2.5 rounded-2xl bg-white px-5 py-3.5 shadow-2xl">
+                          <Loader2 size={18} className="animate-spin text-gray-400" />
+                          <span className="text-sm font-semibold text-gray-700">กำลังบันทึกพิกัด...</span>
+                        </div>
+                      </div>
+                    )}
+                    {pinError && !savingPin && (
+                      <div className="absolute inset-x-4 top-4 z-10 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 shadow-lg">
+                        <p className="text-sm font-medium text-red-600">{pinError}</p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

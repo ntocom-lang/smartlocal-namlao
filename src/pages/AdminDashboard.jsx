@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
@@ -12,28 +12,40 @@ import {
   CheckCircle2, ChevronRight, ChevronLeft,
   Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical, Briefcase,
   X, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Repeat,
-  TrendingUp, AlertTriangle, Printer, UserCircle2, CalendarDays, BookOpen, Bell, ExternalLink, Settings, Download, Banknote, Star, MessageSquare, Car, Terminal, Database
+  TrendingUp, AlertTriangle, Printer, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Banknote, Star, MessageSquare, Car, Terminal, Database
 } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { supabase, signOutSafely } from '../lib/supabase'
 import { compressImage } from '../lib/imageUtils'
 import { attachReporterProfiles } from '../lib/attachReporterProfiles'
 import { uploadFile } from '../lib/driveStorage'
-import { tenantDefaultSubdistrict } from '../lib/thaiAddress'
+import { tenantDefaultSubdistrict } from '../lib/tenantSubdistrict'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
 import { accountProviders, providerLabel } from '../lib/authProviders'
 import { useTenant } from '../contexts/TenantContext'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
-import CivilProjectReport from '../components/admin/CivilProjectReport'
+// lazy: หน้ารายงานโครงการเปิดเฉพาะตอนเลือกเมนู ไม่ต้องโหลดมาพร้อมแผงควบคุม
+const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectReport'))
 import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
 import FeeSettingsAdmin from '../components/admin/FeeSettingsAdmin'
-import EventsManagerComponent from '../components/admin/EventsManager'
-import { InboxModule } from './StaffDashboard'
+// โหลดแบบ lazy — EventsManager เป็น chunk 60KB ที่ของเดิม import แบบ static ทำให้ถูกดาวน์โหลด
+// ทุกครั้งที่เปิดแผงควบคุม Admin ทั้งที่เมนูปฏิทินกิจกรรมถูกถอดออกไปแล้ว จึงเข้าไม่ถึงเลย
+const EventsManagerComponent = lazy(() => import('../components/admin/EventsManager'))
+// lazy: InboxModule เป็น named export ที่อยู่กลางไฟล์ StaffDashboard.jsx (1,900+ บรรทัด)
+// การ import แบบ static จึงลากทั้งหน้าเจ้าหน้าที่ รวมถึง OdorAcknowledgePanel และ
+// buildingPermitPrint ที่ห้อยอยู่กับมัน เข้ามาในสายที่ต้องโหลดตอนเปิดแผงควบคุม Admin
+// ทางที่ถูกกว่าคือย้าย InboxModule ออกเป็นไฟล์ของตัวเอง แต่มันอ้างถึงของใน module scope
+// ของ StaffDashboard ถึง 22 ตัว (StatusBadge, TaskCard, TaskDetailSheet, buildDocHTML ฯลฯ)
+// การแยกจึงเป็น refactor ก้อนใหญ่ที่เสี่ยงเกินกว่าผลที่ได้ — ใช้ dynamic import แทน ได้ผล
+// เรื่องเวลาโหลดเท่ากันโดยไม่ต้องขยับโครงสร้างไฟล์
+const InboxModule = lazy(() => import('./StaffDashboard').then(m => ({ default: m.InboxModule })))
 
 // ต้องตรงกับ uuid ใน supabase/migrations/147_dev_journal.sql (ntocom@gmail.com) —
 // ใช้กรองเมนู "ผู้พัฒนาระบบ" ให้เห็นเฉพาะบัญชีนี้ ไม่ผูกกับ role เพราะ superadmin
 // ของแต่ละเทศบาลเป็นคนละคนกัน ความปลอดภัยจริงอยู่ที่ RLS ของตาราง dev_journal
 const DEV_USER_ID = 'b3e7c083-05ee-4664-ba42-e866729923ef'
-import ReportManagerComponent from '../components/admin/ReportManager'
+// lazy: ตัวนี้เป็นก้อนที่แพงที่สุด — มันลาก recharts (chunk PieChart ~355 KB) ตามมาด้วย
+// ทั้งที่กราฟถูกใช้เฉพาะในหน้ารายงานเท่านั้น
+const ReportManagerComponent = lazy(() => import('../components/admin/ReportManager'))
 import AuditLogViewer from '../components/admin/AuditLogViewer'
 import { ROLE_LABELS, ROLE_DESCRIPTIONS, fetchAssignableStaff, groupStaffByDepartment } from '../lib/staffRoster'
 import FleetSetup from '../components/fleet/FleetSetup'
@@ -4021,14 +4033,11 @@ function getAdminMenuGroups(currentUserRole, currentUserId) {
         { key: 'satisfaction', label: 'ผลการประเมิน', Icon: Star, color: '#d97706', bg: '#fef3c7', show: true },
       ],
     },
-    {
-      group: 'ข้อมูลเผยแพร่และกำหนดการ',
-      description: 'ข้อมูลที่นำไปแสดงต่อประชาชนและหน่วยงาน',
-      accent: '#8b5cf6',
-      items: [
-        { key: 'events', label: 'ปฏิทินกิจกรรม', Icon: CalendarDays, color: '#f59e0b', bg: '#fef3c7', show: canManageContent },
-      ],
-    },
+    // ถอดเมนู "ปฏิทินกิจกรรม" ออกจากแผงควบคุม Admin แล้ว (กลุ่ม "ข้อมูลเผยแพร่และกำหนดการ"
+    // เหลือรายการเดียวคือ events จึงถอดทั้งกลุ่ม) — โค้ดโมดูลยังอยู่ครบ ทั้ง import
+    // EventsManagerComponent และ branch `activePage === 'events'` ด้านล่าง เอากลับมาได้ทันที
+    // ด้วยการใส่กลุ่มนี้คืน ทางเข้าอื่นของปฏิทินกิจกรรมยังใช้งานได้ตามเดิม: หน้าเจ้าหน้าที่
+    // (StaffDashboard โมดูล events) และ route /events
     {
       group: 'ข้อมูลบริการประชาชน',
       description: 'ข้อมูลอ้างอิงที่ใช้รับเรื่อง คิดค่าธรรมเนียม และติดต่อฉุกเฉิน',
@@ -4268,7 +4277,7 @@ export default function AdminDashboard() {
   useEffect(() => { fetchTechnicians() }, [fetchTechnicians])
 
   async function handleLogout() {
-    await supabase.auth.signOut()
+    await signOutSafely('/admin/login')
     navigate('/admin/login')
   }
 
@@ -4626,13 +4635,33 @@ export default function AdminDashboard() {
           )}
         </div>
       ) : activePage === 'doc-requests' ? (
-        <InboxModule tenant={tenant} staffId={currentUserId} />
+        <Suspense fallback={
+          <div className="flex items-center justify-center py-10">
+            <Loader2 size={24} className="animate-spin text-gray-400" />
+          </div>
+        }>
+          <InboxModule tenant={tenant} staffId={currentUserId} />
+        </Suspense>
       ) : activePage === 'events' ? (
-        <EventsManagerComponent tenant={tenant} currentUserRole={currentUserRole} />
+        // Suspense เฉพาะจุด ไม่พึ่งตัวที่ครอบ route อยู่ใน App.jsx — ถ้าใช้ตัวนั้น ทั้งหน้าแผงควบคุม
+        // จะหายไปเป็นจอเปล่าระหว่างดาวน์โหลด chunk แทนที่จะขึ้น spinner เฉพาะส่วนเนื้อหา
+        <Suspense fallback={
+          <div className="flex items-center justify-center py-10">
+            <Loader2 size={24} className="animate-spin text-gray-400" />
+          </div>
+        }>
+          <EventsManagerComponent tenant={tenant} currentUserRole={currentUserRole} />
+        </Suspense>
       ) : activePage === 'satisfaction' ? (
         <SatisfactionAdmin tenant={tenant} />
       ) : activePage === 'report' ? (
-        <ReportManagerComponent complaints={complaints} tenant={tenant} technicians={technicians} />
+        <Suspense fallback={
+          <div className="flex items-center justify-center py-10">
+            <Loader2 size={24} className="animate-spin text-gray-400" />
+          </div>
+        }>
+          <ReportManagerComponent complaints={complaints} tenant={tenant} technicians={technicians} />
+        </Suspense>
       ) : activePage === 'staff' ? (
         LEGACY_STAFF_PAGE_ENABLED
           ? <StaffManager tenant={tenant} />
@@ -4649,7 +4678,13 @@ export default function AdminDashboard() {
         // (เขียนตาราง category_assignments ตัวเดียวกัน) เมนูไปหน้านั้นถูกปิด (show:false) มานานแล้วด้วย
         <CategoryManager tenant={tenant} />
       ) : activePage === 'civil-report' ? (
-        <CivilProjectReport tenant={tenant} />
+        <Suspense fallback={
+          <div className="flex items-center justify-center py-10">
+            <Loader2 size={24} className="animate-spin text-gray-400" />
+          </div>
+        }>
+          <CivilProjectReport tenant={tenant} />
+        </Suspense>
       ) : activePage === 'fee-settings' ? (
         <FeeSettingsAdmin tenant={tenant} />
       ) : activePage === 'system-settings' ? (

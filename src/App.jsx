@@ -234,8 +234,27 @@ function HomeOrTechRedirect() {
 
 const INTERNAL_EVENT_ROLES = ['superadmin', 'admin', 'viewer', 'council', 'officer', 'staff', 'technician', 'kamnan']
 
+// อ่านสิทธิ์ไม่สำเร็จ (เน็ตหลุด/timeout/RLS ปฏิเสธชั่วคราว) — ต้องแยกจาก "ไม่มีสิทธิ์" ให้ชัด
+// เพราะ role ที่ resolve ไม่ได้จะเป็น null แล้วตกไปเจอ `role === null → return null` ด้านล่าง
+// ซึ่งเรนเดอร์จอขาวเปล่า ผู้ใช้เดาไม่ออกว่าต้องกดรีเฟรช (เจอจริงตอน fetch timeout 25s ใน supabase.js)
+function ProfileLoadError() {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 p-6 text-center">
+      <span className="text-4xl">🔐</span>
+      <p className="text-gray-500 text-sm">
+        ตรวจสอบสิทธิ์การเข้าใช้งานไม่สำเร็จ<br />อาจเกิดจากสัญญาณขาดช่วง
+      </p>
+      <button onClick={() => window.location.reload()}
+        className="px-5 py-2.5 rounded-xl text-sm font-bold text-white"
+        style={{ backgroundColor: 'var(--color-primary)' }}>
+        กดเพื่อลองใหม่
+      </button>
+    </div>
+  )
+}
+
 function RequireAuth({ children, adminOnly = false, techOnly = false, staffOnly = false, eventManagerOnly = false }) {
-  const { session, role, profileLoading } = useAuth()
+  const { session, role, profileLoading, profileError } = useAuth()
   const { loading: tenantLoading } = useTenant()
   const location = useLocation()
 
@@ -246,6 +265,9 @@ function RequireAuth({ children, adminOnly = false, techOnly = false, staffOnly 
     const redirectTo = adminOnly ? '/admin/login' : '/auth'
     return <Navigate to={redirectTo} state={{ from: location.pathname + location.search }} replace />
   }
+  // ต้องเช็คก่อนทุกด่านสิทธิ์ด้านล่าง — ครอบคลุมทั้ง adminOnly/techOnly/staffOnly/eventManagerOnly
+  // ในที่เดียว และไม่กระทบตรรกะกัน cross-tenant เดิมเลย (error ไม่เคยทำให้ได้สิทธิ์เพิ่ม มีแต่ค้างที่ null)
+  if (profileError) return <ProfileLoadError />
   if (adminOnly && role !== null && !['admin', 'superadmin', 'viewer'].includes(role)) {
     if (role === 'technician') return <Navigate to="/technician" replace />
     if (role === 'staff' || role === 'officer') return <Navigate to="/staff" replace />
@@ -254,7 +276,10 @@ function RequireAuth({ children, adminOnly = false, techOnly = false, staffOnly 
   if (adminOnly && role === null) return null
   if (techOnly && role !== null && role !== 'technician') return <Navigate to="/" replace />
   if (techOnly && role === null) return null
-  if (staffOnly && role !== null && !['staff', 'officer', 'admin', 'superadmin', 'viewer', 'council'].includes(role)) {
+  // technician อยู่ในลิสต์ด้วย — ช่างคือเจ้าหน้าที่กองช่าง ไม่ใช่คนนอก จึงเข้าหน้าเจ้าหน้าที่ได้
+  // เหมือนกอง อื่นๆ ส่วนหน้า /technician ยังอยู่ครบ (ออกแบบมาสำหรับมือถือหน้างานโดยเฉพาะ)
+  // เมนูที่ช่างเห็นในหน้าเจ้าหน้าที่ถูกจำกัดอีกชั้นที่ StaffDashboard — ดู TECHNICIAN_MODULE_KEYS
+  if (staffOnly && role !== null && !['staff', 'officer', 'admin', 'superadmin', 'viewer', 'council', 'technician'].includes(role)) {
     return <Navigate to="/" replace />
   }
   if (staffOnly && role === null) return null
@@ -369,24 +394,35 @@ function AppShell() {
     if (!profile?.phone?.trim()) setShowPhoneReminder(true)
   }, [tenantId])
 
-  // iOS Safari ตัด WebSocket เมื่อแอปไป background — reconnect ทุกครั้งที่กลับมา
+  // iOS Safari ตัด WebSocket เมื่อแอปไป background — ต้องต่อกลับเมื่อผู้ใช้กลับมา
+  //
+  // ของเดิม disconnect() แล้ว connect() ใหม่ "ทุกครั้ง" ที่หน้ากลับมาแสดงผล โดยไม่ดูว่า socket
+  // เดิมยังดีอยู่ไหม บนเดสก์ท็อปที่สลับหน้าต่างไปมาบ่อยๆ visibilitychange ยิงรัวมาก ผลคือทุกช่อง
+  // realtime ที่เปิดอยู่ (หน้าเจ้าหน้าที่มีพร้อมกันได้ 5-7 ช่อง) ต้อง re-subscribe ใหม่ทั้งหมดทุกรอบ
+  // ซึ่งการ join แต่ละช่องวิ่งผ่าน RLS ที่ Postgres — กลายเป็นภาระที่แอปสร้างใส่เซิร์ฟเวอร์ตัวเอง
+  // ทั้งที่การเชื่อมต่อเดิมยังปกติดี
+  //
+  // เปลี่ยนเป็น: ต่อใหม่เฉพาะตอนหลุดจริง ถ้ายังต่ออยู่ให้ยิง heartbeat ตรวจสุขภาพแทน — realtime-js
+  // จะรื้อและต่อใหม่ให้เองถ้า heartbeat ก่อนหน้าไม่มีคำตอบ (กันเคส socket ตายแบบ readyState ยัง
+  // เป็น open ซึ่งเป็นอาการที่โค้ดเดิมตั้งใจกัน) ได้ผลเดิมโดยไม่ต้องรื้อของที่ยังใช้ได้ทิ้ง
   useEffect(() => {
     let reconnectTimer = null
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        clearTimeout(reconnectTimer)
-        reconnectTimer = setTimeout(() => {
-          supabase.realtime.disconnect()
-          setTimeout(() => supabase.realtime.connect(), 300)
-        }, 200)
-      }
+      if (document.visibilityState !== 'visible') return
+      clearTimeout(reconnectTimer)
+      reconnectTimer = setTimeout(() => {
+        const rt = supabase.realtime
+        if (rt.isConnected()) { rt.sendHeartbeat(); return }
+        if (rt.isConnecting?.()) return
+        rt.connect()
+      }, 200)
     }
     document.addEventListener('visibilitychange', handleVisibility)
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility)
       clearTimeout(reconnectTimer)
     }
-  }, [navigate])
+  }, [])
 
   useEffect(() => {
     // ดัก OAuth error callback เช่น LINE/Google login ล้มเหลวฝั่ง provider

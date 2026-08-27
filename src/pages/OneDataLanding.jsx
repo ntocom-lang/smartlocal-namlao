@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { MapPin, Droplets, Leaf, Store, ArrowRight } from 'lucide-react'
+import { MapPin, ArrowRight } from 'lucide-react'
 import { useTenant } from '../contexts/TenantContext'
 
 const FORMS = [

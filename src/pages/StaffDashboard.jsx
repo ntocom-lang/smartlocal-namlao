@@ -7,7 +7,7 @@ import {
   Printer, Search, Hammer, Home, CalendarDays, TrendingUp, Images, Camera,
   Banknote, Luggage, Star, Car, Bell, Trash2, Briefcase, Database, BookOpen,
 } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { supabase, signOutSafely } from '../lib/supabase'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
 import { useTenant } from '../contexts/TenantContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
@@ -119,6 +119,27 @@ const MODULE_GROUPS = [
   { group: 'ตรวจสอบภายใน', items: [], alwaysShow: true },
 ]
 const MODULES = [...STANDALONE_GROUPS.flatMap(g => g.items), ...MODULE_GROUPS.flatMap(g => g.items)]
+
+// เมนูที่ช่างเห็นในหน้าเจ้าหน้าที่ (ช่างคือเจ้าหน้าที่กองช่าง เข้าหน้านี้ได้ ดู RequireAuth ใน App.jsx)
+//
+// จำเป็นต้องมีลิสต์นี้เพราะหน้านี้กรองเมนูด้วย tenant.enabled_modules อย่างเดียว ไม่ได้กรองตาม role
+// เลย ถ้าเปิดประตูให้ technician โดยไม่มีตัวกรอง ช่างจะเห็นครบทุกโมดูลรวมถึงคำขอเอกสารของประชาชน
+//
+// เลือกจาก "สิ่งที่ RLS ฝั่ง DB เปิดให้ technician อ่านได้จริง" ไม่ใช่เดาจากชื่อเมนู:
+//   - 'inbox' (คำขอเอกสาร) ไม่อยู่ในลิสต์โดยตั้งใจ — policy `read document_requests` มีเงื่อนไข
+//     เฉพาะ superadmin/admin/officer/staff ไม่มี technician เลย โชว์เมนูไปก็กดเจอหน้าว่าง
+//     ซึ่งแยกไม่ออกจาก "ไม่มีข้อมูล" = โกหกผู้ใช้
+//   - 'fleet' ใช้คอลัมน์ profiles.fleet_role แยกต่างหาก ไม่ผูกกับ role หลัก ช่างที่ได้รับสิทธิ์
+//     ยานพาหนะจึงใช้ได้ตามปกติ ส่วนคนที่ไม่ได้ตั้ง fleet_role จะเข้าไปแล้วไม่เห็นข้อมูลเอง
+const TECHNICIAN_MODULE_KEYS = [
+  'complaints',    // คำร้อง — RLS: complaints select by role scope ครอบ technician อยู่แล้ว
+  'infra',         // บันทึกงานซ่อม — งานหลักของกองช่าง
+  'events',        // ปฏิทินกิจกรรม
+  'data-center',   // ศูนย์ข้อมูลดิจิทัล
+  'fleet',         // ยานพาหนะ/น้ำมัน
+  'positions',     // ทำเนียบตำแหน่ง
+  'manual-staff',  // คู่มือ
+]
 
 
 const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
@@ -1527,12 +1548,18 @@ export default function StaffDashboard() {
   const alwaysEnabled = ['events']
   if (role === 'council') alwaysEnabled.push('data-center', 'report')
   const enabledKeys = Array.from(new Set([...baseEnabledKeys, ...alwaysEnabled]))
+  // ตัดอีกชั้นสำหรับช่าง — ต้องผ่านทั้ง enabled_modules ของ อปท. และลิสต์ที่ช่างมีสิทธิ์จริง
+  // (ทำเป็นชั้นแยก ไม่ไปยุ่งกับ enabledKeys เดิม เพื่อไม่ให้กระทบ role อื่น)
+  const scopedKeys = role === 'technician'
+    ? enabledKeys.filter(k => TECHNICIAN_MODULE_KEYS.includes(k))
+    : enabledKeys
   const visibleStandaloneGroups = STANDALONE_GROUPS
-    .map(g => ({ ...g, items: g.items.filter(m => enabledKeys.includes(m.key)) }))
+    .map(g => ({ ...g, items: g.items.filter(m => scopedKeys.includes(m.key)) }))
     .filter(g => g.items.length > 0)
   const visibleGroups = MODULE_GROUPS
-    .map(g => ({ ...g, items: g.items.filter(m => enabledKeys.includes(m.key)) }))
-    .filter(g => g.items.length > 0 || g.alwaysShow)
+    .map(g => ({ ...g, items: g.items.filter(m => scopedKeys.includes(m.key)) }))
+    // ช่างไม่ต้องเห็นหัวข้อกองอื่นที่ยังไม่มีเมนูงาน (สำนักปลัด/กองคลัง ฯลฯ) — เป็นแค่ความรก
+    .filter(g => g.items.length > 0 || (g.alwaysShow && role !== 'technician'))
   // หน้า Dashboard ต้องเห็นทุกงานที่เปิดใช้จริง ไม่ใช่เฉพาะเมนูที่ผูกกับกอง
   // และไม่ส่งกลุ่มว่างไปแสดง เพราะทำให้หน้าแรกดูเหมือนไม่มีเครื่องมือให้ใช้งาน
   const visibleHomeGroups = [...visibleStandaloneGroups, ...visibleGroups]
@@ -1685,7 +1712,7 @@ export default function StaffDashboard() {
   }, [tenant?.id, profile?.id, profile?.role, adhocCategories])
 
   async function handleLogout() {
-    await supabase.auth.signOut()
+    await signOutSafely('/')
     navigate('/')
   }
 

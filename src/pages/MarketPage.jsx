@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, MapPin, Phone, ExternalLink, Store, Plus } from 'lucide-react'
+import { ArrowLeft, MapPin, Phone, ExternalLink, Plus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 

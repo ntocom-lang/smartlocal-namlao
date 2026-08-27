@@ -172,8 +172,9 @@ export default function DevJournal() {
           }
         })
         setEntries(merged)
-        setLoading(false)
       })
+      .catch((err) => console.error('[dev-journal] โหลดบันทึกไม่สำเร็จ:', err?.message ?? err))
+      .finally(() => setLoading(false))
   }
 
   function openCreate() {

@@ -95,6 +95,13 @@ export default function StaffOperationalDashboard({
       })
       setLoadError(errors.length ? 'ข้อมูลบางส่วนโหลดไม่สำเร็จ กรุณาลองใหม่' : '')
       setLoading(false)
+    }).catch((err) => {
+      // Promise.all reject ได้เมื่อ query ตัวใดตัวหนึ่งชน timeout 25 วิ — ถ้าไม่ดัก
+      // setLoading(false) ใน .then ไม่ได้รัน แล้วแดชบอร์ดค้างสปินเนอร์ไม่มีทางออก
+      if (cancelled) return
+      console.error('[staff-dashboard] โหลดสรุปงานไม่สำเร็จ:', err?.message ?? err)
+      setLoadError('โหลดข้อมูลไม่สำเร็จ — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง กรุณาลองใหม่')
+      setLoading(false)
     })
 
     return () => { cancelled = true }

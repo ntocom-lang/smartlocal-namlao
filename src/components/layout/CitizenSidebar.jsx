@@ -7,7 +7,7 @@ import {
 import { useAuth } from '../../contexts/AuthContext'
 import { useTenant } from '../../contexts/TenantContext'
 import { useNotifications } from '../../contexts/NotificationsContext'
-import { supabase } from '../../lib/supabase'
+import { signOutSafely } from '../../lib/supabase'
 
 const NAV_GROUPS = [
   {
@@ -64,7 +64,7 @@ export default function CitizenSidebar() {
     return exact ? location.pathname === href : location.pathname.startsWith(href)
   }
 
-  async function logout() { await supabase.auth.signOut(); navigate('/') }
+  async function logout() { await signOutSafely('/'); navigate('/') }
 
   return (
     <aside className="hidden lg:flex flex-col w-56 shrink-0 shadow-lg self-start sticky top-0 max-h-screen overflow-y-auto"

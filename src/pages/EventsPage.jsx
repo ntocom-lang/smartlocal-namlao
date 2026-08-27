@@ -4,6 +4,7 @@ import { ArrowLeft, CalendarDays, MapPin, Clock, Plus, List, ChevronLeft, Chevro
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import EventDetailModal from '../components/EventDetailModal'
+import { toDateStr } from '../lib/thaiDate'
 
 const CATEGORY_COLOR = {
   'ประชาสัมพันธ์': '#10b981', 'ประชุม': '#3b82f6', 'กำหนดการ': '#f97316',
@@ -314,7 +315,7 @@ export default function EventsPage() {
       .from('events')
       .select('*, creator:profiles!events_created_by_fkey(full_name)')
       .eq('municipality_id', tenant.id)
-      .gte('event_date', threeMonthsAgo.toISOString().split('T')[0])
+      .gte('event_date', toDateStr(threeMonthsAgo))
       .order('event_date', { ascending: true })
 
     // ทุกคนดึงกิจกรรมมาแสดงในรายการ/ปฏิทินได้หมด (เช็ควันว่างของกลุ่มอื่นได้)
@@ -346,8 +347,8 @@ export default function EventsPage() {
     to.setMonth(to.getMonth() + 12)
     supabase.rpc('get_event_dots', {
       p_municipality_id: tenant.id,
-      p_from: from.toISOString().split('T')[0],
-      p_to: to.toISOString().split('T')[0],
+      p_from: toDateStr(from),
+      p_to: toDateStr(to),
     }).then(({ data }) => setDotEvents(data ?? []))
       .catch(() => {})
   }, [tenant?.id])

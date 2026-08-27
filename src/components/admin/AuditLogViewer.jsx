@@ -126,10 +126,19 @@ export default function AuditLogViewer({ tenant }) {
     if (filterType !== 'all')   q = q.eq('resource_type', filterType)
     if (pageSize !== 'all') q = q.range(page * pageSize, page * pageSize + pageSize - 1)
 
-    const { data, count } = await q
-    setLogs(data ?? [])
-    setTotalCount(count ?? 0)
-    setLoading(false)
+    try {
+      const { data, count } = await q
+      setLogs(data ?? [])
+      setTotalCount(count ?? 0)
+    } catch (err) {
+      // fetch ของ client ตัวนี้ครอบ timeout 25 วิไว้ พอ abort จะ reject จริง ถ้าไม่ดัก
+      // setLoading(false) ไม่ได้รัน แล้วสปินเนอร์หมุนค้างตลอดไป
+      console.error('[audit-log] โหลดประวัติไม่สำเร็จ:', err?.message ?? err)
+      setLogs([])
+      setTotalCount(0)
+    } finally {
+      setLoading(false)
+    }
   }, [tenant?.id, filterAction, filterType, page, pageSize])
 
   useEffect(() => { fetchLogs() }, [fetchLogs])

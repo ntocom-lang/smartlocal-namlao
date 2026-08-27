@@ -2,7 +2,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Phone, LogIn, LogOut, UserCircle2, User, LayoutDashboard, Bell, Briefcase } from 'lucide-react'
 import { useTenant } from '../../../../contexts/TenantContext'
 import { useAuth } from '../../../../contexts/AuthContext'
-import { supabase } from '../../../../lib/supabase'
+import { signOutSafely } from '../../../../lib/supabase'
 import { useNotifications } from '../../../../contexts/NotificationsContext'
 
 const NAV_TECH = [
@@ -22,7 +22,7 @@ export default function Header() {
   const { session, role, displayName, avatarUrl } = useAuth()
 
   async function logout() {
-    await supabase.auth.signOut()
+    await signOutSafely('/')
     navigate('/')
   }
   const isAdmin = role === 'admin' || role === 'superadmin'
@@ -122,7 +122,7 @@ export default function Header() {
 
           {session ? (
             <div className="hidden lg:flex items-center gap-2">
-              {(isAdmin || role === 'staff' || role === 'officer') && (
+              {(isAdmin || role === 'staff' || role === 'officer' || role === 'technician') && (
                 <Link to="/staff"
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-colors hover:opacity-90"
                   style={{ backgroundColor: 'rgba(255,255,255,0.18)', color: 'white' }}>

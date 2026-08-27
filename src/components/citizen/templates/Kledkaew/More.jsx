@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../../../../contexts/AuthContext'
 import { useNotifications } from '../../../../contexts/NotificationsContext'
-import { supabase } from '../../../../lib/supabase'
+import { signOutSafely } from '../../../../lib/supabase'
 import { clearCacheAndReload } from '../../../../lib/clearCache'
 
 export default function KledkaewMore() {
@@ -28,7 +28,7 @@ export default function KledkaewMore() {
   }
 
   async function handleLogout() {
-    await supabase.auth.signOut()
+    await signOutSafely('/')
     navigate('/')
   }
 

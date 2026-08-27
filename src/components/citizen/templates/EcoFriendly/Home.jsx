@@ -1,13 +1,12 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { useTenant } from '../../../../contexts/TenantContext'
-import { useAuth } from '../../../../contexts/AuthContext'
 import { supabase } from '../../../../lib/supabase'
 import PostsHighlight from '../../../../components/home/PostsHighlight'
 import TourismSection from '../../../../components/home/TourismSection'
 import BannerSlider from '../../../../components/home/BannerSlider'
 import {
-  ChevronRight, Briefcase, Wrench, Newspaper,
+  ChevronRight, Newspaper,
 } from 'lucide-react'
 import WeatherWidget from '../../../../components/home/WeatherWidget'
 import ComplaintBand from '../../../../components/home/ComplaintBand'
@@ -143,11 +142,7 @@ function EServiceBlock({ docTypes }) {
 // ─────────────────────────────────────────────────────────────────────
 export default function HomePage() {
   const { tenant } = useTenant()
-  const { role }   = useAuth()
   const layout = tenant?.layout_theme || 'classic'
-
-  const isStaff           = role === 'staff'
-  const isTechnician      = role === 'technician'
 
   const docTypes = useMemo(() => {
     const extras = (tenant?.fee_schedule?._custom_types || []).map(t => ({

@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { supabase, signOutSafely } from '../lib/supabase'
 import { ChevronLeft, Pencil, Loader2, X, Eye, EyeOff } from 'lucide-react'
 import { compressImage } from '../lib/imageUtils'
 import { useAuth } from '../contexts/AuthContext'
 import { useTenant } from '../contexts/TenantContext'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
-import { THAI_PROVINCES, thaiDistrictsOf, thaiSubdistrictsOf, tenantDefaultSubdistrict } from '../lib/thaiAddress'
+import { THAI_PROVINCES, thaiDistrictsOf, thaiSubdistrictsOf } from '../lib/thaiAddress'
+import { tenantDefaultSubdistrict } from '../lib/tenantSubdistrict'
 
 const ROLE_LABEL = {
   superadmin: 'Super Admin',
@@ -171,7 +172,7 @@ export default function ProfilePage() {
   }
 
   async function handleLogout() {
-    await supabase.auth.signOut()
+    await signOutSafely('/')
     navigate('/')
   }
 

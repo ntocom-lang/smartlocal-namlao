@@ -47,7 +47,7 @@ export async function logAction({ action, resourceType, resourceId, resourceLabe
       resource_label:  resourceLabel ?? null,
       metadata:        metadata ?? null,
     })
-  } catch (_) {
+  } catch {
     // audit log ไม่ควร block UI ถ้า insert fail
   }
 }

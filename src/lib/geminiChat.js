@@ -1,4 +1,5 @@
 import { supabase, supabaseUrl, supabaseAnonKey } from './supabase'
+import { todayStr } from './thaiDate'
 
 const PERSONNEL_IDENTITY_QUERY = /(?:ใคร|ชื่อ|รายชื่อ|คนไหน|ผู้ใด|ปัจจุบัน|ดำรงตำแหน่ง|ตำแหน่งอะไร)/
 const OFFICIAL_POSITION_QUERY = /(?:นายก|รองนายก|ปลัด|รองปลัด|ประธานสภา|รองประธานสภา|สมาชิกสภา|เลขานุการสภา|ผู้บริหาร|ผู้อำนวยการ|หัวหน้ากอง|หัวหน้าสำนัก|หัวหน้าหน่วย|บุคลากร)/
@@ -61,31 +62,68 @@ async function answerOfficialDirectoryQuestion(tenantId, tenantName, question) {
   return `ข้อมูลการแต่งตั้งในระบบครับ\n${matched.map((row) => `• ${positionNameForTenant(row.position_name, tenantName)}: ${row.full_name}`).join('\n')} 🤖`
 }
 
+// PostgrestBuilder ที่ supabase.from(...) คืนมาเป็นแค่ thenable (มีเฉพาะ then) ไม่ใช่ Promise แท้
+// จึง "ไม่มี" เมธอด .catch/.finally — ต่อ .catch() ท้าย query ตรงๆ จะโยน TypeError แบบ synchronous
+// ตั้งแต่ตัวแรก ยังไม่ทันได้ยิง request ด้วยซ้ำ (เป็นบั๊ก production จริง: query ตัวแรกพัง ตัวที่เหลือ
+// ไม่ได้รันเลย แล้ว askGemini กลืน error ต่อ — ส่ง context ว่างให้ AI ทุกคำถามโดยไม่มีสัญญาณเตือน)
+// ห่อด้วย async function แทน เพื่อคงเจตนาเดิม: แหล่งไหนล้ม ตัดเฉพาะแหล่งนั้น ที่เหลือยังส่งให้ AI ได้
+async function safeRows(query) {
+  try {
+    const { data, error } = await query
+    if (error) {
+      console.warn('[chat context] query ไม่สำเร็จ:', error.message)
+      return []
+    }
+    return data ?? []
+  } catch (err) {
+    console.warn('[chat context] query โยน error:', err?.message ?? err)
+    return []
+  }
+}
+
 // ส่งให้ AI เฉพาะข้อมูลสาธารณะ ห้ามรวมข้อมูลบัญชีหรือข้อมูลคำร้องส่วนบุคคล
 async function buildContext(tenantId) {
   if (!tenantId) return ''
-  const today = new Date().toISOString().split('T')[0]
+  const today = todayStr()
   const lines = []
 
-  // 1. ข่าวสาร/ประกาศล่าสุด (Posts)
-  const { data: posts } = await supabase.from('posts')
-    .select('title, type, created_at')
-    .eq('municipality_id', tenantId)
-    .eq('is_published', true)
-    .order('created_at', { ascending: false }).limit(4).catch(() => ({ data: null }))
-  if (posts?.length) {
+  // ทั้ง 4 แหล่งไม่มีตัวไหนพึ่งผลของตัวก่อนหน้า และ buildContext ถูกเรียกใหม่ทุกข้อความที่ผู้ใช้พิมพ์
+  // ยิงขนานกันจึงลดเวลารอจาก 4 round-trip เหลือรอบเดียว — สำคัญกับ UX แชตที่ผู้ใช้นั่งรอคำตอบ
+  const [posts, events, emergency, places] = await Promise.all([
+    // 1. ข่าวสาร/ประกาศล่าสุด (Posts)
+    safeRows(supabase.from('posts')
+      .select('title, type, created_at')
+      .eq('municipality_id', tenantId)
+      .eq('is_published', true)
+      .order('created_at', { ascending: false }).limit(4)),
+
+    // 2. กิจกรรมสาธารณะ (Events)
+    safeRows(supabase.from('events')
+      .select('title, event_date, event_time, location')
+      .eq('municipality_id', tenantId).contains('audiences', ['public'])
+      .gte('event_date', today).order('event_date', { ascending: true }).limit(4)),
+
+    // 3. เบอร์โทรฉุกเฉินประจำท้องถิ่น (Emergency Contacts)
+    safeRows(supabase.from('emergency_contacts')
+      .select('name, phone_number')
+      .eq('municipality_id', tenantId).limit(5)),
+
+    // 4. สถานที่ท่องเที่ยว/OTOP เด่น — ตารางชื่อ 'tourism_places' (เดิมเขียน 'tourism_spots'
+    // ซึ่งไม่มีอยู่จริงใน DB) กรอง is_active ให้ตรงกับหน้าท่องเที่ยวฝั่งประชาชน ไม่งั้น AI จะพูดถึง
+    // สถานที่ที่แอดมินปิดการแสดงผลไปแล้ว
+    safeRows(supabase.from('tourism_places')
+      .select('name, category')
+      .eq('municipality_id', tenantId).eq('is_active', true).limit(5)),
+  ])
+
+  if (posts.length) {
     lines.push('ข่าวสาร/ประกาศล่าสุดของเทศบาล:')
     for (const p of posts) {
       lines.push(`- ${p.title} (หมวด: ${p.type || 'ทั่วไป'})`)
     }
   }
 
-  // 2. กิจกรรมสาธารณะ (Events)
-  const { data: events } = await supabase.from('events')
-    .select('title, event_date, event_time, location')
-    .eq('municipality_id', tenantId).contains('audiences', ['public'])
-    .gte('event_date', today).order('event_date', { ascending: true }).limit(4).catch(() => ({ data: null }))
-  if (events?.length) {
+  if (events.length) {
     lines.push('กิจกรรมที่จะถึงเร็วๆ นี้:')
     for (const e of events) {
       const d = new Date(e.event_date + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })
@@ -93,24 +131,16 @@ async function buildContext(tenantId) {
     }
   }
 
-  // 3. เบอร์โทรฉุกเฉินประจำท้องถิ่น (Emergency Contacts)
-  const { data: emergency } = await supabase.from('emergency_contacts')
-    .select('name, phone_number')
-    .eq('municipality_id', tenantId).limit(5).catch(() => ({ data: null }))
-  if (emergency?.length) {
+  if (emergency.length) {
     lines.push('เบอร์โทรฉุกเฉินประจำท้องถิ่น:')
     for (const em of emergency) {
       lines.push(`- ${em.name}: ${em.phone_number}`)
     }
   }
 
-  // 4. สถานที่ท่องเที่ยว/OTOP เด่น (Tourism Spots)
-  const { data: spots } = await supabase.from('tourism_spots')
-    .select('name, category')
-    .eq('municipality_id', tenantId).limit(5).catch(() => ({ data: null }))
-  if (spots?.length) {
+  if (places.length) {
     lines.push('แหล่งท่องเที่ยว/ร้านอาหาร/OTOP ในพื้นที่:')
-    for (const s of spots) {
+    for (const s of places) {
       lines.push(`- ${s.name} (${s.category || 'ท่องเที่ยว/OTOP'})`)
     }
   }

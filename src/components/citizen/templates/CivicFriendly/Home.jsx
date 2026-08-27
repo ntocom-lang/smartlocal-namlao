@@ -6,9 +6,10 @@ import { supabase } from '../../../../lib/supabase'
 import PostsHighlight from '../../../../components/home/PostsHighlight'
 import TourismSection from '../../../../components/home/TourismSection'
 import BannerSlider from '../../../../components/home/BannerSlider'
-import { Info, ChevronRight, Briefcase, Megaphone, Wrench, Newspaper, CalendarDays, ChevronLeft, Landmark, Trash2, Lightbulb, Hospital, Route, Bug, Droplets } from 'lucide-react'
+import { Info, ChevronRight, Megaphone, Newspaper, CalendarDays, ChevronLeft, Landmark, Trash2, Lightbulb, Hospital, Route, Bug, Droplets } from 'lucide-react'
 import WeatherWidget from '../../../../components/home/WeatherWidget'
 import StaffSection from '../../../../components/home/StaffSection'
+import { toDateStr } from '../../../../lib/thaiDate'
 
 const MARQUEE_TEXT = 'บริการประชาชนออนไลน์ ตลอด 24 ชั่วโมง เพื่อใช้เป็นช่องทางในการติดตามข่าวสาร แจ้งเรื่องร้องเรียน และรับบริการต่างๆได้อย่างสะดวก รวดเร็ว และเข้าถึงได้ทุกที่ทุกเวลา'
 
@@ -359,8 +360,6 @@ export default function HomePage() {
   const { role }   = useAuth()
   const layout = tenant?.layout_theme || 'classic'
 
-  const isStaff           = role === 'staff'
-  const isTechnician      = role === 'technician'
 
   const docTypes = useMemo(() => {
     const extras = (tenant?.fee_schedule?._custom_types || []).map(t => ({
@@ -378,8 +377,8 @@ export default function HomePage() {
     threeMonthsAhead.setMonth(threeMonthsAhead.getMonth() + 2)
     supabase.rpc('get_event_dots', {
       p_municipality_id: tenant.id,
-      p_from: threeMonthsAgo.toISOString().split('T')[0],
-      p_to: threeMonthsAhead.toISOString().split('T')[0],
+      p_from: toDateStr(threeMonthsAgo),
+      p_to: toDateStr(threeMonthsAhead),
     }).then(({ data }) => setCalEvents(data ?? []))
   }, [tenant?.id])
 
