@@ -1116,6 +1116,17 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
           if (row.municipality_id !== tenant.id) return
           loadAssignedComplaints()
         })
+      // DELETE (แอดมินลบคำร้องทิ้ง) — payload มีแค่ primary key เช็ค municipality_id/assigned_to
+      // แบบ INSERT/UPDATE ไม่ได้ จึงกรองด้วย "id นี้อยู่ในรายการที่โหลดมาหรือเปล่า" แทน
+      // ตัดออกจาก state ตรงๆ ไม่ refetch เพราะรู้อยู่แล้วว่าแถวนั้นหายไปแถวเดียว
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'complaints' },
+        ({ old }) => {
+          const deletedId = old?.id
+          if (!deletedId) return
+          setComplaints((prev) => prev.some((c) => c.id === deletedId)
+            ? prev.filter((c) => c.id !== deletedId)
+            : prev)
+        })
       .subscribe()
     return () => supabase.removeChannel(ch)
   }, [tenant?.id, staffId, loadAssignedComplaints])
@@ -1657,7 +1668,10 @@ export default function StaffDashboard() {
 
     const ch = supabase.channel(`staff-complaint-badge-${tenant.id}-${crypto.randomUUID()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'complaints' },
-        ({ new: row }) => {
+        ({ eventType, new: row }) => {
+          // DELETE ส่ง payload.new มาว่างเปล่า เช็ค municipality_id/assigned_to ไม่ได้ ตัวนับจึงไม่เคย
+          // อัปเดตหลังลบคำร้อง — นับใหม่ไปเลย (RPC นับอย่างเดียว ไม่หนัก และเกิดไม่บ่อย)
+          if (eventType === 'DELETE') { refreshComplaintBadge(); return }
           if (row?.municipality_id !== tenant.id) return
           if (!isAdmin && row?.assigned_to !== profile.id) return
           refreshComplaintBadge()
