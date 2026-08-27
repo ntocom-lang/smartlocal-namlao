@@ -3,155 +3,27 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>คู่มือเจ้าหน้าที่ SmartLocal — ระบบยานพาหนะและเชื้อเพลิง</title>
+<title>คู่มือเจ้าหน้าที่ SmartLocal — ฉบับรวมทุกโมดูล</title>
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<style>
-  html { scroll-behavior: smooth; }
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-  :root {
-    --primary: #0369a1;
-    --primary-dark: #075985;
-    --primary-light: #e0f2fe;
-    --blue: #1976d2;
-    --blue-light: #e3f2fd;
-    --purple: #7c3aed;
-    --amber: #d97706;
-    --red: #dc2626;
-    --gray-50: #f9fafb;
-    --gray-100: #f3f4f6;
-    --gray-200: #e5e7eb;
-    --gray-300: #d1d5db;
-    --gray-400: #9ca3af;
-    --gray-500: #6b7280;
-    --gray-700: #374151;
-    --gray-800: #1f2937;
-  }
-
-  body { font-family: 'Sarabun', sans-serif; font-size: 15px; line-height: 1.7; color: var(--gray-800); background: #fff; }
-
-  .page { width: 210mm; max-width: 100%; min-height: 297mm; margin: 0 auto 20px; padding: 0; background: #fff; box-shadow: 0 2px 20px rgba(0,0,0,0.12); }
-
-  @media print {
-    body { background: #fff; }
-    .page { width: 210mm; max-width: 210mm; box-shadow: none; margin: 0; page-break-after: always; }
-    .content-page { padding: 20mm 18mm 16mm; min-height: 270mm; }
-    .cover { min-height: 270mm; }
-    .no-print { display: none; }
-  }
-
-  /* Cover */
-  .cover {
-    background: linear-gradient(160deg, #0c4a6e 0%, #075985 50%, #0ea5e9 100%);
-    min-height: 297mm; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    text-align: center; color: #fff; padding: 40px; position: relative; overflow: hidden;
-  }
-  .cover::before { content: ''; position: absolute; width: 400px; height: 400px; border-radius: 50%; border: 60px solid rgba(255,255,255,0.06); top: -100px; right: -100px; }
-  .cover::after  { content: ''; position: absolute; width: 300px; height: 300px; border-radius: 50%; border: 50px solid rgba(255,255,255,0.05); bottom: -80px; left: -80px; }
-
-  .cover-badge { background: rgba(255,255,255,0.18); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.3); border-radius: 99px; padding: 6px 20px; font-size: 13px; font-weight: 500; letter-spacing: .5px; margin-bottom: 28px; }
-  .cover-logo { width: 100px; height: 100px; border-radius: 50%; background: rgba(255,255,255,0.25); border: 3px solid rgba(255,255,255,0.5); display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; font-size: 48px; }
-  .cover h1 { font-size: 34px; font-weight: 800; line-height: 1.25; margin-bottom: 12px; }
-  .cover p  { font-size: 17px; color: rgba(255,255,255,0.8); max-width: 380px; margin: 0 auto 36px; }
-  .cover-divider { width: 60px; height: 3px; background: rgba(255,255,255,0.5); border-radius: 99px; margin: 0 auto 36px; }
-  .cover-steps { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 40px; }
-  .cover-step { background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.3); border-radius: 16px; padding: 12px 16px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; min-width: 120px; }
-  .cover-step-num { width: 24px; height: 24px; background: rgba(255,255,255,0.3); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; }
-  .cover-footer { position: absolute; bottom: 28px; font-size: 12px; color: rgba(255,255,255,0.55); letter-spacing: .3px; }
-
-  /* Content */
-  .content-page { padding: 36px 28px 28px; min-height: 297mm; }
-  .page-header { display: flex; align-items: center; gap: 12px; padding-bottom: 16px; border-bottom: 2px solid var(--primary); margin-bottom: 28px; }
-  .page-header-icon { width: 40px; height: 40px; border-radius: 12px; background: linear-gradient(135deg, var(--primary-dark), var(--primary)); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 20px; flex-shrink: 0; }
-  .page-header h2 { font-size: 22px; font-weight: 800; color: var(--primary-dark); }
-  .page-header p  { font-size: 13px; color: var(--gray-500); margin-top: 1px; }
-
-  .step-section { display: grid; grid-template-columns: 1fr 200px; gap: 28px; align-items: start; margin-bottom: 36px; page-break-inside: avoid; }
-  .step-section.reverse { grid-template-columns: 200px 1fr; }
-  .step-section.reverse .phone-col { order: -1; }
-
-  .step-num { display: inline-flex; align-items: center; gap: 10px; background: linear-gradient(135deg, var(--primary-dark), var(--primary)); color: #fff; border-radius: 99px; padding: 4px 14px 4px 4px; font-size: 13px; font-weight: 700; margin-bottom: 10px; }
-  .step-num-circle { width: 28px; height: 28px; background: rgba(255,255,255,0.25); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 14px; }
-  h3 { font-size: 18px; font-weight: 800; color: var(--gray-800); margin-bottom: 10px; }
-  .step-desc { font-size: 14px; color: var(--gray-700); margin-bottom: 14px; line-height: 1.75; }
-
-  .tips { background: var(--primary-light); border-left: 4px solid var(--primary); border-radius: 0 10px 10px 0; padding: 10px 14px; font-size: 13px; color: var(--primary-dark); margin-top: 12px; }
-  .tips strong { display: block; font-weight: 700; margin-bottom: 3px; }
-  .note-box { background: #fff8e1; border: 1px solid #ffd54f; border-radius: 10px; padding: 10px 14px; font-size: 13px; color: #7c5c00; margin-top: 10px; }
-  .audit-box { background: #f0fdf4; border: 1px solid #86efac; border-radius: 10px; padding: 10px 14px; font-size: 13px; color: #166534; margin-top: 10px; }
-
-  ul.steps-list { list-style: none; margin: 0; padding: 0; }
-  ul.steps-list li { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 8px; font-size: 14px; color: var(--gray-700); }
-  ul.steps-list li::before { content: attr(data-n); min-width: 22px; height: 22px; background: var(--primary); color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 2px; }
-
-  /* Phone */
-  .phone-wrap { display: flex; flex-direction: column; align-items: center; }
-  .phone { width: 190px; background: #1a1a2e; border-radius: 32px; padding: 10px; box-shadow: 0 12px 40px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(255,255,255,0.08); position: relative; }
-  .phone-notch { width: 60px; height: 6px; background: #0d0d1a; border-radius: 99px; margin: 0 auto 6px; }
-  .phone-screen { background: var(--gray-50); border-radius: 22px; overflow: hidden; min-height: 340px; }
-  .phone-caption { margin-top: 10px; font-size: 12px; color: var(--gray-500); text-align: center; font-weight: 600; }
-
-  /* Section divider */
-  .section-divider { display: flex; align-items: center; gap: 10px; margin: 24px 0 20px; }
-  .section-divider-line { flex: 1; height: 1px; background: var(--gray-200); }
-  .section-divider-text { font-size: 12px; font-weight: 700; color: var(--gray-400); white-space: nowrap; }
-
-  /* Info table */
-  .info-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
-  .info-table th { background: var(--primary); color: #fff; padding: 8px 12px; text-align: left; font-weight: 700; font-size: 13px; }
-  .info-table td { padding: 8px 12px; border-bottom: 1px solid var(--gray-100); vertical-align: top; }
-  .info-table tr:nth-child(even) td { background: var(--gray-50); }
-
-  /* TOC */
-  .toc { background: var(--gray-50); border-radius: 16px; padding: 20px 24px; margin-bottom: 20px; }
-  .toc h3 { font-size: 16px; font-weight: 800; color: var(--primary-dark); margin-bottom: 14px; }
-  .toc-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-bottom: 1px solid var(--gray-200); border-radius: 10px; font-size: 14px; color: var(--gray-700); text-decoration: none; transition: background .15s, color .15s; cursor: pointer; }
-  a.toc-item:hover { background: var(--primary-light); color: var(--primary-dark); }
-  .toc-item:last-child { border-bottom: none; }
-  .toc-num { min-width: 28px; height: 28px; background: linear-gradient(135deg, var(--primary-dark), var(--primary)); color: #fff; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; }
-  .toc-dots { flex: 1; border-bottom: 2px dotted var(--gray-300); height: 1px; margin: 0 6px; }
-  .toc-page { font-size: 13px; color: var(--gray-400); font-weight: 600; }
-
-  /* Status flow */
-  .status-flow { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 16px 0; flex-wrap: wrap; }
-  .status-chip { padding: 6px 14px; border-radius: 99px; font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 5px; }
-  .status-arrow { font-size: 18px; color: var(--gray-400); }
-
-  @media (max-width: 640px) {
-    body { background: #f1f5f9; font-size: 14px; }
-    .page { width: 100%; min-height: unset; margin: 0 0 10px; box-shadow: none; border-radius: 0; }
-    .cover { min-height: unset; padding: 48px 24px 40px; }
-    .cover h1 { font-size: 24px; } .cover p { font-size: 15px; }
-    .cover-steps { gap: 8px; display: grid; grid-template-columns: 1fr 1fr; }
-    .cover-step { min-width: unset; font-size: 12px; padding: 10px 12px; }
-    .cover-footer { position: static; margin-top: 24px; }
-    .content-page { padding: 24px 16px 24px; min-height: unset; }
-    .step-section, .step-section.reverse { grid-template-columns: 1fr; gap: 20px; }
-    .step-section.reverse .phone-col { order: 1; }
-    .phone-wrap { margin: 0 auto; } .phone { width: 220px; }
-    .page-header h2 { font-size: 19px; }
-    .toc-dots { display: none; } .toc-page { margin-left: auto; }
-    .info-table { font-size: 12px; display: block; overflow-x: auto; }
-    .section-divider { margin: 18px 0 16px; }
-    h3 { font-size: 16px; }
-  }
-</style>
+<link rel="stylesheet" href="/manual.css">
 </head>
 <body>
 
 <!-- ═══════════════════════ COVER ═══════════════════════ -->
 <div class="page">
   <div class="cover">
-    <div class="cover-badge">🚗 คู่มือสำหรับเจ้าหน้าที่</div>
-    <div class="cover-logo">🚗</div>
-    <h1>ระบบยานพาหนะและเชื้อเพลิง</h1>
-    <p>บันทึกการเติมเชื้อเพลิง ซ่อมบำรุง และดูสถิติการใช้งานรถแต่ละคัน</p>
+    <div class="cover-badge">📘 คู่มือสำหรับเจ้าหน้าที่</div>
+    <div class="cover-logo">🏛️</div>
+    <h1>คู่มือเจ้าหน้าที่<br>ระบบ SmartLocal e-Service</h1>
+    <p>ฉบับรวมทุกโมดูล — งานบริการประชาชน ประชาสัมพันธ์ ทรัพยากรกลาง และงานบุคลากร</p>
     <div class="cover-divider"></div>
     <div class="cover-steps">
-      <div class="cover-step"><div class="cover-step-num">1</div>บันทึกเชื้อเพลิง</div>
-      <div class="cover-step"><div class="cover-step-num">2</div>บันทึกซ่อมบำรุง</div>
-      <div class="cover-step"><div class="cover-step-num">3</div>แก้ไขรายการ</div>
-      <div class="cover-step"><div class="cover-step-num">4</div>ดูสถิติรายคัน</div>
+      <div class="cover-step"><div class="cover-step-num">1</div>คำร้อง</div>
+      <div class="cover-step"><div class="cover-step-num">2</div>คำขอเอกสาร</div>
+      <div class="cover-step"><div class="cover-step-num">3</div>ประชาสัมพันธ์</div>
+      <div class="cover-step"><div class="cover-step-num">4</div>ยานพาหนะ</div>
+      <div class="cover-step"><div class="cover-step-num">5</div>ข้อมูลดิจิทัล</div>
+      <div class="cover-step"><div class="cover-step-num">6</div>บุคลากร</div>
     </div>
     <div class="cover-footer">SmartLocal e-Service Platform · คู่มือฉบับเจ้าหน้าที่</div>
   </div>
@@ -167,48 +39,810 @@
 
     <div class="toc">
       <h3>เนื้อหาในคู่มือ</h3>
-      <a class="toc-item" href="#overview">
-        <div class="toc-num">1</div>
-        <span>ภาพรวมระบบยานพาหนะ — เข้าใช้งานและแท็บต่างๆ</span>
-        <div class="toc-dots"></div><span class="toc-page">→</span>
-      </a>
-      <a class="toc-item" href="#vehicles">
-        <div class="toc-num">2</div>
-        <span>รถและเครื่องยนต์ — ดูสถิติการใช้งานรายคัน</span>
-        <div class="toc-dots"></div><span class="toc-page">→</span>
-      </a>
-      <a class="toc-item" href="#fuel">
-        <div class="toc-num">3</div>
-        <span>บันทึกและแก้ไขการเติมเชื้อเพลิง</span>
-        <div class="toc-dots"></div><span class="toc-page">→</span>
-      </a>
-      <a class="toc-item" href="#maintenance" style="border-bottom:none;">
-        <div class="toc-num">4</div>
-        <span>บันทึกและแก้ไขการซ่อมบำรุง</span>
-        <div class="toc-dots"></div><span class="toc-page">→</span>
-      </a>
+      <a class="toc-item" href="#start"><div class="toc-num">1</div><span>เริ่มต้นใช้งานและสิทธิ์แต่ละบทบาท</span><div class="toc-dots"></div><span class="toc-page">→</span></a>
+      <a class="toc-item" href="#home"><div class="toc-num">2</div><span>หน้าหลัก — ศูนย์ปฏิบัติงานประจำวัน</span><div class="toc-dots"></div><span class="toc-page">→</span></a>
+      <a class="toc-item" href="#complaints"><div class="toc-num">3</div><span>คำร้อง — รับเรื่อง ดำเนินการ ปิดงาน</span><div class="toc-dots"></div><span class="toc-page">→</span></a>
+      <a class="toc-item" href="#docs"><div class="toc-num">4</div><span>คำขอเอกสาร — ตรวจสอบและออกเอกสาร</span><div class="toc-dots"></div><span class="toc-page">→</span></a>
+      <a class="toc-item" href="#events"><div class="toc-num">5</div><span>ปฏิทินกิจกรรม — เพิ่มกิจกรรมและกลุ่มเป้าหมาย</span><div class="toc-dots"></div><span class="toc-page">→</span></a>
+      <a class="toc-item" href="#posts"><div class="toc-num">6</div><span>ข่าวสาร / ภาพกิจกรรม</span><div class="toc-dots"></div><span class="toc-page">→</span></a>
+      <a class="toc-item" href="#tourism"><div class="toc-num">7</div><span>เที่ยว กิน พัก OTOP และคำขอลงทะเบียนร้านค้า</span><div class="toc-dots"></div><span class="toc-page">→</span></a>
+      <a class="toc-item" href="#reviews"><div class="toc-num">8</div><span>รีวิวสถานที่ — ตรวจสอบและลบรีวิวที่ไม่เหมาะสม</span><div class="toc-dots"></div><span class="toc-page">→</span></a>
+      <a class="toc-item" href="#report"><div class="toc-num">9</div><span>รายงาน — สรุปผลและออกเอกสารเสนอผู้บังคับบัญชา</span><div class="toc-dots"></div><span class="toc-page">→</span></a>
+      <a class="toc-item" href="#datacenter"><div class="toc-num">10</div><span>ศูนย์ข้อมูลดิจิทัล — แผนที่ GIS และหมุดข้อมูล</span><div class="toc-dots"></div><span class="toc-page">→</span></a>
+      <a class="toc-item" href="#overview"><div class="toc-num">11</div><span>ยานพาหนะ/น้ำมัน — เชื้อเพลิง ซ่อมบำรุง สถิติรายคัน</span><div class="toc-dots"></div><span class="toc-page">→</span></a>
+      <a class="toc-item" href="#positions"><div class="toc-num">12</div><span>ทำเนียบตำแหน่ง — โครงสร้างและผู้ดำรงตำแหน่ง</span><div class="toc-dots"></div><span class="toc-page">→</span></a>
+      <a class="toc-item" href="#infra"><div class="toc-num">13</div><span>บันทึกงานซ่อม (กองช่าง)</span><div class="toc-dots"></div><span class="toc-page">→</span></a>
+      <a class="toc-item" href="#pdpa" style="border-bottom:none;"><div class="toc-num">14</div><span>ข้อควรระวังด้านข้อมูลส่วนบุคคล และคำถามที่พบบ่อย</span><div class="toc-dots"></div><span class="toc-page">→</span></a>
     </div>
 
     <div style="background:linear-gradient(135deg,#e0f2fe,#bae6fd);border-radius:14px;padding:16px 20px;margin-top:20px;">
-      <p style="font-size:13.5px;color:#075985;font-weight:700;margin-bottom:8px;">🔑 วิธีเข้าสู่ระบบยานพาหนะ</p>
+      <p style="font-size:13.5px;color:#075985;font-weight:700;margin-bottom:8px;">🔑 วิธีเข้าสู่ระบบเจ้าหน้าที่</p>
       <div class="status-flow">
         <div class="status-chip" style="background:#fff;color:#0369a1;">🔐 เข้าสู่ระบบ</div>
         <div class="status-arrow">→</div>
-        <div class="status-chip" style="background:#fff;color:#0369a1;">แดชบอร์ดเจ้าหน้าที่</div>
+        <div class="status-chip" style="background:#fff;color:#0369a1;">เมนู “ระบบเจ้าหน้าที่”</div>
         <div class="status-arrow">→</div>
-        <div class="status-chip" style="background:#fff;color:#0369a1;">🚗 ยานพาหนะ/น้ำมัน</div>
+        <div class="status-chip" style="background:#fff;color:#0369a1;">🏛️ แดชบอร์ดเจ้าหน้าที่</div>
       </div>
-      <p style="font-size:12px;color:#0369a1;text-align:center;margin-top:4px;">หรือไปที่ URL: <strong>/fleet</strong> โดยตรง (ต้องเข้าสู่ระบบด้วยบัญชีเจ้าหน้าที่)</p>
+      <p style="font-size:12px;color:#0369a1;text-align:center;margin-top:4px;">หรือเปิด URL <strong>/staff</strong> โดยตรง — เมนูที่เห็นจะขึ้นกับบทบาท (role) ของบัญชีท่าน</p>
+    </div>
+
+    <div class="note-box" style="margin-top:14px;">
+      <strong>คู่มือนี้ครอบคลุมเมนูฝั่งเจ้าหน้าที่ทั้งหมด</strong>
+      หากท่านเป็นแอดมินระบบ (ตั้งค่าระบบ จัดการผู้ใช้ ประเภทคำร้อง ค่าธรรมเนียม) ให้ดู
+      <strong>คู่มือผู้ดูแลระบบ</strong> ที่ <strong>/manual-admin.html</strong> ประกอบด้วย
+      ส่วนคู่มือสำหรับประชาชนอยู่ที่ <strong>/manual-citizen.html</strong>
     </div>
   </div>
 </div>
 
+<!-- ═══════════════════ 1 — เริ่มต้นใช้งาน / สิทธิ์ ═══════════════════ -->
+<div id="start" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">🔑</div>
+      <div><h2>1. เริ่มต้นใช้งานและสิทธิ์แต่ละบทบาท</h2><p>เมนูที่ท่านเห็น ขึ้นกับบทบาทที่แอดมินกำหนดให้บัญชี</p></div>
+    </div>
+
+    <p class="step-desc">
+      ระบบไม่ได้แสดงเมนูเหมือนกันทุกคน — บัญชีแต่ละคนมี <strong>บทบาท (role)</strong> หนึ่งค่า
+      ที่แอดมินตั้งไว้ในหน้า “จัดการผู้ใช้และการแต่งตั้ง” บทบาทนี้กำหนดทั้ง
+      <strong>เมนูที่เห็น</strong> <strong>ขอบเขตข้อมูลที่ดึงมาได้</strong> และ
+      <strong>ข้อมูลส่วนบุคคลของผู้ร้องที่ถูกปิดบัง</strong> ถ้าท่านหาเมนูที่ต้องใช้ไม่เจอ
+      ให้แจ้งแอดมินตรวจบทบาทของบัญชีท่านก่อน อย่าใช้บัญชีของคนอื่นทำงานแทน
+    </p>
+
+    <div class="role-card">
+      <h4>🛠️ ปฏิบัติงาน <span class="badge badge-blue">technician</span></h4>
+      <p>เจ้าหน้าที่ปฏิบัติงานหรือภาคสนาม บันทึกและอัปเดตงานที่รับผิดชอบ — เห็นเฉพาะคำร้องที่ถูกมอบหมายให้ตัวเอง</p>
+    </div>
+    <div class="role-card">
+      <h4>👤 เจ้าหน้าที่ <span class="badge badge-blue">staff</span></h4>
+      <p>เจ้าหน้าที่ทั่วไป ใช้เฉพาะเมนูงานที่ได้รับมอบหมาย — ขอบเขตคำร้องเท่ากับ technician คือเห็นเฉพาะงานของตัวเอง</p>
+    </div>
+    <div class="role-card" style="border-left-color:#7c3aed;">
+      <h4>🏢 หัวหน้ากอง <span class="badge badge-purple">officer</span></h4>
+      <p>ดูแลงานและเอกสารของกองที่สังกัด <strong>ทั้งกอง ไม่ข้ามกอง</strong> — เห็นคำร้องทุกเรื่องในกองตัวเองที่แอดมินรับเรื่องแล้ว ไม่จำกัดเฉพาะที่มอบหมายให้ตัวเอง</p>
+    </div>
+    <div class="role-card" style="border-left-color:#d97706;">
+      <h4>📊 ผู้บริหาร <span class="badge badge-yellow">viewer</span></h4>
+      <p>ดูข้อมูลและภาพรวมเพื่อประกอบการตัดสินใจ — ไม่มีสิทธิ์แก้ไขเนื้อหาหรือกดเปลี่ยนสถานะงาน</p>
+    </div>
+    <div class="role-card" style="border-left-color:#d97706;">
+      <h4>🏛️ สภาเทศบาล <span class="badge badge-yellow">council</span></h4>
+      <p>ดูข้อมูลและงานที่เกี่ยวข้องกับสภาเทศบาล — ในปฏิทินกิจกรรมจะไม่เห็นและสร้างกิจกรรมกลุ่มเป้าหมาย “ฝ่ายบริหาร” ไม่ได้</p>
+    </div>
+    <div class="role-card" style="border-left-color:#dc2626;">
+      <h4>⚙️ แอดมินระบบ <span class="badge badge-red">admin</span></h4>
+      <p>ผู้ดูแลระบบของเทศบาล จัดการผู้ใช้ การตั้งค่า และงานทุกกองในเทศบาล — เป็นผู้กด “รับเรื่อง” คำร้องใหม่ และกด “ปิดเรื่อง” ตอนจบ</p>
+    </div>
+    <div class="role-card" style="border-left-color:#1e293b;">
+      <h4>🧑‍💻 Super Admin <span class="badge badge-gray">superadmin</span></h4>
+      <p>ผู้พัฒนาระบบ จัดการได้ทุกเทศบาลและทุกโมดูล — สงวนไว้สำหรับทีมผู้ดูแลแพลตฟอร์มเท่านั้น</p>
+    </div>
+
+    <div class="tips">
+      <strong>💡 บทบาทถูกบังคับที่ฐานข้อมูล ไม่ใช่แค่ซ่อนปุ่ม</strong>
+      การเห็นหรือไม่เห็นข้อมูล ควบคุมด้วย Row Level Security ฝั่งเซิร์ฟเวอร์ ไม่ใช่การซ่อนปุ่มบนหน้าจอ
+      การพยายามเปิด URL ตรงๆ เพื่อข้ามสิทธิ์จึงไม่ได้ผล และการเรียกข้อมูลเกินสิทธิ์จะถูกปฏิเสธ
+    </div>
+
+    <div class="section-divider">
+      <div class="section-divider-line"></div>
+      <div class="section-divider-text">แผนผังเมนูฝั่งเจ้าหน้าที่</div>
+      <div class="section-divider-line"></div>
+    </div>
+
+    <div class="nav-mock">
+      <div class="nav-item on">🏠 หน้าหลัก</div>
+      <div class="nav-item">🗄️ ศูนย์รวมข้อมูลดิจิทัล</div>
+      <div class="nav-group">งานบริการประชาชน</div>
+      <div class="nav-item">💬 คำร้อง</div>
+      <div class="nav-item">📄 คำขอเอกสาร</div>
+      <div class="nav-group">ประชาสัมพันธ์และท่องเที่ยว</div>
+      <div class="nav-item">📅 ปฏิทินกิจกรรม</div>
+      <div class="nav-item">🖼️ ข่าวสาร/ภาพกิจกรรม</div>
+      <div class="nav-item">🧳 เที่ยว กิน พัก OTOP</div>
+      <div class="nav-item">⭐ รีวิวสถานที่</div>
+      <div class="nav-group">แผนงานและทรัพยากรกลาง</div>
+      <div class="nav-item">📈 รายงาน</div>
+      <div class="nav-item">📍 ศูนย์ข้อมูลดิจิทัล</div>
+      <div class="nav-item">🚗 ยานพาหนะ/น้ำมัน</div>
+      <div class="nav-group">บุคลากร</div>
+      <div class="nav-item">💼 ทำเนียบตำแหน่ง</div>
+      <div class="nav-group">กองช่าง</div>
+      <div class="nav-item">🔨 บันทึกงานซ่อม</div>
+      <div class="nav-group">คู่มือ</div>
+      <div class="nav-item">📘 คู่มือเจ้าหน้าที่</div>
+    </div>
+
+    <div class="note-box">
+      <strong>หัวข้อกองที่ยังไม่มีเมนูงานจะแสดงไว้แต่ว่างเปล่า</strong> (เช่น สำนักปลัด กองคลัง กองการศึกษา ตรวจสอบภายใน)
+      เป็นการจงใจให้เห็นโครงสร้างส่วนราชการครบทุกกอง ไม่ใช่ความผิดพลาดของระบบ
+      เมื่อมีโมดูลของกองนั้นเพิ่มเข้ามา เมนูจะไปอยู่ใต้หัวข้อกองที่ตรงกัน
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ 2 — หน้าหลัก ═══════════════════ -->
+<div id="home" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">🏠</div>
+      <div><h2>2. หน้าหลัก — ศูนย์ปฏิบัติงานประจำวัน</h2><p>เปิดมาแล้วรู้ทันทีว่าวันนี้มีงานอะไรค้าง</p></div>
+    </div>
+
+    <div class="step-section">
+      <div>
+        <div class="step-num"><div class="step-num-circle">1</div>เริ่มวันทำงานที่นี่</div>
+        <h3>สามส่วนบนหน้าหลัก</h3>
+        <p class="step-desc">
+          หน้าหลักไม่ใช่หน้าตกแต่ง แต่เป็นคิวงานประจำวัน ควรเปิดดูก่อนเริ่มงานทุกครั้ง
+        </p>
+        <table class="info-table">
+          <thead><tr><th>ส่วน</th><th>ใช้ทำอะไร</th></tr></thead>
+          <tbody>
+            <tr><td>⚡ เมนูใช้งานด่วน</td><td>ทางลัดไปโมดูลที่ท่านมีสิทธิ์ใช้ — กดแล้วเข้าหน้าจัดการทันที</td></tr>
+            <tr><td>📥 งานรอรับเรื่อง</td><td>คำร้องที่มอบหมายมาถึงท่านแล้วแต่ยังไม่ได้เริ่ม พร้อมจำนวนวันที่ค้าง</td></tr>
+            <tr><td>🧰 เครื่องมือที่ใช้งานได้</td><td>ลิงก์ไปเครื่องมือรอบข้าง เช่น ศูนย์ข้อมูลดิจิทัล ปฏิทิน และแบบฟอร์มเฉพาะกิจ</td></tr>
+          </tbody>
+        </table>
+        <div class="tips">
+          <strong>💡 ตัวเลขสีแดงข้างเมนู</strong>
+          คือจำนวนงานที่ยังไม่ได้จัดการ ตัวเลขจะลดลงเองเมื่อสถานะงานเปลี่ยน ไม่ต้องกดล้างเอง
+        </div>
+      </div>
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen">
+              <div class="ui-bar">🏛️ แดชบอร์ดสำหรับเจ้าหน้าที่</div>
+              <div class="ui-stats">
+                <div class="ui-stat"><b style="color:#f59e0b;">4</b><span>รอรับเรื่อง</span></div>
+                <div class="ui-stat"><b style="color:#8b5cf6;">7</b><span>กำลังทำ</span></div>
+                <div class="ui-stat"><b style="color:#10b981;">23</b><span>ปิดแล้ว</span></div>
+              </div>
+              <div style="padding:8px 10px;font-weight:800;font-size:11.5px;">งานรอรับเรื่อง</div>
+              <div class="ui-row"><span>💡</span><div class="grow"><div style="font-weight:700;">ไฟทางสาธารณะดับ</div><div class="ui-muted">CMP-2569-0142</div></div><span class="badge badge-red">3 วัน</span></div>
+              <div class="ui-row"><span>🗑️</span><div class="grow"><div style="font-weight:700;">ขยะตกค้างริมถนน</div><div class="ui-muted">CMP-2569-0141</div></div><span class="badge badge-yellow">1 วัน</span></div>
+              <div class="ui-row"><span>💧</span><div class="grow"><div style="font-weight:700;">ท่อระบายน้ำอุดตัน</div><div class="ui-muted">CMP-2569-0139</div></div><span class="badge badge-yellow">1 วัน</span></div>
+            </div>
+          </div>
+          <div class="phone-caption">หน้าหลัก — ภาพจำลอง</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="warn-box">
+      <strong>⚠️ ระยะเวลาค้างงานคือหลักฐานการให้บริการ</strong>
+      ระบบบันทึกวันเวลาทุกครั้งที่สถานะเปลี่ยน และนำไปออกรายงานเสนอผู้บังคับบัญชาได้
+      การกด “รับเรื่อง” ทิ้งไว้โดยยังไม่ลงมือจึงไม่ได้ทำให้ตัวเลขดีขึ้น เพราะระบบนับตั้งแต่วันที่ประชาชนยื่นคำร้อง
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ 3 — คำร้อง ═══════════════════ -->
+<div id="complaints" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">💬</div>
+      <div><h2>3. คำร้อง — รับเรื่อง ดำเนินการ ปิดงาน</h2><p>งานหลักของเจ้าหน้าที่ปฏิบัติงานและหัวหน้ากอง</p></div>
+    </div>
+
+    <h3>สถานะคำร้องทั้ง 6 ค่า</h3>
+    <p class="step-desc">
+      ทุกคำร้องเดินตามลำดับสถานะเดียวกัน ประชาชนเห็นสถานะนี้แบบเรียลไทม์ในเมนู “คำร้องของฉัน”
+      การกดเปลี่ยนสถานะจึงเท่ากับการแจ้งผลต่อประชาชนโดยตรง
+    </p>
+
+    <div class="status-flow">
+      <div class="status-chip" style="background:#fef3c7;color:#b45309;">รอดำเนินการ</div>
+      <div class="status-arrow">→</div>
+      <div class="status-chip" style="background:#dbeafe;color:#1d4ed8;">รับเรื่องแล้ว</div>
+      <div class="status-arrow">→</div>
+      <div class="status-chip" style="background:#ede9fe;color:#6d28d9;">กำลังดำเนินการ</div>
+      <div class="status-arrow">→</div>
+      <div class="status-chip" style="background:#fff7ed;color:#c2410c;">รอปิดเรื่อง</div>
+      <div class="status-arrow">→</div>
+      <div class="status-chip" style="background:#d1fae5;color:#047857;">ปิดเรื่องแล้ว</div>
+    </div>
+
+    <table class="info-table">
+      <thead><tr><th>สถานะ</th><th>ความหมาย</th><th>ใครเป็นคนกด</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge badge-yellow">รอดำเนินการ</span></td><td>ประชาชนยื่นเข้ามาแล้ว ยังไม่ผ่านการคัดกรอง</td><td>— (สถานะตั้งต้น)</td></tr>
+        <tr><td><span class="badge badge-blue">รับเรื่องแล้ว</span></td><td>คัดกรองแล้ว มอบหมายผู้รับผิดชอบเรียบร้อย</td><td>แอดมิน</td></tr>
+        <tr><td><span class="badge badge-purple">กำลังดำเนินการ</span></td><td>ผู้รับผิดชอบเริ่มลงมือแล้ว</td><td>เจ้าหน้าที่ผู้รับผิดชอบ</td></tr>
+        <tr><td><span class="badge badge-yellow">รอปิดเรื่อง</span></td><td>งานเสร็จหน้างานแล้ว รอผู้บังคับบัญชาตรวจ</td><td>เจ้าหน้าที่ผู้รับผิดชอบ</td></tr>
+        <tr><td><span class="badge badge-green">ปิดเรื่องแล้ว</span></td><td>ตรวจผ่าน ปิดเรื่องและแจ้งผลประชาชนแล้ว</td><td>แอดมิน</td></tr>
+        <tr><td><span class="badge badge-red">ปฏิเสธ</span></td><td>ไม่อยู่ในอำนาจหน้าที่ หรือข้อมูลไม่เพียงพอ ต้องระบุเหตุผล</td><td>แอดมิน</td></tr>
+      </tbody>
+    </table>
+
+    <div class="note-box">
+      <strong>คำร้องสถานะ “รอดำเนินการ” จะยังไม่ปรากฏในหน้าจอของเจ้าหน้าที่</strong>
+      เป็นการจงใจ เพื่อให้ผ่านการคัดกรองและมอบหมายจากแอดมินก่อน ถ้าประชาชนแจ้งว่ายื่นแล้วแต่ท่านยังไม่เห็นงาน
+      ให้ตรวจกับแอดมินว่ากด “รับเรื่อง” และมอบหมายให้ท่านหรือยัง
+    </div>
+
+    <div class="section-divider">
+      <div class="section-divider-line"></div>
+      <div class="section-divider-text">ขั้นตอนของเจ้าหน้าที่ผู้รับผิดชอบ</div>
+      <div class="section-divider-line"></div>
+    </div>
+
+    <div class="step-section">
+      <div>
+        <div class="step-num"><div class="step-num-circle">1</div>เปิดงานที่ได้รับมอบหมาย</div>
+        <h3>กดที่แถวคำร้องเพื่อดูรายละเอียด</h3>
+        <ul class="steps-list">
+          <li data-n="1">เข้าเมนู <strong>คำร้อง</strong> จากแถบด้านซ้าย</li>
+          <li data-n="2">กรองด้วยแถบสถานะ หรือพิมพ์คำค้น/เลขที่คำร้องในช่องค้นหา</li>
+          <li data-n="3">กดที่แถวเพื่อเปิดรายละเอียด — จะเห็นรูปที่ประชาชนแนบ ตำแหน่งที่ปักหมุด และข้อมูลติดต่อ</li>
+        </ul>
+        <div class="warn-box">
+          <strong>⚠️ การเปิดรายละเอียดถูกบันทึกไว้ทุกครั้ง</strong>
+          ชื่อและเบอร์โทรของผู้ร้องเป็นข้อมูลส่วนบุคคล ระบบบันทึกลง <strong>บันทึกกิจกรรม (audit log)</strong>
+          ว่าใครเปิดดูคำร้องใด เมื่อใด และด้วยเหตุผลใด ให้เปิดดูเฉพาะเรื่องที่ท่านรับผิดชอบเท่านั้น
+        </div>
+      </div>
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen">
+              <div class="ui-bar">💬 งานที่ได้รับมอบหมาย</div>
+              <div class="ui-tabs">
+                <span class="ui-tab on">ทั้งหมด</span>
+                <span class="ui-tab">รับเรื่องแล้ว</span>
+                <span class="ui-tab">กำลังทำ</span>
+              </div>
+              <div class="ui-row"><span>💡</span><div class="grow"><div style="font-weight:700;">ไฟทางสาธารณะดับ</div><div class="ui-muted">CMP-2569-0142 · หมู่ 4</div></div><span class="badge badge-blue">รับเรื่องแล้ว</span></div>
+              <div class="ui-row"><span>💧</span><div class="grow"><div style="font-weight:700;">ท่อระบายน้ำอุดตัน</div><div class="ui-muted">CMP-2569-0139 · หมู่ 2</div></div><span class="badge badge-purple">กำลังทำ</span></div>
+              <div class="ui-row"><span>🌳</span><div class="grow"><div style="font-weight:700;">กิ่งไม้พาดสายไฟ</div><div class="ui-muted">CMP-2569-0136 · หมู่ 7</div></div><span class="badge badge-yellow">รอปิดเรื่อง</span></div>
+              <div class="ui-row" style="background:#f8fafc;"><div class="grow ui-muted">ผู้แจ้ง: ส. สมมติ · 081-XXX-234</div></div>
+            </div>
+          </div>
+          <div class="phone-caption">เบอร์โทรถูกปิดบังบางส่วนตามบทบาท</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="step-section reverse">
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen">
+              <div class="ui-bar">📌 CMP-2569-0139</div>
+              <div style="padding:10px;">
+                <div style="font-weight:800;font-size:12.5px;margin-bottom:4px;">ท่อระบายน้ำอุดตัน</div>
+                <div class="ui-muted" style="margin-bottom:8px;">แจ้งเมื่อ 12 ส.ค. 2569 · หมู่ 2 ถนนเลียบคลอง</div>
+                <div style="background:#e2e8f0;border-radius:8px;height:56px;margin-bottom:8px;"></div>
+                <div style="background:#f1f5f9;border-radius:8px;padding:7px;font-size:10.5px;margin-bottom:8px;">
+                  บันทึกผลการดำเนินการ<br><span class="ui-muted">ลอกท่อและเก็บเศษวัสดุออกแล้ว น้ำระบายได้ปกติ</span>
+                </div>
+                <div style="display:flex;gap:6px;">
+                  <span class="ui-btn ghost">แนบรูปหลังทำ</span>
+                  <span class="ui-btn" style="background:#f97316;">ปิดงาน</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-caption">หน้าปิดงาน — ภาพจำลอง</div>
+        </div>
+      </div>
+      <div>
+        <div class="step-num"><div class="step-num-circle">2</div>ดำเนินการและปิดงาน</div>
+        <h3>ปุ่มจะเปลี่ยนไปตามสถานะปัจจุบัน</h3>
+        <table class="info-table">
+          <thead><tr><th>สถานะตอนนี้</th><th>ปุ่มที่เห็น</th><th>กดแล้วเปลี่ยนเป็น</th></tr></thead>
+          <tbody>
+            <tr><td>รับเรื่องแล้ว</td><td>เริ่มดำเนินการ</td><td>กำลังดำเนินการ</td></tr>
+            <tr><td>กำลังดำเนินการ</td><td>ปิดงาน</td><td>รอปิดเรื่อง</td></tr>
+          </tbody>
+        </table>
+        <div class="tips">
+          <strong>💡 ตอนกด “ปิดงาน” ต้องแนบรูปผลงาน</strong>
+          ระบบเปิดหน้าต่างให้อัปโหลดรูปหลังดำเนินการพร้อมบันทึกผลสั้นๆ
+          รูปชุดนี้คือหลักฐานประกอบการปิดเรื่องและใช้แสดงต่อประชาชน จึงควรถ่ายมุมเดียวกับรูปที่ประชาชนแจ้งมา
+        </div>
+        <div class="audit-box">
+          <strong>เจ้าหน้าที่ปิดงานได้ถึงสถานะ “รอปิดเรื่อง” เท่านั้น</strong>
+          จากนั้นแอดมินหรือผู้บังคับบัญชาจะตรวจผลงานแล้วกด “ปิดเรื่อง” ระบบจึงจะแจ้งเตือนไปยังประชาชน
+          และเปิดหน้าประเมินความพึงพอใจให้ผู้ร้อง
+        </div>
+      </div>
+    </div>
+
+    <div class="section-divider">
+      <div class="section-divider-line"></div>
+      <div class="section-divider-text">กรณีพิเศษ — สายงานเฉพาะกิจ</div>
+      <div class="section-divider-line"></div>
+    </div>
+
+    <p class="step-desc">
+      คำร้องบางหมวดที่เทศบาลกำหนดเป็นงานเฉพาะกิจ (เช่น <strong>กลิ่นเหม็นรบกวน</strong>)
+      จะถูกส่งตรงถึงผู้รับผิดชอบทันทีโดยไม่ต้องรอแอดมินกด “รับเรื่อง” และจะโผล่เป็นกล่องแยกบนหน้าจอ
+      ให้กดเข้าไปดูรายละเอียดแล้วกด <strong>“รับทราบ”</strong> เพื่อยืนยันว่าได้รับเรื่องแล้ว
+      งานประเภทนี้จึงไม่ปรากฏในคิวรับเรื่องปกติของแอดมิน
+    </p>
+  </div>
+</div>
+
+<!-- ═══════════════════ 4 — คำขอเอกสาร ═══════════════════ -->
+<div id="docs" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">📄</div>
+      <div><h2>4. คำขอเอกสาร — ตรวจสอบและออกเอกสาร</h2><p>รับคำขอออนไลน์ ตรวจหลักฐาน แล้วออกเอกสารดิจิทัล</p></div>
+    </div>
+
+    <h3>ประเภทเอกสารที่รองรับ</h3>
+    <table class="info-table">
+      <thead><tr><th>ประเภท</th><th>ใช้เมื่อ</th></tr></thead>
+      <tbody>
+        <tr><td>🏠 ใบรับรองการอยู่อาศัย</td><td>ยืนยันว่าผู้ขออาศัยอยู่ในเขตพื้นที่</td></tr>
+        <tr><td>👤 หนังสือรับรองบุคคล</td><td>รับรองสถานะบุคคลตามที่ร้องขอ</td></tr>
+        <tr><td>🏦 ค่าธรรมเนียม/ภาษี</td><td>แจ้งยอดหรือรับรองการชำระ</td></tr>
+        <tr><td>🗑️ ค่าธรรมเนียมขยะ</td><td>งานจัดเก็บค่าธรรมเนียมขยะมูลฝอย</td></tr>
+        <tr><td>🏗️ ขออนุญาตก่อสร้างบ้าน</td><td>มีแบบฟอร์มเฉพาะ (ตัวช่วยกรอกแบบขั้นตอน)</td></tr>
+      </tbody>
+    </table>
+    <p class="step-desc" style="margin-top:10px;">
+      แอดมินเพิ่มประเภทเอกสารของเทศบาลเองได้ในหน้าตั้งค่า ประเภทที่เพิ่มจะขึ้นในรายการนี้อัตโนมัติ
+    </p>
+
+    <div class="step-section">
+      <div>
+        <div class="step-num"><div class="step-num-circle">1</div>คัดกรองคำขอ</div>
+        <h3>สี่แท็บ กับตัวเลขที่ต้องเคลียร์</h3>
+        <ul class="steps-list">
+          <li data-n="1">เข้าเมนู <strong>คำขอเอกสาร</strong> — การ์ดสามใบด้านบนสรุป รอดำเนินการ / กำลังดำเนินการ / เสร็จสิ้น</li>
+          <li data-n="2">ใช้แท็บ <strong>รอดำเนินการ</strong> เป็นคิวหลัก ค้นหาได้ด้วยชื่อผู้ยื่นหรือประเภทเอกสาร</li>
+          <li data-n="3">กดที่แถวเพื่อเปิดรายละเอียดคำขอและไฟล์แนบที่ประชาชนอัปโหลด</li>
+          <li data-n="4">ตรวจความถูกต้องของข้อมูลก่อนกด <strong>“รับเรื่อง — เริ่มดำเนินการ”</strong></li>
+        </ul>
+        <div class="tips">
+          <strong>💡 คำขอใหม่เด้งขึ้นเองโดยไม่ต้องรีเฟรช</strong>
+          หน้าจอนี้ต่อสัญญาณเรียลไทม์กับฐานข้อมูล คำขอที่ประชาชนเพิ่งกดส่งจะโผล่ขึ้นหัวรายการทันที
+          ปุ่มรีเฟรชมุมขวาบนใช้เมื่อสงสัยว่าการเชื่อมต่อหลุดเท่านั้น
+        </div>
+      </div>
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen">
+              <div class="ui-bar">📄 คำขอเอกสาร</div>
+              <div class="ui-stats">
+                <div class="ui-stat"><b style="color:#f59e0b;">6</b><span>รอทำ</span></div>
+                <div class="ui-stat"><b style="color:#3b82f6;">2</b><span>กำลังทำ</span></div>
+                <div class="ui-stat"><b style="color:#10b981;">41</b><span>เสร็จสิ้น</span></div>
+              </div>
+              <div class="ui-tabs">
+                <span class="ui-tab on">ทั้งหมด</span><span class="ui-tab">รอดำเนินการ</span><span class="ui-tab">เสร็จสิ้น</span>
+              </div>
+              <div class="ui-row"><span>🏠</span><div class="grow"><div style="font-weight:700;">ใบรับรองการอยู่อาศัย</div><div class="ui-muted">ผู้ยื่น: ก. ตัวอย่าง</div></div><span class="badge badge-yellow">รอ</span></div>
+              <div class="ui-row"><span>🗑️</span><div class="grow"><div style="font-weight:700;">ค่าธรรมเนียมขยะ</div><div class="ui-muted">ผู้ยื่น: ข. ทดสอบ</div></div><span class="badge badge-blue">กำลังทำ</span></div>
+              <div class="ui-row"><span>🏗️</span><div class="grow"><div style="font-weight:700;">ขออนุญาตก่อสร้าง</div><div class="ui-muted">ผู้ยื่น: ค. สมมติ</div></div><span class="badge badge-green">เสร็จ</span></div>
+            </div>
+          </div>
+          <div class="phone-caption">ชื่อในภาพเป็นข้อมูลสมมติ</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-divider">
+      <div class="section-divider-line"></div>
+      <div class="section-divider-text">ผลการพิจารณา</div>
+      <div class="section-divider-line"></div>
+    </div>
+
+    <table class="info-table">
+      <thead><tr><th>การกระทำ</th><th>ระบบทำอะไรต่อ</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge badge-blue">รับเรื่อง — เริ่มดำเนินการ</span></td><td>เปลี่ยนสถานะเป็น “กำลังดำเนินการ” และผูกคำขอไว้กับบัญชีของท่านในฐานะผู้รับผิดชอบ</td></tr>
+        <tr><td><span class="badge badge-green">เสร็จสิ้น</span></td><td>ระบบสร้างเอกสารตามแบบฟอร์มพร้อมวันที่และเลขที่อ้างอิง เก็บเป็นไฟล์ แล้วส่งลิงก์ให้ประชาชนดาวน์โหลดในเมนู “เอกสารของฉัน”</td></tr>
+        <tr><td><span class="badge badge-red">ปฏิเสธคำขอ</span></td><td>ต้องพิมพ์เหตุผลก่อนยืนยัน — เหตุผลนี้แสดงให้ผู้ยื่นเห็น จึงต้องเขียนให้เข้าใจและอ้างอิงระเบียบได้</td></tr>
+      </tbody>
+    </table>
+
+    <div class="warn-box">
+      <strong>⚠️ “ปฏิเสธ” กับ “ลบถาวร” ไม่ใช่สิ่งเดียวกัน</strong>
+      การปฏิเสธจะเก็บคำขอไว้เป็นหลักฐานพร้อมเหตุผล ส่วนการลบถาวรจำกัดไว้เฉพาะ superadmin
+      และมีไว้สำหรับรายการที่ผิดพลาด/สแปม/ทดสอบเท่านั้น <strong>ห้ามใช้การลบแทนการปฏิเสธคำขอปกติ</strong>
+      เพราะจะทำให้หลักฐานการปฏิบัติราชการหายไปจากระบบ
+    </div>
+
+    <div class="note-box">
+      <strong>เอกสารที่ออกแล้วมีเลขที่อ้างอิงและวันที่กำกับเสมอ</strong>
+      ก่อนกด “เสร็จสิ้น” ให้ตรวจชื่อ-สกุล ที่อยู่ และวัตถุประสงค์อีกครั้ง
+      เพราะเอกสารจะถูกสร้างและส่งถึงประชาชนทันทีที่กด
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ 5 — ปฏิทินกิจกรรม ═══════════════════ -->
+<div id="events" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">📅</div>
+      <div><h2>5. ปฏิทินกิจกรรม</h2><p>กิจกรรมหนึ่งรายการ เลือกได้ว่าใครเห็น</p></div>
+    </div>
+
+    <div class="step-section">
+      <div>
+        <div class="step-num"><div class="step-num-circle">1</div>เพิ่มกิจกรรม</div>
+        <h3>กรอกฟอร์มแล้วเลือกกลุ่มเป้าหมาย</h3>
+        <ul class="steps-list">
+          <li data-n="1">เข้าเมนู <strong>ปฏิทินกิจกรรม</strong> แล้วกดปุ่มเพิ่มกิจกรรม</li>
+          <li data-n="2">กรอกชื่อกิจกรรม รายละเอียด วันที่และเวลา (ติ๊ก “ตลอดวัน” ได้ถ้าไม่ระบุเวลา)</li>
+          <li data-n="3">ระบุสถานที่และหมวดกิจกรรม — พิมพ์หมวดเองได้ถ้าไม่มีในตัวเลือก</li>
+          <li data-n="4">แนบไฟล์ประกอบได้หลายไฟล์ เช่น กำหนดการหรือหนังสือเชิญ</li>
+          <li data-n="5">เลือก <strong>กลุ่มเป้าหมายอย่างน้อย 1 กลุ่ม</strong> แล้วจึงบันทึกได้</li>
+        </ul>
+        <div class="note-box">
+          <strong>ถ้าไม่เลือกกลุ่มเป้าหมาย ระบบจะไม่ยอมบันทึก</strong>
+          และขึ้นข้อความเตือน เพราะกิจกรรมที่ไม่มีกลุ่มเป้าหมายจะไม่ปรากฏให้ใครเห็นเลย
+        </div>
+      </div>
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen">
+              <div class="ui-bar">📅 เพิ่มกิจกรรม</div>
+              <div style="padding:10px;font-size:10.5px;">
+                <div class="ui-muted">ชื่อกิจกรรม</div>
+                <div style="border:1px solid #e5e7eb;border-radius:7px;padding:5px 7px;margin:3px 0 8px;font-weight:700;">ประชุมประชาคมหมู่บ้าน หมู่ 3</div>
+                <div class="ui-muted">วันที่ / เวลา</div>
+                <div style="border:1px solid #e5e7eb;border-radius:7px;padding:5px 7px;margin:3px 0 8px;">15 ก.ย. 2569 · 09:00–12:00</div>
+                <div class="ui-muted" style="margin-bottom:4px;">กลุ่มเป้าหมาย</div>
+                <div style="display:flex;gap:4px;flex-wrap:wrap;">
+                  <span class="badge badge-green">ประชาชน</span>
+                  <span class="badge badge-blue">เจ้าหน้าที่</span>
+                  <span class="badge badge-gray">ผู้บริหาร</span>
+                  <span class="badge badge-gray">สภาเทศบาล</span>
+                </div>
+                <div style="margin-top:10px;"><span class="ui-btn">บันทึกกิจกรรม</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-caption">ฟอร์มกิจกรรม — ภาพจำลอง</div>
+        </div>
+      </div>
+    </div>
+
+    <h3>กลุ่มเป้าหมาย 4 กลุ่ม</h3>
+    <table class="info-table">
+      <thead><tr><th>กลุ่ม</th><th>ใครเห็น</th><th>ใช้กับ</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge badge-green">ประชาชน</span></td><td>ทุกคน รวมผู้ที่ยังไม่ได้เข้าสู่ระบบ</td><td>กิจกรรมสาธารณะ ประเพณี งานบริการเคลื่อนที่</td></tr>
+        <tr><td><span class="badge badge-blue">เจ้าหน้าที่</span></td><td>บุคลากรภายในเทศบาลที่เข้าสู่ระบบแล้ว</td><td>ประชุมภายใน อบรม เวรปฏิบัติงาน</td></tr>
+        <tr><td><span class="badge badge-purple">ผู้บริหาร</span></td><td>บุคลากรภายใน (สภาเทศบาลสร้างรายการกลุ่มนี้ไม่ได้)</td><td>วาระผู้บริหาร นัดหมายภายนอก</td></tr>
+        <tr><td><span class="badge badge-yellow">สภาเทศบาล</span></td><td>บุคลากรภายใน</td><td>ประชุมสภา สมัยประชุม</td></tr>
+      </tbody>
+    </table>
+
+    <div class="warn-box">
+      <strong>⚠️ ติ๊ก “ประชาชน” เท่ากับเผยแพร่สู่สาธารณะทันที</strong>
+      กิจกรรมกลุ่มนี้แสดงบนเว็บไซต์หน้าประชาชนโดยไม่ต้องเข้าสู่ระบบ
+      จึงไม่ควรใส่ชื่อผู้เข้าร่วม เบอร์โทรส่วนตัว หรือรายละเอียดที่เป็นข้อมูลส่วนบุคคลลงในคำอธิบายหรือไฟล์แนบ
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ 6 — ข่าวสาร/ภาพกิจกรรม ═══════════════════ -->
+<div id="posts" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">🖼️</div>
+      <div><h2>6. ข่าวสาร / ภาพกิจกรรม</h2><p>เผยแพร่ข่าวและอัลบั้มภาพสู่หน้าประชาชน</p></div>
+    </div>
+
+    <p class="step-desc">
+      โมดูลนี้มี 2 แท็บ — <strong>ข่าวสาร</strong> สำหรับประกาศและข่าวประชาสัมพันธ์
+      และ <strong>กิจกรรม</strong> สำหรับภาพบรรยากาศงานที่จัดไปแล้ว ทั้งสองแท็บใช้ฟอร์มเดียวกัน
+    </p>
+
+    <table class="info-table">
+      <thead><tr><th>ช่อง</th><th>คำแนะนำ</th></tr></thead>
+      <tbody>
+        <tr><td>ชื่อข่าว / ชื่อกิจกรรม</td><td>สั้น ชัด บอกได้ว่าเรื่องอะไรตั้งแต่บรรทัดแรก</td></tr>
+        <tr><td>เนื้อหาย่อ</td><td>สรุป 2–3 บรรทัด ใช้แสดงบนการ์ดหน้าแรก</td></tr>
+        <tr><td>รูปภาพ</td><td>อัปโหลดแล้วเลื่อนปรับจุดโฟกัสของภาพได้ ให้ใบหน้าหรือป้ายงานไม่ถูกตัด</td></tr>
+        <tr><td>วันที่</td><td>วันที่ของข่าวหรือวันที่จัดกิจกรรม ใช้เรียงลำดับการแสดงผล</td></tr>
+        <tr><td>สถานะเผยแพร่</td><td>ปิดไว้ก่อนได้ระหว่างเตรียมเนื้อหา แล้วค่อยเปิดเมื่อพร้อมประกาศ</td></tr>
+      </tbody>
+    </table>
+
+    <div class="section-divider">
+      <div class="section-divider-line"></div>
+      <div class="section-divider-text">ใครแก้ของใครได้</div>
+      <div class="section-divider-line"></div>
+    </div>
+
+    <table class="info-table">
+      <thead><tr><th>บทบาท</th><th>สร้างใหม่</th><th>แก้ไข/ลบ</th></tr></thead>
+      <tbody>
+        <tr><td>แอดมิน / Super Admin</td><td style="text-align:center;">✅</td><td>ทุกโพสต์ในเทศบาล</td></tr>
+        <tr><td>หัวหน้ากอง (officer)</td><td style="text-align:center;">✅ ต้องมีกองสังกัด</td><td>เฉพาะโพสต์ของกองตัวเอง</td></tr>
+        <tr><td>เจ้าหน้าที่ (staff)</td><td style="text-align:center;">✅</td><td>เฉพาะโพสต์ที่ตัวเองสร้าง</td></tr>
+      </tbody>
+    </table>
+
+    <div class="note-box">
+      <strong>หัวหน้ากองที่ยังไม่ถูกผูกกับกองใด จะสร้างโพสต์ไม่ได้</strong>
+      และระบบจะขึ้นข้อความแจ้งไว้ด้านบนหน้าจอ ให้แจ้งแอดมินตั้งค่ากองสังกัดในหน้าจัดการผู้ใช้ก่อน
+    </div>
+
+    <div class="warn-box">
+      <strong>⚠️ ภาพกิจกรรมที่มีใบหน้าประชาชน</strong>
+      การเผยแพร่ภาพที่ระบุตัวบุคคลได้ ควรเป็นภาพบรรยากาศงานสาธารณะในมุมกว้าง
+      หลีกเลี่ยงภาพโคลสอัพรายบุคคล โดยเฉพาะเด็ก ผู้ป่วย หรือผู้รับความช่วยเหลือ
+      หากจำเป็นต้องใช้ภาพเจาะจงบุคคล ควรมีการแจ้งและขอความยินยอมตามแนวทางของหน่วยงาน
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ 7 — OTOP ═══════════════════ -->
+<div id="tourism" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">🧳</div>
+      <div><h2>7. เที่ยว กิน พัก OTOP</h2><p>ทะเบียนสถานที่ และคำขอลงทะเบียนจากผู้ประกอบการ</p></div>
+    </div>
+
+    <p class="step-desc">
+      โมดูลนี้แบ่งเป็น 2 แท็บ — <strong>สถานที่ทั้งหมด</strong> คือทะเบียนที่เผยแพร่อยู่จริง
+      และ <strong>คำขอลงทะเบียน</strong> คือคำขอที่ผู้ประกอบการยื่นเข้ามาเองผ่านหน้าประชาชน
+      ตัวเลขสีแดงบนแท็บคือจำนวนคำขอที่ยังไม่ได้พิจารณา
+    </p>
+
+    <h3>5 หมวดสถานที่</h3>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 4px;">
+      <span class="badge badge-yellow">🏛️ เที่ยว</span>
+      <span class="badge badge-green">🍽️ กิน</span>
+      <span class="badge badge-blue">🏨 พัก</span>
+      <span class="badge badge-green">🛍️ OTOP</span>
+      <span class="badge badge-red">🔧 บริการ</span>
+    </div>
+
+    <div class="step-section">
+      <div>
+        <div class="step-num"><div class="step-num-circle">1</div>พิจารณาคำขอลงทะเบียน</div>
+        <h3>อนุมัติแล้วขึ้นหน้าประชาชนทันที</h3>
+        <ul class="steps-list">
+          <li data-n="1">เปิดแท็บ <strong>คำขอลงทะเบียน</strong> — กรองด้วยสถานะ รอพิจารณา / อนุมัติแล้ว / ปฏิเสธแล้ว</li>
+          <li data-n="2">กดที่รายการเพื่อดูรายละเอียดร้าน ภาพประกอบ และข้อมูลติดต่อที่ผู้ยื่นกรอกมา</li>
+          <li data-n="3">ตรวจว่าร้านตั้งอยู่ในเขตพื้นที่จริง ข้อมูลติดต่อใช้ได้ และเนื้อหาไม่ขัดต่อความเหมาะสม</li>
+          <li data-n="4">กด <strong>อนุมัติ</strong> เพื่อเพิ่มเข้าทะเบียนสถานที่ หรือ <strong>ปฏิเสธ</strong> พร้อมเหตุผล</li>
+        </ul>
+        <div class="tips">
+          <strong>💡 แก้ไขข้อมูลได้หลังอนุมัติ</strong>
+          รายการที่อนุมัติแล้วจะไปอยู่ในแท็บ “สถานที่ทั้งหมด” แก้ชื่อ รายละเอียด เบอร์โทร ลิงก์แผนที่
+          และสลับซ่อน/แสดงได้ตลอด โดยไม่ต้องให้ผู้ประกอบการยื่นใหม่
+        </div>
+      </div>
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen">
+              <div class="ui-bar">🧳 เที่ยว กิน พัก OTOP</div>
+              <div class="ui-tabs">
+                <span class="ui-tab on">สถานที่ทั้งหมด</span>
+                <span class="ui-tab" style="background:#fef3c7;color:#b45309;">คำขอลงทะเบียน 3</span>
+              </div>
+              <div class="ui-row"><span>🍽️</span><div class="grow"><div style="font-weight:700;">ร้านอาหารตัวอย่าง</div><div class="ui-muted">กิน · หมู่ 5</div></div><span class="badge badge-green">แสดง</span></div>
+              <div class="ui-row"><span>🛍️</span><div class="grow"><div style="font-weight:700;">กลุ่มทอผ้าสมมติ</div><div class="ui-muted">OTOP · หมู่ 1</div></div><span class="badge badge-green">แสดง</span></div>
+              <div class="ui-row"><span>🏨</span><div class="grow"><div style="font-weight:700;">โฮมสเตย์ทดสอบ</div><div class="ui-muted">พัก · หมู่ 8</div></div><span class="badge badge-gray">ซ่อน</span></div>
+            </div>
+          </div>
+          <div class="phone-caption">ชื่อร้านในภาพเป็นข้อมูลสมมติ</div>
+        </div>
+      </div>
+    </div>
+
+    <table class="info-table">
+      <thead><tr><th>บทบาท</th><th>แก้ไข/ลบสถานที่ได้แค่ไหน</th></tr></thead>
+      <tbody>
+        <tr><td>แอดมิน / Super Admin</td><td>ทุกรายการในเทศบาล</td></tr>
+        <tr><td>หัวหน้ากอง (officer)</td><td>เฉพาะรายการของกองตัวเอง</td></tr>
+        <tr><td>เจ้าหน้าที่ (staff)</td><td>เฉพาะรายการที่ตัวเองสร้าง — รายการอื่นจะกดปุ่มไม่ได้และแสดงว่า “ดูได้อย่างเดียว”</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════════════ 8 — รีวิวสถานที่ ═══════════════════ -->
+<div id="reviews" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">⭐</div>
+      <div><h2>8. รีวิวสถานที่</h2><p>ตรวจสอบรีวิวจากประชาชนและนักท่องเที่ยว</p></div>
+    </div>
+
+    <p class="step-desc">
+      รีวิวที่ประชาชนเขียนจะ <strong>แสดงบนหน้าเว็บทันทีโดยไม่ต้องรออนุมัติ</strong>
+      หน้าจอนี้จึงเป็นเครื่องมือ <strong>ตรวจหลังเผยแพร่</strong> ไม่ใช่คิวอนุมัติ
+      หน้าที่ของเจ้าหน้าที่คือไล่ดูเป็นระยะ แล้วลบเฉพาะรีวิวที่ไม่เหมาะสม
+    </p>
+
+    <ul class="steps-list">
+      <li data-n="1">เปิดเมนู <strong>รีวิวสถานที่</strong> — รายการเรียงจากใหม่ไปเก่า</li>
+      <li data-n="2">กรองเฉพาะระดับดาวที่ต้องการตรวจ (เช่น 1 ดาว) เพื่อดูข้อร้องเรียนรุนแรงก่อน</li>
+      <li data-n="3">ปรับจำนวนรายการต่อหน้า และเลื่อนหน้าด้วยปุ่ม ก่อนหน้า / ถัดไป</li>
+      <li data-n="4">กดลบเฉพาะรีวิวที่ผิดเงื่อนไข — ระบบจะถามยืนยันก่อนเสมอ</li>
+    </ul>
+
+    <div class="audit-box">
+      <strong>การลบรีวิวถูกบันทึกลงบันทึกกิจกรรมทุกครั้ง</strong>
+      พร้อมชื่อสถานที่ ระดับดาว และข้อความบางส่วน เพื่อให้ตรวจสอบย้อนหลังได้ว่าใครลบอะไรเมื่อใด
+    </div>
+
+    <div class="warn-box">
+      <strong>⚠️ อย่าลบรีวิวเพียงเพราะเป็นคำติ</strong>
+      รีวิวเชิงลบที่เป็นความเห็นโดยสุจริตถือเป็นเสียงสะท้อนของประชาชน การลบทิ้งเพื่อรักษาภาพลักษณ์
+      สุ่มเสี่ยงต่อข้อครหาเรื่องความโปร่งใส เกณฑ์การลบที่ควรใช้คือ
+      ข้อความหยาบคาย ใส่ร้ายระบุตัวบุคคล เปิดเผยข้อมูลส่วนบุคคลของผู้อื่น สแปมโฆษณา หรือข้อความซ้ำจากผู้เขียนเดียวกัน
+      หากไม่แน่ใจ ให้หารือผู้บังคับบัญชาก่อนลบ
+    </div>
+
+    <div class="tips">
+      <strong>💡 ใช้รีวิวเป็นข้อมูลบริหาร</strong>
+      สถานที่ที่ได้ดาวต่ำต่อเนื่องมักสะท้อนปัญหาจริงหน้างาน เช่น ป้ายชำรุด ห้องน้ำไม่สะอาด ทางเข้าไม่ปลอดภัย
+      ควรสรุปประเด็นเสนอผู้บังคับบัญชาแทนการลบรีวิว
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ 9 — รายงาน ═══════════════════ -->
+<div id="report" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">📈</div>
+      <div><h2>9. รายงาน</h2><p>สรุปผลการรับคำร้อง และออกเอกสารเสนอผู้บังคับบัญชา</p></div>
+    </div>
+
+    <div class="step-section">
+      <div>
+        <div class="step-num"><div class="step-num-circle">1</div>เลือกช่วงเวลา</div>
+        <h3>รายเดือน · รายปี · ทั้งหมด</h3>
+        <p class="step-desc">
+          เลือกมุมมองจากแถบด้านบน ถ้าเลือก <strong>รายเดือน</strong> จะเลือกเดือนและปีที่ต้องการได้
+          ตัวเลขทั้งหน้าและกราฟจะเปลี่ยนตามช่วงเวลาที่เลือกทันที
+        </p>
+        <table class="info-table">
+          <thead><tr><th>ตัวเลข</th><th>ความหมาย</th></tr></thead>
+          <tbody>
+            <tr><td>คำร้องทั้งหมด</td><td>จำนวนที่รับเข้ามาในช่วงเวลาที่เลือก</td></tr>
+            <tr><td>ดำเนินการแล้วเสร็จ</td><td>ปิดเรื่องเรียบร้อยแล้ว</td></tr>
+            <tr><td>คงค้าง</td><td>ยังอยู่ระหว่างดำเนินการ ณ วันที่ออกรายงาน</td></tr>
+            <tr><td>อัตราแล้วเสร็จ</td><td>สัดส่วนงานที่ปิดได้ เทียบกับที่รับเข้ามา</td></tr>
+            <tr><td>ระยะเวลาเฉลี่ย</td><td>จำนวนวันเฉลี่ยตั้งแต่รับคำร้องจนปิดเรื่อง</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen">
+              <div class="ui-bar">📈 รายงานสรุป</div>
+              <div class="ui-tabs">
+                <span class="ui-tab on">รายเดือน</span><span class="ui-tab">รายปี</span><span class="ui-tab">ทั้งหมด</span>
+              </div>
+              <div class="ui-stats">
+                <div class="ui-stat"><b style="color:#0369a1;">58</b><span>ทั้งหมด</span></div>
+                <div class="ui-stat"><b style="color:#10b981;">49</b><span>แล้วเสร็จ</span></div>
+                <div class="ui-stat"><b style="color:#f59e0b;">9</b><span>คงค้าง</span></div>
+              </div>
+              <div class="ui-row"><div class="grow">อัตราแล้วเสร็จ</div><b>84.5%</b></div>
+              <div class="ui-row"><div class="grow">ระยะเวลาเฉลี่ย</div><b>3.2 วัน</b></div>
+              <div class="ui-row" style="gap:6px;"><span class="ui-btn">พิมพ์รายงาน</span><span class="ui-btn ghost">ดาวน์โหลด CSV</span></div>
+            </div>
+          </div>
+          <div class="phone-caption">ตัวเลขในภาพเป็นตัวอย่าง</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-divider">
+      <div class="section-divider-line"></div>
+      <div class="section-divider-text">การนำออกข้อมูล</div>
+      <div class="section-divider-line"></div>
+    </div>
+
+    <table class="info-table">
+      <thead><tr><th>ปุ่ม</th><th>ได้อะไร</th><th>ใช้เมื่อ</th></tr></thead>
+      <tbody>
+        <tr><td>🖨️ พิมพ์รายงาน</td><td>เอกสารรูปแบบหนังสือราชการ — หัวเรื่อง “รายงานสรุปผลการรับคำร้อง” เรียนผู้บังคับบัญชา พร้อมตารางแนวโน้ม ตารางแยกตามประเภทคำร้อง และช่องลงนามผู้รายงาน</td><td>เสนอผู้บริหาร แนบวาระประชุม เก็บเข้าแฟ้ม</td></tr>
+        <tr><td>⬇️ ดาวน์โหลด CSV</td><td>ไฟล์ตารางเปิดด้วย Excel ได้ (รองรับภาษาไทย)</td><td>นำไปทำกราฟเอง หรือรวมกับข้อมูลชุดอื่น</td></tr>
+      </tbody>
+    </table>
+
+    <div class="tips">
+      <strong>💡 หน้าพิมพ์คือหน้าต่างพิมพ์ของเบราว์เซอร์</strong>
+      เลือกปลายทางเป็น “บันทึกเป็น PDF” เพื่อได้ไฟล์ PDF โดยไม่ต้องพิมพ์ลงกระดาษ
+      และตั้งขนาดกระดาษเป็น A4 ก่อนสั่งพิมพ์ทุกครั้ง
+    </div>
+
+    <div class="warn-box">
+      <strong>⚠️ ตัวเลขที่ท่านเห็นถูกจำกัดตามบทบาทของท่าน</strong>
+      รายงานฝั่งเจ้าหน้าที่ดึงข้อมูลตามขอบเขตสิทธิ์ — หัวหน้ากองเห็นเฉพาะกองตัวเอง
+      เจ้าหน้าที่เห็นเฉพาะงานที่ได้รับมอบหมาย ดังนั้น <strong>ตัวเลขในรายงานของแต่ละคนไม่เท่ากัน</strong>
+      รายงานภาพรวมทั้งเทศบาลต้องออกจากบัญชีแอดมิน มิฉะนั้นเอกสารที่เสนอผู้บริหารจะต่ำกว่าความจริง
+    </div>
+
+    <div class="warn-box">
+      <strong>⚠️ ไฟล์ CSV มีข้อมูลผู้ร้อง</strong>
+      เมื่อดาวน์โหลดแล้ว ไฟล์จะอยู่นอกการควบคุมของระบบ ให้เก็บไว้ในเครื่องของหน่วยงาน
+      ห้ามส่งต่อผ่านช่องทางสาธารณะหรืออัปโหลดขึ้นบริการภายนอกที่หน่วยงานไม่ได้รับรอง และลบทิ้งเมื่อใช้เสร็จ
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ 10 — ศูนย์ข้อมูลดิจิทัล ═══════════════════ -->
+<div id="datacenter" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">📍</div>
+      <div><h2>10. ศูนย์ข้อมูลดิจิทัล</h2><p>แผนที่ GIS และคลังหมุดข้อมูลของเทศบาล</p></div>
+    </div>
+
+    <p class="step-desc">
+      กดเมนู <strong>ศูนย์ข้อมูลดิจิทัล</strong> แล้วระบบจะพาไปหน้าฝั่งเจ้าหน้าที่โดยตรง (<strong>/data-center/staff</strong>)
+      ประชาชนเข้าดูได้เฉพาะหน้าสาธารณะ (<strong>/data-center/public</strong>) ซึ่งแสดงเฉพาะข้อมูลที่เปิดเผยได้
+    </p>
+
+    <table class="info-table">
+      <thead><tr><th>แท็บ</th><th>ใช้ทำอะไร</th><th>ใครใช้ได้</th></tr></thead>
+      <tbody>
+        <tr><td>🧩 ภาพรวมระบบ</td><td>สรุปจำนวนข้อมูลแต่ละกลุ่ม/ประเภท กดที่รายการเพื่อกระโดดไปดูบนแผนที่แบบกรองเฉพาะกลุ่มนั้น</td><td>เจ้าหน้าที่ทุกบทบาท</td></tr>
+        <tr><td>🗺️ แผนที่ GIS</td><td>ดูหมุดข้อมูลทั้งหมดบนแผนที่ กรองตามกลุ่มและประเภท</td><td>เจ้าหน้าที่ทุกบทบาท</td></tr>
+        <tr><td>➕ บันทึกข้อมูลใหม่</td><td>เพิ่มหมุดข้อมูลใหม่พร้อมพิกัดและรายละเอียด</td><td>เจ้าหน้าที่ทุกบทบาท</td></tr>
+        <tr><td>🏷️ จัดการหมวดหมู่</td><td>เพิ่ม/แก้กลุ่มและประเภทข้อมูลของเทศบาล</td><td><span class="badge badge-red">แอดมิน</span> เท่านั้น</td></tr>
+      </tbody>
+    </table>
+
+    <div class="section-divider">
+      <div class="section-divider-line"></div>
+      <div class="section-divider-text">สิทธิ์แก้ไขหมุดข้อมูล</div>
+      <div class="section-divider-line"></div>
+    </div>
+
+    <table class="info-table">
+      <thead><tr><th>บทบาท</th><th>แก้ไข/ลบหมุดได้แค่ไหน</th></tr></thead>
+      <tbody>
+        <tr><td>แอดมิน / Super Admin</td><td>ทุกหมุดในเทศบาล</td></tr>
+        <tr><td>หัวหน้ากอง (officer)</td><td>เฉพาะหมุดของกองตัวเอง</td></tr>
+        <tr><td>เจ้าหน้าที่ / ปฏิบัติงาน</td><td>เฉพาะหมุดที่ตัวเองเป็นผู้บันทึก</td></tr>
+      </tbody>
+    </table>
+
+    <div class="tips">
+      <strong>💡 บันทึกพิกัดให้ถูกตั้งแต่ครั้งแรก</strong>
+      หมุดที่พิกัดคลาดเคลื่อนจะทำให้แผนที่ใช้วางแผนงานไม่ได้จริง
+      ถ้าอยู่หน้างานให้ใช้ตำแหน่งปัจจุบันจากมือถือ ถ้าบันทึกย้อนหลังให้เทียบกับจุดอ้างอิงที่เห็นชัด เช่น ทางแยกหรือเลขเสาไฟ
+    </div>
+
+    <div class="warn-box">
+      <strong>⚠️ ข้อมูลบนหมุดอาจถูกเปิดเผยต่อสาธารณะ</strong>
+      หมุดในศูนย์ข้อมูลดิจิทัลมีไว้บันทึก <strong>ทรัพย์สินและโครงสร้างพื้นฐาน</strong>
+      เช่น เสาไฟ ถังขยะ ท่อระบายน้ำ ประปาหมู่บ้าน ไม่ใช่ข้อมูลรายบุคคล
+      ห้ามบันทึกชื่อ เลขบัตรประชาชน เบอร์โทร หรือข้อมูลสุขภาพของประชาชนลงในหมายเหตุของหมุด
+    </div>
+  </div>
+</div>
 <!-- ═══════════════════════ PAGE 1 — ภาพรวม ═══════════════════════ -->
 <div id="overview" class="page">
   <div class="content-page">
     <div class="page-header">
       <div class="page-header-icon">🚗</div>
-      <div><h2>ภาพรวมระบบยานพาหนะ</h2><p>6 แท็บหลักในระบบ</p></div>
+      <div><h2>11.1 ยานพาหนะ/น้ำมัน — ภาพรวมระบบ</h2><p>6 แท็บหลักในระบบ</p></div>
     </div>
 
     <p class="step-desc">ระบบยานพาหนะแบ่งเป็น 6 แท็บ เข้าถึงได้จากแถบเมนูด้านบนของหน้า <strong>ยานพาหนะและเชื้อเพลิง</strong></p>
@@ -236,7 +870,7 @@
   <div class="content-page">
     <div class="page-header">
       <div class="page-header-icon">🚙</div>
-      <div><h2>รถและเครื่องยนต์</h2><p>ดูสถิติการใช้งานรายคัน (ฟีเจอร์ใหม่)</p></div>
+      <div><h2>11.2 รถและเครื่องยนต์</h2><p>ดูสถิติการใช้งานรายคัน (ฟีเจอร์ใหม่)</p></div>
     </div>
 
     <div class="step-section">
@@ -303,7 +937,7 @@
   <div class="content-page">
     <div class="page-header">
       <div class="page-header-icon">⛽</div>
-      <div><h2>บันทึกและแก้ไขการเติมเชื้อเพลิง</h2><p>รวมช่องราคา/ลิตร คำนวณยอดรวมอัตโนมัติ</p></div>
+      <div><h2>11.3 บันทึกและแก้ไขการเติมเชื้อเพลิง</h2><p>รวมช่องราคา/ลิตร คำนวณยอดรวมอัตโนมัติ</p></div>
     </div>
 
     <div class="step-section">
@@ -363,7 +997,7 @@
   <div class="content-page">
     <div class="page-header">
       <div class="page-header-icon">🔧</div>
-      <div><h2>บันทึกและแก้ไขการซ่อมบำรุง</h2><p>ยอดรวมคำนวณจากทุกรายการที่ตรงตัวกรองเสมอ</p></div>
+      <div><h2>11.4 บันทึกและแก้ไขการซ่อมบำรุง</h2><p>ยอดรวมคำนวณจากทุกรายการที่ตรงตัวกรองเสมอ</p></div>
     </div>
 
     <div class="step-section">
@@ -433,6 +1067,167 @@
         <tr><td>fleet_viewer (ดูรายงาน)</td><td style="text-align:center;">—</td><td style="text-align:center;">—</td><td style="text-align:center;">—</td><td>ดูอย่างเดียว</td></tr>
       </tbody>
     </table>
+  </div>
+</div>
+
+<!-- ═══════════════════ 12 — ทำเนียบตำแหน่ง ═══════════════════ -->
+<div id="positions" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">💼</div>
+      <div><h2>12. ทำเนียบตำแหน่ง</h2><p>โครงสร้างตำแหน่งและผู้ดำรงตำแหน่งของหน่วยงาน</p></div>
+    </div>
+
+    <p class="step-desc">
+      ทำเนียบตำแหน่งคือผังตำแหน่งตามโครงสร้างส่วนราชการ พร้อมรายชื่อผู้ดำรงตำแหน่งปัจจุบัน
+      ใช้เป็นข้อมูลอ้างอิงร่วมกันทั้งระบบ — เช่น การมอบหมายงานและการแสดงผู้รับผิดชอบในคำร้อง
+      <strong>เจ้าหน้าที่ทุกบทบาทเปิดดูได้</strong> ส่วนการแก้ไขจำกัดตามสิทธิ์
+    </p>
+
+    <ul class="steps-list">
+      <li data-n="1">ค้นหาได้ทั้ง <strong>ชื่อตำแหน่ง</strong> และ <strong>ชื่อคน</strong> ในช่องค้นหาเดียว</li>
+      <li data-n="2">กดที่แถวตำแหน่งเพื่อกางดูผู้ดำรงตำแหน่งและข้อมูลติดต่อ</li>
+      <li data-n="3">ตำแหน่งที่ผูกกับกองใดกองหนึ่งจะแสดงชื่อกองกำกับไว้ ตำแหน่งกลางเว้นว่างได้</li>
+    </ul>
+
+    <table class="info-table">
+      <thead><tr><th>บทบาท</th><th>ทำอะไรได้</th></tr></thead>
+      <tbody>
+        <tr><td>เจ้าหน้าที่ทั่วไป / หัวหน้ากอง</td><td>ดูอย่างเดียว</td></tr>
+        <tr><td>แอดมิน</td><td>เพิ่ม/ลบผู้ดำรงตำแหน่ง รวมถึงเพิ่มแบบ “ชื่อและเบอร์โทร” สำหรับผู้ที่ยังไม่มีบัญชีในระบบ</td></tr>
+        <tr><td>Super Admin</td><td>เพิ่ม/แก้/ลบตัวตำแหน่งเอง (ชื่อตำแหน่ง ระดับ กองที่สังกัด)</td></tr>
+      </tbody>
+    </table>
+
+    <div class="tips">
+      <strong>💡 “ชื่ออย่างเดียว” ต่างจาก “บัญชีผู้ใช้”</strong>
+      การเพิ่มชื่อผู้ดำรงตำแหน่งในทำเนียบ ไม่ได้สร้างบัญชีให้คนนั้นเข้าใช้ระบบ
+      ถ้าต้องการให้เข้าใช้งานได้ ต้องให้แอดมินสร้างบัญชีในหน้า “จัดการผู้ใช้และการแต่งตั้ง” ต่างหาก
+    </div>
+
+    <div class="warn-box">
+      <strong>⚠️ ปรับปรุงให้ตรงกับคำสั่งแต่งตั้งเสมอ</strong>
+      เมื่อมีคำสั่งย้าย เกษียณ หรือแต่งตั้งใหม่ ให้แก้ทำเนียบทันที
+      ทำเนียบที่ล้าสมัยจะทำให้คำร้องถูกมอบหมายไปยังผู้ที่ไม่ได้รับผิดชอบแล้ว และงานค้างโดยไม่มีใครรู้
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ 13 — บันทึกงานซ่อม ═══════════════════ -->
+<div id="infra" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">🔨</div>
+      <div><h2>13. บันทึกงานซ่อม (กองช่าง)</h2><p>ทะเบียนงานซ่อมและงานโครงสร้างพื้นฐาน</p></div>
+    </div>
+
+    <p class="step-desc">
+      เมนูนี้อยู่ใต้หัวข้อ <strong>กองช่าง</strong> ใช้บันทึกงานซ่อม/งานปรับปรุงโครงสร้างพื้นฐานที่ดำเนินการจริง
+      แยกจากเมนู “คำร้อง” ตรงที่คำร้องคือเรื่องที่ประชาชนแจ้งเข้ามา ส่วนที่นี่คืองานของกองช่างเอง
+      ซึ่งอาจเกิดจากคำร้อง จากแผนงานประจำปี หรือจากการสำรวจพบเองก็ได้
+    </p>
+
+    <h3>ประเภทงาน 8 ประเภท</h3>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0;">
+      <span class="badge badge-gray">🛣️ ถนน/ทางหลวง</span>
+      <span class="badge badge-gray">🕳️ ระบบระบายน้ำ</span>
+      <span class="badge badge-gray">🌉 สะพาน/คลอง</span>
+      <span class="badge badge-gray">💡 ไฟฟ้า</span>
+      <span class="badge badge-gray">🏞️ ลำเหมือง</span>
+      <span class="badge badge-gray">🏗️ อาคาร</span>
+      <span class="badge badge-gray">💧 ชลประทาน</span>
+      <span class="badge badge-gray">📝 อื่นๆ</span>
+    </div>
+
+    <h3>ข้อมูลที่ต้องกรอก</h3>
+    <table class="info-table">
+      <thead><tr><th>ช่อง</th><th>คำแนะนำ</th></tr></thead>
+      <tbody>
+        <tr><td>ชื่องาน / โครงการ</td><td>ระบุให้ค้นเจอภายหลัง เช่น “ก่อสร้างถนน คสล. หมู่ที่ 5”</td></tr>
+        <tr><td>ประเภทงาน</td><td>เลือกจาก 8 ประเภทข้างต้น ใช้จัดกลุ่มในรายงาน</td></tr>
+        <tr><td>สถานที่ / หมู่บ้าน</td><td>ชื่อจุดที่เข้าใจตรงกันในพื้นที่</td></tr>
+        <tr><td>วันที่ทำงาน</td><td>ค่าเริ่มต้นเป็นวันนี้ แก้เป็นวันที่ดำเนินการจริงได้</td></tr>
+        <tr><td>งบประมาณ (บาท)</td><td>ตัวเลขที่ใช้จริงหรือที่ได้รับอนุมัติ ตามที่หน่วยงานกำหนด</td></tr>
+        <tr><td>รายละเอียด</td><td>สเปกวัสดุ งบแยกหมวด หมายเหตุสัญญา และข้อมูลที่ใช้ตรวจรับงาน</td></tr>
+      </tbody>
+    </table>
+
+    <div class="note-box">
+      <strong>ระบบเตือนรายการที่ยังกรอกไม่ครบ</strong>
+      งานที่ช่างปักหมุดไว้แต่ยัง <strong>ไม่มีทั้งงบประมาณและรายละเอียด</strong>
+      จะถูกนับและขึ้นแถบเตือนด้านบนหน้าจอ ให้ตามกรอกให้ครบก่อนสิ้นเดือน
+      รายการที่ข้อมูลไม่ครบจะใช้เป็นหลักฐานประกอบการตรวจสอบไม่ได้
+    </div>
+
+    <table class="info-table">
+      <thead><tr><th>บทบาท</th><th>แก้ไข/ลบได้แค่ไหน</th></tr></thead>
+      <tbody>
+        <tr><td>แอดมิน / Super Admin</td><td>ทุกรายการ</td></tr>
+        <tr><td>หัวหน้ากอง (officer)</td><td>เฉพาะรายการของกองตัวเอง</td></tr>
+        <tr><td>เจ้าหน้าที่ / ปฏิบัติงาน</td><td>เฉพาะรายการที่ตัวเองบันทึก</td></tr>
+      </tbody>
+    </table>
+
+    <div class="audit-box">
+      <strong>ทุกการแก้ไขและลบถูกบันทึกลงบันทึกกิจกรรม</strong>
+      พร้อมประเภทงาน สถานะ และงบประมาณ ณ ขณะนั้น
+      ข้อมูลชุดนี้เป็นหลักฐานประกอบการตรวจสอบ จึงควรแก้ให้ถูกต้องแทนการลบแล้วสร้างใหม่
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ 14 — PDPA / FAQ ═══════════════════ -->
+<div id="pdpa" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">🛡️</div>
+      <div><h2>14. ข้อควรระวังด้านข้อมูลส่วนบุคคล</h2><p>สิ่งที่เจ้าหน้าที่ทุกคนต้องถือปฏิบัติ</p></div>
+    </div>
+
+    <p class="step-desc">
+      ข้อมูลในระบบนี้มีทั้งชื่อ ที่อยู่ เบอร์โทร ภาพถ่าย และพิกัดบ้านของประชาชน
+      ซึ่งเป็นข้อมูลส่วนบุคคลตามกฎหมายคุ้มครองข้อมูลส่วนบุคคล
+      หน่วยงานเป็นผู้ควบคุมข้อมูล และเจ้าหน้าที่ทุกคนคือผู้ใช้ข้อมูลในนามหน่วยงาน
+    </p>
+
+    <ul class="checklist">
+      <li class="check-item"><span class="check-box"></span><span><strong>เปิดดูเท่าที่จำเป็นต่อหน้าที่</strong> — ไม่เปิดคำร้องของกองอื่นหรือของคนรู้จักด้วยความอยากรู้ ทุกการเปิดดูถูกบันทึกไว้</span></li>
+      <li class="check-item"><span class="check-box"></span><span><strong>ไม่ส่งต่อออกนอกระบบ</strong> — ห้ามแคปหน้าจอที่มีชื่อ/เบอร์โทรผู้ร้องส่งในกลุ่มแชตส่วนตัวหรือกลุ่มไลน์ที่มีบุคคลภายนอก</span></li>
+      <li class="check-item"><span class="check-box"></span><span><strong>ระวังช่องเผยแพร่สาธารณะ</strong> — ข่าวสาร ปฏิทินกลุ่ม “ประชาชน” และหมุดข้อมูล ต้องไม่มีข้อมูลรายบุคคล</span></li>
+      <li class="check-item"><span class="check-box"></span><span><strong>ไฟล์ที่ดาวน์โหลดคือความรับผิดชอบของท่าน</strong> — CSV และเอกสารที่บันทึกลงเครื่อง ให้เก็บในเครื่องของหน่วยงานและลบเมื่อใช้เสร็จ</span></li>
+      <li class="check-item"><span class="check-box"></span><span><strong>ไม่ใช้บัญชีร่วมกัน</strong> — บันทึกกิจกรรมอ้างอิงบัญชีผู้ใช้ ถ้าใช้บัญชีคนอื่นทำงาน ผู้ที่ต้องรับผิดชอบคือเจ้าของบัญชี</span></li>
+      <li class="check-item"><span class="check-box"></span><span><strong>ออกจากระบบเมื่อใช้เครื่องร่วม</strong> — โดยเฉพาะเครื่องที่ตั้งอยู่จุดบริการประชาชน</span></li>
+    </ul>
+
+    <div class="warn-box">
+      <strong>⚠️ คู่มือฉบับนี้เปิดอ่านได้โดยไม่ต้องเข้าสู่ระบบ</strong>
+      ชื่อบุคคล เลขที่คำร้อง และตัวเลขทั้งหมดในภาพประกอบเป็น <strong>ข้อมูลสมมติ</strong>
+      หากท่านจัดทำเอกสารอบรมเพิ่มเติม ห้ามใช้ภาพหน้าจอที่มีข้อมูลจริงของประชาชน
+    </div>
+
+    <div class="section-divider">
+      <div class="section-divider-line"></div>
+      <div class="section-divider-text">คำถามที่พบบ่อย</div>
+      <div class="section-divider-line"></div>
+    </div>
+
+    <table class="info-table">
+      <thead><tr><th>ปัญหา</th><th>ทำอย่างไร</th></tr></thead>
+      <tbody>
+        <tr><td>เข้าสู่ระบบแล้วไม่เห็นเมนูที่เคยใช้</td><td>บทบาทของบัญชีอาจถูกเปลี่ยน หรือกองสังกัดยังไม่ถูกตั้งค่า — แจ้งแอดมินตรวจในหน้าจัดการผู้ใช้</td></tr>
+        <tr><td>ประชาชนบอกว่ายื่นคำร้องแล้ว แต่ไม่พบในระบบ</td><td>คำร้องยังเป็นสถานะ “รอดำเนินการ” ซึ่งยังไม่ส่งถึงเจ้าหน้าที่ ให้ตรวจกับแอดมินว่ารับเรื่องและมอบหมายแล้วหรือยัง</td></tr>
+        <tr><td>กด “ปิดงาน” ไม่ได้</td><td>ต้องแนบรูปผลการดำเนินการก่อน และคำร้องต้องอยู่ในสถานะ “กำลังดำเนินการ”</td></tr>
+        <tr><td>ปิดงานแล้วแต่ประชาชนยังเห็นว่าไม่เสร็จ</td><td>ถูกต้องแล้ว — สถานะ “รอปิดเรื่อง” ยังรอแอดมินตรวจและกด “ปิดเรื่อง” จึงจะแจ้งผลไปยังประชาชน</td></tr>
+        <tr><td>เห็นเบอร์โทรผู้ร้องเป็น 081-XXX-234</td><td>เป็นการปิดบังตามบทบาท ไม่ใช่ข้อมูลผิด หากจำเป็นต้องติดต่อ ให้ประสานผ่านผู้มีสิทธิ์เต็มในกอง</td></tr>
+        <tr><td>อัปโหลดรูปไม่สำเร็จ</td><td>ตรวจสัญญาณอินเทอร์เน็ต ลองลดขนาดรูป และถ้าใช้มือถือให้เปิดแอปค้างไว้จนอัปโหลดเสร็จ</td></tr>
+        <tr><td>หน้าจอค้างหรือข้อมูลไม่อัปเดต</td><td>กดปุ่มรีเฟรชในหน้านั้น ถ้ายังไม่หาย ให้ออกจากระบบแล้วเข้าใหม่ หรือล้างแคชจากเมนู “อื่นๆ” ฝั่งประชาชน</td></tr>
+      </tbody>
+    </table>
+
+    <div class="tips">
+      <strong>💡 คู่มือเล่มอื่น</strong>
+      ผู้ดูแลระบบ: <strong>/manual-admin.html</strong> · ประชาชน: <strong>/manual-citizen.html</strong>
+    </div>
   </div>
 </div>
 

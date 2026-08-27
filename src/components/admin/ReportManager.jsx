@@ -111,6 +111,7 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
   const [view, setView]   = useState('month')
   const [month, setMonth] = useState(now.getMonth())
   const [year, setYear]   = useState(now.getFullYear())
+  const [cat, setCat]     = useState('all')
 
   // ดึงหมวดหมู่ที่ Admin สร้างเอง merge เข้า CATEGORY_LABEL/EMOJI
   const [, setCatVer] = useState(0)
@@ -132,7 +133,14 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
   if (!years.includes(now.getFullYear())) years.push(now.getFullYear())
   years.sort((a, b) => b - a)
 
-  const viewData = complaints.filter(c => {
+  // รายการประเภทสำหรับ dropdown — เอาเฉพาะประเภทที่มีคำร้องจริง เรียงตามจำนวนมาก→น้อย
+  const catTotals = {}
+  complaints.forEach(c => { if (c.category) catTotals[c.category] = (catTotals[c.category] || 0) + 1 })
+  const catOptions = Object.entries(catTotals).sort((a, b) => b[1] - a[1])
+  const catLabel = cat === 'all' ? null : (CATEGORY_LABEL[cat] ?? cat)
+  const scoped = cat === 'all' ? complaints : complaints.filter(c => c.category === cat)
+
+  const viewData = scoped.filter(c => {
     const d = new Date(c.created_at)
     if (view === 'month') return d.getMonth() === month && d.getFullYear() === year
     if (view === 'year')  return d.getFullYear() === year
@@ -145,7 +153,7 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
   const active    = total - completed - rejected
   const rate      = total > 0 ? Math.round(completed / total * 100) : 0
 
-  const closedData = complaints.filter(c => {
+  const closedData = scoped.filter(c => {
     if (!isClosedStatus(c.status)) return false
     const d = new Date(c.updated_at)
     if (view === 'month') return d.getMonth() === month && d.getFullYear() === year
@@ -159,12 +167,12 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
   const prevMonth = month === 0 ? 11 : month - 1
   const prevYear  = month === 0 ? year - 1 : year
   const prevData  = view === 'month'
-    ? complaints.filter(c => { const d = new Date(c.created_at); return d.getMonth() === prevMonth && d.getFullYear() === prevYear })
+    ? scoped.filter(c => { const d = new Date(c.created_at); return d.getMonth() === prevMonth && d.getFullYear() === prevYear })
     : []
   const prevTotal     = prevData.length
   const prevCompleted = prevData.filter(c => isClosedStatus(c.status)).length
   const prevRate      = prevTotal > 0 ? Math.round(prevCompleted / prevTotal * 100) : 0
-  const prevClosedData = complaints.filter(c => {
+  const prevClosedData = scoped.filter(c => {
     if (!isClosedStatus(c.status)) return false
     const d = new Date(c.updated_at)
     return d.getMonth() === prevMonth && d.getFullYear() === prevYear
@@ -180,7 +188,7 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
   const slaRate7  = closedData.length > 0 ? Math.round(slaIn7 / closedData.length * 100) : null
 
   const techMap = {}
-  complaints.filter(c => isClosedStatus(c.status) && c.assigned_to).forEach(c => {
+  scoped.filter(c => isClosedStatus(c.status) && c.assigned_to).forEach(c => {
     const tech = technicians.find(t => t.id === c.assigned_to)
     const name = tech?.full_name || tech?.email || null
     if (!name) return
@@ -194,18 +202,18 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
 
   const trend = view === 'all'
     ? years.slice().reverse().map(y => {
-        const cs = complaints.filter(c => new Date(c.created_at).getFullYear() === y)
+        const cs = scoped.filter(c => new Date(c.created_at).getFullYear() === y)
         return { label: String(y + 543), submitted: cs.length, completed: cs.filter(c => isClosedStatus(c.status)).length }
       })
     : view === 'year'
     ? Array.from({ length: 12 }, (_, i) => {
-        const cs = complaints.filter(c => { const d = new Date(c.created_at); return d.getMonth() === i && d.getFullYear() === year })
+        const cs = scoped.filter(c => { const d = new Date(c.created_at); return d.getMonth() === i && d.getFullYear() === year })
         return { label: MONTHS_TH[i], submitted: cs.length, completed: cs.filter(c => isClosedStatus(c.status)).length }
       })
     : Array.from({ length: 4 }, (_, i) => {
         const weekStart = i * 7 + 1
         const weekEnd   = i === 3 ? 31 : weekStart + 6
-        const cs = complaints.filter(c => { const d = new Date(c.created_at); return d.getMonth() === month && d.getFullYear() === year && d.getDate() >= weekStart && d.getDate() <= weekEnd })
+        const cs = scoped.filter(c => { const d = new Date(c.created_at); return d.getMonth() === month && d.getFullYear() === year && d.getDate() >= weekStart && d.getDate() <= weekEnd })
         return { label: `สัปดาห์ ${i + 1}`, submitted: cs.length, completed: cs.filter(c => isClosedStatus(c.status)).length }
       })
 
@@ -220,15 +228,29 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
   const CAT_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#94a3b8']
 
   const nowMs = now.getTime()
-  const overdue = complaints
+  const overdue = scoped
     .filter(c => !['completed', 'closed', 'rejected'].includes(c.status) && (nowMs - new Date(c.created_at)) > 15 * 86400000)
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).slice(0, 6)
-  const noTechAction = complaints
+  const noTechAction = scoped
     .filter(c => c.status === 'received' && (nowMs - new Date(c.updated_at)) > 7 * 86400000)
     .sort((a, b) => new Date(a.updated_at) - new Date(b.updated_at)).slice(0, 6)
 
   const rateColor = rate >= 70 ? '#10b981' : rate >= 40 ? '#f59e0b' : '#ef4444'
-  const viewLabel = view === 'month' ? `${MONTHS_FULL_TH[month]} ${year + 543}` : view === 'year' ? `ปี ${year + 543}` : 'ทั้งหมด'
+  const periodLabel = view === 'month' ? `${MONTHS_FULL_TH[month]} ${year + 543}` : view === 'year' ? `ปี ${year + 543}` : 'ทั้งหมด'
+  const viewLabel = catLabel ? `${periodLabel} เฉพาะประเภท${catLabel}` : periodLabel
+
+  // เลือกประเภทเดียวแล้ว การ์ดสัดส่วน "ประเภท" ไม่มีความหมาย → สลับไปดูสัดส่วนสถานะแทน
+  const statusCount = {}
+  viewData.forEach(c => { statusCount[c.status] = (statusCount[c.status] || 0) + 1 })
+  const statusData = Object.entries(statusCount)
+    .map(([value, count]) => ({ name: STATUS[value]?.label ?? value, color: STATUS[value]?.color ?? '#94a3b8', count }))
+    .sort((a, b) => b.count - a.count)
+  const breakdown = catLabel
+    ? { title: `สถานะคำร้อง${catLabel}`, pie: statusData, list: statusData, colorOf: d => d.color }
+    : {
+        title: view === 'all' ? 'ประเภทคำร้องทั้งหมด' : view === 'year' ? `ประเภทคำร้องปี ${year + 543}` : `ประเภทคำร้อง${MONTHS_FULL_TH[month]}นี้`,
+        pie: catPieData, list: catData, colorOf: (d, i) => CAT_COLORS[i % CAT_COLORS.length],
+      }
 
   function exportCsv() {
     const rows = [
@@ -290,27 +312,37 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
             </button>
           ))}
         </div>
-        {view !== 'all' && (
-          <div className="mt-3 flex items-center gap-2">
-            {view === 'month' && (
-              <select value={month} onChange={event => setMonth(+event.target.value)}
-                className="min-h-10 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-blue-400">
-                {MONTHS_TH.map((label, index) => <option key={label} value={index}>{label}</option>)}
-              </select>
-            )}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <select value={cat} onChange={event => setCat(event.target.value)}
+            className={`min-h-10 min-w-0 flex-1 basis-full rounded-xl border bg-white px-3 text-sm font-semibold outline-none focus:border-blue-400 sm:basis-44 ${cat === 'all' ? 'border-slate-200 text-slate-700' : 'border-blue-300 text-blue-700'}`}
+            aria-label="กรองตามประเภทคำร้อง">
+            <option value="all">ทุกประเภท</option>
+            {catOptions.map(([value, count]) => (
+              <option key={value} value={value}>
+                {CATEGORY_EMOJI[value] ? `${CATEGORY_EMOJI[value]} ` : ''}{CATEGORY_LABEL[value] ?? value} ({count})
+              </option>
+            ))}
+          </select>
+          {view === 'month' && (
+            <select value={month} onChange={event => setMonth(+event.target.value)}
+              className="min-h-10 min-w-0 flex-1 basis-24 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-blue-400">
+              {MONTHS_TH.map((label, index) => <option key={label} value={index}>{label}</option>)}
+            </select>
+          )}
+          {view !== 'all' && (
             <select value={year} onChange={event => setYear(+event.target.value)}
-              className="min-h-10 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-blue-400">
+              className="min-h-10 min-w-0 flex-1 basis-28 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-blue-400">
               {years.map(value => <option key={value} value={value}>พ.ศ. {value + 543}</option>)}
             </select>
-            {(view !== 'month' || month !== now.getMonth() || year !== now.getFullYear()) && (
-              <button onClick={() => { setView('month'); setMonth(now.getMonth()); setYear(now.getFullYear()) }}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-400 transition hover:bg-red-50 hover:text-red-500"
-                aria-label="กลับไปเดือนปัจจุบัน" title="กลับไปเดือนปัจจุบัน">
-                <X size={15} />
-              </button>
-            )}
-          </div>
-        )}
+          )}
+          {(view !== 'month' || month !== now.getMonth() || year !== now.getFullYear() || cat !== 'all') && (
+            <button onClick={() => { setView('month'); setMonth(now.getMonth()); setYear(now.getFullYear()); setCat('all') }}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-400 transition hover:bg-red-50 hover:text-red-500"
+              aria-label="ล้างตัวกรอง" title="ล้างตัวกรอง กลับไปเดือนปัจจุบัน">
+              <X size={15} />
+            </button>
+          )}
+        </div>
       </section>
 
       <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3">
@@ -373,7 +405,7 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
         <h3 className="mb-4 text-sm font-extrabold text-slate-800">
           {view === 'all' ? 'แนวโน้มรายปี' : view === 'year' ? `แนวโน้มรายเดือน ปี ${year + 543}` : `แนวโน้มรายสัปดาห์ ${MONTHS_FULL_TH[month]} ${year + 543}`}
         </h3>
-        {complaints.length === 0 ? (
+        {scoped.length === 0 ? (
           <div className="flex items-center justify-center h-40 text-gray-400 text-sm">ยังไม่มีข้อมูล</div>
         ) : (
           <ResponsiveContainer width="100%" height={220}>
@@ -393,16 +425,14 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
       </div>
 
       <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm md:p-5">
-        <h3 className="mb-4 text-sm font-extrabold text-slate-800">
-          {view === 'all' ? 'ประเภทคำร้องทั้งหมด' : view === 'year' ? `ประเภทคำร้องปี ${year + 543}` : `ประเภทคำร้อง${MONTHS_FULL_TH[month]}นี้`}
-        </h3>
-        {catData.length === 0 ? (
+        <h3 className="mb-4 text-sm font-extrabold text-slate-800">{breakdown.title}</h3>
+        {breakdown.list.length === 0 ? (
           <p className="text-sm text-gray-400 text-center py-8">ไม่มีข้อมูล</p>
         ) : (
           <>
             <ResponsiveContainer width="100%" height={200}>
               <PieChart>
-                <Pie data={catPieData} cx="50%" cy="50%" innerRadius={48} outerRadius={78}
+                <Pie data={breakdown.pie} cx="50%" cy="50%" innerRadius={48} outerRadius={78}
                   dataKey="count" nameKey="name" paddingAngle={2}
                   label={({ cx, cy, midAngle, outerRadius, count }) => {
                     const RADIAN = Math.PI / 180
@@ -411,25 +441,25 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
                     return <text x={x} y={y} textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={700} fill="#374151">{count}</text>
                   }}
                   labelLine={{ stroke: '#d1d5db', strokeWidth: 1 }}>
-                  {catPieData.map((_, i) => <Cell key={i} fill={CAT_COLORS[i % CAT_COLORS.length]} />)}
+                  {breakdown.pie.map((d, i) => <Cell key={i} fill={breakdown.colorOf(d, i)} />)}
                 </Pie>
                 <Tooltip formatter={(value, name) => [`${value} รายการ`, name]}
                   contentStyle={{ borderRadius: 12, border: '1px solid #f3f4f6', fontSize: 12 }} />
               </PieChart>
             </ResponsiveContainer>
             <div className="space-y-2.5 mt-2">
-              {catData.map(({ name, emoji, count }, i) => (
+              {breakdown.list.map((item, i) => (
                 <div key={i}>
                   <div className="flex items-center justify-between text-xs mb-1.5">
                     <span className="text-gray-700 font-medium flex items-center gap-2 truncate">
-                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: CAT_COLORS[i % CAT_COLORS.length] }} />
-                      <span>{emoji}</span> {name}
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: breakdown.colorOf(item, i) }} />
+                      {item.emoji && <span>{item.emoji}</span>} {item.name}
                     </span>
-                    <span className="text-gray-500 shrink-0 ml-2 font-semibold">{count}</span>
+                    <span className="text-gray-500 shrink-0 ml-2 font-semibold">{item.count}</span>
                   </div>
                   <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                     <div className="h-full rounded-full transition-all"
-                      style={{ width: `${count / catData[0].count * 100}%`, backgroundColor: CAT_COLORS[i % CAT_COLORS.length], opacity: 0.75 }} />
+                      style={{ width: `${item.count / breakdown.list[0].count * 100}%`, backgroundColor: breakdown.colorOf(item, i), opacity: 0.75 }} />
                   </div>
                 </div>
               ))}
@@ -443,7 +473,7 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <h3 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
             <Wrench size={14} className="text-orange-500" /> ผลงานช่าง
-            <span className="text-xs font-normal text-gray-400 ml-auto">ตลอดทุกช่วงเวลา</span>
+            <span className="text-xs font-normal text-gray-400 ml-auto">ตลอดทุกช่วงเวลา{catLabel ? ` · ${catLabel}` : ''}</span>
           </h3>
           <div className="space-y-3">
             {techLeaderboard.map((t, i) => {
