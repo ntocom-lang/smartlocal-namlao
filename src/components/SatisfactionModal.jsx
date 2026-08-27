@@ -11,7 +11,16 @@ const RATINGS = [
   { value: 1, emoji: '😡', label: 'แย่มาก',    color: '#ef4444', bg: '#fef2f2', border: '#fca5a5' },
 ]
 
-export default function SatisfactionModal({ onClose, complaintId = null, delayMs = 800 }) {
+// ข้อความตาม code ที่ rate_complaint() คืนมา — RPC ไม่ raise exception ในเคสธุรกิจปกติ
+// เพราะอยากให้ UI แยกแยะได้ว่าควรให้ผู้ใช้ลองใหม่หรือควรปิดหน้าต่างไปเลย
+const RPC_ERROR = {
+  not_found:      'ไม่พบคำร้องนี้ในระบบแล้ว',
+  not_closed:     'คำร้องยังไม่ปิดเรื่อง ให้คะแนนได้หลังเจ้าหน้าที่ปิดเรื่องแล้ว',
+  not_owner:      'ให้คะแนนได้เฉพาะผู้ยื่นคำร้องเท่านั้น',
+  invalid_rating: 'คะแนนไม่ถูกต้อง',
+}
+
+export default function SatisfactionModal({ onClose, complaintId = null, onRated = null, delayMs = 800 }) {
   const { tenant } = useTenant()
   const [visible, setVisible] = useState(false)
   const [selected, setSelected] = useState(null)
@@ -32,14 +41,32 @@ export default function SatisfactionModal({ onClose, complaintId = null, delayMs
     try {
       // เดิมไม่อ่าน error เลย ผู้ใช้เห็น "ขอบคุณ" ทุกครั้งแม้บันทึกไม่สำเร็จ คะแนนหายเงียบ
       // ข้อมูลชุดนี้ใช้ทำรายงาน LPA ตัวเลขที่ขาดหายแบบมองไม่เห็นร้ายกว่าการขึ้น error
-      const { error: err } = await supabase.from('satisfaction_ratings').insert({
-        municipality_id: tenant?.id ?? null,
-        rating: selected,
-        comment: comment.trim() || null,
-      })
-      if (err) throw err
       if (complaintId) {
-        await supabase.from('complaints').update({ rating: selected }).eq('id', complaintId)
+        // ผูกกับคำร้อง: ต้องผ่าน RPC เท่านั้น เดิม insert + update complaints ตรงๆ ซึ่ง update
+        // โดน RLS กรองทิ้งเงียบทุกครั้ง (ไม่มี UPDATE policy ให้ citizen) complaints.rating
+        // จึงเป็น NULL ตลอด — ดู supabase/migrations/20260830150000_rate_complaint_rpc.sql
+        const { data, error: err } = await supabase.rpc('rate_complaint', {
+          p_complaint_id: complaintId,
+          p_rating: selected,
+          p_comment: comment.trim() || null,
+        })
+        if (err) throw err
+        if (!data?.ok) {
+          // ให้คะแนนไปแล้ว = งานสำเร็จอยู่แล้ว ไม่ต้องบังคับให้ผู้ใช้กดซ้ำจนกว่าจะยอมแพ้
+          if (data?.code !== 'already_rated') {
+            setError(RPC_ERROR[data?.code] ?? 'ส่งคะแนนไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')
+            return
+          }
+        }
+        onRated?.(complaintId, selected, data?.verified === true)
+      } else {
+        // ประเมินภาพรวมหน่วยงาน (เมนู "ประเมินความพึงพอใจ") ไม่ผูกคำร้อง
+        const { error: err } = await supabase.from('satisfaction_ratings').insert({
+          municipality_id: tenant?.id ?? null,
+          rating: selected,
+          comment: comment.trim() || null,
+        })
+        if (err) throw err
       }
       setDone(true)
       setTimeout(() => onClose?.(), 1800)
