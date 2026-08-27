@@ -4078,9 +4078,25 @@ const RATING_LABELS = { 5: 'ยอดเยี่ยม', 4: 'ดี', 3: 'พ�
 const RATING_COLORS = { 5: '#22c55e', 4: '#3b82f6', 3: '#f59e0b', 2: '#f97316', 1: '#ef4444' }
 const RATING_EMOJI  = { 5: '😄', 4: '😊', 3: '😐', 2: '😢', 1: '😡' }
 
+// ที่มาของคะแนนมี 3 แบบ น้ำหนักความน่าเชื่อถือไม่เท่ากัน จึงต้องแยกให้เห็นก่อนเอาไปอ้างอิง
+//   verified    — ผูกกับคำร้อง และผู้ให้คะแนนคือผู้ยื่นคำร้องที่ล็อกอินแล้ว (ตรวจสอบย้อนกลับได้)
+//   linked_anon — ผูกกับคำร้อง แต่ให้คะแนนผ่านการค้นด้วยเลขอ้างอิงโดยไม่ล็อกอิน
+//   general     — แบบประเมินภาพรวมหน่วยงาน (หน้า /satisfaction) ไม่ผูกคำร้อง ไม่ระบุตัวตนโดยเจตนา
+function ratingSource(r) {
+  if (!r.complaint_id) return 'general'
+  return r.is_verified ? 'verified' : 'linked_anon'
+}
+
+const SOURCE_TABS = [
+  { key: 'all',      label: 'ทั้งหมด' },
+  { key: 'verified', label: 'ยืนยันตัวตนแล้ว' },
+  { key: 'general',  label: 'ประเมินภาพรวม' },
+]
+
 function SatisfactionAdmin({ tenant }) {
   const [ratings, setRatings]   = useState([])
   const [loading, setLoading]   = useState(true)
+  const [sourceTab, setSourceTab] = useState('all')
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -4092,8 +4108,16 @@ function SatisfactionAdmin({ tenant }) {
       .then(({ data }) => { setRatings(data ?? []); setLoading(false) })
   }, [tenant?.id])
 
-const avg = ratings.length ? (ratings.reduce((s, r) => s + r.rating, 0) / ratings.length).toFixed(1) : '-'
-  const counts = [5,4,3,2,1].map(v => ({ v, count: ratings.filter(r => r.rating === v).length }))
+  const bySource = {
+    verified:    ratings.filter(r => ratingSource(r) === 'verified'),
+    linked_anon: ratings.filter(r => ratingSource(r) === 'linked_anon'),
+    general:     ratings.filter(r => ratingSource(r) === 'general'),
+  }
+  const filtered = sourceTab === 'all' ? ratings : bySource[sourceTab]
+  const sourceLabel = SOURCE_TABS.find(t => t.key === sourceTab)?.label ?? 'ทั้งหมด'
+
+  const avg = filtered.length ? (filtered.reduce((s, r) => s + r.rating, 0) / filtered.length).toFixed(1) : '-'
+  const counts = [5,4,3,2,1].map(v => ({ v, count: filtered.filter(r => r.rating === v).length }))
 
   function thDate(iso) {
     const d = new Date(iso)
@@ -4102,10 +4126,10 @@ const avg = ratings.length ? (ratings.reduce((s, r) => s + r.rating, 0) / rating
 
   function handlePrint() {
     const now = new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })
-    const avgScore = ratings.length ? (ratings.reduce((s, r) => s + r.rating, 0) / ratings.length).toFixed(2) : '-'
+    const avgScore = filtered.length ? (filtered.reduce((s, r) => s + r.rating, 0) / filtered.length).toFixed(2) : '-'
     const bars = [5,4,3,2,1].map(v => {
-      const c = ratings.filter(r => r.rating === v).length
-      const pct = ratings.length ? Math.round(c / ratings.length * 100) : 0
+      const c = filtered.filter(r => r.rating === v).length
+      const pct = filtered.length ? Math.round(c / filtered.length * 100) : 0
       return `<tr>
         <td>${RATING_EMOJI[v]} ${RATING_LABELS[v]}</td>
         <td style="width:260px">
@@ -4138,16 +4162,23 @@ const avg = ratings.length ? (ratings.reduce((s, r) => s + r.rating, 0) / rating
   @media print { button { display:none; } }
 </style></head><body>
 <h2>${tenant?.name ?? 'หน่วยงาน'}</h2>
-<p class="sub">รายงานผลการประเมินความพึงพอใจการให้บริการ &nbsp;|&nbsp; วันที่พิมพ์ ${now}</p>
+<p class="sub">รายงานผลการประเมินความพึงพอใจการให้บริการ &nbsp;|&nbsp; ชุดข้อมูล: ${sourceLabel} &nbsp;|&nbsp; วันที่พิมพ์ ${now}</p>
 <div class="stats">
   <div class="stat-box"><div class="stat-num">${avgScore}</div><div class="stat-lbl">คะแนนเฉลี่ย (จาก 5)</div></div>
-  <div class="stat-box"><div class="stat-num">${ratings.length}</div><div class="stat-lbl">ผู้ประเมินทั้งหมด</div></div>
-  <div class="stat-box"><div class="stat-num" style="color:#22c55e">${ratings.filter(r=>r.rating>=4).length}</div><div class="stat-lbl">พึงพอใจ (ดี/ยอดเยี่ยม)</div></div>
-  <div class="stat-box"><div class="stat-num" style="color:#ef4444">${ratings.filter(r=>r.rating<=2).length}</div><div class="stat-lbl">ไม่พึงพอใจ (แย่/แย่มาก)</div></div>
+  <div class="stat-box"><div class="stat-num">${filtered.length}</div><div class="stat-lbl">ผู้ประเมินทั้งหมด</div></div>
+  <div class="stat-box"><div class="stat-num" style="color:#22c55e">${filtered.filter(r=>r.rating>=4).length}</div><div class="stat-lbl">พึงพอใจ (ดี/ยอดเยี่ยม)</div></div>
+  <div class="stat-box"><div class="stat-num" style="color:#ef4444">${filtered.filter(r=>r.rating<=2).length}</div><div class="stat-lbl">ไม่พึงพอใจ (แย่/แย่มาก)</div></div>
 </div>
 <div class="section">สัดส่วนคะแนน</div>
 <table><thead><tr><th>ระดับ</th><th>สัดส่วน</th><th style="width:50px;text-align:center">จำนวน</th><th style="width:60px;text-align:center">ร้อยละ</th></tr></thead>
 <tbody>${bars}</tbody></table>
+<div class="section">ที่มาของคะแนน</div>
+<table><thead><tr><th>ที่มา</th><th style="width:90px;text-align:center">จำนวน</th><th>ระดับความน่าเชื่อถือ</th></tr></thead>
+<tbody>
+  <tr><td>ผูกคำร้อง — ผู้ยื่นคำร้องยืนยันตัวตนแล้ว</td><td style="text-align:center">${bySource.verified.length}</td><td>ตรวจสอบย้อนกลับได้ถึงเลขคำร้อง</td></tr>
+  <tr><td>ผูกคำร้อง — ให้คะแนนด้วยเลขอ้างอิงโดยไม่ล็อกอิน</td><td style="text-align:center">${bySource.linked_anon.length}</td><td>ยืนยันตัวผู้ให้คะแนนไม่ได้</td></tr>
+  <tr><td>ประเมินภาพรวมหน่วยงาน (ไม่ผูกคำร้อง)</td><td style="text-align:center">${bySource.general.length}</td><td>ไม่ระบุตัวตนโดยเจตนา</td></tr>
+</tbody></table>
 <div class="footer">ออกจากระบบบริการออนไลน์ SmartLocal &nbsp;|&nbsp; ${tenant?.name ?? ''}</div>
 </body></html>`
 
@@ -4173,6 +4204,34 @@ const avg = ratings.length ? (ratings.reduce((s, r) => s + r.rating, 0) / rating
         </button>
       </div>
 
+      {/* แยกชุดข้อมูลตามที่มา — คะแนนที่ยืนยันตัวผู้ให้คะแนนได้กับที่ยืนยันไม่ได้ไม่ควรถูกเฉลี่ย
+          รวมกันเงียบๆ แล้วเอาไปอ้างอิงในรายงาน ตัวเลือกที่เลือกไว้มีผลกับทั้งการ์ด กราฟ และไฟล์พิมพ์ */}
+      <div className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100">
+        <div className="flex flex-wrap gap-2">
+          {SOURCE_TABS.map(t => {
+            const n = t.key === 'all' ? ratings.length : bySource[t.key].length
+            const active = sourceTab === t.key
+            return (
+              <button key={t.key} onClick={() => setSourceTab(t.key)}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors"
+                style={{
+                  backgroundColor: active ? '#1a3a5c' : '#f8fafc',
+                  color: active ? '#fff' : '#475569',
+                  borderColor: active ? '#1a3a5c' : '#e2e8f0',
+                }}>
+                {t.label} ({n})
+              </button>
+            )
+          })}
+        </div>
+        {bySource.linked_anon.length > 0 && (
+          <p className="text-[11px] text-gray-500 mt-2 leading-relaxed">
+            มีคะแนนที่ผูกคำร้องแต่ให้ผ่านการค้นด้วยเลขอ้างอิงโดยไม่ล็อกอินอีก {bySource.linked_anon.length} รายการ
+            — นับรวมอยู่ใน "ทั้งหมด" แต่ยืนยันตัวผู้ให้คะแนนไม่ได้ ควรใช้ชุด "ยืนยันตัวตนแล้ว" เมื่อต้องอ้างอิงในรายงาน
+          </p>
+        )}
+      </div>
+
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex flex-col items-center gap-1">
@@ -4182,8 +4241,8 @@ const avg = ratings.length ? (ratings.reduce((s, r) => s + r.rating, 0) / rating
         </div>
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex flex-col items-center gap-1">
           <MessageSquare size={22} className="text-blue-400" />
-          <p className="text-3xl font-black text-gray-800">{ratings.length}</p>
-          <p className="text-xs text-gray-400">ผู้ประเมินทั้งหมด</p>
+          <p className="text-3xl font-black text-gray-800">{filtered.length}</p>
+          <p className="text-xs text-gray-400">{sourceTab === 'all' ? 'ผู้ประเมินทั้งหมด' : `ผู้ประเมิน (${sourceLabel})`}</p>
         </div>
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex flex-col items-center gap-1">
           <span className="text-2xl">😄</span>
@@ -4206,7 +4265,7 @@ const avg = ratings.length ? (ratings.reduce((s, r) => s + r.rating, 0) / rating
             <span className="text-xs font-semibold text-gray-600 w-16 shrink-0">{RATING_LABELS[v]}</span>
             <div className="flex-1 h-4 bg-gray-100 rounded-full overflow-hidden">
               <div className="h-full rounded-full transition-all"
-                style={{ width: ratings.length ? `${(count / ratings.length) * 100}%` : '0%', backgroundColor: RATING_COLORS[v] }} />
+                style={{ width: filtered.length ? `${(count / filtered.length) * 100}%` : '0%', backgroundColor: RATING_COLORS[v] }} />
             </div>
             <span className="text-xs font-bold text-gray-500 w-6 text-right">{count}</span>
           </div>

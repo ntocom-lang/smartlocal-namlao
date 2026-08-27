@@ -95,6 +95,31 @@ function StatusBadge({ status }) {
 
 const STATUS_COMPAT = { pending: 'new', done: 'done', completed: 'closed' }
 
+const RATING_FACE = {
+  5: { emoji: '😄', label: 'ยอดเยี่ยม' },
+  4: { emoji: '😊', label: 'ดี' },
+  3: { emoji: '😐', label: 'พอสมควร' },
+  2: { emoji: '😢', label: 'แย่' },
+  1: { emoji: '😡', label: 'แย่มาก' },
+}
+
+function isClosed(status) {
+  return status === 'closed' || status === 'completed'
+}
+
+// localStorage เข้าถึงไม่ได้ในโหมดส่วนตัวของบางเบราว์เซอร์ (throw ตั้งแต่ getItem) — ห้ามให้
+// หน้าคำร้องทั้งหน้าพังเพราะแค่จำไม่ได้ว่าเคยประเมินไปแล้ว
+function satDone(id) {
+  try { return localStorage.getItem(`sat_done_${id}`) === '1' } catch { return false }
+}
+function markSatDone(id) {
+  try { localStorage.setItem(`sat_done_${id}`, '1') } catch { /* ไม่จำก็ไม่เป็นไร ฝั่ง DB กันซ้ำอยู่แล้ว */ }
+}
+
+function findUnrated(list) {
+  return list.find(c => isClosed(c.status) && c.rating == null && !satDone(c.id)) ?? null
+}
+
 function StatusStepper({ status }) {
   const normalized = STATUS_COMPAT[status] ?? status
   if (normalized === 'rejected') {
@@ -169,7 +194,7 @@ function StatusStepper({ status }) {
   )
 }
 
-function DetailSheet({ complaint: c, onClose, onAttachmentsChange, catLabel = DEFAULT_CATEGORY_LABEL, catEmoji = DEFAULT_CATEGORY_EMOJI }) {
+function DetailSheet({ complaint: c, onClose, onAttachmentsChange, onRate, catLabel = DEFAULT_CATEGORY_LABEL, catEmoji = DEFAULT_CATEGORY_EMOJI }) {
   const { tenant } = useTenant()
   const [newPhotos, setNewPhotos] = useState([]) // { file, preview }
   const [uploading, setUploading] = useState(false)
@@ -325,6 +350,37 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange, catLabel = DE
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">ความคืบหน้า</p>
             <StatusStepper status={c.status} />
           </div>
+
+          {/* ประเมินความพึงพอใจ — ทางเข้าสำรองเมื่อป็อปอัพหลังปิดเรื่องไม่ได้เด้ง
+              (ผู้แจ้งไม่ได้เปิดแอปค้างไว้ตอนเจ้าหน้าที่ปิดเรื่อง ซึ่งเป็นเคสส่วนใหญ่) */}
+          {isClosed(c.status) && (c.rating != null || onRate) && (
+            <div className="rounded-2xl border p-4"
+                 style={{ backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }}>
+              {c.rating != null ? (
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl leading-none">{RATING_FACE[c.rating]?.emoji ?? '🙂'}</span>
+                  <div>
+                    <p className="text-sm font-bold text-green-800">
+                      ประเมินแล้ว: {RATING_FACE[c.rating]?.label ?? `${c.rating} คะแนน`}
+                    </p>
+                    <p className="text-xs text-green-600 mt-0.5">ขอบคุณที่ให้ความเห็นกับเรา</p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm font-bold text-green-800">คำร้องนี้ปิดเรื่องแล้ว</p>
+                  <p className="text-xs text-green-600 mt-0.5 mb-3">
+                    ขอเวลาสักครู่ให้คะแนนความพึงพอใจการให้บริการ
+                  </p>
+                  <button onClick={() => onRate(c.id)}
+                    className="w-full py-2.5 rounded-xl text-sm font-bold text-white transition-transform active:scale-95"
+                    style={{ backgroundColor: '#16a34a' }}>
+                    ประเมินความพึงพอใจ
+                  </button>
+                </>
+              )}
+            </div>
+          )}
 
           {/* เอกสารฉบับสมบูรณ์ (ลงนามจาก GDCC e-Office แล้ว) */}
           {c.final_document_path && (
@@ -521,6 +577,9 @@ export default function MyComplaints() {
   const [session, setSession] = useState(undefined)
   const [showSat, setShowSat] = useState(false)
   const [satComplaintId, setSatComplaintId] = useState(null)
+  // เด้งแบบอัตโนมัติได้ครั้งเดียวต่อการเปิดหน้า — ผู้ใช้ที่กด "ข้าม" ไปแล้วไม่ควรโดนซ้ำ
+  // ทุกครั้งที่ effect โหลดใหม่ (openId เปลี่ยนก็ทำให้ load() วิ่งอีกรอบ)
+  const satAutoShownRef = useRef(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(10)
 
@@ -579,6 +638,16 @@ export default function MyComplaints() {
         const list = data ?? []
         setComplaints(list)
         if (openId) setSelected(list.find((c) => c.id === openId) ?? null)
+
+        // เดิมป็อปอัพประเมินเด้งจาก realtime ช่องทางเดียว คือต้องเปิดหน้านี้ค้างไว้พอดีตอน
+        // เจ้าหน้าที่กดปิดเรื่อง ซึ่งแทบไม่เกิดขึ้นจริง — push แจ้ง "คำร้องของคุณปิดเรื่องแล้ว"
+        // พาผู้ใช้มาที่ /my-complaints หลังจากนั้น แล้วไม่มีอะไรถามเลย
+        const unrated = findUnrated(list)
+        if (unrated && !satAutoShownRef.current) {
+          satAutoShownRef.current = true
+          setSatComplaintId(unrated.id)
+          setShowSat(true)
+        }
       } catch {}
       finally { setLoading(false) }
     }
@@ -598,9 +667,9 @@ export default function MyComplaints() {
         setComplaints(prev => prev.map(c => c.id === updated.id ? { ...c, ...updated } : c))
         if (
           updated.user_id === userId &&
-          (updated.status === 'closed' || updated.status === 'completed') &&
+          isClosed(updated.status) &&
           updated.rating == null &&
-          !localStorage.getItem(`sat_done_${updated.id}`)
+          !satDone(updated.id)
         ) {
           setSatComplaintId(updated.id)
           setShowSat(true)
@@ -636,8 +705,37 @@ export default function MyComplaints() {
     const { data } = await supabase.rpc('get_complaint_by_ref', {
       _ref_no: ref, _municipality_id: tenant.id,
     })
-    setSearchResult(data?.[0] ?? null)
+    const row = data?.[0] ?? null
+    setSearchResult(row)
     setSearching(false)
+    // ผู้แจ้งที่ไม่ได้ล็อกอินก็ต้องได้ประเมิน — can_rate คำนวณฝั่งเซิร์ฟเวอร์ (ปิดเรื่องแล้ว
+    // และยังไม่เคยมีคะแนนของผู้ไม่ล็อกอินผูกกับเรื่องนี้) คะแนนกลุ่มนี้ถูกเก็บเป็น unverified
+    // ไม่ปนกับตัวเลขที่ใช้อ้างอิงทางราชการ เพราะ ref_no เดาได้และไม่มี rate limit
+    if (row?.can_rate && !satDone(row.id)) {
+      setSatComplaintId(row.id)
+      setShowSat(true)
+    }
+  }
+
+  function handleRated(id, rating, verified) {
+    markSatDone(id)
+    // คะแนนของผู้ไม่ล็อกอินไม่ได้ลง complaints.rating (unverified) จึงอัปเดตแค่ can_rate
+    // ไม่งั้นการ์ดจะโชว์ "ประเมินแล้ว: ..." ทั้งที่ค่าจริงในฐานข้อมูลยังว่าง
+    const patch = verified ? { rating, can_rate: false } : { can_rate: false }
+    setComplaints(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c))
+    setSelected(prev => prev?.id === id ? { ...prev, ...patch } : prev)
+    setSearchResult(prev => prev?.id === id ? { ...prev, ...patch } : prev)
+  }
+
+  function openRating(id) {
+    setSatComplaintId(id)
+    setShowSat(true)
+  }
+
+  function closeRating() {
+    if (satComplaintId) markSatDone(satComplaintId)
+    setShowSat(false)
+    setSatComplaintId(null)
   }
 
   if (session === undefined) return (
@@ -716,7 +814,17 @@ export default function MyComplaints() {
         </div>
 
         {selected && (
-          <DetailSheet complaint={selected} onClose={() => setSelected(null)} catLabel={catLabel} catEmoji={catEmoji} />
+          <DetailSheet complaint={selected} onClose={() => setSelected(null)}
+            onRate={selected.can_rate ? openRating : undefined}
+            catLabel={catLabel} catEmoji={catEmoji} />
+        )}
+
+        {showSat && (
+          <SatisfactionModal
+            complaintId={satComplaintId}
+            onRated={handleRated}
+            onClose={closeRating}
+          />
         )}
       </div>
     )
@@ -728,10 +836,8 @@ export default function MyComplaints() {
       {showSat && (
         <SatisfactionModal
           complaintId={satComplaintId}
-          onClose={() => {
-            if (satComplaintId) localStorage.setItem(`sat_done_${satComplaintId}`, '1')
-            setShowSat(false)
-          }}
+          onRated={handleRated}
+          onClose={closeRating}
         />
       )}
       {/* PC header */}
@@ -904,6 +1010,7 @@ export default function MyComplaints() {
           complaint={selected}
           onClose={() => setSelected(null)}
           onAttachmentsChange={handleAttachmentsChange}
+          onRate={selected.rating == null && isClosed(selected.status) ? openRating : undefined}
           catLabel={catLabel}
           catEmoji={catEmoji}
         />

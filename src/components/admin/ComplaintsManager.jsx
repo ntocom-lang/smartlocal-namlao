@@ -1626,7 +1626,9 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
           body: {
             user_id: c.user_id,
             title: 'คำร้องของคุณปิดเรื่องแล้ว',
-            body: `คำร้อง${CATEGORY_LABEL[c?.category] ?? c?.category ?? ''} ดำเนินการเสร็จสิ้นแล้ว`,
+            // ชวนประเมินตั้งแต่ใน notification — แตะแล้วหน้า /my-complaints จะเด้งแบบประเมิน
+            // ให้เองถ้ายังไม่เคยให้คะแนน (ดู findUnrated ใน MyComplaints.jsx)
+            body: `คำร้อง${CATEGORY_LABEL[c?.category] ?? c?.category ?? ''} ดำเนินการเสร็จสิ้นแล้ว — แตะเพื่อให้คะแนนความพึงพอใจ`,
             url: '/my-complaints',
           },
         }).catch(() => {})
