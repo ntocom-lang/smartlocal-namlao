@@ -94,6 +94,12 @@ function eventAttachments(ev) {
   return ev.attachment_url ? [ev.attachment_url] : []
 }
 
+// RPC ตัด URL ไฟล์แนบออกสำหรับคนที่ไม่มีสิทธิ์ แต่ยังส่ง has_attachment มาบอกว่ามีไฟล์อยู่
+// เพื่อให้หน้าจอโชว์ไอคอนแบบกดไม่ได้ได้ ผู้ใช้จะได้รู้ว่าต้องไปขอจากคนที่มีสิทธิ์
+function hasAttachment(ev) {
+  return ev.has_attachment === true || eventAttachments(ev).length > 0
+}
+
 // กลุ่มเป้าหมายที่แต่ละบทบาท "เป็นเจ้าของ" — ใช้ตัดสินว่าเปิดดูรายละเอียดกิจกรรมได้ไหม
 // เดิมบุคลากรภายในทุกบทบาทเห็นรายละเอียดทุกกิจกรรมร่วมกัน ทำให้เจ้าหน้าที่ทั่วไปและช่าง
 // เปิดอ่านกำหนดการผู้บริหารและวาระสภาได้หมด ซึ่งไม่ใช่ข้อมูลที่ควรเปิดกว้างขนาดนั้น
@@ -119,6 +125,9 @@ const ROLE_AUDIENCES = {
  * ถ้าต้องการปิดจริงต้องกั้นที่ฐานข้อมูล ไม่ใช่แค่ซ่อนปุ่ม
  */
 function canViewEventDetail(ev, role, currentUserId, scope) {
+  // RPC ตัดสินมาให้แล้วฝั่งเซิร์ฟเวอร์ — เชื่อค่านั้นก่อนเสมอ กติกาด้านล่างเป็นโหมดถอย
+  // สำหรับกรณีที่ยังไม่ได้ apply migration หรือข้อมูลมาจาก query เดิม
+  if (typeof ev.can_view_detail === 'boolean') return ev.can_view_detail
   if ((ev.audiences ?? []).includes('public')) return true
   if (['admin', 'superadmin'].includes(role)) return true
   if (currentUserId && ev.created_by === currentUserId) return true
@@ -173,7 +182,7 @@ function EventCard({ ev, onEdit, onDelete, onView, deleting }) {
             </div>
             <div className="flex items-center gap-1.5">
               <p className="text-sm font-bold text-gray-800 leading-tight">{ev.title}</p>
-              {eventAttachments(ev).length > 0 && <Paperclip size={12} className="text-gray-400 shrink-0" />}
+              {hasAttachment(ev) && <Paperclip size={12} className="text-gray-400 shrink-0" />}
             </div>
             <p className="text-xs text-gray-500 mt-0.5">
               {dateStr}
@@ -594,23 +603,42 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
       setCurrentUserId(userId)
 
       // สองคิวรีนี้ไม่พึ่งผลของกันและกัน ยิงขนานลดเวลารอครึ่งหนึ่ง
-      // บุคลากรภายในเห็นปฏิทินทั้งหมดของเทศบาลเดียวกัน
+      //
+      // ดึงผ่าน RPC list_events_for_staff แทนการ select ตาราง events ตรงๆ — RPC ตัดฟิลด์
+      // description และไฟล์แนบออกฝั่งเซิร์ฟเวอร์สำหรับคนที่ไม่มีสิทธิ์ดูรายละเอียด การซ่อน
+      // ปุ่มฝั่งหน้าจออย่างเดียวกันไม่ได้ เพราะข้อมูลถูกส่งมาถึงเบราว์เซอร์แล้ว ใครเปิด
+      // DevTools ก็อ่านได้ (ดู migration 20260830090000)
       // เจ้าของแก้ไข/ลบของตนเองได้ หัวหน้ากองแก้ไขงานในกอง และ Admin/SuperAdmin จัดการตามขอบเขตเดิม
       const [scopeResult, eventsResult] = await Promise.all([
         userId
           ? supabase.from('profiles').select('department_id, is_dept_head').eq('id', userId).maybeSingle()
           : Promise.resolve({ data: null, error: null }),
-        supabase
-          .from('events')
-          .select('*, creator:profiles!events_created_by_fkey(full_name)')
-          .eq('municipality_id', tenant.id)
-          .order('event_date', { ascending: true }),
+        supabase.rpc('list_events_for_staff', { p_municipality_id: tenant.id }),
       ])
 
       setCurrentUserScope(scopeResult.data ?? null)
-      if (eventsResult.error) throw eventsResult.error
 
-      const sorted = (eventsResult.data ?? []).sort((a, b) => {
+      // ถ้ายังไม่ได้ apply migration บนฐานข้อมูลนั้น RPC จะไม่มีอยู่ (PGRST202 / 42883)
+      // กรณีนั้นถอยไปใช้ query เดิมเพื่อไม่ให้หน้าปฏิทินตายทั้งหน้า — แต่ต้องรู้ว่าโหมดถอยนี้
+      // "ไม่ได้ปิดช่องโหว่" ข้อมูลจะกลับไปถูกส่งมาครบเหมือนเดิม จึงต้องส่งเสียงดังใน console
+      let rows = eventsResult.data
+      if (eventsResult.error) {
+        const missingRpc = eventsResult.error.code === 'PGRST202' || eventsResult.error.code === '42883'
+        if (!missingRpc) throw eventsResult.error
+        console.error(
+          '[events] ยังไม่มีฟังก์ชัน list_events_for_staff ในฐานข้อมูล — ถอยไปใช้ query เดิมชั่วคราว ' +
+          'รายละเอียดกิจกรรมของทุกกลุ่มยังถูกส่งมาถึงเบราว์เซอร์ กรุณา apply migration 20260830090000',
+        )
+        const fallback = await supabase
+          .from('events')
+          .select('*, creator:profiles!events_created_by_fkey(full_name)')
+          .eq('municipality_id', tenant.id)
+          .order('event_date', { ascending: true })
+        if (fallback.error) throw fallback.error
+        rows = fallback.data
+      }
+
+      const sorted = (rows ?? []).sort((a, b) => {
         if (a.event_date < b.event_date) return -1
         if (a.event_date > b.event_date) return 1
         const ta = a.event_time ?? '99:99'
@@ -1610,9 +1638,9 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                               {/* ไฟล์แนบผูกกับสิทธิ์เดียวกับการเปิดดูรายละเอียด — ถ้าปิดชื่อกิจกรรมไว้
                                   แต่ปล่อยคลิปหนีบให้กดได้ ก็เท่ากับไม่ได้ปิดอะไรเลย ยังโชว์ไอคอนไว้
                                   ให้รู้ว่ามีไฟล์แนบอยู่ แต่กดไม่ได้ */}
-                              {eventAttachments(ev).length === 0
+                              {!hasAttachment(ev)
                                 ? <span className="text-gray-300 text-xs">—</span>
-                                : canView
+                                : (canView && eventAttachments(ev).length > 0)
                                 ? <a href={eventAttachments(ev)[0]} target="_blank" rel="noopener noreferrer"
                                     title={`เปิดไฟล์แนบ${eventAttachments(ev).length > 1 ? ` (${eventAttachments(ev).length} ไฟล์)` : ''}`}
                                     className="relative inline-flex items-center justify-center w-7 h-7 rounded-lg bg-blue-50 hover:bg-blue-100 transition-colors">
