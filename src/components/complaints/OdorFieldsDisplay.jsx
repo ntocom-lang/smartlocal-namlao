@@ -1,4 +1,5 @@
 import { MapPin, Wind, Phone } from 'lucide-react'
+import { odorIncidentRangeOf, odorTimeRangeLabel } from '../../lib/odorTimeRanges'
 
 // แสดงฟิลด์เฉพาะหมวด "กลิ่นเหม็นรบกวน (มลพิษทางอากาศ)" — ใช้ซ้ำทั้งในแท็ปแอดมิน (เฉพาะกิจ) และแผงรับทราบ
 // ของผู้รับผิดชอบ (OdorAcknowledgePanel) พิกัด GPS แยกเป็นหัวข้อของตัวเอง ไม่ปนกับสถานที่/เบอร์ติดต่อ
@@ -25,6 +26,7 @@ export default function OdorFieldsDisplay({ complaint: c }) {
             </>
           )}
         </p>
+        <p>ช่วงเวลาที่ได้กลิ่น: {odorTimeRangeLabel(odorIncidentRangeOf(c)) ?? '-'}</p>
         <p>วันเวลาที่แจ้ง: {submittedAt}</p>
         <p>ระดับความรุนแรง: {extra.odor_intensity ?? '-'} / 5</p>
         <p>อาการทางสุขภาพ: {extra.health_effect ?? 'ไม่มี'}</p>
