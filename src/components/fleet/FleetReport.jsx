@@ -8,6 +8,8 @@ import FleetEmptyState from './FleetEmptyState'
 const fmt  = n => (n ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 2 })
 const fmtB = n => `฿${Math.round(n ?? 0).toLocaleString('th-TH')}`
 const thDate = d => d ? new Date(d).toLocaleDateString('th-TH', { dateStyle: 'short' }) : '—'
+// ใช้กับหัวรายงานที่พิมพ์ออกไปเป็นเอกสาร — ต้องเป็น พ.ศ. เหมือนวันที่ในตาราง
+const thDateLong = d => d ? new Date(d).toLocaleDateString('th-TH', { dateStyle: 'long' }) : '—'
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 })[char])
@@ -137,7 +139,9 @@ export default function FleetReport({ tenant }) {
   const totalMaintCost = data?.maint.reduce((s, m) => s + (m.cost ?? 0), 0) ?? 0
 
   const selVehicleName = selVehicle ? (vehicles.find(v => v.id === selVehicle)?.name ?? '') : 'ทุกทรัพย์สิน'
-  const reportTitle = `รายงานรถ เครื่องยนต์ และเชื้อเพลิง — ${selVehicleName} | ${dateFrom} ถึง ${dateTo}`
+  // เดิมหัวรายงานพิมพ์ช่วงวันที่เป็น ค.ศ. (2026-08-01) ทั้งที่ทุกแถวในตารางเป็น พ.ศ. (20/8/69)
+  // เอกสารฉบับเดียวกันมีสองศักราชปนกัน ผู้ตรวจสอบอ่านแล้วสรุปได้ว่ารายการอยู่นอกช่วงที่ระบุ
+  const reportTitle = `รายงานรถ เครื่องยนต์ และเชื้อเพลิง — ${selVehicleName} | ${thDateLong(dateFrom)} ถึง ${thDateLong(dateTo)}`
 
   /* ── PDF ── */
   function exportPDF() {
