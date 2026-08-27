@@ -36,7 +36,7 @@ export async function logAction({ action, resourceType, resourceId, resourceLabe
   try {
     const actor = await getActor()
     if (!actor || !municipalityId) return
-    await supabase.from('audit_logs').insert({
+    const { error } = await supabase.from('audit_logs').insert({
       municipality_id: municipalityId,
       actor_id:        actor.id,
       actor_name:      actor.name,
@@ -47,8 +47,12 @@ export async function logAction({ action, resourceType, resourceId, resourceLabe
       resource_label:  resourceLabel ?? null,
       metadata:        metadata ?? null,
     })
-  } catch {
-    // audit log ไม่ควร block UI ถ้า insert fail
+    // ยังไม่ block UI เหมือนเดิม แต่ต้องไม่เงียบสนิท
+    // เคสจริง: RLS ปฏิเสธ insert ของ superadmin (municipality_id = null) มาตั้งแต่ migration 068
+    // ทุก action ของบัญชีที่มีอำนาจสูงสุดจึงไม่ถูกบันทึกเลย และไม่มีใครรู้เพราะ error ถูกกลืนทิ้ง
+    if (error) console.warn('[auditLog] บันทึกร่องรอยการใช้งานไม่สำเร็จ:', error.message, { action, resourceType, resourceId })
+  } catch (err) {
+    console.warn('[auditLog] บันทึกร่องรอยการใช้งานไม่สำเร็จ:', err?.message ?? err)
   }
 }
 

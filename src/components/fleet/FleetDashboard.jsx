@@ -126,7 +126,7 @@ function BudgetBar({ depts, budgets, fuelByDept }) {
 
 export default function FleetDashboard({ tenant, depts, isAdmin }) {
   const [vehicles,   setVehicles]   = useState([])
-  const [thisMonth,  setThisMonth]  = useState({ fuel_cost: 0, distance_km: 0, fuel_liters: 0, vehicle_fuel_liters: 0 })
+  const [thisMonth,  setThisMonth]  = useState({ fuel_cost: 0, distance_km: 0, fuel_liters: 0, vehicle_fuel_liters: 0, efficiency_avg: null })
   const [budgets,    setBudgets]    = useState([])
   const [fuelByDept, setFuelByDept] = useState({})
   const [pendingCnt, setPendingCnt] = useState(0)
@@ -148,7 +148,7 @@ export default function FleetDashboard({ tenant, depts, isAdmin }) {
       supabase.from('fleet_vehicles').select('*').eq('municipality_id', tenant.id),
       // 3 ชุดนี้ถูกนำไป reduce เป็นยอดรวมค่าน้ำมัน/ระยะทาง/ยอดใช้จ่ายรายกอง (แถบงบประมาณ)
       // ถ้า PostgREST ตัดแถวตาม db-max-rows ยอดจะต่ำกว่าจริงแบบไม่มีสัญญาณเตือน
-      fetchAllRows(() => supabase.from('fleet_fuel_records').select('total_cost, liters, vehicle_id, fleet_vehicles(asset_kind)')
+      fetchAllRows(() => supabase.from('fleet_fuel_records').select('total_cost, liters, efficiency_kml, vehicle_id, fleet_vehicles(asset_kind)')
         .eq('municipality_id', tenant.id).gte('filled_at', from).lte('filled_at', to).order('id')),
       fetchAllRows(() => supabase.from('fleet_trips').select('distance_km, department_id')
         .eq('municipality_id', tenant.id).gte('trip_date', from).lte('trip_date', to).order('id')),
@@ -171,6 +171,12 @@ export default function FleetDashboard({ tenant, depts, isAdmin }) {
         vehicle_fuel_liters: (f ?? []).reduce((s, r) =>
           s + ((r.fleet_vehicles?.asset_kind ?? 'vehicle') === 'vehicle' ? (r.liters ?? 0) : 0), 0),
         distance_km: (t ?? []).reduce((s, r) => s + (r.distance_km ?? 0), 0),
+        // เฉลี่ยจาก efficiency_kml ที่ trigger คำนวณแบบ full-to-full ต่อการเติมแต่ละครั้ง
+        // (แถวที่เติมไม่เต็มถังหรือไม่มีระเบียนก่อนหน้าจะเป็น null และไม่ถูกนับ)
+        efficiency_avg: (() => {
+          const vals = (f ?? []).map(r => r.efficiency_kml).filter(x => x != null)
+          return vals.length ? vals.reduce((s, x) => s + Number(x), 0) / vals.length : null
+        })(),
       })
       setBudgets(b ?? [])
       setPendingCnt(count ?? 0)
@@ -216,8 +222,12 @@ export default function FleetDashboard({ tenant, depts, isAdmin }) {
   const repairVeh  = vehicles.filter(v => v.status === 'under_repair').length
   const vehicleCount = vehicles.filter(v => (v.asset_kind ?? 'vehicle') === 'vehicle').length
   const engineCount = vehicles.filter(v => v.asset_kind === 'engine').length
-  const efficiency = thisMonth.vehicle_fuel_liters > 0
-    ? (thisMonth.distance_km / thisMonth.vehicle_fuel_liters).toFixed(1) : '-'
+  // เดิมเอา "ระยะทางรวมจาก fleet_trips" หารด้วย "ลิตรรวมจาก fleet_fuel_records" ซึ่งเป็นคนละฐาน:
+  // ระยะทางนับเฉพาะเที่ยวที่กรอกเลขไมล์ครบ ส่วนลิตรนับทุกการเติมของทุกคัน
+  // ค่าที่ได้จึงต่ำกว่าความจริงมากอย่างเป็นระบบ (ทดสอบจริงได้ 0.2 กม./ล.)
+  // ใช้ค่าเฉลี่ยของ efficiency_kml ที่คำนวณแบบ full-to-full ต่อการเติมแทน
+  const efficiency = thisMonth.efficiency_avg != null
+    ? thisMonth.efficiency_avg.toFixed(1) : '-'
 
   return (
     <div className="space-y-3 md:space-y-4">
@@ -230,7 +240,7 @@ export default function FleetDashboard({ tenant, depts, isAdmin }) {
         <KpiCard icon={Route}     label="ระยะทางรวม"    value={`${fmt(Math.round(thisMonth.distance_km))} กม.`}
           sub="เดือนนี้" color="#10b981" />
         <KpiCard icon={TrendingUp} label="อัตราสิ้นเปลือง" value={`${efficiency} กม./ล.`}
-          sub="เฉลี่ยเดือนนี้" color="#8b5cf6" />
+          sub={efficiency === '-' ? 'ต้องเติมเต็มถัง 2 ครั้งขึ้นไป' : 'เฉลี่ยจากการเติมเต็มถัง'} color="#8b5cf6" />
       </div>
 
       {isAdmin && pendingCnt > 0 && (

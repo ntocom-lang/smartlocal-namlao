@@ -158,7 +158,8 @@ export default function FleetReport({ tenant }) {
         <td align="right">${fmt(f.liters)}</td>
         <td align="right">${fmt(f.price_per_liter)}</td>
         <td align="right">${fmtB(cost)}</td>
-        <td>${escapeHtml(f.fuel_station ?? '—')}</td></tr>`
+        <td>${escapeHtml(f.fuel_station ?? '—')}</td>
+        <td>${f.is_anomaly ? '⚠ ' + escapeHtml(f.anomaly_reason || 'ผิดปกติ') : '—'}</td></tr>`
     }).join('')
     const maintRows = (data?.maint ?? []).map((m, i) =>
       `<tr style="background:${i%2?'#f5f8fc':'#fff'}">
@@ -202,9 +203,9 @@ export default function FleetReport({ tenant }) {
         <tr class="total"><td colspan="6" align="right">รวมระยะทาง</td><td align="right">${totalKm.toLocaleString()} กม.</td></tr>
       </table>
       <h2>บันทึกน้ำมัน (${data?.fuel.length??0} รายการ)</h2>
-      <table><tr><th>ที่</th><th>วันที่</th><th>ยานพาหนะ</th><th>ลิตร</th><th>ราคา/ล.</th><th>รวม</th><th>ปั๊ม</th></tr>
+      <table><tr><th>ที่</th><th>วันที่</th><th>ยานพาหนะ</th><th>ลิตร</th><th>ราคา/ล.</th><th>รวม</th><th>ปั๊ม</th><th>ตรวจสอบ</th></tr>
         ${fuelRows}
-        <tr class="total"><td colspan="3" align="right">รวม</td><td align="right">${fmt(totalLiters)} ล.</td><td></td><td align="right">${fmtB(totalFuelCost)}</td><td></td></tr>
+        <tr class="total"><td colspan="3" align="right">รวม</td><td align="right">${fmt(totalLiters)} ล.</td><td></td><td align="right">${fmtB(totalFuelCost)}</td><td></td><td></td></tr>
       </table>
       <h2>ซ่อมบำรุง (${data?.maint.length??0} รายการ)</h2>
       <table><tr><th>ที่</th><th>วันที่</th><th>ยานพาหนะ</th><th>ประเภท</th><th>รายละเอียด</th><th>ค่าใช้จ่าย</th><th>อู่/ผู้รับจ้าง</th></tr>
@@ -231,13 +232,14 @@ export default function FleetReport({ tenant }) {
 
   function exportFuelCSV() {
     downloadCSV([
-      ['ที่','วันที่','ทรัพย์สิน','ทะเบียน/รหัส','ชนิดเชื้อเพลิง','ลิตร','ราคา/ลิตร','รวม (บาท)','ค่ามิเตอร์','หน่วย','ปั๊ม','ใบเสร็จ'],
+      ['ที่','วันที่','ทรัพย์สิน','ทะเบียน/รหัส','ชนิดเชื้อเพลิง','ลิตร','ราคา/ลิตร','รวม (บาท)','ค่ามิเตอร์','หน่วย','ปั๊ม','ใบเสร็จ','กม./ล.','ผิดปกติ','เหตุผลที่ตั้งธง'],
       ...(data?.fuel ?? []).map((f, i) => [
         i+1, thDate(f.filled_at), f.fleet_vehicles?.name??'', assetIdentifier(f.fleet_vehicles),
         f.fuel_type === 'other' ? f.fuel_other_name || 'อื่นๆ' : FUEL_LABEL[f.fuel_type] || f.fuel_type || '',
         f.liters??'', f.price_per_liter??'',
         Math.round(f.total_cost ?? (f.liters??0)*(f.price_per_liter??0)),
         f.odometer??'', meterUnitShort(f.fleet_vehicles), f.fuel_station??'', f.receipt_no??'',
+        f.efficiency_kml ?? '', f.is_anomaly ? 'ผิดปกติ' : '', f.anomaly_reason ?? '',
       ]),
     ], `น้ำมัน_${dateFrom}_${dateTo}.csv`)
   }
@@ -435,13 +437,18 @@ export default function FleetReport({ tenant }) {
                         {f.fuel_type === 'other' ? f.fuel_other_name || 'อื่นๆ' : FUEL_LABEL[f.fuel_type] || f.fuel_type || '—'}
                         {' · '}{fmt(f.liters)} ลิตร{f.fuel_station ? ` · ${f.fuel_station}` : ''}
                       </p>
+                      {f.is_anomaly && (
+                        <p className="text-[10px] text-red-600 font-semibold mt-0.5 leading-relaxed">
+                          ⚠ {f.anomaly_reason || 'ผิดปกติ'}
+                        </p>
+                      )}
                     </div>
                   )
                 })}
               </div>
             }>
             <table className="w-full text-sm border-collapse">
-              <THdr cols={['ที่','วันที่','ทรัพย์สิน','เชื้อเพลิง','ลิตร','ราคา/ล.','รวม (บาท)','ปั๊ม']} />
+              <THdr cols={['ที่','วันที่','ทรัพย์สิน','เชื้อเพลิง','ลิตร','ราคา/ล.','รวม (บาท)','ปั๊ม','ตรวจสอบ']} />
               <tbody>
                 {data.fuel.map((f, i) => {
                   const cost = f.total_cost ?? (f.liters ?? 0) * (f.price_per_liter ?? 0)
@@ -454,7 +461,14 @@ export default function FleetReport({ tenant }) {
                       <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-200 text-right">{fmt(f.liters)}</td>
                       <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-200 text-right">{fmt(f.price_per_liter)}</td>
                       <td className="px-3 py-2 text-xs font-semibold text-gray-700 border-r border-gray-200 text-right">{fmtB(cost)}</td>
-                      <td className="px-3 py-2 text-xs text-gray-500">{f.fuel_station ?? '—'}</td>
+                      <td className="px-3 py-2 text-xs text-gray-500 border-r border-gray-200">{f.fuel_station ?? '—'}</td>
+                      {/* ธงที่ trg_fleet_fuel_anomaly ตั้งไว้ ต้องปรากฏในรายงานด้วย ไม่ใช่เห็นแค่ในหน้าคีย์ข้อมูล
+                          ไม่งั้นรายการที่ระบบสงสัยจะถูกส่งให้ผู้ตรวจสอบในสภาพเดียวกับรายการปกติ */}
+                      <td className="px-3 py-2 text-xs">
+                        {f.is_anomaly
+                          ? <span className="text-red-600 font-semibold">⚠ {f.anomaly_reason || 'ผิดปกติ'}</span>
+                          : <span className="text-gray-300">—</span>}
+                      </td>
                     </tr>
                   )
                 })}
@@ -464,6 +478,7 @@ export default function FleetReport({ tenant }) {
                     <td className="px-3 py-2 text-xs font-bold text-gray-800 text-right border-r border-gray-200">{fmt(totalLiters)} ล.</td>
                     <td className="px-3 py-2 border-r border-gray-200" />
                     <td className="px-3 py-2 text-xs font-bold text-gray-800 text-right border-r border-gray-200">{fmtB(totalFuelCost)}</td>
+                    <td className="px-3 py-2 border-r border-gray-200" />
                     <td />
                   </tr>
                 )}

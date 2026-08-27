@@ -39,6 +39,23 @@ function toLocalDT(date) {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
 }
 
+// ช่อง <input type="datetime-local"> คืนค่าเป็นเวลาท้องถิ่นแบบ "ไม่มี timezone" ("2027-01-05T09:00")
+// ถ้าส่งค่านี้ดิบๆ เข้าคอลัมน์ timestamptz, Postgres จะตีความว่าเป็น UTC
+// เวลาที่เก็บจึงเพี้ยนไป 7 ชม. (09:00 ที่กรอก กลายเป็น 09:00Z = 16:00 ตามเวลาไทย)
+// ทุกจุดที่ส่งค่าจากช่อง datetime-local เข้า DB ต้องผ่านฟังก์ชันนี้เสมอ
+function toISO(localDT) {
+  if (!localDT) return null
+  const d = new Date(localDT)
+  return Number.isNaN(d.getTime()) ? null : d.toISOString()
+}
+
+// วันที่ตามเวลาไทย ไม่ใช่ UTC — toISOString() จะได้วันผิดสำหรับเวลาช่วงเช้ามืดกับหัวค่ำ
+function localDateStr(value) {
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return ''
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function fmtDT(str) {
   if (!str) return '—'
   return new Date(str).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })
@@ -107,20 +124,21 @@ function BookingCalendar({ trips, onClose }) {
   )
 
   function getDay(day) {
-    const date = new Date(yr, mo, day)
-    const dateStr = date.toISOString().slice(0, 10)
+    // ใช้วันที่ตามเวลาไทย — เดิมใช้ toISOString() ซึ่งแปลงเป็น UTC ก่อน
+    // ทำให้ new Date(yr, mo, day) (เที่ยงคืนไทย) กลายเป็นวันก่อนหน้า 17:00Z = ปฏิทินเลื่อนไป 1 วัน
+    const dateStr = localDateStr(new Date(yr, mo, day))
     return relevant.filter(t => {
       const start = t.planned_departure
-        ? new Date(t.planned_departure).toISOString().slice(0, 10)
+        ? localDateStr(t.planned_departure)
         : t.trip_date
       const end = t.planned_return
-        ? new Date(t.planned_return).toISOString().slice(0, 10)
+        ? localDateStr(t.planned_return)
         : start
       return dateStr >= start && dateStr <= end
     })
   }
 
-  const today = now.toISOString().slice(0, 10)
+  const today = localDateStr(now)
   // build grid cells: blanks + days
   const cells = Array(firstDow).fill(null).concat(
     Array.from({ length: daysInMonth }, (_, i) => i + 1)
@@ -315,6 +333,19 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
   // ต่อ tenant ถ้าให้มันเรียก fetchHistory() เอง จะได้ historyPage/historyPageSize จาก closure
   // ของ render แรกเสมอ (stale) แล้วเด้งผู้ใช้กลับหน้า 1 เงียบๆ ทุกครั้งที่มีคนแก้ข้อมูล
   const [refreshKey, setRefreshKey] = useState(0)
+
+  // ปิด popup ด้วยปุ่ม Esc — พฤติกรรมที่ผู้ใช้เดสก์ท็อปคาดหวัง และเป็นทางออกสำรอง
+  // เมื่อปุ่มกากบาทหลุดออกนอกจอบนอุปกรณ์เล็ก ไม่ปิดระหว่างกำลังบันทึกเพื่อกันปิดคาครึ่งทาง
+  useEffect(() => {
+    if (!modal) return undefined
+    const onKey = (e) => {
+      if (e.key !== 'Escape' || saving) return
+      setModal(null); setSelTrip(null); setConflict(null)
+      setShowOverride(false); setOverrideReason(''); setRejectReason('')
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [modal, saving])
   const loadTrips = () => setRefreshKey(k => k + 1)
 
   // โหลดครั้งเดียวต่อ tenant — รายชื่อเจ้าหน้าที่/รถไม่เปลี่ยนตามการแก้ทริป
@@ -386,7 +417,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
       .select('id,status,destination,driver:profiles!fleet_trips_driver_id_fkey(full_name)')
       .eq('vehicle_id', vehicleId)
       .in('status', ['pending', 'approved'])
-      .lt('planned_departure', to).gt('planned_return', from)
+      // แปลงเป็น ISO ก่อนเทียบ ไม่งั้นเทียบเวลาท้องถิ่นกับ timestamptz คนละฐานเวลา
+      .lt('planned_departure', toISO(to) ?? to).gt('planned_return', toISO(from) ?? from)
     if (excludeId) overlapQ = overlapQ.neq('id', excludeId)
     const { data: overlap } = await overlapQ
     return [...(busy ?? []), ...(overlap ?? [])]
@@ -397,11 +429,17 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
   // (ใช้แค่ "แนะนำ" ตัวจริงยังเช็คซ้ำที่ findVehicleConflicts ตอน submit)
   function computeAvailableVehicles(excludeVehicleId, from, to, excludeTripId = null) {
     const busy = new Set()
+    // เทียบเป็นตัวเลข timestamp — เดิมเทียบ string ระหว่างค่าจากฟอร์ม ("2027-01-05T09:00")
+    // กับค่าจาก DB ("2027-01-05T02:00:00+00:00") ซึ่งคนละรูปแบบและคนละฐานเวลา
+    const fromMs = new Date(from).getTime()
+    const toMs   = new Date(to).getTime()
     trips.forEach(t => {
       if (t.id === excludeTripId) return
       if (!['pending', 'approved', 'in_progress'].includes(t.status)) return
       const overlaps = t.status === 'in_progress'
-        || (t.planned_departure && t.planned_return && t.planned_departure < to && t.planned_return > from)
+        || (t.planned_departure && t.planned_return
+            && new Date(t.planned_departure).getTime() < toMs
+            && new Date(t.planned_return).getTime() > fromMs)
       if (overlaps) busy.add(t.vehicle_id)
     })
     return vehicles.filter(v => v.id !== excludeVehicleId && !busy.has(v.id))
@@ -483,9 +521,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
       vehicle_id: form.vehicle_id,
       driver_id: form.driver_id || user?.id,
       department_id: deptLocked ? (myDeptId || null) : (form.department_id || null),
-      trip_date: form.planned_departure.slice(0, 10),
-      planned_departure: form.planned_departure,
-      planned_return: form.planned_return,
+      trip_date: form.planned_departure.slice(0, 10),   // วันที่ตามที่ผู้ใช้กรอก (เวลาไทย)
+      planned_departure: toISO(form.planned_departure),
+      planned_return:    toISO(form.planned_return),
       destination: form.destination,
       purpose: form.purpose,
     }
@@ -531,8 +569,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
       p_vehicle_id:        form.vehicle_id,
       p_driver_id:         form.driver_id || user?.id,
       p_department_id:     form.department_id || null,
-      p_planned_departure: new Date(form.planned_departure).toISOString(),
-      p_planned_return:    new Date(form.planned_return).toISOString(),
+      p_planned_departure: toISO(form.planned_departure),
+      p_planned_return:    toISO(form.planned_return),
       p_destination:       form.destination,
       p_purpose:           form.purpose,
       p_reason:            overrideReason.trim(),
@@ -587,9 +625,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
       driver_id: form.driver_id || user?.id,
       created_by: user?.id,
       department_id: deptLocked ? (myDeptId || null) : (form.department_id || null),
-      trip_date: form.started_at.slice(0, 10),
-      started_at: form.started_at,
-      returned_at: form.returned_at || null,
+      trip_date: form.started_at.slice(0, 10),   // วันที่ตามที่ผู้ใช้กรอก (เวลาไทย)
+      started_at:  toISO(form.started_at),
+      returned_at: toISO(form.returned_at),
       odometer_start: startMeter,
       odometer_end: endMeter,
       destination: form.destination,
@@ -648,7 +686,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
     setSaving(true)
     const { error } = await supabase.from('fleet_trips').update({
       status: 'in_progress',
-      started_at: form.started_at,
+      started_at: toISO(form.started_at),
       odometer_start: startMeter,
     }).eq('id', selTrip.id)
     setSaving(false)
@@ -669,7 +707,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
     setSaving(true)
     const { error } = await supabase.from('fleet_trips').update({
       status: 'completed',
-      returned_at: form.returned_at,
+      returned_at: toISO(form.returned_at),
       odometer_end: endMeter,
       notes: form.notes || null,
     }).eq('id', selTrip.id)
