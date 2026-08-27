@@ -116,8 +116,27 @@ function markSatDone(id) {
   try { localStorage.setItem(`sat_done_${id}`, '1') } catch { /* ไม่จำก็ไม่เป็นไร ฝั่ง DB กันซ้ำอยู่แล้ว */ }
 }
 
+// เด้งประเมินเองเฉพาะเรื่องที่เพิ่งปิดไม่นาน — ตอนฟีเจอร์นี้ขึ้นระบบมีคำร้องที่ปิดเรื่องแล้ว
+// ค้างอยู่จำนวนหนึ่ง ถ้าไม่จำกัดช่วงเวลา ผู้ใช้จะโดนป็อปอัพย้อนหลังเรื่องที่จำไม่ได้แล้ว
+// ซึ่งได้คะแนนที่ไม่สะท้อนอะไรและกวนผู้ใช้ฟรีๆ ปุ่มประเมินในหน้ารายละเอียดยังเปิดไว้เสมอ
+// คนที่อยากให้คะแนนเรื่องเก่ายังทำได้
+const SAT_PROMPT_WINDOW_DAYS = 30
+
+function withinPromptWindow(closedAt) {
+  // closed_at เป็น NULL ในคำร้องเก่าที่ปิดก่อนระบบเริ่มบันทึกเวลาปิดเรื่อง — ถือว่าพ้นช่วงไปแล้ว
+  if (!closedAt) return false
+  const t = new Date(closedAt).getTime()
+  if (Number.isNaN(t)) return false
+  return Date.now() - t <= SAT_PROMPT_WINDOW_DAYS * 86400000
+}
+
 function findUnrated(list) {
-  return list.find(c => isClosed(c.status) && c.rating == null && !satDone(c.id)) ?? null
+  return list.find(c =>
+    isClosed(c.status) &&
+    c.rating == null &&
+    withinPromptWindow(c.closed_at) &&
+    !satDone(c.id)
+  ) ?? null
 }
 
 function StatusStepper({ status }) {
@@ -665,10 +684,13 @@ export default function MyComplaints() {
         filter: `municipality_id=eq.${tenant.id}`,
       }, ({ new: updated }) => {
         setComplaints(prev => prev.map(c => c.id === updated.id ? { ...c, ...updated } : c))
+        // ใช้ช่วงเวลาเดียวกับตอนโหลดรายการ — UPDATE ไม่ได้แปลว่าเพิ่งปิดเรื่อง แอดมินแก้อย่างอื่น
+        // (เช่นแนบเอกสาร) ในคำร้องเก่าที่ปิดไปนานแล้วก็ยิง event นี้เหมือนกัน
         if (
           updated.user_id === userId &&
           isClosed(updated.status) &&
           updated.rating == null &&
+          withinPromptWindow(updated.closed_at) &&
           !satDone(updated.id)
         ) {
           setSatComplaintId(updated.id)
