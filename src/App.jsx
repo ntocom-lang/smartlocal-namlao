@@ -309,19 +309,36 @@ function AppShell() {
   const hideBottomNav = ['/admin', '/staff', '/dev-journal', '/data-center'].some(p => location.pathname.startsWith(p))
 
   const checkAndFixProfile = useCallback(async (uid, userMeta = {}) => {
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('phone, municipality_id, full_name, avatar_url, role')
       .eq('id', uid)
       .maybeSingle()
 
-    const updates = {}
-
-    if (tenantId && !profile?.municipality_id && profile?.role === 'citizen') {
-      updates.municipality_id = tenantId
+    if (profileError) {
+      console.error('[profile] อ่านโปรไฟล์ไม่สำเร็จ:', profileError.message)
+      return
     }
 
+    // สมัคร/ล็อกอินด้วย Google หรือ LINE จะไม่มี municipality_id ติดมาใน raw_user_meta_data
+    // (handle_new_user() เติมให้ได้เฉพาะการสมัครด้วยอีเมล) ถ้าตรงนี้ไม่สำเร็จ โปรไฟล์จะค้างเป็น
+    // null ถาวรและหายไปจากหน้า "จัดการผู้ใช้และการแต่งตั้ง" ของ อปท. เพราะ get_users_with_email()
+    // กรองด้วย municipality_id — admin จะมองไม่เห็นและแต่งตั้งตำแหน่งให้ไม่ได้เลย
+    // จึงต้องไม่กลืน error เงียบๆ (ของเดิมกลืน ทำให้บั๊กนี้ซ่อนอยู่นานจนสะสมหลายบัญชี)
+    if (tenantId && !profile?.municipality_id && profile?.role === 'citizen') {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ municipality_id: tenantId })
+        .eq('id', uid)
+      if (error) console.error('[profile] ผูก อปท. ให้บัญชีนี้ไม่สำเร็จ:', error.message)
+    }
+
+    const updates = {}
+
     // LINE/Google OAuth — ชื่ออยู่ใน 'name', รูปอยู่ใน 'picture'
+    // แยกคำสั่งจากการผูก อปท. ข้างบน เพราะ trg_guard_profile_privileged_update ตรวจ
+    // municipality_id ด้วยเงื่อนไขคนละชุด ถ้ารวมเป็นคำสั่งเดียวแล้วเงื่อนไขนั้นไม่ผ่าน
+    // ชื่อกับรูปจะไม่ถูกเติมไปด้วยทั้งที่ไม่ใช่ฟิลด์ privileged
     if (!profile?.full_name?.trim()) {
       const name = userMeta?.full_name || userMeta?.name || ''
       if (name) updates.full_name = name
@@ -333,10 +350,11 @@ function AppShell() {
     }
 
     if (Object.keys(updates).length > 0) {
-      await supabase.from('profiles').upsert(
+      const { error } = await supabase.from('profiles').upsert(
         { id: uid, ...updates },
         { onConflict: 'id' }
       )
+      if (error) console.error('[profile] เติมชื่อ/รูปจาก OAuth ไม่สำเร็จ:', error.message)
     }
 
     // เช็คชื่อ-นามสกุลครบไม๊ (นับรวมค่าที่เพิ่งเติมจาก OAuth metadata ข้างบนด้วย) — ต้องมีทั้งชื่อและ
