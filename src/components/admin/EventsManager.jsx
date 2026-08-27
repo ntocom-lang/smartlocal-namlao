@@ -94,15 +94,39 @@ function eventAttachments(ev) {
   return ev.attachment_url ? [ev.attachment_url] : []
 }
 
-// บุคลากรภายในเทศบาลเดียวกันเห็นรายละเอียดปฏิทินร่วมกัน ส่วน citizen เห็นเฉพาะรายการ public
-function audienceFilter(role) {
-  if (EVENT_MANAGER_ROLES.includes(role)) return null
-  return ['public']
+// กลุ่มเป้าหมายที่แต่ละบทบาท "เป็นเจ้าของ" — ใช้ตัดสินว่าเปิดดูรายละเอียดกิจกรรมได้ไหม
+// เดิมบุคลากรภายในทุกบทบาทเห็นรายละเอียดทุกกิจกรรมร่วมกัน ทำให้เจ้าหน้าที่ทั่วไปและช่าง
+// เปิดอ่านกำหนดการผู้บริหารและวาระสภาได้หมด ซึ่งไม่ใช่ข้อมูลที่ควรเปิดกว้างขนาดนั้น
+const ROLE_AUDIENCES = {
+  viewer:     ['management'],   // ผู้บริหาร
+  council:    ['council'],      // สมาชิกสภา
+  kamnan:     [],               // กำนัน — ยังไม่มีข้อสรุปว่าควรเห็นกลุ่มใด ให้เห็นเฉพาะ public ไปก่อน
+  officer:    ['staff'],
+  staff:      ['staff'],
+  technician: ['staff'],
 }
-function canViewEventDetail(ev, role, currentUserId) {
+
+/**
+ * เปิดดูรายละเอียดกิจกรรมได้เมื่อเข้าเงื่อนไขข้อใดข้อหนึ่ง
+ *   1. กิจกรรมประกาศเป็นสาธารณะ — ประชาชนก็เห็นอยู่แล้วบนหน้าเว็บ ไม่มีเหตุให้ปิดจากเจ้าหน้าที่
+ *   2. admin / superadmin — ผู้ดูแลระบบ
+ *   3. เป็นคนสร้างเอง — ไม่งั้นสร้างแล้วเปิดดูของตัวเองไม่ได้
+ *   4. เป็นหัวหน้ากอง และกิจกรรมนั้นอยู่ในกองตน (กติกาเดียวกับปุ่มแก้ไข/ลบ)
+ *   5. บทบาทตรงกับกลุ่มเป้าหมายของกิจกรรม เช่น ผู้บริหารเปิดของ 'management' สภาเปิดของ 'council'
+ *      เจ้าหน้าที่/ช่างเปิดของ 'staff' — คนละกลุ่มกันเปิดข้ามไม่ได้
+ *
+ * ⚠️ นี่เป็นการกั้นระดับหน้าจอเท่านั้น RLS ของตาราง events ยังคืนทั้งแถว (รวม description
+ * และไฟล์แนบ) ให้บุคลากรภายในทุกคนอยู่ — ใครเปิด DevTools ยิง query เองก็ยังได้ข้อมูลครบ
+ * ถ้าต้องการปิดจริงต้องกั้นที่ฐานข้อมูล ไม่ใช่แค่ซ่อนปุ่ม
+ */
+function canViewEventDetail(ev, role, currentUserId, scope) {
+  if ((ev.audiences ?? []).includes('public')) return true
+  if (['admin', 'superadmin'].includes(role)) return true
   if (currentUserId && ev.created_by === currentUserId) return true
-  const allowed = audienceFilter(role)
-  return allowed === null || (ev.audiences ?? []).some(a => allowed.includes(a))
+  if (scope?.is_dept_head && scope?.department_id && ev.department_id === scope.department_id) return true
+  const mine = ROLE_AUDIENCES[role]
+  if (!mine) return false
+  return (ev.audiences ?? []).some(a => mine.includes(a))
 }
 
 function EventCard({ ev, onEdit, onDelete, onView, deleting }) {
@@ -1490,7 +1514,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                       <EventCard key={ev.id} ev={ev}
                         onEdit={canManage && canEditRow ? openEdit : null}
                         onDelete={canManage && canDeleteRow ? handleDelete : null}
-                        onView={canViewEventDetail(ev, currentUserRole, currentUserId) ? setViewingEvent : null}
+                        onView={canViewEventDetail(ev, currentUserRole, currentUserId, currentUserScope) ? setViewingEvent : null}
                         deleting={deleting} />
                     )
                   })}
@@ -1526,7 +1550,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                         const isDepartmentHeadForEvent = !!currentUserScope?.is_dept_head && !!currentUserScope?.department_id && ev.department_id === currentUserScope.department_id
                         const canEditRow = isAdminManager || ev.created_by === currentUserId || isDepartmentHeadForEvent
                         const canDeleteRow = isAdminManager || ev.created_by === currentUserId || isDepartmentHeadForEvent
-                        const canView = canViewEventDetail(ev, currentUserRole, currentUserId)
+                        const canView = canViewEventDetail(ev, currentUserRole, currentUserId, currentUserScope)
                         return (
                           <tr key={ev.id}
                             className="transition-colors"
