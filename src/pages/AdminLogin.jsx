@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { isNetworkAuthError } from '../lib/authErrors'
-import { Lock, Mail, Loader2, ShieldCheck, Eye, EyeOff } from 'lucide-react'
+import { Lock, Mail, Loader2, ShieldCheck, Eye, EyeOff, KeyRound, QrCode } from 'lucide-react'
+import QrLoginPanel from '../components/auth/QrLoginPanel'
 
 export default function AdminLogin() {
   const navigate = useNavigate()
@@ -12,6 +13,9 @@ export default function AdminLogin() {
   const [error, setError] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [remember, setRemember] = useState(false)
+  // เจ้าหน้าที่ที่ไปใช้ PC เครื่องคนอื่นไม่ควรต้องพิมพ์รหัสผ่านทิ้งไว้บนเครื่องนั้น
+  // (และกดปุ่ม Google/LINE ไม่ได้ เพราะเบราว์เซอร์เครื่องนั้นจำบัญชีเจ้าของเครื่องไว้)
+  const [tab, setTab] = useState('password')
 
   async function handleLogin(e) {
     e.preventDefault()
@@ -54,8 +58,25 @@ export default function AdminLogin() {
         </div>
 
         <h1 className="text-xl font-bold text-gray-800 text-center mb-1">เข้าสู่ระบบเจ้าหน้าที่</h1>
-        <p className="text-sm text-gray-400 text-center mb-6">แผงควบคุมสำหรับผู้ดูแลระบบ</p>
+        <p className="text-sm text-gray-400 text-center mb-5">แผงควบคุมสำหรับผู้ดูแลระบบ</p>
 
+        <div className="grid grid-cols-2 gap-1 p-1 bg-gray-50 rounded-xl mb-5">
+          {[
+            { key: "password", label: "รหัสผ่าน", Icon: KeyRound },
+            { key: "qr", label: "QR จากมือถือ", Icon: QrCode },
+          ].map(({ key, label, Icon }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTab(key)}
+              className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium transition-all ${tab === key ? "bg-white shadow-sm text-gray-800" : "text-gray-400"}`}
+            >
+              <Icon size={15} /> {label}
+            </button>
+          ))}
+        </div>
+
+        {tab === "password" ? (
         <form onSubmit={handleLogin} className="space-y-4">
           <div className="relative">
             <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -117,6 +138,7 @@ export default function AdminLogin() {
             ) : 'เข้าสู่ระบบ'}
           </button>
         </form>
+        ) : <QrLoginPanel />}
       </div>
     </div>
   )

@@ -14,6 +14,7 @@ import { supabase } from './lib/supabase'
 import { Phone, UserRound } from 'lucide-react'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from './lib/thaiName'
 import { recordVisit } from './lib/menuUsage'
+import { BASENAME } from './lib/basename'
 
 const HomePage = lazyWithRetry(() => import('./pages/HomePage'))
 const CitizenForm = lazyWithRetry(() => import('./pages/CitizenForm'))
@@ -25,6 +26,7 @@ const AdminLogin = lazyWithRetry(() => import('./pages/AdminLogin'))
 const DevJournal = lazyWithRetry(() => import('./pages/DevJournal'))
 const AuthPage = lazyWithRetry(() => import('./pages/AuthPage'))
 const ResetPasswordPage = lazyWithRetry(() => import('./pages/ResetPasswordPage'))
+const DeviceLoginApprove = lazyWithRetry(() => import('./pages/DeviceLoginApprove'))
 const SatisfactionPage = lazyWithRetry(() => import('./pages/SatisfactionPage'))
 const TechnicianDashboard = lazyWithRetry(() => import('./pages/TechnicianDashboard'))
 const ProfilePage = lazyWithRetry(() => import('./pages/ProfilePage'))
@@ -533,6 +535,8 @@ function AppShell() {
           <Route path="/market" element={<MarketPage />} />
           <Route path="/auth" element={<AuthPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
+          {/* หน้าอนุมัติการเข้าสู่ระบบด้วย QR บนมือถือ — เปิดจากการสแกน QR ที่จอ PC */}
+          <Route path="/device-login" element={<DeviceLoginApprove />} />
           <Route path="/satisfaction" element={<SatisfactionPage />} />
           <Route path="/profile" element={
             <RequireAuth>
@@ -653,29 +657,7 @@ function AppShell() {
   )
 }
 
-function computeBasename() {
-  if (import.meta.env.VITE_TENANT_SLUG) return ''
 
-  const { hostname, pathname } = window.location
-
-  if (!hostname.endsWith('.vercel.app') && hostname !== 'localhost' && !hostname.match(/^\d/)) {
-    return ''
-  }
-
-  // smartlocal-{slug}.vercel.app = deployment เฉพาะ อปท. เดียว (เหมือน custom domain) — slug มาจาก
-  // hostname เองอยู่แล้ว (ดู detectTenantSlug ใน TenantContext.jsx ที่เช็คแพทเทิร์นเดียวกันนี้) ไม่ใช่
-  // path-mode ห้ามเอา path แรกไปตั้งเป็น basename ไม่งั้นเข้าหน้าอื่นที่ไม่ใช่ "/" ตรงๆ (เช่น /auth,
-  // /reports) จะพังทันที เพราะ path นั้นเองจะถูกเข้าใจผิดว่าเป็น basename ทำให้ลิงก์ทุกอันเพี้ยน
-  // (บั๊กจริงที่เจอ: เข้า /auth ตรงๆ แล้วกลายเป็นหน้าแรกซ้อนอยู่ใต้ /auth/auth, /auth/complaint ฯลฯ)
-  if (/^smartlocal-.+$/.test(hostname.split('.')[0])) return ''
-
-  // Path mode: /namlao/... → basename = '/namlao' (เฉพาะ deployment กลางแบบ path-based เท่านั้น)
-  const segment = pathname.split('/').filter(Boolean)[0]
-  return segment ? `/${segment}` : ''
-}
-
-// computed once at module load — must NOT be inside the component (re-render would shift basename)
-const BASENAME = computeBasename()
 
 export default function App() {
   return (
