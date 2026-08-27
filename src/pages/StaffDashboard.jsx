@@ -99,7 +99,7 @@ const STANDALONE_GROUPS = [
     items: [
       // newTab: เปิดเอกสารคงที่ (static HTML) แท็บใหม่ — ต่างจาก externalUrl ที่ navigate() ในแท็บเดิม
       // (ใช้กับ route ภายในแอปเท่านั้น เพราะไฟล์ static ไม่มี route จับใน App.jsx)
-      { key: 'manual-staff', label: 'คู่มือเจ้าหน้าที่ (ยานพาหนะ)', Icon: BookOpen, color: '#0369a1', bg: '#e0f2fe', newTab: '/manual-staff.html' },
+      { key: 'manual-staff', label: 'คู่มือเจ้าหน้าที่', Icon: BookOpen, color: '#0369a1', bg: '#e0f2fe', newTab: '/manual-staff.html' },
     ],
   },
 ]
