@@ -42,8 +42,12 @@ export default function GoogleMapPicker({
 
   const [selected, setSelected] = useState(initialLocation)
   const isModal = modal ?? Boolean(onConfirm || onClose)
+  const selectedRef = useRef(initialLocation)
 
   const commitSelection = useCallback(location => {
+    // อัปเดต ref ทันที (synchronous) ก่อน setState เพื่อไม่ให้ listener zoom_changed/idle
+    // ของแผนที่อ่านพิกัดเก่าแล้วดึง center กลับที่เดิม
+    selectedRef.current = location
     setSelected(location)
     onLocationSelect?.(location)
   }, [onLocationSelect])
@@ -71,11 +75,6 @@ export default function GoogleMapPicker({
       commitSelection({ ...point, address: `${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}` })
     }
   }, [commitSelection])
-
-  const selectedRef = useRef(selected)
-  useEffect(() => {
-    selectedRef.current = selected
-  }, [selected])
 
   const handleMapReady = useCallback((map, google) => {
     mapRef.current = map
@@ -179,17 +178,28 @@ export default function GoogleMapPicker({
   useEffect(() => () => autocompleteListenerRef.current?.remove?.(), [])
 
   function locateMe() {
-    if (!navigator.geolocation) return
+    if (!navigator.geolocation) {
+      alert('อุปกรณ์หรือเบราว์เซอร์นี้ไม่รองรับการอ่านตำแหน่ง')
+      return
+    }
+    if (!window.isSecureContext) {
+      alert('ต้องเปิดผ่าน HTTPS จึงจะอ่านตำแหน่งปัจจุบันได้')
+      return
+    }
     setLocating(true)
     navigator.geolocation.getCurrentPosition(position => {
       const point = { lat: position.coords.latitude, lng: position.coords.longitude }
+      // commit ก่อน pan/zoom เพื่อให้ listener ของแผนที่ยึดพิกัดใหม่ ไม่ดึง center กลับที่เดิม
+      commitSelection({ ...point, address: point.lat.toFixed(6) + ', ' + point.lng.toFixed(6) })
       mapRef.current?.panTo(point)
       mapRef.current?.setZoom(18)
       reverseGeocode(point)
       setLocating(false)
-    }, () => {
+    }, err => {
       setLocating(false)
-      alert('ไม่สามารถอ่านตำแหน่งปัจจุบันได้ กรุณาอนุญาต Location ในเบราว์เซอร์')
+      if (err?.code === 1) alert('ยังไม่ได้อนุญาตให้เว็บไซต์ใช้ตำแหน่ง กรุณาเปิดสิทธิ์ Location ในตั้งค่าเบราว์เซอร์แล้วลองใหม่')
+      else if (err?.code === 3) alert('ค้นหาตำแหน่งนานเกินไป กรุณาเปิด GPS แล้วลองใหม่ในที่โล่ง')
+      else alert('อ่านตำแหน่งปัจจุบันไม่สำเร็จ กรุณาเปิด GPS แล้วลองใหม่')
     }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 })
   }
 
@@ -234,13 +244,6 @@ export default function GoogleMapPicker({
             </button>
           </form>
         )}
-        {!readOnly && (
-          <button type="button" onClick={locateMe} disabled={locating}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-blue-600 shadow-sm disabled:opacity-50"
-            title="ตำแหน่งปัจจุบัน">
-            <LocateFixed size={18} className={locating ? 'animate-pulse' : ''} />
-          </button>
-        )}
         {isModal && onClose && (
           <button type="button" onClick={onClose} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100" aria-label="ปิด">
             <X size={20} />
@@ -262,6 +265,14 @@ export default function GoogleMapPicker({
           onMapReady={handleMapReady}
           markers={(readOnly || !fixedCenterPin) && validPoint(selected) ? [{ id: 'selected-location', position: selected, color: '#ef4444', scale: 17, title: 'ตำแหน่งที่เลือก' }] : []}
         />
+        {!readOnly && (
+          <button type="button" onClick={locateMe} disabled={locating}
+            className="absolute bottom-12 left-3 z-10 flex items-center gap-1.5 rounded-full bg-blue-600 px-3.5 py-2.5 text-xs font-bold text-white shadow-lg transition-transform active:scale-95 disabled:opacity-70"
+            title="ไปยังตำแหน่งปัจจุบันของฉัน" aria-label="ตำแหน่งปัจจุบันของฉัน">
+            <LocateFixed size={16} className={locating ? 'animate-pulse' : ''} />
+            {locating ? 'กำลังหาตำแหน่ง...' : 'ตำแหน่งของฉัน'}
+          </button>
+        )}
         {!readOnly && fixedCenterPin && (
           <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-full flex-col items-center">
             <div className="relative text-red-600 transition-transform active:scale-110 drop-shadow-xl">
