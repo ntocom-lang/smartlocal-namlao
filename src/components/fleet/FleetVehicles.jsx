@@ -34,6 +34,7 @@ const EMPTY = {
   vehicle_type:'car', brand:'', model:'', manufacture_year:'',
   fuel_type:'diesel', tank_capacity:'', odometer_initial:'', is_pool:false, status:'active',
   department_id:'', notes:'',
+  efficiency_min:'', efficiency_max:'',
   insurance_expiry:'', act_expiry:'', registration_expiry:'', inspection_expiry:'',
 }
 
@@ -184,6 +185,7 @@ const auditSnapshot = v => v ? {
   asset_kind: v.asset_kind, vehicle_type: v.vehicle_type, status: v.status,
   department_id: v.department_id, is_pool: v.is_pool,
   meter_unit: v.meter_unit, tank_capacity: v.tank_capacity, fuel_type: v.fuel_type,
+  efficiency_min: v.efficiency_min, efficiency_max: v.efficiency_max,
 } : null
 
 export default function FleetVehicles({ tenant, depts, isAdmin }) {
@@ -252,6 +254,7 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
       fuel_type: v.fuel_type, tank_capacity: v.tank_capacity ?? '', odometer_initial: v.odometer_initial ?? '',
       is_pool: v.is_pool, status: v.status, department_id: v.department_id ?? '',
       notes: v.notes ?? '',
+      efficiency_min: v.efficiency_min ?? '', efficiency_max: v.efficiency_max ?? '',
       insurance_expiry: v.insurance_expiry ?? '', act_expiry: v.act_expiry ?? '',
       registration_expiry: v.registration_expiry ?? '', inspection_expiry: v.inspection_expiry ?? '',
     })
@@ -266,6 +269,12 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
     if (form.asset_kind !== 'vehicle' && !form.asset_code.trim()) return alert('เครื่องยนต์/ครุภัณฑ์ต้องมีรหัสครุภัณฑ์')
     if (form.tank_capacity !== '' && Number(form.tank_capacity) <= 0) return alert('ความจุถังต้องมากกว่า 0')
     if (form.odometer_initial !== '' && Number(form.odometer_initial) < 0) return alert('ค่ามิเตอร์เริ่มต้นต้องไม่ติดลบ')
+    const effMin = form.efficiency_min === '' ? null : Number(form.efficiency_min)
+    const effMax = form.efficiency_max === '' ? null : Number(form.efficiency_max)
+    if (effMin !== null && !(effMin > 0)) return alert('อัตราสิ้นเปลืองขั้นต่ำต้องมากกว่า 0')
+    if (effMax !== null && !(effMax > 0)) return alert('อัตราสิ้นเปลืองสูงสุดต้องมากกว่า 0')
+    if (effMin !== null && effMax !== null && effMax <= effMin)
+      return alert('อัตราสิ้นเปลืองสูงสุดต้องมากกว่าขั้นต่ำ')
     setSaving(true)
     const payload = {
       ...form,
@@ -281,6 +290,8 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
       act_expiry:          form.act_expiry          || null,
       registration_expiry: form.registration_expiry || null,
       inspection_expiry:   form.inspection_expiry   || null,
+      efficiency_min: effMin,
+      efficiency_max: effMax,
     }
     if (modal === 'add') {
       const { data, error } = await supabase.from('fleet_vehicles').insert(payload)
@@ -600,6 +611,25 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
                 <div>
                   <label className="text-xs font-semibold text-gray-600 mb-1 block">ความจุถัง (ลิตร)</label>
                   <input type="number" value={form.tank_capacity} onChange={set('tank_capacity')} placeholder="60" className={inp} />
+                </div>
+                {/* ช่วงที่ยอมรับได้ต่อคัน — ใช้แทนค่าเริ่มต้นตามประเภทรถ ซึ่งเป็นค่าที่ อปท. แก้เองได้
+                    รถเฉพาะทาง (รถขยะ รถดับเพลิง รถกระเช้า) กินน้ำมันไม่เหมือนรถประเภทเดียวกัน
+                    ถ้าไม่ให้ตั้งเองจะติดธง "ผิดปกติ" ทุกครั้งจนเจ้าหน้าที่เลิกสนใจธง */}
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 mb-1 block">กม./ล. ต่ำสุดที่ยอมรับได้</label>
+                  <input type="number" step="0.01" value={form.efficiency_min} onChange={set('efficiency_min')}
+                    placeholder="ว่าง = ตามประเภทรถ" className={inp} />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 mb-1 block">กม./ล. สูงสุดที่ยอมรับได้</label>
+                  <input type="number" step="0.01" value={form.efficiency_max} onChange={set('efficiency_max')}
+                    placeholder="ว่าง = ตามประเภทรถ" className={inp} />
+                </div>
+                <div className="md:col-span-2">
+                  <p className="text-[11px] text-gray-400 leading-relaxed">
+                    ระบบใช้ช่วงนี้ตั้งธง “ผิดปกติ” เมื่ออัตราสิ้นเปลืองที่คำนวณได้หลุดออกนอกช่วง
+                    ปล่อยว่างทั้งคู่ = ใช้ค่าเริ่มต้นตามประเภทรถ (มอเตอร์ไซค์ 15–90 · รถบรรทุก/รถขุด 0.5–15 · อื่นๆ 3–30)
+                  </p>
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-gray-600 mb-1 block">ค่ามิเตอร์เริ่มต้น ({meterUnitShort(form)})</label>
