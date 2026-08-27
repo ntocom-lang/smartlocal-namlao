@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import FleetImportModal from './FleetImportModal'
 import FleetVehicleDetail from './FleetVehicleDetail'
 import FleetEmptyState from './FleetEmptyState'
+import { logAction } from '../../lib/auditLog'
 import {
   ASSET_KIND_LABEL,
   ASSET_KIND_OPTIONS,
@@ -176,6 +177,15 @@ function VehicleTypeManagerModal({ tenant, types, setTypes, onClose }) {
   )
 }
 
+// ทะเบียนครุภัณฑ์เป็นข้อมูลตั้งต้นของทั้งโมดูล การแก้ประเภทรถ/กอง/สถานะ
+// เปลี่ยนผลลัพธ์ของรายงานย้อนหลังทั้งหมด จึงต้องเหลือร่องรอยว่าใครแก้อะไร
+const auditSnapshot = v => v ? {
+  name: v.name, license_plate: v.license_plate, asset_code: v.asset_code,
+  asset_kind: v.asset_kind, vehicle_type: v.vehicle_type, status: v.status,
+  department_id: v.department_id, is_pool: v.is_pool,
+  meter_unit: v.meter_unit, tank_capacity: v.tank_capacity, fuel_type: v.fuel_type,
+} : null
+
 export default function FleetVehicles({ tenant, depts, isAdmin }) {
   const [vehicles,     setVehicles]     = useState([])
   // เก็บเฉพาะแถวจริงจากฐานข้อมูล (มี id เสมอ) — ใช้เป็นแหล่งข้อมูลตรงให้โมดัล "จัดการประเภท"
@@ -277,13 +287,25 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
         .select('*, departments(name,short_name)').single()
       if (!error) {
         setVehicles(prev => [...prev, data].sort((a,b) => a.name.localeCompare(b.name, 'th')))
+        logAction({
+          action: 'create', resourceType: 'fleet_vehicle', resourceId: data.id,
+          resourceLabel: `${data.name} (${assetIdentifier(data)})`,
+          municipalityId: tenant.id, metadata: { after: auditSnapshot(data) },
+        })
         setModal(null)
       } else alert(error.message)
     } else {
       const { data, error } = await supabase.from('fleet_vehicles').update(payload)
         .eq('id', modal.id).select('*, departments(name,short_name)').single()
       if (!error) {
+        const before = vehicles.find(v => v.id === modal.id)
         setVehicles(prev => prev.map(v => v.id === modal.id ? data : v))
+        logAction({
+          action: 'update', resourceType: 'fleet_vehicle', resourceId: data.id,
+          resourceLabel: `${data.name} (${assetIdentifier(data)})`,
+          municipalityId: tenant.id,
+          metadata: { before: auditSnapshot(before), after: auditSnapshot(data) },
+        })
         setModal(null)
       } else alert(error.message)
     }
@@ -303,7 +325,14 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
     }
     if (!confirm(`ลบ "${v.name}" (${assetIdentifier(v)})?`)) return
     const { error } = await supabase.from('fleet_vehicles').delete().eq('id', v.id)
-    if (!error) setVehicles(prev => prev.filter(x => x.id !== v.id))
+    if (!error) {
+      setVehicles(prev => prev.filter(x => x.id !== v.id))
+      logAction({
+        action: 'delete', resourceType: 'fleet_vehicle', resourceId: v.id,
+        resourceLabel: `${v.name} (${assetIdentifier(v)})`,
+        municipalityId: tenant.id, metadata: { deleted: auditSnapshot(v) },
+      })
+    }
     else alert('ลบไม่สำเร็จ: ' + error.message)
   }
 

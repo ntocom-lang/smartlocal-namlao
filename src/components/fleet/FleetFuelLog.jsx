@@ -3,6 +3,7 @@ import { Plus, X, AlertTriangle, FileText, Paperclip, Pencil, Fuel } from 'lucid
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import FleetEmptyState from './FleetEmptyState'
+import { logAction } from '../../lib/auditLog'
 import {
   FUEL_OPTIONS,
   assetIdentifier,
@@ -23,6 +24,21 @@ const sel = inp + ' appearance-none'
 const fmt = n => (n ?? 0).toLocaleString('th-TH')
 const fmtB = n => `฿${fmt(Math.round(n ?? 0))}`
 const thDate = d => new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
+
+// snapshot เฉพาะฟิลด์ที่มีผลต่อการตรวจสอบการเบิกจ่าย ไม่ยัดทั้งแถวลง audit log
+// จุดสำคัญคือกรณี "ลบ" — ถ้าไม่เก็บค่าไว้ ตัวเลขที่ถูกลบจะสืบกลับไม่ได้เลย
+const auditSnapshot = r => r ? {
+  filled_at: r.filled_at, vehicle_id: r.vehicle_id, odometer: r.odometer,
+  liters: r.liters, price_per_liter: r.price_per_liter, total_cost: r.total_cost,
+  full_tank: r.full_tank, fuel_station: r.fuel_station, receipt_no: r.receipt_no,
+  is_anomaly: r.is_anomaly, anomaly_reason: r.anomaly_reason,
+} : null
+
+const auditLabel = r => [
+  r?.fleet_vehicles?.name ?? 'ไม่ระบุรถ',
+  `${r?.liters ?? '?'} ล.`,
+  `฿${Math.round(r?.total_cost ?? 0).toLocaleString('th-TH')}`,
+].join(' — ')
 
 const EMPTY_FORM = {
   vehicle_id: '', driver_id: '',
@@ -170,7 +186,8 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
     }
 
     setSaving(true)
-    const oldReceiptUrl = editingId ? records.find(x => x.id === editingId)?.receipt_url : null
+    const beforeRecord = editingId ? records.find(x => x.id === editingId) : null
+    const oldReceiptUrl = beforeRecord?.receipt_url ?? null
     const recordId = editingId ?? crypto.randomUUID()
 
     // อัปโหลดเอกสารก่อน insert/update เสมอ แล้วใส่ receipt_url ไปในคำสั่งเดียวกัน
@@ -209,6 +226,14 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
       // แนบไฟล์ใหม่แทนที่เอกสารเดิมสำเร็จแล้ว (กรณีแก้ไข) — ลบไฟล์เก่าทิ้งกันขยะค้าง storage
       if (receiptPath && oldReceiptUrl && oldReceiptUrl !== receiptPath) removeFleetDocument(oldReceiptUrl).catch(() => {})
       setRecords(prev => editingId ? prev.map(x => x.id === editingId ? data : x) : [data, ...prev])
+      logAction({
+        action: editingId ? 'update' : 'create',
+        resourceType: 'fleet_fuel', resourceId: recordId, resourceLabel: auditLabel(data),
+        municipalityId: tenant.id,
+        metadata: editingId
+          ? { before: auditSnapshot(beforeRecord), after: auditSnapshot(data) }
+          : { after: auditSnapshot(data) },
+      })
       closeModal()
       setForm(EMPTY_FORM)
       setReceiptFile(null)
@@ -225,6 +250,10 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
     if (!confirm(`ลบรายการเติมน้ำมัน ${thDate(r.filled_at)} — ${r.fleet_vehicles?.name} (${r.liters} ลิตร)?`)) return
     const { error } = await supabase.from('fleet_fuel_records').delete().eq('id', r.id)
     if (!error) {
+      logAction({
+        action: 'delete', resourceType: 'fleet_fuel', resourceId: r.id, resourceLabel: auditLabel(r),
+        municipalityId: tenant.id, metadata: { deleted: auditSnapshot(r) },
+      })
       setRecords(prev => prev.filter(x => x.id !== r.id))
       if (r.receipt_url) removeFleetDocument(r.receipt_url).catch(() => {})
     }

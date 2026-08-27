@@ -3,6 +3,7 @@ import { Plus, X, Wrench, AlertTriangle, FileText, Paperclip, Pencil } from 'luc
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAllRows } from '../../lib/fetchAllRows'
+import { logAction } from '../../lib/auditLog'
 import FleetEmptyState from './FleetEmptyState'
 import {
   assetIdentifier,
@@ -73,6 +74,21 @@ function DueSoonAlert({ records }) {
     </div>
   )
 }
+
+// snapshot เฉพาะฟิลด์ที่มีผลต่อการตรวจสอบการเบิกจ่าย ไม่ยัดทั้งแถวลง audit log
+// จุดสำคัญคือกรณี "ลบ" — ถ้าไม่เก็บค่าไว้ ตัวเลขที่ถูกลบจะสืบกลับไม่ได้เลย
+const auditSnapshot = r => r ? {
+  service_date: r.service_date, vehicle_id: r.vehicle_id,
+  maintenance_type: r.maintenance_type, description: r.description,
+  cost: r.cost, vendor: r.vendor, odometer: r.odometer,
+  next_service_date: r.next_service_date,
+} : null
+
+const auditLabel = r => [
+  r?.fleet_vehicles?.name ?? 'ไม่ระบุรถ',
+  r?.description ?? '',
+  `฿${Math.round(r?.cost ?? 0).toLocaleString('th-TH')}`,
+].filter(Boolean).join(' — ')
 
 export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
   const { session } = useAuth()
@@ -203,7 +219,8 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
     const fileError = validateFleetDocument(receiptFile)
     if (fileError) return alert(fileError)
     setSaving(true)
-    const oldReceiptUrl = editingId ? records.find(x => x.id === editingId)?.receipt_url : null
+    const beforeRecord = editingId ? records.find(x => x.id === editingId) : null
+    const oldReceiptUrl = beforeRecord?.receipt_url ?? null
     const recordId = editingId ?? crypto.randomUUID()
 
     // อัปโหลดเอกสารก่อน insert/update เสมอ แล้วใส่ receipt_url ไปในคำสั่งเดียวกัน
@@ -240,8 +257,16 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
     const query = editingId
       ? supabase.from('fleet_maintenance').update(payload).eq('id', editingId)
       : supabase.from('fleet_maintenance').insert({ id: recordId, ...payload, municipality_id: tenant.id, created_by: user?.id ?? null })
-    const { error } = await query.select(SELECT_Q).single()
+    const { data, error } = await query.select(SELECT_Q).single()
     if (!error) {
+      logAction({
+        action: editingId ? 'update' : 'create',
+        resourceType: 'fleet_maintenance', resourceId: recordId, resourceLabel: auditLabel(data),
+        municipalityId: tenant.id,
+        metadata: editingId
+          ? { before: auditSnapshot(beforeRecord), after: auditSnapshot(data) }
+          : { after: auditSnapshot(data) },
+      })
       if (receiptPath && oldReceiptUrl && oldReceiptUrl !== receiptPath) removeFleetDocument(oldReceiptUrl).catch(() => {})
       // โหลดใหม่ทั้งหน้าปัจจุบันและยอดรวม (totalCost) แทนการแทรก/แก้ state เอง เพื่อให้ยอดรวมไม่ค้างข้อมูลเก่า
       loadRecords()
@@ -260,6 +285,10 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
     if (!confirm(`ลบรายการซ่อมบำรุง "${r.description}"?`)) return
     const { error } = await supabase.from('fleet_maintenance').delete().eq('id', r.id)
     if (!error) {
+      logAction({
+        action: 'delete', resourceType: 'fleet_maintenance', resourceId: r.id, resourceLabel: auditLabel(r),
+        municipalityId: tenant.id, metadata: { deleted: auditSnapshot(r) },
+      })
       if (r.receipt_url) removeFleetDocument(r.receipt_url).catch(() => {})
       // โหลดใหม่แทนการตัด state เอง เพื่อให้ totalCost/totalCount (แยก query จากตารางที่แสดง) ไม่ค้างข้อมูลเก่า
       loadRecords()
