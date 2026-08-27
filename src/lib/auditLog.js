@@ -6,7 +6,13 @@ let _cacheExpiry = 0
 
 async function getActor() {
   if (_cache && Date.now() < _cacheExpiry) return _cache
-  const { data: { user } } = await supabase.auth.getUser()
+  // getSession() อ่านจาก storage ฝั่ง client ไม่ยิงเน็ต
+  // เดิมใช้ getUser() ซึ่งเรียก /auth/v1/user ทุกครั้งที่ cache หมดอายุ (60 วินาที)
+  // ทำให้ทุก action ที่ถูกบันทึกมี network call แถมมาหนึ่งครั้ง และถ้า endpoint นั้นตอบ 403
+  // (token ถูก rotate/หมดอายุ) client จะเคลียร์ session ทิ้ง = การเขียนร่องรอยการใช้งาน
+  // ไปเตะผู้ใช้ออกจากระบบเสียเอง ซึ่งเจอจริงตอนทดสอบโมดูลยานพาหนะ
+  const { data: { session } } = await supabase.auth.getSession()
+  const user = session?.user
   if (!user) return null
   const { data: profile } = await supabase
     .from('profiles')

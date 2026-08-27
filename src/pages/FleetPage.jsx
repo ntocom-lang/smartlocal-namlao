@@ -55,11 +55,21 @@ function TabBar({ tab, setTab }) {
 }
 
 /* ── Mobile grid launcher ── */
-function MobileGrid({ setTab, fleetInfo, depts, tenant }) {
-  const roleLabel =
-    fleetInfo?.fleet_role === 'fleet_admin'  ? 'ผู้ดูแลระบบยานพาหนะ' :
-    fleetInfo?.fleet_role === 'fleet_staff'  ? 'เจ้าหน้าที่ยานพาหนะ' :
-    fleetInfo?.fleet_role === 'fleet_viewer' ? 'ผู้ดูรายงาน' : 'ผู้ใช้งาน'
+// ป้ายบอกสิทธิ์ต้องคำนวณด้วยตรรกะเดียวกับ isAdmin (fleet_role === 'fleet_admin' || isSysAdmin)
+// เดิมป้ายดูแค่ fleet_role แล้วตกมาที่ 'ผู้ดูรายงาน' เป็นค่าท้ายสุด ผู้ดูแลระบบของ อปท.
+// (role = 'admin') ที่ยังไม่ถูกกำหนด fleet_role จึงถูกแสดงว่า "อ่านอย่างเดียว"
+// ทั้งที่ fleet_is_manager() ฝั่ง DB ให้สิทธิ์อนุมัติและลบได้ทุกอย่าง
+function fleetRoleLabel(fleetInfo, isSysAdmin, short = false) {
+  if (fleetInfo?.fleet_role === 'fleet_admin' || isSysAdmin)
+    return short ? 'ผู้ดูแลระบบ' : 'ผู้ดูแลระบบยานพาหนะ'
+  if (fleetInfo?.fleet_role === 'fleet_staff')
+    return short ? 'เจ้าหน้าที่' : 'เจ้าหน้าที่ยานพาหนะ'
+  if (fleetInfo?.fleet_role === 'fleet_viewer') return 'ผู้ดูรายงาน'
+  return 'ผู้ใช้งาน'
+}
+
+function MobileGrid({ setTab, fleetInfo, depts, tenant, isSysAdmin }) {
+  const roleLabel = fleetRoleLabel(fleetInfo, isSysAdmin)
   const deptName = depts.find(d => d.id === fleetInfo?.department_id)?.name ?? ''
 
   return (
@@ -235,9 +245,7 @@ export default function FleetPage({ onBack } = {}) {
         <div className="hidden md:block bg-white px-4 md:px-6 pt-4">
           <h1 className="text-base font-black text-gray-800">🚗 ระบบยานพาหนะและเชื้อเพลิง</h1>
           <p className="text-[11px] text-gray-400 mb-1">
-            {fleetInfo?.fleet_role === 'fleet_admin' ? 'ผู้ดูแลระบบ'
-             : fleetInfo?.fleet_role === 'fleet_staff' ? 'เจ้าหน้าที่'
-             : 'ผู้ดูรายงาน'}
+            {fleetRoleLabel(fleetInfo, isSysAdmin, true)}
             {depts.find(d => d.id === fleetInfo?.department_id)
               ? ` · ${depts.find(d => d.id === fleetInfo.department_id).name}` : ''}
           </p>
@@ -249,7 +257,7 @@ export default function FleetPage({ onBack } = {}) {
         {/* Mobile: grid or content */}
         <div className="md:hidden">
           {tab === null
-            ? <MobileGrid setTab={setTab} fleetInfo={fleetInfo} depts={depts} tenant={tenant} />
+            ? <MobileGrid setTab={setTab} fleetInfo={fleetInfo} depts={depts} tenant={tenant} isSysAdmin={isSysAdmin} />
             : <MobileContent tab={tab} setTab={setTab}>
                 <div>{contentNode}</div>
               </MobileContent>
@@ -274,7 +282,7 @@ export default function FleetPage({ onBack } = {}) {
                 className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">
                 <ArrowLeft size={16} className="text-white" />
               </button>
-              <MobileGrid setTab={setTab} fleetInfo={fleetInfo} depts={depts} tenant={tenant} />
+              <MobileGrid setTab={setTab} fleetInfo={fleetInfo} depts={depts} tenant={tenant} isSysAdmin={isSysAdmin} />
             </div>
           )
           : <MobileContent tab={tab} setTab={setTab}>{contentNode}</MobileContent>
@@ -292,9 +300,7 @@ export default function FleetPage({ onBack } = {}) {
             <div>
               <h1 className="text-base font-black text-gray-800">🚗 ระบบยานพาหนะและเชื้อเพลิง</h1>
               <p className="text-[11px] text-gray-400">
-                {fleetInfo?.fleet_role === 'fleet_admin' ? 'ผู้ดูแลระบบ'
-                 : fleetInfo?.fleet_role === 'fleet_staff' ? 'เจ้าหน้าที่'
-                 : 'ผู้ดูรายงาน'}
+                {fleetRoleLabel(fleetInfo, isSysAdmin, true)}
                 {depts.find(d => d.id === fleetInfo?.department_id)
                   ? ` · ${depts.find(d => d.id === fleetInfo.department_id).name}` : ''}
               </p>

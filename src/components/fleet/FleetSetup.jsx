@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import FleetEmptyState from './FleetEmptyState'
 import { fiscalYearOf, FISCAL_MONTHS_TH } from '../../lib/fiscalYear'
 import { adminUpdateUser } from '../../lib/adminUpdateUser'
+import { logAction } from '../../lib/auditLog'
 
 const ROLES = {
   fleet_admin:  'ผู้ดูแลระบบ (เต็มสิทธิ์)',
@@ -159,6 +160,14 @@ function UsersTab({ tenant, depts }) {
     if (!error) {
       const added = { ...profile, fleet_role: 'fleet_staff', department_id: null }
       setUsers(prev => [...prev, added].sort((a, b) => (a.full_name ?? '').localeCompare(b.full_name ?? '', 'th')))
+      // การให้สิทธิ์ใช้รถราชการคือการมอบอำนาจ ต้องรู้ว่าใครให้ใครเมื่อไร
+      // (admin_update_user ไม่ได้เขียน audit log ฝั่ง DB — ตรวจแล้ว)
+      logAction({
+        action: 'grant', resourceType: 'fleet_user', resourceId: profile.id,
+        resourceLabel: profile.full_name ?? profile.email ?? profile.id,
+        municipalityId: tenant.id,
+        metadata: { before: { fleet_role: null }, after: { fleet_role: 'fleet_staff' } },
+      })
       setAllProfiles(prev => prev.filter(p => p.id !== profile.id))
     } else {
       alert('เพิ่มผู้ใช้ไม่สำเร็จ: ' + error.message)
@@ -171,6 +180,13 @@ function UsersTab({ tenant, depts }) {
     const { error } = await adminUpdateUser(user.id, { fleet_role: null, department_id: null })
     if (!error) {
       setUsers(prev => prev.filter(u => u.id !== user.id))
+      logAction({
+        action: 'revoke', resourceType: 'fleet_user', resourceId: user.id,
+        resourceLabel: user.full_name ?? user.email ?? user.id,
+        municipalityId: tenant.id,
+        metadata: { before: { fleet_role: user.fleet_role, department_id: user.department_id },
+                    after: { fleet_role: null, department_id: null } },
+      })
     } else {
       alert('ลบไม่สำเร็จ: ' + error.message)
     }
@@ -179,9 +195,16 @@ function UsersTab({ tenant, depts }) {
 
   async function update(id, field, value) {
     setSaving(id + field)
+    const target = users.find(u => u.id === id)
     const { error } = await adminUpdateUser(id, { [field]: value || null })
     if (!error) {
       setUsers(prev => prev.map(u => u.id === id ? { ...u, [field]: value || null } : u))
+      logAction({
+        action: 'update', resourceType: 'fleet_user', resourceId: id,
+        resourceLabel: target?.full_name ?? target?.email ?? id,
+        municipalityId: tenant.id,
+        metadata: { field, before: target?.[field] ?? null, after: value || null },
+      })
     } else {
       alert('บันทึกไม่สำเร็จ: ' + error.message)
     }
