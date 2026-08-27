@@ -2,7 +2,7 @@ import { Home, ClipboardList, FileBarChart, CalendarDays, LayoutGrid, Wrench, Br
 
 export function getNavItems(role) {
   const isAdmin = ['admin', 'superadmin', 'viewer'].includes(role)
-  const isStaff = ['staff', 'officer', 'council', 'kamnan'].includes(role)
+  const isStaff = ['staff', 'officer', 'council'].includes(role)
   const isTech  = role === 'technician'
 
   let roleNavItem = { label: 'ยื่นคำร้อง', icon: ClipboardList, href: '/complaint' }

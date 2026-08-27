@@ -85,7 +85,7 @@ const AUDIENCE_OPTIONS = [
   { value: 'management', label: 'ผู้บริหาร',                color: '#8b5cf6' },
   { value: 'council',    label: 'สภาเทศบาล',               color: '#f59e0b' },
 ]
-const EVENT_MANAGER_ROLES = ['superadmin', 'admin', 'viewer', 'council', 'officer', 'staff', 'technician', 'kamnan']
+const EVENT_MANAGER_ROLES = ['superadmin', 'admin', 'viewer', 'council', 'officer', 'staff', 'technician']
 const EMPTY_EVENT_FORM = { title: '', description: '', event_date: '', event_time: '', end_time: '', end_date: '', location: '', category: '', customCategory: '', is_all_day: false, audiences: [], attachment_urls: [], attachment_files: [] }
 
 // backward-compat: event เก่าเก็บไฟล์แนบเดียวใน attachment_url, ของใหม่เก็บหลายไฟล์ใน attachment_urls
@@ -94,15 +94,47 @@ function eventAttachments(ev) {
   return ev.attachment_url ? [ev.attachment_url] : []
 }
 
-// บุคลากรภายในเทศบาลเดียวกันเห็นรายละเอียดปฏิทินร่วมกัน ส่วน citizen เห็นเฉพาะรายการ public
-function audienceFilter(role) {
-  if (EVENT_MANAGER_ROLES.includes(role)) return null
-  return ['public']
+// RPC ตัด URL ไฟล์แนบออกสำหรับคนที่ไม่มีสิทธิ์ แต่ยังส่ง has_attachment มาบอกว่ามีไฟล์อยู่
+// เพื่อให้หน้าจอโชว์ไอคอนแบบกดไม่ได้ได้ ผู้ใช้จะได้รู้ว่าต้องไปขอจากคนที่มีสิทธิ์
+function hasAttachment(ev) {
+  return ev.has_attachment === true || eventAttachments(ev).length > 0
 }
-function canViewEventDetail(ev, role, currentUserId) {
+
+// กลุ่มเป้าหมายที่แต่ละบทบาท "เป็นเจ้าของ" — ใช้ตัดสินว่าเปิดดูรายละเอียดกิจกรรมได้ไหม
+// เดิมบุคลากรภายในทุกบทบาทเห็นรายละเอียดทุกกิจกรรมร่วมกัน ทำให้เจ้าหน้าที่ทั่วไปและช่าง
+// เปิดอ่านกำหนดการผู้บริหารและวาระสภาได้หมด ซึ่งไม่ใช่ข้อมูลที่ควรเปิดกว้างขนาดนั้น
+const ROLE_AUDIENCES = {
+  viewer:     ['management'],   // ผู้บริหาร
+  council:    ['council'],      // สมาชิกสภา
+  officer:    ['staff'],
+  staff:      ['staff'],
+  technician: ['staff'],
+}
+
+/**
+ * เปิดดูรายละเอียดกิจกรรมได้เมื่อเข้าเงื่อนไขข้อใดข้อหนึ่ง
+ *   1. กิจกรรมประกาศเป็นสาธารณะ — ประชาชนก็เห็นอยู่แล้วบนหน้าเว็บ ไม่มีเหตุให้ปิดจากเจ้าหน้าที่
+ *   2. admin / superadmin — ผู้ดูแลระบบ
+ *   3. เป็นคนสร้างเอง — ไม่งั้นสร้างแล้วเปิดดูของตัวเองไม่ได้
+ *   4. เป็นหัวหน้ากอง และกิจกรรมนั้นอยู่ในกองตน (กติกาเดียวกับปุ่มแก้ไข/ลบ)
+ *   5. บทบาทตรงกับกลุ่มเป้าหมายของกิจกรรม เช่น ผู้บริหารเปิดของ 'management' สภาเปิดของ 'council'
+ *      เจ้าหน้าที่/ช่างเปิดของ 'staff' — คนละกลุ่มกันเปิดข้ามไม่ได้
+ *
+ * ⚠️ นี่เป็นการกั้นระดับหน้าจอเท่านั้น RLS ของตาราง events ยังคืนทั้งแถว (รวม description
+ * และไฟล์แนบ) ให้บุคลากรภายในทุกคนอยู่ — ใครเปิด DevTools ยิง query เองก็ยังได้ข้อมูลครบ
+ * ถ้าต้องการปิดจริงต้องกั้นที่ฐานข้อมูล ไม่ใช่แค่ซ่อนปุ่ม
+ */
+function canViewEventDetail(ev, role, currentUserId, scope) {
+  // RPC ตัดสินมาให้แล้วฝั่งเซิร์ฟเวอร์ — เชื่อค่านั้นก่อนเสมอ กติกาด้านล่างเป็นโหมดถอย
+  // สำหรับกรณีที่ยังไม่ได้ apply migration หรือข้อมูลมาจาก query เดิม
+  if (typeof ev.can_view_detail === 'boolean') return ev.can_view_detail
+  if ((ev.audiences ?? []).includes('public')) return true
+  if (['admin', 'superadmin'].includes(role)) return true
   if (currentUserId && ev.created_by === currentUserId) return true
-  const allowed = audienceFilter(role)
-  return allowed === null || (ev.audiences ?? []).some(a => allowed.includes(a))
+  if (scope?.is_dept_head && scope?.department_id && ev.department_id === scope.department_id) return true
+  const mine = ROLE_AUDIENCES[role]
+  if (!mine) return false
+  return (ev.audiences ?? []).some(a => mine.includes(a))
 }
 
 function EventCard({ ev, onEdit, onDelete, onView, deleting }) {
@@ -150,7 +182,7 @@ function EventCard({ ev, onEdit, onDelete, onView, deleting }) {
             </div>
             <div className="flex items-center gap-1.5">
               <p className="text-sm font-bold text-gray-800 leading-tight">{ev.title}</p>
-              {eventAttachments(ev).length > 0 && <Paperclip size={12} className="text-gray-400 shrink-0" />}
+              {hasAttachment(ev) && <Paperclip size={12} className="text-gray-400 shrink-0" />}
             </div>
             <p className="text-xs text-gray-500 mt-0.5">
               {dateStr}
@@ -197,7 +229,7 @@ function EventCard({ ev, onEdit, onDelete, onView, deleting }) {
   )
 }
 
-function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage, openAdd }) {
+function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage, openAdd, canViewEvent }) {
   const todayRef = useMemo(() => {
     const t = new Date()
     t.setHours(0, 0, 0, 0)
@@ -401,7 +433,10 @@ function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage,
                     className="w-full text-left bg-white rounded-xl border border-gray-200 shadow-xs p-3.5 flex items-start justify-between gap-3"
                     style={{ borderLeftColor: color, borderLeftWidth: 3 }}
                   >
-                    <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onSelectEvent(ev)}>
+                    <div
+                      className={`flex-1 min-w-0${canViewEvent(ev) ? ' cursor-pointer' : ''}`}
+                      title={canViewEvent(ev) ? undefined : 'ไม่มีสิทธิ์เปิดดูรายละเอียดกิจกรรมนี้'}
+                      onClick={canViewEvent(ev) ? () => onSelectEvent(ev) : undefined}>
                       <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                         <span
                           className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white"
@@ -568,23 +603,42 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
       setCurrentUserId(userId)
 
       // สองคิวรีนี้ไม่พึ่งผลของกันและกัน ยิงขนานลดเวลารอครึ่งหนึ่ง
-      // บุคลากรภายในเห็นปฏิทินทั้งหมดของเทศบาลเดียวกัน
+      //
+      // ดึงผ่าน RPC list_events_for_staff แทนการ select ตาราง events ตรงๆ — RPC ตัดฟิลด์
+      // description และไฟล์แนบออกฝั่งเซิร์ฟเวอร์สำหรับคนที่ไม่มีสิทธิ์ดูรายละเอียด การซ่อน
+      // ปุ่มฝั่งหน้าจออย่างเดียวกันไม่ได้ เพราะข้อมูลถูกส่งมาถึงเบราว์เซอร์แล้ว ใครเปิด
+      // DevTools ก็อ่านได้ (ดู migration 20260830090000)
       // เจ้าของแก้ไข/ลบของตนเองได้ หัวหน้ากองแก้ไขงานในกอง และ Admin/SuperAdmin จัดการตามขอบเขตเดิม
       const [scopeResult, eventsResult] = await Promise.all([
         userId
           ? supabase.from('profiles').select('department_id, is_dept_head').eq('id', userId).maybeSingle()
           : Promise.resolve({ data: null, error: null }),
-        supabase
-          .from('events')
-          .select('*, creator:profiles!events_created_by_fkey(full_name)')
-          .eq('municipality_id', tenant.id)
-          .order('event_date', { ascending: true }),
+        supabase.rpc('list_events_for_staff', { p_municipality_id: tenant.id }),
       ])
 
       setCurrentUserScope(scopeResult.data ?? null)
-      if (eventsResult.error) throw eventsResult.error
 
-      const sorted = (eventsResult.data ?? []).sort((a, b) => {
+      // ถ้ายังไม่ได้ apply migration บนฐานข้อมูลนั้น RPC จะไม่มีอยู่ (PGRST202 / 42883)
+      // กรณีนั้นถอยไปใช้ query เดิมเพื่อไม่ให้หน้าปฏิทินตายทั้งหน้า — แต่ต้องรู้ว่าโหมดถอยนี้
+      // "ไม่ได้ปิดช่องโหว่" ข้อมูลจะกลับไปถูกส่งมาครบเหมือนเดิม จึงต้องส่งเสียงดังใน console
+      let rows = eventsResult.data
+      if (eventsResult.error) {
+        const missingRpc = eventsResult.error.code === 'PGRST202' || eventsResult.error.code === '42883'
+        if (!missingRpc) throw eventsResult.error
+        console.error(
+          '[events] ยังไม่มีฟังก์ชัน list_events_for_staff ในฐานข้อมูล — ถอยไปใช้ query เดิมชั่วคราว ' +
+          'รายละเอียดกิจกรรมของทุกกลุ่มยังถูกส่งมาถึงเบราว์เซอร์ กรุณา apply migration 20260830090000',
+        )
+        const fallback = await supabase
+          .from('events')
+          .select('*, creator:profiles!events_created_by_fkey(full_name)')
+          .eq('municipality_id', tenant.id)
+          .order('event_date', { ascending: true })
+        if (fallback.error) throw fallback.error
+        rows = fallback.data
+      }
+
+      const sorted = (rows ?? []).sort((a, b) => {
         if (a.event_date < b.event_date) return -1
         if (a.event_date > b.event_date) return 1
         const ta = a.event_time ?? '99:99'
@@ -1437,6 +1491,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
         <AdminCalendarView
           events={filteredEvents}
           onSelectEvent={setViewingEvent}
+          canViewEvent={(ev) => canViewEventDetail(ev, currentUserRole, currentUserId, currentUserScope)}
           onEdit={openEdit}
           onDelete={handleDelete}
           canManage={canManage}
@@ -1490,7 +1545,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                       <EventCard key={ev.id} ev={ev}
                         onEdit={canManage && canEditRow ? openEdit : null}
                         onDelete={canManage && canDeleteRow ? handleDelete : null}
-                        onView={canViewEventDetail(ev, currentUserRole, currentUserId) ? setViewingEvent : null}
+                        onView={canViewEventDetail(ev, currentUserRole, currentUserId, currentUserScope) ? setViewingEvent : null}
                         deleting={deleting} />
                     )
                   })}
@@ -1526,7 +1581,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                         const isDepartmentHeadForEvent = !!currentUserScope?.is_dept_head && !!currentUserScope?.department_id && ev.department_id === currentUserScope.department_id
                         const canEditRow = isAdminManager || ev.created_by === currentUserId || isDepartmentHeadForEvent
                         const canDeleteRow = isAdminManager || ev.created_by === currentUserId || isDepartmentHeadForEvent
-                        const canView = canViewEventDetail(ev, currentUserRole, currentUserId)
+                        const canView = canViewEventDetail(ev, currentUserRole, currentUserId, currentUserScope)
                         return (
                           <tr key={ev.id}
                             className="transition-colors"
@@ -1580,7 +1635,12 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                               {ev.creator?.full_name ?? <span className="text-gray-300">—</span>}
                             </td>
                             <td className="px-3 py-2 text-center border-r border-gray-200">
-                              {eventAttachments(ev).length > 0
+                              {/* ไฟล์แนบผูกกับสิทธิ์เดียวกับการเปิดดูรายละเอียด — ถ้าปิดชื่อกิจกรรมไว้
+                                  แต่ปล่อยคลิปหนีบให้กดได้ ก็เท่ากับไม่ได้ปิดอะไรเลย ยังโชว์ไอคอนไว้
+                                  ให้รู้ว่ามีไฟล์แนบอยู่ แต่กดไม่ได้ */}
+                              {!hasAttachment(ev)
+                                ? <span className="text-gray-300 text-xs">—</span>
+                                : (canView && eventAttachments(ev).length > 0)
                                 ? <a href={eventAttachments(ev)[0]} target="_blank" rel="noopener noreferrer"
                                     title={`เปิดไฟล์แนบ${eventAttachments(ev).length > 1 ? ` (${eventAttachments(ev).length} ไฟล์)` : ''}`}
                                     className="relative inline-flex items-center justify-center w-7 h-7 rounded-lg bg-blue-50 hover:bg-blue-100 transition-colors">
@@ -1591,7 +1651,11 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                                       </span>
                                     )}
                                   </a>
-                                : <span className="text-gray-300 text-xs">—</span>}
+                                : <span
+                                    title="ไม่มีสิทธิ์เปิดไฟล์แนบของกิจกรรมนี้"
+                                    className="relative inline-flex items-center justify-center w-7 h-7 rounded-lg bg-gray-100 cursor-not-allowed">
+                                    <Paperclip size={13} className="text-gray-300" />
+                                  </span>}
                             </td>
                             {canManage && (
                               <td className="px-3 py-2 text-center" onClick={e => e.stopPropagation()}>
