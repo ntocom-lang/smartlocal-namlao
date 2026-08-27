@@ -232,7 +232,7 @@ function HomeOrTechRedirect() {
 }
 
 
-const INTERNAL_EVENT_ROLES = ['superadmin', 'admin', 'viewer', 'council', 'officer', 'staff', 'technician', 'kamnan']
+const INTERNAL_EVENT_ROLES = ['superadmin', 'admin', 'viewer', 'council', 'officer', 'staff', 'technician']
 
 // อ่านสิทธิ์ไม่สำเร็จ (เน็ตหลุด/timeout/RLS ปฏิเสธชั่วคราว) — ต้องแยกจาก "ไม่มีสิทธิ์" ให้ชัด
 // เพราะ role ที่ resolve ไม่ได้จะเป็น null แล้วตกไปเจอ `role === null → return null` ด้านล่าง

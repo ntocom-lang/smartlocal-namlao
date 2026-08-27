@@ -85,7 +85,7 @@ const AUDIENCE_OPTIONS = [
   { value: 'management', label: 'ผู้บริหาร',                color: '#8b5cf6' },
   { value: 'council',    label: 'สภาเทศบาล',               color: '#f59e0b' },
 ]
-const EVENT_MANAGER_ROLES = ['superadmin', 'admin', 'viewer', 'council', 'officer', 'staff', 'technician', 'kamnan']
+const EVENT_MANAGER_ROLES = ['superadmin', 'admin', 'viewer', 'council', 'officer', 'staff', 'technician']
 const EMPTY_EVENT_FORM = { title: '', description: '', event_date: '', event_time: '', end_time: '', end_date: '', location: '', category: '', customCategory: '', is_all_day: false, audiences: [], attachment_urls: [], attachment_files: [] }
 
 // backward-compat: event เก่าเก็บไฟล์แนบเดียวใน attachment_url, ของใหม่เก็บหลายไฟล์ใน attachment_urls
@@ -100,7 +100,6 @@ function eventAttachments(ev) {
 const ROLE_AUDIENCES = {
   viewer:     ['management'],   // ผู้บริหาร
   council:    ['council'],      // สมาชิกสภา
-  kamnan:     [],               // กำนัน — ยังไม่มีข้อสรุปว่าควรเห็นกลุ่มใด ให้เห็นเฉพาะ public ไปก่อน
   officer:    ['staff'],
   staff:      ['staff'],
   technician: ['staff'],
