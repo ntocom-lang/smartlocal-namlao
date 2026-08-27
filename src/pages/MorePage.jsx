@@ -9,7 +9,7 @@ import {
   CalendarDays, Luggage, AlertTriangle, Cloud, RefreshCw, Database,
 } from 'lucide-react'
 import qrCodeImage from '../assets/qr-code.png'
-import { supabase } from '../lib/supabase'
+import { supabase, signOutSafely } from '../lib/supabase'
 import { clearCacheAndReload } from '../lib/clearCache'
 import { getRankedPaths } from '../lib/menuUsage'
 import { useTenant } from '../contexts/TenantContext'
@@ -333,7 +333,7 @@ function NamlaoMorePage() {
   }, [session?.user?.id, tenant?.id])
 
   async function handleLogout() {
-    await supabase.auth.signOut()
+    await signOutSafely('/')
     navigate('/')
   }
 

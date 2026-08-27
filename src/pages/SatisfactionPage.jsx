@@ -19,19 +19,31 @@ export default function SatisfactionPage() {
   const [comment, setComment] = useState('')
   const [submitted, setSubmitted] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   const orgName = tenant?.name || 'หน่วยงาน'
 
   async function handleSubmit() {
     if (!selected) return
     setLoading(true)
-    await supabase.from('satisfaction_ratings').insert({
-      municipality_id: tenant?.id ?? null,
-      rating: selected,
-      comment: comment.trim() || null,
-    })
-    setLoading(false)
-    setSubmitted(true)
+    setError('')
+    try {
+      // เดิมไม่เช็ค error เลย ผู้ใช้จึงเห็นหน้า "ขอบคุณ" ทุกครั้งแม้บันทึกไม่สำเร็จ
+      // แล้วคะแนนหายไปเงียบๆ โดยไม่มีใครรู้ — ข้อมูลประเมินความพึงพอใจใช้รายงาน LPA
+      // ตัวเลขขาดหายแบบมองไม่เห็นจึงร้ายแรงกว่าการขึ้น error ให้ผู้ใช้กดส่งใหม่
+      const { error: err } = await supabase.from('satisfaction_ratings').insert({
+        municipality_id: tenant?.id ?? null,
+        rating: selected,
+        comment: comment.trim() || null,
+      })
+      if (err) throw err
+      setSubmitted(true)
+    } catch (err) {
+      console.error('[satisfaction] บันทึกผลประเมินไม่สำเร็จ:', err?.message ?? err)
+      setError('ส่งผลการประเมินไม่สำเร็จ — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง กรุณากดส่งอีกครั้ง')
+    } finally {
+      setLoading(false)
+    }
   }
 
   if (submitted) {
@@ -108,6 +120,34 @@ export default function SatisfactionPage() {
             </button>
           ))}
         </div>
+
+        {/* ความคิดเห็นเพิ่มเติม — โผล่หลังเลือกคะแนนแล้ว ให้พฤติกรรมตรงกับ SatisfactionModal
+            ที่เด้งขึ้นหลังปิดคำร้อง (เดิมหน้านี้ไม่มีช่องนี้เลย ทั้งที่ handleSubmit ส่งค่า comment
+            เข้า DB อยู่แล้ว ผลคือคอลัมน์ comment ของทุกแถวที่มาจากหน้านี้เป็น null ตลอด) */}
+        {selected && (
+          <div className="space-y-2">
+            <label htmlFor="satisfaction-comment" className="block text-sm font-semibold text-gray-700">
+              ความคิดเห็นเพิ่มเติม <span className="font-normal text-gray-400">(ไม่บังคับ)</span>
+            </label>
+            <textarea
+              id="satisfaction-comment"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              rows={3}
+              maxLength={500}
+              placeholder={`สิ่งที่อยากให้${orgName}ปรับปรุง หรือชื่นชมเจ้าหน้าที่`}
+              className="w-full border-2 border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-800 bg-white resize-none focus:outline-none focus:border-transparent focus:ring-2"
+              style={{ '--tw-ring-color': 'var(--color-primary)' }}
+            />
+            <p className="text-right text-xs text-gray-400">{comment.length}/500</p>
+          </div>
+        )}
+
+        {error && (
+          <p className="text-sm text-red-500 text-center bg-red-50 border border-red-100 rounded-2xl px-4 py-3">
+            {error}
+          </p>
+        )}
 
         {/* Submit */}
         <button

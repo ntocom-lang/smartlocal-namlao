@@ -1,11 +1,10 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, MapPin, Wind, Droplets, Sun, CalendarDays } from 'lucide-react'
+import { ChevronLeft, MapPin, Wind, Droplets, CalendarDays } from 'lucide-react'
 import { getWeatherInfo, WEATHER_LAT, WEATHER_LON } from '../lib/weatherUtils'
 import { useTenant } from '../contexts/TenantContext'
 
 const DAYS_TH = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์']
-const MONTHS_TH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
 
 function formatDay(dateStr, index) {
   if (index === 0) return 'วันนี้'

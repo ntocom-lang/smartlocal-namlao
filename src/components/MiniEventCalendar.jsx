@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import { toDateStr } from '../lib/thaiDate'
 
 const DAY_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 
@@ -34,8 +35,8 @@ export default function MiniEventCalendar() {
     if (!tenant?.id) return
     // ดึงกิจกรรม 3 เดือนย้อนหลัง ถึง 3 เดือนข้างหน้า — เห็นเฉพาะที่ตัวเองมีสิทธิ์ (RLS)
     // ใช้กับรายการรายละเอียดของวันที่เลือกเท่านั้น
-    const from = new Date(calYear, calMonth - 1, 1).toISOString().split('T')[0]
-    const to   = new Date(calYear, calMonth + 2, 0).toISOString().split('T')[0]
+    const from = toDateStr(new Date(calYear, calMonth - 1, 1))
+    const to   = toDateStr(new Date(calYear, calMonth + 2, 0))
     supabase.from('events')
       .select('id, title, event_date, event_time, is_all_day, location, audiences, category')
       .eq('municipality_id', tenant.id)

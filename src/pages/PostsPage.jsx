@@ -83,7 +83,9 @@ export default function PostsPage() {
       .order('event_date', { ascending: false, nullsFirst: false })
       .order('created_at',  { ascending: false })
       .limit(50)
-      .then(({ data }) => { setPosts(data ?? []); setLoading(false) })
+      .then(({ data }) => setPosts(data ?? []))
+      .catch((err) => console.error('[posts] โหลดข่าวสารไม่สำเร็จ:', err?.message ?? err))
+      .finally(() => setLoading(false))
   }, [tenant?.id, tab])
 
   const isActivity = tab === 'activity'

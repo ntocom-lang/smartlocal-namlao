@@ -61,9 +61,24 @@ function recoverExpiredSession() {
   return recovering.finally(() => { recovering = null })
 }
 
+// fetch ตัวนี้ถูกส่งต่อให้ทุก sub-client ของ supabase-js รวมถึง auth client ด้วย
+// (createClient ส่ง settings.global.fetch เข้า _initSupabaseAuthClient) input จึงมาได้ทั้ง
+// string / URL / Request ต้องดึง URL ออกมาให้ครบทุกแบบก่อนเอาไปเทียบ
+function requestUrlOf(input) {
+  if (typeof input === 'string') return input
+  if (input instanceof URL) return input.href
+  return input?.url ?? ''
+}
+
 async function fetchWithAuthRecovery(input, init = {}) {
   const res = await fetchWithTimeout(input, init)
-  if (res.status === 400 || res.status === 401) {
+  // ห้ามแตะ endpoint ของ auth เอง (/auth/v1/*) — auth-js จัดการวงจร token ของตัวเองอยู่แล้ว
+  // (refresh อัตโนมัติ, ตั้งใจข้าม 401/403 ตอน logout, มี deferred กัน refresh ซ้อน) การยิง
+  // recoverExpiredSession() สวนเข้าไปตอน logout ตอบ 401 จะสร้าง session ใหม่ทับของที่เพิ่งลบ
+  // ผู้ใช้เด้งกลับเข้าระบบทันทีหลังกดออก — และ noOpLock ด้านบนทำให้ไม่มี lock กันสองงานนี้ชนกัน
+  // ตัวดักนี้มีไว้สำหรับ request ที่ผ่าน RLS (PostgREST/Storage/Functions) เท่านั้น
+  const isAuthEndpoint = requestUrlOf(input).includes('/auth/v1/')
+  if (!isAuthEndpoint && (res.status === 400 || res.status === 401)) {
     res.clone().text().then((body) => {
       if (/jwt|token.{0,20}expired|expired.{0,20}token|invalid.{0,20}token/i.test(body)) {
         recoverExpiredSession()
@@ -95,4 +110,54 @@ if (typeof document !== 'undefined') {
     if (document.visibilityState === 'visible') supabase.auth.startAutoRefresh()
     else supabase.auth.stopAutoRefresh()
   })
+}
+
+// supabase-js เก็บ session ไว้ที่ key `sb-<project-ref>-auth-token` ใน localStorage และมี key
+// พี่น้องที่ขึ้นต้นเหมือนกัน (เช่น -code-verifier ของ PKCE) กวาดด้วย prefix แทนการ hardcode
+// ชื่อเต็ม เพื่อไม่ให้พังเงียบๆ ถ้า supabase-js เปลี่ยนรูปแบบ key ภายในวันหลัง
+function purgeStoredAuthSession() {
+  try {
+    const keys = []
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i)
+      if (key && /^sb-.+-auth-token/.test(key)) keys.push(key)
+    }
+    keys.forEach((key) => localStorage.removeItem(key))
+    return keys.length > 0
+  } catch {
+    return false
+  }
+}
+
+/**
+ * ออกจากระบบให้สำเร็จเสมอ ไม่ว่า token จะอยู่ในสภาพไหน — ใช้แทน supabase.auth.signOut() ทุกจุด
+ *
+ * ทำไมเรียก signOut() ตรงๆ ไม่พอ: _signOut() ต้องอ่าน session ปัจจุบันก่อน ถ้า access token
+ * หมดอายุ auth-js จะ _callRefreshToken() ให้อัตโนมัติ แล้วผลลัพธ์แตกออกเป็น 2 ทาง
+ *   - refresh พลาดแบบ non-retryable (refresh token ถูกเพิกถอน) → _removeSession() ถูกเรียก
+ *     session หายจริง ออกจากระบบได้ตามปกติ
+ *   - refresh พลาดแบบ retryable (เน็ตหลุด, timeout 25s ของ fetchWithTimeout, server ไม่ตอบ)
+ *     → auth-js "คืน error แล้วจบ" โดยยังไม่ลบ session (ดู GoTrueClient._signOut ที่เช็ค
+ *     sessionError แล้ว return ก่อนถึงบรรทัด _removeSession()) ผู้ใช้กดออกกี่ครั้งก็วนกลับที่เดิม
+ *     และเงียบสนิทเพราะทุก call site เดิมทิ้ง error ที่คืนมา
+ * ส่ง scope: 'local' ก็ไม่ช่วย เพราะด่าน sessionError อยู่ก่อนบรรทัดที่ดู scope
+ *
+ * ทางออกเดียวที่เชื่อถือได้คือล้าง session ที่เก็บไว้เองแล้วบังคับโหลดหน้าใหม่ — ต้อง reload จริง
+ * ไม่ใช่ navigate ของ router เพราะ GoTrueClient ยัง cache session ไว้ใน memory ของหน้าเดิม
+ *
+ * @param {string} redirectTo path ที่จะไปต่อ ใช้เฉพาะกรณีต้องบังคับล้าง (ปกติผู้เรียก navigate เอง)
+ * @returns {Promise<{ ok: boolean, forced: boolean }>} forced = true คือหลุดมาทางล้าง storage เอง
+ */
+export async function signOutSafely(redirectTo = '/') {
+  try {
+    const { error } = await supabase.auth.signOut()
+    if (!error) return { ok: true, forced: false }
+    console.warn('[auth] signOut() คืน error, บังคับล้าง session ในเครื่อง:', error.message)
+  } catch (err) {
+    console.warn('[auth] signOut() โยน error, บังคับล้าง session ในเครื่อง:', err?.message ?? err)
+  }
+
+  purgeStoredAuthSession()
+  window.location.assign(redirectTo)
+  return { ok: true, forced: true }
 }

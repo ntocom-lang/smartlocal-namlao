@@ -31,13 +31,19 @@ export default function ResetPasswordPage() {
     if (password !== confirm) { setError('รหัสผ่านไม่ตรงกัน กรุณาตรวจสอบอีกครั้ง'); return }
     setError('')
     setLoading(true)
-    const { error: err } = await supabase.auth.updateUser({ password })
-    setLoading(false)
-    if (err) {
-      setError(`ตั้งรหัสผ่านไม่สำเร็จ: ${err.message}`)
-    } else {
+    try {
+      const { error: err } = await supabase.auth.updateUser({ password })
+      if (err) {
+        setError(`ตั้งรหัสผ่านไม่สำเร็จ: ${err.message}`)
+        return
+      }
       setDone(true)
       setTimeout(() => navigate('/', { replace: true }), 3000)
+    } catch (err) {
+      console.error('[reset-password] ตั้งรหัสผ่านใหม่ไม่สำเร็จ:', err?.message ?? err)
+      setError('ตั้งรหัสผ่านไม่สำเร็จ — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง กรุณาลองใหม่')
+    } finally {
+      setLoading(false)
     }
   }
 

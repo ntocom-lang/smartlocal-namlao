@@ -2,7 +2,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Phone, LogIn, LogOut, UserCircle2, User, LayoutDashboard, Bell, Briefcase } from 'lucide-react'
 import { useTenant } from '../../../../contexts/TenantContext'
 import { useAuth } from '../../../../contexts/AuthContext'
-import { supabase } from '../../../../lib/supabase'
+import { signOutSafely } from '../../../../lib/supabase'
 import { useNotifications } from '../../../../contexts/NotificationsContext'
 
 const NAV_TECH = [
@@ -22,7 +22,7 @@ export default function Header() {
   const { session, role, displayName, avatarUrl } = useAuth()
 
   async function logout() {
-    await supabase.auth.signOut()
+    await signOutSafely('/')
     navigate('/')
   }
   const isAdmin = role === 'admin' || role === 'superadmin'

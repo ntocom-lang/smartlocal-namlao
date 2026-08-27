@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { Upload, FileText, CheckCircle2, AlertCircle, Loader2, X, MapPin, Route, Eye, Trash2, Layers, Filter } from 'lucide-react'
+import { Upload, FileText, CheckCircle2, AlertCircle, Loader2, X, MapPin, Route, Trash2, Layers, Filter } from 'lucide-react'
 import JSZip from 'jszip'
 import { supabase } from '../../lib/supabase'
 

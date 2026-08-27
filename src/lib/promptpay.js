@@ -35,7 +35,10 @@ export function generatePromptPayPayload(target, amount = 0) {
 
   const parts = [
     tlv('00', '01'),
-    tlv('01', '12'),
+    // Point of Initiation Method: '11' = static QR (สแกนซ้ำได้ ไม่ระบุจำนวนเงิน)
+    // '12' = dynamic QR (ใช้ครั้งเดียว มีจำนวนเงินกำกับ) เดิม hardcode '12' ไว้ตลอด
+    // ทำให้ QR ที่ไม่ระบุจำนวนเงินถูกแอปธนาคารบางตัวปฏิเสธเมื่อสแกนซ้ำ
+    tlv('01', amount > 0 ? '12' : '11'),
     tlv('29', merchantAcct),
     tlv('53', '764'),
     ...(amount > 0 ? [tlv('54', amount.toFixed(2))] : []),

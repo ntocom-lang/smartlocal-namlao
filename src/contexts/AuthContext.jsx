@@ -11,6 +11,8 @@ export function AuthProvider({ children }) {
   const [profileName, setProfileName] = useState(null)
   const [profileAvatarUrl, setProfileAvatarUrl] = useState(null)
   const [profileLoading, setProfileLoading] = useState(false)
+  // true = อ่าน profiles ไม่สำเร็จ (คนละเรื่องกับ "ไม่มีสิทธิ์") ให้หน้าที่ป้องกันสิทธิ์แสดงข้อความ + ปุ่มลองใหม่
+  const [profileError, setProfileError] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
@@ -23,7 +25,7 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     if (session === undefined) return
-    if (!session) { setRole(null); setProfileName(null); setProfileAvatarUrl(null); return }
+    if (!session) { setRole(null); setProfileName(null); setProfileAvatarUrl(null); setProfileError(false); return }
 
     // สำคัญ: ห้าม resolve role ใดๆ ก่อน tenant โหลดเสร็จ — เดิมเช็ค municipality mismatch แบบ
     // `if (tenant?.id && ...)` ซึ่งถ้า tenant ยังโหลดไม่เสร็จ (tenant?.id เป็น falsy ชั่วคราว) เงื่อนไข
@@ -33,12 +35,18 @@ export function AuthProvider({ children }) {
     if (tenantLoading) { setProfileLoading(true); return }
 
     setProfileLoading(true)
+    setProfileError(false)
     supabase
       .from('profiles')
       .select('role, municipality_id, full_name, avatar_url')
       .eq('id', session.user.id)
       .maybeSingle()
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        // แยก "อ่านโปรไฟล์ไม่สำเร็จ" ออกจาก "ไม่มีแถวโปรไฟล์" ให้ชัด — maybeSingle() ที่ไม่เจอแถวจะคืน
+        // data=null คู่กับ error=null ซึ่งแปลว่า citizen ได้จริง แต่ถ้า error มีค่า (RLS ปฏิเสธ, 500,
+        // schema cache ยังไม่พร้อม) การเดาเป็น citizen เท่ากับถอดสิทธิ์แอดมินเงียบๆ จากความผิดพลาดชั่วคราว
+        if (error) throw error
+
         const profileRole   = data?.role ?? 'citizen'
         const profileMuniId = data?.municipality_id
         setProfileName(data?.full_name ?? null)
@@ -64,6 +72,18 @@ export function AuthProvider({ children }) {
 
         setRole(profileRole)
       })
+      .catch((err) => {
+        // ต้องมี .catch เสมอ: client ตัวนี้ครอบ fetch ด้วย timeout 25s ไว้ใน supabase.js พอ abort
+        // แล้วจะ reject จริง (ไม่ใช่คืน { data, error } ตามปกติของ PostgREST) ถ้าไม่ดักไว้ role จะค้าง
+        // null ถาวร แล้ว RequireAuth ใน App.jsx จะ return null = จอขาวเปล่า ไม่มีข้อความ ไม่มีปุ่มลองใหม่
+        // ตั้ง profileError แทนการเดา role — ห้ามเดาขึ้น (เสี่ยงให้สิทธิ์เกิน) และไม่ควรเดาลงเป็น citizen
+        // เพราะแอดมินจะโดนเด้งกลับหน้าแรกเงียบๆ แล้วนึกว่าถูกถอดสิทธิ์จริง
+        console.error('[auth] อ่านโปรไฟล์ไม่สำเร็จ:', err?.message ?? err)
+        setRole(null)
+        setProfileName(null)
+        setProfileAvatarUrl(null)
+        setProfileError(true)
+      })
       .finally(() => setProfileLoading(false))
   }, [session?.user?.id, tenant?.id, tenantLoading])
 
@@ -79,7 +99,7 @@ export function AuthProvider({ children }) {
     || null
 
   return (
-    <AuthContext.Provider value={{ session, role, profileName, displayName, avatarUrl, profileLoading }}>
+    <AuthContext.Provider value={{ session, role, profileName, displayName, avatarUrl, profileLoading, profileError }}>
       {children}
     </AuthContext.Provider>
   )

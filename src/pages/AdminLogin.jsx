@@ -16,20 +16,27 @@ export default function AdminLogin() {
     e.preventDefault()
     setError('')
     setLoading(true)
-
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-      options: { persistSession: remember },
-    })
-
-    if (authError) {
-      setError('อีเมลหรือรหัสผ่านไม่ถูกต้อง')
+    // ต้องมี try/finally: signInWithPassword reject ได้จริง (เน็ตหลุด หรือชน timeout 25 วิ ของ
+    // fetchWithTimeout ใน supabase.js) ไม่ใช่แค่คืน error object พอ await โยนออกไป setLoading(false)
+    // ไม่ได้รัน ปุ่มจะค้างเป็น "กำลังเข้าสู่ระบบ..." แบบ disabled ถาวร เจ้าหน้าที่กดซ้ำไม่ได้
+    // และไม่มีข้อความบอกว่าเกิดอะไรขึ้น ต้องเดาเองว่าต้องรีเฟรชหน้า
+    try {
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+        options: { persistSession: remember },
+      })
+      if (authError) {
+        setError('อีเมลหรือรหัสผ่านไม่ถูกต้อง')
+        return
+      }
+      navigate('/admin')
+    } catch (err) {
+      console.error('[admin-login] เข้าสู่ระบบล้มเหลว:', err?.message ?? err)
+      setError('เข้าสู่ระบบไม่สำเร็จ — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง กรุณาลองใหม่')
+    } finally {
       setLoading(false)
-      return
     }
-
-    navigate('/admin')
   }
 
   return (

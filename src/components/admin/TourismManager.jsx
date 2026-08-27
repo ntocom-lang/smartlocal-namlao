@@ -28,13 +28,18 @@ export function TourismReviewsAdmin({ tenant }) {
   async function fetchData() {
     if (!tenant?.id) return
     setLoading(true)
-    const [{ data: rv }, { data: pl }] = await Promise.all([
-      supabase.from('tourism_reviews').select('*').eq('municipality_id', tenant.id).order('created_at', { ascending: false }),
-      supabase.from('tourism_places').select('id, name').eq('municipality_id', tenant.id),
-    ])
-    setReviews(rv ?? [])
-    setPlaces(pl ?? [])
-    setLoading(false)
+    try {
+      const [{ data: rv }, { data: pl }] = await Promise.all([
+        supabase.from('tourism_reviews').select('*').eq('municipality_id', tenant.id).order('created_at', { ascending: false }),
+        supabase.from('tourism_places').select('id, name').eq('municipality_id', tenant.id),
+      ])
+      setReviews(rv ?? [])
+      setPlaces(pl ?? [])
+    } catch (err) {
+      console.error('[tourism] โหลดรีวิว/สถานที่ไม่สำเร็จ:', err?.message ?? err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { fetchData() }, [tenant?.id])
@@ -173,7 +178,9 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
     setLoading(true)
     supabase.from('tourism_places').select('*').eq('municipality_id', tenant.id)
       .order('display_order')
-      .then(({ data }) => { setPlaces(data ?? []); setLoading(false) })
+      .then(({ data }) => setPlaces(data ?? []))
+      .catch((err) => console.error('[tourism] โหลดสถานที่ท่องเที่ยวไม่สำเร็จ:', err?.message ?? err))
+      .finally(() => setLoading(false))
   }, [tenant?.id])
 
   useEffect(() => {

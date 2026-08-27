@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Loader2, Plus, X, Pencil, Trash2, ChevronLeft, ChevronRight, Paperclip, CalendarDays, Tag, Users, Check, ChevronUp, Link2, CheckCheck, Image, FileText, Sparkles, Clock, MapPin, List } from 'lucide-react'
+import { Loader2, Plus, X, Pencil, Trash2, ChevronLeft, ChevronRight, Paperclip, CalendarDays, Tag, Users, Check, ChevronUp, Image, FileText, Sparkles, Clock, MapPin, List, Link2, CheckCheck } from 'lucide-react'
 import { supabase, supabaseUrl } from '../../lib/supabase'
 import { notifyTelegram } from '../../lib/notifyTelegram'
 import { logAction } from '../../lib/auditLog'
 import { extractEventFromFile } from '../../lib/geminiChat'
 import { uploadFile } from '../../lib/driveStorage'
+import { todayStr } from '../../lib/thaiDate'
 
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
 const MINUTES = ['00', '15', '30', '45']
@@ -472,6 +473,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
   const [currentUserScope, setCurrentUserScope] = useState(null)
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [editingEvent, setEditingEvent] = useState(null)
   const [deleting, setDeleting] = useState(null)
@@ -508,7 +510,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
   useEffect(() => {
     if (!autoCreateSignal) return undefined
     const timer = window.setTimeout(() => {
-      const today = new Date().toISOString().split('T')[0]
+      const today = todayStr()
       const audienceAllowed = AUDIENCE_OPTIONS.some(option => option.value === autoCreateAudience)
         && !(currentUserRole === 'council' && autoCreateAudience === 'management')
       setForm({ ...EMPTY_EVENT_FORM, event_date: today, audiences: audienceAllowed ? [autoCreateAudience] : [] })
@@ -547,44 +549,56 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
   async function fetchEvents() {
     if (!tenant?.id) return
     setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    const userId = user?.id
-    setCurrentUserId(userId ?? null)
-    if (userId) {
-      const { data: scope } = await supabase
-        .from('profiles')
-        .select('department_id, is_dept_head')
-        .eq('id', userId)
-        .maybeSingle()
-      setCurrentUserScope(scope ?? null)
-    } else {
-      setCurrentUserScope(null)
+    setLoadError('')
+    try {
+      // ใช้ getSession() (อ่านจาก storage ในเครื่อง) ไม่ใช่ getUser() ที่ยิง network ไปตรวจ token
+      // กับเซิร์ฟเวอร์ — ตรงนี้ต้องการแค่ user id ไว้ตัดสินใจว่าปุ่มแก้ไข/ลบจะโชว์ไหม สิทธิ์จริง
+      // บังคับด้วย RLS ฝั่ง DB อยู่แล้ว การยิง round-trip เพิ่มจึงไม่ได้ความปลอดภัยขึ้นเลย
+      // มีแต่ทำให้หน้านี้ค้างง่ายขึ้นตอน Supabase ตอบช้า
+      const { data: { session } } = await supabase.auth.getSession()
+      const userId = session?.user?.id ?? null
+      setCurrentUserId(userId)
+
+      // สองคิวรีนี้ไม่พึ่งผลของกันและกัน ยิงขนานลดเวลารอครึ่งหนึ่ง
+      // บุคลากรภายในเห็นปฏิทินทั้งหมดของเทศบาลเดียวกัน
+      // เจ้าของแก้ไข/ลบของตนเองได้ หัวหน้ากองแก้ไขงานในกอง และ Admin/SuperAdmin จัดการตามขอบเขตเดิม
+      const [scopeResult, eventsResult] = await Promise.all([
+        userId
+          ? supabase.from('profiles').select('department_id, is_dept_head').eq('id', userId).maybeSingle()
+          : Promise.resolve({ data: null, error: null }),
+        supabase
+          .from('events')
+          .select('*, creator:profiles!events_created_by_fkey(full_name)')
+          .eq('municipality_id', tenant.id)
+          .order('event_date', { ascending: true }),
+      ])
+
+      setCurrentUserScope(scopeResult.data ?? null)
+      if (eventsResult.error) throw eventsResult.error
+
+      const sorted = (eventsResult.data ?? []).sort((a, b) => {
+        if (a.event_date < b.event_date) return -1
+        if (a.event_date > b.event_date) return 1
+        const ta = a.event_time ?? '99:99'
+        const tb = b.event_time ?? '99:99'
+        if (ta < tb) return -1
+        if (ta > tb) return 1
+        return new Date(a.created_at) - new Date(b.created_at)
+      })
+      setEvents(sorted)
+    } catch (err) {
+      // ต้องดักไว้เสมอ: fetch ของ client ตัวนี้ถูกครอบ timeout 25 วิไว้ พอ Supabase ตอบช้าเกิน
+      // จะ abort แล้ว reject จริง ถ้าปล่อยหลุด ฟังก์ชันจะจบกลางทาง setLoading(false) ไม่ได้รัน
+      // แล้วสปินเนอร์จะหมุนค้างตลอดไปโดยไม่มีข้อความและไม่มีทางกดลองใหม่
+      console.error('[events] โหลดปฏิทินกิจกรรมไม่สำเร็จ:', err?.message ?? err)
+      setLoadError('โหลดปฏิทินกิจกรรมไม่สำเร็จ — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง')
+    } finally {
+      setLoading(false)
     }
-
-    let query = supabase
-      .from('events')
-      .select('*, creator:profiles!events_created_by_fkey(full_name)')
-      .eq('municipality_id', tenant.id)
-      .order('event_date', { ascending: true })
-
-    // บุคลากรภายในเห็นปฏิทินทั้งหมดของเทศบาลเดียวกัน
-    // เจ้าของแก้ไข/ลบของตนเองได้ หัวหน้ากองแก้ไขงานในกอง และ Admin/SuperAdmin จัดการตามขอบเขตเดิม
-    const { data } = await query
-    const sorted = (data ?? []).sort((a, b) => {
-      if (a.event_date < b.event_date) return -1
-      if (a.event_date > b.event_date) return 1
-      const ta = a.event_time ?? '99:99'
-      const tb = b.event_time ?? '99:99'
-      if (ta < tb) return -1
-      if (ta > tb) return 1
-      return new Date(a.created_at) - new Date(b.created_at)
-    })
-    setEvents(sorted)
-    setLoading(false)
   }
 
   function openAdd() {
-    const today = new Date().toISOString().split('T')[0]
+    const today = todayStr()
     setForm({ ...EMPTY_EVENT_FORM, event_date: today })
     setMultiDay(false)
     setLocationCustom(false)
@@ -651,7 +665,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
     setFormError('')
     try {
       const categories = [...EVENTS_CATEGORIES]
-      const result = await extractEventFromFile(file, categories, form.event_date || new Date().toISOString().split('T')[0])
+      const result = await extractEventFromFile(file, categories, form.event_date || todayStr())
       setForm((p) => ({
         ...p,
         title: result.title || p.title,
@@ -814,12 +828,23 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
     ? `${supabaseUrl}/functions/v1/calendar-ics?token=${calToken}`
     : null
 
-  function copyIcsUrl() {
+  // ลิงก์ subscribe ปฏิทิน (.ics) — เอาไปวางใน Google Calendar / Apple Calendar / Outlook
+  // แล้วกิจกรรมของเทศบาลจะไหลเข้าปฏิทินส่วนตัวของเจ้าหน้าที่เองโดยอัตโนมัติ
+  //
+  // navigator.clipboard มีเฉพาะบน secure context (https หรือ localhost) — บนอินทราเน็ต
+  // ที่เปิดผ่าน http://192.168.x.x จะเป็น undefined ต้องมีทางถอยให้ผู้ใช้ยังเอาลิงก์ไปได้
+  async function copyIcsUrl() {
     if (!icsUrl) return
-    navigator.clipboard.writeText(icsUrl).then(() => {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('clipboard API ไม่พร้อมใช้งาน')
+      await navigator.clipboard.writeText(icsUrl)
       setCopied(true)
       setTimeout(() => setCopied(false), 2500)
-    })
+    } catch (err) {
+      console.warn('[events] คัดลอกลิงก์ปฏิทินไม่สำเร็จ:', err?.message ?? err)
+      // ทางถอย: เปิด prompt ให้ผู้ใช้กด Ctrl+C เอาเอง ดีกว่ากดแล้วไม่เกิดอะไรขึ้นเลย
+      window.prompt('คัดลอกลิงก์ปฏิทินนี้ไปวางในแอปปฏิทินของคุณ', icsUrl)
+    }
   }
 
   return (
@@ -849,6 +874,18 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
               <><List size={13} /> รายการ</>
             )}
           </button>
+          {icsUrl && (
+            <button
+              type="button"
+              onClick={copyIcsUrl}
+              title="คัดลอกลิงก์สำหรับ subscribe ปฏิทินนี้ในแอปปฏิทินส่วนตัว"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all active:scale-95 shadow-xs"
+              style={copied
+                ? { backgroundColor: '#f0fdf4', color: '#15803d', borderColor: '#86efac' }
+                : { backgroundColor: '#f8fafc', color: '#475569', borderColor: '#e2e8f0' }}>
+              {copied ? <><CheckCheck size={13} /> คัดลอกแล้ว</> : <><Link2 size={13} /> ลิงก์ปฏิทิน</>}
+            </button>
+          )}
           {canManage && (
             <button onClick={openAdd}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white shadow-xs"
@@ -880,6 +917,18 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
             style={{ backgroundColor: 'rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.9)' }}>
             {upcoming.length} รายการ
           </span>
+          {icsUrl && (
+            <button
+              type="button"
+              onClick={copyIcsUrl}
+              title="คัดลอกลิงก์สำหรับ subscribe ปฏิทินนี้ใน Google Calendar / Apple Calendar / Outlook"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold border transition-colors hover:bg-white/20"
+              style={copied
+                ? { backgroundColor: 'rgba(134,239,172,0.25)', color: '#dcfce7', borderColor: 'rgba(134,239,172,0.6)' }
+                : { backgroundColor: 'rgba(255,255,255,0.12)', color: '#fff', borderColor: 'rgba(255,255,255,0.3)' }}>
+              {copied ? <><CheckCheck size={13} /> คัดลอกแล้ว</> : <><Link2 size={13} /> ลิงก์ปฏิทิน</>}
+            </button>
+          )}
           {canManage && (
             <button onClick={openAdd}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold border transition-colors hover:bg-white/20"
@@ -1365,6 +1414,16 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
       {loading ? (
         <div className="flex justify-center py-10 text-gray-400">
           <Loader2 size={24} className="animate-spin" />
+        </div>
+      ) : loadError ? (
+        <div className="flex flex-col items-center gap-3 py-10 text-center">
+          <span className="text-3xl">📶</span>
+          <p className="text-sm text-gray-500">{loadError}</p>
+          <button onClick={fetchEvents}
+            className="px-5 py-2.5 rounded-xl text-sm font-bold text-white"
+            style={{ backgroundColor: 'var(--color-primary)' }}>
+            กดเพื่อลองใหม่
+          </button>
         </div>
       ) : viewMode === 'calendar' ? (
         <AdminCalendarView

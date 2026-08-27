@@ -7,7 +7,7 @@ import {
   Printer, Search, Hammer, Home, CalendarDays, TrendingUp, Images, Camera,
   Banknote, Luggage, Star, Car, Bell, Trash2, Briefcase, Database, BookOpen,
 } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { supabase, signOutSafely } from '../lib/supabase'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
 import { useTenant } from '../contexts/TenantContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
@@ -1685,7 +1685,7 @@ export default function StaffDashboard() {
   }, [tenant?.id, profile?.id, profile?.role, adhocCategories])
 
   async function handleLogout() {
-    await supabase.auth.signOut()
+    await signOutSafely('/')
     navigate('/')
   }
 

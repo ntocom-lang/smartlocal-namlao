@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
-  Search, Upload, FileText, ImageIcon, Download, Eye, Trash2, X,
-  Clock, Shield, Tag, Loader2, BookOpen, History, AlertCircle,
-  Lock, ChevronDown, ChevronUp, Hash,
+  Search, Upload, Download, Eye, Trash2, X, Loader2, History, AlertCircle, Lock,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { compressImage } from '../../lib/imageUtils'
@@ -302,14 +300,19 @@ function AuditDrawer({ tenantId, onClose }) {
 
   useEffect(() => {
     async function fetchLogs() {
-      const { data } = await supabase
-        .from('document_access_logs')
-        .select('*, document:documents(title, doc_number), user:profiles!document_access_logs_user_id_fkey(full_name)')
-        .eq('municipality_id', tenantId)
-        .order('accessed_at', { ascending: false })
-        .limit(200)
-      setLogs(data ?? [])
-      setLoading(false)
+      try {
+        const { data } = await supabase
+          .from('document_access_logs')
+          .select('*, document:documents(title, doc_number), user:profiles!document_access_logs_user_id_fkey(full_name)')
+          .eq('municipality_id', tenantId)
+          .order('accessed_at', { ascending: false })
+          .limit(200)
+        setLogs(data ?? [])
+      } catch (err) {
+        console.error('[document-archive] โหลดประวัติการเข้าถึงไม่สำเร็จ:', err?.message ?? err)
+      } finally {
+        setLoading(false)
+      }
     }
     fetchLogs()
   }, [tenantId])
@@ -360,7 +363,6 @@ function AuditDrawer({ tenantId, onClose }) {
 export default function DocumentArchive({ tenant, profile }) {
   const role      = profile?.role ?? 'staff'
   const canUpload = ['admin', 'superadmin', 'staff'].includes(role)
-  const canDelete = ['admin', 'superadmin'].includes(role)
   const canAudit  = ['admin', 'superadmin', 'viewer'].includes(role)
   const allowed   = visibleDepts(role)
 
@@ -376,13 +378,18 @@ export default function DocumentArchive({ tenant, profile }) {
 
   const fetchDocs = useCallback(async () => {
     setLoading(true)
-    const { data } = await supabase
-      .from('documents')
-      .select('*, uploader:profiles!documents_uploaded_by_fkey(full_name)')
-      .eq('municipality_id', tenant.id)
-      .order('created_at', { ascending: false })
-    setDocs(data ?? [])
-    setLoading(false)
+    try {
+      const { data } = await supabase
+        .from('documents')
+        .select('*, uploader:profiles!documents_uploaded_by_fkey(full_name)')
+        .eq('municipality_id', tenant.id)
+        .order('created_at', { ascending: false })
+      setDocs(data ?? [])
+    } catch (err) {
+      console.error('[document-archive] โหลดคลังเอกสารไม่สำเร็จ:', err?.message ?? err)
+    } finally {
+      setLoading(false)
+    }
   }, [tenant.id])
 
   useEffect(() => { fetchDocs() }, [fetchDocs])

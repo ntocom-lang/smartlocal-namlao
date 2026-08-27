@@ -5,8 +5,6 @@ import FleetEmptyState from './FleetEmptyState'
 import { fiscalYearOf, FISCAL_MONTHS_TH } from '../../lib/fiscalYear'
 import { adminUpdateUser } from '../../lib/adminUpdateUser'
 
-const inp = 'w-full px-3 py-2.5 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent'
-
 const ROLES = {
   fleet_admin:  'ผู้ดูแลระบบ (เต็มสิทธิ์)',
   fleet_staff:  'เจ้าหน้าที่ (บันทึก/ดูข้อมูลกองตัวเอง)',

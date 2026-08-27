@@ -109,11 +109,27 @@ function injectPWAManifest(tenant) {
   }
 }
 
+const DEFAULT_THEME_COLOR = '#1d4ed8'
+
+// theme_color มาจากช่องที่แอดมินกรอกเองใน DB จึงไว้ใจรูปแบบไม่ได้ — เจอได้ทั้งค่าว่าง, hex 3 หลัก
+// (#059), ไม่มี #, หรือชนิดที่ไม่ใช่สตริงถ้าข้อมูลเพี้ยน ของเดิม slice+parseInt ตรงๆ ทำให้
+//   - ค่าว่าง/3 หลัก → parseInt('') = NaN → เซ็ต --color-primary-dark เป็น '#NaNNaNNaN' ทั้งแอป
+//   - ไม่ใช่สตริง → .slice โยน TypeError ซึ่งถูก try/catch ของ fetchTenant จับ แล้วขึ้นหน้า
+//     "ไม่พบหน่วยงานรหัส ... ในระบบ" ทั้งที่โหลด อปท. สำเร็จแล้ว — สีผิดไม่ควรล้มทั้งแอป
+function normalizeHexColor(value) {
+  if (typeof value !== 'string') return DEFAULT_THEME_COLOR
+  const hex = value.trim().replace(/^#/, '')
+  if (/^[0-9a-fA-F]{6}$/.test(hex)) return `#${hex}`
+  // hex ย่อ 3 หลัก: #059 → #005599
+  if (/^[0-9a-fA-F]{3}$/.test(hex)) return `#${hex[0]}${hex[0]}${hex[1]}${hex[1]}${hex[2]}${hex[2]}`
+  return DEFAULT_THEME_COLOR
+}
+
 export function applyTheme(hexColor, uiStyle = 'default') {
   const root = document.documentElement
 
   // kledkaew theme ใช้เขียวเสมอ ไม่ว่า DB จะกำหนดสีอะไร
-  const effectiveColor = uiStyle === 'kledkaew' ? '#059669' : hexColor
+  const effectiveColor = uiStyle === 'kledkaew' ? '#059669' : normalizeHexColor(hexColor)
 
   root.style.setProperty('--color-primary', effectiveColor)
 
@@ -230,13 +246,13 @@ export function TenantProvider({ children }) {
         setTerminology(TERMINOLOGY[resolvedTenant.org_type] ?? TERMINOLOGY['อบต.'])
         applyTheme(resolvedTenant.theme_color ?? '#1d4ed8', resolvedTenant.ui_style)
         document.title = resolvedTenant.name
-        try { injectPWAManifest(resolvedTenant) } catch (_) {}
+        try { injectPWAManifest(resolvedTenant) } catch {}
         try {
           localStorage.setItem('sl_slug', resolvedTenant.slug)
           localStorage.setItem('sl_tenant_name', resolvedTenant.name)
-        } catch (_) {}
+        } catch {}
         setLoading(false)
-      } catch (err) {
+      } catch {
         clearTimeout(timerId)
         if (!timedOut) {
           setError(`ไม่พบหน่วยงานรหัส "${slug}" ในระบบ`)

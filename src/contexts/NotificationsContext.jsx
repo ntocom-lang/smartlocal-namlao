@@ -49,16 +49,21 @@ export function NotificationsProvider({ children }) {
   const fetchItems = useCallback(async () => {
     if (!session?.user?.id || !tenant?.id) { setItems([]); return }
     setLoading(true)
-    const { data } = await supabase
-      .from('complaints')
-      .select('id, complaint_number, category, status, updated_at, created_at')
-      .eq('municipality_id', tenant.id)
-      .eq('user_id', session.user.id)
-      .neq('status', 'pending')
-      .order('updated_at', { ascending: false })
-      .limit(50)
-    setItems(data ?? [])
-    setLoading(false)
+    try {
+      const { data } = await supabase
+        .from('complaints')
+        .select('id, complaint_number, category, status, updated_at, created_at')
+        .eq('municipality_id', tenant.id)
+        .eq('user_id', session.user.id)
+        .neq('status', 'pending')
+        .order('updated_at', { ascending: false })
+        .limit(50)
+      setItems(data ?? [])
+    } catch (err) {
+      console.error('[notifications] โหลดการแจ้งเตือนไม่สำเร็จ:', err?.message ?? err)
+    } finally {
+      setLoading(false)
+    }
   }, [session?.user?.id, tenant?.id])
 
   // Initial fetch

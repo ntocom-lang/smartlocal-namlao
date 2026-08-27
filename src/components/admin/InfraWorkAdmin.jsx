@@ -100,9 +100,14 @@ export default function InfraWorkAdmin({ tenant, currentUserRole, myDepartmentId
       .eq('municipality_id', tenant.id)
     // department_id เป็น NULL (ยังไม่ระบุกอง) ให้ผ่านตัวกรองเสมอ กันงานเก่าที่ยังไม่ backfill หายไปจากสายตา
     if (scopingByDept) q = q.or(`department_id.is.null,department_id.eq.${myDepartmentId}`)
-    const { data } = await q.order('work_date', { ascending: false }).limit(200)
-    setInfraWorks(data ?? [])
-    setLoading(false)
+    try {
+      const { data } = await q.order('work_date', { ascending: false }).limit(200)
+      setInfraWorks(data ?? [])
+    } catch (err) {
+      console.error('[infra-work] โหลดงานโครงสร้างพื้นฐานไม่สำเร็จ:', err?.message ?? err)
+    } finally {
+      setLoading(false)
+    }
   }, [tenant?.id, scopingByDept, myDepartmentId])
 
   useEffect(() => { fetchWorks() }, [fetchWorks])
