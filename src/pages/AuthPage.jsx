@@ -4,8 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { Mail, Lock, Loader2, UserCircle2, Phone, Eye, EyeOff, ExternalLink, ArrowLeft } from 'lucide-react'
 import { NAME_TITLES, joinThaiFullName } from '../lib/thaiName'
-
-const PHONE_EMAIL_DOMAIN = 'phone.smartlocal.app'
+import { PHONE_EMAIL_DOMAIN } from '../lib/authProviders'
 
 function detectInAppBrowser() {
   const ua = navigator.userAgent || ''

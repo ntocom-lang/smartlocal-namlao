@@ -20,6 +20,7 @@ import { attachReporterProfiles } from '../lib/attachReporterProfiles'
 import { uploadFile } from '../lib/driveStorage'
 import { tenantDefaultSubdistrict } from '../lib/thaiAddress'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
+import { accountProviders, providerLabel } from '../lib/authProviders'
 import { useTenant } from '../contexts/TenantContext'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 import CivilProjectReport from '../components/admin/CivilProjectReport'
@@ -94,6 +95,31 @@ const PERSONNEL_CARD_PALETTES = [
   { color: '#d97706', soft: '#fffbeb', border: '#fde68a' },
   { color: '#db2777', soft: '#fdf2f8', border: '#fbcfe8' },
 ]
+
+// chip "เชื่อมต่อบัญชี" ใช้ทั้งในตาราง (compact), การ์ดมือถือ และแท็บข้อมูลบัญชีในหน้ารายละเอียด
+function ProviderChips({ user, compact = false }) {
+  const keys = accountProviders(user)
+  if (keys.length === 0) return <span className="text-xs text-gray-300 italic">ไม่พบข้อมูล</span>
+  return (
+    <div className="flex flex-wrap gap-1">
+      {keys.map((key) => {
+        const b = providerLabel(key)
+        return (
+          <span
+            key={key}
+            title={b.label}
+            className={compact
+              ? 'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold whitespace-nowrap'
+              : 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold'}
+            style={{ backgroundColor: b.bg, color: b.color }}
+          >
+            {b.icon} {compact ? b.short : b.label}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
 
 function canManageUser(currentUserRole, currentUserId, targetUser) {
   if (!targetUser || !currentUserId || targetUser.id === currentUserId) return false
@@ -623,6 +649,9 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
                     </span>
                   </div>
                 )}
+                <div className="ml-[60px] mt-1">
+                  <ProviderChips user={u} compact />
+                </div>
                 <div className="ml-[60px] mt-1 flex items-center gap-2">
                   <button onClick={() => setViewingUserId(u.id)} className="rounded-lg bg-blue-50 px-2.5 py-1.5 text-xs font-bold text-blue-600 transition-colors hover:bg-blue-100 hover:text-blue-700">
                     {canManage ? 'แต่งตั้ง / แก้ไขข้อมูล' : 'ดูรายละเอียด'}
@@ -706,15 +735,16 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
           <table className="w-full text-sm text-left text-gray-600 table-fixed border-collapse">
             <thead>
               <tr className="bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-900">
-                <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 w-[6%]">ลำดับ</th>
-                <th className="px-2 py-2.5 text-[13px] font-bold text-white border-r border-white/10 w-[24%] cursor-pointer hover:bg-white/10 transition-colors" onClick={() => handleSort('full_name')}>
+                <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 w-[5%]">ลำดับ</th>
+                <th className="px-2 py-2.5 text-[13px] font-bold text-white border-r border-white/10 w-[22%] cursor-pointer hover:bg-white/10 transition-colors" onClick={() => handleSort('full_name')}>
                   <div className="flex items-center gap-1">ชื่อ-นามสกุล {sortConfig.key === 'full_name' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
                 </th>
-                <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 w-[26%]">อีเมล</th>
-                <th className="px-2 py-2.5 text-[13px] font-bold text-white border-r border-white/10 w-[18%] cursor-pointer hover:bg-white/10 transition-colors" onClick={() => handleSort('role')}>
+                <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 w-[22%]">อีเมล</th>
+                <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 w-[13%]">เชื่อมต่อบัญชี</th>
+                <th className="px-2 py-2.5 text-[13px] font-bold text-white border-r border-white/10 w-[15%] cursor-pointer hover:bg-white/10 transition-colors" onClick={() => handleSort('role')}>
                   <div className="flex items-center gap-1">บทบาท/สิทธิ์ {sortConfig.key === 'role' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
                 </th>
-                <th className="px-2 py-2.5 text-[11px] font-bold text-white w-[26%]">สังกัดและตำแหน่ง</th>
+                <th className="px-2 py-2.5 text-[11px] font-bold text-white w-[23%]">สังกัดและตำแหน่ง</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
@@ -752,8 +782,12 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
                       </div>
                     </td>
                     {/* อีเมล */}
-                    <td className="px-2 py-3 overflow-hidden">
+                    <td className="px-2 py-3 overflow-hidden border-r border-gray-200">
                       <span className="text-xs text-gray-600 break-all">{u.email || <span className="italic text-gray-300">ยังไม่ระบุ</span>}</span>
+                    </td>
+                    {/* เชื่อมต่อบัญชี: มาจาก auth.identities ผ่าน RPC ดูรายละเอียดเพิ่มในแท็บ "ข้อมูลบัญชี" */}
+                    <td className="px-2 py-3 overflow-hidden border-r border-gray-200">
+                      <ProviderChips user={u} compact />
                     </td>
                     {/* บทบาท/สิทธิ์: role badge เท่านั้น */}
                     <td className="px-2 py-3 overflow-hidden border-r border-gray-200">
@@ -1004,12 +1038,6 @@ function HandoverWorkloadModal({ oldStaff, tenant, onClose }) {
 
 function AccountInfoTab(props) {
   const { user, isEditing, draft, setDraft } = props
-  const providerBadge = {
-    'email':       { label: 'Email/Password', bg: '#f3f4f6', color: '#374151', icon: '✉️' },
-    'google':      { label: 'Google',          bg: '#fef9c3', color: '#854d0e', icon: '🔵' },
-    'custom:line': { label: 'LINE',             bg: '#dcfce7', color: '#166534', icon: '💚' },
-  }
-  const providers = user.providers || []
   return (
     <div className="space-y-5">
       <PersonalInfoField
@@ -1022,21 +1050,7 @@ function AccountInfoTab(props) {
       />
       <div>
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ช่องทางเชื่อมต่อบัญชี</p>
-        {providers.length === 0 ? (
-          <p className="text-xs text-gray-300 italic">ไม่พบข้อมูล</p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {providers.map((p) => {
-              const b = providerBadge[p] ?? { label: p, bg: '#f3f4f6', color: '#374151', icon: '🔗' }
-              return (
-                <span key={p} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
-                      style={{ backgroundColor: b.bg, color: b.color }}>
-                  {b.icon} {b.label}
-                </span>
-              )
-            })}
-          </div>
-        )}
+        <ProviderChips user={user} />
       </div>
       <div className="flex gap-6 text-xs text-gray-400 border-t border-gray-100 pt-4">
         <div>
