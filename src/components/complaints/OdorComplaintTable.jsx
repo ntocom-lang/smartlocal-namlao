@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { MapPin, Camera, Loader2, Search, X, ChevronUp, ChevronDown } from 'lucide-react'
 import { OdorAckBadge } from './OdorFieldsDisplay'
+import { ODOR_TIME_RANGES, odorIncidentRangeOf } from '../../lib/odorTimeRanges'
 
 // ตาราง/ตัวกรองของหมวดเฉพาะกิจ "กลิ่นเหม็นรบกวน" — ใช้ร่วมกัน 2 หน้า:
 //   - แอดมิน  : ComplaintsManager.jsx แท็ป "กลิ่นเหม็นรบกวน (เฉพาะกิจ)"
@@ -13,20 +14,6 @@ import { OdorAckBadge } from './OdorFieldsDisplay'
 //   staff → ไม่มี เพราะทุกแถวเป็นชื่อตัวเอง (ซ้ำทุกบรรทัด เปลืองพื้นที่เปล่า)
 // ส่วนปุ่มลบ/พิมพ์ (แอดมิน) และปุ่มรับทราบ (เจ้าหน้าที่) อยู่ในบ็อปอัพรายละเอียดของแต่ละหน้า
 // ส่งเข้ามาทาง children ของ OdorDetailModal ไม่ได้ฝังไว้ในตารางนี้
-
-// ตัวกรอง "ช่วงเวลา" — เวลาแจ้งแต่ละคำร้องมักไม่ซ้ำกันเป๊ะ ดึงมาเป็นดรอปดาวน์ตรงๆ แบบสถานที่/ความรุนแรง
-// ไม่มีประโยชน์ (ตัวเลือกจะเยอะเกือบเท่าจำนวนแถว) จึงแบ่งเป็นช่วงคงที่ 4 ช่วงแทน
-// มีประโยชน์กับ odor โดยเฉพาะ เพราะกลิ่น/ทิศทางลมมักสัมพันธ์กับช่วงเวลาของวัน
-const ODOR_TIME_RANGES = [
-  { value: 'dawn',      label: 'เช้ามืด (00:01–06:00)', from: 0,  to: 6 },
-  { value: 'morning',   label: 'เช้า (06:01–12:00)',    from: 6,  to: 12 },
-  { value: 'afternoon', label: 'บ่าย (12:01–18:00)',     from: 12, to: 18 },
-  { value: 'evening',   label: 'ค่ำ/กลางคืน (18:01–24:00)', from: 18, to: 24 },
-]
-function odorTimeRangeOf(dateStr) {
-  const h = new Date(dateStr).getHours()
-  return ODOR_TIME_RANGES.find((r) => h >= r.from && h < r.to)?.value ?? null
-}
 
 const odorLocationOf = (c) => c.location_name || c.village || 'ไม่ระบุสถานที่'
 const fmtDate = (s) => new Date(s).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })
@@ -114,7 +101,7 @@ export default function OdorComplaintTable({
   const intensityOptions = countBy((c) => c.extra_data?.odor_intensity).sort((a, b) => Number(a[0]) - Number(b[0]))
   const healthOptions = countBy((c) => c.extra_data?.health_effect).sort((a, b) => b[1] - a[1])
   const timeRangeCounts = complaints.reduce((acc, c) => {
-    const r = odorTimeRangeOf(c.created_at)
+    const r = odorIncidentRangeOf(c)
     if (r) acc[r] = (acc[r] || 0) + 1
     return acc
   }, {})
@@ -123,7 +110,7 @@ export default function OdorComplaintTable({
     if (filterLocation && (c.location_name || c.village || '') !== filterLocation) return false
     if (filterIntensity && String(c.extra_data?.odor_intensity ?? '') !== filterIntensity) return false
     if (filterHealth && (c.extra_data?.health_effect || '') !== filterHealth) return false
-    if (filterTimeRange && odorTimeRangeOf(c.created_at) !== filterTimeRange) return false
+    if (filterTimeRange && odorIncidentRangeOf(c) !== filterTimeRange) return false
     return true
   })
 
@@ -152,7 +139,7 @@ export default function OdorComplaintTable({
     filterLocation && `สถานที่: ${filterLocation}`,
     filterIntensity && `ความรุนแรง: ${filterIntensity}/5`,
     filterHealth && `อาการ: ${filterHealth}`,
-    filterTimeRange && `ช่วงเวลา: ${ODOR_TIME_RANGES.find((r) => r.value === filterTimeRange)?.label}`,
+    filterTimeRange && `ช่วงเวลาที่ได้กลิ่น: ${ODOR_TIME_RANGES.find((r) => r.value === filterTimeRange)?.label}`,
   ].filter(Boolean).join(' · ')
 
   const selectCls = 'px-2.5 py-1.5 rounded-xl border border-lime-200 bg-white text-xs text-gray-700 focus:outline-none focus:border-lime-400'
@@ -182,7 +169,7 @@ export default function OdorComplaintTable({
           {healthOptions.map(([h, count]) => <option key={h} value={h}>{h} ({count})</option>)}
         </select>
         <select value={filterTimeRange} onChange={(e) => setFilterTimeRange(e.target.value)} className={selectCls}>
-          <option value="">ช่วงเวลาทั้งหมด</option>
+          <option value="">ช่วงเวลาที่ได้กลิ่นทั้งหมด</option>
           {ODOR_TIME_RANGES.map((r) => (
             <option key={r.value} value={r.value}>{r.label} ({timeRangeCounts[r.value] ?? 0})</option>
           ))}

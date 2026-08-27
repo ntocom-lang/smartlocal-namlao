@@ -16,6 +16,7 @@ import { compressImage } from '../lib/imageUtils'
 import MapPicker from '../components/MapPicker'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
 import { uploadFile } from '../lib/driveStorage'
+import { ODOR_TIME_RANGES } from '../lib/odorTimeRanges'
 
 const MAX_PHOTOS = 3
 
@@ -346,7 +347,7 @@ export default function CitizenForm() {
     category: defaultCategory, issue_type: '', village: '', detail: '', phone: '',
     name_title: '', name_first: '', name_last: '',
     // ฟิลด์เสริมเฉพาะหมวด odor — ดู buildExtraData()/validateOdorFields() ด้านล่าง
-    odor_intensity: '', wind_direction: '', health_effect: '',
+    odor_intensity: '', wind_direction: '', health_effect: '', odor_time_range: '',
   })
   const [profilePhone, setProfilePhone] = useState('') // เบอร์เดิมจากโปรไฟล์ ไว้เทียบว่าผู้ใช้แก้เบอร์หรือไม่
   const [syncPhoneToProfile, setSyncPhoneToProfile] = useState(false)
@@ -480,6 +481,7 @@ export default function CitizenForm() {
     if (form.category !== 'odor') return null
     return {
       odor_intensity: form.odor_intensity ? Number(form.odor_intensity) : null,
+      odor_time_range: form.odor_time_range || null,
       wind_direction: form.wind_direction || null,
       health_effect:  form.health_effect || null,
     }
@@ -491,6 +493,7 @@ export default function CitizenForm() {
     if (form.category !== 'odor') return null
     if (!form.odor_intensity) return 'กรุณาเลือกระดับความรุนแรงของกลิ่น'
     if (!form.wind_direction) return 'กรุณาเลือกทิศทางลม'
+    if (!form.odor_time_range) return 'กรุณาเลือกช่วงเวลาที่ได้กลิ่น'
     // พิกัดบังคับเฉพาะหมวดนี้ (หมวดอื่นยังไม่บังคับเหมือนเดิม) — เรื่องกลิ่นไม่มีบ้านเลขที่ให้ยึด
     // มีแค่ชื่อหมู่บ้านกว้างๆ ถ้าไม่มีพิกัด เจ้าหน้าที่รับทราบไปก็ไม่รู้จะไปตรวจสอบจุดไหน
     if (geo.lat == null || geo.lng == null) return 'กรุณากดปุ่ม "ปักหมุดจากแผนที่" เพื่อระบุจุดที่ได้กลิ่น'
@@ -772,6 +775,20 @@ export default function CitizenForm() {
         {/* ฟิลด์เสริมเฉพาะหมวด odor — GPS ใช้ปุ่ม "ปักหมุดจากแผนที่" เดิมด้านล่างของฟอร์ม ไม่ซ้ำที่นี่ */}
         {form.category === 'odor' && (
           <div className="space-y-2">
+            {/* ช่วงเวลาที่ได้กลิ่น — ข้อมูลที่เจ้าหน้าที่ใช้จริงคือ "ควรไปดมช่วงไหน" ไม่ใช่นาทีที่พบกลิ่น
+                วันเวลาแบบละเอียดซ้ำซ้อนกับ complaints.created_at จึงไม่เก็บ (เคยมีแล้วถอดออก 2 รอบ)
+                ค่านี้ชนะค่าที่คำนวณจากเวลาที่แจ้งเสมอในตัวกรอง (ดู src/lib/odorTimeRanges.js) */}
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">ช่วงเวลาที่ได้กลิ่น *</label>
+              <div className="relative">
+                <select value={form.odor_time_range} onChange={set('odor_time_range')} required
+                  className="w-full px-4 py-2.5 pr-10 rounded-xl border border-gray-300 bg-white text-gray-900 text-base focus:outline-none focus:border-blue-400 appearance-none">
+                  <option value="">— กรุณาเลือก —</option>
+                  {ODOR_TIME_RANGES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                </select>
+                <ChevronDown size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              </div>
+            </div>
             {/* ระดับความรุนแรง 1-5 */}
             <div>
               <label className="text-xs font-semibold text-gray-600 mb-1 block">ระดับความรุนแรงของกลิ่น *</label>
