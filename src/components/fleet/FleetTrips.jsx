@@ -105,29 +105,84 @@ const DOW_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 const MONTH_TH = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
                   'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
 
-function BookingCalendar({ trips, onClose }) {
-  const now = new Date()
-  const [yr, setYr] = useState(now.getFullYear())
-  const [mo, setMo] = useState(now.getMonth()) // 0-indexed
-  const [selDay, setSelDay] = useState(null)  // { day, bookings }
+// สถานะที่แสดงบนปฏิทิน — ตัดที่ถูกปฏิเสธ/ยกเลิกออก เพราะรถไม่ได้ถูกใช้จริง
+const CAL_STATUSES = ['pending', 'approved', 'in_progress', 'completed']
 
-  function prevMonth() { setSelDay(null); if (mo === 0) { setMo(11); setYr(y => y - 1) } else setMo(m => m - 1) }
-  function nextMonth() { setSelDay(null); if (mo === 11) { setMo(0); setYr(y => y + 1) } else setMo(m => m + 1) }
+// ปฏิทินดึงข้อมูลของเดือนที่กำลังดูเอง ไม่รับผ่าน prop
+// เดิมรับอาร์เรย์ trips ของหน้าหลัก ซึ่งหลังแยกประวัติไปแบ่งหน้าที่ server แล้ว
+// เหลือเฉพาะสถานะที่ยังดำเนินอยู่ ทริปที่ "เสร็จสิ้น" จึงหายจากปฏิทินทั้งหมด
+// (เดือนที่ผ่านมาขึ้นว่างเปล่าทั้งที่มีการใช้รถจริง) และถ้าเปลี่ยนไปส่ง history แทน
+// ก็จะได้แค่ 20 แถวของหน้าปัจจุบัน ซึ่งไม่มีความสัมพันธ์กับเดือนที่เปิดดูเลย
+function BookingCalendar({ tenant, onClose }) {
+  const now = new Date()
+  // เก็บปี+เดือนเป็นก้อนเดียว เพื่อให้การข้ามปีคำนวณจากค่าล่าสุดเสมอ
+  // เดิมแยกเป็นสอง state แล้วอ่าน mo ตรงๆ มาเช็คเงื่อนไข ถ้า React รวมสองคลิกไว้ชุดเดียว
+  // (ดับเบิลคลิกปุ่มลูกศร) เงื่อนไขข้ามปีจะอ่านค่าเก่า → เดือนวิ่งเลย 11 และปีไม่เปลี่ยน
+  const [cur, setCur] = useState({ yr: now.getFullYear(), mo: now.getMonth() }) // mo 0-indexed
+  const { yr, mo } = cur
+  const [selDay, setSelDay] = useState(null)   // เลขวันที่ถูกเลือก
+  // ผูกผลลัพธ์ไว้กับคีย์ของเดือนที่ขอมา แล้วอนุมาน "กำลังโหลด" จากการที่คีย์ยังไม่ตรงกัน
+  // ดีกว่าตั้ง setLoading(true) ตรงๆ ในเอฟเฟกต์ (สั่ง render ซ้อนโดยไม่จำเป็น)
+  // และกันไม่ให้ข้อมูลของเดือนก่อนหน้าค้างบนตารางระหว่างรอเดือนใหม่
+  const [monthData, setMonthData] = useState({ key: null, rows: [] })
+
+  // popup อื่นในหน้านี้ปิดด้วย Esc ได้หมดแล้ว ปฏิทินจึงต้องทำเหมือนกัน
+  // ไม่งั้นผู้ใช้ที่ชินกับ Esc จะกดแล้วไม่มีอะไรเกิดขึ้น
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  function shiftMonth(delta) {
+    setSelDay(null)
+    setCur(c => {
+      const m = c.mo + delta
+      return { yr: c.yr + Math.floor(m / 12), mo: ((m % 12) + 12) % 12 }
+    })
+  }
 
   const firstDow = new Date(yr, mo, 1).getDay()   // 0=Sun
   const daysInMonth = new Date(yr, mo + 1, 0).getDate()
+  const monthKey = `${yr}-${mo}`
+  const loading = monthData.key !== monthKey
+  const monthTrips = loading ? [] : monthData.rows
 
-  // all trips that have a date range (active or history)
-  const relevant = trips.filter(t =>
-    ['pending', 'approved', 'in_progress'].includes(t.status) ||
-    (t.status === 'completed' && t.planned_departure)
-  )
+  useEffect(() => {
+    if (!tenant?.id) return undefined
+    let cancelled = false
+    // ขอบเขตเดือนคิดตามเวลาไทยก่อน แล้วค่อยแปลงเป็น UTC ให้ฐานข้อมูล
+    // (planned_departure/return เป็น timestamptz ส่วน trip_date เป็น date ล้วน)
+    const from = new Date(yr, mo, 1).toISOString()
+    const to   = new Date(yr, mo + 1, 1).toISOString()   // ไม่รวมวันแรกของเดือนถัดไป
+    const dFrom = localDateStr(new Date(yr, mo, 1))
+    const dTo   = localDateStr(new Date(yr, mo, daysInMonth))
+    // ครอบคลุมสามแบบ: ช่วงจองที่คร่อมเดือนนี้ / จองที่ยังไม่ระบุเวลากลับ /
+    // รายการบันทึกย้อนหลังที่มีแต่ trip_date
+    const overlap = [
+      `and(planned_departure.lt."${to}",planned_return.gte."${from}")`,
+      `and(planned_departure.lt."${to}",planned_departure.gte."${from}",planned_return.is.null)`,
+      `and(planned_departure.is.null,trip_date.gte."${dFrom}",trip_date.lte."${dTo}")`,
+    ].join(',')
+
+    supabase.from('fleet_trips').select(SELECT)
+      .eq('municipality_id', tenant.id)
+      .in('status', CAL_STATUSES)
+      .or(overlap)
+      .order('planned_departure', { ascending: true, nullsFirst: false })
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (error) console.error('fleet_trips calendar SELECT error:', error)
+        setMonthData({ key: monthKey, rows: data ?? [] })
+      })
+    return () => { cancelled = true }
+  }, [tenant?.id, yr, mo, daysInMonth, monthKey])
 
   function getDay(day) {
     // ใช้วันที่ตามเวลาไทย — เดิมใช้ toISOString() ซึ่งแปลงเป็น UTC ก่อน
     // ทำให้ new Date(yr, mo, day) (เที่ยงคืนไทย) กลายเป็นวันก่อนหน้า 17:00Z = ปฏิทินเลื่อนไป 1 วัน
     const dateStr = localDateStr(new Date(yr, mo, day))
-    return relevant.filter(t => {
+    return monthTrips.filter(t => {
       const start = t.planned_departure
         ? localDateStr(t.planned_departure)
         : t.trip_date
@@ -139,6 +194,9 @@ function BookingCalendar({ trips, onClose }) {
   }
 
   const today = localDateStr(now)
+  // คำนวณใหม่ทุก render — เดิมเก็บ bookings ไว้ใน state ตอนคลิก ซึ่งจะค้างเป็นค่าเก่า
+  // เมื่อข้อมูลของเดือนโหลดเสร็จทีหลังหรือถูกโหลดใหม่
+  const selBookings = selDay ? getDay(selDay) : []
   // build grid cells: blanks + days
   const cells = Array(firstDow).fill(null).concat(
     Array.from({ length: daysInMonth }, (_, i) => i + 1)
@@ -152,14 +210,14 @@ function BookingCalendar({ trips, onClose }) {
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div className="flex items-center gap-3">
-            <button onClick={prevMonth}
+            <button onClick={() => shiftMonth(-1)}
               className="w-7 h-7 rounded-full hover:bg-gray-100 flex items-center justify-center">
               <ChevronLeft size={16} />
             </button>
             <h2 className="text-sm font-black text-gray-800 min-w-[130px] text-center">
               {MONTH_TH[mo]} {yr + 543}
             </h2>
-            <button onClick={nextMonth}
+            <button onClick={() => shiftMonth(1)}
               className="w-7 h-7 rounded-full hover:bg-gray-100 flex items-center justify-center">
               <ChevronRight size={16} />
             </button>
@@ -196,11 +254,11 @@ function BookingCalendar({ trips, onClose }) {
               const bookings = getDay(day)
               const cellDate = `${yr}-${String(mo + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`
               const isToday = cellDate === today
-              const isSel = selDay?.day === day
+              const isSel = selDay === day
               const hasBook = bookings.length > 0
               return (
                 <div key={day}
-                  onClick={() => hasBook && setSelDay(isSel ? null : { day, bookings })}
+                  onClick={() => hasBook && setSelDay(isSel ? null : day)}
                   className="rounded-xl p-1 min-h-[52px] flex flex-col transition-all"
                   style={{
                     background: isSel ? '#fffbeb' : isToday ? '#eff6ff' : '#f9fafb',
@@ -230,12 +288,12 @@ function BookingCalendar({ trips, onClose }) {
             <div className="mt-3 rounded-2xl border border-blue-100 bg-blue-50 p-3 space-y-2">
               <div className="flex items-center justify-between mb-1">
                 <p className="text-xs font-black text-blue-700">
-                  📅 {selDay.day} {MONTH_TH[mo]} {yr + 543} — {selDay.bookings.length} รายการ
+                  📅 {selDay} {MONTH_TH[mo]} {yr + 543} — {selBookings.length} รายการ
                 </p>
                 <button onClick={() => setSelDay(null)}
                   className="text-blue-300 hover:text-blue-500 text-xs">✕</button>
               </div>
-              {selDay.bookings.map(t => (
+              {selBookings.map(t => (
                 <div key={t.id} className="bg-white rounded-xl p-3 shadow-sm space-y-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-[11px] font-black text-gray-800">
@@ -261,8 +319,11 @@ function BookingCalendar({ trips, onClose }) {
           )}
 
           {/* Summary for month */}
-          {relevant.length === 0 && (
-            <p className="text-center text-sm text-gray-400 py-6">ไม่มีรายการจองในเดือนนี้</p>
+          {loading && (
+            <p className="text-center text-sm text-gray-400 py-6">กำลังโหลด...</p>
+          )}
+          {!loading && monthTrips.length === 0 && (
+            <p className="text-center text-sm text-gray-400 py-6">ไม่มีรายการใช้รถในเดือนนี้</p>
           )}
         </div>
       </div>
@@ -677,6 +738,36 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
     loadTrips()
   }
 
+  /* ── ผู้จองถอนคำขอของตัวเองที่ยังไม่ถูกพิจารณา ──
+     เดิมไม่มีทางถอนจากหน้าจอเลย ทั้งที่ RLS อนุญาตอยู่แล้ว (ตรวจด้วยการยิง API ตรงแล้ว)
+     เจ้าหน้าที่ที่จองผิดวันจึงต้องตามแอดมินมากดปฏิเสธให้ ซึ่งไปโผล่ในประวัติว่า
+     "ถูกปฏิเสธ" ทั้งที่ผู้จองถอนเอง — คนละเรื่องกันในแง่การตรวจสอบ
+     บังคับระบุเหตุผลเหมือนตอนปฏิเสธ เพราะการจองรถราชการที่ถูกยกเลิกต้องอธิบายได้ว่าเพราะอะไร */
+  function handleCancelOwn(t) {
+    setSelTrip(t)
+    setRejectReason('')
+    setModal('cancel')
+  }
+  async function submitCancelOwn() {
+    const reason = rejectReason.trim()
+    if (reason.length < 5) return alert('กรุณาระบุเหตุผลการยกเลิกอย่างน้อย 5 ตัวอักษร')
+    setSaving(true)
+    const { error } = await supabase.from('fleet_trips').update({
+      status: 'cancelled',
+      reject_reason: reason,
+      // ใช้ช่องเดียวกับการพิจารณา — ป้ายใน UI เปลี่ยนเป็น "ผู้ดำเนินการ" เมื่อสถานะเป็น cancelled
+      approved_by: user?.id,
+      approved_at: new Date().toISOString(),
+    }).eq('id', selTrip.id)
+    setSaving(false)
+    if (error) return alert('ยกเลิกไม่สำเร็จ: ' + error.message)
+    logAction({ action: 'cancel', resourceType: 'fleet_trip', resourceId: selTrip.id,
+      resourceLabel: `${selTrip.vehicle?.name} — ${selTrip.destination}`,
+      municipalityId: tenant.id, metadata: { reason, cancelled_by: 'ผู้จอง' } })
+    setModal(null); setSelTrip(null); setRejectReason('')
+    loadTrips()
+  }
+
   /* ── Depart / Return ── */
   async function submitDepart() {
     if (!form.started_at) return alert('กรุณาระบุเวลาออก')
@@ -742,6 +833,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
     const canApprove = t.status === 'pending' && isAdmin
     const canDepart  = t.status === 'approved' && (isOwner(t) || isAdmin)
     const canReturn  = t.status === 'in_progress' && (isOwner(t) || isAdmin)
+    // admin มีปุ่ม "ปฏิเสธ" อยู่แล้ว จึงไม่ต้องมีปุ่มถอนซ้อนอีกปุ่ม
+    const canCancel  = t.status === 'pending' && isOwner(t) && !isAdmin
     const dist = t.distance_km ?? null
     return (
       <div key={t.id}
@@ -773,7 +866,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
           {t.started_at && <div>🚀 {fmtDT(t.started_at)}{t.odometer_start ? ` · ${Number(t.odometer_start).toLocaleString()} กม.` : ''}</div>}
           {t.returned_at && <div>🏁 {fmtDT(t.returned_at)}{t.odometer_end ? ` · ${Number(t.odometer_end).toLocaleString()} กม.` : ''}</div>}
         </div>
-        {(canApprove || canDepart || canReturn || isAdmin) && (
+        {(canApprove || canDepart || canReturn || canCancel || isAdmin) && (
           <div className="flex gap-1.5 pt-0.5">
             {canApprove && <>
               <button onClick={() => handleApprove(t)}
@@ -785,6 +878,12 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
                 ✕ ปฏิเสธ
               </button>
             </>}
+            {canCancel && (
+              <button onClick={() => handleCancelOwn(t)}
+                className="flex-1 py-1.5 rounded-lg text-[11px] font-bold text-gray-500 border border-gray-200 bg-gray-50">
+                ✕ ยกเลิกคำขอ
+              </button>
+            )}
             {isAdmin && (
               <button onClick={() => handleDelete(t)}
                 className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-red-500 border border-red-200 bg-red-50 hover:bg-red-500 hover:text-white transition-colors">
@@ -822,6 +921,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
     const canApprove = t.status === 'pending' && isAdmin
     const canDepart  = t.status === 'approved' && (isOwner(t) || isAdmin)
     const canReturn  = t.status === 'in_progress' && (isOwner(t) || isAdmin)
+    const canCancel  = t.status === 'pending' && isOwner(t) && !isAdmin
     const dateStr = t.planned_departure ? fmtDate(t.planned_departure) : fmtDate(t.trip_date || t.started_at)
     const dist = t.distance_km ?? null
     return (
@@ -858,6 +958,12 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
               <button onClick={() => handleReject(t)}
                 className="px-2 py-1 rounded-lg border border-red-200 text-red-500 text-[12px] font-bold">ปฏิเสธ</button>
             </>}
+            {canCancel && (
+              <button onClick={() => handleCancelOwn(t)}
+                className="px-2 py-1 rounded-lg border border-gray-300 text-gray-500 hover:bg-gray-500 hover:text-white text-[12px] font-bold whitespace-nowrap transition-colors">
+                ยกเลิกคำขอ
+              </button>
+            )}
             {canDepart && (
               <button onClick={() => {
                 setSelTrip(t)
@@ -1009,7 +1115,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
         </>}
       </div>
 
-      {showCal && <BookingCalendar trips={trips} onClose={() => setShowCal(false)} />}
+      {showCal && <BookingCalendar tenant={tenant} onClose={() => setShowCal(false)} />}
 
       {/* ═══ MODALS ═══ */}
 
@@ -1266,6 +1372,33 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
               className={inp} />
             <p className="text-[11px] text-gray-400 mt-1">
               ผู้จองจะเห็นเหตุผลนี้ในหน้ารายละเอียดการเดินทาง และระบบเก็บไว้ในประวัติการใช้งานเพื่อการตรวจสอบ
+            </p>
+          </div>
+        </Modal>
+      )}
+
+      {/* ผู้จองถอนคำขอของตัวเอง — บังคับระบุเหตุผลเช่นกัน */}
+      {modal === 'cancel' && selTrip && (
+        <Modal title="✕ ยกเลิกคำขอจองรถ"
+               onClose={() => { setModal(null); setSelTrip(null); setRejectReason('') }}
+               onSave={submitCancelOwn} saveLabel="ยืนยันยกเลิกคำขอ" saving={saving}>
+          <div className="bg-gray-50 rounded-xl p-3">
+            <p className="text-sm font-bold text-gray-800">
+              {selTrip.vehicle?.name} · {assetIdentifier(selTrip.vehicle)}
+            </p>
+            <p className="text-xs text-gray-600">{selTrip.destination} — {selTrip.purpose}</p>
+            {selTrip.planned_departure && (
+              <p className="text-xs text-gray-500 mt-1">🗓 {fmtDT(selTrip.planned_departure)} – {fmtDT(selTrip.planned_return)}</p>
+            )}
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">เหตุผลการยกเลิก (บังคับกรอก) *</label>
+            <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={3}
+              placeholder="เช่น เลื่อนกำหนดการประชุม / จองผิดวัน / ไปรถส่วนตัวแทน"
+              className={inp} />
+            <p className="text-[11px] text-gray-400 mt-1">
+              ยกเลิกได้เฉพาะคำขอที่ยังไม่ถูกพิจารณา ระบบบันทึกว่าผู้จองเป็นผู้ยกเลิกเอง
+              พร้อมเหตุผล เพื่อแยกจากกรณีที่ผู้มีอำนาจปฏิเสธ
             </p>
           </div>
         </Modal>
