@@ -532,10 +532,18 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
     onAutoEditHandled?.()
   }, [autoEditEventId, events])
 
+  // ลิงก์ subscribe ปฏิทินเปิดให้ทุกบทบาทที่เข้าถึงโมดูลนี้ได้ (เดิมจำกัดแค่ admin/superadmin)
+  // เจ้าหน้าที่ทุกกองรวมถึงช่างต้องผูกปฏิทินงานเข้ากับปฏิทินส่วนตัวได้เหมือนกัน — RLS ฝั่ง DB
+  // ไม่ได้ห้ามอ่าน calendar_token อยู่แล้ว เป็นการจำกัดในโค้ดล้วนๆ
+  //
+  // ⚠️ token นี้เปิดให้อ่านปฏิทินได้ "โดยไม่ต้องล็อกอิน" ใครได้ลิงก์ไปก็เห็นกิจกรรมทั้งหมด
+  // รวมของผู้บริหารและสภา — ปุ่มจึงเตือนไว้ในคำอธิบาย และถ้าลิงก์รั่ว ให้ออก token ใหม่โดย
+  // อัปเดตคอลัมน์ municipalities.calendar_token (ลิงก์เดิมจะใช้ไม่ได้ทันที)
   useEffect(() => {
-    if (!tenant?.id || !['admin', 'superadmin'].includes(currentUserRole)) return
+    if (!tenant?.id || !EVENT_MANAGER_ROLES.includes(currentUserRole)) return
     supabase.from('municipalities').select('calendar_token').eq('id', tenant.id).single()
       .then(({ data }) => setCalToken(data?.calendar_token ?? null))
+      .catch((err) => console.warn('[events] อ่าน calendar_token ไม่สำเร็จ:', err?.message ?? err))
   }, [tenant?.id, currentUserRole])
 
   useEffect(() => {
@@ -878,7 +886,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
             <button
               type="button"
               onClick={copyIcsUrl}
-              title="คัดลอกลิงก์สำหรับ subscribe ปฏิทินนี้ในแอปปฏิทินส่วนตัว"
+              title="คัดลอกลิงก์สำหรับผูกปฏิทินนี้เข้ากับแอปปฏิทินส่วนตัว — ใครมีลิงก์นี้เปิดดูได้โดยไม่ต้องล็อกอิน อย่าเผยแพร่ต่อสาธารณะ"
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all active:scale-95 shadow-xs"
               style={copied
                 ? { backgroundColor: '#f0fdf4', color: '#15803d', borderColor: '#86efac' }
@@ -921,7 +929,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
             <button
               type="button"
               onClick={copyIcsUrl}
-              title="คัดลอกลิงก์สำหรับ subscribe ปฏิทินนี้ใน Google Calendar / Apple Calendar / Outlook"
+              title="คัดลอกลิงก์สำหรับผูกปฏิทินนี้เข้ากับ Google Calendar / Apple Calendar / Outlook — ใครมีลิงก์นี้เปิดดูได้โดยไม่ต้องล็อกอิน อย่าเผยแพร่ต่อสาธารณะ"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold border transition-colors hover:bg-white/20"
               style={copied
                 ? { backgroundColor: 'rgba(134,239,172,0.25)', color: '#dcfce7', borderColor: 'rgba(134,239,172,0.6)' }
