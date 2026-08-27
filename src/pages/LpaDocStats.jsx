@@ -71,6 +71,12 @@ export default function LpaDocStats() {
     ? Math.round((stats.completed / stats.total) * 100)
     : 0
 
+  // doc_requests_public() คืน purpose เฉพาะเจ้าหน้าที่ของเทศบาลนั้น (ข้อความที่ประชาชนพิมพ์เอง
+  // ฟอร์ม "สอบถามยอดชำระ" ใช้ฟิลด์นี้เป็นช่องบังคับกรอกด้วย ดู migration 20260830160000)
+  // ผู้ชมทั่วไปจึงได้ NULL ทุกแถว — ซ่อนคอลัมน์ไปเลยดีกว่าโชว์แถบว่างยาวทั้งตาราง
+  const showPurpose = rows.some(r => r.purpose)
+  const tableCols = showPurpose ? 7 : 6
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -194,7 +200,7 @@ export default function LpaDocStats() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
-                  {['#', 'ประเภทเอกสาร', 'วัตถุประสงค์', 'วันที่ยื่น', 'วันที่เสร็จ', 'ใช้เวลา', 'สถานะ'].map(h => (
+                  {['#', 'ประเภทเอกสาร', ...(showPurpose ? ['วัตถุประสงค์'] : []), 'วันที่ยื่น', 'วันที่เสร็จ', 'ใช้เวลา', 'สถานะ'].map(h => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
                       {h}
                     </th>
@@ -204,7 +210,7 @@ export default function LpaDocStats() {
               <tbody className="divide-y divide-gray-50">
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-400">
+                    <td colSpan={tableCols} className="px-4 py-12 text-center text-sm text-gray-400">
                       ยังไม่มีข้อมูลคำขอเอกสาร
                     </td>
                   </tr>
@@ -216,9 +222,11 @@ export default function LpaDocStats() {
                       <td className="px-4 py-3 font-medium text-gray-800">
                         {DOC_LABELS[r.doc_type] ?? r.doc_type}
                       </td>
-                      <td className="px-4 py-3 text-gray-500 max-w-[160px] truncate">
-                        {r.purpose || '—'}
-                      </td>
+                      {showPurpose && (
+                        <td className="px-4 py-3 text-gray-500 max-w-[160px] truncate">
+                          {r.purpose || '—'}
+                        </td>
+                      )}
                       <td className="px-4 py-3 text-gray-600 whitespace-nowrap tabular-nums">
                         {thDate(r.created_at)}
                       </td>
