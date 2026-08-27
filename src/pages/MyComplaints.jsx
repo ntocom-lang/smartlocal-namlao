@@ -606,6 +606,25 @@ export default function MyComplaints() {
           setShowSat(true)
         }
       })
+      // DELETE (แอดมินลบคำร้องทิ้ง) — ถ้าไม่ดัก ประชาชนจะยังเห็นเรื่องที่ถูกลบไปแล้วจนกว่าจะรีเฟรช
+      // payload ของ DELETE มีแค่ primary key (replica identity ของตารางเป็นค่า default ซึ่งจงใจไม่
+      // เปลี่ยนเป็น full เพราะจะทำให้ข้อมูลเต็มแถวหลุดไปหา subscriber ทุกคนโดยไม่ผ่าน RLS)
+      // จึงใส่ filter municipality_id ไม่ได้และเช็ค user_id ไม่ได้ — กรองด้วย "id นี้อยู่ในรายการ
+      // ที่โหลดมาหรือเปล่า" แทน ซึ่งเป็นรายการของผู้ใช้คนนี้อยู่แล้ว
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'complaints' },
+        ({ old }) => {
+          const deletedId = old?.id
+          if (!deletedId) return
+          setComplaints(prev => prev.some(c => c.id === deletedId)
+            ? prev.filter(c => c.id !== deletedId)
+            : prev)
+          // ถ้ากำลังเปิดบ็อปอัพให้คะแนนของเรื่องที่เพิ่งถูกลบ ต้องปิดทิ้ง ไม่งั้นกดส่งคะแนนแล้ว error
+          setSatComplaintId(cur => {
+            if (cur !== deletedId) return cur
+            queueMicrotask(() => setShowSat(false))
+            return null
+          })
+        })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [tenant?.id, session?.user?.id])
