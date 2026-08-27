@@ -213,9 +213,15 @@ function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, to
           // กลุ่มที่เป็นเส้นทาง (ถนน) ล้วน ไม่ต้องขึ้นเป็นการ์ดในแถบสรุปเลย ทั้งฝั่งเจ้าหน้าที่และประชาชน
           // เพราะควบคุมด้วยปุ่มลอย 🛣️ บนแผนที่แล้วจุดเดียวพอ ไม่ต้องมีอีกจุดควบคุม/แสดงผลซ้ำกัน
           if (isRouteOnlyGroup) return null
-          const on = activeGroups === null || activeGroups.has(group)
-          const onGroupToggle = () => toggleGroup(group)
           const visibleCategories = categories.filter(c => !routeCategoryKeys.has(`${group}::${c.category}`))
+          // หัวการ์ดกลุ่มต้องสั่งเปิด/ปิดประเภทย่อยในกลุ่มยกชุดด้วย ไม่ใช่แค่ activeGroups เพราะหมุด
+          // ต้องผ่านตัวกรอง 2 ชั้น (กลุ่ม AND ประเภทย่อย) และประเภทย่อยเริ่มต้นปิดไว้หมด — ถ้าคุมแค่
+          // ชั้นกลุ่ม กดหัวการ์ดแล้วสีเปลี่ยนแต่แผนที่ว่างเปล่า ดูเหมือนปุ่มเสีย
+          const groupCategoryKeys = visibleCategories.map(c => `${group}::${c.category}`)
+          const on = groupCategoryKeys.length === 0
+            ? (activeGroups === null || activeGroups.has(group))
+            : groupCategoryKeys.some(k => activeCategories.has(k))
+          const onGroupToggle = () => toggleGroup(group, groupCategoryKeys)
           return (
             <div key={group} className="rounded-2xl border border-gray-100 overflow-hidden">
               <button onClick={onGroupToggle}
@@ -429,13 +435,28 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   const effectiveTab = allowStatusFilter ? activeTab : 'dce'
   const activeSummary = effectiveTab === 'dce' ? dceSummary : effectiveTab === 'complaints' ? complaintSummary : projectSummary
 
-  function toggleGroup(g) {
-    setActiveGroups(prev => {
-      const base = prev ?? new Set(groups)
-      const next = new Set(base)
-      next.has(g) ? next.delete(g) : next.add(g)
+  // keysInGroup = ประเภทย่อยทั้งหมดของกลุ่มนี้ที่โชว์ในการ์ด (ตัดประเภทที่เป็นเส้นทางออกแล้ว) —
+  // กดหัวการ์ดต้องเปิด/ปิดหมุดทั้งกลุ่มยกชุด ไม่ใช่แค่สลับ activeGroups ที่เป็นตัวกรองชั้นนอก
+  // อย่างเดียว ส่วนการเลือกดูเฉพาะประเภทย่อยยังกดที่แถวนั้นได้ตามเดิม
+  function toggleGroup(g, keysInGroup = []) {
+    if (keysInGroup.length === 0) {
+      setActiveGroups(prev => {
+        const base = prev ?? new Set(groups)
+        const next = new Set(base)
+        next.has(g) ? next.delete(g) : next.add(g)
+        return next
+      })
+      return
+    }
+    const allOn = keysInGroup.every(k => activeCategories.has(k))
+    setActiveCategories(prev => {
+      const next = new Set(prev)
+      keysInGroup.forEach(k => { if (allOn) next.delete(k); else next.add(k) })
       return next
     })
+    // ตัวกรองชั้นกลุ่มต้องเปิดค้างไว้ ไม่งั้นเปิดประเภทย่อยแล้วยังโดนบล็อกที่ชั้นนอกอยู่ดี
+    // (prev === null คือเปิดทุกกลุ่มอยู่แล้ว ปล่อยไว้ตามเดิม)
+    if (!allOn) setActiveGroups(prev => (prev === null ? null : new Set(prev).add(g)))
   }
 
   function toggleCategory(key) {
