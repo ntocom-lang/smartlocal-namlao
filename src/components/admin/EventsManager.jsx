@@ -221,7 +221,7 @@ function EventCard({ ev, onEdit, onDelete, onView, deleting }) {
   )
 }
 
-function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage, openAdd }) {
+function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage, openAdd, canViewEvent }) {
   const todayRef = useMemo(() => {
     const t = new Date()
     t.setHours(0, 0, 0, 0)
@@ -425,7 +425,10 @@ function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage,
                     className="w-full text-left bg-white rounded-xl border border-gray-200 shadow-xs p-3.5 flex items-start justify-between gap-3"
                     style={{ borderLeftColor: color, borderLeftWidth: 3 }}
                   >
-                    <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onSelectEvent(ev)}>
+                    <div
+                      className={`flex-1 min-w-0${canViewEvent(ev) ? ' cursor-pointer' : ''}`}
+                      title={canViewEvent(ev) ? undefined : 'ไม่มีสิทธิ์เปิดดูรายละเอียดกิจกรรมนี้'}
+                      onClick={canViewEvent(ev) ? () => onSelectEvent(ev) : undefined}>
                       <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                         <span
                           className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white"
@@ -1461,6 +1464,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
         <AdminCalendarView
           events={filteredEvents}
           onSelectEvent={setViewingEvent}
+          canViewEvent={(ev) => canViewEventDetail(ev, currentUserRole, currentUserId, currentUserScope)}
           onEdit={openEdit}
           onDelete={handleDelete}
           canManage={canManage}
@@ -1604,7 +1608,12 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                               {ev.creator?.full_name ?? <span className="text-gray-300">—</span>}
                             </td>
                             <td className="px-3 py-2 text-center border-r border-gray-200">
-                              {eventAttachments(ev).length > 0
+                              {/* ไฟล์แนบผูกกับสิทธิ์เดียวกับการเปิดดูรายละเอียด — ถ้าปิดชื่อกิจกรรมไว้
+                                  แต่ปล่อยคลิปหนีบให้กดได้ ก็เท่ากับไม่ได้ปิดอะไรเลย ยังโชว์ไอคอนไว้
+                                  ให้รู้ว่ามีไฟล์แนบอยู่ แต่กดไม่ได้ */}
+                              {eventAttachments(ev).length === 0
+                                ? <span className="text-gray-300 text-xs">—</span>
+                                : canView
                                 ? <a href={eventAttachments(ev)[0]} target="_blank" rel="noopener noreferrer"
                                     title={`เปิดไฟล์แนบ${eventAttachments(ev).length > 1 ? ` (${eventAttachments(ev).length} ไฟล์)` : ''}`}
                                     className="relative inline-flex items-center justify-center w-7 h-7 rounded-lg bg-blue-50 hover:bg-blue-100 transition-colors">
@@ -1615,7 +1624,11 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                                       </span>
                                     )}
                                   </a>
-                                : <span className="text-gray-300 text-xs">—</span>}
+                                : <span
+                                    title="ไม่มีสิทธิ์เปิดไฟล์แนบของกิจกรรมนี้"
+                                    className="relative inline-flex items-center justify-center w-7 h-7 rounded-lg bg-gray-100 cursor-not-allowed">
+                                    <Paperclip size={13} className="text-gray-300" />
+                                  </span>}
                             </td>
                             {canManage && (
                               <td className="px-3 py-2 text-center" onClick={e => e.stopPropagation()}>
