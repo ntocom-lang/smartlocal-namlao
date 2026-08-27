@@ -345,7 +345,10 @@ export default function DataCenterOverview({
       )}
 
       {/* Cyber Action Bar */}
-      <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4.5 rounded-2xl backdrop-blur-xl border shadow-xl ${
+      {/* relative z-30 จำเป็น: backdrop-blur บนแถบนี้สร้าง stacking context ของตัวเอง ทำให้ z-20
+          ของ popover เลือกไอคอนกลุ่มข้างในเทียบกับพี่น้องไม่ได้ การ์ดสถิติที่อยู่หลังใน DOM
+          (ก็มี backdrop-blur เหมือนกัน) จึงวาดทับ popover จนกดอะไรไม่ได้ */}
+      <div className={`relative z-30 flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4.5 rounded-2xl backdrop-blur-xl border shadow-xl ${
         isLight
           ? 'bg-white/90 border-slate-200 shadow-sky-950/5 text-slate-800'
           : 'bg-slate-900/80 border-cyan-500/30 shadow-cyan-950/40 text-white'
