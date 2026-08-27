@@ -35,7 +35,7 @@ export default function ServiceHubHeader() {
             <LayoutDashboard size={13} /> แผงควบคุม Admin
           </Link>
         )}
-        {session && (role === 'staff' || role === 'officer' || isAdmin) && (
+        {session && (role === 'staff' || role === 'officer' || role === 'technician' || isAdmin) && (
           <Link to="/staff" className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white/70 text-gray-800 hover:bg-white transition-colors">
             <Briefcase size={13} /> สำหรับเจ้าหน้าที่
           </Link>

@@ -276,7 +276,10 @@ function RequireAuth({ children, adminOnly = false, techOnly = false, staffOnly 
   if (adminOnly && role === null) return null
   if (techOnly && role !== null && role !== 'technician') return <Navigate to="/" replace />
   if (techOnly && role === null) return null
-  if (staffOnly && role !== null && !['staff', 'officer', 'admin', 'superadmin', 'viewer', 'council'].includes(role)) {
+  // technician อยู่ในลิสต์ด้วย — ช่างคือเจ้าหน้าที่กองช่าง ไม่ใช่คนนอก จึงเข้าหน้าเจ้าหน้าที่ได้
+  // เหมือนกอง อื่นๆ ส่วนหน้า /technician ยังอยู่ครบ (ออกแบบมาสำหรับมือถือหน้างานโดยเฉพาะ)
+  // เมนูที่ช่างเห็นในหน้าเจ้าหน้าที่ถูกจำกัดอีกชั้นที่ StaffDashboard — ดู TECHNICIAN_MODULE_KEYS
+  if (staffOnly && role !== null && !['staff', 'officer', 'admin', 'superadmin', 'viewer', 'council', 'technician'].includes(role)) {
     return <Navigate to="/" replace />
   }
   if (staffOnly && role === null) return null

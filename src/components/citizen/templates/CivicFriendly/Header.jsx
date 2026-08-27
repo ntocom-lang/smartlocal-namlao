@@ -122,7 +122,7 @@ export default function Header() {
 
           {session ? (
             <div className="hidden md:flex items-center gap-2">
-              {(isAdmin || role === 'staff' || role === 'officer') && (
+              {(isAdmin || role === 'staff' || role === 'officer' || role === 'technician') && (
                 <Link to="/staff"
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-colors hover:opacity-90"
                   style={{ backgroundColor: 'rgba(255,255,255,0.18)', color: 'white' }}>

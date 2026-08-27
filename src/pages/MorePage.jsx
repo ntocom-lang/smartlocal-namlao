@@ -338,7 +338,8 @@ function NamlaoMorePage() {
   }
 
   const isAdmin   = role === 'admin' || role === 'superadmin'
-  const isStaff   = role === 'staff' || role === 'officer'
+  // technician นับรวมด้วย — ช่างคือเจ้าหน้าที่กองช่าง เข้าระบบเจ้าหน้าที่ได้เหมือนกอง อื่น
+  const isStaff   = role === 'staff' || role === 'officer' || role === 'technician'
   const isViewer  = role === 'viewer'
   const isInternal = ['superadmin', 'admin', 'viewer', 'council', 'officer', 'staff', 'technician', 'kamnan'].includes(role)
   const initials  = (displayName[0] || '?').toUpperCase()
