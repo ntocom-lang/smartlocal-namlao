@@ -17,10 +17,18 @@ function termSet(mayor, deputyMayor, council, councilPresident, clerk) {
   return { mayor, deputyMayor, council, councilPresident, clerk }
 }
 
+// ลำดับสำคัญมาก: hostname ต้องมาก่อน VITE_TENANT_SLUG เสมอ ห้ามสลับกลับ
+//
+// ของเดิมเช็ค env var เป็นข้อแรก ซึ่งพังหนักตอนย้ายไป Cloudflare (2026-08-28):
+// Vite ฝังค่า env ลงบันเดิลตอน build และ .env.local ในเครื่องนักพัฒนามี
+// VITE_TENANT_SLUG=namlao อยู่ พอ build ในเครื่องแทนที่จะ build บน CI แบบเดิม
+// minifier เห็นว่า if ข้อแรกเป็นจริงเสมอ เลยลบตรรกะอ่าน hostname ทิ้งทั้งก้อน
+// เหลือ `function detectTenantSlug(){return "namlao"}` ผลคือ *ทุก* อปท.
+// แสดงข้อมูลของน้ำเลา ซึ่งเป็นข้อมูลจริงของประชาชน
+//
+// env var มีไว้สำหรับกรณีที่ hostname บอกอะไรไม่ได้จริงๆ เท่านั้น คือแอปที่ห่อด้วย
+// Capacitor (รันที่ localhost) กับ dev server จึงต้องเป็น fallback ท้ายสุด ไม่ใช่ข้อแรก
 function detectTenantSlug() {
-  // Dev override ผ่าน env var
-  if (import.meta.env.VITE_TENANT_SLUG) return import.meta.env.VITE_TENANT_SLUG
-
   const { hostname, pathname } = window.location
   const parts = hostname.split('.')
   const excluded = ['www', 'app', 'admin', 'localhost']
@@ -44,7 +52,17 @@ function detectTenantSlug() {
 
   // Path mode: smartlocal.vercel.app/namlao/...
   const segment = pathname.split('/').filter(Boolean)[0]
-  return segment ?? null
+  if (segment) return segment
+
+  // ค่าที่ฝังไว้ตอน build ใช้ได้เฉพาะบน localhost จริงๆ เท่านั้น คือแอปที่ห่อด้วย
+  // Capacitor กับ dev server ซึ่งเป็นสองกรณีเดียวที่ hostname บอกอะไรไม่ได้จริง
+  // จำกัดให้แคบขนาดนี้เพราะถ้าปล่อยเป็น fallback ลอยๆ โฮสต์อย่าง www.<โดเมน>
+  // (ที่ติด excluded แล้วไม่มี path) จะตกมารับค่านี้ แล้วกลายเป็นน้ำเลาซ้ำรอยเดิม
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return import.meta.env.VITE_TENANT_SLUG || null
+  }
+
+  return null
 }
 
 const ORG_ABBR = {
