@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "cf:dev": "wrangler dev",
-    "cf:deploy": "npm run build && wrangler deploy"
+    "cf:deploy": "node scripts/predeploy-check.js && npm run build && wrangler deploy",
+    "cf:deploy:force": "npm run build && wrangler deploy"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.4",
