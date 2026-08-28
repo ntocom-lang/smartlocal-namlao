@@ -201,33 +201,7 @@ export default function GoogleMapCanvas({
         gmpDraggable: isDraggable,
       })
 
-      if (markerData.iconUrl) {
-        const iconWrapper = document.createElement('div')
-        const iconSize = markerData.scale ? Math.max(34, markerData.scale * 3) : 44
-        iconWrapper.style.width = String(iconSize) + 'px'
-        iconWrapper.style.height = String(iconSize) + 'px'
-        iconWrapper.style.display = 'flex'
-        iconWrapper.style.alignItems = 'center'
-        iconWrapper.style.justifyContent = 'center'
-        iconWrapper.style.borderRadius = '50%'
-        iconWrapper.style.background = markerData.color || '#ef4444'
-        iconWrapper.style.border = '3px solid #ffffff'
-        iconWrapper.style.boxShadow = '0 3px 10px rgba(15, 23, 42, 0.3)'
-        iconWrapper.style.overflow = 'hidden'
-
-        const iconImage = document.createElement('img')
-        iconImage.src = markerData.iconUrl
-        iconImage.alt = ''
-        iconImage.style.width = '72%'
-        iconImage.style.height = '72%'
-        iconImage.style.objectFit = 'contain'
-        iconImage.addEventListener('error', () => {
-          iconImage.remove()
-          iconWrapper.textContent = markerData.label || '📍'
-        })
-        iconWrapper.append(iconImage)
-        marker.append(iconWrapper)
-      } else if (markerData.shape === 'circle') {
+      if (markerData.shape === 'circle' || markerData.iconUrl) {
         // หมุดทรงกลม (แทนหยดน้ำของ PinElement) — ใช้กับแผนที่ศูนย์ข้อมูลดิจิทัลที่หมุดกระจุกกันหนาแน่น
         // ทรงกลมกินพื้นที่แนวตั้งน้อยกว่าและอ่านอิโมจิง่ายกว่าตอนหมุดซ้อนกัน
         // AdvancedMarkerElement วาง "ขอบล่าง" ของ element ไว้ที่พิกัด (ถูกต้องกับปลายแหลมของหยดน้ำ)
@@ -257,12 +231,49 @@ export default function GoogleMapCanvas({
         circle.style.alignItems = 'center'
         circle.style.justifyContent = 'center'
         circle.style.borderRadius = '50%'
-        circle.style.background = markerData.color || '#ef4444'
-        circle.style.border = '1.5px solid #ffffff'
-        circle.style.boxShadow = '0 1px 3px rgba(15, 23, 42, 0.4)'
         circle.style.fontSize = String(Math.round(size * 0.6)) + 'px'
         circle.style.lineHeight = '1'
-        circle.textContent = markerData.label ? String(markerData.label) : ''
+
+        // ไอคอนที่แอดมินแนบเป็นรูป (data URL 64x64 จากหน้าจัดการหมวดหมู่ หรือ URL ของ
+        // complaint_categories) — วาด "เต็มหมุด" ไม่มีวงกลมสีพื้นรองอีกชั้น
+        //
+        // เดิมยัดรูปไว้ในวงกลมสีกลุ่มเหมือนอิโมจิ แต่ไอคอนที่หน่วยงานใช้จริงเกือบทั้งหมดเป็นตราสัญลักษณ์
+        // ที่มีพื้น/กรอบของตัวเองอยู่แล้ว (เช่นป้าย CCTV วงกลมเหลืองขอบดำ) พอซ้อนในวงกลมอีกใบ ตัวลาย
+        // เหลือแค่ ~12px กลายเป็นวงกลมในวงกลม ผู้ใช้เห็นว่า "เล็กกว่าหมุดอิโมจิมาก" ซึ่งถูกต้อง
+        // ตอนนี้ให้รูปกินพื้นที่ทั้งหมุด (ใหญ่ขึ้นเท่าตัว) ใช้ drop-shadow ตามรูปทรงจริงของลายแทนวงกลม
+        // ขาว-เงา เพื่อให้ยังอ่านออกบนภาพดาวเทียม — แลกกับการเสียแถบสีประจำกลุ่มบนหมุดนั้น ซึ่งยอมได้
+        // เพราะการแนบไอคอนเองแปลว่าตั้งใจให้สัญลักษณ์นั้นเป็นตัวสื่อความหมายแทนสีอยู่แล้ว
+        // โหลดรูปไม่ขึ้น (เน็ตหลุด/ลิงก์เสีย) ให้ตกกลับไปเป็นหมุดวงกลม+อิโมจิแบบเดิม ไม่ปล่อยหมุดว่าง
+        const paintAsCircle = () => {
+          circle.style.background = markerData.color || '#ef4444'
+          circle.style.border = '1.5px solid #ffffff'
+          circle.style.boxShadow = '0 1px 3px rgba(15, 23, 42, 0.4)'
+          circle.style.overflow = 'hidden'
+        }
+
+        if (markerData.iconUrl) {
+          const ICON_MARKER_SCALE = 1.35 // ชดเชยที่ไม่มีวงกลมสีล้อมรอบ ให้ "น้ำหนักภาพ" เท่าหมุดอิโมจิ
+          circle.style.width = String(Math.round(size * ICON_MARKER_SCALE)) + 'px'
+          circle.style.height = String(Math.round(size * ICON_MARKER_SCALE)) + 'px'
+          const iconImage = document.createElement('img')
+          iconImage.src = markerData.iconUrl
+          iconImage.alt = ''
+          iconImage.style.width = '100%'
+          iconImage.style.height = '100%'
+          iconImage.style.objectFit = 'contain'
+          iconImage.style.filter = 'drop-shadow(0 1px 1.5px rgba(15, 23, 42, 0.55))'
+          iconImage.addEventListener('error', () => {
+            iconImage.remove()
+            circle.style.width = String(size) + 'px'
+            circle.style.height = String(size) + 'px'
+            paintAsCircle()
+            circle.textContent = markerData.label ? String(markerData.label) : '📍'
+          })
+          circle.append(iconImage)
+        } else {
+          paintAsCircle()
+          circle.textContent = markerData.label ? String(markerData.label) : ''
+        }
         hit.append(circle)
         marker.append(hit)
       } else if (PinElement) {
