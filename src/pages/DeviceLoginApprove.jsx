@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { invokeDeviceLogin } from '../lib/deviceLogin'
 import { useAuth } from '../contexts/AuthContext'
 import { CheckCircle2, KeyRound, Loader2, Monitor, ScanLine, ShieldAlert, ShieldCheck } from 'lucide-react'
 
@@ -35,12 +35,10 @@ export default function DeviceLoginApprove() {
     if (!identifier || !session || profileLoading) return
     let cancelled = false
     ;(async () => {
-      const { data, error: fnError } = await supabase.functions.invoke('device-login', {
-        body: { action: 'info', ...identifier },
-      })
+      const { data, offline } = await invokeDeviceLogin({ action: 'info', ...identifier })
       if (cancelled) return
       setLoading(false)
-      if (fnError && !data) {
+      if (offline) {
         setError('เชื่อมต่อไม่ได้ กรุณาลองใหม่อีกครั้ง')
         return
       }
@@ -70,11 +68,9 @@ export default function DeviceLoginApprove() {
   async function approve(pick) {
     setApproving(true)
     setError('')
-    const { data, error: fnError } = await supabase.functions.invoke('device-login', {
-      body: { action: 'approve', ...identifier, pick },
-    })
+    const { data, offline } = await invokeDeviceLogin({ action: 'approve', ...identifier, pick })
     setApproving(false)
-    if (fnError && !data) {
+    if (offline) {
       setError('เชื่อมต่อไม่ได้ กรุณาลองใหม่')
       return
     }

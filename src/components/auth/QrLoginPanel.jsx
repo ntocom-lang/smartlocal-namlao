@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import QRCode from 'qrcode'
 import { supabase } from '../../lib/supabase'
+import { invokeDeviceLogin } from '../../lib/deviceLogin'
 import { appUrl } from '../../lib/basename'
 import { Loader2, RefreshCw, Smartphone } from 'lucide-react'
 
@@ -32,11 +33,9 @@ export default function QrLoginPanel() {
     setQrDataUrl('')
     requestRef.current = null
 
-    const { data, error: fnError } = await supabase.functions.invoke('device-login', {
-      body: { action: 'start' },
-    })
-    if (fnError || !data?.ok) {
-      setError(data?.error ?? 'ขอรหัส QR ไม่สำเร็จ กรุณาลองใหม่')
+    const { data, offline } = await invokeDeviceLogin({ action: 'start' })
+    if (offline || !data?.ok) {
+      setError(offline ? 'เชื่อมต่อไม่ได้ กรุณาลองใหม่' : (data?.error ?? 'ขอรหัส QR ไม่สำเร็จ กรุณาลองใหม่'))
       setPhase('error')
       return
     }
@@ -68,15 +67,12 @@ export default function QrLoginPanel() {
     const tick = () => {
       const remaining = Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 1000))
       setSecondsLeft(remaining)
-      if (remaining === 0) {
-        setError('QR หมดอายุแล้ว กดขอรหัสใหม่ได้เลย')
-        setPhase('error')
-      }
+      if (remaining === 0) start()
     }
     tick()
     const timerId = setInterval(tick, 1000)
     return () => clearInterval(timerId)
-  }, [phase, expiresAt])
+  }, [phase, expiresAt, start])
 
   // ถามสถานะเป็นระยะ — ฝั่งเซิร์ฟเวอร์จะคืน token ก็ต่อเมื่อมือถืออนุมัติแล้ว และเครื่องนี้
   // พิสูจน์ verifier ได้เท่านั้น
@@ -88,11 +84,11 @@ export default function QrLoginPanel() {
       const request = requestRef.current
       if (!request || cancelled) return
 
-      const { data, error: fnError } = await supabase.functions.invoke('device-login', {
-        body: { action: 'claim', code: request.code, verifier: request.verifier },
+      const { data, offline } = await invokeDeviceLogin({
+        action: 'claim', code: request.code, verifier: request.verifier,
       })
       if (cancelled) return
-      if (fnError && !data) return // เน็ตสะดุดชั่วคราว รอบหน้าค่อยลองใหม่
+      if (offline) return // เน็ตสะดุดชั่วคราว รอบหน้าค่อยลองใหม่
 
       if (data?.ok && data.status === 'pending') return
 
