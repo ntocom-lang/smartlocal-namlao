@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom'
+import { withModule } from '../../lib/withModule'
 import { Database, ChevronRight, Sparkles, MapPin, BarChart2 } from 'lucide-react'
 
 // variant="dark" (ค่าเริ่มต้น) = โทนน้ำเงินคราม/คราม เดิม ใช้กับ 6 ธีมเดิมทั้งหมดไม่เปลี่ยนแปลง
@@ -25,7 +26,7 @@ const VARIANTS = {
   },
 }
 
-export default function DataCenterBanner({ variant = 'dark' }) {
+function DataCenterBanner({ variant = 'dark' }) {
   const navigate = useNavigate()
   const v = VARIANTS[variant] ?? VARIANTS.dark
 
@@ -82,3 +83,6 @@ export default function DataCenterBanner({ variant = 'dark' }) {
     </div>
   )
 }
+
+// ซ่อนทั้งแถบเมื่อ อปท. ไม่ได้เปิดโมดูล 'data-center' — โมดูลคือแพ็กเกจที่ขายเป็นเรื่องๆ
+export default withModule('data-center', DataCenterBanner)

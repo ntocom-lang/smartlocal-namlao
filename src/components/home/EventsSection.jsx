@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { withModule } from '../../lib/withModule'
 import { ArrowRight, MapPin } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
@@ -28,7 +29,7 @@ function audienceFilter(role) {
   return ['public']
 }
 
-export default function EventsSection() {
+function EventsSection() {
   const { tenant } = useTenant()
   const navigate = useNavigate()
   const [events, setEvents] = useState([])
@@ -150,3 +151,6 @@ export default function EventsSection() {
     </section>
   )
 }
+
+// ซ่อนทั้งแถบเมื่อ อปท. ไม่ได้เปิดโมดูล 'events' — โมดูลคือแพ็กเกจที่ขายเป็นเรื่องๆ
+export default withModule('events', EventsSection)

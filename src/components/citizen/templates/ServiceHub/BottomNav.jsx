@@ -2,16 +2,18 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useNotifications } from '../../../../contexts/NotificationsContext'
 import { useAuth } from '../../../../contexts/AuthContext'
 import { getNavItems } from '../navData'
+import { useTenant } from '../../../../contexts/TenantContext'
 
 export default function ServiceHubBottomNav() {
   const location = useLocation()
   const navigate = useNavigate()
   const { unreadCount } = useNotifications()
   const { role } = useAuth()
+  const { isModuleEnabled } = useTenant()
 
   if (location.pathname.startsWith('/admin') || location.pathname.startsWith('/staff')) return null
 
-  const NAV_ITEMS = getNavItems(role)
+  const NAV_ITEMS = getNavItems(role, isModuleEnabled)
 
   return (
     <>

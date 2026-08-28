@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import ModuleLink from '../../../common/ModuleLink'
 import { Link } from 'react-router-dom'
 import { useTenant } from '../../../../contexts/TenantContext'
 import { supabase } from '../../../../lib/supabase'
@@ -105,7 +106,7 @@ export default function Home() {
                <p className="text-white text-xs font-bold leading-snug drop-shadow-md">Air4Thai<br/>รายงานสถานการณ์<br/>มลพิษทางอากาศ</p>
              </div>
            </a>
-           <Link to="/doc-request" className="rounded-2xl overflow-hidden shadow-sm relative h-32 col-span-2 block transition-transform active:scale-95 group bg-white border border-gray-100">
+           <ModuleLink to="/doc-request" className="rounded-2xl overflow-hidden shadow-sm relative h-32 col-span-2 block transition-transform active:scale-95 group bg-white border border-gray-100">
              {/* Background Image */}
              <img src="https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=800&q=80" alt="e-Service Background" className="w-full h-full object-cover opacity-60 transition-transform duration-500 group-hover:scale-105" />
              
@@ -131,7 +132,7 @@ export default function Home() {
                  เพื่อประชาชน
                </p>
              </div>
-           </Link>
+           </ModuleLink>
         </div>
       </div>
 
@@ -142,9 +143,9 @@ export default function Home() {
           
           <div className="relative z-10 flex justify-between items-start mb-5">
             <h2 className="text-[17px] font-black text-emerald-900 leading-tight">แจ้งเรื่องร้องเรียน<br/>/ร้องทุกข์</h2>
-            <Link to="/complaint" className="bg-yellow-400 text-yellow-900 text-[13px] font-black px-4 py-1.5 rounded-full shadow-sm hover:bg-yellow-300 transition-colors">
+            <ModuleLink to="/complaint" className="bg-yellow-400 text-yellow-900 text-[13px] font-black px-4 py-1.5 rounded-full shadow-sm hover:bg-yellow-300 transition-colors">
               ดูทั้งหมด
-            </Link>
+            </ModuleLink>
           </div>
           
           <div className="grid grid-cols-3 gap-3 relative z-10">
@@ -162,9 +163,9 @@ export default function Home() {
           </div>
 
           <div className="mt-5 relative overflow-hidden rounded-l-md rounded-r-full inline-block">
-             <Link to="/my-complaints" className="block bg-[#10b981] hover:bg-[#059669] transition-colors text-white text-xs font-bold px-5 py-2.5 shadow-md relative z-10">
+             <ModuleLink to="/my-complaints" className="block bg-[#10b981] hover:bg-[#059669] transition-colors text-white text-xs font-bold px-5 py-2.5 shadow-md relative z-10">
                ติดตามเรื่องร้องเรียน &gt;
-             </Link>
+             </ModuleLink>
           </div>
           
         </div>
@@ -242,7 +243,7 @@ export default function Home() {
       <div className="px-4 mt-4 max-w-6xl mx-auto">
         <div className="flex items-center justify-between mb-3 px-1">
           <h2 className="text-[17px] font-black text-emerald-900">📅 ปฏิทินกิจกรรม</h2>
-          <Link to="/events" className="text-xs font-bold text-emerald-700 hover:text-emerald-900">ดูทั้งหมด →</Link>
+          <ModuleLink to="/events" className="text-xs font-bold text-emerald-700 hover:text-emerald-900">ดูทั้งหมด →</ModuleLink>
         </div>
         <MiniEventCalendar />
       </div>

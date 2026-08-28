@@ -12,6 +12,7 @@ import qrCodeImage from '../assets/qr-code.png'
 import { supabase, signOutSafely } from '../lib/supabase'
 import { clearCacheAndReload } from '../lib/clearCache'
 import { getRankedPaths } from '../lib/menuUsage'
+import { moduleForPath } from '../lib/staffModules'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useNotifications } from '../contexts/NotificationsContext'
@@ -211,6 +212,13 @@ function QuickLink({ icon: Icon, iconBg, iconColor, label, href }) {
 }
 
 function MenuRow({ icon: Icon, iconBg, iconColor = 'text-gray-600', label, desc, badge, href, onClick, danger, external }) {
+  // แถวเมนูซ่อนตัวเองเมื่อปลายทางเป็นหน้าของโมดูลที่ อปท. นี้ไม่ได้เปิดใช้งาน
+  // ทำที่นี่จุดเดียวแทนการใส่เงื่อนไขคร่อม <MenuRow> ทีละอัน (หน้านี้มีเกิน 20 แถว กระจายอยู่หลายกลุ่ม
+  // ใส่ทีละอันแล้วพลาดแถวเดียวคือลิงก์ค้างที่กดแล้วเจอหน้า "ยังไม่ได้เปิดใช้งาน")
+  const { isModuleEnabled } = useTenant()
+  const moduleKey = href && !external ? moduleForPath(href) : null
+  if (moduleKey && !isModuleEnabled(moduleKey)) return null
+
   const inner = (
     <div className={`flex items-center gap-3.5 px-4 py-3.5 transition-colors hover:bg-gray-50 active:bg-gray-100 ${danger ? 'bg-red-50/50 hover:bg-red-50 active:bg-red-100' : ''}`}>
       <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${iconBg ?? 'bg-gray-100'}`}>
@@ -252,7 +260,7 @@ export default function MorePage() {
 
 function NamlaoMorePage() {
   const navigate = useNavigate()
-  const { tenant } = useTenant()
+  const { tenant, isModuleEnabled } = useTenant()
 
   const { unreadCount } = useNotifications()
   const { session, role, displayName, avatarUrl } = useAuth()
@@ -372,7 +380,15 @@ function NamlaoMorePage() {
     const ranked = getRankedPaths().filter(p => QUICK_MENU_CATALOG.some(c => c.path === p))
     return [...ranked, ...DEFAULT_QUICK_PATHS.filter(p => !ranked.includes(p))].slice(0, 4)
   })
-  const quickItems = quickPaths.map(p => QUICK_MENU_CATALOG.find(c => c.path === p)).filter(Boolean)
+  // กรองโมดูลที่ปิดออกหลังจัดอันดับแล้ว (ไม่ใช่ก่อน) เพราะประวัติการใช้งานใน localStorage เป็นของ
+  // เครื่องผู้ใช้ อาจมี path ของโมดูลที่หน่วยงานเพิ่งปิดค้างอยู่ ต้องไม่โผล่มาเป็นเมนูใช้บ่อย
+  const quickItems = quickPaths
+    .map(p => QUICK_MENU_CATALOG.find(c => c.path === p))
+    .filter(Boolean)
+    .filter(item => {
+      const key = moduleForPath(item.path)
+      return !key || isModuleEnabled(key)
+    })
 
   return (
     <div className="min-h-screen pb-28 md:pb-8" style={{ backgroundColor: '#eef2f7' }}>

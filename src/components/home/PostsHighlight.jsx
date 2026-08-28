@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { withModule } from '../../lib/withModule'
 import { Link } from 'react-router-dom'
 import { Newspaper, Camera, CalendarDays, ChevronRight, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
@@ -119,7 +120,7 @@ function ActivityCard({ post, onClick }) {
   )
 }
 
-export default function PostsHighlight({ showOnDesktop = false }) {
+function PostsHighlight({ showOnDesktop = false }) {
   const { tenant } = useTenant()
   const [news, setNews]             = useState([])
   const [activities, setActivities] = useState([])
@@ -220,3 +221,6 @@ export default function PostsHighlight({ showOnDesktop = false }) {
     </>
   )
 }
+
+// ซ่อนทั้งแถบเมื่อ อปท. ไม่ได้เปิดโมดูล 'posts' — โมดูลคือแพ็กเกจที่ขายเป็นเรื่องๆ
+export default withModule('posts', PostsHighlight)

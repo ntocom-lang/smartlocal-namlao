@@ -3,12 +3,14 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useNotifications } from '../../../../contexts/NotificationsContext'
 import { useAuth } from '../../../../contexts/AuthContext'
 import { getNavItems } from '../navData'
+import { useTenant } from '../../../../contexts/TenantContext'
 
 export default function EcoFriendlyBottomNav() {
   const location = useLocation()
   const navigate = useNavigate()
   const { unreadCount } = useNotifications()
   const { role } = useAuth()
+  const { isModuleEnabled } = useTenant()
   const [techNewCount, setTechNewCount] = useState(
     () => parseInt(localStorage.getItem('sl_tech_new') ?? '0', 10)
   )
@@ -21,7 +23,7 @@ export default function EcoFriendlyBottomNav() {
 
   if (location.pathname.startsWith('/admin') || location.pathname.startsWith('/staff')) return null
 
-  const NAV_ITEMS = getNavItems(role)
+  const NAV_ITEMS = getNavItems(role, isModuleEnabled)
 
   return (
     <>

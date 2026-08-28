@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import ModuleLink from '../../../common/ModuleLink'
 import { Link, useNavigate } from 'react-router-dom'
 import { useTenant } from '../../../../contexts/TenantContext'
 import { useAuth } from '../../../../contexts/AuthContext'
@@ -88,10 +89,10 @@ function MiniCalendar({ events }) {
           <CalendarDays size={14} style={{ color: 'var(--color-primary)' }} className="shrink-0" />
           <p className="text-xs font-bold text-gray-700">ปฏิทินกิจกรรม</p>
         </div>
-        <Link to="/events" className="text-[13px] font-medium flex items-center gap-0.5 hover:underline"
+        <ModuleLink to="/events" className="text-[13px] font-medium flex items-center gap-0.5 hover:underline"
           style={{ color: 'var(--color-primary)' }}>
           ทั้งหมด <ChevronRight size={11} />
-        </Link>
+        </ModuleLink>
       </div>
       <div className="flex items-center justify-between mb-2">
         <button onClick={prevMonth} className="p-1 rounded-lg hover:bg-gray-100 transition-colors text-gray-400">
@@ -291,10 +292,10 @@ function CustomComplaintBand() {
         <p className="text-[#8c5a14] text-[13px] font-extrabold flex items-center gap-1.5 drop-shadow-sm">
           🚨 แจ้งเหตุ / แจ้งซ่อม
         </p>
-        <Link to="/complaint"
+        <ModuleLink to="/complaint"
           className="flex items-center gap-0.5 text-[#8c5a14] text-[13px] font-bold bg-white/20 px-2.5 py-1 rounded-full hover:bg-white/30 transition-colors">
           ทั้งหมด <ChevronRight size={13} />
-        </Link>
+        </ModuleLink>
       </div>
 
       <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide relative z-10">

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { withModule } from '../../lib/withModule'
 import { ArrowRight, Newspaper } from 'lucide-react'
 import { useTenant } from '../../contexts/TenantContext'
 
@@ -21,7 +22,7 @@ function buildSrc(fbPageUrl, width) {
   )
 }
 
-export default function NewsSection() {
+function NewsSection() {
   const { tenant } = useTenant()
   const wrapRef = useRef(null)
   const [src, setSrc] = useState(null)
@@ -100,3 +101,6 @@ export default function NewsSection() {
     </section>
   )
 }
+
+// ซ่อนทั้งแถบเมื่อ อปท. ไม่ได้เปิดโมดูล 'posts' — โมดูลคือแพ็กเกจที่ขายเป็นเรื่องๆ
+export default withModule('posts', NewsSection)

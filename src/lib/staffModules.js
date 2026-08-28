@@ -61,3 +61,33 @@ export const MODULE_GROUPS = [
 // คีย์ทั้งหมดที่ตั้งค่าได้ = คีย์ที่ StaffDashboard เอาไปกรองเมนูจริง
 // คีย์ที่ไม่อยู่ในนี้จะเปิดให้ทุก อปท. เสมอ เพราะไม่มี UI ให้ตั้งค่า
 export const MANAGED_MODULE_KEYS = MODULE_GROUPS.flatMap(g => g.items.map(m => m.key))
+
+// หน้าฝั่งประชาชนที่ผูกกับแต่ละโมดูล — โมดูลคือ "แพ็กเกจที่ขายให้ อปท. เป็นเรื่องๆ" ปิดแล้วต้องหาย
+// ทั้งระบบ ไม่ใช่แค่เมนูเจ้าหน้าที่ ถ้าปิดแต่หลังบ้านอย่างเดียว ประชาชนยังยื่นคำร้องเข้ามาได้เรื่อยๆ
+// โดยไม่มีใครในสำนักงานเห็น ซึ่งแย่กว่าไม่ปิดเลย
+//
+// path ตรงนี้ต้องตรงกับ <Route path=...> ใน App.jsx เป๊ะ (ไม่รวม basename)
+// path ที่มีพารามิเตอร์ให้ใส่แบบมี prefix เช่น '/tourism' ครอบ '/tourism/:id' ด้วย (เทียบแบบ startsWith)
+//
+// หน้าที่ "ไม่" อยู่ในตารางนี้คือหน้าพื้นฐานที่ทุก อปท. ต้องมีเสมอไม่ว่าซื้อโมดูลไหน
+// (หน้าแรก, เข้าสู่ระบบ, โปรไฟล์, ติดต่อเรา, เหตุฉุกเฉิน, ค้นหา, เมนูอื่นๆ)
+export const MODULE_ROUTES = {
+  complaints: ['/complaint', '/complaint-legacy', '/my-complaints', '/reports/complaints', '/satisfaction'],
+  inbox: ['/doc-request', '/my-docs', '/request'],
+  events: ['/events'],
+  posts: ['/news'],
+  tourism: ['/tourism', '/market'],
+  'data-center': ['/data-center'],
+  report: ['/reports', '/doc-stats'],
+  fleet: ['/fleet'],
+}
+
+// path → คีย์โมดูลที่คุมมัน (null = หน้าพื้นฐาน ไม่ผูกกับโมดูลไหน เปิดเสมอ)
+// เทียบแบบ prefix เพื่อให้ครอบ path ลูก เช่น /tourism/12, /data-center/public
+export function moduleForPath(pathname = '') {
+  const path = pathname.replace(/\/+$/, '') || '/'
+  for (const [key, routes] of Object.entries(MODULE_ROUTES)) {
+    if (routes.some(r => path === r || path.startsWith(`${r}/`))) return key
+  }
+  return null
+}

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import ModuleLink from '../../../common/ModuleLink'
 import { Link } from 'react-router-dom'
 import { useTenant } from '../../../../contexts/TenantContext'
 import { supabase } from '../../../../lib/supabase'
@@ -102,9 +103,9 @@ function EServiceBlock({ docTypes }) {
           <p className="text-white font-extrabold text-[15px] md:text-base tracking-wide uppercase flex items-center gap-1.5 drop-shadow-sm">
             ✦ E-SERVICE ✦ <span className="text-white/90">งานบริการประชาชน</span>
           </p>
-          <Link to="/doc-request" className="flex items-center gap-0.5 text-white/90 text-[13px] font-semibold hover:text-white transition-colors">
+          <ModuleLink to="/doc-request" className="flex items-center gap-0.5 text-white/90 text-[13px] font-semibold hover:text-white transition-colors">
             ทั้งหมด <ChevronRight size={13} />
-          </Link>
+          </ModuleLink>
         </div>
 
         <div className="grid lg:hidden gap-2 pb-1"
