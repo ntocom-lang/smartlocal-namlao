@@ -48,6 +48,16 @@ jobs:
       - name: ติดตั้ง dependency ตาม lockfile
         run: npm ci
 
+      - name: ตรวจว่าหลังบ้านของทุก อปท. ยังเหมือนกัน
+        # กติกา: หลังบ้านแก้ที่ อปท. ไหน อปท. อื่นต้องได้ตามด้วย ต่างกันได้แค่ธีมหน้าแรก
+        # ด่านนี้จับ (1) เงื่อนไขแยกราย อปท. ที่หลุดเข้าหน้า staff/admin
+        # (2) โมดูลใหม่ที่เพิ่มเข้าโค้ดแล้วแต่ยังไม่ได้เติมคีย์ลง municipalities.enabled_modules
+        #     ซึ่งจะทำให้เมนูหายจากทุก อปท. เงียบๆ ทันทีที่ deploy
+        run: npm run check:uniform
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+
       - name: Build
         # VITE_TENANT_SLUG ต้องไม่ถูกตั้งที่นี่เด็ดขาด — มันมีไว้สำหรับ dev server/Capacitor
         # ที่ hostname บอก อปท. ไม่ได้เท่านั้น ถ้าฝังลง bundle ของ production ทุกโดเมนจะ
