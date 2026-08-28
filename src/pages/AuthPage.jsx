@@ -3,9 +3,9 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { isNetworkAuthError } from '../lib/authErrors'
 import { useTenant } from '../contexts/TenantContext'
-import QrLoginPanel from '../components/auth/QrLoginPanel'
+import DeviceLoginPanel from '../components/auth/DeviceLoginPanel'
 import { appUrl } from '../lib/basename'
-import { Mail, Lock, Loader2, UserCircle2, Phone, Eye, EyeOff, ExternalLink, ArrowLeft, QrCode } from 'lucide-react'
+import { Mail, Lock, Loader2, UserCircle2, Phone, Eye, EyeOff, ExternalLink, ArrowLeft, Smartphone } from 'lucide-react'
 import { NAME_TITLES, joinThaiFullName } from '../lib/thaiName'
 import { PHONE_EMAIL_DOMAIN } from '../lib/authProviders'
 
@@ -280,7 +280,7 @@ export default function AuthPage() {
 
         {/* Title */}
         <h1 className="text-xl font-bold text-gray-800 text-center mb-1">
-          {mode === 'forgot' ? 'รีเซ็ตรหัสผ่าน' : mode === 'qr' ? 'เข้าสู่ระบบด้วย QR' : mode === 'login' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก'}
+          {mode === 'forgot' ? 'รีเซ็ตรหัสผ่าน' : mode === 'qr' ? 'เข้าสู่ระบบด้วยรหัสจากมือถือ' : mode === 'login' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก'}
         </h1>
         <p className="text-sm text-gray-400 text-center mb-6">
           {mode === 'forgot'
@@ -481,8 +481,8 @@ export default function AuthPage() {
         {mode === 'login' && (
           <button onClick={() => { setMode('qr'); setError(''); setSuccess('') }}
             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-gray-200 bg-white text-gray-600 text-sm font-medium hover:bg-gray-50 active:scale-95 transition-all shadow-sm mt-3">
-            <QrCode size={17} className="text-gray-400" />
-            เข้าสู่ระบบด้วย QR (สำหรับเจ้าหน้าที่)
+            <Smartphone size={17} className="text-gray-400" />
+            เข้าสู่ระบบด้วยรหัสจากมือถือ (สำหรับเจ้าหน้าที่)
           </button>
         )}
         </>
@@ -490,7 +490,7 @@ export default function AuthPage() {
 
         {mode === 'qr' && (
           <>
-            <QrLoginPanel />
+            <DeviceLoginPanel />
             <button type="button" onClick={() => { setMode('login'); setError('') }}
               className="w-full mt-5 flex items-center justify-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors">
               <ArrowLeft size={15} /> กลับไปหน้าเข้าสู่ระบบ

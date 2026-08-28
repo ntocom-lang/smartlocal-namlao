@@ -2,8 +2,9 @@
 // Deploy: supabase functions deploy device-login
 // เอกสารออกแบบ: docs/device-qr-login-design.md
 //
-// ล็อกอินด้วย QR จากมือถือ สำหรับเจ้าหน้าที่ที่ต้องไปใช้ PC เครื่องอื่นในสำนักงาน
-// PC แสดง QR + เลข 2 หลัก → มือถือที่ล็อกอินอยู่แล้วสแกน → แตะเลขที่ตรงกับจอ PC
+// ล็อกอินด้วยรหัสจากมือถือ สำหรับเจ้าหน้าที่ที่ต้องไปใช้ PC เครื่องอื่นในสำนักงาน
+// PC แสดงรหัส 6 หลัก + เลข 2 หลัก → เจ้าหน้าที่กรอกรหัสในแอปมือถือที่ล็อกอินอยู่แล้ว
+// → แตะเลขที่ตรงกับจอ PC
 // → PC เอา verifier ที่เก็บไว้ในแรมตัวเองมาแลก magic-link token → verifyOtp เป็น session
 //
 // เหตุผลที่ต้องเป็น edge function ไม่ใช่ plpgsql RPC: ขั้นตอน claim ต้องเรียก
@@ -11,7 +12,7 @@
 // และตาราง device_login_requests ถูก revoke จาก anon/authenticated ทั้งหมดโดยตั้งใจ
 //
 // สิ่งที่ห้ามหลุดออกจากฟังก์ชันนี้เด็ดขาด:
-//   - match_number (ต้องรู้จากจอ PC เท่านั้น ไม่งั้นตัวกัน QRLJacking ไร้ผล)
+//   - match_number (ต้องรู้จากจอ PC เท่านั้น ไม่งั้นตัวกันการสวมรอยไร้ผล)
 //   - verifier_hash
 //   - token_hash ให้ผู้เรียกที่พิสูจน์ verifier ไม่ได้
 
@@ -34,7 +35,7 @@ const STAFF_ROLES = new Set(['superadmin', 'admin', 'officer', 'technician', 'st
 // (มีเลขให้เลือก 3 ตัว ถ้าปล่อยให้ลองซ้ำได้ โอกาสเดาถูกจะไต่จาก 1/3 ขึ้นไปเรื่อยๆ)
 const MAX_ATTEMPTS = 1
 const REQUEST_TTL_SECONDS = 300
-// หลังมือถืออนุมัติ ต่ออายุให้ PC มีเวลามา claim แม้ QR จะใกล้หมดอายุพอดี
+// หลังมือถืออนุมัติ ต่ออายุให้ PC มีเวลามา claim แม้รหัสจะใกล้หมดอายุพอดี
 const CLAIM_GRACE_SECONDS = 60
 const RATE_LIMIT_WINDOW_MINUTES = 10
 const RATE_LIMIT_MAX_STARTS = 20
@@ -56,7 +57,8 @@ function randomInt(minInclusive: number, maxInclusive: number) {
   const span = maxInclusive - minInclusive + 1
   const bytes = new Uint32Array(1)
   // ตัดค่าที่ทำให้การ mod เอนเอียง (modulo bias) ทิ้ง แล้วสุ่มใหม่ — เลข 2 หลักนี้คือตัวกัน
-  // QRLJacking ถ้ามันเดาง่ายกว่าที่ควร มาตรการทั้งหมดก็อ่อนลงตาม
+  // การสวมรอย (หลอกให้เจ้าหน้าที่อนุมัติเครื่องของคนร้าย) ถ้ามันเดาง่ายกว่าที่ควร
+  // มาตรการทั้งหมดก็อ่อนลงตาม
   const limit = Math.floor(0xffffffff / span) * span
   let value = 0
   do {
@@ -151,7 +153,7 @@ serve(async (req) => {
         }
       }
 
-      const code = randomHex(16)          // 128 bit — อยู่ใน QR
+      const code = randomHex(16)          // 128 bit — ฝั่ง PC เก็บไว้เองสำหรับขั้น claim
       const verifier = randomHex(32)      // 256 bit — อยู่แต่ในแรมของ PC เครื่องนี้
       const matchNumber = randomInt(10, 99)
 
@@ -186,7 +188,7 @@ serve(async (req) => {
         // ชนเฉพาะ short_code เท่านั้นที่ควรลองใหม่ ปัญหาอื่นให้เลิกทันที
         if (!String(error.message ?? '').includes('idx_device_login_requests_short_code')) break
       }
-      if (!inserted) return json({ ok: false, error: 'ไม่สามารถเริ่มการเข้าสู่ระบบด้วย QR ได้' }, 500)
+      if (!inserted) return json({ ok: false, error: 'ไม่สามารถเริ่มการเข้าสู่ระบบได้' }, 500)
 
       return json({
         ok: true,
@@ -200,8 +202,8 @@ serve(async (req) => {
 
     // ── 2/3. มือถือดูรายละเอียด แล้วอนุมัติ ──────────────────────────────────
     if (action === 'info' || action === 'approve') {
-      // เข้าได้ 2 ทาง: สแกน QR (code 32 hex) หรือกรอกรหัสสั้น 6 หลักที่โชว์คู่กับ QR
-      // short_code ใช้ได้แค่ตรงนี้ ฝั่ง PC ที่มาแลก session ยังต้องพิสูจน์ด้วย verifier เสมอ
+      // เข้าได้ 2 ทาง: รหัสสั้น 6 หลักที่เจ้าหน้าที่กรอกเอง หรือ code 32 hex (เผื่อไว้สำหรับ
+      // ลิงก์ตรงในอนาคต) — ทั้งคู่ใช้ได้แค่ขั้นนี้ ฝั่ง PC ที่มาแลก session ยังต้องพิสูจน์ด้วย verifier เสมอ
       const byCode = isHex(body.code, 32)
       const shortCode = String(body.short_code ?? '').trim()
       const byShortCode = /^[0-9]{6}$/.test(shortCode)
@@ -225,7 +227,7 @@ serve(async (req) => {
       if (!profile || !STAFF_ROLES.has(profile.role)) {
         return json({
           ok: false,
-          error: 'การเข้าสู่ระบบด้วย QR ใช้ได้เฉพาะบัญชีเจ้าหน้าที่เท่านั้น',
+          error: 'การเข้าสู่ระบบด้วยรหัสจากมือถือ ใช้ได้เฉพาะบัญชีเจ้าหน้าที่เท่านั้น',
         }, 403)
       }
 
@@ -241,7 +243,7 @@ serve(async (req) => {
       }
       if (new Date(request.expires_at).getTime() < Date.now()) {
         await admin.from('device_login_requests').update({ status: 'expired' }).eq('id', request.id)
-        return json({ ok: false, error: 'QR หมดอายุแล้ว กรุณากดขอรหัสใหม่ที่หน้าจอคอมพิวเตอร์' }, 410)
+        return json({ ok: false, error: 'รหัสหมดอายุแล้ว กรุณากดขอรหัสใหม่ที่หน้าจอคอมพิวเตอร์' }, 410)
       }
 
       const device = describeDevice(request.requester_user_agent ?? '')
@@ -365,7 +367,7 @@ serve(async (req) => {
         return json({
           ok: false,
           status: 'no_email',
-          error: 'บัญชีนี้ไม่มีอีเมลในระบบ จึงใช้การเข้าสู่ระบบด้วย QR ไม่ได้'
+          error: 'บัญชีนี้ไม่มีอีเมลในระบบ จึงใช้การเข้าสู่ระบบด้วยรหัสจากมือถือไม่ได้'
             + ' กรุณาให้ผู้ดูแลระบบตั้งอีเมลเข้าสู่ระบบให้ก่อน',
         }, 422)
       }

@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { isNetworkAuthError } from '../lib/authErrors'
-import { Lock, Mail, Loader2, ShieldCheck, Eye, EyeOff, KeyRound, QrCode } from 'lucide-react'
-import QrLoginPanel from '../components/auth/QrLoginPanel'
+import { Lock, Mail, Loader2, ShieldCheck, Eye, EyeOff, KeyRound, Smartphone } from 'lucide-react'
+import DeviceLoginPanel from '../components/auth/DeviceLoginPanel'
 
 export default function AdminLogin() {
   const navigate = useNavigate()
@@ -63,7 +63,7 @@ export default function AdminLogin() {
         <div className="grid grid-cols-2 gap-1 p-1 bg-gray-50 rounded-xl mb-5">
           {[
             { key: "password", label: "รหัสผ่าน", Icon: KeyRound },
-            { key: "qr", label: "QR จากมือถือ", Icon: QrCode },
+            { key: "qr", label: "รหัสจากมือถือ", Icon: Smartphone },
           ].map(({ key, label, Icon }) => (
             <button
               key={key}
@@ -138,7 +138,7 @@ export default function AdminLogin() {
             ) : 'เข้าสู่ระบบ'}
           </button>
         </form>
-        ) : <QrLoginPanel />}
+        ) : <DeviceLoginPanel />}
       </div>
     </div>
   )
