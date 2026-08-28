@@ -1546,12 +1546,17 @@ export default function StaffDashboard() {
   const baseEnabledKeys = tenant?.enabled_modules
     ? [...tenant.enabled_modules, ...allModuleKeys.filter(k => !managedKeys.includes(k))]
     : allModuleKeys
-  // events เปิดเสมอสำหรับ admin/officer/staff/viewer/council ไม่ขึ้นกับ ModuleManager
-  // council ได้โมดูลเพิ่มเติม: map, civil-report, report
+  // เดิม 'events' ถูกบังคับเปิดตรงนี้เสมอ ไม่ขึ้นกับ ModuleManager — ผลคือติ๊กปิด "ปฏิทินกิจกรรม"
+  // ในหน้า admin แล้วเมนูไม่หาย (ปุ่มหลอก) ตอนนี้ยกออกให้ไปขึ้นกับ enabled_modules เหมือนโมดูลอื่น
+  //
+  // สิทธิ์พิเศษของ council ยังอยู่ แต่ต้องอยู่ "ใต้" การตั้งค่าระดับ อปท. เสมอ — ถ้าหน่วยงานปิด
+  // ศูนย์ข้อมูลดิจิทัล/รายงานไว้ สมาชิกสภาก็ต้องไม่เห็น ไม่งั้นการปิดโมดูลจะไม่มีความหมายจริง
+  // (เดิม push เข้า alwaysEnabled ทำให้ council ทะลุการตั้งค่าของ อปท. ไปได้)
   const role = profile?.role
-  const alwaysEnabled = ['events']
-  if (role === 'council') alwaysEnabled.push('data-center', 'report')
-  const enabledKeys = Array.from(new Set([...baseEnabledKeys, ...alwaysEnabled]))
+  const councilExtraKeys = role === 'council'
+    ? ['data-center', 'report'].filter(k => baseEnabledKeys.includes(k))
+    : []
+  const enabledKeys = Array.from(new Set([...baseEnabledKeys, ...councilExtraKeys]))
   // ตัดอีกชั้นสำหรับช่าง — ต้องผ่านทั้ง enabled_modules ของ อปท. และลิสต์ที่ช่างมีสิทธิ์จริง
   // (ทำเป็นชั้นแยก ไม่ไปยุ่งกับ enabledKeys เดิม เพื่อไม่ให้กระทบ role อื่น)
   const scopedKeys = role === 'technician'
