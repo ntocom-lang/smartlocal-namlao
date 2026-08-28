@@ -129,6 +129,35 @@ grep -oE 'function [A-Za-z0-9_$]+\(\)\{return`[a-z]+`\}' dist/assets/index-*.js
 
 ---
 
+### กับดักที่สาม: `cf:deploy` build จาก working tree ไม่ใช่ HEAD — เกิดขึ้นจริง 2026-08-28
+
+`npm run cf:deploy` ยิงตรงเข้า production โดยไม่ผ่าน CI และ `vite build` อ่านไฟล์
+จากดิสก์ตามที่เป็นอยู่ **ของที่แก้ค้างไว้ยังไม่ commit จึงขึ้น production ทันที**
+พิมพ์คำสั่งผิดครั้งเดียวก็พอ
+
+เกิดจริง: โค้ดทดลองที่ลบปุ่ม "ลิงก์ปฏิทิน" (subscribe .ics) ออกจาก
+`EventsManager.jsx` ขึ้น production ไปโดยไม่ตั้งใจ ทำให้เจ้าหน้าที่ทุก อปท.
+กดผูกปฏิทินเข้า Google/Apple Calendar ไม่ได้ ทั้งที่ repo ยังมีปุ่มนั้นอยู่ —
+**โค้ดใน git ไม่ตรงกับของที่รันจริง** ซึ่งอันตรายกว่าตัวปุ่มที่หายไป
+
+กันไว้แล้วด้วย `scripts/predeploy-check.js` ที่คั่นอยู่หน้า `cf:deploy` ตรวจสองข้อ
+
+1. ไฟล์ที่มีผลต่อบันเดิล (`src/`, `public/`, `worker/`, `scripts/`, `vite.config.js`,
+   `package.json`, `wrangler.jsonc`) ต้องไม่มีของค้างที่ยังไม่ commit
+2. commit ที่กำลังจะ deploy ต้องมีอยู่บน `origin` แล้ว — ไม่งั้นถ้าเครื่อง dev พัง
+   จะไม่มีใครรู้ว่าของที่รันบน production มาจากโค้ดชุดไหน
+
+ตั้งใจข้ามด่านจริงๆ ใช้ `npm run cf:deploy:force` (หรือ `ALLOW_DIRTY_DEPLOY=1`)
+
+**วิธีตรวจว่า production ตรงกับ repo** — hash ต้องตรงกัน
+
+```bash
+grep -o 'assets/index-[A-Za-z0-9_-]*\.js' dist/_template.html
+curl -s https://namlao.rk-networks.com/ | grep -o 'assets/index-[A-Za-z0-9_-]*\.js'
+```
+
+---
+
 ## ขั้นตอนที่ต้องทำในบัญชี (ทำจาก repo ไม่ได้)
 
 1. **จดโดเมนที่ Cloudflare Registrar** — DNS มาอยู่ที่ Cloudflare อัตโนมัติ

@@ -35,7 +35,9 @@ const ROLE_LABEL = {
 export default function StaffSessionBar() {
   const { session, role, displayName } = useAuth()
   const isStaff = Boolean(session) && Boolean(ROLE_LABEL[role])
-  const { secondsLeft, isWarning, stayActive } = useIdleLogout(isStaff)
+  // ส่ง access token เข้าไปด้วยเพื่อให้ตัวจับเวลาผูกกับ session_id ของการล็อกอินครั้งนี้
+  // (ไม่งั้นค่าที่ค้างจาก session ก่อนหน้าจะเด้งผู้ใช้ออกทันทีที่ล็อกอินใหม่ — ดู useIdleLogout.js)
+  const { secondsLeft, isWarning, stayActive } = useIdleLogout(isStaff, session?.access_token)
 
   if (!isStaff) return null
 
