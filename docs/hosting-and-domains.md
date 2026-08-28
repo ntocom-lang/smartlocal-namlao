@@ -94,6 +94,39 @@ property that is receiving Free Services"* ตอนนี้ไม่กระ�
 Worker จึงใช้ชื่อ `DEV_TENANT_SLUG` ที่ชนกันไม่ได้ตั้งแต่แรก
 ทดสอบในเครื่องด้วย `npx wrangler dev --var DEV_TENANT_SLUG:thungkaew`
 
+### กับดักเดียวกันฝั่ง client — เกิดขึ้นจริงแล้ว 2026-08-28
+
+การป้องกันข้างบนดักไว้แค่ฝั่ง Worker **ฝั่ง client โดนเหมือนกันและหนักกว่า**
+เพราะ Vite ฝังค่า env ลงบันเดิล **ตอน build** ไม่ใช่ตอนรัน
+
+`detectTenantSlug()` เดิมเช็ค `import.meta.env.VITE_TENANT_SLUG` เป็นเงื่อนไขแรก
+พอเปลี่ยนจาก build บน CI ของ Vercel (ไม่มี `.env.local` เพราะถูก gitignore)
+มาเป็น `npm run cf:deploy` ที่ build ในเครื่อง minifier เห็นว่า `if` ข้อแรก
+เป็นจริงเสมอ จึงลบตรรกะอ่าน hostname ทิ้งทั้งก้อน เหลือ
+
+```js
+function detectTenantSlug(){ return "namlao" }
+```
+
+ผลคือ **ทุก อปท. แสดงข้อมูลของน้ำเลา ซึ่งเป็นคำร้องจริงของประชาชน**
+
+**ตรวจจากภายนอกไม่เห็นเลย** เพราะฝั่ง SSR อ่าน hostname ตรงๆ `<title>` กับ og:tag
+จึงถูกต้องทุกโดเมน ผิดเฉพาะตอน React บูตขึ้นมา — curl ทดสอบเท่าไรก็ผ่านหมด
+
+แก้แล้วโดยสลับลำดับ: **hostname มาก่อน env var เสมอ** และค่าที่ฝังตอน build
+ใช้ได้เฉพาะเมื่อ `hostname` เป็น `localhost`/`127.0.0.1` เท่านั้น
+
+**เช็คก่อน deploy ทุกครั้ง** — คำสั่งนี้ต้องไม่คืนอะไร
+
+```bash
+grep -oE 'function [A-Za-z0-9_$]+\(\)\{return`[a-z]+`\}' dist/assets/index-*.js
+```
+
+และพึงระลึกว่า **ทุกค่าใน `.env.local` ถูกฝังลงบันเดิลตอน build ในเครื่อง**
+ไม่ใช่แค่ tenant slug — ถ้าค่าในเครื่องต่างจากที่ควรใช้บน production
+จะฝังค่าผิดโดยไม่มีอะไรฟ้อง (ตรวจแล้ว 2026-08-28: Google Maps, Supabase anon
+และ VAPID key ตรงกับที่ Vercel ใช้)
+
 ---
 
 ## ขั้นตอนที่ต้องทำในบัญชี (ทำจาก repo ไม่ได้)
