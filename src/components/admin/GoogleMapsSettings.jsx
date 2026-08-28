@@ -28,6 +28,9 @@ export default function GoogleMapsSettings() {
   const [email, setEmail] = useState('')
   const [projectId, setProjectId] = useState('')
   const [saving, setSaving] = useState(false)
+  // ยังไม่รู้ว่าค่าเดิมในฐานข้อมูลคืออะไร จนกว่า RPC จะตอบกลับสำเร็จ ระหว่างนั้นห้ามส่ง
+  // สองฟิลด์นี้ไปกับคำสั่งบันทึกเด็ดขาด — ดูเหตุผลที่ saveSettings
+  const [cloudInfoLoaded, setCloudInfoLoaded] = useState(false)
 
   // google_cloud_email/google_project_id ไม่ได้อยู่ใน TenantContext แล้ว (ตั้งใจไม่ส่งให้ผู้เยี่ยมชมทุกคน
   // ผ่าน public tenant fetch) — หน้าตั้งค่านี้เข้าถึงได้เฉพาะแอดมิน จึงดึง 2 ฟิลด์นี้เองตอนเปิดหน้า
@@ -45,11 +48,13 @@ export default function GoogleMapsSettings() {
           console.warn('[google-maps] อ่านค่า Google Cloud ไม่สำเร็จ:', error.message)
           return
         }
-        // RETURNS TABLE คืนเป็น array เสมอ ว่างได้ถ้าสิทธิ์ไม่ผ่านหรือไม่พบหน่วยงาน
+        // RETURNS TABLE คืนเป็น array เสมอ — ว่างแปลว่าสิทธิ์ไม่ผ่านหรือไม่พบหน่วยงาน
+        // ต่างจาก "แถวมีอยู่แต่ค่าเป็น null" ซึ่งถือว่าโหลดสำเร็จและแก้ไขได้
         const row = data?.[0]
         if (!row) return
         setEmail(row.google_cloud_email || '')
         setProjectId(row.google_project_id || '')
+        setCloudInfoLoaded(true)
       })
     return () => { cancelled = true }
   }, [tenant?.id])
@@ -70,10 +75,24 @@ export default function GoogleMapsSettings() {
     setSaving(true)
     setSaved(false)
     try {
+      // ⚠️ ห้ามส่ง google_cloud_email/google_project_id ถ้า RPC ยังโหลดค่าเดิมไม่สำเร็จ
+      // ทั้งสอง state เริ่มจาก '' แล้วรอ RPC มาเติมทีหลัง ถ้าโหลดพลาด (เน็ตหลุด สิทธิ์ไม่ผ่าน
+      // หรือกดบันทึกก่อนโหลดเสร็จ) แล้วยังส่งไปด้วย `email.trim() || null` จะกลายเป็นการเอา
+      // null ไปทับค่าเดิมในฐานข้อมูล = ลบข้อมูลทิ้งโดยที่คนกดตั้งใจจะแก้แค่ API Key
+      // เกิดจริงแล้ว 2026-08-28 ระหว่างที่สิทธิ์ใน DB ถูกตัดไปก่อนโค้ดใหม่จะ deploy
+      //
+      // ระบบราชการต้องย้อนรอยได้ ปุ่มที่ลบข้อมูลโดยคนกดไม่รู้ตัวจึงรับไม่ได้ — โครงการนี้
+      // อยู่บน free tier ที่ไม่มี PITR ข้อมูลที่ทับไปแล้วกู้คืนไม่ได้เลย
       const payload = {
-        google_cloud_email: email.trim() || null,
-        google_project_id: projectId.trim() || null,
+        ...(cloudInfoLoaded ? {
+          google_cloud_email: email.trim() || null,
+          google_project_id: projectId.trim() || null,
+        } : {}),
         ...(editingKey ? { google_maps_api_key: replacementKey } : {}),
+      }
+      if (Object.keys(payload).length === 0) {
+        setTestResult({ ok: false, message: 'ยังโหลดข้อมูลทะเบียน Google Cloud ไม่สำเร็จ — รีเฟรชหน้าก่อนบันทึก' })
+        return
       }
       const { data, error } = await supabase
         .from('municipalities')
@@ -211,14 +230,27 @@ export default function GoogleMapsSettings() {
 
           <details className="group rounded-2xl border border-slate-200 bg-white">
             <summary className="cursor-pointer list-none px-4 py-3 text-xs font-bold text-slate-600">ข้อมูลทะเบียน Google Cloud <span className="font-normal text-slate-400">(ข้อมูลประกอบ)</span></summary>
-            <div className="grid gap-4 border-t border-slate-100 p-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-slate-600"><Mail size={14} /> อีเมลผู้รับผิดชอบ</label>
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)} className={inputCls} placeholder="gis@example.go.th" />
-              </div>
-              <div>
-                <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-slate-600"><CloudCog size={14} /> Project ID</label>
-                <input type="text" value={projectId} onChange={e => setProjectId(e.target.value)} className={inputCls} placeholder="municipality-maps" />
+            <div className="border-t border-slate-100 p-4">
+              {/* ช่องว่างสองความหมาย "ยังโหลดไม่เสร็จ" กับ "ในฐานข้อมูลไม่มีค่า" หน้าตาเหมือนกันเป๊ะ
+                  ต้องบอกให้ชัดว่ากำลังอยู่สถานะไหน ไม่งั้นแอดมินพิมพ์ทับของเดิมโดยไม่รู้ตัว */}
+              {!cloudInfoLoaded && (
+                <div className="mb-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] leading-relaxed text-amber-800">
+                  <CircleAlert size={15} className="mt-0.5 shrink-0" />
+                  ยังอ่านค่าเดิมจากฐานข้อมูลไม่สำเร็จ — ช่องด้านล่างถูกล็อกไว้กันเผลอบันทึกทับของเดิม
+                  กด &quot;เปลี่ยน API Key&quot; และบันทึกได้ตามปกติ ถ้าต้องแก้ข้อมูลทะเบียนให้รีเฟรชหน้าก่อน
+                </div>
+              )}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-slate-600"><Mail size={14} /> อีเมลผู้รับผิดชอบ</label>
+                  <input type="email" value={email} onChange={e => setEmail(e.target.value)} disabled={!cloudInfoLoaded}
+                    className={`${inputCls} disabled:cursor-not-allowed disabled:opacity-60`} placeholder="gis@example.go.th" />
+                </div>
+                <div>
+                  <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-slate-600"><CloudCog size={14} /> Project ID</label>
+                  <input type="text" value={projectId} onChange={e => setProjectId(e.target.value)} disabled={!cloudInfoLoaded}
+                    className={`${inputCls} disabled:cursor-not-allowed disabled:opacity-60`} placeholder="municipality-maps" />
+                </div>
               </div>
             </div>
           </details>
