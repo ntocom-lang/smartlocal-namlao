@@ -1,30 +1,26 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { invokeDeviceLogin } from '../lib/deviceLogin'
 import { useAuth } from '../contexts/AuthContext'
-import { CheckCircle2, KeyRound, Loader2, Monitor, ScanLine, ShieldAlert, ShieldCheck } from 'lucide-react'
+import { CheckCircle2, KeyRound, Loader2, Monitor, ShieldAlert, ShieldCheck } from 'lucide-react'
 
-// หน้าอนุมัติบนมือถือ — เข้าได้ 2 ทาง (ดู docs/device-qr-login-design.md)
-//   1. สแกน QR (จากในแอปที่ /scan-login หรือจากแอปกล้องของเครื่อง) → มี ?code= มาให้เลย
-//   2. กรอกรหัส 6 หลักที่โชว์คู่กับ QR บนจอ PC — ทางนี้จำเป็นเพราะการสแกนด้วยแอปกล้องจะเปิด
-//      ลิงก์ในเบราว์เซอร์เริ่มต้น ซึ่งบน iOS นั้น PWA กับ Safari แยก storage กัน เจ้าหน้าที่ที่
-//      ล็อกอินไว้ใน PWA จะกลายเป็นยังไม่ได้ล็อกอินทันที
+// หน้ายืนยันการเข้าสู่ระบบบนคอมพิวเตอร์ (ดู docs/device-login-design.md)
+//
+// เจ้าหน้าที่เปิดหน้านี้จากในแอปที่ล็อกอินอยู่แล้ว (โปรไฟล์ → เข้าสู่ระบบบนคอมพิวเตอร์)
+// แล้วกรอกรหัส 6 หลักที่เห็นบนจอ PC — ไม่ใช้กล้องเลย จึงไม่ติดปัญหาสิทธิ์กล้อง,
+// in-app browser ของ LINE, หรือ iOS ที่ PWA กับ Safari แยก storage กันคนละส่วน
 //
 // หัวใจของหน้านี้คือ "แตะเลขที่ตรงกับจอ PC": เลขจริงถูกส่งไปแสดงบนจอ PC เท่านั้น ไม่เคยส่งมา
-// ที่มือถือว่าตัวไหนถูก คนร้ายที่ส่ง QR ของเครื่องตัวเองมาทางไลน์/กระดาษ (QRLJacking —
-// วิธีที่ใช้โจมตี LINE/WhatsApp Web ได้จริง) จึงบอกเจ้าหน้าที่ไม่ได้ว่าต้องแตะเลขอะไร
-// แตะผิดครั้งเดียวคำขอถูกยกเลิกทันที
+// ที่มือถือว่าตัวไหนถูก คนร้ายที่หลอกให้เจ้าหน้าที่กรอกรหัสของเครื่องตัวเองจึงบอกไม่ได้ว่าต้อง
+// แตะเลขอะไร แตะผิดครั้งเดียวคำขอถูกยกเลิกทันที
 
 export default function DeviceLoginApprove() {
-  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { session, profileLoading } = useAuth()
-  const codeFromUrl = searchParams.get('code') ?? ''
 
-  // ตัวระบุคำขอที่กำลังอนุมัติ: มาจาก QR (code) หรือจากรหัสสั้นที่กรอกเอง (short_code)
-  const [identifier, setIdentifier] = useState(codeFromUrl ? { code: codeFromUrl } : null)
+  const [identifier, setIdentifier] = useState(null) // { short_code } ของคำขอที่กำลังยืนยัน
   const [shortInput, setShortInput] = useState('')
-  const [loading, setLoading] = useState(Boolean(codeFromUrl))
+  const [loading, setLoading] = useState(false)
   const [info, setInfo] = useState(null)
   const [error, setError] = useState('')
   const [approving, setApproving] = useState(false)
@@ -39,12 +35,13 @@ export default function DeviceLoginApprove() {
       if (cancelled) return
       setLoading(false)
       if (offline) {
+        setIdentifier(null)
         setError('เชื่อมต่อไม่ได้ กรุณาลองใหม่อีกครั้ง')
         return
       }
       if (!data?.ok) {
         setIdentifier(null)
-        setError(data?.error ?? 'คำขอนี้ใช้ไม่ได้แล้ว กรุณาขอรหัสใหม่ที่หน้าจอคอมพิวเตอร์')
+        setError(data?.error ?? 'รหัสนี้ใช้ไม่ได้แล้ว กรุณาขอรหัสใหม่ที่หน้าจอคอมพิวเตอร์')
         return
       }
       setInfo(data)
@@ -94,10 +91,7 @@ export default function DeviceLoginApprove() {
     )
   }
 
-  // สแกน QR จากแอปกล้องหรือ LINE อาจเปิดในเบราว์เซอร์ที่ยังไม่ได้เข้าสู่ระบบ — บอกให้ชัดว่า
-  // ต้องทำอะไรต่อ แล้วพากลับมาที่หน้านี้เองหลังเข้าสู่ระบบเสร็จ
   if (!session) {
-    const backTo = codeFromUrl ? `/device-login?code=${codeFromUrl}` : '/device-login'
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className={`${card} text-center space-y-4`}>
@@ -113,7 +107,7 @@ export default function DeviceLoginApprove() {
           </p>
           <button
             type="button"
-            onClick={() => navigate('/auth', { state: { from: backTo } })}
+            onClick={() => navigate('/auth', { state: { from: '/device-login' } })}
             className="w-full py-3 rounded-xl text-white font-semibold text-sm active:scale-95 transition-all"
             style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}
           >
@@ -165,7 +159,6 @@ export default function DeviceLoginApprove() {
           <p className="text-sm text-red-500 text-center leading-relaxed">{error}</p>
         )}
 
-        {/* ยังไม่ได้ระบุคำขอ = เข้าหน้านี้ตรงๆ หรือคำขอก่อนหน้าใช้ไม่ได้แล้ว → ให้กรอกรหัสสั้น */}
         {!identifier && !loading && (
           <form onSubmit={submitShortCode} className="space-y-4">
             <p className="text-sm text-gray-600 text-center leading-relaxed">
@@ -190,14 +183,6 @@ export default function DeviceLoginApprove() {
               style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}
             >
               ถัดไป
-            </button>
-
-            <button
-              type="button"
-              onClick={() => navigate('/scan-login')}
-              className="w-full flex items-center justify-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors"
-            >
-              <ScanLine size={15} /> สแกน QR แทนการกรอกรหัส
             </button>
           </form>
         )}

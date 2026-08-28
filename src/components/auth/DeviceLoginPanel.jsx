@@ -1,41 +1,47 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import QRCode from 'qrcode'
 import { supabase } from '../../lib/supabase'
 import { invokeDeviceLogin } from '../../lib/deviceLogin'
-import { appUrl } from '../../lib/basename'
 import { Loader2, RefreshCw, Smartphone } from 'lucide-react'
 
-// แผง "เข้าสู่ระบบด้วย QR" บนจอ PC — สำหรับเจ้าหน้าที่ที่ต้องไปใช้เครื่องคนอื่นในสำนักงาน
+// แผง "เข้าสู่ระบบด้วยรหัสจากมือถือ" บนจอ PC — สำหรับเจ้าหน้าที่ที่ต้องไปใช้เครื่องคนอื่น
 // แล้วไม่อยากพิมพ์รหัสผ่านทิ้งไว้บนเครื่องนั้น (และกดปุ่ม Google/LINE ไม่ได้เพราะจะเข้าเป็น
-// บัญชีเจ้าของเครื่อง) — ดู docs/device-qr-login-design.md
+// บัญชีเจ้าของเครื่อง) — ดู docs/device-login-design.md
+//
+// เดิมหน้านี้แสดง QR ให้สแกน แต่ถอดออกแล้ว: การสแกนต้องพึ่งกล้อง สิทธิ์กล้อง และเบราว์เซอร์
+// ที่เปิดลิงก์ให้ ซึ่งบน iOS ที่ล็อกอินไว้ใน PWA จะเปิด Safari ที่แยก storage กันคนละส่วน
+// กลายเป็นยังไม่ได้ล็อกอิน ส่วนรหัส 6 หลักใช้ได้ทุกเครื่องและเจ้าหน้าที่คุ้นอยู่แล้วจาก OTP ธนาคาร
 //
 // verifier ถูกเก็บใน ref เท่านั้น ไม่ลง state/localStorage/URL โดยตั้งใจ: มันคือหลักฐานว่า
-// "เครื่องนี้คือเครื่องที่ขอ" ถ้ามันรั่วไปพร้อม code (ซึ่งอยู่ใน QR = ใครถ่ายรูปจอก็ได้ไป)
-// คนอื่นจะแลก session ของเจ้าหน้าที่ไปได้ทันที
+// "เครื่องนี้คือเครื่องที่ขอ" ถ้ามันรั่วไปพร้อมรหัสที่โชว์บนจอ คนอื่นจะแลก session ไปได้ทันที
 
 const POLL_INTERVAL_MS = 3000
+// ต่ออายุให้เองได้ไม่เกิน 3 รอบ (~15 นาที) แล้วต้องกดเอง — หน้านี้ยิง edge function ทุก 3 วิ
+// ถ้าปล่อยให้ต่ออายุไม่รู้จบ เครื่องที่เปิดหน้าทิ้งไว้ทั้งวันเครื่องเดียวก็กินเกือบหมื่น
+// invocation ต่อวัน ไม่กี่เครื่องก็ทะลุโควตาฟรีของโปรเจกต์แล้ว
+const MAX_AUTO_REFRESH = 3
 
-export default function QrLoginPanel() {
+export default function DeviceLoginPanel() {
   const navigate = useNavigate()
   const [phase, setPhase] = useState('idle') // idle | starting | waiting | signingIn | error
-  const [qrDataUrl, setQrDataUrl] = useState('')
   const [matchNumber, setMatchNumber] = useState(null)
   const [shortCode, setShortCode] = useState('')
   const [expiresAt, setExpiresAt] = useState(null)
   const [secondsLeft, setSecondsLeft] = useState(0)
   const [error, setError] = useState('')
   const requestRef = useRef(null)
+  const autoRefreshCount = useRef(0)
 
-  const start = useCallback(async () => {
+  // auto = true คือระบบต่ออายุให้เอง (นับโควตา), ไม่ใส่ = ผู้ใช้กดขอเอง (รีเซ็ตโควตา)
+  const start = useCallback(async ({ auto = false } = {}) => {
+    if (!auto) autoRefreshCount.current = 0
     setPhase('starting')
     setError('')
-    setQrDataUrl('')
     requestRef.current = null
 
     const { data, offline } = await invokeDeviceLogin({ action: 'start' })
     if (offline || !data?.ok) {
-      setError(offline ? 'เชื่อมต่อไม่ได้ กรุณาลองใหม่' : (data?.error ?? 'ขอรหัส QR ไม่สำเร็จ กรุณาลองใหม่'))
+      setError(offline ? 'เชื่อมต่อไม่ได้ กรุณาลองใหม่' : (data?.error ?? 'ขอรหัสไม่สำเร็จ กรุณาลองใหม่'))
       setPhase('error')
       return
     }
@@ -44,30 +50,25 @@ export default function QrLoginPanel() {
     setMatchNumber(data.match_number)
     setShortCode(data.short_code ?? '')
     setExpiresAt(data.expires_at)
-
-    try {
-      // วาด QR ในเครื่องล้วน ห้ามใช้บริการวาด QR ออนไลน์เด็ดขาด — code จะรั่วออกนอกระบบ
-      const url = await QRCode.toDataURL(appUrl(`/device-login?code=${data.code}`), {
-        width: 264,
-        margin: 1,
-        errorCorrectionLevel: 'M',
-      })
-      setQrDataUrl(url)
-      setPhase('waiting')
-    } catch (err) {
-      console.error('[qr-login] วาด QR ไม่สำเร็จ:', err?.message ?? err)
-      setError('แสดง QR ไม่สำเร็จ กรุณาลองใหม่')
-      setPhase('error')
-    }
+    setPhase('waiting')
   }, [])
 
-  // นับถอยหลังให้เห็นว่าเหลือเวลาเท่าไร ก่อนต้องกดขอใหม่
+  // นับถอยหลังให้เห็นว่าเหลือเวลาเท่าไร
   useEffect(() => {
     if (phase !== 'waiting' || !expiresAt) return
     const tick = () => {
       const remaining = Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 1000))
       setSecondsLeft(remaining)
-      if (remaining === 0) start()
+      if (remaining !== 0) return
+      // แท็บถูกซ่อน/ย่อ = ไม่มีใครมองจออยู่ อย่าเพิ่งสร้างคำขอใหม่ทิ้งไว้ รอจนกลับมาดูจริงๆ
+      if (document.hidden) return
+      if (autoRefreshCount.current >= MAX_AUTO_REFRESH) {
+        setError('หยุดต่ออายุอัตโนมัติแล้ว กดขอรหัสใหม่เมื่อพร้อมใช้งาน')
+        setPhase('error')
+        return
+      }
+      autoRefreshCount.current += 1
+      start({ auto: true })
     }
     tick()
     const timerId = setInterval(tick, 1000)
@@ -83,6 +84,8 @@ export default function QrLoginPanel() {
     async function poll() {
       const request = requestRef.current
       if (!request || cancelled) return
+      // ไม่ยิงถามสถานะตอนที่ไม่มีใครดูจอ — ผู้ใช้กลับมาเมื่อไรค่อยถามต่อ
+      if (document.hidden) return
 
       const { data, offline } = await invokeDeviceLogin({
         action: 'claim', code: request.code, verifier: request.verifier,
@@ -100,7 +103,7 @@ export default function QrLoginPanel() {
           type: 'magiclink',
         })
         if (otpError) {
-          console.error('[qr-login] แลก session ไม่สำเร็จ:', otpError.message)
+          console.error('[device-login] แลก session ไม่สำเร็จ:', otpError.message)
           setError('เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่')
           setPhase('error')
           return
@@ -112,9 +115,9 @@ export default function QrLoginPanel() {
       // ที่เหลือคือคำขอถูกปิดไปแล้ว ต้องเริ่มใหม่เท่านั้น
       const reasons = {
         denied: 'คำขอถูกยกเลิกเพื่อความปลอดภัย (เลือกตัวเลขไม่ตรง) กรุณาขอรหัสใหม่',
-        expired: 'QR หมดอายุแล้ว กดขอรหัสใหม่ได้เลย',
+        expired: 'รหัสหมดอายุแล้ว กดขอรหัสใหม่ได้เลย',
         claimed: 'รหัสนี้ถูกใช้ไปแล้ว กรุณาขอรหัสใหม่',
-        no_email: data?.error ?? 'บัญชีนี้ใช้การเข้าสู่ระบบด้วย QR ไม่ได้',
+        no_email: data?.error ?? 'บัญชีนี้ใช้การเข้าสู่ระบบด้วยรหัสไม่ได้',
       }
       setError(reasons[data?.status] ?? data?.error ?? 'เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่')
       setPhase('error')
@@ -133,17 +136,17 @@ export default function QrLoginPanel() {
           </div>
         </div>
         <p className="text-sm text-gray-500 leading-relaxed">
-          ใช้มือถือของคุณสแกน QR เพื่อเข้าสู่ระบบบนเครื่องนี้<br />
+          ใช้มือถือของคุณยืนยันการเข้าสู่ระบบบนเครื่องนี้<br />
           ไม่ต้องพิมพ์รหัสผ่านบนคอมพิวเตอร์เครื่องนี้เลย
         </p>
         {error && <p className="text-sm text-red-500">{error}</p>}
         <button
           type="button"
-          onClick={start}
+          onClick={() => start()}
           className="w-full py-3 rounded-xl text-white font-semibold text-sm transition-all active:scale-95"
           style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}
         >
-          {phase === 'error' ? 'ขอรหัสใหม่' : 'แสดง QR สำหรับเข้าสู่ระบบ'}
+          {phase === 'error' ? 'ขอรหัสใหม่' : 'ขอรหัสเข้าสู่ระบบ'}
         </button>
       </div>
     )
@@ -153,41 +156,27 @@ export default function QrLoginPanel() {
     return (
       <div className="py-10 flex flex-col items-center gap-3 text-gray-400">
         <Loader2 size={24} className="animate-spin" />
-        <span className="text-sm">{phase === 'starting' ? 'กำลังสร้าง QR...' : 'กำลังเข้าสู่ระบบ...'}</span>
+        <span className="text-sm">{phase === 'starting' ? 'กำลังขอรหัส...' : 'กำลังเข้าสู่ระบบ...'}</span>
       </div>
     )
   }
 
   return (
-    <div className="text-center space-y-4">
+    <div className="text-center space-y-5">
       <ol className="text-sm text-gray-600 text-left space-y-1.5 bg-gray-50 rounded-xl p-4 leading-relaxed">
         <li><span className="font-semibold">1.</span> เปิดแอปในมือถือของคุณ (ที่เข้าสู่ระบบไว้แล้ว)</li>
         <li><span className="font-semibold">2.</span> ไปที่ <span className="font-semibold">โปรไฟล์ → เข้าสู่ระบบบนคอมพิวเตอร์</span></li>
-        <li><span className="font-semibold">3.</span> สแกน QR ด้านล่าง หรือกดกรอกรหัส 6 หลัก</li>
-        <li><span className="font-semibold">4.</span> แตะตัวเลขที่ตรงกับเลขข้างล่างนี้</li>
+        <li><span className="font-semibold">3.</span> กรอกรหัส 6 หลักข้างล่างนี้</li>
+        <li><span className="font-semibold">4.</span> แตะตัวเลขที่ตรงกับเลขสีน้ำเงิน</li>
       </ol>
 
-      {qrDataUrl && (
-        <img
-          src={qrDataUrl}
-          alt="QR สำหรับเข้าสู่ระบบ"
-          className="mx-auto rounded-xl border border-gray-100"
-          width={264}
-          height={264}
-        />
-      )}
-
-      {/* ทางเข้าสำรองเมื่อสแกนไม่ได้ (เช่น iOS ที่ล็อกอินไว้ใน PWA ซึ่งแยก storage จาก Safari
-          ที่แอปกล้องเปิดให้) — เปิดแอปในมือถือแล้วกรอกรหัสนี้แทนการสแกน */}
-      {shortCode && (
-        <div className="bg-gray-50 rounded-xl py-3">
-          <p className="text-xs text-gray-400 mb-0.5">สแกนไม่ได้? กรอกรหัสนี้ในแอปมือถือแทน</p>
-          <p className="text-2xl font-bold tracking-[0.3em] text-gray-700">{shortCode}</p>
-        </div>
-      )}
+      <div className="bg-gray-50 rounded-2xl py-5">
+        <p className="text-xs text-gray-400 mb-1">รหัสสำหรับกรอกในมือถือ</p>
+        <p className="text-4xl font-bold tracking-[0.25em] text-gray-800">{shortCode}</p>
+      </div>
 
       <div>
-        <p className="text-xs text-gray-400 mb-1">แตะตัวเลขนี้ในมือถือ</p>
+        <p className="text-xs text-gray-400 mb-1">แล้วแตะตัวเลขนี้ในมือถือ</p>
         <p className="text-5xl font-bold tracking-widest" style={{ color: 'var(--color-primary)' }}>
           {matchNumber}
         </p>
@@ -199,7 +188,7 @@ export default function QrLoginPanel() {
 
       <button
         type="button"
-        onClick={start}
+        onClick={() => start()}
         className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors"
       >
         <RefreshCw size={14} /> ขอรหัสใหม่

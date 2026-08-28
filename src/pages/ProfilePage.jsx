@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase, signOutSafely } from '../lib/supabase'
-import { ChevronLeft, ChevronRight, Pencil, Loader2, X, Eye, EyeOff, ScanLine } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Pencil, Loader2, X, Eye, EyeOff, Smartphone } from 'lucide-react'
 import { compressImage } from '../lib/imageUtils'
 import { useAuth } from '../contexts/AuthContext'
 import { useTenant } from '../contexts/TenantContext'
@@ -332,15 +332,13 @@ export default function ProfilePage() {
             </span>
           </div>
 
-          {/* เข้าสู่ระบบบน PC เครื่องอื่นโดยไม่ต้องพิมพ์รหัสผ่านทิ้งไว้บนเครื่องนั้น — สแกนจาก
-              ในแอปตรงนี้ ไม่ใช่จากแอปกล้องของเครื่อง เพราะแอปกล้องจะเปิดลิงก์ในเบราว์เซอร์
-              เริ่มต้น ซึ่งบน iOS แยก storage จาก PWA ทำให้กลายเป็นยังไม่ได้ล็อกอิน */}
+          {/* เข้าสู่ระบบบน PC เครื่องอื่นโดยไม่ต้องพิมพ์รหัสผ่านทิ้งไว้บนเครื่องนั้น */}
           {STAFF_ROLES.includes(contextRole ?? profile.role) && (
             <button
-              onClick={() => navigate('/scan-login')}
+              onClick={() => navigate('/device-login')}
               className="w-full flex items-center px-5 py-4 gap-3 text-left active:bg-gray-50 transition-colors"
             >
-              <ScanLine size={16} className="text-gray-400" />
+              <Smartphone size={16} className="text-gray-400" />
               <span className="text-sm text-gray-700 flex-1">เข้าสู่ระบบบนคอมพิวเตอร์</span>
               <ChevronRight size={16} className="text-gray-300" />
             </button>
