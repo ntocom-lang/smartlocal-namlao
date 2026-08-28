@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { isNetworkAuthError } from '../lib/authErrors'
 import { Lock, Mail, Loader2, ShieldCheck, Eye, EyeOff, KeyRound, Smartphone } from 'lucide-react'
@@ -7,6 +7,10 @@ import DeviceLoginPanel from '../components/auth/DeviceLoginPanel'
 
 export default function AdminLogin() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  // มาจาก useIdleLogout ที่พาออกมาเพราะทิ้งหน้าจอไว้นาน — ต้องบอกเหตุผลให้ชัด ไม่งั้น
+  // เจ้าหน้าที่จะนึกว่าระบบล่มหรือรหัสผ่านมีปัญหา
+  const loggedOutForIdle = searchParams.get('reason') === 'idle'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -59,6 +63,13 @@ export default function AdminLogin() {
 
         <h1 className="text-xl font-bold text-gray-800 text-center mb-1">เข้าสู่ระบบเจ้าหน้าที่</h1>
         <p className="text-sm text-gray-400 text-center mb-5">แผงควบคุมสำหรับผู้ดูแลระบบ</p>
+
+        {loggedOutForIdle && (
+          <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-5 text-center leading-relaxed">
+            ออกจากระบบให้อัตโนมัติแล้ว เพราะไม่ได้ใช้งานนานเกิน 1 ชั่วโมง<br />
+            <span className="text-xs">เพื่อไม่ให้บัญชีของคุณค้างอยู่บนเครื่องนี้</span>
+          </p>
+        )}
 
         <div className="grid grid-cols-2 gap-1 p-1 bg-gray-50 rounded-xl mb-5">
           {[
