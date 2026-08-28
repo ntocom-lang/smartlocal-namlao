@@ -33,7 +33,7 @@ const STAFF_ROLES = new Set(['superadmin', 'admin', 'officer', 'technician', 'st
 // เพดานการยิงผิด: แตะเลขผิดหรือส่ง verifier ผิด = ปิดคำขอทิ้งทันที ไม่ให้เดาซ้ำ
 // (มีเลขให้เลือก 3 ตัว ถ้าปล่อยให้ลองซ้ำได้ โอกาสเดาถูกจะไต่จาก 1/3 ขึ้นไปเรื่อยๆ)
 const MAX_ATTEMPTS = 1
-const REQUEST_TTL_SECONDS = 120
+const REQUEST_TTL_SECONDS = 300
 // หลังมือถืออนุมัติ ต่ออายุให้ PC มีเวลามา claim แม้ QR จะใกล้หมดอายุพอดี
 const CLAIM_GRACE_SECONDS = 60
 const RATE_LIMIT_WINDOW_MINUTES = 10
