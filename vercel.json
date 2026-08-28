@@ -1,6 +1,14 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run build",
-"rewrites": [
+  "rewrites": [
     { "source": "/(.*)", "destination": "/api/ssr" }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "*": false,
+      "**": false,
+      "master": true
+    }
+  }
 }
