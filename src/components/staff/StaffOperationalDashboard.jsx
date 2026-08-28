@@ -4,6 +4,7 @@ import {
   Inbox, Loader2, Plus, RefreshCw, TrendingUp,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { addWorkingDays, workingDaysSince } from '../../lib/workingDays'
 
 const ROLE_LABELS = {
   superadmin: 'Super Admin', admin: 'แอดมินระบบ', officer: 'หัวหน้ากอง',
@@ -22,9 +23,10 @@ function formatThaiDate(value, options = {}) {
   return new Date(value).toLocaleDateString('th-TH', options)
 }
 
+// อายุงานนับเป็นวันทำการ (ตัดเสาร์-อาทิตย์และวันหยุดนักขัตฤกษ์) — ดู src/lib/workingDays.js
 function ageInDays(value) {
   if (!value) return 0
-  return Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 86_400_000))
+  return workingDaysSince(value)
 }
 
 export default function StaffOperationalDashboard({
@@ -46,7 +48,10 @@ export default function StaffOperationalDashboard({
     const municipalityId = tenant.id
     const canDocs = showOverview && moduleKeys.has('inbox')
     const canComplaints = showOverview && moduleKeys.has('complaints')
-    const overdueBefore = new Date(Date.now() - 7 * 86_400_000).toISOString()
+    // เส้นแบ่ง "ค้างเกิน 7 วันทำการ" — ถอยหลัง 7 วันทำการแล้วยึดเที่ยงคืนตามเวลาเครื่อง
+    // (ห้ามส่งเป็น 'YYYY-MM-DD' ดิบให้ PostgREST เพราะฝั่งเซิร์ฟเวอร์ตีความเป็น UTC จะเพี้ยน 7 ชม.)
+    const [cy, cm, cd] = addWorkingDays(new Date(), -7).split('-').map(Number)
+    const overdueBefore = new Date(cy, cm - 1, cd).toISOString()
 
     const queries = [
       canDocs
@@ -129,7 +134,7 @@ export default function StaffOperationalDashboard({
     { label: 'คำขอเอกสารรอรับ', value: data.pendingDocCount, Icon: FileText, color: '#7c3aed', bg: '#f3e8ff', module: 'inbox' },
     { label: 'คำร้องใหม่', value: data.pendingComplaintCount, Icon: Inbox, color: '#dc2626', bg: '#fee2e2', module: 'complaints' },
     { label: 'กำลังดำเนินการ', value: data.inProgressCount, Icon: TrendingUp, color: '#0284c7', bg: '#e0f2fe' },
-    { label: 'ค้างเกิน 7 วัน', value: data.overdueCount, Icon: AlertTriangle, color: '#d97706', bg: '#fef3c7' },
+    { label: 'ค้างเกิน 7 วันทำการ', value: data.overdueCount, Icon: AlertTriangle, color: '#d97706', bg: '#fef3c7' },
   ]
 
   const todayTH = new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
@@ -266,7 +271,7 @@ export default function StaffOperationalDashboard({
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <p className="min-w-0 flex-1 truncate text-xs font-bold text-slate-800">{item.title}</p>
-                        <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-black ring-1 ${waitingClass}`}>รอ {waitingDays} วัน</span>
+                        <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-black ring-1 ${waitingClass}`}>รอ {waitingDays} วันทำการ</span>
                       </div>
                       <p className="mt-0.5 text-[10px] text-slate-400">รับเรื่องเมื่อ {formatThaiDate(item.created_at, { day: 'numeric', month: 'short', year: '2-digit' })}</p>
                     </div>

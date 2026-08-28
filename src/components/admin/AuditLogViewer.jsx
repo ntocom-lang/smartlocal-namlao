@@ -20,6 +20,7 @@ const RESOURCE_LABEL = {
   infrastructure_work:'งานโครงสร้าง',
   tourism_place:      'สถานที่ท่องเที่ยว',
   tourism_review:     'รีวิว',
+  public_holiday:     'วันหยุดราชการ',
 }
 
 const ROLE_LABEL = {

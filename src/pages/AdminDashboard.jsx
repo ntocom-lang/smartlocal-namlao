@@ -12,11 +12,12 @@ import {
   CheckCircle2, ChevronRight, ChevronLeft,
   Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical, Briefcase,
   X, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Repeat,
-  TrendingUp, AlertTriangle, Printer, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Banknote, Star, MessageSquare, Car, Terminal, Database
+  TrendingUp, AlertTriangle, Printer, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Banknote, Star, MessageSquare, Car, Terminal, Database, CalendarDays
 } from 'lucide-react'
 import { supabase, signOutSafely } from '../lib/supabase'
 import { compressImage } from '../lib/imageUtils'
 import { attachReporterProfiles } from '../lib/attachReporterProfiles'
+import { workingDaysBetween, workingDaysSince } from '../lib/workingDays'
 import { uploadFile } from '../lib/driveStorage'
 import { tenantDefaultSubdistrict } from '../lib/tenantSubdistrict'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
@@ -26,6 +27,7 @@ import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 // lazy: หน้ารายงานโครงการเปิดเฉพาะตอนเลือกเมนู ไม่ต้องโหลดมาพร้อมแผงควบคุม
 const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectReport'))
 import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
+import HolidaysAdmin from '../components/admin/HolidaysAdmin'
 import FeeSettingsAdmin from '../components/admin/FeeSettingsAdmin'
 // โหลดแบบ lazy — EventsManager เป็น chunk 60KB ที่ของเดิม import แบบ static ทำให้ถูกดาวน์โหลด
 // ทุกครั้งที่เปิดแผงควบคุม Admin ทั้งที่เมนูปฏิทินกิจกรรมถูกถอดออกไปแล้ว จึงเข้าไม่ถึงเลย
@@ -3713,7 +3715,7 @@ function handlePrint({ view, month, year, viewLabel, total, completed, rejected,
     <div class="stat-box"><div class="num" style="color:#f59e0b">${active}</div><div class="lbl">อยู่ระหว่างดำเนินการ</div></div>
     <div class="stat-box"><div class="num" style="color:#ef4444">${rejected}</div><div class="lbl">ปฏิเสธคำร้อง</div></div>
   </div>
-  <p>อัตราการปิดงาน <b>${rate}%</b>${avgDays !== null ? ` &nbsp;|&nbsp; เฉลี่ยระยะเวลาดำเนินการ <b>${avgDays} วัน</b>` : ''}</p>
+  <p>อัตราการปิดงาน <b>${rate}%</b>${avgDays !== null ? ` &nbsp;|&nbsp; เฉลี่ยระยะเวลาดำเนินการ <b>${avgDays} วันทำการ</b>` : ''}</p>
 
   <div class="section">๒. แนวโน้มการรับคำร้อง</div>
   <table>
@@ -3758,6 +3760,10 @@ function handlePrint({ view, month, year, viewLabel, total, completed, rejected,
 }
 
 // ─── Report Manager ───────────────────────────────────────────────────────────
+// ระยะเวลาดำเนินการของคำร้อง 1 เรื่อง นับเป็น "วันทำการ" (ตัดเสาร์-อาทิตย์และวันหยุดนักขัตฤกษ์)
+// ต้องให้ค่าตรงกับ ReportManager ซึ่งคำนวณตัวเลขชุดเดียวกัน
+const resolutionDays = c => workingDaysBetween(c.created_at, c.updated_at) ?? 0
+
 const MONTHS_TH = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
 const MONTHS_FULL_TH = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
   'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
@@ -3795,9 +3801,7 @@ function ReportManager({ complaints, tenant, technicians = [] }) {
     return true
   })
   const avgDays = closedData.length > 0
-    ? Math.round(closedData.reduce((s, c) =>
-        s + (new Date(c.updated_at) - new Date(c.created_at)) / 86400000, 0
-      ) / closedData.length)
+    ? Math.round(closedData.reduce((s, c) => s + resolutionDays(c), 0) / closedData.length)
     : null
 
   // เทียบเดือนที่แล้ว (เฉพาะ view === 'month')
@@ -3815,13 +3819,13 @@ function ReportManager({ complaints, tenant, technicians = [] }) {
     return d.getMonth() === prevMonth && d.getFullYear() === prevYear
   })
   const prevAvgDays = prevClosedData.length > 0
-    ? Math.round(prevClosedData.reduce((s, c) => s + (new Date(c.updated_at) - new Date(c.created_at)) / 86400000, 0) / prevClosedData.length)
+    ? Math.round(prevClosedData.reduce((s, c) => s + resolutionDays(c), 0) / prevClosedData.length)
     : null
 
   // SLA compliance — breakdown ระยะเวลาปิดงาน
-  const slaIn3    = closedData.filter(c => (new Date(c.updated_at) - new Date(c.created_at)) / 86400000 <= 3).length
-  const slaIn7    = closedData.filter(c => (new Date(c.updated_at) - new Date(c.created_at)) / 86400000 <= 7).length
-  const slaIn14   = closedData.filter(c => (new Date(c.updated_at) - new Date(c.created_at)) / 86400000 <= 14).length
+  const slaIn3    = closedData.filter(c => resolutionDays(c) <= 3).length
+  const slaIn7    = closedData.filter(c => resolutionDays(c) <= 7).length
+  const slaIn14   = closedData.filter(c => resolutionDays(c) <= 14).length
   const slaOver14 = closedData.length - slaIn14
   const slaRate7  = closedData.length > 0 ? Math.round(slaIn7 / closedData.length * 100) : null
 
@@ -3833,7 +3837,7 @@ function ReportManager({ complaints, tenant, technicians = [] }) {
     if (!name) return
     if (!techMap[name]) techMap[name] = { name, completed: 0, totalDays: 0 }
     techMap[name].completed++
-    techMap[name].totalDays += (new Date(c.updated_at) - new Date(c.created_at)) / 86400000
+    techMap[name].totalDays += resolutionDays(c)
   })
   const techLeaderboard = Object.values(techMap)
     .map(t => ({ ...t, avgDays: Math.round(t.totalDays / t.completed) }))
@@ -3876,19 +3880,19 @@ function ReportManager({ complaints, tenant, technicians = [] }) {
 
   const CAT_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#94a3b8']
 
-  const nowMs = now.getTime()
-
-  // คำร้องค้างนานเกิน 15 วัน
+  // เกณฑ์ค้างงานนับเป็นวันทำการ — คำร้องที่ยื่นก่อนวันหยุดยาวจะไม่ถูกตีว่าค้าง
+  // ทั้งที่สำนักงานยังไม่ได้เปิดทำการ
+  // คำร้องค้างนานเกิน 15 วันทำการ
   const overdue = complaints
     .filter(c => !['completed','rejected'].includes(c.status) &&
-      (nowMs - new Date(c.created_at)) > 15 * 86400000)
+      workingDaysSince(c.created_at, now) > 15)
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
     .slice(0, 6)
 
-  // รับเรื่องแล้ว (received) แต่ช่างยังไม่รับงานต่อเกิน 7 วัน
+  // รับเรื่องแล้ว (received) แต่ช่างยังไม่รับงานต่อเกิน 7 วันทำการ
   const noTechAction = complaints
     .filter(c => c.status === 'received' &&
-      (nowMs - new Date(c.updated_at)) > 7 * 86400000)
+      workingDaysSince(c.updated_at, now) > 7)
     .sort((a, b) => new Date(a.updated_at) - new Date(b.updated_at))
     .slice(0, 6)
 
@@ -3974,7 +3978,7 @@ function ReportManager({ complaints, tenant, technicians = [] }) {
           { label: 'คำร้องที่รับเข้า', value: total,    color: '#64748b', sub: 'รายการ',           delta: view === 'month' ? total - prevTotal : null,                                    unit: '' },
           { label: 'ปิดงานแล้ว',       value: completed, color: '#10b981', sub: 'รายการ',           delta: view === 'month' ? completed - prevCompleted : null,                            unit: '' },
           { label: 'อัตราปิดงาน',      value: `${rate}%`, color: rateColor, sub: rate >= 70 ? '✅ ดี' : rate >= 40 ? '⚠️ ปานกลาง' : '🔴 ต่ำ', delta: view === 'month' && prevTotal > 0 ? rate - prevRate : null, unit: '%' },
-          { label: 'เฉลี่ยวันปิดงาน',  value: avgDays !== null ? avgDays : '—', color: '#8b5cf6', sub: avgDays !== null ? 'วัน' : 'ไม่มีข้อมูล', delta: view === 'month' && avgDays !== null && prevAvgDays !== null ? prevAvgDays - avgDays : null, unit: 'วัน' },
+          { label: 'เฉลี่ยวันปิดงาน',  value: avgDays !== null ? avgDays : '—', color: '#8b5cf6', sub: avgDays !== null ? 'วันทำการ' : 'ไม่มีข้อมูล', delta: view === 'month' && avgDays !== null && prevAvgDays !== null ? prevAvgDays - avgDays : null, unit: 'วันทำการ' },
         ].map(({ label, value, color, sub, delta, unit }) => (
           <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
             <p className="text-2xl font-black leading-none" style={{ color }}>{value}</p>
@@ -3995,20 +3999,20 @@ function ReportManager({ complaints, tenant, technicians = [] }) {
           <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
             <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
               <Clock size={14} className="text-blue-500" />
-              SLA — ระยะเวลาแก้ไขปัญหา
+              SLA — ระยะเวลาแก้ไขปัญหา (วันทำการ)
             </h3>
             {slaRate7 !== null && (
               <span className={`text-sm font-bold px-3 py-1 rounded-full ${slaRate7 >= 70 ? 'bg-green-50 text-green-600' : slaRate7 >= 40 ? 'bg-yellow-50 text-yellow-600' : 'bg-red-50 text-red-500'}`}>
-                {slaRate7 >= 70 ? '✅' : slaRate7 >= 40 ? '⚠️' : '🔴'} {slaRate7}% แก้ภายใน 7 วัน
+                {slaRate7 >= 70 ? '✅' : slaRate7 >= 40 ? '⚠️' : '🔴'} {slaRate7}% แก้ภายใน 7 วันทำการ
               </span>
             )}
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
-              { label: '0–3 วัน', count: slaIn3,            color: '#10b981', bg: '#d1fae5', emoji: '🟢' },
-              { label: '4–7 วัน', count: slaIn7 - slaIn3,  color: '#3b82f6', bg: '#dbeafe', emoji: '🔵' },
-              { label: '8–14 วัน', count: slaIn14 - slaIn7, color: '#f59e0b', bg: '#fef3c7', emoji: '🟡' },
-              { label: '15+ วัน',  count: slaOver14,          color: '#ef4444', bg: '#fee2e2', emoji: '🔴' },
+              { label: '0–3 วันทำการ', count: slaIn3,            color: '#10b981', bg: '#d1fae5', emoji: '🟢' },
+              { label: '4–7 วันทำการ', count: slaIn7 - slaIn3,  color: '#3b82f6', bg: '#dbeafe', emoji: '🔵' },
+              { label: '8–14 วันทำการ', count: slaIn14 - slaIn7, color: '#f59e0b', bg: '#fef3c7', emoji: '🟡' },
+              { label: '15+ วันทำการ',  count: slaOver14,          color: '#ef4444', bg: '#fee2e2', emoji: '🔴' },
             ].map(({ label, count, color, bg, emoji }) => (
               <div key={label} className="rounded-2xl p-4 text-center" style={{ backgroundColor: bg }}>
                 <p className="text-xs mb-1">{emoji}</p>
@@ -4140,7 +4144,7 @@ function ReportManager({ complaints, tenant, technicians = [] }) {
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-sm font-bold text-gray-800">{t.completed} งาน</p>
-                    <p className="text-[11px] text-gray-400">เฉลี่ย {t.avgDays} วัน/งาน</p>
+                    <p className="text-[11px] text-gray-400">เฉลี่ย {t.avgDays} วันทำการ/งาน</p>
                   </div>
                 </div>
               )
@@ -4156,9 +4160,9 @@ function ReportManager({ complaints, tenant, technicians = [] }) {
           <div className="bg-white rounded-2xl border border-orange-100 shadow-sm p-5">
             <h3 className="text-sm font-semibold text-gray-700 mb-1 flex items-center gap-2">
               <Clock size={14} className="text-orange-500" />
-              รอช่างรับงานเกิน 7 วัน
+              รอช่างรับงานเกิน 7 วันทำการ
             </h3>
-            <p className="text-xs text-gray-400 mb-4">ค้างเกิน 7 วันหลังรับเรื่อง · ทั้งระบบ {noTechAction.length} รายการ</p>
+            <p className="text-xs text-gray-400 mb-4">ค้างเกิน 7 วันทำการหลังรับเรื่อง · ทั้งระบบ {noTechAction.length} รายการ</p>
             {noTechAction.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-gray-400">
                 <CheckCircle2 size={28} className="text-green-400 mb-2" />
@@ -4167,7 +4171,7 @@ function ReportManager({ complaints, tenant, technicians = [] }) {
             ) : (
               <div className="space-y-0 divide-y divide-gray-50">
                 {noTechAction.map(c => {
-                  const days = Math.floor((nowMs - new Date(c.updated_at)) / 86400000)
+                  const days = workingDaysSince(c.updated_at, now)
                   return (
                     <div key={c.id} className="flex items-center gap-3 py-2.5">
                       <span className="text-lg shrink-0">{CATEGORY_EMOJI[c.category] ?? '📄'}</span>
@@ -4182,7 +4186,7 @@ function ReportManager({ complaints, tenant, technicians = [] }) {
                         </p>
                       </div>
                       <span className="text-xs font-bold text-orange-500 shrink-0 bg-orange-50 px-2 py-0.5 rounded-lg">
-                        {days} วัน
+                        {days} วันทำการ
                       </span>
                     </div>
                   )
@@ -4195,9 +4199,9 @@ function ReportManager({ complaints, tenant, technicians = [] }) {
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
             <h3 className="text-sm font-semibold text-gray-700 mb-1 flex items-center gap-2">
               <AlertTriangle size={14} className="text-amber-500" />
-              คำร้องค้างเกิน 15 วัน
+              คำร้องค้างเกิน 15 วันทำการ
             </h3>
-            <p className="text-xs text-gray-400 mb-4">ค้างเกิน 15 วัน · ทั้งระบบ {overdue.length} รายการ</p>
+            <p className="text-xs text-gray-400 mb-4">ค้างเกิน 15 วันทำการ · ทั้งระบบ {overdue.length} รายการ</p>
             {overdue.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-gray-400">
                 <CheckCircle2 size={28} className="text-green-400 mb-2" />
@@ -4206,7 +4210,7 @@ function ReportManager({ complaints, tenant, technicians = [] }) {
             ) : (
               <div className="space-y-0 divide-y divide-gray-50">
                 {overdue.map(c => {
-                  const days = Math.floor((nowMs - new Date(c.created_at)) / 86400000)
+                  const days = workingDaysSince(c.created_at, now)
                   const s = STATUS[c.status]
                   return (
                     <div key={c.id} className="flex items-center gap-3 py-2.5">
@@ -4221,7 +4225,7 @@ function ReportManager({ complaints, tenant, technicians = [] }) {
                         </span>
                       </div>
                       <span className="text-xs font-bold text-red-500 shrink-0 bg-red-50 px-2 py-0.5 rounded-lg">
-                        {days} วัน
+                        {days} วันทำการ
                       </span>
                     </div>
                   )
@@ -4982,6 +4986,8 @@ export default function AdminDashboard() {
         </Suspense>
       ) : activePage === 'fee-settings' ? (
         <FeeSettingsAdmin tenant={tenant} />
+      ) : activePage === 'holidays' ? (
+        <HolidaysAdmin tenant={tenant} currentUserRole={currentUserRole} />
       ) : activePage === 'system-settings' ? (
         <SystemSettingsAdmin tenant={tenant} onUpdateTenant={() => window.location.reload()} />
       ) : activePage === 'audit-log' ? (
@@ -5090,6 +5096,7 @@ export default function AdminDashboard() {
                   { key: 'categories',  Icon: Tag,    color: '#d97706', bg: '#fef3c7', label: 'ประเภทคำร้อง', desc: 'จัดการหมวดหมู่ + ผู้รับผิดชอบ', show: currentUserRole !== 'viewer' },
                   { key: 'emergency',   Icon: Phone,       color: '#ef4444', bg: '#fee2e2', label: 'สายด่วนฉุกเฉิน',  desc: 'จัดการรายชื่อและเบอร์ติดต่อ',     show: currentUserRole !== 'viewer' },
                   { key: 'locations',   Icon: MapPin,      color: '#0891b2', bg: '#e0f2fe', label: 'สถานที่เกิดเหตุ', desc: 'จัดการหมู่บ้าน / ตำบลในพื้นที่',  show: currentUserRole !== 'viewer' },
+                  { key: 'holidays',    Icon: CalendarDays, color: '#0d9488', bg: '#ccfbf1', label: 'วันหยุดราชการ',  desc: 'ใช้คำนวณ SLA คำร้องเป็นวันทำการ',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'fleet-setup',      Icon: Car,         color: '#0369a1', bg: '#e0f2fe', label: 'ตั้งค่ายานพาหนะ', desc: 'กอง/หน่วยงาน งบประมาณ สิทธิ์ผู้ใช้', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'system-settings',  Icon: Settings,    color: '#3b82f6', bg: '#dbeafe', label: 'ตั้งค่าระบบ',    desc: 'ตั้งค่าชื่อระบบและข้อมูลพื้นฐาน',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'users',           Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', label: 'จัดการผู้ใช้และการแต่งตั้ง', desc: 'ตำแหน่ง สังกัด บทบาท และสิทธิ์', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },

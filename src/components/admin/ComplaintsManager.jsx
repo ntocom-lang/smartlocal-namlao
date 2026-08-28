@@ -18,6 +18,7 @@ import { generateDraftPdfBlob } from '../../lib/generateDraftPdf'
 import { uploadFile, resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef, toReliableImageUrl } from '../../lib/driveStorage'
 import { fetchAssignableStaff, groupStaffByDepartment, ROLE_LABELS } from '../../lib/staffRoster'
 import { fetchPersonnelSignatories } from '../../lib/personnelDirectory'
+import { addWorkingDays, workingDaysLeft } from '../../lib/workingDays'
 import OssIntakeForm from './OssIntakeForm'
 import OdorFieldsDisplay from '../complaints/OdorFieldsDisplay'
 import OdorComplaintTable, { OdorDetailModal } from '../complaints/OdorComplaintTable'
@@ -71,34 +72,20 @@ let CATEGORY_EMOJI = {
 }
 const STATUS_MAIN = ['new', 'received', 'in_progress', 'done', 'closed', 'rejected']
 
-function addWorkingDays(date, days) {
-  const d = new Date(date)
-  let added = 0
-  while (added < days) {
-    d.setDate(d.getDate() + 1)
-    const dow = d.getDay()
-    if (dow !== 0 && dow !== 6) added++
-  }
-  return d.toISOString().slice(0, 10)
-}
-
-function slaDaysLeft(dueDateStr) {
-  if (!dueDateStr) return null
-  const now = new Date(); now.setHours(0, 0, 0, 0)
-  const due = new Date(dueDateStr); due.setHours(0, 0, 0, 0)
-  return Math.round((due - now) / 86400000)
-}
+// addWorkingDays/workingDaysLeft ย้ายไป src/lib/workingDays.js แล้ว — ของเดิมในไฟล์นี้
+// ตัดแค่เสาร์-อาทิตย์ ไม่ตัดวันหยุดนักขัตฤกษ์ และใช้ toISOString() ซึ่งทำให้ due_date
+// ที่ตั้งช่วง 00:00–06:59 น. เพี้ยนไป 1 วัน (ดูคำอธิบายใน src/lib/thaiDate.js)
 
 function SlaBadge({ dueDate, status }) {
   if (!dueDate || status === 'done' || status === 'closed' || status === 'rejected') return null
-  const days = slaDaysLeft(dueDate)
+  const days = workingDaysLeft(dueDate)
   if (days === null) return null
   const color = days < 0 ? { bg: '#fee2e2', text: '#991b1b' }
     : days <= 5 ? { bg: '#fef3c7', text: '#92400e' }
     : { bg: '#d1fae5', text: '#065f46' }
-  const label = days < 0 ? `เกินกำหนด ${Math.abs(days)} วัน`
+  const label = days < 0 ? `เกินกำหนด ${Math.abs(days)} วันทำการ`
     : days === 0 ? 'ครบกำหนดวันนี้'
-    : `เหลือ ${days} วัน`
+    : `เหลือ ${days} วันทำการ`
   return (
     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap"
           style={{ backgroundColor: color.bg, color: color.text }}>

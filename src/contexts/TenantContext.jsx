@@ -1,7 +1,8 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { toReliableImageUrl } from '../lib/driveStorage'
 import { MANAGED_MODULE_KEYS } from '../lib/staffModules'
+import { loadHolidays } from '../lib/holidaysSource'
 
 const TenantContext = createContext(null)
 
@@ -203,6 +204,16 @@ export function TenantProvider({ children }) {
   const [terminology, setTerminology] = useState(TERMINOLOGY['อบต.'])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  // ตัวนับรอบการโหลดวันหยุดราชการ — ไม่มีใครอ่านค่านี้ตรงๆ แต่การเปลี่ยนค่ามันบังคับให้
+  // ทุก component ที่ใช้ useTenant() เรนเดอร์ใหม่ ตัวเลข "เหลือ N วันทำการ" ที่คำนวณไปแล้ว
+  // จากตาราง static จึงถูกคิดใหม่ตามข้อมูลใน DB โดยไม่ต้องแก้ component สักตัว
+  const [holidaysVersion, setHolidaysVersion] = useState(0)
+
+  // เรียกซ้ำได้หลังแอดมินบันทึกการแก้ไขวันหยุด เพื่อให้ทั้งแอปเห็นค่าใหม่ทันทีโดยไม่ต้องรีเฟรช
+  const reloadHolidays = useCallback(async (municipalityId) => {
+    await loadHolidays(municipalityId ?? tenant?.id ?? null)
+    setHolidaysVersion(v => v + 1)
+  }, [tenant?.id])
 
   useEffect(() => {
     const slug = detectTenantSlug()
@@ -271,6 +282,10 @@ export function TenantProvider({ children }) {
           localStorage.setItem('sl_tenant_name', resolvedTenant.name)
         } catch {}
         setLoading(false)
+
+        // ตั้งใจไม่ await และไม่กั้น setLoading — หน้าจอต้องขึ้นทันทีตามเดิม ระหว่างรอ
+        // ตัวคำนวณจะใช้ตาราง static ในโค้ดไปก่อน พอข้อมูลมาถึงค่อยเรนเดอร์ใหม่ผ่าน holidaysVersion
+        loadHolidays(resolvedTenant.id).then(() => setHolidaysVersion(v => v + 1))
       } catch {
         clearTimeout(timerId)
         if (!timedOut) {
@@ -303,7 +318,7 @@ export function TenantProvider({ children }) {
   }
 
   return (
-    <TenantContext.Provider value={{ tenant, terminology, loading, error, patchTenant, isModuleEnabled }}>
+    <TenantContext.Provider value={{ tenant, terminology, loading, error, patchTenant, isModuleEnabled, holidaysVersion, reloadHolidays }}>
       {children}
     </TenantContext.Provider>
   )

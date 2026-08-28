@@ -2,6 +2,11 @@ import { useState, useEffect } from 'react'
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
 import { Wrench, TrendingUp, AlertTriangle, Printer, X, Clock, CheckCircle2, Download } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { workingDaysBetween, workingDaysSince } from '../../lib/workingDays'
+
+// ระยะเวลาดำเนินการของคำร้อง 1 เรื่อง นับเป็น "วันทำการ" (ตัดเสาร์-อาทิตย์และวันหยุดนักขัตฤกษ์)
+// เดิมนับเป็นวันปฏิทิน ทำให้เรื่องที่คร่อมสงกรานต์/ปีใหม่ดูเหมือนช้ากว่าความเป็นจริงหลายวัน
+const resolutionDays = c => workingDaysBetween(c.created_at, c.updated_at) ?? 0
 
 const STATUS = {
   new:         { label: 'คำร้องใหม่',      color: '#f59e0b', bg: '#fef3c7', text: '#92400e' },
@@ -86,7 +91,7 @@ function handlePrint({ view, viewLabel, total, completed, rejected, active, rate
     <div class="stat-box"><div class="num" style="color:#f59e0b">${active}</div><div class="lbl">อยู่ระหว่างดำเนินการ</div></div>
     <div class="stat-box"><div class="num" style="color:#ef4444">${rejected}</div><div class="lbl">ปฏิเสธคำร้อง</div></div>
   </div>
-  <p>อัตราการปิดงาน <b>${rate}%</b>${avgDays !== null ? ` &nbsp;|&nbsp; เฉลี่ยระยะเวลาดำเนินการ <b>${avgDays} วัน</b>` : ''}</p>
+  <p>อัตราการปิดงาน <b>${rate}%</b>${avgDays !== null ? ` &nbsp;|&nbsp; เฉลี่ยระยะเวลาดำเนินการ <b>${avgDays} วันทำการ</b>` : ''}</p>
   <div class="section">๒. แนวโน้มการรับคำร้อง</div>
   <table><thead><tr><th>${trendHeader}</th><th>คำร้องที่รับ</th><th>ดำเนินการแล้วเสร็จ</th><th>คงค้าง</th></tr></thead><tbody>${trendRows}</tbody></table>
   <div style="page-break-inside:avoid">
@@ -161,7 +166,7 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
     return true
   })
   const avgDays = closedData.length > 0
-    ? Math.round(closedData.reduce((s, c) => s + (new Date(c.updated_at) - new Date(c.created_at)) / 86400000, 0) / closedData.length)
+    ? Math.round(closedData.reduce((s, c) => s + resolutionDays(c), 0) / closedData.length)
     : null
 
   const prevMonth = month === 0 ? 11 : month - 1
@@ -178,12 +183,12 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
     return d.getMonth() === prevMonth && d.getFullYear() === prevYear
   })
   const prevAvgDays = prevClosedData.length > 0
-    ? Math.round(prevClosedData.reduce((s, c) => s + (new Date(c.updated_at) - new Date(c.created_at)) / 86400000, 0) / prevClosedData.length)
+    ? Math.round(prevClosedData.reduce((s, c) => s + resolutionDays(c), 0) / prevClosedData.length)
     : null
 
-  const slaIn3    = closedData.filter(c => (new Date(c.updated_at) - new Date(c.created_at)) / 86400000 <= 3).length
-  const slaIn7    = closedData.filter(c => (new Date(c.updated_at) - new Date(c.created_at)) / 86400000 <= 7).length
-  const slaIn14   = closedData.filter(c => (new Date(c.updated_at) - new Date(c.created_at)) / 86400000 <= 14).length
+  const slaIn3    = closedData.filter(c => resolutionDays(c) <= 3).length
+  const slaIn7    = closedData.filter(c => resolutionDays(c) <= 7).length
+  const slaIn14   = closedData.filter(c => resolutionDays(c) <= 14).length
   const slaOver14 = closedData.length - slaIn14
   const slaRate7  = closedData.length > 0 ? Math.round(slaIn7 / closedData.length * 100) : null
 
@@ -194,7 +199,7 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
     if (!name) return
     if (!techMap[name]) techMap[name] = { name, completed: 0, totalDays: 0 }
     techMap[name].completed++
-    techMap[name].totalDays += (new Date(c.updated_at) - new Date(c.created_at)) / 86400000
+    techMap[name].totalDays += resolutionDays(c)
   })
   const techLeaderboard = Object.values(techMap)
     .map(t => ({ ...t, avgDays: Math.round(t.totalDays / t.completed) }))
@@ -227,12 +232,13 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
   const catPieData = otherCount > 0 ? [...catData, { name: 'อื่นๆ', emoji: '📄', count: otherCount }] : catData
   const CAT_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#94a3b8']
 
-  const nowMs = now.getTime()
+  // เกณฑ์ค้างงานนับเป็นวันทำการเช่นกัน — คำร้องที่ยื่นก่อนวันหยุดยาวจะไม่ถูกตีว่าค้าง
+  // ทั้งที่สำนักงานยังไม่ได้เปิดทำการ
   const overdue = scoped
-    .filter(c => !['completed', 'closed', 'rejected'].includes(c.status) && (nowMs - new Date(c.created_at)) > 15 * 86400000)
+    .filter(c => !['completed', 'closed', 'rejected'].includes(c.status) && workingDaysSince(c.created_at, now) > 15)
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).slice(0, 6)
   const noTechAction = scoped
-    .filter(c => c.status === 'received' && (nowMs - new Date(c.updated_at)) > 7 * 86400000)
+    .filter(c => c.status === 'received' && workingDaysSince(c.updated_at, now) > 7)
     .sort((a, b) => new Date(a.updated_at) - new Date(b.updated_at)).slice(0, 6)
 
   const rateColor = rate >= 70 ? '#10b981' : rate >= 40 ? '#f59e0b' : '#ef4444'
@@ -350,7 +356,7 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
           { label: 'คำร้องที่รับเข้า', value: total, color: '#2563eb', bg: '#eff6ff', sub: 'รายการ', delta: view === 'month' ? total - prevTotal : null, unit: '' },
           { label: 'ปิดเรื่องแล้ว', value: completed, color: '#059669', bg: '#ecfdf5', sub: 'รายการ', delta: view === 'month' ? completed - prevCompleted : null, unit: '' },
           { label: 'อัตราปิดเรื่อง', value: `${rate}%`, color: rateColor, bg: rate >= 70 ? '#ecfdf5' : rate >= 40 ? '#fffbeb' : '#fef2f2', sub: rate >= 70 ? 'ผลการดำเนินงานดี' : rate >= 40 ? 'ควรติดตาม' : 'ต้องเร่งดำเนินการ', delta: view === 'month' && prevTotal > 0 ? rate - prevRate : null, unit: '%' },
-          { label: 'เวลาเฉลี่ยปิดเรื่อง', value: avgDays !== null ? avgDays : '—', color: '#7c3aed', bg: '#f5f3ff', sub: avgDays !== null ? 'วัน' : 'ไม่มีข้อมูล', delta: view === 'month' && avgDays !== null && prevAvgDays !== null ? prevAvgDays - avgDays : null, unit: 'วัน' },
+          { label: 'เวลาเฉลี่ยปิดเรื่อง', value: avgDays !== null ? avgDays : '—', color: '#7c3aed', bg: '#f5f3ff', sub: avgDays !== null ? 'วันทำการ' : 'ไม่มีข้อมูล', delta: view === 'month' && avgDays !== null && prevAvgDays !== null ? prevAvgDays - avgDays : null, unit: 'วันทำการ' },
         ].map(({ label, value, color, bg, sub, delta, unit }) => (
           <div key={label} className="relative overflow-hidden rounded-2xl border border-white p-3.5 shadow-sm md:p-4"
             style={{ background: `linear-gradient(145deg, #ffffff 20%, ${bg} 125%)` }}>
@@ -372,20 +378,20 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <h3 className="flex items-center gap-2 text-sm font-extrabold text-slate-800">
               <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><Clock size={15} /></span>
-              ระยะเวลาปิดเรื่อง
+              ระยะเวลาปิดเรื่อง (วันทำการ)
             </h3>
             {slaRate7 !== null && (
               <span className={`rounded-full px-3 py-1 text-xs font-extrabold ${slaRate7 >= 70 ? 'bg-emerald-50 text-emerald-700' : slaRate7 >= 40 ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-600'}`}>
-                {slaRate7}% ภายใน 7 วัน
+                {slaRate7}% ภายใน 7 วันทำการ
               </span>
             )}
           </div>
           <div className="grid grid-cols-4 gap-2">
             {[
-              { label: '0–3 วัน',  count: slaIn3,            color: '#10b981', bg: '#d1fae5', emoji: '🟢' },
-              { label: '4–7 วัน',  count: slaIn7 - slaIn3,   color: '#3b82f6', bg: '#dbeafe', emoji: '🔵' },
-              { label: '8–14 วัน', count: slaIn14 - slaIn7,  color: '#f59e0b', bg: '#fef3c7', emoji: '🟡' },
-              { label: '15+ วัน',  count: slaOver14,          color: '#ef4444', bg: '#fee2e2', emoji: '🔴' },
+              { label: '0–3 วันทำการ',  count: slaIn3,            color: '#10b981', bg: '#d1fae5', emoji: '🟢' },
+              { label: '4–7 วันทำการ',  count: slaIn7 - slaIn3,   color: '#3b82f6', bg: '#dbeafe', emoji: '🔵' },
+              { label: '8–14 วันทำการ', count: slaIn14 - slaIn7,  color: '#f59e0b', bg: '#fef3c7', emoji: '🟡' },
+              { label: '15+ วันทำการ',  count: slaOver14,          color: '#ef4444', bg: '#fee2e2', emoji: '🔴' },
             ].map(({ label, count, color, bg, emoji }) => (
               <div key={label} className="rounded-2xl px-1.5 py-3 text-center" style={{ backgroundColor: bg }}>
                 <p className="mb-1 text-[9px]">{emoji}</p>
@@ -490,7 +496,7 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-sm font-bold text-gray-800">{t.completed} งาน</p>
-                    <p className="text-[11px] text-gray-400">เฉลี่ย {t.avgDays} วัน/งาน</p>
+                    <p className="text-[11px] text-gray-400">เฉลี่ย {t.avgDays} วันทำการ/งาน</p>
                   </div>
                 </div>
               )
@@ -503,9 +509,9 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
         <div className="grid md:grid-cols-2 gap-4">
           <div className="bg-white rounded-2xl border border-orange-100 shadow-sm p-5">
             <h3 className="text-sm font-semibold text-gray-700 mb-1 flex items-center gap-2">
-              <Clock size={14} className="text-orange-500" /> รอช่างรับงานเกิน 7 วัน
+              <Clock size={14} className="text-orange-500" /> รอช่างรับงานเกิน 7 วันทำการ
             </h3>
-            <p className="text-xs text-gray-400 mb-4">ค้างเกิน 7 วันหลังรับเรื่อง · ทั้งระบบ {noTechAction.length} รายการ</p>
+            <p className="text-xs text-gray-400 mb-4">ค้างเกิน 7 วันทำการหลังรับเรื่อง · ทั้งระบบ {noTechAction.length} รายการ</p>
             {noTechAction.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-gray-400">
                 <CheckCircle2 size={28} className="text-green-400 mb-2" />
@@ -514,7 +520,7 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
             ) : (
               <div className="space-y-0 divide-y divide-gray-50">
                 {noTechAction.map(c => {
-                  const days = Math.floor((nowMs - new Date(c.updated_at)) / 86400000)
+                  const days = workingDaysSince(c.updated_at, now)
                   return (
                     <div key={c.id} className="flex items-center gap-3 py-2.5">
                       <span className="text-lg shrink-0">{CATEGORY_EMOJI[c.category] ?? '📄'}</span>
@@ -524,7 +530,7 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
                           {c.assigned_to_name ? `ช่าง: ${c.assigned_to_name}` : c.assigned_to ? 'มอบหมายแล้ว ยังไม่รับงาน' : 'ยังไม่ได้มอบหมายช่าง'}
                         </p>
                       </div>
-                      <span className="text-xs font-bold text-orange-500 shrink-0 bg-orange-50 px-2 py-0.5 rounded-lg">{days} วัน</span>
+                      <span className="text-xs font-bold text-orange-500 shrink-0 bg-orange-50 px-2 py-0.5 rounded-lg">{days} วันทำการ</span>
                     </div>
                   )
                 })}
@@ -533,9 +539,9 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
           </div>
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
             <h3 className="text-sm font-semibold text-gray-700 mb-1 flex items-center gap-2">
-              <AlertTriangle size={14} className="text-amber-500" /> คำร้องค้างเกิน 15 วัน
+              <AlertTriangle size={14} className="text-amber-500" /> คำร้องค้างเกิน 15 วันทำการ
             </h3>
-            <p className="text-xs text-gray-400 mb-4">ค้างเกิน 15 วัน · ทั้งระบบ {overdue.length} รายการ</p>
+            <p className="text-xs text-gray-400 mb-4">ค้างเกิน 15 วันทำการ · ทั้งระบบ {overdue.length} รายการ</p>
             {overdue.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-gray-400">
                 <CheckCircle2 size={28} className="text-green-400 mb-2" />
@@ -544,7 +550,7 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
             ) : (
               <div className="space-y-0 divide-y divide-gray-50">
                 {overdue.map(c => {
-                  const days = Math.floor((nowMs - new Date(c.created_at)) / 86400000)
+                  const days = workingDaysSince(c.created_at, now)
                   const s = STATUS[c.status]
                   return (
                     <div key={c.id} className="flex items-center gap-3 py-2.5">
@@ -554,7 +560,7 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
                         <span className="text-[13px] px-1.5 py-0.5 rounded-full font-medium"
                           style={{ backgroundColor: s?.bg, color: s?.text }}>{s?.label}</span>
                       </div>
-                      <span className="text-xs font-bold text-red-500 shrink-0 bg-red-50 px-2 py-0.5 rounded-lg">{days} วัน</span>
+                      <span className="text-xs font-bold text-red-500 shrink-0 bg-red-50 px-2 py-0.5 rounded-lg">{days} วันทำการ</span>
                     </div>
                   )
                 })}

@@ -6,6 +6,7 @@ import { CategoryIcon } from '../lib/categoryIcon'
 import { compressImage } from '../lib/imageUtils'
 import { uploadFile, resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef } from '../lib/driveStorage'
 import SatisfactionModal from '../components/SatisfactionModal'
+import { workingDaysLeft } from '../lib/workingDays'
 import {
   ClipboardList, Loader2, ChevronRight, X, MapPin,
   Phone, ArrowLeft, Check, XCircle, Navigation, Camera, AlignLeft,
@@ -37,23 +38,18 @@ const STATUS_FLOW_LABEL = {
   closed:      { label: 'ปิดเรื่องแล้ว',  desc: 'ปิดเรื่องและแจ้งผลประชาชนแล้ว' },
 }
 
-function slaDaysLeft(dueDateStr) {
-  if (!dueDateStr) return null
-  const now = new Date(); now.setHours(0, 0, 0, 0)
-  const due = new Date(dueDateStr); due.setHours(0, 0, 0, 0)
-  return Math.round((due - now) / 86400000)
-}
-
+// นับเป็น "วันทำการ" ให้ตรงกับฝั่งเจ้าหน้าที่ (ComplaintsManager) — ประชาชนกับเจ้าหน้าที่
+// ต้องเห็นตัวเลขเดียวกัน ไม่งั้นจะเถียงกันว่าเรื่องเกินกำหนดแล้วหรือยัง
 function SlaBadge({ dueDate, status }) {
   if (!dueDate || status === 'done' || status === 'closed' || status === 'rejected') return null
-  const days = slaDaysLeft(dueDate)
+  const days = workingDaysLeft(dueDate)
   if (days === null) return null
   const color = days < 0 ? { bg: '#fee2e2', text: '#991b1b' }
     : days <= 5 ? { bg: '#fef3c7', text: '#92400e' }
     : { bg: '#d1fae5', text: '#065f46' }
-  const label = days < 0 ? `เกินกำหนด ${Math.abs(days)} วัน`
+  const label = days < 0 ? `เกินกำหนด ${Math.abs(days)} วันทำการ`
     : days === 0 ? 'ครบกำหนดวันนี้'
-    : `เหลือ ${days} วัน`
+    : `เหลือ ${days} วันทำการ`
   return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap"
           style={{ backgroundColor: color.bg, color: color.text }}>
