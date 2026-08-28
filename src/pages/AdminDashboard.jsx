@@ -161,6 +161,9 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
   // พร้อมทางออกไปหน้าโอนงาน แทนที่จะแค่ alert() เฉยๆ แล้วให้ผู้ใช้เดาเอง
   const [deleteBlockedReason, setDeleteBlockedReason] = useState('')
   const [handoverStaff, setHandoverStaff] = useState(null)
+  // บัญชีที่จะ "เก็บไว้" เมื่อรวมบัญชีซ้ำ (คนเดียวสมัคร 2 ครั้งด้วยคนละ provider) — บัญชีที่จะยุบ
+  // เลือกในโมดัลอีกที ดู MergeDuplicateModal
+  const [mergeKeepUser, setMergeKeepUser] = useState(null)
   // ค่าเริ่มต้นต้องตรงกับ ORDER BY จริงใน get_users_with_email() (full_name ASC) ไม่งั้นลูกศร
   // บนหัวตารางจะขึ้นผิดทิศทาง (ข้อมูลที่ได้มาเรียงตามชื่อแล้ว แต่ลูกศรจะโชว์ว่ายังไม่ได้กดเรียง)
   const [sortConfig, setSortConfig] = useState({ key: 'full_name', direction: 'asc' })
@@ -330,6 +333,15 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
     }
   }
 
+  // หลังรวมบัญชีสำเร็จต้องโหลดรายการใหม่ ไม่ใช่แค่กรองบัญชีที่ถูกยุบออกจาก state — เพราะ providers
+  // ของบัญชีที่เก็บไว้เปลี่ยนไปด้วย (auth.identities ของ LINE/Google ย้ายมาผูกกับบัญชีนี้แล้ว) ถ้าไม่
+  // โหลดใหม่ chip "เชื่อมต่อบัญชี" จะยังเป็นค่าเก่า ดูเหมือนช่องทาง login ที่เพิ่งรวมเข้ามาหายไป
+  function handleMerged(mergedId) {
+    setMergeKeepUser(null)
+    if (viewingUserId === mergedId) setViewingUserId(null)
+    fetchUsers({ search, page })
+  }
+
   const handleSort = (key) => {
     setSortConfig(current => ({
       key,
@@ -400,6 +412,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
         deletingUser={deletingUser} setDeletingUser={setDeletingUser} deleteLoading={deleteLoading} deleteUser={deleteUser}
         deleteBlockedReason={deleteBlockedReason} setDeleteBlockedReason={setDeleteBlockedReason}
         handoverStaff={handoverStaff} setHandoverStaff={setHandoverStaff}
+        mergeKeepUser={mergeKeepUser} setMergeKeepUser={setMergeKeepUser} onMerged={handleMerged}
         saveUserEdits={saveUserEdits}
         updateUserEmail={updateUserEmail}
       />
@@ -1048,6 +1061,208 @@ function HandoverWorkloadModal({ oldStaff, tenant, onClose }) {
   )
 }
 
+// ป้ายไทยของ key ใน rows_to_move ที่ merge_duplicate_profile คืนมา — โชว์เฉพาะ key ที่ > 0 เท่านั้น
+// (ปกติ 41 key แต่ส่วนใหญ่เป็น 0) key ที่ไม่มีในนี้ตกไป fallback เป็นชื่อดิบ ไม่ต้องไล่เพิ่มทุกครั้ง
+// ที่ DB เพิ่มตาราง — แค่อ่านยากขึ้นนิดเดียว ไม่ใช่บั๊ก
+const MERGE_ROW_LABELS = {
+  complaints_user_id: 'เรื่องร้องเรียนที่แจ้งไว้',
+  complaints_assigned_to: 'เรื่องร้องเรียนที่รับผิดชอบ',
+  category_assignments_technician_id: 'หมวดคำร้องที่เป็นผู้รับผิดชอบเริ่มต้น',
+  document_requests_user_id: 'คำร้องขอเอกสารที่ยื่นไว้',
+  document_requests_assigned_to: 'คำร้องขอเอกสารที่รับผิดชอบ',
+  documents_uploaded_by: 'เอกสารที่อัปโหลด',
+  drive_files_owner_user_id: 'ไฟล์แนบบน Google Drive',
+  events_created_by: 'กิจกรรมที่สร้าง',
+  posts_created_by: 'ข่าวประชาสัมพันธ์ที่สร้าง',
+  push_subscriptions_user_id: 'อุปกรณ์ที่รับการแจ้งเตือน',
+  satisfaction_responses_user_id: 'แบบประเมินความพึงพอใจที่ตอบ',
+  business_registrations_user_id: 'คำขอจดทะเบียนพาณิชย์',
+  tourism_reviews_user_id: 'รีวิวแหล่งท่องเที่ยว',
+}
+
+// รวมบัญชีซ้ำ: คนเดียวสมัคร 2 ครั้งด้วยคนละช่องทาง (เจอบ่อยกับ LINE เพราะ LINE ไม่ส่งอีเมลมาให้
+// Supabase จึงเชื่อมเข้าบัญชีเดิมอัตโนมัติไม่ได้ ต้องมาเชื่อมทีหลังด้วยมือ)
+// keepUser = บัญชีที่เปิดหน้ารายละเอียดอยู่ (ตรึงไว้ ไม่ให้เลือกสลับ) — บัญชีที่เลือกในโมดัลคือบัญชีที่จะ
+// ถูกยุบและลบทิ้ง ทิศทางกลับกันไม่ได้ จึงบังคับให้กด "ตรวจสอบก่อนรวม" (dry run ฝั่ง DB) ดูจำนวนแถวจริง
+// ก่อนเสมอ ปุ่มยืนยันจะ enable ก็ต่อเมื่อ preview ตรงกับบัญชีที่เลือกอยู่จริง
+function MergeDuplicateModal({ keepUser, tenant, currentUserRole, currentUserId, onClose, onMerged }) {
+  const [search, setSearch] = useState(keepUser.full_name || '')
+  const [candidates, setCandidates] = useState([])
+  // เริ่มที่ true เพราะ effect ด้านล่างยิงค้นหาทันทีตอนเปิดโมดัล (ด้วยชื่อของบัญชีที่เก็บไว้)
+  const [searching, setSearching] = useState(true)
+  const [mergeId, setMergeId] = useState('')
+  const [preview, setPreview] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [done, setDone] = useState(null)
+
+  useEffect(() => {
+    if (!tenant?.id) return
+    let cancelled = false
+    const t = setTimeout(async () => {
+      setSearching(true)
+      const { data, error: rpcError } = await supabase.rpc('get_users_with_email', {
+        p_municipality_id: tenant.id,
+        p_roles: [...NON_CITIZEN_ROLES, 'citizen'],
+        p_search: search.trim() || null,
+        p_limit: 50,
+        p_offset: 0,
+      })
+      if (cancelled) return
+      setSearching(false)
+      if (rpcError) { setError(rpcError.message); return }
+      // ยุบได้เฉพาะบัญชีที่สิทธิ์ของผู้ใช้ปัจจุบันจัดการได้จริง (กติกาเดียวกับปุ่มลบ) — ฝั่ง DB
+      // ก็ตรวจซ้ำอีกชั้น ตรงนี้แค่ไม่ให้เลือกสิ่งที่จะโดนปฏิเสธอยู่ดี
+      setCandidates((data ?? []).filter((u) => canManageUser(currentUserRole, currentUserId, u) && u.id !== keepUser.id))
+    }, search.trim() ? 400 : 0)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [search, tenant?.id, currentUserRole, currentUserId, keepUser.id])
+
+  const selected = candidates.find((u) => u.id === mergeId) ?? null
+  const previewMatches = preview && preview.merge_id === mergeId
+
+  async function runPreview() {
+    setBusy(true); setError(''); setPreview(null)
+    const { data, error: rpcError } = await supabase.rpc('merge_duplicate_profile', {
+      p_keep_id: keepUser.id, p_merge_id: mergeId, p_dry_run: true,
+    })
+    setBusy(false)
+    if (rpcError) setError(rpcError.message)
+    else setPreview(data)
+  }
+
+  async function confirmMerge() {
+    setBusy(true); setError('')
+    const { data, error: rpcError } = await supabase.rpc('merge_duplicate_profile', {
+      p_keep_id: keepUser.id, p_merge_id: mergeId, p_dry_run: false,
+    })
+    setBusy(false)
+    if (rpcError) setError(rpcError.message)
+    else setDone(data)
+  }
+
+  const movedRows = previewMatches
+    ? Object.entries(preview.rows_to_move ?? {}).filter(([, v]) => Number(v) > 0)
+    : []
+  const conflict = previewMatches ? (preview.identity_provider_conflict ?? null) : null
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4" onClick={() => !busy && onClose()}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        {done ? (
+          <div className="flex flex-col items-center text-center gap-3">
+            <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center">
+              <Check size={24} className="text-green-500" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-800">รวมบัญชีสำเร็จ</h3>
+            <p className="text-sm text-gray-500 leading-relaxed">
+              ข้อมูลทั้งหมดย้ายมาอยู่ที่บัญชีของ <strong className="text-gray-800">{keepUser.full_name || keepUser.email}</strong> แล้ว
+              และเจ้าตัวจะ login ด้วยช่องทางไหนก็เข้าบัญชีเดียวกันนี้
+            </p>
+            <button onClick={() => onMerged(done.deleted)} className="w-full py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium transition-colors">
+              เสร็จสิ้น
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-full bg-violet-100 flex items-center justify-center shrink-0">
+                <Users size={22} className="text-violet-500" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-lg font-semibold text-gray-800">รวมบัญชีซ้ำ</h3>
+                <p className="text-xs text-gray-400">ใช้เมื่อคนเดียวสมัครไว้หลายบัญชีคนละช่องทาง</p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-green-100 bg-green-50 px-3 py-2.5">
+              <p className="text-[11px] font-semibold text-green-700 mb-1">บัญชีที่เก็บไว้ (ข้อมูลทั้งหมดจะมารวมที่นี่)</p>
+              <p className="text-sm font-medium text-gray-800 truncate">{keepUser.full_name || keepUser.email || '—'}</p>
+              <div className="mt-1"><ProviderChips user={keepUser} compact /></div>
+            </div>
+
+            <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2.5">
+              <p className="text-[11px] font-semibold text-red-700 mb-1.5">บัญชีที่จะยุบ (จะถูกลบทิ้งหลังย้ายข้อมูลแล้ว)</p>
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                disabled={busy}
+                placeholder="ค้นหาชื่อ / อีเมล / เบอร์โทร"
+                className="w-full text-sm border border-red-200 rounded-lg px-3 py-2 mb-2 bg-white text-gray-700 focus:outline-none"
+              />
+              <select
+                value={mergeId}
+                onChange={(e) => { setMergeId(e.target.value); setPreview(null); setError('') }}
+                disabled={busy}
+                className="w-full text-sm border border-red-200 rounded-lg px-3 py-2 bg-white text-gray-700 focus:outline-none"
+              >
+                <option value="">{searching ? '— กำลังค้นหา... —' : `— เลือกบัญชีที่จะยุบ (${candidates.length}) —`}</option>
+                {candidates.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {(u.full_name || '(ไม่มีชื่อ)')} · {u.email || 'ไม่มีอีเมล'} · {ROLE_LABELS[u.role]?.label ?? u.role}
+                  </option>
+                ))}
+              </select>
+              {selected && <div className="mt-2"><ProviderChips user={selected} compact /></div>}
+            </div>
+
+            {previewMatches && (
+              <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs text-gray-600 space-y-1.5">
+                <p className="font-semibold text-gray-700">ผลตรวจสอบก่อนรวม</p>
+                {conflict?.length ? (
+                  <p className="text-red-600">
+                    ทั้งสองบัญชีมีช่องทาง login ซ้ำกัน ({conflict.join(', ')}) — รวมอัตโนมัติไม่ได้
+                    เพราะระบบเลือกแทนไม่ได้ว่าจะเก็บอันไหน
+                  </p>
+                ) : (
+                  <p className="text-green-700">ช่องทาง login ไม่ชนกัน — ย้ายมารวมได้</p>
+                )}
+                {movedRows.length === 0 ? (
+                  <p>บัญชีที่จะยุบยังไม่มีข้อมูลผูกอยู่เลย — ยุบได้ทันที ไม่มีอะไรสูญหาย</p>
+                ) : (
+                  <ul className="space-y-0.5">
+                    {movedRows.map(([k, v]) => (
+                      <li key={k}>• {MERGE_ROW_LABELS[k] ?? k} <strong className="text-gray-800">{v}</strong> รายการ</li>
+                    ))}
+                  </ul>
+                )}
+                <p className="text-gray-400">ประวัติในบันทึกการใช้งาน (audit log) จะยังคงชื่อผู้กระทำเดิมไว้ ไม่ถูกแก้ย้อนหลัง</p>
+              </div>
+            )}
+
+            {error && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>}
+
+            <div className="flex gap-3 mt-1">
+              <button onClick={onClose} disabled={busy} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50">
+                ยกเลิก
+              </button>
+              {previewMatches && !conflict?.length ? (
+                <button
+                  onClick={confirmMerge}
+                  disabled={busy}
+                  className="flex-1 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {busy ? <Loader2 size={15} className="animate-spin" /> : <Users size={15} />}
+                  {busy ? 'กำลังรวม...' : 'ยืนยันรวมบัญชี'}
+                </button>
+              ) : (
+                <button
+                  onClick={runPreview}
+                  disabled={busy || !mergeId}
+                  className="flex-1 py-2.5 rounded-xl bg-gray-700 hover:bg-gray-800 text-white text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {busy ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
+                  {busy ? 'กำลังตรวจสอบ...' : 'ตรวจสอบก่อนรวม'}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function AccountInfoTab(props) {
   const { user, isEditing, draft, setDraft } = props
   return (
@@ -1365,6 +1580,7 @@ function UserDetailPage(props) {
   const {
     user, onBack, currentUserRole, currentUserId, tenant, saving, deletingUser, setDeletingUser, deleteLoading, deleteUser,
     deleteBlockedReason, setDeleteBlockedReason, handoverStaff, setHandoverStaff,
+    mergeKeepUser, setMergeKeepUser, onMerged,
     saveUserEdits, updateUserEmail,
   } = props
   const [activeTab, setActiveTab] = useState('appointment')
@@ -1491,6 +1707,16 @@ function UserDetailPage(props) {
                   <Repeat size={14} /> โอนงานให้ผู้อื่น
                 </button>
               )}
+              {/* ปุ่มนี้ผูกกับบัญชีที่ "เก็บไว้" จึงไม่ใช้ canManageUser กับ user คนนี้ (บัญชีนี้ไม่ถูกลบ)
+                  — สิทธิ์จัดการถูกเช็คกับบัญชีที่จะยุบในโมดัลและซ้ำอีกชั้นที่ RPC */}
+              {['admin', 'superadmin'].includes(currentUserRole) && (
+                <button
+                  onClick={() => setMergeKeepUser(user)}
+                  className="flex items-center gap-1.5 text-xs font-medium text-violet-600 hover:text-violet-700 hover:bg-violet-50 px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  <Users size={14} /> รวมบัญชีซ้ำ
+                </button>
+              )}
               {canDelete && (
                 <button
                   onClick={() => setDeletingUser(user)}
@@ -1527,6 +1753,16 @@ function UserDetailPage(props) {
       />
       {handoverStaff && (
         <HandoverWorkloadModal oldStaff={handoverStaff} tenant={tenant} onClose={() => setHandoverStaff(null)} />
+      )}
+      {mergeKeepUser && (
+        <MergeDuplicateModal
+          keepUser={mergeKeepUser}
+          tenant={tenant}
+          currentUserRole={currentUserRole}
+          currentUserId={currentUserId}
+          onClose={() => setMergeKeepUser(null)}
+          onMerged={onMerged}
+        />
       )}
     </div>
   )
