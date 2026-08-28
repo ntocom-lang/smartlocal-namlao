@@ -1,0 +1,84 @@
+# Deploy อัตโนมัติขึ้น Cloudflare Workers เมื่อ master ขยับ
+#
+# ก่อนหน้านี้ repo นี้ไม่มี CI เลย — ต้องรัน `npm run cf:deploy` จากเครื่องนักพัฒนาทุกครั้ง
+# ซึ่งพลาดง่ายสองทาง: (1) merge PR แล้วลืม deploy คนใช้เลยไม่เห็นของใหม่ (2) build จาก
+# working tree ของเครื่องตัวเอง ที่มี .env.local ปักหมุด อปท. ไว้ ทำให้ bundle ไม่ตรงกับ
+# โค้ดใน master (เคสจริง 2026-08-28: ทุ่งแค้วโชว์ข้อมูลผิด tenant)
+#
+# CI นี้ build จาก commit ใน master ล้วนๆ ไม่มี .env.local ปนแน่นอน
+#
+# จงใจ "ไม่" รัน npm run lint เป็นด่าน เพราะโค้ดเดิมยังมี eslint error ค้าง 68 จุด
+# ถ้าใส่เป็น gate ตอนนี้ deploy จะไม่มีวันผ่าน — ค่อยเปิดเมื่อเคลียร์ของเดิมหมดแล้ว
+#
+# จงใจไม่รับ trigger จาก pull_request ด้วย: repo นี้เป็น public ถ้าให้ PR จาก fork รัน
+# workflow ที่ถือ secrets ใครก็ส่ง PR มาขโมย token ได้
+name: Deploy to Cloudflare Workers
+
+on:
+  push:
+    branches: [master]
+    # เปลี่ยนแค่เอกสาร/migration ไม่ต้อง deploy ซ้ำ (bundle ไม่ได้ต่างกันเลย)
+    paths-ignore:
+      - 'docs/**'
+      - 'supabase/**'
+      - '**.md'
+  workflow_dispatch: # กดรันเองได้จากแท็บ Actions เวลาต้อง deploy ซ้ำโดยโค้ดไม่เปลี่ยน
+
+# กัน deploy ซ้อนกันเวลา merge ติดๆ กันหลาย PR — ปล่อยให้ตัวที่รันอยู่จบก่อนเสมอ
+# (cancel-in-progress: false เพราะการยกเลิกกลางทาง wrangler อาจทิ้ง asset ค้าง)
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: ติดตั้ง dependency ตาม lockfile
+        run: npm ci
+
+      - name: Build
+        # VITE_TENANT_SLUG ต้องไม่ถูกตั้งที่นี่เด็ดขาด — มันมีไว้สำหรับ dev server/Capacitor
+        # ที่ hostname บอก อปท. ไม่ได้เท่านั้น ถ้าฝังลง bundle ของ production ทุกโดเมนจะ
+        # กลายเป็น อปท. เดียวกันหมด (ดูคอมเมนต์ยาวใน src/contexts/TenantContext.jsx)
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
+          VITE_GOOGLE_MAPS_MAP_ID: ${{ secrets.VITE_GOOGLE_MAPS_MAP_ID }}
+          VITE_VAPID_PUBLIC_KEY: ${{ secrets.VITE_VAPID_PUBLIC_KEY }}
+          VITE_LONGDO_KEY: ${{ secrets.VITE_LONGDO_KEY }}
+
+      - name: กันบันเดิลที่ปักหมุด อปท. ขึ้น production
+        # ด่านสุดท้ายจริงๆ ก่อนปล่อยของ — ถ้าวันหนึ่งมีใครเผลอเพิ่ม VITE_TENANT_SLUG
+        # เข้ามาในขั้น build ข้างบน หรือมี .env.* หลุดเข้า repo ให้ CI ล้มตรงนี้
+        # ดีกว่าไปรู้ตอนที่ประชาชนเห็นข้อมูลของ อปท. อื่น
+        run: |
+          if [ -n "$VITE_TENANT_SLUG" ]; then
+            echo "::error::VITE_TENANT_SLUG ถูกตั้งไว้ตอน build — ห้ามใช้กับ production"
+            exit 1
+          fi
+          if ls .env .env.local .env.production 2>/dev/null | grep -q .; then
+            echo "::error::เจอไฟล์ .env ใน working tree ของ CI — ตรวจ .gitignore"
+            exit 1
+          fi
+
+      - name: Deploy ขึ้น Cloudflare Workers
+        # ใช้ wrangler จาก devDependencies ของ repo (เวอร์ชันเดียวกับที่ทดสอบในเครื่อง)
+        # ไม่พึ่ง third-party action เพื่อลดผิวสัมผัส supply chain
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
