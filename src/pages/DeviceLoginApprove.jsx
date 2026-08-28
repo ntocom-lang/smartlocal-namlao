@@ -2,9 +2,13 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { CheckCircle2, Loader2, Monitor, ShieldAlert, ShieldCheck } from 'lucide-react'
+import { CheckCircle2, KeyRound, Loader2, Monitor, ScanLine, ShieldAlert, ShieldCheck } from 'lucide-react'
 
-// หน้าอนุมัติบนมือถือ — เปิดจากการสแกน QR ที่จอ PC (ดู docs/device-qr-login-design.md)
+// หน้าอนุมัติบนมือถือ — เข้าได้ 2 ทาง (ดู docs/device-qr-login-design.md)
+//   1. สแกน QR (จากในแอปที่ /scan-login หรือจากแอปกล้องของเครื่อง) → มี ?code= มาให้เลย
+//   2. กรอกรหัส 6 หลักที่โชว์คู่กับ QR บนจอ PC — ทางนี้จำเป็นเพราะการสแกนด้วยแอปกล้องจะเปิด
+//      ลิงก์ในเบราว์เซอร์เริ่มต้น ซึ่งบน iOS นั้น PWA กับ Safari แยก storage กัน เจ้าหน้าที่ที่
+//      ล็อกอินไว้ใน PWA จะกลายเป็นยังไม่ได้ล็อกอินทันที
 //
 // หัวใจของหน้านี้คือ "แตะเลขที่ตรงกับจอ PC": เลขจริงถูกส่งไปแสดงบนจอ PC เท่านั้น ไม่เคยส่งมา
 // ที่มือถือว่าตัวไหนถูก คนร้ายที่ส่ง QR ของเครื่องตัวเองมาทางไลน์/กระดาษ (QRLJacking —
@@ -15,9 +19,12 @@ export default function DeviceLoginApprove() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { session, profileLoading } = useAuth()
-  const code = searchParams.get('code') ?? ''
+  const codeFromUrl = searchParams.get('code') ?? ''
 
-  const [loading, setLoading] = useState(true)
+  // ตัวระบุคำขอที่กำลังอนุมัติ: มาจาก QR (code) หรือจากรหัสสั้นที่กรอกเอง (short_code)
+  const [identifier, setIdentifier] = useState(codeFromUrl ? { code: codeFromUrl } : null)
+  const [shortInput, setShortInput] = useState('')
+  const [loading, setLoading] = useState(Boolean(codeFromUrl))
   const [info, setInfo] = useState(null)
   const [error, setError] = useState('')
   const [approving, setApproving] = useState(false)
@@ -25,32 +32,46 @@ export default function DeviceLoginApprove() {
 
   // setState ทั้งหมดอยู่หลัง await โดยตั้งใจ — ไม่ให้ effect ยิง setState แบบ sync (cascading render)
   useEffect(() => {
-    if (!code || !session || profileLoading) return
+    if (!identifier || !session || profileLoading) return
     let cancelled = false
     ;(async () => {
       const { data, error: fnError } = await supabase.functions.invoke('device-login', {
-        body: { action: 'info', code },
+        body: { action: 'info', ...identifier },
       })
       if (cancelled) return
       setLoading(false)
       if (fnError && !data) {
-        setError('เชื่อมต่อไม่ได้ กรุณาลองสแกนใหม่อีกครั้ง')
+        setError('เชื่อมต่อไม่ได้ กรุณาลองใหม่อีกครั้ง')
         return
       }
       if (!data?.ok) {
-        setError(data?.error ?? 'คำขอนี้ใช้ไม่ได้แล้ว กรุณาสแกน QR ใหม่')
+        setIdentifier(null)
+        setError(data?.error ?? 'คำขอนี้ใช้ไม่ได้แล้ว กรุณาขอรหัสใหม่ที่หน้าจอคอมพิวเตอร์')
         return
       }
       setInfo(data)
     })()
     return () => { cancelled = true }
-  }, [code, session, profileLoading])
+  }, [identifier, session, profileLoading])
+
+  function submitShortCode(e) {
+    e.preventDefault()
+    const value = shortInput.trim()
+    if (!/^[0-9]{6}$/.test(value)) {
+      setError('กรุณากรอกรหัส 6 หลักที่แสดงบนหน้าจอคอมพิวเตอร์')
+      return
+    }
+    setError('')
+    setInfo(null)
+    setLoading(true)
+    setIdentifier({ short_code: value })
+  }
 
   async function approve(pick) {
     setApproving(true)
     setError('')
     const { data, error: fnError } = await supabase.functions.invoke('device-login', {
-      body: { action: 'approve', code, pick },
+      body: { action: 'approve', ...identifier, pick },
     })
     setApproving(false)
     if (fnError && !data) {
@@ -59,25 +80,15 @@ export default function DeviceLoginApprove() {
     }
     if (!data?.ok) {
       setInfo(null)
-      setError(data?.error ?? 'ยืนยันไม่สำเร็จ กรุณาสแกน QR ใหม่')
+      setIdentifier(null)
+      setShortInput('')
+      setError(data?.error ?? 'ยืนยันไม่สำเร็จ กรุณาขอรหัสใหม่ที่หน้าจอคอมพิวเตอร์')
       return
     }
     setApproved(true)
   }
 
   const card = 'w-full max-w-sm bg-white rounded-3xl shadow-xl border border-gray-100 p-7'
-
-  if (!code) {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <div className={card}>
-          <p className="text-center text-gray-500 text-sm">
-            ลิงก์ไม่ถูกต้อง กรุณาสแกน QR จากหน้าจอคอมพิวเตอร์อีกครั้ง
-          </p>
-        </div>
-      </div>
-    )
-  }
 
   if (profileLoading) {
     return (
@@ -90,6 +101,7 @@ export default function DeviceLoginApprove() {
   // สแกน QR จากแอปกล้องหรือ LINE อาจเปิดในเบราว์เซอร์ที่ยังไม่ได้เข้าสู่ระบบ — บอกให้ชัดว่า
   // ต้องทำอะไรต่อ แล้วพากลับมาที่หน้านี้เองหลังเข้าสู่ระบบเสร็จ
   if (!session) {
+    const backTo = codeFromUrl ? `/device-login?code=${codeFromUrl}` : '/device-login'
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className={`${card} text-center space-y-4`}>
@@ -105,7 +117,7 @@ export default function DeviceLoginApprove() {
           </p>
           <button
             type="button"
-            onClick={() => navigate('/auth', { state: { from: `/device-login?code=${code}` } })}
+            onClick={() => navigate('/auth', { state: { from: backTo } })}
             className="w-full py-3 rounded-xl text-white font-semibold text-sm active:scale-95 transition-all"
             style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}
           >
@@ -157,6 +169,43 @@ export default function DeviceLoginApprove() {
           <p className="text-sm text-red-500 text-center leading-relaxed">{error}</p>
         )}
 
+        {/* ยังไม่ได้ระบุคำขอ = เข้าหน้านี้ตรงๆ หรือคำขอก่อนหน้าใช้ไม่ได้แล้ว → ให้กรอกรหัสสั้น */}
+        {!identifier && !loading && (
+          <form onSubmit={submitShortCode} className="space-y-4">
+            <p className="text-sm text-gray-600 text-center leading-relaxed">
+              กรอกรหัส 6 หลักที่แสดงบนหน้าจอคอมพิวเตอร์
+            </p>
+            <div className="relative">
+              <KeyRound size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                value={shortInput}
+                onChange={(e) => setShortInput(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="000000"
+                className="w-full pl-9 pr-3 py-3 border border-gray-200 rounded-xl text-center text-xl font-bold tracking-[0.3em] text-gray-800 focus:outline-none focus:ring-2 focus:border-transparent"
+                style={{ '--tw-ring-color': 'var(--color-primary)' }}
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={shortInput.length !== 6}
+              className="w-full py-3 rounded-xl text-white font-semibold text-sm active:scale-95 transition-all disabled:opacity-50"
+              style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}
+            >
+              ถัดไป
+            </button>
+
+            <button
+              type="button"
+              onClick={() => navigate('/scan-login')}
+              className="w-full flex items-center justify-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+            >
+              <ScanLine size={15} /> สแกน QR แทนการกรอกรหัส
+            </button>
+          </form>
+        )}
+
         {info && !loading && (
           <>
             <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-600 space-y-1">
@@ -171,9 +220,10 @@ export default function DeviceLoginApprove() {
             </div>
 
             <p className="text-sm text-gray-600 text-center leading-relaxed">
-              แตะตัวเลขที่ <span className="font-semibold">ตรงกับหน้าจอคอมพิวเตอร์</span><br />
+              แตะตัวเลขที่ <span className="font-semibold">ตรงกับหน้าจอคอมพิวเตอร์ตรงหน้าคุณ</span><br />
               <span className="text-xs text-gray-400">
-                ถ้าคุณไม่ได้เป็นคนขอเข้าสู่ระบบ ให้ปิดหน้านี้ทิ้งทันที
+                ถ้าคุณไม่ได้เป็นคนขอเข้าสู่ระบบ หรือมีคนโทรมาบอกให้กรอกรหัส/แตะเลข
+                ให้ปิดหน้านี้ทิ้งทันที
               </span>
             </p>
 

@@ -162,24 +162,50 @@ serve(async (req) => {
       }
 
       const expiresAt = new Date(Date.now() + REQUEST_TTL_SECONDS * 1000).toISOString()
-      const { error } = await admin.from('device_login_requests').insert({
+      const verifierHash = await sha256Hex(verifier)
+      const userAgent = cleanText(req.headers.get('user-agent'), 400)
+
+      // รหัสสั้นสำหรับกรอกมือ (ทางเข้าสำรองเมื่อสแกนไม่ได้ เช่น iOS ที่ล็อกอินไว้ใน PWA
+      // ซึ่งแยก storage จาก Safari ที่แอปกล้องเปิดให้) — unique index กันชนไว้อีกชั้น
+      // จึงวนสุ่มใหม่ได้เมื่อบังเอิญไปตรงกับคำขอที่ยังค้างอยู่
+      let shortCode = ''
+      let inserted = false
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        shortCode = String(randomInt(100000, 999999))
+        const { error } = await admin.from('device_login_requests').insert({
+          code,
+          short_code: shortCode,
+          verifier_hash: verifierHash,
+          match_number: matchNumber,
+          decoy_numbers: [...decoys],
+          requester_ip: ip,
+          requester_user_agent: userAgent,
+          expires_at: expiresAt,
+        })
+        if (!error) { inserted = true; break }
+        // ชนเฉพาะ short_code เท่านั้นที่ควรลองใหม่ ปัญหาอื่นให้เลิกทันที
+        if (!String(error.message ?? '').includes('idx_device_login_requests_short_code')) break
+      }
+      if (!inserted) return json({ ok: false, error: 'ไม่สามารถเริ่มการเข้าสู่ระบบด้วย QR ได้' }, 500)
+
+      return json({
+        ok: true,
         code,
-        verifier_hash: await sha256Hex(verifier),
+        verifier,
         match_number: matchNumber,
-        decoy_numbers: [...decoys],
-        requester_ip: ip,
-        requester_user_agent: cleanText(req.headers.get('user-agent'), 400),
+        short_code: shortCode,
         expires_at: expiresAt,
       })
-      if (error) return json({ ok: false, error: 'ไม่สามารถเริ่มการเข้าสู่ระบบด้วย QR ได้' }, 500)
-
-      return json({ ok: true, code, verifier, match_number: matchNumber, expires_at: expiresAt })
     }
 
     // ── 2/3. มือถือดูรายละเอียด แล้วอนุมัติ ──────────────────────────────────
     if (action === 'info' || action === 'approve') {
-      if (!isHex(body.code, 32)) return json({ ok: false, error: 'รหัสไม่ถูกต้อง' }, 400)
-      const code = body.code
+      // เข้าได้ 2 ทาง: สแกน QR (code 32 hex) หรือกรอกรหัสสั้น 6 หลักที่โชว์คู่กับ QR
+      // short_code ใช้ได้แค่ตรงนี้ ฝั่ง PC ที่มาแลก session ยังต้องพิสูจน์ด้วย verifier เสมอ
+      const byCode = isHex(body.code, 32)
+      const shortCode = String(body.short_code ?? '').trim()
+      const byShortCode = /^[0-9]{6}$/.test(shortCode)
+      if (!byCode && !byShortCode) return json({ ok: false, error: 'รหัสไม่ถูกต้อง' }, 400)
 
       const authorization = req.headers.get('Authorization') ?? ''
       const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -203,15 +229,15 @@ serve(async (req) => {
         }, 403)
       }
 
-      const { data: request } = await admin
-        .from('device_login_requests')
-        .select('id, status, match_number, decoy_numbers, requester_ip, requester_user_agent, expires_at, attempt_count')
-        .eq('code', code)
-        .maybeSingle()
+      const columns = 'id, status, match_number, decoy_numbers, requester_ip, requester_user_agent, expires_at, attempt_count'
+      const lookup = admin.from('device_login_requests').select(columns)
+      const { data: request } = byCode
+        ? await lookup.eq('code', body.code).maybeSingle()
+        : await lookup.eq('short_code', shortCode).maybeSingle()
 
-      if (!request) return json({ ok: false, error: 'ไม่พบคำขอนี้ กรุณาสแกน QR ใหม่' }, 404)
+      if (!request) return json({ ok: false, error: 'ไม่พบคำขอนี้ กรุณาขอรหัสใหม่ที่หน้าจอคอมพิวเตอร์' }, 404)
       if (request.status !== 'pending') {
-        return json({ ok: false, error: 'คำขอนี้ถูกใช้ไปแล้ว กรุณาสแกน QR ใหม่' }, 409)
+        return json({ ok: false, error: 'คำขอนี้ถูกใช้ไปแล้ว กรุณาขอรหัสใหม่ที่หน้าจอคอมพิวเตอร์' }, 409)
       }
       if (new Date(request.expires_at).getTime() < Date.now()) {
         await admin.from('device_login_requests').update({ status: 'expired' }).eq('id', request.id)
@@ -268,7 +294,7 @@ serve(async (req) => {
         .select('id')
         .maybeSingle()
 
-      if (!approved) return json({ ok: false, error: 'คำขอนี้ถูกใช้ไปแล้ว กรุณาสแกน QR ใหม่' }, 409)
+      if (!approved) return json({ ok: false, error: 'คำขอนี้ถูกใช้ไปแล้ว กรุณาขอรหัสใหม่ที่หน้าจอคอมพิวเตอร์' }, 409)
 
       // ผู้ตรวจสอบต้องตามได้ว่า session บนเครื่องนั้นเกิดจากการอนุมัติของใคร จากเครื่องไหน เมื่อไร
       await admin.from('audit_logs').insert({

@@ -1,13 +1,16 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase, signOutSafely } from '../lib/supabase'
-import { ChevronLeft, Pencil, Loader2, X, Eye, EyeOff } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Pencil, Loader2, X, Eye, EyeOff, ScanLine } from 'lucide-react'
 import { compressImage } from '../lib/imageUtils'
 import { useAuth } from '../contexts/AuthContext'
 import { useTenant } from '../contexts/TenantContext'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
 import { THAI_PROVINCES, thaiDistrictsOf, thaiSubdistrictsOf } from '../lib/thaiAddress'
 import { tenantDefaultSubdistrict } from '../lib/tenantSubdistrict'
+
+// role ที่ใช้การเข้าสู่ระบบด้วย QR ได้ ต้องตรงกับ STAFF_ROLES ใน edge function device-login
+const STAFF_ROLES = ['superadmin', 'admin', 'officer', 'technician', 'staff', 'viewer', 'council']
 
 const ROLE_LABEL = {
   superadmin: 'Super Admin',
@@ -328,6 +331,20 @@ export default function ProfilePage() {
               {roleLabel}
             </span>
           </div>
+
+          {/* เข้าสู่ระบบบน PC เครื่องอื่นโดยไม่ต้องพิมพ์รหัสผ่านทิ้งไว้บนเครื่องนั้น — สแกนจาก
+              ในแอปตรงนี้ ไม่ใช่จากแอปกล้องของเครื่อง เพราะแอปกล้องจะเปิดลิงก์ในเบราว์เซอร์
+              เริ่มต้น ซึ่งบน iOS แยก storage จาก PWA ทำให้กลายเป็นยังไม่ได้ล็อกอิน */}
+          {STAFF_ROLES.includes(contextRole ?? profile.role) && (
+            <button
+              onClick={() => navigate('/scan-login')}
+              className="w-full flex items-center px-5 py-4 gap-3 text-left active:bg-gray-50 transition-colors"
+            >
+              <ScanLine size={16} className="text-gray-400" />
+              <span className="text-sm text-gray-700 flex-1">เข้าสู่ระบบบนคอมพิวเตอร์</span>
+              <ChevronRight size={16} className="text-gray-300" />
+            </button>
+          )}
 
           {/* เบอร์โทร */}
           <div className="flex items-center px-5 py-4 gap-3">

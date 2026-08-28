@@ -27,6 +27,7 @@ const DevJournal = lazyWithRetry(() => import('./pages/DevJournal'))
 const AuthPage = lazyWithRetry(() => import('./pages/AuthPage'))
 const ResetPasswordPage = lazyWithRetry(() => import('./pages/ResetPasswordPage'))
 const DeviceLoginApprove = lazyWithRetry(() => import('./pages/DeviceLoginApprove'))
+const QrScanLogin = lazyWithRetry(() => import('./pages/QrScanLogin'))
 const SatisfactionPage = lazyWithRetry(() => import('./pages/SatisfactionPage'))
 const TechnicianDashboard = lazyWithRetry(() => import('./pages/TechnicianDashboard'))
 const ProfilePage = lazyWithRetry(() => import('./pages/ProfilePage'))
@@ -537,6 +538,8 @@ function AppShell() {
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           {/* หน้าอนุมัติการเข้าสู่ระบบด้วย QR บนมือถือ — เปิดจากการสแกน QR ที่จอ PC */}
           <Route path="/device-login" element={<DeviceLoginApprove />} />
+          {/* สแกน QR จากในแอปเอง — ไม่ต้องออกไปเบราว์เซอร์อื่นที่ไม่มี session ของเจ้าหน้าที่ */}
+          <Route path="/scan-login" element={<QrScanLogin />} />
           <Route path="/satisfaction" element={<SatisfactionPage />} />
           <Route path="/profile" element={
             <RequireAuth>
