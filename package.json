@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build && node scripts/postbuild.js",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "cf:dev": "wrangler dev",
+    "cf:deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.4",
@@ -43,6 +45,7 @@
     "supabase": "^2.116.0",
     "vite": "^8.0.10",
     "vite-plugin-pwa": "^1.3.0",
-    "workbox-precaching": "^7.4.1"
+    "workbox-precaching": "^7.4.1",
+    "wrangler": "^4.127.0"
   }
 }
