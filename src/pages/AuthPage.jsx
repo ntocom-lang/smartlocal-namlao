@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { isNetworkAuthError } from '../lib/authErrors'
 import { useTenant } from '../contexts/TenantContext'
 import QrLoginPanel from '../components/auth/QrLoginPanel'
+import { appUrl } from '../lib/basename'
 import { Mail, Lock, Loader2, UserCircle2, Phone, Eye, EyeOff, ExternalLink, ArrowLeft, QrCode } from 'lucide-react'
 import { NAME_TITLES, joinThaiFullName } from '../lib/thaiName'
 import { PHONE_EMAIL_DOMAIN } from '../lib/authProviders'
@@ -70,7 +71,11 @@ export default function AuthPage() {
     try {
       const { error: err } = await supabase.auth.signInWithOAuth({
         provider,
-        options: { redirectTo: window.location.origin },
+        // ต้องเป็น appUrl() ไม่ใช่ origin เปล่าๆ — deployment แบบ path-based
+        // (smartlocal.vercel.app/{slug}/...) จะถูกตัด slug ทิ้ง พอ provider ส่งกลับมาที่ origin
+        // detectTenantSlug() หา slug ไม่เจอ แอปขึ้น "ไม่พบรหัสหน่วยงาน" และ checkAndFixProfile
+        // ไม่ถูกเรียก บัญชีที่สมัครใหม่จึงค้างเป็น municipality_id = null ถาวร
+        options: { redirectTo: appUrl('/') },
       })
       if (err) setError(errorText)
       else return // สำเร็จ = กำลัง redirect ออกไป ปล่อยสปินเนอร์ค้างไว้ตามเดิม
@@ -104,7 +109,7 @@ export default function AuthPage() {
     setLoading(true)
     try {
       const { error: err } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo: appUrl('/reset-password'),
       })
       if (err) {
         setError('ส่งอีเมลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')
