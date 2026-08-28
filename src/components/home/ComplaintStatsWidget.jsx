@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { withModule } from '../../lib/withModule'
 import { Link } from 'react-router-dom'
 import { useTenant } from '../../contexts/TenantContext'
 import { supabase } from '../../lib/supabase'
@@ -6,7 +7,7 @@ import { useVisibleRefresh } from '../../hooks/useVisibleRefresh'
 
 // วงแหวนความคืบหน้าแบบเบาๆ ไม่พึ่ง library ภายนอก (conic-gradient ธรรมดา) — ต้นทุน $0
 // ใช้ RPC complaint_stats() ที่มีอยู่แล้ว (public, ไม่มี PII, ใช้ในหน้า ComplaintStats.jsx ของแอดมินด้วย)
-export default function ComplaintStatsWidget() {
+function ComplaintStatsWidget() {
   const { tenant } = useTenant()
   const tenantId = tenant?.id
   const [stats, setStats] = useState(null)
@@ -68,3 +69,6 @@ export default function ComplaintStatsWidget() {
     </Link>
   )
 }
+
+// ซ่อนทั้งแถบเมื่อ อปท. ไม่ได้เปิดโมดูล 'complaints' — โมดูลคือแพ็กเกจที่ขายเป็นเรื่องๆ
+export default withModule('complaints', ComplaintStatsWidget)

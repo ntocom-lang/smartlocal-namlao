@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { withModule } from '../../lib/withModule'
 import { useNavigate } from 'react-router-dom'
 import { Luggage, Utensils, BedDouble, ShoppingBag, Wrench, ChevronRight, MapPin, Compass } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
@@ -13,7 +14,7 @@ const CATS = [
   { key: 'service', label: 'บริการ',  Icon: Wrench,      from: '#fb923c', to: '#c2410c', glow: '#fb923c60', emoji: '🔧' },
 ]
 
-export default function TourismSection() {
+function TourismSection() {
   const { tenant } = useTenant()
   const navigate = useNavigate()
   const [places, setPlaces] = useState([])
@@ -275,3 +276,6 @@ export default function TourismSection() {
     </section>
   )
 }
+
+// ซ่อนทั้งแถบเมื่อ อปท. ไม่ได้เปิดโมดูล 'tourism' — โมดูลคือแพ็กเกจที่ขายเป็นเรื่องๆ
+export default withModule('tourism', TourismSection)

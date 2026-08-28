@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { NotificationsProvider } from './contexts/NotificationsContext'
 import Header from './components/layout/Header'
 import Footer from './components/layout/Footer'
+import ModuleGuard from './components/common/ModuleGuard'
 import BottomNav from './components/layout/BottomNav'
 import CitizenSidebar from './components/layout/CitizenSidebar'
 import InstallPrompt from './components/InstallPrompt'
@@ -527,6 +528,9 @@ function AppShell() {
                    style={{ borderTopColor: 'var(--color-primary)' }} />
             </div>
           }>
+          {/* กันเข้าหน้าของโมดูลที่ อปท. นี้ไม่ได้เปิดใช้งาน — ครอบทั้งก้อนจุดเดียว
+              route ที่เพิ่มทีหลังจึงถูกคุมอัตโนมัติจาก MODULE_ROUTES ใน src/lib/staffModules.js */}
+          <ModuleGuard>
           <Routes>
           <Route path="/" element={<HomeOrTechRedirect />} />
           <Route path="/search" element={<ChatbotPage />} />
@@ -650,6 +654,7 @@ function AppShell() {
             </RequireAuth>
           } />
           </Routes>
+          </ModuleGuard>
           </Suspense>
           </SuspenseErrorBoundary>
           {location.pathname !== '/search' && location.pathname !== '/chatbot' && <Footer />}

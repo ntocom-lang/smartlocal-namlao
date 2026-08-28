@@ -29,6 +29,12 @@ export default defineConfig([
       globals: globals.browser,
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
+    rules: {
+      // withModule() ห่อคอมโพเนนต์ให้ซ่อนตัวเองเมื่อ อปท. ไม่ได้เปิดโมดูลนั้น (src/lib/withModule.jsx)
+      // ไฟล์ที่ export default withModule(...) ยังเป็น "ไฟล์ที่ export คอมโพเนนต์ล้วน" อยู่
+      // Fast Refresh ทำงานได้ตามปกติ แค่ปลั๊กอินไม่รู้จัก HOC ตัวนี้จึงต้องบอกมันตรงๆ
+      'react-refresh/only-export-components': ['error', { allowExportNames: [], extraHOCs: ['withModule'] }],
+    },
   },
   {
     // worker/ รันบน Cloudflare Workers ไม่ใช่เบราว์เซอร์ จึงมี global ที่ globals.browser

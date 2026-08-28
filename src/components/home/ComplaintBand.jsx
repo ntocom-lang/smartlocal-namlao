@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { withModule } from '../../lib/withModule'
 import { useNavigate } from 'react-router-dom'
 import { ChevronRight, Search, Siren } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
@@ -41,7 +42,7 @@ const DEFAULT_CATEGORIES = [
 
 // variant="warm" (ค่าเริ่มต้น) = แถบไล่สีส้ม ใช้กับ 6 ธีมเดิมทั้งหมดไม่เปลี่ยนแปลง
 // variant="clean" = พื้นขาว/เทาอ่อน ใช้เฉพาะ thungkaew-Theme (ServiceHub) ให้ตรงกับภาพอ้างอิงที่ขอเลียนแบบ
-export default function ComplaintBand({ variant = 'warm' }) {
+function ComplaintBand({ variant = 'warm' }) {
   const { tenant } = useTenant()
   const navigate = useNavigate()
   const [cats, setCats] = useState(DEFAULT_CATEGORIES)
@@ -165,3 +166,6 @@ export default function ComplaintBand({ variant = 'warm' }) {
     </div>
   )
 }
+
+// ซ่อนทั้งแถบเมื่อ อปท. ไม่ได้เปิดโมดูล 'complaints' — โมดูลคือแพ็กเกจที่ขายเป็นเรื่องๆ
+export default withModule('complaints', ComplaintBand)

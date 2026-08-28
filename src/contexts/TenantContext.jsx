@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { toReliableImageUrl } from '../lib/driveStorage'
+import { MANAGED_MODULE_KEYS } from '../lib/staffModules'
 
 const TenantContext = createContext(null)
 
@@ -286,8 +287,23 @@ export function TenantProvider({ children }) {
     setTenant((prev) => prev ? { ...prev, ...fields } : prev)
   }
 
+  // โมดูลนี้เปิดขายให้ อปท. นี้หรือยัง — จุดตัดสินใจเดียวของทั้งระบบ ใช้ทั้งหน้าเจ้าหน้าที่และหน้าประชาชน
+  //
+  // ต้องตอบ true ระหว่างที่ tenant ยังโหลดไม่เสร็จ (tenant = null) ไม่งั้นทุกหน้าจะกะพริบเป็น
+  // "ไม่มีสิทธิ์" หนึ่งเฟรมก่อนข้อมูลมา แล้วตัว <RequireModule> จะเด้งผู้ใช้ออกจากหน้าที่เขาเปิดถูกแล้ว
+  // ส่วน enabled_modules = null (แถวเก่าที่ไม่เคยตั้งค่า) แปลว่า "เปิดทุกโมดูล" ตามพฤติกรรมเดิม
+  //
+  // คีย์ที่ไม่ได้อยู่ในลิสต์ที่ตั้งค่าได้ (MANAGED_MODULE_KEYS) ให้ผ่านเสมอ เพราะไม่มี UI ให้ปิด
+  // การเช็คคีย์ที่ไม่มีใครตั้งค่าได้แล้วคืน false เท่ากับปิดฟีเจอร์ทิ้งโดยไม่มีใครเปิดกลับได้
+  function isModuleEnabled(key) {
+    if (!key) return true
+    if (!tenant || !Array.isArray(tenant.enabled_modules)) return true
+    if (!MANAGED_MODULE_KEYS.includes(key)) return true
+    return tenant.enabled_modules.includes(key)
+  }
+
   return (
-    <TenantContext.Provider value={{ tenant, terminology, loading, error, patchTenant }}>
+    <TenantContext.Provider value={{ tenant, terminology, loading, error, patchTenant, isModuleEnabled }}>
       {children}
     </TenantContext.Provider>
   )

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import ModuleLink from '../../../common/ModuleLink'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   Bell, FileSearch, ClipboardList, ShieldCheck,
@@ -99,28 +100,28 @@ export default function KledkaewMore() {
         <div className="bg-[#10b981] rounded-2xl p-4 shadow-xl border border-emerald-400/30">
           <h3 className="text-white font-bold text-[16px] mb-3 px-1 drop-shadow-sm">ติดต่อ/แจ้งเรื่องร้องเรียน</h3>
           <div className="bg-[#064e3b] rounded-xl py-4 px-1 flex justify-between items-stretch text-center shadow-inner">
-            <Link to="/complaint" className="flex-1 flex flex-col items-center justify-start gap-2 border-r border-white/10 px-1">
+            <ModuleLink to="/complaint" className="flex-1 flex flex-col items-center justify-start gap-2 border-r border-white/10 px-1">
               <div className="relative">
                 <ClipboardList size={32} className="text-amber-400 drop-shadow-sm" strokeWidth={1.5} />
                 <div className="absolute -top-1 -right-1 w-4 h-4 bg-amber-400 rounded-full flex items-center justify-center text-[#064e3b] text-[10px] font-bold">?</div>
               </div>
               <span className="text-white/90 text-[13px] font-medium leading-tight">ร้องเรียน<br/>ร้องทุกข์</span>
-            </Link>
-            <Link to="/doc-request" className="flex-1 flex flex-col items-center justify-start gap-2 border-r border-white/10 px-1">
+            </ModuleLink>
+            <ModuleLink to="/doc-request" className="flex-1 flex flex-col items-center justify-start gap-2 border-r border-white/10 px-1">
               <Globe size={32} className="text-amber-400 drop-shadow-sm" strokeWidth={1.5} />
               <span className="text-white/90 text-[13px] font-medium leading-tight">E-Service</span>
-            </Link>
-            <Link to="/my-complaints" className="flex-1 flex flex-col items-center justify-start gap-2 border-r border-white/10 px-1">
+            </ModuleLink>
+            <ModuleLink to="/my-complaints" className="flex-1 flex flex-col items-center justify-start gap-2 border-r border-white/10 px-1">
               <FileSearch size={32} className="text-amber-400 drop-shadow-sm" strokeWidth={1.5} />
               <span className="text-white/90 text-[13px] font-medium leading-tight">ติดตาม<br/>คำร้อง</span>
-            </Link>
-            <Link to="/my-docs" className="flex-1 flex flex-col items-center justify-start gap-2 px-1">
+            </ModuleLink>
+            <ModuleLink to="/my-docs" className="flex-1 flex flex-col items-center justify-start gap-2 px-1">
               <div className="relative">
                 <FileText size={32} className="text-amber-400 drop-shadow-sm" strokeWidth={1.5} />
                 <div className="absolute -top-1 -right-1 w-4 h-4 border-2 border-[#064e3b] rounded-full bg-amber-400"></div>
               </div>
               <span className="text-white/90 text-[13px] font-medium leading-tight">ติดตาม<br/>เอกสาร</span>
-            </Link>
+            </ModuleLink>
           </div>
         </div>
       </div>

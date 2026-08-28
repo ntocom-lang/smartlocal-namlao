@@ -8,6 +8,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { useTenant } from '../../contexts/TenantContext'
 import { useNotifications } from '../../contexts/NotificationsContext'
 import { signOutSafely } from '../../lib/supabase'
+import { moduleForPath } from '../../lib/staffModules'
 
 const NAV_GROUPS = [
   {
@@ -54,7 +55,7 @@ export default function CitizenSidebar() {
   const location         = useLocation()
   const navigate         = useNavigate()
   const { session, displayName } = useAuth()
-  const { tenant }       = useTenant()
+  const { tenant, isModuleEnabled } = useTenant()
   const { unreadCount }  = useNotifications()
 
   if (HIDDEN_PATHS.some(p => location.pathname.startsWith(p))) return null
@@ -80,8 +81,16 @@ export default function CitizenSidebar() {
       </div>
 
       {/* Nav */}
+      {/* ตัดเมนูของโมดูลที่ อปท. ไม่ได้เปิดออก แล้วซ่อนหัวข้อกลุ่มที่ไม่เหลือเมนูเลย
+          (ไม่งั้นจะเห็นหัวข้อ "ของฉัน" ลอยอยู่โดยไม่มีอะไรอยู่ข้างใต้) */}
       <nav className="flex-1 px-2.5 py-2 space-y-3">
-        {NAV_GROUPS.map(group => (
+        {NAV_GROUPS.map(group => ({
+          ...group,
+          items: group.items.filter(item => {
+            const key = moduleForPath(item.href)
+            return !key || isModuleEnabled(key)
+          }),
+        })).filter(group => group.items.length > 0).map(group => (
           <div key={group.label}>
             <p className="px-3 mb-1 text-[9px] font-bold uppercase tracking-widest" style={{ color: LABEL }}>
               {group.label}

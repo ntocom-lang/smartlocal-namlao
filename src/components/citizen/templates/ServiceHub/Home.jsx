@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import ModuleLink from '../../../common/ModuleLink'
 import { Link } from 'react-router-dom'
 import { useTenant } from '../../../../contexts/TenantContext'
 import { Wifi, Users, MapPinned, Compass } from 'lucide-react'
@@ -121,10 +122,10 @@ function EServiceGrid({ docTypes, rounded = 'rounded-2xl' }) {
         ))}
       </div>
       <div className="relative z-10 mt-2.5 flex justify-end">
-        <Link to="/doc-request"
+        <ModuleLink to="/doc-request"
           className="rounded-full border border-yellow-200/80 bg-gradient-to-r from-yellow-300 to-amber-400 px-3 py-1 text-[11px] font-black text-amber-950 shadow-md shadow-amber-950/15 transition-all hover:-translate-y-0.5 hover:shadow-lg">
           ดูทั้งหมด ›
-        </Link>
+        </ModuleLink>
       </div>
     </div>
   )
