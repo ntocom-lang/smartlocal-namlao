@@ -30,16 +30,26 @@ export default function GoogleMapsSettings() {
   const [saving, setSaving] = useState(false)
 
   // google_cloud_email/google_project_id ไม่ได้อยู่ใน TenantContext แล้ว (ตั้งใจไม่ส่งให้ผู้เยี่ยมชมทุกคน
-  // ผ่าน public tenant fetch) — หน้าตั้งค่านี้เข้าถึงได้เฉพาะแอดมิน จึงดึง 2 ฟิลด์นี้เองตรงๆ ตอนเปิดหน้า
+  // ผ่าน public tenant fetch) — หน้าตั้งค่านี้เข้าถึงได้เฉพาะแอดมิน จึงดึง 2 ฟิลด์นี้เองตอนเปิดหน้า
+  //
+  // เดิม SELECT ตรงจากตาราง แต่ column grant เป็นสิทธิ์ระดับ role ไม่ใช่ระดับแถว ผู้ใช้ที่ล็อกอิน
+  // คนไหนก็ได้จึงยิง REST อ่าน 2 ฟิลด์นี้ของ *ทุก* อปท. ได้ ตอนนี้ตัดสิทธิ์ทิ้งแล้วใน
+  // 20260830220000 และย้ายมาเรียกผ่าน RPC ที่ตรวจว่าเป็นแอดมินของหน่วยงานนั้นจริง
   useEffect(() => {
     if (!tenant?.id) return
     let cancelled = false
-    supabase.from('municipalities').select('google_cloud_email, google_project_id')
-      .eq('id', tenant.id).maybeSingle()
-      .then(({ data }) => {
-        if (cancelled || !data) return
-        setEmail(data.google_cloud_email || '')
-        setProjectId(data.google_project_id || '')
+    supabase.rpc('get_google_cloud_settings', { _municipality_id: tenant.id })
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (error) {
+          console.warn('[google-maps] อ่านค่า Google Cloud ไม่สำเร็จ:', error.message)
+          return
+        }
+        // RETURNS TABLE คืนเป็น array เสมอ ว่างได้ถ้าสิทธิ์ไม่ผ่านหรือไม่พบหน่วยงาน
+        const row = data?.[0]
+        if (!row) return
+        setEmail(row.google_cloud_email || '')
+        setProjectId(row.google_project_id || '')
       })
     return () => { cancelled = true }
   }, [tenant?.id])
