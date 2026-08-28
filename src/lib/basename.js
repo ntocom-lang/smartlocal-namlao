@@ -6,9 +6,12 @@
 // ที่นั่น basename ต้องเป็น '' และที่ไหนที่ slug มาจาก path ที่นั่น basename ต้องเป็น '/{slug}'
 // ถ้าสองอย่างนี้ไม่ตรงกัน จะได้ URL ที่หลุด tenant แล้วแอปจะขึ้น "ไม่พบรหัสหน่วยงาน"
 
+// ลำดับต้องตรงกับ detectTenantSlug() ใน TenantContext.jsx: hostname มาก่อน env var
+// เสมอ (ดูเหตุผลเต็มที่นั่น — ของเดิมเช็ค env var ก่อนแล้ว minifier ลบตรรกะ hostname
+// ทิ้งจนทุก อปท. กลายเป็นน้ำเลา) ที่นี่ไม่ได้ทำให้ผลลัพธ์เพี้ยนเหมือนที่โน่น เพราะ
+// custom domain คืน '' อยู่แล้วทั้งสองทาง แต่ต้องเรียงให้เหมือนกันไว้ ไม่งั้นวันหน้า
+// แก้ที่เดียวแล้วสองไฟล์นี้จะตีความ hostname คนละแบบ
 export function computeBasename() {
-  if (import.meta.env.VITE_TENANT_SLUG) return ''
-
   const { hostname, pathname } = window.location
 
   if (!hostname.endsWith('.vercel.app') && hostname !== 'localhost' && !hostname.match(/^\d/)) {
@@ -21,6 +24,9 @@ export function computeBasename() {
   // /reports) จะพังทันที เพราะ path นั้นเองจะถูกเข้าใจผิดว่าเป็น basename ทำให้ลิงก์ทุกอันเพี้ยน
   // (บั๊กจริงที่เจอ: เข้า /auth ตรงๆ แล้วกลายเป็นหน้าแรกซ้อนอยู่ใต้ /auth/auth, /auth/complaint ฯลฯ)
   if (/^smartlocal-.+$/.test(hostname.split('.')[0])) return ''
+
+  // build ที่ปักหมุด อปท. ไว้ (Capacitor / dev server) ไม่มี path ให้ตีความ
+  if (import.meta.env.VITE_TENANT_SLUG) return ''
 
   // Path mode: /namlao/... → basename = '/namlao' (เฉพาะ deployment กลางแบบ path-based เท่านั้น)
   const segment = pathname.split('/').filter(Boolean)[0]
