@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Loader2, Plus, X, Pencil, Trash2, ChevronLeft, ChevronRight, Paperclip, CalendarDays, Tag, Users, Check, ChevronUp, Image, FileText, Sparkles, Clock, MapPin, List, Link2, CheckCheck } from 'lucide-react'
-import { supabase, supabaseUrl } from '../../lib/supabase'
+import { Loader2, Plus, X, Pencil, Trash2, ChevronLeft, ChevronRight, Paperclip, CalendarDays, Tag, Users, Check, ChevronUp, Image, FileText, Sparkles, Clock, MapPin, List } from 'lucide-react'
+import { supabase } from '../../lib/supabase'
 import { notifyTelegram } from '../../lib/notifyTelegram'
 import { logAction } from '../../lib/auditLog'
 import { extractEventFromFile } from '../../lib/geminiChat'
@@ -530,8 +530,6 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
   const [pageSize, setPageSize] = useState(10)
   const [currentPage, setCurrentPage] = useState(1)
   const [showScrollTop, setShowScrollTop] = useState(false)
-  const [calToken, setCalToken] = useState(null)
-  const [copied, setCopied] = useState(false)
   const [viewingEvent, setViewingEvent] = useState(null)
   const topRef = useRef(null)
   const formErrorRef = useRef(null)
@@ -566,20 +564,6 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
     if (match) openEdit(match)
     onAutoEditHandled?.()
   }, [autoEditEventId, events])
-
-  // ลิงก์ subscribe ปฏิทินเปิดให้ทุกบทบาทที่เข้าถึงโมดูลนี้ได้ (เดิมจำกัดแค่ admin/superadmin)
-  // เจ้าหน้าที่ทุกกองรวมถึงช่างต้องผูกปฏิทินงานเข้ากับปฏิทินส่วนตัวได้เหมือนกัน — RLS ฝั่ง DB
-  // ไม่ได้ห้ามอ่าน calendar_token อยู่แล้ว เป็นการจำกัดในโค้ดล้วนๆ
-  //
-  // ⚠️ token นี้เปิดให้อ่านปฏิทินได้ "โดยไม่ต้องล็อกอิน" ใครได้ลิงก์ไปก็เห็นกิจกรรมทั้งหมด
-  // รวมของผู้บริหารและสภา — ปุ่มจึงเตือนไว้ในคำอธิบาย และถ้าลิงก์รั่ว ให้ออก token ใหม่โดย
-  // อัปเดตคอลัมน์ municipalities.calendar_token (ลิงก์เดิมจะใช้ไม่ได้ทันที)
-  useEffect(() => {
-    if (!tenant?.id || !EVENT_MANAGER_ROLES.includes(currentUserRole)) return
-    supabase.from('municipalities').select('calendar_token').eq('id', tenant.id).single()
-      .then(({ data }) => setCalToken(data?.calendar_token ?? null))
-      .catch((err) => console.warn('[events] อ่าน calendar_token ไม่สำเร็จ:', err?.message ?? err))
-  }, [tenant?.id, currentUserRole])
 
   useEffect(() => {
     const scroller = topRef.current?.closest('[class*="overflow-y-auto"]')
@@ -886,29 +870,6 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
     scroller?.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  const icsUrl = calToken
-    ? `${supabaseUrl}/functions/v1/calendar-ics?token=${calToken}`
-    : null
-
-  // ลิงก์ subscribe ปฏิทิน (.ics) — เอาไปวางใน Google Calendar / Apple Calendar / Outlook
-  // แล้วกิจกรรมของเทศบาลจะไหลเข้าปฏิทินส่วนตัวของเจ้าหน้าที่เองโดยอัตโนมัติ
-  //
-  // navigator.clipboard มีเฉพาะบน secure context (https หรือ localhost) — บนอินทราเน็ต
-  // ที่เปิดผ่าน http://192.168.x.x จะเป็น undefined ต้องมีทางถอยให้ผู้ใช้ยังเอาลิงก์ไปได้
-  async function copyIcsUrl() {
-    if (!icsUrl) return
-    try {
-      if (!navigator.clipboard?.writeText) throw new Error('clipboard API ไม่พร้อมใช้งาน')
-      await navigator.clipboard.writeText(icsUrl)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2500)
-    } catch (err) {
-      console.warn('[events] คัดลอกลิงก์ปฏิทินไม่สำเร็จ:', err?.message ?? err)
-      // ทางถอย: เปิด prompt ให้ผู้ใช้กด Ctrl+C เอาเอง ดีกว่ากดแล้วไม่เกิดอะไรขึ้นเลย
-      window.prompt('คัดลอกลิงก์ปฏิทินนี้ไปวางในแอปปฏิทินของคุณ', icsUrl)
-    }
-  }
-
   return (
     <div className="space-y-4" ref={topRef}>
       {showScrollTop && (
@@ -936,18 +897,6 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
               <><List size={13} /> รายการ</>
             )}
           </button>
-          {icsUrl && (
-            <button
-              type="button"
-              onClick={copyIcsUrl}
-              title="คัดลอกลิงก์สำหรับผูกปฏิทินนี้เข้ากับแอปปฏิทินส่วนตัว — ใครมีลิงก์นี้เปิดดูได้โดยไม่ต้องล็อกอิน อย่าเผยแพร่ต่อสาธารณะ"
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all active:scale-95 shadow-xs"
-              style={copied
-                ? { backgroundColor: '#f0fdf4', color: '#15803d', borderColor: '#86efac' }
-                : { backgroundColor: '#f8fafc', color: '#475569', borderColor: '#e2e8f0' }}>
-              {copied ? <><CheckCheck size={13} /> คัดลอกแล้ว</> : <><Link2 size={13} /> ลิงก์ปฏิทิน</>}
-            </button>
-          )}
           {canManage && (
             <button onClick={openAdd}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white shadow-xs"
@@ -979,18 +928,6 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
             style={{ backgroundColor: 'rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.9)' }}>
             {upcoming.length} รายการ
           </span>
-          {icsUrl && (
-            <button
-              type="button"
-              onClick={copyIcsUrl}
-              title="คัดลอกลิงก์สำหรับผูกปฏิทินนี้เข้ากับ Google Calendar / Apple Calendar / Outlook — ใครมีลิงก์นี้เปิดดูได้โดยไม่ต้องล็อกอิน อย่าเผยแพร่ต่อสาธารณะ"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold border transition-colors hover:bg-white/20"
-              style={copied
-                ? { backgroundColor: 'rgba(134,239,172,0.25)', color: '#dcfce7', borderColor: 'rgba(134,239,172,0.6)' }
-                : { backgroundColor: 'rgba(255,255,255,0.12)', color: '#fff', borderColor: 'rgba(255,255,255,0.3)' }}>
-              {copied ? <><CheckCheck size={13} /> คัดลอกแล้ว</> : <><Link2 size={13} /> ลิงก์ปฏิทิน</>}
-            </button>
-          )}
           {canManage && (
             <button onClick={openAdd}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold border transition-colors hover:bg-white/20"
