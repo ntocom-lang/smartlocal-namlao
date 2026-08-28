@@ -13,7 +13,10 @@ import { signOutSafely } from '../lib/supabase'
 
 const IDLE_LIMIT_MS = 30 * 60 * 1000  // 30 นาที — ยาวพอสำหรับงานเอกสารที่ต้องคิดนาน
 const WARN_BEFORE_MS = 2 * 60 * 1000  // เตือนล่วงหน้า 2 นาที ให้กด "ใช้งานต่อ" ได้ทัน
-const CHECK_INTERVAL_MS = 5000
+// เดินทุกวินาทีเพราะแถบบอกตัวตนโชว์เวลานับถอยหลังให้เห็นตลอด — ถ้าเช็คห่างกว่านี้
+// ตัวเลขจะกระโดดข้ามวินาที ดูเหมือนนาฬิกาเสีย (re-render แค่ StaffSessionBar ตัวเดียว
+// ที่ถือ state นี้ ไม่ได้ลามไปทั้งแอป)
+const CHECK_INTERVAL_MS = 1000
 const ACTIVITY_THROTTLE_MS = 5000
 // เก็บใน localStorage ด้วย ไม่ใช่แค่ในหน่วยความจำ — ปิดแท็บแล้วเปิดใหม่ต้องนับต่อจากเดิม
 // ไม่ใช่เริ่มนับหนึ่งใหม่ ไม่งั้นแค่ปิด-เปิดแท็บก็รีเซ็ตตัวจับเวลาได้ฟรี
@@ -40,8 +43,8 @@ function writeLastActivity(timestamp) {
 }
 
 export function useIdleLogout(enabled) {
-  // จำนวนวินาทีที่เหลือก่อนถูกออกจากระบบ (null = ยังไม่ถึงช่วงเตือน)
-  const [warningSecondsLeft, setWarningSecondsLeft] = useState(null)
+  // วินาทีที่เหลือก่อนถูกออกจากระบบ — โชว์บนแถบตลอดเวลา ไม่ใช่เฉพาะตอนใกล้หมด
+  const [secondsLeft, setSecondsLeft] = useState(Math.round(IDLE_LIMIT_MS / 1000))
   const lastActivityRef = useRef(0)
   const loggingOutRef = useRef(false)
 
@@ -49,7 +52,7 @@ export function useIdleLogout(enabled) {
     const now = Date.now()
     lastActivityRef.current = now
     writeLastActivity(now)
-    setWarningSecondsLeft(null)
+    setSecondsLeft(Math.round(IDLE_LIMIT_MS / 1000))
   }, [])
 
   useEffect(() => {
@@ -67,7 +70,6 @@ export function useIdleLogout(enabled) {
       throttleUntil = now + ACTIVITY_THROTTLE_MS
       lastActivityRef.current = now
       writeLastActivity(now)
-      setWarningSecondsLeft((prev) => (prev === null ? prev : null))
     }
 
     ACTIVITY_EVENTS.forEach((event) => {
@@ -83,16 +85,12 @@ export function useIdleLogout(enabled) {
 
       if (idleMs >= IDLE_LIMIT_MS) {
         loggingOutRef.current = true
-        setWarningSecondsLeft(null)
+        setSecondsLeft(0)
         signOutSafely('/admin/login?reason=idle')
         return
       }
 
-      if (idleMs >= IDLE_LIMIT_MS - WARN_BEFORE_MS) {
-        setWarningSecondsLeft(Math.ceil((IDLE_LIMIT_MS - idleMs) / 1000))
-      } else {
-        setWarningSecondsLeft((prev) => (prev === null ? prev : null))
-      }
+      setSecondsLeft(Math.ceil((IDLE_LIMIT_MS - idleMs) / 1000))
     }, CHECK_INTERVAL_MS)
 
     return () => {
@@ -101,6 +99,12 @@ export function useIdleLogout(enabled) {
     }
   }, [enabled])
 
-  // ปิดการใช้งานอยู่ = ไม่ต้องเตือนอะไรทั้งนั้น ตัดสินตรงนี้แทนการ setState ใน effect
-  return { warningSecondsLeft: enabled ? warningSecondsLeft : null, stayActive: markActive }
+  // ปิดการใช้งานอยู่ = ไม่ต้องนับอะไรทั้งนั้น ตัดสินตรงนี้แทนการ setState ใน effect
+  const active = enabled ? secondsLeft : null
+  return {
+    secondsLeft: active,
+    // ใกล้หมดเวลาแล้ว = ถึงคิวเด้ง modal ถามว่าจะใช้งานต่อไหม
+    isWarning: active !== null && active <= WARN_BEFORE_MS / 1000,
+    stayActive: markActive,
+  }
 }

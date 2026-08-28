@@ -1,7 +1,7 @@
 import { useAuth } from '../../contexts/AuthContext'
 import { useIdleLogout } from '../../hooks/useIdleLogout'
 import { signOutSafely } from '../../lib/supabase'
-import { LogOut, UserRound } from 'lucide-react'
+import { Clock, LogOut, UserRound } from 'lucide-react'
 
 // แถบบอกว่า "ตอนนี้กำลังใช้งานในชื่อใคร" สำหรับบัญชีเจ้าหน้าที่ พร้อมตัวจับเวลาออกจากระบบ
 // อัตโนมัติเมื่อไม่มีการใช้งาน
@@ -12,6 +12,15 @@ import { LogOut, UserRound } from 'lucide-react'
 // รหัสจากมือถือตั้งใจแก้ (ดู docs/device-login-design.md)
 //
 // ประชาชนไม่เห็นแถบนี้ ใช้แอปบนมือถือตัวเองอยู่แล้ว ไม่ได้แก้ปัญหาอะไร มีแต่เกะกะ
+
+// mm:ss — เจ้าหน้าที่อ่านนาที:วินาทีคุ้นกว่าตัวเลขวินาทีดิบ
+function formatCountdown(totalSeconds) {
+  if (totalSeconds === null) return ''
+  const safe = Math.max(0, totalSeconds)
+  const minutes = Math.floor(safe / 60)
+  const seconds = safe % 60
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+}
 
 const ROLE_LABEL = {
   superadmin: 'ผู้ดูแลระบบส่วนกลาง',
@@ -26,7 +35,7 @@ const ROLE_LABEL = {
 export default function StaffSessionBar() {
   const { session, role, displayName } = useAuth()
   const isStaff = Boolean(session) && Boolean(ROLE_LABEL[role])
-  const { warningSecondsLeft, stayActive } = useIdleLogout(isStaff)
+  const { secondsLeft, isWarning, stayActive } = useIdleLogout(isStaff)
 
   if (!isStaff) return null
 
@@ -40,21 +49,28 @@ export default function StaffSessionBar() {
             <span className="text-white/60"> · {ROLE_LABEL[role]}</span>
           </span>
         </span>
-        <button
-          type="button"
-          onClick={() => signOutSafely('/')}
-          className="flex items-center gap-1 shrink-0 px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 transition-colors font-semibold"
-        >
-          <LogOut size={12} /> ออกจากระบบ
-        </button>
+        <span className="flex items-center gap-2 shrink-0">
+          {/* นับถอยหลังให้เห็นตลอด ไม่ใช่โผล่ตอนใกล้หมด — เจ้าหน้าที่จะได้รู้ตัวว่าเหลือเวลาเท่าไร
+              ก่อนระบบจะออกให้เอง แทนที่จะถูกเด้งออกกลางคันโดยไม่รู้ล่วงหน้า */}
+          <span className={`flex items-center gap-1 tabular-nums ${isWarning ? 'text-amber-300 font-semibold' : 'text-white/60'}`}>
+            <Clock size={12} /> {formatCountdown(secondsLeft)}
+          </span>
+          <button
+            type="button"
+            onClick={() => signOutSafely('/')}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 transition-colors font-semibold"
+          >
+            <LogOut size={12} /> ออกจากระบบ
+          </button>
+        </span>
       </div>
 
-      {warningSecondsLeft !== null && (
+      {isWarning && (
         <div className="fixed inset-0 z-9999 bg-black/50 flex items-center justify-center px-4">
           <div className="w-full max-w-xs bg-white rounded-2xl p-6 text-center space-y-4 shadow-xl">
             <h2 className="text-base font-bold text-gray-800">ไม่ได้ใช้งานมาสักพัก</h2>
             <p className="text-sm text-gray-500 leading-relaxed">
-              ระบบจะออกจากระบบให้อัตโนมัติใน <span className="font-bold text-gray-800">{warningSecondsLeft}</span> วินาที
+              ระบบจะออกจากระบบให้อัตโนมัติใน <span className="font-bold text-gray-800">{secondsLeft}</span> วินาที
               เพื่อไม่ให้บัญชีของคุณค้างอยู่บนเครื่องนี้
             </p>
             <div className="flex gap-2">
