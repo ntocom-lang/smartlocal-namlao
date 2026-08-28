@@ -254,13 +254,16 @@ function StatusStepper({ status, note }) {
 const LEGACY_STATUS = { pending: 'new', completed: 'done', received: 'received' }
 function normalizeActionStatus(s) { return LEGACY_STATUS[s] ?? s ?? 'new' }
 
-function ActionButton({ status, id, onUpdate, loading, size = 'sm', tenant }) {
+function ActionButton({ status, id, onUpdate, loading, size = 'sm', tenant, canFinalClose = false }) {
   const action = NEXT_ACTION[normalizeActionStatus(status)]
   const [confirm, setConfirm] = useState(false)
   const [note, setNote] = useState('')
   const [pendingFiles, setPendingFiles] = useState([])
   const [uploading, setUploading] = useState(false)
   if (!action) return null
+  // เจ้าหน้าที่รายงานผลได้ถึง `done` เท่านั้น การเปลี่ยนเป็น `closed` เป็นการ
+  // ตรวจรับและแจ้งผลประชาชนขั้นสุดท้าย จึงสงวนไว้ให้ Admin/Super Admin
+  if (action.next === 'closed' && !canFinalClose) return null
   const withPhoto = action.next === 'done'
   function handleClose() { setConfirm(false); setNote(''); setPendingFiles([]) }
   async function handleConfirm() {
@@ -1206,14 +1209,18 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
                   <CheckCircle2 size={15} className="text-green-500 shrink-0 mt-0.5" />
                   <div>
                     <p className="text-xs font-semibold text-green-800">ช่างรายงานว่าดำเนินการแล้ว</p>
-                    <p className="text-[11px] text-green-600 mt-0.5">กรุณาตรวจสอบผลงานและกด "ปิดเรื่อง" เพื่อแจ้งประชาชน</p>
+                    <p className="text-[11px] text-green-600 mt-0.5">
+                      {isAdminRole
+                        ? 'กรุณาตรวจสอบผลงานและกด "ปิดเรื่อง" เพื่อแจ้งประชาชน'
+                        : 'ส่งผลการดำเนินงานให้ Admin ตรวจสอบและปิดเรื่องแล้ว'}
+                    </p>
                   </div>
                 </div>
               )}
             <div className="flex gap-2 flex-wrap items-center">
               <ActionButton status={c.status} id={c.id}
                 onUpdate={(id, next, wp = [], note = null) => { onUpdate(id, next, wp, note); onClose() }}
-                loading={updating} size="lg" tenant={tenant} />
+                loading={updating} size="lg" tenant={tenant} canFinalClose={isAdminRole} />
               <RejectButton status={c.status} id={c.id}
                 onUpdate={(id, next, wp = [], note = null) => { onUpdate(id, next, wp, note); onClose() }}
                 loading={updating} />
@@ -1583,10 +1590,18 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   }
 
   async function updateStatus(id, nextStatus, workPhotos = [], techNote = null) {
+    // Defense in depth: ActionButton ซ่อนปุ่มปิดเรื่องไว้แล้วผ่าน canFinalClose แต่ฟังก์ชันนี้
+    // เป็นทางออกสู่ฐานข้อมูลร่วมของทั้งหน้า (การ์ด/ตาราง/โมดัล) จึงต้องกันซ้ำที่นี่ด้วย
+    // ไม่ให้ขึ้นกับว่าใครเรียก — `completed` คือสถานะปิดเรื่องแบบ legacy คุมกติกาเดียวกัน
+    if (['closed', 'completed'].includes(nextStatus) && !['admin', 'superadmin'].includes(currentUserRole)) {
+      console.error('final complaint closure requires admin or superadmin')
+      return
+    }
     setUpdating(id)
     const payload = { status: nextStatus }
     if (workPhotos.length > 0) payload.work_photos = workPhotos
     if (techNote) payload.technician_note = techNote
+    // กำหนดเสร็จ = 15 วันทำการ (ไม่นับเสาร์-อาทิตย์และวันหยุดนักขัตฤกษ์)
     if (nextStatus === 'in_progress') payload.due_date = addWorkingDays(new Date(), 15)
     if (nextStatus === 'closed') payload.closed_at = new Date().toISOString()
     const { error } = await supabase.from('complaints').update(payload).eq('id', id)
@@ -2167,7 +2182,8 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                     </div>
                     {NEXT_ACTION[c.status] && (['admin', 'superadmin'].includes(currentUserRole) || (currentUserRole === 'technician' && c.assigned_to === currentUserId)) && (
                       <div onClick={(e) => e.stopPropagation()}>
-                        <ActionButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} tenant={tenant} />
+                        <ActionButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating}
+                          tenant={tenant} canFinalClose={['admin', 'superadmin'].includes(currentUserRole)} />
                       </div>
                     )}
                   </div>
@@ -2289,7 +2305,8 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
                         <div className="flex items-center justify-center gap-1">
                           {(['admin', 'superadmin'].includes(currentUserRole) || (currentUserRole === 'technician' && c.assigned_to === currentUserId)) && (
                             <>
-                              <ActionButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} size="xs" tenant={tenant} />
+                              <ActionButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating}
+                                size="xs" tenant={tenant} canFinalClose={['admin', 'superadmin'].includes(currentUserRole)} />
                               <RejectButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} compact />
                             </>
                           )}

@@ -552,6 +552,13 @@ export default function TechnicianDashboard() {
   }, [tenant?.id, staffId, fetchComplaints])
 
   async function updateStatus(id, nextStatus, workPhotos = null, techNote = null) {
+    // หน้านี้เป็นของผู้ปฏิบัติงาน ซึ่งจบงานได้แค่ `done` — การปิดเรื่อง (`closed` และ
+    // `completed` แบบ legacy) เป็นการตรวจรับของ Admin เท่านั้น ปัจจุบัน NEXT_ACTION ของ
+    // ไฟล์นี้จบที่ `done` อยู่แล้ว ด่านนี้จึงมีไว้กันวันที่มีคนแก้ตารางนั้นแล้วลืมเรื่องสิทธิ์
+    if (['closed', 'completed'].includes(nextStatus)) {
+      console.error('final complaint closure requires admin or superadmin')
+      return
+    }
     setUpdating(id)
     const payload = { status: nextStatus }
     if (workPhotos?.length > 0) payload.work_photos = workPhotos

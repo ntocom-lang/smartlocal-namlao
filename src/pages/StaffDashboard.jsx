@@ -1159,6 +1159,12 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
   }
 
   async function advanceStatus(id, next, workPhotos = null, techNote = null) {
+    // Defense in depth: shared detail modal ถูกใช้ทั้ง Admin และหน้าผู้รับผิดชอบ
+    // เจ้าหน้าที่ต้องจบงานที่ `done`; `closed`/legacy `completed` เป็นการตรวจรับของ Admin
+    if (['closed', 'completed'].includes(next) && !['admin', 'superadmin'].includes(currentUserRole)) {
+      console.error('final complaint closure requires admin or superadmin')
+      return
+    }
     setUpdating(id)
     const payload = { status: next, updated_at: new Date().toISOString() }
     if (workPhotos?.length > 0) payload.work_photos = workPhotos
