@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "cf:dev": "wrangler dev",
     "cf:deploy": "node scripts/predeploy-check.js && npm run build && wrangler deploy",
-    "cf:deploy:force": "npm run build && wrangler deploy"
+    "cf:deploy:force": "npm run build && wrangler deploy",
+    "check:uniform": "node scripts/check-backend-uniformity.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.4",
