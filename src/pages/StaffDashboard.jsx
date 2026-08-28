@@ -15,6 +15,7 @@ import { thaiDate } from '../lib/thaiDate'
 import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
 import { uploadFile } from '../lib/driveStorage'
 import { fetchAssignableStaff } from '../lib/staffRoster'
+import { MANAGED_MODULE_KEYS } from '../lib/staffModules'
 import OdorAcknowledgePanel from '../components/staff/OdorAcknowledgePanel'
 
 const CivilProjectAdmin = lazy(() => import('../components/admin/CivilProjectAdmin'))
@@ -1537,8 +1538,11 @@ export default function StaffDashboard() {
   const [complaintCatVersion, setComplaintCatVersion] = useState(0)
 
   const allModuleKeys = MODULES.map(m => m.key)
-  // keys ที่เคยอยู่ใน ModuleManager — ถ้า key ใหม่ยังไม่เคยถูก manage ให้ default เป็น enabled
-  const managedKeys = ['inbox', 'docs', 'complaints', 'events', 'projects', 'data-center', 'report']
+  // คีย์ที่ตั้งเปิด-ปิดรายหน่วยงานได้ มาจากลิสต์กลางที่ ModuleManager (หน้า admin) ใช้ร่วมกัน
+  // คีย์ที่ไม่อยู่ในลิสต์นั้นจะเปิดให้ทุก อปท. เสมอ เพราะไม่มี UI ให้ตั้งค่า
+  // (เดิม hardcode ไว้ที่นี่คนละชุดกับหน้า admin — fleet/posts/positions/infra/manual-staff
+  //  จึงเปิดค้างให้ทุก อปท. และ tourism ที่ติ๊กปิดได้ก็ไม่หายจากเมนูจริง)
+  const managedKeys = MANAGED_MODULE_KEYS
   const baseEnabledKeys = tenant?.enabled_modules
     ? [...tenant.enabled_modules, ...allModuleKeys.filter(k => !managedKeys.includes(k))]
     : allModuleKeys

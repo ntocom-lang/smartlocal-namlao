@@ -2,42 +2,12 @@ import { useState, useEffect } from 'react'
 import { Loader2, Save, CheckSquare, Square, CheckCircle2, AlertCircle } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
+import { MODULE_GROUPS, MANAGED_MODULE_KEYS } from '../../lib/staffModules'
 
-const ALL_MODULES = [
-  {
-    group: 'บริการประชาชน',
-    items: [
-      { key: 'complaints', label: 'คำร้อง',        desc: 'ระบบรับเรื่องร้องเรียน' },
-      { key: 'docs',       label: 'เอกสาร',         desc: 'จัดการคำขอเอกสารราชการ' },
-      { key: 'inbox',      label: 'กล่องงาน',       desc: 'รับ-ส่งคำขอเอกสารจากประชาชน' },
-    ],
-  },
-  {
-    group: 'งานภายใน',
-    items: [
-      { key: 'events',   label: 'ปฏิทินกิจกรรม', desc: 'กำหนดการและปฏิทินกิจกรรมของหน่วยงาน' },
-      { key: 'approve',  label: 'อนุมัติ',   desc: 'คำขออนุมัติภายใน' },
-      { key: 'projects', label: 'โครงการ',   desc: 'ติดตามโครงการก่อสร้าง' },
-    ],
-  },
-  {
-    group: 'ข้อมูลและรายงาน',
-    items: [
-      { key: 'data-center',  label: 'ศูนย์ข้อมูลดิจิทัล', desc: 'แผนที่และคลังข้อมูลพิกัด/สถานที่ทุกประเภท' },
-      { key: 'report',       label: 'รายงาน',      desc: 'สรุปสถิติและรายงาน' },
-    ],
-  },
-  {
-    group: 'เนื้อหาและชุมชน',
-    items: [
-      { key: 'tourism',           label: 'เที่ยว กิน พัก OTOP', desc: 'จัดการสถานที่ท่องเที่ยว ร้านค้า ที่พัก' },
-      { key: 'tourism-reviews',   label: 'รีวิวสถานที่',        desc: 'ตรวจสอบและลบรีวิวที่ไม่เหมาะสม' },
-      { key: 'business-register', label: 'ลงทะเบียนธุรกิจ',    desc: 'อนุมัติ/จัดการคำขอลงทะเบียนธุรกิจ' },
-    ],
-  },
-]
-
-const ALL_KEYS = ALL_MODULES.flatMap(g => g.items.map(m => m.key))
+// รายการโมดูลย้ายไปเป็นแหล่งความจริงร่วมกับ StaffDashboard แล้ว (src/lib/staffModules.js)
+// เดิมสองไฟล์ถือลิสต์คนละชุด ทำให้ติ๊กปิดบางโมดูลแล้วเมนูฝั่งเจ้าหน้าที่ไม่หายจริง
+const ALL_MODULES = MODULE_GROUPS
+const ALL_KEYS = MANAGED_MODULE_KEYS
 
 export default function ModuleManager({ tenant }) {
   const { patchTenant } = useTenant()
@@ -62,9 +32,14 @@ export default function ModuleManager({ tenant }) {
     setStatus(null)
   }
 
+  // "เปิด/ปิดทั้งหมด" ต้องแตะเฉพาะคีย์ที่หน้านี้แสดงจริง — คีย์อื่นที่อยู่ใน enabled_modules
+  // (ของเก่าอย่าง map/docs-archive หรือโมดูลใหม่ที่ยังไม่ได้เพิ่มเข้าหน้านี้) ต้องคงไว้เสมอ
+  // ของเดิม setEnabled(allOn ? [] : ALL_KEYS) เขียนทับทั้ง array ทำให้คีย์ที่หน้านี้ไม่รู้จัก
+  // หายจาก DB เงียบๆ ทุกครั้งที่กดปุ่มนี้ — ไม่มีใครเห็นผลจนกว่าจะมีคนเอาคีย์นั้นไปใช้กรองเมนู
   function toggleAll() {
     const allOn = ALL_KEYS.every(k => enabled.includes(k))
-    setEnabled(allOn ? [] : ALL_KEYS)
+    const untouched = enabled.filter(k => !ALL_KEYS.includes(k))
+    setEnabled(allOn ? untouched : [...untouched, ...ALL_KEYS])
     setDirty(true)
     setStatus(null)
   }
@@ -95,7 +70,10 @@ export default function ModuleManager({ tenant }) {
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="font-bold text-gray-700">จัดการโมดูล</h2>
-          <p className="text-xs text-gray-400 mt-0.5">{enabled.length}/{ALL_KEYS.length} โมดูลเปิดใช้งาน</p>
+          {/* นับเฉพาะคีย์ที่หน้านี้แสดง ไม่งั้นตัวเลขจะเกินตัวหารเมื่อ DB มีคีย์เก่าที่หน้านี้ไม่รู้จักปนอยู่ */}
+          <p className="text-xs text-gray-400 mt-0.5">
+            {enabled.filter(k => ALL_KEYS.includes(k)).length}/{ALL_KEYS.length} โมดูลเปิดใช้งาน
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button
