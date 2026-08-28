@@ -90,9 +90,66 @@ Hobby ให้ **100 deployment ต่อวัน** และทุกโป�
 แต่ติดข้อ 1 อยู่ดี
 
 ทางแก้เชิงสถาปัตยกรรม: รวมเหลือ **โปรเจกต์เดียว** แล้วผูกหลาย custom domain
-— `detectTenantSlug()` ใน [`src/contexts/TenantContext.jsx`](../src/contexts/TenantContext.jsx)
-แยก tenant จาก hostname อยู่แล้ว (และ `computeBasename()` ใน
-[`src/lib/basename.js`](../src/lib/basename.js) เช็คแพทเทิร์นเดียวกัน ต้องแก้คู่กันเสมอ)
-ได้ 1 build ต่อ push ไม่ว่าจะมีลูกค้ากี่ราย แต่ต้องเลิกพึ่งชื่อ
-`smartlocal-{slug}.vercel.app` (subdomain ผูกกับชื่อโปรเจกต์) จึงต้องรอให้ อปท.
-มีโดเมนของตัวเอง หรือหันไปใช้โหมด path (`/{slug}`) ที่แอปรองรับอยู่แล้ว
+ได้ 1 build ต่อ push ไม่ว่าจะมีลูกค้ากี่ราย — เลือกเส้นทางนี้แล้ว ดูขั้นตอนข้างล่าง
+
+## Runbook: รวมเหลือ Vercel โปรเจกต์เดียว + subdomain ต่อ อปท.
+
+### ทำไมถึงไม่ต้องแก้โค้ด
+
+ทั้งสามชั้นอ่าน slug จาก subdomain ของ custom domain อยู่แล้ว
+
+| ชั้น | ที่อยู่ | พฤติกรรม |
+| --- | --- | --- |
+| client | `detectTenantSlug()` ใน [`src/contexts/TenantContext.jsx`](../src/contexts/TenantContext.jsx) | custom domain → คืน `parts[0]` |
+| SSR (og:tags) | `detectSlug()` ใน [`api/ssr.js`](../api/ssr.js) | ตรรกะเดียวกันฝั่ง server |
+| router | `computeBasename()` ใน [`src/lib/basename.js`](../src/lib/basename.js) | คืน `''` สอดคล้องกัน |
+
+`namlao.example.com` → slug `namlao` ทันที ไม่ต้องตั้ง env var ไม่ต้องแก้อะไร
+และแต่ละ อปท. ยังได้ origin ของตัวเอง จึงแยก PWA / session / localStorage
+เหมือนตอนใช้ `smartlocal-{slug}.vercel.app` ทุกประการ
+
+> **แต่ apex กับ www พัง** — `example.com` ให้ `parts[0] = "example"` ซึ่งไม่ตรงกับ
+> slug ไหนเลย ขึ้น "ไม่พบรหัสหน่วยงาน" ส่วน `www.example.com` ติด `excluded`
+> แล้วตกไป path mode ได้ `null` ขึ้น error เดียวกัน **ต้องตั้ง redirect ที่ apex/www**
+> ไปหน้าแนะนำระบบหรือ อปท. ตัวอย่าง ไม่งั้นคนที่พิมพ์โดเมนเปล่าๆ (รวมถึง อปท.
+> ที่กำลังพิจารณาซื้อ) จะเจอหน้า error เป็นหน้าแรก
+
+### ขั้นตอน
+
+1. **เลือกโปรเจกต์ที่จะเก็บไว้: `smartlocal-namlao`**
+   เพราะเป็นตัวเดียวที่มีผู้ใช้จริง และชื่อโปรเจกต์ทำให้ URL เดิม
+   `smartlocal-namlao.vercel.app` ยัง resolve เป็น น้ำเลา ได้ถูกต้องต่อไป
+   ผู้ใช้ที่ติดตั้ง PWA ไว้แล้วจึงไม่ต้องทำอะไรเลย
+2. **จดโดเมน แล้วชี้ nameserver มาที่ Vercel**
+   ถ้าจะใช้ wildcard ต้องใช้วิธี nameserver เท่านั้น (เอกสาร Vercel ระบุไว้)
+3. **เพิ่ม `*.example.com` เป็น domain ของโปรเจกต์นั้น**
+   Hobby จำกัด 50 domain ต่อโปรเจกต์ พอสำหรับ 50 อปท.
+   ได้ wildcard แล้ว **การรับ อปท. รายใหม่ไม่ต้องแตะ DNS อีกเลย** แค่เพิ่มแถวใน
+   `municipalities` ให้ `slug` ตรงกับ subdomain ที่จะใช้
+4. **ทดสอบทีละ tenant** — `namlao.` / `tamnaktham.` / `thungkaew.` ต้องขึ้นชื่อ
+   โลโก้ และสีของ อปท. นั้น และแชร์ลิงก์ลง LINE แล้ว og:title ต้องถูก (พิสูจน์ว่า
+   `api/ssr.js` อ่าน host ใหม่ได้)
+5. **อัปเดต Supabase → Authentication → URL Configuration**
+   เพิ่ม `https://*.example.com/**` ใน Redirect URLs และแก้ Site URL
+   ⚠️ **ลืมข้อนี้ = เข้าสู่ระบบด้วย Google/LINE พังทั้งระบบบนโดเมนใหม่**
+   (ฝั่ง Google/LINE console ไม่ต้องแก้ เพราะชี้ที่ callback ของ Supabase ซึ่งไม่เปลี่ยน)
+6. **ตั้ง redirect ของ apex/www** ตามที่เตือนไว้ข้างบน
+7. **ปลด 3 โปรเจกต์ที่เหลือออกจาก git** (Settings → Git → Disconnect)
+   ได้ 1 build ต่อ push ทันที และ URL เดิมยังออนไลน์อยู่ (ค้างที่ deployment สุดท้าย)
+8. **ลบโปรเจกต์ทิ้ง** เมื่อมั่นใจว่าไม่มีใครใช้ URL เก่าแล้ว
+
+### ความเสี่ยงของขั้นตอนนี้
+
+- ระหว่างข้อ 7 ถึง 8 โปรเจกต์ที่ถูก disconnect จะ**ค้างอยู่ที่โค้ดเก่า** ถ้าเอาไปสาธิต
+  ให้ อปท. ดูจะเห็นของเก่า ควรทำข้อ 7 หลังจากโดเมนใหม่ใช้ได้จริงแล้วเท่านั้น
+  และให้ช่วงคาบเกี่ยวสั้นที่สุด
+- ตรวจก่อนว่ามีใครใช้ `smartlocal-app.vercel.app` (โหมด path) อยู่หรือไม่
+  ถ้ามีลิงก์แจกไปแล้วต้องแจ้งย้ายก่อนลบ
+- **ยังไม่แก้เรื่องแผน Hobby ห้ามใช้เชิงพาณิชย์** (ดูหัวข้อข้างบน) การรวมโปรเจกต์
+  แก้แค่โควตา build เท่านั้น ข้อนั้นยังต้องตัดสินใจแยก
+
+### ต้นทุน
+
+ค่าโดเมนปีละครั้ง — ตัวเลขขึ้นกับ TLD ที่เลือก ต้องเช็คกับ registrar ตอนจะจดจริง
+เป็นรายจ่ายเดียวของเส้นทางนี้ และเป็นรายจ่ายก้อนเดียวไม่ว่าจะมี อปท. กี่ราย
+ต่างจากค่า hosting ที่โตตามจำนวนลูกค้า
