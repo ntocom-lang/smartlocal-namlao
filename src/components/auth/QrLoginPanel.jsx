@@ -15,6 +15,10 @@ import { Loader2, RefreshCw, Smartphone } from 'lucide-react'
 // คนอื่นจะแลก session ของเจ้าหน้าที่ไปได้ทันที
 
 const POLL_INTERVAL_MS = 3000
+// ต่ออายุให้เองได้ไม่เกิน 3 รอบ (~15 นาที) แล้วต้องกดเอง — หน้านี้ยิง edge function ทุก 3 วิ
+// ถ้าปล่อยให้ต่ออายุไม่รู้จบ เครื่องที่เปิดหน้าทิ้งไว้ทั้งวันเครื่องเดียวก็กินเกือบหมื่น
+// invocation ต่อวัน ไม่กี่เครื่องก็ทะลุโควตาฟรีของโปรเจกต์แล้ว
+const MAX_AUTO_REFRESH = 3
 
 export default function QrLoginPanel() {
   const navigate = useNavigate()
@@ -26,8 +30,11 @@ export default function QrLoginPanel() {
   const [secondsLeft, setSecondsLeft] = useState(0)
   const [error, setError] = useState('')
   const requestRef = useRef(null)
+  const autoRefreshCount = useRef(0)
 
-  const start = useCallback(async () => {
+  // auto = true คือระบบต่ออายุให้เอง (นับโควตา), ไม่ใส่ = ผู้ใช้กดขอเอง (รีเซ็ตโควตา)
+  const start = useCallback(async ({ auto = false } = {}) => {
+    if (!auto) autoRefreshCount.current = 0
     setPhase('starting')
     setError('')
     setQrDataUrl('')
@@ -67,7 +74,16 @@ export default function QrLoginPanel() {
     const tick = () => {
       const remaining = Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 1000))
       setSecondsLeft(remaining)
-      if (remaining === 0) start()
+      if (remaining !== 0) return
+      // แท็บถูกซ่อน/ย่อ = ไม่มีใครมองจออยู่ อย่าเพิ่งสร้างคำขอใหม่ทิ้งไว้ รอจนกลับมาดูจริงๆ
+      if (document.hidden) return
+      if (autoRefreshCount.current >= MAX_AUTO_REFRESH) {
+        setError('หยุดต่ออายุอัตโนมัติแล้ว กดขอรหัสใหม่เมื่อพร้อมใช้งาน')
+        setPhase('error')
+        return
+      }
+      autoRefreshCount.current += 1
+      start({ auto: true })
     }
     tick()
     const timerId = setInterval(tick, 1000)
@@ -83,6 +99,8 @@ export default function QrLoginPanel() {
     async function poll() {
       const request = requestRef.current
       if (!request || cancelled) return
+      // ไม่ยิงถามสถานะตอนที่ไม่มีใครดูจอ — ผู้ใช้กลับมาเมื่อไรค่อยถามต่อ
+      if (document.hidden) return
 
       const { data, offline } = await invokeDeviceLogin({
         action: 'claim', code: request.code, verifier: request.verifier,
@@ -139,7 +157,7 @@ export default function QrLoginPanel() {
         {error && <p className="text-sm text-red-500">{error}</p>}
         <button
           type="button"
-          onClick={start}
+          onClick={() => start()}
           className="w-full py-3 rounded-xl text-white font-semibold text-sm transition-all active:scale-95"
           style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}
         >
@@ -199,7 +217,7 @@ export default function QrLoginPanel() {
 
       <button
         type="button"
-        onClick={start}
+        onClick={() => start()}
         className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors"
       >
         <RefreshCw size={14} /> ขอรหัสใหม่
