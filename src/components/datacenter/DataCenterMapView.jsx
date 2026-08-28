@@ -4,7 +4,8 @@ import { useEffect, useState, useMemo } from 'react'
 import { Loader2, Database, MessageSquareWarning, Minimize2, Maximize2, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import GoogleMapCanvas from '../common/GoogleMapCanvas'
-import { resolveGroupEmoji, resolveEntryEmoji, fetchGroupIconOverrides } from '../../lib/dataCenterGroupIcon'
+import { resolveGroupEmoji, resolveEntryEmoji, fetchGroupIconOverrides, isIconImage } from '../../lib/dataCenterGroupIcon'
+import CategoryIcon from './CategoryIcon'
 
 function TrafficLightIcon({ size = 20, className = "" }) {
   return (
@@ -50,15 +51,10 @@ const groupMeta = (g, overrides = {}) => {
 // ไอคอนเฉพาะประเภทย่อย ย้ายไปอยู่ใน src/lib/dataCenterGroupIcon.js แล้ว (FIXED_CATEGORY_EMOJI) เพื่อให้
 // หน้ารายการใช้ชุดเดียวกัน + รองรับไอคอนที่แอดมินตั้งเองรายประเภทย่อยผ่านหน้า "จัดการหมวดหมู่"
 const markerEmoji = (e, overrides = {}) => resolveEntryEmoji(e.group_name, e.category, overrides)
-const isIconUrl = value => typeof value === 'string'
-  && (value.startsWith('http://') || value.startsWith('https://') || value.startsWith('/') || value.startsWith('data:image/'))
-
-function CategoryIcon({ value, alt = '' }) {
-  if (!value) return null
-  return isIconUrl(value)
-    ? <img src={value} alt={alt} className="w-4 h-4 object-contain shrink-0" />
-    : <span className="leading-none shrink-0">{value}</span>
-}
+// isIconUrl/CategoryIcon เดิมนิยามไว้ในไฟล์นี้ไฟล์เดียว ย้ายไปเป็นของกลาง (isIconImage ใน
+// src/lib/dataCenterGroupIcon.js + CategoryIcon.jsx) แล้ว เพราะตอนนี้ไอคอนที่แอดมินตั้งเองก็เป็นรูป
+// ที่แนบจากเครื่องได้ ทุกหน้าที่แสดงไอคอนหมวดจึงต้องใช้ตัวตรวจชุดเดียวกัน ไม่ใช่เฉพาะแผนที่
+const isIconUrl = isIconImage
 
 // ฝั่งประชาชนบังคับเห็นเฉพาะ "คำร้อง"/"โครงการ" ที่เสร็จสิ้น/จบงานแล้วเท่านั้น (ไม่มีตัวเลือกสถานะ)
 // ฝั่งเจ้าหน้าที่ (allowStatusFilter=true) เลือกดูสถานะอื่นได้ด้วยผ่านตัวกรองสถานะ — ค่าเริ่มต้นยังเป็น "เสร็จสิ้นแล้ว" เหมือนกัน
@@ -228,7 +224,7 @@ function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, to
                 className="w-full flex items-center justify-between px-3 py-2.5 transition-colors"
                 style={{ backgroundColor: on ? meta.color : '#f3f4f6' }}>
                 <span className="flex items-center gap-2 text-sm font-bold" style={{ color: on ? '#fff' : '#9ca3af' }}>
-                  <span>{meta.emoji}</span> {group}
+                  <CategoryIcon value={meta.emoji} alt="" /> {group}
                 </span>
                 {/* ไม่มีรายประเภทให้กางดู (ฝั่งประชาชนถูกซ่อนไว้) ก็ไม่ต้องโชว์จำนวนรวม กันงงว่านับอะไรบ้าง */}
                 {visibleCategories.length > 0 && (

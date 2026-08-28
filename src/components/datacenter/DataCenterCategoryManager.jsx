@@ -6,6 +6,7 @@ import {
   saveGroupIconOverride, renameIconTarget, iconKey,
 } from '../../lib/dataCenterGroupIcon'
 import GroupIconPicker from './GroupIconPicker'
+import CategoryIcon from './CategoryIcon'
 
 // รวมกลุ่มหลัก/ประเภทย่อยที่ "มีอยู่จริง" ในฐานข้อมูล (ไม่ใช่ตัวอย่างเริ่มต้นใน SEED_GROUPS ของฟอร์ม)
 // เพื่อให้ admin/superadmin เจอชื่อที่พนักงานพิมพ์เพี้ยน/สะกดต่างกัน แล้วรวมเข้าด้วยกันได้
@@ -209,7 +210,7 @@ function IconButton({ emoji, label, onClick }) {
   return (
     <button type="button" onClick={onClick} title={label} aria-label={label}
       className="w-8 h-8 shrink-0 rounded-lg border border-gray-200 bg-white text-base leading-none flex items-center justify-center hover:border-blue-300 hover:bg-blue-50">
-      {emoji}
+      <CategoryIcon value={emoji} alt={label} />
     </button>
   )
 }

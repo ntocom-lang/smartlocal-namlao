@@ -7,6 +7,7 @@ import {
 import { supabase } from '../../lib/supabase'
 import DataCenterImportModal from './DataCenterImportModal'
 import GroupIconPicker from './GroupIconPicker'
+import CategoryIcon from './CategoryIcon'
 import { resolveGroupEmoji, resolveEntryEmoji, fetchGroupIconOverrides, saveGroupIconOverride, iconKey } from '../../lib/dataCenterGroupIcon'
 
 const TABLE_PAGE_SIZES = [10, 20, 50, 100]
@@ -362,7 +363,8 @@ export default function DataCenterOverview({
               <div className={`w-10 h-10 rounded-xl border flex items-center justify-center shadow-inner text-xl ${
                 isLight ? 'bg-sky-100 border-sky-300' : 'bg-cyan-500/20 border-cyan-500/40'
               }`}>
-                {resolveGroupEmoji(initialFilterGroup, groupIconOverrides)}
+                <CategoryIcon value={resolveGroupEmoji(initialFilterGroup, groupIconOverrides)}
+                  alt={`ไอคอนกลุ่ม ${initialFilterGroup}`} />
               </div>
               {canEditGroupIcon && (
                 <button type="button" title="แก้ไขไอคอนกลุ่มนี้"
@@ -577,7 +579,7 @@ export default function DataCenterOverview({
               }`}>
                 <button type="button" onClick={() => onSelectCategory?.(g.name, null)} className="w-full text-left p-3.5">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-2xl">{g.meta.emoji}</span>
+                    <span className="text-2xl leading-none"><CategoryIcon value={g.meta.emoji} alt="" /></span>
                     <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-full"
                       style={{ backgroundColor: withAlpha(g.meta.bg, 0.15), color: g.meta.bg }}>
                       {g.count} รายการ
@@ -715,7 +717,7 @@ export default function DataCenterOverview({
                     <div key={entry.id} className="flex items-center gap-2 px-3.5 py-3">
                       <button type="button" onClick={() => onEditEntry(entry)} className="flex-1 min-w-0 text-left">
                         <p className="text-xs font-bold truncate flex items-center gap-1.5">
-                          <span>{entryEmoji}</span>
+                          <CategoryIcon value={entryEmoji} alt="" />
                           <span className="truncate">{entry.name || '(ไม่มีชื่อ)'}</span>
                         </p>
                         <p className={`text-[10px] mt-0.5 truncate ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>{entry.category} · {formatThaiDate(entry.created_at)}</p>
@@ -819,7 +821,7 @@ export default function DataCenterOverview({
                         </td>
                         <td className={`px-3.5 py-3 font-semibold transition-colors ${isLight ? 'text-slate-900 group-hover:text-sky-700' : 'text-slate-100 group-hover:text-cyan-300'}`}>
                           <div className="flex items-center gap-2">
-                            <span>{entryEmoji}</span>
+                            <CategoryIcon value={entryEmoji} alt="" />
                             <span>{entry.name || <span className={`italic ${isLight ? 'text-slate-400' : 'text-slate-500'}`}>(ไม่มีชื่อ)</span>}</span>
                           </div>
                         </td>
