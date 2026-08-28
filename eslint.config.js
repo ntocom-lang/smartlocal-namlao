@@ -18,4 +18,13 @@ export default defineConfig([
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
   },
+  {
+    // worker/ รันบน Cloudflare Workers ไม่ใช่เบราว์เซอร์ จึงมี global ที่ globals.browser
+    // ไม่รู้จัก (HTMLRewriter เป็นของ Cloudflare เอง) ส่วน fetch/Request/Response/URL
+    // มากับ globals.browser อยู่แล้วเพราะเป็น Web API มาตรฐาน
+    files: ['worker/**/*.js'],
+    languageOptions: {
+      globals: { ...globals.browser, HTMLRewriter: 'readonly' },
+    },
+  },
 ])

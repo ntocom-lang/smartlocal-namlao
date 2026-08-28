@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "smartlocal",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-08-28",
+
+  // dist/ ถูก serve เป็น static asset ซึ่ง Cloudflare ไม่คิดเงินและไม่เรียก Worker
+  // not_found_handling: "none" คือหัวใจของการตั้งค่านี้ — request ที่ไม่ตรงกับไฟล์ไหน
+  // (route ของ SPA อย่าง /auth, /admin, /complaint/123) จะตกมาที่ worker/index.js
+  // ให้ฉีด og:tag ตาม อปท. ก่อนส่งออก ส่วน index.html ไม่อยู่ใน dist แล้วเพราะ
+  // scripts/postbuild.js เปลี่ยนชื่อเป็น _template.html ไว้ ทุก route จึงไม่ match asset
+  //
+  // ห้ามเพิ่ม run_worker_first: true — จะทำให้ทุกไฟล์ JS/CSS/รูปวิ่งผ่าน Worker
+  // แล้วเผาโควตา 100,000 ครั้ง/วันทิ้ง ทั้งที่ static asset ควรฟรี
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "none"
+  },
+
+  // anon key ไม่ได้ใส่ไว้ที่นี่เพราะโค้ดมี fallback อยู่แล้ว และมันถูก expose ใน
+  // client bundle ทุก deployment อยู่แล้ว ไม่ใช่ความลับ
+  "vars": {
+    "VITE_SUPABASE_URL": "https://umxssfahtuprnztlytdd.supabase.co"
+  },
+
+  "observability": {
+    "enabled": true
+  }
+}
