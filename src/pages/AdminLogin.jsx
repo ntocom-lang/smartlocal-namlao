@@ -66,7 +66,7 @@ export default function AdminLogin() {
 
         {loggedOutForIdle && (
           <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-5 text-center leading-relaxed">
-            ออกจากระบบให้อัตโนมัติแล้ว เพราะไม่ได้ใช้งานนานเกิน 30 นาที<br />
+            ออกจากระบบให้อัตโนมัติแล้ว เพราะไม่ได้ใช้งานนานเกิน 1 ชั่วโมง<br />
             <span className="text-xs">เพื่อไม่ให้บัญชีของคุณค้างอยู่บนเครื่องนี้</span>
           </p>
         )}
