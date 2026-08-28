@@ -3,7 +3,8 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { isNetworkAuthError } from '../lib/authErrors'
 import { useTenant } from '../contexts/TenantContext'
-import { Mail, Lock, Loader2, UserCircle2, Phone, Eye, EyeOff, ExternalLink, ArrowLeft } from 'lucide-react'
+import QrLoginPanel from '../components/auth/QrLoginPanel'
+import { Mail, Lock, Loader2, UserCircle2, Phone, Eye, EyeOff, ExternalLink, ArrowLeft, QrCode } from 'lucide-react'
 import { NAME_TITLES, joinThaiFullName } from '../lib/thaiName'
 import { PHONE_EMAIL_DOMAIN } from '../lib/authProviders'
 
@@ -274,18 +275,20 @@ export default function AuthPage() {
 
         {/* Title */}
         <h1 className="text-xl font-bold text-gray-800 text-center mb-1">
-          {mode === 'forgot' ? 'รีเซ็ตรหัสผ่าน' : mode === 'login' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก'}
+          {mode === 'forgot' ? 'รีเซ็ตรหัสผ่าน' : mode === 'qr' ? 'เข้าสู่ระบบด้วย QR' : mode === 'login' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก'}
         </h1>
         <p className="text-sm text-gray-400 text-center mb-6">
           {mode === 'forgot'
             ? 'ระบุอีเมลที่ลงทะเบียนไว้ เราจะส่งลิงก์ให้'
+            : mode === 'qr'
+            ? 'สำหรับเจ้าหน้าที่ที่ไปใช้คอมพิวเตอร์เครื่องอื่น'
             : mode === 'login'
             ? `เข้าสู่ระบบ${tenant?.system_name || `${tenant?.name} One Data`}`
             : 'สร้างบัญชีเพื่อใช้บริการ'}
         </p>
 
         {/* Tab — ซ่อนเมื่อ forgot */}
-        {mode !== 'forgot' && (
+        {mode !== 'forgot' && mode !== 'qr' && (
           <div className="flex bg-gray-100 rounded-xl p-1 mb-6">
             {['login', 'register'].map((m) => (
               <button key={m} onClick={() => { setMode(m); setError(''); setSuccess('') }}
@@ -345,7 +348,7 @@ export default function AuthPage() {
         )}
 
         {/* Form */}
-        {mode !== 'forgot' && (
+        {mode !== 'forgot' && mode !== 'qr' && (
         <>
         <form onSubmit={mode === 'login' ? handleLogin : handleRegister} className="space-y-3" autoComplete="on">
           {mode === 'register' && (
@@ -466,7 +469,28 @@ export default function AuthPage() {
           )}
           {mode === 'login' ? 'เข้าสู่ระบบด้วย Google' : 'สมัครด้วย Google'}
         </button>
+
+        {/* ทางเข้าสำหรับเจ้าหน้าที่ที่ไปใช้ PC เครื่องอื่น — กดปุ่ม Google/LINE บนเครื่องคนอื่นจะเข้าเป็น
+            บัญชีเจ้าของเครื่อง ทำให้ audit log บันทึกผู้กระทำผิดตัว โชว์เฉพาะตอนเข้าสู่ระบบ
+            (ไม่โชว์ตอนสมัครสมาชิก) ประชาชนที่กดเข้ามาจะถูกปฏิเสธที่ฝั่งเซิร์ฟเวอร์อยู่แล้ว */}
+        {mode === 'login' && (
+          <button onClick={() => { setMode('qr'); setError(''); setSuccess('') }}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-gray-200 bg-white text-gray-600 text-sm font-medium hover:bg-gray-50 active:scale-95 transition-all shadow-sm mt-3">
+            <QrCode size={17} className="text-gray-400" />
+            เข้าสู่ระบบด้วย QR (สำหรับเจ้าหน้าที่)
+          </button>
+        )}
         </>
+        )}
+
+        {mode === 'qr' && (
+          <>
+            <QrLoginPanel />
+            <button type="button" onClick={() => { setMode('login'); setError('') }}
+              className="w-full mt-5 flex items-center justify-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors">
+              <ArrowLeft size={15} /> กลับไปหน้าเข้าสู่ระบบ
+            </button>
+          </>
         )}
       </div>
     </div>
