@@ -20,6 +20,7 @@ export default function QrLoginPanel() {
   const [phase, setPhase] = useState('idle') // idle | starting | waiting | signingIn | error
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [matchNumber, setMatchNumber] = useState(null)
+  const [shortCode, setShortCode] = useState('')
   const [expiresAt, setExpiresAt] = useState(null)
   const [secondsLeft, setSecondsLeft] = useState(0)
   const [error, setError] = useState('')
@@ -42,6 +43,7 @@ export default function QrLoginPanel() {
 
     requestRef.current = { code: data.code, verifier: data.verifier }
     setMatchNumber(data.match_number)
+    setShortCode(data.short_code ?? '')
     setExpiresAt(data.expires_at)
 
     try {
@@ -164,8 +166,9 @@ export default function QrLoginPanel() {
     <div className="text-center space-y-4">
       <ol className="text-sm text-gray-600 text-left space-y-1.5 bg-gray-50 rounded-xl p-4 leading-relaxed">
         <li><span className="font-semibold">1.</span> เปิดแอปในมือถือของคุณ (ที่เข้าสู่ระบบไว้แล้ว)</li>
-        <li><span className="font-semibold">2.</span> สแกน QR ด้านล่างนี้</li>
-        <li><span className="font-semibold">3.</span> ในมือถือ ให้แตะตัวเลขที่ตรงกับเลขข้างล่าง</li>
+        <li><span className="font-semibold">2.</span> ไปที่ <span className="font-semibold">โปรไฟล์ → เข้าสู่ระบบบนคอมพิวเตอร์</span></li>
+        <li><span className="font-semibold">3.</span> สแกน QR ด้านล่าง หรือกดกรอกรหัส 6 หลัก</li>
+        <li><span className="font-semibold">4.</span> แตะตัวเลขที่ตรงกับเลขข้างล่างนี้</li>
       </ol>
 
       {qrDataUrl && (
@@ -176,6 +179,15 @@ export default function QrLoginPanel() {
           width={264}
           height={264}
         />
+      )}
+
+      {/* ทางเข้าสำรองเมื่อสแกนไม่ได้ (เช่น iOS ที่ล็อกอินไว้ใน PWA ซึ่งแยก storage จาก Safari
+          ที่แอปกล้องเปิดให้) — เปิดแอปในมือถือแล้วกรอกรหัสนี้แทนการสแกน */}
+      {shortCode && (
+        <div className="bg-gray-50 rounded-xl py-3">
+          <p className="text-xs text-gray-400 mb-0.5">สแกนไม่ได้? กรอกรหัสนี้ในแอปมือถือแทน</p>
+          <p className="text-2xl font-bold tracking-[0.3em] text-gray-700">{shortCode}</p>
+        </div>
       )}
 
       <div>

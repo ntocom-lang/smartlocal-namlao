@@ -22,6 +22,7 @@
     "@tailwindcss/vite": "^4.3.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
+    "jsqr": "^1.4.0",
     "jszip": "^3.10.1",
     "lucide-react": "^1.14.0",
     "qrcode": "^1.5.4",
