@@ -52,17 +52,25 @@ function detectTenantSlug() {
     if (match) return match[1]
   }
 
-  // Path mode: smartlocal.vercel.app/namlao/...
+  // build ที่ปักหมุด อปท. ไว้แล้ว (Capacitor / dev server) ต้องเช็คก่อน path mode ไม่ใช่หลัง
+  //
+  // ต้องตรงกับ computeBasename() ใน src/lib/basename.js ที่คืน '' ทันทีที่เจอ VITE_TENANT_SLUG
+  // ของเดิมที่นี่ไล่ path segment ก่อน ทำให้สองไฟล์ตีความ URL เดียวกันคนละแบบ: เปิด
+  // http://localhost:5173/complaint ตรงๆ แล้ว slug กลายเป็น "complaint" (ยิง
+  // ?slug=eq.complaint ได้ 406) ส่วน router ที่ basename = '' ก็หา route ไม่เจอ ขึ้นหน้าว่าง
+  // กระทบแอป Capacitor ด้วยเพราะรันบน localhost เหมือนกัน — deep-link/refresh หลุด tenant ทันที
+  //
+  // เงื่อนไข hostname ต้องอยู่หน้าสุดของ if เสมอ ห้ามเหลือแค่ `if (VITE_TENANT_SLUG)` ลอยๆ
+  // ไม่งั้น minifier จะมองว่าเป็นจริงเสมอตอน build แล้วลบตรรกะ hostname ข้างบนทิ้งทั้งก้อน
+  // (บั๊กจริงตอนย้าย Cloudflare 2026-08-28 ที่ทำให้ทุก อปท. กลายเป็นน้ำเลา)
+  const pinnedSlug = import.meta.env.VITE_TENANT_SLUG
+  if ((hostname === 'localhost' || hostname === '127.0.0.1') && pinnedSlug) {
+    return pinnedSlug
+  }
+
+  // Path mode: smartlocal.vercel.app/namlao/... (deployment กลางแบบ path-based เท่านั้น)
   const segment = pathname.split('/').filter(Boolean)[0]
   if (segment) return segment
-
-  // ค่าที่ฝังไว้ตอน build ใช้ได้เฉพาะบน localhost จริงๆ เท่านั้น คือแอปที่ห่อด้วย
-  // Capacitor กับ dev server ซึ่งเป็นสองกรณีเดียวที่ hostname บอกอะไรไม่ได้จริง
-  // จำกัดให้แคบขนาดนี้เพราะถ้าปล่อยเป็น fallback ลอยๆ โฮสต์อย่าง www.<โดเมน>
-  // (ที่ติด excluded แล้วไม่มี path) จะตกมารับค่านี้ แล้วกลายเป็นน้ำเลาซ้ำรอยเดิม
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return import.meta.env.VITE_TENANT_SLUG || null
-  }
 
   return null
 }
