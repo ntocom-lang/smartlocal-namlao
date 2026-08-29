@@ -472,7 +472,12 @@ export default function CitizenForm() {
 
 
 
-  const set = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }))
+  // ล้าง error ทันทีที่ผู้ใช้เริ่มแก้ฟิลด์ — ของเดิมล้างตอนกดส่งเท่านั้น ข้อความอย่าง
+  // "กรุณาเลือกลักษณะปัญหา" จึงค้างอยู่ใต้ฟอร์มทั้งที่เลือกไปแล้ว ทำให้เข้าใจว่ายังกรอกไม่ครบ
+  const set = (field) => (e) => {
+    setError(null)
+    setForm((prev) => ({ ...prev, [field]: e.target.value }))
+  }
   const reporterFullName = joinThaiFullName(form.name_title, form.name_first, form.name_last)
 
   // รวมฟิลด์เสริมของหมวดที่มีเป็น jsonb object เดียว — คืน null ถ้าหมวดนี้ไม่มีฟิลด์เสริม (ไม่ใช่ odor)
@@ -709,7 +714,7 @@ export default function CitizenForm() {
           <div className="flex flex-wrap gap-2">
             {visibleFtCategories.map((cat) => (
               <button key={cat.value} type="button"
-                onClick={() => setForm((p) => ({ ...p, category: cat.value }))}
+                onClick={() => { setError(null); setForm((p) => ({ ...p, category: cat.value })) }}
                 className="text-xs font-semibold px-3 py-1.5 rounded-full border transition-all"
                 style={form.category === cat.value
                   ? { backgroundColor: ftConfig.color, color: '#fff', borderColor: ftConfig.color }
