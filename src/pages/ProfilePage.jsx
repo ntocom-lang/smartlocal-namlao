@@ -8,6 +8,7 @@ import { useTenant } from '../contexts/TenantContext'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
 import { THAI_PROVINCES, thaiDistrictsOf, thaiSubdistrictsOf } from '../lib/thaiAddress'
 import { tenantDefaultSubdistrict } from '../lib/tenantSubdistrict'
+import ActiveSessions from '../components/profile/ActiveSessions'
 
 // role ที่ใช้การเข้าสู่ระบบด้วย QR ได้ ต้องตรงกับ STAFF_ROLES ใน edge function device-login
 const STAFF_ROLES = ['superadmin', 'admin', 'officer', 'technician', 'staff', 'viewer', 'council']
@@ -553,6 +554,9 @@ export default function ProfilePage() {
             )}
           </div>
         </div>
+
+        {/* อุปกรณ์ที่ล็อกอินอยู่ — ให้เจ้าของบัญชีเตะ session ที่ลืมไว้บนเครื่องคนอื่นได้เอง */}
+        <ActiveSessions />
 
         {/* Message */}
         {msg && <p className="text-xs text-emerald-600 text-center font-semibold bg-emerald-50 border border-emerald-200 p-2.5 rounded-xl">{msg}</p>}
