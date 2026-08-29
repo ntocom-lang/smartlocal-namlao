@@ -12,7 +12,7 @@ import {
   CheckCircle2, ChevronRight, ChevronLeft,
   Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical, Briefcase,
   X, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Repeat,
-  TrendingUp, AlertTriangle, Printer, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Banknote, Star, MessageSquare, Car, Terminal, Database, CalendarDays
+  TrendingUp, AlertTriangle, Printer, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Banknote, Star, MessageSquare, Car, Terminal, Database, CalendarDays, KeyRound
 } from 'lucide-react'
 import { supabase, signOutSafely } from '../lib/supabase'
 import { compressImage } from '../lib/imageUtils'
@@ -28,6 +28,7 @@ import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectReport'))
 import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
 import HolidaysAdmin from '../components/admin/HolidaysAdmin'
+import ResetPasswordModal from '../components/admin/ResetPasswordModal'
 import FeeSettingsAdmin from '../components/admin/FeeSettingsAdmin'
 // โหลดแบบ lazy — EventsManager เป็น chunk 60KB ที่ของเดิม import แบบ static ทำให้ถูกดาวน์โหลด
 // ทุกครั้งที่เปิดแผงควบคุม Admin ทั้งที่เมนูปฏิทินกิจกรรมถูกถอดออกไปแล้ว จึงเข้าไม่ถึงเลย
@@ -192,6 +193,10 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
   // derive จาก users list เสมอ (ไม่เก็บ snapshot แยก) กัน UI ค้างข้อมูลเก่าหลังแก้ไขในหน้ารายละเอียด
   const viewingUser = viewingUserId ? users.find(u => u.id === viewingUserId) : null
   const [deletingUser, setDeletingUser] = useState(null)
+  // ผู้ใช้ที่กำลังจะตั้งรหัสผ่านใหม่ให้ (ประชาชนลืมรหัสแล้วเดินมาที่สำนักงาน) — ระบบไม่มีทางกู้
+  // บัญชีอื่นเลย บัญชีเบอร์โทรรีเซ็ตทางอีเมลไม่ได้อยู่แล้ว ส่วนบัญชีอีเมลก็ส่งลิงก์ไปไม่ถึงถ้ายัง
+  // ไม่ได้ตั้ง custom SMTP (built-in ของ Supabase ปฏิเสธการส่งไปยังอีเมลนอกทีมโปรเจกต์)
+  const [resetPasswordUser, setResetPasswordUser] = useState(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
   // ลบไม่สำเร็จเพราะยังมีงานค้าง (guard ใน delete_user_by_id) — โชว์เหตุผลใน modal เดิม
   // พร้อมทางออกไปหน้าโอนงาน แทนที่จะแค่ alert() เฉยๆ แล้วให้ผู้ใช้เดาเอง
@@ -474,6 +479,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
         mergeKeepUser={mergeKeepUser} setMergeKeepUser={setMergeKeepUser} onMerged={handleMerged}
         saveUserEdits={saveUserEdits}
         updateUserEmail={updateUserEmail}
+        resetPasswordUser={resetPasswordUser} setResetPasswordUser={setResetPasswordUser}
       />
     )
   }
@@ -1637,6 +1643,7 @@ function UserDetailPage(props) {
     deleteBlockedReason, setDeleteBlockedReason, handoverStaff, setHandoverStaff,
     mergeKeepUser, setMergeKeepUser, onMerged,
     saveUserEdits, updateUserEmail,
+    resetPasswordUser, setResetPasswordUser,
   } = props
   const [activeTab, setActiveTab] = useState('appointment')
   const [isEditing, setIsEditing] = useState(false)
@@ -1772,6 +1779,14 @@ function UserDetailPage(props) {
                   <Users size={14} /> รวมบัญชีซ้ำ
                 </button>
               )}
+              {canEdit && (
+                <button
+                  onClick={() => setResetPasswordUser(user)}
+                  className="flex items-center gap-1.5 text-xs font-medium text-amber-600 hover:text-amber-700 hover:bg-amber-50 px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  <KeyRound size={14} /> ตั้งรหัสผ่านใหม่
+                </button>
+              )}
               {canDelete && (
                 <button
                   onClick={() => setDeletingUser(user)}
@@ -1818,6 +1833,9 @@ function UserDetailPage(props) {
           onClose={() => setMergeKeepUser(null)}
           onMerged={onMerged}
         />
+      )}
+      {resetPasswordUser && (
+        <ResetPasswordModal user={resetPasswordUser} onClose={() => setResetPasswordUser(null)} />
       )}
     </div>
   )
