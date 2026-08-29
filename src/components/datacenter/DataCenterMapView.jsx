@@ -40,6 +40,16 @@ const GROUP_META = {
   'โครงการก่อสร้าง':    { emoji: '🚧', color: '#7c3aed' },
 }
 const FALLBACK = { emoji: '📌', color: '#475569' }
+// กลุ่มหลักชื่อนี้คือ "ข้อตกลง" ของระบบ: ประเภทย่อยทุกตัวในกลุ่มนี้จะกลายเป็นปุ่มลอยมุมซ้ายบนของแผนที่
+// 1 ประเภทย่อย = 1 ปุ่ม ใช้ไอคอนที่แอดมินตั้งไว้ให้ประเภทย่อยนั้น และไม่ขึ้นการ์ดในแถบสรุปฝั่งขวาอีก
+//
+// ทำแบบนี้เพราะ อปท. สร้างกลุ่มนี้เองได้จากหน้า "จัดการหมวดหมู่" แล้วย้ายประเภทย่อยที่อยากให้เป็นปุ่ม
+// (เช่น กล้อง CCTV) เข้ามา — ได้ความยืดหยุ่นรายหน่วยงานโดยไม่ต้องแก้โค้ดและไม่ต้องเพิ่มคอลัมน์ใน DB
+// อปท. ไหนไม่มีกลุ่มชื่อนี้ ก็ไม่มีปุ่มลอยเพิ่ม (เหลือแค่ปุ่มเส้นทางถนนตามเดิม)
+//
+// เทียบชื่อแบบเป๊ะ (trim ช่องว่างหัวท้าย) ตั้งใจให้เป๊ะ เพราะมันคือคำสั่งของแอดมิน ไม่ใช่การเดาความหมาย
+const FLOAT_GROUP = 'ปุ่มลอยบนแผนที่'
+const isFloatGroup = g => typeof g === 'string' && g.trim() === FLOAT_GROUP
 // emoji มาจาก resolveGroupEmoji() ร่วมกับ DataCenterOverview.jsx เสมอ (overrides จากตาราง
 // data_center_group_icons ก่อน แล้วค่อย fallback ตาม GROUP_META/keyword ในนั้น) — สี/pinColor ยังคง
 // เป็นของแผนที่เองเหมือนเดิม ไม่ต้องตรงกับหน้ารายการ
@@ -209,6 +219,9 @@ function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, to
           // กลุ่มที่เป็นเส้นทาง (ถนน) ล้วน ไม่ต้องขึ้นเป็นการ์ดในแถบสรุปเลย ทั้งฝั่งเจ้าหน้าที่และประชาชน
           // เพราะควบคุมด้วยปุ่มลอย 🛣️ บนแผนที่แล้วจุดเดียวพอ ไม่ต้องมีอีกจุดควบคุม/แสดงผลซ้ำกัน
           if (isRouteOnlyGroup) return null
+          // กลุ่ม "ปุ่มลอยบนแผนที่" คุมจากปุ่มลอยบนแผนที่จุดเดียว ไม่ต้องมีการ์ดในแถบสรุปฝั่งขวาอีก
+          // (เหตุผลเดียวกับกลุ่มที่เป็นเส้นทางล้วนข้างบน) — กลุ่มอื่นยังใช้การ์ดในแถบสรุปตามเดิมทุกกลุ่ม
+          if (isFloatGroup(group)) return null
           const visibleCategories = categories.filter(c => !routeCategoryKeys.has(`${group}::${c.category}`))
           // หัวการ์ดกลุ่มต้องสั่งเปิด/ปิดประเภทย่อยในกลุ่มยกชุดด้วย ไม่ใช่แค่ activeGroups เพราะหมุด
           // ต้องผ่านตัวกรอง 2 ชั้น (กลุ่ม AND ประเภทย่อย) และประเภทย่อยเริ่มต้นปิดไว้หมด — ถ้าคุมแค่
@@ -293,6 +306,10 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   const effectiveStatusFilter = allowStatusFilter ? statusFilter : 'completed'
   // ปุ่มลอยเปิด/ปิดเส้นทาง (ถนน) ทั้งหมดพร้อมกัน — ไม่ต้องไปติ๊กทีละประเภทในแถบขวา
   const [showRoutes, setShowRoutes] = useState(false)
+  // ประเภทย่อยในกลุ่ม "ปุ่มลอยบนแผนที่" ที่ผู้ใช้กดปิด — เก็บเป็นชุด "ที่ปิด" ไม่ใช่ "ที่เปิด" เพราะปุ่มลอย
+  // ต้องเริ่มต้นเปิดทุกตัว ทั้งที่ยังไม่รู้ว่ามีประเภทย่อยอะไรบ้างจนกว่า allRows จะโหลดเสร็จ — ถ้าเก็บเป็นชุด
+  // ที่เปิดจะต้องไปเติมค่าใน useEffect ซึ่งชน lint rule react-hooks/set-state-in-effect ของโปรเจกต์
+  const [floatOff, setFloatOff] = useState(() => new Set())
   // ไอคอนกลุ่มหลักที่แอดมินตั้งเอง (data_center_group_icons) — ตัวเดียวกับที่ DataCenterOverview.jsx
   // ใช้ กันอิโมจิไม่ตรงกันระหว่างหน้ารายการกับแผนที่ ดู src/lib/dataCenterGroupIcon.js
   const [groupIconOverrides, setGroupIconOverrides] = useState({})
@@ -406,6 +423,8 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
       }
       return true
     }
+    // กลุ่ม "ปุ่มลอยบนแผนที่" ข้ามตัวกรอง 2 ชั้นปกติ ไปขึ้นกับปุ่มลอยของประเภทย่อยตัวเอง (ดู FLOAT_GROUP)
+    if (isFloatGroup(e.group_name)) return !floatOff.has(categoryKey(e, resolveCategoryLabel))
     return (activeGroups === null || activeGroups.has(e.group_name))
       && activeCategories.has(categoryKey(e, resolveCategoryLabel))
   })
@@ -414,6 +433,30 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
   const routeCategoryKeys = new Set(
     entries.filter(e => e.route_points?.length >= 2).map(e => categoryKey(e, resolveCategoryLabel)),
   )
+  // ปุ่มลอยบนแผนที่ = ปุ่มเส้นทางถนน (ของเดิม) + 1 ปุ่มต่อ 1 ประเภทย่อยในกลุ่ม "ปุ่มลอยบนแผนที่"
+  // ใช้ buildGroupSummary ตัวเดียวกับแถบสรุป ไอคอน/ชื่อ/การนับจึงมาจากแหล่งเดียวกันเสมอ
+  const hasRoutes = entries.some(e => e.route_points?.length >= 2)
+  const floatSummary = buildGroupSummary(
+    entries.filter(e => isFloatGroup(e.group_name)), resolveCategoryLabel, resolveMarkerIcon,
+  )
+  const mapButtons = [
+    hasRoutes && {
+      id: 'routes', label: 'เส้นทางถนน', Icon: TrafficLightIcon,
+      on: showRoutes, toggle: () => setShowRoutes(v => !v),
+    },
+    ...floatSummary.flatMap(g => g.categories.map(c => {
+      const key = `${g.group}::${c.category}`
+      return {
+        id: key, label: c.category, icon: c.icon, on: !floatOff.has(key),
+        toggle: () => setFloatOff(prev => {
+          const next = new Set(prev)
+          next.has(key) ? next.delete(key) : next.add(key)
+          return next
+        }),
+      }
+    })),
+  ].filter(Boolean)
+
   const fallbackCenter = tenant?.latitude && tenant?.longitude ? { lat: Number(tenant.latitude), lng: Number(tenant.longitude) } : { lat: 13.7563, lng: 100.5018 }
   // มีพิกัดจุดโฟกัส (มาจากปุ่ม "ดูบนแผนที่") ใช้ pan กล้องไปจุดนั้นแทนศูนย์กลางเทศบาลเดิม พร้อมซูมเข้าใกล้ขึ้น
   const hasFocusPoint = Number.isFinite(focusLat) && Number.isFinite(focusLng)
@@ -523,15 +566,31 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
             />
           )}
 
-          {entries.some(e => e.route_points?.length >= 2) && (
-            <button type="button" title={showRoutes ? 'ซ่อนเส้นทางถนน' : 'แสดงเส้นทางถนน'}
-              onClick={() => setShowRoutes(v => !v)}
-              className="absolute right-3 top-14 z-20 w-10 h-10 rounded-full shadow-md border flex items-center justify-center transition-all active:scale-95"
-              style={showRoutes
-                ? { backgroundColor: '#1e88c7', borderColor: '#1e88c7', color: '#ffffff' }
-                : { backgroundColor: '#ffffff', borderColor: '#e5e7eb', color: '#1e88c7' }}>
-              <TrafficLightIcon size={20} />
-            </button>
+          {/* ปุ่มลอยทั้งชุด เรียงแถวเดียวมุมซ้ายบน — มุมขวาบนถูกแถบสลับ แผนที่/ดาวเทียม ของ
+              GoogleMapCanvas จองไว้แล้ว (absolute right-3 top-3 ในไฟล์นั้น) */}
+          {mapButtons.length > 0 && (
+            <div className="absolute left-3 top-3 z-20 flex items-center gap-2">
+              {mapButtons.map(({ id, label, Icon, icon, on, toggle }) => (
+                // group/relative: ให้ป้ายชื่อโผล่ใต้ปุ่มตอน hover/โฟกัสด้วยคีย์บอร์ด — ใช้ป้ายในหน้าเว็บเอง
+                // ไม่ใช้ title ของเบราว์เซอร์ เพราะมันขึ้นช้า หน้าตาแล้วแต่ OS และแตะบนมือถือไม่ขึ้นเลย
+                <div key={id} className="relative group">
+                  <button type="button" aria-label={`${on ? 'ซ่อน' : 'แสดง'}${label}`} aria-pressed={on}
+                    onClick={toggle}
+                    className="w-10 h-10 rounded-full shadow-md border flex items-center justify-center transition-all active:scale-95"
+                    style={on
+                      ? { backgroundColor: '#1e88c7', borderColor: '#1e88c7', color: '#ffffff' }
+                      : { backgroundColor: '#ffffff', borderColor: '#e5e7eb', color: '#1e88c7' }}>
+                    {/* เส้นทางถนนใช้ไอคอน SVG ในโค้ด ส่วนปุ่มจากกลุ่ม "ปุ่มลอยบนแผนที่" ใช้ไอคอนที่
+                        แอดมินตั้งให้ประเภทย่อยนั้น ซึ่งเป็นได้ทั้งอิโมจิและรูปแนบ (CategoryIcon จัดการให้) */}
+                    {Icon ? <Icon size={20} /> : <span className="text-xl leading-none"><CategoryIcon value={icon} alt="" /></span>}
+                  </button>
+                  <span aria-hidden="true"
+                    className="pointer-events-none absolute left-0 top-full mt-1.5 whitespace-nowrap rounded-md bg-gray-800/90 px-2 py-1 text-[11px] font-semibold text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                    {label}
+                  </span>
+                </div>
+              ))}
+            </div>
           )}
 
           {selectedEntry && (selectedEntry.source_table === 'business_registrations' || selectedEntry.source_table === 'civil_projects') && (
