@@ -8,7 +8,9 @@
 
 param (
     [ValidateSet(
-        "admin", "officer", "officer-fin", "staff", "technician", "technician-2",
+        "superadmin",
+        "admin", "officer", "officer-fin", "officer-edu", "officer-audit",
+        "staff", "staff-edu", "staff-audit", "technician", "technician-2",
         "viewer", "council", "citizen",
         "fleet-admin", "fleet-staff", "fleet-viewer"
     )]

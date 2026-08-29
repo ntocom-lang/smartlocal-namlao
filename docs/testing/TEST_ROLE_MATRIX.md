@@ -17,7 +17,7 @@ access token, refresh token, recovery code หรือ browser storage/session 
 | ชื่อที่แสดง | เทศบาลตำบลสาธิต |
 | URL | https://demo.rk-networks.com/ |
 | สร้างโดย | `supabase/migrations/20260829113107_seed_demo_tenant.sql` |
-| บัญชีทดสอบ | `supabase/seed_demo_accounts.sql` (12 บัญชี ครบทุกสิทธิ์) |
+| บัญชีทดสอบ | `supabase/seed_demo_accounts.sql` (17 บัญชี ครบ 8 role · 3 fleet_role · ทั้ง 7 กอง) |
 | โครงตั้งต้น | กอง/ฝ่าย 7 · หมวดหมู่เรื่องร้องเรียน 11 · ผังจ่ายงาน 11 (คัดลอกค่าตั้งค่าจากน้ำเลา ไม่มีข้อมูลบุคคล) |
 
 **สิ่งที่ต้องรู้ก่อนทดสอบ**
@@ -41,35 +41,49 @@ access token, refresh token, recovery code หรือ browser storage/session 
 
 ## สิทธิ์หลักของระบบ
 
+ทุกบัญชีอยู่ใน อปท. `demo` (ยกเว้น Super Admin) · รหัสผ่านไม่บันทึกในไฟล์นี้
+สร้าง/รีเซ็ตด้วย `supabase/seed_demo_accounts.sql`
+
+ครอบคลุมครบ **8 role · 3 fleet_role · ทั้ง 7 กองของสนามซ้อม** ไม่มีกองไหนเหลือ 0 คน
+และทุกบัญชีผูก `position_id` กับทำเนียบตำแหน่งจริง เพื่อให้คอลัมน์ "สังกัดและตำแหน่ง"
+ในหน้าจัดการผู้ใช้มีข้อมูลให้เรียงทดสอบ
+
+| Test Email | `role` | `fleet_role` | สังกัด | ตำแหน่งในทำเนียบ | ใช้ทดสอบอะไร |
+|---|---|---|---|---|---|
+| `demo-admin` | `admin` | `fleet_admin` | สำนักปลัด | ปลัด อบต. | จัดการระบบและผู้ใช้ใน อปท. ตนเอง ไม่ข้าม tenant |
+| `demo-officer-eng` | `officer` | `fleet_staff` | กองช่าง | ผอ.กองช่าง | จัดการงานในกองตนเอง · **ต้องไม่เห็นงานกองอื่น** |
+| `demo-officer-fin` | `officer` | `fleet_staff` | กองคลัง | ผอ.กองคลัง | คู่เทียบ พิสูจน์ว่าหัวหน้ากองแยกกันจริง |
+| `demo-officer-edu` | `officer` | `fleet_staff` | กองการศึกษา | ผอ.กองการศึกษาฯ | หัวหน้ากองที่ไม่เกี่ยวกับงานซ่อม |
+| `demo-officer-audit` | `officer` | `fleet_viewer` | ตรวจสอบภายใน | หัวหน้าหน่วยตรวจสอบภายใน | หัวหน้ากองที่ควรอ่านได้แต่ไม่ควรแก้งานคนอื่น |
+| `demo-staff` | `staff` | *(ไม่มี)* | กองช่าง | เจ้าพนักงาน | **ต้องไม่เห็นเมนูยานพาหนะ** (คู่เทียบของ fleet) |
+| `demo-staff-edu` | `staff` | *(ไม่มี)* | กองการศึกษา | ครู/ผู้ดูแลเด็ก | เจ้าหน้าที่กองที่ไม่มีงานซ่อม |
+| `demo-staff-audit` | `staff` | *(ไม่มี)* | ตรวจสอบภายใน | นักวิชาการตรวจสอบภายใน | เจ้าหน้าที่หน่วยตรวจสอบ |
+| `demo-technician` | `technician` | *(ไม่มี)* | กองช่าง | นายช่างโยธา | รับงานและอัปเดตสถานะ/หลักฐานหน้างาน |
+| `demo-technician-2` | `technician` | *(ไม่มี)* | สำนักปลัด | ช่างไฟฟ้า | คู่เทียบ ทดสอบจ่ายงานข้ามกอง · **ต้องไม่เห็นงานที่ไม่ได้รับมอบหมาย** |
+| `demo-viewer` | `viewer` | `fleet_viewer` | ผู้บริหาร | นายก อบต. | อ่านรายงาน/ภาพรวมได้ แก้หรือลบไม่ได้ |
+| `demo-council` | `council` | `fleet_viewer` | สมาชิกสภาฯ | สมาชิกสภา | เมนูสภา โดยไม่มีสิทธิ์ Admin |
+| `demo-citizen` | `citizen` | *(ไม่มี)* | ไม่สังกัด | — | เห็นเฉพาะข้อมูลของตนเอง |
+| `demo-fleet-admin` | `staff` | `fleet_admin` | กองช่าง | นักวิชาการ | สร้าง/แก้/ลบข้อมูล Fleet และกำหนดสิทธิ์ |
+| `demo-fleet-staff` | `staff` | `fleet_staff` | กองช่าง | พนักงานขับเครื่องจักรกล | ทำรายการตามกอง ถูกบล็อกคำสั่งที่สงวนให้ Admin |
+| `demo-fleet-viewer` | `staff` | `fleet_viewer` | กองช่าง | พนักงานจ้างทั่วไป | อ่านอย่างเดียว ไม่มีปุ่มเขียน/ลบ |
+
+ทุกบัญชีลงท้าย `@smartlocal.test` (TLD สงวนตาม RFC 2606 เป็นอีเมลจริงไม่ได้แน่นอน)
+
+### Super Admin — ใช้แล้วลบทิ้งทันที
+
 > [!CAUTION]
-> **Super Admin:** ไม่อนุญาตให้สร้างบัญชีทดสอบในระบบ (สงวนเฉพาะบัญชีจริงของผู้พัฒนาระบบเท่านั้น)
-
-ทุกบัญชีอยู่ใน อปท. `demo` · รหัสผ่านชุดเดียวกันทั้งหมด ไม่บันทึกไว้ในไฟล์นี้
-(อยู่ในหัวไฟล์ `seed_demo_accounts.sql` ตอนรัน แล้วต้องลบออกก่อน commit)
-
-| ลำดับ | Test Email | `role` | `fleet_role` | สังกัด | ตำแหน่ง | ผลที่ต้องตรวจ | Chrome Profile |
-|---:|---|---|---|---|---|---|---|
-| 1 | `demo-admin@smartlocal.test` | `admin` | `fleet_admin` | สำนักปลัด | นักวิชาการคอมพิวเตอร์ | จัดการระบบและผู้ใช้ภายใน อปท. ตนเอง แต่ไม่ข้าม tenant | `TEST-admin` |
-| 2 | `demo-officer-eng@smartlocal.test` | `officer` | `fleet_staff` | กองช่าง | ผู้อำนวยการกองช่าง | จัดการงานในกองตนเอง · **ต้องไม่เห็นงานกองคลัง** | `TEST-officer` |
-| 3 | `demo-officer-fin@smartlocal.test` | `officer` | `fleet_staff` | กองคลัง | ผู้อำนวยการกองคลัง | คู่เทียบของข้อ 2 ใช้พิสูจน์ว่าหัวหน้ากองแยกกันจริง | `TEST-officer-fin` |
-| 4 | `demo-staff@smartlocal.test` | `staff` | *(ไม่มี)* | กองช่าง | เจ้าพนักงานธุรการ | ใช้งานเฉพาะงานที่ได้รับมอบหมาย · **ต้องไม่เห็นเมนูยานพาหนะ** | `TEST-staff` |
-| 5 | `demo-technician@smartlocal.test` | `technician` | *(ไม่มี)* | กองช่าง | นายช่างโยธาปฏิบัติงาน | รับงานและอัปเดตสถานะ/หลักฐานภาคสนามตามสิทธิ์ | `TEST-technician` |
-| 6 | `demo-technician-2@smartlocal.test` | `technician` | *(ไม่มี)* | สำนักปลัด | นายช่างปฏิบัติงาน | คู่เทียบของข้อ 5 ใช้ทดสอบการจ่ายงานข้ามกอง | `TEST-technician-2` |
-| 7 | `demo-viewer@smartlocal.test` | `viewer` | `fleet_viewer` | ผู้บริหาร | นายกเทศมนตรี | อ่านรายงาน/ภาพรวมได้ แต่แก้ไขหรือลบข้อมูลไม่ได้ | `TEST-viewer` |
-| 8 | `demo-council@smartlocal.test` | `council` | `fleet_viewer` | สมาชิกสภาเทศบาลตำบล | สมาชิกสภาเทศบาลตำบล | เข้าถึงเมนูสภาและข้อมูลที่อนุญาต โดยไม่มีสิทธิ์ Admin | `TEST-council` |
-| 9 | `demo-citizen@smartlocal.test` | `citizen` | *(ไม่มี)* | ไม่มีสังกัดภายใน | — | ใช้บริการประชาชนและเห็นเฉพาะข้อมูลของตนเอง | `TEST-citizen` |
-
-## สิทธิ์ Fleet เพิ่มเติม
-
-บัญชี Fleet ใช้ `profiles.role = staff` เหมือนกัน แต่แยก `fleet_role` เพื่อทดสอบ RLS
-และปุ่มคำสั่งของโมดูลยานพาหนะโดยไม่ปนกับสิทธิ์หลัก
-(คู่เทียบคือข้อ 4 ข้างบน — `staff` ที่ไม่มี `fleet_role` เลย)
-
-| ลำดับ | Test Email | `role` | `fleet_role` | ผลที่ต้องตรวจ | Chrome Profile |
-|---:|---|---|---|---|---|
-| 10 | `demo-fleet-admin@smartlocal.test` | `staff` | `fleet_admin` | สร้าง/แก้ไข/ลบข้อมูล `[TEST]` และกำหนดสิทธิ์ Fleet | `TEST-fleet-admin` |
-| 11 | `demo-fleet-staff@smartlocal.test` | `staff` | `fleet_staff` | ทำรายการตามกอง/รถส่วนกลาง และถูกบล็อกคำสั่งที่สงวนให้ Admin | `TEST-fleet-staff` |
-| 12 | `demo-fleet-viewer@smartlocal.test` | `staff` | `fleet_viewer` | อ่านข้อมูลได้อย่างเดียว ไม่มีปุ่มหรือสิทธิ์เขียน/ลบ | `TEST-fleet-viewer` |
+> `demo-superadmin@smartlocal.test` **ไม่ได้อยู่ใน อปท. ไหนเลย** (`municipality_id = NULL`)
+> ซึ่งจำเป็น เพราะบั๊กที่ต้องทดสอบเกิดจาก policy ที่เทียบ
+> `c.municipality_id = get_my_municipality_id()` แล้วได้ NULL
+>
+> **ผลที่เลี่ยงไม่ได้:** บัญชีนี้เข้าถึงข้อมูลทุก อปท. รวมคำร้องจริงของประชาชน
+> (ตรวจแล้ว: มองเห็นคำร้อง 34 รายการรวมทุก อปท.) จำกัดขอบเขตไม่ได้ เพราะ
+> `get_my_role() = 'superadmin'` เป็น OR branch แรกในแทบทุก policy และ
+> `AuthContext.jsx` คืน role superadmin ก่อนเช็ค municipality เสมอ
+>
+> จึงต้อง: **ใช้รหัสผ่านคนละตัวกับบัญชีอื่น** (สคริปต์บังคับไว้แล้ว) ·
+> ห้ามเขียนรหัสลงเอกสารหรือ repo · **ลบทิ้งทันทีที่ทดสอบเสร็จ**
+> `delete from auth.users where email = 'demo-superadmin@smartlocal.test';`
 
 ## บัญชีเก่าที่เลิกใช้ทดสอบแล้ว
 
@@ -87,13 +101,17 @@ access token, refresh token, recovery code หรือ browser storage/session 
 ## วิธีเตรียมและทดสอบระบบ
 
 1. **สร้าง/รีเซ็ตบัญชีทดสอบ:**
-   - เปิด `supabase/seed_demo_accounts.sql` กรอก `v_password` (อย่างน้อย 12 ตัวอักษร)
+   - เปิด `supabase/seed_demo_accounts.sql` กรอก **ทั้ง `v_password` และ `v_su_password`**
+     (อย่างน้อย 12 ตัวอักษร และต้องไม่ซ้ำกัน — สคริปต์ปฏิเสธถ้าซ้ำ)
      แล้วรันใน Supabase SQL Editor · **ลบรหัสผ่านออกจากไฟล์ก่อน commit ทุกครั้ง**
    - สคริปต์รันซ้ำได้ (uuid ตายตัว + upsert) ใช้รีเซ็ตรหัสผ่านทั้งชุดได้ด้วย
    - ล้างทิ้งทั้งชุด: `delete from auth.users where email like 'demo-%@smartlocal.test';`
+   - ลบเฉพาะ Super Admin หลังทดสอบเสร็จ:
+     `delete from auth.users where email = 'demo-superadmin@smartlocal.test';`
 2. **ตรวจก่อนล็อกอินทุกครั้ง:**
    - `municipality_id` ของบัญชีต้องเป็นของ `demo` เท่านั้น
      ถ้าเป็น `namlao`/`tamnaktham`/`thungkaew`/`muangphrae` ให้หยุดทันที
+   - ยกเว้น `demo-superadmin` ที่ต้องเป็น `NULL` โดยเจตนา — ดูคำเตือนข้างบน
 3. **เปิด Chrome Profile แยกอิสระ:**
    - `.\scripts\launch-test-profiles.ps1 -Role <role_name>`
    - ตัวอย่าง: `.\scripts\launch-test-profiles.ps1 -Role technician`
