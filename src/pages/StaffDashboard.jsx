@@ -1168,7 +1168,9 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
     setUpdating(id)
     const payload = { status: next, updated_at: new Date().toISOString() }
     if (workPhotos?.length > 0) payload.work_photos = workPhotos
-    if (techNote !== null) payload.technician_note = techNote
+    // เหมือน updateStatus() ใน ComplaintsManager.jsx: technician_note เก็บรายงานหน้างานของช่าง
+    // เท่านั้น ห้ามให้หมายเหตุของสถานะอื่นมาทับ ไม่งั้นบันทึกการปฏิบัติงานหายถาวร
+    if (techNote !== null && ['done', 'completed'].includes(next)) payload.technician_note = techNote
     const { error } = await supabase.from('complaints').update(payload).eq('id', id)
     if (!error) {
       setComplaints(prev => prev.map(c => c.id === id ? { ...c, ...payload } : c))
@@ -1460,6 +1462,7 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
       {selected && (
         <Suspense fallback={null}>
           <ComplaintDetailModal
+            key={selected.id}
             complaint={selected}
             onClose={() => setSelected(null)}
             onUpdate={advanceStatus}

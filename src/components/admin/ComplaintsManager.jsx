@@ -18,7 +18,7 @@ import { generateDraftPdfBlob } from '../../lib/generateDraftPdf'
 import { uploadFile, resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef, toReliableImageUrl } from '../../lib/driveStorage'
 import { fetchAssignableStaff, groupStaffByDepartment, ROLE_LABELS } from '../../lib/staffRoster'
 import { fetchPersonnelSignatories } from '../../lib/personnelDirectory'
-import { addWorkingDays, workingDaysLeft } from '../../lib/workingDays'
+import { workingDaysLeft } from '../../lib/workingDays'
 import OssIntakeForm from './OssIntakeForm'
 import OdorFieldsDisplay from '../complaints/OdorFieldsDisplay'
 import OdorComplaintTable, { OdorDetailModal } from '../complaints/OdorComplaintTable'
@@ -534,6 +534,9 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
   const [overrideConfirm, setOverrideConfirm] = useState(null)
   const [overrideNote, setOverrideNote] = useState('')
   const [nearbyList, setNearbyList] = useState([])
+  // ประวัติการดำเนินการจาก complaint_timeline — ตารางนี้ถูกเขียนมาตลอดแต่ไม่เคยมีหน้าไหนอ่าน
+  // หมายเหตุที่เจ้าหน้าที่พิมพ์ตอนเปลี่ยนสถานะจึงหายเข้ากลีบเมฆ ทั้งที่เป็นบันทึกการปฏิบัติงาน
+  const [timelineRows, setTimelineRows] = useState([])
   const [showPinEdit, setShowPinEdit] = useState(false)
   const [savingPin, setSavingPin] = useState(false)
   const [pinError, setPinError] = useState('')
@@ -598,6 +601,22 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
       if (data) setNearbyList(data.filter((n) => n.id !== c.id).slice(0, 5))
     })
   }, [c.id, c.latitude])
+
+  // ไม่ต้องมี loading flag: timelineRows เริ่มที่ [] อยู่แล้ว บล็อกประวัติจึงยังไม่ขึ้นจนกว่าจะโหลดเสร็จ
+  // และจุดที่ render modal ใส่ key={id} ไว้ ทำให้เปลี่ยนคำร้องแล้ว state รีเซ็ตเองไม่ค้างของเก่า
+  useEffect(() => {
+    let cancelled = false
+    supabase.from('complaint_timeline')
+      .select('id, status, note, actor_name, created_at')
+      .eq('complaint_id', c.id)
+      .order('created_at', { ascending: true })
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (error) console.error('complaint_timeline load error:', error.message)
+        setTimelineRows(data ?? [])
+      })
+    return () => { cancelled = true }
+  }, [c.id])
 
   async function handleDelete() {
     if (!window.confirm(`ลบคำร้องนี้ออกจากระบบ?\n\nการลบไม่สามารถย้อนกลับได้`)) return
@@ -801,6 +820,36 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">ความคืบหน้า</p>
             <StatusStepper status={c.status} note={c.technician_note} />
           </div>
+
+          {timelineRows.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                ประวัติการดำเนินการ
+              </p>
+              <ol className="space-y-2">
+                {timelineRows.map((row) => (
+                  <li key={row.id} className="flex gap-2.5 px-3 py-2 rounded-xl bg-gray-50 border border-gray-100">
+                    <span className="w-1.5 shrink-0 rounded-full mt-0.5"
+                      style={{ backgroundColor: STATUS[normalizeActionStatus(row.status)]?.color ?? '#94a3b8' }} />
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-gray-700">
+                        {STATUS[normalizeActionStatus(row.status)]?.label ?? row.status}
+                        <span className="ml-2 font-normal text-gray-400">
+                          {new Date(row.created_at).toLocaleString('th-TH', {
+                            day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit',
+                          })} น.
+                        </span>
+                      </p>
+                      <p className="text-[11px] text-gray-500 mt-0.5">โดย {row.actor_name || 'เจ้าหน้าที่'}</p>
+                      {row.note && (
+                        <p className="text-xs text-gray-700 mt-1 whitespace-pre-wrap wrap-break-word">{row.note}</p>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
 
           {canManageDocs && ['new', 'received'].includes(normalizeActionStatus(c.status)) && (
             <div className="space-y-2">
@@ -1381,6 +1430,10 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   const [technicians, setTechnicians]             = useState([])
   const [selectedIds, setSelectedIds]             = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting]           = useState(false)
+  // เตือนเมื่อเปลี่ยนสถานะสำเร็จแต่เขียนประวัติ (complaint_timeline) ไม่ผ่าน RLS
+  const [timelineWarning, setTimelineWarning]     = useState(null)
+  // ชื่อผู้ใช้ปัจจุบัน ใช้ลง actor_name ของ timeline — ประวัติที่ไม่รู้ว่าใครทำใช้ตรวจสอบไม่ได้
+  const [currentUserName, setCurrentUserName]     = useState(null)
   const canBulkDelete = ['admin', 'superadmin'].includes(currentUserRole)
   const technicianGroups = groupStaffByDepartment(technicians ?? [])
 
@@ -1512,6 +1565,16 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   useEffect(() => { queueMicrotask(fetchTechnicians) }, [fetchTechnicians])
   useEffect(() => { queueMicrotask(fetchComplaints) }, [fetchComplaints])
 
+  // ชื่อผู้ใช้ปัจจุบันสำหรับ actor_name ของ complaint_timeline — ไม่ block อะไร ถ้าโหลดไม่ได้
+  // ก็ปล่อยเป็น null แล้วประวัติจะขึ้นว่า "เจ้าหน้าที่" แทน ดีกว่าค้างไม่ให้เปลี่ยนสถานะ
+  useEffect(() => {
+    if (!currentUserId) return
+    let cancelled = false
+    supabase.from('profiles').select('full_name').eq('id', currentUserId).maybeSingle()
+      .then(({ data }) => { if (!cancelled) setCurrentUserName(data?.full_name ?? null) })
+    return () => { cancelled = true }
+  }, [currentUserId])
+
   useEffect(() => {
     if (!tenantId) return
     const ch = supabase.channel(`complaints-mgr-${tenantId}-${crypto.randomUUID()}`)
@@ -1600,9 +1663,16 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
     setUpdating(id)
     const payload = { status: nextStatus }
     if (workPhotos.length > 0) payload.work_photos = workPhotos
-    if (techNote) payload.technician_note = techNote
-    // กำหนดเสร็จ = 15 วันทำการ (ไม่นับเสาร์-อาทิตย์และวันหยุดนักขัตฤกษ์)
-    if (nextStatus === 'in_progress') payload.due_date = addWorkingDays(new Date(), 15)
+    // technician_note = "รายงานผลหน้างานของช่าง" เท่านั้น จึงเขียนได้เฉพาะตอนจบงาน (done)
+    // ของเดิมเขียนทุกสถานะ พอแอดมินกดปิดเรื่องพร้อมหมายเหตุตรวจรับ บันทึกของช่าง
+    // ("เปลี่ยนหลอด LED 18W 1 ดวง") ถูกทับหายถาวร ทั้งที่เป็นหลักฐานการปฏิบัติงานที่ใช้ตรวจสอบ
+    // หมายเหตุของสถานะอื่น (รับเรื่อง/ปิดเรื่อง/ปฏิเสธ) ลง complaint_timeline เป็นประวัติแทน
+    if (techNote && ['done', 'completed'].includes(nextStatus)) payload.technician_note = techNote
+    // ห้ามเขียนทับ due_date ที่นี่ — trigger auto_assign_complaint ตั้งกำหนดเสร็จให้แล้วตอน
+    // ประชาชนยื่นคำร้อง โดยอ่าน sla_days รายหมวดจาก category_assignments ซึ่งเป็นตัวเลขที่
+    // แต่ละ อปท. ตั้งเอง ของเดิมทับด้วย 15 วันทำการแบบตายตัวตอนกด "เริ่มดำเนินการ" ผลคือ
+    // กำหนดส่งเลื่อนออกไปไกลกว่าเดิมทุกครั้งที่งานเริ่มเดิน (เคสจริง: ไฟฟ้าสาธารณะ SLA 10 วัน
+    // กลายเป็น 15 วันทำการ) ทำให้สถิติ SLA และไฟเตือนใกล้ครบกำหนดเพี้ยนทั้งระบบ
     if (nextStatus === 'closed') payload.closed_at = new Date().toISOString()
     const { error } = await supabase.from('complaints').update(payload).eq('id', id)
     if (error) {
@@ -1616,12 +1686,21 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
 
       const c = complaints.find(x => x.id === id)
 
-      supabase.from('complaint_timeline').insert({
+      // timeline คือที่เดียวที่เก็บ "ใครเปลี่ยนสถานะอะไร พร้อมหมายเหตุ" แบบต่อท้ายไม่ทับของเดิม
+      // ห้ามใช้ .then() เปล่าเหมือนเดิม — RLS ตีกลับ 403 มาแล้วเงียบสนิท ผู้ใช้เห็นว่าบันทึกสำเร็จ
+      // ทั้งที่หมายเหตุหายไปทั้งก้อน (เคสจริง: superadmin ที่ municipality_id เป็น NULL)
+      const { error: timelineError } = await supabase.from('complaint_timeline').insert({
         complaint_id: id,
         status: nextStatus,
         note: techNote ?? null,
-        actor_name: null,
-      }).then()
+        actor_name: currentUserName ?? null,
+      })
+      if (timelineError) {
+        console.error('complaint_timeline insert error:', timelineError.message)
+        setTimelineWarning('เปลี่ยนสถานะสำเร็จ แต่บันทึกหมายเหตุลงประวัติไม่สำเร็จ กรุณาแจ้งผู้ดูแลระบบ')
+      } else {
+        setTimelineWarning(null)
+      }
 
       if (nextStatus === 'closed' && c?.user_id) {
         supabase.functions.invoke('send-push', {
@@ -2378,9 +2457,25 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
         )}
       </div>
 
+      {/* เขียนประวัติไม่ผ่าน = หมายเหตุที่เจ้าหน้าที่เพิ่งพิมพ์หายไปแล้ว ต้องบอกให้รู้ตัว
+          ไม่ใช่ปล่อยให้เข้าใจว่าบันทึกครบเหมือนของเดิมที่กลืน error ทิ้ง */}
+      {timelineWarning && (
+        <div className="fixed bottom-4 inset-x-4 z-200 mx-auto max-w-md rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 shadow-lg">
+          <div className="flex items-start gap-2">
+            <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-800 flex-1">{timelineWarning}</p>
+            <button onClick={() => setTimelineWarning(null)}
+              className="text-amber-500 hover:text-amber-700 shrink-0" aria-label="ปิดคำเตือน">
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Detail modal */}
       {selectedComplaint && (
         <ComplaintDetailModal
+          key={selectedComplaint.id}
           complaint={selectedComplaint}
           onClose={() => setSelectedComplaint(null)}
           onUpdate={updateStatus}
