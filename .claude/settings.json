@@ -109,7 +109,8 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" \"http://localhost:5174/src/pages/CitizenForm.jsx\")",
       "Bash(curl -s \"http://localhost:5174/src/pages/CitizenForm.jsx\")",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" \"http://localhost:5174/src/pages/ProfilePage.jsx\")",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" \"http://localhost:5174/src/pages/AuthPage.jsx\")"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" \"http://localhost:5174/src/pages/AuthPage.jsx\")",
+      "Bash(npx supabase projects api-keys *)"
     ],
     "additionalDirectories": [
       "\\tmp",
