@@ -11,7 +11,8 @@ import CitizenSidebar from './components/layout/CitizenSidebar'
 import InstallPrompt from './components/InstallPrompt'
 import ScrollToTopButton from './components/ScrollToTopButton'
 import InAppBrowserGate from './components/InAppBrowserGate'
-import { supabase } from './lib/supabase'
+import { supabase, initialAuthParams } from './lib/supabase'
+import { fetchProfile } from './lib/profileFetch'
 import { Phone, UserRound } from 'lucide-react'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from './lib/thaiName'
 import { recordVisit } from './lib/menuUsage'
@@ -338,11 +339,7 @@ function AppShell() {
   const hideBottomNav = ['/admin', '/staff', '/dev-journal', '/data-center'].some(p => location.pathname.startsWith(p))
 
   const checkAndFixProfile = useCallback(async (uid, userMeta = {}) => {
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('phone, municipality_id, full_name, avatar_url, role')
-      .eq('id', uid)
-      .maybeSingle()
+    const { data: profile, error: profileError } = await fetchProfile(uid)
 
     if (profileError) {
       console.error('[profile] อ่านโปรไฟล์ไม่สำเร็จ:', profileError.message)
@@ -430,14 +427,21 @@ function AppShell() {
 
   useEffect(() => {
     // ดัก OAuth error callback เช่น LINE/Google login ล้มเหลวฝั่ง provider
-    const params = new URLSearchParams(window.location.search)
-    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
-    const oauthError = params.get('error') || hashParams.get('error')
-    const oauthErrorDesc = params.get('error_description') || hashParams.get('error_description')
-    if (oauthError) {
-      window.history.replaceState({}, '', window.location.pathname)
-      navigate('/auth', { replace: true, state: { oauthError: oauthErrorDesc || oauthError } })
-    }
+    //
+    // อ่านจาก initialAuthParams (จับไว้ตั้งแต่ก่อนสร้าง supabase client) ไม่ใช่ window.location สดๆ
+    // เพราะ detectSessionInUrl ของ supabase-js ล้าง hash/query ทิ้งแบบ async แข่งกับ effect นี้อยู่
+    const oauthError = initialAuthParams.error
+    const oauthErrorDesc = initialAuthParams.errorDescription
+    if (!oauthError) return
+
+    // ลิงก์รีเซ็ตรหัสผ่านที่หมดอายุ/ถูกใช้ไปแล้ว ก็ส่ง error กลับมาทางเดียวกันนี้ แต่ลงที่
+    // /reset-password ปล่อยให้หน้านั้นอธิบายเอง — ของเดิมเหมารวมแล้วลากมาที่ /auth พร้อมข้อความ
+    // "เข้าสู่ระบบด้วย LINE/Google ไม่สำเร็จ" ซึ่งคนละเรื่องกับสิ่งที่ผู้ใช้เพิ่งกดมา ผู้ใช้เลยไม่มี
+    // ทางรู้ว่าต้องไปขอลิงก์ใหม่ (endsWith เพราะ deployment แบบ path-based มี slug นำหน้า)
+    if (window.location.pathname.endsWith('/reset-password')) return
+
+    window.history.replaceState({}, '', window.location.pathname)
+    navigate('/auth', { replace: true, state: { oauthError: oauthErrorDesc || oauthError } })
   }, [navigate])
 
   useEffect(() => {

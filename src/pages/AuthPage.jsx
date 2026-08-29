@@ -1,26 +1,29 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { supabase, setRememberSession } from '../lib/supabase'
 import { isNetworkAuthError } from '../lib/authErrors'
 import { useTenant } from '../contexts/TenantContext'
 import DeviceLoginPanel from '../components/auth/DeviceLoginPanel'
 import { appUrl } from '../lib/basename'
 import { Mail, Lock, Loader2, UserCircle2, Phone, Eye, EyeOff, ExternalLink, ArrowLeft, Smartphone } from 'lucide-react'
 import { NAME_TITLES, joinThaiFullName } from '../lib/thaiName'
-import { PHONE_EMAIL_DOMAIN } from '../lib/authProviders'
+import { phoneToLoginEmail, normalizeThaiPhone } from '../lib/authProviders'
+import { validateNewPassword, PASSWORD_HINT } from '../lib/passwordPolicy'
 
 function detectInAppBrowser() {
   const ua = navigator.userAgent || ''
   return /FBAN|FBAV|Instagram|Line\/|Twitter\/|MicroMessenger|GSA\/|Musical_ly/.test(ua)
 }
 
-function phoneToEmail(phone) {
-  return `${phone.replace(/\D/g, '')}@${PHONE_EMAIL_DOMAIN}`
-}
-
+// พิมพ์อีเมลมาก็ใช้ตามนั้น พิมพ์เบอร์มาก็แปลงเป็นอีเมลปลอมรูปแบบเดียวของระบบ
+//
+// เคยมีตัวสำรองไว้ลองรูปแบบเลขดิบแบบเก่าด้วย (บัญชีที่สมัครก่อนมี normalizeThaiPhone เช่นคนที่
+// พิมพ์ +66 81 234 5678 แล้วได้บัญชี 66812345678@...) ถอดออกแล้วเมื่อ 2026-08-29 หลังตรวจ
+// auth.users ทั้งหมดพบว่าเหลือบัญชีรูปแบบเก่าใบเดียวและถูกลบไปแล้ว
+// (ดู scripts/report-phone-login-emails.sql ถ้าต้องตรวจซ้ำในอนาคต)
 function resolveLoginEmail(input) {
   const v = input.trim()
-  return v.includes('@') ? v : phoneToEmail(v)
+  return v.includes('@') ? v : phoneToLoginEmail(v)
 }
 
 export default function AuthPage() {
@@ -44,7 +47,9 @@ export default function AuthPage() {
   }, [])
   const [success, setSuccess] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [remember, setRemember] = useState(false)
+  // ค่าเริ่มต้น = จำไว้ ให้ตรงกับพฤติกรรมเดิมของระบบ และกติกาที่ว่าผู้ใช้ต้องกดออกเอง
+  // การ "ไม่ติ๊ก" คือผู้ใช้เลือกเองว่าไม่ให้ค้างบนเครื่องนี้ ไม่ใช่ระบบพาออกอัตโนมัติ
+  const [remember, setRemember] = useState(true)
   const [loadingGoogle, setLoadingGoogle] = useState(false)
   const [loadingLine, setLoadingLine] = useState(false)
   const [forgotEmail, setForgotEmail] = useState('')
@@ -66,6 +71,9 @@ export default function AuthPage() {
   // สปินเนอร์ที่ยังหมุนอยู่ระหว่างนั้นจึงถูกต้องแล้ว — finally มีผลเฉพาะตอนไปต่อไม่ได้
   async function startOAuth(provider, { setLoading: setProviderLoading, errorText }) {
     storeOauthFrom()
+    // OAuth ไม่มีช่องติ๊ก "จำการเข้าสู่ระบบ" และผู้ใช้กลุ่มนี้คือประชาชนบนมือถือตัวเอง
+    // ตั้งเป็นจำไว้เสมอ ไม่งั้น session จะหายทุกครั้งที่ปิดแท็บ
+    setRememberSession(true)
     setProviderLoading(true)
     setError('')
     try {
@@ -131,11 +139,12 @@ export default function AuthPage() {
     // ต้องมี try/finally: signInWithPassword reject ได้จริงเมื่อเน็ตหลุดหรือชน timeout 25 วิ
     // ของ fetchWithTimeout ถ้าปล่อยหลุด setLoading(false) ไม่ได้รัน ปุ่ม "เข้าสู่ระบบ" จะค้าง
     // เป็นสปินเนอร์ disabled ถาวร ผู้ใช้กดซ้ำไม่ได้และไม่มีข้อความบอกว่าเกิดอะไรขึ้น
+    // ต้องตั้งก่อนยิง signIn — storage adapter ใน supabase.js อ่านค่านี้ตอนเขียน session ลงเครื่อง
+    setRememberSession(remember)
     try {
       const { error: err } = await supabase.auth.signInWithPassword({
         email: resolveLoginEmail(form.email),
         password: form.password,
-        options: { persistSession: remember },
       })
       if (err) {
         setError(isNetworkAuthError(err)
@@ -156,17 +165,21 @@ export default function AuthPage() {
     e.preventDefault()
     setError('')
     if (!form.name_first.trim() || !form.name_last.trim()) { setError('กรุณากรอกชื่อและนามสกุล'); return }
-    if (form.password.length < 6) { setError('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร'); return }
+    const passwordError = validateNewPassword(form.password)
+    if (passwordError) { setError(passwordError); return }
 
     const fullName = joinThaiFullName(form.name_title, form.name_first, form.name_last)
     const hasEmail = form.email.trim().length > 0
-    const phoneDigits = form.phone.replace(/\D/g, '')
-    if (!hasEmail && phoneDigits.length < 9) {
-      setError('กรุณาใส่เบอร์โทรศัพท์ให้ถูกต้อง (อย่างน้อย 9 หลัก)')
+    // เบอร์โทรเป็นฟิลด์บังคับของฟอร์มสมัคร (และกลายเป็นชื่อบัญชีเมื่อไม่กรอกอีเมล) จึงต้องตรวจ
+    // ทุกกรณี ไม่ใช่เฉพาะตอนไม่มีอีเมลอย่างของเดิม — ที่ผ่านมาคนที่กรอกอีเมลมาด้วยใส่เบอร์มั่วได้
+    // แล้วเจ้าหน้าที่โทรกลับไม่ได้ตอนมีคำร้อง
+    const normalizedPhone = normalizeThaiPhone(form.phone)
+    if (normalizedPhone.length < 9 || normalizedPhone.length > 10) {
+      setError('กรุณาใส่เบอร์โทรศัพท์ให้ถูกต้อง (9-10 หลัก)')
       return
     }
 
-    const email = hasEmail ? form.email.trim() : phoneToEmail(form.phone)
+    const email = hasEmail ? form.email.trim() : phoneToLoginEmail(normalizedPhone)
     setLoading(true)
     // ขั้นตอนสมัครยิง network หลายรอบต่อกัน (signUp → upsert profile → auto sign-in) ถ้ารอบไหน
     // reject กลางทาง (เน็ตหลุด/timeout 25 วิ) โดยไม่มี finally ปุ่มสมัครจะค้างเป็นสปินเนอร์ถาวร
@@ -178,7 +191,7 @@ export default function AuthPage() {
         options: {
           data: {
             full_name: fullName,
-            phone: form.phone.trim(),
+            phone: normalizedPhone,
             municipality_id: tenant?.id ?? null,
           },
         },
@@ -199,13 +212,17 @@ export default function AuthPage() {
 
       const userId = data.user?.id
       if (userId && tenant?.id) {
-        await supabase.from('profiles').upsert({
+        // handle_new_user() สร้างโปรไฟล์ให้ตั้งแต่ตอน INSERT auth.users แล้ว (SECURITY DEFINER
+        // ไม่ติด RLS) รอบนี้เป็นแค่การเติมซ้ำให้ชัวร์ ถ้าล้มก็ไม่ควรขวางการสมัคร — แต่ต้องเห็นใน log
+        // ไม่ใช่กลืนเงียบแบบเดิม เพราะถ้ามันล้มบ่อยแปลว่า trigger ฝั่ง DB มีปัญหาที่ต้องไล่จริง
+        const { error: upsertErr } = await supabase.from('profiles').upsert({
           id: userId,
           full_name: fullName,
-          phone: form.phone.trim() || null,
+          phone: normalizedPhone || null,
           municipality_id: tenant.id,
           role: 'citizen',
         }, { onConflict: 'id' })
+        if (upsertErr) console.error('[auth] เติมข้อมูลโปรไฟล์หลังสมัครไม่สำเร็จ:', upsertErr.message)
       }
 
       if (data.session) {
@@ -401,7 +418,7 @@ export default function AuthPage() {
             <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input value={form.password} onChange={set('password')} required
               type={showPassword ? 'text' : 'password'}
-              placeholder={mode === 'register' ? 'รหัสผ่าน (อย่างน้อย 6 ตัว)' : 'รหัสผ่าน'}
+              placeholder={mode === 'register' ? `รหัสผ่าน (${PASSWORD_HINT})` : 'รหัสผ่าน'}
               autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
               className="w-full pl-9 pr-10 py-3 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:border-transparent"
               style={{ '--tw-ring-color': 'var(--color-primary)' }} />
@@ -416,7 +433,7 @@ export default function AuthPage() {
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)}
                   className="w-4 h-4 rounded accent-(--color-primary)" />
-                <span className="text-sm text-gray-500">จดจำรหัสผ่าน</span>
+                <span className="text-sm text-gray-500">จำการเข้าสู่ระบบไว้บนเครื่องนี้</span>
               </label>
               <button type="button" onClick={() => { setMode('forgot'); setError(''); setSuccess('') }}
                 className="text-sm text-blue-500 hover:text-blue-700 transition-colors">

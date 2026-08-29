@@ -179,7 +179,10 @@ enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts
 enable_manual_linking = false
 # Passwords shorter than this value will be rejected as weak. Minimum 6, recommended 8 or more.
-minimum_password_length = 6
+# ต้องตรงกับ MIN_PASSWORD_LENGTH ใน src/lib/passwordPolicy.js เสมอ
+# หมายเหตุ: ไฟล์นี้คุมเฉพาะ Supabase ที่รันในเครื่อง — โปรเจกต์บน cloud ต้องไปตั้งที่
+# Dashboard → Authentication → Policies → Minimum password length ให้เป็น 8 ด้วย
+minimum_password_length = 8
 # Passwords that do not meet the following requirements will be rejected as weak. Supported values
 # are: `letters_digits`, `lower_upper_letters_digits`, `lower_upper_letters_digits_symbols`
 password_requirements = ""

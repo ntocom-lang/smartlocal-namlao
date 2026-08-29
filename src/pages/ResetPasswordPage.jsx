@@ -1,7 +1,37 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
-import { Lock, Eye, EyeOff, Loader2, CheckCircle2, ShieldCheck } from 'lucide-react'
+import { supabase, initialAuthParams } from '../lib/supabase'
+import { Lock, Eye, EyeOff, Loader2, CheckCircle2, ShieldCheck, AlertTriangle } from 'lucide-react'
+import { validateNewPassword, PASSWORD_HINT } from '../lib/passwordPolicy'
+
+// ตัดสินตั้งแต่ตอนโหลดโมดูลว่า URL นี้เป็นลิงก์รีเซ็ตรหัสผ่านที่ใช้ได้ไหม
+//
+// initialAuthParams เป็นค่าคงที่ระดับโมดูล (จับไว้ตั้งแต่ก่อนสร้าง supabase client) ไม่ใช่ state
+// ที่เปลี่ยนได้ จึงคำนวณนอก component แล้วใช้เป็นค่าตั้งต้นของ useState ตรงๆ ไม่ต้องยัดใส่ effect
+function describeRecoveryLink() {
+  if (initialAuthParams.error) {
+    const code = initialAuthParams.errorCode ?? ''
+    const expired = code === 'otp_expired' || /expired/i.test(initialAuthParams.errorDescription ?? '')
+    return {
+      watch: false,
+      error: expired
+        ? 'ลิงก์รีเซ็ตรหัสผ่านนี้หมดอายุแล้ว\nกรุณาขอลิงก์ใหม่ที่หน้าเข้าสู่ระบบ'
+        : 'ลิงก์รีเซ็ตรหัสผ่านนี้ใช้ไม่ได้หรือถูกใช้ไปแล้ว\nกรุณาขอลิงก์ใหม่ที่หน้าเข้าสู่ระบบ',
+    }
+  }
+
+  // type=recovery = flow แบบ implicit, hasCode = flow แบบ PKCE (ค่า default ของ supabase-js)
+  if (initialAuthParams.type !== 'recovery' && !initialAuthParams.hasCode) {
+    return {
+      watch: false,
+      error: 'เข้าหน้านี้ได้จากลิงก์ในอีเมลรีเซ็ตรหัสผ่านเท่านั้น\nหากต้องการเปลี่ยนรหัสผ่าน กรุณากด "ลืมรหัสผ่าน?" ที่หน้าเข้าสู่ระบบ',
+    }
+  }
+
+  return { watch: true, error: '' }
+}
+
+const RECOVERY_LINK = describeRecoveryLink()
 
 export default function ResetPasswordPage() {
   const navigate = useNavigate()
@@ -12,22 +42,41 @@ export default function ResetPasswordPage() {
   const [error, setError] = useState('')
   const [done, setDone] = useState(false)
   const [ready, setReady] = useState(false)
+  // ปลดล็อกฟอร์มได้ทางเดียวคือ "URL นี้เป็นลิงก์รีเซ็ตรหัสผ่านที่ใช้ได้จริง"
+  //
+  // ของเดิมปลดล็อกทันทีที่ getSession() มี session ซึ่งเป็นจริงกับ "ใครก็ตามที่ล็อกอินค้างอยู่บน
+  // เครื่องนี้" ด้วย — เดินไปที่ PC ที่เจ้าหน้าที่เปิดค้างไว้ พิมพ์ /reset-password เอง แล้วตั้ง
+  // รหัสผ่านใหม่ยึดบัญชีได้เลยโดยไม่ต้องรู้รหัสเดิม (secure_password_change ปิดอยู่ ไม่มีด่านถามซ้ำ)
+  const [linkError, setLinkError] = useState(RECOVERY_LINK.error)
 
   useEffect(() => {
-    // Supabase v2 fires PASSWORD_RECOVERY when redirect token is valid
+    if (!RECOVERY_LINK.watch) return undefined
+
+    let verified = false
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') setReady(true)
+      if (event === 'PASSWORD_RECOVERY') { verified = true; setReady(true) }
     })
-    // กรณี token อยู่ใน hash แล้ว Supabase process ก่อน component mount
+
+    // เผื่อ PASSWORD_RECOVERY ยิงไปก่อนหน้านี้จะ mount (หน้านี้ถูก lazy-load, _initialize ยิง event
+    // ใน setTimeout 0) — ปลอดภัยเพราะยังต้องผ่านด่าน isRecoveryUrl ข้างบนมาก่อนเสมอ
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) setReady(true)
-    })
-    return () => subscription.unsubscribe()
+      if (data.session) { verified = true; setReady(true) }
+    }).catch(() => {})
+
+    // PKCE เก็บ code_verifier ไว้ในเครื่องที่ "กดขอลิงก์" ถ้าผู้ใช้เปิดอีเมลบนเครื่อง/เบราว์เซอร์
+    // คนละตัว การแลก code จะล้มเงียบๆ ไม่มี event ตามมา ของเดิมจะหมุนสปินเนอร์ค้างตลอดกาล
+    const timer = setTimeout(() => {
+      if (verified) return
+      setLinkError('ยืนยันลิงก์ไม่สำเร็จ\nกรุณาเปิดลิงก์จากอีเมลบนเบราว์เซอร์เครื่องเดียวกับที่กดขอรีเซ็ตรหัสผ่าน หรือขอลิงก์ใหม่อีกครั้ง')
+    }, 15000)
+
+    return () => { clearTimeout(timer); subscription.unsubscribe() }
   }, [])
 
   async function handleSubmit(e) {
     e.preventDefault()
-    if (password.length < 6) { setError('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร'); return }
+    const passwordError = validateNewPassword(password)
+    if (passwordError) { setError(passwordError); return }
     if (password !== confirm) { setError('รหัสผ่านไม่ตรงกัน กรุณาตรวจสอบอีกครั้ง'); return }
     setError('')
     setLoading(true)
@@ -66,6 +115,19 @@ export default function ResetPasswordPage() {
             <p className="text-green-700 font-semibold text-center">ตั้งรหัสผ่านใหม่สำเร็จ!</p>
             <p className="text-sm text-gray-400 text-center">กำลังพาไปหน้าหลัก...</p>
           </div>
+        ) : linkError ? (
+          <div className="flex flex-col items-center gap-4 py-4">
+            <AlertTriangle size={44} className="text-amber-500" />
+            <p className="text-sm text-gray-600 text-center leading-relaxed whitespace-pre-line">{linkError}</p>
+            <button
+              type="button"
+              onClick={() => navigate('/auth', { replace: true })}
+              className="w-full py-3 rounded-xl text-white font-semibold text-sm transition-all active:scale-95"
+              style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}
+            >
+              ไปหน้าเข้าสู่ระบบ
+            </button>
+          </div>
         ) : !ready ? (
           <div className="flex flex-col items-center gap-3 py-6 text-gray-400">
             <Loader2 size={28} className="animate-spin" />
@@ -80,7 +142,7 @@ export default function ResetPasswordPage() {
                 onChange={(e) => { setPassword(e.target.value); setError('') }}
                 required
                 type={showPassword ? 'text' : 'password'}
-                placeholder="รหัสผ่านใหม่ (อย่างน้อย 6 ตัว)"
+                placeholder={`รหัสผ่านใหม่ (${PASSWORD_HINT})`}
                 autoComplete="new-password"
                 className="w-full pl-9 pr-10 py-3 border border-gray-200 rounded-xl text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:border-transparent"
                 style={{ '--tw-ring-color': 'var(--color-primary)' }}

@@ -30,3 +30,26 @@ export function accountProviders(user) {
     return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
   })
 }
+
+// ── เบอร์โทร → อีเมลสำหรับล็อกอิน ─────────────────────────────────────────────
+//
+// ของเดิมใช้ `phone.replace(/\D/g, '')` ดิบๆ ทั้งตอนสมัครและตอนล็อกอิน แปลว่ารูปแบบที่ผู้ใช้
+// พิมพ์กลายเป็นส่วนหนึ่งของ "ชื่อบัญชี" ไปด้วย — คนที่สมัครด้วย +66 81 234 5678 ได้บัญชี
+// 66812345678@... แล้ววันหลังพิมพ์ 081-234-5678 ตอนล็อกอินจะกลายเป็นคนละบัญชี เข้าไม่ได้ถาวร
+// และไม่มีข้อความไหนบอกได้ว่าทำไม (ระบบเห็นเป็นแค่ "ไม่มีบัญชีนี้")
+//
+// แปลงให้เหลือรูปแบบเดียวคือเลขในประเทศขึ้นต้น 0 เสมอ ก่อนเอาไปประกอบเป็นอีเมล
+export function normalizeThaiPhone(input) {
+  let digits = String(input ?? '').replace(/\D/g, '')
+  if (!digits) return ''
+  // 0066xxxxxxxxx / 66xxxxxxxxx = รูปแบบระหว่างประเทศ ตัดรหัสประเทศทิ้ง
+  if (digits.startsWith('0066')) digits = digits.slice(4)
+  else if (digits.startsWith('66') && digits.length >= 10) digits = digits.slice(2)
+  // เบอร์ในประเทศขึ้นต้นด้วย 0 เสมอ (คนพิมพ์ตกหน้าบ่อย)
+  if (!digits.startsWith('0')) digits = `0${digits}`
+  return digits
+}
+
+export function phoneToLoginEmail(phone) {
+  return `${normalizeThaiPhone(phone)}@${PHONE_EMAIL_DOMAIN}`
+}

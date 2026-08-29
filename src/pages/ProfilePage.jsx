@@ -9,6 +9,7 @@ import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiNam
 import { THAI_PROVINCES, thaiDistrictsOf, thaiSubdistrictsOf } from '../lib/thaiAddress'
 import { tenantDefaultSubdistrict } from '../lib/tenantSubdistrict'
 import ActiveSessions from '../components/profile/ActiveSessions'
+import { validateNewPassword, PASSWORD_HINT } from '../lib/passwordPolicy'
 
 // role ที่ใช้การเข้าสู่ระบบด้วย QR ได้ ต้องตรงกับ STAFF_ROLES ใน edge function device-login
 const STAFF_ROLES = ['superadmin', 'admin', 'officer', 'technician', 'staff', 'viewer', 'council']
@@ -163,7 +164,8 @@ export default function ProfilePage() {
   async function handleChangePassword() {
     setError('')
     setMsg('')
-    if (newPassword.length < 6) { setError('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร'); return }
+    const passwordError = validateNewPassword(newPassword)
+    if (passwordError) { setError(passwordError); return }
     if (newPassword !== confirmPassword) { setError('รหัสผ่านไม่ตรงกัน กรุณาตรวจสอบอีกครั้ง'); return }
     setChangingPassword(true)
     const { error: err } = await supabase.auth.updateUser({ password: newPassword })
@@ -515,7 +517,7 @@ export default function ProfilePage() {
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     type={showNewPassword ? 'text' : 'password'}
-                    placeholder="รหัสผ่านใหม่ (อย่างน้อย 6 ตัว)"
+                    placeholder={`รหัสผ่านใหม่ (${PASSWORD_HINT})`}
                     autoComplete="new-password"
                     autoFocus
                     className="w-full text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 pr-9 outline-none"

@@ -8,6 +8,110 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY in .env.local')
 }
 
+// จับพารามิเตอร์ auth จาก URL ไว้ตั้งแต่ก่อนสร้าง client
+//
+// detectSessionInUrl ของ supabase-js ล้าง hash/query ทิ้งทันทีที่ประมวลผลเสร็จ หน้าไหนที่ mount
+// ทีหลัง (ResetPasswordPage ถูก lazy-load) จึงอ่าน URL เดิมไม่ทันแล้ว ต้องเก็บไว้ตรงนี้ ซึ่งรันก่อน
+// createClient เสมอ — ใช้แยกให้ออกว่า "ลิงก์รีเซ็ตรหัสผ่านหมดอายุ" กับ "OAuth ล้มเหลว" คนละเรื่องกัน
+function readInitialAuthParams() {
+  if (typeof window === 'undefined') return {}
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+  const query = new URLSearchParams(window.location.search)
+  const pick = (key) => hash.get(key) ?? query.get(key)
+  return {
+    type: pick('type'),
+    error: pick('error'),
+    errorCode: pick('error_code'),
+    errorDescription: pick('error_description'),
+    hasCode: Boolean(query.get('code')),
+    hasAccessToken: Boolean(hash.get('access_token')),
+  }
+}
+
+export const initialAuthParams = readInitialAuthParams()
+
+// ── "จำการเข้าสู่ระบบไว้บนเครื่องนี้" ────────────────────────────────────────────
+//
+// ของเดิมส่ง options: { persistSession: remember } เข้า signInWithPassword ซึ่ง auth-js ไม่เคยอ่าน
+// (หยิบจาก options แค่ captchaToken ตัวเดียว ดู GoTrueClient ตรง /token?grant_type=password)
+// ผลคือติ๊กหรือไม่ติ๊กก็เขียน session ลง localStorage เหมือนกันหมด — เจ้าหน้าที่ที่ไปใช้ PC กลาง
+// ของสำนักงานเข้าใจว่าไม่ได้ให้จำ แต่บัญชีค้างอยู่บนเครื่องนั้นจริง
+//
+// persistSession เป็น option ระดับ createClient เปลี่ยนรายครั้งไม่ได้ จึงต้องคุมที่ชั้น storage แทน:
+// ติ๊ก = localStorage (อยู่ข้ามการปิดเบราว์เซอร์) ไม่ติ๊ก = sessionStorage (หายเมื่อปิดแท็บ)
+const REMEMBER_KEY = 'sl-auth-remember'
+
+function safeStorage(kind) {
+  try {
+    return kind === 'local' ? window.localStorage : window.sessionStorage
+  } catch {
+    return null
+  }
+}
+
+// ไม่มีค่าที่บันทึกไว้ = ถือว่าจำ เพื่อไม่ให้ผู้ใช้เดิมที่ล็อกอินค้างอยู่ก่อนหน้านี้ถูกเด้งออกตอน
+// อัปเดตโค้ด และเพื่อให้ OAuth (Google/LINE) ซึ่งไม่มีช่องติ๊กยังค้าง session ไว้ตามเดิม
+// (ตรงกับกติกา 2026-08-29: ห้ามมีทางไหนพาผู้ใช้ออกจากระบบเองนอกจากผู้ใช้สั่ง)
+function wantsPersistentSession() {
+  try {
+    return safeStorage('local')?.getItem(REMEMBER_KEY) !== '0'
+  } catch {
+    return true
+  }
+}
+
+/**
+ * ตั้งว่า session ที่กำลังจะถูกสร้างควรค้างบนเครื่องนี้ไหม — ต้องเรียก "ก่อน" signIn ทุกครั้ง
+ * เพราะ storage adapter อ่านค่านี้ตอนเขียน session ลงเครื่อง
+ */
+export function setRememberSession(remember) {
+  const local = safeStorage('local')
+  if (!local) return
+  try {
+    if (remember) local.removeItem(REMEMBER_KEY)
+    else local.setItem(REMEMBER_KEY, '0')
+  } catch {
+    // เครื่องที่ปิด storage ไว้ ปล่อยให้ใช้ค่า default (จำ) ไปตามเดิม
+  }
+}
+
+// code-verifier ของ PKCE ต้องอยู่ localStorage เสมอ ห้ามตามค่า remember
+// ผู้ใช้กด "ลืมรหัสผ่าน" ในแท็บหนึ่ง แล้วเปิดลิงก์จากอีเมลในแท็บ/หน้าต่างใหม่เสมอ ถ้า verifier
+// ไปอยู่ใน sessionStorage (ผูกกับแท็บเดิม) แท็บใหม่จะหาไม่เจอ แล้วการรีเซ็ตรหัสผ่านพังทั้งฟีเจอร์
+function isTabScopable(key) {
+  return !String(key).includes('code-verifier')
+}
+
+const rememberAwareStorage = {
+  getItem(key) {
+    try {
+      return safeStorage('session')?.getItem(key) ?? safeStorage('local')?.getItem(key) ?? null
+    } catch {
+      return null
+    }
+  },
+  setItem(key, value) {
+    try {
+      const useSession = isTabScopable(key) && !wantsPersistentSession()
+      const target = safeStorage(useSession ? 'session' : 'local')
+      const other = safeStorage(useSession ? 'local' : 'session')
+      target?.setItem(key, value)
+      // กันของเก่าค้างอีกฝั่ง ไม่งั้น getItem จะหยิบ session เดิมที่ควรถูกทิ้งไปแล้วกลับมาใช้
+      other?.removeItem(key)
+    } catch {
+      // เขียนไม่ได้ (โหมดส่วนตัว/โควตาเต็ม) ปล่อยให้ session อยู่แค่ในแรมของหน้านี้
+    }
+  },
+  removeItem(key) {
+    try {
+      safeStorage('session')?.removeItem(key)
+      safeStorage('local')?.removeItem(key)
+    } catch {
+      // ไม่มีอะไรให้ทำต่อ
+    }
+  },
+}
+
 const FETCH_TIMEOUT_MS = 25_000
 
 // กัน request ค้างตลอดไป (เช่น ระหว่าง auth token refresh) — ถ้า client ตัวเดียวนี้ค้าง
@@ -125,7 +229,7 @@ async function fetchWithAuthRecovery(input, init = {}) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   global: { fetch: fetchWithAuthRecovery },
-  auth: { lock: noOpLock },
+  auth: { lock: noOpLock, storage: rememberAwareStorage },
 })
 
 supabase.auth.onAuthStateChange((event) => {
@@ -152,13 +256,19 @@ if (typeof document !== 'undefined') {
 // ชื่อเต็ม เพื่อไม่ให้พังเงียบๆ ถ้า supabase-js เปลี่ยนรูปแบบ key ภายในวันหลัง
 function purgeStoredAuthSession() {
   try {
-    const keys = []
-    for (let i = 0; i < localStorage.length; i += 1) {
-      const key = localStorage.key(i)
-      if (key && /^sb-.+-auth-token/.test(key)) keys.push(key)
+    // ต้องกวาดทั้งสองที่ — ตั้งแต่มี rememberAwareStorage แล้ว session ของคนที่ไม่ติ๊ก
+    // "จำการเข้าสู่ระบบ" จะไปอยู่ sessionStorage ถ้าล้างแต่ localStorage การบังคับออกจากระบบ
+    // จะไม่มีผลกับคนกลุ่มนั้นเลย
+    const removed = []
+    for (const store of [localStorage, sessionStorage]) {
+      const keys = []
+      for (let i = 0; i < store.length; i += 1) {
+        const key = store.key(i)
+        if (key && /^sb-.+-auth-token/.test(key)) keys.push(key)
+      }
+      keys.forEach((key) => { store.removeItem(key); removed.push(key) })
     }
-    keys.forEach((key) => localStorage.removeItem(key))
-    return keys.length > 0
+    return removed.length > 0
   } catch {
     return false
   }

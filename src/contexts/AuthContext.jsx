@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { fetchProfile } from '../lib/profileFetch'
 import { useTenant } from './TenantContext'
 
 const AuthContext = createContext(null)
@@ -36,11 +37,9 @@ export function AuthProvider({ children }) {
 
     setProfileLoading(true)
     setProfileError(false)
-    supabase
-      .from('profiles')
-      .select('role, municipality_id, full_name, avatar_url')
-      .eq('id', session.user.id)
-      .maybeSingle()
+    // fetchProfile รวมคำสั่งอ่าน profiles ให้เป็นชุดเดียวกับที่ checkAndFixProfile ใน App.jsx ใช้
+    // ตอนโหลดหน้าพร้อมกัน จึงยิงจริงแค่ครั้งเดียวแทนที่จะเป็นสองรอบของแถวเดียวกัน
+    fetchProfile(session.user.id)
       .then(({ data, error }) => {
         // แยก "อ่านโปรไฟล์ไม่สำเร็จ" ออกจาก "ไม่มีแถวโปรไฟล์" ให้ชัด — maybeSingle() ที่ไม่เจอแถวจะคืน
         // data=null คู่กับ error=null ซึ่งแปลว่า citizen ได้จริง แต่ถ้า error มีค่า (RLS ปฏิเสธ, 500,

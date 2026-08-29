@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../../lib/supabase'
+import { supabase, setRememberSession } from '../../lib/supabase'
 import { invokeDeviceLogin } from '../../lib/deviceLogin'
 import { Loader2, RefreshCw, Smartphone } from 'lucide-react'
 
@@ -98,6 +98,11 @@ export default function DeviceLoginPanel() {
       if (data?.ok && data.token_hash) {
         setPhase('signingIn')
         requestRef.current = null
+        // ทางเข้านี้มีไว้สำหรับ "เจ้าหน้าที่ไปยืมเครื่องคนอื่นใช้" โดยเฉพาะ จึงผูก session ไว้กับแท็บ
+        // เท่านั้น ปิดแท็บ/ปิดเบราว์เซอร์แล้วหลุดเอง — ถ้าปล่อยให้ค้างใน localStorage เหมือนการ
+        // ล็อกอินปกติ บัญชีเจ้าหน้าที่จะค้างอยู่บนเครื่องเพื่อนร่วมงานถาวร ซึ่งเป็นสิ่งที่ฟีเจอร์นี้
+        // ตั้งใจจะกำจัดตั้งแต่แรก (ไม่ใช่การพาออกอัตโนมัติ — เป็นขอบเขตของการยืมเครื่องครั้งนั้น)
+        setRememberSession(false)
         const { error: otpError } = await supabase.auth.verifyOtp({
           token_hash: data.token_hash,
           type: 'magiclink',

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { supabase, setRememberSession } from '../lib/supabase'
 import { isNetworkAuthError } from '../lib/authErrors'
 import { Lock, Mail, Loader2, ShieldCheck, Eye, EyeOff, KeyRound, Smartphone } from 'lucide-react'
 import DeviceLoginPanel from '../components/auth/DeviceLoginPanel'
@@ -21,7 +21,9 @@ export default function AdminLogin() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [remember, setRemember] = useState(false)
+  // ค่าเริ่มต้น = จำไว้ ให้ตรงกับพฤติกรรมเดิม การไม่ติ๊กคือเจ้าหน้าที่เลือกเองว่าไม่ให้ค้าง
+  // บนเครื่องนี้ (session จะอยู่แค่จนปิดแท็บ) ไม่ใช่ระบบพาออกอัตโนมัติ
+  const [remember, setRemember] = useState(true)
   // เจ้าหน้าที่ที่ไปใช้ PC เครื่องคนอื่นไม่ควรต้องพิมพ์รหัสผ่านทิ้งไว้บนเครื่องนั้น
   // (และกดปุ่ม Google/LINE ไม่ได้ เพราะเบราว์เซอร์เครื่องนั้นจำบัญชีเจ้าของเครื่องไว้)
   const [tab, setTab] = useState('password')
@@ -34,11 +36,13 @@ export default function AdminLogin() {
     // fetchWithTimeout ใน supabase.js) ไม่ใช่แค่คืน error object พอ await โยนออกไป setLoading(false)
     // ไม่ได้รัน ปุ่มจะค้างเป็น "กำลังเข้าสู่ระบบ..." แบบ disabled ถาวร เจ้าหน้าที่กดซ้ำไม่ได้
     // และไม่มีข้อความบอกว่าเกิดอะไรขึ้น ต้องเดาเองว่าต้องรีเฟรชหน้า
+    // ต้องตั้งก่อนยิง signIn — storage adapter ใน supabase.js อ่านค่านี้ตอนเขียน session ลงเครื่อง
+    // ของเดิมส่ง options.persistSession ซึ่ง auth-js ไม่เคยอ่าน ติ๊กหรือไม่ก็ค้างบนเครื่องเหมือนกันหมด
+    setRememberSession(remember)
     try {
       const { error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
-        options: { persistSession: remember },
       })
       if (authError) {
         setError(isNetworkAuthError(authError)
@@ -141,7 +145,7 @@ export default function AdminLogin() {
               onChange={(e) => setRemember(e.target.checked)}
               className="w-4 h-4 rounded accent-(--color-primary)"
             />
-            <span className="text-sm text-gray-500">จดจำรหัสผ่าน</span>
+            <span className="text-sm text-gray-500">จำการเข้าสู่ระบบไว้บนเครื่องนี้</span>
           </label>
 
           {error && (
