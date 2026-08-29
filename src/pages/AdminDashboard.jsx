@@ -4700,10 +4700,16 @@ export default function AdminDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <div className="text-right">
-              <p className="text-xs font-bold text-white">{ROLE_LABELS[currentUserRole]?.label ?? 'ผู้ดูแลระบบ'}</p>
+            {/* ชื่อคนที่ล็อกอินต้องเห็นตลอด ไม่ใช่แค่ตำแหน่ง — เจ้าหน้าที่ที่ไปนั่ง PC เครื่องอื่น
+                จะได้รู้ตัวก่อนกดอนุมัติอะไรที่ audit_logs บันทึกชื่อคนกดเอาไว้
+                (ของเดิมโชว์แค่ตำแหน่งกับตัวอักษร "A" ที่ hardcode ไว้ ไม่ได้มาจากชื่อจริงด้วยซ้ำ) */}
+            <div className="text-right min-w-0">
+              <p className="text-xs font-bold text-white truncate max-w-[14rem]">{currentUserName || 'ไม่ทราบชื่อ'}</p>
+              <p className="text-[10px] text-white/70 leading-tight">{ROLE_LABELS[currentUserRole]?.label ?? 'ผู้ดูแลระบบ'}</p>
             </div>
-            <div className="w-8 h-8 rounded-full bg-white/20 border border-white/40 flex items-center justify-center text-sm font-bold text-white shrink-0">A</div>
+            {currentUserAvatar
+              ? <img src={currentUserAvatar} alt="" className="w-8 h-8 rounded-full object-cover border border-white/40 shrink-0" />
+              : <div className="w-8 h-8 rounded-full bg-white/20 border border-white/40 flex items-center justify-center text-sm font-bold text-white shrink-0">{(currentUserName || '?')[0].toUpperCase()}</div>}
             <button onClick={() => navigate('/')}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/10 hover:bg-white/20 transition-colors border border-white/20">
               <Home size={13} />
@@ -4730,7 +4736,7 @@ export default function AdminDashboard() {
           </button>
           <div className="flex-1 min-w-0">
             <p className="font-bold text-sm leading-tight truncate">{tenant?.name}</p>
-            <p className="text-white/70 text-[11px] mt-0.5">แผงควบคุม Admin</p>
+            <p className="text-white/70 text-[11px] mt-0.5 truncate">แผงควบคุม Admin{currentUserName ? ` · ${currentUserName}` : ''}</p>
           </div>
           <button onClick={() => navigate('/notifications')} aria-label="การแจ้งเตือน" className="p-1.5 text-white/85 hover:text-white transition-colors shrink-0">
             <Bell size={19} />

@@ -8,7 +8,7 @@ import DeviceLoginPanel from '../components/auth/DeviceLoginPanel'
 export default function AdminLogin() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  // ถอดการออกจากระบบอัตโนมัติเมื่อไม่ได้ใช้งานออกไปแล้ว (2026-08-29 ดู StaffSessionBar.jsx)
+  // ถอดการออกจากระบบอัตโนมัติเมื่อไม่ได้ใช้งานออกไปแล้ว (2026-08-29 ดู docs/device-login-design.md ข้อ 7)
   // ไม่มีโค้ดจุดไหนพามาที่ ?reason=idle อีก แต่คงข้อความนี้ไว้เพราะแอปเป็น PWA — เครื่องที่ยัง
   // ค้าง bundle เก่าจาก service worker ยังเด้งมาที่ URL นี้ได้อยู่ ลบทิ้งตอนนี้จะกลายเป็นถูก
   // เด้งออกโดยไม่มีคำอธิบาย ซึ่งเจ้าหน้าที่จะนึกว่าระบบล่ม

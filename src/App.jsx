@@ -11,7 +11,6 @@ import CitizenSidebar from './components/layout/CitizenSidebar'
 import InstallPrompt from './components/InstallPrompt'
 import ScrollToTopButton from './components/ScrollToTopButton'
 import InAppBrowserGate from './components/InAppBrowserGate'
-import StaffSessionBar from './components/layout/StaffSessionBar'
 import { supabase } from './lib/supabase'
 import { Phone, UserRound } from 'lucide-react'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from './lib/thaiName'
@@ -512,10 +511,6 @@ function AppShell() {
         <PhoneReminderModal onClose={() => setShowPhoneReminder(false)} />
       )}
       <NotificationsProvider>
-        {/* บอกว่ากำลังใช้งานในชื่อใคร + ออกจากระบบอัตโนมัติเมื่อทิ้งไว้นาน (เฉพาะบัญชีเจ้าหน้าที่)
-            สำคัญขึ้นมากตั้งแต่มีการเข้าสู่ระบบด้วยรหัสจากมือถือ เพราะเจ้าหน้าที่จะเข้าใช้งานบน
-            เครื่องคนอื่นบ่อยขึ้น แล้วลืมกดออกจากระบบบ่อยขึ้นตาม */}
-        <StaffSessionBar />
         {!isBackOffice && <Header />}
         {isTechnician && <div className="hidden md:block"><Header /></div>}
         <div className="flex flex-1 min-h-0 overflow-hidden">
