@@ -19,6 +19,8 @@ export default function GoogleMapPicker({
   modal,
   fixedCenterPin = true,
   showBoundary = false,
+  autoLocate = true,
+  skipGeolocation = false,
   mapClassName = 'w-full h-80 min-h-[320px]',
   placeholder = 'ค้นหาบ้านเลขที่ ชื่อสถานที่ หรือถนน...',
 }) {
@@ -28,6 +30,9 @@ export default function GoogleMapPicker({
   const mapRef = useRef(null)
   const googleRef = useRef(null)
   const autocompleteListenerRef = useRef(null)
+  const isMountedRef = useRef(true)
+  const autoLocateAttemptedRef = useRef(false)
+  const pendingAutoCoordRef = useRef(null)
   const [locating, setLocating] = useState(false)
 
   const initialLocation = useMemo(() => {
@@ -76,13 +81,52 @@ export default function GoogleMapPicker({
     }
   }, [commitSelection])
 
+  const locateMe = useCallback((silent = false) => {
+    if (!navigator.geolocation) {
+      if (!silent) alert('อุปกรณ์หรือเบราว์เซอร์นี้ไม่รองรับการอ่านตำแหน่ง')
+      return
+    }
+    if (!window.isSecureContext) {
+      if (!silent) alert('ต้องเปิดผ่าน HTTPS หรือ localhost จึงจะอ่านตำแหน่งปัจจุบันได้')
+      return
+    }
+    setLocating(true)
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        if (!isMountedRef.current) return
+        const point = { lat: position.coords.latitude, lng: position.coords.longitude }
+        pendingAutoCoordRef.current = point
+        commitSelection({ ...point, address: point.lat.toFixed(6) + ', ' + point.lng.toFixed(6) })
+        if (mapRef.current) {
+          mapRef.current.panTo(point)
+          mapRef.current.setZoom(18)
+        }
+        reverseGeocode(point)
+        setLocating(false)
+      },
+      err => {
+        if (!isMountedRef.current) return
+        setLocating(false)
+        if (!silent) {
+          if (err?.code === 1) alert('ยังไม่ได้อนุญาตให้เว็บไซต์ใช้ตำแหน่ง กรุณาเปิดสิทธิ์ Location ในตั้งค่าเบราว์เซอร์แล้วลองใหม่')
+          else if (err?.code === 3) alert('ค้นหาตำแหน่งนานเกินไป กรุณาเปิด GPS แล้วลองใหม่ในที่โล่ง')
+          else alert('อ่านตำแหน่งปัจจุบันไม่สำเร็จ กรุณาเปิด GPS แล้วลองใหม่')
+        }
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+    )
+  }, [commitSelection, reverseGeocode])
+
   const handleMapReady = useCallback((map, google) => {
     mapRef.current = map
     googleRef.current = google
     if (readOnly) return
 
-    // Reverse geocode initial tenant position if no initial address
-    if (!initialPos?.address) {
+    if (pendingAutoCoordRef.current) {
+      map.panTo(pendingAutoCoordRef.current)
+      map.setZoom(18)
+      reverseGeocode(pendingAutoCoordRef.current)
+    } else if (!initialPos?.address) {
       const center = map.getCenter()
       if (center) {
         reverseGeocode({ lat: center.lat(), lng: center.lng() })
@@ -175,33 +219,17 @@ export default function GoogleMapPicker({
     }
   }, [commitSelection, readOnly, reverseGeocode, initialPos?.address, fixedCenterPin, placeholder])
 
-  useEffect(() => () => autocompleteListenerRef.current?.remove?.(), [])
-
-  function locateMe() {
-    if (!navigator.geolocation) {
-      alert('อุปกรณ์หรือเบราว์เซอร์นี้ไม่รองรับการอ่านตำแหน่ง')
-      return
+  useEffect(() => {
+    isMountedRef.current = true
+    if (!readOnly && autoLocate && !skipGeolocation && !validPoint(initialPos) && !autoLocateAttemptedRef.current) {
+      autoLocateAttemptedRef.current = true
+      locateMe(true)
     }
-    if (!window.isSecureContext) {
-      alert('ต้องเปิดผ่าน HTTPS จึงจะอ่านตำแหน่งปัจจุบันได้')
-      return
+    return () => {
+      isMountedRef.current = false
+      autocompleteListenerRef.current?.remove?.()
     }
-    setLocating(true)
-    navigator.geolocation.getCurrentPosition(position => {
-      const point = { lat: position.coords.latitude, lng: position.coords.longitude }
-      // commit ก่อน pan/zoom เพื่อให้ listener ของแผนที่ยึดพิกัดใหม่ ไม่ดึง center กลับที่เดิม
-      commitSelection({ ...point, address: point.lat.toFixed(6) + ', ' + point.lng.toFixed(6) })
-      mapRef.current?.panTo(point)
-      mapRef.current?.setZoom(18)
-      reverseGeocode(point)
-      setLocating(false)
-    }, err => {
-      setLocating(false)
-      if (err?.code === 1) alert('ยังไม่ได้อนุญาตให้เว็บไซต์ใช้ตำแหน่ง กรุณาเปิดสิทธิ์ Location ในตั้งค่าเบราว์เซอร์แล้วลองใหม่')
-      else if (err?.code === 3) alert('ค้นหาตำแหน่งนานเกินไป กรุณาเปิด GPS แล้วลองใหม่ในที่โล่ง')
-      else alert('อ่านตำแหน่งปัจจุบันไม่สำเร็จ กรุณาเปิด GPS แล้วลองใหม่')
-    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 })
-  }
+  }, [readOnly, autoLocate, skipGeolocation, initialPos, locateMe])
 
   function handleSearchSubmit(e) {
     if (e) e.preventDefault()
@@ -266,7 +294,7 @@ export default function GoogleMapPicker({
           markers={(readOnly || !fixedCenterPin) && validPoint(selected) ? [{ id: 'selected-location', position: selected, color: '#ef4444', scale: 17, title: 'ตำแหน่งที่เลือก' }] : []}
         />
         {!readOnly && (
-          <button type="button" onClick={locateMe} disabled={locating}
+          <button type="button" onClick={() => locateMe(false)} disabled={locating}
             className="absolute bottom-12 left-3 z-10 flex items-center gap-1.5 rounded-full bg-blue-600 px-3.5 py-2.5 text-xs font-bold text-white shadow-lg transition-transform active:scale-95 disabled:opacity-70"
             title="ไปยังตำแหน่งปัจจุบันของฉัน" aria-label="ตำแหน่งปัจจุบันของฉัน">
             <LocateFixed size={16} className={locating ? 'animate-pulse' : ''} />
