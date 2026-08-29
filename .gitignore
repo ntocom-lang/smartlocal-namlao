@@ -30,6 +30,7 @@ api/_template.html
 
 # Playwright MCP browser session artifacts
 .playwright-mcp/
+.chrome-test-profiles/
 
 # Sensitive files — ห้าม commit เด็ดขาด
 recovery-codes.txt
