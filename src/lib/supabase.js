@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { isNetworkAuthError } from './authErrors'
 
 export const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 export const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -46,16 +47,50 @@ function isProtectedPath(path) {
 // บังคับ refresh หรือ sign-out ทันทีที่เจอสัญญาณว่า token ใช้ไม่ได้แล้ว
 // เช็คจากข้อความ error แทน status code ล้วนๆ เพราะ 400 เฉยๆ ใช้กับ validation
 // error ปกติทั่วแอปด้วย (เช่น insert ผิด constraint) ไม่ควร sign-out มั่ว
+//
+// ⚠️ กติกาที่ตกลงไว้ (2026-08-29): ผู้ใช้ต้องออกจากระบบด้วยการกดปุ่มเองเท่านั้น ห้ามมีทางไหน
+// พาออกอัตโนมัติ ยกเว้นทางเดียวคือ refresh token ตายจริงจนกู้ไม่ได้ ซึ่งไม่ใช่ทางเลือกของเรา
+// (ไม่มี token = ยิง request อะไรก็ไม่ผ่าน RLS ทั้งหมด) ของเดิมพลาดตรงเหมาเอาว่า refreshSession()
+// ล้ม = session ตาย ทั้งที่ auth-js แยก AuthRetryableFetchError (เน็ตหลุด/ชน timeout 25 วิ)
+// ออกมาให้แล้ว — เจ้าหน้าที่ที่ใช้มือถือนอกสำนักงานสัญญาณตกจึงถูกไล่ออกทั้งที่ token ยังดีอยู่
+const RETRY_DELAY_MS = 3000
 let recovering = null
 function recoverExpiredSession() {
   if (recovering) return recovering
   recovering = (async () => {
-    try {
-      const { data, error } = await supabase.auth.refreshSession()
-      if (error || !data?.session) throw error ?? new Error('no session after refresh')
-    } catch {
-      await supabase.auth.signOut()
-      if (isProtectedPath(window.location.pathname)) window.location.href = '/admin/login'
+    // ลองสองรอบ ห่างกัน 3 วิ — รอบเดียวแยก "เซิร์ฟเวอร์สะอึกชั่วขณะ" ออกจาก "token ตายจริง"
+    // ไม่ได้ และราคาของการตัดสินผิดฝั่งนี้คือไล่คนที่ยังล็อกอินถูกต้องออกจากระบบ
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      let failure
+      try {
+        const { data, error } = await supabase.auth.refreshSession()
+        if (!error && data?.session) return
+        failure = error ?? new Error('refreshSession คืนค่าโดยไม่มี session')
+      } catch (err) {
+        failure = err
+      }
+
+      // ปัญหาการเชื่อมต่อ = ยังสรุปไม่ได้ว่า session ตาย ห้ามพาออกเด็ดขาด ปล่อยให้ตัว
+      // auto-refresh ของ SDK (หรือ 401 ครั้งถัดไป) ลองใหม่เองเมื่อสัญญาณกลับมา
+      if (isNetworkAuthError(failure)) {
+        console.warn('[auth] ต่ออายุ token ไม่สำเร็จเพราะการเชื่อมต่อ — คงสถานะล็อกอินไว้:', failure?.message ?? failure)
+        return
+      }
+
+      if (attempt === 1) {
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS))
+        continue
+      }
+
+      // ถึงตรงนี้คือเซิร์ฟเวอร์ปฏิเสธ refresh token สองรอบติด (ถูกเพิกถอน/หมดอายุ/สลับ
+      // signing key) กู้เองไม่ได้แล้ว ต้องล็อกอินใหม่เท่านั้น — พาไปหน้า login พร้อมเหตุผล
+      // ดีกว่าปล่อยให้หน้าเว็บดูปกติแต่ทุกอย่างโหลดไม่ขึ้นโดยผู้ใช้ไม่รู้ว่าเกิดอะไร
+      console.error('[auth] refresh token ใช้ไม่ได้แล้ว ต้องเข้าสู่ระบบใหม่:', failure?.message ?? failure)
+      purgeStoredAuthSession()
+      if (isProtectedPath(window.location.pathname)) {
+        window.location.href = '/admin/login?reason=expired'
+      }
+      return
     }
   })()
   return recovering.finally(() => { recovering = null })

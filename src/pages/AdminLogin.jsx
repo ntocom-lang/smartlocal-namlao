@@ -8,9 +8,14 @@ import DeviceLoginPanel from '../components/auth/DeviceLoginPanel'
 export default function AdminLogin() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  // มาจาก useIdleLogout ที่พาออกมาเพราะทิ้งหน้าจอไว้นาน — ต้องบอกเหตุผลให้ชัด ไม่งั้น
-  // เจ้าหน้าที่จะนึกว่าระบบล่มหรือรหัสผ่านมีปัญหา
+  // ถอดการออกจากระบบอัตโนมัติเมื่อไม่ได้ใช้งานออกไปแล้ว (2026-08-29 ดู StaffSessionBar.jsx)
+  // ไม่มีโค้ดจุดไหนพามาที่ ?reason=idle อีก แต่คงข้อความนี้ไว้เพราะแอปเป็น PWA — เครื่องที่ยัง
+  // ค้าง bundle เก่าจาก service worker ยังเด้งมาที่ URL นี้ได้อยู่ ลบทิ้งตอนนี้จะกลายเป็นถูก
+  // เด้งออกโดยไม่มีคำอธิบาย ซึ่งเจ้าหน้าที่จะนึกว่าระบบล่ม
   const loggedOutForIdle = searchParams.get('reason') === 'idle'
+  // ทางเดียวที่เหลือที่ระบบพาผู้ใช้ออกเอง: refresh token ถูกเซิร์ฟเวอร์ปฏิเสธสองรอบติด
+  // (ดู recoverExpiredSession ใน src/lib/supabase.js) เน็ตหลุดไม่เข้าเงื่อนไขนี้
+  const loggedOutForExpired = searchParams.get('reason') === 'expired'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -63,6 +68,13 @@ export default function AdminLogin() {
 
         <h1 className="text-xl font-bold text-gray-800 text-center mb-1">เข้าสู่ระบบเจ้าหน้าที่</h1>
         <p className="text-sm text-gray-400 text-center mb-5">แผงควบคุมสำหรับผู้ดูแลระบบ</p>
+
+        {loggedOutForExpired && (
+          <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-5 text-center leading-relaxed">
+            สิทธิ์การเข้าใช้งานของอุปกรณ์นี้หมดอายุแล้ว กรุณาเข้าสู่ระบบอีกครั้ง<br />
+            <span className="text-xs">ไม่ได้เกิดจากสัญญาณอินเทอร์เน็ตขาดช่วง</span>
+          </p>
+        )}
 
         {loggedOutForIdle && (
           <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-5 text-center leading-relaxed">
