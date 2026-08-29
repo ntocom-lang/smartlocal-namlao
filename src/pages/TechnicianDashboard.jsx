@@ -33,6 +33,13 @@ const NEXT_ACTION = {
   in_progress: { label: 'ปิดงาน',        next: 'done' },
 }
 
+// แอดมินปิดเรื่องด้วยสถานะ 'closed' (ดู STATUS_FLOW ใน ComplaintsManager.jsx) ส่วน 'completed'
+// เป็นค่า legacy ของสถานะเดียวกัน หน้านี้เคยเช็คแต่ 'completed' อย่างเดียวทุกจุด งานที่แอดมิน
+// ปิดไปแล้วจึงตกอยู่ในกลุ่ม "งานที่รอดำเนินการ" ตลอดกาล ถูกนับเป็นงานค้างและงานใกล้ครบกำหนด
+// ซ้ำทุกวัน แถมช่างยังกดแก้สถานะเรื่องที่ปิดไปแล้วได้อีก — เช็คผ่าน helper ตัวนี้ที่เดียวเท่านั้น
+const CLOSED_STATUSES = new Set(['completed', 'closed'])
+function isClosed(status) { return CLOSED_STATUSES.has(status) }
+
 let CATEGORY_LABEL = {
   road: 'ซ่อมแซมถนน', light: 'ไฟฟ้าสาธารณะ',
   trash: 'ขยะ/ความสะอาด', water: 'น้ำประปา',
@@ -71,7 +78,7 @@ function markSeen(id) {
 
 function emitTechBadge(list) {
   const seen = getSeenIds()
-  const count = list.filter(c => c.status !== 'completed' && c.status !== 'closed' && !seen.has(c.id)).length
+  const count = list.filter(c => !isClosed(c.status) && !seen.has(c.id)).length
   localStorage.setItem('sl_tech_new', String(count))
   window.dispatchEvent(new CustomEvent('tech-badge-update', { detail: count }))
 }
@@ -86,7 +93,9 @@ const STATUS_FLOW_LABEL = {
 }
 
 function StatusStepper({ status }) {
-  const currentIdx = STATUS_FLOW.indexOf(status)
+  // STATUS_FLOW จบที่ 'completed' ตามคำศัพท์ของหน้านี้ แต่แอดมินเขียน 'closed' ลง DB
+  // ถ้าส่งเข้าไปตรงๆ indexOf จะได้ -1 แล้วไม่มีขั้นไหนติดสว่างเลยทั้งที่เรื่องปิดไปแล้ว
+  const currentIdx = STATUS_FLOW.indexOf(isClosed(status) ? 'completed' : status)
   return (
     <div className="space-y-0">
       {STATUS_FLOW.map((step, i) => {
@@ -144,6 +153,10 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant }) {
   const [showMapEdit, setShowMapEdit] = useState(false)
 
   const action = NEXT_ACTION[c.status]
+  // ขั้นสุดท้ายที่ช่างทำได้คือ 'done' (รอแอดมินตรวจรับแล้วปิดเรื่องเอง) — เดิมเทียบกับ
+  // 'completed' ซึ่ง NEXT_ACTION ไม่เคยคืนค่านั้น เงื่อนไขจึงเป็นเท็จเสมอ ปุ่ม "ปิดงาน"
+  // เลยไม่เคยได้สไตล์ปิดงาน และไม่เคยส่งรูปหน้างาน/หมายเหตุไปพร้อมการเปลี่ยนสถานะ
+  const isFinishStep = action?.next === 'done'
   const catLabel = CATEGORY_LABEL[c.category] ?? c.category
   const catEmoji = CATEGORY_EMOJI[c.category] ?? '📄'
 
@@ -314,7 +327,7 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant }) {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">จุดเกิดเหตุ</p>
-              {c.status !== 'completed' && c.status !== 'rejected' && (
+              {!isClosed(c.status) && c.status !== 'rejected' && (
                 <button onClick={() => setShowMapEdit(true)}
                   className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-orange-50 text-orange-600 hover:bg-orange-100 transition-colors">
                   <MapPin size={13} />
@@ -368,7 +381,7 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant }) {
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                 รูปหลักฐานการทำงาน {photos.length > 0 && `(${photos.length})`}
               </p>
-              {c.status !== 'completed' && c.status !== 'rejected' && (
+              {!isClosed(c.status) && c.status !== 'rejected' && (
                 <label className="cursor-pointer flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors">
                   {uploading
                     ? <Loader2 size={13} className="animate-spin" />
@@ -399,7 +412,7 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant }) {
           </div>
 
           {/* บันทึกของช่าง */}
-          {c.status !== 'completed' && c.status !== 'rejected' && (
+          {!isClosed(c.status) && c.status !== 'rejected' && (
             <div className="space-y-2">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">บันทึกของช่าง</p>
               <div className="flex gap-2">
@@ -420,7 +433,7 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant }) {
           )}
 
           {/* บันทึกที่บันทึกไว้แล้ว (completed) */}
-          {c.status === 'completed' && c.technician_note && (
+          {isClosed(c.status) && c.technician_note && (
             <div className="space-y-2">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">บันทึกของช่าง</p>
               <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
@@ -431,7 +444,7 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant }) {
         </div>
 
         {/* Footer */}
-        {c.status !== 'completed' && c.status !== 'rejected' && (
+        {!isClosed(c.status) && c.status !== 'rejected' && (
           <div className="px-5 py-4 border-t border-gray-100 bg-gray-50 shrink-0 space-y-2">
             {needsPhoto && (
               <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-center">
@@ -440,13 +453,13 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant }) {
             )}
             {action && (
               <button
-                onClick={() => onUpdate(c.id, action.next, action.next === 'completed' ? photos : null, action.next === 'completed' ? note : null)}
-                disabled={updating === c.id || (action.next === 'completed' && needsPhoto)}
+                onClick={() => onUpdate(c.id, action.next, isFinishStep ? photos : null, isFinishStep ? (note.trim() || null) : null)}
+                disabled={updating === c.id || (isFinishStep && needsPhoto)}
                 className="w-full py-3 rounded-2xl text-sm font-bold text-white transition-all active:scale-98 disabled:opacity-50"
-                style={{ backgroundColor: action.next === 'completed' ? '#10b981' : '#2563eb' }}>
+                style={{ backgroundColor: isFinishStep ? '#10b981' : '#2563eb' }}>
                 {updating === c.id
                   ? <Loader2 size={16} className="animate-spin mx-auto" />
-                  : action.next === 'completed'
+                  : isFinishStep
                     ? `✅ ${action.label}`
                     : `${action.label} →`}
               </button>
@@ -668,8 +681,8 @@ export default function TechnicianDashboard() {
 
   useEffect(() => { fetchMyProjects() }, [fetchMyProjects])
 
-  const pending = complaints.filter((c) => c.status !== 'completed')
-  const done = complaints.filter((c) => c.status === 'completed')
+  const pending = complaints.filter((c) => !isClosed(c.status))
+  const done = complaints.filter((c) => isClosed(c.status))
 
   // ระดับความเร่งด่วนตาม due_date ที่ระบบกำหนดให้อัตโนมัติตอนมอบหมายงาน (auto_assign_complaint)
   const today = todayStr()
@@ -684,7 +697,7 @@ export default function TechnicianDashboard() {
   // closed_at เป็น timestamptz — .slice(0, 10) จะได้วันตาม UTC ซึ่งคนละฐานกับ today ที่เป็นวัน
   // ตามเครื่อง ต้องแปลงเป็นวันท้องถิ่นก่อนเทียบ ไม่งั้นงานที่ปิดหลังเที่ยงคืนถึงตี 7 จะหล่นออกจากยอด
   const doneTodayCount = complaints.filter((c) =>
-    (c.status === 'completed' || c.status === 'closed') && c.closed_at && toDateStr(new Date(c.closed_at)) === today
+    isClosed(c.status) && c.closed_at && toDateStr(new Date(c.closed_at)) === today
   ).length
 
   return (
@@ -701,7 +714,8 @@ export default function TechnicianDashboard() {
 
       {showGpsMap && (
         <MapPicker
-          initialPos={gpsGeo.lat ? { lat: gpsGeo.lat, lng: gpsGeo.lng } : (tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null)}
+          initialPos={gpsGeo.lat ? { lat: gpsGeo.lat, lng: gpsGeo.lng } : null}
+          fallbackPos={tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null}
           onConfirm={({ lat, lng, address }) => {
             setGpsGeo({ lat, lng })
             if (address && !gpsForm.village) setGpsForm(p => ({ ...p, village: address }))
