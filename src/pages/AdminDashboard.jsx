@@ -101,6 +101,7 @@ let CATEGORY_EMOJI = {
 
 const NON_CITIZEN_ROLES = ['staff', 'officer', 'technician', 'admin', 'superadmin', 'council', 'viewer']
 const USER_PAGE_SIZE = 50
+const USER_SORT_KEYS = new Set(['created_at', 'full_name', 'email', 'providers', 'role', 'assignment'])
 const PERSONNEL_CARD_PALETTES = [
   { color: '#2563eb', soft: '#eff6ff', border: '#bfdbfe' },
   { color: '#7c3aed', soft: '#f5f3ff', border: '#ddd6fe' },
@@ -133,6 +134,39 @@ function ProviderChips({ user, compact = false }) {
       })}
     </div>
   )
+}
+
+function UserSortHeader({ label, sortKey, sortConfig, onSort, className = '' }) {
+  const isActive = sortConfig.key === sortKey
+  const nextDirectionLabel = isActive && sortConfig.direction === 'asc' ? 'จากมากไปน้อย' : 'จากน้อยไปมาก'
+  return (
+    <th
+      aria-sort={isActive ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+      className={`border-r border-white/10 text-white ${className}`}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className="flex w-full items-center gap-1 px-2 py-2.5 text-left font-bold transition-colors hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/80"
+        title={`กดเพื่อเรียง${label} ${nextDirectionLabel}`}
+      >
+        <span>{label}</span>
+        {isActive
+          ? (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)
+          : <span aria-hidden="true" className="text-[10px] text-white/45">↕</span>}
+      </button>
+    </th>
+  )
+}
+
+function userSortValue(user, key) {
+  if (key === 'providers') {
+    return accountProviders(user).map((provider) => providerLabel(provider).label).join(' ')
+  }
+  if (key === 'role') return ROLE_LABELS[user.role]?.label ?? user.role ?? ''
+  if (key === 'assignment') return `${user.department_name ?? ''} ${user.position_name ?? ''}`.trim()
+  if (key === 'created_at') return user.created_at ? new Date(user.created_at).getTime() : 0
+  return user[key] ?? ''
 }
 
 function canManageUser(currentUserRole, currentUserId, targetUser) {
@@ -169,6 +203,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
   // ค่าเริ่มต้นต้องตรงกับ ORDER BY จริงใน get_users_with_email() (full_name ASC) ไม่งั้นลูกศร
   // บนหัวตารางจะขึ้นผิดทิศทาง (ข้อมูลที่ได้มาเรียงตามชื่อแล้ว แต่ลูกศรจะโชว์ว่ายังไม่ได้กดเรียง)
   const [sortConfig, setSortConfig] = useState({ key: 'full_name', direction: 'asc' })
+  const [serverSortReady, setServerSortReady] = useState(true)
 
   const [search, setSearch] = useState('')
   const [filterRole, setFilterRole] = useState('')
@@ -209,6 +244,8 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
     if (!['admin', 'superadmin'].includes(currentUserRole) || !tenant?.id) return
     const searchTerm = (opts.search ?? '').trim()
     const requestedPage = Math.max(0, opts.page ?? 0)
+    const requestedSortKey = USER_SORT_KEYS.has(opts.sortKey ?? sortConfig.key) ? (opts.sortKey ?? sortConfig.key) : 'full_name'
+    const requestedSortDirection = (opts.sortDirection ?? sortConfig.direction) === 'desc' ? 'desc' : 'asc'
     const requestId = ++fetchSequence.current
     setLoading(true)
     try {
@@ -216,14 +253,29 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
       // (LEAST(GREATEST(p_limit,1),100)) — ถ้า pageSize=100 แล้วขอ 101 จะโดน clamp เหลือ 100 เสมอ ทำให้
       // ตรวจ "มีหน้าถัดไปไหม" ด้วยการเทียบจำนวนที่ได้คืนมาผิดพลาดได้ ใช้ staffCount/citizenCount ที่มีอยู่แล้ว
       // (นับจริงจาก get_user_role_counts) เป็นตัวคำนวณจำนวนหน้าแทน แม่นกว่าและไม่ต้อง query ซ้ำ
-      const { data, error } = await supabase.rpc('get_users_with_email', {
+      const rpcParams = {
         p_municipality_id: tenant.id,
         p_roles: subTab === 'citizen' ? ['citizen'] : (filterRole ? [filterRole] : NON_CITIZEN_ROLES),
         p_search: searchTerm || null,
         p_limit: pageSize,
         p_offset: requestedPage * pageSize,
+      }
+      let usedLegacyRpc = false
+      let { data, error } = await supabase.rpc('get_users_with_email_sorted', {
+        ...rpcParams,
+        p_sort_key: requestedSortKey,
+        p_sort_direction: requestedSortDirection,
       })
+      // ระหว่าง deploy แบบ DB-first หาก schema cache ยังไม่เห็น RPC ใหม่ ให้รายการเดิมยังเปิดได้
+      // (แต่จะเรียงได้ถูกต้องเฉพาะข้อมูลในหน้าปัจจุบันจนกว่า migration จะถูก apply)
+      if (error?.code === 'PGRST202') {
+        usedLegacyRpc = true
+        const legacyResult = await supabase.rpc('get_users_with_email', rpcParams)
+        data = legacyResult.data
+        error = legacyResult.error
+      }
       if (requestId !== fetchSequence.current) return
+      setServerSortReady(!usedLegacyRpc)
       if (error) {
         console.error('get_users_with_email:', error.message)
         setUsers([])
@@ -233,7 +285,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
     } finally {
       if (requestId === fetchSequence.current) setLoading(false)
     }
-  }, [tenant?.id, currentUserRole, subTab, filterRole, pageSize])
+  }, [tenant?.id, currentUserRole, subTab, filterRole, pageSize, sortConfig])
 
   // ค้นหา/กรอง/แบ่งหน้าใน SQL เพื่อไม่ดึง PII ทั้งหมดมาที่ Browser — RPC จำกัดหน้าละ
   // USER_PAGE_SIZE อยู่แล้ว ทั้งสองแท็บจึงโหลดหน้าแรกได้ทันทีโดยไม่ต้องรอพิมพ์ค้นหาก่อน
@@ -345,10 +397,12 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
   }
 
   const handleSort = (key) => {
+    if (!USER_SORT_KEYS.has(key)) return
     setSortConfig(current => ({
       key,
       direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc'
     }))
+    setPage(0)
   }
 
   // การ์ดกลุ่ม "กอง/หน่วยงาน" แทนกลุ่มตำแหน่งเดิม — เข้าใจง่ายกว่า เพราะตรงกับโครงสร้างหน่วยงานจริง
@@ -372,20 +426,21 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
   const assignedOnPage = users.filter(u => u.department_id).length
   const departmentHeadOnPage = users.filter(u => u.is_dept_head).length
 
-  const filtered = users.filter((u) => {
+  const filteredOnPage = users.filter((u) => {
     const q = search.toLowerCase()
     const matchSearch = !q || (u.full_name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q) || (u.phone || '').includes(q)
     const matchRole = !filterRole || u.role === filterRole
     const matchDept = !filterDept || (filterDept === 'none' ? !u.department_id : u.department_id === filterDept)
     return matchSearch && matchRole && matchDept
-  }).sort((a, b) => {
+  })
+  const filtered = serverSortReady ? filteredOnPage : [...filteredOnPage].sort((a, b) => {
     const { key, direction } = sortConfig;
-    let aVal = a[key] || '';
-    let bVal = b[key] || '';
+    let aVal = userSortValue(a, key)
+    let bVal = userSortValue(b, key)
 
-    // Sort logically for text, case insensitive
-    if (typeof aVal === 'string') aVal = aVal.toLowerCase();
-    if (typeof bVal === 'string') bVal = bVal.toLowerCase();
+    // fallback ฝั่ง client ใช้เฉพาะช่วงที่ production ยังไม่ apply RPC ใหม่
+    if (typeof aVal === 'string') aVal = aVal.toLocaleLowerCase('th')
+    if (typeof bVal === 'string') bVal = bVal.toLocaleLowerCase('th')
 
     // ชื่อภาษาไทยขึ้นก่อนภาษาอังกฤษเสมอ (ตรงกับที่ get_users_with_email() เรียงมาจาก server) —
     // ไม่งั้น string comparison ปกติของ JS จะเอาอักษรละตินขึ้นก่อน เพราะ code point ของอักษรไทยสูงกว่า
@@ -395,9 +450,11 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
       if (aThai !== bThai) return aThai ? -1 : 1
     }
 
-    if (aVal < bVal) return direction === 'asc' ? -1 : 1;
-    if (aVal > bVal) return direction === 'asc' ? 1 : -1;
-    return 0;
+    const comparison = typeof aVal === 'string' && typeof bVal === 'string'
+      ? aVal.localeCompare(bVal, 'th', { numeric: true, sensitivity: 'base' })
+      : (aVal < bVal ? -1 : (aVal > bVal ? 1 : 0))
+    if (comparison !== 0) return direction === 'asc' ? comparison : -comparison
+    return (a.full_name || a.email || '').localeCompare(b.full_name || b.email || '', 'th')
   })
 
   if (viewingUser) {
@@ -762,16 +819,12 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
           <table className="w-full text-sm text-left text-gray-600 table-fixed border-collapse">
             <thead>
               <tr className="bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-900">
-                <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 w-[5%]">ลำดับ</th>
-                <th className="px-2 py-2.5 text-[13px] font-bold text-white border-r border-white/10 w-[22%] cursor-pointer hover:bg-white/10 transition-colors" onClick={() => handleSort('full_name')}>
-                  <div className="flex items-center gap-1">ชื่อ-นามสกุล {sortConfig.key === 'full_name' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
-                </th>
-                <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 w-[22%]">อีเมล</th>
-                <th className="px-2 py-2.5 text-[11px] font-bold text-white border-r border-white/10 w-[13%]">เชื่อมต่อบัญชี</th>
-                <th className="px-2 py-2.5 text-[13px] font-bold text-white border-r border-white/10 w-[15%] cursor-pointer hover:bg-white/10 transition-colors" onClick={() => handleSort('role')}>
-                  <div className="flex items-center gap-1">บทบาท/สิทธิ์ {sortConfig.key === 'role' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
-                </th>
-                <th className="px-2 py-2.5 text-[11px] font-bold text-white w-[23%]">สังกัดและตำแหน่ง</th>
+                <UserSortHeader label="ลำดับ" sortKey="created_at" sortConfig={sortConfig} onSort={handleSort} className="w-[5%] text-[11px]" />
+                <UserSortHeader label="ชื่อ-นามสกุล" sortKey="full_name" sortConfig={sortConfig} onSort={handleSort} className="w-[22%] text-[13px]" />
+                <UserSortHeader label="อีเมล" sortKey="email" sortConfig={sortConfig} onSort={handleSort} className="w-[22%] text-[11px]" />
+                <UserSortHeader label="เชื่อมต่อบัญชี" sortKey="providers" sortConfig={sortConfig} onSort={handleSort} className="w-[13%] text-[11px]" />
+                <UserSortHeader label="บทบาท/สิทธิ์" sortKey="role" sortConfig={sortConfig} onSort={handleSort} className="w-[15%] text-[13px]" />
+                <UserSortHeader label="สังกัดและตำแหน่ง" sortKey="assignment" sortConfig={sortConfig} onSort={handleSort} className="w-[23%] border-r-0 text-[11px]" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
@@ -782,7 +835,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
                     className="cursor-pointer transition-colors hover:bg-blue-50/80"
                     style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#f8fafc' }}
                     onClick={(e) => { if (e.target.closest('button, select, input, a, label')) return; setViewingUserId(u.id) }}>
-                    <td className="px-2 py-3 text-xs text-gray-400 font-mono border-r border-gray-200">{i + 1}</td>
+                    <td className="px-2 py-3 text-xs text-gray-400 font-mono border-r border-gray-200">{page * pageSize + i + 1}</td>
                     <td className="px-2 py-3 border-r border-gray-200">
                       <div className="flex items-center gap-2 min-w-0">
                         <div className="flex flex-col min-w-0">
