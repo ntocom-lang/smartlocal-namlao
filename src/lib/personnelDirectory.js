@@ -12,10 +12,10 @@ function normalizePersonnel(rows) {
   }))
 }
 
-async function legacyStaffFallback(municipalityId, fields = '*') {
+async function legacyStaffFallback(municipalityId) {
   const result = await supabase
     .from('staff')
-    .select(fields)
+    .select('*')
     .eq('municipality_id', municipalityId)
     .eq('is_active', true)
     .order('display_order')
@@ -54,26 +54,4 @@ export async function fetchPublicPersonnel(municipalityId) {
   }
 
   return legacyStaffFallback(municipalityId)
-}
-
-/**
- * รายชื่อผู้ดำรงตำแหน่งสำหรับเอกสารภายใน/ลายเซ็น
- * RPC ตรวจว่าผู้เรียกเป็นเจ้าหน้าที่ของเทศบาลเดียวกันหรือ Super Admin
- */
-export async function fetchPersonnelSignatories(municipalityId) {
-  if (!municipalityId) return { data: [], error: null, source: 'none' }
-
-  const result = await supabase.rpc('get_personnel_signatories', {
-    p_municipality_id: municipalityId,
-  })
-  // ครอบทั้ง error และ 0 แถว ด้วยเหตุผลเดียวกับ fetchPublicPersonnel ข้างบน
-  if (!result.error) {
-    const rows = normalizePersonnel(result.data)
-    if (rows.length > 0) return { data: rows, error: null, source: 'profiles' }
-    console.warn('[personnelDirectory] signatory RPC returned no rows; using legacy staff fallback')
-  } else {
-    console.warn('[personnelDirectory] signatory RPC unavailable; using legacy staff fallback:', result.error.message)
-  }
-
-  return legacyStaffFallback(municipalityId, 'id,name,title,role,photo_url,phone,display_order')
 }

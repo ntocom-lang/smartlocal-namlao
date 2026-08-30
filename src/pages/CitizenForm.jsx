@@ -96,15 +96,6 @@ const DEFAULT_CATEGORIES = [
   { value: 'other',            label: 'อื่นๆ' },
 ]
 
-const CATEGORY_DEPT = {
-  light: 'กองช่าง', road: 'กองช่าง', road_concrete: 'กองช่าง',
-  road_asphalt: 'กองช่าง', road_slurry: 'กองช่าง', road_gravel: 'กองช่าง',
-  drain: 'กองช่าง', building: 'กองช่าง', pipe_water: 'กองช่าง',
-  canal: 'กองช่าง', dredge: 'กองช่าง', waterway: 'กองช่าง',
-  water_supply: 'กองช่าง', flood: 'กองช่าง',
-  tax: 'กองคลัง',
-}
-
 const REPAIR_CATEGORIES = new Set([
   'light', 'road', 'road_concrete', 'road_asphalt', 'road_slurry', 'road_gravel',
   'drain', 'manhole', 'pipe_water',
@@ -529,6 +520,7 @@ export default function CitizenForm() {
     if (ISSUE_TYPES_BY_CATEGORY[form.category] && !form.issue_type) { setError('กรุณาเลือกลักษณะปัญหา'); return }
     const odorErr = validateOdorFields(form)
     if (odorErr) { setError(odorErr); return }
+    if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
     if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
     if (!tenant?.id) { setError('ไม่พบข้อมูลหน่วยงาน'); return }
 
@@ -556,7 +548,7 @@ export default function CitizenForm() {
       let insertResult
       try {
         insertResult = await raceTimeout(
-          supabase.rpc('submit_citizen_complaint_v3', {
+          supabase.rpc('submit_citizen_complaint_v4', {
             p_id:              complaintId,
             p_municipality_id: tenant.id,
             p_category:        form.category,
@@ -569,7 +561,6 @@ export default function CitizenForm() {
             p_longitude:       geo.lng,
             p_user_id:         userId,
             p_channel:         'citizen_online',
-            p_department:      CATEGORY_DEPT[form.category] ?? 'สำนักปลัด',
             p_issue_type:      form.issue_type || null,
             p_extra_data:      buildExtraData(form),
           }).single()
@@ -754,9 +745,11 @@ export default function CitizenForm() {
               {NAME_TITLES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
             <input type="text" value={form.name_first} onChange={set('name_first')}
+              maxLength={100}
               placeholder="ชื่อ *"
               className="flex-1 min-w-0 px-4 py-2.5 rounded-xl border border-gray-300 bg-white text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-blue-400" />
             <input type="text" value={form.name_last} onChange={set('name_last')}
+              maxLength={100}
               placeholder="นามสกุล *"
               className="flex-1 min-w-0 px-4 py-2.5 rounded-xl border border-gray-300 bg-white text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-blue-400" />
           </div>
@@ -836,13 +829,14 @@ export default function CitizenForm() {
         )}
 
         {/* Detail */}
-        <textarea value={form.detail} onChange={set('detail')} rows={2} required
+        <textarea value={form.detail} onChange={set('detail')} rows={2} required minLength={10} maxLength={5000}
           placeholder={ftConfig?.placeholder ?? 'รายละเอียด'}
           className="w-full px-4 py-3.5 rounded-xl border border-gray-300 bg-white text-gray-900 text-base placeholder-gray-400 resize-none focus:outline-none focus:border-blue-400" />
 
         {/* Village */}
         {locations.length === 0 ? (
           <input type="text" value={form.village} onChange={set('village')}
+            maxLength={250}
             placeholder="สถานที่"
             className="w-full px-4 py-2.5 rounded-xl border border-gray-300 bg-white text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-blue-400" />
         ) : (
@@ -859,6 +853,7 @@ export default function CitizenForm() {
         {/* Phone */}
         <div className="relative">
           <input type="tel" value={form.phone} onChange={set('phone')}
+            maxLength={30}
             placeholder="เบอร์ติดต่อ *"
             className="w-full px-4 py-2.5 pl-10 rounded-xl border border-gray-300 bg-white text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-blue-400" />
           <Phone size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
@@ -946,6 +941,7 @@ export default function CitizenForm() {
           if (ISSUE_TYPES_BY_CATEGORY[form.category] && !form.issue_type) { setError('กรุณาเลือกลักษณะปัญหา'); return }
           const odorErr = validateOdorFields(form)
           if (odorErr) { setError(odorErr); return }
+          if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
           if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
           setShowConsent(true)
         }} disabled={submitting}

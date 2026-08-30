@@ -14,10 +14,10 @@ import { compressImage } from '../../lib/imageUtils'
 import { logAction } from '../../lib/auditLog'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../../lib/complaintPrivacy'
 import { buildCouncilComplaintHtml } from '../../lib/councilFormPrint'
+import { isMissingSignatoryError, prepareComplaintPrint } from '../../lib/complaintPrint'
 import { generateDraftPdfBlob } from '../../lib/generateDraftPdf'
 import { uploadFile, resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef, toReliableImageUrl } from '../../lib/driveStorage'
 import { fetchAssignableStaff, groupStaffByDepartment, ROLE_LABELS } from '../../lib/staffRoster'
-import { fetchPersonnelSignatories } from '../../lib/personnelDirectory'
 import { workingDaysLeft } from '../../lib/workingDays'
 import OssIntakeForm from './OssIntakeForm'
 import OdorFieldsDisplay from '../complaints/OdorFieldsDisplay'
@@ -653,9 +653,35 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
     const phone = c.phone || c.profiles?.phone || '—'
     const cat = CATEGORY_LABEL[c.category] ?? c.category ?? '—'
 
-    // ใบคำร้องทางการ — ใช้แบบเดียวกันทุกคำร้อง ไม่ว่าผู้แจ้งจะเป็นประชาชนหรือสมาชิกสภา
-    const { data: staffList } = await fetchPersonnelSignatories(tenant?.id)
-    const html = buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate, cat, phone, staffList })
+    // Database เป็นผู้ resolve ผู้ลงนามและบันทึก snapshot ก่อนสร้างแบบพิมพ์
+    let printContextResult = await prepareComplaintPrint(c.id)
+    if (printContextResult.error && isMissingSignatoryError(printContextResult.error)) {
+      const allowBlank = window.confirm(
+        `${printContextResult.error.message}\n\nต้องการพิมพ์แบบเว้นชื่อผู้ลงนามหรือไม่?`,
+      )
+      if (!allowBlank) { w.close(); return }
+      printContextResult = await prepareComplaintPrint(c.id, true)
+    }
+    if (printContextResult.error) {
+      w.close()
+      alert('เตรียมแบบพิมพ์ไม่สำเร็จ: ' + printContextResult.error.message)
+      return
+    }
+    const printComplaint = {
+      ...c,
+      department_id: printContextResult.data?.department_id ?? c.department_id,
+      department: printContextResult.data?.department_name ?? c.department,
+    }
+    const html = buildCouncilComplaintHtml({
+      c: printComplaint,
+      tenant,
+      terminology,
+      num,
+      thDate,
+      cat,
+      phone,
+      signatories: printContextResult.data?.signatories ?? {},
+    })
     w.document.write(html)
     w.document.close()
     setTimeout(() => w.print(), 500)
@@ -670,8 +696,7 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
       const num = c.ref_no ?? '—'
       const phone = c.phone || c.profiles?.phone || '—'
       const cat = CATEGORY_LABEL[c.category] ?? c.category ?? '—'
-      const { data: staffList } = await fetchPersonnelSignatories(tenant?.id)
-      const html = buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate, cat, phone, staffList, includeStaffSignatures: false })
+      const html = buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate, cat, phone, includeStaffSignatures: false })
 
       const blob = await generateDraftPdfBlob(html)
       const { url: driveRef, error: upErr } = await uploadFile('official-documents', blob, {

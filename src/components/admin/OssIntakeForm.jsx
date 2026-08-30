@@ -4,19 +4,10 @@ import { supabase } from '../../lib/supabase'
 import { compressImage } from '../../lib/imageUtils'
 import MapPicker from '../MapPicker'
 import { buildCouncilComplaintHtml } from '../../lib/councilFormPrint'
+import { isMissingSignatoryError, prepareComplaintPrint } from '../../lib/complaintPrint'
 import { uploadFile } from '../../lib/driveStorage'
 
 const MAX_PHOTOS = 3
-
-// เดียวกับ CATEGORY_DEPT ใน CitizenForm.jsx — คัดลอกมาเฉพาะเท่าที่ใช้ในฟอร์มนี้
-// (ฟอร์มนี้ใช้เพื่อกรอกแทนที่เคาน์เตอร์ OSS เท่านั้น ไม่ใช่ฟอร์มเดียวกับที่ประชาชนใช้เอง)
-const CATEGORY_DEPT = {
-  light: 'กองช่าง', road: 'กองช่าง', drain: 'กองช่าง', building: 'กองช่าง',
-  canal: 'กองช่าง', water_supply: 'กองช่าง', flood: 'กองช่าง', waste_water: 'กองช่าง',
-  tax: 'กองคลัง', trash: 'กองสาธารณสุข', mosquito: 'กองสาธารณสุข', animals: 'กองสาธารณสุข',
-  disease: 'กองสาธารณสุข', noise: 'สำนักปลัด', grievance: 'สำนักปลัด',
-  corruption: 'สำนักปลัด', borrow_equipment: 'สำนักปลัด', other: 'สำนักปลัด',
-}
 
 export default function OssIntakeForm({ tenant, categoryLabels, onClose }) {
   const [form, setForm] = useState({ category: '', reporter_name: '', phone: '', village: '', detail: '' })
@@ -49,20 +40,23 @@ export default function OssIntakeForm({ tenant, categoryLabels, onClose }) {
     setError(null)
     setSubmitting(true)
     try {
-      const { data: inserted, error: dbError } = await supabase.from('complaints').insert({
-        municipality_id: tenant.id,
-        category: form.category,
-        form_type: 'infrastructure',
-        channel: 'oss_counter',
-        village: form.village.trim() || null,
-        detail: form.detail.trim(),
-        phone: form.phone.trim(),
-        reporter_name: form.reporter_name.trim(),
-        latitude: geo.lat,
-        longitude: geo.lng,
-        user_id: null,
-        department: CATEGORY_DEPT[form.category] ?? 'สำนักปลัด',
-      }).select('id, ref_no').single()
+      const complaintId = crypto.randomUUID()
+      const { data: inserted, error: dbError } = await supabase.rpc('submit_citizen_complaint_v4', {
+        p_id: complaintId,
+        p_municipality_id: tenant.id,
+        p_category: form.category,
+        p_form_type: 'infrastructure',
+        p_village: form.village.trim() || null,
+        p_detail: form.detail.trim(),
+        p_phone: form.phone.trim(),
+        p_reporter_name: form.reporter_name.trim(),
+        p_latitude: geo.lat,
+        p_longitude: geo.lng,
+        p_user_id: null,
+        p_channel: 'oss_counter',
+        p_issue_type: null,
+        p_extra_data: null,
+      }).single()
 
       if (dbError) { setError(`เกิดข้อผิดพลาด: ${dbError.message}`); return }
 
@@ -97,19 +91,46 @@ export default function OssIntakeForm({ tenant, categoryLabels, onClose }) {
     }
   }
 
-  function handlePrintReceipt() {
+  async function handlePrintReceipt() {
     if (!result) return
+    const w = window.open('', '_blank', 'width=800,height=900')
+    if (!w) {
+      alert('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ กรุณาอนุญาตป๊อปอัพแล้วลองใหม่')
+      return
+    }
+    let printContextResult = await prepareComplaintPrint(result.id)
+    if (printContextResult.error && isMissingSignatoryError(printContextResult.error)) {
+      const allowBlank = window.confirm(
+        `${printContextResult.error.message}\n\nต้องการพิมพ์แบบเว้นชื่อผู้ลงนามหรือไม่?`,
+      )
+      if (!allowBlank) { w.close(); return }
+      printContextResult = await prepareComplaintPrint(result.id, true)
+    }
+    if (printContextResult.error) {
+      w.close()
+      alert('เตรียมแบบพิมพ์ไม่สำเร็จ: ' + printContextResult.error.message)
+      return
+    }
     const html = buildCouncilComplaintHtml({
-      c: { id: result.id, ref_no: result.ref_no, category: form.category, detail: form.detail, village: form.village, profiles: null },
+      c: {
+        id: result.id,
+        ref_no: result.ref_no,
+        category: form.category,
+        detail: form.detail,
+        village: form.village,
+        reporter_name: form.reporter_name,
+        department_id: printContextResult.data?.department_id,
+        department: printContextResult.data?.department_name,
+        profiles: null,
+      },
       tenant,
       terminology: null,
       num: result.ref_no,
       thDate: new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' }),
       cat: categoryLabels?.[form.category] ?? form.category,
       phone: form.phone,
-      staffList: [],
+      signatories: printContextResult.data?.signatories ?? {},
     })
-    const w = window.open('', '_blank', 'width=800,height=900')
     w.document.write(html)
     w.document.close()
     setTimeout(() => w.print(), 400)
@@ -164,22 +185,25 @@ export default function OssIntakeForm({ tenant, categoryLabels, onClose }) {
                 <div>
                   <label className="text-xs font-semibold text-gray-500 mb-1 block">ชื่อ-นามสกุลผู้แจ้ง *</label>
                   <input value={form.reporter_name} onChange={set('reporter_name')}
+                    maxLength={250}
                     className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400" />
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-gray-500 mb-1 block">เบอร์โทร *</label>
                   <input value={form.phone} onChange={set('phone')} type="tel"
+                    maxLength={30}
                     className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400" />
                 </div>
               </div>
               <div>
                 <label className="text-xs font-semibold text-gray-500 mb-1 block">หมู่บ้าน/สถานที่</label>
                 <input value={form.village} onChange={set('village')} placeholder="เช่น หมู่ 5 บ้านหนองหาร"
+                  maxLength={250}
                   className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400" />
               </div>
               <div>
                 <label className="text-xs font-semibold text-gray-500 mb-1 block">รายละเอียด *</label>
-                <textarea value={form.detail} onChange={set('detail')} rows={3}
+                <textarea value={form.detail} onChange={set('detail')} rows={3} minLength={10} maxLength={5000}
                   placeholder="อธิบายปัญหาอย่างน้อย 10 ตัวอักษร..."
                   className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400 resize-none" />
               </div>

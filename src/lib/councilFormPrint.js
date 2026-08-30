@@ -146,7 +146,7 @@ function departmentHeadFallback(department) {
 // ต้องไม่มีบล็อกลงชื่อ (กองช่าง/ปลัด/นายก) ในไฟล์ draft เลย เพราะผู้มีอำนาจจะลงนามที่ GDCC
 // โดยตรง ถ้าใส่บล็อกลงชื่อเปล่าไปด้วยจะสับสนว่าต้องเซ็นในไฟล์นี้หรือเซ็นที่ GDCC — ปุ่ม
 // "พิมพ์" ยังคงบล็อกลงชื่อไว้ตามเดิม (ใช้เป็นแบบฟอร์มกระดาษเวียนเซ็นในสำนักงานได้)
-export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate, cat, phone, staffList, includeStaffSignatures = true }) {
+export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate, cat, phone, signatories = {}, includeStaffSignatures = true }) {
   const loc = locationName(tenant)
   const reporter = c.reporter_name || c.profiles?.full_name || '.................................................'
 
@@ -184,26 +184,27 @@ export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate,
           `จังหวัด${tenant?.province || '.................'}`,
         ]
 
-  const mayor = staffList?.find((s) => s.role === 'mayor')
-  const clerk = staffList?.find((s) => s.role === 'clerk')
-  const departmentHead = staffList?.find((s) => s.role === 'dept_head' && c.department && s.title?.includes(c.department))
-    || staffList?.find((s) => c.department
-      && /หัวหน้า|ผู้อำนวยการ/.test(s.title ?? '')
-      && s.title.includes(c.department))
-    || (c.department === 'กองช่าง' && tenant?.slug === 'namlao'
-      ? { name: 'นายชัยศักดิ์ ชัยธรรม', title: 'ผู้อำนวยการกองช่าง' }
-      : null)
+  // ผู้ลงนามต้องมาจาก prepare_complaint_print ซึ่งตรวจ tenant, ขอบเขตกอง,
+  // ช่วงเวลาปฏิบัติหน้าที่ และบันทึก snapshot แล้ว ห้ามเดาจากข้อความตำแหน่งที่ client
+  const mayor = signatories.mayor ?? null
+  const clerk = signatories.clerk ?? null
+  const departmentHead = signatories.department_head ?? null
   const requestCopy = buildRequestCopy(c.category, cat, tenant?.name)
 
   const location1 = [c.location_name, c.village].filter(Boolean).join(', ')
   const point1 = [location1, c.detail].filter(Boolean).join(' — ') || '.................................................................................................'
 
   // อ้างอิงตำแหน่งจากแบบฟอร์มกระดาษจริง: แถวบน กองช่าง+ปลัด สองคอลัมน์ / แถวล่าง นายก อยู่กึ่งกลาง-ขวา
+  // authority_reference = เลขที่คำสั่ง/หนังสือรักษาราชการแทน ต้องพิมพ์ติดใต้ตำแหน่งเสมอเมื่อมีค่า
+  // เพราะผู้ลงนามที่ไม่ใช่เจ้าของตำแหน่งต้องแสดงฐานอำนาจในเอกสาร ไม่งั้นเอกสารถูกทักท้วงได้
   const signBlock = (person, fallbackTitle, width = '45%') => `
     <div style="width:${width};text-align:center;">
       <div>ลงชื่อ.................................................</div>
       <div style="margin-top:26px;">(${esc(person?.name) || '.........................................................'})</div>
       <div>${esc(person?.title) || esc(fallbackTitle)}</div>
+      ${person?.authority_reference
+        ? `<div style="font-size:12px;margin-top:2px;">(${esc(person.authority_reference)})</div>`
+        : ''}
     </div>`
 
   return `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">

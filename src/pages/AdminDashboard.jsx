@@ -27,6 +27,7 @@ import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 // lazy: หน้ารายงานโครงการเปิดเฉพาะตอนเลือกเมนู ไม่ต้องโหลดมาพร้อมแผงควบคุม
 const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectReport'))
 import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
+import ComplaintSignatorySettings from '../components/admin/ComplaintSignatorySettings'
 import HolidaysAdmin from '../components/admin/HolidaysAdmin'
 import ResetPasswordModal from '../components/admin/ResetPasswordModal'
 import FeeSettingsAdmin from '../components/admin/FeeSettingsAdmin'
@@ -2996,7 +2997,7 @@ function SlaInput({ value, onCommit }) {
   )
 }
 
-function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleActive, onToggleAdhoc, onEditEmoji, iconStyle, techGroups = [], techId = '', slaDays = 3, onTechChange, onSlaChange, savingAssign = false }) {
+function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleActive, onToggleAdhoc, onEditEmoji, iconStyle, departments = [], techGroups = [], techId = '', slaDays = 3, onDepartmentChange, onTechChange, onSlaChange, savingAssign = false }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(cat.label)
@@ -3089,6 +3090,21 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
       <div className="flex items-center gap-2 pl-14">
         {savingAssign && <Loader2 size={12} className="animate-spin text-gray-300 shrink-0" />}
         <select
+          value={cat.department_id ?? ''}
+          onChange={(e) => onDepartmentChange?.(e.target.value)}
+          title={cat.is_active && !cat.department_id ? 'หมวดนี้ยังไม่มีกองรับผิดชอบ จึงรับคำร้องใหม่ผ่าน v4 ไม่ได้' : undefined}
+          className={`min-w-0 flex-1 rounded-lg px-2 py-1.5 text-xs focus:outline-none ${
+            cat.is_active && !cat.department_id
+              ? 'border border-red-400 bg-red-50 text-red-700'
+              : 'border border-gray-200 bg-white text-gray-700'
+          }`}
+        >
+          <option value="">— เลือกกอง —</option>
+          {departments.map((department) => (
+            <option key={department.id} value={department.id}>{department.name}</option>
+          ))}
+        </select>
+        <select
           value={techId}
           onChange={(e) => onTechChange?.(e.target.value)}
           title={cat.is_active && !techId ? 'หมวดนี้เปิดให้แจ้งได้แต่ยังไม่มีผู้รับผิดชอบ คำร้องจะไม่ถูกมอบหมายให้ใคร' : undefined}
@@ -3115,13 +3131,14 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
   )
 }
 
-function SortableDesktopRow({ cat, idx, draft, assign, isSaving, techGroups = [], onSetDraft, onSaveRow, onCancelRow, onStartLabelEdit, onToggleActive, onToggleAdhoc, onDeleteCat, onEditEmoji, iconStyle }) {
+function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [], techGroups = [], onSetDraft, onSaveRow, onCancelRow, onStartLabelEdit, onToggleActive, onToggleAdhoc, onDeleteCat, onEditEmoji, iconStyle }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
   const color = COLOR_PRESETS[cat.color_idx ?? 0] ?? COLOR_PRESETS[0]
   const editingLabel = !!draft?.editingLabel
   const hasDraft = !!draft && !editingLabel
   const currentTechId = draft?.technician_id ?? assign?.technician_id ?? ''
   const currentSla = draft?.sla_days ?? assign?.sla_days ?? 3
+  const currentDepartmentId = draft?.department_id ?? cat.department_id ?? ''
 
   return (
     <tr
@@ -3167,6 +3184,23 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, techGroups = []
           style={{ backgroundColor: color.color, color: color.textColor }}>
           <CategoryIcon emoji={cat.emoji} size={13} style={iconStyle} /> {cat.label}
         </span>
+      </td>
+      <td className="px-3 py-2.5">
+        <select
+          value={currentDepartmentId}
+          onChange={(e) => onSetDraft(cat.value, { department_id: e.target.value })}
+          title={cat.is_active && !currentDepartmentId ? 'หมวดนี้ยังไม่มีกองรับผิดชอบ' : undefined}
+          className={`max-w-40 rounded-lg px-2 py-1.5 text-xs focus:outline-none ${
+            cat.is_active && !currentDepartmentId
+              ? 'border border-red-400 bg-red-50 text-red-700'
+              : 'border border-gray-200 bg-white text-gray-700'
+          }`}
+        >
+          <option value="">— เลือกกอง —</option>
+          {departments.map((department) => (
+            <option key={department.id} value={department.id}>{department.name}</option>
+          ))}
+        </select>
       </td>
       <td className="px-3 py-2.5">
         <div className="flex items-center gap-1.5">
@@ -3256,6 +3290,7 @@ function CategoryManager({ tenant }) {
   const [iconStyle, setIconStyle] = useState(tenant?.category_icon_style || 'color')
   const [iconStyleSaving, setIconStyleSaving] = useState(false)
   const [cats, setCats] = useState([])
+  const [departments, setDepartments] = useState([])
   const [techs, setTechs] = useState([])
   const [assignMap, setAssignMap] = useState({}) // { catValue: { technician_id, sla_days } }
   const [savingAssign, setSavingAssign] = useState(null)
@@ -3263,7 +3298,7 @@ function CategoryManager({ tenant }) {
   const [saving, setSaving] = useState(false)
   const [seeding, setSeeding] = useState(false)
   const [error, setError] = useState(null)
-  const [form, setForm] = useState({ label: '', emoji: '📝', colorIdx: 6, emojiTouched: false })
+  const [form, setForm] = useState({ label: '', emoji: '📝', colorIdx: 6, emojiTouched: false, department_id: '' })
   const [rowDrafts, setRowDrafts] = useState({}) // { catValue: { label?, technician_id?, sla_days?, editingLabel? } }
   const [savingAll, setSavingAll] = useState(false)
   const [iconPickerCat, setIconPickerCat] = useState(null)
@@ -3309,8 +3344,11 @@ function CategoryManager({ tenant }) {
     const pending = cats.filter(c => rowDrafts[c.value])
     if (!pending.length) return
     setSavingAll(true)
-    await Promise.all(pending.map(cat => saveRow(cat)))
-    setSavingAll(false)
+    try {
+      await Promise.all(pending.map(cat => saveRow(cat)))
+    } finally {
+      setSavingAll(false)
+    }
   }
   function startLabelEdit(cat) {
     setRowDrafts((prev) => ({ ...prev, [cat.value]: { ...(prev[cat.value] ?? {}), editingLabel: true, label: cat.label } }))
@@ -3324,6 +3362,21 @@ function CategoryManager({ tenant }) {
     if (d.editingLabel && newLabel && newLabel !== cat.label) ops.push(editCat(cat.id, newLabel))
     const techChanged = d.technician_id !== undefined
     const slaChanged = d.sla_days !== undefined
+    const departmentChanged = d.department_id !== undefined
+    if (departmentChanged) {
+      if (!d.department_id && cat.is_active) {
+        setError(`ประเภท “${cat.label}” เปิดใช้งานอยู่ จึงต้องระบุกองรับผิดชอบ`)
+        setSavingAssign(null)
+        return
+      }
+      ops.push(
+        writeCategoryDepartment(cat.id, d.department_id).then(() => {
+          setCats((prev) => prev.map((item) => item.id === cat.id
+            ? { ...item, department_id: d.department_id || null }
+            : item))
+        }),
+      )
+    }
     if (techChanged || slaChanged) {
       const slaVal = slaChanged ? Math.max(1, parseInt(d.sla_days) || 1) : undefined
       ops.push(
@@ -3332,7 +3385,8 @@ function CategoryManager({ tenant }) {
           category: cat.value,
           ...(techChanged ? { technician_id: d.technician_id || null } : {}),
           ...(slaChanged ? { sla_days: slaVal } : {}),
-        }, { onConflict: 'municipality_id,category' }).then(() => {
+        }, { onConflict: 'municipality_id,category' }).then(({ error: assignmentError }) => {
+          if (assignmentError) throw assignmentError
           setAssignMap((prev) => ({
             ...prev,
             [cat.value]: {
@@ -3344,9 +3398,15 @@ function CategoryManager({ tenant }) {
         })
       )
     }
-    await Promise.all(ops)
-    setRowDrafts((prev) => { const n = { ...prev }; delete n[cat.value]; return n })
-    setSavingAssign(null)
+    try {
+      await Promise.all(ops)
+      setRowDrafts((prev) => { const n = { ...prev }; delete n[cat.value]; return n })
+      setError(null)
+    } catch (saveError) {
+      setError('บันทึกประเภทคำร้องไม่สำเร็จ: ' + saveError.message)
+    } finally {
+      setSavingAssign(null)
+    }
   }
 
   const sensors = useSensors(
@@ -3370,12 +3430,14 @@ function CategoryManager({ tenant }) {
     setLoading(true)
     setError(null)
     try {
-      const [catsRes, assignRes] = await Promise.all([
+      const [catsRes, assignRes, departmentsRes] = await Promise.all([
         supabase.from('complaint_categories').select('*').eq('municipality_id', tenant.id).order('sort_order'),
         supabase.from('category_assignments').select('category,technician_id,sla_days').eq('municipality_id', tenant.id),
+        supabase.from('departments').select('id,code,name,sort_order').eq('municipality_id', tenant.id).eq('is_active', true).order('sort_order'),
       ])
       if (catsRes.error) setError('โหลดข้อมูลไม่ได้: ' + catsRes.error.message)
       setCats(catsRes.data ?? [])
+      setDepartments(departmentsRes.data ?? [])
       const aMap = {}
       for (const a of assignRes.data ?? []) {
         aMap[a.category] = { technician_id: a.technician_id ?? '', sla_days: a.sla_days ?? 3 }
@@ -3403,6 +3465,38 @@ function CategoryManager({ tenant }) {
   // นับจากทุกหมวดที่ is_active ไม่ใช่แค่แท็บที่เปิดอยู่ — หมวดเฉพาะกิจที่ไม่มีผู้รับผิดชอบ
   // อันตรายกว่าหมวดปกติด้วยซ้ำ (RLS ให้เห็นเฉพาะ assigned_to ถ้า NULL คือไม่มีใครเห็นเลย)
   const unassignedActiveCats = cats.filter((c) => c.is_active && !assignMap[c.value]?.technician_id)
+  const unroutedActiveCats = cats.filter((c) => c.is_active && !c.department_id)
+
+  // RLS ให้เขียน complaint_categories ได้เฉพาะ admin/superadmin แต่หน้านี้เปิดให้ทุก role
+  // ที่ไม่ใช่ viewer เห็น พอ staff/officer กดเปลี่ยนกอง PostgREST จะคืน 204 ไม่มี error
+  // (กรองไม่เจอแถว ≠ ผิดพลาด) แล้ว UI จะ optimistic ว่าสำเร็จทั้งที่ DB ไม่ขยับ
+  // department_id เป็นตัวกำหนดว่าคำร้องเข้ากองไหน จะปลอมว่าสำเร็จไม่ได้ — ต้องนับแถวที่เขียนจริง
+  async function writeCategoryDepartment(categoryId, departmentId) {
+    const { data, error: updateError } = await supabase.from('complaint_categories')
+      .update({ department_id: departmentId || null }).eq('id', categoryId).select('id')
+    if (updateError) throw updateError
+    if (!data || data.length === 0) {
+      throw new Error('ไม่มีสิทธิ์แก้กองรับผิดชอบ (ต้องเป็นผู้ดูแลระบบของ อปท. นี้)')
+    }
+  }
+
+  async function handleDepartmentChange(cat, departmentId) {
+    if (!departmentId && cat.is_active) {
+      setError(`ประเภท “${cat.label}” เปิดใช้งานอยู่ จึงต้องระบุกองรับผิดชอบ`)
+      return
+    }
+    setSavingAssign(cat.value)
+    try {
+      await writeCategoryDepartment(cat.id, departmentId)
+    } catch (writeError) {
+      setError('บันทึกกองรับผิดชอบไม่สำเร็จ: ' + writeError.message)
+      return
+    } finally {
+      setSavingAssign(null)
+    }
+    setError(null)
+    setCats((prev) => prev.map((item) => item.id === cat.id ? { ...item, department_id: departmentId || null } : item))
+  }
 
   async function handleTechChange(catValue, techId) {
     setSavingAssign(catValue)
@@ -3430,7 +3524,10 @@ function CategoryManager({ tenant }) {
   async function addCat() {
     const label = form.label.trim()
     const emoji = form.emoji.trim() || '📝'
-    if (!label || !tenant?.id) return
+    if (!label || !tenant?.id || !form.department_id) {
+      setError('กรุณาระบุชื่อประเภทและกองรับผิดชอบก่อนเพิ่ม')
+      return
+    }
     const value = `cat_${Date.now().toString(36)}`
     setSaving(true)
     setError(null)
@@ -3443,13 +3540,14 @@ function CategoryManager({ tenant }) {
       color:      preset.color,
       text_color: preset.textColor,
       sort_order: cats.length,
+      department_id: form.department_id,
       is_adhoc:   categoryTab === 'adhoc', // เพิ่มระหว่างอยู่แท็บไหน ก็สร้างเป็นประเภทงานนั้นไปเลย กันงง
     }).select().single()
     if (err) {
       setError('เพิ่มไม่สำเร็จ: ' + err.message)
     } else if (data) {
       setCats((prev) => [...prev, data])
-      setForm({ label: '', emoji: '📝', colorIdx: 6, emojiTouched: false })
+      setForm({ label: '', emoji: '📝', colorIdx: 6, emojiTouched: false, department_id: '' })
     }
     setSaving(false)
   }
@@ -3469,8 +3567,21 @@ function CategoryManager({ tenant }) {
   }
 
   async function toggleActive(id, current) {
-    const { error: err } = await supabase.from('complaint_categories').update({ is_active: !current }).eq('id', id)
+    const cat = cats.find((item) => item.id === id)
+    if (!current && !cat?.department_id) {
+      setError(`กำหนดกองรับผิดชอบให้ประเภท “${cat?.label ?? ''}” ก่อนเปิดใช้งาน`)
+      return
+    }
+    // เหตุผลเดียวกับ writeCategoryDepartment: เปิด/ปิดหมวดคือสวิตช์ว่าประชาชนส่งคำร้องหมวดนี้ได้ไหม
+    // ถ้า RLS ปัดตกเงียบๆ แล้ว UI บอกว่าสำเร็จ ผู้ดูแลจะเข้าใจผิดว่าปิดหมวดที่มีปัญหาไปแล้ว
+    const { data, error: err } = await supabase.from('complaint_categories')
+      .update({ is_active: !current }).eq('id', id).select('id')
     if (err) { setError('บันทึกไม่สำเร็จ: ' + err.message); return }
+    if (!data || data.length === 0) {
+      setError('ไม่มีสิทธิ์เปิด/ปิดประเภทคำร้อง (ต้องเป็นผู้ดูแลระบบของ อปท. นี้)')
+      return
+    }
+    setError(null)
     setCats((prev) => prev.map((c) => c.id === id ? { ...c, is_active: !current } : c))
   }
 
@@ -3501,8 +3612,23 @@ function CategoryManager({ tenant }) {
     if (!tenant?.id) return
     setSeeding(true)
     setError(null)
-    const rows = DEFAULT_SEED.map((d, i) => ({ ...d, text_color: d.textColor, municipality_id: tenant.id, sort_order: i }))
+    const departmentFor = (category) => {
+      const engineering = new Set(['light', 'road', 'water_supply'])
+      const health = new Set(['mosquito', 'trash', 'odor'])
+      const routeCode = engineering.has(category) ? 'engineering' : health.has(category) ? 'health' : 'general'
+      return departments.find((department) => (
+        routeCode === 'health'
+          ? ['health', 'public_health'].includes(department.code) || department.name.includes('สาธารณสุข')
+          : department.code === routeCode
+      ))?.id ?? departments.find((department) => department.code === 'general')?.id ?? null
+    }
+    const rows = DEFAULT_SEED.map((d, i) => ({ ...d, text_color: d.textColor, municipality_id: tenant.id, sort_order: i, department_id: departmentFor(d.value) }))
       .map(({ textColor, ...rest }) => rest)
+    if (rows.some((row) => !row.department_id)) {
+      setError('ยังไม่มีกอง/ส่วนราชการที่ใช้เป็นค่าเริ่มต้น กรุณาตั้งโครงสร้างหน่วยงานก่อนโหลดประเภทคำร้อง')
+      setSeeding(false)
+      return
+    }
     const { error: err } = await supabase.from('complaint_categories').upsert(rows, { onConflict: 'municipality_id,value' })
     if (err) setError('โหลดค่าเริ่มต้นไม่สำเร็จ: ' + err.message)
     else await fetchCats()
@@ -3589,6 +3715,17 @@ function CategoryManager({ tenant }) {
             style={{ '--tw-ring-color': 'var(--color-primary)' }}
           />
         </div>
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-gray-500">กอง/ส่วนราชการรับผิดชอบ *</label>
+          <select value={form.department_id}
+            onChange={(e) => setForm((prev) => ({ ...prev, department_id: e.target.value }))}
+            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 focus:outline-none">
+            <option value="">— เลือกกองก่อนเปิดใช้ประเภท —</option>
+            {departments.map((department) => (
+              <option key={department.id} value={department.id}>{department.name}</option>
+            ))}
+          </select>
+        </div>
         {/* Color picker */}
         <div className="flex items-center gap-2">
           <span className="text-xs text-gray-500">สี:</span>
@@ -3615,7 +3752,7 @@ function CategoryManager({ tenant }) {
         </div>
         <button
           onClick={addCat}
-          disabled={saving || !form.label.trim()}
+          disabled={saving || !form.label.trim() || !form.department_id}
           className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-medium text-white disabled:opacity-50"
           style={{ backgroundColor: 'var(--color-primary)' }}
         >
@@ -3625,7 +3762,7 @@ function CategoryManager({ tenant }) {
       </div>
 
       {/* Global save bar */}
-      {Object.keys(rowDrafts).some(k => !rowDrafts[k].editingLabel || rowDrafts[k].technician_id !== undefined || rowDrafts[k].sla_days !== undefined) && (
+      {Object.keys(rowDrafts).some(k => !rowDrafts[k].editingLabel || rowDrafts[k].technician_id !== undefined || rowDrafts[k].sla_days !== undefined || rowDrafts[k].department_id !== undefined) && (
         <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
           <span className="text-sm text-amber-700 font-medium">
             มีการเปลี่ยนแปลง {Object.keys(rowDrafts).length} รายการที่ยังไม่ได้บันทึก
@@ -3683,6 +3820,20 @@ function CategoryManager({ tenant }) {
         </div>
       )}
 
+      {!loading && unroutedActiveCats.length > 0 && (
+        <div className="mb-3 rounded-xl border border-red-300 bg-red-50 px-3 py-2.5">
+          <p className="text-xs font-bold text-red-900">
+            ⚠️ มี {unroutedActiveCats.length} หมวดที่เปิดใช้งาน แต่ยังไม่ได้กำหนดกองรับผิดชอบ
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-red-800">
+            ระบบรับคำร้องรุ่นใหม่จะปฏิเสธหมวดเหล่านี้เพื่อป้องกันการส่งผิดกอง กรุณาเลือกกองในช่องกรอบแดงก่อน deploy frontend
+          </p>
+          <p className="mt-1.5 text-[11px] font-semibold text-red-900">
+            {unroutedActiveCats.map((c) => c.label).join(' · ')}
+          </p>
+        </div>
+      )}
+
       {/* List */}
       {loading ? (
         <div className="flex justify-center py-8"><Loader2 size={22} className="animate-spin text-gray-300" /></div>
@@ -3706,9 +3857,11 @@ function CategoryManager({ tenant }) {
                     onToggleAdhoc={toggleAdhoc}
                     onEditEmoji={setIconPickerCat}
                     iconStyle={iconStyle}
+                    departments={departments}
                     techGroups={techGroups}
                     techId={assignMap[cat.value]?.technician_id ?? ''}
                     slaDays={assignMap[cat.value]?.sla_days ?? 3}
+                    onDepartmentChange={(departmentId) => handleDepartmentChange(cat, departmentId)}
                     onTechChange={(tid) => handleTechChange(cat.value, tid)}
                     onSlaChange={(d) => handleSlaChange(cat.value, d)}
                     savingAssign={savingAssign === cat.value}
@@ -3728,6 +3881,7 @@ function CategoryManager({ tenant }) {
                       <th className="px-2 py-3 text-left text-xs font-semibold text-gray-500 w-8">#</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ประเภท</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ป้ายสี</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">กองรับผิดชอบ</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ช่างรับผิดชอบ</th>
                       <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 w-24">ระยะเวลา</th>
                       <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 w-20">สถานะ</th>
@@ -3744,6 +3898,7 @@ function CategoryManager({ tenant }) {
                         draft={rowDrafts[cat.value]}
                         assign={assignMap[cat.value]}
                         isSaving={savingAssign === cat.value || savingAll}
+                        departments={departments}
                         techGroups={techGroups}
                         onSetDraft={setDraft}
                         onSaveRow={saveRow}
@@ -5100,7 +5255,12 @@ export default function AdminDashboard() {
         // หน้า "ผู้รับผิดชอบแต่ละประเภทคำร้อง" (activePage 'assignments', AssignmentManager component)
         // ถูกลบไปแล้ว — เป็น UI ซ้ำซ้อนกับส่วนตั้งผู้รับผิดชอบ+SLA ที่ฝังอยู่ใน CategoryManager นี้อยู่แล้ว
         // (เขียนตาราง category_assignments ตัวเดียวกัน) เมนูไปหน้านั้นถูกปิด (show:false) มานานแล้วด้วย
-        <CategoryManager tenant={tenant} />
+        <div className="space-y-5">
+          <CategoryManager tenant={tenant} />
+          {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
+            <ComplaintSignatorySettings tenant={tenant} />
+          )}
+        </div>
       ) : activePage === 'civil-report' ? (
         <Suspense fallback={
           <div className="flex items-center justify-center py-10">

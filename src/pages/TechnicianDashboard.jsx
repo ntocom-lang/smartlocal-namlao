@@ -14,7 +14,7 @@ import { compressImage } from '../lib/imageUtils'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { uploadFile } from '../lib/driveStorage'
 import { buildCouncilComplaintHtml } from '../lib/councilFormPrint'
-import { fetchPersonnelSignatories } from '../lib/personnelDirectory'
+import { isMissingSignatoryError, prepareComplaintPrint } from '../lib/complaintPrint'
 import MapPicker from '../components/MapPicker'
 import { toDateStr, todayStr } from '../lib/thaiDate'
 
@@ -179,17 +179,34 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant }) {
     const thDate = createdAt.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
     const num = printableComplaint.ref_no || printableComplaint.complaint_number || '—'
     const phone = printableComplaint.phone || printableComplaint.profiles?.phone || '—'
-    const { data: staffList } = await fetchPersonnelSignatories(tenant?.id)
+    let printContextResult = await prepareComplaintPrint(c.id)
+    if (printContextResult.error && isMissingSignatoryError(printContextResult.error)) {
+      const allowBlank = window.confirm(
+        `${printContextResult.error.message}\n\nต้องการพิมพ์แบบเว้นชื่อผู้ลงนามหรือไม่?`,
+      )
+      if (!allowBlank) { popup.close(); return }
+      printContextResult = await prepareComplaintPrint(c.id, true)
+    }
+    if (printContextResult.error) {
+      popup.close()
+      alert('เตรียมแบบพิมพ์ไม่สำเร็จ: ' + printContextResult.error.message)
+      return
+    }
+    const printComplaint = {
+      ...printableComplaint,
+      department_id: printContextResult.data?.department_id ?? printableComplaint.department_id,
+      department: printContextResult.data?.department_name ?? printableComplaint.department,
+    }
 
     popup.document.write(buildCouncilComplaintHtml({
-      c: printableComplaint,
+      c: printComplaint,
       tenant,
       terminology,
       num,
       thDate,
       cat: catLabel,
       phone,
-      staffList,
+      signatories: printContextResult.data?.signatories ?? {},
     }))
     popup.document.close()
     setTimeout(() => {
