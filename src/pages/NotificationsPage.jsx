@@ -12,19 +12,32 @@ import { supabase } from '../lib/supabase'
 // ─── constants ────────────────────────────────────────────────────────────────
 
 const STATUS_INFO = {
+  new:         { label: 'คำร้องใหม่',      bg: '#fef3c7', color: '#92400e', Icon: Clock },
+  pending:     { label: 'คำร้องใหม่',      bg: '#fef3c7', color: '#92400e', Icon: Clock },
   received:    { label: 'รับเรื่องแล้ว',   bg: '#dbeafe', color: '#1e40af', Icon: Clock },
   in_progress: { label: 'กำลังดำเนินการ', bg: '#ede9fe', color: '#5b21b6', Icon: RefreshCw },
   done:        { label: 'ดำเนินการแล้ว',  bg: '#d1fae5', color: '#065f46', Icon: CheckCircle2 },
+  completed:   { label: 'ดำเนินการแล้ว',  bg: '#d1fae5', color: '#065f46', Icon: CheckCircle2 },
   closed:      { label: 'ปิดเรื่องแล้ว',  bg: '#f1f5f9', color: '#475569', Icon: CheckCircle2 },
   rejected:    { label: 'ปฏิเสธ',         bg: '#fee2e2', color: '#991b1b', Icon: XCircle },
 }
 
-const STATUS_MSG = {
+const CITIZEN_STATUS_MSG = {
   received:    'เจ้าหน้าที่รับเรื่องของคุณแล้ว',
   in_progress: 'เจ้าหน้าที่อยู่ระหว่างดำเนินการ',
   done:        'เจ้าหน้าที่ดำเนินการเสร็จแล้ว 🎉',
+  completed:   'เจ้าหน้าที่ดำเนินการเสร็จแล้ว 🎉',
   closed:      'ปิดเรื่องและแจ้งผลเรียบร้อยแล้ว ✅',
   rejected:    'ขออภัย คำร้องของคุณถูกปฏิเสธ',
+}
+
+const STAFF_STATUS_MSG = {
+  new:         'มีคำร้องใหม่รอรับเรื่อง',
+  pending:     'มีคำร้องใหม่รอรับเรื่อง',
+  received:    'งานรอเริ่มดำเนินการ',
+  in_progress: 'งานกำลังดำเนินการ',
+  done:        'ดำเนินการแล้ว รอปิดเรื่อง',
+  completed:   'ดำเนินการแล้ว รอปิดเรื่อง',
 }
 
 let CATEGORY_LABEL = {
@@ -68,7 +81,8 @@ function timeAgo(dateStr) {
 export default function NotificationsPage() {
   const navigate = useNavigate()
   const { tenant } = useTenant()
-  const { items, loading, markRead, markAllRead } = useNotifications()
+  const { items, loading, audience, markRead, markAllRead } = useNotifications()
+  const isStaffInbox = audience === 'staff'
 
   // ดึงหมวดหมู่ที่ Admin สร้างเอง merge เข้า CATEGORY_LABEL/EMOJI
   const [, setCatVer] = useState(0)
@@ -107,7 +121,9 @@ export default function NotificationsPage() {
           </button>
 
           <div className="flex-1">
-            <h1 className="font-bold text-gray-800 text-base leading-tight">การแจ้งเตือน</h1>
+            <h1 className="font-bold text-gray-800 text-base leading-tight">
+              {isStaffInbox ? 'งานที่ต้องทำ' : 'การแจ้งเตือน'}
+            </h1>
             {!loading && items.length > 0 && (
               <p className="text-[13px] text-gray-400 mt-0.5">
                 {hasUnread ? `${unreadItems.length} รายการยังไม่อ่าน` : 'อ่านทั้งหมดแล้ว'}
@@ -125,7 +141,7 @@ export default function NotificationsPage() {
       {/* ── PC header ── */}
       <div className="hidden md:flex items-center justify-between px-8 py-4 bg-white border-b border-gray-200 shadow-sm">
         <div>
-          <h1 className="text-lg font-bold text-gray-800">การแจ้งเตือน</h1>
+          <h1 className="text-lg font-bold text-gray-800">{isStaffInbox ? 'งานที่ต้องทำ' : 'การแจ้งเตือน'}</h1>
           {!loading && items.length > 0 && (
             <p className="text-xs text-gray-400 mt-0.5">
               {hasUnread ? `${unreadItems.length} รายการยังไม่อ่าน` : 'อ่านทั้งหมดแล้ว'}
@@ -147,9 +163,13 @@ export default function NotificationsPage() {
             <div className="w-20 h-20 rounded-3xl bg-gray-100 flex items-center justify-center mb-5">
               <Bell size={36} className="text-gray-300" />
             </div>
-            <p className="font-bold text-gray-500 text-base">ยังไม่มีการแจ้งเตือน</p>
+            <p className="font-bold text-gray-500 text-base">
+              {isStaffInbox ? 'ยังไม่มีงานใหม่' : 'ยังไม่มีการแจ้งเตือน'}
+            </p>
             <p className="text-sm text-gray-400 mt-2 text-center leading-relaxed">
-              เมื่อเจ้าหน้าที่อัปเดตสถานะคำร้อง<br />จะแสดงที่นี่โดยอัตโนมัติ
+              {isStaffInbox
+                ? <>เมื่อมีคำร้องใหม่หรืองานที่ต้องทำ<br />จะแสดงที่นี่โดยอัตโนมัติ</>
+                : <>เมื่อเจ้าหน้าที่อัปเดตสถานะคำร้อง<br />จะแสดงที่นี่โดยอัตโนมัติ</>}
             </p>
           </div>
 
@@ -165,13 +185,18 @@ export default function NotificationsPage() {
               </button>
             ) : <div />}
             <button
-              onClick={() => { markAllRead(); navigate('/my-complaints') }}
+              onClick={() => {
+                markAllRead()
+                const first = items[0]
+                if (first?._href) navigate(first._href, first._hrefState ? { state: first._hrefState } : undefined)
+                else navigate('/my-complaints')
+              }}
               className="text-sm font-semibold px-4 py-1.5 rounded-xl transition-colors"
               style={{
                 color: 'var(--color-primary)',
                 backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, transparent)',
               }}>
-              ดูคำร้องทั้งหมด
+              {isStaffInbox ? 'ไปหน้างาน' : 'ดูคำร้องทั้งหมด'}
             </button>
           </div>
 
@@ -195,7 +220,10 @@ export default function NotificationsPage() {
                 return (
                   <button
                     key={n.id}
-                    onClick={() => { markRead(n.id); navigate(`/my-complaints?id=${n.id}`) }}
+                    onClick={() => {
+                      markRead(n.id)
+                      navigate(n._href ?? '/my-complaints', n._hrefState ? { state: n._hrefState } : undefined)
+                    }}
                     className={`w-full flex items-start gap-3 px-4 py-4 text-left transition-colors hover:bg-gray-50 active:bg-gray-100 ${
                       n._unread ? 'bg-blue-50/40' : ''
                     }`}
@@ -223,7 +251,7 @@ export default function NotificationsPage() {
                       )}
 
                       <p className="text-xs text-gray-500 mt-1 leading-snug">
-                        {STATUS_MSG[n.status] ?? s.label}
+                        {(n._audience === 'staff' ? STAFF_STATUS_MSG[n.status] : CITIZEN_STATUS_MSG[n.status]) ?? s.label}
                       </p>
 
                       <div className="flex items-center gap-2 mt-2">

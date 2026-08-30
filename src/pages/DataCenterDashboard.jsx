@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { LayoutGrid, MapPin, Plus, Bell, ArrowLeft, PanelLeftOpen, PanelLeftClose, Tags, ChevronRight, Activity, Cpu, ShieldCheck, Sun, Moon, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import { useNotifications } from '../contexts/NotificationsContext'
 import DataCenter3DCanvas from '../components/datacenter/DataCenter3DCanvas'
 
 const DataCenterOverview = lazy(() => import('../components/datacenter/DataCenterOverview'))
@@ -32,6 +33,7 @@ function readStoredTheme() {
 export default function DataCenterDashboard() {
   const navigate = useNavigate()
   const { tenant } = useTenant()
+  const { unreadCount } = useNotifications()
   const [profile, setProfile] = useState(null)
   const [activeModule, setActiveModule] = useState('overview')
   const [refreshKey, setRefreshKey] = useState(0)
@@ -203,8 +205,13 @@ export default function DataCenterDashboard() {
           <button onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')} aria-label="เปลี่ยนธีม" className="p-2 rounded-xl bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 hover:text-white transition-all active:scale-90 shrink-0">
             {isLight ? <Moon size={18} /> : <Sun size={18} className="text-amber-400" />}
           </button>
-          <button onClick={() => navigate('/notifications')} aria-label="การแจ้งเตือน" className="p-2 rounded-xl bg-slate-800/60 border border-slate-700 text-cyan-300 hover:text-white transition-colors shrink-0">
+          <button onClick={() => navigate('/notifications')} aria-label="การแจ้งเตือน" className="relative p-2 rounded-xl bg-slate-800/60 border border-slate-700 text-cyan-300 hover:text-white transition-colors shrink-0">
             <Bell size={18} />
+            {unreadCount > 0 && (
+              <span className="absolute top-1 right-1 min-w-3.5 h-3.5 px-0.5 rounded-full bg-red-500 text-white text-[8px] font-bold flex items-center justify-center">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
           </button>
         </div>
       </header>

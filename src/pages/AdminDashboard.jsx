@@ -23,6 +23,7 @@ import { tenantDefaultSubdistrict } from '../lib/tenantSubdistrict'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
 import { accountProviders, providerLabel, phoneToLoginEmail, normalizeThaiPhone } from '../lib/authProviders'
 import { useTenant } from '../contexts/TenantContext'
+import { useNotifications } from '../contexts/NotificationsContext'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 // lazy: หน้ารายงานโครงการเปิดเฉพาะตอนเลือกเมนู ไม่ต้องโหลดมาพร้อมแผงควบคุม
 const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectReport'))
@@ -4823,6 +4824,7 @@ function SatisfactionAdmin({ tenant }) {
 
 export default function AdminDashboard() {
   const { tenant } = useTenant()
+  const { unreadCount } = useNotifications()
   const navigate = useNavigate()
   const location = useLocation()
   const [complaints, setComplaints] = useState([])
@@ -4990,8 +4992,13 @@ export default function AdminDashboard() {
             <p className="font-bold text-sm leading-tight truncate">{tenant?.name}</p>
             <p className="text-white/70 text-[11px] mt-0.5 truncate">แผงควบคุม Admin{currentUserName ? ` · ${currentUserName}` : ''}</p>
           </div>
-          <button onClick={() => navigate('/notifications')} aria-label="การแจ้งเตือน" className="p-1.5 text-white/85 hover:text-white transition-colors shrink-0">
+          <button onClick={() => navigate('/notifications')} aria-label="การแจ้งเตือน" className="relative p-1.5 text-white/85 hover:text-white transition-colors shrink-0">
             <Bell size={19} />
+            {unreadCount > 0 && (
+              <span className="absolute top-0 right-0 min-w-3.5 h-3.5 px-0.5 rounded-full bg-red-500 text-white text-[8px] font-bold flex items-center justify-center">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
           </button>
           <button onClick={() => navigate('/profile')} className="p-1 shrink-0">
             {currentUserAvatar ? (

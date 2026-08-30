@@ -18,11 +18,12 @@
 //                 ไม่ผูกกับการรันปกติ
 
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 import { chromium } from 'playwright'
-import { BlockedError, navigateClientSide as settleAndNavigate, reloadIfServiceWorkerUpdated, trackProfileResolution, waitForSettled } from './lib/appReady.mjs'
+import { BlockedError, navigateClientSide as settleAndNavigate, reloadIfServiceWorkerUpdated, safeEvaluate, trackProfileResolution, waitForSettled } from './lib/appReady.mjs'
 
 const ROOT_DIR = process.cwd()
 const LOCAL_ENV_PATH = path.join(ROOT_DIR, '.env.test.local')
@@ -90,6 +91,20 @@ async function loadLocalTestEnv() {
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error
   }
+
+  if (process.platform === 'win32' && !process.env.DEMO_TEST_PASSWORD) {
+    try {
+      const output = execFileSync('reg.exe', ['query', 'HKCU\\Environment', '/v', 'DEMO_TEST_PASSWORD'], {
+        encoding: 'utf8',
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      })
+      const match = output.match(/^\s*DEMO_TEST_PASSWORD\s+REG_\w+\s+(.+)$/mi)
+      if (match?.[1]) process.env.DEMO_TEST_PASSWORD = match[1].trim()
+    } catch {
+      // ใช้ session/autofill ต่อถ้าไม่มีรหัสใน user environment
+    }
+  }
 }
 
 function parseArgs(argv) {
@@ -153,6 +168,50 @@ async function navigateClientSide(page, route) {
 
 async function isVisible(locator) {
   return await locator.count() > 0 && await locator.first().isVisible()
+}
+
+async function pageHasText(page, text) {
+  return Boolean(await safeEvaluate(page, (needle) => (document.body?.innerText || '').includes(needle), text, false))
+}
+
+function notificationCards(page) {
+  return page.locator('.divide-y > button:visible')
+}
+
+/**
+ * ตรวจหน้า /notifications ของประชาชนหลังสถานะคำร้องเปลี่ยน
+ * การ์ดเรียง updated_at DESC — เรื่องที่เพิ่งถูกอัปเดตต้องอยู่บนสุด
+ */
+async function assertTopNotification(page, { statusLabel, statusMsg, unread = null }) {
+  await navigateClientSide(page, '/notifications')
+  assert.equal(pathnameOf(page), '/notifications', 'เข้า /notifications ไม่ได้')
+  assert.ok(
+    await pageHasText(page, 'การแจ้งเตือน') || await pageHasText(page, 'งานที่ต้องทำ'),
+    'หน้า /notifications ไม่มีหัวข้อ',
+  )
+
+  const card = notificationCards(page).first()
+  try {
+    await card.waitFor({ state: 'visible', timeout: 15_000 })
+  } catch {
+    throw new BlockedError(`หน้าการแจ้งเตือนว่าง ทั้งที่ควรมีสถานะ "${statusLabel}"`)
+  }
+
+  const text = ((await card.innerText()) || '').replace(/\s+/g, ' ')
+  assert.ok(text.includes('ไฟฟ้าสาธารณะ'), 'การ์ดบนสุดไม่ใช่หมวดไฟฟ้าสาธารณะของคำร้องทดสอบ')
+  assert.ok(text.includes(statusLabel), `การ์ดบนสุดไม่มีสถานะ "${statusLabel}"`)
+  if (statusMsg) assert.ok(text.includes(statusMsg), `การ์ดบนสุดไม่มีข้อความ "${statusMsg}"`)
+  if (unread === true) {
+    assert.equal(await pageHasText(page, 'รายการยังไม่อ่าน'), true, 'ไม่มีตัวนับรายการยังไม่อ่านหลังเปลี่ยนสถานะ')
+  }
+}
+
+async function clickTopNotification(page) {
+  const card = notificationCards(page).first()
+  if (!await isVisible(card)) throw new BlockedError('ไม่พบการ์ดแจ้งเตือนให้คลิก')
+  await card.click()
+  const { path } = await waitForSettled(page, authStates.get(page))
+  assert.equal(String(path).startsWith('/my-complaints'), true, `คลิกการแจ้งเตือนแล้วไป ${path} ไม่ใช่ /my-complaints`)
 }
 
 function phoneModal(page) {
@@ -272,6 +331,25 @@ async function withAccount(alias, profile, baseUrl, headed, fn) {
 }
 
 // ─────────────────────────────────────────────────────────────────── checks ──
+
+/** ผู้ไม่ได้ล็อกอินเปิด /notifications ได้ แต่ต้องว่าง เพราะรายการผูก user_id ของ session */
+async function checkGuestNotifications(baseUrl, headed) {
+  let context
+  try {
+    context = await chromium.launch({ channel: 'chrome', headless: !headed })
+  } catch {
+    throw new BlockedError('เปิด Chrome ไม่สำเร็จ')
+  }
+  try {
+    const page = await context.newPage()
+    await page.goto(`${baseUrl}/notifications`, { waitUntil: 'domcontentloaded', timeout: 25_000 })
+    await waitForApp(page, 2_000)
+    assert.equal(await pageHasText(page, 'การแจ้งเตือน'), true, 'ผู้เยี่ยมชมเปิด /notifications แล้วไม่เห็นหัวข้อ')
+    assert.equal(await pageHasText(page, 'ยังไม่มีการแจ้งเตือน'), true, 'ผู้เยี่ยมชมต้องเห็นสถานะว่าง ไม่ใช่คำร้องของคนอื่น')
+  } finally {
+    await context.close()
+  }
+}
 
 /** ข้อ 4: หน้า /auth ของสนามซ้อมต้องไม่ยืมชื่อ อปท. จริงมาแสดง */
 async function checkAuthBranding(baseUrl, headed) {
@@ -545,6 +623,9 @@ async function assignComplaint(page, refNo) {
 async function runWriteWorkflow(baseUrl, headed, telegramErrors) {
   const refNo = await withAccount('demo-citizen', 'citizen', baseUrl, headed, async (page, errors) => {
     const created = await createTestComplaint(page)
+    await navigateClientSide(page, '/notifications')
+    assert.equal(pathnameOf(page), '/notifications', 'ประชาชนเข้า /notifications หลังส่งคำร้องไม่ได้')
+    assert.equal(await pageHasText(page, 'การแจ้งเตือน'), true, 'หน้า /notifications ไม่มีหัวข้อหลังส่งคำร้อง')
     telegramErrors.push(...errors)
     return created
   })
@@ -553,14 +634,35 @@ async function runWriteWorkflow(baseUrl, headed, telegramErrors) {
   // ตั้งค่าระบบ ไม่มีรายการคำร้องอยู่เลย (ดู StaffDashboard.jsx:1937)
   await withAccount('demo-admin', 'admin', baseUrl, headed, async (page, errors) => {
     await dismissProfileReminders(page)
+    await assertTopNotification(page, {
+      statusLabel: 'คำร้องใหม่',
+      statusMsg: 'มีคำร้องใหม่รอรับเรื่อง',
+      unread: true,
+    })
     await openStaffComplaints(page)
     await actOnComplaint(page, refNo, /^รับเรื่อง$/)
     await assignComplaint(page, refNo)
     telegramErrors.push(...errors)
   })
 
+  await withAccount('demo-citizen', 'citizen', baseUrl, headed, async (page, errors) => {
+    await dismissProfileReminders(page)
+    await assertTopNotification(page, {
+      statusLabel: 'รับเรื่องแล้ว',
+      statusMsg: 'เจ้าหน้าที่รับเรื่องของคุณแล้ว',
+      unread: true,
+    })
+    await clickTopNotification(page)
+    telegramErrors.push(...errors)
+  })
+
   await withAccount('demo-technician-2', 'technician-2', baseUrl, headed, async (page, errors) => {
     await dismissProfileReminders(page)
+    await assertTopNotification(page, {
+      statusLabel: 'รับเรื่องแล้ว',
+      statusMsg: 'งานรอเริ่มดำเนินการ',
+      unread: true,
+    })
     await navigateClientSide(page, '/technician')
     // การ์ด/แถวของช่างแสดง c.detail ไม่ได้แสดงเลขที่คำร้อง จึงจับด้วย [TEST] marker แทน
     // ใช้ .first() ได้เพราะคิวของช่างคนนี้จะมีงานทดสอบที่ยังไม่ปิดได้ครั้งละเรื่องเดียว
@@ -572,8 +674,23 @@ async function runWriteWorkflow(baseUrl, headed, telegramErrors) {
     telegramErrors.push(...errors)
   })
 
+  await withAccount('demo-citizen', 'citizen', baseUrl, headed, async (page, errors) => {
+    await dismissProfileReminders(page)
+    await assertTopNotification(page, {
+      statusLabel: 'ดำเนินการแล้ว',
+      statusMsg: 'เจ้าหน้าที่ดำเนินการเสร็จแล้ว',
+      unread: true,
+    })
+    telegramErrors.push(...errors)
+  })
+
   await withAccount('demo-admin', 'admin', baseUrl, headed, async (page, errors) => {
     await dismissProfileReminders(page)
+    await assertTopNotification(page, {
+      statusLabel: 'ดำเนินการแล้ว',
+      statusMsg: 'ดำเนินการแล้ว รอปิดเรื่อง',
+      unread: true,
+    })
     await openStaffComplaints(page)
     await actOnComplaint(page, refNo, /^ปิดเรื่อง$/)
     telegramErrors.push(...errors)
@@ -581,6 +698,12 @@ async function runWriteWorkflow(baseUrl, headed, telegramErrors) {
 
   await withAccount('demo-citizen', 'citizen', baseUrl, headed, async (page, errors) => {
     await dismissProfileReminders(page)
+    await assertTopNotification(page, {
+      statusLabel: 'ปิดเรื่องแล้ว',
+      statusMsg: 'ปิดเรื่องและแจ้งผลเรียบร้อยแล้ว',
+      unread: true,
+    })
+    await clickTopNotification(page)
     await navigateClientSide(page, '/my-complaints')
     const bodyText = await page.evaluate(() => document.body?.innerText || '')
     assert.ok(bodyText.includes(refNo), `ประชาชนไม่เห็นคำร้อง ${refNo} ในหน้าติดตาม`)
@@ -623,6 +746,7 @@ async function main() {
   const telegramErrors = []
 
   const checks = [
+    { name: 'guest-notifications-empty', reason: 'ผู้เยี่ยมชมเปิด /notifications ได้แต่ต้องว่าง', run: () => checkGuestNotifications(baseUrl, args.headed) },
     { name: 'auth-branding', reason: 'หน้า /auth แสดงชื่อสนามซ้อมและไม่มีชื่อ อปท. จริง', run: () => checkAuthBranding(baseUrl, args.headed) },
     { name: 'citizen-reminder-once', reason: 'ประชาชนกดข้ามกล่องเบอร์โทรแล้วไม่เด้งซ้ำข้ามหน้า', run: () => checkCitizenReminderDismissal(baseUrl, args.headed) },
     { name: 'backoffice-not-blocked', reason: 'ช่างเข้าหลังบ้านได้โดยไม่ถูกกล่อง onboarding บัง', run: () => checkBackOfficeNotBlocked(baseUrl, args.headed) },

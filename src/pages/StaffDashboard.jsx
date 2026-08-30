@@ -10,6 +10,7 @@ import {
 import { supabase, signOutSafely } from '../lib/supabase'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
 import { useTenant } from '../contexts/TenantContext'
+import { useNotifications } from '../contexts/NotificationsContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { thaiDate } from '../lib/thaiDate'
 import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
@@ -1529,6 +1530,7 @@ export default function StaffDashboard() {
   const navigate = useNavigate()
   const location = useLocation()
   const { tenant } = useTenant()
+  const { unreadCount } = useNotifications()
   const [activeModule, setActiveModule] = useState(location.state?.module ?? 'home')
   const [mapOpenComplaintId] = useState(location.state?.openComplaintId ?? null)
   const [autoEditEventId, setAutoEditEventId] = useState(location.state?.editEventId ?? null)
@@ -1763,8 +1765,13 @@ export default function StaffDashboard() {
               <Database size={19} />
             </button>
           )}
-          <button onClick={() => navigate('/notifications')} aria-label="การแจ้งเตือน" className="p-1.5 text-white/85 hover:text-white transition-colors shrink-0">
+          <button onClick={() => navigate('/notifications')} aria-label="การแจ้งเตือน" className="relative p-1.5 text-white/85 hover:text-white transition-colors shrink-0">
             <Bell size={19} />
+            {unreadCount > 0 && (
+              <span className="absolute top-0 right-0 min-w-3.5 h-3.5 px-0.5 rounded-full bg-red-500 text-white text-[8px] font-bold flex items-center justify-center">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
           </button>
           <button onClick={() => navigate('/profile')} className="p-1 shrink-0">
             {profile?.avatar_url ? (
