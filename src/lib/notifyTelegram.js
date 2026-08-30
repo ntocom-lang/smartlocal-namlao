@@ -31,6 +31,9 @@ export function notifyTelegram(notificationType, resourceId) {
     },
   }).then(({ data, error }) => {
     if (error) console.error('Telegram notification failed:', error.message)
+    // อปท. ที่ไม่ได้ผูกกลุ่ม Telegram (เช่น สนามซ้อม slug='demo') Edge Function คืน 2xx พร้อม
+    // skipped:true ไม่ใช่ error — ห้าม log เป็น error เพราะจะกลบสัญญาณของที่พังจริงใน console
+    else if (data?.skipped) console.info('ข้ามการแจ้งเตือน Telegram:', data.reason ?? 'not_configured')
     return data ?? null
   }).catch((error) => {
     console.error('Telegram notification failed:', error?.message ?? error)

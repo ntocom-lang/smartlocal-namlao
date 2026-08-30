@@ -16,7 +16,17 @@ export function AuthProvider({ children }) {
   const [profileError, setProfileError] = useState(false)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session))
+    // ต้องมี .catch เสมอ: refresh token ที่ค้างในเครื่องแต่ถูกเพิกถอน/หมดอายุแล้วทำให้ getSession()
+    // reject (AuthApiError: Invalid Refresh Token) ของเดิมไม่มี catch จึงเกิดสองอย่างพร้อมกัน —
+    // unhandled rejection ขึ้น console error ตอนเปิดเว็บ และ session ค้างเป็น undefined ถาวร
+    // ซึ่งทั้งแอปแปลว่า "กำลังโหลด" ผู้ใช้จึงติดหน้าโหลดโดยไม่มีทางไปต่อจนกว่าจะรีเฟรชเอง
+    // ผลลัพธ์ที่ถูกต้องของ token เสียคือ "ยังไม่ได้เข้าสู่ระบบ" (null) แบบเงียบๆ
+    supabase.auth.getSession()
+      .then(({ data }) => setSession(data.session))
+      .catch((err) => {
+        console.warn('[auth] อ่าน session เดิมไม่ได้ ถือว่ายังไม่ได้เข้าสู่ระบบ:', err?.message ?? err)
+        setSession(null)
+      })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s)
       if (!s) { setRole(null); setProfileName(null); setProfileAvatarUrl(null) }

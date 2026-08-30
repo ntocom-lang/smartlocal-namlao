@@ -244,7 +244,13 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant }) {
     setShowMapEdit(false)
   }
 
-  const needsPhoto = false
+  // รูปหลักฐานการทำงานเป็น "ทางเลือก" โดยเจตนา ไม่ใช่ข้อบังคับ — ตัดสินใจไว้ที่ commit 0edd5ac
+  // ("อนุโลมปิดงานได้โดยไม่ต้องถ่ายรูปหลักฐาน") ของเดิมบังคับด้วยเงื่อนไข
+  // c.status === 'in_progress' && photos.length === 0 แล้วปิดปุ่มจนกว่าจะมีรูป ก่อนหน้านี้เหลือไว้
+  // เป็น `const needsPhoto = false` ค้างอยู่ พร้อมข้อความ "กรุณาถ่ายรูปหลักฐานก่อนปิดงาน" ที่ไม่มี
+  // วันได้แสดง — คนอ่านโค้ด/คนทดสอบเข้าใจผิดว่าเป็นข้อบังคับที่พัง จึงถอดทิ้งทั้งชุด
+  // ถ้าวันหนึ่งจะบังคับจริง ต้องมีด่านฝั่ง DB ด้วย (trigger บน complaints ตอน in_progress → done)
+  // เพราะ UI guard อย่างเดียว bypass ผ่าน PostgREST ตรงๆ ได้
 
   return (
     <div className="fixed inset-0 z-60 flex items-end sm:items-center justify-center">
@@ -406,6 +412,7 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant }) {
                 <div className="text-center">
                   <Image size={24} className="mx-auto mb-1 opacity-50" />
                   <p className="text-xs">ยังไม่มีรูปหลักฐาน</p>
+                  <p className="text-[11px] mt-0.5 text-gray-300">แนบไว้ก็ได้ ไม่แนบก็ปิดงานได้</p>
                 </div>
               </div>
             )}
@@ -446,15 +453,10 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant }) {
         {/* Footer */}
         {!isClosed(c.status) && c.status !== 'rejected' && (
           <div className="px-5 py-4 border-t border-gray-100 bg-gray-50 shrink-0 space-y-2">
-            {needsPhoto && (
-              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-center">
-                กรุณาถ่ายรูปหลักฐานก่อนปิดงาน
-              </p>
-            )}
             {action && (
               <button
                 onClick={() => onUpdate(c.id, action.next, isFinishStep ? photos : null, isFinishStep ? (note.trim() || null) : null)}
-                disabled={updating === c.id || (isFinishStep && needsPhoto)}
+                disabled={updating === c.id}
                 className="w-full py-3 rounded-2xl text-sm font-bold text-white transition-all active:scale-98 disabled:opacity-50"
                 style={{ backgroundColor: isFinishStep ? '#10b981' : '#2563eb' }}>
                 {updating === c.id

@@ -30,6 +30,10 @@ BEGIN
   -- is_active ต้องเป็น true ไม่งั้น policy "public can read active municipalities"
   -- จะบล็อก แล้วหน้าเว็บขึ้น "ไม่พบรหัสหน่วยงาน"
   -- enabled_modules คัดลอกจากน้ำเลาเพื่อให้ได้ครบ 18 คีย์เท่า อปท. อื่น ไม่ต้องมาไล่ sync ทีหลัง
+  -- system_name ต้องเป็น NULL ห้ามคัดลอกจากต้นแบบ — เป็นชื่อเฉพาะของหน่วยงาน ไม่ใช่ค่าตั้งค่ากลาง
+  -- ของเดิมคัดลอก m.system_name มา ทำให้หน้า /auth ของสนามซ้อมขึ้น "เข้าสู่ระบบเทศบาลตำบลน้ำเลา"
+  -- (เจอตอน E2E 2026-08-30) ปล่อย NULL ไว้ หน้าเว็บจะ fallback เป็น "<ชื่อ อปท.> One Data" เอง
+  -- แถวที่สร้างไปแล้วแก้ด้วย 20260901140000_fix_demo_tenant_system_name.sql
   INSERT INTO public.municipalities
     (slug, name, org_type, province, theme_color, is_active, enabled_modules, system_name)
   SELECT
@@ -40,7 +44,7 @@ BEGIN
     '#0f766e',          -- สีเขียวน้ำทะเล ต่างจากทุก อปท. จริง เห็นแล้วรู้ทันทีว่าอยู่สนามซ้อม
     true,
     m.enabled_modules,
-    m.system_name
+    NULL
   FROM public.municipalities m
   WHERE m.id = v_src_id
     AND NOT EXISTS (SELECT 1 FROM public.municipalities WHERE slug = 'demo');

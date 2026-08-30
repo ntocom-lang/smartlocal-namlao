@@ -34,7 +34,7 @@ type NotificationType = keyof typeof notificationSpecs
 
 type DeliveryRow = {
   id: string
-  status: 'pending' | 'sent' | 'failed'
+  status: 'pending' | 'sent' | 'failed' | 'skipped'
   attempt_count: number
   updated_at: string
   claim_token: string | null
@@ -374,15 +374,22 @@ serve(async (req) => {
     if (claim.duplicate) return json({ ok: true, duplicate: true, status: 'sent' })
     if (claim.inProgress || !claim.claimed) return json({ ok: true, duplicate: true, status: 'pending' }, 202)
 
-    const finish = async (status: 'sent' | 'failed', values: Record<string, unknown>) => {
+    // 'skipped' = ช่องทางนี้ไม่ได้ถูกตั้งค่าไว้สำหรับ อปท. นี้ ไม่ใช่ความล้มเหลว
+    // ต้องแยกออกจาก 'failed' ให้ชัด ไม่งั้น audit ของ notification_deliveries อ่านไม่ออกว่า
+    // แถวไหนคือ "ระบบส่งไม่สำเร็จจริง" กับ "อปท. ไม่ได้เปิดใช้ช่องทางนี้"
+    const finish = async (status: 'sent' | 'failed' | 'skipped', values: Record<string, unknown>) => {
       await admin.from('notification_deliveries').update({
         status, claim_token: null, updated_at: new Date().toISOString(), ...values,
       }).eq('id', claim.delivery.id).eq('claim_token', claim.claimToken)
     }
 
+    // อปท. ที่ยังไม่ได้ผูกกลุ่ม Telegram (รวมถึงสนามซ้อม slug='demo' ที่ตั้งใจไม่ผูก) ไม่ใช่ error
+    // ของเดิมคืน 422 ทำให้ client log console.error ทุกครั้งที่มีการเปลี่ยนสถานะคำร้อง — E2E
+    // อ่านไม่ออกว่าอันไหนคือของพังจริง ต้องคืน 2xx พร้อมธง skipped ให้ client เงียบได้อย่างถูกต้อง
+    // ⚠️ เคสตั้งค่าพังจริง (มี group แต่ token/สิทธิ์บอทเสีย) ยังตกไปที่ finish('failed') ตามเดิม
     if (!municipality.telegram_group_id) {
-      await finish('failed', { last_error: 'Telegram group is not configured' })
-      return json({ ok: false, error: 'Telegram group is not configured' }, 422)
+      await finish('skipped', { last_error: 'telegram group is not configured for this municipality' })
+      return json({ ok: true, skipped: true, reason: 'not_configured' })
     }
     if (!BOT_TOKEN) {
       await finish('failed', { last_error: 'TELEGRAM_BOT_TOKEN is not configured' })

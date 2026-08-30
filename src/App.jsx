@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState, Component } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, Component } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { TenantProvider, useTenant } from './contexts/TenantContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
@@ -212,6 +212,49 @@ function NameReminderModal({ initialFullName, onClose }) {
   )
 }
 
+// ── จำการกด "ข้ามไปก่อน" ของกล่องเตือนโปรไฟล์ ───────────────────────────────────
+//
+// ของเดิมไม่มีที่จำเลย พอผู้ใช้กดข้าม กล่องก็เด้งกลับมาใหม่ทุกครั้งที่ checkAndFixProfile() ถูก
+// เรียก (ซึ่งเกิดขึ้นทุกครั้งที่เปลี่ยนหน้า — ดูเหตุผลที่ useEffect ของ auth ใน AppShell)
+// เจ้าหน้าที่ที่ไม่มีเบอร์ในโปรไฟล์จึงถูก overlay ของ onboarding ประชาชนบังหน้าปฏิบัติงานทุกหน้า
+//
+// ผูก key กับ user id เพื่อไม่ให้การสลับบัญชีบนเครื่องเดียวกันสืบทอดการข้ามของคนก่อนหน้า
+// และใช้ sessionStorage (ไม่ใช่ local) เพื่อให้ปิดแท็บ/ล็อกอินรอบใหม่แล้วเตือนอีกได้ตามนโยบาย
+function reminderSkipKey(kind, uid) {
+  return `sl-reminder-skipped-${kind}:${uid}`
+}
+
+function isReminderSkipped(kind, uid) {
+  try {
+    return sessionStorage.getItem(reminderSkipKey(kind, uid)) === '1'
+  } catch {
+    // เครื่องที่ปิด storage ไว้ ยอมให้เตือนซ้ำดีกว่าพังทั้งหน้า
+    return false
+  }
+}
+
+function markReminderSkipped(kind, uid) {
+  if (!uid) return
+  try {
+    sessionStorage.setItem(reminderSkipKey(kind, uid), '1')
+  } catch {
+    // ไม่มีอะไรให้ทำต่อ
+  }
+}
+
+function clearReminderSkips() {
+  try {
+    const keys = []
+    for (let i = 0; i < sessionStorage.length; i += 1) {
+      const key = sessionStorage.key(i)
+      if (key?.startsWith('sl-reminder-skipped-')) keys.push(key)
+    }
+    keys.forEach((key) => sessionStorage.removeItem(key))
+  } catch {
+    // ไม่มีอะไรให้ทำต่อ
+  }
+}
+
 // retry once on ChunkLoadError (iOS network instability)
 function lazyWithRetry(fn) {
   return lazy(() => fn().catch(() => new Promise(r => setTimeout(r, 800)).then(() => fn())))
@@ -336,7 +379,17 @@ function AppShell() {
   const [phoneReminderRequired, setPhoneReminderRequired] = useState(false)
   const [showNameReminder, setShowNameReminder] = useState(false)
   const [nameReminderInitial, setNameReminderInitial] = useState('')
+  const [reminderUid, setReminderUid] = useState(null)
   const navigate = useNavigate()
+
+  // useNavigate() ของ react-router v7 คืนฟังก์ชัน "ตัวใหม่ทุกครั้งที่ pathname เปลี่ยน"
+  // (useNavigateUnstable ใส่ locationPathname ไว้ใน deps ของ useCallback ข้างใน) ถ้าเอา navigate
+  // ไปใส่ dependency array ของ effect ตรงๆ effect นั้นจะรันใหม่ทุกการเปลี่ยนหน้า — ตัวแปรนี้ทำให้
+  // effect อ้างถึง navigate ตัวล่าสุดได้โดยไม่ต้องประกาศเป็น dependency
+  // ต้อง sync ใน effect ไม่ใช่ระหว่าง render (กติกา react-hooks/refs) — effect ตัวนี้ประกาศไว้
+  // ก่อน effect ที่ใช้งาน จึงได้ค่าล่าสุดก่อนเสมอ ส่วนรอบแรกได้ค่าจาก useRef(navigate) อยู่แล้ว
+  const navigateRef = useRef(navigate)
+  useEffect(() => { navigateRef.current = navigate }, [navigate])
   const location = useLocation()
   const isBackOffice = ['/admin', '/staff', '/technician', '/dev-journal', '/data-center'].some(p => location.pathname.startsWith(p))
   // ช่างมีเมนูบนสุด/แถบข้างมาตรฐานอยู่แล้วในทุกธีม (NAV_TECH) แต่ต้องเปิดเฉพาะจอ PC
@@ -405,7 +458,8 @@ function AppShell() {
     // นามสกุลถึงจะถือว่าครบ เอกสารราชการ/แจ้งเตือนคำร้องต้องใช้ชื่อเต็ม
     const effectiveFullName = updates.full_name ?? profile?.full_name ?? ''
     const { first, last } = splitThaiFullName(effectiveFullName)
-    if (!first.trim() || !last.trim()) {
+    setReminderUid(uid)
+    if ((!first.trim() || !last.trim()) && !isReminderSkipped('name', uid)) {
       setNameReminderInitial(effectiveFullName)
       setShowNameReminder(true)
     }
@@ -416,9 +470,12 @@ function AppShell() {
     // เพราะไม่เหลืออะไรให้ค้นนอกจากชื่อ — เบอร์โทรจึงเป็นตัวระบุตัวตนชิ้นเดียวที่จะใช้กู้บัญชีได้
     // (เจ้าหน้าที่ยืนยันตัวตนที่สำนักงาน แล้วใช้ admin-update-login-email + ตั้งรหัสผ่านชั่วคราว)
     // กรณีนี้เท่านั้นที่ห้ามข้าม ผู้ใช้ที่มีอีเมลอยู่แล้วยังกด "ข้ามไปก่อน" ได้ตามเดิม
+    // required = ห้ามข้าม จึงต้องเด้งซ้ำแม้เคยกดข้ามมาก่อน (บัญชี LINE ที่ไม่มีอีเมล ถ้าไม่มีเบอร์
+    // = ไม่เหลืออะไรให้กู้บัญชีเลย) ส่วนบัญชีที่มีอีเมลอยู่แล้ว กดข้ามครั้งเดียวพอสำหรับ session นี้
     if (!profile?.phone?.trim()) {
-      setPhoneReminderRequired(!user.email)
-      setShowPhoneReminder(true)
+      const required = !user.email
+      setPhoneReminderRequired(required)
+      if (required || !isReminderSkipped('phone', uid)) setShowPhoneReminder(true)
     }
   }, [tenantId])
 
@@ -468,15 +525,22 @@ function AppShell() {
     if (window.location.pathname.endsWith('/reset-password')) return
 
     window.history.replaceState({}, '', window.location.pathname)
-    navigate('/auth', { replace: true, state: { oauthError: oauthErrorDesc || oauthError } })
-  }, [navigate])
+    navigateRef.current('/auth', { replace: true, state: { oauthError: oauthErrorDesc || oauthError } })
+  }, [])
 
   useEffect(() => {
     if (!tenantId) return
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) checkAndFixProfile(data.session.user)
+    }).catch((err) => {
+      // refresh token ที่ค้างอยู่ในเครื่องแต่ถูกเพิกถอน/หมดอายุแล้ว ทำให้ getSession() reject
+      // (AuthApiError: Invalid Refresh Token) ของเดิมไม่มี .catch จึงกลายเป็น unhandled rejection
+      // ขึ้น console error แดงตอนเปิดเว็บ ทั้งที่ผลลัพธ์ที่ถูกต้องคือ "ยังไม่ได้ล็อกอิน" เฉยๆ
+      console.warn('[auth] อ่าน session เดิมไม่ได้ ถือว่ายังไม่ได้เข้าสู่ระบบ:', err?.message ?? err)
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // ออกจากระบบแล้วต้องเตือนใหม่ได้ในรอบถัดไป การกด "ข้ามไปก่อน" มีผลแค่ภายใน session เดียว
+      if (event === 'SIGNED_OUT') clearReminderSkips()
       if (event === 'SIGNED_IN' && session) {
         await checkAndFixProfile(session.user)
 
@@ -503,12 +567,15 @@ function AppShell() {
         const returnTo = sessionStorage.getItem('oauth_from')
         if (returnTo) {
           sessionStorage.removeItem('oauth_from')
-          navigate(returnTo, { replace: true })
+          navigateRef.current(returnTo, { replace: true })
         }
       }
     })
     return () => subscription.unsubscribe()
-  }, [checkAndFixProfile, navigate, tenantId])
+    // ห้ามใส่ navigate ใน deps (ดูคอมเมนต์ที่ navigateRef) — ของเดิมใส่ไว้ ทำให้ effect นี้รันใหม่
+    // ทุกครั้งที่เปลี่ยนหน้า: ยิง getSession() ใหม่ → checkAndFixProfile() ใหม่ → กล่องเตือน
+    // เบอร์โทร/ชื่อเด้งซ้ำทุกหน้า และ subscribe onAuthStateChange ใหม่ทั้งที่ของเดิมยังดีอยู่
+  }, [checkAndFixProfile, tenantId])
 
   if (loading) {
     return (
@@ -537,9 +604,13 @@ function AppShell() {
   return (
     <div className="h-dvh bg-gray-50 dark:bg-transparent flex flex-col">
       {showNameReminder ? (
-        <NameReminderModal initialFullName={nameReminderInitial} onClose={() => setShowNameReminder(false)} />
+        <NameReminderModal
+          initialFullName={nameReminderInitial}
+          onClose={() => { markReminderSkipped('name', reminderUid); setShowNameReminder(false) }} />
       ) : showPhoneReminder && (
-        <PhoneReminderModal required={phoneReminderRequired} onClose={() => setShowPhoneReminder(false)} />
+        <PhoneReminderModal
+          required={phoneReminderRequired}
+          onClose={() => { markReminderSkipped('phone', reminderUid); setShowPhoneReminder(false) }} />
       )}
       <NotificationsProvider>
         {!isBackOffice && <Header />}
