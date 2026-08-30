@@ -86,22 +86,25 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
     })
   }, [tenant?.id])
 
+  function loadRecords() {
+    if (!tenant?.id) return
+    setLoading(true)
+    let q = supabase.from('fleet_fuel_records')
+      .select(SELECT_Q, { count: 'exact' })
+      .eq('municipality_id', tenant.id)
+      .order('filled_at', { ascending: false })
+    if (filterVeh !== 'all') q = q.eq('vehicle_id', filterVeh)
+    if (dateFrom) q = q.gte('filled_at', dateFrom)
+    if (dateTo)   q = q.lte('filled_at', dateTo)
+    if (pageSize !== 'all') q = q.range(page * pageSize, (page + 1) * pageSize - 1)
+    q.then(({ data, count }) => { setRecords(data ?? []); setTotalCount(count ?? 0) }).finally(() => setLoading(false))
+  }
+
   useEffect(() => {
     if (!tenant?.id) return
     // setState เรียกผ่าน queueMicrotask กันเข้าเงื่อนไข effect เรียก setState ตรงๆ ในตัว effect
-    queueMicrotask(() => {
-      setLoading(true)
-      let q = supabase.from('fleet_fuel_records')
-        .select(SELECT_Q, { count: 'exact' })
-        .eq('municipality_id', tenant.id)
-        .order('filled_at', { ascending: false })
-      if (filterVeh !== 'all') q = q.eq('vehicle_id', filterVeh)
-      if (dateFrom) q = q.gte('filled_at', dateFrom)
-      if (dateTo)   q = q.lte('filled_at', dateTo)
-      if (pageSize !== 'all') q = q.range(page * pageSize, (page + 1) * pageSize - 1)
-      q.then(({ data, count }) => { setRecords(data ?? []); setTotalCount(count ?? 0) }).finally(() => setLoading(false))
-    })
-    // SELECT_Q เป็นค่าคงที่ต่อ render ไม่ต้องอยู่ใน dependency array
+    queueMicrotask(loadRecords)
+    // SELECT_Q/loadRecords เป็นค่าคงที่ต่อ render ไม่ต้องอยู่ใน dependency array
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenant?.id, filterVeh, dateFrom, dateTo, page, pageSize])
 
@@ -225,7 +228,10 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
     if (!error) {
       // แนบไฟล์ใหม่แทนที่เอกสารเดิมสำเร็จแล้ว (กรณีแก้ไข) — ลบไฟล์เก่าทิ้งกันขยะค้าง storage
       if (receiptPath && oldReceiptUrl && oldReceiptUrl !== receiptPath) removeFleetDocument(oldReceiptUrl).catch(() => {})
-      setRecords(prev => editingId ? prev.map(x => x.id === editingId ? data : x) : [data, ...prev])
+      // โหลดใหม่แทนการแทรก/แก้ state เอง เพื่อให้ตัวนับ "(x–y จาก N)" กับปุ่มเปลี่ยนหน้าไม่ค้าง
+      // ค่าเก่า (totalCount มาจาก count:'exact' คนละ query กับตาราง) และให้แถวใหม่เข้าลำดับ
+      // ตามวันที่จริง ไม่ใช่ไปแปะหัวตารางเสมอ — แนวเดียวกับ FleetMaintenance
+      loadRecords()
       logAction({
         action: editingId ? 'update' : 'create',
         resourceType: 'fleet_fuel', resourceId: recordId, resourceLabel: auditLabel(data),
@@ -254,7 +260,7 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
         action: 'delete', resourceType: 'fleet_fuel', resourceId: r.id, resourceLabel: auditLabel(r),
         municipalityId: tenant.id, metadata: { deleted: auditSnapshot(r) },
       })
-      setRecords(prev => prev.filter(x => x.id !== r.id))
+      loadRecords()   // เช่นเดียวกับตอนบันทึก — ตัวนับกับหน้าที่แสดงต้องมาจาก query เดียวกันเสมอ
       if (r.receipt_url) removeFleetDocument(r.receipt_url).catch(() => {})
     }
     else alert('ลบไม่สำเร็จ: ' + error.message)

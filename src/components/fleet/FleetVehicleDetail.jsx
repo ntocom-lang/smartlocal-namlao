@@ -31,6 +31,11 @@ export default function FleetVehicleDetail({ vehicle, tenant, onClose }) {
   const [loading, setLoading] = useState(true)
   const [months,  setMonths]  = useState([]) // [{ key, label, trips, distance, fuelLiters, fuelCost, maintCost }]
   const [totals,  setTotals]  = useState({ trips: 0, distance: 0, fuelLiters: 0, fuelCost: 0, maintCost: 0 })
+  // อัตราสิ้นเปลืองคิดแบบ full-to-full จาก efficiency_kml ที่ trigger ฝั่ง DB คำนวณให้ต่อการเติมแต่ละครั้ง
+  // ไม่ใช่ (ระยะทางจากใบเดินทาง ÷ ลิตรทั้งหมด) แบบเดิม เพราะสองตัวนี้ไม่ได้ครอบคลุมช่วงเดียวกัน:
+  // การใช้รถบางเที่ยวไม่ได้ลงใบเดินทาง แต่ค่าน้ำมันลงครบทุกใบเสร็จ ตัวหารจึงใหญ่เกินจริงเสมอ
+  // (เคยได้ 0.6 กม./ล. สำหรับรถกระบะ ขณะที่หน้าภาพรวมแสดง 7.1 กม./ล. ของคันเดียวกัน)
+  const [efficiency, setEfficiency] = useState(null)
   // useMemo กันสร้าง Date object ใหม่ทุก render (ค่าคงที่ตราบใดที่ยังไม่ปิด modal) ไม่งั้น effect ด้านล่างจะวนซ้ำ
   const { from, to, labelBE } = useMemo(() => fiscalYearRange(), [])
 
@@ -44,10 +49,13 @@ export default function FleetVehicleDetail({ vehicle, tenant, onClose }) {
       // จึงต้องได้แถวครบ ไม่ถูก PostgREST ตัดตาม db-max-rows — .order('id') บังคับลำดับ
       // ให้ชี้ขาด ไม่งั้นการไล่หน้าจะได้แถวซ้ำหรือตกหล่น
       Promise.all([
+        // นับเฉพาะ 'completed' — คำขอที่ยังไม่อนุมัติ ที่ถูกปฏิเสธ และที่ยกเลิกไปแล้ว ไม่ใช่ "เที่ยว"
+        // ที่ใช้รถจริง ถ้านับรวมด้วย สมุดประจำรถจะรายงานจำนวนเที่ยวเกินความจริง (รายงานส่งออก
+        // ที่ FleetReport กรอง completed อยู่แล้ว ตัวเลขสองที่จึงเคยไม่ตรงกัน)
         fetchAllRows(() => supabase.from('fleet_trips').select('trip_date, distance_km')
-          .eq('municipality_id', tenant.id).eq('vehicle_id', vehicle.id)
+          .eq('municipality_id', tenant.id).eq('vehicle_id', vehicle.id).eq('status', 'completed')
           .gte('trip_date', fromStr).lte('trip_date', toStr).order('id')),
-        fetchAllRows(() => supabase.from('fleet_fuel_records').select('filled_at, liters, total_cost')
+        fetchAllRows(() => supabase.from('fleet_fuel_records').select('filled_at, liters, total_cost, efficiency_kml')
           .eq('municipality_id', tenant.id).eq('vehicle_id', vehicle.id)
           .gte('filled_at', fromStr).lte('filled_at', toStr).order('id')),
         fetchAllRows(() => supabase.from('fleet_maintenance').select('service_date, cost')
@@ -93,12 +101,17 @@ export default function FleetVehicleDetail({ vehicle, tenant, onClose }) {
           fuelCost: acc.fuelCost + m.fuelCost,
           maintCost: acc.maintCost + m.maintCost,
         }), { trips: 0, distance: 0, fuelLiters: 0, fuelCost: 0, maintCost: 0 }))
+
+        const effVals = (fuel ?? []).map(f => f.efficiency_kml).filter(x => x != null).map(Number)
+        setEfficiency(isVehicleAsset(vehicle) && effVals.length
+          ? (effVals.reduce((s, x) => s + x, 0) / effVals.length).toFixed(1)
+          : null)
       }).finally(() => setLoading(false))
     })
+    // vehicle ทั้งก้อนไม่ต้องอยู่ใน dependency — modal นี้ผูกกับรถคันเดียวตลอดอายุ (id เปลี่ยน = เปิดใหม่)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenant?.id, vehicle?.id, from, to])
 
-  const efficiency = isVehicleAsset(vehicle) && totals.fuelLiters > 0
-    ? (totals.distance / totals.fuelLiters).toFixed(1) : null
 
   return (
     <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 p-4">
@@ -138,6 +151,9 @@ export default function FleetVehicleDetail({ vehicle, tenant, onClose }) {
                 <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3">
                   <div className="flex items-center gap-1.5 text-emerald-500 mb-1"><Gauge size={13} /><span className="text-[11px] font-bold">อัตราสิ้นเปลืองเฉลี่ย</span></div>
                   <p className="text-xl font-black text-gray-800">{efficiency ? `${efficiency}` : '—'} <span className="text-xs font-semibold text-gray-400">{efficiency ? 'กม./ล.' : ''}</span></p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">
+                    {efficiency ? 'เฉลี่ยจากการเติมเต็มถัง' : 'ต้องเติมเต็มถังติดกันอย่างน้อย 2 ครั้ง'}
+                  </p>
                 </div>
               </div>
 

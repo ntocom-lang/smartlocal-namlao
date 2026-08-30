@@ -332,7 +332,7 @@ function BookingCalendar({ tenant, onClose }) {
 }
 
 /* ── Main ──────────────────────────────────────────────── */
-export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
+export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff }) {
   const { session } = useAuth()
   const user = session?.user
 
@@ -345,6 +345,12 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
   const myDeptName = depts.find(d => d.id === myDeptId)?.name ?? ''
   const deptLocked = !isAdmin           // ผู้ที่ไม่ใช่ manager เลือกกองอื่นไม่ได้อยู่แล้วโดย RLS
   const missingDept = deptLocked && !myDeptId
+
+  // fleet_viewer อ่านได้อย่างเดียว — RLS fleet_trips_insert ยอมเฉพาะ manager หรือ fleet_staff
+  // ที่กองตรงกับรถ ถ้าไม่ปิดปุ่มไว้ ผู้ตรวจการจะกรอกฟอร์มจนครบแล้วเจอ error ดิบจาก Postgres
+  // ("new row violates row-level security policy") ซึ่งอ่านไม่รู้เรื่องและดูเหมือนระบบพัง
+  // ใช้เกณฑ์เดียวกับ FleetFuelLog/FleetMaintenance เพื่อให้ทั้งโมดูลตัดสินสิทธิ์เหมือนกัน
+  const canWrite = isAdmin || isStaff
 
   // trips = เฉพาะรายการที่ยังดำเนินอยู่ (pending/approved/in_progress) โหลดครบไม่จำกัดจำนวน
   // เพราะเป็นชุดเล็กและถูกใช้ทั้งตารางบน ปฏิทินจอง และการคำนวณรถว่าง
@@ -508,6 +514,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
 
   /* ── Open modals ── */
   function openReserve() {
+    if (!canWrite) return alert('สิทธิ์ของท่านเป็นผู้ดูรายงาน จองรถหรือบันทึกการเดินทางไม่ได้')
     // กันเปิดฟอร์มทั้งที่ยังไม่มีกอง — RLS จะปฏิเสธตอนบันทึกด้วย error ดิบจาก Postgres
     if (missingDept) return alert('บัญชีของคุณยังไม่ได้กำหนดกอง/หน่วยงาน จึงยังบันทึกการใช้รถไม่ได้ — กรุณาให้ผู้ดูแลระบบกำหนดกองให้ก่อน (ตั้งค่า > เจ้าหน้าที่ยานพาหนะ)')
     const dep = new Date(Date.now() + 3600000)
@@ -550,6 +557,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
   }
 
   function openDirect() {
+    if (!canWrite) return alert('สิทธิ์ของท่านเป็นผู้ดูรายงาน จองรถหรือบันทึกการเดินทางไม่ได้')
     // กันเปิดฟอร์มทั้งที่ยังไม่มีกอง — RLS จะปฏิเสธตอนบันทึกด้วย error ดิบจาก Postgres
     if (missingDept) return alert('บัญชีของคุณยังไม่ได้กำหนดกอง/หน่วยงาน จึงยังบันทึกการใช้รถไม่ได้ — กรุณาให้ผู้ดูแลระบบกำหนดกองให้ก่อน (ตั้งค่า > เจ้าหน้าที่ยานพาหนะ)')
     setForm({
@@ -778,6 +786,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
     const { error } = await supabase.from('fleet_trips').update({
       status: 'in_progress',
       started_at: toISO(form.started_at),
+      // trip_date คือวันที่ "ใช้รถจริง" ไม่ใช่วันที่จองไว้ — รายงาน สมุดประจำรถ และหน้าภาพรวม
+      // กรองด้วยคอลัมน์นี้ทั้งหมด ถ้าออกเดินทางคนละวันกับที่จอง (เลื่อนเร็ว/ช้า ซึ่งเกิดประจำ)
+      // แล้วไม่ sync ค่า ระยะทางกับค่าน้ำมันจะไปตกเดือน/ปีงบผิด และขัดกับเวลาออกจริงที่บันทึกไว้
+      trip_date: form.started_at.slice(0, 10),   // เวลาไทยจากช่อง datetime-local ตรงๆ
       odometer_start: startMeter,
     }).eq('id', selTrip.id)
     setSaving(false)
@@ -922,7 +934,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
     const canDepart  = t.status === 'approved' && (isOwner(t) || isAdmin)
     const canReturn  = t.status === 'in_progress' && (isOwner(t) || isAdmin)
     const canCancel  = t.status === 'pending' && isOwner(t) && !isAdmin
-    const dateStr = t.planned_departure ? fmtDate(t.planned_departure) : fmtDate(t.trip_date || t.started_at)
+    // ออกเดินทางแล้วให้ยึดวันที่ออกจริงเสมอ ไม่ใช่วันที่จองไว้ ตารางนี้จะได้ตรงกับ trip_date
+    // ที่รายงานใช้ (แถวเก่าก่อนแก้บั๊กนี้ยังไม่มี started_at จึงตกไปใช้ค่าเดิมตามลำดับเดิม)
+    const dateStr = fmtDate(t.started_at || t.planned_departure || t.trip_date)
     const dist = t.distance_km ?? null
     return (
       <tr key={t.id} style={{ backgroundColor: idx % 2 === 0 ? '#fff' : '#f5f8fc' }}
@@ -1028,7 +1042,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
     <div className="space-y-3 md:space-y-5">
 
       {/* บอกสาเหตุตั้งแต่ต้น ดีกว่าปล่อยให้กดแล้วเจอ error จาก RLS ตอนบันทึก */}
-      {missingDept && (
+      {missingDept && canWrite && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[11px] md:text-xs text-amber-700">
           ⚠️ บัญชีของคุณยังไม่ได้กำหนด <strong>กอง/หน่วยงาน</strong> จึงยังจองรถหรือบันทึกการเดินทางไม่ได้
           <span className="text-amber-600"> — แจ้งผู้ดูแลระบบให้กำหนดกองที่ ตั้งค่า &gt; เจ้าหน้าที่ยานพาหนะ</span>
@@ -1037,15 +1051,15 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
 
       {/* ── Action buttons ── */}
       <div className="flex items-center gap-1.5 md:gap-2 flex-nowrap md:flex-wrap">
-        <button onClick={openReserve}
+        {canWrite && <button onClick={openReserve}
           className="flex items-center gap-1.5 px-3 py-2 md:px-4 md:py-2.5 rounded-lg md:rounded-xl text-[11px] md:text-xs font-bold border-2 text-blue-600 border-blue-300 bg-blue-50 hover:bg-blue-100 transition-colors">
           <Calendar size={13} /> จองรถ
-        </button>
-        <button onClick={openDirect}
+        </button>}
+        {canWrite && <button onClick={openDirect}
           className="flex items-center gap-1.5 px-3 py-2 md:px-4 md:py-2.5 rounded-lg md:rounded-xl text-[11px] md:text-xs font-bold text-white transition-colors"
           style={{ backgroundColor: 'var(--color-primary)' }}>
           <Plus size={13} /> บันทึกการเดินทาง
-        </button>
+        </button>}
         <button onClick={() => setShowCal(true)} aria-label="เปิดปฏิทินการจอง"
           className="md:hidden ml-auto flex items-center gap-1 px-2.5 py-2 rounded-lg text-[11px] font-bold text-blue-600 bg-blue-50">
           <Calendar size={13} /> ปฏิทิน
@@ -1066,7 +1080,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin }) {
         {active.length === 0 ? (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
             <FleetEmptyState icon={Route} title="ยังไม่มีรายการจองหรือการเดินทางที่ดำเนินการอยู่"
-              hint={<>กด <strong className="text-gray-500">จองรถ</strong> เพื่อส่งคำขอ</>} />
+              hint={canWrite
+                ? <>กด <strong className="text-gray-500">จองรถ</strong> เพื่อส่งคำขอ</>
+                : 'สิทธิ์ของท่านเป็นผู้ดูรายงาน จึงดูได้อย่างเดียว'} />
           </div>
         ) : <>
           {renderTripsTable(active)}

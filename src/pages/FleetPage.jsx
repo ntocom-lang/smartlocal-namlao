@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, LayoutDashboard, Car, Fuel, Route, Wrench, BarChart2, ChevronRight, BookOpen } from 'lucide-react'
+import { ArrowLeft, LayoutDashboard, Car, Fuel, Route, Wrench, BarChart2, Wallet, ChevronRight, BookOpen } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -11,7 +11,11 @@ const FleetFuelLog = lazy(() => import('../components/fleet/FleetFuelLog'))
 const FleetTrips = lazy(() => import('../components/fleet/FleetTrips'))
 const FleetMaintenance = lazy(() => import('../components/fleet/FleetMaintenance'))
 const FleetReport = lazy(() => import('../components/fleet/FleetReport'))
+const FleetBudget = lazy(() => import('../components/fleet/FleetBudget'))
 
+// adminOnly = เห็นเฉพาะผู้มีสิทธิ์ fleet_admin (หรือ admin/superadmin ของ อปท.)
+// งบประมาณเดิมมี UI อยู่หลัง /admin ทางเดียว ผู้ดูแลยานพาหนะที่ role เป็น staff จึงตั้งงบไม่ได้
+// ทั้งที่ RLS fbudget_write ให้สิทธิ์อยู่แล้ว และแถบงบบนหน้าภาพรวมก็ไม่มีวันขึ้น
 const TABS = [
   { id: 'dashboard',   label: 'ภาพรวม',     sub: 'สถิติและสรุปรวม',     Icon: LayoutDashboard, color: '#1a3a5c', grad: 'linear-gradient(135deg,#1a3a5c,#2d5f8a)' },
   { id: 'vehicles',    label: 'รถและเครื่องยนต์', sub: 'ทะเบียนรถและครุภัณฑ์', Icon: Car,          color: '#2563eb', grad: 'linear-gradient(135deg,#1d4ed8,#3b82f6)' },
@@ -19,6 +23,7 @@ const TABS = [
   { id: 'trips',       label: 'การเดินทาง', sub: 'จองและบันทึกการใช้รถ', Icon: Route,           color: '#7c3aed', grad: 'linear-gradient(135deg,#6d28d9,#8b5cf6)' },
   { id: 'maintenance', label: 'ซ่อมบำรุง',  sub: 'ประวัติการซ่อมบำรุง',  Icon: Wrench,          color: '#dc2626', grad: 'linear-gradient(135deg,#b91c1c,#ef4444)' },
   { id: 'report',      label: 'รายงาน',     sub: 'ส่งออก PDF / Excel',   Icon: BarChart2,       color: '#059669', grad: 'linear-gradient(135deg,#047857,#10b981)' },
+  { id: 'budget',      label: 'งบประมาณ',   sub: 'งบน้ำมันรายกอง',      Icon: Wallet,          color: '#0891b2', grad: 'linear-gradient(135deg,#0e7490,#22d3ee)', adminOnly: true },
 ]
 
 /* ── ปุ่มเปิดคู่มือการใช้งาน (เปิดแท็บใหม่ ไม่ทับหน้าที่กำลังทำงานอยู่) ── */
@@ -34,11 +39,11 @@ function ManualLink({ light, className = '' }) {
 }
 
 /* ── Desktop horizontal tab bar ── */
-function TabBar({ tab, setTab }) {
+function TabBar({ tab, setTab, tabs }) {
   return (
     <div className="hidden md:flex items-center overflow-x-auto border-b border-gray-200 bg-white"
          style={{ scrollbarWidth: 'none' }}>
-      {TABS.map(({ id, label, Icon }) => (
+      {tabs.map(({ id, label, Icon }) => (
         <button key={id} onClick={() => setTab(id)}
           className="flex items-center gap-1.5 px-4 py-2.5 text-[13px] font-bold shrink-0 border-b-2 transition-colors"
           style={{
@@ -68,7 +73,7 @@ function fleetRoleLabel(fleetInfo, isSysAdmin, short = false) {
   return 'ผู้ใช้งาน'
 }
 
-function MobileGrid({ setTab, fleetInfo, depts, tenant, isSysAdmin }) {
+function MobileGrid({ setTab, fleetInfo, depts, tenant, isSysAdmin, tabs }) {
   const roleLabel = fleetRoleLabel(fleetInfo, isSysAdmin)
   const deptName = depts.find(d => d.id === fleetInfo?.department_id)?.name ?? ''
 
@@ -98,20 +103,20 @@ function MobileGrid({ setTab, fleetInfo, depts, tenant, isSysAdmin }) {
         {/* ภาพรวม — full width */}
         <button onClick={() => setTab('dashboard')}
           className="w-full mb-3 rounded-2xl overflow-hidden shadow-md active:scale-[0.98] transition-transform text-left flex items-center gap-4 px-5 py-4"
-          style={{ background: TABS[0].grad }}>
+          style={{ background: tabs[0].grad }}>
           <div className="w-12 h-12 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
             <LayoutDashboard size={22} className="text-white" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-base font-black text-white">{TABS[0].label}</p>
-            <p className="text-[11px] text-white/70 mt-0.5">{TABS[0].sub}</p>
+            <p className="text-base font-black text-white">{tabs[0].label}</p>
+            <p className="text-[11px] text-white/70 mt-0.5">{tabs[0].sub}</p>
           </div>
           <ChevronRight size={18} className="text-white/50" />
         </button>
 
         {/* 2-col grid for the rest */}
         <div className="grid grid-cols-2 gap-3">
-          {TABS.slice(1).map(({ id, label, sub, Icon, grad }) => (
+          {tabs.slice(1).map(({ id, label, sub, Icon, grad }) => (
             <button key={id} onClick={() => setTab(id)}
               className="rounded-2xl overflow-hidden shadow-sm active:scale-[0.97] transition-transform text-left flex flex-col"
               style={{ background: '#fff', border: '1px solid #e5e7eb' }}>
@@ -135,8 +140,8 @@ function MobileGrid({ setTab, fleetInfo, depts, tenant, isSysAdmin }) {
 }
 
 /* ── Mobile content view (เมื่อเลือก tab แล้ว) ── */
-function MobileContent({ tab, setTab, children }) {
-  const t = TABS.find(x => x.id === tab)
+function MobileContent({ tab, setTab, children, tabs }) {
+  const t = tabs.find(x => x.id === tab)
   if (!t) return null
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
@@ -219,6 +224,9 @@ export default function FleetPage({ onBack } = {}) {
   // desktop default to 'dashboard' when tab is null
   const activeTab = tab ?? 'dashboard'
 
+  // แท็บที่ผู้ใช้คนนี้เห็นจริง — งบประมาณเปิดให้เฉพาะผู้ดูแลระบบยานพาหนะ ตรงกับ RLS fbudget_write
+  const visibleTabs = TABS.filter(t => !t.adminOnly || isAdmin)
+
   const contentNode = (
     <Suspense fallback={
       <div className="flex min-h-48 items-center justify-center" role="status" aria-label="กำลังโหลดโมดูลยานพาหนะ">
@@ -232,6 +240,7 @@ export default function FleetPage({ onBack } = {}) {
       {activeTab === 'trips'       && <FleetTrips       {...ctx} />}
       {activeTab === 'maintenance' && <FleetMaintenance {...ctx} />}
       {activeTab === 'report'      && <FleetReport      tenant={tenant} depts={depts} />}
+      {activeTab === 'budget' && isAdmin && <FleetBudget tenant={tenant} depts={depts} />}
     </Suspense>
   )
 
@@ -252,13 +261,13 @@ export default function FleetPage({ onBack } = {}) {
         </div>
 
         {/* Desktop tab bar */}
-        <TabBar tab={activeTab} setTab={setTab} />
+        <TabBar tab={activeTab} setTab={setTab} tabs={visibleTabs} />
 
         {/* Mobile: grid or content */}
         <div className="md:hidden">
           {tab === null
-            ? <MobileGrid setTab={setTab} fleetInfo={fleetInfo} depts={depts} tenant={tenant} isSysAdmin={isSysAdmin} />
-            : <MobileContent tab={tab} setTab={setTab}>
+            ? <MobileGrid setTab={setTab} fleetInfo={fleetInfo} depts={depts} tenant={tenant} isSysAdmin={isSysAdmin} tabs={visibleTabs} />
+            : <MobileContent tab={tab} setTab={setTab} tabs={visibleTabs}>
                 <div>{contentNode}</div>
               </MobileContent>
           }
@@ -282,10 +291,10 @@ export default function FleetPage({ onBack } = {}) {
                 className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">
                 <ArrowLeft size={16} className="text-white" />
               </button>
-              <MobileGrid setTab={setTab} fleetInfo={fleetInfo} depts={depts} tenant={tenant} isSysAdmin={isSysAdmin} />
+              <MobileGrid setTab={setTab} fleetInfo={fleetInfo} depts={depts} tenant={tenant} isSysAdmin={isSysAdmin} tabs={visibleTabs} />
             </div>
           )
-          : <MobileContent tab={tab} setTab={setTab}>{contentNode}</MobileContent>
+          : <MobileContent tab={tab} setTab={setTab} tabs={visibleTabs}>{contentNode}</MobileContent>
         }
       </div>
 
@@ -306,7 +315,7 @@ export default function FleetPage({ onBack } = {}) {
               </p>
             </div>
           </div>
-          <TabBar tab={activeTab} setTab={setTab} />
+          <TabBar tab={activeTab} setTab={setTab} tabs={visibleTabs} />
         </div>
         <div className="flex-1 p-4 max-w-5xl mx-auto w-full">{contentNode}</div>
       </div>
