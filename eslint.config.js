@@ -5,16 +5,16 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  // เดิม ignore แค่ 'dist' ทำให้ `npm run lint` ไปไล่ bundle ที่ build แล้วด้วย —
-  // android/app/**/assets เก็บ bundle ที่ Capacitor คัดลอกไปฝัง (ทั้ง minified ทั้ง workbox)
-  // ตัวเดียวก็ยิง error หลักร้อยจากโค้ดที่ไม่มีใครแก้ด้วยมือ รวมทั้งหมด 944 problems
-  // จนอ่านไม่ออกว่าอันไหนของจริง (ของจริงในโค้ดต้นทางมี 82 errors / 18 warnings)
+  // เดิม ignore แค่ 'dist' ทำให้ `npm run lint` ไปไล่ bundle ที่ build แล้วด้วย ตัวเดียวก็ยิง error
+  // หลักร้อยจากโค้ดที่ไม่มีใครแก้ด้วยมือ จนอ่านไม่ออกว่าอันไหนของจริง
   // ด่านที่ส่งเสียงดังจนไม่มีใครฟังคือด่านที่ไม่มีอยู่จริง
   globalIgnores([
     'dist',
     'dev-dist',
-    'android',            // build artifact ของ Capacitor ไม่ใช่ source
     '.claude/worktrees',  // worktree ของ agent เป็นสำเนาของ repo ตัวเอง ลินต์ซ้ำเปล่าๆ
+    // โปรไฟล์ Chrome ของเทสต์ มี bundle ของ extension ที่ Chrome ติดตั้งเองปนอยู่
+    // ตัวเดียวยิงหลักพัน problem กลบของจริงจนหมด (git ignore ไว้แล้ว แต่ eslint ไม่ได้อ่าน .gitignore)
+    '.chrome-test-profiles',
     'scratch',            // สคริปต์ทดลองใช้ครั้งเดียว ไม่ได้ขึ้น production
     'supabase/functions', // Deno runtime คนละชุด global กับที่ config นี้ตั้งไว้
   ]),

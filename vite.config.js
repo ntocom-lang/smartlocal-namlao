@@ -7,7 +7,7 @@ export default defineConfig({
   base: '/',
   server: {
     watch: {
-      ignored: ['**/android/**', '**/dist/**', '**/dev-dist/**', '**/.chrome-test-profiles/**']
+      ignored: ['**/dist/**', '**/dev-dist/**', '**/.chrome-test-profiles/**']
     }
   },
   plugins: [

@@ -39,7 +39,7 @@ function autoShortName(tenant) {
 //
 // ตัวแปรทับชื่อ DEV_TENANT_SLUG ตั้งใจไม่ใช้ชื่อ VITE_TENANT_SLUG แบบฝั่ง client:
 // wrangler dev ดูด .env.local เข้ามาเป็น env ให้อัตโนมัติ และในไฟล์นั้นมี
-// VITE_TENANT_SLUG=namlao อยู่ (ไว้ให้ Vite dev server กับ build ของ Capacitor ใช้)
+// VITE_TENANT_SLUG=namlao อยู่ (ไว้ให้ Vite dev server ใช้)
 // ถ้า worker อ่านชื่อเดียวกัน แล้ววันหนึ่งค่านั้นหลุดขึ้น production ทุก อปท. จะถูกฉีด
 // og:tag เป็นน้ำเลาหมดโดยไม่มีอะไรฟ้อง — ผิดแบบเงียบและหาสาเหตุยาก
 // ใช้ชื่อที่ชนกันไม่ได้ตั้งแต่แรกถูกกว่ามาไล่ทีหลัง

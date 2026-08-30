@@ -25,7 +25,7 @@ export function computeBasename() {
   // (บั๊กจริงที่เจอ: เข้า /auth ตรงๆ แล้วกลายเป็นหน้าแรกซ้อนอยู่ใต้ /auth/auth, /auth/complaint ฯลฯ)
   if (/^smartlocal-.+$/.test(hostname.split('.')[0])) return ''
 
-  // build ที่ปักหมุด อปท. ไว้ (Capacitor / dev server) ไม่มี path ให้ตีความ
+  // build ที่ปักหมุด อปท. ไว้ (dev server) ไม่มี path ให้ตีความ
   if (import.meta.env.VITE_TENANT_SLUG) return ''
 
   // Path mode: /namlao/... → basename = '/namlao' (เฉพาะ deployment กลางแบบ path-based เท่านั้น)

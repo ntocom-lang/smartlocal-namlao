@@ -87,7 +87,7 @@ property that is receiving Free Services"* ตอนนี้ไม่กระ�
 ### กับดักที่เจอตอนพอร์ต: ชื่อตัวแปรทับ tenant
 
 `wrangler dev` **ดูด `.env.local` เข้ามาเป็น env ให้อัตโนมัติ** และในไฟล์นั้นมี
-`VITE_TENANT_SLUG=namlao` อยู่ (ไว้ให้ Vite dev server กับ build ของ Capacitor)
+`VITE_TENANT_SLUG=namlao` อยู่ (ไว้ให้ Vite dev server)
 ถ้า Worker อ่านชื่อเดียวกันแล้ววันหนึ่งค่านั้นหลุดขึ้น production
 **ทุก อปท. จะถูกฉีด og:tag เป็นน้ำเลาหมดโดยไม่มีอะไรฟ้อง**
 

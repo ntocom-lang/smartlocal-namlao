@@ -243,7 +243,9 @@ supabase.auth.onAuthStateChange((event) => {
 // ซ่อนเพจชั่วคราว (เช่น หน้าต่างเลือกไฟล์ของระบบเปิดคลุมจอ) แล้วตัวต่ออายุ token
 // อัตโนมัติในตัว SDK ไม่ฟื้นตัวเอง ทำให้ request ที่ต้องใช้สิทธิ์ล็อกอินทุกตัว
 // (ไม่ใช่แค่ตอนอัปโหลดไฟล์) ค้างตลอดไปหลังจากนั้น — วิธีนี้เป็นคำแนะนำทางการ
-// ของ Supabase สำหรับแอปที่ห่อด้วย native wrapper (แอปนี้ใช้ Capacitor)
+// ของ Supabase สำหรับแอปที่ห่อด้วย native wrapper — แอป Capacitor ถูกเลิกใช้และลบไปแล้ว
+// แต่โค้ดนี้ต้องอยู่ต่อ เพราะอาการเดียวกันเกิดกับเบราว์เซอร์บนมือถือทั่วไปด้วย (เคสจริงที่เจอ
+// คือหน้าต่างเลือกไฟล์ของระบบเปิดคลุมจอ) ไม่ได้ผูกกับ native wrapper แต่อย่างใด
 if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') supabase.auth.startAutoRefresh()

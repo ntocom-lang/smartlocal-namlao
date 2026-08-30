@@ -28,8 +28,8 @@ function termSet(mayor, deputyMayor, council, councilPresident, clerk) {
 // เหลือ `function detectTenantSlug(){return "namlao"}` ผลคือ *ทุก* อปท.
 // แสดงข้อมูลของน้ำเลา ซึ่งเป็นข้อมูลจริงของประชาชน
 //
-// env var มีไว้สำหรับกรณีที่ hostname บอกอะไรไม่ได้จริงๆ เท่านั้น คือแอปที่ห่อด้วย
-// Capacitor (รันที่ localhost) กับ dev server จึงต้องเป็น fallback ท้ายสุด ไม่ใช่ข้อแรก
+// env var มีไว้สำหรับกรณีที่ hostname บอกอะไรไม่ได้จริงๆ เท่านั้น คือ dev server
+// ที่รันบน localhost จึงต้องเป็น fallback ท้ายสุด ไม่ใช่ข้อแรก
 function detectTenantSlug() {
   const { hostname, pathname } = window.location
   const parts = hostname.split('.')
@@ -52,13 +52,12 @@ function detectTenantSlug() {
     if (match) return match[1]
   }
 
-  // build ที่ปักหมุด อปท. ไว้แล้ว (Capacitor / dev server) ต้องเช็คก่อน path mode ไม่ใช่หลัง
+  // build ที่ปักหมุด อปท. ไว้แล้ว (dev server) ต้องเช็คก่อน path mode ไม่ใช่หลัง
   //
   // ต้องตรงกับ computeBasename() ใน src/lib/basename.js ที่คืน '' ทันทีที่เจอ VITE_TENANT_SLUG
   // ของเดิมที่นี่ไล่ path segment ก่อน ทำให้สองไฟล์ตีความ URL เดียวกันคนละแบบ: เปิด
   // http://localhost:5173/complaint ตรงๆ แล้ว slug กลายเป็น "complaint" (ยิง
   // ?slug=eq.complaint ได้ 406) ส่วน router ที่ basename = '' ก็หา route ไม่เจอ ขึ้นหน้าว่าง
-  // กระทบแอป Capacitor ด้วยเพราะรันบน localhost เหมือนกัน — deep-link/refresh หลุด tenant ทันที
   //
   // เงื่อนไข hostname ต้องอยู่หน้าสุดของ if เสมอ ห้ามเหลือแค่ `if (VITE_TENANT_SLUG)` ลอยๆ
   // ไม่งั้น minifier จะมองว่าเป็นจริงเสมอตอน build แล้วลบตรรกะ hostname ข้างบนทิ้งทั้งก้อน
