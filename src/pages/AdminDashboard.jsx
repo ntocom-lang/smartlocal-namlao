@@ -21,7 +21,7 @@ import { workingDaysBetween, workingDaysSince } from '../lib/workingDays'
 import { uploadFile } from '../lib/driveStorage'
 import { tenantDefaultSubdistrict } from '../lib/tenantSubdistrict'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
-import { accountProviders, providerLabel } from '../lib/authProviders'
+import { accountProviders, providerLabel, phoneToLoginEmail, normalizeThaiPhone } from '../lib/authProviders'
 import { useTenant } from '../contexts/TenantContext'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 // lazy: หน้ารายงานโครงการเปิดเฉพาะตอนเลือกเมนู ไม่ต้องโหลดมาพร้อมแผงควบคุม
@@ -1326,6 +1326,21 @@ function MergeDuplicateModal({ keepUser, tenant, currentUserRole, currentUserId,
 
 function AccountInfoTab(props) {
   const { user, isEditing, draft, setDraft } = props
+
+  // บัญชีที่สมัครด้วย LINE จะไม่มีอีเมลติดมาเลย ถ้า channel ยังไม่ได้รับอนุมัติสิทธิ์ขอ email
+  // จาก LINE (ของโปรเจกต์นี้เป็นแบบนั้น) บัญชีพวกนี้จึงล็อกอินด้วยรหัสผ่านไม่ได้ ไม่มีชื่อผู้ใช้
+  // ให้พิมพ์ และเจ้าหน้าที่ก็ตั้งรหัสผ่านชั่วคราวให้แล้วก็ยังใช้ไม่ได้อยู่ดี
+  //
+  // ทางแก้ไม่ใช่ไปขออีเมลจากประชาชน (กลุ่มผู้ใช้หลักคือผู้สูงอายุที่ไม่มีอีเมลและไม่ควรต้องไปสมัคร)
+  // แต่ใช้ "เบอร์โทร" เป็นชื่อผู้ใช้แทน ซึ่งเป็นกลไกที่ระบบนี้ใช้อยู่แล้วกับคนที่สมัครด้วยเบอร์
+  // (phoneToLoginEmail แปลงเป็นอีเมลปลอมที่ไม่ต้องมีกล่องจดหมายจริง)
+  //
+  // การเซ็ตอีเมลผ่าน admin-update-login-email ปลอดภัยกับบัญชี OAuth: GoTrue ฝั่ง adminUserUpdate
+  // สร้างแถว identity ของ provider 'email' ให้เองเมื่อยังไม่มี และ identity ของ LINE เดิมไม่ถูกแตะ
+  // เจ้าตัวจึงยังกดปุ่ม LINE เข้าได้เหมือนเดิม ได้ทางเข้าเพิ่มมาอีกทางโดยไม่เสียทางเดิม
+  const loginPhone = normalizeThaiPhone(draft?.phone ?? user.phone ?? '')
+  const canUsePhoneAsLogin = !user.email && /^0\d{8,9}$/.test(loginPhone)
+
   return (
     <div className="space-y-5">
       <PersonalInfoField
@@ -1336,6 +1351,29 @@ function AccountInfoTab(props) {
         placeholder="name@gmail.com"
         onChange={(e) => setDraft(d => ({ ...d, email: e.target.value }))}
       />
+
+      {!user.email && (
+        <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 leading-relaxed">
+          <p className="font-semibold mb-1">บัญชีนี้ยังล็อกอินด้วยรหัสผ่านไม่ได้</p>
+          ไม่มีชื่อผู้ใช้ให้พิมพ์คู่กับรหัสผ่าน ถ้าวันหนึ่งเจ้าตัวเข้า LINE ไม่ได้ จะกู้บัญชีไม่ได้เลย
+          {canUsePhoneAsLogin ? (
+            isEditing ? (
+              <button
+                type="button"
+                onClick={() => setDraft(d => ({ ...d, email: phoneToLoginEmail(loginPhone) }))}
+                className="mt-2 w-full py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold transition-colors"
+              >
+                ใช้เบอร์ {loginPhone} เป็นชื่อผู้ใช้
+              </button>
+            ) : (
+              <p className="mt-1">กด &ldquo;แก้ไข&rdquo; แล้วจะมีปุ่มตั้งเบอร์ {loginPhone} เป็นชื่อผู้ใช้ให้</p>
+            )
+          ) : (
+            <p className="mt-1">บัญชีนี้ยังไม่มีเบอร์โทรในระบบด้วย ต้องกรอกเบอร์ให้ก่อนจึงจะตั้งชื่อผู้ใช้ได้</p>
+          )}
+        </div>
+      )}
+
       <div>
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ช่องทางเชื่อมต่อบัญชี</p>
         <ProviderChips user={user} />
@@ -1691,12 +1729,22 @@ function UserDetailPage(props) {
     // ที่เรียก Supabase Admin API เท่านั้น (admin_update_user ธรรมดาแตะ auth.users ไม่ได้)
     const newEmail = draft.email.trim().toLowerCase()
     if (newEmail && newEmail !== (user.email || '').toLowerCase()) {
-      if (!confirm(`ยืนยันเปลี่ยนอีเมลที่ใช้ login ของ "${user.full_name || user.email}" เป็น "${newEmail}"?\n\nอีเมลเดิมจะใช้ login ไม่ได้อีกทันที`)) {
-        return
-      }
+      // บัญชีที่ยังไม่เคยมีอีเมล (สมัครด้วย LINE) ไม่มี "อีเมลเดิม" ให้เสีย — เป็นการเพิ่มทางเข้า
+      // ไม่ใช่การเปลี่ยน ถ้าใช้ข้อความเตือนอันเดียวกันเจ้าหน้าที่จะลังเลไม่กล้ากดทั้งที่ไม่มีอะไรเสีย
+      const label = user.full_name || user.email || 'บัญชีนี้'
+      const message = user.email
+        ? `ยืนยันเปลี่ยนอีเมลที่ใช้ login ของ "${label}" เป็น "${newEmail}"?\n\nอีเมลเดิมจะใช้ login ไม่ได้อีกทันที`
+        : `ยืนยันตั้งชื่อผู้ใช้ของ "${label}" เป็น "${newEmail}"?\n\nช่องทางเดิม (LINE/Google) ยังใช้เข้าได้ตามปกติ\nขั้นถัดไปให้กด "ตั้งรหัสผ่านชั่วคราว" แล้วพิมพ์บัตรให้เจ้าตัว`
+      if (!confirm(message)) return
+
       const emailResult = await updateUserEmail(user, newEmail)
       if (!emailResult.ok) {
-        setSaveError('เปลี่ยนอีเมลไม่สำเร็จ: ' + emailResult.error)
+        // ข้อความจาก GoTrue เป็นภาษาอังกฤษ เคสที่เจ้าหน้าที่เจอบ่อยสุดคือเบอร์ซ้ำกับบัญชีอื่น
+        // (คนเดียวกันมีทั้งบัญชี LINE และบัญชีเบอร์โทร) ซึ่งต้องไปยุบบัญชีรวมกันแทน ไม่ใช่ตั้งซ้ำ
+        const dup = /already been registered|already exists|duplicate/i.test(emailResult.error || '')
+        setSaveError(dup
+          ? 'ชื่อผู้ใช้นี้มีบัญชีอื่นใช้อยู่แล้ว — น่าจะเป็นคนเดียวกันที่มีสองบัญชี ให้ใช้ "ยุบบัญชีซ้ำ" รวมกันแทน'
+          : 'เปลี่ยนอีเมลไม่สำเร็จ: ' + emailResult.error)
         return
       }
     }
