@@ -3096,7 +3096,6 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
         )}
 
         <CategoryActiveSwitch
-          compact
           active={cat.is_active !== false}
           onToggle={() => onToggleActive?.(cat.id, cat.is_active !== false)}
         />
@@ -3207,7 +3206,9 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [
         )}
       </td>
       <td className="px-4 py-3">
-        <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full"
+        {/* ป้ายสีต้องอยู่บรรทัดเดียวเสมอ — ตอนตารางถูกบีบ ข้อความยาวๆ อย่าง "กลิ่นเหม็นรบกวน
+            (มลพิษทางอากาศ)" จะตกบรรทัดทีละตัวอักษรจนแถวสูงผิดปกติและอ่านไม่ออก */}
+        <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
           style={{ backgroundColor: color.color, color: color.textColor }}>
           <CategoryIcon emoji={cat.emoji} size={13} style={iconStyle} /> {cat.label}
         </span>
@@ -3268,6 +3269,7 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [
       </td>
       <td className="px-4 py-3 text-center">
         <CategoryActiveSwitch
+          compact
           active={cat.is_active !== false}
           onToggle={() => onToggleActive(cat.id, cat.is_active !== false)}
         />
@@ -3905,8 +3907,8 @@ function CategoryManager({ tenant }) {
           {/* Desktop table — DnD sortable */}
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={visibleCats.map((c) => c.id)} strategy={verticalListSortingStrategy}>
-              <div className="hidden md:block border border-gray-200 rounded-xl overflow-hidden">
-                <table className="w-full text-sm">
+              <div className="hidden md:block border border-gray-200 rounded-xl overflow-x-auto overscroll-x-contain">
+                <table className="w-full min-w-[62rem] text-sm">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="px-2 py-3 w-8" />
@@ -3916,8 +3918,8 @@ function CategoryManager({ tenant }) {
                       <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">กองรับผิดชอบ</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ช่างรับผิดชอบ</th>
                       <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 w-24">ระยะเวลา</th>
-                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 w-20">สถานะ</th>
-                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 w-24">ประเภทงาน</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 whitespace-nowrap">สถานะ</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 whitespace-nowrap">ประเภทงาน</th>
                       <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 w-20">จัดการ</th>
                     </tr>
                   </thead>
