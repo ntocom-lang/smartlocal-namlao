@@ -52,6 +52,7 @@ export default function AuthPage() {
   const [remember, setRemember] = useState(true)
   const [loadingGoogle, setLoadingGoogle] = useState(false)
   const [loadingLine, setLoadingLine] = useState(false)
+  const [loadingLineWeb, setLoadingLineWeb] = useState(false)
   const [forgotEmail, setForgotEmail] = useState('')
 
   const set = (f) => (e) => setForm((p) => ({ ...p, [f]: e.target.value }))
@@ -69,7 +70,7 @@ export default function AuthPage() {
   //
   // หมายเหตุ: ถ้าสำเร็จจริง เบราว์เซอร์จะ redirect ออกไปหน้า provider ตั้งแต่ก่อนถึง finally
   // สปินเนอร์ที่ยังหมุนอยู่ระหว่างนั้นจึงถูกต้องแล้ว — finally มีผลเฉพาะตอนไปต่อไม่ได้
-  async function startOAuth(provider, { setLoading: setProviderLoading, errorText }) {
+  async function startOAuth(provider, { setLoading: setProviderLoading, errorText, queryParams }) {
     storeOauthFrom()
     // OAuth ไม่มีช่องติ๊ก "จำการเข้าสู่ระบบ" และผู้ใช้กลุ่มนี้คือประชาชนบนมือถือตัวเอง
     // ตั้งเป็นจำไว้เสมอ ไม่งั้น session จะหายทุกครั้งที่ปิดแท็บ
@@ -83,7 +84,10 @@ export default function AuthPage() {
         // (smartlocal.vercel.app/{slug}/...) จะถูกตัด slug ทิ้ง พอ provider ส่งกลับมาที่ origin
         // detectTenantSlug() หา slug ไม่เจอ แอปขึ้น "ไม่พบรหัสหน่วยงาน" และ checkAndFixProfile
         // ไม่ถูกเรียก บัญชีที่สมัครใหม่จึงค้างเป็น municipality_id = null ถาวร
-        options: { redirectTo: appUrl('/') },
+        // queryParams ถูกต่อท้าย URL /authorize ของ GoTrue แล้วส่งต่อไปยัง provider ตัวจริง
+        // (GoTrue ตัดทิ้งเฉพาะพารามิเตอร์ที่ตัวเองคุม เช่น redirect_uri/state/code_challenge
+        // ที่เหลือ forward ให้หมด) ใช้สั่งพฤติกรรมฝั่ง LINE ได้โดยไม่ต้องประกอบ URL เอง
+        options: { redirectTo: appUrl('/'), ...(queryParams ? { queryParams } : {}) },
       })
       if (err) setError(errorText)
       else return // สำเร็จ = กำลัง redirect ออกไป ปล่อยสปินเนอร์ค้างไว้ตามเดิม
@@ -104,6 +108,24 @@ export default function AuthPage() {
 
   async function handleLine() {
     await startOAuth('custom:line', { setLoading: setLoadingLine, errorText: 'ไม่สามารถเข้าสู่ระบบด้วย LINE ได้' })
+  }
+
+  // ทางสำรองสำหรับเครื่องที่เปิดแอป LINE ไม่ขึ้น (แอปเวอร์ชันเก่า / ถอนแอปไปแล้ว / WebView บล็อก)
+  //
+  // ตามเอกสาร LINE Login v2.1 บนมือถือ "auto login" ผ่านแอปจะมาก่อนเสมอถ้าสภาพแวดล้อมรองรับ
+  // พอแอปเปิดไม่ขึ้น ผู้ใช้จะค้างอยู่ที่หน้าของ LINE — และเบราว์เซอร์ออกจากหน้าเราไปแล้วตั้งแต่ตอน
+  // redirect เราจึงดักจับหรือขึ้น error ให้ไม่ได้เลย ต้องให้ผู้ใช้เลือกเส้นทางเองตั้งแต่ต้น
+  //
+  // disable_auto_login=true สั่งให้ LINE ข้ามการเรียกแอปแล้วแสดงฟอร์มล็อกอินบนเว็บแทน
+  // ⚠️ ข้อจำกัดที่เลี่ยงไม่ได้: ฟอร์มนั้นต้องใช้อีเมล+รหัสผ่านของบัญชี LINE ซึ่งคนที่สมัคร LINE
+  // ด้วยเบอร์อย่างเดียวจะไม่มี — กลุ่มนั้นต้องใช้การสมัครด้วยเบอร์โทรของระบบเราแทน จึงเขียนกำกับ
+  // ไว้ที่ปุ่มด้วย ไม่ปล่อยให้กดแล้วไปตันเอาข้างหน้า
+  async function handleLineWebOnly() {
+    await startOAuth('custom:line', {
+      setLoading: setLoadingLineWeb,
+      errorText: 'ไม่สามารถเข้าสู่ระบบด้วย LINE ได้',
+      queryParams: { disable_auto_login: 'true' },
+    })
   }
 
   async function handleForgotPassword(e) {
@@ -474,6 +496,12 @@ export default function AuthPage() {
             </svg>
           )}
           {mode === 'login' ? 'เข้าสู่ระบบด้วย LINE' : 'สมัครด้วย LINE'}
+        </button>
+
+        {/* ทางสำรองเมื่อกดปุ่มบนแล้วเครื่องเรียกแอป LINE ไม่ขึ้น — ดูเหตุผลที่ handleLineWebOnly() */}
+        <button onClick={handleLineWebOnly} disabled={loadingLineWeb}
+          className="w-full text-center text-xs text-gray-400 hover:text-gray-600 py-2 disabled:opacity-60">
+          {loadingLineWeb ? 'กำลังเปิดหน้า LINE...' : 'กดแล้วแอป LINE ไม่เปิด? เข้าผ่านหน้าเว็บ LINE แทน'}
         </button>
 
         {/* Google OAuth */}

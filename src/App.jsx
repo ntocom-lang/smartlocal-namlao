@@ -52,7 +52,9 @@ const PostsPage = lazyWithRetry(() => import('./pages/PostsPage'))
 const FleetPage = lazyWithRetry(() => import('./pages/FleetPage'))
 const ChatbotPage = lazyWithRetry(() => import('./pages/ChatbotPage'))
 
-function PhoneReminderModal({ onClose }) {
+// required = บัญชีนี้ไม่มีอีเมลเลย เบอร์โทรจึงเป็นตัวระบุตัวตนชิ้นเดียวที่เหลือ ข้ามไม่ได้
+// (เหตุผลเต็มอยู่ที่จุดเรียก setPhoneReminderRequired ใน checkAndFixProfile)
+function PhoneReminderModal({ onClose, required = false }) {
   const [phone, setPhone] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -83,10 +85,19 @@ function PhoneReminderModal({ onClose }) {
             <Phone size={30} className="text-white" />
           </div>
           <h2 className="text-xl font-bold text-gray-800">เพิ่มเบอร์มือถือ</h2>
-          <p className="text-sm text-gray-500 leading-relaxed">
-            กรอกเบอร์มือถือเพื่อให้เจ้าหน้าที่ติดต่อกลับ<br />
-            และติดตามสถานะคำร้องของท่านได้สะดวกขึ้น
-          </p>
+          {required ? (
+            <p className="text-sm text-gray-500 leading-relaxed">
+              บัญชีที่สมัครด้วย LINE ไม่มีอีเมลติดมาด้วย<br />
+              กรอกเบอร์มือถือไว้ <strong className="text-gray-700">เพื่อให้กู้บัญชีคืนได้</strong>
+              หากวันหนึ่งเข้าแอป LINE ไม่ได้<br />
+              และเพื่อให้เจ้าหน้าที่ติดต่อกลับเรื่องคำร้องของท่าน
+            </p>
+          ) : (
+            <p className="text-sm text-gray-500 leading-relaxed">
+              กรอกเบอร์มือถือเพื่อให้เจ้าหน้าที่ติดต่อกลับ<br />
+              และติดตามสถานะคำร้องของท่านได้สะดวกขึ้น
+            </p>
+          )}
 
           <input
             type="tel"
@@ -108,9 +119,11 @@ function PhoneReminderModal({ onClose }) {
             style={{ backgroundColor: 'var(--color-primary)' }}>
             {saving ? 'กำลังบันทึก...' : 'บันทึกเบอร์มือถือ'}
           </button>
-          <button onClick={onClose} className="text-sm text-gray-400 hover:text-gray-600 py-1">
-            ข้ามไปก่อน
-          </button>
+          {!required && (
+            <button onClick={onClose} className="text-sm text-gray-400 hover:text-gray-600 py-1">
+              ข้ามไปก่อน
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -320,6 +333,7 @@ function AppShell() {
   const { loading, error, tenant } = useTenant()
   const tenantId = tenant?.id
   const [showPhoneReminder, setShowPhoneReminder] = useState(false)
+  const [phoneReminderRequired, setPhoneReminderRequired] = useState(false)
   const [showNameReminder, setShowNameReminder] = useState(false)
   const [nameReminderInitial, setNameReminderInitial] = useState('')
   const navigate = useNavigate()
@@ -338,7 +352,11 @@ function AppShell() {
   // ช่างยังใช้เมนูล่างของแอป (NAV_TECH) ได้ ต่างจาก /admin กับ /staff ที่ไม่มีเมนูล่างเลย
   const hideBottomNav = ['/admin', '/staff', '/dev-journal', '/data-center'].some(p => location.pathname.startsWith(p))
 
-  const checkAndFixProfile = useCallback(async (uid, userMeta = {}) => {
+  // รับ user ทั้งก้อน ไม่ใช่แค่ uid + user_metadata เพราะต้องใช้ user.email ตัดสินว่าบัญชีนี้
+  // มีตัวระบุตัวตนไว้กู้บัญชีอยู่แล้วหรือยัง (ดูเงื่อนไขเบอร์โทรท้ายฟังก์ชัน)
+  const checkAndFixProfile = useCallback(async (user) => {
+    const uid = user.id
+    const userMeta = user.user_metadata ?? {}
     const { data: profile, error: profileError } = await fetchProfile(uid)
 
     if (profileError) {
@@ -392,7 +410,16 @@ function AppShell() {
       setShowNameReminder(true)
     }
 
-    if (!profile?.phone?.trim()) setShowPhoneReminder(true)
+    // บัญชีที่ไม่มีอีเมลใน auth.users เลย = สมัครด้วย LINE ในกรณีที่ channel ยังไม่ได้รับอนุมัติ
+    // สิทธิ์ขอ email จาก LINE บัญชีแบบนี้ไม่มีทั้งอีเมลและรหัสผ่าน ถ้าวันหนึ่งเข้าแอป LINE ไม่ได้
+    // (เปลี่ยนเครื่อง/ถอนแอป) จะล็อกอินไม่ได้อีกเลย และเจ้าหน้าที่ก็ค้นหาตัวเขาในระบบไม่เจอด้วย
+    // เพราะไม่เหลืออะไรให้ค้นนอกจากชื่อ — เบอร์โทรจึงเป็นตัวระบุตัวตนชิ้นเดียวที่จะใช้กู้บัญชีได้
+    // (เจ้าหน้าที่ยืนยันตัวตนที่สำนักงาน แล้วใช้ admin-update-login-email + ตั้งรหัสผ่านชั่วคราว)
+    // กรณีนี้เท่านั้นที่ห้ามข้าม ผู้ใช้ที่มีอีเมลอยู่แล้วยังกด "ข้ามไปก่อน" ได้ตามเดิม
+    if (!profile?.phone?.trim()) {
+      setPhoneReminderRequired(!user.email)
+      setShowPhoneReminder(true)
+    }
   }, [tenantId])
 
   // iOS Safari ตัด WebSocket เมื่อแอปไป background — ต้องต่อกลับเมื่อผู้ใช้กลับมา
@@ -447,11 +474,11 @@ function AppShell() {
   useEffect(() => {
     if (!tenantId) return
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) checkAndFixProfile(data.session.user.id, data.session.user.user_metadata)
+      if (data.session) checkAndFixProfile(data.session.user)
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session) {
-        await checkAndFixProfile(session.user.id, session.user.user_metadata)
+        await checkAndFixProfile(session.user)
 
         // merge phone/id_card จาก account เดิม กรณี LINE OAuth เริ่มจากหน้า ProfilePage
         const mergeRaw = sessionStorage.getItem('merge_profile_on_oauth')
@@ -512,7 +539,7 @@ function AppShell() {
       {showNameReminder ? (
         <NameReminderModal initialFullName={nameReminderInitial} onClose={() => setShowNameReminder(false)} />
       ) : showPhoneReminder && (
-        <PhoneReminderModal onClose={() => setShowPhoneReminder(false)} />
+        <PhoneReminderModal required={phoneReminderRequired} onClose={() => setShowPhoneReminder(false)} />
       )}
       <NotificationsProvider>
         {!isBackOffice && <Header />}
