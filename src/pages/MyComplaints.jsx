@@ -10,7 +10,7 @@ import { workingDaysLeft } from '../lib/workingDays'
 import {
   ClipboardList, Loader2, ChevronRight, X, MapPin,
   Phone, ArrowLeft, Check, XCircle, Navigation, Camera, AlignLeft,
-  ChevronLeft, Clock, Search, ImagePlus, Upload, FileText,
+  ChevronLeft, Clock, Search, ImagePlus, Upload, FileText, CheckCircle2,
 } from 'lucide-react'
 
 const MAX_CITIZEN_PHOTOS = 3
@@ -90,6 +90,30 @@ function StatusBadge({ status }) {
 }
 
 const STATUS_COMPAT = { pending: 'new', done: 'done', completed: 'closed' }
+
+// หมวดเฉพาะกิจ (complaint_categories.is_adhoc เช่น กลิ่นเหม็นรบกวน) ส่งตรงถึงผู้รับผิดชอบและ
+// "ไม่แตะ status เลย" ตลอดสายงาน — ผู้แจ้งจึงเห็น "คำร้องใหม่" ค้างตลอดกาลแม้เจ้าหน้าที่รับเรื่อง
+// ไปแล้ว ซึ่งอ่านได้เป็น "ไม่มีใครสนใจเรื่องของฉัน" ความคืบหน้าจริงของสายงานนี้อยู่ที่
+// extra_data.acknowledged_at (เขียนโดย acknowledge_odor_complaint() ฝั่งเซิร์ฟเวอร์เท่านั้น)
+// ใช้การมีอยู่ของคีย์นี้เป็นสัญญาณ ไม่ต้อง query complaint_categories เพิ่มเพื่อถาม is_adhoc
+function ackAtOf(complaint) {
+  const at = complaint?.extra_data?.acknowledged_at
+  if (!at) return null
+  const time = new Date(at)
+  return Number.isNaN(time.getTime()) ? null : time
+}
+
+function AckBadge({ complaint, withTime = false }) {
+  const at = ackAtOf(complaint)
+  if (!at) return null
+  return (
+    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap bg-lime-100 text-lime-800">
+      <CheckCircle2 size={12} />
+      เจ้าหน้าที่รับทราบแล้ว
+      {withTime && ` · ${at.toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}`}
+    </span>
+  )
+}
 
 const RATING_FACE = {
   5: { emoji: '😄', label: 'ยอดเยี่ยม' },
@@ -363,6 +387,13 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange, onRate, catLa
           {/* status stepper */}
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">ความคืบหน้า</p>
+            {/* สายงานเฉพาะกิจไม่มีขั้นสถานะให้ไล่ — บอกตรงๆ ว่ามีผู้รับผิดชอบรับเรื่องแล้วเมื่อไหร่
+                แทนที่จะปล่อยให้ stepper ค้างที่ "คำร้องใหม่" เป็นข้อมูลเดียวที่ผู้แจ้งได้เห็น */}
+            {ackAtOf(c) && (
+              <div className="mb-3 flex items-center gap-2 rounded-2xl border border-lime-200 bg-lime-50 px-3 py-2.5">
+                <AckBadge complaint={c} withTime />
+              </div>
+            )}
             <StatusStepper status={c.status} />
           </div>
 
@@ -924,6 +955,7 @@ export default function MyComplaints() {
                     )}
                     <div className="flex items-center gap-2 mt-2 flex-wrap">
                       <StatusBadge status={c.status} />
+                      <AckBadge complaint={c} />
                       <SlaBadge dueDate={c.due_date} status={c.status} />
                       {c.ref_no && (
                         <span className="text-[11px] text-gray-400 font-mono">{c.ref_no}</span>
