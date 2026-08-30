@@ -474,21 +474,39 @@ async function confirmDialog(page) {
   return true
 }
 
-/** หาแถวของคำร้องในตาราง/การ์ด — รอจริงเพราะรายการโหลดจาก DB หลังหน้า mount */
-async function complaintRow(page, refNo) {
-  const row = page.locator('tr:visible, div[class*="cursor-pointer"]:visible')
+/**
+ * หาแถวของคำร้องในตาราง/การ์ด — รอจริงเพราะรายการโหลดจาก DB หลังหน้า mount
+ *
+ * ต้องมีรอบสองเสมอ: ComplaintsManager ดึงรายการครั้งเดียวตอน mount ไม่ได้ subscribe realtime
+ * คำร้องที่เพิ่งถูกสร้างจากอีก browser context หนึ่งเมื่อไม่กี่วินาทีก่อนจึงมีสิทธิ์ไม่อยู่ในชุดที่
+ * ดึงมา แล้วรอจนหมดเวลาไปเปล่าๆ (เจอจริง 2026-08-30: --write BLOCKED ที่ ES-69-0009
+ * แต่เปิดหน้าเดิมซ้ำอีกครั้งเจอแถวทันที) เปิดโมดูลใหม่ = ดึงรายการใหม่
+ */
+async function complaintRow(page, refNo, { reopen = null } = {}) {
+  const locate = () => page.locator('tr:visible, div[class*="cursor-pointer"]:visible')
     .filter({ hasText: refPattern(refNo) }).first()
+
   try {
+    const row = locate()
     await row.waitFor({ state: 'visible', timeout: 15_000 })
+    return row
   } catch {
-    throw new BlockedError(`ไม่พบคำร้อง ${refNo} ในรายการของหน้านี้`)
+    if (!reopen) throw new BlockedError(`ไม่พบคำร้อง ${refNo} ในรายการของหน้านี้`)
   }
-  return row
+
+  await reopen(page)
+  try {
+    const row = locate()
+    await row.waitFor({ state: 'visible', timeout: 15_000 })
+    return row
+  } catch {
+    throw new BlockedError(`ไม่พบคำร้อง ${refNo} ในรายการของหน้านี้ (เปิดรายการใหม่แล้วสองรอบ)`)
+  }
 }
 
 /** กดปุ่มเปลี่ยนสถานะของคำร้องหนึ่งเรื่อง — ปุ่มอยู่ในแถวเลย ไม่ต้องเปิด modal */
 async function actOnComplaint(page, refNo, buttonName) {
-  const row = await complaintRow(page, refNo)
+  const row = await complaintRow(page, refNo, { reopen: openStaffComplaints })
   let button = row.locator('button:visible').filter({ hasText: buttonName }).first()
   if (!await isVisible(button)) {
     // บางสถานะปุ่มอยู่ในแผงรายละเอียดที่ต้องกดเปิดก่อน
@@ -508,7 +526,7 @@ async function actOnComplaint(page, refNo, buttonName) {
  * จึงไม่มี auto-assign ถ้าไม่มอบหมายเอง งานจะไม่โผล่ในคิวของช่างเลย
  */
 async function assignComplaint(page, refNo) {
-  const row = await complaintRow(page, refNo)
+  const row = await complaintRow(page, refNo, { reopen: openStaffComplaints })
   await row.click()
   await waitForApp(page, 1_200)
 
