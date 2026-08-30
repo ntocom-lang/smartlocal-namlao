@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase, signOutSafely } from '../../lib/supabase'
 import { describeDevice, relativeTimeTh } from '../../lib/deviceLabel'
-import { Loader2, Monitor, Smartphone, Tablet, HelpCircle, LogOut, RefreshCw } from 'lucide-react'
+import { Loader2, Monitor, Smartphone, Tablet, HelpCircle, LogOut, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react'
 
 // "อุปกรณ์ที่ล็อกอินอยู่" — ให้เจ้าของบัญชีเห็นเองว่า session ค้างอยู่ที่เครื่องไหนบ้าง
 // แล้วเตะออกทีละเครื่องได้ แก้ปัญหาลืมกดออกจากระบบบนเครื่องคนอื่นโดยไม่ต้องให้ระบบ
@@ -13,6 +13,9 @@ import { Loader2, Monitor, Smartphone, Tablet, HelpCircle, LogOut, RefreshCw } f
 const ICONS = { desktop: Monitor, mobile: Smartphone, tablet: Tablet, unknown: HelpCircle }
 
 export default function ActiveSessions() {
+  // พับไว้ก่อน กดแล้วค่อยกาง — หน้าโปรไฟล์เป็นหน้าที่คนเข้าบ่อยเพื่อแก้ชื่อ/ที่อยู่
+  // รายการอุปกรณ์เป็นของที่นานๆ ใช้ที ไม่ควรกินพื้นที่และไม่ควรยิง RPC ทุกครั้งที่เปิดหน้า
+  const [open, setOpen] = useState(false)
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -22,6 +25,7 @@ export default function ActiveSessions() {
   const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
+    if (!open) return
     let cancelled = false
     supabase.rpc('list_my_sessions').then(({ data, error: rpcError }) => {
       if (cancelled) return
@@ -37,7 +41,7 @@ export default function ActiveSessions() {
       setBusyId(null)
     })
     return () => { cancelled = true }
-  }, [reloadKey])
+  }, [open, reloadKey])
 
   async function handleRevoke(row) {
     const device = describeDevice(row.user_agent).label
@@ -68,19 +72,29 @@ export default function ActiveSessions() {
 
   return (
     <div className="bg-white rounded-2xl shadow-xs overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-        <span className="text-sm font-semibold text-gray-700">อุปกรณ์ที่ล็อกอินอยู่</span>
+      <div className={`flex items-center gap-2 px-5 py-4 ${open ? 'border-b border-gray-100' : ''}`}>
         <button
           type="button"
-          onClick={() => { setLoading(true); setReloadKey((k) => k + 1) }}
-          className="text-gray-400 hover:text-gray-600 transition-colors"
-          aria-label="โหลดรายการใหม่"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="flex-1 flex items-center gap-2 text-left"
         >
-          <RefreshCw size={15} />
+          {open ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronRight size={16} className="text-gray-400" />}
+          <span className="text-sm font-semibold text-gray-700">อุปกรณ์ที่ล็อกอินอยู่</span>
         </button>
+        {open && (
+          <button
+            type="button"
+            onClick={() => { setLoading(true); setReloadKey((k) => k + 1) }}
+            className="text-gray-400 hover:text-gray-600 transition-colors shrink-0"
+            aria-label="โหลดรายการใหม่"
+          >
+            <RefreshCw size={15} />
+          </button>
+        )}
       </div>
 
-      {loading ? (
+      {!open ? null : loading ? (
         <div className="px-5 py-6 flex items-center justify-center text-gray-400">
           <Loader2 size={18} className="animate-spin" />
         </div>
@@ -129,15 +143,15 @@ export default function ActiveSessions() {
         </div>
       )}
 
-      {error && <p className="px-5 pb-4 text-xs text-red-500 font-semibold">{error}</p>}
+      {open && error && <p className="px-5 pb-4 text-xs text-red-500 font-semibold">{error}</p>}
 
       {/* สองข้อนี้ต้องเขียนไว้ให้เห็น ไม่ใช่ให้ผู้ใช้ไปเจอเอาเองตอนใช้งานจริง */}
-      <p className="px-5 py-3 text-[11px] text-gray-400 leading-relaxed border-t border-gray-100">
+      {open && <p className="px-5 py-3 text-[11px] text-gray-400 leading-relaxed border-t border-gray-100">
         เครื่องที่ถูกเตะออกจะเข้าใช้งานต่อได้อีกไม่เกิน 1 ชั่วโมงก่อนหลุดจริง
         เพราะสิทธิ์ที่เครื่องนั้นถืออยู่ต้องรอหมดอายุตามรอบ<br />
         ถ้าเตะมือถือของตัวเองออก จะอนุมัติการเข้าสู่ระบบด้วยรหัส 6 หลักบนคอมพิวเตอร์ไม่ได้
         จนกว่าจะเข้าสู่ระบบบนมือถือใหม่
-      </p>
+      </p>}
     </div>
   )
 }
