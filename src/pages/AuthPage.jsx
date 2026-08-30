@@ -5,15 +5,10 @@ import { isNetworkAuthError } from '../lib/authErrors'
 import { useTenant } from '../contexts/TenantContext'
 import DeviceLoginPanel from '../components/auth/DeviceLoginPanel'
 import { appUrl } from '../lib/basename'
-import { Mail, Lock, Loader2, UserCircle2, Phone, Eye, EyeOff, ExternalLink, ArrowLeft, Smartphone } from 'lucide-react'
+import { Mail, Lock, Loader2, UserCircle2, Phone, Eye, EyeOff, ArrowLeft, Smartphone } from 'lucide-react'
 import { NAME_TITLES, joinThaiFullName } from '../lib/thaiName'
 import { phoneToLoginEmail, normalizeThaiPhone } from '../lib/authProviders'
 import { validateNewPassword, PASSWORD_HINT } from '../lib/passwordPolicy'
-
-function detectInAppBrowser() {
-  const ua = navigator.userAgent || ''
-  return /FBAN|FBAV|Instagram|Line\/|Twitter\/|MicroMessenger|GSA\/|Musical_ly/.test(ua)
-}
 
 // พิมพ์อีเมลมาก็ใช้ตามนั้น พิมพ์เบอร์มาก็แปลงเป็นอีเมลปลอมรูปแบบเดียวของระบบ
 //
@@ -31,7 +26,6 @@ export default function AuthPage() {
   const location = useLocation()
   const { tenant } = useTenant()
   const from = location.state?.from ?? '/'
-  const inAppBrowser = detectInAppBrowser()
 
   const [mode, setMode] = useState('login') // 'login' | 'register' | 'forgot'
   const [form, setForm] = useState({ email: '', password: '', name_title: '', name_first: '', name_last: '', phone: '' })
@@ -87,7 +81,7 @@ export default function AuthPage() {
         // ไม่ถูกเรียก บัญชีที่สมัครใหม่จึงค้างเป็น municipality_id = null ถาวร
         // queryParams ถูกต่อท้าย URL /authorize ของ GoTrue แล้วส่งต่อไปยัง provider ตัวจริง
         // (GoTrue ตัดทิ้งเฉพาะพารามิเตอร์ที่ตัวเองคุม เช่น redirect_uri/state/code_challenge
-        // ที่เหลือ forward ให้หมด) ใช้สั่งพฤติกรรมฝั่ง LINE ได้โดยไม่ต้องประกอบ URL เอง
+        // ที่เหลือ forward ให้หมด) ใช้สั่งพฤติกรรมฝั่ง provider ได้โดยไม่ต้องประกอบ URL เอง
         options: { redirectTo: appUrl('/'), ...(queryParams ? { queryParams } : {}) },
       })
       if (err) setError(errorText)
@@ -99,12 +93,23 @@ export default function AuthPage() {
     setProviderLoading(false)
   }
 
+  // prompt=select_account บังคับให้ Google ถามว่าจะใช้บัญชีไหนทุกครั้ง แทนที่จะหยิบบัญชีที่
+  // ล็อกอินค้างอยู่ในเบราว์เซอร์ให้เงียบๆ
+  //
+  // เคสจริงที่ต้องกัน: เครื่อง PC ที่ใช้ร่วมกันในสำนักงาน หรือประชาชนที่ยืมเครื่องคนอื่นกด
+  // ของเดิมกดปุ่มนี้แล้วเข้าเป็นบัญชีเจ้าของเครื่องทันทีโดยไม่มีจังหวะให้รู้ตัว ผลคือคำร้องและ
+  // audit log บันทึกผู้กระทำผิดตัว ซึ่งเป็นหลักฐานที่ สตง./ป.ป.ช. ใช้ตรวจย้อนหลังได้
+  // (โปรเจกต์นี้รู้ปัญหานี้อยู่แล้ว จึงมีปุ่ม QR ล็อกอินข้ามเครื่องไว้เป็นทางเลือก แต่นั่นคือการ
+  // เพิ่มทางที่ถูก ไม่ได้อุดทางที่ผิด — พารามิเตอร์นี้อุดที่ต้นทาง)
+  //
+  // ไม่ทำแบบเดียวกันกับ LINE เพราะ auto login ของ LINE ผูกกับแอปบนเครื่องนั้น ไม่ใช่ session
+  // ค้างในเบราว์เซอร์ และการบังคับ prompt จะทำให้ผู้สูงอายุบนมือถือตัวเองต้องล็อกอินใหม่ทุกครั้ง
   async function handleGoogle() {
-    if (inAppBrowser) {
-      setError('ไม่สามารถเข้าสู่ระบบด้วย Google ในบราวเซอร์นี้ได้ กรุณาเปิดลิงก์ใน Safari ก่อน')
-      return
-    }
-    await startOAuth('google', { setLoading: setLoadingGoogle, errorText: 'ไม่สามารถเข้าสู่ระบบด้วย Google ได้' })
+    await startOAuth('google', {
+      setLoading: setLoadingGoogle,
+      errorText: 'ไม่สามารถเข้าสู่ระบบด้วย Google ได้',
+      queryParams: { prompt: 'select_account' },
+    })
   }
 
   async function handleLine() {
@@ -282,43 +287,6 @@ export default function AuthPage() {
     <div className="min-h-screen flex items-center justify-center px-4 pt-10 pb-28">
       <div className="w-full max-w-sm bg-white rounded-3xl shadow-xl border border-gray-100 p-8">
 
-        {/* In-app browser warning */}
-        {inAppBrowser && (
-          <div className="mb-5 bg-amber-50 border border-amber-200 rounded-2xl p-4">
-            <p className="text-sm font-semibold text-amber-800 mb-1">⚠️ เปิดในบราวเซอร์ในแอป</p>
-            <p className="text-xs text-amber-700 mb-3">
-              ไม่สามารถเข้าสู่ระบบด้วย Google ได้จากบราวเซอร์นี้
-              กรุณาเปิดในบราวเซอร์จริงก่อน
-            </p>
-            <div className="flex flex-col gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  const url = window.location.href
-                  window.location.href = url.replace(/^https:\/\//, 'googlechromes://').replace(/^http:\/\//, 'googlechrome://')
-                }}
-                className="flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-white border border-amber-300 text-amber-900 text-xs font-semibold shadow-sm active:scale-95 transition-all"
-              >
-                <svg width="14" height="14" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M47.5 24.5c0-1.6-.1-3.2-.4-4.7H24v8.9h13.2c-.6 3-2.3 5.6-4.9 7.3v6h7.9c4.6-4.3 7.3-10.6 7.3-17.5z" fill="#4285F4"/>
-                  <path d="M24 48c6.6 0 12.2-2.2 16.2-5.9l-7.9-6c-2.2 1.5-5 2.3-8.3 2.3-6.4 0-11.8-4.3-13.7-10.1H2.1v6.2C6.1 42.7 14.5 48 24 48z" fill="#34A853"/>
-                  <path d="M10.3 28.3c-.5-1.5-.8-3-.8-4.3s.3-2.8.8-4.3v-6.2H2.1C.8 16.2 0 19.9 0 24s.8 7.8 2.1 10.5l8.2-6.2z" fill="#FBBC05"/>
-                  <path d="M24 9.5c3.6 0 6.8 1.2 9.3 3.6l6.9-6.9C36.2 2.3 30.6 0 24 0 14.5 0 6.1 5.3 2.1 13.5l8.2 6.2C12.2 13.8 17.6 9.5 24 9.5z" fill="#EA4335"/>
-                </svg>
-                เปิดใน Google Chrome
-              </button>
-              <a
-                href={window.location.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-white border border-amber-300 text-amber-900 text-xs font-semibold shadow-sm active:scale-95 transition-all"
-              >
-                <ExternalLink size={13} />
-                เปิดใน Safari
-              </a>
-            </div>
-          </div>
-        )}
 
 
         <div className="flex justify-center mb-5">

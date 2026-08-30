@@ -46,6 +46,7 @@ export default function ProfilePage() {
   const [editAddress, setEditAddress] = useState(false)
   const [isGoogleLinked, setIsGoogleLinked] = useState(false)
   const [isLineLinked, setIsLineLinked] = useState(false)
+  const [linking, setLinking] = useState('')
   const [showChangePassword, setShowChangePassword] = useState(false)
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -215,18 +216,41 @@ export default function ProfilePage() {
     setSaving(false)
   }
 
-  async function handleGoogleLink() {
-    await supabase.auth.linkIdentity({
-      provider: 'google',
-      options: { redirectTo: window.location.href },
-    })
-  }
+  // ของเดิม await แล้วทิ้งค่าที่คืนมาทั้งก้อน ไม่ดู error ไม่มีสปินเนอร์ ไม่มีข้อความ ผู้ใช้กดแล้ว
+  // ไม่มีอะไรเกิดขึ้นเลย แยกไม่ออกว่าเน็ตช้า กดไม่โดน หรือระบบพัง แล้วก็กดซ้ำไปเรื่อยๆ
+  //
+  // linkIdentity คืน { error } เมื่อ API ปฏิเสธ (เช่น identity นั้นผูกกับผู้ใช้รายอื่นอยู่แล้ว หรือ
+  // "Allow manual linking" ถูกปิดในโปรเจกต์) และ reject ได้ด้วยเมื่อเน็ตหลุด/ชน timeout ของ
+  // fetchWithTimeout ต้องครอบทั้งสองแบบ — รูปเดียวกับ startOAuth ใน AuthPage.jsx
+  //
+  // สำเร็จ = เบราว์เซอร์กำลัง redirect ออกไปหน้า provider จึง return ทิ้งสปินเนอร์ค้างไว้ตามเดิม
+  // การเคลียร์ค่าท้ายฟังก์ชันจึงมีผลเฉพาะตอนไปต่อไม่ได้เท่านั้น
+  async function linkProvider(provider, label) {
+    setMsg('')
+    setError('')
+    setLinking(provider)
+    try {
+      const { error: err } = await supabase.auth.linkIdentity({
+        provider,
+        options: { redirectTo: window.location.href },
+      })
+      if (!err) return
 
-  async function handleLineLink() {
-    await supabase.auth.linkIdentity({
-      provider: 'custom:line',
-      options: { redirectTo: window.location.href },
-    })
+      const message = String(err.message ?? '')
+      // เคสที่ผู้ใช้เจอบ่อยสุด: เคยสมัครไว้อีกบัญชีด้วย provider เดียวกันโดยไม่รู้ตัว
+      // ต้องบอกทางออกให้ด้วย ไม่ใช่แค่บอกว่าไม่สำเร็จ เพราะเขาแก้เองไม่ได้
+      if (/already|exists|duplicate|linked/i.test(message)) {
+        setError(`บัญชี ${label} นี้ถูกใช้ผูกกับผู้ใช้รายอื่นในระบบอยู่แล้ว หากเป็นบัญชีของท่านเอง กรุณาติดต่อเจ้าหน้าที่เพื่อรวมบัญชี`)
+      } else if (/manual linking|not enabled|disabled/i.test(message)) {
+        setError(`ระบบยังไม่เปิดให้เชื่อมต่อบัญชี ${label} กรุณาแจ้งผู้ดูแลระบบ`)
+      } else {
+        setError(`เชื่อมต่อ ${label} ไม่สำเร็จ: ${message}`)
+      }
+    } catch (err) {
+      console.error(`[profile] linkIdentity(${provider}) ล้มเหลว:`, err?.message ?? err)
+      setError(`เชื่อมต่อ ${label} ไม่สำเร็จ — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง กรุณาลองใหม่`)
+    }
+    setLinking('')
   }
 
   if (loading) {
@@ -468,10 +492,11 @@ export default function ProfilePage() {
               </span>
             ) : (
               <button
-                onClick={handleGoogleLink}
-                className="text-xs text-gray-500 border border-gray-200 px-3 py-1 rounded-full hover:bg-gray-50 transition-colors"
+                onClick={() => linkProvider('google', 'Google')}
+                disabled={linking !== ''}
+                className="text-xs text-gray-500 border border-gray-200 px-3 py-1 rounded-full hover:bg-gray-50 transition-colors disabled:opacity-50"
               >
-                เชื่อมต่อ
+                {linking === 'google' ? 'กำลังเปิด...' : 'เชื่อมต่อ'}
               </button>
             )}
           </div>
@@ -489,10 +514,11 @@ export default function ProfilePage() {
               </span>
             ) : (
               <button
-                onClick={handleLineLink}
-                className="text-xs text-gray-500 border border-gray-200 px-3 py-1 rounded-full hover:bg-gray-50 transition-colors"
+                onClick={() => linkProvider('custom:line', 'LINE')}
+                disabled={linking !== ''}
+                className="text-xs text-gray-500 border border-gray-200 px-3 py-1 rounded-full hover:bg-gray-50 transition-colors disabled:opacity-50"
               >
-                เชื่อมต่อ
+                {linking === 'custom:line' ? 'กำลังเปิด...' : 'เชื่อมต่อ'}
               </button>
             )}
           </div>
