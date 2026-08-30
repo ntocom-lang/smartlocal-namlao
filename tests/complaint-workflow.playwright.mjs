@@ -22,6 +22,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 import { chromium } from 'playwright'
+import { BlockedError, navigateClientSide as settleAndNavigate, trackProfileResolution, waitForSettled } from './lib/appReady.mjs'
 
 const ROOT_DIR = process.cwd()
 const LOCAL_ENV_PATH = path.join(ROOT_DIR, '.env.test.local')
@@ -52,7 +53,14 @@ const TEST_TECHNICIAN = 'ช่างไฟฟ้า'
 const TEST_FIRST_NAME = '[TEST]ผู้ทดสอบ'
 const TEST_LAST_NAME = 'ระบบสาธิต'
 
-class BlockedError extends Error {}
+// บัญชีหลังบ้านที่ใช้ทดสอบ "กดข้ามกล่อง onboarding แล้วต้องไม่เด้งซ้ำ" เรียงตามลำดับที่จะลอง
+// ต้องลองหลายบัญชี เพราะเงื่อนไขของเทสต์คือบัญชีนั้น "ยังไม่มีเบอร์/ชื่อ" ซึ่งเปลี่ยนได้ตลอดเวลา
+// (2026-08-30 demo-technician-2 ถูกกรอกเบอร์ครบแล้ว เทสต์จึงรายงาน BLOCKED ทั้งที่โค้ดปกติ)
+const REMINDER_CANDIDATES = [
+  { alias: 'demo-technician', profile: 'technician', routes: ['/technician', '/staff', '/technician', '/profile'] },
+  { alias: 'demo-technician-2', profile: 'technician-2', routes: ['/technician', '/staff', '/technician', '/profile'] },
+  { alias: 'demo-council', profile: 'council', routes: ['/staff', '/profile', '/staff'] },
+]
 
 // ───────────────────────────────────────────────────────────── config/safety ──
 
@@ -125,6 +133,8 @@ function safeReason(error) {
 
 // ────────────────────────────────────────────────────────────── page helpers ──
 
+// ใช้รอ "ผลของการคลิก" (modal เปิด/รายการรีเฟรช) เท่านั้น การเปลี่ยนหน้าใช้ navigateClientSide
+// ที่รอสัญญาณจริงแทนการนอนรอเวลา — ดูเหตุผลใน tests/lib/appReady.mjs
 async function waitForApp(page, milliseconds = 1_200) {
   await page.waitForTimeout(milliseconds)
 }
@@ -133,13 +143,12 @@ function pathnameOf(page) {
   return new URL(page.url()).pathname
 }
 
+// ผูก authState (จังหวะที่ role ถูก resolve) ไว้กับ page เพื่อให้จุดที่เรียก navigateClientSide
+// ทั้งไฟล์ไม่ต้องส่งพารามิเตอร์เพิ่มทีละจุด
+const authStates = new WeakMap()
+
 async function navigateClientSide(page, route) {
-  await page.evaluate((nextRoute) => {
-    window.history.pushState({}, '', nextRoute)
-    window.dispatchEvent(new PopStateEvent('popstate'))
-  }, route)
-  await waitForApp(page)
-  return pathnameOf(page)
+  return settleAndNavigate(page, authStates.get(page), route)
 }
 
 async function isVisible(locator) {
@@ -250,8 +259,10 @@ async function withAccount(alias, profile, baseUrl, headed, fn) {
       if (TELEGRAM_ERROR_PATTERN.test(error?.message ?? '')) consoleErrors.push('telegram-notification-failed')
     })
 
+    // ต้องดักก่อน goto เสมอ ไม่งั้น response ของ profiles รอบ boot หลุดไปก่อนติดตั้ง listener
+    authStates.set(page, trackProfileResolution(page))
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 25_000 })
-    await waitForApp(page, 1_800)
+    await waitForSettled(page, authStates.get(page))
     await loginAs(page, alias)
     return await fn(page, consoleErrors)
   } finally {
@@ -299,18 +310,25 @@ async function checkCitizenReminderDismissal(baseUrl, headed) {
 
 /** ข้อ 3 (ต่อ): หลังบ้านต้องไม่ถูก overlay ของ onboarding ประชาชนบัง */
 async function checkBackOfficeNotBlocked(baseUrl, headed) {
-  return withAccount('demo-technician-2', 'technician-2', baseUrl, headed, async (page) => {
-    const sawReminder = await dismissProfileReminders(page)
-    if (!sawReminder) {
-      // ไม่เจอกล่องเตือนตั้งแต่แรก = ทดสอบ "กดข้ามแล้วต้องไม่เด้งซ้ำ" ไม่ได้จริง
-      // ต้องรายงาน BLOCKED ไม่ใช่ PASS ไม่งั้นเป็นผลลวงที่บอกว่าบั๊กถูกแก้แล้วทั้งที่ไม่เคยตรวจ
-      throw new BlockedError('บัญชี demo-technician-2 มีเบอร์/ชื่อครบแล้ว จึงไม่มีกล่องเตือนให้ทดสอบ')
-    }
-    for (const route of ['/technician', '/staff', '/technician', '/profile']) {
-      await navigateClientSide(page, route)
-      await assertNoProfileReminder(page, route)
-    }
-  })
+  // เงื่อนไขของเทสต์นี้คือต้องเจอกล่องเตือนก่อน ถึงจะพิสูจน์ได้ว่ากดข้ามแล้วไม่เด้งซ้ำ
+  // บัญชีไหนถูกกรอกเบอร์ครบไปแล้วก็ข้ามไปลองบัญชีถัดไป ไม่ใช่จบเป็น BLOCKED ทันที
+  const skipped = []
+  for (const candidate of REMINDER_CANDIDATES) {
+    const done = await withAccount(candidate.alias, candidate.profile, baseUrl, headed, async (page) => {
+      if (!await dismissProfileReminders(page)) return false
+      for (const route of candidate.routes) {
+        await navigateClientSide(page, route)
+        await assertNoProfileReminder(page, `${candidate.alias} ที่ ${route}`)
+      }
+      return true
+    })
+    if (done) return
+    skipped.push(candidate.alias)
+  }
+
+  // ไม่เจอกล่องเตือนเลยสักบัญชี = ทดสอบไม่ได้จริง ต้องรายงาน BLOCKED ไม่ใช่ PASS
+  // ไม่งั้นเป็นผลลวงที่บอกว่าบั๊กถูกแก้แล้วทั้งที่ไม่เคยตรวจ
+  throw new BlockedError(`บัญชีหลังบ้านที่ลอง (${skipped.join(', ')}) มีเบอร์/ชื่อครบแล้ว จึงไม่มีกล่องเตือนให้ทดสอบ`)
 }
 
 /** เปิดงานของช่างจาก marker แล้วกดปุ่มที่ระบุในแผงรายละเอียด */

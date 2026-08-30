@@ -18,7 +18,8 @@
     "test:workflow:write": "node tests/complaint-workflow.playwright.mjs --write",
     "test:fleet": "node tests/fleet-workflow.playwright.mjs",
     "test:fleet:write": "node tests/fleet-workflow.playwright.mjs --write",
-    "test:fleet:cleanup": "node tests/fleet-workflow.playwright.mjs --cleanup"
+    "test:fleet:cleanup": "node tests/fleet-workflow.playwright.mjs --cleanup",
+    "test:local-build": "node tests/verify-local-build.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

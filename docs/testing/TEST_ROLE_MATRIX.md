@@ -112,13 +112,22 @@ access token, refresh token, recovery code หรือ browser storage/session 
    - `municipality_id` ของบัญชีต้องเป็นของ `demo` เท่านั้น
      ถ้าเป็น `namlao`/`tamnaktham`/`thungkaew`/`muangphrae` ให้หยุดทันที
    - ยกเว้น `demo-superadmin` ที่ต้องเป็น `NULL` โดยเจตนา — ดูคำเตือนข้างบน
-3. **เปิด Chrome Profile แยกอิสระ:**
-   - `.\scripts\launch-test-profiles.ps1 -Role <role_name>`
-   - ตัวอย่าง: `.\scripts\launch-test-profiles.ps1 -Role technician`
-4. **ล็อกอินครั้งแรก:**
-   - ผู้ดูแลล็อกอินด้วย Email ตามตารางใน Profile นั้น 1 ครั้ง เพื่อให้ Session ฝังใน Profile อิสระ
-5. **ส่งต่อให้ Agent / Tester ทดสอบ:**
-   - แจ้งเฉพาะ Alias หรือ Role ของ Profile ที่เปิดอยู่ เพื่อรัน UI / E2E Test โดยไม่ต้องรับรู้หรือส่ง Credential ในแชท
+3. **ตั้งค่า Automated Login บนเครื่องทดสอบครั้งเดียว:**
+   - สร้าง `.env.test.local` (ถูก `.gitignore` ด้วย `.env*` อยู่แล้ว) และใส่เฉพาะ:
+     `DEMO_TEST_PASSWORD=...` กับ `DEMO_SUPERADMIN_PASSWORD=...`
+   - บน Windows runner อ่านค่าเดียวกันจาก User Environment (`HKCU\\Environment`) เป็น fallback อัตโนมัติ
+     จึงใช้ได้แม้ Claude/Codex ถูกเปิดก่อนตั้งค่า environment โดยไม่ต้องส่งรหัสผ่านในแชท
+   - ห้าม commit, ห้ามส่งค่าในแชท และห้ามใช้รหัสนี้กับบัญชีจริง
+4. **ตรวจ config โดยไม่เปิด browser:**
+   - `npm run test:demo-roles:check`
+5. **รันทั้ง 17 บัญชี:**
+   - `npm run test:demo-roles`
+   - runner ยอมรับเฉพาะ `https://demo.rk-networks.com`, ใช้ persistent session/Chrome autofill เดิมก่อน และ login อัตโนมัติจาก local credential เมื่อ session ไม่พร้อม
+   - รันเฉพาะบางบัญชี: `npm run test:demo-roles -- --roles demo-admin,demo-technician`
+   - ดู browser ระหว่างทดสอบ: `npm run test:demo-roles -- --headed --roles demo-admin`
+6. **ผลทดสอบ:**
+   - เขียนลง `test-results.log` เฉพาะ alias, `PASS / FAIL / BLOCKED` และเหตุผล โดยไม่บันทึก password, token หรือข้อมูลในหน้า
+   - `demo-superadmin` ตรวจเฉพาะ auth/profile; runner ไม่เปิด module ที่อาจดึงข้อมูลข้าม อปท.
 
 ## เกณฑ์ส่งมอบการทดสอบ
 

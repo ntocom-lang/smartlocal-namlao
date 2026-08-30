@@ -1568,9 +1568,17 @@ export default function StaffDashboard() {
   const enabledKeys = Array.from(new Set([...baseEnabledKeys, ...councilExtraKeys]))
   // ตัดอีกชั้นสำหรับช่าง — ต้องผ่านทั้ง enabled_modules ของ อปท. และลิสต์ที่ช่างมีสิทธิ์จริง
   // (ทำเป็นชั้นแยก ไม่ไปยุ่งกับ enabledKeys เดิม เพื่อไม่ให้กระทบ role อื่น)
-  const scopedKeys = role === 'technician'
+  // 'fleet' ไม่ได้ผูกกับ role หลัก แต่ผูกกับ profiles.fleet_role อีกคอลัมน์หนึ่ง เงื่อนไขต้องตรงกับ
+  // hasAccess ใน FleetPage เป๊ะๆ (fleet_role ใดก็ได้ หรือเป็น admin/superadmin ของ อปท.)
+  // ของเดิมกรองด้วย enabled_modules อย่างเดียว เจ้าหน้าที่ที่ไม่ได้ถูกตั้ง fleet_role จึงเห็นเมนู
+  // "ยานพาหนะ/น้ำมัน" แล้วกดไปเจอ "ไม่มีสิทธิ์เข้าใช้ระบบ" — เมนูหลอกแบบเดียวกับ defect P1 ของ
+  // Fleet ที่เพิ่งแก้ไป (ปุ่มจองรถโผล่ให้ fleet_viewer) และขัดกับ TEST_ROLE_MATRIX ที่ระบุว่า
+  // demo-staff "ต้องไม่เห็นเมนูยานพาหนะ"
+  const hasFleetAccess = Boolean(profile?.fleet_role) || role === 'admin' || role === 'superadmin'
+  const roleScopedKeys = role === 'technician'
     ? enabledKeys.filter(k => TECHNICIAN_MODULE_KEYS.includes(k))
     : enabledKeys
+  const scopedKeys = hasFleetAccess ? roleScopedKeys : roleScopedKeys.filter(k => k !== 'fleet')
   const visibleStandaloneGroups = STANDALONE_GROUPS
     .map(g => ({ ...g, items: g.items.filter(m => scopedKeys.includes(m.key)) }))
     .filter(g => g.items.length > 0)
