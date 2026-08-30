@@ -110,7 +110,7 @@ function SignatoryRow({ slot, people, assignment, onSaved }) {
   }
 
   async function clear() {
-    if (!assignment || !window.confirm(`ยกเลิกผู้ลงนามตำแหน่ง “${slot.label}”?`)) return
+    if (!assignment || !window.confirm(`ยกเลิกผู้ลงนาม “${slot.label}”?`)) return
     setSaving(true)
     setError('')
     const { error: clearError } = await supabase.rpc('clear_document_signatory', {
@@ -246,7 +246,10 @@ export default function ComplaintSignatorySettings({ tenant }) {
         key: assignmentKey('department_head', department.id),
         role: 'department_head', municipalityId: tenant?.id,
         departmentId: department.id, departmentName: department.name,
-        label: `หัวหน้า${department.name}`,
+        // ใช้ชื่อกองตรงๆ ห้ามเติมคำว่า "หัวหน้า" นำหน้า — หน่วยงานอย่าง "ตรวจสอบภายใน"
+        // ส่วนใหญ่ขึ้นตรงกับปลัดและไม่มีตำแหน่งหัวหน้า ป้ายที่เติมเองจึงผิดกับ อปท. จำนวนมาก
+        // ผลพลอยได้: ข้อความนี้กลายเป็นข้อมูล ไม่ใช่โค้ด ผู้ดูแลแก้เองได้ที่หน้าจัดการกอง/ส่วนราชการ
+        label: department.name,
       })),
   ], [departments, tenant?.id])
 
@@ -263,7 +266,8 @@ export default function ComplaintSignatorySettings({ tenant }) {
         <div className="min-w-0 flex-1">
           <h2 className="font-semibold text-gray-800">ผู้ลงนามแบบพิมพ์คำร้อง</h2>
           <p className="mt-1 text-xs leading-5 text-gray-500">
-            นายก/ปลัด ใช้กับคำร้องทุกใบ ส่วนหัวหน้าส่วนราชการใช้เฉพาะคำร้องที่ route เข้ากองนั้น
+            นายก/ปลัด ใช้กับคำร้องทุกใบ ส่วนแถวของแต่ละกองใช้เฉพาะคำร้องที่ route เข้ากองนั้น
+            (ชื่อแถวมาจากหน้าจัดการกอง/ส่วนราชการ แก้ที่นั่นแล้วเปลี่ยนตามทันที)
             เลือกจากบัญชีบุคลากรหรือกรอกชื่อและตำแหน่งเองสำหรับผู้ที่ไม่มีบัญชี
             โดยไม่เกี่ยวกับผู้รับผิดชอบลงพื้นที่หรือสิทธิ์เข้าเมนู
           </p>
@@ -282,7 +286,7 @@ export default function ComplaintSignatorySettings({ tenant }) {
         <div className="md:overflow-x-auto">
           <div className="rounded-xl border border-gray-200 md:min-w-180">
             <div className={`${GRID_CLASS} hidden border-b border-gray-200 bg-gray-50 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-gray-500 md:grid`}>
-              <span>ตำแหน่งผู้ลงนาม</span>
+              <span>ผู้ลงนามประจำ</span>
               <span>ผู้ลงนาม *</span>
               <span>ชื่อตำแหน่งที่พิมพ์</span>
               <span className="text-right">จัดการ</span>
