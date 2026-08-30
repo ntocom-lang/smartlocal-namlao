@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2, Wallpaper, MapPinned, X, Plus } from 'lucide-react'
+import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2, Wallpaper, MapPinned, X, Plus, ShieldCheck, Trash2, RefreshCw, AlertTriangle } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { uploadFile, toReliableImageUrl } from '../../lib/driveStorage'
 import { useTenant } from '../../contexts/TenantContext'
@@ -532,7 +532,153 @@ const SETTINGS_TABS = [
   { key: 'branding',     label: 'แบรนด์และรูปภาพ',    icon: Wallpaper, Component: BrandingTab },
   { key: 'qr',           label: 'โลโก้/QR Code',      icon: QrCode,    Component: QrCodeTab },
   { key: 'departments',  label: 'กอง/หน่วยงาน',      icon: Building2, Component: DepartmentsTab },
+  { key: 'retention',    label: 'ข้อมูลส่วนบุคคล',    icon: ShieldCheck, Component: DataRetentionTab },
 ]
+
+// ระยะเวลาเก็บรักษาที่ประกาศไว้กับประชาชนในฟอร์มและ PDPA modal (src/pages/CitizenForm.jsx)
+// ต้องเป็นค่าเดียวกับที่ส่งให้ฐานข้อมูล ไม่งั้นหน้าจอกับสิ่งที่ลบจริงจะคนละเรื่องกัน
+const RETENTION = '5 years'
+const RETENTION_LABEL = '5 ปีนับจากวันปิดเรื่อง'
+
+// การลบข้อมูลติดต่อของประชาชนเคยเป็น cron รายวัน แต่ถอดออกแล้ว (migration 20260902150000)
+// ให้เป็นการกระทำที่มีคนรับผิดชอบแทน — แท็บนี้คือหน้าที่ทำให้คำประกาศเรื่องระยะเวลาเก็บรักษา
+// เป็นจริงได้โดยไม่ต้องเข้า SQL editor: ดูจำนวนที่ถึงกำหนด แล้วกดลบเมื่อตัดสินใจแล้ว
+// ตัวเลขทั้งหมดมาจาก complaint_contact_retention_preview() (อ่านอย่างเดียว) และการลบไปที่
+// purge_due_complaint_contacts() ที่บังคับให้ส่งจำนวนบนหน้าจอไปยืนยันกับความจริงฝั่งเซิร์ฟเวอร์
+function DataRetentionTab() {
+  const [preview, setPreview] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [purging, setPurging] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [error, setError] = useState(null)
+  const [result, setResult] = useState(null)
+
+  async function loadPreview() {
+    setLoading(true)
+    setError(null)
+    const { data, error: rpcError } = await supabase
+      .rpc('complaint_contact_retention_preview', { p_retention: RETENTION })
+    if (rpcError) setError('ดูข้อมูลไม่สำเร็จ: ' + rpcError.message)
+    else setPreview(data)
+    setLoading(false)
+  }
+
+  useEffect(() => { queueMicrotask(loadPreview) }, [])
+
+  async function runPurge() {
+    setPurging(true)
+    setError(null)
+    setResult(null)
+    const { data, error: rpcError } = await supabase.rpc('purge_due_complaint_contacts', {
+      p_expected_count: preview?.due_for_purge ?? 0,
+      p_retention: RETENTION,
+    })
+    if (rpcError) setError('ลบไม่สำเร็จ: ' + rpcError.message)
+    else setResult(data)
+    setConfirming(false)
+    setPurging(false)
+    await loadPreview()
+  }
+
+  const due = preview?.due_for_purge ?? 0
+  const cutoffLabel = preview?.cutoff
+    ? new Date(preview.cutoff).toLocaleDateString('th-TH', { dateStyle: 'long' })
+    : '—'
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
+      <div>
+        <h2 className="text-base font-bold text-gray-800">ระยะเวลาเก็บข้อมูลติดต่อผู้แจ้ง</h2>
+        <p className="text-sm text-gray-500 mt-1">
+          หน่วยงานประกาศกับประชาชนในแบบฟอร์มว่าเก็บ <strong>ชื่อ-นามสกุลและเบอร์โทรศัพท์</strong> ไว้ {RETENTION_LABEL}
+          — หน้านี้คือที่ที่ทำให้คำประกาศนั้นเป็นจริง ระบบไม่ลบเองอัตโนมัติ ผู้ดูแลเป็นคนตัดสินใจกดลบ
+          (รายละเอียดคำร้อง พิกัด และสถิติไม่ถูกแตะ)
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-gray-400 py-6">
+          <Loader2 size={16} className="animate-spin" /> กำลังตรวจข้อมูล...
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: 'ถึงกำหนดลบแล้ว', value: due, tone: due > 0 ? 'text-red-600' : 'text-gray-800' },
+              { label: 'ยังเก็บข้อมูลติดต่ออยู่', value: preview?.holding_contacts ?? 0, tone: 'text-gray-800' },
+              { label: 'ตัดสินไม่ได้', value: preview?.skipped_no_anchor ?? 0, tone: 'text-amber-600' },
+            ].map(card => (
+              <div key={card.label} className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-3">
+                <p className="text-[11px] font-semibold text-gray-400">{card.label}</p>
+                <p className={`text-2xl font-bold mt-0.5 ${card.tone}`}>{card.value}</p>
+                <p className="text-[11px] text-gray-400">เรื่อง</p>
+              </div>
+            ))}
+          </div>
+
+          <p className="text-xs text-gray-500">
+            นับเรื่องที่ปิดก่อนวันที่ <strong>{cutoffLabel}</strong>
+            {preview?.scope === 'all_municipalities' ? ' (ทุกหน่วยงาน)' : ' (เฉพาะหน่วยงานของท่าน)'}
+          </p>
+
+          {(preview?.skipped_no_anchor ?? 0) > 0 && (
+            <div className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
+              <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+              <span>
+                มี {preview.skipped_no_anchor} เรื่องที่ปิดแล้วแต่ไม่มีวันที่ปิดเรื่องบันทึกไว้ จึงนับอายุไม่ได้และจะไม่ถูกลบ
+                — ต้องให้ผู้ดูแลระบบเติมวันที่ปิดเรื่องย้อนหลังก่อน
+              </span>
+            </div>
+          )}
+
+          {error && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-700">{error}</div>
+          )}
+
+          {result && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs text-emerald-800">
+              {result.purged > 0
+                ? `ลบข้อมูลติดต่อของ ${result.purged} เรื่องเรียบร้อย บันทึกไว้ในบันทึกกิจกรรมแล้ว`
+                : (result.message ?? 'ยังไม่มีเรื่องที่ถึงกำหนดลบ')}
+            </div>
+          )}
+
+          {confirming ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4 space-y-3">
+              <p className="text-sm font-bold text-red-800">ยืนยันการลบข้อมูลติดต่อ {due} เรื่อง</p>
+              <p className="text-xs text-red-700">
+                ชื่อ-นามสกุลและเบอร์โทรของผู้แจ้งในเรื่องเหล่านี้จะถูกลบถาวร กู้คืนไม่ได้
+                ตัวคำร้อง สถานะ และพิกัดยังอยู่ครบ ระบบจะบันทึกว่าท่านเป็นผู้สั่งลบไว้ในบันทึกกิจกรรม
+              </p>
+              <div className="flex gap-2">
+                <button type="button" onClick={runPurge} disabled={purging}
+                  className="flex-1 rounded-xl bg-red-600 py-2 text-sm font-bold text-white disabled:opacity-50 flex items-center justify-center gap-2">
+                  {purging && <Loader2 size={14} className="animate-spin" />} ยืนยันลบ {due} เรื่อง
+                </button>
+                <button type="button" onClick={() => setConfirming(false)} disabled={purging}
+                  className="flex-1 rounded-xl border border-gray-200 bg-white py-2 text-sm font-medium text-gray-600">
+                  ยกเลิก
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => setConfirming(true)} disabled={due === 0}
+                title={due === 0 ? 'ยังไม่มีเรื่องที่ถึงกำหนดลบ' : undefined}
+                className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2">
+                <Trash2 size={15} /> ลบข้อมูลติดต่อที่ครบกำหนด{due > 0 ? ` (${due} เรื่อง)` : ''}
+              </button>
+              <button type="button" onClick={loadPreview}
+                className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-600 flex items-center gap-2">
+                <RefreshCw size={15} /> ตรวจใหม่
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
 
 function DepartmentsTab({ tenant }) {
   return (
