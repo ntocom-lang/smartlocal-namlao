@@ -2997,6 +2997,33 @@ function SlaInput({ value, onCommit }) {
   )
 }
 
+// สวิตช์เปิด/ปิดประเภทคำร้อง — ของเดิมเป็นปุ่มกลมเขียนว่า "เปิด"/"ปิด" ซึ่งอ่านได้ 2 ทาง:
+// เป็น "สถานะปัจจุบัน" หรือ "คำสั่งที่จะเกิดถ้ากด" ผู้ดูแลที่อ่านอีกทางจะกดกลับด้านทันที
+// (ปิดหมวดที่เปิดอยู่โดยตั้งใจจะเปิด = ประชาชนส่งคำร้องหมวดนั้นไม่ได้ทั้ง อปท. โดยไม่มีใครรู้)
+// รูปแบบสวิตช์ + ข้อความ "สถานะ: เปิดใช้งาน/ปิดใช้งาน" อ่านได้ทางเดียว และมี role="switch"
+// ให้ screen reader กับ E2E อ่าน aria-checked เป็นค่าจริงแทนการเดาจากข้อความบนปุ่ม
+function CategoryActiveSwitch({ active, onToggle, compact = false }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={active}
+      onClick={onToggle}
+      title={active ? 'กดเพื่อปิดใช้งานประเภทนี้' : 'กดเพื่อเปิดใช้งานประเภทนี้'}
+      className={`inline-flex items-center gap-2 rounded-full border px-1.5 py-1 shrink-0 transition-colors ${
+        active ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-100'
+      }`}
+    >
+      <span className={`relative w-8 h-4.5 rounded-full transition-colors ${active ? 'bg-green-500' : 'bg-gray-300'}`}>
+        <span className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white shadow-sm transition-all ${active ? 'left-4' : 'left-0.5'}`} />
+      </span>
+      <span className={`text-[11px] font-bold whitespace-nowrap pr-1 ${active ? 'text-green-700' : 'text-gray-500'}`}>
+        {compact ? (active ? 'เปิดใช้งาน' : 'ปิดใช้งาน') : `สถานะ: ${active ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}`}
+      </span>
+    </button>
+  )
+}
+
 function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleActive, onToggleAdhoc, onEditEmoji, iconStyle, departments = [], techGroups = [], techId = '', slaDays = 3, onDepartmentChange, onTechChange, onSlaChange, savingAssign = false }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
   const [isEditing, setIsEditing] = useState(false)
@@ -3067,12 +3094,11 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
           </button>
         )}
 
-        <button
-          onClick={() => onToggleActive?.(cat.id, cat.is_active !== false)}
-          className={`px-2 py-1 rounded-full text-[12px] font-bold shrink-0 transition-colors ${cat.is_active === false ? 'bg-gray-200 text-gray-500 hover:bg-green-100 hover:text-green-700' : 'bg-green-100 text-green-700 hover:bg-gray-200 hover:text-gray-500'}`}
-        >
-          {cat.is_active === false ? 'ปิด' : 'เปิด'}
-        </button>
+        <CategoryActiveSwitch
+          compact
+          active={cat.is_active !== false}
+          onToggle={() => onToggleActive?.(cat.id, cat.is_active !== false)}
+        />
         <button
           onClick={() => onToggleAdhoc?.(cat.id, !!cat.is_adhoc)}
           title="สลับปกติ/เฉพาะกิจ"
@@ -3240,12 +3266,10 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [
         </div>
       </td>
       <td className="px-4 py-3 text-center">
-        <button
-          onClick={() => onToggleActive(cat.id, cat.is_active !== false)}
-          className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${cat.is_active === false ? 'bg-gray-200 text-gray-500 hover:bg-green-100 hover:text-green-700' : 'bg-green-100 text-green-700 hover:bg-gray-200 hover:text-gray-500'}`}
-        >
-          {cat.is_active === false ? 'ปิด' : 'เปิด'}
-        </button>
+        <CategoryActiveSwitch
+          active={cat.is_active !== false}
+          onToggle={() => onToggleActive(cat.id, cat.is_active !== false)}
+        />
       </td>
       <td className="px-4 py-3 text-center">
         <button
@@ -3575,14 +3599,21 @@ function CategoryManager({ tenant }) {
     // เหตุผลเดียวกับ writeCategoryDepartment: เปิด/ปิดหมวดคือสวิตช์ว่าประชาชนส่งคำร้องหมวดนี้ได้ไหม
     // ถ้า RLS ปัดตกเงียบๆ แล้ว UI บอกว่าสำเร็จ ผู้ดูแลจะเข้าใจผิดว่าปิดหมวดที่มีปัญหาไปแล้ว
     const { data, error: err } = await supabase.from('complaint_categories')
-      .update({ is_active: !current }).eq('id', id).select('id')
+      .update({ is_active: !current }).eq('id', id).select('id, is_active')
     if (err) { setError('บันทึกไม่สำเร็จ: ' + err.message); return }
     if (!data || data.length === 0) {
       setError('ไม่มีสิทธิ์เปิด/ปิดประเภทคำร้อง (ต้องเป็นผู้ดูแลระบบของ อปท. นี้)')
       return
     }
+    // ยึดค่าที่ฐานข้อมูลคืนกลับมา (RETURNING) ไม่ใช่ !current ที่เดาไว้ล่วงหน้า — ถ้ามี trigger
+    // หรือ policy เปลี่ยน/ปัดค่าที่เขียนไป สวิตช์จะต้องเด้งกลับไปตามความจริง ไม่ใช่ค้างที่ค่าที่หวัง
+    const saved = data[0].is_active
+    setCats((prev) => prev.map((c) => c.id === id ? { ...c, is_active: saved } : c))
+    if (saved === current) {
+      setError('ฐานข้อมูลไม่ได้เปลี่ยนสถานะประเภทนี้ กรุณาลองใหม่หรือตรวจสอบสิทธิ์')
+      return
+    }
     setError(null)
-    setCats((prev) => prev.map((c) => c.id === id ? { ...c, is_active: !current } : c))
   }
 
   async function toggleAdhoc(id, current) {

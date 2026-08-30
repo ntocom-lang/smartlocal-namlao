@@ -9,6 +9,11 @@ const ACTION_INFO = {
   reject:        { label: 'ปฏิเสธ',           bg: '#fee2e2', color: '#991b1b', Icon: Shield },
   assign:        { label: 'มอบหมาย',          bg: '#ede9fe', color: '#5b21b6', Icon: User },
   view_pii:      { label: 'เปิดดูข้อมูลส่วนบุคคล', bg: '#fef3c7', color: '#92400e', Icon: Eye },
+  // หมวดเฉพาะกิจ (odor) ไม่มี pipeline สถานะ การรับทราบของผู้รับผิดชอบคือหลักฐานเดียวว่ามีคนรับเรื่อง
+  // ไปดำเนินการ — บันทึกโดย acknowledge_odor_complaint() (20260902110000)
+  acknowledge_adhoc_complaint: { label: 'รับทราบคำร้องเฉพาะกิจ', bg: '#ecfccb', color: '#4d7c0f', Icon: Shield },
+  // งานอัตโนมัติรายวัน (purge_expired_complaint_contacts, 20260902120000) actor เป็น 'ระบบ'
+  purge_contact_pii: { label: 'ลบข้อมูลติดต่อครบกำหนด', bg: '#e0e7ff', color: '#3730a3', Icon: Trash2 },
 }
 
 const RESOURCE_LABEL = {

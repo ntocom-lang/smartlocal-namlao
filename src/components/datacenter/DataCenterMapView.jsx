@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase'
 import GoogleMapCanvas from '../common/GoogleMapCanvas'
 import { resolveGroupEmoji, resolveEntryEmoji, fetchGroupIconOverrides, isIconImage } from '../../lib/dataCenterGroupIcon'
 import CategoryIcon from './CategoryIcon'
+import { odorTimeRangeLabel } from '../../lib/odorTimeRanges'
 
 function TrafficLightIcon({ size = 20, className = "" }) {
   return (
@@ -620,6 +621,31 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
                     className="rounded-xl bg-sky-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs disabled:opacity-40">บันทึก</button>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* หมุดคำร้องหมวดเฉพาะกิจ (odor) — RPC คืน extra_data แบบ whitelist มาให้เฉพาะแถวเฉพาะกิจ
+              (adhoc_pin_answers, migration 20260902090000) จึงใช้ตัวมันเองเป็นตัวบอกว่าจะเปิดการ์ดนี้ไหม
+              ผู้บริหาร (viewer/council) เห็นการ์ดนี้เป็นข้อมูลชุดเดียวที่มีของคำร้องนั้น เพราะ RPC
+              ตัด subject/detail ของ role นี้ทิ้งทั้งหมด ไม่มี PII ให้แสดงตั้งแต่ต้นทาง */}
+          {selectedEntry && selectedEntry.source_table === 'complaints' && selectedEntry.extra_data && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 w-[min(340px,calc(100%-32px))] rounded-2xl border border-lime-200 bg-white p-3 text-xs shadow-2xl backdrop-blur-xs">
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <p className="font-bold text-gray-800 truncate">{resolveCategoryLabel(selectedEntry) || selectedEntry.title}</p>
+                <button type="button" onClick={() => setSelectedEntry(null)} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100"><X size={14} /></button>
+              </div>
+              <div className="space-y-0.5 text-gray-600">
+                <p>วันเวลาที่แจ้ง: {selectedEntry.created_at
+                  ? new Date(selectedEntry.created_at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })
+                  : '-'}</p>
+                <p>ช่วงเวลาที่ได้กลิ่น: {odorTimeRangeLabel(selectedEntry.extra_data.odor_time_range) ?? '-'}</p>
+                <p>ระดับความรุนแรง: {selectedEntry.extra_data.odor_intensity ?? '-'} / 5</p>
+                <p>ทิศทางลม: {selectedEntry.extra_data.wind_direction ?? '-'}</p>
+                <p>อาการทางสุขภาพ: {selectedEntry.extra_data.health_effect ?? 'ไม่ระบุ'}</p>
+                <p className={selectedEntry.extra_data.acknowledged ? 'text-emerald-700 font-semibold' : 'text-amber-700 font-semibold'}>
+                  {selectedEntry.extra_data.acknowledged ? 'ผู้รับผิดชอบรับทราบแล้ว' : 'รอผู้รับผิดชอบรับทราบ'}
+                </p>
+              </div>
             </div>
           )}
 

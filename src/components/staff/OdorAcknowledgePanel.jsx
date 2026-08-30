@@ -90,20 +90,31 @@ export default function OdorAcknowledgePanel({ tenantId, staffId }) {
     setDetailLoadingId(null)
   }
 
+  // รับทราบผ่าน RPC เท่านั้น (acknowledge_odor_complaint, migration 20260902110000) — ของเดิมอ่าน
+  // extra_data ทั้งก้อนมาไว้ใน state ตอนโหลดหน้า แล้วเขียนกลับทั้งก้อนตอนกดปุ่ม ซึ่งทับค่าที่คนอื่น
+  // เขียนระหว่างนั้นทิ้ง (lost update) และใช้เวลา/ตัวตนจากเครื่องผู้ใช้เป็นหลักฐาน
+  // ตอนนี้ DB เป็นคนตัดสินทั้ง now(), auth.uid(), การกดซ้ำ และปฏิเสธถ้าไม่ใช่ผู้รับผิดชอบ
   async function acknowledge(c) {
     setAcking(c.id)
-    const nextExtra = {
-      ...(c.extra_data ?? {}),
-      acknowledged_at: new Date().toISOString(),
-      acknowledged_by: staffId,
-    }
-    const { error } = await supabase.from('complaints').update({ extra_data: nextExtra }).eq('id', c.id)
-    if (!error) {
-      setComplaints((prev) => prev.map((x) => x.id === c.id ? { ...x, extra_data: nextExtra } : x))
-      setExpandedId(null)
-    } else {
+    const { data, error } = await supabase.rpc('acknowledge_odor_complaint', { p_complaint_id: c.id })
+    if (error) {
       alert('รับทราบไม่สำเร็จ: ' + error.message)
+      setAcking(null)
+      return
     }
+    if (data?.ok === false) {
+      alert(data.code === 'not_found' ? 'ไม่พบคำร้องนี้แล้ว (อาจถูกลบไป)' : 'รับทราบไม่สำเร็จ')
+      setAcking(null)
+      await fetchOdorComplaints()
+      return
+    }
+    // ใช้ค่าที่ DB คืนกลับมา ไม่ใช่ค่าที่เดาเอาฝั่ง client — กดซ้ำจะได้เวลาเดิมของครั้งแรกเสมอ
+    const ackedAt = data?.acknowledged_at ?? null
+    const ackedBy = data?.acknowledged_by ?? staffId
+    setComplaints((prev) => prev.map((x) => x.id === c.id
+      ? { ...x, extra_data: { ...(x.extra_data ?? {}), acknowledged_at: ackedAt, acknowledged_by: ackedBy } }
+      : x))
+    setExpandedId(null)
     setAcking(null)
   }
 

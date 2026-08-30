@@ -19,6 +19,8 @@
     "test:fleet": "node tests/fleet-workflow.playwright.mjs",
     "test:fleet:write": "node tests/fleet-workflow.playwright.mjs --write",
     "test:fleet:cleanup": "node tests/fleet-workflow.playwright.mjs --cleanup",
+    "test:odor": "node tests/odor-workflow.playwright.mjs",
+    "test:odor:write": "node tests/odor-workflow.playwright.mjs --write",
     "test:local-build": "node tests/verify-local-build.mjs"
   },
   "dependencies": {
