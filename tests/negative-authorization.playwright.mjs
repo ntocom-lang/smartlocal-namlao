@@ -4,7 +4,7 @@ import { access, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 import { chromium } from 'playwright'
-import { BlockedError, navigateClientSide, trackProfileResolution, waitForSettled } from './lib/appReady.mjs'
+import { BlockedError, navigateClientSide, reloadIfServiceWorkerUpdated, safeEvaluate, trackProfileResolution, waitForSettled } from './lib/appReady.mjs'
 
 const ROOT_DIR = process.cwd()
 const MATRIX_PATH = path.join(ROOT_DIR, 'docs', 'testing', 'TEST_ROLE_MATRIX.md')
@@ -179,7 +179,7 @@ async function pathExists(targetPath) {
 }
 
 async function assertDemoTenant(page) {
-  const isDemo = await page.evaluate((expectedName) => {
+  const isDemo = await safeEvaluate(page, (expectedName) => {
     const text = `${document.title}\n${document.body?.innerText || ''}`
     return text.includes(expectedName)
   }, DEMO_TENANT_NAME)
@@ -237,7 +237,7 @@ async function ensureAuthenticated(page, authState, roleCase) {
 async function waitForText(page, text, timeout = 12_000) {
   const deadline = Date.now() + timeout
   for (;;) {
-    if (await page.evaluate((needle) => (document.body?.innerText ?? '').includes(needle), text)) return true
+    if (await safeEvaluate(page, (needle) => (document.body?.innerText ?? '').includes(needle), text, false)) return true
     if (Date.now() >= deadline) return false
     await page.waitForTimeout(200)
   }
@@ -315,9 +315,11 @@ async function assertFleetAccess(page, authState, roleCase) {
     await waitForText(page, ROUTE_MARKERS['/fleet']),
     `${roleCase.alias} อยู่ที่ /fleet แต่หน้าไม่เรนเดอร์เนื้อหาของตัวเอง`,
   )
-  const denialVisible = await page.evaluate(
+  const denialVisible = await safeEvaluate(
+    page,
     (needle) => (document.body?.innerText ?? '').includes(needle),
     FLEET_DENIED_TEXT,
+    false,
   )
   assert.equal(denialVisible, false, `${roleCase.alias} มี fleet_role แต่ UI ปฏิเสธสิทธิ์`)
 }
@@ -344,6 +346,7 @@ async function runRoleCase(roleCase, baseUrl, headed) {
     // ต้องดักก่อน goto เสมอ ไม่งั้น response ของ profiles รอบ boot หลุดไปก่อนติดตั้ง listener
     const authState = trackProfileResolution(page)
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 25_000 })
+    await reloadIfServiceWorkerUpdated(page, baseUrl)
     await waitForSettled(page, authState)
     await assertDemoTenant(page)
     await ensureAuthenticated(page, authState, roleCase)

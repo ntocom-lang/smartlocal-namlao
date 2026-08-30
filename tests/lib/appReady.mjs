@@ -33,6 +33,27 @@ export function pathnameOf(page) {
   return new URL(page.url()).pathname
 }
 
+/**
+ * evaluate ที่ทน "หน้ารีโหลดกลางคัน" ได้ คืน fallback เมื่อ context ถูกทำลาย
+ *
+ * vite-plugin-pwa ตั้ง registerType 'autoUpdate' ไว้ เมื่อ service worker ตัวใหม่ activate
+ * registerSW จะสั่ง reload หน้าเองโดยไม่ถามใคร ทุก page.evaluate() ที่ค้างอยู่ตอนนั้นจะโยน
+ * "Execution context was destroyed" ทันที (เจอจริงหลัง deploy 2026-08-30: FAIL 5 บัญชีรวด
+ * ด้วย error นี้ ทั้งที่สิทธิ์ทุกอย่างถูกต้อง) การรีโหลดคือ "สิ่งที่เรากำลังรอให้นิ่ง" อยู่แล้ว
+ * จึงต้องนับเป็นสัญญาณให้วนรอต่อ ไม่ใช่ข้อผิดพลาดของการทดสอบ
+ */
+export async function safeEvaluate(page, fn, arg, fallback = null) {
+  try {
+    return await page.evaluate(fn, arg)
+  } catch (error) {
+    const message = String(error?.message ?? error)
+    if (/Execution context was destroyed|Target closed|Target crashed|frame was detached/i.test(message)) {
+      return fallback
+    }
+    throw error
+  }
+}
+
 /** เริ่มดักจังหวะที่ role ถูก resolve — ต้องเรียกก่อน page.goto() ครั้งแรกเสมอ */
 export function trackProfileResolution(page) {
   const state = { resolvedAt: 0 }
@@ -54,7 +75,8 @@ export async function waitForSettled(page, authState, { timeout = SETTLE_TIMEOUT
   let snapshot = { path: pathnameOf(page), chars: 0 }
 
   while (Date.now() < deadline) {
-    snapshot = await page.evaluate((errorText) => {
+    // reloading = หน้าเพิ่งถูก service worker สั่งรีโหลด ยังตอบอะไรไม่ได้ ให้ถือว่า "ยังไม่นิ่ง"
+    const reading = await safeEvaluate(page, (errorText) => {
       const text = document.body?.innerText ?? ''
       // เช็คแค่ "มีคีย์ session อยู่ไหม" ไม่อ่านค่า token ออกมาเด็ดขาด
       let hasStoredSession = false
@@ -70,6 +92,13 @@ export async function waitForSettled(page, authState, { timeout = SETTLE_TIMEOUT
         hasStoredSession,
       }
     }, PROFILE_ERROR_TEXT)
+
+    if (!reading) {
+      stableSince = Date.now()
+      await page.waitForTimeout(POLL_MS)
+      continue
+    }
+    snapshot = reading
 
     if (snapshot.profileError) throw new BlockedError('อ่านโปรไฟล์/สิทธิ์ไม่สำเร็จ (หน้าแสดงปุ่มลองใหม่)')
 
@@ -92,6 +121,44 @@ export async function waitForSettled(page, authState, { timeout = SETTLE_TIMEOUT
     `แอปไม่พร้อมตรวจภายใน ${Math.round(timeout / 1000)} วินาที `
     + `(path=${snapshot.path}, เนื้อหา ${snapshot.chars} ตัวอักษร) — ไม่นับเป็นผ่าน`,
   )
+}
+
+/**
+ * โหลดซ้ำถ้า service worker เพิ่งมีของใหม่ — ต้องเรียกหลัง goto ครั้งแรกเสมอ
+ *
+ * แอปเป็น PWA (vite-plugin-pwa registerType 'autoUpdate' + skipWaiting/clientsClaim) การเปิดเว็บ
+ * ครั้งแรก "หลัง deploy" ยังได้ app shell เก่าจาก service worker ของใหม่มาตั้งแต่การโหลดครั้งถัดไป
+ * ถ้าไม่รอตรงนี้ เทสจะ FAIL หลัง deploy ทุกครั้งทั้งที่โค้ดขึ้นถูกต้องแล้ว (เจอจริง 2026-08-30
+ * ที่ fleet-workflow: เซิร์ฟเวอร์เสิร์ฟ index ตัวใหม่ แต่เบราว์เซอร์โหลดตัวเก่า)
+ */
+export async function reloadIfServiceWorkerUpdated(page, baseUrl) {
+  // registration.update() คืนค่าก่อนที่ installing จะถูกตั้งเสมอไป การเช็คครั้งเดียวทันทีจึงพลาดได้
+  // (เจอจริงหลัง deploy 2026-08-30: 2 บัญชีที่โปรไฟล์ยังมี service worker เก่ายังเห็น UI ชุดเดิม
+  // ขณะที่โปรไฟล์อื่นได้ของใหม่) จึงต้องวนดูสักพักว่ามีตัวใหม่กำลังติดตั้งไหม
+  const pending = await safeEvaluate(page, async (waitMs) => {
+    if (!('serviceWorker' in navigator)) return false
+    const registration = await navigator.serviceWorker.getRegistration()
+    if (!registration) return false
+    try { await registration.update() } catch { /* offline/ถูกบล็อก — ปล่อยผ่าน */ }
+    const deadline = Date.now() + waitMs
+    while (Date.now() < deadline) {
+      if (registration.waiting || registration.installing) return true
+      await new Promise((resolve) => setTimeout(resolve, 200))
+    }
+    return false
+  }, 4_000, false)
+
+  if (!pending) return
+
+  // รอให้ตัวใหม่ activate จริงก่อนโหลดซ้ำ ไม่งั้นได้ app shell เก่าอีกรอบ
+  await safeEvaluate(page, (waitMs) => new Promise((resolve) => {
+    const done = () => resolve(true)
+    navigator.serviceWorker.addEventListener('controllerchange', done, { once: true })
+    setTimeout(done, waitMs)
+  }), 8_000, true)
+
+  // autoUpdate ของ vite-plugin-pwa อาจสั่ง reload เองไปแล้ว goto ซ้ำจึงล้มได้ ไม่ใช่ความผิดพลาด
+  await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 }).catch(() => {})
 }
 
 /** เปลี่ยนหน้าแบบ client-side (ไม่ reload ทั้งแอป) แล้วรอจน settle คืน pathname สุดท้ายจริง */

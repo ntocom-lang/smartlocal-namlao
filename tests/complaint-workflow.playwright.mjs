@@ -22,7 +22,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 import { chromium } from 'playwright'
-import { BlockedError, navigateClientSide as settleAndNavigate, trackProfileResolution, waitForSettled } from './lib/appReady.mjs'
+import { BlockedError, navigateClientSide as settleAndNavigate, reloadIfServiceWorkerUpdated, trackProfileResolution, waitForSettled } from './lib/appReady.mjs'
 
 const ROOT_DIR = process.cwd()
 const LOCAL_ENV_PATH = path.join(ROOT_DIR, '.env.test.local')
@@ -262,6 +262,7 @@ async function withAccount(alias, profile, baseUrl, headed, fn) {
     // ต้องดักก่อน goto เสมอ ไม่งั้น response ของ profiles รอบ boot หลุดไปก่อนติดตั้ง listener
     authStates.set(page, trackProfileResolution(page))
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 25_000 })
+    await reloadIfServiceWorkerUpdated(page, baseUrl)
     await waitForSettled(page, authStates.get(page))
     await loginAs(page, alias)
     return await fn(page, consoleErrors)

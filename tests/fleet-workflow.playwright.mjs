@@ -31,6 +31,7 @@ import { readFile, writeFile, access } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 import { chromium } from 'playwright'
+import { BlockedError, reloadIfServiceWorkerUpdated, safeEvaluate } from './lib/appReady.mjs'
 
 const ROOT_DIR = process.cwd()
 const LOCAL_ENV_PATH = path.join(ROOT_DIR, '.env.test.local')
@@ -52,8 +53,6 @@ const CLEANUP_PREFIX = '[TEST] regression '
 
 const WRITE_BUTTON_RE = /เพิ่มทรัพย์สิน|บันทึกเชื้อเพลิง|บันทึกซ่อมบำรุง|จองรถ|บันทึกการเดินทาง|นำเข้า CSV/
 const FLEET_TAB_LABELS = ['ภาพรวม', 'รถและเครื่องยนต์', 'เชื้อเพลิง', 'การเดินทาง', 'ซ่อมบำรุง', 'รายงาน', 'งบประมาณ']
-
-class BlockedError extends Error {}
 
 // ───────────────────────────────────────────────────────────── config/safety ──
 
@@ -130,9 +129,10 @@ async function openFleet(profile, baseUrl, headed) {
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
   await page.waitForTimeout(2_500)
   await reloadIfServiceWorkerUpdated(page, baseUrl)
+  await page.waitForTimeout(2_500)
 
   // dev server ในเครื่องใช้ VITE_TENANT_SLUG=demo จึงชี้ tenant เดียวกัน แต่ต้องยืนยันจากหน้าจอ
-  const onDemo = await page.evaluate(name => document.body?.innerText?.includes(name) ?? false, DEMO_TENANT_NAME)
+  const onDemo = await safeEvaluate(page, name => document.body?.innerText?.includes(name) ?? false, DEMO_TENANT_NAME, false)
   if (!onDemo) throw new BlockedError(`ไม่พบชื่อ tenant "${DEMO_TENANT_NAME}" — ยกเลิกเพื่อกันยิงผิด อปท.`)
 
   await gotoRoute(page, '/fleet', 5_000)
@@ -140,24 +140,6 @@ async function openFleet(profile, baseUrl, headed) {
   const denied = await page.getByRole('heading', { name: 'ไม่มีสิทธิ์เข้าใช้ระบบ', exact: true }).count()
   if (denied) throw new BlockedError(`${profile} เข้า /fleet ไม่ได้ — ตรวจ fleet_role ของบัญชีทดสอบ`)
   return { context, page }
-}
-
-// แอปเป็น PWA (vite-plugin-pwa registerType 'autoUpdate' + skipWaiting/clientsClaim)
-// การเปิดเว็บครั้งแรก "หลัง deploy" ยังได้ app shell เก่าจาก service worker เสมอ
-// ตัว SW ถึงจะอัปเดตตัวเองแล้วส่งของใหม่ให้ตั้งแต่การโหลดครั้งถัดไป
-// ถ้าไม่รอตรงนี้ เทสจะ FAIL หลัง deploy ทุกครั้งทั้งที่โค้ดขึ้นถูกต้องแล้ว (เจอจริง 2026-08-30)
-async function reloadIfServiceWorkerUpdated(page, baseUrl) {
-  const needsReload = await page.evaluate(async () => {
-    if (!('serviceWorker' in navigator)) return false
-    const registration = await navigator.serviceWorker.getRegistration()
-    if (!registration) return false
-    try { await registration.update() } catch { /* offline/ถูกบล็อก — ปล่อยผ่าน */ }
-    return Boolean(registration.waiting || registration.installing)
-  }).catch(() => false)
-  if (!needsReload) return
-  await page.waitForTimeout(2_000)
-  await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
-  await page.waitForTimeout(2_500)
 }
 
 async function gotoRoute(page, route, wait = 3_000) {
