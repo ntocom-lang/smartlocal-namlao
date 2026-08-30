@@ -53,3 +53,18 @@ export function normalizeThaiPhone(input) {
 export function phoneToLoginEmail(phone) {
   return `${normalizeThaiPhone(phone)}@${PHONE_EMAIL_DOMAIN}`
 }
+
+// ตรงข้ามกับ phoneToLoginEmail — คืนสิ่งที่ผู้ใช้ต้องพิมพ์จริงตอนล็อกอิน
+//
+// auth.users.email ของบัญชีเบอร์โทรเป็นอีเมลปลอมที่ระบบสร้างเอง ผู้ใช้ไม่เคยเห็นและพิมพ์ตามไม่ได้
+// (หน้าล็อกอินแปลงเบอร์ให้เองอยู่แล้ว) ที่ไหนก็ตามที่เอาค่านี้ไปบอกผู้ใช้ ต้องถอดกลับเป็นเบอร์ก่อน
+// kind = 'none' คือบัญชีที่ไม่มีอีเมลเลย (LINE ที่ channel ยังไม่ได้รับอนุมัติสิทธิ์ขอ email)
+// ซึ่งล็อกอินด้วยรหัสผ่านไม่ได้เลยเพราะไม่มีชื่อผู้ใช้ให้พิมพ์ — ผู้เรียกต้องจัดการเคสนี้เสมอ
+export function loginIdentifier(email) {
+  const v = String(email ?? '').trim()
+  if (!v) return { value: '', kind: 'none' }
+  if (v.toLowerCase().endsWith(`@${PHONE_EMAIL_DOMAIN}`)) {
+    return { value: v.slice(0, v.lastIndexOf('@')), kind: 'phone' }
+  }
+  return { value: v, kind: 'email' }
+}

@@ -1,6 +1,10 @@
 import { useState } from 'react'
-import { KeyRound, Loader2, Copy, Check, AlertTriangle } from 'lucide-react'
+import { KeyRound, Loader2, Copy, Check, AlertTriangle, Printer } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { useTenant } from '../../contexts/TenantContext'
+import { loginIdentifier } from '../../lib/authProviders'
+import { buildAccountCardHtml } from '../../lib/accountCardPrint'
+import { appUrl } from '../../lib/basename'
 
 // ตั้งรหัสผ่านชั่วคราวให้ผู้ใช้ที่ลืมรหัส — สำหรับเคสประชาชนเดินมาที่สำนักงาน
 //
@@ -11,6 +15,7 @@ import { supabase } from '../../lib/supabase'
 // รหัสถูกสุ่มฝั่งเซิร์ฟเวอร์ (edge function admin-reset-user-password) ไม่ให้เจ้าหน้าที่ตั้งเอง
 // กันการใช้รหัสง่ายๆ ซ้ำกันทุกคน — ที่นี่มีหน้าที่แค่แสดงผลและย้ำขั้นตอนต่อไปให้เจ้าหน้าที่
 export default function ResetPasswordModal({ user, onClose }) {
+  const { tenant } = useTenant()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [password, setPassword] = useState('')
@@ -49,6 +54,33 @@ export default function ResetPasswordModal({ user, onClose }) {
     }
   }
 
+  // พิมพ์บัตรให้ประชาชนถือกลับบ้าน — เหตุผลเต็มอยู่ที่ src/lib/accountCardPrint.js
+  //
+  // ต้องเปิดหน้าต่างแบบ sync ในจังหวะคลิก ก่อน await ใดๆ ไม่งั้น popup blocker บล็อกเงียบๆ
+  // (รูปแบบเดียวกับ handlePrintComplaint ใน ComplaintsManager.jsx) ที่นี่ไม่มี await อยู่แล้ว
+  // เพราะรหัสผ่านอยู่ใน state ตั้งแต่ตอนตั้งสำเร็จ แต่คงลำดับไว้ให้เหมือนกันกันคนแก้ทีหลังเผลอ
+  function printCard() {
+    const w = window.open('', '_blank', 'width=800,height=900')
+    if (!w) {
+      setError('เบราว์เซอร์บล็อกป๊อปอัพ กรุณาอนุญาตป๊อปอัพสำหรับเว็บไซต์นี้แล้วกดพิมพ์ใหม่')
+      return
+    }
+    const login = loginIdentifier(user.email)
+    w.document.write(buildAccountCardHtml({
+      fullName: user.full_name,
+      loginValue: login.value,
+      loginKind: login.kind,
+      password,
+      tenant,
+      // ต้องผ่าน appUrl() ไม่ใช่ location.host เปล่าๆ — deployment แบบ path-based
+      // (host/{slug}/...) จะได้ที่อยู่ที่ตัด slug ทิ้ง ประชาชนพิมพ์ตามแล้วเข้าผิด อปท.
+      // ตัด https:// กับ / ท้ายออกให้สั้นพอที่ผู้สูงอายุจะพิมพ์ตามจากกระดาษได้
+      appOrigin: appUrl('/').replace(/^https?:\/\//, '').replace(/\/$/, ''),
+    }))
+    w.document.close()
+    setTimeout(() => w.print(), 400)
+  }
+
   const name = user.full_name || user.email || 'ผู้ใช้นี้'
 
   return (
@@ -75,13 +107,35 @@ export default function ResetPasswordModal({ user, onClose }) {
               </button>
             </div>
 
+            {/* พิมพ์กระดาษเป็นทางหลัก ไม่ใช่ทางเลือกเสริม — ผู้ใช้ที่มาถึงจุดนี้คือคนที่จำรหัสของ
+                ตัวเองไม่ได้ตั้งแต่แรก การบอกรหัส 10 ตัวปากเปล่าแล้วให้กลับบ้านไปพิมพ์เองไม่จบงาน */}
+            <button
+              onClick={printCard}
+              className="w-full py-2.5 rounded-xl text-white text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+              style={{ backgroundColor: 'var(--color-primary)' }}
+            >
+              <Printer size={16} /> พิมพ์บัตรเข้าใช้งานให้ประชาชน
+            </button>
+
+            {loginIdentifier(user.email).kind === 'none' && (
+              <p className="w-full text-left text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2.5 leading-relaxed">
+                <strong>บัญชีนี้ยังล็อกอินด้วยรหัสผ่านไม่ได้</strong><br />
+                เป็นบัญชีที่ผูกกับ LINE อย่างเดียว ไม่มีชื่อผู้ใช้ให้พิมพ์คู่กับรหัสผ่าน
+                ต้องตั้ง &ldquo;อีเมลสำหรับเข้าสู่ระบบ&rdquo; ให้บัญชีนี้ก่อนที่หน้าจัดการผู้ใช้
+              </p>
+            )}
+
+            {error && (
+              <p className="w-full text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2 text-left">{error}</p>
+            )}
+
             <div className="w-full text-left text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 leading-relaxed">
               <p className="font-semibold mb-1 flex items-center gap-1.5">
                 <AlertTriangle size={13} /> หน้าจอนี้แสดงรหัสครั้งเดียว
               </p>
-              ปิดแล้วดูย้อนหลังไม่ได้ ต้องตั้งใหม่อย่างเดียว<br />
-              แจ้งรหัสให้เจ้าตัว แล้ว<strong>บอกให้ไปเปลี่ยนรหัสเองที่หน้าโปรไฟล์ทันที</strong> —
-              ตราบใดที่ยังไม่เปลี่ยน รหัสนี้ยังใช้เข้าบัญชีได้อยู่<br />
+              ปิดแล้วดูย้อนหลังไม่ได้ ต้องตั้งใหม่อย่างเดียว — <strong>พิมพ์บัตรก่อนปิด</strong><br />
+              มอบบัตรให้เจ้าตัวเท่านั้น <strong>ห้ามเก็บสำเนาไว้ที่สำนักงาน</strong> และบอกให้ไป
+              เปลี่ยนรหัสเองที่หน้าโปรไฟล์ทันที — ตราบใดที่ยังไม่เปลี่ยน รหัสนี้ยังใช้เข้าบัญชีได้อยู่<br />
               หากสงสัยว่ามีคนอื่นเข้าถึงบัญชีนี้อยู่ ให้เจ้าตัวเตะอุปกรณ์ออกเองที่
               หน้าโปรไฟล์ &rarr; &ldquo;อุปกรณ์ที่ล็อกอินอยู่&rdquo;
             </div>

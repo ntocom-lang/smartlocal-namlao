@@ -54,6 +54,7 @@ export default function AuthPage() {
   const [loadingLine, setLoadingLine] = useState(false)
   const [loadingLineWeb, setLoadingLineWeb] = useState(false)
   const [forgotEmail, setForgotEmail] = useState('')
+  const [showOfficeHelp, setShowOfficeHelp] = useState(false)
 
   const set = (f) => (e) => setForm((p) => ({ ...p, [f]: e.target.value }))
 
@@ -131,11 +132,16 @@ export default function AuthPage() {
   async function handleForgotPassword(e) {
     e.preventDefault()
     const email = forgotEmail.trim()
+    // บัญชีเบอร์โทรใช้อีเมลปลอมที่ระบบสร้างเอง ไม่มีกล่องจดหมายจริงให้ส่งลิงก์ไปหา
+    // ทางเดียวคือมาที่สำนักงาน จึงกางรายละเอียดที่ต้องเตรียมให้ครบตรงนี้เลย ไม่ใช่บอกลอยๆ
+    // ว่า "กรุณาติดต่อเจ้าหน้าที่" แล้วปล่อยให้ไปหาเบอร์ อปท. เอาเองต่อ
     if (!email.includes('@')) {
-      setError('บัญชีที่สมัครด้วยเบอร์โทรศัพท์ไม่สามารถรีเซ็ตรหัสผ่านทางอีเมลได้\nกรุณาติดต่อเจ้าหน้าที่')
+      setError('')
+      setShowOfficeHelp(true)
       return
     }
     setError('')
+    setShowOfficeHelp(false)
     setLoading(true)
     try {
       const { error: err } = await supabase.auth.resetPasswordForEmail(email, {
@@ -144,7 +150,12 @@ export default function AuthPage() {
       if (err) {
         setError('ส่งอีเมลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')
       } else {
-        setSuccess(`ส่งลิงก์รีเซ็ตรหัสผ่านไปที่ ${email} แล้ว\nกรุณาตรวจสอบกล่องขาเข้า (และโฟลเดอร์ Spam)`)
+        // resetPasswordForEmail คืน ok แม้เมลไม่ได้ถูกส่งออกจริง (ตั้งใจของ Supabase กันคนไล่เดา
+        // ว่าอีเมลไหนมีบัญชีอยู่) และโปรเจกต์นี้ยังไม่ได้ตั้ง custom SMTP ตัว built-in ปฏิเสธการส่ง
+        // ไปยังอีเมลนอกทีมโปรเจกต์ ประชาชนส่วนใหญ่จึงไม่ได้รับจริง — ห้ามขึ้นข้อความยืนยันลอยๆ
+        // แล้วปล่อยให้เขานั่งรอเมลที่ไม่มีวันมา ต้องกางทางสำรองให้เห็นพร้อมกันเสมอ
+        setSuccess(`ส่งลิงก์รีเซ็ตรหัสผ่านไปที่ ${email} แล้ว\nกรุณาตรวจสอบกล่องขาเข้า (และโฟลเดอร์ Spam)\n\nถ้าไม่ได้รับภายใน 10 นาที ให้ใช้วิธีด้านล่างแทน`)
+        setShowOfficeHelp(true)
       }
     } catch (err) {
       console.error('[auth] resetPasswordForEmail ล้มเหลว:', err?.message ?? err)
@@ -362,18 +373,28 @@ export default function AuthPage() {
               </div>
             ) : (
               <>
+                {/* type ของช่องนี้ต้องเป็น "text" ไม่ใช่ "email" — ของเดิมเป็น email ทำให้เบราว์เซอร์
+                    บล็อกตั้งแต่ก่อนส่งฟอร์มถ้าผู้ใช้พิมพ์เบอร์โทรลงมา ขึ้นแค่ทูลทิป "Please include an @"
+                    ข้อความอธิบายของเราจึงไม่มีวันได้แสดงเลย และคนที่สมัครด้วยเบอร์ (ซึ่งเป็นทางหลัก
+                    ของระบบนี้ อีเมลไม่บังคับด้วยซ้ำ) เจอทางตันโดยไม่รู้ว่าทำไม */}
                 <div className="relative">
                   <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                   <input
                     value={forgotEmail}
                     onChange={(e) => { setForgotEmail(e.target.value); setError('') }}
-                    required type="email" placeholder="อีเมลที่ลงทะเบียนไว้"
+                    required type="text" inputMode="email"
+                    placeholder="อีเมล หรือเบอร์โทรที่ใช้สมัคร"
                     autoComplete="email"
                     className="w-full pl-9 pr-3 py-3 border border-gray-200 rounded-xl text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:border-transparent"
                     style={{ '--tw-ring-color': 'var(--color-primary)' }}
                   />
                 </div>
                 {error && <p className="text-sm text-red-500 text-center whitespace-pre-line">{error}</p>}
+                <button type="button"
+                  onClick={() => { setShowOfficeHelp(true); setError('') }}
+                  className="w-full text-center text-xs text-gray-400 hover:text-gray-600 py-1">
+                  จำอีเมลที่ใช้สมัครไม่ได้?
+                </button>
                 <button type="submit" disabled={loading}
                   className="w-full py-3 rounded-xl text-white font-semibold text-sm transition-all disabled:opacity-60 active:scale-95"
                   style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}>
@@ -384,7 +405,36 @@ export default function AuthPage() {
                 </button>
               </>
             )}
-            <button type="button" onClick={() => { setMode('login'); setError(''); setSuccess(''); setForgotEmail('') }}
+            {/* ทางกู้บัญชีที่พึ่งได้จริงของระบบนี้ — บัญชีเบอร์โทรไม่มีกล่องจดหมายให้ส่งลิงก์ไปหา
+                และบัญชีอีเมลก็ยังไม่มี custom SMTP ทั้งสองทางจึงจบลงที่การมาที่สำนักงานเหมือนกัน
+                ถ้าไม่บอกว่าไปที่ไหน เอาอะไรไป ผู้สูงอายุก็ไปไม่ถูกอยู่ดี ข้อมูลดึงจาก tenant
+                ไม่ฮาร์ดโค้ด อปท. ไหนใช้ระบบนี้ก็ได้ที่อยู่กับเบอร์ของตัวเอง */}
+            {showOfficeHelp && (
+              <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3.5 text-sm text-gray-700 leading-relaxed text-left">
+                <p className="font-semibold text-gray-800 mb-1.5">ติดต่อเจ้าหน้าที่เพื่อขอรหัสผ่านใหม่</p>
+                <p className="text-[13px] text-gray-600">
+                  เจ้าหน้าที่จะตั้งรหัสผ่านชั่วคราวให้ พร้อมพิมพ์บัตรเข้าใช้งานที่มีชื่อผู้ใช้และรหัสผ่าน
+                  ให้ถือกลับบ้าน
+                </p>
+                <p className="mt-2 text-[13px]">
+                  <strong>กรุณานำบัตรประจำตัวประชาชนไปด้วย</strong> เพื่อยืนยันว่าเป็นเจ้าของบัญชีจริง
+                </p>
+                <div className="mt-2.5 pt-2.5 border-t border-blue-200 text-[13px] space-y-0.5">
+                  <p className="font-semibold text-gray-800">{tenant?.name ?? 'สำนักงาน อปท.'}</p>
+                  {tenant?.address && <p className="text-gray-600 whitespace-pre-line">{tenant.address}</p>}
+                  {tenant?.phone && (
+                    <p>
+                      โทร.{' '}
+                      <a href={`tel:${tenant.phone}`} className="font-semibold text-blue-600 hover:underline">
+                        {tenant.phone}
+                      </a>
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <button type="button" onClick={() => { setMode('login'); setError(''); setSuccess(''); setForgotEmail(''); setShowOfficeHelp(false) }}
               className="w-full flex items-center justify-center gap-1.5 text-sm text-gray-400 hover:text-gray-600 transition-colors py-1">
               <ArrowLeft size={14} /> กลับไปเข้าสู่ระบบ
             </button>
@@ -457,7 +507,7 @@ export default function AuthPage() {
                   className="w-4 h-4 rounded accent-(--color-primary)" />
                 <span className="text-sm text-gray-500">จำการเข้าสู่ระบบไว้บนเครื่องนี้</span>
               </label>
-              <button type="button" onClick={() => { setMode('forgot'); setError(''); setSuccess('') }}
+              <button type="button" onClick={() => { setMode('forgot'); setError(''); setSuccess(''); setShowOfficeHelp(false) }}
                 className="text-sm text-blue-500 hover:text-blue-700 transition-colors">
                 ลืมรหัสผ่าน?
               </button>
