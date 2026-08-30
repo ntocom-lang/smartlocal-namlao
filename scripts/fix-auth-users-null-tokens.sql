@@ -1,3 +1,6 @@
+-- ℹ️ เคสปี 2026-08-30 ไม่ได้ใช้ไฟล์นี้ — อาการหายไปเองหลังลบแถวบัญชีทดสอบเก่าที่เป็นตัวการทิ้ง
+--    (ดูสรุปใน scripts/diagnose-auth-users-null-tokens.sql) เก็บไว้เผื่ออาการกลับมาเท่านั้น
+--
 -- ⚠️ ไฟล์นี้แก้ข้อมูลจริงบน auth.users
 --    รันต่อเมื่อ scripts/diagnose-auth-users-null-tokens.sql ยืนยันแล้วว่ามีคอลัมน์เป็น NULL จริง
 --    และสำรอง auth.users ก่อน (Dashboard > Database > Backups)
