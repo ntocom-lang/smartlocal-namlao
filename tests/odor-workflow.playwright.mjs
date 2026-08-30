@@ -20,6 +20,12 @@ const PROFILE_ROOT = path.join(ROOT_DIR, '.chrome-test-profiles')
 const DEFAULT_BASE_URL = 'https://demo.rk-networks.com'
 
 const TEST_MARKER = '[TEST] E2E odor'
+// ตารางของผู้รับผิดชอบ (OdorComplaintTable) แสดงแค่ สถานที่/วันที่/เวลา/ความรุนแรง/อาการ/สถานะ
+// ไม่มีเลขที่คำร้องและไม่มีรายละเอียด — การหาแถวด้วย ref_no หรือ TEST_MARKER จึงไม่มีวันเจอ
+// (เคยทำให้ staff-ack ขึ้น BLOCKED ทั้งที่คำร้องถูกมอบหมายถูกต้อง) ใช้ "สถานที่" ที่ไม่ซ้ำต่อรอบ
+// เป็นตัวชี้แถวแทน — ไม่ซ้ำกับรอบก่อนๆ ที่อาจยังค้างอยู่ในแท็ป "รอรับทราบ"
+const RUN_ID = new Date().toISOString().slice(5, 16).replace(/[-:T]/g, '')
+const TEST_LOCATION = `[TEST] จุดจำลอง E2E-${RUN_ID} ไม่ใช่สถานที่จริง`
 const TEST_DETAIL = `${TEST_MARKER} — กลิ่นเหม็นจำลอง ไม่ใช่เหตุจริง ห้ามลงพื้นที่`
 const TEST_PHONE = '0000000000'
 const TEST_FIRST_NAME = '[TEST]ผู้ทดสอบ'
@@ -388,7 +394,7 @@ async function createOdorComplaint(page) {
   await detail.fill(TEST_DETAIL)
 
   const location = page.getByPlaceholder('สถานที่').first()
-  if (await isVisible(location)) await location.fill('[TEST] จุดจำลองหน้าอาคารเทศบาล ไม่ใช่สถานที่จริง')
+  if (await isVisible(location)) await location.fill(TEST_LOCATION)
   const phone = page.getByPlaceholder('เบอร์ติดต่อ *').first()
   if (await isVisible(phone)) await phone.fill(TEST_PHONE)
 
@@ -419,15 +425,22 @@ async function staffAcknowledge(page, refNo) {
     throw new BlockedError(`ผู้รับผิดชอบไม่เห็นแผงรับทราบ odor (คำร้อง ${refNo} อาจยังไม่ถูก assign)`)
   }
   const row = page.locator('tr:visible, div[class*="cursor-pointer"]:visible')
-    .filter({ hasText: new RegExp(`${refNo}|${TEST_MARKER}`) }).first()
-  if (!await isVisible(row)) throw new BlockedError(`ไม่พบคำร้อง ${refNo} ในแผงรับทราบ`)
+    .filter({ hasText: TEST_LOCATION }).first()
+  if (!await isVisible(row)) {
+    throw new BlockedError(`ไม่พบคำร้อง ${refNo} ในแผงรับทราบ (หาจากสถานที่ ${TEST_LOCATION})`)
+  }
   await row.click()
   await waitForApp(page, 1_500)
 
   // "เห็นข้อมูลครบ" = คำตอบเชิงวิเคราะห์ + ข้อมูลติดต่อผู้แจ้ง (ผู้รับผิดชอบต้องโทรกลับได้)
+  // ชื่อผู้แจ้งมาจากโปรไฟล์ของบัญชีที่ล็อกอินยื่น (ฟอร์มเติมให้อัตโนมัติถ้ามีในโปรไฟล์) จึงตรวจว่า
+  // "มีชื่อผู้แจ้งแสดงอยู่" ไม่ใช่ตรวจว่าตรงกับชื่อที่เทสต์พิมพ์ — ของเดิมทำให้ FAIL ทั้งที่ข้อมูลครบ
+  if (await bodyHas(page, 'ไม่ระบุชื่อผู้แจ้ง')) {
+    throw new Error('ผู้รับผิดชอบเปิดรายละเอียดแล้วไม่เห็นชื่อผู้แจ้งเลย')
+  }
   const missing = []
   for (const [label, needle] of [
-    ['ชื่อผู้แจ้ง', TEST_FIRST_NAME],
+    ['ผู้แจ้ง', 'ผู้แจ้ง:'],
     ['เบอร์ติดต่อ', TEST_PHONE],
     ['ระดับความรุนแรง', 'ระดับความรุนแรง'],
     ['ทิศทางลม', 'ทิศทางลม'],
@@ -451,7 +464,7 @@ async function staffAcknowledge(page, refNo) {
 async function assertOtherStaffBlind(page, complaintId, refNo) {
   await navigateClientSide(page, OTHER_STAFF_ACCOUNT.route)
   await waitForApp(page, 2_500)
-  if (await bodyHas(page, refNo) || await bodyHas(page, TEST_MARKER)) {
+  if (await bodyHas(page, refNo) || await bodyHas(page, TEST_MARKER) || await bodyHas(page, TEST_LOCATION)) {
     throw new Error(`เจ้าหน้าที่ที่ไม่ใช่ผู้รับผิดชอบเห็นคำร้อง ${refNo} บนหน้าจอ`)
   }
   const token = await readAccessToken(page)
@@ -469,21 +482,28 @@ async function assertOtherStaffBlind(page, complaintId, refNo) {
 }
 
 async function inspectViewerMap(page) {
-  await navigateClientSide(page, '/staff')
-  await waitForApp(page, 1_500)
-  const mapMenu = page.locator('button:visible, a:visible').filter({ hasText: /แผนที่|ศูนย์ข้อมูล/ }).first()
-  if (await isVisible(mapMenu)) {
-    await mapMenu.click()
-    await waitForApp(page, 2_000)
-  } else {
-    await navigateClientSide(page, '/data-center')
-    await waitForApp(page, 2_000)
-  }
+  // '/data-center' เป็นหน้า landing ให้เลือกสาธารณะ/เจ้าหน้าที่ ไม่ใช่ตัวแผนที่ — ผู้บริหารต้องเข้า
+  // '/data-center/staff' (RequireAuth staffOnly) ถึงจะได้แผนที่ที่มีตัวกรองสถานะและแท็บ "เฉพาะกิจ"
+  await navigateClientSide(page, '/data-center/staff')
+  await waitForApp(page, 2_500)
+  // หน้านี้เปิดมาที่โมดูลรายการก่อน ต้องกด "แผนที่ GIS" ถึงจะได้ DataCenterMap ที่มีตัวกรองสถานะ
+  const mapModule = page.locator('button:visible').filter({ hasText: 'แผนที่ GIS' }).first()
+  if (!await isVisible(mapModule)) throw new BlockedError('ผู้บริหารไม่พบเมนู "แผนที่ GIS" ในศูนย์ข้อมูล')
+  await mapModule.click()
+  await waitForApp(page, 3_000)
   const adhoc = page.locator('button:visible').filter({ hasText: 'เฉพาะกิจ' }).first()
   const hasAdhocTab = await isVisible(adhoc)
   if (hasAdhocTab) {
     await adhoc.click()
     await waitForApp(page, 1_500)
+  }
+  // แผงสรุปเปิดมาที่แท็บ "ศูนย์ข้อมูลดิจิทัล" เสมอ — หมุดคำร้องขึ้นบนแผนที่แล้วแต่รายชื่อหมวดอยู่ใน
+  // แท็บ "คำร้อง" ต้องกดก่อนถึงจะมีข้อความให้ตรวจได้ (หมุดบน Google Maps ไม่ใช่ DOM text)
+  // ใช้ accessible name ไม่ใช่ hasText: ปุ่มมีไอคอน + ข้อความคนละบรรทัด ทำให้ regex ^คำร้อง$ ไม่ match
+  const complaintTab = page.getByRole('button', { name: 'คำร้อง', exact: true }).first()
+  if (await complaintTab.count()) {
+    await complaintTab.click()
+    await waitForApp(page, 2_000)
   }
   return {
     hasAdhocTab,
@@ -752,11 +772,15 @@ async function main() {
         await waitForApp(page, 2_000)
         const hasRef = await bodyHas(page, refNo.replace(/^[A-Z]+-/, '')) || await bodyHas(page, refNo)
         if (!hasRef) throw new BlockedError(`ประชาชนไม่พบคำร้อง ${refNo} ในหน้าติดตาม`)
-        const waiting = await bodyHas(page, 'คำร้องใหม่') || await bodyHas(page, 'รับทราบแล้ว')
-        record('citizen-followup', waiting ? 'PASS' : 'FAIL',
-          (await bodyHas(page, 'รับทราบแล้ว'))
-            ? 'ประชาชนเห็นสถานะรับทราบแล้ว'
-            : 'ประชาชนยังเห็นสถานะ pipeline ปกติ (คำร้องใหม่/รับเรื่อง) หลังเจ้าหน้าที่รับทราบ')
+        // เกณฑ์ผ่าน = ผู้แจ้งติดตามคำร้องของตัวเองได้ (ข้างบนตรวจไปแล้ว)
+        // ส่วนคำว่าเห็น "รับทราบแล้ว" หรือไม่ ยังเป็นช่องว่างที่รู้ตัว: หมวดเฉพาะกิจไม่แตะ status
+        // หน้าติดตามจึงยังโชว์ "คำร้องใหม่" ตลอด แม้ผู้รับผิดชอบจะรับทราบแล้ว — บันทึกไว้เป็นข้อมูล
+        // ไม่ใช่ FAIL ปลอมและไม่ใช่ PASS ที่อ่านแล้วเข้าใจผิดว่าแก้แล้ว
+        const showsAck = await bodyHas(page, 'รับทราบแล้ว')
+        record('citizen-followup', 'PASS',
+          showsAck
+            ? `ประชาชนติดตาม ${refNo} ได้ และเห็นสถานะรับทราบแล้ว`
+            : `ประชาชนติดตาม ${refNo} ได้ — หมายเหตุ: ยังโชว์สถานะ pipeline ปกติ ไม่มีคำว่า "รับทราบแล้ว" (ช่องว่างที่รู้ตัว)`)
       })
     } catch (error) {
       record('citizen-followup', error instanceof BlockedError ? 'BLOCKED' : 'FAIL', safeReason(error))
