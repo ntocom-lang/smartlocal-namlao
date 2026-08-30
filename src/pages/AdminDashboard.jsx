@@ -3201,7 +3201,9 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [
               title="เปลี่ยนไอคอน"
               className="hover:bg-gray-100 rounded-lg p-1 transition-colors active:scale-90 shrink-0"
             ><CategoryIcon emoji={cat.emoji} size={22} style={iconStyle} /></button>
-            <span className="font-medium text-gray-800">{cat.label}</span>
+            {/* ชื่อประเภทอยู่บรรทัดเดียว: ปล่อยให้ตกบรรทัดแล้วชื่อยาวอย่าง "กลิ่นเหม็นรบกวน
+                (มลพิษทางอากาศ)" ทำให้แถวสูง 6 บรรทัดและอ่านยากกว่าการเลื่อนตารางแนวนอน */}
+            <span className="font-medium text-gray-800 whitespace-nowrap">{cat.label}</span>
           </div>
         )}
       </td>
