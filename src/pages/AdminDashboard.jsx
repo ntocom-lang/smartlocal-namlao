@@ -12,7 +12,7 @@ import {
   CheckCircle2, ChevronRight, ChevronLeft,
   Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical, Briefcase,
   X, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Repeat,
-  TrendingUp, AlertTriangle, Printer, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Star, MessageSquare, Car, Terminal, Database, CalendarDays, KeyRound, ClipboardList
+  TrendingUp, AlertTriangle, Printer, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Star, MessageSquare, Car, Terminal, Database, CalendarDays, KeyRound, ClipboardList, FileText, UserRoundCheck
 } from 'lucide-react'
 import { supabase, signOutSafely } from '../lib/supabase'
 import { compressImage } from '../lib/imageUtils'
@@ -57,6 +57,52 @@ import { ROLE_LABELS, ROLE_DESCRIPTIONS, fetchAssignableStaff, groupStaffByDepar
 import FleetSetup from '../components/fleet/FleetSetup'
 import { adminUpdateUser } from '../lib/adminUpdateUser'
 import { CategoryIcon } from '../lib/categoryIcon'
+
+// ─── หน้า "ประเภทคำร้อง" แบ่งเป็นแท็บ ─────────────────────────────────────────
+// เดิมวาง 3 ส่วนซ้อนกันลงมาจนต้องเลื่อนจอหลายหน้ากว่าจะถึงส่วนล่างสุด แยกเป็นแท็บ 2026-08-31
+// ทั้ง 3 ส่วนเป็นข้อมูลอ้างอิงคนละก้อน ไม่ต้องเห็นพร้อมกัน
+//
+// อยู่ในไฟล์นี้เพราะ CategoryManager เป็น component ที่ประกาศในไฟล์เดียวกัน (ไม่ได้แยกไฟล์)
+// ถ้าย้ายออกไปเป็นไฟล์นอกจะต้อง export CategoryManager แล้วเกิด circular import
+//
+// แท็บ 2-3 เห็นเฉพาะ admin/superadmin เหมือนเงื่อนไขเดิมตอนยังซ้อนกันอยู่
+function CategorySettingsTabs({ tenant, currentUserRole }) {
+  const [tab, setTab] = useState('categories')
+  const canManage = currentUserRole === 'admin' || currentUserRole === 'superadmin'
+
+  const TABS = [
+    { key: 'categories', label: 'ประเภทคำร้อง',      Icon: Tag,            show: true },
+    { key: 'doc-types',  label: 'ประเภทคำขอเอกสาร', Icon: FileText,       show: canManage },
+    { key: 'signatory',  label: 'ผู้ลงนาม',          Icon: UserRoundCheck, show: canManage },
+  ].filter(t => t.show)
+
+  // กันแท็บค้างอยู่บนแท็บที่ role ปัจจุบันไม่มีสิทธิ์เห็น (เช่นสิทธิ์ถูกลดระหว่างใช้งาน)
+  const active = TABS.some(t => t.key === tab) ? tab : 'categories'
+
+  return (
+    <div className="space-y-5">
+      {TABS.length > 1 && (
+        <div className="inline-flex max-w-full overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
+          {TABS.map(({ key, label, Icon }) => (
+            <button key={key} type="button" onClick={() => setTab(key)}
+              className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-3.5 py-2 text-xs font-bold transition-all md:px-4 md:text-sm ${
+                active === key
+                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md shadow-amber-200'
+                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+              }`}>
+              <Icon size={15} /> {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {active === 'categories' && <CategoryManager tenant={tenant} />}
+      {/* key={tenant.id} ให้ remount อ่านค่า fee_schedule ใหม่เมื่อสลับหน่วยงาน */}
+      {active === 'doc-types' && <DocumentTypeFeeSettings key={tenant?.id} tenant={tenant} />}
+      {active === 'signatory' && <ComplaintSignatorySettings tenant={tenant} />}
+    </div>
+  )
+}
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS = {
@@ -5350,18 +5396,9 @@ export default function AdminDashboard() {
         // หน้า "ผู้รับผิดชอบแต่ละประเภทคำร้อง" (activePage 'assignments', AssignmentManager component)
         // ถูกลบไปแล้ว — เป็น UI ซ้ำซ้อนกับส่วนตั้งผู้รับผิดชอบ+SLA ที่ฝังอยู่ใน CategoryManager นี้อยู่แล้ว
         // (เขียนตาราง category_assignments ตัวเดียวกัน) เมนูไปหน้านั้นถูกปิด (show:false) มานานแล้วด้วย
-        <div className="space-y-5">
-          <CategoryManager tenant={tenant} />
-          {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
-            <>
-              {/* ย้ายมาจากเมนู "ค่าธรรมเนียม" (FeeSettingsAdmin) ที่ถอดออก 2026-08-31 — เป็นที่เดียว
-                  ที่เขียน municipalities.fee_schedule ซึ่งคุมประเภทคำขอเอกสารที่หน้าประชาชนทุกธีมแสดง
-                  ถ้าไม่ย้ายมา อปท. จะเพิ่ม/ลบประเภทของตัวเองไม่ได้อีกเลย */}
-              <DocumentTypeFeeSettings key={tenant?.id} tenant={tenant} />
-              <ComplaintSignatorySettings tenant={tenant} />
-            </>
-          )}
-        </div>
+        // 3 แท็บย่อยอยู่ใน CategorySettingsTabs — ประเภทคำร้อง / ประเภทคำขอเอกสาร (ย้ายมาจากเมนู
+        // "ค่าธรรมเนียม" ที่ถอดออก เป็นที่เดียวที่เขียน municipalities.fee_schedule ได้) / ผู้ลงนาม
+        <CategorySettingsTabs tenant={tenant} currentUserRole={currentUserRole} />
       ) : activePage === 'civil-report' ? (
         <Suspense fallback={
           <div className="flex items-center justify-center py-10">
