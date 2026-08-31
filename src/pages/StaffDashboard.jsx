@@ -5,7 +5,7 @@ import {
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, AlignLeft, Calendar, Hash, RefreshCw,
   Printer, Search, Hammer, Home, CalendarDays, TrendingUp, Images, Camera,
-  Banknote, Luggage, Star, Car, Bell, Trash2, Briefcase, Database, BookOpen,
+  Banknote, Luggage, Star, Car, Bell, Trash2, Database, BookOpen,
 } from 'lucide-react'
 import { supabase, signOutSafely } from '../lib/supabase'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
@@ -33,7 +33,6 @@ const ReportManager = lazy(() => import('../components/admin/ReportManager'))
 const TourismManager = lazy(() => import('../components/admin/TourismManager'))
 const TourismReviewsAdmin = lazy(() => import('../components/admin/TourismManager').then(module => ({ default: module.TourismReviewsAdmin })))
 const PostsManager = lazy(() => import('../components/staff/PostsManager'))
-const PositionsManager = lazy(() => import('../components/staff/PositionsManager'))
 const StaffOperationalDashboard = lazy(() => import('../components/staff/StaffOperationalDashboard'))
 const FleetPage = lazy(() => import('./FleetPage'))
 const BuildingPermitWizard = lazy(() => import('./BuildingPermitWizard'))
@@ -90,12 +89,8 @@ const STANDALONE_GROUPS = [
       { key: 'fleet',    label: 'ยานพาหนะ/น้ำมัน',  Icon: Car,           color: '#0369a1', bg: '#e0f2fe' },
     ],
   },
-  {
-    group: 'บุคลากร',
-    items: [
-      { key: 'positions', label: 'ทำเนียบตำแหน่ง', Icon: Briefcase, color: '#4338ca', bg: '#e0e7ff' },
-    ],
-  },
+  // กลุ่ม 'บุคลากร' (เมนู 'positions' ทำเนียบตำแหน่ง) ถอดออก 2026-08-31 — ซ้ำกับหน้า
+  // "จัดการผู้ใช้และการแต่งตั้ง" ฝั่งแอดมิน ส่วนการแก้แบบตำแหน่งย้ายไป SuperAdminPanel → แบบตำแหน่ง
   {
     group: 'คู่มือ',
     items: [
@@ -139,7 +134,6 @@ const TECHNICIAN_MODULE_KEYS = [
   'events',        // ปฏิทินกิจกรรม
   'data-center',   // ศูนย์ข้อมูลดิจิทัล
   'fleet',         // ยานพาหนะ/น้ำมัน
-  'positions',     // ทำเนียบตำแหน่ง
   'manual-staff',  // คู่มือ
 ]
 
@@ -1964,7 +1958,6 @@ export default function StaffDashboard() {
             {activeModule === 'tourism'          && <TourismManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} currentUserId={profile?.id ?? null} myDepartmentId={profile?.department_id ?? null} />}
             {activeModule === 'tourism-reviews'  && <TourismReviewsAdmin tenant={tenant} />}
             {activeModule === 'fleet' && <FleetPage onBack={() => setActiveModule('home')} />}
-            {activeModule === 'positions' && <PositionsManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} />}
             </Suspense>
             </div>
           </main>
