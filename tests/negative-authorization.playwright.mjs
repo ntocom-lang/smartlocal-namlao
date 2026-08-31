@@ -36,7 +36,7 @@ const FLEET_MENU_LABEL = 'ยานพาหนะ/น้ำมัน'
 const DESTRUCTIVE_PATTERN = /(ลบ|แก้ไข|delete|edit)/i
 const BACK_OFFICE_ROUTES = new Set(['/admin', '/staff'])
 const ADMIN_MANAGEMENT_MENUS = [
-  'ประเภทคำร้อง', 'สายด่วน', 'สถานที่เกิดเหตุ', 'ค่าธรรมเนียม', 'ยานพาหนะ',
+  'ประเภทคำร้อง', 'สายด่วน', 'สถานที่เกิดเหตุ', 'ยานพาหนะ',
   'ตั้งค่าระบบ', 'จัดการผู้ใช้และการแต่งตั้ง', 'บันทึกกิจกรรม',
 ]
 

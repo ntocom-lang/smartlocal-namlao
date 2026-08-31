@@ -12,7 +12,7 @@ import {
   CheckCircle2, ChevronRight, ChevronLeft,
   Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical, Briefcase,
   X, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Repeat,
-  TrendingUp, AlertTriangle, Printer, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Banknote, Star, MessageSquare, Car, Terminal, Database, CalendarDays, KeyRound
+  TrendingUp, AlertTriangle, Printer, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Star, MessageSquare, Car, Terminal, Database, CalendarDays, KeyRound, ClipboardList
 } from 'lucide-react'
 import { supabase, signOutSafely } from '../lib/supabase'
 import { compressImage } from '../lib/imageUtils'
@@ -29,9 +29,9 @@ import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectReport'))
 import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
 import ComplaintSignatorySettings from '../components/admin/ComplaintSignatorySettings'
+import PositionCatalogAdmin from '../components/admin/PositionCatalogAdmin'
 import HolidaysAdmin from '../components/admin/HolidaysAdmin'
 import ResetPasswordModal from '../components/admin/ResetPasswordModal'
-import FeeSettingsAdmin from '../components/admin/FeeSettingsAdmin'
 // โหลดแบบ lazy — EventsManager เป็น chunk 60KB ที่ของเดิม import แบบ static ทำให้ถูกดาวน์โหลด
 // ทุกครั้งที่เปิดแผงควบคุม Admin ทั้งที่เมนูปฏิทินกิจกรรมถูกถอดออกไปแล้ว จึงเข้าไม่ถึงเลย
 const EventsManagerComponent = lazy(() => import('../components/admin/EventsManager'))
@@ -180,7 +180,7 @@ function canManageUser(currentUserRole, currentUserId, targetUser) {
 }
 
 function UserManager({ tenant, currentUserRole, currentUserId }) {
-  const [subTab, setSubTab] = useState('staff') // 'staff' | 'citizen'
+  const [subTab, setSubTab] = useState('staff') // 'staff' | 'citizen' | 'positions'
   const [users, setUsers] = useState([])
   const [depts, setDepts] = useState([])
   const [positions, setPositions] = useState([])
@@ -226,12 +226,17 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
     Promise.all([
       supabase.from('departments').select('id, name, short_name')
         .eq('municipality_id', tenant.id).eq('is_active', true).order('sort_order'),
-      supabase.from('positions').select('id, name, role, category, department_hint').order('sort_order'),
+      // positions เป็นของแต่ละ อปท. แล้ว (20260831140000_positions_per_municipality.sql)
+      // RLS กรองให้อยู่แล้วสำหรับ admin แต่ superadmin อ่านได้ทุกแถวข้าม อปท. จึงต้องกรองเองด้วย
+      supabase.from('positions').select('id, name, role, category, department_hint')
+        .eq('municipality_id', tenant.id).order('sort_order'),
     ]).then(([{ data: departmentRows }, { data: positionRows }]) => {
       setDepts(departmentRows ?? [])
       setPositions(positionRows ?? [])
     })
-  }, [tenant?.id])
+    // subTab อยู่ใน deps เพื่อให้ dropdown "ตำแหน่ง" ในแท็บเจ้าหน้าที่เห็นตำแหน่งที่เพิ่งเพิ่มจาก
+    // แท็บแบบตำแหน่งทันทีที่สลับกลับมา ไม่ต้องรีเฟรชหน้าเอง
+  }, [tenant?.id, subTab])
 
   // จำนวนจริงทั้งหมดของแต่ละแท็บ (ไม่ใช่แค่ users.length ที่จำกัดแค่หน้าละ USER_PAGE_SIZE คน — ถ้ามีเกินนั้น
   // ตัวเลขในรายการจะน้อยกว่าความจริง) — ใช้ RPC get_user_role_counts แทนนับตรงจาก client เพราะต้อง mirror
@@ -249,6 +254,8 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
 
   const fetchUsers = useCallback(async (opts = {}) => {
     if (!['admin', 'superadmin'].includes(currentUserRole) || !tenant?.id) return
+    // แท็บ "แบบตำแหน่ง" ไม่ได้แสดงรายชื่อคน ไม่ต้องยิง RPC ดึง PII มาทิ้งเปล่าๆ
+    if (subTab === 'positions') return
     const searchTerm = (opts.search ?? '').trim()
     const requestedPage = Math.max(0, opts.page ?? 0)
     const requestedSortKey = USER_SORT_KEYS.has(opts.sortKey ?? sortConfig.key) ? (opts.sortKey ?? sortConfig.key) : 'full_name'
@@ -522,6 +529,9 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
           </button>
         </div>
 
+        {/* การ์ดสถิติเป็นตัวเลขของ "รายชื่อคน" ล้วน แท็บแบบตำแหน่งไม่มีรายชื่อจึงซ่อนไว้
+            ไม่งั้นจะโชว์ค่าค้างจากแท็บก่อนหน้าซึ่งอ่านแล้วเข้าใจผิดว่าเป็นตัวเลขของตำแหน่ง */}
+        {subTab !== 'positions' && (
         <div className="relative mt-5 grid grid-cols-3 gap-2 md:max-w-xl md:gap-3">
           {[
             { label: subTab === 'staff' ? 'เจ้าหน้าที่ทั้งหมด' : 'ประชาชนทั้งหมด', value: activeTabCount ?? '—', color: 'text-cyan-200' },
@@ -534,16 +544,20 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
             </div>
           ))}
         </div>
+        )}
       </section>
 
       <section className="overflow-hidden rounded-[24px] border border-slate-200/80 bg-white shadow-lg shadow-slate-200/60">
 
-      {/* แท็บย่อย: เจ้าหน้าที่ / ประชาชน — แยก query กันโหลดผู้ใช้ทั้งหมดมาทีเดียว (แต่ละแท็บโหลดหน้าแรกทันที) */}
+      {/* แท็บย่อย: เจ้าหน้าที่ / ประชาชน / แบบตำแหน่ง — แยก query กันโหลดผู้ใช้ทั้งหมดมาทีเดียว */}
       <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50 via-white to-blue-50/60 px-4 py-3 md:px-5">
         <div className="inline-flex rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
         {[
           { key: 'staff', label: 'เจ้าหน้าที่', count: staffCount, Icon: Briefcase },
           { key: 'citizen', label: 'ประชาชน', count: citizenCount, Icon: UserCircle2 },
+          // แบบตำแหน่งของหน่วยงาน — ย้ายมาจากเมนู "ทำเนียบตำแหน่ง" ฝั่งเจ้าหน้าที่ที่ถอดออก 2026-08-31
+          // อยู่หน้าเดียวกับการแต่งตั้งเพราะเป็นของคู่กัน (สร้างตำแหน่ง → แต่งตั้งคนเข้าตำแหน่ง)
+          { key: 'positions', label: 'แบบตำแหน่ง', count: null, Icon: ClipboardList },
         ].map(({ key, label, count, Icon }) => (
           <button key={key} onClick={() => {
             fetchSequence.current += 1
@@ -569,6 +583,10 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
         ))}
         </div>
       </div>
+
+      {subTab === 'positions' && <PositionCatalogAdmin tenant={tenant} currentUserRole={currentUserRole} />}
+
+      {subTab !== 'positions' && (<>
 
       {/* การ์ดกลุ่ม "กอง/หน่วยงาน" (เฉพาะแท็บเจ้าหน้าที่) */}
       {subTab === 'staff' && (
@@ -942,6 +960,8 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
           </div>
         )
       })()}
+
+      </>)}
 
       </section>
       <DeleteUserConfirmModal
@@ -4591,7 +4611,6 @@ const PAGE_LABELS = {
   'doc-requests': 'คำขอเอกสาร',
   report: 'รายงานสรุป',
   categories: 'ประเภทคำร้อง',
-  'fee-settings': 'ค่าธรรมเนียม',
   emergency: 'สายด่วน',
   locations: 'สถานที่เกิดเหตุ',
   'system-settings': 'ตั้งค่าระบบ',
@@ -4624,13 +4643,12 @@ function getAdminMenuGroups(currentUserRole, currentUserId) {
     // (StaffDashboard โมดูล events) และ route /events
     {
       group: 'ข้อมูลบริการประชาชน',
-      description: 'ข้อมูลอ้างอิงที่ใช้รับเรื่อง คิดค่าธรรมเนียม และติดต่อฉุกเฉิน',
+      description: 'ข้อมูลอ้างอิงที่ใช้รับเรื่องและติดต่อฉุกเฉิน',
       accent: '#0ea5e9',
       items: [
         { key: 'categories', label: 'ประเภทคำร้อง', Icon: Tag, color: '#d97706', bg: '#fef3c7', show: canManageContent },
         { key: 'emergency', label: 'สายด่วน', Icon: Phone, color: '#ef4444', bg: '#fee2e2', show: canManageContent },
         { key: 'locations', label: 'สถานที่เกิดเหตุ', Icon: MapPin, color: '#0891b2', bg: '#e0f2fe', show: canManageContent },
-        { key: 'fee-settings', label: 'ค่าธรรมเนียม', Icon: Banknote, color: '#10b981', bg: '#d1fae5', show: canManageSystem },
         { key: 'fleet-setup', label: 'ยานพาหนะ', Icon: Car, color: '#0369a1', bg: '#e0f2fe', show: canManageSystem },
       ],
     },
@@ -5345,8 +5363,6 @@ export default function AdminDashboard() {
         }>
           <CivilProjectReport tenant={tenant} />
         </Suspense>
-      ) : activePage === 'fee-settings' ? (
-        <FeeSettingsAdmin tenant={tenant} />
       ) : activePage === 'holidays' ? (
         <HolidaysAdmin tenant={tenant} currentUserRole={currentUserRole} />
       ) : activePage === 'system-settings' ? (

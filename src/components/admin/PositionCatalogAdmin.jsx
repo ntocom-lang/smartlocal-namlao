@@ -1,16 +1,15 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Briefcase, Plus, Pencil, Trash2, X, Loader2, Search, AlertCircle, Users } from 'lucide-react'
+import { Briefcase, Plus, Pencil, Trash2, X, Loader2, Search, AlertCircle, Users, DownloadCloud } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
-// แคตตาล็อกแบบตำแหน่ง (ตาราง positions) — ย้ายมาจากเมนู "ทำเนียบตำแหน่ง" ฝั่งเจ้าหน้าที่ที่ถอดออกแล้ว
-// (ซ้ำซ้อนกับหน้า "จัดการผู้ใช้และการแต่งตั้ง" ในสายตาแอดมิน) เหลือไว้ที่นี่เพราะ positions ยังเป็น
-// dependency จริง 2 จุด:
-//   1. RPC get_public_personnel_directory ใช้ INNER JOIN positions — ใครไม่มี position_id หายจาก
-//      หน้าบุคลากรฝั่งประชาชนทั้งคน
-//   2. dropdown "ตำแหน่ง" ในหน้าจัดการผู้ใช้และการแต่งตั้ง
+// แบบตำแหน่งของหน่วยงาน (ตาราง positions) — ย้ายมาจากเมนู "ทำเนียบตำแหน่ง" ฝั่งเจ้าหน้าที่ที่ถอดออก
+// 2026-08-31 (ซ้ำซ้อนกับหน้าจัดการผู้ใช้ในสายตาแอดมิน) ตาราง positions ยังจำเป็นเพราะเป็น dependency
+// จริง 2 จุด: RPC get_public_personnel_directory ใช้ INNER JOIN (ใครไม่มี position_id หายจากหน้า
+// บุคลากรฝั่งประชาชนทั้งคน) และ dropdown "ตำแหน่ง" ในแท็บเจ้าหน้าที่
 //
-// ⚠️ positions ไม่มีคอลัมน์ municipality_id = ตารางกลางใช้ร่วมทุก อปท. แก้ที่นี่กระทบทุกหน่วยงาน
-// จึงจำกัดไว้ที่ superadmin และบล็อกการลบตำแหน่งที่ยังมีคนถืออยู่
+// ตั้งแต่ 20260831140000_positions_per_municipality.sql ตารางนี้เป็นของใครของมันแล้ว
+// (municipality_id NOT NULL) แอดมินแต่ละ อปท. แก้ได้เฉพาะของหน่วยงานตัวเอง — RLS บังคับซ้ำฝั่ง DB
+// ยังต้องกรอง .eq('municipality_id') ฝั่ง client อยู่ เพราะ superadmin อ่านได้ทุกแถวข้าม อปท.
 
 // ต้องตรงกับ CHECK constraint ใน supabase/migrations (positions_personnel)
 const CATEGORIES = [
@@ -30,32 +29,36 @@ const ROLE_TH = {
 const EMPTY_FORM = { name: '', category: 'operating_staff', role: 'staff', department_hint: '', sort_order: 0 }
 const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
 
-export default function PositionCatalogAdmin() {
+export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
   const [positions, setPositions] = useState([])
-  const [usage, setUsage] = useState({}) // position_id -> จำนวนคนที่ถืออยู่ (ทุก อปท.)
+  const [usage, setUsage] = useState({}) // position_id -> จำนวนคนในหน่วยงานนี้ที่ถืออยู่
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(null) // null=ปิด, {}=สร้างใหม่, {...position}=แก้ไข
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
+  const [importing, setImporting] = useState(false)
   const [search, setSearch] = useState('')
+
+  const canManage = ['admin', 'superadmin'].includes(currentUserRole)
 
   // ไม่ setLoading(true) ตรงนี้ — เรียกจาก useEffect ตอน mount ด้วย การ setState แบบ sync ในเอฟเฟกต์
   // ทำให้เกิด cascading render (react-hooks/set-state-in-effect) ค่าเริ่มต้นเป็น true อยู่แล้ว
   // ส่วนการ reload หลังบันทึก/ลบ ให้รีเฟรชเงียบๆ ไม่ต้องกระพริบทั้งหน้า
   const reload = useCallback(() => {
-    Promise.all([
-      supabase.from('positions').select('*').order('sort_order'),
-      // นับผู้ถือตำแหน่งข้าม อปท. เพื่อกันลบตำแหน่งที่หน่วยงานอื่นใช้อยู่ — ดึงเฉพาะคอลัมน์เดียว
-      // (superadmin อ่าน profiles ได้ทุกแถวตาม RLS) ปริมาณระดับพันแถวยังรับไหวสำหรับหน้าที่ใช้นานๆ ครั้ง
-      supabase.from('profiles').select('position_id').not('position_id', 'is', null),
-    ]).then(([{ data: pos }, { data: holders }]) => {
+    const query = tenant?.id
+      ? Promise.all([
+          supabase.from('positions').select('*').eq('municipality_id', tenant.id).order('sort_order'),
+          supabase.from('profiles').select('position_id').eq('municipality_id', tenant.id).not('position_id', 'is', null),
+        ])
+      : Promise.resolve([{ data: [] }, { data: [] }])
+    query.then(([{ data: pos }, { data: holders }]) => {
       setPositions(pos ?? [])
       const counts = {}
       for (const row of holders ?? []) counts[row.position_id] = (counts[row.position_id] ?? 0) + 1
       setUsage(counts)
       setLoading(false)
     })
-  }, [])
+  }, [tenant])
 
   useEffect(() => { reload() }, [reload])
 
@@ -69,7 +72,7 @@ export default function PositionCatalogAdmin() {
   }
 
   async function handleSave() {
-    if (!form.name.trim()) return
+    if (!form.name.trim() || !tenant?.id) return
     setSaving(true)
     const payload = {
       name: form.name.trim(),
@@ -80,25 +83,42 @@ export default function PositionCatalogAdmin() {
     }
     const { error } = editing?.id
       ? await supabase.from('positions').update(payload).eq('id', editing.id)
-      : await supabase.from('positions').insert(payload)
+      : await supabase.from('positions').insert({ ...payload, municipality_id: tenant.id })
     setSaving(false)
-    if (error) { alert('บันทึกไม่สำเร็จ: ' + error.message); return }
+    if (error) {
+      // 23505 = ชน UNIQUE (municipality_id, name) — ข้อความดิบของ Postgres อ่านไม่รู้เรื่องสำหรับแอดมิน
+      alert(error.code === '23505'
+        ? `มีตำแหน่งชื่อ "${payload.name}" อยู่แล้วในหน่วยงานนี้`
+        : 'บันทึกไม่สำเร็จ: ' + error.message)
+      return
+    }
     setEditing(null)
     reload()
   }
 
   async function handleDelete(p) {
     const count = usage[p.id] ?? 0
-    // ลบตำแหน่งที่ยังมีคนถือ = คนเหล่านั้นหลุด position_id แล้วหายจากหน้าบุคลากรฝั่งประชาชนทันที
-    // (RPC ใช้ INNER JOIN) และอาจเป็นคนของ อปท. อื่นที่แอดมินคนนี้มองไม่เห็นด้วยซ้ำ — บล็อกไว้เลย
+    // ลบตำแหน่งที่ยังมีคนถือ = คนเหล่านั้นหลุด position_id (ON DELETE SET NULL) แล้วหายจากหน้า
+    // บุคลากรฝั่งประชาชนทันที เพราะ RPC ใช้ INNER JOIN — บล็อกไว้ก่อน ให้ย้ายคนออกเอง
     if (count > 0) {
-      alert(`ลบไม่ได้: ยังมีบุคลากร ${count} คนถือตำแหน่ง "${p.name}" อยู่ (นับรวมทุก อปท.)\n\n` +
-        'ต้องย้ายคนเหล่านั้นไปตำแหน่งอื่นที่หน้า "จัดการผู้ใช้และการแต่งตั้ง" ก่อน')
+      alert(`ลบไม่ได้: ยังมีบุคลากร ${count} คนถือตำแหน่ง "${p.name}" อยู่\n\n` +
+        'ต้องย้ายคนเหล่านั้นไปตำแหน่งอื่นที่แท็บ "เจ้าหน้าที่" ก่อน')
       return
     }
-    if (!window.confirm(`ลบตำแหน่ง "${p.name}" ออกจากตารางกลาง?\n\nตำแหน่งนี้จะหายจาก dropdown ของทุก อปท.`)) return
+    if (!window.confirm(`ลบตำแหน่ง "${p.name}" ของหน่วยงานนี้?`)) return
     const { error } = await supabase.from('positions').delete().eq('id', p.id)
     if (error) { alert('ลบไม่สำเร็จ: ' + error.message); return }
+    reload()
+  }
+
+  async function handleImportDefaults() {
+    if (!tenant?.id) return
+    if (!window.confirm('นำเข้าชุดตำแหน่งมาตรฐาน อบต./เทศบาล?\n\nจะเพิ่มเฉพาะชื่อที่ยังไม่มีในหน่วยงานนี้ ของเดิมไม่ถูกแก้')) return
+    setImporting(true)
+    const { data, error } = await supabase.rpc('import_default_positions', { p_municipality_id: tenant.id })
+    setImporting(false)
+    if (error) { alert('นำเข้าไม่สำเร็จ: ' + error.message); return }
+    alert(data > 0 ? `เพิ่มตำแหน่งใหม่ ${data} รายการ` : 'ไม่มีตำแหน่งใหม่ให้เพิ่ม — มีครบอยู่แล้ว')
     reload()
   }
 
@@ -115,27 +135,37 @@ export default function PositionCatalogAdmin() {
   if (loading) return <div className="flex justify-center py-16"><Loader2 size={28} className="animate-spin text-gray-200" /></div>
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 px-4 py-4 md:px-5">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-bold text-gray-800 flex items-center gap-2">
-            <Briefcase size={17} className="text-indigo-500" /> แบบตำแหน่ง (ตารางกลาง)
+            <Briefcase size={17} className="text-indigo-500" /> แบบตำแหน่งของหน่วยงาน
           </h2>
-          <p className="text-xs text-gray-400 mt-0.5">ใช้เป็นตัวเลือกตำแหน่งในหน้าจัดการผู้ใช้ ของทุก อปท.</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            ใช้เป็นตัวเลือกตำแหน่งตอนแต่งตั้งในแท็บ "เจ้าหน้าที่" — {positions.length} ตำแหน่ง
+          </p>
         </div>
-        <button onClick={openCreate}
-          className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-white shadow-sm active:scale-95 transition-all"
-          style={{ backgroundColor: '#1e293b' }}>
-          <Plus size={14} /> เพิ่มตำแหน่ง
-        </button>
+        {canManage && (
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={handleImportDefaults} disabled={importing}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50 active:scale-95 transition-all">
+              {importing ? <Loader2 size={14} className="animate-spin" /> : <DownloadCloud size={14} />}
+              <span className="hidden md:inline">ชุดมาตรฐาน</span>
+            </button>
+            <button onClick={openCreate}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-white shadow-sm active:scale-95 transition-all"
+              style={{ backgroundColor: '#1e293b' }}>
+              <Plus size={14} /> เพิ่มตำแหน่ง
+            </button>
+          </div>
+        )}
       </div>
 
-      <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-700 flex gap-2">
+      <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs leading-5 text-blue-700 flex gap-2">
         <AlertCircle size={15} className="shrink-0 mt-0.5" />
         <span>
-          ตารางนี้ <strong>ใช้ร่วมกันทุกหน่วยงาน</strong> (ไม่มี municipality_id) เพิ่มหรือแก้ที่นี่
-          จะเห็นผลกับ อปท. ทุกแห่งพร้อมกัน — การแต่งตั้งคนเข้าตำแหน่งทำที่
-          <strong> จัดการผู้ใช้และการแต่งตั้ง</strong>
+          ตำแหน่งชุดนี้เป็น<strong>ของหน่วยงานนี้เท่านั้น</strong> แก้แล้วไม่กระทบ อปท. อื่น —
+          การแต่งตั้งคนเข้าตำแหน่งทำที่แท็บ <strong>เจ้าหน้าที่</strong>
         </span>
       </div>
 
@@ -150,8 +180,11 @@ export default function PositionCatalogAdmin() {
         <div className="bg-white rounded-2xl border border-gray-100 flex flex-col items-center justify-center px-4 py-12 text-center">
           <Briefcase size={28} className="text-gray-200" />
           <p className="mt-3 text-sm font-semibold text-gray-500">
-            {searchQ ? `ไม่พบตำแหน่งที่ตรงกับ "${search.trim()}"` : 'ยังไม่มีตำแหน่งในระบบ'}
+            {searchQ ? `ไม่พบตำแหน่งที่ตรงกับ "${search.trim()}"` : 'หน่วยงานนี้ยังไม่มีตำแหน่ง'}
           </p>
+          {!searchQ && canManage && (
+            <p className="mt-1 text-xs text-gray-400">กด "ชุดมาตรฐาน" เพื่อนำเข้าโครงสร้างตำแหน่ง อบต./เทศบาล ทั้งชุด</p>
+          )}
         </div>
       ) : (
         grouped.map(cat => (
@@ -176,19 +209,21 @@ export default function PositionCatalogAdmin() {
                       </div>
                     </div>
                     <span className={`shrink-0 flex items-center gap-1 text-xs font-bold ${count > 0 ? 'text-gray-400' : 'text-amber-400'}`}
-                      title={count > 0 ? `มีผู้ถือตำแหน่ง ${count} คน (ทุก อปท.)` : 'ยังไม่มีใครถือตำแหน่งนี้'}>
+                      title={count > 0 ? `มีผู้ถือตำแหน่ง ${count} คน` : 'ยังไม่มีใครถือตำแหน่งนี้'}>
                       <Users size={12} /> {count}
                     </span>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button onClick={() => openEdit(p)}
-                        className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
-                        <Pencil size={13} />
-                      </button>
-                      <button onClick={() => handleDelete(p)}
-                        className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors">
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
+                    {canManage && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button onClick={() => openEdit(p)}
+                          className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
+                          <Pencil size={13} />
+                        </button>
+                        <button onClick={() => handleDelete(p)}
+                          className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )
               })}

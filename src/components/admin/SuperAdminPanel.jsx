@@ -1,16 +1,15 @@
 import { useState } from 'react'
-import { ShieldCheck, Palette, LayoutGrid, Briefcase } from 'lucide-react'
+import { ShieldCheck, Palette, LayoutGrid } from 'lucide-react'
 import ThemeSettingsAdmin from './ThemeSettingsAdmin'
 import ModuleManager from './ModuleManager'
-import PositionCatalogAdmin from './PositionCatalogAdmin'
 
 // เพิ่มแท็บใหม่ในอนาคต: เพิ่ม entry ตรงนี้ + เขียน component ใหม่ ไม่ต้องแก้โครงสร้าง SuperAdminPanel เลย
 const SUPERADMIN_TABS = [
   { key: 'theme',   label: 'ธีมแอป',        icon: Palette,    Component: ThemeSettingsAdmin },
   { key: 'modules', label: 'จัดการโมดูล',   icon: LayoutGrid, Component: ModuleManager },
-  // ย้ายมาจากเมนู "ทำเนียบตำแหน่ง" ฝั่งเจ้าหน้าที่ที่ถอดออก 2026-08-31 — positions เป็นตารางกลาง
-  // ไม่มี municipality_id แก้ทีเดียวกระทบทุก อปท. จึงเป็นงานของ superadmin ไม่ใช่ของแต่ละหน่วยงาน
-  { key: 'positions', label: 'แบบตำแหน่ง',  icon: Briefcase,  Component: PositionCatalogAdmin },
+  // ไม่มีแท็บ "แบบตำแหน่ง" ที่นี่โดยตั้งใจ — ตั้งแต่ 20260831140000_positions_per_municipality.sql
+  // positions เป็นของแต่ละ อปท. แล้ว แอดมินหน่วยงานจัดการเองที่ จัดการผู้ใช้และการแต่งตั้ง → แบบตำแหน่ง
+  // (superadmin เข้าหน้าเดียวกันนั้นแล้วเห็น/แก้ได้ทุกแถวจาก RLS อยู่แล้ว ไม่ต้องมีของ 2 ที่)
 ]
 
 export default function SuperAdminPanel({ tenant }) {

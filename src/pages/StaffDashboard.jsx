@@ -82,10 +82,6 @@ const STANDALONE_GROUPS = [
       // รอออกแบบใหม่ — คอมโพเนนต์ CivilProjectAdmin/CivilProjectReport กับ branch ที่ render
       // มันยังอยู่ครบ เอากลับมาแค่ใส่ 2 บรรทัดนี้คืน
       { key: 'report',        label: 'รายงาน',           Icon: TrendingUp,    color: '#f59e0b', bg: '#fef3c7' },
-      // รวมกับศูนย์ข้อมูลดิจิทัลแล้ว — กดแล้ว navigate ไป /data-center/staff ตรงๆ ในแท็บเดิม (ข้าม
-      // หน้าเลือกโหมด "เจ้าหน้าที่/ประชาชน" ของ /data-center เพราะรู้อยู่แล้วว่าเป็นฝั่งเจ้าหน้าที่)
-      // (ปุ่ม externalUrl เช็คใน StaffOperationalDashboard.openTask และตัว sidebar เองด้านล่าง)
-      { key: 'data-center', label: 'ศูนย์ข้อมูลดิจิทัล', Icon: MapPin,        color: '#0891b2', bg: '#e0f2fe', externalUrl: '/data-center/staff' },
       { key: 'fleet',    label: 'ยานพาหนะ/น้ำมัน',  Icon: Car,           color: '#0369a1', bg: '#e0f2fe' },
     ],
   },
