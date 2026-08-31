@@ -7,9 +7,10 @@
     "dev": "vite",
     "build": "vite build && node scripts/postbuild.js",
     "lint": "eslint .",
+    "lint:blocking": "node scripts/lint-blocking.mjs",
     "preview": "vite preview",
     "cf:dev": "wrangler dev",
-    "cf:deploy": "node scripts/predeploy-check.js && npm run build && wrangler deploy",
+    "cf:deploy": "node scripts/predeploy-check.js && npm run lint:blocking && npm run build && wrangler deploy && npm run test:smoke -- --expect-local-build",
     "cf:deploy:force": "npm run build && wrangler deploy",
     "check:uniform": "node scripts/check-backend-uniformity.mjs",
     "test:demo-roles": "node tests/negative-authorization.playwright.mjs",
@@ -21,7 +22,8 @@
     "test:fleet:cleanup": "node tests/fleet-workflow.playwright.mjs --cleanup",
     "test:odor": "node tests/odor-workflow.playwright.mjs",
     "test:odor:write": "node tests/odor-workflow.playwright.mjs --write",
-    "test:local-build": "node tests/verify-local-build.mjs"
+    "test:local-build": "node tests/verify-local-build.mjs",
+    "test:smoke": "node tests/post-deploy-smoke.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
