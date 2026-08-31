@@ -29,6 +29,7 @@ import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectReport'))
 import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
 import ComplaintSignatorySettings from '../components/admin/ComplaintSignatorySettings'
+import DocumentTypeFeeSettings from '../components/admin/DocumentTypeFeeSettings'
 import PositionCatalogAdmin from '../components/admin/PositionCatalogAdmin'
 import HolidaysAdmin from '../components/admin/HolidaysAdmin'
 import ResetPasswordModal from '../components/admin/ResetPasswordModal'
@@ -5352,7 +5353,13 @@ export default function AdminDashboard() {
         <div className="space-y-5">
           <CategoryManager tenant={tenant} />
           {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
-            <ComplaintSignatorySettings tenant={tenant} />
+            <>
+              {/* ย้ายมาจากเมนู "ค่าธรรมเนียม" (FeeSettingsAdmin) ที่ถอดออก 2026-08-31 — เป็นที่เดียว
+                  ที่เขียน municipalities.fee_schedule ซึ่งคุมประเภทคำขอเอกสารที่หน้าประชาชนทุกธีมแสดง
+                  ถ้าไม่ย้ายมา อปท. จะเพิ่ม/ลบประเภทของตัวเองไม่ได้อีกเลย */}
+              <DocumentTypeFeeSettings key={tenant?.id} tenant={tenant} />
+              <ComplaintSignatorySettings tenant={tenant} />
+            </>
           )}
         </div>
       ) : activePage === 'civil-report' ? (
