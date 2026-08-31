@@ -12,6 +12,36 @@
 
 const SHELL_PATH = '/_template.html'
 
+// นามสกุลของ "ไฟล์" ที่เบราว์เซอร์เอาไปใช้ตรงๆ ไม่ใช่หน้าเว็บ
+// ใช้เป็น allowlist ไม่ใช่กฎ "มีจุด = ไฟล์" เพราะ route ของ SPA มีจุดได้
+// แล้วจะกลายเป็น 404 ทั้งที่เป็นหน้าจริง
+const FILE_EXTENSIONS = new Set([
+  'js', 'mjs', 'css', 'map', 'json', 'webmanifest',
+  'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'avif', 'ico', 'bmp',
+  'woff', 'woff2', 'ttf', 'otf', 'eot',
+  'mp4', 'webm', 'mp3', 'wav', 'ogg',
+  'pdf', 'txt', 'xml', 'csv', 'zip', 'wasm',
+])
+
+// request นี้ขอ "ไฟล์" หรือขอ "หน้าเว็บ"
+//
+// ต้องแยกให้ออก เพราะ not_found_handling: "none" ส่งทุก path ที่ไม่ตรงไฟล์ไหน
+// มาที่ worker เหมือนกันหมด ถ้าตอบ HTML shell กลับไปให้ทุกอัน request ที่ขอ
+// /assets/index-<hash>.js ของ build เก่าจะได้ HTML กลับไปพร้อมสถานะ 200
+// เบราว์เซอร์เอา HTML ไปรันเป็น JS แล้วตายด้วย "Unexpected token '<'" — หน้าขาว
+//
+// เกิดได้ทุกครั้งที่ deploy: vite ล้าง dist/ ทุกรอบ ชื่อไฟล์เปลี่ยน hash
+// แต่ HTML เก่ายังถูก cache ไว้ (max-age=300) และยังชี้ไปที่ชื่อไฟล์ชุดเดิม
+// ตอบ 404 ตรงๆ ดีกว่า — เบราว์เซอร์กับ workbox รู้จักจัดการ 404
+// ส่วน HTML ที่ปลอมเป็น JS ไม่มีใครดักได้
+function isFileRequest(pathname) {
+  if (pathname.startsWith('/assets/')) return true
+  const last = pathname.split('/').pop() || ''
+  const dot = last.lastIndexOf('.')
+  if (dot <= 0) return false
+  return FILE_EXTENSIONS.has(last.slice(dot + 1).toLowerCase())
+}
+
 // anon key ปลอดภัยที่จะ embed — ถูก expose ใน client bundle อยู่แล้วทุก deployment
 const FALLBACK_SUPABASE_URL = 'https://umxssfahtuprnztlytdd.supabase.co'
 const FALLBACK_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVteHNzZmFodHVwcm56dGx5dGRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0NDI0MzAsImV4cCI6MjA5NDAxODQzMH0.SeQTZHWIAPx0XdQ_xK_BNhHjDVd8CeDdwK2NyXdof7E'
@@ -109,6 +139,15 @@ function buildMetaTags(tenant, origin) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url)
+
+    // มาถึงตรงนี้แปลว่าไม่มีไฟล์ไหนใน dist/ ตรงกับ path นี้ ถ้าเป็น request ที่ขอไฟล์
+    // ก็แปลว่าไฟล์นั้นไม่มีอยู่จริง จบตรงนี้ ไม่ต้องแตะ shell หรือยิง Supabase
+    if (isFileRequest(url.pathname)) {
+      return new Response('Not found', {
+        status: 404,
+        headers: { 'Content-Type': 'text/plain; charset=UTF-8', 'Cache-Control': 'no-store' },
+      })
+    }
 
     const shell = await env.ASSETS.fetch(new Request(new URL(SHELL_PATH, url)))
     if (!shell.ok) return new Response('Build output not found', { status: 500 })
