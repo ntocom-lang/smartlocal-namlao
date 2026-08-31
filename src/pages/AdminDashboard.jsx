@@ -3621,10 +3621,44 @@ function CategoryManager({ tenant }) {
     setError(null)
   }
 
+  // สลับปกติ/เฉพาะกิจ = เปลี่ยนกติกาการมองเห็นของทั้งหมวดย้อนหลังทันที ไม่ใช่แค่คำร้องใหม่
+  // (complaint_category_is_adhoc() ถูกเรียกสดทุกครั้งใน RLS, list_complaints_for_staff,
+  //  get_complaint_private_detail และ data_center_unified_pins) การกดพลาดจึงมี 2 ทิศทางที่อันตราย
+  // คนละแบบ — ทางหนึ่งทำให้เรื่องหายไปจากสายตาเพื่อนร่วมกอง อีกทางเปิดข้อมูลผู้แจ้งที่เคยปิดไว้
+  // ให้คนกลุ่มใหญ่ขึ้นย้อนหลัง จึงต้องยืนยันพร้อมบอกผลที่ตามมาให้ครบก่อนเสมอ
   async function toggleAdhoc(id, current) {
-    const { error: err } = await supabase.from('complaint_categories').update({ is_adhoc: !current }).eq('id', id)
+    const cat = cats.find((c) => c.id === id)
+    const label = cat?.label ?? ''
+    const message = current
+      ? `เปลี่ยน "${label}" จากเฉพาะกิจกลับเป็นหมวดปกติ?\n\n`
+        + '• คำร้องของหมวดนี้ทั้งหมด รวมเรื่องเก่าที่เคยปิดไว้ จะกลับไปให้เจ้าหน้าที่ในกองเดียวกันเห็นได้\n'
+        + '• ผู้บริหาร/สภา จะเห็นรายการคำร้องของหมวดนี้ตามสิทธิ์ปกติ ไม่ใช่แค่หมุดบนแผนที่\n'
+        + '• กลับไปใช้ขั้นตอนรับเรื่อง/ปิดเรื่องตามปกติ การกดรับทราบเดิมจะไม่ใช่ตัวชี้วัดอีก\n\n'
+        + 'เป็นการเปิดเผยข้อมูลย้อนหลังให้คนกลุ่มใหญ่ขึ้น ยืนยันหรือไม่'
+      : `เปลี่ยน "${label}" เป็นหมวดเฉพาะกิจ?\n\n`
+        + '• คำร้องจะส่งตรงถึงผู้รับผิดชอบที่มอบหมายไว้ โดยไม่ผ่านการรับเรื่องของแอดมิน\n'
+        + '• เจ้าหน้าที่คนอื่นในกองเดียวกันจะมองไม่เห็นคำร้องหมวดนี้อีก เห็นเฉพาะผู้ที่ถูกมอบหมายและแอดมิน\n'
+        + '• ผู้บริหาร/สภา จะเห็นเฉพาะหมุดบนแผนที่แบบไม่มีชื่อผู้แจ้ง เบอร์โทร และรายละเอียด\n'
+        + '• ไม่มีขั้นตอนรับเรื่อง/ปิดเรื่อง ใช้การกดรับทราบครั้งเดียวแทน\n\n'
+        + 'มีผลกับคำร้องเก่าของหมวดนี้ทันทีด้วย ยืนยันหรือไม่'
+    if (!window.confirm(message)) return
+
+    // เหตุผลเดียวกับ toggleActive: ถ้า RLS ปัดตกเงียบๆ (ไม่ใช่แอดมินของ อปท. นี้) PostgREST
+    // คืน 204 ไม่มี error แล้ว UI จะโชว์ว่าสำเร็จทั้งที่กติกาการมองเห็นไม่ได้ขยับเลย
+    const { data, error: err } = await supabase.from('complaint_categories')
+      .update({ is_adhoc: !current }).eq('id', id).select('id, is_adhoc')
     if (err) { setError('บันทึกไม่สำเร็จ: ' + err.message); return }
-    setCats((prev) => prev.map((c) => c.id === id ? { ...c, is_adhoc: !current } : c))
+    if (!data || data.length === 0) {
+      setError('ไม่มีสิทธิ์เปลี่ยนประเภทงาน (ต้องเป็นผู้ดูแลระบบของ อปท. นี้)')
+      return
+    }
+    const saved = data[0].is_adhoc
+    setCats((prev) => prev.map((c) => c.id === id ? { ...c, is_adhoc: saved } : c))
+    if (saved === current) {
+      setError('ฐานข้อมูลไม่ได้เปลี่ยนประเภทงานของหมวดนี้ กรุณาลองใหม่')
+      return
+    }
+    setError(null)
   }
 
   async function moveCat(idx, dir) {
