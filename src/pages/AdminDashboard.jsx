@@ -45,15 +45,14 @@ const EventsManagerComponent = lazy(() => import('../components/admin/EventsMana
 // เรื่องเวลาโหลดเท่ากันโดยไม่ต้องขยับโครงสร้างไฟล์
 const InboxModule = lazy(() => import('./StaffDashboard').then(m => ({ default: m.InboxModule })))
 
-// ต้องตรงกับ uuid ใน supabase/migrations/147_dev_journal.sql (ntocom@gmail.com) —
-// ใช้กรองเมนู "ผู้พัฒนาระบบ" ให้เห็นเฉพาะบัญชีนี้ ไม่ผูกกับ role เพราะ superadmin
-// ของแต่ละเทศบาลเป็นคนละคนกัน ความปลอดภัยจริงอยู่ที่ RLS ของตาราง dev_journal
-const DEV_USER_ID = 'b3e7c083-05ee-4664-ba42-e866729923ef'
 // lazy: ตัวนี้เป็นก้อนที่แพงที่สุด — มันลาก recharts (chunk PieChart ~355 KB) ตามมาด้วย
 // ทั้งที่กราฟถูกใช้เฉพาะในหน้ารายงานเท่านั้น
 const ReportManagerComponent = lazy(() => import('../components/admin/ReportManager'))
 import AuditLogViewer from '../components/admin/AuditLogViewer'
 import { ROLE_LABELS, ROLE_DESCRIPTIONS, fetchAssignableStaff, groupStaffByDepartment } from '../lib/staffRoster'
+import { DEV_USER_ID } from '../lib/portalAccess'
+import PortalSwitcher from '../components/layout/PortalSwitcher'
+import UserProfileBadge from '../components/layout/UserProfileBadge'
 import FleetSetup from '../components/fleet/FleetSetup'
 import { adminUpdateUser } from '../lib/adminUpdateUser'
 import { CategoryIcon } from '../lib/categoryIcon'
@@ -5056,22 +5055,9 @@ export default function AdminDashboard() {
               <p className="text-sm font-bold text-white mt-0.5 leading-tight">{tenant?.name}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {/* ชื่อคนที่ล็อกอินต้องเห็นตลอด ไม่ใช่แค่ตำแหน่ง — เจ้าหน้าที่ที่ไปนั่ง PC เครื่องอื่น
-                จะได้รู้ตัวก่อนกดอนุมัติอะไรที่ audit_logs บันทึกชื่อคนกดเอาไว้
-                (ของเดิมโชว์แค่ตำแหน่งกับตัวอักษร "A" ที่ hardcode ไว้ ไม่ได้มาจากชื่อจริงด้วยซ้ำ) */}
-            <div className="text-right min-w-0">
-              <p className="text-xs font-bold text-white truncate max-w-[14rem]">{currentUserName || 'ไม่ทราบชื่อ'}</p>
-              <p className="text-[10px] text-white/70 leading-tight">{ROLE_LABELS[currentUserRole]?.label ?? 'ผู้ดูแลระบบ'}</p>
-            </div>
-            {currentUserAvatar
-              ? <img src={currentUserAvatar} alt="" className="w-8 h-8 rounded-full object-cover border border-white/40 shrink-0" />
-              : <div className="w-8 h-8 rounded-full bg-white/20 border border-white/40 flex items-center justify-center text-sm font-bold text-white shrink-0">{(currentUserName || '?')[0].toUpperCase()}</div>}
-            <button onClick={() => navigate('/')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/10 hover:bg-white/20 transition-colors border border-white/20">
-              <Home size={13} />
-              เว็บหลัก
-            </button>
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <UserProfileBadge tone="onDark" />
+            <PortalSwitcher className="flex" />
             <button onClick={handleLogout}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/10 hover:bg-white/20 transition-colors border border-white/20">
               <LogOut size={13} />

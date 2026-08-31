@@ -324,9 +324,8 @@ const FORM_TYPE_CONFIG = {
 
 export default function CitizenForm() {
   const { tenant } = useTenant()
-  const isKledkaew = tenant?.ui_style === 'kledkaew'
-  const primaryBg = isKledkaew ? 'linear-gradient(135deg, #059669 0%, #064e3b 100%)' : 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)'
-  const primaryColor = isKledkaew ? '#059669' : 'var(--color-primary)'
+  const primaryBg = 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)'
+  const primaryColor = 'var(--color-primary)'
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const preCategory = searchParams.get('category') ?? ''

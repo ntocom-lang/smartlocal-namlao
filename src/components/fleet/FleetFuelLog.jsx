@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, X, AlertTriangle, FileText, Paperclip, Pencil, Fuel } from 'lucide-react'
+import { Plus, X, AlertTriangle, FileText, Paperclip, Pencil, Fuel, Printer } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import FleetEmptyState from './FleetEmptyState'
@@ -18,6 +18,7 @@ import {
   uploadFleetDocument,
   validateFleetDocument,
 } from '../../lib/fleetDocuments'
+import { buildFleetFuelRecordHtml, fuelTypeLabel } from '../../lib/fleetFuelPrint'
 
 const inp = 'w-full px-3 py-2.5 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent'
 const sel = inp + ' appearance-none'
@@ -55,7 +56,8 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
   const [vehicles,  setVehicles]  = useState([])
   const [staffList, setStaffList] = useState([])
   const [loading,   setLoading]   = useState(true)
-  const [modal,     setModal]     = useState(false)
+  const [modal,     setModal]     = useState(null)
+  const [selRecord, setSelRecord] = useState(null)
   const [editingId, setEditingId] = useState(null)
   const [form,      setForm]      = useState(EMPTY_FORM)
   const [receiptFile, setReceiptFile] = useState(null)
@@ -71,6 +73,7 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
 
   const SELECT_Q = '*, fleet_vehicles(name, license_plate, asset_code, asset_kind, meter_unit), ' +
     'driver:profiles!fleet_fuel_records_driver_id_fkey(id,full_name), ' +
+    'creator:profiles!fleet_fuel_records_created_by_fkey(id,full_name), ' +
     'editor:profiles!fleet_fuel_records_updated_by_fkey(id,full_name)'
 
   useEffect(() => {
@@ -118,9 +121,36 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
 
   function openModal() {
     setEditingId(null)
+    setSelRecord(null)
     setForm({ ...EMPTY_FORM, driver_id: user?.id ?? '' })
     setReceiptFile(null)
-    setModal(true)
+    setModal('form')
+  }
+
+  function openDetail(r) {
+    setSelRecord(r)
+    setModal('detail')
+  }
+
+  function printFuelRecord(r) {
+    const win = window.open('', '_blank', 'width=900,height=760')
+    if (!win) return alert('เบราว์เซอร์ปิดกั้นหน้าต่างพิมพ์ กรุณาอนุญาต pop-up แล้วลองใหม่')
+    win.document.open()
+    win.document.write(buildFleetFuelRecordHtml({ record: r, tenant }))
+    win.document.close()
+    const printWhenReady = async () => {
+      try {
+        if (win.document.fonts?.ready) {
+          await Promise.race([
+            win.document.fonts.ready,
+            new Promise(resolve => setTimeout(resolve, 1200)),
+          ])
+        }
+      } catch { /* โหลดฟอนต์ไม่ทันก็พิมพ์ด้วยฟอนต์บนเครื่อง */ }
+      win.focus()
+      win.print()
+    }
+    setTimeout(printWhenReady, 200)
   }
 
   function openEditModal(r) {
@@ -140,11 +170,12 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
       notes: r.notes ?? '',
     })
     setReceiptFile(null)
-    setModal(true)
+    setModal('form')
   }
 
   function closeModal() {
-    setModal(false)
+    setModal(null)
+    setSelRecord(null)
     setEditingId(null)
   }
 
@@ -322,7 +353,9 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
               <tbody className="divide-y divide-gray-200">
                 {records.map((r, idx) => (
                   <tr key={r.id}
+                    className="cursor-pointer"
                     style={{ backgroundColor: idx % 2 === 0 ? '#fff' : '#f5f8fc' }}
+                    onClick={e => { if (e.target.closest('button')) return; openDetail(r) }}
                     onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'}
                     onMouseLeave={e => e.currentTarget.style.backgroundColor = idx % 2 === 0 ? '#fff' : '#f5f8fc'}>
                     <td className="px-2 py-2 text-gray-400 text-xs">{idx + 1}</td>
@@ -396,7 +429,8 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
           {/* Mobile Cards */}
           <div className="md:hidden space-y-1.5">
             {records.map(r => (
-              <div key={r.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
+              <div key={r.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 cursor-pointer"
+                onClick={e => { if (e.target.closest('button')) return; openDetail(r) }}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
@@ -492,8 +526,78 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
         </div>
       )}
 
+      {modal === 'detail' && selRecord && (() => {
+        const r = selRecord
+        const cost = r.total_cost ?? ((r.liters ?? 0) * (r.price_per_liter ?? 0))
+        return (
+          <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 p-4">
+            <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                <h2 className="text-base font-black text-gray-800">รายละเอียดเชื้อเพลิง</h2>
+                <button onClick={closeModal} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><X size={16} /></button>
+              </div>
+              <div className="overflow-y-auto p-5 space-y-3 flex-1 text-sm">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-black text-gray-800 truncate">{r.fleet_vehicles?.name ?? '—'}</p>
+                    <p className="text-[11px] text-gray-400">{assetIdentifier(r.fleet_vehicles)}</p>
+                  </div>
+                  {r.is_anomaly
+                    ? <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-600 shrink-0">ผิดปกติ</span>
+                    : null}
+                </div>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                  <div><p className="text-gray-400">วันที่เติม</p><p className="font-semibold text-gray-700">{thDate(r.filled_at)}</p></div>
+                  <div><p className="text-gray-400">ผู้ใช้รถ</p><p className="font-semibold text-gray-700">{r.driver?.full_name || '—'}</p></div>
+                  <div><p className="text-gray-400">ชนิดเชื้อเพลิง</p><p className="font-semibold text-gray-700">{fuelTypeLabel(r)}</p></div>
+                  <div><p className="text-gray-400">ลักษณะการเติม</p><p className="font-semibold text-gray-700">{r.full_tank === false ? 'ไม่เต็มถัง' : 'เต็มถัง'}</p></div>
+                  <div><p className="text-gray-400">ปริมาณ</p><p className="font-semibold text-gray-700">{r.liters ?? '—'} ลิตร</p></div>
+                  <div><p className="text-gray-400">ราคาต่อลิตร</p><p className="font-semibold text-gray-700">{r.price_per_liter == null ? '—' : `฿${fmt(r.price_per_liter)}`}</p></div>
+                  <div><p className="text-gray-400">รวมเป็นเงิน</p><p className="font-black text-gray-800">{r.total_cost == null && !r.price_per_liter ? '—' : fmtB(cost)}</p></div>
+                  <div><p className="text-gray-400">เลขไมล์ / มิเตอร์</p><p className="font-semibold text-gray-700">{r.odometer == null ? '—' : `${fmt(r.odometer)} ${meterUnitShort(r.fleet_vehicles)}`}</p></div>
+                  {r.efficiency_kml != null && (
+                    <div><p className="text-gray-400">อัตราสิ้นเปลือง</p><p className="font-semibold text-emerald-700">{r.efficiency_kml} กม./ล.</p></div>
+                  )}
+                  <div className="col-span-2"><p className="text-gray-400">สถานีบริการ / ปั๊ม</p><p className="font-semibold text-gray-700">{r.fuel_station || '—'}</p></div>
+                  <div><p className="text-gray-400">เลขที่ใบเสร็จ</p><p className="font-semibold text-gray-700">{r.receipt_no || '—'}</p></div>
+                  <div><p className="text-gray-400">ผู้บันทึก</p><p className="font-semibold text-gray-700">{r.creator?.full_name || '—'}</p></div>
+                  {r.anomaly_reason && (
+                    <div className="col-span-2"><p className="text-gray-400">เหตุที่ระบบตั้งธง</p><p className="font-semibold text-red-600">{r.anomaly_reason}</p></div>
+                  )}
+                  {r.notes && (
+                    <div className="col-span-2"><p className="text-gray-400">หมายเหตุ</p><p className="font-semibold text-gray-700">{r.notes}</p></div>
+                  )}
+                  {r.updated_by && (
+                    <div className="col-span-2"><p className="text-gray-400">แก้ไขล่าสุด</p><p className="font-semibold text-amber-600">{thDate(r.updated_at)}{r.editor?.full_name ? ` · ${r.editor.full_name}` : ''}</p></div>
+                  )}
+                </div>
+              </div>
+              <div className={`grid grid-cols-1 gap-2 px-5 pb-5 pt-3 border-t border-gray-100 ${canWrite ? 'sm:grid-cols-2' : ''}`}>
+                <button onClick={() => printFuelRecord(r)}
+                  className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 text-sm font-bold text-gray-700 hover:bg-gray-50">
+                  <Printer size={15} /> พิมพ์บันทึกเชื้อเพลิง
+                </button>
+                {r.receipt_url && (
+                  <button onClick={() => handleOpenDocument(r.receipt_url)}
+                    className="flex items-center justify-center gap-2 rounded-xl border border-blue-200 py-3 text-sm font-bold text-blue-700 hover:bg-blue-50">
+                    <FileText size={15} /> เปิดใบเสร็จ
+                  </button>
+                )}
+                {canWrite && (
+                  <button onClick={() => openEditModal(r)}
+                    className="rounded-xl py-3 text-sm font-bold text-white sm:col-span-2"
+                    style={{ backgroundColor: 'var(--color-primary)' }}>
+                    ✏️ แก้ไขรายการ
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Modal */}
-      {modal && (
+      {modal === 'form' && (
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center">
           <div className="absolute inset-0 bg-black/50" onClick={closeModal} />
           <div className="relative bg-white rounded-t-3xl md:rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">

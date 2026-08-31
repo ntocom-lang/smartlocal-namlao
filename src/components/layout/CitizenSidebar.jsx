@@ -54,7 +54,7 @@ const LABEL    = 'rgba(255,255,255,0.35)'
 export default function CitizenSidebar() {
   const location         = useLocation()
   const navigate         = useNavigate()
-  const { session, displayName } = useAuth()
+  const { session, displayName, avatarUrl, role } = useAuth()
   const { tenant, isModuleEnabled } = useTenant()
   const { unreadCount }  = useNotifications()
 
@@ -137,13 +137,21 @@ export default function CitizenSidebar() {
       <div className="px-2.5 py-3 border-t space-y-1" style={{ borderColor: DIVIDER }}>
         {session ? (
           <>
-            <div className="flex items-center gap-2.5 px-3 py-2">
-              <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-                style={{ backgroundColor: 'rgba(255,255,255,0.18)', color: '#fff' }}>
-                {(displayName || '?')[0].toUpperCase()}
+            <Link to="/profile" title="โปรไฟล์ของคุณ (คลิกเพื่อดูและแก้ไข)"
+              className="flex items-center gap-2.5 px-3 py-2 rounded-lg transition-colors hover:bg-white/10 group">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt={displayName} className="w-7 h-7 rounded-full object-cover border border-white/40 shrink-0 group-hover:scale-105 transition-transform" />
+              ) : (
+                <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 group-hover:scale-105 transition-transform"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.18)', color: '#fff' }}>
+                  {(displayName || '?')[0].toUpperCase()}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold truncate text-white leading-tight">{displayName || 'ผู้ใช้'}</p>
+                <p className="text-[10px] text-white/50 leading-tight mt-0.5">จัดการโปรไฟล์</p>
               </div>
-              <p className="text-xs font-semibold truncate text-white">{displayName || 'ผู้ใช้'}</p>
-            </div>
+            </Link>
             <button onClick={logout}
               className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-colors hover:bg-white/10"
               style={{ color: INACTIVE }}>

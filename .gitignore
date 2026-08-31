@@ -41,3 +41,4 @@ recovery-codes.txt
 *.recovery-codes*
 *-backup-codes*
 .env*
+tmp/

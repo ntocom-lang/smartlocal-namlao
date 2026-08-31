@@ -247,7 +247,7 @@ export default function FleetDashboard({ tenant, depts, isAdmin }) {
         <div className="flex items-center gap-2 md:gap-3 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 md:px-4 md:py-3">
           <CalendarClock size={16} className="text-blue-500 shrink-0" />
           <p className="text-xs md:text-sm text-blue-700">
-            มีการเดินทางรอการอนุมัติ <strong>{pendingCnt}</strong> รายการ
+            มีคำขอใช้รถรอการอนุมัติ <strong>{pendingCnt}</strong> รายการ
           </p>
         </div>
       )}

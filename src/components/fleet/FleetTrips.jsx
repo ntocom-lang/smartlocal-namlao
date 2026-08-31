@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
-import { Plus, Calendar, X, ChevronLeft, ChevronRight, Route, History } from 'lucide-react'
+import { Plus, Calendar, X, ChevronLeft, ChevronRight, Route, History, Printer } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { assetIdentifier, assetOptionLabel } from '../../lib/fleetAssets'
 import { logAction } from '../../lib/auditLog'
 import { notifyTelegram } from '../../lib/notifyTelegram'
+import { buildFleetTripRequestHtml, resolveOrderAuthority } from '../../lib/fleetTripPrint'
 import FleetEmptyState from './FleetEmptyState'
 
 const STATUS_LABEL = {
@@ -27,55 +28,88 @@ const STATUS_CLR = {
 const inp = 'w-full px-3 py-2.5 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent'
 const sel = inp + ' appearance-none'
 
-const SELECT = `*, vehicle:fleet_vehicles(id,name,license_plate,asset_code,asset_kind,meter_unit), driver:profiles!fleet_trips_driver_id_fkey(id,full_name), approver:profiles!fleet_trips_approved_by_fkey(full_name), departments(name,short_name)`
+const SELECT = `*, vehicle:fleet_vehicles(id,name,license_plate,asset_code,asset_kind,meter_unit), driver:profiles!fleet_trips_driver_id_fkey(id,full_name), requester:profiles!fleet_trips_created_by_fkey(id,full_name,job_title,position:positions(name)), approver:profiles!fleet_trips_approved_by_fkey(full_name,job_title,position:positions(name)), departments(name,short_name)`
 
 function userOptionLabel(profile, currentUserId) {
   const name = profile.full_name?.trim() || profile.email?.trim() || `ผู้ใช้ ${profile.id.slice(0, 8)}`
   return `${name}${profile.id === currentUserId ? ' (ฉัน)' : ''}`
 }
 
+function profilePosition(profile) {
+  return profile?.job_title?.trim() || profile?.position?.name?.trim() || ''
+}
+
+// เลือกผู้ลงนามแถวที่ "มีผลวันนี้" ตามเวลาไทย — คิดฝั่ง client เพราะแถวมีไม่กี่แถว
+// และ effective_from/effective_to เก็บเป็น date ไม่ใช่ timestamptz จึงเทียบเป็นสตริงได้ตรงๆ
+function resolveActiveSignatory(rows) {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date())
+  const active = (rows ?? []).find(row =>
+    (!row.effective_from || row.effective_from <= today)
+    && (!row.effective_to || row.effective_to >= today))
+  return active ?? null
+}
+
+const pad2 = n => String(n).padStart(2, '0')
+
+// datetime-local คืน "YYYY-MM-DDTHH:mm" โดยไม่มี timezone
+// new Date("2026-08-27T09:00") ใน Safari/บางเบราว์เซอร์ถูกตีเป็น UTC ไม่ใช่เวลาเครื่อง
+// ผลคือบันทึก 09:00 แล้วเด้งเป็น 16:00 (หรือย้อน 02:00) — parse เป็น local ด้วยตัวเลขปี/เดือน/วัน/ชม. เอง
+function parseDateTime(value) {
+  if (!value) return null
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value
+  const s = String(value).trim()
+  const local = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?$/.exec(s)
+  if (local) {
+    return new Date(+local[1], +local[2] - 1, +local[3], +local[4], +local[5], +(local[6] || 0))
+  }
+  const d = new Date(s)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
 function toLocalDT(date) {
-  const d = new Date(date)
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+  const d = parseDateTime(date)
+  if (!d) return ''
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`
 }
 
-// ช่อง <input type="datetime-local"> คืนค่าเป็นเวลาท้องถิ่นแบบ "ไม่มี timezone" ("2027-01-05T09:00")
-// ถ้าส่งค่านี้ดิบๆ เข้าคอลัมน์ timestamptz, Postgres จะตีความว่าเป็น UTC
-// เวลาที่เก็บจึงเพี้ยนไป 7 ชม. (09:00 ที่กรอก กลายเป็น 09:00Z = 16:00 ตามเวลาไทย)
-// ทุกจุดที่ส่งค่าจากช่อง datetime-local เข้า DB ต้องผ่านฟังก์ชันนี้เสมอ
+// ส่งเข้าคอลัมน์ timestamptz ต้องเป็น ISO มี offset — ห้ามส่งสตริง datetime-local ดิบ
 function toISO(localDT) {
-  if (!localDT) return null
-  const d = new Date(localDT)
-  return Number.isNaN(d.getTime()) ? null : d.toISOString()
+  const d = parseDateTime(localDT)
+  return d ? d.toISOString() : null
 }
 
-// วันที่ตามเวลาไทย ไม่ใช่ UTC — toISOString() จะได้วันผิดสำหรับเวลาช่วงเช้ามืดกับหัวค่ำ
 function localDateStr(value) {
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return ''
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const d = parseDateTime(value)
+  if (!d) return ''
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
 }
 
 function fmtDT(str) {
   if (!str) return '—'
-  return new Date(str).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })
+  const d = parseDateTime(str)
+  if (!d) return '—'
+  return d.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' })
 }
 
 function fmtDate(str) {
   if (!str) return '—'
-  return new Date(str).toLocaleDateString('th-TH', { dateStyle: 'short' })
+  const d = parseDateTime(str)
+  if (!d) return '—'
+  return d.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'short' })
 }
 
 const EMPTY_RESERVE = {
   vehicle_id: '', driver_id: '', department_id: '',
   planned_departure: '', planned_return: '',
-  destination: '', purpose: '',
+  destination: '', destination_locality: '', destination_province: '',
+  purpose: '', passengers: 1, requester_position: '',
 }
 const EMPTY_DIRECT = {
   vehicle_id: '', driver_id: '', department_id: '',
   started_at: '', returned_at: '',
   odometer_start: '', odometer_end: '',
-  destination: '', purpose: '', notes: '',
+  destination: '', destination_locality: '', destination_province: '',
+  purpose: '', passengers: 1, requester_position: '', notes: '', backdated_reason: '',
 }
 
 /* ── Modal shell ──────────────────────────────────────── */
@@ -157,7 +191,7 @@ function BookingCalendar({ tenant, onClose }) {
     const to   = new Date(yr, mo + 1, 1).toISOString()   // ไม่รวมวันแรกของเดือนถัดไป
     const dFrom = localDateStr(new Date(yr, mo, 1))
     const dTo   = localDateStr(new Date(yr, mo, daysInMonth))
-    // ครอบคลุมสามแบบ: ช่วงจองที่คร่อมเดือนนี้ / จองที่ยังไม่ระบุเวลากลับ /
+    // ครอบคลุมสามแบบ: ช่วงขอใช้รถที่คร่อมเดือนนี้ / คำขอที่ยังไม่ระบุเวลากลับ /
     // รายการบันทึกย้อนหลังที่มีแต่ trip_date
     const overlap = [
       `and(planned_departure.lt."${to}",planned_return.gte."${from}")`,
@@ -209,18 +243,21 @@ function BookingCalendar({ tenant, onClose }) {
       <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <div className="flex items-center gap-3">
-            <button onClick={() => shiftMonth(-1)}
-              className="w-7 h-7 rounded-full hover:bg-gray-100 flex items-center justify-center">
-              <ChevronLeft size={16} />
-            </button>
-            <h2 className="text-sm font-black text-gray-800 min-w-[130px] text-center">
-              {MONTH_TH[mo]} {yr + 543}
-            </h2>
-            <button onClick={() => shiftMonth(1)}
-              className="w-7 h-7 rounded-full hover:bg-gray-100 flex items-center justify-center">
-              <ChevronRight size={16} />
-            </button>
+          <div>
+            <p className="mb-1 text-xs font-bold text-gray-500">ปฏิทินการใช้รถ</p>
+            <div className="flex items-center gap-3">
+              <button onClick={() => shiftMonth(-1)}
+                className="w-7 h-7 rounded-full hover:bg-gray-100 flex items-center justify-center">
+                <ChevronLeft size={16} />
+              </button>
+              <h2 className="text-sm font-black text-gray-800 min-w-[130px] text-center">
+                {MONTH_TH[mo]} {yr + 543}
+              </h2>
+              <button onClick={() => shiftMonth(1)}
+                className="w-7 h-7 rounded-full hover:bg-gray-100 flex items-center justify-center">
+                <ChevronRight size={16} />
+              </button>
+            </div>
           </div>
           <button onClick={onClose}
             className="w-7 h-7 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-400">
@@ -308,9 +345,9 @@ function BookingCalendar({ tenant, onClose }) {
                   <p className="text-[11px] text-gray-500">👤 {t.driver?.full_name}</p>
                   {t.planned_departure && (
                     <p className="text-[10px] text-gray-400">
-                      {new Date(t.planned_departure).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})}
+                      {fmtDT(t.planned_departure)}
                       {' → '}
-                      {t.planned_return ? new Date(t.planned_return).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}) : '—'}
+                      {t.planned_return ? fmtDT(t.planned_return) : '—'}
                     </p>
                   )}
                 </div>
@@ -353,12 +390,14 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   const canWrite = isAdmin || isStaff
 
   // trips = เฉพาะรายการที่ยังดำเนินอยู่ (pending/approved/in_progress) โหลดครบไม่จำกัดจำนวน
-  // เพราะเป็นชุดเล็กและถูกใช้ทั้งตารางบน ปฏิทินจอง และการคำนวณรถว่าง
+  // เพราะเป็นชุดเล็กและถูกใช้ทั้งตารางบน ปฏิทินการใช้รถ และการคำนวณรถว่าง
   // ส่วนประวัติ (completed/rejected/cancelled) โตไม่จำกัด แยกไปแบ่งหน้าฝั่ง server ด้านล่าง
   const [trips,     setTrips]     = useState([])
   const [history,      setHistory]      = useState([])
   const [historyCount, setHistoryCount] = useState(0)
   const [staffList, setStaffList] = useState([])
+  const [requesterProfile, setRequesterProfile] = useState(null)
+  const [orderAuthority, setOrderAuthority] = useState(null)
   const [vehicles,  setVehicles]  = useState([])
   const [loading,   setLoading]   = useState(true)
   const [modal,     setModal]     = useState(null) // 'reserve'|'direct'|'depart'|'return'
@@ -385,7 +424,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   }
 
   // ประวัติแบ่งหน้าที่ server — เดิมดึงรวมมา .limit(300) แล้วหั่นหน้าฝั่ง client
-  // ทำให้ อปท. ที่มีทริปเกิน 300 รายการ "ประวัติการเดินทาง" หายถาวรจากหน้าจอ
+  // ทำให้ อปท. ที่มีทริปเกิน 300 รายการ "ประวัติการใช้รถ" หายถาวรจากหน้าจอ
   // (นับรวม active ด้วย ยิ่งเหลือประวัติน้อยลงไปอีก)
   function fetchHistory(page = historyPage, size = historyPageSize) {
     let q = supabase.from('fleet_trips').select(SELECT, { count: 'exact' })
@@ -426,11 +465,22 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       supabase.from('fleet_vehicles').select('id,name,license_plate,asset_code,asset_kind,meter_unit')
         .eq('municipality_id', tenant.id).eq('asset_kind', 'vehicle')
         .eq('status', 'active').order('name'),
-    ]).then(([{ data: s }, { data: v }]) => {
+      supabase.from('profiles').select('id,full_name,job_title,position:positions(name)')
+        .eq('id', user?.id).eq('municipality_id', tenant.id).maybeSingle(),
+      // ผู้มีอำนาจสั่งใช้รถบนใบขออนุญาต (แบบ 3) — ใช้ผู้ลงนามบทบาท "นายก" ที่ อปท. ตั้งไว้
+      // ไม่ใช่บัญชีที่กดอนุมัติในระบบ ยังไม่ตั้งค่า = เว้นว่างให้เซ็นสด
+      supabase.from('document_signatories')
+        .select('manual_name,title_override,effective_from,effective_to,profile:profiles!document_signatories_profile_id_fkey(full_name,job_title,position:positions(name))')
+        .eq('municipality_id', tenant.id).eq('signatory_role', 'mayor')
+        .eq('document_type', 'complaint').eq('is_active', true)
+        .is('department_id', null),
+    ]).then(([{ data: s }, { data: v }, { data: requester }, { data: signatories }]) => {
       setStaffList(s ?? [])
       setVehicles(v ?? [])
+      setRequesterProfile(requester ?? null)
+      setOrderAuthority(resolveActiveSignatory(signatories))
     })
-  }, [tenant?.id])
+  }, [tenant?.id, user?.id])
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -473,7 +523,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
   /* ── Conflict check — คืนรายการทริปที่ชนคิว (ไม่ใช่แค่ true/false) เพื่อเอาไปแสดง
-     ในการ์ดเตือน + ใช้เป็นเป้าหมาย "จองแทนที่ฉุกเฉิน" ── */
+     ในการ์ดเตือน + ใช้เป็นเป้าหมาย "ใช้รถแทนคิวเดิมกรณีฉุกเฉิน" ── */
   async function findVehicleConflicts(vehicleId, from, to, excludeId = null) {
     let busyQ = supabase.from('fleet_trips')
       .select('id,status,destination,driver:profiles!fleet_trips_driver_id_fkey(full_name)')
@@ -498,15 +548,15 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     const busy = new Set()
     // เทียบเป็นตัวเลข timestamp — เดิมเทียบ string ระหว่างค่าจากฟอร์ม ("2027-01-05T09:00")
     // กับค่าจาก DB ("2027-01-05T02:00:00+00:00") ซึ่งคนละรูปแบบและคนละฐานเวลา
-    const fromMs = new Date(from).getTime()
-    const toMs   = new Date(to).getTime()
+    const fromMs = parseDateTime(from)?.getTime() ?? 0
+    const toMs   = parseDateTime(to)?.getTime() ?? 0
     trips.forEach(t => {
       if (t.id === excludeTripId) return
       if (!['pending', 'approved', 'in_progress'].includes(t.status)) return
       const overlaps = t.status === 'in_progress'
         || (t.planned_departure && t.planned_return
-            && new Date(t.planned_departure).getTime() < toMs
-            && new Date(t.planned_return).getTime() > fromMs)
+            && (parseDateTime(t.planned_departure)?.getTime() ?? 0) < toMs
+            && (parseDateTime(t.planned_return)?.getTime() ?? 0) > fromMs)
       if (overlaps) busy.add(t.vehicle_id)
     })
     return vehicles.filter(v => v.id !== excludeVehicleId && !busy.has(v.id))
@@ -514,7 +564,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
 
   /* ── Open modals ── */
   function openReserve() {
-    if (!canWrite) return alert('สิทธิ์ของท่านเป็นผู้ดูรายงาน จองรถหรือบันทึกการเดินทางไม่ได้')
+    if (!canWrite) return alert('สิทธิ์ของท่านเป็นผู้ดูรายงาน ขออนุญาตใช้รถหรือบันทึกการใช้รถย้อนหลังไม่ได้')
     // กันเปิดฟอร์มทั้งที่ยังไม่มีกอง — RLS จะปฏิเสธตอนบันทึกด้วย error ดิบจาก Postgres
     if (missingDept) return alert('บัญชีของคุณยังไม่ได้กำหนดกอง/หน่วยงาน จึงยังบันทึกการใช้รถไม่ได้ — กรุณาให้ผู้ดูแลระบบกำหนดกองให้ก่อน (ตั้งค่า > เจ้าหน้าที่ยานพาหนะ)')
     const dep = new Date(Date.now() + 3600000)
@@ -524,6 +574,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       ...EMPTY_RESERVE,
       driver_id: user?.id ?? '',
       department_id: fleetInfo?.department_id ?? '',   // deptLocked บังคับใช้ค่านี้เสมอตอน submit
+      requester_position: profilePosition(requesterProfile),
+      destination_province: tenant?.province || '',
       planned_departure: toLocalDT(dep),
       planned_return: toLocalDT(ret),
     })
@@ -533,7 +585,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     setModal('reserve')
   }
 
-  // แก้ไขการจองที่ยัง pending — เฉพาะเจ้าของหรือ admin (ดู canEdit ใน renderTripRow/Card)
+  // แก้ไขคำขอใช้รถที่ยัง pending — เฉพาะเจ้าของหรือ admin (ดู canEdit ใน renderTripRow/Card)
   function openEditReserve(t) {
     setSelTrip(t)
     setForm({
@@ -543,7 +595,11 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       planned_departure: t.planned_departure ? toLocalDT(t.planned_departure) : '',
       planned_return: t.planned_return ? toLocalDT(t.planned_return) : '',
       destination: t.destination || '',
+      destination_locality: t.destination_locality || '',
+      destination_province: t.destination_province || tenant?.province || '',
       purpose: t.purpose || '',
+      passengers: t.passengers ?? 1,
+      requester_position: t.requester_position || profilePosition(t.requester) || profilePosition(requesterProfile),
     })
     setConflict(null)
     setShowOverride(false)
@@ -556,14 +612,42 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     setModal('detail')
   }
 
+  function printTripRequest(t) {
+    const win = window.open('', '_blank', 'width=900,height=760')
+    if (!win) return alert('เบราว์เซอร์ปิดกั้นหน้าต่างพิมพ์ กรุณาอนุญาต pop-up แล้วลองใหม่')
+    win.document.open()
+    win.document.write(buildFleetTripRequestHtml({
+      trip: t, tenant, orderAuthority: resolveOrderAuthority(orderAuthority, tenant),
+    }))
+    win.document.close()
+    const printWhenReady = async () => {
+      try {
+        if (win.document.fonts?.ready) {
+          await Promise.race([
+            win.document.fonts.ready,
+            new Promise(resolve => setTimeout(resolve, 1200)),
+          ])
+        }
+      } catch { /* โหลดฟอนต์ไม่ทันก็พิมพ์ด้วยฟอนต์บนเครื่อง */ }
+      win.focus()
+      win.print()
+    }
+    setTimeout(printWhenReady, 200)
+  }
+
   function openDirect() {
-    if (!canWrite) return alert('สิทธิ์ของท่านเป็นผู้ดูรายงาน จองรถหรือบันทึกการเดินทางไม่ได้')
+    // บันทึกย้อนหลัง = สร้างรายการ "เสร็จสิ้นแล้ว" โดยข้ามขั้นขออนุญาต จำกัดเฉพาะผู้ดูแลระบบ
+    // ยานพาหนะ (guard ฝั่ง DB บังคับซ้ำอีกชั้นด้วย FLEET_TRIP_BACKDATED_REQUIRES_MANAGER)
+    if (!isAdmin) return alert('บันทึกการใช้รถย้อนหลังได้เฉพาะผู้ดูแลระบบยานพาหนะ — กรุณายื่นคำขออนุญาตใช้รถตามปกติ')
+    if (!canWrite) return alert('สิทธิ์ของท่านเป็นผู้ดูรายงาน ขออนุญาตใช้รถหรือบันทึกการใช้รถย้อนหลังไม่ได้')
     // กันเปิดฟอร์มทั้งที่ยังไม่มีกอง — RLS จะปฏิเสธตอนบันทึกด้วย error ดิบจาก Postgres
     if (missingDept) return alert('บัญชีของคุณยังไม่ได้กำหนดกอง/หน่วยงาน จึงยังบันทึกการใช้รถไม่ได้ — กรุณาให้ผู้ดูแลระบบกำหนดกองให้ก่อน (ตั้งค่า > เจ้าหน้าที่ยานพาหนะ)')
     setForm({
       ...EMPTY_DIRECT,
       driver_id: user?.id ?? '',
       department_id: fleetInfo?.department_id ?? '',   // deptLocked บังคับใช้ค่านี้เสมอตอน submit
+      requester_position: profilePosition(requesterProfile),
+      destination_province: tenant?.province || '',
       started_at: toLocalDT(new Date()),
     })
     setModal('direct')
@@ -571,9 +655,18 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
 
   /* ── Submit reservation (สร้างใหม่ หรือแก้ไข selTrip ถ้ามี) ── */
   async function submitReserve() {
-    if (!form.vehicle_id || !form.planned_departure || !form.planned_return || !form.destination || !form.purpose)
+    if (!form.vehicle_id || !form.planned_departure || !form.planned_return
+        || !form.destination || !form.destination_locality || !form.destination_province || !form.purpose)
       return alert('กรุณากรอกข้อมูลให้ครบ')
-    if (new Date(form.planned_return) <= new Date(form.planned_departure))
+    const passengerCount = Number(form.passengers)
+    if (!Number.isInteger(passengerCount) || passengerCount < 1 || passengerCount > 100)
+      return alert('จำนวนผู้ร่วมเดินทางต้องเป็นจำนวนเต็ม 1–100 คน')
+    const requesterPosition = form.requester_position?.trim()
+    if (!requesterPosition) return alert('กรุณาระบุตำแหน่งผู้ขอใช้รถ')
+    if (requesterPosition.length > 200) return alert('ตำแหน่งผู้ขอยาวเกิน 200 ตัวอักษร')
+    if (form.destination_locality.trim().length > 200 || form.destination_province.trim().length > 100)
+      return alert('ท้องที่หรือจังหวัดยาวเกินกำหนด')
+    if ((parseDateTime(form.planned_return)?.getTime() ?? 0) <= (parseDateTime(form.planned_departure)?.getTime() ?? 0))
       return alert('เวลากลับต้องหลังเวลาออก')
     const isEdit = !!selTrip
     const excludeId = isEdit ? selTrip.id : null
@@ -593,8 +686,12 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       trip_date: form.planned_departure.slice(0, 10),   // วันที่ตามที่ผู้ใช้กรอก (เวลาไทย)
       planned_departure: toISO(form.planned_departure),
       planned_return:    toISO(form.planned_return),
-      destination: form.destination,
-      purpose: form.purpose,
+      destination: form.destination.trim(),
+      destination_locality: form.destination_locality.trim(),
+      destination_province: form.destination_province.trim(),
+      purpose: form.purpose.trim(),
+      passengers: passengerCount,
+      requester_position: requesterPosition,
     }
     const { error } = isEdit
       ? await supabase.from('fleet_trips').update(payload).eq('id', selTrip.id)
@@ -613,7 +710,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
         municipalityId: tenant.id,
         metadata: { before: {
           vehicle_id: selTrip.vehicle_id, planned_departure: selTrip.planned_departure,
-          planned_return: selTrip.planned_return, destination: selTrip.destination, purpose: selTrip.purpose,
+          planned_return: selTrip.planned_return, destination: selTrip.destination,
+          destination_locality: selTrip.destination_locality,
+          destination_province: selTrip.destination_province, purpose: selTrip.purpose,
         }, after: payload },
       })
     }
@@ -623,11 +722,21 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     loadTrips()
   }
 
-  /* ── จองแทนที่ฉุกเฉิน (admin เท่านั้น) — ยกเลิกการจองที่ชนคิวทั้งหมด แล้วสร้างการจองใหม่
+  /* ── ใช้รถแทนคิวเดิมกรณีฉุกเฉิน (admin เท่านั้น) — ยกเลิกคำขอที่ชนคิวทั้งหมด แล้วสร้างคำขอใหม่
      เป็น approved ทันที (admin เป็นผู้ตัดสินใจ/รับผิดชอบเอง) พร้อม audit log + แจ้งเตือนเจ้าของเดิม ── */
   async function submitOverrideReserve() {
     if (!isAdmin || !conflict?.trips?.length) return
     if (!overrideReason.trim()) return alert('กรุณาระบุเหตุผลความจำเป็นเร่งด่วน')
+    const passengerCount = Number(form.passengers)
+    if (!Number.isInteger(passengerCount) || passengerCount < 1 || passengerCount > 100)
+      return alert('จำนวนผู้ร่วมเดินทางต้องเป็นจำนวนเต็ม 1–100 คน')
+    const requesterPosition = form.requester_position?.trim()
+    if (!requesterPosition) return alert('กรุณาระบุตำแหน่งผู้ขอใช้รถ')
+    if (requesterPosition.length > 200) return alert('ตำแหน่งผู้ขอยาวเกิน 200 ตัวอักษร')
+    if (!form.destination_locality?.trim() || !form.destination_province?.trim())
+      return alert('กรุณาระบุท้องที่และจังหวัด')
+    if (form.destination_locality.trim().length > 200 || form.destination_province.trim().length > 100)
+      return alert('ท้องที่หรือจังหวัดยาวเกินกำหนด')
     setSaving(true)
 
     // ทั้ง "ยกเลิกคิวเดิม" และ "สร้างคิวใหม่" ทำใน RPC เดียว = transaction เดียว
@@ -641,11 +750,15 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       p_planned_departure: toISO(form.planned_departure),
       p_planned_return:    toISO(form.planned_return),
       p_destination:       form.destination,
+      p_destination_locality: form.destination_locality.trim(),
+      p_destination_province: form.destination_province.trim(),
       p_purpose:           form.purpose,
       p_reason:            overrideReason.trim(),
+      p_passengers:        passengerCount,
+      p_requester_position: requesterPosition,
     })
     setSaving(false)
-    if (error) return alert('จองแทนที่ไม่สำเร็จ: ' + error.message)
+    if (error) return alert('อนุมัติใช้รถแทนคิวเดิมไม่สำเร็จ: ' + error.message)
 
     const result = Array.isArray(data) ? data[0] : data
     const newTripId = result?.new_trip_id
@@ -663,7 +776,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     if (newTripId) {
       logAction({
         action: 'create_override', resourceType: 'fleet_trip', resourceId: newTripId,
-        resourceLabel: `${form.destination} (จองแทนที่ฉุกเฉิน)`, municipalityId: tenant.id,
+        resourceLabel: `${form.destination} (ใช้รถแทนคิวเดิมกรณีฉุกเฉิน)`, municipalityId: tenant.id,
         metadata: { bumped: bumpedIds, reason: overrideReason.trim() },
       })
     }
@@ -675,9 +788,26 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
 
   /* ── Submit direct entry ── */
   async function submitDirect() {
-    if (!form.vehicle_id || !form.started_at || !form.destination || !form.purpose)
+    if (!isAdmin) return alert('บันทึกการใช้รถย้อนหลังได้เฉพาะผู้ดูแลระบบยานพาหนะ')
+    if (!form.vehicle_id || !form.started_at || !form.destination
+        || !form.destination_locality || !form.destination_province || !form.purpose)
       return alert('กรุณากรอกข้อมูลให้ครบ')
-    if (form.returned_at && new Date(form.returned_at) < new Date(form.started_at))
+    // ต้องอธิบายได้ว่าทำไมจึงไม่ได้ขออนุญาตล่วงหน้า ไม่งั้นเอกสารที่พิมพ์ออกมาจะเป็นใบที่
+    // ไม่มีใครอนุมัติและไม่มีคำอธิบาย (DB บังคับซ้ำด้วย FLEET_TRIP_BACKDATED_REQUIRES_REASON)
+    const backdatedReason = form.backdated_reason?.trim() || ''
+    if (backdatedReason.length < 5)
+      return alert('กรุณาระบุเหตุผลที่บันทึกย้อนหลัง อย่างน้อย 5 ตัวอักษร')
+    if (backdatedReason.length > 500)
+      return alert('เหตุผลที่บันทึกย้อนหลังยาวเกิน 500 ตัวอักษร')
+    const passengerCount = Number(form.passengers)
+    if (!Number.isInteger(passengerCount) || passengerCount < 1 || passengerCount > 100)
+      return alert('จำนวนผู้ร่วมเดินทางต้องเป็นจำนวนเต็ม 1–100 คน')
+    const requesterPosition = form.requester_position?.trim() || null
+    if (requesterPosition && requesterPosition.length > 200)
+      return alert('ตำแหน่งผู้ขอยาวเกิน 200 ตัวอักษร')
+    if (form.destination_locality.trim().length > 200 || form.destination_province.trim().length > 100)
+      return alert('ท้องที่หรือจังหวัดยาวเกินกำหนด')
+    if (form.returned_at && (parseDateTime(form.returned_at)?.getTime() ?? 0) < (parseDateTime(form.started_at)?.getTime() ?? 0))
       return alert('เวลากลับต้องไม่ก่อนเวลาออก')
     const startMeter = form.odometer_start === '' ? null : Number(form.odometer_start)
     const endMeter = form.odometer_end === '' ? null : Number(form.odometer_end)
@@ -699,9 +829,14 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       returned_at: toISO(form.returned_at),
       odometer_start: startMeter,
       odometer_end: endMeter,
-      destination: form.destination,
-      purpose: form.purpose,
+      destination: form.destination.trim(),
+      destination_locality: form.destination_locality.trim(),
+      destination_province: form.destination_province.trim(),
+      purpose: form.purpose.trim(),
+      passengers: passengerCount,
+      requester_position: requesterPosition,
       notes: form.notes || null,
+      backdated_reason: backdatedReason,
       status: 'completed',
     })
     setSaving(false)
@@ -712,13 +847,13 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
 
   /* ── Admin approve/reject ── */
   async function handleApprove(t) {
-    if (!confirm(`อนุมัติการจองรถ "${t.vehicle?.name}" ให้ ${t.driver?.full_name}?`)) return
+    if (!confirm(`อนุมัติคำขอใช้รถ "${t.vehicle?.name}" ให้ ${t.driver?.full_name}?`)) return
     const { error } = await supabase.from('fleet_trips').update({ status: 'approved', approved_by: user?.id, approved_at: new Date().toISOString() }).eq('id', t.id)
     if (error) return alert('อนุมัติไม่สำเร็จ: ' + error.message)
     logAction({ action: 'approve', resourceType: 'fleet_trip', resourceId: t.id, resourceLabel: `${t.vehicle?.name} — ${t.destination}`, municipalityId: tenant.id })
     loadTrips()
   }
-  // ปฏิเสธต้องระบุเหตุผลเสมอ — ผู้จองต้องรู้ว่าถูกปฏิเสธเพราะอะไร และต้องเหลือร่องรอย
+  // ปฏิเสธต้องระบุเหตุผลเสมอ — ผู้ขอใช้รถต้องรู้ว่าถูกปฏิเสธเพราะอะไร และต้องเหลือร่องรอย
   // ให้ตรวจสอบย้อนหลังได้ว่าใช้ดุลพินิจปฏิเสธด้วยเหตุใด (เก็บทั้งในตารางและ audit log)
   function handleReject(t) {
     setSelTrip(t)
@@ -746,11 +881,11 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     loadTrips()
   }
 
-  /* ── ผู้จองถอนคำขอของตัวเองที่ยังไม่ถูกพิจารณา ──
+  /* ── ผู้ขอใช้รถถอนคำขอของตัวเองที่ยังไม่ถูกพิจารณา ──
      เดิมไม่มีทางถอนจากหน้าจอเลย ทั้งที่ RLS อนุญาตอยู่แล้ว (ตรวจด้วยการยิง API ตรงแล้ว)
-     เจ้าหน้าที่ที่จองผิดวันจึงต้องตามแอดมินมากดปฏิเสธให้ ซึ่งไปโผล่ในประวัติว่า
-     "ถูกปฏิเสธ" ทั้งที่ผู้จองถอนเอง — คนละเรื่องกันในแง่การตรวจสอบ
-     บังคับระบุเหตุผลเหมือนตอนปฏิเสธ เพราะการจองรถราชการที่ถูกยกเลิกต้องอธิบายได้ว่าเพราะอะไร */
+     เจ้าหน้าที่ที่ยื่นคำขอผิดวันจึงต้องตามแอดมินมากดปฏิเสธให้ ซึ่งไปโผล่ในประวัติว่า
+     "ถูกปฏิเสธ" ทั้งที่ผู้ขอใช้รถถอนเอง — คนละเรื่องกันในแง่การตรวจสอบ
+     บังคับระบุเหตุผลเหมือนตอนปฏิเสธ เพราะคำขอใช้รถราชการที่ถูกยกเลิกต้องอธิบายได้ว่าเพราะอะไร */
   function handleCancelOwn(t) {
     setSelTrip(t)
     setRejectReason('')
@@ -771,7 +906,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     if (error) return alert('ยกเลิกไม่สำเร็จ: ' + error.message)
     logAction({ action: 'cancel', resourceType: 'fleet_trip', resourceId: selTrip.id,
       resourceLabel: `${selTrip.vehicle?.name} — ${selTrip.destination}`,
-      municipalityId: tenant.id, metadata: { reason, cancelled_by: 'ผู้จอง' } })
+      municipalityId: tenant.id, metadata: { reason, cancelled_by: 'ผู้ขอใช้รถ' } })
     setModal(null); setSelTrip(null); setRejectReason('')
     loadTrips()
   }
@@ -786,8 +921,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     const { error } = await supabase.from('fleet_trips').update({
       status: 'in_progress',
       started_at: toISO(form.started_at),
-      // trip_date คือวันที่ "ใช้รถจริง" ไม่ใช่วันที่จองไว้ — รายงาน สมุดประจำรถ และหน้าภาพรวม
-      // กรองด้วยคอลัมน์นี้ทั้งหมด ถ้าออกเดินทางคนละวันกับที่จอง (เลื่อนเร็ว/ช้า ซึ่งเกิดประจำ)
+      // trip_date คือวันที่ "ใช้รถจริง" ไม่ใช่วันที่ตามคำขอ — รายงาน สมุดประจำรถ และหน้าภาพรวม
+      // กรองด้วยคอลัมน์นี้ทั้งหมด ถ้าออกเดินทางคนละวันกับที่ขอไว้ (เลื่อนเร็ว/ช้า ซึ่งเกิดประจำ)
       // แล้วไม่ sync ค่า ระยะทางกับค่าน้ำมันจะไปตกเดือน/ปีงบผิด และขัดกับเวลาออกจริงที่บันทึกไว้
       trip_date: form.started_at.slice(0, 10),   // เวลาไทยจากช่อง datetime-local ตรงๆ
       odometer_start: startMeter,
@@ -800,7 +935,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
 
   async function submitReturn() {
     if (!form.returned_at) return alert('กรุณาระบุเวลากลับ')
-    if (selTrip.started_at && new Date(form.returned_at) < new Date(selTrip.started_at))
+    if (selTrip.started_at && (parseDateTime(form.returned_at)?.getTime() ?? 0) < (parseDateTime(selTrip.started_at)?.getTime() ?? 0))
       return alert('เวลากลับต้องไม่ก่อนเวลาออก')
     const endMeter = form.odometer_end === '' ? null : Number(form.odometer_end)
     if (endMeter !== null && (!Number.isFinite(endMeter) || endMeter < 0))
@@ -821,7 +956,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   }
 
   async function handleDelete(t) {
-    if (!confirm(`ลบรายการ "${t.vehicle?.name}" วันที่ ${t.planned_departure ? new Date(t.planned_departure).toLocaleDateString('th-TH') : '—'}?`)) return
+    if (!confirm(`ลบรายการ "${t.vehicle?.name}" วันที่ ${t.planned_departure ? fmtDate(t.planned_departure) : '—'}?`)) return
     const { error } = await supabase.from('fleet_trips').delete().eq('id', t.id)
     if (error) return alert('ลบไม่สำเร็จ: ' + error.message)
     logAction({ action: 'delete', resourceType: 'fleet_trip', resourceId: t.id, resourceLabel: `${t.vehicle?.name} — ${t.destination}`, municipalityId: tenant.id, metadata: { status: t.status } })
@@ -862,7 +997,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
               {STATUS_LABEL[t.status]}
             </span>
             {t.planned_departure && (
-              <span className="text-[9px] font-semibold bg-blue-50 text-blue-500 px-1.5 py-0.5 rounded-full">จอง</span>
+              <span className="text-[9px] font-semibold bg-blue-50 text-blue-500 px-1.5 py-0.5 rounded-full">คำขอ</span>
             )}
           </div>
         </div>
@@ -934,7 +1069,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     const canDepart  = t.status === 'approved' && (isOwner(t) || isAdmin)
     const canReturn  = t.status === 'in_progress' && (isOwner(t) || isAdmin)
     const canCancel  = t.status === 'pending' && isOwner(t) && !isAdmin
-    // ออกเดินทางแล้วให้ยึดวันที่ออกจริงเสมอ ไม่ใช่วันที่จองไว้ ตารางนี้จะได้ตรงกับ trip_date
+    // ออกเดินทางแล้วให้ยึดวันที่ออกจริงเสมอ ไม่ใช่วันที่ตามคำขอ ตารางนี้จะได้ตรงกับ trip_date
     // ที่รายงานใช้ (แถวเก่าก่อนแก้บั๊กนี้ยังไม่มี started_at จึงตกไปใช้ค่าเดิมตามลำดับเดิม)
     const dateStr = fmtDate(t.started_at || t.planned_departure || t.trip_date)
     const dist = t.distance_km ?? null
@@ -945,7 +1080,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
         <td className="px-3 py-2.5 text-center text-xs text-gray-400 border-r border-gray-200">{idx + 1}</td>
         <td className="px-4 py-2.5 text-xs border-r border-gray-200">
           <div className="font-semibold text-gray-700">{dateStr}</div>
-          {t.planned_departure && <div className="text-[10px] text-blue-400">📅 จอง</div>}
+          {t.planned_departure && <div className="text-[10px] text-blue-400">📄 คำขอ</div>}
         </td>
         <td className="px-4 py-2.5 text-xs font-semibold text-gray-700 border-r border-gray-200 whitespace-nowrap">
           {t.vehicle?.name}
@@ -1044,7 +1179,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       {/* บอกสาเหตุตั้งแต่ต้น ดีกว่าปล่อยให้กดแล้วเจอ error จาก RLS ตอนบันทึก */}
       {missingDept && canWrite && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[11px] md:text-xs text-amber-700">
-          ⚠️ บัญชีของคุณยังไม่ได้กำหนด <strong>กอง/หน่วยงาน</strong> จึงยังจองรถหรือบันทึกการเดินทางไม่ได้
+          ⚠️ บัญชีของคุณยังไม่ได้กำหนด <strong>กอง/หน่วยงาน</strong> จึงยังขออนุญาตใช้รถหรือบันทึกการใช้รถย้อนหลังไม่ได้
           <span className="text-amber-600"> — แจ้งผู้ดูแลระบบให้กำหนดกองที่ ตั้งค่า &gt; เจ้าหน้าที่ยานพาหนะ</span>
         </div>
       )}
@@ -1053,14 +1188,16 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       <div className="flex items-center gap-1.5 md:gap-2 flex-nowrap md:flex-wrap">
         {canWrite && <button onClick={openReserve}
           className="flex items-center gap-1.5 px-3 py-2 md:px-4 md:py-2.5 rounded-lg md:rounded-xl text-[11px] md:text-xs font-bold border-2 text-blue-600 border-blue-300 bg-blue-50 hover:bg-blue-100 transition-colors">
-          <Calendar size={13} /> จองรถ
+          <Calendar size={13} /> ขออนุญาตใช้รถ
         </button>}
-        {canWrite && <button onClick={openDirect}
+        {isAdmin && <button onClick={openDirect}
           className="flex items-center gap-1.5 px-3 py-2 md:px-4 md:py-2.5 rounded-lg md:rounded-xl text-[11px] md:text-xs font-bold text-white transition-colors"
           style={{ backgroundColor: 'var(--color-primary)' }}>
-          <Plus size={13} /> บันทึกการเดินทาง
+          <Plus size={13} />
+          <span className="md:hidden">บันทึกย้อนหลัง</span>
+          <span className="hidden md:inline">บันทึกการใช้รถย้อนหลัง</span>
         </button>}
-        <button onClick={() => setShowCal(true)} aria-label="เปิดปฏิทินการจอง"
+        <button onClick={() => setShowCal(true)} aria-label="เปิดปฏิทินการใช้รถ"
           className="md:hidden ml-auto flex items-center gap-1 px-2.5 py-2 rounded-lg text-[11px] font-bold text-blue-600 bg-blue-50">
           <Calendar size={13} /> ปฏิทิน
         </button>
@@ -1070,18 +1207,18 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       <div className="space-y-1.5 md:space-y-2">
         <div className="flex items-center justify-between">
           <p className="text-[11px] md:text-xs font-bold text-gray-500 uppercase tracking-wide">
-            การจองและการเดินทาง{active.length > 0 && <span className="text-blue-500 normal-case ml-1">({active.length})</span>}
+            คำขอและการใช้รถ{active.length > 0 && <span className="text-blue-500 normal-case ml-1">({active.length})</span>}
           </p>
           <button onClick={() => setShowCal(true)}
             className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[13px] font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors">
-            <Calendar size={13} /> ปฏิทินการจอง
+            <Calendar size={13} /> ปฏิทินการใช้รถ
           </button>
         </div>
         {active.length === 0 ? (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
-            <FleetEmptyState icon={Route} title="ยังไม่มีรายการจองหรือการเดินทางที่ดำเนินการอยู่"
+          <FleetEmptyState icon={Route} title="ยังไม่มีคำขอหรือรายการใช้รถที่ดำเนินการอยู่"
               hint={canWrite
-                ? <>กด <strong className="text-gray-500">จองรถ</strong> เพื่อส่งคำขอ</>
+                ? <>กด <strong className="text-gray-500">ขออนุญาตใช้รถ</strong> เพื่อส่งคำขอ</>
                 : 'สิทธิ์ของท่านเป็นผู้ดูรายงาน จึงดูได้อย่างเดียว'} />
           </div>
         ) : <>
@@ -1095,10 +1232,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       {/* ── History ── */}
       <div className="space-y-1.5 md:space-y-2">
         <p className="text-[11px] md:text-xs font-bold text-gray-500 uppercase tracking-wide">
-          ประวัติการเดินทาง <span className="text-gray-400 normal-case">({historyCount})</span>
+          ประวัติการใช้รถ <span className="text-gray-400 normal-case">({historyCount})</span>
         </p>
         {historyCount === 0 ? (
-          <FleetEmptyState icon={History} title="ยังไม่มีประวัติการเดินทาง" />
+          <FleetEmptyState icon={History} title="ยังไม่มีประวัติการใช้รถ" />
         ) : <>
           {renderTripsTable(pagedHistory)}
           <div className="md:hidden space-y-1.5">
@@ -1144,7 +1281,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
           <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 p-4">
             <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl">
               <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-                <h2 className="text-base font-black text-gray-800">รายละเอียดการเดินทาง</h2>
+                <h2 className="text-base font-black text-gray-800">รายละเอียดการใช้รถ</h2>
                 <button onClick={() => { setModal(null); setSelTrip(null) }}
                   className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><X size={16} /></button>
               </div>
@@ -1155,12 +1292,17 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                         style={{ backgroundColor: clr + '18', color: clr }}>{STATUS_LABEL[t.status]}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                  <div><p className="text-gray-400">ผู้ใช้รถ</p><p className="font-semibold text-gray-700">{t.driver?.full_name || '—'}</p></div>
+                  <div><p className="text-gray-400">ผู้ขอใช้รถ</p><p className="font-semibold text-gray-700">{t.requester?.full_name || '—'}</p></div>
+                  <div><p className="text-gray-400">ตำแหน่งผู้ขอ</p><p className="font-semibold text-gray-700">{t.requester_position || profilePosition(t.requester) || '—'}</p></div>
+                  <div><p className="text-gray-400">พนักงานขับรถ / ผู้ใช้รถ</p><p className="font-semibold text-gray-700">{t.driver?.full_name || '—'}</p></div>
                   <div><p className="text-gray-400">กอง/หน่วยงาน</p><p className="font-semibold text-gray-700">{t.departments?.name || '—'}</p></div>
+                  <div><p className="text-gray-400">ผู้ร่วมเดินทาง</p><p className="font-semibold text-gray-700">{t.passengers ?? 1} คน <span className="font-normal text-gray-400">(ไม่รวมคนขับ)</span></p></div>
                   <div className="col-span-2"><p className="text-gray-400">ปลายทาง</p><p className="font-semibold text-gray-700">{t.destination || '—'}</p></div>
+                  <div><p className="text-gray-400">ในท้องที่</p><p className="font-semibold text-gray-700">{t.destination_locality || '—'}</p></div>
+                  <div><p className="text-gray-400">จังหวัด</p><p className="font-semibold text-gray-700">{t.destination_province || '—'}</p></div>
                   <div className="col-span-2"><p className="text-gray-400">วัตถุประสงค์</p><p className="font-semibold text-gray-700">{t.purpose || '—'}</p></div>
                   {t.planned_departure && <>
-                    <div><p className="text-gray-400">วันเวลาออก (จอง)</p><p className="font-semibold text-gray-700">{fmtDT(t.planned_departure)}</p></div>
+                    <div><p className="text-gray-400">วันเวลาออก (ตามคำขอ)</p><p className="font-semibold text-gray-700">{fmtDT(t.planned_departure)}</p></div>
                     <div><p className="text-gray-400">กลับโดยประมาณ</p><p className="font-semibold text-gray-700">{fmtDT(t.planned_return)}</p></div>
                   </>}
                   {t.started_at && <div><p className="text-gray-400">ออกจริง</p><p className="font-semibold text-gray-700">{fmtDT(t.started_at)}{t.odometer_start != null ? ` · ${Number(t.odometer_start).toLocaleString()} กม.` : ''}</p></div>}
@@ -1170,30 +1312,50 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                     <p className="text-gray-400">{t.status === 'rejected' ? 'ผู้ปฏิเสธ' : t.status === 'cancelled' ? 'ผู้ดำเนินการ' : 'ผู้อนุมัติ'}</p>
                     <p className="font-semibold text-gray-700">{t.approver.full_name}{t.approved_at ? ` · ${fmtDT(t.approved_at)}` : ''}</p>
                   </div>}
+                  {t.backdated_reason && <div className="col-span-2"><p className="text-gray-400">เหตุผลที่บันทึกย้อนหลัง</p><p className="font-semibold text-amber-600">{t.backdated_reason}</p></div>}
                   {t.reject_reason && <div className="col-span-2"><p className="text-gray-400">เหตุผลปฏิเสธ/ยกเลิก</p><p className="font-semibold text-red-600">{t.reject_reason}</p></div>}
                   {t.notes && <div className="col-span-2"><p className="text-gray-400">หมายเหตุ</p><p className="font-semibold text-gray-700">{t.notes}</p></div>}
                 </div>
               </div>
-              {canEdit && (
-                <div className="px-5 pb-5 pt-2 border-t border-gray-100">
+              <div className={`grid grid-cols-1 gap-2 px-5 pb-5 pt-3 border-t border-gray-100 ${canEdit ? 'sm:grid-cols-2' : ''}`}>
+                <button onClick={() => printTripRequest(t)}
+                  className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 text-sm font-bold text-gray-700 hover:bg-gray-50">
+                  <Printer size={15} /> พิมพ์ใบขอใช้รถ (แบบ 3)
+                </button>
+                {canEdit && (
                   <button onClick={() => openEditReserve(t)}
-                    className="w-full py-3 rounded-xl text-sm font-bold text-white"
+                    className="rounded-xl py-3 text-sm font-bold text-white"
                     style={{ backgroundColor: 'var(--color-primary)' }}>
-                    ✏️ แก้ไขการจอง
+                    ✏️ แก้ไขคำขอ
                   </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         )
       })()}
 
-      {/* จองรถ / แก้ไขการจอง */}
+      {/* ขอใช้รถ / แก้ไขคำขอใช้รถ */}
       {modal === 'reserve' && (
-        <Modal title={selTrip ? '✏️ แก้ไขการจอง' : '📅 จองรถ'}
+        <Modal title={selTrip ? '✏️ แก้ไขใบขอใช้รถ (แบบ 3)' : '📄 ใบขออนุญาตใช้รถส่วนกลาง (แบบ 3)'}
                onClose={() => { setModal(null); setSelTrip(null); setConflict(null); setShowOverride(false); setOverrideReason('') }}
                onSave={submitReserve}
-               saveLabel={selTrip ? 'บันทึกการแก้ไข' : 'ส่งคำขอจอง'} saving={saving}>
+               saveLabel={selTrip ? 'บันทึกการแก้ไข' : 'ส่งคำขออนุญาตใช้รถ'} saving={saving}>
+          <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs">
+            <p className="text-blue-500">ผู้ขอใช้รถ</p>
+            <p className="mt-0.5 font-bold text-gray-800">
+              {selTrip?.requester?.full_name || requesterProfile?.full_name || 'บัญชีผู้ใช้ปัจจุบัน'}
+            </p>
+            <p className="mt-1 text-[11px] text-gray-500">ระบบยืนยันผู้ขอจากบัญชีที่เข้าสู่ระบบและเก็บเป็นหลักฐาน ไม่ให้เลือกชื่อแทนกัน</p>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">ตำแหน่งผู้ขอ *</label>
+            <input value={form.requester_position || ''} onChange={set('requester_position')}
+              readOnly={!!selTrip || !!profilePosition(requesterProfile)}
+              placeholder="เช่น นักวิชาการสาธารณสุข"
+              className={inp + ((selTrip || profilePosition(requesterProfile)) ? ' bg-gray-50 text-gray-500' : '')} />
+            <p className="mt-1 text-[10px] text-gray-400">บันทึกเป็น snapshot ณ วันยื่นคำขอ เพื่อให้เอกสารย้อนหลังไม่เปลี่ยนตามตำแหน่งปัจจุบัน</p>
+          </div>
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">ยานพาหนะ *</label>
             <select value={form.vehicle_id}
@@ -1205,7 +1367,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
           {conflict && (
             <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-600 space-y-2">
               <p className="font-semibold">
-                ⚠️ รถคันนี้ถูกจองในช่วงเวลาดังกล่าวแล้ว
+                ⚠️ รถคันนี้มีคำขอใช้รถในช่วงเวลาดังกล่าวแล้ว
                 {conflict.trips[0]?.driver?.full_name ? ` โดย ${conflict.trips[0].driver.full_name}` : ''}
                 {conflict.trips[0]?.destination ? ` (${conflict.trips[0].destination})` : ''}
               </p>
@@ -1232,7 +1394,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                   <div className="flex gap-2">
                     <button type="button" onClick={submitOverrideReserve} disabled={saving}
                       className="flex-1 py-2 rounded-lg text-white text-xs font-bold bg-red-600 disabled:opacity-50">
-                      {saving ? 'กำลังบันทึก...' : 'ยืนยันจองแทนที่ (ยกเลิกการจองเดิม)'}
+                      {saving ? 'กำลังบันทึก...' : 'ยืนยันใช้รถแทนคิวเดิม (ยกเลิกคำขอเดิม)'}
                     </button>
                     <button type="button" onClick={() => { setShowOverride(false); setOverrideReason('') }}
                       className="px-3 py-2 rounded-lg border border-gray-200 text-gray-500 text-xs font-semibold">ยกเลิก</button>
@@ -1241,7 +1403,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
               ) : (
                 <button type="button" onClick={() => setShowOverride(true)}
                   className="text-red-700 underline font-semibold">
-                  🚨 จำเป็นต้องใช้รถคันนี้จริงๆ — จองแทนที่ฉุกเฉิน (Admin เท่านั้น)
+                  🚨 จำเป็นต้องใช้รถคันนี้จริงๆ — ใช้รถแทนคิวเดิมกรณีฉุกเฉิน (Admin เท่านั้น)
                 </button>
               ))}
             </div>
@@ -1259,12 +1421,18 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
             </div>
           </div>
           <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้ใช้รถ</label>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">พนักงานขับรถ / ผู้ใช้รถ</label>
             <select value={form.driver_id} onChange={set('driver_id')} className={sel}>
               {staffList.map(s => (
                 <option key={s.id} value={s.id}>{userOptionLabel(s, user?.id)}</option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">จำนวนผู้ร่วมเดินทาง (รวมผู้ขอ) *</label>
+            <input type="number" min="1" max="100" step="1" value={form.passengers}
+              onChange={set('passengers')} className={inp} />
+            <p className="mt-1 text-[10px] text-gray-400">ไม่รวมพนักงานขับรถ</p>
           </div>
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">กอง/หน่วยงาน</label>
@@ -1280,9 +1448,21 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
             )}
           </div>
           <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1 block">ปลายทาง *</label>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">สถานที่ไป *</label>
             <input value={form.destination} onChange={set('destination')}
-              placeholder="เช่น อำเภอเมือง" className={inp} />
+              placeholder="เช่น ศาลากลางจังหวัดแพร่" className={inp} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">ในท้องที่ *</label>
+              <input value={form.destination_locality} onChange={set('destination_locality')}
+                placeholder="เช่น อำเภอเมืองแพร่" className={inp} />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">จังหวัด *</label>
+              <input value={form.destination_province} onChange={set('destination_province')}
+                placeholder="เช่น แพร่" className={inp} />
+            </div>
           </div>
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">วัตถุประสงค์ *</label>
@@ -1292,16 +1472,44 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
         </Modal>
       )}
 
-      {/* บันทึกทีหลัง */}
+      {/* บันทึกการใช้รถย้อนหลัง — สำหรับกรณีที่ใช้รถไปแล้ว ไม่ใช้แทนขั้นขออนุญาตตามปกติ */}
       {modal === 'direct' && (
-        <Modal title="📝 บันทึกการเดินทาง" onClose={() => setModal(null)} onSave={submitDirect}
+        <Modal title="📝 บันทึกการใช้รถย้อนหลัง" onClose={() => setModal(null)} onSave={submitDirect}
                saveLabel="บันทึก" saving={saving}>
+          <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs">
+            <p className="text-blue-500">ผู้บันทึก/ผู้ขอใช้รถ</p>
+            <p className="mt-0.5 font-bold text-gray-800">{requesterProfile?.full_name || 'บัญชีผู้ใช้ปัจจุบัน'}</p>
+          </div>
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-700">
+            ⚠️ รายการนี้จะถูกบันทึกเป็น <strong>“เสร็จสิ้น”</strong> ทันทีโดยไม่ผ่านขั้นอนุมัติ
+            ใบขออนุญาตใช้รถที่พิมพ์จากรายการนี้จะไม่มีผู้อนุมัติ ใช้เฉพาะกรณีที่ใช้รถไปแล้วจริงเท่านั้น
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">เหตุผลที่บันทึกย้อนหลัง *</label>
+            <textarea value={form.backdated_reason || ''} onChange={set('backdated_reason')} rows={2}
+              placeholder="เช่น เหตุฉุกเฉินนอกเวลาราชการ ยังไม่ได้ยื่นคำขอล่วงหน้า"
+              className={inp} />
+            <p className="mt-1 text-[10px] text-gray-400">พิมพ์กำกับไว้ในใบขออนุญาตใช้รถ เพื่อให้ตรวจสอบย้อนหลังได้</p>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">ตำแหน่งผู้ขอ</label>
+            <input value={form.requester_position || ''} onChange={set('requester_position')}
+              readOnly={!!profilePosition(requesterProfile)}
+              placeholder="เช่น นักวิชาการสาธารณสุข"
+              className={inp + (profilePosition(requesterProfile) ? ' bg-gray-50 text-gray-500' : '')} />
+          </div>
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">ยานพาหนะ *</label>
             <select value={form.vehicle_id} onChange={set('vehicle_id')} className={sel}>
               <option value="">— เลือกรถ —</option>
               {vehicles.map(v => <option key={v.id} value={v.id}>{assetOptionLabel(v)}</option>)}
             </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">จำนวนผู้ร่วมเดินทาง (รวมผู้ขอ) *</label>
+            <input type="number" min="1" max="100" step="1" value={form.passengers}
+              onChange={set('passengers')} className={inp} />
+            <p className="mt-1 text-[10px] text-gray-400">ไม่รวมพนักงานขับรถ</p>
           </div>
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้ใช้รถ</label>
@@ -1328,6 +1536,18 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
             <label className="text-xs font-semibold text-gray-600 mb-1 block">ปลายทาง *</label>
             <input value={form.destination} onChange={set('destination')}
               placeholder="เช่น อำเภอเมือง" className={inp} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">ในท้องที่ *</label>
+              <input value={form.destination_locality} onChange={set('destination_locality')}
+                placeholder="เช่น อำเภอเมืองแพร่" className={inp} />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">จังหวัด *</label>
+              <input value={form.destination_province} onChange={set('destination_province')}
+                placeholder="เช่น แพร่" className={inp} />
+            </div>
           </div>
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">วัตถุประสงค์ *</label>
@@ -1369,9 +1589,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       )}
 
       {/* บันทึกออกเดินทาง */}
-      {/* ปฏิเสธการจอง — บังคับระบุเหตุผล */}
+      {/* ปฏิเสธคำขอใช้รถ — บังคับระบุเหตุผล */}
       {modal === 'reject' && selTrip && (
-        <Modal title="⛔ ปฏิเสธการจองรถ"
+        <Modal title="⛔ ปฏิเสธคำขอใช้รถ"
                onClose={() => { setModal(null); setSelTrip(null); setRejectReason('') }}
                onSave={submitReject} saveLabel="ยืนยันปฏิเสธ" saving={saving}>
           <div className="bg-red-50 rounded-xl p-3">
@@ -1387,15 +1607,15 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
               placeholder="เช่น รถติดภารกิจผู้บริหาร / เอกสารขออนุมัติไม่ครบ / ซ้อนกับงานเร่งด่วน"
               className={inp} />
             <p className="text-[11px] text-gray-400 mt-1">
-              ผู้จองจะเห็นเหตุผลนี้ในหน้ารายละเอียดการเดินทาง และระบบเก็บไว้ในประวัติการใช้งานเพื่อการตรวจสอบ
+              ผู้ขอจะเห็นเหตุผลนี้ในหน้ารายละเอียดการใช้รถ และระบบเก็บไว้ในประวัติการใช้งานเพื่อการตรวจสอบ
             </p>
           </div>
         </Modal>
       )}
 
-      {/* ผู้จองถอนคำขอของตัวเอง — บังคับระบุเหตุผลเช่นกัน */}
+      {/* ผู้ขอใช้รถถอนคำขอของตัวเอง — บังคับระบุเหตุผลเช่นกัน */}
       {modal === 'cancel' && selTrip && (
-        <Modal title="✕ ยกเลิกคำขอจองรถ"
+        <Modal title="✕ ยกเลิกคำขอใช้รถ"
                onClose={() => { setModal(null); setSelTrip(null); setRejectReason('') }}
                onSave={submitCancelOwn} saveLabel="ยืนยันยกเลิกคำขอ" saving={saving}>
           <div className="bg-gray-50 rounded-xl p-3">
@@ -1410,10 +1630,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">เหตุผลการยกเลิก (บังคับกรอก) *</label>
             <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={3}
-              placeholder="เช่น เลื่อนกำหนดการประชุม / จองผิดวัน / ไปรถส่วนตัวแทน"
+              placeholder="เช่น เลื่อนกำหนดการประชุม / ระบุวันขอใช้รถผิด / ไปรถส่วนตัวแทน"
               className={inp} />
             <p className="text-[11px] text-gray-400 mt-1">
-              ยกเลิกได้เฉพาะคำขอที่ยังไม่ถูกพิจารณา ระบบบันทึกว่าผู้จองเป็นผู้ยกเลิกเอง
+              ยกเลิกได้เฉพาะคำขอที่ยังไม่ถูกพิจารณา ระบบบันทึกว่าผู้ขอใช้รถเป็นผู้ยกเลิกเอง
               พร้อมเหตุผล เพื่อแยกจากกรณีที่ผู้มีอำนาจปฏิเสธ
             </p>
           </div>

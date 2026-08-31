@@ -6,7 +6,7 @@ const isStandalone = () =>
   window.matchMedia('(display-mode: standalone)').matches ||
   window.navigator.standalone === true
 
-function IOSGuide({ onClose }) {
+export function IOSGuide({ onClose }) {
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 px-4 pb-4"
          onClick={onClose}>

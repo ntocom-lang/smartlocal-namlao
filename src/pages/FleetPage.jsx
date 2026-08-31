@@ -20,7 +20,7 @@ const TABS = [
   { id: 'dashboard',   label: 'ภาพรวม',     sub: 'สถิติและสรุปรวม',     Icon: LayoutDashboard, color: '#1a3a5c', grad: 'linear-gradient(135deg,#1a3a5c,#2d5f8a)' },
   { id: 'vehicles',    label: 'รถและเครื่องยนต์', sub: 'ทะเบียนรถและครุภัณฑ์', Icon: Car,          color: '#2563eb', grad: 'linear-gradient(135deg,#1d4ed8,#3b82f6)' },
   { id: 'fuel',        label: 'เชื้อเพลิง',  sub: 'บันทึกเชื้อเพลิง/ของเหลว', Icon: Fuel,          color: '#d97706', grad: 'linear-gradient(135deg,#b45309,#f59e0b)' },
-  { id: 'trips',       label: 'การเดินทาง', sub: 'จองและบันทึกการใช้รถ', Icon: Route,           color: '#7c3aed', grad: 'linear-gradient(135deg,#6d28d9,#8b5cf6)' },
+  { id: 'trips',       label: 'การใช้รถ', sub: 'คำขอและบันทึกการใช้รถ', Icon: Route,           color: '#7c3aed', grad: 'linear-gradient(135deg,#6d28d9,#8b5cf6)' },
   { id: 'maintenance', label: 'ซ่อมบำรุง',  sub: 'ประวัติการซ่อมบำรุง',  Icon: Wrench,          color: '#dc2626', grad: 'linear-gradient(135deg,#b91c1c,#ef4444)' },
   { id: 'report',      label: 'รายงาน',     sub: 'ส่งออก PDF / Excel',   Icon: BarChart2,       color: '#059669', grad: 'linear-gradient(135deg,#047857,#10b981)' },
   { id: 'budget',      label: 'งบประมาณ',   sub: 'งบน้ำมันรายกอง',      Icon: Wallet,          color: '#0891b2', grad: 'linear-gradient(135deg,#0e7490,#22d3ee)', adminOnly: true },

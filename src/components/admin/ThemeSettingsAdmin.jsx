@@ -9,7 +9,7 @@ import { useTenant, applyTheme } from '../../contexts/TenantContext'
 // มี 2 ธีมชื่อทุ่งแค้ว — รวมเหลือตัวเดียวแล้วตามที่ตกลงกัน)
 const PRESETS = [
   { key: 'namlao',    id: 'eco_friendly', name: 'NamlaoTheme',     icon: '🟢', desc: 'เรียบง่าย สบายตา', color: null },
-  { key: 'theme2',    id: 'kledkaew',     name: 'Theme2',          icon: '🦕', desc: 'สดใส สนุกสนาน',    color: null },
+  { key: 'theme2',    id: 'kledkaew',     name: 'Kledkaew',        icon: '🌿', desc: 'สดใส สนุกสนาน',    color: null },
   { key: 'servicehub', id: 'service_hub', name: 'thungkaew-Theme', icon: '🌾', desc: 'เน้นสถิติ/บริการ',  color: null },
 ]
 

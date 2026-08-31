@@ -18,6 +18,8 @@ import { uploadFile } from '../lib/driveStorage'
 import { fetchAssignableStaff } from '../lib/staffRoster'
 import { MANAGED_MODULE_KEYS } from '../lib/staffModules'
 import OdorAcknowledgePanel from '../components/staff/OdorAcknowledgePanel'
+import PortalSwitcher from '../components/layout/PortalSwitcher'
+import UserProfileBadge from '../components/layout/UserProfileBadge'
 
 const CivilProjectAdmin = lazy(() => import('../components/admin/CivilProjectAdmin'))
 const InfraWorkAdmin = lazy(() => import('../components/admin/InfraWorkAdmin'))
@@ -1796,27 +1798,15 @@ export default function StaffDashboard() {
                 <p className="text-sm font-bold text-white mt-0.5 leading-tight">{tenant?.name}</p>
               </div>
             </div>
-            {profile && (
-              <div className="flex items-center gap-2">
-                <div className="text-right">
-                  <p className="text-xs font-bold text-white">{profile.full_name}</p>
-                  <p className="text-[10px] text-emerald-200">{ROLE_TH[profile.role] ?? profile.role}</p>
-                </div>
-                <div className="w-8 h-8 rounded-full bg-white/20 border border-white/40 flex items-center justify-center text-sm font-bold text-white shrink-0">
-                  {profile.full_name?.[0]?.toUpperCase() ?? '?'}
-                </div>
-                <button onClick={() => navigate('/')}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/10 hover:bg-white/20 transition-colors border border-white/20">
-                  <Home size={13} />
-                  เว็บหลัก
-                </button>
-                <button onClick={handleLogout}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/10 hover:bg-white/20 transition-colors border border-white/20">
-                  <LogOut size={13} />
-                  ออกจากระบบ
-                </button>
-              </div>
-            )}
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              <UserProfileBadge tone="onDark" />
+              <PortalSwitcher className="flex" />
+              <button onClick={handleLogout}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/10 hover:bg-white/20 transition-colors border border-white/20">
+                <LogOut size={13} />
+                ออกจากระบบ
+              </button>
+            </div>
           </div>
 
         </header>

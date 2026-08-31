@@ -1,8 +1,12 @@
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Bell, User, Home, Newspaper, ClipboardList, LayoutGrid, CalendarDays, Luggage } from 'lucide-react'
+import { Bell, User, Home, Newspaper, ClipboardList, LayoutGrid, CalendarDays, Luggage, LogOut } from 'lucide-react'
 import { useTenant } from '../../../../contexts/TenantContext'
 import { useNotifications } from '../../../../contexts/NotificationsContext'
 import { useAuth } from '../../../../contexts/AuthContext'
+import { signOutSafely } from '../../../../lib/supabase'
+import { moduleForPath } from '../../../../lib/staffModules'
+import PortalSwitcher from '../../../layout/PortalSwitcher'
+import UserProfileBadge from '../../../layout/UserProfileBadge'
 
 const PC_NAV = [
   { href: '/',           label: 'หน้าแรก',     Icon: Home,          exact: true },
@@ -14,11 +18,20 @@ const PC_NAV = [
 ]
 
 export default function Header() {
-  const { tenant } = useTenant()
+  const { tenant, isModuleEnabled } = useTenant()
   const navigate = useNavigate()
   const location = useLocation()
   const { unreadCount } = useNotifications()
   const { session, displayName, avatarUrl } = useAuth()
+
+  async function logout() {
+    await signOutSafely('/')
+    navigate('/')
+  }
+  const pcNav = PC_NAV.filter(({ href }) => {
+    const key = moduleForPath(href)
+    return !key || isModuleEnabled(key)
+  })
 
   const name = tenant?.name || ''
   let prefix = ''
@@ -34,17 +47,21 @@ export default function Header() {
 
   return (
     <header className="relative w-full text-white overflow-hidden pb-6"
-            style={{ 
-              background: 'linear-gradient(180deg, #047857 0%, #064e3b 100%)',
+            style={{
+              background: 'linear-gradient(180deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)',
             }}>
-      {/* Background illustration for the header */}
-      <div className="absolute inset-0 opacity-40 pointer-events-none" style={{ backgroundImage: `url("${tenant?.header_image_url || 'https://images.unsplash.com/photo-1511497584788-876760111969?auto=format&fit=crop&q=80&w=1000'}")`, backgroundSize: 'cover', backgroundPosition: 'center' }}></div>
-      <div className="absolute bottom-0 left-0 right-0 h-20 bg-linear-to-t from-[#064e3b] via-[#064e3b]/80 to-transparent pointer-events-none"></div>
+      {tenant?.header_image_url && (
+        <div className="absolute inset-0 opacity-40 pointer-events-none" style={{ backgroundImage: `url("${tenant.header_image_url}")`, backgroundSize: 'cover', backgroundPosition: 'center' }}></div>
+      )}
+      <div className="absolute bottom-0 left-0 right-0 h-20 pointer-events-none"
+        style={{ background: 'linear-gradient(to top, var(--color-primary-dark), transparent)' }}></div>
       
       <div className="relative z-10 px-4 pt-3 pb-1 flex justify-between items-center max-w-6xl mx-auto">
-        <button onClick={() => navigate('/profile')} className="p-1.5 text-white hover:bg-white/10 rounded-full transition-colors -ml-1">
+        <button onClick={() => navigate(session ? '/profile' : '/auth')}
+          aria-label={session ? 'บัญชีของฉัน' : 'เข้าสู่ระบบ'}
+          className="p-1.5 text-white hover:bg-white/10 rounded-full transition-colors -ml-1">
           {session ? (
-            <div className="w-8 h-8 rounded-full bg-emerald-700/50 border border-white/60 flex items-center justify-center font-bold text-white shadow-sm overflow-hidden">
+            <div className="w-8 h-8 rounded-full bg-white/20 border border-white/60 flex items-center justify-center font-bold text-white shadow-sm overflow-hidden">
               {avatarUrl ? (
                 <img src={avatarUrl} alt="Profile" className="w-full h-full object-cover" />
               ) : (
@@ -52,7 +69,7 @@ export default function Header() {
               )}
             </div>
           ) : (
-            <div className="w-8 h-8 rounded-full bg-emerald-700/50 border border-white/60 flex items-center justify-center shadow-sm text-white">
+            <div className="w-8 h-8 rounded-full bg-white/20 border border-white/60 flex items-center justify-center shadow-sm text-white">
               <User size={18} />
             </div>
           )}
@@ -70,7 +87,8 @@ export default function Header() {
           </div>
         </Link>
         
-        <button onClick={() => navigate('/notifications')} className="relative p-2 text-white/90 hover:text-white transition-colors -mr-2">
+        <button onClick={() => navigate('/notifications')} aria-label="การแจ้งเตือน"
+          className="relative p-2 text-white/90 hover:text-white transition-colors -mr-2">
           <Bell size={24} />
           {unreadCount > 0 && (
             <span className="absolute top-1.5 right-1.5 min-w-4 h-4 bg-amber-400 text-amber-900 text-[9px] font-bold rounded-full flex items-center justify-center px-0.5 border border-white shadow-sm">
@@ -110,22 +128,40 @@ export default function Header() {
         </div>
       </div>
 
-      {/* PC-only nav strip */}
-      <nav className="hidden md:flex items-center justify-center gap-1 relative z-10 pb-3 px-4 max-w-6xl mx-auto">
-        {PC_NAV.map(({ href, label, Icon, exact }) => {
-          const active = exact ? location.pathname === href : location.pathname.startsWith(href)
-          return (
-            <Link key={href} to={href}
-              className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-bold transition-all"
-              style={active
-                ? { backgroundColor: 'rgba(255,255,255,0.25)', color: '#fff' }
-                : { color: 'rgba(255,255,255,0.7)' }}>
-              <Icon size={15} />
-              {label}
-            </Link>
-          )
-        })}
-      </nav>
+      {/* แยกปุ่มสลับมุมมองออกจากแถบเมนูประชาชน — ธีมนี้ไม่มี sidebar บน PC จึงต้องเหลือ PC_NAV */}
+      <div className="hidden md:flex flex-col items-center gap-3 relative z-10 pb-3 px-4 max-w-6xl mx-auto mt-3">
+        {session ? (
+          <div className="flex items-center gap-2 flex-wrap justify-center">
+            <UserProfileBadge tone="onDark" />
+            <PortalSwitcher className="flex" />
+            <button onClick={logout}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/10 hover:bg-white/20 transition-colors border border-white/20">
+              <LogOut size={13} /> ออกจากระบบ
+            </button>
+          </div>
+        ) : (
+          <PortalSwitcher className="flex" />
+        )}
+        <nav className="flex items-center justify-center gap-1 flex-wrap">
+          {pcNav.map(({ href, label, Icon, exact }) => {
+            const active = exact ? location.pathname === href : location.pathname.startsWith(href)
+            return (
+              <Link key={href} to={href}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-bold transition-all"
+                style={active
+                  ? { backgroundColor: 'rgba(255,255,255,0.25)', color: '#fff' }
+                  : { color: 'rgba(255,255,255,0.7)' }}>
+                <Icon size={15} />
+                {label}
+              </Link>
+            )
+          })}
+          <a href="/manual-citizen.html" target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-bold text-white/70 hover:text-white transition-colors">
+            📋 คู่มือ
+          </a>
+        </nav>
+      </div>
     </header>
   )
 }

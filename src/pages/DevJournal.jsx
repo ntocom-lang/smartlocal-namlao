@@ -5,15 +5,14 @@ import {
   LayoutGrid, LogOut, Folder, Activity, Database, Cpu, ShieldCheck, Sparkles,
   Clock3, CheckCircle2, CircleDot, Layers3, Command, ChevronRight, KeyRound,
 } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { supabase, signOutSafely } from '../lib/supabase'
 import { thaiDate } from '../lib/thaiDate'
 import { useTenant } from '../contexts/TenantContext'
 import SuperAdminPanel from '../components/admin/SuperAdminPanel'
 import GoogleMapsSettings from '../components/admin/GoogleMapsSettings'
-
-// ต้องตรงกับ uuid ใน supabase/migrations/147_dev_journal.sql (ntocom@gmail.com) —
-// เช็คฝั่ง client แค่เพื่อ UX (กันไม่ให้เห็นหน้าเปล่า/redirect เร็ว) ความปลอดภัยจริงอยู่ที่ RLS
-const DEV_USER_ID = 'b3e7c083-05ee-4664-ba42-e866729923ef'
+import PortalSwitcher from '../components/layout/PortalSwitcher'
+import UserProfileBadge from '../components/layout/UserProfileBadge'
+import { DEV_USER_ID } from '../lib/portalAccess'
 
 // สีธีมของหน้านี้ตั้งใจใช้ slate เข้ม (ไม่ใช่ var(--color-primary) ของ tenant) เพราะ
 // dev_journal เป็นข้อมูลข้ามทุกเทศบาล ไม่ผูกกับธีมของเทศบาลใดเทศบาลหนึ่ง
@@ -429,20 +428,29 @@ export default function DevJournal() {
 
       {/* ─── Main content ─── */}
       <div className="flex-1 min-w-0 pb-24 md:pb-0 bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.08),transparent_30%),linear-gradient(180deg,#f8fafc_0%,#f1f5f9_100%)]">
-        <div className="hidden md:flex sticky top-0 z-20 items-center justify-between px-7 py-3.5 bg-white/85 backdrop-blur-xl border-b border-slate-200/70">
-          <div className="flex items-center gap-3">
+        <div className="hidden md:flex sticky top-0 z-20 items-center justify-between gap-3 px-7 py-3.5 bg-white/85 backdrop-blur-xl border-b border-slate-200/70">
+          <div className="flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 rounded-xl bg-slate-900 flex items-center justify-center shadow-sm">
               <Cpu size={17} className="text-cyan-300" />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">System Workspace</p>
-              <p className="text-sm font-black text-slate-800">{activeModule === 'all' ? 'ทุกส่วนของระบบ' : activeModule}</p>
+              <p className="text-sm font-black text-slate-800 truncate">{activeModule === 'all' ? 'ทุกส่วนของระบบ' : activeModule}</p>
             </div>
           </div>
-          <button onClick={openCreate}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 shadow-lg shadow-blue-600/20 hover:shadow-blue-600/30 hover:-translate-y-0.5 active:scale-95 transition-all">
-            <Plus size={15} /> เพิ่มบันทึกใหม่
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <UserProfileBadge tone="onLight" />
+            <PortalSwitcher className="flex" tone="onLight" />
+            <button onClick={async () => { await signOutSafely('/'); navigate('/') }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors border border-slate-200">
+              <LogOut size={13} />
+              ออกจากระบบ
+            </button>
+            <button onClick={openCreate}
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 shadow-md shadow-blue-600/20 hover:shadow-blue-600/30 hover:-translate-y-0.5 active:scale-95 transition-all">
+              <Plus size={14} /> เพิ่มบันทึกใหม่
+            </button>
+          </div>
         </div>
 
         <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 lg:py-7 space-y-5">

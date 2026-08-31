@@ -27,7 +27,7 @@ const ROLE_LABEL = {
 
 export default function ProfilePage() {
   const navigate = useNavigate()
-  const { role: contextRole } = useAuth()
+  const { role: contextRole, refreshProfile } = useAuth()
   const { tenant } = useTenant()
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState({
@@ -144,6 +144,7 @@ export default function ProfilePage() {
     setEditPhone(false)
     setEditIdCard(false)
     setEditAddress(false)
+    refreshProfile?.()
   }
 
   // แสดงที่อยู่รวมเป็นบรรทัดเดียว รูปแบบเดียวกับ formatStructuredAddress ใน AdminDashboard.jsx
@@ -214,6 +215,7 @@ export default function ProfilePage() {
     setAvatarUrl(publicUrl)
     setMsg('อัปโหลดรูปโปรไฟล์สำเร็จ')
     setSaving(false)
+    refreshProfile?.()
   }
 
   // ของเดิม await แล้วทิ้งค่าที่คืนมาทั้งก้อน ไม่ดู error ไม่มีสปินเนอร์ ไม่มีข้อความ ผู้ใช้กดแล้ว

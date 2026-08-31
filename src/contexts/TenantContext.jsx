@@ -155,8 +155,7 @@ function normalizeHexColor(value) {
 export function applyTheme(hexColor, uiStyle = 'default') {
   const root = document.documentElement
 
-  // kledkaew theme ใช้เขียวเสมอ ไม่ว่า DB จะกำหนดสีอะไร
-  const effectiveColor = uiStyle === 'kledkaew' ? '#059669' : normalizeHexColor(hexColor)
+  const effectiveColor = normalizeHexColor(hexColor)
 
   root.style.setProperty('--color-primary', effectiveColor)
 

@@ -21,6 +21,44 @@ export function fiscalYearRange(date = new Date()) {
 
 // เดือนเรียงตามปีงบ (ต.ค.→ก.ย.) พร้อมเลขเดือนปฏิทินจริง (1-12) กำกับแต่ละอัน — ใช้แสดง
 // หัวตาราง/กราฟรายเดือนให้ตรงลำดับที่ อปท. คุ้นเคย ไม่ใช่ ม.ค.→ธ.ค. แบบปีปฏิทิน
+// ปีงบ พ.ศ. → วันเริ่ม/สิ้นสุดแบบ YYYY-MM-DD (ไม่ใช้ Date เที่ยงคืน UTC)
+export function fiscalYearBounds(fiscalYearBE) {
+  const endCE = Number(fiscalYearBE) - 543
+  const startCE = endCE - 1
+  return {
+    fiscalYearBE: Number(fiscalYearBE),
+    startCE,
+    endCE,
+    from: `${startCE}-10-01`,
+    to: `${endCE}-09-30`,
+  }
+}
+
+// ไตรมาสงบประมาณ อปท.: 1=ต.ค.–ธ.ค. 2=ม.ค.–มี.ค. 3=เม.ย.–มิ.ย. 4=ก.ค.–ก.ย.
+export const FISCAL_QUARTERS = [
+  { value: 1, label: 'ไตรมาส 1 (ต.ค.–ธ.ค.)', short: 'ต.ค.–ธ.ค.' },
+  { value: 2, label: 'ไตรมาส 2 (ม.ค.–มี.ค.)', short: 'ม.ค.–มี.ค.' },
+  { value: 3, label: 'ไตรมาส 3 (เม.ย.–มิ.ย.)', short: 'เม.ย.–มิ.ย.' },
+  { value: 4, label: 'ไตรมาส 4 (ก.ค.–ก.ย.)', short: 'ก.ค.–ก.ย.' },
+]
+
+export function fiscalQuarterOf(date = new Date()) {
+  const month = date.getMonth() // 0-11
+  if (month >= 9) return 1
+  if (month <= 2) return 2
+  if (month <= 5) return 3
+  return 4
+}
+
+export function fiscalQuarterBounds(fiscalYearBE, quarter) {
+  const { startCE, endCE } = fiscalYearBounds(fiscalYearBE)
+  const q = Number(quarter)
+  if (q === 1) return { from: `${startCE}-10-01`, to: `${startCE}-12-31` }
+  if (q === 2) return { from: `${endCE}-01-01`, to: `${endCE}-03-31` }
+  if (q === 3) return { from: `${endCE}-04-01`, to: `${endCE}-06-30` }
+  return { from: `${endCE}-07-01`, to: `${endCE}-09-30` }
+}
+
 export const FISCAL_MONTHS_TH = [
   { label: 'ต.ค.',  month: 10 }, { label: 'พ.ย.', month: 11 }, { label: 'ธ.ค.', month: 12 },
   { label: 'ม.ค.',  month: 1 },  { label: 'ก.พ.', month: 2 },  { label: 'มี.ค.', month: 3 },

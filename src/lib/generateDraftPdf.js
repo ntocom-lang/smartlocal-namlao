@@ -11,22 +11,28 @@ import html2canvas from 'html2canvas'
 // ซึ่งไม่มี glyph ภาษาไทย ทำให้ข้อความไทยกลายเป็นสัญลักษณ์มั่ว ส่วน html2canvas
 // วาดจากพิกเซลที่เบราว์เซอร์เรนเดอร์จริง (เหมือนปุ่ม "พิมพ์" ที่ใช้ window.print())
 // จึงได้ตัวอักษรไทยถูกต้องโดยไม่ต้อง embed font file เพิ่มเลย
-export async function generateDraftPdfBlob(html) {
+export async function generateDraftPdfBlob(html, options = {}) {
   // ห้ามใช้ left:-9999px ซ่อน container — jsPDF คำนวณตำแหน่งบางส่วนจาก
   // getBoundingClientRect() ของ viewport ตรงๆ ถ้า container อยู่นอกจอ เนื้อหา
   // จะถูกวาดไปไกลนอกขอบเขต MediaBox ทำให้ PDF ออกมาว่างเปล่า (ไม่มี error ให้เห็น)
   // ต้องคง left/top ไว้ที่ 0 แล้วซ่อนด้วย z-index ต่ำกว่าเนื้อหาอื่นแทน
   //
-  // padding ตรงนี้ตั้งใจให้เท่ากับ @page { margin: 1.6cm 2.5cm } ใน buildCouncilComplaintHtml —
+  // padding ค่าเริ่มต้นเท่ากับ @page { margin: 1.6cm 2.5cm } ใน buildCouncilComplaintHtml —
   // @page margin มีผลเฉพาะตอน print จริงเท่านั้น (ปุ่ม "พิมพ์") ไม่มีผลกับ html2canvas
   // ที่ capture DOM แบบปกติ ถ้าไม่ใส่ padding เอง เนื้อหาจะกว้างเต็ม 210mm ชิดขอบ
   // ไม่เหมือนไฟล์ที่พิมพ์จริง ต้อง sync ค่าไว้ด้วยกันเสมอถ้าแก้ margin ใน @page
+  // เอกสารที่จัด margin ในตัว HTML แล้ว (เช่น แบบ 3 มี .sheet) ส่ง padding: '0'
+  const padding = options.padding ?? '1.6cm 2.5cm'
   const container = document.createElement('div')
-  container.style.cssText = 'position:fixed;left:0;top:0;width:210mm;padding:1.6cm 2.5cm;box-sizing:border-box;background:#fff;z-index:-1;pointer-events:none;'
+  container.style.cssText = `position:fixed;left:0;top:0;width:210mm;padding:${padding};box-sizing:border-box;background:#fff;z-index:-1;pointer-events:none;`
   container.innerHTML = html
   document.body.appendChild(container)
 
   try {
+    await Promise.race([
+      document.fonts?.ready ?? Promise.resolve(),
+      new Promise(resolve => setTimeout(resolve, 1500)),
+    ])
     // เอกสารหลายหน้าที่ระบุ data-pdf-page มีขนาด A4 และจุดตัดหน้าของตัวเอง
     // จับภาพทีละหน้าเพื่อไม่ให้ jsPDF ตัดบรรทัดคาบระหว่างหน้า
     const explicitPages = [...container.querySelectorAll('[data-pdf-page]')]
@@ -44,7 +50,8 @@ export async function generateDraftPdfBlob(html) {
       return pdf.output('blob')
     }
 
-    const canvas = await html2canvas(container, { scale: 2, backgroundColor: '#ffffff' })
+    const target = container.querySelector('.sheet') || container
+    const canvas = await html2canvas(target, { scale: 2, backgroundColor: '#ffffff', useCORS: true })
 
     const pdf = new jsPDF({ unit: 'mm', format: 'a4' })
     const pageWidth = pdf.internal.pageSize.getWidth()

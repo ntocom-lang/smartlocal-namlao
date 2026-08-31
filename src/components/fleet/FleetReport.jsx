@@ -3,13 +3,21 @@ import { FileX2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { assetIdentifier, assetOptionLabel, FUEL_LABEL, meterUnitShort } from '../../lib/fleetAssets'
 import { fetchAllRows } from '../../lib/fetchAllRows'
+import { buildFleetForm4Html } from '../../lib/fleetForm4Print'
+import {
+  PERIOD_MODES, QUARTERS, MONTH_OPTIONS,
+  currentPeriodDefaults, yearOptionsBE, fiscalYearOptionsBE, fleetPeriodRange,
+} from '../../lib/fleetReportPeriod'
 import FleetEmptyState from './FleetEmptyState'
+
+const PERIOD_DEFAULTS = currentPeriodDefaults()
+const PERIOD_YEARS = yearOptionsBE()
+const FISCAL_YEARS = fiscalYearOptionsBE()
+const INITIAL_PERIOD = fleetPeriodRange(PERIOD_DEFAULTS)
 
 const fmt  = n => (n ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 2 })
 const fmtB = n => `฿${Math.round(n ?? 0).toLocaleString('th-TH')}`
 const thDate = d => d ? new Date(d).toLocaleDateString('th-TH', { dateStyle: 'short' }) : '—'
-// ใช้กับหัวรายงานที่พิมพ์ออกไปเป็นเอกสาร — ต้องเป็น พ.ศ. เหมือนวันที่ในตาราง
-const thDateLong = d => d ? new Date(d).toLocaleDateString('th-TH', { dateStyle: 'long' }) : '—'
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 })[char])
@@ -69,12 +77,24 @@ function THdr({ cols }) {
 export default function FleetReport({ tenant }) {
   const [vehicles,   setVehicles]   = useState([])
   const [selVehicle, setSelVehicle] = useState('')
-  const [dateFrom,   setDateFrom]   = useState(() => {
-    const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10)
-  })
-  const [dateTo,     setDateTo]     = useState(new Date().toISOString().slice(0, 10))
+  const [periodMode, setPeriodMode] = useState(PERIOD_DEFAULTS.mode)
+  const [periodMonth, setPeriodMonth] = useState(PERIOD_DEFAULTS.month)
+  const [periodQuarter, setPeriodQuarter] = useState(PERIOD_DEFAULTS.quarter)
+  const [periodYearBE, setPeriodYearBE] = useState(PERIOD_DEFAULTS.yearBE)
+  const [periodFiscalYearBE, setPeriodFiscalYearBE] = useState(PERIOD_DEFAULTS.fiscalYearBE)
+  const [dateFrom,   setDateFrom]   = useState(INITIAL_PERIOD.from)
+  const [dateTo,     setDateTo]     = useState(INITIAL_PERIOD.to)
   const [data,       setData]       = useState(null)
   const [loading,    setLoading]    = useState(false)
+  const [printingForm4, setPrintingForm4] = useState(false)
+
+  const period = fleetPeriodRange({
+    mode: periodMode, yearBE: periodYearBE, fiscalYearBE: periodFiscalYearBE,
+    month: periodMonth, quarter: periodQuarter, dateFrom, dateTo,
+  })
+  const periodLabel = period.label
+  const rangeFrom = period.from
+  const rangeTo = period.to
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -87,7 +107,7 @@ export default function FleetReport({ tenant }) {
     setLoading(true)
     try {
       const vq = q => selVehicle ? q.eq('vehicle_id', selVehicle) : q
-      const endDay = nextDay(dateTo) // ใช้ .lt(nextDay) แทน .lte(T23:59:59) เพื่อหลีกเลี่ยง format tz
+      const endDay = nextDay(rangeTo) // ใช้ .lt(nextDay) แทน .lte(T23:59:59) เพื่อหลีกเลี่ยง format tz
 
       // ดึงผ่าน fetchAllRows เพราะยอดรวมค่าน้ำมัน/ค่าซ่อมด้านล่างคำนวณฝั่ง client จากแถวที่ได้มา
       // ถ้า PostgREST ตัดแถวตาม db-max-rows ยอดในรายงานจะต่ำกว่าจริงโดยไม่มีสัญญาณเตือน
@@ -96,15 +116,15 @@ export default function FleetReport({ tenant }) {
         fetchAllRows(() => vq(supabase.from('fleet_trips')
           .select('*, vehicle:fleet_vehicles(id,name,license_plate,asset_code,asset_kind,meter_unit), driver:profiles!fleet_trips_driver_id_fkey(id,full_name)')
           .eq('municipality_id', tenant.id).eq('status', 'completed')
-          .gte('trip_date', dateFrom).lt('trip_date', endDay)).order('trip_date').order('id')),
+          .gte('trip_date', rangeFrom).lt('trip_date', endDay)).order('trip_date').order('id')),
         fetchAllRows(() => vq(supabase.from('fleet_fuel_records')
           .select('*, fleet_vehicles(name, license_plate, asset_code, asset_kind, meter_unit)')
           .eq('municipality_id', tenant.id)
-          .gte('filled_at', dateFrom).lte('filled_at', dateTo)).order('filled_at').order('id')),
+          .gte('filled_at', rangeFrom).lte('filled_at', rangeTo)).order('filled_at').order('id')),
         fetchAllRows(() => vq(supabase.from('fleet_maintenance')
           .select('*, fleet_vehicles(name, license_plate, asset_code, asset_kind, meter_unit)')
           .eq('municipality_id', tenant.id)
-          .gte('service_date', dateFrom).lte('service_date', dateTo)).order('service_date').order('id')),
+          .gte('service_date', rangeFrom).lte('service_date', rangeTo)).order('service_date').order('id')),
       ])
       const loadError = tripResult.error || fuelResult.error || maintResult.error
       if (loadError) {
@@ -141,7 +161,73 @@ export default function FleetReport({ tenant }) {
   const selVehicleName = selVehicle ? (vehicles.find(v => v.id === selVehicle)?.name ?? '') : 'ทุกทรัพย์สิน'
   // เดิมหัวรายงานพิมพ์ช่วงวันที่เป็น ค.ศ. (2026-08-01) ทั้งที่ทุกแถวในตารางเป็น พ.ศ. (20/8/69)
   // เอกสารฉบับเดียวกันมีสองศักราชปนกัน ผู้ตรวจสอบอ่านแล้วสรุปได้ว่ารายการอยู่นอกช่วงที่ระบุ
-  const reportTitle = `รายงานรถ เครื่องยนต์ และเชื้อเพลิง — ${selVehicleName} | ${thDateLong(dateFrom)} ถึง ${thDateLong(dateTo)}`
+  const reportTitle = `รายงานรถ เครื่องยนต์ และเชื้อเพลิง — ${selVehicleName} | ${periodLabel}`
+
+  function openPrintWindow(html, { width = 900, height = 760 } = {}) {
+    const win = window.open('', '_blank', `width=${width},height=${height}`)
+    if (!win) {
+      alert('เบราว์เซอร์ปิดกั้นหน้าต่างพิมพ์ กรุณาอนุญาต pop-up แล้วลองใหม่')
+      return null
+    }
+    win.document.open()
+    win.document.write(html)
+    win.document.close()
+    const printWhenReady = async () => {
+      try {
+        if (win.document.fonts?.ready) {
+          await Promise.race([
+            win.document.fonts.ready,
+            new Promise(resolve => setTimeout(resolve, 1200)),
+          ])
+        }
+      } catch { /* โหลดฟอนต์ไม่ทันก็พิมพ์ด้วยฟอนต์บนเครื่อง */ }
+      win.focus()
+      win.print()
+    }
+    setTimeout(printWhenReady, 200)
+    return win
+  }
+
+  // แบบ 4 = บันทึกการใช้รถรายคันตามกระดาษ ดึงทริปเสร็จสิ้นของคันที่เลือกเอง
+  // ไม่ใช้ชุด data ของรายงานผู้บริหาร เพราะชุดนั้นอาจรวมทุกคัน และไม่มีชื่อผู้ขอใช้รถ
+  async function printForm4() {
+    if (!tenant?.id) return alert('ไม่พบหน่วยงาน')
+    if (!selVehicle) {
+      return alert('แบบ 4 เป็นบันทึกการใช้รถรายคัน กรุณาเลือกยานพาหนะก่อนพิมพ์')
+    }
+    const vehicle = vehicles.find(v => v.id === selVehicle)
+    if (!vehicle) return alert('ไม่พบยานพาหนะที่เลือก')
+    setPrintingForm4(true)
+    try {
+      const endDay = nextDay(rangeTo)
+      const tripResult = await fetchAllRows(() => supabase.from('fleet_trips')
+        .select('id,trip_date,depart_time,return_time,started_at,returned_at,odometer_start,odometer_end,distance_km,destination,notes,backdated_reason,driver:profiles!fleet_trips_driver_id_fkey(id,full_name),requester:profiles!fleet_trips_created_by_fkey(id,full_name)')
+        .eq('municipality_id', tenant.id)
+        .eq('vehicle_id', selVehicle)
+        .eq('status', 'completed')
+        .gte('trip_date', rangeFrom)
+        .lt('trip_date', endDay)
+        .order('trip_date')
+        .order('id'))
+      if (tripResult.error) {
+        alert('โหลดบันทึกการใช้รถไม่สำเร็จ: ' + tripResult.error.message)
+        return
+      }
+      if (tripResult.truncated) {
+        alert('รายการใช้รถในช่วงนี้มีจำนวนมากเกินกว่าที่ระบบดึงได้ในครั้งเดียว — เอกสารที่พิมพ์ยังไม่ครบ กรุณาแบ่งช่วงวันที่ให้สั้นลง')
+      }
+      openPrintWindow(buildFleetForm4Html({
+        vehicle, trips: tripResult.data ?? [], periodLabel,
+      }), {
+        width: 1123, height: 794,
+      })
+    } catch (err) {
+      console.error('[fleet-form4] พิมพ์แบบ 4 ไม่สำเร็จ:', err?.message ?? err)
+      alert('พิมพ์แบบ 4 ไม่สำเร็จ — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง กรุณาลองใหม่')
+    } finally {
+      setPrintingForm4(false)
+    }
+  }
 
   /* ── PDF ── */
   function exportPDF() {
@@ -195,13 +281,13 @@ export default function FleetReport({ tenant }) {
     </head><body>
       <h1>${reportTitle}</h1>
       <div class="summary">
-        <div class="card"><div class="val">${data?.trips.length??0}</div><div class="lbl">การเดินทาง (ครั้ง)</div></div>
+        <div class="card"><div class="val">${data?.trips.length??0}</div><div class="lbl">การใช้รถ (ครั้ง)</div></div>
         <div class="card"><div class="val">${totalKm.toLocaleString()}</div><div class="lbl">ระยะทาง (กม.)</div></div>
         <div class="card"><div class="val">${fmt(totalLiters)}</div><div class="lbl">น้ำมัน (ลิตร)</div></div>
         <div class="card"><div class="val">${fmtB(totalFuelCost)}</div><div class="lbl">ค่าน้ำมัน</div></div>
         <div class="card"><div class="val">${fmtB(totalMaintCost)}</div><div class="lbl">ค่าซ่อมบำรุง</div></div>
       </div>
-      <h2>การเดินทาง (${data?.trips.length??0} รายการ)</h2>
+      <h2>การใช้รถ (${data?.trips.length??0} รายการ)</h2>
       <table><tr><th>ที่</th><th>วันที่</th><th>ยานพาหนะ</th><th>ปลายทาง</th><th>วัตถุประสงค์</th><th>ผู้ใช้รถ</th><th>ระยะทาง</th></tr>
         ${trRows}
         <tr class="total"><td colspan="6" align="right">รวมระยะทาง</td><td align="right">${totalKm.toLocaleString()} กม.</td></tr>
@@ -231,7 +317,7 @@ export default function FleetReport({ tenant }) {
           t.destination, t.purpose, t.driver?.full_name??'',
           t.odometer_start??'', t.odometer_end??'', km]
       }),
-    ], `การเดินทาง_${dateFrom}_${dateTo}.csv`)
+    ], `การใช้รถ_${rangeFrom}_${rangeTo}.csv`)
   }
 
   function exportFuelCSV() {
@@ -245,7 +331,7 @@ export default function FleetReport({ tenant }) {
         f.odometer??'', meterUnitShort(f.fleet_vehicles), f.fuel_station??'', f.receipt_no??'',
         f.efficiency_kml ?? '', f.is_anomaly ? 'ผิดปกติ' : '', f.anomaly_reason ?? '',
       ]),
-    ], `น้ำมัน_${dateFrom}_${dateTo}.csv`)
+    ], `น้ำมัน_${rangeFrom}_${rangeTo}.csv`)
   }
 
   function exportMaintCSV() {
@@ -256,24 +342,19 @@ export default function FleetReport({ tenant }) {
         MAINT_TH[m.maintenance_type]??m.maintenance_type, m.description, m.cost??0,
         m.vendor??'', m.odometer??'', meterUnitShort(m.fleet_vehicles),
       ]),
-    ], `ซ่อมบำรุง_${dateFrom}_${dateTo}.csv`)
+    ], `ซ่อมบำรุง_${rangeFrom}_${rangeTo}.csv`)
   }
 
-  /* ── Quick range shortcuts ── */
-  function setThisMonth() {
-    const d = new Date(); d.setDate(1)
-    setDateFrom(d.toISOString().slice(0, 10))
-    setDateTo(new Date().toISOString().slice(0, 10))
-  }
-  function setLastMonth() {
-    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1)
-    const e = new Date(d.getFullYear(), d.getMonth() + 1, 0)
-    setDateFrom(d.toISOString().slice(0, 10))
-    setDateTo(e.toISOString().slice(0, 10))
-  }
-  function setThisYear() {
-    const y = new Date().getFullYear()
-    setDateFrom(`${y}-01-01`); setDateTo(`${y}-12-31`)
+  function resetPeriod() {
+    setSelVehicle('')
+    setPeriodMode(PERIOD_DEFAULTS.mode)
+    setPeriodMonth(PERIOD_DEFAULTS.month)
+    setPeriodQuarter(PERIOD_DEFAULTS.quarter)
+    setPeriodYearBE(PERIOD_DEFAULTS.yearBE)
+    setPeriodFiscalYearBE(PERIOD_DEFAULTS.fiscalYearBE)
+    setDateFrom(INITIAL_PERIOD.from)
+    setDateTo(INITIAL_PERIOD.to)
+    setData(null)
   }
 
   return (
@@ -282,6 +363,25 @@ export default function FleetReport({ tenant }) {
       {/* ── Filter panel ── */}
       <div className="bg-white rounded-xl md:rounded-2xl border border-gray-100 shadow-sm p-3 md:p-4 space-y-2.5 md:space-y-3">
         <p className="text-xs md:text-sm font-bold text-gray-700">🔍 เลือกข้อมูลที่ต้องการดู</p>
+        <div className="flex flex-wrap gap-1.5">
+          {PERIOD_MODES.map(mode => (
+            <button key={mode.value} type="button" onClick={() => {
+              if (mode.value === 'custom' && periodMode !== 'custom') {
+                setDateFrom(period.from)
+                setDateTo(period.to)
+              }
+              setPeriodMode(mode.value)
+            }}
+              className={`px-3 py-1.5 text-[11px] md:text-xs font-bold rounded-lg border ${
+                periodMode === mode.value
+                  ? 'text-white border-transparent'
+                  : 'text-gray-600 border-gray-200 bg-white hover:bg-gray-50'
+              }`}
+              style={periodMode === mode.value ? { backgroundColor: 'var(--color-primary)' } : undefined}>
+              {mode.label}
+            </button>
+          ))}
+        </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3">
           <div className="col-span-2 md:col-span-1">
             <label className="text-xs font-semibold text-gray-500 mb-1 block">รถ/เครื่องยนต์/ครุภัณฑ์</label>
@@ -291,16 +391,57 @@ export default function FleetReport({ tenant }) {
               {vehicles.map(v => <option key={v.id} value={v.id}>{assetOptionLabel(v)}</option>)}
             </select>
           </div>
-          <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">ตั้งแต่วันที่</label>
-            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-              className="w-full px-3 py-2 text-sm text-gray-700 bg-white border border-gray-200 rounded-xl focus:outline-none" />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">ถึงวันที่</label>
-            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-              className="w-full px-3 py-2 text-sm text-gray-700 bg-white border border-gray-200 rounded-xl focus:outline-none" />
-          </div>
+          {periodMode === 'month' && (
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1 block">เดือน</label>
+              <select value={periodMonth} onChange={e => setPeriodMonth(Number(e.target.value))}
+                className="w-full px-3 py-2 text-sm text-gray-700 bg-white border border-gray-200 rounded-xl focus:outline-none">
+                {MONTH_OPTIONS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
+            </div>
+          )}
+          {periodMode === 'quarter' && (
+            <div className="col-span-2 md:col-span-1">
+              <label className="text-xs font-semibold text-gray-500 mb-1 block">ไตรมาส</label>
+              <select value={periodQuarter} onChange={e => setPeriodQuarter(Number(e.target.value))}
+                className="w-full px-3 py-2 text-sm text-gray-700 bg-white border border-gray-200 rounded-xl focus:outline-none">
+                {QUARTERS.map(q => <option key={q.value} value={q.value}>{q.label}</option>)}
+              </select>
+            </div>
+          )}
+          {periodMode !== 'custom' && (
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1 block">
+                {periodMode === 'month' ? 'ปี พ.ศ.' : 'ปีงบประมาณ พ.ศ.'}
+              </label>
+              <select
+                value={periodMode === 'month' ? periodYearBE : periodFiscalYearBE}
+                onChange={e => {
+                  const value = Number(e.target.value)
+                  if (periodMode === 'month') setPeriodYearBE(value)
+                  else setPeriodFiscalYearBE(value)
+                }}
+                className="w-full px-3 py-2 text-sm text-gray-700 bg-white border border-gray-200 rounded-xl focus:outline-none">
+                {(periodMode === 'month' ? PERIOD_YEARS : FISCAL_YEARS).map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {periodMode === 'custom' && (
+            <>
+              <div>
+                <label className="text-xs font-semibold text-gray-500 mb-1 block">ตั้งแต่วันที่</label>
+                <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                  className="w-full px-3 py-2 text-sm text-gray-700 bg-white border border-gray-200 rounded-xl focus:outline-none" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-500 mb-1 block">ถึงวันที่</label>
+                <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                  className="w-full px-3 py-2 text-sm text-gray-700 bg-white border border-gray-200 rounded-xl focus:outline-none" />
+              </div>
+            </>
+          )}
           <div className="col-span-2 md:col-span-1 flex items-end">
             <button onClick={loadReport} disabled={loading}
               className="w-full py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50"
@@ -309,23 +450,22 @@ export default function FleetReport({ tenant }) {
             </button>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 md:gap-2 flex-wrap">
-          {[['เดือนนี้', setThisMonth], ['เดือนที่แล้ว', setLastMonth], ['ปีนี้', setThisYear]].map(([label, fn]) => (
-            <button key={label} onClick={fn}
-              className="px-3 py-1 text-[11px] font-semibold text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50">
-              {label}
-            </button>
-          ))}
-          <button onClick={() => {
-            setSelVehicle('')
-            const d = new Date(); d.setDate(1)
-            setDateFrom(d.toISOString().slice(0, 10))
-            setDateTo(new Date().toISOString().slice(0, 10))
-            setData(null)
-          }} className="px-3 py-1 text-[11px] font-semibold text-red-500 border border-red-200 rounded-lg hover:bg-red-50">
+        {periodLabel && (
+          <p className="text-[11px] text-gray-500">ช่วงที่เลือก: {periodLabel}</p>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={printForm4} disabled={printingForm4 || !selVehicle}
+            className="w-full md:w-auto px-3 py-2 rounded-xl text-[11px] md:text-xs font-bold border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
+            {printingForm4 ? 'กำลังเตรียมแบบ 4...' : '🖨️ พิมพ์แบบ 4 บันทึกการใช้รถ (รายคัน)'}
+          </button>
+          <button onClick={resetPeriod}
+            className="px-3 py-1.5 text-[11px] font-semibold text-red-500 border border-red-200 rounded-lg hover:bg-red-50">
             ล้าง
           </button>
         </div>
+        {!selVehicle && (
+          <p className="text-[11px] text-gray-400">แบบ 4 ต้องเลือกยานพาหนะ 1 คัน แล้วจึงพิมพ์ได้</p>
+        )}
       </div>
 
       {/* ── Results ── */}
@@ -333,13 +473,17 @@ export default function FleetReport({ tenant }) {
         <>
           {/* Export buttons */}
           <div className="grid grid-cols-2 md:flex gap-2">
+            <button onClick={printForm4} disabled={printingForm4 || !selVehicle}
+              className="justify-center flex items-center gap-1.5 px-2 md:px-3 py-2 rounded-xl text-[11px] md:text-xs font-bold border border-gray-800 text-gray-800 bg-white hover:bg-gray-50 disabled:opacity-50">
+              {printingForm4 ? 'กำลังเตรียมแบบ 4...' : '🖨️ พิมพ์แบบ 4'}
+            </button>
             <button onClick={exportPDF}
               className="justify-center flex items-center gap-1.5 px-2 md:px-3 py-2 rounded-xl text-[11px] md:text-xs font-bold border border-gray-200 text-gray-600 bg-white hover:bg-gray-50">
               🖨️ พิมพ์ / PDF
             </button>
             <button onClick={exportTripCSV}
               className="justify-center flex items-center gap-1.5 px-2 md:px-3 py-2 rounded-xl text-[11px] md:text-xs font-bold border border-green-200 text-green-700 bg-green-50 hover:bg-green-100">
-              📥 Excel การเดินทาง
+              📥 Excel การใช้รถ
             </button>
             <button onClick={exportFuelCSV}
               className="justify-center flex items-center gap-1.5 px-2 md:px-3 py-2 rounded-xl text-[11px] md:text-xs font-bold border border-green-200 text-green-700 bg-green-50 hover:bg-green-100">
@@ -354,7 +498,7 @@ export default function FleetReport({ tenant }) {
           {/* Summary cards */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2 md:gap-3">
             {[
-              { label: 'การเดินทาง', val: `${data.trips.length} ครั้ง`, clr: '#3b82f6' },
+              { label: 'การใช้รถ', val: `${data.trips.length} ครั้ง`, clr: '#3b82f6' },
               { label: 'ระยะทางรวม', val: `${totalKm.toLocaleString()} กม.`, clr: '#8b5cf6' },
               { label: 'เชื้อเพลิงรวม', val: `${fmt(totalLiters)} ล.`, clr: '#f59e0b' },
               { label: 'ค่าเชื้อเพลิง', val: fmtB(totalFuelCost), clr: '#ef4444' },
@@ -369,7 +513,7 @@ export default function FleetReport({ tenant }) {
 
           {/* ── Trips table ── */}
           <ReportSection
-            title={`การเดินทาง (${data.trips.length} รายการ)`}
+            title={`การใช้รถ (${data.trips.length} รายการ)`}
             empty={data.trips.length === 0}
             mobile={
               <div className="space-y-1.5">
