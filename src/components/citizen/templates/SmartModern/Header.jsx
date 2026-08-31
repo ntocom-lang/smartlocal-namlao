@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { Phone, LogIn, LogOut, Bell } from 'lucide-react'
+import { Phone, LogIn, LogOut, Bell, User } from 'lucide-react'
 import { useTenant } from '../../../../contexts/TenantContext'
 import { useAuth } from '../../../../contexts/AuthContext'
 import { signOutSafely } from '../../../../lib/supabase'
