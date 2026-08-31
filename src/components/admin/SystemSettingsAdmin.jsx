@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2, Wallpaper, MapPinned, X, Plus, ShieldCheck, Trash2, RefreshCw, AlertTriangle } from 'lucide-react'
+import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2, Wallpaper, MapPinned, X, Plus, Trash2, RefreshCw, AlertTriangle } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { uploadFile, toReliableImageUrl } from '../../lib/driveStorage'
 import { useTenant } from '../../contexts/TenantContext'
@@ -532,7 +532,11 @@ const SETTINGS_TABS = [
   { key: 'branding',     label: 'แบรนด์และรูปภาพ',    icon: Wallpaper, Component: BrandingTab },
   { key: 'qr',           label: 'โลโก้/QR Code',      icon: QrCode,    Component: QrCodeTab },
   { key: 'departments',  label: 'กอง/หน่วยงาน',      icon: Building2, Component: DepartmentsTab },
-  { key: 'retention',    label: 'ข้อมูลส่วนบุคคล',    icon: ShieldCheck, Component: DataRetentionTab },
+  // ซ่อนไว้ 2569-08-31: ตัวเลขบนแท็บนี้จะเป็น 0 ไปจนถึงราวปี 2573 (เรื่องแรกที่ปิด + 5 ปี)
+  // จึงยังไม่มีอะไรให้แอดมินตัดสินใจ กลไกฝั่ง DB ยังอยู่ครบและยังเรียกได้จาก SQL Editor
+  // เปิดกลับ = ลบคอมเมนต์บรรทัดล่างนี้ออก + เติม ShieldCheck กลับใน import บรรทัดบนสุด
+  // (DataRetentionTab ยังอยู่ครบในไฟล์นี้ ไม่ต้องเขียนใหม่)
+  // { key: 'retention',    label: 'ข้อมูลส่วนบุคคล',    icon: ShieldCheck, Component: DataRetentionTab },
 ]
 
 // ระยะเวลาเก็บรักษาที่ประกาศไว้กับประชาชนในฟอร์มและ PDPA modal (src/pages/CitizenForm.jsx)
@@ -545,6 +549,7 @@ const RETENTION_LABEL = '5 ปีนับจากวันปิดเรื�
 // เป็นจริงได้โดยไม่ต้องเข้า SQL editor: ดูจำนวนที่ถึงกำหนด แล้วกดลบเมื่อตัดสินใจแล้ว
 // ตัวเลขทั้งหมดมาจาก complaint_contact_retention_preview() (อ่านอย่างเดียว) และการลบไปที่
 // purge_due_complaint_contacts() ที่บังคับให้ส่งจำนวนบนหน้าจอไปยืนยันกับความจริงฝั่งเซิร์ฟเวอร์
+// eslint-disable-next-line no-unused-vars -- ถูกซ่อนจาก SETTINGS_TABS ชั่วคราว เก็บไว้รอเปิดกลับ
 function DataRetentionTab() {
   const [preview, setPreview] = useState(null)
   const [loading, setLoading] = useState(true)
