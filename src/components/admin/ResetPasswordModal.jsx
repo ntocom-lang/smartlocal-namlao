@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { KeyRound, Loader2, Copy, Check, AlertTriangle, Printer } from 'lucide-react'
+import { KeyRound, Loader2, Copy, Check, AlertTriangle, Printer, Eye, EyeOff, Sparkles, PenLine } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import { loginIdentifier } from '../../lib/authProviders'
 import { buildAccountCardHtml } from '../../lib/accountCardPrint'
 import { appUrl } from '../../lib/basename'
+import { PASSWORD_HINT, validateNewPassword } from '../../lib/passwordPolicy'
 
 // ตั้งรหัสผ่านชั่วคราวให้ผู้ใช้ที่ลืมรหัส — สำหรับเคสประชาชนเดินมาที่สำนักงาน
 //
@@ -12,23 +13,35 @@ import { appUrl } from '../../lib/basename'
 // อีเมลก็ส่งลิงก์ไปไม่ถึงถ้ายังไม่ได้ตั้ง custom SMTP (built-in ของ Supabase ปฏิเสธการส่งไปยัง
 // อีเมลนอกทีมโปรเจกต์) และสมัครใหม่ก็ไม่ได้เพราะเบอร์/อีเมลเดิมถูกใช้ไปแล้ว
 //
-// รหัสถูกสุ่มฝั่งเซิร์ฟเวอร์ (edge function admin-reset-user-password) ไม่ให้เจ้าหน้าที่ตั้งเอง
-// กันการใช้รหัสง่ายๆ ซ้ำกันทุกคน — ที่นี่มีหน้าที่แค่แสดงผลและย้ำขั้นตอนต่อไปให้เจ้าหน้าที่
+// ค่าเริ่มต้นสุ่มรหัสฝั่งเซิร์ฟเวอร์ เจ้าหน้าที่เลือกกำหนดเองได้เฉพาะเมื่อจำเป็น
+// ทั้งสองกรณีแสดงผลครั้งเดียวและห้ามเก็บ plaintext ลง audit log
 export default function ResetPasswordModal({ user, onClose }) {
   const { tenant } = useTenant()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [password, setPassword] = useState('')
   const [copied, setCopied] = useState(false)
+  const [mode, setMode] = useState('auto')
+  const [customPassword, setCustomPassword] = useState('')
+  const [showCustomPassword, setShowCustomPassword] = useState(false)
 
   if (!user) return null
 
   async function handleReset() {
+    if (mode === 'custom') {
+      const passwordError = validateNewPassword(customPassword)
+      if (passwordError) {
+        setError(passwordError)
+        return
+      }
+    }
     setBusy(true)
     setError('')
     try {
+      const body = { user_id: user.id }
+      if (mode === 'custom') body.password = customPassword
       const { data, error: err } = await supabase.functions.invoke('admin-reset-user-password', {
-        body: { user_id: user.id },
+        body,
       })
       if (err || !data?.ok || !data?.password) {
         setError(data?.error || err?.message || 'ตั้งรหัสผ่านใหม่ไม่สำเร็จ')
@@ -154,13 +167,70 @@ export default function ResetPasswordModal({ user, onClose }) {
             </div>
             <h3 className="text-lg font-semibold text-gray-800">ตั้งรหัสผ่านใหม่ให้ผู้ใช้</h3>
             <p className="text-sm text-gray-500 leading-relaxed">
-              ระบบจะสุ่มรหัสผ่านชั่วคราวให้ <strong className="text-gray-800">{name}</strong><br />
+              ตั้งรหัสผ่านชั่วคราวให้ <strong className="text-gray-800">{name}</strong><br />
               <strong className="text-red-600">รหัสเดิมจะใช้ไม่ได้ทันที</strong>
             </p>
             <p className="w-full text-left text-xs text-gray-500 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2.5 leading-relaxed">
               ใช้เมื่อเจ้าตัวมาติดต่อที่สำนักงานและยืนยันตัวตนแล้วเท่านั้น —
               การกระทำนี้ถูกบันทึกลงประวัติการใช้งานพร้อมชื่อผู้ทำ
             </p>
+
+            <div className="grid grid-cols-2 gap-1 w-full rounded-xl bg-gray-100 p-1" role="group" aria-label="วิธีกำหนดรหัสผ่าน">
+              <button
+                type="button"
+                onClick={() => { setMode('auto'); setError('') }}
+                disabled={busy}
+                aria-pressed={mode === 'auto'}
+                className={`flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-xs font-semibold transition-colors ${mode === 'auto' ? 'bg-white text-amber-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                <Sparkles size={14} /> สุ่มอัตโนมัติ
+              </button>
+              <button
+                type="button"
+                onClick={() => { setMode('custom'); setError('') }}
+                disabled={busy}
+                aria-pressed={mode === 'custom'}
+                className={`flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-xs font-semibold transition-colors ${mode === 'custom' ? 'bg-white text-amber-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                <PenLine size={14} /> กำหนดเอง
+              </button>
+            </div>
+
+            {mode === 'custom' ? (
+              <div className="w-full text-left">
+                <label htmlFor="admin-custom-password" className="mb-1.5 block text-xs font-medium text-gray-700">
+                  รหัสผ่านใหม่
+                </label>
+                <div className="relative">
+                  <input
+                    id="admin-custom-password"
+                    type={showCustomPassword ? 'text' : 'password'}
+                    value={customPassword}
+                    onChange={(e) => { setCustomPassword(e.target.value); setError('') }}
+                    autoComplete="new-password"
+                    disabled={busy}
+                    placeholder={PASSWORD_HINT}
+                    className="w-full rounded-xl border border-gray-200 py-2.5 pl-3 pr-10 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:opacity-50"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomPassword((value) => !value)}
+                    disabled={busy}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50"
+                    aria-label={showCustomPassword ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}
+                  >
+                    {showCustomPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+                <p className="mt-1.5 text-xs leading-relaxed text-amber-700">
+                  หลีกเลี่ยงชื่อ เบอร์โทร วันเกิด และรหัสที่ใช้ซ้ำกับผู้อื่น
+                </p>
+              </div>
+            ) : (
+              <p className="w-full rounded-xl border border-green-100 bg-green-50 px-3 py-2.5 text-left text-xs leading-relaxed text-green-700">
+                ระบบจะสุ่มรหัส 10 ตัวที่คาดเดายาก และแสดงให้พิมพ์เพียงครั้งเดียว
+              </p>
+            )}
 
             {error && (
               <p className="w-full text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2 text-left">{error}</p>
@@ -176,11 +246,11 @@ export default function ResetPasswordModal({ user, onClose }) {
               </button>
               <button
                 onClick={handleReset}
-                disabled={busy}
+                disabled={busy || (mode === 'custom' && !customPassword)}
                 className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {busy ? <Loader2 size={15} className="animate-spin" /> : <KeyRound size={15} />}
-                {busy ? 'กำลังตั้ง...' : 'ยืนยันตั้งรหัสใหม่'}
+                {busy ? 'กำลังตั้ง...' : mode === 'custom' ? 'ยืนยันรหัสที่กำหนด' : 'ยืนยันสุ่มรหัสใหม่'}
               </button>
             </div>
           </div>

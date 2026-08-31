@@ -43,6 +43,8 @@ const LETTERS = 'abcdefghjkmnpqrstuvwxyz'
 const DIGITS = '23456789'
 const LETTER_COUNT = 6
 const DIGIT_COUNT = 4
+const MIN_PASSWORD_LENGTH = 8
+const MAX_PASSWORD_BYTES = 72
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -87,6 +89,21 @@ serve(async (req) => {
     const targetUserId = body.user_id
     if (!isUuid(targetUserId)) return json({ ok: false, error: 'invalid user_id' }, 400)
 
+    const hasCustomPassword = Object.prototype.hasOwnProperty.call(body, 'password')
+    if (hasCustomPassword && typeof body.password !== 'string') {
+      return json({ ok: false, error: 'invalid password' }, 400)
+    }
+    // ห้าม trim รหัสผ่าน เพราะช่องว่างอาจเป็นส่วนหนึ่งของรหัสที่ผู้ใช้ตั้งใจตั้ง
+    const customPassword = hasCustomPassword ? body.password as string : null
+    if (customPassword !== null) {
+      if (customPassword.length < MIN_PASSWORD_LENGTH) {
+        return json({ ok: false, error: `รหัสผ่านต้องมีอย่างน้อย ${MIN_PASSWORD_LENGTH} ตัวอักษร` }, 400)
+      }
+      if (new TextEncoder().encode(customPassword).length > MAX_PASSWORD_BYTES) {
+        return json({ ok: false, error: `รหัสผ่านยาวเกินไป (สูงสุด ${MAX_PASSWORD_BYTES} bytes)` }, 400)
+      }
+    }
+
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
     })
@@ -122,9 +139,9 @@ serve(async (req) => {
       return json({ ok: false, error: 'permission denied: user is outside your municipality' }, 403)
     }
 
-    // สุ่มฝั่งเซิร์ฟเวอร์ ไม่ให้ผู้ดูแลระบบเลือกรหัสเอง — กันการตั้งรหัสง่ายๆ ซ้ำๆ ทุกคน
-    // และไม่ต้องส่งรหัสผ่านเข้ามาใน request body
-    const password = generateTempPassword()
+    // ค่าเริ่มต้นยังสุ่มฝั่งเซิร์ฟเวอร์ ส่วน custom ใช้เฉพาะเมื่อเจ้าหน้าที่เลือกและส่งมาโดยชัดเจน
+    const password = customPassword ?? generateTempPassword()
+    const resetMode = customPassword === null ? 'auto' : 'custom'
 
     const { error: updateError } = await admin.auth.admin.updateUserById(targetUserId, { password })
     if (updateError) {
@@ -142,7 +159,8 @@ serve(async (req) => {
       resource_type: 'profile',
       resource_id: targetUserId,
       resource_label: target.full_name ?? null,
-      metadata: { target_user_id: targetUserId, target_role: target.role },
+      // ห้ามเพิ่ม password ลง metadata หรือ log ไม่ว่ากรณีใด
+      metadata: { target_user_id: targetUserId, target_role: target.role, reset_mode: resetMode },
     })
 
     return json({ ok: true, password })

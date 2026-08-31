@@ -11,6 +11,7 @@
 // ⚠️ ต้องตั้งค่าฝั่งเซิร์ฟเวอร์ให้ตรงกันด้วย: Supabase Dashboard → Authentication → Policies →
 // Minimum password length ไม่งั้นด่านนี้เป็นแค่ฝั่งหน้าจอ ซึ่งข้ามได้ด้วยการยิง API ตรง
 export const MIN_PASSWORD_LENGTH = 8
+export const MAX_PASSWORD_BYTES = 72
 
 /**
  * ตรวจรหัสผ่านที่ผู้ใช้ตั้งใหม่ — คืนข้อความ error ภาษาไทย หรือ '' เมื่อผ่าน
@@ -20,6 +21,11 @@ export function validateNewPassword(password) {
   const value = String(password ?? '')
   if (value.length < MIN_PASSWORD_LENGTH) {
     return `รหัสผ่านต้องมีอย่างน้อย ${MIN_PASSWORD_LENGTH} ตัวอักษร`
+  }
+  // Supabase Auth เก็บรหัสผ่านด้วย bcrypt ซึ่งรับข้อมูลได้สูงสุด 72 bytes ไม่ใช่ 72 ตัวอักษร
+  // ภาษาไทยหนึ่งตัวใช้หลาย bytes จึงต้องตรวจ UTF-8 bytes เพื่อให้ frontend ตรงกับ backend
+  if (new TextEncoder().encode(value).length > MAX_PASSWORD_BYTES) {
+    return `รหัสผ่านยาวเกินไป (สูงสุด ${MAX_PASSWORD_BYTES} bytes)`
   }
   return ''
 }
