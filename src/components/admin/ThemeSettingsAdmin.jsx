@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { LayoutTemplate, Save, Loader2, CheckCircle2, Building2, Check } from 'lucide-react'
+import { LayoutTemplate, Save, Loader2, CheckCircle2, Building2, Check, Copy, CheckCheck } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant, applyTheme } from '../../contexts/TenantContext'
 
@@ -31,6 +31,7 @@ export default function ThemeSettingsAdmin() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [activeMuniList, setActiveMuniList] = useState(null)
+  const [copiedKey, setCopiedKey] = useState(null)
 
   // ดึงรายการ อปท. ทั้งหมดเพื่อนับและแสดงสถิติการใช้งาน
   useEffect(() => {
@@ -70,6 +71,32 @@ export default function ThemeSettingsAdmin() {
 
     // เมื่ออยู่บน Localhost หรือสภาพแวดล้อมอื่นๆ ให้ชี้ไปยังโดเมน Production หลัก (rk-networks.com) โดยตรง
     return `https://${m.slug}.rk-networks.com/`
+  }
+
+  // คัดลอกข้อความลงคลิปบอร์ด — navigator.clipboard ใช้ได้เฉพาะ HTTPS/localhost
+  // จึง fallback เป็น textarea + execCommand เผื่อเปิดผ่าน IP หรือ http ในวง LAN
+  async function copyText(text, key) {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text)
+      } else {
+        const ta = document.createElement('textarea')
+        ta.value = text
+        ta.setAttribute('readonly', '')
+        ta.style.position = 'fixed'
+        ta.style.top = '-1000px'
+        ta.style.opacity = '0'
+        document.body.appendChild(ta)
+        ta.select()
+        const ok = document.execCommand('copy')
+        document.body.removeChild(ta)
+        if (!ok) throw new Error('execCommand copy failed')
+      }
+      setCopiedKey(key)
+      setTimeout(() => setCopiedKey(prev => (prev === key ? null : prev)), 1800)
+    } catch {
+      alert('คัดลอกไม่สำเร็จ — เบราว์เซอร์ไม่อนุญาตให้เข้าถึงคลิปบอร์ด')
+    }
   }
 
   function flash() { setSaved(true); setTimeout(() => setSaved(false), 2500) }
@@ -135,7 +162,7 @@ export default function ThemeSettingsAdmin() {
                     borderColor: active ? 'var(--color-primary)' : '#e5e7eb',
                     backgroundColor: active ? 'rgba(var(--color-primary-rgb,28,124,214),0.05)' : '#ffffff',
                   }}>
-                  
+
                   {/* ป้ายบอกว่านี่คือธีมที่ใช้งานอยู่ในปัจจุบัน */}
                   {isCurrent && (
                     <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-green-100 text-green-700 border border-green-200 flex items-center gap-0.5 shadow-2xs">
@@ -151,7 +178,7 @@ export default function ThemeSettingsAdmin() {
 
                   {/* สถิติจำนวน อปท. ที่ใช้งาน */}
                   <div className="mt-3 pt-2.5 border-t border-gray-100 w-full flex flex-col items-center gap-1">
-                    <span 
+                    <span
                       onClick={(e) => {
                         if (munisUsing.length > 0) {
                           e.stopPropagation()
@@ -159,8 +186,8 @@ export default function ThemeSettingsAdmin() {
                         }
                       }}
                       className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 transition-all ${
-                        munisUsing.length > 0 
-                          ? 'bg-blue-50 text-blue-700 border border-blue-100 hover:bg-blue-100 cursor-pointer shadow-2xs' 
+                        munisUsing.length > 0
+                          ? 'bg-blue-50 text-blue-700 border border-blue-100 hover:bg-blue-100 cursor-pointer shadow-2xs'
                           : 'bg-gray-50 text-gray-400'
                       }`}
                       title={munisUsing.length > 0 ? "คลิกเพื่อดูรายชื่อ อปท. ทั้งหมด" : ""}
@@ -170,12 +197,12 @@ export default function ThemeSettingsAdmin() {
 
                     {/* รายชื่อ อปท. ที่ใช้งาน (คลิกดูเต็มได้) */}
                     {munisUsing.length > 0 && (
-                      <div 
+                      <div
                         onClick={(e) => {
                           e.stopPropagation()
                           setActiveMuniList({ name: preset.name, list: munisUsing })
                         }}
-                        className="text-[9px] text-gray-500 line-clamp-1 max-w-full px-1 hover:text-blue-600 hover:underline cursor-pointer transition-colors" 
+                        className="text-[9px] text-gray-500 line-clamp-1 max-w-full px-1 hover:text-blue-600 hover:underline cursor-pointer transition-colors"
                         title="คลิกเพื่อดูรายชื่อ อปท. ทั้งหมด"
                       >
                         {munisUsing.map(m => m.name).join(', ')}
@@ -209,13 +236,26 @@ export default function ThemeSettingsAdmin() {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-gray-800">อปท. ที่ใช้ธีม {activeMuniList.name}</h3>
-                  <p className="text-[11px] text-gray-400">ทั้งหมด {activeMuniList.list.length} หน่วยงาน (คลิกเพื่อเปิดดูหน้าเว็บ)</p>
+                  <p className="text-[11px] text-gray-400">ทั้งหมด {activeMuniList.list.length} หน่วยงาน (คลิกชื่อเพื่อเปิดเว็บ · กดไอคอนเพื่อคัดลอก)</p>
                 </div>
               </div>
-              <button onClick={() => setActiveMuniList(null)} 
-                className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100">
-                ✕
-              </button>
+              <div className="flex items-center gap-1 shrink-0">
+                <button type="button"
+                  onClick={() => copyText(
+                    activeMuniList.list.map(m => `${m.name}\t${getMuniUrl(m)}`).join('\n'),
+                    '__all__'
+                  )}
+                  title="คัดลอกชื่อและลิงก์ทั้งหมด"
+                  className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold border border-gray-200 text-gray-600 hover:bg-gray-100 hover:text-gray-800 transition-colors">
+                  {copiedKey === '__all__'
+                    ? <><CheckCheck size={12} className="text-green-600" /> คัดลอกแล้ว</>
+                    : <><Copy size={12} /> คัดลอกทั้งหมด</>}
+                </button>
+                <button onClick={() => setActiveMuniList(null)}
+                  className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100">
+                  ✕
+                </button>
+              </div>
             </div>
 
             <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
@@ -224,19 +264,21 @@ export default function ThemeSettingsAdmin() {
                 const isCurrentTenant = m.id === tenant?.id
 
                 return (
-                  <a
+                  <div
                     key={m.id}
-                    href={targetHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-between p-2.5 rounded-xl bg-gray-50 hover:bg-blue-50/70 border border-gray-100 hover:border-blue-200 text-xs text-gray-700 hover:text-blue-700 transition-all group"
+                    className="flex items-center justify-between p-2.5 rounded-xl bg-gray-50 hover:bg-blue-50/70 border border-gray-100 hover:border-blue-200 text-xs text-gray-700 transition-all group"
                   >
-                    <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                    <a
+                      href={targetHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2.5 min-w-0 pr-2 flex-1 hover:text-blue-700 transition-colors"
+                    >
                       <span className="w-5 h-5 rounded-full bg-white border border-gray-200 group-hover:border-blue-300 text-gray-400 group-hover:text-blue-600 font-bold flex items-center justify-center text-[10px] shrink-0">
                         {idx + 1}
                       </span>
                       <span className="font-semibold truncate">{m.name}</span>
-                    </div>
+                    </a>
 
                     <div className="flex items-center gap-2 shrink-0">
                       {isCurrentTenant && (
@@ -244,11 +286,17 @@ export default function ThemeSettingsAdmin() {
                           หน่วยงานนี้
                         </span>
                       )}
-                      <span className="text-[10px] text-blue-500 font-medium opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
-                        เปิดเว็บ ↗
-                      </span>
+                      <button type="button"
+                        onClick={() => copyText(`${m.name}\t${targetHref}`, m.id)}
+                        title="คัดลอกชื่อและลิงก์"
+                        aria-label={`คัดลอกชื่อและลิงก์ของ ${m.name}`}
+                        className="p-1.5 rounded-lg border border-gray-200 bg-white text-gray-400 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 transition-colors">
+                        {copiedKey === m.id
+                          ? <CheckCheck size={13} className="text-green-600" />
+                          : <Copy size={13} />}
+                      </button>
                     </div>
-                  </a>
+                  </div>
                 )
               })}
             </div>
