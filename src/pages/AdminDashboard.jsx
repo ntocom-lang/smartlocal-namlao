@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
@@ -1993,6 +1994,72 @@ function CategoryBadge({ category }) {
   )
 }
 
+// ตัวเลือกไอคอนตอนแก้ไขสายด่วนที่มีอยู่แล้ว — ชุดสำเร็จ + ช่องพิมพ์ emoji เอง
+// ใช้ทั้งการ์ดมือถือและแถวตาราง desktop จึงแยกออกมาเป็น component เดียว
+// ป็อปอัพต้องยิงผ่าน portal + position:fixed เพราะตาราง desktop อยู่ในกล่อง
+// overflow-hidden ถ้าใช้ absolute ธรรมดาเมนูจะโดนครอบตัดจนเห็นไม่ครบ
+const EMOJI_MENU_W = 224
+const EMOJI_MENU_H = 272
+
+function EmojiEditPicker({ value, onChange }) {
+  const btnRef = useRef(null)
+  const [pos, setPos] = useState(null) // null = ปิดอยู่
+
+  function openPicker() {
+    const r = btnRef.current?.getBoundingClientRect()
+    if (!r) return
+    const left = Math.min(Math.max(8, r.left), window.innerWidth - EMOJI_MENU_W - 8)
+    // ที่ว่างด้านล่างไม่พอ (แถวท้ายตาราง) ให้เด้งขึ้นบนแทน
+    const openUp = r.bottom + EMOJI_MENU_H > window.innerHeight && r.top > EMOJI_MENU_H
+    setPos({ left, top: openUp ? r.top - EMOJI_MENU_H - 4 : r.bottom + 4 })
+  }
+
+  // fixed ไม่เลื่อนตามหน้าจอ — เลื่อน/ย่อขยายเมื่อไหร่ให้ปิดไปเลย ดีกว่าค้างผิดตำแหน่ง
+  useEffect(() => {
+    if (!pos) return
+    const close = () => setPos(null)
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    return () => {
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+    }
+  }, [pos])
+
+  return (
+    <>
+      <button ref={btnRef} type="button" title="เปลี่ยนไอคอน"
+        onClick={() => (pos ? setPos(null) : openPicker())}
+        className="w-10 h-10 rounded-xl border border-gray-200 bg-gray-50 hover:bg-gray-100 text-xl flex items-center justify-center transition-colors shrink-0">
+        {value || '📞'}
+      </button>
+      {pos && createPortal(
+        <>
+          <div className="fixed inset-0 z-[60]" onClick={() => setPos(null)} />
+          <div className="fixed z-[61] bg-white border border-gray-200 rounded-2xl shadow-xl p-3 space-y-2"
+            style={{ left: pos.left, top: pos.top, width: EMOJI_MENU_W }}>
+            <div className="grid grid-cols-6 gap-1.5">
+              {EMERGENCY_EMOJIS.map((e) => (
+                <button key={e} type="button"
+                  onClick={() => { onChange(e); setPos(null) }}
+                  className={`text-xl rounded-xl p-1.5 hover:bg-gray-100 transition-colors ${value === e ? 'bg-blue-50 ring-2 ring-blue-300' : ''}`}>
+                  {e}
+                </button>
+              ))}
+            </div>
+            {/* พิมพ์เอง: รองรับ emoji ที่ไม่มีในชุด และ emoji หลาย code point เช่น 🏛️ */}
+            <input value={value ?? ''} maxLength={16} autoComplete="off"
+              onChange={(e) => onChange(e.target.value)}
+              placeholder="หรือพิมพ์ emoji เอง"
+              className="w-full border border-gray-200 rounded-xl px-2.5 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-200" />
+          </div>
+        </>,
+        document.body
+      )}
+    </>
+  )
+}
+
 function SortableContact({ c, i, total, onDelete, onMove, onEdit, editingId, editingForm, onEditChange, onEditSave }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: c.id })
   const style = {
@@ -2047,14 +2114,17 @@ function SortableContact({ c, i, total, onDelete, onMove, onEdit, editingId, edi
       </div>
       {isEditing && (
         <div className="mt-3 ml-12 space-y-2">
-          <input
-            autoFocus
-            value={editingForm.label}
-            onChange={(e) => onEditChange('label', e.target.value)}
-            placeholder="ชื่อสายด่วน"
-            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2"
-            style={{ '--tw-ring-color': 'var(--color-primary)' }}
-          />
+          <div className="flex items-center gap-2">
+            <EmojiEditPicker value={editingForm.emoji} onChange={(v) => onEditChange('emoji', v)} />
+            <input
+              autoFocus
+              value={editingForm.label}
+              onChange={(e) => onEditChange('label', e.target.value)}
+              placeholder="ชื่อสายด่วน"
+              className="flex-1 min-w-0 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2"
+              style={{ '--tw-ring-color': 'var(--color-primary)' }}
+            />
+          </div>
           <input
             value={editingForm.number}
             onChange={(e) => onEditChange('number', e.target.value)}
@@ -2117,7 +2187,11 @@ function SortableContactRow({ c, order, onDelete, onEdit, editingId, editingForm
           <span className="text-xs text-gray-400">{order}</span>
         </div>
       </td>
-      <td className="px-4 py-3 text-2xl">{c.emoji}</td>
+      <td className="px-4 py-3 text-2xl">
+        {isEditing
+          ? <EmojiEditPicker value={editingForm.emoji} onChange={(v) => onEditChange('emoji', v)} />
+          : c.emoji}
+      </td>
       <td className="px-4 py-3">
         {isEditing ? (
           <input value={editingForm.label} onChange={e => onEditChange('label', e.target.value)}
@@ -2180,7 +2254,7 @@ function EmergencyManager({ tenant }) {
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ label: '', number: '', emoji: '📞', color: '#1d4ed8', bg: '#dbeafe', category: 'other' })
   const [editingId, setEditingId] = useState(null)
-  const [editingForm, setEditingForm] = useState({ label: '', number: '', category: 'other' })
+  const [editingForm, setEditingForm] = useState({ label: '', number: '', emoji: '📞', category: 'other' })
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
 
   const sensors = useSensors(
@@ -2302,16 +2376,21 @@ function EmergencyManager({ tenant }) {
   function handleEdit(c) {
     if (!c) { setEditingId(null); return }
     setEditingId(c.id)
-    setEditingForm({ label: c.label, number: c.number, category: emergencyCategoryOf(c) })
+    setEditingForm({ label: c.label, number: c.number, emoji: c.emoji || '📞', category: emergencyCategoryOf(c) })
   }
 
   async function saveContactEdit() {
     if (!editingForm.label.trim() || !editingForm.number.trim()) return
-    const { error } = await supabase.from('emergency_contacts')
-      .update({ label: editingForm.label.trim(), number: editingForm.number.trim(), category: editingForm.category })
-      .eq('id', editingId)
+    // ไอคอนว่าง/มีแต่ช่องว่าง = กลับไปใช้ 📞 ไม่ปล่อยให้ช่องไอคอนโล่งในหน้าประชาชน
+    const next = {
+      label: editingForm.label.trim(),
+      number: editingForm.number.trim(),
+      emoji: (editingForm.emoji || '').trim() || '📞',
+      category: editingForm.category,
+    }
+    const { error } = await supabase.from('emergency_contacts').update(next).eq('id', editingId)
     if (error) return
-    setContacts((prev) => prev.map((c) => c.id === editingId ? { ...c, ...editingForm } : c))
+    setContacts((prev) => prev.map((c) => c.id === editingId ? { ...c, ...next } : c))
     setEditingId(null)
   }
 
