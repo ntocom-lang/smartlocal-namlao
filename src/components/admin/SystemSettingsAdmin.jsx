@@ -1,11 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
-import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2, Wallpaper, MapPinned, X, Plus, Trash2, RefreshCw, AlertTriangle } from 'lucide-react'
+import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2, Wallpaper, MapPinned, X, Plus, Pencil, Trash2, RefreshCw, AlertTriangle } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { uploadFile, toReliableImageUrl } from '../../lib/driveStorage'
 import { useTenant } from '../../contexts/TenantContext'
 import DepartmentManager from './DepartmentManager'
 
 const inputCls = 'w-full px-4 py-2.5 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent transition-all'
+
+// เพดานจำนวนสถานที่ — ข้อมูลจริงของ อปท. ที่ใช้อยู่มีศาลาหมู่บ้านครบ 10 หมู่ + ห้องประชุมอีก 2-3 แห่ง
+// จึงตั้งไว้ 20 ไม่ใช่ 10 แต่ไม่ปล่อยไม่จำกัด เพราะปุ่มลัดเรียงกริด 2 คอลัมน์ ยาวเกินไปจะกดยากบนมือถือ
+const MAX_EVENT_LOCATIONS = 20
 
 export default function SystemSettingsAdmin() {
   const { tenant, patchTenant } = useTenant()
@@ -20,6 +24,10 @@ export default function SystemSettingsAdmin() {
   // ปุ่มบันทึกออกจาก saveContactInfo (กันพลาดกดบันทึกอันหนึ่งแล้วไปทับอีกอันที่ยังแก้ไม่เสร็จ)
   const [internalExtensions, setInternalExtensions] = useState(() => tenant?.internal_extensions || [])
   const [extensionsSaving, setExtensionsSaving] = useState(false)
+  // สถานที่จัดกิจกรรมที่ใช้บ่อย — โผล่เป็นปุ่มลัดในฟอร์ม "เพิ่มกิจกรรมในปฏิทิน" ลิสต์ว่าง = ใช้ค่า
+  // เริ่มต้นของระบบ (ห้องประชุมสภา / ห้องประชุม{อบต.|เทศบาล} / โดมอเนกประสงค์)
+  const [eventLocations, setEventLocations] = useState(() => tenant?.event_location_presets || [])
+  const [eventLocationsSaving, setEventLocationsSaving] = useState(false)
   const [loading, setLoading] = useState(false)
   const [savedSection, setSavedSection] = useState(null)
   const [logoUploading, setLogoUploading] = useState(false)
@@ -160,6 +168,36 @@ export default function SystemSettingsAdmin() {
       alert('บันทึกไม่สำเร็จ: ' + err.message)
     } finally {
       setExtensionsSaving(false)
+    }
+  }
+
+  // สถานที่จัดกิจกรรม — ตัดช่องว่างหัวท้าย ทิ้งแถวว่าง ตัดชื่อซ้ำ (ปุ่มในฟอร์มใช้ชื่อเป็น key)
+  // และจำกัดความยาว/จำนวนไว้ ไม่ให้ปุ่มลัดยาวจนล้นกริด 2 คอลัมน์บนมือถือ
+  async function saveEventLocations() {
+    setEventLocationsSaving(true)
+    try {
+      if (!tenant?.id) throw new Error('ไม่พบ tenant.id — กรุณา refresh หน้า')
+      const cleaned = [...new Set(
+        eventLocations.map(v => String(v ?? '').trim().slice(0, 60)).filter(Boolean)
+      )].slice(0, MAX_EVENT_LOCATIONS)
+
+      const { data, error } = await supabase
+        .from('municipalities')
+        .update({ event_location_presets: cleaned })
+        .eq('id', tenant.id)
+        .select('id')
+
+      if (error) throw error
+      if (!data?.length) throw new Error('RLS block — ไม่มีสิทธิ์ update municipalities')
+
+      patchTenant({ event_location_presets: cleaned })
+      setEventLocations(cleaned)
+      setSavedSection('eventLocations')
+      setTimeout(() => setSavedSection(null), 2500)
+    } catch (err) {
+      alert('บันทึกไม่สำเร็จ: ' + err.message)
+    } finally {
+      setEventLocationsSaving(false)
     }
   }
 
@@ -485,6 +523,7 @@ export default function SystemSettingsAdmin() {
     subtitle, setSubtitle, pwaShortName, setPwaShortName, saveSystemName,
     address, setAddress, phone, setPhone, fax, setFax, websiteUrl, setWebsiteUrl, email, setEmail, saveContactInfo,
     internalExtensions, setInternalExtensions, extensionsSaving, saveInternalExtensions,
+    eventLocations, setEventLocations, eventLocationsSaving, saveEventLocations,
     logoPreview, logoUploading, logoRef, handleLogoUpload,
     headerPreview, headerUploading, headerRef, handleHeaderUpload, removeHeaderImage,
     headerImageMode, headerModeSaving, setHeaderMode,
@@ -698,7 +737,25 @@ function GeneralInfoTab({
   subtitle, setSubtitle, pwaShortName, setPwaShortName, saveSystemName,
   address, setAddress, phone, setPhone, fax, setFax, websiteUrl, setWebsiteUrl, email, setEmail, saveContactInfo,
   internalExtensions, setInternalExtensions, extensionsSaving, saveInternalExtensions,
+  eventLocations, setEventLocations, eventLocationsSaving, saveEventLocations,
 }) {
+  const orgLabel = tenant?.org_type === 'อบต.' ? 'อบต.' : 'เทศบาล'
+  const DEFAULT_EVENT_LOCATIONS = ['ห้องประชุมสภา', `ห้องประชุม${orgLabel}`, 'โดมอเนกประสงค์']
+
+  function addLocationRow() {
+    setEventLocations(prev => [...prev, ''])
+  }
+  function updateLocationRow(i, value) {
+    setEventLocations(prev => prev.map((row, idx) => idx === i ? value : row))
+  }
+  function removeLocationRow(i) {
+    setEventLocations(prev => prev.filter((_, idx) => idx !== i))
+  }
+  // ให้แอดมินเริ่มจากค่าเริ่มต้นแล้วแก้คำ (เช่น "โดมอเนกประสงค์" → "โดมหน้าสำนักงาน") ง่ายกว่าพิมพ์ใหม่หมด
+  function seedDefaultLocations() {
+    setEventLocations(DEFAULT_EVENT_LOCATIONS)
+  }
+
   function addExtensionRow() {
     setInternalExtensions(prev => [...prev, { name: '', ext: '' }])
   }
@@ -883,6 +940,82 @@ function GeneralInfoTab({
             {savedSection === 'extensions' ? 'บันทึกแล้ว' : 'บันทึกหมายเลขภายใน'}
           </button>
         </div>
+      </div>
+
+      {/* ── สถานที่จัดกิจกรรม ── ปุ่มลัดในฟอร์ม "เพิ่มกิจกรรมในปฏิทิน" ลิสต์ว่าง = ใช้ค่าเริ่มต้นของระบบ
+          เพราะชื่ออาคารของแต่ละ อปท. ไม่เหมือนกัน (โดมอยู่หน้า/ข้าง/หลัง หรือไม่มีโดมเลย) */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <h2 className="text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
+          <MapPinned size={15} /> สถานที่จัดกิจกรรม
+        </h2>
+        <p className="text-xs text-gray-400 mb-4">
+          ปุ่มลัดในฟอร์ม "เพิ่มกิจกรรมในปฏิทิน" — เจ้าหน้าที่ยังกด "อื่นๆ (ระบุ)" พิมพ์สถานที่นอกรายการได้เสมอ
+        </p>
+
+        {eventLocations.length === 0 ? (
+          <div className="rounded-xl bg-gray-50 border border-gray-100 p-4">
+            <p className="text-xs text-gray-500 mb-2">ยังไม่ได้ตั้งค่า — ตอนนี้ระบบใช้ค่าเริ่มต้น:</p>
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {DEFAULT_EVENT_LOCATIONS.map(loc => (
+                <span key={loc} className="px-2.5 py-1 rounded-lg bg-white border border-gray-200 text-xs text-gray-600">{loc}</span>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" onClick={seedDefaultLocations}
+                className="px-4 py-2 text-xs font-semibold text-gray-600 border border-dashed border-gray-300 rounded-xl hover:bg-white hover:text-gray-800 transition-colors flex items-center gap-1.5">
+                <Pencil size={14} /> แก้ไขให้ตรงกับสถานที่จริง
+              </button>
+              {/* ลบแถวจนหมดแล้วต้องกดบันทึกได้ ไม่งั้นค่าที่เคยตั้งไว้ใน DB จะค้างอยู่ทั้งที่หน้าจอว่าง */}
+              {tenant?.event_location_presets?.length > 0 && (
+                <button type="button" onClick={saveEventLocations} disabled={eventLocationsSaving}
+                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold rounded-xl shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-50">
+                  {savedSection === 'eventLocations' ? <CheckCircle2 size={14} /> : <Save size={14} />}
+                  {savedSection === 'eventLocations' ? 'บันทึกแล้ว' : 'บันทึกกลับไปใช้ค่าเริ่มต้น'}
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-2.5">
+              {eventLocations.map((loc, i) => (
+                <div key={i} className="flex items-center gap-2.5">
+                  <input
+                    type="text"
+                    value={loc}
+                    maxLength={60}
+                    onChange={e => updateLocationRow(i, e.target.value)}
+                    placeholder="เช่น โดมหน้าสำนักงาน, ศาลาประชาคม"
+                    className={`${inputCls} flex-1`}
+                  />
+                  <button type="button" onClick={() => removeLocationRow(i)}
+                    className="shrink-0 w-9 h-9 flex items-center justify-center rounded-xl text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                    <X size={16} />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {eventLocations.length < MAX_EVENT_LOCATIONS && (
+              <button type="button" onClick={addLocationRow}
+                className="mt-3 px-4 py-2 text-xs font-semibold text-gray-500 border border-dashed border-gray-300 rounded-xl hover:bg-gray-50 hover:text-gray-700 transition-colors flex items-center gap-1.5">
+                <Plus size={14} /> เพิ่มสถานที่
+              </button>
+            )}
+
+            <div className="flex justify-end pt-4">
+              <button
+                type="button"
+                onClick={saveEventLocations}
+                disabled={eventLocationsSaving}
+                className="px-6 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-xl shadow-sm hover:shadow transition-all flex items-center gap-2 disabled:opacity-50"
+              >
+                {savedSection === 'eventLocations' ? <CheckCircle2 size={16} /> : <Save size={16} />}
+                {savedSection === 'eventLocations' ? 'บันทึกแล้ว' : 'บันทึกสถานที่'}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

@@ -3,6 +3,7 @@ import { CheckCircle2, LocateFixed, MapPin, Search, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { useTenant } from '../../contexts/TenantContext'
 import GoogleMapCanvas from './GoogleMapCanvas'
+import LeafletMapPicker from './LeafletMapPicker'
 
 const validPoint = point => Number.isFinite(Number(point?.lat)) && Number.isFinite(Number(point?.lng))
 
@@ -25,6 +26,32 @@ export default function GoogleMapPicker({
   placeholder = 'ค้นหาบ้านเลขที่ ชื่อสถานที่ หรือถนน...',
 }) {
   const { tenant } = useTenant()
+  const apiKey = (tenant?.google_maps_api_key && tenant.google_maps_api_key.trim()) || import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
+  const storedEngine = typeof window !== 'undefined' ? localStorage.getItem('smartlocal_map_engine') : null
+  const effectiveEngine = storedEngine || tenant?.map_engine || 'leaflet'
+
+  if (effectiveEngine === 'leaflet') {
+    return (
+      <LeafletMapPicker
+        defaultLat={defaultLat}
+        defaultLng={defaultLng}
+        initialPos={initialPos}
+        fallbackPos={fallbackPos}
+        zoom={zoom}
+        onLocationSelect={onLocationSelect}
+        onConfirm={onConfirm}
+        onClose={onClose}
+        readOnly={readOnly}
+        modal={modal}
+        fixedCenterPin={fixedCenterPin}
+        showBoundary={showBoundary}
+        autoLocate={autoLocate}
+        skipGeolocation={skipGeolocation}
+        mapClassName={mapClassName}
+        placeholder={placeholder}
+      />
+    )
+  }
   const inputRef = useRef(null)
   const autocompleteHostRef = useRef(null)
   const mapRef = useRef(null)

@@ -492,7 +492,14 @@ function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage,
 export default function EventsManager({ tenant, currentUserRole = 'staff', autoEditEventId, onAutoEditHandled, autoCreateSignal = 0, autoCreateAudience = null, onAutoCreateHandled }) {
   const canManage = EVENT_MANAGER_ROLES.includes(currentUserRole)
   const orgLabel = tenant?.org_type === 'อบต.' ? 'อบต.' : 'เทศบาล'
-  const LOCATION_PRESETS = ['ห้องประชุมสภา', `ห้องประชุม${orgLabel}`, `โดมหลัง${orgLabel}`]
+  // รายการสถานที่ตั้งเองได้ต่อ อปท. ที่หน้า "ตั้งค่าระบบ → ข้อมูลทั่วไป" — ถ้ายังไม่ตั้ง ใช้ค่าเริ่มต้น
+  // ที่ไม่ระบุทิศทางของอาคาร (ของเดิม hardcode "โดมหลัง..." ซึ่งไม่ตรงกับผังของหลาย อปท.)
+  const LOCATION_PRESETS = useMemo(() => {
+    const custom = (Array.isArray(tenant?.event_location_presets) ? tenant.event_location_presets : [])
+      .filter(v => typeof v === 'string' && v.trim())
+      .map(v => v.trim())
+    return custom.length ? custom : ['ห้องประชุมสภา', `ห้องประชุม${orgLabel}`, 'โดมอเนกประสงค์']
+  }, [tenant?.event_location_presets, orgLabel])
   const [currentUserId, setCurrentUserId] = useState(null)
   const [currentUserScope, setCurrentUserScope] = useState(null)
   const [events, setEvents] = useState([])

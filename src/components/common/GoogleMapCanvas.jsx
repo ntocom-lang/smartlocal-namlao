@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, Layers, Loader2, Map as MapIcon } from 'lucide-react'
+import { AlertTriangle, Loader2 } from 'lucide-react'
 import { useTenant } from '../../contexts/TenantContext'
 import { loadGoogleMaps } from '../../lib/googleMaps'
+import LeafletMapCanvas from './LeafletMapCanvas'
 
 const isPoint = point => Number.isFinite(Number(point?.lat)) && Number.isFinite(Number(point?.lng))
 
@@ -13,7 +14,7 @@ const isPoint = point => Number.isFinite(Number(point?.lat)) && Number.isFinite(
 export default function GoogleMapCanvas({
   center,
   zoom = 15,
-  mapTypeId = 'roadmap',
+  mapTypeId = 'hybrid',
   mapId,
   markers = [],
   polylines = [],
@@ -52,6 +53,31 @@ export default function GoogleMapCanvas({
   }
 
   const apiKey = (tenant?.google_maps_api_key && tenant.google_maps_api_key.trim()) || import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
+  const storedEngine = typeof window !== 'undefined' ? localStorage.getItem('smartlocal_map_engine') : null
+  const effectiveEngine = storedEngine || tenant?.map_engine || 'leaflet'
+
+  if (effectiveEngine === 'leaflet') {
+    return (
+      <LeafletMapCanvas
+        center={center}
+        zoom={zoom}
+        mapTypeId={mapTypeId}
+        markers={markers}
+        polylines={polylines}
+        boundaryGeoJson={boundaryGeoJson}
+        fitBounds={fitBounds}
+        onMapClick={onMapClick}
+        onMapRightClick={onMapRightClick}
+        onFeatureClick={onFeatureClick}
+        onFeatureRightClick={onFeatureRightClick}
+        onPolylineRightClick={onPolylineRightClick}
+        onMarkerDragEnd={onMarkerDragEnd}
+        onMapReady={onMapReady}
+        className={className}
+      />
+    )
+  }
+
   const effectiveMapId = mapId || import.meta.env.VITE_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID'
   const safeCenter = useMemo(() => isPoint(center)
     ? { lat: Number(center.lat), lng: Number(center.lng) }
@@ -476,35 +502,6 @@ export default function GoogleMapCanvas({
       }}
     >
       <div ref={containerRef} className="absolute inset-0" aria-label="Google Maps" />
-
-      {!loading && !error && (
-        <div className="absolute right-3 top-3 z-20 flex items-center gap-1 rounded-2xl border border-gray-200/80 bg-white/95 p-1 shadow-lg backdrop-blur-xs">
-          <button
-            type="button"
-            onClick={() => changeMapType('roadmap')}
-            className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-extrabold transition-all active:scale-95 ${
-              activeMapType === 'roadmap'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-gray-700 hover:bg-gray-100'
-            }`}
-          >
-            <MapIcon size={14} />
-            <span>แผนที่</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => changeMapType('hybrid')}
-            className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-extrabold transition-all active:scale-95 ${
-              activeMapType === 'hybrid' || activeMapType === 'satellite'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-gray-700 hover:bg-gray-100'
-            }`}
-          >
-            <Layers size={14} />
-            <span>ดาวเทียม</span>
-          </button>
-        </div>
-      )}
 
       {loading && (
         <div className="absolute inset-0 z-20 flex items-center justify-center gap-2 bg-gray-50/90 text-sm font-semibold text-gray-500">
