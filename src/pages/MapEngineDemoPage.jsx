@@ -1,14 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
-  ArrowLeft, CheckCircle2, CloudCog, Compass, Eye, Flame, Globe2, Layers,
-  LocateFixed, Map, MapPin, Navigation, RefreshCw, Search, ShieldCheck, Sparkles, Zap,
+  ArrowLeft, CheckCircle2, Compass, Eye, Flame, Globe2, Layers,
+  MapPin, Navigation, ShieldCheck, Sparkles, Zap,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import LeafletMapCanvas from '../components/common/LeafletMapCanvas'
 import LeafletMapPicker from '../components/common/LeafletMapPicker'
 import GoogleMapCanvas from '../components/common/GoogleMapCanvas'
-import GoogleMapPicker from '../components/common/GoogleMapPicker'
 import { useTenant } from '../contexts/TenantContext'
+import { setMapEngine, useMapEngine } from '../lib/mapEngine'
 
 // ตัวอย่างหมุดสำหรับทดสอบ Multi-Pins GIS
 const SAMPLE_PINS = [
@@ -51,10 +51,8 @@ export default function MapEngineDemoPage() {
     lng: Number(tenant?.longitude) || 100.1167,
   }
 
-  // Active Global Map Engine in localStorage
-  const [activeEngine, setActiveEngine] = useState(() => {
-    return localStorage.getItem('smartlocal_map_engine') || 'leaflet'
-  })
+  // อ่านจาก store กลาง เพื่อให้หน้านี้กับการ์ดในหน้าตั้งค่า Google Maps เห็นค่าตรงกันเสมอ
+  const activeEngine = useMapEngine()
 
   const [activeTab, setActiveTab] = useState('picker') // 'picker' | 'datacenter' | 'compare'
   const [selectedLocation, setSelectedLocation] = useState(defaultPos)
@@ -62,8 +60,7 @@ export default function MapEngineDemoPage() {
   const [savedSuccess, setSavedSuccess] = useState(false)
 
   function handleSetEngine(engine) {
-    setActiveEngine(engine)
-    localStorage.setItem('smartlocal_map_engine', engine)
+    setMapEngine(engine)
     setSavedSuccess(true)
     setTimeout(() => setSavedSuccess(false), 2000)
   }

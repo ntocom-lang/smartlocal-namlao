@@ -2,16 +2,30 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import { useTenant } from '../../contexts/TenantContext'
 import { loadGoogleMaps } from '../../lib/googleMaps'
+import { useMapEngine } from '../../lib/mapEngine'
 import LeafletMapCanvas from './LeafletMapCanvas'
 
 const isPoint = point => Number.isFinite(Number(point?.lat)) && Number.isFinite(Number(point?.lng))
 
-
+/**
+ * ตัวเลือก engine ต้องอยู่ใน wrapper บางๆ ที่ไม่มี hook ของตัวเองนอกจาก useMapEngine
+ * ห้ามใส่ early return ไว้กลาง GoogleMapsCanvasImpl เด็ดขาด เพราะ hook ที่เหลืออีกกว่า 20 ตัว
+ * จะถูกข้ามเมื่อ engine = leaflet พอแอดมินสลับ engine ระหว่างที่แผนที่ยัง mount อยู่
+ * React จะโยน "Rendered fewer hooks than expected" แล้วหน้าจอขาวทั้งหน้า
+ * แยกเป็นคนละ component type แบบนี้ React จะ unmount ตัวเก่า mount ตัวใหม่ให้เอง
+ */
+export default function GoogleMapCanvas(props) {
+  const engine = useMapEngine()
+  // LeafletMapCanvas รับ prop เป็นชื่อเดียวกันทั้งหมด ส่วน mapId/options เป็นของ Google โดยเฉพาะ
+  // ตัวมันจะไม่ได้ destructure ออกมาใช้ ปล่อยผ่านไปเฉยๆ ได้ ไม่ต้องกรองทิ้ง
+  if (engine === 'leaflet') return <LeafletMapCanvas {...props} />
+  return <GoogleMapsCanvasImpl {...props} />
+}
 
 /**
  * Native Google Maps canvas used by every map surface in SmartLocal.
  */
-export default function GoogleMapCanvas({
+function GoogleMapsCanvasImpl({
   center,
   zoom = 15,
   mapTypeId = 'hybrid',
@@ -43,40 +57,11 @@ export default function GoogleMapCanvas({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [mapReadyState, setMapReadyState] = useState(0)
-  const [activeMapType, setActiveMapType] = useState(mapTypeId)
-
-  function changeMapType(type) {
-    setActiveMapType(type)
-    if (mapRef.current) {
-      mapRef.current.setMapTypeId(type)
-    }
-  }
+  // ไม่มีปุ่มสลับ แผนที่/ดาวเทียม แล้ว (ย้ายไปเป็นตัวเลือกระดับ engine) แต่คง state ไว้
+  // เพราะ initMap ใช้ค่านี้ตอนสร้าง map และ prop mapTypeId ยังเปลี่ยนได้จากผู้เรียก
+  const [activeMapType] = useState(mapTypeId)
 
   const apiKey = (tenant?.google_maps_api_key && tenant.google_maps_api_key.trim()) || import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
-  const storedEngine = typeof window !== 'undefined' ? localStorage.getItem('smartlocal_map_engine') : null
-  const effectiveEngine = storedEngine || tenant?.map_engine || 'leaflet'
-
-  if (effectiveEngine === 'leaflet') {
-    return (
-      <LeafletMapCanvas
-        center={center}
-        zoom={zoom}
-        mapTypeId={mapTypeId}
-        markers={markers}
-        polylines={polylines}
-        boundaryGeoJson={boundaryGeoJson}
-        fitBounds={fitBounds}
-        onMapClick={onMapClick}
-        onMapRightClick={onMapRightClick}
-        onFeatureClick={onFeatureClick}
-        onFeatureRightClick={onFeatureRightClick}
-        onPolylineRightClick={onPolylineRightClick}
-        onMarkerDragEnd={onMarkerDragEnd}
-        onMapReady={onMapReady}
-        className={className}
-      />
-    )
-  }
 
   const effectiveMapId = mapId || import.meta.env.VITE_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID'
   const safeCenter = useMemo(() => isPoint(center)

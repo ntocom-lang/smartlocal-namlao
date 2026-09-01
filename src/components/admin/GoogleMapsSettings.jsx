@@ -5,6 +5,7 @@ import {
   Loader2, Mail, RefreshCw, Save, ShieldCheck, Sparkles, Zap,
 } from 'lucide-react'
 import { useTenant } from '../../contexts/TenantContext'
+import { setMapEngine, useMapEngine } from '../../lib/mapEngine'
 import { supabase } from '../../lib/supabase'
 import { loadGoogleMaps } from '../../lib/googleMaps'
 
@@ -26,7 +27,7 @@ export default function GoogleMapsSettings() {
   const [editingKey, setEditingKey] = useState(false)
   const [showKey, setShowKey] = useState(false)
   const [newKey, setNewKey] = useState('')
-  const [engine, setEngine] = useState(() => (typeof window !== 'undefined' ? localStorage.getItem('smartlocal_map_engine') : null) || 'leaflet')
+  const engine = useMapEngine()
   const [email, setEmail] = useState('')
   const [projectId, setProjectId] = useState('')
   const [saving, setSaving] = useState(false)
@@ -191,8 +192,7 @@ export default function GoogleMapsSettings() {
           <button
             type="button"
             onClick={() => {
-              setEngine('leaflet')
-              localStorage.setItem('smartlocal_map_engine', 'leaflet')
+              setMapEngine('leaflet')
             }}
             className={`flex flex-col items-start rounded-2xl border p-4 text-left transition-all ${
               engine === 'leaflet'
@@ -218,8 +218,7 @@ export default function GoogleMapsSettings() {
           <button
             type="button"
             onClick={() => {
-              setEngine('google')
-              localStorage.setItem('smartlocal_map_engine', 'google')
+              setMapEngine('google')
             }}
             className={`flex flex-col items-start rounded-2xl border p-4 text-left transition-all ${
               engine === 'google'

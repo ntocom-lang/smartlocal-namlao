@@ -6,6 +6,32 @@ import { useTenant } from '../../contexts/TenantContext'
 
 const isPoint = point => Number.isFinite(Number(point?.lat)) && Number.isFinite(Number(point?.lng))
 
+// L.divIcon / bindPopup รับ "HTML string" ไม่ใช่ JSX — React ไม่ได้ escape ให้ ค่าที่เอามาต่อสตริง
+// (title/subtitle/label/สีหมุด/iconUrl) หลายจอมาจากข้อมูลที่ประชาชนกรอกเอง เช่น ชื่อร้านในทะเบียน
+// พาณิชย์ หรือหัวเรื่องเรื่องร้องเรียน ถ้าไม่ escape = stored XSS บนเว็บราชการ
+// (markerData.infoHtml ยังปล่อยดิบตามเดิม เพราะเป็น HTML ที่โค้ดฝั่งเราประกอบเองทั้งก้อน
+//  ผู้เรียกต้องรับผิดชอบ escape เนื้อหาที่ผู้ใช้กรอกก่อนส่งเข้ามา)
+const escapeHtml = value => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;')
+
+const escapeAttr = escapeHtml
+
+// กัน javascript: / data:text/html ที่ฝังมาทาง iconUrl แล้วกลายเป็นช่องรันสคริปต์
+const safeUrl = value => {
+  const raw = String(value ?? '').trim()
+  return /^(https?:|\/|data:image\/)/i.test(raw) ? raw : ''
+}
+
+// สีถูกยัดลง style="" ตรงๆ ปล่อยดิบจะปิด attribute แล้วแทรก tag ต่อได้ จึงรับเฉพาะรูปแบบสีที่รู้จัก
+const safeColor = value => {
+  const raw = String(value ?? '').trim()
+  return /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\)|hsla?\([\d\s.,%]+\)|[a-z]+)$/i.test(raw) ? raw : '#ef4444'
+}
+
 /**
  * Leaflet Open-Source Map Canvas ($0 Budget / 100% Free)
  * Drop-in replacement for GoogleMapCanvas with zero API key requirement.
@@ -37,7 +63,9 @@ export default function LeafletMapCanvas({
   const callbacksRef = useRef({ onMapClick, onMapRightClick, onFeatureClick, onFeatureRightClick, onPolylineRightClick, onMarkerDragEnd, onMapReady })
   const lastFitSignatureRef = useRef('')
   const [loading, setLoading] = useState(true)
-  const [activeMapType, setActiveMapType] = useState(mapTypeId === 'satellite' || mapTypeId === 'hybrid' ? 'hybrid' : 'roadmap')
+  // derive จาก prop ตรงๆ ไม่เก็บเป็น state ซ้ำ — ไม่มีปุ่มสลับในตัว component แล้ว
+  // เก็บเป็น state จะกลายเป็นแหล่งความจริงคู่ขนานที่หลุดจาก prop ได้
+  const activeMapType = mapTypeId === 'satellite' || mapTypeId === 'hybrid' ? 'hybrid' : 'roadmap'
 
   const safeCenter = useMemo(() => {
     if (isPoint(center)) return [Number(center.lat), Number(center.lng)]
@@ -135,7 +163,6 @@ export default function LeafletMapCanvas({
 
   // 2. Switch Map Type
   function changeMapType(type) {
-    setActiveMapType(type)
     const map = mapRef.current
     if (!map) return
 
@@ -148,6 +175,13 @@ export default function LeafletMapCanvas({
       if (roadmap && !map.hasLayer(roadmap)) map.addLayer(roadmap)
     }
   }
+
+  // ปุ่มสลับ แผนที่/ดาวเทียม ถูกถอดออกไปแล้ว ตัวเลือกจึงมาทาง prop อย่างเดียว
+  // เดิม mapTypeId ถูกอ่านแค่ตอน mount ผู้เรียกที่เปลี่ยนค่าทีหลังจะไม่มีอะไรเกิดขึ้นเลย
+  useEffect(() => {
+    changeMapType(activeMapType)
+   
+  }, [activeMapType])
 
   // 3. Update Center & Zoom
   useEffect(() => {
@@ -183,25 +217,25 @@ export default function LeafletMapCanvas({
       const color = markerData.color || '#ef4444'
       const labelText = markerData.label ? String(markerData.label) : ''
 
-      let iconHtml = ''
+      let iconHtml
       if (markerData.iconUrl) {
         const iconSize = Math.round(size * 1.35)
         iconHtml = `
           <div style="width: ${iconSize}px; height: ${iconSize}px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));">
-            <img src="${markerData.iconUrl}" style="width: 100%; height: 100%; object-fit: contain;" alt="" />
+            <img src="${escapeAttr(safeUrl(markerData.iconUrl))}" style="width: 100%; height: 100%; object-fit: contain;" alt="" />
           </div>
         `
       } else if (markerData.shape === 'circle') {
         iconHtml = `
-          <div style="width: ${size}px; height: ${size}px; border-radius: 50%; background: ${color}; border: 2px solid #ffffff; box-shadow: 0 2px 5px rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; font-size: ${Math.round(size * 0.6)}px; line-height: 1; color: #ffffff;">
-            ${labelText}
+          <div style="width: ${size}px; height: ${size}px; border-radius: 50%; background: ${safeColor(color)}; border: 2px solid #ffffff; box-shadow: 0 2px 5px rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; font-size: ${Math.round(size * 0.6)}px; line-height: 1; color: #ffffff;">
+            ${escapeHtml(labelText)}
           </div>
         `
       } else {
         iconHtml = `
           <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translateY(-50%);">
-            <div style="background: ${color}; color: #ffffff; width: ${size * 1.3}px; height: ${size * 1.3}px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 2px solid #ffffff; box-shadow: 0 3px 6px rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center;">
-              <span style="transform: rotate(45deg); font-size: ${Math.round(size * 0.6)}px; font-weight: 700;">${labelText}</span>
+            <div style="background: ${safeColor(color)}; color: #ffffff; width: ${size * 1.3}px; height: ${size * 1.3}px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 2px solid #ffffff; box-shadow: 0 3px 6px rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center;">
+              <span style="transform: rotate(45deg); font-size: ${Math.round(size * 0.6)}px; font-weight: 700;">${escapeHtml(labelText)}</span>
             </div>
             <div style="width: 6px; height: 6px; background: rgba(0,0,0,0.3); border-radius: 50%; margin-top: 2px; filter: blur(1px);"></div>
           </div>
@@ -234,15 +268,15 @@ export default function LeafletMapCanvas({
       if (markerData.title || markerData.infoHtml) {
         const titleText = markerData.title || ''
         const subtitleText = markerData.subtitle || markerData.entry?.group_name || ''
-        const lat = markerData.position.lat
-        const lng = markerData.position.lng
+        const lat = Number(markerData.position.lat)
+        const lng = Number(markerData.position.lng)
         const gmapsUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
 
         const htmlContent = markerData.infoHtml || `
           <div style="font-family: 'Sarabun', system-ui, sans-serif; padding: 2px 2px 0 0; min-width: 175px; max-width: 240px; box-sizing: border-box;">
-            <div style="font-weight: 800; font-size: 14px; color: #0f172a; line-height: 1.35; margin-bottom: 2px;">${titleText}</div>
-            ${subtitleText ? `<div style="font-size: 11px; font-weight: 600; color: #64748b; margin-bottom: 8px; line-height: 1.3;">${subtitleText}</div>` : '<div style="margin-bottom: 6px;"></div>'}
-            <a href="${gmapsUrl}" target="_blank" rel="noopener noreferrer"
+            <div style="font-weight: 800; font-size: 14px; color: #0f172a; line-height: 1.35; margin-bottom: 2px;">${escapeHtml(titleText)}</div>
+            ${subtitleText ? `<div style="font-size: 11px; font-weight: 600; color: #64748b; margin-bottom: 8px; line-height: 1.3;">${escapeHtml(subtitleText)}</div>` : '<div style="margin-bottom: 6px;"></div>'}
+            <a href="${escapeAttr(gmapsUrl)}" target="_blank" rel="noopener noreferrer"
               style="display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: 10px; background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: #ffffff; padding: 6px 12px; font-size: 11px; font-weight: 700; text-decoration: none; box-shadow: 0 2px 6px rgba(37,99,235,0.22); text-align: center;">
               <span>📍 เปิดพิกัดนำทาง</span>
             </a>
