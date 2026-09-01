@@ -13,9 +13,12 @@ import {
   CheckCircle2, ChevronRight, ChevronLeft,
   Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical, Briefcase,
   X, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Repeat,
-  TrendingUp, AlertTriangle, Printer, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Star, MessageSquare, Car, Terminal, Database, CalendarDays, KeyRound, ClipboardList, FileText, UserRoundCheck
+  TrendingUp, AlertTriangle, Printer, ImagePlus, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Star, MessageSquare, Car, Terminal, Database, CalendarDays, KeyRound, ClipboardList, FileText, UserRoundCheck
 } from 'lucide-react'
 import { supabase, signOutSafely } from '../lib/supabase'
+// ไอคอนที่เป็นได้ทั้งอิโมจิและรูปแนบ — ของกลางชุดเดียวกับศูนย์ข้อมูลดิจิทัล ไม่ทำซ้ำอีกชุด
+import IconOrImage from '../components/datacenter/CategoryIcon'
+import { fileToIconDataUrl, isIconImage, ICON_UPLOAD_ACCEPT, ICON_IMAGE_MAX_PX } from '../lib/dataCenterGroupIcon'
 import { compressImage } from '../lib/imageUtils'
 import { attachReporterProfiles } from '../lib/attachReporterProfiles'
 import { workingDaysBetween, workingDaysSince } from '../lib/workingDays'
@@ -1999,11 +2002,32 @@ function CategoryBadge({ category }) {
 // ป็อปอัพต้องยิงผ่าน portal + position:fixed เพราะตาราง desktop อยู่ในกล่อง
 // overflow-hidden ถ้าใช้ absolute ธรรมดาเมนูจะโดนครอบตัดจนเห็นไม่ครบ
 const EMOJI_MENU_W = 224
-const EMOJI_MENU_H = 272
+const EMOJI_MENU_H = 330
 
 function EmojiEditPicker({ value, onChange }) {
   const btnRef = useRef(null)
+  const fileRef = useRef(null)
   const [pos, setPos] = useState(null) // null = ปิดอยู่
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const isImage = isIconImage(value)
+
+  // ย่อรูปเป็น PNG จัตุรัสเล็ก + ตัดขอบว่างรอบลาย ด้วย helper ตัวเดียวกับไอคอนศูนย์ข้อมูล
+  // เก็บเป็น data URL ในคอลัมน์ emoji ตรงๆ (เป็น text ไม่มีลิมิต) จึงไม่ต้องพึ่ง storage/Drive
+  async function handlePickFile(e) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // เคลียร์เสมอ ไม่งั้นเลือกไฟล์ชื่อเดิมซ้ำ onChange จะไม่ยิง
+    if (!file) return
+    setErr('')
+    setBusy(true)
+    try {
+      onChange(await fileToIconDataUrl(file))
+    } catch (ex) {
+      setErr(ex?.message || 'แนบไฟล์ไม่สำเร็จ')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   function openPicker() {
     const r = btnRef.current?.getBoundingClientRect()
@@ -2017,22 +2041,25 @@ function EmojiEditPicker({ value, onChange }) {
   // fixed ไม่เลื่อนตามหน้าจอ — เลื่อน/ย่อขยายเมื่อไหร่ให้ปิดไปเลย ดีกว่าค้างผิดตำแหน่ง
   useEffect(() => {
     if (!pos) return
-    const close = () => setPos(null)
+    // ระหว่างแนบไฟล์ห้ามปิด — บนมือถือการเปิด file picker ทำให้เกิด resize เมนูจะหายกลางคัน
+    const close = () => { if (!busy) setPos(null) }
     window.addEventListener('scroll', close, true)
     window.addEventListener('resize', close)
     return () => {
       window.removeEventListener('scroll', close, true)
       window.removeEventListener('resize', close)
     }
-  }, [pos])
+  }, [pos, busy])
 
   return (
     <>
       <button ref={btnRef} type="button" title="เปลี่ยนไอคอน"
         onClick={() => (pos ? setPos(null) : openPicker())}
         className="w-10 h-10 rounded-xl border border-gray-200 bg-gray-50 hover:bg-gray-100 text-xl flex items-center justify-center transition-colors shrink-0">
-        {value || '📞'}
+        <IconOrImage value={value || '📞'} alt="" />
       </button>
+      {/* วางไว้นอก portal: เมนูอาจถูกปิดตอน file picker เด้ง ถ้า input อยู่ในเมนูจะถูก unmount ก่อน onChange ยิง */}
+      <input ref={fileRef} type="file" accept={ICON_UPLOAD_ACCEPT} onChange={handlePickFile} className="hidden" />
       {pos && createPortal(
         <>
           <div className="fixed inset-0 z-[60]" onClick={() => setPos(null)} />
@@ -2047,11 +2074,33 @@ function EmojiEditPicker({ value, onChange }) {
                 </button>
               ))}
             </div>
-            {/* พิมพ์เอง: รองรับ emoji ที่ไม่มีในชุด และ emoji หลาย code point เช่น 🏛️ */}
-            <input value={value ?? ''} maxLength={16} autoComplete="off"
-              onChange={(e) => onChange(e.target.value)}
-              placeholder="หรือพิมพ์ emoji เอง"
-              className="w-full border border-gray-200 rounded-xl px-2.5 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-200" />
+            <button type="button" onClick={() => fileRef.current?.click()} disabled={busy}
+              title={`แนบรูปจากเครื่อง (ย่อเป็น ${ICON_IMAGE_MAX_PX}x${ICON_IMAGE_MAX_PX} px อัตโนมัติ)`}
+              className={`w-full inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition-colors disabled:opacity-50 ${
+                isImage ? 'border-blue-400 bg-blue-50 text-blue-600' : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+              }`}>
+              {busy ? <Loader2 size={13} className="animate-spin" /> : <ImagePlus size={13} />}
+              {isImage ? 'เปลี่ยนรูป' : 'แทรกรูปภาพ'}
+            </button>
+            {/* โหมดรูปไม่ต้องมีช่องพิมพ์: data URL ยาวเป็นหมื่นตัวอักษร ให้แก้มือไม่มีประโยชน์ */}
+            {isImage ? (
+              <div className="flex items-center gap-2 border border-gray-200 rounded-xl px-2.5 py-1.5">
+                <img src={value} alt="ไอคอนที่แนบไว้" className="w-6 h-6 object-contain shrink-0" />
+                <span className="text-[11px] text-gray-500 flex-1 leading-tight">ใช้รูปที่แนบไว้</span>
+                <button type="button" onClick={() => { onChange('📞'); setErr('') }}
+                  aria-label="เอารูปออก กลับไปใช้อิโมจิ"
+                  className="p-1 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50">
+                  <X size={13} />
+                </button>
+              </div>
+            ) : (
+              /* พิมพ์เอง: รองรับ emoji ที่ไม่มีในชุด และ emoji หลาย code point เช่น 🏛️ */
+              <input value={value ?? ''} maxLength={16} autoComplete="off"
+                onChange={(e) => onChange(e.target.value)}
+                placeholder="หรือพิมพ์ emoji เอง"
+                className="w-full border border-gray-200 rounded-xl px-2.5 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-200" />
+            )}
+            {err && <p className="text-[11px] text-red-500 font-semibold leading-tight">{err}</p>}
           </div>
         </>,
         document.body
@@ -2080,7 +2129,7 @@ function SortableContact({ c, i, total, onDelete, onMove, onEdit, editingId, edi
         </button>
         <div className="w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0"
              style={{ backgroundColor: c.bg }}>
-          {c.emoji}
+          <IconOrImage value={c.emoji} alt="" />
         </div>
         <div className="flex-1 min-w-0">
           <p className="font-semibold text-gray-800 text-sm">{c.label}</p>
@@ -2190,7 +2239,7 @@ function SortableContactRow({ c, order, onDelete, onEdit, editingId, editingForm
       <td className="px-4 py-3 text-2xl">
         {isEditing
           ? <EmojiEditPicker value={editingForm.emoji} onChange={(v) => onEditChange('emoji', v)} />
-          : c.emoji}
+          : <IconOrImage value={c.emoji} alt="" />}
       </td>
       <td className="px-4 py-3">
         {isEditing ? (
@@ -2255,7 +2304,6 @@ function EmergencyManager({ tenant }) {
   const [form, setForm] = useState({ label: '', number: '', emoji: '📞', color: '#1d4ed8', bg: '#dbeafe', category: 'other' })
   const [editingId, setEditingId] = useState(null)
   const [editingForm, setEditingForm] = useState({ label: '', number: '', emoji: '📞', category: 'other' })
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -2405,32 +2453,20 @@ function EmergencyManager({ tenant }) {
     <div className="space-y-4">
       {/* Add form */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
-        {showEmojiPicker && <div className="fixed inset-0 z-40" onClick={() => setShowEmojiPicker(false)} />}
         <p className="font-semibold text-gray-700 text-sm">เพิ่มสายด่วนใหม่</p>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-          {/* Emoji picker */}
-          <div className="relative">
-            <button type="button"
-              onClick={() => setShowEmojiPicker((v) => !v)}
-              className="w-full flex items-center justify-center gap-2 border border-gray-200 rounded-xl px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors"
-              title="เลือก emoji">
-              <span className="text-2xl">{form.emoji}</span>
-              <span className="text-xs text-gray-400">เปลี่ยน</span>
-            </button>
-            {showEmojiPicker && (
-              <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-2xl shadow-xl p-3 grid grid-cols-6 gap-1.5 w-56">
-                {EMERGENCY_EMOJIS.map((e) => (
-                  <button key={e} type="button"
-                    onClick={() => { setForm((f) => ({ ...f, emoji: e })); setShowEmojiPicker(false) }}
-                    className={`text-xl rounded-xl p-1.5 hover:bg-gray-100 transition-colors ${form.emoji === e ? 'bg-blue-50 ring-2 ring-blue-300' : ''}`}>
-                    {e}
-                  </button>
-                ))}
-              </div>
-            )}
+          <div className="flex items-center gap-2">
+            <EmojiEditPicker value={form.emoji} onChange={(v) => setForm((f) => ({ ...f, emoji: v }))} />
+            <span className="text-xs text-gray-400">ไอคอน</span>
           </div>
           <input value={form.label}
-            onChange={(e) => setForm({ ...form, label: e.target.value, emoji: guessEmoji(e.target.value), category: guessCategory(e.target.value) })}
+            onChange={(e) => setForm({
+              ...form,
+              label: e.target.value,
+              // แนบรูปไว้แล้วห้ามให้ guessEmoji ทับ ไม่งั้นพิมพ์ชื่อต่อรูปหายทันที
+              emoji: isIconImage(form.emoji) ? form.emoji : guessEmoji(e.target.value),
+              category: guessCategory(e.target.value),
+            })}
             className="border border-gray-200 rounded-xl px-3 py-2 text-sm col-span-1 text-gray-800"
             placeholder="ชื่อ เช่น ตำรวจ" />
           <input value={form.number} onChange={(e) => setForm({ ...form, number: e.target.value })}

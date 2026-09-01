@@ -5,6 +5,8 @@ import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import { EMERGENCY_CATEGORIES, emergencyCategoryOf } from '../lib/emergencyCategories'
+// ไอคอนสายด่วนเป็นได้ทั้งอิโมจิและรูปที่แอดมินแนบ (data URL) — ถ้า render ตรงๆ จะโชว์สตริงยาวเหยียด
+import CategoryIcon from '../components/datacenter/CategoryIcon'
 
 // ต่ำกว่านี้ช่องค้นหามีแต่กินที่ — อปท. ส่วนใหญ่มี 5-6 เบอร์ ที่เยอะสุดตอนนี้คือ 15
 const SEARCH_THRESHOLD = 8
@@ -19,7 +21,7 @@ function ContactRow({ contact, cat }) {
        className="flex items-center gap-3 px-3 py-2.5 active:bg-gray-50 hover:bg-gray-50/70 transition-colors">
       <div className="w-9 h-9 rounded-lg flex items-center justify-center text-lg shrink-0"
            style={{ backgroundColor: cat.bg }}>
-        {contact.emoji}
+        <CategoryIcon value={contact.emoji} alt="" />
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-[15px] font-semibold text-gray-800 leading-snug">{contact.label}</p>

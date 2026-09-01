@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
+// ไอคอนสายด่วนเป็นได้ทั้งอิโมจิและรูปที่แอดมินแนบ (data URL) — ถ้า render ตรงๆ จะโชว์สตริงยาวเหยียด
+import CategoryIcon from '../datacenter/CategoryIcon'
 
 export default function EmergencyGrid() {
   const { tenant } = useTenant()
@@ -36,7 +38,7 @@ export default function EmergencyGrid() {
             <div className="w-9 h-9 rounded-full flex items-center justify-center text-lg
                             group-hover:scale-110 transition-transform"
                  style={{ backgroundColor: bg }}>
-              {emoji}
+              <CategoryIcon value={emoji} alt="" />
             </div>
             <div>
               <p className="text-sm font-extrabold leading-none" style={{ color }}>{number}</p>
