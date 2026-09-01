@@ -66,10 +66,16 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
-          VITE_GOOGLE_MAPS_MAP_ID: ${{ secrets.VITE_GOOGLE_MAPS_MAP_ID }}
           VITE_VAPID_PUBLIC_KEY: ${{ secrets.VITE_VAPID_PUBLIC_KEY }}
-          VITE_LONGDO_KEY: ${{ secrets.VITE_LONGDO_KEY }}
+          # ภาพดาวเทียมของแผนที่ — ไม่ใส่ก็ยัง deploy ได้ ระบบจะ fallback ไป Esri legacy
+          # แล้วต่อไป OSM เองตามลำดับใน src/lib/mapTiles.js (secret ที่ยังไม่ได้ตั้งจะเป็นค่าว่าง
+          # ไม่ทำให้ workflow ล้ม) ใส่เมื่อไหร่ก็ได้ แล้วสั่ง Run workflow ซ้ำเพื่อ build ใหม่
+          # ⚠️ บัญชี ArcGIS ที่ออกคีย์นี้ต้องปิด pay-as-you-go ไว้เสมอ เพื่อให้เกินโควตาฟรีแล้ว
+          #    บริการ "หยุด" ไม่ใช่ "ออกใบเรียกเก็บเงิน" (นโยบายงบ 0 บาท)
+          VITE_ARCGIS_API_KEY: ${{ secrets.VITE_ARCGIS_API_KEY }}
+          # ถอด VITE_GOOGLE_MAPS_API_KEY / VITE_GOOGLE_MAPS_MAP_ID / VITE_LONGDO_KEY ออกแล้ว
+          # ระบบเลิกใช้ Google Maps ไปตั้งแต่ b5f30b2 และไม่เคยมีโค้ดไหนอ่าน VITE_LONGDO_KEY เลย
+          # การส่ง secret ที่ไม่มีใครใช้เข้า build มีแต่เพิ่มโอกาสหลุดเข้าไปในบันเดิลโดยไม่ตั้งใจ
 
       - name: กันบันเดิลที่ปักหมุด อปท. ขึ้น production
         # ด่านสุดท้ายจริงๆ ก่อนปล่อยของ — ถ้าวันหนึ่งมีใครเผลอเพิ่ม VITE_TENANT_SLUG
