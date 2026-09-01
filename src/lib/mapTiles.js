@@ -66,40 +66,44 @@ export function createStreetLayer() {
 
 // ป้ายชื่อสถานที่ที่วางทับภาพดาวเทียม
 //
-// Static Basemap Tiles ตัวใหม่ให้ข้อมูลละเอียดกว่า legacy มาก — บนโดเมนจริงเห็นชื่อถนน
-// (อบต. แพร่ 5093, ซอย 13, ทางหลวง 1134), โรงเรียน, ตลาดกลางสหกรณ์, ปั๊ม, ลำน้ำ
-// ขณะที่ legacy มีแต่ชื่อหมู่บ้านไม่กี่ชื่อ
+// 🇹🇭 ลำดับนี้เลือก "ภาษาไทย" มาก่อน "ความละเอียดของข้อมูล" โดยตั้งใจ
 //
-// ⚠️ บริการนี้บังคับ HTTP referrer ตามที่ตั้งไว้ในคีย์ "เข้มกว่า" ibasemaps ที่ไม่บังคับเลย
-//    ทดสอบยิงด้วยคีย์เดียวกัน ต่างกันแค่ Referer:
-//      https://demo.rk-networks.com/  → ดาวเทียม 200 | ป้ายชื่อ 200
-//      http://localhost:5177/         → ดาวเทียม 200 | ป้ายชื่อ 401
-//      ไม่ส่ง Referer                  → ดาวเทียม 200 | ป้ายชื่อ 401
-//    แปลว่าบน production ใช้ตัวใหม่ได้ แต่ตอน dev ในเครื่องจะได้ 401 เสมอ ซึ่งไม่ใช่ความผิดพลาด
-//    อย่าไปแก้ด้วยการเติม localhost เข้า referrer ของคีย์ เพราะเท่ากับเปิดให้ใครก็ตามที่
-//    ตั้ง Referer เองเอาคีย์ไปใช้จนโควตาเราหมดได้
+// World_Boundaries_and_Places (ตัวแรก) แสดงชื่อเป็นอักษรไทยคู่อังกฤษ — "ห้วยทรายขาว",
+// "ทรัพย์ไพวัลย์", "วัดน้ำเลา" ซึ่งเป็นสิ่งที่ประชาชนที่มาปักหมุดแจ้งเรื่องอ่านออกจริง
 //
-// จึงให้ถอยไป legacy เองอัตโนมัติ คนที่รัน dev server จะเห็นป้ายชื่อแบบเดิมโดยไม่ต้องตั้งอะไร
-// ส่วนบน production ได้ตัวใหม่ ไม่ต้องมีสวิตช์แยกสภาพแวดล้อมให้พลาด
+// Static Basemap Tiles (ตัวสำรอง) มีข้อมูลมากกว่ามาก — ชื่อถนน (อบต.แพร่ 5093, ซอย 13,
+// ทล.1134), โรงเรียน, รพ.สต., ตลาดกลางสหกรณ์, ปั๊ม, ลำน้ำ — แต่เป็น "อังกฤษล้วน"
+// เช่น "Thung Khaeo Tambon Health Promoting Hospital" ซึ่งชาวบ้านทั่วไปอ่านไม่ออก
+// จึงใช้เป็นตัวสำรองเมื่อชั้นไทยล่ม (ยังดีกว่าไม่มีป้ายเลย) ไม่ใช่ตัวหลัก
 //
-// ⚠️ ตัวใหม่ส่ง tile 512x512 ไม่ใช่ 256 แบบ legacy จึงต้องมี tileSize/zoomOffset กำกับ
+// แก้ที่ฝั่ง Esri ไม่ได้: Basemap Styles API รองรับ 43 ภาษา ตรวจแล้วไม่มีไทย และ static
+// tile ไม่รับพารามิเตอร์ภาษาเลย (ยิง language=th / lang=th / culture=th / th-TH
+// ได้ไฟล์ขนาด 40905 ไบต์เท่ากันเป๊ะทุกแบบ) ถ้าวันหนึ่งอยากได้ทั้งไทยและละเอียด
+// ทางเดียวคือ vector tile ที่ render ป้ายเองจาก OSM (มี name:th) ซึ่งต้อง self-host
+//
+// ⚠️ ตัวสำรองบังคับ HTTP referrer เข้มกว่า ibasemaps ที่ไม่บังคับเลย — ทดสอบด้วยคีย์เดียวกัน
+//    ต่างแค่ Referer: โดเมนจริง → 200, localhost หรือไม่ส่ง → 401
+//    อย่าแก้ด้วยการเติม localhost เข้า referrer ของคีย์ เพราะเท่ากับเปิดให้ใครก็ตามที่
+//    ตั้ง Referer เองเอาคีย์ไปใช้จนโควตาเราหมด
+//
+// ⚠️ ตัวสำรองส่ง tile 512x512 ไม่ใช่ 256 จึงต้องมี tileSize/zoomOffset กำกับ
 //    ไม่งั้นป้ายจะเบลอและไปโผล่ผิดตำแหน่ง (Leaflet ถือว่า tile เป็น 256 เป็นค่าเริ่มต้น)
 export function createHybridLabelLayer() {
-  const legacy = {
-    name: 'labels-legacy',
+  const thaiLabels = {
+    name: 'labels-thai',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
     options: { maxZoom: 19 },
   }
 
-  if (!ARCGIS_KEY) return createFallbackLayer([legacy])
+  if (!ARCGIS_KEY) return createFallbackLayer([thaiLabels])
 
   return createFallbackLayer([
+    thaiLabels,
     {
-      name: 'labels-static-basemap',
+      name: 'labels-english-fallback',
       url: `https://static-map-tiles-api.arcgis.com/arcgis/rest/services/static-basemap-tiles-service/v1/arcgis/imagery/labels/static/tile/{z}/{y}/{x}?token=${encodeURIComponent(ARCGIS_KEY)}`,
       options: { maxZoom: 19, tileSize: 512, zoomOffset: -1 },
     },
-    legacy,
   ])
 }
 
