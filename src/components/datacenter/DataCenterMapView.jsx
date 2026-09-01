@@ -3,7 +3,7 @@ import { useEffect, useState, useMemo } from 'react'
 // (ตรงตามที่ commit 79f5a3c ทำกับ ClipboardList ตอนถอดเมนู) เอากลับมาพร้อมกันตอนคืนแท็บ
 import { Loader2, Database, MessageSquareWarning, Minimize2, Maximize2, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import GoogleMapCanvas from '../common/GoogleMapCanvas'
+import LeafletMapCanvas from '../common/LeafletMapCanvas'
 import { resolveGroupEmoji, resolveEntryEmoji, fetchGroupIconOverrides, isIconImage } from '../../lib/dataCenterGroupIcon'
 import CategoryIcon from './CategoryIcon'
 import { odorTimeRangeLabel } from '../../lib/odorTimeRanges'
@@ -534,7 +534,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
               <Loader2 size={28} className="animate-spin text-gray-300" />
             </div>
           ) : (
-            <GoogleMapCanvas
+            <LeafletMapCanvas
               center={mapCenter}
               zoom={mapZoom}
               mapTypeId="hybrid"

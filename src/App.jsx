@@ -26,7 +26,6 @@ const BusinessRegisterPage = lazyWithRetry(() => import('./pages/BusinessRegiste
 const MarketPage = lazyWithRetry(() => import('./pages/MarketPage'))
 const AdminLogin = lazyWithRetry(() => import('./pages/AdminLogin'))
 const DevJournal = lazyWithRetry(() => import('./pages/DevJournal'))
-const MapEngineDemoPage = lazyWithRetry(() => import('./pages/MapEngineDemoPage'))
 const AuthPage = lazyWithRetry(() => import('./pages/AuthPage'))
 const ResetPasswordPage = lazyWithRetry(() => import('./pages/ResetPasswordPage'))
 const DeviceLoginApprove = lazyWithRetry(() => import('./pages/DeviceLoginApprove'))
@@ -680,7 +679,6 @@ function AppShell() {
           } />
           <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/dev-journal" element={<DevJournal />} />
-          <Route path="/map-demo" element={<MapEngineDemoPage />} />
           <Route path="/staff" element={
             <RequireAuth staffOnly>
               <SuspenseErrorBoundary>

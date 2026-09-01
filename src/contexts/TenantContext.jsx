@@ -237,19 +237,11 @@ export function TenantProvider({ children }) {
           return
         }
 
-        // Google fields were added later than the core tenant schema. Read separately so an environment that
-        // hasn't applied that migration can still load the whole app.
-        // เฉพาะ google_maps_api_key เท่านั้นที่ต้องส่งให้ browser จริง (Google Maps JS SDK ต้องใช้ฝั่ง client
-        // ป้องกันด้วย HTTP referrer restriction บน Google Cloud Console ไม่ใช่การซ่อน) — ส่วน
-        // google_cloud_email/google_project_id เป็นข้อมูลอ้างอิงสำหรับแอดมินเท่านั้น ไม่ต้องส่งให้ผู้เยี่ยมชมทุกคน
-        // (เดิมดึงมาด้วย ทำให้ทุกคนที่เปิดเว็บเห็นอีเมล/project id ของ Google Cloud ผ่าน Network tab — แก้แล้ว
-        // ดู GoogleMapsSettings.jsx ซึ่งดึง 2 ฟิลด์นี้เองตอนแอดมินเปิดหน้าตั้งค่าแทน)
-        const { data: googleConfig, error: googleConfigError } = await supabase
-          .from('municipalities')
-          .select('google_maps_api_key')
-          .eq('id', data.id)
-          .maybeSingle()
-        const merged = googleConfigError ? data : { ...data, ...googleConfig }
+        // เดิมมี query ก้อนที่สองยิงตามมาเพื่อดึง google_maps_api_key มาให้ Google Maps JS SDK
+        // ตอนนี้ระบบใช้ Leaflet + OpenStreetMap ล้วน ไม่มีที่ไหนอ่านคีย์นี้แล้ว จึงตัดทิ้ง
+        // = ลด round-trip ไป Supabase 1 ครั้งต่อการเปิดเว็บ 1 ครั้ง ของทุก อปท.
+        // (คอลัมน์ยังอยู่ใน DB ไม่ได้ลบ เผื่อบริการ Google อื่นในอนาคต แค่ไม่ส่งมาฝั่ง browser)
+        const merged = data
         // แก้ logo_url/header_image_url ที่อาจเป็น URL Drive แบบเก่า (uc?id= หรือ lh3...=s0) ที่ถูก
         // Chromium/Edge บล็อกด้วย ORB เวลาฝังเป็น <img> — ดู toReliableImageUrl ใน driveStorage.js
         // แก้ตรงจุดเดียวตรงนี้ ครอบคลุมทุกที่ในแอปที่อ่าน tenant.logo_url / tenant.header_image_url

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Maximize2, Minimize2 } from 'lucide-react'
-import GoogleMapPicker from './common/GoogleMapPicker'
+import LeafletMapPicker from './common/LeafletMapPicker'
 
 export default function InlineMapPicker({ value, onChange, defaultCenter }) {
   const [fullscreen, setFullscreen] = useState(false)
@@ -17,7 +17,7 @@ export default function InlineMapPicker({ value, onChange, defaultCenter }) {
         </div>
       )}
       <div className={fullscreen ? 'min-h-0 flex-1 overflow-auto p-4' : ''}>
-        <GoogleMapPicker
+        <LeafletMapPicker
           initialPos={value}
           fallbackPos={defaultCenter}
           onLocationSelect={onChange}

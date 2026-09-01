@@ -5,7 +5,7 @@ import {
   Image, AlertTriangle, CheckCircle2, Calendar, Banknote, Building2,
   Search, Clock, Upload, ChevronRight, Camera, Navigation, Copy, Check, Maximize2, Minimize2,
 } from 'lucide-react'
-import GoogleMapCanvas from '../common/GoogleMapCanvas'
+import LeafletMapCanvas from '../common/LeafletMapCanvas'
 import { supabase } from '../../lib/supabase'
 import { compressImage } from '../../lib/imageUtils'
 import { logAction } from '../../lib/auditLog'
@@ -197,7 +197,7 @@ function DetailMap({ lat, lng, title, routePoints, routeColor = '#3b82f6', proje
 
   const map = className => (
     <div className="relative h-full w-full">
-      <GoogleMapCanvas center={center} zoom={15} mapTypeId="hybrid" markers={markers} polylines={polylines}
+      <LeafletMapCanvas center={center} zoom={15} mapTypeId="hybrid" markers={markers} polylines={polylines}
         fitBounds={hasRoute && viewMode === 'route'} className={className} />
       {navigationButtons}
     </div>

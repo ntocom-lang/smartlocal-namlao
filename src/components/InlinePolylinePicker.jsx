@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { LocateFixed, MapPin, Maximize2, Minimize2, Redo2, Search, Trash2, Undo2, X } from 'lucide-react'
-import GoogleMapCanvas from './common/GoogleMapCanvas'
+import { Loader2, LocateFixed, MapPin, Maximize2, Minimize2, Redo2, Search, Trash2, Undo2, X } from 'lucide-react'
+import LeafletMapCanvas from './common/LeafletMapCanvas'
+import { searchPlaces } from '../lib/nominatim'
 
 function haversine(a, b) {
   const radius = 6371000
@@ -40,9 +41,12 @@ function nearestSegmentIndex(point, path) {
 }
 
 export default function InlinePolylinePicker({ value = [], onChange, defaultCenter, color = '#3b82f6', dashArray = null }) {
-  const inputRef = useRef(null)
   const mapRef = useRef(null)
-  const autocompleteListenerRef = useRef(null)
+  const searchAbortRef = useRef(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState([])
+  const [searchError, setSearchError] = useState('')
+  const [searching, setSearching] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const [redoStack, setRedoStack] = useState([])
   // เมนูคำสั่งตอนคลิกขวา — คลิกขวาพื้นที่ว่าง = เมนู "เพิ่มจุดตรงนี้", คลิกขวาที่หมุดเดิม = เมนู "ลบจุดนี้"
@@ -90,24 +94,45 @@ export default function InlinePolylinePicker({ value = [], onChange, defaultCent
     })
   }
 
-  const handleMapReady = useCallback((map, google) => {
+  const handleMapReady = useCallback(map => {
     mapRef.current = map
-    if (!inputRef.current) return
-    autocompleteListenerRef.current?.remove?.()
-    const autocomplete = new google.maps.places.Autocomplete(inputRef.current, {
-      componentRestrictions: { country: 'th' },
-      fields: ['geometry', 'name', 'formatted_address'],
-    })
-    autocomplete.bindTo('bounds', map)
-    autocompleteListenerRef.current = autocomplete.addListener('place_changed', () => {
-      const place = autocomplete.getPlace()
-      if (!place?.geometry?.location) return
-      map.panTo(place.geometry.location)
-      map.setZoom(17)
-    })
   }, [])
 
-  useEffect(() => () => autocompleteListenerRef.current?.remove?.(), [])
+  // ค้นหาสถานที่ด้วย Nominatim — ต้องให้ผู้ใช้กดค้นหาเอง (submit) ไม่ยิงทุกตัวอักษร
+  // เพราะ Nominatim สาธารณะจำกัด 1 req/วินาที และห้าม autocomplete ตาม usage policy
+  async function handleSearch(e) {
+    e?.preventDefault()
+    const q = searchQuery.trim()
+    if (!q) return
+
+    // ยกเลิกคำค้นก่อนหน้าที่ยังค้างอยู่ กันผลลัพธ์เก่ามาถึงทีหลังแล้วทับผลใหม่
+    searchAbortRef.current?.abort()
+    const controller = new AbortController()
+    searchAbortRef.current = controller
+
+    setSearching(true)
+    try {
+      const results = await searchPlaces(q, { signal: controller.signal })
+      if (controller.signal.aborted) return
+      if (!results.length) {
+        setSearchResults([])
+        setSearchError('ไม่พบสถานที่ที่ค้นหา ลองใช้ชื่อตำบล/อำเภอ หรือชื่อสถานที่สำคัญใกล้เคียง')
+        return
+      }
+      setSearchError('')
+      setSearchResults(results)
+    } finally {
+      if (!controller.signal.aborted) setSearching(false)
+    }
+  }
+
+  function handleSelectPlace(place) {
+    setSearchResults([])
+    setSearchQuery(place.shortLabel)
+    mapRef.current?.setView([place.lat, place.lng], 17)
+  }
+
+  useEffect(() => () => searchAbortRef.current?.abort(), [])
 
   const handleMarkerDragEnd = useCallback((markerData, newPos) => {
     const idx = markerData.index
@@ -181,11 +206,44 @@ export default function InlinePolylinePicker({ value = [], onChange, defaultCent
   const content = (
     <div className={fullscreen ? 'flex h-full min-h-0 flex-col bg-white' : 'overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm'}>
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-gray-100 p-3">
-        <div className="relative min-w-[220px] flex-1">
+        <form onSubmit={handleSearch} className="relative min-w-[220px] flex-1">
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input ref={inputRef} type="search" placeholder="ค้นหาสถานที่บน Google Maps..."
-            className="w-full rounded-xl border border-gray-200 py-2 pl-9 pr-3 text-xs outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
-        </div>
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={e => { setSearchQuery(e.target.value); setSearchError('') }}
+            placeholder="ค้นหาสถานที่ แล้วกด Enter..."
+            className="w-full rounded-xl border border-gray-200 py-2 pl-9 pr-9 text-xs outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+          />
+          {searching && (
+            <Loader2 size={15} className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-blue-600" />
+          )}
+
+          {/* ผลค้นหา — คลิกแล้วเลื่อนแผนที่ไปจุดนั้น ไม่ได้เพิ่มหมุดให้เอง
+              เพราะเครื่องมือนี้ให้ผู้ใช้คลิกวางจุดเส้นทางเองทีละจุด */}
+          {searchResults.length > 0 && (
+            <ul className="absolute left-0 right-0 top-full z-30 mt-1 max-h-56 overflow-y-auto rounded-xl border border-gray-200 bg-white py-1 shadow-lg">
+              {searchResults.map((place, idx) => (
+                <li key={`${place.lat},${place.lng},${idx}`}>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPlace(place)}
+                    className="flex w-full items-start gap-2 px-3 py-2 text-left text-xs text-gray-700 hover:bg-blue-50"
+                  >
+                    <MapPin size={13} className="mt-0.5 shrink-0 text-blue-500" />
+                    <span className="line-clamp-2">{place.label}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {searchError && (
+            <p className="absolute left-0 right-0 top-full z-30 mt-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 shadow-sm">
+              {searchError}
+            </p>
+          )}
+        </form>
         <button type="button" onClick={locateMe} className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-blue-600" title="ตำแหน่งปัจจุบัน"><LocateFixed size={16} /></button>
         <button type="button" onClick={undo} disabled={!value.length} className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-600 disabled:opacity-30" title="ย้อนกลับ"><Undo2 size={16} /></button>
         <button type="button" onClick={redo} disabled={!redoStack.length} className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-600 disabled:opacity-30" title="ทำซ้ำ"><Redo2 size={16} /></button>
@@ -210,7 +268,7 @@ export default function InlinePolylinePicker({ value = [], onChange, defaultCent
           ระยะทางรวม <span className="font-mono text-sm text-blue-700">{distanceLabel}</span>
         </div>
       </div>
-      <GoogleMapCanvas
+      <LeafletMapCanvas
         center={initialCenter}
         zoom={17}
         mapTypeId="hybrid"
