@@ -291,8 +291,27 @@ async function clickButton(page, label, { exact = true } = {}) {
 const bodyText = page => page.evaluate(() => document.body.innerText)
 
 // ช่องร่วมของใบขออนุญาตใช้รถ (แบบ 3) ที่ทั้งฟอร์ม "ขออนุญาตใช้รถ" และ "บันทึกย้อนหลัง" ต้องมี
+// "ผู้ขับรถ" เป็นช่องบังคับตั้งแต่แยกบทบาทผู้ขอ/ผู้ขับ — เดิมระบบเติมชื่อคนกรอกให้เองเงียบๆ
+// ทำให้ใบขออนุญาต (แบบ 3) พิมพ์ชื่อผู้ขับผิดคน เลือกตัวเลือกแรกที่ไม่ใช่ placeholder
+// แทนการระบุชื่อตายตัว เพื่อให้ทนต่อการเปลี่ยนทะเบียนพนักงานขับรถบนสนามซ้อม
+async function selectAnyDriver(page) {
+  const optionLabel = await page.evaluate(() => {
+    const label = [...document.querySelectorAll('label')]
+      .find(el => el.offsetParent !== null && el.textContent.trim().startsWith('ผู้ขับรถ'))
+    const select = label?.parentElement?.querySelector('select')
+    const option = select ? [...select.options].find(o => o.value) : null
+    return option ? option.textContent.trim() : null
+  })
+  if (!optionLabel) {
+    throw new BlockedError('ไม่มีตัวเลือกผู้ขับรถ — ตั้งทะเบียนที่ ตั้งค่า > สิทธิ์ผู้ใช้ > พนักงานขับรถ')
+  }
+  await selectField(page, 'ผู้ขับรถ', optionLabel)
+  return optionLabel
+}
+
 async function fillForm3Fields(page, { destination, purpose, passengers = 3 }) {
   await fillFieldIfEditable(page, 'ตำแหน่งผู้ขอใช้รถ', TEST_POSITION)
+  await selectAnyDriver(page)
   await fillField(page, 'จำนวนผู้ร่วมเดินทาง', passengers)
   const destinationLabel = await page.evaluate(() =>
     [...document.querySelectorAll('label')].some(el => el.offsetParent !== null
@@ -726,7 +745,9 @@ async function checkForm3RequestPrint(baseUrl, headed) {
     await clickButton(page, 'ขออนุญาตใช้รถ')
     await page.waitForTimeout(1_000)
 
-    // ผู้ขออนุญาตต้องมาจากบัญชีที่ล็อกอิน ไม่มีช่องให้พิมพ์เอง และต้องขึ้นชื่อจริงให้เจ้าหน้าที่เห็น
+    // ผู้ขอใช้รถเลือกได้จากรายชื่อเจ้าหน้าที่ (กรณีกรอกแทนคนที่ใช้ระบบไม่คล่อง) แต่ต้อง
+    // ตั้งต้นเป็นบัญชีที่ล็อกอินเสมอ ห้ามมีช่องให้พิมพ์ชื่อเอง และต้องขึ้นชื่อจริงให้เห็น
+    // ส่วนผู้บันทึกรายการ (created_by) ระบบยึดจาก auth.uid() เท่านั้น แก้ไม่ได้
     const header = await page.evaluate(() => {
       const box = [...document.querySelectorAll('div')]
         .find(el => el.offsetParent !== null && (el.innerText || '').startsWith('ผู้ขอใช้รถ'))
@@ -745,6 +766,7 @@ async function checkForm3RequestPrint(baseUrl, headed) {
       'ฟอร์มไม่มีช่อง "ตำแหน่งผู้ขอใช้รถ" ซึ่งเป็นช่องบังคับของแบบ 3')
 
     await fillFieldIfEditable(page, 'ตำแหน่งผู้ขอใช้รถ', TEST_POSITION)
+    const driverName = await selectAnyDriver(page)
     await fillField(page, 'จำนวนผู้ร่วมเดินทาง', 3)
     await fillField(page, 'สถานที่ไป', destination)
     await fillField(page, 'ในท้องที่', TEST_LOCALITY)
@@ -832,6 +854,15 @@ async function checkForm3RequestPrint(baseUrl, headed) {
       assert.ok(!authorityBlock.includes(requesterPrinted),
         `ช่องผู้มีอำนาจสั่งใช้รถพิมพ์ชื่อผู้ขอ/คนกดอนุมัติ (${requesterPrinted}) แทนผู้ลงนามที่ตั้งค่าไว้`)
     }
+    // ชื่อในช่อง "ผู้ขับรถ" ต้องเป็นคนที่เลือกไว้ในฟอร์มจริงๆ — เดิมระบบเติม driver_id เป็น
+    // คนที่กรอกให้เองเมื่อไม่ได้เลือก ทำให้เอกสารพิมพ์ชื่อผิดคนโดยไม่มีใครรู้
+    const driverBlock = finalPrint.slice(
+      finalPrint.indexOf('ผู้ขับรถ'),
+      finalPrint.indexOf('ผู้อำนวยการกอง/หัวหน้ากอง'))
+    const driverBase = driverName.replace(/\s*\(ฉัน\)\s*/, '').replace(/\s*—.*$/, '').trim()
+    assert.ok(driverBlock.includes(driverBase),
+      `ช่องผู้ขับรถบนแบบ 3 ไม่ตรงกับที่เลือกไว้ในฟอร์ม (${driverBase})`)
+
     assert.ok(!finalPrint.includes('undefined') && !finalPrint.includes('NaN')
       && !finalPrint.includes('Invalid Date'), 'เอกสารพิมพ์มีค่าที่เรนเดอร์ไม่สำเร็จ')
 
