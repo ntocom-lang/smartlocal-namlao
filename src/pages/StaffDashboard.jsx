@@ -1,10 +1,10 @@
-import { lazy, Suspense, useState, useEffect, useCallback, useMemo } from 'react'
+import { lazy, Suspense, useState, useEffect, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Inbox, FileText, MessageSquareWarning, LogOut,
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, AlignLeft, Calendar, Hash, RefreshCw,
-  Printer, Search, Hammer, Home, CalendarDays, TrendingUp, Images, Camera,
+  Printer, Search, Hammer, LayoutDashboard, CalendarDays, TrendingUp, Images, Camera,
   Banknote, Luggage, Star, Car, Bell, Trash2, Database, BookOpen,
 } from 'lucide-react'
 import { supabase, signOutSafely } from '../lib/supabase'
@@ -84,6 +84,11 @@ const STANDALONE_GROUPS = [
       // รอออกแบบใหม่ — คอมโพเนนต์ CivilProjectAdmin/CivilProjectReport กับ branch ที่ render
       // มันยังอยู่ครบ เอากลับมาแค่ใส่ 2 บรรทัดนี้คืน
       { key: 'report',        label: 'รายงาน',           Icon: TrendingUp,    color: '#f59e0b', bg: '#fef3c7' },
+      // externalUrl (ไม่ใช่ activeModule) เพราะศูนย์ข้อมูลเป็นหน้าแยกที่ route /data-center/staff
+      // เดิมคีย์นี้ไม่มีในลิสต์เลย ถูก hardcode เป็นปุ่มใน sidebar อย่างเดียว ผลคือหน้าแดชบอร์ด
+      // (ที่ไล่เมนูจาก visibleGroups) หามันไม่เจอ — "เมนูใช้งานด่วน" เหลือ 2 ปุ่ม และบนมือถือที่ไม่มี
+      // sidebar เหลือทางเข้าเดียวคือไอคอนเล็กๆ บน header ที่ไม่มีป้ายชื่อ
+      { key: 'data-center', label: 'ศูนย์รวมข้อมูลดิจิทัล', Icon: Database, color: '#0284c7', bg: '#e0f2fe', externalUrl: '/data-center/staff' },
       { key: 'fleet',    label: 'ยานพาหนะ/น้ำมัน',  Icon: Car,           color: '#0369a1', bg: '#e0f2fe' },
     ],
   },
@@ -1526,13 +1531,6 @@ export default function StaffDashboard() {
   const [newComplaintCount, setNewComplaintCount] = useState(0)
   // null = ยังไม่รู้ ใช้กันไม่ให้ badge ของแอดมินโชว์ตัวเลขผิดระหว่างรอผลหมวดเฉพาะกิจ
   const [adhocCategories, setAdhocCategories] = useState(null)
-  // C_CAT/C_CAT_META เป็น module-level object ที่ ComplaintsStaffModule mutate ในตัวเองอยู่แล้ว
-  // (ไม่ reassign ทั้งก้อน) แต่หน้า overview (StaffOperationalDashboard) เคย render ก่อนที่ผู้ใช้
-  // จะเปิดแท็บคำร้องเลยสักครั้ง จึงเห็นแค่ 8 หมวดเดิมที่ hardcode ไว้ (ทำให้ประเภทอื่นเช่น
-  // "grievance" โผล่เป็นค่าดิบภาษาอังกฤษ) — ดึงซ้ำที่ root ให้พร้อมตั้งแต่โหลดแดชบอร์ดครั้งแรก
-  // แล้ว bump version เพื่อ spread C_CAT เป็น object ใหม่ ไม่งั้น useMemo ปลายทางจะไม่เห็นว่าเปลี่ยน
-  // (mutate in place ที่เดิม reference เดิม เทียบด้วย Object.is แล้วดูเหมือนไม่เปลี่ยน)
-  const [complaintCatVersion, setComplaintCatVersion] = useState(0)
 
   const allModuleKeys = MODULES.map(m => m.key)
   // คีย์ที่ตั้งเปิด-ปิดรายหน่วยงานได้ มาจากลิสต์กลางที่ ModuleManager (หน้า admin) ใช้ร่วมกัน
@@ -1587,29 +1585,8 @@ export default function StaffDashboard() {
     }))
   }, [tenant?.fee_schedule?._custom_types])
 
-  useEffect(() => {
-    if (!tenant?.id) return
-    supabase.from('complaint_categories').select('value, label, emoji, color, text_color').eq('municipality_id', tenant.id)
-      .then(({ data }) => {
-        if (data && data.length > 0) {
-          for (const c of data) {
-            C_CAT[c.value] = c.label
-            C_CAT_META[c.value] = {
-              emoji: c.emoji || C_CAT_META[c.value]?.emoji || '📝',
-              color: c.color || C_CAT_META[c.value]?.color || '#f3f4f6',
-              textColor: c.text_color || C_CAT_META[c.value]?.textColor || '#6b7280',
-            }
-          }
-          setComplaintCatVersion(v => v + 1)
-        }
-      })
-  }, [tenant?.id])
-
-  // spread เป็น object ใหม่เฉพาะตอน version เปลี่ยนจริง (ไม่ใช่ทุก re-render ของ StaffDashboard
-  // ที่เกิดถี่จาก pendingCount/newComplaintCount polling) กัน workQueue useMemo ปลายทางคำนวณทิ้งเปล่าๆ
-  // complaintCatVersion เป็นแค่ตัวกระตุ้นให้ spread C_CAT ใหม่ตอนดึงข้อมูลเสร็จ ไม่ได้ใช้ค่าจริงในนี้
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const complaintLabelsSnapshot = useMemo(() => ({ ...C_CAT }), [complaintCatVersion])
+  // (ถอด prefetch complaint_categories ระดับ root ออก 2026-09-02 พร้อมกับ "งานรอรับเรื่อง"
+  //  ที่เป็นผู้ใช้เพียงรายเดียว — ComplaintsStaffModule ดึงชุดเดียวกันเองตอนเปิดแท็บคำร้องอยู่แล้ว)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -1733,18 +1710,22 @@ export default function StaffDashboard() {
   return (
     <div className="min-h-full" style={{ backgroundColor: '#eef2f7' }}>
 
-      {/* Mobile header — เหมือนหน้าหลักประชาชน กันสับสนตอนสลับโหมด */}
+      {/* Mobile header — เดิมทำหน้าตาให้เหมือนหน้าประชาชน "กันสับสนตอนสลับโหมด" แต่กลับย้อนศร:
+          เจ้าหน้าที่แยกไม่ออกว่าตัวเองอยู่โหมดไหน (ฝั่ง PC มีป้าย "ระบบเจ้าหน้าที่" ชัดเจนแต่มือถือไม่มี)
+          2026-09-02 จึงใส่ป้าย "ระบบเจ้าหน้าที่" ชุดเดียวกับ PC ส่วนโลโก้ยังกลับหน้าแรกเหมือนเดิม */}
       <header className="md:hidden text-white px-4 pt-3 pb-4 relative overflow-hidden shrink-0"
         style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%)' }}>
         <div className="flex items-center gap-3 relative z-10">
-          <button onClick={() => navigate('/')} className="shrink-0 active:opacity-70 transition-opacity">
+          {/* กดโลโก้ = กลับหน้าแรกฝั่งประชาชน (พฤติกรรมเดิมของทุกหน้าในระบบ) — ป้าย "ระบบเจ้าหน้าที่"
+              ข้างล่างทำหน้าที่บอกโหมดแทน จึงไม่ต้องมีปุ่มออกแยกอีกปุ่ม */}
+          <button onClick={() => navigate('/')} aria-label="กลับหน้าแรก" className="shrink-0 active:opacity-70 transition-opacity">
             {tenant?.logo_url
               ? <img src={tenant.logo_url} alt="โลโก้" className="w-11 h-11 rounded-full object-contain bg-white/10 p-0.5 border border-white/20" />
               : <div className="w-11 h-11 rounded-full border-2 border-white/40 bg-white/20 flex items-center justify-center text-lg font-bold">{tenant?.name?.[0] ?? '?'}</div>}
           </button>
           <div className="flex-1 min-w-0">
             <p className="font-bold text-sm leading-tight truncate">{tenant?.name ?? 'Staff Portal'}</p>
-            <p className="text-white/70 text-[11px] mt-0.5">สำหรับเจ้าหน้าที่</p>
+            <span className="mt-1 inline-block rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest">ระบบเจ้าหน้าที่</span>
           </div>
           {enabledKeys.includes('data-center') && (
             <button onClick={() => navigate('/data-center/staff')} aria-label="ศูนย์รวมข้อมูลดิจิทัล" className="p-1.5 text-white/85 hover:text-white transition-colors shrink-0">
@@ -1812,16 +1793,11 @@ export default function StaffDashboard() {
             <nav className="flex-1 px-3 py-4 overflow-y-auto">
               <button onClick={() => setActiveModule('home')}
                 className={`mb-2 flex min-h-9 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60 ${activeModule === 'home' ? 'bg-white/20 text-white shadow-sm' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}>
-                <Home size={16} strokeWidth={activeModule === 'home' ? 2.2 : 1.8} />
-                <span className="flex-1 text-left text-xs">หน้าหลัก</span>
+                <LayoutDashboard size={16} strokeWidth={activeModule === 'home' ? 2.2 : 1.8} />
+                <span className="flex-1 text-left text-xs">แดชบอร์ด</span>
               </button>
-              {enabledKeys.includes('data-center') && (
-                <button onClick={() => navigate('/data-center/staff')}
-                  className="mb-2 flex min-h-9 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-all text-white/80 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60">
-                  <Database size={16} strokeWidth={1.8} />
-                  <span className="flex-1 text-left text-xs">ศูนย์รวมข้อมูลดิจิทัล</span>
-                </button>
-              )}
+              {/* ศูนย์รวมข้อมูลดิจิทัลย้ายไปอยู่ในกลุ่ม "แผนงานและทรัพยากรกลาง" ของ STANDALONE_GROUPS
+                  แล้ว (2026-09-02) — ปุ่ม hardcode ตรงนี้จึงถูกถอดออก ไม่งั้นขึ้นซ้ำ 2 บรรทัด */}
               {visibleStandaloneGroups.map(({ group, items }) => (
                 <div key={group} className="mb-3">
                   <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-widest text-white/55">{group}</p>
@@ -1891,13 +1867,9 @@ export default function StaffDashboard() {
                 key={tenant?.id}
                 visibleGroups={visibleHomeGroups}
                 setActiveModule={setActiveModule}
-                tenant={tenant}
                 profile={profile}
                 pendingCount={pendingCount}
-                newComplaintCount={newComplaintCount}
                 navigate={navigate}
-                docTypes={getAllDocTypes()}
-                complaintLabels={complaintLabelsSnapshot}
                 onCreateManagementEvent={() => {
                   setAutoCreateEventSignal(signal => signal + 1)
                   setActiveModule('events')
@@ -1954,7 +1926,7 @@ export default function StaffDashboard() {
             paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 6px)',
           }}>
           {[
-            { key: 'home',       label: 'หน้าหลัก',   Icon: Home },
+            { key: 'home',       label: 'แดชบอร์ด',   Icon: LayoutDashboard },
             { key: 'inbox',      label: 'คำขอเอกสาร', Icon: FileText },
             { key: 'complaints', label: 'คำร้อง',      Icon: MessageSquareWarning },
             { key: 'events',     label: 'ปฏิทินกิจกรรม', Icon: CalendarDays },
@@ -1985,8 +1957,9 @@ export default function StaffDashboard() {
               </button>
             )
           })}
-          {/* รายงาน */}
-          {(() => {
+          {/* รายงาน — ต้องกรองด้วย visibleModules เหมือนปุ่มอื่น ไม่งั้นเป็นปุ่มหลอกใน อปท.
+              ที่ปิดโมดูลรายงานไว้ (หลักการ: ปิดโมดูลแล้วต้องหายทั้งระบบ) */}
+          {visibleModules.some(m => m.key === 'report') && (() => {
             const isActive = activeModule === 'report'
             return (
               <button onClick={() => setActiveModule('report')}
