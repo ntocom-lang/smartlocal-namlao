@@ -201,7 +201,7 @@ export default function FleetReport({ tenant }) {
     try {
       const endDay = nextDay(rangeTo)
       const tripResult = await fetchAllRows(() => supabase.from('fleet_trips')
-        .select('id,trip_date,depart_time,return_time,started_at,returned_at,odometer_start,odometer_end,distance_km,destination,notes,backdated_reason,driver:profiles!fleet_trips_driver_id_fkey(id,full_name),requester:profiles!fleet_trips_created_by_fkey(id,full_name)')
+        .select('id,trip_date,depart_time,return_time,started_at,returned_at,odometer_start,odometer_end,distance_km,destination,notes,backdated_reason,driver:profiles!fleet_trips_driver_id_fkey(id,full_name),requester:profiles!fleet_trips_requested_by_fkey(id,full_name),creator:profiles!fleet_trips_created_by_fkey(id,full_name)')
         .eq('municipality_id', tenant.id)
         .eq('vehicle_id', selVehicle)
         .eq('status', 'completed')

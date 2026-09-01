@@ -28,15 +28,37 @@ const STATUS_CLR = {
 const inp = 'w-full px-3 py-2.5 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent'
 const sel = inp + ' appearance-none'
 
-const SELECT = `*, vehicle:fleet_vehicles(id,name,license_plate,asset_code,asset_kind,meter_unit), driver:profiles!fleet_trips_driver_id_fkey(id,full_name), requester:profiles!fleet_trips_created_by_fkey(id,full_name,job_title,position:positions(name)), approver:profiles!fleet_trips_approved_by_fkey(full_name,job_title,position:positions(name)), departments(name,short_name)`
-
-function userOptionLabel(profile, currentUserId) {
-  const name = profile.full_name?.trim() || profile.email?.trim() || `ผู้ใช้ ${profile.id.slice(0, 8)}`
-  return `${name}${profile.id === currentUserId ? ' (ฉัน)' : ''}`
-}
+// requester = ผู้ขอใช้รถตัวจริง (ชื่อบนแบบ 3) — ผูกกับ requested_by ไม่ใช่ created_by แล้ว
+// creator = ผู้บันทึกรายการ เก็บไว้แสดงกำกับเมื่อมีการกรอกแทนกัน
+const SELECT = `*, vehicle:fleet_vehicles(id,name,license_plate,asset_code,asset_kind,meter_unit), driver:profiles!fleet_trips_driver_id_fkey(id,full_name), requester:profiles!fleet_trips_requested_by_fkey(id,full_name,job_title,position:positions(name)), creator:profiles!fleet_trips_created_by_fkey(id,full_name), approver:profiles!fleet_trips_approved_by_fkey(full_name,job_title,position:positions(name)), departments(name,short_name)`
 
 function profilePosition(profile) {
   return profile?.job_title?.trim() || profile?.position?.name?.trim() || ''
+}
+
+// ป้ายชื่อในช่อง "ผู้ขับรถ" — ใบขับขี่หมดอายุขึ้นเตือนแต่ยังเลือกได้
+// บล็อกไม่ได้เพราะ อปท. หลายแห่งต่ออายุช้ากว่าภารกิจ ถ้าบล็อกคือรถออกไม่ได้เลย
+// หน้าที่ของระบบคือทำให้คนกดเห็นและมีร่องรอยว่าเห็นแล้ว ไม่ใช่ตัดสินใจแทน
+function driverOptionLabel(driver, currentUserId) {
+  const name = driver.full_name?.trim() || `ผู้ใช้ ${String(driver.profile_id ?? '').slice(0, 8)}`
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date())
+  const expired = driver.license_expires_on && driver.license_expires_on < today
+  return `${name}${driver.profile_id === currentUserId ? ' (ฉัน)' : ''}${expired ? ' — ใบขับขี่หมดอายุ' : ''}`
+}
+
+// error code จาก trigger fleet_guard_trip_write() — Postgres คืนมาเป็นสตริงดิบ
+// ถ้าไม่แปลง เจ้าหน้าที่จะเห็น "FLEET_TRIP_CANCEL_REQUIRES_OWNER" ซึ่งอ่านไม่รู้เรื่อง
+const TRIP_ERROR_TH = {
+  FLEET_TRIP_CANCEL_REQUIRES_OWNER:   'ยกเลิกได้เฉพาะคำขอของตัวท่านเอง หรือให้ผู้ดูแลระบบยานพาหนะเป็นผู้ยกเลิก',
+  FLEET_TRIP_DRIVER_OUTSIDE_TENANT:   'ผู้ขับรถที่เลือกไม่ได้อยู่ในสังกัดนี้ กรุณาเลือกใหม่',
+  FLEET_TRIP_REQUESTER_INVALID:       'ผู้ขอใช้รถที่เลือกไม่ได้อยู่ในสังกัดนี้ หรือไม่ใช่เจ้าหน้าที่ กรุณาเลือกใหม่',
+  FLEET_TRIP_PROGRESS_REQUIRES_OWNER: 'บันทึกออก/กลับได้เฉพาะผู้ขอใช้รถ ผู้ขับรถ หรือผู้ดูแลระบบยานพาหนะ',
+  FLEET_TRIP_APPROVAL_REQUIRES_MANAGER: 'อนุมัติหรือปฏิเสธได้เฉพาะผู้ดูแลระบบยานพาหนะ',
+}
+function tripErrorMessage(error) {
+  const raw = error?.message ?? ''
+  const hit = Object.keys(TRIP_ERROR_TH).find(code => raw.includes(code))
+  return hit ? TRIP_ERROR_TH[hit] : raw
 }
 
 // เลือกผู้ลงนามแถวที่ "มีผลวันนี้" ตามเวลาไทย — คิดฝั่ง client เพราะแถวมีไม่กี่แถว
@@ -99,13 +121,13 @@ function fmtDate(str) {
 }
 
 const EMPTY_RESERVE = {
-  vehicle_id: '', driver_id: '', department_id: '',
+  vehicle_id: '', driver_id: '', department_id: '', requested_by: '',
   planned_departure: '', planned_return: '',
   destination: '', destination_locality: '', destination_province: '',
   purpose: '', passengers: 1, requester_position: '',
 }
 const EMPTY_DIRECT = {
-  vehicle_id: '', driver_id: '', department_id: '',
+  vehicle_id: '', driver_id: '', department_id: '', requested_by: '',
   started_at: '', returned_at: '',
   odometer_start: '', odometer_end: '',
   destination: '', destination_locality: '', destination_province: '',
@@ -396,6 +418,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   const [history,      setHistory]      = useState([])
   const [historyCount, setHistoryCount] = useState(0)
   const [staffList, setStaffList] = useState([])
+  // ทะเบียนพนักงานขับรถของ อปท. นี้ (fleet_drivers_directory) — ว่างได้ถ้ายังไม่ตั้งค่า
+  const [driverList, setDriverList] = useState([])
   const [requesterProfile, setRequesterProfile] = useState(null)
   const [orderAuthority, setOrderAuthority] = useState(null)
 
@@ -466,7 +490,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   useEffect(() => {
     if (!tenant?.id) return
     Promise.all([
-      supabase.from('profiles').select('id,full_name,email,department_id')
+      supabase.from('profiles').select('id,full_name,email,department_id,job_title,position:positions(name)')
         .eq('municipality_id', tenant.id)
         .not('fleet_role', 'is', null)
         .order('full_name'),
@@ -482,11 +506,16 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
         .eq('municipality_id', tenant.id).eq('signatory_role', 'mayor')
         .eq('document_type', 'complaint').eq('is_active', true)
         .is('department_id', null),
-    ]).then(([{ data: s }, { data: v }, { data: requester }, { data: signatories }]) => {
+      // ทะเบียนพนักงานขับรถ — คนละแกนกับ fleet_role (สิทธิ์ในระบบ) อ่านผ่าน view
+      // ที่ตัดเลขใบขับขี่ออกแล้วตาม PDPA เจ้าหน้าที่ทั่วไปไม่ต้องเห็นเลขใบขับขี่
+      supabase.from('fleet_drivers_directory').select('profile_id,full_name,license_expires_on')
+        .eq('municipality_id', tenant.id).eq('status', 'active').order('full_name'),
+    ]).then(([{ data: s }, { data: v }, { data: requester }, { data: signatories }, { data: drivers }]) => {
       setStaffList(s ?? [])
       setVehicles(v ?? [])
       setRequesterProfile(requester ?? null)
       setOrderAuthority(resolveActiveSignatory(signatories))
+      setDriverList(drivers ?? [])
     })
   }, [tenant?.id, user?.id])
 
@@ -580,8 +609,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     setSelTrip(null)
     setForm({
       ...EMPTY_RESERVE,
-      driver_id: user?.id ?? '',
+      driver_id: '',
       department_id: fleetInfo?.department_id ?? '',   // deptLocked บังคับใช้ค่านี้เสมอตอน submit
+      requested_by: user?.id ?? '',
       requester_position: profilePosition(requesterProfile),
       destination_province: tenant?.province || '',
       planned_departure: toLocalDT(dep),
@@ -607,6 +637,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       destination_province: t.destination_province || tenant?.province || '',
       purpose: t.purpose || '',
       passengers: t.passengers ?? 1,
+      requested_by: t.requested_by || t.created_by || user?.id || '',
       requester_position: t.requester_position || profilePosition(t.requester) || profilePosition(requesterProfile),
     })
     setConflict(null)
@@ -652,8 +683,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     if (missingDept) return alert('บัญชีของคุณยังไม่ได้กำหนดกอง/หน่วยงาน จึงยังบันทึกการใช้รถไม่ได้ — กรุณาให้ผู้ดูแลระบบกำหนดกองให้ก่อน (ตั้งค่า > เจ้าหน้าที่ยานพาหนะ)')
     setForm({
       ...EMPTY_DIRECT,
-      driver_id: user?.id ?? '',
+      driver_id: '',
       department_id: fleetInfo?.department_id ?? '',   // deptLocked บังคับใช้ค่านี้เสมอตอน submit
+      requested_by: user?.id ?? '',
       requester_position: profilePosition(requesterProfile),
       destination_province: tenant?.province || '',
       started_at: toLocalDT(new Date()),
@@ -666,6 +698,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     if (!form.vehicle_id || !form.planned_departure || !form.planned_return
         || !form.destination || !form.destination_locality || !form.destination_province || !form.purpose)
       return alert('กรุณากรอกข้อมูลให้ครบ')
+    if (!form.requested_by)
+      return alert('กรุณาเลือกผู้ขอใช้รถ')
+    if (!form.driver_id)
+      return alert('กรุณาเลือกผู้ขับรถ')
     const passengerCount = Number(form.passengers)
     if (!Number.isInteger(passengerCount) || passengerCount < 1 || passengerCount > 100)
       return alert('จำนวนผู้ร่วมเดินทางต้องเป็นจำนวนเต็ม 1–100 คน')
@@ -689,7 +725,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     setSaving(true)
     const payload = {
       vehicle_id: form.vehicle_id,
-      driver_id: form.driver_id || user?.id,
+      driver_id: form.driver_id,
       department_id: deptLocked ? (myDeptId || null) : (form.department_id || null),
       trip_date: form.planned_departure.slice(0, 10),   // วันที่ตามที่ผู้ใช้กรอก (เวลาไทย)
       planned_departure: toISO(form.planned_departure),
@@ -699,6 +735,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       destination_province: form.destination_province.trim(),
       purpose: form.purpose.trim(),
       passengers: passengerCount,
+      requested_by: form.requested_by || user?.id,
       requester_position: requesterPosition,
     }
     const { error } = isEdit
@@ -710,7 +747,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
           status: 'pending',
         })
     setSaving(false)
-    if (error) return alert(error.message)
+    if (error) return alert(tripErrorMessage(error))
     if (isEdit) {
       logAction({
         action: 'update', resourceType: 'fleet_trip', resourceId: selTrip.id,
@@ -735,6 +772,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   async function submitOverrideReserve() {
     if (!isAdmin || !conflict?.trips?.length) return
     if (!overrideReason.trim()) return alert('กรุณาระบุเหตุผลความจำเป็นเร่งด่วน')
+    if (!form.requested_by)
+      return alert('กรุณาเลือกผู้ขอใช้รถ')
+    if (!form.driver_id)
+      return alert('กรุณาเลือกผู้ขับรถ')
     const passengerCount = Number(form.passengers)
     if (!Number.isInteger(passengerCount) || passengerCount < 1 || passengerCount > 100)
       return alert('จำนวนผู้ร่วมเดินทางต้องเป็นจำนวนเต็ม 1–100 คน')
@@ -753,7 +794,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     const { data, error } = await supabase.rpc('fleet_override_booking', {
       p_municipality_id:   tenant.id,
       p_vehicle_id:        form.vehicle_id,
-      p_driver_id:         form.driver_id || user?.id,
+      p_driver_id:         form.driver_id,
       p_department_id:     form.department_id || null,
       p_planned_departure: toISO(form.planned_departure),
       p_planned_return:    toISO(form.planned_return),
@@ -764,9 +805,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       p_reason:            overrideReason.trim(),
       p_passengers:        passengerCount,
       p_requester_position: requesterPosition,
+      p_requested_by:      form.requested_by || user?.id,
     })
     setSaving(false)
-    if (error) return alert('อนุมัติใช้รถแทนคิวเดิมไม่สำเร็จ: ' + error.message)
+    if (error) return alert('อนุมัติใช้รถแทนคิวเดิมไม่สำเร็จ: ' + tripErrorMessage(error))
 
     const result = Array.isArray(data) ? data[0] : data
     const newTripId = result?.new_trip_id
@@ -800,6 +842,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     if (!form.vehicle_id || !form.started_at || !form.destination
         || !form.destination_locality || !form.destination_province || !form.purpose)
       return alert('กรุณากรอกข้อมูลให้ครบ')
+    if (!form.requested_by)
+      return alert('กรุณาเลือกผู้ขอใช้รถ')
+    if (!form.driver_id)
+      return alert('กรุณาเลือกผู้ขับรถ')
     // ต้องอธิบายได้ว่าทำไมจึงไม่ได้ขออนุญาตล่วงหน้า ไม่งั้นเอกสารที่พิมพ์ออกมาจะเป็นใบที่
     // ไม่มีใครอนุมัติและไม่มีคำอธิบาย (DB บังคับซ้ำด้วย FLEET_TRIP_BACKDATED_REQUIRES_REASON)
     const backdatedReason = form.backdated_reason?.trim() || ''
@@ -829,7 +875,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     const { error } = await supabase.from('fleet_trips').insert({
       municipality_id: tenant.id,
       vehicle_id: form.vehicle_id,
-      driver_id: form.driver_id || user?.id,
+      driver_id: form.driver_id,
       created_by: user?.id,
       department_id: deptLocked ? (myDeptId || null) : (form.department_id || null),
       trip_date: form.started_at.slice(0, 10),   // วันที่ตามที่ผู้ใช้กรอก (เวลาไทย)
@@ -842,23 +888,38 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       destination_province: form.destination_province.trim(),
       purpose: form.purpose.trim(),
       passengers: passengerCount,
+      requested_by: form.requested_by || user?.id,
       requester_position: requesterPosition,
       notes: form.notes || null,
       backdated_reason: backdatedReason,
       status: 'completed',
     })
     setSaving(false)
-    if (error) return alert(error.message)
+    if (error) return alert(tripErrorMessage(error))
     setModal(null)
     loadTrips()
   }
 
   /* ── Admin approve/reject ── */
+  // ผู้อนุมัติเป็นผู้ขอเองได้ (ผู้ใช้ระบบตัดสินใจไว้ เพราะ อปท. ส่วนใหญ่มีผู้มีอำนาจอนุมัติคนเดียว)
+  // แต่ต้องเห็นตอนตรวจย้อนหลัง จึงเตือนก่อนกดและติดธง self_approved ลง audit log
   async function handleApprove(t) {
-    if (!confirm(`อนุมัติคำขอใช้รถ "${t.vehicle?.name}" ให้ ${t.driver?.full_name}?`)) return
+    const selfApproved = isRequester(t)
+    const warn = selfApproved
+      ? '\n\n⚠️ คำขอนี้ท่านเป็นผู้ยื่นเอง ระบบจะบันทึกไว้ว่าเป็นการอนุมัติคำขอของตนเอง'
+      : ''
+    if (!confirm(`อนุมัติคำขอใช้รถ "${t.vehicle?.name}" ให้ ${t.driver?.full_name}?${warn}`)) return
     const { error } = await supabase.from('fleet_trips').update({ status: 'approved', approved_by: user?.id, approved_at: new Date().toISOString() }).eq('id', t.id)
-    if (error) return alert('อนุมัติไม่สำเร็จ: ' + error.message)
-    logAction({ action: 'approve', resourceType: 'fleet_trip', resourceId: t.id, resourceLabel: `${t.vehicle?.name} — ${t.destination}`, municipalityId: tenant.id })
+    if (error) return alert('อนุมัติไม่สำเร็จ: ' + tripErrorMessage(error))
+    logAction({
+      action: 'approve', resourceType: 'fleet_trip', resourceId: t.id,
+      resourceLabel: `${t.vehicle?.name} — ${t.destination}`, municipalityId: tenant.id,
+      metadata: {
+        self_approved: selfApproved,
+        requested_by: t.requested_by ?? t.created_by ?? null,
+        created_by: t.created_by ?? null,
+      },
+    })
     loadTrips()
   }
   // ปฏิเสธต้องระบุเหตุผลเสมอ — ผู้ขอใช้รถต้องรู้ว่าถูกปฏิเสธเพราะอะไร และต้องเหลือร่องรอย
@@ -881,7 +942,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       approved_at: new Date().toISOString(),
     }).eq('id', selTrip.id)
     setSaving(false)
-    if (error) return alert('ปฏิเสธไม่สำเร็จ: ' + error.message)
+    if (error) return alert('ปฏิเสธไม่สำเร็จ: ' + tripErrorMessage(error))
     logAction({ action: 'reject', resourceType: 'fleet_trip', resourceId: selTrip.id,
       resourceLabel: `${selTrip.vehicle?.name} — ${selTrip.destination}`,
       municipalityId: tenant.id, metadata: { reason } })
@@ -911,7 +972,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       approved_at: new Date().toISOString(),
     }).eq('id', selTrip.id)
     setSaving(false)
-    if (error) return alert('ยกเลิกไม่สำเร็จ: ' + error.message)
+    if (error) return alert('ยกเลิกไม่สำเร็จ: ' + tripErrorMessage(error))
     logAction({ action: 'cancel', resourceType: 'fleet_trip', resourceId: selTrip.id,
       resourceLabel: `${selTrip.vehicle?.name} — ${selTrip.destination}`,
       municipalityId: tenant.id, metadata: { reason, cancelled_by: 'ผู้ขอใช้รถ' } })
@@ -936,7 +997,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       odometer_start: startMeter,
     }).eq('id', selTrip.id)
     setSaving(false)
-    if (error) return alert(error.message)
+    if (error) return alert(tripErrorMessage(error))
     setModal(null); setSelTrip(null)
     loadTrips()
   }
@@ -958,7 +1019,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       notes: form.notes || null,
     }).eq('id', selTrip.id)
     setSaving(false)
-    if (error) return alert(error.message)
+    if (error) return alert(tripErrorMessage(error))
     setModal(null); setSelTrip(null)
     loadTrips()
   }
@@ -973,7 +1034,107 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
 
   /* ── Derived ── */
   const active  = trips   // โหลดมาเฉพาะสถานะที่ยังดำเนินอยู่แล้ว ไม่ต้อง filter ซ้ำ
-  const isOwner = t => t.driver_id === user?.id
+
+  // ผู้ขอใช้รถ (created_by) กับ ผู้ขับรถ (driver_id) เป็นคนละคน — เดิมโค้ดนี้เป็น
+  // isOwner = driver_id === uid ตัวเดียวคุมทั้งถอนคำขอ/บันทึกออก/บันทึกกลับ/แก้ไข
+  // ซึ่งเข้มกว่า trigger fleet_guard_trip_write() ที่ยอมทั้ง driver_id และ created_by อยู่แล้ว
+  // ผลคือพอผู้ขอมอบให้คนอื่นขับ ตัวผู้ขอเองกดอะไรกับคำขอตัวเองไม่ได้เลย
+  // นับทั้งผู้ขอตัวจริงและคนที่กรอกแทน — ทั้งคู่ต้องแตะคำขอใบนี้ได้ (ตรงกับ trigger ฝั่ง DB)
+  // ทริปเก่าก่อนมี requested_by จะเป็น null จึงถอยไปดู created_by
+  const isRequester = t => t.created_by === user?.id
+    || (t.requested_by ?? t.created_by) === user?.id
+  const isDriver    = t => t.driver_id  === user?.id
+
+  // อปท. ที่ยังไม่ได้ตั้งทะเบียนพนักงานขับรถต้องใช้งานต่อได้ ไม่งั้นการ deploy รอบนี้
+  // จะทำให้ทุก อปท. บันทึกการใช้รถไม่ได้จนกว่าจะมีคนไปตั้งค่าให้ครบก่อน
+  const driverFallback = driverList.length === 0
+  const driverOptions = driverFallback
+    ? staffList.map(s => ({ profile_id: s.id, full_name: s.full_name || s.email, license_expires_on: null }))
+    : driverList
+
+  // แก้ไขทริปเก่าที่คนขับถูกถอดออกจากทะเบียน (หรือตั้งเป็นพักใช้) แล้ว — ค่าใน state
+  // ยังถูกต้องแต่ไม่มี option ให้ตรง <select> จึงแสดงเป็นช่องว่างทั้งที่ยังมีค่าอยู่
+  // ต่อท้ายเป็นตัวเลือกพิเศษไว้ ไม่งั้นผู้ใช้เห็น "ยังไม่ได้เลือก" แล้วกดบันทึกทับด้วยค่าเดิมโดยไม่รู้ตัว
+  const currentDriverMissing = form.driver_id
+    && !driverOptions.some(d => d.profile_id === form.driver_id)
+  const driverFieldOptions = currentDriverMissing
+    ? [...driverOptions, {
+        profile_id: form.driver_id,
+        full_name: `${selTrip?.driver?.full_name ?? 'ผู้ขับรถเดิม'} (นอกทะเบียนปัจจุบัน)`,
+        license_expires_on: null,
+      }]
+    : driverOptions
+
+  const driverField = (
+    <div>
+      <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้ขับรถ *</label>
+      <select value={form.driver_id ?? ''} onChange={set('driver_id')} className={sel}>
+        <option value="">— เลือกผู้ขับรถ —</option>
+        {driverFieldOptions.map(d => (
+          <option key={d.profile_id} value={d.profile_id}>{driverOptionLabel(d, user?.id)}</option>
+        ))}
+      </select>
+      {driverFallback && (
+        <p className="mt-1 text-[10px] text-amber-600">
+          ยังไม่ได้ตั้งทะเบียนพนักงานขับรถ — แสดงรายชื่อเจ้าหน้าที่ทั้งหมดชั่วคราว
+          (ตั้งค่า &gt; สิทธิ์ผู้ใช้ &gt; พนักงานขับรถ)
+        </p>
+      )}
+    </div>
+  )
+
+  // ผู้ขอใช้รถ = คนที่ชื่อขึ้นบนใบขออนุญาต (แบบ 3) และเป็นผู้ลงนาม ซึ่งอาจไม่ใช่คนที่กดในระบบ
+  // เจ้าหน้าที่อาวุโสที่ใช้ระบบไม่คล่องจึงฝากเพื่อนร่วมงานกรอกแทนได้ โดยระบบยังเก็บไว้ว่าใครเป็นคนกด
+  // ผู้ดูแลระบบของ อปท. (role = 'admin') อาจไม่มี fleet_role จึงไม่อยู่ใน staffList — เติมตัวเองเข้าไปเสมอ
+  const requesterOptions = (user?.id && !staffList.some(s => s.id === user.id))
+    ? [{ id: user.id, full_name: myDisplayName, job_title: requesterProfile?.job_title,
+         position: requesterProfile?.position }, ...staffList]
+    : staffList
+
+  const pickedRequester = requesterOptions.find(s => s.id === form.requested_by) ?? null
+  const delegating = !!form.requested_by && form.requested_by !== user?.id
+  const autoPosition = form.requested_by === user?.id
+    ? (profilePosition(requesterProfile) || profilePosition(pickedRequester))
+    : profilePosition(pickedRequester)
+
+  function pickRequester(e) {
+    const id = e.target.value
+    const picked = requesterOptions.find(s => s.id === id)
+    const pos = id === user?.id
+      ? (profilePosition(requesterProfile) || profilePosition(picked))
+      : profilePosition(picked)
+    setForm(f => ({ ...f, requested_by: id, requester_position: pos }))
+  }
+
+  const requesterField = (
+    <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 space-y-2">
+      <div>
+        <label className="text-xs font-semibold text-blue-600 mb-1 block">ผู้ขอใช้รถ *</label>
+        <select value={form.requested_by ?? ''} onChange={pickRequester}
+          disabled={!!selTrip && selTrip.status !== 'pending'}
+          className={sel + ((!!selTrip && selTrip.status !== 'pending') ? ' bg-gray-50 text-gray-500 cursor-not-allowed' : '')}>
+          <option value="">— เลือกผู้ขอใช้รถ —</option>
+          {requesterOptions.map(s => (
+            <option key={s.id} value={s.id}>
+              {(s.full_name?.trim() || s.email || 'ไม่ระบุชื่อ')}{s.id === user?.id ? ' (ฉัน)' : ''}
+            </option>
+          ))}
+        </select>
+      </div>
+      {delegating ? (
+        <p className="text-[11px] text-amber-700 leading-relaxed">
+          <strong>บันทึกแทน</strong> — ชื่อบนใบขออนุญาตใช้รถ (แบบ 3) จะเป็น
+          <strong> {pickedRequester?.full_name?.trim() || 'ผู้ที่เลือก'}</strong> และต้องให้เจ้าตัวลงนามด้วยตนเอง
+          ระบบบันทึกไว้ว่า <strong>{myDisplayName}</strong> เป็นผู้ทำรายการ
+        </p>
+      ) : (
+        <p className="text-[11px] text-gray-500">
+          ผู้ทำรายการ: <span className="font-semibold text-gray-700">{myDisplayName}</span>
+          {' '}— เลือกชื่อผู้อื่นได้หากกรอกแทนเพื่อนร่วมงาน
+        </p>
+      )}
+    </div>
+  )
 
   // historyCount มาจาก count:'exact' ของ server ไม่ใช่ความยาวอาร์เรย์ที่โหลดมา
   const historyTotalPages = historyPageSize === 'all'
@@ -986,10 +1147,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   function renderTripCard(t) {
     const clr = STATUS_CLR[t.status]
     const canApprove = t.status === 'pending' && isAdmin
-    const canDepart  = t.status === 'approved' && (isOwner(t) || isAdmin)
-    const canReturn  = t.status === 'in_progress' && (isOwner(t) || isAdmin)
+    const canDepart  = t.status === 'approved' && (isDriver(t) || isRequester(t) || isAdmin)
+    const canReturn  = t.status === 'in_progress' && (isDriver(t) || isRequester(t) || isAdmin)
     // admin มีปุ่ม "ปฏิเสธ" อยู่แล้ว จึงไม่ต้องมีปุ่มถอนซ้อนอีกปุ่ม
-    const canCancel  = t.status === 'pending' && isOwner(t) && !isAdmin
+    const canCancel  = t.status === 'pending' && isRequester(t) && !isAdmin
     const dist = t.distance_km ?? null
     return (
       <div key={t.id}
@@ -1074,9 +1235,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   function renderTripRow(t, idx) {
     const clr = STATUS_CLR[t.status]
     const canApprove = t.status === 'pending' && isAdmin
-    const canDepart  = t.status === 'approved' && (isOwner(t) || isAdmin)
-    const canReturn  = t.status === 'in_progress' && (isOwner(t) || isAdmin)
-    const canCancel  = t.status === 'pending' && isOwner(t) && !isAdmin
+    const canDepart  = t.status === 'approved' && (isDriver(t) || isRequester(t) || isAdmin)
+    const canReturn  = t.status === 'in_progress' && (isDriver(t) || isRequester(t) || isAdmin)
+    const canCancel  = t.status === 'pending' && isRequester(t) && !isAdmin
     // ออกเดินทางแล้วให้ยึดวันที่ออกจริงเสมอ ไม่ใช่วันที่ตามคำขอ ตารางนี้จะได้ตรงกับ trip_date
     // ที่รายงานใช้ (แถวเก่าก่อนแก้บั๊กนี้ยังไม่มี started_at จึงตกไปใช้ค่าเดิมตามลำดับเดิม)
     const dateStr = fmtDate(t.started_at || t.planned_departure || t.trip_date)
@@ -1284,7 +1445,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       {modal === 'detail' && selTrip && (() => {
         const t = selTrip
         const clr = STATUS_CLR[t.status]
-        const canEdit = t.status === 'pending' && (isOwner(t) || isAdmin)
+        const canEdit = t.status === 'pending' && (isRequester(t) || isAdmin)
         return (
           <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 p-4">
             <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl">
@@ -1300,7 +1461,14 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                         style={{ backgroundColor: clr + '18', color: clr }}>{STATUS_LABEL[t.status]}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                  <div><p className="text-gray-400">ผู้ขอใช้รถ</p><p className="font-semibold text-gray-700">{t.requester?.full_name || '—'}</p></div>
+                  <div>
+                    <p className="text-gray-400">ผู้ขอใช้รถ</p>
+                    <p className="font-semibold text-gray-700">{t.requester?.full_name || t.creator?.full_name || '—'}</p>
+                    {/* กรอกแทนกัน = ต้องเห็นทั้งสองชื่อ ไม่งั้นตรวจย้อนหลังไม่ได้ว่าใครเป็นคนทำรายการ */}
+                    {t.creator?.id && t.requested_by && t.creator.id !== t.requested_by && (
+                      <p className="text-[10px] text-amber-600 mt-0.5">บันทึกแทนโดย {t.creator.full_name || '—'}</p>
+                    )}
+                  </div>
                   <div><p className="text-gray-400">ตำแหน่งผู้ขอใช้รถ</p><p className="font-semibold text-gray-700">{t.requester_position || profilePosition(t.requester) || '—'}</p></div>
                   <div><p className="text-gray-400">ผู้ขับรถ</p><p className="font-semibold text-gray-700">{t.driver?.full_name || '—'}</p></div>
                   <div><p className="text-gray-400">กอง/หน่วยงาน</p><p className="font-semibold text-gray-700">{t.departments?.name || '—'}</p></div>
@@ -1349,15 +1517,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                onClose={() => { setModal(null); setSelTrip(null); setConflict(null); setShowOverride(false); setOverrideReason('') }}
                onSave={submitReserve}
                saveLabel={selTrip ? 'บันทึกการแก้ไข' : 'ส่งคำขออนุญาตใช้รถ'} saving={saving}>
-          <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs">
-            <p className="text-blue-500">ผู้ขอใช้รถ</p>
-            <p className="mt-0.5 font-bold text-gray-800">
-              {selTrip?.requester?.full_name || myDisplayName}
-            </p>
-            <p className="mt-1 text-[11px] text-gray-500">ระบบยืนยันผู้ขอจากบัญชีที่เข้าสู่ระบบและเก็บเป็นหลักฐาน ไม่ให้เลือกชื่อแทนกัน</p>
-          </div>
+          {requesterField}
           {(() => {
-            const positionLocked = Boolean(selTrip) || Boolean(profilePosition(requesterProfile))
+            const positionLocked = Boolean(selTrip) || Boolean(autoPosition)
             return (
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">ตำแหน่งผู้ขอใช้รถ *</label>
@@ -1441,14 +1603,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                 onChange={e => { set('planned_return')(e); setConflict(null); setShowOverride(false) }} className={inp} />
             </div>
           </div>
-          <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้ขับรถ</label>
-            <select value={form.driver_id} onChange={set('driver_id')} className={sel}>
-              {staffList.map(s => (
-                <option key={s.id} value={s.id}>{userOptionLabel(s, user?.id)}</option>
-              ))}
-            </select>
-          </div>
+          {driverField}
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">จำนวนผู้ร่วมเดินทาง (รวมผู้ขอ) *</label>
             <input type="number" min="1" max="100" step="1" value={form.passengers}
@@ -1497,12 +1652,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       {modal === 'direct' && (
         <Modal title="📝 บันทึกการใช้รถย้อนหลัง" onClose={() => setModal(null)} onSave={submitDirect}
                saveLabel="บันทึก" saving={saving}>
-          <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs">
-            <p className="text-blue-500">ผู้บันทึก/ผู้ขอใช้รถ</p>
-            <p className="mt-0.5 font-bold text-gray-800">{myDisplayName}</p>
-          </div>
+          {requesterField}
           {(() => {
-            const positionLocked = Boolean(profilePosition(requesterProfile))
+            const positionLocked = Boolean(autoPosition)
             return (
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">ตำแหน่งผู้ขอใช้รถ *</label>
@@ -1544,14 +1696,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
               onChange={set('passengers')} className={inp} />
             <p className="mt-1 text-[10px] text-gray-400">ไม่รวมผู้ขับรถ</p>
           </div>
-          <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้ขับรถ</label>
-            <select value={form.driver_id} onChange={set('driver_id')} className={sel}>
-              {staffList.map(s => (
-                <option key={s.id} value={s.id}>{userOptionLabel(s, user?.id)}</option>
-              ))}
-            </select>
-          </div>
+          {driverField}
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">กอง/หน่วยงาน</label>
             {deptLocked ? (

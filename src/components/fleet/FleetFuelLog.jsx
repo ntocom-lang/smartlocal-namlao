@@ -55,6 +55,8 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
   const [records,   setRecords]   = useState([])
   const [vehicles,  setVehicles]  = useState([])
   const [staffList, setStaffList] = useState([])
+  // ทะเบียนพนักงานขับรถ (fleet_drivers_directory) — ว่างได้ถ้า อปท. ยังไม่ตั้งค่า
+  const [driverList, setDriverList] = useState([])
   const [loading,   setLoading]   = useState(true)
   const [modal,     setModal]     = useState(null)
   const [selRecord, setSelRecord] = useState(null)
@@ -83,9 +85,13 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
         .eq('municipality_id', tenant.id).eq('status', 'active').order('name'),
       supabase.from('profiles').select('id, full_name')
         .eq('municipality_id', tenant.id).not('fleet_role', 'is', null).order('full_name'),
-    ]).then(([{ data: v }, { data: s }]) => {
+      // ทะเบียนพนักงานขับรถ — ใช้ view ที่ตัดเลขใบขับขี่ออกแล้วตาม PDPA
+      supabase.from('fleet_drivers_directory').select('profile_id, full_name')
+        .eq('municipality_id', tenant.id).eq('status', 'active').order('full_name'),
+    ]).then(([{ data: v }, { data: s }, { data: d }]) => {
       setVehicles(v ?? [])
       setStaffList(s ?? [])
+      setDriverList(d ?? [])
     })
   }, [tenant?.id])
 
@@ -119,10 +125,28 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
     ? (parseFloat(form.liters) * parseFloat(form.price_per_liter)).toFixed(2) : null
   const selectedAsset = vehicles.find(asset => asset.id === form.vehicle_id)
 
+  // อปท. ที่ยังไม่ได้ตั้งทะเบียนพนักงานขับรถต้องบันทึกน้ำมันต่อได้ ไม่งั้น deploy รอบนี้
+  // จะทำให้ช่องผู้ขับรถว่างเปล่าทันทีทุกแห่งที่ยังไม่ได้ตั้งค่า
+  const driverFallback = driverList.length === 0
+  const driverBase = driverFallback
+    ? staffList.map(s => ({ profile_id: s.id, full_name: s.full_name }))
+    : driverList
+
+  // แก้ไขบันทึกเก่าที่คนขับถูกถอดออกจากทะเบียนแล้ว — ค่ายังถูกต้องแต่ไม่มี option ให้ตรง
+  // <select> จะแสดงเป็น "— ไม่ระบุ —" ทั้งที่ยังมีค่าอยู่ ทำให้เข้าใจผิดว่าข้อมูลหาย
+  const currentDriverMissing = form.driver_id
+    && !driverBase.some(d => d.profile_id === form.driver_id)
+  const driverOptions = currentDriverMissing
+    ? [...driverBase, {
+        profile_id: form.driver_id,
+        full_name: `${records.find(r => r.id === editingId)?.driver?.full_name ?? 'ผู้ขับรถเดิม'} (นอกทะเบียนปัจจุบัน)`,
+      }]
+    : driverBase
+
   function openModal() {
     setEditingId(null)
     setSelRecord(null)
-    setForm({ ...EMPTY_FORM, driver_id: user?.id ?? '' })
+    setForm({ ...EMPTY_FORM, driver_id: '' })
     setReceiptFile(null)
     setModal('form')
   }
@@ -238,7 +262,7 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
 
     const payload = {
       vehicle_id:      form.vehicle_id,
-      driver_id:       form.driver_id || user?.id,
+      driver_id:       form.driver_id || null,
       filled_at:       form.filled_at,
       odometer:        meter,
       liters,
@@ -345,7 +369,7 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
             <table className="w-full text-sm border-collapse table-fixed">
               <thead>
                 <tr style={{ backgroundColor: '#1a3a5c' }}>
-                  {[...['ที่','วันที่','ทรัพย์สิน','ผู้ใช้รถ','จำนวน','รวม (฿)','มิเตอร์','ปั๊ม/เอกสาร'], ...(canWrite ? ['จัดการ'] : [])].map((h, i) => (
+                  {[...['ที่','วันที่','ทรัพย์สิน','ผู้ขับรถ','จำนวน','รวม (฿)','มิเตอร์','ปั๊ม/เอกสาร'], ...(canWrite ? ['จัดการ'] : [])].map((h, i) => (
                     <th key={i} className="px-2 py-2 text-left text-[11px] font-bold text-white whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -548,7 +572,7 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
                 </div>
                 <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                   <div><p className="text-gray-400">วันที่เติม</p><p className="font-semibold text-gray-700">{thDate(r.filled_at)}</p></div>
-                  <div><p className="text-gray-400">ผู้ใช้รถ</p><p className="font-semibold text-gray-700">{r.driver?.full_name || '—'}</p></div>
+                  <div><p className="text-gray-400">ผู้ขับรถ</p><p className="font-semibold text-gray-700">{r.driver?.full_name || '—'}</p></div>
                   <div><p className="text-gray-400">ชนิดเชื้อเพลิง</p><p className="font-semibold text-gray-700">{fuelTypeLabel(r)}</p></div>
                   <div><p className="text-gray-400">ลักษณะการเติม</p><p className="font-semibold text-gray-700">{r.full_tank === false ? 'ไม่เต็มถัง' : 'เต็มถัง'}</p></div>
                   <div><p className="text-gray-400">ปริมาณ</p><p className="font-semibold text-gray-700">{r.liters ?? '—'} ลิตร</p></div>
@@ -631,20 +655,28 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
                 </select>
               </div>
 
-              {/* ผู้ใช้รถ (คนเติม/ขับ ณ ตอนนั้น) — เปลี่ยนเป็นเพื่อนร่วมงานคนอื่นได้ เผื่อกรอกแทนกรณีฝากทำให้ */}
-              {staffList.length > 0 ? (
+              {/* ผู้ขับรถ ณ ตอนเติม — ดึงจากทะเบียนพนักงานขับรถ ไม่ใช่รายชื่อผู้มีสิทธิ์ใช้ระบบ
+                  ยังเลือกคนอื่นได้ เผื่อกรอกแทนกรณีฝากทำให้ และเว้น "ไม่ระบุ" ได้เหมือนเดิม */}
+              {driverOptions.length > 0 ? (
                 <div>
-                  <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้ใช้รถ</label>
-                  <select value={form.driver_id} onChange={set('driver_id')} className={sel}>
+                  <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้ขับรถ</label>
+                  <select value={form.driver_id ?? ''} onChange={set('driver_id')} className={sel}>
                     <option value="">— ไม่ระบุ —</option>
-                    {staffList.map(s => (
-                      <option key={s.id} value={s.id}>{s.full_name}{s.id === user?.id ? ' (ฉัน)' : ''}</option>
+                    {driverOptions.map(d => (
+                      <option key={d.profile_id} value={d.profile_id}>
+                        {d.full_name}{d.profile_id === user?.id ? ' (ฉัน)' : ''}
+                      </option>
                     ))}
                   </select>
+                  {driverFallback && (
+                    <p className="mt-1 text-[10px] text-amber-600">
+                      ยังไม่ได้ตั้งทะเบียนพนักงานขับรถ — แสดงรายชื่อเจ้าหน้าที่ทั้งหมดชั่วคราว
+                    </p>
+                  )}
                 </div>
               ) : (
                 <div className="bg-gray-50 rounded-xl px-3 py-2 text-xs text-gray-500">
-                  👤 ผู้ใช้รถ: <span className="font-semibold text-gray-700">ฉัน</span>
+                  👤 ผู้ขับรถ: <span className="font-semibold text-gray-700">ไม่ระบุ</span>
                 </div>
               )}
 

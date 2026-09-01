@@ -91,7 +91,8 @@ export function resolveOrderAuthority(signatory, tenant) {
 }
 
 export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null }) {
-  const requesterName = trip?.requester?.full_name || ''
+  // requester ผูกกับ requested_by (ผู้ขอตัวจริง) แล้ว — ทริปเก่าที่ยังไม่ถูก backfill ถอยไปใช้ผู้บันทึก
+  const requesterName = trip?.requester?.full_name || trip?.creator?.full_name || ''
   const requesterPosition = trip?.requester_position || profilePosition(trip?.requester)
   const driverName = trip?.driver?.full_name || ''
   const approverName = trip?.approver?.full_name || ''

@@ -210,7 +210,7 @@ function dataRow(row, monthlyTotal) {
   }
   const depart = departureParts(trip)
   const returned = returnParts(trip)
-  const userName = String(trip.requester?.full_name ?? '').trim()
+  const userName = String(trip.requester?.full_name ?? trip.creator?.full_name ?? '').trim()
   const driverName = String(trip.driver?.full_name ?? '').trim()
   return `<tr>
     <td class="c-seq">${row.seq}</td>

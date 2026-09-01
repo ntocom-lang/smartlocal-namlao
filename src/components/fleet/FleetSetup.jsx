@@ -12,6 +12,19 @@ const ROLES = {
   fleet_viewer: 'ผู้ดูรายงาน (อ่านอย่างเดียว)',
 }
 
+const DRIVER_STATUS = {
+  active:    'ปฏิบัติงาน',
+  suspended: 'พักใช้ชั่วคราว',
+  inactive:  'ไม่ใช้งาน',
+}
+
+// เทียบเป็นสตริงตามเวลาไทย — license_expires_on เป็น date ไม่ใช่ timestamptz
+function isLicenseExpired(driver) {
+  if (!driver?.license_expires_on) return false
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date())
+  return driver.license_expires_on < today
+}
+
 function Tab({ id, active, label, Icon, onClick }) {
   return (
     <button onClick={() => onClick(id)}
@@ -35,14 +48,82 @@ function UsersTab({ tenant, depts }) {
   const [search, setSearch]     = useState('')
   const [filterRole, setFilterRole] = useState('all')
   const [filterDept, setFilterDept] = useState('all')
+  // ทะเบียนพนักงานขับรถ — คีย์ด้วย profile_id เพื่อเช็คสถานะรายแถวได้ในครั้งเดียว
+  const [drivers, setDrivers] = useState({})
+  const [driverEdit, setDriverEdit] = useState(null)   // { profile, form }
 
   useEffect(() => {
     if (!tenant?.id) return
-    supabase.from('profiles').select('id, full_name, email, fleet_role, department_id')
-      .eq('municipality_id', tenant.id).not('fleet_role', 'is', null).order('full_name')
-      .then(({ data }) => setUsers(data ?? []))
-      .finally(() => setLoading(false))
+    Promise.all([
+      supabase.from('profiles').select('id, full_name, email, fleet_role, department_id')
+        .eq('municipality_id', tenant.id).not('fleet_role', 'is', null).order('full_name'),
+      supabase.from('fleet_drivers')
+        .select('id, profile_id, license_no, license_type, license_issued_on, license_expires_on, status, note')
+        .eq('municipality_id', tenant.id),
+    ]).then(([{ data: profileRows }, { data: driverRows }]) => {
+      setUsers(profileRows ?? [])
+      setDrivers(Object.fromEntries((driverRows ?? []).map(d => [d.profile_id, d])))
+    }).finally(() => setLoading(false))
   }, [tenant?.id])
+
+  // เป็นพนักงานขับรถ = คุณสมบัติ ไม่ใช่ระดับสิทธิ์ จึงเก็บแยกตาราง ไม่ยัดเป็นค่าใน fleet_role
+  // (คนขับต้องบันทึกออก-กลับ/เติมน้ำมันได้ด้วย = ต้องมี fleet_staff อยู่แล้ว)
+  async function toggleDriver(u) {
+    setSaving(u.id + 'driver')
+    const existing = drivers[u.id]
+    if (existing) {
+      const { error } = await supabase.from('fleet_drivers').delete().eq('id', existing.id)
+      if (error) { alert('ถอดออกจากทะเบียนไม่สำเร็จ: ' + error.message); setSaving(null); return }
+      setDrivers(prev => { const next = { ...prev }; delete next[u.id]; return next })
+      logAction({
+        action: 'revoke', resourceType: 'fleet_driver', resourceId: u.id,
+        resourceLabel: u.full_name ?? u.email ?? u.id, municipalityId: tenant.id,
+        metadata: { before: { is_driver: true }, after: { is_driver: false } },
+      })
+    } else {
+      const { data, error } = await supabase.from('fleet_drivers')
+        .insert({ municipality_id: tenant.id, profile_id: u.id })
+        .select('id, profile_id, license_no, license_type, license_issued_on, license_expires_on, status, note')
+        .single()
+      if (error) { alert('เพิ่มเข้าทะเบียนไม่สำเร็จ: ' + error.message); setSaving(null); return }
+      setDrivers(prev => ({ ...prev, [u.id]: data }))
+      logAction({
+        action: 'grant', resourceType: 'fleet_driver', resourceId: u.id,
+        resourceLabel: u.full_name ?? u.email ?? u.id, municipalityId: tenant.id,
+        metadata: { before: { is_driver: false }, after: { is_driver: true } },
+      })
+    }
+    setSaving(null)
+  }
+
+  async function saveDriverDetail() {
+    const { profile, form } = driverEdit
+    const row = drivers[profile.id]
+    if (!row) return
+    const payload = {
+      license_no:         form.license_no.trim() || null,
+      license_type:       form.license_type.trim() || null,
+      license_issued_on:  form.license_issued_on || null,
+      license_expires_on: form.license_expires_on || null,
+      status:             form.status,
+      note:               form.note.trim() || null,
+    }
+    if (payload.license_issued_on && payload.license_expires_on
+        && payload.license_expires_on < payload.license_issued_on)
+      return alert('วันหมดอายุต้องไม่ก่อนวันออกใบขับขี่')
+    setSaving(profile.id + 'driver')
+    const { error } = await supabase.from('fleet_drivers').update(payload).eq('id', row.id)
+    setSaving(null)
+    if (error) return alert('บันทึกไม่สำเร็จ: ' + error.message)
+    setDrivers(prev => ({ ...prev, [profile.id]: { ...row, ...payload } }))
+    // ไม่บันทึกเลขใบขับขี่ลง audit log — เป็นข้อมูลส่วนบุคคล บันทึกแค่ว่ามีการแก้ไข
+    logAction({
+      action: 'update', resourceType: 'fleet_driver', resourceId: profile.id,
+      resourceLabel: profile.full_name ?? profile.email ?? profile.id, municipalityId: tenant.id,
+      metadata: { fields: Object.keys(payload).filter(k => k !== 'license_no'), status: payload.status },
+    })
+    setDriverEdit(null)
+  }
 
   async function openPicker() {
     // ต้องกรอง role ตัด 'citizen' ออก ไม่งั้นจะดึงประชาชนทั่วไปทุกคนที่สมัครไว้มาปนในลิสต์
@@ -80,6 +161,12 @@ function UsersTab({ tenant, depts }) {
     setSaving(user.id)
     const { error } = await adminUpdateUser(user.id, { fleet_role: null, department_id: null })
     if (!error) {
+      // ถอดออกจากระบบยานพาหนะแล้วต้องหลุดจากทะเบียนคนขับด้วย ไม่งั้นชื่อยังค้างใน dropdown
+      // ทั้งที่คนนั้นไม่มีสิทธิ์แตะระบบแล้ว (fleet_role = null ไม่ได้ลบแถว fleet_drivers ให้)
+      if (drivers[user.id]) {
+        await supabase.from('fleet_drivers').delete().eq('id', drivers[user.id].id)
+        setDrivers(prev => { const next = { ...prev }; delete next[user.id]; return next })
+      }
       setUsers(prev => prev.filter(u => u.id !== user.id))
       logAction({
         action: 'revoke', resourceType: 'fleet_user', resourceId: user.id,
@@ -100,6 +187,17 @@ function UsersTab({ tenant, depts }) {
     const { error } = await adminUpdateUser(id, { [field]: value || null })
     if (!error) {
       setUsers(prev => prev.map(u => u.id === id ? { ...u, [field]: value || null } : u))
+      // ลดสิทธิ์เป็นผู้ดูรายงาน = อ่านอย่างเดียว บันทึกออก-กลับไม่ได้ จึงเป็นคนขับต่อไม่ได้
+      // ถ้าปล่อยแถวไว้ ชื่อจะยังขึ้นใน dropdown แล้วผู้ขอจะเลือกคนที่กดอะไรไม่ได้เลย
+      if (field === 'fleet_role' && value === 'fleet_viewer' && drivers[id]) {
+        await supabase.from('fleet_drivers').delete().eq('id', drivers[id].id)
+        setDrivers(prev => { const next = { ...prev }; delete next[id]; return next })
+        logAction({
+          action: 'revoke', resourceType: 'fleet_driver', resourceId: id,
+          resourceLabel: target?.full_name ?? target?.email ?? id, municipalityId: tenant.id,
+          metadata: { reason: 'downgraded_to_fleet_viewer' },
+        })
+      }
       logAction({
         action: 'update', resourceType: 'fleet_user', resourceId: id,
         resourceLabel: target?.full_name ?? target?.email ?? id,
@@ -209,9 +307,117 @@ function UsersTab({ tenant, depts }) {
                 </select>
               </div>
             </div>
+
+            {/* พนักงานขับรถ = คุณสมบัติ คนละแกนกับ "สิทธิ์" ด้านบน
+                ผู้ดูรายงานอ่านอย่างเดียว บันทึกออก-กลับไม่ได้ จึงเป็นคนขับไม่ได้ */}
+            <div className="mt-2 pt-2 border-t border-gray-100 flex items-center justify-between gap-2">
+              <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                <input type="checkbox" checked={!!drivers[u.id]}
+                  onChange={() => toggleDriver(u)}
+                  disabled={saving === u.id + 'driver' || u.fleet_role === 'fleet_viewer'}
+                  className="w-4 h-4 rounded border-gray-300 disabled:opacity-40" />
+                <span className={u.fleet_role === 'fleet_viewer' ? 'text-gray-300' : 'font-semibold'}>
+                  พนักงานขับรถ
+                </span>
+                {drivers[u.id]?.status && drivers[u.id].status !== 'active' && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 font-semibold">
+                    {drivers[u.id].status === 'suspended' ? 'พักใช้' : 'ไม่ใช้งาน'}
+                  </span>
+                )}
+                {isLicenseExpired(drivers[u.id]) && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-600 font-semibold">
+                    ใบขับขี่หมดอายุ
+                  </span>
+                )}
+              </label>
+              {drivers[u.id] && (
+                <button
+                  onClick={() => setDriverEdit({
+                    profile: u,
+                    form: {
+                      license_no:         drivers[u.id].license_no ?? '',
+                      license_type:       drivers[u.id].license_type ?? '',
+                      license_issued_on:  drivers[u.id].license_issued_on ?? '',
+                      license_expires_on: drivers[u.id].license_expires_on ?? '',
+                      status:             drivers[u.id].status ?? 'active',
+                      note:               drivers[u.id].note ?? '',
+                    },
+                  })}
+                  className="text-[11px] font-semibold text-gray-500 hover:text-gray-700 underline shrink-0">
+                  ใบขับขี่
+                </button>
+              )}
+            </div>
           </div>
         ))}
       </div>
+
+      {/* รายละเอียดใบขับขี่ — ⚠️ PDPA: เลขใบขับขี่เห็นได้เฉพาะผู้ดูแลระบบยานพาหนะ
+          (RLS ของ fleet_drivers อนุญาตเฉพาะ fleet_is_manager ส่วน dropdown ฝั่งเจ้าหน้าที่
+          อ่านผ่าน view fleet_drivers_directory ที่ไม่มีคอลัมน์นี้) */}
+      {driverEdit && (
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setDriverEdit(null)} />
+          <div className="relative bg-white rounded-t-3xl md:rounded-2xl w-full max-w-sm flex flex-col shadow-2xl">
+            <div className="px-5 pt-5 pb-3 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="font-bold text-gray-800 text-sm truncate">
+                ใบขับขี่ — {driverEdit.profile.full_name ?? '(ไม่มีชื่อ)'}
+              </h3>
+              <button onClick={() => setDriverEdit(null)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><X size={16} /></button>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-semibold text-gray-500 mb-1 block">เลขที่ใบขับขี่</label>
+                  <input value={driverEdit.form.license_no} maxLength={40}
+                    onChange={e => setDriverEdit(s => ({ ...s, form: { ...s.form, license_no: e.target.value } }))}
+                    className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-lg text-gray-900 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-gray-500 mb-1 block">ชนิด</label>
+                  <input value={driverEdit.form.license_type} maxLength={40} placeholder="เช่น ท.2"
+                    onChange={e => setDriverEdit(s => ({ ...s, form: { ...s.form, license_type: e.target.value } }))}
+                    className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-lg text-gray-900 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-gray-500 mb-1 block">วันออกใบ</label>
+                  <input type="date" value={driverEdit.form.license_issued_on}
+                    onChange={e => setDriverEdit(s => ({ ...s, form: { ...s.form, license_issued_on: e.target.value } }))}
+                    className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-lg text-gray-900 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-gray-500 mb-1 block">วันหมดอายุ</label>
+                  <input type="date" value={driverEdit.form.license_expires_on}
+                    onChange={e => setDriverEdit(s => ({ ...s, form: { ...s.form, license_expires_on: e.target.value } }))}
+                    className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-lg text-gray-900 focus:outline-none" />
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold text-gray-500 mb-1 block">สถานะ</label>
+                <select value={driverEdit.form.status}
+                  onChange={e => setDriverEdit(s => ({ ...s, form: { ...s.form, status: e.target.value } }))}
+                  className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-lg bg-white text-gray-900 focus:outline-none appearance-none">
+                  {Object.entries(DRIVER_STATUS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+                <p className="mt-1 text-[10px] text-gray-400">เฉพาะสถานะ &quot;ปฏิบัติงาน&quot; เท่านั้นที่ขึ้นในช่องเลือกผู้ขับรถ</p>
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold text-gray-500 mb-1 block">หมายเหตุ</label>
+                <textarea value={driverEdit.form.note} rows={2} maxLength={500}
+                  onChange={e => setDriverEdit(s => ({ ...s, form: { ...s.form, note: e.target.value } }))}
+                  className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-lg text-gray-900 focus:outline-none" />
+              </div>
+            </div>
+            <div className="px-5 pb-5">
+              <button onClick={saveDriverDetail} disabled={saving === driverEdit.profile.id + 'driver'}
+                className="w-full py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50"
+                style={{ backgroundColor: 'var(--color-primary)' }}>
+                {saving === driverEdit.profile.id + 'driver' ? 'กำลังบันทึก...' : 'บันทึก'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Pick user modal */}
       {showPick && (
