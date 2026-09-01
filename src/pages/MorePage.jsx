@@ -93,7 +93,7 @@ function QRShareCard({ tenant }) {
 
   async function handleShare() {
     if (navigator.share) {
-      await navigator.share({ title: tenant?.name || 'SmartLocal', text: 'ระบบศูนย์รวมข้อมูลดิจิทัลเพื่อการพัฒนาอย่างยั่งยืน', url })
+      await navigator.share({ title: tenant?.name || 'SmartLocal', text: '✦ E-Service ✦ งานบริการประชาชน', url })
     } else {
       handleCopy()
     }

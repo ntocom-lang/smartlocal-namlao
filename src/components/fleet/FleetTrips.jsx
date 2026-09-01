@@ -342,7 +342,7 @@ function BookingCalendar({ tenant, onClose }) {
                     </span>
                   </div>
                   <p className="text-[11px] text-gray-600">📍 {t.destination} — {t.purpose}</p>
-                  <p className="text-[11px] text-gray-500">👤 {t.driver?.full_name}</p>
+                  <p className="text-[11px] text-gray-500">ผู้ใช้รถ {t.requester?.full_name || '—'}</p>
                   {t.planned_departure && (
                     <p className="text-[10px] text-gray-400">
                       {fmtDT(t.planned_departure)}
@@ -398,6 +398,14 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   const [staffList, setStaffList] = useState([])
   const [requesterProfile, setRequesterProfile] = useState(null)
   const [orderAuthority, setOrderAuthority] = useState(null)
+
+  // ชื่อผู้ทำรายการที่โชว์บนหัวฟอร์ม — profiles เป็นแหล่งหลัก ถ้าไม่มีแถว (เช่น บัญชีข้ามสังกัด)
+  // ค่อยถอยไปใช้ metadata ของ auth แล้วจึงอีเมล เพื่อไม่ให้ขึ้นข้อความลอยๆ ว่า "บัญชีผู้ใช้ปัจจุบัน"
+  const myDisplayName = requesterProfile?.full_name?.trim()
+    || user?.user_metadata?.full_name?.trim()
+    || user?.email
+    || '—'
+
   const [vehicles,  setVehicles]  = useState([])
   const [loading,   setLoading]   = useState(true)
   const [modal,     setModal]     = useState(null) // 'reserve'|'direct'|'depart'|'return'
@@ -661,9 +669,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     const passengerCount = Number(form.passengers)
     if (!Number.isInteger(passengerCount) || passengerCount < 1 || passengerCount > 100)
       return alert('จำนวนผู้ร่วมเดินทางต้องเป็นจำนวนเต็ม 1–100 คน')
-    const requesterPosition = form.requester_position?.trim()
-    if (!requesterPosition) return alert('กรุณาระบุตำแหน่งผู้ขอใช้รถ')
-    if (requesterPosition.length > 200) return alert('ตำแหน่งผู้ขอยาวเกิน 200 ตัวอักษร')
+    const requesterPosition = form.requester_position?.trim().slice(0, 200) || null
+    if (!requesterPosition)
+      return alert('กรุณากรอกตำแหน่งผู้ขอใช้รถ สำหรับใบขออนุญาตใช้รถ (แบบ 3)')
     if (form.destination_locality.trim().length > 200 || form.destination_province.trim().length > 100)
       return alert('ท้องที่หรือจังหวัดยาวเกินกำหนด')
     if ((parseDateTime(form.planned_return)?.getTime() ?? 0) <= (parseDateTime(form.planned_departure)?.getTime() ?? 0))
@@ -730,9 +738,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     const passengerCount = Number(form.passengers)
     if (!Number.isInteger(passengerCount) || passengerCount < 1 || passengerCount > 100)
       return alert('จำนวนผู้ร่วมเดินทางต้องเป็นจำนวนเต็ม 1–100 คน')
-    const requesterPosition = form.requester_position?.trim()
-    if (!requesterPosition) return alert('กรุณาระบุตำแหน่งผู้ขอใช้รถ')
-    if (requesterPosition.length > 200) return alert('ตำแหน่งผู้ขอยาวเกิน 200 ตัวอักษร')
+    const requesterPosition = form.requester_position?.trim().slice(0, 200) || null
+    if (!requesterPosition)
+      return alert('กรุณากรอกตำแหน่งผู้ขอใช้รถ สำหรับใบขออนุญาตใช้รถ (แบบ 3)')
     if (!form.destination_locality?.trim() || !form.destination_province?.trim())
       return alert('กรุณาระบุท้องที่และจังหวัด')
     if (form.destination_locality.trim().length > 200 || form.destination_province.trim().length > 100)
@@ -802,9 +810,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     const passengerCount = Number(form.passengers)
     if (!Number.isInteger(passengerCount) || passengerCount < 1 || passengerCount > 100)
       return alert('จำนวนผู้ร่วมเดินทางต้องเป็นจำนวนเต็ม 1–100 คน')
-    const requesterPosition = form.requester_position?.trim() || null
-    if (requesterPosition && requesterPosition.length > 200)
-      return alert('ตำแหน่งผู้ขอยาวเกิน 200 ตัวอักษร')
+    const requesterPosition = form.requester_position?.trim().slice(0, 200) || null
+    if (!requesterPosition)
+      return alert('กรุณากรอกตำแหน่งผู้ขอใช้รถ สำหรับใบขออนุญาตใช้รถ (แบบ 3)')
     if (form.destination_locality.trim().length > 200 || form.destination_province.trim().length > 100)
       return alert('ท้องที่หรือจังหวัดยาวเกินกำหนด')
     if (form.returned_at && (parseDateTime(form.returned_at)?.getTime() ?? 0) < (parseDateTime(form.started_at)?.getTime() ?? 0))
@@ -1006,7 +1014,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
         </p>
         <div className="border-t border-gray-100 pt-1.5 text-[10px] leading-4 text-gray-500">
           <div className="flex items-center gap-2">
-            <span className="min-w-0 flex-1 truncate">👤 {t.driver?.full_name}{t.departments?.short_name ? ` · ${t.departments.short_name}` : ''}</span>
+            <span className="min-w-0 flex-1 truncate">ผู้ใช้รถ {t.requester?.full_name || '—'}{t.departments?.short_name ? ` · ${t.departments.short_name}` : ''}</span>
             {dist != null && <span className="shrink-0 font-bold text-gray-700">📏 {dist.toLocaleString()} กม.</span>}
           </div>
           {t.planned_departure && <div>🗓 {fmtDT(t.planned_departure)} – {fmtDT(t.planned_return)}</div>}
@@ -1088,7 +1096,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
         <td className="px-4 py-2.5 text-xs text-gray-600 border-r border-gray-200">{t.destination}</td>
         <td className="px-4 py-2.5 text-xs text-gray-500 border-r border-gray-200">{t.purpose}</td>
         <td className="px-4 py-2.5 text-xs text-gray-600 border-r border-gray-200 whitespace-nowrap">
-          {t.driver?.full_name}
+          {t.requester?.full_name || '—'}
         </td>
         <td className="px-4 py-2.5 text-xs text-gray-500 border-r border-gray-200 text-right whitespace-nowrap">
           {dist != null ? `${dist.toLocaleString()} กม.` : '—'}
@@ -1293,8 +1301,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                 </div>
                 <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                   <div><p className="text-gray-400">ผู้ขอใช้รถ</p><p className="font-semibold text-gray-700">{t.requester?.full_name || '—'}</p></div>
-                  <div><p className="text-gray-400">ตำแหน่งผู้ขอ</p><p className="font-semibold text-gray-700">{t.requester_position || profilePosition(t.requester) || '—'}</p></div>
-                  <div><p className="text-gray-400">พนักงานขับรถ / ผู้ใช้รถ</p><p className="font-semibold text-gray-700">{t.driver?.full_name || '—'}</p></div>
+                  <div><p className="text-gray-400">ตำแหน่งผู้ขอใช้รถ</p><p className="font-semibold text-gray-700">{t.requester_position || profilePosition(t.requester) || '—'}</p></div>
+                  <div><p className="text-gray-400">ผู้ขับรถ</p><p className="font-semibold text-gray-700">{t.driver?.full_name || '—'}</p></div>
                   <div><p className="text-gray-400">กอง/หน่วยงาน</p><p className="font-semibold text-gray-700">{t.departments?.name || '—'}</p></div>
                   <div><p className="text-gray-400">ผู้ร่วมเดินทาง</p><p className="font-semibold text-gray-700">{t.passengers ?? 1} คน <span className="font-normal text-gray-400">(ไม่รวมคนขับ)</span></p></div>
                   <div className="col-span-2"><p className="text-gray-400">ปลายทาง</p><p className="font-semibold text-gray-700">{t.destination || '—'}</p></div>
@@ -1344,18 +1352,31 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
           <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs">
             <p className="text-blue-500">ผู้ขอใช้รถ</p>
             <p className="mt-0.5 font-bold text-gray-800">
-              {selTrip?.requester?.full_name || requesterProfile?.full_name || 'บัญชีผู้ใช้ปัจจุบัน'}
+              {selTrip?.requester?.full_name || myDisplayName}
             </p>
             <p className="mt-1 text-[11px] text-gray-500">ระบบยืนยันผู้ขอจากบัญชีที่เข้าสู่ระบบและเก็บเป็นหลักฐาน ไม่ให้เลือกชื่อแทนกัน</p>
           </div>
+          {(() => {
+            const positionLocked = Boolean(selTrip) || Boolean(profilePosition(requesterProfile))
+            return (
           <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1 block">ตำแหน่งผู้ขอ *</label>
-            <input value={form.requester_position || ''} onChange={set('requester_position')}
-              readOnly={!!selTrip || !!profilePosition(requesterProfile)}
-              placeholder="เช่น นักวิชาการสาธารณสุข"
-              className={inp + ((selTrip || profilePosition(requesterProfile)) ? ' bg-gray-50 text-gray-500' : '')} />
-            <p className="mt-1 text-[10px] text-gray-400">บันทึกเป็น snapshot ณ วันยื่นคำขอ เพื่อให้เอกสารย้อนหลังไม่เปลี่ยนตามตำแหน่งปัจจุบัน</p>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">ตำแหน่งผู้ขอใช้รถ *</label>
+            <input value={form.requester_position}
+              onChange={positionLocked ? undefined : set('requester_position')}
+              disabled={positionLocked} readOnly={positionLocked}
+              placeholder="เช่น เจ้าพนักงานธุรการ" className={positionLocked
+                ? inp + ' bg-gray-50 text-gray-500 cursor-not-allowed'
+                : inp} />
+            <p className="mt-1 text-[10px] text-gray-400">
+              {selTrip
+                ? 'ล็อกตามที่บันทึกตอนยื่นคำขอ เพื่อไม่ให้เอกสารเก่าเปลี่ยน'
+                : positionLocked
+                  ? 'ดึงจากข้อมูลบุคลากร และล็อกไว้เป็นหลักฐานในแบบ 3'
+                  : 'ใช้พิมพ์ในช่องตำแหน่งบนใบขออนุญาตใช้รถ (แบบ 3)'}
+            </p>
           </div>
+            )
+          })()}
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">ยานพาหนะ *</label>
             <select value={form.vehicle_id}
@@ -1421,7 +1442,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
             </div>
           </div>
           <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1 block">พนักงานขับรถ / ผู้ใช้รถ</label>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้ขับรถ</label>
             <select value={form.driver_id} onChange={set('driver_id')} className={sel}>
               {staffList.map(s => (
                 <option key={s.id} value={s.id}>{userOptionLabel(s, user?.id)}</option>
@@ -1432,7 +1453,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
             <label className="text-xs font-semibold text-gray-600 mb-1 block">จำนวนผู้ร่วมเดินทาง (รวมผู้ขอ) *</label>
             <input type="number" min="1" max="100" step="1" value={form.passengers}
               onChange={set('passengers')} className={inp} />
-            <p className="mt-1 text-[10px] text-gray-400">ไม่รวมพนักงานขับรถ</p>
+            <p className="mt-1 text-[10px] text-gray-400">ไม่รวมผู้ขับรถ</p>
           </div>
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">กอง/หน่วยงาน</label>
@@ -1478,8 +1499,27 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                saveLabel="บันทึก" saving={saving}>
           <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs">
             <p className="text-blue-500">ผู้บันทึก/ผู้ขอใช้รถ</p>
-            <p className="mt-0.5 font-bold text-gray-800">{requesterProfile?.full_name || 'บัญชีผู้ใช้ปัจจุบัน'}</p>
+            <p className="mt-0.5 font-bold text-gray-800">{myDisplayName}</p>
           </div>
+          {(() => {
+            const positionLocked = Boolean(profilePosition(requesterProfile))
+            return (
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">ตำแหน่งผู้ขอใช้รถ *</label>
+            <input value={form.requester_position}
+              onChange={positionLocked ? undefined : set('requester_position')}
+              disabled={positionLocked} readOnly={positionLocked}
+              placeholder="เช่น เจ้าพนักงานธุรการ" className={positionLocked
+                ? inp + ' bg-gray-50 text-gray-500 cursor-not-allowed'
+                : inp} />
+            <p className="mt-1 text-[10px] text-gray-400">
+              {positionLocked
+                ? 'ดึงจากข้อมูลบุคลากร และล็อกไว้เป็นหลักฐานในแบบ 3'
+                : 'ใช้พิมพ์ในช่องตำแหน่งบนใบขออนุญาตใช้รถ (แบบ 3)'}
+            </p>
+          </div>
+            )
+          })()}
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-700">
             ⚠️ รายการนี้จะถูกบันทึกเป็น <strong>“เสร็จสิ้น”</strong> ทันทีโดยไม่ผ่านขั้นอนุมัติ
             ใบขออนุญาตใช้รถที่พิมพ์จากรายการนี้จะไม่มีผู้อนุมัติ ใช้เฉพาะกรณีที่ใช้รถไปแล้วจริงเท่านั้น
@@ -1492,13 +1532,6 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
             <p className="mt-1 text-[10px] text-gray-400">พิมพ์กำกับไว้ในใบขออนุญาตใช้รถ เพื่อให้ตรวจสอบย้อนหลังได้</p>
           </div>
           <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1 block">ตำแหน่งผู้ขอ</label>
-            <input value={form.requester_position || ''} onChange={set('requester_position')}
-              readOnly={!!profilePosition(requesterProfile)}
-              placeholder="เช่น นักวิชาการสาธารณสุข"
-              className={inp + (profilePosition(requesterProfile) ? ' bg-gray-50 text-gray-500' : '')} />
-          </div>
-          <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">ยานพาหนะ *</label>
             <select value={form.vehicle_id} onChange={set('vehicle_id')} className={sel}>
               <option value="">— เลือกรถ —</option>
@@ -1509,10 +1542,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
             <label className="text-xs font-semibold text-gray-600 mb-1 block">จำนวนผู้ร่วมเดินทาง (รวมผู้ขอ) *</label>
             <input type="number" min="1" max="100" step="1" value={form.passengers}
               onChange={set('passengers')} className={inp} />
-            <p className="mt-1 text-[10px] text-gray-400">ไม่รวมพนักงานขับรถ</p>
+            <p className="mt-1 text-[10px] text-gray-400">ไม่รวมผู้ขับรถ</p>
           </div>
           <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้ใช้รถ</label>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้ขับรถ</label>
             <select value={form.driver_id} onChange={set('driver_id')} className={sel}>
               {staffList.map(s => (
                 <option key={s.id} value={s.id}>{userOptionLabel(s, user?.id)}</option>

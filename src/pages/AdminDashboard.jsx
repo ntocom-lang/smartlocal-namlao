@@ -21,7 +21,7 @@ import { workingDaysBetween, workingDaysSince } from '../lib/workingDays'
 import { uploadFile } from '../lib/driveStorage'
 import { tenantDefaultSubdistrict } from '../lib/tenantSubdistrict'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
-import { accountProviders, providerLabel, phoneToLoginEmail, normalizeThaiPhone } from '../lib/authProviders'
+import { accountProviders, providerLabel, phoneToLoginEmail, normalizeThaiPhone, loginIdentifier } from '../lib/authProviders'
 import { useTenant } from '../contexts/TenantContext'
 import { useNotifications } from '../contexts/NotificationsContext'
 import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
@@ -1393,7 +1393,7 @@ function MergeDuplicateModal({ keepUser, tenant, currentUserRole, currentUserId,
 }
 
 function AccountInfoTab(props) {
-  const { user, isEditing, draft, setDraft } = props
+  const { user, isEditing, draft, setDraft, clearSaveError } = props
 
   // บัญชีที่สมัครด้วย LINE จะไม่มีอีเมลติดมาเลย ถ้า channel ยังไม่ได้รับอนุมัติสิทธิ์ขอ email
   // จาก LINE (ของโปรเจกต์นี้เป็นแบบนั้น) บัญชีพวกนี้จึงล็อกอินด้วยรหัสผ่านไม่ได้ ไม่มีชื่อผู้ใช้
@@ -1408,16 +1408,20 @@ function AccountInfoTab(props) {
   // เจ้าตัวจึงยังกดปุ่ม LINE เข้าได้เหมือนเดิม ได้ทางเข้าเพิ่มมาอีกทางโดยไม่เสียทางเดิม
   const loginPhone = normalizeThaiPhone(draft?.phone ?? user.phone ?? '')
   const canUsePhoneAsLogin = !user.email && /^0\d{8,9}$/.test(loginPhone)
+  const currentLogin = loginIdentifier(user.email)
 
   return (
     <div className="space-y-5">
       <PersonalInfoField
-        label="อีเมล (ใช้ login)"
+        label="ชื่อผู้ใช้สำหรับเข้าสู่ระบบ (เบอร์มือถือหรืออีเมล)"
         isEditing={isEditing}
-        displayValue={user.email}
+        displayValue={currentLogin.value}
         editValue={draft?.email ?? ''}
-        placeholder="name@gmail.com"
-        onChange={(e) => setDraft(d => ({ ...d, email: e.target.value }))}
+        placeholder="0812345678 หรือ name@gmail.com"
+        onChange={(e) => {
+          clearSaveError()
+          setDraft(d => ({ ...d, email: e.target.value }))
+        }}
       />
 
       {!user.email && (
@@ -1428,7 +1432,10 @@ function AccountInfoTab(props) {
             isEditing ? (
               <button
                 type="button"
-                onClick={() => setDraft(d => ({ ...d, email: phoneToLoginEmail(loginPhone) }))}
+                onClick={() => {
+                  clearSaveError()
+                  setDraft(d => ({ ...d, email: loginPhone }))
+                }}
                 className="mt-2 w-full py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold transition-colors"
               >
                 ใช้เบอร์ {loginPhone} เป็นชื่อผู้ใช้
@@ -1764,7 +1771,9 @@ function UserDetailPage(props) {
   function startEdit() {
     setDraft({
       full_name: user.full_name || '',
-      email: user.email || '',
+      // ซ่อน @phone.smartlocal.app ซึ่งเป็น implementation detail — เจ้าหน้าที่แก้เฉพาะ
+      // ชื่อผู้ใช้จริงที่ประชาชนต้องพิมพ์ (เบอร์มือถือหรืออีเมล)
+      email: loginIdentifier(user.email).value,
       phone: user.phone || '',
       id_card: user.id_card || '',
       address_province: user.address_province || tenant?.province || '',
@@ -1793,16 +1802,30 @@ function UserDetailPage(props) {
       return
     }
 
-    // อีเมล login จริง (auth.users.email) เปลี่ยนแยกจากฟิลด์อื่น — ต้องผ่าน edge function
-    // ที่เรียก Supabase Admin API เท่านั้น (admin_update_user ธรรมดาแตะ auth.users ไม่ได้)
-    const newEmail = draft.email.trim().toLowerCase()
+    // Supabase Auth ใช้อีเมลเป็น identifier ภายใน บัญชีที่ประชาชนกรอกเบอร์จึงต้องแปลงเป็น
+    // <เบอร์>@phone.smartlocal.app ก่อนส่ง Edge Function โดยไม่เปิดเผยรูปแบบนี้บนหน้าจอ
+    const loginInput = draft.email.trim()
+    const isEmailLogin = loginInput.includes('@')
+    const normalizedLoginPhone = isEmailLogin ? '' : normalizeThaiPhone(loginInput)
+    if (loginInput && isEmailLogin && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginInput) || loginInput.length > 254)) {
+      setSaveError('กรุณากรอกอีเมลสำหรับเข้าสู่ระบบให้ถูกต้อง')
+      return
+    }
+    if (loginInput && !isEmailLogin && !/^0\d{8,9}$/.test(normalizedLoginPhone)) {
+      setSaveError('ชื่อผู้ใช้ต้องเป็นเบอร์มือถือ 9–10 หลัก หรืออีเมลที่ถูกต้อง')
+      return
+    }
+    const newEmail = isEmailLogin
+      ? loginInput.toLowerCase()
+      : loginInput ? phoneToLoginEmail(normalizedLoginPhone) : ''
+    const newLoginLabel = isEmailLogin ? newEmail : normalizedLoginPhone
     if (newEmail && newEmail !== (user.email || '').toLowerCase()) {
       // บัญชีที่ยังไม่เคยมีอีเมล (สมัครด้วย LINE) ไม่มี "อีเมลเดิม" ให้เสีย — เป็นการเพิ่มทางเข้า
       // ไม่ใช่การเปลี่ยน ถ้าใช้ข้อความเตือนอันเดียวกันเจ้าหน้าที่จะลังเลไม่กล้ากดทั้งที่ไม่มีอะไรเสีย
       const label = user.full_name || user.email || 'บัญชีนี้'
       const message = user.email
-        ? `ยืนยันเปลี่ยนอีเมลที่ใช้ login ของ "${label}" เป็น "${newEmail}"?\n\nอีเมลเดิมจะใช้ login ไม่ได้อีกทันที`
-        : `ยืนยันตั้งชื่อผู้ใช้ของ "${label}" เป็น "${newEmail}"?\n\nช่องทางเดิม (LINE/Google) ยังใช้เข้าได้ตามปกติ\nขั้นถัดไปให้กด "ตั้งรหัสผ่านชั่วคราว" แล้วพิมพ์บัตรให้เจ้าตัว`
+        ? `ยืนยันเปลี่ยนชื่อผู้ใช้สำหรับเข้าสู่ระบบของ "${label}" เป็น "${newLoginLabel}"?\n\nชื่อผู้ใช้เดิมจะใช้เข้าสู่ระบบไม่ได้อีกทันที`
+        : `ยืนยันตั้งชื่อผู้ใช้ของ "${label}" เป็น "${newLoginLabel}"?\n\nช่องทางเดิม (LINE/Google) ยังใช้เข้าได้ตามปกติ\nขั้นถัดไปให้กด "ตั้งรหัสผ่านใหม่" แล้วพิมพ์บัตรให้เจ้าตัว`
       if (!confirm(message)) return
 
       const emailResult = await updateUserEmail(user, newEmail)
@@ -1812,7 +1835,7 @@ function UserDetailPage(props) {
         const dup = /already been registered|already exists|duplicate/i.test(emailResult.error || '')
         setSaveError(dup
           ? 'ชื่อผู้ใช้นี้มีบัญชีอื่นใช้อยู่แล้ว — น่าจะเป็นคนเดียวกันที่มีสองบัญชี ให้ใช้ "ยุบบัญชีซ้ำ" รวมกันแทน'
-          : 'เปลี่ยนอีเมลไม่สำเร็จ: ' + emailResult.error)
+          : 'เปลี่ยนชื่อผู้ใช้ไม่สำเร็จ: ' + emailResult.error)
         return
       }
     }
@@ -1929,7 +1952,7 @@ function UserDetailPage(props) {
         {saveError && (
           <div className="mb-4 text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{saveError}</div>
         )}
-        <ActiveComponent {...props} isEditing={isEditing} draft={draft} setDraft={setDraft} />
+        <ActiveComponent {...props} isEditing={isEditing} draft={draft} setDraft={setDraft} clearSaveError={() => setSaveError('')} />
       </div>
       <DeleteUserConfirmModal
         deletingUser={deletingUser} setDeletingUser={setDeletingUser} deleteLoading={deleteLoading} deleteUser={deleteUser}

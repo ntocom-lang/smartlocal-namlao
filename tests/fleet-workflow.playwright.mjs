@@ -51,8 +51,8 @@ const TEST_PURPOSE = `[TEST] regression ${STAMP} ห้ามใช้รถจ�
 const TEST_STATION = '[TEST] ปั๊มจำลอง'
 const TEST_LOCALITY = '[TEST] อำเภอจำลอง'
 const TEST_PROVINCE = '[TEST] จังหวัดจำลอง'
-const TEST_POSITION = '[TEST] ตำแหน่งจำลอง'
 const TEST_BACKDATED_REASON = '[TEST] เหตุจำลอง ใช้รถฉุกเฉินนอกเวลาราชการ ยังไม่ได้ยื่นคำขอล่วงหน้า'
+const TEST_POSITION = '[TEST] ตำแหน่งจำลอง'
 const PRINT_DIR = process.env.FLEET_TEST_PRINT_DIR || path.join(ROOT_DIR, 'tmp')
 // คำนำหน้าที่ใช้ตัดสินว่าแถวไหน "ของเทสตัวนี้" — โหมด --cleanup ลบเฉพาะที่ตรงคำนี้เป๊ะ
 const CLEANUP_PREFIX = '[TEST] regression '
@@ -252,6 +252,20 @@ async function fillField(page, labelText, value) {
   await element.fill(String(value))
 }
 
+async function fillFieldIfEditable(page, labelText, value) {
+  const editable = await page.evaluate(text => {
+    const labels = [...document.querySelectorAll('label')]
+      .filter(el => el.offsetParent !== null && el.textContent.trim().startsWith(text))
+    for (const label of labels) {
+      const control = label.parentElement?.querySelector('input, textarea')
+      if (control && !control.disabled && !control.readOnly) return true
+    }
+    return false
+  }, labelText)
+  if (editable) await fillField(page, labelText, value)
+  return editable
+}
+
 async function selectField(page, labelText, optionLabel) {
   const element = (await controlHandle(page, labelText, 'select')).asElement()
   if (!element) throw new BlockedError(`ไม่พบดรอปดาวน์ "${labelText}"`)
@@ -276,26 +290,9 @@ async function clickButton(page, label, { exact = true } = {}) {
 
 const bodyText = page => page.evaluate(() => document.body.innerText)
 
-// "ตำแหน่งผู้ขอ" เป็น readOnly เมื่อโปรไฟล์มีตำแหน่งอยู่แล้ว (trigger ฝั่ง DB จะเขียนทับให้)
-// element.fill() จะโยน error กับช่อง readOnly จึงต้องข้ามอย่างตั้งใจ ไม่ใช่ปล่อยให้เทสล้ม
-async function fillFieldIfEditable(page, labelText, value) {
-  const element = (await controlHandle(page, labelText, 'input, textarea')).asElement()
-  if (!element) throw new BlockedError(`ไม่พบช่อง "${labelText}"`)
-  const locked = await element.evaluate(el => el.readOnly || el.disabled)
-  if (locked) return false
-  await element.fill(String(value))
-  return true
-}
-
-async function readFieldValue(page, labelText) {
-  const element = (await controlHandle(page, labelText, 'input, textarea, select')).asElement()
-  if (!element) throw new BlockedError(`ไม่พบช่อง "${labelText}"`)
-  return element.evaluate(el => el.value)
-}
-
 // ช่องร่วมของใบขออนุญาตใช้รถ (แบบ 3) ที่ทั้งฟอร์ม "ขออนุญาตใช้รถ" และ "บันทึกย้อนหลัง" ต้องมี
 async function fillForm3Fields(page, { destination, purpose, passengers = 3 }) {
-  await fillFieldIfEditable(page, 'ตำแหน่งผู้ขอ', TEST_POSITION)
+  await fillFieldIfEditable(page, 'ตำแหน่งผู้ขอใช้รถ', TEST_POSITION)
   await fillField(page, 'จำนวนผู้ร่วมเดินทาง', passengers)
   const destinationLabel = await page.evaluate(() =>
     [...document.querySelectorAll('label')].some(el => el.offsetParent !== null
@@ -729,11 +726,25 @@ async function checkForm3RequestPrint(baseUrl, headed) {
     await clickButton(page, 'ขออนุญาตใช้รถ')
     await page.waitForTimeout(1_000)
 
-    // ตำแหน่งผู้ขอต้องมาจากข้อมูลบุคลากร ไม่ใช่ให้พิมพ์เองได้ตามใจ (snapshot กันแก้ย้อนหลัง)
-    const positionEditable = await fillFieldIfEditable(page, 'ตำแหน่งผู้ขอ', TEST_POSITION)
-    const positionValue = await readFieldValue(page, 'ตำแหน่งผู้ขอ')
-    assert.ok(String(positionValue).trim(), 'ช่อง "ตำแหน่งผู้ขอ" ว่าง ทั้งที่เป็นช่องบังคับของแบบ 3')
+    // ผู้ขออนุญาตต้องมาจากบัญชีที่ล็อกอิน ไม่มีช่องให้พิมพ์เอง และต้องขึ้นชื่อจริงให้เจ้าหน้าที่เห็น
+    const header = await page.evaluate(() => {
+      const box = [...document.querySelectorAll('div')]
+        .find(el => el.offsetParent !== null && (el.innerText || '').startsWith('ผู้ขอใช้รถ'))
+      const labels = [...document.querySelectorAll('label')]
+        .filter(el => el.offsetParent !== null)
+        .map(el => el.textContent.trim())
+      return { text: (box?.innerText || '').slice(0, 200), labels }
+    })
+    assert.ok(!header.labels.some(label => label.startsWith('ผู้ขออนุญาต')),
+      'ฟอร์มยังมีช่องให้กรอก "ผู้ขออนุญาต" ทั้งที่ต้องยึดตามบัญชีที่ล็อกอิน')
+    assert.ok(!header.text.includes('บัญชีผู้ใช้ปัจจุบัน'),
+      'หัวฟอร์มขึ้นคำว่า "บัญชีผู้ใช้ปัจจุบัน" แทนชื่อเจ้าหน้าที่')
+    assert.ok(header.text.replace('ผู้ขอใช้รถ', '').trim().length > 2,
+      'หัวฟอร์มไม่แสดงชื่อผู้ทำรายการ')
+    assert.ok(header.labels.some(label => label.startsWith('ตำแหน่งผู้ขอใช้รถ')),
+      'ฟอร์มไม่มีช่อง "ตำแหน่งผู้ขอใช้รถ" ซึ่งเป็นช่องบังคับของแบบ 3')
 
+    await fillFieldIfEditable(page, 'ตำแหน่งผู้ขอใช้รถ', TEST_POSITION)
     await fillField(page, 'จำนวนผู้ร่วมเดินทาง', 3)
     await fillField(page, 'สถานที่ไป', destination)
     await fillField(page, 'ในท้องที่', TEST_LOCALITY)
@@ -752,7 +763,7 @@ async function checkForm3RequestPrint(baseUrl, headed) {
     await openTripDetail(page, destination)
     const detailText = await page.evaluate(() =>
       [...document.querySelectorAll('div.fixed.inset-0')].map(m => m.innerText).join('\n'))
-    for (const field of ['ตำแหน่งผู้ขอ', 'ผู้ร่วมเดินทาง', 'ในท้องที่', 'จังหวัด']) {
+    for (const field of ['ตำแหน่ง', 'ผู้ร่วมเดินทาง', 'ในท้องที่', 'จังหวัด']) {
       assert.ok(detailText.includes(field), `กล่องรายละเอียดไม่มีช่อง "${field}" ของแบบ 3`)
     }
     assert.ok(detailText.includes(TEST_LOCALITY) && detailText.includes(TEST_PROVINCE),
@@ -788,7 +799,6 @@ async function checkForm3RequestPrint(baseUrl, headed) {
       { pdfPath: path.join(PRINT_DIR, 'fleet-form3-completed.pdf') })
     const expected = [
       ['ทะเบียนรถ', TEST_PLATE],
-      ['ตำแหน่งผู้ขอ', String(positionValue).trim()],
       ['ในท้องที่', TEST_LOCALITY],
       ['จังหวัด', TEST_PROVINCE.replace(/^จังหวัด\s*/, '')],
       ['สถานที่ไป', destination],
@@ -830,10 +840,6 @@ async function checkForm3RequestPrint(baseUrl, headed) {
     assert.ok(finalPrint.includes(buddhistYear),
       `เอกสารไม่ได้ใช้ปี พ.ศ. (คาดว่าเจอ ${buddhistYear})`)
     await closeDetail(page)
-
-    if (!positionEditable) {
-      process.stdout.write('NOTE: ช่อง "ตำแหน่งผู้ขอ" ล็อกตามข้อมูลบุคลากร (ตรงกับ trigger ฝั่ง DB)\n')
-    }
   } finally {
     await context.close()
   }
