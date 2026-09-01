@@ -35,7 +35,7 @@ const NAV_GROUPS = [
     label: 'ข้อมูลองค์กร',
     items: [
       { label: 'ติดต่อเรา',   href: '/contact',   Icon: Phone },
-      { label: 'เหตุฉุกเฉิน', href: '/emergency', Icon: AlertCircle },
+      { label: 'สายด่วนฉุกเฉิน', href: '/emergency', Icon: AlertCircle },
       { label: 'เมนูทั้งหมด', href: '/more',      Icon: LayoutGrid },
     ],
   },

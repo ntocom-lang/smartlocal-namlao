@@ -327,7 +327,7 @@ const SHORTCUTS = [
   { label: 'Line OA', icon: '💬', href: '#' },
   { label: 'เว็บไซต์', icon: '🌐', href: '#' },
   { label: 'เจ้าหน้าที่', icon: '💼', href: '/staff' },
-  { label: 'ฉุกเฉิน', icon: '🚨', href: '/emergency' },
+  { label: 'สายด่วน', icon: '🚨', href: '/emergency' },
   { label: 'Facebook', icon: '📘', href: '#' },
 ]
 

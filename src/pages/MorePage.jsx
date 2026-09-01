@@ -358,7 +358,7 @@ function NamlaoMorePage() {
   // ในนั้น จะไม่ถูกนับ ต่อให้ใส่ไว้ในนี้ก็ตาม) DEFAULT_QUICK_PATHS ใช้ตอนยังไม่มีประวัติการใช้งานเลย
   // (ผู้ใช้ใหม่/เพิ่งล้าง cache) เรียงตามที่คาดว่าจำเป็นที่สุดของงานบริการประชาชนทั่วไป
   const QUICK_MENU_CATALOG = [
-    { path: '/emergency', icon: AlertTriangle, iconBg: 'bg-red-100', iconColor: 'text-red-600', label: 'เหตุฉุกเฉิน' },
+    { path: '/emergency', icon: AlertTriangle, iconBg: 'bg-red-100', iconColor: 'text-red-600', label: 'สายด่วนฉุกเฉิน' },
     { path: '/complaint', icon: ClipboardList, iconBg: 'bg-orange-100', iconColor: 'text-orange-600',
       label: tenant?.ui_style === 'service_hub' ? 'ร้องเรียน/ร้องทุกข์' : 'แจ้งเหตุ/แจ้งซ่อม' },
     { path: '/doc-request', icon: FileText, iconBg: 'bg-blue-100', iconColor: 'text-blue-600', label: 'สอบถามยอดชำระ' },
@@ -609,8 +609,8 @@ function NamlaoMorePage() {
             icon={AlertTriangle}
             iconBg="bg-red-100"
             iconColor="text-red-600"
-            label="เหตุฉุกเฉิน"
-            desc="เบอร์ฉุกเฉิน แจ้งเหตุด่วน ในพื้นที่"
+            label="สายด่วนฉุกเฉิน"
+            desc="รวมเบอร์โทรฉุกเฉินในพื้นที่"
             href="/emergency"
           />
           <MenuRow

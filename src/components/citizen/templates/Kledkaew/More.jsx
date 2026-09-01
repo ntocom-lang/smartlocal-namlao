@@ -109,7 +109,7 @@ export default function KledkaewMore() {
         { label: 'เอกสารของฉัน', icon: FileSearch, href: '/my-docs', color: 'text-[var(--color-primary)]' },
         { label: 'แจ้งเหตุ/แจ้งซ่อม', icon: ClipboardList, href: '/complaint', color: 'text-[var(--color-primary)]' },
         { label: 'คำร้องของฉัน', icon: FileSearch, href: '/my-complaints', color: 'text-[var(--color-primary)]' },
-        { label: 'เหตุฉุกเฉิน', icon: AlertTriangle, href: '/emergency', color: 'text-red-500' },
+        { label: 'สายด่วนฉุกเฉิน', icon: AlertTriangle, href: '/emergency', color: 'text-red-500' },
         { label: 'ปฏิทินกิจกรรม', icon: CalendarDays, href: '/events', color: 'text-[var(--color-primary)]' },
         { label: 'สภาพอากาศ', icon: Cloud, href: '/weather', color: 'text-[var(--color-primary)]' },
       ],

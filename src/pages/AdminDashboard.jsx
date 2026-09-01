@@ -2065,6 +2065,73 @@ function SortableContact({ c, i, total, onDelete, onMove, onEdit, editingId, edi
   )
 }
 
+// แถวตารางฝั่ง desktop — ลากสลับลำดับได้เหมือนการ์ดบนมือถือ
+// หมายเหตุ: ต้องอยู่คนละ DndContext กับการ์ดมือถือ เพราะทั้งสอง view mount พร้อมกัน
+// (ซ่อนด้วย CSS เท่านั้น) ถ้าใช้ context เดียวกัน sortable id จะซ้ำและ dnd-kit จะจับคู่ผิดแถว
+function SortableContactRow({ c, i, onDelete, onEdit, editingId, editingForm, onEditChange, onEditSave, onEditCancel }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: c.id })
+  const style = {
+    // ตัด x ทิ้งเพื่อล็อกแกน Y เอง (โปรเจกต์ไม่ได้ลง @dnd-kit/modifiers)
+    // และคง scale ไว้ที่ 1 กันความกว้างคอลัมน์บิดตอนลาก
+    transform: transform ? CSS.Transform.toString({ ...transform, x: 0, scaleX: 1, scaleY: 1 }) : undefined,
+    transition,
+    opacity: isDragging ? 0.45 : 1,
+    position: 'relative',
+    zIndex: isDragging ? 10 : undefined,
+  }
+  const isEditing = editingId === c.id
+  return (
+    <tr ref={setNodeRef} style={style}
+        className={`transition-colors ${isDragging ? 'bg-gray-50 shadow-sm' : 'hover:bg-gray-50'}`}>
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-1">
+          <button {...attributes} {...listeners}
+            className="p-1 -ml-1 rounded text-gray-300 hover:text-gray-600 cursor-grab active:cursor-grabbing touch-none"
+            title="ลากเพื่อสลับลำดับ">
+            <GripVertical size={15} />
+          </button>
+          <span className="text-xs text-gray-400">{i + 1}</span>
+        </div>
+      </td>
+      <td className="px-4 py-3 text-2xl">{c.emoji}</td>
+      <td className="px-4 py-3">
+        {isEditing ? (
+          <input value={editingForm.label} onChange={e => onEditChange('label', e.target.value)}
+            className="border border-gray-300 rounded-lg px-2 py-1 text-sm text-gray-800 focus:outline-none w-full max-w-xs" />
+        ) : (
+          <span className="font-medium text-gray-800">{c.label}</span>
+        )}
+      </td>
+      <td className="px-4 py-3">
+        {isEditing ? (
+          <div className="flex items-center gap-2">
+            <input value={editingForm.number} onChange={e => onEditChange('number', e.target.value)}
+              className="border border-gray-300 rounded-lg px-2 py-1 text-sm text-gray-800 focus:outline-none w-32" />
+            <button onClick={onEditSave}
+              className="px-2.5 py-1 rounded-lg text-xs font-semibold text-white bg-green-500 hover:bg-green-600">บันทึก</button>
+            <button onClick={onEditCancel}
+              className="px-2.5 py-1 rounded-lg text-xs text-gray-500 border border-gray-200 hover:bg-gray-50">ยกเลิก</button>
+          </div>
+        ) : (
+          <a href={`tel:${c.number}`} className="text-blue-600 hover:underline font-mono">{c.number}</a>
+        )}
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex justify-end gap-1.5">
+          <button onClick={() => onEdit(c)}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="แก้ไข">
+            <Pencil size={14} />
+          </button>
+          <button onClick={() => onDelete(c.id)}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="ลบ">
+            <Trash2 size={14} />
+          </button>
+        </div>
+      </td>
+    </tr>
+  )
+}
+
 const EMERGENCY_EMOJIS = [
   '📞','👮','🚒','🏥','🚑','⚡','💧','🏛️','🪖','🆘',
   '🩺','🛣️','💡','⛽','🌳','🔥','🚔','🚨','🛡️','☎️',
@@ -2256,61 +2323,35 @@ function EmergencyManager({ tenant }) {
               </div>
             </SortableContext>
           </DndContext>
-          {/* Desktop table */}
+          {/* Desktop table — DnD คนละ context กับการ์ดมือถือ (ดูหมายเหตุที่ SortableContactRow) */}
           <div className="hidden md:block border border-gray-200 rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-16">ลำดับ</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-24">ลำดับ</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-16">สัญลักษณ์</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ชื่อ / หน่วยงาน</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">เบอร์โทร</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 w-28">จัดการ</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
-                {contacts.map((c, i) => (
-                  <tr key={c.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3 text-xs text-gray-400">{i + 1}</td>
-                    <td className="px-4 py-3 text-2xl">{c.emoji}</td>
-                    <td className="px-4 py-3">
-                      {editingId === c.id ? (
-                        <input value={editingForm.label} onChange={e => setEditingForm(p => ({ ...p, label: e.target.value }))}
-                          className="border border-gray-300 rounded-lg px-2 py-1 text-sm text-gray-800 focus:outline-none w-full max-w-xs" />
-                      ) : (
-                        <span className="font-medium text-gray-800">{c.label}</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      {editingId === c.id ? (
-                        <div className="flex items-center gap-2">
-                          <input value={editingForm.number} onChange={e => setEditingForm(p => ({ ...p, number: e.target.value }))}
-                            className="border border-gray-300 rounded-lg px-2 py-1 text-sm text-gray-800 focus:outline-none w-32" />
-                          <button onClick={saveContactEdit}
-                            className="px-2.5 py-1 rounded-lg text-xs font-semibold text-white bg-green-500 hover:bg-green-600">บันทึก</button>
-                          <button onClick={() => setEditingId(null)}
-                            className="px-2.5 py-1 rounded-lg text-xs text-gray-500 border border-gray-200 hover:bg-gray-50">ยกเลิก</button>
-                        </div>
-                      ) : (
-                        <a href={`tel:${c.number}`} className="text-blue-600 hover:underline font-mono">{c.number}</a>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-1.5">
-                        <button onClick={() => handleEdit(c)}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="แก้ไข">
-                          <Pencil size={14} />
-                        </button>
-                        <button onClick={() => deleteContact(c.id)}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="ลบ">
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                <SortableContext items={contacts.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+                  <tbody className="divide-y divide-gray-100">
+                    {contacts.map((c, i) => (
+                      <SortableContactRow key={c.id} c={c} i={i}
+                        onDelete={deleteContact} onEdit={handleEdit}
+                        editingId={editingId} editingForm={editingForm}
+                        onEditChange={(field, val) => setEditingForm((p) => ({ ...p, [field]: val }))}
+                        onEditSave={saveContactEdit} onEditCancel={() => setEditingId(null)} />
+                    ))}
+                  </tbody>
+                </SortableContext>
+              </DndContext>
             </table>
+            <p className="px-4 py-2 text-[11px] text-gray-400 bg-gray-50 border-t border-gray-100">
+              ลากไอคอน ⠿ ที่คอลัมน์ลำดับเพื่อสลับตำแหน่ง — ลำดับที่จัดไว้จะแสดงตามนี้บนหน้าประชาชน
+            </p>
           </div>
         </>
       )}
@@ -4680,7 +4721,7 @@ const PAGE_LABELS = {
   'doc-requests': 'คำขอเอกสาร',
   report: 'รายงานสรุป',
   categories: 'ประเภทคำร้อง',
-  emergency: 'สายด่วน',
+  emergency: 'สายด่วนฉุกเฉิน',
   locations: 'สถานที่เกิดเหตุ',
   'system-settings': 'ตั้งค่าระบบ',
   users: 'จัดการผู้ใช้และการแต่งตั้ง',
@@ -4716,7 +4757,7 @@ function getAdminMenuGroups(currentUserRole, currentUserId) {
       accent: '#0ea5e9',
       items: [
         { key: 'categories', label: 'ประเภทคำร้อง', Icon: Tag, color: '#d97706', bg: '#fef3c7', show: canManageContent },
-        { key: 'emergency', label: 'สายด่วน', Icon: Phone, color: '#ef4444', bg: '#fee2e2', show: canManageContent },
+        { key: 'emergency', label: 'สายด่วนฉุกเฉิน', Icon: Phone, color: '#ef4444', bg: '#fee2e2', show: canManageContent },
         { key: 'locations', label: 'สถานที่เกิดเหตุ', Icon: MapPin, color: '#0891b2', bg: '#e0f2fe', show: canManageContent },
         { key: 'fleet-setup', label: 'ยานพาหนะ', Icon: Car, color: '#0369a1', bg: '#e0f2fe', show: canManageSystem },
       ],

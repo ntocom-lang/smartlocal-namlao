@@ -2,18 +2,9 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 
-const FALLBACK = [
-  { id: '1', label: 'ตำรวจ',          number: '191',  emoji: '👮', color: '#1d4ed8', bg: '#dbeafe' },
-  { id: '2', label: 'กู้ชีพ / EMS',   number: '1669', emoji: '🚑', color: '#dc2626', bg: '#fee2e2' },
-  { id: '3', label: 'การไฟฟ้า',       number: '1129', emoji: '⚡', color: '#d97706', bg: '#fef3c7' },
-  { id: '4', label: 'ดับเพลิง',       number: '199',  emoji: '🚒', color: '#ea580c', bg: '#ffedd5' },
-  { id: '5', label: 'ประปา',          number: '1662', emoji: '💧', color: '#0284c7', bg: '#e0f2fe' },
-  { id: '6', label: 'สายด่วนรัฐบาล', number: '1111', emoji: '📞', color: '#7c3aed', bg: '#ede9fe' },
-]
-
 export default function EmergencyGrid() {
   const { tenant } = useTenant()
-  const [contacts, setContacts] = useState(FALLBACK)
+  const [contacts, setContacts] = useState([])
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -23,10 +14,11 @@ export default function EmergencyGrid() {
       .eq('municipality_id', tenant.id)
       .eq('is_active', true)
       .order('display_order')
-      .then(({ data }) => {
-        if (data && data.length > 0) setContacts(data)
-      })
+      .then(({ data }) => setContacts(data || []))
   }, [tenant?.id])
+
+  // เบอร์สายด่วนต่างกันทุก อปท. จึงไม่มีเบอร์กลางสำรอง — ยังไม่กรอกก็ไม่ต้องขึ้นหัวข้อว่างบนหน้าแรก
+  if (contacts.length === 0) return null
 
   return (
     <section>

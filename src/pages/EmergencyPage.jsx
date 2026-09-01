@@ -1,35 +1,34 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Phone, PhoneCall } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { ArrowLeft, Phone, PhoneCall, Settings } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
-
-const FALLBACK = [
-  { id: '1', label: 'ตำรวจ',          number: '191',  emoji: '👮', color: '#1d4ed8', bg: '#dbeafe' },
-  { id: '2', label: 'กู้ชีพ / EMS',   number: '1669', emoji: '🚑', color: '#dc2626', bg: '#fee2e2' },
-  { id: '3', label: 'การไฟฟ้า',       number: '1129', emoji: '⚡', color: '#d97706', bg: '#fef3c7' },
-  { id: '4', label: 'ดับเพลิง',       number: '199',  emoji: '🚒', color: '#ea580c', bg: '#ffedd5' },
-  { id: '5', label: 'ประปา',          number: '1662', emoji: '💧', color: '#0284c7', bg: '#e0f2fe' },
-  { id: '6', label: 'สายด่วนรัฐบาล', number: '1111', emoji: '📞', color: '#7c3aed', bg: '#ede9fe' },
-]
+import { useAuth } from '../contexts/AuthContext'
 
 export default function EmergencyPage() {
   const navigate = useNavigate()
-  const { tenant } = useTenant()
-  const [contacts, setContacts] = useState(FALLBACK)
+  const { tenant, loading: tenantLoading } = useTenant()
+  const { role } = useAuth()
+  const [contacts, setContacts] = useState(null)   // null = ยังไม่ได้โหลด, [] = โหลดแล้วแต่ไม่มีข้อมูล
 
+  // เบอร์สายด่วนต่างกันทุก อปท. จึงไม่มีเบอร์กลางสำรอง — แต่ละแห่งต้องกรอกเองจากหลังบ้าน
   useEffect(() => {
     if (!tenant?.id) return
+    let alive = true
     supabase
       .from('emergency_contacts')
       .select('*')
       .eq('municipality_id', tenant.id)
       .eq('is_active', true)
       .order('display_order')
-      .then(({ data }) => {
-        if (data && data.length > 0) setContacts(data)
-      })
+      .then(({ data }) => { if (alive) setContacts(data || []) })
+    return () => { alive = false }
   }, [tenant?.id])
+
+  // tenant ยังโหลดไม่เสร็จ หรือมี tenant แล้วแต่ query ยังไม่กลับ = ยังโหลดอยู่
+  // ถ้า tenant โหลดจบแล้วแต่หา tenant ไม่เจอ ให้ตกไปที่ empty state แทนที่จะค้าง skeleton
+  const loading = tenantLoading || Boolean(tenant?.id && contacts === null)
+  const canManage = role === 'admin' || role === 'superadmin'
 
   return (
     <div className="max-w-lg mx-auto pb-28 md:pb-8">
@@ -73,28 +72,55 @@ export default function EmergencyPage() {
         </div>
 
         {/* Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-3">
-          {contacts.map(({ id, label, number, emoji, color, bg }) => (
-            <a key={id} href={`tel:${number}`}
-               className="flex flex-col items-center gap-2 p-3 md:p-4 rounded-2xl bg-white border border-gray-100 shadow-sm active:scale-95 transition-transform text-center">
-              <div className="w-12 h-12 md:w-14 md:h-14 rounded-2xl flex items-center justify-center text-2xl md:text-3xl"
-                   style={{ backgroundColor: bg }}>
-                {emoji}
-              </div>
-              <div>
-                <p className="text-xl md:text-2xl font-extrabold leading-none tracking-wide" style={{ color }}>
-                  {number}
-                </p>
-                <p className="text-xs md:text-sm text-gray-500 mt-1">{label}</p>
-              </div>
-              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-white text-[10px] md:text-xs font-semibold"
-                    style={{ backgroundColor: color }}>
-                <Phone size={12} />
-                โทรเลย
-              </span>
-            </a>
-          ))}
-        </div>
+        {loading ? (
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-3">
+            {[0, 1, 2, 3].map(i => (
+              <div key={i} className="h-[148px] md:h-[176px] rounded-2xl bg-gray-100 animate-pulse" />
+            ))}
+          </div>
+        ) : !contacts || contacts.length === 0 ? (
+          <div className="rounded-2xl bg-white border border-gray-100 shadow-sm px-5 py-8 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-3">
+              <PhoneCall size={26} className="text-gray-400" />
+            </div>
+            <p className="font-semibold text-gray-700">ยังไม่มีข้อมูลสายด่วนฉุกเฉิน</p>
+            <p className="text-sm text-gray-500 mt-1 leading-relaxed">
+              {tenant?.name || 'หน่วยงาน'}ยังไม่ได้บันทึกเบอร์สายด่วน
+              {tenant?.phone ? ' กรุณาติดต่อสำนักงานตามเบอร์ด้านล่าง' : ' กรุณาติดต่อสำนักงานโดยตรง'}
+            </p>
+            {canManage && (
+              <Link to="/admin" state={{ page: 'emergency' }}
+                    className="inline-flex items-center gap-2 mt-4 px-4 py-2 rounded-xl text-white text-sm font-semibold"
+                    style={{ backgroundColor: '#ef4444' }}>
+                <Settings size={14} />
+                เพิ่มเบอร์สายด่วน
+              </Link>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-3">
+            {contacts.map(({ id, label, number, emoji, color, bg }) => (
+              <a key={id} href={`tel:${number}`}
+                 className="flex flex-col items-center gap-2 p-3 md:p-4 rounded-2xl bg-white border border-gray-100 shadow-sm active:scale-95 transition-transform text-center">
+                <div className="w-12 h-12 md:w-14 md:h-14 rounded-2xl flex items-center justify-center text-2xl md:text-3xl"
+                     style={{ backgroundColor: bg }}>
+                  {emoji}
+                </div>
+                <div>
+                  <p className="text-xl md:text-2xl font-extrabold leading-none tracking-wide" style={{ color }}>
+                    {number}
+                  </p>
+                  <p className="text-xs md:text-sm text-gray-500 mt-1">{label}</p>
+                </div>
+                <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-white text-[10px] md:text-xs font-semibold"
+                      style={{ backgroundColor: color }}>
+                  <Phone size={12} />
+                  โทรเลย
+                </span>
+              </a>
+            ))}
+          </div>
+        )}
 
         {/* Tenant contact */}
         {tenant?.phone && (
