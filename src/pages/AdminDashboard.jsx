@@ -2023,11 +2023,11 @@ function SortableContact({ c, i, total, onDelete, onMove, onEdit, editingId, edi
           </div>
         </div>
         <div className="flex flex-col gap-0">
-          <button onClick={() => onMove(i, -1)} disabled={i === 0}
+          <button onClick={() => onMove(c, -1)} disabled={i === 0}
                   className="p-0.5 rounded text-gray-300 hover:text-gray-600 disabled:opacity-20 transition-colors">
             <ChevronUp size={14} />
           </button>
-          <button onClick={() => onMove(i, 1)} disabled={i === total - 1}
+          <button onClick={() => onMove(c, 1)} disabled={i === total - 1}
                   className="p-0.5 rounded text-gray-300 hover:text-gray-600 disabled:opacity-20 transition-colors">
             <ChevronDown size={14} />
           </button>
@@ -2092,7 +2092,7 @@ function SortableContact({ c, i, total, onDelete, onMove, onEdit, editingId, edi
 // แถวตารางฝั่ง desktop — ลากสลับลำดับได้เหมือนการ์ดบนมือถือ
 // หมายเหตุ: ต้องอยู่คนละ DndContext กับการ์ดมือถือ เพราะทั้งสอง view mount พร้อมกัน
 // (ซ่อนด้วย CSS เท่านั้น) ถ้าใช้ context เดียวกัน sortable id จะซ้ำและ dnd-kit จะจับคู่ผิดแถว
-function SortableContactRow({ c, i, onDelete, onEdit, editingId, editingForm, onEditChange, onEditSave, onEditCancel }) {
+function SortableContactRow({ c, order, onDelete, onEdit, editingId, editingForm, onEditChange, onEditSave, onEditCancel }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: c.id })
   const style = {
     // ตัด x ทิ้งเพื่อล็อกแกน Y เอง (โปรเจกต์ไม่ได้ลง @dnd-kit/modifiers)
@@ -2114,7 +2114,7 @@ function SortableContactRow({ c, i, onDelete, onEdit, editingId, editingForm, on
             title="ลากเพื่อสลับลำดับ">
             <GripVertical size={15} />
           </button>
-          <span className="text-xs text-gray-400">{i + 1}</span>
+          <span className="text-xs text-gray-400">{order}</span>
         </div>
       </td>
       <td className="px-4 py-3 text-2xl">{c.emoji}</td>
@@ -2217,19 +2217,42 @@ function EmergencyManager({ tenant }) {
     )
   }
 
-  function handleDragEnd({ active, over }) {
-    if (!over || active.id === over.id) return
-    const oldIdx = contacts.findIndex((c) => c.id === active.id)
-    const newIdx = contacts.findIndex((c) => c.id === over.id)
-    const next = arrayMove(contacts, oldIdx, newIdx)
+  // เรียงทั้งชุดไล่ตามลำดับหมวดก่อน แล้วค่อยตามลำดับที่แอดมินจัดไว้ในหมวด
+  // display_order ที่บันทึกจึงตรงกับที่หน้าประชาชนแสดงเสมอ (หน้านั้นจัดกลุ่มด้วยหมวดเหมือนกัน)
+  function orderByCategory(list) {
+    return EMERGENCY_CATEGORIES.flatMap((cat) =>
+      list.filter((c) => emergencyCategoryOf(c) === cat.key)
+    )
+  }
+
+  // สลับตำแหน่งภายในหมวดเดียวกันเท่านั้น แล้วบันทึกลำดับใหม่ทั้งชุด
+  function reorderWithin(catKey, from, to) {
+    const inCat = contacts.filter((c) => emergencyCategoryOf(c) === catKey)
+    const oldIdx = inCat.findIndex((c) => c.id === from)
+    const newIdx = inCat.findIndex((c) => c.id === to)
+    if (oldIdx < 0 || newIdx < 0 || oldIdx === newIdx) return
+    const rest = contacts.filter((c) => emergencyCategoryOf(c) !== catKey)
+    const next = orderByCategory([...rest, ...arrayMove(inCat, oldIdx, newIdx)])
     setContacts(next)
     saveOrder(next)
   }
 
-  function handleMove(idx, dir) {
-    const next = arrayMove(contacts, idx, idx + dir)
-    setContacts(next)
-    saveOrder(next)
+  function handleDragEnd({ active, over }) {
+    if (!over || active.id === over.id) return
+    const from = contacts.find((c) => c.id === active.id)
+    const to = contacts.find((c) => c.id === over.id)
+    // ลากข้ามหมวดไม่ทำอะไร — เปลี่ยนหมวดต้องกดแก้ไขแล้วเลือกจาก dropdown
+    // (กันลากพลาดแล้วหมวดเปลี่ยนโดยไม่รู้ตัว)
+    if (!from || !to || emergencyCategoryOf(from) !== emergencyCategoryOf(to)) return
+    reorderWithin(emergencyCategoryOf(from), from.id, to.id)
+  }
+
+  function handleMove(contact, dir) {
+    const catKey = emergencyCategoryOf(contact)
+    const inCat = contacts.filter((c) => emergencyCategoryOf(c) === catKey)
+    const target = inCat[inCat.findIndex((c) => c.id === contact.id) + dir]
+    if (!target) return
+    reorderWithin(catKey, contact.id, target.id)
   }
 
   function guessEmoji(label) {
@@ -2291,6 +2314,13 @@ function EmergencyManager({ tenant }) {
     setContacts((prev) => prev.map((c) => c.id === editingId ? { ...c, ...editingForm } : c))
     setEditingId(null)
   }
+
+  // จัดกลุ่มให้ตรงกับหน้าประชาชน — หมวดที่ไม่มีรายการไม่ต้องขึ้นหัวข้อเปล่า
+  const grouped = EMERGENCY_CATEGORIES
+    .map((cat) => ({ cat, items: contacts.filter((c) => emergencyCategoryOf(c) === cat.key) }))
+    .filter((g) => g.items.length > 0)
+  // เลขในคอลัมน์ "ลำดับ" คือลำดับรวมที่ประชาชนเห็น ไม่ใช่ลำดับในหมวด
+  const orderIndex = new Map(orderByCategory(contacts).map((c, i) => [c.id, i + 1]))
 
   return (
     <div className="space-y-4">
@@ -2356,17 +2386,28 @@ function EmergencyManager({ tenant }) {
         <>
           {/* Mobile: DnD sortable cards */}
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={contacts.map((c) => c.id)} strategy={verticalListSortingStrategy}>
-              <div className="md:hidden bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                {contacts.map((c, i) => (
-                  <SortableContact key={c.id} c={c} i={i} total={contacts.length}
-                    onDelete={deleteContact} onMove={handleMove} onEdit={handleEdit}
-                    editingId={editingId} editingForm={editingForm}
-                    onEditChange={(field, val) => setEditingForm((p) => ({ ...p, [field]: val }))}
-                    onEditSave={saveContactEdit} />
-                ))}
-              </div>
-            </SortableContext>
+            <div className="md:hidden space-y-3">
+              {grouped.map(({ cat, items }) => (
+                <div key={cat.key}>
+                  <div className="flex items-center gap-1.5 px-1 mb-1.5">
+                    <span className="text-sm">{cat.emoji}</span>
+                    <span className="text-xs font-bold" style={{ color: cat.color }}>{cat.label}</span>
+                    <span className="text-[11px] text-gray-400">{items.length}</span>
+                  </div>
+                  <SortableContext items={items.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                      {items.map((c, i) => (
+                        <SortableContact key={c.id} c={c} i={i} total={items.length}
+                          onDelete={deleteContact} onMove={handleMove} onEdit={handleEdit}
+                          editingId={editingId} editingForm={editingForm}
+                          onEditChange={(field, val) => setEditingForm((p) => ({ ...p, [field]: val }))}
+                          onEditSave={saveContactEdit} />
+                      ))}
+                    </div>
+                  </SortableContext>
+                </div>
+              ))}
+            </div>
           </DndContext>
           {/* Desktop table — DnD คนละ context กับการ์ดมือถือ (ดูหมายเหตุที่ SortableContactRow) */}
           <div className="hidden md:block border border-gray-200 rounded-xl overflow-hidden">
@@ -2382,21 +2423,33 @@ function EmergencyManager({ tenant }) {
                 </tr>
               </thead>
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                <SortableContext items={contacts.map((c) => c.id)} strategy={verticalListSortingStrategy}>
-                  <tbody className="divide-y divide-gray-100">
-                    {contacts.map((c, i) => (
-                      <SortableContactRow key={c.id} c={c} i={i}
-                        onDelete={deleteContact} onEdit={handleEdit}
-                        editingId={editingId} editingForm={editingForm}
-                        onEditChange={(field, val) => setEditingForm((p) => ({ ...p, [field]: val }))}
-                        onEditSave={saveContactEdit} onEditCancel={() => setEditingId(null)} />
-                    ))}
+                {grouped.map(({ cat, items }) => (
+                  <tbody key={cat.key} className="divide-y divide-gray-100">
+                    <tr className="bg-gray-50/80 border-t border-gray-100">
+                      <td colSpan={6} className="px-4 py-2">
+                        <span className="inline-flex items-center gap-1.5 text-xs font-bold" style={{ color: cat.color }}>
+                          <span>{cat.emoji}</span>
+                          {cat.label}
+                          <span className="text-[11px] font-normal text-gray-400">{items.length}</span>
+                        </span>
+                      </td>
+                    </tr>
+                    <SortableContext items={items.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+                      {items.map((c) => (
+                        <SortableContactRow key={c.id} c={c} order={orderIndex.get(c.id)}
+                          onDelete={deleteContact} onEdit={handleEdit}
+                          editingId={editingId} editingForm={editingForm}
+                          onEditChange={(field, val) => setEditingForm((p) => ({ ...p, [field]: val }))}
+                          onEditSave={saveContactEdit} onEditCancel={() => setEditingId(null)} />
+                      ))}
+                    </SortableContext>
                   </tbody>
-                </SortableContext>
+                ))}
               </DndContext>
             </table>
             <p className="px-4 py-2 text-[11px] text-gray-400 bg-gray-50 border-t border-gray-100">
-              ลากไอคอน ⠿ ที่คอลัมน์ลำดับเพื่อสลับตำแหน่ง — ลำดับที่จัดไว้จะแสดงตามนี้บนหน้าประชาชน
+              ลากไอคอน ⠿ ที่คอลัมน์ลำดับเพื่อสลับตำแหน่งภายในหมวดเดียวกัน — ลำดับที่จัดไว้จะแสดงตามนี้บนหน้าประชาชน
+              ส่วนการย้ายหมวดให้กดแก้ไข (✎) แล้วเลือกหมวดใหม่
             </p>
           </div>
         </>
