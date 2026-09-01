@@ -1717,7 +1717,7 @@ function PermissionsTab({ user, currentUserRole, isEditing, draft, setDraft }) {
             <option value="citizen">ประชาชน — ใช้บริการประชาชนเท่านั้น</option>
             <option value="staff">เจ้าหน้าที่ — ใช้เมนูงานที่ได้รับมอบหมาย</option>
             <option value="viewer">ผู้บริหาร — ดูภาพรวมและข้อมูลประกอบการตัดสินใจ</option>
-            <option value="council">สภาเทศบาล — ดูงานที่เกี่ยวข้องกับสภา</option>
+            <option value="council">{ROLE_LABELS.council.label} — ดูงานที่เกี่ยวข้องกับสภา</option>
             <option value="officer">หัวหน้ากอง — จัดการงานของกองที่สังกัด</option>
             <option value="technician">ปฏิบัติงาน — บันทึกงานที่รับผิดชอบ</option>
             {currentUserRole === 'superadmin' && <option value="admin">แอดมินระบบ — ดูแลทั้งเทศบาล</option>}

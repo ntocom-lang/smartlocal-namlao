@@ -5,24 +5,11 @@ import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import EventDetailModal from '../components/EventDetailModal'
 import { toDateStr } from '../lib/thaiDate'
+import { AUDIENCE_COLOR, AUDIENCE_LABEL } from '../lib/orgTerms'
 
 const CATEGORY_COLOR = {
   'ประชาสัมพันธ์': '#10b981', 'ประชุม': '#3b82f6', 'กำหนดการ': '#f97316',
   'อบรม': '#8b5cf6', 'อื่นๆ': '#6b7280',
-}
-
-const AUDIENCE_LABEL = {
-  public:     'ประชาชน',
-  staff:      'เจ้าหน้าที่',
-  management: 'ผู้บริหาร',
-  council:    'สภาเทศบาล',
-}
-
-const AUDIENCE_COLOR = {
-  public:     '#10b981',
-  staff:      '#3b82f6',
-  management: '#8b5cf6',
-  council:    '#f59e0b',
 }
 
 const DAY_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']

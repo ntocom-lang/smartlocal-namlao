@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Briefcase, Plus, Pencil, Trash2, X, Loader2, Search, AlertCircle, Users, DownloadCloud } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { activeOrgTerms } from '../../lib/orgTerms'
 
 // แบบตำแหน่งของหน่วยงาน (ตาราง positions) — ย้ายมาจากเมนู "ทำเนียบตำแหน่ง" ฝั่งเจ้าหน้าที่ที่ถอดออก
 // 2026-08-31 (ซ้ำซ้อนกับหน้าจัดการผู้ใช้ในสายตาแอดมิน) ตาราง positions ยังจำเป็นเพราะเป็น dependency
@@ -23,7 +24,9 @@ const CATEGORIES = [
 
 const ROLE_TH = {
   superadmin: 'Super Admin', admin: 'แอดมินระบบ', officer: 'หัวหน้ากอง',
-  technician: 'ปฏิบัติงาน', staff: 'เจ้าหน้าที่', viewer: 'ผู้บริหาร', council: 'สภาเทศบาล',
+  technician: 'ปฏิบัติงาน', staff: 'เจ้าหน้าที่', viewer: 'ผู้บริหาร',
+  // getter เพราะคำเรียกสภาเปลี่ยนตาม org_type และค่านี้ยังไม่พร้อมตอน import — ดู src/lib/orgTerms.js
+  get council() { return activeOrgTerms().councilOrg },
 }
 
 const EMPTY_FORM = { name: '', category: 'operating_staff', role: 'staff', department_hint: '', sort_order: 0 }

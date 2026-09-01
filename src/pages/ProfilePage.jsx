@@ -10,6 +10,7 @@ import { THAI_PROVINCES, thaiDistrictsOf, thaiSubdistrictsOf } from '../lib/thai
 import { tenantDefaultSubdistrict } from '../lib/tenantSubdistrict'
 import ActiveSessions from '../components/profile/ActiveSessions'
 import { validateNewPassword, PASSWORD_HINT } from '../lib/passwordPolicy'
+import { activeOrgTerms } from '../lib/orgTerms'
 
 // role ที่ใช้การเข้าสู่ระบบด้วย QR ได้ ต้องตรงกับ STAFF_ROLES ใน edge function device-login
 const STAFF_ROLES = ['superadmin', 'admin', 'officer', 'technician', 'staff', 'viewer', 'council']
@@ -21,7 +22,8 @@ const ROLE_LABEL = {
   technician: 'ปฏิบัติงาน',
   staff:      'เจ้าหน้าที่',
   viewer:     'ผู้บริหาร',
-  council:    'สภาเทศบาล',
+  // getter เพราะคำเรียกสภาเปลี่ยนตาม org_type และค่านี้ยังไม่พร้อมตอน import — ดู src/lib/orgTerms.js
+  get council() { return activeOrgTerms().councilOrg },
   citizen:    'ประชาชน',
 }
 

@@ -11,6 +11,7 @@ import { Info, ChevronRight, Megaphone, Newspaper, CalendarDays, ChevronLeft, La
 import WeatherWidget from '../../../../components/home/WeatherWidget'
 import StaffSection from '../../../../components/home/StaffSection'
 import { toDateStr } from '../../../../lib/thaiDate'
+import { AUDIENCE_LABEL as AUD_LABEL } from '../../../../lib/orgTerms'
 
 const MARQUEE_TEXT = 'บริการประชาชนออนไลน์ ตลอด 24 ชั่วโมง เพื่อใช้เป็นช่องทางในการติดตามข่าวสาร แจ้งเรื่องร้องเรียน และรับบริการต่างๆได้อย่างสะดวก รวดเร็ว และเข้าถึงได้ทุกที่ทุกเวลา'
 
@@ -24,7 +25,7 @@ const DAY_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 const AUD_COLOR = {
   public: '#10b981', staff: '#3b82f6', management: '#8b5cf6', council: '#f59e0b',
 }
-const AUD_LABEL = { public: 'ประชาชน', staff: 'เจ้าหน้าที่', management: 'ผู้บริหาร', council: 'สภาเทศบาล' }
+// คำเรียกสภาเปลี่ยนตาม org_type (สภาเทศบาล / สภา อบต. / สภา อบจ.) — ดู src/lib/orgTerms.js
 
 // ── section order per layout ──────────────────────────────────────────
 const LAYOUT_ORDER = {

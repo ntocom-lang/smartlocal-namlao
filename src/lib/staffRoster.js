@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { activeOrgTerms } from './orgTerms'
 
 // Role vocabulary ของทั้งระบบ (profiles.role) — เดิม AdminDashboard.jsx นิยามไว้เอง ส่วน
 // ComplaintsManager.jsx ไม่มีเลย ทำให้แสดง/กรอง role เพี้ยนกันคนละจุด (เช่น "หัวหน้ากอง" เคยถูก
@@ -10,7 +11,10 @@ export const ROLE_LABELS = {
   technician:  { label: 'ปฏิบัติงาน',   color: '#d97706', bg: '#fef3c7' },
   staff:       { label: 'เจ้าหน้าที่',  color: '#0ea5e9', bg: '#e0f2fe' },
   viewer:      { label: 'ผู้บริหาร',    color: '#059669', bg: '#d1fae5' },
-  council:     { label: 'สภาเทศบาล',    color: '#f59e0b', bg: '#fff7ed' },
+  // label เป็น getter เพราะคำเรียกสภาเปลี่ยนตาม org_type ("สภาเทศบาล" / "สภา อบต." / "สภา อบจ.")
+  // ทำแบบนี้เพื่อให้ ~20 จุดที่เขียน ROLE_LABELS[role].label อยู่แล้วได้ค่าถูกต้องโดยไม่ต้องแก้ทุกจุด
+  // เป็น hook — activeOrgTerms() อ่าน module state ที่ TenantProvider ตั้งไว้ตั้งแต่ก่อนหน้าจอแรกเรนเดอร์
+  council:     { get label() { return activeOrgTerms().councilOrg }, color: '#f59e0b', bg: '#fff7ed' },
   citizen:     { label: 'ประชาชน',       color: '#374151', bg: '#f3f4f6' },
 }
 
@@ -18,11 +22,11 @@ export const ROLE_DESCRIPTIONS = {
   citizen: 'ใช้บริการประชาชน ไม่มีสิทธิ์จัดการงานภายใน',
   staff: 'เจ้าหน้าที่ทั่วไป ใช้เฉพาะเมนูงานที่ได้รับมอบหมาย',
   viewer: 'ผู้บริหาร ดูข้อมูลและภาพรวมเพื่อประกอบการตัดสินใจ',
-  council: 'สมาชิกสภา ดูข้อมูลและงานที่เกี่ยวข้องกับสภาเทศบาล',
+  get council() { return `สมาชิกสภา ดูข้อมูลและงานที่เกี่ยวข้องกับ${activeOrgTerms().councilOrg}` },
   officer: 'หัวหน้ากอง ดูแลงานและเอกสารของกองที่สังกัดทั้งกอง ไม่ข้ามกอง',
   technician: 'เจ้าหน้าที่ปฏิบัติงานหรือภาคสนาม บันทึกและอัปเดตงานที่รับผิดชอบ',
-  admin: 'ผู้ดูแลระบบของเทศบาล จัดการผู้ใช้ การตั้งค่า และงานทุกกองในเทศบาล',
-  superadmin: 'ผู้พัฒนาระบบ จัดการได้ทุกเทศบาลและทุกโมดูล',
+  admin: 'ผู้ดูแลระบบของหน่วยงาน จัดการผู้ใช้ การตั้งค่า และงานทุกกอง',
+  superadmin: 'ผู้พัฒนาระบบ จัดการได้ทุกหน่วยงานและทุกโมดูล',
 }
 
 // role ที่ถือว่าเป็น "ผู้ปฏิบัติงาน" รับมอบหมายงาน/คำร้องได้ — ตัด viewer/council (ตำแหน่งกำกับดูแล

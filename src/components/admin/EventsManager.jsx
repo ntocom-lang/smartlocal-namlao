@@ -6,6 +6,7 @@ import { logAction } from '../../lib/auditLog'
 import { extractEventFromFile } from '../../lib/geminiChat'
 import { uploadFile } from '../../lib/driveStorage'
 import { todayStr } from '../../lib/thaiDate'
+import { AUDIENCE_COLOR, AUDIENCE_LABEL, activeOrgTerms } from '../../lib/orgTerms'
 
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
 const MINUTES = ['00', '15', '30', '45']
@@ -80,10 +81,11 @@ const EVENTS_CATEGORY_COLOR = {
   'อบรม': '#8b5cf6', 'อื่นๆ': '#6b7280',
 }
 const AUDIENCE_OPTIONS = [
-  { value: 'public',     label: 'ประชาชน',                 color: '#10b981' },
-  { value: 'staff',      label: 'เจ้าหน้าที่',              color: '#3b82f6' },
-  { value: 'management', label: 'ผู้บริหาร',                color: '#8b5cf6' },
-  { value: 'council',    label: 'สภาเทศบาล',               color: '#f59e0b' },
+  { value: 'public',     label: 'ประชาชน',                 color: AUDIENCE_COLOR.public },
+  { value: 'staff',      label: 'เจ้าหน้าที่',              color: AUDIENCE_COLOR.staff },
+  { value: 'management', label: 'ผู้บริหาร',                color: AUDIENCE_COLOR.management },
+  // label เป็น getter เพราะคำเรียกสภาเปลี่ยนตาม org_type ของ อปท. — ดู src/lib/orgTerms.js
+  { value: 'council',    get label() { return activeOrgTerms().councilOrg }, color: AUDIENCE_COLOR.council },
 ]
 const EVENT_MANAGER_ROLES = ['superadmin', 'admin', 'viewer', 'council', 'officer', 'staff', 'technician']
 const EMPTY_EVENT_FORM = { title: '', description: '', event_date: '', event_time: '', end_time: '', end_date: '', location: '', category: '', customCategory: '', is_all_day: false, audiences: [], attachment_urls: [], attachment_files: [] }
@@ -276,19 +278,6 @@ function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage,
 
   const monthName = new Date(calYear, calMonth, 1)
     .toLocaleDateString('th-TH', { year: 'numeric', month: 'long' })
-
-  const AUDIENCE_COLOR = {
-    public:     '#10b981',
-    staff:      '#3b82f6',
-    management: '#8b5cf6',
-    council:    '#f59e0b',
-  }
-  const AUDIENCE_LABEL = {
-    public:     'ประชาชน',
-    staff:      'เจ้าหน้าที่',
-    management: 'ผู้บริหาร',
-    council:    'สภาเทศบาล',
-  }
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 space-y-4">

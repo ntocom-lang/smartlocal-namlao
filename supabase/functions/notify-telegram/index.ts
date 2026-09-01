@@ -52,11 +52,26 @@ const INTERNAL_ROLES = new Set([
   'superadmin', 'admin', 'officer', 'viewer', 'council', 'staff', 'technician', 'kamnan',
 ])
 
-const AUDIENCE_LABELS: Record<string, string> = {
-  public: 'ประชาชน',
-  staff: 'เจ้าหน้าที่',
-  management: 'ผู้บริหาร',
-  council: 'สภาเทศบาล',
+// ต้องตรงกับ AUDIENCE_LABEL ใน src/lib/orgTerms.js — คำเรียกสภาเปลี่ยนตาม municipalities.org_type
+// ("สภาเทศบาล" / "สภา อบต." / "สภา อบจ.") ฝั่ง edge function ไม่มี TenantContext จึงต้องอ่าน
+// org_type จาก DB เองแล้วส่งเข้ามาเป็นพารามิเตอร์
+const COUNCIL_ORG_BY_TYPE: Record<string, string> = {
+  'เทศบาลนคร': 'สภาเทศบาล',
+  'เทศบาลเมือง': 'สภาเทศบาล',
+  'เทศบาลตำบล': 'สภาเทศบาล',
+  'เทศบาล': 'สภาเทศบาล',
+  'อบต.': 'สภา อบต.',
+  'อบจ.': 'สภา อบจ.',
+}
+const DEFAULT_COUNCIL_ORG = COUNCIL_ORG_BY_TYPE['อบต.']
+
+function audienceLabels(orgType: unknown): Record<string, string> {
+  return {
+    public: 'ประชาชน',
+    staff: 'เจ้าหน้าที่',
+    management: 'ผู้บริหาร',
+    council: COUNCIL_ORG_BY_TYPE[String(orgType ?? '')] ?? DEFAULT_COUNCIL_ORG,
+  }
 }
 
 // ต้องตรงกับ CATEGORY_LABEL ใน src/components/admin/ComplaintsManager.jsx ทุกคำ — ไม่งั้นข้อความ
@@ -131,7 +146,8 @@ function formatThaiDate(dateValue: unknown) {
   })
 }
 
-function buildEventMessage(event: Record<string, unknown>) {
+function buildEventMessage(event: Record<string, unknown>, orgType: unknown) {
+  const AUDIENCE_LABELS = audienceLabels(orgType)
   const audiences = Array.isArray(event.audiences)
     ? event.audiences.map((value) => AUDIENCE_LABELS[String(value)] ?? cleanText(value, 40)).filter(Boolean)
     : []
@@ -357,7 +373,7 @@ serve(async (req) => {
     if (!isUuid(municipalityId)) return json({ ok: false, error: 'resource municipality is invalid' }, 422)
     const { data: municipality, error: municipalityError } = await admin
       .from('municipalities')
-      .select('id,telegram_group_id')
+      .select('id,telegram_group_id,org_type')
       .eq('id', municipalityId)
       .maybeSingle()
     if (municipalityError || !municipality) return json({ ok: false, error: 'municipality not found' }, 404)
@@ -397,7 +413,7 @@ serve(async (req) => {
     }
 
     const message = notificationType === 'event_created'
-      ? buildEventMessage(resource)
+      ? buildEventMessage(resource, municipality.org_type)
       : notificationType === 'complaint_created'
         ? buildComplaintCreatedMessage(resource)
         : notificationType === 'complaint_status_updated' || notificationType.startsWith('technician_')

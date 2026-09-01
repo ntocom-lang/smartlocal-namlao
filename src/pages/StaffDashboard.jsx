@@ -138,15 +138,9 @@ const TECHNICIAN_MODULE_KEYS = [
 
 const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200'
 
-const ROLE_TH = {
-  superadmin: 'Super Admin',
-  admin:      'แอดมินระบบ',
-  officer:    'หัวหน้ากอง',
-  technician: 'ปฏิบัติงาน',
-  staff:      'เจ้าหน้าที่',
-  viewer:     'ผู้บริหาร',
-  council:    'สภาเทศบาล',
-}
+// ROLE_TH เดิมตรงนี้ถูกลบทิ้ง — ไม่มีใครเรียกใช้เลยสักจุด (dead code) แต่ยัง hardcode "สภาเทศบาล"
+// ค้างไว้ ถ้าปล่อยไว้จะกลายเป็นแหล่งที่ผิดให้คนหยิบไปใช้ต่อ ต้องการ label ของ role ให้ import
+// ROLE_LABELS จาก src/lib/staffRoster.js ซึ่งรู้จัก org_type แล้ว
 
 function dateTH(s) {
   if (!s) return ''

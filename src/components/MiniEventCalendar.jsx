@@ -3,22 +3,9 @@ import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { toDateStr } from '../lib/thaiDate'
+import { AUDIENCE_COLOR, AUDIENCE_LABEL } from '../lib/orgTerms'
 
 const DAY_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
-
-const AUDIENCE_COLOR = {
-  public:     '#10b981',
-  staff:      '#3b82f6',
-  management: '#8b5cf6',
-  council:    '#f59e0b',
-}
-
-const AUDIENCE_LABEL = {
-  public:     'ประชาชน',
-  staff:      'เจ้าหน้าที่',
-  management: 'สภาเทศบาล',
-  council:    'สภาเทศบาล',
-}
 
 export default function MiniEventCalendar() {
   const { tenant } = useTenant()

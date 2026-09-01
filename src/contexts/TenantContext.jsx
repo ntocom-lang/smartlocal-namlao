@@ -3,21 +3,9 @@ import { supabase } from '../lib/supabase'
 import { toReliableImageUrl } from '../lib/driveStorage'
 import { MANAGED_MODULE_KEYS } from '../lib/staffModules'
 import { loadHolidays } from '../lib/holidaysSource'
+import { ORG_TERMS, getOrgTerms, setActiveOrgType, DEFAULT_ORG_TYPE } from '../lib/orgTerms'
 
 const TenantContext = createContext(null)
-
-// คำเรียกตำแหน่งตาม org_type
-const TERMINOLOGY = {
-  'เทศบาลนคร':  termSet('นายกเทศมนตรี', 'รองนายกเทศมนตรี', 'สมาชิกสภาเทศบาล', 'ประธานสภาเทศบาล', 'ปลัดเทศบาล'),
-  'เทศบาลเมือง': termSet('นายกเทศมนตรี', 'รองนายกเทศมนตรี', 'สมาชิกสภาเทศบาล', 'ประธานสภาเทศบาล', 'ปลัดเทศบาล'),
-  'เทศบาลตำบล': termSet('นายกเทศมนตรี', 'รองนายกเทศมนตรี', 'สมาชิกสภาเทศบาล', 'ประธานสภาเทศบาล', 'ปลัดเทศบาล'),
-  'เทศบาล':     termSet('นายกเทศมนตรี', 'รองนายกเทศมนตรี', 'สมาชิกสภาเทศบาล', 'ประธานสภาเทศบาล', 'ปลัดเทศบาล'),
-  'อบต.':       termSet('นายก อบต.', 'รองนายก อบต.', 'สมาชิกสภา อบต.', 'ประธานสภา อบต.', 'ปลัด อบต.'),
-}
-
-function termSet(mayor, deputyMayor, council, councilPresident, clerk) {
-  return { mayor, deputyMayor, council, councilPresident, clerk }
-}
 
 // ลำดับสำคัญมาก: hostname ต้องมาก่อน VITE_TENANT_SLUG เสมอ ห้ามสลับกลับ
 //
@@ -74,19 +62,14 @@ function detectTenantSlug() {
   return null
 }
 
-const ORG_ABBR = {
-  'เทศบาลนคร':  { abbr: 'ทน.', strip: 'เทศบาลนคร' },
-  'เทศบาลเมือง': { abbr: 'ทม.', strip: 'เทศบาลเมือง' },
-  'เทศบาลตำบล': { abbr: 'ทต.', strip: 'เทศบาลตำบล' },
-  'อบต.':        { abbr: 'อบต.', strip: 'องค์การบริหารส่วนตำบล' },
-}
-
 function autoShortName(tenant) {
   if (tenant.pwa_short_name) return tenant.pwa_short_name
-  const map = ORG_ABBR[tenant.org_type]
-  if (!map) return tenant.name
-  const location = tenant.name.replace(map.strip, '').trim()
-  return map.abbr + location
+  // ตั้งใจอ่าน ORG_TERMS ตรงๆ ไม่ผ่าน getOrgTerms() — org_type ที่ไม่รู้จักต้องได้ชื่อเต็ม
+  // ไม่ใช่ตกไปใช้ตัวย่อของ อบต. ซึ่งจะได้ชื่อย่อผิดประเภทหน่วยงาน
+  const terms = ORG_TERMS[tenant.org_type]
+  if (!terms?.abbr) return tenant.name
+  const location = tenant.name.replace(terms.strip, '').trim()
+  return terms.abbr + location
 }
 
 function injectPWAManifest(tenant) {
@@ -207,7 +190,7 @@ export function applyTheme(hexColor, uiStyle = 'default') {
 
 export function TenantProvider({ children }) {
   const [tenant, setTenant] = useState(null)
-  const [terminology, setTerminology] = useState(TERMINOLOGY['อบต.'])
+  const [terminology, setTerminology] = useState(getOrgTerms(DEFAULT_ORG_TYPE))
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   // ตัวนับรอบการโหลดวันหยุดราชการ — ไม่มีใครอ่านค่านี้ตรงๆ แต่การเปลี่ยนค่ามันบังคับให้
@@ -279,7 +262,10 @@ export function TenantProvider({ children }) {
         }
 
         setTenant(resolvedTenant)
-        setTerminology(TERMINOLOGY[resolvedTenant.org_type] ?? TERMINOLOGY['อบต.'])
+        // ต้องตั้งก่อน setTerminology เสมอ — โค้ดนอก React (staffRoster.js ฯลฯ) อ่านค่านี้ผ่าน
+        // activeOrgTerms() ไม่ได้ subscribe context จึงไม่มีอะไรมาบังคับลำดับให้
+        setActiveOrgType(resolvedTenant.org_type)
+        setTerminology(getOrgTerms(resolvedTenant.org_type))
         applyTheme(resolvedTenant.theme_color ?? '#1d4ed8', resolvedTenant.ui_style)
         document.title = resolvedTenant.name
         try { injectPWAManifest(resolvedTenant) } catch {}

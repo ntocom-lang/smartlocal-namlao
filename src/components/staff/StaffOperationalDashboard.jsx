@@ -5,10 +5,13 @@ import {
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { addWorkingDays, workingDaysSince } from '../../lib/workingDays'
+import { activeOrgTerms } from '../../lib/orgTerms'
 
 const ROLE_LABELS = {
   superadmin: 'Super Admin', admin: 'แอดมินระบบ', officer: 'หัวหน้ากอง',
-  technician: 'ผู้ปฏิบัติงาน', staff: 'เจ้าหน้าที่', viewer: 'ผู้บริหาร', council: 'สภาเทศบาล',
+  technician: 'ผู้ปฏิบัติงาน', staff: 'เจ้าหน้าที่', viewer: 'ผู้บริหาร',
+  // getter เพราะคำเรียกสภาเปลี่ยนตาม org_type และค่านี้ยังไม่พร้อมตอน import — ดู src/lib/orgTerms.js
+  get council() { return activeOrgTerms().councilOrg },
 }
 
 const EMPTY_DATA = {
