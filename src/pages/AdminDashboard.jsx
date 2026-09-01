@@ -21,6 +21,7 @@ import { workingDaysBetween, workingDaysSince } from '../lib/workingDays'
 import { uploadFile } from '../lib/driveStorage'
 import { tenantDefaultSubdistrict } from '../lib/tenantSubdistrict'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
+import { EMERGENCY_CATEGORIES, EMERGENCY_CATEGORY_MAP, emergencyCategoryOf, guessCategory } from '../lib/emergencyCategories'
 import { accountProviders, providerLabel, phoneToLoginEmail, normalizeThaiPhone, loginIdentifier } from '../lib/authProviders'
 import { useTenant } from '../contexts/TenantContext'
 import { useNotifications } from '../contexts/NotificationsContext'
@@ -1981,6 +1982,17 @@ function UserDetailPage(props) {
 }
 
 // ─── Emergency Contacts Manager ───────────────────────────────────────────────
+// ป้ายหมวด — ค่าที่ไม่รู้จัก/ว่าง ตกไปหมวด "อื่น ๆ" ตามที่หน้าประชาชนแสดง
+function CategoryBadge({ category }) {
+  const cat = EMERGENCY_CATEGORY_MAP[emergencyCategoryOf({ category })]
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap"
+          style={{ backgroundColor: cat.bg, color: cat.color }}>
+      {cat.emoji} {cat.label}
+    </span>
+  )
+}
+
 function SortableContact({ c, i, total, onDelete, onMove, onEdit, editingId, editingForm, onEditChange, onEditSave }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: c.id })
   const style = {
@@ -2005,7 +2017,10 @@ function SortableContact({ c, i, total, onDelete, onMove, onEdit, editingId, edi
         </div>
         <div className="flex-1 min-w-0">
           <p className="font-semibold text-gray-800 text-sm">{c.label}</p>
-          <p className="text-[13px] text-gray-400">{c.number}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="text-[13px] text-gray-400">{c.number}</p>
+            <CategoryBadge category={c.category} />
+          </div>
         </div>
         <div className="flex flex-col gap-0">
           <button onClick={() => onMove(i, -1)} disabled={i === 0}
@@ -2048,6 +2063,15 @@ function SortableContact({ c, i, total, onDelete, onMove, onEdit, editingId, edi
             className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2"
             style={{ '--tw-ring-color': 'var(--color-primary)' }}
           />
+          <select
+            value={editingForm.category ?? 'other'}
+            onChange={(e) => onEditChange('category', e.target.value)}
+            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2"
+            style={{ '--tw-ring-color': 'var(--color-primary)' }}>
+            {EMERGENCY_CATEGORIES.map((cat) => (
+              <option key={cat.key} value={cat.key}>{cat.emoji} {cat.label}</option>
+            ))}
+          </select>
           <div className="flex gap-2">
             <button onClick={onEditSave}
                     className="px-4 py-1.5 rounded-xl text-sm font-medium text-white"
@@ -2104,6 +2128,18 @@ function SortableContactRow({ c, i, onDelete, onEdit, editingId, editingForm, on
       </td>
       <td className="px-4 py-3">
         {isEditing ? (
+          <select value={editingForm.category ?? 'other'} onChange={e => onEditChange('category', e.target.value)}
+            className="border border-gray-300 rounded-lg px-2 py-1 text-sm text-gray-800 bg-white focus:outline-none w-full">
+            {EMERGENCY_CATEGORIES.map((cat) => (
+              <option key={cat.key} value={cat.key}>{cat.emoji} {cat.label}</option>
+            ))}
+          </select>
+        ) : (
+          <CategoryBadge category={c.category} />
+        )}
+      </td>
+      <td className="px-4 py-3">
+        {isEditing ? (
           <div className="flex items-center gap-2">
             <input value={editingForm.number} onChange={e => onEditChange('number', e.target.value)}
               className="border border-gray-300 rounded-lg px-2 py-1 text-sm text-gray-800 focus:outline-none w-32" />
@@ -2142,9 +2178,9 @@ function EmergencyManager({ tenant }) {
   const [contacts, setContacts] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({ label: '', number: '', emoji: '📞', color: '#1d4ed8', bg: '#dbeafe' })
+  const [form, setForm] = useState({ label: '', number: '', emoji: '📞', color: '#1d4ed8', bg: '#dbeafe', category: 'other' })
   const [editingId, setEditingId] = useState(null)
-  const [editingForm, setEditingForm] = useState({ label: '', number: '' })
+  const [editingForm, setEditingForm] = useState({ label: '', number: '', category: 'other' })
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
 
   const sensors = useSensors(
@@ -2225,10 +2261,11 @@ function EmergencyManager({ tenant }) {
       emoji: form.emoji,
       color: form.color,
       bg: form.bg,
+      category: form.category,
       display_order: contacts.length + 1,
     }).select().single()
     if (data) setContacts((prev) => [...prev, data])
-    setForm({ label: '', number: '', emoji: '📞', color: '#1d4ed8', bg: '#dbeafe' })
+    setForm({ label: '', number: '', emoji: '📞', color: '#1d4ed8', bg: '#dbeafe', category: 'other' })
     setSaving(false)
   }
 
@@ -2242,13 +2279,13 @@ function EmergencyManager({ tenant }) {
   function handleEdit(c) {
     if (!c) { setEditingId(null); return }
     setEditingId(c.id)
-    setEditingForm({ label: c.label, number: c.number })
+    setEditingForm({ label: c.label, number: c.number, category: emergencyCategoryOf(c) })
   }
 
   async function saveContactEdit() {
     if (!editingForm.label.trim() || !editingForm.number.trim()) return
     const { error } = await supabase.from('emergency_contacts')
-      .update({ label: editingForm.label.trim(), number: editingForm.number.trim() })
+      .update({ label: editingForm.label.trim(), number: editingForm.number.trim(), category: editingForm.category })
       .eq('id', editingId)
     if (error) return
     setContacts((prev) => prev.map((c) => c.id === editingId ? { ...c, ...editingForm } : c))
@@ -2261,7 +2298,7 @@ function EmergencyManager({ tenant }) {
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
         {showEmojiPicker && <div className="fixed inset-0 z-40" onClick={() => setShowEmojiPicker(false)} />}
         <p className="font-semibold text-gray-700 text-sm">เพิ่มสายด่วนใหม่</p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
           {/* Emoji picker */}
           <div className="relative">
             <button type="button"
@@ -2283,12 +2320,20 @@ function EmergencyManager({ tenant }) {
               </div>
             )}
           </div>
-          <input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value, emoji: guessEmoji(e.target.value) })}
+          <input value={form.label}
+            onChange={(e) => setForm({ ...form, label: e.target.value, emoji: guessEmoji(e.target.value), category: guessCategory(e.target.value) })}
             className="border border-gray-200 rounded-xl px-3 py-2 text-sm col-span-1 text-gray-800"
             placeholder="ชื่อ เช่น ตำรวจ" />
           <input value={form.number} onChange={(e) => setForm({ ...form, number: e.target.value })}
             className="border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800"
             placeholder="เบอร์โทร เช่น 191" />
+          <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}
+            className="border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 bg-white"
+            title="หมวดสำหรับจัดกลุ่มบนหน้าประชาชน">
+            {EMERGENCY_CATEGORIES.map((cat) => (
+              <option key={cat.key} value={cat.key}>{cat.emoji} {cat.label}</option>
+            ))}
+          </select>
           <button onClick={addContact} disabled={saving || !form.label || !form.number}
             className="flex items-center justify-center gap-1 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-50"
             style={{ backgroundColor: 'var(--color-primary)' }}>
@@ -2331,6 +2376,7 @@ function EmergencyManager({ tenant }) {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-24">ลำดับ</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-16">สัญลักษณ์</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ชื่อ / หน่วยงาน</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-44">หมวด</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">เบอร์โทร</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 w-28">จัดการ</th>
                 </tr>

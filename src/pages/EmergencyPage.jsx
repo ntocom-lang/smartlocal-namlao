@@ -1,15 +1,44 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Phone, PhoneCall, Settings } from 'lucide-react'
+import { ArrowLeft, Phone, PhoneCall, Search, Settings } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
+import { EMERGENCY_CATEGORIES, emergencyCategoryOf } from '../lib/emergencyCategories'
+
+// ต่ำกว่านี้ช่องค้นหามีแต่กินที่ — อปท. ส่วนใหญ่มี 5-6 เบอร์ ที่เยอะสุดตอนนี้คือ 15
+const SEARCH_THRESHOLD = 8
+
+// เทียบเบอร์แบบไม่สนขีด/วงเล็บ/ช่องว่าง: พิมพ์ 0811801863 ต้องเจอ 081-180-1863
+const digitsOf = (s) => String(s || '').replace(/\D/g, '')
+
+function ContactRow({ contact, cat }) {
+  return (
+    <a href={`tel:${contact.number}`}
+       aria-label={`โทร ${contact.label} ${contact.number}`}
+       className="flex items-center gap-3 px-3 py-2.5 active:bg-gray-50 hover:bg-gray-50/70 transition-colors">
+      <div className="w-9 h-9 rounded-lg flex items-center justify-center text-lg shrink-0"
+           style={{ backgroundColor: cat.bg }}>
+        {contact.emoji}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[15px] font-semibold text-gray-800 leading-snug">{contact.label}</p>
+        <p className="text-sm text-gray-500 mt-0.5 tracking-wide">{contact.number}</p>
+      </div>
+      <span className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+            style={{ backgroundColor: cat.bg, color: cat.color }}>
+        <Phone size={16} />
+      </span>
+    </a>
+  )
+}
 
 export default function EmergencyPage() {
   const navigate = useNavigate()
   const { tenant, loading: tenantLoading } = useTenant()
   const { role } = useAuth()
   const [contacts, setContacts] = useState(null)   // null = ยังไม่ได้โหลด, [] = โหลดแล้วแต่ไม่มีข้อมูล
+  const [query, setQuery] = useState('')
 
   // เบอร์สายด่วนต่างกันทุก อปท. จึงไม่มีเบอร์กลางสำรอง — แต่ละแห่งต้องกรอกเองจากหลังบ้าน
   useEffect(() => {
@@ -25,10 +54,25 @@ export default function EmergencyPage() {
     return () => { alive = false }
   }, [tenant?.id])
 
+  // จัดกลุ่มตามหมวด เรียงหมวดตาม EMERGENCY_CATEGORIES และในหมวดเรียงตาม display_order ที่แอดมินจัดไว้
+  const groups = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    const qDigits = digitsOf(query)
+    const matched = (contacts || []).filter((c) => {
+      if (!q) return true
+      if (String(c.label || '').toLowerCase().includes(q)) return true
+      return qDigits.length > 0 && digitsOf(c.number).includes(qDigits)
+    })
+    return EMERGENCY_CATEGORIES
+      .map((cat) => ({ cat, items: matched.filter((c) => emergencyCategoryOf(c) === cat.key) }))
+      .filter((g) => g.items.length > 0)
+  }, [contacts, query])
+
   // tenant ยังโหลดไม่เสร็จ หรือมี tenant แล้วแต่ query ยังไม่กลับ = ยังโหลดอยู่
   // ถ้า tenant โหลดจบแล้วแต่หา tenant ไม่เจอ ให้ตกไปที่ empty state แทนที่จะค้าง skeleton
   const loading = tenantLoading || Boolean(tenant?.id && contacts === null)
   const canManage = role === 'admin' || role === 'superadmin'
+  const showSearch = !loading && (contacts?.length || 0) > SEARCH_THRESHOLD
 
   return (
     <div className="max-w-lg mx-auto pb-28 md:pb-8">
@@ -71,11 +115,26 @@ export default function EmergencyPage() {
           </div>
         </div>
 
-        {/* Grid */}
+        {/* Search — โผล่เฉพาะเมื่อเบอร์เยอะจนไล่หาด้วยตาไม่ไหว */}
+        {showSearch && (
+          <div className="relative">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="ค้นหาหน่วยงาน หรือเบอร์โทร"
+              className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-200 bg-white text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2"
+              style={{ '--tw-ring-color': 'var(--color-primary)' }}
+            />
+          </div>
+        )}
+
+        {/* Groups */}
         {loading ? (
           <div className="space-y-2">
             {[0, 1, 2, 3, 4, 5].map(i => (
-              <div key={i} className="h-[66px] rounded-xl bg-gray-100 animate-pulse" />
+              <div key={i} className="h-[58px] rounded-xl bg-gray-100 animate-pulse" />
             ))}
           </div>
         ) : !contacts || contacts.length === 0 ? (
@@ -97,54 +156,48 @@ export default function EmergencyPage() {
               </Link>
             )}
           </div>
-        ) : (
-          <div className="space-y-2">
-            {contacts.map(({ id, label, number, emoji, color, bg }) => (
-              <a key={id} href={`tel:${number}`}
-                 aria-label={`โทร ${label} ${number}`}
-                 className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white border border-gray-100 shadow-sm active:scale-[0.98] hover:shadow-md transition-all">
-                <div className="w-11 h-11 rounded-lg flex items-center justify-center text-xl shrink-0"
-                     style={{ backgroundColor: bg }}>
-                  {emoji}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[18px] font-extrabold leading-none tracking-wide break-words" style={{ color }}>
-                    {number}
-                  </p>
-                  <p className="text-[13px] text-gray-500 mt-1 leading-snug">{label}</p>
-                </div>
-                <span className="w-10 h-10 rounded-full flex items-center justify-center text-white shrink-0"
-                      style={{ backgroundColor: color }}>
-                  <Phone size={18} />
-                </span>
-              </a>
-            ))}
+        ) : groups.length === 0 ? (
+          <div className="rounded-xl bg-white border border-gray-100 shadow-sm px-5 py-8 text-center">
+            <p className="text-sm text-gray-500">ไม่พบหน่วยงานหรือเบอร์ที่ตรงกับ “{query.trim()}”</p>
           </div>
+        ) : (
+          groups.map(({ cat, items }) => (
+            <section key={cat.key}>
+              <div className="flex items-center gap-2 px-1 mb-1.5">
+                <span className="text-sm">{cat.emoji}</span>
+                <h2 className="text-[13px] font-bold text-gray-500">{cat.label}</h2>
+                <span className="text-[11px] text-gray-400">{items.length}</span>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden divide-y divide-gray-50">
+                {items.map((c) => <ContactRow key={c.id} contact={c} cat={cat} />)}
+              </div>
+            </section>
+          ))
         )}
 
         {/* Tenant contact */}
         {tenant?.phone && (
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-1 mb-2">
-              ติดต่อ{tenant.name}
+              ติดต่อสำนักงาน
             </p>
             <a href={`tel:${tenant.phone}`}
                aria-label={`โทร ${tenant.name} ${tenant.phone}`}
-               className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white border border-gray-100 shadow-sm active:scale-[0.98] hover:shadow-md transition-all">
-              <div className="w-11 h-11 rounded-lg flex items-center justify-center shrink-0"
+               className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white border border-gray-100 shadow-sm active:bg-gray-50 hover:bg-gray-50/70 transition-colors">
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
                    style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 15%, white)' }}>
-                <Phone size={20} style={{ color: 'var(--color-primary)' }} />
+                <Phone size={18} style={{ color: 'var(--color-primary)' }} />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[18px] font-extrabold leading-none tracking-wide break-words"
-                   style={{ color: 'var(--color-primary)' }}>
-                  {tenant.phone}
-                </p>
-                <p className="text-[13px] text-gray-500 mt-1 leading-snug truncate">{tenant.name}</p>
+                <p className="text-[15px] font-semibold text-gray-800 leading-snug">{tenant.name}</p>
+                <p className="text-sm text-gray-500 mt-0.5 tracking-wide">{tenant.phone}</p>
               </div>
-              <span className="w-10 h-10 rounded-full flex items-center justify-center text-white shrink-0"
-                    style={{ backgroundColor: 'var(--color-primary)' }}>
-                <Phone size={18} />
+              <span className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+                    style={{
+                      backgroundColor: 'color-mix(in srgb, var(--color-primary) 15%, white)',
+                      color: 'var(--color-primary)',
+                    }}>
+                <Phone size={16} />
               </span>
             </a>
           </div>
