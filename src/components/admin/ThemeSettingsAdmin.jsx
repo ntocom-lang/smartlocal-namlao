@@ -56,31 +56,20 @@ export default function ThemeSettingsAdmin() {
 
   function getMuniUrl(m) {
     if (!m || !m.slug) return '/'
-    const { hostname, protocol, port, origin } = window.location
+    const { hostname, protocol, port } = window.location
     const portSuffix = port ? `:${port}` : ''
 
-    // Localhost / Development IP
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.match(/^\d/)) {
-      return `/${m.slug}`
-    }
-
-    // Vercel deployment: smartlocal-{slug}.vercel.app
-    if (hostname.endsWith('.vercel.app')) {
-      if (hostname.startsWith('smartlocal-')) {
-        return `${protocol}//smartlocal-${m.slug}.vercel.app${portSuffix}`
+    // เมื่ออยู่บน Custom Domain (เช่น namlao.rk-networks.com)
+    if (!hostname.endsWith('.vercel.app') && hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.match(/^\d/)) {
+      const parts = hostname.split('.')
+      if (parts.length >= 2) {
+        const baseDomain = parts.slice(1).join('.')
+        return `${protocol}//${m.slug}.${baseDomain}${portSuffix}/`
       }
-      return `${origin}/${m.slug}`
     }
 
-    // Custom Domain: {slug}.rk-networks.com หรือ {slug}.smartlocal.th
-    const parts = hostname.split('.')
-    if (parts.length >= 2) {
-      // เอา base domain เช่น rk-networks.com (2 ส่วนท้าย หรือตามโครงสร้าง)
-      const baseDomain = parts.slice(1).join('.')
-      return `${protocol}//${m.slug}.${baseDomain}${portSuffix}/`
-    }
-
-    return `/${m.slug}`
+    // เมื่ออยู่บน Localhost หรือสภาพแวดล้อมอื่นๆ ให้ชี้ไปยังโดเมน Production หลัก (rk-networks.com) โดยตรง
+    return `https://${m.slug}.rk-networks.com/`
   }
 
   function flash() { setSaved(true); setTimeout(() => setSaved(false), 2500) }
