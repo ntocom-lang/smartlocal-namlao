@@ -64,30 +64,60 @@ export function createStreetLayer() {
   return L.tileLayer(OSM_URL, OSM_OPTIONS)
 }
 
-// ป้ายชื่อสถานที่/ขอบเขตที่วางทับภาพดาวเทียม — ถ้าโหลดไม่ได้ก็แค่ไม่มีชื่อกำกับ
-// ไม่ใช่เรื่องคอขาดบาดตาย จึงไม่ต้องมี fallback ให้ชั้นนี้
+// ป้ายชื่อสถานที่ที่วางทับภาพดาวเทียม
+//
+// Static Basemap Tiles ตัวใหม่มีข้อมูลละเอียดกว่า legacy จริง วัดจาก tile เดียวกัน
+// (z16 แถวน้ำเลา): ตัวใหม่มีป้ายกินพื้นที่ 4.9% ส่วน legacy โปร่งใส 100% คือไม่มีป้ายเลย
+// แต่บริการนี้ต้องการ privilege "staticbasemaptiles" ซึ่งเป็นคนละตัวกับสิทธิ์ basemap
+// ที่ใช้กับ ibasemaps — คีย์ที่ไม่ได้ติ๊กสิทธิ์นี้ตอนสร้างจะได้ HTTP 401 ทุกใบ
+// (ทดสอบจริงแล้วเจอเคสนี้: ดาวเทียมผ่าน 200 แต่ป้ายชื่อ 401 ด้วยคีย์เดียวกัน)
+//
+// จึงให้ถอยไป legacy เองอัตโนมัติ ผู้ดูแลไม่ต้องรู้เรื่อง privilege เลย ถ้าวันหนึ่งไปเพิ่ม
+// สิทธิ์ในคีย์ ระบบจะเริ่มใช้ตัวใหม่เองโดยไม่ต้องแก้โค้ด
+//
+// ⚠️ ตัวใหม่ส่ง tile 512x512 ไม่ใช่ 256 แบบ legacy จึงต้องมี tileSize/zoomOffset กำกับ
+//    ไม่งั้นป้ายจะเบลอและไปโผล่ผิดตำแหน่ง (Leaflet ถือว่า tile เป็น 256 เป็นค่าเริ่มต้น)
 export function createHybridLabelLayer() {
-  return L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
-    maxZoom: 19,
-  })
+  const legacy = {
+    name: 'labels-legacy',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+    options: { maxZoom: 19 },
+  }
+
+  if (!ARCGIS_KEY) return createFallbackLayer([legacy])
+
+  return createFallbackLayer([
+    {
+      name: 'labels-static-basemap',
+      url: `https://static-map-tiles-api.arcgis.com/arcgis/rest/services/static-basemap-tiles-service/v1/arcgis/imagery/labels/static/tile/{z}/{y}/{x}?token=${encodeURIComponent(ARCGIS_KEY)}`,
+      options: { maxZoom: 19, tileSize: 512, zoomOffset: -1 },
+    },
+    legacy,
+  ])
+}
+
+export function createSatelliteLayer() {
+  return createFallbackLayer(satelliteSources())
 }
 
 /**
- * ชั้นภาพดาวเทียมที่สลับไปแหล่งถัดไปเองเมื่อแหล่งปัจจุบันล่ม
+ * ชั้น tile ที่สลับไปแหล่งถัดไปเองเมื่อแหล่งปัจจุบันใช้ไม่ได้
  *
  * คืนเป็น LayerGroup ที่ "ตัวมันเองไม่เปลี่ยน" แล้วสลับ tileLayer ข้างในแทน — จำเป็น
  * เพราะผู้เรียกเก็บ reference นี้ไว้ใน baseLayersRef แล้วใช้ hasLayer/addLayer เทียบ
  * ถ้าคืน tileLayer ที่ถูกแทนที่ตอน fallback reference ฝั่งโน้นจะชี้ไปชั้นที่ถูกถอดไปแล้ว
  * แล้วปุ่มสลับแผนที่/ดาวเทียมจะเพี้ยนเงียบๆ
  *
- * เกณฑ์ตัดสินว่า "ล่ม": นับ tileerror ที่เกิดใน 8 วินาทีแรกหลังชั้นเริ่มโหลด ถ้าเกิน 4 ใบ
+ * เกณฑ์ตัดสินว่า "ใช้ไม่ได้": นับ tileerror ที่เกิดใน 8 วินาทีแรกหลังชั้นเริ่มโหลด ถ้าเกิน 4 ใบ
  * ถือว่าใช้ไม่ได้จริง — ไม่ใช้ error ใบเดียวเป็นเกณฑ์ เพราะ tile หลุดประปรายเป็นเรื่องปกติ
  * ของเน็ตมือถือต่างจังหวัด ถ้าสลับทันทีที่เจอใบแรกผู้ใช้จะเห็นแผนที่กระพริบโดยไม่จำเป็น
+ * ครอบคลุมทั้งกรณีเซิร์ฟเวอร์ล่ม (network error) และคีย์ไม่มีสิทธิ์ (HTTP 401/403)
+ * เพราะ Leaflet ยิง tileerror เหมือนกันทั้งสองแบบ
  *
+ * @param {Array<{name: string, url: string, options: object}>} sources เรียงจากตัวที่อยากใช้ที่สุด
  * @returns {L.LayerGroup & { disposeFallback: () => void }}
  */
-export function createSatelliteLayer() {
-  const sources = satelliteSources()
+function createFallbackLayer(sources) {
   const group = L.layerGroup()
   let index = 0
   let current = null

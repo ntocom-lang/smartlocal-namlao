@@ -63,7 +63,7 @@ export default function LeafletMapCanvas({
   const geojsonLayerRef = useRef(null)
   const callbacksRef = useRef({ onMapClick, onMapRightClick, onFeatureClick, onFeatureRightClick, onPolylineRightClick, onMarkerDragEnd, onMapReady })
   const lastFitSignatureRef = useRef('')
-  const satelliteFallbackRef = useRef(null)
+  const fallbackLayersRef = useRef([])
   const [loading, setLoading] = useState(true)
   // derive จาก prop ตรงๆ ไม่เก็บเป็น state ซ้ำ — ไม่มีปุ่มสลับในตัว component แล้ว
   // เก็บเป็น state จะกลายเป็นแหล่งความจริงคู่ขนานที่หลุดจาก prop ได้
@@ -109,9 +109,12 @@ export default function LeafletMapCanvas({
     // (ArcGIS ที่มี key → Esri legacy → OSM) กันจอขาวเมื่อผู้ให้บริการรายใดรายหนึ่งล่ม
     const streetLayer = createStreetLayer()
     const satelliteTile = createSatelliteLayer()
-    satelliteFallbackRef.current = satelliteTile
+    const labelTile = createHybridLabelLayer()
+    // เก็บทั้งสองชั้นไว้ปลด timer/listener ตอน unmount — ชั้นป้ายชื่อก็มี fallback ในตัวเหมือนกัน
+    // (คีย์ที่ไม่มีสิทธิ์ staticbasemaptiles จะได้ 401 แล้วถอยไป endpoint เดิมเอง)
+    fallbackLayersRef.current = [satelliteTile, labelTile]
 
-    const hybridGroup = L.layerGroup([satelliteTile, createHybridLabelLayer()])
+    const hybridGroup = L.layerGroup([satelliteTile, labelTile])
 
     baseLayersRef.current = {
       roadmap: streetLayer,
@@ -147,8 +150,8 @@ export default function LeafletMapCanvas({
     return () => {
       // ต้องปลด timer/listener ของ fallback ก่อน map.remove() ไม่งั้น setTimeout 8 วิ
       // ที่ตั้งค้างไว้จะยิงหลัง component ถูก unmount ไปแล้ว
-      satelliteFallbackRef.current?.disposeFallback?.()
-      satelliteFallbackRef.current = null
+      fallbackLayersRef.current.forEach(layer => layer?.disposeFallback?.())
+      fallbackLayersRef.current = []
       map.remove()
       mapRef.current = null
     }
