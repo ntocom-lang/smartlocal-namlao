@@ -1093,9 +1093,6 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
 
   const pickedRequester = requesterOptions.find(s => s.id === form.requested_by) ?? null
   const delegating = !!form.requested_by && form.requested_by !== user?.id
-  const autoPosition = form.requested_by === user?.id
-    ? (profilePosition(requesterProfile) || profilePosition(pickedRequester))
-    : profilePosition(pickedRequester)
 
   function pickRequester(e) {
     const id = e.target.value
@@ -1519,22 +1516,23 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                saveLabel={selTrip ? 'บันทึกการแก้ไข' : 'ส่งคำขออนุญาตใช้รถ'} saving={saving}>
           {requesterField}
           {(() => {
-            const positionLocked = Boolean(selTrip) || Boolean(autoPosition)
+            // ล็อกเฉพาะคำขอที่ถูกพิจารณาไปแล้ว — เอกสารที่อนุมัติแล้วต้องไม่เปลี่ยนย้อนหลัง
+            // ระหว่างยัง pending ให้แก้ได้ เพราะ job_title ในโปรไฟล์หลายคนไม่เป็นปัจจุบัน
+            // และกรณีรักษาราชการแทนตำแหน่งบนเอกสารต่างจากในทะเบียน
+            const positionLocked = Boolean(selTrip) && selTrip.status !== 'pending'
             return (
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">ตำแหน่งผู้ขอใช้รถ *</label>
             <input value={form.requester_position}
               onChange={positionLocked ? undefined : set('requester_position')}
-              disabled={positionLocked} readOnly={positionLocked}
+              disabled={positionLocked} readOnly={positionLocked} maxLength={200}
               placeholder="เช่น เจ้าพนักงานธุรการ" className={positionLocked
                 ? inp + ' bg-gray-50 text-gray-500 cursor-not-allowed'
                 : inp} />
             <p className="mt-1 text-[10px] text-gray-400">
-              {selTrip
-                ? 'ล็อกตามที่บันทึกตอนยื่นคำขอ เพื่อไม่ให้เอกสารเก่าเปลี่ยน'
-                : positionLocked
-                  ? 'ดึงจากข้อมูลบุคลากร และล็อกไว้เป็นหลักฐานในแบบ 3'
-                  : 'ใช้พิมพ์ในช่องตำแหน่งบนใบขออนุญาตใช้รถ (แบบ 3)'}
+              {positionLocked
+                ? 'ล็อกตามที่บันทึกตอนยื่นคำขอ เพื่อไม่ให้เอกสารที่พิจารณาแล้วเปลี่ยน'
+                : 'เติมให้จากข้อมูลบุคลากรอัตโนมัติ แก้ได้ถ้าไม่ตรง เช่น กรณีรักษาราชการแทน'}
             </p>
           </div>
             )
@@ -1653,25 +1651,14 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
         <Modal title="📝 บันทึกการใช้รถย้อนหลัง" onClose={() => setModal(null)} onSave={submitDirect}
                saveLabel="บันทึก" saving={saving}>
           {requesterField}
-          {(() => {
-            const positionLocked = Boolean(autoPosition)
-            return (
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">ตำแหน่งผู้ขอใช้รถ *</label>
-            <input value={form.requester_position}
-              onChange={positionLocked ? undefined : set('requester_position')}
-              disabled={positionLocked} readOnly={positionLocked}
-              placeholder="เช่น เจ้าพนักงานธุรการ" className={positionLocked
-                ? inp + ' bg-gray-50 text-gray-500 cursor-not-allowed'
-                : inp} />
+            <input value={form.requester_position} onChange={set('requester_position')} maxLength={200}
+              placeholder="เช่น เจ้าพนักงานธุรการ" className={inp} />
             <p className="mt-1 text-[10px] text-gray-400">
-              {positionLocked
-                ? 'ดึงจากข้อมูลบุคลากร และล็อกไว้เป็นหลักฐานในแบบ 3'
-                : 'ใช้พิมพ์ในช่องตำแหน่งบนใบขออนุญาตใช้รถ (แบบ 3)'}
+              เติมให้จากข้อมูลบุคลากรอัตโนมัติ แก้ได้ถ้าไม่ตรง เช่น กรณีรักษาราชการแทน
             </p>
           </div>
-            )
-          })()}
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-700">
             ⚠️ รายการนี้จะถูกบันทึกเป็น <strong>“เสร็จสิ้น”</strong> ทันทีโดยไม่ผ่านขั้นอนุมัติ
             ใบขออนุญาตใช้รถที่พิมพ์จากรายการนี้จะไม่มีผู้อนุมัติ ใช้เฉพาะกรณีที่ใช้รถไปแล้วจริงเท่านั้น
