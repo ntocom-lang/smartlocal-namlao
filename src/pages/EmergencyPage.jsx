@@ -57,25 +57,25 @@ export default function EmergencyPage() {
         </div>
       </div>
 
-      <div className="px-4 pt-1 md:pt-4 space-y-5">
+      <div className="px-4 pt-1 md:pt-4 space-y-4">
 
         {/* Hero */}
-        <div className="rounded-2xl p-5 flex items-center gap-4"
+        <div className="rounded-xl px-4 py-3.5 flex items-center gap-3"
              style={{ background: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)' }}>
-          <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
-            <PhoneCall size={24} className="text-white" />
+          <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center shrink-0">
+            <PhoneCall size={20} className="text-white" />
           </div>
           <div className="text-white">
-            <h2 className="font-bold text-lg leading-tight">สายด่วนฉุกเฉิน 24 ชั่วโมง</h2>
-            <p className="text-white/80 text-xs mt-0.5">กดที่การ์ดเพื่อโทรหาหน่วยงานได้เลย</p>
+            <h2 className="font-bold text-[15px] leading-tight">สายด่วนฉุกเฉิน 24 ชั่วโมง</h2>
+            <p className="text-white/80 text-[11px] mt-0.5">แตะที่รายการเพื่อโทรออกได้ทันที</p>
           </div>
         </div>
 
         {/* Grid */}
         {loading ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-3">
-            {[0, 1, 2, 3].map(i => (
-              <div key={i} className="h-[148px] md:h-[176px] rounded-2xl bg-gray-100 animate-pulse" />
+          <div className="space-y-2">
+            {[0, 1, 2, 3, 4, 5].map(i => (
+              <div key={i} className="h-[66px] rounded-xl bg-gray-100 animate-pulse" />
             ))}
           </div>
         ) : !contacts || contacts.length === 0 ? (
@@ -98,24 +98,24 @@ export default function EmergencyPage() {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-3">
+          <div className="space-y-2">
             {contacts.map(({ id, label, number, emoji, color, bg }) => (
               <a key={id} href={`tel:${number}`}
-                 className="flex flex-col items-center gap-2 p-3 md:p-4 rounded-2xl bg-white border border-gray-100 shadow-sm active:scale-95 transition-transform text-center">
-                <div className="w-12 h-12 md:w-14 md:h-14 rounded-2xl flex items-center justify-center text-2xl md:text-3xl"
+                 aria-label={`โทร ${label} ${number}`}
+                 className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white border border-gray-100 shadow-sm active:scale-[0.98] hover:shadow-md transition-all">
+                <div className="w-11 h-11 rounded-lg flex items-center justify-center text-xl shrink-0"
                      style={{ backgroundColor: bg }}>
                   {emoji}
                 </div>
-                <div>
-                  <p className="text-xl md:text-2xl font-extrabold leading-none tracking-wide" style={{ color }}>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[18px] font-extrabold leading-none tracking-wide break-words" style={{ color }}>
                     {number}
                   </p>
-                  <p className="text-xs md:text-sm text-gray-500 mt-1">{label}</p>
+                  <p className="text-[13px] text-gray-500 mt-1 leading-snug">{label}</p>
                 </div>
-                <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-white text-[10px] md:text-xs font-semibold"
+                <span className="w-10 h-10 rounded-full flex items-center justify-center text-white shrink-0"
                       style={{ backgroundColor: color }}>
-                  <Phone size={12} />
-                  โทรเลย
+                  <Phone size={18} />
                 </span>
               </a>
             ))}
@@ -129,21 +129,22 @@ export default function EmergencyPage() {
               ติดต่อ{tenant.name}
             </p>
             <a href={`tel:${tenant.phone}`}
-               className="flex items-center gap-4 bg-white rounded-2xl px-4 py-4 shadow-sm border border-gray-100 active:scale-95 transition-transform">
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0"
+               aria-label={`โทร ${tenant.name} ${tenant.phone}`}
+               className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white border border-gray-100 shadow-sm active:scale-[0.98] hover:shadow-md transition-all">
+              <div className="w-11 h-11 rounded-lg flex items-center justify-center shrink-0"
                    style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 15%, white)' }}>
                 <Phone size={20} style={{ color: 'var(--color-primary)' }} />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs text-gray-500 truncate">{tenant.name}</p>
-                <p className="text-xl font-extrabold leading-tight" style={{ color: 'var(--color-primary)' }}>
+                <p className="text-[18px] font-extrabold leading-none tracking-wide break-words"
+                   style={{ color: 'var(--color-primary)' }}>
                   {tenant.phone}
                 </p>
+                <p className="text-[13px] text-gray-500 mt-1 leading-snug truncate">{tenant.name}</p>
               </div>
-              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-white text-xs font-semibold shrink-0"
+              <span className="w-10 h-10 rounded-full flex items-center justify-center text-white shrink-0"
                     style={{ backgroundColor: 'var(--color-primary)' }}>
-                <Phone size={12} />
-                โทร
+                <Phone size={18} />
               </span>
             </a>
           </div>
