@@ -3,6 +3,7 @@ import { Loader2 } from 'lucide-react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useTenant } from '../../contexts/TenantContext'
+import { createStreetLayer, createSatelliteLayer, createHybridLabelLayer } from '../../lib/mapTiles'
 
 const isPoint = point => Number.isFinite(Number(point?.lat)) && Number.isFinite(Number(point?.lng))
 
@@ -62,6 +63,7 @@ export default function LeafletMapCanvas({
   const geojsonLayerRef = useRef(null)
   const callbacksRef = useRef({ onMapClick, onMapRightClick, onFeatureClick, onFeatureRightClick, onPolylineRightClick, onMarkerDragEnd, onMapReady })
   const lastFitSignatureRef = useRef('')
+  const satelliteFallbackRef = useRef(null)
   const [loading, setLoading] = useState(true)
   // derive จาก prop ตรงๆ ไม่เก็บเป็น state ซ้ำ — ไม่มีปุ่มสลับในตัว component แล้ว
   // เก็บเป็น state จะกลายเป็นแหล่งความจริงคู่ขนานที่หลุดจาก prop ได้
@@ -103,25 +105,13 @@ export default function LeafletMapCanvas({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
 
-    // Base Layer: CartoDB Voyager (Street map with crisp labels and clean aesthetic)
-    const streetLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>',
-      maxZoom: 19,
-      subdomains: 'abcd',
-    })
+    // แหล่ง tile ทั้งหมดอยู่ใน lib/mapTiles.js — ชั้นดาวเทียมมี fallback ในตัว
+    // (ArcGIS ที่มี key → Esri legacy → OSM) กันจอขาวเมื่อผู้ให้บริการรายใดรายหนึ่งล่ม
+    const streetLayer = createStreetLayer()
+    const satelliteTile = createSatelliteLayer()
+    satelliteFallbackRef.current = satelliteTile
 
-    // Base Layer: Esri World Imagery (High-resolution satellite imagery)
-    const satelliteTile = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
-      maxZoom: 19,
-    })
-
-    // Overlay: Esri Boundaries and Places for Hybrid View
-    const hybridLabels = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 19,
-    })
-
-    const hybridGroup = L.layerGroup([satelliteTile, hybridLabels])
+    const hybridGroup = L.layerGroup([satelliteTile, createHybridLabelLayer()])
 
     baseLayersRef.current = {
       roadmap: streetLayer,
@@ -155,6 +145,10 @@ export default function LeafletMapCanvas({
     callbacksRef.current.onMapReady?.(map, L)
 
     return () => {
+      // ต้องปลด timer/listener ของ fallback ก่อน map.remove() ไม่งั้น setTimeout 8 วิ
+      // ที่ตั้งค้างไว้จะยิงหลัง component ถูก unmount ไปแล้ว
+      satelliteFallbackRef.current?.disposeFallback?.()
+      satelliteFallbackRef.current = null
       map.remove()
       mapRef.current = null
     }
