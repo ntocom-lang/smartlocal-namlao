@@ -94,14 +94,18 @@ export function resolveOrderAuthority(signatory, tenant, role = 'mayor') {
   return { name, title }
 }
 
-// ช่อง "ผู้อำนวยการกอง/หัวหน้ากอง" พิมพ์เฉพาะชื่อ ไม่พิมพ์บรรทัดตำแหน่งใต้ชื่อ:
-// ป้ายบทบาทบนเส้นลงนามระบุว่าเป็นหัวหน้ากองอยู่แล้ว การเติมอีกบรรทัดทั้งซ้ำความหมาย
-// และดันความสูงรวมจนใบเกิน 1 หน้า A4 ซึ่งเป็นข้อบังคับของแบบฟอร์มนี้
-// ยังไม่ได้ตั้งผู้ลงนามของกองนั้น = เว้นว่างให้เซ็นสด ห้ามเดาชื่อแทน
+// ช่อง "ผู้อำนวยการกอง/หัวหน้ากอง" ใช้ชื่อตำแหน่งที่ อปท. ระบุไว้ในทะเบียนเป็นป้ายบทบาท
+// บนเส้นลงนามแทนคำกลางๆ ของแบบฟอร์ม — ระบุตรงตัวกว่าและไม่ได้เพิ่มบรรทัดใหม่
+// (การพิมพ์ตำแหน่งเป็นบรรทัดที่สองใต้ชื่อจะดันความสูงจนใบเกิน 1 หน้า A4 ซึ่งเป็น
+// ข้อบังคับของแบบฟอร์มนี้ จึงแทนที่ป้ายเดิมแทนการเพิ่ม)
+// ยังไม่ได้ตั้งผู้ลงนามของกองนั้น = เว้นว่างให้เซ็นสดและคงป้ายกลางไว้ ห้ามเดาชื่อแทน
 export function resolveDeptHead(signatory) {
   return {
     name: signatory?.manual_name?.trim()
       || signatory?.profile?.full_name?.trim()
+      || '',
+    title: signatory?.title_override?.trim()
+      || profilePosition(signatory?.profile)
       || '',
   }
 }
@@ -196,7 +200,11 @@ export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null,
     }
     .signature-row > * { min-width: 0; }
     .signature-line { height: 1.15em; border-bottom: 1px dotted #333; }
-    .signature-role { text-align: left; }
+    /* ป้ายบทบาทเดิมเป็นคำกลางความยาวคงที่ จึงอยู่ในคอลัมน์ 13em ได้พอดีตลอด
+       ตอนนี้เป็นชื่อตำแหน่งจริงที่ อปท. พิมพ์เอง ยาวได้ถึง 250 ตัวอักษร ถ้าคง nowrap
+       ที่สืบจาก .signature-row ไว้ ข้อความจะล้นออกนอกขอบกระดาษแล้วหายไปเงียบๆ
+       บนเอกสารที่เอาไปให้เซ็น — ยอมให้ตัดบรรทัดแทน */
+    .signature-role { text-align: left; white-space: normal; overflow-wrap: anywhere; }
     .signature-name-row { margin-top: 2pt; }
     .signature-name, .signature-title { position: relative; text-align: center; }
     .signature-name.is-blank { display: flex; justify-content: space-between; width: 100%; }
@@ -243,7 +251,11 @@ export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null,
   <div class="signatures">
     ${signatureBlock({ role: 'ผู้ขออนุญาต', name: requesterName })}
     ${signatureBlock({ role: 'ผู้ขับรถ', name: driverName })}
-    ${signatureBlock({ role: 'ผู้อำนวยการกอง/หัวหน้ากอง', name: deptHead?.name || '', suffix: 'หรือผู้แทน' })}
+    ${signatureBlock({
+      role: deptHead?.title?.trim() || 'ผู้อำนวยการกอง/หัวหน้ากอง',
+      name: deptHead?.name || '',
+      suffix: 'หรือผู้แทน',
+    })}
   </div>
 
   <div class="decision">

@@ -112,7 +112,9 @@ const defaultHtml = buildFleetTripRequestHtml({
 })
 assert.ok(defaultHtml.includes('สมนึก นายกฯ'))
 assert.ok(defaultHtml.includes('สมปอง ผอ.กองการศึกษา'))
-assert.ok(defaultHtml.includes('ผู้อำนวยการกอง/หัวหน้ากอง'))
+// ป้ายบทบาทบนเส้นลงนามใช้ชื่อตำแหน่งที่ อปท. ตั้งไว้ ระบุตรงตัวกว่าคำกลางของแบบฟอร์ม
+assert.ok(defaultHtml.includes('ผู้อำนวยการกองการศึกษา'))
+assert.ok(!defaultHtml.includes('ผู้อำนวยการกอง/หัวหน้ากอง'))
 
 // ── เลือกปลัดเป็นผู้มีอำนาจสั่งใช้รถ ───────────────────────────────────────────────
 const clerkAuthority = resolveOrderAuthority(pickSignatory(registry, { role: 'clerk' }), tenant, 'clerk')
@@ -159,7 +161,9 @@ assert.equal(resolveDeptHead(null).name, '')
 const blankHtml = buildFleetTripRequestHtml({
   trip, tenant, orderAuthority: resolveOrderAuthority(null, tenant), deptHead: resolveDeptHead(null),
 })
+// ยังไม่ตั้งผู้ลงนามของกองนั้น = คงคำกลางของแบบฟอร์มไว้ ห้ามเว้นป้ายว่าง
 assert.ok(blankHtml.includes('ผู้อำนวยการกอง/หัวหน้ากอง'))
+assert.equal(resolveDeptHead(null).title, '')
 assert.ok(!blankHtml.includes('สมปอง'))
 // เรียกแบบไม่ส่ง deptHead เลยต้องไม่พังและได้ผลเท่ากับส่ง null
 assert.equal(
@@ -168,7 +172,9 @@ assert.equal(
 )
 
 // ── ช่องหัวหน้ากองพิมพ์เฉพาะชื่อ ไม่เพิ่มบรรทัดตำแหน่ง (ใบต้องจบใน 1 หน้า A4) ────────
-assert.equal(Object.keys(resolveDeptHead(registry[2])).join(','), 'name')
+// คืนทั้งชื่อและตำแหน่ง — ตำแหน่งไปเป็นป้ายบทบาท ไม่ใช่บรรทัดเพิ่มใต้ชื่อ
+assert.equal(Object.keys(resolveDeptHead(registry[2])).sort().join(','), 'name,title')
+assert.equal(resolveDeptHead(registry[2]).title, 'ผู้อำนวยการกองการศึกษา')
 const titleLines = (html) => (html.match(/class="signature-title"/g) ?? []).length
 // มีบรรทัดตำแหน่งได้บล็อกเดียวคือผู้มีอำนาจสั่งใช้รถ
 assert.equal(titleLines(defaultHtml), 1)
