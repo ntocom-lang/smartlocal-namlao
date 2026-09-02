@@ -133,7 +133,7 @@ function EServiceGrid({ docTypes, rounded = 'rounded-2xl' }) {
       </Link>
       {/* เบอร์โทรสำคัญ — แถวบางกว่าและสีอ่อนกว่าสายด่วนโดยตั้งใจ ไม่ให้แย่งสายตาจากแถบแดง
           เพราะเหตุด่วนต้องหาเจอก่อนเสมอ ใช้ <Link> ตรงๆ เหมือนกัน /directory ไม่ผูกโมดูล (เปิดเสมอ) */}
-      <Link to="/directory" aria-label="ทำเนียบเบอร์โทรสำคัญ หน่วยงานราชการและผู้นำท้องถิ่น"
+      <Link to="/directory" aria-label="เบอร์โทรสำคัญ หน่วยงานราชการและผู้นำท้องถิ่น"
         className="relative z-10 mb-2 flex items-center gap-2.5 rounded-xl border border-white/70 bg-white/95 px-3 py-2 shadow-md shadow-blue-950/10 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:bg-white hover:shadow-lg active:scale-[0.98]">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-700">
           <BookUser size={16} />
