@@ -46,14 +46,12 @@ export default function EmergencyPage() {
   useEffect(() => {
     if (!tenant?.id) return
     let alive = true
+    // อ่านผ่าน RPC ไม่ใช่ SELECT ตรงบนตาราง — RLS กรองราย อปท. ให้ผู้ไม่ล็อกอินไม่ได้
+    // (ไม่มี JWT claim ให้รู้ว่ากำลังเปิดเว็บของ อปท. ไหน) การบังคับส่ง _municipality_id
+    // เข้าไปจึงเป็นทางเดียวที่กันการดึงเบอร์ข้ามทุก อปท. ในคำขอเดียว
+    // เบอร์ที่ไม่ใช่เหตุด่วน (ราชการ/ผู้นำท้องถิ่น) อยู่หน้า /directory — ดู src/lib/contactBooks.js
     supabase
-      .from('emergency_contacts')
-      .select('*')
-      .eq('municipality_id', tenant.id)
-      // เบอร์ที่ไม่ใช่เหตุด่วน (ราชการ/ผู้นำท้องถิ่น) ย้ายไปหน้า /directory แล้ว — ดู src/lib/contactBooks.js
-      .eq('book', 'urgent')
-      .eq('is_active', true)
-      .order('display_order')
+      .rpc('get_public_emergency_contacts', { _municipality_id: tenant.id, _book: 'urgent' })
       .then(({ data }) => { if (alive) setContacts(data || []) })
     return () => { alive = false }
   }, [tenant?.id])

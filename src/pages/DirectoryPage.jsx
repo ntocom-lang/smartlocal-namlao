@@ -53,14 +53,12 @@ export default function DirectoryPage() {
   useEffect(() => {
     if (!tenant?.id) return
     let alive = true
+    // อ่านผ่าน RPC ไม่ใช่ SELECT ตรงบนตาราง — สมุดนี้เก็บเบอร์ส่วนตัวของผู้นำท้องถิ่น
+    // ที่มี consent_at กำกับ การปล่อยให้ดึงข้ามทุก อปท. ได้ในคำขอเดียวเป็นการประมวลผล
+    // คนละลักษณะกับที่เจ้าของข้อมูลยินยอมไว้ ดู 20260905130000
+    // เบอร์เหตุด่วนอยู่หน้า /emergency — สองหน้านี้ใช้ตารางเดียวกันแต่คนละสมุด
     supabase
-      .from('emergency_contacts')
-      .select('*')
-      .eq('municipality_id', tenant.id)
-      // เบอร์เหตุด่วนอยู่หน้า /emergency — สองหน้านี้ใช้ตารางเดียวกันแต่คนละสมุด
-      .eq('book', 'directory')
-      .eq('is_active', true)
-      .order('display_order')
+      .rpc('get_public_emergency_contacts', { _municipality_id: tenant.id, _book: 'directory' })
       .then(({ data }) => { if (alive) setContacts(data || []) })
     return () => { alive = false }
   }, [tenant?.id])

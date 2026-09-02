@@ -10,12 +10,13 @@ export default function EmergencyGrid() {
 
   useEffect(() => {
     if (!tenant?.id) return
+    // อ่านผ่าน RPC ไม่ใช่ SELECT ตรงบนตาราง — anon ไม่มีสิทธิ์อ่านตารางนี้แล้ว
+    // ตั้งแต่ 20260905140000 ดูเหตุผลใน 20260905130000
+    // ระบุ urgent ชัดเจน: หัวข้อบล็อกนี้คือ "สายด่วน 24 ชั่วโมง" การดึงทุกสมุดมาแสดง
+    // จะเอาเบอร์สำนักงานที่รับสายเฉพาะเวลาราชการมาอยู่ใต้ป้ายนั้น ซึ่งเป็นปัญหาต้นเรื่อง
+    // ที่ทำให้ต้องแยกสมุด directory ออกไปตั้งแต่แรก
     supabase
-      .from('emergency_contacts')
-      .select('*')
-      .eq('municipality_id', tenant.id)
-      .eq('is_active', true)
-      .order('display_order')
+      .rpc('get_public_emergency_contacts', { _municipality_id: tenant.id, _book: 'urgent' })
       .then(({ data }) => setContacts(data || []))
   }, [tenant?.id])
 

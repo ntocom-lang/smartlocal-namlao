@@ -104,9 +104,14 @@ async function buildContext(tenantId) {
       .gte('event_date', today).order('event_date', { ascending: true }).limit(4)),
 
     // 3. เบอร์โทรฉุกเฉินประจำท้องถิ่น (Emergency Contacts)
-    safeRows(supabase.from('emergency_contacts')
-      .select('name, phone_number')
-      .eq('municipality_id', tenantId).limit(5)),
+    // เดิม select('name, phone_number') ซึ่งเป็นคอลัมน์ที่ไม่มีอยู่จริง (ของจริงคือ label, number)
+    // safeRows กลืน error ทิ้ง แชตจึงไม่เคยมีเบอร์ฉุกเฉินใน context เลยตั้งแต่ต้น
+    // — บั๊กชนิดเดียวกับ tourism_spots ที่บันทึกไว้ในข้อ 4
+    // อ่านผ่าน RPC ให้ตรงกับหน้า /emergency: กรอง is_active + สมุด urgent ให้ในตัว
+    // ไม่งั้น AI จะบอกเบอร์ที่แอดมินปิดไปแล้ว หรือหยิบเบอร์สำนักงานที่รับสายเฉพาะเวลาราชการ
+    // มาตอบคำถามเหตุด่วน
+    safeRows(supabase.rpc('get_public_emergency_contacts',
+      { _municipality_id: tenantId, _book: 'urgent' }).limit(5)),
 
     // 4. สถานที่ท่องเที่ยว/OTOP เด่น — ตารางชื่อ 'tourism_places' (เดิมเขียน 'tourism_spots'
     // ซึ่งไม่มีอยู่จริงใน DB) กรอง is_active ให้ตรงกับหน้าท่องเที่ยวฝั่งประชาชน ไม่งั้น AI จะพูดถึง
@@ -134,7 +139,7 @@ async function buildContext(tenantId) {
   if (emergency.length) {
     lines.push('เบอร์โทรฉุกเฉินประจำท้องถิ่น:')
     for (const em of emergency) {
-      lines.push(`- ${em.name}: ${em.phone_number}`)
+      lines.push(`- ${em.label}: ${em.number}`)
     }
   }
 
