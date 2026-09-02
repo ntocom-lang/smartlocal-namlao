@@ -34,7 +34,11 @@ const sel = inp + ' appearance-none'
 
 // requester = ผู้ขอใช้รถตัวจริง (ชื่อบนแบบ 3) — ผูกกับ requested_by ไม่ใช่ created_by แล้ว
 // creator = ผู้บันทึกรายการ เก็บไว้แสดงกำกับเมื่อมีการกรอกแทนกัน
-const SELECT = `*, vehicle:fleet_vehicles(id,name,license_plate,asset_code,asset_kind,meter_unit), driver:profiles!fleet_trips_driver_id_fkey(id,full_name), requester:profiles!fleet_trips_requested_by_fkey(id,full_name,job_title,position:positions(name)), creator:profiles!fleet_trips_created_by_fkey(id,full_name), approver:profiles!fleet_trips_approved_by_fkey(full_name,job_title,position:positions(name)), departments(name,short_name)`
+// ต้องระบุชื่อ FK ของ departments ให้ชัด — fleet_trips มี FK ไป departments สองเส้น
+// (department_id = กองที่รับผิดชอบทริป, dept_head_department_id = กองของหัวหน้าที่ลงนามแบบ 3)
+// ถ้าเขียน departments(...) ลอยๆ PostgREST จะตอบ PGRST201 "more than one relationship"
+// แล้วรายการทริปทั้งหน้าโหลดไม่ขึ้นเลย โดยที่คำขอถูกบันทึกลง DB ไปแล้ว
+const SELECT = `*, vehicle:fleet_vehicles(id,name,license_plate,asset_code,asset_kind,meter_unit), driver:profiles!fleet_trips_driver_id_fkey(id,full_name), requester:profiles!fleet_trips_requested_by_fkey(id,full_name,job_title,position:positions(name)), creator:profiles!fleet_trips_created_by_fkey(id,full_name), approver:profiles!fleet_trips_approved_by_fkey(full_name,job_title,position:positions(name)), departments!fleet_trips_department_id_fkey(name,short_name)`
 
 function profilePosition(profile) {
   return profile?.job_title?.trim() || profile?.position?.name?.trim() || ''
