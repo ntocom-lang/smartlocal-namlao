@@ -85,8 +85,8 @@ assert.match(migrationSource, /p_effective_from IS NULL OR p_effective_from > v_
 assert.match(migrationSource, /timezone\('Asia\/Bangkok', now\(\)\)::date/)
 // หน้าจอย้ายไป v3 แล้ว (รองรับแถวที่แอดมินสร้างเอง) — v2 ยังอยู่ในฐานข้อมูลไว้ย้อนดูของเดิม
 // แต่ต้องไม่มีใครเรียกจากโค้ดอีก ไม่งั้นการบันทึกจะข้ามกติกาของ custom_label ไปได้
-assert.match(signatorySettingsSource, /set_document_signatory_v3/)
-assert.doesNotMatch(signatorySettingsSource, /set_document_signatory_v2/)
+assert.match(signatorySettingsSource, /set_document_signatory_v4/)
+assert.doesNotMatch(signatorySettingsSource, /set_document_signatory_v[23]/)
 assert.match(signatorySettingsSource, /กรอกชื่อเอง/)
 assert.match(signatorySettingsSource, /ใช้สำหรับผู้ลงนามที่ไม่มีบัญชีในระบบ/)
 assert.match(manualSignatoryMigrationSource, /ADD COLUMN IF NOT EXISTS manual_name text/)

@@ -6,7 +6,7 @@ import {
   resolveOrderAuthority,
 } from '../src/lib/fleetTripPrint.js'
 import {
-  organizationSignatories, pickSignatory, signatoryName, signatoryTitle,
+  defaultVehicleAuthority, organizationSignatories, pickSignatory, signatoryName, signatoryTitle,
 } from '../src/lib/documentSignatories.js'
 
 const tenant = { name: 'เทศบาลตำบลสาธิต', province: 'แพร่' }
@@ -50,7 +50,8 @@ const registry = [
     profile: { full_name: 'สมปอง ผอ.กองการศึกษา', job_title: 'ผู้อำนวยการกองการศึกษา', position: null },
   },
   {
-    signatory_role: 'vehicle_authority', department_id: null,
+    signatory_role: 'custom', department_id: null, custom_label: 'ผู้รับมอบอำนาจสั่งใช้รถ',
+    is_vehicle_order_default: true,
     manual_name: null, title_override: 'รองนายกเทศมนตรี ปฏิบัติราชการแทนนายกเทศมนตรี',
     effective_from: '2026-01-01', effective_to: null,
     profile: { full_name: 'สมชิด รองนายกฯ', job_title: 'รองนายกเทศมนตรี', position: null },
@@ -93,7 +94,15 @@ assert.equal(signatoryName(pickSignatory(withCustom, { role: 'mayor' })), 'ส�
 // หัวหน้ากองต้องไม่หลุดเข้ามา เพราะไม่ใช่ผู้มีอำนาจสั่งใช้รถ
 const orgRows = organizationSignatories(withCustom)
 assert.ok(orgRows.every(r => r.signatory_role !== 'department_head'))
-assert.equal(orgRows.filter(r => r.signatory_role === 'custom').length, 2)
+assert.equal(orgRows.filter(r => r.signatory_role === 'custom').length, 3)
+
+// ── เครื่องหมาย "ผู้มีอำนาจสั่งใช้รถโดยปริยาย" ───────────────────────────────────
+assert.equal(signatoryName(defaultVehicleAuthority(withCustom)), 'สมชิด รองนายกฯ')
+// ไม่มีแถวไหนติ๊ก = ไม่มีค่าตั้งต้น (ฝั่ง UI จะถอยไปใช้นายก)
+assert.equal(defaultVehicleAuthority(registry.filter(r => !r.is_vehicle_order_default)), null)
+assert.equal(defaultVehicleAuthority([]), null)
+// แถวที่ติ๊กแต่หมดอายุแล้วต้องไม่ถูกหยิบ ไม่งั้นใบจะขึ้นชื่อคนที่พ้นตำแหน่ง
+assert.equal(defaultVehicleAuthority([{ ...customA, is_vehicle_order_default: true, effective_to: '2026-02-01' }]), null)
 
 // ── ค่าปริยาย: ไม่เลือกอะไรเลย = นายก และหัวหน้ากองตามกองของทริป ─────────────────
 const defaultHtml = buildFleetTripRequestHtml({
@@ -125,15 +134,16 @@ assert.equal(bareMayor.title, 'นายกเทศมนตรีตำบล�
 assert.deepEqual(resolveOrderAuthority({ manual_name: 'สมนึก นายกฯ' }, tenant), bareMayor)
 
 // ── กรณีนายกมอบอำนาจให้ผู้อื่นสั่งใช้รถ (เช่น รองนายก) ─────────────────────────────
-const delegated = pickSignatory(registry, { role: 'vehicle_authority' })
+// ค่าตั้งต้นมาจากแถวที่ติ๊กไว้ ไม่ใช่บทบาทตายตัว
+const delegated = defaultVehicleAuthority(registry)
 assert.equal(signatoryName(delegated), 'สมชิด รองนายกฯ')
-const delegatedAuthority = resolveOrderAuthority(delegated, tenant, 'vehicle_authority')
+const delegatedAuthority = resolveOrderAuthority(delegated, tenant, 'custom')
 assert.equal(delegatedAuthority.name, 'สมชิด รองนายกฯ')
 assert.equal(delegatedAuthority.title, 'รองนายกเทศมนตรี ปฏิบัติราชการแทนนายกเทศมนตรี')
 // ห้ามถอยไปใช้ "นายกเทศมนตรี..." ของ tenant เด็ดขาด — ผู้รับมอบอำนาจไม่ใช่นายก
 // การพิมพ์ตำแหน่งนายกใต้ชื่อรองนายกคือการระบุผู้ลงนามผิดตัวในเอกสารราชการ
 assert.equal(
-  resolveOrderAuthority({ manual_name: 'สมชิด รองนายกฯ' }, tenant, 'vehicle_authority').title,
+  resolveOrderAuthority({ manual_name: 'สมชิด รองนายกฯ' }, tenant, 'custom').title,
   '',
 )
 // แถวมอบอำนาจต้องไม่ปนกับนายก/ปลัด — ทั้งสามเป็นคนละแถวในทะเบียน
@@ -180,16 +190,17 @@ assert.ok(tripsSource.includes('.update(signatoryChoice)'))
 assert.equal(
   (tripsSource.match(/dept_head_department_id: deptHeadDefault\(/g) ?? []).length, 2,
 )
-assert.equal((tripsSource.match(/order_authority_role: authorityDefault\(\)/g) ?? []).length, 2)
+assert.equal((tripsSource.match(/\.\.\.authorityDefault\(\)/g) ?? []).length, 2)
 // เปลี่ยนผู้ขอแล้วหัวหน้ากองต้องเปลี่ยนตาม ไม่ค้างชื่อหัวหน้าของคนก่อนหน้า
 assert.ok(tripsSource.includes('const deptHead = deptHeadDefault(picked?.department_id)'))
 // ต้องอ่าน department_id ของโปรไฟล์ตัวเองมาด้วย ไม่งั้น default ของฟอร์มใหม่จะว่างเสมอ
 assert.ok(tripsSource.includes('id,full_name,job_title,department_id,position:positions(name)'))
 // กองที่ยังไม่มีผู้ลงนามห้ามถูก preselect — <select> จะถือค่าที่ไม่มี option แล้วโชว์ช่องว่าง
 assert.ok(tripsSource.includes("return pickSignatory(signatories, { role: 'department_head', departmentId }) ? departmentId : ''"))
-assert.ok(tripsSource.includes("return pickSignatory(signatories, { role: 'mayor' }) ? 'mayor' : ''"))
+// ไม่มีแถวไหนติ๊กไว้ = ถอยไปใช้นายก และถ้าไม่มีนายกด้วยก็ไม่ preselect อะไรเลย
+assert.ok(tripsSource.includes("order_authority_role: pickSignatory(signatories, { role: 'mayor' }) ? 'mayor' : ''"))
 // ตั้งผู้รับมอบอำนาจไว้ = ต้องเป็นค่าตั้งต้น ไม่งั้นเจ้าหน้าที่ต้องจำสลับเองทุกใบ
-assert.ok(tripsSource.includes("if (pickSignatory(signatories, { role: 'vehicle_authority' })) return 'vehicle_authority'"))
+assert.ok(tripsSource.includes('const marked = defaultVehicleAuthority(signatories)'))
 // ตัวเลือกต้องมาจากทะเบียนจริง ไม่ใช่รายการบทบาทตายตัวในโค้ด (แอดมินเพิ่มแถวเองได้แล้ว)
 assert.ok(tripsSource.includes('organizationSignatories(signatories)'))
 // เก็บคู่ (role, label) เพราะบทบาท custom มีได้หลายแถว role อย่างเดียวชี้ไม่ถูกว่าแถวไหน
@@ -275,11 +286,49 @@ assert.ok(regrantMigration.includes('GRANT EXECUTE ON FUNCTION public.clear_docu
 const settingsSource = await readFile(
   new URL('../src/components/admin/SignatorySettings.jsx', import.meta.url), 'utf8',
 )
-assert.ok(settingsSource.includes("supabase.rpc('set_document_signatory_v3'"))
+// v3 ถูกแทนด้วย v4 แล้ว (รองรับเครื่องหมายค่าตั้งต้น) ต้องไม่มีใครเรียกตัวเก่าอีก
+assert.ok(!settingsSource.includes("supabase.rpc('set_document_signatory_v3'"))
 assert.ok(settingsSource.includes("supabase.rpc('clear_document_signatory_v2'"))
 assert.ok(settingsSource.includes('function addCustomRow()'))
 // คีย์แถวต้องรวมชื่อแถว ไม่งั้นทุกแถวที่สร้างเองจะแสดงค่าของแถวเดียวกันหมด
 assert.ok(settingsSource.includes('function assignmentKey(role, departmentId = null, customLabel = null)'))
 assert.ok(settingsSource.includes('p_custom_label: slot.customLabel ?? null'))
+
+// ── migration เครื่องหมายค่าตั้งต้น + ปลดระวางบทบาทสำเร็จรูป ──────────────────────
+const flagMigration = await readFile(
+  new URL('../supabase/migrations/20260904180000_signatory_vehicle_default_flag.sql', import.meta.url), 'utf8',
+)
+assert.ok(flagMigration.includes('ADD COLUMN IF NOT EXISTS is_vehicle_order_default boolean NOT NULL DEFAULT false'))
+// ติ๊กได้แถวเดียวต่อ อปท. — ถ้ามีสองแถวระบบเลือกไม่ถูกว่าใครเป็นค่าตั้งต้น
+assert.ok(flagMigration.includes('document_signatories_one_vehicle_default_idx'))
+assert.ok(flagMigration.includes('WHERE is_vehicle_order_default AND is_active'))
+// หัวหน้ากองติ๊กไม่ได้ กันทั้งที่ตารางและใน RPC
+assert.ok(flagMigration.includes("CHECK (NOT is_vehicle_order_default OR signatory_role <> 'department_head')"))
+assert.ok(flagMigration.includes("IF p_is_vehicle_order_default AND p_signatory_role = 'department_head' THEN"))
+// ต้องปลดเครื่องหมายของแถวเดิมก่อน INSERT ไม่งั้นชน unique index
+assert.ok(flagMigration.includes('SET is_vehicle_order_default = false'))
+assert.ok(flagMigration.indexOf('SET is_vehicle_order_default = false')
+  < flagMigration.indexOf('INSERT INTO public.document_signatories ('))
+// v4 เป็นฟังก์ชันใหม่ ไม่แตะ v3 เพื่อให้โค้ดที่ยังไม่ deploy ใช้ตัวเดิมได้ระหว่างรอ
+assert.ok(flagMigration.includes('CREATE OR REPLACE FUNCTION public.set_document_signatory_v4('))
+assert.ok(!flagMigration.includes('REVOKE EXECUTE ON FUNCTION public.set_document_signatory_v3'))
+
+const retireMigration = await readFile(
+  new URL('../supabase/migrations/20260904190000_retire_vehicle_authority_role.sql', import.meta.url), 'utf8',
+)
+// แถวเก่าต้องถูกแปลงเป็นแถวที่สร้างเอง ไม่ใช่ลบทิ้ง — ข้อมูลที่ อปท. ตั้งไว้ต้องไม่หายเงียบ
+assert.ok(retireMigration.includes("SET signatory_role = 'custom'"))
+// ทริปเก่าที่ชี้บทบาทนี้ต้องถูกย้ายด้วย ไม่งั้นพิมพ์แล้ว resolve ไม่เจอ
+assert.ok(retireMigration.includes('UPDATE public.fleet_trips'))
+assert.ok(retireMigration.includes("signatory_role IN ('department_head', 'clerk', 'mayor', 'custom')"))
+// การถอน/ถอดต้องอยู่ไฟล์ที่ apply หลัง deploy เท่านั้น
+assert.ok(retireMigration.includes('REVOKE EXECUTE ON FUNCTION public.set_document_signatory_v3'))
+
+assert.ok(settingsSource.includes("supabase.rpc('set_document_signatory_v4'"))
+assert.ok(settingsSource.includes('p_is_vehicle_order_default: vehicleDefault'))
+// ช่องติ๊กต้องไม่ขึ้นบนแถวหัวหน้ากอง
+assert.ok(settingsSource.includes('{!slot.departmentId && ('))
+// แถวสำเร็จรูปถูกถอดออกจากรายการแล้ว
+assert.ok(!settingsSource.includes("role: 'vehicle_authority'"))
 
 console.log('fleet form 3 signatory assertions passed')

@@ -7,7 +7,7 @@ import { logAction } from '../../lib/auditLog'
 import { notifyTelegram } from '../../lib/notifyTelegram'
 import { buildFleetTripRequestHtml, resolveDeptHead, resolveOrderAuthority } from '../../lib/fleetTripPrint'
 import {
-  CUSTOM_ROLE, SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE,
+  CUSTOM_ROLE, SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, defaultVehicleAuthority,
   organizationSignatories, pickSignatory, signatoryName, signatoryTitle,
 } from '../../lib/documentSignatories'
 import FleetEmptyState from './FleetEmptyState'
@@ -614,7 +614,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       requester_position: profilePosition(requesterProfile),
       // ตั้งค่าจริงไว้ให้เลย ไม่ใช่ปล่อยว่าง เจ้าหน้าที่จะได้เห็นชื่อคนที่จะเซ็นตั้งแต่แรก
       dept_head_department_id: deptHeadDefault(fleetInfo?.department_id ?? requesterProfile?.department_id),
-      order_authority_role: authorityDefault(),
+      ...authorityDefault(),
       destination_province: tenant?.province || '',
       planned_departure: toLocalDT(dep),
       planned_return: toLocalDT(ret),
@@ -705,7 +705,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       requester_position: profilePosition(requesterProfile),
       // ตั้งค่าจริงไว้ให้เลย ไม่ใช่ปล่อยว่าง เจ้าหน้าที่จะได้เห็นชื่อคนที่จะเซ็นตั้งแต่แรก
       dept_head_department_id: deptHeadDefault(fleetInfo?.department_id ?? requesterProfile?.department_id),
-      order_authority_role: authorityDefault(),
+      ...authorityDefault(),
       destination_province: tenant?.province || '',
       started_at: toLocalDT(new Date()),
     })
@@ -1144,9 +1144,21 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   // เซ็นใบใช้รถแทนนายก ถ้ายังตั้งต้นเป็นนายก เจ้าหน้าที่ต้องจำสลับเองทุกใบ ลืมเมื่อไร
   // ได้เอกสารที่ระบุผู้มีอำนาจผิดตัวทันที จึงให้แถวมอบอำนาจมาก่อนเมื่อมีการตั้งไว้
   // ยังไม่ได้ตั้งนายกด้วย = ไม่ preselect อะไรเลย ดีกว่าโชว์ช่องว่างที่อธิบายไม่ได้
+  // ค่าตั้งต้นมาจากแถวที่แอดมินติ๊กไว้ว่าเป็นผู้มีอำนาจสั่งใช้รถ ไม่ใช่บทบาทตายตัวอีกต่อไป
+  // คืนเป็นคู่ (role, label) เพราะแถวที่ติ๊กอาจเป็นแถวที่แอดมินสร้างเอง ซึ่ง role อย่างเดียว
+  // ชี้ไม่ถูกว่าแถวไหน — ไม่มีใครติ๊กเลยจึงถอยไปใช้นายกตามเดิม
   function authorityDefault() {
-    if (pickSignatory(signatories, { role: 'vehicle_authority' })) return 'vehicle_authority'
-    return pickSignatory(signatories, { role: 'mayor' }) ? 'mayor' : ''
+    const marked = defaultVehicleAuthority(signatories)
+    if (marked) {
+      return {
+        order_authority_role: marked.signatory_role,
+        order_authority_label: marked.custom_label ?? '',
+      }
+    }
+    return {
+      order_authority_role: pickSignatory(signatories, { role: 'mayor' }) ? 'mayor' : '',
+      order_authority_label: '',
+    }
   }
 
   // ช่องลงนาม 2 ช่องล่างของแบบ 3 — เก็บเป็น "ตัวชี้" (กองไหน / บทบาทไหน) ไม่ใช่ชื่อ
@@ -1160,8 +1172,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   // หรือผู้รับมอบอำนาจตามคำสั่ง การเปิดให้เลือกหัวหน้ากองใดก็ได้เสี่ยงระบุผู้ไม่มีอำนาจลงในเอกสาร
   //
   // แถวที่แอดมินสร้างเองมาก่อน เพราะการสร้างแถวเองคือการตั้งใจแต่งตั้งเฉพาะเรื่อง
-  const ROLE_LABEL = { mayor: 'นายก', clerk: 'ปลัด', vehicle_authority: 'ผู้รับมอบอำนาจ' }
-  const ROLE_ORDER = { vehicle_authority: 0, custom: 1, mayor: 2, clerk: 3 }
+  const ROLE_LABEL = { mayor: 'นายก', clerk: 'ปลัด' }
+  const ROLE_ORDER = { custom: 0, mayor: 1, clerk: 2 }
   const authorityOptions = organizationSignatories(signatories)
     .map(row => ({
       role: row.signatory_role,

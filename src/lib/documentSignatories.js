@@ -30,11 +30,11 @@ export function isSignatoryActiveToday(row, today = todayBangkok()) {
 // select เต็มสำหรับ "ทั้งทะเบียน" — ต้องมี signatory_role กับ department_id ติดมาด้วย
 // เพื่อจับคู่แถวกับช่องลงนามแต่ละช่องได้ฝั่ง client โดยไม่ต้องยิง query แยกรายช่อง
 export const SIGNATORY_REGISTRY_SELECT =
-  `signatory_role,department_id,custom_label,${SIGNATORY_WITH_PROFILE_SELECT}`
+  `signatory_role,department_id,custom_label,is_vehicle_order_default,${SIGNATORY_WITH_PROFILE_SELECT}`
 
 // บทบาทของระบบ — ลบหรือเปลี่ยนชื่อไม่ได้เพราะ prepare_complaint_print resolve ผู้ลงนาม
 // บนแบบพิมพ์คำร้องจากชื่อบทบาทเหล่านี้ตรงๆ ส่วนแถวที่แอดมินสร้างเองใช้ CUSTOM_ROLE
-export const SYSTEM_SIGNATORY_ROLES = ['mayor', 'clerk', 'department_head', 'vehicle_authority']
+export const SYSTEM_SIGNATORY_ROLES = ['mayor', 'clerk', 'department_head']
 export const CUSTOM_ROLE = 'custom'
 
 // ชื่อแถวที่แสดงบนหน้าจอ — แถวที่แอดมินสร้างเองใช้ชื่อที่ตั้งไว้เอง
@@ -58,6 +58,14 @@ export function pickSignatory(rows, { role, departmentId = null, customLabel = n
 
 // แถวที่เลือกเป็น "ผู้ลงนามระดับหน่วยงาน" ได้ (ไม่ผูกกับกอง) เรียงให้แถวที่แอดมิน
 // สร้างเองมาก่อน เพราะการสร้างแถวเองคือการตั้งใจแต่งตั้งเฉพาะเรื่อง
+// แถวที่แอดมินติ๊กไว้ว่าเป็นผู้มีอำนาจสั่งใช้รถโดยปริยาย — ติ๊กได้แถวเดียวต่อ อปท.
+// (บังคับด้วย partial unique index ฝั่ง DB) ไม่ติ๊กเลย = ใบขออนุญาตใช้รถถอยไปใช้นายก
+export function defaultVehicleAuthority(rows) {
+  const today = todayBangkok()
+  return (rows ?? []).find(row =>
+    row.is_vehicle_order_default && isSignatoryActiveToday(row, today)) ?? null
+}
+
 export function organizationSignatories(rows) {
   const today = todayBangkok()
   return (rows ?? [])

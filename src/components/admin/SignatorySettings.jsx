@@ -46,6 +46,7 @@ function SignatoryRow({ slot, people, assignment, onSaved, onDiscard = null }) {
   const [profileId, setProfileId] = useState(assignment?.profile_id ?? '')
   const [manualName, setManualName] = useState(assignment?.manual_name ?? '')
   const [titleOverride, setTitleOverride] = useState(assignment?.title_override ?? '')
+  const [vehicleDefault, setVehicleDefault] = useState(Boolean(assignment?.is_vehicle_order_default))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -83,7 +84,7 @@ function SignatoryRow({ slot, people, assignment, onSaved, onDiscard = null }) {
     // ส่ง p_effective_from เป็น null โดยตั้งใจ — ให้ DB coalesce เป็นวันนี้ตามเวลา Asia/Bangkok
     // จะได้ไม่ต้องพึ่งนาฬิกาของเครื่องผู้ใช้ ส่วนเลขที่คำสั่ง/วันสิ้นสุดไม่ใช้แล้ว ผู้ดูแลเปลี่ยนตัว
     // ผู้ลงนามเองเมื่อมีคำสั่งใหม่
-    const { error: saveError } = await supabase.rpc('set_document_signatory_v3', {
+    const { error: saveError } = await supabase.rpc('set_document_signatory_v4', {
       p_municipality_id: slot.municipalityId,
       p_signatory_role: slot.role,
       p_department_id: slot.departmentId,
@@ -95,13 +96,14 @@ function SignatoryRow({ slot, people, assignment, onSaved, onDiscard = null }) {
       p_effective_to: null,
       // ชื่อแถวเป็นตัวระบุแถวสำหรับบทบาทที่แอดมินสร้างเอง บทบาทของระบบต้องส่ง null
       p_custom_label: slot.customLabel ?? null,
+      p_is_vehicle_order_default: vehicleDefault,
     })
     setSaving(false)
     if (saveError) {
       // PGRST202 = ฟังก์ชันไม่มีใน schema cache ซึ่งเกือบทุกครั้งแปลว่า migration ยังไม่ถูก apply
       // ข้อความดิบของ PostgREST อ่านแล้วไม่รู้ว่าต้องทำอะไรต่อ จึงแปลให้เป็นคำสั่งที่ลงมือได้จริง
       setError(saveError.code === 'PGRST202'
-        ? 'ยังไม่ได้ติดตั้งฟังก์ชันบันทึกผู้ลงนามในฐานข้อมูล (migration 20260904140000) กรุณาแจ้งผู้ดูแลระบบให้ apply ก่อน'
+        ? 'ยังไม่ได้ติดตั้งฟังก์ชันบันทึกผู้ลงนามในฐานข้อมูล (migration 20260904180000) กรุณาแจ้งผู้ดูแลระบบให้ apply ก่อน'
         : saveError.message)
       return
     }
@@ -184,6 +186,17 @@ function SignatoryRow({ slot, people, assignment, onSaved, onDiscard = null }) {
         <input value={titleOverride} onChange={(event) => setTitleOverride(event.target.value)}
           placeholder={sourceMode === 'manual' ? 'ตำแหน่งที่พิมพ์ *' : selected ? personTitle(selected) : 'ตำแหน่งจากโปรไฟล์'}
           maxLength={250} aria-label={`ชื่อตำแหน่งที่พิมพ์ ${slot.label}`} className={FIELD_CLASS} />
+        {/* หัวหน้ากองติ๊กไม่ได้ — อำนาจสั่งใช้รถเป็นของผู้บริหารท้องถิ่นหรือผู้รับมอบอำนาจ
+            ตามคำสั่ง (DB บังคับซ้ำอีกชั้นทั้งที่ CHECK และใน RPC) */}
+        {!slot.departmentId && (
+          <label className="mt-1.5 flex items-start gap-1.5 text-[10px] leading-tight text-gray-600">
+            <input type="checkbox" checked={vehicleDefault}
+              onChange={(event) => setVehicleDefault(event.target.checked)}
+              aria-label={`ใช้เป็นผู้มีอำนาจสั่งใช้รถโดยปริยาย ${slot.label}`}
+              className="mt-0.5 shrink-0 accent-indigo-600" />
+            <span>ใช้เป็นผู้มีอำนาจสั่งใช้รถโดยปริยาย (ใบขออนุญาตใช้รถ แบบ 3)</span>
+          </label>
+        )}
       </div>
 
       <div className="flex items-center justify-end gap-1 md:pt-0.5">
@@ -253,12 +266,6 @@ export default function SignatorySettings({ tenant }) {
   const slots = useMemo(() => [
     { key: assignmentKey('mayor'), role: 'mayor', municipalityId: tenant?.id, departmentId: null, label: 'นายก' },
     { key: assignmentKey('clerk'), role: 'clerk', municipalityId: tenant?.id, departmentId: null, label: 'ปลัด' },
-    // ตั้งเฉพาะเมื่อนายกมีคำสั่งมอบอำนาจการสั่งใช้รถให้ผู้อื่น (รองนายก/ปลัด/รองปลัด)
-    // optional = true จึงไม่ถูกนับว่า "ขาด" — อปท. ส่วนใหญ่ไม่ได้มอบอำนาจ ถ้านับด้วย
-    // ทุกแห่งจะเห็นป้ายเตือนค้างตลอดทั้งที่ตั้งค่าครบแล้ว
-    { key: assignmentKey('vehicle_authority'), role: 'vehicle_authority', municipalityId: tenant?.id,
-      departmentId: null, label: 'ผู้มีอำนาจสั่งใช้รถ', optional: true,
-      hint: 'เฉพาะกรณีมีคำสั่งมอบอำนาจ ไม่ตั้งก็ได้ — ใบขออนุญาตใช้รถจะใช้นายกตามปกติ' },
     ...departments
       .filter((department) => department.code !== 'exec')
       .map((department) => ({
@@ -352,6 +359,7 @@ export default function SignatorySettings({ tenant }) {
               <p className="text-[10px] leading-tight text-gray-400">
                 สำหรับผู้ลงนามที่ไม่มีในรายการข้างบน เช่น รองนายก หรือผู้รับมอบอำนาจเฉพาะเรื่อง
                 — แถวที่เพิ่มเองใช้กับใบขออนุญาตใช้รถ ไม่ใช้กับแบบพิมพ์คำร้อง
+                ติ๊ก “ใช้เป็นผู้มีอำนาจสั่งใช้รถโดยปริยาย” ได้แถวเดียว ไม่ติ๊กเลย = ใบจะใช้นายก
               </p>
             </div>
           </div>
