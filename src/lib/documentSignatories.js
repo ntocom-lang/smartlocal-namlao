@@ -29,16 +29,39 @@ export function isSignatoryActiveToday(row, today = todayBangkok()) {
 
 // select เต็มสำหรับ "ทั้งทะเบียน" — ต้องมี signatory_role กับ department_id ติดมาด้วย
 // เพื่อจับคู่แถวกับช่องลงนามแต่ละช่องได้ฝั่ง client โดยไม่ต้องยิง query แยกรายช่อง
-export const SIGNATORY_REGISTRY_SELECT = `signatory_role,department_id,${SIGNATORY_WITH_PROFILE_SELECT}`
+export const SIGNATORY_REGISTRY_SELECT =
+  `signatory_role,department_id,custom_label,${SIGNATORY_WITH_PROFILE_SELECT}`
+
+// บทบาทของระบบ — ลบหรือเปลี่ยนชื่อไม่ได้เพราะ prepare_complaint_print resolve ผู้ลงนาม
+// บนแบบพิมพ์คำร้องจากชื่อบทบาทเหล่านี้ตรงๆ ส่วนแถวที่แอดมินสร้างเองใช้ CUSTOM_ROLE
+export const SYSTEM_SIGNATORY_ROLES = ['mayor', 'clerk', 'department_head', 'vehicle_authority']
+export const CUSTOM_ROLE = 'custom'
+
+// ชื่อแถวที่แสดงบนหน้าจอ — แถวที่แอดมินสร้างเองใช้ชื่อที่ตั้งไว้เอง
+export function signatoryRowLabel(row, fallback = '') {
+  return row?.signatory_role === CUSTOM_ROLE ? (row.custom_label?.trim() || fallback) : fallback
+}
 
 // เลือกแถวของบทบาท/กองที่ต้องการจากทะเบียนที่โหลดมาแล้ว และต้องมีผลวันนี้ด้วย
 // departmentId = null คือผู้ลงนามระดับหน่วยงาน (นายก/ปลัด) ซึ่งเก็บ department_id เป็น NULL
-export function pickSignatory(rows, { role, departmentId = null } = {}) {
+//
+// customLabel จำเป็นเฉพาะบทบาท custom ที่มีได้หลายแถวต่อ อปท. — เอกสารอ้างถึงแถวด้วยคู่
+// (role, label) ไม่ใช่ id เพราะการเปลี่ยนตัวผู้ลงนามคือปิดแถวเก่าแล้วสร้างแถวใหม่ id จึงเปลี่ยน
+export function pickSignatory(rows, { role, departmentId = null, customLabel = null } = {}) {
   const today = todayBangkok()
   return (rows ?? []).find(row =>
     row.signatory_role === role
     && (row.department_id ?? null) === (departmentId ?? null)
+    && (row.custom_label ?? null) === (customLabel ?? null)
     && isSignatoryActiveToday(row, today)) ?? null
+}
+
+// แถวที่เลือกเป็น "ผู้ลงนามระดับหน่วยงาน" ได้ (ไม่ผูกกับกอง) เรียงให้แถวที่แอดมิน
+// สร้างเองมาก่อน เพราะการสร้างแถวเองคือการตั้งใจแต่งตั้งเฉพาะเรื่อง
+export function organizationSignatories(rows) {
+  const today = todayBangkok()
+  return (rows ?? [])
+    .filter(row => row.signatory_role !== 'department_head' && isSignatoryActiveToday(row, today))
 }
 
 // ชื่อที่จะพิมพ์ — ผู้ลงนามที่ไม่มีบัญชีในระบบเก็บชื่อไว้ที่ manual_name

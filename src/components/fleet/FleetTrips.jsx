@@ -7,7 +7,8 @@ import { logAction } from '../../lib/auditLog'
 import { notifyTelegram } from '../../lib/notifyTelegram'
 import { buildFleetTripRequestHtml, resolveDeptHead, resolveOrderAuthority } from '../../lib/fleetTripPrint'
 import {
-  SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, pickSignatory, signatoryName, signatoryTitle,
+  CUSTOM_ROLE, SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE,
+  organizationSignatories, pickSignatory, signatoryName, signatoryTitle,
 } from '../../lib/documentSignatories'
 import FleetEmptyState from './FleetEmptyState'
 
@@ -119,7 +120,7 @@ const EMPTY_RESERVE = {
   destination: '', destination_locality: '', destination_province: '',
   purpose: '', passengers: 1, requester_position: '',
   // '' = ใช้ค่าปริยายตอนพิมพ์แบบ 3 (หัวหน้ากองตามกองของทริป / นายก) ตรงกับ NULL ใน DB
-  dept_head_department_id: '', order_authority_role: '',
+  dept_head_department_id: '', order_authority_role: '', order_authority_label: '',
 }
 const EMPTY_DIRECT = {
   vehicle_id: '', driver_id: '', department_id: '', requested_by: '',
@@ -127,7 +128,7 @@ const EMPTY_DIRECT = {
   odometer_start: '', odometer_end: '',
   destination: '', destination_locality: '', destination_province: '',
   purpose: '', passengers: 1, requester_position: '', notes: '', backdated_reason: '',
-  dept_head_department_id: '', order_authority_role: '',
+  dept_head_department_id: '', order_authority_role: '', order_authority_label: '',
 }
 
 /* ── Modal shell ──────────────────────────────────────── */
@@ -642,6 +643,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       requester_position: t.requester_position || profilePosition(t.requester) || profilePosition(requesterProfile),
       dept_head_department_id: t.dept_head_department_id || '',
       order_authority_role: t.order_authority_role || '',
+      order_authority_label: t.order_authority_label || '',
     })
     setConflict(null)
     setShowOverride(false)
@@ -658,10 +660,11 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     // หัวหน้ากอง: ถ้าไม่ได้เลือกไว้ ใช้กองที่รับผิดชอบทริปนั้น (พฤติกรรมที่เจ้าหน้าที่คาดหวัง)
     const deptHeadDeptId = t.dept_head_department_id || t.department_id || null
     const authorityRole = t.order_authority_role || 'mayor'
+    const authorityLabel = t.order_authority_label || null
     const deptHeadRow = deptHeadDeptId
       ? pickSignatory(signatories, { role: 'department_head', departmentId: deptHeadDeptId })
       : null
-    const authorityRow = pickSignatory(signatories, { role: authorityRole })
+    const authorityRow = pickSignatory(signatories, { role: authorityRole, customLabel: authorityLabel })
     const win = window.open('', '_blank', 'width=900,height=760')
     if (!win) return alert('เบราว์เซอร์ปิดกั้นหน้าต่างพิมพ์ กรุณาอนุญาต pop-up แล้วลองใหม่')
     win.document.open()
@@ -756,6 +759,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       // ช่องว่าง = ให้ตอนพิมพ์ถอยไปใช้ค่าปริยาย ต้องส่ง null ไม่ใช่ '' เพราะคอลัมน์เป็น uuid/CHECK
       dept_head_department_id: form.dept_head_department_id || null,
       order_authority_role: form.order_authority_role || null,
+      order_authority_label: form.order_authority_role === CUSTOM_ROLE
+        ? (form.order_authority_label || null)
+        : null,
     }
     const { error } = isEdit
       ? await supabase.from('fleet_trips').update(payload).eq('id', selTrip.id)
@@ -840,6 +846,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     const signatoryChoice = {
       dept_head_department_id: form.dept_head_department_id || null,
       order_authority_role: form.order_authority_role || null,
+      order_authority_label: form.order_authority_role === CUSTOM_ROLE
+        ? (form.order_authority_label || null)
+        : null,
     }
     if (newTripId && (signatoryChoice.dept_head_department_id || signatoryChoice.order_authority_role)) {
       const { error: signatoryError } = await supabase.from('fleet_trips')
@@ -929,6 +938,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       // ช่องว่าง = ให้ตอนพิมพ์ถอยไปใช้ค่าปริยาย ต้องส่ง null ไม่ใช่ '' เพราะคอลัมน์เป็น uuid/CHECK
       dept_head_department_id: form.dept_head_department_id || null,
       order_authority_role: form.order_authority_role || null,
+      order_authority_label: form.order_authority_role === CUSTOM_ROLE
+        ? (form.order_authority_label || null)
+        : null,
       notes: form.notes || null,
       backdated_reason: backdatedReason,
       status: 'completed',
@@ -1143,15 +1155,34 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   const deptHeadOptions = depts
     .map(d => ({ dept: d, row: pickSignatory(signatories, { role: 'department_head', departmentId: d.id }) }))
     .filter(item => item.row)
-  // จำกัดเฉพาะ 3 บทบาทนี้ — ผู้มีอำนาจสั่งใช้รถต้องเป็นผู้บริหารท้องถิ่น ผู้รักษาราชการแทน
-  // หรือผู้รับมอบอำนาจตามคำสั่งของ อปท. การเปิดให้เลือกหัวหน้ากองใดก็ได้เสี่ยงระบุผู้ไม่มีอำนาจ
-  // ลงในเอกสาร แถว "ผู้มีอำนาจสั่งใช้รถ" มาก่อนเพราะเป็นค่าตั้งต้นเมื่อ อปท. ตั้งไว้
-  const authorityOptions = [
-    { role: 'vehicle_authority', label: 'ผู้รับมอบอำนาจ',
-      row: pickSignatory(signatories, { role: 'vehicle_authority' }) },
-    { role: 'mayor', label: 'นายก', row: pickSignatory(signatories, { role: 'mayor' }) },
-    { role: 'clerk', label: 'ปลัด', row: pickSignatory(signatories, { role: 'clerk' }) },
-  ].filter(item => item.row)
+  // ตัวเลือกมาจากทะเบียนทั้งหมดที่เป็นผู้ลงนามระดับหน่วยงาน (ไม่ผูกกับกอง) — หัวหน้ากอง
+  // ถูกตัดออกโดยตั้งใจ ผู้มีอำนาจสั่งใช้รถต้องเป็นผู้บริหารท้องถิ่น ผู้รักษาราชการแทน
+  // หรือผู้รับมอบอำนาจตามคำสั่ง การเปิดให้เลือกหัวหน้ากองใดก็ได้เสี่ยงระบุผู้ไม่มีอำนาจลงในเอกสาร
+  //
+  // แถวที่แอดมินสร้างเองมาก่อน เพราะการสร้างแถวเองคือการตั้งใจแต่งตั้งเฉพาะเรื่อง
+  const ROLE_LABEL = { mayor: 'นายก', clerk: 'ปลัด', vehicle_authority: 'ผู้รับมอบอำนาจ' }
+  const ROLE_ORDER = { vehicle_authority: 0, custom: 1, mayor: 2, clerk: 3 }
+  const authorityOptions = organizationSignatories(signatories)
+    .map(row => ({
+      role: row.signatory_role,
+      customLabel: row.custom_label ?? null,
+      label: row.custom_label?.trim() || ROLE_LABEL[row.signatory_role] || row.signatory_role,
+      row,
+    }))
+    .sort((a, b) => (ROLE_ORDER[a.role] ?? 9) - (ROLE_ORDER[b.role] ?? 9)
+      || a.label.localeCompare(b.label, 'th'))
+
+  // <select> เก็บค่าเดียวได้ จึงเข้ารหัสเป็น 'role:label' แล้วแตกกลับตอนบันทึก
+  const authorityValue = (f) => (f.order_authority_role ? `${f.order_authority_role}:${f.order_authority_label ?? ''}` : '')
+  function pickAuthority(event) {
+    const [role = '', ...rest] = event.target.value.split(':')
+    const label = rest.join(':')
+    setForm(f => ({
+      ...f,
+      order_authority_role: role,
+      order_authority_label: role === CUSTOM_ROLE ? label : '',
+    }))
+  }
 
   const signatoryFields = (
     <div className="grid grid-cols-1 gap-3 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3">
@@ -1169,10 +1200,14 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       </div>
       <div>
         <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้มีอำนาจสั่งใช้รถ</label>
-        <select value={form.order_authority_role ?? ''} onChange={set('order_authority_role')} className={sel}>
+        {/* ค่าใน <option> ต้องพก label มาด้วย เพราะบทบาท custom มีได้หลายแถว role
+            อย่างเดียวชี้ไม่ถูกว่าแถวไหน */}
+        <select value={authorityValue(form)} onChange={pickAuthority} className={sel}>
           <option value="">— ไม่ระบุ (เว้นให้เซ็นสด) —</option>
-          {authorityOptions.map(({ role, label, row }) => (
-            <option key={role} value={role}>{label} · {signatoryName(row)}</option>
+          {authorityOptions.map(({ role, customLabel, label, row }) => (
+            <option key={`${role}:${customLabel ?? ''}`} value={`${role}:${customLabel ?? ''}`}>
+              {label} · {signatoryName(row)}
+            </option>
           ))}
         </select>
       </div>
