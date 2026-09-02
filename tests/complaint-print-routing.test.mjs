@@ -68,7 +68,9 @@ const ossFormSource = await readFile(new URL('../src/components/admin/OssIntakeF
 const printSource = await readFile(new URL('../src/lib/councilFormPrint.js', import.meta.url), 'utf8')
 const migrationSource = await readFile(new URL('../supabase/migrations/20260901160000_complaint_routing_and_signatories.sql', import.meta.url), 'utf8')
 const manualSignatoryMigrationSource = await readFile(new URL('../supabase/migrations/20260901170000_manual_document_signatories.sql', import.meta.url), 'utf8')
-const signatorySettingsSource = await readFile(new URL('../src/components/admin/ComplaintSignatorySettings.jsx', import.meta.url), 'utf8')
+const signatorySettingsSource = await readFile(new URL('../src/components/admin/SignatorySettings.jsx', import.meta.url), 'utf8')
+// ทะเบียนผู้ลงนามเป็นของกลาง ไม่ได้ผูกกับคำร้องแล้ว — วันที่/scope ย้ายมารวมที่ helper ตัวนี้
+const signatoryLibSource = await readFile(new URL('../src/lib/documentSignatories.js', import.meta.url), 'utf8')
 
 assert.doesNotMatch(citizenFormSource, /CATEGORY_DEPT/)
 assert.doesNotMatch(ossFormSource, /CATEGORY_DEPT/)
@@ -104,8 +106,10 @@ assert.ok(manualSignatoryMigrationSource.includes("REVOKE EXECUTE ON FUNCTION pu
 
 // UI: ค่าจากอีกโหมดต้องไม่ไหลข้ามมา และวันที่ต้องอิง Asia/Bangkok ให้ตรงกับที่ RPC ตรวจ
 assert.ok(signatorySettingsSource.includes("function switchMode(nextMode)"))
-assert.ok(signatorySettingsSource.includes("timeZone: 'Asia/Bangkok'"))
+assert.ok(signatoryLibSource.includes("timeZone: 'Asia/Bangkok'"))
+assert.ok(signatorySettingsSource.includes('todayBangkok'))
 assert.ok(!signatorySettingsSource.includes("getTimezoneOffset"))
+assert.ok(!signatoryLibSource.includes("getTimezoneOffset"))
 assert.ok(signatorySettingsSource.includes("Boolean(selected)"))
 
 // RLS ปัดตก UPDATE แล้วคืน 204 ไม่มี error — การเขียน department_id ต้องนับแถวที่เขียนจริงเสมอ

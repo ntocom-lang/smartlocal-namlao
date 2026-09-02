@@ -33,7 +33,7 @@ import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 // lazy: หน้ารายงานโครงการเปิดเฉพาะตอนเลือกเมนู ไม่ต้องโหลดมาพร้อมแผงควบคุม
 const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectReport'))
 import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
-import ComplaintSignatorySettings from '../components/admin/ComplaintSignatorySettings'
+import SignatorySettings from '../components/admin/SignatorySettings'
 import DocumentTypeFeeSettings from '../components/admin/DocumentTypeFeeSettings'
 import PositionCatalogAdmin from '../components/admin/PositionCatalogAdmin'
 import HolidaysAdmin from '../components/admin/HolidaysAdmin'
@@ -69,7 +69,9 @@ import { CategoryIcon } from '../lib/categoryIcon'
 // อยู่ในไฟล์นี้เพราะ CategoryManager เป็น component ที่ประกาศในไฟล์เดียวกัน (ไม่ได้แยกไฟล์)
 // ถ้าย้ายออกไปเป็นไฟล์นอกจะต้อง export CategoryManager แล้วเกิด circular import
 //
-// แท็บ 2-3 เห็นเฉพาะ admin/superadmin เหมือนเงื่อนไขเดิมตอนยังซ้อนกันอยู่
+// แท็บ "ประเภทคำขอเอกสาร" เห็นเฉพาะ admin/superadmin เหมือนเงื่อนไขเดิมตอนยังซ้อนกันอยู่
+// แท็บ "ผู้ลงนาม" ถูกยกออกไปเป็นเมนูหลัก activePage 'signatories' แล้ว เพราะไม่ได้ผูกกับ
+// คำร้องอย่างเดียว (ยานพาหนะดึงไปพิมพ์ใบขออนุญาตใช้รถด้วย) — ดู components/admin/SignatorySettings
 function CategorySettingsTabs({ tenant, currentUserRole }) {
   const [tab, setTab] = useState('categories')
   const canManage = currentUserRole === 'admin' || currentUserRole === 'superadmin'
@@ -77,7 +79,6 @@ function CategorySettingsTabs({ tenant, currentUserRole }) {
   const TABS = [
     { key: 'categories', label: 'ประเภทคำร้อง',      Icon: Tag,            show: true },
     { key: 'doc-types',  label: 'ประเภทคำขอเอกสาร', Icon: FileText,       show: canManage },
-    { key: 'signatory',  label: 'ผู้ลงนาม',          Icon: UserRoundCheck, show: canManage },
   ].filter(t => t.show)
 
   // กันแท็บค้างอยู่บนแท็บที่ role ปัจจุบันไม่มีสิทธิ์เห็น (เช่นสิทธิ์ถูกลดระหว่างใช้งาน)
@@ -103,7 +104,6 @@ function CategorySettingsTabs({ tenant, currentUserRole }) {
       {active === 'categories' && <CategoryManager tenant={tenant} />}
       {/* key={tenant.id} ให้ remount อ่านค่า fee_schedule ใหม่เมื่อสลับหน่วยงาน */}
       {active === 'doc-types' && <DocumentTypeFeeSettings key={tenant?.id} tenant={tenant} />}
-      {active === 'signatory' && <ComplaintSignatorySettings tenant={tenant} />}
     </div>
   )
 }
@@ -2248,7 +2248,7 @@ function SortableContactRow({ c, order, onDelete, onEdit, editingId, editingForm
   return (
     <tr ref={setNodeRef} style={style}
         className={`transition-colors ${isDragging ? 'bg-gray-50 shadow-sm' : 'hover:bg-gray-50'}`}>
-      <td className="px-4 py-3">
+      <td className="min-w-0 px-2 py-3">
         <div className="flex items-center gap-1">
           <button {...attributes} {...listeners}
             className="p-1 -ml-1 rounded text-gray-300 hover:text-gray-600 cursor-grab active:cursor-grabbing touch-none"
@@ -3414,14 +3414,14 @@ function CategoryActiveSwitch({ active, onToggle, compact = false }) {
       aria-checked={active}
       onClick={onToggle}
       title={active ? 'กดเพื่อปิดใช้งานประเภทนี้' : 'กดเพื่อเปิดใช้งานประเภทนี้'}
-      className={`inline-flex items-center gap-2 rounded-full border px-1.5 py-1 shrink-0 transition-colors ${
+      className={`inline-flex shrink-0 items-center rounded-full border py-1 transition-colors ${compact ? 'gap-1 px-1' : 'gap-2 px-1.5'} ${
         active ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-100'
       }`}
     >
       <span className={`relative w-8 h-4.5 rounded-full transition-colors ${active ? 'bg-green-500' : 'bg-gray-300'}`}>
         <span className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white shadow-sm transition-all ${active ? 'left-4' : 'left-0.5'}`} />
       </span>
-      <span className={`text-[11px] font-bold whitespace-nowrap pr-1 ${active ? 'text-green-700' : 'text-gray-500'}`}>
+      <span className={`font-bold whitespace-nowrap ${compact ? 'pr-0.5 text-[10px]' : 'pr-1 text-[11px]'} ${active ? 'text-green-700' : 'text-gray-500'}`}>
         {compact ? (active ? 'เปิดใช้งาน' : 'ปิดใช้งาน') : `สถานะ: ${active ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}`}
       </span>
     </button>
@@ -3562,7 +3562,6 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
 
 function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [], techGroups = [], onSetDraft, onSaveRow, onCancelRow, onStartLabelEdit, onToggleActive, onToggleAdhoc, onDeleteCat, onEditEmoji, iconStyle }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
-  const color = COLOR_PRESETS[cat.color_idx ?? 0] ?? COLOR_PRESETS[0]
   const editingLabel = !!draft?.editingLabel
   const hasDraft = !!draft && !editingLabel
   const currentTechId = draft?.technician_id ?? assign?.technician_id ?? ''
@@ -3604,26 +3603,16 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [
               title="เปลี่ยนไอคอน"
               className="hover:bg-gray-100 rounded-lg p-1 transition-colors active:scale-90 shrink-0"
             ><CategoryIcon emoji={cat.emoji} size={22} style={iconStyle} /></button>
-            {/* ชื่อประเภทอยู่บรรทัดเดียว: ปล่อยให้ตกบรรทัดแล้วชื่อยาวอย่าง "กลิ่นเหม็นรบกวน
-                (มลพิษทางอากาศ)" ทำให้แถวสูง 6 บรรทัดและอ่านยากกว่าการเลื่อนตารางแนวนอน */}
-            <span className="font-medium text-gray-800 whitespace-nowrap">{cat.label}</span>
+            <span className="min-w-0 break-words font-medium leading-snug text-gray-800">{cat.label}</span>
           </div>
         )}
       </td>
-      <td className="px-4 py-3">
-        {/* ป้ายสีต้องอยู่บรรทัดเดียวเสมอ — ตอนตารางถูกบีบ ข้อความยาวๆ อย่าง "กลิ่นเหม็นรบกวน
-            (มลพิษทางอากาศ)" จะตกบรรทัดทีละตัวอักษรจนแถวสูงผิดปกติและอ่านไม่ออก */}
-        <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
-          style={{ backgroundColor: color.color, color: color.textColor }}>
-          <CategoryIcon emoji={cat.emoji} size={13} style={iconStyle} /> {cat.label}
-        </span>
-      </td>
-      <td className="px-3 py-2.5">
+      <td className="min-w-0 px-2 py-2.5">
         <select
           value={currentDepartmentId}
           onChange={(e) => onSetDraft(cat.value, { department_id: e.target.value })}
           title={cat.is_active && !currentDepartmentId ? 'หมวดนี้ยังไม่มีกองรับผิดชอบ' : undefined}
-          className={`max-w-40 rounded-lg px-2 py-1.5 text-xs focus:outline-none ${
+          className={`block w-full min-w-0 max-w-full rounded-lg px-2 py-1.5 text-xs focus:outline-none ${
             cat.is_active && !currentDepartmentId
               ? 'border border-red-400 bg-red-50 text-red-700'
               : 'border border-gray-200 bg-white text-gray-700'
@@ -3635,14 +3624,14 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [
           ))}
         </select>
       </td>
-      <td className="px-3 py-2.5">
-        <div className="flex items-center gap-1.5">
+      <td className="min-w-0 px-2 py-2.5">
+        <div className="flex min-w-0 items-center gap-1.5">
           {isSaving && <Loader2 size={12} className="animate-spin text-gray-300 shrink-0" />}
           <select
             value={currentTechId}
             onChange={(e) => onSetDraft(cat.value, { technician_id: e.target.value })}
             title={cat.is_active && !currentTechId ? 'หมวดนี้เปิดให้แจ้งได้แต่ยังไม่มีผู้รับผิดชอบ คำร้องจะไม่ถูกมอบหมายให้ใคร' : undefined}
-            className={`text-xs rounded-lg px-2 py-1.5 focus:outline-none max-w-40 ${
+            className={`block w-full min-w-0 max-w-full rounded-lg px-2 py-1.5 text-xs focus:outline-none ${
               cat.is_active && !currentTechId
                 ? 'border border-red-400 bg-red-50 text-red-700'
                 : 'border border-gray-200 bg-white text-gray-700'
@@ -3661,7 +3650,7 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [
           </select>
         </div>
       </td>
-      <td className="px-3 py-2.5">
+      <td className="px-2 py-2.5">
         <div className="flex items-center gap-1 justify-center">
           <input
             type="number" min="1" max="365"
@@ -3672,25 +3661,25 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [
           <span className="text-xs text-gray-400">วัน</span>
         </div>
       </td>
-      <td className="px-4 py-3 text-center">
+      <td className="px-1 py-3 text-center">
         <CategoryActiveSwitch
           compact
           active={cat.is_active !== false}
           onToggle={() => onToggleActive(cat.id, cat.is_active !== false)}
         />
       </td>
-      <td className="px-4 py-3 text-center">
+      <td className="px-2 py-3 text-center">
         <button
           onClick={() => onToggleAdhoc(cat.id, !!cat.is_adhoc)}
           title="สลับปกติ/เฉพาะกิจ"
-          className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${cat.is_adhoc ? 'bg-lime-100 text-lime-700 hover:bg-gray-200 hover:text-gray-500' : 'bg-gray-200 text-gray-500 hover:bg-lime-100 hover:text-lime-700'}`}
+          className={`max-w-full px-2 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${cat.is_adhoc ? 'bg-lime-100 text-lime-700 hover:bg-gray-200 hover:text-gray-500' : 'bg-gray-200 text-gray-500 hover:bg-lime-100 hover:text-lime-700'}`}
         >
           {cat.is_adhoc ? '💨 เฉพาะกิจ' : 'ปกติ'}
         </button>
       </td>
-      <td className="px-4 py-3">
+      <td className="px-2 py-3">
         {editingLabel ? (
-          <div className="flex justify-end gap-1.5">
+          <div className="flex justify-end gap-0.5">
             <button onClick={() => onSaveRow(cat)} disabled={isSaving}
               className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50 transition-colors">
               {isSaving ? <Loader2 size={12} className="animate-spin" /> : 'บันทึก'}
@@ -3703,11 +3692,11 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [
         ) : (
           <div className="flex justify-end gap-1.5">
             <button onClick={() => onStartLabelEdit(cat)}
-              className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="แก้ไขชื่อ">
+              className="p-1 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="แก้ไขชื่อ">
               <Pencil size={14} />
             </button>
             <button onClick={() => onDeleteCat(cat.id)}
-              className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="ลบ">
+              className="p-1 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="ลบ">
               <Trash2 size={14} />
             </button>
           </div>
@@ -4346,20 +4335,30 @@ function CategoryManager({ tenant }) {
           {/* Desktop table — DnD sortable */}
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={visibleCats.map((c) => c.id)} strategy={verticalListSortingStrategy}>
-              <div className="hidden md:block border border-gray-200 rounded-xl overflow-x-auto overscroll-x-contain">
-                <table className="w-full min-w-[62rem] text-sm">
+              <div className="hidden md:block overflow-hidden rounded-xl border border-gray-200">
+                <table className="w-full table-fixed text-sm">
+                  <colgroup>
+                    <col className="w-[4%]" />
+                    <col className="w-[4%]" />
+                    <col className="w-[19%]" />
+                    <col className="w-[17%]" />
+                    <col className="w-[16%]" />
+                    <col className="w-[9%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[9%]" />
+                    <col className="w-[8%]" />
+                  </colgroup>
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="px-2 py-3 w-8" />
                       <th className="px-2 py-3 text-left text-xs font-semibold text-gray-500 w-8">#</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ประเภท</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ป้ายสี</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">กองรับผิดชอบ</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ช่างรับผิดชอบ</th>
-                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 w-24">ระยะเวลา</th>
-                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 whitespace-nowrap">สถานะ</th>
-                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 whitespace-nowrap">ประเภทงาน</th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 w-20">จัดการ</th>
+                      <th className="px-2 py-3 text-left text-xs font-semibold text-gray-500">ประเภท</th>
+                      <th className="px-2 py-3 text-left text-xs font-semibold text-gray-500">กองรับผิดชอบ</th>
+                      <th className="px-2 py-3 text-left text-xs font-semibold text-gray-500">ช่างรับผิดชอบ</th>
+                      <th className="px-2 py-3 text-center text-xs font-semibold text-gray-500">ระยะเวลา</th>
+                      <th className="px-2 py-3 text-center text-xs font-semibold text-gray-500 whitespace-nowrap">สถานะ</th>
+                      <th className="px-2 py-3 text-center text-xs font-semibold leading-tight text-gray-500">ประเภทงาน</th>
+                      <th className="px-2 py-3 text-right text-xs font-semibold text-gray-500">จัดการ</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -4994,6 +4993,7 @@ const PAGE_LABELS = {
   'doc-requests': 'คำขอเอกสาร',
   report: 'รายงานสรุป',
   categories: 'ประเภทคำร้อง',
+  signatories: 'ผู้ลงนามเอกสาร',
   emergency: 'สายด่วนฉุกเฉิน',
   locations: 'สถานที่เกิดเหตุ',
   'system-settings': 'ตั้งค่าระบบ',
@@ -5041,6 +5041,7 @@ function getAdminMenuGroups(currentUserRole, currentUserId) {
       accent: '#6366f1',
       items: [
         { key: 'system-settings', label: 'ตั้งค่าระบบ', Icon: Settings, color: '#3b82f6', bg: '#dbeafe', show: canManageSystem },
+        { key: 'signatories', label: 'ผู้ลงนามเอกสาร', Icon: UserRoundCheck, color: '#4338ca', bg: '#e0e7ff', show: canManageSystem },
         { key: 'users', label: 'จัดการผู้ใช้และการแต่งตั้ง', Icon: Shield, color: '#7c3aed', bg: '#ede9fe', show: canManageSystem },
         { key: 'audit-log', label: 'บันทึกกิจกรรม', Icon: BookOpen, color: '#ef4444', bg: '#fee2e2', show: canManageSystem },
       ],
@@ -5715,12 +5716,15 @@ export default function AdminDashboard() {
         <UserManager tenant={tenant} currentUserRole={currentUserRole} currentUserId={currentUserId} />
       ) : activePage === 'locations' ? (
         <LocationManager tenant={tenant} />
+      ) : activePage === 'signatories' ? (
+        <SignatorySettings tenant={tenant} />
       ) : activePage === 'categories' ? (
         // หน้า "ผู้รับผิดชอบแต่ละประเภทคำร้อง" (activePage 'assignments', AssignmentManager component)
         // ถูกลบไปแล้ว — เป็น UI ซ้ำซ้อนกับส่วนตั้งผู้รับผิดชอบ+SLA ที่ฝังอยู่ใน CategoryManager นี้อยู่แล้ว
         // (เขียนตาราง category_assignments ตัวเดียวกัน) เมนูไปหน้านั้นถูกปิด (show:false) มานานแล้วด้วย
-        // 3 แท็บย่อยอยู่ใน CategorySettingsTabs — ประเภทคำร้อง / ประเภทคำขอเอกสาร (ย้ายมาจากเมนู
-        // "ค่าธรรมเนียม" ที่ถอดออก เป็นที่เดียวที่เขียน municipalities.fee_schedule ได้) / ผู้ลงนาม
+        // 2 แท็บย่อยอยู่ใน CategorySettingsTabs — ประเภทคำร้อง / ประเภทคำขอเอกสาร (ย้ายมาจากเมนู
+        // "ค่าธรรมเนียม" ที่ถอดออก เป็นที่เดียวที่เขียน municipalities.fee_schedule ได้)
+        // แท็บ "ผู้ลงนาม" เดิมย้ายออกไปเป็นเมนู 'signatories' ด้านบนแล้ว
         <CategorySettingsTabs tenant={tenant} currentUserRole={currentUserRole} />
       ) : activePage === 'civil-report' ? (
         <Suspense fallback={
@@ -5802,6 +5806,18 @@ export default function AdminDashboard() {
               </button>
             )}
             {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
+              <button onClick={() => setActivePage('signatories')}
+                className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#e0e7ff' }}>
+                  <UserRoundCheck size={24} style={{ color: '#4338ca' }} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-800">ผู้ลงนามเอกสาร</p>
+                  <p className="text-[13px] text-gray-400 mt-0.5">นายก ปลัด หัวหน้ากอง</p>
+                </div>
+              </button>
+            )}
+            {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
               <button onClick={() => setActivePage('system-settings')}
                 className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
                 <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#dbeafe' }}>
@@ -5843,6 +5859,7 @@ export default function AdminDashboard() {
                   { key: 'holidays',    Icon: CalendarDays, color: '#0d9488', bg: '#ccfbf1', label: 'วันหยุดราชการ',  desc: 'ใช้คำนวณ SLA คำร้องเป็นวันทำการ',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'fleet-setup',      Icon: Car,         color: '#0369a1', bg: '#e0f2fe', label: 'ตั้งค่ายานพาหนะ', desc: 'กอง/หน่วยงาน งบประมาณ สิทธิ์ผู้ใช้', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'system-settings',  Icon: Settings,    color: '#3b82f6', bg: '#dbeafe', label: 'ตั้งค่าระบบ',    desc: 'ตั้งค่าชื่อระบบและข้อมูลพื้นฐาน',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
+                  { key: 'signatories',      Icon: UserRoundCheck, color: '#4338ca', bg: '#e0e7ff', label: 'ผู้ลงนามเอกสาร', desc: 'นายก ปลัด หัวหน้ากอง ใช้ร่วมทุกเอกสาร', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'users',           Icon: Shield,      color: '#7c3aed', bg: '#ede9fe', label: 'จัดการผู้ใช้และการแต่งตั้ง', desc: 'ตำแหน่ง สังกัด บทบาท และสิทธิ์', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                 ].filter(r => r.show).map(({ key, Icon, color, bg, label, desc }) => (
                   <tr key={key} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => setActivePage(key)}>

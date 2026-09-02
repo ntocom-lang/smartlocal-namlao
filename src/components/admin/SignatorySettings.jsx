@@ -1,13 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Loader2, Save, Trash2, UserRoundCheck } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-
-// RPC ตรวจ effective_from เทียบกับ timezone('Asia/Bangkok', now()) ถ้าฝั่ง UI ใช้เวลาเครื่อง
-// ผู้ใช้ที่นาฬิกา/timezone เพี้ยนไปข้างหน้าจะโดน 22007 'วันที่เริ่มมีผลต้องไม่เกินวันปัจจุบัน'
-// โดยไม่มีทางเดาสาเหตุได้ — en-CA ให้รูปแบบ YYYY-MM-DD ตรงกับที่ Postgres รับพอดี
-function todayIso() {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date())
-}
+import { SIGNATORY_SCOPE, todayBangkok } from '../../lib/documentSignatories'
 
 function assignmentKey(role, departmentId = null) {
   return `${role}:${departmentId ?? 'organization'}`
@@ -19,7 +13,7 @@ function personTitle(person) {
 
 function assignmentState(assignment) {
   if (!assignment) return { ready: false, label: 'ยังไม่ตั้ง' }
-  const today = todayIso()
+  const today = todayBangkok()
   if (assignment.effective_from > today) return { ready: false, label: 'ยังไม่ถึงวันเริ่ม' }
   if (assignment.effective_to && assignment.effective_to < today) return { ready: false, label: 'หมดอายุ' }
   return { ready: true, label: 'พร้อมใช้งาน' }
@@ -34,7 +28,7 @@ async function fetchSignatorySettings(municipalityId) {
       .in('role', ['admin', 'officer', 'staff', 'technician', 'viewer'])
       .order('full_name'),
     supabase.from('document_signatories').select('*')
-      .eq('municipality_id', municipalityId).eq('document_type', 'complaint').eq('is_active', true),
+      .eq('municipality_id', municipalityId).eq('document_type', SIGNATORY_SCOPE).eq('is_active', true),
   ])
   return { departmentResult, peopleResult, assignmentResult }
 }
@@ -205,7 +199,7 @@ function SignatoryRow({ slot, people, assignment, onSaved }) {
   )
 }
 
-export default function ComplaintSignatorySettings({ tenant }) {
+export default function SignatorySettings({ tenant }) {
   const [departments, setDepartments] = useState([])
   const [people, setPeople] = useState([])
   const [assignments, setAssignments] = useState([])
@@ -264,9 +258,11 @@ export default function ComplaintSignatorySettings({ tenant }) {
       <div className="flex items-start gap-3">
         <div className="rounded-xl bg-indigo-100 p-2 text-indigo-700"><UserRoundCheck size={20} /></div>
         <div className="min-w-0 flex-1">
-          <h2 className="font-semibold text-gray-800">ผู้ลงนามแบบพิมพ์คำร้อง</h2>
+          <h2 className="font-semibold text-gray-800">ผู้ลงนามเอกสาร</h2>
           <p className="mt-1 text-xs leading-5 text-gray-500">
-            นายก/ปลัด ใช้กับคำร้องทุกใบ ส่วนแถวของแต่ละกองใช้เฉพาะคำร้องที่ route เข้ากองนั้น
+            ทะเบียนกลางที่ทุกโมดูลดึงไปใช้ ตั้งที่นี่ที่เดียวแล้วมีผลกับทุกเอกสารที่ต้องลงนาม
+            ปัจจุบันใช้กับ แบบพิมพ์คำร้อง และ ใบขออนุญาตใช้รถส่วนกลาง (แบบ 3)
+            นายก/ปลัด ใช้กับทุกใบ ส่วนแถวของแต่ละกองใช้เฉพาะเอกสารที่ route เข้ากองนั้น
             (ชื่อแถวมาจากหน้าจัดการกอง/ส่วนราชการ แก้ที่นั่นแล้วเปลี่ยนตามทันที)
             เลือกจากบัญชีบุคลากรหรือกรอกชื่อและตำแหน่งเองสำหรับผู้ที่ไม่มีบัญชี
             โดยไม่เกี่ยวกับผู้รับผิดชอบลงพื้นที่หรือสิทธิ์เข้าเมนู
