@@ -5,6 +5,20 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
   base: '/',
+
+  build: {
+    // ห้ามล้าง dist ก่อน build — asset ของรุ่นก่อนต้องอยู่ต่ออีกพักหนึ่ง
+    //
+    // HTML ที่ค้างอยู่ในเบราว์เซอร์ ใน service worker หรือในแท็บที่ผู้ใช้เปิดทิ้งไว้
+    // ยังชี้ไปที่ชื่อไฟล์ของรุ่นก่อน ถ้าล้างทิ้งทุกรอบ คนกลุ่มนั้นจะได้ 404 = หน้าขาว
+    // scripts/postbuild.js เป็นตัวเก็บกวาด เก็บไว้ 2 รุ่นแล้วลบที่เก่ากว่านั้น
+    emptyOutDir: false,
+
+    // ให้ postbuild รู้ว่าไฟล์ไหนเป็นของรุ่นปัจจุบันจริงๆ — readdir ใช้ไม่ได้แล้ว
+    // เพราะ dist ไม่ถูกล้าง จะปนกับของรุ่นก่อน (postbuild ลบ .vite/ ทิ้งหลังอ่านเสร็จ)
+    manifest: true,
+  },
+
   server: {
     watch: {
       ignored: ['**/dist/**', '**/dev-dist/**', '**/.chrome-test-profiles/**']

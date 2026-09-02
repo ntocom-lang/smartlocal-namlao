@@ -152,9 +152,22 @@ export default {
     const shell = await env.ASSETS.fetch(new Request(new URL(SHELL_PATH, url)))
     if (!shell.ok) return new Response('Build output not found', { status: 500 })
 
+    // max-age=0 โดยตั้งใจ ห้ามใส่ TTL กลับมา
+    //
+    // เดิมเป็น max-age=300 แล้วทุก deploy มีหน้าต่างพังจริงราว 5 นาที: vite ล้าง dist ทุกรอบ
+    // ชื่อไฟล์ asset เปลี่ยน hash เสมอ ส่วน edge ยังจ่าย HTML เก่าที่ชี้ไฟล์ชุดเดิมอยู่
+    // ผู้ใช้ที่เปิดเว็บช่วงนั้นจึงขอไฟล์ที่ไม่มีแล้ว ได้ 404 กลับไป = หน้าขาว
+    // (ยืนยันจากของจริง 2026-09-02: หลัง deploy namlao ยังชี้ bundle เก่าที่ถูกลบไปแล้ว
+    //  ขณะที่ demo ได้ของใหม่ไปแล้ว — คนละ POP คนละ cache)
+    //
+    // ราคาที่จ่าย: navigation ทุกครั้งเรียก worker จริง ไม่กิน cache ชั้น edge อีก
+    // ยอมรับได้เพราะ static asset (JS/CSS/รูป) ยังไม่ผ่าน worker เลย ตัวที่นับโควตา
+    // มีแค่ request หน้าเว็บ ซึ่งของ อปท. ระดับนี้ห่างจากลิมิต 100,000 ครั้ง/วันมาก
+    // ถ้าวันหนึ่งใกล้เต็มจริง ให้ไปแก้ที่ scripts/postbuild.js (เก็บ asset รุ่นก่อนไว้)
+    // แล้วค่อยใส่ TTL กลับ ไม่ใช่ใส่ TTL ทิ้งไว้เฉยๆ
     const headers = {
       'Content-Type': 'text/html; charset=UTF-8',
-      'Cache-Control': 'public, max-age=300, stale-while-revalidate=60',
+      'Cache-Control': 'public, max-age=0, must-revalidate',
     }
 
     let tenant = null
