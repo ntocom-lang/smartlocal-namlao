@@ -42,3 +42,6 @@ recovery-codes.txt
 *-backup-codes*
 .env*
 tmp/
+
+# ภาพจาก tests/screenshot-local-build.mjs — ของใช้แล้วทิ้ง ไม่ต้องเข้า repo
+screenshots/

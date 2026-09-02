@@ -24,6 +24,7 @@
     "test:odor": "node tests/odor-workflow.playwright.mjs",
     "test:odor:write": "node tests/odor-workflow.playwright.mjs --write",
     "test:local-build": "node tests/verify-local-build.mjs",
+    "test:shot": "node tests/screenshot-local-build.mjs",
     "test:smoke": "node tests/post-deploy-smoke.mjs"
   },
   "dependencies": {
