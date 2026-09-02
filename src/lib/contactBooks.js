@@ -14,6 +14,8 @@ export const CONTACT_BOOKS = [
   {
     key: 'urgent',
     label: 'สายด่วนฉุกเฉิน',
+    // ใช้ต่อท้ายคำกริยาในหลังบ้าน เช่น "เพิ่ม...ใหม่" ป้าย label เต็มอ่านไม่ลื่นในประโยค
+    itemNoun: 'เบอร์สายด่วน',
     subtitle: 'เหตุด่วนเหตุร้าย โทรได้ตลอด 24 ชั่วโมง',
     path: '/emergency',
     emoji: '🚨',
@@ -24,6 +26,7 @@ export const CONTACT_BOOKS = [
   {
     key: 'directory',
     label: 'ทำเนียบเบอร์โทรสำคัญ',
+    itemNoun: 'เบอร์โทรสำคัญ',
     // ไม่ใช้คำว่า "24 ชั่วโมง" โดยตั้งใจ — เบอร์ในสมุดนี้ส่วนใหญ่รับสายเฉพาะเวลาราชการ
     subtitle: 'หน่วยงานราชการ ผู้นำท้องถิ่น และเบอร์ติดต่อในพื้นที่',
     path: '/directory',
@@ -51,4 +54,11 @@ export function bookOf(contact) {
 // 'other' ตกมาที่สายด่วนเพราะเดาไม่ได้ว่าเป็นเบอร์ด่วนหรือไม่
 export function guessBook(category) {
   return category === 'government' || category === 'leader' ? 'directory' : 'urgent'
+}
+
+// เบอร์มือถือไทย (06/08/09 ขึ้นต้น 10 หลัก) = ข้อมูลส่วนบุคคลของคนคนหนึ่ง ไม่ใช่เบอร์หน่วยงาน
+// ใช้เตือนแอดมินให้ยืนยันความยินยอมก่อนเผยแพร่ ไม่ได้บล็อกการบันทึก
+export function looksLikePersonalMobile(number) {
+  const d = String(number || '').replace(/[^0-9]/g, '')
+  return d.length === 10 && /^0[689]/.test(d)
 }

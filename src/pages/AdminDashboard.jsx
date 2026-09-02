@@ -12,7 +12,7 @@ import {
   RefreshCw, Clock, Loader2, Check,
   CheckCircle2, ChevronRight, ChevronLeft,
   Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical, Briefcase,
-  X, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Repeat,
+  X, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Repeat, ArrowLeftRight, BookUser, ShieldQuestion,
   TrendingUp, AlertTriangle, Printer, ImagePlus, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Star, MessageSquare, Car, Terminal, Database, CalendarDays, KeyRound, ClipboardList, FileText, UserRoundCheck
 } from 'lucide-react'
 import { supabase, signOutSafely } from '../lib/supabase'
@@ -26,6 +26,7 @@ import { uploadFile } from '../lib/driveStorage'
 import { tenantDefaultSubdistrict } from '../lib/tenantSubdistrict'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
 import { EMERGENCY_CATEGORIES, EMERGENCY_CATEGORY_MAP, emergencyCategoryOf, guessCategory } from '../lib/emergencyCategories'
+import { CONTACT_BOOK_MAP, DEFAULT_CONTACT_BOOK, guessBook, looksLikePersonalMobile } from '../lib/contactBooks'
 import { accountProviders, providerLabel, phoneToLoginEmail, normalizeThaiPhone, loginIdentifier } from '../lib/authProviders'
 import { useTenant } from '../contexts/TenantContext'
 import { useNotifications } from '../contexts/NotificationsContext'
@@ -2008,6 +2009,17 @@ function InactiveBadge() {
   )
 }
 
+// PDPA: เบอร์มือถือของบุคคลต้องมีความยินยอมก่อนเผยแพร่บนเว็บสาธารณะ
+// ป้ายนี้เตือนเฉยๆ ไม่บล็อกการบันทึก เพราะบางแห่งเก็บหนังสือยินยอมเป็นกระดาษไว้แล้ว
+function ConsentWarnBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap bg-amber-100 text-amber-700"
+          title="เบอร์มือถือส่วนบุคคล — ยังไม่ได้ยืนยันว่าเจ้าของยินยอมให้เผยแพร่ (PDPA)">
+      <ShieldQuestion size={11} /> ยังไม่ยืนยันยินยอม
+    </span>
+  )
+}
+
 // ตัวเลือกไอคอนตอนแก้ไขสายด่วนที่มีอยู่แล้ว — ชุดสำเร็จ + ช่องพิมพ์ emoji เอง
 // ใช้ทั้งการ์ดมือถือและแถวตาราง desktop จึงแยกออกมาเป็น component เดียว
 // ป็อปอัพต้องยิงผ่าน portal + position:fixed เพราะตาราง desktop อยู่ในกล่อง
@@ -2130,7 +2142,7 @@ function EmojiEditPicker({ value, onChange }) {
   )
 }
 
-function SortableContact({ c, i, total, onDelete, onMove, onEdit, editingId, editingForm, onEditChange, onEditSave }) {
+function SortableContact({ c, i, total, onDelete, onMove, onEdit, onMoveBook, otherBookLabel, editingId, editingForm, onEditChange, onEditSave }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: c.id })
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -2158,6 +2170,7 @@ function SortableContact({ c, i, total, onDelete, onMove, onEdit, editingId, edi
             <p className="text-[13px] text-gray-400">{c.number}</p>
             <CategoryBadge category={c.category} />
             {c.is_active === false && <InactiveBadge />}
+            {looksLikePersonalMobile(c.number) && !c.consent_at && <ConsentWarnBadge />}
           </div>
         </div>
         <div className="flex flex-col gap-0">
@@ -2174,6 +2187,10 @@ function SortableContact({ c, i, total, onDelete, onMove, onEdit, editingId, edi
            className="p-2 rounded-xl text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors">
           <PhoneCall size={15} />
         </a>
+        <button onClick={() => onMoveBook(c)} title={`ย้ายไปที่${otherBookLabel}`}
+                className="p-2 rounded-xl text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors">
+          <ArrowLeftRight size={15} />
+        </button>
         <button onClick={() => onEdit(c)}
                 className="p-2 rounded-xl text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-colors">
           <Pencil size={15} />
@@ -2191,11 +2208,18 @@ function SortableContact({ c, i, total, onDelete, onMove, onEdit, editingId, edi
               autoFocus
               value={editingForm.label}
               onChange={(e) => onEditChange('label', e.target.value)}
-              placeholder="ชื่อสายด่วน"
+              placeholder="ชื่อ / หน่วยงาน"
               className="flex-1 min-w-0 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2"
               style={{ '--tw-ring-color': 'var(--color-primary)' }}
             />
           </div>
+          <input
+            value={editingForm.note ?? ''}
+            onChange={(e) => onEditChange('note', e.target.value)}
+            placeholder="หมายเหตุ เช่น ผู้ใหญ่บ้าน หมู่ 3 หรือ จ-ศ 08.30-16.30"
+            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2"
+            style={{ '--tw-ring-color': 'var(--color-primary)' }}
+          />
           <input
             value={editingForm.number}
             onChange={(e) => onEditChange('number', e.target.value)}
@@ -2213,6 +2237,13 @@ function SortableContact({ c, i, total, onDelete, onMove, onEdit, editingId, edi
               <option key={cat.key} value={cat.key}>{cat.emoji} {cat.label}</option>
             ))}
           </select>
+          {looksLikePersonalMobile(editingForm.number) && (
+            <label className="flex items-start gap-2 text-[12px] text-gray-600 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+              <input type="checkbox" className="mt-0.5" checked={Boolean(editingForm.consent)}
+                     onChange={(e) => onEditChange('consent', e.target.checked)} />
+              <span>เจ้าของเบอร์ยินยอมให้เผยแพร่บนเว็บสาธารณะแล้ว (PDPA)</span>
+            </label>
+          )}
           <div className="flex gap-2">
             <button onClick={onEditSave}
                     className="px-4 py-1.5 rounded-xl text-sm font-medium text-white"
@@ -2233,7 +2264,7 @@ function SortableContact({ c, i, total, onDelete, onMove, onEdit, editingId, edi
 // แถวตารางฝั่ง desktop — ลากสลับลำดับได้เหมือนการ์ดบนมือถือ
 // หมายเหตุ: ต้องอยู่คนละ DndContext กับการ์ดมือถือ เพราะทั้งสอง view mount พร้อมกัน
 // (ซ่อนด้วย CSS เท่านั้น) ถ้าใช้ context เดียวกัน sortable id จะซ้ำและ dnd-kit จะจับคู่ผิดแถว
-function SortableContactRow({ c, order, onDelete, onEdit, editingId, editingForm, onEditChange, onEditSave, onEditCancel }) {
+function SortableContactRow({ c, order, onDelete, onEdit, onMoveBook, otherBookLabel, editingId, editingForm, onEditChange, onEditSave, onEditCancel }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: c.id })
   const style = {
     // ตัด x ทิ้งเพื่อล็อกแกน Y เอง (โปรเจกต์ไม่ได้ลง @dnd-kit/modifiers)
@@ -2265,12 +2296,26 @@ function SortableContactRow({ c, order, onDelete, onEdit, editingId, editingForm
       </td>
       <td className="px-4 py-3">
         {isEditing ? (
-          <input value={editingForm.label} onChange={e => onEditChange('label', e.target.value)}
-            className="border border-gray-300 rounded-lg px-2 py-1 text-sm text-gray-800 focus:outline-none w-full max-w-xs" />
+          <div className="space-y-1 max-w-xs">
+            <input value={editingForm.label} onChange={e => onEditChange('label', e.target.value)}
+              className="border border-gray-300 rounded-lg px-2 py-1 text-sm text-gray-800 focus:outline-none w-full" />
+            <input value={editingForm.note ?? ''} onChange={e => onEditChange('note', e.target.value)}
+              placeholder="หมายเหตุ เช่น ผู้ใหญ่บ้าน หมู่ 3"
+              className="border border-gray-200 rounded-lg px-2 py-1 text-[13px] text-gray-700 focus:outline-none w-full" />
+            {looksLikePersonalMobile(editingForm.number) && (
+              <label className="flex items-start gap-1.5 text-[11px] text-amber-700">
+                <input type="checkbox" className="mt-0.5" checked={Boolean(editingForm.consent)}
+                       onChange={e => onEditChange('consent', e.target.checked)} />
+                <span>เจ้าของเบอร์ยินยอมให้เผยแพร่แล้ว (PDPA)</span>
+              </label>
+            )}
+          </div>
         ) : (
-          <span className="inline-flex items-center gap-1.5">
+          <span className="inline-flex items-center gap-1.5 flex-wrap">
             <span className="font-medium text-gray-800">{c.label}</span>
             {c.is_active === false && <InactiveBadge />}
+            {looksLikePersonalMobile(c.number) && !c.consent_at && <ConsentWarnBadge />}
+            {c.note && <span className="block w-full text-[12px] text-gray-400">{c.note}</span>}
           </span>
         )}
       </td>
@@ -2306,6 +2351,10 @@ function SortableContactRow({ c, order, onDelete, onEdit, editingId, editingForm
             className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="แก้ไข">
             <Pencil size={14} />
           </button>
+          <button onClick={() => onMoveBook(c)}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors" title={`ย้ายไปที่${otherBookLabel}`}>
+            <ArrowLeftRight size={14} />
+          </button>
           <button onClick={() => onDelete(c.id)}
             className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="ลบ">
             <Trash2 size={14} />
@@ -2322,13 +2371,17 @@ const EMERGENCY_EMOJIS = [
   '📟','🔧','🏗️','🚧','⚠️','🌊','🌪️','🦺','🧯','🔑',
 ]
 
-function EmergencyManager({ tenant }) {
+// ใช้ร่วมกัน 2 เมนู (สายด่วนฉุกเฉิน / เบอร์โทรสำคัญ) ต่างกันแค่ prop book
+// ห้ามก๊อปเป็นตัวที่สอง — ลากเรียง/optimistic order/ตัวเลือกไอคอน อยู่ในนี้ทั้งหมด แก้ที่เดียวแล้วอีกที่จะเพี้ยนเงียบๆ
+function EmergencyManager({ tenant, book = DEFAULT_CONTACT_BOOK }) {
+  const BOOK = CONTACT_BOOK_MAP[book] ?? CONTACT_BOOK_MAP[DEFAULT_CONTACT_BOOK]
+  const OTHER = CONTACT_BOOK_MAP[book === 'urgent' ? 'directory' : 'urgent']
   const [contacts, setContacts] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({ label: '', number: '', emoji: '📞', color: '#1d4ed8', bg: '#dbeafe', category: 'other' })
+  const [form, setForm] = useState({ label: '', number: '', emoji: '📞', color: '#1d4ed8', bg: '#dbeafe', category: 'other', note: '', consent: false })
   const [editingId, setEditingId] = useState(null)
-  const [editingForm, setEditingForm] = useState({ label: '', number: '', emoji: '📞', category: 'other' })
+  const [editingForm, setEditingForm] = useState({ label: '', number: '', emoji: '📞', category: 'other', note: '', consent: false })
   // ช่องไหนที่แอดมินเลือกเองแล้ว ถือว่าตั้งใจ — guessEmoji/guessCategory ห้ามเขียนทับตอนพิมพ์ชื่อต่อ
   const [touched, setTouched] = useState({ emoji: false, category: false })
 
@@ -2345,12 +2398,13 @@ function EmergencyManager({ tenant }) {
         .from('emergency_contacts')
         .select('*')
         .eq('municipality_id', tenant.id)
+        .eq('book', book)
         .order('display_order')
       setContacts(data ?? [])
     } finally {
       setLoading(false)
     }
-  }, [tenant?.id])
+  }, [tenant?.id, book])
 
   useEffect(() => {
     fetchContacts()
@@ -2448,15 +2502,18 @@ function EmergencyManager({ tenant }) {
         color: form.color,
         bg: form.bg,
         category: form.category,
+        book,
+        note: form.note.trim() || null,
+        consent_at: form.consent ? new Date().toISOString() : null,
         display_order: nextDisplayOrder(),
       }).select().single()
       // พังแล้วห้ามล้างฟอร์ม แอดมินจะได้กดซ้ำได้โดยไม่ต้องพิมพ์ใหม่ทั้งหมด
       if (error) {
-        alert(`เพิ่มสายด่วนไม่สำเร็จ: ${error.message}`)
+        alert(`เพิ่ม${BOOK.itemNoun}ไม่สำเร็จ: ${error.message}`)
         return
       }
       setContacts((prev) => [...prev, data])
-      setForm({ label: '', number: '', emoji: '📞', color: '#1d4ed8', bg: '#dbeafe', category: 'other' })
+      setForm({ label: '', number: '', emoji: '📞', color: '#1d4ed8', bg: '#dbeafe', category: 'other', note: '', consent: false })
       setTouched({ emoji: false, category: false })
     } finally {
       setSaving(false)
@@ -2465,7 +2522,7 @@ function EmergencyManager({ tenant }) {
 
   async function deleteContact(id) {
     const contact = contacts.find((c) => c.id === id)
-    if (!window.confirm(`ลบ "${contact?.label}" ออกจากรายการเบอร์ฉุกเฉิน?`)) return
+    if (!window.confirm(`ลบ "${contact?.label}" ออกจาก${BOOK.label}?`)) return
     const { error } = await supabase.from('emergency_contacts').delete().eq('id', id)
     if (error) {
       alert(`ลบไม่สำเร็จ: ${error.message}`)
@@ -2477,7 +2534,7 @@ function EmergencyManager({ tenant }) {
   function handleEdit(c) {
     if (!c) { setEditingId(null); return }
     setEditingId(c.id)
-    setEditingForm({ label: c.label, number: c.number, emoji: c.emoji || '📞', category: emergencyCategoryOf(c) })
+    setEditingForm({ label: c.label, number: c.number, emoji: c.emoji || '📞', category: emergencyCategoryOf(c), note: c.note || '', consent: Boolean(c.consent_at) })
   }
 
   async function saveContactEdit() {
@@ -2488,6 +2545,11 @@ function EmergencyManager({ tenant }) {
       number: editingForm.number.trim(),
       emoji: (editingForm.emoji || '').trim() || '📞',
       category: editingForm.category,
+      note: (editingForm.note || '').trim() || null,
+      // ติ๊กไว้อยู่แล้วให้คงเวลาเดิม ไม่ประทับใหม่ทุกครั้งที่กดบันทึก ร่องรอยจะได้ตรงกับวันที่ยืนยันจริง
+      consent_at: editingForm.consent
+        ? (contacts.find((c) => c.id === editingId)?.consent_at ?? new Date().toISOString())
+        : null,
     }
     const { error } = await supabase.from('emergency_contacts').update(next).eq('id', editingId)
     if (error) {
@@ -2496,6 +2558,29 @@ function EmergencyManager({ tenant }) {
     }
     setContacts((prev) => prev.map((c) => c.id === editingId ? { ...c, ...next } : c))
     setEditingId(null)
+  }
+
+  // ย้ายข้ามสมุด — display_order นับแยกของใครของมัน จึงต้องอ่านเลขท้ายสุดของสมุดปลายทางก่อน
+  // ใช้ค่าจากตารางจริงไม่ใช่ state เพราะ state มีแค่สมุดที่เปิดอยู่
+  async function moveToOtherBook(contact) {
+    if (!window.confirm(`ย้าย "${contact.label}" ไปที่${OTHER.label}?`)) return
+    const { data: tail } = await supabase
+      .from('emergency_contacts')
+      .select('display_order')
+      .eq('municipality_id', tenant.id)
+      .eq('book', OTHER.key)
+      .order('display_order', { ascending: false })
+      .limit(1)
+    const nextOrder = (tail?.[0]?.display_order ?? 0) + 1
+    const { error } = await supabase
+      .from('emergency_contacts')
+      .update({ book: OTHER.key, display_order: nextOrder })
+      .eq('id', contact.id)
+    if (error) {
+      alert(`ย้ายไม่สำเร็จ: ${error.message}`)
+      return
+    }
+    setContacts((prev) => prev.filter((c) => c.id !== contact.id))
   }
 
   // จัดกลุ่มให้ตรงกับหน้าประชาชน — หมวดที่ไม่มีรายการไม่ต้องขึ้นหัวข้อเปล่า
@@ -2509,7 +2594,13 @@ function EmergencyManager({ tenant }) {
     <div className="space-y-4">
       {/* Add form */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
-        <p className="font-semibold text-gray-700 text-sm">เพิ่มสายด่วนใหม่</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                style={{ backgroundColor: BOOK.bg, color: BOOK.color }}>
+            {BOOK.emoji} {BOOK.label}
+          </span>
+          <p className="font-semibold text-gray-700 text-sm">เพิ่ม{BOOK.itemNoun}ใหม่</p>
+        </div>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
           <div className="flex items-center gap-2">
             <EmojiEditPicker value={form.emoji}
@@ -2545,7 +2636,29 @@ function EmergencyManager({ tenant }) {
             เพิ่ม
           </button>
         </div>
+        <input value={form.note}
+          onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
+          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800"
+          placeholder="หมายเหตุ (ไม่บังคับ) เช่น ผู้ใหญ่บ้าน หมู่ 3 หรือ จ-ศ 08.30-16.30" />
+        {/* PDPA: เตือนเฉพาะเบอร์ที่ดูเป็นมือถือส่วนบุคคล ไม่รบกวนตอนกรอกเบอร์หน่วยงาน
+            ไม่บล็อกการบันทึก — บางแห่งเก็บหนังสือยินยอมเป็นกระดาษไว้แล้ว ระบบแค่เก็บร่องรอยว่ายืนยันเมื่อไหร่ */}
+        {looksLikePersonalMobile(form.number) && (
+          <label className="flex items-start gap-2 text-[12px] text-gray-600 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+            <input type="checkbox" className="mt-0.5" checked={form.consent}
+                   onChange={(e) => setForm((f) => ({ ...f, consent: e.target.checked }))} />
+            <span>เบอร์นี้เป็นเบอร์มือถือส่วนบุคคล — เจ้าของยินยอมให้เผยแพร่บนเว็บสาธารณะแล้ว (PDPA)</span>
+          </label>
+        )}
       </div>
+
+      {/* เดาจากหมวดว่ารายการนี้ควรอยู่อีกสมุด — เตือนอย่างเดียว ไม่ย้ายให้เอง
+          แอดมินอาจตั้งใจใส่ไว้สมุดนี้ เช่น เบอร์ อปพร. ของ อบต. ที่รับแจ้งเหตุตลอด 24 ชม. */}
+      {form.label.trim() !== '' && guessBook(form.category) !== book && (
+        <div className="flex items-start gap-2 rounded-xl bg-indigo-50 border border-indigo-100 px-3 py-2 text-[12px] text-indigo-700">
+          <BookUser size={14} className="mt-0.5 shrink-0" />
+          <span>หมวดนี้มักอยู่ใน{OTHER.label} — ถ้าใส่ผิดที่ กดปุ่ม ⇄ ที่รายการเพื่อย้ายทีหลังได้</span>
+        </div>
+      )}
 
       {/* List */}
       {loading ? (
@@ -2554,7 +2667,7 @@ function EmergencyManager({ tenant }) {
         </div>
       ) : contacts.length === 0 ? (
         <div className="text-center py-8 text-gray-400 text-sm">
-          ยังไม่มีข้อมูลสายด่วน — เพิ่มจากแบบฟอร์มด้านบน
+          ยังไม่มี{BOOK.itemNoun} — เพิ่มจากแบบฟอร์มด้านบน
         </div>
       ) : (
         <>
@@ -2573,6 +2686,7 @@ function EmergencyManager({ tenant }) {
                       {items.map((c, i) => (
                         <SortableContact key={c.id} c={c} i={i} total={items.length}
                           onDelete={deleteContact} onMove={handleMove} onEdit={handleEdit}
+                          onMoveBook={moveToOtherBook} otherBookLabel={OTHER.label}
                           editingId={editingId} editingForm={editingForm}
                           onEditChange={(field, val) => setEditingForm((p) => ({ ...p, [field]: val }))}
                           onEditSave={saveContactEdit} />
@@ -2612,6 +2726,7 @@ function EmergencyManager({ tenant }) {
                       {items.map((c) => (
                         <SortableContactRow key={c.id} c={c} order={orderIndex.get(c.id)}
                           onDelete={deleteContact} onEdit={handleEdit}
+                          onMoveBook={moveToOtherBook} otherBookLabel={OTHER.label}
                           editingId={editingId} editingForm={editingForm}
                           onEditChange={(field, val) => setEditingForm((p) => ({ ...p, [field]: val }))}
                           onEditSave={saveContactEdit} onEditCancel={() => setEditingId(null)} />
@@ -2623,7 +2738,7 @@ function EmergencyManager({ tenant }) {
             </table>
             <p className="px-4 py-2 text-[11px] text-gray-400 bg-gray-50 border-t border-gray-100">
               ลากไอคอน ⠿ ที่คอลัมน์ลำดับเพื่อสลับตำแหน่งภายในหมวดเดียวกัน — ลำดับที่จัดไว้จะแสดงตามนี้บนหน้าประชาชน
-              ส่วนการย้ายหมวดให้กดแก้ไข (✎) แล้วเลือกหมวดใหม่
+              ส่วนการย้ายหมวดให้กดแก้ไข (✎) แล้วเลือกหมวดใหม่ และปุ่ม ⇄ ย้ายรายการไปที่{OTHER.label}
             </p>
           </div>
         </>
@@ -4995,6 +5110,7 @@ const PAGE_LABELS = {
   categories: 'ประเภทคำร้อง',
   signatories: 'ผู้ลงนามเอกสาร',
   emergency: 'สายด่วนฉุกเฉิน',
+  directory: 'เบอร์โทรสำคัญ',
   locations: 'สถานที่เกิดเหตุ',
   'system-settings': 'ตั้งค่าระบบ',
   users: 'จัดการผู้ใช้และการแต่งตั้ง',
@@ -5031,6 +5147,7 @@ function getAdminMenuGroups(currentUserRole, currentUserId) {
       items: [
         { key: 'categories', label: 'ประเภทคำร้อง', Icon: Tag, color: '#d97706', bg: '#fef3c7', show: canManageContent },
         { key: 'emergency', label: 'สายด่วนฉุกเฉิน', Icon: Phone, color: '#ef4444', bg: '#fee2e2', show: canManageContent },
+        { key: 'directory', label: 'เบอร์โทรสำคัญ', Icon: BookUser, color: '#1d4ed8', bg: '#dbeafe', show: canManageContent },
         { key: 'locations', label: 'สถานที่เกิดเหตุ', Icon: MapPin, color: '#0891b2', bg: '#e0f2fe', show: canManageContent },
         { key: 'fleet-setup', label: 'ยานพาหนะ', Icon: Car, color: '#0369a1', bg: '#e0f2fe', show: canManageSystem },
       ],
@@ -5711,7 +5828,9 @@ export default function AdminDashboard() {
           ? <StaffManager tenant={tenant} />
           : <UserManager tenant={tenant} currentUserRole={currentUserRole} currentUserId={currentUserId} />
       ) : activePage === 'emergency' ? (
-        <EmergencyManager tenant={tenant} />
+        <EmergencyManager tenant={tenant} book="urgent" />
+      ) : activePage === 'directory' ? (
+        <EmergencyManager tenant={tenant} book="directory" />
       ) : activePage === 'users' ? (
         <UserManager tenant={tenant} currentUserRole={currentUserRole} currentUserId={currentUserId} />
       ) : activePage === 'locations' ? (
@@ -5780,7 +5899,17 @@ export default function AdminDashboard() {
               </div>
               <div>
                 <p className="text-sm font-bold text-gray-800">สายด่วนฉุกเฉิน</p>
-                <p className="text-[13px] text-gray-400 mt-0.5">จัดการเบอร์ติดต่อ</p>
+                <p className="text-[13px] text-gray-400 mt-0.5">เบอร์เหตุด่วน โทรได้ 24 ชม.</p>
+              </div>
+            </button>
+            <button onClick={() => setActivePage('directory')}
+              className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#dbeafe' }}>
+                <BookUser size={24} style={{ color: '#1d4ed8' }} />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-gray-800">เบอร์โทรสำคัญ</p>
+                <p className="text-[13px] text-gray-400 mt-0.5">ส่วนราชการ ผู้นำท้องถิ่น</p>
               </div>
             </button>
             <button onClick={() => setActivePage('locations')}
@@ -5854,7 +5983,8 @@ export default function AdminDashboard() {
               <tbody className="divide-y divide-gray-100">
                 {[
                   { key: 'categories',  Icon: Tag,    color: '#d97706', bg: '#fef3c7', label: 'ประเภทคำร้อง', desc: 'จัดการหมวดหมู่ + ผู้รับผิดชอบ', show: currentUserRole !== 'viewer' },
-                  { key: 'emergency',   Icon: Phone,       color: '#ef4444', bg: '#fee2e2', label: 'สายด่วนฉุกเฉิน',  desc: 'จัดการรายชื่อและเบอร์ติดต่อ',     show: currentUserRole !== 'viewer' },
+                  { key: 'emergency',   Icon: Phone,       color: '#ef4444', bg: '#fee2e2', label: 'สายด่วนฉุกเฉิน',  desc: 'เบอร์เหตุด่วน โทรได้ 24 ชม.',     show: currentUserRole !== 'viewer' },
+                  { key: 'directory',   Icon: BookUser,    color: '#1d4ed8', bg: '#dbeafe', label: 'เบอร์โทรสำคัญ',   desc: 'ส่วนราชการ ผู้นำท้องถิ่น',        show: currentUserRole !== 'viewer' },
                   { key: 'locations',   Icon: MapPin,      color: '#0891b2', bg: '#e0f2fe', label: 'สถานที่เกิดเหตุ', desc: 'จัดการหมู่บ้าน / ตำบลในพื้นที่',  show: currentUserRole !== 'viewer' },
                   { key: 'holidays',    Icon: CalendarDays, color: '#0d9488', bg: '#ccfbf1', label: 'วันหยุดราชการ',  desc: 'ใช้คำนวณ SLA คำร้องเป็นวันทำการ',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'fleet-setup',      Icon: Car,         color: '#0369a1', bg: '#e0f2fe', label: 'ตั้งค่ายานพาหนะ', desc: 'กอง/หน่วยงาน งบประมาณ สิทธิ์ผู้ใช้', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
