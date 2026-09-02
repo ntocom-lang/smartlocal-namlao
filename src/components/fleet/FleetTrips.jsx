@@ -6,6 +6,7 @@ import { assetIdentifier, assetOptionLabel } from '../../lib/fleetAssets'
 import { logAction } from '../../lib/auditLog'
 import { notifyTelegram } from '../../lib/notifyTelegram'
 import { buildFleetTripRequestHtml, resolveOrderAuthority } from '../../lib/fleetTripPrint'
+import { SIGNATORY_SCOPE, SIGNATORY_WITH_PROFILE_SELECT, resolveActiveSignatory } from '../../lib/documentSignatories'
 import FleetEmptyState from './FleetEmptyState'
 
 const STATUS_LABEL = {
@@ -59,16 +60,6 @@ function tripErrorMessage(error) {
   const raw = error?.message ?? ''
   const hit = Object.keys(TRIP_ERROR_TH).find(code => raw.includes(code))
   return hit ? TRIP_ERROR_TH[hit] : raw
-}
-
-// เลือกผู้ลงนามแถวที่ "มีผลวันนี้" ตามเวลาไทย — คิดฝั่ง client เพราะแถวมีไม่กี่แถว
-// และ effective_from/effective_to เก็บเป็น date ไม่ใช่ timestamptz จึงเทียบเป็นสตริงได้ตรงๆ
-function resolveActiveSignatory(rows) {
-  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date())
-  const active = (rows ?? []).find(row =>
-    (!row.effective_from || row.effective_from <= today)
-    && (!row.effective_to || row.effective_to >= today))
-  return active ?? null
 }
 
 const pad2 = n => String(n).padStart(2, '0')
@@ -502,9 +493,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       // ผู้มีอำนาจสั่งใช้รถบนใบขออนุญาต (แบบ 3) — ใช้ผู้ลงนามบทบาท "นายก" ที่ อปท. ตั้งไว้
       // ไม่ใช่บัญชีที่กดอนุมัติในระบบ ยังไม่ตั้งค่า = เว้นว่างให้เซ็นสด
       supabase.from('document_signatories')
-        .select('manual_name,title_override,effective_from,effective_to,profile:profiles!document_signatories_profile_id_fkey(full_name,job_title,position:positions(name))')
+        .select(SIGNATORY_WITH_PROFILE_SELECT)
         .eq('municipality_id', tenant.id).eq('signatory_role', 'mayor')
-        .eq('document_type', 'complaint').eq('is_active', true)
+        .eq('document_type', SIGNATORY_SCOPE).eq('is_active', true)
         .is('department_id', null),
       // ทะเบียนพนักงานขับรถ — คนละแกนกับ fleet_role (สิทธิ์ในระบบ) อ่านผ่าน view
       // ที่ตัดเลขใบขับขี่ออกแล้วตาม PDPA เจ้าหน้าที่ทั่วไปไม่ต้องเห็นเลขใบขับขี่
