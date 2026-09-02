@@ -2155,7 +2155,7 @@ function SortableContact({ c, i, total, onDelete, onMove, onEdit, onMoveBook, ot
   return (
     <div ref={setNodeRef} style={style}
          className={`px-4 py-3 bg-white ${i < total - 1 ? 'border-b border-gray-50' : ''}`}>
-      <div className="flex items-center gap-2">
+      <div className="flex items-start gap-2">
         <button {...attributes} {...listeners}
                 className="p-1 text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing touch-none shrink-0">
           <GripVertical size={16} />
@@ -2165,24 +2165,30 @@ function SortableContact({ c, i, total, onDelete, onMove, onEdit, onMoveBook, ot
           <IconOrImage value={c.emoji} alt="" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="font-semibold text-gray-800 text-sm">{c.label}</p>
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <p className="text-[13px] text-gray-400">{c.number}</p>
+          <p className="font-semibold text-gray-800 text-sm leading-snug">{c.label}</p>
+          {c.note && <p className="text-[12px] text-gray-400 leading-snug mt-0.5">{c.note}</p>}
+          <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+            <p className="text-[13px] text-gray-400 tabular-nums whitespace-nowrap">{c.number}</p>
             <CategoryBadge category={c.category} />
             {c.is_active === false && <InactiveBadge />}
             {looksLikePersonalMobile(c.number) && !c.consent_at && <ConsentWarnBadge />}
           </div>
         </div>
-        <div className="flex flex-col gap-0">
+      </div>
+
+      {/* แถวปุ่ม — แยกออกมาเพื่อไม่ให้ไปเบียดพื้นที่ชื่อ ปุ่มขนาดนิ้วกดได้จริงบนมือถือ */}
+      <div className="mt-2 flex items-center justify-between">
+        <div className="flex items-center">
           <button onClick={() => onMove(c, -1)} disabled={i === 0}
-                  className="p-0.5 rounded text-gray-300 hover:text-gray-600 disabled:opacity-20 transition-colors">
-            <ChevronUp size={14} />
+                  className="p-1.5 rounded-lg text-gray-300 hover:text-gray-600 disabled:opacity-20 transition-colors">
+            <ChevronUp size={16} />
           </button>
           <button onClick={() => onMove(c, 1)} disabled={i === total - 1}
-                  className="p-0.5 rounded text-gray-300 hover:text-gray-600 disabled:opacity-20 transition-colors">
-            <ChevronDown size={14} />
+                  className="p-1.5 rounded-lg text-gray-300 hover:text-gray-600 disabled:opacity-20 transition-colors">
+            <ChevronDown size={16} />
           </button>
         </div>
+        <div className="flex items-center gap-0.5">
         <a href={`tel:${c.number}`}
            className="p-2 rounded-xl text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors">
           <PhoneCall size={15} />
@@ -2199,6 +2205,7 @@ function SortableContact({ c, i, total, onDelete, onMove, onEdit, onMoveBook, ot
                 className="p-2 rounded-xl text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
           <Trash2 size={15} />
         </button>
+        </div>
       </div>
       {isEditing && (
         <div className="mt-3 ml-12 space-y-2">
@@ -2335,14 +2342,14 @@ function SortableContactRow({ c, order, onDelete, onEdit, onMoveBook, otherBookL
         {isEditing ? (
           <div className="flex items-center gap-2">
             <input value={editingForm.number} onChange={e => onEditChange('number', e.target.value)}
-              className="border border-gray-300 rounded-lg px-2 py-1 text-sm text-gray-800 focus:outline-none w-32" />
+              className="border border-gray-300 rounded-lg px-2 py-1 text-sm text-gray-800 focus:outline-none w-36" />
             <button onClick={onEditSave}
               className="px-2.5 py-1 rounded-lg text-xs font-semibold text-white bg-green-500 hover:bg-green-600">บันทึก</button>
             <button onClick={onEditCancel}
               className="px-2.5 py-1 rounded-lg text-xs text-gray-500 border border-gray-200 hover:bg-gray-50">ยกเลิก</button>
           </div>
         ) : (
-          <a href={`tel:${c.number}`} className="text-blue-600 hover:underline font-mono">{c.number}</a>
+          <a href={`tel:${c.number}`} className="text-blue-600 hover:underline font-mono tabular-nums whitespace-nowrap">{c.number}</a>
         )}
       </td>
       <td className="px-4 py-3">
@@ -2736,9 +2743,10 @@ function EmergencyManager({ tenant, initialBook = DEFAULT_CONTACT_BOOK }) {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-24">ลำดับ</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-16">สัญลักษณ์</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">ชื่อ / หน่วยงาน</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-44">หมวด</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">เบอร์โทร</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 w-28">จัดการ</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-40">หมวด</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-40 whitespace-nowrap">เบอร์โทร</th>
+                  {/* 3 ปุ่มแล้ว (แก้ไข/ย้ายสมุด/ลบ) w-28 เดิมทำให้ปุ่มชิดขอบ */}
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 w-32">จัดการ</th>
                 </tr>
               </thead>
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
