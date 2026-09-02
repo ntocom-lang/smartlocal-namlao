@@ -254,7 +254,9 @@ export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null,
     ${signatureBlock({
       role: deptHead?.title?.trim() || 'ผู้อำนวยการกอง/หัวหน้ากอง',
       name: deptHead?.name || '',
-      suffix: 'หรือผู้แทน',
+      // "หรือผู้แทน" มีไว้เผื่อตอนที่ป้ายเป็นคำกลางและยังไม่รู้ว่าใครจะเซ็น
+      // พอทะเบียนระบุทั้งชื่อและตำแหน่งมาแล้วก็ไม่ต้องเผื่ออีก คงไว้เฉพาะกรณียังไม่ได้ตั้ง
+      suffix: deptHead?.title?.trim() ? '' : 'หรือผู้แทน',
     })}
   </div>
 

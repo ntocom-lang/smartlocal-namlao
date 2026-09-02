@@ -115,6 +115,8 @@ assert.ok(defaultHtml.includes('สมปอง ผอ.กองการศึ�
 // ป้ายบทบาทบนเส้นลงนามใช้ชื่อตำแหน่งที่ อปท. ตั้งไว้ ระบุตรงตัวกว่าคำกลางของแบบฟอร์ม
 assert.ok(defaultHtml.includes('ผู้อำนวยการกองการศึกษา'))
 assert.ok(!defaultHtml.includes('ผู้อำนวยการกอง/หัวหน้ากอง'))
+// ระบุตำแหน่งชัดแล้วไม่ต้องเผื่อ "หรือผู้แทน" อีก
+assert.ok(!defaultHtml.includes('หรือผู้แทน'))
 
 // ── เลือกปลัดเป็นผู้มีอำนาจสั่งใช้รถ ───────────────────────────────────────────────
 const clerkAuthority = resolveOrderAuthority(pickSignatory(registry, { role: 'clerk' }), tenant, 'clerk')
@@ -164,6 +166,8 @@ const blankHtml = buildFleetTripRequestHtml({
 // ยังไม่ตั้งผู้ลงนามของกองนั้น = คงคำกลางของแบบฟอร์มไว้ ห้ามเว้นป้ายว่าง
 assert.ok(blankHtml.includes('ผู้อำนวยการกอง/หัวหน้ากอง'))
 assert.equal(resolveDeptHead(null).title, '')
+// กรณีนี้ยังไม่รู้ว่าใครเซ็น จึงยังต้องเผื่อ "หรือผู้แทน" ไว้
+assert.ok(blankHtml.includes('หรือผู้แทน'))
 assert.ok(!blankHtml.includes('สมปอง'))
 // เรียกแบบไม่ส่ง deptHead เลยต้องไม่พังและได้ผลเท่ากับส่ง null
 assert.equal(
