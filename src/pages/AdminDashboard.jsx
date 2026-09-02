@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef, lazy, Suspense } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
@@ -26,7 +26,7 @@ import { uploadFile } from '../lib/driveStorage'
 import { tenantDefaultSubdistrict } from '../lib/tenantSubdistrict'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
 import { EMERGENCY_CATEGORIES, EMERGENCY_CATEGORY_MAP, emergencyCategoryOf, guessCategory } from '../lib/emergencyCategories'
-import { CONTACT_BOOK_MAP, DEFAULT_CONTACT_BOOK, guessBook, looksLikePersonalMobile } from '../lib/contactBooks'
+import { CONTACT_BOOKS, CONTACT_BOOK_MAP, DEFAULT_CONTACT_BOOK, bookOf, guessBook, looksLikePersonalMobile } from '../lib/contactBooks'
 import { accountProviders, providerLabel, phoneToLoginEmail, normalizeThaiPhone, loginIdentifier } from '../lib/authProviders'
 import { useTenant } from '../contexts/TenantContext'
 import { useNotifications } from '../contexts/NotificationsContext'
@@ -2371,12 +2371,16 @@ const EMERGENCY_EMOJIS = [
   '📟','🔧','🏗️','🚧','⚠️','🌊','🌪️','🦺','🧯','🔑',
 ]
 
-// ใช้ร่วมกัน 2 เมนู (สายด่วนฉุกเฉิน / เบอร์โทรสำคัญ) ต่างกันแค่ prop book
-// ห้ามก๊อปเป็นตัวที่สอง — ลากเรียง/optimistic order/ตัวเลือกไอคอน อยู่ในนี้ทั้งหมด แก้ที่เดียวแล้วอีกที่จะเพี้ยนเงียบๆ
-function EmergencyManager({ tenant, book = DEFAULT_CONTACT_BOOK }) {
-  const BOOK = CONTACT_BOOK_MAP[book] ?? CONTACT_BOOK_MAP[DEFAULT_CONTACT_BOOK]
+// เมนูเดียว 2 แท็บ (สายด่วนฉุกเฉิน / เบอร์โทรสำคัญ) — เรื่องเดียวกัน แยกเป็นสองเมนูแล้วรก
+// initialBook มาจาก deep link เช่นปุ่ม "เพิ่มเบอร์โทรสำคัญ" บนหน้า /directory
+//
+// โหลดทุกแถวของ อปท. ครั้งเดียวแล้วกรองฝั่ง client โดยตั้งใจ: ตารางนี้ใหญ่สุด 15 แถว
+// แลกมาด้วยตัวนับบนแท็บที่ถูกเสมอ สลับแท็บไม่ต้องโหลดใหม่ และย้ายข้ามสมุดแล้วเห็นผลทันที
+function EmergencyManager({ tenant, initialBook = DEFAULT_CONTACT_BOOK }) {
+  const [book, setBook] = useState(CONTACT_BOOK_MAP[initialBook] ? initialBook : DEFAULT_CONTACT_BOOK)
+  const BOOK = CONTACT_BOOK_MAP[book]
   const OTHER = CONTACT_BOOK_MAP[book === 'urgent' ? 'directory' : 'urgent']
-  const [contacts, setContacts] = useState([])
+  const [allContacts, setAllContacts] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ label: '', number: '', emoji: '📞', color: '#1d4ed8', bg: '#dbeafe', category: 'other', note: '', consent: false })
@@ -2398,19 +2402,34 @@ function EmergencyManager({ tenant, book = DEFAULT_CONTACT_BOOK }) {
         .from('emergency_contacts')
         .select('*')
         .eq('municipality_id', tenant.id)
-        .eq('book', book)
         .order('display_order')
-      setContacts(data ?? [])
+      setAllContacts(data ?? [])
     } finally {
       setLoading(false)
     }
-  }, [tenant?.id, book])
+  }, [tenant?.id])
 
   useEffect(() => {
     fetchContacts()
     const safety = setTimeout(() => setLoading(false), 12000)
     return () => clearTimeout(safety)
   }, [fetchContacts])
+
+  // ทุกอย่างใต้บรรทัดนี้ทำงานกับ "แถวของแท็บที่เปิดอยู่" เท่านั้น
+  // ลำดับ (display_order) จึงยังนับแยกของใครของมันเหมือนเดิม
+  const contacts = useMemo(() => allContacts.filter((c) => bookOf(c) === book), [allContacts, book])
+  const countOf = (key) => allContacts.filter((c) => bookOf(c) === key).length
+
+  // แถวใน state ตัวจริงคือ allContacts — ตัวช่วยนี้ให้โค้ดเดิมที่เคยเรียก setContacts(fn(contacts))
+  // เขียนกลับได้โดยไม่ไปแตะแถวของอีกแท็บ
+  function setContacts(updater) {
+    setAllContacts((prev) => {
+      const mine = prev.filter((c) => bookOf(c) === book)
+      const next = typeof updater === 'function' ? updater(mine) : updater
+      const others = prev.filter((c) => bookOf(c) !== book)
+      return [...others, ...next]
+    })
+  }
 
   // จอย้ายให้เห็นทันทีแบบ optimistic — ถ้าบันทึกไม่ผ่านแม้แถวเดียวต้องบอกแล้วดึงของจริงกลับมา
   // ไม่งั้นแอดมินเห็นว่าจัดลำดับสำเร็จ แต่หน้าประชาชนยังเรียงแบบเดิม
@@ -2580,7 +2599,8 @@ function EmergencyManager({ tenant, book = DEFAULT_CONTACT_BOOK }) {
       alert(`ย้ายไม่สำเร็จ: ${error.message}`)
       return
     }
-    setContacts((prev) => prev.filter((c) => c.id !== contact.id))
+    setAllContacts((prev) => prev.map((c) =>
+      c.id === contact.id ? { ...c, book: OTHER.key, display_order: nextOrder } : c))
   }
 
   // จัดกลุ่มให้ตรงกับหน้าประชาชน — หมวดที่ไม่มีรายการไม่ต้องขึ้นหัวข้อเปล่า
@@ -2592,15 +2612,26 @@ function EmergencyManager({ tenant, book = DEFAULT_CONTACT_BOOK }) {
 
   return (
     <div className="space-y-4">
+      {/* แท็บสมุด — เรื่องเดียวกันจึงอยู่เมนูเดียว แต่คนละสมุดเพราะเงื่อนไขการโทรต่างกัน
+          (เหตุด่วน 24 ชม. กับ เบอร์ที่รับสายเฉพาะเวลาราชการ) */}
+      <div className="flex gap-2 bg-gray-100 p-1 rounded-2xl">
+        {CONTACT_BOOKS.map((b) => {
+          const on = b.key === book
+          return (
+            <button key={b.key} onClick={() => { setBook(b.key); setEditingId(null) }}
+              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition-all ${on ? 'bg-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              style={on ? { color: b.color } : undefined}>
+              <span>{b.emoji}</span>
+              <span className="truncate">{b.label}</span>
+              <span className={`text-[11px] font-normal ${on ? 'text-gray-400' : 'text-gray-400'}`}>{countOf(b.key)}</span>
+            </button>
+          )
+        })}
+      </div>
+
       {/* Add form */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold"
-                style={{ backgroundColor: BOOK.bg, color: BOOK.color }}>
-            {BOOK.emoji} {BOOK.label}
-          </span>
-          <p className="font-semibold text-gray-700 text-sm">เพิ่ม{BOOK.itemNoun}ใหม่</p>
-        </div>
+        <p className="font-semibold text-gray-700 text-sm">เพิ่ม{BOOK.itemNoun}ใหม่</p>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
           <div className="flex items-center gap-2">
             <EmojiEditPicker value={form.emoji}
@@ -5109,7 +5140,7 @@ const PAGE_LABELS = {
   report: 'รายงานสรุป',
   categories: 'ประเภทคำร้อง',
   signatories: 'ผู้ลงนามเอกสาร',
-  emergency: 'สายด่วนฉุกเฉิน',
+  emergency: 'เบอร์โทรสำคัญ',
   directory: 'เบอร์โทรสำคัญ',
   locations: 'สถานที่เกิดเหตุ',
   'system-settings': 'ตั้งค่าระบบ',
@@ -5146,8 +5177,7 @@ function getAdminMenuGroups(currentUserRole, currentUserId) {
       accent: '#0ea5e9',
       items: [
         { key: 'categories', label: 'ประเภทคำร้อง', Icon: Tag, color: '#d97706', bg: '#fef3c7', show: canManageContent },
-        { key: 'emergency', label: 'สายด่วนฉุกเฉิน', Icon: Phone, color: '#ef4444', bg: '#fee2e2', show: canManageContent },
-        { key: 'directory', label: 'เบอร์โทรสำคัญ', Icon: BookUser, color: '#1d4ed8', bg: '#dbeafe', show: canManageContent },
+        { key: 'emergency', label: 'เบอร์โทรสำคัญ', Icon: Phone, color: '#ef4444', bg: '#fee2e2', show: canManageContent },
         { key: 'locations', label: 'สถานที่เกิดเหตุ', Icon: MapPin, color: '#0891b2', bg: '#e0f2fe', show: canManageContent },
         { key: 'fleet-setup', label: 'ยานพาหนะ', Icon: Car, color: '#0369a1', bg: '#e0f2fe', show: canManageSystem },
       ],
@@ -5828,9 +5858,10 @@ export default function AdminDashboard() {
           ? <StaffManager tenant={tenant} />
           : <UserManager tenant={tenant} currentUserRole={currentUserRole} currentUserId={currentUserId} />
       ) : activePage === 'emergency' ? (
-        <EmergencyManager tenant={tenant} book="urgent" />
+        <EmergencyManager tenant={tenant} initialBook="urgent" />
       ) : activePage === 'directory' ? (
-        <EmergencyManager tenant={tenant} book="directory" />
+        // ไม่มีในเมนูแล้ว แต่คงไว้รับ deep link จากปุ่มบนหน้า /directory
+        <EmergencyManager tenant={tenant} initialBook="directory" />
       ) : activePage === 'users' ? (
         <UserManager tenant={tenant} currentUserRole={currentUserRole} currentUserId={currentUserId} />
       ) : activePage === 'locations' ? (
@@ -5898,18 +5929,8 @@ export default function AdminDashboard() {
                 <Phone size={24} style={{ color: '#ef4444' }} />
               </div>
               <div>
-                <p className="text-sm font-bold text-gray-800">สายด่วนฉุกเฉิน</p>
-                <p className="text-[13px] text-gray-400 mt-0.5">เบอร์เหตุด่วน โทรได้ 24 ชม.</p>
-              </div>
-            </button>
-            <button onClick={() => setActivePage('directory')}
-              className="flex flex-col items-center gap-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:bg-gray-50 active:scale-95 transition-all text-center">
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#dbeafe' }}>
-                <BookUser size={24} style={{ color: '#1d4ed8' }} />
-              </div>
-              <div>
                 <p className="text-sm font-bold text-gray-800">เบอร์โทรสำคัญ</p>
-                <p className="text-[13px] text-gray-400 mt-0.5">ส่วนราชการ ผู้นำท้องถิ่น</p>
+                <p className="text-[13px] text-gray-400 mt-0.5">สายด่วนฉุกเฉิน และเบอร์โทรสำคัญ</p>
               </div>
             </button>
             <button onClick={() => setActivePage('locations')}
@@ -5983,8 +6004,7 @@ export default function AdminDashboard() {
               <tbody className="divide-y divide-gray-100">
                 {[
                   { key: 'categories',  Icon: Tag,    color: '#d97706', bg: '#fef3c7', label: 'ประเภทคำร้อง', desc: 'จัดการหมวดหมู่ + ผู้รับผิดชอบ', show: currentUserRole !== 'viewer' },
-                  { key: 'emergency',   Icon: Phone,       color: '#ef4444', bg: '#fee2e2', label: 'สายด่วนฉุกเฉิน',  desc: 'เบอร์เหตุด่วน โทรได้ 24 ชม.',     show: currentUserRole !== 'viewer' },
-                  { key: 'directory',   Icon: BookUser,    color: '#1d4ed8', bg: '#dbeafe', label: 'เบอร์โทรสำคัญ',   desc: 'ส่วนราชการ ผู้นำท้องถิ่น',        show: currentUserRole !== 'viewer' },
+                  { key: 'emergency',   Icon: Phone,       color: '#ef4444', bg: '#fee2e2', label: 'เบอร์โทรสำคัญ',    desc: 'สายด่วนฉุกเฉิน และเบอร์โทรสำคัญ', show: currentUserRole !== 'viewer' },
                   { key: 'locations',   Icon: MapPin,      color: '#0891b2', bg: '#e0f2fe', label: 'สถานที่เกิดเหตุ', desc: 'จัดการหมู่บ้าน / ตำบลในพื้นที่',  show: currentUserRole !== 'viewer' },
                   { key: 'holidays',    Icon: CalendarDays, color: '#0d9488', bg: '#ccfbf1', label: 'วันหยุดราชการ',  desc: 'ใช้คำนวณ SLA คำร้องเป็นวันทำการ',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'fleet-setup',      Icon: Car,         color: '#0369a1', bg: '#e0f2fe', label: 'ตั้งค่ายานพาหนะ', desc: 'กอง/หน่วยงาน งบประมาณ สิทธิ์ผู้ใช้', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
