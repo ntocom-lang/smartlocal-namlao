@@ -112,38 +112,35 @@ function EServiceGrid({ docTypes, rounded = 'rounded-2xl' }) {
           style={{ background: 'linear-gradient(115deg, transparent 35%, rgba(255,255,255,0.85) 48%, transparent 58%)' }} />
       </p>
       <p className="relative z-10 text-white/75 text-[11px] sm:text-xs font-semibold mt-0.5 mb-3">บริการแบบเบ็ดเสร็จ ณ จุดเดียว ด้วยระบบออนไลน์</p>
-      {/* สายด่วนฉุกเฉิน — วางเป็นแถวแรกเหนืองานบริการตามที่ผู้บริหารสั่ง ไม่ยัดเป็นการ์ดในกริด 3 ช่อง
-          เพราะ (1) จำนวนบริการจะเกินแถวพอดีกลายเป็นการ์ดโดดเดี่ยว (2) สีแดงเต็มแถบแยกเหตุด่วนออกจาก
-          งานบริการทั่วไปชัดกว่า และพื้นที่กดใหญ่กว่า เหมาะกับผู้สูงอายุที่กดตอนตกใจ
-          ใช้ <Link> ตรงๆ ไม่ผ่าน ModuleLink เพราะ /emergency ไม่ได้ผูกกับโมดูลใน MODULE_ROUTES (เปิดเสมอ) */}
-      <Link to="/emergency" aria-label="สายด่วนฉุกเฉิน แจ้งเหตุด่วนตลอด 24 ชั่วโมง"
-        className="relative z-10 mb-2 flex items-center gap-3 rounded-xl border border-red-300/60 px-3 py-2.5 shadow-md shadow-red-950/25 transition-all hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]"
-        style={{ background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 55%, #b91c1c 100%)' }}>
-        <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/20 ring-2 ring-white/45">
-          <Phone size={19} className="text-white" />
-          <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 animate-pulse rounded-full bg-yellow-300 ring-2 ring-red-600" />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-[13px] sm:text-[15px] font-black leading-tight text-white drop-shadow-sm">สายด่วนฉุกเฉิน</span>
-          <span className="block text-[10px] sm:text-[11px] font-semibold leading-tight text-white/85">แจ้งเหตุด่วน เหตุร้าย ตลอด 24 ชั่วโมง</span>
-        </span>
-        <span className="flex shrink-0 items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-black text-red-700 shadow-sm">
-          โทรเลย <ChevronRight size={13} />
-        </span>
-      </Link>
-      {/* เบอร์โทรสำคัญ — แถวบางกว่าและสีอ่อนกว่าสายด่วนโดยตั้งใจ ไม่ให้แย่งสายตาจากแถบแดง
-          เพราะเหตุด่วนต้องหาเจอก่อนเสมอ ใช้ <Link> ตรงๆ เหมือนกัน /directory ไม่ผูกโมดูล (เปิดเสมอ) */}
-      <Link to="/directory" aria-label="เบอร์โทรสำคัญ หน่วยงานราชการและผู้นำท้องถิ่น"
-        className="relative z-10 mb-2 flex items-center gap-2.5 rounded-xl border border-white/70 bg-white/95 px-3 py-2 shadow-md shadow-blue-950/10 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:bg-white hover:shadow-lg active:scale-[0.98]">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-700">
-          <BookUser size={16} />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-[12px] sm:text-[13px] font-black leading-tight text-gray-800">เบอร์โทรสำคัญ</span>
-          <span className="block text-[10px] font-semibold leading-tight text-gray-500">ส่วนราชการ ผู้นำท้องถิ่น และเบอร์ติดต่อในพื้นที่</span>
-        </span>
-        <ChevronRight size={14} className="shrink-0 text-gray-400" />
-      </Link>
+      {/* ปุ่มติดต่อวางคู่กัน: เหตุด่วนอยู่ซ้ายตามลำดับการมอง และสมุดโทรศัพท์อยู่ขวา
+          ใช้ <Link> ตรงๆ เพราะทั้งสองเส้นทางเปิดเสมอและไม่ได้ผูกกับ MODULE_ROUTES */}
+      <div className="relative z-10 mb-2 grid grid-cols-2 items-stretch gap-2">
+        <Link to="/emergency" aria-label="สายด่วนฉุกเฉิน แจ้งเหตุด่วนตลอด 24 ชั่วโมง"
+          className="flex min-w-0 items-center gap-2 rounded-xl border border-red-300/60 px-2.5 py-2.5 shadow-md shadow-red-950/25 transition-all hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]"
+          style={{ background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 55%, #b91c1c 100%)' }}>
+          <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/20 ring-2 ring-white/45">
+            <Phone size={17} className="text-white" />
+            <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 animate-pulse rounded-full bg-yellow-300 ring-2 ring-red-600" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[11px] font-black leading-tight text-white drop-shadow-sm sm:text-[13px]">สายด่วนฉุกเฉิน</span>
+            <span className="mt-0.5 block text-[9px] font-semibold leading-tight text-white/85 sm:text-[10px]">ฉุกเฉินตลอด 24 ชั่วโมง</span>
+          </span>
+          <ChevronRight size={13} className="shrink-0 text-white/90" />
+        </Link>
+
+        <Link to="/directory" aria-label="เบอร์โทรสำคัญ หน่วยงานราชการและผู้นำท้องถิ่น"
+          className="flex min-w-0 items-center gap-2 rounded-xl border border-white/70 bg-white/95 px-2.5 py-2.5 shadow-md shadow-blue-950/10 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:bg-white hover:shadow-lg active:scale-[0.98]">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-700">
+            <BookUser size={17} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[11px] font-black leading-tight text-gray-800 sm:text-[13px]">เบอร์โทรสำคัญ</span>
+            <span className="mt-0.5 block text-[9px] font-semibold leading-tight text-gray-500 sm:text-[10px]">รวมเบอร์ติดต่อในพื้นที่</span>
+          </span>
+          <ChevronRight size={13} className="shrink-0 text-gray-400" />
+        </Link>
+      </div>
       <div className="relative z-10 grid grid-cols-3 gap-1.5 sm:gap-2">
         {docTypes.slice(0, 6).map(({ value, label, emoji }) => (
           <Link key={value} to={`/doc-request?type=${value}`}
