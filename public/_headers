@@ -1,0 +1,12 @@
+# Cloudflare Workers Assets อ่านไฟล์นี้จาก dist/ ตอน deploy (vite ก๊อป public/ ลง dist/ ให้เอง)
+#
+# ค่าเริ่มต้นของ Workers Assets คือ max-age=0, must-revalidate ทุกไฟล์ — เบราว์เซอร์จึงต้อง
+# ถาม edge ใหม่ทุกครั้งที่เปิดเว็บ แม้แต่ไฟล์ที่ชื่อมี hash ซึ่งเปลี่ยนเนื้อหาไม่ได้อยู่แล้ว
+# (เนื้อหาเปลี่ยน = hash เปลี่ยน = คนละชื่อไฟล์)
+#
+# ปลอดภัยที่จะ immutable ได้เพราะ scripts/postbuild.js เก็บ asset ไว้ 2 รุ่น
+# คนที่ค้าง HTML รุ่นก่อนจึงยังโหลดไฟล์ที่ตัวเองอ้างถึงได้จริง
+#
+# ห้ามขยายไปครอบ /sw.js หรือ /_template.html — สองตัวนั้นต้องอัปเดตได้ทันที
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
