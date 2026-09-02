@@ -5,7 +5,9 @@ import {
   resolveDeptHead,
   resolveOrderAuthority,
 } from '../src/lib/fleetTripPrint.js'
-import { pickSignatory, signatoryName, signatoryTitle } from '../src/lib/documentSignatories.js'
+import {
+  organizationSignatories, pickSignatory, signatoryName, signatoryTitle,
+} from '../src/lib/documentSignatories.js'
 
 const tenant = { name: 'เทศบาลตำบลสาธิต', province: 'แพร่' }
 
@@ -74,6 +76,24 @@ assert.equal(pickSignatory(registry, { role: 'department_head' }), null)
 // แถวที่ effective_to ผ่านไปแล้วต้องไม่ถูกหยิบ ไม่งั้นใบจะพิมพ์ชื่อคนที่พ้นตำแหน่ง
 assert.equal(pickSignatory(registry, { role: 'department_head', departmentId: DEPT_CIVIL }), null)
 assert.equal(signatoryTitle(pickSignatory(registry, { role: 'clerk' })), 'ปลัดเทศบาล รักษาราชการแทนนายกเทศมนตรี')
+
+// ── แถวที่แอดมินสร้างเอง: มีได้หลายแถว ต้องแยกกันด้วยชื่อแถว ────────────────────────
+const customA = { signatory_role: 'custom', department_id: null, custom_label: 'รองนายก (สั่งใช้รถ)',
+  manual_name: 'สมชิด รองนายก ก.', title_override: 'รองนายกเทศมนตรี', effective_from: '2026-01-01', effective_to: null, profile: null }
+const customB = { signatory_role: 'custom', department_id: null, custom_label: 'รองนายก (งานช่าง)',
+  manual_name: 'สมทรง รองนายก ข.', title_override: 'รองนายกเทศมนตรี', effective_from: '2026-01-01', effective_to: null, profile: null }
+const withCustom = [...registry, customA, customB]
+assert.equal(signatoryName(pickSignatory(withCustom, { role: 'custom', customLabel: 'รองนายก (สั่งใช้รถ)' })), 'สมชิด รองนายก ก.')
+assert.equal(signatoryName(pickSignatory(withCustom, { role: 'custom', customLabel: 'รองนายก (งานช่าง)' })), 'สมทรง รองนายก ข.')
+// ไม่ระบุชื่อแถว = ไม่ควรได้แถว custom แถวใดเลย ไม่งั้นเอกสารจะหยิบผิดคนโดยไม่มีใครรู้
+assert.equal(pickSignatory(withCustom, { role: 'custom' }), null)
+// บทบาทของระบบต้องไม่ถูกแถว custom แย่งไป
+assert.equal(signatoryName(pickSignatory(withCustom, { role: 'mayor' })), 'สมนึก นายกฯ')
+// organizationSignatories = ทุกแถวที่ไม่ผูกกับกอง (นายก ปลัด ผู้รับมอบอำนาจ + custom)
+// หัวหน้ากองต้องไม่หลุดเข้ามา เพราะไม่ใช่ผู้มีอำนาจสั่งใช้รถ
+const orgRows = organizationSignatories(withCustom)
+assert.ok(orgRows.every(r => r.signatory_role !== 'department_head'))
+assert.equal(orgRows.filter(r => r.signatory_role === 'custom').length, 2)
 
 // ── ค่าปริยาย: ไม่เลือกอะไรเลย = นายก และหัวหน้ากองตามกองของทริป ─────────────────
 const defaultHtml = buildFleetTripRequestHtml({
@@ -170,7 +190,11 @@ assert.ok(tripsSource.includes("return pickSignatory(signatories, { role: 'depar
 assert.ok(tripsSource.includes("return pickSignatory(signatories, { role: 'mayor' }) ? 'mayor' : ''"))
 // ตั้งผู้รับมอบอำนาจไว้ = ต้องเป็นค่าตั้งต้น ไม่งั้นเจ้าหน้าที่ต้องจำสลับเองทุกใบ
 assert.ok(tripsSource.includes("if (pickSignatory(signatories, { role: 'vehicle_authority' })) return 'vehicle_authority'"))
-assert.ok(tripsSource.includes("{ role: 'vehicle_authority', label: 'ผู้รับมอบอำนาจ',"))
+// ตัวเลือกต้องมาจากทะเบียนจริง ไม่ใช่รายการบทบาทตายตัวในโค้ด (แอดมินเพิ่มแถวเองได้แล้ว)
+assert.ok(tripsSource.includes('organizationSignatories(signatories)'))
+// เก็บคู่ (role, label) เพราะบทบาท custom มีได้หลายแถว role อย่างเดียวชี้ไม่ถูกว่าแถวไหน
+assert.equal((tripsSource.match(/order_authority_label: form\.order_authority_role === CUSTOM_ROLE/g) ?? []).length, 3)
+assert.ok(tripsSource.includes('pickSignatory(signatories, { role: authorityRole, customLabel: authorityLabel })'))
 // กล่องผู้ลงนามอยู่ล่างสุดของทั้งสองฟอร์ม (บรรทัดสุดท้ายก่อนปิด Modal)
 assert.equal((tripsSource.match(/ {10}\{signatoryFields\}\r?\n {8}<\/Modal>/g) ?? []).length, 2)
 
@@ -212,5 +236,50 @@ assert.ok(roleMigration.includes('FROM pg_constraint'))
 assert.ok(!/DROP CONSTRAINT IF EXISTS document_signatories_check\d*/.test(roleMigration))
 // ห้ามแตะ constraint อื่นที่ไม่เกี่ยวกับบทบาท (identity/ความยาวชื่อ) — pattern ต้องอิง signatory_role
 assert.ok(roleMigration.includes("LIKE '%signatory_role%department_head%'"))
+
+// ── migration แถวที่แอดมินสร้างเอง ────────────────────────────────────────────────
+const customMigration = await readFile(
+  new URL('../supabase/migrations/20260904140000_signatory_custom_rows.sql', import.meta.url), 'utf8',
+)
+assert.ok(customMigration.includes("signatory_role IN ('department_head', 'clerk', 'mayor', 'vehicle_authority', 'custom')"))
+// custom เป็นผู้ลงนามระดับหน่วยงาน ต้องอยู่ฝั่ง department_id IS NULL
+assert.ok(customMigration.includes("(signatory_role IN ('clerk', 'mayor', 'vehicle_authority', 'custom') AND department_id IS NULL)"))
+// ชื่อแถวเป็นตัวระบุแถว: custom ต้องมี บทบาทอื่นต้องไม่มี
+assert.ok(customMigration.includes('document_signatories_custom_label_check'))
+// unique index ต้องรวม custom_label ไม่งั้น custom มีได้แถวเดียวทั้ง อปท. ซึ่งผิดวัตถุประสงค์
+assert.ok(customMigration.includes("coalesce(custom_label, '')"))
+// v3 เป็นฟังก์ชันใหม่ ไม่ใช่การเติมพารามิเตอร์ให้ v2 (กัน PostgREST เลือก overload ผิด)
+assert.ok(customMigration.includes('CREATE OR REPLACE FUNCTION public.set_document_signatory_v3('))
+assert.ok(customMigration.includes('CREATE OR REPLACE FUNCTION public.clear_document_signatory_v2('))
+// ปิดแถวเดิมต้องเจาะจงถึง label ไม่งั้นสร้างแถว custom ใหม่จะไปปิดแถว custom อื่นทิ้ง
+assert.ok(customMigration.includes('AND custom_label IS NOT DISTINCT FROM v_custom_label'))
+for (const mustKeep of [
+  "RAISE EXCEPTION 'ไม่มีสิทธิ์กำหนดผู้ลงนาม'",
+  'INSERT INTO public.document_signatories',
+  'INSERT INTO public.audit_logs',
+  'RETURN v_result;',
+]) {
+  assert.ok(customMigration.includes(mustKeep), 'v3 ขาดส่วน: ' + mustKeep)
+}
+
+// การถอนสิทธิ์ RPC เก่าต้องอยู่คนละไฟล์กับที่สร้างเวอร์ชันใหม่ เพราะ migration ถูก apply
+// ก่อน deploy โค้ดเสมอ ถ้า revoke พร้อมกัน โค้ดที่รันอยู่บน production จะเรียกตัวเก่าไม่ได้
+// ระหว่างรอ deploy (เกิดจริงแล้ว 2026-09-02 — ดูไฟล์ regrant)
+const regrantMigration = await readFile(
+  new URL('../supabase/migrations/20260904160000_regrant_legacy_signatory_rpcs.sql', import.meta.url), 'utf8',
+)
+assert.ok(regrantMigration.includes('GRANT EXECUTE ON FUNCTION public.set_document_signatory_v2('))
+assert.ok(regrantMigration.includes('GRANT EXECUTE ON FUNCTION public.clear_document_signatory(uuid, text, uuid)'))
+
+// UI: ต้องเรียก RPC เวอร์ชันที่รองรับชื่อแถว และมีทางเพิ่มแถวเอง
+const settingsSource = await readFile(
+  new URL('../src/components/admin/SignatorySettings.jsx', import.meta.url), 'utf8',
+)
+assert.ok(settingsSource.includes("supabase.rpc('set_document_signatory_v3'"))
+assert.ok(settingsSource.includes("supabase.rpc('clear_document_signatory_v2'"))
+assert.ok(settingsSource.includes('function addCustomRow()'))
+// คีย์แถวต้องรวมชื่อแถว ไม่งั้นทุกแถวที่สร้างเองจะแสดงค่าของแถวเดียวกันหมด
+assert.ok(settingsSource.includes('function assignmentKey(role, departmentId = null, customLabel = null)'))
+assert.ok(settingsSource.includes('p_custom_label: slot.customLabel ?? null'))
 
 console.log('fleet form 3 signatory assertions passed')

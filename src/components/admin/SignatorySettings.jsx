@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Loader2, Save, Trash2, UserRoundCheck } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Loader2, Plus, Save, Trash2, UserRoundCheck } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { SIGNATORY_SCOPE, todayBangkok } from '../../lib/documentSignatories'
+import { CUSTOM_ROLE, SIGNATORY_SCOPE, todayBangkok } from '../../lib/documentSignatories'
 
-function assignmentKey(role, departmentId = null) {
-  return `${role}:${departmentId ?? 'organization'}`
+// ต้องรวม customLabel ด้วย เพราะบทบาท custom มีได้หลายแถวต่อ อปท. ถ้าคีย์ชนกัน
+// ทุกแถวที่แอดมินสร้างเองจะแสดงค่าของแถวเดียวกันหมด
+function assignmentKey(role, departmentId = null, customLabel = null) {
+  return `${role}:${departmentId ?? 'organization'}:${customLabel ?? ''}`
 }
 
 function personTitle(person) {
@@ -39,7 +41,7 @@ async function fetchSignatorySettings(municipalityId) {
 const FIELD_CLASS = 'w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 focus:outline-none focus:border-indigo-400'
 const GRID_CLASS = 'grid gap-2 md:grid-cols-[minmax(160px,1.2fr)_minmax(210px,1.6fr)_minmax(150px,1.2fr)_auto]'
 
-function SignatoryRow({ slot, people, assignment, onSaved }) {
+function SignatoryRow({ slot, people, assignment, onSaved, onDiscard = null }) {
   const [sourceMode, setSourceMode] = useState(assignment?.manual_name ? 'manual' : 'profile')
   const [profileId, setProfileId] = useState(assignment?.profile_id ?? '')
   const [manualName, setManualName] = useState(assignment?.manual_name ?? '')
@@ -81,7 +83,7 @@ function SignatoryRow({ slot, people, assignment, onSaved }) {
     // ส่ง p_effective_from เป็น null โดยตั้งใจ — ให้ DB coalesce เป็นวันนี้ตามเวลา Asia/Bangkok
     // จะได้ไม่ต้องพึ่งนาฬิกาของเครื่องผู้ใช้ ส่วนเลขที่คำสั่ง/วันสิ้นสุดไม่ใช้แล้ว ผู้ดูแลเปลี่ยนตัว
     // ผู้ลงนามเองเมื่อมีคำสั่งใหม่
-    const { error: saveError } = await supabase.rpc('set_document_signatory_v2', {
+    const { error: saveError } = await supabase.rpc('set_document_signatory_v3', {
       p_municipality_id: slot.municipalityId,
       p_signatory_role: slot.role,
       p_department_id: slot.departmentId,
@@ -91,13 +93,15 @@ function SignatoryRow({ slot, people, assignment, onSaved }) {
       p_authority_reference: null,
       p_effective_from: null,
       p_effective_to: null,
+      // ชื่อแถวเป็นตัวระบุแถวสำหรับบทบาทที่แอดมินสร้างเอง บทบาทของระบบต้องส่ง null
+      p_custom_label: slot.customLabel ?? null,
     })
     setSaving(false)
     if (saveError) {
       // PGRST202 = ฟังก์ชันไม่มีใน schema cache ซึ่งเกือบทุกครั้งแปลว่า migration ยังไม่ถูก apply
       // ข้อความดิบของ PostgREST อ่านแล้วไม่รู้ว่าต้องทำอะไรต่อ จึงแปลให้เป็นคำสั่งที่ลงมือได้จริง
       setError(saveError.code === 'PGRST202'
-        ? 'ยังไม่ได้ติดตั้งฟังก์ชันบันทึกผู้ลงนามในฐานข้อมูล (migration 20260901170000) กรุณาแจ้งผู้ดูแลระบบให้ apply ก่อน'
+        ? 'ยังไม่ได้ติดตั้งฟังก์ชันบันทึกผู้ลงนามในฐานข้อมูล (migration 20260904140000) กรุณาแจ้งผู้ดูแลระบบให้ apply ก่อน'
         : saveError.message)
       return
     }
@@ -108,10 +112,11 @@ function SignatoryRow({ slot, people, assignment, onSaved }) {
     if (!assignment || !window.confirm(`ยกเลิกผู้ลงนาม “${slot.label}”?`)) return
     setSaving(true)
     setError('')
-    const { error: clearError } = await supabase.rpc('clear_document_signatory', {
+    const { error: clearError } = await supabase.rpc('clear_document_signatory_v2', {
       p_municipality_id: slot.municipalityId,
       p_signatory_role: slot.role,
       p_department_id: slot.departmentId,
+      p_custom_label: slot.customLabel ?? null,
     })
     setSaving(false)
     if (clearError) { setError(clearError.message); return }
@@ -188,6 +193,13 @@ function SignatoryRow({ slot, people, assignment, onSaved }) {
           {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
           <span className="md:hidden">บันทึกผู้ลงนาม</span>
         </button>
+        {!assignment && onDiscard && (
+          <button type="button" onClick={onDiscard} title="ทิ้งแถวนี้"
+            className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-[11px] font-semibold text-gray-500">
+            <Trash2 size={12} />
+            <span className="md:hidden">ทิ้งแถวนี้</span>
+          </button>
+        )}
         {assignment && (
           <button type="button" onClick={clear} disabled={saving} title="ยกเลิกผู้ลงนาม"
             className="flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2 py-1.5 text-[11px] font-semibold text-red-600 disabled:opacity-40">
@@ -209,6 +221,8 @@ export default function SignatorySettings({ tenant }) {
   const [people, setPeople] = useState([])
   const [assignments, setAssignments] = useState([])
   const [loading, setLoading] = useState(true)
+  // แถวที่กด "เพิ่มผู้ลงนาม" แล้วแต่ยังไม่ได้บันทึก — เก็บแยกเพราะยังไม่มีใน DB
+  const [draftRows, setDraftRows] = useState([])
   const [error, setError] = useState('')
 
   function applyResults({ departmentResult, peopleResult, assignmentResult }) {
@@ -256,13 +270,38 @@ export default function SignatorySettings({ tenant }) {
         // ผลพลอยได้: ข้อความนี้กลายเป็นข้อมูล ไม่ใช่โค้ด ผู้ดูแลแก้เองได้ที่หน้าจัดการกอง/ส่วนราชการ
         label: department.name,
       })),
-  ], [departments, tenant?.id])
+    // แถวที่แอดมินสร้างเอง — มาจากข้อมูลในทะเบียน ไม่ใช่รายการตายตัวในโค้ด
+    // draftRows คือแถวที่เพิ่งกด "เพิ่มผู้ลงนาม" แต่ยังไม่ได้บันทึก จึงยังไม่มีใน assignments
+    ...[...new Set([
+      ...assignments.filter((a) => a.signatory_role === CUSTOM_ROLE).map((a) => a.custom_label),
+      ...draftRows,
+    ])].filter(Boolean).map((customLabel) => ({
+      key: assignmentKey(CUSTOM_ROLE, null, customLabel),
+      role: CUSTOM_ROLE, municipalityId: tenant?.id, departmentId: null,
+      customLabel, label: customLabel, optional: true, removable: true,
+    })),
+  ], [departments, tenant?.id, assignments, draftRows])
 
   const assignmentMap = useMemo(() => Object.fromEntries(
-    assignments.map((assignment) => [assignmentKey(assignment.signatory_role, assignment.department_id), assignment]),
+    assignments.map((assignment) => [
+      assignmentKey(assignment.signatory_role, assignment.department_id, assignment.custom_label),
+      assignment,
+    ]),
   ), [assignments])
 
   const missingCount = slots.filter((slot) => !assignmentState(assignmentMap[slot.key], slot.optional).ready).length
+
+  // ชื่อแถวเป็นตัวระบุแถว ซ้ำกันไม่ได้ (unique index ฝั่ง DB บังคับอีกชั้น แต่ต้องกัน
+  // ตั้งแต่หน้าจอ ไม่งั้นผู้ใช้กรอกจนเสร็จแล้วค่อยเจอ error 23505 ที่อ่านไม่ออก)
+  function addCustomRow() {
+    const raw = window.prompt('ชื่อผู้ลงนามที่ต้องการเพิ่ม (เช่น รองนายก, ผู้อำนวยการกองสาธารณสุข)')
+    const label = raw?.trim()
+    if (!label) return
+    if (label.length > 100) { setError('ชื่อผู้ลงนามยาวเกิน 100 ตัวอักษร'); return }
+    if (slots.some((slot) => slot.label === label)) { setError(`มีแถว “${label}” อยู่แล้ว`); return }
+    setError('')
+    setDraftRows((rows) => [...rows, label])
+  }
 
   return (
     <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm space-y-3">
@@ -300,8 +339,21 @@ export default function SignatorySettings({ tenant }) {
             </div>
             {slots.map((slot) => (
               <SignatoryRow key={`${slot.key}:${assignmentMap[slot.key]?.id ?? 'empty'}`} slot={slot} people={people}
-                assignment={assignmentMap[slot.key]} onSaved={reload} />
+                assignment={assignmentMap[slot.key]} onSaved={reload}
+                onDiscard={slot.removable && !assignmentMap[slot.key]
+                  ? () => setDraftRows((rows) => rows.filter((label) => label !== slot.customLabel))
+                  : null} />
             ))}
+            <div className="flex items-center gap-2 px-3 py-2.5">
+              <button type="button" onClick={addCustomRow}
+                className="flex items-center gap-1.5 rounded-lg border border-dashed border-indigo-300 bg-indigo-50/50 px-3 py-1.5 text-[11px] font-bold text-indigo-700 hover:bg-indigo-50">
+                <Plus size={13} /> เพิ่มผู้ลงนาม
+              </button>
+              <p className="text-[10px] leading-tight text-gray-400">
+                สำหรับผู้ลงนามที่ไม่มีในรายการข้างบน เช่น รองนายก หรือผู้รับมอบอำนาจเฉพาะเรื่อง
+                — แถวที่เพิ่มเองใช้กับใบขออนุญาตใช้รถ ไม่ใช้กับแบบพิมพ์คำร้อง
+              </p>
+            </div>
           </div>
         </div>
       )}
