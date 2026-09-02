@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Phone, PhoneCall, Search, Settings } from 'lucide-react'
+import { ArrowLeft, BookUser, Phone, Search, Settings } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
 import { EMERGENCY_CATEGORIES, emergencyCategoryOf } from '../lib/emergencyCategories'
-// ไอคอนสายด่วนเป็นได้ทั้งอิโมจิและรูปที่แอดมินแนบ (data URL) — ถ้า render ตรงๆ จะโชว์สตริงยาวเหยียด
+import { CONTACT_BOOK_MAP } from '../lib/contactBooks'
+// ไอคอนเป็นได้ทั้งอิโมจิและรูปที่แอดมินแนบ (data URL) — ถ้า render ตรงๆ จะโชว์สตริงยาวเหยียด
 import CategoryIcon from '../components/datacenter/CategoryIcon'
 
-// ต่ำกว่านี้ช่องค้นหามีแต่กินที่ — อปท. ส่วนใหญ่มี 5-6 เบอร์ ที่เยอะสุดตอนนี้คือ 15
-const SEARCH_THRESHOLD = 8
+// สมุดนี้มีเบอร์เยอะกว่าหน้าสายด่วนโดยธรรมชาติ (ผู้ใหญ่บ้านทุกหมู่ + ส่วนราชการ)
+// จึงเปิดช่องค้นหาที่จำนวนน้อยกว่าหน้าสายด่วน
+const SEARCH_THRESHOLD = 6
+
+const BOOK = CONTACT_BOOK_MAP.directory
 
 // เทียบเบอร์แบบไม่สนขีด/วงเล็บ/ช่องว่าง: พิมพ์ 0811801863 ต้องเจอ 081-180-1863
 const digitsOf = (s) => String(s || '').replace(/\D/g, '')
@@ -25,6 +29,10 @@ function ContactRow({ contact, cat }) {
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-[15px] font-semibold text-gray-800 leading-snug">{contact.label}</p>
+        {/* note = ตำแหน่ง/หมู่/เวลาทำการ ที่แอดมินกรอกไว้ ไม่มีก็ไม่ต้องเว้นที่ */}
+        {contact.note && (
+          <p className="text-[13px] text-gray-500 leading-snug mt-0.5">{contact.note}</p>
+        )}
         <p className="text-sm text-gray-500 mt-0.5 tracking-wide">{contact.number}</p>
       </div>
       <span className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
@@ -35,14 +43,13 @@ function ContactRow({ contact, cat }) {
   )
 }
 
-export default function EmergencyPage() {
+export default function DirectoryPage() {
   const navigate = useNavigate()
   const { tenant, loading: tenantLoading } = useTenant()
   const { role } = useAuth()
   const [contacts, setContacts] = useState(null)   // null = ยังไม่ได้โหลด, [] = โหลดแล้วแต่ไม่มีข้อมูล
   const [query, setQuery] = useState('')
 
-  // เบอร์สายด่วนต่างกันทุก อปท. จึงไม่มีเบอร์กลางสำรอง — แต่ละแห่งต้องกรอกเองจากหลังบ้าน
   useEffect(() => {
     if (!tenant?.id) return
     let alive = true
@@ -50,21 +57,24 @@ export default function EmergencyPage() {
       .from('emergency_contacts')
       .select('*')
       .eq('municipality_id', tenant.id)
-      // เบอร์ที่ไม่ใช่เหตุด่วน (ราชการ/ผู้นำท้องถิ่น) ย้ายไปหน้า /directory แล้ว — ดู src/lib/contactBooks.js
-      .eq('book', 'urgent')
+      // เบอร์เหตุด่วนอยู่หน้า /emergency — สองหน้านี้ใช้ตารางเดียวกันแต่คนละสมุด
+      .eq('book', 'directory')
       .eq('is_active', true)
       .order('display_order')
       .then(({ data }) => { if (alive) setContacts(data || []) })
     return () => { alive = false }
   }, [tenant?.id])
 
-  // จัดกลุ่มตามหมวด เรียงหมวดตาม EMERGENCY_CATEGORIES และในหมวดเรียงตาม display_order ที่แอดมินจัดไว้
+  // จัดกลุ่มตามหมวดชุดเดียวกับหน้าสายด่วน เรียงหมวดตาม EMERGENCY_CATEGORIES
+  // ในหมวดเรียงตาม display_order ที่แอดมินจัดไว้
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase()
     const qDigits = digitsOf(query)
     const matched = (contacts || []).filter((c) => {
       if (!q) return true
+      // ค้นหาครอบ note ด้วย เพราะคนค้นด้วยคำว่า "หมู่ 3" บ่อยกว่าชื่อคน
       if (String(c.label || '').toLowerCase().includes(q)) return true
+      if (String(c.note || '').toLowerCase().includes(q)) return true
       return qDigits.length > 0 && digitsOf(c.number).includes(qDigits)
     })
     return EMERGENCY_CATEGORIES
@@ -73,7 +83,6 @@ export default function EmergencyPage() {
   }, [contacts, query])
 
   // tenant ยังโหลดไม่เสร็จ หรือมี tenant แล้วแต่ query ยังไม่กลับ = ยังโหลดอยู่
-  // ถ้า tenant โหลดจบแล้วแต่หา tenant ไม่เจอ ให้ตกไปที่ empty state แทนที่จะค้าง skeleton
   const loading = tenantLoading || Boolean(tenant?.id && contacts === null)
   const canManage = role === 'admin' || role === 'superadmin'
   const showSearch = !loading && (contacts?.length || 0) > SEARCH_THRESHOLD
@@ -89,37 +98,40 @@ export default function EmergencyPage() {
             className="p-2 -ml-1 rounded-xl hover:bg-gray-200/60 text-gray-500 transition-colors">
             <ArrowLeft size={20} />
           </button>
-          <h1 className="text-base font-bold text-gray-800">สายด่วนฉุกเฉิน</h1>
+          <h1 className="text-base font-bold text-gray-800">{BOOK.label}</h1>
         </div>
       </div>
 
       {/* PC header */}
       <div className="hidden md:flex items-center gap-3 px-4 pt-8 pb-5 border-b border-gray-100 mb-2">
         <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-2xl shrink-0"
-             style={{ background: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)' }}>
-          📞
+             style={{ background: BOOK.gradient }}>
+          {BOOK.emoji}
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">สายด่วนฉุกเฉิน</h1>
-          <p className="text-sm text-gray-500 mt-0.5">เบอร์โทรศัพท์ฉุกเฉิน 24 ชั่วโมง</p>
+          <h1 className="text-2xl font-bold text-gray-800">{BOOK.label}</h1>
+          <p className="text-sm text-gray-500 mt-0.5">{BOOK.subtitle}</p>
         </div>
       </div>
 
       <div className="px-4 pt-1 md:pt-4 space-y-4">
 
-        {/* Hero */}
+        {/* Hero — ห้ามใช้คำว่า 24 ชั่วโมง เบอร์ในสมุดนี้ส่วนใหญ่รับสายเฉพาะเวลาราชการ */}
         <div className="rounded-xl px-4 py-3.5 flex items-center gap-3"
-             style={{ background: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)' }}>
+             style={{ background: BOOK.gradient }}>
           <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center shrink-0">
-            <PhoneCall size={20} className="text-white" />
+            <BookUser size={20} className="text-white" />
           </div>
           <div className="text-white">
-            <h2 className="font-bold text-[15px] leading-tight">สายด่วนฉุกเฉิน 24 ชั่วโมง</h2>
-            <p className="text-white/80 text-[11px] mt-0.5">แตะที่รายการเพื่อโทรออกได้ทันที</p>
+            <h2 className="font-bold text-[15px] leading-tight">{BOOK.subtitle}</h2>
+            <p className="text-white/80 text-[11px] mt-0.5">
+              แตะที่รายการเพื่อโทรออก — กรณีเหตุด่วนเหตุร้าย โทร{' '}
+              <Link to="/emergency" className="underline font-semibold">สายด่วนฉุกเฉิน</Link>
+            </p>
           </div>
         </div>
 
-        {/* Search — โผล่เฉพาะเมื่อเบอร์เยอะจนไล่หาด้วยตาไม่ไหว */}
+        {/* Search */}
         {showSearch && (
           <div className="relative">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
@@ -127,7 +139,7 @@ export default function EmergencyPage() {
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="ค้นหาหน่วยงาน หรือเบอร์โทร"
+              placeholder="ค้นหาชื่อ หน่วยงาน หมู่ หรือเบอร์โทร"
               className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-200 bg-white text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2"
               style={{ '--tw-ring-color': 'var(--color-primary)' }}
             />
@@ -144,25 +156,24 @@ export default function EmergencyPage() {
         ) : !contacts || contacts.length === 0 ? (
           <div className="rounded-2xl bg-white border border-gray-100 shadow-sm px-5 py-8 text-center">
             <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-3">
-              <PhoneCall size={26} className="text-gray-400" />
+              <BookUser size={26} className="text-gray-400" />
             </div>
-            <p className="font-semibold text-gray-700">ยังไม่มีข้อมูลสายด่วนฉุกเฉิน</p>
+            <p className="font-semibold text-gray-700">ยังไม่มีเบอร์โทรสำคัญ</p>
             <p className="text-sm text-gray-500 mt-1 leading-relaxed">
-              {tenant?.name || 'หน่วยงาน'}ยังไม่ได้บันทึกเบอร์สายด่วน
-              {tenant?.phone ? ' กรุณาติดต่อสำนักงานตามเบอร์ด้านล่าง' : ' กรุณาติดต่อสำนักงานโดยตรง'}
+              {tenant?.name || 'หน่วยงาน'}ยังไม่ได้บันทึกเบอร์หน่วยงานราชการหรือผู้นำท้องถิ่น
             </p>
             {canManage && (
-              <Link to="/admin" state={{ page: 'emergency' }}
+              <Link to="/admin" state={{ page: 'emergency', book: 'directory' }}
                     className="inline-flex items-center gap-2 mt-4 px-4 py-2 rounded-xl text-white text-sm font-semibold"
-                    style={{ backgroundColor: '#ef4444' }}>
+                    style={{ backgroundColor: BOOK.color }}>
                 <Settings size={14} />
-                เพิ่มเบอร์สายด่วน
+                เพิ่มเบอร์โทรสำคัญ
               </Link>
             )}
           </div>
         ) : groups.length === 0 ? (
           <div className="rounded-xl bg-white border border-gray-100 shadow-sm px-5 py-8 text-center">
-            <p className="text-sm text-gray-500">ไม่พบหน่วยงานหรือเบอร์ที่ตรงกับ “{query.trim()}”</p>
+            <p className="text-sm text-gray-500">ไม่พบชื่อหรือเบอร์ที่ตรงกับ “{query.trim()}”</p>
           </div>
         ) : (
           groups.map(({ cat, items }) => (

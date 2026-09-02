@@ -328,6 +328,7 @@ const SHORTCUTS = [
   { label: 'เว็บไซต์', icon: '🌐', href: '#' },
   { label: 'เจ้าหน้าที่', icon: '💼', href: '/staff' },
   { label: 'สายด่วน', icon: '🚨', href: '/emergency' },
+  { label: 'เบอร์สำคัญ', icon: '📒', href: '/directory' },
   { label: 'Facebook', icon: '📘', href: '#' },
 ]
 

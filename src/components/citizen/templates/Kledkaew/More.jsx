@@ -3,7 +3,7 @@ import ModuleLink from '../../../common/ModuleLink'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   Bell, FileSearch, ClipboardList, ShieldCheck,
-  Phone, AlertTriangle, Cloud,
+  Phone, AlertTriangle, Cloud, BookUser,
   Store, FileText, CalendarDays, Luggage, Info,
   UserCircle, LogOut, Globe, UserCog, Settings, RefreshCw, ChevronDown,
   Database, BookOpen, Monitor, Check, UploadIcon, Wrench,
@@ -110,6 +110,7 @@ export default function KledkaewMore() {
         { label: 'แจ้งเหตุ/แจ้งซ่อม', icon: ClipboardList, href: '/complaint', color: 'text-[var(--color-primary)]' },
         { label: 'คำร้องของฉัน', icon: FileSearch, href: '/my-complaints', color: 'text-[var(--color-primary)]' },
         { label: 'สายด่วนฉุกเฉิน', icon: AlertTriangle, href: '/emergency', color: 'text-red-500' },
+        { label: 'เบอร์โทรสำคัญ', icon: BookUser, href: '/directory', color: 'text-blue-600' },
         { label: 'ปฏิทินกิจกรรม', icon: CalendarDays, href: '/events', color: 'text-[var(--color-primary)]' },
         { label: 'สภาพอากาศ', icon: Cloud, href: '/weather', color: 'text-[var(--color-primary)]' },
       ],
