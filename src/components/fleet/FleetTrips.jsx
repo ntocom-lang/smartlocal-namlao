@@ -11,6 +11,7 @@ import {
   organizationSignatories, pickSignatory, signatoryName, signatoryTitle,
 } from '../../lib/documentSignatories'
 import FleetEmptyState from './FleetEmptyState'
+import ResponsiveSelect from '../common/ResponsiveSelect'
 
 const STATUS_LABEL = {
   pending:     'รอการอนุมัติ',
@@ -1120,15 +1121,31 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       }]
     : driverOptions
 
+  const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date())
+  const driverItems = driverFieldOptions.map(d => {
+    const isMe = d.profile_id === user?.id
+    const expired = d.license_expires_on && d.license_expires_on < todayStr
+    const name = d.full_name?.trim() || `ผู้ใช้ ${String(d.profile_id ?? '').slice(0, 8)}`
+    return {
+      value: d.profile_id,
+      label: driverOptionLabel(d, user?.id),
+      title: name,
+      badge: isMe ? 'ฉัน' : undefined,
+      warning: expired ? 'ใบขับขี่หมดอายุ' : undefined,
+    }
+  })
+
   const driverField = (
     <div>
       <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้ขับรถ *</label>
-      <select value={form.driver_id ?? ''} onChange={set('driver_id')} className={sel}>
-        <option value="">— เลือกผู้ขับรถ —</option>
-        {driverFieldOptions.map(d => (
-          <option key={d.profile_id} value={d.profile_id}>{driverOptionLabel(d, user?.id)}</option>
-        ))}
-      </select>
+      <ResponsiveSelect
+        value={form.driver_id ?? ''}
+        onChange={set('driver_id')}
+        placeholder="— เลือกผู้ขับรถ —"
+        modalTitle="เลือกผู้ขับรถ"
+        searchPlaceholder="ค้นหาพนักงานขับรถ..."
+        options={driverItems}
+      />
       {driverFallback && (
         <p className="mt-1 text-[10px] text-amber-600">
           ยังไม่ได้ตั้งทะเบียนพนักงานขับรถ — แสดงรายชื่อเจ้าหน้าที่ทั้งหมดชั่วคราว
@@ -1200,32 +1217,56 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     }))
   }
 
+  const deptHeadItems = deptHeadOptions.map(({ dept, row }) => {
+    const sName = signatoryName(row)
+    const sTitle = signatoryTitle(row)
+    return {
+      value: dept.id,
+      label: `${sName}${sTitle ? ` · ${sTitle}` : ''} (${dept.name})`,
+      title: sName,
+      subtitle: sTitle || undefined,
+      badge: dept.name,
+    }
+  })
+
+  const authorityItems = authorityOptions.map(({ role, customLabel, label, row }) => {
+    const sName = signatoryName(row)
+    const sTitle = signatoryTitle(row)
+    return {
+      value: `${role}:${customLabel ?? ''}`,
+      label: `${label} · ${sName}`,
+      title: sName,
+      subtitle: sTitle || undefined,
+      badge: label,
+    }
+  })
+
   const signatoryFields = (
     <div className="grid grid-cols-1 gap-3 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3">
       <p className="text-[11px] font-bold text-indigo-800">ผู้ลงนามบนใบขออนุญาต (แบบ 3)</p>
       <div>
         <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้อำนวยการกอง/หัวหน้ากอง</label>
-        <select value={form.dept_head_department_id ?? ''} onChange={set('dept_head_department_id')} className={sel}>
-          <option value="">— ตามกองที่รับผิดชอบ —</option>
-          {deptHeadOptions.map(({ dept, row }) => (
-            <option key={dept.id} value={dept.id}>
-              {signatoryName(row)}{signatoryTitle(row) ? ` · ${signatoryTitle(row)}` : ''} ({dept.name})
-            </option>
-          ))}
-        </select>
+        <ResponsiveSelect
+          value={form.dept_head_department_id ?? ''}
+          onChange={set('dept_head_department_id')}
+          placeholder="— ตามกองที่รับผิดชอบ —"
+          modalTitle="ผู้อำนวยการกอง/หัวหน้ากอง"
+          searchPlaceholder="ค้นหาชื่อ หรือกอง..."
+          options={deptHeadItems}
+        />
       </div>
       <div>
         <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้มีอำนาจสั่งใช้รถ</label>
         {/* ค่าใน <option> ต้องพก label มาด้วย เพราะบทบาท custom มีได้หลายแถว role
             อย่างเดียวชี้ไม่ถูกว่าแถวไหน */}
-        <select value={authorityValue(form)} onChange={pickAuthority} className={sel}>
-          <option value="">— ไม่ระบุ (เว้นให้เซ็นสด) —</option>
-          {authorityOptions.map(({ role, customLabel, label, row }) => (
-            <option key={`${role}:${customLabel ?? ''}`} value={`${role}:${customLabel ?? ''}`}>
-              {label} · {signatoryName(row)}
-            </option>
-          ))}
-        </select>
+        <ResponsiveSelect
+          value={authorityValue(form)}
+          onChange={pickAuthority}
+          placeholder="— ไม่ระบุ (เว้นให้เซ็นสด) —"
+          modalTitle="ผู้มีอำนาจสั่งใช้รถ"
+          searchPlaceholder="ค้นหาชื่อ หรือบทบาท..."
+          options={authorityItems}
+        />
       </div>
       {deptHeadOptions.length === 0 && authorityOptions.length === 0 && (
         <p className="text-[10px] leading-relaxed text-amber-700">
@@ -1260,20 +1301,33 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     setForm(f => ({ ...f, requested_by: id, requester_position: pos, dept_head_department_id: deptHead }))
   }
 
+  const requesterItems = requesterOptions.map(s => {
+    const name = s.full_name?.trim() || s.email || 'ไม่ระบุชื่อ'
+    const isMe = s.id === user?.id
+    const pos = profilePosition(s)
+    return {
+      value: s.id,
+      label: `${name}${isMe ? ' (ฉัน)' : ''}`,
+      title: name,
+      subtitle: pos || undefined,
+      badge: isMe ? 'ฉัน' : undefined,
+    }
+  })
+
   const requesterField = (
     <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 space-y-2">
       <div>
         <label className="text-xs font-semibold text-blue-600 mb-1 block">ผู้ขอใช้รถ *</label>
-        <select value={form.requested_by ?? ''} onChange={pickRequester}
+        <ResponsiveSelect
+          value={form.requested_by ?? ''}
+          onChange={pickRequester}
           disabled={!!selTrip && selTrip.status !== 'pending'}
-          className={sel + ((!!selTrip && selTrip.status !== 'pending') ? ' bg-gray-50 text-gray-500 cursor-not-allowed' : '')}>
-          <option value="">— เลือกผู้ขอใช้รถ —</option>
-          {requesterOptions.map(s => (
-            <option key={s.id} value={s.id}>
-              {(s.full_name?.trim() || s.email || 'ไม่ระบุชื่อ')}{s.id === user?.id ? ' (ฉัน)' : ''}
-            </option>
-          ))}
-        </select>
+          placeholder="— เลือกผู้ขอใช้รถ —"
+          modalTitle="เลือกผู้ขอใช้รถ"
+          searchPlaceholder="ค้นหาชื่อ, ตำแหน่ง..."
+          options={requesterItems}
+          className={!!selTrip && selTrip.status !== 'pending' ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}
+        />
       </div>
       {delegating ? (
         <p className="text-[11px] text-amber-700 leading-relaxed">
@@ -1289,6 +1343,21 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       )}
     </div>
   )
+
+  const vehicleItems = vehicles.map(v => ({
+    value: v.id,
+    label: assetOptionLabel(v),
+    title: v.name,
+    subtitle: v.asset_kind || undefined,
+    badge: assetIdentifier(v),
+  }))
+
+  const deptItems = depts.map(d => ({
+    value: d.id,
+    label: d.name,
+    title: d.name,
+    badge: d.short_name || undefined,
+  }))
 
   // historyCount มาจาก count:'exact' ของ server ไม่ใช่ความยาวอาร์เรย์ที่โหลดมา
   const historyTotalPages = historyPageSize === 'all'
@@ -1696,11 +1765,14 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
           })()}
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">ยานพาหนะ *</label>
-            <select value={form.vehicle_id}
-              onChange={e => { set('vehicle_id')(e); setConflict(null); setShowOverride(false) }} className={sel}>
-              <option value="">— เลือกรถ —</option>
-              {vehicles.map(v => <option key={v.id} value={v.id}>{assetOptionLabel(v)}</option>)}
-            </select>
+            <ResponsiveSelect
+              value={form.vehicle_id}
+              onChange={e => { set('vehicle_id')(e); setConflict(null); setShowOverride(false) }}
+              placeholder="— เลือกรถ —"
+              modalTitle="เลือกยานพาหนะ"
+              searchPlaceholder="ค้นหาชื่อรถ หรือทะเบียน..."
+              options={vehicleItems}
+            />
           </div>
           {conflict && (
             <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-600 space-y-2">
@@ -1772,10 +1844,14 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
               <input value={myDeptName || '—'} disabled readOnly
                 className={inp + ' bg-gray-50 text-gray-500 cursor-not-allowed'} />
             ) : (
-              <select value={form.department_id} onChange={set('department_id')} className={sel}>
-                <option value="">ทุกกอง</option>
-                {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
+              <ResponsiveSelect
+                value={form.department_id}
+                onChange={set('department_id')}
+                placeholder="ทุกกอง"
+                modalTitle="เลือกกอง/หน่วยงาน"
+                searchPlaceholder="ค้นหากอง..."
+                options={deptItems}
+              />
             )}
           </div>
           <div>
@@ -1830,10 +1906,14 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
           </div>
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">ยานพาหนะ *</label>
-            <select value={form.vehicle_id} onChange={set('vehicle_id')} className={sel}>
-              <option value="">— เลือกรถ —</option>
-              {vehicles.map(v => <option key={v.id} value={v.id}>{assetOptionLabel(v)}</option>)}
-            </select>
+            <ResponsiveSelect
+              value={form.vehicle_id}
+              onChange={set('vehicle_id')}
+              placeholder="— เลือกรถ —"
+              modalTitle="เลือกยานพาหนะ"
+              searchPlaceholder="ค้นหาชื่อรถ หรือทะเบียน..."
+              options={vehicleItems}
+            />
           </div>
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">จำนวนผู้ร่วมเดินทาง (รวมผู้ขอ) *</label>
@@ -1849,10 +1929,14 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
               <input value={myDeptName || '—'} disabled readOnly
                 className={inp + ' bg-gray-50 text-gray-500 cursor-not-allowed'} />
             ) : (
-              <select value={form.department_id} onChange={set('department_id')} className={sel}>
-                <option value="">ทุกกอง</option>
-                {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
+              <ResponsiveSelect
+                value={form.department_id}
+                onChange={set('department_id')}
+                placeholder="ทุกกอง"
+                modalTitle="เลือกกอง/หน่วยงาน"
+                searchPlaceholder="ค้นหากอง..."
+                options={deptItems}
+              />
             )}
           </div>
           <div>
