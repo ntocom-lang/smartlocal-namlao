@@ -80,17 +80,33 @@ function signatureBlock({ role, name = '', title = '', suffix = '' }) {
 // ไม่ใช่บัญชีที่กดอนุมัติในระบบ — คนกดอนุมัติในระบบอาจเป็นผู้ดูแลระบบยานพาหนะที่ไม่ได้เป็น
 // ผู้มีอำนาจสั่งใช้รถตามคำสั่งมอบอำนาจ ถ้าพิมพ์ชื่อคนกดลงช่องนั้นคือระบุตัวผู้มีอำนาจผิด
 // ยังไม่ได้ตั้งค่า = เว้นว่างให้เซ็นสด ห้ามเดาชื่อแทน
-export function resolveOrderAuthority(signatory, tenant) {
+// role บอกว่าช่องนี้ถูกตั้งให้เป็นนายกหรือปลัด — สำคัญตรง fallback ของตำแหน่ง:
+// organizationHeadTitle(tenant) คืน "นายกเทศมนตรี..." ซึ่งใช้ได้เฉพาะกรณีนายกเท่านั้น
+// ถ้าเอามาเติมให้ปลัดที่ยังไม่ได้ตั้งชื่อตำแหน่ง เอกสารจะระบุตำแหน่งผู้ลงนามผิดตัว
+// ปลัดที่ไม่มีตำแหน่งในโปรไฟล์จึงเว้นว่างไว้ให้เขียนสด ห้ามเดาแทน
+export function resolveOrderAuthority(signatory, tenant, role = 'mayor') {
   const name = signatory?.manual_name?.trim()
     || signatory?.profile?.full_name?.trim()
     || ''
   const title = signatory?.title_override?.trim()
     || profilePosition(signatory?.profile)
-    || organizationHeadTitle(tenant)
+    || (role === 'mayor' ? organizationHeadTitle(tenant) : '')
   return { name, title }
 }
 
-export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null }) {
+// ช่อง "ผู้อำนวยการกอง/หัวหน้ากอง" พิมพ์เฉพาะชื่อ ไม่พิมพ์บรรทัดตำแหน่งใต้ชื่อ:
+// ป้ายบทบาทบนเส้นลงนามระบุว่าเป็นหัวหน้ากองอยู่แล้ว การเติมอีกบรรทัดทั้งซ้ำความหมาย
+// และดันความสูงรวมจนใบเกิน 1 หน้า A4 ซึ่งเป็นข้อบังคับของแบบฟอร์มนี้
+// ยังไม่ได้ตั้งผู้ลงนามของกองนั้น = เว้นว่างให้เซ็นสด ห้ามเดาชื่อแทน
+export function resolveDeptHead(signatory) {
+  return {
+    name: signatory?.manual_name?.trim()
+      || signatory?.profile?.full_name?.trim()
+      || '',
+  }
+}
+
+export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null, deptHead = null }) {
   // requester ผูกกับ requested_by (ผู้ขอตัวจริง) แล้ว — ทริปเก่าที่ยังไม่ถูก backfill ถอยไปใช้ผู้บันทึก
   const requesterName = trip?.requester?.full_name || trip?.creator?.full_name || ''
   const requesterPosition = trip?.requester_position || profilePosition(trip?.requester)
@@ -227,7 +243,7 @@ export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null 
   <div class="signatures">
     ${signatureBlock({ role: 'ผู้ขออนุญาต', name: requesterName })}
     ${signatureBlock({ role: 'ผู้ขับรถ', name: driverName })}
-    ${signatureBlock({ role: 'ผู้อำนวยการกอง/หัวหน้ากอง', suffix: 'หรือผู้แทน' })}
+    ${signatureBlock({ role: 'ผู้อำนวยการกอง/หัวหน้ากอง', name: deptHead?.name || '', suffix: 'หรือผู้แทน' })}
   </div>
 
   <div class="decision">

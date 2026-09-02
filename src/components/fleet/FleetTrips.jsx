@@ -5,8 +5,10 @@ import { useAuth } from '../../contexts/AuthContext'
 import { assetIdentifier, assetOptionLabel } from '../../lib/fleetAssets'
 import { logAction } from '../../lib/auditLog'
 import { notifyTelegram } from '../../lib/notifyTelegram'
-import { buildFleetTripRequestHtml, resolveOrderAuthority } from '../../lib/fleetTripPrint'
-import { SIGNATORY_SCOPE, SIGNATORY_WITH_PROFILE_SELECT, resolveActiveSignatory } from '../../lib/documentSignatories'
+import { buildFleetTripRequestHtml, resolveDeptHead, resolveOrderAuthority } from '../../lib/fleetTripPrint'
+import {
+  SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, pickSignatory, signatoryName, signatoryTitle,
+} from '../../lib/documentSignatories'
 import FleetEmptyState from './FleetEmptyState'
 
 const STATUS_LABEL = {
@@ -116,6 +118,8 @@ const EMPTY_RESERVE = {
   planned_departure: '', planned_return: '',
   destination: '', destination_locality: '', destination_province: '',
   purpose: '', passengers: 1, requester_position: '',
+  // '' = ใช้ค่าปริยายตอนพิมพ์แบบ 3 (หัวหน้ากองตามกองของทริป / นายก) ตรงกับ NULL ใน DB
+  dept_head_department_id: '', order_authority_role: '',
 }
 const EMPTY_DIRECT = {
   vehicle_id: '', driver_id: '', department_id: '', requested_by: '',
@@ -123,6 +127,7 @@ const EMPTY_DIRECT = {
   odometer_start: '', odometer_end: '',
   destination: '', destination_locality: '', destination_province: '',
   purpose: '', passengers: 1, requester_position: '', notes: '', backdated_reason: '',
+  dept_head_department_id: '', order_authority_role: '',
 }
 
 /* ── Modal shell ──────────────────────────────────────── */
@@ -412,7 +417,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   // ทะเบียนพนักงานขับรถของ อปท. นี้ (fleet_drivers_directory) — ว่างได้ถ้ายังไม่ตั้งค่า
   const [driverList, setDriverList] = useState([])
   const [requesterProfile, setRequesterProfile] = useState(null)
-  const [orderAuthority, setOrderAuthority] = useState(null)
+  // ทะเบียนผู้ลงนามทั้งชุดของ อปท. — ต้องใช้หลายบทบาทพร้อมกัน (นายก/ปลัด/หัวหน้าทุกกอง)
+  // ทั้งเป็นตัวเลือกในฟอร์มและใช้ resolve ชื่อตอนพิมพ์ จึงโหลดครั้งเดียวแล้วเลือกฝั่ง client
+  const [signatories, setSignatories] = useState([])
 
   // ชื่อผู้ทำรายการที่โชว์บนหัวฟอร์ม — profiles เป็นแหล่งหลัก ถ้าไม่มีแถว (เช่น บัญชีข้ามสังกัด)
   // ค่อยถอยไปใช้ metadata ของ auth แล้วจึงอีเมล เพื่อไม่ให้ขึ้นข้อความลอยๆ ว่า "บัญชีผู้ใช้ปัจจุบัน"
@@ -488,15 +495,15 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       supabase.from('fleet_vehicles').select('id,name,license_plate,asset_code,asset_kind,meter_unit')
         .eq('municipality_id', tenant.id).eq('asset_kind', 'vehicle')
         .eq('status', 'active').order('name'),
-      supabase.from('profiles').select('id,full_name,job_title,position:positions(name)')
+      supabase.from('profiles').select('id,full_name,job_title,department_id,position:positions(name)')
         .eq('id', user?.id).eq('municipality_id', tenant.id).maybeSingle(),
-      // ผู้มีอำนาจสั่งใช้รถบนใบขออนุญาต (แบบ 3) — ใช้ผู้ลงนามบทบาท "นายก" ที่ อปท. ตั้งไว้
-      // ไม่ใช่บัญชีที่กดอนุมัติในระบบ ยังไม่ตั้งค่า = เว้นว่างให้เซ็นสด
+      // ผู้ลงนามบนใบขออนุญาต (แบบ 3) มาจากทะเบียนผู้ลงนามกลางที่ อปท. ตั้งไว้
+      // ไม่ใช่บัญชีที่กดอนุมัติในระบบ — คนกดอนุมัติอาจเป็นผู้ดูแลระบบยานพาหนะที่ไม่ได้
+      // เป็นผู้มีอำนาจสั่งใช้รถตามคำสั่งมอบอำนาจ ยังไม่ตั้งค่า = เว้นว่างให้เซ็นสด
       supabase.from('document_signatories')
-        .select(SIGNATORY_WITH_PROFILE_SELECT)
-        .eq('municipality_id', tenant.id).eq('signatory_role', 'mayor')
-        .eq('document_type', SIGNATORY_SCOPE).eq('is_active', true)
-        .is('department_id', null),
+        .select(SIGNATORY_REGISTRY_SELECT)
+        .eq('municipality_id', tenant.id)
+        .eq('document_type', SIGNATORY_SCOPE).eq('is_active', true),
       // ทะเบียนพนักงานขับรถ — คนละแกนกับ fleet_role (สิทธิ์ในระบบ) อ่านผ่าน view
       // ที่ตัดเลขใบขับขี่ออกแล้วตาม PDPA เจ้าหน้าที่ทั่วไปไม่ต้องเห็นเลขใบขับขี่
       supabase.from('fleet_drivers_directory').select('profile_id,full_name,license_expires_on')
@@ -505,7 +512,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       setStaffList(s ?? [])
       setVehicles(v ?? [])
       setRequesterProfile(requester ?? null)
-      setOrderAuthority(resolveActiveSignatory(signatories))
+      setSignatories(signatories ?? [])
       setDriverList(drivers ?? [])
     })
   }, [tenant?.id, user?.id])
@@ -604,6 +611,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       department_id: fleetInfo?.department_id ?? '',   // deptLocked บังคับใช้ค่านี้เสมอตอน submit
       requested_by: user?.id ?? '',
       requester_position: profilePosition(requesterProfile),
+      // ตั้งค่าจริงไว้ให้เลย ไม่ใช่ปล่อยว่าง เจ้าหน้าที่จะได้เห็นชื่อคนที่จะเซ็นตั้งแต่แรก
+      dept_head_department_id: deptHeadDefault(fleetInfo?.department_id ?? requesterProfile?.department_id),
+      order_authority_role: authorityDefault(),
       destination_province: tenant?.province || '',
       planned_departure: toLocalDT(dep),
       planned_return: toLocalDT(ret),
@@ -630,6 +640,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       passengers: t.passengers ?? 1,
       requested_by: t.requested_by || t.created_by || user?.id || '',
       requester_position: t.requester_position || profilePosition(t.requester) || profilePosition(requesterProfile),
+      dept_head_department_id: t.dept_head_department_id || '',
+      order_authority_role: t.order_authority_role || '',
     })
     setConflict(null)
     setShowOverride(false)
@@ -643,11 +655,21 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   }
 
   function printTripRequest(t) {
+    // หัวหน้ากอง: ถ้าไม่ได้เลือกไว้ ใช้กองที่รับผิดชอบทริปนั้น (พฤติกรรมที่เจ้าหน้าที่คาดหวัง)
+    const deptHeadDeptId = t.dept_head_department_id || t.department_id || null
+    const authorityRole = t.order_authority_role || 'mayor'
+    const deptHeadRow = deptHeadDeptId
+      ? pickSignatory(signatories, { role: 'department_head', departmentId: deptHeadDeptId })
+      : null
+    const authorityRow = pickSignatory(signatories, { role: authorityRole })
     const win = window.open('', '_blank', 'width=900,height=760')
     if (!win) return alert('เบราว์เซอร์ปิดกั้นหน้าต่างพิมพ์ กรุณาอนุญาต pop-up แล้วลองใหม่')
     win.document.open()
     win.document.write(buildFleetTripRequestHtml({
-      trip: t, tenant, orderAuthority: resolveOrderAuthority(orderAuthority, tenant),
+      trip: t,
+      tenant,
+      orderAuthority: resolveOrderAuthority(authorityRow, tenant, authorityRole),
+      deptHead: resolveDeptHead(deptHeadRow),
     }))
     win.document.close()
     const printWhenReady = async () => {
@@ -678,6 +700,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       department_id: fleetInfo?.department_id ?? '',   // deptLocked บังคับใช้ค่านี้เสมอตอน submit
       requested_by: user?.id ?? '',
       requester_position: profilePosition(requesterProfile),
+      // ตั้งค่าจริงไว้ให้เลย ไม่ใช่ปล่อยว่าง เจ้าหน้าที่จะได้เห็นชื่อคนที่จะเซ็นตั้งแต่แรก
+      dept_head_department_id: deptHeadDefault(fleetInfo?.department_id ?? requesterProfile?.department_id),
+      order_authority_role: authorityDefault(),
       destination_province: tenant?.province || '',
       started_at: toLocalDT(new Date()),
     })
@@ -728,6 +753,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       passengers: passengerCount,
       requested_by: form.requested_by || user?.id,
       requester_position: requesterPosition,
+      // ช่องว่าง = ให้ตอนพิมพ์ถอยไปใช้ค่าปริยาย ต้องส่ง null ไม่ใช่ '' เพราะคอลัมน์เป็น uuid/CHECK
+      dept_head_department_id: form.dept_head_department_id || null,
+      order_authority_role: form.order_authority_role || null,
     }
     const { error } = isEdit
       ? await supabase.from('fleet_trips').update(payload).eq('id', selTrip.id)
@@ -805,6 +833,23 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     const newTripId = result?.new_trip_id
     // ใช้ id ที่ DB ยกเลิกจริง ไม่ใช่ conflict.trips ฝั่ง client ซึ่งมองไม่เห็นคิวของกองอื่น
     const bumpedIds = result?.bumped_ids ?? []
+    // แทรกคิวฉุกเฉินสร้างทริปผ่าน RPC ซึ่ง signature ยังไม่รับผู้ลงนามแบบ 3 ถ้าไม่เขียนตามหลัง
+    // ค่าที่เจ้าหน้าที่เลือกไว้จะหายเงียบโดยไม่มีใครรู้ตัวจนกว่าจะพิมพ์ใบออกมาแล้วชื่อผิด
+    // เขียนเฉพาะกรณีเลือกค่าอื่นจากค่าปริยาย และถ้าพลาดก็ไม่ล้มการจองที่ DB ยืนยันไปแล้ว —
+    // ใบยังพิมพ์ได้ด้วยค่าปริยาย แค่บอกให้ไปเลือกซ้ำในหน้าแก้ไขคำขอ
+    const signatoryChoice = {
+      dept_head_department_id: form.dept_head_department_id || null,
+      order_authority_role: form.order_authority_role || null,
+    }
+    if (newTripId && (signatoryChoice.dept_head_department_id || signatoryChoice.order_authority_role)) {
+      const { error: signatoryError } = await supabase.from('fleet_trips')
+        .update(signatoryChoice).eq('id', newTripId)
+      if (signatoryError) {
+        alert('จองรถแทนคิวเดิมสำเร็จแล้ว แต่บันทึกผู้ลงนามบนแบบ 3 ไม่สำเร็จ'
+          + ' — ใบที่พิมพ์จะใช้หัวหน้ากองตามกองที่รับผิดชอบและนายกเป็นผู้สั่งใช้รถ'
+          + ' หากต้องการคนอื่น กรุณากดแก้ไขคำขอแล้วเลือกผู้ลงนามอีกครั้ง')
+      }
+    }
 
     bumpedIds.forEach(id => {
       logAction({
@@ -881,6 +926,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       passengers: passengerCount,
       requested_by: form.requested_by || user?.id,
       requester_position: requesterPosition,
+      // ช่องว่าง = ให้ตอนพิมพ์ถอยไปใช้ค่าปริยาย ต้องส่ง null ไม่ใช่ '' เพราะคอลัมน์เป็น uuid/CHECK
+      dept_head_department_id: form.dept_head_department_id || null,
+      order_authority_role: form.order_authority_role || null,
       notes: form.notes || null,
       backdated_reason: backdatedReason,
       status: 'completed',
@@ -1074,11 +1122,75 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     </div>
   )
 
+  // เลือกกองได้ต่อเมื่อกองนั้นมีผู้ลงนามในทะเบียนจริง ไม่งั้น <select> จะถือค่าที่ไม่มี
+  // option ตรงแล้วแสดงเป็นช่องว่าง ผู้ใช้เห็นแล้วนึกว่าระบบลืมค่า — คืน '' ให้ถอยไปใช้ค่าปริยาย
+  function deptHeadDefault(departmentId) {
+    if (!departmentId) return ''
+    return pickSignatory(signatories, { role: 'department_head', departmentId }) ? departmentId : ''
+  }
+  // อปท. ที่ตั้งแถว "ผู้มีอำนาจสั่งใช้รถ" ไว้ = มีคำสั่งมอบอำนาจแล้ว และตั้งใจให้คนนั้น
+  // เซ็นใบใช้รถแทนนายก ถ้ายังตั้งต้นเป็นนายก เจ้าหน้าที่ต้องจำสลับเองทุกใบ ลืมเมื่อไร
+  // ได้เอกสารที่ระบุผู้มีอำนาจผิดตัวทันที จึงให้แถวมอบอำนาจมาก่อนเมื่อมีการตั้งไว้
+  // ยังไม่ได้ตั้งนายกด้วย = ไม่ preselect อะไรเลย ดีกว่าโชว์ช่องว่างที่อธิบายไม่ได้
+  function authorityDefault() {
+    if (pickSignatory(signatories, { role: 'vehicle_authority' })) return 'vehicle_authority'
+    return pickSignatory(signatories, { role: 'mayor' }) ? 'mayor' : ''
+  }
+
+  // ช่องลงนาม 2 ช่องล่างของแบบ 3 — เก็บเป็น "ตัวชี้" (กองไหน / บทบาทไหน) ไม่ใช่ชื่อ
+  // ชื่อจริงถูก resolve จากทะเบียนตอนพิมพ์ เพื่อให้ใบที่พิมพ์ขึ้นชื่อคนที่จะเซ็นจริงวันนั้น
+  // แม้ อปท. เปลี่ยนตัวผู้ลงนามหลังจากกรอกฟอร์มไปแล้ว
+  const deptHeadOptions = depts
+    .map(d => ({ dept: d, row: pickSignatory(signatories, { role: 'department_head', departmentId: d.id }) }))
+    .filter(item => item.row)
+  // จำกัดเฉพาะ 3 บทบาทนี้ — ผู้มีอำนาจสั่งใช้รถต้องเป็นผู้บริหารท้องถิ่น ผู้รักษาราชการแทน
+  // หรือผู้รับมอบอำนาจตามคำสั่งของ อปท. การเปิดให้เลือกหัวหน้ากองใดก็ได้เสี่ยงระบุผู้ไม่มีอำนาจ
+  // ลงในเอกสาร แถว "ผู้มีอำนาจสั่งใช้รถ" มาก่อนเพราะเป็นค่าตั้งต้นเมื่อ อปท. ตั้งไว้
+  const authorityOptions = [
+    { role: 'vehicle_authority', label: 'ผู้รับมอบอำนาจ',
+      row: pickSignatory(signatories, { role: 'vehicle_authority' }) },
+    { role: 'mayor', label: 'นายก', row: pickSignatory(signatories, { role: 'mayor' }) },
+    { role: 'clerk', label: 'ปลัด', row: pickSignatory(signatories, { role: 'clerk' }) },
+  ].filter(item => item.row)
+
+  const signatoryFields = (
+    <div className="grid grid-cols-1 gap-3 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3">
+      <p className="text-[11px] font-bold text-indigo-800">ผู้ลงนามบนใบขออนุญาต (แบบ 3)</p>
+      <div>
+        <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้อำนวยการกอง/หัวหน้ากอง</label>
+        <select value={form.dept_head_department_id ?? ''} onChange={set('dept_head_department_id')} className={sel}>
+          <option value="">— ตามกองที่รับผิดชอบ —</option>
+          {deptHeadOptions.map(({ dept, row }) => (
+            <option key={dept.id} value={dept.id}>
+              {signatoryName(row)}{signatoryTitle(row) ? ` · ${signatoryTitle(row)}` : ''} ({dept.name})
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้มีอำนาจสั่งใช้รถ</label>
+        <select value={form.order_authority_role ?? ''} onChange={set('order_authority_role')} className={sel}>
+          <option value="">— ไม่ระบุ (เว้นให้เซ็นสด) —</option>
+          {authorityOptions.map(({ role, label, row }) => (
+            <option key={role} value={role}>{label} · {signatoryName(row)}</option>
+          ))}
+        </select>
+      </div>
+      {deptHeadOptions.length === 0 && authorityOptions.length === 0 && (
+        <p className="text-[10px] leading-relaxed text-amber-700">
+          ยังไม่ได้ตั้งทะเบียนผู้ลงนาม — ใบที่พิมพ์จะเว้นช่องลงนามไว้ให้เขียนสด
+          (ผู้ดูแลระบบตั้งได้ที่แผงควบคุมแอดมิน &gt; ผู้ลงนามเอกสาร)
+        </p>
+      )}
+    </div>
+  )
+
   // ผู้ขอใช้รถ = คนที่ชื่อขึ้นบนใบขออนุญาต (แบบ 3) และเป็นผู้ลงนาม ซึ่งอาจไม่ใช่คนที่กดในระบบ
   // เจ้าหน้าที่อาวุโสที่ใช้ระบบไม่คล่องจึงฝากเพื่อนร่วมงานกรอกแทนได้ โดยระบบยังเก็บไว้ว่าใครเป็นคนกด
   // ผู้ดูแลระบบของ อปท. (role = 'admin') อาจไม่มี fleet_role จึงไม่อยู่ใน staffList — เติมตัวเองเข้าไปเสมอ
   const requesterOptions = (user?.id && !staffList.some(s => s.id === user.id))
     ? [{ id: user.id, full_name: myDisplayName, job_title: requesterProfile?.job_title,
+         department_id: requesterProfile?.department_id,
          position: requesterProfile?.position }, ...staffList]
     : staffList
 
@@ -1091,7 +1203,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     const pos = id === user?.id
       ? (profilePosition(requesterProfile) || profilePosition(picked))
       : profilePosition(picked)
-    setForm(f => ({ ...f, requested_by: id, requester_position: pos }))
+    // หัวหน้ากองที่ลงนามต้องเป็นหัวหน้าของ "ผู้ขอ" เปลี่ยนคนขอแล้วต้องเปลี่ยนตาม
+    // ไม่งั้นใบจะค้างชื่อหัวหน้ากองของคนก่อนหน้าโดยไม่มีใครสังเกต — ผู้ใช้เลือกทับเองได้
+    const deptHead = deptHeadDefault(picked?.department_id)
+    setForm(f => ({ ...f, requested_by: id, requester_position: pos, dept_head_department_id: deptHead }))
   }
 
   const requesterField = (
@@ -1634,6 +1749,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
             <input value={form.purpose} onChange={set('purpose')}
               placeholder="เช่น ประชุมราชการ" className={inp} />
           </div>
+          {signatoryFields}
         </Modal>
       )}
 
@@ -1741,6 +1857,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
             <label className="text-xs font-semibold text-gray-600 mb-1 block">หมายเหตุ</label>
             <input value={form.notes} onChange={set('notes')} className={inp} />
           </div>
+          {signatoryFields}
         </Modal>
       )}
 

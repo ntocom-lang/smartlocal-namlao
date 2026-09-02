@@ -1,5 +1,3 @@
-import { supabase } from './supabase'
-
 // ทะเบียนผู้ลงนามกลางของ อปท. — ตาราง document_signatories เก็บได้ 1 แถวที่ active
 // ต่อบทบาทต่อหน่วยงาน (บังคับด้วย document_signatories_one_active_scope_idx)
 // ทุกเอกสารในระบบใช้ผู้ลงนามชุดเดียวกันนี้: แบบพิมพ์คำร้อง (prepare_complaint_print)
@@ -29,22 +27,30 @@ export function isSignatoryActiveToday(row, today = todayBangkok()) {
     && (!row.effective_to || row.effective_to >= today)
 }
 
-// เลือกแถวที่ "มีผลวันนี้" — คิดฝั่ง client เพราะแถวมีไม่กี่แถวต่อหน่วยงาน
-export function resolveActiveSignatory(rows) {
+// select เต็มสำหรับ "ทั้งทะเบียน" — ต้องมี signatory_role กับ department_id ติดมาด้วย
+// เพื่อจับคู่แถวกับช่องลงนามแต่ละช่องได้ฝั่ง client โดยไม่ต้องยิง query แยกรายช่อง
+export const SIGNATORY_REGISTRY_SELECT = `signatory_role,department_id,${SIGNATORY_WITH_PROFILE_SELECT}`
+
+// เลือกแถวของบทบาท/กองที่ต้องการจากทะเบียนที่โหลดมาแล้ว และต้องมีผลวันนี้ด้วย
+// departmentId = null คือผู้ลงนามระดับหน่วยงาน (นายก/ปลัด) ซึ่งเก็บ department_id เป็น NULL
+export function pickSignatory(rows, { role, departmentId = null } = {}) {
   const today = todayBangkok()
-  return (rows ?? []).find(row => isSignatoryActiveToday(row, today)) ?? null
+  return (rows ?? []).find(row =>
+    row.signatory_role === role
+    && (row.department_id ?? null) === (departmentId ?? null)
+    && isSignatoryActiveToday(row, today)) ?? null
 }
 
-// อ่านผู้ลงนามพร้อมโปรไฟล์สำหรับเอาไปพิมพ์เอกสาร — คืน { data, error } ตาม convention
-// ของ supabase-js เพื่อให้ผู้เรียกตัดสินใจเรื่อง error เอง
-// departmentId = null คือผู้ลงนามระดับหน่วยงาน (นายก/ปลัด), ระบุ uuid คือหัวหน้ากองนั้น
-export async function fetchSignatories(municipalityId, { role, departmentId = null } = {}) {
-  let query = supabase.from('document_signatories')
-    .select(SIGNATORY_WITH_PROFILE_SELECT)
-    .eq('municipality_id', municipalityId)
-    .eq('document_type', SIGNATORY_SCOPE)
-    .eq('is_active', true)
-  if (role) query = query.eq('signatory_role', role)
-  query = departmentId ? query.eq('department_id', departmentId) : query.is('department_id', null)
-  return query
+// ชื่อที่จะพิมพ์ — ผู้ลงนามที่ไม่มีบัญชีในระบบเก็บชื่อไว้ที่ manual_name
+export function signatoryName(row) {
+  return row?.manual_name?.trim() || row?.profile?.full_name?.trim() || ''
+}
+
+// ตำแหน่งที่จะพิมพ์ — title_override ทับได้เสมอ (ใช้ระบุ "รักษาราชการแทน...")
+// ถัดมาคือตำแหน่งในโปรไฟล์ แล้วจึงชื่อตำแหน่งตามผังตำแหน่ง
+export function signatoryTitle(row) {
+  return row?.title_override?.trim()
+    || row?.profile?.job_title?.trim()
+    || row?.profile?.position?.name?.trim()
+    || ''
 }
