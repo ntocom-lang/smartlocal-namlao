@@ -1997,6 +1997,17 @@ function CategoryBadge({ category }) {
   )
 }
 
+// หน้าประชาชนกรอง is_active = true แต่หลังบ้านดึงมาทุกแถวเพื่อให้แอดมินยังเห็นของที่ปิดไว้
+// ถ้าไม่ติดป้ายบอก แถวที่ปิดจะดูเหมือนใช้งานได้ปกติทั้งที่ประชาชนมองไม่เห็น
+function InactiveBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap bg-gray-200 text-gray-600"
+          title="ปิดใช้งานอยู่ — ไม่แสดงบนหน้าประชาชน">
+      ปิดใช้งาน
+    </span>
+  )
+}
+
 // ตัวเลือกไอคอนตอนแก้ไขสายด่วนที่มีอยู่แล้ว — ชุดสำเร็จ + ช่องพิมพ์ emoji เอง
 // ใช้ทั้งการ์ดมือถือและแถวตาราง desktop จึงแยกออกมาเป็น component เดียว
 // ป็อปอัพต้องยิงผ่าน portal + position:fixed เพราะตาราง desktop อยู่ในกล่อง
@@ -2096,7 +2107,17 @@ function EmojiEditPicker({ value, onChange }) {
             ) : (
               /* พิมพ์เอง: รองรับ emoji ที่ไม่มีในชุด และ emoji หลาย code point เช่น 🏛️ */
               <input value={value ?? ''} maxLength={16} autoComplete="off"
-                onChange={(e) => onChange(e.target.value)}
+                onChange={(e) => {
+                  const v = e.target.value
+                  // ช่องนี้รับเฉพาะอิโมจิ — ถ้าเป็น URL/พาธ isIconImage() จะมองเป็นรูป แล้วหน้าประชาชน
+                  // ทุกเครื่องจะยิง <img src> ออกไปโฮสต์ภายนอก (โปรเจกต์ไม่มี CSP กันไว้)
+                  if (isIconImage(v)) {
+                    setErr('ช่องนี้ใส่ได้เฉพาะอิโมจิ ถ้าจะใช้รูปให้กดปุ่ม "แทรกรูปภาพ"')
+                    return
+                  }
+                  setErr('')
+                  onChange(v)
+                }}
                 placeholder="หรือพิมพ์ emoji เอง"
                 className="w-full border border-gray-200 rounded-xl px-2.5 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-200" />
             )}
@@ -2133,9 +2154,10 @@ function SortableContact({ c, i, total, onDelete, onMove, onEdit, editingId, edi
         </div>
         <div className="flex-1 min-w-0">
           <p className="font-semibold text-gray-800 text-sm">{c.label}</p>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <p className="text-[13px] text-gray-400">{c.number}</p>
             <CategoryBadge category={c.category} />
+            {c.is_active === false && <InactiveBadge />}
           </div>
         </div>
         <div className="flex flex-col gap-0">
@@ -2246,7 +2268,10 @@ function SortableContactRow({ c, order, onDelete, onEdit, editingId, editingForm
           <input value={editingForm.label} onChange={e => onEditChange('label', e.target.value)}
             className="border border-gray-300 rounded-lg px-2 py-1 text-sm text-gray-800 focus:outline-none w-full max-w-xs" />
         ) : (
-          <span className="font-medium text-gray-800">{c.label}</span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="font-medium text-gray-800">{c.label}</span>
+            {c.is_active === false && <InactiveBadge />}
+          </span>
         )}
       </td>
       <td className="px-4 py-3">
@@ -2304,6 +2329,8 @@ function EmergencyManager({ tenant }) {
   const [form, setForm] = useState({ label: '', number: '', emoji: '📞', color: '#1d4ed8', bg: '#dbeafe', category: 'other' })
   const [editingId, setEditingId] = useState(null)
   const [editingForm, setEditingForm] = useState({ label: '', number: '', emoji: '📞', category: 'other' })
+  // ช่องไหนที่แอดมินเลือกเองแล้ว ถือว่าตั้งใจ — guessEmoji/guessCategory ห้ามเขียนทับตอนพิมพ์ชื่อต่อ
+  const [touched, setTouched] = useState({ emoji: false, category: false })
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -2331,12 +2358,19 @@ function EmergencyManager({ tenant }) {
     return () => clearTimeout(safety)
   }, [fetchContacts])
 
+  // จอย้ายให้เห็นทันทีแบบ optimistic — ถ้าบันทึกไม่ผ่านแม้แถวเดียวต้องบอกแล้วดึงของจริงกลับมา
+  // ไม่งั้นแอดมินเห็นว่าจัดลำดับสำเร็จ แต่หน้าประชาชนยังเรียงแบบเดิม
   async function saveOrder(ordered) {
-    await Promise.all(
+    const results = await Promise.all(
       ordered.map((c, i) =>
         supabase.from('emergency_contacts').update({ display_order: i + 1 }).eq('id', c.id)
       )
     )
+    const failed = results.find((r) => r.error)
+    if (failed) {
+      alert(`บันทึกลำดับไม่สำเร็จ: ${failed.error.message}`)
+      fetchContacts()
+    }
   }
 
   // เรียงทั้งชุดไล่ตามลำดับหมวดก่อน แล้วค่อยตามลำดับที่แอดมินจัดไว้ในหมวด
@@ -2396,28 +2430,47 @@ function EmergencyManager({ tenant }) {
     return '📞'
   }
 
+  // ต่อท้ายด้วยเลขที่มากกว่าทุกแถวที่มีอยู่จริง — ใช้ contacts.length + 1 ไม่ได้
+  // เพราะถ้าเคยลบแถวกลางๆ เลขจะไปซ้ำกับของเดิม แล้ว order by display_order จะสลับไม่แน่นอน
+  function nextDisplayOrder() {
+    return contacts.reduce((max, c) => Math.max(max, c.display_order ?? 0), 0) + 1
+  }
+
   async function addContact() {
     if (!form.label.trim() || !form.number.trim()) return
     setSaving(true)
-    const { data } = await supabase.from('emergency_contacts').insert({
-      municipality_id: tenant.id,
-      label: form.label.trim(),
-      number: form.number.trim(),
-      emoji: form.emoji,
-      color: form.color,
-      bg: form.bg,
-      category: form.category,
-      display_order: contacts.length + 1,
-    }).select().single()
-    if (data) setContacts((prev) => [...prev, data])
-    setForm({ label: '', number: '', emoji: '📞', color: '#1d4ed8', bg: '#dbeafe', category: 'other' })
-    setSaving(false)
+    try {
+      const { data, error } = await supabase.from('emergency_contacts').insert({
+        municipality_id: tenant.id,
+        label: form.label.trim(),
+        number: form.number.trim(),
+        emoji: form.emoji,
+        color: form.color,
+        bg: form.bg,
+        category: form.category,
+        display_order: nextDisplayOrder(),
+      }).select().single()
+      // พังแล้วห้ามล้างฟอร์ม แอดมินจะได้กดซ้ำได้โดยไม่ต้องพิมพ์ใหม่ทั้งหมด
+      if (error) {
+        alert(`เพิ่มสายด่วนไม่สำเร็จ: ${error.message}`)
+        return
+      }
+      setContacts((prev) => [...prev, data])
+      setForm({ label: '', number: '', emoji: '📞', color: '#1d4ed8', bg: '#dbeafe', category: 'other' })
+      setTouched({ emoji: false, category: false })
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function deleteContact(id) {
     const contact = contacts.find((c) => c.id === id)
     if (!window.confirm(`ลบ "${contact?.label}" ออกจากรายการเบอร์ฉุกเฉิน?`)) return
-    await supabase.from('emergency_contacts').delete().eq('id', id)
+    const { error } = await supabase.from('emergency_contacts').delete().eq('id', id)
+    if (error) {
+      alert(`ลบไม่สำเร็จ: ${error.message}`)
+      return
+    }
     setContacts((prev) => prev.filter((c) => c.id !== id))
   }
 
@@ -2437,7 +2490,10 @@ function EmergencyManager({ tenant }) {
       category: editingForm.category,
     }
     const { error } = await supabase.from('emergency_contacts').update(next).eq('id', editingId)
-    if (error) return
+    if (error) {
+      alert(`บันทึกไม่สำเร็จ: ${error.message}`)
+      return
+    }
     setContacts((prev) => prev.map((c) => c.id === editingId ? { ...c, ...next } : c))
     setEditingId(null)
   }
@@ -2456,23 +2512,26 @@ function EmergencyManager({ tenant }) {
         <p className="font-semibold text-gray-700 text-sm">เพิ่มสายด่วนใหม่</p>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
           <div className="flex items-center gap-2">
-            <EmojiEditPicker value={form.emoji} onChange={(v) => setForm((f) => ({ ...f, emoji: v }))} />
+            <EmojiEditPicker value={form.emoji}
+              onChange={(v) => { setForm((f) => ({ ...f, emoji: v })); setTouched((t) => ({ ...t, emoji: true })) }} />
             <span className="text-xs text-gray-400">ไอคอน</span>
           </div>
           <input value={form.label}
-            onChange={(e) => setForm({
-              ...form,
+            onChange={(e) => setForm((f) => ({
+              ...f,
               label: e.target.value,
-              // แนบรูปไว้แล้วห้ามให้ guessEmoji ทับ ไม่งั้นพิมพ์ชื่อต่อรูปหายทันที
-              emoji: isIconImage(form.emoji) ? form.emoji : guessEmoji(e.target.value),
-              category: guessCategory(e.target.value),
-            })}
+              // เดาให้เฉพาะช่องที่แอดมินยังไม่ได้เลือกเอง — เลือกไอคอน/แนบรูป/เลือกหมวดแล้ว
+              // พิมพ์ชื่อต่อต้องไม่โดนทับ (เดิมรูปหาย และหมวดที่แก้เองเด้งกลับทุกครั้งที่พิมพ์)
+              emoji: touched.emoji ? f.emoji : guessEmoji(e.target.value),
+              category: touched.category ? f.category : guessCategory(e.target.value),
+            }))}
             className="border border-gray-200 rounded-xl px-3 py-2 text-sm col-span-1 text-gray-800"
             placeholder="ชื่อ เช่น ตำรวจ" />
           <input value={form.number} onChange={(e) => setForm({ ...form, number: e.target.value })}
             className="border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800"
             placeholder="เบอร์โทร เช่น 191" />
-          <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}
+          <select value={form.category}
+            onChange={(e) => { setForm((f) => ({ ...f, category: e.target.value })); setTouched((t) => ({ ...t, category: true })) }}
             className="border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 bg-white"
             title="หมวดสำหรับจัดกลุ่มบนหน้าประชาชน">
             {EMERGENCY_CATEGORIES.map((cat) => (
