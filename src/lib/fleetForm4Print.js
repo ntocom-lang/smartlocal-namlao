@@ -169,6 +169,48 @@ export function paginateForm4Trips(trips, rowsPerPage = FORM4_ROWS_PER_PAGE) {
   return pages
 }
 
+// ปรับขนาดตัวอักษรรายช่องให้ข้อความอยู่ครบในกรอบ ไล่ 3 ขั้นตามลำดับความเหมือนต้นฉบับ:
+//   1) บรรทัดเดียว 11pt (เท่ากระดาษ)  2) บรรทัดเดียวย่อลงถึง 9.5pt  3) ตัด 2 บรรทัด 8pt→7pt
+// ต้องรันหลังฟอนต์โหลดเสร็จ ไม่งั้นวัดความกว้างด้วย metric ของฟอนต์สำรองแล้วได้ผลผิด
+// (openPrintWindow ใน FleetReport.jsx รอ document.fonts.ready ก่อนสั่งพิมพ์อยู่แล้ว
+//  callback ตัวนี้ถูกลงทะเบียนก่อน จึงทำงานเสร็จก่อน print เสมอ)
+const AUTO_FIT_SCRIPT = `<script>
+(function () {
+  var SINGLE_MAX = 11, SINGLE_MIN = 9.5, WRAP_MAX = 8, WRAP_MIN = 7, STEP = 0.25;
+  function overflows(el) {
+    return el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1;
+  }
+  function fitOne(el) {
+    el.classList.remove('wrapped');
+    var size = SINGLE_MAX;
+    el.style.fontSize = size + 'pt';
+    if (!overflows(el)) return;
+    while (size > SINGLE_MIN) {
+      size = Math.round((size - STEP) * 100) / 100;
+      el.style.fontSize = size + 'pt';
+      if (!overflows(el)) return;
+    }
+    el.classList.add('wrapped');
+    size = WRAP_MAX;
+    el.style.fontSize = size + 'pt';
+    while (size > WRAP_MIN && overflows(el)) {
+      size = Math.round((size - STEP) * 100) / 100;
+      el.style.fontSize = size + 'pt';
+    }
+  }
+  function fitAll() {
+    var cells = document.querySelectorAll('td.left .cell');
+    for (var i = 0; i < cells.length; i++) fitOne(cells[i]);
+  }
+  fitAll();
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(fitAll).catch(function () {});
+  }
+})();
+</script>`
+// หมายเหตุ: เขียน </script> ตรงๆ ได้เพราะไฟล์นี้ถูก build เป็น .js แล้วโหลดผ่าน <script src>
+// ไม่เคยถูก inline ลงใน index.html ถ้าวันหน้าเปลี่ยนไป inline ต้องกลับมาหนีเป็น <\/script>
+
 function tableHeader() {
   return `<thead>
     <tr>
@@ -212,19 +254,22 @@ function dataRow(row, monthlyTotal) {
   const returned = returnParts(trip)
   const userName = String(trip.requester?.full_name ?? trip.creator?.full_name ?? '').trim()
   const driverName = String(trip.driver?.full_name ?? '').trim()
+  // ช่องข้อความยาวต้องห่อด้วย .cell เพื่อให้สคริปต์ auto-fit ย่อ/ตัดบรรทัดได้เป็นรายช่อง
+  // (ของเดิมเป็น nowrap+overflow:hidden ล้วน ข้อความยาวจึงถูกตัดหายเงียบๆ กลางคำ)
+  const textCell = value => `<td class="left"><span class="cell">${esc(value)}</span></td>`
   return `<tr>
     <td class="c-seq">${row.seq}</td>
     <td>${esc(depart.date)}</td>
     <td>${esc(depart.time)}</td>
-    <td class="left">${esc(userName)}</td>
-    <td class="left">${esc(String(trip.destination ?? '').trim())}</td>
+    ${textCell(userName)}
+    ${textCell(String(trip.destination ?? '').trim())}
     <td>${esc(meterText(trip.odometer_start))}</td>
     <td>${esc(returned.date)}</td>
     <td>${esc(returned.time)}</td>
     <td>${esc(meterText(trip.odometer_end))}</td>
     <td>${esc(distanceText(trip))}</td>
-    <td class="left">${esc(driverName)}</td>
-    <td class="left">${esc(remarkText(trip))}</td>
+    ${textCell(driverName)}
+    ${textCell(remarkText(trip))}
   </tr>`
 }
 
@@ -332,13 +377,34 @@ export function buildFleetForm4Html({ vehicle, trips = [], periodLabel = '' }) {
     }
     th.c-seq, th.c-user, th.c-dest, th.c-drv, th.c-note { white-space: nowrap; }
     td {
-      height: 6.15mm;
+      height: 6.3mm;
       padding: 0 4px;
-      line-height: 6.15mm;
+      line-height: 6.3mm;
       white-space: nowrap;
       overflow: hidden;
     }
-    td.left { text-align: left; }
+    td.left { text-align: left; padding: 0 3px; }
+    /* ค่าเริ่มต้นของช่องข้อความ = บรรทัดเดียวเต็มความสูงแถว เหมือนต้นฉบับกระดาษ
+       สคริปต์ auto-fit ท้ายไฟล์จะย่อฟอนต์ก่อน แล้วค่อยเติมคลาส .wrapped ให้ตัด 2 บรรทัด
+       เฉพาะช่องที่ยังไม่พอจริงๆ — ไทยมีสระบน/ล่าง บีบ 2 บรรทัดทุกช่องจะโดนตัดหัวสระ */
+    td.left .cell {
+      display: block;
+      max-height: 6.3mm;
+      line-height: 6.3mm;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    /* ถ้าย่อจนเล็กสุดแล้วยังไม่พอ (เช่น หมายเหตุยาวระดับย่อหน้า) ต้องจบด้วย "…" ให้เห็น
+       ห้ามตัดหายเงียบๆ กลางคำเหมือนเดิม คนอ่านต้องรู้ว่ายังมีข้อความต่อ */
+    td.left .cell.wrapped {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-height: 3.15mm;
+      white-space: normal;
+      word-break: break-word;
+    }
     tr.total td {
       font-weight: 700;
       background: #ececec;
@@ -357,18 +423,19 @@ export function buildFleetForm4Html({ vehicle, trips = [], periodLabel = '' }) {
     tr.total .total-value { font-size: 13pt; }
     tr.total .total-unit { text-align: left; padding-left: 8px; }
     col.c-seq { width: 4.6%; }
-    col.c-date { width: 7.8%; }
+    col.c-date { width: 7.3%; }
     col.c-time { width: 5.4%; }
-    col.c-user { width: 13%; }
+    col.c-user { width: 11.4%; }
     col.c-dest { width: 15.4%; }
-    col.c-odo { width: 8%; }
+    col.c-odo { width: 6.8%; }
     col.c-sum { width: 6.6%; }
-    col.c-drv { width: 11%; }
-    col.c-note { width: 7%; }
+    col.c-drv { width: 12%; }
+    col.c-note { width: 11%; }
   </style>
 </head>
 <body>
 ${pages.map(rows => sheet({ title, plate, periodLabel, rows, monthlyTotal })).join('\n')}
+${AUTO_FIT_SCRIPT}
 </body>
 </html>`
 }
