@@ -101,6 +101,19 @@ assert.ok(manualSignatoryMigrationSource.includes("'authority_reference', NULLIF
 assert.ok(!manualSignatoryMigrationSource.includes("has_authority_reference"))
 // หมวดที่เปิดใช้งานแต่ไม่มีกอง = ประชาชนส่งคำร้องหมวดนั้นไม่ได้ ต้องกันที่ DB ไม่ใช่เชื่อ Browser
 assert.ok(manualSignatoryMigrationSource.includes("trg_active_category_requires_department"))
+
+// แบบพิมพ์คำร้องต้องหยิบผู้ลงนามแค่ 3 บทบาทนี้เท่านั้น — ทะเบียนเป็นของกลางและมีบทบาท
+// 'vehicle_authority' (ผู้รับมอบอำนาจสั่งใช้รถ) เพิ่มเข้ามาแล้ว ถ้า whitelist นี้ถูกแก้ให้กว้างขึ้น
+// คำร้องจะถูกลงนามโดยผู้ที่ได้รับมอบอำนาจมาเฉพาะเรื่องรถ ซึ่งเป็นการระบุผู้ลงนามผิดตัว
+assert.ok(manualSignatoryMigrationSource.includes(
+  "(signatory.signatory_role = 'department_head'"))
+assert.ok(manualSignatoryMigrationSource.includes(
+  "OR (signatory.signatory_role IN ('clerk', 'mayor')"))
+// รายการนับ "ขาดผู้ลงนาม" ก็ต้องคงไว้ 3 บทบาท ไม่งั้นทุก อปท. ที่ไม่ได้มอบอำนาจ
+// จะพิมพ์คำร้องไม่ได้เพราะระบบหาว่ายังตั้งค่าไม่ครบ
+assert.ok(manualSignatoryMigrationSource.includes(
+  "VALUES ('department_head'::text, 1), ('clerk'::text, 2), ('mayor'::text, 3)"))
+assert.ok(!manualSignatoryMigrationSource.includes('vehicle_authority'))
 // v1 เป็นทางเขียนที่สองที่ข้ามกติกา manual signer ทั้งชุด
 assert.ok(manualSignatoryMigrationSource.includes("REVOKE EXECUTE ON FUNCTION public.set_document_signatory("))
 

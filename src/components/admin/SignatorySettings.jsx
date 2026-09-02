@@ -11,8 +11,9 @@ function personTitle(person) {
   return person?.job_title || person?.position?.name || 'ไม่ระบุตำแหน่ง'
 }
 
-function assignmentState(assignment) {
-  if (!assignment) return { ready: false, label: 'ยังไม่ตั้ง' }
+function assignmentState(assignment, optional = false) {
+  // แถวที่ไม่บังคับยังไม่ตั้ง = ปกติ ไม่ใช่ปัญหา จึงไม่ขึ้นสีเตือนและไม่ถูกนับว่าขาด
+  if (!assignment) return { ready: optional, label: optional ? 'ไม่ได้มอบอำนาจ' : 'ยังไม่ตั้ง' }
   const today = todayBangkok()
   if (assignment.effective_from > today) return { ready: false, label: 'ยังไม่ถึงวันเริ่ม' }
   if (assignment.effective_to && assignment.effective_to < today) return { ready: false, label: 'หมดอายุ' }
@@ -51,7 +52,7 @@ function SignatoryRow({ slot, people, assignment, onSaved }) {
   // ขึ้นคำเตือน 'อยู่นอกกอง' ตั้งแต่ยังไม่ได้เลือกใครเลย
   const crossDepartment = sourceMode === 'profile' && Boolean(slot.departmentId) && Boolean(selected)
     && selected.department_id !== slot.departmentId
-  const status = assignmentState(assignment)
+  const status = assignmentState(assignment, slot.optional)
   const identityReady = sourceMode === 'manual' ? Boolean(manualName.trim() && titleOverride.trim()) : Boolean(profileId)
 
   // title_override ใช้ร่วมสองโหมดแต่มีความหมายต่างกัน: โหมด manual คือตำแหน่งบังคับของคนนอกระบบ
@@ -129,6 +130,9 @@ function SignatoryRow({ slot, people, assignment, onSaved }) {
         <span className={`mt-0.5 ml-5 inline-block text-[10px] font-semibold ${status.ready ? 'text-emerald-700' : 'text-amber-700'}`}>
           {status.label}
         </span>
+        {slot.hint && (
+          <p className="ml-5 mt-0.5 text-[10px] leading-tight text-gray-400">{slot.hint}</p>
+        )}
       </div>
 
       <div className="min-w-0">
@@ -162,7 +166,8 @@ function SignatoryRow({ slot, people, assignment, onSaved }) {
             แต่ถ้าเลือกผิดคนจะได้เห็นก่อนกดบันทึก */}
         {crossDepartment && (
           <p className="mt-1 text-[10px] font-medium leading-tight text-amber-700">
-            ไม่ได้สังกัด {slot.departmentName} — ระบุคำว่า “รักษาราชการแทน” ในช่องตำแหน่งที่พิมพ์ได้
+            ไม่ได้สังกัด {slot.departmentName} — ระบุคำว่า “รักษาราชการแทน” หรือ “ปฏิบัติราชการแทน”
+            ในช่องตำแหน่งที่พิมพ์ได้ (คนละกรณีกัน ตรวจถ้อยคำกับคำสั่งจริงก่อน)
           </p>
         )}
       </div>
@@ -234,6 +239,12 @@ export default function SignatorySettings({ tenant }) {
   const slots = useMemo(() => [
     { key: assignmentKey('mayor'), role: 'mayor', municipalityId: tenant?.id, departmentId: null, label: 'นายก' },
     { key: assignmentKey('clerk'), role: 'clerk', municipalityId: tenant?.id, departmentId: null, label: 'ปลัด' },
+    // ตั้งเฉพาะเมื่อนายกมีคำสั่งมอบอำนาจการสั่งใช้รถให้ผู้อื่น (รองนายก/ปลัด/รองปลัด)
+    // optional = true จึงไม่ถูกนับว่า "ขาด" — อปท. ส่วนใหญ่ไม่ได้มอบอำนาจ ถ้านับด้วย
+    // ทุกแห่งจะเห็นป้ายเตือนค้างตลอดทั้งที่ตั้งค่าครบแล้ว
+    { key: assignmentKey('vehicle_authority'), role: 'vehicle_authority', municipalityId: tenant?.id,
+      departmentId: null, label: 'ผู้มีอำนาจสั่งใช้รถ', optional: true,
+      hint: 'เฉพาะกรณีมีคำสั่งมอบอำนาจ ไม่ตั้งก็ได้ — ใบขออนุญาตใช้รถจะใช้นายกตามปกติ' },
     ...departments
       .filter((department) => department.code !== 'exec')
       .map((department) => ({
@@ -251,7 +262,7 @@ export default function SignatorySettings({ tenant }) {
     assignments.map((assignment) => [assignmentKey(assignment.signatory_role, assignment.department_id), assignment]),
   ), [assignments])
 
-  const missingCount = slots.filter((slot) => !assignmentState(assignmentMap[slot.key]).ready).length
+  const missingCount = slots.filter((slot) => !assignmentState(assignmentMap[slot.key], slot.optional).ready).length
 
   return (
     <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm space-y-3">
