@@ -13,7 +13,7 @@ import StaffSection from '../../../../components/home/StaffSection'
 import { toDateStr } from '../../../../lib/thaiDate'
 import { AUDIENCE_LABEL as AUD_LABEL } from '../../../../lib/orgTerms'
 
-const MARQUEE_TEXT = 'บริการประชาชนออนไลน์ ตลอด 24 ชั่วโมง เพื่อใช้เป็นช่องทางในการติดตามข่าวสาร แจ้งเหตุ/แจ้งซ่อม และรับบริการต่างๆได้อย่างสะดวก รวดเร็ว และเข้าถึงได้ทุกที่ทุกเวลา'
+const MARQUEE_TEXT = 'บริการประชาชนออนไลน์ ตลอด 24 ชั่วโมง เพื่อใช้เป็นช่องทางในการติดตามข่าวสาร ร้องเรียน/ร้องทุกข์ และรับบริการต่างๆได้อย่างสะดวก รวดเร็ว และเข้าถึงได้ทุกที่ทุกเวลา'
 
 const marqueeStyle = `
 @keyframes marquee {
@@ -295,7 +295,7 @@ function CustomComplaintBand() {
     <div className="rounded-2xl px-5 py-5 relative overflow-hidden mb-3 bg-white border border-gray-200 shadow-sm">
       <div className="flex items-center justify-between mb-4 relative z-10">
         <p className="text-gray-800 text-[14px] font-bold flex items-center gap-1.5">
-          <span className="text-red-500">🚨</span> แจ้งเหตุ / แจ้งซ่อม
+          <span className="text-red-500">🚨</span> ร้องเรียน/ร้องทุกข์
         </p>
         <ModuleLink to="/complaint"
           className="flex items-center gap-0.5 text-gray-500 text-sm font-medium hover:text-[var(--color-primary)] transition-colors">

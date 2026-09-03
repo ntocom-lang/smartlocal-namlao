@@ -107,7 +107,7 @@ export default function KledkaewMore() {
       items: [
         { label: 'บริการเอกสารออนไลน์', icon: FileText, href: '/doc-request', color: 'text-[var(--color-primary)]' },
         { label: 'เอกสารของฉัน', icon: FileSearch, href: '/my-docs', color: 'text-[var(--color-primary)]' },
-        { label: 'แจ้งเหตุ/แจ้งซ่อม', icon: ClipboardList, href: '/complaint', color: 'text-[var(--color-primary)]' },
+        { label: 'ร้องเรียน/ร้องทุกข์', icon: ClipboardList, href: '/complaint', color: 'text-[var(--color-primary)]' },
         { label: 'คำร้องของฉัน', icon: FileSearch, href: '/my-complaints', color: 'text-[var(--color-primary)]' },
         { label: 'สายด่วนฉุกเฉิน', icon: AlertTriangle, href: '/emergency', color: 'text-red-500' },
         { label: 'เบอร์โทรสำคัญ', icon: BookUser, href: '/directory', color: 'text-blue-600' },

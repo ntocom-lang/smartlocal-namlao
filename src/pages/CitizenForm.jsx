@@ -103,7 +103,7 @@ const REPAIR_CATEGORIES = new Set([
 
 function getFormActionCopy(formType, category, categoryLabel = '') {
   if (formType === 'infrastructure') {
-    return { title: 'แจ้งเหตุ/แจ้งซ่อม', submit: 'ส่งเรื่องแจ้งเหตุ/แจ้งซ่อม' }
+    return { title: 'ร้องเรียน/ร้องทุกข์', submit: 'ส่งเรื่องร้องเรียน/ร้องทุกข์' }
   }
   if (formType === 'water_support') {
     return { title: 'ขอสนับสนุนน้ำอุปโภค-บริโภค', submit: 'ส่งคำขอรับบริการ' }
@@ -127,7 +127,7 @@ function getFormActionCopy(formType, category, categoryLabel = '') {
     return { title: 'แจ้งกลิ่นเหม็นรบกวน (มลพิษทางอากาศ)', submit: 'ส่งเรื่องแจ้งกลิ่นเหม็น' }
   }
   if (REPAIR_CATEGORIES.has(category)) {
-    return { title: categoryLabel ? `แจ้ง${categoryLabel}ชำรุด` : 'แจ้งเหตุ/แจ้งซ่อม', submit: 'ส่งเรื่องแจ้งซ่อม' }
+    return { title: categoryLabel ? `แจ้ง${categoryLabel}ชำรุด` : 'ร้องเรียน/ร้องทุกข์', submit: 'ส่งเรื่องแจ้งซ่อม' }
   }
   if (formType === 'environment') {
     return { title: 'แจ้งเหตุสิ่งแวดล้อม/ขอรับบริการ', submit: 'ส่งคำร้อง' }
@@ -279,7 +279,7 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
 
 const FORM_TYPE_CONFIG = {
   infrastructure: {
-    label: 'แจ้งเหตุ/แจ้งซ่อม',
+    label: 'ร้องเรียน/ร้องทุกข์',
     icon: '🔧',
     color: '#ef4444',
     categories: [

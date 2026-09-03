@@ -7,7 +7,7 @@ import { useTenant } from '../contexts/TenantContext'
 // ไล่หาหลักฐานจากชื่อรายการในเกณฑ์ ถ้าหน้านี้ไม่มีคำว่า e-Service เลยจะหาไม่เจอ
 const REPORTS = [
   {
-    label: 'สถิติการขอรับบริการออนไลน์ (e-Service) — แจ้งเหตุ/แจ้งซ่อม',
+    label: 'สถิติการขอรับบริการออนไลน์ (e-Service) — ร้องเรียน/ร้องทุกข์',
     desc: 'จำนวนเรื่อง สถานะ และระยะเวลาดำเนินการ แยกตามปีงบประมาณ',
     href: '/reports/complaints',
     Icon: ClipboardList,

@@ -22,7 +22,7 @@ export const MODULE_GROUPS = [
   {
     group: 'บริการประชาชน',
     items: [
-      { key: 'complaints', label: 'คำร้อง',   desc: 'ระบบรับเรื่องแจ้งเหตุ/แจ้งซ่อม' },
+      { key: 'complaints', label: 'คำร้อง', desc: 'ระบบรับเรื่องร้องเรียน/ร้องทุกข์' },
       { key: 'inbox',      label: 'คำขอเอกสาร', desc: 'รับ-ส่งคำขอเอกสารจากประชาชน' },
     ],
   },

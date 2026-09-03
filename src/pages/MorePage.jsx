@@ -360,7 +360,7 @@ function NamlaoMorePage() {
   const QUICK_MENU_CATALOG = [
     { path: '/emergency', icon: AlertTriangle, iconBg: 'bg-red-100', iconColor: 'text-red-600', label: 'สายด่วนฉุกเฉิน' },
     { path: '/complaint', icon: ClipboardList, iconBg: 'bg-orange-100', iconColor: 'text-orange-600',
-      label: 'แจ้งเหตุ/แจ้งซ่อม' },
+      label: 'ร้องเรียน/ร้องทุกข์' },
     { path: '/doc-request', icon: FileText, iconBg: 'bg-blue-100', iconColor: 'text-blue-600', label: 'สอบถามยอดชำระ' },
     { path: '/my-complaints', icon: FileSearch, iconBg: 'bg-sky-100', iconColor: 'text-sky-600', label: 'คำร้องของฉัน' },
     { path: '/events', icon: CalendarDays, iconBg: 'bg-green-100', iconColor: 'text-green-600', label: 'ปฏิทินกิจกรรม' },
@@ -617,7 +617,7 @@ function NamlaoMorePage() {
             icon={ClipboardList}
             iconBg="bg-orange-100"
             iconColor="text-orange-600"
-            label="แจ้งเหตุ/แจ้งซ่อม"
+            label="ร้องเรียน/ร้องทุกข์"
             desc="แจ้งซ่อม / ขอน้ำ / แจ้งเหตุสิ่งแวดล้อม"
             href="/complaint"
           />
