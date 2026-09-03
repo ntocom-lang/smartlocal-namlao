@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import FleetEmptyState from './FleetEmptyState'
 import { logAction } from '../../lib/auditLog'
+import { notifyTelegram } from '../../lib/notifyTelegram'
 import {
   FUEL_OPTIONS,
   assetIdentifier,
@@ -295,6 +296,9 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
           ? { before: auditSnapshot(beforeRecord), after: auditSnapshot(data) }
           : { after: auditSnapshot(data) },
       })
+      // แจ้งกลุ่ม Telegram เฉพาะรายการใหม่ การแก้ไขไม่ส่งซ้ำ เพราะ idempotency key ของ
+      // notify-telegram สำหรับชนิดนี้คือ "ชนิด:id" ล้วน ยิงซ้ำจะถูกกันเป็น duplicate อยู่ดี
+      if (!editingId) notifyTelegram('fleet_fuel_created', recordId)
       closeModal()
       setForm(EMPTY_FORM)
       setReceiptFile(null)

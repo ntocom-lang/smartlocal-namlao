@@ -28,6 +28,7 @@ const notificationSpecs = {
   technician_in_progress: { table: 'complaints', resourceType: 'complaint', access: 'staff' },
   technician_closed: { table: 'complaints', resourceType: 'complaint', access: 'staff' },
   fleet_trip_bumped: { table: 'fleet_trips', resourceType: 'fleet_trip', access: 'staff' },
+  fleet_fuel_created: { table: 'fleet_fuel_records', resourceType: 'fleet_fuel', access: 'staff' },
 } as const
 
 type NotificationType = keyof typeof notificationSpecs
@@ -204,6 +205,53 @@ function buildFleetTripBumpedMessage(trip: Record<string, unknown>) {
   ].filter(Boolean).join('\n')
 }
 
+// ป้ายชนิดเชื้อเพลิงต้องตรงกับ FUEL_OPTIONS ใน src/lib/fleetAssets.js — edge function
+// ไม่ได้ใช้โมดูลฝั่ง client จึงต้องคัดลอกมาไว้ที่นี่ แก้ที่ใดที่หนึ่งแล้วต้องแก้อีกฝั่ง
+const FUEL_TYPE_LABEL: Record<string, string> = {
+  diesel: 'ดีเซล',
+  gasoline: 'เบนซิน',
+  gas_lpg: 'แก๊ส LPG',
+  electric: 'ไฟฟ้า',
+  lubricant: 'น้ำมันหล่อลื่น/ของเหลว',
+  other: 'อื่น ๆ',
+}
+
+function formatAmount(value: unknown, digits = 2) {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return null
+  return num.toLocaleString('th-TH', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+}
+
+function buildFleetFuelCreatedMessage(record: Record<string, unknown>) {
+  const vehicle = record.vehicle as { name?: string; license_plate?: string; meter_unit?: string } | null
+  const driver = record.driver as { full_name?: string } | null
+  const vehicleName = cleanText(vehicle?.name, 100) || 'ไม่ทราบคัน'
+  const plate = cleanText(vehicle?.license_plate, 40)
+  // อุปกรณ์บางชนิด (เครื่องตัดหญ้า เครื่องสูบน้ำ) นับเป็นชั่วโมงไม่ใช่กิโลเมตร
+  // ค่าใน DB เป็น 'km'/'hour' ต้องแปลงเป็นไทยเอง เทียบเท่า meterUnitShort() ใน src/lib/fleetAssets.js
+  const meterUnit = vehicle?.meter_unit === 'hour' ? 'ชม.' : 'กม.'
+  const fuelKey = String(record.fuel_type ?? '')
+  const fuelLabel = fuelKey === 'other'
+    ? cleanText(record.fuel_other_name, 60) || 'อื่น ๆ'
+    : FUEL_TYPE_LABEL[fuelKey] ?? null
+  const liters = formatAmount(record.liters, 2)
+  const pricePerLiter = formatAmount(record.price_per_liter, 2)
+  const totalCost = formatAmount(record.total_cost, 2)
+  const odometer = formatAmount(record.odometer, 0)
+  return [
+    '⛽ <b>บันทึกการเติมเชื้อเพลิงใหม่</b>',
+    `ยานพาหนะ: ${escapeHtml(vehicleName, 100)}${plate ? ` (${escapeHtml(plate, 40)})` : ''}`,
+    record.filled_at ? `วันที่เติม: ${escapeHtml(formatThaiDate(record.filled_at), 60)}` : '',
+    fuelLabel ? `ชนิด: ${escapeHtml(fuelLabel, 60)}${record.full_tank ? ' (เต็มถัง)' : ''}` : '',
+    liters ? `ปริมาณ: ${escapeHtml(liters, 20)} ลิตร${pricePerLiter ? ` × ${escapeHtml(pricePerLiter, 20)} บาท` : ''}` : '',
+    totalCost ? `เป็นเงิน: <b>${escapeHtml(totalCost, 20)} บาท</b>` : '',
+    odometer ? `เลขไมล์: ${escapeHtml(odometer, 20)} ${escapeHtml(meterUnit, 20)}` : '',
+    driver?.full_name ? `ผู้ใช้รถ: ${escapeHtml(driver.full_name, 100)}` : '',
+    record.fuel_station ? `สถานีบริการ: ${escapeHtml(record.fuel_station, 100)}` : '',
+    record.receipt_no ? `เลขที่ใบเสร็จ: ${escapeHtml(record.receipt_no, 60)}` : '',
+  ].filter(Boolean).join('\n')
+}
+
 function isRecent(createdAt: unknown, minutes = 15) {
   const timestamp = new Date(String(createdAt ?? '')).getTime()
   return Number.isFinite(timestamp) && timestamp >= Date.now() - minutes * 60_000
@@ -353,7 +401,9 @@ serve(async (req) => {
         ? 'id,municipality_id,user_id,created_at,updated_at,status,category,assigned_to'
         : spec.table === 'fleet_trips'
           ? 'id,municipality_id,status,destination,reject_reason,vehicle:fleet_vehicles(name),driver:profiles!fleet_trips_driver_id_fkey(full_name)'
-          : 'id,municipality_id,user_id,created_at,updated_at,status,document_type,fee_amount'
+          : spec.table === 'fleet_fuel_records'
+            ? 'id,municipality_id,created_at,filled_at,liters,price_per_liter,total_cost,odometer,full_tank,fuel_type,fuel_other_name,fuel_station,receipt_no,vehicle:fleet_vehicles(name,license_plate,meter_unit),driver:profiles!fleet_fuel_records_driver_id_fkey(full_name)'
+            : 'id,municipality_id,user_id,created_at,updated_at,status,document_type,fee_amount'
     const { data: resource, error: resourceError } = await admin
       .from(spec.table)
       .select(selectColumns)
@@ -420,7 +470,9 @@ serve(async (req) => {
           ? buildComplaintStatusMessage(resource)
           : notificationType === 'fleet_trip_bumped'
             ? buildFleetTripBumpedMessage(resource)
-            : STATIC_MESSAGES[notificationType]
+            : notificationType === 'fleet_fuel_created'
+              ? buildFleetFuelCreatedMessage(resource)
+              : STATIC_MESSAGES[notificationType]
     if (!message) {
       await finish('failed', { last_error: 'Notification template is not configured' })
       return json({ ok: false, error: 'notification template is not configured' }, 500)
