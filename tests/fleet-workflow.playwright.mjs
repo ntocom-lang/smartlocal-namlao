@@ -833,9 +833,15 @@ async function checkForm3RequestPrint(baseUrl, headed) {
     for (const [field, value] of expected) {
       assert.ok(finalPrint.includes(value), `เอกสารพิมพ์ไม่มีค่าของช่อง "${field}"`)
     }
-    for (const role of ['ผู้ขออนุญาต', 'ผู้ขับรถ', 'ผู้อำนวยการกอง/หัวหน้ากอง', 'ผู้มีอำนาจสั่งใช้รถ']) {
+    for (const role of ['ผู้ขออนุญาต', 'ผู้ขับรถ', 'ผู้มีอำนาจสั่งใช้รถ']) {
       assert.ok(finalPrint.includes(role), `เอกสารพิมพ์ไม่มีช่องลงนาม "${role}"`)
     }
+    // ช่องลงนามที่ 3 (หัวหน้ากอง) ตรวจด้วยจำนวนช่อง ไม่ใช่ข้อความคงที่ — ตั้งแต่ b7197f9
+    // ป้ายบทบาทมาจากตำแหน่งที่ อปท. ตั้งไว้ในทะเบียนผู้ลงนาม (เช่น "ผู้อำนวยการกองช่าง")
+    // เหลือคำกลาง "ผู้อำนวยการกอง/หัวหน้ากอง" เฉพาะ อปท. ที่ยังไม่ได้ตั้ง
+    const signatureCount = (finalPrint.match(/\(ลงชื่อ\)/g) || []).length
+    assert.ok(signatureCount >= 3,
+      `เอกสารพิมพ์มีช่องลงนาม ${signatureCount} ช่อง ต้องมีอย่างน้อย 3 (ผู้ขออนุญาต/ผู้ขับรถ/หัวหน้ากอง)`)
     assert.ok(/\(✓\)\s*อนุมัติ/.test(finalPrint),
       'คำขอที่อนุมัติและเดินทางจบแล้ว แต่เอกสารไม่ติ๊กช่อง "อนุมัติ"')
     assert.ok(!/\(✓\)\s*ไม่อนุมัติ/.test(finalPrint), 'เอกสารติ๊กช่อง "ไม่อนุมัติ" ผิด')
@@ -856,9 +862,11 @@ async function checkForm3RequestPrint(baseUrl, headed) {
     }
     // ชื่อในช่อง "ผู้ขับรถ" ต้องเป็นคนที่เลือกไว้ในฟอร์มจริงๆ — เดิมระบบเติม driver_id เป็น
     // คนที่กรอกให้เองเมื่อไม่ได้เลือก ทำให้เอกสารพิมพ์ชื่อผิดคนโดยไม่มีใครรู้
+    // ขอบเขตท้ายบล็อกใช้ส่วน "ความเห็นของผู้มีอำนาจสั่งใช้รถ" ซึ่งเป็นข้อความคงที่บนแบบฟอร์ม
+    // ไม่ใช่ป้ายช่องหัวหน้ากองที่เปลี่ยนตามทะเบียนผู้ลงนามของแต่ละ อปท.
     const driverBlock = finalPrint.slice(
       finalPrint.indexOf('ผู้ขับรถ'),
-      finalPrint.indexOf('ผู้อำนวยการกอง/หัวหน้ากอง'))
+      finalPrint.indexOf('ความเห็นของผู้มีอำนาจสั่งใช้รถ'))
     const driverBase = driverName.replace(/\s*\(ฉัน\)\s*/, '').replace(/\s*—.*$/, '').trim()
     assert.ok(driverBlock.includes(driverBase),
       `ช่องผู้ขับรถบนแบบ 3 ไม่ตรงกับที่เลือกไว้ในฟอร์ม (${driverBase})`)

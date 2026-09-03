@@ -5,10 +5,13 @@
 // (tamnaktham, thungkaew) เห็นป้ายกำกับกลุ่มผู้รับข้อมูลในปฏิทินกิจกรรม/หน้าจัดการผู้ใช้ เป็น
 // "สภาเทศบาล" ทั้งที่ต้องเป็น "สภา อบต." — ย้ายมารวมที่นี่ที่เดียว ใครต้องใช้ import แทนการนิยามเอง
 
-function termSet({ mayor, deputyMayor, council, councilPresident, clerk, councilOrg, abbr, strip }) {
-  return { mayor, deputyMayor, council, councilPresident, clerk, councilOrg, abbr, strip }
+function termSet({ mayor, deputyMayor, council, councilPresident, clerk, councilOrg, office, abbr, strip }) {
+  return { mayor, deputyMayor, council, councilPresident, clerk, councilOrg, office, abbr, strip }
 }
 
+// office = ชื่อสถานที่ราชการของ อปท. ใช้ในประโยคแบบ "ชำระเงิน ณ ..." / "ติดต่อรับเอกสาร ณ ..."
+// เขียนให้ต่อท้ายคำว่า "ณ" ได้พอดี ห้ามขึ้นต้นด้วยคำว่า "ที่" ในประโยคที่มี "ที่" นำอยู่แล้ว
+// (เทศบาลใช้ "สำนักงานเทศบาล" ส่วน อบต. ตามระเบียบเรียก "ที่ทำการ")
 const MUNICIPAL_TERMS = {
   mayor: 'นายกเทศมนตรี',
   deputyMayor: 'รองนายกเทศมนตรี',
@@ -16,6 +19,7 @@ const MUNICIPAL_TERMS = {
   councilPresident: 'ประธานสภาเทศบาล',
   clerk: 'ปลัดเทศบาล',
   councilOrg: 'สภาเทศบาล',
+  office: 'สำนักงานเทศบาล',
 }
 
 export const ORG_TERMS = {
@@ -28,11 +32,13 @@ export const ORG_TERMS = {
   'อบต.': termSet({
     mayor: 'นายก อบต.', deputyMayor: 'รองนายก อบต.', council: 'สมาชิกสภา อบต.',
     councilPresident: 'ประธานสภา อบต.', clerk: 'ปลัด อบต.', councilOrg: 'สภา อบต.',
+    office: 'ที่ทำการ อบต.',
     abbr: 'อบต.', strip: 'องค์การบริหารส่วนตำบล',
   }),
   'อบจ.': termSet({
     mayor: 'นายก อบจ.', deputyMayor: 'รองนายก อบจ.', council: 'สมาชิกสภา อบจ.',
     councilPresident: 'ประธานสภา อบจ.', clerk: 'ปลัด อบจ.', councilOrg: 'สภา อบจ.',
+    office: 'สำนักงาน อบจ.',
     abbr: 'อบจ.', strip: 'องค์การบริหารส่วนจังหวัด',
   }),
 }

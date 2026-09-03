@@ -65,7 +65,7 @@ const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-3 text-sm tex
 export default function CitizenDocRequest() {
   const navigate  = useNavigate()
   const [searchParams] = useSearchParams()
-  const { tenant } = useTenant()
+  const { tenant, terminology } = useTenant()
   const allDocTypes = useMemo(() => {
     const extras = (tenant?.fee_schedule?._custom_types || []).map(t => ({
       value:  t.value,
@@ -141,7 +141,7 @@ export default function CitizenDocRequest() {
   }
 
   // แสดงยอดค่าธรรมเนียม/ภาษีเป็นข้อมูลอ้างอิงเท่านั้น — ป้องกันการทุจริต ห้ามเก็บเงิน
-  // ผ่านแอปเด็ดขาดทุกประเภทเอกสาร ประชาชนต้องไปชำระที่เทศบาลเองเสมอ (ไม่มีหน้าชำระ/
+  // ผ่านแอปเด็ดขาดทุกประเภทเอกสาร ประชาชนต้องไปชำระที่สำนักงานเองเสมอ (ไม่มีหน้าชำระ/
   // สแกน QR/แนบสลิปในระบบนี้อีกต่อไป)
   const feeAmount = selected ? ((tenant?.fee_schedule ?? {})[selected.value] ?? 0) : 0
   // tax_notice/waste_collection ไม่ใช่การขอออกเอกสารเหมือนประเภทอื่น เป็นแค่ "สอบถามยอด" —
@@ -515,8 +515,8 @@ export default function CitizenDocRequest() {
           <p className="text-xs text-gray-400 text-center leading-relaxed">
             {isFeeInquiry
               ? (session
-                  ? <>ติดตามสถานะและรับการแจ้งเตือนได้ที่เมนู เอกสารของฉัน<br />ภายใน 1–3 วันทำการ — ชำระได้ที่เทศบาลเท่านั้น</>
-                  : <>เจ้าหน้าที่จะตรวจสอบยอดและแจ้งกลับทางโทรศัพท์<br />ภายใน 1–3 วันทำการ — ชำระได้ที่เทศบาลเท่านั้น</>)
+                  ? <>ติดตามสถานะและรับการแจ้งเตือนได้ที่เมนู เอกสารของฉัน<br />ภายใน 1–3 วันทำการ — ชำระเงิน ณ {terminology.office} เท่านั้น</>
+                  : <>เจ้าหน้าที่จะตรวจสอบยอดและแจ้งกลับทางโทรศัพท์<br />ภายใน 1–3 วันทำการ — ชำระเงิน ณ {terminology.office} เท่านั้น</>)
               : (session
                   ? <>ติดตามสถานะและรับการแจ้งเตือนได้ที่เมนู เอกสารของฉัน<br />ภายใน 1–3 วันทำการ</>
                   : <>เจ้าหน้าที่จะดำเนินการและแจ้งผลทางโทรศัพท์<br />ภายใน 1–3 วันทำการ</>)}
@@ -530,7 +530,7 @@ export default function CitizenDocRequest() {
             <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 space-y-1">
               <p className="text-xs font-bold text-emerald-700 uppercase tracking-wide">ค่าธรรมเนียม</p>
               <p className="text-2xl font-bold text-emerald-800">ฟรี</p>
-              <p className="text-xs text-emerald-600">แจ้งยอด แล้วชำระที่เทศบาล</p>
+              <p className="text-xs text-emerald-600">แจ้งยอด แล้วชำระเงิน ณ {terminology.office}</p>
             </div>
           ) : feeAmount > 0 ? (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-2">
@@ -551,7 +551,7 @@ export default function CitizenDocRequest() {
             {(isFeeInquiry ? [
               { step: '1', label: 'ส่งคำถาม', desc: 'กรอกแบบฟอร์มและส่งข้อมูล' },
               { step: '2', label: 'เจ้าหน้าที่ตรวจสอบ', desc: 'ตรวจสอบยอดภาษี/ค่าธรรมเนียม' },
-              { step: '3', label: 'แจ้งยอดชำระ', desc: 'แจ้งยอด แล้วชำระที่เทศบาล' },
+              { step: '3', label: 'แจ้งยอดชำระ', desc: `แจ้งยอด แล้วชำระเงิน ณ ${terminology.office}` },
             ] : [
               { step: '1', label: 'ยื่นคำขอ', desc: 'กรอกแบบฟอร์มและส่งเอกสาร' },
               { step: '2', label: 'เจ้าหน้าที่รับเรื่อง', desc: 'ตรวจสอบและดำเนินการ' },
