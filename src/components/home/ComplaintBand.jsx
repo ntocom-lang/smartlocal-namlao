@@ -87,7 +87,7 @@ function ComplaintBand({ variant = 'warm' }) {
                 <Siren size={15} />
               </span>
             )}
-            <p className={`${titleColor} font-extrabold text-[15px] md:text-base tracking-wide ${clean ? '' : 'drop-shadow-sm'}`}>{clean ? 'ร้องเรียน / ร้องทุกข์' : '🚨 แจ้งเหตุ / แจ้งซ่อม'}</p>
+            <p className={`${titleColor} font-extrabold text-[15px] md:text-base tracking-wide ${clean ? '' : 'drop-shadow-sm'}`}>{clean ? 'แจ้งเหตุ / แจ้งซ่อม' : '🚨 แจ้งเหตุ / แจ้งซ่อม'}</p>
           </div>
           {clean ? (
             <button onClick={() => navigate('/my-complaints')} className={chipCls}

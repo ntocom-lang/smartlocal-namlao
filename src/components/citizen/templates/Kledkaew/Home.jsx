@@ -30,7 +30,7 @@ const DEFAULT_CATS = [
 ]
 
 const POPULAR = [
-  { label: 'ร้องเรียน\nร้องทุกข์', emoji: '🙋', path: '/complaint' },
+  { label: 'แจ้งเหตุ\nแจ้งซ่อม', emoji: '🙋', path: '/complaint' },
   { label: 'E-Service',           emoji: '🌐', path: '/doc-request' },
   { label: 'ติดตาม\nคำร้อง',     emoji: '🔎', path: '/my-complaints' },
   { label: 'ติดตาม\nเอกสาร',     emoji: '📄', path: '/my-docs' },
@@ -115,7 +115,7 @@ export default function Home() {
               style={{ background: 'linear-gradient(to bottom, color-mix(in srgb, var(--color-primary) 8%, white), transparent)' }}></div>
 
             <div className="relative z-10 flex justify-between items-start mb-5">
-              <h2 className="text-[17px] font-black leading-tight" style={{ color: 'var(--color-primary-dark)' }}>แจ้งเรื่องร้องเรียน<br/>/ร้องทุกข์</h2>
+              <h2 className="text-[17px] font-black leading-tight" style={{ color: 'var(--color-primary-dark)' }}>แจ้งเหตุ<br/>/ แจ้งซ่อม</h2>
               <ModuleLink to="/complaint" className="bg-yellow-400 text-yellow-900 text-[13px] font-black px-4 py-1.5 rounded-full shadow-sm hover:bg-yellow-300 transition-colors">
                 ดูทั้งหมด
               </ModuleLink>
@@ -142,7 +142,7 @@ export default function Home() {
             <div className="mt-5 relative overflow-hidden rounded-l-md rounded-r-full inline-block">
               <ModuleLink to="/my-complaints" className="block hover:opacity-90 transition-opacity text-white text-xs font-bold px-5 py-2.5 shadow-md relative z-10"
                 style={{ backgroundColor: 'var(--color-primary)' }}>
-                ติดตามเรื่องร้องเรียน &gt;
+                ติดตามเรื่องที่แจ้ง &gt;
               </ModuleLink>
             </div>
           </div>

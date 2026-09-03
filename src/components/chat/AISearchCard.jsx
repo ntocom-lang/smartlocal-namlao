@@ -85,7 +85,7 @@ export default function AISearchCard() {
             type="text"
             value={input}
             onChange={e => setInput(e.target.value)}
-            placeholder="ถามอะไรก็ได้ เช่น วิธีแจ้งร้องเรียน..."
+            placeholder="ถามอะไรก็ได้ เช่น วิธีแจ้งซ่อมไฟถนน..."
             className="flex-1 bg-transparent px-3 py-2 text-sm outline-none text-gray-700 placeholder-gray-400"
             disabled={loading}
           />

@@ -161,7 +161,7 @@ export default function KledkaewMore() {
       <div className="relative z-20 w-full max-w-lg mx-auto mb-4 mt-2 md:mx-0 md:mb-0 md:sticky md:top-6">
         <div className="rounded-2xl p-4 shadow-xl border border-white/20"
           style={{ backgroundColor: 'var(--color-primary)' }}>
-          <h3 className="text-white font-bold text-[16px] mb-3 px-1 drop-shadow-sm">ติดต่อ/แจ้งเรื่องร้องเรียน</h3>
+          <h3 className="text-white font-bold text-[16px] mb-3 px-1 drop-shadow-sm">ติดต่อ / แจ้งเหตุ</h3>
           <div className="rounded-xl py-4 px-1 flex justify-between items-stretch text-center shadow-inner"
             style={{ backgroundColor: 'var(--color-primary-dark)' }}>
             <ModuleLink to="/complaint" className="flex-1 flex flex-col items-center justify-start gap-2 border-r border-white/10 px-1">
@@ -170,7 +170,7 @@ export default function KledkaewMore() {
                 <div className="absolute -top-1 -right-1 w-4 h-4 bg-amber-400 rounded-full flex items-center justify-center text-[10px] font-bold"
                   style={{ color: 'var(--color-primary-dark)' }}>?</div>
               </div>
-              <span className="text-white/90 text-[13px] font-medium leading-tight">ร้องเรียน<br/>ร้องทุกข์</span>
+              <span className="text-white/90 text-[13px] font-medium leading-tight">แจ้งเหตุ<br/>แจ้งซ่อม</span>
             </ModuleLink>
             <ModuleLink to="/doc-request" className="flex-1 flex flex-col items-center justify-start gap-2 border-r border-white/10 px-1">
               <Globe size={32} className="text-amber-400 drop-shadow-sm" strokeWidth={1.5} />
