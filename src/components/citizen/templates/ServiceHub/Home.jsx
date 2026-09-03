@@ -1,10 +1,9 @@
 import { useMemo } from 'react'
-import ModuleLink from '../../../common/ModuleLink'
 import { Link } from 'react-router-dom'
 import { useTenant } from '../../../../contexts/TenantContext'
 import { Wifi, Users, MapPinned, Compass, Phone, BookUser, ChevronRight } from 'lucide-react'
 import BannerSlider from '../../../../components/home/BannerSlider'
-import ComplaintBand from '../../../../components/home/ComplaintBand'
+// ComplaintBand นำออกจากหน้าแรกตามคำขอ (เข้าใช้งานผ่านปุ่ม ร้องเรียน/ร้องทุกข์ ด้านบน)
 import ComplaintStatsWidget from '../../../../components/home/ComplaintStatsWidget'
 import PostsHighlight from '../../../../components/home/PostsHighlight'
 import TourismSection from '../../../../components/home/TourismSection'
@@ -14,19 +13,48 @@ import { CategoryIcon } from '../../../../lib/categoryIcon'
 // รายการ "งานบริการประชาชน" จริง — ใช้ชุดข้อมูลเดียวกับ EServiceBlock ของธีมอื่นๆ (EcoFriendly ฯลฯ)
 // คือประเภทคำร้องขอเอกสาร ไม่ใช่เรื่องร้องเรียน (นั่นเป็นของ ComplaintBand คนละส่วนกัน) ผูกกับ
 // /doc-request?type=... เหมือนกันทุกธีม + เพิ่มประเภทที่แอดมินตั้งเองได้ผ่าน fee_schedule._custom_types
-const BASE_DOC_TYPES = [
-  { value: 'waste_collection', label: 'ค่าธรรมเนียมขยะ',      emoji: '🗑️' },
-  { value: 'tax_notice',       label: 'ค่าธรรมเนียม/ภาษี',     emoji: '🏛️' },
-  { value: 'building_permit',  label: 'ขออนุญาตก่อสร้างบ้าน', emoji: '🏗️' },
-]
+const COMPLAINT_SERVICE = {
+  value: 'complaint',
+  label: 'ร้องเรียน/ร้องทุกข์',
+  emoji: '📢',
+  href: '/complaint',
+}
+
+const CITIZEN_SERVICE = {
+  value: 'citizen_service',
+  label: 'บริการประชาชน',
+  emoji: '📋',
+  href: '/doc-request',
+}
+
+const SATISFACTION_SERVICE = {
+  value: 'satisfaction',
+  label: 'ประเมินความพึงพอใจ',
+  emoji: '⭐',
+  href: '/satisfaction',
+}
+
+const MANUAL_SERVICE = {
+  value: 'manual',
+  label: 'คู่มือสำหรับประชาชน',
+  emoji: '📖',
+  href: '/manual-citizen.html',
+  external: true,
+}
+
+// 3 บริการเอกสารเดิม (ขยะ/ภาษี/ขอสร้างบ้าน) เข้าถึงผ่านหน้า /doc-request
+// - ค่าธรรมเนียมขยะ
+// - ค่าธรรมเนียม/ภาษี
+// - ขออนุญาตก่อสร้างบ้าน
+
 
 // ป้ายลอย 4 มุมทับภาพแบนเนอร์ — ใช้ชื่อฟีเจอร์ของเราเองล้วนๆ (ไม่ได้ยืมข้อความ/โลโก้จากที่ไหน)
 // เพื่อให้ hero ดูมีมิติแบบ "smart city" ตามภาพต้นแบบที่ขอเลียนแบบเลย์เอาต์
 const HERO_BADGES = [
-  { icon: Wifi,       label: 'บริการออนไลน์', pos: 'top-3 left-3' },
-  { icon: Users,       label: 'เพื่อประชาชน',   pos: 'top-3 right-3' },
-  { icon: MapPinned,  label: 'ข้อมูลเปิด GIS', pos: 'bottom-3 left-3' },
-  { icon: Compass,    label: 'แหล่งท่องเที่ยว', pos: 'bottom-3 right-3' },
+  { icon: Wifi,       label: 'บริการออนไลน์', pos: 'top-2 left-3' },
+  { icon: Users,       label: 'เพื่อประชาชน',   pos: 'top-2 right-3' },
+  { icon: MapPinned,  label: 'ข้อมูลเปิด GIS', pos: 'bottom-2 left-3' },
+  { icon: Compass,    label: 'แหล่งท่องเที่ยว', pos: 'bottom-2 right-3' },
 ]
 
 function HeroBanner({ tenant, rounded = 'rounded-2xl' }) {
@@ -36,7 +64,7 @@ function HeroBanner({ tenant, rounded = 'rounded-2xl' }) {
   // ก็ยังใช้ไล่สีเดิม (var(--color-primary) → เข้ม) เป็น fallback ไม่ว่างเปล่า
   return (
     <div className={`relative overflow-hidden ${rounded}`}
-      style={{ minHeight: 200, background: 'linear-gradient(135deg, var(--color-primary), #0f172a)' }}>
+      style={{ minHeight: 100, background: 'linear-gradient(135deg, var(--color-primary), #0f172a)' }}>
       {tenant?.header_image_url && (
         <>
           <img src={tenant.header_image_url} alt="" className="absolute inset-0 w-full h-full object-cover" />
@@ -47,18 +75,18 @@ function HeroBanner({ tenant, rounded = 'rounded-2xl' }) {
           )}
         </>
       )}
-      <div className="absolute inset-0 pointer-events-none hidden sm:block">
+      <div className="absolute inset-0 pointer-events-none hidden md:block">
         {HERO_BADGES.map(({ icon: Icon, label, pos }) => (
           <div key={label}
-            className={`absolute ${pos} flex items-center gap-1.5 px-2.5 py-1.5 rounded-full backdrop-blur-md bg-white/25 border border-white/40 text-white text-[10px] font-bold shadow-lg`}>
-            <Icon size={13} /> {label}
+            className={`absolute ${pos} flex items-center gap-1.5 px-2 py-1 rounded-full backdrop-blur-md bg-white/25 border border-white/40 text-white text-[9px] font-bold shadow-lg`}>
+            <Icon size={12} /> {label}
           </div>
         ))}
       </div>
       <div className="absolute inset-0 flex items-center justify-center px-4 pointer-events-none">
-        <div className="text-center px-5 py-3 rounded-2xl backdrop-blur-md bg-black/30 border border-white/20 max-w-[85%]">
-          <p className="text-white font-black text-lg sm:text-2xl leading-tight drop-shadow-lg">{tenant?.name}</p>
-          <p className="text-white/80 text-[11px] sm:text-sm font-semibold mt-0.5">
+        <div className="text-center px-4 py-1.5 sm:py-2 rounded-xl backdrop-blur-md bg-black/30 border border-white/20 max-w-[85%]">
+          <p className="text-white font-black text-base sm:text-xl leading-tight drop-shadow-lg">{tenant?.name}</p>
+          <p className="text-white/80 text-[10px] sm:text-xs font-semibold mt-0.5">
             {tenant?.system_subtitle || 'บริการออนไลน์ครบวงจร สะดวก รวดเร็ว'}
           </p>
         </div>
@@ -69,6 +97,15 @@ function HeroBanner({ tenant, rounded = 'rounded-2xl' }) {
 
 function EServiceGrid({ docTypes, rounded = 'rounded-2xl' }) {
   const { tenant } = useTenant()
+  const displayItems = docTypes.slice(0, 6)
+  const isPair = displayItems.length === 2
+  const gridCols = isPair
+    ? 'grid-cols-2'
+    : displayItems.length === 4
+      ? 'grid-cols-4'
+      : displayItems.length <= 3
+        ? 'grid-cols-3'
+        : 'grid-cols-3 sm:grid-cols-6'
   return (
     <div className={`relative isolate overflow-hidden shadow-lg p-4 sm:p-5 ${rounded}`}
       style={{
@@ -141,34 +178,49 @@ function EServiceGrid({ docTypes, rounded = 'rounded-2xl' }) {
           <ChevronRight size={13} className="shrink-0 text-gray-400" />
         </Link>
       </div>
-      <div className="relative z-10 grid grid-cols-3 gap-1.5 sm:gap-2">
-        {docTypes.slice(0, 6).map(({ value, label, emoji }) => (
-          <Link key={value} to={`/doc-request?type=${value}`}
-            className="group flex flex-col items-center gap-1 rounded-xl border border-white/70 bg-white/95 p-1.5 shadow-md shadow-blue-950/10 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:bg-white hover:shadow-lg active:scale-95 sm:p-2">
-            <CategoryIcon emoji={emoji} size={22} style={tenant?.category_icon_style} />
-            <p className="text-[10px] sm:text-[11px] font-bold text-gray-700 text-center leading-tight line-clamp-2 transition-colors group-hover:text-blue-700">{label}</p>
-          </Link>
-        ))}
-      </div>
-      <div className="relative z-10 mt-2.5 flex justify-end">
-        <ModuleLink to="/doc-request"
-          className="rounded-full border border-yellow-200/80 bg-gradient-to-r from-yellow-300 to-amber-400 px-3 py-1 text-[11px] font-black text-amber-950 shadow-md shadow-amber-950/15 transition-all hover:-translate-y-0.5 hover:shadow-lg">
-          ดูทั้งหมด ›
-        </ModuleLink>
+      <div className={`relative z-10 grid ${gridCols} ${isPair ? 'gap-2' : 'gap-1.5 sm:gap-2'}`}>
+        {displayItems.map(({ value, label, emoji, href, external }) => {
+          const cardContent = (
+            <>
+              <CategoryIcon emoji={emoji} size={isPair ? 26 : 22} style={tenant?.category_icon_style} />
+              <p className={`${isPair ? 'text-[11px] sm:text-xs' : 'text-[10px] sm:text-[11px]'} font-bold text-gray-700 text-center leading-tight line-clamp-2 transition-colors group-hover:text-blue-700`}>{label}</p>
+            </>
+          )
+          const cardClass = `group flex flex-col items-center justify-center gap-1.5 rounded-xl border border-white/70 bg-white/95 ${isPair ? 'p-2.5 sm:p-3' : 'p-1.5 sm:p-2'} shadow-md shadow-blue-950/10 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:bg-white hover:shadow-lg active:scale-95`
+          if (external) {
+            return (
+              <a key={value} href={href} target="_blank" rel="noopener noreferrer" className={cardClass}>
+                {cardContent}
+              </a>
+            )
+          }
+          return (
+            <Link key={value} to={href || `/doc-request?type=${value}`} className={cardClass}>
+              {cardContent}
+            </Link>
+          )
+        })}
       </div>
     </div>
   )
 }
 
 export default function ServiceHubHome() {
-  const { tenant } = useTenant()
+  const { tenant, isModuleEnabled } = useTenant()
 
   const docTypes = useMemo(() => {
     const extras = (tenant?.fee_schedule?._custom_types || []).map(t => ({
       value: t.value, label: t.label, emoji: t.emoji || '📋',
     }))
-    return [...BASE_DOC_TYPES, ...extras]
-  }, [tenant])
+    const complaintsEnabled = !isModuleEnabled || isModuleEnabled('complaints')
+    const inboxEnabled = !isModuleEnabled || isModuleEnabled('inbox')
+    const base = []
+    if (complaintsEnabled) base.push(COMPLAINT_SERVICE)
+    if (inboxEnabled) base.push(CITIZEN_SERVICE)
+    if (complaintsEnabled) base.push(SATISFACTION_SERVICE)
+    base.push(MANUAL_SERVICE)
+    return [...base, ...extras]
+  }, [tenant, isModuleEnabled])
 
   return (
     <div className="bg-gray-50">
@@ -181,7 +233,6 @@ export default function ServiceHubHome() {
 
       <div className="px-3 sm:px-4 lg:px-6 pt-3 pb-4 max-w-[1440px] mx-auto space-y-3">
         <BannerSlider />
-        <ComplaintBand variant="clean" />
         <ComplaintStatsWidget />
         <PostsHighlight />
         <SmartCityBanner />
