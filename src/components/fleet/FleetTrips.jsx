@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Plus, Calendar, X, ChevronLeft, ChevronRight, Route, History, Printer } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -1301,16 +1301,51 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     setForm(f => ({ ...f, requested_by: id, requester_position: pos, dept_head_department_id: deptHead }))
   }
 
-  const requesterItems = requesterOptions.map(s => {
+  const sortedRequesterOptions = useMemo(() => {
+    const myDept = myDeptId || requesterProfile?.department_id || ''
+    return [...requesterOptions].sort((a, b) => {
+      // 1. ตนเอง (ฉัน) ขึ้นอันดับแรกเสมอ
+      const isMeA = a.id === user?.id
+      const isMeB = b.id === user?.id
+      if (isMeA && !isMeB) return -1
+      if (!isMeA && isMeB) return 1
+
+      // 2. สมาชิกในกองของตนเองขึ้นก่อนกองอื่น
+      const isMyDeptA = !!(myDept && a.department_id === myDept)
+      const isMyDeptB = !!(myDept && b.department_id === myDept)
+      if (isMyDeptA && !isMyDeptB) return -1
+      if (!isMyDeptA && isMyDeptB) return 1
+
+      // 3. เรียงตามลำดับกองที่กำหนดไว้ใน depts
+      const idxA = depts.findIndex(d => d.id === a.department_id)
+      const idxB = depts.findIndex(d => d.id === b.department_id)
+      const orderA = idxA >= 0 ? idxA : 999
+      const orderB = idxB >= 0 ? idxB : 999
+      if (orderA !== orderB) return orderA - orderB
+
+      // 4. ภายในกองเดียวกัน เรียงตามชื่อภาษาไทย
+      return (a.full_name || '').localeCompare(b.full_name || '', 'th')
+    })
+  }, [requesterOptions, myDeptId, requesterProfile?.department_id, user?.id, depts])
+
+  const requesterItems = sortedRequesterOptions.map(s => {
     const name = s.full_name?.trim() || s.email || 'ไม่ระบุชื่อ'
     const isMe = s.id === user?.id
     const pos = profilePosition(s)
+    const myDept = myDeptId || requesterProfile?.department_id || ''
+    const isMyDept = !!(myDept && s.department_id === myDept)
+    const dept = depts.find(d => d.id === s.department_id)
+    const groupName = dept ? dept.name : 'ส่วนกลาง / ไม่ระบุกอง'
+    const groupBadge = isMyDept ? 'กองของคุณ' : undefined
+
     return {
       value: s.id,
       label: `${name}${isMe ? ' (ฉัน)' : ''}`,
       title: name,
-      subtitle: pos || undefined,
+      subtitle: pos || (dept ? dept.name : undefined),
       badge: isMe ? 'ฉัน' : undefined,
+      group: groupName,
+      groupBadge: groupBadge,
     }
   })
 
@@ -1324,7 +1359,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
           disabled={!!selTrip && selTrip.status !== 'pending'}
           placeholder="— เลือกผู้ขอใช้รถ —"
           modalTitle="เลือกผู้ขอใช้รถ"
-          searchPlaceholder="ค้นหาชื่อ, ตำแหน่ง..."
+          searchPlaceholder="ค้นหาชื่อ, ตำแหน่ง, สังกัดกอง..."
           options={requesterItems}
           className={!!selTrip && selTrip.status !== 'pending' ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}
         />
@@ -1352,12 +1387,27 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     badge: assetIdentifier(v),
   }))
 
-  const deptItems = depts.map(d => ({
-    value: d.id,
-    label: d.name,
-    title: d.name,
-    badge: d.short_name || undefined,
-  }))
+  const sortedDepts = useMemo(() => {
+    const myDept = myDeptId || requesterProfile?.department_id || ''
+    return [...depts].sort((a, b) => {
+      const isMyA = a.id === myDept
+      const isMyB = b.id === myDept
+      if (isMyA && !isMyB) return -1
+      if (!isMyA && isMyB) return 1
+      return (a.sort_order ?? 0) - (b.sort_order ?? 0)
+    })
+  }, [depts, myDeptId, requesterProfile?.department_id])
+
+  const deptItems = sortedDepts.map(d => {
+    const myDept = myDeptId || requesterProfile?.department_id || ''
+    const isMyDept = d.id === myDept
+    return {
+      value: d.id,
+      label: d.name,
+      title: d.name,
+      badge: isMyDept ? 'กองของคุณ' : (d.short_name || undefined),
+    }
+  })
 
   // historyCount มาจาก count:'exact' ของ server ไม่ใช่ความยาวอาร์เรย์ที่โหลดมา
   const historyTotalPages = historyPageSize === 'all'

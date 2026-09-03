@@ -5477,9 +5477,13 @@ export default function AdminDashboard() {
 
   useEffect(() => { fetchTechnicians() }, [fetchTechnicians])
 
+  // ออกแล้วพากลับหน้าแรกประชาชน ไม่ใช่ /admin/login — เดิมค้างอยู่หน้าล็อกอินเจ้าหน้าที่
+  // ซึ่งเป็นทางตันสำหรับคนที่แค่จะออกไปดูเว็บสาธารณะต่อ
+  // คนที่จะเข้าใหม่: เข้าที่ /auth ได้ตามปกติ แล้วปุ่ม "Admin" ในลิงก์ลัดหน้าแรกจะโผล่เอง
+  // (ShortcutBand เช็ค role) หรือกลับมาที่ /admin/login โดยตรงก็ได้ ซึ่งตอนนี้มี Google/LINE แล้ว
   async function handleLogout() {
-    await signOutSafely('/admin/login')
-    navigate('/admin/login')
+    await signOutSafely('/')
+    navigate('/')
   }
 
   // silent = true สำหรับ realtime refetch — ไม่ยิง setLoading ไม่งั้นหน้ารายงานจะกลับไปขึ้น
