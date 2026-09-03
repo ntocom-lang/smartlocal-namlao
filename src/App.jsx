@@ -51,7 +51,6 @@ const ComplaintStats = lazyWithRetry(() => import('./pages/ComplaintStats'))
 const ReportsHub = lazyWithRetry(() => import('./pages/ReportsHub'))
 const PostsPage = lazyWithRetry(() => import('./pages/PostsPage'))
 const FleetPage = lazyWithRetry(() => import('./pages/FleetPage'))
-const ChatbotPage = lazyWithRetry(() => import('./pages/ChatbotPage'))
 
 // required = บัญชีนี้ไม่มีอีเมลเลย เบอร์โทรจึงเป็นตัวระบุตัวตนชิ้นเดียวที่เหลือ ข้ามไม่ได้
 // (เหตุผลเต็มอยู่ที่จุดเรียก setPhoneReminderRequired ใน checkAndFixProfile)
@@ -618,7 +617,7 @@ function AppShell() {
         {isTechnician && <div className="hidden md:block"><Header /></div>}
         <div className="flex flex-1 min-h-0 overflow-hidden">
           {(!isBackOffice || isTechnician) && <CitizenSidebar />}
-          <main className={`flex-1 min-w-0 ${location.pathname === '/search' || location.pathname === '/chatbot' ? 'overflow-hidden flex flex-col h-full' : 'overflow-y-auto'}`}>
+          <main className="flex-1 min-w-0 overflow-y-auto">
           <SuspenseErrorBoundary>
           <Suspense fallback={
             <div className="flex items-center justify-center min-h-[50vh]" role="status" aria-label="กำลังโหลดหน้า">
@@ -631,8 +630,9 @@ function AppShell() {
           <ModuleGuard>
           <Routes>
           <Route path="/" element={<HomeOrTechRedirect />} />
-          <Route path="/search" element={<ChatbotPage />} />
-          <Route path="/chatbot" element={<ChatbotPage />} />
+          {/* แชทบอทน้ำเลาใจดีปิดใช้งานแล้ว โค้ดหน้ายังอยู่ที่ pages/ChatbotPage.jsx */}
+          <Route path="/search" element={<Navigate to="/" replace />} />
+          <Route path="/chatbot" element={<Navigate to="/" replace />} />
           <Route path="/complaint" element={<ComplaintCategory />} />
           <Route path="/complaint-legacy" element={<OneDataLanding />} />
           <Route path="/business-register" element={
@@ -756,7 +756,7 @@ function AppShell() {
           </ModuleGuard>
           </Suspense>
           </SuspenseErrorBoundary>
-          {location.pathname !== '/search' && location.pathname !== '/chatbot' && <Footer />}
+          <Footer />
           </main>
         </div>
         {!hideBottomNav && <BottomNav />}
