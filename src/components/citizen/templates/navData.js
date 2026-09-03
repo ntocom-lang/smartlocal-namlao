@@ -4,7 +4,7 @@ import { moduleForPath } from '../../../lib/staffModules'
 // เมนูล่างของหน้าประชาชน ใช้ร่วมกันทั้ง 7 ธีม
 //
 // isModuleEnabled: ส่งมาจาก BottomNav ของแต่ละธีม (useTenant) เพื่อตัดเมนูของโมดูลที่ อปท. นี้
-// ไม่ได้ซื้อออก — โมดูลคือแพ็กเกจที่ขายเป็นเรื่องๆ ถ้าไม่กรองตรงนี้ ปุ่ม "ยื่นคำร้อง" จะยังอยู่กลางจอ
+// ไม่ได้ซื้อออก — โมดูลคือแพ็กเกจที่ขายเป็นเรื่องๆ ถ้าไม่กรองตรงนี้ ปุ่ม "ร้องเรียน" จะยังอยู่กลางจอ
 // ทั้งที่หน่วยงานปิดบริการไปแล้ว กดแล้วเจอหน้า "ยังไม่ได้เปิดใช้งาน" ซึ่งดูเหมือนระบบพัง
 // ไม่ส่งมา = ไม่กรอง (ค่าเริ่มต้นปลอดภัย ใช้กับที่เรียกนอก React context)
 export function getNavItems(role, isModuleEnabled = null) {
@@ -12,7 +12,7 @@ export function getNavItems(role, isModuleEnabled = null) {
   const isStaff = ['staff', 'officer', 'council'].includes(role)
   const isTech  = role === 'technician'
 
-  let roleNavItem = { label: 'ยื่นคำร้อง', icon: ClipboardList, href: '/complaint' }
+  let roleNavItem = { label: 'ร้องเรียน', icon: ClipboardList, href: '/complaint' }
   if (isTech) {
     roleNavItem = { label: 'งานของฉัน', icon: Wrench, href: '/technician' }
   } else if (isStaff) {
