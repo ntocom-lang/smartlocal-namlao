@@ -2156,7 +2156,11 @@ function SortableContact({ c, i, total, onDelete, onMove, onEdit, onMoveBook, ot
     <div ref={setNodeRef} style={style}
          className={`px-4 py-3 bg-white ${i < total - 1 ? 'border-b border-gray-50' : ''}`}>
       <div className="flex items-start gap-2">
+        {/* ปุ่มในการ์ดเป็นไอคอนล้วนและซ้ำกันทุกแถว — ต้องบอกทั้ง "ทำอะไร" และ "กับแถวไหน"
+            ไม่งั้นผู้ใช้ screen reader ได้ยินแค่ "ปุ่ม" เรียงกันหลายสิบอันแยกไม่ออก
+            ใช้ aria-label ไม่ใช่ title เพราะบนมือถือไม่มี hover ให้ tooltip โผล่ */}
         <button {...attributes} {...listeners}
+                aria-label={`ลากเพื่อจัดลำดับ ${c.label}`}
                 className="p-1 text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing touch-none shrink-0">
           <GripVertical size={16} />
         </button>
@@ -2180,10 +2184,12 @@ function SortableContact({ c, i, total, onDelete, onMove, onEdit, onMoveBook, ot
       <div className="mt-2 flex items-center justify-between">
         <div className="flex items-center">
           <button onClick={() => onMove(c, -1)} disabled={i === 0}
+                  aria-label={`เลื่อน ${c.label} ขึ้น`}
                   className="p-1.5 rounded-lg text-gray-300 hover:text-gray-600 disabled:opacity-20 transition-colors">
             <ChevronUp size={16} />
           </button>
           <button onClick={() => onMove(c, 1)} disabled={i === total - 1}
+                  aria-label={`เลื่อน ${c.label} ลง`}
                   className="p-1.5 rounded-lg text-gray-300 hover:text-gray-600 disabled:opacity-20 transition-colors">
             <ChevronDown size={16} />
           </button>
@@ -2194,14 +2200,17 @@ function SortableContact({ c, i, total, onDelete, onMove, onEdit, onMoveBook, ot
           <PhoneCall size={15} />
         </a>
         <button onClick={() => onMoveBook(c)} title={`ย้ายไปที่${otherBookLabel}`}
+                aria-label={`ย้าย ${c.label} ไปที่${otherBookLabel}`}
                 className="p-2 rounded-xl text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors">
           <ArrowLeftRight size={15} />
         </button>
         <button onClick={() => onEdit(c)}
+                aria-label={`แก้ไข ${c.label}`}
                 className="p-2 rounded-xl text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-colors">
           <Pencil size={15} />
         </button>
         <button onClick={() => onDelete(c.id)}
+                aria-label={`ลบ ${c.label}`}
                 className="p-2 rounded-xl text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
           <Trash2 size={15} />
         </button>
@@ -2289,6 +2298,7 @@ function SortableContactRow({ c, order, onDelete, onEdit, onMoveBook, otherBookL
       <td className="min-w-0 px-2 py-3">
         <div className="flex items-center gap-1">
           <button {...attributes} {...listeners}
+            aria-label={`ลากเพื่อจัดลำดับ ${c.label}`}
             className="p-1 -ml-1 rounded text-gray-300 hover:text-gray-600 cursor-grab active:cursor-grabbing touch-none"
             title="ลากเพื่อสลับลำดับ">
             <GripVertical size={15} />
@@ -2354,15 +2364,17 @@ function SortableContactRow({ c, order, onDelete, onEdit, onMoveBook, otherBookL
       </td>
       <td className="px-4 py-3">
         <div className="flex justify-end gap-1.5">
-          <button onClick={() => onEdit(c)}
+          {/* title สั้นไว้ให้ tooltip อ่านง่ายตอน hover ส่วน aria-label ระบุแถวด้วย
+              เพราะทั้งคอลัมน์เป็นปุ่มไอคอนหน้าตาเหมือนกันทุกแถว */}
+          <button onClick={() => onEdit(c)} aria-label={`แก้ไข ${c.label}`}
             className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="แก้ไข">
             <Pencil size={14} />
           </button>
-          <button onClick={() => onMoveBook(c)}
+          <button onClick={() => onMoveBook(c)} aria-label={`ย้าย ${c.label} ไปที่${otherBookLabel}`}
             className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors" title={`ย้ายไปที่${otherBookLabel}`}>
             <ArrowLeftRight size={14} />
           </button>
-          <button onClick={() => onDelete(c.id)}
+          <button onClick={() => onDelete(c.id)} aria-label={`ลบ ${c.label}`}
             className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="ลบ">
             <Trash2 size={14} />
           </button>
