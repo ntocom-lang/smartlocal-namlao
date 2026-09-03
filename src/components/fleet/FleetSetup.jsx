@@ -236,7 +236,8 @@ function UsersTab({ tenant, depts }) {
   // fleet_staff ที่ไม่ผูกกองจะบันทึกการเดินทาง/จองรถไม่ได้เลย เพราะ RLS เทียบ
   // department_id = my_fleet().fdept_id ซึ่ง NULL = NULL ให้ NULL ไม่ใช่ TRUE
   // ส่วน fleet_admin/fleet_viewer เห็นทุกกองอยู่แล้ว ไม่ต้องมีกองก็ทำงานได้ จึงไม่นับ
-  const staffMissingDept = users.filter(u => u.fleet_role === 'fleet_staff' && !u.department_id).length
+  const needsDept = u => u.fleet_role === 'fleet_staff' && !u.department_id
+  const staffMissingDept = users.filter(needsDept).length
 
   const visibleUsers = users.filter(u => {
     if (filterRole !== 'all' && u.fleet_role !== filterRole) return false
@@ -268,27 +269,33 @@ function UsersTab({ tenant, depts }) {
           const t = CARD_TONE[tone]
           const warn = key === 'fleet_staff' && staffMissingDept > 0
           return (
-            <button key={key} type="button"
-              onClick={() => setFilterRole(active && key !== 'all' ? 'all' : key)}
-              aria-pressed={active}
-              className={`text-left rounded-2xl border p-3 transition-colors ${
-                active ? t.on : 'border-gray-100 bg-white hover:border-gray-200'
-              }`}>
-              <div className="flex items-center gap-1.5 mb-1">
-                <Icon size={14} className={active ? t.icon : 'text-gray-400'} />
-                <span className="text-[11px] font-bold text-gray-700 truncate">{label}</span>
-              </div>
-              <p className={`text-xl font-bold leading-none ${active ? t.num : 'text-gray-800'}`}>
-                {roleCount(key)}<span className="text-[10px] font-semibold text-gray-400 ml-1">คน</span>
-              </p>
-              <p className="text-[10px] text-gray-400 leading-snug mt-1">{scope}</p>
+            <div key={key} className={`rounded-2xl border p-3 transition-colors ${
+              active ? t.on : 'border-gray-100 bg-white hover:border-gray-200'
+            }`}>
+              <button type="button" aria-pressed={active}
+                onClick={() => setFilterRole(active && key !== 'all' ? 'all' : key)}
+                className="w-full text-left">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Icon size={14} className={active ? t.icon : 'text-gray-400'} />
+                  <span className="text-[11px] font-bold text-gray-700 truncate">{label}</span>
+                </div>
+                <p className={`text-xl font-bold leading-none ${active ? t.num : 'text-gray-800'}`}>
+                  {roleCount(key)}<span className="text-[10px] font-semibold text-gray-400 ml-1">คน</span>
+                </p>
+                <p className="text-[10px] text-gray-400 leading-snug mt-1">{scope}</p>
+              </button>
+              {/* ป้ายเตือนเป็นปุ่มแยก — กดแล้วกรองตรงไปที่ "เจ้าหน้าที่ที่ยังไม่ผูกกอง" เลย
+                  ไม่ต้องกดการ์ดแล้วไปเปิดดรอปดาวน์กองอีกรอบ (แยกเป็น <button> คนละตัวเพราะ
+                  ปุ่มซ้อนในปุ่มเป็น HTML ที่ไม่ถูกต้อง) */}
               {warn && (
-                <p className="flex items-start gap-1 text-[10px] font-semibold text-amber-600 mt-1.5 leading-snug">
+                <button type="button"
+                  onClick={() => { setFilterRole('fleet_staff'); setFilterDept('none') }}
+                  className="flex items-start gap-1 text-[10px] font-semibold text-amber-600 hover:text-amber-700 hover:underline mt-1.5 leading-snug text-left">
                   <AlertTriangle size={11} className="shrink-0 mt-px" />
                   <span>{staffMissingDept} คนยังไม่ผูกกอง — บันทึกการใช้รถไม่ได้</span>
-                </p>
+                </button>
               )}
-            </button>
+            </div>
           )
         })}
       </div>
@@ -347,12 +354,22 @@ function UsersTab({ tenant, depts }) {
               </div>
               <div>
                 <label className="text-[10px] font-semibold text-gray-500 mb-1 block">กอง</label>
+                {/* เจ้าหน้าที่ที่ยังไม่ผูกกองต้องสะดุดตาตั้งแต่เลื่อนผ่าน ไม่ใช่รู้ต่อเมื่อกรองถูกอัน
+                    สีจะหายเองทันทีที่เลือกกอง จึงเป็น feedback ว่าแก้เรียบร้อยแล้ว */}
                 <select value={u.department_id ?? ''} onChange={e => update(u.id, 'department_id', e.target.value)}
                   disabled={saving === u.id + 'department_id'}
-                  className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-lg bg-white text-gray-900 focus:outline-none appearance-none disabled:opacity-60">
+                  className={`w-full text-xs px-2 py-1.5 border rounded-lg text-gray-900 focus:outline-none appearance-none disabled:opacity-60 ${
+                    needsDept(u) ? 'border-amber-400 bg-amber-50' : 'border-gray-200 bg-white'
+                  }`}>
                   <option value="">— ไม่ระบุ —</option>
                   {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
+                {needsDept(u) && (
+                  <p className="flex items-start gap-1 text-[10px] font-semibold text-amber-600 mt-1 leading-snug">
+                    <AlertTriangle size={11} className="shrink-0 mt-px" />
+                    <span>ต้องระบุกอง ไม่งั้นบันทึกการใช้รถไม่ได้</span>
+                  </p>
+                )}
               </div>
             </div>
 
