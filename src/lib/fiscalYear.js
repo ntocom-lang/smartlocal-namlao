@@ -10,6 +10,14 @@ export function fiscalYearOf(date = new Date()) {
   return startCalendarYear + 1 + 543
 }
 
+// ตัวเลือกปีงบสำหรับหน้ารายงานสาธารณะ (ปีงบปัจจุบัน → ย้อนหลัง) เรียงใหม่→เก่า
+// ใช้แทนการไปไล่หาปีที่มีข้อมูลจริงจาก DB เพราะหน้ารายงานต้องแสดงปีงบที่ผู้ตรวจ ITA ขอ
+// ได้เสมอแม้ปีนั้นจะยังไม่มีคำร้องสักรายการ (ต้องเห็นเลข 0 ไม่ใช่หาตัวเลือกไม่เจอ)
+export function recentFiscalYears(count = 5, date = new Date()) {
+  const current = fiscalYearOf(date)
+  return Array.from({ length: count }, (_, i) => current - i)
+}
+
 // ช่วงวันที่ ต.ค.–ก.ย. ของปีงบที่ครอบคลุมวันที่ที่กำหนด
 export function fiscalYearRange(date = new Date()) {
   const y = date.getFullYear()

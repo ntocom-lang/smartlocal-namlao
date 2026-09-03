@@ -11,6 +11,9 @@ import {
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
+import FiscalYearPicker from '../components/common/FiscalYearPicker'
+import { FY_ALL, useFiscalYearParam, fiscalPeriodLabel } from '../lib/fiscalYearParam'
+import { FISCAL_MONTHS_TH, fiscalYearBounds } from '../lib/fiscalYear'
 
 // ดึงมาใช้คำนวณกราฟสรุปทั้งหมด (สถานะ/หมวดหมู่/แนวโน้มรายเดือน) — คำร้องเรียนสะสมของ อปท.
 // ทั่วไปไม่เกินหลักพัน จึงพอเป็น "ทั้งหมด" ในทางปฏิบัติ ถ้าเกิน limit จะมีหมายเหตุแจ้งผู้ใช้ (ดู isTruncated ด้านล่าง)
@@ -62,20 +65,41 @@ export default function ComplaintStats() {
   const [categoryLabels, setCategoryLabels] = useState({})
   const [loading, setLoading]     = useState(true)
 
+  const { value: fiscalYear, setValue: setFiscalYear, options: fiscalOptions } = useFiscalYearParam()
+  // useFiscalYearParam() สร้าง object range ใหม่ทุกรอบ render — ต้อง memo ตามค่าปีงบ
+  // ไม่งั้น loadStats เปลี่ยน identity ทุกรอบ แล้ว useEffect/useVisibleRefresh ยิงซ้ำไม่หยุด
+  const fiscalRange = useMemo(
+    () => (fiscalYear === FY_ALL ? null : fiscalYearBounds(fiscalYear)),
+    [fiscalYear],
+  )
+
   const now = new Date().toLocaleDateString('th-TH', {
     year: 'numeric', month: 'long', day: 'numeric',
   })
 
+  // ปีงบที่เลือกเป็นตัวกำหนดว่าจะยิง RPC ตัวไหน — ตัว _fy รับช่วงวันที่และนับฝั่ง DB
+  // (ไม่กรองฝั่ง client จาก rows เพราะ rows ถูกตัดที่ AGGREGATE_LIMIT ปีงบเก่าจะหายไปเงียบๆ)
   const loadStats = useCallback(() => {
     if (!tenantId) return Promise.resolve()
-    return Promise.all([
-      supabase.rpc('complaint_stats',  { _municipality_id: tenantId }),
-      supabase.rpc('complaints_public', { _municipality_id: tenantId, _limit: AGGREGATE_LIMIT }),
-    ]).then(([{ data: s }, { data: r }]) => {
+    const calls = fiscalRange
+      ? [
+          supabase.rpc('complaint_stats_fy', {
+            _municipality_id: tenantId, _from: fiscalRange.from, _to: fiscalRange.to,
+          }),
+          supabase.rpc('complaints_public_fy', {
+            _municipality_id: tenantId, _limit: AGGREGATE_LIMIT,
+            _from: fiscalRange.from, _to: fiscalRange.to,
+          }),
+        ]
+      : [
+          supabase.rpc('complaint_stats',   { _municipality_id: tenantId }),
+          supabase.rpc('complaints_public', { _municipality_id: tenantId, _limit: AGGREGATE_LIMIT }),
+        ]
+    return Promise.all(calls).then(([{ data: s }, { data: r }]) => {
       setStats(s)
       setRows(r ?? [])
     }).catch(() => {})
-  }, [tenantId])
+  }, [tenantId, fiscalRange])
 
   // ป้ายชื่อหมวดหมู่แยกออกจากรอบรีเฟรช — แอดมินแก้ปีละครั้ง ไม่ต้องดึงซ้ำทุกนาที
   useEffect(() => {
@@ -99,6 +123,9 @@ export default function ComplaintStats() {
   const completionRate = stats?.total > 0
     ? Math.round((stats.resolved / stats.total) * 100)
     : 0
+
+  // ปีงบที่เลือกจบไปแล้วหรือยัง (ใช้ตัดสินว่าจะโชว์ "เดือนนี้" หรือช่วงวันที่ของปีงบ)
+  const isPastFiscalYear = fiscalYear !== FY_ALL && fiscalYear < fiscalOptions[0]
 
   function categoryLabel(value) {
     return categoryLabels[value] ?? FALLBACK_CATEGORY_LABELS[value] ?? value
@@ -132,14 +159,23 @@ export default function ComplaintStats() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, categoryLabels])
 
-  // แนวโน้มรายเดือน — 6 เดือนล่าสุด นับจากเดือนปัจจุบันย้อนหลัง (รวมเดือนที่มี 0 เรื่องด้วย ไม่ข้าม
-  // ไม่งั้นเส้นจะกระโดดผิดสัดส่วนเวลา)
+  // แนวโน้มรายเดือน (รวมเดือนที่มี 0 เรื่องด้วย ไม่ข้าม ไม่งั้นเส้นจะกระโดดผิดสัดส่วนเวลา)
+  //   เลือกปีงบ → 12 เดือนของปีงบนั้น เรียง ต.ค.→ก.ย. ตามที่ อปท. อ่านรายงานกัน
+  //   "ทุกปีงบประมาณ" → 6 เดือนล่าสุดแบบเดิม (ไม่มีขอบเขตปีให้ยึด)
   const monthlyTrend = useMemo(() => {
-    const nowDate = new Date()
     const buckets = []
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(nowDate.getFullYear(), nowDate.getMonth() - i, 1)
-      buckets.push({ key: `${d.getFullYear()}-${d.getMonth()}`, label: MONTH_SHORT_TH[d.getMonth()], count: 0 })
+    if (fiscalRange) {
+      FISCAL_MONTHS_TH.forEach(({ label, month }) => {
+        // ต.ค.–ธ.ค. อยู่ในปีปฏิทินก่อนหน้า (startCE) ที่เหลืออยู่ในปีที่ปีงบสิ้นสุด (endCE)
+        const year = month >= 10 ? fiscalRange.startCE : fiscalRange.endCE
+        buckets.push({ key: `${year}-${month - 1}`, label, count: 0 })
+      })
+    } else {
+      const nowDate = new Date()
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(nowDate.getFullYear(), nowDate.getMonth() - i, 1)
+        buckets.push({ key: `${d.getFullYear()}-${d.getMonth()}`, label: MONTH_SHORT_TH[d.getMonth()], count: 0 })
+      }
     }
     const byKey = Object.fromEntries(buckets.map(b => [b.key, b]))
     rows.forEach(r => {
@@ -148,7 +184,7 @@ export default function ComplaintStats() {
       if (byKey[key]) byKey[key].count += 1
     })
     return buckets
-  }, [rows])
+  }, [rows, fiscalRange])
 
   if (loading) {
     return (
@@ -175,8 +211,11 @@ export default function ComplaintStats() {
                 ความโปร่งใสด้านการจัดการเรื่องร้องเรียน
               </span>
               <h1 className="text-xl font-black text-gray-800 leading-tight mt-2">
-                รายงานการจัดการเรื่องร้องเรียน/ร้องทุกข์
+                รายงานสถิติข้อมูลการขอรับบริการผ่านช่องทางออนไลน์ (e-Service)
               </h1>
+              <p className="text-sm font-semibold text-gray-600 mt-1">
+                ด้านการจัดการเรื่องร้องเรียน/ร้องทุกข์ — {fiscalPeriodLabel(fiscalYear)}
+              </p>
               <p className="text-sm text-gray-500 mt-0.5">{tenant?.name ?? 'หน่วยงาน'}</p>
               <p className="text-xs text-gray-400 mt-1">ข้อมูล ณ วันที่ {now}</p>
             </div>
@@ -186,6 +225,11 @@ export default function ComplaintStats() {
               <Printer size={15} /> พิมพ์
             </button>
           </div>
+
+          {/* ตัวกรองปีงบ — ซ่อนตอนพิมพ์ เพราะช่วงเวลาที่เลือกพิมพ์ติดไปกับหัวรายงานอยู่แล้ว */}
+          <div className="print:hidden mt-4">
+            <FiscalYearPicker value={fiscalYear} options={fiscalOptions} onChange={setFiscalYear} />
+          </div>
         </div>
       </div>
 
@@ -194,9 +238,12 @@ export default function ComplaintStats() {
         {/* ── Stats grid ── */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3">
           <StatCard
-            label="รวมเรื่องทั้งหมด"
+            label={fiscalRange ? 'รวมเรื่องในปีงบนี้' : 'รวมเรื่องทั้งหมด'}
             value={stats?.total ?? 0}
-            sub={`เดือนนี้ ${stats?.this_month ?? 0} เรื่อง`}
+            // ปีงบที่ปิดไปแล้วไม่มี "เดือนนี้" อยู่ในช่วง จะขึ้น 0 เสมอ — โชว์ช่วงวันที่แทนจะตรงกว่า
+            sub={isPastFiscalYear
+              ? `1 ต.ค. ${fiscalYear - 1} – 30 ก.ย. ${fiscalYear}`
+              : `เดือนนี้ ${stats?.this_month ?? 0} เรื่อง`}
             Icon={ClipboardList}
             iconBg="bg-blue-500"
             border="border-blue-100"
@@ -288,6 +335,13 @@ export default function ComplaintStats() {
           </div>
         </div>
 
+        {/* ปีงบที่ไม่มีคำร้องเลยต้องบอกให้ชัดว่า "ไม่มีเรื่อง" ไม่ใช่ปล่อยหน้าว่างจนดูเหมือนโหลดพัง */}
+        {!stats?.total && (
+          <p className="bg-white rounded-2xl border border-gray-100 p-4 text-center text-sm text-gray-400">
+            ไม่มีคำร้องใน{fiscalPeriodLabel(fiscalYear)}
+          </p>
+        )}
+
         {/* ── หมวดหมู่ยอดนิยม + แนวโน้มรายเดือน ── */}
         {stats?.total > 0 && (
           <div className="grid md:grid-cols-2 gap-3">
@@ -318,7 +372,9 @@ export default function ComplaintStats() {
             {/* Trend over time → area, single series, sequential hue */}
             <div className="bg-white rounded-2xl border border-gray-100 p-3 md:p-4">
               <p className="text-sm font-bold text-gray-700 mb-1">แนวโน้มจำนวนคำร้อง</p>
-              <p className="text-[10px] text-gray-400 mb-1.5">6 เดือนล่าสุด</p>
+              <p className="text-[10px] text-gray-400 mb-1.5">
+                {fiscalRange ? `รายเดือน ปีงบประมาณ ${fiscalYear} (ต.ค.–ก.ย.)` : '6 เดือนล่าสุด'}
+              </p>
               <ResponsiveContainer width="100%" height={160}>
                 <AreaChart data={monthlyTrend} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                   <defs>

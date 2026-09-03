@@ -2,17 +2,20 @@ import { Link } from 'react-router-dom'
 import { ArrowLeft, ClipboardList, ShieldCheck, Database, ChevronRight, FileBarChart } from 'lucide-react'
 import { useTenant } from '../contexts/TenantContext'
 
+// ชื่อการ์ด 2 อันแรกตั้งตามถ้อยคำในแบบวัด OIT ของ ITA ข้อ e-Service ("รายงานสถิติข้อมูล
+// การขอรับบริการผ่านช่องทางออนไลน์ (e-Service)") ไม่ใช่คำเรียกภายในของเรา — ผู้ตรวจ ITA
+// ไล่หาหลักฐานจากชื่อรายการในเกณฑ์ ถ้าหน้านี้ไม่มีคำว่า e-Service เลยจะหาไม่เจอ
 const REPORTS = [
   {
-    label: 'เรื่องร้องเรียน/ร้องทุกข์',
-    desc: 'สถิติการรับเรื่องและระยะเวลาดำเนินการ',
+    label: 'สถิติการขอรับบริการออนไลน์ (e-Service) — แจ้งเหตุ/แจ้งซ่อม',
+    desc: 'จำนวนเรื่อง สถานะ และระยะเวลาดำเนินการ แยกตามปีงบประมาณ',
     href: '/reports/complaints',
     Icon: ClipboardList,
     iconBg: 'bg-amber-500',
   },
   {
-    label: 'งานบริการประชาชน',
-    desc: 'สถิติการออกเอกสาร/ใบรับรองดิจิทัล',
+    label: 'สถิติการขอรับบริการออนไลน์ (e-Service) — ขอเอกสาร/ใบรับรอง',
+    desc: 'จำนวนคำขอ สถานะ และระยะเวลาออกเอกสาร แยกตามปีงบประมาณ',
     href: '/doc-stats',
     Icon: ShieldCheck,
     iconBg: 'bg-emerald-500',

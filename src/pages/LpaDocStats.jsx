@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import {
   FileText, CheckCircle2, Clock, RefreshCw, XCircle,
@@ -6,6 +6,9 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import FiscalYearPicker from '../components/common/FiscalYearPicker'
+import { FY_ALL, useFiscalYearParam, fiscalPeriodLabel } from '../lib/fiscalYearParam'
+import { fiscalYearBounds } from '../lib/fiscalYear'
 
 const DOC_LABELS = {
   residence_cert: 'ใบรับรองการอยู่อาศัย',
@@ -50,22 +53,41 @@ export default function LpaDocStats() {
   const [rows, setRows]     = useState([])
   const [loading, setLoading] = useState(true)
 
+  const { value: fiscalYear, setValue: setFiscalYear, options: fiscalOptions } = useFiscalYearParam()
+  // memo ตามค่าปีงบ — object range ที่ hook สร้างใหม่ทุกรอบ render จะทำให้ useEffect ยิงซ้ำไม่หยุด
+  const fiscalRange = useMemo(
+    () => (fiscalYear === FY_ALL ? null : fiscalYearBounds(fiscalYear)),
+    [fiscalYear],
+  )
+  const isPastFiscalYear = fiscalYear !== FY_ALL && fiscalYear < fiscalOptions[0]
+
   const now = new Date().toLocaleDateString('th-TH', {
     year: 'numeric', month: 'long', day: 'numeric',
   })
 
   useEffect(() => {
     if (!tenant?.id) return
-    Promise.all([
-      supabase.rpc('doc_request_stats',   { _municipality_id: tenant.id }),
-      supabase.rpc('doc_requests_public', { _municipality_id: tenant.id, _limit: 30 }),
-    ]).then(([{ data: s }, { data: r }]) => {
+    const calls = fiscalRange
+      ? [
+          supabase.rpc('doc_request_stats_fy', {
+            _municipality_id: tenant.id, _from: fiscalRange.from, _to: fiscalRange.to,
+          }),
+          supabase.rpc('doc_requests_public_fy', {
+            _municipality_id: tenant.id, _limit: 30,
+            _from: fiscalRange.from, _to: fiscalRange.to,
+          }),
+        ]
+      : [
+          supabase.rpc('doc_request_stats',   { _municipality_id: tenant.id }),
+          supabase.rpc('doc_requests_public', { _municipality_id: tenant.id, _limit: 30 }),
+        ]
+    Promise.all(calls).then(([{ data: s }, { data: r }]) => {
       setStats(s)
       setRows(r ?? [])
     })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [tenant?.id])
+  }, [tenant?.id, fiscalRange])
 
   const completionRate = stats?.total > 0
     ? Math.round((stats.completed / stats.total) * 100)
@@ -102,8 +124,11 @@ export default function LpaDocStats() {
                 ความโปร่งใสด้านบริการดิจิทัล
               </span>
               <h1 className="text-xl font-black text-gray-800 leading-tight mt-2">
-                รายงานการให้บริการออกเอกสาร
+                รายงานสถิติข้อมูลการขอรับบริการผ่านช่องทางออนไลน์ (e-Service)
               </h1>
+              <p className="text-sm font-semibold text-gray-600 mt-1">
+                ด้านการออกเอกสาร/ใบรับรองดิจิทัล — {fiscalPeriodLabel(fiscalYear)}
+              </p>
               <p className="text-sm text-gray-500 mt-0.5">{tenant?.name ?? 'หน่วยงาน'}</p>
               <p className="text-xs text-gray-400 mt-1">ข้อมูล ณ วันที่ {now}</p>
             </div>
@@ -113,6 +138,10 @@ export default function LpaDocStats() {
               <Printer size={15} /> พิมพ์
             </button>
           </div>
+
+          <div className="print:hidden mt-4">
+            <FiscalYearPicker id="fy-doc-stats" value={fiscalYear} options={fiscalOptions} onChange={setFiscalYear} />
+          </div>
         </div>
       </div>
 
@@ -121,9 +150,11 @@ export default function LpaDocStats() {
         {/* ── Stats grid ── */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           <StatCard
-            label="รวมคำขอทั้งหมด"
+            label={fiscalRange ? 'รวมคำขอในปีงบนี้' : 'รวมคำขอทั้งหมด'}
             value={stats?.total ?? 0}
-            sub={`เดือนนี้ ${stats?.this_month ?? 0} คำขอ`}
+            sub={isPastFiscalYear
+              ? `1 ต.ค. ${fiscalYear - 1} – 30 ก.ย. ${fiscalYear}`
+              : `เดือนนี้ ${stats?.this_month ?? 0} คำขอ`}
             Icon={FileText}
             iconBg="bg-blue-500"
             border="border-blue-100"
