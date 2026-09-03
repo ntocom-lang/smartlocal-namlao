@@ -4,7 +4,7 @@ import {
   ArrowLeft, Loader2, Lightbulb, Hammer, Trees,
   Trash2, Droplets, Waves, CloudRain, Package, ShieldAlert,
   Megaphone, VolumeX, Building2, Receipt, Pickaxe, Dog,
-  Flame, PhoneCall, HelpCircle, Truck, CircleDot, Wind, Stethoscope
+  Flame, PhoneCall, HelpCircle, Truck, CircleDot, Wind, Stethoscope, Search
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
@@ -117,9 +117,20 @@ export default function ComplaintCategory() {
       <div className="max-w-2xl mx-auto px-4 pt-6 pb-28 md:pb-8">
 
         {/* Prompt text */}
-        <h2 className="text-[#0f172a] text-[15px] font-bold mb-4 text-left">
-          เลือกหมวดหมู่เพื่อแจ้งเรื่อง
-        </h2>
+        <div className="flex items-center justify-between gap-2 mb-4">
+          <h2 className="text-[#0f172a] text-[15px] font-bold text-left">
+            เลือกหมวดหมู่เพื่อแจ้งเรื่อง
+          </h2>
+          <button
+            onClick={() => navigate('/my-complaints')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-white shadow-sm transition-all hover:opacity-90 active:scale-95 shrink-0"
+            style={{ background: 'linear-gradient(135deg, var(--color-primary), #0f172a)' }}
+            aria-label="ติดตามคำร้อง"
+          >
+            <Search size={13} />
+            <span>ติดตามคำร้อง</span>
+          </button>
+        </div>
 
         {/* Grid */}
         {loading ? (
