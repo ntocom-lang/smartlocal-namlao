@@ -141,6 +141,10 @@ serve(async (req) => {
       filename: sanitizeSegment(filename),
       content_type: contentType,
       web_view_link: uploaded.webViewLink,
+      // เก็บ subject ดิบ (ไม่ใช่ตัวที่ sanitize แล้วสำหรับตั้งชื่อโฟลเดอร์) เพราะฝั่งที่ใช้ต่อ
+      // ต้องเทียบตรงตัวกับ id ของเรื่อง — attach_complaint_photos ใช้ยืนยันว่าไฟล์นี้
+      // เป็นของคำร้องนั้นจริง ไม่ใช่แค่อยู่ใน bucket เดียวกัน (ดู 20260905180000)
+      subject: subject ? String(subject) : null,
     })
     if (insertErr) console.error('drive_files insert failed (ไฟล์ขึ้น Drive แล้วแต่บันทึก mapping ไม่สำเร็จ):', insertErr.message)
 

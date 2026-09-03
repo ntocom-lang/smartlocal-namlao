@@ -634,6 +634,9 @@ export default function MyComplaints() {
   const [searching, setSearching]     = useState(false)
   const [searchResult, setSearchResult] = useState(null)
   const [searched, setSearched]       = useState(false)
+  // แยก "ยิงถี่เกินไป" ออกจาก "ไม่พบ" — get_complaint_by_ref มี rate limit แล้ว
+  // (20260905190000) ถ้าเหมารวมเป็นไม่พบ ผู้ใช้จะนึกว่าเรื่องตัวเองหายไปจากระบบ
+  const [searchError, setSearchError] = useState(null)
 
   const perPage = itemsPerPage === 'all' ? complaints.length : itemsPerPage
   const totalPages = perPage > 0 ? Math.max(1, Math.ceil(complaints.length / perPage)) : 1
@@ -750,10 +753,18 @@ export default function MyComplaints() {
   async function handleRefSearch() {
     const ref = refInput.trim().toUpperCase()
     if (!ref || !tenant?.id) return
-    setSearching(true); setSearched(true); setSearchResult(null)
-    const { data } = await supabase.rpc('get_complaint_by_ref', {
+    setSearching(true); setSearched(true); setSearchResult(null); setSearchError(null)
+    const { data, error } = await supabase.rpc('get_complaint_by_ref', {
       _ref_no: ref, _municipality_id: tenant.id,
     })
+    if (error) {
+      // PT429 = โควตาการค้นหาต่อ IP เต็ม ไม่ใช่ว่าไม่มีเรื่องนี้ในระบบ
+      setSearchError(error.code === 'PT429'
+        ? (error.message || 'ค้นหาถี่เกินไป กรุณารอสักครู่แล้วลองใหม่')
+        : 'ค้นหาไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')
+      setSearching(false)
+      return
+    }
     const row = data?.[0] ?? null
     setSearchResult(row)
     setSearching(false)
@@ -840,7 +851,11 @@ export default function MyComplaints() {
               </button>
             </div>
 
-            {searched && !searching && !searchResult && (
+            {searchError && !searching && (
+              <p className="text-xs text-amber-600">{searchError}</p>
+            )}
+
+            {searched && !searching && !searchResult && !searchError && (
               <p className="text-xs text-red-500">ไม่พบเลขอ้างอิงนี้ ลองตรวจสอบอีกครั้ง</p>
             )}
 
