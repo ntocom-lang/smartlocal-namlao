@@ -244,7 +244,10 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
     return () => supabase.removeChannel(channel)
   }, [tenant?.id])
 
-  function openAdd() { setForm({ ...EMPTY, department_id: depts[0]?.id ?? '' }); setModal('add') }
+  // อปท. ขนาดเล็ก-กลางส่วนใหญ่ใช้รถร่วมกันทุกกอง ไม่ได้ซื้อรถแยกรายกอง
+  // จึงตั้งต้นเป็น "ใช้ร่วมกันทุกกอง" ไม่ผูกกอง — ของเดิมเลือกกองแรกในลิสต์ให้อัตโนมัติ
+  // ทำให้ผู้กรอกที่ไม่ทันสังเกตได้รถที่กองอื่นมองไม่เห็นโดยไม่ตั้งใจ
+  function openAdd() { setForm({ ...EMPTY, is_pool: true, department_id: '' }); setModal('add') }
   function openEdit(v) {
     setForm({
       name: v.name, asset_kind: v.asset_kind ?? 'vehicle',
@@ -263,10 +266,21 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
 
+  // ติ๊ก "ใช้ร่วมกันทุกกอง" แล้วต้องล้างกองทิ้งด้วย ไม่งั้นจะได้รถกลางที่ยังผูกกองค้างไว้
+  // ซึ่งไม่กระทบสิทธิ์ (is_pool ชนะใน fleet_can_read_asset) แต่ป้ายในตารางกับตัวกรองจะแสดงผิด
+  const setIsPool = e => setForm(f => ({
+    ...f, is_pool: e.target.checked, department_id: e.target.checked ? '' : f.department_id,
+  }))
+
   async function handleSave() {
     if (!form.name.trim()) return alert('กรุณากรอกชื่อทรัพย์สิน')
     if (form.asset_kind === 'vehicle' && !form.license_plate.trim()) return alert('ยานพาหนะต้องมีทะเบียนรถ')
     if (form.asset_kind !== 'vehicle' && !form.asset_code.trim()) return alert('เครื่องยนต์/ครุภัณฑ์ต้องมีรหัสครุภัณฑ์')
+    // กฎเดียวกับการนำเข้า CSV (FleetImportModal) — ไม่ระบุกองและไม่ใช่ของกลาง
+    // จะทำให้ fleet_can_read_asset ได้ NULL แทน TRUE คือเจ้าหน้าที่ยานพาหนะทุกคนมองไม่เห็นรายการนี้
+    // เห็นแต่ผู้ดูแล ซึ่งเป็นอาการที่ไล่หาสาเหตุยากมากเพราะข้อมูลยังอยู่ครบ
+    if (!form.is_pool && !form.department_id)
+      return alert('เลือกกอง/หน่วยงาน หรือติ๊ก "ใช้ร่วมกันทุกกอง" อย่างใดอย่างหนึ่ง\nถ้าไม่ระบุทั้งคู่ เจ้าหน้าที่ยานพาหนะจะมองไม่เห็นรายการนี้')
     if (form.tank_capacity !== '' && Number(form.tank_capacity) <= 0) return alert('ความจุถังต้องมากกว่า 0')
     if (form.odometer_initial !== '' && Number(form.odometer_initial) < 0) return alert('ค่ามิเตอร์เริ่มต้นต้องไม่ติดลบ')
     const effMin = form.efficiency_min === '' ? null : Number(form.efficiency_min)
@@ -641,10 +655,21 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
                     {METER_UNIT_OPTIONS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
                   </select>
                 </div>
+                {/* เช็คบ็อกซ์ต้องอยู่เหนือช่องกอง เพราะเป็นตัวตัดสินว่าต้องกรอกช่องกองหรือไม่
+                    ของเดิมวางไว้ล่างสุดใต้ "สถานะ" ผู้กรอกจึงเลือกกองไปแล้วก่อนจะเห็นตัวเลือกนี้ */}
+                <div className="col-span-2 flex items-start gap-2">
+                  <input type="checkbox" id="is_pool" checked={form.is_pool} onChange={setIsPool}
+                    className="w-4 h-4 mt-0.5 rounded accent-blue-500" />
+                  <label htmlFor="is_pool" className="text-sm text-gray-700 leading-snug">
+                    ใช้ร่วมกันทุกกอง (ทรัพย์สินส่วนกลาง)
+                    <span className="block text-[11px] text-gray-400">ทุกกองเห็นและเบิกใช้ได้ ไม่ต้องระบุกอง</span>
+                  </label>
+                </div>
                 <div>
                   <label className="text-xs font-semibold text-gray-600 mb-1 block">กอง/หน่วยงาน</label>
-                  <select value={form.department_id} onChange={set('department_id')} className={sel}>
-                    <option value="">— ไม่ระบุ —</option>
+                  <select value={form.department_id} onChange={set('department_id')} disabled={form.is_pool}
+                    className={sel + (form.is_pool ? ' bg-gray-50 text-gray-400 cursor-not-allowed' : '')}>
+                    <option value="">{form.is_pool ? '— ใช้ร่วมทุกกอง —' : '— เลือกกอง —'}</option>
                     {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
                 </div>
@@ -654,11 +679,14 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
                     {Object.entries(STATUS_TH).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
                   </select>
                 </div>
-                <div className="col-span-2 flex items-center gap-2">
-                  <input type="checkbox" id="is_pool" checked={form.is_pool} onChange={set('is_pool')}
-                    className="w-4 h-4 rounded accent-blue-500" />
-                  <label htmlFor="is_pool" className="text-sm text-gray-700">ทรัพย์สินส่วนกลาง (ทุกกองใช้ร่วมกันได้)</label>
-                </div>
+                {!form.is_pool && (
+                  <div className="col-span-2">
+                    <p className="text-[11px] text-gray-400 leading-relaxed">
+                      ระบุกองเมื่อต้องการให้เห็นและเบิกใช้ได้เฉพาะกองนั้น
+                      (ผู้ดูแลระบบยานพาหนะและผู้ดูรายงานยังเห็นทุกกองตามเดิม)
+                    </p>
+                  </div>
+                )}
               </div>
 
               {isVehicleAsset(form) && <div className="border-t border-gray-100 pt-4 space-y-3">
