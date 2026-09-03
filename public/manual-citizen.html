@@ -248,23 +248,23 @@
 
   ul.steps-list { list-style: none; margin: 0; padding: 0; }
   ul.steps-list li {
-    display: flex;
-    gap: 10px;
-    align-items: flex-start;
+    position: relative;
+    padding-left: 32px;
     margin-bottom: 8px;
     font-size: 14px;
+    line-height: 1.7;
     color: var(--gray-700);
   }
   ul.steps-list li::before {
     content: attr(data-n);
-    min-width: 22px; height: 22px;
+    position: absolute;
+    left: 0; top: 2px;
+    width: 22px; height: 22px;
     background: var(--blue);
     color: #fff;
     border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     font-size: 11px; font-weight: 700;
-    flex-shrink: 0;
-    margin-top: 2px;
   }
 
   /* ─── Phone Frame ─── */
@@ -1051,6 +1051,18 @@
       <a class="toc-item" href="#step6">
         <div class="toc-num">6</div>
         <span>การติดตามสถานะคำร้อง</span>
+        <div class="toc-dots"></div>
+        <span class="toc-page">→</span>
+      </a>
+      <a class="toc-item" href="#docs">
+        <div class="toc-num" style="background:linear-gradient(135deg,#6d28d9,#8b5cf6);">📄</div>
+        <span>ขอเอกสารออนไลน์ และ "เอกสารของฉัน"</span>
+        <div class="toc-dots"></div>
+        <span class="toc-page">→</span>
+      </a>
+      <a class="toc-item" href="#contacts">
+        <div class="toc-num" style="background:linear-gradient(135deg,#1d4ed8,#3b82f6);">📒</div>
+        <span>เบอร์โทรสำคัญและสายด่วนฉุกเฉิน</span>
         <div class="toc-dots"></div>
         <span class="toc-page">→</span>
       </a>
@@ -1883,6 +1895,280 @@
   </div>
 </div>
 
+<!-- ═══════════════ PAGE 8.6 — ขอเอกสารออนไลน์ / เอกสารของฉัน ═══════════════ -->
+<div id="docs" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">📄</div>
+      <div>
+        <h2>ขอเอกสารออนไลน์</h2>
+        <p>ยื่นคำขอใบรับรอง สอบถามยอดชำระ และติดตามที่ "เอกสารของฉัน"</p>
+      </div>
+    </div>
+
+    <div class="step-section">
+      <div>
+        <div class="step-num"><div class="step-num-circle">1</div>ยื่นคำขอ</div>
+        <h3>เลือกประเภทเอกสารที่ต้องการ</h3>
+        <p class="step-desc">บริการนี้แยกจากการร้องเรียน/ร้องทุกข์ ใช้สำหรับขอเอกสารราชการและสอบถามยอดค่าธรรมเนียม</p>
+        <ul class="steps-list">
+          <li data-n="1">หน้าหลัก กด <strong>"บริการประชาชน"</strong> หรือ <strong>เมนูอื่นๆ → "สอบถามยอดชำระ"</strong></li>
+          <li data-n="2">กดเลือก <strong>ประเภทเอกสาร</strong> ที่ต้องการจากรายการ</li>
+          <li data-n="3">กรอก <strong>เลขบัตรประจำตัวประชาชน</strong> เพื่อยืนยันตัวตน — บันทึกครั้งเดียว ครั้งต่อไปไม่ต้องกรอกซ้ำ</li>
+          <li data-n="4">กรอกข้อมูลผู้ยื่นคำขอ: คำนำหน้า ชื่อ-สกุล เบอร์โทรศัพท์ ที่อยู่ และ<strong>วัตถุประสงค์</strong> (เช่น เพื่อยื่นกู้ธนาคาร สมัครงาน)</li>
+          <li data-n="5">กด <strong>ส่งคำขอ</strong> ระบบจะแสดง <strong>หมายเลขอ้างอิง 8 หลัก</strong></li>
+        </ul>
+        <div class="tips">
+          <strong>💡 ค่าธรรมเนียมและระยะเวลา</strong>
+          แต่ละประเภทแสดงค่าธรรมเนียมและขั้นตอนไว้ก่อนยื่น มีทั้งแบบ <b>ไม่มีค่าธรรมเนียม</b>, แบบ <b>โอนผ่านบัญชีธนาคารหลังยื่นคำขอ</b> และแบบ <b>เจ้าหน้าที่แจ้งยอดแล้วชำระที่สำนักงาน</b> โดยทั่วไปดำเนินการภายใน <b>1–3 วันทำการ</b>
+        </div>
+        <div class="note-box" style="margin-top:12px;">
+          <strong>⚠️ ยื่นโดยไม่เข้าสู่ระบบก็ได้</strong> แต่จะติดตามสถานะได้ยากขึ้น หากไม่ล็อกอิน <u>ต้องจดหมายเลขอ้างอิงไว้</u> เพราะใช้ค้นหาคำขอของท่านได้ทางเดียว
+        </div>
+      </div>
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen" style="min-height: 380px;">
+              <div class="app-back-header">
+                <div class="app-back-btn">←</div>
+                <div><div class="app-back-title">งานบริการประชาชน</div><div class="app-back-sub">เลือกเอกสารที่ต้องการ</div></div>
+              </div>
+              <div class="prompt-box">เลือกประเภทเอกสารที่ต้องการ</div>
+              <div class="cat-grid">
+                <div class="cat-item"><div class="cat-emoji-box" style="background:#dbeafe;">🏠</div><span>ใบรับรอง<br>การอยู่อาศัย</span></div>
+                <div class="cat-item"><div class="cat-emoji-box" style="background:#dcfce7;">👤</div><span>หนังสือรับรอง<br>บุคคล</span></div>
+                <div class="cat-item"><div class="cat-emoji-box" style="background:#fef3c7;">🗑️</div><span>ค่าธรรมเนียม<br>ขยะ</span></div>
+                <div class="cat-item"><div class="cat-emoji-box" style="background:#fee2e2;">🏛️</div><span>สอบถามยอด<br>ภาษี</span></div>
+                <div class="cat-item"><div class="cat-emoji-box" style="background:#e0e7ff;">🏗️</div><span>ขออนุญาต<br>ก่อสร้าง</span></div>
+                <div class="cat-item" style="border-style:dashed;"><div class="cat-emoji-box" style="background:#f3f4f6;">📋</div><span>อื่นๆ</span></div>
+              </div>
+              <div style="padding:0 10px;">
+                <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:9px 10px;">
+                  <div style="font-size:8px;font-weight:800;color:#9ca3af;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;">ค่าธรรมเนียม</div>
+                  <div style="font-size:11px;font-weight:800;color:#065f46;">ไม่มีค่าธรรมเนียม</div>
+                  <div style="font-size:9px;color:#6b7280;margin-top:3px;">ระยะเวลาดำเนินการ 1–3 วันทำการ</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-caption">เลือกประเภทเอกสาร</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="step-section" style="margin-top:18px;">
+      <div>
+        <div class="step-num"><div class="step-num-circle">2</div>ติดตามผล</div>
+        <h3>ดูสถานะที่ "เอกสารของฉัน"</h3>
+        <p class="step-desc">เข้าที่ <strong>เมนูอื่นๆ → เอกสารของฉัน</strong> จะเห็นคำขอทั้งหมดพร้อมเลขอ้างอิงและสถานะปัจจุบัน</p>
+        <div class="status-flow" style="margin:10px 0 12px;">
+          <span class="status-chip badge-yellow">รอดำเนินการ</span>
+          <span class="status-arrow">→</span>
+          <span class="status-chip badge-purple">กำลังดำเนินการ</span>
+          <span class="status-arrow">→</span>
+          <span class="status-chip badge-green">เสร็จสิ้น</span>
+        </div>
+        <p class="step-desc">หากเอกสารไม่ครบหรือคุณสมบัติไม่เข้าเกณฑ์ สถานะจะเป็น <strong>ปฏิเสธ</strong> พร้อมเหตุผลจากเจ้าหน้าที่</p>
+        <ul class="steps-list">
+          <li data-n="1">สถานะ <strong>เสร็จสิ้น</strong> = เอกสารออกให้แล้ว กด <strong>ดาวน์โหลด</strong> เพื่อบันทึกไว้ในเครื่องแล้วนำไปพิมพ์</li>
+          <li data-n="2">ยังไม่ได้เข้าสู่ระบบ? กรอก <strong>เลขอ้างอิง 8 ตัว</strong> ที่ช่องค้นหา เช่น <strong>3F9A1B2C</strong></li>
+          <li data-n="3">เรื่องสอบถามยอดชำระ เจ้าหน้าที่จะโทรกลับตามเบอร์ที่กรอกไว้</li>
+        </ul>
+        <div class="note-box" style="margin-top:12px;">
+          <strong>🔒 ลิงก์ดาวน์โหลดมีอายุ 1 ชั่วโมง</strong> เพื่อป้องกันการเปิดเอกสารโดยไม่ได้รับอนุญาต การคัดลอกลิงก์ส่งต่อจึงใช้ไม่ได้ ให้กดดาวน์โหลดเก็บไฟล์ไว้ในเครื่องแทน
+        </div>
+      </div>
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen" style="min-height: 340px;">
+              <div class="app-back-header">
+                <div class="app-back-btn">←</div>
+                <div><div class="app-back-title">เอกสารของฉัน</div><div class="app-back-sub">สถานะใบรับรองและเอกสารราชการ</div></div>
+              </div>
+              <div style="padding:10px;">
+                <div class="complaint-card">
+                  <div class="complaint-emoji" style="background:#dcfce7;">🏠</div>
+                  <div class="complaint-info">
+                    <div class="complaint-title">ใบรับรองการอยู่อาศัย</div>
+                    <div class="complaint-num">เลขอ้างอิง: 3F9A1B2C</div>
+                    <div class="complaint-sub"><span class="badge badge-green">เสร็จสิ้น</span></div>
+                  </div>
+                  <div class="complaint-arrow">›</div>
+                </div>
+                <div class="complaint-card">
+                  <div class="complaint-emoji" style="background:#fef3c7;">🗑️</div>
+                  <div class="complaint-info">
+                    <div class="complaint-title">ค่าธรรมเนียมขยะ</div>
+                    <div class="complaint-num">เลขอ้างอิง: 7C21D4E8</div>
+                    <div class="complaint-sub"><span class="badge badge-purple">กำลังดำเนินการ</span></div>
+                  </div>
+                  <div class="complaint-arrow">›</div>
+                </div>
+                <div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:10px;margin-top:8px;">
+                  <div style="font-size:10px;font-weight:800;color:#065f46;">เอกสารออกให้แล้ว</div>
+                  <div style="font-size:9px;color:#047857;margin-top:2px;">ดาวน์โหลดหรือแชร์เพื่อนำไปปริ้นได้เลย</div>
+                  <div style="margin-top:7px;background:linear-gradient(135deg,#059669,#10b981);color:#fff;border-radius:8px;text-align:center;padding:6px;font-size:10px;font-weight:800;">⬇ ดาวน์โหลดเอกสาร</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-caption">เอกสารของฉัน</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ PAGE 8.7 — เบอร์โทรสำคัญ / สายด่วนฉุกเฉิน ═══════════════ -->
+<div id="contacts" class="page">
+  <div class="content-page">
+    <div class="page-header">
+      <div class="page-header-icon">📒</div>
+      <div>
+        <h2>เบอร์โทรสำคัญและสายด่วนฉุกเฉิน</h2>
+        <p>สมุดเบอร์โทรของหน่วยงาน กดโทรออกได้ทันทีจากหน้าจอ</p>
+      </div>
+    </div>
+
+    <div class="step-section">
+      <div>
+        <div class="step-num"><div class="step-num-circle">1</div>สองสมุด แยกกันคนละหน้า</div>
+        <h3>เลือกให้ถูกหน้าตามความเร่งด่วน</h3>
+        <p class="step-desc">ระบบแยกเบอร์เป็น 2 สมุด เพราะ "โทรได้ตลอด 24 ชั่วโมง" กับ "โทรได้เวลาราชการ" ปนกันไม่ได้</p>
+        <table class="info-table">
+          <tr><th>สมุด</th><th>ใช้เมื่อไหร่</th><th>ทางเข้า</th></tr>
+          <tr>
+            <td><strong>🚨 สายด่วนฉุกเฉิน</strong></td>
+            <td>เหตุด่วนเหตุร้าย โทรได้ตลอด 24 ชั่วโมง</td>
+            <td>เมนูอื่นๆ → สายด่วนฉุกเฉิน</td>
+          </tr>
+          <tr>
+            <td><strong>📒 เบอร์โทรสำคัญ</strong></td>
+            <td>หน่วยงานราชการ ผู้นำท้องถิ่น และเบอร์ติดต่อในพื้นที่ ส่วนใหญ่รับสายเฉพาะเวลาราชการ</td>
+            <td>หน้าหลัก → เบอร์สำคัญ<br>หรือแถบเมนูด้านข้าง (PC)</td>
+          </tr>
+        </table>
+        <div class="tips" style="margin-top:14px;">
+          <strong>💡 ทั้งสองหน้าเปิดดูได้โดยไม่ต้องเข้าสู่ระบบ</strong>
+          และกดที่รายชื่อเพื่อ<b>โทรออกทันที</b> ไม่ต้องจดเบอร์
+        </div>
+      </div>
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen" style="min-height: 360px;">
+              <div class="app-back-header">
+                <div class="app-back-btn">←</div>
+                <div><div class="app-back-title">เบอร์โทรสำคัญ</div><div class="app-back-sub">หน่วยงานราชการ ผู้นำท้องถิ่น และเบอร์ติดต่อในพื้นที่</div></div>
+              </div>
+              <div style="padding:8px 10px 0;">
+                <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:7px 9px;font-size:9px;color:#9ca3af;display:flex;align-items:center;gap:5px;">
+                  🔍 ค้นหาชื่อ หน่วยงาน หมู่ หรือเบอร์โทร
+                </div>
+              </div>
+              <div style="padding:8px 10px;">
+                <div style="font-size:8px;font-weight:800;color:#1d4ed8;text-transform:uppercase;letter-spacing:.5px;margin:6px 0 4px;">หน่วยงานราชการ</div>
+                <div class="complaint-card">
+                  <div class="complaint-emoji" style="background:#dbeafe;">🏛️</div>
+                  <div class="complaint-info">
+                    <div class="complaint-title">สำนักงาน อปท.</div>
+                    <div class="complaint-sub">เวลาราชการ 08.30–16.30 น.</div>
+                    <div class="complaint-num">0x-xxx-xxxx</div>
+                  </div>
+                  <div class="complaint-arrow">📞</div>
+                </div>
+                <div style="font-size:8px;font-weight:800;color:#1d4ed8;text-transform:uppercase;letter-spacing:.5px;margin:8px 0 4px;">ผู้นำท้องถิ่น</div>
+                <div class="complaint-card">
+                  <div class="complaint-emoji" style="background:#dcfce7;">👤</div>
+                  <div class="complaint-info">
+                    <div class="complaint-title">ผู้ใหญ่บ้าน</div>
+                    <div class="complaint-sub">หมู่ 3</div>
+                    <div class="complaint-num">08x-xxx-xxxx</div>
+                  </div>
+                  <div class="complaint-arrow">📞</div>
+                </div>
+                <div class="complaint-card">
+                  <div class="complaint-emoji" style="background:#dcfce7;">👤</div>
+                  <div class="complaint-info">
+                    <div class="complaint-title">ผู้ใหญ่บ้าน</div>
+                    <div class="complaint-sub">หมู่ 4</div>
+                    <div class="complaint-num">08x-xxx-xxxx</div>
+                  </div>
+                  <div class="complaint-arrow">📞</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-caption">สมุดเบอร์โทรสำคัญ</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="step-section" style="margin-top:18px;">
+      <div>
+        <div class="step-num"><div class="step-num-circle">2</div>ค้นหาให้เจอเร็ว</div>
+        <h3>พิมพ์ชื่อ หมู่ หรือเบอร์ก็ได้</h3>
+        <p class="step-desc">เมื่อมีเบอร์ในสมุดตั้งแต่ 7 รายการขึ้นไป ระบบจะแสดงช่องค้นหาให้อัตโนมัติ</p>
+        <div class="checklist">
+          <div class="check-item"><div class="check-box">✓</div><div>ค้นด้วย<strong>ชื่อ</strong> เช่น "ผู้ใหญ่บ้าน" หรือชื่อหน่วยงาน</div></div>
+          <div class="check-item"><div class="check-box">✓</div><div>ค้นด้วย<strong>หมู่</strong> เช่น "หมู่ 3" — ตรงกับหมายเหตุที่เจ้าหน้าที่กรอกไว้</div></div>
+          <div class="check-item"><div class="check-box">✓</div><div>ค้นด้วย<strong>เบอร์โทร</strong> พิมพ์ติดกันไม่ต้องใส่ขีดก็เจอ</div></div>
+        </div>
+        <p class="step-desc" style="margin-top:12px;">รายชื่อจัดกลุ่มไว้ 6 หมวด ได้แก่ <strong>เหตุด่วนเหตุร้าย, สาธารณสุข, สาธารณูปโภค, หน่วยงานราชการ, ผู้นำท้องถิ่น</strong> และ <strong>อื่น ๆ</strong> เลื่อนหาตามหมวดได้โดยไม่ต้องพิมพ์ค้นหา</p>
+        <div class="note-box" style="margin-top:12px;">
+          <strong>📌 เบอร์ในสมุดนี้เป็นข้อมูลที่เจ้าของเบอร์ยินยอมให้เผยแพร่</strong> หากพบเบอร์ไม่ถูกต้องหรือต้องการให้ถอดออก แจ้งได้ที่ <strong>เมนูอื่นๆ → ติดต่อเรา</strong>
+        </div>
+      </div>
+      <div class="phone-col">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen" style="min-height: 320px;">
+              <div class="app-back-header" style="background:linear-gradient(135deg,#ef4444,#b91c1c);">
+                <div class="app-back-btn">←</div>
+                <div><div class="app-back-title">สายด่วนฉุกเฉิน</div><div class="app-back-sub">เหตุด่วนเหตุร้าย โทรได้ตลอด 24 ชั่วโมง</div></div>
+              </div>
+              <div style="padding:10px;">
+                <div class="complaint-card">
+                  <div class="complaint-emoji" style="background:#fee2e2;">🚓</div>
+                  <div class="complaint-info">
+                    <div class="complaint-title">แจ้งเหตุด่วนเหตุร้าย</div>
+                    <div class="complaint-num">191</div>
+                  </div>
+                  <div class="complaint-arrow">📞</div>
+                </div>
+                <div class="complaint-card">
+                  <div class="complaint-emoji" style="background:#fee2e2;">🚑</div>
+                  <div class="complaint-info">
+                    <div class="complaint-title">การแพทย์ฉุกเฉิน</div>
+                    <div class="complaint-num">1669</div>
+                  </div>
+                  <div class="complaint-arrow">📞</div>
+                </div>
+                <div class="complaint-card">
+                  <div class="complaint-emoji" style="background:#ffedd5;">🚒</div>
+                  <div class="complaint-info">
+                    <div class="complaint-title">งานป้องกันและบรรเทาสาธารณภัย</div>
+                    <div class="complaint-sub">ตลอด 24 ชั่วโมง</div>
+                    <div class="complaint-num">0x-xxx-xxxx</div>
+                  </div>
+                  <div class="complaint-arrow">📞</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-caption">สายด่วนฉุกเฉิน</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════ PAGE 9.5 — ประเมินพึงพอใจ + บริการอื่นๆ ═══════════════ -->
 <div class="page">
   <div class="content-page">
@@ -1981,7 +2267,7 @@
         <div style="font-size:12px;color:#c2410c;line-height:1.6;">สถานที่ท่องเที่ยว ร้านอาหาร ที่พัก ในพื้นที่ เข้าได้จากเมนูอื่นๆ</div>
       </div>
       <div style="background:#fef2f2;border-radius:12px;border:1px solid #fca5a5;padding:12px;">
-        <div style="font-weight:800;font-size:13px;color:#991b1b;margin-bottom:4px;">🚨 เหตุฉุกเฉิน</div>
+        <div style="font-weight:800;font-size:13px;color:#991b1b;margin-bottom:4px;">🚨 สายด่วนฉุกเฉิน</div>
         <div style="font-size:12px;color:#dc2626;line-height:1.6;">เบอร์ฉุกเฉิน แจ้งเหตุด่วน ในพื้นที่ เข้าได้จากเมนูอื่นๆ → สายด่วนฉุกเฉิน</div>
       </div>
       <div style="background:#eff6ff;border-radius:12px;border:1px solid #bfdbfe;padding:12px;">
@@ -1998,7 +2284,47 @@
       </div>
       <div style="background:#fef3c7;border-radius:12px;border:1px solid #fcd34d;padding:12px;">
         <div style="font-weight:800;font-size:13px;color:#92400e;margin-bottom:4px;">📊 รายงานความโปร่งใส</div>
-        <div style="font-size:12px;color:#b45309;line-height:1.6;">สรุปผลการจัดการเรื่องร้องเรียน/แจ้งซ่อมของหน่วยงาน (จำนวนทั้งหมด, เสร็จสิ้นกี่%, ระยะเวลาเฉลี่ย) เข้าดูได้ที่ <strong>/reports</strong> โดยตรง ไม่ต้องเข้าสู่ระบบ</div>
+        <div style="font-size:12px;color:#b45309;line-height:1.6;">สรุปผลการจัดการเรื่องร้องเรียน/ร้องทุกข์ของหน่วยงาน (จำนวนทั้งหมด, เสร็จสิ้นกี่%, ระยะเวลาเฉลี่ย) เข้าดูได้ที่ <strong>/reports</strong> โดยตรง ไม่ต้องเข้าสู่ระบบ</div>
+      </div>
+      <div style="background:#eff6ff;border-radius:12px;border:1px solid #bfdbfe;padding:12px;">
+        <div style="font-weight:800;font-size:13px;color:#1e40af;margin-bottom:4px;">📒 เบอร์โทรสำคัญ</div>
+        <div style="font-size:12px;color:#1d4ed8;line-height:1.6;">หน่วยงานราชการ ผู้นำท้องถิ่น และเบอร์ติดต่อในพื้นที่ ค้นหาด้วยชื่อ หมู่ หรือเบอร์ แล้วกดโทรออกได้ทันที เข้าได้จากหน้าหลัก → เบอร์สำคัญ</div>
+      </div>
+      <div style="background:#f0fdfa;border-radius:12px;border:1px solid #99f6e4;padding:12px;">
+        <div style="font-weight:800;font-size:13px;color:#115e59;margin-bottom:4px;">💰 สอบถามยอดชำระ</div>
+        <div style="font-size:12px;color:#0f766e;line-height:1.6;">สอบถามยอดภาษีที่ดินและสิ่งปลูกสร้าง ภาษีป้าย และค่าธรรมเนียมต่างๆ เจ้าหน้าที่ตรวจสอบแล้วแจ้งกลับทางโทรศัพท์ ภายใน 1–3 วันทำการ</div>
+      </div>
+      <div style="background:#f5f3ff;border-radius:12px;border:1px solid #ddd6fe;padding:12px;">
+        <div style="font-weight:800;font-size:13px;color:#5b21b6;margin-bottom:4px;">📁 เอกสารของฉัน</div>
+        <div style="font-size:12px;color:#6d28d9;line-height:1.6;">ติดตามสถานะคำขอเอกสารทุกฉบับ พร้อม<strong>เลขอ้างอิง 8 ตัว</strong> เมื่อสถานะเป็น "เสร็จสิ้น" ดาวน์โหลดเอกสารไปพิมพ์ได้เลย</div>
+      </div>
+      <div style="background:#ecfeff;border-radius:12px;border:1px solid #a5f3fc;padding:12px;">
+        <div style="font-weight:800;font-size:13px;color:#155e75;margin-bottom:4px;">🗺️ ศูนย์ข้อมูลดิจิทัล</div>
+        <div style="font-size:12px;color:#0e7490;line-height:1.6;">GIS Portal ของหน่วยงาน ดูข้อมูลเชิงพื้นที่บนแผนที่ เลือก <strong>"สำหรับประชาชน"</strong> เพื่อเข้าดูส่วนที่เปิดเผยได้</div>
+      </div>
+      <div style="background:#fff1f2;border-radius:12px;border:1px solid #fecdd3;padding:12px;">
+        <div style="font-weight:800;font-size:13px;color:#9f1239;margin-bottom:4px;">🔔 การแจ้งเตือน</div>
+        <div style="font-size:12px;color:#be123c;line-height:1.6;">เมื่อเจ้าหน้าที่อัปเดตสถานะคำร้องหรือคำขอเอกสารของท่าน ระบบจะแจ้งที่นี่โดยอัตโนมัติ ต้องเข้าสู่ระบบจึงจะเห็นรายการของตนเอง</div>
+      </div>
+      <div style="background:#f8fafc;border-radius:12px;border:1px solid #e2e8f0;padding:12px;">
+        <div style="font-weight:800;font-size:13px;color:#334155;margin-bottom:4px;">☎️ ติดต่อเรา</div>
+        <div style="font-size:12px;color:#475569;line-height:1.6;">ที่อยู่ เบอร์โทรศัพท์ โทรสาร และช่องทางติดต่อหน่วยงาน สำหรับเรื่องที่ต้องคุยกับเจ้าหน้าที่โดยตรง</div>
+      </div>
+      <div style="background:#fff7ed;border-radius:12px;border:1px solid #fed7aa;padding:12px;">
+        <div style="font-weight:800;font-size:13px;color:#9a3412;margin-bottom:4px;">🍜 เที่ยว กิน พัก OTOP</div>
+        <div style="font-size:12px;color:#c2410c;line-height:1.6;">ร้านค้า OTOP ที่พัก และสถานที่ท่องเที่ยวในชุมชน พร้อมเวลาทำการและเบอร์ติดต่อร้าน</div>
+      </div>
+      <div style="background:#f0fdf4;border-radius:12px;border:1px solid #a7f3d0;padding:12px;">
+        <div style="font-weight:800;font-size:13px;color:#065f46;margin-bottom:4px;">📈 รายงานการออกเอกสารดิจิทัล</div>
+        <div style="font-size:12px;color:#047857;line-height:1.6;">สถิติการให้บริการออกเอกสารของหน่วยงาน จำนวนคำขอและอัตราการเสร็จสิ้น เปิดดูได้โดยไม่ต้องเข้าสู่ระบบ</div>
+      </div>
+      <div style="background:#faf5ff;border-radius:12px;border:1px solid #e9d5ff;padding:12px;">
+        <div style="font-weight:800;font-size:13px;color:#6b21a8;margin-bottom:4px;">🤖 แชทบอทถาม-ตอบ</div>
+        <div style="font-size:12px;color:#7e22ce;line-height:1.6;">สอบถามวิธีใช้งานและขั้นตอนการรับบริการเบื้องต้นได้ตลอด 24 ชั่วโมง หากเป็นเรื่องเฉพาะราย ให้ติดต่อเจ้าหน้าที่โดยตรง</div>
+      </div>
+      <div style="background:#f1f5f9;border-radius:12px;border:1px solid #cbd5e1;padding:12px;">
+        <div style="font-weight:800;font-size:13px;color:#1e293b;margin-bottom:4px;">📱 ติดตั้งเป็นแอปบนมือถือ</div>
+        <div style="font-size:12px;color:#334155;line-height:1.6;">เปิดเว็บด้วยเบราว์เซอร์แล้วเลือก <strong>"เพิ่มลงในหน้าจอโฮม"</strong> จะได้ไอคอนแอปบนมือถือ เปิดใช้ได้เร็วขึ้นโดยไม่ต้องพิมพ์ที่อยู่เว็บ</div>
       </div>
     </div>
 
