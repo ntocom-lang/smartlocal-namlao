@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, X, Users, SearchX, Wallet, Car } from 'lucide-react'
+import { Plus, X, Users, SearchX, Wallet, Car, ShieldCheck, ClipboardEdit, Eye, AlertTriangle } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import FleetEmptyState from './FleetEmptyState'
 import BudgetTab from './FleetBudget'
@@ -10,6 +10,22 @@ const ROLES = {
   fleet_admin:  'ผู้ดูแลระบบ (เต็มสิทธิ์)',
   fleet_staff:  'เจ้าหน้าที่ (บันทึก/ดูข้อมูลกองตัวเอง)',
   fleet_viewer: 'ผู้ดูรายงาน (อ่านอย่างเดียว)',
+}
+
+// การ์ดสรุปสิทธิ์ — "สถานะ" ที่ผู้ดูแลต้องรู้คือแต่ละสิทธิ์เห็นข้อมูลแค่ไหน ไม่ใช่แค่จำนวนคน
+// ข้อความ scope ต้องตรงกับ fleet_can_read_asset() ใน RLS เสมอ ถ้าแก้ policy ต้องมาแก้ตรงนี้ด้วย
+const ROLE_CARDS = [
+  { key: 'all',          label: 'ทั้งหมด',     scope: 'ผู้ใช้ในระบบยานพาหนะ',  Icon: Users,         tone: 'slate'   },
+  { key: 'fleet_admin',  label: 'ผู้ดูแลระบบ', scope: 'ทุกกอง แก้ไขได้ทั้งหมด', Icon: ShieldCheck,   tone: 'indigo'  },
+  { key: 'fleet_staff',  label: 'เจ้าหน้าที่', scope: 'กองตัวเอง + รถกลาง',    Icon: ClipboardEdit, tone: 'emerald' },
+  { key: 'fleet_viewer', label: 'ผู้ดูรายงาน', scope: 'ทุกกอง อ่านอย่างเดียว',  Icon: Eye,           tone: 'amber'   },
+]
+
+const CARD_TONE = {
+  slate:   { on: 'border-slate-400 bg-slate-50',     icon: 'text-slate-500',   num: 'text-slate-700'   },
+  indigo:  { on: 'border-indigo-400 bg-indigo-50',   icon: 'text-indigo-500',  num: 'text-indigo-700'  },
+  emerald: { on: 'border-emerald-400 bg-emerald-50', icon: 'text-emerald-500', num: 'text-emerald-700' },
+  amber:   { on: 'border-amber-400 bg-amber-50',     icon: 'text-amber-500',   num: 'text-amber-700'   },
 }
 
 const DRIVER_STATUS = {
@@ -215,6 +231,13 @@ function UsersTab({ tenant, depts }) {
     (p.email ?? '').toLowerCase().includes(search.toLowerCase())
   )
 
+  const roleCount = key => key === 'all' ? users.length : users.filter(u => u.fleet_role === key).length
+
+  // fleet_staff ที่ไม่ผูกกองจะบันทึกการเดินทาง/จองรถไม่ได้เลย เพราะ RLS เทียบ
+  // department_id = my_fleet().fdept_id ซึ่ง NULL = NULL ให้ NULL ไม่ใช่ TRUE
+  // ส่วน fleet_admin/fleet_viewer เห็นทุกกองอยู่แล้ว ไม่ต้องมีกองก็ทำงานได้ จึงไม่นับ
+  const staffMissingDept = users.filter(u => u.fleet_role === 'fleet_staff' && !u.department_id).length
+
   const visibleUsers = users.filter(u => {
     if (filterRole !== 'all' && u.fleet_role !== filterRole) return false
     if (filterDept !== 'all') {
@@ -229,7 +252,7 @@ function UsersTab({ tenant, depts }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-gray-500">ผู้ใช้ที่มีสิทธิ์เข้าระบบยานพาหนะ {users.length} คน</p>
+        <p className="text-xs text-gray-500">ผู้ใช้ที่มีสิทธิ์เข้าระบบยานพาหนะ</p>
         <button onClick={openPicker}
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white"
           style={{ backgroundColor: 'var(--color-primary)' }}>
@@ -237,15 +260,40 @@ function UsersTab({ tenant, depts }) {
         </button>
       </div>
 
+      {/* การ์ดสรุปสิทธิ์ = ตัวกรองในตัว (แทน dropdown "ทุกสิทธิ์" เดิม)
+          กดการ์ดที่เลือกอยู่ซ้ำ = กลับไปแสดงทั้งหมด */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        {ROLE_CARDS.map(({ key, label, scope, Icon, tone }) => {
+          const active = filterRole === key
+          const t = CARD_TONE[tone]
+          const warn = key === 'fleet_staff' && staffMissingDept > 0
+          return (
+            <button key={key} type="button"
+              onClick={() => setFilterRole(active && key !== 'all' ? 'all' : key)}
+              aria-pressed={active}
+              className={`text-left rounded-2xl border p-3 transition-colors ${
+                active ? t.on : 'border-gray-100 bg-white hover:border-gray-200'
+              }`}>
+              <div className="flex items-center gap-1.5 mb-1">
+                <Icon size={14} className={active ? t.icon : 'text-gray-400'} />
+                <span className="text-[11px] font-bold text-gray-700 truncate">{label}</span>
+              </div>
+              <p className={`text-xl font-bold leading-none ${active ? t.num : 'text-gray-800'}`}>
+                {roleCount(key)}<span className="text-[10px] font-semibold text-gray-400 ml-1">คน</span>
+              </p>
+              <p className="text-[10px] text-gray-400 leading-snug mt-1">{scope}</p>
+              {warn && (
+                <p className="flex items-start gap-1 text-[10px] font-semibold text-amber-600 mt-1.5 leading-snug">
+                  <AlertTriangle size={11} className="shrink-0 mt-px" />
+                  <span>{staffMissingDept} คนยังไม่ผูกกอง — บันทึกการใช้รถไม่ได้</span>
+                </p>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
       <div className="flex gap-2 flex-wrap items-center">
-        <select value={filterRole} onChange={e => setFilterRole(e.target.value)}
-          className="text-xs border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none appearance-none">
-          <option value="all">ทุกสิทธิ์ ({users.length})</option>
-          {Object.entries(ROLES).map(([k, v]) => {
-            const cnt = users.filter(u => u.fleet_role === k).length
-            return <option key={k} value={k}>{v.split(' ')[0]} ({cnt})</option>
-          })}
-        </select>
         <select value={filterDept} onChange={e => setFilterDept(e.target.value)}
           className="text-xs border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-700 focus:outline-none appearance-none">
           <option value="all">ทุกกอง ({users.length})</option>
