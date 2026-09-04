@@ -19,7 +19,7 @@ const NAV_GROUPS = [
       { label: 'งานบริการประชาชน', href: '/doc-request', Icon: FileText },
       { label: 'ปฏิทินกิจกรรม',   href: '/events',      Icon: CalendarDays },
       { label: 'ข่าวสาร/ประกาศ',  href: '/news',        Icon: Newspaper },
-      { label: 'แหล่งท่องเที่ยว', href: '/tourism',     Icon: MapPin },
+      { label: 'เที่ยว กิน พัก ชอป', href: '/tourism', Icon: MapPin },
       { label: 'ศูนย์ข้อมูลดิจิทัล', href: '/data-center', Icon: Database },
     ],
   },
@@ -55,7 +55,7 @@ const LABEL    = 'rgba(255,255,255,0.35)'
 export default function CitizenSidebar() {
   const location         = useLocation()
   const navigate         = useNavigate()
-  const { session, displayName, avatarUrl, role } = useAuth()
+  const { session, displayName, avatarUrl } = useAuth()
   const { tenant, isModuleEnabled } = useTenant()
   const { unreadCount }  = useNotifications()
 

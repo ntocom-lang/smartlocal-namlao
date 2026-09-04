@@ -1,14 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, ChevronLeft, ChevronRight, MapPin, ExternalLink, Share2, Phone, X, Zap, ShoppingCart, CalendarCheck, MessageCircle, Globe, Bike, Star, Loader2 } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, MapPin, ExternalLink, Share2, Phone, X, Zap, ShoppingCart, CalendarCheck, MessageCircle, Globe, Bike, Star, Loader2, Clock, Navigation } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import { getOpenState, weeklyHours, directionsUrl, DAY_KEYS } from '../lib/tourismPlaces'
 
 const CAT_LABEL = {
   travel:  '🏛️ เที่ยว',
   food:    '🍽️ กิน',
   stay:    '🏨 พัก',
-  shop:    '🛍️ OTOP',
+  shop:    '🛍️ ชอป/OTOP',
   service: '🔧 บริการ',
 }
 
@@ -392,6 +393,11 @@ export default function TourismDetailPage() {
   const svc = SVC[place.online_service] ?? SVC.order
   const SvcIcon = svc.Icon
 
+  const openState = getOpenState(place.opening_hours)
+  const hours     = weeklyHours(place.opening_hours)
+  const todayKey  = DAY_KEYS[new Date().getDay()]
+  const navUrl    = directionsUrl(place)
+
   const placeContent = (
     <div className="space-y-4">
       {/* Name + badges */}
@@ -401,6 +407,14 @@ export default function TourismDetailPage() {
           {CAT_LABEL[place.category] && (
             <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
               {CAT_LABEL[place.category]}
+            </span>
+          )}
+          {openState.state !== 'unknown' && (
+            <span className="flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full"
+              style={openState.state === 'closed'
+                ? { backgroundColor: '#f1f5f9', color: '#64748b' }
+                : { backgroundColor: '#dcfce7', color: '#15803d' }}>
+              <Clock size={10} /> {openState.label}
             </span>
           )}
           {isOnline && (
@@ -457,12 +471,54 @@ export default function TourismDetailPage() {
         </div>
       )}
 
-      {place.maps_url && (
-        <a href={place.maps_url} target="_blank" rel="noopener noreferrer"
+      {(hours.length > 0 || place.hours_note) && (
+        <div>
+          <h2 className="text-sm font-semibold text-gray-500 mb-2">เวลาทำการ</h2>
+          {hours.length > 0 && (
+            <div className="bg-gray-50 rounded-2xl divide-y divide-gray-100 overflow-hidden">
+              {hours.map(d => (
+                <div key={d.key}
+                  className="flex items-center justify-between px-4 py-2"
+                  style={d.key === todayKey ? { backgroundColor: '#fffbeb' } : undefined}>
+                  <span className={`text-sm ${d.key === todayKey ? 'font-bold text-amber-800' : 'text-gray-600'}`}>
+                    {d.label}{d.key === todayKey ? ' (วันนี้)' : ''}
+                  </span>
+                  <span className={`text-sm ${d.closed ? 'text-gray-400' : 'text-gray-700 font-medium'}`}>{d.text}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {place.hours_note && (
+            <p className="text-xs text-gray-500 mt-2 leading-relaxed">หมายเหตุ: {place.hours_note}</p>
+          )}
+        </div>
+      )}
+
+      {(place.facebook_url || place.line_id) && (
+        <div className="bg-gray-50 rounded-2xl divide-y divide-gray-100 overflow-hidden">
+          {place.facebook_url && (
+            <a href={place.facebook_url} target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-3 px-4 py-3 active:bg-gray-100 transition-colors">
+              <span className="text-base">📘</span>
+              <span className="text-sm text-gray-700 font-medium">Facebook</span>
+              <ExternalLink size={13} className="ml-auto text-gray-400" />
+            </a>
+          )}
+          {place.line_id && (
+            <div className="flex items-center gap-3 px-4 py-3">
+              <span className="text-base">💬</span>
+              <span className="text-sm text-gray-700">LINE: {place.line_id}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {navUrl && (
+        <a href={navUrl} target="_blank" rel="noopener noreferrer"
            className="flex items-center justify-center gap-2 w-full py-3.5 rounded-2xl font-semibold text-sm text-white active:scale-[0.98] transition-transform"
            style={{ backgroundColor: '#10b981' }}>
-          <MapPin size={16} />
-          เปิดใน Google Maps
+          <Navigation size={16} />
+          นำทางไปที่นี่
           <ExternalLink size={14} className="opacity-70" />
         </a>
       )}

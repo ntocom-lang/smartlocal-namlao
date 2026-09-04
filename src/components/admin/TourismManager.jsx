@@ -5,16 +5,27 @@ import { compressImage } from '../../lib/imageUtils'
 import { logAction } from '../../lib/auditLog'
 import { uploadFile } from '../../lib/driveStorage'
 import BusinessRegistrationAdmin from './BusinessRegistrationAdmin'
+import OpeningHoursEditor from './OpeningHoursEditor'
+import { parseCoords, hoursToRows, rowsToHours, rowsAreValid } from '../../lib/tourismPlaces'
 
 const TOUR_CATS = [
   { key: 'travel',  label: 'เที่ยว', emoji: '🏛️', color: '#d97706' },
   { key: 'food',    label: 'กิน',    emoji: '🍽️', color: '#10b981' },
   { key: 'stay',    label: 'พัก',    emoji: '🏨', color: '#3b82f6' },
-  { key: 'shop',    label: 'OTOP',  emoji: '🛍️', color: '#15803d' },
+  { key: 'shop',    label: 'ชอป',   emoji: '🛍️', color: '#15803d' },
   { key: 'service', label: 'บริการ', emoji: '🔧', color: '#dc2626' },
 ]
 
-const EMPTY_FORM = { name: '', category: 'travel', description: '', phone: '', address: '', maps_url: '', service_type: 'offline', online_service: 'order', online_url: '', has_delivery: false }
+const EMPTY_FORM = {
+  name: '', category: 'travel', description: '', phone: '', address: '', maps_url: '',
+  service_type: 'offline', online_service: 'order', online_url: '', has_delivery: false,
+  latitude: '', longitude: '', village_no: '', price_range: '', facebook_url: '', line_id: '',
+  is_featured: false, hours_note: '', hoursEnabled: false, hoursRows: hoursToRows(null),
+}
+
+// กรอบพิกัดประเทศไทย — ตรงกับ CHECK constraint tourism_places_lat_lng_thailand_chk
+// ดักไว้ตั้งแต่ฟอร์มเพื่อให้เจ้าหน้าที่เห็นข้อความไทย แทนที่จะเจอ error 23514 ดิบๆ จาก Postgres
+const TH_BOUNDS = { latMin: 5, latMax: 21, lngMin: 96, lngMax: 106 }
 
 export function TourismReviewsAdmin({ tenant }) {
   const [reviews, setReviews] = useState([])
@@ -170,6 +181,9 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
   const [uploadingFor, setUploadingFor] = useState(null)
   const [mgTab, setMgTab]               = useState('places')
   const [pendingCount, setPendingCount]  = useState(0)
+  // คอลัมน์ชุดใหม่ (เวลาทำการ/พิกัด/แนะนำ) มาจาก migration 20260906110000 — ถ้า อปท. ไหน
+  // ยังไม่ได้รัน ให้ซ่อนช่องกรอกไปเลย ดีกว่าปล่อยให้กดบันทึกแล้วเจอ PGRST204 โดยไม่รู้สาเหตุ
+  const [hasNewCols, setHasNewCols] = useState(null)
   const [placesPage, setPlacesPage]         = useState(0)
   const [placesPageSize, setPlacesPageSize] = useState(20)
 
@@ -192,6 +206,12 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
       .then(({ count }) => setPendingCount(count ?? 0))
   }, [tenant?.id])
 
+  useEffect(() => {
+    supabase.from('tourism_places').select('opening_hours').limit(1)
+      .then(({ error }) => setHasNewCols(!error))
+      .catch(() => setHasNewCols(false))
+  }, [])
+
   const sheetPlace = sheet && sheet !== 'add' ? places.find(p => p.id === sheet) : null
   const sheetAllImgs = sheetPlace ? [sheetPlace.image_url, ...(sheetPlace.gallery ?? [])].filter(Boolean) : []
 
@@ -207,13 +227,66 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
   function openAdd() { setForm(EMPTY_FORM); setSheet('add') }
   function openEdit(place) {
     if (!canManagePlace(place)) return
-    setForm({ name: place.name, category: place.category, description: place.description || '', phone: place.phone || '', address: place.address || '', maps_url: place.maps_url || '', service_type: place.service_type || 'offline', online_service: place.online_service || 'order', online_url: place.online_url || '', has_delivery: place.has_delivery ?? false })
+    setForm({
+      name: place.name, category: place.category, description: place.description || '',
+      phone: place.phone || '', address: place.address || '', maps_url: place.maps_url || '',
+      service_type: place.service_type || 'offline', online_service: place.online_service || 'order',
+      online_url: place.online_url || '', has_delivery: place.has_delivery ?? false,
+      latitude: place.latitude ?? '', longitude: place.longitude ?? '',
+      village_no: place.village_no || '', price_range: place.price_range ?? '',
+      facebook_url: place.facebook_url || '', line_id: place.line_id || '',
+      is_featured: place.is_featured ?? false, hours_note: place.hours_note || '',
+      hoursEnabled: !!place.opening_hours, hoursRows: hoursToRows(place.opening_hours),
+    })
     setSheet(place.id)
   }
   function closeSheet() { setSheet(null) }
 
+  // แปลงค่าจากฟอร์มเป็น payload ของคอลัมน์ชุดใหม่ (คืน {} ถ้ายังไม่ได้รัน migration)
+  function extraFields() {
+    if (!hasNewCols) return {}
+    const lat = String(form.latitude).trim()
+    const lng = String(form.longitude).trim()
+    return {
+      latitude:     lat === '' ? null : Number(lat),
+      longitude:    lng === '' ? null : Number(lng),
+      village_no:   form.village_no.trim() || null,
+      price_range:  form.price_range === '' ? null : Number(form.price_range),
+      facebook_url: form.facebook_url.trim() || null,
+      line_id:      form.line_id.trim() || null,
+      is_featured:  !!form.is_featured,
+      hours_note:   form.hours_note.trim() || null,
+      opening_hours: form.hoursEnabled ? rowsToHours(form.hoursRows) : null,
+    }
+  }
+
+  // คืนข้อความ error ภาษาไทย หรือ null ถ้าผ่าน
+  function validateForm() {
+    if (!hasNewCols) return null
+    const lat = String(form.latitude).trim()
+    const lng = String(form.longitude).trim()
+    if ((lat === '') !== (lng === '')) return 'พิกัดต้องกรอกทั้งละติจูดและลองจิจูด หรือเว้นว่างทั้งคู่'
+    if (lat !== '') {
+      const la = Number(lat); const ln = Number(lng)
+      if (!Number.isFinite(la) || !Number.isFinite(ln)) return 'พิกัดต้องเป็นตัวเลข'
+      if (la < TH_BOUNDS.latMin || la > TH_BOUNDS.latMax || ln < TH_BOUNDS.lngMin || ln > TH_BOUNDS.lngMax) {
+        return 'พิกัดอยู่นอกประเทศไทย — มักเกิดจากสลับละติจูดกับลองจิจูดกัน (ละติจูดไทยประมาณ 5-21, ลองจิจูด 96-106)'
+      }
+    }
+    if (form.hoursEnabled && !rowsAreValid(form.hoursRows)) return 'เวลาทำการต้องอยู่ในรูปแบบ ชั่วโมง:นาที เช่น 08:30'
+    return null
+  }
+
+  function fillCoordsFromMapsUrl() {
+    const c = parseCoords({ maps_url: form.maps_url })
+    if (!c) { window.alert('ดึงพิกัดจากลิงก์นี้ไม่ได้ — ต้องเป็นลิงก์แบบมีตัวเลขพิกัด เช่น maps.google.com/?q=18.12,100.54'); return }
+    setForm(p => ({ ...p, latitude: c.lat, longitude: c.lng }))
+  }
+
   async function handleSave() {
     if (!form.name.trim()) return
+    const invalid = validateForm()
+    if (invalid) { window.alert(invalid); return }
     setSaving(true)
     const onlineFields = form.service_type !== 'offline'
       ? { service_type: form.service_type, online_service: form.online_service, online_url: form.online_url.trim() || null, has_delivery: form.has_delivery }
@@ -224,7 +297,7 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
         description: form.description.trim() || null, phone: form.phone.trim() || null,
         address: form.address.trim() || null, maps_url: form.maps_url.trim() || null,
         is_active: true, display_order: places.length, gallery: [],
-        created_by: currentUserId, department_id: myDepartmentId, ...onlineFields,
+        created_by: currentUserId, department_id: myDepartmentId, ...onlineFields, ...extraFields(),
       }).select().single()
       if (error) {
         window.alert('เพิ่มรายการไม่สำเร็จ: ' + error.message)
@@ -237,7 +310,8 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
       const { error } = await supabase.from('tourism_places').update({
         name: form.name.trim(), category: form.category,
         description: form.description.trim() || null, phone: form.phone.trim() || null,
-        address: form.address.trim() || null, maps_url: form.maps_url.trim() || null, ...onlineFields,
+        address: form.address.trim() || null, maps_url: form.maps_url.trim() || null,
+        ...onlineFields, ...extraFields(),
       }).eq('id', sheet)
       if (error) {
         window.alert('บันทึกไม่สำเร็จ: ' + error.message)
@@ -556,7 +630,77 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
                   placeholder="ที่อยู่ / หมู่ที่ / ตำบล" className={inputCls} />
                 <input value={form.maps_url} onChange={e => setForm(p => ({ ...p, maps_url: e.target.value }))}
                   placeholder="ลิงก์ Google Maps" className={inputCls} />
+
+                {hasNewCols === false && (
+                  <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2 leading-relaxed">
+                    ยังใช้เวลาทำการ/พิกัด/ป้ายแนะนำไม่ได้ — ต้องรัน migration 20260906110000 บนฐานข้อมูลนี้ก่อน
+                  </p>
+                )}
+
+                {hasNewCols && (
+                  <>
+                    <div className="flex gap-2">
+                      <input value={form.latitude} inputMode="decimal"
+                        onChange={e => setForm(p => ({ ...p, latitude: e.target.value }))}
+                        placeholder="ละติจูด (เช่น 18.1234)" className={inputCls} />
+                      <input value={form.longitude} inputMode="decimal"
+                        onChange={e => setForm(p => ({ ...p, longitude: e.target.value }))}
+                        placeholder="ลองจิจูด (เช่น 100.5432)" className={inputCls} />
+                    </div>
+                    <button type="button" onClick={fillCoordsFromMapsUrl}
+                      className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600">
+                      ดึงพิกัดจากลิงก์ Google Maps ด้านบน
+                    </button>
+                    <p className="text-[11px] text-gray-400 leading-relaxed">
+                      พิกัดใช้เรียงลำดับ &quot;ใกล้ฉัน&quot; และปุ่มนำทางฝั่งประชาชน ถ้าไม่กรอกจะใช้ลิงก์ Google Maps แทน
+                    </p>
+
+                    <div className="flex gap-2">
+                      <input value={form.village_no}
+                        onChange={e => setForm(p => ({ ...p, village_no: e.target.value }))}
+                        placeholder="หมู่ที่ (เช่น 5)" className={inputCls} />
+                      <select value={form.price_range}
+                        onChange={e => setForm(p => ({ ...p, price_range: e.target.value }))}
+                        className={inputCls}>
+                        <option value="">ช่วงราคา (ไม่ระบุ)</option>
+                        <option value="1">฿ ประหยัด</option>
+                        <option value="2">฿฿ ปานกลาง</option>
+                        <option value="3">฿฿฿ ค่อนข้างสูง</option>
+                        <option value="4">฿฿฿฿ สูง</option>
+                      </select>
+                    </div>
+
+                    <input value={form.facebook_url}
+                      onChange={e => setForm(p => ({ ...p, facebook_url: e.target.value }))}
+                      placeholder="ลิงก์เพจ Facebook" className={inputCls} />
+                    <input value={form.line_id}
+                      onChange={e => setForm(p => ({ ...p, line_id: e.target.value }))}
+                      placeholder="LINE ID" className={inputCls} />
+
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={form.is_featured}
+                        onChange={e => setForm(p => ({ ...p, is_featured: e.target.checked }))}
+                        className="w-4 h-4 rounded accent-amber-500" />
+                      <span className="text-sm text-gray-700">ปักหมุดเป็นรายการแนะนำ (ขึ้นก่อนรายการอื่น)</span>
+                    </label>
+                  </>
+                )}
               </div>
+
+              {hasNewCols && (
+                <div className="space-y-2">
+                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">เวลาทำการ</p>
+                  <OpeningHoursEditor
+                    enabled={form.hoursEnabled}
+                    onToggle={v => setForm(p => ({ ...p, hoursEnabled: v }))}
+                    rows={form.hoursRows}
+                    onChange={rows => setForm(p => ({ ...p, hoursRows: rows }))}
+                  />
+                  <input value={form.hours_note}
+                    onChange={e => setForm(p => ({ ...p, hours_note: e.target.value }))}
+                    placeholder="หมายเหตุเวลาทำการ (เช่น ปิดวันพระ / โทรนัดล่วงหน้า)" className={inputCls} />
+                </div>
+              )}
 
               <div className="space-y-2">
                 <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">บริการออนไลน์</p>

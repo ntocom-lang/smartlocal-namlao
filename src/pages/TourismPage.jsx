@@ -1,434 +1,495 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  ArrowLeft, Phone, MapPin, Plus, ShoppingCart,
-  CalendarCheck, MessageCircle, Globe, Bike, Zap, ChevronRight, Loader2, Star,
+  ArrowLeft, Phone, MapPin, Plus, ShoppingCart, Search, X, SlidersHorizontal,
+  CalendarCheck, MessageCircle, Globe, Bike, Zap, Loader2, Star, Navigation,
+  Clock, Sparkles,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
+import {
+  TOURISM_CATS, catOf, getOpenState, parseCoords, haversineKm,
+  formatDistance, directionsUrl, matchesQuery,
+} from '../lib/tourismPlaces'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const CATS = [
-  { key: null,      label: 'ทั้งหมด', emoji: null,  color: '#64748b', bg: '#f1f5f9' },
-  { key: 'travel',  label: 'เที่ยว',  emoji: '🏛️', color: '#1d4ed8', bg: '#dbeafe' },
-  { key: 'food',    label: 'กิน',     emoji: '🍽️', color: '#d97706', bg: '#fef3c7' },
-  { key: 'stay',    label: 'พัก',     emoji: '🏨', color: '#7c3aed', bg: '#ede9fe' },
-  { key: 'shop',    label: 'OTOP',   emoji: '🛍️', color: '#15803d', bg: '#dcfce7' },
-  { key: 'service', label: 'บริการ',  emoji: '🔧', color: '#dc2626', bg: '#fee2e2' },
-]
+const CATS = [{ key: null, label: 'ทั้งหมด', emoji: null }, ...TOURISM_CATS]
 
 const SVC = {
-  order:   { label: 'สั่งซื้อเลย',  Icon: ShoppingCart,  bg: '#fef3c7', color: '#d97706', solid: '#f59e0b' },
-  book:    { label: 'จองเลย',       Icon: CalendarCheck,  bg: '#dbeafe', color: '#1d4ed8', solid: '#3b82f6' },
-  line:    { label: 'ติดต่อ Line',   Icon: MessageCircle, bg: '#dcfce7', color: '#15803d', solid: '#22c55e' },
-  website: { label: 'เว็บไซต์',     Icon: Globe,          bg: '#ede9fe', color: '#7c3aed', solid: '#8b5cf6' },
+  order:   { label: 'สั่งซื้อ',    Icon: ShoppingCart,  bg: '#fef3c7', color: '#b45309' },
+  book:    { label: 'จอง',        Icon: CalendarCheck, bg: '#dbeafe', color: '#1d4ed8' },
+  line:    { label: 'ทัก LINE',   Icon: MessageCircle, bg: '#dcfce7', color: '#15803d' },
+  website: { label: 'เว็บไซต์',   Icon: Globe,         bg: '#ede9fe', color: '#6d28d9' },
 }
 
-// ─── Place card (grid) ────────────────────────────────────────────────────────
+const SORTS = [
+  { key: 'recommended', label: 'แนะนำ' },
+  { key: 'near',        label: 'ใกล้ฉัน' },
+  { key: 'rating',      label: 'คะแนนสูงสุด' },
+  { key: 'name',        label: 'ชื่อ ก-ฮ' },
+]
+
+const OPEN_STYLE = {
+  open:         { bg: '#dcfce7', color: '#15803d', dot: '#22c55e' },
+  closing_soon: { bg: '#fef3c7', color: '#b45309', dot: '#f59e0b' },
+  closed:       { bg: '#f1f5f9', color: '#64748b', dot: '#94a3b8' },
+}
+
+// ─── ชิ้นส่วนเล็ก ──────────────────────────────────────────────────────────────
+
+function OpenBadge({ state, label, compact = false }) {
+  if (state === 'unknown') return null
+  const s = OPEN_STYLE[state]
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+      style={{ backgroundColor: s.bg, color: s.color }}>
+      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: s.dot }} />
+      {compact ? (state === 'closed' ? 'ปิด' : 'เปิด') : label}
+    </span>
+  )
+}
 
 function RatingBadge({ avg, count }) {
   if (!avg || !count) return null
   return (
     <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-amber-700">
       <Star size={10} fill="#f59e0b" stroke="none" />
-      {avg.toFixed(1)}
+      {Number(avg).toFixed(1)}
       <span className="font-normal text-gray-400">({count})</span>
     </span>
   )
 }
 
-function PlaceCard({ place, onClick, avgRating, reviewCount }) {
-  const cat = CATS.find(c => c.key === place.category)
-  const isOnline = place.service_type === 'online'
+// ปุ่มลัดใต้การ์ด — เจตนาให้ "โทร" กับ "นำทาง" กดได้จากหน้ารวมโดยไม่ต้องเข้าไปหน้าใน
+// เพราะ 2 อย่างนี้คือสิ่งที่คนหาร้านต้องการจริงๆ การบังคับกด 2 ชั้นคือแรงเสียดทานเปล่าๆ
+function ActionRow({ place }) {
+  const dir = directionsUrl(place)
   const svc = SVC[place.online_service] ?? SVC.order
   const SvcIcon = svc.Icon
+  const stop = (e) => e.stopPropagation()
 
   return (
-    <button onClick={onClick}
-      className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 active:scale-[0.97] transition-all hover:shadow-md text-left w-full group">
-      {/* Image */}
-      <div className="relative overflow-hidden" style={{ aspectRatio: '4/3' }}>
-        {place.image_url
-          ? <img src={place.image_url} alt={place.name}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-          : <div className="w-full h-full bg-linear-to-br from-gray-100 to-gray-200 flex items-center justify-center text-4xl">
-              {cat?.emoji ?? '🏙️'}
-            </div>
-        }
-        {/* Online badge */}
-        {isOnline && (
-          <span className="absolute top-2 right-2 flex items-center gap-0.5 bg-green-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-sm">
-            <Zap size={8} fill="white" strokeWidth={0} /> ออนไลน์
-          </span>
-        )}
-        {/* Category badge */}
-        {cat?.emoji && (
-          <span className="absolute top-2 left-2 text-[11px] font-semibold px-2 py-0.5 rounded-full shadow-sm"
-            style={{ backgroundColor: cat.bg + 'f0', color: cat.color }}>
-            {cat.emoji} {cat.label}
-          </span>
-        )}
-        {/* Delivery */}
-        {place.has_delivery && (
-          <span className="absolute bottom-2 left-2 flex items-center gap-0.5 bg-orange-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-            <Bike size={9} /> ส่งได้
-          </span>
-        )}
-      </div>
+    <div className="flex items-stretch gap-1.5 px-2.5 pb-2.5">
+      {place.phone && (
+        <a href={`tel:${place.phone}`} onClick={stop}
+          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-xl text-[11px] font-bold bg-green-50 text-green-700 active:scale-95 transition-transform"
+          aria-label={`โทรหา ${place.name}`}>
+          <Phone size={11} /> โทร
+        </a>
+      )}
+      {dir && (
+        <a href={dir} target="_blank" rel="noopener noreferrer" onClick={stop}
+          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-xl text-[11px] font-bold bg-blue-50 text-blue-700 active:scale-95 transition-transform"
+          aria-label={`นำทางไป ${place.name}`}>
+          <Navigation size={11} /> นำทาง
+        </a>
+      )}
+      {place.online_url && (
+        <a href={place.online_url} target="_blank" rel="noopener noreferrer" onClick={stop}
+          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-xl text-[11px] font-bold active:scale-95 transition-transform"
+          style={{ backgroundColor: svc.bg, color: svc.color }}>
+          <SvcIcon size={11} /> {svc.label}
+        </a>
+      )}
+    </div>
+  )
+}
 
-      {/* Content */}
-      <div className="p-3">
-        <p className="text-sm font-bold text-gray-800 leading-tight line-clamp-1">{place.name}</p>
-        {place.description && (
-          <p className="text-xs text-gray-500 mt-1 line-clamp-2 leading-snug">{place.description}</p>
-        )}
-        <div className="mt-1.5 space-y-0.5">
-          <RatingBadge avg={avgRating} count={reviewCount} />
-          {place.phone && (
-            <div className="flex items-center gap-1">
-              <Phone size={10} className="text-gray-400 shrink-0" />
-              <span className="text-[11px] text-gray-500 truncate">{place.phone}</span>
-            </div>
+function PlaceCard({ place, onOpen, rating, distanceKm, now }) {
+  const cat = catOf(place.category)
+  const open = getOpenState(place.opening_hours, now)
+  const dist = formatDistance(distanceKm)
+
+  return (
+    <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 hover:shadow-md transition-shadow flex flex-col">
+      <button onClick={onOpen} className="text-left w-full active:scale-[0.99] transition-transform">
+        <div className="relative overflow-hidden bg-gray-100" style={{ aspectRatio: '4/3' }}>
+          {place.image_url
+            ? <img src={place.image_url} alt={place.name} loading="lazy" decoding="async"
+                className="w-full h-full object-cover" />
+            : <div className="w-full h-full flex items-center justify-center text-4xl">{cat?.emoji ?? '🏙️'}</div>
+          }
+          {cat && (
+            <span className="absolute top-2 left-2 text-[11px] font-semibold px-2 py-0.5 rounded-full shadow-sm"
+              style={{ backgroundColor: `${cat.bg}f0`, color: cat.color }}>
+              {cat.emoji} {cat.label}
+            </span>
+          )}
+          {place.is_featured && (
+            <span className="absolute top-2 right-2 flex items-center gap-0.5 bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-sm">
+              <Sparkles size={9} /> แนะนำ
+            </span>
+          )}
+          <div className="absolute bottom-2 left-2 flex items-center gap-1">
+            <OpenBadge state={open.state} label={open.label} />
+            {place.has_delivery && (
+              <span className="flex items-center gap-0.5 bg-orange-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                <Bike size={9} /> ส่งได้
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="px-2.5 pt-2.5 pb-2">
+          <p className="text-sm font-bold text-gray-800 leading-tight line-clamp-1">{place.name}</p>
+          <div className="flex items-center gap-2 mt-1 min-h-[16px]">
+            <RatingBadge avg={rating?.avg_rating} count={rating?.review_count} />
+            {dist && (
+              <span className="inline-flex items-center gap-0.5 text-[11px] text-gray-500 font-semibold">
+                <Navigation size={9} className="text-gray-400" /> {dist}
+              </span>
+            )}
+          </div>
+          {place.description && (
+            <p className="text-xs text-gray-500 mt-1 line-clamp-2 leading-snug">{place.description}</p>
           )}
           {place.address && (
-            <div className="flex items-start gap-1">
+            <div className="flex items-start gap-1 mt-1">
               <MapPin size={10} className="text-gray-400 shrink-0 mt-0.5" />
               <span className="text-[11px] text-gray-400 line-clamp-1">{place.address}</span>
             </div>
           )}
         </div>
-        {/* CTA button */}
-        {isOnline && (
-          <div className="mt-2.5 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl text-xs font-bold"
-            style={{ backgroundColor: svc.bg, color: svc.color }}>
-            <SvcIcon size={11} />
-            {svc.label}
-          </div>
-        )}
+      </button>
+      <div className="mt-auto">
+        <ActionRow place={place} />
       </div>
-    </button>
+    </div>
   )
 }
 
-// ─── Market card (horizontal layout, online_only) ────────────────────────────
-
-function MarketCard({ place, onClick }) {
-  const cat = CATS.find(c => c.key === place.category)
-  const svc = SVC[place.online_service] ?? SVC.order
-  const SvcIcon = svc.Icon
-
+function FilterChip({ active, onClick, children, activeBg = 'var(--color-primary)', activeColor = '#fff' }) {
   return (
     <button onClick={onClick}
-      className="bg-white rounded-2xl shadow-sm border border-gray-100 flex gap-3 p-3 active:scale-[0.98] transition-all hover:shadow-md text-left w-full group">
-      <div className="relative shrink-0 w-20 h-20 rounded-xl overflow-hidden">
-        {place.image_url
-          ? <img src={place.image_url} alt={place.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-          : <div className="w-full h-full bg-linear-to-br from-purple-100 to-indigo-200 flex items-center justify-center text-2xl">🏪</div>
-        }
-        {place.has_delivery && (
-          <span className="absolute bottom-1 left-1 flex items-center gap-0.5 bg-orange-500 text-white text-[8px] font-bold px-1 py-0.5 rounded-full">
-            <Bike size={7} /> ส่ง
-          </span>
-        )}
-      </div>
-      <div className="flex-1 min-w-0 flex flex-col justify-between">
-        <div>
-          {cat?.emoji && (
-            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
-              style={{ backgroundColor: cat.bg, color: cat.color }}>
-              {cat.emoji} {cat.label}
-            </span>
-          )}
-          <p className="text-sm font-bold text-gray-800 mt-1 truncate">{place.name}</p>
-          {place.description && (
-            <p className="text-xs text-gray-500 mt-0.5 line-clamp-2 leading-snug">{place.description}</p>
-          )}
-        </div>
-        {place.online_url ? (
-          <div className="mt-1.5 inline-flex items-center gap-1 py-1 px-2.5 rounded-lg text-[11px] font-bold"
-            style={{ backgroundColor: svc.bg, color: svc.color }}>
-            <SvcIcon size={10} /> {svc.label}
-          </div>
-        ) : (
-          <div className="mt-1.5 inline-flex items-center gap-1 py-1 px-2.5 rounded-lg text-[11px] font-bold bg-gray-100 text-gray-500">
-            <SvcIcon size={10} /> {svc.label}
-          </div>
-        )}
-      </div>
+      className="shrink-0 flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-full transition-colors border"
+      style={active
+        ? { backgroundColor: activeBg, color: activeColor, borderColor: activeBg }
+        : { backgroundColor: '#fff', color: '#64748b', borderColor: '#e2e8f0' }}>
+      {children}
     </button>
   )
 }
 
-// ─── Featured card (horizontal scroll, online only) ───────────────────────────
-
-function FeaturedCard({ place, onClick }) {
-  const svc = SVC[place.online_service] ?? SVC.order
-  const SvcIcon = svc.Icon
-
-  return (
-    <button onClick={onClick}
-      className="shrink-0 w-40 rounded-2xl overflow-hidden shadow-md active:scale-95 transition-transform text-left relative"
-      style={{ height: '200px' }}>
-      {place.image_url
-        ? <img src={place.image_url} alt={place.name} className="absolute inset-0 w-full h-full object-cover" />
-        : <div className="absolute inset-0 bg-linear-to-br from-amber-100 to-orange-200 flex items-center justify-center text-4xl">🏪</div>
-      }
-      {/* Overlay */}
-      <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/10 to-transparent" />
-      {/* Delivery badge */}
-      {place.has_delivery && (
-        <span className="absolute top-2 right-2 flex items-center gap-0.5 bg-orange-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-          <Bike size={8} /> ส่งได้
-        </span>
-      )}
-      {/* Bottom content */}
-      <div className="absolute bottom-0 left-0 right-0 p-2.5">
-        <p className="text-white text-xs font-bold line-clamp-2 leading-snug mb-2">{place.name}</p>
-        <div className="flex items-center justify-center gap-1 py-1.5 px-2 rounded-xl text-[11px] font-bold"
-          style={{ backgroundColor: svc.bg, color: svc.color }}>
-          <SvcIcon size={10} />
-          {svc.label}
-        </div>
-      </div>
-    </button>
-  )
-}
-
-// ─── Main page ────────────────────────────────────────────────────────────────
+// ─── หน้าหลัก ─────────────────────────────────────────────────────────────────
 
 export default function TourismPage() {
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { tenant } = useTenant()
-  const [places, setPlaces] = useState([])
+
+  const [places, setPlaces]   = useState([])
   const [loading, setLoading] = useState(true)
+  const [ratings, setRatings] = useState({})
+
+  const [query, setQuery]     = useState('')
   const [activeCat, setActiveCat] = useState(searchParams.get('cat') || null)
-  const [showOnline, setShowOnline] = useState(searchParams.get('online') === '1')
-  const [ratingMap, setRatingMap] = useState({})
+  const [openNow, setOpenNow] = useState(false)
+  const [onlineOnly, setOnlineOnly] = useState(searchParams.get('online') === '1')
+  const [deliveryOnly, setDeliveryOnly] = useState(false)
+  const [sort, setSort] = useState('recommended')
+
+  const [myPos, setMyPos] = useState(null)
+  const [geoState, setGeoState] = useState('idle') // idle | asking | denied | ok
+
+  // เวลาอ้างอิงของป้ายเปิด/ปิด — เดินทุก 1 นาที ไม่งั้นเปิดหน้าค้างไว้แล้วป้ายจะโกหก
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 60_000)
+    return () => clearInterval(t)
+  }, [])
 
   useEffect(() => {
     if (!tenant?.id) return
+    let alive = true
+    // ไม่ setLoading(true) ตรงนี้ — ค่าเริ่มต้นเป็น true อยู่แล้ว และ tenant เปลี่ยนกลางคัน
+    // ไม่ได้ในทางปฏิบัติ (ผูกกับ hostname) การเรียก setState ตรงๆ ในบอดี้ effect ผิดกฎ lint ของโปรเจกต์
     supabase
       .from('tourism_places')
       .select('*')
       .eq('municipality_id', tenant.id)
       .eq('is_active', true)
       .order('display_order')
-      .then(({ data }) => setPlaces(data ?? []))
+      .then(({ data }) => { if (alive) setPlaces(data ?? []) })
       .catch(() => {})
-      .finally(() => setLoading(false))
+      .finally(() => { if (alive) setLoading(false) })
+    return () => { alive = false }
   }, [tenant?.id])
 
+  // คะแนนรีวิว: อ่านจาก view สรุป (migration 20260906130000) ถ้ายังไม่มี view ค่อยถอยไป
+  // นับเองจาก tourism_reviews — หน้าเว็บจึงใช้ได้ทั้งก่อนและหลังรัน migration
   useEffect(() => {
     if (!tenant?.id) return
-    supabase.from('tourism_reviews')
-      .select('place_id, rating')
-      .eq('municipality_id', tenant.id)
-      .then(({ data, error }) => {
-        if (error || !data) return
-        const map = {}
-        data.forEach(r => {
-          if (!map[r.place_id]) map[r.place_id] = { sum: 0, count: 0 }
-          map[r.place_id].sum += r.rating
-          map[r.place_id].count += 1
-        })
-        const result = {}
-        Object.entries(map).forEach(([id, { sum, count }]) => {
-          result[id] = { avg: sum / count, count }
-        })
-        setRatingMap(result)
+    let alive = true
+    async function load() {
+      const view = await supabase
+        .from('tourism_place_ratings')
+        .select('place_id, avg_rating, review_count')
+        .eq('municipality_id', tenant.id)
+      if (!alive) return
+      if (!view.error && view.data) {
+        setRatings(Object.fromEntries(view.data.map(r => [r.place_id, r])))
+        return
+      }
+      const raw = await supabase
+        .from('tourism_reviews')
+        .select('place_id, rating')
+        .eq('municipality_id', tenant.id)
+      if (!alive || raw.error || !raw.data) return
+      const acc = {}
+      raw.data.forEach((r) => {
+        acc[r.place_id] = acc[r.place_id] ?? { sum: 0, review_count: 0 }
+        acc[r.place_id].sum += r.rating
+        acc[r.place_id].review_count += 1
       })
-      .catch(() => {})
+      setRatings(Object.fromEntries(
+        Object.entries(acc).map(([id, v]) => [id, { avg_rating: v.sum / v.review_count, review_count: v.review_count }]),
+      ))
+    }
+    load()
+    return () => { alive = false }
   }, [tenant?.id])
 
-  const onlinePlaces  = places.filter(p => p.service_type === 'online')
-  const marketPlaces  = places.filter(p => p.service_type === 'online_only')
-  const mainPlaces    = places.filter(p => p.service_type !== 'online_only')
+  // ขอตำแหน่งเฉพาะตอนผู้ใช้กด "ใกล้ฉัน" เท่านั้น ไม่ขอตั้งแต่เปิดหน้า —
+  // ป๊อปอัพขอพิกัดตั้งแต่ยังไม่ได้ทำอะไรคือสาเหตุอันดับต้นๆ ที่คนกดปฏิเสธถาวร
+  const askLocation = useCallback(() => {
+    if (myPos) { setSort('near'); return }
+    if (!navigator.geolocation) { setGeoState('denied'); return }
+    setGeoState('asking')
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setMyPos({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+        setGeoState('ok')
+        setSort('near')
+      },
+      () => setGeoState('denied'),
+      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 300_000 },
+    )
+  }, [myPos])
 
-  const filtered = mainPlaces.filter(p => {
-    if (showOnline) return p.service_type === 'online'
-    if (activeCat) return p.category === activeCat
-    return true
-  })
+  const distances = useMemo(() => {
+    if (!myPos) return {}
+    const out = {}
+    places.forEach((p) => {
+      const c = parseCoords(p)
+      if (c) out[p.id] = haversineKm(myPos, c)
+    })
+    return out
+  }, [myPos, places])
 
-  const filteredMarket = activeCat
-    ? marketPlaces.filter(p => p.category === activeCat)
-    : marketPlaces
+  const visible = useMemo(() => {
+    const list = places.filter((p) => {
+      if (activeCat && p.category !== activeCat) return false
+      if (onlineOnly && p.service_type !== 'online' && p.service_type !== 'online_only') return false
+      if (deliveryOnly && !p.has_delivery) return false
+      if (openNow && getOpenState(p.opening_hours, now).state === 'closed') return false
+      if (openNow && getOpenState(p.opening_hours, now).state === 'unknown') return false
+      return matchesQuery(p, query)
+    })
 
-  function handleCatClick(key) {
-    if (key === '__online__') { setShowOnline(true); setActiveCat(null) }
-    else { setShowOnline(false); setActiveCat(key) }
+    const byName = (a, b) => String(a.name).localeCompare(String(b.name), 'th')
+    if (sort === 'name') return [...list].sort(byName)
+    if (sort === 'rating') {
+      return [...list].sort((a, b) =>
+        (ratings[b.id]?.avg_rating ?? 0) - (ratings[a.id]?.avg_rating ?? 0)
+        || (ratings[b.id]?.review_count ?? 0) - (ratings[a.id]?.review_count ?? 0)
+        || byName(a, b))
+    }
+    if (sort === 'near' && myPos) {
+      // รายการที่ไม่มีพิกัดต้องไปท้ายสุด ไม่ใช่ปนอยู่ต้นๆ ทั้งที่ไม่รู้ว่าอยู่ไหน
+      return [...list].sort((a, b) => {
+        const da = distances[a.id] ?? Infinity
+        const db = distances[b.id] ?? Infinity
+        return da - db || byName(a, b)
+      })
+    }
+    return [...list].sort((a, b) =>
+      Number(b.is_featured ?? false) - Number(a.is_featured ?? false)
+      || (a.display_order ?? 999) - (b.display_order ?? 999)
+      || byName(a, b))
+  }, [places, activeCat, onlineOnly, deliveryOnly, openNow, query, sort, ratings, distances, myPos, now])
+
+  const hasFilter = Boolean(query || activeCat || openNow || onlineOnly || deliveryOnly)
+
+  function clearFilters() {
+    setQuery(''); setActiveCat(null); setOpenNow(false)
+    setOnlineOnly(false); setDeliveryOnly(false); setSort('recommended')
+    setSearchParams({}, { replace: true })
   }
 
-  const activeKey = showOnline ? '__online__' : activeCat
-  const showFeaturedRow  = !showOnline && !activeCat && onlinePlaces.length > 0
-  const showMarketSection = !showOnline && filteredMarket.length > 0
+  function pickCat(key) {
+    setActiveCat(key)
+    const next = new URLSearchParams(searchParams)
+    if (key) next.set('cat', key); else next.delete('cat')
+    setSearchParams(next, { replace: true })
+  }
+
+  const countByCat = useMemo(() => {
+    const acc = {}
+    places.forEach((p) => { acc[p.category] = (acc[p.category] ?? 0) + 1 })
+    return acc
+  }, [places])
 
   return (
     <div className="max-w-6xl mx-auto pb-28 md:pb-8">
 
-      {/* ── Sticky header ── */}
-      <div className="sticky top-0 z-30 bg-white/96 backdrop-blur-md border-b border-gray-100 shadow-sm">
-
-        {/* Mobile title row */}
+      {/* ── หัวเรื่อง + ตัวกรอง (ติดบนสุด) ── */}
+      <div className="sticky top-0 z-30 bg-white/97 backdrop-blur-md border-b border-gray-100 shadow-sm">
         <div className="flex items-center gap-2 px-4 pt-3 pb-1 md:hidden">
-          <button onClick={() => navigate(-1)} className="p-2 -ml-1 rounded-xl hover:bg-gray-100 text-gray-500 transition-colors">
+          <button onClick={() => navigate(-1)}
+            className="p-2 -ml-1 rounded-xl hover:bg-gray-100 text-gray-500 transition-colors" aria-label="ย้อนกลับ">
             <ArrowLeft size={20} />
           </button>
-          <h1 className="text-base font-bold text-gray-800 flex-1 truncate">
-            เที่ยว กิน พัก OTOP
-            {showOnline ? ' — ออนไลน์' : activeCat ? ` — ${CATS.find(c => c.key === activeCat)?.label}` : ''}
-          </h1>
+          <h1 className="text-base font-bold text-gray-800 flex-1 truncate">เที่ยว กิน พัก ชอป บริการ</h1>
           <button onClick={() => navigate('/business-register')}
             className="shrink-0 flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-xl"
-            style={{ backgroundColor: '#fef3c7', color: '#d97706' }}>
+            style={{ backgroundColor: '#fef3c7', color: '#b45309' }}>
             <Plus size={11} /> ลงทะเบียน
           </button>
         </div>
 
-        {/* PC title row */}
         <div className="hidden md:flex items-center justify-between px-6 pt-5 pb-1">
           <div>
-            <h1 className="text-2xl font-bold text-gray-800">เที่ยว กิน พัก OTOP</h1>
-            <p className="text-sm text-gray-400 mt-0.5">ค้นพบสถานที่ ร้านค้า และบริการในพื้นที่ · {places.length} รายการ</p>
+            <h1 className="text-2xl font-bold text-gray-800">เที่ยว กิน พัก ชอป บริการ</h1>
+            <p className="text-sm text-gray-400 mt-0.5">
+              ที่เที่ยว ร้านอาหาร ที่พัก ของฝาก และบริการในพื้นที่ · {places.length} รายการ
+            </p>
           </div>
           <button onClick={() => navigate('/business-register')}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors hover:bg-amber-100"
-            style={{ backgroundColor: '#fef3c7', color: '#d97706' }}>
-            <Plus size={15} /> ลงทะเบียนสถานที่ของคุณ
+            style={{ backgroundColor: '#fef3c7', color: '#b45309' }}>
+            <Plus size={15} /> ลงทะเบียนร้านของคุณ
           </button>
         </div>
 
-        {/* Category filter pills */}
-        <div className="flex gap-2 px-4 py-3 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+        {/* ค้นหา */}
+        <div className="px-4 md:px-6 pt-2">
+          <div className="relative">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="ค้นหาชื่อร้าน ของที่ขาย หรือหมู่บ้าน..."
+              aria-label="ค้นหาสถานที่และร้านค้า"
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-9 pr-9 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-200 focus:bg-white"
+            />
+            {query && (
+              <button onClick={() => setQuery('')} aria-label="ล้างคำค้นหา"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-gray-400 hover:bg-gray-100">
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* หมวด */}
+        <div className="flex gap-2 px-4 md:px-6 pt-3 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
           {CATS.map(({ key, label, emoji }) => (
-            <button key={key ?? 'all'} onClick={() => handleCatClick(key)}
-              className="shrink-0 flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-full transition-all"
-              style={activeKey === key
-                ? { backgroundColor: 'var(--color-primary)', color: '#fff' }
-                : { backgroundColor: '#f1f5f9', color: '#64748b' }}>
+            <FilterChip key={key ?? 'all'} active={activeCat === key} onClick={() => pickCat(key)}>
               {emoji && <span>{emoji}</span>}
               {label}
-            </button>
+              {key && countByCat[key] > 0 && (
+                <span className={activeCat === key ? 'opacity-70' : 'text-gray-400'}>{countByCat[key]}</span>
+              )}
+            </FilterChip>
           ))}
-          {/* Online filter */}
-          <button onClick={() => handleCatClick('__online__')}
-            className="shrink-0 flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-full transition-all"
-            style={activeKey === '__online__'
-              ? { backgroundColor: '#22c55e', color: '#fff' }
-              : { backgroundColor: '#f0fdf4', color: '#15803d' }}>
-            <Zap size={11} fill={activeKey === '__online__' ? '#fff' : '#22c55e'} strokeWidth={0} />
-            ออนไลน์
-            {onlinePlaces.length > 0 && (
-              <span className="font-bold px-1.5 rounded-full text-[10px]"
-                style={{
-                  backgroundColor: activeKey === '__online__' ? 'rgba(255,255,255,0.25)' : '#22c55e',
-                  color: '#fff',
-                }}>
-                {onlinePlaces.length}
-              </span>
-            )}
-          </button>
         </div>
+
+        {/* ตัวกรองด่วน + เรียงลำดับ */}
+        <div className="flex gap-2 px-4 md:px-6 py-2.5 overflow-x-auto items-center" style={{ scrollbarWidth: 'none' }}>
+          <FilterChip active={openNow} onClick={() => setOpenNow(v => !v)} activeBg="#16a34a">
+            <Clock size={11} /> เปิดอยู่ตอนนี้
+          </FilterChip>
+          <FilterChip active={onlineOnly} onClick={() => setOnlineOnly(v => !v)} activeBg="#22c55e">
+            <Zap size={11} /> สั่งออนไลน์
+          </FilterChip>
+          <FilterChip active={deliveryOnly} onClick={() => setDeliveryOnly(v => !v)} activeBg="#f97316">
+            <Bike size={11} /> ส่งถึงบ้าน
+          </FilterChip>
+          <FilterChip active={sort === 'near'} onClick={askLocation} activeBg="#0ea5e9">
+            {geoState === 'asking' ? <Loader2 size={11} className="animate-spin" /> : <Navigation size={11} />}
+            ใกล้ฉัน
+          </FilterChip>
+
+          <div className="ml-auto shrink-0 flex items-center gap-1 pl-2">
+            <SlidersHorizontal size={12} className="text-gray-400" />
+            <select value={sort} aria-label="เรียงลำดับ"
+              onChange={(e) => { const v = e.target.value; if (v === 'near') askLocation(); else setSort(v) }}
+              className="text-xs font-semibold text-gray-600 bg-transparent focus:outline-none py-1">
+              {SORTS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {geoState === 'denied' && (
+          <p className="px-4 md:px-6 pb-2 text-[11px] text-gray-400">
+            เปิดสิทธิ์ตำแหน่งในเบราว์เซอร์ก่อน จึงจะเรียง &quot;ใกล้ฉัน&quot; ได้
+          </p>
+        )}
       </div>
 
-      {/* ── Body ── */}
-      <div className="px-4 pt-5 space-y-6">
+      {/* ── เนื้อหา ── */}
+      <div className="px-4 md:px-6 pt-4">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
             <Loader2 size={28} className="animate-spin text-gray-300" />
             <p className="text-sm text-gray-400">กำลังโหลด...</p>
           </div>
-
         ) : (
           <>
-            {/* ── Featured: online horizontal row ── */}
-            {showFeaturedRow && (
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center">
-                      <Zap size={12} fill="white" strokeWidth={0} />
-                    </div>
-                    <h2 className="font-bold text-gray-800 text-sm">สั่งได้เลย · บริการออนไลน์</h2>
-                  </div>
-                  <button onClick={() => handleCatClick('__online__')}
-                    className="flex items-center gap-0.5 text-xs text-green-600 font-semibold hover:underline">
-                    ทั้งหมด <ChevronRight size={12} />
-                  </button>
-                </div>
-                <div className="flex gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: 'none' }}>
-                  {onlinePlaces.map(place => (
-                    <FeaturedCard key={place.id} place={place} onClick={() => navigate(`/tourism/${place.id}`)} />
-                  ))}
-                </div>
-              </div>
-            )}
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs text-gray-400 font-semibold">
+                พบ {visible.length} รายการ
+                {sort === 'near' && myPos && ' · เรียงจากใกล้ที่สุด'}
+              </p>
+              {hasFilter && (
+                <button onClick={clearFilters}
+                  className="flex items-center gap-1 text-xs font-semibold text-gray-500 hover:text-gray-700">
+                  <X size={12} /> ล้างตัวกรอง
+                </button>
+              )}
+            </div>
 
-            {/* ── Main grid ── */}
-            {filtered.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-                <p className="text-4xl mb-3">🏙️</p>
-                <p className="text-sm font-semibold text-gray-400">ยังไม่มีรายการในหมวดนี้</p>
-                <p className="text-xs text-gray-400 mt-1">ลองเลือกหมวดอื่น หรือกลับมาดูใหม่เร็วๆ นี้</p>
+            {visible.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <p className="text-4xl mb-3">🔍</p>
+                <p className="text-sm font-semibold text-gray-500">
+                  {places.length === 0 ? 'ยังไม่มีรายการในระบบ' : 'ไม่พบรายการที่ตรงกับที่ค้นหา'}
+                </p>
+                <p className="text-xs text-gray-400 mt-1 max-w-xs">
+                  {places.length === 0
+                    ? 'ถ้าคุณมีร้านหรือที่พักในพื้นที่ ลงทะเบียนได้ฟรี เจ้าหน้าที่จะตรวจแล้วเผยแพร่ให้'
+                    : 'ลองลดตัวกรอง หรือพิมพ์คำสั้นลง เช่น ชื่อร้านคำเดียว'}
+                </p>
+                {hasFilter && (
+                  <button onClick={clearFilters}
+                    className="mt-4 px-4 py-2 rounded-xl text-xs font-bold bg-gray-100 text-gray-600">
+                    ล้างตัวกรองทั้งหมด
+                  </button>
+                )}
               </div>
             ) : (
-              <>
-                {showFeaturedRow && (
-                  <div className="flex items-center gap-2">
-                    <div className="h-px flex-1 bg-gray-100" />
-                    <span className="text-xs text-gray-400 font-semibold">สถานที่ทั้งหมด · {filtered.length} รายการ</span>
-                    <div className="h-px flex-1 bg-gray-100" />
-                  </div>
-                )}
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
-                  {filtered.map(place => (
-                    <PlaceCard key={place.id} place={place}
-                      avgRating={ratingMap[place.id]?.avg}
-                      reviewCount={ratingMap[place.id]?.count}
-                      onClick={() => navigate(`/tourism/${place.id}`)} />
-                  ))}
-                </div>
-              </>
-            )}
-
-            {/* ── ตลาดออนไลน์ section ── */}
-            {showMarketSection && (
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-base"
-                    style={{ background: 'linear-gradient(135deg, #7c3aed, #4f46e5)' }}>
-                    🏪
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h2 className="font-bold text-gray-800 text-sm leading-tight">ตลาดออนไลน์</h2>
-                    <p className="text-[11px] text-gray-400 leading-tight">สั่งซื้อได้เลย · ไม่ต้องออกจากบ้าน</p>
-                  </div>
-                  <span className="shrink-0 text-[11px] font-bold px-2 py-0.5 rounded-full"
-                    style={{ backgroundColor: '#ede9fe', color: '#7c3aed' }}>
-                    {filteredMarket.length} ร้าน
-                  </span>
-                </div>
-                <div className="space-y-2">
-                  {filteredMarket.map(place => (
-                    <MarketCard key={place.id} place={place} onClick={() => navigate(`/tourism/${place.id}`)} />
-                  ))}
-                </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
+                {visible.map(place => (
+                  <PlaceCard key={place.id} place={place} now={now}
+                    rating={ratings[place.id]}
+                    distanceKm={distances[place.id]}
+                    onOpen={() => navigate(`/tourism/${place.id}`)} />
+                ))}
               </div>
             )}
 
-            {/* ── CTA: register ── */}
             <button onClick={() => navigate('/business-register')}
-              className="w-full flex items-center gap-3 rounded-2xl px-4 py-4 text-left active:scale-[0.99] transition-transform"
+              className="w-full mt-6 flex items-center gap-3 rounded-2xl px-4 py-4 text-left active:scale-[0.99] transition-transform"
               style={{ background: 'linear-gradient(135deg, #fef3c7, #fff7ed)', border: '1px solid #fcd34d' }}>
               <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 text-xl"
                 style={{ backgroundColor: '#fde68a' }}>
                 🏪
               </div>
               <div>
-                <p className="text-sm font-bold text-amber-800">มีร้านค้า / สถานที่ท่องเที่ยว?</p>
-                <p className="text-xs text-amber-600 mt-0.5">ลงทะเบียนฟรี เพื่อแสดงบนแผนที่และเว็บไซต์ →</p>
+                <p className="text-sm font-bold text-amber-800">มีร้านค้า ที่พัก หรือแหล่งท่องเที่ยว?</p>
+                <p className="text-xs text-amber-700/80 mt-0.5">ลงทะเบียนฟรี เพื่อแสดงบนแผนที่และเว็บไซต์ของ อปท. →</p>
               </div>
             </button>
           </>
