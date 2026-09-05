@@ -209,7 +209,10 @@ function signatureBlock(sign, offsetClass) {
 
 export function buildFleetFuelMemoHtml({
   orgName = '',
-  logoUrl = '',
+  // ตราครุฑ ไม่ใช่ตราของ อปท. — หนังสือราชการภายใน (บันทึกข้อความ) ใช้ครุฑเสมอ
+  // ต้องเป็น URL แบบเต็ม (มี origin) เพราะหน้าต่างพิมพ์เป็น about:blank ที่เขียนด้วย
+  // document.write พาธแบบ /images/... จะ resolve ไม่เจอแล้วขึ้นรูปแตก
+  emblemUrl = '',
   department = '',
   docNumber = '',
   docDate = '',
@@ -267,8 +270,10 @@ export function buildFleetFuelMemoHtml({
       thead { display: table-header-group; }
     }
     .head { display: flex; align-items: center; gap: 12mm; }
-    /* ครุฑสูง 1.5 ซม. ตามรูปแบบบันทึกข้อความ — ไม่มีไฟล์ครุฑในระบบ ใช้ตราหน่วยงานที่ อปท.
-       อัปโหลดไว้แทนถ้ามี ไม่มีก็เว้นที่ว่างขนาดเท่ากันไว้ให้พิมพ์ทับกระดาษหัวจดหมายได้พอดี */
+    /* ครุฑสูง 1.5 ซม. ตามรูปแบบบันทึกข้อความ — ห้ามใช้ตราของ อปท. แทน หนังสือราชการภายใน
+       ใช้ครุฑเสมอ (ของเดิมเผลอใส่ tenant.logo_url ลงช่องนี้ ซึ่งผิดรูปแบบเอกสาร)
+       ไฟล์ที่ต้องมี: public/images/garuda.png — ยังไม่มีในระบบ ระหว่างนี้จะได้ช่องว่าง
+       ขนาดเท่ากันแทน ซึ่งพิมพ์ทับกระดาษหัวจดหมายที่มีครุฑอยู่แล้วได้พอดี */
     .emblem { width: 15mm; height: 15mm; flex: none; }
     .emblem img { width: 100%; height: 100%; object-fit: contain; }
     /* 22pt ไม่ใช่ 29pt ตามแบบฟอร์มบันทึกข้อความมาตรฐาน — วัดจากใบจริงของ อปท. แล้วหัวเรื่อง
@@ -361,7 +366,12 @@ export function buildFleetFuelMemoHtml({
 <body>
 <div class="sheet">
   <div class="head">
-    <div class="emblem">${logoUrl ? `<img src="${esc(logoUrl)}" alt="">` : ''}</div>
+    <div class="emblem">${emblemUrl
+      // onerror ซ่อนรูปที่โหลดไม่ขึ้น — ยังไม่มีไฟล์ครุฑในระบบจนกว่าจะวางไว้ที่
+      // public/images/garuda.png ระหว่างนั้นต้องได้ช่องว่างเปล่าขนาด 1.5 ซม.
+      // (พิมพ์ทับกระดาษหัวจดหมายที่มีครุฑอยู่แล้วได้พอดี) ไม่ใช่ไอคอนรูปแตก
+      ? `<img src="${esc(emblemUrl)}" alt="" onerror="this.style.display='none'">`
+      : ''}</div>
     <h1>บันทึกข้อความ</h1>
   </div>
   <p class="field"><b>ส่วนราชการ</b>&nbsp;&nbsp;${esc(department)}</p>

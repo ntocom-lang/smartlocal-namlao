@@ -371,7 +371,9 @@ export default function FleetReport({ tenant }) {
       })
       openPrintWindow(buildFleetFuelMemoHtml({
         orgName: tenant?.name ?? '',
-        logoUrl: tenant?.logo_url ?? '',
+        // ครุฑ ไม่ใช่ตราของ อปท. — บันทึกข้อความเป็นหนังสือราชการที่ใช้ครุฑตามระเบียบสารบรรณ
+        // ต้องเป็น URL เต็ม เพราะหน้าต่างพิมพ์เป็น about:blank ที่ resolve พาธสัมพัทธ์ไม่ได้
+        emblemUrl: `${window.location.origin}/images/garuda.png`,
         department: memoForm.department,
         docNumber: memoForm.docNumber,
         docDate: memoForm.docDate,
