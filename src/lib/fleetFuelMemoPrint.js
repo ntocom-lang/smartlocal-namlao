@@ -255,7 +255,10 @@ export function buildFleetFuelMemoHtml({
        อัปโหลดไว้แทนถ้ามี ไม่มีก็เว้นที่ว่างขนาดเท่ากันไว้ให้พิมพ์ทับกระดาษหัวจดหมายได้พอดี */
     .emblem { width: 15mm; height: 15mm; flex: none; }
     .emblem img { width: 100%; height: 100%; object-fit: contain; }
-    h1 { flex: 1; margin: 0; text-align: center; font-size: 29pt; font-weight: 700; }
+    /* 22pt ไม่ใช่ 29pt ตามแบบฟอร์มบันทึกข้อความมาตรฐาน — วัดจากใบจริงของ อปท. แล้วหัวเรื่อง
+       สูงราว 20–22pt ที่ 29pt หัวเรื่องใหญ่จนผิดสัดส่วนกับเนื้อความเมื่อวางเทียบกับใบต้นฉบับ
+       และกินที่แนวตั้งที่ต้องเอาไปเว้นให้ช่องลงนาม */
+    h1 { flex: 1; margin: 0; text-align: center; font-size: 22pt; font-weight: 700; }
     .field { margin: 0; }
     .field b { font-weight: 700; }
     .field-row { display: flex; margin: 0; }
@@ -276,7 +279,8 @@ export function buildFleetFuelMemoHtml({
     /* ⚠️ ข้อยกเว้น "ขนาดตัวอักษร" เฉพาะตาราง (เนื้อความของหนังสือยังเป็น 16pt ตามมาตรฐาน)
        7 คอลัมน์ที่ต้องมีทั้งชื่อรถยาวๆ ทะเบียน และตัวเลข 5 ช่อง ถ้าบังคับ 16pt ทั้งตาราง
        ใบของ อปท. ที่มีรถ 7 คันจะสูง 354 มม. (วัดจริง) ล้นพื้นที่พิมพ์ 276 มม. ไปหน้า 2
-       ทั้งที่ใบต้นฉบับจบหน้าเดียว — 12pt (หัวตาราง 11pt) ทำให้เคสจริง 7 คันจบใน 1 หน้าพอดี
+       ทั้งที่ใบต้นฉบับจบหน้าเดียว — 11pt (หัวตาราง 10.5pt) ทำให้เคสจริง 7 คันจบใน 1 หน้า
+       พร้อมช่องลงนามแบบขั้นบันได 3 ชั้นและที่เซ็น 8 มม. ครบทุกคน
        เหลือที่เผื่อราว 8 มม. ⚠️ ตัวเลขนี้วัดจากใบจริงของเทศบาลตำบลน้ำเลา ถ้าจะขยับขนาด
        ต้องวัดความสูงรวมใหม่ทุกครั้ง อย่าเดา
        font-size-adjust สืบทอดมาจาก .sheet อยู่แล้ว ขนาดที่ตั้งเองนี้จึงยังพิมพ์เท่ากันทุกเครื่อง
@@ -286,7 +290,7 @@ export function buildFleetFuelMemoHtml({
       border-collapse: collapse;
       table-layout: fixed;
       margin-top: 6pt;
-      font-size: 12pt;
+      font-size: 11pt;
     }
     th, td {
       border: 1px solid #000;
@@ -294,7 +298,7 @@ export function buildFleetFuelMemoHtml({
       text-align: center;
       padding: 1mm 3px;
     }
-    th { font-weight: 700; line-height: 1.15; font-size: 11pt; }
+    th { font-weight: 700; line-height: 1.15; font-size: 10.5pt; }
     td { height: 7mm; line-height: 1.2; }
     /* แถวเดียวห้ามถูกตัดครึ่งคาบสองหน้า และบล็อกลงนามต้องอยู่ด้วยกันทั้งชุด
        (ชื่อโผล่หน้าหนึ่ง ตำแหน่งไปอีกหน้า = เอกสารใช้ไม่ได้) */
@@ -305,7 +309,7 @@ export function buildFleetFuelMemoHtml({
     /* หมายเหตุใต้อัตราที่ใช้จริง (เช่น "ใช้รถถึง 31 ก.ค. เติมน้ำมัน 15 ก.ค.") เป็นคำอธิบาย
        กำกับตัวเลข ไม่ใช่เนื้อความของหนังสือ บนใบจริงจึงเขียนตัวเล็กกว่า — ยกเว้นเฉพาะ
        "ขนาดตัวอักษร" ของช่องนี้ ฟอนต์/ขอบกระดาษยังเป็นค่ามาตรฐานกลางทั้งใบ */
-    .rate-note { display: block; font-size: 9pt; line-height: 1.05; }
+    .rate-note { display: block; font-size: 8pt; line-height: 1.05; }
     /* หน่วยห้ามตัดกลางคำเป็น "กม./" ขึ้นบรรทัดใหม่ "ลิตร" — ตัดทั้งก้อนหลังตัวเลขแทน */
     .unit { white-space: nowrap; }
     col.c-seq { width: 7%; }
@@ -317,19 +321,21 @@ export function buildFleetFuelMemoHtml({
     col.c-actual { width: 15%; }
     .closing { margin: 8pt 0 0; text-indent: 2.5cm; }
     .signs { margin-top: 6pt; }
-    /* พัสดุกับปลัดอยู่แถวเดียวกัน (ซ้าย–ขวา) ไม่ได้เยื้องลงเป็นขั้นบันไดเหมือนใบต้นฉบับ
-       เพราะ 3 บล็อกเรียงลงมาใช้ที่แนวตั้งจนเหลือช่องเซ็นแค่ 2.8 มม. เซ็นชื่อไม่ได้จริง
-       รวมสองช่องเป็นแถวเดียวคืนที่มาได้ 14 มม. เอามาเพิ่มช่องเซ็นเป็น 8 มม. ครบทั้ง 3 คน
-       (ยังคงตำแหน่งซ้าย–ขวาของแต่ละคนไว้ตรงกับใบต้นฉบับ) */
-    .sign-row { display: flex; justify-content: space-between; }
+    /* ช่องลงนามเยื้องลงเป็นขั้นบันได 3 ชั้นตามใบต้นฉบับ (พัสดุซ้าย · ปลัดขวา · นายกซ้ายล่างสุด)
+       ไม่ใช่จับพัสดุกับปลัดมาไว้แถวเดียวกัน — เคยทำแบบนั้นเพื่อประหยัดที่แนวตั้ง แต่วางเทียบกับ
+       ใบจริงแล้วผิดรูปทันที ที่แนวตั้งที่ต้องใช้เพิ่มไปเอาคืนจากหัวเรื่อง (29→22pt) กับตาราง
+       (12→11pt) แทน */
     .sign { text-align: center; width: 46%; }
-    .sign p { margin: 0; }
+    /* ชื่อ/ตำแหน่งผู้ลงนาม 14pt ไม่ใช่ 16pt ของเนื้อความ — ยกเว้นเฉพาะขนาดตัวอักษรของบล็อกนี้
+       เพื่อคืนที่แนวตั้งให้ช่องเซ็น 8 มม. ยังอยู่ครบทั้ง 3 ชั้นโดยเอกสารไม่หลุดหน้า 2
+       (ใบต้นฉบับก็เขียนชื่อผู้ลงนามเล็กกว่าเนื้อความเล็กน้อยเช่นกัน) */
+    .sign p { margin: 0; font-size: 14pt; }
     /* เว้นที่ว่างเหนือชื่อไว้ให้เซ็นสด — บันทึกข้อความไม่มีเส้น "ลงชื่อ ____" บนใบต้นฉบับ
        ⚠️ 8 มม. คือความสูงที่ลายเซ็นคนไทยทั่วไปเขียนได้โดยไม่ทับตัวหนังสือ (7 มม. ยังฝืด)
        ลดค่านี้เพื่อให้เอกสารจบหน้าเดียวไม่ได้ ต้องไปหาที่จากส่วนอื่นแทน */
     .sign-name { margin-top: 8mm !important; }
     .sign--left { margin-left: 4%; }
-    .sign--right { margin-right: 2%; }
+    .sign--right { margin-left: 52%; }
     .sign--bottom { margin-left: 2%; }
   </style>
 </head>
@@ -375,10 +381,8 @@ export function buildFleetFuelMemoHtml({
   </table>
   <p class="closing">จึงเรียนมาเพื่อโปรดทราบ</p>
   <div class="signs">
-    <div class="sign-row">
-      ${signatureBlock(signatures.supply, 'sign--left')}
-      ${signatureBlock(signatures.clerk, 'sign--right')}
-    </div>
+    ${signatureBlock(signatures.supply, 'sign--left')}
+    ${signatureBlock(signatures.clerk, 'sign--right')}
     ${signatureBlock(signatures.mayor, 'sign--bottom')}
   </div>
 </div>
