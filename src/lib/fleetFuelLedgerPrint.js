@@ -10,15 +10,16 @@ import { GOV_FONT_LINK, GOV_PAGE_MARGIN, govDocFontCss, govPageCss } from './gov
 // A4 แนวตั้ง พื้นที่พิมพ์สูง 276 มม. (297 − ขอบบน 12 − ขอบล่าง 9)
 //
 // ⚠️ ค่านี้วัดจากของจริงในเบราว์เซอร์ ห้ามคำนวณเอาเองจากขนาดฟอนต์ — ครั้งแรกประเมินไว้
-// 25 แถว แล้ววัดได้ 289 มม. ล้นพื้นที่พิมพ์ไป 13 มม. (หัวเรื่อง 4 บรรทัด + หัวตาราง 2 แถว
-// ที่ 16pt กินที่มากกว่าที่คิด) 22 แถววัดได้ 259.5 มม. เหลือเผื่อ ~16 มม.
+// 25 แถว แล้ววัดได้ 289 มม. ล้นพื้นที่พิมพ์ไป 13 มม. จึงลดเหลือ 22 แถว (วัดได้ 259.5 มม.)
+// ต่อมาย่อหัวตารางเหลือ 12.5pt ทำให้หัวตารางจาก 27.5 มม. เหลือ 11.7 มม. คืนที่มาได้ 16 มม.
+// จึงเพิ่มกลับเป็น 24 แถว วัดได้ 256.9 มม. เหลือเผื่อ 19 มม.
 //
 // ที่เผื่อไว้นั้นจำเป็น เพราะ height ของ td เป็นแค่ "ขั้นต่ำ" — แถวที่หมายเหตุยาวจนขึ้น
 // 2–3 บรรทัดจะสูงกว่าแถวปกติหลายมิลลิเมตร ถ้าเผื่อไม่พอ ตารางจะไหลไปกินหน้าถัดไป
 // เดือนที่หมายเหตุยาวหลายแถวติดกันจะล้นไปหน้าถัดไปแทนการถูกตัดทิ้ง (ดู @media print)
 //
 // แถวรวมยอด "แทนที่" แถวว่างแถวสุดท้าย (ไม่ได้เพิ่มแถวใหม่) ความสูงรวมต่อหน้าจึงคงที่
-export const FUEL_LEDGER_ROWS_PER_PAGE = 22
+export const FUEL_LEDGER_ROWS_PER_PAGE = 24
 
 function esc(value) {
   return String(value ?? '')
@@ -49,11 +50,25 @@ function numText(value, digits = 2) {
   })
 }
 
+// ป้ายประเภทแบบย่อเฉพาะใบนี้ — คอลัมน์ "ประเภท" บนกระดาษต้นฉบับกว้างแค่ 16 มม.
+// ชื่อเต็มในระบบยาวเกินช่องจนตัดหลายบรรทัด แล้วดันความสูงแถวขึ้นทั้งใบ:
+// "น้ำมันหล่อลื่น/ของเหลว" ต้องใช้ 47 มม. ที่ 16pt (= 4 บรรทัด) และ "แก๊ส LPG" 2 บรรทัด
+// แก๊ส LPG สำคัญกว่าเพราะรถที่ใช้แก๊สเติมทุกวัน ทั้งใบจะกลายเป็น 2 บรรทัดทุกแถว
+// วัดจริง: 24 แถวแบบนั้นสูง 420 มม. ล้นพื้นที่พิมพ์ 276 มม. ไปกินหน้าที่สองทั้งที่ไม่จำเป็น
+// สมุดคุมที่เขียนมือจริงก็ใช้คำสั้นแบบนี้อยู่แล้ว และชื่อเต็มยังแสดงครบทุกจุดในระบบ
+// ย่อเฉพาะบนใบพิมพ์นี้ใบเดียว
+const LEDGER_FUEL_SHORT_LABEL = {
+  lubricant: 'หล่อลื่น',
+  gas_lpg: 'LPG',
+}
+
 export function ledgerFuelTypeLabel(record) {
   if (record?.fuel_type === 'other') {
     return String(record.fuel_other_name ?? '').trim() || 'อื่น ๆ'
   }
-  return FUEL_LABEL[record?.fuel_type] || String(record?.fuel_type ?? '').trim()
+  return LEDGER_FUEL_SHORT_LABEL[record?.fuel_type]
+    || FUEL_LABEL[record?.fuel_type]
+    || String(record?.fuel_type ?? '').trim()
 }
 
 function recordCost(record) {
@@ -144,7 +159,7 @@ function dataRow(row, totals) {
   return `<tr>
     <td>${esc(ledgerDateText(record.filled_at))}</td>
     <td class="left"><span class="cell">${esc(String(record.receipt_no ?? '').trim())}</span></td>
-    <td>${esc(ledgerFuelTypeLabel(record))}</td>
+    <td><span class="cell cell--type">${esc(ledgerFuelTypeLabel(record))}</span></td>
     <td>${esc(numText(record.price_per_liter, 2))}</td>
     <td>${esc(numText(record.liters, 2))}</td>
     <td>${esc(numText(recordCost(record), 2))}</td>
@@ -236,47 +251,72 @@ export function buildFleetFuelLedgerHtml({ vehicle, records = [], periodLabel = 
       border: 1px solid #000;
       vertical-align: middle;
       text-align: center;
+      /* กันตัวเลขยาวผิดคาด (เช่น ยอดรวมทั้งเดือนหลักล้าน) ล้นไปทับเส้นตารางและช่องข้างเคียง
+         ตัวเลขไม่มีช่องว่างให้ตัดบรรทัด break-word จึงไม่พอ ต้อง anywhere — ยอมให้ขึ้นบรรทัด
+         ใหม่กลางตัวเลข ดีกว่าพิมพ์ออกมาแล้วตัวเลขทับกันจนสอบยันกับใบเสร็จไม่ได้ */
+      overflow-wrap: anywhere;
     }
-    th { font-weight: 700; line-height: 1.15; padding: 1px 3px; }
+    /* หัวตาราง 12.5pt — ยกเว้นเฉพาะ "ขนาดตัวอักษร" ตามที่มาตรฐานกลางเปิดช่องไว้
+       (ฟอนต์ ขอบกระดาษ และตัวเลขในตารางยังเป็น 16pt เต็มมาตรฐาน)
+       วัดจริงบน Chrome: ที่ 16pt หัวคอลัมน์ทั้ง 7 ช่องต้องการความกว้างรวม 173 มม.
+       แต่พื้นที่พิมพ์มีแค่ 160 มม. ผลคือ "จำนวน(บาท)" (ต้องการ 27.6 มีให้ 22.4) กับ
+       "ประเภท" (16.9/16.0) ล้นทับเส้นตาราง และอีก 4 ช่องถูกตัดเป็น 2 บรรทัด
+       ที่ 12.5pt ทุกหัวอยู่บรรทัดเดียวโดยเหลือระยะเผื่ออย่างน้อย 1.1 มม. ทุกช่อง
+       และคอลัมน์ "ใบส่งของ" ยังกว้างพอ (เคยแคบแล้วเลขที่ใบส่งของตกบรรทัด)
+       ⚠️ แก้ตัวเลขนี้เมื่อไร ต้องวัดความกว้างหัวใหม่ทุกช่อง ไม่ใช่แค่ช่องที่แก้ */
+    th { font-size: 12.5pt; font-weight: 700; line-height: 1.15; padding: 1px 3px; }
     /* height เป็นแค่ "ขั้นต่ำ" ของ td — แถวที่ใบส่งของ/หมายเหตุยาวเกินคอลัมน์จะตัดขึ้น
        บรรทัดใหม่แล้วสูงกว่านี้เอง ข้อมูลจึงไม่หายแม้แลกกับพิมพ์ได้น้อยแถวลงต่อหน้า
        ⚠️ ต้องตั้งค่าไว้ ไม่ปล่อยให้สูงตามเนื้อหาล้วน เพราะ <td></td> ของแถวว่างไม่มี
        line box ให้ยึด จะเหลือแค่ padding แล้วตารางกลายเป็นแถบหนา-บางสลับกัน */
     td { height: 8mm; padding: 1mm 4px; line-height: 1.2; }
-    tr.blank-filler td { height: 8.6mm; }
+    tr.blank-filler td { height: 9mm; }
     td.left { text-align: left; }
     td.left .cell { display: block; white-space: normal; overflow-wrap: break-word; }
     /* หมายเหตุเป็นข้อความอิสระที่ยาวได้ไม่จำกัด กันไว้ 2 บรรทัดไม่ให้แถวเดียวดันทั้งหน้าล้น
-       ⚠️ ยาวเกิน 3 บรรทัดจะถูกตัดด้วย "…" — ช่องหมายเหตุบนใบต้นฉบับเจตนาให้เขียนสั้น
+       ⚠️ ยาวเกิน 2 บรรทัดจะถูกตัดด้วย "…" — ช่องหมายเหตุบนใบต้นฉบับเจตนาให้เขียนสั้น
        ข้อความเต็มยังอ่านได้ในระบบเสมอ ส่วนใบส่งของ (เลขที่เอกสาร) ไม่ clamp เพราะต้อง
        อ่านครบทุกหลักเวลาสอบยันกับใบเสร็จ */
-    /* หมายเหตุเล็กกว่าช่องอื่น 3pt — ยกเว้นเฉพาะ "ขนาดตัวอักษร" ของช่องนี้ช่องเดียว
+    /* หมายเหตุเล็กกว่าช่องอื่น 4pt — ยกเว้นเฉพาะ "ขนาดตัวอักษร" ของช่องนี้ช่องเดียว
        (ฟอนต์/ขอบกระดาษยังเป็นมาตรฐานกลาง) ที่ 16pt ข้อความ 3 บรรทัดดันแถวสูง 22 มม.
        เกือบสามเท่าแถวปกติ พิมพ์ได้น้อยแถวลงมากและเสี่ยงล้นหน้า */
     td.left .cell--clamp {
-      font-size: 13pt;
+      font-size: 12pt;
       display: -webkit-box;
       -webkit-box-orient: vertical;
-      -webkit-line-clamp: 3;
+      -webkit-line-clamp: 2;
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    /* ประเภทเชื้อเพลิงใช้ 16pt เต็มมาตรฐานเหมือนช่องตัวเลข แต่กันไว้ 2 บรรทัด
+       ค่าที่ระบบมีให้เลือกทุกค่าอยู่ใน 2 บรรทัดพอดีในคอลัมน์กว้าง 16 มม. (ดีเซล/เบนซิน/
+       ไฟฟ้า 1 บรรทัด · หล่อลื่น/แก๊ส LPG 2 บรรทัด) จึงไม่มีรายการปกติใบไหนถูกตัดจริง
+       ⚠️ ที่ต้องกันเพราะประเภท "อื่น ๆ" ให้เจ้าหน้าที่พิมพ์ชื่อเองยาวเท่าไรก็ได้
+       ถ้าไม่กัน รายการเดียวจะดันตารางล้นไปกินหน้าถัดไป */
+    td .cell--type {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     tr.total td {
       font-weight: 700;
       background: #ececec;
       border-top: 2px solid #000;
-      height: 8.6mm;
+      height: 9mm;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
     tr.total .total-label { text-align: right; padding-right: 12px; letter-spacing: 0.06em; }
-    col.c-date { width: 12%; }
-    col.c-doc { width: 22%; }
-    col.c-type { width: 11%; }
-    col.c-price { width: 12%; }
-    col.c-liters { width: 13%; }
-    col.c-baht { width: 15%; }
-    col.c-note { width: 15%; }
+    col.c-date { width: 14.8%; }
+    col.c-doc { width: 19.4%; }
+    col.c-type { width: 10.1%; }
+    col.c-price { width: 14.2%; }
+    col.c-liters { width: 14.3%; }
+    col.c-baht { width: 15.5%; }
+    col.c-note { width: 11.7%; }
   </style>
 </head>
 <body>
