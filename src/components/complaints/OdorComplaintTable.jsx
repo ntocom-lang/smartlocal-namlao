@@ -1,19 +1,23 @@
 import { useState } from 'react'
 import { MapPin, Camera, Loader2, Search, X, ChevronUp, ChevronDown } from 'lucide-react'
-import { OdorAckBadge } from './OdorFieldsDisplay'
 import { ODOR_TIME_RANGES, odorIncidentRangeOf } from '../../lib/odorTimeRanges'
 
 // ตาราง/ตัวกรองของหมวดเฉพาะกิจ "กลิ่นเหม็นรบกวน" — ใช้ร่วมกัน 2 หน้า:
 //   - แอดมิน  : ComplaintsManager.jsx แท็ป "กลิ่นเหม็นรบกวน (เฉพาะกิจ)"
-//   - เจ้าหน้าที่: staff/OdorAcknowledgePanel.jsx (ผู้รับผิดชอบกดรับทราบ)
+//   - เจ้าหน้าที่: staff/OdorReportPanel.jsx (ผู้รับผิดชอบดูรายงาน)
 // เดิมสองหน้าเขียนตารางแยกกันคนละชุด คอลัมน์/ตัวกรอง/การเรียงลำดับไม่ตรงกัน และเวลาเพิ่มคอลัมน์ต้องแก้
 // 2 รอบ (ปัญหาเดียวกับไอคอน Data Center ที่เพิ่งรวมเป็นจุดเดียวไป) — รวมมาที่นี่ที่เดียว
 //
 // ต่างกันแค่ mode:
 //   admin → มีคอลัมน์ "ผู้รับผิดชอบ"
 //   staff → ไม่มี เพราะทุกแถวเป็นชื่อตัวเอง (ซ้ำทุกบรรทัด เปลืองพื้นที่เปล่า)
-// ส่วนปุ่มลบ/พิมพ์ (แอดมิน) และปุ่มรับทราบ (เจ้าหน้าที่) อยู่ในบ็อปอัพรายละเอียดของแต่ละหน้า
-// ส่งเข้ามาทาง children ของ OdorDetailModal ไม่ได้ฝังไว้ในตารางนี้
+// ส่วนปุ่มลบ/พิมพ์/มอบหมายใหม่ (แอดมิน) อยู่ในบ็อปอัพรายละเอียดของแต่ละหน้า ส่งเข้ามาทาง children
+// ของ OdorDetailModal ไม่ได้ฝังไว้ในตารางนี้
+//
+// เดิมมีคอลัมน์ "สถานะ" (รอรับทราบ / รับทราบแล้ว) เป็นคอลัมน์สุดท้าย — ถอดออกแล้วพร้อมกับการ
+// เปลี่ยนมาให้ระบบรับเรื่องอัตโนมัติ ค่าจะเป็น "ระบบรับเรื่องแล้ว" เหมือนกันทุกแถวตลอดไป
+// คอลัมน์ที่ไม่เคยต่างกันระหว่างแถวไม่ได้ช่วยให้เปรียบเทียบอะไรได้ มีแต่กินความกว้างตาราง
+// สถานะรายเรื่องยังดูได้ในบ็อปอัพรายละเอียด (OdorFieldsDisplay) ซึ่งตรงกับที่ประชาชนเห็น
 
 const odorLocationOf = (c) => c.location_name || c.village || 'ไม่ระบุสถานที่'
 const fmtDate = (s) => new Date(s).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })
@@ -120,7 +124,8 @@ export default function OdorComplaintTable({
     intensity: (c) => c.extra_data?.odor_intensity ?? -1,
     health: (c) => (c.extra_data?.health_effect || '').toLowerCase(),
     assignee: (c) => (technicians.find((t) => t.id === c.assigned_to)?.full_name || '').toLowerCase(),
-    status: (c) => c.extra_data?.acknowledged_at || '',
+    // ไม่มี sortGetter ของ 'status' แล้ว — ระบบรับเรื่องอัตโนมัติทุกใบในทรานแซกชันเดียวกับที่บันทึก
+    // คำร้อง routed_at จึงเท่ากับ created_at เสมอ เรียงตามสถานะ = เรียงตามวันที่แจ้ง ซ้ำกับคอลัมน์ที่มีอยู่
   }
   const sorted = sortConfig.key
     ? [...filtered].sort((a, b) => {
@@ -215,7 +220,7 @@ export default function OdorComplaintTable({
                   </div>
                   {detailLoadingId === c.id
                     ? <Loader2 size={14} className="animate-spin text-lime-500 shrink-0" />
-                    : <OdorAckBadge complaint={c} />}
+                    : <ChevronDown size={14} className="text-gray-300 shrink-0 -rotate-90" />}
                 </button>
               </div>
             ))}
@@ -238,7 +243,6 @@ export default function OdorComplaintTable({
                   {showAssignee && (
                     <OdorSortTh label="ผู้รับผิดชอบ" sortKey="assignee" sortConfig={sortConfig} onSort={handleSort} />
                   )}
-                  <OdorSortTh label="สถานะ" sortKey="status" sortConfig={sortConfig} onSort={handleSort} align="center" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -250,7 +254,13 @@ export default function OdorComplaintTable({
                       onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#ecfccb' }}
                       onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = i % 2 === 0 ? '#fff' : '#f7faf0' }}
                       onClick={() => onRowClick?.(c)}>
-                      <td className="px-2 py-2 text-center text-xs text-gray-500 border-r border-gray-200">{i + 1}</td>
+                      {/* ตัวหมุนตอนกำลังโหลดรายละเอียดย้ายมาอยู่คอลัมน์ลำดับ เพราะเป็นคอลัมน์เดียว
+                          ที่มีครบทั้ง 2 โหมด (โหมดเจ้าหน้าที่ไม่มีคอลัมน์ผู้รับผิดชอบ) */}
+                      <td className="px-2 py-2 text-center text-xs text-gray-500 border-r border-gray-200">
+                        {detailLoadingId === c.id
+                          ? <Loader2 size={12} className="inline animate-spin text-lime-500" />
+                          : i + 1}
+                      </td>
                       <td className="px-2 py-2 text-gray-500 text-xs whitespace-nowrap border-r border-gray-200">
                         <span className="flex items-center gap-1">
                           {c.latitude && <MapPin size={10} className="text-orange-500 shrink-0" />}
@@ -263,21 +273,17 @@ export default function OdorComplaintTable({
                       <td className="px-2 py-2 text-center text-gray-600 text-xs whitespace-nowrap border-r border-gray-200">
                         {c.extra_data?.odor_intensity ?? '-'} / 5
                       </td>
-                      <td className="px-2 py-2 text-gray-600 text-xs whitespace-nowrap border-r border-gray-200">
+                      {/* เส้นขวาเฉพาะตอนมีคอลัมน์ผู้รับผิดชอบต่อท้าย ไม่งั้นโหมดเจ้าหน้าที่จะมีเส้นลอยที่ขอบตาราง */}
+                      <td className={`px-2 py-2 text-gray-600 text-xs whitespace-nowrap ${showAssignee ? 'border-r border-gray-200' : ''}`}>
                         {c.extra_data?.health_effect || <span className="text-gray-300">ไม่มี</span>}
                       </td>
                       {showAssignee && (
-                        <td className="px-2 py-2 text-xs whitespace-nowrap border-r border-gray-200">
+                        <td className="px-2 py-2 text-xs whitespace-nowrap">
                           {assignee
                             ? <span className="text-blue-700 font-medium">{assignee}</span>
                             : <span className="text-gray-300">ยังไม่ได้ตั้งค่า</span>}
                         </td>
                       )}
-                      <td className="px-2 py-2 text-center whitespace-nowrap">
-                        {detailLoadingId === c.id
-                          ? <Loader2 size={14} className="inline animate-spin text-lime-500" />
-                          : <OdorAckBadge complaint={c} />}
-                      </td>
                     </tr>
                   )
                 })}

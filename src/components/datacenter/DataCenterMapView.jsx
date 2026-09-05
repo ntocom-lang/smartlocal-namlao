@@ -642,8 +642,11 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
                 <p>ระดับความรุนแรง: {selectedEntry.extra_data.odor_intensity ?? '-'} / 5</p>
                 <p>ทิศทางลม: {selectedEntry.extra_data.wind_direction ?? '-'}</p>
                 <p>อาการทางสุขภาพ: {selectedEntry.extra_data.health_effect ?? 'ไม่ระบุ'}</p>
-                <p className={selectedEntry.extra_data.acknowledged ? 'text-emerald-700 font-semibold' : 'text-amber-700 font-semibold'}>
-                  {selectedEntry.extra_data.acknowledged ? 'ผู้รับผิดชอบรับทราบแล้ว' : 'รอผู้รับผิดชอบรับทราบ'}
+                {/* ระบบรับเรื่องอัตโนมัติทุกใบตั้งแต่ประชาชนกดส่ง (trigger route_adhoc_complaint)
+                    จึงไม่มีสถานะ 'รอ...' อีก — เดิมข้อความตรงนี้เขียนว่า 'ผู้รับผิดชอบรับทราบแล้ว'
+                    ซึ่งกลายเป็นเท็จเมื่อไม่มีคนกดจริง ผู้บริหารอ่านแล้วเข้าใจว่ามีคนดูแลอยู่ */}
+                <p className='text-emerald-700 font-semibold'>
+                  ระบบรับเรื่องและส่งถึงผู้รับผิดชอบแล้ว
                 </p>
               </div>
             </div>

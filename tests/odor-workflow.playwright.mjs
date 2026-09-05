@@ -1,5 +1,5 @@
 // E2E: กลิ่นเหม็นรบกวน (มลพิษทางอากาศ)
-// เจตนา: ประชาชนตอบคำถาม + ปักหมุด → เจ้าหน้าที่กดรับทราบเท่านั้น
+// เจตนา: ประชาชนตอบคำถาม + ปักหมุด → ระบบรับเรื่องอัตโนมัติ → ผู้รับผิดชอบเปิดรายงานสรุปดู
 //        ผู้บริหารเห็นคำตอบและพิกัดบนแผนที่เพื่อประกอบการตัดสินใจ
 //
 // ยิงได้เฉพาะ https://demo.rk-networks.com
@@ -20,10 +20,10 @@ const PROFILE_ROOT = path.join(ROOT_DIR, '.chrome-test-profiles')
 const DEFAULT_BASE_URL = 'https://demo.rk-networks.com'
 
 const TEST_MARKER = '[TEST] E2E odor'
-// ตารางของผู้รับผิดชอบ (OdorComplaintTable) แสดงแค่ สถานที่/วันที่/เวลา/ความรุนแรง/อาการ/สถานะ
+// ตารางของผู้รับผิดชอบ (OdorComplaintTable) แสดงแค่ สถานที่/วันที่/เวลา/ความรุนแรง/อาการ
 // ไม่มีเลขที่คำร้องและไม่มีรายละเอียด — การหาแถวด้วย ref_no หรือ TEST_MARKER จึงไม่มีวันเจอ
 // (เคยทำให้ staff-ack ขึ้น BLOCKED ทั้งที่คำร้องถูกมอบหมายถูกต้อง) ใช้ "สถานที่" ที่ไม่ซ้ำต่อรอบ
-// เป็นตัวชี้แถวแทน — ไม่ซ้ำกับรอบก่อนๆ ที่อาจยังค้างอยู่ในแท็ป "รอรับทราบ"
+// เป็นตัวชี้แถวแทน — ไม่ซ้ำกับรอบก่อนๆ ที่อาจยังค้างอยู่ในรายการ
 const RUN_ID = new Date().toISOString().slice(5, 16).replace(/[-:T]/g, '')
 const TEST_LOCATION = `[TEST] จุดจำลอง E2E-${RUN_ID} ไม่ใช่สถานที่จริง`
 const TEST_DETAIL = `${TEST_MARKER} — กลิ่นเหม็นจำลอง ไม่ใช่เหตุจริง ห้ามลงพื้นที่`
@@ -45,7 +45,9 @@ const TENANT_SLUG = 'demo'
 // คีย์ที่ห้ามหลุดออกทางหมุดแผนที่ของผู้บริหารเด็ดขาด — ตรวจทั้งชื่อคีย์และเนื้อหาที่รู้ว่าเป็น PII ของเคสนี้
 const PII_PIN_KEYS = ['detail', 'subject', 'phone', 'reporter_name', 'user_id', 'village']
 const ALLOWED_PIN_ANSWER_KEYS = [
-  'odor_intensity', 'odor_time_range', 'wind_direction', 'health_effect', 'acknowledged',
+  // routed_at = เวลาที่ระบบรับเรื่อง (trigger route_adhoc_complaint) เป็น timestamp ไม่ใช่ตัวตนคน
+  // จึงไม่เพิ่ม PII ให้ผู้บริหาร ส่วน acknowledged ยังคืนมาเพื่อรองรับคำร้องเก่าที่เคยมีคนกดรับทราบ
+  'odor_intensity', 'odor_time_range', 'wind_direction', 'health_effect', 'acknowledged', 'routed_at',
 ]
 
 function parseEnv(content) {
@@ -414,20 +416,43 @@ async function createOdorComplaint(page) {
   return match[0]
 }
 
-// ผู้รับผิดชอบ: ต้องเห็นข้อมูลครบ (ชื่อผู้แจ้ง เบอร์ติดต่อ คำตอบ พิกัด) แล้วกด "รับทราบ" ครั้งเดียวจบ
-// คืน access token กลับไปให้ main() ใช้ตรวจ 2 เคสที่ UI ตรวจแทนไม่ได้: กดรับทราบซ้ำ และการยิง
-// PATCH เปลี่ยน status ตรงผ่าน PostgREST
-async function staffAcknowledge(page, refNo) {
+// ผู้รับผิดชอบ: บทบาทเปลี่ยนจาก "กดรับทราบ" เป็น "อ่านรายงาน" (ระบบรับเรื่องเองตั้งแต่ยื่นแล้ว)
+// ต้องได้ครบ 3 อย่าง: (1) เปิดมาเจอรายงานสรุปเป็นค่าเริ่มต้น (2) สลับไปดูรายการแล้วเปิดรายละเอียด
+// ได้ข้อมูลติดต่อผู้แจ้งครบ (3) ไม่มีปุ่ม "รับทราบ" หลงเหลืออยู่ที่ไหนอีก
+// คืน access token กลับไปให้ main() ใช้ตรวจเคสที่ UI ตรวจแทนไม่ได้: การยิง PATCH ตรงผ่าน PostgREST
+async function staffOpensReport(page, refNo) {
   await navigateClientSide(page, ACK_ACCOUNT.route)
   await waitForApp(page, 2_000)
   const panel = page.locator('div:visible').filter({ hasText: 'เฉพาะกิจ: กลิ่นเหม็นรบกวน' }).first()
   if (!await isVisible(panel)) {
-    throw new BlockedError(`ผู้รับผิดชอบไม่เห็นแผงรับทราบ odor (คำร้อง ${refNo} อาจยังไม่ถูก assign)`)
+    throw new BlockedError(`ผู้รับผิดชอบไม่เห็นแผงกลิ่นเหม็น (คำร้อง ${refNo} อาจยังไม่ถูก assign)`)
   }
+
+  // (1) ดีฟอลต์ต้องเป็นรายงานสรุป ไม่ใช่รายการดิบ — ถ้าดีฟอลต์เพี้ยนกลับไปเป็นรายการ ผู้รับผิดชอบ
+  // จะไม่มีวันเห็นบทวิเคราะห์เลยเพราะไม่รู้ว่ามีปุ่มให้กด
+  if (!await bodyHas(page, 'สรุปและวิเคราะห์คำร้องกลิ่นเหม็นรบกวน')) {
+    throw new Error('เปิดแผงมาแล้วไม่เจอรายงานสรุป (ดีฟอลต์ควรเป็นมุมมองรายงาน)')
+  }
+  const reportMissing = []
+  for (const needle of ['คำร้องทั้งหมด', 'ความรุนแรงเฉลี่ย', 'ช่วงเวลาที่ได้กลิ่น', 'ข้อสังเกตจากข้อมูล']) {
+    if (!await bodyHas(page, needle)) reportMissing.push(needle)
+  }
+  if (reportMissing.length > 0) throw new Error(`รายงานสรุปขาดหัวข้อ: ${reportMissing.join(', ')}`)
+  // ข้อจำกัดของข้อมูลต้องถูกพิมพ์ไว้ในรายงานเสมอ ห้ามหายไปเงียบๆ ตอนแก้ UI รอบหลัง
+  if (!await bodyHas(page, 'ไม่ใช่ผลตรวจวัดกลิ่น')) {
+    throw new Error('รายงานไม่ได้เตือนว่าตัวเลขคือเรื่องที่ประชาชนแจ้ง ไม่ใช่ผลตรวจวัด')
+  }
+
+  // (2) สลับไปมุมมองรายการแล้วเปิดรายละเอียด
+  const listTab = page.getByRole('button', { name: /รายการคำร้อง/ }).first()
+  if (!await isVisible(listTab)) throw new Error('ไม่พบปุ่มสลับไปมุมมองรายการคำร้อง')
+  await listTab.click()
+  await waitForApp(page, 1_500)
+
   const row = page.locator('tr:visible, div[class*="cursor-pointer"]:visible')
     .filter({ hasText: TEST_LOCATION }).first()
   if (!await isVisible(row)) {
-    throw new BlockedError(`ไม่พบคำร้อง ${refNo} ในแผงรับทราบ (หาจากสถานที่ ${TEST_LOCATION})`)
+    throw new BlockedError(`ไม่พบคำร้อง ${refNo} ในรายการ (หาจากสถานที่ ${TEST_LOCATION})`)
   }
   await row.click()
   await waitForApp(page, 1_500)
@@ -445,6 +470,8 @@ async function staffAcknowledge(page, refNo) {
     ['ระดับความรุนแรง', 'ระดับความรุนแรง'],
     ['ทิศทางลม', 'ทิศทางลม'],
     ['พิกัดที่ปักหมุด', 'พิกัดที่ปักหมุด'],
+    // สถานะที่เจ้าหน้าที่เห็นต้องเป็นข้อความเดียวกับที่ประชาชนเห็นในหน้าติดตาม
+    ['สถานะระบบรับเรื่อง', 'ระบบรับเรื่องแล้ว'],
   ]) {
     if (!await bodyHas(page, needle)) missing.push(label)
   }
@@ -452,11 +479,12 @@ async function staffAcknowledge(page, refNo) {
     throw new Error(`ผู้รับผิดชอบเปิดรายละเอียดแล้วแต่ไม่เห็น: ${missing.join(', ')}`)
   }
 
+  // (3) ปุ่มรับทราบต้องไม่มีเหลืออยู่ — ถ้ายังมี แปลว่ามีเส้นทางที่เขียน acknowledged_by ได้อีก
+  // ซึ่งจะสร้างหลักฐาน "ใครรับเรื่องไปดำเนินการ" ปนกับสายงานใหม่ที่ไม่มีใครรับผิดชอบการกดนั้น
   const ack = page.getByRole('button', { name: 'รับทราบ', exact: true }).first()
-  if (!await isVisible(ack)) throw new BlockedError('ไม่พบปุ่มรับทราบ')
-  await ack.click()
-  await waitForApp(page, 2_000)
-  if (await isVisible(ack)) throw new Error('กดรับทราบแล้วปุ่มยังอยู่ — สถานะไม่ขยับ')
+  if (await isVisible(ack)) {
+    throw new Error('ยังมีปุ่ม "รับทราบ" เหลืออยู่ทั้งที่เปลี่ยนเป็นระบบรับเรื่องอัตโนมัติแล้ว')
+  }
   return await readAccessToken(page)
 }
 
@@ -616,7 +644,7 @@ async function main() {
 
     const readComplaint = async () => {
       const { status, payload } = await supabaseFetch(
-        `/rest/v1/complaints?ref_no=eq.${encodeURIComponent(refNo)}&select=id,status,assigned_to,category,latitude,longitude,extra_data`,
+        `/rest/v1/complaints?ref_no=eq.${encodeURIComponent(refNo)}&select=id,status,assigned_to,category,latitude,longitude,created_at,extra_data`,
         { token: adminToken })
       const row = Array.isArray(payload) ? payload[0] : null
       if (!row) throw new BlockedError(`แอดมินอ่านคำร้อง ${refNo} ไม่ได้ (HTTP ${status})`)
@@ -635,36 +663,50 @@ async function main() {
         && submitted.extra_data?.odor_time_range && submitted.extra_data?.wind_direction) ? 'PASS' : 'FAIL',
       `บันทึกพิกัดและคำตอบครบ intensity=${submitted.extra_data?.odor_intensity ?? '-'} range=${submitted.extra_data?.odor_time_range ?? '-'}`)
 
+    // ระบบต้องรับเรื่องให้เองตั้งแต่วินาทีที่ยื่น ก่อนที่เจ้าหน้าที่คนใดจะเปิดดู — ตรวจตรงนี้เพราะ
+    // เป็นคำสัญญาที่แสดงต่อประชาชนทันทีในหน้าติดตาม ถ้า trigger ไม่ทำงานประชาชนจะเห็น "คำร้องใหม่"
+    // ค้างอยู่เหมือนเดิมโดยไม่มีอะไรบอกว่าเรื่องถึงใครแล้ว
+    const routedAt = submitted.extra_data?.routed_at ?? null
+    const routedDelta = routedAt ? Math.abs(new Date(routedAt) - new Date(submitted.created_at ?? routedAt)) : null
+    record('auto-route', routedAt ? 'PASS' : 'FAIL',
+      routedAt
+        ? `ระบบประทับ routed_at ให้อัตโนมัติตั้งแต่ยื่น (ห่างจากเวลาที่บันทึกคำร้อง ${routedDelta} ms)`
+        : 'ไม่มี extra_data.routed_at — trigger route_adhoc_complaint ไม่ทำงาน')
+    record('no-fake-acknowledger',
+      submitted.extra_data?.acknowledged_by == null ? 'PASS' : 'FAIL',
+      submitted.extra_data?.acknowledged_by == null
+        ? 'ไม่มีการบันทึกชื่อผู้รับทราบ (ระบบรับเรื่องเอง ไม่แอบอ้างว่ามีเจ้าหน้าที่กด)'
+        : `มี acknowledged_by=${submitted.extra_data.acknowledged_by} ทั้งที่ไม่มีใครกด`)
+    record('status-untouched', submitted.status === 'pending' ? 'PASS' : 'FAIL',
+      `สถานะหลังระบบรับเรื่อง = ${submitted.status} (ต้องเป็น pending ไม่แตะ pipeline ปกติ)`)
+
     let ackToken = null
     try {
       ackToken = await withAccount(ACK_ACCOUNT.alias, ACK_ACCOUNT.profile, baseUrl, args.headed,
-        (page) => staffAcknowledge(page, refNo))
-      record('staff-ack', 'PASS', `ผู้รับผิดชอบเห็นข้อมูลครบและกดรับทราบ ${refNo} ครั้งเดียว`)
+        (page) => staffOpensReport(page, refNo))
+      record('staff-report', 'PASS',
+        `ผู้รับผิดชอบเปิดมาเจอรายงานสรุป และดูรายละเอียด ${refNo} ได้ครบโดยไม่มีปุ่มรับทราบ`)
     } catch (error) {
-      record('staff-ack', error instanceof BlockedError ? 'BLOCKED' : 'FAIL', safeReason(error))
+      record('staff-report', error instanceof BlockedError ? 'BLOCKED' : 'FAIL', safeReason(error))
     }
 
     if (ackToken) {
-      // กดรับทราบซ้ำ: ต้องไม่ error และต้องไม่ทับเวลา/ผู้รับทราบของครั้งแรก
+      // ผู้รับผิดชอบยิง PATCH ยัด routed_at ปลอมเอง — ต้องถูก guard_adhoc_complaint_write ปฏิเสธ
+      // (เดิมเคสนี้ทดสอบการกดรับทราบซ้ำ ซึ่งไม่มีปุ่มให้กดแล้ว)
       try {
-        const after = await readComplaint()
-        const firstAckAt = after.extra_data?.acknowledged_at ?? null
-        const again = await supabaseFetch('/rest/v1/rpc/acknowledge_odor_complaint', {
-          token: ackToken, method: 'POST', body: { p_complaint_id: complaintId },
+        const forged = await supabaseFetch(`/rest/v1/complaints?id=eq.${complaintId}`, {
+          token: ackToken,
+          method: 'PATCH',
+          body: { extra_data: { ...submitted.extra_data, routed_at: '2000-01-01T00:00:00Z' } },
         })
-        const afterSecond = await readComplaint()
-        const unchanged = firstAckAt && afterSecond.extra_data?.acknowledged_at === firstAckAt
-        record('ack-idempotent', (again.ok && again.payload?.already === true && unchanged) ? 'PASS' : 'FAIL',
-          unchanged
-            ? 'กดรับทราบซ้ำได้ผลลัพธ์ already=true และเวลาเดิมไม่ถูกทับ'
-            : `กดรับทราบซ้ำแล้วข้อมูลเปลี่ยน (HTTP ${again.status})`)
-        record('ack-identity',
-          afterSecond.extra_data?.acknowledged_by === ACK_STAFF_ID ? 'PASS' : 'FAIL',
-          `ผู้รับทราบที่บันทึกในฐานข้อมูล = ${afterSecond.extra_data?.acknowledged_by ?? 'ไม่มี'}`)
-        record('status-untouched', afterSecond.status === 'pending' ? 'PASS' : 'FAIL',
-          `สถานะหลังรับทราบ = ${afterSecond.status} (ต้องเป็น pending)`)
+        const afterForge = await readComplaint()
+        const intact = !forged.ok && afterForge.extra_data?.routed_at === routedAt
+        record('routed-at-immutable', intact ? 'PASS' : 'FAIL',
+          intact
+            ? 'ผู้รับผิดชอบยัดเวลารับเรื่องปลอมผ่าน API ตรงไม่ได้'
+            : `เวลารับเรื่องถูกแก้จากภายนอกได้ (HTTP ${forged.status})`)
       } catch (error) {
-        record('ack-idempotent', error instanceof BlockedError ? 'BLOCKED' : 'FAIL', safeReason(error))
+        record('routed-at-immutable', error instanceof BlockedError ? 'BLOCKED' : 'FAIL', safeReason(error))
       }
 
       // ผู้รับผิดชอบยิง PATCH ตรงผ่าน PostgREST เปลี่ยนสถานะ/หมวด — ต้องถูก trigger ปฏิเสธ
@@ -772,15 +814,16 @@ async function main() {
         await waitForApp(page, 2_000)
         const hasRef = await bodyHas(page, refNo.replace(/^[A-Z]+-/, '')) || await bodyHas(page, refNo)
         if (!hasRef) throw new BlockedError(`ประชาชนไม่พบคำร้อง ${refNo} ในหน้าติดตาม`)
-        // เกณฑ์ผ่าน = ผู้แจ้งติดตามคำร้องของตัวเองได้ (ข้างบนตรวจไปแล้ว)
-        // ส่วนคำว่าเห็น "รับทราบแล้ว" หรือไม่ ยังเป็นช่องว่างที่รู้ตัว: หมวดเฉพาะกิจไม่แตะ status
-        // หน้าติดตามจึงยังโชว์ "คำร้องใหม่" ตลอด แม้ผู้รับผิดชอบจะรับทราบแล้ว — บันทึกไว้เป็นข้อมูล
-        // ไม่ใช่ FAIL ปลอมและไม่ใช่ PASS ที่อ่านแล้วเข้าใจผิดว่าแก้แล้ว
-        const showsAck = await bodyHas(page, 'รับทราบแล้ว')
-        record('citizen-followup', 'PASS',
-          showsAck
-            ? `ประชาชนติดตาม ${refNo} ได้ และเห็นสถานะรับทราบแล้ว`
-            : `ประชาชนติดตาม ${refNo} ได้ — หมายเหตุ: ยังโชว์สถานะ pipeline ปกติ ไม่มีคำว่า "รับทราบแล้ว" (ช่องว่างที่รู้ตัว)`)
+        // ตั้งแต่ระบบรับเรื่องอัตโนมัติ ป้ายนี้ต้องขึ้นทุกใบทันทีที่ยื่น ไม่ต้องรอใครกด จึงเลิกเป็น
+        // "ช่องว่างที่รู้ตัว" แล้วและกลายเป็นเกณฑ์ผ่านจริง — ข้อความต้องตรงกับ ODOR_INTAKE_LABEL
+        // ใน src/lib/odorIntake.js และห้ามกลับไปเป็น "เจ้าหน้าที่รับทราบแล้ว" ซึ่งไม่มีคนอยู่เบื้องหลัง
+        const showsIntake = await bodyHas(page, 'ระบบรับเรื่องแล้ว')
+        const showsFakeAck = await bodyHas(page, 'เจ้าหน้าที่รับทราบแล้ว')
+        if (showsFakeAck) throw new Error('หน้าติดตามยังอ้างว่า "เจ้าหน้าที่รับทราบแล้ว" ทั้งที่ไม่มีใครกด')
+        record('citizen-followup', showsIntake ? 'PASS' : 'FAIL',
+          showsIntake
+            ? `ประชาชนติดตาม ${refNo} ได้ และเห็นว่าระบบรับเรื่องแล้ว`
+            : `ประชาชนติดตาม ${refNo} ได้ แต่ไม่เห็นสถานะ "ระบบรับเรื่องแล้ว"`)
       })
     } catch (error) {
       record('citizen-followup', error instanceof BlockedError ? 'BLOCKED' : 'FAIL', safeReason(error))

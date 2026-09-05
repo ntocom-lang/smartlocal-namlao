@@ -44,7 +44,7 @@ import ResetPasswordModal from '../components/admin/ResetPasswordModal'
 // ทุกครั้งที่เปิดแผงควบคุม Admin ทั้งที่เมนูปฏิทินกิจกรรมถูกถอดออกไปแล้ว จึงเข้าไม่ถึงเลย
 const EventsManagerComponent = lazy(() => import('../components/admin/EventsManager'))
 // lazy: InboxModule เป็น named export ที่อยู่กลางไฟล์ StaffDashboard.jsx (1,900+ บรรทัด)
-// การ import แบบ static จึงลากทั้งหน้าเจ้าหน้าที่ รวมถึง OdorAcknowledgePanel และ
+// การ import แบบ static จึงลากทั้งหน้าเจ้าหน้าที่ รวมถึง OdorReportPanel และ
 // buildingPermitPrint ที่ห้อยอยู่กับมัน เข้ามาในสายที่ต้องโหลดตอนเปิดแผงควบคุม Admin
 // ทางที่ถูกกว่าคือย้าย InboxModule ออกเป็นไฟล์ของตัวเอง แต่มันอ้างถึงของใน module scope
 // ของ StaffDashboard ถึง 22 ตัว (StatusBadge, TaskCard, TaskDetailSheet, buildDocHTML ฯลฯ)
