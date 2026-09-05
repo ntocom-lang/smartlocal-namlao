@@ -212,7 +212,6 @@ export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null,
     .signature-suffix { position: absolute; left: 100%; top: 0; margin-left: 4px; white-space: nowrap; }
     .decision { margin-top: 22pt; page-break-inside: avoid; }
     .decision .signature { margin-top: 22pt; }
-    .audit-note { margin-top: 8pt; font-size: 8pt; line-height: 1.25; color: #444; }
   </style>
 </head>
 <body>
@@ -269,8 +268,6 @@ export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null,
     ${rejectReason ? '' : '<div class="continuation"></div>'}
     ${signatureBlock({ role: 'ผู้มีอำนาจสั่งใช้รถ', name: authority.name, title: authority.title })}
   </div>
-
-  ${trip?.backdated_reason ? `<p class="audit-note">บันทึกการใช้รถย้อนหลัง เหตุผล: ${esc(trip.backdated_reason)}</p>` : ''}
 </div>
 </body>
 </html>`

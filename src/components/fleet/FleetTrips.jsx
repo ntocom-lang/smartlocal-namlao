@@ -903,13 +903,15 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       return alert('กรุณาเลือกผู้ขอใช้รถ')
     if (!form.driver_id)
       return alert('กรุณาเลือกผู้ขับรถ')
-    // ต้องอธิบายได้ว่าทำไมจึงไม่ได้ขออนุญาตล่วงหน้า ไม่งั้นเอกสารที่พิมพ์ออกมาจะเป็นใบที่
-    // ไม่มีใครอนุมัติและไม่มีคำอธิบาย (DB บังคับซ้ำด้วย FLEET_TRIP_BACKDATED_REQUIRES_REASON)
-    const backdatedReason = form.backdated_reason?.trim() || ''
-    if (backdatedReason.length < 5)
-      return alert('กรุณาระบุเหตุผลที่บันทึกย้อนหลัง อย่างน้อย 5 ตัวอักษร')
-    if (backdatedReason.length > 500)
+    // ไม่บังคับกรอกแล้ว (2026-09-05) — แต่ถ้ากรอกมาต้องผ่านเกณฑ์เดียวกับ CHECK ที่ DB
+    // (fleet_trips_backdated_reason_length_check: เว้นว่างได้ แต่ถ้ามีค่าต้องยาว 5-500)
+    // ต้องส่ง null ตอนว่าง ห้ามส่ง '' เพราะ CHECK ยอมให้เป็น NULL เท่านั้น ไม่ใช่สตริงว่าง
+    const backdatedReasonInput = form.backdated_reason?.trim() || ''
+    if (backdatedReasonInput && backdatedReasonInput.length < 5)
+      return alert('ถ้ากรอกเหตุผลที่บันทึกย้อนหลัง ต้องยาวอย่างน้อย 5 ตัวอักษร (จะเว้นว่างไว้ก็ได้)')
+    if (backdatedReasonInput.length > 500)
       return alert('เหตุผลที่บันทึกย้อนหลังยาวเกิน 500 ตัวอักษร')
+    const backdatedReason = backdatedReasonInput || null
     const passengerCount = Number(form.passengers)
     if (!Number.isInteger(passengerCount) || passengerCount < 1 || passengerCount > 100)
       return alert('จำนวนผู้ร่วมเดินทางต้องเป็นจำนวนเต็ม 1–100 คน')
@@ -1918,11 +1920,11 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
             ใบขออนุญาตใช้รถที่พิมพ์จากรายการนี้จะไม่มีผู้อนุมัติ ใช้เฉพาะกรณีที่ใช้รถไปแล้วจริงเท่านั้น
           </div>
           <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1 block">เหตุผลที่บันทึกย้อนหลัง *</label>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">เหตุผลที่บันทึกย้อนหลัง (ไม่บังคับ)</label>
             <textarea value={form.backdated_reason || ''} onChange={set('backdated_reason')} rows={2}
               placeholder="เช่น เหตุฉุกเฉินนอกเวลาราชการ ยังไม่ได้ยื่นคำขอล่วงหน้า"
               className={inp} />
-            <p className="mt-1 text-[10px] text-gray-400">พิมพ์กำกับไว้ในใบขออนุญาตใช้รถ เพื่อให้ตรวจสอบย้อนหลังได้</p>
+            <p className="mt-1 text-[10px] text-gray-400">ไม่กรอกก็ได้ ถ้ากรอกต้องยาวอย่างน้อย 5 ตัวอักษร — เก็บไว้ในระบบเพื่อให้ตรวจสอบย้อนหลังได้ (ไม่แสดงในใบพิมพ์)</p>
           </div>
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">ยานพาหนะ *</label>
