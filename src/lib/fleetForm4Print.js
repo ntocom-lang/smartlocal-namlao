@@ -3,7 +3,7 @@
 
 import { GOV_FONT_LINK, GOV_PAGE_MARGIN, govDocFontIdentityCss, govPageCss } from './govDocStyle.js'
 
-export const FORM4_ROWS_PER_PAGE = 22
+export const FORM4_ROWS_PER_PAGE = 14
 
 function esc(value) {
   return String(value ?? '')
@@ -91,13 +91,10 @@ export function monthlyDistanceKm(trips) {
   return (trips ?? []).reduce((sum, trip) => sum + tripDistanceKm(trip), 0)
 }
 
+// เหตุผลบันทึกย้อนหลัง (backdated_reason) ไม่พิมพ์ลงแบบ 4 แล้ว — เป็นข้อมูลสำหรับ
+// ตรวจสอบภายในระบบเท่านั้น ไม่ใช่ช่องบนกระดาษต้นฉบับ (เดิมเคยต่อท้ายเป็น "ย้อนหลัง: ...")
 function remarkText(trip) {
-  const parts = []
-  const notes = String(trip?.notes ?? '').trim()
-  const backdated = String(trip?.backdated_reason ?? '').trim()
-  if (notes) parts.push(notes)
-  if (backdated) parts.push(`ย้อนหลัง: ${backdated}`)
-  return parts.join(' ')
+  return String(trip?.notes ?? '').trim()
 }
 
 export function form4VehicleTitle(vehicle) {
@@ -171,48 +168,6 @@ export function paginateForm4Trips(trips, rowsPerPage = FORM4_ROWS_PER_PAGE) {
   return pages
 }
 
-// ปรับขนาดตัวอักษรรายช่องให้ข้อความอยู่ครบในกรอบ ไล่ 3 ขั้นตามลำดับความเหมือนต้นฉบับ:
-//   1) บรรทัดเดียว 11pt (เท่ากระดาษ)  2) บรรทัดเดียวย่อลงถึง 9.5pt  3) ตัด 2 บรรทัด 8pt→7pt
-// ต้องรันหลังฟอนต์โหลดเสร็จ ไม่งั้นวัดความกว้างด้วย metric ของฟอนต์สำรองแล้วได้ผลผิด
-// (openPrintWindow ใน FleetReport.jsx รอ document.fonts.ready ก่อนสั่งพิมพ์อยู่แล้ว
-//  callback ตัวนี้ถูกลงทะเบียนก่อน จึงทำงานเสร็จก่อน print เสมอ)
-const AUTO_FIT_SCRIPT = `<script>
-(function () {
-  var SINGLE_MAX = 11, SINGLE_MIN = 9.5, WRAP_MAX = 8, WRAP_MIN = 7, STEP = 0.25;
-  function overflows(el) {
-    return el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1;
-  }
-  function fitOne(el) {
-    el.classList.remove('wrapped');
-    var size = SINGLE_MAX;
-    el.style.fontSize = size + 'pt';
-    if (!overflows(el)) return;
-    while (size > SINGLE_MIN) {
-      size = Math.round((size - STEP) * 100) / 100;
-      el.style.fontSize = size + 'pt';
-      if (!overflows(el)) return;
-    }
-    el.classList.add('wrapped');
-    size = WRAP_MAX;
-    el.style.fontSize = size + 'pt';
-    while (size > WRAP_MIN && overflows(el)) {
-      size = Math.round((size - STEP) * 100) / 100;
-      el.style.fontSize = size + 'pt';
-    }
-  }
-  function fitAll() {
-    var cells = document.querySelectorAll('td.left .cell');
-    for (var i = 0; i < cells.length; i++) fitOne(cells[i]);
-  }
-  fitAll();
-  if (document.fonts && document.fonts.ready) {
-    document.fonts.ready.then(fitAll).catch(function () {});
-  }
-})();
-</script>`
-// หมายเหตุ: เขียน </script> ตรงๆ ได้เพราะไฟล์นี้ถูก build เป็น .js แล้วโหลดผ่าน <script src>
-// ไม่เคยถูก inline ลงใน index.html ถ้าวันหน้าเปลี่ยนไป inline ต้องกลับมาหนีเป็น <\/script>
-
 function tableHeader() {
   return `<thead>
     <tr>
@@ -256,22 +211,25 @@ function dataRow(row, monthlyTotal) {
   const returned = returnParts(trip)
   const userName = String(trip.requester?.full_name ?? trip.creator?.full_name ?? '').trim()
   const driverName = String(trip.driver?.full_name ?? '').trim()
-  // ช่องข้อความยาวต้องห่อด้วย .cell เพื่อให้สคริปต์ auto-fit ย่อ/ตัดบรรทัดได้เป็นรายช่อง
-  // (ของเดิมเป็น nowrap+overflow:hidden ล้วน ข้อความยาวจึงถูกตัดหายเงียบๆ กลางคำ)
-  const textCell = value => `<td class="left"><span class="cell">${esc(value)}</span></td>`
+  // ช่องข้อความยาวห่อด้วย .cell ที่ตั้ง white-space:normal ไว้ ขึ้นบรรทัดใหม่ได้เมื่อยาวเกิน
+  // ความกว้างคอลัมน์ แทนการตัด/ย่อขนาด (ของเดิมเป็น nowrap+overflow:hidden ล้วน
+  // ข้อความยาวจึงถูกตัดหายเงียบๆ กลางคำ) — ชื่อ (clamp:false) ไม่จำกัดบรรทัด ส่วนสถานที่ไป/
+  // หมายเหตุ (clamp:true) กันไว้ 2 บรรทัดเพราะเป็นข้อความอิสระที่ยาวไม่จำกัดได้จริง ดู CSS .cell--clamp
+  const textCell = (value, { clamp = false } = {}) =>
+    `<td class="left"><span class="cell${clamp ? ' cell--clamp' : ''}">${esc(value)}</span></td>`
   return `<tr>
     <td class="c-seq">${row.seq}</td>
     <td>${esc(depart.date)}</td>
     <td>${esc(depart.time)}</td>
     ${textCell(userName)}
-    ${textCell(String(trip.destination ?? '').trim())}
+    ${textCell(String(trip.destination ?? '').trim(), { clamp: true })}
     <td>${esc(meterText(trip.odometer_start))}</td>
     <td>${esc(returned.date)}</td>
     <td>${esc(returned.time)}</td>
     <td>${esc(meterText(trip.odometer_end))}</td>
     <td>${esc(distanceText(trip))}</td>
     ${textCell(driverName)}
-    ${textCell(remarkText(trip))}
+    ${textCell(remarkText(trip), { clamp: true })}
   </tr>`
 }
 
@@ -313,9 +271,9 @@ export function buildFleetForm4Html({ vehicle, trips = [], periodLabel = '' }) {
     html, body { margin: 0; }
     body {
       color: #000;
-      /* ตารางแบบ 4 คุมขนาดตัวอักษรเองรายช่อง เพื่อให้ 22 บรรทัดลงพอดีใน A4 แนวนอน
-         จึงใช้เฉพาะ "ตัวตนของฟอนต์" จากมาตรฐานกลาง ไม่บังคับ 16pt ทั้งใบ
-         font-size-adjust ยังคุมให้ทุกขนาดพิมพ์ออกมาเท่ากันทุกเครื่องเหมือนใบอื่น */
+      /* ตารางแบบ 4 ใช้ขนาดตัวอักษรเดียวกันทั้งตาราง (ไม่บังคับ 16pt ทั้งใบเพราะคอลัมน์
+         ไม่พอ) จึงใช้เฉพาะ "ตัวตนของฟอนต์" จากมาตรฐานกลาง — font-size-adjust ยังคุมให้
+         ขนาดที่ตั้งเองนี้พิมพ์ออกมาเท่ากันทุกเครื่องเหมือนใบอื่น */
       ${govDocFontIdentityCss()}
       background: #fff;
     }
@@ -365,7 +323,7 @@ export function buildFleetForm4Html({ vehicle, trips = [], periodLabel = '' }) {
       width: 100%;
       border-collapse: collapse;
       table-layout: fixed;
-      font-size: 11pt;
+      font-size: 10.5pt;
     }
     th, td {
       border: 1px solid #000;
@@ -379,34 +337,42 @@ export function buildFleetForm4Html({ vehicle, trips = [], periodLabel = '' }) {
       padding: 1px 3px;
     }
     th.c-seq, th.c-user, th.c-dest, th.c-drv, th.c-note { white-space: nowrap; }
+    /* ทุกช่องข้อมูลขนาดตัวอักษรเท่ากันหมด (10.5pt จาก table ด้านบน) ไม่มีการย่อ/ตัดข้อความ
+       รายช่องอีกต่อไป — ชื่อ-นามสกุล/หมายเหตุที่ยาวเกินความกว้างคอลัมน์จะ "ตัดขึ้นบรรทัดใหม่"
+       แทนการหด font หรือใส่ "…" (ของเดิมเจอชื่อจริงยาวจนตัดหายกลางคำแม้ย่อสุดแล้ว) แถวที่มี
+       ข้อความยาวจะสูงกว่าแถวอื่นได้เพราะ height ด้านล่างเป็นแค่ "ขั้นต่ำ" ไม่ใช่ตายตัว
+       (แถวที่ข้อความไม่พอ 1 บรรทัดจะโตเกิน height นี้เอง) ข้อมูลจึงครบเสมอ แลกกับพิมพ์ได้
+       น้อยแถว/หน้าลงเมื่อมีชื่อยาวหลายรายการ (ดู FORM4_ROWS_PER_PAGE)
+       ⚠️ ต้องตั้ง height ไว้ (ไม่ใช่ปล่อยให้สูงตามเนื้อหาอย่างเดียว) เพราะ <td></td> ที่ไม่มี
+       เนื้อหาเลย (แถวว่างที่เติมให้ครบ 1 หน้า) ไม่มี line box ให้ยึด จะเหลือแค่ padding
+       (~2mm) สั้นกว่าแถวที่มีข้อมูลมาก (~6.7mm) ทำให้ตารางดูเป็นแถบสลับหนา-บางไม่เป็นระเบียบ */
     td {
-      height: 6.3mm;
-      padding: 0 4px;
-      line-height: 6.3mm;
-      white-space: nowrap;
-      overflow: hidden;
+      height: 6.4mm;
+      padding: 1mm 4px;
+      line-height: 1.2;
     }
-    td.left { text-align: left; padding: 0 3px; }
-    /* ค่าเริ่มต้นของช่องข้อความ = บรรทัดเดียวเต็มความสูงแถว เหมือนต้นฉบับกระดาษ
-       สคริปต์ auto-fit ท้ายไฟล์จะย่อฟอนต์ก่อน แล้วค่อยเติมคลาส .wrapped ให้ตัด 2 บรรทัด
-       เฉพาะช่องที่ยังไม่พอจริงๆ — ไทยมีสระบน/ล่าง บีบ 2 บรรทัดทุกช่องจะโดนตัดหัวสระ */
+    td:not(.left) { white-space: nowrap; overflow: hidden; }
+    td.left { text-align: left; padding: 1mm 3px; }
     td.left .cell {
       display: block;
-      max-height: 6.3mm;
-      line-height: 6.3mm;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      white-space: normal;
+      overflow-wrap: break-word;
     }
-    /* ถ้าย่อจนเล็กสุดแล้วยังไม่พอ (เช่น หมายเหตุยาวระดับย่อหน้า) ต้องจบด้วย "…" ให้เห็น
-       ห้ามตัดหายเงียบๆ กลางคำเหมือนเดิม คนอ่านต้องรู้ว่ายังมีข้อความต่อ */
-    td.left .cell.wrapped {
+    /* ชื่อ-นามสกุล (ผู้ใช้รถ/พนักงานขับรถ) ไม่จำกัดจำนวนบรรทัดเด็ดขาด ต้องแสดงครบเสมอ
+       (ตามที่รายงานมา: ชื่อจริงถูกตัดหายเพราะย่อ font จนคอลัมน์ยังไม่พอ) — สถานที่ไป/หมายเหตุ
+       เป็นข้อความอิสระที่ผู้ใช้พิมพ์เองได้ไม่จำกัดความยาว (เคยเจอปลายทางหลายหมู่บ้านคั่นด้วย
+       จุลภาคยาวมาก) จึงยังกันไว้ที่ 2 บรรทัดแล้วจบด้วย "…" เพื่อไม่ให้ 1 แถวที่ยาวผิดปกติ
+       ดันตารางทั้งหน้าล้นออกไป — 2 บรรทัดกว้างกว่าความยาวจริงที่เจอในข้อมูลทั่วไปมาก
+       จึงแทบไม่ตัดอะไรเลยในทางปฏิบัติ ต่างจากชื่อที่ห้ามตัดแม้แต่กรณีเดียว */
+    /* .cell--clamp ต้อง specificity เท่ากับ "td.left .cell" ด้านบนเป๊ะ (2 คลาส + 1 element)
+       ไม่งั้น display:block ของ base rule จะชนะเสมอไม่ว่าจะเขียนอยู่บรรทัดหลังแค่ไหน
+       เขียนแค่ ".cell--clamp" เฉยๆ specificity ต่ำกว่า จะโดนแพ้ overwrite เงียบๆ */
+    td.left .cell--clamp {
       display: -webkit-box;
       -webkit-box-orient: vertical;
       -webkit-line-clamp: 2;
-      line-height: 3.15mm;
-      white-space: normal;
-      word-break: break-word;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     tr.total td {
       font-weight: 700;
@@ -425,20 +391,23 @@ export function buildFleetForm4Html({ vehicle, trips = [], periodLabel = '' }) {
     }
     tr.total .total-value { font-size: 13pt; }
     tr.total .total-unit { text-align: left; padding-left: 8px; }
-    col.c-seq { width: 4.6%; }
-    col.c-date { width: 7.3%; }
-    col.c-time { width: 5.4%; }
-    col.c-user { width: 11.4%; }
-    col.c-dest { width: 15.4%; }
-    col.c-odo { width: 6.8%; }
-    col.c-sum { width: 6.6%; }
-    col.c-drv { width: 12%; }
-    col.c-note { width: 11%; }
+    /* กว้างขึ้นกว่าเดิมเฉพาะคอลัมน์ที่มีข้อความยาวจริง (c-user/c-drv/c-dest) โดยหักมาจาก
+       คอลัมน์ตัวเลข/วันที่ที่มีที่ว่างเหลือ (c-odo/c-date/c-time/c-sum/c-seq/c-note)
+       c-user กับ c-drv ตั้งใจให้กว้างเท่ากัน (14%) เพราะเดิมกว้างไม่เท่ากันแล้วชื่อเดียวกัน
+       ขึ้นบรรทัดใหม่แค่ฝั่งที่แคบกว่า ดูแปลกเวลาเทียบ 2 คอลัมน์ในแถวเดียวกัน */
+    col.c-seq { width: 3%; }
+    col.c-date { width: 6.8%; }
+    col.c-time { width: 5%; }
+    col.c-user { width: 14%; }
+    col.c-dest { width: 17%; }
+    col.c-odo { width: 6.2%; }
+    col.c-sum { width: 6%; }
+    col.c-drv { width: 14%; }
+    col.c-note { width: 10%; }
   </style>
 </head>
 <body>
 ${pages.map(rows => sheet({ title, plate, periodLabel, rows, monthlyTotal })).join('\n')}
-${AUTO_FIT_SCRIPT}
 </body>
 </html>`
 }
