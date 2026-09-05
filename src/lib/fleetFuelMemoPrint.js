@@ -317,12 +317,19 @@ export function buildFleetFuelMemoHtml({
     col.c-actual { width: 15%; }
     .closing { margin: 8pt 0 0; text-indent: 2.5cm; }
     .signs { margin-top: 6pt; }
+    /* พัสดุกับปลัดอยู่แถวเดียวกัน (ซ้าย–ขวา) ไม่ได้เยื้องลงเป็นขั้นบันไดเหมือนใบต้นฉบับ
+       เพราะ 3 บล็อกเรียงลงมาใช้ที่แนวตั้งจนเหลือช่องเซ็นแค่ 2.8 มม. เซ็นชื่อไม่ได้จริง
+       รวมสองช่องเป็นแถวเดียวคืนที่มาได้ 14 มม. เอามาเพิ่มช่องเซ็นเป็น 8 มม. ครบทั้ง 3 คน
+       (ยังคงตำแหน่งซ้าย–ขวาของแต่ละคนไว้ตรงกับใบต้นฉบับ) */
+    .sign-row { display: flex; justify-content: space-between; }
     .sign { text-align: center; width: 46%; }
     .sign p { margin: 0; }
-    /* เว้นที่ว่างเหนือชื่อไว้ให้เซ็นสด — บันทึกข้อความไม่มีเส้น "ลงชื่อ ____" บนใบต้นฉบับ */
-    .sign-name { margin-top: 8pt !important; }
-    .sign--left { margin-left: 6%; }
-    .sign--right { margin-left: 50%; }
+    /* เว้นที่ว่างเหนือชื่อไว้ให้เซ็นสด — บันทึกข้อความไม่มีเส้น "ลงชื่อ ____" บนใบต้นฉบับ
+       ⚠️ 8 มม. คือความสูงที่ลายเซ็นคนไทยทั่วไปเขียนได้โดยไม่ทับตัวหนังสือ (7 มม. ยังฝืด)
+       ลดค่านี้เพื่อให้เอกสารจบหน้าเดียวไม่ได้ ต้องไปหาที่จากส่วนอื่นแทน */
+    .sign-name { margin-top: 8mm !important; }
+    .sign--left { margin-left: 4%; }
+    .sign--right { margin-right: 2%; }
     .sign--bottom { margin-left: 2%; }
   </style>
 </head>
@@ -368,8 +375,10 @@ export function buildFleetFuelMemoHtml({
   </table>
   <p class="closing">จึงเรียนมาเพื่อโปรดทราบ</p>
   <div class="signs">
-    ${signatureBlock(signatures.supply, 'sign--left')}
-    ${signatureBlock(signatures.clerk, 'sign--right')}
+    <div class="sign-row">
+      ${signatureBlock(signatures.supply, 'sign--left')}
+      ${signatureBlock(signatures.clerk, 'sign--right')}
+    </div>
     ${signatureBlock(signatures.mayor, 'sign--bottom')}
   </div>
 </div>
