@@ -212,6 +212,20 @@ export default function FleetReport({ tenant }) {
           ])
         }
       } catch { /* โหลดฟอนต์ไม่ทันก็พิมพ์ด้วยฟอนต์บนเครื่อง */ }
+      // รอรูปด้วย ไม่ใช่แค่ฟอนต์ — ตราครุฑบนบันทึกข้อความเป็นไฟล์ ~490KB ถ้าสั่งพิมพ์
+      // ก่อนโหลดเสร็จ เอกสารจะออกมาหัวว่างโดยไม่มีอะไรฟ้อง (คนพิมพ์รู้ตัวตอนกระดาษออกมาแล้ว)
+      try {
+        const images = [...win.document.images].filter(img => !img.complete)
+        if (images.length) {
+          await Promise.race([
+            Promise.all(images.map(img => new Promise(resolve => {
+              img.addEventListener('load', resolve, { once: true })
+              img.addEventListener('error', resolve, { once: true })
+            }))),
+            new Promise(resolve => setTimeout(resolve, 2500)),
+          ])
+        }
+      } catch { /* โหลดรูปไม่ทันก็ยังพิมพ์ได้ ช่องครุฑจะว่างไว้ให้พิมพ์ทับหัวจดหมาย */ }
       win.focus()
       win.print()
     }
@@ -371,7 +385,9 @@ export default function FleetReport({ tenant }) {
       })
       openPrintWindow(buildFleetFuelMemoHtml({
         orgName: tenant?.name ?? '',
-        logoUrl: tenant?.logo_url ?? '',
+        // ครุฑ ไม่ใช่ตราของ อปท. — บันทึกข้อความเป็นหนังสือราชการที่ใช้ครุฑตามระเบียบสารบรรณ
+        // ต้องเป็น URL เต็ม เพราะหน้าต่างพิมพ์เป็น about:blank ที่ resolve พาธสัมพัทธ์ไม่ได้
+        emblemUrl: `${window.location.origin}/images/garuda.svg`,
         department: memoForm.department,
         docNumber: memoForm.docNumber,
         docDate: memoForm.docDate,
