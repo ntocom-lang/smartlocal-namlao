@@ -1,25 +1,69 @@
 # AI Instructions — Single Source of Truth
 
-**โครงสร้าง 2 ชั้น (ตั้งแต่ 2026-07-29):**
+**โครงสร้าง 3 ไฟล์ต้นฉบับ (แก้ได้เฉพาะ 3 ไฟล์นี้):**
 - `docs/ai/CORE.md` = **หลักการสากล** ใช้ได้ทุกโปรเจกต์ทุกสายงาน (ไม่มีชื่อโดเมนเฉพาะ)
 - `docs/ai/DOMAIN.md` = **ความเชี่ยวชาญเฉพาะโปรเจกต์นี้** (Smart City ภาครัฐไทย) — มีเฉพาะโปรเจกต์นี้เท่านั้น
   โปรเจกต์อื่นที่ไม่ใช่สายงานนี้ ให้สร้าง `docs/ai/DOMAIN.md` ของตัวเองแยกต่างหาก ไม่ต้องแก้ CORE.md
+- `docs/ai/SAFETY.md` = กติกาสำหรับ agent ที่แก้ไฟล์ในเครื่องได้ (IDE/CLI) — ไม่ sync ไปฝั่งเว็บ
 
-**ไฟล์ที่ copy เนื้อหามา (ต้อง sync มือทุกครั้งที่แก้ CORE.md และ/หรือ DOMAIN.md):**
-- `AGENTS.md` (root, เฉพาะโปรเจกต์นี้ — Claude Code อ่านอัตโนมัติ) = CORE.md + DOMAIN.md + [SAFETY สำหรับ agent ใน IDE]
-- `.agents/rules/domain.md` (เฉพาะโปรเจกต์นี้ — Antigravity อ่านเป็น Workspace Rules อัตโนมัติ) = DOMAIN.md ล้วนๆ
-- `~/.claude/CLAUDE.md` (global, **ทุกโปรเจกต์**) = CORE.md ล้วนๆ **ไม่มี DOMAIN.md**
-- `~/.gemini/GEMINI.md` (global, **ทุกโปรเจกต์** — Antigravity อ่านเป็น Global Rules ไม่ว่าจะสลับ backend เป็น Claude/GPT/Gemini) = CORE.md ล้วนๆ **ไม่มี DOMAIN.md**
-- `docs/ai/web-snippets.md` = CORE.md + DOMAIN.md + Adapter เฉพาะแต่ละเว็บ (ต้อง paste มือเข้า Claude/ChatGPT/Gemini เว็บใหม่ทุกครั้ง — เว็บพวกนี้ผูกกับโปรเจกต์นี้อยู่แล้ว เช่น Gemini Gem ชื่อ "SmartLocal SME" จึงยังคงรวม DOMAIN.md เข้าไปด้วย)
+**ปลายทางทั้งหมดถูก generate โดย `scripts/ai-sync.mjs` — ห้ามแก้ไฟล์เหล่านี้ตรงๆ:**
 
-**ไฟล์ที่ไม่ซ้ำเนื้อหา CORE.md (แก้เฉพาะจุด):** `CLAUDE.md`, `GEMINI.md` (root) — มีแค่ `@AGENTS.md`/คำสั่งอ่าน + `[Adapter]` เฉพาะตัว
+| ปลายทาง | เนื้อหา | ใครอ่าน |
+|---|---|---|
+| `AGENTS.md` (root) | CORE + DOMAIN + SAFETY + มาตรฐานการพิมพ์ | Claude Code (ผ่าน `CLAUDE.md`) และเครื่องมือที่อ่าน AGENTS.md |
+| `.agents/rules/domain.md` | DOMAIN ทั้งไฟล์ (รวมมาตรฐานการพิมพ์) | Antigravity — Workspace Rules |
+| `~/.claude/CLAUDE.md` | CORE ล้วน **ไม่มี DOMAIN** | Claude Code ทุกโปรเจกต์ (global) |
+| `~/.gemini/GEMINI.md` | CORE ล้วน **ไม่มี DOMAIN** | Antigravity — Global Rules ทุก backend (Claude/GPT/Gemini/Grok) |
+| `docs/ai/web-snippets.md` | CORE + DOMAIN + Adapter รายเว็บ | ต้นทางสำหรับ paste เข้า Gemini Gem / ChatGPT Project / Claude Project |
 
-**เหตุผลที่แยก 2 ชั้น**: เดิม global files (`~/.claude/CLAUDE.md`, `~/.gemini/GEMINI.md`) มี "Smart City ภาครัฐไทย" ฝังอยู่ตรงๆ ทำให้ทุกโปรเจกต์ที่เปิดใน Claude Code/Antigravity ถูกตีความว่าเป็นงาน Smart City ไปด้วย ทั้งที่บางโปรเจกต์อาจเป็นสายงานอื่น — แยกออกมาเพื่อให้ **สลับสายงานได้ต่อโปรเจกต์** แค่สร้าง `docs/ai/DOMAIN.md` ใหม่ของโปรเจกต์นั้น ไม่ต้องแตะ global เลย
+**ไฟล์ที่ไม่ซ้ำเนื้อหา CORE.md (แก้มือได้ตามปกติ):** `CLAUDE.md`, `GEMINI.md` (root)
+— มีแค่คำสั่งอ่าน `AGENTS.md` + `[Adapter]` เฉพาะตัว `ai-sync.mjs` ไม่แตะ 2 ไฟล์นี้
 
-**ขั้นตอน regenerate เมื่อแก้ CORE.md:** 1) แก้ `docs/ai/CORE.md` 2) copy ทับใน `~/.claude/CLAUDE.md`, `~/.gemini/GEMINI.md` (เฉพาะเนื้อหา CORE ล้วนๆ) 3) copy CORE.md + DOMAIN.md รวมกันทับใน `AGENTS.md` และ 3 บล็อกใน `web-snippets.md` (backup ไฟล์เดิมเป็น `.bak.<YYYYMMDD-HHMM>` ก่อนทุกครั้ง) 4) paste เนื้อหาใหม่เข้า Claude web / ChatGPT / Gemini Gem ด้วยมือ
+## วิธีใช้
 
-**ขั้นตอนเมื่อแก้ DOMAIN.md เท่านั้น (ไม่แตะ CORE.md):** sync เข้า `AGENTS.md` และ `web-snippets.md` เท่านั้น — **ห้าม** sync เข้า global files (`~/.claude/CLAUDE.md`, `~/.gemini/GEMINI.md`)
+```bash
+npm run ai:sync     # แก้ต้นฉบับแล้วรันคำสั่งนี้คำสั่งเดียว จบทุกปลายทาง
+npm run ai:check    # ตรวจอย่างเดียว ไม่เขียน — ต่างเมื่อไรคืน exit 1 (CI ใช้ตัวนี้)
+```
 
-**หมายเหตุ:** เคยมีไฟล์ `.roo/skills/subjectmatterexpert/SKILL.md` (Roo Code) ซึ่งเป็นคนละ path กับ convention จริงของ Roo Code (`.roo/rules/`) และปัจจุบันเลิกใช้ Roo Code แล้ว (ถอด `.roo/rules/` ออกไปแล้วเมื่อ 2026-07-29) ไฟล์ `.roo/skills/...` ที่เหลืออยู่เป็นไฟล์ค้าง ไม่มีเครื่องมือไหนอ่าน
+- `ai:sync` สำรองไฟล์นอก git (`~/.claude/CLAUDE.md`, `~/.gemini/GEMINI.md`) เป็น `.bak.<YYYYMMDD-HHMM>` ให้ก่อนเขียนทับเสมอ
+- ไฟล์ที่อยู่ใน repo ไม่ต้องสำรอง เพราะ `git diff` / `git checkout` ย้อนได้อยู่แล้ว
+- `.github/workflows/ai-docs-check.yml` รัน `ai:check --repo-only` ทุก push/PR
+  (`--repo-only` เพราะ runner ไม่มีไฟล์ global 2 ตัว — ฝั่งนั้นตรวจด้วย `npm run doctor` บนเครื่อง dev)
+- **ตั้งเครื่องใหม่**: `git clone` แล้วรัน `npm run ai:sync` ครั้งเดียว AI ทุกตัวได้บริบทครบ
+  ไม่ต้อง copy ไฟล์ global ข้ามเครื่อง เพราะ generate จาก `CORE.md` ที่อยู่ใน repo ได้ทั้งหมด
 
-⚠️ **ทบทวนไฟล์นี้ทุก 6 เดือน** โดยเฉพาะส่วน Compliance Gate ใน `docs/ai/DOMAIN.md` — ระเบียบ/กฎหมายที่อ้างถึง (มท., PDPA, จัดซื้อจัดจ้าง) อาจแก้ไขระหว่างทาง
+## กฎแปลงถ้อยคำ
+
+`CORE.md` เขียนแบบกลางๆ แล้วถูกแปลงเป็น 2 เวอร์ชัน:
+- **ฉบับโปรเจกต์** (AGENTS.md, web-snippets) — เปลี่ยน "ทีม" เป็น "อปท.", ยัด Compliance Gate ของโดเมนเข้าข้อ 3 ฯลฯ
+- **ฉบับ global** — เติม "ของโปรเจกต์นั้น" ให้อ่านรู้เรื่องไม่ว่าเปิดโปรเจกต์ไหน
+
+กฎทั้งหมดอยู่ในตัวแปร `RULES` ใน `scripts/ai-sync.mjs` เป็น**ข้อมูล ไม่ใช่ logic**
+**ถ้าแก้ถ้อยคำใน `CORE.md` จนกฎหาข้อความต้นทางไม่เจอ สคริปต์จะหยุดทันทีพร้อมบอกว่ากฎไหนพัง**
+— ตั้งใจให้เป็นแบบนี้ ดีกว่าปล่อยให้ drift เงียบๆ แบบเดิม
+
+## ทำไมต้องแยก CORE กับ DOMAIN
+
+เดิม global files (`~/.claude/CLAUDE.md`, `~/.gemini/GEMINI.md`) มี "Smart City ภาครัฐไทย" ฝังอยู่ตรงๆ
+ทำให้ทุกโปรเจกต์ที่เปิดใน Claude Code/Antigravity ถูกตีความว่าเป็นงาน Smart City ไปด้วย
+ทั้งที่บางโปรเจกต์อาจเป็นสายงานอื่น — แยกออกมาเพื่อให้ **สลับสายงานได้ต่อโปรเจกต์**
+แค่สร้าง `docs/ai/DOMAIN.md` ใหม่ของโปรเจกต์นั้น ไม่ต้องแตะ global เลย
+
+## บันทึกเหตุการณ์
+
+- **2026-07-29** แยกโครงสร้าง 2 ชั้น (CORE + DOMAIN)
+- **2026-09-05** เลิก sync ด้วยมือ เปลี่ยนมาใช้ `scripts/ai-sync.mjs`
+  เหตุผล: การ copy มือพังจริง — กฎ `$0 Budget Policy` ถูกเพิ่มใน `CORE.md` แล้ว sync เข้า `AGENTS.md` ตัวเดียว
+  **หายไปจากอีก 4 ปลายทาง** (`~/.claude/CLAUDE.md`, `~/.gemini/GEMINI.md`, `web-snippets.md` ทั้ง 3 บล็อก)
+  โดยไม่มีใครรู้ ⇒ ทุกโปรเจกต์อื่นที่เปิดใน Claude Code/Antigravity ไม่มีกฎห้ามใช้บริการเสียเงินอยู่พักใหญ่
+  พร้อมกันนั้น: แยก `[SAFETY สำหรับ agent ใน IDE]` ออกมาเป็น `docs/ai/SAFETY.md` (เดิมอยู่แค่ในไฟล์ generated
+  ไม่มีต้นฉบับ ถ้า regenerate จะหายทั้งบล็อก) และเพิ่ม `[มาตรฐานการพิมพ์เอกสารราชการ]` เข้า
+  `.agents/rules/domain.md` (เดิมถูกตัดทิ้ง ทำให้ Antigravity ไม่รู้กฎฟอนต์/ขอบกระดาษทั้งที่เป็นกฎเขียนโค้ด)
+
+**หมายเหตุ:** เคยมีไฟล์ `.roo/skills/subjectmatterexpert/SKILL.md` (Roo Code) ซึ่งเป็นคนละ path
+กับ convention จริงของ Roo Code (`.roo/rules/`) และปัจจุบันเลิกใช้ Roo Code แล้ว
+(ถอด `.roo/rules/` ออกไปแล้วเมื่อ 2026-07-29) ไฟล์ที่เหลืออยู่เป็นไฟล์ค้าง ไม่มีเครื่องมือไหนอ่าน
+
+⚠️ **ทบทวนไฟล์นี้ทุก 6 เดือน** โดยเฉพาะส่วน Compliance Gate ใน `docs/ai/DOMAIN.md` —
+ระเบียบ/กฎหมายที่อ้างถึง (มท., PDPA, จัดซื้อจัดจ้าง) อาจแก้ไขระหว่างทาง

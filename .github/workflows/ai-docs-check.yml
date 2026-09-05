@@ -1,0 +1,48 @@
+# ตรวจว่าไฟล์ instruction ของ AI ทุกตัวยังตรงกับต้นฉบับ docs/ai/CORE.md + DOMAIN.md + SAFETY.md
+#
+# ทำไมต้องแยกไฟล์ ไม่ไปเป็น step ใน deploy.yml:
+# deploy.yml มี paths-ignore: 'docs/**' ⇒ ถ้าแก้แค่ docs/ai/CORE.md มันจะไม่ trigger เลย
+# ซึ่งเป็นเคสหลักที่ต้องดักพอดี (แก้ต้นฉบับแล้วลืม sync)
+#
+# เคสจริงที่ทำให้ต้องมี workflow นี้ (2026-09-05): กฎ "$0 Budget Policy" ถูกเพิ่มใน CORE.md
+# แล้ว sync เข้า AGENTS.md ตัวเดียว หายไปจากอีก 4 ปลายทางโดยไม่มีใครรู้
+#
+# --repo-only: runner ไม่มี ~/.claude/CLAUDE.md กับ ~/.gemini/GEMINI.md (เป็นไฟล์ประจำเครื่อง)
+# 2 ตัวนั้นตรวจด้วย npm run doctor บนเครื่อง dev แทน
+#
+# ไม่ต้อง npm ci: scripts/ai-sync.mjs ใช้เฉพาะ node builtin ไม่มี dependency
+# ⇒ รันจบใน ~10 วินาที และ PR จาก fork ก็ไม่ได้รัน install script ของ dependency ใคร
+name: AI docs check
+
+on:
+  push:
+  pull_request:
+
+# ไม่ใช้ secret ใดๆ — workflow นี้แค่อ่านไฟล์ในโค้ดแล้วเทียบ
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-docs-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
+      - name: ตรวจว่าไฟล์ instruction ตรงกับต้นฉบับ
+        run: node scripts/ai-sync.mjs --check --repo-only
+
+      - name: ชี้ทางแก้เมื่อไม่ตรง
+        if: failure()
+        run: |
+          echo "::error::ไฟล์ instruction ของ AI ไม่ตรงกับ docs/ai/CORE.md + DOMAIN.md + SAFETY.md"
+          echo "วิธีแก้: รัน 'npm run ai:sync' บนเครื่อง แล้ว commit ไฟล์ที่เปลี่ยนไปด้วย"
+          echo "ห้ามแก้ AGENTS.md / .agents/rules/domain.md / docs/ai/web-snippets.md ตรงๆ — มันเป็นไฟล์ generated"

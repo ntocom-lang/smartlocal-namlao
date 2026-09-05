@@ -1,0 +1,32 @@
+# ตรึงรูปแบบ line ending ให้เหมือนกันทุกเครื่อง ไม่ว่าใครตั้ง core.autocrlf ไว้ยังไง
+#
+# สภาพจริง ณ 2026-09-05: index เป็น LF ล้วน 662 ไฟล์ (ไม่มี CRLF ไม่มี mixed)
+# และ core.autocrlf=true มาจาก system config ของตัวติดตั้ง Git for Windows
+# ⇒ ตอนนี้ยังไม่มีปัญหา ไฟล์นี้คือ "ประกัน" กันวันหน้ามีเครื่องหรือ editor ตั้งค่าต่าง
+# แล้ว CRLF หลุดเข้า history จนเครื่องอื่นเห็น diff ทั้งไฟล์
+#
+# ตั้งใจใช้ `text=auto` เฉยๆ ไม่ใส่ `eol=lf` — ถ้าใส่ ไฟล์ในเครื่องทั้ง 662 ตัว
+# จะถูกเขียนใหม่พร้อมกันโดยไม่ได้อะไรเพิ่ม เพราะ repo เก็บเป็น LF อยู่แล้ว
+
+* text=auto
+
+# สคริปต์เชลล์ต้องเป็น LF เสมอ ไม่งั้น bash ตีความ \r เป็นส่วนหนึ่งของคำสั่งแล้วพัง
+*.sh text eol=lf
+
+# ฝั่ง Windows คงไว้เป็น CRLF ตามที่เครื่องมือฝั่งนั้นคาดหวัง
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# ห้ามแตะไฟล์ binary เด็ดขาด — แปลง line ending แล้วไฟล์เสียถาวร
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.zip binary
