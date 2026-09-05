@@ -940,8 +940,8 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr style={{ backgroundColor: '#1a3a5c' }}>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white w-8 border-r border-white/10">ที่</th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">เลขอ้างอิง</th>
+                  <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white w-8 border-r border-white/10">ที่</th>
+                  <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">เลขอ้างอิง</th>
                   {/* ตัดคอลัมน์ "วัตถุประสงค์" กับ "โทรศัพท์" ออกแล้ว
                       - วัตถุประสงค์: purpose ของคำขอส่วนใหญ่ขึ้นต้นด้วยข้อความเดียวกับคอลัมน์
                         ประเภทบริการ พอโดน truncate ที่ 180px จึงเหลือแต่ส่วนที่ซ้ำ ส่วนที่ต่างจริง
@@ -949,15 +949,21 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
                       - โทรศัพท์: เป็นข้อมูลส่วนบุคคลที่ไม่จำเป็นต้องกางบนหน้าจอรายการซึ่งมัก
                         เปิดค้างไว้/ฉายให้คนอื่นเห็น ลดการเปิดเผยเกินจำเป็นตาม PDPA
                       ทั้งสองค่ายังดูได้ครบในแผ่นรายละเอียดเมื่อกดเข้าไปในคำขอนั้น */}
-                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap">ชื่อ-สกุลผู้ยื่น</th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap">ประเภทบริการ/เอกสาร</th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap">วันที่ยื่น</th>
+                  <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap">ชื่อ-สกุลผู้ยื่น</th>
+                  <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap">ประเภทบริการ/เอกสาร</th>
+                  <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap">วันที่ยื่น</th>
                   {/* คอลัมน์ที่เพิ่มกลับมาหลังตัด "วัตถุประสงค์"/"โทรศัพท์" ออก — จำเป็นจริง
                       เพราะเป็นคอลัมน์เดียวที่ตอบว่า "งานนี้ใครถือ" ถ้าไม่มี หัวหน้ากองต้องกด
                       เปิดทีละใบเพื่อดู และงานที่ไม่มีเจ้าของจะไม่มีใครสังเกตเห็น */}
-                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap">ผู้รับผิดชอบ</th>
-                  <th className="px-4 py-2.5 text-center text-[11px] font-bold text-white border-r border-white/10">สถานะ</th>
-                  <th className="px-4 py-2.5 text-center text-[11px] font-bold text-white">ดำเนินการ</th>
+                  <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap">ผู้รับผิดชอบ</th>
+                  <th className="px-3 py-2.5 text-center text-[11px] font-bold text-white border-r border-white/10">สถานะ</th>
+                  {/* ปักคอลัมน์ปุ่มไว้ขอบขวาเสมอ — พอเพิ่มคอลัมน์ "ผู้รับผิดชอบ" ตารางกว้างเกินจอ
+                      (วัดจริง: ต้องการ 1068px มีให้ 1022px บนจอ 1440 และแย่กว่านี้บนจอ 1366
+                      ที่เจ้าหน้าที่ส่วนใหญ่ใช้) ปุ่ม "ตรวจสอบคำขอ" เป็นคอลัมน์ขวาสุดจึงถูกตัดหาย
+                      ต้องเลื่อนแนวนอนหาก่อนถึงจะกดได้ = ปุ่มหลักของหน้ากลายเป็นของที่ต้องไปตามหา
+                      background: inherit ให้สีตามแถว (แถวสลับสีและเปลี่ยนสีตอน hover ด้วย inline style) */}
+                  <th className="sticky right-0 z-10 px-3 py-2.5 text-center text-[11px] font-bold text-white shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]"
+                    style={{ background: 'inherit' }}>ดำเนินการ</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -970,20 +976,20 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
                       onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'}
                       onMouseLeave={e => e.currentTarget.style.backgroundColor = idx % 2 === 0 ? '#fff' : '#f5f8fc'}
                       onClick={() => setSelected(req)}>
-                      <td className="px-4 py-2.5 text-gray-500 text-xs border-r border-gray-200">{idx + 1}</td>
-                      <td className="px-4 py-2.5 font-mono text-xs text-gray-600 border-r border-gray-200 whitespace-nowrap">{req.id?.slice(0, 8)?.toUpperCase() ?? '—'}</td>
+                      <td className="px-3 py-2.5 text-gray-500 text-xs border-r border-gray-200">{idx + 1}</td>
+                      <td className="px-3 py-2.5 font-mono text-xs text-gray-600 border-r border-gray-200 whitespace-nowrap">{req.id?.slice(0, 8)?.toUpperCase() ?? '—'}</td>
                       {/* nowrap ทั้งชื่อและประเภท — เดิมคอลัมน์แคบจนชื่อคนแตกเป็น 5 บรรทัด
                           ("นาย / ยุทธ / ศักดิ์ / กาศ / เกษม") แถวสูงเกินจำเป็นทั้งตาราง
                           ถ้าจอแคบจนไม่พอ ตารางมี overflow-x-auto ครอบอยู่ ให้เลื่อนแนวนอนแทน */}
-                      <td className="px-4 py-2.5 font-semibold text-gray-800 text-sm border-r border-gray-200 whitespace-nowrap">{req.requester_name}</td>
-                      <td className="px-4 py-2.5 text-gray-700 text-xs border-r border-gray-200 whitespace-nowrap">{docType?.label.replace(/^\S+\s*/, '') ?? req.document_type}</td>
-                      <td className="px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap border-r border-gray-200">{dateTH(req.created_at)}</td>
-                      <td className="px-4 py-2.5 text-xs whitespace-nowrap border-r border-gray-200">
+                      <td className="px-3 py-2.5 font-semibold text-gray-800 text-sm border-r border-gray-200 whitespace-nowrap">{req.requester_name}</td>
+                      <td className="px-3 py-2.5 text-gray-700 text-xs border-r border-gray-200 whitespace-nowrap">{docType?.label.replace(/^\S+\s*/, '') ?? req.document_type}</td>
+                      <td className="px-3 py-2.5 text-gray-500 text-xs whitespace-nowrap border-r border-gray-200">{dateTH(req.created_at)}</td>
+                      <td className="px-3 py-2.5 text-xs whitespace-nowrap border-r border-gray-200">
                         {req.assigned_to
                           ? <span className="text-gray-700">{assigneeNameOf(req.assigned_to)}</span>
                           : <span className="font-semibold text-amber-600">ยังไม่มอบหมาย</span>}
                       </td>
-                      <td className="px-4 py-2.5 text-center border-r border-gray-200">
+                      <td className="px-3 py-2.5 text-center border-r border-gray-200">
                         <div className="flex flex-col items-center gap-1">
                           <StatusBadge status={req.status} />
                           {isOverdue(req) && (
@@ -996,7 +1002,8 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
                       {/* stopPropagation ที่ระดับ td แบบเดียวกับตารางคำร้อง — ปุ่มในช่องนี้
                           ต้องยิง handler ของตัวเอง ไม่ใช่ปล่อยให้คลิกทะลุไปโดน onClick ของ tr
                           (ของเดิมปุ่มไม่มี onClick เลย อาศัยคลิกทะลุอย่างเดียว จึงเป็นปุ่มหลอก) */}
-                      <td className="px-4 py-2.5 text-center" onClick={e => e.stopPropagation()}>
+                      <td className="sticky right-0 z-10 px-3 py-2.5 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]"
+                        style={{ background: 'inherit' }} onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1.5">
                           <button
                             onClick={() => setSelected(req)}
