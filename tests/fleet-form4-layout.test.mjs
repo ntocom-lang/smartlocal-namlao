@@ -156,6 +156,30 @@ const checks = [
     },
   },
   {
+    name: 'overflow-spillover-page-fits',
+    reason: 'เดือนที่ข้อมูลเต็มพอดี 1 หน้า แถวรวมยอดจะเด้งไปหน้าถัดไปเดี่ยวๆ (ดู paginateForm4Trips) — หน้านั้นเกือบเป็นแถวว่างล้วน ต้องไม่ล้นเพราะแถวว่างถูกดันสูงเพื่อเติมเต็มหน้า',
+    async run(browser) {
+      // ที่มา: 2026-09-05 ตั้ง tr.blank-filler ให้สูงกว่าปกติเพื่อให้ตารางเต็มหน้าเวลาข้อมูลน้อย
+      // (ดูคอมเมนต์ tr.blank-filler td ใน fleetForm4Print.js) ตอนแรกตั้ง 11mm โดยลืมคิดพื้นที่
+      // ของ thead (หัวตาราง 2 แถวที่มีป้ายกำกับยาวถึง 4 บรรทัด กิน ~19mm) รวมเข้าไปในงบ
+      // ผลคือหน้าที่มีแต่แถวว่าง 13 แถว + แถวรวม 1 แถว ล้นไป 195mm จาก 189mm แก้เป็น 9.8mm
+      const page = await renderForm4(browser, makeTrips(FORM4_ROWS_PER_PAGE))
+      try {
+        const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true })
+        assert.equal(pdfPageCount(pdf), 2,
+          'ข้อมูลเต็มพอดี 1 หน้าต้องมีหน้าที่ 2 สำหรับแถวรวมยอดเสมอ (ไม่งั้นแถวรวมหายไปพร้อมกับหน้าแรก)')
+
+        const heights = await sheetContentHeightMm(page)
+        for (const mm of heights) {
+          assert.ok(mm <= 186,
+            `เนื้อหาสูง ${mm.toFixed(1)}mm เหลือขอบน้อยเกินไป (พื้นที่พิมพ์ 189mm) — ปรับ tr.blank-filler td height ลง`)
+        }
+      } finally {
+        await page.close()
+      }
+    },
+  },
+  {
     name: 'long-free-text-visibly-clamped-not-silently-lost',
     reason: 'สถานที่ไป/หมายเหตุที่ยาวเกินกันไว้ต้องจบด้วย "…" ให้เห็น ไม่ตัดหายเงียบแบบไม่มีสัญญาณ',
     async run(browser) {
