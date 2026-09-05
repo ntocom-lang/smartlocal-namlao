@@ -30,6 +30,7 @@
     "test:fleet:cleanup": "node tests/fleet-workflow.playwright.mjs --cleanup",
     "test:fleet:form4": "node tests/fleet-form4-print.test.mjs && node tests/fleet-form4-layout.test.mjs",
     "test:odor:analytics": "node tests/odor-analytics.test.mjs",
+    "test:odor:intake": "node tests/odor-intake.test.mjs",
     "test:odor": "node tests/odor-workflow.playwright.mjs",
     "test:odor:write": "node tests/odor-workflow.playwright.mjs --write",
     "test:local-build": "node tests/verify-local-build.mjs",

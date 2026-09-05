@@ -465,6 +465,24 @@ export default function CitizenForm() {
 
   // รวมฟิลด์เสริมของหมวดที่มีเป็น jsonb object เดียว — คืน null ถ้าหมวดนี้ไม่มีฟิลด์เสริม (ไม่ใช่ odor)
   // ตัด incident_source_suspected/incident_time ออกแล้ว (ใช้ complaints.created_at แทนวันเวลาที่แจ้ง)
+  // ช่องรายละเอียด: ทุกหมวดต้องกรอกเสมอ แต่ขั้นต่ำ 10 ตัวอักษรยกเว้นให้หมวดกลิ่นเหม็นรบกวน
+  //
+  // หมวดกลิ่นบังคับคำตอบ structured ครบชุด (ความรุนแรง/ช่วงเวลา/ทิศลม/อาการ) + พิกัด GPS อยู่แล้ว
+  // เจ้าหน้าที่ลงพื้นที่ได้แม้ผู้แจ้งพิมพ์แค่ "เหม็นมาก" — ข้อมูลที่ใช้ทำงานจริงไม่ได้อยู่ในช่องนี้
+  // ต่างจากหมวดถนน/ไฟฟ้าที่ถ้าได้ detail มาว่า "พัง" คำเดียวจะสั่งการต่อไม่ได้ และข้อความนั้น
+  // ไหลไปขึ้นใบพิมพ์เสนอผู้บังคับบัญชากับข้อความแจ้งเตือน Telegram ตรงๆ
+  //
+  // ⚠️ กฎเดียวกันนี้บังคับซ้ำที่ฐานข้อมูล (submit_citizen_complaint_v4 ในไมเกรชัน
+  // 20260908110000) ที่นี่เป็นแค่ UX ให้เห็น error เร็ว แก้ที่เดียวไม่พอ ต้องแก้ทั้งสองที่
+  function validateDetail(form) {
+    const detail = form.detail.trim()
+    if (!detail) return 'กรุณากรอกรายละเอียด'
+    if (form.category !== 'odor' && detail.length < 10) {
+      return 'กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'
+    }
+    return null
+  }
+
   function buildExtraData(form) {
     if (form.category !== 'odor') return null
     return {
@@ -512,7 +530,8 @@ export default function CitizenForm() {
     if (ISSUE_TYPES_BY_CATEGORY[form.category] && !form.issue_type) { setError('กรุณาเลือกลักษณะปัญหา'); return }
     const odorErr = validateOdorFields(form)
     if (odorErr) { setError(odorErr); return }
-    if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
+    const detailErr = validateDetail(form)
+    if (detailErr) { setError(detailErr); return }
     if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
     if (!tenant?.id) { setError('ไม่พบข้อมูลหน่วยงาน'); return }
 
@@ -840,7 +859,10 @@ export default function CitizenForm() {
         )}
 
         {/* Detail */}
-        <textarea value={form.detail} onChange={set('detail')} rows={2} required minLength={10} maxLength={5000}
+        {/* minLength ของเบราว์เซอร์บล็อกตั้งแต่ก่อนโค้ดเราได้ทำงาน จึงต้องถอดตามหมวดด้วย
+            ไม่ใช่แก้แค่ validateDetail() — required ยังอยู่ทุกหมวด ห้ามปล่อยว่าง */}
+        <textarea value={form.detail} onChange={set('detail')} rows={2} required maxLength={5000}
+          minLength={form.category === 'odor' ? undefined : 10}
           placeholder={ftConfig?.placeholder ?? 'รายละเอียด'}
           className="w-full px-4 py-3.5 rounded-xl border border-gray-300 bg-white text-gray-900 text-base placeholder-gray-400 resize-none focus:outline-none focus:border-blue-400" />
 
@@ -952,7 +974,8 @@ export default function CitizenForm() {
           if (ISSUE_TYPES_BY_CATEGORY[form.category] && !form.issue_type) { setError('กรุณาเลือกลักษณะปัญหา'); return }
           const odorErr = validateOdorFields(form)
           if (odorErr) { setError(odorErr); return }
-          if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
+          const detailErr = validateDetail(form)
+    if (detailErr) { setError(detailErr); return }
           if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
           setShowConsent(true)
         }} disabled={submitting}

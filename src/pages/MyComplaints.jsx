@@ -7,7 +7,7 @@ import { compressImage } from '../lib/imageUtils'
 import { uploadFile, resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef } from '../lib/driveStorage'
 import SatisfactionModal from '../components/SatisfactionModal'
 import { workingDaysLeft } from '../lib/workingDays'
-import { odorRoutedAt, ODOR_INTAKE_LABEL } from '../lib/odorIntake'
+import { odorRoutedAt, isAdhocComplaint, ODOR_INTAKE_LABEL } from '../lib/odorIntake'
 import {
   ClipboardList, Loader2, ChevronRight, X, MapPin,
   Phone, ArrowLeft, Check, XCircle, Navigation, Camera, AlignLeft,
@@ -367,7 +367,9 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange, onRate, catLa
               <p className="text-white font-black text-xl tracking-wider mt-0.5 font-mono">
                 {c.ref_no ?? '—'}
               </p>
-              {c.due_date && (
+              {/* หมวดเฉพาะกิจไม่มีขั้นปิดงาน ตัวนับจะพลิกเป็น "เกินกำหนด" แล้วนับขึ้นตลอดไป
+                  แม้เจ้าหน้าที่จัดการจบแล้ว จึงไม่แสดงเลย (ดูเหตุผลเต็มใน lib/odorIntake.js) */}
+              {c.due_date && !isAdhocComplaint(c) && (
                 <div className="mt-1">
                   <SlaBadge dueDate={c.due_date} status={c.status} />
                 </div>
@@ -393,7 +395,9 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange, onRate, catLa
                 <AckBadge complaint={c} withTime />
               </div>
             )}
-            <StatusStepper status={c.status} />
+            {/* หมวดเฉพาะกิจไม่ไล่ status เลย stepper จะค้างที่ "คำร้องใหม่" ตลอดกาล และขัดกับ
+                ป้าย "ระบบรับเรื่องแล้ว" ด้านบน — ป้ายนั้นคือความคืบหน้าทั้งหมดที่สายงานนี้มีจริง */}
+            {!isAdhocComplaint(c) && <StatusStepper status={c.status} />}
           </div>
 
           {/* ประเมินความพึงพอใจ — ทางเข้าสำรองเมื่อป็อปอัพหลังปิดเรื่องไม่ได้เด้ง
@@ -970,7 +974,7 @@ export default function MyComplaints() {
                     <div className="flex items-center gap-2 mt-2 flex-wrap">
                       <StatusBadge status={c.status} />
                       <AckBadge complaint={c} />
-                      <SlaBadge dueDate={c.due_date} status={c.status} />
+                      {!isAdhocComplaint(c) && <SlaBadge dueDate={c.due_date} status={c.status} />}
                       {c.ref_no && (
                         <span className="text-[11px] text-gray-400 font-mono">{c.ref_no}</span>
                       )}
