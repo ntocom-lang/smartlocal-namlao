@@ -29,13 +29,13 @@ deploy              -> GitHub Actions เมื่อ master ขยับ ไม
 | # | ขั้น | หมายเหตุ |
 |---|---|---|
 | 1 | ลง **Git**, **Node 24**, **Antigravity**, **Google Chrome** | Chrome จำเป็นสำหรับ E2E (ใช้ `channel: 'chrome'`) |
-| 2 | ล็อกอิน GitHub (`gh auth login`) และ Antigravity/Claude | ทำด้วยมือ อัตโนมัติไม่ได้และไม่ควร |
+| 2 | ล็อกอิน GitHub (`gh auth login`) และ Antigravity/Claude<br>ตั้ง `git config --global user.name` + `user.email` | ทำด้วยมือ อัตโนมัติไม่ได้และไม่ควร<br>**ลืม `git config` = `npm run handoff` commit ไม่ผ่าน** แล้วรู้ตัวอีกทีตอนไปนั่งอีกเครื่องแล้วหางานไม่เจอ (`doctor` ไม่ตรวจข้อนี้ให้) |
 | 3 | `git clone https://github.com/ntocom-lang/smartlocal-namlao.git` | **ห้าม clone ลง Desktop หรือ Documents** (ดูข้อห้ามข้างล่าง) |
 | 4 | `git clone https://github.com/ntocom-lang/smartlocal-devconfig.git` | วางไว้ระดับเดียวกับโปรเจกต์หลัก |
 | 5 | `npm ci` | ~745 MB |
 | 6 | `npm run ai:sync` | สร้าง `~/.claude/CLAUDE.md` + `~/.gemini/GEMINI.md` ให้ AI ทุกตัว |
 | 7 | `npm run env:pull` | ดึง `.env.local` จาก devconfig |
-| 8 | `npm run memory:link -- ../smartlocal-devconfig` | ผูก memory ของ Claude |
+| 8 | **เปิด Claude Code ที่โฟลเดอร์โปรเจกต์ 1 ครั้งก่อน** แล้วปิด<br>จากนั้น `npm run memory:link -- ../smartlocal-devconfig` | ผูก memory ของ Claude<br>ลำดับสำคัญ: Claude สร้างโฟลเดอร์ memory ตอนเปิดโปรเจกต์ครั้งแรกเท่านั้น รันก่อนเปิดจะ exit 1 แล้วโชว์รายการโฟลเดอร์ที่มีจริงให้เลือก (ตั้งใจไม่เดาชื่อให้) |
 | 9 | `npm run doctor` | ต้องผ่านทุกข้อก่อนเริ่มงาน |
 
 **path ที่แนะนำ:** `C:\dev\smartlocal` — สั้น ไม่มีช่องว่าง ไม่ผูกกับไดรฟ์ที่อาจไม่มี
@@ -45,6 +45,7 @@ deploy              -> GitHub Actions เมื่อ master ขยับ ไม
 
 รันขั้น 3–9 ซ้ำ **ไม่มีอะไรผูกกับ path อีกแล้ว**
 ถ้าแค่ย้ายโฟลเดอร์ (โปรเจกต์เดิม) รันแค่ `npm run memory:link` พอ
+— แต่ต้องเปิด Claude Code ที่ **path ใหม่** 1 ครั้งก่อนเสมอ ไม่งั้นสคริปต์หาโฟลเดอร์ memory ของ path นั้นไม่เจอ
 
 ### ก่อนล้างเครื่องทุกครั้ง
 
