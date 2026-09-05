@@ -20,7 +20,7 @@ import { supabase, signOutSafely } from '../lib/supabase'
 import IconOrImage from '../components/datacenter/CategoryIcon'
 import { fileToIconDataUrl, isIconImage, ICON_UPLOAD_ACCEPT, ICON_IMAGE_MAX_PX } from '../lib/dataCenterGroupIcon'
 import { compressImage } from '../lib/imageUtils'
-import { GOV_FONT_LINK, govDocFontCss, govPageCss } from '../lib/govDocStyle.js'
+import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from '../lib/govDocStyle.js'
 import { attachReporterProfiles } from '../lib/attachReporterProfiles'
 import { workingDaysBetween, workingDaysSince } from '../lib/workingDays'
 import { uploadFile } from '../lib/driveStorage'
@@ -4615,6 +4615,7 @@ function handlePrint({ view, month, year, viewLabel, total, completed, rejected,
     .sign-box { text-align: center; }
     .sign-line { border-top: 1px solid #000; width: 220px; margin: 60px auto 4px; }
     .sign-label { font-size: 13pt; }
+    .eservice-origin { ${GOV_ESERVICE_ORIGIN_CSS} margin-top: 16px; text-align: right; }
     @media print { button { display: none; } }
   </style>
 </head><body>
@@ -4672,7 +4673,7 @@ function handlePrint({ view, month, year, viewLabel, total, completed, rejected,
       <div class="sign-label">วันที่ .................................</div>
     </div>
   </div>
-
+  <div class="eservice-origin">${govEServiceOriginText(tenant)}</div>
 </body></html>`
 
   const w = window.open('', '_blank', 'width=900,height=700')

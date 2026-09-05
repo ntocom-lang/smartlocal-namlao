@@ -268,7 +268,7 @@ export default function FleetReport({ tenant }) {
         alert('รายการใช้รถในช่วงนี้มีจำนวนมากเกินกว่าที่ระบบดึงได้ในครั้งเดียว — เอกสารที่พิมพ์ยังไม่ครบ กรุณาแบ่งช่วงวันที่ให้สั้นลง')
       }
       openPrintWindow(buildFleetForm4Html({
-        vehicle, trips: tripResult.data ?? [], periodLabel,
+        vehicle, trips: tripResult.data ?? [], periodLabel, tenant,
       }), {
         width: 1123, height: 794,
       })

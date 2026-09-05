@@ -5,7 +5,7 @@
 // รายการต่อกันทั้งช่วงเวลา แล้วเติมแถวว่างให้เต็มหน้าเหมือนกระดาษเปล่าที่รอเขียนมือ
 
 import { FUEL_LABEL } from './fleetAssets.js'
-import { GOV_FONT_LINK, GOV_PAGE_MARGIN, govDocFontCss, govPageCss } from './govDocStyle.js'
+import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, GOV_PAGE_MARGIN, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
 
 // A4 แนวตั้ง พื้นที่พิมพ์สูง 276 มม. (297 − ขอบบน 12 − ขอบล่าง 9)
 //
@@ -191,6 +191,7 @@ function sheet({ vehicleLine, periodLabel, orgName, rows, totals }) {
         ${rows.map(row => dataRow(row, totals)).join('')}
       </tbody>
     </table>
+    <div class="eservice-origin">${esc(govEServiceOriginText(orgName))}</div>
   </section>`
 }
 
@@ -222,6 +223,9 @@ export function buildFleetFuelLedgerHtml({ vehicle, records = [], periodLabel = 
       overflow: hidden;
     }
     .sheet + .sheet { page-break-before: always; }
+    /* อยู่ใน sheet() จึงพิมพ์ทุกหน้าของสมุดคุม ไม่ใช่หน้าสุดท้ายหน้าเดียว —
+       แต่ละหน้าอาจถูกฉีกไปเก็บแยกแฟ้ม ต้องบอกที่มาได้ทุกแผ่น */
+    .eservice-origin { ${GOV_ESERVICE_ORIGIN_CSS} margin-top: 4mm; text-align: center; }
     @media print {
       html, body { height: auto; }
       .sheet {

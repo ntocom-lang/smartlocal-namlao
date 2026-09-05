@@ -1,9 +1,13 @@
 // แบบ 4 บันทึกการใช้รถ — รายคัน รายเดือน ตามแบบฟอร์มกระดาษ
 // (ลำดับคอลัมน์/ข้อความหัวตารางต้องตรงต้นฉบับ ห้ามเติมช่องที่ไม่มีบนกระดาษ)
 
-import { GOV_FONT_LINK, GOV_PAGE_MARGIN, govDocFontIdentityCss, govPageCss } from './govDocStyle.js'
+import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, GOV_PAGE_MARGIN_LANDSCAPE, govDocFontIdentityCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
 
-export const FORM4_ROWS_PER_PAGE = 14
+// ⚠️ 13 แถว/หน้า ไม่ใช่ตัวเลขที่เลือกเอาสวย — เป็นค่าที่พอดีกับพื้นที่พิมพ์แนวนอน 170mm
+// หลังย้ายขอบเข้าแฟ้มไปด้านบน 3 ซม. เมื่อ 2569-09-05 (เดิม 14 แถว ตอนพื้นที่ยังเป็น 189mm)
+// เคสหนักสุดที่ 14 แถววัดได้ 170.8mm ล้นออกนอกกระดาษ ห้ามเพิ่มกลับโดยไม่รัน
+// tests/fleet-form4-layout.test.mjs
+export const FORM4_ROWS_PER_PAGE = 13
 
 function esc(value) {
   return String(value ?? '')
@@ -236,7 +240,7 @@ function dataRow(row, monthlyTotal) {
   </tr>`
 }
 
-function sheet({ title, plate, periodLabel, rows, monthlyTotal }) {
+function sheet({ title, plate, periodLabel, rows, monthlyTotal, originText }) {
   return `<section class="sheet">
     <div class="form-no">แบบ 4</div>
     <h1>${esc(title)}</h1>
@@ -254,14 +258,18 @@ function sheet({ title, plate, periodLabel, rows, monthlyTotal }) {
         ${rows.map(row => dataRow(row, monthlyTotal)).join('')}
       </tbody>
     </table>
+    <div class="eservice-origin">${esc(originText)}</div>
   </section>`
 }
 
-export function buildFleetForm4Html({ vehicle, trips = [], periodLabel = '' }) {
+export function buildFleetForm4Html({ vehicle, trips = [], periodLabel = '', tenant = null }) {
   const title = form4VehicleTitle(vehicle)
   const plate = form4PlateText(vehicle)
   const monthlyTotal = monthlyDistanceKm(trips)
   const pages = paginateForm4Trips(trips)
+  // tenant เพิ่งเพิ่มเข้ามาเพื่อพิมพ์บรรทัดกำกับที่มา — ไม่ส่งมาก็ยังพิมพ์ได้ ได้ข้อความ
+  // แบบไม่มีชื่อหน่วยงาน (เทสต์เดิมเรียกโดยไม่ส่ง tenant จึงต้องไม่พังเมื่อไม่มีค่า)
+  const originText = govEServiceOriginText(tenant)
   return `<!doctype html>
 <html lang="th">
 <head>
@@ -283,17 +291,20 @@ export function buildFleetForm4Html({ vehicle, trips = [], periodLabel = '' }) {
     .sheet {
       width: 297mm;
       min-height: 210mm;
-      padding: ${GOV_PAGE_MARGIN};
+      padding: ${GOV_PAGE_MARGIN_LANDSCAPE};
       overflow: hidden;
     }
     .sheet + .sheet { page-break-before: always; }
+    /* แบบ 4 เป็นตารางแนวนอนที่ overflow:hidden — บรรทัดนี้ต้องอยู่ในพื้นที่ที่เหลือจริง
+       ไม่งั้นจะถูกตัดหายเงียบๆ วัดความสูงใหม่ทุกครั้งที่แก้ตาราง */
+    .eservice-origin { ${GOV_ESERVICE_ORIGIN_CSS} margin-top: 3mm; text-align: center; }
     @media print {
       html, body { height: auto; overflow: hidden; }
       .sheet {
         width: auto;
         min-height: 0;
         height: auto;
-        max-height: 189mm;
+        max-height: 170mm;
         padding: 0;
         overflow: hidden;
         page-break-inside: avoid;
@@ -361,9 +372,12 @@ export function buildFleetForm4Html({ vehicle, trips = [], periodLabel = '' }) {
        แถวรวมยอดจะเด้งไปอยู่หน้าถัดไปเดี่ยวๆ (ดู paginateForm4Trips) กลายเป็นหน้าที่มีแต่
        แถวว่าง 13 แถว + แถวรวม 1 แถว หน้านั้นแคบกว่าที่คิด เพราะ thead (หัวตาราง 2 แถว
        ที่มีป้ายกำกับ 4 บรรทัดอย่าง "ระยะทาง/กม/ไมล์/เมื่อรถออก/เดินทาง") กินพื้นที่ไปแล้ว
-       ~19mm ต่อหน้า นอกเหนือจากบล็อกหัวเรื่อง — วัดจริงแล้วเพดานอยู่ที่ราว 10.5mm/แถว
-       (13×10.5 + แถวรวม ~9.4 + thead ~19.2 + หัวเรื่อง ~23.6 ≈ 189mm พอดี) 9.8mm เผื่อขอบไว้ */
-    tr.blank-filler td { height: 9.8mm; }
+       ~19mm ต่อหน้า นอกเหนือจากบล็อกหัวเรื่อง
+       ⚠️ คำนวณใหม่เมื่อ 2569-09-05 หลังย้ายขอบเข้าแฟ้มของแนวนอนไปด้านบน 3 ซม.
+       พื้นที่พิมพ์แนวตั้งลดจาก 189mm เหลือ 170mm งบใหม่ต่อหน้า:
+         170 − หัวเรื่อง 23.6 − thead 19.2 − แถวรวม 9.4 − บรรทัดกำกับที่มา 7.5 = 110.3mm
+         110.3 ÷ 12 แถวว่าง = 9.19mm/แถว → ตั้ง 8.8mm เผื่อฟอนต์ต่างเครื่อง */
+    tr.blank-filler td { height: 8.8mm; }
     td.left { text-align: left; padding: 1mm 3px; }
     td.left .cell {
       display: block;
@@ -420,7 +434,7 @@ export function buildFleetForm4Html({ vehicle, trips = [], periodLabel = '' }) {
   </style>
 </head>
 <body>
-${pages.map(rows => sheet({ title, plate, periodLabel, rows, monthlyTotal })).join('\n')}
+${pages.map(rows => sheet({ title, plate, periodLabel, rows, monthlyTotal, originText })).join('\n')}
 </body>
 </html>`
 }

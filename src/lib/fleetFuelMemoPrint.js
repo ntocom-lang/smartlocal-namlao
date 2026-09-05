@@ -7,7 +7,7 @@
 // ตัวเลขทุกช่องในตารางคำนวณจากข้อมูลที่บันทึกไว้ในระบบ ไม่มีการเดาหรือเติมค่าแทนช่องว่าง
 // ช่องที่ไม่มีข้อมูลพิมพ์เป็นขีด "-" ให้เขียนมือ เพราะเป็นเอกสารประกอบการตรวจสอบการเบิกจ่าย
 
-import { GOV_FONT_LINK, GOV_PAGE_MARGIN, govDocFontCss, govPageCss } from './govDocStyle.js'
+import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, GOV_PAGE_MARGIN, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
 import { MONTHS_TH } from './thaiDate.js'
 
 function esc(value) {
@@ -242,15 +242,12 @@ export function buildFleetFuelMemoHtml({
     html, body { margin: 0; }
     body {
       color: #000;
-      /* ⚠️ ข้อยกเว้นขนาดตัวอักษร: ใบนี้ใช้ 14pt ทั้งใบ ไม่ใช่ 16pt ตามมาตรฐานกลาง
-         (ฟอนต์ THSarabunPSK · font-size-adjust · ขอบกระดาษ 3/2 ซม. ยังเป็นค่ามาตรฐานครบ)
-         เหตุผล: ผู้ใช้สั่งให้ขนาดตัวอักษรของหัวหนังสือ เนื้อความ และ "จึงเรียนมาเพื่อโปรดทราบ"
-         เท่ากับบล็อกลงนาม (14pt) เพื่อให้ทั้งใบดูเป็นชุดเดียวกัน — ที่บล็อกลงนามเป็น 14pt
-         เพราะต้องคืนที่แนวตั้งให้ช่องเซ็น 8 มม. ครบทั้ง 3 ชั้นโดยไม่หลุดหน้า 2
-         ผลข้างเคียงที่ดี: เคส 7 คันเหลือที่เผื่อมากขึ้น เอกสารทนความต่างของฟอนต์ข้ามเครื่องได้ดีขึ้น
-         ⚠️ ถ้าจะกลับไป 16pt ให้ตรงมาตรฐาน ต้องวัดความสูงใหม่ทั้งใบ — ของเดิมที่ 16pt
-         เคส 7 คันเหลือเผื่อแค่ 2.3 มม. ซึ่งไม่พอสำหรับเครื่องที่ไม่ได้ลงฟอนต์ราชการ */
-      ${govDocFontCss({ fontSize: '14pt' })}
+      /* เคยเป็นข้อยกเว้น 14pt ใบเดียวในระบบ ตอนนี้ 14pt เป็นค่ามาตรฐานกลางแล้ว
+         จึงเรียก govDocFontCss() เปล่าๆ ได้ — ที่ใบนี้ต้องเป็น 14pt เพราะต้องคืนที่แนวตั้ง
+         ให้ช่องเซ็น 8 มม. ครบทั้ง 3 ชั้นโดยไม่หลุดหน้า 2 (ตอน 16pt เคส 7 คันเหลือเผื่อแค่
+         2.3 มม. ซึ่งไม่พอสำหรับเครื่องที่ไม่ได้ลงฟอนต์ราชการ)
+         ⚠️ ถ้าวันหนึ่งค่ากลางถูกเปลี่ยนกลับไปใหญ่กว่านี้ ใบนี้ต้องวัดความสูงใหม่ทั้งใบ */
+      ${govDocFontCss()}
       background: #fff;
     }
     .sheet {
@@ -331,6 +328,9 @@ export function buildFleetFuelMemoHtml({
        (ชื่อโผล่หน้าหนึ่ง ตำแหน่งไปอีกหน้า = เอกสารใช้ไม่ได้) */
     tr { page-break-inside: avoid; }
     .signs { page-break-inside: avoid; }
+    /* ⚠️ ใบนี้เคยเหลือที่เผื่อแค่ 2.3 มม. ตอนเป็น 16pt — บรรทัดนี้กินเพิ่มอีก จึงต้องรัน
+       tests/fleet-fuel-print.test.mjs ทุกครั้งที่แตะระยะในใบนี้ */
+    .eservice-origin { ${GOV_ESERVICE_ORIGIN_CSS} margin-top: 4mm; text-align: center; }
     td.left { text-align: left; }
     td.left .cell { display: block; white-space: normal; overflow-wrap: break-word; }
     /* หมายเหตุใต้อัตราที่ใช้จริง (เช่น "ใช้รถถึง 31 ก.ค. เติมน้ำมัน 15 ก.ค.") เป็นคำอธิบาย
@@ -421,6 +421,7 @@ export function buildFleetFuelMemoHtml({
     ${signatureBlock(signatures.clerk, 'sign--right')}
     ${signatureBlock(signatures.mayor, 'sign--bottom')}
   </div>
+  <div class="eservice-origin">${esc(govEServiceOriginText(orgName))}</div>
 </div>
 </body>
 </html>`

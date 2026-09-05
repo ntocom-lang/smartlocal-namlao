@@ -11,7 +11,7 @@
 // ⚠️ PDPA: แผ่นนี้ = เข้าบัญชีได้ทันที ต้องส่งให้เจ้าตัวเท่านั้นและห้ามสำนักงานเก็บสำเนาไว้
 // คำเตือนจึงพิมพ์ลงบนตัวแผ่นเอง ไม่ใช่ขึ้นแค่บนหน้าจอที่ปิดแล้วหายไปพร้อมกัน
 
-import { GOV_FONT_LINK, govDocFontCss, govPageCss } from './govDocStyle.js'
+import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -115,6 +115,8 @@ ${GOV_FONT_LINK}
   </ol>
 
   <div class="foot">
+    <!-- .foot เป็น 13pt อยู่แล้ว จึงไม่ต้องใช้ GOV_ESERVICE_ORIGIN_CSS ซ้ำ -->
+    ${esc(govEServiceOriginText(tenant))}<br>
     ออกให้เมื่อ ${esc(issuedAt)}
     ${tenant?.phone ? `&nbsp;·&nbsp; สอบถาม โทร. ${esc(tenant.phone)}` : ''}
     ${tenant?.address ? `<div>${esc(String(tenant.address).replace(/\s*\n\s*/g, ' '))}</div>` : ''}

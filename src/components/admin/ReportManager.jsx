@@ -3,7 +3,7 @@ import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Ba
 import { Wrench, TrendingUp, AlertTriangle, Printer, X, Clock, CheckCircle2, Download } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { workingDaysBetween, workingDaysSince } from '../../lib/workingDays'
-import { GOV_FONT_LINK, govDocFontCss, govPageCss } from '../../lib/govDocStyle.js'
+import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from '../../lib/govDocStyle.js'
 
 // ระยะเวลาดำเนินการของคำร้อง 1 เรื่อง นับเป็น "วันทำการ" (ตัดเสาร์-อาทิตย์และวันหยุดนักขัตฤกษ์)
 // เดิมนับเป็นวันปฏิทิน ทำให้เรื่องที่คร่อมสงกรานต์/ปีใหม่ดูเหมือนช้ากว่าความเป็นจริงหลายวัน
@@ -74,6 +74,7 @@ function handlePrint({ view, viewLabel, total, completed, rejected, active, rate
     .sign-box { text-align: center; }
     .sign-line { border-top: 1px solid #000; width: 220px; margin: 60px auto 4px; }
     .sign-label { font-size: 13pt; }
+    .eservice-origin { ${GOV_ESERVICE_ORIGIN_CSS} margin-top: 16px; text-align: right; }
     @media print { button { display: none; } }
   </style>
 </head><body>
@@ -105,6 +106,7 @@ function handlePrint({ view, viewLabel, total, completed, rejected, active, rate
     <div class="sign-box"><div class="sign-line"></div><div class="sign-label">ผู้รายงาน</div><div class="sign-label">ตำแหน่ง .................................</div><div class="sign-label">วันที่ ${thaiDate}</div></div>
     <div class="sign-box"><div class="sign-line"></div><div class="sign-label">ผู้บังคับบัญชา</div><div class="sign-label">ตำแหน่ง .................................</div><div class="sign-label">วันที่ .................................</div></div>
   </div>
+  <div class="eservice-origin">${govEServiceOriginText(tenant)}</div>
 </body></html>`
   const w = window.open('', '_blank', 'width=900,height=700')
   w.document.write(html)

@@ -1,5 +1,5 @@
 import { FUEL_LABEL, assetIdentifier, meterUnitShort } from './fleetAssets.js'
-import { GOV_FONT_LINK, GOV_PAGE_MARGIN, govDocFontCss, govPageCss } from './govDocStyle.js'
+import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, GOV_PAGE_MARGIN, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
 
 const MONTHS_TH = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
   'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
@@ -130,6 +130,7 @@ export function buildFleetFuelRecordHtml({ record, tenant }) {
     .sign-name { margin: 6pt 0 0; }
     .sign-role { margin: 2pt 0 0; }
     .note { margin-top: 16pt; font-size: 11pt; color: #444; }
+    .eservice-origin { ${GOV_ESERVICE_ORIGIN_CSS} margin-top: 5mm; text-align: center; }
   </style>
 </head>
 <body>
@@ -159,6 +160,7 @@ export function buildFleetFuelRecordHtml({ record, tenant }) {
     ${signature('หัวหน้ากอง/ผู้แทน', '')}
   </div>
   ${record?.receipt_url ? '<p class="note">มีสำเนาใบเสร็จแนบในระบบ</p>' : ''}
+  <div class="eservice-origin">${esc(govEServiceOriginText(tenant))}</div>
 </div>
 </body>
 </html>`
