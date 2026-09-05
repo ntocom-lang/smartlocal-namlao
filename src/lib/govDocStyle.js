@@ -78,3 +78,30 @@ export function govDocFontIdentityCss() {
     `font-size-adjust: ${GOV_FONT_SIZE_ADJUST};`,
   ].join('\n      ')
 }
+
+/**
+ * บรรทัดกำกับที่มาของเอกสาร — ให้คนที่ถือกระดาษรู้ว่าออกมาจากระบบ E-Service ของ อปท. ใด
+ * ไม่ใช่เอกสารที่พิมพ์เองจากที่อื่น
+ *
+ * ต้องเรียกจากที่นี่ที่เดียวทุกใบ ห้ามพิมพ์ข้อความนี้ซ้ำในไฟล์ปลายทาง — ถ้าแต่ละใบเขียนเอง
+ * จะเพี้ยนกันทีละใบเหมือนที่เคยเกิดกับ ComplaintsManager ที่เขียนว่า "ออกจากระบบบริการ
+ * ออนไลน์ SmartLocal" โดยไม่มีชื่อ อปท. เลย
+ *
+ * ⚠️ ผลลัพธ์เป็น "ข้อความดิบ" ยังไม่ได้ escape — ชื่อ อปท. มาจากฐานข้อมูลที่แอดมินแก้ได้
+ * ไฟล์ปลายทางที่แปะลง HTML ต้องส่งผ่านฟังก์ชัน escape ของตัวเองเสมอ
+ *
+ * รับได้ทั้ง object tenant และชื่อหน่วยงานเป็นสตริง เพราะใบฝั่งยานพาหนะบางใบรับมาแค่
+ * orgName ไม่ได้รับ tenant ทั้งก้อน (เช่น buildFleetFuelLedgerHtml)
+ *
+ * @param {{ name?: string } | string | null | undefined} tenantOrName
+ */
+// หน้าตาของบรรทัดกำกับที่มา — คุมแค่ "ขนาดกับสี" ไว้ตรงกลาง ส่วนตำแหน่ง (กลาง/ชิดขวา/
+// ระยะห่าง) ปล่อยให้แต่ละใบกำหนดเอง เพราะเลย์เอาต์ท้ายใบไม่เหมือนกัน
+// 11pt เท่ากับบรรทัดอ้างอิงระบบในใบอื่น — เล็กกว่าเนื้อความของหนังสือชัดเจนพอที่จะไม่ถูกอ่าน
+// ปนกัน แต่ยังไม่เล็กจนเจ้าหน้าที่สูงอายุอ่านไม่ออก
+export const GOV_ESERVICE_ORIGIN_CSS = 'font-size: 11pt; color: #555;'
+
+export function govEServiceOriginText(tenantOrName) {
+  const name = (typeof tenantOrName === 'string' ? tenantOrName : tenantOrName?.name)?.trim()
+  return name ? `ผ่านระบบ E-Service ${name}` : 'ผ่านระบบ E-Service'
+}
