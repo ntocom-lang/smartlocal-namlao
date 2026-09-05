@@ -232,10 +232,8 @@ export default function ServiceHubHome() {
       </div>
 
       <div className="px-3 sm:px-4 lg:px-6 pt-3 pb-4 max-w-[1440px] mx-auto space-y-3">
-        {/* สถิติร้องเรียนขึ้นมาไว้ใต้ e-Service ทันที — บนมือถือจะเห็นตัวเลขได้ตั้งแต่จอแรก
-            ไม่ต้องเลื่อนผ่านสไลด์ภาพก่อน (BannerSlider สูงเกินครึ่งจอบนเครื่องเล็ก) */}
-        <ComplaintStatsWidget />
         <BannerSlider />
+        <ComplaintStatsWidget />
         <PostsHighlight />
         <SmartCityBanner />
       </div>

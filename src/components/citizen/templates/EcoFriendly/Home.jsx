@@ -22,6 +22,7 @@ const LAYOUT_ORDER = {
 }
 const BASE_DOC_TYPES = [
   { value: 'waste_collection', label: 'ค่าธรรมเนียมขยะ',            emoji: '🗑️' },
+  { value: 'waste_collection_request', label: 'ขอให้มาเก็บขยะ', emoji: '🚛' },
   { value: 'tax_notice',       label: 'ค่าธรรมเนียม/ภาษี', emoji: '🏛️' },
   { value: 'building_permit',  label: 'ขออนุญาตก่อสร้างบ้าน',       emoji: '🏗️' },
 ]
@@ -108,9 +109,11 @@ function EServiceBlock({ docTypes }) {
           </ModuleLink>
         </div>
 
+        {/* มือถือแสดง 4 ช่อง (ไอคอน 52px × 4 + gap 8px = 232px ยังพอบนจอ 360px) — ตอนเหลือ 3
+            ช่อง บริการที่เพิ่มใหม่จะถูกตัดหายไปจากหน้าแรกบนมือถือทั้งที่ PC เห็นปกติ */}
         <div className="grid lg:hidden gap-2 pb-1"
-          style={{ gridTemplateColumns: `repeat(${Math.max(1, Math.min(docTypes.length, 3))}, minmax(0, 1fr))` }}>
-          {docTypes.slice(0, 3).map(({ value, label, emoji }) => (
+          style={{ gridTemplateColumns: `repeat(${Math.max(1, Math.min(docTypes.length, 4))}, minmax(0, 1fr))` }}>
+          {docTypes.slice(0, 4).map(({ value, label, emoji }) => (
             <Link key={value} to={`/doc-request?type=${value}`}
               className="flex flex-col items-center gap-1.5 active:scale-95 transition-transform group">
               <div className="w-[52px] h-[52px] rounded-2xl flex items-center justify-center shadow-md bg-white/20 border border-white/30 backdrop-blur-sm group-hover:bg-white/30 transition-colors"

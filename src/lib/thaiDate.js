@@ -6,6 +6,17 @@ export function thaiDate(dateStr) {
   return `${d.getDate()} ${MONTHS_TH[d.getMonth()]} พ.ศ. ${d.getFullYear() + 543}`
 }
 
+// แปลงค่าจาก <input type="date"> (YYYY-MM-DD) เป็นวันที่ไทยเต็ม "1 ตุลาคม พ.ศ. 2569"
+// ห้ามส่งสตริงนี้เข้า new Date(str) ตรงๆ แล้ว format — "2026-10-01" ถูก parse เป็น UTC
+// เที่ยงคืน ประเทศที่ offset ติดลบจะได้วันก่อนหน้า จึงแยกตัวเลขมาสร้าง Date ตามเวลาเครื่องเอง
+// คืนค่าว่างเมื่อรูปแบบไม่ตรง เพื่อให้ช่องในแบบฟอร์มพิมพ์เป็นเส้นประให้เขียนเองได้
+export function thaiDateFromDateInput(value) {
+  const match = String(value ?? '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match) return ''
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  return `${date.getDate()} ${MONTHS_TH[date.getMonth()]} พ.ศ. ${date.getFullYear() + 543}`
+}
+
 // แปลง Date เป็นสตริง YYYY-MM-DD ตาม "วันตามปฏิทินของเครื่องผู้ใช้" — ใช้แทน
 // toISOString().split('T')[0] ทุกจุดที่ค่านั้นจะถูกเทียบกับคอลัมน์ชนิด date ของ Postgres
 // (events.event_date, complaints.due_date, civil_projects.start_date, infrastructure_works.work_date)

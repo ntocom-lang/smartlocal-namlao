@@ -6,6 +6,7 @@ import { useTenant } from '../contexts/TenantContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
 import BuildingPermitWizard from './BuildingPermitWizard'
+import WasteCollectionRequestWizard from './WasteCollectionRequestWizard'
 
 // ที่อยู่ผู้ยื่นคำขอ = ที่อยู่ในเขตของหน่วยงานเสมอ (ระบบนี้แยกตามหน่วยงาน ใครหน่วยงานนั้น)
 // เลยไม่ต้องให้ประชาชนพิมพ์ตำบล/อำเภอ/จังหวัดเอง ให้กรอกแค่บ้านเลขที่ แล้วต่อท้ายด้วย
@@ -48,6 +49,17 @@ const BASE_DOC_TYPES = [
     color:   '#0891b2',
     bg:      '#ecfeff',
     border:  '#a5f3fc',
+  },
+  {
+    value:   'waste_collection_request',
+    label:   'ขอรับบริการเก็บขนขยะมูลฝอย',
+    emoji:   '🚛',
+    desc:    'แจ้งให้ อปท. เริ่มจัดเก็บขยะจากบ้านหรือสถานที่ของท่าน',
+    // บริการเดียวที่บังคับล็อกอิน — มีค่าธรรมเนียมรายเดือนและต้องตามสถานะยาว
+    requiresAuth: true,
+    color:   '#0e7490',
+    bg:      '#ecfeff',
+    border:  '#67e8f9',
   },
   {
     value:   'building_permit',
@@ -156,6 +168,7 @@ export default function CitizenDocRequest() {
   // ในระบบนี้) เป็นแค่ "แจ้งความประสงค์เบื้องต้น" ให้เจ้าหน้าที่ติดต่อนัดวันมายื่นเอกสาร
   // ตัวจริงที่กองช่าง — ต้องเขียนข้อความให้ชัดว่าไม่ใช่การยื่นขออนุญาตที่สมบูรณ์แล้ว
   const isPermitIntent = selected?.value === 'building_permit'
+  const isWasteCollectionRequest = selected?.value === 'waste_collection_request'
   const addressSuffix = tenantAddressSuffix(tenant)
   const fullName = joinThaiFullName(form.name_title, form.name_first, form.name_last)
 
@@ -294,7 +307,7 @@ export default function CitizenDocRequest() {
           </button>
           <div>
             <p className="font-bold text-gray-800">E-SERVICE งานบริการประชาชน</p>
-            <p className="text-xs text-gray-400">เลือกประเภทเอกสารที่ต้องการ</p>
+            <p className="text-xs text-gray-400">เลือกบริการที่ต้องการ</p>
           </div>
         </div>
 
@@ -312,7 +325,7 @@ export default function CitizenDocRequest() {
           </div>
           <div className="px-8 py-3 bg-white border-b border-gray-200 shadow-sm">
             <h1 className="text-base font-bold text-gray-800">E-SERVICE งานบริการประชาชน</h1>
-            <p className="text-[11px] text-gray-400 mt-0.5">{tenant?.name} — เลือกประเภทเอกสารที่ต้องการ</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">{tenant?.name} — เลือกบริการที่ต้องการ</p>
           </div>
         </div>
 
@@ -332,7 +345,7 @@ export default function CitizenDocRequest() {
             </div>
           )}
 
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-1">เลือกเอกสารที่ต้องการ</p>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-1">เลือกบริการที่ต้องการ</p>
 
           {/* Mobile: vertical list | PC: 2-column grid */}
           <div className="space-y-2.5 md:space-y-0 md:grid md:grid-cols-2 md:gap-3">
@@ -347,6 +360,13 @@ export default function CitizenDocRequest() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-bold leading-tight" style={{ color: d.color }}>{d.label}</p>
                   <p className="text-xs text-gray-400 mt-1 leading-snug">{d.desc}</p>
+                  {/* บริการที่บังคับล็อกอินต้องบอกตั้งแต่หน้าเลือก ไม่ใช่ปล่อยให้กดเข้าไป
+                      กรอกจนเกือบเสร็จแล้วค่อยเจอด่าน */}
+                  {d.requiresAuth && !session && (
+                    <span className="mt-1.5 inline-block rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                      ต้องเข้าสู่ระบบก่อนยื่น
+                    </span>
+                  )}
                 </div>
                 <ChevronRight size={18} className="text-gray-300 shrink-0" />
               </button>
@@ -361,6 +381,12 @@ export default function CitizenDocRequest() {
   // เพราะฟิลด์เยอะกว่าฟอร์มทั่วไปมาก และต้องสร้างไฟล์พิมพ์ที่ตรงกับฟอร์มราชการจริง
   if (isPermitIntent) {
     return <BuildingPermitWizard tenant={tenant} session={session} onBack={() => setSelected(null)} />
+  }
+
+  // ขอเริ่มรับบริการเก็บขนขยะมีข้อมูลเฉพาะตามแบบคำขอรับบริการ (อายุ, ที่ตั้งรับขยะ, ประเภทสถานที่,
+  // วันที่เริ่มบริการ และการยอมรับค่าบริการ) จึงใช้ฟอร์มเฉพาะ ไม่ปนกับฟอร์มสอบถามค่าธรรมเนียม
+  if (isWasteCollectionRequest) {
+    return <WasteCollectionRequestWizard tenant={tenant} session={session} onBack={() => setSelected(null)} />
   }
 
   // ─── Step 2: Form ──────────────────────────────────────────────────────────
@@ -385,7 +411,7 @@ export default function CitizenDocRequest() {
         <div className="px-8 py-1.5 flex items-center justify-between border-b"
           style={{ backgroundColor: '#dce8f5', borderColor: '#b8cfea' }}>
           <p className="text-[11px] text-gray-600">
-            ระบบบริการอิเล็กทรอนิกส์ › {tenant?.name ?? ''} › ขอเอกสาร ›{' '}
+            ระบบบริการอิเล็กทรอนิกส์ › {tenant?.name ?? ''} › บริการประชาชน ›{' '}
             <span className="font-semibold text-gray-700">{selected.label}</span>
           </p>
           <p className="text-[11px] text-gray-500">
