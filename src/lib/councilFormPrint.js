@@ -1,3 +1,5 @@
+import { GOV_FONT_LINK, govDocFontCss, govPageCss } from './govDocStyle.js'
+
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
@@ -209,9 +211,10 @@ export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate,
 
   return `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
 <title>คำร้อง ${num}</title>
+${GOV_FONT_LINK}
 <style>
-  @page { size: A4 portrait; margin: 1.6cm 2.5cm; }
-  body { font-family: 'Sarabun', sans-serif; font-size: 15px; color: #111; line-height: 1.5; }
+  ${govPageCss()}
+  body { ${govDocFontCss()} color: #111; }
   p { margin: 0; }
   .center { text-align: center; }
   .request-refs { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding: 0; font-size: 12px; line-height: 1.4; }

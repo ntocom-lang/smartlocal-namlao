@@ -11,6 +11,8 @@
 // ⚠️ PDPA: แผ่นนี้ = เข้าบัญชีได้ทันที ต้องส่งให้เจ้าตัวเท่านั้นและห้ามสำนักงานเก็บสำเนาไว้
 // คำเตือนจึงพิมพ์ลงบนตัวแผ่นเอง ไม่ใช่ขึ้นแค่บนหน้าจอที่ปิดแล้วหายไปพร้อมกัน
 
+import { GOV_FONT_LINK, govDocFontCss, govPageCss } from './govDocStyle.js'
+
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
@@ -51,26 +53,29 @@ export function buildAccountCardHtml({ fullName, loginValue, loginKind, password
 
   return `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
 <title>บัตรเข้าใช้งานระบบ</title>
+${GOV_FONT_LINK}
 <style>
-  @page { size: A5 portrait; margin: 1.2cm; }
-  body { font-family: 'Sarabun', sans-serif; font-size: 14px; color: #111; line-height: 1.55; margin: 0; }
+  ${govPageCss()}
+  body { ${govDocFontCss()} color: #111; margin: 0; }
   .card { border: 2px solid #111; border-radius: 10px; padding: 16px 18px; }
-  .org { text-align: center; font-size: 15px; font-weight: 700; }
-  .head { text-align: center; font-size: 19px; font-weight: 700; margin-top: 2px; }
-  .sub { text-align: center; font-size: 12px; color: #444; margin-top: 2px; }
+  .org { text-align: center; font-size: 16pt; font-weight: 700; }
+  .head { text-align: center; font-size: 20pt; font-weight: 700; margin-top: 2px; }
+  .sub { text-align: center; font-size: 14pt; color: #444; margin-top: 2px; }
   .rule { border-top: 1px solid #999; margin: 12px 0; }
   .field { margin-bottom: 12px; }
-  .label { font-size: 12px; color: #444; }
-  /* ตัวใหญ่และไม่ใช่ฟอนต์ประดิษฐ์ ตั้งใจให้สายตาผู้สูงอายุอ่านออกโดยไม่ต้องใส่แว่นอ่านหนังสือ */
-  .value { font-family: 'Courier New', monospace; font-size: 26px; font-weight: 700; letter-spacing: 2px; }
+  .label { font-size: 14pt; color: #444; }
+  /* ช่องนี้เป็นข้อยกเว้นเดียวที่ไม่ใช้ฟอนต์มาตรฐาน — ตั้งใจใช้ monospace เพราะต้องแยก
+     0 กับ O และ 1 กับ l ออกจากกันให้เห็น ผู้สูงอายุพิมพ์รหัสผิดตัวแล้วล็อกอินไม่ได้
+     ตัวใหญ่เพื่อให้อ่านออกโดยไม่ต้องใส่แว่นอ่านหนังสือ */
+  .value { font-family: 'Courier New', monospace; font-size: 22pt; font-weight: 700; letter-spacing: 2px; }
   .write-in { border: 1px dashed #666; border-radius: 8px; padding: 8px 10px; margin-top: 4px; }
   .write-line { border-bottom: 1px solid #333; height: 30px; margin-top: 4px; }
-  .steps { font-size: 13px; padding-left: 18px; margin: 0; }
+  .steps { font-size: 15pt; padding-left: 18px; margin: 0; }
   .steps li { margin-bottom: 3px; }
-  .warn-block { border: 1.5px solid #b45309; background: #fffbeb; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin-bottom: 12px; }
+  .warn-block { border: 1.5px solid #b45309; background: #fffbeb; border-radius: 8px; padding: 8px 10px; font-size: 14pt; margin-bottom: 12px; }
   .warn-title { font-weight: 700; margin-bottom: 2px; }
-  .foot { font-size: 11.5px; color: #444; margin-top: 12px; }
-  .pdpa { font-size: 11.5px; border-top: 1px dashed #999; margin-top: 10px; padding-top: 6px; }
+  .foot { font-size: 13pt; color: #444; margin-top: 12px; }
+  .pdpa { font-size: 13pt; border-top: 1px dashed #999; margin-top: 10px; padding-top: 6px; }
   @media print { button { display: none; } }
 </style></head><body>
 <div class="card">

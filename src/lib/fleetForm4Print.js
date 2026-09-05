@@ -1,6 +1,8 @@
 // แบบ 4 บันทึกการใช้รถ — รายคัน รายเดือน ตามแบบฟอร์มกระดาษ
 // (ลำดับคอลัมน์/ข้อความหัวตารางต้องตรงต้นฉบับ ห้ามเติมช่องที่ไม่มีบนกระดาษ)
 
+import { GOV_FONT_LINK, GOV_PAGE_MARGIN, govDocFontIdentityCss, govPageCss } from './govDocStyle.js'
+
 export const FORM4_ROWS_PER_PAGE = 22
 
 function esc(value) {
@@ -304,22 +306,23 @@ export function buildFleetForm4Html({ vehicle, trips = [], periodLabel = '' }) {
 <head>
   <meta charset="utf-8">
   <title>${esc(title)} ${esc(plate)}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">
+  ${GOV_FONT_LINK}
   <style>
-    @page { size: A4 landscape; margin: 7mm 9mm; }
+    ${govPageCss({ size: 'A4 landscape' })}
     * { box-sizing: border-box; }
     html, body { margin: 0; }
     body {
       color: #000;
-      font-family: "TH Sarabun New", "Sarabun", sans-serif;
+      /* ตารางแบบ 4 คุมขนาดตัวอักษรเองรายช่อง เพื่อให้ 22 บรรทัดลงพอดีใน A4 แนวนอน
+         จึงใช้เฉพาะ "ตัวตนของฟอนต์" จากมาตรฐานกลาง ไม่บังคับ 16pt ทั้งใบ
+         font-size-adjust ยังคุมให้ทุกขนาดพิมพ์ออกมาเท่ากันทุกเครื่องเหมือนใบอื่น */
+      ${govDocFontIdentityCss()}
       background: #fff;
     }
     .sheet {
       width: 297mm;
       min-height: 210mm;
-      padding: 7mm 9mm;
+      padding: ${GOV_PAGE_MARGIN};
       overflow: hidden;
     }
     .sheet + .sheet { page-break-before: always; }
@@ -329,7 +332,7 @@ export function buildFleetForm4Html({ vehicle, trips = [], periodLabel = '' }) {
         width: auto;
         min-height: 0;
         height: auto;
-        max-height: 196mm;
+        max-height: 189mm;
         padding: 0;
         overflow: hidden;
         page-break-inside: avoid;

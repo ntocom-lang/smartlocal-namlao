@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
+import { govDocFontCss, govPageCss } from '../../lib/govDocStyle.js'
 import { ChevronRight, ArrowLeft, Printer, BarChart2 } from 'lucide-react'
 
 const PROJECT_TYPE_LABEL = {
@@ -119,8 +120,9 @@ export default function CivilProjectReport({ tenant }) {
         <title>รายงานโครงการ ปี ${selectedYear}</title>
         <style>
           @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap');
+          ${govPageCss()}
           * { box-sizing: border-box; margin: 0; padding: 0; }
-          body { font-family: 'Sarabun', sans-serif; font-size: 14px; color: #111; line-height: 1.6; padding: 20px 28px; }
+          body { ${govDocFontCss()} color: #111; padding: 20px 28px; }
           .center { text-align: center; }
           .right  { text-align: right; }
           .bold   { font-weight: 700; }

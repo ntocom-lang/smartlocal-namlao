@@ -1,3 +1,5 @@
+import { GOV_FONT_LINK, GOV_PAGE_MARGIN, govDocFontCss, govPageCss } from './govDocStyle.js'
+
 function esc(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -143,23 +145,19 @@ export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null,
 <head>
   <meta charset="utf-8">
   <title>ใบขออนุญาตใช้รถส่วนกลาง</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">
+  ${GOV_FONT_LINK}
   <style>
     /* ทั้งใบต้องจบใน 1 หน้า A4 เท่าต้นฉบับกระดาษ ตัวเลขระยะห่างด้านล่างถูกไล่ให้ความสูงรวม
        ไม่เกินพื้นที่พิมพ์แล้ว ถ้าจะเพิ่มบรรทัด/ระยะห่าง ต้องวัดใหม่ทุกครั้ง
        @page = ขอบตอนพิมพ์จากเว็บ; .sheet padding = ขอบตอนดูบนจอ ห้ามซ้อนกันตอน print */
-    @page { size: A4 portrait; margin: 1.2cm 1.8cm 0.9cm 1.8cm; }
+    ${govPageCss()}
     * { box-sizing: border-box; }
     html, body { margin: 0; }
     .sheet {
       width: 210mm;
-      padding: 1.2cm 1.8cm 0.9cm 1.8cm;
+      padding: ${GOV_PAGE_MARGIN};
       color: #000;
-      font-family: "TH Sarabun New", "Sarabun", sans-serif;
-      font-size: 14pt;
-      line-height: 1.25;
+      ${govDocFontCss()}
       background: #fff;
     }
     @media print {
@@ -167,7 +165,7 @@ export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null,
     }
     p { margin: 0; }
     .form-no { text-align: right; font-weight: 400; }
-    h1 { margin: 2pt 0 0; text-align: center; font-size: 16pt; font-weight: 700; line-height: 1.25; white-space: nowrap; }
+    h1 { margin: 2pt 0 0; text-align: center; font-size: 18pt; font-weight: 700; line-height: 1.25; white-space: nowrap; }
     .date-line { margin-top: 12pt; text-align: right; }
     .body-line { margin-top: 6pt; }
     .field { display: inline-block; min-width: 74px; border-bottom: 1px dotted #333; padding: 0 6px 1px; text-align: center; }
@@ -178,13 +176,16 @@ export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null,
     .line-row .fill-tiny { flex: 0 0 58px; text-align: center; }
     .field.is-filled, .fill.is-filled, .line-row .fill.is-filled { border-bottom: none; }
     .requester-line { margin-top: 8pt; }
-    .requester-line .indent { margin-left: 2.8cm; }
+    .requester-line .indent { margin-left: 1.6cm; }
     .requester-line .fill:last-child { flex: 1.25; }
     .continuation { height: 1.15em; border-bottom: 1px dotted #333; }
-    .signatures { margin-top: 34pt; }
+    /* ระยะห่างบล็อกลายเซ็นถูกบีบลงหลังขยายตัวอักษรเป็น 16pt ตามมาตรฐาน —
+       ส่วนนี้ไม่ใช่ค่าที่ระเบียบกำหนด จึงยืดหยุ่นได้ ต่างจากขอบกระดาษกับขนาดฟอนต์
+       ห้ามเพิ่มกลับโดยไม่วัดใหม่ ใบต้องจบใน 1 หน้าแม้ชื่อตำแหน่งยาวสุด */
+    .signatures { margin-top: 22pt; }
     .signature {
-      width: 82%;
-      margin: 14pt 0 0 auto;
+      width: 92%;
+      margin: 11pt 0 0 auto;
       page-break-inside: avoid;
       display: grid;
       grid-template-columns: max-content 1fr 13em;
@@ -209,8 +210,8 @@ export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null,
     .signature-name, .signature-title { position: relative; text-align: center; }
     .signature-name.is-blank { display: flex; justify-content: space-between; width: 100%; }
     .signature-suffix { position: absolute; left: 100%; top: 0; margin-left: 4px; white-space: nowrap; }
-    .decision { margin-top: 32pt; page-break-inside: avoid; }
-    .decision .signature { margin-top: 30pt; }
+    .decision { margin-top: 22pt; page-break-inside: avoid; }
+    .decision .signature { margin-top: 22pt; }
     .audit-note { margin-top: 8pt; font-size: 8pt; line-height: 1.25; color: #444; }
   </style>
 </head>

@@ -3,6 +3,7 @@ import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Ba
 import { Wrench, TrendingUp, AlertTriangle, Printer, X, Clock, CheckCircle2, Download } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { workingDaysBetween, workingDaysSince } from '../../lib/workingDays'
+import { GOV_FONT_LINK, govDocFontCss, govPageCss } from '../../lib/govDocStyle.js'
 
 // ระยะเวลาดำเนินการของคำร้อง 1 เรื่อง นับเป็น "วันทำการ" (ตัดเสาร์-อาทิตย์และวันหยุดนักขัตฤกษ์)
 // เดิมนับเป็นวันปฏิทิน ทำให้เรื่องที่คร่อมสงกรานต์/ปีใหม่ดูเหมือนช้ากว่าความเป็นจริงหลายวัน
@@ -54,9 +55,10 @@ function handlePrint({ view, viewLabel, total, completed, rejected, active, rate
   const trendHeader = view === 'month' ? 'สัปดาห์' : view === 'year' ? 'เดือน' : 'ปี'
   const html = `<!DOCTYPE html><html lang="th"><head>
   <meta charset="UTF-8"><title>รายงาน ${viewLabel} - ${tenant?.name}</title>
+  ${GOV_FONT_LINK}
   <style>
-    @page { size: A4; margin: 2cm 2.5cm; }
-    body { font-family: 'TH Sarabun New', Sarabun, sans-serif; font-size: 16pt; color: #000; line-height: 1.6; }
+    ${govPageCss({ size: 'A4 portrait' })}
+    body { ${govDocFontCss()} color: #000; }
     h1 { font-size: 20pt; text-align: center; margin: 0 0 4px; }
     .sub { text-align: center; font-size: 14pt; margin-bottom: 20px; }
     .memo { display: grid; grid-template-columns: 120px 1fr; gap: 4px 8px; margin-bottom: 20px; font-size: 15pt; }

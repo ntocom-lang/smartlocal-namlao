@@ -1,4 +1,5 @@
 import { FUEL_LABEL, assetIdentifier, meterUnitShort } from './fleetAssets.js'
+import { GOV_FONT_LINK, GOV_PAGE_MARGIN, govDocFontCss, govPageCss } from './govDocStyle.js'
 
 const MONTHS_TH = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
   'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
@@ -87,21 +88,17 @@ export function buildFleetFuelRecordHtml({ record, tenant }) {
 <head>
   <meta charset="utf-8">
   <title>บันทึกการเติมน้ำมันเชื้อเพลิง ${esc(plate)}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">
+  ${GOV_FONT_LINK}
   <style>
-    @page { size: A4 portrait; margin: 1.4cm 1.8cm; }
+    ${govPageCss()}
     * { box-sizing: border-box; }
     html, body { margin: 0; }
     .sheet {
       width: 210mm;
       min-height: 297mm;
-      padding: 1.4cm 1.8cm;
+      padding: ${GOV_PAGE_MARGIN};
       color: #000;
-      font-family: "TH Sarabun New", "Sarabun", sans-serif;
-      font-size: 14pt;
-      line-height: 1.35;
+      ${govDocFontCss()}
       background: #fff;
     }
     @media print { .sheet { width: auto; min-height: auto; padding: 0; } }
@@ -127,7 +124,9 @@ export function buildFleetFuelRecordHtml({ record, tenant }) {
       margin-top: 36pt;
     }
     .sign { text-align: center; }
-    .sign .line { display: inline-block; min-width: 9em; border-bottom: 1px dotted #333; }
+    /* 9em เดิมไล่ไว้ตอนตัวอักษร 14pt พอขยายเป็น 16pt ตามมาตรฐาน 3 คอลัมน์รวมกัน
+       กว้าง 608px เกินพื้นที่พิมพ์ 605px ทำให้ช่องขวาสุดถูกตัด — 8.5em พอดีไม่ล้น */
+    .sign .line { display: inline-block; min-width: 8.5em; border-bottom: 1px dotted #333; }
     .sign-name { margin: 6pt 0 0; }
     .sign-role { margin: 2pt 0 0; }
     .note { margin-top: 16pt; font-size: 11pt; color: #444; }
