@@ -64,6 +64,12 @@ const TRIP_ERROR_TH = {
   FLEET_TRIP_PROGRESS_REQUIRES_OWNER: 'บันทึกออก/กลับได้เฉพาะผู้ขอใช้รถ ผู้ขับรถ หรือผู้ดูแลระบบยานพาหนะ',
   FLEET_TRIP_APPROVAL_REQUIRES_MANAGER: 'อนุมัติหรือปฏิเสธได้เฉพาะผู้ดูแลระบบยานพาหนะ',
 }
+// UPDATE ที่ถูก RLS ปฏิเสธจะ "ไม่ตรงแถวใดเลย" ไม่ใช่ error — PostgREST คืน 204 และ error เป็น null
+// ถ้าไม่ดักจำนวนแถวเอง ผู้ใช้จะเห็นหน้าต่างปิดเหมือนบันทึกสำเร็จ แต่สถานะไม่ขยับ กดซ้ำกี่ครั้งก็เท่าเดิม
+const TRIP_NO_ROW_MSG = 'บันทึกไม่สำเร็จ — บัญชีของท่านไม่มีสิทธิ์แก้ไขรายการนี้'
+  + ' (ต้องเป็นผู้ขอใช้รถ ผู้ขับรถ ผู้บันทึกคำขอแทน หรือผู้ดูแลระบบยานพาหนะ)'
+  + ' หากคิดว่าไม่ถูกต้อง กรุณาแจ้งผู้ดูแลระบบยานพาหนะ'
+
 function tripErrorMessage(error) {
   const raw = error?.message ?? ''
   const hit = Object.keys(TRIP_ERROR_TH).find(code => raw.includes(code))
@@ -403,7 +409,6 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   // และ FleetSetup เพิ่มเจ้าหน้าที่ใหม่ด้วย department_id: null เป็นค่าเริ่มต้น จึงติดกับดักนี้ทุกคน
   // แก้โดยล็อกช่องกองให้ตรงกับโปรไฟล์เสมอ และกันไม่ให้เปิดฟอร์มถ้ายังไม่มีกอง พร้อมบอกวิธีแก้
   const myDeptId = fleetInfo?.department_id ?? ''
-  const myDeptName = depts.find(d => d.id === myDeptId)?.name ?? ''
   const deptLocked = !isAdmin           // ผู้ที่ไม่ใช่ manager เลือกกองอื่นไม่ได้อยู่แล้วโดย RLS
   const missingDept = deptLocked && !myDeptId
 
@@ -614,7 +619,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     setForm({
       ...EMPTY_RESERVE,
       driver_id: '',
-      department_id: fleetInfo?.department_id ?? '',   // deptLocked บังคับใช้ค่านี้เสมอตอน submit
+      // ถอดช่องเลือกกองออกจากฟอร์มแล้ว (ไม่ได้พิมพ์ลงแบบ 3) — ทริปผูกกับกองของคนที่ยื่นเสมอ
+      department_id: fleetInfo?.department_id ?? '',
       requested_by: user?.id ?? '',
       requester_position: profilePosition(requesterProfile),
       // ตั้งค่าจริงไว้ให้เลย ไม่ใช่ปล่อยว่าง เจ้าหน้าที่จะได้เห็นชื่อคนที่จะเซ็นตั้งแต่แรก
@@ -705,7 +711,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     setForm({
       ...EMPTY_DIRECT,
       driver_id: '',
-      department_id: fleetInfo?.department_id ?? '',   // deptLocked บังคับใช้ค่านี้เสมอตอน submit
+      // ถอดช่องเลือกกองออกจากฟอร์มแล้ว (ไม่ได้พิมพ์ลงแบบ 3) — ทริปผูกกับกองของคนที่ยื่นเสมอ
+      department_id: fleetInfo?.department_id ?? '',
       requested_by: user?.id ?? '',
       requester_position: profilePosition(requesterProfile),
       // ตั้งค่าจริงไว้ให้เลย ไม่ใช่ปล่อยว่าง เจ้าหน้าที่จะได้เห็นชื่อคนที่จะเซ็นตั้งแต่แรก
@@ -1043,7 +1050,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     if (startMeter !== null && (!Number.isFinite(startMeter) || startMeter < 0))
       return alert('เลขไมล์ก่อนออกต้องเป็น 0 หรือมากกว่า')
     setSaving(true)
-    const { error } = await supabase.from('fleet_trips').update({
+    const { data: rows, error } = await supabase.from('fleet_trips').update({
       status: 'in_progress',
       started_at: toISO(form.started_at),
       // trip_date คือวันที่ "ใช้รถจริง" ไม่ใช่วันที่ตามคำขอ — รายงาน สมุดประจำรถ และหน้าภาพรวม
@@ -1051,9 +1058,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       // แล้วไม่ sync ค่า ระยะทางกับค่าน้ำมันจะไปตกเดือน/ปีงบผิด และขัดกับเวลาออกจริงที่บันทึกไว้
       trip_date: form.started_at.slice(0, 10),   // เวลาไทยจากช่อง datetime-local ตรงๆ
       odometer_start: startMeter,
-    }).eq('id', selTrip.id)
+    }).eq('id', selTrip.id).select('id')
     setSaving(false)
     if (error) return alert(tripErrorMessage(error))
+    if (!rows?.length) return alert(TRIP_NO_ROW_MSG)
     setModal(null); setSelTrip(null)
     loadTrips()
   }
@@ -1068,14 +1076,15 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     if (selTrip.odometer_start != null && endMeter !== null && endMeter < Number(selTrip.odometer_start))
       return alert('เลขไมล์หลังกลับต้องไม่น้อยกว่าเลขไมล์ก่อนออก')
     setSaving(true)
-    const { error } = await supabase.from('fleet_trips').update({
+    const { data: rows, error } = await supabase.from('fleet_trips').update({
       status: 'completed',
       returned_at: toISO(form.returned_at),
       odometer_end: endMeter,
       notes: form.notes || null,
-    }).eq('id', selTrip.id)
+    }).eq('id', selTrip.id).select('id')
     setSaving(false)
     if (error) return alert(tripErrorMessage(error))
+    if (!rows?.length) return alert(TRIP_NO_ROW_MSG)
     setModal(null); setSelTrip(null)
     loadTrips()
   }
@@ -1386,28 +1395,6 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     subtitle: v.asset_kind || undefined,
     badge: assetIdentifier(v),
   }))
-
-  const sortedDepts = useMemo(() => {
-    const myDept = myDeptId || requesterProfile?.department_id || ''
-    return [...depts].sort((a, b) => {
-      const isMyA = a.id === myDept
-      const isMyB = b.id === myDept
-      if (isMyA && !isMyB) return -1
-      if (!isMyA && isMyB) return 1
-      return (a.sort_order ?? 0) - (b.sort_order ?? 0)
-    })
-  }, [depts, myDeptId, requesterProfile?.department_id])
-
-  const deptItems = sortedDepts.map(d => {
-    const myDept = myDeptId || requesterProfile?.department_id || ''
-    const isMyDept = d.id === myDept
-    return {
-      value: d.id,
-      label: d.name,
-      title: d.name,
-      badge: isMyDept ? 'กองของคุณ' : (d.short_name || undefined),
-    }
-  })
 
   // historyCount มาจาก count:'exact' ของ server ไม่ใช่ความยาวอาร์เรย์ที่โหลดมา
   const historyTotalPages = historyPageSize === 'all'
@@ -1888,23 +1875,6 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
             <p className="mt-1 text-[10px] text-gray-400">ไม่รวมผู้ขับรถ</p>
           </div>
           <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1 block">กอง/หน่วยงาน</label>
-            {deptLocked ? (
-              // ไม่ใช่ manager: RLS ยอมรับเฉพาะกองของตัวเอง แสดงเป็นช่องล็อกไม่ให้เลือกผิดจนโดนปฏิเสธ
-              <input value={myDeptName || '—'} disabled readOnly
-                className={inp + ' bg-gray-50 text-gray-500 cursor-not-allowed'} />
-            ) : (
-              <ResponsiveSelect
-                value={form.department_id}
-                onChange={set('department_id')}
-                placeholder="ทุกกอง"
-                modalTitle="เลือกกอง/หน่วยงาน"
-                searchPlaceholder="ค้นหากอง..."
-                options={deptItems}
-              />
-            )}
-          </div>
-          <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">สถานที่ไป *</label>
             <input value={form.destination} onChange={set('destination')}
               placeholder="เช่น ศาลากลางจังหวัดแพร่" className={inp} />
@@ -1972,23 +1942,6 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
             <p className="mt-1 text-[10px] text-gray-400">ไม่รวมผู้ขับรถ</p>
           </div>
           {driverField}
-          <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1 block">กอง/หน่วยงาน</label>
-            {deptLocked ? (
-              // ไม่ใช่ manager: RLS ยอมรับเฉพาะกองของตัวเอง แสดงเป็นช่องล็อกไม่ให้เลือกผิดจนโดนปฏิเสธ
-              <input value={myDeptName || '—'} disabled readOnly
-                className={inp + ' bg-gray-50 text-gray-500 cursor-not-allowed'} />
-            ) : (
-              <ResponsiveSelect
-                value={form.department_id}
-                onChange={set('department_id')}
-                placeholder="ทุกกอง"
-                modalTitle="เลือกกอง/หน่วยงาน"
-                searchPlaceholder="ค้นหากอง..."
-                options={deptItems}
-              />
-            )}
-          </div>
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">ปลายทาง *</label>
             <input value={form.destination} onChange={set('destination')}
