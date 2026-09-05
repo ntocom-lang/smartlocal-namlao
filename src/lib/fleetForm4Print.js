@@ -171,7 +171,7 @@ export function paginateForm4Trips(trips, rowsPerPage = FORM4_ROWS_PER_PAGE) {
 function tableHeader() {
   return `<thead>
     <tr>
-      <th rowspan="2" class="c-seq">ลำดับที่</th>
+      <th rowspan="2" class="c-seq">ที่</th>
       <th colspan="2">ออกเดินทาง</th>
       <th rowspan="2" class="c-user">ผู้ใช้รถ</th>
       <th rowspan="2" class="c-dest">สถานที่ไป</th>
