@@ -1,4 +1,4 @@
-import { GOV_FONT_LINK, GOV_PAGE_MARGIN, govDocFontCss, govPageCss } from './govDocStyle.js'
+import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, GOV_PAGE_MARGIN, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
 
 function esc(value) {
   return String(value ?? '')
@@ -179,6 +179,7 @@ export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null,
     .requester-line .indent { margin-left: 1.6cm; }
     .requester-line .fill:last-child { flex: 1.25; }
     .continuation { height: 1.15em; border-bottom: 1px dotted #333; }
+    .eservice-origin { ${GOV_ESERVICE_ORIGIN_CSS} margin-top: 5mm; text-align: center; }
     /* ระยะห่างบล็อกลายเซ็นถูกบีบลงหลังขยายตัวอักษรเป็น 16pt ตามมาตรฐาน —
        ส่วนนี้ไม่ใช่ค่าที่ระเบียบกำหนด จึงยืดหยุ่นได้ ต่างจากขอบกระดาษกับขนาดฟอนต์
        ห้ามเพิ่มกลับโดยไม่วัดใหม่ ใบต้องจบใน 1 หน้าแม้ชื่อตำแหน่งยาวสุด */
@@ -268,6 +269,7 @@ export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null,
     ${rejectReason ? '' : '<div class="continuation"></div>'}
     ${signatureBlock({ role: 'ผู้มีอำนาจสั่งใช้รถ', name: authority.name, title: authority.title })}
   </div>
+  <div class="eservice-origin">${esc(govEServiceOriginText(tenant))}</div>
 </div>
 </body>
 </html>`

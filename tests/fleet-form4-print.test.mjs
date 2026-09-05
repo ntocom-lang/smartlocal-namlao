@@ -63,7 +63,7 @@ const blank = buildFleetForm4Html({ vehicle, trips: [] })
 assert.equal((blank.match(/<section class="sheet">/g) || []).length, 1)
 assert.equal((html.match(/<section class="sheet">/g) || []).length, 1)
 assert.equal((blank.match(/<tbody>/g) || []).length, 1)
-assert.equal((blank.match(/<tr[\s>]/g) || []).length, 16) // หัว 2 แถว + ว่าง 13 + รวม 1 (FORM4_ROWS_PER_PAGE=14)
+assert.equal((blank.match(/<tr[\s>]/g) || []).length, 15) // หัว 2 แถว + ว่าง 12 + รวม 1 (FORM4_ROWS_PER_PAGE=13)
 assert.match(html, /thead \{ display: table-row-group; \}/)
 assert.match(html, /page-break-inside: avoid/)
 

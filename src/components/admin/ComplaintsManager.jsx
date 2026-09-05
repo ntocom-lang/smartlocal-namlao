@@ -22,9 +22,17 @@ import { workingDaysLeft } from '../../lib/workingDays'
 import OssIntakeForm from './OssIntakeForm'
 import OdorFieldsDisplay from '../complaints/OdorFieldsDisplay'
 import OdorComplaintTable, { OdorDetailModal } from '../complaints/OdorComplaintTable'
-import { GOV_FONT_LINK, govDocFontIdentityCss, govPageCss } from '../../lib/govDocStyle.js'
+import { GOV_FONT_LINK, govDocFontIdentityCss, govEServiceOriginText, govPageCss } from '../../lib/govDocStyle.js'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+// ชื่อหน่วยงานมาจากฐานข้อมูลที่แอดมินแก้ได้ และรายงานถูกเขียนลงหน้าต่างพิมพ์ด้วย
+// document.write จึงต้อง escape ก่อนแปะเสมอ กัน HTML injection ผ่านชื่อหน่วยงาน
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, character => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[character])
+}
+
 const STATUS = {
   new:         { label: 'คำร้องใหม่',      color: '#f59e0b', bg: '#fef3c7', text: '#92400e' },
   received:    { label: 'รับเรื่องแล้ว',   color: '#0ea5e9', bg: '#e0f2fe', text: '#0369a1' },
@@ -1811,7 +1819,7 @@ ${GOV_FONT_LINK}
   </tr></thead>
   <tbody>${rows}</tbody>
 </table>
-<div class="footer">ออกจากระบบบริการออนไลน์ SmartLocal</div>
+<div class="footer">${escapeHtml(govEServiceOriginText(tenant))}</div>
 </body></html>`
     const w = window.open('', '_blank', 'width=1100,height=700')
     w.document.write(html)
@@ -1871,6 +1879,7 @@ ${GOV_FONT_LINK}
   .sign-row { margin-top:36px; display:flex; justify-content:flex-end; }
   .sign-box { text-align:center; font-size:13px; width:260px; }
   .sign-line { margin:36px 0 6px; border-bottom:1px dotted #555; }
+  .footer { margin-top:12px; font-size:12px; color:#555; text-align:right; }
   @media print { button { display:none; } }
 </style></head><body>
 <h2>${tenant?.name ?? ''} — รายงานคำร้องกลิ่นเหม็นรบกวน (มลพิษทางอากาศ)</h2>
@@ -1894,6 +1903,7 @@ ${GOV_FONT_LINK}
     ผู้รายงาน
   </div>
 </div>
+<div class="footer">${escapeHtml(govEServiceOriginText(tenant))}</div>
 </body></html>`
     const w = window.open('', '_blank', 'width=1100,height=700')
     w.document.write(html)

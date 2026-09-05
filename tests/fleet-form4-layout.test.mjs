@@ -66,7 +66,7 @@ function overflowingCells(page, selector) {
 }
 
 // ".sheet" มี max-height + overflow:hidden ตอนพิมพ์ — getBoundingClientRect().height ของมัน
-// เพดานอยู่ที่ 189mm เสมอไม่ว่าเนื้อหาจริงจะสูงแค่ไหน ใช้วัดหาการล้นไม่ได้ (จะรายงาน "พอดี"
+// เพดานอยู่ที่ 170mm เสมอไม่ว่าเนื้อหาจริงจะสูงแค่ไหน ใช้วัดหาการล้นไม่ได้ (จะรายงาน "พอดี"
 // ทุกครั้งแม้ตัดเนื้อหาทิ้งไปจริง) ต้องวัดจาก <table> ที่ไม่ถูกครอบความสูงแทน
 function sheetContentHeightMm(page) {
   return page.evaluate(() => [...document.querySelectorAll('.sheet')].map(sheet => {
@@ -144,11 +144,11 @@ const checks = [
 
         const heights = await sheetContentHeightMm(page)
         // เหลือขอบไว้กันฟอนต์ต่างเครื่อง (เครื่อง อปท. ใช้ TH Sarabun New ที่ metric ไม่เท่ากัน)
-        // พื้นที่พิมพ์จริง 189mm — วัดจาก <table> ตรงๆ ไม่ใช่ .sheet ที่ถูก overflow:hidden ครอบไว้
-        // (ครอบแล้วจะรายงาน "พอดี 189mm" เสมอแม้เนื้อหาจริงล้นไปเยอะ ดู sheetContentHeightMm ด้านบน)
+        // พื้นที่พิมพ์จริง 170mm — วัดจาก <table> ตรงๆ ไม่ใช่ .sheet ที่ถูก overflow:hidden ครอบไว้
+        // (ครอบแล้วจะรายงาน "พอดี 170mm" เสมอแม้เนื้อหาจริงล้นไปเยอะ ดู sheetContentHeightMm ด้านบน)
         for (const mm of heights) {
-          assert.ok(mm <= 186,
-            `เนื้อหาสูง ${mm.toFixed(1)}mm เหลือขอบน้อยเกินไป (พื้นที่พิมพ์ 189mm) เสี่ยงตกหน้า 2 บนเครื่องอื่น`)
+          assert.ok(mm <= 167,
+            `เนื้อหาสูง ${mm.toFixed(1)}mm เหลือขอบน้อยเกินไป (พื้นที่พิมพ์ 170mm) เสี่ยงตกหน้า 2 บนเครื่องอื่น`)
         }
       } finally {
         await page.close()
@@ -162,7 +162,7 @@ const checks = [
       // ที่มา: 2026-09-05 ตั้ง tr.blank-filler ให้สูงกว่าปกติเพื่อให้ตารางเต็มหน้าเวลาข้อมูลน้อย
       // (ดูคอมเมนต์ tr.blank-filler td ใน fleetForm4Print.js) ตอนแรกตั้ง 11mm โดยลืมคิดพื้นที่
       // ของ thead (หัวตาราง 2 แถวที่มีป้ายกำกับยาวถึง 4 บรรทัด กิน ~19mm) รวมเข้าไปในงบ
-      // ผลคือหน้าที่มีแต่แถวว่าง 13 แถว + แถวรวม 1 แถว ล้นไป 195mm จาก 189mm แก้เป็น 9.8mm
+      // ผลคือหน้าที่มีแต่แถวว่าง 13 แถว + แถวรวม 1 แถว ล้นไป 195mm จาก 189mm (ยุคขอบเข้าแฟ้มด้านซ้าย) แก้เป็น 9.8mm
       const page = await renderForm4(browser, makeTrips(FORM4_ROWS_PER_PAGE))
       try {
         const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true })
@@ -171,8 +171,8 @@ const checks = [
 
         const heights = await sheetContentHeightMm(page)
         for (const mm of heights) {
-          assert.ok(mm <= 186,
-            `เนื้อหาสูง ${mm.toFixed(1)}mm เหลือขอบน้อยเกินไป (พื้นที่พิมพ์ 189mm) — ปรับ tr.blank-filler td height ลง`)
+          assert.ok(mm <= 167,
+            `เนื้อหาสูง ${mm.toFixed(1)}mm เหลือขอบน้อยเกินไป (พื้นที่พิมพ์ 170mm) — ปรับ tr.blank-filler td height ลง`)
         }
       } finally {
         await page.close()

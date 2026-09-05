@@ -1,4 +1,4 @@
-import { GOV_FONT_LINK, govDocFontCss, govPageCss } from './govDocStyle.js'
+import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -204,8 +204,10 @@ export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate,
       <div>ลงชื่อ.................................................</div>
       <div style="margin-top:26px;">(${esc(person?.name) || '.........................................................'})</div>
       <div>${esc(person?.title) || esc(fallbackTitle)}</div>
+      ${/* 11pt — บรรทัดอ้างอิงคำสั่งมอบอำนาจใต้ชื่อผู้ลงนาม เป็นข้อความประกอบ ไม่ใช่เนื้อความ
+            จึงเล็กกว่าได้ แต่ต้องไม่เล็กจนอ่านไม่ออก (เดิม 12px = 9pt) */''}
       ${person?.authority_reference
-        ? `<div style="font-size:12px;margin-top:2px;">(${esc(person.authority_reference)})</div>`
+        ? `<div style="font-size:11pt;margin-top:2px;">(${esc(person.authority_reference)})</div>`
         : ''}
     </div>`
 
@@ -217,7 +219,11 @@ ${GOV_FONT_LINK}
   body { ${govDocFontCss()} color: #111; }
   p { margin: 0; }
   .center { text-align: center; }
-  .request-refs { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding: 0; font-size: 12px; line-height: 1.4; }
+  /* 11pt โดยตั้งใจ — บล็อกมุมกระดาษเป็นเลขอ้างอิงของระบบกับช่องให้เจ้าหน้าที่ลงเลขรับ
+     ไม่ใช่เนื้อความของหนังสือ ต้องเล็กกว่าเนื้อความเพื่อไม่ให้อ่านสับสนว่าเป็นเลขที่หนังสือ
+     (เดิม hardcode 12px = 9pt ซึ่งเล็กเกินไปสำหรับเจ้าหน้าที่สูงอายุ และไม่ได้ผูกกับค่ากลาง
+     พอค่ากลางเปลี่ยนจาก 16pt เป็น 14pt สัดส่วนจึงเพี้ยน) */
+  .request-refs { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding: 0; font-size: 11pt; line-height: 1.4; }
   .e-service-ref { text-align: left; }
   .official-ref { min-width: 220px; text-align: right; white-space: nowrap; }
   .indent { text-indent: 2em; }
@@ -232,8 +238,8 @@ ${GOV_FONT_LINK}
   <div class="official-ref">คำร้องเลขที่........................................</div>
 </div>
 
-<p class="center" style="font-size:18px;font-weight:700;margin-top:10px;">คำร้อง</p>
-<p class="center" style="margin-top:2px;">ผ่านระบบ E-Service ${esc(tenant?.name ?? '')}</p>
+<p class="center" style="font-weight:700;margin-top:10px;">คำร้อง</p>
+<p class="center" style="margin-top:2px;">${esc(govEServiceOriginText(tenant))}</p>
 
 <p style="margin-top:16px;">เรื่อง &nbsp;&nbsp;${esc(requestCopy.subject)}</p>
 <p style="margin-top:4px;">เรียน &nbsp;&nbsp;${esc(mayorTitle)}</p>
