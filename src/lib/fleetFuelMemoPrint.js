@@ -151,12 +151,13 @@ export function buildMemoRows({ vehicles = [], trips = [], fuel = [], typeLabels
       const plate = String(vehicle.license_plate ?? vehicle.asset_code ?? '').trim()
       // หมายเหตุกำกับอัตราที่ใช้จริง — ใบต้นฉบับเขียนไว้เมื่อวันใช้รถกับวันเติมน้ำมันไม่ตรงกัน
       // เพราะน้ำมันที่เติมวันหนึ่งถูกใช้ข้ามไปอีกช่วง ทำให้อัตราของเดือนนั้นไม่ใช่ค่าจริงเป๊ะ
-      let rateNote = ''
-      if (item.liters <= 0) {
-        rateNote = '(ไม่มีการเบิกน้ำมันในช่วงนี้)'
-      } else if (item.lastTrip && item.lastFuel && item.lastTrip !== item.lastFuel) {
-        rateNote = `(ใช้รถถึง ${shortDateText(item.lastTrip)} เติมน้ำมัน ${shortDateText(item.lastFuel)})`
-      }
+      // ไม่มีการเบิกน้ำมัน = ปล่อยเป็นขีด "-" เฉยๆ ไม่ต้องเขียนกำกับว่าทำไม
+      // (เคยเขียน "(ไม่มีการเบิกน้ำมันในช่วงนี้)" แล้วรกโดยไม่ได้เพิ่มข้อมูล — ขีดในช่องลิตร
+      //  กับช่องบาทบอกอยู่แล้วว่าเดือนนั้นไม่ได้เบิก)
+      const rateNote = item.liters > 0 && item.lastTrip && item.lastFuel
+        && item.lastTrip !== item.lastFuel
+        ? `(ใช้รถถึง ${shortDateText(item.lastTrip)} เติมน้ำมัน ${shortDateText(item.lastFuel)})`
+        : ''
       return {
         vehicleText: plate ? `${label} ทะเบียน ${plate}` : label,
         distanceKm: item.distance,
