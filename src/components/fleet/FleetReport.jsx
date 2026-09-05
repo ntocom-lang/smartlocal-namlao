@@ -9,8 +9,8 @@ import {
   buildFleetFuelMemoHtml, buildMemoRows, defaultAddressee, memoMonthLabel,
 } from '../../lib/fleetFuelMemoPrint'
 import {
-  CUSTOM_ROLE, SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE,
-  isSignatoryActiveToday, pickSignatory, signatoryName, signatoryTitle, todayBangkok,
+  SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE, organizationSignatories,
+  pickSignatory, signatoryName, signatoryRowLabel, signatoryTitle, todayBangkok,
 } from '../../lib/documentSignatories'
 import {
   PERIOD_MODES, QUARTERS, MONTH_OPTIONS,
@@ -30,10 +30,16 @@ const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 })[char])
 
-// หัวบันทึกข้อความ (เลขที่หนังสือ/ส่วนราชการ/เรียน/ผู้ลงนามช่องพัสดุ) ไม่มีที่เก็บในฐานข้อมูล
-// จึงจำค่าที่กรอกครั้งล่าสุดไว้ในเครื่องแยกราย อปท. เดือนถัดไปเจ้าหน้าที่แก้แค่เลขที่กับวันที่
+// หัวบันทึกข้อความ (เลขที่หนังสือ/ส่วนราชการ/เรียน) ไม่มีที่เก็บในฐานข้อมูล จึงจำค่าที่กรอก
+// ครั้งล่าสุดไว้ในเครื่องแยกราย อปท. เดือนถัดไปเจ้าหน้าที่แก้แค่เลขที่กับวันที่
 // ⚠️ เป็นค่าของ "เครื่องนั้น" ไม่ใช่ของหน่วยงาน เปลี่ยนเครื่อง/ล้างแคชแล้วต้องกรอกใหม่
+// ส่วนผู้ลงนามเก็บแค่ "แถวไหนในทะเบียน" (supplyKey) ไม่ใช่ชื่อคน ชื่อจริงอ่านสดจากทะเบียน
+// ทุกครั้งที่พิมพ์ เปลี่ยนตัวผู้ลงนามในทะเบียนแล้วเอกสารเดือนถัดไปได้ชื่อใหม่เอง
 const MEMO_PREFS_KEY = 'fleet-fuel-memo:'
+
+// ป้ายของบทบาทมาตรฐานในทะเบียนผู้ลงนาม — แถวที่แอดมินสร้างเองใช้ชื่อแถวที่ตั้งไว้แทน
+// (department_head ไม่อยู่ในลิสต์เพราะ organizationSignatories กรองออกไปแล้ว)
+const SYSTEM_ROLE_LABEL = { mayor: 'นายก', clerk: 'ปลัด' }
 
 function loadMemoPrefs(tenantId) {
   try {
@@ -321,19 +327,30 @@ export default function FleetReport({ tenant }) {
     const registry = rows ?? []
     const clerk = pickSignatory(registry, { role: 'clerk' })
     const mayor = pickSignatory(registry, { role: 'mayor' })
-    // ช่อง "หัวหน้าเจ้าหน้าที่พัสดุ" ไม่ใช่บทบาทมาตรฐานของระบบ อปท. ต้องเพิ่มเองเป็นแถว custom
-    // ในเมนูผู้ลงนามเอกสาร ถ้ายังไม่มีก็ให้พิมพ์ชื่อในกล่องนี้ได้เลย ไม่บังคับให้ไปตั้งค่าก่อน
-    const supplyRow = registry.find(row => row.signatory_role === CUSTOM_ROLE
-      && String(row.custom_label ?? '').includes('พัสดุ')
-      && isSignatoryActiveToday(row, todayBangkok()))
+    // ช่องพัสดุก็ดึงจากทะเบียนผู้ลงนามกลางเหมือนปลัด/นายก ไม่ให้พิมพ์ชื่อเองอีกแล้ว
+    // (ของเดิมพิมพ์เองได้ แล้วเจอเคสจริงที่มีคนกรอก "00000" ค้างไว้แล้วจำลง localStorage
+    //  ติดไปทุกเดือน ชื่อบนเอกสารราชการต้องมาจากที่เดียวกับเอกสารใบอื่นเสมอ)
+    //
+    // "หัวหน้าเจ้าหน้าที่พัสดุ" ไม่ใช่บทบาทมาตรฐานของระบบ (มีแค่ นายก/ปลัด/หัวหน้ากอง)
+    // อปท. ต้องเพิ่มเองเป็นแถว custom ชื่อแถวจึงเป็นข้อความอิสระที่ตั้งไม่เหมือนกัน
+    // จึงให้เลือกเองว่าจะใช้แถวไหน แล้วจำ "ตัวชี้ไปยังแถว" ไม่ใช่ชื่อคน — เปลี่ยนตัวผู้ลงนาม
+    // ในทะเบียนเมื่อไร เอกสารเดือนถัดไปได้ชื่อใหม่เองโดยไม่ต้องมาแก้ตรงนี้
+    const options = organizationSignatories(registry).map(row => ({
+      key: `${row.signatory_role}|${row.custom_label ?? ''}`,
+      label: signatoryRowLabel(row, SYSTEM_ROLE_LABEL[row.signatory_role] ?? row.signatory_role),
+      name: signatoryName(row),
+      title: signatoryTitle(row),
+    }))
+    const guess = options.find(item => `${item.label} ${item.title}`.includes('พัสดุ'))
     setMemoForm({
       department: prefs.department ?? `กองคลัง ${tenant.name ?? ''}`.trim(),
       docNumber: prefs.docNumber ?? '',
       docDate: todayBangkok(),
       addressee: prefs.addressee ?? defaultAddressee(tenant.name),
-      supplyName: prefs.supplyName || signatoryName(supplyRow),
-      // signatoryTitle คืนสตริงว่างเมื่อไม่พบแถว ใช้ ?? ไม่ได้ ต้อง || ถึงจะตกมาที่ค่าเริ่มต้น
-      supplyTitle: prefs.supplyTitle || signatoryTitle(supplyRow) || 'หัวหน้าเจ้าหน้าที่พัสดุ',
+      supplyOptions: options,
+      supplyKey: options.some(item => item.key === prefs.supplyKey)
+        ? prefs.supplyKey
+        : (guess?.key ?? ''),
       clerkName: signatoryName(clerk),
       clerkTitle: signatoryTitle(clerk),
       mayorName: signatoryName(mayor),
@@ -343,6 +360,10 @@ export default function FleetReport({ tenant }) {
 
   async function printMemo() {
     if (!tenant?.id || !memoForm) return
+    // ชื่อ/ตำแหน่งช่องพัสดุอ่านจากทะเบียนตอนกดพิมพ์เสมอ ไม่ได้เก็บสำเนาไว้ในฟอร์ม
+    // ยังไม่ได้เลือก = พิมพ์เป็นวงเล็บว่างให้เซ็นสด เหมือนช่องปลัด/นายกที่ยังไม่ได้ตั้งค่า
+    const supplySignatory = (memoForm.supplyOptions ?? [])
+      .find(item => item.key === memoForm.supplyKey) ?? null
     setPrintingMemo(true)
     try {
       const endDay = nextDay(rangeTo)
@@ -380,8 +401,7 @@ export default function FleetReport({ tenant }) {
         department: memoForm.department,
         docNumber: memoForm.docNumber,
         addressee: memoForm.addressee,
-        supplyName: memoForm.supplyName,
-        supplyTitle: memoForm.supplyTitle,
+        supplyKey: memoForm.supplyKey,
       })
       openPrintWindow(buildFleetFuelMemoHtml({
         orgName: tenant?.name ?? '',
@@ -397,7 +417,9 @@ export default function FleetReport({ tenant }) {
         addressee: memoForm.addressee,
         rows,
         signatures: {
-          supply: { name: memoForm.supplyName, title: memoForm.supplyTitle },
+          supply: supplySignatory
+            ? { name: supplySignatory.name, title: supplySignatory.title }
+            : null,
           clerk: { name: memoForm.clerkName, title: memoForm.clerkTitle },
           mayor: { name: memoForm.mayorName, title: memoForm.mayorTitle },
         },
@@ -891,9 +913,11 @@ export default function FleetReport({ tenant }) {
 /* ── กล่องกรอกหัวบันทึกข้อความ ──
    ชื่อปลัด/นายกดึงจากทะเบียนผู้ลงนามกลาง แสดงให้เห็นแต่แก้ที่นี่ไม่ได้ — ต้องไปแก้ที่เมนู
    "ผู้ลงนามเอกสาร" เพื่อให้ทุกเอกสารในระบบใช้ชื่อชุดเดียวกัน ไม่ใช่ต่างใบต่างชื่อ
-   ส่วนช่องพัสดุพิมพ์ทับได้ เพราะยังไม่ใช่บทบาทมาตรฐานที่ทุก อปท. ตั้งไว้ */
+   ช่องพัสดุก็มาจากทะเบียนเดียวกัน แต่ต้องเลือกแถวเองเพราะไม่ใช่บทบาทมาตรฐานของระบบ
+   แต่ละ อปท. ตั้งชื่อแถวไม่เหมือนกัน ("หัวหน้าเจ้าหน้าที่พัสดุ", "เจ้าหน้าที่พัสดุ", ฯลฯ) */
 function MemoDialog({ form, setForm, periodLabel, printing, onPrint, onClose }) {
   const set = key => e => setForm(f => ({ ...f, [key]: e.target.value }))
+  const supplyPicked = (form.supplyOptions ?? []).find(item => item.key === form.supplyKey)
   const field = 'w-full px-3 py-2 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2'
   return (
     <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 p-0 md:p-4"
@@ -920,18 +944,29 @@ function MemoDialog({ form, setForm, periodLabel, printing, onPrint, onClose }) 
           <label className="text-xs font-semibold text-gray-600 mb-1 block">เรียน</label>
           <input value={form.addressee} onChange={set('addressee')} className={field} />
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้ลงนามช่องพัสดุ</label>
-            <input value={form.supplyName} onChange={set('supplyName')} placeholder="ชื่อ-นามสกุล" className={field} />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1 block">ตำแหน่ง</label>
-            <input value={form.supplyTitle} onChange={set('supplyTitle')} className={field} />
-          </div>
+        <div>
+          <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้ลงนามช่องพัสดุ</label>
+          <select value={form.supplyKey} onChange={set('supplyKey')} className={field}>
+            <option value="">— ไม่ระบุ (พิมพ์เป็นช่องว่างให้เซ็นสด) —</option>
+            {(form.supplyOptions ?? []).map(item => (
+              <option key={item.key} value={item.key}>
+                {item.label}{item.name ? ` — ${item.name}` : ''}
+              </option>
+            ))}
+          </select>
+          {supplyPicked && (
+            <p className="mt-1 text-[11px] text-gray-500">
+              จะพิมพ์เป็น ({supplyPicked.name || 'ยังไม่ได้ตั้งชื่อผู้ลงนาม'}) / {supplyPicked.title || 'ยังไม่ได้ตั้งตำแหน่ง'}
+            </p>
+          )}
+          {!(form.supplyOptions ?? []).length && (
+            <p className="mt-1 text-[11px] text-red-500">
+              ยังไม่มีผู้ลงนามในทะเบียน — เพิ่มที่เมนู “ผู้ลงนามเอกสาร” ก่อน
+            </p>
+          )}
         </div>
         <div className="rounded-xl bg-gray-50 border border-gray-100 p-3 text-[11px] text-gray-600 leading-relaxed">
-          ผู้ลงนามอีก 2 ช่องดึงจากทะเบียนผู้ลงนามกลาง — แก้ได้ที่เมนู “ผู้ลงนามเอกสาร”<br />
+          ผู้ลงนามทั้ง 3 ช่องดึงจากทะเบียนผู้ลงนามกลาง — แก้ชื่อ/ตำแหน่งได้ที่เมนู “ผู้ลงนามเอกสาร”<br />
           ปลัด: {form.clerkName || <span className="text-red-500">ยังไม่ได้ตั้งค่า (จะพิมพ์เป็นช่องว่างให้เซ็นสด)</span>}<br />
           นายก: {form.mayorName || <span className="text-red-500">ยังไม่ได้ตั้งค่า (จะพิมพ์เป็นช่องว่างให้เซ็นสด)</span>}
         </div>
