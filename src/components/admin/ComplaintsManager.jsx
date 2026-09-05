@@ -4,7 +4,7 @@ import {
   ClipboardList, Clock, Loader2, CheckCircle2, XCircle, AlertCircle,
   ChevronRight, ChevronLeft, Filter, Search, Phone, Trash2, Wrench,
   MapPin, X, FileText, AlignLeft, Camera, ChevronDown,
-  Shield, Printer, Users, RefreshCw, AlertTriangle, Building2,
+  Shield, Printer, Users, RefreshCw, AlertTriangle, Building2, BarChart3, List,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
@@ -22,6 +22,16 @@ import { workingDaysLeft } from '../../lib/workingDays'
 import OssIntakeForm from './OssIntakeForm'
 import OdorFieldsDisplay from '../complaints/OdorFieldsDisplay'
 import OdorComplaintTable, { OdorDetailModal } from '../complaints/OdorComplaintTable'
+import OdorReportSummary from '../complaints/OdorReportSummary'
+import { buildOdorSummary } from '../../lib/odorAnalytics'
+import { odorIncidentRangeOf, odorTimeRangeLabel } from '../../lib/odorTimeRanges'
+
+// มุมมองของแท็ปเฉพาะกิจ (odor): บทวิเคราะห์ กับ รายการดิบ — ดีฟอลต์เปิดที่รายงาน เพราะสิ่งที่แอดมิน
+// ต้องใช้ตัดสินใจคือภาพรวม ส่วนรายการรายเรื่องเปิดเมื่อต้องการติดต่อผู้แจ้งหรือมอบหมายใหม่เท่านั้น
+const ODOR_VIEWS = [
+  { key: 'report', label: 'รายงานสรุป', icon: BarChart3 },
+  { key: 'list',   label: 'รายการคำร้อง', icon: List },
+]
 import { GOV_FONT_LINK, govDocFontIdentityCss, govEServiceOriginText, govPageCss } from '../../lib/govDocStyle.js'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -143,6 +153,11 @@ function StatusBadge({ status }) {
 
 // มอบหมายใหม่รายเรื่องในแท็ปเฉพาะกิจ (odor) — ใช้ร่วมกันทั้งการ์ดมือถือและตารางเดสก์ท็อป กันเขียนซ้ำ
 // เรื่องที่ acknowledge แล้วห้ามแก้ผู้รับผิดชอบ (รักษาประวัติการปฏิบัติงาน) แสดงข้อความแทน
+//
+// ⚠️ เงื่อนไขยังเป็น acknowledged_at ไม่ใช่ routed_at และห้ามเปลี่ยน — routed_at มีอยู่ทุกแถวตั้งแต่
+// เปลี่ยนมาให้ระบบรับเรื่องอัตโนมัติ ถ้าเปลี่ยนไปเช็คตัวนั้นจะกลายเป็นล็อกไม่ให้มอบหมายใหม่ได้เลย
+// สักเรื่องเดียว ซึ่งทำลายเหตุผลที่มีบล็อกนี้ตั้งแต่แรก (ผู้รับผิดชอบเดิมย้าย/พ้นตำแหน่งแล้วเรื่องค้าง)
+// ที่ล็อกไว้คือเฉพาะเรื่องเก่าที่เคยมีเจ้าหน้าที่กดรับทราบด้วยตัวเองจริงๆ เท่านั้น
 function OdorReassignBlock({ complaint: c, canBulkDelete, technicianGroups, onReassign }) {
   if (!canBulkDelete) return null
   if (c.extra_data?.acknowledged_at) {
@@ -1436,6 +1451,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   // แท็ปแยกต่างหากสำหรับหมวด "กลิ่นเหม็นรบกวน" (เฉพาะกิจ ส่งตรงผู้รับผิดชอบ ไม่ผ่านแอดมิน) — ดูอย่างเดียว
   // ไม่ใช้ FILTER_TABS/filterTab เดิมเพราะ array นั้นชี้ enum สถานะ ไม่ใช่หมวดคำร้อง
   const [odorTabActive, setOdorTabActive] = useState(false)
+  const [odorView, setOdorView] = useState('report')
   const [odorExpandedId, setOdorExpandedId] = useState(null)
   // เบอร์โทร/ชื่อผู้แจ้งใน `complaints` (มาจาก list_complaints_for_staff) ถูก mask ไว้สำหรับ role
   // ที่ไม่ใช่ admin/superadmin (ดู 150_complaint_pii_role_access.sql) — ผู้รับผิดชอบที่เป็น officer/
@@ -1838,29 +1854,68 @@ ${GOV_FONT_LINK}
     const thDate = now.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
     const filterLabel = filterSummary || 'ทั้งหมด'
 
+    // ⚠️ ทุกค่าที่มาจากผู้ใช้ต้องผ่าน escapeHtml ก่อนต่อเข้า template — สถานที่/หมู่บ้านเป็น free text
+    // ที่ประชาชนพิมพ์เอง ถ้าต่อดิบๆ แท็กที่ปนมาจะทำเลย์เอาต์ใบพิมพ์พังหรือแทรกสคริปต์ในหน้าต่างพิมพ์ได้
     const rows = rowsToPrint.map((c, i) => {
       const d = new Date(c.created_at)
       const dateStr = d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
       const timeStr = d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
-      const location = c.location_name || c.village || '—'
+      const location = escapeHtml(c.location_name || c.village || '—')
       const intensity = c.extra_data?.odor_intensity != null ? `${c.extra_data.odor_intensity} / 5` : '—'
-      const health = c.extra_data?.health_effect || 'ไม่มี'
-      const assignee = technicians.find((t) => t.id === c.assigned_to)?.full_name || 'ยังไม่ได้ตั้งค่า'
-      const ackAt = c.extra_data?.acknowledged_at
-      const status = ackAt
-        ? `รับทราบแล้ว (${new Date(ackAt).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })})`
-        : 'รอรับทราบ'
+      const health = escapeHtml(c.extra_data?.health_effect || 'ไม่มี')
+      const assignee = escapeHtml(technicians.find((t) => t.id === c.assigned_to)?.full_name || 'ยังไม่ได้ตั้งค่า')
+      // คอลัมน์สุดท้ายเดิมคือ "สถานะ" (รอรับทราบ/รับทราบแล้ว) — ตั้งแต่ระบบรับเรื่องอัตโนมัติ ค่าจะ
+      // เหมือนกันทุกแถว พิมพ์ลงกระดาษก็เปลืองคอลัมน์เปล่า เปลี่ยนเป็นช่วงเวลาที่ได้กลิ่นซึ่งเป็นข้อมูล
+      // ที่ผู้บังคับบัญชาใช้สั่งจัดเวรลงพื้นที่ได้จริง
+      const timeRange = escapeHtml(odorTimeRangeLabel(odorIncidentRangeOf(c)) ?? '—')
       return `<tr>
         <td style="text-align:center">${i + 1}</td>
         <td>${location}</td>
         <td style="text-align:center">${dateStr}</td>
         <td style="text-align:center">${timeStr}</td>
+        <td>${timeRange}</td>
         <td style="text-align:center">${intensity}</td>
         <td>${health}</td>
         <td>${assignee}</td>
-        <td style="text-align:center">${status}</td>
       </tr>`
     }).join('')
+
+    // บทสรุปเชิงวิเคราะห์ — ใช้ก้อนคำนวณเดียวกับแผงบนหน้าจอ (buildOdorSummary) ตัวเลขจึงตรงกันเสมอ
+    // วางไว้เหนือตารางเพราะผู้บังคับบัญชาอ่านบรรทัดแรกแล้วต้องได้ข้อสรุป ไม่ใช่ต้องไล่อ่าน 40 แถวก่อน
+    const s = buildOdorSummary(rowsToPrint)
+    const fmtShort = (d) => (d ? d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '—')
+    const pctText = (p) => (p != null ? ` (${p}%)` : '')
+    const topTimeRanges = [...s.timeRanges].sort((a, b) => b.count - a.count).filter((r) => r.count > 0)
+    const summaryHtml = `
+<div class="summary">
+  <h3>บทสรุปสำหรับผู้บริหาร</h3>
+  <div class="stat-row">
+    <div class="stat"><b>${s.total}</b><span>คำร้องทั้งหมด (เรื่อง)</span></div>
+    <div class="stat"><b>${s.intensity.avg ?? '—'}</b><span>ความรุนแรงเฉลี่ย (จาก 5)</span></div>
+    <div class="stat"><b>${s.intensity.severeCount}</b><span>ระดับ ${s.intensity.severeFrom} ขึ้นไป (เรื่อง)</span></div>
+    <div class="stat"><b>${s.health.count}</b><span>ผู้แจ้งที่มีอาการทางกาย (ราย)</span></div>
+  </div>
+  <p class="range">ช่วงข้อมูล ${fmtShort(s.firstAt)} ถึง ${fmtShort(s.lastAt)}</p>
+  <div class="cols">
+    <div>
+      <p class="head">ช่วงเวลาที่ได้กลิ่น</p>
+      ${topTimeRanges.length
+        ? `<ul>${topTimeRanges.map((r) => `<li>${escapeHtml(r.label)} — ${r.count} เรื่อง${pctText(r.pct)}</li>`).join('')}</ul>`
+        : '<p class="none">ไม่มีข้อมูล</p>'}
+    </div>
+    <div>
+      <p class="head">พื้นที่ที่ถูกแจ้งมากที่สุด</p>
+      ${s.locations.length
+        ? `<ul>${s.locations.slice(0, 5).map((l) => `<li>${escapeHtml(l.name)} — ${l.count} เรื่อง${pctText(l.pct)}${
+            l.avgIntensity != null ? ` ความรุนแรงเฉลี่ย ${l.avgIntensity}` : ''}</li>`).join('')}</ul>`
+        : '<p class="none">ไม่มีข้อมูล</p>'}
+    </div>
+  </div>
+  ${s.observations.length
+    ? `<p class="head">ข้อสังเกตจากข้อมูล</p><ol class="obs">${
+        s.observations.map((o) => `<li>${escapeHtml(o)}</li>`).join('')}</ol>`
+    : ''}
+</div>`
 
     const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
 <title>รายงานคำร้องกลิ่นเหม็นรบกวน</title>
@@ -1880,20 +1935,38 @@ ${GOV_FONT_LINK}
   .sign-box { text-align:center; font-size:13px; width:260px; }
   .sign-line { margin:36px 0 6px; border-bottom:1px dotted #555; }
   .footer { margin-top:12px; font-size:12px; color:#555; text-align:right; }
+  /* บทสรุป: กันไม่ให้ถูกหั่นครึ่งข้ามหน้า ผู้บังคับบัญชาต้องอ่านจบในหน้าเดียว
+     ส่วนตารางรายเรื่องจะไหลไปหน้าถัดไปได้ตามปกติ (พื้นที่พิมพ์แนวนอนสูงแค่ 170 มม.) */
+  .summary { page-break-inside: avoid; border:1px solid #d9e6b8; background:#f7faf0;
+             border-radius:6px; padding:10px 12px; margin-bottom:14px; }
+  .summary h3 { margin:0 0 8px; font-size:14px; color:#3f6212; }
+  .summary .head { font-size:12px; font-weight:bold; margin:8px 0 3px; color:#3f6212; }
+  .summary ul, .summary ol { margin:0; padding-left:18px; font-size:12px; line-height:1.5; }
+  .summary .obs { line-height:1.55; }
+  .summary .none { font-size:12px; color:#777; margin:0; }
+  .summary .range { font-size:11px; color:#666; margin:6px 0 0; }
+  .stat-row { display:flex; gap:8px; }
+  .stat { flex:1; background:#fff; border:1px solid #e3ecd0; border-radius:5px;
+          padding:6px 8px; text-align:center; }
+  .stat b { display:block; font-size:18px; color:#3f6212; }
+  .stat span { font-size:10px; color:#666; }
+  .cols { display:flex; gap:16px; margin-top:4px; }
+  .cols > div { flex:1; }
   @media print { button { display:none; } }
 </style></head><body>
 <h2>${tenant?.name ?? ''} — รายงานคำร้องกลิ่นเหม็นรบกวน (มลพิษทางอากาศ)</h2>
 <p class="sub">เรียน ผู้บังคับบัญชา เพื่อทราบ &nbsp;|&nbsp; ตัวกรอง: ${filterLabel} &nbsp;|&nbsp; ทั้งหมด ${rowsToPrint.length} รายการ &nbsp;|&nbsp; พิมพ์วันที่ ${thDate}</p>
+${summaryHtml}
 <table>
   <thead><tr>
     <th style="width:40px">ที่</th>
-    <th style="width:170px">สถานที่</th>
+    <th style="width:160px">สถานที่</th>
     <th style="width:70px">วันที่แจ้ง</th>
-    <th style="width:60px">เวลา</th>
+    <th style="width:55px">เวลา</th>
+    <th style="width:140px">ช่วงเวลาที่ได้กลิ่น</th>
     <th style="width:70px">ความรุนแรง</th>
     <th style="width:120px">อาการทางสุขภาพ</th>
-    <th style="width:130px">ผู้รับผิดชอบ</th>
-    <th style="width:150px">สถานะ</th>
+    <th style="width:125px">ผู้รับผิดชอบ</th>
   </tr></thead>
   <tbody>${rows}</tbody>
 </table>
@@ -2220,24 +2293,57 @@ ${GOV_FONT_LINK}
 
         {/* List */}
         {odorTabActive ? (
-          /* แท็ปเฉพาะกิจ — ไม่มีปุ่มเปลี่ยนสถานะ/ลบเหมือนแท็ปปกติ ผู้รับผิดชอบกด "รับทราบ" เองที่
-             แดชบอร์ดของตน (OdorAcknowledgePanel) ไม่ใช่หน้านี้ แต่แอดมินมอบหมายใหม่ได้ถ้าเรื่องยัง
-             ไม่ acknowledge (เช่นผู้รับผิดชอบเดิมย้าย/พ้นตำแหน่งแล้วเรื่องค้าง) — เรื่องที่ acknowledge
-             แล้วคงผู้รับผิดชอบเดิมไว้เสมอเพื่อรักษาประวัติการปฏิบัติงาน */
-          <OdorComplaintTable
-            complaints={odorComplaints}
-            mode="admin"
-            technicians={technicians}
-            detailLoadingId={odorDetailLoadingId}
-            onRowClick={toggleOdorRow}
-            renderToolbarExtra={({ filtered, filterSummary }) => (
-              <button type="button" onClick={() => handlePrintOdorComplaints(filtered, filterSummary)}
-                title="พิมพ์รายงานเสนอผู้บังคับบัญชา"
-                className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-lime-700 bg-white border border-lime-200 hover:bg-lime-100 transition-colors flex items-center gap-1">
-                <Printer size={12} /> พิมพ์รายงาน
-              </button>
+          /* แท็ปเฉพาะกิจ — ไม่มีปุ่มเปลี่ยนสถานะ/ลบเหมือนแท็ปปกติ ระบบรับเรื่องให้อัตโนมัติตั้งแต่
+             ประชาชนกดส่ง ไม่มีใครต้องกดรับทราบอีก แต่แอดมินยังมอบหมายใหม่ได้ (เช่นผู้รับผิดชอบเดิม
+             ย้าย/พ้นตำแหน่งแล้วเรื่องค้าง) ยกเว้นเรื่องเก่าที่เคยมีคนกดรับทราบไว้จริง
+             ซึ่งคงผู้รับผิดชอบเดิมไว้เสมอเพื่อรักษาประวัติการปฏิบัติงาน */
+          <>
+            {/* สลับระหว่างบทวิเคราะห์กับรายการดิบ — แยกคนละมุมมองแทนที่จะวางซ้อนกันในหน้าเดียว
+                เพราะตัวกรองของตารางจะทำให้ตัวเลขสรุปด้านบนขยับตามจนอ่านผิดว่าเป็นภาพรวมทั้ง อปท. */}
+            <div className="flex flex-wrap items-center gap-1.5 px-4 py-3 border-b border-gray-100 bg-lime-50/40">
+              {ODOR_VIEWS.map((v) => {
+                const active = odorView === v.key
+                return (
+                  <button key={v.key} type="button" onClick={() => setOdorView(v.key)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors ${
+                      active ? 'text-white border-transparent bg-lime-600' : 'text-lime-700 bg-white border-lime-200 hover:bg-lime-100'
+                    }`}>
+                    <v.icon size={13} /> {v.label}
+                  </button>
+                )
+              })}
+              {/* ปุ่มพิมพ์ของมุมมองรายงานพิมพ์ "ทุกเรื่อง" เพราะมุมมองนี้ไม่มีตัวกรอง — ส่วนปุ่มพิมพ์
+                  ในแถบเครื่องมือของตาราง (มุมมองรายการ) พิมพ์เฉพาะที่ผ่านตัวกรองอยู่ ณ ตอนนั้น */}
+              {odorView === 'report' && (
+                <button type="button" onClick={() => handlePrintOdorComplaints(odorComplaints, '')}
+                  title="พิมพ์รายงานเสนอผู้บังคับบัญชา"
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-lime-700 bg-white border border-lime-200 hover:bg-lime-100 transition-colors flex items-center gap-1">
+                  <Printer size={12} /> พิมพ์รายงาน
+                </button>
+              )}
+            </div>
+
+            {odorView === 'report' ? (
+              <div className="p-4">
+                <OdorReportSummary complaints={odorComplaints} />
+              </div>
+            ) : (
+              <OdorComplaintTable
+                complaints={odorComplaints}
+                mode="admin"
+                technicians={technicians}
+                detailLoadingId={odorDetailLoadingId}
+                onRowClick={toggleOdorRow}
+                renderToolbarExtra={({ filtered, filterSummary }) => (
+                  <button type="button" onClick={() => handlePrintOdorComplaints(filtered, filterSummary)}
+                    title="พิมพ์รายงานเสนอผู้บังคับบัญชา"
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-lime-700 bg-white border border-lime-200 hover:bg-lime-100 transition-colors flex items-center gap-1">
+                    <Printer size={12} /> พิมพ์รายงาน
+                  </button>
+                )}
+              />
             )}
-          />
+          </>
         ) : loading ? (
           <div className="flex items-center justify-center py-16 text-gray-400">
             <Loader2 size={24} className="animate-spin mr-2" /> กำลังโหลด...

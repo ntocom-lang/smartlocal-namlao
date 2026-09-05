@@ -17,6 +17,7 @@ import MapPicker from '../components/MapPicker'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
 import { uploadFile } from '../lib/driveStorage'
 import { ODOR_TIME_RANGES } from '../lib/odorTimeRanges'
+import { ODOR_INTENSITY_LEVELS, WIND_DIRECTIONS, HEALTH_EFFECT_OPTIONS } from '../lib/odorOptions'
 
 const MAX_PHOTOS = 3
 
@@ -71,16 +72,8 @@ const ISSUE_TYPES_BY_CATEGORY = {
 
 // ฟิลด์เสริมของหมวด "กลิ่นเหม็นรบกวน (มลพิษทางอากาศ)" — เก็บรวมเป็น complaints.extra_data (jsonb) ก้อนเดียว
 // ไม่ใช่คอลัมน์แยกทีละฟิลด์ เพราะยังไม่มีความจำเป็นต้องกรอง/ออกรายงานสถิติแยกรายฟิลด์ในเร็วๆ นี้
-const ODOR_INTENSITY_LEVELS = [
-  { value: 1, label: 'ได้กลิ่นจางๆ' },
-  { value: 2, label: 'ได้กลิ่นชัดเจน' },
-  { value: 3, label: 'รบกวนการใช้ชีวิต' },
-  { value: 4, label: 'แสบจมูก/เวียนหัว' },
-  { value: 5, label: 'รุนแรงจนนอนไม่หลับ' },
-]
-const WIND_DIRECTIONS = ['เหนือ', 'ใต้', 'ตะวันออก', 'ตะวันตก', 'ลมสงบ']
-const HEALTH_EFFECT_NONE = 'ไม่มีอาการทางกาย'
-const HEALTH_EFFECT_OPTIONS = ['เวียนศีรษะ', 'คลื่นไส้', 'ระคายเคืองทางเดินหายใจ', HEALTH_EFFECT_NONE]
+// ตัวเลือกทั้ง 3 ชุดย้ายไป src/lib/odorOptions.js แล้ว เพราะรายงานวิเคราะห์ต้องแปลงเลข 1-5 กลับเป็น
+// คำอธิบายด้วย ถ้าปล่อยให้ประกาศซ้ำ 2 ที่จะเพี้ยนทันทีที่มีคนแก้ข้างเดียว
 
 const DEFAULT_CATEGORIES = [
   { value: 'light',            label: 'ไฟฟ้าสาธารณะ' },

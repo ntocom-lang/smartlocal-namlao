@@ -1,8 +1,9 @@
 import { MapPin, Wind, Phone } from 'lucide-react'
 import { odorIncidentRangeOf, odorTimeRangeLabel } from '../../lib/odorTimeRanges'
+import { odorIntakeText } from '../../lib/odorIntake'
 
 // แสดงฟิลด์เฉพาะหมวด "กลิ่นเหม็นรบกวน (มลพิษทางอากาศ)" — ใช้ซ้ำทั้งในแท็ปแอดมิน (เฉพาะกิจ) และแผงรับทราบ
-// ของผู้รับผิดชอบ (OdorAcknowledgePanel) พิกัด GPS แยกเป็นหัวข้อของตัวเอง ไม่ปนกับสถานที่/เบอร์ติดต่อ
+// ของผู้รับผิดชอบ (OdorReportPanel) พิกัด GPS แยกเป็นหัวข้อของตัวเอง ไม่ปนกับสถานที่/เบอร์ติดต่อ
 // เหมือนใน ComplaintDetailModal ทั่วไป (ตามที่ตกลงกัน)
 export default function OdorFieldsDisplay({ complaint: c }) {
   const extra = c.extra_data ?? {}
@@ -28,6 +29,14 @@ export default function OdorFieldsDisplay({ complaint: c }) {
         </p>
         <p>ช่วงเวลาที่ได้กลิ่น: {odorTimeRangeLabel(odorIncidentRangeOf(c)) ?? '-'}</p>
         <p>วันเวลาที่แจ้ง: {submittedAt}</p>
+        {/* สถานะเดียวกับที่ผู้แจ้งเห็นในหน้า "คำร้องของฉัน" — ให้เจ้าหน้าที่รู้ว่าประชาชนเห็นอะไรอยู่
+            เวลาโทรมาถามจะได้ตอบตรงกัน */}
+        <p className="flex items-center gap-1.5">
+          สถานะ:
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700">
+            <Wind size={11} /> {odorIntakeText(c)}
+          </span>
+        </p>
         <p>ระดับความรุนแรง: {extra.odor_intensity ?? '-'} / 5</p>
         <p>อาการทางสุขภาพ: {extra.health_effect ?? 'ไม่มี'}</p>
         <p>ทิศทางลม: {extra.wind_direction ?? '-'}</p>
@@ -54,22 +63,7 @@ export default function OdorFieldsDisplay({ complaint: c }) {
   )
 }
 
-// Badge สั้นๆ บอกสถานะรับทราบ — ใช้ในแท็ปแอดมินและหัวการ์ดของแผงรับทราบ
-// compact = ตัดวันเวลาออก เหลือแค่คำสั้นๆ — ใช้ในตารางเดสก์ท็อป (คอลัมน์แคบ, table-fixed) กัน
-// ข้อความ "รับทราบแล้ว · 25/8/69 17:18" ดันคอลัมน์ขยายจนตารางล้นต้องเลื่อนซ้ายขวา
-// (flex item ไม่ยอมหดต่ำกว่า min-content โดยดีฟอลต์) วันเวลาเต็มยังดูได้ตอนกางรายละเอียด
-export function OdorAckBadge({ complaint: c, compact = false }) {
-  const ackAt = c.extra_data?.acknowledged_at
-  if (!ackAt) {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-700 whitespace-nowrap">
-        <Wind size={11} /> รอรับทราบ
-      </span>
-    )
-  }
-  return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700 whitespace-nowrap">
-      รับทราบแล้ว{!compact && ` · ${new Date(ackAt).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}`}
-    </span>
-  )
-}
+// เดิมมี OdorAckBadge ("รอรับทราบ" / "รับทราบแล้ว") export ออกไปให้ตารางใช้ทุกแถว — ถอดออกแล้ว
+// เพราะระบบรับเรื่องอัตโนมัติทุกใบตั้งแต่วินาทีที่ยื่น (trigger route_adhoc_complaint) ค่าจึงเท่ากัน
+// ทุกแถวตลอดกาล ป้ายที่ไม่เคยเปลี่ยนค่าไม่ได้บอกอะไรนอกจากกินพื้นที่ สถานะย้ายมาอยู่บรรทัดเดียว
+// ในกล่องรายละเอียดด้านบนแทน (ที่เดียวกับที่ประชาชนเห็นใน MyComplaints)

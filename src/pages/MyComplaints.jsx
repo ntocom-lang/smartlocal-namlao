@@ -7,6 +7,7 @@ import { compressImage } from '../lib/imageUtils'
 import { uploadFile, resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef } from '../lib/driveStorage'
 import SatisfactionModal from '../components/SatisfactionModal'
 import { workingDaysLeft } from '../lib/workingDays'
+import { odorRoutedAt, ODOR_INTAKE_LABEL } from '../lib/odorIntake'
 import {
   ClipboardList, Loader2, ChevronRight, X, MapPin,
   Phone, ArrowLeft, Check, XCircle, Navigation, Camera, AlignLeft,
@@ -92,24 +93,22 @@ function StatusBadge({ status }) {
 const STATUS_COMPAT = { pending: 'new', done: 'done', completed: 'closed' }
 
 // หมวดเฉพาะกิจ (complaint_categories.is_adhoc เช่น กลิ่นเหม็นรบกวน) ส่งตรงถึงผู้รับผิดชอบและ
-// "ไม่แตะ status เลย" ตลอดสายงาน — ผู้แจ้งจึงเห็น "คำร้องใหม่" ค้างตลอดกาลแม้เจ้าหน้าที่รับเรื่อง
+// "ไม่แตะ status เลย" ตลอดสายงาน — ผู้แจ้งจึงเห็น "คำร้องใหม่" ค้างตลอดกาลแม้เรื่องถึงมือคนรับผิดชอบ
 // ไปแล้ว ซึ่งอ่านได้เป็น "ไม่มีใครสนใจเรื่องของฉัน" ความคืบหน้าจริงของสายงานนี้อยู่ที่
-// extra_data.acknowledged_at (เขียนโดย acknowledge_odor_complaint() ฝั่งเซิร์ฟเวอร์เท่านั้น)
-// ใช้การมีอยู่ของคีย์นี้เป็นสัญญาณ ไม่ต้อง query complaint_categories เพิ่มเพื่อถาม is_adhoc
-function ackAtOf(complaint) {
-  const at = complaint?.extra_data?.acknowledged_at
-  if (!at) return null
-  const time = new Date(at)
-  return Number.isNaN(time.getTime()) ? null : time
-}
-
+// extra_data.routed_at (เขียนโดย trigger route_adhoc_complaint ฝั่งเซิร์ฟเวอร์เท่านั้น)
+// หรือ acknowledged_at ของเรื่องเก่าที่เคยมีเจ้าหน้าที่กดรับทราบจริงในสายงานก่อนหน้า
+// ใช้การมีอยู่ของคีย์เป็นสัญญาณ ไม่ต้อง query complaint_categories เพิ่มเพื่อถาม is_adhoc
+// ⚠️ ห้ามเปิด fallbackToCreated ที่นี่เด็ดขาด หน้านี้แสดงคำร้องคละหมวด หมวดปกติจะขึ้นป้ายผิดทั้งหมด
+//
+// ข้อความคือ "ระบบรับเรื่องแล้ว" ไม่ใช่ "เจ้าหน้าที่รับทราบแล้ว" อย่างเดิม — ตั้งแต่เปลี่ยนมาให้ระบบ
+// รับเรื่องอัตโนมัติ ไม่มีเจ้าหน้าที่คนใดกดอะไรเลย ป้ายเดิมจึงเป็นคำกล่าวอ้างที่ไม่มีคนอยู่เบื้องหลัง
 function AckBadge({ complaint, withTime = false }) {
-  const at = ackAtOf(complaint)
+  const at = odorRoutedAt(complaint)
   if (!at) return null
   return (
     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap bg-lime-100 text-lime-800">
       <CheckCircle2 size={12} />
-      เจ้าหน้าที่รับทราบแล้ว
+      {ODOR_INTAKE_LABEL}
       {withTime && ` · ${at.toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}`}
     </span>
   )
@@ -387,9 +386,9 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange, onRate, catLa
           {/* status stepper */}
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">ความคืบหน้า</p>
-            {/* สายงานเฉพาะกิจไม่มีขั้นสถานะให้ไล่ — บอกตรงๆ ว่ามีผู้รับผิดชอบรับเรื่องแล้วเมื่อไหร่
+            {/* สายงานเฉพาะกิจไม่มีขั้นสถานะให้ไล่ — บอกตรงๆ ว่าระบบรับเรื่องเข้ามาแล้วเมื่อไหร่
                 แทนที่จะปล่อยให้ stepper ค้างที่ "คำร้องใหม่" เป็นข้อมูลเดียวที่ผู้แจ้งได้เห็น */}
-            {ackAtOf(c) && (
+            {odorRoutedAt(c) && (
               <div className="mb-3 flex items-center gap-2 rounded-2xl border border-lime-200 bg-lime-50 px-3 py-2.5">
                 <AckBadge complaint={c} withTime />
               </div>

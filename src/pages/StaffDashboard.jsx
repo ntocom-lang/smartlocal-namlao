@@ -20,7 +20,7 @@ import { uploadFile } from '../lib/driveStorage'
 import { fetchAssignableStaff, groupStaffByDepartment } from '../lib/staffRoster'
 import { BASE_DOCUMENT_TYPES } from '../lib/documentTypes'
 import { MANAGED_MODULE_KEYS } from '../lib/staffModules'
-import OdorAcknowledgePanel from '../components/staff/OdorAcknowledgePanel'
+import OdorReportPanel from '../components/staff/OdorReportPanel'
 import PortalSwitcher from '../components/layout/PortalSwitcher'
 import UserProfileBadge from '../components/layout/UserProfileBadge'
 
@@ -1472,7 +1472,7 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
 
   return (
     <div className="space-y-4 md:space-y-5">
-      <OdorAcknowledgePanel tenantId={tenantId} staffId={staffId} />
+      <OdorReportPanel tenantId={tenantId} staffId={staffId} />
 
       <section className="relative overflow-hidden rounded-3xl px-5 py-5 text-white shadow-lg shadow-blue-900/10 md:rounded-2xl md:px-6"
         style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 58%, #38bdf8 140%)' }}>
@@ -1906,8 +1906,8 @@ export default function StaffDashboard() {
     // ฝั่งแอดมินใช้ head:true นับอย่างเดียว ไม่ดึงแถวลง client = ไม่มี PII ติดมา และไม่ต้องใช้
     // seen ids เพราะพอกดรับเรื่องแล้ว status เปลี่ยน ตัวเลขลดเองโดยไม่ต้องจำสถานะบนเครื่อง
     //
-    // ⚠️ ต้องตัดหมวดเฉพาะกิจ (complaint_categories.is_adhoc) ออกเสมอ — OdorAcknowledgePanel
-    // จงใจแยกขาดจาก status pipeline ผู้รับผิดชอบกด "รับทราบ" แล้วเขียนแค่ extra_data.acknowledged_at
+    // ⚠️ ต้องตัดหมวดเฉพาะกิจ (complaint_categories.is_adhoc) ออกเสมอ — OdorReportPanel
+    // จงใจแยกขาดจาก status pipeline: ระบบรับเรื่องเองตั้งแต่ยื่นโดยเขียนแค่ extra_data.routed_at
     // ไม่เคยแตะ status ⇒ คำร้องเฉพาะกิจค้าง pending ตลอดไปแม้จัดการเสร็จแล้ว ถ้านับรวมเข้ามา
     // badge จะไม่มีวันลงถึง 0 แล้วคนจะเลิกมองมัน ซึ่งแย่กว่าไม่มี badge
     // อีกทั้งหมวดเฉพาะกิจออกแบบให้ "ส่งตรงถึงผู้รับผิดชอบโดยไม่ผ่านแอดมิน" อยู่แล้ว
