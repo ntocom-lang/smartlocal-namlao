@@ -245,9 +245,17 @@ export function buildFleetFuelMemoHtml({
       width: 210mm;
       min-height: 297mm;
       padding: ${GOV_PAGE_MARGIN};
+      /* คอลัมน์ flex เพื่อให้บล็อกลงนามดันตัวเองลงไปอยู่ท้ายหน้าด้วย margin-top:auto
+         (ดู .signs) — ดันด้วยระยะตายตัวไม่ได้ เพราะเคส 7 คันเหลือที่แค่ 7.7 มม.
+         ใส่เกินนั้นเอกสารหลุดไปหน้า 2 ทันที ส่วน อปท. ที่มีรถ 3 คันจะเหลือที่ว่างเกือบครึ่งหน้า
+         วิธีนี้ให้ผลถูกทั้งสองเคสโดยไม่ต้องตั้งค่าแยก */
+      display: flex;
+      flex-direction: column;
     }
     @media print {
-      .sheet { width: auto; min-height: 0; padding: 0; }
+      /* 274mm = พื้นที่พิมพ์ 276 มม. หัก 2 มม. กันปัดเศษไปเปิดหน้า 2 เปล่าๆ
+         ต้องมีความสูงที่แน่นอนตรงนี้ margin-top:auto ของบล็อกลงนามถึงจะมีที่ให้ดัน */
+      .sheet { width: auto; min-height: 274mm; padding: 0; }
       thead { display: table-header-group; }
     }
     .head { display: flex; align-items: center; gap: 12mm; }
@@ -320,6 +328,11 @@ export function buildFleetFuelMemoHtml({
     col.c-std { width: 15%; }
     col.c-actual { width: 15%; }
     .closing { margin: 8pt 0 0; text-indent: 2.5cm; }
+    /* ตัวคั่นที่ "ยืดได้แต่มีเพดาน" — ดันช่องลงนามลงมาได้มากสุด 20 มม. เมื่อหน้ายังโล่ง
+       แล้วหดเองเมื่อรถเยอะจนหน้าเริ่มเต็ม (เคส 7 คันเหลือที่ยืดแค่ ~5 มม.)
+       ใช้ margin-top:auto เฉยๆ ไม่ได้ เพราะจะดันไปติดขอบล่างสุดทุกครั้ง เอกสารที่มีรถ
+       ไม่กี่คันจะเหลือช่องว่างกลางหน้าเป็นแผ่นใหญ่ ดูเหมือนพิมพ์ตกหล่น */
+    .sign-gap { flex: 1 1 auto; max-height: 20mm; }
     .signs { margin-top: 6pt; }
     /* ช่องลงนามเยื้องลงเป็นขั้นบันได 3 ชั้นตามใบต้นฉบับ (พัสดุซ้าย · ปลัดขวา · นายกซ้ายล่างสุด)
        ไม่ใช่จับพัสดุกับปลัดมาไว้แถวเดียวกัน — เคยทำแบบนั้นเพื่อประหยัดที่แนวตั้ง แต่วางเทียบกับ
@@ -380,6 +393,7 @@ export function buildFleetFuelMemoHtml({
     </tbody>
   </table>
   <p class="closing">จึงเรียนมาเพื่อโปรดทราบ</p>
+  <div class="sign-gap"></div>
   <div class="signs">
     ${signatureBlock(signatures.supply, 'sign--left')}
     ${signatureBlock(signatures.clerk, 'sign--right')}
