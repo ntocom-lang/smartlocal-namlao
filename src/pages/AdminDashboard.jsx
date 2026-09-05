@@ -37,6 +37,7 @@ const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectRe
 import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
 import SignatorySettings from '../components/admin/SignatorySettings'
 import DocumentTypeFeeSettings from '../components/admin/DocumentTypeFeeSettings'
+import DocumentTypeAssignments from '../components/admin/DocumentTypeAssignments'
 import PositionCatalogAdmin from '../components/admin/PositionCatalogAdmin'
 import HolidaysAdmin from '../components/admin/HolidaysAdmin'
 import ResetPasswordModal from '../components/admin/ResetPasswordModal'
@@ -105,7 +106,15 @@ function CategorySettingsTabs({ tenant, currentUserRole }) {
 
       {active === 'categories' && <CategoryManager tenant={tenant} />}
       {/* key={tenant.id} ให้ remount อ่านค่า fee_schedule ใหม่เมื่อสลับหน่วยงาน */}
-      {active === 'doc-types' && <DocumentTypeFeeSettings key={tenant?.id} tenant={tenant} />}
+      {active === 'doc-types' && (
+        <div className="space-y-5">
+          <DocumentTypeFeeSettings key={tenant?.id} tenant={tenant} />
+          {/* ผังงาน (กอง/ผู้รับผิดชอบ/SLA) อยู่คนละตารางกับค่าธรรมเนียม จึงแยกฟอร์มและปุ่มบันทึก
+              ของตัวเอง — ถ้ารวมปุ่มเดียว การบันทึกค่าธรรมเนียมจะเขียนทับ fee_schedule ทั้งก้อน
+              และผังงานที่แก้ค้างไว้จะหายไปด้วยโดยไม่มีใครรู้ */}
+          <DocumentTypeAssignments key={`assign-${tenant?.id}`} tenant={tenant} />
+        </div>
+      )}
     </div>
   )
 }
