@@ -36,7 +36,6 @@ import CivilProjectAdmin from '../components/admin/CivilProjectAdmin'
 const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectReport'))
 import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
 import SignatorySettings from '../components/admin/SignatorySettings'
-import DocumentTypeFeeSettings from '../components/admin/DocumentTypeFeeSettings'
 import DocumentTypeAssignments from '../components/admin/DocumentTypeAssignments'
 import PositionCatalogAdmin from '../components/admin/PositionCatalogAdmin'
 import HolidaysAdmin from '../components/admin/HolidaysAdmin'
@@ -105,16 +104,10 @@ function CategorySettingsTabs({ tenant, currentUserRole }) {
       )}
 
       {active === 'categories' && <CategoryManager tenant={tenant} />}
-      {/* key={tenant.id} ให้ remount อ่านค่า fee_schedule ใหม่เมื่อสลับหน่วยงาน */}
-      {active === 'doc-types' && (
-        <div className="space-y-5">
-          <DocumentTypeFeeSettings key={tenant?.id} tenant={tenant} />
-          {/* ผังงาน (กอง/ผู้รับผิดชอบ/SLA) อยู่คนละตารางกับค่าธรรมเนียม จึงแยกฟอร์มและปุ่มบันทึก
-              ของตัวเอง — ถ้ารวมปุ่มเดียว การบันทึกค่าธรรมเนียมจะเขียนทับ fee_schedule ทั้งก้อน
-              และผังงานที่แก้ค้างไว้จะหายไปด้วยโดยไม่มีใครรู้ */}
-          <DocumentTypeAssignments key={`assign-${tenant?.id}`} tenant={tenant} />
-        </div>
-      )}
+      {/* key={tenant.id} ให้ remount อ่านรายการประเภทที่เพิ่มเอง (fee_schedule._custom_types)
+          ใหม่เมื่อสลับหน่วยงาน — เดิมแยกเป็น 2 การ์ด (ค่าธรรมเนียม + ผังงาน) รวมเป็นใบเดียว
+          2569-09-05 พร้อมตัดอัตราค่าธรรมเนียมทิ้ง */}
+      {active === 'doc-types' && <DocumentTypeAssignments key={tenant?.id} tenant={tenant} />}
     </div>
   )
 }
@@ -5908,8 +5901,9 @@ export default function AdminDashboard() {
         // หน้า "ผู้รับผิดชอบแต่ละประเภทคำร้อง" (activePage 'assignments', AssignmentManager component)
         // ถูกลบไปแล้ว — เป็น UI ซ้ำซ้อนกับส่วนตั้งผู้รับผิดชอบ+SLA ที่ฝังอยู่ใน CategoryManager นี้อยู่แล้ว
         // (เขียนตาราง category_assignments ตัวเดียวกัน) เมนูไปหน้านั้นถูกปิด (show:false) มานานแล้วด้วย
-        // 2 แท็บย่อยอยู่ใน CategorySettingsTabs — ประเภทคำร้อง / ประเภทคำขอเอกสาร (ย้ายมาจากเมนู
-        // "ค่าธรรมเนียม" ที่ถอดออก เป็นที่เดียวที่เขียน municipalities.fee_schedule ได้)
+        // 2 แท็บย่อยอยู่ใน CategorySettingsTabs — ประเภทคำร้อง / ประเภทคำขอเอกสาร (แท็บหลังเป็น
+        // ที่เดียวที่เขียน municipalities.fee_schedule._custom_types ได้ ส่วนช่องอัตราค่าธรรมเนียม
+        // ที่เคยอยู่ในแท็บนี้ถูกตัดทิ้ง 2569-09-05 เพราะไม่มี อปท. ไหนใช้จริง)
         // แท็บ "ผู้ลงนาม" เดิมย้ายออกไปเป็นเมนู 'signatories' ด้านบนแล้ว
         <CategorySettingsTabs tenant={tenant} currentUserRole={currentUserRole} />
       ) : activePage === 'civil-report' ? (

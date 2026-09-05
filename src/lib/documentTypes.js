@@ -2,8 +2,9 @@
 //
 // เดิมแต่ละหน้าจอนิยามลิสต์ของตัวเอง (StaffDashboard, CitizenDocRequest, MyDocRequests,
 // LpaDocStats, DocumentTypeFeeSettings) เพิ่มประเภทใหม่ทีต้องไล่แก้ 5 จุด และหลุดจริงมาแล้ว —
-// DocumentTypeFeeSettings รู้จักแค่ 3 ประเภทที่เก็บค่าธรรมเนียม ทำให้หน้าตั้งค่าของแอดมิน
-// มองไม่เห็น building_permit / tax_notice / waste_collection_request เลย ทั้งที่ประชาชนยื่นได้
+// DocumentTypeFeeSettings (การ์ดตั้งค่าธรรมเนียม ที่ยุบรวมเข้า DocumentTypeAssignments แล้ว
+// 2569-09-05) รู้จักแค่ 3 ประเภทที่เก็บค่าธรรมเนียม ทำให้หน้าตั้งค่าของแอดมินมองไม่เห็น
+// building_permit / tax_notice / waste_collection_request เลย ทั้งที่ประชาชนยื่นได้
 //
 // ไฟล์นี้เก็บเฉพาะ value + label ที่ทุกหน้าจอใช้ตรงกัน ส่วนฟิลด์ตกแต่งเฉพาะหน้า (สี ไอคอน
 // คำอธิบายฝั่งประชาชน) ยังอยู่ที่หน้านั้นตามเดิม ไม่ยกมารวมเพราะคนละบริบทการใช้งาน
@@ -18,8 +19,9 @@ export const BASE_DOCUMENT_TYPES = [
 ]
 
 /**
- * ประเภทที่ อปท. เพิ่มเองผ่านหน้า "ประเภทคำขอเอกสาร" — เก็บใน
- * municipalities.fee_schedule._custom_types (jsonb ก้อนเดียวกับอัตราค่าธรรมเนียม)
+ * ประเภทที่ อปท. เพิ่มเองผ่านแท็บ "ประเภทคำขอเอกสาร" (DocumentTypeAssignments) — เก็บใน
+ * municipalities.fee_schedule._custom_types (jsonb ก้อนเดียวกับอัตราค่าธรรมเนียมเดิม
+ * ที่เลิกตั้งผ่าน UI แล้ว แต่ค่าเก่ายังค้างอยู่และมีโค้ดอ่านอยู่)
  * @param {{ fee_schedule?: { _custom_types?: Array<{ value: string, label: string, emoji?: string }> } } | null} tenant
  */
 export function customDocumentTypes(tenant) {
