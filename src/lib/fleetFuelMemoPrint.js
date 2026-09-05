@@ -272,7 +272,9 @@ export function buildFleetFuelMemoHtml({
     .head { display: flex; align-items: center; gap: 12mm; }
     /* ครุฑสูง 1.5 ซม. ตามรูปแบบบันทึกข้อความ — ห้ามใช้ตราของ อปท. แทน หนังสือราชการภายใน
        ใช้ครุฑเสมอ (ของเดิมเผลอใส่ tenant.logo_url ลงช่องนี้ ซึ่งผิดรูปแบบเอกสาร)
-       ไฟล์ที่ต้องมี: public/images/garuda.png — ยังไม่มีในระบบ ระหว่างนี้จะได้ช่องว่าง
+       ไฟล์: public/images/garuda.svg (ครุฑขาวดำจาก Wikimedia Commons — Public domain ไม่ต้อง
+       อ้างอิงผู้ทำ · ใช้ได้เพราะผู้ใช้ระบบคือหน่วยงานราชการและเอกสารนี้เป็นหนังสือราชการจริง)
+       ถ้าไฟล์หาย img จะซ่อนตัวเองแล้วได้ช่องว่าง
        ขนาดเท่ากันแทน ซึ่งพิมพ์ทับกระดาษหัวจดหมายที่มีครุฑอยู่แล้วได้พอดี */
     .emblem { width: 15mm; height: 15mm; flex: none; }
     .emblem img { width: 100%; height: 100%; object-fit: contain; }
@@ -368,7 +370,7 @@ export function buildFleetFuelMemoHtml({
   <div class="head">
     <div class="emblem">${emblemUrl
       // onerror ซ่อนรูปที่โหลดไม่ขึ้น — ยังไม่มีไฟล์ครุฑในระบบจนกว่าจะวางไว้ที่
-      // public/images/garuda.png ระหว่างนั้นต้องได้ช่องว่างเปล่าขนาด 1.5 ซม.
+      // public/images/garuda.svg ถ้าไฟล์หายต้องได้ช่องว่างเปล่าขนาด 1.5 ซม.
       // (พิมพ์ทับกระดาษหัวจดหมายที่มีครุฑอยู่แล้วได้พอดี) ไม่ใช่ไอคอนรูปแตก
       ? `<img src="${esc(emblemUrl)}" alt="" onerror="this.style.display='none'">`
       : ''}</div>
