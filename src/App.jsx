@@ -23,7 +23,6 @@ const CitizenForm = lazyWithRetry(() => import('./pages/CitizenForm'))
 const ComplaintCategory = lazyWithRetry(() => import('./pages/ComplaintCategory'))
 const OneDataLanding = lazyWithRetry(() => import('./pages/OneDataLanding'))
 const BusinessRegisterPage = lazyWithRetry(() => import('./pages/BusinessRegisterPage'))
-const MarketPage = lazyWithRetry(() => import('./pages/MarketPage'))
 const AdminLogin = lazyWithRetry(() => import('./pages/AdminLogin'))
 const DevJournal = lazyWithRetry(() => import('./pages/DevJournal'))
 const AuthPage = lazyWithRetry(() => import('./pages/AuthPage'))
@@ -640,7 +639,10 @@ function AppShell() {
               <BusinessRegisterPage />
             </RequireAuth>
           } />
-          <Route path="/market" element={<MarketPage />} />
+          {/* /market ถูกยุบรวมเข้า /tourism (2026-09-04) — ข้อมูลชุดเดียวกันเคยแสดง 2 หน้าจาก 2 ตาราง
+              และหน้า /market อ่านจาก business_registrations ที่แก้ไขไม่ได้ ทำให้ประชาชนเห็นข้อมูลเก่า
+              คง route ไว้เป็น redirect เพราะมีลิงก์/QR/บุ๊กมาร์กเดิมชี้มาที่นี่ */}
+          <Route path="/market" element={<Navigate to="/tourism" replace />} />
           <Route path="/auth" element={<AuthPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           {/* หน้ายืนยันการเข้าสู่ระบบบนคอมพิวเตอร์ — เจ้าหน้าที่กรอกรหัส 6 หลักจากจอ PC */}

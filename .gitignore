@@ -45,3 +45,8 @@ tmp/
 
 # ภาพจาก tests/screenshot-local-build.mjs — ของใช้แล้วทิ้ง ไม่ต้องเข้า repo
 screenshots/
+
+# Claude Code — settings ส่วนตัวต่อเครื่อง (allowlist สะสม path/token จากคำสั่งที่เคยรันเอง)
+# settings.json = ของกลางของโปรเจกต์ commit ได้ / settings.local.json = ของเครื่องใครเครื่องมัน
+.claude/settings.local.json
+.claude/worktrees/

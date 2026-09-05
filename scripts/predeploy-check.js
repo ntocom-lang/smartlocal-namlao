@@ -45,7 +45,7 @@ function git(args) {
 // แล้ว match กับ BUILD_INPUTS ไม่ติด ผลคือไฟล์ค้างที่เรียงตามตัวอักษรมาเป็นอันแรก
 // หลุดด่านนี้ไปได้เสมอโดยไม่มีอะไรฟ้อง — ตรงข้ามกับหน้าที่ของด่านนี้ทั้งหมด
 function gitLines(args) {
-  return execFileSync('git', args, { encoding: 'utf8' }).replace(/s+$/, '')
+  return execFileSync('git', args, { encoding: 'utf8' }).replace(/\s+$/, '')
 }
 
 function fail(title, lines, hint) {
@@ -62,6 +62,34 @@ function failEnv(lines, hint) {
   console.error(`\n\u274c ไม่พบตัวแปร environment ที่จำเป็น — bundle ที่ได้จะขึ้นหน้าขาวทั้งหน้า\n`)
   for (const l of lines) console.error(`   ${l}`)
   console.error(`\n   ${hint}\n`)
+  process.exit(1)
+}
+
+// ── ด่านที่ 0: ทางหลักของการขึ้น production คือ CI ไม่ใช่เครื่อง dev ──
+//
+// ตั้งแต่ 2026-08-28 มี .github/workflows/deploy.yml ที่ build+deploy จาก commit ใน master
+// โดยไม่มี .env.local ปนเข้า bundle ⇒ merge เข้า master แล้วจบ ไม่ต้อง deploy จากเครื่องอีก
+//
+// ที่ต้องบล็อกฝั่งเครื่อง: .env.local ของเครื่อง dev มี VITE_TENANT_SLUG=<อปท. ที่กำลังทดสอบ>
+// ซึ่ง vite ฝังลงบันเดิลตอน build ⇒ ทุกโดเมนกลายเป็น อปท. เดียวกันหมด (เกิดจริง 2026-08-28)
+// ตั้งแต่ 2026-09-05 มี 2 เครื่องที่ build ได้ (PC บ้าน + โน้ตบุคที่ทำงาน) ความเสี่ยงคูณสอง
+//
+// ด่านนี้อยู่เหนือ ALLOW_DIRTY_DEPLOY เพราะเป็นคนละคำถาม —
+// ALLOW_DIRTY_DEPLOY ตอบว่า "ยอมให้ของค้างขึ้นไหม" ส่วนด่านนี้ตอบว่า "ควร deploy จากที่นี่ไหม"
+//
+// จำเป็นต้อง deploy จากเครื่องจริงๆ (CI ล่ม / ต้อง rollback ด่วน):
+//   ALLOW_LOCAL_DEPLOY=1 npm run cf:deploy
+//   (PowerShell: $env:ALLOW_LOCAL_DEPLOY=1; npm run cf:deploy)
+//
+// หมายเหตุ: ด่านนี้ไม่ได้กันทุกทาง — `npm run cf:deploy:force` กับ `npx wrangler deploy`
+// ไม่ได้เรียกไฟล์นี้เลย ทั้งสองทางนั้นตั้งใจให้เป็นทางลัดสำหรับคนที่รู้ว่ากำลังทำอะไรอยู่
+if (!process.env.CI && process.env.ALLOW_LOCAL_DEPLOY !== '1') {
+  console.error('\n❌ ไม่ควร deploy จากเครื่อง dev — ทางหลักคือ push/merge เข้า master แล้วให้ CI ทำ\n')
+  console.error('   เหตุผล: .env.local ในเครื่องมี VITE_TENANT_SLUG ที่ vite จะฝังลงบันเดิล')
+  console.error('           ทำให้ทุก อปท. กลายเป็น อปท. เดียวกันหมด (เกิดขึ้นจริงมาแล้ว)\n')
+  console.error('   ปกติ : git push แล้วเปิด PR -> merge เข้า master -> CI deploy ให้เอง')
+  console.error('   ฉุกเฉิน: ALLOW_LOCAL_DEPLOY=1 npm run cf:deploy')
+  console.error('           (PowerShell: $env:ALLOW_LOCAL_DEPLOY=1; npm run cf:deploy)\n')
   process.exit(1)
 }
 

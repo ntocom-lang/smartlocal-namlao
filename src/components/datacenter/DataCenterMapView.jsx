@@ -365,7 +365,7 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
 
   // อนุมัติ/ปฏิเสธคำขอลงทะเบียนธุรกิจแบบเร็วจากป๊อปอัพ (ย้ายมาจาก MapDashboardAdmin เดิม) — แค่ปรับสถานะ
   // ไม่ได้สร้างรายการ tourism_places ให้อัตโนมัติ (พฤติกรรมเดิมของปุ่มด่วนนี้เป็นแบบนี้อยู่แล้ว) ถ้าต้องการ
-  // แก้รายละเอียด/รูปก่อนเผยแพร่ ต้องไปที่หน้า "เที่ยว กิน พัก OTOP" > "คำขอลงทะเบียน" เหมือนเดิม
+  // แก้รายละเอียด/รูปก่อนเผยแพร่ ต้องไปที่หน้า "เที่ยว กิน พัก ชอป บริการ" > "คำขอลงทะเบียน" เหมือนเดิม
   async function approveBiz(id, approved) {
     setApprovingBizId(id)
     const { data: { session } } = await supabase.auth.getSession()

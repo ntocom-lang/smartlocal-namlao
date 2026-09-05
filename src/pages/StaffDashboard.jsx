@@ -12,6 +12,7 @@ import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/c
 import { useTenant } from '../contexts/TenantContext'
 import { useNotifications } from '../contexts/NotificationsContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
+import { govDocFontCss, govPageCss } from '../lib/govDocStyle.js'
 import { thaiDate } from '../lib/thaiDate'
 import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
 import { uploadFile } from '../lib/driveStorage'
@@ -73,7 +74,7 @@ const STANDALONE_GROUPS = [
     items: [
       { key: 'events',          label: 'ปฏิทินกิจกรรม',       Icon: CalendarDays, color: '#10b981', bg: '#d1fae5' },
       { key: 'posts',           label: 'ข่าวสาร/ภาพกิจกรรม',  Icon: Images,       color: '#059669', bg: '#d1fae5' },
-      { key: 'tourism',         label: 'เที่ยว กิน พัก OTOP', Icon: Luggage,      color: '#d97706', bg: '#fef3c7' },
+      { key: 'tourism',         label: 'เที่ยว กิน พัก ชอป บริการ', Icon: Luggage,      color: '#d97706', bg: '#fef3c7' },
       { key: 'tourism-reviews', label: 'รีวิวสถานที่',        Icon: Star,         color: '#f59e0b', bg: '#fef3c7' },
     ],
   },
@@ -844,9 +845,9 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
 
 const DOC_CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Sarabun:ital,wght@0,400;0,600;0,700;1,400&display=swap');
-  @page { size: A4 portrait; margin: 2.5cm 2cm; }
+  ${govPageCss()}
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Sarabun', 'TH SarabunNew', sans-serif; font-size: 16pt; line-height: 2; color: #000; }
+  body { ${govDocFontCss()} color: #000; }
   .header { text-align: center; margin-bottom: 16pt; }
   .header .emblem { font-size: 44pt; display: block; margin-bottom: 4pt; }
   .header .emblem-img { width: 64pt; height: 64pt; object-fit: contain; display: block; margin: 0 auto 6pt; }

@@ -51,7 +51,8 @@ assert.match(html, /class="total"/)
 assert.match(html, /รวมระยะทางทั้งสิ้น/)
 assert.match(html, /กิโลเมตร/)
 assert.match(html, /ตรวจงาน/)
-assert.match(html, /ย้อนหลัง: เหตุจำลอง/)
+assert.ok(!html.includes('เหตุจำลอง'),
+  'เหตุผลบันทึกย้อนหลัง (backdated_reason) ไม่ควรพิมพ์ลงแบบ 4 แล้ว — เป็นข้อมูลตรวจสอบภายในระบบเท่านั้น')
 assert.match(html, /2569/)
 assert.ok(!html.includes('ห้ามโผล่ในแบบ 4'), 'วัตถุประสงค์ไม่ใช่ช่องของแบบ 4')
 assert.ok(!html.includes('1/9/2569') && !html.includes('1/9/2026'),
@@ -62,7 +63,7 @@ const blank = buildFleetForm4Html({ vehicle, trips: [] })
 assert.equal((blank.match(/<section class="sheet">/g) || []).length, 1)
 assert.equal((html.match(/<section class="sheet">/g) || []).length, 1)
 assert.equal((blank.match(/<tbody>/g) || []).length, 1)
-assert.equal((blank.match(/<tr[\s>]/g) || []).length, 24) // หัว 2 แถว + ว่าง 21 + รวม 1
+assert.equal((blank.match(/<tr[\s>]/g) || []).length, 16) // หัว 2 แถว + ว่าง 13 + รวม 1 (FORM4_ROWS_PER_PAGE=14)
 assert.match(html, /thead \{ display: table-row-group; \}/)
 assert.match(html, /page-break-inside: avoid/)
 

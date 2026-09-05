@@ -31,7 +31,7 @@ const TOURISM_CATS = [
   { value: 'travel',  label: '🏛️ เที่ยว' },
   { value: 'food',    label: '🍽️ กิน' },
   { value: 'stay',    label: '🏨 พัก' },
-  { value: 'shop',    label: '🛍️ OTOP' },
+  { value: 'shop',    label: '🛍️ ชอป/OTOP' },
   { value: 'service', label: '🔧 บริการ' },
 ]
 
@@ -472,6 +472,17 @@ export default function BusinessRegistrationAdmin({ tenant, currentUserRole, myD
       ? { service_type: form.service_type, online_service: form.online_service, online_url: form.online_url.trim() || null, has_delivery: form.has_delivery }
       : { service_type: 'offline', online_service: null, online_url: null, has_delivery: false }
 
+    // คอลัมน์ชุดใหม่มาจาก migration 20260906110000 — ถ้าฐานข้อมูลนี้ยังไม่ได้รัน ให้ข้ามไป
+    // ไม่งั้น insert ทั้งก้อนจะล้มด้วย PGRST204 แล้วอนุมัติคำขอไม่ได้เลย
+    const probe = await supabase.from('tourism_places').select('opening_hours').limit(1)
+    const carryOver = probe.error ? {} : {
+      latitude:     Number.isFinite(Number(selected.latitude))  ? Number(selected.latitude)  : null,
+      longitude:    Number.isFinite(Number(selected.longitude)) ? Number(selected.longitude) : null,
+      hours_note:   selected.operating_hours?.trim() || null,
+      facebook_url: selected.facebook_url?.trim() || null,
+      line_id:      selected.line_id?.trim() || null,
+    }
+
     const { error: insertErr } = await supabase.from('tourism_places').insert({
       municipality_id: tenant.id,
       name:        form.name.trim(),
@@ -485,6 +496,7 @@ export default function BusinessRegistrationAdmin({ tenant, currentUserRole, myD
       is_active:   true,
       display_order: 999,
       ...onlineFields,
+      ...carryOver,
     })
     if (insertErr) {
       setActing(false)

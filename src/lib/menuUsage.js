@@ -9,7 +9,7 @@
 // ลดเมนูที่ให้ขึ้นเป็น "ใช้บ่อย" ได้ ให้แก้ทั้งสองที่ให้ตรงกัน
 export const TRACKABLE_PATHS = [
   '/emergency', '/complaint', '/doc-request', '/my-complaints',
-  '/events', '/tourism', '/market', '/data-center',
+  '/events', '/tourism', '/data-center',
   '/my-docs', '/weather', '/contact', '/notifications',
 ]
 

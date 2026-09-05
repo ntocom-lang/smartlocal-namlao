@@ -1146,7 +1146,7 @@ function BrandingTab({
       {/* ── ภาพพื้นหลังส่วนท่องเที่ยว ── */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         <h2 className="text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
-          <ImageIcon size={15} /> ภาพพื้นหลังส่วนเที่ยว กิน พัก OTOP
+          <ImageIcon size={15} /> ภาพพื้นหลังส่วนเที่ยว กิน พัก ชอป บริการ
         </h2>
         <p className="text-xs text-gray-400 mb-5 leading-relaxed">
           แสดงเป็นภาพพื้นหลังขนาดใหญ่ด้านหลังการ์ดแนะนำสถานที่ในหน้าแรก · แนะนำรูปแนวนอนที่มีพื้นที่ว่างสำหรับข้อความ

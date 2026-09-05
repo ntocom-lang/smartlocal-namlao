@@ -22,6 +22,7 @@ import { workingDaysLeft } from '../../lib/workingDays'
 import OssIntakeForm from './OssIntakeForm'
 import OdorFieldsDisplay from '../complaints/OdorFieldsDisplay'
 import OdorComplaintTable, { OdorDetailModal } from '../complaints/OdorComplaintTable'
+import { GOV_FONT_LINK, govDocFontIdentityCss, govPageCss } from '../../lib/govDocStyle.js'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const STATUS = {
@@ -1781,9 +1782,12 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
 
     const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
 <title>รายการคำร้อง</title>
+${GOV_FONT_LINK}
 <style>
-  @page { size: A4 landscape; margin: 1.5cm; }
-  body { font-family: 'Sarabun', sans-serif; font-size: 14px; color: #111; }
+  ${govPageCss({ size: 'A4 landscape' })}
+  /* ตารางคุมขนาดตัวอักษรเองรายคอลัมน์ (12-16px) เพื่อให้คอลัมน์ครบใน A4 แนวนอน
+     จึงใช้เฉพาะตัวตนของฟอนต์จากมาตรฐานกลาง ไม่บังคับ 16pt ทั้งใบ */
+  body { ${govDocFontIdentityCss()} font-size: 14px; color: #111; }
   h2 { text-align:center; font-size:16px; margin:0 0 4px; }
   p.sub { text-align:center; font-size:13px; color:#555; margin:0 0 16px; }
   table { width:100%; border-collapse:collapse; font-size:12px; }
@@ -1852,9 +1856,12 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
 
     const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
 <title>รายงานคำร้องกลิ่นเหม็นรบกวน</title>
+${GOV_FONT_LINK}
 <style>
-  @page { size: A4 landscape; margin: 1.5cm; }
-  body { font-family: 'Sarabun', sans-serif; font-size: 14px; color: #111; }
+  ${govPageCss({ size: 'A4 landscape' })}
+  /* ตารางคุมขนาดตัวอักษรเองรายคอลัมน์ (12-16px) เพื่อให้คอลัมน์ครบใน A4 แนวนอน
+     จึงใช้เฉพาะตัวตนของฟอนต์จากมาตรฐานกลาง ไม่บังคับ 16pt ทั้งใบ */
+  body { ${govDocFontIdentityCss()} font-size: 14px; color: #111; }
   h2 { text-align:center; font-size:16px; margin:0 0 4px; }
   p.sub { text-align:center; font-size:13px; color:#555; margin:0 0 16px; }
   table { width:100%; border-collapse:collapse; font-size:12px; }

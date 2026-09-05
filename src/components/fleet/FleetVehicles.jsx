@@ -34,7 +34,7 @@ const EMPTY = {
   vehicle_type:'car', brand:'', model:'', manufacture_year:'',
   fuel_type:'diesel', tank_capacity:'', odometer_initial:'', is_pool:false, status:'active',
   department_id:'', notes:'',
-  efficiency_min:'', efficiency_max:'',
+  efficiency_min:'', efficiency_max:'', fuel_rate_standard_kml:'',
   insurance_expiry:'', act_expiry:'', registration_expiry:'', inspection_expiry:'',
 }
 
@@ -186,6 +186,7 @@ const auditSnapshot = v => v ? {
   department_id: v.department_id, is_pool: v.is_pool,
   meter_unit: v.meter_unit, tank_capacity: v.tank_capacity, fuel_type: v.fuel_type,
   efficiency_min: v.efficiency_min, efficiency_max: v.efficiency_max,
+  fuel_rate_standard_kml: v.fuel_rate_standard_kml,
 } : null
 
 export default function FleetVehicles({ tenant, depts, isAdmin }) {
@@ -198,6 +199,9 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
   const [modal,        setModal]        = useState(null)
   const [form,         setForm]         = useState(EMPTY)
   const [saving,       setSaving]       = useState(false)
+  // กางส่วน "ตั้งค่าขั้นสูง" ให้เองเมื่อรถคันนั้นเคยตั้งค่าไว้ ไม่งั้นค่าที่ตั้งไว้จะถูกซ่อน
+  // จนคนแก้ไม่รู้ว่ามีอยู่ แล้วไปงงว่าทำไมเกณฑ์ธงของคันนี้ไม่เหมือนคันอื่น
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const [filterDept,   setFilterDept]   = useState('all')
   const [filterStatus, setFilterStatus] = useState('active')
   const [filterKind,   setFilterKind]   = useState('all')
@@ -247,8 +251,13 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
   // อปท. ขนาดเล็ก-กลางส่วนใหญ่ใช้รถร่วมกันทุกกอง ไม่ได้ซื้อรถแยกรายกอง
   // จึงตั้งต้นเป็น "ใช้ร่วมกันทุกกอง" ไม่ผูกกอง — ของเดิมเลือกกองแรกในลิสต์ให้อัตโนมัติ
   // ทำให้ผู้กรอกที่ไม่ทันสังเกตได้รถที่กองอื่นมองไม่เห็นโดยไม่ตั้งใจ
-  function openAdd() { setForm({ ...EMPTY, is_pool: true, department_id: '' }); setModal('add') }
+  function openAdd() {
+    setForm({ ...EMPTY, is_pool: true, department_id: '' })
+    setShowAdvanced(false)
+    setModal('add')
+  }
   function openEdit(v) {
+    setShowAdvanced(v.efficiency_min != null || v.efficiency_max != null)
     setForm({
       name: v.name, asset_kind: v.asset_kind ?? 'vehicle',
       license_plate: v.license_plate ?? '', asset_code: v.asset_code ?? '',
@@ -258,6 +267,7 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
       is_pool: v.is_pool, status: v.status, department_id: v.department_id ?? '',
       notes: v.notes ?? '',
       efficiency_min: v.efficiency_min ?? '', efficiency_max: v.efficiency_max ?? '',
+      fuel_rate_standard_kml: v.fuel_rate_standard_kml ?? '',
       insurance_expiry: v.insurance_expiry ?? '', act_expiry: v.act_expiry ?? '',
       registration_expiry: v.registration_expiry ?? '', inspection_expiry: v.inspection_expiry ?? '',
     })
@@ -289,6 +299,10 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
     if (effMax !== null && !(effMax > 0)) return alert('อัตราสิ้นเปลืองสูงสุดต้องมากกว่า 0')
     if (effMin !== null && effMax !== null && effMax <= effMin)
       return alert('อัตราสิ้นเปลืองสูงสุดต้องมากกว่าขั้นต่ำ')
+    // อัตราที่ทางราชการกำหนด — ตัวเลขที่พิมพ์ลงบันทึกข้อความรายงานการใช้น้ำมันรายเดือน
+    // คนละแกนกับช่วงจับค่าผิดปกติด้านบน จึงตรวจแยกและไม่บังคับให้อยู่ในช่วงนั้น
+    const stdRate = form.fuel_rate_standard_kml === '' ? null : Number(form.fuel_rate_standard_kml)
+    if (stdRate !== null && !(stdRate > 0)) return alert('อัตราสิ้นเปลืองที่กำหนดต้องมากกว่า 0')
     setSaving(true)
     const payload = {
       ...form,
@@ -306,6 +320,7 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
       inspection_expiry:   form.inspection_expiry   || null,
       efficiency_min: effMin,
       efficiency_max: effMax,
+      fuel_rate_standard_kml: stdRate,
     }
     if (modal === 'add') {
       const { data, error } = await supabase.from('fleet_vehicles').insert(payload)
@@ -626,25 +641,54 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
                   <label className="text-xs font-semibold text-gray-600 mb-1 block">ความจุถัง (ลิตร)</label>
                   <input type="number" value={form.tank_capacity} onChange={set('tank_capacity')} placeholder="60" className={inp} />
                 </div>
-                {/* ช่วงที่ยอมรับได้ต่อคัน — ใช้แทนค่าเริ่มต้นตามประเภทรถ ซึ่งเป็นค่าที่ อปท. แก้เองได้
-                    รถเฉพาะทาง (รถขยะ รถดับเพลิง รถกระเช้า) กินน้ำมันไม่เหมือนรถประเภทเดียวกัน
-                    ถ้าไม่ให้ตั้งเองจะติดธง "ผิดปกติ" ทุกครั้งจนเจ้าหน้าที่เลิกสนใจธง */}
+                {/* อัตราที่ทางราชการกำหนดต่อคัน — ใช้พิมพ์ช่อง "อัตราที่กำหนด" ในบันทึกข้อความ
+                    รายงานการใช้น้ำมันเชื้อเพลิงรายเดือน ปล่อยว่างแล้วเอกสารพิมพ์เป็นขีดว่างให้เขียนมือ
+                    ระบบไม่เดาค่าให้ เพราะเป็นตัวเลขที่ใช้ประกอบการตรวจสอบการเบิกจ่าย */}
                 <div>
-                  <label className="text-xs font-semibold text-gray-600 mb-1 block">กม./ล. ต่ำสุดที่ยอมรับได้</label>
-                  <input type="number" step="0.01" value={form.efficiency_min} onChange={set('efficiency_min')}
-                    placeholder="ว่าง = ตามประเภทรถ" className={inp} />
+                  <label className="text-xs font-semibold text-gray-600 mb-1 block">อัตราที่กำหนด (กม./ล.)</label>
+                  <input type="number" step="0.01" value={form.fuel_rate_standard_kml} onChange={set('fuel_rate_standard_kml')}
+                    placeholder="เช่น 10" className={inp} />
                 </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-600 mb-1 block">กม./ล. สูงสุดที่ยอมรับได้</label>
-                  <input type="number" step="0.01" value={form.efficiency_max} onChange={set('efficiency_max')}
-                    placeholder="ว่าง = ตามประเภทรถ" className={inp} />
-                </div>
-                <div className="md:col-span-2">
-                  <p className="text-[11px] text-gray-400 leading-relaxed">
-                    ระบบใช้ช่วงนี้ตั้งธง “ผิดปกติ” เมื่ออัตราสิ้นเปลืองที่คำนวณได้หลุดออกนอกช่วง
-                    ปล่อยว่างทั้งคู่ = ใช้ค่าเริ่มต้นตามประเภทรถ (มอเตอร์ไซค์ 15–90 · รถบรรทุก/รถขุด 0.5–15 · อื่นๆ 3–30)
+                <div className="flex items-end">
+                  <p className="text-[11px] text-gray-400 leading-relaxed pb-2">
+                    ตัวเลขที่หน่วยงานกำหนดไว้ว่ารถคันนี้ควรวิ่งได้กี่ กม./ลิตร ใช้พิมพ์ลงเอกสารอย่างเดียว
+                    ไม่เกี่ยวกับการตั้งธงผิดปกติ
                   </p>
                 </div>
+                {/* ช่วงที่ยอมรับได้ต่อคัน — พับเก็บไว้เพราะแทบไม่มีใครต้องกรอก (ตรวจ 2026-09-05:
+                    รถ 11 คันใน 3 อปท. ตั้งค่านี้ 0 คัน) ค่าเริ่มต้นตามประเภทรถครอบคลุมรถทั่วไปอยู่แล้ว
+                    เดิมวางเรียงติดกับ "อัตราที่กำหนด" ในฟอร์มหลัก ผู้กรอกแยกไม่ออกว่าช่องไหนต้องกรอก
+                    ⚠️ ห้ามถอดทิ้ง: trigger fleet_fuel_compute_efficiency อ่านสองคอลัมน์นี้อยู่ และเป็น
+                    ทางเดียวที่ อปท. จะแก้เคสรถเฉพาะทาง (รถขยะ/ดับเพลิง/กระเช้า) ที่ติดธง "ผิดปกติ"
+                    ทุกครั้งจนเจ้าหน้าที่เลิกสนใจธง — ธงที่ผิดจริงจะถูกมองข้ามไปด้วย */}
+                <details
+                  className="col-span-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2"
+                  open={showAdvanced}
+                  onToggle={e => setShowAdvanced(e.currentTarget.open)}
+                >
+                  <summary className="text-xs font-semibold text-gray-600 cursor-pointer select-none">
+                    ตั้งค่าขั้นสูง (ปกติไม่ต้องกรอก)
+                  </summary>
+                  <div className="grid grid-cols-2 gap-3 mt-3">
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 mb-1 block">กม./ล. ต่ำสุดที่ยอมรับได้</label>
+                      <input type="number" step="0.01" value={form.efficiency_min} onChange={set('efficiency_min')}
+                        placeholder="ว่าง = ตามประเภทรถ" className={inp} />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 mb-1 block">กม./ล. สูงสุดที่ยอมรับได้</label>
+                      <input type="number" step="0.01" value={form.efficiency_max} onChange={set('efficiency_max')}
+                        placeholder="ว่าง = ตามประเภทรถ" className={inp} />
+                    </div>
+                    <div className="col-span-2">
+                      <p className="text-[11px] text-gray-400 leading-relaxed">
+                        ระบบใช้ช่วงนี้ตั้งธง “ผิดปกติ” เมื่ออัตราสิ้นเปลืองที่คำนวณได้หลุดออกนอกช่วง
+                        ปล่อยว่างทั้งคู่ = ใช้ค่าเริ่มต้นตามประเภทรถ (มอเตอร์ไซค์ 15–90 · รถบรรทุก/รถขุด 0.5–15 · อื่นๆ 3–30)
+                        กรอกเฉพาะรถที่ติดธงผิดปกติทั้งที่ใช้งานตามปกติ
+                      </p>
+                    </div>
+                  </div>
+                </details>
                 <div>
                   <label className="text-xs font-semibold text-gray-600 mb-1 block">ค่ามิเตอร์เริ่มต้น ({meterUnitShort(form)})</label>
                   <input type="number" value={form.odometer_initial} onChange={set('odometer_initial')} placeholder="0" className={inp} />

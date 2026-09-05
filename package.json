@@ -8,6 +8,14 @@
     "build": "vite build && node scripts/postbuild.js",
     "lint": "eslint .",
     "lint:blocking": "node scripts/lint-blocking.mjs",
+    "ai:sync": "node scripts/ai-sync.mjs",
+    "ai:check": "node scripts/ai-sync.mjs --check",
+    "doctor": "node scripts/doctor.mjs",
+    "handoff": "node scripts/handoff.mjs",
+    "resume": "node scripts/resume.mjs",
+    "memory:link": "node scripts/link-memory.mjs",
+    "env:pull": "node scripts/env-sync.mjs",
+    "env:push": "node scripts/env-sync.mjs --push",
     "preview": "vite preview",
     "cf:dev": "wrangler dev",
     "cf:deploy": "node scripts/predeploy-check.js && npm run lint:blocking && npm run build && wrangler deploy && npm run test:smoke -- --expect-local-build",
@@ -26,6 +34,7 @@
     "test:local-build": "node tests/verify-local-build.mjs",
     "test:shot": "node tests/screenshot-local-build.mjs",
     "test:smoke": "node tests/post-deploy-smoke.mjs",
+    "test:tourism": "node tests/tourism-hours.test.mjs",
     "test:fleet:form3": "node tests/fleet-form3-signatories.test.mjs && node tests/fleet-form3-layout.test.mjs"
   },
   "dependencies": {

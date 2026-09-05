@@ -4,6 +4,14 @@ import { supabase } from '../../lib/supabase'
 import { assetIdentifier, assetOptionLabel, FUEL_LABEL, meterUnitShort } from '../../lib/fleetAssets'
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { buildFleetForm4Html } from '../../lib/fleetForm4Print'
+import { buildFleetFuelLedgerHtml } from '../../lib/fleetFuelLedgerPrint'
+import {
+  buildFleetFuelMemoHtml, buildMemoRows, defaultAddressee, memoMonthLabel,
+} from '../../lib/fleetFuelMemoPrint'
+import {
+  CUSTOM_ROLE, SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE,
+  isSignatoryActiveToday, pickSignatory, signatoryName, signatoryTitle, todayBangkok,
+} from '../../lib/documentSignatories'
 import {
   PERIOD_MODES, QUARTERS, MONTH_OPTIONS,
   currentPeriodDefaults, yearOptionsBE, fiscalYearOptionsBE, fleetPeriodRange,
@@ -21,6 +29,23 @@ const thDate = d => d ? new Date(d).toLocaleDateString('th-TH', { dateStyle: 'sh
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 })[char])
+
+// หัวบันทึกข้อความ (เลขที่หนังสือ/ส่วนราชการ/เรียน/ผู้ลงนามช่องพัสดุ) ไม่มีที่เก็บในฐานข้อมูล
+// จึงจำค่าที่กรอกครั้งล่าสุดไว้ในเครื่องแยกราย อปท. เดือนถัดไปเจ้าหน้าที่แก้แค่เลขที่กับวันที่
+// ⚠️ เป็นค่าของ "เครื่องนั้น" ไม่ใช่ของหน่วยงาน เปลี่ยนเครื่อง/ล้างแคชแล้วต้องกรอกใหม่
+const MEMO_PREFS_KEY = 'fleet-fuel-memo:'
+
+function loadMemoPrefs(tenantId) {
+  try {
+    return JSON.parse(localStorage.getItem(MEMO_PREFS_KEY + tenantId) || '{}') || {}
+  } catch { return {} }
+}
+
+function saveMemoPrefs(tenantId, prefs) {
+  try {
+    localStorage.setItem(MEMO_PREFS_KEY + tenantId, JSON.stringify(prefs))
+  } catch { /* โหมดส่วนตัว/โควตาเต็ม — ไม่จำค่าก็ยังพิมพ์ได้ ไม่ต้องขัดจังหวะผู้ใช้ */ }
+}
 
 function nextDay(dateStr) {
   const d = new Date(dateStr + 'T00:00:00Z')
@@ -87,6 +112,9 @@ export default function FleetReport({ tenant }) {
   const [data,       setData]       = useState(null)
   const [loading,    setLoading]    = useState(false)
   const [printingForm4, setPrintingForm4] = useState(false)
+  const [printingLedger, setPrintingLedger] = useState(false)
+  const [printingMemo, setPrintingMemo] = useState(false)
+  const [memoForm, setMemoForm] = useState(null)
 
   const period = fleetPeriodRange({
     mode: periodMode, yearBE: periodYearBE, fiscalYearBE: periodFiscalYearBE,
@@ -98,7 +126,10 @@ export default function FleetReport({ tenant }) {
 
   useEffect(() => {
     if (!tenant?.id) return
-    supabase.from('fleet_vehicles').select('id,name,license_plate,asset_code,asset_kind,meter_unit')
+    // vehicle_type/fuel_rate_standard_kml ใช้เฉพาะตอนพิมพ์บันทึกข้อความสรุปรายเดือน
+    // (ช่อง "ประเภทรถ" กับ "อัตราที่กำหนด") ดึงมาพร้อมกันตั้งแต่แรกเพื่อไม่ต้องยิงซ้ำตอนกดพิมพ์
+    supabase.from('fleet_vehicles')
+      .select('id,name,license_plate,asset_code,asset_kind,meter_unit,vehicle_type,fuel_rate_standard_kml')
       .eq('municipality_id', tenant.id).order('name')
       .then(({ data: v }) => setVehicles(v ?? []))
   }, [tenant?.id])
@@ -226,6 +257,141 @@ export default function FleetReport({ tenant }) {
       alert('พิมพ์แบบ 4 ไม่สำเร็จ — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง กรุณาลองใหม่')
     } finally {
       setPrintingForm4(false)
+    }
+  }
+
+  // ปริมาณการเบิกใช้น้ำมันเชื้อเพลิง = สมุดคุมรายคัน ดึงบันทึกการเติมน้ำมันของคันที่เลือกเอง
+  // ไม่ใช้ชุด data ของรายงานผู้บริหาร เพราะชุดนั้นอาจรวมทุกคันเมื่อไม่ได้เลือกยานพาหนะ
+  async function printFuelLedger() {
+    if (!tenant?.id) return alert('ไม่พบหน่วยงาน')
+    if (!selVehicle) {
+      return alert('ใบนี้เป็นสมุดคุมน้ำมันรายคัน กรุณาเลือกยานพาหนะก่อนพิมพ์')
+    }
+    const vehicle = vehicles.find(v => v.id === selVehicle)
+    if (!vehicle) return alert('ไม่พบยานพาหนะที่เลือก')
+    setPrintingLedger(true)
+    try {
+      const result = await fetchAllRows(() => supabase.from('fleet_fuel_records')
+        .select('id,filled_at,created_at,receipt_no,fuel_type,fuel_other_name,price_per_liter,liters,total_cost,notes')
+        .eq('municipality_id', tenant.id)
+        .eq('vehicle_id', selVehicle)
+        .gte('filled_at', rangeFrom).lte('filled_at', rangeTo)
+        .order('filled_at').order('id'))
+      if (result.error) {
+        alert('โหลดบันทึกการเติมน้ำมันไม่สำเร็จ: ' + result.error.message)
+        return
+      }
+      if (result.truncated) {
+        alert('รายการเติมน้ำมันในช่วงนี้มีจำนวนมากเกินกว่าที่ระบบดึงได้ในครั้งเดียว — เอกสารที่พิมพ์ยังไม่ครบ กรุณาแบ่งช่วงวันที่ให้สั้นลง')
+      }
+      openPrintWindow(buildFleetFuelLedgerHtml({
+        vehicle, records: result.data ?? [], periodLabel, orgName: tenant?.name ?? '',
+      }))
+    } catch (err) {
+      console.error('[fleet-fuel-ledger] พิมพ์ปริมาณการเบิกใช้น้ำมันไม่สำเร็จ:', err?.message ?? err)
+      alert('พิมพ์ไม่สำเร็จ — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง กรุณาลองใหม่')
+    } finally {
+      setPrintingLedger(false)
+    }
+  }
+
+  // บันทึกข้อความเป็นเอกสารสรุป "ทุกคัน" จึงไม่สนใจตัวกรองยานพาหนะที่เลือกไว้ด้านบน
+  // เปิดกล่องกรอกหัวหนังสือก่อน เพราะเลขที่หนังสือ/ส่วนราชการไม่มีเก็บในฐานข้อมูล
+  async function openMemoDialog() {
+    if (!tenant?.id) return alert('ไม่พบหน่วยงาน')
+    const prefs = loadMemoPrefs(tenant.id)
+    const { data: rows } = await supabase.from('document_signatories')
+      .select(SIGNATORY_REGISTRY_SELECT)
+      .eq('municipality_id', tenant.id)
+      .eq('document_type', SIGNATORY_SCOPE).eq('is_active', true)
+    const registry = rows ?? []
+    const clerk = pickSignatory(registry, { role: 'clerk' })
+    const mayor = pickSignatory(registry, { role: 'mayor' })
+    // ช่อง "หัวหน้าเจ้าหน้าที่พัสดุ" ไม่ใช่บทบาทมาตรฐานของระบบ อปท. ต้องเพิ่มเองเป็นแถว custom
+    // ในเมนูผู้ลงนามเอกสาร ถ้ายังไม่มีก็ให้พิมพ์ชื่อในกล่องนี้ได้เลย ไม่บังคับให้ไปตั้งค่าก่อน
+    const supplyRow = registry.find(row => row.signatory_role === CUSTOM_ROLE
+      && String(row.custom_label ?? '').includes('พัสดุ')
+      && isSignatoryActiveToday(row, todayBangkok()))
+    setMemoForm({
+      department: prefs.department ?? `กองคลัง ${tenant.name ?? ''}`.trim(),
+      docNumber: prefs.docNumber ?? '',
+      docDate: todayBangkok(),
+      addressee: prefs.addressee ?? defaultAddressee(tenant.name),
+      supplyName: prefs.supplyName || signatoryName(supplyRow),
+      // signatoryTitle คืนสตริงว่างเมื่อไม่พบแถว ใช้ ?? ไม่ได้ ต้อง || ถึงจะตกมาที่ค่าเริ่มต้น
+      supplyTitle: prefs.supplyTitle || signatoryTitle(supplyRow) || 'หัวหน้าเจ้าหน้าที่พัสดุ',
+      clerkName: signatoryName(clerk),
+      clerkTitle: signatoryTitle(clerk),
+      mayorName: signatoryName(mayor),
+      mayorTitle: signatoryTitle(mayor),
+    })
+  }
+
+  async function printMemo() {
+    if (!tenant?.id || !memoForm) return
+    setPrintingMemo(true)
+    try {
+      const endDay = nextDay(rangeTo)
+      const [tripResult, fuelResult, typeResult] = await Promise.all([
+        fetchAllRows(() => supabase.from('fleet_trips')
+          .select('id,vehicle_id,trip_date,odometer_start,odometer_end,distance_km')
+          .eq('municipality_id', tenant.id).eq('status', 'completed')
+          .gte('trip_date', rangeFrom).lt('trip_date', endDay).order('trip_date').order('id')),
+        fetchAllRows(() => supabase.from('fleet_fuel_records')
+          .select('id,vehicle_id,filled_at,liters,price_per_liter,total_cost')
+          .eq('municipality_id', tenant.id)
+          .gte('filled_at', rangeFrom).lte('filled_at', rangeTo).order('filled_at').order('id')),
+        supabase.from('fleet_vehicle_types').select('value,label').eq('municipality_id', tenant.id),
+      ])
+      const loadError = tripResult.error || fuelResult.error
+      if (loadError) {
+        alert('โหลดข้อมูลสรุปไม่สำเร็จ: ' + loadError.message)
+        return
+      }
+      // ยอดในบันทึกข้อความเป็นตัวเลขที่เสนอผู้บริหารและใช้ตรวจสอบการเบิกจ่าย
+      // ถ้าดึงมาไม่ครบต้องบอกให้ชัด ห้ามปล่อยให้พิมพ์ออกไปโดยเข้าใจว่ายอดถูกต้อง
+      if (tripResult.truncated || fuelResult.truncated) {
+        alert('ข้อมูลในช่วงที่เลือกมีจำนวนมากเกินกว่าที่ระบบดึงได้ในครั้งเดียว — ยอดในบันทึกข้อความยังไม่ครบ กรุณาแบ่งช่วงวันที่ให้สั้นลง')
+        return
+      }
+      const typeLabels = Object.fromEntries((typeResult.data ?? []).map(t => [t.value, t.label]))
+      const rows = buildMemoRows({
+        vehicles, trips: tripResult.data ?? [], fuel: fuelResult.data ?? [], typeLabels,
+      })
+      if (!rows.length) {
+        alert('ช่วงที่เลือกไม่มีรถคันใดมีการใช้งานหรือเบิกจ่ายน้ำมัน จึงยังไม่มีข้อมูลให้รายงาน')
+        return
+      }
+      saveMemoPrefs(tenant.id, {
+        department: memoForm.department,
+        docNumber: memoForm.docNumber,
+        addressee: memoForm.addressee,
+        supplyName: memoForm.supplyName,
+        supplyTitle: memoForm.supplyTitle,
+      })
+      openPrintWindow(buildFleetFuelMemoHtml({
+        orgName: tenant?.name ?? '',
+        logoUrl: tenant?.logo_url ?? '',
+        department: memoForm.department,
+        docNumber: memoForm.docNumber,
+        docDate: memoForm.docDate,
+        // หัวเรื่องเขียน "ประจำเดือน ..." ได้เฉพาะช่วงที่เป็นเดือนเดียวเต็มเดือน
+        // ช่วงอื่น (ไตรมาส/ปี/กำหนดเอง) ใช้ข้อความช่วงเวลาเดิมแทน ไม่บิดให้เป็นเดือน
+        monthLabel: memoMonthLabel(rangeFrom, rangeTo) || periodLabel,
+        addressee: memoForm.addressee,
+        rows,
+        signatures: {
+          supply: { name: memoForm.supplyName, title: memoForm.supplyTitle },
+          clerk: { name: memoForm.clerkName, title: memoForm.clerkTitle },
+          mayor: { name: memoForm.mayorName, title: memoForm.mayorTitle },
+        },
+      }))
+      setMemoForm(null)
+    } catch (err) {
+      console.error('[fleet-fuel-memo] พิมพ์บันทึกข้อความไม่สำเร็จ:', err?.message ?? err)
+      alert('พิมพ์บันทึกข้อความไม่สำเร็จ — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง กรุณาลองใหม่')
+    } finally {
+      setPrintingMemo(false)
     }
   }
 
@@ -458,13 +624,21 @@ export default function FleetReport({ tenant }) {
             className="w-full md:w-auto px-3 py-2 rounded-xl text-[11px] md:text-xs font-bold border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
             {printingForm4 ? 'กำลังเตรียมแบบ 4...' : '🖨️ พิมพ์แบบ 4 บันทึกการใช้รถ (รายคัน)'}
           </button>
+          <button onClick={printFuelLedger} disabled={printingLedger || !selVehicle}
+            className="w-full md:w-auto px-3 py-2 rounded-xl text-[11px] md:text-xs font-bold border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
+            {printingLedger ? 'กำลังเตรียมเอกสาร...' : '🖨️ พิมพ์ปริมาณการเบิกใช้น้ำมัน (รายคัน)'}
+          </button>
+          <button onClick={openMemoDialog} disabled={printingMemo}
+            className="w-full md:w-auto px-3 py-2 rounded-xl text-[11px] md:text-xs font-bold border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50">
+            🖨️ พิมพ์บันทึกข้อความสรุปน้ำมัน (ทุกคัน)
+          </button>
           <button onClick={resetPeriod}
             className="px-3 py-1.5 text-[11px] font-semibold text-red-500 border border-red-200 rounded-lg hover:bg-red-50">
             ล้าง
           </button>
         </div>
         {!selVehicle && (
-          <p className="text-[11px] text-gray-400">แบบ 4 ต้องเลือกยานพาหนะ 1 คัน แล้วจึงพิมพ์ได้</p>
+          <p className="text-[11px] text-gray-400">แบบ 4 และปริมาณการเบิกใช้น้ำมัน ต้องเลือกยานพาหนะ 1 คัน แล้วจึงพิมพ์ได้ · บันทึกข้อความสรุปพิมพ์ทุกคันในช่วงที่เลือกเสมอ</p>
         )}
       </div>
 
@@ -687,6 +861,75 @@ export default function FleetReport({ tenant }) {
           เลือกช่วงเวลาและกด "ดูรายงาน"
         </div>
       )}
+
+      {memoForm && (
+        <MemoDialog
+          form={memoForm} setForm={setMemoForm} periodLabel={periodLabel}
+          printing={printingMemo} onPrint={printMemo} onClose={() => setMemoForm(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+/* ── กล่องกรอกหัวบันทึกข้อความ ──
+   ชื่อปลัด/นายกดึงจากทะเบียนผู้ลงนามกลาง แสดงให้เห็นแต่แก้ที่นี่ไม่ได้ — ต้องไปแก้ที่เมนู
+   "ผู้ลงนามเอกสาร" เพื่อให้ทุกเอกสารในระบบใช้ชื่อชุดเดียวกัน ไม่ใช่ต่างใบต่างชื่อ
+   ส่วนช่องพัสดุพิมพ์ทับได้ เพราะยังไม่ใช่บทบาทมาตรฐานที่ทุก อปท. ตั้งไว้ */
+function MemoDialog({ form, setForm, periodLabel, printing, onPrint, onClose }) {
+  const set = key => e => setForm(f => ({ ...f, [key]: e.target.value }))
+  const field = 'w-full px-3 py-2 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2'
+  return (
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 p-0 md:p-4"
+      onClick={onClose}>
+      <div className="w-full md:max-w-lg bg-white rounded-t-2xl md:rounded-2xl p-4 space-y-3 max-h-[90vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}>
+        <p className="text-sm font-bold text-gray-800">หัวบันทึกข้อความ</p>
+        <p className="text-[11px] text-gray-500">ช่วงที่เลือก: {periodLabel}</p>
+        <div>
+          <label className="text-xs font-semibold text-gray-600 mb-1 block">ส่วนราชการ</label>
+          <input value={form.department} onChange={set('department')} className={field} />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">ที่ (เลขที่หนังสือ)</label>
+            <input value={form.docNumber} onChange={set('docNumber')} placeholder="พร 73602/-" className={field} />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">วันที่ออกหนังสือ</label>
+            <input type="date" value={form.docDate} onChange={set('docDate')} className={field} />
+          </div>
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-gray-600 mb-1 block">เรียน</label>
+          <input value={form.addressee} onChange={set('addressee')} className={field} />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้ลงนามช่องพัสดุ</label>
+            <input value={form.supplyName} onChange={set('supplyName')} placeholder="ชื่อ-นามสกุล" className={field} />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">ตำแหน่ง</label>
+            <input value={form.supplyTitle} onChange={set('supplyTitle')} className={field} />
+          </div>
+        </div>
+        <div className="rounded-xl bg-gray-50 border border-gray-100 p-3 text-[11px] text-gray-600 leading-relaxed">
+          ผู้ลงนามอีก 2 ช่องดึงจากทะเบียนผู้ลงนามกลาง — แก้ได้ที่เมนู “ผู้ลงนามเอกสาร”<br />
+          ปลัด: {form.clerkName || <span className="text-red-500">ยังไม่ได้ตั้งค่า (จะพิมพ์เป็นช่องว่างให้เซ็นสด)</span>}<br />
+          นายก: {form.mayorName || <span className="text-red-500">ยังไม่ได้ตั้งค่า (จะพิมพ์เป็นช่องว่างให้เซ็นสด)</span>}
+        </div>
+        <div className="flex gap-2 pt-1">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-bold border border-gray-200 text-gray-600">
+            ยกเลิก
+          </button>
+          <button onClick={onPrint} disabled={printing}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50"
+            style={{ backgroundColor: 'var(--color-primary)' }}>
+            {printing ? 'กำลังเตรียมเอกสาร...' : '🖨️ พิมพ์'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
