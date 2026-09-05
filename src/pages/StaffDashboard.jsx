@@ -12,11 +12,13 @@ import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/c
 import { useTenant } from '../contexts/TenantContext'
 import { useNotifications } from '../contexts/NotificationsContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
-import { govDocFontCss, govPageCss } from '../lib/govDocStyle.js'
-import { thaiDate } from '../lib/thaiDate'
+import { govDocFontCss, govEServiceOriginText, govPageCss } from '../lib/govDocStyle.js'
+import { thaiDate, thaiDateFromDateInput } from '../lib/thaiDate'
 import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
+import { buildWasteCollectionRequestHtml, collectionPointText } from '../lib/wasteCollectionRequestPrint'
 import { uploadFile } from '../lib/driveStorage'
-import { fetchAssignableStaff } from '../lib/staffRoster'
+import { fetchAssignableStaff, groupStaffByDepartment } from '../lib/staffRoster'
+import { BASE_DOCUMENT_TYPES } from '../lib/documentTypes'
 import { MANAGED_MODULE_KEYS } from '../lib/staffModules'
 import OdorAcknowledgePanel from '../components/staff/OdorAcknowledgePanel'
 import PortalSwitcher from '../components/layout/PortalSwitcher'
@@ -39,16 +41,13 @@ const PostsManager = lazy(() => import('../components/staff/PostsManager'))
 const StaffOperationalDashboard = lazy(() => import('../components/staff/StaffOperationalDashboard'))
 const FleetPage = lazy(() => import('./FleetPage'))
 const BuildingPermitWizard = lazy(() => import('./BuildingPermitWizard'))
+const WasteCollectionRequestWizard = lazy(() => import('./WasteCollectionRequestWizard'))
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const DOC_TYPES = [
-  { value: 'residence_cert',   label: '🏠 ใบรับรองการอยู่อาศัย' },
-  { value: 'personal_cert',    label: '👤 หนังสือรับรองบุคคล' },
-  { value: 'tax_notice',       label: '🏦 ค่าธรรมเนียม/ภาษี' },
-  { value: 'waste_collection', label: '🗑️ ค่าธรรมเนียมขยะ' },
-  { value: 'building_permit',  label: '🏗️ ขออนุญาตก่อสร้างบ้าน' },
-]
+// ลิสต์ประเภทย้ายไป src/lib/documentTypes.js แล้ว — หน้าตั้งค่าของแอดมิน (กอง/ผู้รับผิดชอบ/SLA)
+// ต้องใช้ลิสต์เดียวกับหน้านี้เป๊ะ ไม่งั้นจะมีประเภทที่ประชาชนยื่นได้แต่แอดมินตั้งผู้รับผิดชอบไม่ได้
+const DOC_TYPES = BASE_DOCUMENT_TYPES
 let _customDocTypes = []
 function getAllDocTypes() { return [...DOC_TYPES, ..._customDocTypes] }
 
@@ -59,6 +58,19 @@ const STATUS = {
   rejected:   { label: 'ปฏิเสธ',         color: '#ef4444', bg: '#fee2e2', Icon: XCircle },
 }
 
+// ป้ายปุ่มในคอลัมน์ "ดำเนินการ" ของตารางคำขอ — ต้องเปลี่ยนตามสถานะ ห้ามใช้คำว่า
+// "ดำเนินการ" คำเดียวทุกแถว เพราะแถวที่ปิดงานแล้วจะขึ้น "เสร็จสิ้น" คู่กับปุ่ม "ดำเนินการ"
+// ซึ่งอ่านแล้วเหมือนกดต่อได้ และคำนี้ยังไปชนกับค่าในคอลัมน์สถานะเอง (รอดำเนินการ /
+// กำลังดำเนินการ) จนดูเหมือนสองคอลัมน์บอกเรื่องเดียวกัน
+// ทุกป้ายเปิดแผ่นรายละเอียดเหมือนกันหมด — ตารางนี้เดินสถานะแบบ inline อย่างตารางคำร้องไม่ได้
+// เพราะการปิดงานต้องใส่หมายเหตุเจ้าหน้าที่และสร้างไฟล์เอกสารก่อน
+const INBOX_ACTION_LABELS = {
+  pending:    'ตรวจสอบคำขอ',
+  processing: 'ดำเนินการต่อ',
+  completed:  'ดูรายละเอียด',
+  rejected:   'ดูรายละเอียด',
+}
+
 // เมนูที่ข้ามกอง (ใช้ร่วมกันทุกกอง ไม่ผูกกับกองใดกองหนึ่ง) — จัดเป็นกลุ่มย่อยตามลักษณะงาน
 // เพื่อให้หาเจอง่าย แทนที่จะเป็นลิสต์ยาวไม่มีหัวข้อ
 const STANDALONE_GROUPS = [
@@ -66,7 +78,7 @@ const STANDALONE_GROUPS = [
     group: 'งานบริการประชาชน',
     items: [
       { key: 'complaints', label: 'คำร้อง',     Icon: MessageSquareWarning, color: '#ef4444', bg: '#fee2e2' },
-      { key: 'inbox',      label: 'คำขอเอกสาร', Icon: FileText,             color: '#8b5cf6', bg: '#ede9fe' },
+      { key: 'inbox',      label: 'คำขอบริการ/เอกสาร', Icon: FileText,       color: '#8b5cf6', bg: '#ede9fe' },
     ],
   },
   {
@@ -156,6 +168,18 @@ function dateTH(s) {
   })
 }
 
+// เทียบ due_date (คอลัมน์ date ไม่มีเวลา) กับ "วันนี้ตามเวลาไทย" ด้วยสตริง YYYY-MM-DD ตรงๆ
+// ไม่แปลงเป็น Date object เพราะ new Date('2026-09-07') ถูกตีความเป็น UTC เที่ยงคืน แล้วเครื่อง
+// ที่ตั้งเป็น GMT+7 จะอ่านได้เป็นวันก่อนหน้า — กับดักเดิมที่เคยทำให้แบบ 4 พิมพ์วันที่ผิดไป 1 วัน
+function todayISOInBangkok() {
+  return new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10)
+}
+const OPEN_REQUEST_STATUSES = ['pending', 'processing']
+function isOverdue(req) {
+  if (!req?.due_date || !OPEN_REQUEST_STATUSES.includes(req.status)) return false
+  return String(req.due_date).slice(0, 10) < todayISOInBangkok()
+}
+
 // ─── Shared components ────────────────────────────────────────────────────────
 
 function StatusBadge({ status }) {
@@ -216,7 +240,10 @@ function TaskCard({ req, onClick }) {
 
 const FEE_INQUIRY_TYPES = ['tax_notice', 'waste_collection']
 
-function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onInquiryUpdate, currentUserRole, onDelete }) {
+function TaskDetailSheet({
+  req, onClose, onUpdate, acting, tenant, onInquiryUpdate, currentUserRole, onDelete,
+  canAssign = false, assignees = [], assigning = false, assigneeName = null, onAssign,
+}) {
   const [staffNote, setStaffNote]         = useState(req.staff_notes || '')
   const [confirmReject, setConfirmReject] = useState(false)
   const [rejectReason, setRejectReason]   = useState('')
@@ -287,8 +314,86 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onInquiryUpda
             {req.purpose && (
               <InfoRow icon={<AlignLeft size={14} />} label="วัตถุประสงค์"  value={req.purpose} />
             )}
+            {req.document_type === 'waste_collection_request' && req.permit_form_data?.applicant?.age && (
+              <InfoRow icon={<User size={14} />} label="อายุ" value={`${req.permit_form_data.applicant.age} ปี`} />
+            )}
+            {req.document_type === 'waste_collection_request' && req.permit_form_data?.bin_count && (
+              <InfoRow icon={<Trash2 size={14} />} label="จำนวนถัง" value={`${req.permit_form_data.bin_count} ใบ`} />
+            )}
+            {/* หมุดจุดวางถังต้องเห็นในแดชบอร์ดที่สั่งงาน ไม่ใช่เห็นเฉพาะตอนพิมพ์ใบออกมา
+                และต้องกดนำทางได้เลย เพราะคนที่ใช้คือพนักงานเก็บขนที่เปิดจากมือถือหน้างาน */}
+            {req.document_type === 'waste_collection_request' && req.permit_form_data?.collection_point && (
+              <InfoRow icon={<MapPin size={14} />} label="จุดวางถัง" value={
+                <span className="flex flex-col gap-1">
+                  {req.permit_form_data.collection_point.address && (
+                    <span>{req.permit_form_data.collection_point.address}</span>
+                  )}
+                  <a href={`https://www.google.com/maps/dir/?api=1&destination=${req.permit_form_data.collection_point.lat},${req.permit_form_data.collection_point.lng}`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="font-mono text-xs font-semibold text-blue-600 underline">
+                    {Number(req.permit_form_data.collection_point.lat).toFixed(6)}, {Number(req.permit_form_data.collection_point.lng).toFixed(6)} — เปิดนำทาง
+                  </a>
+                </span>
+              } />
+            )}
+            {req.document_type === 'waste_collection_request' && req.permit_form_data?.service_start_date && (
+              <InfoRow icon={<Calendar size={14} />} label="เริ่มให้จัดเก็บ"
+                value={thaiDateFromDateInput(req.permit_form_data.service_start_date)} />
+            )}
             <InfoRow icon={<Hash size={14} />}       label="เลขอ้างอิง"    value={<span className="font-mono font-bold tracking-widest">{req.id?.slice(0, 8)?.toUpperCase() ?? '—'}</span>} />
             <InfoRow icon={<Calendar size={14} />}  label="วันที่ยื่น"     value={dateTH(req.created_at)} />
+            {req.due_date && (
+              <InfoRow icon={<Clock size={14} />} label="กำหนดเสร็จ" value={
+                <span className={isOverdue(req) ? 'font-bold text-red-600' : ''}>
+                  {thaiDateFromDateInput(String(req.due_date).slice(0, 10))}
+                  {isOverdue(req) && ' — เกินกำหนดแล้ว'}
+                </span>
+              } />
+            )}
+          </div>
+
+          {/* ผู้รับผิดชอบ — แสดงให้ทุกบทบาทเห็น แต่เปลี่ยนตัวได้เฉพาะแอดมิน/หัวหน้ากอง
+              (trigger protect_document_request_scope ฝั่ง DB บังคับอีกชั้น) */}
+          <div className="rounded-2xl border border-gray-200 overflow-hidden">
+            <div className="px-4 py-2.5 bg-gray-50 flex items-center gap-2">
+              <User size={14} className="text-gray-500 shrink-0" />
+              <p className="text-xs font-bold text-gray-700">ผู้รับผิดชอบ</p>
+            </div>
+            <div className="px-4 py-3 bg-white space-y-2">
+              {canAssign ? (
+                <>
+                  <select
+                    value={req.assigned_to ?? ''}
+                    disabled={assigning}
+                    onChange={e => onAssign?.(req.id, e.target.value)}
+                    className={inputCls + ' disabled:opacity-50'}>
+                    <option value="">— ยังไม่มอบหมาย —</option>
+                    {groupStaffByDepartment(assignees).map(group => (
+                      <optgroup key={group.department_name} label={group.department_name}>
+                        {group.members.map(p => (
+                          <option key={p.id} value={p.id}>
+                            {p.full_name || p.email}{p.is_dept_head ? ' (หัวหน้ากอง)' : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                  {/* คนที่ถูกมอบหมายไว้เดิมอาจไม่อยู่ในลิสต์แล้ว (ย้ายกอง/ถูกลดบทบาท/ปิดบัญชี)
+                      ต้องบอกให้เห็น ไม่ใช่ปล่อยให้ select เด้งกลับเป็น "ยังไม่มอบหมาย" เงียบๆ
+                      จนเข้าใจว่างานไม่มีเจ้าของทั้งที่ในฐานข้อมูลยังผูกอยู่กับคนเดิม */}
+                  {req.assigned_to && !assignees.some(p => p.id === req.assigned_to) && (
+                    <p className="text-[11px] font-semibold leading-relaxed text-amber-700">
+                      ⚠️ ผู้รับผิดชอบเดิมไม่อยู่ในรายชื่อที่มอบหมายได้แล้ว (ย้ายกองหรือปิดบัญชี) กรุณาเลือกคนใหม่
+                    </p>
+                  )}
+                  {assigning && <p className="text-[11px] text-gray-400">กำลังบันทึก...</p>}
+                </>
+              ) : (
+                <p className={`text-sm ${req.assigned_to ? 'font-semibold text-gray-800' : 'font-semibold text-amber-600'}`}>
+                  {req.assigned_to ? (assigneeName ?? '—') : 'ยังไม่มอบหมาย — รอหัวหน้ากองมอบหมาย'}
+                </p>
+              )}
+            </div>
           </div>
 
           {isFeeInquiry && isActive && (
@@ -406,6 +511,27 @@ function TaskDetailSheet({ req, onClose, onUpdate, acting, tenant, onInquiryUpda
             </button>
           </div>
         )}
+        {req.document_type === 'waste_collection_request' && req.permit_form_data && (
+          <div className="px-4 pb-2 pt-3 border-t border-gray-100 shrink-0">
+            <button onClick={() => {
+              const html = buildWasteCollectionRequestHtml({
+                form: req.permit_form_data,
+                tenant,
+                thDate: thaiDate(req.created_at),
+                referenceNo: req.id?.slice(0, 8)?.toUpperCase() ?? '',
+              })
+              const w = window.open('', '_blank', 'width=860,height=1100')
+              if (!w) return
+              w.document.write(html)
+              w.document.close()
+              setTimeout(() => { w.focus(); w.print() }, 400)
+            }}
+              className="w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 text-sm active:scale-[0.98] transition-all"
+              style={{ backgroundColor: '#0e7490' }}>
+              <Printer size={16} /> พิมพ์ใบแจ้งขออนุญาตเก็บขนขยะ
+            </button>
+          </div>
+        )}
         {req.status === 'completed' && (
           <div className="px-4 pb-6 pt-3 border-t border-gray-100 shrink-0">
             <button onClick={() => {
@@ -467,7 +593,7 @@ const EMPTY_REQ = {
   requester_phone: '', requester_address: '', purpose: '',
 }
 
-function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuildingPermit }) {
+function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuildingPermit, onSelectWasteCollection }) {
   const [form, setForm] = useState(EMPTY_REQ)
   const [saving, setSaving] = useState(false)
   const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }))
@@ -499,14 +625,18 @@ function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuilding
         </div>
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
           <div>
-            <label className="text-xs font-semibold text-gray-500 mb-2 block">ประเภทเอกสาร</label>
+            <label className="text-xs font-semibold text-gray-500 mb-2 block">ประเภทบริการ/เอกสาร</label>
             <div className="grid grid-cols-2 gap-2">
               {getAllDocTypes().map(d => {
                 const [emoji, ...rest] = d.label.split(' ')
                 const isSel = form.document_type === d.value
                 return (
                   <button key={d.value} type="button"
-                    onClick={() => d.value === 'building_permit' ? onSelectBuildingPermit() : setForm(p => ({ ...p, document_type: d.value }))}
+                    onClick={() => {
+                      if (d.value === 'building_permit') onSelectBuildingPermit()
+                      else if (d.value === 'waste_collection_request') onSelectWasteCollection()
+                      else setForm(p => ({ ...p, document_type: d.value }))
+                    }}
                     className="flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left text-xs font-semibold transition-all active:scale-95"
                     style={isSel
                       ? { borderColor: '#3b82f6', backgroundColor: '#eff6ff', color: '#1d4ed8' }
@@ -562,8 +692,32 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
   const [acting, setActing]       = useState(false)
   const [showAdd, setShowAdd]     = useState(false)
   const [showPermitWizard, setShowPermitWizard] = useState(false)
+  const [showWasteWizard, setShowWasteWizard] = useState(false)
   const [search, setSearch]       = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
+  const [assignees, setAssignees] = useState([])
+  const [assigning, setAssigning] = useState(false)
+
+  // เปลี่ยนตัวผู้รับผิดชอบได้เฉพาะแอดมินกับหัวหน้ากอง — ตรงกับ trigger
+  // protect_document_request_scope ฝั่ง DB ไม่ใช่ซ่อนปุ่มเฉยๆ (กดได้ก็ error กลับมาอยู่ดี)
+  const canAssign = ['admin', 'superadmin', 'officer'].includes(currentUserRole)
+
+  useEffect(() => {
+    if (!tenant?.id || !canAssign) return
+    let cancelled = false
+    fetchAssignableStaff(tenant.id).then(people => {
+      if (!cancelled) setAssignees(people)
+    })
+    return () => { cancelled = true }
+  }, [tenant?.id, canAssign])
+
+  // ชื่อผู้รับผิดชอบสำหรับตาราง — คนที่ถูกมอบหมายไว้แล้วอาจไม่อยู่ใน assignees (ย้ายกอง/
+  // ถูกลดบทบาท) จึงต้องเผื่อกรณีหาไม่เจอ ไม่ใช่แสดงว่างเปล่าจนดูเหมือนยังไม่มอบหมาย
+  const assigneeNameOf = useCallback(id => {
+    if (!id) return null
+    const person = assignees.find(p => p.id === id)
+    return person ? (person.full_name || person.email || 'ไม่ทราบชื่อ') : 'ผู้ใช้ที่ถูกย้าย/ปิดบัญชี'
+  }, [assignees])
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -604,7 +758,8 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
     let document_url = null
     if (newStatus === 'completed' && req) {
       const docDate = new Date().toISOString().slice(0, 10)
-      const html = buildDocHTML({ req: { ...req, staff_notes: staffNote || req.staff_notes }, tenant, docDate })
+      const completedRequest = { ...req, staff_notes: staffNote || req.staff_notes }
+      const html = buildDocHTML({ req: completedRequest, tenant, docDate })
       const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
       const { url, error: upErr } = await uploadFile('document-certs', blob, {
         subject: id,
@@ -616,21 +771,52 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
       }
     }
 
-    await supabase.from('document_requests').update({
+    // "รับเรื่อง" = รับงานเข้าตัวเองได้ก็ต่อเมื่อยังไม่มีเจ้าของเท่านั้น
+    //
+    // ของเดิมยัด assigned_to: staffId ลงไปทุกครั้งที่กดเปลี่ยนสถานะ ผลคือใครกดคนสุดท้าย
+    // กลายเป็นเจ้าของงานแทนคนเดิมเงียบๆ และถ้าคนเดิมเป็น role 'staff' เขาจะมองไม่เห็นคำขอนั้น
+    // อีกเลยทันที (policy "read document_requests" ให้ staff เห็นเฉพาะ assigned_to = ตัวเอง)
+    // ตอนนี้ trigger protect_document_request_scope ปฏิเสธการเปลี่ยนตัวโดยคนที่ไม่ใช่
+    // แอดมิน/หัวหน้ากองอยู่แล้ว ถ้ายังส่งค่าไปทุกครั้ง update จะ error ทั้งก้อน
+    const claimAssignee = req && !req.assigned_to && staffId ? { assigned_to: staffId } : {}
+
+    const { error: updateError } = await supabase.from('document_requests').update({
       status:        newStatus,
       staff_notes:   staffNote   || null,
       reject_reason: rejectReason || null,
-      assigned_to:   staffId,
       updated_at:    new Date().toISOString(),
+      ...claimAssignee,
       ...(document_url ? { document_url, issued_at: new Date().toISOString() } : {}),
     }).eq('id', id)
 
+    if (updateError) {
+      setActing(false)
+      alert('บันทึกไม่สำเร็จ: ' + updateError.message)
+      return
+    }
+
     setRequests(prev => prev.map(r =>
-      r.id === id ? { ...r, status: newStatus, staff_notes: staffNote || null, document_url } : r
+      r.id === id ? { ...r, status: newStatus, staff_notes: staffNote || null, document_url, ...claimAssignee } : r
     ))
     notifyTelegram('document_request_status_updated', id)
     setActing(false)
     setSelected(null)
+  }
+
+  // มอบหมาย/เปลี่ยนตัวผู้รับผิดชอบรายคำขอ — ปลายทางเดียวกับที่ trigger ตั้งให้อัตโนมัติตอน
+  // คำขอเข้า ใช้ตอนคนลา งานล้น หรือประเภทที่ยังไม่ได้ตั้งผู้รับผิดชอบเริ่มต้นไว้
+  //
+  // ⚠️ ถ้ามอบหมายให้คนที่เป็น role 'staff' คนที่เคยเห็นคำขอนี้อาจมองไม่เห็นอีก (policy ให้
+  // staff เห็นเฉพาะงานตัวเอง) หัวหน้ากองยังเห็นทั้งกองเสมอ จึงไม่มีเคสงานหายไปทั้งระบบ
+  async function handleAssign(id, assigneeId) {
+    setAssigning(true)
+    const { error } = await supabase.from('document_requests')
+      .update({ assigned_to: assigneeId || null, updated_at: new Date().toISOString() })
+      .eq('id', id)
+    setAssigning(false)
+    if (error) { alert('มอบหมายไม่สำเร็จ: ' + error.message); return }
+    setRequests(prev => prev.map(r => r.id === id ? { ...r, assigned_to: assigneeId || null } : r))
+    setSelected(prev => prev && prev.id === id ? { ...prev, assigned_to: assigneeId || null } : prev)
   }
 
   // ลบถาวร — จำกัดเฉพาะ superadmin เท่านั้น (บังคับจริงด้วย RLS policy ในฐานข้อมูล
@@ -670,8 +856,8 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-bold text-gray-800">คำขอเอกสาร</h2>
-          <p className="text-xs text-gray-400 mt-0.5">คำขอเอกสารจากประชาชน</p>
+          <h2 className="text-lg font-bold text-gray-800">คำขอบริการ/เอกสาร</h2>
+          <p className="text-xs text-gray-400 mt-0.5">คำขอบริการและเอกสารจากประชาชน</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setRefreshKey(k => k + 1)} disabled={loading}
@@ -691,7 +877,7 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
       <div className="relative">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
         <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="ค้นหาชื่อ หรือประเภทเอกสาร..."
+          placeholder="ค้นหาชื่อ หรือประเภทบริการ/เอกสาร..."
           className="w-full pl-9 pr-9 py-2.5 text-sm border border-gray-200 rounded-xl bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-200" />
         {search && (
           <button onClick={() => setSearch('')}
@@ -754,15 +940,30 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr style={{ backgroundColor: '#1a3a5c' }}>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white w-8 border-r border-white/10">ที่</th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">เลขอ้างอิง</th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ชื่อ-สกุลผู้ยื่น</th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">ประเภทเอกสาร</th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">วัตถุประสงค์</th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">โทรศัพท์</th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">วันที่ยื่น</th>
-                  <th className="px-4 py-2.5 text-center text-[11px] font-bold text-white border-r border-white/10">สถานะ</th>
-                  <th className="px-4 py-2.5 text-center text-[11px] font-bold text-white">ดำเนินการ</th>
+                  <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white w-8 border-r border-white/10">ที่</th>
+                  <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10">เลขอ้างอิง</th>
+                  {/* ตัดคอลัมน์ "วัตถุประสงค์" กับ "โทรศัพท์" ออกแล้ว
+                      - วัตถุประสงค์: purpose ของคำขอส่วนใหญ่ขึ้นต้นด้วยข้อความเดียวกับคอลัมน์
+                        ประเภทบริการ พอโดน truncate ที่ 180px จึงเหลือแต่ส่วนที่ซ้ำ ส่วนที่ต่างจริง
+                        (ประเภทสถานที่ วันเริ่มบริการ) ถูกตัดหายหมด
+                      - โทรศัพท์: เป็นข้อมูลส่วนบุคคลที่ไม่จำเป็นต้องกางบนหน้าจอรายการซึ่งมัก
+                        เปิดค้างไว้/ฉายให้คนอื่นเห็น ลดการเปิดเผยเกินจำเป็นตาม PDPA
+                      ทั้งสองค่ายังดูได้ครบในแผ่นรายละเอียดเมื่อกดเข้าไปในคำขอนั้น */}
+                  <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap">ชื่อ-สกุลผู้ยื่น</th>
+                  <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap">ประเภทบริการ/เอกสาร</th>
+                  <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap">วันที่ยื่น</th>
+                  {/* คอลัมน์ที่เพิ่มกลับมาหลังตัด "วัตถุประสงค์"/"โทรศัพท์" ออก — จำเป็นจริง
+                      เพราะเป็นคอลัมน์เดียวที่ตอบว่า "งานนี้ใครถือ" ถ้าไม่มี หัวหน้ากองต้องกด
+                      เปิดทีละใบเพื่อดู และงานที่ไม่มีเจ้าของจะไม่มีใครสังเกตเห็น */}
+                  <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap">ผู้รับผิดชอบ</th>
+                  <th className="px-3 py-2.5 text-center text-[11px] font-bold text-white border-r border-white/10">สถานะ</th>
+                  {/* ปักคอลัมน์ปุ่มไว้ขอบขวาเสมอ — พอเพิ่มคอลัมน์ "ผู้รับผิดชอบ" ตารางกว้างเกินจอ
+                      (วัดจริง: ต้องการ 1068px มีให้ 1022px บนจอ 1440 และแย่กว่านี้บนจอ 1366
+                      ที่เจ้าหน้าที่ส่วนใหญ่ใช้) ปุ่ม "ตรวจสอบคำขอ" เป็นคอลัมน์ขวาสุดจึงถูกตัดหาย
+                      ต้องเลื่อนแนวนอนหาก่อนถึงจะกดได้ = ปุ่มหลักของหน้ากลายเป็นของที่ต้องไปตามหา
+                      background: inherit ให้สีตามแถว (แถวสลับสีและเปลี่ยนสีตอน hover ด้วย inline style) */}
+                  <th className="sticky right-0 z-10 px-3 py-2.5 text-center text-[11px] font-bold text-white shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]"
+                    style={{ background: 'inherit' }}>ดำเนินการ</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -775,17 +976,40 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
                       onMouseEnter={e => e.currentTarget.style.backgroundColor = '#dbeafe'}
                       onMouseLeave={e => e.currentTarget.style.backgroundColor = idx % 2 === 0 ? '#fff' : '#f5f8fc'}
                       onClick={() => setSelected(req)}>
-                      <td className="px-4 py-2.5 text-gray-500 text-xs border-r border-gray-200">{idx + 1}</td>
-                      <td className="px-4 py-2.5 font-mono text-xs text-gray-600 border-r border-gray-200 whitespace-nowrap">{req.id?.slice(0, 8)?.toUpperCase() ?? '—'}</td>
-                      <td className="px-4 py-2.5 font-semibold text-gray-800 text-sm border-r border-gray-200">{req.requester_name}</td>
-                      <td className="px-4 py-2.5 text-gray-700 text-xs border-r border-gray-200">{docType?.label.replace(/^\S+\s*/, '') ?? req.document_type}</td>
-                      <td className="px-4 py-2.5 text-gray-500 text-xs max-w-[180px] truncate border-r border-gray-200">{req.purpose || '—'}</td>
-                      <td className="px-4 py-2.5 text-gray-500 text-xs border-r border-gray-200">{req.requester_phone || '—'}</td>
-                      <td className="px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap border-r border-gray-200">{dateTH(req.created_at)}</td>
-                      <td className="px-4 py-2.5 text-center border-r border-gray-200"><StatusBadge status={req.status} /></td>
-                      <td className="px-4 py-2.5 text-center">
+                      <td className="px-3 py-2.5 text-gray-500 text-xs border-r border-gray-200">{idx + 1}</td>
+                      <td className="px-3 py-2.5 font-mono text-xs text-gray-600 border-r border-gray-200 whitespace-nowrap">{req.id?.slice(0, 8)?.toUpperCase() ?? '—'}</td>
+                      {/* nowrap ทั้งชื่อและประเภท — เดิมคอลัมน์แคบจนชื่อคนแตกเป็น 5 บรรทัด
+                          ("นาย / ยุทธ / ศักดิ์ / กาศ / เกษม") แถวสูงเกินจำเป็นทั้งตาราง
+                          ถ้าจอแคบจนไม่พอ ตารางมี overflow-x-auto ครอบอยู่ ให้เลื่อนแนวนอนแทน */}
+                      <td className="px-3 py-2.5 font-semibold text-gray-800 text-sm border-r border-gray-200 whitespace-nowrap">{req.requester_name}</td>
+                      <td className="px-3 py-2.5 text-gray-700 text-xs border-r border-gray-200 whitespace-nowrap">{docType?.label.replace(/^\S+\s*/, '') ?? req.document_type}</td>
+                      <td className="px-3 py-2.5 text-gray-500 text-xs whitespace-nowrap border-r border-gray-200">{dateTH(req.created_at)}</td>
+                      <td className="px-3 py-2.5 text-xs whitespace-nowrap border-r border-gray-200">
+                        {req.assigned_to
+                          ? <span className="text-gray-700">{assigneeNameOf(req.assigned_to)}</span>
+                          : <span className="font-semibold text-amber-600">ยังไม่มอบหมาย</span>}
+                      </td>
+                      <td className="px-3 py-2.5 text-center border-r border-gray-200">
+                        <div className="flex flex-col items-center gap-1">
+                          <StatusBadge status={req.status} />
+                          {isOverdue(req) && (
+                            <span className="whitespace-nowrap rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600">
+                              เกินกำหนด
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      {/* stopPropagation ที่ระดับ td แบบเดียวกับตารางคำร้อง — ปุ่มในช่องนี้
+                          ต้องยิง handler ของตัวเอง ไม่ใช่ปล่อยให้คลิกทะลุไปโดน onClick ของ tr
+                          (ของเดิมปุ่มไม่มี onClick เลย อาศัยคลิกทะลุอย่างเดียว จึงเป็นปุ่มหลอก) */}
+                      <td className="sticky right-0 z-10 px-3 py-2.5 text-center shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]"
+                        style={{ background: 'inherit' }} onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1.5">
-                          <button className="text-xs font-bold px-3 py-1 rounded border border-blue-600 text-blue-700 hover:bg-blue-600 hover:text-white transition-colors">ดำเนินการ</button>
+                          <button
+                            onClick={() => setSelected(req)}
+                            className="whitespace-nowrap text-xs font-bold px-3 py-1 rounded border border-blue-600 text-blue-700 hover:bg-blue-600 hover:text-white transition-colors">
+                            {INBOX_ACTION_LABELS[req.status] ?? 'ดูรายละเอียด'}
+                          </button>
                           {currentUserRole === 'superadmin' && (
                             <button
                               onClick={e => {
@@ -820,13 +1044,16 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
         <TaskDetailSheet req={selected} onClose={() => setSelected(null)}
           onUpdate={handleUpdate} acting={acting} tenant={tenant}
           onInquiryUpdate={() => { setSelected(null); setRefreshKey(k => k + 1) }}
-          currentUserRole={currentUserRole} onDelete={handleDelete} />
+          currentUserRole={currentUserRole} onDelete={handleDelete}
+          canAssign={canAssign} assignees={assignees} assigning={assigning}
+          assigneeName={assigneeNameOf(selected.assigned_to)} onAssign={handleAssign} />
       )}
       {showAdd && (
         <NewRequestSheet tenant={tenant} staffId={staffId}
           onClose={() => setShowAdd(false)}
           onCreated={r => setRequests(prev => [r, ...prev])}
-          onSelectBuildingPermit={() => { setShowAdd(false); setShowPermitWizard(true) }} />
+          onSelectBuildingPermit={() => { setShowAdd(false); setShowPermitWizard(true) }}
+          onSelectWasteCollection={() => { setShowAdd(false); setShowWasteWizard(true) }} />
       )}
       {/* ขออนุญาตก่อสร้างบ้าน — ใช้ wizard เต็มรูปแบบเดียวกับฝั่งประชาชน (แบบ ข.๑ จริง)
           แทนฟอร์มสั้นทั่วไปใน NewRequestSheet เพราะฟิลด์ไม่พอสำหรับพิมพ์แบบร่างที่ถูกต้อง */}
@@ -835,6 +1062,14 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
           <BuildingPermitWizard tenant={tenant} session={null} staffId={staffId}
             onBack={() => setShowPermitWizard(false)}
             onDone={() => { setShowPermitWizard(false); setRefreshKey(k => k + 1) }} />
+        </div>
+      )}
+      {/* คำขอเก็บขนขยะต้องใช้ฟิลด์ตามใบแจ้งจริง จึงไม่สร้างผ่านฟอร์ม walk-in แบบย่อ */}
+      {showWasteWizard && (
+        <div className="fixed inset-0 z-[60] bg-white overflow-y-auto">
+          <WasteCollectionRequestWizard tenant={tenant} session={null} staffId={staffId}
+            onBack={() => setShowWasteWizard(false)}
+            onDone={() => { setShowWasteWizard(false); setRefreshKey(k => k + 1) }} />
         </div>
       )}
     </div>
@@ -871,6 +1106,7 @@ const DOC_TITLES = {
   personal_cert:    'หนังสือรับรองบุคคล',
   tax_notice:       'ผลการตรวจสอบยอดภาษีที่ดินและสิ่งปลูกสร้าง',
   waste_collection: 'ผลการตรวจสอบค่าธรรมเนียมขยะ',
+  waste_collection_request: 'แจ้งผลการขอรับบริการเก็บขนขยะมูลฝอย',
   other:            'หนังสือรับรอง',
 }
 
@@ -912,6 +1148,25 @@ function buildDocBody(req, orgName) {
               </p>
               <p>กรุณาติดต่อชำระที่สำนักงานเทศบาล เอกสารนี้ไม่ใช่ใบเสร็จรับเงินหรือหลักฐานการชำระเงิน</p>
               ${req.staff_notes ? `<p>หมายเหตุ: ${escapeHtml(req.staff_notes)}</p>` : ''}`
+    case 'waste_collection_request': {
+      // ไม่ใช่หนังสือรับรอง แต่เป็นหนังสือแจ้งผลว่ารับคำขอเข้าเส้นทางเก็บขนแล้ว —
+      // ห้ามอัปโหลด "ใบคำขอที่ประชาชนกรอกเอง" มาเป็นเอกสารผลลัพธ์ เพราะประชาชนจะได้
+      // ใบเดิมที่ตัวเองยื่นกลับไป ไม่ใช่คำตอบจาก อปท.
+      const form = req.permit_form_data ?? {}
+      const startDate = thaiDateFromDateInput(form.service_start_date)
+      const placeType = form.place_type ? escapeHtml(form.place_type) : '-'
+      const binCount = form.bin_count ? `${escapeHtml(String(form.bin_count))} ใบ` : '-'
+      const point = collectionPointText(form.collection_point)
+      return `<p>ตามที่ ${name}${idCard} ที่อยู่ ${addr} ได้ยื่นคำขอรับบริการเก็บขนขยะมูลฝอยจาก${orgName} นั้น</p>
+              <p class="no-indent" style="margin-left:3em; margin-top:6pt">
+                ประเภทสถานที่: <strong>${placeType}</strong><br/>
+                จำนวนถังรองรับขยะ: <strong>${binCount}</strong><br/>
+                ${point ? `จุดวางถัง (พิกัด): <strong>${escapeHtml(point)}</strong><br/>` : ''}
+                เริ่มให้บริการเก็บขนตั้งแต่วันที่: <strong>${startDate || '-'}</strong>
+              </p>
+              <p>${orgName}ได้รับคำขอไว้และบรรจุสถานที่ดังกล่าวเข้าเส้นทางเก็บขนขยะมูลฝอยเรียบร้อยแล้ว ทั้งนี้ ผู้ขอรับบริการมีหน้าที่ชำระค่าธรรมเนียมเก็บขนขยะมูลฝอยตามอัตราที่กำหนดไว้ในข้อบัญญัติท้องถิ่น</p>
+              ${req.staff_notes ? `<p>หมายเหตุ: ${escapeHtml(req.staff_notes)}</p>` : ''}`
+    }
     default:
       return `<p>${escapeHtml(req.purpose) || 'ตามที่ได้รับการร้องขอ'}</p>
               ${req.staff_notes ? `<p>รายละเอียดเพิ่มเติม: ${escapeHtml(req.staff_notes)}</p>` : ''}`
@@ -922,6 +1177,8 @@ function buildDocHTML({ req, tenant, docDate }) {
   const orgName  = escapeHtml(tenant?.name ?? 'หน่วยงาน')
   const title    = DOC_TITLES[req.document_type] ?? DOC_TITLES.other
   const isFeeInquiry = FEE_INQUIRY_TYPES.includes(req.document_type)
+  // หนังสือ "แจ้งผล" ไม่ใช่หนังสือรับรอง จึงห้ามลงท้ายว่าออกให้เพื่อเป็นหลักฐาน
+  const isNotice = isFeeInquiry || req.document_type === 'waste_collection_request'
   const logoUrl  = typeof tenant?.logo_url === 'string' && /^https?:\/\//.test(tenant.logo_url)
     ? escapeHtml(tenant.logo_url) : null
 
@@ -941,14 +1198,19 @@ function buildDocHTML({ req, tenant, docDate }) {
 <div class="body">
   ${buildDocBody(req, orgName)}
 </div>
-<p class="closing">${isFeeInquiry ? 'ข้อมูลนี้ใช้แจ้งผลการตรวจสอบเบื้องต้น ไม่ใช่ใบเสร็จรับเงินหรือหลักฐานการชำระเงิน' : 'จึงออกหนังสือรับรองฉบับนี้ให้เพื่อเป็นหลักฐาน'}</p>
+<p class="closing">${isFeeInquiry
+  ? 'ข้อมูลนี้ใช้แจ้งผลการตรวจสอบเบื้องต้น ไม่ใช่ใบเสร็จรับเงินหรือหลักฐานการชำระเงิน'
+  : req.document_type === 'waste_collection_request'
+    ? 'จึงเรียนมาเพื่อทราบ และขอให้ติดต่อชำระค่าธรรมเนียมที่สำนักงานตามกำหนด'
+    : 'จึงออกหนังสือรับรองฉบับนี้ให้เพื่อเป็นหลักฐาน'}</p>
 <div class="signature">
   <div class="sig-line"></div>
   <p>(...............................................)</p>
-  <p>${isFeeInquiry ? 'เจ้าหน้าที่ผู้ตรวจสอบข้อมูล' : 'ผู้มีอำนาจลงนาม'}</p>
+  <p>${isNotice ? 'เจ้าหน้าที่ผู้ตรวจสอบข้อมูล' : 'ผู้มีอำนาจลงนาม'}</p>
   <p>${orgName}</p>
 </div>
 <div class="footer-note">
+  ${escapeHtml(govEServiceOriginText(tenant))}<br>
   หมายเลขอ้างอิง: ${req.id?.slice(0, 8)?.toUpperCase() ?? '-'} &nbsp;|&nbsp; ออกโดย ${orgName} &nbsp;|&nbsp; วันที่ ${thaiDate(docDate)}
 </div>
 </body></html>`
@@ -1928,7 +2190,7 @@ export default function StaffDashboard() {
           }}>
           {[
             { key: 'home',       label: 'แดชบอร์ด',   Icon: LayoutDashboard },
-            { key: 'inbox',      label: 'คำขอเอกสาร', Icon: FileText },
+            { key: 'inbox',      label: 'คำขอบริการ/เอกสาร', Icon: FileText },
             { key: 'complaints', label: 'คำร้อง',      Icon: MessageSquareWarning },
             { key: 'events',     label: 'ปฏิทินกิจกรรม', Icon: CalendarDays },
           ].filter(({ key }) => key === 'home' || visibleModules.some(m => m.key === key)).map(({ key, label, Icon }) => {

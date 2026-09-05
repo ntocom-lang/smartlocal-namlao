@@ -8,8 +8,9 @@ import {
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
+import { buildWasteCollectionRequestHtml } from '../lib/wasteCollectionRequestPrint'
 import { generateDraftPdfBlob } from '../lib/generateDraftPdf'
-import { thaiDate } from '../lib/thaiDate'
+import { thaiDate, thaiDateFromDateInput } from '../lib/thaiDate'
 import { resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef } from '../lib/driveStorage'
 
 const BASE_DOC_TYPES = {
@@ -17,6 +18,7 @@ const BASE_DOC_TYPES = {
   personal_cert:    'หนังสือรับรองบุคคล',
   tax_notice:       'ค่าธรรมเนียม/ภาษี',
   waste_collection: 'ค่าธรรมเนียมขยะ',
+  waste_collection_request: 'ขอรับบริการเก็บขนขยะมูลฝอย',
   building_permit:  'ขออนุญาตก่อสร้างบ้าน',
 }
 let _customDocLabels = {}
@@ -214,6 +216,38 @@ function DocDetailSheet({ req, onClose, tenant }) {
     }
   }
 
+  function wasteRequestHtml() {
+    return buildWasteCollectionRequestHtml({
+      form: req.permit_form_data,
+      tenant,
+      thDate: thaiDate(req.created_at),
+      referenceNo: req.id.slice(0, 8).toUpperCase(),
+    })
+  }
+
+  function handlePrintWasteRequest() {
+    const w = window.open('', '_blank', 'width=860,height=1100')
+    if (!w) return
+    w.document.write(wasteRequestHtml())
+    w.document.close()
+    setTimeout(() => { w.focus(); w.print() }, 400)
+  }
+
+  async function handleDownloadWasteRequestPdf() {
+    setPdfBusy(true)
+    try {
+      const blob = await generateDraftPdfBlob(wasteRequestHtml())
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `คำขอเก็บขนขยะ-${req.id.slice(0, 8).toUpperCase()}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      setPdfBusy(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-end md:items-center justify-center">
       <div className="bg-white w-full md:max-w-lg md:rounded-3xl rounded-t-3xl max-h-[93vh] flex flex-col overflow-hidden shadow-2xl">
@@ -284,10 +318,14 @@ function DocDetailSheet({ req, onClose, tenant }) {
           <div className="bg-gray-50 rounded-2xl p-4 space-y-2.5">
             <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">รายละเอียดคำขอ</p>
             {[
-              { label: 'ประเภทเอกสาร', value: docLabel },
+              { label: 'ประเภทบริการ/เอกสาร', value: docLabel },
               req.purpose       && { label: 'วัตถุประสงค์', value: req.purpose },
               req.requester_name && { label: 'ชื่อ-สกุล',    value: req.requester_name },
               req.requester_phone && { label: 'โทรศัพท์',    value: req.requester_phone },
+              req.requester_address && { label: 'สถานที่รับบริการ', value: req.requester_address },
+              req.document_type === 'waste_collection_request' && req.permit_form_data?.service_start_date && {
+                label: 'เริ่มให้จัดเก็บ', value: thaiDateFromDateInput(req.permit_form_data.service_start_date),
+              },
               { label: 'วันที่ยื่น', value: dateTH(req.created_at) },
             ].filter(Boolean).map(({ label, value }) => (
               <div key={label} className="flex gap-2 text-xs">
@@ -323,6 +361,21 @@ function DocDetailSheet({ req, onClose, tenant }) {
               </button>
               <button onClick={handleDownloadPermitPdf} disabled={pdfBusy}
                 className="w-full py-3 rounded-2xl font-semibold text-violet-700 bg-violet-50 border border-violet-200 text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-all">
+                {pdfBusy ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+                {pdfBusy ? 'กำลังสร้างไฟล์...' : 'ดาวน์โหลด PDF'}
+              </button>
+            </div>
+          )}
+
+          {req.document_type === 'waste_collection_request' && req.permit_form_data && (
+            <div className="space-y-2">
+              <button onClick={handlePrintWasteRequest}
+                className="w-full py-3 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+                style={{ backgroundColor: '#0e7490' }}>
+                <Printer size={15} /> พิมพ์ใบแจ้งขออนุญาต
+              </button>
+              <button onClick={handleDownloadWasteRequestPdf} disabled={pdfBusy}
+                className="w-full py-3 rounded-2xl font-semibold text-cyan-800 bg-cyan-50 border border-cyan-200 text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-all">
                 {pdfBusy ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
                 {pdfBusy ? 'กำลังสร้างไฟล์...' : 'ดาวน์โหลด PDF'}
               </button>
@@ -432,7 +485,7 @@ export default function MyDocRequests() {
         <div className="px-8 py-3 flex items-center justify-between bg-white border-b border-gray-200 shadow-sm">
           <div>
             <h1 className="text-base font-bold text-gray-800">เอกสารของฉัน</h1>
-            <p className="text-[11px] text-gray-400 mt-0.5">{tenant?.name} — คำขอเอกสารและใบรับรองราชการ</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">{tenant?.name} — คำขอบริการและเอกสารราชการ</p>
           </div>
           <button onClick={() => navigate('/doc-request')}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
@@ -454,7 +507,7 @@ export default function MyDocRequests() {
             ) : requests.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-gray-400">
                 <FileText size={44} className="mb-3 opacity-20" />
-                <p className="text-sm font-semibold text-gray-500">ยังไม่มีคำขอเอกสาร</p>
+                <p className="text-sm font-semibold text-gray-500">ยังไม่มีคำขอบริการหรือเอกสาร</p>
                 <p className="text-xs text-gray-400 mt-1 mb-5">คำขอที่ท่านยื่นจะแสดงที่นี่</p>
                 <button onClick={() => navigate('/doc-request')}
                   className="px-6 py-3 rounded-2xl font-bold text-white text-sm active:scale-95 transition-all"
@@ -476,7 +529,7 @@ export default function MyDocRequests() {
                 <div className="hidden md:block bg-white border border-gray-200 overflow-hidden shadow-sm">
                   <div className="px-5 py-3 flex items-center justify-between border-b border-gray-200"
                     style={{ backgroundColor: '#f5f8fc' }}>
-                    <p className="text-xs font-semibold text-gray-600">รายการคำขอเอกสารทั้งหมด</p>
+                    <p className="text-xs font-semibold text-gray-600">รายการคำขอบริการและเอกสารทั้งหมด</p>
                     <p className="text-xs text-gray-400">{requests.length} รายการ</p>
                   </div>
                   <table className="w-full text-sm">
@@ -484,7 +537,7 @@ export default function MyDocRequests() {
                       <tr style={{ backgroundColor: '#1a3a5c' }}>
                         <th className="text-center text-white/80 text-xs font-semibold px-4 py-2.5 w-10 border-r border-white/10">ที่</th>
                         <th className="text-center text-white/80 text-xs font-semibold px-4 py-2.5 border-r border-white/10">เลขอ้างอิง</th>
-                        <th className="text-left text-white/80 text-xs font-semibold px-4 py-2.5 border-r border-white/10">ประเภทเอกสาร</th>
+                        <th className="text-left text-white/80 text-xs font-semibold px-4 py-2.5 border-r border-white/10">ประเภทบริการ/เอกสาร</th>
                         <th className="text-center text-white/80 text-xs font-semibold px-4 py-2.5 border-r border-white/10">สถานะ</th>
                         <th className="text-left text-white/80 text-xs font-semibold px-4 py-2.5">วันที่ยื่น</th>
                       </tr>

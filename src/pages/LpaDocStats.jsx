@@ -15,6 +15,7 @@ const DOC_LABELS = {
   personal_cert:  'หนังสือรับรองบุคคล',
   tax_notice:       'ค่าธรรมเนียม/ภาษี',
   waste_collection: 'ค่าธรรมเนียมขยะ',
+  waste_collection_request: 'ขอรับบริการเก็บขนขยะมูลฝอย',
   building_permit:  'ขออนุญาตก่อสร้างบ้าน',
 }
 

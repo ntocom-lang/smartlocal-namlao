@@ -7,7 +7,7 @@ import { supabase } from '../../../../lib/supabase'
 import PostsHighlight from '../../../../components/home/PostsHighlight'
 import TourismSection from '../../../../components/home/TourismSection'
 import BannerSlider from '../../../../components/home/BannerSlider'
-import { Info, ChevronRight, Megaphone, Newspaper, CalendarDays, ChevronLeft, Landmark, Trash2, Lightbulb, Hospital, Route, Bug, Droplets } from 'lucide-react'
+import { Info, ChevronRight, Megaphone, Newspaper, CalendarDays, ChevronLeft, Landmark, Trash2, Truck, Lightbulb, Hospital, Route, Bug, Droplets } from 'lucide-react'
 import WeatherWidget from '../../../../components/home/WeatherWidget'
 import StaffSection from '../../../../components/home/StaffSection'
 import { toDateStr } from '../../../../lib/thaiDate'
@@ -44,6 +44,7 @@ const LAYOUT_RIGHT = {
 const BASE_DOC_TYPES = [
   { value: 'tax_notice',       label: 'ค่าธรรมเนียม/ภาษี', emoji: <Landmark size={28} strokeWidth={2} className="text-[var(--color-primary)] drop-shadow-[0_0_8px_rgba(var(--color-primary-rgb),0.6)]" /> },
   { value: 'waste_collection', label: 'ค่าธรรมเนียมขยะ',            emoji: <Trash2 size={28} strokeWidth={2} className="text-[var(--color-primary)] drop-shadow-[0_0_8px_rgba(var(--color-primary-rgb),0.6)]" /> },
+  { value: 'waste_collection_request', label: 'ขอให้มาเก็บขยะ', emoji: <Truck size={28} strokeWidth={2} className="text-[var(--color-primary)] drop-shadow-[0_0_8px_rgba(var(--color-primary-rgb),0.6)]" /> },
 ]
 
 // ── sub-components ────────────────────────────────────────────────────
