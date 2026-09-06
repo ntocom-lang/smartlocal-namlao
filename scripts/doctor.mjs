@@ -84,7 +84,7 @@ if (haveEnv === null) {
 }
 
 /* ── 4. ไฟล์ instruction ของ AI ตรงกับต้นฉบับไหม (รวมไฟล์ global) ── */
-// จุดสำคัญของเครื่องใหม่: ~/.claude/CLAUDE.md กับ ~/.gemini/GEMINI.md ไม่อยู่ใน git
+// จุดสำคัญของเครื่องใหม่: ~/.claude/CLAUDE.md, ~/.gemini/GEMINI.md, ~/.codex/AGENTS.md ไม่อยู่ใน git
 // ถ้าไม่รัน ai:sync AI ทุกตัวบนเครื่องนั้นจะไม่มีหลักการติดตัวเลย
 try {
   execFileSync(process.execPath, ['scripts/ai-sync.mjs', '--check'], { stdio: 'pipe' });

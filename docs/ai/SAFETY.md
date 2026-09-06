@@ -10,6 +10,10 @@
 [SAFETY สำหรับ agent ใน IDE]
 - ห้าม commit/push เอง ห้ามแก้ .env, credential, secret, CI config โดยไม่ถาม
 - ห้ามลบไฟล์หรือ git reset --hard / force push
+- agent ที่รันบนคลาวด์ (Codex cloud, Claude Code on the web) ไม่มีทรีในเครื่องให้ผมกู้
+  ถ้าไม่ push งานก็หายไปกับ container ⇒ push ได้เฉพาะสาขาที่ผมกำหนดให้ (`codex/...`, `claude/...`)
+  ที่ตัดจาก `origin/master` เท่านั้น ยังห้าม push เข้า master ห้าม force push ห้าม merge PR เอง
+  และห้ามแตะ .env/secret/CI config เหมือนเดิม
 - ห้ามอ่านหรือส่งไฟล์ที่มีข้อมูลส่วนบุคคลของประชาชนออกนอกเครื่อง
   ถ้าเจอไฟล์ลักษณะนี้ ให้หยุดและแจ้งผม (PDPA)
 - ก่อนแก้ไฟล์เกิน 3 ไฟล์ ให้เสนอแผนก่อนแล้วรอ approve

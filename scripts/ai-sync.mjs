@@ -3,10 +3,11 @@
  * ai-sync.mjs — สร้างไฟล์ instruction ของ AI ทุกตัวจากต้นฉบับชุดเดียว
  *
  *   ต้นฉบับ : docs/ai/CORE.md (หลักการสากล) + docs/ai/DOMAIN.md (เฉพาะโปรเจกต์) + docs/ai/SAFETY.md
+ *             + docs/ai/ADAPTERS.md (ส่วนต่างเฉพาะเครื่องมือ)
  *   ปลายทาง : AGENTS.md, .agents/rules/domain.md, docs/ai/web-snippets.md,
- *             ~/.claude/CLAUDE.md, ~/.gemini/GEMINI.md
+ *             ~/.claude/CLAUDE.md, ~/.gemini/GEMINI.md, ~/.codex/AGENTS.md
  *
- * ทำไมต้องมี: 2 ไฟล์สุดท้ายอยู่นอก git ⇒ เครื่องใหม่จะไม่มีเลย และการ copy ด้วยมือ
+ * ทำไมต้องมี: 3 ไฟล์สุดท้ายอยู่นอก git ⇒ เครื่องใหม่จะไม่มีเลย และการ copy ด้วยมือ
  * เคยพังจริง — กฎ "$0 Budget Policy" หายไปจาก 4 ใน 5 ปลายทาง (ตรวจพบ 2026-09-05)
  *
  *   npm run ai:sync    เขียนไฟล์จริง (สำรองไฟล์นอก git เป็น .bak.<YYYYMMDD-HHMM> ก่อน)
@@ -70,6 +71,7 @@ function sections(lines, label) {
 const core = sections(read('docs/ai/CORE.md'), 'docs/ai/CORE.md');
 const domain = sections(read('docs/ai/DOMAIN.md'), 'docs/ai/DOMAIN.md');
 const safety = sections(read('docs/ai/SAFETY.md'), 'docs/ai/SAFETY.md');
+const adapters = sections(read('docs/ai/ADAPTERS.md'), 'docs/ai/ADAPTERS.md');
 
 const need = (map, key, file) => {
   const v = map.get(key);
@@ -90,6 +92,11 @@ const DOM_PRINT = need(domain, DOM_PRINT_K, 'DOMAIN.md');
 
 const SAFETY_K = '[SAFETY สำหรับ agent ใน IDE]';
 const SAFETY_BODY = need(safety, SAFETY_K, 'SAFETY.md');
+
+// Codex ไม่อ่านไฟล์ชื่อ CODEX.md — อ่าน AGENTS.md ของรีโป (ซึ่ง AI ตัวอื่นอ่านด้วย) กับ ~/.codex/AGENTS.md
+// ⇒ adapter เฉพาะตัวมันต้องออกที่ global ไม่ใช่ AGENTS.md ไม่งั้นไปกวน AI ตัวอื่น
+const ADAPTER_CODEX_K = '[Adapter — Codex]';
+const ADAPTER_CODEX = need(adapters, ADAPTER_CODEX_K, 'ADAPTERS.md');
 
 /* ───────────── กฎแปลงถ้อยคำ (data — แก้ตรงนี้ที่เดียว) ───────────── */
 
@@ -264,6 +271,11 @@ const targets = [
     path: join(HOME, '.gemini', 'GEMINI.md'),
     inGit: false,
     build: () => [...HEAD_GLOBAL, ...bodyGlobal, ''].join('\n'),
+  },
+  {
+    path: join(HOME, '.codex', 'AGENTS.md'),
+    inGit: false,
+    build: () => [...HEAD_GLOBAL, ...bodyGlobal, '', ADAPTER_CODEX_K, ...ADAPTER_CODEX, ''].join('\n'),
   },
   { path: 'docs/ai/web-snippets.md', inGit: true, build: buildWebSnippets },
 ];

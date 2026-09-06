@@ -1,10 +1,11 @@
 # AI Instructions — Single Source of Truth
 
-**โครงสร้าง 3 ไฟล์ต้นฉบับ (แก้ได้เฉพาะ 3 ไฟล์นี้):**
+**โครงสร้าง 4 ไฟล์ต้นฉบับ (แก้ได้เฉพาะ 4 ไฟล์นี้):**
 - `docs/ai/CORE.md` = **หลักการสากล** ใช้ได้ทุกโปรเจกต์ทุกสายงาน (ไม่มีชื่อโดเมนเฉพาะ)
 - `docs/ai/DOMAIN.md` = **ความเชี่ยวชาญเฉพาะโปรเจกต์นี้** (Smart City ภาครัฐไทย) — มีเฉพาะโปรเจกต์นี้เท่านั้น
   โปรเจกต์อื่นที่ไม่ใช่สายงานนี้ ให้สร้าง `docs/ai/DOMAIN.md` ของตัวเองแยกต่างหาก ไม่ต้องแก้ CORE.md
 - `docs/ai/SAFETY.md` = กติกาสำหรับ agent ที่แก้ไฟล์ในเครื่องได้ (IDE/CLI) — ไม่ sync ไปฝั่งเว็บ
+- `docs/ai/ADAPTERS.md` = ส่วนต่างเฉพาะเครื่องมือที่ไม่มีไฟล์ adapter ของตัวเองในรีโป (ตอนนี้มี Codex ตัวเดียว)
 
 **ปลายทางทั้งหมดถูก generate โดย `scripts/ai-sync.mjs` — ห้ามแก้ไฟล์เหล่านี้ตรงๆ:**
 
@@ -14,6 +15,7 @@
 | `.agents/rules/domain.md` | DOMAIN ทั้งไฟล์ (รวมมาตรฐานการพิมพ์) | Antigravity — Workspace Rules |
 | `~/.claude/CLAUDE.md` | CORE ล้วน **ไม่มี DOMAIN** | Claude Code ทุกโปรเจกต์ (global) |
 | `~/.gemini/GEMINI.md` | CORE ล้วน **ไม่มี DOMAIN** | Antigravity — Global Rules ทุก backend (Claude/GPT/Gemini/Grok) |
+| `~/.codex/AGENTS.md` | CORE ล้วน **ไม่มี DOMAIN** + `[Adapter — Codex]` | Codex (CLI / cloud / IDE extension) ทุกโปรเจกต์ (global) |
 | `docs/ai/web-snippets.md` | CORE + DOMAIN + Adapter รายเว็บ | ต้นทางสำหรับ paste เข้า Gemini Gem / ChatGPT Project / Claude Project |
 
 **ไฟล์ที่ไม่ซ้ำเนื้อหา CORE.md (แก้มือได้ตามปกติ):** `CLAUDE.md`, `GEMINI.md` (root)
@@ -30,6 +32,9 @@ npm run ai:check    # ตรวจอย่างเดียว ไม่เข
 - ไฟล์ที่อยู่ใน repo ไม่ต้องสำรอง เพราะ `git diff` / `git checkout` ย้อนได้อยู่แล้ว
 - `.github/workflows/ai-docs-check.yml` รัน `ai:check --repo-only` ทุก push/PR
   (`--repo-only` เพราะ runner ไม่มีไฟล์ global 2 ตัว — ฝั่งนั้นตรวจด้วย `npm run doctor` บนเครื่อง dev)
+- Codex อ่าน `AGENTS.md` ของรีโปเองอัตโนมัติ (มาตรฐาน AGENTS.md) ⇒ ฝั่งโปรเจกต์ไม่ต้องตั้งอะไรเพิ่ม
+  ที่ต้อง generate คือ global `~/.codex/AGENTS.md` เพราะ **Codex ไม่อ่านไฟล์ชื่อ `CODEX.md`**
+  adapter เฉพาะตัวมันจึงยัดลง `AGENTS.md` ไม่ได้ (จะไปกวน AI ตัวอื่นที่อ่านไฟล์เดียวกัน)
 - **ตั้งเครื่องใหม่**: `git clone` แล้วรัน `npm run ai:sync` ครั้งเดียว AI ทุกตัวได้บริบทครบ
   ไม่ต้อง copy ไฟล์ global ข้ามเครื่อง เพราะ generate จาก `CORE.md` ที่อยู่ใน repo ได้ทั้งหมด
 
@@ -53,6 +58,9 @@ npm run ai:check    # ตรวจอย่างเดียว ไม่เข
 ## บันทึกเหตุการณ์
 
 - **2026-07-29** แยกโครงสร้าง 2 ชั้น (CORE + DOMAIN)
+- **2026-09-06** เพิ่มปลายทาง `~/.codex/AGENTS.md` + ต้นฉบับ `docs/ai/ADAPTERS.md`
+  และเพิ่มข้อยกเว้น push ของ agent ฝั่งคลาวด์ใน `docs/ai/SAFETY.md`
+  (เดิม "ห้าม commit/push เอง" ขัดกับ Codex cloud / Claude Code on the web ที่ส่งงานได้ทางเดียวคือ push)
 - **2026-09-05** เลิก sync ด้วยมือ เปลี่ยนมาใช้ `scripts/ai-sync.mjs`
   เหตุผล: การ copy มือพังจริง — กฎ `$0 Budget Policy` ถูกเพิ่มใน `CORE.md` แล้ว sync เข้า `AGENTS.md` ตัวเดียว
   **หายไปจากอีก 4 ปลายทาง** (`~/.claude/CLAUDE.md`, `~/.gemini/GEMINI.md`, `web-snippets.md` ทั้ง 3 บล็อก)
