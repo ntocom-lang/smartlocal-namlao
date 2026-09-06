@@ -564,6 +564,12 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
                 entry: e,
               }))}
               onFeatureClick={feature => setSelectedEntry(feature.entry)}
+              /* กดที่ว่างบนแผนที่แล้วปิดแผงรายละเอียดเลย ไม่ต้องเล็งปุ่ม × ที่เล็กมากบนมือถือ
+                  Leaflet ไม่ส่ง event click ของแผนที่เมื่อกดโดนหมุด (หยุด propagation ให้เอง)
+                  กดหมุดอื่นจึงยังสลับแผงได้ตามปกติ ไม่ใช่ปิดแล้วต้องกดใหม่
+                  ส่วนตัวแผงอยู่นอก .leaflet-container (เป็น sibling) การกดในแผงจึงไม่ตกมาถึงตรงนี้
+                  ปุ่มอนุมัติ/เปลี่ยนสถานะข้างในเลยยังกดได้ ไม่ถูกปิดทิ้งก่อนทำงาน */
+              onMapClick={() => setSelectedEntry(null)}
             />
           )}
 
