@@ -34,7 +34,9 @@ export function AuthProvider({ children }) {
     return () => subscription.unsubscribe()
   }, [])
 
-  const loadUserProfile = useCallback(async (uid, tenantObj) => {
+  // รับ "id ของ อปท." ไม่ใช่ tenant ทั้งก้อน — ตรรกะข้างในใช้แค่ id เทียบกับ profiles.municipality_id
+  // และ deps ของ effect ที่เรียกฟังก์ชันนี้ต้องเป็นค่า primitive เท่านั้น (ดูเหตุผลยาวที่ effect ข้างล่าง)
+  const loadUserProfile = useCallback(async (uid, tenantId) => {
     if (!uid) return
     setProfileLoading(true)
     setProfileError(false)
@@ -54,13 +56,13 @@ export function AuthProvider({ children }) {
       }
 
       // tenant โหลดไม่สำเร็จเลย (error) — ไม่มี tenant.id ให้เทียบ ปลอดภัยไว้ก่อนด้วยการไม่ให้สิทธิ์พิเศษ
-      if (!tenantObj?.id) {
+      if (!tenantId) {
         setRole('citizen')
         return
       }
 
       // role อื่น — ถ้า municipality ไม่ตรง → ลดเหลือ citizen
-      if (profileMuniId && profileMuniId !== tenantObj.id) {
+      if (profileMuniId && profileMuniId !== tenantId) {
         setRole('citizen')
         return
       }
@@ -88,14 +90,25 @@ export function AuthProvider({ children }) {
     // ช้ากว่า session ที่ค้างจาก อปท. เดิม) รอ tenantLoading ให้จบก่อนเสมอ ปลอดภัยกว่าเสี่ยง race condition
     if (tenantLoading) { setProfileLoading(true); return }
 
-    loadUserProfile(session.user.id, tenant)
-  }, [session?.user?.id, tenant, tenantLoading, loadUserProfile])
+    loadUserProfile(session.user.id, tenant?.id)
+    // ⚠️ deps ต้องเป็น tenant?.id เท่านั้น ห้ามใส่ tenant ทั้ง object เด็ดขาด
+    //
+    // patchTenant() ใน TenantContext สร้าง object ใหม่ทุกครั้ง ({ ...prev, ...fields }) ถ้า deps
+    // เป็น object เต็ม ทุกการบันทึกในหลังบ้าน (โลโก้, ธีมสี, เปิด-ปิดโมดูล, ประเภทคำขอเอกสาร ฯลฯ)
+    // จะทำให้ effect นี้รันใหม่ → setProfileLoading(true) ทันทีแบบ synchronous → RequireAuth ใน
+    // src/App.jsx คืน null → หน้าทั้งหน้า unmount แล้ว mount ใหม่ = state หายหมด แอดมินถูกเด้ง
+    // กลับหน้าแรกของหลังบ้านทุกครั้งที่กดบันทึก และไม่ทันเห็นข้อความ "บันทึกสำเร็จ"
+    // (บั๊กจริงที่วัดได้ 2569-09-06 ทั้งการ์ดประเภทคำขอเอกสารและปุ่มสลับสไตล์ไอคอนหมวดคำร้อง)
+    //
+    // ตรรกะกัน cross-tenant ไม่เปลี่ยน: ยังรอ tenantLoading ก่อนเสมอ และยังโหลดโปรไฟล์ใหม่ทุกครั้ง
+    // ที่ "อปท. เปลี่ยน" เพราะสิ่งที่ใช้ตัดสินสิทธิ์คือ id ตัวเดียว ฟิลด์อื่นของ tenant ไม่เกี่ยวเลย
+  }, [session?.user?.id, tenant?.id, tenantLoading, loadUserProfile])
 
   const refreshProfile = useCallback(async () => {
     if (session?.user?.id) {
-      await loadUserProfile(session.user.id, tenant)
+      await loadUserProfile(session.user.id, tenant?.id)
     }
-  }, [session?.user?.id, tenant, loadUserProfile])
+  }, [session?.user?.id, tenant?.id, loadUserProfile])
 
   const displayName = profileName
     || session?.user?.user_metadata?.full_name
