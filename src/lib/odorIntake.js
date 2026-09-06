@@ -28,6 +28,19 @@ function odorRoutedAt(complaint, { fallbackToCreated = false } = {}) {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
+// แถวนี้เป็นคำร้องหมวดเฉพาะกิจหรือไม่ — ใช้ในหน้าที่แสดงคำร้องคละหมวดเพื่อซ่อนของที่ใช้ไม่ได้กับ
+// สายงานนี้ (แถบความคืบหน้า 5 ขั้น และตัวนับ SLA) โดยไม่ต้อง query complaint_categories เพิ่ม
+//
+// ⚠️ ทำไมของพวกนั้นต้องซ่อน: หมวดเฉพาะกิจ "ไม่แตะ complaints.status เลย" ตลอดสายงาน
+//   - แถบความคืบหน้า: จะค้างที่ "คำร้องใหม่" ตลอดกาล อีก 4 ขั้นไม่มีวันสว่าง แม้เจ้าหน้าที่จะ
+//     ลงพื้นที่จัดการจบไปแล้ว และยังขัดกับป้าย "ระบบรับเรื่องแล้ว" ที่อยู่เหนือมันเอง
+//   - ตัวนับ SLA: SlaBadge คืน null เฉพาะตอน status เป็น done/closed/rejected ซึ่งหมวดนี้ไม่มี
+//     วันไปถึง พ้นกำหนดเมื่อไหร่ป้ายจะพลิกเป็น "เกินกำหนด N วันทำการ" แล้วนับขึ้นไม่มีวันหยุด
+//     = ระบบของ อปท. ประกาศต่อประชาชนเองว่าตัวเองทำงานเกินกำหนด บนเรื่องที่ออกแบบมาไม่มีขั้นปิด
+function isAdhocComplaint(complaint) {
+  return odorRoutedAt(complaint) != null
+}
+
 // ข้อความสถานะมาตรฐาน — รวมไว้ที่เดียวเพราะเคยแก้ป้ายทำนองนี้แล้วตกหล่นหน้าใดหน้าหนึ่งมาแล้ว
 const ODOR_INTAKE_LABEL = 'ระบบรับเรื่องแล้ว'
 
@@ -38,4 +51,4 @@ function odorIntakeText(complaint, { withTime = true } = {}) {
   return `${ODOR_INTAKE_LABEL} · ${at.toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}`
 }
 
-export { odorRoutedAt, odorIntakeText, ODOR_INTAKE_LABEL }
+export { odorRoutedAt, isAdhocComplaint, odorIntakeText, ODOR_INTAKE_LABEL }
