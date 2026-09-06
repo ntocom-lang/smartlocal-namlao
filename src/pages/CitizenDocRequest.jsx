@@ -7,6 +7,7 @@ import { notifyTelegram } from '../lib/notifyTelegram'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
 import BuildingPermitWizard from './BuildingPermitWizard'
 import WasteCollectionRequestWizard from './WasteCollectionRequestWizard'
+import { withoutRemovedTypes } from '../lib/documentTypes'
 
 // ที่อยู่ผู้ยื่นคำขอ = ที่อยู่ในเขตของหน่วยงานเสมอ (ระบบนี้แยกตามหน่วยงาน ใครหน่วยงานนั้น)
 // เลยไม่ต้องให้ประชาชนพิมพ์ตำบล/อำเภอ/จังหวัดเอง ให้กรอกแค่บ้านเลขที่ แล้วต่อท้ายด้วย
@@ -88,14 +89,18 @@ export default function CitizenDocRequest() {
       bg:     '#eef2ff',
       border: '#c7d2fe',
     }))
-    return [...BASE_DOC_TYPES, ...extras]
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return [...withoutRemovedTypes(BASE_DOC_TYPES, tenant), ...extras]
   }, [tenant])
   const [session, setSession]     = useState(undefined)
-  const [selected, setSelected]   = useState(() => {
+  const [selectedRaw, setSelected] = useState(() => {
     const t = searchParams.get('type')
     return t ? (BASE_DOC_TYPES.find(d => d.value === t) ?? null) : null
   })
+  // ประเภทที่ อปท. ลบทิ้งแล้ว ต้องเปิดฟอร์มไม่ได้แม้มีลิงก์เก่า/บุ๊กมาร์ก ?type=... ชี้เข้ามาตรงๆ
+  // กรองตอนอ่าน state ไม่ใช่ใน useEffect เพราะ tenant มาหลัง mount ได้ (คอมโพเนนต์ไม่ remount)
+  const selected = selectedRaw && allDocTypes.some(d => d.value === selectedRaw.value)
+    ? selectedRaw
+    : null
   const [form, setForm]           = useState({ name_title: '', name_first: '', name_last: '', requester_id_card: '', requester_phone: '', requester_address: '', purpose: '' })
   const [saving, setSaving]       = useState(false)
   const [done, setDone]           = useState(null)
