@@ -147,7 +147,12 @@ const MANIFEST_PATH = '/manifest.webmanifest'
 // ไม่ย่อ/ขยายรูปเอง: Cloudflare Image Resizing เป็นบริการเสียเงิน ผิดนโยบายงบ 0 บาท
 // อ่านหัวไฟล์ 24 ไบต์แรกพอ แล้วยกเลิก stream ทิ้ง ไม่ต้องโหลดรูปทั้งใบ
 async function readPngSize(url) {
-  const res = await fetch(url, { headers: { Range: 'bytes=0-33' }, redirect: 'error', signal: AbortSignal.timeout(3000) })
+  // redirect: manual ไม่ใช่ error — workerd ไม่รองรับค่า error และโยน TypeError ทิ้งทุกครั้ง
+  // ("error won't be implemented since it does not make sense at the edge") ซึ่ง catch ข้างล่าง
+  // กลืนไว้เงียบๆ ผลคือทุก อปท. ตกไปใช้ไอคอนกลางหมด โลโก้หน่วยงานไม่เคยขึ้นเป็นไอคอนแอปเลย
+  // manual คืน response ที่มีสถานะ 30x กลับมาให้ ซึ่ง !res.ok ด้านล่างตัดทิ้งอยู่แล้ว
+  // จึงยังไม่ตามลิงก์ต่อไปโฮสต์อื่นเหมือนเดิม
+  const res = await fetch(url, { headers: { Range: 'bytes=0-33' }, redirect: 'manual', signal: AbortSignal.timeout(3000) })
   if (!res.ok || !res.body) return null
 
   const reader = res.body.getReader()
