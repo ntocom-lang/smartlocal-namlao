@@ -554,7 +554,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
         <div className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-cyan-400/20 blur-3xl" />
         <div className="pointer-events-none absolute bottom-0 left-1/3 h-28 w-56 rounded-full bg-violet-500/20 blur-3xl" />
         <div className="relative flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-start gap-3 pr-10 md:gap-4 md:pr-0">
+          <div className="flex min-w-0 items-start gap-3 md:gap-4">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/20 bg-white/10 shadow-inner backdrop-blur-sm md:h-14 md:w-14">
               <Users size={25} strokeWidth={1.8} />
             </div>
@@ -576,11 +576,11 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
           </div>
           <button
             onClick={() => fetchUsers({ search, page })}
-            className="group absolute right-0 top-0 flex h-10 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-3 text-xs font-semibold text-white backdrop-blur-sm transition-all hover:bg-white/20 active:scale-95 md:static md:px-3.5"
+            className="group flex min-h-11 shrink-0 items-center justify-center gap-2 self-start rounded-xl border border-white/20 bg-white/10 px-3 text-sm font-semibold text-white backdrop-blur-sm transition-all hover:bg-white/20 active:scale-95 md:self-auto md:px-3.5"
             title="รีเฟรชข้อมูล"
           >
             <RefreshCw size={15} className="transition-transform duration-500 group-hover:rotate-180" />
-            <span className="hidden md:inline">อัปเดตข้อมูล</span>
+            <span>อัปเดตข้อมูล</span>
           </button>
         </div>
 
@@ -606,7 +606,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
 
       {/* แท็บย่อย: เจ้าหน้าที่ / ประชาชน / แบบตำแหน่ง — แยก query กันโหลดผู้ใช้ทั้งหมดมาทีเดียว */}
       <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50 via-white to-blue-50/60 px-4 py-3 md:px-5">
-        <div className="inline-flex rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
+        <div aria-label="เมนูจัดการผู้ใช้และการแต่งตั้ง" className="grid grid-cols-1 gap-1 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm sm:inline-flex">
         {[
           { key: 'staff', label: 'เจ้าหน้าที่', count: staffCount, Icon: Briefcase },
           { key: 'citizen', label: 'ประชาชน', count: citizenCount, Icon: UserCircle2 },
@@ -624,15 +624,16 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
             setFilterDept('')
             setLoading(true)
           }}
-            className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition-all md:px-4 md:text-sm ${
+            aria-current={subTab === key ? 'page' : undefined}
+            className={`flex min-h-11 min-w-0 items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-bold transition-all md:px-4 ${
               subTab === key
                 ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-200'
                 : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
             }`}>
-            <Icon size={15} />
-            {label}
+            <Icon size={17} className="shrink-0" />
+            <span className="min-w-0 flex-1 text-left break-words">{label}</span>
             {count != null && (
-              <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${subTab === key ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-400'}`}>{count}</span>
+              <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-xs ${subTab === key ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>{count}</span>
             )}
           </button>
         ))}
@@ -653,13 +654,14 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
             </div>
             {filterDept && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-600">กำลังกรอง</span>}
           </div>
-          <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
           {deptCards.map(c => {
             const isActive = filterDept === c.value
             return (
               <button
                 key={c.value}
                 type="button"
+                aria-pressed={isActive}
                 onClick={() => { setFilterDept(prev => prev === c.value ? '' : c.value); setPage(0) }}
                 className="group relative flex min-h-[72px] items-center gap-3 overflow-hidden rounded-2xl border px-3 py-3 text-left transition-all hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98]"
                 style={{
@@ -674,8 +676,8 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
                   <Briefcase size={17} />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs font-extrabold leading-snug text-slate-800">{c.label}</span>
-                  <span className="mt-1 block truncate text-[9px] font-medium text-slate-400">{c.shortName || 'หน่วยงานภายใน'}</span>
+                  <span className="block break-words text-sm font-extrabold leading-relaxed text-slate-800">{c.label}</span>
+                  <span className="mt-1 block break-words text-xs font-medium text-slate-500">{c.shortName || 'หน่วยงานภายใน'}</span>
                 </span>
                 <span className="min-w-7 shrink-0 rounded-full px-2 py-1 text-center text-[11px] font-black"
                   style={{ backgroundColor: isActive ? c.palette.color : c.palette.soft, color: isActive ? '#fff' : c.palette.color }}>
@@ -772,13 +774,13 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
                 onClick={(e) => { if (e.target.closest('button, select, input, a, label')) return; setViewingUserId(u.id) }}>
                 <span className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: rs.color }} />
                 {/* แถว 1: avatar + ชื่อ + badge */}
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <span className="text-xs text-gray-400 font-mono w-5 text-right shrink-0">{i + 1}</span>
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-sm font-black text-white shadow-sm"
                        style={{ background: `linear-gradient(135deg, ${rs.color}, ${rs.color}bb)` }}>
                     {(u.full_name || u.email || '?')[0].toUpperCase()}
                   </div>
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-0 basis-1/2">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <p className="font-medium text-gray-800 text-sm">
                         {u.full_name || '—'}
@@ -806,7 +808,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
                   </span>
                 </div>
                 {subTab === 'staff' && (
-                  <div className="ml-[60px] mt-1 flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 px-2.5 py-2">
+                  <div className="mt-1 flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 px-2.5 py-2 break-words">
                     <span className="text-xs font-semibold text-slate-600">{u.department_name || 'ไม่ระบุกอง'}</span>
                     {u.is_dept_head && <span className="text-[11px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">หัวหน้ากอง</span>}
                     <span className="text-xs text-gray-400">
@@ -814,29 +816,29 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
                     </span>
                   </div>
                 )}
-                <div className="ml-[60px] mt-1">
+                <div className="mt-1">
                   <ProviderChips user={u} compact />
                 </div>
-                <div className="ml-[60px] mt-1 flex items-center gap-2">
-                  <button onClick={() => setViewingUserId(u.id)} className="rounded-lg bg-blue-50 px-2.5 py-1.5 text-xs font-bold text-blue-600 transition-colors hover:bg-blue-100 hover:text-blue-700">
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <button onClick={() => setViewingUserId(u.id)} className="min-h-11 rounded-lg bg-blue-50 px-3 py-2 text-sm font-bold text-blue-600 transition-colors hover:bg-blue-100 hover:text-blue-700">
                     {canManage ? 'แต่งตั้ง / แก้ไขข้อมูล' : 'ดูรายละเอียด'}
                   </button>
                   {canManage && subTab === 'staff' && (
                     <button
                       onClick={() => setHandoverStaff(u)}
-                      className="p-1.5 rounded text-gray-300 hover:text-orange-500 hover:bg-orange-50 transition-colors"
+                      className="flex min-h-11 items-center gap-1.5 rounded-lg bg-orange-50 px-3 py-2 text-sm font-semibold text-orange-700 hover:bg-orange-100 transition-colors"
                       title="โอนงาน"
                     >
-                      <Repeat size={13} />
+                      <Repeat size={15} className="shrink-0" /> โอนงาน
                     </button>
                   )}
                   {canManage && (
                     <button
                       onClick={() => setDeletingUser(u)}
-                      className="p-1.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                      className="flex min-h-11 items-center gap-1.5 rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-100 transition-colors"
                       title="ลบผู้ใช้งาน"
                     >
-                      <Trash2 size={13} />
+                      <Trash2 size={15} className="shrink-0" /> ลบผู้ใช้งาน
                     </button>
                   )}
                 </div>

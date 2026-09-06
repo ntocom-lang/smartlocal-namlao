@@ -139,7 +139,7 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
 
   return (
     <div className="space-y-4 px-4 py-4 md:px-5">
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-col items-stretch gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h2 className="text-base font-bold text-gray-800 flex items-center gap-2">
             <Briefcase size={17} className="text-indigo-500" /> แบบตำแหน่งของหน่วยงาน
@@ -149,14 +149,14 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
           </p>
         </div>
         {canManage && (
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <button onClick={handleImportDefaults} disabled={importing}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50 active:scale-95 transition-all">
+              className="flex min-h-11 items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50 active:scale-95 transition-all">
               {importing ? <Loader2 size={14} className="animate-spin" /> : <DownloadCloud size={14} />}
-              <span className="hidden md:inline">ชุดมาตรฐาน</span>
+              <span>ชุดมาตรฐาน</span>
             </button>
             <button onClick={openCreate}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-white shadow-sm active:scale-95 transition-all"
+              className="flex min-h-11 items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-white shadow-sm active:scale-95 transition-all"
               style={{ backgroundColor: '#1e293b' }}>
               <Plus size={14} /> เพิ่มตำแหน่ง
             </button>
@@ -193,16 +193,16 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
         grouped.map(cat => (
           <div key={cat.value} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="flex items-center justify-between gap-3 px-4 pt-3 pb-2">
-              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{cat.label}</p>
-              <p className="text-[11px] font-semibold text-gray-300">{cat.items.length} ตำแหน่ง</p>
+              <p className="min-w-0 break-words text-xs font-bold text-gray-600">{cat.label}</p>
+              <p className="shrink-0 text-xs font-semibold text-gray-500">{cat.items.length} ตำแหน่ง</p>
             </div>
             <div className="divide-y divide-gray-50">
               {cat.items.map(p => {
                 const count = usage[p.id] ?? 0
                 return (
-                  <div key={p.id} className="flex items-center gap-3 px-4 py-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-gray-800 truncate">{p.name}</p>
+                  <div key={p.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
+                    <div className="w-full min-w-0 md:w-auto md:flex-1">
+                      <p className="text-sm font-semibold leading-relaxed text-gray-800 break-words">{p.name}</p>
                       <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                         <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600">{ROLE_TH[p.role] ?? p.role}</span>
                         {p.department_hint && (
@@ -216,14 +216,16 @@ export default function PositionCatalogAdmin({ tenant, currentUserRole }) {
                       <Users size={12} /> {count}
                     </span>
                     {canManage && (
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div className="ml-auto flex items-center gap-2 shrink-0 md:ml-0">
                         <button onClick={() => openEdit(p)}
-                          className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
-                          <Pencil size={13} />
+                          aria-label={`แก้ไขตำแหน่ง ${p.name}`}
+                          className="flex min-h-11 items-center gap-1.5 px-3 py-2 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-600 transition-colors">
+                          <Pencil size={15} /> <span className="text-sm">แก้ไข</span>
                         </button>
                         <button onClick={() => handleDelete(p)}
-                          className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors">
-                          <Trash2 size={13} />
+                          aria-label={`ลบตำแหน่ง ${p.name}`}
+                          className="flex min-h-11 items-center gap-1.5 px-3 py-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 transition-colors">
+                          <Trash2 size={15} /> <span className="text-sm">ลบ</span>
                         </button>
                       </div>
                     )}
