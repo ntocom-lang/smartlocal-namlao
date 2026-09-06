@@ -573,11 +573,15 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
     : null
   // หมุดเฉพาะกิจใช้ชื่อหมวดเป็นหัวข้อเสมอ — title ของ role ที่เห็น free-text ได้คือ subject ที่ประชาชน
   // พิมพ์เอง ซึ่งการ์ดนี้ตั้งใจไม่แสดงมาตั้งแต่ต้น
-  const selectedTitle = selectedEntry
-    ? (selectedIsAdhoc
-      ? (resolveCategoryLabel(selectedEntry) || selectedEntry.title)
-      : (selectedEntry.title || resolveCategoryLabel(selectedEntry) || selectedEntry.group_name))
-    : ''
+  //
+  // แยกออกมาเป็นฟังก์ชันเพราะ tooltip ตอน hover ต้องใช้ชื่อเดียวกับการ์ดเป๊ะๆ ถ้าเขียนสองที่
+  // วันหนึ่งจะเพี้ยนกัน แล้วกลายเป็นว่า hover เห็นชื่อหนึ่ง กดแล้วเห็นอีกชื่อหนึ่ง
+  // ⚠️ กฎ PDPA ของหมุดเฉพาะกิจต้องอยู่ในนี้ที่เดียว: ใช้ชื่อหมวดเสมอ ห้ามหลุด subject ที่ประชาชน
+  //   พิมพ์เองออกไปเป็น tooltip ซึ่งลอยอยู่บนแผนที่โดยไม่มี audit log ว่าใครเห็นของใคร
+  const pinTitleOf = (entry) => (isAdhocEntry(entry, complaintCategoryMeta)
+    ? (resolveCategoryLabel(entry) || entry.title)
+    : (entry.title || resolveCategoryLabel(entry) || entry.group_name))
+  const selectedTitle = selectedEntry ? pinTitleOf(selectedEntry) : ''
   const selectedSubtitle = selectedEntry
     ? [selectedEntry.group_name, resolveCategoryLabel(selectedEntry)].filter(v => v && v !== selectedTitle).join(' · ')
     : ''
@@ -621,11 +625,14 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
                 return {
                   id: `${e.source_table}-${e.source_id}`,
                   position: { lat: Number(e.latitude), lng: Number(e.longitude) },
-                  // ตั้งใจไม่ส่ง title — LeafletMapCanvas จะ bindPopup ให้อัตโนมัติทุกหมุดที่มี title
-                  // (ดู LeafletMapCanvas บรรทัด "if (markerData.title || markerData.infoHtml)") ทำให้กดหมุด
-                  // แล้วเด้งทั้ง popup ของ Leaflet และการ์ดรายละเอียดของเราซ้อนกัน 2 ชั้น เลือกใช้การ์ด
-                  // อย่างเดียวเพราะ popup เป็น HTML string ทำ role gating / ปุ่มอนุมัติ / ปรับสถานะไม่ได้
-                  // แลกกับการเสีย tooltip ตอน hover บน PC (ข้อมูลชุดเดียวกันอยู่บนการ์ดครบแล้ว)
+                  // ยังคงไม่ส่ง title — LeafletMapCanvas ใช้ title เป็นสวิตช์สั่ง bindPopup ด้วย
+                  // (ดูบรรทัด "if (markerData.title || markerData.infoHtml)") ถ้าส่งไปจะได้ popup
+                  // ของ Leaflet ซ้อนกับการ์ดรายละเอียดของเรา 2 ชั้น และ popup เป็น HTML string
+                  // ทำ role gating / ปุ่มอนุมัติ / ปรับสถานะไม่ได้
+                  //
+                  // ส่ง tooltip แทน — ช่องที่ให้ข้อความ hover โดยไม่ผูก popup เอาชื่อหมุดกลับมาให้
+                  // คนใช้ PC ชี้เมาส์ดูได้เร็วๆ ว่าหมุดไหนคืออะไร โดยไม่ต้องกดทีละใบ
+                  tooltip: pinTitleOf(e),
                   color: meta.pinColor ?? meta.color,
                   label: isIconUrl(icon) ? '' : icon,
                   iconUrl: isIconUrl(icon) ? icon : null,
