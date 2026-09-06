@@ -42,6 +42,27 @@ const OTHER_STAFF_ACCOUNT = { alias: 'demo-staff', profile: 'staff', route: '/st
 // hostname demo.rk-networks.com → slug 'demo' (ดู detectTenantSlug ใน src/contexts/TenantContext.jsx)
 const TENANT_SLUG = 'demo'
 
+// เคสทั้งหมดที่การรันแบบ --write ต้องได้ผล ใช้กระทบยอดตอนจบว่ามีตัวไหนไม่ถูกตรวจบ้าง
+//
+// ⚠️ ทำไมต้องมี: เคสหลัง staff-report อยู่ในบล็อก `if (ackToken)` และเคสท้ายๆ อยู่หลังจุดที่
+//   throw ออกไปให้ catch ชั้นนอกรับได้ พอขั้นก่อนหน้าล้ม เคสเหล่านั้นจะ "ไม่ถูก record เลย"
+//   ไม่ใช่ FAIL ไม่ใช่ SKIP แต่หายไปจากผลลัพธ์เฉยๆ
+//   เกิดขึ้นจริง 2026-09-06: staff-report ล้มเพราะ service worker อัปเดตกลางคัน ผลลัพธ์เหลือ
+//   17 บรรทัดที่ดูเหมือนผ่านหมด ทั้งที่การตรวจความปลอดภัย 2 ตัว (routed-at-immutable,
+//   direct-update-blocked) ไม่ได้ถูกยิงเลย — คนอ่านผลไม่มีทางรู้ว่าขาดอะไรไปถ้าไม่นับบรรทัดเอง
+//   กระทบยอดแล้วเคสที่หายจะขึ้น SKIP และ exit code เป็น 1 เพราะ SKIP ไม่ใช่ PASS
+//
+// ⚠️ เพิ่ม/ลบเคสในไฟล์นี้ต้องมาแก้รายชื่อนี้ด้วยเสมอ ไม่งั้นเคสใหม่จะขึ้น SKIP ค้างตลอด
+//   (ตั้งใจให้พังแบบเห็นชัด ดีกว่าปล่อยให้ตกสำรวจเงียบๆ แบบเดิม)
+const WRITE_MODE_STEPS = [
+  'citizen-form', 'admin-category', 'enable-odor', 'citizen-submit',
+  'auto-assign', 'submit-validation', 'auto-route', 'no-fake-acknowledger',
+  'status-untouched', 'staff-report', 'routed-at-immutable', 'direct-update-blocked',
+  'non-assigned-blind', 'admin-map-pin', 'admin-no-status-pipeline',
+  'executive-map', 'executive-pin-payload', 'executive-no-pii-onscreen',
+  'anon-map', 'citizen-followup',
+]
+
 // คีย์ที่ห้ามหลุดออกทางหมุดแผนที่ของผู้บริหารเด็ดขาด — ตรวจทั้งชื่อคีย์และเนื้อหาที่รู้ว่าเป็น PII ของเคสนี้
 const PII_PIN_KEYS = ['detail', 'subject', 'phone', 'reporter_name', 'user_id', 'village']
 const ALLOWED_PIN_ANSWER_KEYS = [
@@ -830,6 +851,13 @@ async function main() {
     }
   } catch (error) {
     record('runner', error instanceof BlockedError ? 'BLOCKED' : 'FAIL', safeReason(error))
+  }
+
+  // เคสที่ไม่ถูก record เลยต้องโผล่เป็น SKIP ไม่ใช่หายไปจากผลลัพธ์ (ดู WRITE_MODE_STEPS)
+  const recorded = new Set(results.map((item) => item.step))
+  for (const step of WRITE_MODE_STEPS) {
+    if (recorded.has(step)) continue
+    record(step, 'SKIP', 'ไม่ได้ถูกตรวจในรอบนี้ — ขั้นก่อนหน้าล้มหรือการรันจบก่อนถึงเคสนี้')
   }
 
   await appendLog(results)
