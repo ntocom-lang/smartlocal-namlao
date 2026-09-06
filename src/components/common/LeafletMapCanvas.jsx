@@ -246,10 +246,18 @@ export default function LeafletMapCanvas({
         iconAnchor: [size / 2, size / 2],
       })
 
+      // markerData.title ทำสองหน้าที่พร้อมกัน: เป็นข้อความ tooltip ตอน hover และเป็น "สวิตช์"
+      // สั่งให้ผูก popup ของ Leaflet ด้านล่าง (if (markerData.title || markerData.infoHtml))
+      // ผู้เรียกที่มีการ์ดรายละเอียดเป็นของตัวเองจึงส่ง title มาไม่ได้เลย ไม่งั้นได้ popup ซ้อน 2 ชั้น
+      // แล้วต้องยอมเสีย tooltip ไปด้วยทั้งที่ไม่เกี่ยวกัน (เคสจริง: แผนที่ data-center)
+      //
+      // markerData.tooltip จึงเป็นช่องสำหรับ "อยากได้ข้อความ hover แต่ไม่เอา popup" โดยเฉพาะ
+      // ใช้ attribute title ของ HTML ตรงๆ ไม่ใช่ L.tooltip เพราะบนมือถือ L.tooltip จะเปิดตอนแตะ
+      // แล้วชนกับการ์ดรายละเอียด ส่วน attribute title เบราว์เซอร์แสดงเฉพาะตอน hover ด้วยเมาส์
       const marker = L.marker(pos, {
         icon: customIcon,
         draggable: isDraggable,
-        title: markerData.title || '',
+        title: markerData.title || markerData.tooltip || '',
         zIndexOffset: markerData.zIndex || 0,
       })
 
