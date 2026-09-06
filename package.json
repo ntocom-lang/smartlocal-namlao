@@ -39,6 +39,7 @@
     "test:local-build": "node tests/verify-local-build.mjs",
     "test:shot": "node tests/screenshot-local-build.mjs",
     "test:smoke": "node tests/post-deploy-smoke.mjs",
+    "test:browser": "node tests/external-browser.test.mjs",
     "test:tourism": "node tests/tourism-hours.test.mjs",
     "test:fleet:form3": "node tests/fleet-form3-signatories.test.mjs && node tests/fleet-form3-layout.test.mjs"
   },

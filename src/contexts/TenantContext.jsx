@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { toReliableImageUrl } from '../lib/driveStorage'
 import { MANAGED_MODULE_KEYS } from '../lib/staffModules'
 import { loadHolidays } from '../lib/holidaysSource'
-import { ORG_TERMS, getOrgTerms, setActiveOrgType, DEFAULT_ORG_TYPE } from '../lib/orgTerms'
+import { getOrgTerms, setActiveOrgType, DEFAULT_ORG_TYPE } from '../lib/orgTerms'
 
 const TenantContext = createContext(null)
 
@@ -62,61 +62,29 @@ function detectTenantSlug() {
   return null
 }
 
-function autoShortName(tenant) {
-  if (tenant.pwa_short_name) return tenant.pwa_short_name
-  // ตั้งใจอ่าน ORG_TERMS ตรงๆ ไม่ผ่าน getOrgTerms() — org_type ที่ไม่รู้จักต้องได้ชื่อเต็ม
-  // ไม่ใช่ตกไปใช้ตัวย่อของ อบต. ซึ่งจะได้ชื่อย่อผิดประเภทหน่วยงาน
-  const terms = ORG_TERMS[tenant.org_type]
-  if (!terms?.abbr) return tenant.name
-  const location = tenant.name.replace(terms.strip, '').trim()
-  return terms.abbr + location
-}
+// ไอคอนที่ต้องแก้จากฝั่ง client เท่านั้น — manifest ไม่อยู่ตรงนี้แล้ว
+//
+// ของเดิมประกอบ manifest เป็น blob: แล้วฉีด <link rel="manifest"> เข้า <head> หลัง fetch
+// tenant เสร็จ ทำให้การค้นพบ manifest ต้องรอข้อมูล และ
+// อปท. ที่ยังไม่มีโลโก้จะได้ icons: [] ตอนนี้ย้ายไปให้
+// worker/index.js เสิร์ฟที่ /manifest.webmanifest ต่อ อปท. ตาม hostname แทน
+//
+// แทนที่ไอคอนสำรองใน HTML ด้วยโลโก้หน่วยงานเมื่อโหลดข้อมูลสำเร็จ
+function injectTenantIcons(tenant) {
+  if (!tenant.logo_url) return
 
-function injectPWAManifest(tenant) {
-  const manifest = {
-    name: tenant.name,
-    short_name: autoShortName(tenant),
-    description: `ระบบศูนย์รวมข้อมูลดิจิทัลเพื่อการพัฒนา${tenant.name}อย่างยั่งยืน`,
-    theme_color: tenant.theme_color ?? '#1c7cd6',
-    background_color: '#ffffff',
-    display: 'standalone',
-    start_url: window.location.origin + '/',
-    scope: window.location.origin + '/',
-    icons: tenant.logo_url
-      ? [{ src: tenant.logo_url, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }]
-      : [],
+  let appleIcon = document.querySelector('link[rel="apple-touch-icon"]')
+  if (!appleIcon) {
+    appleIcon = document.createElement('link')
+    appleIcon.rel = 'apple-touch-icon'
+    document.head.appendChild(appleIcon)
   }
+  appleIcon.href = tenant.logo_url
 
-  const blob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' })
-  const url = URL.createObjectURL(blob)
-
-  let link = document.querySelector('link[rel="manifest"]')
-  if (!link) {
-    link = document.createElement('link')
-    link.rel = 'manifest'
-    document.head.appendChild(link)
-  }
-  if (link.href?.startsWith('blob:')) URL.revokeObjectURL(link.href)
-  link.href = url
-
-  // iOS Safari ใช้ apple-touch-icon แทน manifest icons
-  if (tenant.logo_url) {
-    let appleIcon = document.querySelector('link[rel="apple-touch-icon"]')
-    if (!appleIcon) {
-      appleIcon = document.createElement('link')
-      appleIcon.rel = 'apple-touch-icon'
-      document.head.appendChild(appleIcon)
-    }
-    appleIcon.href = tenant.logo_url
-
-    // favicon แท็บเบราว์เซอร์ — index.html hardcode /logo.png (โลโก้ namlao ตัวเดิมสมัย single-tenant)
-    // ไว้เป็นค่าเริ่มต้นก่อน JS โหลดเสร็จ ทุก tenant deploy จากโค้ดชุดเดียวกันเลยเห็นโลโก้เดียวกันหมดถ้า
-    // ไม่มาแก้ href ตรงนี้ทับหลัง fetch tenant เสร็จ — แก้ทั้ง rel="icon" และ "shortcut icon" (บาง
-    // เบราว์เซอร์ใช้ tag คนละอันกัน)
-    document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]').forEach(el => {
-      el.href = tenant.logo_url
-    })
-  }
+  // แก้ทั้ง rel="icon" และ "shortcut icon" — บางเบราว์เซอร์ใช้ tag คนละอันกัน
+  document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]').forEach(el => {
+    el.href = tenant.logo_url
+  })
 }
 
 const DEFAULT_THEME_COLOR = '#1d4ed8'
@@ -260,7 +228,7 @@ export function TenantProvider({ children }) {
         setTerminology(getOrgTerms(resolvedTenant.org_type))
         applyTheme(resolvedTenant.theme_color ?? '#1d4ed8', resolvedTenant.ui_style)
         document.title = resolvedTenant.name
-        try { injectPWAManifest(resolvedTenant) } catch {}
+        try { injectTenantIcons(resolvedTenant) } catch {}
         try {
           localStorage.setItem('sl_slug', resolvedTenant.slug)
           localStorage.setItem('sl_tenant_name', resolvedTenant.name)
