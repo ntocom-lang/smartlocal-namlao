@@ -7,7 +7,7 @@
 //   node tests/odor-analytics.test.mjs
 
 import assert from 'node:assert/strict'
-import { buildOdorSummary } from '../src/lib/odorAnalytics.js'
+import { buildOdorSummary, buildOdorPoints } from '../src/lib/odorAnalytics.js'
 
 const mk = ({ at, loc, iv, tr, wind, health }) => ({
   created_at: at,
@@ -119,6 +119,88 @@ const mk = ({ at, loc, iv, tr, wind, health }) => ({
   ])
   assert.equal(s.months.length, 4, 'ม.ค. ถึง เม.ย. ต้องมีครบ 4 เดือน')
   assert.deepEqual(s.months.map((m) => m.count), [1, 0, 0, 1], 'ก.พ./มี.ค. ต้องเป็น 0 ไม่ใช่ถูกข้าม')
+}
+
+// ══ buildOdorPoints: หมุดบนแผนที่ ══════════════════════════════════════════════
+// ทำไมต้องล็อกไว้: หมุดพวกนี้คือสิ่งที่เจ้าหน้าที่ใช้ตัดสินว่าจะเอารถไปจอดตรงไหน และการปัดกริด
+// คือด่านเดียวที่กันไม่ให้แผงรายงานชี้หลังคาเรือนของคนที่ร้องเรียนเพื่อนบ้าน
+
+const DEG_PER_M = 1 / 111320  // ละติจูดเท่านั้น (ลองจิจูดสั้นลงตาม cos) — พอสำหรับเทสต์
+const at = (lat, lng, iv) => ({
+  latitude: lat, longitude: lng, created_at: '2026-09-01T03:00:00Z',
+  extra_data: { odor_intensity: iv, odor_time_range: 'morning', wind_direction: 'เหนือ' },
+})
+const BASE_LAT = 19.02
+const BASE_LNG = 99.90
+
+// ── รวมจุดใกล้ แยกจุดไกล ────────────────────────────────────────────────────────
+{
+  const r = buildOdorPoints([
+    at(BASE_LAT, BASE_LNG, 3),
+    at(BASE_LAT + 30 * DEG_PER_M, BASE_LNG, 5),   // ห่าง 30 ม. ต้องอยู่เซลล์เดียวกัน
+    at(BASE_LAT + 400 * DEG_PER_M, BASE_LNG, 2),  // ห่าง 400 ม. ต้องแยกเซลล์
+  ])
+  assert.equal(r.points.length, 2, 'จุดห่าง 30 ม. ต้องรวมเป็นเซลล์เดียว จุดห่าง 400 ม. ต้องแยก')
+  assert.equal(r.mapped, 3)
+  assert.equal(r.points[0].count, 2, 'เซลล์ที่มีเรื่องมากสุดต้องมาก่อน')
+  assert.equal(r.points[0].maxIntensity, 5, 'ต้องใช้ความรุนแรงสูงสุดในเซลล์ ไม่ใช่ค่าเฉลี่ย')
+  assert.equal(r.points[0].severeCount, 1)
+  assert.equal(r.maxCount, 2, 'maxCount ใช้ไล่ขนาดวงกลม ต้องเท่าจำนวนของเซลล์ที่มากที่สุด')
+}
+
+// ── พิกัดว่างต้องนับเป็น "ไม่มีพิกัด" ไม่ใช่ "พิกัดผิดปกติ" ─────────────────────────
+// Number(null) และ Number('') คืน 0 ซึ่ง Number.isFinite ผ่าน — พลาดตรงนี้แล้วข้อความใต้แผนที่
+// จะบอกสาเหตุผิด และคำร้องไร้พิกัดจะถูกวางไว้กลางอ่าวกินี (เคสจริงที่เจอตอนพัฒนา)
+{
+  const r = buildOdorPoints([
+    { latitude: null, longitude: null },
+    { latitude: '', longitude: '' },
+    {},
+    at(0, 0, 1),                 // พิกัดจริงแต่อยู่นอกประเทศไทย
+    at(BASE_LAT, BASE_LNG, 2),
+  ])
+  assert.equal(r.missingCoords, 3, 'null / สตริงว่าง / ไม่มีคีย์ ต้องนับเป็นไม่มีพิกัด')
+  assert.equal(r.outOfRange, 1, '0,0 อยู่นอกกรอบประเทศไทย ต้องถูกตัดออกและนับแยก')
+  assert.equal(r.mapped, 1)
+  assert.equal(r.total, 5, 'total ต้องเป็นจำนวนคำร้องทั้งหมดที่ส่งเข้ามา')
+}
+
+// ── เซลล์ต้องคงที่ ไม่ขยับตามชุดข้อมูล ────────────────────────────────────────────
+// ถ้าปัดกริดโดยอ้างค่าเฉลี่ยของชุดข้อมูล หมุดทั้งแผนที่จะเลื่อนทุกครั้งที่มีคำร้องใหม่เข้ามา
+// เจ้าหน้าที่ที่จำตำแหน่งจุดกระจุกไว้จะอ่านว่าแหล่งกำเนิดย้ายที่ ทั้งที่ไม่มีอะไรย้าย
+{
+  const one = buildOdorPoints([at(BASE_LAT, BASE_LNG, 3)]).points[0]
+  const two = buildOdorPoints([
+    at(BASE_LAT, BASE_LNG, 3),
+    at(BASE_LAT + 5000 * DEG_PER_M, BASE_LNG + 0.05, 4),
+  ]).points.find((pt) => pt.key === one.key)
+  assert.ok(two, 'เซลล์เดิมต้องยังอยู่หลังเพิ่มคำร้องที่อื่น')
+  assert.equal(two.lat, one.lat, 'ตำแหน่งหมุดเดิมต้องไม่ขยับ')
+  assert.equal(two.lng, one.lng, 'ตำแหน่งหมุดเดิมต้องไม่ขยับ')
+}
+
+// ── ไม่มีข้อมูลเลย ต้องไม่พังและต้องไม่หาร 0 ────────────────────────────────────────
+{
+  const r = buildOdorPoints([])
+  assert.deepEqual(r.points, [])
+  assert.equal(r.maxCount, 1, 'ต้องไม่เป็น 0 เพราะถูกใช้เป็นตัวหารตอนไล่ขนาดวง')
+  assert.equal(buildOdorPoints(null).total, 0)
+  assert.equal(buildOdorPoints(undefined).points.length, 0)
+}
+
+// ── หมุดต้องไม่พาข้อมูลผู้แจ้งติดออกไปด้วย ────────────────────────────────────────
+// แผนที่ไม่มี audit log ต่างจากบ็อปอัพรายเรื่อง ถ้าเผลอส่งชื่อ/เบอร์/detail ออกมาในก้อนนี้
+// มันจะไหลไปโผล่บน popup โดยไม่มีใครสังเกต
+{
+  const row = at(BASE_LAT, BASE_LNG, 4)
+  row.reporter_name = 'นายทดสอบ ระบบ'
+  row.phone = '0800000000'
+  row.detail = 'ข้อความที่ประชาชนพิมพ์เอง'
+  const [pt] = buildOdorPoints([row]).points
+  const flat = JSON.stringify(pt)
+  for (const secret of ['นายทดสอบ', '0800000000', 'ข้อความที่ประชาชนพิมพ์เอง']) {
+    assert.ok(!flat.includes(secret), `หมุดต้องไม่มีข้อมูลผู้แจ้ง แต่พบ: ${secret}`)
+  }
 }
 
 console.log('✅ odor-analytics: ผ่านทุกเคส')

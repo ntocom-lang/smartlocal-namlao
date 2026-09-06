@@ -199,4 +199,108 @@ export function buildOdorObservations(s) {
   return out
 }
 
-export { ODOR_SMALL_SAMPLE }
+
+// ── หมุดบนแผนที่ (ปัดพิกัดลงกริด) ──────────────────────────────────────────────
+//
+// ⚠️ ทำไมต้องปัดกริด ไม่ใช้พิกัดดิบ
+//   พิกัดที่ผู้แจ้งปักมาส่วนใหญ่คือบ้านตัวเอง ไม่ใช่ตัวโรงงาน/ฟาร์มที่เป็นต้นเหตุ การกางหมุดดิบ
+//   บนแผงรายงานจึงเท่ากับชี้หลังคาเรือนของคนที่ร้องเรียนเพื่อนบ้าน ให้ทุกคนที่เปิดแผงนี้เห็นพร้อมกัน
+//   ทั้งที่การเปิดดูข้อมูลรายเรื่อง (ชื่อ/เบอร์/พิกัด) ผ่านบ็อปอัพยังถูกบันทึก audit log ว่าใครดูของใคร
+//   — แผนที่จะข้ามด่านนั้นไปทั้งหมดถ้าปล่อยพิกัดดิบ
+//   เป้าหมายของแผนที่นี้คือหา "แหล่งกำเนิดกลิ่น" ซึ่งความละเอียดระดับ 100 ม. เพียงพอแล้ว
+//   ⚠️ กริดลดความเสี่ยง ไม่ได้ทำให้ระบุตัวไม่ได้ — ถ้าในเซลล์นั้นมีบ้านหลังเดียวก็ยังรู้ว่าใคร
+//     จึงไม่ควรเอาแผนที่นี้ไปเปิดให้ role ที่กว้างกว่าที่เห็นรายการคำร้องอยู่แล้ว
+//
+// ⚠️ ห้ามเปลี่ยนเป็น heatmap ไล่สี — ข้อมูลจริงตอนนี้อยู่ระดับหลักหน่วยถึงหลักสิบเรื่องต่อ อปท.
+//   การเกลี่ยสีจากคำร้องไม่กี่ใบจะวาด "จุดร้อน" ที่มาจากเรื่องเดียว แล้วมีคนเอาไปอ้างสั่งการจริง
+//   1 วง = 1 เซลล์กริด นับได้ด้วยตา คือรูปแบบเดียวที่ซื่อสัตย์กับขนาดข้อมูลชุดนี้
+const ODOR_GRID_METERS = 100
+
+// ความยาว 1 องศาละติจูดโดยประมาณ (WGS84) — ค่ามาตรฐานที่ใช้กันทั่วไป ไม่ต้องพึ่งไลบรารี geo
+const METERS_PER_DEG_LAT = 111320
+
+// กรอบประเทศไทยแบบหยาบ ใช้กันพิกัดขยะ (GPS อ่านพลาดเป็น 0,0 หรือค่าที่ผู้ใช้ลากหมุดหลุด)
+// ไม่ใช่การตรวจเขตปกครอง — จุดเดียวที่หลุดออกไปทำให้ fitBounds ซูมออกไปครึ่งโลกจนแผนที่ใช้ไม่ได้เลย
+// นับแยกไว้แล้วรายงานจำนวนออกไปด้วย ไม่กลืนหายเงียบๆ
+const TH_BOUNDS = { minLat: 5, maxLat: 21, minLng: 96, maxLng: 106 }
+
+// ⚠️ ห้ามใช้ Number() ตรงๆ กับพิกัด — Number(null) และ Number('') คืน 0 ซึ่ง Number.isFinite ผ่าน
+// คำร้องที่ไม่มีพิกัดจะกลายเป็นจุดที่ละติจูด 0 แล้วถูกนับเป็น 'พิกัดนอกกรอบ' แทน 'ไม่มีพิกัด'
+// ทำให้ข้อความใต้แผนที่บอกสาเหตุผิด (เจอตอนทดสอบจริง ไม่ใช่การป้องกันไว้ก่อนแบบลอยๆ)
+const toCoord = (v) => (v == null || v === '' ? NaN : Number(v))
+
+/**
+ * รวมคำร้องกลิ่นเป็นหมุดตามเซลล์กริด สำหรับวาดบนแผนที่
+ * @param {Array} complaints คำร้องหมวด odor
+ * @param {{gridMeters?: number}} options ขนาดเซลล์เป็นเมตร (ค่าเริ่มต้น 100)
+ * @returns ก้อนหมุด + จำนวนที่ลงแผนที่ไม่ได้ (แยกเหตุผล) เพื่อให้ผู้อ่านรู้ว่าแผนที่ไม่ครบตรงไหน
+ */
+export function buildOdorPoints(complaints, { gridMeters = ODOR_GRID_METERS } = {}) {
+  const rows = Array.isArray(complaints) ? complaints : []
+  const step = Number(gridMeters) > 0 ? Number(gridMeters) : ODOR_GRID_METERS
+  const latStep = step / METERS_PER_DEG_LAT
+
+  let missingCoords = 0
+  let outOfRange = 0
+  const cells = new Map()
+
+  for (const c of rows) {
+    const lat = toCoord(c?.latitude)
+    const lng = toCoord(c?.longitude)
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) { missingCoords += 1; continue }
+    if (lat < TH_BOUNDS.minLat || lat > TH_BOUNDS.maxLat
+      || lng < TH_BOUNDS.minLng || lng > TH_BOUNDS.maxLng) { outOfRange += 1; continue }
+
+    // ปัดลงกริดโดยอ้างจุดกำเนิด (0,0) เสมอ ห้ามอ้างค่าเฉลี่ยของชุดข้อมูล — เซลล์จะได้คงที่
+    // เพิ่มคำร้องใหม่เข้ามาแล้วหมุดเดิมไม่ขยับ (ถ้าอ้างค่าเฉลี่ย ทั้งแผนที่จะเลื่อนทุกครั้งที่มีเรื่องใหม่
+    // แล้วเจ้าหน้าที่ที่จำตำแหน่งจุดกระจุกไว้จะอ่านว่าแหล่งกำเนิดย้ายที่ ทั้งที่ไม่มีอะไรย้าย)
+    const latIdx = Math.floor(lat / latStep)
+    const cellLat = (latIdx + 0.5) * latStep
+    // 1 องศาลองจิจูดสั้นลงตามละติจูด — ใช้ cellLat (ไม่ใช่ lat ดิบ) เพื่อให้ทุกจุดในแถบละติจูดเดียวกัน
+    // ได้ขนาดเซลล์เท่ากันเป๊ะ ไม่งั้นสองจุดที่คนละฝั่งของเส้นแบ่งจะคำนวณ step ต่างกันนิดเดียวแล้วเหลื่อม
+    const lngStep = step / (METERS_PER_DEG_LAT * Math.max(0.01, Math.cos((cellLat * Math.PI) / 180)))
+    const lngIdx = Math.floor(lng / lngStep)
+    const cellLng = (lngIdx + 0.5) * lngStep
+
+    const key = `${latIdx}:${lngIdx}`
+    if (!cells.has(key)) cells.set(key, { key, lat: cellLat, lng: cellLng, items: [] })
+    cells.get(key).items.push(c)
+  }
+
+  const points = [...cells.values()].map((cell) => {
+    const intensities = cell.items.map(intensityOf).filter((v) => v != null)
+    const dates = cell.items.map(dateOf).filter(Boolean).sort((a, b) => a - b)
+    return {
+      key: cell.key,
+      lat: cell.lat,
+      lng: cell.lng,
+      count: cell.items.length,
+      severeCount: intensities.filter((v) => v >= ODOR_SEVERE_FROM).length,
+      maxIntensity: intensities.length ? Math.max(...intensities) : null,
+      avgIntensity: round1(mean(intensities)),
+      firstAt: dates[0] ?? null,
+      latestAt: dates[dates.length - 1] ?? null,
+      // ทิศทางลม/ช่วงเวลา เป็นคำตอบ structured ล้วน ไม่ใช่ free-text ที่ผู้แจ้งพิมพ์เอง
+      // จึงเอาขึ้น popup ได้โดยไม่ทำให้แผงนี้กลายเป็นที่เปิดเผยข้อมูลผู้แจ้ง
+      timeRanges: tally(cell.items, odorIncidentRangeOf),
+      winds: tally(cell.items, (c) => c?.extra_data?.wind_direction),
+    }
+  }).sort((a, b) => b.count - a.count
+    || (b.maxIntensity ?? 0) - (a.maxIntensity ?? 0)
+    || a.key.localeCompare(b.key))
+
+  return {
+    gridMeters: step,
+    points,
+    total: rows.length,
+    mapped: rows.length - missingCoords - outOfRange,
+    missingCoords,
+    outOfRange,
+    // ใช้ไล่ขนาดวงกลม — ต่ำสุด 1 เสมอ กัน 0/0 ตอนไม่มีหมุดเลย
+    maxCount: points.reduce((m, p) => Math.max(m, p.count), 1),
+    smallSample: rows.length < ODOR_SMALL_SAMPLE,
+    smallSampleThreshold: ODOR_SMALL_SAMPLE,
+  }
+}
+
+export { ODOR_SMALL_SAMPLE, ODOR_GRID_METERS }
