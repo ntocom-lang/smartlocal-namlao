@@ -280,9 +280,12 @@ export default function DocumentTypeAssignments({ tenant }) {
       ) : (
         <>
           <div className="rounded-xl border border-gray-100 overflow-x-auto">
-            <table className="w-full text-sm min-w-[680px]">
+            <table className="w-full text-sm min-w-[720px]">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
+                  {/* หัวคอลัมน์ลำดับใช้คำว่า "ที่" ตามแบบพิมพ์ราชการ ไม่ใช่ "ลำดับที่"
+                      (ตรงกับแบบ 4 บันทึกการใช้รถ และเทสต์ที่เช็คหัวคอลัมน์นี้อยู่) */}
+                  <th className="pl-4 pr-1 py-2.5 text-right text-xs font-semibold text-gray-500 w-10">ที่</th>
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500">ประเภทเอกสาร/บริการ</th>
                   <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 w-44">กองรับผิดชอบ</th>
                   <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 w-52">ผู้รับผิดชอบ</th>
@@ -293,13 +296,13 @@ export default function DocumentTypeAssignments({ tenant }) {
               <tbody className="divide-y divide-gray-50">
                 {docTypes.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-4 py-6 text-center text-xs text-gray-400">
+                    <td colSpan={6} className="px-4 py-6 text-center text-xs text-gray-400">
                       ลบประเภทคำขอออกหมดแล้ว — หน้ายื่นคำขอฝั่งประชาชนจะไม่มีบริการให้เลือกเลย
                       กู้คืนที่แถบด้านล่าง หรือเพิ่มประเภทใหม่
                     </td>
                   </tr>
                 )}
-                {docTypes.map(({ value, label, custom }) => {
+                {docTypes.map(({ value, label, custom }, index) => {
                   const v = valueOf(value)
                   const dirty = Boolean(drafts[value])
                   const rowCls = dirty ? 'bg-amber-50/50'
@@ -307,6 +310,11 @@ export default function DocumentTypeAssignments({ tenant }) {
                     : 'hover:bg-gray-50/50'
                   return (
                     <tr key={value} className={rowCls}>
+                      {/* ลำดับนับจากแถวที่แสดงจริง ไม่ใช่ตำแหน่งใน BASE_DOCUMENT_TYPES —
+                          ลบประเภทออกแล้วเลขต้องเรียง 1..n ต่อเนื่อง ไม่มีเลขหาย */}
+                      <td className="pl-4 pr-1 py-2.5 text-right text-xs text-gray-400 tabular-nums align-middle">
+                        {index + 1}
+                      </td>
                       <td className="px-4 py-2.5">
                         <p className="text-sm text-gray-700">{label}</p>
                         {custom && <p className="text-[10px] text-blue-400 mt-0.5">ประเภทที่เพิ่มเอง</p>}
