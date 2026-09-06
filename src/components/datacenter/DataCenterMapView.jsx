@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 // Construction ถูกเอาออกจาก import พร้อมกับปุ่มแท็บ "โครงการ" ที่คอมเมนต์ไว้ใน SummaryPanel
 // (ตรงตามที่ commit 79f5a3c ทำกับ ClipboardList ตอนถอดเมนู) เอากลับมาพร้อมกันตอนคืนแท็บ
-import { Loader2, Database, MessageSquareWarning, Minimize2, Maximize2, X } from 'lucide-react'
+import { Loader2, Database, MessageSquareWarning, Minimize2, Maximize2, X, Navigation } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import LeafletMapCanvas from '../common/LeafletMapCanvas'
 import { resolveGroupEmoji, resolveEntryEmoji, fetchGroupIconOverrides, isIconImage } from '../../lib/dataCenterGroupIcon'
@@ -78,7 +78,9 @@ const STATUS_FILTER_OPTIONS = [
   { value: 'completed',   label: 'เสร็จสิ้นแล้ว' },
   { value: 'in_progress', label: 'กำลังดำเนินการ' },
   { value: 'adhoc',       label: 'เฉพาะกิจ' },
-  { value: 'all',         label: 'ทั้งหมด' },
+  // "ทุกสถานะ" ไม่ใช่ "ทั้งหมด" — ตัวกรองนี้กรองแกนสถานะของคำร้องอย่างเดียว ไม่ได้กรองแหล่งข้อมูล
+  // คำว่า "ทั้งหมด" ถูกอ่านว่ารวมหมุดของศูนย์ข้อมูลดิจิทัลเข้ามาด้วย ทั้งที่หมุดพวกนั้นอยู่คนละแท็บ
+  { value: 'all',         label: 'ทุกสถานะ' },
 ]
 // คำร้องหมวดเฉพาะกิจ (complaint_categories.is_adhoc, เช่น odor) ไม่เคยเปลี่ยน status ออกจาก 'pending'
 // เลย เพราะข้าม status pipeline ปกติทั้งหมด (ใช้ extra_data.acknowledged_at ของตัวเองแทน) — ถ้ากรองด้วย
@@ -141,6 +143,27 @@ const CIVIL_PROJECT_STATUS_OPTIONS = [
   { value: 'suspended',   label: 'ระงับชั่วคราว' },
 ]
 
+// ป้ายสถานะภาษาไทยบนการ์ดรายละเอียดหมุด — ค่าดิบใน DB ('new'/'closed'/'completed') ไม่เคยถูกแสดง
+// บนแผนที่มาก่อน ต้องแยกตามตารางเพราะแต่ละตารางใช้คำคนละชุดแทนความหมายเดียวกัน (คำร้องใช้
+// closed/done ส่วนโครงการใช้ completed) — คำร้องคัดคำมาจาก STATUS ใน ComplaintsManager.jsx และ
+// สถานประกอบการจาก BusinessRegistrationAdmin.jsx ต้องตรงกันทุกคำ ไม่งั้นเรื่องเดียวกันอ่านได้คนละอย่าง
+// ระหว่างแผนที่กับหน้าจัดการ ค่าที่ไม่รู้จักคืน undefined แล้วซ่อนบรรทัดสถานะทิ้ง ดีกว่าโชว์รหัสดิบ
+const STATUS_LABEL = {
+  complaints: {
+    new: 'คำร้องใหม่', pending: 'คำร้องใหม่', received: 'รับเรื่องแล้ว',
+    in_progress: 'กำลังดำเนินการ', done: 'ดำเนินการแล้ว', completed: 'ดำเนินการแล้ว',
+    closed: 'ปิดเรื่องแล้ว', rejected: 'ปฏิเสธ',
+  },
+  business_registrations: { pending: 'รอดำเนินการ', approved: 'อนุมัติแล้ว', rejected: 'ปฏิเสธแล้ว' },
+  civil_projects: Object.fromEntries(CIVIL_PROJECT_STATUS_OPTIONS.map(opt => [opt.value, opt.label])),
+  infrastructure_works: {
+    planned: 'วางแผน', in_progress: 'กำลังดำเนินการ', completed: 'แล้วเสร็จ', cancelled: 'ยกเลิก',
+  },
+  // หมุดสถานที่: RPC กรอง status='active' มาให้แล้วทุกแถว โชว์ "ใช้งาน" ก็ไม่ได้บอกอะไรใหม่ ปล่อยว่างไว้
+  data_center_entries: {},
+}
+const statusLabelOf = entry => STATUS_LABEL[entry.source_table]?.[entry.status]
+
 // จัดกลุ่ม entries ที่กรองมาแล้วเป็น [{ group, total, categories: [{category, count}] }] เรียงตามตัวอักษรไทย
 // ใช้ป้ายชื่อไทย (categoryLabel) แทนรหัส category ดิบ แล้วรวมจำนวนตามป้ายชื่อ (กันชื่อซ้ำเวลามีหลายรหัสแปลผลเดียวกัน)
 function buildGroupSummary(list, resolveLabel = categoryLabel, resolveIcon = markerEmoji) {
@@ -168,10 +191,18 @@ function buildGroupSummary(list, resolveLabel = categoryLabel, resolveIcon = mar
   })
 }
 
+// ตัวเลขจำนวนหมุดบนหัวแท็บ — เห็นทันทีว่าอะไรอยู่แท็บไหน ไม่ต้องเดาจากหมุดที่ปนกันอยู่บนแผนที่
+// (จำนวนของแท็บคำร้องขยับตามตัวกรองสถานะที่เลือกอยู่ ส่วนศูนย์ข้อมูลดิจิทัลเป็นสถานที่ถาวร นิ่งเสมอ)
+function TabCount({ value }) {
+  return (
+    <span className="px-1.5 rounded-full bg-gray-100 text-gray-500 text-[10px] font-bold">{value}</span>
+  )
+}
+
 // เนื้อหาแท็บ + การ์ดสรุป — ใช้ร่วมกันทั้งแถบขวาบน PC และแผงล่างบนมือถือ ไม่ต้องแก้ 2 ที่
 // showSourceTabs=false (ฝั่งประชาชน): ซ่อนเฉพาะปุ่ม "คำร้อง"/"โครงการ" — แถบ "ศูนย์ข้อมูลดิจิทัล" ยังต้องอยู่เสมอ
 // (เดิมซ่อนทั้งแถบไปด้วยโดยไม่ตั้งใจ ทำให้ประชาชนไม่เห็นหัวข้ออะไรเลย)
-function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, toggleGroup, activeCategories, toggleCategory, showSourceTabs, routeCategoryKeys, showRoutes, setShowRoutes, groupIconOverrides }) {
+function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, toggleGroup, activeCategories, toggleCategory, showSourceTabs, routeCategoryKeys, showRoutes, setShowRoutes, groupIconOverrides, statusFilter, setStatusFilter, dceCount, complaintCount }) {
   return (
     <>
       <div className="flex border-b border-gray-100 shrink-0">
@@ -180,7 +211,10 @@ function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, to
           style={activeTab === 'dce'
             ? { color: '#1e88c7', borderBottom: '2px solid #1e88c7' }
             : { color: '#9ca3af' }}>
-          <Database size={14} /> ศูนย์ข้อมูลดิจิทัล
+          <Database size={14} />
+          <span className="flex items-center gap-1">
+            ศูนย์ข้อมูลดิจิทัล <TabCount value={dceCount} />
+          </span>
         </button>
         {showSourceTabs && (
           <>
@@ -189,7 +223,10 @@ function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, to
               style={activeTab === 'complaints'
                 ? { color: '#1e88c7', borderBottom: '2px solid #1e88c7' }
                 : { color: '#9ca3af' }}>
-              <MessageSquareWarning size={14} /> คำร้อง
+              <MessageSquareWarning size={14} />
+              <span className="flex items-center gap-1">
+                คำร้อง <TabCount value={complaintCount} />
+              </span>
             </button>
             {/* แท็บ "โครงการ" ถูกถอดออกชั่วคราว ให้ตรงกับที่ถอดเมนู แผนงาน/โครงการ ออกจาก
                 StaffDashboard ไปแล้ว (commit 79f5a3c) — แผนที่เป็นคนละ surface กับเมนู ตอนนั้นเลย
@@ -207,6 +244,26 @@ function SummaryPanel({ activeTab, setActiveTab, activeSummary, activeGroups, to
           </>
         )}
       </div>
+
+      {/* ตัวกรองสถานะอยู่ใต้แท็บ "คำร้อง" เท่านั้น — เดิมลอยอยู่บนสุดเหนือทั้งหน้า ทำให้ผู้ใช้อ่านว่าเป็น
+          "ตอนนี้แผนที่แสดงอะไร" พอกด "กำลังดำเนินการ" แล้วยังเห็นหมุดของศูนย์ข้อมูลดิจิทัล (บ่อน้ำ/วัด/
+          จุดสถานที่จริง) จึงเข้าใจว่าสถานที่พวกนั้นกำลังดำเนินการอยู่ ทั้งที่เป็นสถานที่ถาวรที่ไม่มีสถานะ
+          และไม่เคยถูกตัวกรองนี้กรองเลย (ดู matchesStatusFilter) — ผูกไว้กับแท็บที่มันมีผลจริงแทน */}
+      {showSourceTabs && activeTab === 'complaints' && (
+        <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 border-b border-gray-100 shrink-0">
+          <span className="text-[11px] font-bold text-gray-400 pr-0.5">สถานะ</span>
+          {STATUS_FILTER_OPTIONS.map(opt => {
+            const on = statusFilter === opt.value
+            return (
+              <button key={opt.value} onClick={() => setStatusFilter(opt.value)}
+                className="text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all"
+                style={on ? { backgroundColor: '#1e88c7', borderColor: '#1e88c7', color: '#fff' } : { backgroundColor: '#f9fafb', borderColor: '#e5e7eb', color: '#6b7280' }}>
+                {opt.label}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       <div className="p-3 space-y-3">
         {activeSummary.length === 0 ? (
@@ -499,6 +556,38 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
     if (!allOn) setActiveGroups(prev => (prev === null ? null : new Set(prev).add(g)))
   }
 
+  // ---- การ์ดรายละเอียดหมุด ----
+  // เดิมมีการ์ด 2 ใบที่โครงเกือบเหมือนกัน และครอบแค่ 3 ใน 5 ชนิดของแหล่งข้อมูล — หมุด
+  // data_center_entries (สถานที่จริงทั้งหมด และเป็นชนิดเดียวที่ฝั่งประชาชนได้รับจาก RPC) กับคำร้อง
+  // ที่ไม่ใช่หมวดเฉพาะกิจ กดแล้วไม่ขึ้นอะไรเลย ยุบเหลือใบเดียวครอบทุกชนิด เพิ่มแหล่งใหม่ทีหลังจะได้ไม่หล่นอีก
+  const selectedIsAdhoc = selectedEntry ? isAdhocEntry(selectedEntry, complaintCategoryMeta) : false
+  const selectedIsComplaint = selectedEntry?.source_table === 'complaints'
+  // การกรองข้อมูลอ่อนไหวทำที่ DB แล้ว (data_center_unified_pins ส่งให้ anon/citizen เฉพาะ
+  // data_center_entries และตัด subject/detail ของ viewer/council ทิ้ง) — เงื่อนไขนี้เป็นกันชนชั้นที่สอง
+  // เผื่อวันหน้ามีคนแก้ RPC พลาด การ์ดนี้ต้องไม่กลายเป็นช่องให้ free-text ของผู้แจ้งหลุดออกฝั่งประชาชน
+  const canSeeComplaintText = allowStatusFilter && selectedIsComplaint
+  // หมวดเฉพาะกิจโชว์เฉพาะคำตอบ structured ตามที่ออกแบบไว้เดิม ไม่เอา detail ที่ประชาชนพิมพ์เองมาแสดง
+  // แม้ผู้ใช้จะเป็น admin ก็ตาม (รายละเอียดเต็มอ่านได้ในหน้าจัดการคำร้อง ซึ่งมี audit log กำกับ)
+  const selectedDescription = selectedEntry && !selectedIsAdhoc && (!selectedIsComplaint || canSeeComplaintText)
+    ? selectedEntry.description
+    : null
+  // หมุดเฉพาะกิจใช้ชื่อหมวดเป็นหัวข้อเสมอ — title ของ role ที่เห็น free-text ได้คือ subject ที่ประชาชน
+  // พิมพ์เอง ซึ่งการ์ดนี้ตั้งใจไม่แสดงมาตั้งแต่ต้น
+  const selectedTitle = selectedEntry
+    ? (selectedIsAdhoc
+      ? (resolveCategoryLabel(selectedEntry) || selectedEntry.title)
+      : (selectedEntry.title || resolveCategoryLabel(selectedEntry) || selectedEntry.group_name))
+    : ''
+  const selectedSubtitle = selectedEntry
+    ? [selectedEntry.group_name, resolveCategoryLabel(selectedEntry)].filter(v => v && v !== selectedTitle).join(' · ')
+    : ''
+  // วันที่ของหมุดสถานที่คือวันที่เจ้าหน้าที่กรอกเข้าระบบ ไม่ใช่ข้อมูลของสถานที่นั้น ประชาชนอ่านแล้วเข้าใจผิด
+  // ว่าเป็นวันที่สร้าง/ติดตั้ง จึงไม่แสดง — ส่วนคำร้อง/คำขอ วันที่แจ้งคือข้อมูลสำคัญของเรื่อง
+  const selectedDateLabel = selectedEntry?.source_table === 'complaints' ? 'วันเวลาที่แจ้ง'
+    : selectedEntry?.source_table === 'business_registrations' ? 'วันที่ยื่นคำขอ'
+    : selectedEntry?.source_table === 'civil_projects' || selectedEntry?.source_table === 'infrastructure_works' ? 'วันที่บันทึก'
+    : null
+
   function toggleCategory(key) {
     setActiveCategories(prev => {
       const next = new Set(prev)
@@ -509,22 +598,8 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      {/* ตัวกรองสถานะ — เฉพาะฝั่งเจ้าหน้าที่ (allowStatusFilter) เท่านั้น มีผลแค่รายการคำร้อง/โครงการ */}
-      {allowStatusFilter && (
-        <div className="flex flex-wrap items-center gap-1.5 px-4 py-2.5 bg-white border-b border-gray-100 shrink-0">
-          <span className="text-[11px] font-bold text-gray-400 pr-1">สถานะคำร้อง/โครงการ</span>
-          {STATUS_FILTER_OPTIONS.map(opt => {
-            const on = statusFilter === opt.value
-            return (
-              <button key={opt.value} onClick={() => setStatusFilter(opt.value)}
-                className="text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all"
-                style={on ? { backgroundColor: '#1e88c7', borderColor: '#1e88c7', color: '#fff' } : { backgroundColor: '#f9fafb', borderColor: '#e5e7eb', color: '#6b7280' }}>
-                {opt.label}
-              </button>
-            )
-          })}
-        </div>
-      )}
+      {/* ตัวกรองสถานะย้ายเข้าไปอยู่ใน SummaryPanel ใต้แท็บ "คำร้อง" แล้ว (เหตุผลกำกับไว้ตรงจุดนั้น)
+          แถบบนสุดจึงไม่มีอะไรเหลือ ตัดทิ้งทั้งแถบ */}
 
       {/* PC: แผนที่ฝั่งซ้าย + แถบข้อมูลฝั่งขวา (ตาม layout เทศบาลนครนนทบุรี) / มือถือ: แผนที่เต็มจอ + แผงสรุปลอยด้านล่าง */}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-0">
@@ -546,7 +621,11 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
                 return {
                   id: `${e.source_table}-${e.source_id}`,
                   position: { lat: Number(e.latitude), lng: Number(e.longitude) },
-                  title: e.title || resolveCategoryLabel(e) || e.group_name,
+                  // ตั้งใจไม่ส่ง title — LeafletMapCanvas จะ bindPopup ให้อัตโนมัติทุกหมุดที่มี title
+                  // (ดู LeafletMapCanvas บรรทัด "if (markerData.title || markerData.infoHtml)") ทำให้กดหมุด
+                  // แล้วเด้งทั้ง popup ของ Leaflet และการ์ดรายละเอียดของเราซ้อนกัน 2 ชั้น เลือกใช้การ์ด
+                  // อย่างเดียวเพราะ popup เป็น HTML string ทำ role gating / ปุ่มอนุมัติ / ปรับสถานะไม่ได้
+                  // แลกกับการเสีย tooltip ตอน hover บน PC (ข้อมูลชุดเดียวกันอยู่บนการ์ดครบแล้ว)
                   color: meta.pinColor ?? meta.color,
                   label: isIconUrl(icon) ? '' : icon,
                   iconUrl: isIconUrl(icon) ? icon : null,
@@ -573,10 +652,11 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
             />
           )}
 
-          {/* ปุ่มลอยทั้งชุด เรียงแถวเดียวมุมซ้ายบน — มุมขวาบนถูกแถบสลับ แผนที่/ดาวเทียม ของ
-              GoogleMapCanvas จองไว้แล้ว (absolute right-3 top-3 ในไฟล์นั้น) */}
+          {/* ปุ่มลอยทั้งชุด (เส้นทางถนน/กล้องวงจรปิด ฯลฯ) เรียงแถวเดียวมุมขวาบน — เดิมอยู่ซ้ายบนเพราะ
+              ขวาบนถูกแถบสลับ แผนที่/ดาวเทียม ของ GoogleMapCanvas จองไว้ ตอนนี้ย้ายมาใช้
+              LeafletMapCanvas แล้ว ไม่มีแถบนั้น และปุ่มซูมของ Leaflet อยู่ bottomright มุมขวาบนจึงว่าง */}
           {mapButtons.length > 0 && (
-            <div className="absolute left-3 top-3 z-20 flex items-center gap-2">
+            <div className="absolute right-3 top-3 z-20 flex items-center gap-2">
               {mapButtons.map(({ id, label, Icon, icon, on, toggle }) => (
                 // group/relative: ให้ป้ายชื่อโผล่ใต้ปุ่มตอน hover/โฟกัสด้วยคีย์บอร์ด — ใช้ป้ายในหน้าเว็บเอง
                 // ไม่ใช้ title ของเบราว์เซอร์ เพราะมันขึ้นช้า หน้าตาแล้วแต่ OS และแตะบนมือถือไม่ขึ้นเลย
@@ -591,8 +671,10 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
                         แอดมินตั้งให้ประเภทย่อยนั้น ซึ่งเป็นได้ทั้งอิโมจิและรูปแนบ (CategoryIcon จัดการให้) */}
                     {Icon ? <Icon size={20} /> : <span className="text-xl leading-none"><CategoryIcon value={icon} alt="" /></span>}
                   </button>
+                  {/* ป้ายชื่อยึดขอบขวาของปุ่ม (ตามชุดปุ่มที่ย้ายมาอยู่มุมขวาบน) — ถ้ายังยึดซ้ายอยู่
+                      ป้ายของปุ่มขวาสุดจะยื่นทะลุขอบแผนที่ออกไป อ่านไม่ครบ */}
                   <span aria-hidden="true"
-                    className="pointer-events-none absolute left-0 top-full mt-1.5 whitespace-nowrap rounded-md bg-gray-800/90 px-2 py-1 text-[11px] font-semibold text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                    className="pointer-events-none absolute right-0 top-full mt-1.5 whitespace-nowrap rounded-md bg-gray-800/90 px-2 py-1 text-[11px] font-semibold text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                     {label}
                   </span>
                 </div>
@@ -600,23 +682,102 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
             </div>
           )}
 
-          {selectedEntry && (selectedEntry.source_table === 'business_registrations' || selectedEntry.source_table === 'civil_projects') && (
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 w-[min(340px,calc(100%-32px))] rounded-2xl border border-gray-200 bg-white p-3 text-xs shadow-2xl backdrop-blur-xs">
-              <div className="flex items-center justify-between gap-2 mb-1.5">
-                <p className="font-bold text-gray-800 truncate">{selectedEntry.title || resolveCategoryLabel(selectedEntry) || selectedEntry.group_name}</p>
-                <button type="button" onClick={() => setSelectedEntry(null)} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100"><X size={14} /></button>
+          {/* การ์ดรายละเอียดหมุด — ใบเดียวใช้กับทุกแหล่งข้อมูล เนื้อในเปลี่ยนตาม source_table
+              ส่วนที่อ่อนไหว (free-text ของผู้แจ้ง) ถูกกรองที่ RPC ไปแล้วชั้นหนึ่ง และมี canSeeComplaintText
+              กันไว้อีกชั้นตรงจุดคำนวณค่าด้านบน
+              มือถือวางการ์ดไว้ "ด้านบน" ไม่ใช่ล่าง — แผงสรุปแบบ bottom sheet กินพื้นที่ล่างถึง 55%
+              ของจอและอยู่ที่ z-1001 การ์ดเดิมวาง bottom-4 z-30 จึงจมอยู่ใต้แผงจนมองไม่เห็น (บั๊กเดิมที่
+              เห็นยากเพราะแต่ก่อนการ์ดขึ้นเฉพาะหมุดเฉพาะกิจ ตอนนี้ขึ้นทุกหมุดเลยโผล่ทันที)
+              top-16 เผื่อระยะให้พ้นปุ่มลอยมุมขวาบน (สูง 40px วางที่ top-3) ส่วนบน PC ไม่มี bottom sheet
+              ให้ชน จึงกลับไปวางล่างกลางจอตามเดิม */}
+          {selectedEntry && (
+            <div className="absolute left-1/2 -translate-x-1/2 top-16 lg:top-auto lg:bottom-4 z-1002 max-h-[45vh] overflow-y-auto w-[min(340px,calc(100%-32px))] rounded-2xl border bg-white p-3 text-xs shadow-2xl backdrop-blur-xs"
+              style={{ borderColor: selectedIsAdhoc ? '#d9f99d' : '#e5e7eb' }}>
+              <div className="flex items-start justify-between gap-2 mb-1.5">
+                <div className="min-w-0">
+                  <p className="font-bold text-gray-800 flex items-center gap-1.5">
+                    <CategoryIcon value={resolveMarkerIcon(selectedEntry)} alt="" />
+                    <span className="truncate">{selectedTitle}</span>
+                  </p>
+                  {selectedSubtitle && <p className="text-[11px] text-gray-400 truncate">{selectedSubtitle}</p>}
+                </div>
+                <button type="button" onClick={() => setSelectedEntry(null)} className="shrink-0 rounded-lg p-1 text-gray-400 hover:bg-gray-100"><X size={14} /></button>
               </div>
+
+              <div className="space-y-0.5 text-gray-600">
+                {/* หมวดเฉพาะกิจไม่โชว์สถานะ — status ของมันค้างที่ 'new'/'pending' ตลอดกาลเพราะข้าม
+                    pipeline ปกติทั้งหมด (เหตุผลเดียวกับที่ต้องแยกแท็บ "เฉพาะกิจ" ออกมา) โชว์แล้วจะได้
+                    "สถานะ: คำร้องใหม่" ขัดกับบรรทัด "ระบบรับเรื่องและส่งถึงผู้รับผิดชอบแล้ว" ที่อยู่ใต้มันเอง
+                    ผู้บริหารอ่านแล้วเข้าใจว่าเรื่องยังไม่มีใครแตะ — บรรทัดเขียวคือสถานะจริงของหมุดพวกนี้ */}
+                {!selectedIsAdhoc && statusLabelOf(selectedEntry) && (
+                  <p>สถานะ: <span className="font-semibold text-gray-700">{statusLabelOf(selectedEntry)}</span></p>
+                )}
+                {selectedDateLabel && (
+                  <p>{selectedDateLabel}: {selectedEntry.created_at
+                    ? new Date(selectedEntry.created_at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })
+                    : '-'}</p>
+                )}
+                {selectedDescription && (
+                  <p className="whitespace-pre-wrap wrap-break-word pt-0.5">{selectedDescription}</p>
+                )}
+
+                {/* รูปสถานที่ — RPC ส่ง photo_urls มาเฉพาะสาขา data_center_entries เท่านั้น
+                    (migration 20260908120000) สาขาอื่นเป็น null ตายตัว รูปแนบของคำร้องซึ่งเป็นของ
+                    ผู้แจ้งจึงไม่มีทางโผล่ตรงนี้ — ไฟล์อยู่บน Google Drive แต่เสิร์ฟผ่าน drive-file
+                    ของเราเอง (โดเมนเดียวกับแอป) และเป็น is_public จึงเปิดได้โดยไม่ต้องล็อกอิน */}
+                {selectedEntry.photo_urls?.length > 0 && (
+                  <div className="flex gap-1.5 overflow-x-auto pt-1.5 pb-0.5">
+                    {selectedEntry.photo_urls.map((url, i) => (
+                      <a key={url} href={url} target="_blank" rel="noopener noreferrer" className="shrink-0">
+                        <img src={url} alt={`${selectedTitle} รูปที่ ${i + 1}`} loading="lazy"
+                          className="h-16 w-16 rounded-lg border border-gray-200 object-cover" />
+                      </a>
+                    ))}
+                  </div>
+                )}
+
+                {/* หมุดคำร้องหมวดเฉพาะกิจ (odor) — RPC คืน extra_data แบบ whitelist มาให้เฉพาะแถวเฉพาะกิจ
+                    (adhoc_pin_answers, migration 20260902090000) จึงใช้ตัวมันเองเป็นตัวบอกว่าจะแสดงบล็อกนี้ไหม
+                    ผู้บริหาร (viewer/council) เห็นชุดนี้เป็นข้อมูลชุดเดียวที่มีของคำร้องนั้น เพราะ RPC
+                    ตัด subject/detail ของ role นี้ทิ้งทั้งหมด ไม่มี PII ให้แสดงตั้งแต่ต้นทาง */}
+                {selectedIsComplaint && selectedEntry.extra_data && (
+                  <>
+                    <p>ช่วงเวลาที่ได้กลิ่น: {odorTimeRangeLabel(selectedEntry.extra_data.odor_time_range) ?? '-'}</p>
+                    <p>ระดับความรุนแรง: {selectedEntry.extra_data.odor_intensity ?? '-'} / 5</p>
+                    <p>ทิศทางลม: {selectedEntry.extra_data.wind_direction ?? '-'}</p>
+                    <p>อาการทางสุขภาพ: {selectedEntry.extra_data.health_effect ?? 'ไม่ระบุ'}</p>
+                    {/* ระบบรับเรื่องอัตโนมัติทุกใบตั้งแต่ประชาชนกดส่ง (trigger route_adhoc_complaint)
+                        จึงไม่มีสถานะ 'รอ...' อีก — เดิมข้อความตรงนี้เขียนว่า 'ผู้รับผิดชอบรับทราบแล้ว'
+                        ซึ่งกลายเป็นเท็จเมื่อไม่มีคนกดจริง ผู้บริหารอ่านแล้วเข้าใจว่ามีคนดูแลอยู่ */}
+                    <p className="text-emerald-700 font-semibold">
+                      ระบบรับเรื่องและส่งถึงผู้รับผิดชอบแล้ว
+                    </p>
+                  </>
+                )}
+              </div>
+
+              {/* ลิงก์นำทางของ Google Maps แบบ URL เปล่า ไม่ใช้ API key และไม่ต้องมีบัญชี — ประชาชน
+                  เปิดจากมือถือแล้วเด้งเข้าแอปแผนที่ที่เครื่องมีอยู่ได้เลย เจ้าหน้าที่ใช้ตอนลงพื้นที่ */}
+              {Number.isFinite(Number(selectedEntry.latitude)) && Number.isFinite(Number(selectedEntry.longitude)) && (
+                <a href={`https://www.google.com/maps/dir/?api=1&destination=${selectedEntry.latitude},${selectedEntry.longitude}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="mt-2 flex items-center justify-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 py-1.5 font-bold text-sky-700 active:scale-95">
+                  <Navigation size={13} /> นำทางไปจุดนี้
+                </a>
+              )}
+
               {selectedEntry.source_table === 'business_registrations' && selectedEntry.status === 'pending'
                 && ['admin', 'superadmin'].includes(currentUserRole) && (
-                <div className="flex gap-1.5">
+                <div className="mt-2 flex gap-1.5">
                   <button type="button" disabled={approvingBizId === selectedEntry.source_id} onClick={() => approveBiz(selectedEntry.source_id, true)}
                     className="flex-1 rounded-xl bg-green-600 py-1.5 font-bold text-white shadow-xs active:scale-95 disabled:opacity-50">{approvingBizId === selectedEntry.source_id ? 'กำลังบันทึก...' : 'อนุมัติ'}</button>
                   <button type="button" disabled={approvingBizId === selectedEntry.source_id} onClick={() => approveBiz(selectedEntry.source_id, false)}
                     className="flex-1 rounded-xl bg-red-600 py-1.5 font-bold text-white shadow-xs active:scale-95 disabled:opacity-50">ปฏิเสธ</button>
                 </div>
               )}
+
               {selectedEntry.source_table === 'civil_projects' && currentUserRole && currentUserRole !== 'citizen' && (
-                <div className="flex items-center gap-1.5">
+                <div className="mt-2 flex items-center gap-1.5">
                   <select value={quickStatusDraft[selectedEntry.source_id] ?? selectedEntry.status} disabled={savingProjectId === selectedEntry.source_id}
                     onChange={event => setQuickStatusDraft(prev => ({ ...prev, [selectedEntry.source_id]: event.target.value }))}
                     className="flex-1 rounded-xl border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-700 outline-none">
@@ -627,34 +788,6 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
                     className="rounded-xl bg-sky-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs disabled:opacity-40">บันทึก</button>
                 </div>
               )}
-            </div>
-          )}
-
-          {/* หมุดคำร้องหมวดเฉพาะกิจ (odor) — RPC คืน extra_data แบบ whitelist มาให้เฉพาะแถวเฉพาะกิจ
-              (adhoc_pin_answers, migration 20260902090000) จึงใช้ตัวมันเองเป็นตัวบอกว่าจะเปิดการ์ดนี้ไหม
-              ผู้บริหาร (viewer/council) เห็นการ์ดนี้เป็นข้อมูลชุดเดียวที่มีของคำร้องนั้น เพราะ RPC
-              ตัด subject/detail ของ role นี้ทิ้งทั้งหมด ไม่มี PII ให้แสดงตั้งแต่ต้นทาง */}
-          {selectedEntry && selectedEntry.source_table === 'complaints' && selectedEntry.extra_data && (
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 w-[min(340px,calc(100%-32px))] rounded-2xl border border-lime-200 bg-white p-3 text-xs shadow-2xl backdrop-blur-xs">
-              <div className="flex items-center justify-between gap-2 mb-1.5">
-                <p className="font-bold text-gray-800 truncate">{resolveCategoryLabel(selectedEntry) || selectedEntry.title}</p>
-                <button type="button" onClick={() => setSelectedEntry(null)} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100"><X size={14} /></button>
-              </div>
-              <div className="space-y-0.5 text-gray-600">
-                <p>วันเวลาที่แจ้ง: {selectedEntry.created_at
-                  ? new Date(selectedEntry.created_at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })
-                  : '-'}</p>
-                <p>ช่วงเวลาที่ได้กลิ่น: {odorTimeRangeLabel(selectedEntry.extra_data.odor_time_range) ?? '-'}</p>
-                <p>ระดับความรุนแรง: {selectedEntry.extra_data.odor_intensity ?? '-'} / 5</p>
-                <p>ทิศทางลม: {selectedEntry.extra_data.wind_direction ?? '-'}</p>
-                <p>อาการทางสุขภาพ: {selectedEntry.extra_data.health_effect ?? 'ไม่ระบุ'}</p>
-                {/* ระบบรับเรื่องอัตโนมัติทุกใบตั้งแต่ประชาชนกดส่ง (trigger route_adhoc_complaint)
-                    จึงไม่มีสถานะ 'รอ...' อีก — เดิมข้อความตรงนี้เขียนว่า 'ผู้รับผิดชอบรับทราบแล้ว'
-                    ซึ่งกลายเป็นเท็จเมื่อไม่มีคนกดจริง ผู้บริหารอ่านแล้วเข้าใจว่ามีคนดูแลอยู่ */}
-                <p className='text-emerald-700 font-semibold'>
-                  ระบบรับเรื่องและส่งถึงผู้รับผิดชอบแล้ว
-                </p>
-              </div>
             </div>
           )}
 
@@ -686,7 +819,9 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
                     activeGroups={activeGroups} toggleGroup={toggleGroup}
                     activeCategories={activeCategories} toggleCategory={toggleCategory} showSourceTabs={allowStatusFilter}
                     routeCategoryKeys={routeCategoryKeys} showRoutes={showRoutes} setShowRoutes={setShowRoutes}
-                    groupIconOverrides={groupIconOverrides} />
+                    groupIconOverrides={groupIconOverrides}
+                    statusFilter={statusFilter} setStatusFilter={setStatusFilter}
+                    dceCount={dceEntries.length} complaintCount={complaintEntries.length} />
                 </div>
               )}
             </div>
@@ -699,7 +834,9 @@ export default function DataCenterMapView({ tenant, allowStatusFilter = false, c
             activeGroups={activeGroups} toggleGroup={toggleGroup}
             activeCategories={activeCategories} toggleCategory={toggleCategory} showSourceTabs={allowStatusFilter}
             routeCategoryKeys={routeCategoryKeys} showRoutes={showRoutes} setShowRoutes={setShowRoutes}
-            groupIconOverrides={groupIconOverrides} />
+            groupIconOverrides={groupIconOverrides}
+            statusFilter={statusFilter} setStatusFilter={setStatusFilter}
+            dceCount={dceEntries.length} complaintCount={complaintEntries.length} />
         </aside>
       </div>
     </div>
