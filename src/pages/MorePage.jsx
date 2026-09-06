@@ -18,6 +18,8 @@ import { useAuth } from '../contexts/AuthContext'
 import { useNotifications } from '../contexts/NotificationsContext'
 import SatisfactionModal from '../components/SatisfactionModal'
 import KledkaewMore from '../components/citizen/templates/Kledkaew/More'
+import { useInstallPrompt } from '../hooks/useInstallPrompt'
+import { AndroidGuide } from '../components/InstallPrompt'
 
 // ─── QR Share Card ────────────────────────────────────────────────────────
 
@@ -268,16 +270,9 @@ function NamlaoMorePage() {
   const [showSat, setShowSat] = useState(false)
 
   // PWA Install State
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream
-  const [installPrompt, setInstallPrompt] = useState(null)
-  const [installState, setInstallState] = useState(() => {
-    const isStandalone =
-      window.matchMedia('(display-mode: standalone)').matches ||
-      window.navigator.standalone === true
-    if (isStandalone) return 'installed'
-    if (isIOS) return 'installable'
-    return 'unknown'
-  }) // 'unknown' | 'installable' | 'installed'
+  const { mode: installMode, install } = useInstallPrompt()
+  const isIOS = installMode === 'manual-ios'
+  const installState = installMode === 'installed' ? 'installed' : installMode === 'hidden' ? 'unknown' : 'installable'
   const [showIOSGuide, setShowIOSGuide] = useState(false)
   const [clearingCache, setClearingCache] = useState(false)
 
@@ -298,30 +293,8 @@ function NamlaoMorePage() {
     clearCacheAndReload()
   }
 
-  useEffect(() => {
-    if (installState !== 'unknown') return
-
-    const handler = (e) => {
-      e.preventDefault()
-      setInstallPrompt(e)
-      setInstallState('installable')
-    }
-    window.addEventListener('beforeinstallprompt', handler)
-    return () => window.removeEventListener('beforeinstallprompt', handler)
-  }, [installState])
-
   async function handleInstall() {
-    if (isIOS) {
-      setShowIOSGuide(true)
-      return
-    }
-    if (!installPrompt) return
-    await installPrompt.prompt()
-    const { outcome } = await installPrompt.userChoice
-    if (outcome === 'accepted') {
-      setInstallState('installed')
-      setInstallPrompt(null)
-    }
+    if (await install() === 'guide') setShowIOSGuide(true)
   }
 
   useEffect(() => {
@@ -401,7 +374,7 @@ function NamlaoMorePage() {
         }}
       />
     )}
-    {showIOSGuide && <IOSGuide onClose={() => setShowIOSGuide(false)} />}
+    {showIOSGuide && (isIOS ? <IOSGuide onClose={() => setShowIOSGuide(false)} /> : <AndroidGuide onClose={() => setShowIOSGuide(false)} />)}
     <div className="max-w-4xl mx-auto">
 
       {/* Mobile header */}

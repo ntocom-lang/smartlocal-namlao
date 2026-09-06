@@ -2,9 +2,12 @@
 <html lang="th">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/logo.png" />
-    <link rel="shortcut icon" href="/logo.png" />
-    <link rel="apple-touch-icon" href="/logo.png" />
+    <link rel="icon" type="image/png" href="/icons/icon-192x192.png" />
+    <link rel="shortcut icon" href="/icons/icon-192x192.png" />
+    <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+    <!-- worker/index.js สร้างไฟล์นี้ให้ต่อ อปท. จาก hostname — ต้องอยู่ใน HTML ตั้งแต่แรก
+         ให้เบราว์เซอร์ค้นพบได้ตั้งแต่โหลด HTML โดยไม่ต้องรอข้อมูลจาก JavaScript -->
+    <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SmartLocal</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />

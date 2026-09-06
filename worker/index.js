@@ -99,7 +99,7 @@ async function fetchTenant(slug, env) {
   const supabaseKey = env.VITE_SUPABASE_ANON_KEY || FALLBACK_SUPABASE_KEY
 
   const response = await fetch(
-    `${supabaseUrl}/rest/v1/municipalities?slug=eq.${encodeURIComponent(slug)}&select=name,logo_url,org_type,pwa_short_name`,
+    `${supabaseUrl}/rest/v1/municipalities?slug=eq.${encodeURIComponent(slug)}&select=name,logo_url,org_type,pwa_short_name,theme_color`,
     {
       headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
       signal: AbortSignal.timeout(5000),
@@ -136,9 +136,155 @@ function buildMetaTags(tenant, origin) {
   ].filter(Boolean).join('\n    ')
 }
 
+const MANIFEST_PATH = '/manifest.webmanifest'
+
+// ขนาดจริงของ PNG จาก IHDR — ต้องประกาศใน manifest ให้ตรงของจริง
+//
+// ของเดิมฝั่ง client hardcode 512x512 ให้โลโก้ทุก อปท. ทั้งที่ของจริงหลายแห่งเป็น 480x480
+// Chrome ตรวจไฟล์ที่โหลดมาจริงเทียบกับที่ประกาศ ไม่ตรงแล้วทิ้งไอคอนนั้น พอไม่เหลือไอคอน
+// ที่ใช้ได้ เว็บก็กลายเป็น "ติดตั้งไม่ได้" ทั้งที่มีโลโก้อยู่
+//
+// ไม่ย่อ/ขยายรูปเอง: Cloudflare Image Resizing เป็นบริการเสียเงิน ผิดนโยบายงบ 0 บาท
+// อ่านหัวไฟล์ 24 ไบต์แรกพอ แล้วยกเลิก stream ทิ้ง ไม่ต้องโหลดรูปทั้งใบ
+async function readPngSize(url) {
+  const res = await fetch(url, { headers: { Range: 'bytes=0-33' }, redirect: 'error', signal: AbortSignal.timeout(3000) })
+  if (!res.ok || !res.body) return null
+
+  const reader = res.body.getReader()
+  const head = new Uint8Array(34)
+  let filled = 0
+  try {
+    while (filled < 24) {
+      const { done, value } = await reader.read()
+      if (done) break
+      const take = Math.min(value.length, head.length - filled)
+      head.set(value.subarray(0, take), filled)
+      filled += take
+    }
+  } finally {
+    // ปล่อย connection ทิ้งทันที ไม่รอไบต์ที่เหลือของรูป
+    reader.cancel().catch(() => {})
+  }
+  if (filled < 24) return null
+
+  // ลายเซ็น PNG — โลโก้ที่เป็น JPEG/WebP หรือ URL ที่คืน HTML กลับมาจะตกตรงนี้
+  const SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
+  if (!SIGNATURE.every((byte, i) => head[i] === byte)) return null
+  if (String.fromCharCode(...head.slice(12, 16)) !== 'IHDR') return null
+
+  const view = new DataView(head.buffer)
+  return { width: view.getUint32(16), height: view.getUint32(20) }
+}
+
+// ไอคอนสำรองของระบบ ใช้เมื่อ อปท. ยังไม่ได้อัปโหลดโลโก้ หรือโลโก้เล็กเกินเกณฑ์ของ Chrome
+const FALLBACK_ICONS = [
+  { src: '/icons/icon-192x192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+  { src: '/icons/icon-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+]
+
+// โลโก้เล็กกว่านี้ใช้ไอคอนสำรอง; manifest คงชุด 192/512 สำหรับ install promotion
+const MIN_ICON_PX = 192
+
+async function buildIcons(tenant, env) {
+  const logoUrl = typeof tenant.logo_url === 'string' && /^https:\/\//.test(tenant.logo_url)
+    ? tenant.logo_url
+    : ''
+  if (!logoUrl) return FALLBACK_ICONS
+  // จำกัดปลายทางที่ Worker อ่าน ป้องกัน URL โลโก้พาไปเรียกเครือข่ายอื่น
+  let parsedLogo
+  try { parsedLogo = new URL(logoUrl) } catch { return FALLBACK_ICONS }
+  const trustedOrigin = new URL(env.VITE_SUPABASE_URL || FALLBACK_SUPABASE_URL).origin
+  if (parsedLogo.origin !== trustedOrigin || parsedLogo.username || parsedLogo.password) return FALLBACK_ICONS
+
+  let size = null
+  try {
+    size = await readPngSize(logoUrl)
+  } catch {
+    // โลโก้โหลดไม่ได้/ช้าเกิน 3 วิ — ยอมได้ไอคอนกลาง ดีกว่าปล่อยให้ติดตั้งไม่ได้เลย
+  }
+  if (!size || size.width < MIN_ICON_PX || size.height < MIN_ICON_PX) return FALLBACK_ICONS
+
+  // คงโลโก้ต้นฉบับและขนาดจริง พร้อมไอคอนสำรอง 192/512 ที่ขาดอยู่
+  // เบราว์เซอร์อาจเลือกไอคอนกลางเมื่อขนาดโลโก้หน่วยงานไม่ตรงกับขนาดที่ต้องการ
+  //
+  // purpose ไม่ใส่ maskable: ตราหน่วยงานเป็นวงกลมพื้นโปร่ง ถ้าประกาศว่า maskable
+  // Android จะถือว่าเต็มกรอบได้แล้วขลิบขอบตราทิ้ง
+  return [...FALLBACK_ICONS.filter(icon => icon.sizes !== `${size.width}x${size.height}`), {
+    src: logoUrl,
+    sizes: `${size.width}x${size.height}`,
+    type: 'image/png',
+    purpose: 'any',
+  }]
+}
+
+async function buildManifest(tenant, env) {
+  return {
+    // id ตรึงตัวตนของแอปไว้กับ path นี้ เปลี่ยนเมื่อไหร่ = Android มองเป็นคนละแอป
+    // แล้วผู้ใช้ที่ติดตั้งไว้แล้วจะได้ไอคอนซ้ำอีกอันบนหน้าจอ
+    id: '/',
+    name: tenant.name,
+    short_name: autoShortName(tenant),
+    description: `ระบบศูนย์รวมข้อมูลดิจิทัลเพื่อการพัฒนา${tenant.name}อย่างยั่งยืน`,
+    lang: 'th',
+    dir: 'ltr',
+    theme_color: normalizeHexColor(tenant.theme_color),
+    background_color: '#ffffff',
+    display: 'standalone',
+    orientation: 'portrait',
+    start_url: '/',
+    scope: '/',
+    icons: await buildIcons(tenant, env),
+  }
+}
+
+const DEFAULT_THEME_COLOR = '#1d4ed8'
+
+// theme_color มาจากช่องที่แอดมินกรอกเอง เจอได้ทั้งค่าว่าง hex 3 หลัก ไม่มี # หรือชนิดที่ไม่ใช่
+// สตริง — กรองให้เป็นสีที่ใช้ได้ก่อนส่งให้เบราว์เซอร์
+// (ตรรกะเดียวกับ normalizeHexColor ใน src/contexts/TenantContext.jsx)
+function normalizeHexColor(value) {
+  if (typeof value !== 'string') return DEFAULT_THEME_COLOR
+  const hex = value.trim().replace(/^#/, '')
+  if (/^[0-9a-fA-F]{6}$/.test(hex)) return `#${hex}`
+  if (/^[0-9a-fA-F]{3}$/.test(hex)) return `#${hex[0]}${hex[0]}${hex[1]}${hex[1]}${hex[2]}${hex[2]}`
+  return DEFAULT_THEME_COLOR
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url)
+
+    // manifest ต่อ อปท. — ต้องเช็คก่อน isFileRequest() ซึ่งตอบ 404 ให้ทุกนามสกุลไฟล์
+    //
+    // เสิร์ฟจาก worker ไม่ใช่ไฟล์ static เพราะเนื้อในต่างกันทุก อปท. (ชื่อ โลโก้ สีธีม) แต่
+    // deploy จากบันเดิลชุดเดียวกัน ของเดิมฝั่ง client สร้าง manifest เป็น blob: แล้วฉีดเข้า
+    // <head> หลัง fetch Supabase เสร็จ HTML ที่ส่งออกไปตอนแรกจึงไม่มี <link rel="manifest">
+    // เลย และ อปท. ที่ยังไม่มีโลโก้ได้ icons: [] ซึ่งแปลว่าติดตั้งไม่ได้แน่นอน
+    if (url.pathname === MANIFEST_PATH) {
+      let tenant = null
+      try {
+        const slug = detectSlug(url.hostname, env)
+        if (slug) tenant = await fetchTenant(slug, env)
+      } catch {
+        // Supabase ล่ม — ตกไป 404 ด้านล่าง ผู้ใช้ยังเปิดเว็บได้ แค่ติดตั้งไม่ได้ชั่วคราว
+      }
+
+      if (!tenant) {
+        return new Response('Not found', {
+          status: 404,
+          headers: { 'Content-Type': 'text/plain; charset=UTF-8', 'Cache-Control': 'no-store' },
+        })
+      }
+
+      return new Response(JSON.stringify(await buildManifest(tenant, env)), {
+        headers: {
+          'Content-Type': 'application/manifest+json; charset=UTF-8',
+          // 1 ชั่วโมงพอ: manifest เปลี่ยนเฉพาะตอนแอดมินแก้ชื่อ/โลโก้/สีธีม ซึ่งนานๆ ครั้ง
+          // และกันไม่ให้ทุก navigation ยิง worker เพิ่มอีกหนึ่งครั้ง (โควตา 100,000 ครั้ง/วัน)
+          'Cache-Control': 'public, max-age=3600',
+        },
+      })
+    }
 
     // มาถึงตรงนี้แปลว่าไม่มีไฟล์ไหนใน dist/ ตรงกับ path นี้ ถ้าเป็น request ที่ขอไฟล์
     // ก็แปลว่าไฟล์นั้นไม่มีอยู่จริง จบตรงนี้ ไม่ต้องแตะ shell หรือยิง Supabase
