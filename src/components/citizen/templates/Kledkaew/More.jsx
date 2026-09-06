@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import ModuleLink from '../../../common/ModuleLink'
 import { Link, useNavigate } from 'react-router-dom'
 import {
@@ -15,7 +15,8 @@ import { signOutSafely } from '../../../../lib/supabase'
 import { clearCacheAndReload } from '../../../../lib/clearCache'
 import { moduleForPath } from '../../../../lib/staffModules'
 import { canAccessAdminPortal, canAccessStaffPortal } from '../../../../lib/portalAccess'
-import { IOSGuide } from '../../../InstallPrompt'
+import { useInstallPrompt } from '../../../../hooks/useInstallPrompt'
+import { IOSGuide, AndroidGuide } from '../../../InstallPrompt'
 
 export default function KledkaewMore() {
   const { session, role } = useAuth()
@@ -25,16 +26,9 @@ export default function KledkaewMore() {
   const [clearingCache, setClearingCache] = useState(false)
   const [openSections, setOpenSections] = useState(() => new Set(['services']))
   const [showIOSGuide, setShowIOSGuide] = useState(false)
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream
-  const [installPrompt, setInstallPrompt] = useState(null)
-  const [installState, setInstallState] = useState(() => {
-    const isStandalone =
-      window.matchMedia('(display-mode: standalone)').matches ||
-      window.navigator.standalone === true
-    if (isStandalone) return 'installed'
-    if (isIOS) return 'installable'
-    return 'unknown'
-  })
+  const { mode: installMode, install } = useInstallPrompt()
+  const isIOS = installMode === 'manual-ios'
+  const installState = installMode === 'installed' ? 'installed' : installMode === 'hidden' ? 'unknown' : 'installable'
 
   function toggleSection(id) {
     setOpenSections(current => {
@@ -55,24 +49,8 @@ export default function KledkaewMore() {
     clearCacheAndReload()
   }
 
-  useEffect(() => {
-    if (installState !== 'unknown') return
-    const handler = (e) => {
-      e.preventDefault()
-      setInstallPrompt(e)
-      setInstallState('installable')
-    }
-    window.addEventListener('beforeinstallprompt', handler)
-    return () => window.removeEventListener('beforeinstallprompt', handler)
-  }, [installState])
-
   async function handleInstall() {
-    if (isIOS) {
-      setShowIOSGuide(true)
-      return
-    }
-    if (!installPrompt) return
-    await installPrompt.prompt()
+    if (await install() === 'guide') setShowIOSGuide(true)
   }
 
   const staffItems = [
@@ -155,7 +133,7 @@ export default function KledkaewMore() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-28 md:pb-8 font-sans pt-6 md:pt-8">
-      {showIOSGuide && <IOSGuide onClose={() => setShowIOSGuide(false)} />}
+      {showIOSGuide && (isIOS ? <IOSGuide onClose={() => setShowIOSGuide(false)} /> : <AndroidGuide onClose={() => setShowIOSGuide(false)} />)}
       <div className="max-w-6xl mx-auto px-4 md:grid md:grid-cols-[20rem_minmax(0,1fr)] md:gap-6 md:items-start">
       <div className="relative z-20 w-full max-w-lg mx-auto mb-4 mt-2 md:mx-0 md:mb-0 md:sticky md:top-6">
         <div className="rounded-2xl p-4 shadow-xl border border-white/20"

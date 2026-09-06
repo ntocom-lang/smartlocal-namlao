@@ -1,10 +1,23 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useInstallPrompt } from '../hooks/useInstallPrompt'
 import { Download, X, UploadIcon, PlusSquare } from 'lucide-react'
 
-const isIOS = () => /iPhone|iPad|iPod/i.test(navigator.userAgent)
-const isStandalone = () =>
-  window.matchMedia('(display-mode: standalone)').matches ||
-  window.navigator.standalone === true
+export function AndroidGuide({ onClose }) {
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 p-4" onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-label="วิธีติดตั้งแอป" className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-xl" onClick={e => e.stopPropagation()}>
+        <h2 className="font-bold text-gray-800">เพิ่มแอปลงหน้าจอโฮม</h2>
+        <ol className="list-decimal pl-5 mt-3 space-y-3 text-sm text-gray-600">
+          <li>เปิดเมนูของเบราว์เซอร์ รูปสามจุดหรือสามขีด</li>
+          <li>หาเมนู “ติดตั้งแอป” หรือ “เพิ่มไปที่หน้าจอโฮม” ชื่อเมนูอาจต่างกันตามเบราว์เซอร์</li>
+          <li>กดยืนยัน แล้วดูไอคอนที่หน้าจอโฮม</li>
+        </ol>
+        <p className="mt-3 text-xs text-gray-500">หากไม่พบเมนูนี้ เบราว์เซอร์อาจไม่รองรับ ลองเปิดลิงก์ใน Chrome แล้วตรวจเมนูอีกครั้ง</p>
+        <button type="button" className="mt-4 w-full rounded-xl bg-gray-100 py-3 font-semibold" onClick={onClose}>เข้าใจแล้ว</button>
+      </div>
+    </div>
+  )
+}
 
 export function IOSGuide({ onClose }) {
   return (
@@ -63,41 +76,22 @@ export function IOSGuide({ onClose }) {
 }
 
 export default function InstallPrompt() {
-  const iosMode = isIOS()
-  const [prompt, setPrompt] = useState(null)
-  const [visible, setVisible] = useState(() => iosMode && !isStandalone())
+  const { mode, install } = useInstallPrompt()
+  const iosMode = mode === 'manual-ios'
   const [showGuide, setShowGuide] = useState(false)
 
-  useEffect(() => {
-    if (isStandalone()) return
-
-    // iOS Safari ไม่มี beforeinstallprompt → แสดง instructions manual
-    if (iosMode) return
-
-    const handler = (e) => {
-      e.preventDefault()
-      setPrompt(e)
-      setVisible(true)
-    }
-    window.addEventListener('beforeinstallprompt', handler)
-    return () => window.removeEventListener('beforeinstallprompt', handler)
-  }, [iosMode])
-
-  async function install() {
-    if (!prompt) return
-    prompt.prompt()
-    const { outcome } = await prompt.userChoice
-    if (outcome === 'accepted') setVisible(false)
+  async function handleInstall() {
+    if (await install() === 'guide') setShowGuide(true)
   }
 
-  if (!visible) return null
+  if (mode === 'installed' || mode === 'hidden') return null
 
   return (
     <>
-      {showGuide && <IOSGuide onClose={() => setShowGuide(false)} />}
+      {showGuide && (iosMode ? <IOSGuide onClose={() => setShowGuide(false)} /> : <AndroidGuide onClose={() => setShowGuide(false)} />)}
       <button
         type="button"
-        onClick={iosMode ? () => setShowGuide(true) : install}
+        onClick={handleInstall}
         aria-label={iosMode ? 'ดูวิธีติดตั้งแอป' : 'ติดตั้งแอป'}
         className="md:hidden fixed bottom-20 left-3 z-[60] inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-[11px] font-bold text-white shadow-lg motion-safe:animate-pulse active:scale-95 transition-transform"
         style={{
