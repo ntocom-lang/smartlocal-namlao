@@ -35,6 +35,7 @@ api/_template.html
 test-results.log
 test-results-workflow.log
 test-results-fleet.log
+test-results-doc-types.log
 
 # Sensitive files — ห้าม commit เด็ดขาด
 recovery-codes.txt

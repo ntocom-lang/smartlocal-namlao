@@ -29,6 +29,8 @@
     "test:fleet:write": "node tests/fleet-workflow.playwright.mjs --write",
     "test:fleet:cleanup": "node tests/fleet-workflow.playwright.mjs --cleanup",
     "test:fleet:form4": "node tests/fleet-form4-print.test.mjs && node tests/fleet-form4-layout.test.mjs",
+    "test:doc-types": "node tests/doc-type-delete.playwright.mjs",
+    "test:doc-types:write": "node tests/doc-type-delete.playwright.mjs --write",
     "test:odor:analytics": "node tests/odor-analytics.test.mjs",
     "test:odor:intake": "node tests/odor-intake.test.mjs",
     "test:odor": "node tests/odor-workflow.playwright.mjs",
