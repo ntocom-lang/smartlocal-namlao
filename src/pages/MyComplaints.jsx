@@ -80,7 +80,18 @@ const DEFAULT_CATEGORY_EMOJI = {
   tax: '📋', canal: '🏞️', animals: '🐕', disease: '🏥', other: '📝',
 }
 
-function StatusBadge({ status }) {
+// ⚠️ หมวดเฉพาะกิจ (กลิ่นเหม็นรบกวน) ไม่แตะ complaints.status เลยตลอดสายงาน status จึงค้างที่
+// ค่าตั้งต้นตลอดกาล แล้วแบดจ์จะขึ้น "คำร้องใหม่" เคียงข้างป้าย "ระบบรับเรื่องแล้ว" ที่อยู่ติดกัน
+// — ผู้แจ้งอ่านได้ว่าระบบขัดแย้งกันเอง หรือแย่กว่านั้นคือ "รับเรื่องไปแล้วแต่ยังไม่มีใครทำ"
+// ในเมื่อสายงานนี้ไม่มีขั้นสถานะให้ไล่ ป้าย "ระบบรับเรื่องแล้ว" (AckBadge) คือความคืบหน้า
+// ทั้งหมดที่มีจริง แบดจ์สถานะจึงไม่ควรมีอยู่ ไม่ใช่แค่เปลี่ยนข้อความ
+//
+// ⚠️ ซ่อนเฉพาะตอนที่ status "ยังไม่เคยขยับ" เท่านั้น ห้ามซ่อนทุกกรณี — guard_adhoc_complaint_write
+//   เปิดทางให้ admin/superadmin แก้ status ของหมวดเฉพาะกิจได้ (ตอนนี้ยังไม่มีปุ่มในหน้าจอ
+//   แต่ยิง API ตรงได้) ถ้ามีคนสั่งปิดเรื่องจริง ผู้แจ้งต้องได้เห็น ไม่ใช่ถูกกลืนหายเพราะกฎนี้
+function StatusBadge({ complaint }) {
+  const status = complaint?.status
+  if (isAdhocComplaint(complaint) && (STATUS_COMPAT[status] ?? status) === 'new') return null
   const s = STATUS[status] ?? STATUS.new
   return (
     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"
@@ -871,7 +882,12 @@ export default function MyComplaints() {
                     <CategoryIcon emoji={catEmoji[searchResult.category] ?? '📄'} size={16} style={tenant?.category_icon_style} />
                     {catLabel[searchResult.category] ?? searchResult.category}
                   </p>
-                  <StatusBadge status={searchResult.status} />
+                  {/* หมวดเฉพาะกิจ StatusBadge จะคืน null ที่นี่ AckBadge จึงต้องมีคู่กันเสมอ
+                      ไม่งั้นค้นด้วยเลขที่คำร้องแล้วจะไม่เหลือป้ายบอกสถานะอะไรเลยสักอัน */}
+                  <span className="flex items-center gap-1.5 shrink-0">
+                    <StatusBadge complaint={searchResult} />
+                    <AckBadge complaint={searchResult} />
+                  </span>
                 </div>
                 {searchResult.subject && <p className="text-xs text-gray-500 mb-1">{searchResult.subject}</p>}
                 <p className="text-xs text-gray-400 font-mono">{searchResult.ref_no}</p>
@@ -972,7 +988,7 @@ export default function MyComplaints() {
                       <p className="text-xs text-gray-500 truncate">{c.subject}</p>
                     )}
                     <div className="flex items-center gap-2 mt-2 flex-wrap">
-                      <StatusBadge status={c.status} />
+                      <StatusBadge complaint={c} />
                       <AckBadge complaint={c} />
                       {!isAdhocComplaint(c) && <SlaBadge dueDate={c.due_date} status={c.status} />}
                       {c.ref_no && (
