@@ -1875,12 +1875,12 @@ function UserDetailPage(props) {
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 font-medium px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors shrink-0">
+      <div className="px-4 py-4 sm:px-5 border-b border-gray-100 flex flex-col items-stretch gap-4 xl:flex-row xl:items-center xl:justify-between xl:gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 font-medium px-2 sm:px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors shrink-0">
             <ChevronLeft size={16} /> ย้อนกลับ
           </button>
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             {user.avatar_url ? (
               <img src={user.avatar_url} alt="avatar" className="w-9 h-9 rounded-full object-cover shrink-0 border border-gray-100" />
             ) : (
@@ -1888,16 +1888,16 @@ function UserDetailPage(props) {
                 {(user.full_name || user.email || '?')[0].toUpperCase()}
               </div>
             )}
-            <h3 className="font-semibold text-gray-800 truncate">รายละเอียดข้อมูลผู้ใช้งาน: {user.full_name || user.email || '—'}</h3>
+            <h3 className="text-sm sm:text-base font-semibold text-gray-800 leading-snug line-clamp-2 xl:line-clamp-1">รายละเอียดข้อมูลผู้ใช้งาน: {user.full_name || user.email || '—'}</h3>
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 w-full xl:flex xl:items-center xl:w-auto xl:shrink-0">
           {isEditing ? (
             <>
-              <button onClick={cancelEdit} disabled={isSaving} className="text-xs font-medium text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50">
+              <button onClick={cancelEdit} disabled={isSaving} className="flex min-h-11 w-full items-center justify-center text-xs font-medium text-gray-600 hover:text-gray-700 px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 hover:bg-gray-100 transition-colors disabled:opacity-50 xl:min-h-0 xl:w-auto xl:rounded-lg xl:border-transparent xl:bg-transparent xl:py-1.5">
                 ยกเลิก
               </button>
-              <button onClick={confirmSave} disabled={isSaving} className="flex items-center gap-1.5 text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 px-4 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+              <button onClick={confirmSave} disabled={isSaving} className="flex min-h-11 w-full items-center justify-center gap-1.5 text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 px-4 py-2 rounded-xl transition-colors disabled:opacity-50 xl:min-h-0 xl:w-auto xl:rounded-lg xl:py-1.5">
                 {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                 {isSaving ? 'กำลังบันทึก...' : 'บันทึก'}
               </button>
@@ -1905,14 +1905,14 @@ function UserDetailPage(props) {
           ) : (
             <>
               {canEdit && (
-                <button onClick={startEdit} className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors">
+                <button onClick={startEdit} className="flex min-h-11 w-full items-center justify-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 bg-blue-50/70 hover:bg-blue-50 px-3 py-2 rounded-xl border border-blue-100 transition-colors xl:min-h-0 xl:w-auto xl:rounded-lg xl:border-transparent xl:bg-transparent xl:py-1.5">
                   <Pencil size={14} /> {activeTab === 'appointment' ? 'แก้ไขการแต่งตั้ง' : 'แก้ไขข้อมูล'}
                 </button>
               )}
               {canDelete && user.role !== 'citizen' && (
                 <button
                   onClick={() => setHandoverStaff(user)}
-                  className="flex items-center gap-1.5 text-xs font-medium text-orange-500 hover:text-orange-600 hover:bg-orange-50 px-3 py-1.5 rounded-lg transition-colors"
+                  className="flex min-h-11 w-full items-center justify-center gap-1.5 text-xs font-medium text-orange-600 hover:text-orange-700 bg-orange-50/70 hover:bg-orange-50 px-3 py-2 rounded-xl border border-orange-100 transition-colors xl:min-h-0 xl:w-auto xl:rounded-lg xl:border-transparent xl:bg-transparent xl:py-1.5"
                 >
                   <Repeat size={14} /> โอนงานให้ผู้อื่น
                 </button>
@@ -1922,7 +1922,7 @@ function UserDetailPage(props) {
               {['admin', 'superadmin'].includes(currentUserRole) && (
                 <button
                   onClick={() => setMergeKeepUser(user)}
-                  className="flex items-center gap-1.5 text-xs font-medium text-violet-600 hover:text-violet-700 hover:bg-violet-50 px-3 py-1.5 rounded-lg transition-colors"
+                  className="flex min-h-11 w-full items-center justify-center gap-1.5 text-xs font-medium text-violet-600 hover:text-violet-700 bg-violet-50/70 hover:bg-violet-50 px-3 py-2 rounded-xl border border-violet-100 transition-colors xl:min-h-0 xl:w-auto xl:rounded-lg xl:border-transparent xl:bg-transparent xl:py-1.5"
                 >
                   <Users size={14} /> รวมบัญชีซ้ำ
                 </button>
@@ -1930,7 +1930,7 @@ function UserDetailPage(props) {
               {canEdit && (
                 <button
                   onClick={() => setResetPasswordUser(user)}
-                  className="flex items-center gap-1.5 text-xs font-medium text-amber-600 hover:text-amber-700 hover:bg-amber-50 px-3 py-1.5 rounded-lg transition-colors"
+                  className="flex min-h-11 w-full items-center justify-center gap-1.5 text-xs font-medium text-amber-700 hover:text-amber-800 bg-amber-50/70 hover:bg-amber-50 px-3 py-2 rounded-xl border border-amber-100 transition-colors xl:min-h-0 xl:w-auto xl:rounded-lg xl:border-transparent xl:bg-transparent xl:py-1.5"
                 >
                   <KeyRound size={14} /> ตั้งรหัสผ่านใหม่
                 </button>
@@ -1938,7 +1938,7 @@ function UserDetailPage(props) {
               {canDelete && (
                 <button
                   onClick={() => setDeletingUser(user)}
-                  className="flex items-center gap-1.5 text-xs font-medium text-red-500 hover:text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
+                  className="flex min-h-11 w-full items-center justify-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-700 bg-red-50/70 hover:bg-red-50 px-3 py-2 rounded-xl border border-red-100 transition-colors xl:min-h-0 xl:w-auto xl:rounded-lg xl:border-transparent xl:bg-transparent xl:py-1.5"
                 >
                   <Trash2 size={14} /> ลบผู้ใช้งาน
                 </button>
@@ -1947,17 +1947,17 @@ function UserDetailPage(props) {
           )}
         </div>
       </div>
-      <div className="px-5 border-b border-gray-100 flex gap-1 overflow-x-auto">
+      <div className="grid grid-cols-2 border-b border-gray-100 bg-gray-50/50 sm:flex sm:gap-1 sm:overflow-x-auto sm:bg-white sm:px-5">
         {USER_DETAIL_TABS.map(t => (
-          <button key={t.key} onClick={() => setActiveTab(t.key)}
-            className={`px-4 py-3 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${
-              activeTab === t.key ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'
+          <button key={t.key} onClick={() => setActiveTab(t.key)} aria-current={activeTab === t.key ? 'page' : undefined}
+            className={`min-h-12 px-3 sm:px-4 py-3 text-sm text-center font-semibold border-b-2 transition-colors whitespace-nowrap ${
+              activeTab === t.key ? 'border-blue-500 bg-blue-50/70 text-blue-600 sm:bg-transparent' : 'border-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-700 sm:hover:bg-transparent'
             }`}>
             {t.label}
           </button>
         ))}
       </div>
-      <div className="p-6 max-w-xl">
+      <div className="p-4 sm:p-6 max-w-xl">
         {saveError && (
           <div className="mb-4 text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{saveError}</div>
         )}
