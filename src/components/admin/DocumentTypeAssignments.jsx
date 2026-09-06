@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertCircle, CheckCircle2, Loader2, Plus, Save, Trash2, UserCog } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Loader2, Plus, RotateCcw, Save, Trash2, UserCog } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import { fetchAssignableStaff, groupStaffByDepartment } from '../../lib/staffRoster'
-import { BASE_DOCUMENT_TYPES, defaultSlaDays } from '../../lib/documentTypes'
+import { BASE_DOCUMENT_TYPES, defaultSlaDays, removedDocumentTypes } from '../../lib/documentTypes'
 
 // หน้าตั้ง "ประเภทคำขอเอกสาร/บริการ + ผังงาน" — มีประเภทอะไรบ้าง กองไหนรับ ใครถือ
 // และต้องเสร็จภายในกี่วัน รวมอยู่ในตารางเดียว
@@ -19,9 +19,10 @@ import { BASE_DOCUMENT_TYPES, defaultSlaDays } from '../../lib/documentTypes'
 // "read document_requests" ให้ role 'staff' เห็นเฉพาะแถวที่ assigned_to เป็นตัวเอง
 // ตั้งคนผิด = ส่งเลขบัตรประชาชน/ที่อยู่/เบอร์โทรของประชาชนไปให้คนที่ไม่ควรเห็น (PDPA)
 //
-// ⚠️ นี่คือที่เดียวในระบบที่เขียน municipalities.fee_schedule._custom_types ได้ ถ้าลบทิ้ง
-// อปท. จะเพิ่ม/ลบประเภทคำขอของตัวเองไม่ได้อีกเลย ทั้งที่หน้าประชาชนทั้ง 6 ธีม, CitizenDocRequest,
-// MyDocRequests, StaffDashboard และตารางในไฟล์นี้เองอ่านค่านั้นอยู่
+// ⚠️ นี่คือที่เดียวในระบบที่เขียน municipalities.fee_schedule._custom_types (ประเภทที่เพิ่มเอง)
+// และ ._removed_types (ประเภทมาตรฐานที่ลบทิ้ง) ได้ ถ้าลบทิ้ง อปท. จะเพิ่ม/ลบประเภทคำขอของตัวเอง
+// ไม่ได้อีกเลย ทั้งที่หน้าประชาชนทั้ง 6 ธีม, CitizenDocRequest, MyDocRequests, StaffDashboard
+// และตารางในไฟล์นี้เองอ่านค่านั้นอยู่
 
 export default function DocumentTypeAssignments({ tenant }) {
   const municipalityId = tenant?.id
@@ -43,6 +44,9 @@ export default function DocumentTypeAssignments({ tenant }) {
   // ประเภทที่เคยบันทึกไว้แล้วและถูกกดลบ — เก็บไว้เพื่อตามไปลบแถวผังงานกับคีย์ค่าธรรมเนียมที่ค้าง
   // อยู่ตอนกดบันทึก ไม่งั้นเหลือแถวขยะที่ไม่มี UI ไหนมองเห็นอีกเลย
   const [removedCustom, setRemovedCustom] = useState([])
+  // ประเภทมาตรฐานที่ อปท. นี้ลบทิ้ง (fee_schedule._removed_types) — ลบจาก BASE_DOCUMENT_TYPES
+  // ตรงๆ ไม่ได้เพราะเป็นลิสต์ร่วมของทุก อปท. ในโค้ด จึงเก็บเป็นรายชื่อ "ไม่ใช้ที่นี่" รายหน่วยงาน
+  const [removedBase, setRemovedBase] = useState(() => removedDocumentTypes(tenant))
   const [showAddForm, setShowAddForm] = useState(false)
   const [newEmoji, setNewEmoji] = useState('📋')
   const [newLabel, setNewLabel] = useState('')
@@ -50,9 +54,16 @@ export default function DocumentTypeAssignments({ tenant }) {
   // ไม่ใช้ allDocumentTypes(tenant) แล้ว เพราะรายการที่เพิ่มเองต้องอ่านจาก state ในหน้านี้
   // ให้แถวใหม่โผล่ทันทีตั้งแต่ยังไม่กดบันทึก (tenant เพิ่งอัปเดตหลังบันทึกสำเร็จเท่านั้น)
   const docTypes = useMemo(() => [
-    ...BASE_DOCUMENT_TYPES,
+    ...BASE_DOCUMENT_TYPES.filter(t => !removedBase.includes(t.value)),
     ...customTypes.map(t => ({ value: t.value, label: `${t.emoji || '📋'} ${t.label}`, custom: true })),
-  ], [customTypes])
+  ], [customTypes, removedBase])
+
+  // แถวที่ลบไปแล้ว ยกมาแสดงเป็นแถบกู้คืนใต้ตาราง — ลบผิดใบแล้วต้องเอากลับมาได้
+  // ไม่งั้น อปท. ที่เผลอลบ "ใบรับรองการอยู่อาศัย" ทิ้งจะเปิดบริการนั้นใหม่ไม่ได้เลย
+  const removedBaseTypes = useMemo(
+    () => BASE_DOCUMENT_TYPES.filter(t => removedBase.includes(t.value)),
+    [removedBase],
+  )
 
   // reloadKey แทนการเรียก load() ตรงๆ ใน effect — setState แบบ synchronous ในตัว effect
   // ทำให้เกิด cascading render (กติกา react-hooks/set-state-in-effect ของโปรเจกต์นี้)
@@ -127,6 +138,26 @@ export default function DocumentTypeAssignments({ tenant }) {
     setSaved(false)
   }
 
+  // ลบประเภทมาตรฐานออกจาก อปท. นี้ — ไม่ได้แตะ BASE_DOCUMENT_TYPES ในโค้ด (ของกลางทุก อปท.)
+  // แต่บันทึก value ลง fee_schedule._removed_types แล้วทุกจุดที่เป็น "ตัวเลือกยื่นคำขอใหม่"
+  // จะกรองทิ้ง คำขอเก่าที่ยื่นด้วยประเภทนี้ยังอยู่ครบและยังแสดงชื่อไทยตามเดิม
+  function removeBaseType(value) {
+    setRemovedBase(prev => (prev.includes(value) ? prev : [...prev, value]))
+    setDrafts(prev => {
+      const next = { ...prev }
+      delete next[value]
+      return next
+    })
+    setCustomDirty(true)
+    setSaved(false)
+  }
+
+  function restoreBaseType(value) {
+    setRemovedBase(prev => prev.filter(v => v !== value))
+    setCustomDirty(true)
+    setSaved(false)
+  }
+
   // แถวที่แก้ค้างไว้ของประเภทที่เพิ่งถูกลบไม่ต้องบันทึก
   const dirtyTypes = Object.keys(drafts).filter(t => docTypes.some(d => d.value === t))
   const hasChanges = customDirty || dirtyTypes.length > 0
@@ -149,14 +180,20 @@ export default function DocumentTypeAssignments({ tenant }) {
         const fee_schedule = { ...(fresh?.fee_schedule || {}) }
         removedCustom.forEach(v => { delete fee_schedule[v] })
         fee_schedule._custom_types = customTypes
+        // เขียนทับทั้งชุดเสมอ (ไม่ merge กับค่าที่อ่านมา) เพราะการกู้คืนคือการเอาชื่อออกจากลิสต์นี้
+        if (removedBase.length > 0) fee_schedule._removed_types = removedBase
+        else delete fee_schedule._removed_types
         const { error: upErr } = await supabase
           .from('municipalities').update({ fee_schedule }).eq('id', municipalityId)
         if (upErr) throw upErr
         patchTenant({ fee_schedule })
 
-        if (removedCustom.length > 0) {
+        // ลบแถวผังงานของประเภทที่ไม่ใช้แล้ว ทั้งที่เพิ่มเองและมาตรฐาน — ค่ากอง/ผู้รับผิดชอบเดิม
+        // ไม่ต้องเก็บไว้ ถ้ากู้คืนภายหลังก็ตั้งใหม่ (ระบบใช้ค่าเริ่มต้นให้ก่อน)
+        const rowsToDrop = [...new Set([...removedCustom, ...removedBase])]
+        if (rowsToDrop.length > 0) {
           const { error: delErr } = await supabase.from('document_type_assignments')
-            .delete().eq('municipality_id', municipalityId).in('document_type', removedCustom)
+            .delete().eq('municipality_id', municipalityId).in('document_type', rowsToDrop)
           if (delErr) throw delErr
         }
       }
@@ -254,6 +291,14 @@ export default function DocumentTypeAssignments({ tenant }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
+                {docTypes.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-6 text-center text-xs text-gray-400">
+                      ลบประเภทคำขอออกหมดแล้ว — หน้ายื่นคำขอฝั่งประชาชนจะไม่มีบริการให้เลือกเลย
+                      กู้คืนที่แถบด้านล่าง หรือเพิ่มประเภทใหม่
+                    </td>
+                  </tr>
+                )}
                 {docTypes.map(({ value, label, custom }) => {
                   const v = valueOf(value)
                   const dirty = Boolean(drafts[value])
@@ -298,15 +343,23 @@ export default function DocumentTypeAssignments({ tenant }) {
                         </div>
                       </td>
                       <td className="pr-2">
-                        {/* ประเภทมาตรฐานลบไม่ได้ — ทั้งระบบอ้างค่าเหล่านี้ตรงๆ ตั้งแต่หน้ายื่นคำขอ
-                            ไปจนถึงรายงาน LPA ลบได้เฉพาะประเภทที่ อปท. เพิ่มเอง */}
-                        {custom && (
-                          <button type="button" onClick={() => removeCustomType(value)}
-                            title="ลบประเภทนี้ — คำขอเดิมที่ยื่นด้วยประเภทนี้ยังอยู่ แต่จะไม่มีให้เลือกใหม่"
-                            className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors">
-                            <Trash2 size={13} />
-                          </button>
-                        )}
+                        {/* ประเภทมาตรฐานลบได้เหมือนประเภทที่เพิ่มเอง ต่างกันแค่ปลายทาง:
+                            ตัวที่เพิ่มเองหลุดออกจาก _custom_types ไปเลย ส่วนมาตรฐานไปอยู่ใน
+                            _removed_types (ลิสต์ในโค้ดเป็นของกลางทุก อปท. แก้ต่อกันไม่ได้)
+                            ทั้งสองแบบผลลัพธ์ที่ผู้ใช้เห็นเหมือนกันคือหายจากทุกหน้าจอที่ยื่นคำขอใหม่ */}
+                        <button type="button"
+                          onClick={() => {
+                            if (custom) { removeCustomType(value); return }
+                            // ประเภทมาตรฐานกระทบหน้าประชาชนทั้งเว็บทันทีที่กดบันทึก จึงถามยืนยันก่อน
+                            // ส่วนตัวที่เพิ่งเพิ่มเองยังกดลบได้เลยเหมือนเดิม (เพิ่งพิมพ์ผิดแล้วลบทิ้ง)
+                            if (window.confirm(`ลบ "${label}" ออกจากบริการของหน่วยงานนี้?\n\nประชาชนจะยื่นคำขอประเภทนี้ใหม่ไม่ได้อีก คำขอเดิมที่ยื่นไว้แล้วยังอยู่ครบและดำเนินการต่อได้ตามปกติ\n\nกู้คืนได้ที่แถบใต้ตาราง`)) removeBaseType(value)
+                          }}
+                          title={custom
+                            ? 'ลบประเภทนี้ — คำขอเดิมที่ยื่นด้วยประเภทนี้ยังอยู่ แต่จะไม่มีให้เลือกใหม่'
+                            : 'ลบประเภทนี้ออกจากหน่วยงานนี้ — คำขอเดิมยังอยู่ แต่ประชาชนจะยื่นใหม่ไม่ได้'}
+                          className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors">
+                          <Trash2 size={13} />
+                        </button>
                       </td>
                     </tr>
                   )
@@ -352,6 +405,33 @@ export default function DocumentTypeAssignments({ tenant }) {
               className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 transition-colors">
               <Plus size={13} /> เพิ่มประเภทเอกสาร/บริการใหม่
             </button>
+          )}
+
+          {/* ประเภทมาตรฐานที่ลบไปแล้ว — เก็บทางกลับไว้ที่เดียว ถ้าไม่มีแถบนี้ อปท. ที่กดลบผิด
+              จะเปิดบริการนั้นคืนเองไม่ได้เลย ต้องมาแก้ค่าใน DB ให้ */}
+          {removedBaseTypes.length > 0 && (
+            <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+              <p className="text-[11px] font-bold text-gray-500">
+                ประเภทที่ลบออกจากหน่วยงานนี้ ({removedBaseTypes.length})
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {removedBaseTypes.map(t => (
+                  <span key={t.value}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white pl-2.5 pr-1.5 py-1 text-[11px] text-gray-400 line-through">
+                    {t.label}
+                    <button type="button" onClick={() => restoreBaseType(t.value)}
+                      title="กู้คืนประเภทนี้"
+                      className="no-underline p-1 rounded-md text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors">
+                      <RotateCcw size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <p className="mt-2 text-[10px] leading-relaxed text-gray-400">
+                คำขอเดิมที่ยื่นด้วยประเภทเหล่านี้ยังอยู่ในระบบครบ เจ้าหน้าที่ยังเปิดดูและดำเนินการต่อได้
+                และยังนับในรายงาน LPA ตามเดิม — ที่หายไปคือปุ่มให้ประชาชนยื่นคำขอใหม่เท่านั้น
+              </p>
+            </div>
           )}
         </>
       )}

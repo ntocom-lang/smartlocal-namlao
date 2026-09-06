@@ -18,7 +18,7 @@ import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
 import { buildWasteCollectionRequestHtml, collectionPointText } from '../lib/wasteCollectionRequestPrint'
 import { uploadFile } from '../lib/driveStorage'
 import { fetchAssignableStaff, groupStaffByDepartment } from '../lib/staffRoster'
-import { BASE_DOCUMENT_TYPES } from '../lib/documentTypes'
+import { BASE_DOCUMENT_TYPES, removedDocumentTypes } from '../lib/documentTypes'
 import { MANAGED_MODULE_KEYS } from '../lib/staffModules'
 import OdorReportPanel from '../components/staff/OdorReportPanel'
 import PortalSwitcher from '../components/layout/PortalSwitcher'
@@ -49,7 +49,14 @@ const WasteCollectionRequestWizard = lazy(() => import('./WasteCollectionRequest
 // ต้องใช้ลิสต์เดียวกับหน้านี้เป๊ะ ไม่งั้นจะมีประเภทที่ประชาชนยื่นได้แต่แอดมินตั้งผู้รับผิดชอบไม่ได้
 const DOC_TYPES = BASE_DOCUMENT_TYPES
 let _customDocTypes = []
+let _removedDocTypes = []
+// ทุกประเภทที่ "เคยมี" — ใช้แปลง document_type → ชื่อไทยของคำขอเก่า ห้ามกรองประเภทที่ อปท.
+// ลบทิ้งออกจากตัวนี้ ไม่งั้นคำขอที่ยื่นไว้ก่อนลบจะโชว์เป็น 'residence_cert' ดิบๆ ในหน้าจอ
 function getAllDocTypes() { return [...DOC_TYPES, ..._customDocTypes] }
+// เฉพาะประเภทที่ยังเปิดรับคำขอใหม่ — ใช้กับฟอร์มสร้างคำขอ walk-in เท่านั้น
+function getSelectableDocTypes() {
+  return getAllDocTypes().filter(d => !_removedDocTypes.includes(d.value))
+}
 
 const STATUS = {
   pending:    { label: 'รอดำเนินการ',    color: '#f59e0b', bg: '#fef3c7', Icon: Clock },
@@ -627,7 +634,7 @@ function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuilding
           <div>
             <label className="text-xs font-semibold text-gray-500 mb-2 block">ประเภทบริการ/เอกสาร</label>
             <div className="grid grid-cols-2 gap-2">
-              {getAllDocTypes().map(d => {
+              {getSelectableDocTypes().map(d => {
                 const [emoji, ...rest] = d.label.split(' ')
                 const isSel = form.document_type === d.value
                 return (
@@ -1847,6 +1854,10 @@ export default function StaffDashboard() {
       label: `${t.emoji || '📋'} ${t.label}`,
     }))
   }, [tenant?.fee_schedule?._custom_types])
+
+  useEffect(() => {
+    _removedDocTypes = removedDocumentTypes(tenant)
+  }, [tenant])
 
   // (ถอด prefetch complaint_categories ระดับ root ออก 2026-09-02 พร้อมกับ "งานรอรับเรื่อง"
   //  ที่เป็นผู้ใช้เพียงรายเดียว — ComplaintsStaffModule ดึงชุดเดียวกันเองตอนเปิดแท็บคำร้องอยู่แล้ว)

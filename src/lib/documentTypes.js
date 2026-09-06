@@ -31,9 +31,44 @@ export function customDocumentTypes(tenant) {
   }))
 }
 
-/** ประเภทมาตรฐาน + ประเภทเฉพาะของ อปท. นั้น */
+/**
+ * ประเภทมาตรฐานที่ อปท. กดลบทิ้ง — เก็บ value ไว้ใน municipalities.fee_schedule._removed_types
+ *
+ * ทำไมต้องเก็บ "รายชื่อที่ลบ" แทนที่จะลบออกจากลิสต์จริงๆ: BASE_DOCUMENT_TYPES อยู่ในโค้ด
+ * ไม่ได้อยู่ใน DB ลบให้หายจริงไม่ได้เพราะมันเป็นค่าร่วมของทุก อปท. — อปท. หนึ่งลบ
+ * ใบรับรองการอยู่อาศัยทิ้ง อีกที่หนึ่งยังต้องใช้ ค่านี้จึงเป็นรายชื่อ "ไม่ใช้ที่นี่" รายหน่วยงาน
+ *
+ * ⚠️ ตัวลิสต์ label ยังต้องรู้จักประเภทที่ถูกลบต่อไป — คำขอเก่าใน document_requests ที่ยื่น
+ * ด้วยประเภทนั้นยังอยู่ ถ้ากรองออกจากตัวแปลชื่อด้วย หน้าเจ้าหน้าที่/ประวัติของประชาชน
+ * จะโชว์เป็น 'residence_cert' ดิบๆ และรายงาน LPA จะนับไม่ตรง กรองเฉพาะจุดที่เป็น
+ * "ตัวเลือกยื่นคำขอใหม่" เท่านั้น
+ * @param {{ fee_schedule?: { _removed_types?: string[] } } | null} tenant
+ */
+export function removedDocumentTypes(tenant) {
+  const list = tenant?.fee_schedule?._removed_types
+  return Array.isArray(list) ? list.filter((v) => typeof v === 'string') : []
+}
+
+/**
+ * กรองประเภทที่ อปท. ลบทิ้งออกจากลิสต์ตัวเลือก รับได้ทั้ง array ของ object ที่มี .value
+ * และ array ของ string ตรงๆ
+ * @template T
+ * @param {T[]} types
+ * @param {{ fee_schedule?: { _removed_types?: string[] } } | null} tenant
+ * @returns {T[]}
+ */
+export function withoutRemovedTypes(types, tenant) {
+  const removed = removedDocumentTypes(tenant)
+  if (removed.length === 0) return types
+  return types.filter((t) => !removed.includes(typeof t === 'string' ? t : t?.value))
+}
+
+/** ประเภทมาตรฐาน + ประเภทเฉพาะของ อปท. นั้น (ตัดประเภทที่ลบทิ้งออกแล้ว) */
 export function allDocumentTypes(tenant) {
-  return [...BASE_DOCUMENT_TYPES, ...customDocumentTypes(tenant)]
+  return [
+    ...withoutRemovedTypes(BASE_DOCUMENT_TYPES, tenant),
+    ...customDocumentTypes(tenant),
+  ]
 }
 
 // SLA เริ่มต้นรายประเภท (วันทำการนับจากวันที่ยื่น) ใช้เป็นค่าตั้งต้นตอนแอดมินยังไม่เคยตั้งเอง
