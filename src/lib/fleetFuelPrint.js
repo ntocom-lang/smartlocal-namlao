@@ -1,4 +1,5 @@
 import { FUEL_LABEL, assetIdentifier, meterUnitShort } from './fleetAssets.js'
+import { fuelRecordAmount } from './fleetFuelAmount.js'
 import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, GOV_PAGE_MARGIN, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
 
 const MONTHS_TH = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
@@ -65,11 +66,9 @@ export function buildFleetFuelRecordHtml({ record, tenant }) {
   const unit = meterUnitShort(vehicle)
   const liters = numText(record?.liters, 3)
   const price = numText(record?.price_per_liter, 2)
-  const cost = record?.total_cost ?? (
-    Number.isFinite(Number(record?.liters)) && Number.isFinite(Number(record?.price_per_liter))
-      ? Number(record.liters) * Number(record.price_per_liter)
-      : ''
-  )
+  // ยอดตามบิลมาก่อนยอดคำนวณเสมอ (ดู fleetFuelAmount.js) — null = ไม่มีข้อมูลพอจะบอกยอด
+  const amount = fuelRecordAmount(record)
+  const cost = amount === null ? '' : amount
   const odometer = record?.odometer == null || record?.odometer === ''
     ? ''
     : `${numText(record.odometer, 0)} ${unit}`

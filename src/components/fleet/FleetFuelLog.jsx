@@ -20,11 +20,20 @@ import {
   validateFleetDocument,
 } from '../../lib/fleetDocuments'
 import { buildFleetFuelRecordHtml, fuelTypeLabel } from '../../lib/fleetFuelPrint'
+import { fuelAmountDiffersFromCalc, fuelRecordAmount } from '../../lib/fleetFuelAmount'
 
 const inp = 'w-full px-3 py-2.5 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent'
 const sel = inp + ' appearance-none'
 const fmt = n => (n ?? 0).toLocaleString('th-TH')
-const fmtB = n => `฿${fmt(Math.round(n ?? 0))}`
+// เงินต้องโชว์สตางค์เสมอ เดิมใช้ Math.round ปัดเป็นบาทเต็ม ยอด 1,999.95 จึงขึ้นหน้าจอเป็น
+// ฿2,000 ทั้งที่ใบพิมพ์ได้ 1,999.95 — หน้าจอกลบส่วนต่างทิ้ง เจ้าหน้าที่ไม่มีทางรู้ว่ายอดไม่ตรง
+// จนกว่าจะสั่งพิมพ์ออกมาเทียบกับบิล
+const fmtB = n => `฿${(Number(n) || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+// ยอดที่ต้องโชว์ = ยอดตามบิลถ้ามี ไม่งั้นยอดคำนวณ (ตัดสินที่ fleetFuelAmount.js ที่เดียว)
+const amountText = record => {
+  const amount = fuelRecordAmount(record)
+  return amount === null ? '—' : fmtB(amount)
+}
 const thDate = d => new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
 
 // snapshot เฉพาะฟิลด์ที่มีผลต่อการตรวจสอบการเบิกจ่าย ไม่ยัดทั้งแถวลง audit log
@@ -32,6 +41,7 @@ const thDate = d => new Date(d).toLocaleDateString('th-TH', { day: 'numeric', mo
 const auditSnapshot = r => r ? {
   filled_at: r.filled_at, vehicle_id: r.vehicle_id, odometer: r.odometer,
   liters: r.liters, price_per_liter: r.price_per_liter, total_cost: r.total_cost,
+  invoice_total: r.invoice_total,
   full_tank: r.full_tank, fuel_station: r.fuel_station, receipt_no: r.receipt_no,
   is_anomaly: r.is_anomaly, anomaly_reason: r.anomaly_reason,
 } : null
@@ -39,7 +49,7 @@ const auditSnapshot = r => r ? {
 const auditLabel = r => [
   r?.fleet_vehicles?.name ?? 'ไม่ระบุรถ',
   `${r?.liters ?? '?'} ล.`,
-  `฿${Math.round(r?.total_cost ?? 0).toLocaleString('th-TH')}`,
+  amountText(r),
 ].join(' — ')
 
 const EMPTY_FORM = {
@@ -48,6 +58,7 @@ const EMPTY_FORM = {
   odometer: '', liters: '', price_per_liter: '',
   fuel_type: 'diesel', fuel_other_name: '',
   full_tank: true, fuel_station: '', receipt_no: '', notes: '',
+  invoice_total: '',
 }
 
 export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
@@ -125,6 +136,11 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
   const totalCost = form.liters && form.price_per_liter
     ? (parseFloat(form.liters) * parseFloat(form.price_per_liter)).toFixed(2) : null
   const selectedAsset = vehicles.find(asset => asset.id === form.vehicle_id)
+  // เตือนตอนกรอกว่ายอดบิลไม่ตรงยอดคำนวณ ไม่ได้ห้าม — ต่างกันเป็นเรื่องปกติของการเติมเป็นยอดเงินกลม
+  // แต่ต่างกันมากผิดปกติมักแปลว่าพิมพ์เลขผิดหลัก จึงต้องให้เห็นตัวเลขส่วนต่างระหว่างกรอก
+  const invoiceMismatch = form.invoice_total !== '' && totalCost
+    && Number.isFinite(Number(form.invoice_total))
+    && Math.abs(Number(form.invoice_total) - parseFloat(totalCost)) >= 0.005
 
   // อปท. ที่ยังไม่ได้ตั้งทะเบียนพนักงานขับรถต้องบันทึกน้ำมันต่อได้ ไม่งั้น deploy รอบนี้
   // จะทำให้ช่องผู้ขับรถว่างเปล่าทันทีทุกแห่งที่ยังไม่ได้ตั้งค่า
@@ -193,6 +209,7 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
       fuel_station: r.fuel_station ?? '',
       receipt_no: r.receipt_no ?? '',
       notes: r.notes ?? '',
+      invoice_total: r.invoice_total ?? '',
     })
     setReceiptFile(null)
     setModal('form')
@@ -218,6 +235,10 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
       return alert('ราคาต่อลิตรต้องเป็น 0 หรือมากกว่า')
     if (isVehicleAsset(selectedAsset) && pricePerLiter === null)
       return alert('กรุณาระบุราคาต่อลิตรสำหรับยานพาหนะ')
+    // ยอดตามบิลไม่บังคับ ปล่อยว่าง = ใช้ยอดคำนวณเหมือนเดิม แต่ถ้ากรอกต้องเป็นจำนวนเงินที่ใช้ได้
+    const invoiceTotal = form.invoice_total === '' ? null : Number(form.invoice_total)
+    if (invoiceTotal !== null && (!Number.isFinite(invoiceTotal) || invoiceTotal < 0))
+      return alert('ยอดรวมตามบิลต้องเป็น 0 หรือมากกว่า')
     const fileError = validateFleetDocument(receiptFile)
     if (fileError) return alert(fileError)
 
@@ -273,6 +294,7 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
       full_tank:       form.full_tank,
       fuel_station:    form.fuel_station || null,
       receipt_no:      form.receipt_no   || null,
+      invoice_total:   invoiceTotal,
       notes:           form.notes        || null,
       ...(receiptPath ? { receipt_url: receiptPath } : {}),
     }
@@ -408,9 +430,9 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
                       {r.driver?.full_name ?? '—'}
                     </td>
                     <td className="px-2 py-2 text-right text-gray-600 text-xs">
-                      {r.liters} ล. {r.price_per_liter != null ? `× ฿${r.price_per_liter}` : ''}
+                      {r.liters} ล. {r.price_per_liter != null ? `× ${fmtB(r.price_per_liter)}` : ''}
                     </td>
-                    <td className="px-2 py-2 text-right font-bold text-gray-800 whitespace-nowrap">{r.total_cost == null ? '—' : fmtB(r.total_cost)}</td>
+                    <td className="px-2 py-2 text-right font-bold text-gray-800 whitespace-nowrap">{amountText(r)}</td>
                     <td className="px-2 py-2 text-gray-500 text-xs">
                       {r.odometer == null ? '—' : [fmt(r.odometer), meterUnitShort(r.fleet_vehicles)].join(' ')}
                       {r.efficiency_kml != null && (
@@ -499,7 +521,7 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
                     )}
                   </div>
                   <div className="text-right shrink-0 flex flex-col items-end gap-1">
-                    <p className="text-base font-black text-gray-800">{r.total_cost == null ? '—' : fmtB(r.total_cost)}</p>
+                    <p className="text-base font-black text-gray-800">{amountText(r)}</p>
                     {r.efficiency_kml != null && (
                       <p className="text-[10px] text-emerald-600 font-semibold">{r.efficiency_kml} กม./ล.</p>
                     )}
@@ -556,7 +578,7 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
 
       {modal === 'detail' && selRecord && (() => {
         const r = selRecord
-        const cost = r.total_cost ?? ((r.liters ?? 0) * (r.price_per_liter ?? 0))
+        const calcCost = r.total_cost
         return (
           <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 p-4">
             <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl">
@@ -580,8 +602,13 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
                   <div><p className="text-gray-400">ชนิดเชื้อเพลิง</p><p className="font-semibold text-gray-700">{fuelTypeLabel(r)}</p></div>
                   <div><p className="text-gray-400">ลักษณะการเติม</p><p className="font-semibold text-gray-700">{r.full_tank === false ? 'ไม่เต็มถัง' : 'เต็มถัง'}</p></div>
                   <div><p className="text-gray-400">ปริมาณ</p><p className="font-semibold text-gray-700">{r.liters ?? '—'} ลิตร</p></div>
-                  <div><p className="text-gray-400">ราคาต่อลิตร</p><p className="font-semibold text-gray-700">{r.price_per_liter == null ? '—' : `฿${fmt(r.price_per_liter)}`}</p></div>
-                  <div><p className="text-gray-400">รวมเป็นเงิน</p><p className="font-black text-gray-800">{r.total_cost == null && !r.price_per_liter ? '—' : fmtB(cost)}</p></div>
+                  <div><p className="text-gray-400">ราคาต่อลิตร</p><p className="font-semibold text-gray-700">{r.price_per_liter == null ? '—' : fmtB(r.price_per_liter)}</p></div>
+                  <div><p className="text-gray-400">รวมเป็นเงิน</p><p className="font-black text-gray-800">{amountText(r)}</p>
+                    {/* บอกให้เห็นว่ายอดที่โชว์มาจากบิล ไม่ใช่ลิตรคูณราคา ไม่งั้นผู้ตรวจสอบจะคิดว่าคำนวณผิด */}
+                    {fuelAmountDiffersFromCalc(r) && (
+                      <p className="text-[10px] text-amber-600 font-semibold">ตามบิล · ยอดคำนวณ {fmtB(calcCost)}</p>
+                    )}
+                  </div>
                   <div><p className="text-gray-400">เลขไมล์ / มิเตอร์</p><p className="font-semibold text-gray-700">{r.odometer == null ? '—' : `${fmt(r.odometer)} ${meterUnitShort(r.fleet_vehicles)}`}</p></div>
                   {r.efficiency_kml != null && (
                     <div><p className="text-gray-400">อัตราสิ้นเปลือง</p><p className="font-semibold text-emerald-700">{r.efficiency_kml} กม./ล.</p></div>
@@ -716,10 +743,32 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
 
               {totalCost && (
                 <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 flex items-center justify-between">
-                  <span className="text-xs text-amber-700 font-semibold">ยอดรวม</span>
+                  <span className="text-xs text-amber-700 font-semibold">ยอดคำนวณ (ลิตร × ราคา)</span>
                   <span className="text-lg font-black text-amber-700">{fmtB(parseFloat(totalCost))}</span>
                 </div>
               )}
+
+              {/* ยอดตามบิล — ปั๊มขายเป็น "ยอดเงิน" (สั่งเติมเต็ม 2,000 บาท) ไม่ได้ขายเป็นลิตร
+                  ลิตรบนบิลจึงเป็นค่าที่ปัดมาแล้ว คูณกลับไม่เท่ายอดจ่ายจริง
+                  เคสจริง 7 ก.ย. 2569: 50.25 ล. × 39.80 = 1,999.95 แต่บิลออก 2,000.00
+                  ไม่มีคู่ตัวเลขไหนกรอกแล้วได้ 2,000.00 พอดี (liters เก็บ 3 ตำแหน่ง
+                  price_per_liter เก็บ 2 ตำแหน่ง) จึงต้องมีช่องนี้ ห้ามแก้ด้วยการบิดราคา/ลิตร
+                  เพราะสมุดคุมพิมพ์สองค่านั้นลงกระดาษตรงๆ */}
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1 block">ยอดรวมตามใบรับสินค้า/ใบส่งของ (บาท)</label>
+                <input type="number" step="0.01" min="0" inputMode="decimal"
+                  value={form.invoice_total} onChange={set('invoice_total')}
+                  placeholder={totalCost ? `ปล่อยว่าง = ใช้ ${totalCost}` : 'ยอดเงินบนบิล'}
+                  className={inp} />
+                <p className="mt-1 text-[10px] text-gray-400">
+                  กรอกยอดที่พิมพ์บนบิลจริง เอกสารทุกใบจะใช้ยอดนี้ · ปล่อยว่างถ้ายอดบนบิลตรงกับยอดคำนวณอยู่แล้ว
+                </p>
+                {invoiceMismatch && (
+                  <p className="mt-1 text-[10px] text-amber-600 font-semibold">
+                    ต่างจากยอดคำนวณ {fmtB(Math.abs(Number(form.invoice_total) - parseFloat(totalCost)))} — เอกสารจะพิมพ์ยอดตามบิล
+                  </p>
+                )}
+              </div>
 
               {isVehicleAsset(selectedAsset) && <div className="flex items-center gap-2">
                 <input type="checkbox" id="full_tank" checked={form.full_tank} onChange={set('full_tank')}

@@ -5,6 +5,7 @@
 // รายการต่อกันทั้งช่วงเวลา แล้วเติมแถวว่างให้เต็มหน้าเหมือนกระดาษเปล่าที่รอเขียนมือ
 
 import { FUEL_LABEL } from './fleetAssets.js'
+import { fuelRecordAmount } from './fleetFuelAmount.js'
 import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, GOV_PAGE_MARGIN, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
 
 // A4 แนวตั้ง พื้นที่พิมพ์สูง 276 มม. (297 − ขอบบน 12 − ขอบล่าง 9)
@@ -71,15 +72,11 @@ export function ledgerFuelTypeLabel(record) {
     || String(record?.fuel_type ?? '').trim()
 }
 
+// ยอดในช่อง "จำนวน(บาท)" ต้องเป็นยอดตามบิลที่ปั๊มออกให้ ไม่ใช่ลิตรคูณราคา — ใบนี้เอาไป
+// สอบยันกับใบกำกับภาษีและฎีกา ต่างกันหลักสตางค์ต่อรายการ พอรวมทั้งเดือนแล้วยอดไม่ตรง
+// (ตัดสินใจว่ายอดไหนถูกที่ fleetFuelAmount.js ที่เดียว ห้ามคำนวณเองซ้ำที่นี่)
 function recordCost(record) {
-  if (record?.total_cost !== null && record?.total_cost !== undefined && record?.total_cost !== '') {
-    const stored = Number(record.total_cost)
-    if (Number.isFinite(stored)) return stored
-  }
-  const liters = Number(record?.liters)
-  const price = Number(record?.price_per_liter)
-  if (Number.isFinite(liters) && Number.isFinite(price)) return liters * price
-  return 0
+  return fuelRecordAmount(record) ?? 0
 }
 
 export function ledgerTotals(records) {
