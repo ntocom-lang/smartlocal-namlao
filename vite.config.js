@@ -2,6 +2,44 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import { checkBehind, formatWarning } from './scripts/check-behind.mjs'
+
+// เตือนเมื่อ master ขยับระหว่างที่ dev server เปิดค้างอยู่
+//
+// predev ตรวจให้แค่ตอนสตาร์ท ซึ่งไม่พอ เพราะ dev server ที่เปิดทิ้งไว้ข้ามวัน
+// ผ่านด่านนั้นไปตั้งแต่ตอนที่โค้ดยังใหม่อยู่ (เกิดจริง 2026-09-07)
+// ตัวนี้ไม่หยุด server และไม่แตะเบราว์เซอร์ — แค่พิมพ์เตือนใน terminal ที่รัน vite
+const syncWatcher = () => ({
+  name: 'smartlocal-sync-watcher',
+  apply: 'serve',
+  configureServer(server) {
+    if (process.env.SKIP_SYNC_CHECK === '1') return
+
+    // 3 นาที: ถี่พอที่จะรู้ตัวก่อนไล่หาสาเหตุผิดทาง แต่ไม่ยิง git fetch ถี่จนรบกวน
+    const INTERVAL_MS = 3 * 60 * 1000
+    let lastReportedHead = null
+
+    const tick = () => {
+      let result
+      try {
+        result = checkBehind()
+      } catch {
+        return // ตรวจไม่ได้ก็ปล่อยไป ห้ามทำให้ dev server ล้ม
+      }
+      if (result.ok) return
+
+      // เตือนซ้ำเฉพาะตอนที่ upstream ขยับใหม่ ไม่ใช่ทุก 3 นาทีจนกลายเป็นเสียงรบกวน
+      const head = result.commits[0]
+      if (head === lastReportedHead) return
+      lastReportedHead = head
+      server.config.logger.warn(formatWarning(result))
+    }
+
+    const timer = setInterval(tick, INTERVAL_MS)
+    timer.unref?.() // ห้ามกัน process ไม่ให้ปิดตอน Ctrl+C
+    server.httpServer?.on('close', () => clearInterval(timer))
+  },
+})
 
 export default defineConfig({
   base: '/',
@@ -25,6 +63,7 @@ export default defineConfig({
     }
   },
   plugins: [
+    syncWatcher(),
     react(),
     tailwindcss(),
     VitePWA({

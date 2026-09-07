@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/check-behind.mjs",
     "dev": "vite",
     "build": "vite build && node scripts/postbuild.js",
     "lint": "eslint .",
