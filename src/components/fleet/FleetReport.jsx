@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { assetIdentifier, assetOptionLabel, FUEL_LABEL, meterUnitShort } from '../../lib/fleetAssets'
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { buildFleetForm4Html } from '../../lib/fleetForm4Print'
+import { fuelRecordAmount } from '../../lib/fleetFuelAmount'
 import { buildFleetFuelLedgerHtml } from '../../lib/fleetFuelLedgerPrint'
 import {
   buildFleetFuelMemoHtml, buildMemoRows, defaultAddressee, memoMonthLabel,
@@ -192,7 +193,9 @@ export default function FleetReport({ tenant }) {
   /* ── Summaries ── */
   const totalKm       = data?.trips.reduce((s, t) => s + (t.odometer_end && t.odometer_start ? t.odometer_end - t.odometer_start : 0), 0) ?? 0
   const totalLiters   = data?.fuel.reduce((s, f) => s + (f.liters ?? 0), 0) ?? 0
-  const totalFuelCost = data?.fuel.reduce((s, f) => s + (f.total_cost ?? ((f.liters ?? 0) * (f.price_per_liter ?? 0))), 0) ?? 0
+  // ยอดตามบิลมาก่อนยอดคำนวณ (ดู fleetFuelAmount.js) — ต้องตรงกับสมุดคุมและบันทึกข้อความ
+  // ที่พิมพ์จากข้อมูลชุดเดียวกัน ไม่งั้นรายงานผู้บริหารจะไม่ตรงกับเอกสารที่ส่งกองคลัง
+  const totalFuelCost = data?.fuel.reduce((s, f) => s + (fuelRecordAmount(f) ?? 0), 0) ?? 0
   const totalMaintCost = data?.maint.reduce((s, m) => s + (m.cost ?? 0), 0) ?? 0
 
   const selVehicleName = selVehicle ? (vehicles.find(v => v.id === selVehicle)?.name ?? '') : 'ทุกทรัพย์สิน'
@@ -292,7 +295,7 @@ export default function FleetReport({ tenant }) {
     setPrintingLedger(true)
     try {
       const result = await fetchAllRows(() => supabase.from('fleet_fuel_records')
-        .select('id,filled_at,created_at,receipt_no,fuel_type,fuel_other_name,price_per_liter,liters,total_cost,notes')
+        .select('id,filled_at,created_at,receipt_no,fuel_type,fuel_other_name,price_per_liter,liters,total_cost,invoice_total,notes')
         .eq('municipality_id', tenant.id)
         .eq('vehicle_id', selVehicle)
         .gte('filled_at', rangeFrom).lte('filled_at', rangeTo)
@@ -373,7 +376,7 @@ export default function FleetReport({ tenant }) {
           .eq('municipality_id', tenant.id).eq('status', 'completed')
           .gte('trip_date', rangeFrom).lt('trip_date', endDay).order('trip_date').order('id')),
         fetchAllRows(() => supabase.from('fleet_fuel_records')
-          .select('id,vehicle_id,filled_at,liters,price_per_liter,total_cost')
+          .select('id,vehicle_id,filled_at,liters,price_per_liter,total_cost,invoice_total')
           .eq('municipality_id', tenant.id)
           .gte('filled_at', rangeFrom).lte('filled_at', rangeTo).order('filled_at').order('id')),
         supabase.from('fleet_vehicle_types').select('value,label').eq('municipality_id', tenant.id),
@@ -445,7 +448,7 @@ export default function FleetReport({ tenant }) {
         <td align="right">${km ? km.toLocaleString()+'&nbsp;กม.' : '—'}</td></tr>`
     }).join('')
     const fuelRows = (data?.fuel ?? []).map((f, i) => {
-      const cost = f.total_cost ?? (f.liters??0)*(f.price_per_liter??0)
+      const cost = fuelRecordAmount(f) ?? 0
       return `<tr style="background:${i%2?'#f5f8fc':'#fff'}">
         <td>${i+1}</td><td>${thDate(f.filled_at)}</td>
         <td>${escapeHtml(f.fleet_vehicles?.name)} ${escapeHtml(assetIdentifier(f.fleet_vehicles))}</td>
@@ -531,7 +534,7 @@ export default function FleetReport({ tenant }) {
         i+1, thDate(f.filled_at), f.fleet_vehicles?.name??'', assetIdentifier(f.fleet_vehicles),
         f.fuel_type === 'other' ? f.fuel_other_name || 'อื่นๆ' : FUEL_LABEL[f.fuel_type] || f.fuel_type || '',
         f.liters??'', f.price_per_liter??'',
-        Math.round(f.total_cost ?? (f.liters??0)*(f.price_per_liter??0)),
+        fuelRecordAmount(f) ?? '',
         f.odometer??'', meterUnitShort(f.fleet_vehicles), f.fuel_station??'', f.receipt_no??'',
         f.efficiency_kml ?? '', f.is_anomaly ? 'ผิดปกติ' : '', f.anomaly_reason ?? '',
       ]),
@@ -783,7 +786,7 @@ export default function FleetReport({ tenant }) {
             mobile={
               <div className="space-y-1.5">
                 {data.fuel.map(f => {
-                  const cost = f.total_cost ?? (f.liters ?? 0) * (f.price_per_liter ?? 0)
+                  const cost = fuelRecordAmount(f) ?? 0
                   return (
                     <div key={f.id} className="bg-white rounded-xl border border-gray-100 shadow-sm p-3">
                       <div className="flex items-start justify-between gap-2">
@@ -811,7 +814,7 @@ export default function FleetReport({ tenant }) {
               <THdr cols={['ที่','วันที่','ทรัพย์สิน','เชื้อเพลิง','ลิตร','ราคา/ล.','รวม (บาท)','ปั๊ม','ตรวจสอบ']} />
               <tbody>
                 {data.fuel.map((f, i) => {
-                  const cost = f.total_cost ?? (f.liters ?? 0) * (f.price_per_liter ?? 0)
+                  const cost = fuelRecordAmount(f) ?? 0
                   return (
                     <tr key={f.id} style={{ backgroundColor: i%2===0?'#fff':'#f5f8fc' }}>
                       <td className="px-3 py-2 text-xs text-gray-400 border-r border-gray-200 text-center">{i+1}</td>

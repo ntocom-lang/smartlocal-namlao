@@ -9,6 +9,7 @@
 
 import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, GOV_PAGE_MARGIN, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
 import { MONTHS_TH } from './thaiDate.js'
+import { fuelRecordAmount } from './fleetFuelAmount.js'
 
 function esc(value) {
   return String(value ?? '')
@@ -95,13 +96,10 @@ function tripDistanceKm(trip) {
   return 0
 }
 
+// ยอดรวมรายคันต้องบวกจากยอดตามบิล ไม่ใช่ยอดคำนวณ ไม่งั้นเลขในบันทึกข้อความจะไม่ตรงกับ
+// สมุดคุมที่พิมพ์คู่กัน ทั้งที่มาจากข้อมูลชุดเดียวกัน (ดู fleetFuelAmount.js)
 function fuelCost(record) {
-  const stored = Number(record?.total_cost)
-  if (Number.isFinite(stored) && String(record?.total_cost ?? '') !== '') return stored
-  const liters = Number(record?.liters)
-  const price = Number(record?.price_per_liter)
-  if (Number.isFinite(liters) && Number.isFinite(price)) return liters * price
-  return 0
+  return fuelRecordAmount(record) ?? 0
 }
 
 /**
