@@ -47,6 +47,10 @@ tmp/
 # ภาพจาก tests/screenshot-local-build.mjs — ของใช้แล้วทิ้ง ไม่ต้องเข้า repo
 screenshots/
 
+# สคริปต์ debug ชั่วคราวของแต่ละ session — หลายตัวอ่าน .env.local แล้วยิง Supabase ตัวจริง
+# (localhost ใช้ DB เดียวกับ production) ไม่ควรหลุดเข้า repo ให้ใครรันต่อโดยไม่รู้ตัว
+scratch/
+
 # Claude Code — settings ส่วนตัวต่อเครื่อง (allowlist สะสม path/token จากคำสั่งที่เคยรันเอง)
 # settings.json = ของกลางของโปรเจกต์ commit ได้ / settings.local.json = ของเครื่องใครเครื่องมัน
 .claude/settings.local.json
