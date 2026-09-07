@@ -62,7 +62,7 @@ function SlaBadge({ dueDate, status }) {
 const DEFAULT_CATEGORY_LABEL = {
   road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าส่องสว่าง',
   trash: 'ขยะ/ความสะอาด', water: 'น้ำประปา',
-  flood: 'น้ำท่วม/ระบายน้ำ', tree: 'ตัดต้นไม้',
+  flood: 'น้ำท่วม/ระบายน้ำ', tree: 'ต้นไม้/สวนสาธารณะ',
   noise: 'แจ้งเหตุรำคาญ', drain: 'ท่อระบายน้ำ',
   waste_water: 'น้ำเสีย', suction: 'ดูดสิ่งปฏิกูล',
   manhole: 'ฝาท่อระบายน้ำ', vendor: 'ขายของบนทางสาธารณะ',
