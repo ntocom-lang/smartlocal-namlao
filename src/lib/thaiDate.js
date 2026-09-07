@@ -17,6 +17,23 @@ export function thaiDateFromDateInput(value) {
   return `${date.getDate()} ${MONTHS_TH[date.getMonth()]} พ.ศ. ${date.getFullYear() + 543}`
 }
 
+// วันที่ไทยเต็มพร้อมเวลา "5 กันยายน พ.ศ. 2569 เวลา 21.42 น." — ใช้กับบรรทัดกำกับการลงชื่อ
+// อิเล็กทรอนิกส์บนใบพิมพ์ ต้องมีเวลาด้วยเพราะเป็นหลักฐานว่าลงชื่อเมื่อใด ไม่ใช่แค่วันไหน
+//
+// รับค่าที่ new Date() ตีความได้ (timestamptz จาก Postgres) แล้วแสดงตามเวลาเครื่องผู้พิมพ์
+// คืนค่าว่างเมื่อค่าไม่ถูกต้อง เพื่อให้ผู้เรียกเลือกไม่พิมพ์บรรทัดนั้นแทนการโชว์ Invalid Date
+//
+// ⚠️ ซ้ำกับ signedAtText() ใน wasteCollectionCancelPrint.js ที่เขียนไว้ก่อน — ตัวนั้นยังใช้ของ
+// ตัวเองอยู่ ควรยุบมาใช้ตัวนี้ตัวเดียวเมื่อมีโอกาสแตะไฟล์นั้น
+export function thaiDateTimeText(value) {
+  if (!value) return ''
+  const at = new Date(value)
+  if (Number.isNaN(at.getTime())) return ''
+  const hh = String(at.getHours()).padStart(2, '0')
+  const mm = String(at.getMinutes()).padStart(2, '0')
+  return `${at.getDate()} ${MONTHS_TH[at.getMonth()]} พ.ศ. ${at.getFullYear() + 543} เวลา ${hh}.${mm} น.`
+}
+
 // แปลง Date เป็นสตริง YYYY-MM-DD ตาม "วันตามปฏิทินของเครื่องผู้ใช้" — ใช้แทน
 // toISOString().split('T')[0] ทุกจุดที่ค่านั้นจะถูกเทียบกับคอลัมน์ชนิด date ของ Postgres
 // (events.event_date, complaints.due_date, civil_projects.start_date, infrastructure_works.work_date)

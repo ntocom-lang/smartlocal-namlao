@@ -224,6 +224,8 @@ function DocDetailSheet({ req, onClose, tenant }) {
       tenant,
       thDate: thaiDate(req.created_at),
       referenceNo: req.id.slice(0, 8).toUpperCase(),
+      // เวลาที่ลงชื่อตอนยื่น ไม่ใช่เวลาที่กดพิมพ์ซ้ำ — ใบที่พิมพ์ใหม่ต้องแสดงวันเวลาเดิมเสมอ
+      signedAt: req.permit_form_data?.signed_at ?? req.created_at,
     })
   }
 
