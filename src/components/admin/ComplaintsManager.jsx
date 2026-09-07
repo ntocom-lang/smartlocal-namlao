@@ -1238,6 +1238,13 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
               <RejectButton status={c.status} id={c.id}
                 onUpdate={(id, next, wp = [], note = null) => { onUpdate(id, next, wp, note); onClose() }}
                 loading={updating} />
+              {/* พิมพ์ได้ตั้งแต่ยังไม่จบเรื่อง — เดิมสถานะ "กำลังดำเนินการ" เป็นสถานะเดียวที่ไม่มีปุ่มนี้
+                  ทั้งที่เป็นช่วงที่ต้องใช้กระดาษจริงที่สุด (เช่น ยืมพัสดุ ต้องมีใบให้ผู้ยืมลงชื่อตอนรับของ)
+                  ฝั่ง DB ไม่ได้ผูกเงื่อนไขสถานะไว้ prepare_complaint_print เรียกได้ทุกสถานะอยู่แล้ว */}
+              <button onClick={handlePrintComplaint}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
+                <Printer size={13} /> พิมพ์
+              </button>
               {(currentUserRole === 'admin' || currentUserRole === 'superadmin') && (
                 <button onClick={handleDelete} disabled={deleting}
                   className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 transition-colors disabled:opacity-50">
