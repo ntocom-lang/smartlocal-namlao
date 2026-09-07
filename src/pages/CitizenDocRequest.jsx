@@ -7,6 +7,7 @@ import { notifyTelegram } from '../lib/notifyTelegram'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
 import BuildingPermitWizard from './BuildingPermitWizard'
 import WasteCollectionRequestWizard from './WasteCollectionRequestWizard'
+import WasteCollectionCancelWizard from './WasteCollectionCancelWizard'
 import { withoutRemovedTypes } from '../lib/documentTypes'
 
 // ที่อยู่ผู้ยื่นคำขอ = ที่อยู่ในเขตของหน่วยงานเสมอ (ระบบนี้แยกตามหน่วยงาน ใครหน่วยงานนั้น)
@@ -79,6 +80,18 @@ const BASE_DOC_TYPES = [
     color:   '#0e7490',
     bg:      '#ecfeff',
     border:  '#67e8f9',
+  },
+  {
+    value:   'waste_collection_cancel',
+    label:   'ขอยกเลิกการเก็บขนขยะมูลฝอย',
+    emoji:   '🚫',
+    desc:    'แจ้งให้ อปท. หยุดจัดเก็บขยะจากบ้านหรือสถานที่ที่เคยขอรับบริการไว้',
+    // บังคับล็อกอินด้วยเหตุผลที่หนักกว่าใบขอรับบริการ — คำร้องนี้ไปหยุดบริการและแตะยอด
+    // ค่าธรรมเนียมของบ้านหลังหนึ่ง ถ้ายื่นได้โดยไม่ยืนยันตัวตน ใครก็ยกเลิกบ้านคนอื่นได้
+    requiresAuth: true,
+    color:   '#be123c',
+    bg:      '#fff1f2',
+    border:  '#fecdd3',
   },
   {
     value:   'building_permit',
@@ -192,6 +205,7 @@ export default function CitizenDocRequest() {
   // ตัวจริงที่กองช่าง — ต้องเขียนข้อความให้ชัดว่าไม่ใช่การยื่นขออนุญาตที่สมบูรณ์แล้ว
   const isPermitIntent = selected?.value === 'building_permit'
   const isWasteCollectionRequest = selected?.value === 'waste_collection_request'
+  const isWasteCollectionCancel = selected?.value === 'waste_collection_cancel'
   const addressSuffix = tenantAddressSuffix(tenant)
   const fullName = joinThaiFullName(form.name_title, form.name_first, form.name_last)
 
@@ -410,6 +424,12 @@ export default function CitizenDocRequest() {
   // วันที่เริ่มบริการ และการยอมรับค่าบริการ) จึงใช้ฟอร์มเฉพาะ ไม่ปนกับฟอร์มสอบถามค่าธรรมเนียม
   if (isWasteCollectionRequest) {
     return <WasteCollectionRequestWizard tenant={tenant} session={session} onBack={() => setSelected(null)} />
+  }
+
+  // ขอยกเลิกก็เป็นฟอร์มเฉพาะด้วยเหตุผลเดียวกัน และมีข้อมูลที่ใบขอรับบริการไม่มี — ผู้ใช้บริการ
+  // ที่จะถูกยกเลิกอาจเป็นคนละคนกับผู้ยื่น (ยื่นแทนพ่อแม่/เจ้าของบ้านเช่า) ตามที่ต้นฉบับรองรับ
+  if (isWasteCollectionCancel) {
+    return <WasteCollectionCancelWizard tenant={tenant} session={session} onBack={() => setSelected(null)} />
   }
 
   // ─── Step 2: Form ──────────────────────────────────────────────────────────
