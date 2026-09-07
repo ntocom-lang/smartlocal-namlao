@@ -1,58 +1,70 @@
-// ส่งผู้ใช้ออกไปเบราว์เซอร์ที่ล็อกอิน Google/LINE ได้จริง
-//
-// ที่ต้องมีไฟล์นี้: ตรรกะเดียวกันถูกใช้สองจุดที่ไกลกัน — InAppBrowserGate (เด้งออกจาก webview
-// ของ LINE/Facebook) กับ AuthPage (ผู้ใช้เปิดจาก QR มาโผล่ใน Mi/Vivo Browser ตรงๆ ซึ่งไม่ใช่
-// webview จึงไม่ผ่าน gate) ถ้าปล่อยให้ต่างคนต่างประกอบ intent:// เอง วันหน้าแก้ที่เดียวแล้ว
-// อีกที่ค้างของเก่า เป็นกับดักแบบเดียวกับ detectTenantSlug/computeBasename ที่เคยพังมาแล้ว
-
+// เปิดหน้าเว็บของระบบก่อนเริ่ม OAuth; ห้ามย้าย callback/token ไปอีกเบราว์เซอร์
 export const CHROME_PKG = 'com.android.chrome'
 
-/**
- * เปิด URL ปัจจุบันในเบราว์เซอร์อื่นบน Android — pkg = null คือปล่อยให้ระบบเลือก default browser
- *
- * ต้องเจาะจง Chrome เป็นตัวแรกเสมอ: Mi / Vivo / Oppo / Samsung Browser ไม่มีคุกกี้
- * accounts.google.com ค้างอยู่ และมักบล็อกการเด้ง scheme line:// ผลคือทั้ง Google และ LINE
- * ตกไปหน้าให้กรอกอีเมล+รหัสผ่าน ซึ่งประชาชนส่วนใหญ่จำรหัส Google ไม่ได้ และบัญชี LINE
- * จำนวนมากไม่เคยตั้งรหัสผ่านไว้เลย → สมัครไม่จบสักราย
- * Chrome บน Android ผูกกับบัญชีในเครื่องอยู่แล้ว จึงขึ้นหน้า "เลือกบัญชี" ให้เลย และเป็นตัวเดียว
- * ในกลุ่มนี้ที่ยิง beforeinstallprompt → ปุ่ม "ติดตั้งแอป" กลับมาโผล่ด้วย
- *
- * ห้ามใส่ S.browser_fallback_url ชี้กลับ URL เดิมเป็นทางสำรอง: เครื่องที่ไม่มี Chrome จะโหลด URL
- * นั้นใน webview เดิม (LINE) แล้ววนกลับเข้า gate ยิง intent ซ้ำไม่รู้จบ — ให้ผู้เรียกไล่ทีละขั้นเอง
- */
-export function openInAndroidBrowser(pkg = CHROME_PKG) {
-  const withoutScheme = window.location.href.replace(/^https?:\/\//, '')
-  const pkgPart = pkg ? `package=${pkg};` : ''
-  window.location.href =
-    `intent://${withoutScheme}#Intent;scheme=https;action=android.intent.action.VIEW;${pkgPart}end`
+const OEM_BROWSERS = /SamsungBrowser\/|MiuiBrowser\/|HeyTapBrowser\/|OppoBrowser\/|VivoBrowser\/|HuaweiBrowser\/|UCBrowser\/|MQQBrowser\/|EdgA\/|OPR\/|YaBrowser\//i
+
+export function detectBrowserEnvironment(ua = navigator.userAgent || '') {
+  const isIOS = /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1)
+  const isAndroid = /Android/i.test(ua)
+  const isLine = /Line\//i.test(ua)
+  // fbclid เป็นเพียง tracking parameter: Safari/Chrome ที่เปิดลิงก์จาก Facebook ก็มีได้
+  const isInApp = isLine || /FBAN|FBAV|FBIOS|FB_IAB|Instagram|Twitter\/|MicroMessenger|GSA\/|; wv\)/i.test(ua)
+  return { isIOS, isAndroid, isLine, isInApp }
 }
 
-// LINE มีกลไกเปิดเบราว์เซอร์นอกของตัวเอง ใช้เป็นบันไดขั้นรองเมื่อ intent ที่ล็อก package ไม่ทำงาน
-export function openLineExternalBrowser() {
-  const sep = window.location.search ? '&' : '?'
-  window.location.replace(window.location.href + sep + 'openExternalBrowser=1')
-}
-
-// เบราว์เซอร์ประจำเครื่องยี่ห้อต่างๆ ที่ฐาน Chromium เหมือนกันแต่ไม่ใช่ Chrome จึงไม่มี session
-// ของบัญชี Google ในเครื่อง — UA ของทุกตัวมีคำว่า Chrome/ อยู่ด้วย เช็คด้วย Chrome/ อย่างเดียว
-// จึงตอบผิดหมด ต้องคัดชื่อยี่ห้อออกก่อน (ลำดับเดียวกับที่ deviceLabel.js อธิบายไว้)
-const OEM_BROWSERS =
-  /SamsungBrowser\/|MiuiBrowser\/|HeyTapBrowser\/|OppoBrowser\/|VivoBrowser\/|HuaweiBrowser\/|UCBrowser\/|MQQBrowser\/|EdgA\/|OPR\/|YaBrowser\//i
-
-/**
- * Android ที่เปิดอยู่ในเบราว์เซอร์ประจำเครื่อง (ไม่ใช่ Chrome และไม่ใช่ webview)
- *
- * webview ตัดออกเพราะเป็นงานของ InAppBrowserGate ซึ่งเด้งออกให้อัตโนมัติอยู่แล้ว
- * ที่นี่คือเคสสแกน QR ด้วยแอปกล้องแล้วระบบเปิด default browser ให้ตรงๆ — ไม่มีอะไรจับได้เลย
- * จนกว่าผู้ใช้จะกดปุ่มล็อกอิน
- *
- * Brave/Chromium อื่นที่ปลอม UA เป็น Chrome เป๊ะๆ จะถูกนับเป็น Chrome (ตรวจจาก UA ไม่ได้)
- * ผู้ใช้กลุ่มนั้นยังกรอกรหัสผ่านเข้าระบบได้ตามปกติ ไม่ได้เสียทางเข้า
- */
+// ใช้เพื่อเสนอทางเลือกเท่านั้น UA บอกไม่ได้ว่ามี Google/LINE session อยู่หรือไม่
 export function isAndroidNonChrome() {
   const ua = navigator.userAgent || ''
-  if (!/Android/i.test(ua)) return false
-  if (/; wv\)/i.test(ua)) return false
-  if (!/Chrome\//i.test(ua)) return true      // Firefox และเบราว์เซอร์นอกสาย Chromium
-  return OEM_BROWSERS.test(ua)
+  const env = detectBrowserEnvironment(ua)
+  if (!env.isAndroid || env.isInApp) return false
+  return !/Chrome\//i.test(ua) || OEM_BROWSERS.test(ua)
+}
+
+const AUTH_PARAMS = /^(?:code|state|nonce|token|token_hash|access_token|refresh_token|id_token|provider_token|provider_refresh_token|code_verifier|code_challenge|code_challenge_method|error|error_code|error_description|expires_in|expires_at|token_type|type|openExternalBrowser|openInAppBrowser)$/i
+
+export function browserHandoffUrl(href = window.location.href) {
+  const url = new URL(href)
+  if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) {
+    throw new Error('ลิงก์สำหรับเปิดเบราว์เซอร์ไม่ถูกต้อง')
+  }
+  url.hash = ''
+  for (const key of [...url.searchParams.keys()]) {
+    if (AUTH_PARAMS.test(key)) url.searchParams.delete(key)
+  }
+  return url.href
+}
+
+// รับเฉพาะ path ภายในแอป; next จาก URL ต้องไม่พาออกนอกเว็บหรือพ่วงข้อมูล OAuth
+export function authReturnPath(value) {
+  if (typeof value !== 'string' || !value.startsWith('/') || /^\/[/\\]/.test(value) || value.includes('\\') || [...value].some((c) => c.charCodeAt(0) <= 32)) return '/'
+  try {
+    const decoded = decodeURIComponent(value)
+    if (/^\/[/\\]/.test(decoded) || decoded.includes('\\') || [...decoded].some((c) => c.charCodeAt(0) < 32)) return '/'
+    const url = new URL(value, 'https://app.invalid')
+    if (url.origin !== 'https://app.invalid') return '/'
+    const normalized = decodeURIComponent(url.pathname)
+    if (/^\/[/\\]/.test(normalized) || normalized.includes('\\') || [...normalized].some((c) => c.charCodeAt(0) < 32)) return '/'
+    // ทางเข้าคำขอขยะส่งชนิดเอกสารกลับมาด้วย ต้องคงไว้หลัง login
+    const docType = url.searchParams.get('type')
+    const query = url.pathname === '/doc-request' && /^[a-z][a-z0-9_]{0,63}$/.test(docType ?? '')
+      ? `?type=${docType}` : ''
+    return url.pathname + query // ไม่ส่ง query อื่น/hash หรือข้อมูลฟอร์ม
+  } catch { return '/' }
+}
+
+// ต้องเรียกจากการแตะของผู้ใช้ และไม่มี fallback URL ที่วนกลับเข้า WebView
+export function openInAndroidBrowser(pkg = CHROME_PKG, href = window.location.href) {
+  if (pkg !== null && pkg !== CHROME_PKG) throw new Error('ไม่รองรับเบราว์เซอร์นี้')
+  const url = new URL(browserHandoffUrl(href))
+  const pkgPart = pkg ? `package=${pkg};` : ''
+  window.location.href = `intent://${url.host}${url.pathname}${url.search}#Intent;scheme=${url.protocol.slice(0, -1)};action=android.intent.action.VIEW;${pkgPart}end`
+}
+
+// LINE เปิด default browser ของเครื่อง ไม่รับประกันว่าเป็น Chrome หรือ Safari
+export function openLineExternalBrowser(href = window.location.href) {
+  const url = new URL(browserHandoffUrl(href))
+  url.searchParams.set('openExternalBrowser', '1')
+  if (url.href === window.location.href) return false
+  window.location.assign ? window.location.assign(url.href) : window.location.replace(url.href)
+  return true
 }

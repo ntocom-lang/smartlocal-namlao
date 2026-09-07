@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase, setRememberSession } from '../lib/supabase'
 import { isNetworkAuthError } from '../lib/authErrors'
@@ -9,7 +9,8 @@ import { Mail, Lock, Loader2, UserCircle2, Phone, Eye, EyeOff, ArrowLeft, Smartp
 import { NAME_TITLES, joinThaiFullName } from '../lib/thaiName'
 import { phoneToLoginEmail, normalizeThaiPhone } from '../lib/authProviders'
 import { validateNewPassword, PASSWORD_HINT } from '../lib/passwordPolicy'
-import { isAndroidNonChrome, openInAndroidBrowser } from '../lib/externalBrowser'
+import { authReturnPath, detectBrowserEnvironment, isAndroidNonChrome } from '../lib/externalBrowser'
+import { useExternalBrowserHelp } from '../components/InAppBrowserGate'
 
 // พิมพ์อีเมลมาก็ใช้ตามนั้น พิมพ์เบอร์มาก็แปลงเป็นอีเมลปลอมรูปแบบเดียวของระบบ
 //
@@ -24,57 +25,26 @@ function resolveLoginEmail(input) {
 
 const SKIP_CHROME_HINT = 'sl-skip-chrome-hint'
 
-// แผ่นถามก่อนเริ่ม OAuth เมื่อเปิดอยู่ในเบราว์เซอร์ประจำเครื่องที่ไม่ใช่ Chrome
-//
-// ตั้งใจ "ถาม" ไม่ใช่เด้งไป Chrome เงียบๆ: เครื่องที่ไม่มี Chrome (Huawei ที่ไม่มี GMS หรือผู้ใช้
-// ปิด Chrome ไว้) intent:// จะเงียบสนิท ปุ่มจะดูเหมือนเสีย ผู้ใช้ต้องมีทางไปต่อในเบราว์เซอร์เดิม
-// เสมอ แม้ทางนั้นจะต้องกรอกรหัสผ่านเองก็ตาม
-function ChromeHintSheet({ onOpenChrome, onContinue, onClose }) {
-  return (
-    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50 px-4 pb-4"
-         onClick={onClose}>
-      <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl"
-           onClick={(e) => e.stopPropagation()}>
-        <p className="font-bold text-gray-800 text-base mb-2">เปิดใน Chrome ก่อนไหม?</p>
-        <p className="text-sm text-gray-500 leading-relaxed mb-4">
-          เบราว์เซอร์ที่ใช้อยู่นี้ไม่ได้ผูกกับบัญชี Google ในเครื่อง กดสมัครด้วย Google หรือ LINE
-          แล้วมักโดนถามอีเมลกับรหัสผ่าน ถ้าเปิดใน Chrome จะขึ้นให้เลือกบัญชีได้เลย
-        </p>
-        <button type="button" onClick={onOpenChrome}
-          className="w-full py-3.5 rounded-2xl font-bold text-sm text-white active:scale-95 transition-transform"
-          style={{ background: 'var(--color-primary)' }}>
-          เปิดใน Chrome
-        </button>
-        <p className="text-[12px] text-gray-400 text-center mt-2 leading-relaxed">
-          เปิดแล้วกดปุ่ม Google หรือ LINE ซ้ำอีกครั้งในหน้าที่เด้งขึ้นมา
-        </p>
-        <button type="button" onClick={onContinue}
-          className="w-full mt-3 py-3 rounded-2xl font-semibold text-sm text-gray-600 bg-gray-100 active:scale-95 transition-transform">
-          ทำต่อในเบราว์เซอร์นี้
-        </button>
-      </div>
-    </div>
-  )
-}
-
 export default function AuthPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const { tenant } = useTenant()
-  const from = location.state?.from ?? '/'
+  const params = new URLSearchParams(location.search)
+  const from = authReturnPath(location.state?.from ?? params.get('next') ?? '/')
+  const showBrowserHelp = useExternalBrowserHelp()
+  const browserEnv = detectBrowserEnvironment()
 
-  const [mode, setMode] = useState('login') // 'login' | 'register' | 'forgot'
+  const [mode, setMode] = useState(() => params.get('mode') === 'register' ? 'register' : 'login') // 'login' | 'register' | 'forgot'
   const [form, setForm] = useState({ email: '', password: '', name_title: '', name_first: '', name_last: '', phone: '' })
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState(() => location.state?.oauthError ? 'เข้าสู่ระบบด้วย LINE/Google ไม่สำเร็จ ลองทางเข้าหน้าเว็บ LINE ด้านล่าง หรือใช้บัญชีเบอร์โทร / รหัสผ่านเดิม' : '')
 
   useEffect(() => {
     if (location.state?.oauthError) {
-      setError('เข้าสู่ระบบด้วย LINE/Google ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')
       // clear oauthError จาก history เพื่อไม่ให้แสดงซ้ำเมื่อกด Back กลับมา
-      navigate(location.pathname, { replace: true, state: { from } })
+      navigate(location.pathname + location.search, { replace: true, state: { from } })
     }
-  }, [])
+  }, [from, location.pathname, location.search, location.state?.oauthError, navigate])
   const [success, setSuccess] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   // ค่าเริ่มต้น = จำไว้ ให้ตรงกับพฤติกรรมเดิมของระบบ และกติกาที่ว่าผู้ใช้ต้องกดออกเอง
@@ -85,72 +55,118 @@ export default function AuthPage() {
   const [loadingLineWeb, setLoadingLineWeb] = useState(false)
   const [forgotEmail, setForgotEmail] = useState('')
   const [showOfficeHelp, setShowOfficeHelp] = useState(false)
-  const [chromeHint, setChromeHint] = useState(null)
+  const [lineReady, setLineReady] = useState(null)
+  const oauthBusy = useRef(false)
+  const oauthTimer = useRef(null)
+  const oauthAttempt = useRef(0)
+  const authForm = useRef(null)
+
+  // Back/bfcache หรือกลับจากแอปต้องคืนปุ่มให้ลองใหม่ได้
+  useEffect(() => {
+    const reset = () => {
+      oauthAttempt.current += 1
+      oauthBusy.current = false
+      clearTimeout(oauthTimer.current)
+      setLoadingGoogle(false)
+      setLoadingLine(false)
+      setLoadingLineWeb(false)
+      setLineReady(null)
+    }
+    const onVisible = () => { if (document.visibilityState === 'visible') reset() }
+    window.addEventListener('pageshow', reset)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      oauthAttempt.current += 1
+      clearTimeout(oauthTimer.current)
+      window.removeEventListener('pageshow', reset)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [])
 
   const set = (f) => (e) => setForm((p) => ({ ...p, [f]: e.target.value }))
 
   function storeOauthFrom() {
-    if (from && from !== '/') sessionStorage.setItem('oauth_from', from)
+    try {
+      if (from !== '/') sessionStorage.setItem('oauth_from', from)
+      else sessionStorage.removeItem('oauth_from')
+    } catch { /* storage ถูกปิด: login ยังไปต่อได้ แต่กลับหน้าแรก */ }
   }
 
-  // Android ที่เปิดอยู่ในเบราว์เซอร์ประจำเครื่อง (สแกน QR ด้วยแอปกล้องมักได้ตัวนี้ ไม่ใช่ Chrome)
-  // ไม่มี session ของบัญชี Google ในเครื่อง และมักบล็อกการเด้ง scheme line:// กดไปก็เจอหน้าให้
-  // กรอกรหัสผ่านที่ผู้ใช้ส่วนใหญ่ไม่มี จึงถามก่อนหนึ่งจังหวะ
-  //
-  // InAppBrowserGate ครอบเฉพาะ webview ของ LINE/Facebook เคสนี้ไม่ใช่ webview จึงหลุดมาถึงนี่
-  // ถามครั้งเดียวต่อแท็บ: ผู้ใช้ที่ยืนยันว่าจะอยู่ที่เดิมแล้วไม่ต้องเจอซ้ำทุกปุ่ม
+  function openBrowserHelp(required = true, onContinue) {
+    // สร้างลิงก์ใหม่ ไม่คัด callback/token หรือข้อมูลที่กรอกค้างไปด้วย
+    const url = new URL(appUrl('/auth'))
+    if (mode === 'register') url.searchParams.set('mode', 'register')
+    if (from !== '/') url.searchParams.set('next', from)
+    showBrowserHelp?.({ url: url.href, required, onContinue })
+  }
+
   function startOAuth(provider, opts) {
+    if (oauthBusy.current) return
+    setLineReady(null)
+    // LINE รองรับ LINE browser; Google ต้องออกจาก embedded browser ก่อน
+    if (browserEnv.isInApp && (provider === 'google' || !browserEnv.isLine)) {
+      openBrowserHelp(true)
+      return
+    }
     let skipped = false
-    try { skipped = sessionStorage.getItem(SKIP_CHROME_HINT) === '1' } catch { /* storage ถูกปิด: ถามซ้ำได้ ไม่เสียหาย */ }
-    if (!skipped && isAndroidNonChrome()) {
-      setChromeHint({ run: () => runOAuth(provider, opts) })
+    try { skipped = sessionStorage.getItem(SKIP_CHROME_HINT) === '1' } catch { /* ใช้ค่า default */ }
+    if (provider === 'google' && !skipped && isAndroidNonChrome()) {
+      openBrowserHelp(false, () => {
+        try { sessionStorage.setItem(SKIP_CHROME_HINT, '1') } catch { /* ไม่ขวาง login */ }
+        runOAuth(provider, opts)
+      })
       return
     }
     return runOAuth(provider, opts)
   }
 
-  function continueInThisBrowser() {
-    try { sessionStorage.setItem(SKIP_CHROME_HINT, '1') } catch { /* storage ถูกปิด: ถามซ้ำได้ ไม่เสียหาย */ }
-    const pending = chromeHint
-    setChromeHint(null)
-    pending?.run()
-  }
-
-  // ปุ่ม OAuth ต้องปลดล็อกตัวเองได้เสมอเมื่อไปต่อไม่ได้
-  //
-  // เดิมเช็คแค่ `if (err)` ซึ่งครอบเฉพาะกรณี signInWithOAuth คืน error object กลับมา แต่ตัวมัน
-  // "reject" ได้ด้วย (เน็ตหลุด หรือ timeout 25 วิของ fetchWithTimeout สั่ง abort) พอ await โยน
-  // ออกไป บรรทัด setLoadingXxx(false) ไม่มีวันได้รัน ปุ่มเลยค้างเป็นสปินเนอร์ disabled ถาวร
-  // ผู้ใช้กดอะไรไม่ได้อีกเลยจนกว่าจะรีเฟรชหน้าเอง
-  //
-  // หมายเหตุ: ถ้าสำเร็จจริง เบราว์เซอร์จะ redirect ออกไปหน้า provider ตั้งแต่ก่อนถึง finally
-  // สปินเนอร์ที่ยังหมุนอยู่ระหว่างนั้นจึงถูกต้องแล้ว — finally มีผลเฉพาะตอนไปต่อไม่ได้
   async function runOAuth(provider, { setLoading: setProviderLoading, errorText, queryParams }) {
+    if (oauthBusy.current) return
+    oauthBusy.current = true
+    const attempt = ++oauthAttempt.current
     storeOauthFrom()
-    // OAuth ไม่มีช่องติ๊ก "จำการเข้าสู่ระบบ" และผู้ใช้กลุ่มนี้คือประชาชนบนมือถือตัวเอง
-    // ตั้งเป็นจำไว้เสมอ ไม่งั้น session จะหายทุกครั้งที่ปิดแท็บ
     setRememberSession(true)
     setProviderLoading(true)
     setError('')
-    try {
-      const { error: err } = await supabase.auth.signInWithOAuth({
-        provider,
-        // ต้องเป็น appUrl() ไม่ใช่ origin เปล่าๆ — deployment แบบ path-based
-        // (smartlocal.vercel.app/{slug}/...) จะถูกตัด slug ทิ้ง พอ provider ส่งกลับมาที่ origin
-        // detectTenantSlug() หา slug ไม่เจอ แอปขึ้น "ไม่พบรหัสหน่วยงาน" และ checkAndFixProfile
-        // ไม่ถูกเรียก บัญชีที่สมัครใหม่จึงค้างเป็น municipality_id = null ถาวร
-        // queryParams ถูกต่อท้าย URL /authorize ของ GoTrue แล้วส่งต่อไปยัง provider ตัวจริง
-        // (GoTrue ตัดทิ้งเฉพาะพารามิเตอร์ที่ตัวเองคุม เช่น redirect_uri/state/code_challenge
-        // ที่เหลือ forward ให้หมด) ใช้สั่งพฤติกรรมฝั่ง provider ได้โดยไม่ต้องประกอบ URL เอง
-        options: { redirectTo: appUrl('/'), ...(queryParams ? { queryParams } : {}) },
-      })
-      if (err) setError(errorText)
-      else return // สำเร็จ = กำลัง redirect ออกไป ปล่อยสปินเนอร์ค้างไว้ตามเดิม
-    } catch (err) {
-      console.error(`[auth] signInWithOAuth(${provider}) ล้มเหลว:`, err?.message ?? err)
-      setError(`${errorText} — เซิร์ฟเวอร์ตอบช้าหรือสัญญาณขาดช่วง กรุณาลองใหม่`)
+    const release = () => {
+      oauthBusy.current = false
+      clearTimeout(oauthTimer.current)
+      setProviderLoading(false)
     }
-    setProviderLoading(false)
+    oauthTimer.current = setTimeout(() => {
+      if (attempt !== oauthAttempt.current) return
+      oauthAttempt.current += 1
+      release()
+      setError('ยังเปิดหน้าเข้าสู่ระบบไม่สำเร็จ ลองเปิดเบราว์เซอร์ หรือใช้บัญชีเบอร์โทร / รหัสผ่านเดิม')
+    }, 15000)
+    try {
+      const isLine = provider === 'custom:line'
+      const { data, error: err } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: appUrl('/'),
+          // ใช้ <a> จากการแตะจริงใน browser เดิม; Supabase ยังดูแล state/server redirect
+          ...(isLine ? { skipBrowserRedirect: true } : {}),
+          ...(queryParams ? { queryParams } : {}),
+        },
+      })
+      if (attempt !== oauthAttempt.current) return
+      if (err) throw err
+      if (isLine) {
+        const url = new URL(data?.url)
+        const authBase = new URL(import.meta.env.VITE_SUPABASE_URL)
+        if (url.origin !== authBase.origin || url.pathname !== `${authBase.pathname.replace(/\/$/, '')}/auth/v1/authorize`) {
+          throw new Error('Invalid authorization URL')
+        }
+        setLineReady({ url: url.href, webOnly: queryParams?.disable_auto_login === 'true' })
+        release()
+      }
+      // Google กำลังออกจากหน้า; timer/pageshow คืนปุ่มหาก browser ไม่ยอมเปิด
+    } catch {
+      if (attempt !== oauthAttempt.current) return
+      release()
+      setError(`${errorText} กรุณาลองใหม่ หรือใช้บัญชีเบอร์โทร / รหัสผ่านเดิม`)
+    }
   }
 
   // prompt=select_account บังคับให้ Google ถามว่าจะใช้บัญชีไหนทุกครั้ง แทนที่จะหยิบบัญชีที่
@@ -345,13 +361,6 @@ export default function AuthPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 pt-10 pb-28">
-      {chromeHint && (
-        <ChromeHintSheet
-          onOpenChrome={() => openInAndroidBrowser()}
-          onContinue={continueInThisBrowser}
-          onClose={() => setChromeHint(null)}
-        />
-      )}
       <div className="w-full max-w-sm bg-white rounded-3xl shadow-xl border border-gray-100 p-8">
 
 
@@ -381,7 +390,7 @@ export default function AuthPage() {
         {mode !== 'forgot' && mode !== 'qr' && (
           <div className="flex bg-gray-100 rounded-xl p-1 mb-6">
             {['login', 'register'].map((m) => (
-              <button key={m} onClick={() => { setMode(m); setError(''); setSuccess('') }}
+              <button key={m} onClick={() => { setMode(m); setError(''); setSuccess(''); setLineReady(null) }}
                 className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
                   mode === m ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'
                 }`}>
@@ -479,7 +488,12 @@ export default function AuthPage() {
         {/* Form */}
         {mode !== 'forgot' && mode !== 'qr' && (
         <>
-        <form onSubmit={mode === 'login' ? handleLogin : handleRegister} className="space-y-3" autoComplete="on">
+        <div className="rounded-xl bg-blue-50 border border-blue-100 px-3 py-3 mb-4 text-sm text-gray-700 leading-relaxed">
+          <p className="font-semibold">{mode === 'register' ? 'สมัครด้วยเบอร์โทรและรหัสผ่านได้' : 'ใช้เบอร์โทรหรืออีเมล และรหัสผ่านของระบบ'}</p>
+          <p className="text-xs mt-1">{mode === 'register' ? 'ไม่ต้องมีอีเมล Google หรือรหัสผ่าน LINE กรอกชื่อ เบอร์โทร แล้วตั้งรหัสผ่านของระบบนี้' : 'หากเคยสมัครแล้ว ให้ใช้บัญชีเดิม เพื่อให้เห็นรายการที่เคยแจ้งไว้'}</p>
+          {browserEnv.isInApp && <p className="text-xs mt-2">กำลังเปิดในแอป: ใช้ฟอร์มนี้ได้ ส่วน Google ต้องเปิดในเบราว์เซอร์ก่อน</p>}
+        </div>
+        <form ref={authForm} onSubmit={mode === 'login' ? handleLogin : handleRegister} className="space-y-3" autoComplete="on">
           {mode === 'register' && (
             <div className="flex gap-2">
               <select value={form.name_title} onChange={set('name_title')}
@@ -569,7 +583,7 @@ export default function AuthPage() {
         </div>
 
         {/* LINE OAuth */}
-        <button onClick={handleLine} disabled={loadingLine}
+        <button onClick={handleLine} disabled={loadingGoogle || loadingLine || loadingLineWeb}
           className="w-full flex items-center justify-center gap-3 py-3 rounded-xl text-white text-sm font-medium active:scale-95 transition-all disabled:opacity-60 shadow-sm"
           style={{ backgroundColor: '#06C755' }}>
           {loadingLine ? (
@@ -583,14 +597,24 @@ export default function AuthPage() {
           {mode === 'login' ? 'เข้าสู่ระบบด้วย LINE' : 'สมัครด้วย LINE'}
         </button>
 
+        {lineReady && (
+          <div className="mt-3 rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-gray-700" role="status">
+            <p className="mb-2 leading-relaxed">{lineReady.webOnly ? 'ทางนี้ต้องใช้อีเมลและรหัสผ่านที่ตั้งไว้กับ LINE หากไม่มี ให้ใช้บัญชีเบอร์โทร / รหัสผ่านของระบบ' : 'แตะปุ่มด้านล่างเพื่อให้ LINE ยืนยันบัญชี อาจมีหน้าขออนุญาตในครั้งแรก'}</p>
+            <a href={lineReady.url} className="block w-full rounded-xl bg-green-600 py-3 text-center font-semibold text-white">
+              {lineReady.webOnly ? 'เปิดหน้าเว็บ LINE เพื่อเข้าสู่ระบบ' : 'เปิด LINE เพื่อยืนยันบัญชี'}
+            </a>
+            <button type="button" onClick={() => setLineReady(null)} className="w-full py-2 text-xs text-gray-600">ยกเลิก</button>
+          </div>
+        )}
+
         {/* ทางสำรองเมื่อกดปุ่มบนแล้วเครื่องเรียกแอป LINE ไม่ขึ้น — ดูเหตุผลที่ handleLineWebOnly() */}
-        <button onClick={handleLineWebOnly} disabled={loadingLineWeb}
+        <button onClick={handleLineWebOnly} disabled={loadingGoogle || loadingLine || loadingLineWeb}
           className="w-full text-center text-xs text-gray-400 hover:text-gray-600 py-2 disabled:opacity-60">
-          {loadingLineWeb ? 'กำลังเปิดหน้า LINE...' : 'กดแล้วแอป LINE ไม่เปิด? เข้าผ่านหน้าเว็บ LINE แทน'}
+          {loadingLineWeb ? 'กำลังเปิดหน้า LINE...' : 'แอป LINE ไม่เปิด? ใช้อีเมล / รหัสผ่าน LINE ทางเว็บ'}
         </button>
 
         {/* Google OAuth */}
-        <button onClick={handleGoogle} disabled={loadingGoogle}
+        <button onClick={handleGoogle} disabled={loadingGoogle || loadingLine || loadingLineWeb}
           className="w-full flex items-center justify-center gap-3 py-3 rounded-xl border border-gray-200 bg-white text-gray-700 text-sm font-medium hover:bg-gray-50 active:scale-95 transition-all disabled:opacity-60 shadow-sm mt-3">
           {loadingGoogle ? (
             <Loader2 size={18} className="animate-spin text-gray-400" />
@@ -603,6 +627,16 @@ export default function AuthPage() {
             </svg>
           )}
           {mode === 'login' ? 'เข้าสู่ระบบด้วย Google' : 'สมัครด้วย Google'}
+        </button>
+
+        <p className="text-xs text-gray-500 leading-relaxed mt-3">
+          การมีแอปในเครื่องไม่ได้หมายความว่าเบราว์เซอร์เข้าสู่ระบบแล้ว ผู้ให้บริการอาจให้เลือกบัญชี ใส่รหัสผ่าน หรือยืนยันตัวตน
+        </p>
+        <button type="button" onClick={() => { setLineReady(null); openBrowserHelp(true) }} className="w-full py-3 text-sm text-blue-600">
+          Google / LINE เข้าไม่ได้? เปิดในเบราว์เซอร์
+        </button>
+        <button type="button" onClick={() => { setLineReady(null); authForm.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); authForm.current?.querySelector('input')?.focus({ preventScroll: true }) }} className="w-full py-2 text-sm font-semibold text-gray-700">
+          กลับไปใช้เบอร์โทร / รหัสผ่านด้านบน
         </button>
 
         {/* ทางเข้าสำหรับเจ้าหน้าที่ที่ไปใช้ PC เครื่องอื่น — กดปุ่ม Google/LINE บนเครื่องคนอื่นจะเข้าเป็น
