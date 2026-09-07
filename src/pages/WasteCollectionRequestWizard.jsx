@@ -144,11 +144,24 @@ export default function WasteCollectionRequestWizard({ tenant, session, onBack, 
     if (!isValid || saving) return
     setSaving(true)
     const id = crypto.randomUUID()
+    const submittedAt = new Date().toISOString()
+    // ⚠️ ช่องทางการลงชื่อตัดสินจาก "มี session ของผู้ยื่นเองหรือไม่" เท่านั้น — เจ้าหน้าที่ที่
+    // กรอกแทนหน้าเคาน์เตอร์ (staffId) ใช้บัญชีของเจ้าหน้าที่เอง ไม่ใช่ของประชาชน ใบที่พิมพ์ออก
+    // จึงต้องเว้นช่องให้เซ็นด้วยปากกา ห้ามพิมพ์ชื่อประชาชนเป็นลายมือชื่อแทนเด็ดขาด
+    // (ตรรกะเดียวกับ WasteCollectionCancelWizard.jsx — สองใบนี้ต้องตัดสินเหมือนกัน)
+    const channel = session && !staffId ? 'online' : 'counter'
     const submittedForm = {
       ...form,
       applicant: { ...applicant, age, id_card: idCardDigits },
       bin_count: binCount,
-      fee_terms_accepted_at: new Date().toISOString(),
+      fee_terms_accepted_at: submittedAt,
+      signed_at: submittedAt,
+      signed_by: {
+        channel,
+        name: applicantName,
+        user_id: channel === 'online' ? (session?.user?.id ?? null) : null,
+        entered_by_staff_id: staffId ?? null,
+      },
     }
     const requesterAddress = [
       `บ้านเลขที่ ${applicant.addr_no.trim()}`,
@@ -196,6 +209,7 @@ export default function WasteCollectionRequestWizard({ tenant, session, onBack, 
       tenant,
       thDate: thaiDate(new Date().toISOString()),
       referenceNo: done.ref,
+      signedAt: done.form?.signed_at ?? null,
     })
   }
 

@@ -559,6 +559,9 @@ function TaskDetailSheet({
                 tenant,
                 thDate: thaiDate(req.created_at),
                 referenceNo: req.id?.slice(0, 8)?.toUpperCase() ?? '',
+                // ต้องเป็นเวลาที่ผู้ยื่นลงชื่อตอนยื่น ไม่ใช่เวลาที่เจ้าหน้าที่กดพิมพ์ — ใบที่พิมพ์
+                // ซ้ำอีกหกเดือนต้องยังแสดงวันเวลาเดิม ไม่งั้นบรรทัดกำกับใช้อ้างอิงไม่ได้เลย
+                signedAt: req.permit_form_data.signed_at ?? req.created_at,
               })
               const w = window.open('', '_blank', 'width=860,height=1100')
               if (!w) return

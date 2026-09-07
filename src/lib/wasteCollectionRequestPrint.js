@@ -1,5 +1,5 @@
 import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
-import { thaiDateFromDateInput } from './thaiDate.js'
+import { thaiDateFromDateInput, thaiDateTimeText } from './thaiDate.js'
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -67,7 +67,7 @@ function organizationHeadTitle(tenant) {
  * ข้อมูลใน form มาจาก permit_form_data ซึ่งเป็นชื่อคอลัมน์ legacy ของ document_requests;
  * form_type ใช้แยกรูปแบบข้อมูลนี้ออกจากแบบ ข.๑ อย่างชัดเจน
  */
-export function buildWasteCollectionRequestHtml({ form, tenant, thDate, referenceNo = '' }) {
+export function buildWasteCollectionRequestHtml({ form, tenant, thDate, referenceNo = '', signedAt = null }) {
   const data = form || {}
   const applicant = data.applicant || {}
   const applicantName = `${applicant.title || ''}${applicant.first || ''} ${applicant.last || ''}`.trim()
@@ -76,6 +76,15 @@ export function buildWasteCollectionRequestHtml({ form, tenant, thDate, referenc
   const orgName = tenant?.name?.trim() || 'องค์กรปกครองส่วนท้องถิ่น'
   const headTitle = organizationHeadTitle(tenant)
   const collectionPoint = collectionPointText(data.collection_point)
+
+  // ยึด channel ที่บันทึกไว้ตอนยื่นเท่านั้น ห้ามเดาจาก "มี user_id ไหม" — คำขอที่เจ้าหน้าที่
+  // กรอกแทนประชาชนหน้าเคาน์เตอร์ต้องเว้นช่องให้เซ็นปากกาเหมือนเดิม เพราะคนยื่นไม่ได้
+  // ยืนยันตัวตนกับระบบด้วยตัวเอง จะพิมพ์ว่าเขาลงชื่อทางอิเล็กทรอนิกส์ไม่ได้
+  //
+  // คำขอเก่าที่ยื่นก่อนมีฟีเจอร์นี้ไม่มี signed_by ติดมา จึงตกมาที่โหมดเว้นช่องเซ็นตามเดิม
+  // — ถูกต้องแล้ว ระบบย้อนหลังไปอ้างว่าเขาลงชื่ออิเล็กทรอนิกส์ไม่ได้
+  const signedOnline = data.signed_by?.channel === 'online'
+  const signedStamp = signedOnline ? thaiDateTimeText(signedAt || data.signed_at) : ''
 
   return `<!DOCTYPE html>
 <html lang="th">
@@ -120,7 +129,16 @@ export function buildWasteCollectionRequestHtml({ form, tenant, thDate, referenc
        ตกไปคนละบรรทัดจนอ่านไม่รู้เรื่อง (เคสจริง "นางสาวประกายมาศ ศรีวิชัยเลิศสกุล") */
     .signature { margin: 8mm auto 0; width: 96mm; text-align: center; }
     .signature p { margin: 0 0 2mm; white-space: nowrap; }
+    /* โหมดเคาน์เตอร์เว้น 18 มม. ให้เซ็นด้วยปากกา · โหมดออนไลน์ใช้ที่ว่างนี้พิมพ์ชื่อลงไปแทน
+       จึงเหลือ 6 มม. พอให้ชื่อไม่ติดบรรทัด "ขอแสดงความนับถือ"
+       (ค่าเดียวกับใบขอยกเลิกใน wasteCollectionCancelPrint.js — สองใบนี้ต้องหน้าตาเหมือนกัน) */
     .signature-space { height: 18mm; }
+    .signature-typed { height: 6mm; }
+    /* ลายมือชื่ออิเล็กทรอนิกส์ — ตัวหนาให้เห็นว่าเป็นการลงชื่อ ไม่ใช่ชื่อที่พิมพ์ซ้ำเฉยๆ */
+    .signed-name { font-weight: 700; }
+    /* 10pt: บรรทัดกำกับต้องอ่านออกแต่ต้องไม่แย่งน้ำหนักกับชื่อผู้ลงนาม และต้องไม่ดันใบ
+       ตกหน้า 2 · white-space ปกติ (ไม่ nowrap) เพราะข้อความยาวกว่าความกว้างช่องลงนาม */
+    .signed-note { margin-top: 3mm; font-size: 10pt; color: #333; white-space: normal; line-height: 1.2; }
 
     /* 11pt โดยตั้งใจ — บรรทัดนี้ไม่ใช่เนื้อความของหนังสือ แต่เป็นเลขอ้างอิงของระบบที่พิมพ์
        กำกับไว้ให้ตามเรื่องได้ ต้องเล็กกว่าเนื้อความชัดเจนเพื่อไม่ให้อ่านสับสนว่าเป็นเลขที่หนังสือ
@@ -164,9 +182,15 @@ export function buildWasteCollectionRequestHtml({ form, tenant, thDate, referenc
 
     <section class="signature">
       <p>ขอแสดงความนับถือ</p>
-      <div class="signature-space"></div>
+      ${signedOnline
+        ? `<div class="signature-typed"></div>
+      <p class="signed-name">${esc(applicantName)}</p>`
+        : '<div class="signature-space"></div>'}
       <p>(${line(applicantName, '48mm')})</p>
       <p>ผู้ขออนุญาต</p>
+      ${signedOnline
+        ? `<p class="signed-note">ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service${signedStamp ? `<br>${esc(signedStamp)}` : ''}${referenceNo ? ` · เลขอ้างอิง ${esc(referenceNo)}` : ''}</p>`
+        : ''}
     </section>
 
     ${/* บรรทัดกำกับที่มาอยู่ล่างสุดคู่กับเลขอ้างอิง ไม่ใช่ใต้ชื่อเรื่องแบบใบคำร้อง —
