@@ -39,15 +39,6 @@ export function fuelTypeLabel(record) {
   return FUEL_LABEL[record?.fuel_type] || String(record?.fuel_type ?? '').trim()
 }
 
-// พิมพ์ชื่อผู้ขายพร้อมเลขผู้เสียภาษี/สาขา ให้ผู้ตรวจสอบเทียบกับใบกำกับภาษีได้ในบรรทัดเดียว
-function vendorPrintText(vendor) {
-  if (!vendor?.name) return ''
-  const parts = [String(vendor.name).trim()]
-  if (vendor.branch) parts.push(`สาขา ${String(vendor.branch).trim()}`)
-  if (vendor.tax_id) parts.push(`เลขผู้เสียภาษี ${String(vendor.tax_id).trim()}`)
-  return parts.join(' · ')
-}
-
 function row(label, value) {
   const text = String(value ?? '').trim()
   return `<tr>
@@ -156,11 +147,7 @@ export function buildFleetFuelRecordHtml({ record, tenant }) {
     ${row('ปริมาณ', liters ? `${liters} ลิตร` : '')}
     ${row('ราคาต่อลิตร', price ? `${price} บาท` : '')}
     <tr class="total"><th>รวมเป็นเงิน</th><td class="${cost === '' ? '' : 'is-filled'}">${cost === '' ? '' : `${esc(numText(cost, 2))} บาท`}</td></tr>
-    ${row('มูลค่าสินค้าก่อน VAT', record?.amount_before_vat == null ? '' : `${numText(record.amount_before_vat, 2)} บาท`)}
-    ${row('ภาษีมูลค่าเพิ่ม', record?.vat_amount == null ? '' : `${numText(record.vat_amount, 2)} บาท`)}
     ${row('ลักษณะการเติม', tank)}
-    ${row('กอง/หน่วยงานที่รับภาระค่าใช้จ่าย', record?.departments?.name)}
-    ${row('ผู้ขายตามใบกำกับภาษี', vendorPrintText(record?.vendor))}
     ${row('สถานีบริการ / ปั๊ม', record?.fuel_station)}
     ${row('เลขที่ใบรับสินค้า/ใบส่งของ', record?.receipt_no)}
     ${row('อัตราสิ้นเปลือง', efficiency)}
