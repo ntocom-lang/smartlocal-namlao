@@ -15,6 +15,7 @@ export const BASE_DOCUMENT_TYPES = [
   { value: 'tax_notice',               label: '🏦 ค่าธรรมเนียม/ภาษี' },
   { value: 'waste_collection',         label: '🗑️ ค่าธรรมเนียมขยะ' },
   { value: 'waste_collection_request', label: '🚛 ขอรับบริการเก็บขนขยะมูลฝอย' },
+  { value: 'waste_collection_cancel',  label: '🚫 ขอยกเลิกการเก็บขนขยะมูลฝอย' },
   { value: 'building_permit',          label: '🏗️ ขออนุญาตก่อสร้างบ้าน' },
 ]
 
@@ -84,6 +85,9 @@ export const DEFAULT_SLA_DAYS = {
   waste_collection: 3,
   // ต้องจัดถัง วางแผนเส้นทางเก็บขน และแจ้งพนักงานประจำรถ ไม่ใช่งานออกเอกสารหน้าเคาน์เตอร์
   waste_collection_request: 7,
+  // ยกเลิกใช้เท่ากับขอรับบริการ — ต้องออกไปตรวจว่าเลิกใช้จริง ถอนถังกลับ และเคลียร์ยอดค้างชำระ
+  // ก่อนปิดทะเบียนลูกหนี้ ไม่ใช่งานกดปิดในระบบแล้วจบ
+  waste_collection_cancel: 7,
   // ตรวจแบบแปลน/ตรวจพื้นที่จริงก่อนออกใบอนุญาต
   building_permit: 15,
 }

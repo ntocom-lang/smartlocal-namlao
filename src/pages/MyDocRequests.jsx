@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
 import { buildWasteCollectionRequestHtml } from '../lib/wasteCollectionRequestPrint'
+import { buildWasteCollectionCancelHtml, cancelReasonText } from '../lib/wasteCollectionCancelPrint'
 import { generateDraftPdfBlob } from '../lib/generateDraftPdf'
 import { thaiDate, thaiDateFromDateInput } from '../lib/thaiDate'
 import { resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef } from '../lib/driveStorage'
@@ -19,6 +20,7 @@ const BASE_DOC_TYPES = {
   tax_notice:       'ค่าธรรมเนียม/ภาษี',
   waste_collection: 'ค่าธรรมเนียมขยะ',
   waste_collection_request: 'ขอรับบริการเก็บขนขยะมูลฝอย',
+  waste_collection_cancel: 'ขอยกเลิกการเก็บขนขยะมูลฝอย',
   building_permit:  'ขออนุญาตก่อสร้างบ้าน',
 }
 let _customDocLabels = {}
@@ -248,6 +250,40 @@ function DocDetailSheet({ req, onClose, tenant }) {
     }
   }
 
+  function wasteCancelHtml() {
+    return buildWasteCollectionCancelHtml({
+      form: req.permit_form_data,
+      tenant,
+      thDate: thaiDate(req.created_at),
+      referenceNo: req.id.slice(0, 8).toUpperCase(),
+      // เวลาที่ลงชื่อตอนยื่น ไม่ใช่เวลาที่กดพิมพ์ซ้ำ — ใบที่พิมพ์ใหม่ต้องแสดงวันเวลาเดิมเสมอ
+      signedAt: req.permit_form_data?.signed_at ?? req.created_at,
+    })
+  }
+
+  function handlePrintWasteCancel() {
+    const w = window.open('', '_blank', 'width=860,height=1100')
+    if (!w) return
+    w.document.write(wasteCancelHtml())
+    w.document.close()
+    setTimeout(() => { w.focus(); w.print() }, 400)
+  }
+
+  async function handleDownloadWasteCancelPdf() {
+    setPdfBusy(true)
+    try {
+      const blob = await generateDraftPdfBlob(wasteCancelHtml())
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `คำร้องยกเลิกเก็บขนขยะ-${req.id.slice(0, 8).toUpperCase()}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      setPdfBusy(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-end md:items-center justify-center">
       <div className="bg-white w-full md:max-w-lg md:rounded-3xl rounded-t-3xl max-h-[93vh] flex flex-col overflow-hidden shadow-2xl">
@@ -326,6 +362,12 @@ function DocDetailSheet({ req, onClose, tenant }) {
               req.document_type === 'waste_collection_request' && req.permit_form_data?.service_start_date && {
                 label: 'เริ่มให้จัดเก็บ', value: thaiDateFromDateInput(req.permit_form_data.service_start_date),
               },
+              req.document_type === 'waste_collection_cancel' && cancelReasonText(req.permit_form_data) && {
+                label: 'เหตุผลที่ยกเลิก', value: cancelReasonText(req.permit_form_data),
+              },
+              req.document_type === 'waste_collection_cancel' && req.permit_form_data?.cancel_date && {
+                label: 'ยกเลิกตั้งแต่', value: thaiDateFromDateInput(req.permit_form_data.cancel_date),
+              },
               { label: 'วันที่ยื่น', value: dateTH(req.created_at) },
             ].filter(Boolean).map(({ label, value }) => (
               <div key={label} className="flex gap-2 text-xs">
@@ -376,6 +418,21 @@ function DocDetailSheet({ req, onClose, tenant }) {
               </button>
               <button onClick={handleDownloadWasteRequestPdf} disabled={pdfBusy}
                 className="w-full py-3 rounded-2xl font-semibold text-cyan-800 bg-cyan-50 border border-cyan-200 text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-all">
+                {pdfBusy ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+                {pdfBusy ? 'กำลังสร้างไฟล์...' : 'ดาวน์โหลด PDF'}
+              </button>
+            </div>
+          )}
+
+          {req.document_type === 'waste_collection_cancel' && req.permit_form_data && (
+            <div className="space-y-2">
+              <button onClick={handlePrintWasteCancel}
+                className="w-full py-3 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+                style={{ backgroundColor: '#be123c' }}>
+                <Printer size={15} /> พิมพ์ใบแจ้งขอยกเลิก
+              </button>
+              <button onClick={handleDownloadWasteCancelPdf} disabled={pdfBusy}
+                className="w-full py-3 rounded-2xl font-semibold text-rose-800 bg-rose-50 border border-rose-200 text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-all">
                 {pdfBusy ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
                 {pdfBusy ? 'กำลังสร้างไฟล์...' : 'ดาวน์โหลด PDF'}
               </button>

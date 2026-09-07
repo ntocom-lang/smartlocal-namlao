@@ -16,6 +16,7 @@ import { govDocFontCss, govEServiceOriginText, govPageCss } from '../lib/govDocS
 import { thaiDate, thaiDateFromDateInput } from '../lib/thaiDate'
 import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
 import { buildWasteCollectionRequestHtml, collectionPointText } from '../lib/wasteCollectionRequestPrint'
+import { buildWasteCollectionCancelHtml, cancelReasonText } from '../lib/wasteCollectionCancelPrint'
 import { uploadFile } from '../lib/driveStorage'
 import { fetchAssignableStaff, groupStaffByDepartment } from '../lib/staffRoster'
 import { BASE_DOCUMENT_TYPES, removedDocumentTypes } from '../lib/documentTypes'
@@ -42,6 +43,7 @@ const StaffOperationalDashboard = lazy(() => import('../components/staff/StaffOp
 const FleetPage = lazy(() => import('./FleetPage'))
 const BuildingPermitWizard = lazy(() => import('./BuildingPermitWizard'))
 const WasteCollectionRequestWizard = lazy(() => import('./WasteCollectionRequestWizard'))
+const WasteCollectionCancelWizard = lazy(() => import('./WasteCollectionCancelWizard'))
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -347,6 +349,24 @@ function TaskDetailSheet({
               <InfoRow icon={<Calendar size={14} />} label="เริ่มให้จัดเก็บ"
                 value={thaiDateFromDateInput(req.permit_form_data.service_start_date)} />
             )}
+            {req.document_type === 'waste_collection_cancel' && req.permit_form_data?.applicant?.age && (
+              <InfoRow icon={<User size={14} />} label="อายุผู้ยื่น" value={`${req.permit_form_data.applicant.age} ปี`} />
+            )}
+            {/* ชื่อผู้ใช้บริการโชว์เฉพาะตอนที่ไม่ใช่คนเดียวกับผู้ยื่น — ถ้าโชว์ทุกครั้งจะเป็นชื่อซ้ำ
+                กับบรรทัดบนจนเจ้าหน้าที่มองข้าม แล้วพลาดเคสยื่นแทนซึ่งเป็นเคสที่ต้องระวังจริง */}
+            {req.document_type === 'waste_collection_cancel' && req.permit_form_data
+              && req.permit_form_data.same_as_applicant === false && (
+              <InfoRow icon={<User size={14} />} label="ผู้ใช้บริการ" value={
+                `${req.permit_form_data.subscriber?.title ?? ''}${req.permit_form_data.subscriber?.first ?? ''} ${req.permit_form_data.subscriber?.last ?? ''}`.trim() || '—'
+              } />
+            )}
+            {req.document_type === 'waste_collection_cancel' && cancelReasonText(req.permit_form_data) && (
+              <InfoRow icon={<AlignLeft size={14} />} label="เหตุผล" value={cancelReasonText(req.permit_form_data)} />
+            )}
+            {req.document_type === 'waste_collection_cancel' && req.permit_form_data?.cancel_date && (
+              <InfoRow icon={<Calendar size={14} />} label="ขอยกเลิกตั้งแต่"
+                value={thaiDateFromDateInput(req.permit_form_data.cancel_date)} />
+            )}
             <InfoRow icon={<Hash size={14} />}       label="เลขอ้างอิง"    value={<span className="font-mono font-bold tracking-widest">{req.id?.slice(0, 8)?.toUpperCase() ?? '—'}</span>} />
             <InfoRow icon={<Calendar size={14} />}  label="วันที่ยื่น"     value={dateTH(req.created_at)} />
             {req.due_date && (
@@ -539,6 +559,30 @@ function TaskDetailSheet({
             </button>
           </div>
         )}
+        {req.document_type === 'waste_collection_cancel' && req.permit_form_data && (
+          <div className="px-4 pb-2 pt-3 border-t border-gray-100 shrink-0">
+            <button onClick={() => {
+              const html = buildWasteCollectionCancelHtml({
+                form: req.permit_form_data,
+                tenant,
+                thDate: thaiDate(req.created_at),
+                referenceNo: req.id?.slice(0, 8)?.toUpperCase() ?? '',
+                // ต้องเป็นเวลาที่ผู้ยื่นลงชื่อตอนยื่น ไม่ใช่เวลาที่เจ้าหน้าที่กดพิมพ์ — ใบที่พิมพ์
+                // ซ้ำอีกหกเดือนต้องยังแสดงวันเวลาเดิม ไม่งั้นบรรทัดกำกับใช้อ้างอิงไม่ได้เลย
+                signedAt: req.permit_form_data.signed_at ?? req.created_at,
+              })
+              const w = window.open('', '_blank', 'width=860,height=1100')
+              if (!w) return
+              w.document.write(html)
+              w.document.close()
+              setTimeout(() => { w.focus(); w.print() }, 400)
+            }}
+              className="w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 text-sm active:scale-[0.98] transition-all"
+              style={{ backgroundColor: '#be123c' }}>
+              <Printer size={16} /> พิมพ์ใบแจ้งขอยกเลิกเก็บขนขยะ
+            </button>
+          </div>
+        )}
         {req.status === 'completed' && (
           <div className="px-4 pb-6 pt-3 border-t border-gray-100 shrink-0">
             <button onClick={() => {
@@ -600,7 +644,7 @@ const EMPTY_REQ = {
   requester_phone: '', requester_address: '', purpose: '',
 }
 
-function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuildingPermit, onSelectWasteCollection }) {
+function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuildingPermit, onSelectWasteCollection, onSelectWasteCancel }) {
   const [form, setForm] = useState(EMPTY_REQ)
   const [saving, setSaving] = useState(false)
   const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }))
@@ -642,6 +686,7 @@ function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuilding
                     onClick={() => {
                       if (d.value === 'building_permit') onSelectBuildingPermit()
                       else if (d.value === 'waste_collection_request') onSelectWasteCollection()
+                      else if (d.value === 'waste_collection_cancel') onSelectWasteCancel()
                       else setForm(p => ({ ...p, document_type: d.value }))
                     }}
                     className="flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left text-xs font-semibold transition-all active:scale-95"
@@ -700,6 +745,7 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
   const [showAdd, setShowAdd]     = useState(false)
   const [showPermitWizard, setShowPermitWizard] = useState(false)
   const [showWasteWizard, setShowWasteWizard] = useState(false)
+  const [showWasteCancelWizard, setShowWasteCancelWizard] = useState(false)
   const [search, setSearch]       = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
   const [assignees, setAssignees] = useState([])
@@ -1060,7 +1106,8 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
           onClose={() => setShowAdd(false)}
           onCreated={r => setRequests(prev => [r, ...prev])}
           onSelectBuildingPermit={() => { setShowAdd(false); setShowPermitWizard(true) }}
-          onSelectWasteCollection={() => { setShowAdd(false); setShowWasteWizard(true) }} />
+          onSelectWasteCollection={() => { setShowAdd(false); setShowWasteWizard(true) }}
+          onSelectWasteCancel={() => { setShowAdd(false); setShowWasteCancelWizard(true) }} />
       )}
       {/* ขออนุญาตก่อสร้างบ้าน — ใช้ wizard เต็มรูปแบบเดียวกับฝั่งประชาชน (แบบ ข.๑ จริง)
           แทนฟอร์มสั้นทั่วไปใน NewRequestSheet เพราะฟิลด์ไม่พอสำหรับพิมพ์แบบร่างที่ถูกต้อง */}
@@ -1077,6 +1124,16 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
           <WasteCollectionRequestWizard tenant={tenant} session={null} staffId={staffId}
             onBack={() => setShowWasteWizard(false)}
             onDone={() => { setShowWasteWizard(false); setRefreshKey(k => k + 1) }} />
+        </div>
+      )}
+      {/* คำร้องยกเลิกก็ต้องใช้ฟิลด์ตามใบแจ้งจริงเช่นกัน (ผู้ใช้บริการที่จะยกเลิก + เหตุผล + วันที่มีผล)
+          ฟอร์ม walk-in แบบย่อเก็บไม่ครบ · session={null} ทำให้ wizard รู้ว่าเป็นการกรอกแทน
+          แล้วเว้นช่องลงนามให้เซ็นด้วยปากกา ห้ามพิมพ์ชื่อประชาชนเป็นลายมือชื่อ */}
+      {showWasteCancelWizard && (
+        <div className="fixed inset-0 z-[60] bg-white overflow-y-auto">
+          <WasteCollectionCancelWizard tenant={tenant} session={null} staffId={staffId}
+            onBack={() => setShowWasteCancelWizard(false)}
+            onDone={() => { setShowWasteCancelWizard(false); setRefreshKey(k => k + 1) }} />
         </div>
       )}
     </div>
@@ -1114,6 +1171,7 @@ const DOC_TITLES = {
   tax_notice:       'ผลการตรวจสอบยอดภาษีที่ดินและสิ่งปลูกสร้าง',
   waste_collection: 'ผลการตรวจสอบค่าธรรมเนียมขยะ',
   waste_collection_request: 'แจ้งผลการขอรับบริการเก็บขนขยะมูลฝอย',
+  waste_collection_cancel: 'แจ้งผลการขอยกเลิกการเก็บขนขยะมูลฝอย',
   other:            'หนังสือรับรอง',
 }
 
@@ -1174,6 +1232,25 @@ function buildDocBody(req, orgName) {
               <p>${orgName}ได้รับคำขอไว้และบรรจุสถานที่ดังกล่าวเข้าเส้นทางเก็บขนขยะมูลฝอยเรียบร้อยแล้ว ทั้งนี้ ผู้ขอรับบริการมีหน้าที่ชำระค่าธรรมเนียมเก็บขนขยะมูลฝอยตามอัตราที่กำหนดไว้ในข้อบัญญัติท้องถิ่น</p>
               ${req.staff_notes ? `<p>หมายเหตุ: ${escapeHtml(req.staff_notes)}</p>` : ''}`
     }
+    case 'waste_collection_cancel': {
+      // หนังสือแจ้งผลการยกเลิก — จุดที่ห้ามพลาดคือต้องระบุ "วันที่การยกเลิกมีผล" ให้ตรงกับที่
+      // กองคลังใช้ปิดยอด และต้องไม่เขียนว่าไม่มีภาระค้างชำระ ระบบนี้ไม่ได้อ่านทะเบียนลูกหนี้จริง
+      // จะสรุปแทนกองคลังไม่ได้ ถ้าเคลียร์ยอดแล้วให้เจ้าหน้าที่พิมพ์ไว้ในหมายเหตุเอง
+      const form = req.permit_form_data ?? {}
+      const cancelDate = thaiDateFromDateInput(form.cancel_date)
+      const reason = cancelReasonText(form)
+      const subscriber = form.same_as_applicant === false
+        ? `${form.subscriber?.title ?? ''}${form.subscriber?.first ?? ''} ${form.subscriber?.last ?? ''}`.trim()
+        : ''
+      return `<p>ตามที่ ${name}${idCard} ที่อยู่ ${addr} ได้ยื่นคำร้องขอยกเลิกการเก็บขนขยะมูลฝอยของ${orgName} นั้น</p>
+              <p class="no-indent" style="margin-left:3em; margin-top:6pt">
+                ${subscriber ? `ผู้ใช้บริการที่ขอยกเลิก: <strong>${escapeHtml(subscriber)}</strong><br/>` : ''}
+                เหตุผล: <strong>${reason ? escapeHtml(reason) : '-'}</strong><br/>
+                ยกเลิกการจัดเก็บตั้งแต่วันที่: <strong>${cancelDate || '-'}</strong>
+              </p>
+              <p>${orgName}ได้ตรวจสอบและยกเลิกการเก็บขนขยะมูลฝอย ณ สถานที่ดังกล่าวแล้ว ทั้งนี้ ผู้ยื่นคำร้องยังคงมีหน้าที่ชำระค่าธรรมเนียมเก็บขนขยะมูลฝอยที่ค้างชำระจนถึงวันที่การยกเลิกมีผลให้ครบถ้วน</p>
+              ${req.staff_notes ? `<p>หมายเหตุ: ${escapeHtml(req.staff_notes)}</p>` : ''}`
+    }
     default:
       return `<p>${escapeHtml(req.purpose) || 'ตามที่ได้รับการร้องขอ'}</p>
               ${req.staff_notes ? `<p>รายละเอียดเพิ่มเติม: ${escapeHtml(req.staff_notes)}</p>` : ''}`
@@ -1185,7 +1262,9 @@ function buildDocHTML({ req, tenant, docDate }) {
   const title    = DOC_TITLES[req.document_type] ?? DOC_TITLES.other
   const isFeeInquiry = FEE_INQUIRY_TYPES.includes(req.document_type)
   // หนังสือ "แจ้งผล" ไม่ใช่หนังสือรับรอง จึงห้ามลงท้ายว่าออกให้เพื่อเป็นหลักฐาน
-  const isNotice = isFeeInquiry || req.document_type === 'waste_collection_request'
+  const isNotice = isFeeInquiry
+    || req.document_type === 'waste_collection_request'
+    || req.document_type === 'waste_collection_cancel'
   const logoUrl  = typeof tenant?.logo_url === 'string' && /^https?:\/\//.test(tenant.logo_url)
     ? escapeHtml(tenant.logo_url) : null
 
