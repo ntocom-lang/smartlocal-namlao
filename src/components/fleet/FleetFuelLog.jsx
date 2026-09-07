@@ -36,6 +36,37 @@ const amountText = record => {
 }
 const thDate = d => new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
 
+// ความกว้างคอลัมน์ของตารางเชื้อเพลิง (จอใหญ่)
+//
+// ตารางเป็น table-fixed แต่เดิมไม่มี <colgroup> เบราว์เซอร์จึงหารความกว้างให้ทุกคอลัมน์
+// เท่ากันหมด ผลคือ "ที่" ที่ใส่แค่เลขลำดับได้พื้นที่เท่ากับ "ทรัพย์สิน" ที่ต้องใส่ชื่อรถ
+// เต็มๆ ชื่ออย่าง "รถยนต์นั่งส่วนบุคคลไม่เกิน 7 คน" จึงถูกตัดกลางคำเป็น "รถยนต์นั่งส่วน..."
+// ทั้งที่ยังมีที่ว่างเหลือในคอลัมน์อื่น
+//
+// หัวตารางกับ <col> ต้องมาจากลิสต์เดียวกัน ไม่งั้นวันหลังมีคนเพิ่ม/ลบคอลัมน์แล้วความกว้าง
+// จะเลื่อนไปคนละช่องโดยไม่มีอะไรฟ้อง
+//
+// ⚠️ ผลรวมต้องเป็น 100% พอดีทั้งสองกรณี (มีสิทธิ์แก้ไข: 4+8+26+12+12+10+9+9+10
+// ไม่มีสิทธิ์: 4+8+36+12+12+10+9+9) เกิน 100 แล้ว table-fixed จะย่อทุกคอลัมน์
+// ตามสัดส่วนเงียบๆ ค่าที่ไล่ไว้ทั้งชุดจะเพี้ยนหมดโดยไม่มีอะไรฟ้อง
+//
+// ไม่ export ออกไป — ไฟล์คอมโพเนนต์ที่ export อย่างอื่นปนมาจะทำให้ Fast Refresh ใช้ไม่ได้
+// (react-refresh/only-export-components) ถ้าวันหลังมีที่อื่นต้องใช้ ให้ย้ายไป src/lib ก่อน
+function fuelTableColumns(canWrite) {
+  return [
+    { label: 'ที่',          width: '4%' },
+    { label: 'วันที่',        width: '8%' },
+    // ช่องที่ยาวที่สุด กินส่วนที่เหลือจากคอลัมน์ "จัดการ" เมื่อผู้ใช้ไม่มีสิทธิ์แก้ไข
+    { label: 'ทรัพย์สิน',    width: canWrite ? '26%' : '36%' },
+    { label: 'ผู้ขับรถ',      width: '12%' },
+    { label: 'จำนวน',        width: '12%' },
+    { label: 'รวม (฿)',      width: '10%' },
+    { label: 'มิเตอร์',       width: '9%' },
+    { label: 'ปั๊ม/เอกสาร',   width: '9%' },
+    ...(canWrite ? [{ label: 'จัดการ', width: '10%' }] : []),
+  ]
+}
+
 // snapshot เฉพาะฟิลด์ที่มีผลต่อการตรวจสอบการเบิกจ่าย ไม่ยัดทั้งแถวลง audit log
 // จุดสำคัญคือกรณี "ลบ" — ถ้าไม่เก็บค่าไว้ ตัวเลขที่ถูกลบจะสืบกลับไม่ได้เลย
 const auditSnapshot = r => r ? {
@@ -392,11 +423,21 @@ export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
         <>
           {/* Desktop Table */}
           <div className="hidden md:block overflow-x-auto border border-gray-300 shadow-sm" style={{ borderRadius: 4 }}>
-            <table className="w-full text-sm border-collapse table-fixed">
+            {/* min-w กันตารางถูกบีบจนชื่อทรัพย์สินโดนตัดบนจอ md แคบๆ (ตารางเริ่มแสดงที่ 768px)
+                กล่องนอกมี overflow-x-auto อยู่แล้ว แคบกว่านี้จึงเลื่อนแนวนอนแทนการบีบ
+                วัดจริงบน Chrome ที่ 960px: ชื่อยาวสุดที่มีจริง "รถบรรทุกขยะมูลฝอยแบบอัดท้าย"
+                ใช้ 207px คอลัมน์ทรัพย์สินมีให้ 234px · ชื่อคนขับยาวสุด 92px มีให้ 99px
+                (เคยลอง 900px แล้วช่องผู้ขับรถเหลือพอดีเป๊ะ 92/92 ไม่มีที่เผื่อชื่อยาวกว่านี้) */}
+            <table className="w-full min-w-[960px] text-sm border-collapse table-fixed">
+              <colgroup>
+                {fuelTableColumns(canWrite).map(col => (
+                  <col key={col.label} style={{ width: col.width }} />
+                ))}
+              </colgroup>
               <thead>
                 <tr style={{ backgroundColor: '#1a3a5c' }}>
-                  {[...['ที่','วันที่','ทรัพย์สิน','ผู้ขับรถ','จำนวน','รวม (฿)','มิเตอร์','ปั๊ม/เอกสาร'], ...(canWrite ? ['จัดการ'] : [])].map((h, i) => (
-                    <th key={i} className="px-2 py-2 text-left text-[11px] font-bold text-white whitespace-nowrap">{h}</th>
+                  {fuelTableColumns(canWrite).map(col => (
+                    <th key={col.label} className="px-2 py-2 text-left text-[11px] font-bold text-white whitespace-nowrap">{col.label}</th>
                   ))}
                 </tr>
               </thead>
