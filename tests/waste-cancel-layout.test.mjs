@@ -41,6 +41,13 @@ function longForm(overrides = {}) {
     cancel_reason: 'อื่นๆ',
     cancel_reason_other: LONG_REASON,
     cancel_date: '2026-10-01',
+    // ปักหมุดด้วย — ย่อหน้าพิกัดเพิ่มเข้ามาทีหลัง ต้องอยู่ในงบความสูงของเคสหนักสุดเหมือนกัน
+    // ชื่อสถานที่จาก Nominatim ยาวเกิน 40 ตัวอักษรได้จริง (collectionPointText ตัดให้เอง)
+    collection_point: {
+      lat: 18.2456789,
+      lng: 100.1234567,
+      address: 'ถนนยันตรกิจโกศล, ตำบลทุ่งแค้ว, อำเภอหนองม่วงไข่, จังหวัดแพร่, ภาคเหนือ, 54170, ประเทศไทย',
+    },
     outstanding_ack: true,
     signed_at: '2026-09-07T10:32:00',
     signed_by: { channel: 'online', name: 'นางสาวประกายมาศ ศรีวิชัยเลิศสกุล' },

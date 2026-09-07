@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Check, CheckCircle2, Copy, Download, Loader2, Printer, Trash2 } from 'lucide-react'
+import { ArrowLeft, Check, CheckCircle2, Copy, Download, Loader2, MapPin, Printer, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { NAME_TITLES, splitThaiFullName } from '../lib/thaiName'
@@ -8,6 +8,10 @@ import { generateDraftPdfBlob } from '../lib/generateDraftPdf'
 import { thaiDate, thaiDateFromDateInput, todayStr } from '../lib/thaiDate'
 import { tenantDefaultSubdistrict } from '../lib/tenantSubdistrict'
 import { buildWasteCollectionCancelHtml, cancelReasonText } from '../lib/wasteCollectionCancelPrint'
+
+// โหลดเมื่อผู้ใช้กดเปิดแผนที่เท่านั้น — leaflet + ชั้น tile หนักเกินกว่าจะให้ทุกคนที่เปิด
+// หน้ายื่นคำร้องดาวน์โหลดไปเปล่าๆ ทั้งที่การปักหมุดเป็นตัวเลือกเสริม (เหมือนใบขอรับบริการ)
+const InlineMapPicker = lazy(() => import('../components/InlineMapPicker'))
 
 const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-rose-200'
 
@@ -85,8 +89,13 @@ export default function WasteCollectionCancelWizard({ tenant, session, onBack, s
     cancel_reason: CANCEL_REASONS[0],
     cancel_reason_other: '',
     cancel_date: todayStr(),
+    // จุดวางถังที่ขอให้มาถอนกลับ — null จนกว่าผู้ใช้จะกด "ใช้ตำแหน่งนี้" ยืนยันเอง
+    collection_point: null,
     outstanding_ack: false,
   }))
+  const [mapOpen, setMapOpen] = useState(false)
+  // ตำแหน่งที่กำลังเล็งอยู่บนแผนที่ ยังไม่ใช่ค่าที่บันทึก
+  const [pendingPoint, setPendingPoint] = useState(null)
 
   useEffect(() => {
     if (!session) return
@@ -489,6 +498,80 @@ export default function WasteCollectionCancelWizard({ tenant, session, onBack, s
             <input type="date" min={todayStr()} value={form.cancel_date}
               onChange={event => setForm(current => ({ ...current, cancel_date: event.target.value }))}
               className={inputCls} />
+          </Field>
+
+          <Field label="ปักหมุดจุดวางถังที่ขอให้มาถอนกลับ">
+            {/* ห้ามบันทึกจุดที่แผนที่เล็งอยู่ตอนเปิดโดยอัตโนมัติ — LeafletMapPicker ยิง
+                onLocationSelect ตั้งแต่ mount ด้วยจุดกึ่งกลางเริ่มต้น (ที่ตั้งสำนักงาน อปท.)
+                ถ้ารับค่านั้นเลย ทุกคำร้องจะได้หมุดปลอมที่ชี้ไปสำนักงาน ซึ่งแย่กว่าไม่มีหมุด
+                เพราะพนักงานจะเชื่อแล้วขับไปผิดที่ ต้องให้กด "ใช้ตำแหน่งนี้" ยืนยันเสมอ */}
+            {form.collection_point ? (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-3">
+                <div className="flex items-start gap-2">
+                  <MapPin size={14} className="mt-0.5 shrink-0 text-rose-700" />
+                  <div className="min-w-0 flex-1">
+                    {form.collection_point.address && (
+                      <p className="text-xs leading-snug text-rose-900">{form.collection_point.address}</p>
+                    )}
+                    <p className="mt-0.5 font-mono text-[11px] text-rose-700">
+                      {form.collection_point.lat.toFixed(6)}, {form.collection_point.lng.toFixed(6)}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-2 flex gap-3">
+                  <button type="button"
+                    onClick={() => { setPendingPoint(form.collection_point); setMapOpen(true) }}
+                    className="text-xs font-semibold text-rose-700 underline">แก้ไขตำแหน่ง</button>
+                  <button type="button"
+                    onClick={() => setForm(current => ({ ...current, collection_point: null }))}
+                    className="text-xs font-semibold text-red-500 underline">ลบหมุด</button>
+                </div>
+              </div>
+            ) : mapOpen ? (
+              <div className="space-y-2">
+                <Suspense fallback={
+                  <div className="flex h-80 items-center justify-center rounded-xl bg-gray-50 text-sm text-gray-400">
+                    <Loader2 size={16} className="mr-2 animate-spin" /> กำลังโหลดแผนที่
+                  </div>
+                }>
+                  <InlineMapPicker
+                    value={pendingPoint}
+                    onChange={point => setPendingPoint(point)}
+                    defaultCenter={tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null}
+                  />
+                </Suspense>
+                <div className="flex gap-2">
+                  <button type="button" disabled={!pendingPoint}
+                    onClick={() => {
+                      setForm(current => ({
+                        ...current,
+                        collection_point: {
+                          lat: Number(pendingPoint.lat),
+                          lng: Number(pendingPoint.lng),
+                          address: pendingPoint.address ?? '',
+                        },
+                      }))
+                      setMapOpen(false)
+                    }}
+                    className="flex-1 rounded-xl bg-rose-700 py-2.5 text-sm font-bold text-white disabled:opacity-40">
+                    ใช้ตำแหน่งนี้
+                  </button>
+                  <button type="button" onClick={() => { setMapOpen(false); setPendingPoint(null) }}
+                    className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-500">
+                    ยกเลิก
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setMapOpen(true)}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-rose-300 bg-rose-50/50 py-3 text-sm font-semibold text-rose-700">
+                <MapPin size={15} /> เปิดแผนที่เพื่อปักหมุด
+              </button>
+            )}
+            <p className="mt-1 text-[11px] leading-relaxed text-gray-400">
+              ไม่บังคับ — ช่วยให้พนักงานหาถังที่ต้องถอนกลับได้ตรงจุด โดยเฉพาะบ้านที่ไม่มีคนอยู่แล้วโทรถามไม่ได้
+              เลื่อนแผนที่ให้หมุดตรงจุดที่วางถังแล้วกด "ใช้ตำแหน่งนี้"
+            </p>
           </Field>
         </section>
 
