@@ -4,7 +4,7 @@ import {
   MapPin, Phone, ChevronDown, ChevronRight,
   Loader2, CheckCircle2, ArrowLeft, X, User,
   ImagePlus,
-  Lightbulb, Trash2, Scissors, Droplets, Package, Megaphone, Bug,
+  Lightbulb, Trash2, Trees, Droplets, Package, Megaphone, Bug,
   Waves, Wind, Building2, Volume2, HelpCircle,
   CreditCard, PawPrint, Shield, FlameKindling, Axe, Wrench,
 } from 'lucide-react'
@@ -26,7 +26,7 @@ const CATEGORY_ICON = {
   light:            Lightbulb,
   road:             Wrench,
   mosquito:         Bug,
-  tree:             Scissors,
+  tree:             Trees,
   trash:            Trash2,
   water_supply:     Droplets,
   drain:            Wind,
@@ -624,6 +624,8 @@ export default function CitizenForm() {
   const catEmoji = catDbData?.emoji ?? FALLBACK_EMOJI[form.category] ?? null
   const catColor = catDbData?.color ?? FALLBACK_COLOR[form.category] ?? null
   const actionCopy = getFormActionCopy(formType, form.category, catLabel)
+  // ค่าจาก DB โหลดทีหลัง ระหว่างนั้นเป็น false — แถบเตือนจึงขึ้นหลังรู้ผลจริงเท่านั้น ไม่กะพริบ
+  const categoryDisabled = disabledCategoryValues.has(form.category)
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#eef2f7' }}>
@@ -697,6 +699,23 @@ export default function CitizenForm() {
           {actionCopy.title}
         </h1>
       </div>
+
+      {/* หมวดที่มาจากลิงก์ ?category= แต่ อปท. ปิดรับไปแล้ว — ต้องบอกตั้งแต่เปิดหน้า ไม่ใช่ตอนกดส่ง
+          หน้านี้ไม่มี dropdown เปลี่ยนหมวด (ต่างจากโหมด ?form= ที่มี pills) ถ้าปล่อยให้กรอกจนจบ
+          แล้วค่อยเด้ง error ผู้ใช้จะติดตาย ไม่มีทางออกนอกจากปิดหน้าทิ้ง */}
+      {categoryDisabled && (
+        <div className="mx-3 mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <p className="text-sm font-bold text-amber-900">{tenant?.name ?? 'หน่วยงาน'}ปิดรับคำร้องประเภทนี้แล้ว</p>
+          <p className="text-xs text-amber-800 mt-1 leading-relaxed">
+            ประเภท "{catLabel}" ไม่เปิดให้บริการในหน่วยงานนี้ กรุณาเลือกประเภทอื่นที่เปิดรับอยู่
+          </p>
+          <button type="button" onClick={() => navigate('/complaint')}
+            className="mt-2.5 w-full py-2.5 rounded-xl font-semibold text-white text-sm"
+            style={{ backgroundColor: '#d97706' }}>
+            เลือกประเภทคำร้องอื่น
+          </button>
+        </div>
+      )}
 
       {/* Category display row */}
       {!ftConfig && form.category && (
@@ -978,7 +997,7 @@ export default function CitizenForm() {
     if (detailErr) { setError(detailErr); return }
           if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
           setShowConsent(true)
-        }} disabled={submitting}
+        }} disabled={submitting || categoryDisabled}
           className="w-full flex items-center justify-center gap-2 py-3 rounded-full font-semibold text-white text-sm shadow-sm active:scale-95 transition-all disabled:opacity-60"
           style={{ backgroundColor: '#16a34a' }}>
           {submitting

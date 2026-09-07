@@ -245,6 +245,10 @@ function StatusStepper({ status }) {
 
 function DetailSheet({ complaint: c, onClose, onAttachmentsChange, onRate, catLabel = DEFAULT_CATEGORY_LABEL, catEmoji = DEFAULT_CATEGORY_EMOJI }) {
   const { tenant } = useTenant()
+  // complaints.detail เป็น text not null (002_create_complaints.sql) ค่า null จึงแปลว่า
+  // get_complaint_by_ref mask ให้ตอนผู้ค้นไม่ใช่เจ้าของเรื่องหรือเจ้าหน้าที่ — ใช้เป็นสัญญาณ
+  // เดียวคุมทั้งกล่องรายละเอียดและปุ่มโทร (แถวเดียวกันถูก mask พร้อมกันทั้งชุดจาก RPC)
+  const masked = c.detail == null
   const [newPhotos, setNewPhotos] = useState([]) // { file, preview }
   const [uploading, setUploading] = useState(false)
   const [freshAttachments, setFreshAttachments] = useState(null) // null = not fetched yet
@@ -475,7 +479,20 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange, onRate, catLa
                     </div>
                   </div>
                 )}
-                {c.phone && (
+{/* เบอร์ที่ถูก mask (081xxxx234) กดโทรออกไม่ได้จริง จึงไม่ใส่ลิงก์ tel: และไม่ขึ้นปุ่ม "โทร"
+                    แต่ยังโชว์เลขไว้ให้ผู้แจ้งเทียบได้ว่าเป็นเรื่องของตัวเอง */}
+                {c.phone && (masked ? (
+                  <div className="flex items-center gap-3 px-4 py-3">
+                    <div className="w-8 h-8 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
+                      <Phone size={15} className="text-gray-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] text-gray-400">เบอร์โทรติดต่อ</p>
+                      <p className="text-sm font-medium text-gray-800">{c.phone}</p>
+                    </div>
+                    <span className="text-xs text-gray-400 font-medium shrink-0">ซ่อนบางส่วน</span>
+                  </div>
+                ) : (
                   <a href={`tel:${c.phone}`}
                      className="flex items-center gap-3 px-4 py-3 hover:bg-gray-100 transition-colors active:bg-gray-100">
                     <div className="w-8 h-8 rounded-xl bg-green-50 flex items-center justify-center shrink-0">
@@ -487,7 +504,7 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange, onRate, catLa
                     </div>
                     <span className="text-xs text-green-600 font-medium shrink-0">โทร</span>
                   </a>
-                )}
+                ))}
                 {c.latitude && (
                   <a href={`https://maps.google.com/?q=${c.latitude},${c.longitude}`}
                      target="_blank" rel="noreferrer"
@@ -508,13 +525,26 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange, onRate, catLa
             </div>
           )}
 
-          {/* detail */}
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">รายละเอียดปัญหา</p>
-            <div className="bg-gray-50 rounded-2xl px-4 py-3">
-              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{c.detail}</p>
+          {/* detail — ไม่เขียนว่า "เข้าสู่ระบบเพื่อดูข้อมูลเต็ม" เพราะคำร้องที่ยื่นแบบไม่ล็อกอิน
+              มี user_id เป็น null ต่อให้ไปสมัครแล้วล็อกอินก็ไม่มีวันผ่านเงื่อนไข v_privileged */}
+          {masked ? (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">รายละเอียดปัญหา</p>
+              <div className="bg-gray-50 rounded-2xl px-4 py-3">
+                <p className="text-sm text-gray-500 leading-relaxed">
+                  ระบบไม่แสดงรายละเอียดคำร้องเมื่อค้นด้วยเลขอ้างอิง เพื่อคุ้มครองข้อมูลส่วนบุคคลของผู้แจ้ง
+                  หากต้องการข้อมูลเพิ่มเติม กรุณาติดต่อเจ้าหน้าที่พร้อมแจ้งเลขอ้างอิง
+                </p>
+              </div>
             </div>
-          </div>
+          ) : c.detail ? (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">รายละเอียดปัญหา</p>
+              <div className="bg-gray-50 rounded-2xl px-4 py-3">
+                <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{c.detail}</p>
+              </div>
+            </div>
+          ) : null}
 
           {/* citizen attachments — ใช้ freshAttachments (fetch ใหม่ตอนเปิด) เพื่อแก้กรณี list โหลดก่อน upload เสร็จ */}
           {(attDisplay => (attDisplay.length > 0 || onAttachmentsChange) && (
