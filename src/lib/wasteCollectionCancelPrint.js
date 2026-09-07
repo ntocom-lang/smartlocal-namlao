@@ -1,6 +1,10 @@
 import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
 import { orgHeadTitle } from './orgTerms.js'
 import { MONTHS_TH, thaiDateFromDateInput } from './thaiDate.js'
+// ใช้ตัวแปลงพิกัดตัวเดียวกับใบขอรับบริการโดยตั้งใจ — สองใบนี้พิมพ์จุดวางถังของบ้านหลังเดียวกัน
+// ถ้าเขียนแยกกันแล้ววันหนึ่งฝั่งใดฝั่งหนึ่งเปลี่ยนรูปแบบ (จำนวนทศนิยม/ความยาวชื่อสถานที่)
+// เอกสารสองใบของเรื่องเดียวกันจะพิมพ์พิกัดคนละแบบ
+import { collectionPointText } from './wasteCollectionRequestPrint.js'
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -94,6 +98,7 @@ export function buildWasteCollectionCancelHtml({ form, tenant, thDate, reference
   const headTitle = orgHeadTitle(tenant)
   const cancelDate = thaiDateFromDateInput(data.cancel_date)
   const reason = cancelReasonText(data)
+  const collectionPoint = collectionPointText(data.collection_point)
   const signedOnline = data.signed_by?.channel === 'online'
   const signedStamp = signedOnline ? signedAtText(signedAt || data.signed_at) : ''
 
@@ -125,6 +130,9 @@ export function buildWasteCollectionCancelHtml({ form, tenant, thDate, reference
        ในย่อหน้ารับทราบค่าธรรมเนียม · ต่างจากใบขอรับบริการที่ยังใช้ justify ได้เพราะย่อหน้าสั้นกว่า
        และไม่มีก้อน nowrap ยาวๆ อยู่กลางประโยค */
     .body-copy { text-indent: 25mm; text-align: left; }
+    /* บรรทัดพิกัด — ย่อหน้าเสริมที่ไม่มีในต้นฉบับ ไม่ justify เหมือนย่อหน้าหลัก
+       และไม่ nowrap เพราะพิกัดกับชื่อสถานที่รวมกันยาวเกินหนึ่งบรรทัดได้ */
+    .point-copy { text-indent: 25mm; }
 
     .fill-value { white-space: pre-wrap; }
     /* เบอร์โทรมีขีดกลางคั่น เบราว์เซอร์ตัดบรรทัดตรงขีดได้ (เคสจริง "081-" ค้างท้ายบรรทัด
@@ -191,6 +199,11 @@ export function buildWasteCollectionCancelHtml({ form, tenant, thDate, reference
       จังหวัด ${line(subscriber.addr_province, '27mm')}
       เนื่องจาก ${line(reason, '52mm')} ตั้งแต่วันที่ ${line(cancelDate, '43mm')} เป็นต้นไป
     </p>
+
+    ${/* พิกัดจุดวางถัง — ไม่มีในต้นฉบับ แต่จำเป็นกว่าฝั่งใบขอรับบริการเสียอีก: คำร้องยกเลิก
+         ส่วนใหญ่มาจากบ้านที่ไม่มีคนอยู่แล้ว พนักงานที่ไปถอนถังโทรถามเจ้าของบ้านหน้างานไม่ได้
+         ตัดทิ้งเมื่อผู้ยื่นไม่ได้ปักหมุด (ไม่บังคับกรอก) จะได้ไม่เหลือบรรทัดว่างคาใบ */''}
+    ${collectionPoint ? `<p class="point-copy">จุดวางถังตามพิกัดแผนที่ ${line(collectionPoint)}</p>` : ''}
 
     ${/* ย่อหน้านี้ไม่มีในต้นฉบับ — เพิ่มเพราะการยกเลิกบริการคือการปิดภาระค่าธรรมเนียมรายเดือน
          ถ้าใบไม่ระบุว่าหนี้ที่ค้างอยู่ยังต้องชำระ และไม่ระบุว่าการยกเลิกมีผลเมื่อ อปท. ตรวจสอบแล้ว

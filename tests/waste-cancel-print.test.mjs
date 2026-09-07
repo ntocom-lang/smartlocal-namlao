@@ -133,6 +133,25 @@ function render(form, extra = {}) {
   assert.doesNotMatch(html, /NaN/)
 }
 
+// ── พิกัดจุดวางถัง: ปักหมุดแล้วต้องพิมพ์ลงใบ ไม่ปักต้องไม่เหลือบรรทัดว่างคาใบ ──
+{
+  const withPin = render(baseForm({
+    collection_point: { lat: 18.2456789, lng: 100.1234567, address: 'ถนนทดสอบ, ตำบลทุ่งแค้ว' },
+  }))
+  assert.match(withPin, /จุดวางถังตามพิกัดแผนที่/)
+  // พิกัดต้องมาก่อนชื่อสถานที่เสมอ — เป็นค่าที่พนักงานก๊อปไปวางในแอปนำทางได้ตรงๆ
+  assert.match(withPin, /18\.245679, 100\.123457 \(ถนนทดสอบ, ตำบลทุ่งแค้ว\)/)
+
+  const withoutPin = render(baseForm())
+  assert.doesNotMatch(withoutPin, /จุดวางถังตามพิกัดแผนที่/)
+  assert.doesNotMatch(withoutPin, /point-copy">/)
+
+  // พิกัดเสีย (ค่าที่ไม่ใช่ตัวเลข) ต้องถูกตัดทิ้งทั้งบรรทัด ไม่พิมพ์ NaN ลงเอกสารราชการ
+  const brokenPin = render(baseForm({ collection_point: { lat: 'x', lng: null, address: 'ที่ไหนสักแห่ง' } }))
+  assert.doesNotMatch(brokenPin, /จุดวางถังตามพิกัดแผนที่/)
+  assert.doesNotMatch(brokenPin, /NaN/)
+}
+
 // ── escape: ชื่อ อปท. มาจาก DB ที่แอดมินแก้ได้ ห้ามหลุดเป็น HTML ────────────
 {
   const html = buildWasteCollectionCancelHtml({

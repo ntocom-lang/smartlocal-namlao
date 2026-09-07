@@ -343,9 +343,13 @@ function TaskDetailSheet({
               <InfoRow icon={<Trash2 size={14} />} label="จำนวนถัง" value={`${req.permit_form_data.bin_count} ใบ`} />
             )}
             {/* หมุดจุดวางถังต้องเห็นในแดชบอร์ดที่สั่งงาน ไม่ใช่เห็นเฉพาะตอนพิมพ์ใบออกมา
-                และต้องกดนำทางได้เลย เพราะคนที่ใช้คือพนักงานเก็บขนที่เปิดจากมือถือหน้างาน */}
-            {req.document_type === 'waste_collection_request' && req.permit_form_data?.collection_point && (
-              <InfoRow icon={<MapPin size={14} />} label="จุดวางถัง" value={
+                และต้องกดนำทางได้เลย เพราะคนที่ใช้คือพนักงานเก็บขนที่เปิดจากมือถือหน้างาน
+                ใช้ร่วมกันทั้งคำขอรับบริการ (ไปวางถัง) และคำร้องยกเลิก (ไปถอนถังกลับ) —
+                ฝั่งยกเลิกยิ่งจำเป็น เพราะบ้านที่ขอยกเลิกมักไม่มีคนอยู่ให้โทรถามหน้างาน */}
+            {['waste_collection_request', 'waste_collection_cancel'].includes(req.document_type)
+              && req.permit_form_data?.collection_point && (
+              <InfoRow icon={<MapPin size={14} />}
+                label={req.document_type === 'waste_collection_cancel' ? 'ถังที่ต้องถอน' : 'จุดวางถัง'} value={
                 <span className="flex flex-col gap-1">
                   {req.permit_form_data.collection_point.address && (
                     <span>{req.permit_form_data.collection_point.address}</span>
