@@ -155,7 +155,7 @@ export default function FleetReport({ tenant }) {
           .eq('municipality_id', tenant.id).eq('status', 'completed')
           .gte('trip_date', rangeFrom).lt('trip_date', endDay)).order('trip_date').order('id')),
         fetchAllRows(() => vq(supabase.from('fleet_fuel_records')
-          .select('*, fleet_vehicles(name, license_plate, asset_code, asset_kind, meter_unit), departments(name), vendor:fleet_vendors(name,tax_id,branch)')
+          .select('*, fleet_vehicles(name, license_plate, asset_code, asset_kind, meter_unit)')
           .eq('municipality_id', tenant.id)
           .gte('filled_at', rangeFrom).lte('filled_at', rangeTo)).order('filled_at').order('id')),
         fetchAllRows(() => vq(supabase.from('fleet_maintenance')
@@ -526,15 +526,13 @@ export default function FleetReport({ tenant }) {
 
   function exportFuelCSV() {
     downloadCSV([
-      ['ที่','วันที่','ทรัพย์สิน','ทะเบียน/รหัส','ชนิดเชื้อเพลิง','ลิตร','ราคา/ลิตร','รวม (บาท)','ค่ามิเตอร์','หน่วย','ปั๊ม','ผู้ขายตามใบกำกับภาษี','เลขผู้เสียภาษีผู้ขาย','กอง/หน่วยงาน','มูลค่าสินค้าก่อน VAT','ภาษีมูลค่าเพิ่ม','เลขที่ใบรับสินค้า/ใบส่งของ','กม./ล.','ผิดปกติ','เหตุผลที่ตั้งธง'],
+      ['ที่','วันที่','ทรัพย์สิน','ทะเบียน/รหัส','ชนิดเชื้อเพลิง','ลิตร','ราคา/ลิตร','รวม (บาท)','ค่ามิเตอร์','หน่วย','ปั๊ม','เลขที่ใบรับสินค้า/ใบส่งของ','กม./ล.','ผิดปกติ','เหตุผลที่ตั้งธง'],
       ...(data?.fuel ?? []).map((f, i) => [
         i+1, thDate(f.filled_at), f.fleet_vehicles?.name??'', assetIdentifier(f.fleet_vehicles),
         f.fuel_type === 'other' ? f.fuel_other_name || 'อื่นๆ' : FUEL_LABEL[f.fuel_type] || f.fuel_type || '',
         f.liters??'', f.price_per_liter??'',
         Math.round(f.total_cost ?? (f.liters??0)*(f.price_per_liter??0)),
-        f.odometer??'', meterUnitShort(f.fleet_vehicles), f.fuel_station??'',
-        f.vendor?.name??'', f.vendor?.tax_id??'', f.departments?.name??'',
-        f.amount_before_vat??'', f.vat_amount??'', f.receipt_no??'',
+        f.odometer??'', meterUnitShort(f.fleet_vehicles), f.fuel_station??'', f.receipt_no??'',
         f.efficiency_kml ?? '', f.is_anomaly ? 'ผิดปกติ' : '', f.anomaly_reason ?? '',
       ]),
     ], `น้ำมัน_${rangeFrom}_${rangeTo}.csv`)

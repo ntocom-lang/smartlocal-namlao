@@ -20,7 +20,6 @@ import {
   validateFleetDocument,
 } from '../../lib/fleetDocuments'
 import { buildFleetFuelRecordHtml, fuelTypeLabel } from '../../lib/fleetFuelPrint'
-import { vendorLabel } from '../../lib/fleetVendors'
 
 const inp = 'w-full px-3 py-2.5 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent'
 const sel = inp + ' appearance-none'
@@ -34,8 +33,6 @@ const auditSnapshot = r => r ? {
   filled_at: r.filled_at, vehicle_id: r.vehicle_id, odometer: r.odometer,
   liters: r.liters, price_per_liter: r.price_per_liter, total_cost: r.total_cost,
   full_tank: r.full_tank, fuel_station: r.fuel_station, receipt_no: r.receipt_no,
-  vendor_id: r.vendor_id, department_id: r.department_id,
-  amount_before_vat: r.amount_before_vat, vat_amount: r.vat_amount,
   is_anomaly: r.is_anomaly, anomaly_reason: r.anomaly_reason,
 } : null
 
@@ -51,16 +48,14 @@ const EMPTY_FORM = {
   odometer: '', liters: '', price_per_liter: '',
   fuel_type: 'diesel', fuel_other_name: '',
   full_tank: true, fuel_station: '', receipt_no: '', notes: '',
-  vendor_id: '', department_id: '', amount_before_vat: '', vat_amount: '',
 }
 
-export default function FleetFuelLog({ tenant, fleetInfo, depts = [], isAdmin, isStaff }) {
+export default function FleetFuelLog({ tenant, isAdmin, isStaff }) {
   const { session } = useAuth()
   const user = session?.user
   const [records,   setRecords]   = useState([])
   const [vehicles,  setVehicles]  = useState([])
   const [staffList, setStaffList] = useState([])
-  const [vendors,   setVendors]   = useState([])
   // ทะเบียนพนักงานขับรถ (fleet_drivers_directory) — ว่างได้ถ้า อปท. ยังไม่ตั้งค่า
   const [driverList, setDriverList] = useState([])
   const [loading,   setLoading]   = useState(true)
@@ -82,27 +77,22 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts = [], isAdmin, i
   const SELECT_Q = '*, fleet_vehicles(name, license_plate, asset_code, asset_kind, meter_unit), ' +
     'driver:profiles!fleet_fuel_records_driver_id_fkey(id,full_name), ' +
     'creator:profiles!fleet_fuel_records_created_by_fkey(id,full_name), ' +
-    'editor:profiles!fleet_fuel_records_updated_by_fkey(id,full_name), ' +
-    'vendor:fleet_vendors(id,name,tax_id,branch), departments(id,name,short_name)'
+    'editor:profiles!fleet_fuel_records_updated_by_fkey(id,full_name)'
 
   useEffect(() => {
     if (!tenant?.id) return
     Promise.all([
-      supabase.from('fleet_vehicles').select('id, name, license_plate, asset_code, asset_kind, meter_unit, tank_capacity, fuel_type, department_id')
+      supabase.from('fleet_vehicles').select('id, name, license_plate, asset_code, asset_kind, meter_unit, tank_capacity, fuel_type')
         .eq('municipality_id', tenant.id).eq('status', 'active').order('name'),
       supabase.from('profiles').select('id, full_name')
         .eq('municipality_id', tenant.id).not('fleet_role', 'is', null).order('full_name'),
       // ทะเบียนพนักงานขับรถ — ใช้ view ที่ตัดเลขใบขับขี่ออกแล้วตาม PDPA
       supabase.from('fleet_drivers_directory').select('profile_id, full_name')
         .eq('municipality_id', tenant.id).eq('status', 'active').order('full_name'),
-      // ทะเบียนผู้ขาย — โชว์เฉพาะที่ยังเปิดใช้งาน รายที่ปิดแล้วยังอ้างได้จากบันทึกเก่า
-      supabase.from('fleet_vendors').select('id, name, tax_id, branch')
-        .eq('municipality_id', tenant.id).eq('is_active', true).order('name'),
-    ]).then(([{ data: v }, { data: s }, { data: d }, { data: vd }]) => {
+    ]).then(([{ data: v }, { data: s }, { data: d }]) => {
       setVehicles(v ?? [])
       setStaffList(s ?? [])
       setDriverList(d ?? [])
-      setVendors(vd ?? [])
     })
   }, [tenant?.id])
 
@@ -135,20 +125,6 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts = [], isAdmin, i
   const totalCost = form.liters && form.price_per_liter
     ? (parseFloat(form.liters) * parseFloat(form.price_per_liter)).toFixed(2) : null
   const selectedAsset = vehicles.find(asset => asset.id === form.vehicle_id)
-
-  // แยกมูลค่าสินค้า/VAT ให้อัตโนมัติจากยอดที่คำนวณได้ (หาร 1.07) แล้วให้แก้ทับด้วยเลขจริง
-  // จากใบกำกับภาษีได้ — ยอดสองฝั่งไม่จำเป็นต้องเท่ากันเป๊ะ เพราะ total_cost เป็นยอดคำนวณ
-  // ย้อนจากลิตรxราคา ส่วนใบกำกับภาษีเป็นยอดที่จ่ายจริง (ปั๊มมักเติมเป็นยอดเงินกลม)
-  function autoFillVat() {
-    const total = Number(totalCost)
-    if (!Number.isFinite(total) || total <= 0) return alert('กรอกปริมาณและราคา/ลิตร ให้ครบก่อน')
-    const base = Math.round((total / 1.07) * 100) / 100
-    setForm(f => ({
-      ...f,
-      amount_before_vat: base.toFixed(2),
-      vat_amount: (Math.round((total - base) * 100) / 100).toFixed(2),
-    }))
-  }
 
   // อปท. ที่ยังไม่ได้ตั้งทะเบียนพนักงานขับรถต้องบันทึกน้ำมันต่อได้ ไม่งั้น deploy รอบนี้
   // จะทำให้ช่องผู้ขับรถว่างเปล่าทันทีทุกแห่งที่ยังไม่ได้ตั้งค่า
@@ -217,10 +193,6 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts = [], isAdmin, i
       fuel_station: r.fuel_station ?? '',
       receipt_no: r.receipt_no ?? '',
       notes: r.notes ?? '',
-      vendor_id: r.vendor_id ?? '',
-      department_id: r.department_id ?? '',
-      amount_before_vat: r.amount_before_vat ?? '',
-      vat_amount: r.vat_amount ?? '',
     })
     setReceiptFile(null)
     setModal('form')
@@ -241,14 +213,6 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts = [], isAdmin, i
     if (form.fuel_type === 'other' && !form.fuel_other_name.trim())
       return alert('กรุณาระบุชนิดเชื้อเพลิง/ของเหลว')
     if (!Number.isFinite(meter) || meter < 0) return alert('ค่ามิเตอร์ต้องเป็น 0 หรือมากกว่า')
-    // บังคับระบุกอง ไม่งั้นตัดงบประมาณรายกองใน fleet_budgets ไม่ได้ (รายการเก่ายังเป็น NULL ได้)
-    if (!form.department_id) return alert('กรุณาเลือกกอง/หน่วยงานที่รับภาระค่าใช้จ่าย')
-    const baseAmount = form.amount_before_vat === '' ? null : Number(form.amount_before_vat)
-    const vatAmount  = form.vat_amount === '' ? null : Number(form.vat_amount)
-    if (baseAmount !== null && (!Number.isFinite(baseAmount) || baseAmount < 0))
-      return alert('มูลค่าสินค้าก่อน VAT ต้องเป็น 0 หรือมากกว่า')
-    if (vatAmount !== null && (!Number.isFinite(vatAmount) || vatAmount < 0))
-      return alert('ภาษีมูลค่าเพิ่มต้องเป็น 0 หรือมากกว่า')
     if (!Number.isFinite(liters) || liters <= 0) return alert('ปริมาณเชื้อเพลิงต้องมากกว่า 0 ลิตร')
     if (pricePerLiter !== null && (!Number.isFinite(pricePerLiter) || pricePerLiter < 0))
       return alert('ราคาต่อลิตรต้องเป็น 0 หรือมากกว่า')
@@ -309,10 +273,6 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts = [], isAdmin, i
       full_tank:       form.full_tank,
       fuel_station:    form.fuel_station || null,
       receipt_no:      form.receipt_no   || null,
-      vendor_id:       form.vendor_id     || null,
-      department_id:   form.department_id || null,
-      amount_before_vat: form.amount_before_vat === '' ? null : Number(form.amount_before_vat),
-      vat_amount:        form.vat_amount === '' ? null : Number(form.vat_amount),
       notes:           form.notes        || null,
       ...(receiptPath ? { receipt_url: receiptPath } : {}),
     }
@@ -628,20 +588,6 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts = [], isAdmin, i
                   )}
                   <div className="col-span-2"><p className="text-gray-400">สถานีบริการ / ปั๊ม</p><p className="font-semibold text-gray-700">{r.fuel_station || '—'}</p></div>
                   <div className="col-span-2"><p className="text-gray-400">เลขที่ใบรับสินค้า/ใบส่งของ</p><p className="font-semibold text-gray-700">{r.receipt_no || '—'}</p></div>
-                  <div className="col-span-2"><p className="text-gray-400">ผู้ขายตามใบกำกับภาษี</p>
-                    <p className="font-semibold text-gray-700">
-                      {vendorLabel(r.vendor) || '—'}
-                      {r.vendor?.tax_id && <span className="font-normal text-gray-400"> · เลขผู้เสียภาษี {r.vendor.tax_id}</span>}
-                    </p>
-                  </div>
-                  <div><p className="text-gray-400">กอง/หน่วยงานที่รับภาระ</p><p className="font-semibold text-gray-700">{r.departments?.name || '—'}</p></div>
-                  <div><p className="text-gray-400">มูลค่าสินค้า / VAT</p>
-                    <p className="font-semibold text-gray-700">
-                      {r.amount_before_vat == null && r.vat_amount == null
-                        ? '—'
-                        : `฿${fmt(r.amount_before_vat ?? 0)} / ฿${fmt(r.vat_amount ?? 0)}`}
-                    </p>
-                  </div>
                   <div><p className="text-gray-400">ผู้บันทึก</p><p className="font-semibold text-gray-700">{r.creator?.full_name || '—'}</p></div>
                   {r.anomaly_reason && (
                     <div className="col-span-2"><p className="text-gray-400">เหตุที่ระบบตั้งธง</p><p className="font-semibold text-red-600">{r.anomaly_reason}</p></div>
@@ -703,10 +649,6 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts = [], isAdmin, i
                       vehicle_id: event.target.value,
                       fuel_type: asset?.fuel_type || current.fuel_type,
                       full_tank: isVehicleAsset(asset),
-                      // เติมกองให้อัตโนมัติจากกองของรถ รถส่วนกลางไม่มีกองจึงตกมาที่กองของผู้บันทึก
-                      // ไม่ทับค่าที่ผู้ใช้เลือกเองไว้แล้ว — รถส่วนกลางคันเดียวใช้คนละกองได้ในแต่ละเที่ยว
-                      department_id: current.department_id
-                        || asset?.department_id || fleetInfo?.department_id || '',
                     }))
                   }}
                   className={sel}>
@@ -786,54 +728,12 @@ export default function FleetFuelLog({ tenant, fleetInfo, depts = [], isAdmin, i
               </div>}
 
               <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1 block">กอง/หน่วยงานที่รับภาระค่าใช้จ่าย *</label>
-                <select value={form.department_id} onChange={set('department_id')} className={sel}>
-                  <option value="">— เลือกกอง/หน่วยงาน —</option>
-                  {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </select>
-                <p className="mt-1 text-[10px] text-gray-400">ใช้ตัดงบน้ำมันรายกอง — รถส่วนกลางเลือกกองที่ใช้รถเที่ยวนั้น</p>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้ขายตามใบกำกับภาษี</label>
-                <select value={form.vendor_id} onChange={set('vendor_id')} className={sel}>
-                  <option value="">— ไม่ระบุ —</option>
-                  {vendors.map(v => (
-                    <option key={v.id} value={v.id}>{vendorLabel(v)}</option>
-                  ))}
-                </select>
-                {vendors.length === 0 && (
-                  <p className="mt-1 text-[10px] text-amber-600">
-                    ยังไม่มีผู้ขายในทะเบียน — ตั้งค่าที่ระบบยานพาหนะ แท็บ “ผู้ขาย/ปั๊ม”
-                  </p>
-                )}
-              </div>
-
-              <div>
                 <label className="text-xs font-semibold text-gray-600 mb-1 block">ปั๊ม / สถานี</label>
                 <input value={form.fuel_station} onChange={set('fuel_station')} placeholder="ปตท. / เชลล์" className={inp} />
-                <p className="mt-1 text-[10px] text-gray-400">ชื่อที่เรียกกันทั่วไป ส่วนคู่สัญญาตามเอกสารให้เลือกที่ช่อง “ผู้ขายตามใบกำกับภาษี”</p>
               </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-semibold text-gray-600">มูลค่าสินค้า / ภาษีมูลค่าเพิ่ม</label>
-                  <button type="button" onClick={autoFillVat}
-                    className="text-[11px] font-semibold text-blue-600 hover:underline">คิดให้จากยอดรวม</button>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <input type="number" step="0.01" min="0" value={form.amount_before_vat}
-                    onChange={set('amount_before_vat')} placeholder="มูลค่าสินค้า" className={inp} />
-                  <input type="number" step="0.01" min="0" value={form.vat_amount}
-                    onChange={set('vat_amount')} placeholder="ภาษีมูลค่าเพิ่ม" className={inp} />
-                </div>
-                <p className="mt-1 text-[10px] text-gray-400">
-                  กรอกตามใบกำกับภาษี ยอดอาจไม่ตรงกับยอดที่ระบบคำนวณจากลิตร x ราคา เพราะปั๊มมักเติมเป็นยอดเงินกลม
-                </p>
-              </div>
-              {/* แยกออกจากกริด 2 คอลัมน์เดิม เพราะป้ายยาวขึ้นแล้วตกบรรทัดจนกล่องกรอก
-                  ไม่ตรงแนวกับช่องหมายเหตุ ป้ายต้องเรียกตามชื่อบนเอกสารจริงที่ปั๊มออกให้
-                  เจ้าหน้าที่จะได้หยิบเลขถูกใบ (ใบสั่งน้ำมันกับใบรับสินค้าเป็นคนละเลขกัน) */}
+              {/* แยกออกจากกริด 2 คอลัมน์ เพราะป้ายยาวขึ้นแล้วตกบรรทัดจนกล่องกรอกไม่ตรงแนวกับ
+                  ช่องหมายเหตุ ป้ายต้องเรียกตามชื่อบนเอกสารจริงที่ปั๊มออกให้ เจ้าหน้าที่จะได้หยิบ
+                  เลขถูกใบ (ใบสั่งน้ำมันกับใบรับสินค้าเป็นคนละเลขกัน) */}
               <div className="space-y-3">
                 <div>
                   <label className="text-xs font-semibold text-gray-600 mb-1 block">เลขที่ใบรับสินค้า/ใบส่งของ</label>
