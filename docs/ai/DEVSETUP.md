@@ -69,7 +69,9 @@ git -C ../smartlocal-devconfig add -A && git -C ../smartlocal-devconfig commit -
 npm run resume <branch>      # fetch + ff-only + pull devconfig + doctor
 ```
 
-ตั้งตัวแปร `SMARTLOCAL_DEVCONFIG` ชี้ไปที่ repo devconfig แล้ว `resume` จะ pull ให้เอง
+`resume` หา repo devconfig จาก `../smartlocal-devconfig` ให้เอง — **ไม่ต้องตั้งตัวแปรอะไร**
+ถ้าเก็บไว้ที่อื่นค่อยตั้ง `SMARTLOCAL_DEVCONFIG` ชี้ไปที่นั่น
+หาไม่เจอจะขึ้นเตือนให้เห็น ไม่ข้ามเงียบๆ (เดิมข้ามเงียบ ทำให้ memory เป็นของเก่าโดยไม่รู้ตัว)
 
 **`handoff` สร้าง commit ชื่อ `wip(handoff): <ชื่อเครื่อง> @ <เวลา>`** — ไม่ต้องกังวลว่าจะรก
 ตอนเปิด PR ค่อย squash ทีเดียว
