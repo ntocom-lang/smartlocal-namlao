@@ -147,7 +147,13 @@ const MANIFEST_PATH = '/manifest.webmanifest'
 // ไม่ย่อ/ขยายรูปเอง: Cloudflare Image Resizing เป็นบริการเสียเงิน ผิดนโยบายงบ 0 บาท
 // อ่านหัวไฟล์ 24 ไบต์แรกพอ แล้วยกเลิก stream ทิ้ง ไม่ต้องโหลดรูปทั้งใบ
 async function readPngSize(url) {
-  const res = await fetch(url, { headers: { Range: 'bytes=0-33' }, redirect: 'error', signal: AbortSignal.timeout(3000) })
+  // redirect: 'manual' ไม่ใช่ 'error' — workerd ไม่รองรับค่า 'error' และโยน TypeError ทิ้งทุกครั้ง
+  // ("'error' won't be implemented since it does not make sense at the edge; use 'manual' and check
+  //  the response status code") ยืนยันด้วย wrangler dev จริงแล้ว ไม่ได้เชื่อเอกสาร — หน้า Request ของ
+  //  Cloudflare ยังลิสต์ 'error' ไว้ว่าใช้ได้ ซึ่งไม่ตรงกับ runtime
+  // เจตนาเดิม (ไม่ตามลิงก์ต่อไปโฮสต์อื่น) ยังอยู่ครบกับ 'manual': มันคืน response 30x กลับมาเฉยๆ
+  //  แล้ว !res.ok บรรทัดถัดไปตัดทิ้งเอง
+  const res = await fetch(url, { headers: { Range: 'bytes=0-33' }, redirect: 'manual', signal: AbortSignal.timeout(3000) })
   if (!res.ok || !res.body) return null
 
   const reader = res.body.getReader()
