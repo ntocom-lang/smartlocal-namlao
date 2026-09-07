@@ -10,6 +10,7 @@ import { useTenant } from '../contexts/TenantContext'
 import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
 import { buildWasteCollectionRequestHtml } from '../lib/wasteCollectionRequestPrint'
 import { buildWasteCollectionCancelHtml, cancelReasonText } from '../lib/wasteCollectionCancelPrint'
+import { buildWaterSupplyRequestHtml } from '../lib/waterSupplyRequestPrint'
 import { generateDraftPdfBlob } from '../lib/generateDraftPdf'
 import { thaiDate, thaiDateFromDateInput } from '../lib/thaiDate'
 import { resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef } from '../lib/driveStorage'
@@ -21,6 +22,7 @@ const BASE_DOC_TYPES = {
   waste_collection: 'ค่าธรรมเนียมขยะ',
   waste_collection_request: 'ขอรับบริการเก็บขนขยะมูลฝอย',
   waste_collection_cancel: 'ขอยกเลิกการเก็บขนขยะมูลฝอย',
+  water_supply_request: 'ขออนุญาตใช้น้ำประปา',
   building_permit:  'ขออนุญาตก่อสร้างบ้าน',
 }
 let _customDocLabels = {}
@@ -286,6 +288,41 @@ function DocDetailSheet({ req, onClose, tenant }) {
     }
   }
 
+  function waterSupplyHtml() {
+    return buildWaterSupplyRequestHtml({
+      form: req.permit_form_data,
+      tenant,
+      // วันที่บนหัวใบต้องเป็นวันที่ยื่น ไม่ใช่วันที่กดพิมพ์ซ้ำ — ใบเดิมที่พิมพ์ใหม่อีกหกเดือน
+      // ต้องอ่านได้ว่ายื่นเมื่อไหร่ ไม่ใช่วันที่ประชาชนเปิดแอปครั้งล่าสุด
+      docDate: req.created_at,
+      referenceNo: req.id.slice(0, 8).toUpperCase(),
+      signedAt: req.permit_form_data?.signed_at ?? req.created_at,
+    })
+  }
+
+  function handlePrintWaterSupply() {
+    const w = window.open('', '_blank', 'width=860,height=1100')
+    if (!w) return
+    w.document.write(waterSupplyHtml())
+    w.document.close()
+    setTimeout(() => { w.focus(); w.print() }, 400)
+  }
+
+  async function handleDownloadWaterSupplyPdf() {
+    setPdfBusy(true)
+    try {
+      const blob = await generateDraftPdfBlob(waterSupplyHtml())
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `คำขอใช้น้ำประปา-${req.id.slice(0, 8).toUpperCase()}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      setPdfBusy(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-end md:items-center justify-center">
       <div className="bg-white w-full md:max-w-lg md:rounded-3xl rounded-t-3xl max-h-[93vh] flex flex-col overflow-hidden shadow-2xl">
@@ -370,6 +407,9 @@ function DocDetailSheet({ req, onClose, tenant }) {
               req.document_type === 'waste_collection_cancel' && req.permit_form_data?.cancel_date && {
                 label: 'ยกเลิกตั้งแต่', value: thaiDateFromDateInput(req.permit_form_data.cancel_date),
               },
+              req.document_type === 'water_supply_request' && req.permit_form_data?.service_start_date && {
+                label: 'เริ่มใช้น้ำ', value: thaiDateFromDateInput(req.permit_form_data.service_start_date),
+              },
               { label: 'วันที่ยื่น', value: dateTH(req.created_at) },
             ].filter(Boolean).map(({ label, value }) => (
               <div key={label} className="flex gap-2 text-xs">
@@ -435,6 +475,21 @@ function DocDetailSheet({ req, onClose, tenant }) {
               </button>
               <button onClick={handleDownloadWasteCancelPdf} disabled={pdfBusy}
                 className="w-full py-3 rounded-2xl font-semibold text-rose-800 bg-rose-50 border border-rose-200 text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-all">
+                {pdfBusy ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+                {pdfBusy ? 'กำลังสร้างไฟล์...' : 'ดาวน์โหลด PDF'}
+              </button>
+            </div>
+          )}
+
+          {req.document_type === 'water_supply_request' && req.permit_form_data && (
+            <div className="space-y-2">
+              <button onClick={handlePrintWaterSupply}
+                className="w-full py-3 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+                style={{ backgroundColor: '#0369a1' }}>
+                <Printer size={15} /> พิมพ์แบบคำขอใช้น้ำประปา
+              </button>
+              <button onClick={handleDownloadWaterSupplyPdf} disabled={pdfBusy}
+                className="w-full py-3 rounded-2xl font-semibold text-sky-800 bg-sky-50 border border-sky-200 text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-all">
                 {pdfBusy ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
                 {pdfBusy ? 'กำลังสร้างไฟล์...' : 'ดาวน์โหลด PDF'}
               </button>
