@@ -12,6 +12,7 @@ import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/c
 import { useTenant } from '../contexts/TenantContext'
 import { useNotifications } from '../contexts/NotificationsContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
+import { logAction } from '../lib/auditLog'
 import { govDocFontCss, govEServiceOriginText, govPageCss } from '../lib/govDocStyle.js'
 import { thaiDate, thaiDateFromDateInput } from '../lib/thaiDate'
 import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
@@ -78,6 +79,18 @@ const INBOX_ACTION_LABELS = {
   processing: 'ดำเนินการต่อ',
   completed:  'ดูรายละเอียด',
   rejected:   'ดูรายละเอียด',
+}
+
+// ใครลบคำขอถาวรได้ — ต้องตรงกับ RLS policy ของ document_requests เป๊ะ
+// (`superadmin delete document_requests` + `admin delete own municipality document_requests`)
+// ฝั่ง UI เป็นแค่การซ่อนปุ่มให้ไม่ต้องกดแล้วเจอ error ตัวบังคับจริงอยู่ที่ฐานข้อมูล —
+// admin ลบได้เฉพาะคำขอของ อปท. ตัวเองเท่านั้น ซึ่ง policy เป็นคนตัดสิน ไม่ใช่เงื่อนไขบรรทัดนี้
+// (หน้านี้โหลดเฉพาะคำขอของ อปท. ที่ล็อกอินอยู่แล้ว จึงไม่ต้องเช็ค municipality ซ้ำใน UI)
+//
+// role 'officer' (หัวหน้ากอง) กับ 'staff' จงใจไม่ให้ลบ — เดินสถานะเป็น "ปฏิเสธคำขอ"
+// พร้อมเหตุผลได้อยู่แล้ว ซึ่งเก็บร่องรอยไว้ให้ตรวจย้อนหลังได้ ต่างจากการลบทิ้ง
+function canDeleteRequests(role) {
+  return role === 'admin' || role === 'superadmin'
 }
 
 // เมนูที่ข้ามกอง (ใช้ร่วมกันทุกกอง ไม่ผูกกับกองใดกองหนึ่ง) — จัดเป็นกลุ่มย่อยตามลักษณะงาน
@@ -512,7 +525,7 @@ function TaskDetailSheet({
                   className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-600 transition-colors hover:bg-gray-50">
                   ยกเลิก
                 </button>
-                <button onClick={() => onDelete(req.id)} disabled={acting}
+                <button onClick={() => onDelete(req)} disabled={acting}
                   className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-red-600 text-white disabled:opacity-50 transition-opacity">
                   {acting ? <Loader2 size={14} className="animate-spin mx-auto" /> : 'ลบถาวร'}
                 </button>
@@ -623,11 +636,11 @@ function TaskDetailSheet({
             </button>
           </div>
         )}
-        {currentUserRole === 'superadmin' && !confirmDelete && (
+        {canDeleteRequests(currentUserRole) && !confirmDelete && (
           <div className="px-4 pb-6 pt-2 shrink-0">
             <button onClick={() => setConfirmDelete(true)} disabled={acting}
               className="w-full py-2 rounded-xl font-semibold text-red-400 hover:text-red-600 hover:bg-red-50 flex items-center justify-center gap-1.5 text-xs transition-colors">
-              <Trash2 size={13} /> ลบคำขอนี้ถาวร (Super Admin)
+              <Trash2 size={13} /> ลบคำขอนี้ถาวร
             </button>
           </div>
         )}
@@ -872,10 +885,35 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
     setSelected(prev => prev && prev.id === id ? { ...prev, assigned_to: assigneeId || null } : prev)
   }
 
-  // ลบถาวร — จำกัดเฉพาะ superadmin เท่านั้น (บังคับจริงด้วย RLS policy ในฐานข้อมูล
-  // ไม่ใช่แค่ซ่อนปุ่มฝั่ง UI) ใช้เมื่อคำขอผิดพลาด/สแปม/ทดสอบ ไม่ใช่ทางเลือกแทนการปฏิเสธคำขอปกติ
-  async function handleDelete(id) {
+  // ลบถาวร — admin ของ อปท. (เฉพาะคำขอของ อปท. ตัวเอง) และ superadmin เท่านั้น
+  // บังคับจริงด้วย RLS policy ในฐานข้อมูล ไม่ใช่แค่ซ่อนปุ่มฝั่ง UI (ดู migration
+  // 20260908180000_admin_delete_own_document_requests.sql) ใช้เมื่อคำขอผิดพลาด/สแปม/ทดสอบ
+  // ไม่ใช่ทางเลือกแทนการปฏิเสธคำขอตามปกติ
+  //
+  // ⚠️ ต้องเขียน audit_logs ทุกครั้ง — การลบคำขอของประชาชนออกจากระบบโดยไม่มีร่องรอยว่า
+  // ใครลบ ลบอะไร เมื่อไหร่ เป็นสิ่งที่ผู้ตรวจ (สตง.) ทักได้โดยตรง เดิมทำได้เฉพาะ superadmin
+  // ซึ่งเป็นบัญชีเดียวของผู้ดูแลระบบ พอเปิดให้ admin ของแต่ละ อปท. ลบได้ ร่องรอยจึงจำเป็นขึ้นมา
+  //
+  // บันทึก audit ก่อนลบ เพราะหลังลบแล้วไม่มีข้อมูลให้เก็บ snapshot อีก — ถ้า audit เขียนไม่ผ่าน
+  // (logAction กลืน error ไว้เอง) ยังเดินหน้าลบต่อ ไม่บล็อกงานหน้าเคาน์เตอร์
+  async function handleDelete(target) {
+    const req = typeof target === 'string' ? requests.find(r => r.id === target) : target
+    const id = typeof target === 'string' ? target : target?.id
+    if (!id) return
     setActing(true)
+    await logAction({
+      action: 'delete',
+      resourceType: 'document_request',
+      resourceId: id,
+      resourceLabel: req?.requester_name ?? null,
+      municipalityId: tenant?.id,
+      metadata: {
+        document_type: req?.document_type ?? null,
+        status: req?.status ?? null,
+        purpose: req?.purpose ?? null,
+        created_at: req?.created_at ?? null,
+      },
+    })
     const { error } = await supabase.from('document_requests').delete().eq('id', id)
     setActing(false)
     if (error) { alert('ลบไม่สำเร็จ: ' + error.message); return }
@@ -1063,14 +1101,14 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
                             className="whitespace-nowrap text-xs font-bold px-3 py-1 rounded border border-blue-600 text-blue-700 hover:bg-blue-600 hover:text-white transition-colors">
                             {INBOX_ACTION_LABELS[req.status] ?? 'ดูรายละเอียด'}
                           </button>
-                          {currentUserRole === 'superadmin' && (
+                          {canDeleteRequests(currentUserRole) && (
                             <button
                               onClick={e => {
                                 e.stopPropagation()
                                 if (!window.confirm(`ลบคำขอนี้ (${req.requester_name}) ออกจากระบบ?\n\nการลบไม่สามารถย้อนกลับได้`)) return
-                                handleDelete(req.id)
+                                handleDelete(req)
                               }}
-                              title="ลบถาวร (Super Admin)"
+                              title="ลบถาวร"
                               className="p-1.5 rounded border border-red-200 text-red-500 hover:bg-red-500 hover:text-white transition-colors">
                               <Trash2 size={13} />
                             </button>
