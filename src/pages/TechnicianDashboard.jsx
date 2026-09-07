@@ -43,7 +43,7 @@ function isClosed(status) { return CLOSED_STATUSES.has(status) }
 let CATEGORY_LABEL = {
   road: 'ซ่อมแซมถนน', light: 'ไฟฟ้าสาธารณะ',
   trash: 'ขยะ/ความสะอาด', water: 'น้ำประปา',
-  flood: 'น้ำท่วม/ระบายน้ำ', tree: 'ตัดต้นไม้',
+  flood: 'น้ำท่วม/ระบายน้ำ', tree: 'ต้นไม้/สวนสาธารณะ',
   noise: 'แจ้งเหตุรำคาญ', drain: 'ท่อระบายน้ำ',
   waste_water: 'น้ำเสีย', suction: 'ดูดสิ่งปฏิกูล',
   manhole: 'ฝาท่อระบายน้ำ', vendor: 'ขายของบนทางสาธารณะ',

@@ -38,7 +38,7 @@ const FALLBACK_CATEGORY_LABELS = {
   flood: 'น้ำท่วม / ระบายน้ำ', building: 'ตรวจสอบอาคาร', mosquito: 'พ่นยุง',
   disease: 'ควบคุมโรคติดต่อ', pollution: 'กลิ่น / ควัน / มลพิษ',
   grievance: 'แจ้งเรื่องร้องทุกข์ร้องเรียน', corruption: 'แจ้งการทุจริต',
-  tax: 'ภาษีและค่าธรรมเนียม', tree: 'ตัดต้นไม้', water_supply: 'สนับสนุนน้ำอุปโภค',
+  tax: 'ภาษีและค่าธรรมเนียม', tree: 'ต้นไม้/สวนสาธารณะ', water_supply: 'สนับสนุนน้ำอุปโภค',
   animals: 'สุนัขจรจัด', phone_complaint: 'ร้องเรียนเสียง', other: 'อื่นๆ',
 }
 
