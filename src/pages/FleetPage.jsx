@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, LayoutDashboard, Car, Fuel, Route, Wrench, BarChart2, Wallet, ChevronRight, BookOpen } from 'lucide-react'
+import { ArrowLeft, LayoutDashboard, Car, Fuel, Route, Wrench, BarChart2, Wallet, Store, ChevronRight, BookOpen } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -12,6 +12,7 @@ const FleetTrips = lazy(() => import('../components/fleet/FleetTrips'))
 const FleetMaintenance = lazy(() => import('../components/fleet/FleetMaintenance'))
 const FleetReport = lazy(() => import('../components/fleet/FleetReport'))
 const FleetBudget = lazy(() => import('../components/fleet/FleetBudget'))
+const FleetVendors = lazy(() => import('../components/fleet/FleetVendors'))
 
 // adminOnly = เห็นเฉพาะผู้มีสิทธิ์ fleet_admin (หรือ admin/superadmin ของ อปท.)
 // งบประมาณเดิมมี UI อยู่หลัง /admin ทางเดียว ผู้ดูแลยานพาหนะที่ role เป็น staff จึงตั้งงบไม่ได้
@@ -24,6 +25,7 @@ const TABS = [
   { id: 'maintenance', label: 'ซ่อมบำรุง',  sub: 'ประวัติการซ่อมบำรุง',  Icon: Wrench,          color: '#dc2626', grad: 'linear-gradient(135deg,#b91c1c,#ef4444)' },
   { id: 'report',      label: 'รายงาน',     sub: 'ส่งออก PDF / Excel',   Icon: BarChart2,       color: '#059669', grad: 'linear-gradient(135deg,#047857,#10b981)' },
   { id: 'budget',      label: 'งบประมาณ',   sub: 'งบน้ำมันรายกอง',      Icon: Wallet,          color: '#0891b2', grad: 'linear-gradient(135deg,#0e7490,#22d3ee)', adminOnly: true },
+  { id: 'vendors',     label: 'ผู้ขาย/ปั๊ม',  sub: 'คู่สัญญาตามใบกำกับภาษี', Icon: Store,           color: '#7c2d12', grad: 'linear-gradient(135deg,#7c2d12,#c2410c)', adminOnly: true },
 ]
 
 /* ── ปุ่มเปิดคู่มือการใช้งาน (เปิดแท็บใหม่ ไม่ทับหน้าที่กำลังทำงานอยู่) ── */
@@ -241,6 +243,7 @@ export default function FleetPage({ onBack } = {}) {
       {activeTab === 'maintenance' && <FleetMaintenance {...ctx} />}
       {activeTab === 'report'      && <FleetReport      tenant={tenant} depts={depts} />}
       {activeTab === 'budget' && isAdmin && <FleetBudget tenant={tenant} depts={depts} />}
+      {activeTab === 'vendors' && isAdmin && <FleetVendors tenant={tenant} canWrite={isAdmin} />}
     </Suspense>
   )
 

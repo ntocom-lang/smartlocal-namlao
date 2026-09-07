@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { Plus, X, Users, SearchX, Wallet, Car, ShieldCheck, ClipboardEdit, Eye, AlertTriangle } from 'lucide-react'
+import { Plus, X, Users, SearchX, Wallet, Car, Store, ShieldCheck, ClipboardEdit, Eye, AlertTriangle } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import FleetEmptyState from './FleetEmptyState'
 import BudgetTab from './FleetBudget'
+import VendorsTab from './FleetVendors'
 import { adminUpdateUser } from '../../lib/adminUpdateUser'
 import { logAction } from '../../lib/auditLog'
 
@@ -554,10 +555,12 @@ export default function FleetSetup({ tenant, depts: initDepts }) {
       <div className="flex gap-2 flex-wrap">
         <Tab id="budget" active={activeTab === 'budget'} label="งบประมาณ"    Icon={Wallet} onClick={setActiveTab} />
         <Tab id="users"  active={activeTab === 'users'}  label="สิทธิ์ผู้ใช้"  Icon={Users}  onClick={setActiveTab} />
+        <Tab id="vendors" active={activeTab === 'vendors'} label="ผู้ขาย/ปั๊ม" Icon={Store} onClick={setActiveTab} />
       </div>
 
       {activeTab === 'budget' && <BudgetTab tenant={tenant} depts={depts} />}
       {activeTab === 'users'  && <UsersTab  tenant={tenant} depts={depts} />}
+      {activeTab === 'vendors' && <VendorsTab tenant={tenant} canWrite />}
     </div>
   )
 }
