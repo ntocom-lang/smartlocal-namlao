@@ -12,6 +12,8 @@
  * --restore จึงมีไว้ให้เลือกเอง และปฏิเสธถ้าตรวจพบ PR ที่ยังเปิด
  */
 import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 
 const args = process.argv.slice(2);
 const RESTORE = args.includes('--restore');
@@ -102,11 +104,19 @@ if (RESTORE) {
 /* ── ดึง memory/env จาก repo devconfig ถ้ามี ─────────────────────── */
 // devconfig เป็น private repo แยก เก็บ .env.local + memory ของ Claude
 // ต้อง pull ก่อนเริ่มงาน ไม่งั้นสองเครื่องแก้ memory คนละทางแล้ว conflict
-const devconfig = process.env.SMARTLOCAL_DEVCONFIG ?? null;
-if (devconfig) {
+//
+// ใช้ค่าปริยาย ../smartlocal-devconfig ให้ตรงกับ env-sync.mjs และ link-memory.mjs
+// เดิมข้อนี้อ่านแค่ตัวแปร SMARTLOCAL_DEVCONFIG ถ้าไม่ได้ตั้งก็ "ข้ามเงียบๆ"
+// ⇒ resume ขึ้นว่าสำเร็จทุกอย่าง ทั้งที่ memory ยังเป็นของเก่า (เจอจริงบนเครื่อง PC)
+// ตอนนี้ถ้าหาไม่เจอจะบอกออกมา ไม่เงียบอีกแล้ว
+const devconfig = resolve(process.env.SMARTLOCAL_DEVCONFIG ?? join('..', 'smartlocal-devconfig'));
+if (existsSync(join(devconfig, '.git'))) {
   console.log(`\nดึง devconfig ล่าสุด (${devconfig})...`);
   const r = spawnSync('git', ['-C', devconfig, 'pull', '--ff-only'], { stdio: 'inherit' });
   if (r.status !== 0) console.log('⚠️  pull devconfig ไม่สำเร็จ — ตรวจเองอีกที');
+} else {
+  console.log(`\n⚠️  ไม่พบ repo devconfig ที่ ${devconfig} — ข้ามการดึง memory/env`);
+  console.log('    เก็บไว้ที่อื่น? ตั้งตัวแปร SMARTLOCAL_DEVCONFIG ชี้ไปที่นั่น');
 }
 
 /* ── ตรวจความพร้อมของเครื่องนี้ต่อ ──────────────────────────────── */
