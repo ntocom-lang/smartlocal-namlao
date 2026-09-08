@@ -9,6 +9,7 @@ import BuildingPermitWizard from './BuildingPermitWizard'
 import WasteCollectionRequestWizard from './WasteCollectionRequestWizard'
 import WasteCollectionCancelWizard from './WasteCollectionCancelWizard'
 import WaterSupplyRequestWizard from './WaterSupplyRequestWizard'
+import PublicAssistanceWizard from './PublicAssistanceWizard'
 import { withoutRemovedTypes } from '../lib/documentTypes'
 
 // ที่อยู่ผู้ยื่นคำขอ = ที่อยู่ในเขตของหน่วยงานเสมอ (ระบบนี้แยกตามหน่วยงาน ใครหน่วยงานนั้น)
@@ -105,6 +106,19 @@ const BASE_DOC_TYPES = [
     color:   '#0369a1',
     bg:      '#f0f9ff',
     border:  '#bae6fd',
+  },
+  {
+    value:   'public_assistance_request',
+    label:   'ขอรับการช่วยเหลือประชาชน',
+    emoji:   '🤝',
+    desc:    'ขอรับความช่วยเหลือกรณีได้รับความเดือดร้อน เช่น สาธารณภัย ที่อยู่อาศัยเสียหาย',
+    // บังคับล็อกอิน — คำร้องนี้ยื่นในชื่อผู้ยื่นเพื่อขอรับความช่วยเหลือจากงบประมาณ และมีบัญชี
+    // รายชื่อผู้เดือดร้อนแนบท้าย ถ้ายื่นได้โดยไม่ยืนยันตัวตน ใครก็ยื่นในชื่อคนอื่นหรือกรอก
+    // รายชื่อชาวบ้านมั่วได้ ซึ่งกระทบทั้งสิทธิ์ของประชาชนและการตรวจสอบภายหลัง
+    requiresAuth: true,
+    color:   '#be123c',
+    bg:      '#fff1f2',
+    border:  '#fecdd3',
   },
   {
     value:   'building_permit',
@@ -220,6 +234,7 @@ export default function CitizenDocRequest() {
   const isWasteCollectionRequest = selected?.value === 'waste_collection_request'
   const isWasteCollectionCancel = selected?.value === 'waste_collection_cancel'
   const isWaterSupplyRequest = selected?.value === 'water_supply_request'
+  const isPublicAssistanceRequest = selected?.value === 'public_assistance_request'
   const addressSuffix = tenantAddressSuffix(tenant)
   const fullName = joinThaiFullName(form.name_title, form.name_first, form.name_last)
 
@@ -450,6 +465,13 @@ export default function CitizenDocRequest() {
   // ผู้ยื่น, วันที่เริ่มใช้น้ำ, พิกัดจุดติดตั้ง และการยอมรับเรื่องมาตรวัดน้ำ) จึงใช้ฟอร์มเฉพาะ
   if (isWaterSupplyRequest) {
     return <WaterSupplyRequestWizard tenant={tenant} session={session} onBack={() => setSelected(null)} />
+  }
+
+  // คำร้องขอรับการช่วยเหลือมีข้อมูลเฉพาะตามแบบคำร้องต้นฉบับ (เรื่อง, ปัญหาความเดือดร้อน,
+  // ความต้องการรับการช่วยเหลือ และบัญชีรายชื่อผู้เดือดร้อนที่พิมพ์เป็นหน้าแนบท้าย) จึงใช้
+  // ฟอร์มเฉพาะ — ฟอร์มทั่วไปมีแค่ช่อง "วัตถุประสงค์" บรรทัดเดียว เก็บไม่พอสำหรับพิมพ์ใบจริง
+  if (isPublicAssistanceRequest) {
+    return <PublicAssistanceWizard tenant={tenant} session={session} onBack={() => setSelected(null)} />
   }
 
   // ─── Step 2: Form ──────────────────────────────────────────────────────────

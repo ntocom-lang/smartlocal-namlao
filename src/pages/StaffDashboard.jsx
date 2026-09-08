@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Inbox, FileText, MessageSquareWarning, LogOut,
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
-  Plus, Phone, MapPin, User, AlignLeft, Calendar, Hash, RefreshCw,
+  Plus, Phone, MapPin, User, Users, AlignLeft, Calendar, Hash, RefreshCw,
   Printer, Search, Hammer, LayoutDashboard, CalendarDays, TrendingUp, Images, Camera,
   Banknote, Luggage, Star, Car, Bell, Trash2, Database, BookOpen,
 } from 'lucide-react'
@@ -19,6 +19,7 @@ import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
 import { buildWasteCollectionRequestHtml, collectionPointText } from '../lib/wasteCollectionRequestPrint'
 import { buildWasteCollectionCancelHtml, cancelReasonText } from '../lib/wasteCollectionCancelPrint'
 import { buildWaterSupplyRequestHtml } from '../lib/waterSupplyRequestPrint'
+import { buildPublicAssistanceRequestHtml } from '../lib/publicAssistancePrint'
 import { uploadFile } from '../lib/driveStorage'
 import { fetchAssignableStaff, groupStaffByDepartment } from '../lib/staffRoster'
 import { BASE_DOCUMENT_TYPES, removedDocumentTypes } from '../lib/documentTypes'
@@ -47,6 +48,7 @@ const BuildingPermitWizard = lazy(() => import('./BuildingPermitWizard'))
 const WasteCollectionRequestWizard = lazy(() => import('./WasteCollectionRequestWizard'))
 const WasteCollectionCancelWizard = lazy(() => import('./WasteCollectionCancelWizard'))
 const WaterSupplyRequestWizard = lazy(() => import('./WaterSupplyRequestWizard'))
+const PublicAssistanceWizard = lazy(() => import('./PublicAssistanceWizard'))
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -406,6 +408,14 @@ function TaskDetailSheet({
               <InfoRow icon={<Calendar size={14} />} label="เริ่มใช้น้ำ"
                 value={thaiDateFromDateInput(req.permit_form_data.service_start_date)} />
             )}
+            {req.document_type === 'public_assistance_request' && req.permit_form_data && (
+              <InfoRow icon={<Users size={14} />} label="ผู้เดือดร้อนตามบัญชีแนบท้าย"
+                value={`${req.permit_form_data.affected?.length ?? 0} ราย`} />
+            )}
+            {req.document_type === 'public_assistance_request' && req.permit_form_data?.need && (
+              <InfoRow icon={<AlignLeft size={14} />} label="ความต้องการ"
+                value={req.permit_form_data.need} />
+            )}
             <InfoRow icon={<Hash size={14} />}       label="เลขอ้างอิง"    value={<span className="font-mono font-bold tracking-widest">{req.id?.slice(0, 8)?.toUpperCase() ?? '—'}</span>} />
             <InfoRow icon={<Calendar size={14} />}  label="วันที่ยื่น"     value={dateTH(req.created_at)} />
             {req.due_date && (
@@ -650,6 +660,34 @@ function TaskDetailSheet({
             </button>
           </div>
         )}
+        {req.document_type === 'public_assistance_request' && req.permit_form_data && (
+          <div className="px-4 pb-2 pt-3 border-t border-gray-100 shrink-0">
+            <button onClick={async () => {
+              const { data: departments } = await supabase.from('departments')
+                .select('name').eq('municipality_id', req.municipality_id).order('name')
+              const html = buildPublicAssistanceRequestHtml({
+                form: req.permit_form_data,
+                tenant,
+                // วันที่บนหัวใบ = วันที่ยื่น ไม่ใช่วันที่เจ้าหน้าที่กดพิมพ์ ด้วยเหตุผลเดียวกับ signedAt
+                docDate: req.created_at,
+                referenceNo: req.id?.slice(0, 8)?.toUpperCase() ?? '',
+                // ต้องเป็นเวลาที่ผู้ยื่นลงชื่อตอนยื่น ไม่ใช่เวลาที่เจ้าหน้าที่กดพิมพ์ — ใบที่พิมพ์
+                // ซ้ำอีกหกเดือนต้องยังแสดงวันเวลาเดิม ไม่งั้นบรรทัดกำกับใช้อ้างอิงไม่ได้เลย
+                signedAt: req.permit_form_data.signed_at ?? req.created_at,
+                departments: departments ?? [],
+              })
+              const w = window.open('', '_blank', 'width=860,height=1100')
+              if (!w) return
+              w.document.write(html)
+              w.document.close()
+              setTimeout(() => { w.focus(); w.print() }, 400)
+            }}
+              className="w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 text-sm active:scale-[0.98] transition-all"
+              style={{ backgroundColor: '#be123c' }}>
+              <Printer size={16} /> พิมพ์คำร้อง + บัญชีแนบท้าย
+            </button>
+          </div>
+        )}
         {req.status === 'completed' && (
           <div className="px-4 pb-6 pt-3 border-t border-gray-100 shrink-0">
             <button onClick={() => {
@@ -711,7 +749,7 @@ const EMPTY_REQ = {
   requester_phone: '', requester_address: '', purpose: '',
 }
 
-function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuildingPermit, onSelectWasteCollection, onSelectWasteCancel, onSelectWaterSupply }) {
+function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuildingPermit, onSelectWasteCollection, onSelectWasteCancel, onSelectWaterSupply, onSelectPublicAssistance }) {
   const [form, setForm] = useState(EMPTY_REQ)
   const [saving, setSaving] = useState(false)
   const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }))
@@ -755,6 +793,7 @@ function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuilding
                       else if (d.value === 'waste_collection_request') onSelectWasteCollection()
                       else if (d.value === 'waste_collection_cancel') onSelectWasteCancel()
                       else if (d.value === 'water_supply_request') onSelectWaterSupply()
+                      else if (d.value === 'public_assistance_request') onSelectPublicAssistance()
                       else setForm(p => ({ ...p, document_type: d.value }))
                     }}
                     className="flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left text-xs font-semibold transition-all active:scale-95"
@@ -815,6 +854,7 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
   const [showWasteWizard, setShowWasteWizard] = useState(false)
   const [showWasteCancelWizard, setShowWasteCancelWizard] = useState(false)
   const [showWaterSupplyWizard, setShowWaterSupplyWizard] = useState(false)
+  const [showPublicAssistanceWizard, setShowPublicAssistanceWizard] = useState(false)
   const [search, setSearch]       = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
   const [assignees, setAssignees] = useState([])
@@ -1202,7 +1242,8 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
           onSelectBuildingPermit={() => { setShowAdd(false); setShowPermitWizard(true) }}
           onSelectWasteCollection={() => { setShowAdd(false); setShowWasteWizard(true) }}
           onSelectWasteCancel={() => { setShowAdd(false); setShowWasteCancelWizard(true) }}
-          onSelectWaterSupply={() => { setShowAdd(false); setShowWaterSupplyWizard(true) }} />
+          onSelectWaterSupply={() => { setShowAdd(false); setShowWaterSupplyWizard(true) }}
+          onSelectPublicAssistance={() => { setShowAdd(false); setShowPublicAssistanceWizard(true) }} />
       )}
       {/* ขออนุญาตก่อสร้างบ้าน — ใช้ wizard เต็มรูปแบบเดียวกับฝั่งประชาชน (แบบ ข.๑ จริง)
           แทนฟอร์มสั้นทั่วไปใน NewRequestSheet เพราะฟิลด์ไม่พอสำหรับพิมพ์แบบร่างที่ถูกต้อง */}
@@ -1239,6 +1280,16 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
           <WaterSupplyRequestWizard tenant={tenant} session={null} staffId={staffId}
             onBack={() => setShowWaterSupplyWizard(false)}
             onDone={() => { setShowWaterSupplyWizard(false); setRefreshKey(k => k + 1) }} />
+        </div>
+      )}
+      {/* คำร้องขอรับการช่วยเหลือต้องใช้ฟิลด์ตามแบบคำร้องจริง (เรื่อง, ปัญหาความเดือดร้อน,
+          ความต้องการ, บัญชีรายชื่อผู้เดือดร้อน) ฟอร์ม walk-in แบบย่อเก็บไม่ครบ · session={null}
+          ทำให้ wizard รู้ว่าเป็นการกรอกแทน แล้วเว้นช่องลงนามให้เซ็นด้วยปากกา */}
+      {showPublicAssistanceWizard && (
+        <div className="fixed inset-0 z-[60] bg-white overflow-y-auto">
+          <PublicAssistanceWizard tenant={tenant} session={null} staffId={staffId}
+            onBack={() => setShowPublicAssistanceWizard(false)}
+            onDone={() => { setShowPublicAssistanceWizard(false); setRefreshKey(k => k + 1) }} />
         </div>
       )}
     </div>
@@ -1278,6 +1329,7 @@ const DOC_TITLES = {
   waste_collection_request: 'แจ้งผลการขอรับบริการเก็บขนขยะมูลฝอย',
   waste_collection_cancel: 'แจ้งผลการขอยกเลิกการเก็บขนขยะมูลฝอย',
   water_supply_request: 'แจ้งผลการขออนุญาตใช้น้ำประปา',
+  public_assistance_request: 'แจ้งผลการพิจารณาคำร้องขอรับการช่วยเหลือ',
   other:            'หนังสือรับรอง',
 }
 
@@ -1376,6 +1428,20 @@ function buildDocBody(req, orgName) {
               <p>${orgName}ได้รับคำขอไว้แล้ว ทั้งนี้ ผู้ขออนุญาตตกลงใช้มาตรวัดน้ำที่${orgName}จัดหาให้ และมีหน้าที่ชำระเงินค่าน้ำประปาและปฏิบัติตามระเบียบข้อบังคับของ${orgName}ทุกประการ</p>
               ${req.staff_notes ? `<p>หมายเหตุ: ${escapeHtml(req.staff_notes)}</p>` : ''}`
     }
+    case 'public_assistance_request': {
+      const form = req.permit_form_data ?? {}
+      const affected = Array.isArray(form.affected) ? form.affected.length : 0
+      return `<p>ตามที่ ${name}${idCard} ที่อยู่ ${addr} ได้ยื่นคำร้องขอรับการช่วยเหลือต่อ${orgName} นั้น</p>
+              <p class="no-indent" style="margin-left:3em; margin-top:6pt">
+                เรื่อง: <strong>${escapeHtml(req.purpose) || '-'}</strong><br/>
+                ${form.need ? `ความต้องการรับการช่วยเหลือ: <strong>${escapeHtml(form.need)}</strong><br/>` : ''}
+                ${affected ? `ผู้ได้รับความเดือดร้อนตามบัญชีแนบท้าย: <strong>${affected} ราย</strong>` : ''}
+              </p>
+              <p>${orgName}ได้ตรวจสอบข้อเท็จจริงและเสนอผู้บริหารพิจารณาตามระเบียบที่เกี่ยวข้องแล้ว ผลการพิจารณาปรากฏดังนี้</p>
+              ${req.staff_notes
+                ? `<p>${escapeHtml(req.staff_notes)}</p>`
+                : '<p>โปรดติดต่อสอบถามรายละเอียดผลการพิจารณาได้ที่สำนักงาน</p>'}`
+    }
     default:
       return `<p>${escapeHtml(req.purpose) || 'ตามที่ได้รับการร้องขอ'}</p>
               ${req.staff_notes ? `<p>รายละเอียดเพิ่มเติม: ${escapeHtml(req.staff_notes)}</p>` : ''}`
@@ -1391,6 +1457,7 @@ function buildDocHTML({ req, tenant, docDate }) {
     || req.document_type === 'waste_collection_request'
     || req.document_type === 'waste_collection_cancel'
     || req.document_type === 'water_supply_request'
+    || req.document_type === 'public_assistance_request'
   const logoUrl  = typeof tenant?.logo_url === 'string' && /^https?:\/\//.test(tenant.logo_url)
     ? escapeHtml(tenant.logo_url) : null
 

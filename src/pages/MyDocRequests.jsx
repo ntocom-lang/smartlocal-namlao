@@ -11,6 +11,7 @@ import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
 import { buildWasteCollectionRequestHtml } from '../lib/wasteCollectionRequestPrint'
 import { buildWasteCollectionCancelHtml, cancelReasonText } from '../lib/wasteCollectionCancelPrint'
 import { buildWaterSupplyRequestHtml } from '../lib/waterSupplyRequestPrint'
+import { buildPublicAssistanceRequestHtml } from '../lib/publicAssistancePrint'
 import { generateDraftPdfBlob } from '../lib/generateDraftPdf'
 import { thaiDate, thaiDateFromDateInput } from '../lib/thaiDate'
 import { resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef } from '../lib/driveStorage'
@@ -23,6 +24,7 @@ const BASE_DOC_TYPES = {
   waste_collection_request: 'ขอรับบริการเก็บขนขยะมูลฝอย',
   waste_collection_cancel: 'ขอยกเลิกการเก็บขนขยะมูลฝอย',
   water_supply_request: 'ขออนุญาตใช้น้ำประปา',
+  public_assistance_request: 'ขอรับการช่วยเหลือประชาชน',
   building_permit:  'ขออนุญาตก่อสร้างบ้าน',
 }
 let _customDocLabels = {}
@@ -300,6 +302,43 @@ function DocDetailSheet({ req, onClose, tenant }) {
     })
   }
 
+  // ⚠️ ฝั่งประชาชนไม่ส่งรายชื่อกองของ อปท. เข้าไปในใบโดยตั้งใจ — ช่องติ๊ก "ส่วนงานที่รับผิดชอบ"
+  // เป็นของเจ้าหน้าที่ ประชาชนพิมพ์ใบนี้เพื่อไปเก็บลายมือชื่อในบัญชีแนบท้าย ใบจึงใช้ช่องตาม
+  // ต้นฉบับไปก่อน (ดู deptBoxes ใน publicAssistancePrint.js) และไม่ต้องยิง query ที่ RLS
+  // ฝั่งประชาชนอาจไม่อนุญาตอยู่แล้ว
+  function publicAssistanceHtml() {
+    return buildPublicAssistanceRequestHtml({
+      form: req.permit_form_data,
+      tenant,
+      docDate: req.created_at,
+      referenceNo: req.id.slice(0, 8).toUpperCase(),
+      signedAt: req.permit_form_data?.signed_at ?? req.created_at,
+    })
+  }
+
+  function handlePrintPublicAssistance() {
+    const w = window.open('', '_blank', 'width=860,height=1100')
+    if (!w) return
+    w.document.write(publicAssistanceHtml())
+    w.document.close()
+    setTimeout(() => { w.focus(); w.print() }, 400)
+  }
+
+  async function handleDownloadPublicAssistancePdf() {
+    setPdfBusy(true)
+    try {
+      const blob = await generateDraftPdfBlob(publicAssistanceHtml())
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `คำร้องขอรับการช่วยเหลือ-${req.id.slice(0, 8).toUpperCase()}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      setPdfBusy(false)
+    }
+  }
+
   function handlePrintWaterSupply() {
     const w = window.open('', '_blank', 'width=860,height=1100')
     if (!w) return
@@ -410,6 +449,12 @@ function DocDetailSheet({ req, onClose, tenant }) {
               req.document_type === 'water_supply_request' && req.permit_form_data?.service_start_date && {
                 label: 'เริ่มใช้น้ำ', value: thaiDateFromDateInput(req.permit_form_data.service_start_date),
               },
+              req.document_type === 'public_assistance_request' && req.permit_form_data?.need && {
+                label: 'ความต้องการ', value: req.permit_form_data.need,
+              },
+              req.document_type === 'public_assistance_request' && req.permit_form_data && {
+                label: 'ผู้เดือดร้อน', value: `${req.permit_form_data.affected?.length ?? 0} ราย (ตามบัญชีแนบท้าย)`,
+              },
               { label: 'วันที่ยื่น', value: dateTH(req.created_at) },
             ].filter(Boolean).map(({ label, value }) => (
               <div key={label} className="flex gap-2 text-xs">
@@ -478,6 +523,26 @@ function DocDetailSheet({ req, onClose, tenant }) {
                 {pdfBusy ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
                 {pdfBusy ? 'กำลังสร้างไฟล์...' : 'ดาวน์โหลด PDF'}
               </button>
+            </div>
+          )}
+
+          {req.document_type === 'public_assistance_request' && req.permit_form_data && (
+            <div className="space-y-2">
+              <button onClick={handlePrintPublicAssistance}
+                className="w-full py-3 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+                style={{ backgroundColor: '#be123c' }}>
+                <Printer size={15} /> พิมพ์คำร้อง + บัญชีแนบท้าย
+              </button>
+              <button onClick={handleDownloadPublicAssistancePdf} disabled={pdfBusy}
+                className="w-full py-3 rounded-2xl font-semibold text-rose-800 bg-rose-50 border border-rose-200 text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-all">
+                {pdfBusy ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+                {pdfBusy ? 'กำลังสร้างไฟล์...' : 'ดาวน์โหลด PDF'}
+              </button>
+              {/* บอกให้ชัดว่าพิมพ์ไปทำอะไรต่อ — ไม่งั้นประชาชนไม่รู้ว่าหน้า 2 มีไว้ทำไม */}
+              <p className="px-1 text-[11px] leading-relaxed text-gray-500">
+                หน้า 2 เป็นบัญชีแนบท้ายสำหรับให้ผู้เดือดร้อนรายอื่นลงลายมือชื่อด้วยปากกา
+                แล้วนำมายื่นที่สำนักงาน
+              </p>
             </div>
           )}
 
