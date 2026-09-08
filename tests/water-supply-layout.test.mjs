@@ -77,12 +77,12 @@ function pdfPageCount(buffer) {
   return (buffer.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length
 }
 
-// ความสูงเนื้อหาจริงวัดจากขอบบนของ .sheet ถึงขอบล่างขององค์ประกอบสุดท้าย (.reference)
+// ความสูงเนื้อหาจริงวัดจากขอบบนของ .sheet ถึงขอบล่างขององค์ประกอบสุดท้ายที่มีอยู่จริง
 // — .sheet เองมี min-height 297mm ในโหมดจอ วัดจากมันจะได้ค่าคงที่เสมอ ใช้หาการล้นไม่ได้
 function contentHeightMm(page) {
   return page.evaluate(() => {
     const sheet = document.querySelector('.sheet')
-    const last = sheet.querySelector('.reference')
+    const last = sheet.lastElementChild
     return (last.getBoundingClientRect().bottom - sheet.getBoundingClientRect().top) / 3.779527
   })
 }
@@ -279,7 +279,7 @@ const checks = [
         // นับ "จำนวนบรรทัด" จากค่า top ที่ไม่ซ้ำกัน ไม่ใช่จำนวน rect —
         // ย่อหน้ามี <span> คั่น Range จึงคืน rect หลายก้อนบนบรรทัดเดียวกัน
         // (วัดจริงได้ 4 rect ทั้งที่อยู่บรรทัดเดียว) ถ้านับ rect ตรงๆ จะรายงานผิดทุกครั้ง
-        const lineCounts = await page.evaluate(() => [...document.querySelectorAll('.signature p:not(.signed-note)')]
+        const lineCounts = await page.evaluate(() => [...document.querySelectorAll('.signature-line, .sign-paren')]
           .map(el => {
             const range = document.createRange()
             range.selectNodeContents(el)
@@ -307,6 +307,47 @@ const checks = [
         assert.ok(overlap !== null, 'ไม่พบชื่อผู้ลงนามหรือคำว่า "ผู้ขออนุญาต" — โครงช่องลงนามเปลี่ยนไปแล้ว')
         assert.ok(overlap <= 0,
           `ชื่อผู้ลงนามพิมพ์ทับคำว่า "ผู้ขออนุญาต" อยู่ ${overlap}px`)
+
+        const centers = await page.evaluate(() => {
+          const upper = document.querySelector('.signature-line')?.getBoundingClientRect()
+          const lower = document.querySelector('.sign-paren')?.getBoundingClientRect()
+          return upper && lower
+            ? { upper: upper.left + upper.width / 2, lower: lower.left + lower.width / 2 }
+            : null
+        })
+        assert.ok(centers, 'ไม่พบบรรทัดชื่อบนหรือล่างในช่องลงนาม')
+        assert.ok(Math.abs(centers.upper - centers.lower) <= 1,
+          `ชื่อในวงเล็บไม่อยู่กึ่งกลางใต้ชื่อบรรทัดบน (คลาด ${Math.abs(centers.upper - centers.lower).toFixed(1)}px)`)
+      } finally {
+        await page.close()
+      }
+    },
+  },
+  {
+    name: 'long-office-address-wraps-cleanly',
+    reason: 'ที่อยู่สำนักงานบรรทัดยาวต้องแบ่งได้ไม่เกิน 2 บรรทัดและไม่ลากบล็อกล้ำเข้ากลางหน้า',
+    async run(browser) {
+      const page = await render(browser, longForm(), {
+        name: 'เทศบาลตำบลสาธิต',
+        org_type: 'เทศบาลตำบล',
+        address: 'เลขที่ 99 หมู่ที่ 5 ตำบลสาธิต อำเภอเมืองแพร่ จังหวัดแพร่ 54000',
+      })
+      try {
+        const metrics = await page.evaluate(() => {
+          const address = document.querySelector('.office-address')
+          const range = document.createRange()
+          range.selectNodeContents(address)
+          const lines = new Set([...range.getClientRects()].map(rect => Math.round(rect.top))).size
+          return {
+            lines,
+            width: address.getBoundingClientRect().width,
+            maxWidth: 90 * (96 / 25.4),
+          }
+        })
+        assert.equal(metrics.lines, 2,
+          `ที่อยู่สำนักงานยาวควรแบ่งเป็น 2 บรรทัด แต่พบ ${metrics.lines} บรรทัด`)
+        assert.ok(metrics.width <= metrics.maxWidth + 1,
+          `บล็อกที่อยู่สำนักงานกว้างเกิน 90 มม. (${metrics.width.toFixed(1)}px)`)
       } finally {
         await page.close()
       }

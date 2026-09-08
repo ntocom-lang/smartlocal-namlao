@@ -86,6 +86,8 @@ assert.match(online, /<span class="signed-name">นายสมชาย ใจ�
 assert.doesNotMatch(online, /class="fill-blank" style="min-width:54mm"/,
   'โหมดออนไลน์ต้องไม่เว้นช่องเซ็นปากกา ไม่งั้นได้ทั้งชื่อพิมพ์และเส้นประซ้อนกัน')
 assert.match(online, /ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service/)
+assert.equal((online.match(/E-Service/g) || []).length, 1,
+  'คำว่า E-Service ต้องมีเพียงจุดเดียวใต้ช่องลงชื่อ ไม่พิมพ์ซ้ำที่ท้ายเอกสาร')
 assert.match(online, /7 กันยายน พ\.ศ\. 2569 เวลา 10\.32 น\./,
   'ต้องมีวันเวลาที่ลงชื่อ ไม่งั้นบรรทัดกำกับใช้อ้างอิงย้อนหลังไม่ได้')
 assert.match(online, /เลขอ้างอิง A1B2C3D4/)
@@ -97,6 +99,7 @@ const counter = render(baseForm({ signed_by: { channel: 'counter', name: 'นา
 assert.match(counter, /class="fill-blank" style="min-width:54mm"/)
 assert.doesNotMatch(counter, /<span class="signed-name">/)
 assert.doesNotMatch(counter, /ลงชื่อโดยการยืนยันตัวตนผ่านระบบ/)
+assert.doesNotMatch(counter, /E-Service/)
 
 // ── คำขอเก่าที่ยื่นก่อนมีฟีเจอร์นี้: ไม่มี signed_by ต้องตกมาที่โหมดเว้นช่องเซ็น ──
 const legacy = render(baseForm({ signed_at: undefined, signed_by: undefined }))
