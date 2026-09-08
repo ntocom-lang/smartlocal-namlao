@@ -99,6 +99,22 @@ export function buildWasteCollectionCancelHtml({ form, tenant, thDate, reference
   const cancelDate = thaiDateFromDateInput(data.cancel_date)
   const reason = cancelReasonText(data)
   const collectionPoint = collectionPointText(data.collection_point)
+
+  // ต้นฉบับกระดาษมีช่องกรอกชื่อ+ที่อยู่ 2 ชุดเสมอ เพราะออกแบบให้รองรับการยื่นแทน แต่พอผู้ยื่น
+  // กับผู้ใช้บริการเป็นคนเดียวกัน (ซึ่งเป็นเคสส่วนใหญ่) การพิมพ์ตามต้นฉบับจะได้ชื่อกับที่อยู่ชุด
+  // เดียวกันซ้ำสองรอบในย่อหน้าเดียว — เคสจริงที่ผู้ใช้ทักมา: "นายยุทธศักดิ์ กาศเกษม อายุ 30 ปี
+  // อยู่บ้านเลขที่ 12 หมู่ 1 ตำบลสาธิต อำเภอเมืองแพร่ จังหวัดแพร่" ปรากฏ 2 ที่ในย่อหน้าเดียวกัน
+  //
+  // จึงยุบเหลือคำว่า "ของข้าพเจ้า" เฉพาะกรณีคนเดียวกัน ความหมายทางกฎหมายเท่าเดิม (ชื่อ ที่อยู่
+  // และเบอร์โทรของคนคนนั้นอยู่ต้นย่อหน้าครบแล้ว) ส่วนเคสยื่นแทนยังพิมพ์ครบทั้ง 2 ชุดตามต้นฉบับ
+  // เพราะเป็นคนละคนจริงและเจ้าหน้าที่ต้องเห็นว่าไปถอนถังที่บ้านไหน
+  const subscriberCopy = data.same_as_applicant
+    ? 'ของข้าพเจ้า'
+    : `ของ
+      ${line(subscriberName, '58mm')} อายุ ${line(subscriber.age, '14mm')} ปี
+      อยู่บ้านเลขที่ ${line(subscriber.addr_no, '22mm')} หมู่ ${line(subscriber.addr_moo, '12mm')}
+      ตำบล ${line(subscriber.addr_subdistrict, '27mm')} อำเภอ ${line(subscriber.addr_district, '27mm')}
+      จังหวัด ${line(subscriber.addr_province, '27mm')}`
   const signedOnline = data.signed_by?.channel === 'online'
   const signedStamp = signedOnline ? signedAtText(signedAt || data.signed_at) : ''
 
@@ -192,11 +208,7 @@ export function buildWasteCollectionCancelHtml({ form, tenant, thDate, reference
       อยู่บ้านเลขที่ ${line(applicant.addr_no, '22mm')} หมู่ ${line(applicant.addr_moo, '12mm')}
       ตำบล ${line(applicant.addr_subdistrict, '27mm')} อำเภอ ${line(applicant.addr_district, '27mm')}
       จังหวัด ${line(applicant.addr_province, '27mm')} โทรศัพท์ ${line(applicant.phone, '30mm', { nowrap: true })}
-      มีความประสงค์ขอให้<span class="org-name">${esc(orgName)}</span> ดำเนินการยกเลิกการจัดเก็บขยะมูลฝอยของ
-      ${line(subscriberName, '58mm')} อายุ ${line(subscriber.age, '14mm')} ปี
-      อยู่บ้านเลขที่ ${line(subscriber.addr_no, '22mm')} หมู่ ${line(subscriber.addr_moo, '12mm')}
-      ตำบล ${line(subscriber.addr_subdistrict, '27mm')} อำเภอ ${line(subscriber.addr_district, '27mm')}
-      จังหวัด ${line(subscriber.addr_province, '27mm')}
+      มีความประสงค์ขอให้<span class="org-name">${esc(orgName)}</span> ดำเนินการยกเลิกการจัดเก็บขยะมูลฝอย${subscriberCopy}
       เนื่องจาก ${line(reason, '52mm')} ตั้งแต่วันที่ ${line(cancelDate, '43mm')} เป็นต้นไป
     </p>
 
