@@ -47,7 +47,8 @@
     "test:fleet:form3": "node tests/fleet-form3-signatories.test.mjs && node tests/fleet-form3-layout.test.mjs",
     "test:waste-request": "node tests/waste-request-print.test.mjs",
     "test:water-supply": "node tests/water-supply-print.test.mjs && node tests/water-supply-layout.test.mjs",
-    "test:public-assistance": "node tests/public-assistance-print.test.mjs && node tests/public-assistance-layout.test.mjs"
+    "test:public-assistance": "node tests/public-assistance-print.test.mjs && node tests/public-assistance-layout.test.mjs",
+    "test:guard": "node tests/guard-master-tree.test.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
