@@ -12,6 +12,7 @@
 // (PowerShell: $env:ALLOW_MASTER_TREE_EDIT=1)
 
 import { execFileSync } from 'child_process'
+import { fileURLToPath } from 'url'
 import path from 'path'
 
 // สาขาเดียวที่หวง — สาขา feature ในทรีหลักถือว่าเจ้าของรู้ตัวว่าทำอะไรอยู่
@@ -51,12 +52,29 @@ function isMainTree(cwd) {
  * ⚠️ ไม่ใช่ตัวแยกวิเคราะห์ shell ครบรูปแบบ คำสั่งที่ซับซ้อนกว่านี้ (xargs, eval,
  * สคริปต์ที่เขียนไฟล์เอง) รอดด่านนี้ได้ — ด่านนี้กันความเผลอ ไม่ได้กันคนตั้งใจเลี่ยง
  */
-function bashWriteTargets(command) {
+/**
+ * กรอง "ปลายทาง" ที่ไม่ใช่ชื่อไฟล์ — กัน false positive จากสัญลักษณ์ในโค้ดที่หลุด regex มา
+ * เกิดจริงชั่วโมงแรกที่เปิดใช้: `node -e "...on('end',()=>{const j=...})"` โดน regex redirect
+ * จับ `=>` แล้วได้ปลายทางเป็น `s+=d` กับ `{const` — บล็อกคำสั่งที่แค่อ่านอย่างเดียวจนงานเดินต่อไม่ได้
+ *
+ * 2 ชั้น: (1) มีแต่อักขระที่ขึ้นชื่อไฟล์ได้ (2) มี / หรือนามสกุล
+ * ชั้นที่ 2 จำเป็นเพราะตัวแปรชื่อสั้นในโค้ด เช่น `if (a > b)` หน้าตาเหมือนชื่อไฟล์ทุกประการ
+ *
+ * ⚠️ แลกมาด้วย: ไฟล์ใหม่ที่รากโปรเจกต์และไม่มีนามสกุล (เช่น `Makefile`) จะรอดด่านนี้
+ * ยอมรับได้ เพราะ Edit/Write ยังกันครบ 100% — ตรงนี้เป็นชั้นเสริมสำหรับ Bash เท่านั้น
+ */
+function looksLikeFilePath(target) {
+  if (!/^[\w .\/\\@~-]+$/.test(target)) return false
+  return /[\/\\]/.test(target) || /\.[A-Za-z0-9]+$/.test(target)
+}
+
+export function bashWriteTargets(command) {
   const targets = []
   const unquote = (s) => s.replace(/^['"]|['"]$/g, '')
 
-  // redirect: > file, >> file (ข้าม >&2 และ 2>&1)
-  for (const m of command.matchAll(/(?:^|[^0-9&>])>>?\s*(?!&)("[^"]+"|'[^']+'|[^\s;|&)]+)/g)) {
+  // redirect: > file, >> file
+  // ข้าม >&2 และ 2>&1 (ตัวเลข/& นำหน้า) และข้าม => -> >= <> ที่เป็นสัญลักษณ์ในโค้ด ไม่ใช่ redirect
+  for (const m of command.matchAll(/(?:^|[^0-9&>=<!-])>>?\s*(?!&)("[^"]+"|'[^']+'|[^\s;|&)]+)/g)) {
     targets.push(unquote(m[1]))
   }
   // แก้ไฟล์ในที่: sed -i, tee, cp/mv (ปลายทางคือ argument สุดท้าย)
@@ -72,10 +90,10 @@ function bashWriteTargets(command) {
   for (const m of command.matchAll(/\brm\s+(?:-\S+\s+)*("[^"]+"|'[^']+'|[^\s;|&]+)/g)) {
     targets.push(unquote(m[1]))
   }
-  return targets
+  return targets.filter(looksLikeFilePath)
 }
 
-function toolTargets(payload) {
+export function toolTargets(payload) {
   const input = payload.tool_input || {}
   switch (payload.tool_name) {
     case 'Edit':
@@ -149,4 +167,7 @@ async function main() {
   ].join('\n'))
 }
 
-main()
+// รัน main() เฉพาะตอนถูกเรียกเป็น hook จริง — ไม่งั้น import ในเทสต์จะค้างรอ stdin
+// (รูปแบบเดียวกับ check-behind.mjs)
+const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+if (invokedDirectly) main()
