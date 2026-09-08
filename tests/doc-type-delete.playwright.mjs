@@ -1,15 +1,21 @@
-// Regression test สำหรับ "ลบประเภทคำขอเอกสารออกจาก อปท. ได้" (PR #67) + คอลัมน์ "ที่" (PR #69)
+// Regression test สำหรับสวิตช์ "เปิด/ปิดบริการ" รายประเภทคำขอเอกสาร (2569-09-08) —
+// แทนที่ UX เดิม "ลบ + แถบกู้คืนใต้ตาราง" (PR #67) แต่ยังเขียนคีย์เดิม fee_schedule._removed_types
+// รวมคอลัมน์ "ที่" (PR #69) ที่ยังต้องเรียง 1..n เหมือนเดิม
 //
 // ครอบ acceptance criteria:
-//   1. ปุ่มลบต้องขึ้นครบทุกแถว รวมประเภทมาตรฐาน (เดิมขึ้นเฉพาะประเภทที่ อปท. เพิ่มเอง)
+//   1. สวิตช์เปิด/ปิดต้องขึ้นครบทุกแถว ส่วนปุ่มลบถาวรมีเฉพาะประเภทที่ อปท. เพิ่มเอง
+//      (ประเภทมาตรฐานลบไม่ได้ เพราะลิสต์อยู่ในโค้ดเป็นของกลางทุก อปท.)
 //   2. คอลัมน์แรกหัวว่า "ที่" ตามแบบพิมพ์ราชการ และเลขเรียง 1..n ต่อเนื่องเสมอ
-//      แม้ลบประเภทกลางตารางออก (เลขนับจากแถวที่แสดงจริง ไม่ใช่ตำแหน่งใน BASE_DOCUMENT_TYPES)
-//   3. ลบแล้วบันทึก → ค่าลง fee_schedule._removed_types จริง โหลดหน้าใหม่ยังหาย
-//      และมีแถบกู้คืนให้เอากลับมาได้
-//   4. ประเภทที่ลบต้องหายจากหน้าแรกฝั่งประชาชน โดยประเภทอื่นยังอยู่ครบ (ไม่กรองเกินจำเป็น)
-//   5. กดบันทึกแล้วต้องอยู่หน้าเดิมและเห็น "บันทึกสำเร็จ" — กันบั๊ก patchTenant ที่ทำให้
-//      RequireAuth คืน null แล้วหน้าทั้งหน้า remount (PR #66) ถ้าใครเผลอใส่ `tenant` ทั้ง object
-//      กลับเข้า deps ของ effect ใน AuthContext เทสต์ข้อนี้จะแดงทันที
+//   3. ปิดสวิตช์แล้ว "แถวต้องยังอยู่ในตาราง" (ต่างจากเดิมที่แถวหายไปอยู่แถบกู้คืน)
+//      พร้อมป้าย "ปิดอยู่" และช่องผังงานถูกล็อก
+//   4. ปิดแล้วบันทึก → ค่าลง fee_schedule._removed_types จริง โหลดหน้าใหม่ยังปิดอยู่
+//      และเปิดกลับได้จากสวิตช์ในแถวเดิม
+//   5. ประเภทที่ปิดต้องหายจากหน้าแรกฝั่งประชาชน โดยประเภทอื่นยังอยู่ครบ (ไม่กรองเกินจำเป็น)
+//   6. **ปิดแล้วเปิดกลับ ผังงานที่ตั้งไว้ต้องไม่หาย** — หัวใจของการเปลี่ยนจาก "ลบ" เป็น "ปิด"
+//      โค้ดเดิมลบแถว document_type_assignments ทิ้งตอนบันทึก เปิดกลับมาแล้ว SLA เด้งกลับดีฟอลต์
+//   7. กดบันทึกแล้วต้องอยู่หน้าเดิม — กันบั๊ก patchTenant ที่ทำให้ RequireAuth คืน null
+//      แล้วหน้าทั้งหน้า remount (PR #66) ถ้าใครเผลอใส่ `tenant` ทั้ง object กลับเข้า deps
+//      ของ effect ใน AuthContext เทสต์ข้อนี้จะแดงทันที
 //
 // ⚠️ ข้อบังคับด้านความปลอดภัย/PDPA (เหมือน negative-authorization.playwright.mjs)
 //   - ยิงได้เฉพาะสนามซ้อม demo.rk-networks.com หรือ dev server ในเครื่อง (VITE_TENANT_SLUG=demo)
@@ -18,10 +24,10 @@
 //   - ไม่สร้างข้อมูลประชาชนใดๆ โหมด --write แตะเฉพาะ "รายการประเภทคำขอ" ของสนามซ้อม
 //
 // โหมดการรัน
-//   ค่าเริ่มต้น = read-only ตรวจข้อ 1, 2 และการเรียงเลขใหม่หลังกดลบ (กดลบแต่ไม่กดบันทึก
-//                 จึงไม่แตะ DB เลย ทิ้ง draft ด้วยการโหลดหน้าใหม่)
-//   --write     = ตรวจข้อ 3, 4, 5 เพิ่ม ซึ่ง "เขียน fee_schedule ของสนามซ้อมจริง" แล้ว
-//                 กู้คืนกลับสภาพเดิมให้เสมอใน finally ต่อให้ assertion ระหว่างทางพัง
+//   ค่าเริ่มต้น = read-only ตรวจข้อ 1, 2, 3 (กดสวิตช์แต่ไม่กดบันทึก จึงไม่แตะ DB เลย
+//                 ทิ้ง draft ด้วยการโหลดหน้าใหม่)
+//   --write     = ตรวจข้อ 4, 5, 6, 7 เพิ่ม ซึ่ง "เขียน fee_schedule + document_type_assignments
+//                 ของสนามซ้อมจริง" แล้วกู้คืนกลับสภาพเดิมให้เสมอใน finally ต่อให้ assertion พัง
 //   --headed    = เปิดหน้าต่างเบราว์เซอร์ให้ดูด้วยตา
 //
 // การล็อกอิน: ใช้ session ที่ค้างใน .chrome-test-profiles/TEST-admin กับ TEST-citizen
@@ -41,18 +47,21 @@ const DEFAULT_BASE_URL = 'https://demo.rk-networks.com'
 const SESSION_SOURCE_URL = 'https://demo.rk-networks.com'
 const ALLOWED_HOSTS = new Set(['demo.rk-networks.com', 'localhost', '127.0.0.1'])
 
-// ประเภทที่ใช้ทดสอบการลบ — เลือก waste_collection เพราะเป็นประเภทมาตรฐานที่ไม่มี wizard
-// เฉพาะทางผูกอยู่ (ต่างจาก building_permit / waste_collection_request) ลบแล้วกู้คืนได้สะอาด
+// ประเภทที่ใช้ทดสอบการปิด — เลือก waste_collection เพราะเป็นประเภทมาตรฐานที่ไม่มี wizard
+// เฉพาะทางผูกอยู่ (ต่างจาก building_permit / waste_collection_request) ปิดแล้วเปิดคืนได้สะอาด
 const TARGET_LABEL = 'ค่าธรรมเนียมขยะ'
 const TARGET_VALUE = 'waste_collection'
-// ประเภทกลางตาราง ใช้ทดสอบว่าเลขลำดับเรียงใหม่ต่อเนื่อง (กดลบแต่ไม่บันทึก)
+// ประเภทกลางตาราง ใช้ทดสอบว่าปิดแล้วแถวยังอยู่ที่เดิม เลขลำดับไม่ขยับ (กดสวิตช์แต่ไม่บันทึก)
 const MIDDLE_LABEL = 'ค่าธรรมเนียม/ภาษี'
+// ค่า SLA ที่ใช้ทดสอบว่าผังงานไม่หายตอนปิด — ต้องไม่ตรงดีฟอลต์ของ waste_collection (3 วัน)
+const PROBE_SLA = '5'
 
 const CARD_HEADING = 'ประเภทคำขอเอกสารและผังงาน'
-const RESTORE_STRIP = 'ประเภทที่ลบออกจากหน่วยงานนี้'
+const DISABLED_BADGE = 'ปิดอยู่'
 const SAVE_BUTTON = /^บันทึก(การเปลี่ยนแปลง)?$/
-const DELETE_BUTTON = 'button[title*="ลบประเภทนี้"]'
-const RESTORE_BUTTON = 'button[title="กู้คืนประเภทนี้"]'
+const TOGGLE = 'button[role="switch"]'
+// ปุ่มลบถาวรเหลือเฉพาะประเภทที่ อปท. เพิ่มเอง
+const DELETE_BUTTON = 'button[title*="ลบประเภทที่เพิ่มเอง"]'
 
 function resolveBaseUrl() {
   const raw = (process.env.DOCTYPE_TEST_BASE_URL || DEFAULT_BASE_URL).replace(/\/$/, '')
@@ -134,10 +143,17 @@ async function rowNumbers(page) {
   return cells.map(text => text.trim())
 }
 
-/** กดบันทึกแล้วรอ PATCH ของ municipalities — ใช้ response แทนข้อความบนจอ เพื่อไม่ผูกกับ UI */
+/**
+ * กดบันทึกแล้วรอผลจาก REST — ใช้ response แทนข้อความบนจอ เพื่อไม่ผูกกับ UI
+ *
+ * ต้องรับได้ทั้งสองตาราง: เปิด/ปิดบริการเขียน municipalities (PATCH) ส่วนการแก้กอง/ผู้รับผิดชอบ/
+ * วันแล้วเสร็จเขียน document_type_assignments (upsert = POST) การบันทึกครั้งหนึ่งอาจมีแค่อย่างใด
+ * อย่างหนึ่ง ถ้าดักเฉพาะ municipalities เทสต์จะค้างครบ 30 วิ ตอนบันทึกที่แก้แต่ผังงาน
+ */
 async function saveAndWait(page) {
   const patched = page.waitForResponse(
-    res => /\/rest\/v1\/municipalities/.test(res.url()) && res.request().method() === 'PATCH',
+    res => /\/rest\/v1\/(municipalities|document_type_assignments)/.test(res.url())
+      && ['PATCH', 'POST'].includes(res.request().method()),
     { timeout: 30_000 })
   await page.getByRole('button', { name: SAVE_BUTTON }).first().click()
   const response = await patched
@@ -147,16 +163,21 @@ async function saveAndWait(page) {
 
 // ─────────────────────────────────────────────────────── read-only checks ──
 
-// ปุ่มลบต้องมีครบทุกแถว — เดิมประเภทมาตรฐานไม่มีปุ่มเลย อปท. ที่ไม่ได้ให้บริการนั้นจึงเอาออกไม่ได้
-async function checkDeleteButtonOnEveryRow(baseUrl, headed) {
+// สวิตช์ต้องมีครบทุกแถว ส่วนปุ่มลบถาวรต้องไม่ขึ้นกับประเภทมาตรฐาน — ปิดสวิตช์ให้ผลเท่ากัน
+// สำหรับ อปท. นี้อยู่แล้ว และลบลิสต์ในโค้ดซึ่งเป็นของกลางทุก อปท. ทิ้งไม่ได้
+async function checkToggleOnEveryRow(baseUrl, headed) {
   const session = await openProfile('admin', headed)
   try {
     await transferDemoSession(session.page, baseUrl)
     await openDocTypeTab(session, baseUrl)
     const rows = await session.page.locator('table tbody tr').count()
-    const buttons = await session.page.locator(`table ${DELETE_BUTTON}`).count()
-    assert.ok(rows >= 6, `ตารางควรมีอย่างน้อย 6 ประเภท แต่มี ${rows}`)
-    assert.equal(buttons, rows, `ปุ่มลบมี ${buttons} ปุ่มแต่มี ${rows} แถว — ประเภทมาตรฐานต้องลบได้ด้วย`)
+    const toggles = await session.page.locator(`table ${TOGGLE}`).count()
+    const deletes = await session.page.locator(`table ${DELETE_BUTTON}`).count()
+    assert.ok(rows >= 6, `ตารางควรมีอย่างน้อย 6 ประเภท (รวมที่ปิดอยู่) แต่มี ${rows}`)
+    assert.equal(toggles, rows, `สวิตช์มี ${toggles} ตัวแต่มี ${rows} แถว — ทุกประเภทต้องปิด/เปิดได้`)
+    const customRows = await session.page.locator('table tbody tr').filter({ hasText: 'ประเภทที่เพิ่มเอง' }).count()
+    assert.equal(deletes, customRows,
+      `ปุ่มลบถาวรมี ${deletes} ปุ่มแต่มีประเภทที่เพิ่มเอง ${customRows} แถว — ประเภทมาตรฐานต้องลบไม่ได้`)
   } finally {
     await session.context.close()
   }
@@ -179,8 +200,9 @@ async function checkOrderColumn(baseUrl, headed) {
   }
 }
 
-// ลบประเภทกลางตาราง (ไม่กดบันทึก = ไม่แตะ DB) แล้วเลขต้องเรียงใหม่ต่อเนื่อง ไม่มีเลขหาย
-async function checkRenumberAfterDelete(baseUrl, headed) {
+// ปิดประเภทกลางตาราง (ไม่กดบันทึก = ไม่แตะ DB) แล้วแถวต้องยังอยู่ที่เดิม เลขไม่ขยับ
+// มีป้ายบอกว่าปิดอยู่ และช่องผังงานถูกล็อก
+async function checkToggleKeepsRow(baseUrl, headed) {
   const session = await openProfile('admin', headed)
   try {
     await transferDemoSession(session.page, baseUrl)
@@ -190,14 +212,21 @@ async function checkRenumberAfterDelete(baseUrl, headed) {
     if (await target.count() === 0) {
       throw new BlockedError(`สนามซ้อมไม่มีประเภท "${MIDDLE_LABEL}" ให้ทดสอบ (อาจถูกลบค้างไว้) กู้คืนก่อนรันซ้ำ`)
     }
-    await target.locator(DELETE_BUTTON).click()
+    const toggle = target.locator(TOGGLE)
+    assert.equal(await toggle.getAttribute('aria-checked'), 'true',
+      `"${MIDDLE_LABEL}" ควรเปิดอยู่ก่อนเริ่มทดสอบ (สนามซ้อมอาจถูกปิดค้างไว้)`)
+    await toggle.click()
     await session.page.waitForTimeout(600)
+
     const after = await rowNumbers(session.page)
-    assert.equal(after.length, before.length - 1, 'กดลบแล้วจำนวนแถวต้องลดลง 1')
-    assert.deepEqual(after, after.map((_, i) => String(i + 1)),
-      `เลขต้องเรียง 1..${after.length} ต่อเนื่องหลังลบแถวกลาง แต่ได้ ${after.join(',')}`)
-    const stillListed = await rowOf(session.page, MIDDLE_LABEL).count()
-    assert.equal(stillListed, 0, 'แถวที่กดลบต้องหายจากตารางทันทีตั้งแต่ยังไม่บันทึก')
+    assert.deepEqual(after, before, 'ปิดสวิตช์แล้วแถวต้องยังอยู่ครบ เลขลำดับไม่ขยับ')
+    const row = rowOf(session.page, MIDDLE_LABEL)
+    assert.equal(await row.count(), 1, 'แถวที่ปิดต้องยังอยู่ในตาราง ไม่ใช่หายไปแถบอื่น')
+    assert.equal(await row.locator(TOGGLE).getAttribute('aria-checked'), 'false', 'สวิตช์ต้องอยู่สถานะปิด')
+    assert.ok((await row.textContent())?.includes(DISABLED_BADGE),
+      `แถวที่ปิดต้องมีป้าย "${DISABLED_BADGE}" บอกว่าประชาชนยื่นใหม่ไม่ได้`)
+    assert.ok(await row.locator('select:disabled').count() >= 2,
+      'ช่องกอง/ผู้รับผิดชอบของแถวที่ปิดต้องถูกล็อก')
   } finally {
     // ไม่กดบันทึก จึงไม่มีอะไรต้องกู้คืน ปิดหน้าไปเลย draft หายเอง
     await session.context.close()
@@ -206,15 +235,26 @@ async function checkRenumberAfterDelete(baseUrl, headed) {
 
 // ─────────────────────────────────────────────────────────── write checks ──
 
-// วงจรเต็ม: ลบ → บันทึก → ตรวจ persist + ฝั่งประชาชน → กู้คืน
-// กู้คืนอยู่ใน finally เสมอ ต่อให้ assertion กลางทางพัง สนามซ้อมต้องกลับสภาพเดิม
-async function checkDeleteSaveRestore(baseUrl, headed) {
+const slaInput = row => row.locator('input[type="number"]')
+
+/** ตั้งค่า "แล้วเสร็จใน" ของแถวแล้วบันทึก — ใช้ปักหมุดผังงานไว้ตรวจว่าปิดแล้วไม่หาย */
+async function setSlaAndSave(page, label, days) {
+  const input = slaInput(rowOf(page, label))
+  await input.fill(days)
+  await page.waitForTimeout(300)
+  return saveAndWait(page)
+}
+
+// วงจรเต็ม: ตั้ง SLA → ปิด → บันทึก → ตรวจ persist + ฝั่งประชาชน → เปิดกลับ → ผังงานต้องยังอยู่
+// การกู้คืนอยู่ใน finally เสมอ ต่อให้ assertion กลางทางพัง สนามซ้อมต้องกลับสภาพเดิม
+async function checkDisableSaveEnable(baseUrl, headed) {
   const session = await openProfile('admin', headed)
-  let removed = false
+  let touched = false
+  let originalSla = null
   try {
     await transferDemoSession(session.page, baseUrl)
 
-    // baseline ของหน้าแรกฝั่งประชาชน ก่อนลบ
+    // baseline ของหน้าแรกฝั่งประชาชน ก่อนปิด
     const citizenBefore = await collectHomeServiceLinks(baseUrl, headed)
 
     await openDocTypeTab(session, baseUrl)
@@ -223,49 +263,69 @@ async function checkDeleteSaveRestore(baseUrl, headed) {
     if (await target.count() === 0) {
       throw new BlockedError(`สนามซ้อมไม่มีประเภท "${TARGET_LABEL}" ให้ทดสอบ (อาจถูกลบค้างไว้) กู้คืนก่อนรันซ้ำ`)
     }
-    await target.locator(DELETE_BUTTON).click()
+    assert.equal(await target.locator(TOGGLE).getAttribute('aria-checked'), 'true',
+      `"${TARGET_LABEL}" ควรเปิดอยู่ก่อนเริ่มทดสอบ (สนามซ้อมอาจถูกปิดค้างไว้)`)
+
+    // ปักหมุดผังงานด้วยค่าที่ไม่ใช่ดีฟอลต์ ไว้ตรวจข้อ 6 ตอนท้าย
+    originalSla = await slaInput(target).inputValue()
+    touched = true
+    await setSlaAndSave(session.page, TARGET_LABEL, PROBE_SLA)
+
+    // ปิดบริการแล้วบันทึก
+    await rowOf(session.page, TARGET_LABEL).locator(TOGGLE).click()
     await session.page.waitForTimeout(400)
     const status = await saveAndWait(session.page)
-    removed = true
     assert.ok(status >= 200 && status < 300, `บันทึกไม่สำเร็จ (HTTP ${status})`)
 
-    // ข้อ 5 — บั๊ก patchTenant: ต้องอยู่หน้าเดิม ไม่ถูกเด้งกลับหน้าแรกของหลังบ้าน
+    // ข้อ 7 — บั๊ก patchTenant: ต้องอยู่หน้าเดิม ไม่ถูกเด้งกลับหน้าแรกของหลังบ้าน
     assert.ok(await session.page.getByText(CARD_HEADING).count() > 0,
       'บันทึกแล้วหน้าถูก remount กลับไปหน้าแรกของหลังบ้าน — ตรวจ deps ของ effect ใน AuthContext')
-    assert.ok(await session.page.getByText(RESTORE_STRIP).count() > 0,
-      'แถบกู้คืนต้องขึ้นในหน้าเดิมทันทีโดยไม่ต้องโหลดใหม่')
 
-    // ข้อ 3 — ค่าอยู่ใน DB จริง ไม่ใช่แค่ state ในหน้า
+    // ข้อ 4 — ค่าอยู่ใน DB จริง ไม่ใช่แค่ state ในหน้า
     await openDocTypeTab(session, baseUrl)
-    assert.equal(await rowOf(session.page, TARGET_LABEL).count(), 0,
-      'โหลดหน้าใหม่แล้วประเภทที่ลบต้องยังหาย (fee_schedule._removed_types ต้องถูกบันทึก)')
-    assert.equal(await session.page.locator('table tbody tr').count(), rowsBefore - 1,
-      'จำนวนแถวหลังโหลดใหม่ต้องลดลง 1')
-    const numbers = await rowNumbers(session.page)
-    assert.deepEqual(numbers, numbers.map((_, i) => String(i + 1)),
-      'เลขลำดับต้องยังเรียงต่อเนื่องหลังลบถาวร')
+    const reopened = rowOf(session.page, TARGET_LABEL)
+    assert.equal(await reopened.count(), 1, 'โหลดหน้าใหม่แล้วแถวที่ปิดต้องยังอยู่ในตาราง')
+    assert.equal(await reopened.locator(TOGGLE).getAttribute('aria-checked'), 'false',
+      'โหลดหน้าใหม่แล้วต้องยังปิดอยู่ (fee_schedule._removed_types ต้องถูกบันทึก)')
+    assert.equal(await session.page.locator('table tbody tr').count(), rowsBefore,
+      'จำนวนแถวต้องเท่าเดิม — ปิดบริการไม่ใช่การลบแถวออกจากตาราง')
 
-    // ข้อ 4 — ฝั่งประชาชน: หายเฉพาะตัวที่ลบ ตัวอื่นอยู่ครบ
+    // ข้อ 5 — ฝั่งประชาชน: หายเฉพาะตัวที่ปิด ตัวอื่นอยู่ครบ
     const citizenAfter = await collectHomeServiceLinks(baseUrl, headed)
     assert.ok(!citizenAfter.some(href => href.endsWith(`type=${TARGET_VALUE}`)),
-      'หน้าแรกฝั่งประชาชนยังมีปุ่มบริการของประเภทที่ลบไปแล้ว')
+      'หน้าแรกฝั่งประชาชนยังมีปุ่มบริการของประเภทที่ปิดไปแล้ว')
     const others = citizenBefore.filter(href => !href.endsWith(`type=${TARGET_VALUE}`))
     for (const href of others) {
       assert.ok(citizenAfter.includes(href), `ประเภทอื่นหายไปด้วย: ${href} — กรองเกินจำเป็น`)
     }
+
+    // ข้อ 6 — เปิดกลับแล้วผังงานต้องยังอยู่ (โค้ดเดิมลบแถว assignment ทิ้ง ค่าจะเด้งกลับดีฟอลต์)
+    await openDocTypeTab(session, baseUrl)
+    await rowOf(session.page, TARGET_LABEL).locator(TOGGLE).click()
+    await session.page.waitForTimeout(400)
+    await saveAndWait(session.page)
+    await openDocTypeTab(session, baseUrl)
+    const restored = rowOf(session.page, TARGET_LABEL)
+    assert.equal(await restored.locator(TOGGLE).getAttribute('aria-checked'), 'true',
+      'เปิดกลับแล้วต้องอยู่สถานะเปิดหลังโหลดหน้าใหม่')
+    assert.equal(await slaInput(restored).inputValue(), PROBE_SLA,
+      'ปิดแล้วเปิดกลับ ค่า "แล้วเสร็จใน" ที่ตั้งไว้ต้องไม่หาย — แถว document_type_assignments ต้องไม่ถูกลบตอนปิด')
   } finally {
-    if (removed) {
+    if (touched) {
       try {
         await openDocTypeTab(session, baseUrl)
-        while (await session.page.locator(RESTORE_BUTTON).count() > 0) {
-          await session.page.locator(RESTORE_BUTTON).first().click()
+        const row = rowOf(session.page, TARGET_LABEL)
+        if (await row.locator(TOGGLE).getAttribute('aria-checked') === 'false') {
+          await row.locator(TOGGLE).click()
           await session.page.waitForTimeout(300)
         }
-        await saveAndWait(session.page)
+        // คืนค่า SLA เดิมของสนามซ้อม (ค่าที่อ่านได้ตอนเริ่มเทสต์ อาจเป็นดีฟอลต์ของระบบ)
+        await setSlaAndSave(session.page, TARGET_LABEL, originalSla || '3')
         await openDocTypeTab(session, baseUrl)
-        const back = await rowOf(session.page, TARGET_LABEL).count() > 0
-        const stripGone = await session.page.getByText(RESTORE_STRIP).count() === 0
-        if (!back || !stripGone) {
+        const back = rowOf(session.page, TARGET_LABEL)
+        const ok = await back.locator(TOGGLE).getAttribute('aria-checked') === 'true'
+          && await slaInput(back).inputValue() === (originalSla || '3')
+        if (!ok) {
           process.stderr.write(`⚠️ กู้คืน "${TARGET_LABEL}" บนสนามซ้อมไม่สำเร็จ ต้องตามเก็บด้วยมือ\n`)
         }
       } catch {
@@ -333,15 +393,15 @@ async function main() {
   const baseUrl = resolveBaseUrl()
 
   const checks = [
-    { name: 'delete-button-every-row', reason: 'ปุ่มลบขึ้นครบทุกแถว รวมประเภทมาตรฐาน', run: checkDeleteButtonOnEveryRow },
+    { name: 'toggle-every-row', reason: 'สวิตช์ขึ้นครบทุกแถว ปุ่มลบถาวรมีเฉพาะประเภทที่เพิ่มเอง', run: checkToggleOnEveryRow },
     { name: 'order-column', reason: 'คอลัมน์แรกหัวว่า "ที่" และเลขเรียง 1..n', run: checkOrderColumn },
-    { name: 'renumber-after-delete', reason: 'ลบแถวกลาง (ยังไม่บันทึก) แล้วเลขเรียงใหม่ต่อเนื่อง', run: checkRenumberAfterDelete },
+    { name: 'toggle-keeps-row', reason: 'ปิดสวิตช์ (ยังไม่บันทึก) แล้วแถวยังอยู่ที่เดิม พร้อมป้ายและช่องที่ถูกล็อก', run: checkToggleKeepsRow },
   ]
   if (args.write) {
     checks.push({
-      name: 'delete-save-restore',
-      reason: 'ลบ → บันทึกลง DB → หายจากหน้าประชาชนเฉพาะตัวที่ลบ → กู้คืนกลับสภาพเดิม',
-      run: checkDeleteSaveRestore,
+      name: 'disable-save-enable',
+      reason: 'ปิด → บันทึกลง DB → หายจากหน้าประชาชนเฉพาะตัวที่ปิด → เปิดกลับแล้วผังงานยังอยู่',
+      run: checkDisableSaveEnable,
     })
   }
 
