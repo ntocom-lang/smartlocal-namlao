@@ -1,4 +1,5 @@
 import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
+import { orgClerkTitle, orgHeadTitle } from './orgTerms.js'
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -163,8 +164,13 @@ export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate,
   const loc = locationName(tenant)
   const reporter = c.reporter_name || c.profiles?.full_name || '.................................................'
 
-  const mayorTitle = (terminology?.mayor ?? 'นายก') + loc
-  const clerkTitle = (terminology?.clerk ?? 'ปลัด') + loc
+  // จ่าหน้า "เรียน" กับตำแหน่งใต้ช่องลงนามต้องเป็นชื่อหน่วยงานเต็ม (นายกองค์การบริหารส่วนตำบลทุ่งแค้ว)
+  // ไม่ใช่คำเรียกแบบย่อจาก terminology (นายก อบต.ทุ่งแค้ว) ซึ่งเป็นคำที่ใช้บนหน้าจอระบบ —
+  // ใบขยะ/ประปา/ช่วยเหลือประชาชนใช้ orgHeadTitle() กันหมดแล้ว ใบคำร้องนี้ตกหล่นอยู่ไฟล์เดียว
+  const mayorTitle = orgHeadTitle(tenant)
+  const clerkTitle = orgClerkTitle(tenant)
+  // councilTitle ยังใช้คำย่อ + ชื่อพื้นที่ เพราะเป็น "ตำแหน่งของผู้ยื่นคำร้อง" ที่พิมพ์ต่อท้ายชื่อ
+  // ในบรรทัดข้าพเจ้า ไม่ใช่คำจ่าหน้าหนังสือ ("สมาชิกสภา อบต.ทุ่งแค้ว เขตที่ ...")
   const councilTitle = (terminology?.council ?? 'สมาชิกสภา') + loc
 
   // ตำแหน่ง/ที่อยู่ผู้ร้อง — ใช้ข้อมูลบัญชีของผู้ยื่นก่อนเสมอ
@@ -249,7 +255,7 @@ ${GOV_FONT_LINK}
   <div class="official-ref">คำร้องเลขที่........................................</div>
 </div>
 
-<p class="center" style="font-weight:700;margin-top:10px;">คำร้อง</p>
+<p class="center" style="font-weight:700;margin-top:10px;">คำร้อง${esc(requestCopy.subject)}</p>
 <p class="center" style="margin-top:2px;">${esc(govEServiceOriginText(tenant))}</p>
 
 <p style="margin-top:16px;">เรื่อง &nbsp;&nbsp;${esc(requestCopy.subject)}</p>
