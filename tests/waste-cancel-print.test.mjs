@@ -75,15 +75,24 @@ function render(form, extra = {}) {
   assert.match(html, /การยกเลิกจะมีผลเมื่อ.*ตรวจสอบและแจ้งผลแล้ว/)
 }
 
-// ── โหมดลงนาม: ยื่นออนไลน์เอง → พิมพ์ชื่อเป็นลายมือชื่อ + บรรทัดกำกับ ─────────
+// ── โหมดลงนาม: ยื่นออนไลน์เอง → พิมพ์ชื่อเป็นลายมือชื่อ + ร่องรอยที่บรรทัดล่างสุด ──
 {
   const html = render(baseForm())
   assert.match(html, /<p class="signed-name">นายสมชาย ใจดี<\/p>/)
-  assert.match(html, /ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service/)
-  assert.match(html, /7 กันยายน พ.ศ. 2569 เวลา 10\.32 น\./)
-  assert.match(html, /เลขอ้างอิง A1B2C3D4/)
   // ต้องไม่เหลือช่องว่างเซ็นมือคู่กับชื่อที่พิมพ์ไว้แล้ว จะกลายเป็นใบที่มีสองที่ให้ลงชื่อ
   assert.doesNotMatch(html, /<div class="signature-space">/)
+
+  // วันเวลาที่ลงชื่อกับเลขอ้างอิงต้องอยู่ที่บรรทัดล่างสุดบรรทัดเดียว ไม่ซ้ำใต้ช่องลงนามอีกรอบ
+  // (เดิมมี .signed-note บอกเรื่องเดียวกันซ้ำ — ผู้ใช้ทักมา 2569-09-08 ให้เหลืออันล่าง)
+  assert.doesNotMatch(html, /class="signed-note"/)
+  const reference = html.match(/<p class="reference">[\s\S]*?<\/p>/)[0]
+  assert.match(reference, /เลขอ้างอิงระบบ: A1B2C3D4/)
+  assert.match(reference, /ลงชื่ออิเล็กทรอนิกส์ 7 กันยายน พ.ศ. 2569 เวลา 10\.32 น\./)
+  assert.equal((html.match(/A1B2C3D4/g) || []).length, 1, 'เลขอ้างอิงถูกพิมพ์ซ้ำมากกว่าหนึ่งที่')
+
+  // ที่ว่างสำหรับตรายางของ อปท. ต้องมีเสมอในใบที่ลงชื่อออนไลน์ — เจ้าหน้าที่ปั๊มตราเอง
+  // ระบบไม่พิมพ์ช่องลงนามผู้มีอำนาจให้ (ผู้ใช้ระบบสั่งเอง)
+  assert.match(html, /<div class="stamp-space">/)
 }
 
 // ── โหมดลงนาม: เจ้าหน้าที่กรอกแทนที่เคาน์เตอร์ → ต้องเว้นให้เซ็นด้วยปากกา ────
@@ -93,7 +102,10 @@ function render(form, extra = {}) {
   const html = render(baseForm({ signed_by: { channel: 'counter', name: 'นายสมชาย ใจดี' } }))
   assert.match(html, /<div class="signature-space">/)
   assert.doesNotMatch(html, /<p class="signed-name">/)
-  assert.doesNotMatch(html, /ลงชื่อโดยการยืนยันตัวตนผ่านระบบ/)
+  // ใบที่กรอกแทนต้องไม่อ้างว่ามีการลงชื่ออิเล็กทรอนิกส์ ผู้ยื่นยังไม่ได้เซ็นอะไรเลย
+  assert.doesNotMatch(html, /ลงชื่ออิเล็กทรอนิกส์/)
+  // แต่ยังต้องมีที่ว่างให้ปั๊มตรายางเหมือนกัน
+  assert.match(html, /<div class="stamp-space">/)
 }
 
 // ── ผู้ใช้บริการเป็นคนละคนกับผู้ยื่น (ยื่นแทน) ──────────────────────────────
