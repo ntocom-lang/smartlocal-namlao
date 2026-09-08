@@ -236,35 +236,47 @@ const checks = [
     },
   },
   {
-    name: 'body-copy-has-no-stretched-gaps',
-    reason: 'กันคนเผลอใส่ text-align: justify กลับเข้ามา — ประโยคไทยมีช่องว่างน้อย พอยืดแล้วเกิดรูโหว่กลางบรรทัด (เคยลองแล้วพังจริง)',
+    name: 'body-copy-is-readable-and-has-no-stretched-gaps',
+    reason: 'แบ่งข้อมูลผู้ยื่น/รายละเอียดคำขอ/ข้อตกลงเป็น 3 ย่อหน้าที่มีช่องไฟ และกัน text-align: justify ซึ่งทำให้เกิดรูโหว่กลางบรรทัด',
     async run(browser) {
       const page = await render(browser, longForm())
       try {
         // วัดความกว้างของช่องว่างจริงในแต่ละบรรทัด โดยเทียบกับความกว้างช่องว่างปกติของฟอนต์
         // เกิน 4 เท่า = รูโหว่ที่มองเห็นชัด (เคสที่ wasteCollectionCancelPrint.js เจอคือ ~45mm)
-        const worst = await page.evaluate(() => {
-          const para = document.querySelector('.body-copy')
-          const text = para.textContent
-          const gaps = []
-          const walker = document.createTreeWalker(para, NodeFilter.SHOW_TEXT)
-          let node
-          while ((node = walker.nextNode())) {
-            for (let i = 0; i < node.data.length; i += 1) {
-              if (node.data[i] !== ' ') continue
-              const range = document.createRange()
-              range.setStart(node, i)
-              range.setEnd(node, i + 1)
-              const rect = range.getBoundingClientRect()
-              if (rect.width > 0) gaps.push(rect.width)
+        const readability = await page.evaluate(() => {
+          const paragraphs = [...document.querySelectorAll('.body-copy')]
+          const ratios = paragraphs.map(para => {
+            const gaps = []
+            const walker = document.createTreeWalker(para, NodeFilter.SHOW_TEXT)
+            let node
+            while ((node = walker.nextNode())) {
+              for (let i = 0; i < node.data.length; i += 1) {
+                if (node.data[i] !== ' ') continue
+                const range = document.createRange()
+                range.setStart(node, i)
+                range.setEnd(node, i + 1)
+                const rect = range.getBoundingClientRect()
+                if (rect.width > 0) gaps.push(rect.width)
+              }
             }
+            if (gaps.length === 0) return 0
+            const normal = gaps.slice().sort((a, b) => a - b)[Math.floor(gaps.length / 2)]
+            return Math.max(...gaps) / normal
+          })
+          const paragraphGaps = paragraphs.slice(1).map((para, index) =>
+            para.getBoundingClientRect().top - paragraphs[index].getBoundingClientRect().bottom)
+          return {
+            count: paragraphs.length,
+            minGapPx: Math.min(...paragraphGaps),
+            worstRatio: Math.max(...ratios),
           }
-          if (gaps.length === 0) return { ratio: 0, text: text.slice(0, 0) }
-          const normal = gaps.slice().sort((a, b) => a - b)[Math.floor(gaps.length / 2)]
-          return { ratio: Math.max(...gaps) / normal, normal }
         })
-        assert.ok(worst.ratio <= 4,
-          `มีช่องว่างถูกยืดกว้าง ${worst.ratio.toFixed(1)} เท่าของปกติ — เป็นรูโหว่กลางย่อหน้า`)
+        assert.equal(readability.count, 3,
+          `เนื้อหาหลักควรมี 3 ย่อหน้า แต่พบ ${readability.count} ย่อหน้า`)
+        assert.ok(readability.minGapPx >= 8,
+          `ช่องไฟระหว่างย่อหน้าเหลือเพียง ${readability.minGapPx.toFixed(1)}px — ยังอ่านเป็นก้อนแน่น`)
+        assert.ok(readability.worstRatio <= 4,
+          `มีช่องว่างถูกยืดกว้าง ${readability.worstRatio.toFixed(1)} เท่าของปกติ — เป็นรูโหว่กลางย่อหน้า`)
       } finally {
         await page.close()
       }

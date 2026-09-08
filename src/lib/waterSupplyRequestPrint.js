@@ -238,7 +238,10 @@ export function buildWaterSupplyRequestHtml({ form, tenant, docDate, referenceNo
        ตั้งแต่วันที่" และ "ให้ ⟨รู⟩ และยินยอม…") · Chrome ไม่รองรับ text-justify จึงบังคับให้
        ยืดระหว่างตัวอักษรแทนไม่ได้ · ต้นฉบับที่ อบต. ใช้จริงก็ชิดซ้ายปลายขวาไม่เท่ากันอยู่แล้ว
        (เหตุผลเดียวกับ wasteCollectionCancelPrint.js) */
-    .body-copy { text-indent: 25mm; text-align: left; margin-bottom: 5mm; }
+    /* แบ่งเนื้อหาหลักเป็น 3 ย่อหน้า: ข้อมูลผู้ยื่น / รายละเอียดคำขอ / ข้อตกลง
+       คงระยะบรรทัด single ตามมาตรฐานกลาง แต่เว้นท้ายย่อหน้า 3 มม. เพื่อไม่ให้ข้อความ
+       ทั้งหมดเกาะเป็นก้อนเดียวจนอ่านยาก โดยเฉพาะ อปท. ที่ชื่อหน่วยงานยาว */
+    .body-copy { text-indent: 25mm; text-align: left; margin-bottom: 3mm; break-inside: avoid; }
     /* ย่อหน้าพิกัดไม่ใช่ส่วนหนึ่งของย่อหน้าหลัก แต่ย่อหน้าเข้ามาเท่ากันให้อ่านต่อเนื่อง
        ไม่จัดชิดขอบ เพราะเป็นบรรทัดเดียวสั้นๆ justify แล้วจะถูกยืดจนตัวอักษรห่างผิดปกติ */
     .point-copy { text-indent: 25mm; text-align: left; }
@@ -340,11 +343,17 @@ export function buildWaterSupplyRequestHtml({ form, tenant, docDate, referenceNo
       ${field('อยู่บ้านเลขที่', applicant.addr_no, '22mm')} ${field('หมู่ที่', applicant.addr_moo, '12mm')}
       ${field('ตำบล', applicant.addr_subdistrict, '27mm', { tight: true })} ${field('อำเภอ', applicant.addr_district, '27mm', { tight: true })}
       ${field('จังหวัด', applicant.addr_province, '27mm', { tight: true })} ${field('เบอร์โทรศัพท์', applicant.phone, '30mm', { nowrap: true })}
+    </p>
+
+    <p class="body-copy">
       มีความประสงค์ขออนุญาตใช้น้ำประปาของงานกิจการประปา${orgNameTag}
       ${field('ตั้งแต่วันที่', serviceStartDate, '43mm', { words: true, suffix: 'เป็นต้นไป' })}
       ${field('บริเวณที่ตั้งบ้านเลขที่', site.addr_no, '22mm')} ${field('หมู่ที่', site.addr_moo, '12mm')}
       ${field('ตำบล', site.addr_subdistrict, '27mm', { tight: true })} ${field('อำเภอ', site.addr_district, '27mm', { tight: true })}
       ${field('จังหวัด', site.addr_province, '27mm', { tight: true })}
+    </p>
+
+    <p class="body-copy">
       โดยข้าพเจ้า <span class="meter-clause">ขอใช้มาตรวัดน้ำที่ทาง${orgNameTag}จัดหาให้</span>
       และยินยอมชำระเงินค่าน้ำประปาและปฏิบัติตามระเบียบข้อบังคับของ${orgNameTag}ทุกประการ
     </p>
