@@ -17,6 +17,7 @@ const DOC_LABELS = {
   waste_collection: 'ค่าธรรมเนียมขยะ',
   waste_collection_request: 'ขอรับบริการเก็บขนขยะมูลฝอย',
   waste_collection_cancel:  'ขอยกเลิกการเก็บขนขยะมูลฝอย',
+  water_supply_request:     'ขออนุญาตใช้น้ำประปา',
   building_permit:  'ขออนุญาตก่อสร้างบ้าน',
 }
 

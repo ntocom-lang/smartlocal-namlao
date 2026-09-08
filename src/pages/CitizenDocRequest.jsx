@@ -8,6 +8,7 @@ import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiNam
 import BuildingPermitWizard from './BuildingPermitWizard'
 import WasteCollectionRequestWizard from './WasteCollectionRequestWizard'
 import WasteCollectionCancelWizard from './WasteCollectionCancelWizard'
+import WaterSupplyRequestWizard from './WaterSupplyRequestWizard'
 import { withoutRemovedTypes } from '../lib/documentTypes'
 
 // ที่อยู่ผู้ยื่นคำขอ = ที่อยู่ในเขตของหน่วยงานเสมอ (ระบบนี้แยกตามหน่วยงาน ใครหน่วยงานนั้น)
@@ -92,6 +93,18 @@ const BASE_DOC_TYPES = [
     color:   '#be123c',
     bg:      '#fff1f2',
     border:  '#fecdd3',
+  },
+  {
+    value:   'water_supply_request',
+    label:   'ขออนุญาตใช้น้ำประปา',
+    emoji:   '🚰',
+    desc:    'ขอติดตั้งมาตรวัดน้ำและเปิดใช้น้ำประปาของ อปท. สำหรับบ้านหรือสถานที่ที่ยังไม่มีมาตร',
+    // บังคับล็อกอินด้วยเหตุผลเดียวกับใบขอรับบริการเก็บขนขยะ — คำขอนี้เปิดทะเบียนผู้ใช้น้ำ
+    // ในชื่อผู้ยื่นและผูกค่าประกันมาตร ถ้ายื่นได้โดยไม่ยืนยันตัวตน ใครก็ขอมิเตอร์ในชื่อคนอื่นได้
+    requiresAuth: true,
+    color:   '#0369a1',
+    bg:      '#f0f9ff',
+    border:  '#bae6fd',
   },
   {
     value:   'building_permit',
@@ -206,6 +219,7 @@ export default function CitizenDocRequest() {
   const isPermitIntent = selected?.value === 'building_permit'
   const isWasteCollectionRequest = selected?.value === 'waste_collection_request'
   const isWasteCollectionCancel = selected?.value === 'waste_collection_cancel'
+  const isWaterSupplyRequest = selected?.value === 'water_supply_request'
   const addressSuffix = tenantAddressSuffix(tenant)
   const fullName = joinThaiFullName(form.name_title, form.name_first, form.name_last)
 
@@ -430,6 +444,12 @@ export default function CitizenDocRequest() {
   // ที่จะถูกยกเลิกอาจเป็นคนละคนกับผู้ยื่น (ยื่นแทนพ่อแม่/เจ้าของบ้านเช่า) ตามที่ต้นฉบับรองรับ
   if (isWasteCollectionCancel) {
     return <WasteCollectionCancelWizard tenant={tenant} session={session} onBack={() => setSelected(null)} />
+  }
+
+  // ขออนุญาตใช้น้ำประปามีข้อมูลเฉพาะตามแบบคำขอต้นฉบับ (อายุ, สถานที่ติดตั้งมาตรที่แยกจากที่อยู่
+  // ผู้ยื่น, วันที่เริ่มใช้น้ำ, พิกัดจุดติดตั้ง และการยอมรับเรื่องมาตรวัดน้ำ) จึงใช้ฟอร์มเฉพาะ
+  if (isWaterSupplyRequest) {
+    return <WaterSupplyRequestWizard tenant={tenant} session={session} onBack={() => setSelected(null)} />
   }
 
   // ─── Step 2: Form ──────────────────────────────────────────────────────────

@@ -16,6 +16,7 @@ export const BASE_DOCUMENT_TYPES = [
   { value: 'waste_collection',         label: '🗑️ ค่าธรรมเนียมขยะ' },
   { value: 'waste_collection_request', label: '🚛 ขอรับบริการเก็บขนขยะมูลฝอย' },
   { value: 'waste_collection_cancel',  label: '🚫 ขอยกเลิกการเก็บขนขยะมูลฝอย' },
+  { value: 'water_supply_request',     label: '🚰 ขออนุญาตใช้น้ำประปา' },
   { value: 'building_permit',          label: '🏗️ ขออนุญาตก่อสร้างบ้าน' },
 ]
 
@@ -88,6 +89,9 @@ export const DEFAULT_SLA_DAYS = {
   // ยกเลิกใช้เท่ากับขอรับบริการ — ต้องออกไปตรวจว่าเลิกใช้จริง ถอนถังกลับ และเคลียร์ยอดค้างชำระ
   // ก่อนปิดทะเบียนลูกหนี้ ไม่ใช่งานกดปิดในระบบแล้วจบ
   waste_collection_cancel: 7,
+  // ช่างต้องออกไปสำรวจจุดติดตั้ง ประเมินระยะเดินท่อ แจ้งค่าประกันมาตร/ค่าติดตั้ง แล้วจึงติดตั้ง
+  // มาตรจริง — งานหน้างานหลายรอบ ไม่ใช่งานออกเอกสารหน้าเคาน์เตอร์
+  water_supply_request: 7,
   // ตรวจแบบแปลน/ตรวจพื้นที่จริงก่อนออกใบอนุญาต
   building_permit: 15,
 }

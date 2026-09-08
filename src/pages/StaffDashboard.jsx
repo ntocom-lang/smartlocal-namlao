@@ -18,6 +18,7 @@ import { thaiDate, thaiDateFromDateInput } from '../lib/thaiDate'
 import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
 import { buildWasteCollectionRequestHtml, collectionPointText } from '../lib/wasteCollectionRequestPrint'
 import { buildWasteCollectionCancelHtml, cancelReasonText } from '../lib/wasteCollectionCancelPrint'
+import { buildWaterSupplyRequestHtml } from '../lib/waterSupplyRequestPrint'
 import { uploadFile } from '../lib/driveStorage'
 import { fetchAssignableStaff, groupStaffByDepartment } from '../lib/staffRoster'
 import { BASE_DOCUMENT_TYPES, removedDocumentTypes } from '../lib/documentTypes'
@@ -45,6 +46,7 @@ const FleetPage = lazy(() => import('./FleetPage'))
 const BuildingPermitWizard = lazy(() => import('./BuildingPermitWizard'))
 const WasteCollectionRequestWizard = lazy(() => import('./WasteCollectionRequestWizard'))
 const WasteCollectionCancelWizard = lazy(() => import('./WasteCollectionCancelWizard'))
+const WaterSupplyRequestWizard = lazy(() => import('./WaterSupplyRequestWizard'))
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -226,6 +228,22 @@ function InfoRow({ icon, label, value }) {
   )
 }
 
+// ค่าของ InfoRow ที่เป็นหมุดแผนที่ — ใช้ร่วมทุกใบที่ให้ผู้ยื่นปักหมุด (จุดวางถัง, ถังที่ต้องถอน,
+// จุดติดตั้งมาตรวัดน้ำ) คนที่อ่านคือพนักงานที่เปิดจากมือถือหน้างาน จึงต้องกดนำทางได้เลย
+// ไม่ใช่โชว์ตัวเลขให้พิมพ์ตามเอง — พิมพ์พิกัดผิดตัวเดียวคือขับไปคนละหมู่บ้าน
+function MapPointValue({ point }) {
+  return (
+    <span className="flex flex-col gap-1">
+      {point.address && <span>{point.address}</span>}
+      <a href={`https://www.google.com/maps/dir/?api=1&destination=${point.lat},${point.lng}`}
+        target="_blank" rel="noopener noreferrer"
+        className="font-mono text-xs font-semibold text-blue-600 underline">
+        {Number(point.lat).toFixed(6)}, {Number(point.lng).toFixed(6)} — เปิดนำทาง
+      </a>
+    </span>
+  )
+}
+
 // ─── Task Card ────────────────────────────────────────────────────────────────
 
 function TaskCard({ req, onClick }) {
@@ -349,18 +367,8 @@ function TaskDetailSheet({
             {['waste_collection_request', 'waste_collection_cancel'].includes(req.document_type)
               && req.permit_form_data?.collection_point && (
               <InfoRow icon={<MapPin size={14} />}
-                label={req.document_type === 'waste_collection_cancel' ? 'ถังที่ต้องถอน' : 'จุดวางถัง'} value={
-                <span className="flex flex-col gap-1">
-                  {req.permit_form_data.collection_point.address && (
-                    <span>{req.permit_form_data.collection_point.address}</span>
-                  )}
-                  <a href={`https://www.google.com/maps/dir/?api=1&destination=${req.permit_form_data.collection_point.lat},${req.permit_form_data.collection_point.lng}`}
-                    target="_blank" rel="noopener noreferrer"
-                    className="font-mono text-xs font-semibold text-blue-600 underline">
-                    {Number(req.permit_form_data.collection_point.lat).toFixed(6)}, {Number(req.permit_form_data.collection_point.lng).toFixed(6)} — เปิดนำทาง
-                  </a>
-                </span>
-              } />
+                label={req.document_type === 'waste_collection_cancel' ? 'ถังที่ต้องถอน' : 'จุดวางถัง'}
+                value={<MapPointValue point={req.permit_form_data.collection_point} />} />
             )}
             {req.document_type === 'waste_collection_request' && req.permit_form_data?.service_start_date && (
               <InfoRow icon={<Calendar size={14} />} label="เริ่มให้จัดเก็บ"
@@ -383,6 +391,20 @@ function TaskDetailSheet({
             {req.document_type === 'waste_collection_cancel' && req.permit_form_data?.cancel_date && (
               <InfoRow icon={<Calendar size={14} />} label="ขอยกเลิกตั้งแต่"
                 value={thaiDateFromDateInput(req.permit_form_data.cancel_date)} />
+            )}
+            {req.document_type === 'water_supply_request' && req.permit_form_data?.applicant?.age && (
+              <InfoRow icon={<User size={14} />} label="อายุ" value={`${req.permit_form_data.applicant.age} ปี`} />
+            )}
+            {/* จุดติดตั้งมาตรเก็บคนละคีย์กับหมุดของใบขยะ (meter_point ไม่ใช่ collection_point)
+                เพราะเป็นคนละความหมาย ห้ามรวบเป็นคีย์เดียว — ใบหนึ่งบอกจุดวางถัง อีกใบบอกจุด
+                ที่ต้องเจาะท่อ ถ้าใช้ชื่อเดียวกันแล้ววันหนึ่งมีใบที่มีทั้งสองอย่างจะทับกันเงียบๆ */}
+            {req.document_type === 'water_supply_request' && req.permit_form_data?.meter_point && (
+              <InfoRow icon={<MapPin size={14} />} label="จุดติดตั้งมาตร"
+                value={<MapPointValue point={req.permit_form_data.meter_point} />} />
+            )}
+            {req.document_type === 'water_supply_request' && req.permit_form_data?.service_start_date && (
+              <InfoRow icon={<Calendar size={14} />} label="เริ่มใช้น้ำ"
+                value={thaiDateFromDateInput(req.permit_form_data.service_start_date)} />
             )}
             <InfoRow icon={<Hash size={14} />}       label="เลขอ้างอิง"    value={<span className="font-mono font-bold tracking-widest">{req.id?.slice(0, 8)?.toUpperCase() ?? '—'}</span>} />
             <InfoRow icon={<Calendar size={14} />}  label="วันที่ยื่น"     value={dateTH(req.created_at)} />
@@ -603,6 +625,31 @@ function TaskDetailSheet({
             </button>
           </div>
         )}
+        {req.document_type === 'water_supply_request' && req.permit_form_data && (
+          <div className="px-4 pb-2 pt-3 border-t border-gray-100 shrink-0">
+            <button onClick={() => {
+              const html = buildWaterSupplyRequestHtml({
+                form: req.permit_form_data,
+                tenant,
+                // วันที่บนหัวใบ = วันที่ยื่น ไม่ใช่วันที่เจ้าหน้าที่กดพิมพ์ ด้วยเหตุผลเดียวกับ signedAt
+                docDate: req.created_at,
+                referenceNo: req.id?.slice(0, 8)?.toUpperCase() ?? '',
+                // ต้องเป็นเวลาที่ผู้ยื่นลงชื่อตอนยื่น ไม่ใช่เวลาที่เจ้าหน้าที่กดพิมพ์ — ใบที่พิมพ์
+                // ซ้ำอีกหกเดือนต้องยังแสดงวันเวลาเดิม ไม่งั้นบรรทัดกำกับใช้อ้างอิงไม่ได้เลย
+                signedAt: req.permit_form_data.signed_at ?? req.created_at,
+              })
+              const w = window.open('', '_blank', 'width=860,height=1100')
+              if (!w) return
+              w.document.write(html)
+              w.document.close()
+              setTimeout(() => { w.focus(); w.print() }, 400)
+            }}
+              className="w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 text-sm active:scale-[0.98] transition-all"
+              style={{ backgroundColor: '#0369a1' }}>
+              <Printer size={16} /> พิมพ์แบบคำขออนุญาตใช้น้ำประปา
+            </button>
+          </div>
+        )}
         {req.status === 'completed' && (
           <div className="px-4 pb-6 pt-3 border-t border-gray-100 shrink-0">
             <button onClick={() => {
@@ -664,7 +711,7 @@ const EMPTY_REQ = {
   requester_phone: '', requester_address: '', purpose: '',
 }
 
-function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuildingPermit, onSelectWasteCollection, onSelectWasteCancel }) {
+function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuildingPermit, onSelectWasteCollection, onSelectWasteCancel, onSelectWaterSupply }) {
   const [form, setForm] = useState(EMPTY_REQ)
   const [saving, setSaving] = useState(false)
   const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }))
@@ -707,6 +754,7 @@ function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuilding
                       if (d.value === 'building_permit') onSelectBuildingPermit()
                       else if (d.value === 'waste_collection_request') onSelectWasteCollection()
                       else if (d.value === 'waste_collection_cancel') onSelectWasteCancel()
+                      else if (d.value === 'water_supply_request') onSelectWaterSupply()
                       else setForm(p => ({ ...p, document_type: d.value }))
                     }}
                     className="flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left text-xs font-semibold transition-all active:scale-95"
@@ -766,6 +814,7 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
   const [showPermitWizard, setShowPermitWizard] = useState(false)
   const [showWasteWizard, setShowWasteWizard] = useState(false)
   const [showWasteCancelWizard, setShowWasteCancelWizard] = useState(false)
+  const [showWaterSupplyWizard, setShowWaterSupplyWizard] = useState(false)
   const [search, setSearch]       = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
   const [assignees, setAssignees] = useState([])
@@ -1152,7 +1201,8 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
           onCreated={r => setRequests(prev => [r, ...prev])}
           onSelectBuildingPermit={() => { setShowAdd(false); setShowPermitWizard(true) }}
           onSelectWasteCollection={() => { setShowAdd(false); setShowWasteWizard(true) }}
-          onSelectWasteCancel={() => { setShowAdd(false); setShowWasteCancelWizard(true) }} />
+          onSelectWasteCancel={() => { setShowAdd(false); setShowWasteCancelWizard(true) }}
+          onSelectWaterSupply={() => { setShowAdd(false); setShowWaterSupplyWizard(true) }} />
       )}
       {/* ขออนุญาตก่อสร้างบ้าน — ใช้ wizard เต็มรูปแบบเดียวกับฝั่งประชาชน (แบบ ข.๑ จริง)
           แทนฟอร์มสั้นทั่วไปใน NewRequestSheet เพราะฟิลด์ไม่พอสำหรับพิมพ์แบบร่างที่ถูกต้อง */}
@@ -1179,6 +1229,16 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
           <WasteCollectionCancelWizard tenant={tenant} session={null} staffId={staffId}
             onBack={() => setShowWasteCancelWizard(false)}
             onDone={() => { setShowWasteCancelWizard(false); setRefreshKey(k => k + 1) }} />
+        </div>
+      )}
+      {/* คำขอใช้น้ำประปาก็ต้องใช้ฟิลด์ตามแบบคำขอจริง (อายุ, สถานที่ติดตั้งมาตรที่แยกจากที่อยู่ผู้ยื่น,
+          วันที่เริ่มใช้น้ำ, พิกัดจุดติดตั้ง) ฟอร์ม walk-in แบบย่อเก็บไม่ครบ · session={null}
+          ทำให้ wizard รู้ว่าเป็นการกรอกแทน แล้วเว้นช่องลงนามให้เซ็นด้วยปากกา */}
+      {showWaterSupplyWizard && (
+        <div className="fixed inset-0 z-[60] bg-white overflow-y-auto">
+          <WaterSupplyRequestWizard tenant={tenant} session={null} staffId={staffId}
+            onBack={() => setShowWaterSupplyWizard(false)}
+            onDone={() => { setShowWaterSupplyWizard(false); setRefreshKey(k => k + 1) }} />
         </div>
       )}
     </div>
@@ -1217,6 +1277,7 @@ const DOC_TITLES = {
   waste_collection: 'ผลการตรวจสอบค่าธรรมเนียมขยะ',
   waste_collection_request: 'แจ้งผลการขอรับบริการเก็บขนขยะมูลฝอย',
   waste_collection_cancel: 'แจ้งผลการขอยกเลิกการเก็บขนขยะมูลฝอย',
+  water_supply_request: 'แจ้งผลการขออนุญาตใช้น้ำประปา',
   other:            'หนังสือรับรอง',
 }
 
@@ -1296,6 +1357,25 @@ function buildDocBody(req, orgName) {
               <p>${orgName}ได้ตรวจสอบและยกเลิกการเก็บขนขยะมูลฝอย ณ สถานที่ดังกล่าวแล้ว ทั้งนี้ ผู้ยื่นคำร้องยังคงมีหน้าที่ชำระค่าธรรมเนียมเก็บขนขยะมูลฝอยที่ค้างชำระจนถึงวันที่การยกเลิกมีผลให้ครบถ้วน</p>
               ${req.staff_notes ? `<p>หมายเหตุ: ${escapeHtml(req.staff_notes)}</p>` : ''}`
     }
+    case 'water_supply_request': {
+      // หนังสือแจ้งผลว่ารับคำขอและติดตั้งมาตรให้แล้ว — ห้ามอัปโหลด "แบบคำขอที่ประชาชนกรอกเอง"
+      // มาเป็นเอกสารผลลัพธ์ ประชาชนจะได้ใบเดิมที่ตัวเองยื่นกลับไป ไม่ใช่คำตอบจาก อปท.
+      //
+      // จงใจไม่พิมพ์เลขมาตร/ค่าประกันมาตร/อัตราค่าน้ำลงในหนังสือ — ระบบนี้ไม่มีทะเบียนผู้ใช้น้ำ
+      // และไม่ได้อ่านอัตราตามข้อบัญญัติของแต่ละ อปท. จะสรุปตัวเลขแทนกองคลัง/กองช่างไม่ได้
+      // ถ้าต้องแจ้งเลขมาตรหรือยอดเงิน ให้เจ้าหน้าที่พิมพ์ไว้ในหมายเหตุเอง
+      const form = req.permit_form_data ?? {}
+      const startDate = thaiDateFromDateInput(form.service_start_date)
+      const point = collectionPointText(form.meter_point)
+      return `<p>ตามที่ ${name}${idCard} ที่อยู่ ${addr} ได้ยื่นคำขออนุญาตใช้น้ำประปาของ${orgName} นั้น</p>
+              <p class="no-indent" style="margin-left:3em; margin-top:6pt">
+                สถานที่ขอติดตั้งมาตรวัดน้ำ: <strong>${addr}</strong><br/>
+                ${point ? `จุดติดตั้ง (พิกัด): <strong>${escapeHtml(point)}</strong><br/>` : ''}
+                ขอเริ่มใช้น้ำตั้งแต่วันที่: <strong>${startDate || '-'}</strong>
+              </p>
+              <p>${orgName}ได้รับคำขอไว้แล้ว ทั้งนี้ ผู้ขออนุญาตตกลงใช้มาตรวัดน้ำที่${orgName}จัดหาให้ และมีหน้าที่ชำระเงินค่าน้ำประปาและปฏิบัติตามระเบียบข้อบังคับของ${orgName}ทุกประการ</p>
+              ${req.staff_notes ? `<p>หมายเหตุ: ${escapeHtml(req.staff_notes)}</p>` : ''}`
+    }
     default:
       return `<p>${escapeHtml(req.purpose) || 'ตามที่ได้รับการร้องขอ'}</p>
               ${req.staff_notes ? `<p>รายละเอียดเพิ่มเติม: ${escapeHtml(req.staff_notes)}</p>` : ''}`
@@ -1310,6 +1390,7 @@ function buildDocHTML({ req, tenant, docDate }) {
   const isNotice = isFeeInquiry
     || req.document_type === 'waste_collection_request'
     || req.document_type === 'waste_collection_cancel'
+    || req.document_type === 'water_supply_request'
   const logoUrl  = typeof tenant?.logo_url === 'string' && /^https?:\/\//.test(tenant.logo_url)
     ? escapeHtml(tenant.logo_url) : null
 
