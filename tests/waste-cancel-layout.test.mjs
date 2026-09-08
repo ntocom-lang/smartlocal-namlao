@@ -77,12 +77,14 @@ function pdfPageCount(buffer) {
   return (buffer.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length
 }
 
-// ความสูงเนื้อหาจริงวัดจากขอบบนของ .sheet ถึงขอบล่างขององค์ประกอบสุดท้าย (.reference)
-// — .sheet เองมี min-height 297mm ในโหมดจอ วัดจากมันจะได้ค่าคงที่เสมอ ใช้หาการล้นไม่ได้
+// ความสูงเนื้อความจริง วัดจากขอบบนของ .sheet ถึงท้ายช่องลงนามผู้ยื่น
+//
+// ⚠️ ห้ามวัดถึง .reference — ตั้งแต่ 2569-09-08 บรรทัดนั้นถูก flex ดันไปติดขอบล่างของหน้าเสมอ
+// (ดู .stamp-space ในไฟล์ใบพิมพ์) วัดถึงมันจะได้ค่าเท่าความสูงหน้ากระดาษทุกครั้ง ใช้หาการล้นไม่ได้
 function contentHeightMm(page) {
   return page.evaluate(() => {
     const sheet = document.querySelector('.sheet')
-    const last = sheet.querySelector('.reference')
+    const last = sheet.querySelector('.signature')
     return (last.getBoundingClientRect().bottom - sheet.getBoundingClientRect().top) / 3.779527
   })
 }
@@ -101,10 +103,11 @@ const checks = [
           'ใบล้นไปหน้าที่ 2 — ทบทวนระยะ .signature/.reference หรือความยาวย่อหน้ารับทราบค่าธรรมเนียม')
 
         const mm = await contentHeightMm(page)
-        // พื้นที่พิมพ์แนวตั้ง 276mm (297 - 12 - 9) เผื่อขอบไว้กันฟอนต์ต่างเครื่อง —
+        // พื้นที่พิมพ์แนวตั้ง 276mm (297 - 12 - 9) เนื้อความต้องจบภายใน 205mm เพื่อเหลือที่ให้
+        // ตรายาง 55mm กับบรรทัดเลขอ้างอิงท้ายหน้า และเผื่อขอบกันฟอนต์ต่างเครื่อง —
         // เครื่อง อปท. ส่วนใหญ่ไม่มี THSarabunPSK แล้วตกไปใช้ Sarabun ที่ metric ไม่เท่ากันเป๊ะ
-        assert.ok(mm <= 262,
-          `เนื้อหาสูง ${mm.toFixed(1)}mm เหลือขอบน้อยเกินไป (พื้นที่พิมพ์ 276mm) เสี่ยงตกหน้า 2 บนเครื่องอื่น`)
+        assert.ok(mm <= 205,
+          `เนื้อความสูง ${mm.toFixed(1)}mm กินที่ว่างสำหรับตรายาง (ต้องไม่เกิน 205mm จากพื้นที่พิมพ์ 276mm)`)
       } finally {
         await page.close()
       }
@@ -121,7 +124,45 @@ const checks = [
         const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true })
         assert.equal(pdfPageCount(pdf), 1, 'ใบโหมดเคาน์เตอร์ล้นไปหน้าที่ 2')
         const mm = await contentHeightMm(page)
-        assert.ok(mm <= 262, `เนื้อหาสูง ${mm.toFixed(1)}mm เหลือขอบน้อยเกินไป (พื้นที่พิมพ์ 276mm)`)
+        assert.ok(mm <= 205, `เนื้อความสูง ${mm.toFixed(1)}mm กินที่ว่างสำหรับตรายาง (ต้องไม่เกิน 205mm)`)
+      } finally {
+        await page.close()
+      }
+    },
+  },
+  {
+    name: 'stamp-space-and-footer-position',
+    reason: 'ต้องเหลือที่ว่างท้ายใบให้เจ้าหน้าที่ปั๊มตรายางอย่างน้อย 50mm และบรรทัดเลขอ้างอิงต้องอยู่ล่างสุดของหน้า',
+    async run(browser) {
+      // วัดด้วย viewport เท่าพื้นที่พิมพ์จริง (160 × 276 มม. ที่ 96dpi) เพราะ .sheet ใช้
+      // min-height:100% — ถ้า viewport สูงกว่านี้ ที่ว่างที่วัดได้จะมากเกินจริง
+      const page = await browser.newPage({ viewport: { width: 605, height: 1043 } })
+      try {
+        const form = longForm()
+        await page.setContent(buildWasteCollectionCancelHtml({
+          form, tenant: TENANT, thDate: '7 กันยายน พ.ศ. 2569',
+          referenceNo: 'A1B2C3D4', signedAt: form.signed_at,
+        }), { waitUntil: 'load' })
+        await page.evaluate(() => document.fonts.ready)
+        await page.emulateMedia({ media: 'print' })
+        await page.waitForTimeout(300)
+
+        const box = await page.evaluate(() => {
+          const px2mm = 3.779527
+          const sheet = document.querySelector('.sheet')
+          const stamp = document.querySelector('.stamp-space')
+          const ref = document.querySelector('.reference')
+          return {
+            stampMm: stamp.getBoundingClientRect().height / px2mm,
+            gapBelowRefMm: (sheet.getBoundingClientRect().bottom - ref.getBoundingClientRect().bottom) / px2mm,
+          }
+        })
+
+        assert.ok(box.stampMm >= 50,
+          `ที่ว่างสำหรับตรายางเหลือ ${box.stampMm.toFixed(1)}mm — ต้องไม่ต่ำกว่า 50mm`)
+        // เลขอ้างอิงต้องเกาะขอบล่าง ไม่ลอยกลางหน้า (เผื่อ 5mm สำหรับ margin/ปัดเศษ)
+        assert.ok(box.gapBelowRefMm <= 5,
+          `บรรทัดเลขอ้างอิงลอยห่างขอบล่าง ${box.gapBelowRefMm.toFixed(1)}mm — ควรอยู่ล่างสุดของหน้า`)
       } finally {
         await page.close()
       }

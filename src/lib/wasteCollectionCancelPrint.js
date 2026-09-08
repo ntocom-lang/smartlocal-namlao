@@ -132,7 +132,9 @@ export function buildWasteCollectionCancelHtml({ form, tenant, thDate, reference
     body {
       ${govDocFontCss()}
     }
-    .sheet { width: 100%; }
+    /* flex column เพื่อให้ .stamp-space ดันบรรทัดเลขอ้างอิงไปติดขอบล่างของพื้นที่พิมพ์
+       min-height ต้องเป็น 100% ของกล่องหน้ากระดาษ ไม่ใช่ความสูงเนื้อหา ไม่งั้นไม่มีอะไรให้ดัน */
+    .sheet { width: 100%; display: flex; flex-direction: column; min-height: 100%; }
     .title { margin: 6mm 0 7mm; text-align: center; font-weight: 700; }
     .write-at { text-align: right; margin: 0 0 5mm; }
     .date { text-align: center; margin: 0 0 6mm; }
@@ -177,19 +179,28 @@ export function buildWasteCollectionCancelHtml({ form, tenant, thDate, reference
     .signature-typed { height: 6mm; }
     /* ลายมือชื่ออิเล็กทรอนิกส์ — ตัวหนาให้เห็นว่าเป็นการลงชื่อ ไม่ใช่ชื่อที่พิมพ์ซ้ำเฉยๆ */
     .signed-name { font-weight: 700; }
-    /* 10pt: บรรทัดกำกับต้องอ่านออกแต่ต้องไม่แย่งน้ำหนักกับชื่อผู้ลงนาม และต้องไม่ดันใบ
-       ตกหน้า 2 · white-space ปกติ (ไม่ nowrap) เพราะข้อความยาวกว่าความกว้างช่องลงนาม */
-    .signed-note { margin-top: 3mm; font-size: 10pt; color: #333; white-space: normal; line-height: 1.2; }
+
+    /* ที่ว่างสำหรับตรายางของ อปท. — เจ้าหน้าที่ปั๊มตรารับเรื่อง/สั่งการเองบนกระดาษ ระบบจึงไม่
+       พิมพ์ช่องลงนามผู้มีอำนาจไว้ให้ (ผู้ใช้ระบบสั่งเอง 2569-09-08) · flex-grow ดันบรรทัด
+       เลขอ้างอิงลงไปติดขอบล่างของหน้า และ flex-basis กันไว้ว่าอย่างน้อยต้องเหลือ 55 มม.
+       เผื่อกรณีเนื้อความยาวจนไม่มีที่ให้ดัน — ตรายางรับเรื่องของ อปท. สูงราว 40–50 มม. */
+    .stamp-space { flex: 1 0 55mm; }
 
     /* 11pt โดยตั้งใจ — บรรทัดนี้ไม่ใช่เนื้อความของหนังสือ แต่เป็นเลขอ้างอิงของระบบที่พิมพ์
-       กำกับไว้ให้ตามเรื่องได้ ต้องเล็กกว่าเนื้อความชัดเจนเพื่อไม่ให้สับสนว่าเป็นเลขที่หนังสือ */
-    .reference { margin-top: 12mm; font-size: 11pt; color: #333; }
+       กำกับไว้ให้ตามเรื่องได้ ต้องเล็กกว่าเนื้อความชัดเจนเพื่อไม่ให้สับสนว่าเป็นเลขที่หนังสือ
+       เดิมมีบรรทัด .signed-note ใต้ช่องลงนามบอกเรื่องเดียวกันนี้ซ้ำอีกรอบ (ผ่านระบบ E-Service
+       + เลขอ้างอิง) ตัดออกแล้วเหลือที่นี่ที่เดียว */
+    .reference { margin: 0; font-size: 11pt; color: #333; }
 
     @media screen {
       body { background: #e5e7eb; padding: 12px; }
       .sheet { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 12mm 20mm 9mm 30mm; background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,.12); }
     }
     @media print {
+      /* ต้องให้ html/body สูงเท่ากล่องหน้ากระดาษ ไม่งั้น min-height:100% ของ .sheet
+         อ้างอิงกับความสูงเนื้อหาแทน แล้วที่ว่างตรายางจะยุบเหลือ 55mm ตาม flex-basis เฉยๆ
+         โดยไม่ดันเลขอ้างอิงลงขอบล่าง */
+      html, body { height: 100%; }
       body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
     }
   </style>
@@ -236,15 +247,18 @@ export function buildWasteCollectionCancelHtml({ form, tenant, thDate, reference
         : '<div class="signature-space"></div>'}
       <p>(${line(applicantName, '48mm')})</p>
       <p>ผู้ยื่นคำร้อง</p>
-      ${signedOnline
-        ? `<p class="signed-note">ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service${signedStamp ? `<br>${esc(signedStamp)}` : ''}${referenceNo ? ` · เลขอ้างอิง ${esc(referenceNo)}` : ''}</p>`
-        : ''}
     </section>
 
-    ${/* บรรทัดกำกับที่มาอยู่ล่างสุดคู่กับเลขอ้างอิง ไม่ใช่ใต้ชื่อเรื่อง — เนื้อใบต้องตรงกับต้นฉบับ
-         ห้ามแทรกข้อความของระบบกลางใบ */''}
+    ${/* ที่ว่างให้เจ้าหน้าที่ปั๊มตรายางรับเรื่อง/สั่งการ ระบบไม่พิมพ์ช่องลงนามผู้มีอำนาจให้
+         เพราะตรายางของ อปท. มีช่องลงนามอยู่ในตัวอยู่แล้ว */''}
+    <div class="stamp-space"></div>
+
+    ${/* บรรทัดเดียวที่บอกที่มาของเอกสาร อยู่ล่างสุดของหน้า — เดิมมี .signed-note ใต้ช่องลงนาม
+         บอกเรื่องเดียวกันซ้ำอีกรอบ (ผ่านระบบ E-Service + เลขอ้างอิง) ตัดออกแล้ว
+         ยกวันเวลาที่ลงชื่อมารวมไว้ที่บรรทัดนี้แทน ไม่ทิ้งไปเฉยๆ — เป็นร่องรอยว่าลงชื่อเมื่อไหร่
+         ซึ่งเป็นเหตุผลเดียวที่พิมพ์ชื่อแทนลายมือชื่อได้ ถ้าตัดทิ้งใบจะเหลือแค่ชื่อที่พิมพ์ไว้เฉยๆ */''}
     <p class="reference">
-      ${esc(govEServiceOriginText(tenant))}${referenceNo ? ` &nbsp;|&nbsp; เลขอ้างอิงระบบ: ${esc(referenceNo)}` : ''}
+      ${esc(govEServiceOriginText(tenant))}${referenceNo ? ` &nbsp;|&nbsp; เลขอ้างอิงระบบ: ${esc(referenceNo)}` : ''}${signedStamp ? ` &nbsp;|&nbsp; ลงชื่ออิเล็กทรอนิกส์ ${esc(signedStamp)}` : ''}
     </p>
   </main>
 </body>
