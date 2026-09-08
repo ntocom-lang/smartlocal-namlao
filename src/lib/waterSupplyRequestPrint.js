@@ -1,4 +1,4 @@
-import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
+import { GOV_FONT_LINK, govDocFontCss, govPageCss } from './govDocStyle.js'
 import { orgHeadTitle, orgNameParts, orgOfficeName } from './orgTerms.js'
 import { MONTHS_TH, thaiDateFromDateInput, thaiDateTimeText } from './thaiDate.js'
 
@@ -141,7 +141,7 @@ export function thaiDateParts(value) {
  *   2. เพิ่มย่อหน้าพิกัดจุดติดตั้งมาตรวัดน้ำ (พิมพ์เฉพาะเมื่อผู้ยื่นปักหมุดมา) — ช่างประปาต้องไป
  *      เดินท่อและติดตั้งมาตรหน้างาน พิกัดกดนำทางได้ตรงกว่าบ้านเลขที่ในซอยที่ไม่มีป้าย
  *   3. ช่องลงนามรองรับลายมือชื่ออิเล็กทรอนิกส์ (ดู ⚠️ ข้างล่าง)
- *   4. บรรทัดกำกับที่มา + เลขอ้างอิงระบบล่างสุด
+ *   4. บรรทัดกำกับการลงชื่อ + เลขอ้างอิงระบบอยู่ใต้ช่องลงชื่อเพียงจุดเดียว
  *
  * ⚠️ ถ้อยคำ "ขอใช้มาตรวัดน้ำที่ทาง…จัดหาให้" — ต้นฉบับที่สแกนมาอ่านได้ไม่ชัดตรงคำนี้
  * ผู้ใช้ยืนยันถ้อยคำนี้เอง (2569-09-07) ห้ามแก้เป็น "มาตรฐาน" หรือคำอื่นโดยไม่ถามเจ้าของระบบก่อน
@@ -213,7 +213,9 @@ export function buildWaterSupplyRequestHtml({ form, tenant, docDate, referenceNo
     /* บล็อก "เขียนที่ + ที่อยู่สำนักงาน" ชิดขวาตามต้นฉบับ — ใช้ inline-block เพื่อให้ทุกบรรทัด
        เริ่มตรงกันที่ขอบซ้ายของบล็อก ไม่ใช่ชิดขวารายบรรทัดจนขอบซ้ายเป็นฟันปลา */
     .write-at { margin: 0 0 6mm; text-align: right; }
-    .write-at-inner { display: inline-block; text-align: left; }
+    /* จำกัดบล็อกไว้ที่ 90 มม. เพื่อให้ที่อยู่สำนักงานบรรทัดยาว (เช่น เลขที่+หมู่+ตำบล+
+       อำเภอ+จังหวัด+รหัสไปรษณีย์) ขึ้นบรรทัดใหม่ได้เอง ไม่ลากบล็อกยาวล้ำเข้ากลางหน้า */
+    .write-at-inner { display: inline-block; max-width: 90mm; text-align: left; }
     .write-at-inner p { margin: 0; }
     /* บรรทัดวันที่เยื้องจากขอบขวาเข้ามาเล็กน้อยตามต้นฉบับ ไม่ได้ชิดขวาสุดเหมือนบล็อกที่อยู่ */
     .date-line { margin: 0 0 8mm; text-align: right; padding-right: 12mm; }
@@ -276,27 +278,28 @@ export function buildWaterSupplyRequestHtml({ form, tenant, docDate, referenceNo
        (ต่างจากใบเก็บขนขยะที่ขึ้นต้นด้วย "ขอแสดงความนับถือ") — ต้นฉบับคนละแบบ ห้ามยกมาใช้ซ้ำกัน
        sign-label กว้างคงที่ เพื่อให้บรรทัดวงเล็บเยื้องมาอยู่ใต้เส้นประพอดี ไม่ใช่กะด้วยช่องว่าง */
     .signature { margin: 18mm 8mm 0 auto; width: 104mm; }
-    .signature p { margin: 0 0 2mm; white-space: nowrap; }
+    .signature-row { display: flex; align-items: flex-start; white-space: nowrap; }
     .sign-label { display: inline-block; width: 13mm; }
     /* ⚠️ min-width ไม่ใช่ width — ชื่อที่ยาวกว่ากล่องจะล้นออกไปทับคำว่า "ผู้ขออนุญาต" ที่ต่อท้าย
        (เคสจริง "นางสาวประกายมาศ ศรีวิชัยเลิศสกุล" กว้าง ~62 มม. พิมพ์ทับกันจนอ่านไม่ออก)
        ปล่อยให้กล่องยืดตามชื่อแทน ช่องลงนามกว้างสุด ≈ 13 + 62 + 22 = 97 มม. ยังไม่เกิน 104 มม. */
-    .sign-paren { margin-left: 13mm; min-width: 54mm; text-align: center; }
+    /* ชื่อบรรทัดบนและชื่อในวงเล็บอยู่ในกล่องเดียวกัน จึงใช้แกนกึ่งกลางเดียวกันเสมอ
+       แม้ชื่อยาวจนกล่องขยายเกิน 54 มม. */
+    .signature-name { display: flex; flex: 0 0 auto; min-width: 54mm; flex-direction: column; align-items: stretch; }
+    .signature-line, .sign-paren { min-width: 54mm; text-align: center; white-space: nowrap; }
+    .sign-paren { margin-top: 2mm; }
     /* ⚠️ .fill-value เป็น pre-wrap (ช่องกรอกทั่วไปต้องคงช่องว่างที่ผู้ใช้พิมพ์) ซึ่งชนะ nowrap
-       ของ .signature p — ชื่อยาวในวงเล็บจึงถูกตัดขึ้นบรรทัดใหม่ ทั้งที่กล่องจัดกึ่งกลางกว้างแค่
+       ของบรรทัดลงชื่อ — ชื่อยาวในวงเล็บจึงถูกตัดขึ้นบรรทัดใหม่ ทั้งที่กล่องจัดกึ่งกลางกว้างแค่
        54 มม. (วัดจริงกับ "นางสาวประกายมาศ ศรีวิชัยเลิศสกุล" เทสต์ signature-block จับได้)
        ปล่อยให้ชื่อล้นออกนอกกล่อง 54 มม. ได้ ดีกว่า "(" กับ ")" ตกคนละบรรทัดจนอ่านไม่รู้เรื่อง */
     .signature .fill-value { white-space: nowrap; }
     /* ลายมือชื่ออิเล็กทรอนิกส์ — ตัวหนาให้เห็นว่าเป็นการลงชื่อ ไม่ใช่ชื่อที่พิมพ์ซ้ำเฉยๆ
        inline-block กว้างเท่าเส้นประเพื่อให้ "ผู้ขออนุญาต" อยู่ตำแหน่งเดียวกับโหมดเซ็นปากกา */
-    .signed-name { display: inline-block; min-width: 54mm; text-align: center; font-weight: 700; }
+    .signed-name { display: block; min-width: 54mm; text-align: center; font-weight: 700; }
+    .sign-role { margin-left: 1mm; }
     /* 10pt: บรรทัดกำกับต้องอ่านออกแต่ต้องไม่แย่งน้ำหนักกับชื่อผู้ลงนาม และต้องไม่ดันใบตกหน้า 2
        white-space ปกติ (ไม่ nowrap) เพราะข้อความยาวกว่าความกว้างช่องลงนาม */
     .signed-note { margin-top: 3mm; font-size: 10pt; color: #333; white-space: normal; line-height: 1.2; }
-
-    /* 11pt โดยตั้งใจ — บรรทัดนี้ไม่ใช่เนื้อความของหนังสือ แต่เป็นเลขอ้างอิงของระบบที่พิมพ์
-       กำกับไว้ให้ตามเรื่องได้ ต้องเล็กกว่าเนื้อความชัดเจนเพื่อไม่ให้สับสนว่าเป็นเลขที่หนังสือ */
-    .reference { margin-top: 12mm; font-size: 11pt; color: #333; }
 
     @media screen {
       body { background: #e5e7eb; padding: 12px; }
@@ -314,7 +317,7 @@ export function buildWaterSupplyRequestHtml({ form, tenant, docDate, referenceNo
     <div class="write-at">
       <div class="write-at-inner">
         <p>เขียนที่ ${esc(officeName)}</p>
-        ${officeAddressLines.map(part => `<p>${esc(part)}</p>`).join('\n        ')}
+        ${officeAddressLines.map(part => `<p class="office-address">${esc(part)}</p>`).join('\n        ')}
       </div>
     </div>
 
@@ -349,22 +352,20 @@ export function buildWaterSupplyRequestHtml({ form, tenant, docDate, referenceNo
     ${meterPoint ? `<p class="point-copy">จุดติดตั้งมาตรวัดน้ำตามพิกัดแผนที่ ${line(meterPoint)}</p>` : ''}
 
     <section class="signature">
-      <p>
-        <span class="sign-label">ลงชื่อ</span>${signedOnline
-          ? `<span class="signed-name">${esc(applicantName)}</span>`
-          : `<span class="fill-blank" style="min-width:54mm">&nbsp;</span>`} <span class="sign-role">ผู้ขออนุญาต</span>
-      </p>
-      <p class="sign-paren">(${line(applicantName, '44mm')})</p>
+      <div class="signature-row">
+        <span class="sign-label">ลงชื่อ</span>
+        <div class="signature-name">
+          <div class="signature-line">${signedOnline
+            ? `<span class="signed-name">${esc(applicantName)}</span>`
+            : `<span class="fill-blank" style="min-width:54mm">&nbsp;</span>`}</div>
+          <div class="sign-paren">(${line(applicantName, '44mm')})</div>
+        </div>
+        <span class="sign-role">ผู้ขออนุญาต</span>
+      </div>
       ${signedOnline
         ? `<p class="signed-note">ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service${signedStamp ? `<br>${esc(signedStamp)}` : ''}${referenceNo ? ` · เลขอ้างอิง ${esc(referenceNo)}` : ''}</p>`
         : ''}
     </section>
-
-    ${/* บรรทัดกำกับที่มาอยู่ล่างสุดคู่กับเลขอ้างอิง ไม่ใช่ใต้ชื่อเรื่อง — เนื้อใบต้องตรงกับต้นฉบับ
-         ห้ามแทรกข้อความของระบบกลางใบ */''}
-    <p class="reference">
-      ${esc(govEServiceOriginText(tenant))}${referenceNo ? ` &nbsp;|&nbsp; เลขอ้างอิงระบบ: ${esc(referenceNo)}` : ''}
-    </p>
   </main>
 </body>
 </html>`
