@@ -23,9 +23,13 @@ function line(value, width = '36mm', { nowrap = false } = {}) {
 
 // จุดวางถังที่ปักหมุดไว้ → ข้อความสำหรับใบพิมพ์
 // พิกัดต้องมาก่อนชื่อสถานที่เสมอ เพราะเป็นค่าที่พนักงานเก็บขนพิมพ์ลงแอปนำทางได้ตรงๆ
-// ส่วนชื่อจาก Nominatim เป็นข้อมูลช่วยจำ ยาวได้ไม่จำกัด (ของจริงที่เจอ 95 ตัวอักษร
-// "ถนน..., ตำบล..., อำเภอ..., จังหวัด..., ภาคเหนือ, 54170, ประเทศไทย") จึงตัดที่ 40
-// ตัวอักษร ชื่อเต็มยังดูได้ในแดชบอร์ดเจ้าหน้าที่พร้อมปุ่มนำทาง
+//
+// ⚠️ ห้ามตัดชื่อสถานที่ให้สั้นลงอีก — เคยตัดที่ 40 ตัวอักษรแล้วเลิกเมื่อ 2569-09-08 เพราะ
+// ชื่อจาก Nominatim ลงท้ายด้วยหน่วยการปกครองไล่จากเล็กไปใหญ่ (ถนน → ตำบล → อำเภอ →
+// จังหวัด → ภาค → รหัสไปรษณีย์ → ประเทศ) การตัดท้ายจึงไปตัดตรงส่วนที่ระบุพื้นที่พอดี
+// ของจริงที่เจอบนใบที่พิมพ์ออกมา: "(Ban Thung Khaeo, อำเภอหนองม่วงไข่, จังหว…)" ซึ่งอ่านแล้ว
+// เหมือนข้อมูลเสียมากกว่าข้อมูลที่จงใจย่อ · ชื่อยาวสุดที่เจอจริงคือ 95 ตัวอักษร กินราว 2 บรรทัด
+// ในใบ A4 ซึ่ง layout test ของแต่ละใบยืนยันแล้วว่ายังจบ 1 หน้า
 export function collectionPointText(point) {
   const lat = Number(point?.lat)
   const lng = Number(point?.lng)
@@ -33,8 +37,7 @@ export function collectionPointText(point) {
   const coords = `${lat.toFixed(6)}, ${lng.toFixed(6)}`
   const address = String(point?.address ?? '').trim()
   if (!address) return coords
-  const shortAddress = address.length > 40 ? `${address.slice(0, 40)}…` : address
-  return `${coords} (${shortAddress})`
+  return `${coords} (${address})`
 }
 
 function organizationHeadTitle(tenant) {

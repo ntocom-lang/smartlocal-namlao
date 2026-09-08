@@ -142,6 +142,20 @@ function render(form, extra = {}) {
   // พิกัดต้องมาก่อนชื่อสถานที่เสมอ — เป็นค่าที่พนักงานก๊อปไปวางในแอปนำทางได้ตรงๆ
   assert.match(withPin, /18\.245679, 100\.123457 \(ถนนทดสอบ, ตำบลทุ่งแค้ว\)/)
 
+  // ชื่อสถานที่ยาวต้องพิมพ์ครบ ห้ามตัดท้าย — ชื่อจาก Nominatim ไล่จากเล็กไปใหญ่
+  // (ถนน → ตำบล → อำเภอ → จังหวัด → ...) ตัดท้ายเมื่อไหร่ก็ไปตัดตรงส่วนที่ระบุพื้นที่พอดี
+  // เคสจริงบนใบที่พิมพ์ออกมา: "(Ban Thung Khaeo, อำเภอหนองม่วงไข่, จังหว…)"
+  const LONG_ADDRESS = 'Ban Thung Khaeo, ถนนยันตรกิจโกศล, ตำบลทุ่งแค้ว, อำเภอหนองม่วงไข่, จังหวัดแพร่, ภาคเหนือ, 54170, ประเทศไทย'
+  const longPin = render(baseForm({
+    collection_point: { lat: 18.307591, lng: 100.154992, address: LONG_ADDRESS },
+  }))
+  assert.match(longPin, new RegExp(`18\\.307591, 100\\.154992 \\(${LONG_ADDRESS.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\)`))
+  // ตรวจ "…" เฉพาะในย่อหน้าพิกัด ไม่ใช่ทั้งหน้า — คอมเมนต์อธิบาย CSS ในไฟล์ใบพิมพ์เองก็มี
+  // จุดไข่ปลา (เช่น "…ขอให้องค์การบริหาร…") ถ้าเช็คทั้งหน้าจะล้มโดยไม่เกี่ยวกับที่อยู่เลย
+  const pointParagraph = longPin.match(/<p class="point-copy">[\s\S]*?<\/p>/)?.[0] ?? ''
+  assert.ok(pointParagraph, 'ไม่พบย่อหน้าพิกัดในใบ')
+  assert.doesNotMatch(pointParagraph, /…/)
+
   const withoutPin = render(baseForm())
   assert.doesNotMatch(withoutPin, /จุดวางถังตามพิกัดแผนที่/)
   assert.doesNotMatch(withoutPin, /point-copy">/)
