@@ -33,10 +33,24 @@ const EMPTY_FORM = {
  * หน้านี้จึงขึ้นแบนเนอร์เตือนรายการที่มีของหายค้างอยู่แทน ให้เจ้าหน้าที่ไปลดจำนวนเอง
  * แล้วกด "ปรับทะเบียนแล้ว" เพื่อปิดการเตือน
  *
- * หมายเหตุสิทธิ์: หัวหน้ากอง (officer) แก้ได้เฉพาะของกองตัวเองตาม RLS — หน้าจอไม่ได้กรอง
- * ให้ล่วงหน้า ถ้าแก้ของกองอื่นจะถูกฐานข้อมูลปฏิเสธและขึ้นข้อความบอก
+ * สิทธิ์: คุมด้วย profiles.asset_role ที่แอดมินมอบให้เป็นรายคน ไม่ใช่ role หลัก
+ *   asset_admin  — ทุกกองใน อปท. รวมของที่ยังไม่ผูกกอง (admin/superadmin ได้ระดับนี้อัตโนมัติ)
+ *   asset_staff  — เฉพาะของในกองตัวเอง
+ *   asset_viewer — อ่านอย่างเดียว
+ * หน้าจอปิดปุ่มที่ทำไม่ได้ให้ล่วงหน้า แต่ตัวบังคับจริงคือ RLS ฝั่งฐานข้อมูล (asset_can_manage)
+ * ไม่ใช่การซ่อนปุ่ม — ปิด UI อย่างเดียวกันคนที่เปิด devtools ไม่ได้
  */
-export default function BorrowableAssetsAdmin({ tenant }) {
+export default function BorrowableAssetsManager({ tenant, assetRole, myDepartmentId }) {
+  const isManager = assetRole === 'asset_admin'
+  const canWrite = isManager || assetRole === 'asset_staff'
+  // asset_staff แก้ได้เฉพาะกองตัวเอง ของที่ยังไม่ผูกกอง (department_id = null) เป็นของ
+  // ผู้ดูแลระดับ อปท. เท่านั้น ไม่งั้นเจ้าหน้าที่กองไหนก็ยึดของกลางไปเป็นของกองตัวเองได้
+  const canEditAsset = useCallback(
+    asset => isManager
+      || (assetRole === 'asset_staff' && asset.department_id
+          && asset.department_id === myDepartmentId),
+    [isManager, assetRole, myDepartmentId],
+  )
   const [departments, setDepartments] = useState([])
   const [assets, setAssets] = useState([])
   const [losses, setLosses] = useState([])
@@ -128,7 +142,9 @@ export default function BorrowableAssetsAdmin({ tenant }) {
   }
 
   function startAdd() {
-    setForm(EMPTY_FORM)
+    // asset_staff เพิ่มของเข้ากองตัวเองได้อย่างเดียว เติมให้ล่วงหน้าแล้วล็อกช่องไว้
+    // ถ้าปล่อยว่างให้เลือกเอง จะกรอกครบทั้งฟอร์มแล้วโดนฐานข้อมูลปฏิเสธตอนกดบันทึก
+    setForm(isManager ? EMPTY_FORM : { ...EMPTY_FORM, department_id: myDepartmentId ?? '' })
     setEditId(null)
     setShowForm(true)
   }
@@ -258,10 +274,17 @@ export default function BorrowableAssetsAdmin({ tenant }) {
             พัสดุ/ครุภัณฑ์ที่เปิดให้ยืม ใช้เป็นตัวเลือกในแบบคำขอและรายการบนใบ บย.
           </p>
         </div>
-        <button onClick={startAdd}
-          className="inline-flex min-h-[44px] items-center gap-2 rounded-xl bg-sky-600 px-4 text-sm font-semibold text-white hover:bg-sky-700">
-          <Plus size={16} /> เพิ่มรายการ
-        </button>
+        <div className="flex items-center gap-2">
+          <span className="rounded-lg bg-gray-100 px-2.5 py-1 text-[11px] font-semibold text-gray-600">
+            {isManager ? 'ดูแลได้ทุกกอง' : assetRole === 'asset_staff' ? 'ดูแลเฉพาะกองของท่าน' : 'อ่านอย่างเดียว'}
+          </span>
+          {canWrite && (
+            <button onClick={startAdd}
+              className="inline-flex min-h-[44px] items-center gap-2 rounded-xl bg-sky-600 px-4 text-sm font-semibold text-white hover:bg-sky-700">
+              <Plus size={16} /> เพิ่มรายการ
+            </button>
+          )}
+        </div>
       </div>
 
       {pendingLosses.length > 0 && (
@@ -279,7 +302,8 @@ export default function BorrowableAssetsAdmin({ tenant }) {
                   <li key={asset.id} className="flex flex-wrap items-center gap-2 text-xs text-amber-900">
                     <span className="font-semibold">{asset.name}</span>
                     <span>สูญหาย {qty} {asset.unit} (ทะเบียนยังระบุ {asset.total_quantity} {asset.unit})</span>
-                    <button onClick={() => markLossesAdjusted(asset)} disabled={busyId === asset.id}
+                    <button onClick={() => markLossesAdjusted(asset)}
+                      disabled={busyId === asset.id || !canEditAsset(asset)}
                       className="inline-flex min-h-[36px] items-center gap-1 rounded-lg border border-amber-300 bg-white px-3 font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50">
                       <Check size={13} /> ปรับทะเบียนแล้ว
                     </button>
@@ -313,9 +337,11 @@ export default function BorrowableAssetsAdmin({ tenant }) {
 
             <label>
               <span className="mb-1 block text-xs font-semibold text-gray-500">กองเจ้าของพัสดุ</span>
-              <select className={inp} value={form.department_id} onChange={set('department_id')}>
-                <option value="">— ไม่ระบุกอง —</option>
-                {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              <select className={inp} value={form.department_id} onChange={set('department_id')}
+                disabled={!isManager}>
+                {isManager && <option value="">— ไม่ระบุกอง —</option>}
+                {(isManager ? departments : departments.filter(d => d.id === myDepartmentId))
+                  .map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
               </select>
               {/* กองนี้คือช่อง "ไปจากส่วนราชการ" บนใบ บย. และเป็นกองที่คำขอจะวิ่งไปหา
                   ไม่ระบุกอง = คำขอตกไปที่งานพัสดุตามผังงานปกติ */}
@@ -400,7 +426,9 @@ export default function BorrowableAssetsAdmin({ tenant }) {
           <PackageOpen size={32} className="mx-auto text-gray-300" />
           <p className="mt-2 text-sm font-semibold text-gray-500">ยังไม่มีของในทะเบียน</p>
           <p className="mt-1 text-xs text-gray-400">
-            เพิ่มของที่ อปท. เปิดให้ยืม เช่น เต็นท์ โต๊ะ เก้าอี้ เครื่องเสียง
+            {canWrite
+              ? 'เพิ่มของที่ อปท. เปิดให้ยืม เช่น เต็นท์ โต๊ะ เก้าอี้ เครื่องเสียง'
+              : 'ท่านมีสิทธิ์อ่านอย่างเดียว ให้เจ้าหน้าที่พัสดุของแต่ละกองเป็นผู้เพิ่มรายการ'}
           </p>
         </div>
       ) : (
@@ -431,7 +459,8 @@ export default function BorrowableAssetsAdmin({ tenant }) {
                         {asset.notes && ` · ${asset.notes}`}
                       </p>
                       <div className="mt-2 flex flex-wrap gap-2">
-                        <button onClick={() => togglePublic(asset)} disabled={busyId === asset.id}
+                        <button onClick={() => togglePublic(asset)}
+                          disabled={busyId === asset.id || !canEditAsset(asset)}
                           className={`min-h-[40px] rounded-lg px-3 text-[11px] font-semibold disabled:opacity-50 ${
                             asset.is_public_borrowable
                               ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
@@ -439,7 +468,8 @@ export default function BorrowableAssetsAdmin({ tenant }) {
                           }`}>
                           {asset.is_public_borrowable ? 'ประชาชนยืมได้' : 'เฉพาะภายใน'}
                         </button>
-                        <button onClick={() => toggleActive(asset)} disabled={busyId === asset.id}
+                        <button onClick={() => toggleActive(asset)}
+                          disabled={busyId === asset.id || !canEditAsset(asset)}
                           className={`min-h-[40px] rounded-lg px-3 text-[11px] font-semibold disabled:opacity-50 ${
                             asset.is_active
                               ? 'bg-sky-50 text-sky-700 hover:bg-sky-100'
@@ -450,13 +480,14 @@ export default function BorrowableAssetsAdmin({ tenant }) {
                       </div>
                     </div>
                     <div className="flex shrink-0 gap-1">
-                      <button onClick={() => startEdit(asset)}
-                        className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                      <button onClick={() => startEdit(asset)} disabled={!canEditAsset(asset)}
+                        className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40 disabled:hover:bg-transparent"
                         aria-label={`แก้ไข ${asset.name}`}>
                         <Pencil size={16} />
                       </button>
-                      <button onClick={() => handleDelete(asset)} disabled={busyId === asset.id}
-                        className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-gray-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+                      <button onClick={() => handleDelete(asset)}
+                        disabled={busyId === asset.id || !canEditAsset(asset)}
+                        className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-gray-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40 disabled:hover:bg-transparent"
                         aria-label={`ลบ ${asset.name}`}>
                         <Trash2 size={16} />
                       </button>

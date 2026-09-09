@@ -13,7 +13,7 @@ import {
   CheckCircle2, ChevronRight, ChevronLeft,
   Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical, Briefcase,
   X, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Repeat, ArrowLeftRight, BookUser, ShieldQuestion,
-  TrendingUp, AlertTriangle, Printer, ImagePlus, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Star, MessageSquare, Car, Terminal, Database, CalendarDays, KeyRound, ClipboardList, FileText, UserRoundCheck, PackageOpen
+  TrendingUp, AlertTriangle, Printer, ImagePlus, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Star, MessageSquare, Car, Terminal, Database, CalendarDays, KeyRound, ClipboardList, FileText, UserRoundCheck
 } from 'lucide-react'
 import { supabase, signOutSafely } from '../lib/supabase'
 // ไอคอนที่เป็นได้ทั้งอิโมจิและรูปแนบ — ของกลางชุดเดียวกับศูนย์ข้อมูลดิจิทัล ไม่ทำซ้ำอีกชุด
@@ -37,7 +37,6 @@ const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectRe
 import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
 import SignatorySettings from '../components/admin/SignatorySettings'
 import DocumentTypeAssignments from '../components/admin/DocumentTypeAssignments'
-import BorrowableAssetsAdmin from '../components/admin/BorrowableAssetsAdmin'
 import PositionCatalogAdmin from '../components/admin/PositionCatalogAdmin'
 import HolidaysAdmin from '../components/admin/HolidaysAdmin'
 import ResetPasswordModal from '../components/admin/ResetPasswordModal'
@@ -1712,7 +1711,14 @@ function AppointmentTab({ user, depts, positions, currentUserRole, isEditing, dr
 // แยกออกจาก AppointmentTab ตามที่ขอ — การแต่งตั้ง (ตำแหน่งในหน่วยงาน) กับสิทธิ์ (การเข้าใช้งานแอป)
 // เป็นคนละเรื่องกัน แอดมินสับสนว่าทำไมอยู่หน้าเดียวกัน ค่า draft.role ยังใช้ร่วมกับ AppointmentTab
 // (การเลือกตำแหน่งมี "บทบาทแนะนำ" เสนอ role มาให้อัตโนมัติ) แต่แก้ไข/แสดงผลแยกกันคนละแท็บ
-function PermissionsTab({ user, currentUserRole, isEditing, draft, setDraft }) {
+const ASSET_ROLE_OPTIONS = [
+  { value: '',             label: 'ไม่มีสิทธิ์ — ไม่เห็นเมนูทะเบียนของให้ยืม' },
+  { value: 'asset_staff',  label: 'เจ้าหน้าที่พัสดุของกอง — เพิ่ม/แก้ของและดำเนินการคำขอ เฉพาะกองที่สังกัด' },
+  { value: 'asset_admin',  label: 'ผู้ดูแลพัสดุของ อปท. — ทุกกอง รวมของที่ยังไม่ผูกกอง' },
+  { value: 'asset_viewer', label: 'ผู้ดูรายงาน — อ่านอย่างเดียว' },
+]
+
+function PermissionsTab({ user, currentUserRole, isEditing, draft, setDraft, assetRole }) {
   return (
     <div className="space-y-5">
       <div className="rounded-xl border border-purple-100 bg-purple-50 px-4 py-3">
@@ -1747,6 +1753,38 @@ function PermissionsTab({ user, currentUserRole, isEditing, draft, setDraft }) {
           </p>
         )}
       </div>
+
+      {/* สิทธิ์รายโมดูล — แยกจากบทบาทหลักโดยตั้งใจ บทบาทหลักบอกระดับในองค์กร ไม่ได้บอกว่า
+          ใครคือเจ้าหน้าที่พัสดุของกองนั้น ถ้าผูกกับบทบาทหลัก หัวหน้ากองทุกคนจะแก้ทะเบียนของ
+          ได้ทันทีโดยไม่มีใครมอบสิทธิ์ ตรวจย้อนหลังไม่ได้ว่าใครควรเป็นคนทำ */}
+      <div className="border-t border-gray-100 pt-5">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">สิทธิ์โมดูลยืมพัสดุ/ครุภัณฑ์</p>
+        {user.role === 'citizen' || user.role === 'superadmin' ? (
+          <p className="text-sm text-gray-400">ไม่ใช้กับบทบาทนี้</p>
+        ) : isEditing ? (
+          <>
+            <select value={draft.asset_role ?? ''}
+              onChange={(e) => setDraft(current => ({ ...current, asset_role: e.target.value }))}
+              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-700 focus:outline-none bg-white">
+              {ASSET_ROLE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            {draft.asset_role === 'asset_staff' && !draft.department_id && (
+              <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+                ต้องเลือกกอง/หน่วยงานก่อน เพราะสิทธิ์นี้จำกัดอยู่ที่กองที่สังกัด (ไปเลือกที่แท็บ &quot;การแต่งตั้ง&quot;)
+              </p>
+            )}
+            <p className="mt-1 text-xs leading-5 text-gray-500">
+              แอดมินของ อปท. ดูแลทะเบียนได้ทุกกองอยู่แล้วโดยไม่ต้องตั้งค่านี้
+            </p>
+          </>
+        ) : (
+          <p className="text-sm text-gray-800">
+            {assetRole === null
+              ? 'กำลังโหลด…'
+              : (ASSET_ROLE_OPTIONS.find(o => o.value === (assetRole || ''))?.label ?? assetRole)}
+          </p>
+        )}
+      </div>
     </div>
   )
 }
@@ -1774,8 +1812,24 @@ function UserDetailPage(props) {
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(null)
   const [saveError, setSaveError] = useState('')
+  // asset_role ไม่ได้อยู่ในชุดคอลัมน์ที่ get_users_with_email คืนมา และการเพิ่มคอลัมน์
+  // ให้ RETURNS TABLE ต้อง DROP ฟังก์ชันที่ทั้งหน้าจัดการผู้ใช้พึ่งอยู่ จึงอ่านแยกทีละคน
+  // ตอนเปิดหน้ารายละเอียดแทน — คนละ query แต่ไม่ต้องแตะของที่ใช้งานอยู่
+  // เก็บคู่กับ id ที่โหลดมา แล้วค่อยเทียบตอนอ่าน — ถ้าล้างค่าด้วย setState ตรงๆ ในตัว effect
+  // จะได้ค่าของคนก่อนหน้าค้างอยู่หนึ่งเฟรมตอนสลับผู้ใช้ และผิดกฎ react-hooks ด้วย
+  const [loadedAssetRole, setLoadedAssetRole] = useState({ id: null, value: null })
+  const assetRole = loadedAssetRole.id === user.id ? loadedAssetRole.value : null
+  useEffect(() => {
+    let cancelled = false
+    supabase.from('profiles').select('asset_role').eq('id', user.id).maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) setLoadedAssetRole({ id: user.id, value: data?.asset_role ?? '' })
+      })
+    return () => { cancelled = true }
+  }, [user.id])
   const rs = ROLE_LABELS[user.role] || ROLE_LABELS.citizen
   const ActiveComponent = USER_DETAIL_TABS.find(t => t.key === activeTab)?.Component ?? AccountInfoTab
+  const permissionExtras = { assetRole }
   const canEdit = canManageUser(currentUserRole, currentUserId, user)
   const canDelete = canEdit
   const isSaving = saving === user.id
@@ -1797,6 +1851,7 @@ function UserDetailPage(props) {
       position_id: user.position_id || '',
       department_id: user.department_id || '',
       is_dept_head: !!user.is_dept_head,
+      asset_role: assetRole ?? '',
     })
     setSaveError('')
     setIsEditing(true)
@@ -1865,9 +1920,15 @@ function UserDetailPage(props) {
       position_id: draft.position_id || null,
       department_id: draft.department_id || null,
       is_dept_head: draft.department_id ? draft.is_dept_head : false,
+      // asset_staff ต้องมีสังกัด ไม่งั้นถือสิทธิ์แต่มองไม่เห็นของสักชิ้น — ฐานข้อมูลปฏิเสธอยู่แล้ว
+      // แต่ปัดให้เป็นค่าว่างตรงนี้ด้วย เพื่อไม่ให้แอดมินเจอ error ที่แก้ไม่ถูกจุด
+      asset_role: (draft.asset_role === 'asset_staff' && !draft.department_id)
+        ? null
+        : (draft.asset_role || null),
     }
     const result = await saveUserEdits(user, changes)
     if (result.ok) {
+      setLoadedAssetRole({ id: user.id, value: changes.asset_role ?? '' })
       setIsEditing(false)
       setDraft(null)
       setSaveError('')
@@ -1964,7 +2025,7 @@ function UserDetailPage(props) {
         {saveError && (
           <div className="mb-4 text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{saveError}</div>
         )}
-        <ActiveComponent {...props} isEditing={isEditing} draft={draft} setDraft={setDraft} clearSaveError={() => setSaveError('')} />
+        <ActiveComponent {...props} {...permissionExtras} isEditing={isEditing} draft={draft} setDraft={setDraft} clearSaveError={() => setSaveError('')} />
       </div>
       <DeleteUserConfirmModal
         deletingUser={deletingUser} setDeletingUser={setDeletingUser} deleteLoading={deleteLoading} deleteUser={deleteUser}
@@ -5207,7 +5268,6 @@ function getAdminMenuGroups(currentUserRole, currentUserId) {
         { key: 'categories', label: 'ประเภทคำร้อง', Icon: Tag, color: '#d97706', bg: '#fef3c7', show: canManageContent },
         { key: 'emergency', label: 'เบอร์โทรสำคัญ', Icon: Phone, color: '#ef4444', bg: '#fee2e2', show: canManageContent },
         { key: 'locations', label: 'สถานที่เกิดเหตุ', Icon: MapPin, color: '#0891b2', bg: '#e0f2fe', show: canManageContent },
-        { key: 'borrowable-assets', label: 'ทะเบียนของให้ยืม', Icon: PackageOpen, color: '#0d9488', bg: '#ccfbf1', show: canManageContent },
         { key: 'fleet-setup', label: 'ยานพาหนะ', Icon: Car, color: '#0369a1', bg: '#e0f2fe', show: canManageSystem },
       ],
     },
@@ -5899,8 +5959,6 @@ export default function AdminDashboard() {
         <UserManager tenant={tenant} currentUserRole={currentUserRole} currentUserId={currentUserId} />
       ) : activePage === 'locations' ? (
         <LocationManager tenant={tenant} />
-      ) : activePage === 'borrowable-assets' ? (
-        <BorrowableAssetsAdmin tenant={tenant} />
       ) : activePage === 'signatories' ? (
         <SignatorySettings tenant={tenant} />
       ) : activePage === 'categories' ? (
@@ -6042,7 +6100,6 @@ export default function AdminDashboard() {
                   { key: 'categories',  Icon: Tag,    color: '#d97706', bg: '#fef3c7', label: 'ประเภทคำร้อง', desc: 'จัดการหมวดหมู่ + ผู้รับผิดชอบ', show: currentUserRole !== 'viewer' },
                   { key: 'emergency',   Icon: Phone,       color: '#ef4444', bg: '#fee2e2', label: 'เบอร์โทรสำคัญ',    desc: 'สายด่วนฉุกเฉิน และเบอร์โทรสำคัญ', show: currentUserRole !== 'viewer' },
                   { key: 'locations',   Icon: MapPin,      color: '#0891b2', bg: '#e0f2fe', label: 'สถานที่เกิดเหตุ', desc: 'จัดการหมู่บ้าน / ตำบลในพื้นที่',  show: currentUserRole !== 'viewer' },
-                  { key: 'borrowable-assets', Icon: PackageOpen, color: '#0d9488', bg: '#ccfbf1', label: 'ทะเบียนของให้ยืม', desc: 'พัสดุ/ครุภัณฑ์ที่เปิดให้ยืม และสิทธิ์การยืม', show: currentUserRole !== 'viewer' },
                   { key: 'holidays',    Icon: CalendarDays, color: '#0d9488', bg: '#ccfbf1', label: 'วันหยุดราชการ',  desc: 'ใช้คำนวณ SLA คำร้องเป็นวันทำการ',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'fleet-setup',      Icon: Car,         color: '#0369a1', bg: '#e0f2fe', label: 'ตั้งค่ายานพาหนะ', desc: 'กอง/หน่วยงาน งบประมาณ สิทธิ์ผู้ใช้', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'system-settings',  Icon: Settings,    color: '#3b82f6', bg: '#dbeafe', label: 'ตั้งค่าระบบ',    desc: 'ตั้งค่าชื่อระบบและข้อมูลพื้นฐาน',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
