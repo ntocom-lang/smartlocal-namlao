@@ -316,94 +316,104 @@ export default function BorrowableAssetsManager({ tenant, assetRole, myDepartmen
       )}
 
       {showForm && (
-        <div className="rounded-2xl border border-gray-200 bg-white p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-bold text-gray-900">
-              {editId ? 'แก้ไขรายการ' : 'เพิ่มรายการใหม่'}
-            </h3>
-            <button onClick={closeForm} className="rounded-lg p-2 text-gray-400 hover:bg-gray-100">
-              <X size={18} />
-            </button>
-          </div>
+        // ฟอร์มเป็นโมดอล: bottom sheet บนมือถือ / กล่องกลางจอบนเดสก์ท็อป ตามแบบเดียวกับ
+        // PositionCatalogAdmin.jsx และ InfraWorkAdmin.jsx — ของเดิมเป็นแผงแทรกกลางหน้า
+        // ซึ่งบนมือถือดันรายการที่กำลังแก้หลุดออกนอกจอจนไม่เห็นว่ากำลังแก้ตัวไหนอยู่
+        //
+        // ⚠️ ไม่ปิดเมื่อคลิกฉากหลังโดยตั้งใจ — กรอกค้างไว้แล้วเผลอแตะนอกกล่องจะเสียที่พิมพ์ไป
+        // ทั้งหมด ปิดได้ทางปุ่ม X หรือปุ่มยกเลิกเท่านั้น (โมดอลฟอร์มอื่นในระบบก็ทำแบบนี้)
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 md:items-center">
+          <div className="flex max-h-[93vh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl md:max-w-2xl md:rounded-3xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-4 py-3">
+              <h3 className="text-sm font-bold text-gray-900">
+                {editId ? 'แก้ไขรายการ' : 'เพิ่มรายการใหม่'}
+              </h3>
+              <button onClick={closeForm} className="rounded-lg p-2 text-gray-400 hover:bg-gray-100">
+                <X size={18} />
+              </button>
+            </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="sm:col-span-2">
-              <span className="mb-1 block text-xs font-semibold text-gray-500">
-                ชื่อพัสดุ/ครุภัณฑ์ <span className="text-rose-600">*</span>
-              </span>
-              <input className={inp} value={form.name} onChange={set('name')} maxLength={200}
-                placeholder="เช่น เต็นท์ผ้าใบ ขนาด 4x8 เมตร" />
-            </label>
-
-            <label>
-              <span className="mb-1 block text-xs font-semibold text-gray-500">กองเจ้าของพัสดุ</span>
-              <select className={inp} value={form.department_id} onChange={set('department_id')}
-                disabled={!isManager}>
-                {isManager && <option value="">— ไม่ระบุกอง —</option>}
-                {(isManager ? departments : departments.filter(d => d.id === myDepartmentId))
-                  .map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
-              {/* กองนี้คือช่อง "ไปจากส่วนราชการ" บนใบ บย. และเป็นกองที่คำขอจะวิ่งไปหา
-                  ไม่ระบุกอง = คำขอตกไปที่งานพัสดุตามผังงานปกติ */}
-              <span className="mt-1 block text-[11px] text-gray-400">
-                แสดงเป็น &quot;ส่วนราชการ&quot; บนใบยืม และเป็นกองที่ต้องจ่าย/รับของคืน
-              </span>
-            </label>
-
-            <label>
-              <span className="mb-1 block text-xs font-semibold text-gray-500">เลขที่หรือรหัสครุภัณฑ์</span>
-              <input className={inp} value={form.asset_code} onChange={set('asset_code')} maxLength={60}
-                placeholder="ปล่อยว่างได้ถ้าไม่มีรหัส" />
-            </label>
-
-            <label>
-              <span className="mb-1 block text-xs font-semibold text-gray-500">
-                จำนวนทั้งหมด <span className="text-rose-600">*</span>
-              </span>
-              <input className={inp} type="number" inputMode="numeric" min="1" max="9999"
-                value={form.total_quantity} onChange={set('total_quantity')} />
-            </label>
-
-            <label>
-              <span className="mb-1 block text-xs font-semibold text-gray-500">
-                หน่วยนับ <span className="text-rose-600">*</span>
-              </span>
-              <input className={inp} value={form.unit} onChange={set('unit')} maxLength={30}
-                list="borrowable-unit-options" />
-              <datalist id="borrowable-unit-options">
-                {UNIT_SUGGESTIONS.map(u => <option key={u} value={u} />)}
-              </datalist>
-            </label>
-
-            <label className="sm:col-span-2">
-              <span className="mb-1 block text-xs font-semibold text-gray-500">หมายเหตุ</span>
-              <input className={inp} value={form.notes} onChange={set('notes')}
-                placeholder="เช่น ต้องมารับเองที่ที่ทำการ ไม่มีบริการขนส่ง" />
-            </label>
-
-            <label className="flex items-start gap-3 rounded-xl border border-gray-200 p-3 sm:col-span-2">
-              <input type="checkbox" className="mt-0.5 h-5 w-5 shrink-0 accent-sky-600"
-                checked={form.is_public_borrowable} onChange={set('is_public_borrowable')} />
-              <span className="min-w-0">
-                <span className="block text-sm font-semibold text-gray-900">ให้ประชาชนทั่วไปยืมได้</span>
-                <span className="block text-xs text-gray-500">
-                  ไม่ติ๊ก = ประชาชนไม่เห็นรายการนี้เลยแม้แต่ชื่อ ยืมได้เฉพาะบุคลากรหรือผ่านเจ้าหน้าที่รับเรื่องแทน
-                  — ครุภัณฑ์มูลค่าสูงไม่ควรติ๊ก
+            {/* ส่วนกรอกเลื่อนได้เอง หัวกับปุ่มบันทึกตรึงอยู่กับที่ — ฟอร์มนี้สูงเกินจอมือถือ
+                ถ้าปล่อยให้ทั้งกล่องเลื่อน ปุ่ม "เพิ่มเข้าทะเบียน" จะหนีลงไปใต้จอ */}
+            <div className="grid flex-1 gap-3 overflow-y-auto px-4 py-4 sm:grid-cols-2">
+              <label className="sm:col-span-2">
+                <span className="mb-1 block text-xs font-semibold text-gray-500">
+                  ชื่อพัสดุ/ครุภัณฑ์ <span className="text-rose-600">*</span>
                 </span>
-              </span>
-            </label>
-          </div>
+                <input className={inp} value={form.name} onChange={set('name')} maxLength={200}
+                  placeholder="เช่น เต็นท์ผ้าใบ ขนาด 4x8 เมตร" />
+              </label>
 
-          <div className="mt-4 flex gap-2">
-            <button onClick={handleSave} disabled={saving}
-              className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50">
-              {saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
-              {editId ? 'บันทึกการแก้ไข' : 'เพิ่มเข้าทะเบียน'}
-            </button>
-            <button onClick={closeForm}
-              className="min-h-[44px] rounded-xl border border-gray-200 px-4 text-sm font-semibold text-gray-600 hover:bg-gray-50">
-              ยกเลิก
-            </button>
+              <label>
+                <span className="mb-1 block text-xs font-semibold text-gray-500">กองเจ้าของพัสดุ</span>
+                <select className={inp} value={form.department_id} onChange={set('department_id')}
+                  disabled={!isManager}>
+                  {isManager && <option value="">— ไม่ระบุกอง —</option>}
+                  {(isManager ? departments : departments.filter(d => d.id === myDepartmentId))
+                    .map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
+                {/* กองนี้คือช่อง "ไปจากส่วนราชการ" บนใบ บย. และเป็นกองที่คำขอจะวิ่งไปหา
+                    ไม่ระบุกอง = คำขอตกไปที่งานพัสดุตามผังงานปกติ */}
+                <span className="mt-1 block text-[11px] text-gray-400">
+                  แสดงเป็น &quot;ส่วนราชการ&quot; บนใบยืม และเป็นกองที่ต้องจ่าย/รับของคืน
+                </span>
+              </label>
+
+              <label>
+                <span className="mb-1 block text-xs font-semibold text-gray-500">เลขที่หรือรหัสครุภัณฑ์</span>
+                <input className={inp} value={form.asset_code} onChange={set('asset_code')} maxLength={60}
+                  placeholder="ปล่อยว่างได้ถ้าไม่มีรหัส" />
+              </label>
+
+              <label>
+                <span className="mb-1 block text-xs font-semibold text-gray-500">
+                  จำนวนทั้งหมด <span className="text-rose-600">*</span>
+                </span>
+                <input className={inp} type="number" inputMode="numeric" min="1" max="9999"
+                  value={form.total_quantity} onChange={set('total_quantity')} />
+              </label>
+
+              <label>
+                <span className="mb-1 block text-xs font-semibold text-gray-500">
+                  หน่วยนับ <span className="text-rose-600">*</span>
+                </span>
+                <input className={inp} value={form.unit} onChange={set('unit')} maxLength={30}
+                  list="borrowable-unit-options" />
+                <datalist id="borrowable-unit-options">
+                  {UNIT_SUGGESTIONS.map(u => <option key={u} value={u} />)}
+                </datalist>
+              </label>
+
+              <label className="sm:col-span-2">
+                <span className="mb-1 block text-xs font-semibold text-gray-500">หมายเหตุ</span>
+                <input className={inp} value={form.notes} onChange={set('notes')}
+                  placeholder="เช่น ต้องมารับเองที่ที่ทำการ ไม่มีบริการขนส่ง" />
+              </label>
+
+              <label className="flex items-start gap-3 rounded-xl border border-gray-200 p-3 sm:col-span-2">
+                <input type="checkbox" className="mt-0.5 h-5 w-5 shrink-0 accent-sky-600"
+                  checked={form.is_public_borrowable} onChange={set('is_public_borrowable')} />
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-gray-900">ให้ประชาชนทั่วไปยืมได้</span>
+                  <span className="block text-xs text-gray-500">
+                    ไม่ติ๊ก = ประชาชนไม่เห็นรายการนี้เลยแม้แต่ชื่อ ยืมได้เฉพาะบุคลากรหรือผ่านเจ้าหน้าที่รับเรื่องแทน
+                    — ครุภัณฑ์มูลค่าสูงไม่ควรติ๊ก
+                  </span>
+                </span>
+              </label>
+            </div>
+
+            <div className="flex shrink-0 gap-2 border-t border-gray-100 px-4 py-3">
+              <button onClick={handleSave} disabled={saving}
+                className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                {editId ? 'บันทึกการแก้ไข' : 'เพิ่มเข้าทะเบียน'}
+              </button>
+              <button onClick={closeForm}
+                className="min-h-[44px] rounded-xl border border-gray-200 px-4 text-sm font-semibold text-gray-600 hover:bg-gray-50">
+                ยกเลิก
+              </button>
+            </div>
           </div>
         </div>
       )}
