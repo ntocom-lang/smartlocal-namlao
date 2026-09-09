@@ -128,6 +128,34 @@ const checks = [
     },
   },
   {
+    // ใบที่ยื่นออนไลน์สูงกว่าใบเคาน์เตอร์ เพราะมีบรรทัดกำกับการลงชื่อเพิ่มมาใต้ช่องผู้ยืม
+    // เคสอื่นในไฟล์นี้ใช้ฟอร์มที่ไม่มี signed_by จึงวัดแต่โหมดเคาน์เตอร์ ไม่เคยเห็นความสูงจริง
+    // ของใบที่ประชาชนยื่นเอง ซึ่งเป็นใบส่วนใหญ่ในระบบ
+    name: 'online-signature-one-page',
+    reason: 'ใบที่ยื่นออนไลน์มีบรรทัดกำกับการลงชื่อเพิ่ม ต้องยังจบ A4 หน้าเดียว',
+    async run(browser) {
+      const page = await render(browser, {
+        header: typicalHeader(),
+        items: items(7),
+        referenceNo: 'A1B2C3D4',
+        form: {
+          ...LONG_FORM,
+          signed_at: '2026-09-09T14:32:00+07:00',
+          signed_by: { channel: 'online', name: 'นางสาวประกายมาศ ศรีวิชัยเลิศสกุล' },
+        },
+      })
+      try {
+        const mm = await contentHeightMm(page)
+        assert.ok(mm <= ONE_PAGE_BUDGET_MM,
+          `ใบที่ยื่นออนไลน์สูง ${mm.toFixed(1)}mm เกินงบ ${ONE_PAGE_BUDGET_MM}mm`)
+        // บรรทัดกำกับต้องอยู่จริง ไม่ใช่ผ่านเพราะมันหายไป
+        const note = await page.evaluate(() =>
+          document.querySelector('.signed-note')?.textContent?.trim() ?? '')
+        assert.match(note, /ลงชื่อโดยการยืนยันตัวตน/, 'ไม่พบบรรทัดกำกับการลงชื่อในใบที่เรนเดอร์จริง')
+      } finally { await page.close() }
+    },
+  },
+  {
     // ⚠️ ข้อนี้ยอมให้ล้นไปหน้า 2 โดยตั้งใจ ไม่ใช่ข้อบกพร่องที่ยังไม่ได้แก้:
     // พื้นที่พิมพ์กว้าง 160mm ใส่รหัสครุภัณฑ์ (38mm) + ชื่อของยาว (72mm) + จำนวน + หมายเหตุ
     // ในบรรทัดเดียวไม่ได้ แถวจึงตัด 2 บรรทัดตามเนื้อหาจริง ซึ่งถูกต้องกว่าการย่อฟอนต์
