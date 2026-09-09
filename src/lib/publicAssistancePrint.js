@@ -169,9 +169,19 @@ export function buildPublicAssistanceRequestHtml({
   // ⚠️ พิมพ์แค่ "ชื่อ" ในวงเล็บ ไม่พิมพ์ตำแหน่งใต้ชื่อ — ตรงกับต้นฉบับ และเป็นเรื่องความสูงด้วย:
   // ชื่อตำแหน่งเต็ม ("ปลัดองค์การบริหารส่วนตำบลทุ่งแค้ว") ยาวกว่าช่องกว้าง ~50 มม. จึงตัดเป็น
   // 2 บรรทัดเสมอ ดันบล็อกเจ้าหน้าที่สูงขึ้น 17 มม. เทียบกับใบเปล่า (วัดจริง 2569-09-08)
+  // ช่องที่มีคำต่อท้าย ("ผู้รับเรื่อง") เหลือที่ให้เส้นประน้อยกว่าช่องที่ไม่มี — ช่องตารางกว้าง
+  // แค่ ~47 มม. หลังหักขอบ ถ้าใช้ความกว้างเดียวกันทั้งสามช่อง ช่องซ้ายจะดันคำต่อท้ายตกบรรทัด
   const signBlock = (role, person) => `<div class="cell-sign">
-          <div>(ลงชื่อ)<span class="fill-blank" style="min-width:28mm">&nbsp;</span>${role}</div>
-          <div class="cell-paren">(${person?.name ? `<span class="fill-value">${wordSafe(person.name)}</span>` : line('', '26mm')})</div>
+          <div class="cell-sign-row">
+            <span>(ลงชื่อ)</span>
+            <span class="cell-sign-name">
+              <span class="fill-blank" style="min-width:${role ? '20mm' : '26mm'}">&nbsp;</span>
+              <span class="cell-paren">(${person?.name
+                ? `<span class="fill-value">${wordSafe(person.name)}</span>`
+                : line('', role ? '16mm' : '22mm')})</span>
+            </span>
+            ${role ? `<span class="cell-sign-role">${role}</span>` : ''}
+          </div>
           <div class="cell-date">${field('วันที่', '', '7mm')} ${field('เดือน', '', '14mm')}<br>${field('พ.ศ.', '', '12mm')}</div>
         </div>`
 
@@ -302,6 +312,21 @@ export function buildPublicAssistanceRequestHtml({
     .officer .dot-line { height: 4.2mm; }
     .officer .fill-lines { margin-bottom: 0; }
     .cell-sign { margin-top: 1mm; }
+    /* ⚠️ บรรทัดวงเล็บชื่อต้องอยู่ "กึ่งกลางใต้เส้นประ" ของบรรทัด (ลงชื่อ) ไม่ใช่ชิดซ้ายของช่อง
+       (ผู้ใช้ระบบสั่งแก้ 2569-09-09 หลังเห็นใบพิมพ์จริง) — เดิมทั้งสองบรรทัดเป็น div แยกกัน
+       วงเล็บจึงเริ่มที่ขอบซ้ายของช่องตาราง ห่างจากเส้นประที่มันควรอยู่ใต้ ~13 มม.
+       วิธีแก้: มัดเส้นประกับวงเล็บไว้ในกล่องเดียวกันที่กว้างเท่าเส้นประ แล้วจัดกึ่งกลาง
+       ทั้งคู่ใช้แกนเดียวกันเสมอ แม้ชื่อในวงเล็บจะยาวกว่าเส้นประ */
+    /* ⚠️ nowrap เฉพาะป้ายกำกับสองข้าง ห้ามครอบทั้งแถว — ชื่อผู้ลงนามยาวกว่าช่องตาราง
+       (เช่น "นางสาวประกายมาศ ศรีวิชัยเลิศสกุล" กว้าง ~55 มม. ในช่อง ~47 มม.) ถ้าห้ามตัดบรรทัด
+       ทั้งแถว ชื่อจะดันกล่องล้นออกนอกขอบขวาของกระดาษ 8 มม. (เทสต์ nothing-overflows จับได้)
+       ตัวชื่อครอบ nowrap รายคำด้วย wordSafe() อยู่แล้ว จึงตัดได้เฉพาะที่ช่องว่าง ไม่ขาดกลางคำ */
+    .cell-sign-row { display: flex; align-items: flex-start; }
+    .cell-sign-row > span:first-child, .cell-sign-role { white-space: nowrap; }
+    /* flex: 1 1 auto + min-width: 0 ให้กล่องหดตามช่องตารางได้ ไม่ดันแถวให้ล้น
+       ส่วน min-width ของเส้นประด้านในเป็นตัวกำหนดความกว้างขั้นต่ำของช่องลงชื่อ */
+    .cell-sign-name { display: flex; flex: 0 1 auto; min-width: 0; flex-direction: column; align-items: center; }
+    .cell-sign-role { margin-left: 1mm; }
     .cell-paren, .cell-title, .cell-date { margin-top: 1mm; }
     .cell-title { font-size: 11pt; }
     .checkbox { display: inline-block; width: 3.5mm; height: 3.5mm; border: 1px solid #000; margin-right: 1.5mm; vertical-align: -0.3mm; }
