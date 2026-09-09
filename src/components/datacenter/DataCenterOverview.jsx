@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Database, Layers, Radio, Globe, Sparkles, Upload, Plus, BarChart3, MapPin,
-  ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Pencil, Eye, EyeOff, Search, Filter, AlertCircle,
+  ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Pencil, Eye, Search, Filter, AlertCircle,
   Download, AlertTriangle, RefreshCw, Loader2, Building2,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import DataCenterImportModal from './DataCenterImportModal'
+import DataCenterDetailModal from './DataCenterDetailModal'
 import GroupIconPicker from './GroupIconPicker'
 import CategoryIcon from './CategoryIcon'
 import { resolveGroupEmoji, resolveEntryEmoji, fetchGroupIconOverrides, saveGroupIconOverride, iconKey } from '../../lib/dataCenterGroupIcon'
@@ -128,6 +129,7 @@ export default function DataCenterOverview({
   const [groupIconDraft, setGroupIconDraft] = useState('')
   const [savingGroupIcon, setSavingGroupIcon] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
+  const [selectedDetailEntry, setSelectedDetailEntry] = useState(null)
 
   // desktop table: ค้นหา/กรอง/เรียง/แบ่งหน้าอิสระจากสไลด์เมนูซ้าย (sync ค่าเริ่มต้นมาจากมันตอน filter เปลี่ยน)
   const [tableSearch, setTableSearch] = useState('')
@@ -206,9 +208,11 @@ export default function DataCenterOverview({
   async function toggleStatus(entry) {
     const nextStatus = entry.status === 'active' ? 'archived' : 'active'
     setListRows(prev => prev.map(e => e.id === entry.id ? { ...e, status: nextStatus } : e))
+    setSelectedDetailEntry(prev => prev && prev.id === entry.id ? { ...prev, status: nextStatus } : prev)
     const { error } = await supabase.from('data_center_entries').update({ status: nextStatus }).eq('id', entry.id)
     if (error) {
       setListRows(prev => prev.map(e => e.id === entry.id ? { ...e, status: entry.status } : e))
+      setSelectedDetailEntry(prev => prev && prev.id === entry.id ? { ...prev, status: entry.status } : prev)
       alert('บันทึกไม่สำเร็จ: ' + error.message)
       return
     }
@@ -342,6 +346,21 @@ export default function DataCenterOverview({
             setShowImportModal(false)
             onImportSuccess?.()
           }}
+        />
+      )}
+
+      {selectedDetailEntry && (
+        <DataCenterDetailModal
+          entry={selectedDetailEntry}
+          isOpen={!!selectedDetailEntry}
+          onClose={() => setSelectedDetailEntry(null)}
+          onEdit={onEditEntry}
+          onViewOnMap={onViewOnMap}
+          onToggleStatus={toggleStatus}
+          departments={summary?.departments ?? []}
+          groupIconOverrides={groupIconOverrides}
+          theme={theme}
+          groupMeta={getGroupMeta(selectedDetailEntry.group_name, groupIconOverrides)}
         />
       )}
 
@@ -710,36 +729,33 @@ export default function DataCenterOverview({
             ) : (
               <div className={`divide-y ${isLight ? 'divide-slate-200/70' : 'divide-slate-800/60'}`}>
                 {tablePageItems.map(entry => {
-                  const isActive = entry.status !== 'archived'
                   // ไอคอนของแถวใช้ระดับ "ประเภทย่อย" ก่อนเสมอ (ทับไอคอนกลุ่มหลัก)
                   const entryEmoji = resolveEntryEmoji(entry.group_name, entry.category, groupIconOverrides)
                   return (
                     <div key={entry.id} className="flex items-center gap-2 px-3.5 py-3">
-                      <button type="button" onClick={() => onEditEntry(entry)} className="flex-1 min-w-0 text-left">
+                      <button type="button" onClick={() => setSelectedDetailEntry(entry)} className="flex-1 min-w-0 text-left group">
                         <p className="text-xs font-bold truncate flex items-center gap-1.5">
                           <CategoryIcon value={entryEmoji} alt="" />
-                          <span className="truncate">{entry.name || '(ไม่มีชื่อ)'}</span>
+                          <span className={`truncate transition-colors ${isLight ? 'group-hover:text-sky-700' : 'group-hover:text-cyan-300'}`}>
+                            {entry.name || '(ไม่มีชื่อ)'}
+                          </span>
                         </p>
                         <p className={`text-[10px] mt-0.5 truncate ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>{entry.category} · {formatThaiDate(entry.created_at)}</p>
                       </button>
                       <div className="flex items-center gap-1 shrink-0">
+                        <button type="button" onClick={() => setSelectedDetailEntry(entry)} aria-label="ดูรายละเอียด" title="ดูรายละเอียด"
+                          className={`p-1.5 rounded-lg border transition-colors ${isLight ? 'bg-white border-slate-200 text-slate-500 hover:text-sky-700 hover:border-sky-300' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-cyan-300 hover:border-cyan-500/40'}`}>
+                          <Eye size={13} />
+                        </button>
                         {onViewOnMap && (
                           <button type="button" onClick={() => onViewOnMap(entry)} aria-label="ดูบนแผนที่" title="ดูบนแผนที่"
-                            className={`p-1.5 rounded-lg border ${isLight ? 'bg-white border-slate-200 text-slate-500 hover:text-sky-700' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-cyan-300'}`}>
+                            className={`p-1.5 rounded-lg border transition-colors ${isLight ? 'bg-white border-slate-200 text-slate-500 hover:text-sky-700 hover:border-sky-300' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-cyan-300 hover:border-cyan-500/40'}`}>
                             <MapPin size={13} />
                           </button>
                         )}
                         <button type="button" onClick={() => onEditEntry(entry)} aria-label="แก้ไข" title="แก้ไข"
-                          className={`p-1.5 rounded-lg border ${isLight ? 'bg-white border-slate-200 text-slate-500 hover:text-sky-700' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-cyan-300'}`}>
+                          className={`p-1.5 rounded-lg border transition-colors ${isLight ? 'bg-white border-slate-200 text-slate-500 hover:text-sky-700 hover:border-sky-300' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-cyan-300 hover:border-cyan-500/40'}`}>
                           <Pencil size={13} />
-                        </button>
-                        <button type="button" onClick={() => toggleStatus(entry)} aria-label={isActive ? 'ปิดใช้งาน' : 'เปิดใช้งาน'} title={isActive ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}
-                          className={`p-1.5 rounded-lg border ${
-                            isActive
-                              ? (isLight ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400')
-                              : (isLight ? 'bg-slate-100 border-slate-200 text-slate-400' : 'bg-slate-800 border-slate-700 text-slate-500')
-                          }`}>
-                          {isActive ? <Eye size={13} /> : <EyeOff size={13} />}
                         </button>
                       </div>
                     </div>
@@ -815,14 +831,16 @@ export default function DataCenterOverview({
                     // ไอคอนของแถวใช้ระดับ "ประเภทย่อย" ก่อนเสมอ (ทับไอคอนกลุ่มหลัก) — meta เหลือไว้ใช้แค่สีป้ายกลุ่ม
                     const entryEmoji = resolveEntryEmoji(entry.group_name, entry.category, groupIconOverrides)
                     return (
-                      <tr key={entry.id} className={`transition-colors group ${isLight ? 'hover:bg-sky-50/60' : 'hover:bg-cyan-500/5'}`}>
+                      <tr key={entry.id} onClick={() => setSelectedDetailEntry(entry)}
+                        className={`transition-colors group cursor-pointer ${isLight ? 'hover:bg-sky-50/80' : 'hover:bg-cyan-500/10'}`}
+                        title="คลิกเพื่อดูรายละเอียด">
                         <td className={`px-3.5 py-3 text-center font-mono font-bold ${isLight ? 'text-slate-400' : 'text-slate-500'}`}>
                           {(tableCurrentPage - 1) * effectivePageSize + i + 1}
                         </td>
                         <td className={`px-3.5 py-3 font-semibold transition-colors ${isLight ? 'text-slate-900 group-hover:text-sky-700' : 'text-slate-100 group-hover:text-cyan-300'}`}>
                           <div className="flex items-center gap-2">
                             <CategoryIcon value={entryEmoji} alt="" />
-                            <span>{entry.name || <span className={`italic ${isLight ? 'text-slate-400' : 'text-slate-500'}`}>(ไม่มีชื่อ)</span>}</span>
+                            <span className="underline-offset-2 group-hover:underline">{entry.name || <span className={`italic ${isLight ? 'text-slate-400' : 'text-slate-500'}`}>(ไม่มีชื่อ)</span>}</span>
                           </div>
                         </td>
                         <td className="px-3.5 py-3 font-medium">
@@ -837,40 +855,42 @@ export default function DataCenterOverview({
                             ? `เส้นทาง ${entry.route_points.length} จุด`
                             : entry.latitude != null ? `${Number(entry.latitude).toFixed(5)}, ${Number(entry.longitude).toFixed(5)}` : '—'}
                         </td>
-                        <td className="px-3.5 py-3 text-center">
-                          <span className={`inline-flex items-center gap-1.5 text-[10px] font-black px-2.5 py-1 rounded-full border shadow-sm ${
-                            isActive
-                              ? (isLight ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400')
-                              : (isLight ? 'bg-slate-100 border-slate-200 text-slate-400' : 'bg-slate-800 border-slate-700 text-slate-500')
-                          }`}>
+                        <td className="px-3.5 py-3 text-center" onClick={e => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => toggleStatus(entry)}
+                            title={isActive ? 'คลิกเพื่อปิดใช้งาน' : 'คลิกเพื่อเปิดใช้งาน'}
+                            className={`inline-flex items-center gap-1.5 text-[10px] font-black px-2.5 py-1 rounded-full border shadow-sm transition-transform active:scale-95 ${
+                              isActive
+                                ? (isLight ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100' : 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/20')
+                                : (isLight ? 'bg-slate-100 border-slate-200 text-slate-400 hover:bg-slate-200' : 'bg-slate-800 border-slate-700 text-slate-500 hover:bg-slate-700')
+                            }`}>
                             <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
                             {isActive ? 'ใช้งาน' : 'ไม่ใช้งาน'}
-                          </span>
+                          </button>
                         </td>
                         <td className={`px-3.5 py-3 font-mono text-[11px] ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>{formatThaiDate(entry.created_at)}</td>
-                        <td className="px-3.5 py-3">
+                        <td className="px-3.5 py-3" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center justify-center gap-1.5">
+                            <button type="button" onClick={() => setSelectedDetailEntry(entry)} aria-label="ดูรายละเอียด" title="ดูรายละเอียด"
+                              className={`p-1.5 rounded-xl border transition-colors ${
+                                isLight ? 'bg-white border-slate-200 text-slate-600 hover:text-sky-700 hover:border-sky-300 hover:bg-sky-50' : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40 hover:bg-slate-700'
+                              }`}>
+                              <Eye size={13} />
+                            </button>
                             {onViewOnMap && (
-                              <button type="button" onClick={() => onViewOnMap(entry)} aria-label="ดูบนแผนที่"
+                              <button type="button" onClick={() => onViewOnMap(entry)} aria-label="ดูบนแผนที่" title="ดูบนแผนที่"
                                 className={`p-1.5 rounded-xl border transition-colors ${
-                                  isLight ? 'bg-white border-slate-200 text-slate-600 hover:text-sky-700 hover:border-sky-300' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-cyan-300 hover:border-cyan-500/40'
+                                  isLight ? 'bg-white border-slate-200 text-slate-600 hover:text-sky-700 hover:border-sky-300 hover:bg-sky-50' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-cyan-300 hover:border-cyan-500/40 hover:bg-slate-700'
                                 }`}>
                                 <MapPin size={13} />
                               </button>
                             )}
-                            <button type="button" onClick={() => onEditEntry(entry)} aria-label="แก้ไข"
+                            <button type="button" onClick={() => onEditEntry(entry)} aria-label="แก้ไข" title="แก้ไข"
                               className={`p-1.5 rounded-xl border transition-colors ${
-                                isLight ? 'bg-white border-slate-200 text-slate-600 hover:text-sky-700 hover:border-sky-300' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-cyan-300 hover:border-cyan-500/40'
+                                isLight ? 'bg-white border-slate-200 text-slate-600 hover:text-sky-700 hover:border-sky-300 hover:bg-sky-50' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-cyan-300 hover:border-cyan-500/40 hover:bg-slate-700'
                               }`}>
                               <Pencil size={13} />
-                            </button>
-                            <button type="button" onClick={() => toggleStatus(entry)} aria-label={isActive ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}
-                              className={`p-1.5 rounded-xl border transition-colors ${
-                                isActive
-                                  ? (isLight ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100' : 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/20')
-                                  : (isLight ? 'bg-slate-100 border-slate-200 text-slate-400 hover:text-slate-600' : 'bg-slate-800 border-slate-700 text-slate-500 hover:text-slate-300')
-                              }`}>
-                              {isActive ? <Eye size={13} /> : <EyeOff size={13} />}
                             </button>
                           </div>
                         </td>
