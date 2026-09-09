@@ -76,7 +76,7 @@ export default function ComplaintCategory() {
     if (!tenant?.id) return
     supabase
       .from('complaint_categories')
-      .select('value, label, emoji, color, text_color')
+      .select('value, label, emoji, color, text_color, is_adhoc')
       .eq('municipality_id', tenant.id)
       .eq('is_active', true)
       .order('sort_order')
@@ -137,35 +137,79 @@ export default function ComplaintCategory() {
           <div className="flex justify-center py-20">
             <Loader2 size={28} className="animate-spin text-blue-500" />
           </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4">
-            {categories.map((cat) => {
-              const dbEmoji = (cat.emoji || '').trim()
-              const resolvedEmoji = dbEmoji || EMOJI_OVERRIDE[cat.value] || ''
-              const IconComponent = FALLBACK_ICON[cat.value] || HelpCircle
-              const iconBg = FALLBACK_COLOR[cat.value] || '#475569'
+        ) : (() => {
+          const adhocCats = categories.filter(c => !!c.is_adhoc)
+          const normalCats = categories.filter(c => !c.is_adhoc)
 
-              return (
-                <button key={cat.value} onClick={() => handleSelect(cat.value)}
-                  className="flex flex-col items-center justify-start pt-5 pb-4 px-3 gap-3 active:scale-95 transition-all group bg-white rounded-[14px] border border-gray-200 shadow-sm hover:shadow-md hover:border-blue-200">
+          const renderCard = (cat, isAdhoc = false) => {
+            const dbEmoji = (cat.emoji || '').trim()
+            const resolvedEmoji = dbEmoji || EMOJI_OVERRIDE[cat.value] || ''
+            const IconComponent = FALLBACK_ICON[cat.value] || HelpCircle
+            const iconBg = FALLBACK_COLOR[cat.value] || '#475569'
 
-                  <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 transition-transform duration-300 group-hover:scale-110"
-                    style={{ backgroundColor: iconBg }}>
-                    {resolvedEmoji ? (
-                      <CategoryIcon emoji={resolvedEmoji} size={36} style={tenant?.category_icon_style} />
-                    ) : (
-                      <IconComponent size={32} color="white" strokeWidth={2} />
-                    )}
-                  </div>
+            return (
+              <button key={cat.value} onClick={() => handleSelect(cat.value)}
+                className={`flex flex-col items-center justify-start pt-5 pb-4 px-3 gap-3 active:scale-95 transition-all group rounded-[14px] border shadow-sm hover:shadow-md ${
+                  isAdhoc
+                    ? 'bg-gradient-to-b from-lime-50/80 to-white border-lime-200 hover:border-lime-400'
+                    : 'bg-white border-gray-200 hover:border-blue-200'
+                }`}>
 
-                  <span className="text-[12px] font-bold text-[#1e3a8a] text-center leading-snug w-full px-0.5 line-clamp-3 mt-1 group-hover:text-blue-600 transition-colors">
-                    {cat.label}
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 transition-transform duration-300 group-hover:scale-110"
+                  style={{ backgroundColor: iconBg }}>
+                  {resolvedEmoji ? (
+                    <CategoryIcon emoji={resolvedEmoji} size={36} style={tenant?.category_icon_style} />
+                  ) : (
+                    <IconComponent size={32} color="white" strokeWidth={2} />
+                  )}
+                </div>
+
+                <span className={`text-[12px] font-bold text-center leading-snug w-full px-0.5 line-clamp-3 mt-1 transition-colors ${
+                  isAdhoc ? 'text-lime-800 group-hover:text-lime-900' : 'text-[#1e3a8a] group-hover:text-blue-600'
+                }`}>
+                  {cat.label}
+                </span>
+
+                {isAdhoc && (
+                  <span className="text-[10px] font-bold text-lime-700 bg-lime-100 px-2 py-0.5 rounded-full -mt-1">
+                    เฉพาะกิจ
                   </span>
-                </button>
-              )
-            })}
-          </div>
-        )}
+                )}
+              </button>
+            )
+          }
+
+          return (
+            <div className="space-y-6">
+              {adhocCats.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="w-6 h-6 rounded-lg flex items-center justify-center text-white bg-lime-600 shadow-sm">
+                      <Wind size={13} />
+                    </span>
+                    <h3 className="text-gray-800 text-sm font-bold">
+                      หมวดเฉพาะกิจ (ส่งตรงผู้รับผิดชอบ)
+                    </h3>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4">
+                    {adhocCats.map(cat => renderCard(cat, true))}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                {adhocCats.length > 0 && (
+                  <h3 className="text-gray-700 text-sm font-bold mb-3">
+                    คำร้องทั่วไป
+                  </h3>
+                )}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4">
+                  {normalCats.map(cat => renderCard(cat, false))}
+                </div>
+              </div>
+            </div>
+          )
+        })()}
       </div>
     </div>
   )
