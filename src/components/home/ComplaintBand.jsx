@@ -5,6 +5,7 @@ import { ChevronRight, Search, Siren } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import { CategoryIcon } from '../../lib/categoryIcon'
+import AdhocBand from './AdhocBand'
 
 // FALLBACK_EMOJI = ชุดที่แก้ให้ตรงกับไฟล์อื่นๆ ทั้งระบบแล้ว ใช้เฉพาะ clean variant (thungkaew-Theme)
 // LEGACY_FALLBACK_EMOJI = ชุดเดิมก่อนแก้ (เก็บไว้ให้ 6 ธีมเดิมใช้) — ธีมอื่นขอให้ "เหมือนเดิมเป๊ะ" ไม่ต้อง
@@ -50,9 +51,14 @@ function ComplaintBand({ variant = 'warm' }) {
 
   useEffect(() => {
     if (!tenant?.id) return
-    supabase.from('complaint_categories').select('value, label, emoji, color')
+    supabase.from('complaint_categories').select('value, label, emoji, color, is_adhoc')
       .eq('municipality_id', tenant.id).eq('is_active', true).order('sort_order')
-      .then(({ data }) => { if (data?.length) setCats(data) })
+      .then(({ data }) => {
+        if (data?.length) {
+          // กรองเฉพาะหมวดปกติ ไม่รวมเฉพาะกิจ (เช่น กลิ่นเหม็นรบกวน ซึ่งแยกไปอยู่ AdhocBand)
+          setCats(data.filter(c => !c.is_adhoc))
+        }
+      })
       .catch(() => {})
   }, [tenant?.id])
 
@@ -66,7 +72,9 @@ function ComplaintBand({ variant = 'warm' }) {
     : 'flex items-center gap-0.5 text-amber-900/70 text-xs bg-white/30 px-2 py-1 rounded-full hover:bg-white/50 transition-colors shrink-0'
 
   return (
-    <div className={`rounded-2xl overflow-hidden relative ${clean ? 'shadow-sm border border-gray-100' : 'shadow-xl'}`}
+    <div className="flex flex-col gap-2 lg:gap-3">
+      <AdhocBand />
+      <div className={`rounded-2xl overflow-hidden relative ${clean ? 'shadow-sm border border-gray-100' : 'shadow-xl'}`}
       style={clean ? { backgroundColor: '#ffffff' } : { background: 'linear-gradient(135deg, #d97706 0%, #f59e0b 50%, #fde68a 100%)' }}>
       {/* decorative glows — เฉพาะ variant สีส้มเดิม */}
       {!clean && (
@@ -163,6 +171,7 @@ function ComplaintBand({ variant = 'warm' }) {
           </div>
         )}
       </div>
+    </div>
     </div>
   )
 }

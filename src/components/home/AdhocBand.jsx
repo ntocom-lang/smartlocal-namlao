@@ -33,13 +33,18 @@ export default function AdhocBand() {
         style={{ background: 'radial-gradient(circle, rgba(77,124,15,0.35) 0%, transparent 70%)' }} />
 
       <div className="relative z-10 px-4 pt-3 pb-4">
-        <div className="flex items-center gap-2 mb-3">
-          <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-white bg-white/20">
-            <Wind size={15} />
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2">
+            <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-white bg-white/20">
+              <Wind size={15} />
+            </span>
+            <p className="text-white font-extrabold text-[15px] md:text-base tracking-wide drop-shadow-sm">
+              💨 เฉพาะกิจ
+            </p>
+          </div>
+          <span className="text-white text-[11px] font-bold bg-white/20 px-2.5 py-0.5 rounded-full border border-white/20">
+            ส่งตรงผู้รับผิดชอบ
           </span>
-          <p className="text-white font-extrabold text-[15px] md:text-base tracking-wide drop-shadow-sm">
-            💨 เฉพาะกิจ
-          </p>
         </div>
 
         {/* flex-wrap + justify-center แทน grid คอลัมน์ตายตัว — หมวดเฉพาะกิจมักมีแค่ 1-2 หมวด ถ้าใช้
@@ -80,7 +85,7 @@ export default function AdhocBand() {
             return (
               <button key={cat.value}
                 onClick={() => navigate(`/request?category=${cat.value}`)}
-                className="flex flex-col items-center gap-1.5 p-1.5 rounded-xl active:scale-95 transition-all hover:bg-white/15 w-20">
+                className="flex flex-col items-center gap-1.5 p-2 rounded-xl active:scale-95 transition-all hover:bg-white/15 min-w-[5.5rem] max-w-[8rem]">
                 <div className="w-11 h-11 flex items-center justify-center"
                   style={{
                     backgroundColor: color + '22',
