@@ -130,9 +130,15 @@ export function attachmentPageCount(rows) {
  * @param {string}   [args.signedAt]
  * @param {Array<{name?: string}>} [args.departments] กองจริงของ อปท. สำหรับช่องติ๊กส่วนงาน
  * @param {{clerk?: {name?: string, title?: string}, mayor?: {name?: string, title?: string}}} [args.signatories]
+ * @param {boolean}  [args.includeOfficerBlock] พิมพ์ตารางท้ายใบสำหรับเจ้าหน้าที่ (ดูค่าปริยายด้านล่าง)
  */
 export function buildPublicAssistanceRequestHtml({
   form, tenant, docDate, referenceNo = '', signedAt = '', departments = [], signatories = null,
+  // ⚠️ ถอดตารางท้ายใบ (สำหรับเจ้าหน้าที่ / ความเห็นปลัด / คำอนุมัติ / ช่องติ๊กส่วนงาน /
+  // ผลการดำเนินการ) ออกชั่วคราวตามคำสั่งผู้ใช้ระบบ 2569-09-09 — โค้ดกับเทสต์ยังอยู่ครบ
+  // เปิดกลับด้วย includeOfficerBlock: true ที่จุดเรียกใช้ ไม่ต้องรื้อไฟล์นี้ใหม่
+  // ค่าปริยายเป็น false เพราะจุดเรียกใช้ทั้งหมด (StaffDashboard, MyDocRequests) ต้องเหมือนกัน
+  includeOfficerBlock = false,
 }) {
   const data = form || {}
   const applicant = data.applicant || {}
@@ -411,15 +417,17 @@ export function buildPublicAssistanceRequestHtml({
     </p>
 
     <!-- ⚠️ จำนวนบรรทัดเส้นประคือตัวกำหนดความสูงของ "ใบเปล่า" ห้ามเพิ่มโดยไม่วัดใหม่
-         วัดจริง 2569-09-09: 7+3 บรรทัด = 257 มม. / 8+4 = 268 มม. (เกินเพดานเทสต์ 262 มม.
-         ที่เผื่อไว้ให้เครื่องที่ไม่มีฟอนต์ราชการ) / 13+7 = 313 มม. ตกหน้า 2 ทันที
+         ต้องไล่แยกสองโหมด เพราะตารางท้ายใบกินความสูง ~65 มม. (วัดจริง 2569-09-09)
+           มีตาราง  : 7+3 บรรทัด = 257 มม. · 8+4 = 268 มม. เกินเพดานเทสต์ 262 มม. แล้ว
+           ไม่มีตาราง: 15+6 บรรทัด = 252 มม. · 16+7 = 264 มม. เกินเพดานเช่นกัน
+         เพดาน 262 มม. คือ 276 มม. ลบที่เผื่อ 14 มม. ให้เครื่องที่ไม่มีฟอนต์ราชการ
          ช่องที่ผู้ยื่นกรอกมาแล้วไม่ใช้เส้นประ ค่านี้จึงมีผลกับใบเปล่าที่พิมพ์แจกหน้าเคาน์เตอร์
          กับใบที่เว้นช่องไว้เท่านั้น -->
     <p class="section-head">๑. ปัญหาความเดือดร้อน</p>
-    ${writeLines(data.problem, 7)}
+    ${writeLines(data.problem, includeOfficerBlock ? 7 : 15)}
 
     <p class="section-head">๒. ความต้องการรับการช่วยเหลือ</p>
-    ${writeLines(data.need, 3)}
+    ${writeLines(data.need, includeOfficerBlock ? 3 : 6)}
 
     <p class="closing">จึงเรียนมาเพื่อโปรดพิจารณาให้ความช่วยเหลือ</p>
     <p class="regards">ขอแสดงความนับถือ</p>
@@ -440,7 +448,7 @@ export function buildPublicAssistanceRequestHtml({
         : `ยื่นคำร้อง${esc(govEServiceOriginText(tenant))}`}${referenceNo ? ` · เลขอ้างอิง ${esc(referenceNo)}` : ''}</p>
     </section>
 
-    <table class="officer">
+    ${includeOfficerBlock ? `<table class="officer">
       <tr>
         <td>
           <div class="cell-head">สำหรับเจ้าหน้าที่</div>
@@ -474,7 +482,7 @@ export function buildPublicAssistanceRequestHtml({
           <div class="result-line">ผลการดำเนินการ<span class="fill-blank">&nbsp;</span></div>
         </td>
       </tr>
-    </table>
+    </table>` : ''}
   </main>
 
   ${attachmentHtml}

@@ -209,7 +209,7 @@ const checks = [
         const lines = await blank.evaluate(() =>
           [...document.querySelectorAll('.sheet--request > .fill-lines')]
             .map(box => box.querySelectorAll('.dot-line').length))
-        assert.deepEqual(lines, [7, 3], 'ใบเปล่าต้องมีเส้นประให้เขียนมือครบตามที่ไล่ความสูงไว้')
+        assert.deepEqual(lines, [15, 6], 'ใบเปล่าต้องมีเส้นประให้เขียนมือครบตามที่ไล่ความสูงไว้')
       } finally {
         await blank.close()
       }
@@ -219,7 +219,9 @@ const checks = [
     name: 'officer-block-sits-at-page-bottom',
     reason: 'บล็อกเจ้าหน้าที่ต้องยึดขอบล่างของหน้าเสมอ ไม่ลอยขึ้นกลางหน้าเมื่อผู้ยื่นเขียนสั้น (ที่ว่างต้องอยู่เหนือตาราง)',
     async run(browser) {
-      const page = await render(browser, longForm({ problem: 'น้ำท่วมบ้าน', need: 'ขอถุงยังชีพ' }))
+      // ตารางถูกถอดออกจากค่าปริยายชั่วคราว เทสต์ยังต้องคุมเลย์เอาต์ของมันไว้เผื่อเปิดกลับ
+      const page = await render(browser, longForm({ problem: 'น้ำท่วมบ้าน', need: 'ขอถุงยังชีพ' }),
+        { includeOfficerBlock: true })
       try {
         // .sheet ในโหมดจอมี padding ล่าง 9 มม. ตรงกับขอบกระดาษ ตารางจึงต้องจบที่ขอบในพอดี
         const bottomGapMm = await page.evaluate(() => {
@@ -258,8 +260,10 @@ const checks = [
         assert.deepEqual(broken, [],
           `ป้ายชื่อช่องหลุดจากกล่องเส้นประ: ${broken.map(b => `${b.text} (สูง ${b.height}px > ${b.limit}px)`).join(' | ')}`)
 
+        // 7 ช่อง = ข้าพเจ้า/บ้านเลขที่/หมู่ที่/ตำบล/อำเภอ/จังหวัด/จำนวนผู้เดือดร้อน
+        // เดิม 10+ เพราะนับช่องวันที่ในตารางท้ายใบด้วย ซึ่งถูกถอดออกชั่วคราวแล้ว
         const count = await page.locator('.field-blank').count()
-        assert.ok(count >= 10, `ใบเปล่าควรมีช่องกรอกอย่างน้อย 10 ช่อง แต่พบ ${count}`)
+        assert.ok(count >= 7, `ใบเปล่าควรมีช่องกรอกอย่างน้อย 7 ช่อง แต่พบ ${count}`)
       } finally {
         await page.close()
       }
@@ -296,7 +300,8 @@ const checks = [
     name: 'officer-block-not-split',
     reason: 'บล็อกเจ้าหน้าที่ (ผู้รับเรื่อง/ความเห็นปลัด/คำอนุมัติ) ต้องอยู่ครบในแผ่นเดียว ไม่ถูกตัดครึ่ง',
     async run(browser) {
-      const page = await render(browser, longForm(), { departments: DEPARTMENTS, signatories: SIGNATORIES })
+      const page = await render(browser, longForm(),
+        { departments: DEPARTMENTS, signatories: SIGNATORIES, includeOfficerBlock: true })
       try {
         const bottomMm = await page.evaluate(() => {
           const sheet = document.querySelector('.sheet')
