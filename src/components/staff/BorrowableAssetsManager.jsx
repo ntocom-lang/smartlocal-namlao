@@ -451,64 +451,96 @@ export default function BorrowableAssetsManager({ tenant, assetRole, myDepartmen
               <h3 className="text-sm font-bold text-gray-900">{group.label}</h3>
               <p className="text-[11px] text-gray-400">{group.items.length} รายการ</p>
             </div>
-            <ul className="divide-y divide-gray-100">
-              {group.items.map(asset => (
-                <li key={asset.id} className="px-4 py-3">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Package size={15} className="shrink-0 text-gray-400" />
-                        <span className={`text-sm font-semibold ${asset.is_active ? 'text-gray-900' : 'text-gray-400 line-through'}`}>
-                          {asset.name}
-                        </span>
-                        {asset.asset_code && (
-                          <span className="rounded-md bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">
-                            {asset.asset_code}
+            {/* ⚠️ ตารางเดียวใช้ทั้งจอใหญ่และมือถือ โดยให้เลื่อนแนวนอนแทนการทำ 2 เลย์เอาต์
+                (การ์ดบนมือถือ + ตารางบนเดสก์ท็อป) — สอง view ที่ mount พร้อมกันทำให้
+                ปุ่มชื่อเดียวกันมี 2 ตัวใน DOM แล้วเทสต์ UI จับตัวผิดเงียบๆ (บทเรียนจาก /directory)
+                min-w ที่ table กันคอลัมน์ถูกบีบจนอ่านไม่ออกตอนจอแคบ */}
+            {/* ⚠️ ข้อความนี้ต้องมี — บนมือถือคอลัมน์ปุ่มอยู่นอกจอ ถ้าไม่บอกว่าเลื่อนได้
+                เจ้าหน้าที่จะเข้าใจว่าปุ่มเปิด/ปิดให้ยืมกับปุ่มลบหายไป (เห็นตอนทดสอบที่ 390px) */}
+            <p className="px-4 pt-2 text-[11px] text-gray-400 md:hidden">
+              เลื่อนตารางไปทางขวาเพื่อดูสถานะการให้ยืมและปุ่มจัดการ
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px] border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50/70 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                    {/* ชื่อรายการตรึงไว้ตอนเลื่อนแนวนอน ไม่งั้นพอเลื่อนไปกดปุ่มจะไม่รู้ว่าแถวไหน */}
+                    <th className="sticky left-0 z-10 bg-gray-50 px-4 py-2 text-left">รายการ</th>
+                    <th className="px-3 py-2 text-left">รหัสครุภัณฑ์</th>
+                    <th className="px-3 py-2 text-right whitespace-nowrap">จำนวน</th>
+                    <th className="px-3 py-2 text-left">การเปิดให้ยืม</th>
+                    <th className="px-3 py-2 text-center whitespace-nowrap">จัดการ</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {group.items.map(asset => (
+                    <tr key={asset.id} className="align-top">
+                      {/* พื้นหลังทึบบังคับไว้ที่ช่องนี้ ไม่งั้นเนื้อหาคอลัมน์อื่นจะไหลทะลุขึ้นมา
+                          เห็นซ้อนกันตอนเลื่อน (sticky ไม่ได้พาพื้นหลังของแถวมาด้วย)
+                          — และด้วยเหตุนี้จึงเลิกใช้ hover เปลี่ยนสีทั้งแถว เพราะช่องตรึงจะไม่เปลี่ยนตาม */}
+                      <td className="sticky left-0 z-10 bg-white px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <Package size={15} className="shrink-0 text-gray-400" />
+                          <span className={`font-semibold ${asset.is_active ? 'text-gray-900' : 'text-gray-400 line-through'}`}>
+                            {asset.name}
                           </span>
+                        </div>
+                        {asset.notes && (
+                          <p className="mt-1 pl-[23px] text-xs text-gray-500">{asset.notes}</p>
                         )}
-                      </div>
-                      <p className="mt-1 text-xs text-gray-500">
-                        ทั้งหมด {asset.total_quantity} {asset.unit}
-                        {asset.notes && ` · ${asset.notes}`}
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <button onClick={() => togglePublic(asset)}
-                          disabled={busyId === asset.id || !canEditAsset(asset)}
-                          className={`min-h-[40px] rounded-lg px-3 text-[11px] font-semibold disabled:opacity-50 ${
-                            asset.is_public_borrowable
-                              ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                              : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                          }`}>
-                          {asset.is_public_borrowable ? 'ประชาชนยืมได้' : 'เฉพาะภายใน'}
-                        </button>
-                        <button onClick={() => toggleActive(asset)}
-                          disabled={busyId === asset.id || !canEditAsset(asset)}
-                          className={`min-h-[40px] rounded-lg px-3 text-[11px] font-semibold disabled:opacity-50 ${
-                            asset.is_active
-                              ? 'bg-sky-50 text-sky-700 hover:bg-sky-100'
-                              : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                          }`}>
-                          {asset.is_active ? 'เปิดให้ยืม' : 'ปิดการให้ยืม'}
-                        </button>
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 gap-1">
-                      <button onClick={() => startEdit(asset)} disabled={!canEditAsset(asset)}
-                        className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40 disabled:hover:bg-transparent"
-                        aria-label={`แก้ไข ${asset.name}`}>
-                        <Pencil size={16} />
-                      </button>
-                      <button onClick={() => handleDelete(asset)}
-                        disabled={busyId === asset.id || !canEditAsset(asset)}
-                        className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-gray-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40 disabled:hover:bg-transparent"
-                        aria-label={`ลบ ${asset.name}`}>
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
+                      </td>
+                      <td className="px-3 py-3 text-xs text-gray-600">
+                        {asset.asset_code
+                          ? <span className="rounded-md bg-gray-100 px-2 py-0.5">{asset.asset_code}</span>
+                          : <span className="text-gray-300">—</span>}
+                      </td>
+                      {/* จำนวนชิดขวาเพื่อให้หลักตรงกันทุกแถว เทียบยอดด้วยตาได้เร็ว
+                          nowrap กัน "200 ตัว" ถูกหั่นคนละบรรทัดตอนจอแคบ */}
+                      <td className="whitespace-nowrap px-3 py-3 text-right text-gray-700">
+                        {asset.total_quantity} {asset.unit}
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="flex flex-wrap gap-2">
+                          <button onClick={() => togglePublic(asset)}
+                            disabled={busyId === asset.id || !canEditAsset(asset)}
+                            className={`min-h-[36px] whitespace-nowrap rounded-lg px-3 text-[11px] font-semibold disabled:opacity-50 ${
+                              asset.is_public_borrowable
+                                ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                            }`}>
+                            {asset.is_public_borrowable ? 'ประชาชนยืมได้' : 'เฉพาะภายใน'}
+                          </button>
+                          <button onClick={() => toggleActive(asset)}
+                            disabled={busyId === asset.id || !canEditAsset(asset)}
+                            className={`min-h-[36px] whitespace-nowrap rounded-lg px-3 text-[11px] font-semibold disabled:opacity-50 ${
+                              asset.is_active
+                                ? 'bg-sky-50 text-sky-700 hover:bg-sky-100'
+                                : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                            }`}>
+                            {asset.is_active ? 'เปิดให้ยืม' : 'ปิดการให้ยืม'}
+                          </button>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="flex justify-center gap-1">
+                          <button onClick={() => startEdit(asset)} disabled={!canEditAsset(asset)}
+                            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40 disabled:hover:bg-transparent"
+                            aria-label={`แก้ไข ${asset.name}`}>
+                            <Pencil size={16} />
+                          </button>
+                          <button onClick={() => handleDelete(asset)}
+                            disabled={busyId === asset.id || !canEditAsset(asset)}
+                            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-gray-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40 disabled:hover:bg-transparent"
+                            aria-label={`ลบ ${asset.name}`}>
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         ))
       )}
