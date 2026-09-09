@@ -269,9 +269,12 @@ export default function BorrowableAssetsManager({ tenant, assetRole, myDepartmen
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold text-gray-900">ทะเบียนของให้ยืม</h2>
+          <h2 className="text-lg font-bold text-gray-900">พัสดุ/ครุภัณฑ์</h2>
+          {/* ⚠️ หัวข้อกว้างกว่าขอบเขตจริงของหน้านี้ — บรรทัดรองต้องบอกให้ชัดว่าเก็บเฉพาะ
+              ของที่เปิดให้ยืม ไม่ใช่ทะเบียนครุภัณฑ์ทั้งหมดของ อปท. ไม่งั้นเจ้าหน้าที่พัสดุ
+              จะเข้าใจว่าคีย์ครุภัณฑ์ทุกชิ้นลงตรงนี้ได้ แล้วได้ทะเบียนซ้อนกับ e-LAAS */}
           <p className="text-xs text-gray-500">
-            พัสดุ/ครุภัณฑ์ที่เปิดให้ยืม ใช้เป็นตัวเลือกในแบบคำขอและรายการบนใบ บย.
+            ทะเบียนของที่เปิดให้ยืม ใช้เป็นตัวเลือกในแบบคำขอและรายการบนใบ บย.
           </p>
         </div>
         <div className="flex items-center gap-2">

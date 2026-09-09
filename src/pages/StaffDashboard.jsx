@@ -138,7 +138,10 @@ const STANDALONE_GROUPS = [
       { key: 'fleet',    label: 'ยานพาหนะ/น้ำมัน',  Icon: Car,           color: '#0369a1', bg: '#e0f2fe' },
       // ไม่ได้อยู่ใน MANAGED_MODULE_KEYS จึงเปิดให้ทุก อปท. เสมอ แล้วคุมด้วย profiles.asset_role
       // อีกชั้น (แบบเดียวกับ fleet) — คนที่ไม่ได้รับสิทธิ์จะไม่เห็นเมนูนี้เลย ไม่ใช่เห็นแล้วกดไม่ได้
-      { key: 'borrowable-assets', label: 'ทะเบียนของให้ยืม', Icon: PackageOpen, color: '#0d9488', bg: '#ccfbf1' },
+      // ⚠️ คีย์ยังเป็น 'borrowable-assets' ตามเดิม เปลี่ยนแค่ป้ายชื่อที่เจ้าหน้าที่เห็น —
+      // คีย์นี้ผูกกับ activeModule, TECHNICIAN_MODULE_KEYS และค่าใน enabled_modules ของทุก อปท.
+      // เปลี่ยนคีย์เมื่อไหร่เมนูหายทั้งระบบ
+      { key: 'borrowable-assets', label: 'พัสดุ/ครุภัณฑ์', Icon: PackageOpen, color: '#0d9488', bg: '#ccfbf1' },
     ],
   },
   // กลุ่ม 'บุคลากร' (เมนู 'positions' ทำเนียบตำแหน่ง) ถอดออก 2026-08-31 — ซ้ำกับหน้า
@@ -2161,7 +2164,7 @@ export default function StaffDashboard() {
   // Fleet ที่เพิ่งแก้ไป (ปุ่มจองรถโผล่ให้ fleet_viewer) และขัดกับ TEST_ROLE_MATRIX ที่ระบุว่า
   // demo-staff "ต้องไม่เห็นเมนูยานพาหนะ"
   const hasFleetAccess = Boolean(profile?.fleet_role) || role === 'admin' || role === 'superadmin'
-  // ทะเบียนของให้ยืมใช้ profiles.asset_role คนละคอลัมน์กับ fleet_role ด้วยเหตุผลเดียวกัน:
+  // เมนูพัสดุ/ครุภัณฑ์ใช้ profiles.asset_role คนละคอลัมน์กับ fleet_role ด้วยเหตุผลเดียวกัน:
   // "เจ้าหน้าที่พัสดุของกอง" ไม่ใช่ระดับในองค์กร แอดมินต้องมอบให้เป็นรายคน
   // เงื่อนไขต้องตรงกับ asset_is_manager()/asset_can_manage() ฝั่งฐานข้อมูล ไม่งั้นได้เมนูหลอก
   const hasAssetAccess = Boolean(profile?.asset_role) || role === 'admin' || role === 'superadmin'
