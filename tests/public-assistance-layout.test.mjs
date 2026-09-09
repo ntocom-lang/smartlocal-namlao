@@ -113,12 +113,20 @@ function pdfPageCount(buffer) {
 }
 
 // ความสูงเนื้อหาของหน้าคำร้อง วัดจากขอบบนของพื้นที่พิมพ์ถึงขอบล่างขององค์ประกอบสุดท้าย
+//
+// ⚠️ ต้องปลด min-height ของ .sheet--request ก่อนวัดเสมอ — หน้าคำร้องสูงเต็มพื้นที่พิมพ์ตลอด
+// โดยตั้งใจ (เพื่อดันบล็อกเจ้าหน้าที่ลงชิดขอบล่างด้วย margin-top: auto) ถ้าไม่ปลด ทุกใบจะวัดได้
+// 276 มม. เท่ากันหมดจนเทสต์นี้ไม่เหลือความหมาย เราต้องการ "ความสูงของเนื้อหาจริง" ต่างหาก
 function contentHeightMm(page) {
   return page.evaluate(() => {
     const sheet = document.querySelector('.sheet')
+    const restore = sheet.style.minHeight
+    sheet.style.minHeight = '0'
     const top = sheet.getBoundingClientRect().top + parseFloat(getComputedStyle(sheet).paddingTop)
     const last = sheet.lastElementChild
-    return (last.getBoundingClientRect().bottom - top) / 3.779527
+    const mm = (last.getBoundingClientRect().bottom - top) / 3.779527
+    sheet.style.minHeight = restore
+    return mm
   })
 }
 
@@ -181,21 +189,48 @@ const checks = [
     },
   },
   {
-    name: 'long-text-stays-inside-dotted-box',
-    reason: 'ข้อความยาวเต็มเพดานต้องไม่ล้นออกนอกกล่องเส้นประไปทับบล็อกถัดไป (ข้อความเป็น absolute จึงไม่ดันกล่อง)',
+    name: 'filled-fields-have-no-dotted-lines',
+    reason: 'ช่องที่มีข้อความแล้วต้องไม่เหลือเส้นประค้างใต้ข้อความ (ผู้ใช้ระบบสั่งแก้ 2569-09-09) ส่วนใบเปล่าต้องยังมีครบ',
     async run(browser) {
-      const page = await render(browser, longForm())
+      const filled = await render(browser, longForm())
       try {
-        const overflow = await page.evaluate(() => [...document.querySelectorAll('.fill-lines')]
-          .map(box => ({
-            box: Math.round(box.getBoundingClientRect().height),
-            text: Math.round(box.querySelector('.fill-lines-text').scrollHeight),
-            head: box.previousElementSibling?.textContent?.trim().slice(0, 30) ?? '',
-          }))
-          .filter(item => item.text > item.box + 1))
-        assert.deepEqual(overflow, [],
-          `ข้อความล้นกล่องเส้นประ: ${overflow.map(o => `${o.head} (${o.text}px > ${o.box}px)`).join(' | ')}`
-          + ' — ลด PROBLEM_MAX_CHARS/NEED_MAX_CHARS หรือเพิ่มจำนวนบรรทัดในใบ')
+        // นับเฉพาะกล่องในตัวใบ ไม่รวมบล็อกเจ้าหน้าที่ซึ่งเว้นเส้นประไว้ให้เขียนมือเสมอ
+        const counts = await filled.evaluate(() => ({
+          dotted: document.querySelectorAll('.sheet--request > .fill-lines').length,
+          written: document.querySelectorAll('.sheet--request > .written').length,
+        }))
+        assert.equal(counts.dotted, 0, 'ช่องปัญหา/ความต้องการที่กรอกมาแล้วต้องไม่มีกล่องเส้นประเหลือ')
+        assert.equal(counts.written, 2, 'ต้องพิมพ์ข้อความทั้งช่องปัญหาและช่องความต้องการ')
+      } finally {
+        await filled.close()
+      }
+      const blank = await render(browser, BLANK_FORM)
+      try {
+        const lines = await blank.evaluate(() =>
+          [...document.querySelectorAll('.sheet--request > .fill-lines')]
+            .map(box => box.querySelectorAll('.dot-line').length))
+        assert.deepEqual(lines, [7, 3], 'ใบเปล่าต้องมีเส้นประให้เขียนมือครบตามที่ไล่ความสูงไว้')
+      } finally {
+        await blank.close()
+      }
+    },
+  },
+  {
+    name: 'officer-block-sits-at-page-bottom',
+    reason: 'บล็อกเจ้าหน้าที่ต้องยึดขอบล่างของหน้าเสมอ ไม่ลอยขึ้นกลางหน้าเมื่อผู้ยื่นเขียนสั้น (ที่ว่างต้องอยู่เหนือตาราง)',
+    async run(browser) {
+      const page = await render(browser, longForm({ problem: 'น้ำท่วมบ้าน', need: 'ขอถุงยังชีพ' }))
+      try {
+        // .sheet ในโหมดจอมี padding ล่าง 9 มม. ตรงกับขอบกระดาษ ตารางจึงต้องจบที่ขอบในพอดี
+        const bottomGapMm = await page.evaluate(() => {
+          const sheet = document.querySelector('.sheet--request')
+          const officer = document.querySelector('.officer')
+          const inner = sheet.getBoundingClientRect().bottom
+            - parseFloat(getComputedStyle(sheet).paddingBottom)
+          return (inner - officer.getBoundingClientRect().bottom) / 96 * 25.4
+        })
+        assert.ok(bottomGapMm < 2,
+          `บล็อกเจ้าหน้าที่ลอยเหนือขอบล่าง ${bottomGapMm.toFixed(1)} มม. — ตรวจ .officer { margin-top: auto }`)
       } finally {
         await page.close()
       }
