@@ -1712,7 +1712,7 @@ function AppointmentTab({ user, depts, positions, currentUserRole, isEditing, dr
 // เป็นคนละเรื่องกัน แอดมินสับสนว่าทำไมอยู่หน้าเดียวกัน ค่า draft.role ยังใช้ร่วมกับ AppointmentTab
 // (การเลือกตำแหน่งมี "บทบาทแนะนำ" เสนอ role มาให้อัตโนมัติ) แต่แก้ไข/แสดงผลแยกกันคนละแท็บ
 const ASSET_ROLE_OPTIONS = [
-  { value: '',             label: 'ไม่มีสิทธิ์ — ไม่เห็นเมนูทะเบียนของให้ยืม' },
+  { value: '',             label: 'ไม่มีสิทธิ์ — ไม่เห็นเมนูพัสดุ/ครุภัณฑ์' },
   { value: 'asset_staff',  label: 'เจ้าหน้าที่พัสดุของกอง — เพิ่ม/แก้ของและดำเนินการคำขอ เฉพาะกองที่สังกัด' },
   { value: 'asset_admin',  label: 'ผู้ดูแลพัสดุของ อปท. — ทุกกอง รวมของที่ยังไม่ผูกกอง' },
   { value: 'asset_viewer', label: 'ผู้ดูรายงาน — อ่านอย่างเดียว' },
