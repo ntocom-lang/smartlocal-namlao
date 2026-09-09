@@ -161,6 +161,42 @@ const checks = [
     },
   },
   {
+    // ⚠️ เทสต์ข้อนี้เกิดจากใบพิมพ์จริง (ผู้ใช้ระบบแจ้ง 2569-09-09): บรรทัดวงเล็บชื่อเยื้อง
+    // ไปทางซ้ายของเส้นจุดทุกช่อง ยกเว้นช่อง "ผู้ยืม" — ข้ออื่นในไฟล์นี้วัดแค่ความสูงกับการล้น
+    // ขอบ จึงจับความเบี้ยวแนวนอนแบบนี้ไม่ได้เลย ถ้าไม่มีข้อนี้ ครั้งหน้าที่มีคนแก้เลย์เอาต์
+    // ช่องลงนามแล้วเบี้ยวกลับมา ก็จะไม่มีอะไรจับได้อีก
+    name: 'signature-name-centered-under-line',
+    reason: 'บรรทัดใต้เส้นลงนาม (วงเล็บชื่อ/ชื่อตำแหน่ง) ต้องอยู่กึ่งกลางแกนเดียวกับเส้นจุด',
+    async run(browser) {
+      // ทดสอบทั้งทะเบียนผู้ลงนามที่มีชื่อยาว (ค่า default ของ render) — เคสที่ชื่อกับตำแหน่ง
+      // กว้างกว่าเส้นจุด ซึ่งเป็นเคสที่แกนกลางเลื่อนง่ายที่สุด
+      const page = await render(browser, { header: typicalHeader(), items: items(7) })
+      try {
+        const offsets = await page.evaluate(() => {
+          const centerOf = el => {
+            const box = el.getBoundingClientRect()
+            return box.left + box.width / 2
+          }
+          return [...document.querySelectorAll('.sign-row')].flatMap((row, index) => {
+            const line = row.querySelector('.sign-line')
+            return [...row.querySelectorAll('.sign-below')].map((below, order) => ({
+              block: index, order, diff: Math.abs(centerOf(line) - centerOf(below)),
+            }))
+          })
+        })
+        assert.ok(offsets.length >= 9,
+          `เจอบรรทัดใต้เส้นลงนามแค่ ${offsets.length} บรรทัด — ใบนี้ต้องมีอย่างน้อย 9 `
+          + '(ลงนาม 7 จุด + ชื่อตำแหน่งปลัด/นายกอีก 2)')
+        // 1mm = 3.78px ที่ 96dpi — เกินกว่านี้เริ่มเห็นด้วยตาเปล่าบนกระดาษ
+        const crooked = offsets.filter(entry => entry.diff > 3.78)
+        assert.deepEqual(crooked, [],
+          `วงเล็บชื่อไม่อยู่กึ่งกลางใต้เส้นจุด: ${crooked
+            .map(entry => `บล็อก ${entry.block} บรรทัด ${entry.order} เยื้อง ${(entry.diff / 3.78).toFixed(1)}mm`)
+            .join(', ')}`)
+      } finally { await page.close() }
+    },
+  },
+  {
     name: 'signature-blocks-not-split',
     reason: 'ช่องลงนามถูกหั่นครึ่งคนละหน้าแล้วเซ็นไม่ได้ ต้องกัน break-inside ไว้',
     async run(browser) {
