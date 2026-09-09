@@ -10,6 +10,7 @@ import WasteCollectionRequestWizard from './WasteCollectionRequestWizard'
 import WasteCollectionCancelWizard from './WasteCollectionCancelWizard'
 import WaterSupplyRequestWizard from './WaterSupplyRequestWizard'
 import PublicAssistanceWizard from './PublicAssistanceWizard'
+import AssetBorrowRequestWizard from './AssetBorrowRequestWizard'
 import { withoutRemovedTypes } from '../lib/documentTypes'
 
 // ที่อยู่ผู้ยื่นคำขอ = ที่อยู่ในเขตของหน่วยงานเสมอ (ระบบนี้แยกตามหน่วยงาน ใครหน่วยงานนั้น)
@@ -119,6 +120,18 @@ const BASE_DOC_TYPES = [
     color:   '#be123c',
     bg:      '#fff1f2',
     border:  '#fecdd3',
+  },
+  {
+    value:   'asset_borrow_request',
+    label:   'ขอยืมพัสดุ/ครุภัณฑ์',
+    emoji:   '📦',
+    desc:    'ขอยืมของของ อปท. เช่น เต็นท์ โต๊ะ เก้าอี้ เครื่องเสียง สำหรับงานในพื้นที่',
+    // บังคับล็อกอิน — การยืมผูก "ความรับผิดกรณีของชำรุด สูญหาย หรือใช้การไม่ได้" ไว้กับตัวผู้ยืม
+    // ตามข้อความบนใบ บย. ถ้ายื่นได้โดยไม่ยืนยันตัวตน อปท. จะไม่รู้ว่าต้องเรียกให้ใครชดใช้
+    requiresAuth: true,
+    color:   '#0f766e',
+    bg:      '#f0fdfa',
+    border:  '#99f6e4',
   },
   {
     value:   'building_permit',
@@ -235,6 +248,7 @@ export default function CitizenDocRequest() {
   const isWasteCollectionCancel = selected?.value === 'waste_collection_cancel'
   const isWaterSupplyRequest = selected?.value === 'water_supply_request'
   const isPublicAssistanceRequest = selected?.value === 'public_assistance_request'
+  const isAssetBorrowRequest = selected?.value === 'asset_borrow_request'
   const addressSuffix = tenantAddressSuffix(tenant)
   const fullName = joinThaiFullName(form.name_title, form.name_first, form.name_last)
 
@@ -472,6 +486,12 @@ export default function CitizenDocRequest() {
   // ฟอร์มเฉพาะ — ฟอร์มทั่วไปมีแค่ช่อง "วัตถุประสงค์" บรรทัดเดียว เก็บไม่พอสำหรับพิมพ์ใบจริง
   if (isPublicAssistanceRequest) {
     return <PublicAssistanceWizard tenant={tenant} session={session} onBack={() => setSelected(null)} />
+  }
+
+  // คำขอยืมพัสดุต่างจากใบอื่นทั้งหมดตรงที่ต้อง "เลือกรายการของ" จากทะเบียนจริง พร้อมเช็ค
+  // จำนวนว่างตามช่วงวันที่ที่ขอ และเขียน 3 ตารางในธุรกรรมเดียวผ่าน RPC — ฟอร์มทั่วไปทำไม่ได้
+  if (isAssetBorrowRequest) {
+    return <AssetBorrowRequestWizard tenant={tenant} session={session} onBack={() => setSelected(null)} />
   }
 
   // ─── Step 2: Form ──────────────────────────────────────────────────────────

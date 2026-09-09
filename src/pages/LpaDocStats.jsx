@@ -19,6 +19,7 @@ const DOC_LABELS = {
   waste_collection_cancel:  'ขอยกเลิกการเก็บขนขยะมูลฝอย',
   water_supply_request:     'ขออนุญาตใช้น้ำประปา',
   public_assistance_request: 'ขอรับการช่วยเหลือประชาชน',
+  asset_borrow_request: 'ขอยืมพัสดุ/ครุภัณฑ์',
   building_permit:  'ขออนุญาตก่อสร้างบ้าน',
 }
 

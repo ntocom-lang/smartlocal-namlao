@@ -49,6 +49,8 @@ const WasteCollectionRequestWizard = lazy(() => import('./WasteCollectionRequest
 const WasteCollectionCancelWizard = lazy(() => import('./WasteCollectionCancelWizard'))
 const WaterSupplyRequestWizard = lazy(() => import('./WaterSupplyRequestWizard'))
 const PublicAssistanceWizard = lazy(() => import('./PublicAssistanceWizard'))
+const AssetBorrowRequestWizard = lazy(() => import('./AssetBorrowRequestWizard'))
+const AssetBorrowRequestPanel = lazy(() => import('../components/staff/AssetBorrowRequestPanel'))
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -704,7 +706,21 @@ function TaskDetailSheet({
             </button>
           </div>
         )}
-        {isActive && !confirmReject && (
+        {/* คำขอยืมพัสดุมีขั้นตอนของตัวเอง (อนุมัติ → จ่ายของ → รับคืน → ปิดเรื่องชดใช้)
+            จึงใช้แผงเฉพาะแทนปุ่มเปลี่ยนสถานะตัวกลางทั้งชุด
+            ⚠️ ห้ามให้ประเภทนี้เห็นปุ่ม "ดำเนินการเสร็จสิ้น" ตัวกลางเด็ดขาด — การอนุมัติให้ยืม
+            ยังไม่ใช่การจบงาน กดปุ่มนั้นจะข้ามขั้นจ่ายของและรับคืนทั้งหมดแล้วปิดงานทันที
+            ผลคือของออกจากคลังไปโดยระบบบันทึกว่าเรื่องจบแล้ว ไม่มีใครตามของคืน */}
+        {req.document_type === 'asset_borrow_request' && (
+          <Suspense fallback={
+            <div className="flex justify-center py-6"><Loader2 size={18} className="animate-spin text-gray-400" /></div>
+          }>
+            {/* ไม่ส่ง onChanged — แผงโหลดข้อมูลตัวเองใหม่หลังทุก action และรายการฝั่งนอก
+                อัปเดตเองผ่าน realtime subscription บน document_requests ที่มีอยู่แล้ว */}
+            <AssetBorrowRequestPanel requestId={req.id} tenant={tenant} />
+          </Suspense>
+        )}
+        {isActive && !confirmReject && req.document_type !== 'asset_borrow_request' && (
           <div className="px-4 pb-6 pt-3 border-t border-gray-100 space-y-2 shrink-0">
             {req.status === 'pending' && (
               <button onClick={() => onUpdate(req.id, 'processing', staffNote, '')} disabled={acting}
@@ -749,7 +765,7 @@ const EMPTY_REQ = {
   requester_phone: '', requester_address: '', purpose: '',
 }
 
-function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuildingPermit, onSelectWasteCollection, onSelectWasteCancel, onSelectWaterSupply, onSelectPublicAssistance }) {
+function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuildingPermit, onSelectWasteCollection, onSelectWasteCancel, onSelectWaterSupply, onSelectPublicAssistance, onSelectAssetBorrow }) {
   const [form, setForm] = useState(EMPTY_REQ)
   const [saving, setSaving] = useState(false)
   const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }))
@@ -794,6 +810,10 @@ function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuilding
                       else if (d.value === 'waste_collection_cancel') onSelectWasteCancel()
                       else if (d.value === 'water_supply_request') onSelectWaterSupply()
                       else if (d.value === 'public_assistance_request') onSelectPublicAssistance()
+                      // คำขอยืมพัสดุสร้างด้วยฟอร์มทั่วไปไม่ได้ — ต้องเลือกรายการของจากทะเบียน
+                      // และเขียน 3 ตารางผ่าน RPC ถ้าปล่อยให้สร้างด้วยฟอร์มทั่วไปจะได้คำขอ
+                      // ที่ไม่มีรายการของ ซึ่งกดอนุมัติไม่ได้และลบเองก็ไม่ได้
+                      else if (d.value === 'asset_borrow_request') onSelectAssetBorrow()
                       else setForm(p => ({ ...p, document_type: d.value }))
                     }}
                     className="flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left text-xs font-semibold transition-all active:scale-95"
@@ -855,6 +875,7 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
   const [showWasteCancelWizard, setShowWasteCancelWizard] = useState(false)
   const [showWaterSupplyWizard, setShowWaterSupplyWizard] = useState(false)
   const [showPublicAssistanceWizard, setShowPublicAssistanceWizard] = useState(false)
+  const [showAssetBorrowWizard, setShowAssetBorrowWizard] = useState(false)
   const [search, setSearch]       = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
   const [assignees, setAssignees] = useState([])
@@ -1243,7 +1264,8 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
           onSelectWasteCollection={() => { setShowAdd(false); setShowWasteWizard(true) }}
           onSelectWasteCancel={() => { setShowAdd(false); setShowWasteCancelWizard(true) }}
           onSelectWaterSupply={() => { setShowAdd(false); setShowWaterSupplyWizard(true) }}
-          onSelectPublicAssistance={() => { setShowAdd(false); setShowPublicAssistanceWizard(true) }} />
+          onSelectPublicAssistance={() => { setShowAdd(false); setShowPublicAssistanceWizard(true) }}
+          onSelectAssetBorrow={() => { setShowAdd(false); setShowAssetBorrowWizard(true) }} />
       )}
       {/* ขออนุญาตก่อสร้างบ้าน — ใช้ wizard เต็มรูปแบบเดียวกับฝั่งประชาชน (แบบ ข.๑ จริง)
           แทนฟอร์มสั้นทั่วไปใน NewRequestSheet เพราะฟิลด์ไม่พอสำหรับพิมพ์แบบร่างที่ถูกต้อง */}
@@ -1290,6 +1312,20 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
           <PublicAssistanceWizard tenant={tenant} session={null} staffId={staffId}
             onBack={() => setShowPublicAssistanceWizard(false)}
             onDone={() => { setShowPublicAssistanceWizard(false); setRefreshKey(k => k + 1) }} />
+        </div>
+      )}
+      {/* รับเรื่องแทนหน้าเคาน์เตอร์ — session={null} + staffId ทำให้ RPC ตั้ง assigned_to
+          เป็นเจ้าหน้าที่ผู้บันทึก ไม่ใช่ user_id ของประชาชน (ประชาชนที่เดินมายื่นด้วยกระดาษ
+          ไม่มีบัญชีในระบบ) และปลดล็อกให้ย้อนวันที่เริ่มยืมได้ เพราะใบกระดาษมาถึงช้ากว่าวันจริง */}
+      {showAssetBorrowWizard && (
+        <div className="fixed inset-0 z-[60] bg-white overflow-y-auto">
+          <Suspense fallback={
+            <div className="flex justify-center py-10"><Loader2 size={20} className="animate-spin text-gray-400" /></div>
+          }>
+            <AssetBorrowRequestWizard tenant={tenant} session={null} staffId={staffId}
+              onBack={() => setShowAssetBorrowWizard(false)}
+              onDone={() => { setShowAssetBorrowWizard(false); setRefreshKey(k => k + 1) }} />
+          </Suspense>
         </div>
       )}
     </div>

@@ -25,6 +25,7 @@ const BASE_DOC_TYPES = {
   waste_collection_cancel: 'ขอยกเลิกการเก็บขนขยะมูลฝอย',
   water_supply_request: 'ขออนุญาตใช้น้ำประปา',
   public_assistance_request: 'ขอรับการช่วยเหลือประชาชน',
+  asset_borrow_request: 'ขอยืมพัสดุ/ครุภัณฑ์',
   building_permit:  'ขออนุญาตก่อสร้างบ้าน',
 }
 let _customDocLabels = {}
@@ -454,6 +455,18 @@ function DocDetailSheet({ req, onClose, tenant }) {
               },
               req.document_type === 'public_assistance_request' && req.permit_form_data && {
                 label: 'ผู้เดือดร้อน', value: `${req.permit_form_data.affected?.length ?? 0} ราย (ตามบัญชีแนบท้าย)`,
+              },
+              // อ่านจาก permit_form_data (snapshot ตอนยื่น) ไม่ใช่จาก asset_borrow_requests —
+              // ⚠️ ถ้าเจ้าหน้าที่ขยายกำหนดคืนให้ ค่าที่แสดงตรงนี้จะยังเป็นวันเดิมที่ผู้ยื่นขอไว้
+              // ต้องดึงค่าที่แก้ได้มาแสดงแทนเมื่อทำหน้ารายละเอียดคำขอยืมเต็มรูปแบบ (ข้อ 5)
+              req.document_type === 'asset_borrow_request' && req.permit_form_data?.borrow_start_date && {
+                label: 'ตั้งแต่วันที่', value: thaiDateFromDateInput(req.permit_form_data.borrow_start_date),
+              },
+              req.document_type === 'asset_borrow_request' && req.permit_form_data?.return_due_date && {
+                label: 'กำหนดคืน', value: thaiDateFromDateInput(req.permit_form_data.return_due_date),
+              },
+              req.document_type === 'asset_borrow_request' && req.permit_form_data?.place_of_use && {
+                label: 'สถานที่ใช้', value: req.permit_form_data.place_of_use,
               },
               { label: 'วันที่ยื่น', value: dateTH(req.created_at) },
             ].filter(Boolean).map(({ label, value }) => (
