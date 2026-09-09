@@ -216,25 +216,28 @@ const checks = [
     },
   },
   {
-    name: 'officer-block-sits-at-page-bottom',
-    reason: 'บล็อกเจ้าหน้าที่ต้องยึดขอบล่างของหน้าเสมอ ไม่ลอยขึ้นกลางหน้าเมื่อผู้ยื่นเขียนสั้น (ที่ว่างต้องอยู่เหนือตาราง)',
+    name: 'page-tail-sits-at-page-bottom',
+    reason: 'ท้ายใบต้องยึดขอบล่างของหน้าเสมอ ไม่ลอยขึ้นกลางหน้าเมื่อผู้ยื่นเขียนสั้น (ที่ว่างต้องอยู่เหนือ ไม่ใช่ใต้)',
     async run(browser) {
-      // ตารางถูกถอดออกจากค่าปริยายชั่วคราว เทสต์ยังต้องคุมเลย์เอาต์ของมันไว้เผื่อเปิดกลับ
-      const page = await render(browser, longForm({ problem: 'น้ำท่วมบ้าน', need: 'ขอถุงยังชีพ' }),
-        { includeOfficerBlock: true })
-      try {
-        // .sheet ในโหมดจอมี padding ล่าง 9 มม. ตรงกับขอบกระดาษ ตารางจึงต้องจบที่ขอบในพอดี
-        const bottomGapMm = await page.evaluate(() => {
-          const sheet = document.querySelector('.sheet--request')
-          const officer = document.querySelector('.officer')
-          const inner = sheet.getBoundingClientRect().bottom
-            - parseFloat(getComputedStyle(sheet).paddingBottom)
-          return (inner - officer.getBoundingClientRect().bottom) / 96 * 25.4
-        })
-        assert.ok(bottomGapMm < 2,
-          `บล็อกเจ้าหน้าที่ลอยเหนือขอบล่าง ${bottomGapMm.toFixed(1)} มม. — ตรวจ .officer { margin-top: auto }`)
-      } finally {
-        await page.close()
+      // ตัวยึดขอบล่างเปลี่ยนตามโหมด: ปิดตาราง = บรรทัดกำกับที่มาของใบ / เปิดตาราง = ตาราง
+      // แล้วบรรทัดกำกับต่อท้าย ทั้งสองโหมดจึงวัดที่ "ลูกคนสุดท้ายของหน้า" เหมือนกัน
+      for (const includeOfficerBlock of [false, true]) {
+        const page = await render(browser, longForm({ problem: 'น้ำท่วมบ้าน', need: 'ขอถุงยังชีพ' }),
+          { includeOfficerBlock })
+        try {
+          // .sheet ในโหมดจอมี padding ล่าง 9 มม. ตรงกับขอบกระดาษ ท้ายใบจึงต้องจบที่ขอบในพอดี
+          const bottomGapMm = await page.evaluate(() => {
+            const sheet = document.querySelector('.sheet--request')
+            const inner = sheet.getBoundingClientRect().bottom
+              - parseFloat(getComputedStyle(sheet).paddingBottom)
+            return (inner - sheet.lastElementChild.getBoundingClientRect().bottom) / 96 * 25.4
+          })
+          assert.ok(bottomGapMm < 2,
+            `ท้ายใบลอยเหนือขอบล่าง ${bottomGapMm.toFixed(1)} มม. (ตาราง${includeOfficerBlock ? 'เปิด' : 'ปิด'})`
+            + ' — ตรวจ margin-top: auto ของ .signed-note กับ .officer')
+        } finally {
+          await page.close()
+        }
       }
     },
   },
