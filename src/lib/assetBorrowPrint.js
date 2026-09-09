@@ -71,6 +71,36 @@ function signatureName(signatory) {
 }
 
 /**
+ * บล็อกลงนามหนึ่งจุด — "เส้นจุดคือแกน" บรรทัดที่อยู่ใต้มัน (วงเล็บชื่อ ชื่อตำแหน่ง)
+ * ต้องอยู่กึ่งกลางบนแกนเดียวกันเสมอ ไม่ใช่กึ่งกลางของคอลัมน์
+ *
+ * ⚠️ ผู้ใช้ระบบสั่งแก้ 2569-09-09 หลังเห็นใบพิมพ์จริง — ของเดิมเป็น <p> สองย่อหน้าแยกกัน
+ * บรรทัดบนชิดซ้าย บรรทัดล่าง text-align:center ของ "คอลัมน์" ซึ่งไม่ใช่แกนของเส้นจุด
+ * เพราะเส้นจุดถูกดันไปทางขวาด้วยคำว่า "ลงชื่อ" (~10 มม.) และมีคำต่อท้ายกินที่ทางขวาอีก
+ * วงเล็บจึงเยื้องไปทางซ้ายของเส้นจุดทุกช่อง ยกเว้นช่อง "ผู้ยืม" ที่บังเอิญถูกเพราะทั้งก้อน
+ * อยู่ใน .center — วิธีแก้คือมัดเส้นจุดกับบรรทัดใต้ไว้ในกล่องเดียวกันแล้วจัดกึ่งกลาง
+ * (เทคนิคเดียวกับ .cell-sign-row/.cell-sign-name ใน publicAssistancePrint.js)
+ *
+ * @param {object} args
+ * @param {string} [args.width] ความกว้างเส้นจุด — ไล่ไว้รายจุดตามที่ว่างของคอลัมน์นั้น
+ * @param {string} [args.role]  คำต่อท้ายบรรทัดบน เช่น 'ผู้ยืม' (ไม่มีก็เว้นว่าง)
+ * @param {string[]} [args.below] บรรทัดใต้เส้นจุด เรียงบนลงล่าง (escape มาแล้ว)
+ */
+function signRow({ width = '55mm', role = '', below = [] }) {
+  return `<div class="sign-row">
+      <span class="sign-label">ลงชื่อ</span>
+      <span class="sign-axis">
+        <!-- ⚠️ ต้องมี &nbsp; ข้างใน — span ว่างที่มีแต่ border-bottom สูง 0 พอเอามาวางใน
+             flex column แล้วเส้นจุดจะลอยทับบรรทัดวงเล็บ ไม่ได้เป็นบรรทัดของตัวเอง
+             (ตอนเป็น inline อยู่ในย่อหน้าเดิมมันได้ความสูงจาก line box ของย่อหน้า) -->
+        <span class="sign-line" style="min-width:${width}">&nbsp;</span>
+${below.map(text => `        <span class="sign-below">${text}</span>`).join('\n')}
+      </span>
+      ${role ? `<span class="sign-role">${role}</span>` : ''}
+    </div>`
+}
+
+/**
  * แบบพิมพ์ "ใบยืมพัสดุ/ครุภัณฑ์" (บย.)
  *
  * ⚠️ ช่องลายมือชื่อทุกช่องต้องว่างไว้เสมอ — ห้ามพิมพ์ชื่อลงบนเส้นลงนามเป็นลายเซ็นอิเล็กทรอนิกส์
@@ -195,14 +225,41 @@ ${GOV_FONT_LINK}
 
   .sign-line { border-bottom: 1px dotted #000; display: inline-block; min-width: 55mm; }
   .sign-block { break-inside: avoid; page-break-inside: avoid; }
+
+  /* ⚠️ บล็อกลงนาม: บรรทัดใต้เส้นจุด (วงเล็บชื่อ/ชื่อตำแหน่ง) ต้องอยู่ "กึ่งกลางใต้เส้นจุด"
+     ไม่ใช่กึ่งกลางของคอลัมน์ — เหตุผลเต็มอยู่ที่ signRow() ด้านบน
+     .sign-axis เป็นกล่องเดียวที่ครอบทั้งเส้นจุดและบรรทัดใต้ align-items:center จึงบังคับให้
+     ทั้งสองใช้แกนกลางเดียวกันเสมอ แม้ชื่อในวงเล็บจะยาวกว่าเส้นจุด */
+  .sign-row { display: flex; align-items: flex-start; }
+  /* flex: 0 1 auto + min-width: 0 ให้กล่องกว้างพอดีเนื้อหาและหดตามคอลัมน์ได้
+     ถ้าใช้ flex: 1 กล่องจะยืดเต็มคอลัมน์แล้วเส้นจุดถูกดันไปกลางคอลัมน์แทน */
+  .sign-axis { display: flex; flex-direction: column; align-items: center; flex: 0 1 auto; min-width: 0; }
+  /* เส้นจุดยืดเต็มความกว้างของกล่อง ไม่ใช่แค่ min-width ของตัวเอง — วงเล็บชื่อยาวกว่าเส้น
+     เสมอ ถ้าไม่ยืด เส้นจะถูกจัดกึ่งกลางในกล่องที่กว้างตามวงเล็บ แล้วเกิดช่องว่างคั่นระหว่าง
+     คำว่า "ลงชื่อ" กับหัวเส้น ดูเหมือนพิมพ์ตกไปหนึ่งช่อง (ต้นฉบับเส้นเริ่มติดคำว่าลงชื่อ)
+     min-width ยังทำงานอยู่ เป็นความกว้างขั้นต่ำเมื่อบรรทัดใต้สั้นกว่าเส้น */
+  .sign-axis > .sign-line { align-self: stretch; }
+  /* ⚠️ nowrap เฉพาะป้ายกำกับสองข้าง ห้ามครอบทั้งแถว — ชื่อตำแหน่งเต็ม
+     ("ปลัดองค์การบริหารส่วนตำบลทุ่งแค้ว") กว้างกว่าคอลัมน์ ~76 มม. ถ้าห้ามตัดบรรทัดทั้งแถว
+     กล่องจะดันล้นขอบขวากระดาษ (เคสจริงที่เทสต์ของใบขอรับการช่วยเหลือจับได้) */
+  .sign-label, .sign-role { white-space: nowrap; }
+  .sign-role { margin-left: 1mm; }
+  /* บรรทัดใต้เส้นจุดต้องตัดคำได้เมื่อยาวเกินคอลัมน์ และจัดกึ่งกลางทุกบรรทัดที่ตัด */
+  .sign-below { text-align: center; }
+  /* .sign-row เป็น flex จึงจัดกลางหน้าด้วย text-align ของพ่อไม่ได้ ต้อง justify-content */
+  .center-row .sign-row { justify-content: center; }
   .two-col { display: flex; gap: 8mm; break-inside: avoid; page-break-inside: avoid; }
   .two-col > div { flex: 1 1 0; min-width: 0; }
   .center { text-align: center; }
-  .rule { border-top: 1px solid #000; margin: 1.5mm 0 1mm; }
+  /* ⚠️ ระยะคั่นถูกบีบลง 2569-09-09 เพื่อชดเชยความสูงที่เพิ่มจากการจัดบรรทัดวงเล็บชื่อ
+     ให้อยู่ใต้เส้นจุด: ชื่อตำแหน่งยาว ("ปลัดองค์การบริหารส่วนตำบล…") มีที่ในกล่องแกน
+     แค่ ~53mm จึงตัด 2 บรรทัด ทำให้บล็อกปลัด/นายกสูงจาก 37 เป็น 43.5mm และใบหลุด
+     งบ 1 หน้า — ชดเชยที่ระยะคั่นตามลำดับความสำคัญ ห้ามไปลดขนาดฟอนต์ */
+  .rule { border-top: 1px solid #000; margin: 1mm 0 0.6mm; }
   .note-damage { border: 1px solid #000; padding: 1.5mm; margin-top: 2mm; break-inside: avoid; }
   .origin { ${GOV_ESERVICE_ORIGIN_CSS} text-align: center; margin-top: 2mm; }
   /* ระยะคั่นระหว่างบล็อกลงนาม — ใช้ที่เดียวกันทุกจุด ไม่กระจาย inline style */
-  .gap { margin-top: 2mm; }
+  .gap { margin-top: 1.2mm; }
 </style>
 </head><body>
 <div class="sheet">
@@ -234,21 +291,20 @@ ${rows}
     </tbody>
   </table>
 
-  <div class="center sign-block">
-    <p class="para">ลงชื่อ<span class="sign-line"></span>ผู้ยืม</p>
-    <p class="para">(..................................................)</p>
+  <!-- ช่องผู้ยืมอยู่กลางหน้า จึงห่อ .sign-row ด้วย .center-row ให้ทั้งแถวไปอยู่กลางกระดาษ
+       (ตัว .sign-row เป็น flex จึงจัดกลางด้วย text-align ของพ่อไม่ได้) -->
+  <div class="sign-block center-row">
+    ${signRow({ role: 'ผู้ยืม', below: ['(..................................................)'] })}
   </div>
 
   <div class="two-col gap">
     <div>
       <p class="para">- ได้รับของตามรายการข้างต้นแล้ว</p>
-      <p class="para">ลงชื่อ<span class="sign-line" style="min-width:42mm"></span>ผู้รับของ</p>
-      <p class="para center">(........................................................)</p>
+      ${signRow({ width: '42mm', role: 'ผู้รับของ', below: ['(........................................................)'] })}
     </div>
     <div>
       <p class="para">- ได้จ่ายของตามรายการข้างต้นแล้ว</p>
-      <p class="para">ลงชื่อ<span class="sign-line" style="min-width:42mm"></span>ผู้จ่ายของ</p>
-      <p class="para center">(.......................................................)</p>
+      ${signRow({ width: '42mm', role: 'ผู้จ่ายของ', below: ['(.......................................................)'] })}
     </div>
   </div>
 
@@ -258,16 +314,12 @@ ${rows}
     <div>
       <p class="para">- ความเห็น${esc(clerkTitle)}</p>
       <p class="para" style="font-weight:700">ควรอนุมัติให้ยืมได้</p>
-      <p class="para">ลงชื่อ<span class="sign-line" style="min-width:40mm"></span></p>
-      <p class="para center">${signatureName(clerk)}</p>
-      <p class="para center">${esc(clerkTitle)}</p>
+      ${signRow({ width: '40mm', below: [signatureName(clerk), esc(clerkTitle)] })}
     </div>
     <div>
       <p class="para">- ความเห็น${esc(mayorTitle)}</p>
       <p class="para" style="font-weight:700">อนุมัติ</p>
-      <p class="para">ลงชื่อ<span class="sign-line" style="min-width:36mm"></span>ผู้ให้ยืม</p>
-      <p class="para center">${signatureName(mayor)}</p>
-      <p class="para center">${esc(mayorTitle)}</p>
+      ${signRow({ width: '36mm', role: 'ผู้ให้ยืม', below: [signatureName(mayor), esc(mayorTitle)] })}
     </div>
   </div>
 
@@ -277,13 +329,11 @@ ${rows}
     <p class="para" style="font-weight:700">- ได้รับสิ่งของตามรายการข้างต้นคืนในสภาพที่ใช้การได้เรียบร้อยและครบถ้วน</p>
     <div class="two-col gap">
       <div>
-        <p class="para">ลงชื่อ<span class="sign-line" style="min-width:34mm"></span>ผู้ส่งคืน</p>
-        <p class="para center">(............................................)</p>
+        ${signRow({ width: '34mm', role: 'ผู้ส่งคืน', below: ['(............................................)'] })}
         <p class="para nowrap">วันที่.........เดือน..................พ.ศ.........</p>
       </div>
       <div>
-        <p class="para">ลงชื่อ<span class="sign-line" style="min-width:34mm"></span>ผู้รับคืน</p>
-        <p class="para center">(............................................)</p>
+        ${signRow({ width: '34mm', role: 'ผู้รับคืน', below: ['(............................................)'] })}
         <p class="para nowrap">ตำแหน่ง.....................................</p>
         <p class="para nowrap">วันที่.........เดือน..................พ.ศ.........</p>
       </div>
