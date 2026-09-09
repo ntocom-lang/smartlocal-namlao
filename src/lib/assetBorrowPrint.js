@@ -1,6 +1,6 @@
 import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
 import { orgClerkTitle, orgHeadTitle, orgNameParts } from './orgTerms.js'
-import { MONTHS_TH } from './thaiDate.js'
+import { MONTHS_TH, thaiDateTimeText } from './thaiDate.js'
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -85,15 +85,19 @@ function signatureName(signatory) {
  * @param {string} [args.width] ความกว้างเส้นจุด — ไล่ไว้รายจุดตามที่ว่างของคอลัมน์นั้น
  * @param {string} [args.role]  คำต่อท้ายบรรทัดบน เช่น 'ผู้ยืม' (ไม่มีก็เว้นว่าง)
  * @param {string[]} [args.below] บรรทัดใต้เส้นจุด เรียงบนลงล่าง (escape มาแล้ว)
+ * @param {string} [args.signed] ชื่อที่พิมพ์แทนลายมือชื่อ (โหมด online เท่านั้น escape มาแล้ว)
+ *   มีค่า = ไม่พิมพ์เส้นจุด เพราะลงชื่อแล้ว ไม่มีที่ให้เซ็นซ้ำ
  */
-function signRow({ width = '55mm', role = '', below = [] }) {
+function signRow({ width = '55mm', role = '', below = [], signed = '' }) {
   return `<div class="sign-row">
       <span class="sign-label">ลงชื่อ</span>
       <span class="sign-axis">
         <!-- ⚠️ ต้องมี &nbsp; ข้างใน — span ว่างที่มีแต่ border-bottom สูง 0 พอเอามาวางใน
              flex column แล้วเส้นจุดจะลอยทับบรรทัดวงเล็บ ไม่ได้เป็นบรรทัดของตัวเอง
              (ตอนเป็น inline อยู่ในย่อหน้าเดิมมันได้ความสูงจาก line box ของย่อหน้า) -->
-        <span class="sign-line" style="min-width:${width}">&nbsp;</span>
+        ${signed
+          ? `<span class="sign-signed" style="min-width:${width}">${signed}</span>`
+          : `<span class="sign-line" style="min-width:${width}">&nbsp;</span>`}
 ${below.map(text => `        <span class="sign-below">${text}</span>`).join('\n')}
       </span>
       ${role ? `<span class="sign-role">${role}</span>` : ''}
@@ -103,9 +107,24 @@ ${below.map(text => `        <span class="sign-below">${text}</span>`).join('\n'
 /**
  * แบบพิมพ์ "ใบยืมพัสดุ/ครุภัณฑ์" (บย.)
  *
- * ⚠️ ช่องลายมือชื่อทุกช่องต้องว่างไว้เสมอ — ห้ามพิมพ์ชื่อลงบนเส้นลงนามเป็นลายเซ็นอิเล็กทรอนิกส์
- * ระบบนี้ยังไม่ได้รองรับลายมือชื่ออิเล็กทรอนิกส์ตามกฎหมาย การกดปุ่มในระบบไม่ใช่การลงนาม
- * ชื่อที่พิมพ์ในวงเล็บใต้เส้นเป็นเพียง "ชื่อผู้ที่จะมาลงนาม" ตามแบบราชการ ไม่ใช่ตัวลายเซ็น
+ * ⚠️ ช่องลงนาม "ผู้ยืม" มี 2 โหมด ห้ามรวบเป็นโหมดเดียว (กติกาเดียวกับใบน้ำประปา ใบเก็บขนขยะ
+ * และใบขอรับการช่วยเหลือ — ดู waterSupplyRequestPrint.js):
+ *   online  — ผู้ยืมล็อกอินยืนยันตัวตนแล้วยื่นเอง (form.signed_by.channel === 'online')
+ *             พิมพ์ชื่อบนเส้นเป็นลายมือชื่ออิเล็กทรอนิกส์ได้ พร้อมบรรทัดกำกับวันเวลาและ
+ *             เลขอ้างอิงเป็นร่องรอยว่าใครลงชื่อเมื่อไร
+ *   counter — เจ้าหน้าที่กรอกแทนที่เคาน์เตอร์ ผู้ยืม "ไม่ได้" ยืนยันตัวตนในระบบ ต้องเว้นเส้น
+ *             ให้เซ็นด้วยปากกาเสมอ พิมพ์ชื่อบนเส้นแทนไม่ได้เด็ดขาด
+ *   คำขอเก่าที่ไม่มี signed_by ตกมาที่โหมด counter — ถูกแล้ว ระบบย้อนหลังไปอ้างว่าเขาลงชื่อ
+ *   ทางอิเล็กทรอนิกส์ไม่ได้
+ *
+ * ⚠️ ช่องลงนามของ "เจ้าหน้าที่" (ผู้รับของ ผู้จ่ายของ ผู้ส่งคืน ผู้รับคืน ปลัด นายก) ต้องว่างเสมอ
+ * ทุกกรณี — คนเหล่านี้ยังไม่ได้ทำอะไรในระบบตอนพิมพ์ใบ ชื่อในวงเล็บของปลัด/นายกคือ
+ * "ชื่อผู้ที่จะมาลงนาม" ตามแบบราชการ ไม่ใช่ตัวลายเซ็น
+ *
+ * ⚠️ สถานะทางกฎหมายของการพิมพ์ชื่อแทนลายมือชื่อ: อ้างอิงหลักลายมือชื่ออิเล็กทรอนิกส์ตาม
+ * พ.ร.บ.ว่าด้วยธุรกรรมทางอิเล็กทรอนิกส์ ประกอบ พ.ร.บ.การปฏิบัติราชการทางอิเล็กทรอนิกส์
+ * — ยังไม่ได้เปิดตัวบทยืนยันรายมาตรา ใบนี้ผูกพันความรับผิดกรณีของชำรุด/สูญหาย ถ้า อปท.
+ * จะยึดเป็นหลักฐานเรียกค่าเสียหาย ต้องให้นิติกรตรวจตัวบทฉบับปัจจุบันก่อน
  *
  * ⚠️ ต้นฉบับไม่มีวันที่ออกเอกสารและไม่มีบรรทัด "เขียนที่" ต่างจากใบคำร้องอื่นทั้งหมดในระบบ
  * ห้ามคัดหัวกระดาษของ publicAssistancePrint/waterSupplyRequestPrint มาใส่
@@ -122,9 +141,11 @@ ${below.map(text => `        <span class="sign-below">${text}</span>`).join('\n'
  * @param {string} [args.departmentName] กองเจ้าของพัสดุ = ช่อง "ไปจากส่วนราชการ"
  * @param {{name?: string, title?: string}} [args.clerk] ผู้ลงนามบทบาท clerk
  * @param {{name?: string, title?: string}} [args.mayor] ผู้ลงนามบทบาท mayor
+ * @param {string} [args.referenceNo] เลขอ้างอิงคำขอ ใช้เป็นร่องรอยคู่กับลายมือชื่ออิเล็กทรอนิกส์
  */
 export function buildAssetBorrowHtml({
   header, items = [], form = {}, tenant, departmentName = '', clerk = null, mayor = null,
+  referenceNo = '',
 }) {
   const applicant = form.applicant ?? {}
   const borrowerName = [applicant.title, applicant.first, applicant.last]
@@ -136,6 +157,12 @@ export function buildAssetBorrowHtml({
     applicant.addr_district && `อำเภอ${applicant.addr_district}`,
     applicant.addr_province && `จังหวัด${applicant.addr_province}`,
   ].filter(Boolean).join(' ')
+
+  // ลายมือชื่ออิเล็กทรอนิกส์ของผู้ยืม — เงื่อนไขเดียวกับใบน้ำประปา/ขยะ/ช่วยเหลือ
+  // ⚠️ ต้องเทียบ channel === 'online' เท่านั้น ห้ามใช้ "มี signed_at ไหม" เป็นตัวตัดสิน
+  // ใบที่เจ้าหน้าที่คีย์แทนก็มี signed_at (เวลาที่กดบันทึก) แต่ผู้ยืมไม่ได้ยืนยันตัวตนอะไรเลย
+  const signedOnline = form?.signed_by?.channel === 'online'
+  const signedStamp = signedOnline ? thaiDateTimeText(form?.signed_at) : ''
 
   const due = thaiDateParts(header?.return_due_date)
   const problems = items.reduce((sum, item) => sum + (item.damaged_qty ?? 0) + (item.lost_qty ?? 0), 0)
@@ -246,6 +273,13 @@ ${GOV_FONT_LINK}
   .sign-role { margin-left: 1mm; }
   /* บรรทัดใต้เส้นจุดต้องตัดคำได้เมื่อยาวเกินคอลัมน์ และจัดกึ่งกลางทุกบรรทัดที่ตัด */
   .sign-below { text-align: center; }
+  /* ลายมือชื่ออิเล็กทรอนิกส์ — ตัวหนาให้เห็นว่าเป็นการลงชื่อ ไม่ใช่ชื่อที่พิมพ์ซ้ำเฉยๆ
+     (แบบเดียวกับ .signed-name ในใบน้ำประปา/ใบเก็บขนขยะ) และไม่มีเส้นจุดใต้ชื่อ
+     เพราะลงชื่อไปแล้ว ไม่ต้องเว้นที่ให้เซ็นซ้ำ */
+  .sign-signed { text-align: center; font-weight: 700; }
+  /* 10pt: บรรทัดกำกับต้องอ่านออกแต่ไม่แย่งน้ำหนักกับชื่อผู้ลงนาม และต้องไม่ดันใบตกหน้า 2
+     เป็นร่องรอยให้ตรวจย้อนได้ว่าใครลงชื่อเมื่อไร — ห้ามตัดออกเวลาบีบพื้นที่ */
+  .signed-note { margin: 1mm 0 0; font-size: 10pt; color: #333; line-height: 1.2; text-align: center; }
   /* .sign-row เป็น flex จึงจัดกลางหน้าด้วย text-align ของพ่อไม่ได้ ต้อง justify-content */
   .center-row .sign-row { justify-content: center; }
   .two-col { display: flex; gap: 8mm; break-inside: avoid; page-break-inside: avoid; }
@@ -255,11 +289,11 @@ ${GOV_FONT_LINK}
      ให้อยู่ใต้เส้นจุด: ชื่อตำแหน่งยาว ("ปลัดองค์การบริหารส่วนตำบล…") มีที่ในกล่องแกน
      แค่ ~53mm จึงตัด 2 บรรทัด ทำให้บล็อกปลัด/นายกสูงจาก 37 เป็น 43.5mm และใบหลุด
      งบ 1 หน้า — ชดเชยที่ระยะคั่นตามลำดับความสำคัญ ห้ามไปลดขนาดฟอนต์ */
-  .rule { border-top: 1px solid #000; margin: 1mm 0 0.6mm; }
+  .rule { border-top: 1px solid #000; margin: 0.7mm 0 0.4mm; }
   .note-damage { border: 1px solid #000; padding: 1.5mm; margin-top: 2mm; break-inside: avoid; }
-  .origin { ${GOV_ESERVICE_ORIGIN_CSS} text-align: center; margin-top: 2mm; }
+  .origin { ${GOV_ESERVICE_ORIGIN_CSS} text-align: center; margin-top: 1mm; }
   /* ระยะคั่นระหว่างบล็อกลงนาม — ใช้ที่เดียวกันทุกจุด ไม่กระจาย inline style */
-  .gap { margin-top: 1.2mm; }
+  .gap { margin-top: 0.8mm; }
 </style>
 </head><body>
 <div class="sheet">
@@ -300,7 +334,17 @@ ${rows}
        จากทะเบียนผู้ลงนามมาพิมพ์อยู่แล้ว
        คำขอที่ไม่มีชื่อผู้ยื่น (เจ้าหน้าที่คีย์แทนแล้วไม่ได้กรอก) ตกไปเป็นเส้นจุดให้เขียนมือ -->
   <div class="sign-block center-row">
-    ${signRow({ role: 'ผู้ยืม', below: [signatureName({ name: borrowerName })] })}
+    ${signRow({
+      role: 'ผู้ยืม',
+      signed: signedOnline && borrowerName ? esc(borrowerName) : '',
+      below: [signatureName({ name: borrowerName })],
+    })}
+    ${/* ⚠️ ไม่ใส่ชื่อหน่วยงานในบรรทัดนี้ ทั้งที่ใบน้ำประปา/ใบขยะใส่ — บรรทัดท้ายใบ (.origin)
+          บอกชื่อหน่วยงานอยู่แล้ว ใส่ซ้ำทำให้ข้อความยาวจนตัด 2 บรรทัด ดันใบเป็น 271.8mm
+          เกินงบ 1 หน้า (วัดจริง 2569-09-09) */''}${signedOnline
+      ? `<p class="signed-note">ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service${
+          signedStamp ? ` เมื่อ ${esc(signedStamp)}` : ''}${referenceNo ? ` · เลขอ้างอิง ${esc(referenceNo)}` : ''}</p>`
+      : ''}
   </div>
 
   <div class="two-col gap">

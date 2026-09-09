@@ -209,6 +209,9 @@ export default function AssetBorrowRequestPanel({ requestId, tenant, onChanged }
       header, items, form: snapshot, tenant,
       departmentName: printData.department,
       clerk: printData.clerk, mayor: printData.mayor,
+      // เลขอ้างอิง 8 ตัวแรกของ request id — รูปแบบเดียวกับที่ Inbox ใช้แสดงบนหน้าจอ
+      // เป็นร่องรอยคู่กับลายมือชื่ออิเล็กทรอนิกส์ ให้ตรวจย้อนกลับไปหาคำขอต้นทางได้
+      referenceNo: String(requestId ?? '').slice(0, 8).toUpperCase(),
     })
     const win = window.open('', '_blank', 'width=860,height=1100')
     if (!win) return
