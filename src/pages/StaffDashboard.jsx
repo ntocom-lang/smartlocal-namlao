@@ -20,6 +20,10 @@ import { buildWasteCollectionRequestHtml, collectionPointText } from '../lib/was
 import { buildWasteCollectionCancelHtml, cancelReasonText } from '../lib/wasteCollectionCancelPrint'
 import { buildWaterSupplyRequestHtml } from '../lib/waterSupplyRequestPrint'
 import { buildPublicAssistanceRequestHtml } from '../lib/publicAssistancePrint'
+import {
+  SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE,
+  pickSignatory, signatoryName, signatoryTitle,
+} from '../lib/documentSignatories'
 import { uploadFile } from '../lib/driveStorage'
 import { fetchAssignableStaff, groupStaffByDepartment } from '../lib/staffRoster'
 import { BASE_DOCUMENT_TYPES, removedDocumentTypes } from '../lib/documentTypes'
@@ -669,8 +673,18 @@ function TaskDetailSheet({
         {req.document_type === 'public_assistance_request' && req.permit_form_data && (
           <div className="px-4 pb-2 pt-3 border-t border-gray-100 shrink-0">
             <button onClick={async () => {
-              const { data: departments } = await supabase.from('departments')
-                .select('name').eq('municipality_id', req.municipality_id).order('name')
+              // โหลดตอนกดพิมพ์ ไม่ใช่ตอนเปิดรายการ — ใบเดียวใช้ ไม่ควรยิงทุกครั้งที่เลื่อนดูงาน
+              // ผู้ลงนามมาจากทะเบียนกลาง (เมนู "ผู้ลงนามเอกสาร") ชุดเดียวกับใบคำร้อง/ใบใช้รถ
+              // อ่านไม่ได้หรือยังไม่ตั้ง = ใบพิมพ์เส้นประให้เขียนมือเหมือนเดิม ไม่พังทั้งใบ
+              const [{ data: departments }, { data: signRows }] = await Promise.all([
+                supabase.from('departments')
+                  .select('name').eq('municipality_id', req.municipality_id).order('name'),
+                supabase.from('document_signatories').select(SIGNATORY_REGISTRY_SELECT)
+                  .eq('municipality_id', req.municipality_id)
+                  .eq('document_type', SIGNATORY_SCOPE).eq('is_active', true),
+              ])
+              const registry = signRows ?? []
+              const toSignatory = row => (row ? { name: signatoryName(row), title: signatoryTitle(row) } : null)
               const html = buildPublicAssistanceRequestHtml({
                 form: req.permit_form_data,
                 tenant,
@@ -681,6 +695,10 @@ function TaskDetailSheet({
                 // ซ้ำอีกหกเดือนต้องยังแสดงวันเวลาเดิม ไม่งั้นบรรทัดกำกับใช้อ้างอิงไม่ได้เลย
                 signedAt: req.permit_form_data.signed_at ?? req.created_at,
                 departments: departments ?? [],
+                signatories: {
+                  clerk: toSignatory(pickSignatory(registry, { role: 'clerk' })),
+                  mayor: toSignatory(pickSignatory(registry, { role: 'mayor' })),
+                },
               })
               const w = window.open('', '_blank', 'width=860,height=1100')
               if (!w) return

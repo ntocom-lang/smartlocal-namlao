@@ -161,10 +161,21 @@ export function buildPublicAssistanceRequestHtml({
   // เหลือกองที่ตัดออกให้ติ๊กช่อง "อื่น ๆ" แล้วเขียนชื่อกองเอง ดีกว่าตัดหายเงียบๆ จนหาช่องติ๊กไม่เจอ
   const hasMoreDepts = deptNames.length > deptBoxes.length
 
-  const writeLines = (value, count) => `<div class="fill-lines" style="--lines:${count}">
+  // ⚠️ ช่องที่มีข้อความแล้วไม่พิมพ์เส้นประ (ผู้ใช้ระบบสั่งแก้ 2569-09-09 หลังเห็นใบพิมพ์จริง)
+  // เส้นประคือที่ว่างให้เขียนด้วยปากกา ใบที่ยื่นออนไลน์มีข้อความพิมพ์มาแล้วจึงไม่มีอะไรให้เขียน
+  // เส้นที่เหลือค้างใต้ข้อความอ่านเหมือนช่องที่กรอกไม่ครบ ที่ประหยัดได้คืนให้หน้ากระดาษแทน
+  // (บล็อกเจ้าหน้าที่ยึดขอบล่างด้วย .officer { margin-top: auto } จึงไม่ลอยขึ้นมากลางหน้า)
+  const writeLines = (value, count) => {
+    const text = String(value ?? '').trim()
+    // ⚠️ ห้ามจองความสูงเท่าจำนวนบรรทัดของใบเปล่า (เคยลองแล้วเมื่อ 2569-09-09) — ได้ช่องว่าง
+    // สองก้อน (ใต้ข้อ ๑ และเหนือบล็อกเจ้าหน้าที่) ซึ่งอ่านเหมือนใบพิมพ์ตกหล่น ปล่อยให้ข้อความ
+    // สูงตามจริงแล้วให้ที่ว่างไปรวมก้อนเดียวเหนือบล็อกเจ้าหน้าที่ดูเป็นระเบียบกว่า
+    if (text) return `<div class="written">${esc(text)}</div>`
+    return `<div class="fill-lines" style="--lines:${count}">
         <div class="fill-lines-bg">${'<span class="dot-line"></span>'.repeat(count)}</div>
-        <div class="fill-lines-text">${esc(String(value ?? '').trim())}</div>
+        <div class="fill-lines-text"></div>
       </div>`
+  }
 
   // ⚠️ พิมพ์แค่ "ชื่อ" ในวงเล็บ ไม่พิมพ์ตำแหน่งใต้ชื่อ — ตรงกับต้นฉบับ และเป็นเรื่องความสูงด้วย:
   // ชื่อตำแหน่งเต็ม ("ปลัดองค์การบริหารส่วนตำบลทุ่งแค้ว") ยาวกว่าช่องกว้าง ~50 มม. จึงตัดเป็น
@@ -233,6 +244,11 @@ export function buildPublicAssistanceRequestHtml({
       ${govDocFontCss()}
     }
     .sheet { width: 100%; }
+    /* หน้าคำร้องสูงเต็มพื้นที่พิมพ์เสมอ เพื่อดันบล็อกเจ้าหน้าที่ลงไปชิดขอบล่าง — ความสูงของ
+       ใบนี้ไม่คงที่ (ช่องที่กรอกแล้วไม่มีเส้นประ ใบที่เขียนสั้นจึงเตี้ยกว่าใบเปล่าหลายเซนติเมตร)
+       ถ้าปล่อยไหลตามเนื้อหา บล็อกเจ้าหน้าที่จะลอยขึ้นมากลางหน้าแล้วเหลือช่องว่างใต้ใบ
+       276mm = พื้นที่พิมพ์ A4 แนวตั้งตามขอบใน govPageCss() ห้ามใส่เกินนี้ ใบจะตกหน้า 2 */
+    .sheet--request { display: flex; flex-direction: column; min-height: 276mm; }
     /* หน้าบัญชีแนบท้ายต้องขึ้นแผ่นใหม่เสมอ แม้ไม่มีรายชื่อในระบบเลย (ดู attachmentPageCount) */
     .sheet--attachment { break-before: page; page-break-before: always; }
     .title { margin: 0 0 2mm; text-align: center; font-weight: 700; }
@@ -276,6 +292,9 @@ export function buildPublicAssistanceRequestHtml({
        ข้อความเป็น absolute จึงไม่ดันความสูงกล่อง — ความยาวต้องถูกจำกัดที่ฟอร์มก่อนบันทึก
        (ดู PROBLEM_MAX_CHARS ใน PublicAssistanceWizard.jsx) และมีเทสต์เลย์เอาต์กันข้อความล้น */
     .fill-lines { position: relative; margin: 0 0 2mm; }
+    /* ข้อความที่กรอกมาแล้ว — ขนาด/ระยะบรรทัดเท่ากล่องเส้นประเป๊ะ ใบที่กรอกกับใบที่เขียนมือ
+       จะได้อ่านเป็นแบบเดียวกัน ความยาวถูกจำกัดที่ฟอร์มก่อนบันทึกแล้ว (ดู PROBLEM_MAX_CHARS) */
+    .written { font-size: 12pt; line-height: 5.6mm; margin: 0 0 2mm; white-space: pre-wrap; overflow-wrap: break-word; }
     .dot-line { display: block; height: 5.6mm; border-bottom: 1px dotted #000; }
     .fill-lines-text {
       position: absolute; inset: 0;
@@ -298,6 +317,7 @@ export function buildPublicAssistanceRequestHtml({
     .signature .fill-value { white-space: nowrap; }
     .signed-name { display: block; min-width: 50mm; text-align: center; font-weight: 700; }
     .sign-role { margin-left: 1mm; }
+    .signature { margin-bottom: 3mm; }
     .signed-note { margin-top: 2mm; font-size: 10pt; color: #333; white-space: normal; line-height: 1.2; }
 
     /* บล็อกเจ้าหน้าที่ท้ายหน้า 1 — ตารางเส้นจริงตามต้นฉบับ
@@ -305,7 +325,9 @@ export function buildPublicAssistanceRequestHtml({
        ที่คุมขนาดเองรายช่อง (ฟอนต์และ font-size-adjust ยังเป็นค่ากลางทั้งใบ) — ช่องกว้าง
        ~50 มม./คอลัมน์ ถ้าใช้ 14pt เท่าเนื้อความ บรรทัด "เพื่อพิจารณา/สั่งการต่อไป" และชื่อ
        ตำแหน่งผู้ลงนามจะตัดเป็น 2-3 บรรทัดจนบล็อกดันใบตกหน้า 2 */
-    .officer { width: 100%; margin-top: 3mm; border-collapse: collapse; font-size: 11pt; break-inside: avoid; }
+    /* margin-top: auto ดันบล็อกนี้ลงไปชิดขอบล่างของหน้า (ดู .sheet--request) ห้ามเปลี่ยนกลับ
+       เป็นค่าคงที่ ไม่งั้นใบที่เขียนสั้นจะเหลือช่องว่างใต้ตารางครึ่งหน้า */
+    .officer { width: 100%; margin-top: auto; border-collapse: collapse; font-size: 11pt; break-inside: avoid; }
     .officer td { border: 1px solid #000; padding: 1mm 1.5mm; vertical-align: top; }
     .officer .cell-head { font-weight: 700; }
     /* ช่องเจ้าหน้าที่ใช้บรรทัดเส้นประที่เตี้ยกว่าเนื้อความหน้าแรก — เขียนด้วยปากกาในช่องแคบ */
@@ -365,7 +387,7 @@ export function buildPublicAssistanceRequestHtml({
   </style>
 </head>
 <body>
-  <main class="sheet" data-pdf-page>
+  <main class="sheet sheet--request" data-pdf-page>
     <div class="title">แบบคำร้องขอรับการช่วยเหลือประชาชน</div>
 
     <div class="write-at">
@@ -380,7 +402,7 @@ export function buildPublicAssistanceRequestHtml({
     <p class="to"><strong>เรียน</strong><span>${esc(headTitle)}</span></p>
 
     <p class="body-copy">
-      ด้วย ${field('ข้าพเจ้า (นาย/นาง/นางสาว)', applicantName, '58mm', { words: true })}
+      ด้วย ${field(applicantName ? 'ข้าพเจ้า' : 'ข้าพเจ้า (นาย/นาง/นางสาว)', applicantName, '58mm', { words: true })}
       ${field('อยู่บ้านเลขที่', applicant.addr_no, '22mm')} ${field('หมู่ที่', applicant.addr_moo, '12mm')}
       ${field('ตำบล', applicant.addr_subdistrict, '27mm', { tight: true })} ${field('อำเภอ', applicant.addr_district, '27mm', { tight: true })}
       ${field('จังหวัด', applicant.addr_province, '27mm', { tight: true })}
@@ -388,8 +410,13 @@ export function buildPublicAssistanceRequestHtml({
       มีปัญหาความเดือดร้อนและความต้องการความช่วยเหลือ ดังนี้
     </p>
 
+    <!-- ⚠️ จำนวนบรรทัดเส้นประคือตัวกำหนดความสูงของ "ใบเปล่า" ห้ามเพิ่มโดยไม่วัดใหม่
+         วัดจริง 2569-09-09: 7+3 บรรทัด = 257 มม. / 8+4 = 268 มม. (เกินเพดานเทสต์ 262 มม.
+         ที่เผื่อไว้ให้เครื่องที่ไม่มีฟอนต์ราชการ) / 13+7 = 313 มม. ตกหน้า 2 ทันที
+         ช่องที่ผู้ยื่นกรอกมาแล้วไม่ใช้เส้นประ ค่านี้จึงมีผลกับใบเปล่าที่พิมพ์แจกหน้าเคาน์เตอร์
+         กับใบที่เว้นช่องไว้เท่านั้น -->
     <p class="section-head">๑. ปัญหาความเดือดร้อน</p>
-    ${writeLines(data.problem, 6)}
+    ${writeLines(data.problem, 7)}
 
     <p class="section-head">๒. ความต้องการรับการช่วยเหลือ</p>
     ${writeLines(data.need, 3)}

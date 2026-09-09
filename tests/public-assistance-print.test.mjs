@@ -218,4 +218,17 @@ const blank = buildPublicAssistanceRequestHtml({
 assert.doesNotMatch(blank, /NaN|Invalid Date|undefined|null/)
 assert.match(blank, /class="sheet sheet--attachment"/)
 
+// คำนำหน้าในวงเล็บเป็นคำใบ้ให้คนกรอกด้วยปากกา ใบที่มีชื่อมาแล้วต้องไม่พิมพ์ซ้ำ
+// (ผู้ใช้ระบบสั่งแก้ 2569-09-09 หลังเห็น "ข้าพเจ้า (นาย/นาง/นางสาว) นายทดสอบ" บนใบจริง)
+assert.match(blank, /ข้าพเจ้า \(นาย\/นาง\/นางสาว\)/,
+  'ใบเปล่าต้องคงคำใบ้คำนำหน้าไว้ให้คนเขียนมือ')
+assert.doesNotMatch(render(baseForm()), /นาย\/นาง\/นางสาว/,
+  'ใบที่มีชื่อผู้ยื่นแล้วต้องไม่พิมพ์ (นาย/นาง/นางสาว) ซ้ำหน้าชื่อ')
+
+// ช่องที่มีข้อความแล้วต้องไม่เหลือเส้นประ ส่วนใบเปล่าต้องมีครบตามที่ไล่ความสูงไว้
+assert.match(render(baseForm()), /<div class="written">/,
+  'ข้อความที่กรอกมาต้องพิมพ์เป็นข้อความธรรมดา ไม่ใช่ทับบนกล่องเส้นประ')
+assert.equal((blank.match(/<div class="fill-lines"/g) ?? []).length, 4,
+  'ใบเปล่าต้องมีกล่องเส้นประ 4 ก้อน: ปัญหา + ความต้องการ + ความเห็นปลัด + คำอนุมัติ')
+
 console.log('public-assistance-print.test.mjs PASS')
