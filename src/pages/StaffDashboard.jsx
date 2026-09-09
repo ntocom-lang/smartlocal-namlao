@@ -5,7 +5,7 @@ import {
   ChevronRight, X, Clock, CheckCircle2, XCircle, Loader2,
   Plus, Phone, MapPin, User, Users, AlignLeft, Calendar, Hash, RefreshCw,
   Printer, Search, Hammer, LayoutDashboard, CalendarDays, TrendingUp, Images, Camera,
-  Banknote, Luggage, Star, Car, Bell, Trash2, Database, BookOpen,
+  Banknote, Luggage, Star, Car, Bell, Trash2, Database, BookOpen, PackageOpen,
 } from 'lucide-react'
 import { supabase, signOutSafely } from '../lib/supabase'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/complaintPrivacy'
@@ -42,6 +42,7 @@ const ReportManager = lazy(() => import('../components/admin/ReportManager'))
 const TourismManager = lazy(() => import('../components/admin/TourismManager'))
 const TourismReviewsAdmin = lazy(() => import('../components/admin/TourismManager').then(module => ({ default: module.TourismReviewsAdmin })))
 const PostsManager = lazy(() => import('../components/staff/PostsManager'))
+const BorrowableAssetsManager = lazy(() => import('../components/staff/BorrowableAssetsManager'))
 const StaffOperationalDashboard = lazy(() => import('../components/staff/StaffOperationalDashboard'))
 const FleetPage = lazy(() => import('./FleetPage'))
 const BuildingPermitWizard = lazy(() => import('./BuildingPermitWizard'))
@@ -131,6 +132,9 @@ const STANDALONE_GROUPS = [
       // sidebar เหลือทางเข้าเดียวคือไอคอนเล็กๆ บน header ที่ไม่มีป้ายชื่อ
       { key: 'data-center', label: 'ศูนย์รวมข้อมูลดิจิทัล', Icon: Database, color: '#0284c7', bg: '#e0f2fe', externalUrl: '/data-center/staff' },
       { key: 'fleet',    label: 'ยานพาหนะ/น้ำมัน',  Icon: Car,           color: '#0369a1', bg: '#e0f2fe' },
+      // ไม่ได้อยู่ใน MANAGED_MODULE_KEYS จึงเปิดให้ทุก อปท. เสมอ แล้วคุมด้วย profiles.asset_role
+      // อีกชั้น (แบบเดียวกับ fleet) — คนที่ไม่ได้รับสิทธิ์จะไม่เห็นเมนูนี้เลย ไม่ใช่เห็นแล้วกดไม่ได้
+      { key: 'borrowable-assets', label: 'ทะเบียนของให้ยืม', Icon: PackageOpen, color: '#0d9488', bg: '#ccfbf1' },
     ],
   },
   // กลุ่ม 'บุคลากร' (เมนู 'positions' ทำเนียบตำแหน่ง) ถอดออก 2026-08-31 — ซ้ำกับหน้า
@@ -2139,10 +2143,17 @@ export default function StaffDashboard() {
   // Fleet ที่เพิ่งแก้ไป (ปุ่มจองรถโผล่ให้ fleet_viewer) และขัดกับ TEST_ROLE_MATRIX ที่ระบุว่า
   // demo-staff "ต้องไม่เห็นเมนูยานพาหนะ"
   const hasFleetAccess = Boolean(profile?.fleet_role) || role === 'admin' || role === 'superadmin'
+  // ทะเบียนของให้ยืมใช้ profiles.asset_role คนละคอลัมน์กับ fleet_role ด้วยเหตุผลเดียวกัน:
+  // "เจ้าหน้าที่พัสดุของกอง" ไม่ใช่ระดับในองค์กร แอดมินต้องมอบให้เป็นรายคน
+  // เงื่อนไขต้องตรงกับ asset_is_manager()/asset_can_manage() ฝั่งฐานข้อมูล ไม่งั้นได้เมนูหลอก
+  const hasAssetAccess = Boolean(profile?.asset_role) || role === 'admin' || role === 'superadmin'
   const roleScopedKeys = role === 'technician'
     ? enabledKeys.filter(k => TECHNICIAN_MODULE_KEYS.includes(k))
     : enabledKeys
-  const scopedKeys = hasFleetAccess ? roleScopedKeys : roleScopedKeys.filter(k => k !== 'fleet')
+  const scopedKeys = [
+    ...(hasFleetAccess ? [] : ['fleet']),
+    ...(hasAssetAccess ? [] : ['borrowable-assets']),
+  ].reduce((keys, hidden) => keys.filter(k => k !== hidden), roleScopedKeys)
   const visibleStandaloneGroups = STANDALONE_GROUPS
     .map(g => ({ ...g, items: g.items.filter(m => scopedKeys.includes(m.key)) }))
     .filter(g => g.items.length > 0)
@@ -2492,6 +2503,11 @@ export default function StaffDashboard() {
             {activeModule === 'tourism'          && <TourismManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} currentUserId={profile?.id ?? null} myDepartmentId={profile?.department_id ?? null} />}
             {activeModule === 'tourism-reviews'  && <TourismReviewsAdmin tenant={tenant} />}
             {activeModule === 'fleet' && <FleetPage onBack={() => setActiveModule('home')} />}
+            {activeModule === 'borrowable-assets' && (
+              <BorrowableAssetsManager tenant={tenant}
+                assetRole={role === 'admin' || role === 'superadmin' ? 'asset_admin' : profile?.asset_role}
+                myDepartmentId={profile?.department_id ?? null} />
+            )}
             </Suspense>
             </div>
           </main>

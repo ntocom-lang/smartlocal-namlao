@@ -95,9 +95,39 @@ export default function AssetBorrowRequestPanel({ requestId, tenant, onChanged }
     setSnapshot(parentRes.data?.permit_form_data ?? {})
   }, [requestId])
 
+  // สิทธิ์ดำเนินการ — อ่านโปรไฟล์ตัวเองแทนการรับเป็น prop เพราะแผงนี้ถูกเรนเดอร์ลึกอยู่ใน
+  // TaskDetailSheet การส่ง prop ลงมาต้องแก้ทางผ่านหลายชั้นที่ไม่เกี่ยวกับพัสดุเลย
+  // เงื่อนไขต้องตรงกับ asset_can_manage() ฝั่งฐานข้อมูล ไม่งั้นได้ปุ่มหลอกที่กดแล้ว error
+  const [me, setMe] = useState(null)
+  useEffect(() => {
+    let cancelled = false
+    supabase.auth.getSession().then(({ data }) => {
+      if (!data.session) return
+      supabase.from('profiles').select('role, asset_role, department_id, municipality_id')
+        .eq('id', data.session.user.id).maybeSingle()
+        .then(({ data: profile }) => { if (!cancelled) setMe(profile ?? {}) })
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  const canAct = Boolean(
+    me && header && (
+      me.role === 'superadmin'
+      || (me.municipality_id === header.municipality_id && (
+        me.role === 'admin'
+        || me.asset_role === 'asset_admin'
+        || (me.asset_role === 'asset_staff'
+            && header.department_id && me.department_id === header.department_id)
+      ))
+    ),
+  )
+
   useEffect(() => { load() }, [load])
 
   const status = header?.workflow_status
+  // ใช้กับส่วนที่แก้ข้อมูลได้เท่านั้น — ช่องกรอกและปุ่มดำเนินการ ส่วนที่แสดงผลอย่างเดียว
+  // ยังใช้ status ตามปกติ คนที่ไม่มีสิทธิ์จึงยังตามเรื่องได้ครบ แค่ลงมือแทนไม่ได้
+  const editStatus = canAct ? status : ''
   const isOverdue = status === 'issued' && header?.return_due_date < todayBangkok()
 
   function fieldValue(item, key, fallback) {
@@ -229,6 +259,15 @@ export default function AssetBorrowRequestPanel({ requestId, tenant, onChanged }
         )}
       </div>
 
+      {/* บอกให้ชัดว่าทำไมไม่มีปุ่ม — จอที่เงียบเฉยๆ ทำให้เจ้าหน้าที่คิดว่าระบบพัง แล้วโทรหา
+          คนที่แก้ไม่ได้ ข้อความนี้ชี้ตรงไปที่คนที่แก้ให้ได้จริงคือแอดมินของ อปท. */}
+      {me && !canAct && status !== 'returned' && status !== 'rejected' && (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+          ท่านดูเรื่องนี้ได้อย่างเดียว — การอนุมัติ จ่ายของ และรับคืน ต้องเป็นเจ้าหน้าที่พัสดุ
+          ของกองที่ดูแลของชิ้นนี้ ขอสิทธิ์ได้ที่ผู้ดูแลระบบของหน่วยงาน
+        </div>
+      )}
+
       <div className="rounded-xl bg-gray-50 p-3 text-xs text-gray-600">
         ใช้ตั้งแต่ {thaiDateFromDateInput(header.borrow_start_date)}
         {' · '}กำหนดคืน <span className={isOverdue ? 'font-bold text-rose-700' : 'font-semibold'}>
@@ -268,7 +307,7 @@ export default function AssetBorrowRequestPanel({ requestId, tenant, onChanged }
                 </td>
                 <td className="py-2 text-center font-semibold text-gray-700">{item.requested_qty}</td>
 
-                {status === 'submitted' ? (
+                {editStatus === 'submitted' ? (
                   <td className="py-2 text-center">
                     <input className={numCls} type="number" min="0" max={item.requested_qty}
                       value={fieldValue(item, 'approved_qty', item.requested_qty)}
@@ -280,16 +319,18 @@ export default function AssetBorrowRequestPanel({ requestId, tenant, onChanged }
 
                 {status === 'approved' && (
                   <td className="py-2 text-center">
-                    <input className={numCls} type="number" min="0" max={item.approved_qty ?? 0}
-                      value={fieldValue(item, 'issued_qty', item.approved_qty ?? 0)}
-                      onChange={e => setField(item, 'issued_qty', e.target.value)} />
+                    {canAct ? (
+                      <input className={numCls} type="number" min="0" max={item.approved_qty ?? 0}
+                        value={fieldValue(item, 'issued_qty', item.approved_qty ?? 0)}
+                        onChange={e => setField(item, 'issued_qty', e.target.value)} />
+                    ) : <span className="font-semibold text-gray-400">—</span>}
                   </td>
                 )}
 
                 {(status === 'issued' || status === 'settlement' || status === 'returned') && (
                   <>
                     <td className="py-2 text-center font-semibold text-gray-700">{item.issued_qty}</td>
-                    {status === 'issued' ? (
+                    {editStatus === 'issued' ? (
                       <>
                         <td className="py-2 text-center">
                           <input className={numCls} type="number" min="0" max={item.issued_qty}
@@ -323,7 +364,7 @@ export default function AssetBorrowRequestPanel({ requestId, tenant, onChanged }
       </div>
 
       {/* ── ปิดเรื่องชดใช้ ────────────────────────────────────────────── */}
-      {status === 'settlement' && (
+      {editStatus === 'settlement' && (
         <div className="space-y-2 rounded-xl border border-rose-200 bg-rose-50 p-3">
           <p className="text-xs font-semibold text-rose-900">
             มีของชำรุด/สูญหาย — ต้องบันทึกผลดำเนินการทุกรายการก่อนปิดงาน
@@ -348,7 +389,7 @@ export default function AssetBorrowRequestPanel({ requestId, tenant, onChanged }
       )}
 
       {/* ── ช่องกรอกร่วม ─────────────────────────────────────────────── */}
-      {status === 'submitted' && (
+      {editStatus === 'submitted' && (
         <div className="grid gap-2 sm:grid-cols-2">
           <div>
             <label className="mb-1 block text-[11px] font-semibold text-gray-500">เลขที่ บย.</label>
@@ -363,7 +404,7 @@ export default function AssetBorrowRequestPanel({ requestId, tenant, onChanged }
       )}
 
       {/* ── ปุ่มดำเนินการ ────────────────────────────────────────────── */}
-      {status === 'submitted' && (
+      {editStatus === 'submitted' && (
         <div className="space-y-2">
           <button onClick={approve} disabled={acting}
             className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-teal-700 text-sm font-bold text-white disabled:opacity-50">
@@ -380,7 +421,7 @@ export default function AssetBorrowRequestPanel({ requestId, tenant, onChanged }
         </div>
       )}
 
-      {status === 'approved' && (
+      {editStatus === 'approved' && (
         <div className="space-y-2">
           <button onClick={issue} disabled={acting}
             className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 text-sm font-bold text-white disabled:opacity-50">
@@ -393,7 +434,7 @@ export default function AssetBorrowRequestPanel({ requestId, tenant, onChanged }
         </div>
       )}
 
-      {status === 'issued' && (
+      {editStatus === 'issued' && (
         <div className="space-y-2">
           <button onClick={receive} disabled={acting}
             className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 text-sm font-bold text-white disabled:opacity-50">
@@ -421,7 +462,7 @@ export default function AssetBorrowRequestPanel({ requestId, tenant, onChanged }
         </div>
       )}
 
-      {status === 'settlement' && (
+      {editStatus === 'settlement' && (
         <button onClick={settle} disabled={acting}
           className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 text-sm font-bold text-white disabled:opacity-50">
           {acting ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
