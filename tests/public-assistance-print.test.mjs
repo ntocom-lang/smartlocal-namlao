@@ -63,6 +63,12 @@ function render(form, extra = {}) {
   })
 }
 
+// ตารางท้ายใบถูกถอดออกชั่วคราว (ดู includeOfficerBlock ใน publicAssistancePrint.js)
+// เทสต์ของตารางยังต้องอยู่ครบ ไม่งั้นเปิดกลับมาแล้วไม่มีอะไรกันของพัง — ใช้ helper นี้แทน
+function renderWithOfficer(form, extra = {}) {
+  return render(form, { ...extra, includeOfficerBlock: true })
+}
+
 function people(count, prefix = 'ผู้เดือดร้อน') {
   return Array.from({ length: count }, (unused, index) => ({
     name: `${prefix}ที่ ${index + 1}`,
@@ -78,7 +84,7 @@ assert.match(online, /<div class="title">แบบคำร้องขอรั
 assert.match(online, /เขียนที่ ที่ทำการองค์การบริหารส่วนตำบลทุ่งแค้ว/,
   '"เขียนที่" ต้องเป็นชื่อสถานที่ราชการเต็ม ไม่ใช่ชื่อหน่วยงานเปล่าๆ')
 assert.match(online, /เรียน<\/strong><span>นายกองค์การบริหารส่วนตำบลทุ่งแค้ว<\/span>/)
-assert.match(online, /ความคิดเห็นปลัด อบต\./)
+assert.match(renderWithOfficer(baseForm()), /ความคิดเห็นปลัด อบต\./)
 assert.match(online, /๑\. ปัญหาความเดือดร้อน/)
 assert.match(online, /๒\. ความต้องการรับการช่วยเหลือ/)
 assert.match(online, /จึงเรียนมาเพื่อโปรดพิจารณาให้ความช่วยเหลือ/)
@@ -90,7 +96,7 @@ assert.doesNotMatch(online, /อำเภอหนองม่วงไข่ �
 // เทศบาลต้องได้คำเรียกของเทศบาลทั้งบรรทัดเรียนและช่องความเห็น ไม่ใช่ค่าฝังของ อบต.
 const municipal = render(baseForm(), { tenant: MUNICIPALITY })
 assert.match(municipal, /เรียน<\/strong><span>นายกเทศมนตรีตำบลน้ำเลา<\/span>/)
-assert.match(municipal, /ความคิดเห็นปลัดเทศบาล/)
+assert.match(renderWithOfficer(baseForm(), { tenant: MUNICIPALITY }), /ความคิดเห็นปลัดเทศบาล/)
 // ที่ต้องไม่หลุดคือ "ชื่อหน่วยงาน" กับ "คำเรียกตำแหน่ง" ของ อบต. — ส่วนคำว่าทุ่งแค้วเฉยๆ
 // ยังมีได้ เพราะเป็นที่อยู่ที่ผู้ยื่นกรอกเอง คนละเรื่องกับหน่วยงานที่ออกใบ
 assert.doesNotMatch(municipal, /องค์การบริหารส่วนตำบลทุ่งแค้ว|ปลัด อบต\.|นายก อบต\./,
@@ -131,7 +137,7 @@ assert.doesNotMatch(twoPages, /<td class="col-sign">(?!<\/td>)/,
   'ช่องลายมือชื่อในบัญชีแนบท้ายต้องเว้นว่างให้เซ็นด้วยปากกาเสมอ')
 
 // ── ช่องติ๊กส่วนงานที่รับผิดชอบ ────────────────────────────────────────────────
-const withDepts = render(baseForm(), { departments: DEPARTMENTS })
+const withDepts = renderWithOfficer(baseForm(), { departments: DEPARTMENTS })
 for (const dept of DEPARTMENTS) {
   assert.match(withDepts, new RegExp(`<span class="checkbox"></span>${dept.name}`),
     `ต้องมีช่องติ๊กของ ${dept.name}`)
@@ -139,15 +145,16 @@ for (const dept of DEPARTMENTS) {
 assert.doesNotMatch(withDepts, /อื่น ๆ/, 'กอง 5 กองยังไม่เกินเพดาน ไม่ควรมีช่อง "อื่น ๆ"')
 
 // อปท. ที่มีกองเยอะกว่าเพดาน: ตัดเหลือ 6 แล้วต้องมีช่อง "อื่น ๆ" ให้เขียนเอง ห้ามตัดหายเงียบๆ
-const manyDepts = render(baseForm(), {
+const manyDepts = renderWithOfficer(baseForm(), {
   departments: [...DEPARTMENTS, { name: 'กองสาธารณสุข' }, { name: 'กองการประปา' }, { name: 'หน่วยตรวจสอบภายใน' }],
 })
 assert.equal((manyDepts.match(/class="checkbox"/g) || []).length, 7, 'ต้องเป็น 6 กอง + อื่น ๆ')
 assert.match(manyDepts, /<span class="checkbox"><\/span>อื่น ๆ/)
 
 // ไม่ส่งข้อมูลกองมาเลย (ใบเปล่าที่พิมพ์ไว้แจกหน้าเคาน์เตอร์) ใช้ 4 ช่องตามต้นฉบับ
-assert.match(online, /<span class="checkbox"><\/span>สำนักงานปลัด/)
-assert.equal((online.match(/class="checkbox"/g) || []).length, 4)
+const noDepts = renderWithOfficer(baseForm())
+assert.match(noDepts, /<span class="checkbox"><\/span>สำนักงานปลัด/)
+assert.equal((noDepts.match(/class="checkbox"/g) || []).length, 4)
 
 // ── โหมดลงนาม 2 แบบ ─────────────────────────────────────────────────────────
 assert.match(online, /<span class="signed-name">นายสมชาย ใจดี<\/span>/)
@@ -167,7 +174,7 @@ const legacy = render(baseForm({ signed_by: undefined }))
 assert.doesNotMatch(legacy, /class="signed-name"/)
 
 // ── ผู้ลงนามฝั่งเจ้าหน้าที่ ────────────────────────────────────────────────────
-const signed = render(baseForm(), {
+const signed = renderWithOfficer(baseForm(), {
   signatories: {
     clerk: { name: 'นายวิเชียร ทองสุขใส', title: 'ปลัดองค์การบริหารส่วนตำบลทุ่งแค้ว' },
     mayor: { name: 'นางสาวประกายมาศ ศรีวิชัยเลิศสกุล', title: 'นายกองค์การบริหารส่วนตำบลทุ่งแค้ว' },
@@ -228,7 +235,19 @@ assert.doesNotMatch(render(baseForm()), /นาย\/นาง\/นางสา�
 // ช่องที่มีข้อความแล้วต้องไม่เหลือเส้นประ ส่วนใบเปล่าต้องมีครบตามที่ไล่ความสูงไว้
 assert.match(render(baseForm()), /<div class="written">/,
   'ข้อความที่กรอกมาต้องพิมพ์เป็นข้อความธรรมดา ไม่ใช่ทับบนกล่องเส้นประ')
-assert.equal((blank.match(/<div class="fill-lines"/g) ?? []).length, 4,
-  'ใบเปล่าต้องมีกล่องเส้นประ 4 ก้อน: ปัญหา + ความต้องการ + ความเห็นปลัด + คำอนุมัติ')
+assert.equal((blank.match(/<div class="fill-lines"/g) ?? []).length, 2,
+  'ใบเปล่าต้องมีกล่องเส้นประ 2 ก้อน: ปัญหา + ความต้องการ')
+
+// ── ตารางท้ายใบถอดออกชั่วคราวตามคำสั่งผู้ใช้ระบบ 2569-09-09 ───────────────────
+// ค่าปริยายต้องไม่มีตาราง ทุกจุดเรียกใช้จึงได้ใบแบบเดียวกันโดยไม่ต้องส่งอะไรเพิ่ม
+const defaultSheet = render(baseForm(), { departments: DEPARTMENTS })
+assert.doesNotMatch(defaultSheet, /class="officer"/,
+  'ค่าปริยายต้องไม่พิมพ์ตารางท้ายใบ — ถ้าจะเปิดกลับต้องแก้ที่ includeOfficerBlock ไม่ใช่ที่นี่')
+assert.doesNotMatch(defaultSheet, /ผลการดำเนินการ|ส่วนงานที่รับผิดชอบ|คำอนุมัติ\/คำสั่ง/)
+assert.doesNotMatch(defaultSheet, /class="checkbox"/,
+  'ช่องติ๊กส่วนงานอยู่ในตารางท้ายใบ ต้องหายไปพร้อมกัน')
+// เปิด flag แล้วต้องได้ตารางครบเหมือนเดิม
+assert.match(renderWithOfficer(baseForm()), /class="officer"/)
+assert.match(renderWithOfficer(baseForm()), /ผลการดำเนินการ/)
 
 console.log('public-assistance-print.test.mjs PASS')
