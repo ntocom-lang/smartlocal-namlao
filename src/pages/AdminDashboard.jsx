@@ -13,7 +13,7 @@ import {
   CheckCircle2, ChevronRight, ChevronLeft,
   Search, Phone, Trash2, Plus, PhoneCall, LogOut, Users, Shield, MapPin, GripVertical, Briefcase,
   X, Home, LayoutGrid, Tag, ChevronUp, ChevronDown, Pencil, Wrench, Camera, Repeat, ArrowLeftRight, BookUser, ShieldQuestion,
-  TrendingUp, AlertTriangle, Printer, ImagePlus, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Star, MessageSquare, Car, Terminal, Database, CalendarDays, KeyRound, ClipboardList, FileText, UserRoundCheck
+  TrendingUp, AlertTriangle, Printer, ImagePlus, UserCircle2, BookOpen, Bell, ExternalLink, Settings, Download, Star, MessageSquare, Car, Terminal, Database, CalendarDays, KeyRound, ClipboardList, FileText, UserRoundCheck, PackageOpen
 } from 'lucide-react'
 import { supabase, signOutSafely } from '../lib/supabase'
 // ไอคอนที่เป็นได้ทั้งอิโมจิและรูปแนบ — ของกลางชุดเดียวกับศูนย์ข้อมูลดิจิทัล ไม่ทำซ้ำอีกชุด
@@ -37,6 +37,7 @@ const CivilProjectReport = lazy(() => import('../components/admin/CivilProjectRe
 import SystemSettingsAdmin from '../components/admin/SystemSettingsAdmin'
 import SignatorySettings from '../components/admin/SignatorySettings'
 import DocumentTypeAssignments from '../components/admin/DocumentTypeAssignments'
+import BorrowableAssetsAdmin from '../components/admin/BorrowableAssetsAdmin'
 import PositionCatalogAdmin from '../components/admin/PositionCatalogAdmin'
 import HolidaysAdmin from '../components/admin/HolidaysAdmin'
 import ResetPasswordModal from '../components/admin/ResetPasswordModal'
@@ -5206,6 +5207,7 @@ function getAdminMenuGroups(currentUserRole, currentUserId) {
         { key: 'categories', label: 'ประเภทคำร้อง', Icon: Tag, color: '#d97706', bg: '#fef3c7', show: canManageContent },
         { key: 'emergency', label: 'เบอร์โทรสำคัญ', Icon: Phone, color: '#ef4444', bg: '#fee2e2', show: canManageContent },
         { key: 'locations', label: 'สถานที่เกิดเหตุ', Icon: MapPin, color: '#0891b2', bg: '#e0f2fe', show: canManageContent },
+        { key: 'borrowable-assets', label: 'ทะเบียนของให้ยืม', Icon: PackageOpen, color: '#0d9488', bg: '#ccfbf1', show: canManageContent },
         { key: 'fleet-setup', label: 'ยานพาหนะ', Icon: Car, color: '#0369a1', bg: '#e0f2fe', show: canManageSystem },
       ],
     },
@@ -5897,6 +5899,8 @@ export default function AdminDashboard() {
         <UserManager tenant={tenant} currentUserRole={currentUserRole} currentUserId={currentUserId} />
       ) : activePage === 'locations' ? (
         <LocationManager tenant={tenant} />
+      ) : activePage === 'borrowable-assets' ? (
+        <BorrowableAssetsAdmin tenant={tenant} />
       ) : activePage === 'signatories' ? (
         <SignatorySettings tenant={tenant} />
       ) : activePage === 'categories' ? (
@@ -6038,6 +6042,7 @@ export default function AdminDashboard() {
                   { key: 'categories',  Icon: Tag,    color: '#d97706', bg: '#fef3c7', label: 'ประเภทคำร้อง', desc: 'จัดการหมวดหมู่ + ผู้รับผิดชอบ', show: currentUserRole !== 'viewer' },
                   { key: 'emergency',   Icon: Phone,       color: '#ef4444', bg: '#fee2e2', label: 'เบอร์โทรสำคัญ',    desc: 'สายด่วนฉุกเฉิน และเบอร์โทรสำคัญ', show: currentUserRole !== 'viewer' },
                   { key: 'locations',   Icon: MapPin,      color: '#0891b2', bg: '#e0f2fe', label: 'สถานที่เกิดเหตุ', desc: 'จัดการหมู่บ้าน / ตำบลในพื้นที่',  show: currentUserRole !== 'viewer' },
+                  { key: 'borrowable-assets', Icon: PackageOpen, color: '#0d9488', bg: '#ccfbf1', label: 'ทะเบียนของให้ยืม', desc: 'พัสดุ/ครุภัณฑ์ที่เปิดให้ยืม และสิทธิ์การยืม', show: currentUserRole !== 'viewer' },
                   { key: 'holidays',    Icon: CalendarDays, color: '#0d9488', bg: '#ccfbf1', label: 'วันหยุดราชการ',  desc: 'ใช้คำนวณ SLA คำร้องเป็นวันทำการ',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'fleet-setup',      Icon: Car,         color: '#0369a1', bg: '#e0f2fe', label: 'ตั้งค่ายานพาหนะ', desc: 'กอง/หน่วยงาน งบประมาณ สิทธิ์ผู้ใช้', show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
                   { key: 'system-settings',  Icon: Settings,    color: '#3b82f6', bg: '#dbeafe', label: 'ตั้งค่าระบบ',    desc: 'ตั้งค่าชื่อระบบและข้อมูลพื้นฐาน',   show: currentUserRole === 'admin' || currentUserRole === 'superadmin' },
