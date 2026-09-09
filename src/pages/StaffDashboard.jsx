@@ -785,7 +785,7 @@ function TaskDetailSheet({
 // ─── New Request Sheet (walk-in) ──────────────────────────────────────────────
 
 const EMPTY_REQ = {
-  document_type: 'residence_cert',
+  document_type: 'tax_notice',
   requester_name: '', requester_id_card: '',
   requester_phone: '', requester_address: '', purpose: '',
 }

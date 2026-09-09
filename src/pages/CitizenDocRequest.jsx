@@ -36,25 +36,10 @@ function tenantAddressSuffix(tenant) {
   ].filter(Boolean).join(' ')
 }
 
+// residence_cert / personal_cert ตัดออก 2569-09-09 — ไม่ใช่อำนาจหน้าที่ อปท. (ดูเหตุผลเต็มที่
+// src/lib/documentTypes.js) เอกสารเก่าที่เคยยื่นไว้ยังพิมพ์/แสดงผลได้ตามปกติผ่าน
+// StaffDashboard.jsx (DOC_TITLES/buildDocBody) เพียงแต่ยื่นคำขอใหม่ 2 ประเภทนี้ไม่ได้อีก
 const BASE_DOC_TYPES = [
-  {
-    value:   'residence_cert',
-    label:   'ใบรับรองการอยู่อาศัย',
-    emoji:   '🏠',
-    desc:    'ยืนยันที่อยู่อาศัยในเขต เพื่อยื่นเอกสารต่างๆ',
-    color:   '#2563eb',
-    bg:      '#eff6ff',
-    border:  '#bfdbfe',
-  },
-  {
-    value:   'personal_cert',
-    label:   'หนังสือรับรองบุคคล',
-    emoji:   '👤',
-    desc:    'รับรองตัวตนและสถานะการอยู่ในทะเบียนราษฎร',
-    color:   '#4f46e5',
-    bg:      '#eef2ff',
-    border:  '#c7d2fe',
-  },
   {
     value:   'tax_notice',
     label:   'ค่าธรรมเนียม/ภาษี',
