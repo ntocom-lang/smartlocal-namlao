@@ -324,7 +324,10 @@ export function buildPublicAssistanceRequestHtml({
     .signed-name { display: block; min-width: 50mm; text-align: center; font-weight: 700; }
     .sign-role { margin-left: 1mm; }
     .signature { margin-bottom: 3mm; }
-    .signed-note { margin-top: 2mm; font-size: 10pt; color: #333; white-space: normal; line-height: 1.2; }
+    .signed-note { margin: auto 0 0; font-size: 10pt; color: #333; white-space: normal; line-height: 1.2; }
+    /* เปิดตารางท้ายใบเมื่อไหร่ ตารางเป็นตัวยึดขอบล่างแทน (ดู .officer) บรรทัดนี้จึงต่อท้ายตาราง
+       ตามปกติ ถ้าปล่อยให้ auto ทั้งคู่ ที่ว่างจะถูกแบ่งครึ่งแล้วตารางลอยขึ้นกลางหน้า */
+    .officer + .signed-note { margin-top: 2mm; }
 
     /* บล็อกเจ้าหน้าที่ท้ายหน้า 1 — ตารางเส้นจริงตามต้นฉบับ
        ⚠️ 12pt เป็นข้อยกเว้นเรื่อง "ขนาดตัวอักษร" ที่มาตรฐานกลางอนุญาตให้ทำได้ในเอกสารตาราง
@@ -443,11 +446,11 @@ export function buildPublicAssistanceRequestHtml({
         </div>
         <span class="sign-role">ผู้ขอความช่วยเหลือ</span>
       </div>
-      <p class="signed-note">${signedOnline
-        ? `ลงชื่อโดยการยืนยันตัวตน${esc(govEServiceOriginText(tenant))}${signedStamp ? `<br>${esc(signedStamp)}` : ''}`
-        : `ยื่นคำร้อง${esc(govEServiceOriginText(tenant))}`}${referenceNo ? ` · เลขอ้างอิง ${esc(referenceNo)}` : ''}</p>
     </section>
 
+    <!-- ⚠️ บรรทัดกำกับที่มาของใบต้องอยู่ล่างสุดของหน้า ไม่ใช่ใต้ลายมือชื่อ (ผู้ใช้ระบบสั่งย้าย
+         2569-09-09) — เป็นข้อความของระบบ ไม่ใช่ส่วนหนึ่งของคำร้องที่ผู้ยื่นลงนามรับรอง
+         วางไว้ติดลายมือชื่อแล้วอ่านเหมือนเป็นข้อความที่ผู้ยื่นเขียนเอง -->
     ${includeOfficerBlock ? `<table class="officer">
       <tr>
         <td>
@@ -483,6 +486,10 @@ export function buildPublicAssistanceRequestHtml({
         </td>
       </tr>
     </table>` : ''}
+
+    <p class="signed-note">${signedOnline
+      ? `ลงชื่อโดยการยืนยันตัวตน${esc(govEServiceOriginText(tenant))}${signedStamp ? `<br>${esc(signedStamp)}` : ''}`
+      : `ยื่นคำร้อง${esc(govEServiceOriginText(tenant))}`}${referenceNo ? ` · เลขอ้างอิง ${esc(referenceNo)}` : ''}</p>
   </main>
 
   ${attachmentHtml}
