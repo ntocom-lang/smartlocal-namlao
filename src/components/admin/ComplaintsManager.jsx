@@ -17,6 +17,7 @@ import { buildCouncilComplaintHtml } from '../../lib/councilFormPrint'
 import { isMissingSignatoryError, prepareComplaintPrint } from '../../lib/complaintPrint'
 import { generateDraftPdfBlob } from '../../lib/generateDraftPdf'
 import { uploadFile, resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef, toReliableImageUrl } from '../../lib/driveStorage'
+import { complaintFolderPath, complaintFileName } from '../../lib/driveFolders'
 import { fetchAssignableStaff, groupStaffByDepartment, ROLE_LABELS } from '../../lib/staffRoster'
 import { workingDaysLeft } from '../../lib/workingDays'
 import OssIntakeForm from './OssIntakeForm'
@@ -278,7 +279,25 @@ function StatusStepper({ status, note }) {
 const LEGACY_STATUS = { pending: 'new', completed: 'done', received: 'received' }
 function normalizeActionStatus(s) { return LEGACY_STATUS[s] ?? s ?? 'new' }
 
-function ActionButton({ status, id, onUpdate, loading, size = 'sm', tenant, canFinalClose = false }) {
+// รูปผลการดำเนินการลงโฟลเดอร์เดียวกับรูปที่ประชาชนแนบ (โฟลเดอร์ของเรื่องนั้น) แยกกันด้วยชื่อไฟล์
+// ที่มีคำว่า "ผลงาน" — เจ้าหน้าที่เปิดโฟลเดอร์เดือนเดียวก็เห็นครบทั้งก่อนและหลังซ่อม
+// CATEGORY_LABEL ถูก merge หมวดที่แต่ละ อปท. สร้างเองเข้ามาแล้วตอนโหลดหน้า (ดูราวบรรทัด 1544)
+function workPhotoFolder(c) {
+  if (!c) return undefined
+  return complaintFolderPath({
+    refNo: c.ref_no,
+    categoryLabel: CATEGORY_LABEL[c.category] ?? c.category,
+    createdAt: c.created_at,
+  })
+}
+function workPhotoName(c, index = 0, ext = 'jpg') {
+  if (!c?.ref_no) return `work_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
+  return complaintFileName({ refNo: c.ref_no, kind: 'work', index: index + 1, ext })
+}
+
+// complaint = แถวคำร้องเต็ม ใช้ตั้งชื่อโฟลเดอร์/ไฟล์รูปผลงานบน Drive ให้เจ้าหน้าที่เปิดหาเองได้
+// (เลขที่ + หมวด + เดือน) ไม่ส่งมาก็ยังทำงานได้ แค่ไฟล์จะไปกองรวมแบบเดิม
+function ActionButton({ status, id, onUpdate, loading, size = 'sm', tenant, canFinalClose = false, complaint = null }) {
   const action = NEXT_ACTION[normalizeActionStatus(status)]
   const [confirm, setConfirm] = useState(false)
   const [note, setNote] = useState('')
@@ -294,12 +313,13 @@ function ActionButton({ status, id, onUpdate, loading, size = 'sm', tenant, canF
     if (withPhoto && pendingFiles.length > 0) {
       setUploading(true)
       const urls = []
-      for (const f of pendingFiles) {
+      for (const [i, f] of pendingFiles.entries()) {
         const ext = f.name.split('.').pop()
         const compressed = await compressImage(f, 1200)
         const { url, error } = await uploadFile('complaint-attachments', compressed, {
           subject: id,
-          filename: `work_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`,
+          folder: workPhotoFolder(complaint),
+          filename: workPhotoName(complaint, i, ext),
           municipality: tenant?.slug,
         })
         if (!error) urls.push(url)
@@ -577,12 +597,15 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
     if (!files.length || wpUploading) return
     setWpUploading(true)
     const urls = []
-    for (const f of files) {
+    // นับต่อจากรูปผลงานที่มีอยู่แล้ว ไม่ให้เลขท้ายชื่อไฟล์ซ้ำกับรอบก่อน
+    const already = (c.work_photos?.length ?? 0) + extraWorkPhotos.length
+    for (const [i, f] of [...files].entries()) {
       const ext = f.name.split('.').pop()
       const compressed = await compressImage(f, 1200)
       const { url, error } = await uploadFile('complaint-attachments', compressed, {
         subject: c.id,
-        filename: `work_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`,
+        folder: workPhotoFolder(c),
+        filename: workPhotoName(c, already + i, ext),
         municipality: tenant?.slug,
       })
       if (!error) urls.push(url)
@@ -801,12 +824,14 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
   async function handleCloseJob() {
     setCloseUploading(true)
     const urls = []
-    for (const item of pendingPhotos) {
+    const alreadyClosed = (c.work_photos?.length ?? 0) + extraWorkPhotos.length
+    for (const [i, item] of pendingPhotos.entries()) {
       const ext = item.file.name.split('.').pop()
       const compressed = await compressImage(item.file, 1200)
       const { url, error } = await uploadFile('complaint-attachments', compressed, {
         subject: c.id,
-        filename: `work_${Date.now()}.${ext}`,
+        folder: workPhotoFolder(c),
+        filename: workPhotoName(c, alreadyClosed + i, ext),
         municipality: tenant?.slug,
       })
       if (!error) urls.push(url)
@@ -1323,7 +1348,7 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
                 </div>
               )}
             <div className="flex gap-2 flex-wrap items-center">
-              <ActionButton status={c.status} id={c.id}
+              <ActionButton status={c.status} id={c.id} complaint={c}
                 onUpdate={(id, next, wp = [], note = null) => { onUpdate(id, next, wp, note); onClose() }}
                 loading={updating} size="lg" tenant={tenant} canFinalClose={isAdminRole} />
               <RejectButton status={c.status} id={c.id}
@@ -2416,7 +2441,7 @@ ${summaryHtml}
                     </div>
                     {NEXT_ACTION[c.status] && (['admin', 'superadmin'].includes(currentUserRole) || (currentUserRole === 'technician' && c.assigned_to === currentUserId)) && (
                       <div onClick={(e) => e.stopPropagation()}>
-                        <ActionButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating}
+                        <ActionButton status={c.status} id={c.id} complaint={c} onUpdate={updateStatus} loading={updating}
                           tenant={tenant} canFinalClose={['admin', 'superadmin'].includes(currentUserRole)} />
                       </div>
                     )}
@@ -2539,7 +2564,7 @@ ${summaryHtml}
                         <div className="flex items-center justify-center gap-1">
                           {(['admin', 'superadmin'].includes(currentUserRole) || (currentUserRole === 'technician' && c.assigned_to === currentUserId)) && (
                             <>
-                              <ActionButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating}
+                              <ActionButton status={c.status} id={c.id} complaint={c} onUpdate={updateStatus} loading={updating}
                                 size="xs" tenant={tenant} canFinalClose={['admin', 'superadmin'].includes(currentUserRole)} />
                               <RejectButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} compact />
                             </>

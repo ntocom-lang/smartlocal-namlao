@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { compressImage } from '../../lib/imageUtils'
 import { logAction } from '../../lib/auditLog'
 import { uploadFile } from '../../lib/driveStorage'
+import { driveFolderPath, DRIVE_MODULES } from '../../lib/driveFolders'
 import BusinessRegistrationAdmin from './BusinessRegistrationAdmin'
 import OpeningHoursEditor from './OpeningHoursEditor'
 import { parseCoords, hoursToRows, rowsToHours, rowsAreValid } from '../../lib/tourismPlaces'
@@ -357,8 +358,11 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
     setUploadingFor(placeId)
     for (const rawFile of allowed) {
       const compressed = await compressImage(rawFile)
+      // ชื่อสถานที่ท่องเที่ยวเป็นข้อมูลสาธารณะอยู่แล้ว ใช้ตั้งชื่อโฟลเดอร์ได้
+      // (ต่างจากคำร้องที่ห้ามเอาชื่อผู้ร้องมาตั้ง — ดู src/lib/driveFolders.js)
       const { url, error } = await uploadFile('complaint-attachments', compressed, {
         subject: `tourism/${placeId}`,
+        folder: driveFolderPath(DRIVE_MODULES.tourism, place.name),
         filename: `photo_${Date.now()}.jpg`,
         municipality: tenant?.slug,
       })

@@ -24,6 +24,7 @@ import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, govDocFontCss, govEServiceOrigi
 import { attachReporterProfiles } from '../lib/attachReporterProfiles'
 import { workingDaysBetween, workingDaysSince } from '../lib/workingDays'
 import { uploadFile } from '../lib/driveStorage'
+import { driveFolderPath, DRIVE_MODULES } from '../lib/driveFolders'
 import { tenantDefaultSubdistrict } from '../lib/tenantSubdistrict'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
 import { EMERGENCY_CATEGORIES, EMERGENCY_CATEGORY_MAP, emergencyCategoryOf, guessCategory } from '../lib/emergencyCategories'
@@ -2959,8 +2960,11 @@ function StaffManager({ tenant }) {
     setError(null)
     const ext = file.name.split('.').pop().toLowerCase()
     const compressed = await compressImage(file, 400)
+    // ไม่ใส่ชื่อเจ้าหน้าที่ในชื่อโฟลเดอร์ — รูปโปรไฟล์ที่จับคู่กับชื่อบน Drive เป็นข้อมูลส่วนบุคคล
+    // ที่ไม่จำเป็นต้องเปิดเผย ระบบผูกรูปกับแถวใน staff ผ่าน url อยู่แล้ว
     const { url, error: uploadErr } = await uploadFile('complaint-attachments', compressed, {
       subject: `staff/${staffId}`,
+      folder: driveFolderPath(DRIVE_MODULES.staff),
       filename: `photo_${Date.now()}.${ext}`,
       municipality: tenant?.slug,
     })
