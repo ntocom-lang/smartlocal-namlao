@@ -407,6 +407,93 @@ async function main() {
       const events = await selectRows(env, token, 'patient_transport_events', `select=event_type&request_id=eq.${requestId}&order=created_at`)
       assert.deepEqual(events.map(event => event.event_type), ['created', 'forwarded', 'fund_accepted', 'completed'])
     })
+
+    // ── 9. กล่องงานเจ้าหน้าที่ต้องใช้แผงเฉพาะ ไม่ใช่ปุ่มเปลี่ยนสถานะตัวกลาง ────────
+    //
+    // ⚠️ ข้อนี้ไม่ใช่การทดสอบหน้าตา แต่กันข้อบกพร่องที่เคยเจอจริง: ตอนยังไม่ได้ผูก
+    // StaffDashboard ประเภทนี้เห็นปุ่มกลางครบชุด กด "ดำเนินการเสร็จสิ้น" แล้วได้ทั้ง
+    // สถานะแม่-ลูกไม่ตรงกัน (ปิดโดยไม่มีเลขหนังสือนำส่ง) และ handleUpdate สร้าง
+    // "หนังสือรับรอง" จาก DOC_TITLES ค่ากลางอัปขึ้น Drive ทั้งที่คำขอนี้ไม่มีหนังสือรับรอง
+    // ใครเพิ่มประเภทที่มีแผงเฉพาะใหม่แล้วลืมใส่ใน PANEL_DOC_TYPES จะตกข้อนี้
+    const CENTRAL_BUTTONS = [
+      'รับเรื่อง — เริ่มดำเนินการ', 'ดำเนินการเสร็จสิ้น', 'ปฏิเสธคำขอ', 'พิมพ์ / บันทึกเป็น PDF',
+    ]
+
+    async function openDocInbox(page) {
+      await page.goto(`${baseUrl}/staff`, { waitUntil: 'domcontentloaded', timeout: 45_000 })
+      await waitForSettled(page, admin.auth)
+      // /staff เปิดที่แดชบอร์ดรวม ต้องเข้าเมนู "คำขอบริการ/เอกสาร" ก่อนถึงจะเจอกล่องงาน
+      await page.locator('text=คำขอบริการ/เอกสาร').locator('visible=true').first().click({ timeout: 20_000 })
+      await page.waitForTimeout(3_000)
+    }
+
+    await step('กล่องงาน: คำขอรถรับ-ส่งผู้ป่วยใช้แผงเฉพาะ ไม่มีปุ่มเปลี่ยนสถานะตัวกลาง', async () => {
+      const { page } = admin
+      await openDocInbox(page)
+      // ค้นด้วยชื่อประเภทแทนการกดแถวแรก เพื่อไม่ให้ผลขึ้นกับลำดับข้อมูลทดสอบที่ค้างอยู่
+      await page.locator('input[placeholder^="ค้นหาชื่อ"]').first().fill('ขออนุเคราะห์รถรับ-ส่งผู้ป่วย')
+      await page.waitForTimeout(2_000)
+      const row = page.locator('button:has-text("ดูรายละเอียด"), button:has-text("ตรวจสอบคำขอ")').first()
+      assert.ok(await row.count() > 0, 'ไม่พบคำขอรถรับ-ส่งผู้ป่วยในกล่องงาน')
+      await row.click({ timeout: 20_000 })
+      await page.waitForTimeout(3_000)
+      await page.screenshot({ path: path.join(SHOT_DIR, 'staff-panel.png') })
+
+      const sheet = await page.evaluate(() => document.querySelector('.fixed.inset-0.z-50')?.innerText ?? '')
+      assert.ok(/หน่วยงานผู้จัดรถ/.test(sheet), 'ไม่เจอแผงคำขอรถรับ-ส่งผู้ป่วยในใบงาน')
+      assert.ok(await page.locator('button:has-text("พิมพ์หนังสือนำส่ง")').count() > 0,
+        'ไม่เจอปุ่มพิมพ์หนังสือนำส่ง + ใบคำขอ')
+      for (const label of CENTRAL_BUTTONS) {
+        const found = await page.locator(`button:has-text("${label}")`).locator('visible=true').count()
+        assert.equal(found, 0, `ปุ่มกลาง "${label}" ยังโผล่ในคำขอประเภทนี้`)
+      }
+    })
+
+    await step('กล่องงาน: คำขอประเภทอื่นที่ยังไม่ปิด ยังเห็นปุ่มเปลี่ยนสถานะตัวกลางเหมือนเดิม', async () => {
+      const { page } = admin
+      await openDocInbox(page)
+      // ปุ่ม "ตรวจสอบคำขอ" มีเฉพาะแถวที่ยังไม่ปิด — ใบที่ปิดแล้วไม่ขึ้นปุ่มกลางอยู่แล้ว (isActive)
+      // เปิดใบที่ปิดแล้วมาทดสอบจะได้ผลลบลวงว่าปุ่มหายทั้งระบบ
+      const buttons = page.locator('button:has-text("ตรวจสอบคำขอ")')
+      const total = await buttons.count()
+      for (let index = 0; index < Math.min(total, 8); index += 1) {
+        await buttons.nth(index).click({ timeout: 20_000 })
+        await page.waitForTimeout(2_000)
+        const sheet = await page.evaluate(() => document.querySelector('.fixed.inset-0.z-50')?.innerText ?? '')
+        // ข้ามประเภทที่ตั้งใจให้ไม่มีปุ่มกลาง (PANEL_DOC_TYPES ใน StaffDashboard.jsx)
+        if (/ขออนุเคราะห์รถรับ-ส่งผู้ป่วย|ขอยืมพัสดุ\/ครุภัณฑ์/.test(sheet)) {
+          await openDocInbox(page)
+          continue
+        }
+        const visible = []
+        for (const label of CENTRAL_BUTTONS) {
+          if (await page.locator(`button:has-text("${label}")`).locator('visible=true').count() > 0) visible.push(label)
+        }
+        assert.ok(visible.length > 0, `คำขอประเภทอื่นไม่เห็นปุ่มกลางเลย — ${sheet.slice(0, 60)}`)
+        return `เทียบกับ ${sheet.split('\n').slice(0, 3).join(' ').slice(0, 40)}`
+      }
+      throw new BlockedError('ไม่มีคำขอประเภทอื่นที่ยังไม่ปิดในกล่องงานให้เทียบ')
+    })
+
+    await step('กล่องงาน: เจ้าหน้าที่รับเรื่องแทนหน้าเคาน์เตอร์ ต้องผ่านด่านคัดกรองฉุกเฉินเหมือนกัน', async () => {
+      const { page } = admin
+      await openDocInbox(page)
+      await page.locator('button:has-text("สร้างคำขอ")').locator('visible=true').first().click({ timeout: 20_000 })
+      await page.waitForTimeout(1_500)
+      const typeButton = page.locator('button:has-text("ขออนุเคราะห์รถรับ-ส่งผู้ป่วย")').locator('visible=true').first()
+      assert.ok(await typeButton.count() > 0, 'ไม่เจอประเภทนี้ในรายการสร้างคำขอของเจ้าหน้าที่')
+      await typeButton.click({ timeout: 20_000 })
+      await page.waitForTimeout(3_000)
+      const text = await page.evaluate(() => document.body.innerText)
+      assert.ok(/ผู้ป่วยต้องไปโรงพยาบาลด่วนตอนนี้หรือไม่/.test(text),
+        'กดแล้วไม่เข้าวิซาร์ด — ตกไปที่ฟอร์มสร้างคำขอทั่วไปซึ่งไม่มีด่านฉุกเฉินและไม่มีความยินยอม')
+      await page.locator('button:has-text("ใช่ ฉุกเฉิน")').locator('visible=true').first().click({ timeout: 20_000 })
+      await page.waitForTimeout(1_500)
+      const after = await page.evaluate(() => document.body.innerText)
+      assert.ok(/1669/.test(after), 'ตอบว่าฉุกเฉินแล้วไม่ขึ้นให้โทร 1669')
+      assert.ok(!/วันเวลานัด|จุดรับ/.test(after), 'ตอบว่าฉุกเฉินแล้วยังกรอกฟอร์มต่อได้')
+      await page.screenshot({ path: path.join(SHOT_DIR, 'staff-counter-1669.png') })
+    })
   } finally {
     await admin.context.close().catch(() => {})
     await citizen.context.close().catch(() => {})
