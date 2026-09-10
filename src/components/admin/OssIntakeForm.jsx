@@ -79,7 +79,8 @@ export default function OssIntakeForm({ tenant, categoryLabels, onClose }) {
           }
         }
         if (urls.length > 0) {
-          await supabase.rpc('attach_complaint_photos', { p_complaint_id: inserted.id, p_urls: urls }).catch(() => {})
+          // .catch() ต่อท้าย .rpc() ตรงๆ ไม่ได้ (builder มีแค่ .then()) ต้องใช้ onRejected ของ .then()
+          await supabase.rpc('attach_complaint_photos', { p_complaint_id: inserted.id, p_urls: urls }).then(() => {}, () => {})
         }
       }
 
