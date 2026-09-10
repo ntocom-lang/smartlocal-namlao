@@ -291,21 +291,44 @@ const checks = [
     },
   },
   {
-    name: 'counter-entry-leaves-signature-blank',
-    reason: 'คำขอที่เจ้าหน้าที่คีย์แทน ผู้ยื่นไม่ได้ยืนยันตัวตน ห้ามพิมพ์ชื่อลงบนเส้นลงนาม',
+    // ⚠️ ข้อนี้ "กลับด้าน" จากของเดิม (ที่เคยห้ามพิมพ์ชื่อเมื่อเจ้าหน้าที่คีย์แทน) ตามที่เจ้าของ
+    // ระบบสั่งเมื่อ 2569-09-10 ให้พิมพ์ชื่อทุกกรณี — สิ่งที่ยังห้ามคือ "บรรทัดกำกับ" ที่อ้างว่า
+    // ยืนยันตัวตนผ่านระบบแล้ว เพราะไม่เป็นความจริงและใบนี้ส่งออกไปให้องค์กรภายนอกใช้อนุมัติ
+    name: 'counter-entry-prints-name-but-not-online-claim',
+    reason: 'ใบที่เจ้าหน้าที่คีย์แทนต้องพิมพ์ชื่อผู้ยื่น แต่ห้ามอ้างว่ายืนยันตัวตนผ่านระบบแล้ว',
     async run(browser) {
       const counterForm = { ...FORM, signed_by: null }
       const page = await render(browser, buildPatientTransportFormHtml(args({ form: counterForm })))
       try {
         const info = await page.evaluate(() => ({
-          signed: document.querySelectorAll('.sign-signed').length,
-          note: document.querySelectorAll('.signed-note').length,
+          signed: [...document.querySelectorAll('.sign-signed')].map(el => el.textContent.trim()),
+          note: document.querySelector('.signed-note')?.textContent.replace(/\s+/g, ' ').trim() ?? '',
           lines: document.querySelectorAll('.sign-line').length,
         }))
-        assert.equal(info.signed, 0, 'ใบที่เจ้าหน้าที่คีย์แทนมีชื่อพิมพ์บนเส้นลงนาม')
-        assert.equal(info.note, 0, 'ใบที่เจ้าหน้าที่คีย์แทนมีบรรทัดกำกับการลงชื่อผ่านระบบ')
-        // ผู้ยื่น 1 + ประธานกองทุน 1 + เหรัญญิก/พยาน 1
-        assert.equal(info.lines, 3, `มีเส้นลงนาม ${info.lines} เส้น ต้องเป็น 3`)
+        assert.deepEqual(info.signed, [PARENT.requester_name],
+          'ใบที่เจ้าหน้าที่คีย์แทนต้องพิมพ์ชื่อผู้ยื่นบนเส้น 1 จุด')
+        assert.ok(!/ยืนยันตัวตนผ่านระบบ/.test(info.note),
+          `บรรทัดกำกับอ้างว่ายืนยันตัวตนผ่านระบบทั้งที่ไม่ได้ยืนยัน: "${info.note}"`)
+        assert.ok(/บันทึกคำขอแทนที่เคาน์เตอร์/.test(info.note),
+          `บรรทัดกำกับไม่ได้บอกว่าเจ้าหน้าที่บันทึกแทน: "${info.note}"`)
+        assert.ok(/ลงลายมือชื่อรับรอง/.test(info.note),
+          'ไม่ได้บอกให้ผู้ยื่นเซ็นรับรองทับ ทั้งที่ยังไม่มีลายมือชื่อจริงบนใบ')
+        // เหลือเส้นให้เขียนมือเฉพาะของกองทุน 2 ช่อง (ประธาน + เหรัญญิก/พยาน)
+        assert.equal(info.lines, 2, `มีเส้นลงนาม ${info.lines} เส้น ต้องเป็น 2`)
+      } finally { await page.close() }
+    },
+  },
+  {
+    name: 'online-entry-keeps-eservice-note',
+    reason: 'ใบที่ประชาชนยื่นเองต้องมีบรรทัดกำกับ E-Service พร้อมเลขอ้างอิง เป็นร่องรอยให้ตรวจย้อนได้',
+    async run(browser) {
+      const page = await render(browser, buildPatientTransportFormHtml(args()))
+      try {
+        const note = await page.evaluate(() =>
+          document.querySelector('.signed-note')?.textContent.replace(/\s+/g, ' ').trim() ?? '')
+        assert.ok(/ยืนยันตัวตนผ่านระบบ E-Service/.test(note), `ไม่พบบรรทัดกำกับ E-Service: "${note}"`)
+        assert.ok(note.includes('A1B2C3D4'), 'บรรทัดกำกับไม่มีเลขอ้างอิง')
+        assert.ok(!/บันทึกคำขอแทนที่เคาน์เตอร์/.test(note), 'ใบที่ยื่นออนไลน์ติดข้อความของโหมดเคาน์เตอร์มาด้วย')
       } finally { await page.close() }
     },
   },
