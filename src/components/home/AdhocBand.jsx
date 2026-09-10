@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Wind } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import { CategoryIcon } from '../../lib/categoryIcon'
@@ -32,36 +31,30 @@ export default function AdhocBand() {
       <div className="absolute -bottom-8 -right-4 w-36 h-36 rounded-full pointer-events-none"
         style={{ background: 'radial-gradient(circle, rgba(77,124,15,0.35) 0%, transparent 70%)' }} />
 
-      <div className="relative z-10 px-4 pt-3 pb-4">
-        <div className="flex items-center justify-between gap-2 mb-3">
-          <div className="flex items-center gap-2">
-            <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-white bg-white/20">
-              <Wind size={15} />
-            </span>
-            <p className="text-white font-extrabold text-[15px] md:text-base tracking-wide drop-shadow-sm">
-              💨 เฉพาะกิจ
-            </p>
-          </div>
+      <div className="relative z-10 px-4 pt-2.5 pb-2.5">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <p className="text-white font-extrabold text-[15px] md:text-base tracking-wide drop-shadow-sm flex items-center gap-1.5">
+            💨 เฉพาะกิจ
+          </p>
           <span className="text-white text-[11px] font-bold bg-white/20 px-2.5 py-0.5 rounded-full border border-white/20">
             ส่งตรงผู้รับผิดชอบ
           </span>
         </div>
 
-        {/* flex-wrap + justify-center แทน grid คอลัมน์ตายตัว — หมวดเฉพาะกิจมักมีแค่ 1-2 หมวด ถ้าใช้
-            grid-cols-4 เหมือน ComplaintBand จะเหลือช่องว่างเปล่าเป็นแถบใหญ่ ดูไม่เป็นระเบียบ */}
-        <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 lg:hidden pb-1">
+        {/* flex-wrap + justify-center แทน grid คอลัมน์ตายตัว — หมวดเฉพาะกิจมักมีแค่ 1-2 หมวด
+            ปรับความสูงและระยะห่างให้สมดุลเท่าๆ กับกล่องบริการอื่น ไม่สูงโดดเกินไป */}
+        <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 lg:hidden">
           {cats.slice(0, 4).map(cat => {
             const emoji = cat.emoji || '💨'
             const color = cat.color || '#ffffff'
-            // ยิ่งมีหมวดน้อย ยิ่งมีพื้นที่เหลือเยอะ — ให้ป้ายชื่อกว้างขึ้นแทนที่จะย่อ/ตัดคำทิ้งทั้งที่มีที่ว่าง
-            // คงจำกัด 2 บรรทัดไว้เฉพาะตอนแน่น (3-4 หมวด) กันการ์ดสูงเกิน
-            const itemWidth = cats.length === 1 ? 'w-32' : cats.length === 2 ? 'w-24' : 'w-16'
+            // ถ้ามีหมวดเดียวให้กว้างพอดีบรรทัดเดียว ไม่บีบตัดคำ
+            const itemWidth = cats.length === 1 ? 'max-w-[260px]' : cats.length === 2 ? 'w-28' : 'w-20'
             const labelClamp = cats.length <= 2 ? '' : 'line-clamp-2'
             return (
               <button key={cat.value}
                 onClick={() => navigate(`/request?category=${cat.value}`)}
-                className={`flex flex-col items-center gap-1.5 active:scale-95 transition-transform ${itemWidth}`}>
-                <div className="w-13 h-13 flex items-center justify-center shadow-md"
+                className={`flex flex-col items-center gap-1 active:scale-95 transition-transform ${itemWidth}`}>
+                <div className="w-12 h-12 flex items-center justify-center shadow-md"
                   style={{
                     backgroundColor: color + '22',
                     borderRadius: 'var(--radius-btn, 1rem)',
@@ -69,7 +62,7 @@ export default function AdhocBand() {
                     backdropFilter: 'blur(4px)',
                     boxShadow: `0 3px 10px ${color}30, inset 0 1px 0 rgba(255,255,255,0.5)`,
                   }}>
-                  <CategoryIcon emoji={emoji} size={32} style={tenant?.category_icon_style} />
+                  <CategoryIcon emoji={emoji} size={30} style={tenant?.category_icon_style} />
                 </div>
                 <p className={`text-white text-[11px] font-semibold text-center w-full leading-tight drop-shadow-sm ${labelClamp}`}>{cat.label}</p>
               </button>
@@ -77,7 +70,7 @@ export default function AdhocBand() {
           })}
         </div>
 
-        {/* flex-wrap เหมือนฝั่ง mobile — กันหมวดเฉพาะกิจจำนวนน้อยยืดเต็มแถวจนดูโหว่ */}
+        {/* Desktop */}
         <div className="hidden lg:flex flex-wrap gap-2">
           {cats.slice(0, 8).map(cat => {
             const emoji = cat.emoji || '💨'
@@ -85,7 +78,7 @@ export default function AdhocBand() {
             return (
               <button key={cat.value}
                 onClick={() => navigate(`/request?category=${cat.value}`)}
-                className="flex flex-col items-center gap-1.5 p-2 rounded-xl active:scale-95 transition-all hover:bg-white/15 min-w-[5.5rem] max-w-[8rem]">
+                className="flex flex-col items-center gap-1.5 p-1.5 rounded-xl active:scale-95 transition-all hover:bg-white/15 min-w-[5.5rem] max-w-[8rem]">
                 <div className="w-11 h-11 flex items-center justify-center"
                   style={{
                     backgroundColor: color + '22',
