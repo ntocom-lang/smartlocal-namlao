@@ -20,6 +20,7 @@ const DOC_LABELS = {
   water_supply_request:     'ขออนุญาตใช้น้ำประปา',
   public_assistance_request: 'ขอรับการช่วยเหลือประชาชน',
   asset_borrow_request: 'ขอยืมพัสดุ/ครุภัณฑ์',
+  patient_transport_request: 'ขออนุเคราะห์รถรับ-ส่งผู้ป่วย',
   building_permit:  'ขออนุญาตก่อสร้างบ้าน',
 }
 

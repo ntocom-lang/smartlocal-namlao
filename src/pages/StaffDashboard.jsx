@@ -56,8 +56,21 @@ const WaterSupplyRequestWizard = lazy(() => import('./WaterSupplyRequestWizard')
 const PublicAssistanceWizard = lazy(() => import('./PublicAssistanceWizard'))
 const AssetBorrowRequestWizard = lazy(() => import('./AssetBorrowRequestWizard'))
 const AssetBorrowRequestPanel = lazy(() => import('../components/staff/AssetBorrowRequestPanel'))
+const PatientTransportWizard = lazy(() => import('./PatientTransportWizard'))
+const PatientTransportPanel = lazy(() => import('../components/staff/PatientTransportPanel'))
 
 // ─── Config ───────────────────────────────────────────────────────────────────
+
+// ประเภทที่มี "แผงจัดการของตัวเอง" — ต้องซ่อนปุ่มเปลี่ยนสถานะตัวกลางทั้งชุด
+//
+// ⚠️ ปุ่มกลาง (รับเรื่อง / ดำเนินการเสร็จสิ้น / ปฏิเสธคำขอ) เขียน document_requests ตรงๆ
+// ไม่ผ่าน RPC ของโมดูล จึงข้ามทั้งลำดับขั้นและ CHECK ของตารางลูกได้หมด ผลที่เคยไล่ดูแล้ว:
+//   ยืมพัสดุ    — อนุมัติแล้วปิดงานทันที ข้ามขั้นจ่ายของ/รับคืน ของออกจากคลังโดยไม่มีใครตามคืน
+//   รถรับ-ส่งฯ  — ปิดเรื่องโดยไม่มีเลขหนังสือนำส่ง ตรวจย้อนหลังไม่ได้ว่าข้อมูลสุขภาพของผู้ป่วย
+//                 ออกจาก อปท. ไปด้วยหนังสือฉบับไหน และ handleUpdate จะสร้าง "หนังสือรับรอง"
+//                 (ค่ากลางของ DOC_TITLES) อัปขึ้น Drive ทั้งที่คำขอประเภทนี้ไม่มีหนังสือรับรอง
+// เพิ่มประเภทใหม่ที่มีแผงเฉพาะเมื่อไหร่ ต้องมาเพิ่มในลิสต์นี้ด้วยเสมอ
+const PANEL_DOC_TYPES = ['asset_borrow_request', 'patient_transport_request']
 
 // ลิสต์ประเภทย้ายไป src/lib/documentTypes.js แล้ว — หน้าตั้งค่าของแอดมิน (กอง/ผู้รับผิดชอบ/SLA)
 // ต้องใช้ลิสต์เดียวกับหน้านี้เป๊ะ ไม่งั้นจะมีประเภทที่ประชาชนยื่นได้แต่แอดมินตั้งผู้รับผิดชอบไม่ได้
@@ -715,7 +728,12 @@ function TaskDetailSheet({
             </button>
           </div>
         )}
-        {req.status === 'completed' && (
+        {/* ⚠️ ปุ่มนี้พิมพ์ "หนังสือรับรอง" ตัวกลางจาก buildDocHTML() — คำขอรถรับ-ส่งผู้ป่วย
+            ไม่มีหนังสือรับรอง และ DOC_TITLES ไม่มีประเภทนี้ จึงตกไปใช้ค่ากลาง 'หนังสือรับรอง'
+            ได้เอกสารที่ไม่มีความหมายกับเรื่องนี้ พร้อมข้อมูลผู้ป่วยติดไปด้วย
+            ใบพิมพ์จริงของโมดูล (หนังสือนำส่ง + ใบคำขอ) อยู่ในแผงด้านล่าง
+            หมายเหตุ: asset_borrow_request มีอาการเดียวกัน แต่เป็นของโมดูลพัสดุ ไม่แตะในสาขานี้ */}
+        {req.status === 'completed' && req.document_type !== 'patient_transport_request' && (
           <div className="px-4 pb-6 pt-3 border-t border-gray-100 shrink-0">
             <button onClick={() => {
               const html = buildDocHTML({ req, tenant, docDate: new Date().toISOString().slice(0, 10) })
@@ -745,7 +763,20 @@ function TaskDetailSheet({
             <AssetBorrowRequestPanel requestId={req.id} tenant={tenant} />
           </Suspense>
         )}
-        {isActive && !confirmReject && req.document_type !== 'asset_borrow_request' && (
+        {/* คำขอรถรับ-ส่งผู้ป่วยมีขั้นตอนของตัวเอง (ตรวจสอบ → พิมพ์หนังสือนำส่ง → บันทึกเลขหนังสือ
+            → บันทึกผลจากหน่วยงานผู้จัดรถ → ปิดเรื่อง) จึงใช้แผงเฉพาะแทนปุ่มตัวกลาง
+            เหตุผลที่ห้ามใช้ปุ่มกลางเขียนไว้ที่ PANEL_DOC_TYPES ด้านบน */}
+        {req.document_type === 'patient_transport_request' && (
+          <Suspense fallback={
+            <div className="flex justify-center py-6"><Loader2 size={18} className="animate-spin text-gray-400" /></div>
+          }>
+            {/* ⚠️ ไม่ส่ง tenant — แผงนี้อ่านเองจาก useTenant() ต่างจากแผงยืมพัสดุ
+                ถ้าเปลี่ยนมารับเป็น prop แล้ววันหนึ่งจุด mount ลืมส่ง หนังสือนำส่งจะพิมพ์ออกมา
+                ไม่มีชื่อ อปท. โดยไม่มีอะไรฟ้อง */}
+            <PatientTransportPanel requestId={req.id} />
+          </Suspense>
+        )}
+        {isActive && !confirmReject && !PANEL_DOC_TYPES.includes(req.document_type) && (
           <div className="px-4 pb-6 pt-3 border-t border-gray-100 space-y-2 shrink-0">
             {req.status === 'pending' && (
               <button onClick={() => onUpdate(req.id, 'processing', staffNote, '')} disabled={acting}
@@ -790,7 +821,7 @@ const EMPTY_REQ = {
   requester_phone: '', requester_address: '', purpose: '',
 }
 
-function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuildingPermit, onSelectWasteCollection, onSelectWasteCancel, onSelectWaterSupply, onSelectPublicAssistance, onSelectAssetBorrow }) {
+function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuildingPermit, onSelectWasteCollection, onSelectWasteCancel, onSelectWaterSupply, onSelectPublicAssistance, onSelectAssetBorrow, onSelectPatientTransport }) {
   const [form, setForm] = useState(EMPTY_REQ)
   const [saving, setSaving] = useState(false)
   const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }))
@@ -839,6 +870,10 @@ function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuilding
                       // และเขียน 3 ตารางผ่าน RPC ถ้าปล่อยให้สร้างด้วยฟอร์มทั่วไปจะได้คำขอ
                       // ที่ไม่มีรายการของ ซึ่งกดอนุมัติไม่ได้และลบเองก็ไม่ได้
                       else if (d.value === 'asset_borrow_request') onSelectAssetBorrow()
+                      // คำขอรถรับ-ส่งผู้ป่วยสร้างด้วยฟอร์มทั่วไปไม่ได้ — ต้องผ่านด่านคัดกรอง
+                      // เหตุฉุกเฉิน เลือกหน่วยงานปลายทาง และเก็บความยินยอมที่ระบุชื่อผู้รับ
+                      // ฟอร์มทั่วไปไม่มีทั้งสามอย่าง และ RPC จะปฏิเสธคำขอที่ไม่มีความยินยอม
+                      else if (d.value === 'patient_transport_request') onSelectPatientTransport()
                       else setForm(p => ({ ...p, document_type: d.value }))
                     }}
                     className="flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left text-xs font-semibold transition-all active:scale-95"
@@ -901,6 +936,7 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
   const [showWaterSupplyWizard, setShowWaterSupplyWizard] = useState(false)
   const [showPublicAssistanceWizard, setShowPublicAssistanceWizard] = useState(false)
   const [showAssetBorrowWizard, setShowAssetBorrowWizard] = useState(false)
+  const [showPatientTransportWizard, setShowPatientTransportWizard] = useState(false)
   const [search, setSearch]       = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
   const [assignees, setAssignees] = useState([])
@@ -1290,7 +1326,8 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
           onSelectWasteCancel={() => { setShowAdd(false); setShowWasteCancelWizard(true) }}
           onSelectWaterSupply={() => { setShowAdd(false); setShowWaterSupplyWizard(true) }}
           onSelectPublicAssistance={() => { setShowAdd(false); setShowPublicAssistanceWizard(true) }}
-          onSelectAssetBorrow={() => { setShowAdd(false); setShowAssetBorrowWizard(true) }} />
+          onSelectAssetBorrow={() => { setShowAdd(false); setShowAssetBorrowWizard(true) }}
+          onSelectPatientTransport={() => { setShowAdd(false); setShowPatientTransportWizard(true) }} />
       )}
       {/* ขออนุญาตก่อสร้างบ้าน — ใช้ wizard เต็มรูปแบบเดียวกับฝั่งประชาชน (แบบ ข.๑ จริง)
           แทนฟอร์มสั้นทั่วไปใน NewRequestSheet เพราะฟิลด์ไม่พอสำหรับพิมพ์แบบร่างที่ถูกต้อง */}
@@ -1350,6 +1387,21 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
             <AssetBorrowRequestWizard tenant={tenant} session={null} staffId={staffId}
               onBack={() => setShowAssetBorrowWizard(false)}
               onDone={() => { setShowAssetBorrowWizard(false); setRefreshKey(k => k + 1) }} />
+          </Suspense>
+        </div>
+      )}
+      {/* รับเรื่องแทนหน้าเคาน์เตอร์ — staffId ทำให้ยกเว้นเงื่อนไขยื่นล่วงหน้า min_lead_days
+          (ประชาชนเดินมายื่นวันนัดพอดีก็ต้องรับเรื่องไว้ก่อน) และทำให้ใบคำขอที่พิมพ์ออกมา
+          เว้นเส้นลงนามไว้ให้เซ็นด้วยปากกา ไม่พิมพ์ชื่อประชาชนแทนลายมือชื่อ
+          ⚠️ ความยินยอมยังต้องติ๊กในวิซาร์ดเหมือนเดิม เจ้าหน้าที่ติ๊กแทนโดยที่ประชาชนไม่รู้ไม่ได้ */}
+      {showPatientTransportWizard && (
+        <div className="fixed inset-0 z-[60] bg-white overflow-y-auto">
+          <Suspense fallback={
+            <div className="flex justify-center py-10"><Loader2 size={20} className="animate-spin text-gray-400" /></div>
+          }>
+            <PatientTransportWizard tenant={tenant} session={null} staffId={staffId}
+              onBack={() => setShowPatientTransportWizard(false)}
+              onDone={() => { setShowPatientTransportWizard(false); setRefreshKey(k => k + 1) }} />
           </Suspense>
         </div>
       )}
