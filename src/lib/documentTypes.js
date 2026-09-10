@@ -22,6 +22,7 @@ export const BASE_DOCUMENT_TYPES = [
   { value: 'water_supply_request',     label: '🚰 ขออนุญาตใช้น้ำประปา' },
   { value: 'public_assistance_request', label: '🤝 ขอรับการช่วยเหลือประชาชน' },
   { value: 'asset_borrow_request',     label: '📦 ขอยืมพัสดุ/ครุภัณฑ์' },
+  { value: 'patient_transport_request', label: '🚑 ขออนุเคราะห์รถรับ-ส่งผู้ป่วย' },
   { value: 'building_permit',          label: '🏗️ ขออนุญาตก่อสร้างบ้าน' },
 ]
 
@@ -105,6 +106,11 @@ export const DEFAULT_SLA_DAYS = {
   // ⚠️ SLA นี้นับถึง "การพิจารณาคำขอ" เท่านั้น ไม่ใช่วันคืนของ ซึ่งเก็บแยกที่
   // asset_borrow_requests.return_due_date
   asset_borrow_request: 3,
+  // อปท. แค่ตรวจข้อมูลแล้วออกหนังสือนำส่ง — ต้องเสร็จก่อนวันนัดซึ่งหน่วยงานผู้จัดรถกำหนดให้ยื่น
+  // ล่วงหน้า (referral_partners.min_lead_days ค่าเริ่มต้น 3 วัน) ช้ากว่า 2 วันจะจัดรถไม่ทัน
+  // ⚠️ SLA นี้นับถึง "การส่งต่อ" เท่านั้น ไม่ใช่วันเดินทาง ซึ่งเก็บแยกที่
+  // patient_transport_requests.appointment_at
+  patient_transport_request: 2,
   // ตรวจแบบแปลน/ตรวจพื้นที่จริงก่อนออกใบอนุญาต
   building_permit: 15,
 }

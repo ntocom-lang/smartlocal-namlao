@@ -13,8 +13,10 @@ import { buildWasteCollectionCancelHtml, cancelReasonText } from '../lib/wasteCo
 import { buildWaterSupplyRequestHtml } from '../lib/waterSupplyRequestPrint'
 import { buildPublicAssistanceRequestHtml } from '../lib/publicAssistancePrint'
 import { generateDraftPdfBlob } from '../lib/generateDraftPdf'
-import { thaiDate, thaiDateFromDateInput } from '../lib/thaiDate'
+import { thaiDate, thaiDateFromDateInput, thaiDateTimeText } from '../lib/thaiDate'
 import { resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRef } from '../lib/driveStorage'
+import { PATIENT_TRANSPORT_TYPE, TRIP_TYPES, WORKFLOW_STATUS, optionLabel } from '../lib/patientTransport'
+import { buildPatientTransportFormHtml } from '../lib/patientTransportPrint'
 
 const BASE_DOC_TYPES = {
   residence_cert:   'ใบรับรองการอยู่อาศัย',
@@ -26,6 +28,7 @@ const BASE_DOC_TYPES = {
   water_supply_request: 'ขออนุญาตใช้น้ำประปา',
   public_assistance_request: 'ขอรับการช่วยเหลือประชาชน',
   asset_borrow_request: 'ขอยืมพัสดุ/ครุภัณฑ์',
+  patient_transport_request: 'ขออนุเคราะห์รถรับ-ส่งผู้ป่วย',
   building_permit:  'ขออนุญาตก่อสร้างบ้าน',
 }
 let _customDocLabels = {}
@@ -47,8 +50,17 @@ function dateTH(s) {
   return new Date(s).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
-function StatusBadge({ status }) {
-  const s = STATUS[status]; if (!s) return null
+// คำขอรถรับ-ส่งผู้ป่วยปิดเป็น status = rejected ได้ 3 ทาง — อปท. ไม่ส่งต่อ / หน่วยงานผู้จัดรถ
+// ไม่รับ / ผู้ยื่นถอนความยินยอมเอง — ป้าย "ปฏิเสธ" จึงผิดสองในสามกรณี และทำให้คนที่กดยกเลิกเอง
+// เข้าใจว่าถูก อปท. ปฏิเสธ ใช้คำกลางที่ถูกทุกกรณีแทน ส่วนเหตุผลจริงอยู่ในกล่องสถานะการส่งต่อ
+// ของใบนั้นอยู่แล้ว (ใช้เกณฑ์เดียวกับป้ายในไทม์ไลน์ที่เขียนว่า "ปิดเรื่องโดยไม่ได้จัดรถ")
+const PATIENT_TRANSPORT_CLOSED = { label: 'ปิดเรื่อง', color: '#6b7280', bg: '#f3f4f6', Icon: XCircle }
+
+function StatusBadge({ status, documentType }) {
+  const s = documentType === PATIENT_TRANSPORT_TYPE && status === 'rejected'
+    ? PATIENT_TRANSPORT_CLOSED
+    : STATUS[status]
+  if (!s) return null
   const { Icon } = s
   return (
     <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
@@ -71,7 +83,7 @@ function DocCard({ req, onClick }) {
       <div className="flex-1 min-w-0">
         <p className="text-sm font-bold text-gray-800 leading-snug">{docLabel}</p>
         <div className="flex items-center gap-2 mt-1 flex-wrap">
-          <StatusBadge status={req.status} />
+          <StatusBadge status={req.status} documentType={req.document_type} />
           <span className="text-xs text-gray-400 font-mono">{req.id.slice(0,8).toUpperCase()}</span>
         </div>
         {req.purpose && <p className="text-xs text-gray-400 mt-0.5 truncate">{req.purpose}</p>}
@@ -194,7 +206,148 @@ function DocDownloadShare({ url, docLabel }) {
   )
 }
 
-function DocDetailSheet({ req, onClose, tenant }) {
+const TONE_CLS = {
+  amber:   'bg-amber-50 border-amber-200 text-amber-800',
+  blue:    'bg-blue-50 border-blue-200 text-blue-800',
+  emerald: 'bg-emerald-50 border-emerald-200 text-emerald-800',
+  red:     'bg-red-50 border-red-200 text-red-800',
+  gray:    'bg-gray-50 border-gray-200 text-gray-700',
+}
+
+// สถานะการส่งต่อของคำขอรถรับ-ส่งผู้ป่วย — document_requests.status มีแค่ 4 ค่า บอกไม่ได้ว่า
+// เรื่องค้างอยู่ที่ อปท. หรือที่หน่วยงานผู้จัดรถ จึงอ่าน patient_transport_requests เพิ่ม
+// RLS ให้เจ้าของคำขออ่านแถวนี้ได้ผ่านแถวแม่ ส่วนผู้ค้นด้วยเลขอ้างอิงแบบไม่ล็อกอินอ่านไม่ได้
+// = ได้ null แล้วไม่แสดงกล่องนี้ (ไม่มีข้อมูลการส่งต่อหลุดไปถึงคนที่แค่รู้เลขอ้างอิง)
+function PatientTransportProgress({ req, tenant, onChanged }) {
+  const [row, setRow] = useState(null)
+  const [loadError, setLoadError] = useState('')
+  const [confirming, setConfirming] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [actionError, setActionError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    supabase.from('patient_transport_requests')
+      .select('workflow_status, partner_name_snapshot, recipient_title_snapshot, appointment_at, mobility, consent_at, consent_version, forward_letter_no, forward_letter_date, fund_result_note, fund_contact, reject_reason')
+      .eq('request_id', req.id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (error) setLoadError('โหลดสถานะการส่งต่อไม่สำเร็จ กรุณาลองใหม่')
+        else setRow(data)
+      })
+    return () => { cancelled = true }
+  }, [req.id])
+
+  async function handleCancel() {
+    setBusy(true)
+    setActionError('')
+    const { data, error } = await supabase.rpc('cancel_patient_transport_request', {
+      p_request_id: req.id,
+      p_reason: null,
+    })
+    setBusy(false)
+    if (error) {
+      // ข้อความจาก RAISE EXCEPTION เป็นภาษาไทยอยู่แล้ว เช่น "ส่งต่อแล้ว กรุณาติดต่อเจ้าหน้าที่"
+      setActionError(error.message)
+      return
+    }
+    setConfirming(false)
+    setRow(current => current && { ...current, workflow_status: data ?? 'cancelled', reject_reason: 'ผู้ยื่นขอยกเลิกคำขอ' })
+    onChanged?.('rejected')
+  }
+
+  // ประชาชนพิมพ์ได้เฉพาะ "ใบคำขอรับสวัสดิการ" ไม่ใช่หนังสือนำส่ง — หนังสือนำส่งเป็นหนังสือราชการ
+  // ที่ผู้บริหาร อปท. ลงนาม ประชาชนออกเองไม่ได้ ใบคำขอมีไว้ให้ถือไปติดต่อกองทุนเองหรือเก็บไว้เป็นสำเนา
+  function handlePrintForm() {
+    const w = window.open('', '_blank', 'width=860,height=1100')
+    if (!w) return
+    w.document.write(buildPatientTransportFormHtml({
+      header: row,
+      form: req.permit_form_data ?? {},
+      parent: req,
+      tenant,
+      referenceNo: req.id.slice(0, 8).toUpperCase(),
+      // วันที่บนหัวใบต้องเป็นวันที่ยื่น ไม่ใช่วันที่กดพิมพ์ซ้ำ (กติกาเดียวกับใบน้ำประปา/ใบช่วยเหลือ)
+      docDate: req.created_at,
+    }))
+    w.document.close()
+    setTimeout(() => { w.focus(); w.print() }, 400)
+  }
+
+  if (loadError) return <p className="text-xs font-semibold text-red-500">{loadError}</p>
+  if (!row) return null
+
+  const meta = WORKFLOW_STATUS[row.workflow_status] ?? WORKFLOW_STATUS.submitted
+  const closedWithReason = ['rejected', 'cancelled'].includes(row.workflow_status) && row.reject_reason
+
+  return (
+    <div className={`space-y-2 rounded-2xl border p-4 ${TONE_CLS[meta.tone] ?? TONE_CLS.gray}`}>
+      <p className="text-[11px] font-bold uppercase tracking-wide opacity-70">การส่งต่อหน่วยงานผู้จัดรถ</p>
+      <p className="text-sm font-bold">{meta.label}</p>
+      <p className="text-xs leading-relaxed">หน่วยงานผู้จัดรถ: {row.partner_name_snapshot}</p>
+      {row.forward_letter_no && (
+        <p className="text-xs leading-relaxed">
+          ส่งต่อตามหนังสือที่ {row.forward_letter_no}
+          {row.forward_letter_date ? ` ลงวันที่ ${thaiDateFromDateInput(row.forward_letter_date)}` : ''}
+        </p>
+      )}
+      {row.workflow_status === 'fund_accepted' && row.fund_contact && (
+        <p className="text-xs leading-relaxed">ติดต่อหน่วยงานผู้จัดรถ: {row.fund_contact}</p>
+      )}
+      {row.fund_result_note && (
+        <p className="text-xs leading-relaxed">
+          {row.workflow_status === 'fund_declined' ? 'เหตุผล: ' : 'หมายเหตุ: '}{row.fund_result_note}
+        </p>
+      )}
+      {closedWithReason && <p className="text-xs leading-relaxed">เหตุผล: {row.reject_reason}</p>}
+
+      {row.workflow_status === 'submitted' && (
+        <div className="pt-1">
+          {confirming ? (
+            <div className="space-y-2">
+              <p className="text-xs leading-relaxed">
+                ยืนยันยกเลิกคำขอนี้? ข้อมูลของผู้ป่วยจะไม่ถูกส่งต่อให้หน่วยงานผู้จัดรถ
+              </p>
+              <div className="flex gap-2">
+                <button type="button" onClick={handleCancel} disabled={busy}
+                  className="flex-1 rounded-xl bg-red-600 py-2.5 text-xs font-bold text-white disabled:opacity-50">
+                  {busy ? 'กำลังยกเลิก...' : 'ยืนยันยกเลิก'}
+                </button>
+                <button type="button" onClick={() => setConfirming(false)} disabled={busy}
+                  className="flex-1 rounded-xl border border-gray-200 bg-white py-2.5 text-xs font-semibold text-gray-600">
+                  ไม่ยกเลิก
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button type="button" onClick={() => setConfirming(true)}
+              className="w-full rounded-xl border border-red-200 bg-white py-2.5 text-xs font-bold text-red-600">
+              ยกเลิกคำขอ / ถอนความยินยอม
+            </button>
+          )}
+          {actionError && <p className="mt-1.5 text-xs font-semibold text-red-600">{actionError}</p>}
+        </div>
+      )}
+      {['forwarded', 'fund_accepted'].includes(row.workflow_status) && (
+        <p className="text-[11px] leading-relaxed opacity-80">
+          คำขอถูกส่งต่อไปแล้ว หากต้องการยกเลิกหรือถอนความยินยอม กรุณาติดต่อเจ้าหน้าที่
+        </p>
+      )}
+      <button type="button" onClick={handlePrintForm}
+        className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white py-2.5 text-xs font-bold text-gray-700">
+        <Printer size={14} /> พิมพ์ใบคำขอรับสวัสดิการ
+      </button>
+
+      {/* ⚠️ ห้ามเขียนทำนองว่า "ได้รถแน่นอน" — หน่วยงานผู้จัดรถพิจารณาตามระเบียบของตัวเอง */}
+      <p className="text-[11px] leading-relaxed opacity-80">
+        หน่วยงานผู้จัดรถเป็นผู้พิจารณาตามระเบียบของหน่วยงาน หากอาการทรุดลงหรือฉุกเฉิน โทร 1669 ทันที
+      </p>
+    </div>
+  )
+}
+
+function DocDetailSheet({ req, onClose, tenant, onChanged }) {
   const docLabel = docTypeLabel(req.document_type)
   const [pdfBusy, setPdfBusy]         = useState(false)
 
@@ -375,7 +528,7 @@ function DocDetailSheet({ req, onClose, tenant }) {
             <p className="font-bold text-gray-800 truncate">{docLabel}</p>
             <p className="text-xs text-gray-400">เลขอ้างอิง: <span className="font-mono font-semibold">{req.id.slice(0,8).toUpperCase()}</span></p>
           </div>
-          <StatusBadge status={req.status} />
+          <StatusBadge status={req.status} documentType={req.document_type} />
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 pt-5 pb-24 space-y-5">
@@ -398,7 +551,11 @@ function DocDetailSheet({ req, onClose, tenant }) {
                       <XCircle size={15} className="text-red-500" />
                     </div>
                     <div>
-                      <p className="text-sm font-bold text-red-600">ปฏิเสธคำขอ</p>
+                      {/* รถรับ-ส่งผู้ป่วยปิดเป็น rejected ได้ 3 ทาง (อปท. ไม่ส่งต่อ / หน่วยงานผู้จัดรถไม่รับ /
+                          ผู้ยื่นยกเลิกเอง) คำว่า "ปฏิเสธ" จะชี้ผิดคน รายละเอียดจริงอยู่ในกล่องการส่งต่อด้านล่าง */}
+                      <p className="text-sm font-bold text-red-600">
+                        {req.document_type === PATIENT_TRANSPORT_TYPE ? 'ปิดเรื่องโดยไม่ได้จัดรถ' : 'ปฏิเสธคำขอ'}
+                      </p>
                       {req.reject_reason && (
                         <p className="text-xs text-red-400 mt-0.5 leading-relaxed">{req.reject_reason}</p>
                       )}
@@ -467,6 +624,20 @@ function DocDetailSheet({ req, onClose, tenant }) {
               },
               req.document_type === 'asset_borrow_request' && req.permit_form_data?.place_of_use && {
                 label: 'สถานที่ใช้', value: req.permit_form_data.place_of_use,
+              },
+              // ไม่แสดงประเภทนัด/การเคลื่อนไหวซ้ำตรงนี้ — เป็นข้อมูลสุขภาพ แสดงเท่าที่ผู้ยื่นต้องใช้ตามนัด
+              req.document_type === PATIENT_TRANSPORT_TYPE && req.permit_form_data?.patient_name && {
+                label: 'ผู้ป่วย', value: req.permit_form_data.patient_name,
+              },
+              req.document_type === PATIENT_TRANSPORT_TYPE && req.permit_form_data?.destination && {
+                label: 'สถานพยาบาล',
+                value: [req.permit_form_data.destination, req.permit_form_data.destination_detail].filter(Boolean).join(' '),
+              },
+              req.document_type === PATIENT_TRANSPORT_TYPE && req.permit_form_data?.appointment_at && {
+                label: 'วันเวลานัด', value: thaiDateTimeText(req.permit_form_data.appointment_at),
+              },
+              req.document_type === PATIENT_TRANSPORT_TYPE && req.permit_form_data?.trip_type && {
+                label: 'การเดินทาง', value: optionLabel(TRIP_TYPES, req.permit_form_data.trip_type),
               },
               { label: 'วันที่ยื่น', value: dateTH(req.created_at) },
             ].filter(Boolean).map(({ label, value }) => (
@@ -572,6 +743,10 @@ function DocDetailSheet({ req, onClose, tenant }) {
                 {pdfBusy ? 'กำลังสร้างไฟล์...' : 'ดาวน์โหลด PDF'}
               </button>
             </div>
+          )}
+
+          {req.document_type === PATIENT_TRANSPORT_TYPE && (
+            <PatientTransportProgress req={req} tenant={tenant} onChanged={onChanged} />
           )}
 
           {/* Staff note */}
@@ -745,7 +920,7 @@ export default function MyDocRequests() {
                             <td className="px-4 py-3 text-center text-xs text-gray-400 border-r border-gray-100">{i + 1}</td>
                             <td className="px-4 py-3 text-center text-xs font-mono font-bold text-gray-600 border-r border-gray-100">{req.id.slice(0,8).toUpperCase()}</td>
                             <td className="px-4 py-3 font-medium text-gray-800 border-r border-gray-100">{docLabel}</td>
-                            <td className="px-4 py-3 text-center border-r border-gray-100"><StatusBadge status={req.status} /></td>
+                            <td className="px-4 py-3 text-center border-r border-gray-100"><StatusBadge status={req.status} documentType={req.document_type} /></td>
                             <td className="px-4 py-3 text-xs text-gray-500">{dateTH(req.created_at)}</td>
                           </tr>
                         )
@@ -801,6 +976,13 @@ export default function MyDocRequests() {
           req={selected}
           tenant={tenant}
           onClose={() => setSelected(null)}
+          // ผู้ยื่นยกเลิกคำขอเองจากในแผ่นรายละเอียด — อัปเดตสถานะในรายการตรงนี้เลย ไม่ต้องยิง query ใหม่
+          onChanged={status => {
+            const patch = request => (request?.id === selected.id ? { ...request, status } : request)
+            setRequests(list => list.map(patch))
+            setSearchResult(patch)
+            setSelected(patch)
+          }}
         />
       )}
     </div>

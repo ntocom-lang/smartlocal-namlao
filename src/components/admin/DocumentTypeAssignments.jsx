@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import { fetchAssignableStaff, groupStaffByDepartment } from '../../lib/staffRoster'
 import { BASE_DOCUMENT_TYPES, defaultSlaDays, removedDocumentTypes } from '../../lib/documentTypes'
+import ReferralPartnersCard from './ReferralPartnersCard'
 
 // หน้าตั้ง "ประเภทคำขอเอกสาร/บริการ + ผังงาน" — มีประเภทอะไรบ้าง กองไหนรับ ใครถือ
 // และต้องเสร็จภายในกี่วัน รวมอยู่ในตารางเดียว
@@ -475,6 +476,13 @@ export default function DocumentTypeAssignments({ tenant }) {
             <AlertCircle size={13} /> {error}
           </p>
         )}
+      </div>
+
+      {/* ทะเบียนหน่วยงานรับเรื่องต่อวางไว้ในการ์ดนี้ เพราะเป็นตัวเปิด/ปิดบริการรถรับ-ส่งผู้ป่วย
+          คู่กับสวิตช์ในตารางด้านบน (ต้องเปิดทั้งสองอย่างประชาชนจึงจะเห็นบริการ) — บันทึกแยกของตัวเอง
+          ไม่ผูกกับปุ่มบันทึกของตาราง */}
+      <div className="mt-6">
+        <ReferralPartnersCard tenant={tenant} />
       </div>
     </div>
   )

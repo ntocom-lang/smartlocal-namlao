@@ -49,6 +49,7 @@
     "test:water-supply": "node tests/water-supply-print.test.mjs && node tests/water-supply-layout.test.mjs",
     "test:public-assistance": "node tests/public-assistance-print.test.mjs && node tests/public-assistance-layout.test.mjs",
     "test:asset-borrow": "node tests/asset-borrow-print.test.mjs && node tests/asset-borrow-layout.test.mjs",
+    "test:patient-transport": "node tests/patient-transport-layout.test.mjs",
     "test:guard": "node tests/guard-master-tree.test.mjs"
   },
   "dependencies": {

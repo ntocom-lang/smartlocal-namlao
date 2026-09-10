@@ -11,7 +11,9 @@ import WasteCollectionCancelWizard from './WasteCollectionCancelWizard'
 import WaterSupplyRequestWizard from './WaterSupplyRequestWizard'
 import PublicAssistanceWizard from './PublicAssistanceWizard'
 import AssetBorrowRequestWizard from './AssetBorrowRequestWizard'
+import PatientTransportWizard from './PatientTransportWizard'
 import { withoutRemovedTypes } from '../lib/documentTypes'
+import { PATIENT_TRANSPORT_TYPE } from '../lib/patientTransport'
 
 // ที่อยู่ผู้ยื่นคำขอ = ที่อยู่ในเขตของหน่วยงานเสมอ (ระบบนี้แยกตามหน่วยงาน ใครหน่วยงานนั้น)
 // เลยไม่ต้องให้ประชาชนพิมพ์ตำบล/อำเภอ/จังหวัดเอง ให้กรอกแค่บ้านเลขที่ แล้วต่อท้ายด้วย
@@ -119,6 +121,19 @@ const BASE_DOC_TYPES = [
     border:  '#99f6e4',
   },
   {
+    value:   PATIENT_TRANSPORT_TYPE,
+    label:   'ขออนุเคราะห์รถรับ-ส่งผู้ป่วย',
+    emoji:   '🚑',
+    desc:    'ขอรถรับ-ส่งผู้ป่วยไปตามนัดสถานพยาบาล (ไม่ฉุกเฉิน) อปท. ส่งต่อให้หน่วยงานผู้จัดรถพิจารณา',
+    // บังคับล็อกอิน — มีข้อมูลสุขภาพของผู้ป่วยและต้องให้ความยินยอมส่งต่อหน่วยงานภายนอก ต้องรู้ตัว
+    // ผู้ให้ความยินยอม และผู้ยื่นต้องยกเลิก (ถอนความยินยอม) เองได้จากหน้า "เอกสารของฉัน"
+    // การ์ดนี้แสดงเฉพาะ อปท. ที่มีหน่วยงานรับเรื่องต่อเปิดอยู่ (ดู hasTransportPartner)
+    requiresAuth: true,
+    color:   '#b91c1c',
+    bg:      '#fef2f2',
+    border:  '#fecaca',
+  },
+  {
     value:   'building_permit',
     label:   'ขออนุญาตก่อสร้างบ้าน',
     emoji:   '🏗️',
@@ -135,6 +150,21 @@ export default function CitizenDocRequest() {
   const navigate  = useNavigate()
   const [searchParams] = useSearchParams()
   const { tenant, terminology } = useTenant()
+  // การ์ดรถรับ-ส่งผู้ป่วยแสดงเฉพาะ อปท. ที่มีหน่วยงานรับเรื่องต่อเปิดอยู่ — ถามผ่าน RPC ที่คืน
+  // boolean อย่างเดียว เพราะผู้ไม่ล็อกอินอ่าน referral_partners ตรงไม่ได้ (RLS)
+  // เรียกไม่สำเร็จ = ซ่อนการ์ดไว้ ปลอดภัยกว่าโชว์บริการที่ อปท. ยังไม่ได้เปิด
+  const [hasTransportPartner, setHasTransportPartner] = useState(false)
+  useEffect(() => {
+    if (!tenant?.id) return undefined
+    let cancelled = false
+    supabase.rpc('has_active_referral_partner', {
+      _municipality_id: tenant.id,
+      _document_type: PATIENT_TRANSPORT_TYPE,
+    }).then(({ data, error }) => {
+      if (!cancelled) setHasTransportPartner(!error && data === true)
+    })
+    return () => { cancelled = true }
+  }, [tenant?.id])
   const allDocTypes = useMemo(() => {
     const extras = (tenant?.fee_schedule?._custom_types || []).map(t => ({
       value:  t.value,
@@ -145,8 +175,10 @@ export default function CitizenDocRequest() {
       bg:     '#eef2ff',
       border: '#c7d2fe',
     }))
-    return [...withoutRemovedTypes(BASE_DOC_TYPES, tenant), ...extras]
-  }, [tenant])
+    const base = withoutRemovedTypes(BASE_DOC_TYPES, tenant)
+      .filter(d => d.value !== PATIENT_TRANSPORT_TYPE || hasTransportPartner)
+    return [...base, ...extras]
+  }, [tenant, hasTransportPartner])
   const [session, setSession]     = useState(undefined)
   const [selectedRaw, setSelected] = useState(() => {
     const t = searchParams.get('type')
@@ -234,6 +266,7 @@ export default function CitizenDocRequest() {
   const isWaterSupplyRequest = selected?.value === 'water_supply_request'
   const isPublicAssistanceRequest = selected?.value === 'public_assistance_request'
   const isAssetBorrowRequest = selected?.value === 'asset_borrow_request'
+  const isPatientTransportRequest = selected?.value === PATIENT_TRANSPORT_TYPE
   const addressSuffix = tenantAddressSuffix(tenant)
   const fullName = joinThaiFullName(form.name_title, form.name_first, form.name_last)
 
@@ -477,6 +510,12 @@ export default function CitizenDocRequest() {
   // จำนวนว่างตามช่วงวันที่ที่ขอ และเขียน 3 ตารางในธุรกรรมเดียวผ่าน RPC — ฟอร์มทั่วไปทำไม่ได้
   if (isAssetBorrowRequest) {
     return <AssetBorrowRequestWizard tenant={tenant} session={session} onBack={() => setSelected(null)} />
+  }
+
+  // คำขอรถรับ-ส่งผู้ป่วยต้องคัดกรองเหตุฉุกเฉินก่อนเห็นฟอร์ม เลือกหน่วยงานผู้จัดรถจากทะเบียน
+  // และติ๊กยินยอมส่งต่อข้อมูลสุขภาพ แล้วเขียน 2 ตารางในธุรกรรมเดียวผ่าน RPC — ฟอร์มทั่วไปทำไม่ได้
+  if (isPatientTransportRequest) {
+    return <PatientTransportWizard tenant={tenant} session={session} onBack={() => setSelected(null)} />
   }
 
   // ─── Step 2: Form ──────────────────────────────────────────────────────────
