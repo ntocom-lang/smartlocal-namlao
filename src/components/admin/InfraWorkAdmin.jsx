@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { compressImage } from '../../lib/imageUtils'
 import { logAction } from '../../lib/auditLog'
 import { uploadFile } from '../../lib/driveStorage'
+import { driveFolderPath, driveMonthFolder, DRIVE_MODULES } from '../../lib/driveFolders'
 import MapPicker from '../MapPicker'
 
 const TODAY = new Date().toISOString().slice(0, 10)
@@ -119,6 +120,7 @@ export default function InfraWorkAdmin({ tenant, currentUserRole, myDepartmentId
       const compressed = await compressImage(item.file, 1200)
       const { url, error } = await uploadFile('complaint-attachments', compressed, {
         subject: `infra/${id}`,
+        folder: driveFolderPath(DRIVE_MODULES.infra, driveMonthFolder()),
         filename: `${Date.now()}.${ext}`,
         municipality: tenant?.slug,
       })

@@ -39,9 +39,14 @@ function fileToBase64(file) {
 /**
  * @param {string} bucket - ต้องตรงกับ Supabase Storage bucket เดิม เช่น 'complaint-attachments'
  * @param {File|Blob} file
- * @param {{ subject?: string, filename?: string, municipality?: string }} [options] - municipality:
+ * @param {{ subject?: string, folder?: string, filename?: string, municipality?: string }} [options] - municipality:
  *   slug ของเทศบาล ต้องส่งมาด้วยเสมอถ้าผู้ใช้ไม่ได้ login (เช่นประชาชนยื่นคำร้องแบบไม่ล็อกอิน) เพราะฝั่ง
  *   Edge Function ไม่มี profile ให้ดูเทศบาลจาก DB ได้ ต้องรู้จาก useTenant() ของโดเมนที่เปิดอยู่แทน
+ *
+ *   folder: path โฟลเดอร์ที่มนุษย์อ่านออกบน Drive เช่น 'คำร้อง/09-กันยายน/ไฟฟ้าสาธารณะ/ES-69-0133'
+ *   ใช้จัดโฟลเดอร์อย่างเดียว คนละหน้าที่กับ subject ซึ่งต้องเป็น id ล้วนสำหรับตรวจสิทธิ์ฝั่ง DB
+ *   ใช้ driveFolderPath() ใน src/lib/driveFolders.js ประกอบ path แทนการต่อสตริงเอง
+ *   ⚠️ ห้ามใส่ชื่อหรือเบอร์ของประชาชนลงใน folder เด็ดขาด (PDPA)
  * @returns {Promise<{ url: string|null, fileId: string|null, error: any }>}
  */
 export async function uploadFile(bucket, file, options = {}) {
@@ -56,6 +61,7 @@ export async function uploadFile(bucket, file, options = {}) {
     body: {
       bucket,
       subject: options.subject ?? '',
+      ...(options.folder ? { folder: options.folder } : {}),
       filename: options.filename || file.name || `file-${Date.now()}`,
       contentType: guessContentType(file),
       data: base64Data,

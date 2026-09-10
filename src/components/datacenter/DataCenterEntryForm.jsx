@@ -3,6 +3,7 @@ import { MapPin, Loader2, X, Image as ImageIcon, Trash2, Route } from 'lucide-re
 import { supabase } from '../../lib/supabase'
 import { compressImage } from '../../lib/imageUtils'
 import { uploadFile } from '../../lib/driveStorage'
+import { driveFolderPath, DRIVE_MODULES } from '../../lib/driveFolders'
 
 const ROUTE_COLORS = [
   { hex: '#3b82f6', label: 'น้ำเงิน' }, { hex: '#22c55e', label: 'เขียว' },
@@ -93,8 +94,10 @@ export default function DataCenterEntryForm({ tenant, profile, summary = null, i
     const urls = []
     for (const item of images) {
       const ext = item.file.name?.split('.').pop() || 'jpg'
+      // ศูนย์ข้อมูล / <หมวด เช่น วัด โรงเรียน> / <ชื่อสถานที่> — ทั้งสองชั้นเป็นข้อมูลสาธารณะของ อปท.
       const { url, error } = await uploadFile('complaint-attachments', item.file, {
         subject: `data-center/${entryId}`,
+        folder: driveFolderPath(DRIVE_MODULES.dataCenter, form.category.trim(), form.name.trim()),
         filename: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`,
         municipality: tenant?.slug,
       })

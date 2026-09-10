@@ -6,6 +6,7 @@ import MapPicker from '../MapPicker'
 import { buildCouncilComplaintHtml } from '../../lib/councilFormPrint'
 import { isMissingSignatoryError, prepareComplaintPrint } from '../../lib/complaintPrint'
 import { uploadFile } from '../../lib/driveStorage'
+import { complaintFolderPath, complaintFileName } from '../../lib/driveFolders'
 
 const MAX_PHOTOS = 3
 
@@ -62,14 +63,21 @@ export default function OssIntakeForm({ tenant, categoryLabels, onClose }) {
 
       if (photos.length > 0) {
         const urls = []
-        for (const { file } of photos) {
+        // โฟลเดอร์/ชื่อไฟล์ยึดรูปแบบเดียวกับที่ประชาชนยื่นเองผ่าน CitizenForm — คำร้องที่รับหน้าเคาน์เตอร์
+        // ต้องไปกองรวมกับของเดือน/หมวดเดียวกัน ไม่แยกที่เก็บตามช่องทางที่รับเรื่อง
+        const folder = complaintFolderPath({
+          refNo: inserted.ref_no,
+          categoryLabel: categoryLabels?.[form.category] ?? form.category,
+        })
+        for (const [i, { file }] of photos.entries()) {
           try {
             let compressed
             try { compressed = await compressImage(file, undefined, 0.85) }
             catch { try { compressed = await compressImage(file, 480, 0.60) } catch { compressed = file } }
             const { url, error: upErr } = await uploadFile('complaint-attachments', compressed, {
               subject: inserted.id,
-              filename: `${crypto.randomUUID()}.jpg`,
+              folder,
+              filename: complaintFileName({ refNo: inserted.ref_no, index: i + 1 }),
               municipality: tenant?.slug,
             })
             if (upErr) throw upErr

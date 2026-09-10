@@ -4,6 +4,7 @@ import { useTenant } from '../../contexts/TenantContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { compressImage } from '../../lib/imageUtils'
 import { uploadFile } from '../../lib/driveStorage'
+import { driveFolderPath, driveMonthFolder, DRIVE_MODULES } from '../../lib/driveFolders'
 import {
   Plus, Trash2, Loader2, Newspaper, Camera, X, Upload,
   Eye, EyeOff, CalendarDays, Pencil, Check, Move, AlertCircle,
@@ -120,6 +121,7 @@ export default function PostsManager({ currentUserRole = 'staff', myDepartmentId
       const ext = file.name.split('.').pop()
       const { url, error: upErr } = await uploadFile('complaint-attachments', compressed, {
         subject: `posts/${tenant.id}`,
+        folder: driveFolderPath(DRIVE_MODULES.posts, driveMonthFolder()),
         filename: `${Date.now()}.${ext}`,
         municipality: tenant?.slug,
       })
