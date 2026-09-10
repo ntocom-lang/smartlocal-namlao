@@ -6,7 +6,7 @@
 
 import { FUEL_LABEL } from './fleetAssets.js'
 import { fuelRecordAmount } from './fleetFuelAmount.js'
-import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, GOV_PAGE_MARGIN, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
+import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, GOV_PAGE_MARGIN, govDocFontCss, govEServiceOriginText, govPageCss, govPagePadding } from './govDocStyle.js'
 
 // A4 แนวตั้ง พื้นที่พิมพ์สูง 276 มม. (297 − ขอบบน 12 − ขอบล่าง 9)
 //
@@ -203,7 +203,7 @@ export function buildFleetFuelLedgerHtml({ vehicle, records = [], periodLabel = 
   <title>ปริมาณการเบิกใช้น้ำมันเชื้อเพลิง ${esc(vehicleLine)}</title>
   ${GOV_FONT_LINK}
   <style>
-    ${govPageCss()}
+    ${govPageCss({ hideBrowserHeader: true })}
     * { box-sizing: border-box; }
     html, body { margin: 0; }
     body {
@@ -225,11 +225,13 @@ export function buildFleetFuelLedgerHtml({ vehicle, records = [], periodLabel = 
     .eservice-origin { ${GOV_ESERVICE_ORIGIN_CSS} margin-top: 4mm; text-align: center; }
     @media print {
       html, body { height: auto; }
+      /* ขอบกระดาษมาจาก padding ของ .sheet ไม่ใช่ margin ของ @page (ซึ่งเป็น 0 เพื่อไม่ให้
+         เบราว์เซอร์เหลือที่วาดหัว/ท้ายกระดาษของตัวเอง) จึงคง padding ไว้เหมือนโหมดจอ */
       .sheet {
         width: auto;
         min-height: 0;
         height: auto;
-        padding: 0;
+        padding: ${govPagePadding()};
       }
       /* ตั้งใจไม่ตัดด้วย max-height + overflow:hidden แบบแบบ 4 — ใบนี้เป็นเอกสารการเงิน
          ที่ใช้สอบยันกับใบเสร็จ ถ้าเดือนไหนหมายเหตุยาวหลายแถวจนตารางสูงเกินหน้า การตัดทิ้ง
