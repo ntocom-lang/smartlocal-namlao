@@ -54,9 +54,12 @@ function ComplaintBand({ variant = 'warm' }) {
     Promise.all([
       supabase.from('complaint_categories').select('value, label, emoji, color, is_adhoc, sort_order')
         .eq('municipality_id', tenant.id).eq('is_active', true).order('sort_order'),
+      // supabase.rpc() คืน PostgrestFilterBuilder ซึ่งเป็น thenable ที่มีแค่ .then()
+      // ต่อ .catch() ตรงๆ = TypeError ทันทีตอน mount ทำหน้าแรกตก error boundary ทั้งหน้า
+      // ใช้ onRejected ตัวที่สองของ .then() แทน — builder รองรับจริง
       supabase.rpc('complaints_public', { _municipality_id: tenant.id, _limit: 500 })
-        .catch(() => ({ data: [] }))
-    ]).then(([{ data: rawCats }, { data: pubData }]) => {
+        .then(res => res, () => ({ data: [] }))
+    ]).then(([{ data: rawCats } = {}, { data: pubData } = {}]) => {
       if (!rawCats?.length) return
 
       // กรองเฉพาะหมวดปกติ ไม่รวมเฉพาะกิจ (เช่น กลิ่นเหม็นรบกวน ซึ่งแยกไปอยู่ AdhocBand)
