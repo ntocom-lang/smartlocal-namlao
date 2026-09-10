@@ -16,6 +16,7 @@ import { compressImage } from '../lib/imageUtils'
 import MapPicker from '../components/MapPicker'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
 import { uploadFile } from '../lib/driveStorage'
+import { complaintFolderPath, complaintFileName } from '../lib/driveFolders'
 import { ODOR_TIME_RANGES } from '../lib/odorTimeRanges'
 import { ODOR_INTENSITY_LEVELS, WIND_DIRECTIONS, HEALTH_EFFECT_OPTIONS } from '../lib/odorOptions'
 
@@ -130,7 +131,7 @@ function getFormActionCopy(formType, category, categoryLabel = '') {
 
 const GEO_STATUS = { idle: 'idle', ok: 'ok' }
 
-function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, complaintId, photoFiles, primaryColor }) {
+function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, complaintId, photoFiles, primaryColor, categoryLabel }) {
   const { tenant } = useTenant()
   const [items, setItems] = useState(() =>
     (photoFiles ?? []).map(f => ({ file: f, status: 'pending' }))
@@ -192,9 +193,12 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
           let compressed
           try { compressed = await compressImage(file, undefined, 0.85) }
           catch { try { compressed = await compressImage(file, 480, 0.60) } catch { compressed = file } }
+          // subject = id ล้วน (ใช้ตรวจสิทธิ์ฝั่ง DB) ส่วน folder/filename เป็นของเจ้าหน้าที่ที่มาเปิดหา
+          // ไฟล์บน Drive เอง — idx+1 ทำให้ไฟล์ในเรื่องเดียวกันเรียง 1,2,3 ไม่ชนกัน
           const { url, error } = await uploadFile('complaint-attachments', compressed, {
             subject: complaintId,
-            filename: `${crypto.randomUUID()}.jpg`,
+            folder: complaintFolderPath({ refNo: complaintNumber, categoryLabel }),
+            filename: complaintFileName({ refNo: complaintNumber, index: idx + 1 }),
             municipality: tenant?.slug,
           })
           if (error) throw error
@@ -214,7 +218,7 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
     } else {
       setDbSaved(true)
     }
-  }, [complaintId, saveToComplaint])
+  }, [complaintId, saveToComplaint, complaintNumber, categoryLabel, tenant?.slug])
 
   // ลองผูกไฟล์ที่ขึ้น Drive แล้วเข้าคำร้องอีกครั้ง โดยไม่อัปโหลดไฟล์ใหม่
   const retrySave = useCallback(async () => {
@@ -655,12 +659,14 @@ export default function CitizenForm() {
     }
   }
 
-  if (success) return <SuccessScreen onBack={() => navigate('/')} onMyComplaints={() => navigate('/my-complaints')} complaintNumber={complaintNumber} isLoggedIn={isLoggedIn} complaintId={savedComplaintId} photoFiles={savedPhotoFiles} primaryColor={primaryColor} />
+  const allCatsDisplay = [...(ftConfig?.categories ?? []), ...categories]
+  // ต้องคำนวณก่อนแยกไปหน้า SuccessScreen เพราะใช้ตั้งชื่อโฟลเดอร์หมวดบน Drive ด้วย
+  const catLabel = allCatsDisplay.find((c) => c.value === form.category)?.label?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category
+
+  if (success) return <SuccessScreen onBack={() => navigate('/')} onMyComplaints={() => navigate('/my-complaints')} complaintNumber={complaintNumber} isLoggedIn={isLoggedIn} complaintId={savedComplaintId} photoFiles={savedPhotoFiles} primaryColor={primaryColor} categoryLabel={catLabel} />
 
   // pills ของ ftConfig ต้องเคารพหมวดที่เทศบาลนี้ปิดไว้ เหมือน dropdown หลักที่อ่านจาก DB อยู่แล้ว
   const visibleFtCategories = (ftConfig?.categories ?? []).filter((c) => !disabledCategoryValues.has(c.value))
-  const allCatsDisplay = [...(ftConfig?.categories ?? []), ...categories]
-  const catLabel = allCatsDisplay.find((c) => c.value === form.category)?.label?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category
   const CatIcon = CATEGORY_ICON[form.category] ?? HelpCircle
   const catDbData = categories.find(c => c.value === form.category)
   const catEmoji = catDbData?.emoji ?? FALLBACK_EMOJI[form.category] ?? null

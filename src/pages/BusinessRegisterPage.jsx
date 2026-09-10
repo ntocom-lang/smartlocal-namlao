@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { compressImage } from '../lib/imageUtils'
 import { uploadFile } from '../lib/driveStorage'
+import { driveFolderPath, driveMonthFolder, DRIVE_MODULES } from '../lib/driveFolders'
 import MapPicker from '../components/MapPicker'
 
 const BUSINESS_TYPES = [
@@ -86,8 +87,11 @@ export default function BusinessRegisterPage() {
     const urls = []
     for (const item of images) {
       const ext = item.file.name.split('.').pop()
+      // แยกแค่เดือน ไม่เอาชื่อร้าน/ชื่อผู้ประกอบการมาตั้งชื่อโฟลเดอร์ — ร้านของบุคคลธรรมดามักใช้ชื่อ
+      // เจ้าของเป็นชื่อร้าน ซึ่งกลายเป็นข้อมูลส่วนบุคคลที่ค้นเจอง่ายบน Drive ทันที (PDPA)
       const { url, error } = await uploadFile('complaint-attachments', item.file, {
         subject: `business/${id}`,
+        folder: driveFolderPath(DRIVE_MODULES.business, driveMonthFolder()),
         filename: `${Date.now()}.${ext}`,
         municipality: tenant?.slug,
       })

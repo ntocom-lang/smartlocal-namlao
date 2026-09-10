@@ -5,6 +5,7 @@ import { notifyTelegram } from '../../lib/notifyTelegram'
 import { logAction } from '../../lib/auditLog'
 import { extractEventFromFile } from '../../lib/geminiChat'
 import { uploadFile } from '../../lib/driveStorage'
+import { driveFolderPath, driveMonthFolder, DRIVE_MODULES } from '../../lib/driveFolders'
 import { todayStr } from '../../lib/thaiDate'
 import { AUDIENCE_COLOR, AUDIENCE_LABEL, activeOrgTerms } from '../../lib/orgTerms'
 
@@ -669,7 +670,8 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
   // อัปโหลดไฟล์แนบแยกเป็นขั้นหลังบันทึกกิจกรรมเสร็จแล้ว (ไม่บล็อกการบันทึกข้อมูลหลัก)
   // เหมือนแพตเทิร์นที่ CitizenForm.jsx ใช้กับรูปแนบคำร้อง — ถ้าอัปโหลดมีปัญหา
   // กิจกรรมก็ยังถูกบันทึกอยู่ ไม่หายไปพร้อมกัน
-  async function uploadEventAttachments(eventId, files, existingUrls) {
+  // eventTitle ใช้ตั้งชื่อโฟลเดอร์บน Drive ให้เจ้าหน้าที่เปิดหาไฟล์ของกิจกรรมนั้นเจอเอง
+  async function uploadEventAttachments(eventId, files, existingUrls, eventTitle = '') {
     if (!files?.length || !eventId) return
     try {
       const { data: { user }, error: authError } = await supabase.auth.getUser()
@@ -681,6 +683,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
 
         const { url, error: uploadError } = await uploadFile('event-attachments', file, {
           subject: `${tenant.id}/${user.id}`,
+          folder: driveFolderPath(DRIVE_MODULES.events, driveMonthFolder(), eventTitle),
           filename: `${Date.now()}_${safeName}`,
           municipality: tenant?.slug,
         })
@@ -782,7 +785,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
 
       setShowForm(false)
       fetchEvents()
-      if (form.attachment_files.length > 0 && eventId) uploadEventAttachments(eventId, form.attachment_files, form.attachment_urls)
+      if (form.attachment_files.length > 0 && eventId) uploadEventAttachments(eventId, form.attachment_files, form.attachment_urls, form.title.trim())
     } catch (e) {
       const msg = e?.message ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง'
       setFormError(msg)

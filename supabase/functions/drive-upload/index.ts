@@ -59,6 +59,16 @@ serve(async (req) => {
   }
   const bucket = String(body.bucket ?? '')
   const subject = body.subject
+  // folder = path ที่มนุษย์อ่านออก ใช้จัดโฟลเดอร์บน Drive อย่างเดียว
+  // เช่น "คำร้อง/09-กันยายน/ไฟฟ้าสาธารณะ/ES-69-0133"
+  //
+  // แยกจาก subject โดยตั้งใจ — subject ต้องคงเป็น id ล้วน เพราะ attach_complaint_photos เทียบตรงตัว
+  // กับ complaint id เพื่อกันสวมรอยแนบไฟล์ของคำร้องอื่น (ดู 20260905180000) เอา path ไปทับเมื่อไหร่
+  // การตรวจสิทธิ์พังทันที ไม่ส่ง folder มาก็ใช้ subject จัดโฟลเดอร์แบบเดิม ของเก่าจึงไม่พัง
+  //
+  // ⚠️ ห้ามใส่ชื่อ-นามสกุลหรือเบอร์โทรของผู้ร้องลงใน folder — ชื่อโฟลเดอร์บน Drive ค้นเจอง่ายกว่า
+  // ข้อมูลในระบบมาก ใช้ได้แค่เลขที่คำร้อง หมวด และเดือน (PDPA)
+  const folder = body.folder
   const filename = body.filename
   const contentType = typeof body.contentType === 'string' ? body.contentType : 'application/octet-stream'
   const base64Data = body.data
@@ -120,12 +130,17 @@ serve(async (req) => {
   try {
     const accessToken = await getDriveAccessToken()
     const yearBE = String(new Date().getFullYear() + 543) // ปี พ.ศ. ตามธรรมเนียมราชการไทย
+    // folder ที่ client ส่งมาแทนที่ทั้ง BUCKET_LABELS และ subject — segment แรกคือป้ายโมดูลที่อ่านออก
+    // (คำร้อง / ท่องเที่ยว / ข่าวสาร / ศูนย์ข้อมูล ฯลฯ) เพราะทุกโมดูลใช้ bucket complaint-attachments
+    // ร่วมกัน ป้ายจาก BUCKET_LABELS จึงขึ้นว่า "คำร้อง" หมดทุกอัน แล้วปนกันบน Drive
+    const folderSegments = String(folder || '').split('/').map((s) => sanitizeSegment(s)).filter(Boolean)
     const subjectSegments = String(subject || 'ทั่วไป').split('/').map((s) => sanitizeSegment(s)).filter(Boolean)
     const folderId = await resolveFolderChain(accessToken, rootFolderId, [
       sanitizeSegment(municipalitySlug),
       yearBE,
-      BUCKET_LABELS[bucket],
-      ...(subjectSegments.length ? subjectSegments : ['ทั่วไป']),
+      ...(folderSegments.length
+        ? folderSegments
+        : [BUCKET_LABELS[bucket], ...(subjectSegments.length ? subjectSegments : ['ทั่วไป'])]),
     ])
     const uploaded = await uploadFileToDrive(accessToken, folderId, sanitizeSegment(filename), contentType, bytes)
 
