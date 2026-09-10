@@ -137,14 +137,42 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
   )
   const [uploading, setUploading] = useState(false)
   const [dbSaved, setDbSaved] = useState(null) // null=pending, true=ok, false=error
+  const [savingRetry, setSavingRetry] = useState(false)
+  const [leaveWarned, setLeaveWarned] = useState(false)
   const didMount = useRef(false)
+  // เก็บ url ของไฟล์ที่ขึ้น Drive สำเร็จแล้ว เพื่อให้ปุ่ม "ลองบันทึกใหม่" ยิงแค่ขั้นผูกไฟล์เข้าคำร้อง
+  // ไม่อัปโหลดซ้ำ — เคสจริงที่เจอ: ผู้ใช้กดส่งใหม่รอบแล้วรอบเล่าตอนรูปไม่ขึ้น จนคำร้องใบเดียว
+  // มีไฟล์ค้างบน Drive 8 ไฟล์ (10 ก.ย. 2569)
+  const uploadedRef = useRef([])
 
   const hasItems  = items.length > 0
   const allOk     = hasItems && items.every(i => i.status === 'ok')
   const hasFailed = items.some(i => i.status === 'error')
   const okCount   = items.filter(i => i.status === 'ok').length
   const failCount = items.filter(i => i.status === 'error').length
-  const busy      = uploading || (hasItems && !hasFailed && dbSaved === null)
+  const busy      = uploading || savingRetry || (hasItems && !hasFailed && dbSaved === null)
+  // รูปยังไม่ถึงเจ้าหน้าที่: อัปโหลดไม่ขึ้น หรือขึ้นแล้วแต่ผูกเข้าคำร้องไม่สำเร็จ
+  const photosPending = hasItems && (hasFailed || dbSaved === false)
+
+  // ผูก url ที่อัปโหลดแล้วเข้ากับคำร้อง — ลองซ้ำ 3 รอบเผื่อสัญญาณสะดุด
+  // คืน true เมื่อ RPC ยืนยันว่าเขียนลง complaints.attachments จริง
+  const saveToComplaint = useCallback(async (urls) => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const { data: ok, error } = await supabase.rpc('attach_complaint_photos', {
+          p_complaint_id: complaintId,
+          p_urls: urls,
+        })
+        if (error) throw error
+        if (!ok) throw new Error('attach_failed')
+        return true
+      } catch (err) {
+        console.error('[db-save] attempt', attempt + 1, err?.message ?? err)
+        if (attempt < 2) await new Promise(r => setTimeout(r, 1500))
+      }
+    }
+    return false
+  }, [complaintId])
 
   const uploadAll = useCallback(async () => {
     if (!complaintId) return
@@ -181,26 +209,22 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
     setUploading(false)
 
     if (collected.length > 0) {
-      let saved = false
-      for (let attempt = 0; attempt < 3 && !saved; attempt++) {
-        try {
-          const { data: ok, error } = await supabase.rpc('attach_complaint_photos', {
-            p_complaint_id: complaintId,
-            p_urls: collected,
-          })
-          if (error) throw error
-          if (!ok) throw new Error('attach_failed')
-          saved = true
-        } catch (err) {
-          console.error('[db-save] attempt', attempt + 1, err?.message ?? err)
-          if (attempt < 2) await new Promise(r => setTimeout(r, 1500))
-        }
-      }
-      setDbSaved(saved)
+      uploadedRef.current = [...uploadedRef.current, ...collected]
+      setDbSaved(await saveToComplaint(uploadedRef.current))
     } else {
       setDbSaved(true)
     }
-  }, [complaintId])
+  }, [complaintId, saveToComplaint])
+
+  // ลองผูกไฟล์ที่ขึ้น Drive แล้วเข้าคำร้องอีกครั้ง โดยไม่อัปโหลดไฟล์ใหม่
+  const retrySave = useCallback(async () => {
+    if (uploadedRef.current.length === 0) return
+    setSavingRetry(true)
+    setDbSaved(null)
+    const ok = await saveToComplaint(uploadedRef.current)
+    setSavingRetry(false)
+    setDbSaved(ok)
+  }, [saveToComplaint])
 
   useEffect(() => {
     if (!didMount.current && hasItems) { didMount.current = true; uploadAll() }
@@ -237,15 +261,26 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
             ))}
           </div>
           {uploading && <p className="text-xs text-gray-400">กำลังอัปโหลดรูปภาพ...</p>}
-          {!uploading && allOk && dbSaved === null && <p className="text-xs text-gray-400">กำลังบันทึก...</p>}
-          {!uploading && allOk && dbSaved === true && <p className="text-xs text-green-600 font-semibold">แนบรูปภาพเรียบร้อย {okCount} รูป</p>}
-          {!uploading && allOk && dbSaved === false && <p className="text-xs text-red-500 font-semibold">บันทึกรูปไม่สำเร็จ กรุณาลองใหม่</p>}
-          {hasFailed && !uploading && (
-            <button onClick={uploadAll}
-              className="mt-2 w-full py-2 rounded-xl text-xs font-semibold text-white"
-              style={{ backgroundColor: primaryColor }}>
-              ลองอัปโหลดใหม่อีกครั้ง ({failCount} รายการ)
-            </button>
+          {!uploading && (savingRetry || (allOk && dbSaved === null)) && <p className="text-xs text-gray-400">กำลังบันทึก...</p>}
+          {!uploading && !savingRetry && allOk && dbSaved === true && <p className="text-xs text-green-600 font-semibold">แนบรูปภาพเรียบร้อย {okCount} รูป</p>}
+
+          {/* รูปไม่ถึงเจ้าหน้าที่ต้องบอกให้ชัดว่าคำร้องยังอยู่ แต่ "รูปยังไม่ถูกแนบ" และทำอะไรต่อได้ —
+              เดิมขึ้นแค่ข้อความแดงโดยไม่มีปุ่มลองใหม่ ประชาชนจึงได้แต่กดออกไป และไม่มีใครรู้ว่ารูปหาย */}
+          {!uploading && !savingRetry && photosPending && (
+            <div className="mt-2 p-3 rounded-xl bg-red-50 border border-red-100 text-left">
+              <p className="text-xs text-red-600 font-semibold mb-1">
+                คำร้องส่งเรียบร้อยแล้ว แต่ยังแนบรูปไม่สำเร็จ
+              </p>
+              <p className="text-[11px] text-red-500 leading-relaxed">
+                เจ้าหน้าที่จะยังไม่เห็นรูปของท่าน กรุณากดลองใหม่อีกครั้ง
+                หากยังไม่สำเร็จ โปรดแจ้งเจ้าหน้าที่พร้อมเลขที่{complaintNumber ? ` ${complaintNumber}` : 'อ้างอิงด้านบน'}
+              </p>
+              <button onClick={hasFailed ? uploadAll : retrySave}
+                className="mt-2 w-full py-2 rounded-xl text-xs font-semibold text-white"
+                style={{ backgroundColor: primaryColor }}>
+                {hasFailed ? `ลองอัปโหลดใหม่อีกครั้ง (${failCount} รายการ)` : 'ลองบันทึกรูปใหม่อีกครั้ง'}
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -253,15 +288,22 @@ function SuccessScreen({ onBack, onMyComplaints, complaintNumber, isLoggedIn, co
       <p className="text-gray-500 text-sm leading-relaxed mb-8 max-w-xs">
         เจ้าหน้าที่จะดำเนินการตรวจสอบและติดต่อกลับหาท่านโดยเร็วที่สุด
       </p>
+      {/* ออกจากหน้านี้ทั้งที่รูปยังไม่ถูกแนบ = รูปหายถาวร (ไฟล์อยู่ในเครื่องผู้ใช้ ไม่มีทางกู้จากฝั่งเรา)
+          จึงเตือนหนึ่งครั้งก่อน ไม่ได้ห้าม — ผู้ใช้ที่ตั้งใจออกกดซ้ำได้ทันที */}
+      {leaveWarned && photosPending && (
+        <p className="text-xs text-red-500 font-semibold mb-3 max-w-xs">
+          รูปของท่านยังไม่ถูกแนบ ถ้าออกตอนนี้จะต้องแจ้งรูปกับเจ้าหน้าที่เอง — กดอีกครั้งเพื่อออก
+        </p>
+      )}
       <div className="w-full max-w-xs flex flex-col gap-3">
         {isLoggedIn && (
-          <button onClick={onMyComplaints} disabled={busy}
+          <button onClick={() => { if (photosPending && !leaveWarned) { setLeaveWarned(true); return } onMyComplaints() }} disabled={busy}
             className="w-full py-3.5 rounded-2xl font-semibold text-white shadow-lg active:scale-95 transition-all disabled:opacity-50"
             style={{ backgroundColor: 'var(--color-primary)' }}>
             {busy ? <Loader2 size={18} className="animate-spin mx-auto" /> : 'ติดตามสถานะคำร้อง'}
           </button>
         )}
-        <button onClick={onBack} disabled={busy}
+        <button onClick={() => { if (photosPending && !leaveWarned) { setLeaveWarned(true); return } onBack() }} disabled={busy}
           className="w-full py-3 rounded-2xl font-medium text-gray-600 bg-gray-100 active:scale-95 transition-all disabled:opacity-50">
           กลับหน้าหลัก
         </button>
