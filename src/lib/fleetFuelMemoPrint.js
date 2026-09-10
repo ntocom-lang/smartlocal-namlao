@@ -7,7 +7,7 @@
 // ตัวเลขทุกช่องในตารางคำนวณจากข้อมูลที่บันทึกไว้ในระบบ ไม่มีการเดาหรือเติมค่าแทนช่องว่าง
 // ช่องที่ไม่มีข้อมูลพิมพ์เป็นขีด "-" ให้เขียนมือ เพราะเป็นเอกสารประกอบการตรวจสอบการเบิกจ่าย
 
-import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, GOV_PAGE_MARGIN, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
+import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, GOV_PAGE_MARGIN, govDocFontCss, govEServiceOriginText, govPageCss, govPagePadding } from './govDocStyle.js'
 import { MONTHS_TH } from './thaiDate.js'
 import { fuelRecordAmount } from './fleetFuelAmount.js'
 
@@ -235,7 +235,7 @@ export function buildFleetFuelMemoHtml({
   <title>บันทึกข้อความ รายงานการใช้น้ำมันเชื้อเพลิง${periodText ? ` ${periodText}` : ''}</title>
   ${GOV_FONT_LINK}
   <style>
-    ${govPageCss()}
+    ${govPageCss({ hideBrowserHeader: true })}
     * { box-sizing: border-box; }
     html, body { margin: 0; }
     body {
@@ -260,9 +260,13 @@ export function buildFleetFuelMemoHtml({
       flex-direction: column;
     }
     @media print {
-      /* 274mm = พื้นที่พิมพ์ 276 มม. หัก 2 มม. กันปัดเศษไปเปิดหน้า 2 เปล่าๆ
+      /* ขอบกระดาษมาจาก padding ของ .sheet ไม่ใช่ margin ของ @page (ซึ่งเป็น 0 เพื่อไม่ให้
+         เบราว์เซอร์เหลือที่วาดหัว/ท้ายกระดาษของตัวเอง) จึงคง padding ไว้เหมือนโหมดจอ
+         295mm = 274mm เดิม (พื้นที่พิมพ์ 276 มม. หัก 2 มม. กันปัดเศษไปเปิดหน้า 2 เปล่าๆ)
+         บวกขอบบน 12 มม. + ขอบล่าง 9 มม. กลับเข้าไป เพราะ box-sizing: border-box นับ padding
+         รวมในความสูงแล้ว — ที่เหลือให้เนื้อหายังเป็น 274mm เท่าเดิมทุกมิลลิเมตร
          ต้องมีความสูงที่แน่นอนตรงนี้ margin-top:auto ของบล็อกลงนามถึงจะมีที่ให้ดัน */
-      .sheet { width: auto; min-height: 274mm; padding: 0; }
+      .sheet { width: auto; min-height: 295mm; padding: ${govPagePadding()}; }
       thead { display: table-header-group; }
     }
     .head { display: flex; align-items: center; gap: 12mm; }

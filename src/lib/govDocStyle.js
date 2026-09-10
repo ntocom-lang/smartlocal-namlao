@@ -85,11 +85,39 @@ export function govDocFontCss({ fontSize = GOV_FONT_SIZE, lineHeight = GOV_LINE_
  * แนวตั้งได้ GOV_PAGE_MARGIN (ขอบเข้าแฟ้มอยู่ซ้าย) แนวนอนได้ GOV_PAGE_MARGIN_LANDSCAPE
  * (ขอบเข้าแฟ้มอยู่บน) — ไม่ต้องให้แต่ละใบจำเองว่าแนวไหนใช้ค่าอะไร
  * แบบพิมพ์ที่ต้องลอกเลย์เอาต์ต้นฉบับส่ง margin มาทับได้
+ *
+ * @param {object} [opts]
+ * @param {boolean} [opts.hideBrowserHeader] ตั้ง margin ของ @page เป็น 0 เพื่อไม่ให้เบราว์เซอร์
+ *   เหลือที่วาดหัว/ท้ายกระดาษของตัวเอง (วันที่ · ชื่อเรื่อง · URL · เลขหน้า) ซึ่งไม่มีในแบบพิมพ์ราชการ
+ *   ⚠️ ใบที่เปิดออปชันนี้ต้องย้ายขอบกระดาษไปเป็น padding ของกล่องหน้า (.sheet) ทั้งโหมดจอ
+ *   และโหมดพิมพ์ ไม่งั้นเอกสารจะพิมพ์ชิดขอบกระดาษ — ดู govPagePadding()
  */
-export function govPageCss({ size = 'A4 portrait', margin } = {}) {
+export function govPageCss({ size = 'A4 portrait', margin, hideBrowserHeader = false } = {}) {
   const isLandscape = String(size).toLowerCase().includes('landscape')
-  const pageMargin = margin ?? (isLandscape ? GOV_PAGE_MARGIN_LANDSCAPE : GOV_PAGE_MARGIN)
+  const pageMargin = hideBrowserHeader
+    ? '0'
+    : (margin ?? (isLandscape ? GOV_PAGE_MARGIN_LANDSCAPE : GOV_PAGE_MARGIN))
   return `@page { size: ${size}; margin: ${pageMargin}; }`
+}
+
+/**
+ * ขอบกระดาษในรูปค่า padding สำหรับใบที่ใช้ govPageCss({ hideBrowserHeader: true })
+ *
+ * ทำไมต้องย้ายขอบมาเป็น padding: ไม่มี CSS ตัวไหนสั่งปิดหัว/ท้ายกระดาษของเบราว์เซอร์ได้
+ * (เป็นค่าในกล่องพิมพ์ของผู้ใช้) แต่เบราว์เซอร์วาดมันลงใน "พื้นที่ margin ของ @page"
+ * พอ margin เป็น 0 ก็ไม่เหลือที่ให้วาด — ขอบที่ต้องมีตามระเบียบจึงย้ายมาอยู่ที่ padding แทน
+ * ผลบนกระดาษเท่าเดิมทุกมิลลิเมตร เพราะกล่องหน้าใช้ box-sizing: border-box
+ *
+ * ⚠️ เป็นพฤติกรรมของ Chrome/Edge/Firefox ไม่ใช่ข้อกำหนดใน spec และเจ้าหน้าที่ยังกดเปลี่ยน
+ * "ระยะขอบ" ในกล่องพิมพ์กลับเป็นค่าอื่นได้เอง ซึ่งจะทำให้หัวกระดาษกลับมาและขอบซ้อนกัน
+ * จนเอกสารเลื่อน — ต้องปล่อยค่าระยะขอบไว้ที่ "ไม่มี" เสมอ
+ *
+ * ⚠️ ความสูงที่แต่ละใบเคยตั้งไว้เป็น "พื้นที่พิมพ์" (หักขอบแล้ว) ต้องบวกขอบบน+ล่างกลับเข้าไป
+ * เพราะกล่องหน้ากินเต็มแผ่นแล้ว เช่น 274mm ของบันทึกข้อความเป็น 295mm
+ */
+export function govPagePadding({ size = 'A4 portrait', margin } = {}) {
+  const isLandscape = String(size).toLowerCase().includes('landscape')
+  return margin ?? (isLandscape ? GOV_PAGE_MARGIN_LANDSCAPE : GOV_PAGE_MARGIN)
 }
 
 /**

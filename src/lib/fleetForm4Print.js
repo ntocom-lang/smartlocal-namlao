@@ -1,7 +1,7 @@
 // แบบ 4 บันทึกการใช้รถ — รายคัน รายเดือน ตามแบบฟอร์มกระดาษ
 // (ลำดับคอลัมน์/ข้อความหัวตารางต้องตรงต้นฉบับ ห้ามเติมช่องที่ไม่มีบนกระดาษ)
 
-import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, GOV_PAGE_MARGIN_LANDSCAPE, govDocFontIdentityCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
+import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, GOV_PAGE_MARGIN_LANDSCAPE, govDocFontIdentityCss, govEServiceOriginText, govPageCss, govPagePadding } from './govDocStyle.js'
 
 // ⚠️ 13 แถว/หน้า ไม่ใช่ตัวเลขที่เลือกเอาสวย — เป็นค่าที่พอดีกับพื้นที่พิมพ์แนวนอน 170mm
 // หลังย้ายขอบเข้าแฟ้มไปด้านบน 3 ซม. เมื่อ 2569-09-05 (เดิม 14 แถว ตอนพื้นที่ยังเป็น 189mm)
@@ -277,7 +277,7 @@ export function buildFleetForm4Html({ vehicle, trips = [], periodLabel = '', ten
   <title>${esc(title)} ${esc(plate)}</title>
   ${GOV_FONT_LINK}
   <style>
-    ${govPageCss({ size: 'A4 landscape' })}
+    ${govPageCss({ size: 'A4 landscape', hideBrowserHeader: true })}
     * { box-sizing: border-box; }
     html, body { margin: 0; }
     body {
@@ -300,12 +300,16 @@ export function buildFleetForm4Html({ vehicle, trips = [], periodLabel = '', ten
     .eservice-origin { ${GOV_ESERVICE_ORIGIN_CSS} margin-top: 3mm; text-align: center; }
     @media print {
       html, body { height: auto; overflow: hidden; }
+      /* ขอบกระดาษมาจาก padding ของ .sheet ไม่ใช่ margin ของ @page (ซึ่งเป็น 0 เพื่อไม่ให้
+         เบราว์เซอร์เหลือที่วาดหัว/ท้ายกระดาษของตัวเอง) จึงคง padding ไว้เหมือนโหมดจอ
+         และ max-height ต้องเป็นความสูงเต็มแผ่น 210mm ไม่ใช่พื้นที่พิมพ์ 170mm เพราะ
+         box-sizing: border-box นับ padding รวมอยู่ในนั้นแล้ว — พื้นที่เนื้อหายังได้ 170mm เท่าเดิม */
       .sheet {
         width: auto;
         min-height: 0;
         height: auto;
-        max-height: 170mm;
-        padding: 0;
+        max-height: 210mm;
+        padding: ${govPagePadding({ size: 'A4 landscape' })};
         overflow: hidden;
         page-break-inside: avoid;
       }

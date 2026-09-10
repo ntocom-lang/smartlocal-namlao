@@ -46,8 +46,23 @@ function makeTrips(count) {
   }))
 }
 
+// ความกว้างหน้าต่างที่ทำให้ "ความกว้างของตาราง" เท่ากับที่เทสนี้เคยวัดมาตลอด
+//
+// ที่มา: ของเดิม .sheet มี padding: 0 ตอนพิมพ์ (ขอบกระดาษมาจาก margin ของ @page ซึ่งไม่มีผล
+// กับ layout ใน viewport) ตารางจึงกว้างเท่าหน้าต่างดีฟอลต์ของ Playwright คือ 1280px
+// พอย้ายขอบมาเป็น padding ของ .sheet (เพื่อไม่ให้เบราว์เซอร์เหลือที่วาดหัว/ท้ายกระดาษของตัวเอง)
+// ตารางจะแคบลงเท่าขอบซ้าย+ขวา = 40mm ≈ 151px จึงบวกกลับเข้าไปให้ตัวแปรควบคุมเหมือนเดิม
+//
+// ⚠️ หนี้ที่ค้างไว้: 1280px = 338mm ซึ่ง "กว้างกว่ากระดาษจริง" (พื้นที่พิมพ์แนวนอน 257mm)
+// ตารางในเทสจึงตัดคำน้อยกว่าของจริงและเตี้ยกว่าของจริง เกณฑ์ 167mm ด้านล่างถูกตั้งให้เข้ากับ
+// การวัดนี้ ไม่ใช่กับกระดาษ — วัดที่ 257mm จริงแล้วเคสข้อมูลยาวสุดสูง 187.9mm ล้นพื้นที่พิมพ์
+// 170mm อยู่ 17.9mm และถูก overflow:hidden ตัดทิ้ง (เคสข้อมูลความยาวปกติวัดได้ 130.2mm ไม่ล้น)
+// การแก้ต้องไปลด FORM4_ROWS_PER_PAGE หรือบีบความสูงแถว ซึ่งเปลี่ยนหน้าตาเอกสารจริง
+// จึงแยกเป็นงานต่างหาก ไม่รวมกับการเอาหัวกระดาษของเบราว์เซอร์ออก
+const VIEWPORT = { width: 1431, height: 720 }
+
 async function renderForm4(browser, trips) {
-  const page = await browser.newPage()
+  const page = await browser.newPage({ viewport: VIEWPORT })
   const html = buildFleetForm4Html({ vehicle: VEHICLE, trips, periodLabel: PERIOD })
   await page.setContent(html, { waitUntil: 'load' })
   // ต้องรอฟอนต์โหลดเสร็จก่อนวัด ไม่งั้นวัดความกว้าง/ความสูงด้วยฟอนต์สำรองแล้วได้ผลผิด
@@ -68,12 +83,18 @@ function overflowingCells(page, selector) {
 // ".sheet" มี max-height + overflow:hidden ตอนพิมพ์ — getBoundingClientRect().height ของมัน
 // เพดานอยู่ที่ 170mm เสมอไม่ว่าเนื้อหาจริงจะสูงแค่ไหน ใช้วัดหาการล้นไม่ได้ (จะรายงาน "พอดี"
 // ทุกครั้งแม้ตัดเนื้อหาทิ้งไปจริง) ต้องวัดจาก <table> ที่ไม่ถูกครอบความสูงแทน
+//
+// ⚠️ ต้องเริ่มวัดจาก "ขอบในของกล่อง" (บวก padding-top) ไม่ใช่ขอบนอก — ตั้งแต่ย้ายขอบกระดาษ
+// จาก margin ของ @page มาเป็น padding ของ .sheet (เพื่อไม่ให้เบราว์เซอร์เหลือที่วาดหัว/
+// ท้ายกระดาษของตัวเอง ดู govPageCss({ hideBrowserHeader })) ขอบนอกกล่องอยู่เหนือเนื้อหา
+// ขึ้นไปเท่าขอบบนของกระดาษ วัดจากตรงนั้นจะได้ค่าบวกเกินมาโดยที่เอกสารไม่ได้เปลี่ยนอะไรเลย
 function sheetContentHeightMm(page) {
   return page.evaluate(() => [...document.querySelectorAll('.sheet')].map(sheet => {
     const table = sheet.querySelector('table')
-    const sheetTop = sheet.getBoundingClientRect().top
+    const contentTop = sheet.getBoundingClientRect().top
+      + parseFloat(getComputedStyle(sheet).paddingTop)
     const tableBottom = table.getBoundingClientRect().bottom
-    return (tableBottom - sheetTop) / 3.779527 // px -> mm ที่ 96dpi
+    return (tableBottom - contentTop) / 3.779527 // px -> mm ที่ 96dpi
   }))
 }
 
