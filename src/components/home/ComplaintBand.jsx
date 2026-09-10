@@ -51,15 +51,39 @@ function ComplaintBand({ variant = 'warm' }) {
 
   useEffect(() => {
     if (!tenant?.id) return
-    supabase.from('complaint_categories').select('value, label, emoji, color, is_adhoc')
-      .eq('municipality_id', tenant.id).eq('is_active', true).order('sort_order')
-      .then(({ data }) => {
-        if (data?.length) {
-          // กรองเฉพาะหมวดปกติ ไม่รวมเฉพาะกิจ (เช่น กลิ่นเหม็นรบกวน ซึ่งแยกไปอยู่ AdhocBand)
-          setCats(data.filter(c => !c.is_adhoc))
+    Promise.all([
+      supabase.from('complaint_categories').select('value, label, emoji, color, is_adhoc, sort_order')
+        .eq('municipality_id', tenant.id).eq('is_active', true).order('sort_order'),
+      supabase.rpc('complaints_public', { _municipality_id: tenant.id, _limit: 500 })
+        .catch(() => ({ data: [] }))
+    ]).then(([{ data: rawCats }, { data: pubData }]) => {
+      if (!rawCats?.length) return
+
+      // กรองเฉพาะหมวดปกติ ไม่รวมเฉพาะกิจ (เช่น กลิ่นเหม็นรบกวน ซึ่งแยกไปอยู่ AdhocBand)
+      const normalCats = rawCats.filter(c => !c.is_adhoc)
+
+      // นับความนิยมจากสถิติเรื่องร้องเรียนจริง
+      const freqMap = {}
+      if (Array.isArray(pubData)) {
+        for (const row of pubData) {
+          if (row.category) {
+            freqMap[row.category] = (freqMap[row.category] || 0) + 1
+          }
         }
+      }
+
+      // เรียงตามความนิยม (จำนวนเรื่องมาก -> น้อย) หากจำนวนเท่ากันให้ยึดตาม sort_order เดิม
+      const sorted = [...normalCats].sort((a, b) => {
+        const countA = freqMap[a.value] || 0
+        const countB = freqMap[b.value] || 0
+        if (countB !== countA) {
+          return countB - countA
+        }
+        return (a.sort_order ?? 0) - (b.sort_order ?? 0)
       })
-      .catch(() => {})
+
+      setCats(sorted)
+    }).catch(() => {})
   }, [tenant?.id])
 
   const topCats = cats
