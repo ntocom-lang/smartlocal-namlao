@@ -1,5 +1,21 @@
 import assert from 'node:assert/strict'
-import { buildFleetForm4Html, form4VehicleTitle, paginateForm4Trips } from '../src/lib/fleetForm4Print.js'
+import { buildFleetForm4Html, form4VehicleTitle, paginateForm4Trips, FORM4_COL_PCT } from '../src/lib/fleetForm4Print.js'
+
+// ── ความกว้างคอลัมน์ ──
+// ต้องรวมได้ 100% พอดี (วันที่/เวลา/เลขไมล์มีฝั่งออกและฝั่งกลับ อย่างละ 2 คอลัมน์) ไม่งั้นเบราว์เซอร์
+// จะกระจายส่วนต่างให้ทุกคอลัมน์เองแบบคุมไม่ได้ และตัวประมาณความสูงแถวจะคำนวณจากความกว้างผิด
+const colTotal = FORM4_COL_PCT.seq + 2 * FORM4_COL_PCT.date + 2 * FORM4_COL_PCT.time
+  + FORM4_COL_PCT.user + FORM4_COL_PCT.dest + 2 * FORM4_COL_PCT.odo + FORM4_COL_PCT.sum
+  + FORM4_COL_PCT.drv + FORM4_COL_PCT.note
+assert.ok(Math.abs(colTotal - 100) < 0.001, `ความกว้างคอลัมน์แบบ 4 รวมได้ ${colTotal}% ต้องเป็น 100%`)
+// ผู้ใช้รถต้องไม่แคบกว่าช่องข้อความอื่น — เคยเจอชื่อจริงขึ้น 2 บรรทัดบนเครื่องเจ้าหน้าที่ (2026-09-05)
+assert.ok(FORM4_COL_PCT.user >= FORM4_COL_PCT.dest && FORM4_COL_PCT.user >= FORM4_COL_PCT.drv,
+  'ช่องผู้ใช้รถต้องกว้างไม่น้อยกว่าสถานที่ไปและพนักงานขับรถ')
+// CSS <col> ต้องมาจากค่ากลางเดียวกับที่ตัวประมาณความสูงแถวใช้ ห้ามกลับไปเขียนตัวเลขแยกไว้สองที่
+const colCss = buildFleetForm4Html({ vehicle: { name: 'รถทดสอบ', license_plate: 'ทดสอบ 1' }, trips: [] })
+for (const [key, pct] of Object.entries(FORM4_COL_PCT)) {
+  assert.ok(colCss.includes(`col.c-${key} { width: ${pct}%; }`), `CSS ต้องมีความกว้าง c-${key} ตรงกับ FORM4_COL_PCT`)
+}
 
 const vehicle = {
   name: 'รถตู้บรรทุกส่วนบุคคล',
