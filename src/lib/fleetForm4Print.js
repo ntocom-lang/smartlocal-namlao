@@ -3,11 +3,71 @@
 
 import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, GOV_PAGE_MARGIN_LANDSCAPE, govDocFontIdentityCss, govEServiceOriginText, govPageCss, govPagePadding } from './govDocStyle.js'
 
-// ⚠️ 13 แถว/หน้า ไม่ใช่ตัวเลขที่เลือกเอาสวย — เป็นค่าที่พอดีกับพื้นที่พิมพ์แนวนอน 170mm
-// หลังย้ายขอบเข้าแฟ้มไปด้านบน 3 ซม. เมื่อ 2569-09-05 (เดิม 14 แถว ตอนพื้นที่ยังเป็น 189mm)
-// เคสหนักสุดที่ 14 แถววัดได้ 170.8mm ล้นออกนอกกระดาษ ห้ามเพิ่มกลับโดยไม่รัน
-// tests/fleet-form4-layout.test.mjs
+// ⚠️ 13 แถว/หน้า เป็นค่าที่พอดีกับ "แถวว่าง" (8.8mm) บนพื้นที่พิมพ์แนวนอน 170mm เท่านั้น
+// ใช้เป็นเพดานจำนวนแถวและใช้กับเอกสารเปล่าที่ไม่มีข้อมูลให้วัด — จำนวนแถวจริงต่อหน้า
+// ตอนนี้คำนวณจากความสูงของข้อมูลแต่ละแถว ดู paginateForm4Trips()
+//
+// ที่มาของการเปลี่ยน: 13 ถูกคำนวณจากแถวว่างล้วน แต่แถวข้อมูลที่ชื่อยาวจนตัดเป็น 2 บรรทัด
+// สูง 11.1mm ไม่ใช่ 8.8mm — 13 แถวแบบนั้นวัดได้ 187.9mm ล้นพื้นที่ 170mm อยู่ 17.9mm
+// แล้วถูก overflow:hidden ตัดหายเงียบๆ (เคสข้อมูลความยาวปกติ 130.2mm ไม่ล้น)
 export const FORM4_ROWS_PER_PAGE = 13
+
+/* ── งบความสูงต่อหน้า ─────────────────────────────────────────────────────
+   ทุกค่าวัดจากเบราว์เซอร์จริงบนความกว้างพื้นที่พิมพ์ 257mm (A4 แนวนอน หักขอบ 2+2 ซม.)
+   ห้ามแก้จากการกะ ให้วัดใหม่ทุกครั้งที่แตะหัวเรื่อง/หัวตาราง/ขนาดฟอนต์ในตาราง */
+const PRINT_AREA_MM = 170      // พื้นที่พิมพ์แนวตั้ง A4 แนวนอน หักขอบบน 3 ซม. ล่าง 1 ซม.
+const HEADING_MM = 23.6        // "แบบ 4" + ชื่อเรื่อง + ทะเบียน + ประจำเดือน
+const THEAD_MM = 19.2          // หัวตาราง 2 ชั้น (ป้ายกำกับยาวถึง 4 บรรทัด)
+const ORIGIN_LINE_MM = 7.5     // บรรทัดกำกับที่มาใต้ตาราง
+const TOTAL_ROW_MM = 9.4       // แถว "รวมระยะทางทั้งสิ้น"
+const BLANK_ROW_MM = 8.8       // แถวว่างที่ใช้ดันตารางให้เต็มหน้า (ดู tr.blank-filler td)
+const ROW_BASE_MM = 6.7        // แถวข้อมูลที่ทุกช่องจบใน 1 บรรทัด
+const ROW_LINE_MM = 4.4        // ความสูงที่เพิ่มต่อ 1 บรรทัดที่ล้นมา (วัดได้ 11.1mm ที่ 2 บรรทัด)
+
+/* เผื่อไว้กันฟอนต์ต่างเครื่อง — เครื่อง อปท. ส่วนใหญ่ไม่ได้ลงชุดฟอนต์ราชการ ตกไปใช้
+   TH Sarabun New หรือ Sarabun ที่ metric ไม่เท่ากันเป๊ะ และค่าประมาณความสูงแถวเองก็มี
+   ความคลาดเคลื่อนในตัว ถ้าตั้งงบพอดีเป๊ะ เคสหนักสุดวัดได้ 170.2mm ล้นไป 0.2mm ทันที */
+const SAFETY_MM = 3
+
+// งบสำหรับแถวข้อมูลล้วน — แถวรวมยอดหักเพิ่มเฉพาะหน้าที่มีมันจริง
+const ROWS_BUDGET_MM = PRINT_AREA_MM - HEADING_MM - THEAD_MM - ORIGIN_LINE_MM - SAFETY_MM  // 116.7mm
+
+/* ความกว้างช่องข้อความ (mm) = สัดส่วนคอลัมน์ × 257mm หัก padding ซ้าย/ขวาของ td.left
+   (1mm 3px → ~0.8mm ต่อข้าง) ต้องตรงกับ col.c-* ใน CSS ด้านล่างเสมอ */
+const TEXT_COL_MM = {
+  user: 257 * 0.16 - 1.6,   // ผู้ใช้รถ — ห้าม clamp ชื่อต้องครบเสมอ
+  dest: 257 * 0.15 - 1.6,   // สถานที่ไป — clamp 2 บรรทัด
+  drv:  257 * 0.14 - 1.6,   // พนักงานขับรถ — ห้าม clamp
+  note: 257 * 0.10 - 1.6,   // หมายเหตุ — clamp 2 บรรทัด
+}
+
+/* ความกว้างเฉลี่ยต่อตัวอักษรที่ 10.5pt — วัดจริงจากข้อความไทยหลายแบบได้ 1.29–1.73 mm/ตัว
+   (แปรผันเพราะสระบน/ล่างและวรรณยุกต์ไม่กินความกว้าง) ใช้ค่าที่สูงกว่าทุกตัวอย่างที่วัดได้
+   เพื่อให้ประมาณ "สูงกว่าจริง" ไว้ก่อน — ประมาณเกินแล้วได้หน้าเพิ่มยังดีกว่าประมาณขาด
+   แล้วเนื้อหาล้นออกนอกกระดาษ */
+const MM_PER_CHAR = 1.75
+
+/**
+ * ประมาณความสูงของแถวข้อมูล 1 แถว (มม.) จากความยาวข้อความในช่องที่ตัดบรรทัดได้
+ *
+ * เป็นการประมาณ ไม่ใช่การวัด — ตอนสร้าง HTML ยังไม่มี DOM ให้วัดจริง จึงต้องเผื่อไว้เสมอ
+ * และมีกันชนอีกชั้นที่ CSS: .sheet ตอนพิมพ์ไม่ได้ครอบ overflow:hidden ไว้แล้ว ถ้าประมาณพลาด
+ * เนื้อหาจะไหลไปหน้าถัดไปแทนที่จะถูกตัดหายเงียบๆ
+ */
+export function estimateForm4RowHeightMm(trip) {
+  const lines = (value, colMm, maxLines = Infinity) => {
+    const text = String(value ?? '').trim()
+    if (!text) return 1
+    return Math.min(Math.max(1, Math.ceil((text.length * MM_PER_CHAR) / colMm)), maxLines)
+  }
+  const maxLines = Math.max(
+    lines(trip?.requester?.full_name, TEXT_COL_MM.user),
+    lines(trip?.destination, TEXT_COL_MM.dest, 2),
+    lines(trip?.driver?.full_name, TEXT_COL_MM.drv),
+    lines(remarkText(trip), TEXT_COL_MM.note, 2),
+  )
+  return ROW_BASE_MM + (maxLines - 1) * ROW_LINE_MM
+}
 
 function esc(value) {
   return String(value ?? '')
@@ -146,29 +206,84 @@ export function sortForm4Trips(trips) {
   })
 }
 
-export function paginateForm4Trips(trips, rowsPerPage = FORM4_ROWS_PER_PAGE) {
+/**
+ * แบ่งเที่ยวเดินทางลงหน้ากระดาษ
+ *
+ * ค่าเริ่มต้นแบ่งตาม "ความสูงที่ประมาณได้ของแต่ละแถว" ไม่ใช่จำนวนแถวตายตัว — เดือนที่ชื่อ
+ * และปลายทางสั้นจะได้แถวต่อหน้ามากกว่าเดือนที่ยาว ซึ่งเป็นพฤติกรรมที่ถูกต้องกว่าค่าตายตัว
+ * ที่พอดีกับเคสหนึ่งแต่ล้นอีกเคสหนึ่ง (13 แถวเคยล้น 17.9mm เมื่อชื่อยาวจนตัด 2 บรรทัดทุกแถว)
+ *
+ * ส่ง rowsPerPage มาเองได้เมื่อต้องการบังคับจำนวนตายตัว (เทสใช้เพื่อคุมเคสให้แน่นอน)
+ */
+export function paginateForm4Trips(trips, rowsPerPage = null) {
   const sorted = sortForm4Trips(trips)
-  const pageCount = Math.max(1, Math.ceil(sorted.length / rowsPerPage))
-  const pages = Array.from({ length: pageCount }, (_, page) => {
-    const slice = sorted.slice(page * rowsPerPage, (page + 1) * rowsPerPage)
-    const rows = slice.map((trip, index) => ({
-      seq: page * rowsPerPage + index + 1,
-      trip,
-    }))
-    while (rows.length < rowsPerPage) {
-      rows.push({ seq: page * rowsPerPage + rows.length + 1, trip: null })
+  const fixed = Number.isFinite(rowsPerPage) && rowsPerPage > 0
+
+  // จัดเที่ยวลงหน้า: โหมดตายตัวใช้จำนวน โหมดปกติใช้ความสูงสะสมเทียบงบต่อหน้า
+  // เพดาน FORM4_ROWS_PER_PAGE ยังคุมอยู่ด้วย เพื่อไม่ให้เดือนที่ข้อมูลสั้นมากอัดแถวจนแน่นผิดรูป
+  const chunks = []
+  let current = []
+  let usedMm = 0
+  for (const trip of sorted) {
+    const rowMm = estimateForm4RowHeightMm(trip)
+    const full = fixed
+      ? current.length >= rowsPerPage
+      : current.length >= FORM4_ROWS_PER_PAGE || (current.length > 0 && usedMm + rowMm > ROWS_BUDGET_MM)
+    if (full) {
+      chunks.push(current)
+      current = []
+      usedMm = 0
+    }
+    current.push(trip)
+    usedMm += rowMm
+  }
+  if (current.length || chunks.length === 0) chunks.push(current)
+
+  let seq = 0
+  const pages = chunks.map(chunk => chunk.map(trip => ({ seq: ++seq, trip })))
+
+  // เติมแถวว่างให้ตารางเต็มหน้า ไม่งั้นเวลาพิมพ์จะเหลือช่องโหว่เป็นแผ่นๆ ใต้ตาราง
+  // โหมดตายตัวเติมตามจำนวน ส่วนโหมดปกติเติมเท่าที่งบความสูงเหลือจริง
+  const fillPage = (rows, budgetMm, maxRows) => {
+    if (fixed) {
+      while (rows.length < maxRows) rows.push({ seq: ++seq, trip: null })
+      return rows
+    }
+    let leftMm = budgetMm - rows.reduce((sum, r) => sum + (r.trip ? estimateForm4RowHeightMm(r.trip) : 0), 0)
+    while (rows.length < maxRows && leftMm >= BLANK_ROW_MM) {
+      rows.push({ seq: ++seq, trip: null })
+      leftMm -= BLANK_ROW_MM
     }
     return rows
-  })
-  const lastPage = pages[pages.length - 1]
-  if (lastPage[lastPage.length - 1].trip) {
-    pages.push(Array.from({ length: rowsPerPage }, (_, index) => ({
-      seq: pages.length * rowsPerPage + index + 1,
-      trip: null,
-    })))
   }
-  const footer = pages[pages.length - 1]
-  footer[footer.length - 1] = { seq: '', trip: null, total: true }
+
+  // แถวรวมยอดต้องอยู่ท้ายสุดและต้องมีที่พอจริง ถ้าหน้าสุดท้ายเต็มก็เปิดหน้าใหม่ให้มันเดี่ยวๆ
+  // (ยอมได้หน้าเกินมา 1 แผ่น ดีกว่ายอดรวมหายไปพร้อมกับส่วนที่ล้น)
+  const lastMm = pages[pages.length - 1]
+    .reduce((sum, r) => sum + (r.trip ? estimateForm4RowHeightMm(r.trip) : 0), 0)
+  if (fixed
+    ? pages[pages.length - 1].length >= rowsPerPage
+    : lastMm + TOTAL_ROW_MM > ROWS_BUDGET_MM || pages[pages.length - 1].length >= FORM4_ROWS_PER_PAGE) {
+    pages.push([])
+  }
+
+  pages.forEach((rows, index) => {
+    const isLast = index === pages.length - 1
+    if (fixed) {
+      // โหมดจำนวนตายตัว: เติมเต็มโควตาแล้วแทนแถวว่างใบสุดท้ายด้วยแถวรวม (พฤติกรรมเดิม)
+      fillPage(rows, 0, rowsPerPage)
+      if (isLast) rows[rows.length - 1] = { seq: '', trip: null, total: true }
+      return
+    }
+    // โหมดคำนวณ: หน้าสุดท้ายกันที่ให้แถวรวมยอดไว้ทั้งงบความสูงและโควตาจำนวนแถว แล้วต่อท้าย
+    // (อย่าเติมเต็มก่อนแล้วไปแทนแถวว่างใบสุดท้าย — จะกลายเป็นหักที่ของแถวรวมซ้ำสองรอบ)
+    fillPage(
+      rows,
+      isLast ? ROWS_BUDGET_MM - TOTAL_ROW_MM : ROWS_BUDGET_MM,
+      isLast ? FORM4_ROWS_PER_PAGE - 1 : FORM4_ROWS_PER_PAGE,
+    )
+    if (isLast) rows.push({ seq: '', trip: null, total: true })
+  })
   return pages
 }
 
@@ -299,23 +414,26 @@ export function buildFleetForm4Html({ vehicle, trips = [], periodLabel = '', ten
        ไม่งั้นจะถูกตัดหายเงียบๆ วัดความสูงใหม่ทุกครั้งที่แก้ตาราง */
     .eservice-origin { ${GOV_ESERVICE_ORIGIN_CSS} margin-top: 3mm; text-align: center; }
     @media print {
-      html, body { height: auto; overflow: hidden; }
+      html, body { height: auto; }
       /* ขอบกระดาษมาจาก padding ของ .sheet ไม่ใช่ margin ของ @page (ซึ่งเป็น 0 เพื่อไม่ให้
          เบราว์เซอร์เหลือที่วาดหัว/ท้ายกระดาษของตัวเอง) จึงคง padding ไว้เหมือนโหมดจอ
-         และ max-height ต้องเป็นความสูงเต็มแผ่น 210mm ไม่ใช่พื้นที่พิมพ์ 170mm เพราะ
-         box-sizing: border-box นับ padding รวมอยู่ในนั้นแล้ว — พื้นที่เนื้อหายังได้ 170mm เท่าเดิม */
+
+         ⚠️ ไม่ครอบ max-height + overflow:hidden แล้ว (ของเดิมตัดที่ 170mm) — จำนวนแถวต่อหน้า
+         คำนวณจากความสูงที่ประมาณได้ของข้อมูลจริง (ดู paginateForm4Trips) ซึ่งเป็นการประมาณ
+         ไม่ใช่การวัด ถ้าประมาณขาดแล้วยังตัดทิ้งอยู่ เที่ยวเดินทางจะหายจากเอกสารราชการ
+         โดยไม่มีสัญญาณเตือน ปล่อยให้ไหลไปหน้าถัดไปแทน — ได้กระดาษเกินมาบ้างยังตรวจสอบได้
+         ใช้หลักเดียวกับสมุดคุมน้ำมัน (ดู fleetFuelLedgerPrint.js) */
       .sheet {
         width: auto;
         min-height: 0;
         height: auto;
-        max-height: 210mm;
         padding: ${govPagePadding({ size: 'A4 landscape' })};
-        overflow: hidden;
-        page-break-inside: avoid;
       }
-      /* ห้ามให้ thead ไปโผล่หน้า 2 ตอนตารางล้นแค่เศษมิลลิเมตร */
-      thead { display: table-row-group; }
-      table { page-break-inside: avoid; }
+      /* หัวตารางต้องซ้ำทุกหน้าเมื่อเนื้อหาไหลข้ามหน้า ไม่งั้นหน้าที่ล้นมาจะเป็นตารางไร้หัว
+         อ่านไม่ออกว่าคอลัมน์ไหนคืออะไร (ของเดิมใช้ table-row-group เพื่อกันหัวโผล่หน้า 2
+         ตอนตารางล้นเศษมิลลิเมตร ซึ่งไม่จำเป็นแล้วเพราะแบ่งหน้าตามความสูงจริง) */
+      thead { display: table-header-group; }
+      tr { page-break-inside: avoid; }
     }
     .form-no { text-align: right; font-size: 14pt; line-height: 1.1; }
     h1 {

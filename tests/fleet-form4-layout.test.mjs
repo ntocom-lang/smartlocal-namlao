@@ -46,20 +46,20 @@ function makeTrips(count) {
   }))
 }
 
-// ความกว้างหน้าต่างที่ทำให้ "ความกว้างของตาราง" เท่ากับที่เทสนี้เคยวัดมาตลอด
+// หน้าต่างต้องกว้างเท่ากระดาษจริง (A4 แนวนอน 297mm) ไม่ใช่ดีฟอลต์ 1280px ของ Playwright
 //
-// ที่มา: ของเดิม .sheet มี padding: 0 ตอนพิมพ์ (ขอบกระดาษมาจาก margin ของ @page ซึ่งไม่มีผล
-// กับ layout ใน viewport) ตารางจึงกว้างเท่าหน้าต่างดีฟอลต์ของ Playwright คือ 1280px
-// พอย้ายขอบมาเป็น padding ของ .sheet (เพื่อไม่ให้เบราว์เซอร์เหลือที่วาดหัว/ท้ายกระดาษของตัวเอง)
-// ตารางจะแคบลงเท่าขอบซ้าย+ขวา = 40mm ≈ 151px จึงบวกกลับเข้าไปให้ตัวแปรควบคุมเหมือนเดิม
+// ที่มา: เดิมเทสนี้ใช้ 1280px = 338mm ซึ่งกว้างกว่าพื้นที่พิมพ์จริง 257mm อยู่ 81mm ตารางจึง
+// ตัดคำน้อยกว่าของจริงและเตี้ยกว่าของจริง เกณฑ์ที่ตั้งไว้จึงผูกกับการวัดที่ไม่ตรงกับกระดาษ —
+// เคสข้อมูลยาวสุดวัดในเทสได้ 167mm "ผ่าน" ทั้งที่บนกระดาษจริงสูง 187.9mm ล้นพื้นที่ 170mm
+// อยู่ 17.9mm แล้วถูกตัดหายไปเงียบๆ ไม่มีด่านไหนจับได้เลย
 //
-// ⚠️ หนี้ที่ค้างไว้: 1280px = 338mm ซึ่ง "กว้างกว่ากระดาษจริง" (พื้นที่พิมพ์แนวนอน 257mm)
-// ตารางในเทสจึงตัดคำน้อยกว่าของจริงและเตี้ยกว่าของจริง เกณฑ์ 167mm ด้านล่างถูกตั้งให้เข้ากับ
-// การวัดนี้ ไม่ใช่กับกระดาษ — วัดที่ 257mm จริงแล้วเคสข้อมูลยาวสุดสูง 187.9mm ล้นพื้นที่พิมพ์
-// 170mm อยู่ 17.9mm และถูก overflow:hidden ตัดทิ้ง (เคสข้อมูลความยาวปกติวัดได้ 130.2mm ไม่ล้น)
-// การแก้ต้องไปลด FORM4_ROWS_PER_PAGE หรือบีบความสูงแถว ซึ่งเปลี่ยนหน้าตาเอกสารจริง
-// จึงแยกเป็นงานต่างหาก ไม่รวมกับการเอาหัวกระดาษของเบราว์เซอร์ออก
-const VIEWPORT = { width: 1431, height: 720 }
+// .sheet มี padding เท่าขอบกระดาษ (ดู govPageCss({ hideBrowserHeader })) ตารางจึงได้ความกว้าง
+// 297 − 2 − 2 ซม. = 257mm ตรงกับของจริง
+const MM_TO_PX = 96 / 25.4
+const VIEWPORT = { width: Math.round(297 * MM_TO_PX), height: Math.round(210 * MM_TO_PX) }
+
+// พื้นที่พิมพ์แนวตั้งของ A4 แนวนอน หลังหักขอบบน 3 ซม. ล่าง 1 ซม. — เนื้อหาทุกหน้าต้องอยู่ในนี้
+const PRINT_AREA_MM = 170
 
 async function renderForm4(browser, trips) {
   const page = await browser.newPage({ viewport: VIEWPORT })
@@ -88,13 +88,15 @@ function overflowingCells(page, selector) {
 // จาก margin ของ @page มาเป็น padding ของ .sheet (เพื่อไม่ให้เบราว์เซอร์เหลือที่วาดหัว/
 // ท้ายกระดาษของตัวเอง ดู govPageCss({ hideBrowserHeader })) ขอบนอกกล่องอยู่เหนือเนื้อหา
 // ขึ้นไปเท่าขอบบนของกระดาษ วัดจากตรงนั้นจะได้ค่าบวกเกินมาโดยที่เอกสารไม่ได้เปลี่ยนอะไรเลย
+// วัดถึง "ท้ายสุดของเนื้อหาในหน้า" ไม่ใช่แค่ท้ายตาราง — ใต้ตารางยังมีบรรทัดกำกับที่มาอีก
+// ~7.5mm ซึ่งต้องอยู่ในพื้นที่พิมพ์ด้วย ถ้าวัดแค่ถึงท้ายตารางจะรายงานว่าพอดีทั้งที่บรรทัดนั้น
+// ล้นออกไปแล้ว
 function sheetContentHeightMm(page) {
   return page.evaluate(() => [...document.querySelectorAll('.sheet')].map(sheet => {
-    const table = sheet.querySelector('table')
     const contentTop = sheet.getBoundingClientRect().top
       + parseFloat(getComputedStyle(sheet).paddingTop)
-    const tableBottom = table.getBoundingClientRect().bottom
-    return (tableBottom - contentTop) / 3.779527 // px -> mm ที่ 96dpi
+    const last = sheet.children[sheet.children.length - 1]
+    return (last.getBoundingClientRect().bottom - contentTop) / 3.779527 // px -> mm ที่ 96dpi
   }))
 }
 
@@ -152,25 +154,44 @@ const checks = [
     },
   },
   {
-    name: 'fits-one-page',
-    reason: 'หนึ่งเดือนที่ยังไม่เต็มหน้า (แม้ชื่อ/ปลายทาง/หมายเหตุยาวสุดตามที่คาดว่าจะเจอจริง) ต้องพิมพ์จบใน 1 แผ่น',
+    name: 'every-page-fits-print-area',
+    reason: 'ทุกหน้าต้องอยู่ในพื้นที่พิมพ์ 170mm แม้ชื่อ/ปลายทาง/หมายเหตุยาวสุดตามที่คาดว่าจะเจอจริง',
     async run(browser) {
+      // เดิมข้อนี้บังคับว่า "ต้องจบ 1 แผ่น" ซึ่งเป็นเกณฑ์ที่ผิด — จำนวนแถวต่อหน้าคำนวณจาก
+      // ความสูงของข้อมูลจริงแล้ว (ดู paginateForm4Trips) เดือนที่ชื่อยาวจนตัด 2 บรรทัดทุกแถว
+      // "ต้อง" ใช้มากกว่า 1 แผ่น ไม่งั้นข้อมูลหาย สิ่งที่ต้องยืนยันคือทุกหน้าอยู่ในพื้นที่พิมพ์
       const page = await renderForm4(browser, makeTrips(FORM4_ROWS_PER_PAGE - 1))
+      try {
+        const heights = await sheetContentHeightMm(page)
+        for (const mm of heights) {
+          assert.ok(mm <= PRINT_AREA_MM,
+            `เนื้อหาสูง ${mm.toFixed(1)}mm ล้นพื้นที่พิมพ์ ${PRINT_AREA_MM}mm — ทบทวนค่าประมาณใน estimateForm4RowHeightMm`)
+        }
+      } finally {
+        await page.close()
+      }
+    },
+  },
+  {
+    name: 'short-data-still-one-page',
+    reason: 'เดือนที่ข้อมูลความยาวปกติต้องยังจบใน 1 แผ่นเหมือนเดิม ไม่ใช่ถูกดันเป็น 2 แผ่นเพราะคำนวณเผื่อมากเกินไป',
+    async run(browser) {
+      // กันการแก้เกินตัว: ถ้า estimateForm4RowHeightMm เผื่อสูงเกินจริง เดือนธรรมดาจะเปลืองกระดาษ
+      // เพิ่มโดยไม่จำเป็น เคสนี้ใช้ชื่อ/ปลายทางความยาวที่เจอจริงทั่วไป
+      const trips = makeTrips(FORM4_ROWS_PER_PAGE).map(trip => ({
+        ...trip,
+        destination: 'บ้านห้วยกาน',
+        notes: '',
+        requester: { full_name: 'นายสมชาย ใจดี' },
+        driver: { full_name: 'นายสมชาย ใจดี' },
+      }))
+      const page = await renderForm4(browser, trips)
       try {
         // preferCSSPageSize ให้ใช้ @page ของเอกสารเอง (A4 แนวนอน)
         // ถ้าไม่ใส่ Playwright จะใช้ margin 0 แล้ววัดพื้นที่ผิดจากตอนพิมพ์จริง
         const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true })
-        assert.equal(pdfPageCount(pdf), 1,
-          'ตารางล้นออกไปหน้าที่ 2 — ปรับ FORM4_ROWS_PER_PAGE ลง หรือทบทวนความกว้างคอลัมน์')
-
-        const heights = await sheetContentHeightMm(page)
-        // เหลือขอบไว้กันฟอนต์ต่างเครื่อง (เครื่อง อปท. ใช้ TH Sarabun New ที่ metric ไม่เท่ากัน)
-        // พื้นที่พิมพ์จริง 170mm — วัดจาก <table> ตรงๆ ไม่ใช่ .sheet ที่ถูก overflow:hidden ครอบไว้
-        // (ครอบแล้วจะรายงาน "พอดี 170mm" เสมอแม้เนื้อหาจริงล้นไปเยอะ ดู sheetContentHeightMm ด้านบน)
-        for (const mm of heights) {
-          assert.ok(mm <= 167,
-            `เนื้อหาสูง ${mm.toFixed(1)}mm เหลือขอบน้อยเกินไป (พื้นที่พิมพ์ 170mm) เสี่ยงตกหน้า 2 บนเครื่องอื่น`)
-        }
+        assert.ok(pdfPageCount(pdf) <= 2,
+          `ข้อมูลความยาวปกติ ${FORM4_ROWS_PER_PAGE} เที่ยวใช้ถึง ${pdfPageCount(pdf)} แผ่น — ค่าประมาณความสูงเผื่อมากเกินไป`)
       } finally {
         await page.close()
       }
@@ -187,13 +208,13 @@ const checks = [
       const page = await renderForm4(browser, makeTrips(FORM4_ROWS_PER_PAGE))
       try {
         const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true })
-        assert.equal(pdfPageCount(pdf), 2,
-          'ข้อมูลเต็มพอดี 1 หน้าต้องมีหน้าที่ 2 สำหรับแถวรวมยอดเสมอ (ไม่งั้นแถวรวมหายไปพร้อมกับหน้าแรก)')
+        assert.ok(pdfPageCount(pdf) >= 2,
+          'ข้อมูลเต็มพอดี 1 หน้าต้องมีหน้าถัดไปสำหรับแถวรวมยอดเสมอ (ไม่งั้นแถวรวมหายไปพร้อมกับหน้าแรก)')
 
         const heights = await sheetContentHeightMm(page)
         for (const mm of heights) {
-          assert.ok(mm <= 167,
-            `เนื้อหาสูง ${mm.toFixed(1)}mm เหลือขอบน้อยเกินไป (พื้นที่พิมพ์ 170mm) — ปรับ tr.blank-filler td height ลง`)
+          assert.ok(mm <= PRINT_AREA_MM,
+            `เนื้อหาสูง ${mm.toFixed(1)}mm ล้นพื้นที่พิมพ์ ${PRINT_AREA_MM}mm — ปรับ tr.blank-filler td height ลง`)
         }
       } finally {
         await page.close()

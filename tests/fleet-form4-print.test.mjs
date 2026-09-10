@@ -69,7 +69,10 @@ assert.equal((blank.match(/<section class="sheet">/g) || []).length, 1)
 assert.equal((html.match(/<section class="sheet">/g) || []).length, 1)
 assert.equal((blank.match(/<tbody>/g) || []).length, 1)
 assert.equal((blank.match(/<tr[\s>]/g) || []).length, 15) // หัว 2 แถว + ว่าง 12 + รวม 1 (FORM4_ROWS_PER_PAGE=13)
-assert.match(html, /thead \{ display: table-row-group; \}/)
+// หัวตารางต้องซ้ำทุกหน้า (table-header-group) ไม่ใช่โผล่หน้าเดียว (table-row-group เดิม) —
+// ตั้งแต่เลิกครอบ overflow:hidden ไว้ที่ .sheet เนื้อหาที่ประมาณความสูงพลาดจะไหลไปหน้าถัดไป
+// แทนที่จะถูกตัดทิ้ง หน้าที่ล้นมาจึงต้องมีหัวตารางกำกับ ไม่งั้นอ่านไม่ออกว่าคอลัมน์ไหนคืออะไร
+assert.match(html, /thead \{ display: table-header-group; \}/)
 assert.match(html, /page-break-inside: avoid/)
 
 const many = Array.from({ length: 21 }, (_, i) => ({ ...trip, id: String(i + 1), destination: `จุด ${i + 1}` }))
