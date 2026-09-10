@@ -133,7 +133,10 @@ serve(async (req) => {
     // folder ที่ client ส่งมาแทนที่ทั้ง BUCKET_LABELS และ subject — segment แรกคือป้ายโมดูลที่อ่านออก
     // (คำร้อง / ท่องเที่ยว / ข่าวสาร / ศูนย์ข้อมูล ฯลฯ) เพราะทุกโมดูลใช้ bucket complaint-attachments
     // ร่วมกัน ป้ายจาก BUCKET_LABELS จึงขึ้นว่า "คำร้อง" หมดทุกอัน แล้วปนกันบน Drive
-    const folderSegments = String(folder || '').split('/').map((s) => sanitizeSegment(s)).filter(Boolean)
+    // ต้องตัด segment ว่างทิ้ง "ก่อน" sanitize เสมอ — sanitizeSegment('') คืน 'ไม่ระบุ' ซึ่ง truthy
+    // ถ้า filter ทีหลัง ไม่ส่ง folder มาจะได้ ['ไม่ระบุ'] แล้วไปทับ fallback ของ BUCKET_LABELS ทั้งชุด
+    // (เกิดขึ้นจริงกับ production 10 ก.ย. 2569: ไฟล์ศูนย์ข้อมูลของน้ำเลาตกไปอยู่โฟลเดอร์ "ไม่ระบุ")
+    const folderSegments = String(folder || '').split('/').map((s) => s.trim()).filter(Boolean).map((s) => sanitizeSegment(s))
     const subjectSegments = String(subject || 'ทั่วไป').split('/').map((s) => sanitizeSegment(s)).filter(Boolean)
     const folderId = await resolveFolderChain(accessToken, rootFolderId, [
       sanitizeSegment(municipalitySlug),
