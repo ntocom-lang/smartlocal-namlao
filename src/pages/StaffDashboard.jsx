@@ -1227,7 +1227,16 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
                       เปิดทีละใบเพื่อดู และงานที่ไม่มีเจ้าของจะไม่มีใครสังเกตเห็น */}
                   <th className="px-3 py-2.5 text-left text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap">ผู้รับผิดชอบ</th>
                   <th className="px-3 py-2.5 text-center text-[11px] font-bold text-white border-r border-white/10 whitespace-nowrap min-w-[125px]">สถานะ</th>
-                  <th className="px-3 py-2.5 text-center text-[11px] font-bold text-white whitespace-nowrap min-w-[130px]">ดำเนินการ</th>
+                  {/* ⚠️ ปักคอลัมน์ปุ่มไว้ขอบขวาเสมอ (sticky right-0) — ห้ามถอดออก
+                      วัดจริงบน production 2569-09-11 หลังเคยถอดออกใน #134: ตารางกว้าง 1106px
+                      แต่พื้นที่เนื้อหามีให้แค่ 1022px (จอ 1366 และ 1440 — พื้นที่เนื้อหามีเพดาน)
+                      และ 990px บนจอ 1280 ปุ่ม "ตรวจสอบคำขอ" ถูกตัดครึ่ง ปุ่มลบหายทั้งปุ่ม
+                      เจ้าหน้าที่ต้องเลื่อนแนวนอนหาปุ่มหลักของหน้า ทุกขนาดจอที่ใช้กันจริง
+                      ความกว้างตารางขึ้นกับชื่อคนและชื่อประเภทบริการ บีบให้พอดีไม่ได้แน่นอน
+                      background: inherit ให้สีตามแถว (แถวสลับสีและเปลี่ยนสีตอน hover ด้วย inline style)
+                      กันพังซ้ำด้วย tests/staff-inbox-layout.playwright.mjs */}
+                  <th className="sticky right-0 z-10 px-3 py-2.5 text-center text-[11px] font-bold text-white whitespace-nowrap min-w-[130px] shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]"
+                    style={{ background: 'inherit' }}>ดำเนินการ</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -1264,9 +1273,10 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
                         </div>
                       </td>
                       {/* stopPropagation ที่ระดับ td แบบเดียวกับตารางคำร้อง — ปุ่มในช่องนี้
-                          ต้องยิง handler ของตัวเอง ไม่ใช่ปล่อยให้คลิกทะลุไปโดน onClick ของ tr */}
-                      <td className="px-3 py-2.5 text-center whitespace-nowrap"
-                        onClick={e => e.stopPropagation()}>
+                          ต้องยิง handler ของตัวเอง ไม่ใช่ปล่อยให้คลิกทะลุไปโดน onClick ของ tr
+                          sticky ต้องตรงกับหัวคอลัมน์เสมอ เหตุผลเขียนไว้ที่ th "ดำเนินการ" ด้านบน */}
+                      <td className="sticky right-0 z-10 px-3 py-2.5 text-center whitespace-nowrap shadow-[-6px_0_6px_-4px_rgba(0,0,0,0.15)]"
+                        style={{ background: 'inherit' }} onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1.5">
                           <button
                             onClick={() => setSelected(req)}
