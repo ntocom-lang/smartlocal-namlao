@@ -164,15 +164,11 @@ export default function AssetBorrowRequestWizard({ tenant, session, onBack, staf
 
   useEffect(() => { if (step === 2) loadAssets() }, [step, loadAssets])
 
-  const lockedDepartmentId = useMemo(() => {
-    const first = Object.keys(cart).find(id => cart[id] > 0)
-    return first ? (assets.find(a => a.id === first)?.department_id ?? null) : undefined
-  }, [cart, assets])
-
-  const lockedDepartmentName = useMemo(() => {
-    if (lockedDepartmentId === undefined) return ''
-    return assets.find(a => (a.department_id ?? null) === lockedDepartmentId)?.department_name || 'ไม่ระบุกอง'
-  }, [lockedDepartmentId, assets])
+  // เลือกข้ามกองได้แล้ว (2569-09-11) — ของที่ อปท. เปิดให้ยืมกระจายอยู่หลายกองจริง
+  // การบังคับให้ประชาชนยื่นทีละกองคือการผลักภาระจากโครงสร้างภายในของ อปท. ไปให้เขา
+  // ระบบแตกใบตามกองให้เองตอนกดส่งผ่าน create_asset_borrow_batch — ยังต้องแตกอยู่เพราะ
+  // ใบ บย. มีช่อง "ไปจากส่วนราชการ" และช่องผู้จ่ายของ/ผู้รับคืนชุดเดียว ใบเดียวหลายกอง
+  // พิมพ์ออกมาแล้วไม่มีใครเซ็นได้ครบ และสิทธิ์ asset_staff ก็ผูกกับกองตัวเอง
 
   const visibleAssets = useMemo(() => {
     const keyword = search.trim().toLowerCase()
@@ -190,6 +186,26 @@ export default function AssetBorrowRequestWizard({ tenant, session, onBack, staf
       .filter(line => line.asset),
     [cart, assets],
   )
+
+  // จัดของที่เลือกเป็นกลุ่มตามกองเจ้าของพัสดุ = 1 กลุ่ม 1 ใบยืม
+  // ⚠️ ใช้ '__none__' แทน null เป็นคีย์ Map เพราะของที่ยังไม่ผูกกอง (department_id = NULL)
+  // ต้องรวมเป็นกลุ่มเดียวกันได้ ถ้าใช้ null ตรงๆ จะกลายเป็นคีย์ "null" ปนกับกองชื่อ null ไม่ได้
+  const cartGroups = useMemo(() => {
+    const map = new Map()
+    for (const line of cartLines) {
+      const key = line.asset.department_id ?? '__none__'
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          departmentId: line.asset.department_id ?? null,
+          departmentName: line.asset.department_name || 'ไม่ระบุกอง',
+          lines: [],
+        })
+      }
+      map.get(key).lines.push(line)
+    }
+    return [...map.values()]
+  }, [cartLines])
 
   function changeQty(asset, delta) {
     setCart(current => {
@@ -214,7 +230,15 @@ export default function AssetBorrowRequestWizard({ tenant, session, onBack, staf
   async function handleSubmit() {
     if (cartLines.length === 0) return
     setSaving(true)
-    const requestId = crypto.randomUUID()
+    // 1 กอง = 1 ใบ = 1 request_id ทั้งหมดผูกกันด้วย batchId เดียว
+    // ⚠️ id สร้างจากฝั่ง client เหมือนเดิม เพื่อให้ยิงซ้ำตอนเน็ตหลุดแล้วไม่เกิดคำขอซ้ำ
+    // (create_asset_borrow_request เป็น idempotent ตาม request_id)
+    const batchId = crypto.randomUUID()
+    const groups = cartGroups.map(group => ({
+      ...group,
+      requestId: crypto.randomUUID(),
+    }))
+    const requestId = groups[0].requestId
     const submittedAt = new Date().toISOString()
     const channel = session && !staffId ? 'online' : 'counter'
 
@@ -232,6 +256,10 @@ export default function AssetBorrowRequestWizard({ tenant, session, onBack, staf
       form_type: 'asset_borrow_request',
       form_version: 1,
       borrower_type: form.borrower_type,
+      // จำนวนใบทั้งหมดในชุด ณ วันยื่น — เก็บใน snapshot เพราะหน้า "เอกสารของฉัน" อ่าน
+      // permit_form_data อยู่แล้ว ไม่ต้องยิง query เพิ่มทั้งหน้าเพื่อบอกแค่ว่า "1 ใน 2 ใบ"
+      // ⚠️ ค่านี้เท่ากันทุกใบในชุด จึงบอกได้แค่จำนวนรวม ไม่ได้บอกว่าใบนี้เป็นใบที่เท่าไร
+      batch_total: cartGroups.length,
       applicant: {
         title: form.title, first: form.first.trim(), last: form.last.trim(),
         position: form.position.trim(), org: form.org.trim(), phone: form.phone.trim(),
@@ -256,28 +284,41 @@ export default function AssetBorrowRequestWizard({ tenant, session, onBack, staf
       },
     }
 
-    const { error } = await supabase.rpc('create_asset_borrow_request', {
-      p_request_id: requestId,
-      p_payload: {
-        borrower_type: form.borrower_type,
-        borrower_name: applicantName,
-        borrower_position: form.position.trim(),
-        borrower_org: form.org.trim(),
-        borrower_phone: form.phone.trim(),
-        borrower_address: address,
-        purpose: form.purpose.trim(),
-        place_of_use: form.place_of_use.trim(),
-        borrow_start_date: form.borrow_start_date,
-        return_due_date: form.return_due_date,
-        acknowledged_terms: true,
-        staff_entry: Boolean(staffId),
-        form_snapshot: snapshot,
-      },
-      p_items: cartLines.map(line => ({
-        asset_id: line.asset.id,
-        requested_qty: line.qty,
-      })),
-    })
+    const payload = {
+      borrower_type: form.borrower_type,
+      borrower_name: applicantName,
+      borrower_position: form.position.trim(),
+      borrower_org: form.org.trim(),
+      borrower_phone: form.phone.trim(),
+      borrower_address: address,
+      purpose: form.purpose.trim(),
+      place_of_use: form.place_of_use.trim(),
+      borrow_start_date: form.borrow_start_date,
+      return_due_date: form.return_due_date,
+      acknowledged_terms: true,
+      staff_entry: Boolean(staffId),
+      form_snapshot: snapshot,
+    }
+    const itemsOf = group => group.lines.map(line => ({
+      asset_id: line.asset.id,
+      requested_qty: line.qty,
+    }))
+
+    // ⚠️ กองเดียวต้องเรียก RPC เดิม ไม่ใช่ตัวชุด — ลำดับ deploy: ถ้าโค้ดนี้ขึ้นก่อน migration
+    // create_asset_borrow_batch ยังไม่มีในฐานข้อมูล การยื่นทุกใบจะพังทั้งระบบ รวมถึงกรณีกองเดียว
+    // ที่ใช้งานได้อยู่แล้วทุกวันนี้ แยกทางไว้แบบนี้ ความเสี่ยงจำกัดอยู่แค่กรณีข้ามกองซึ่งเป็นของใหม่
+    // ผลพลอยได้: คำขอกองเดียวได้ batch_id = NULL ตรงกับความหมายในคอมเมนต์ของคอลัมน์
+    const { error } = groups.length === 1
+      ? await supabase.rpc('create_asset_borrow_request', {
+        p_request_id: groups[0].requestId,
+        p_payload: payload,
+        p_items: itemsOf(groups[0]),
+      })
+      : await supabase.rpc('create_asset_borrow_batch', {
+        p_batch_id: batchId,
+        p_payload: payload,
+        p_groups: groups.map(group => ({ request_id: group.requestId, items: itemsOf(group) })),
+      })
 
     setSaving(false)
     if (error) {
@@ -285,8 +326,19 @@ export default function AssetBorrowRequestWizard({ tenant, session, onBack, staf
       alert(`ยื่นคำขอไม่สำเร็จ: ${error.message}`)
       return
     }
-    notifyTelegram('document_request_created', requestId)
-    setDone({ ref: requestId.slice(0, 8).toUpperCase(), lines: cartLines, snapshot })
+    // แจ้งเตือนทุกใบ — แต่ละใบวิ่งไปคนละกอง เจ้าหน้าที่กองที่ไม่ได้รับแจ้งจะไม่รู้ว่ามีคำขอเข้า
+    for (const group of groups) notifyTelegram('document_request_created', group.requestId)
+    setDone({
+      ref: requestId.slice(0, 8).toUpperCase(),
+      lines: cartLines,
+      snapshot,
+      // ใบทั้งหมดในชุด ใช้แสดงเลขอ้างอิงให้ครบ ผู้ยื่นจะได้ตามสถานะถูกใบ
+      tickets: groups.map(group => ({
+        ref: group.requestId.slice(0, 8).toUpperCase(),
+        departmentName: group.departmentName,
+        count: group.lines.length,
+      })),
+    })
   }
 
   // ต้องล็อกอิน — คำขอนี้ผูกความรับผิดกรณีของชำรุด/สูญหายไว้กับตัวผู้ยืม ถ้ายื่นได้โดยไม่
@@ -355,16 +407,40 @@ export default function AssetBorrowRequestWizard({ tenant, session, onBack, staf
             </p>
           </div>
 
-          <div className="mb-5 rounded-2xl bg-gray-50 p-4">
-            <p className="mb-1.5 text-xs text-gray-400">หมายเลขอ้างอิง</p>
-            <p className="text-2xl font-bold tracking-widest text-gray-800">{done.ref}</p>
-            <button type="button"
-              onClick={() => { navigator.clipboard.writeText(done.ref); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
-              className="mx-auto mt-2.5 flex items-center gap-1.5 text-xs text-blue-600">
-              {copied ? <Check size={13} /> : <Copy size={13} />}
-              {copied ? 'คัดลอกแล้ว' : 'คัดลอก'}
-            </button>
-          </div>
+          {/* ⚠️ ของจากหลายกองได้เลขอ้างอิงหลายเลข ต้องโชว์ให้ครบ ไม่ใช่โชว์ใบแรกใบเดียว
+              ผู้ยื่นที่ถือเลขเดียวไปถามเจ้าหน้าที่กองอื่นจะกลายเป็น "ไม่พบคำขอ" */}
+          {done.tickets && done.tickets.length > 1 ? (
+            <div className="mb-5 space-y-2">
+              <p className="text-xs text-gray-400">
+                แยกเป็น {done.tickets.length} ใบตามกองเจ้าของพัสดุ — แต่ละใบมีเลขอ้างอิงของตัวเอง
+              </p>
+              {done.tickets.map(ticket => (
+                <div key={ticket.ref} className="rounded-2xl bg-gray-50 p-3 text-left">
+                  <p className="text-[11px] text-gray-400">{ticket.departmentName} · {ticket.count} รายการ</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-lg font-bold tracking-widest text-gray-800">{ticket.ref}</p>
+                    <button type="button"
+                      onClick={() => { navigator.clipboard.writeText(ticket.ref); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
+                      className="flex items-center gap-1.5 text-xs text-blue-600">
+                      <Copy size={13} /> คัดลอก
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {copied && <p className="text-xs text-emerald-600">คัดลอกแล้ว</p>}
+            </div>
+          ) : (
+            <div className="mb-5 rounded-2xl bg-gray-50 p-4">
+              <p className="mb-1.5 text-xs text-gray-400">หมายเลขอ้างอิง</p>
+              <p className="text-2xl font-bold tracking-widest text-gray-800">{done.ref}</p>
+              <button type="button"
+                onClick={() => { navigator.clipboard.writeText(done.ref); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
+                className="mx-auto mt-2.5 flex items-center gap-1.5 text-xs text-blue-600">
+                {copied ? <Check size={13} /> : <Copy size={13} />}
+                {copied ? 'คัดลอกแล้ว' : 'คัดลอก'}
+              </button>
+            </div>
+          )}
 
           <button type="button" onClick={() => (onDone ? onDone() : navigate('/my-doc-requests'))}
             className="min-h-[44px] w-full rounded-2xl bg-teal-700 text-sm font-bold text-white">
@@ -512,11 +588,13 @@ export default function AssetBorrowRequestWizard({ tenant, session, onBack, staf
                 placeholder="ค้นหาชื่อของ รหัส หรือกอง" />
             </div>
 
-            {lockedDepartmentId !== undefined && (
+            {/* บอกล่วงหน้าตั้งแต่ตอนเลือกว่าจะได้ใบกี่ใบ ไม่ใช่ไปเซอร์ไพรส์ตอนกดส่งเสร็จ
+                ผู้ยื่นจะได้รู้ว่าต้องตามสถานะหลายใบ และไม่คิดว่าระบบยื่นซ้ำให้เอง */}
+            {cartGroups.length > 1 && (
               <div className="rounded-2xl border border-teal-200 bg-teal-50 p-3 text-xs leading-relaxed text-teal-900">
-                คำขอนี้ยืมจาก <span className="font-bold">{lockedDepartmentName}</span> —
-                หนึ่งคำขอยืมได้จากกองเดียว เพราะใบยืมออกแยกตามกองเจ้าของพัสดุ
-                ถ้าต้องการของจากกองอื่นด้วย กรุณายื่นอีกคำขอหนึ่ง
+                ท่านเลือกของจาก <span className="font-bold">{cartGroups.length} กอง</span> —
+                ระบบจะแยกเป็นใบยืม {cartGroups.length} ใบให้อัตโนมัติ เพราะแต่ละกองออกใบยืมและ
+                จ่ายของเอง ยื่นครั้งเดียวจบ แต่จะได้เลขอ้างอิง {cartGroups.length} เลขไว้ตามสถานะ
               </div>
             )}
 
@@ -549,10 +627,8 @@ export default function AssetBorrowRequestWizard({ tenant, session, onBack, staf
 
             {assetsState === 'ready' && visibleAssets.map(asset => {
               const inCart = cart[asset.id] ?? 0
-              const otherDept = lockedDepartmentId !== undefined
-                && (asset.department_id ?? null) !== lockedDepartmentId
               const soldOut = asset.available_qty < 1
-              const disabled = otherDept || (soldOut && inCart === 0)
+              const disabled = soldOut && inCart === 0
               return (
                 <div key={asset.id}
                   className={`rounded-2xl border bg-white p-4 ${disabled ? 'border-gray-100 opacity-50' : 'border-gray-100'}`}>
@@ -567,9 +643,6 @@ export default function AssetBorrowRequestWizard({ tenant, session, onBack, staf
                         {soldOut ? 'ช่วงวันที่นี้ถูกจองเต็มแล้ว' : `ว่าง ${asset.available_qty} ${asset.unit}`}
                       </p>
                       {asset.notes && <p className="mt-1 text-[11px] text-gray-400">{asset.notes}</p>}
-                      {otherDept && (
-                        <p className="mt-1 text-[11px] text-teal-700">อยู่คนละกองกับของที่เลือกไว้ ต้องแยกคำขอ</p>
-                      )}
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       <button type="button" disabled={inCart === 0} onClick={() => changeQty(asset, -1)}
@@ -604,26 +677,49 @@ export default function AssetBorrowRequestWizard({ tenant, session, onBack, staf
                 {form.position.trim() && (
                   <div className="flex gap-3"><dt className="w-28 shrink-0 text-gray-400">ตำแหน่ง</dt><dd className="min-w-0 text-gray-800">{form.position}</dd></div>
                 )}
-                <div className="flex gap-3"><dt className="w-28 shrink-0 text-gray-400">ยืมจาก</dt><dd className="min-w-0 text-gray-800">{lockedDepartmentName}</dd></div>
+                <div className="flex gap-3">
+                  <dt className="w-28 shrink-0 text-gray-400">ยืมจาก</dt>
+                  <dd className="min-w-0 text-gray-800">
+                    {cartGroups.map(group => group.departmentName).join(' · ')}
+                  </dd>
+                </div>
                 <div className="flex gap-3"><dt className="w-28 shrink-0 text-gray-400">เพื่อ</dt><dd className="min-w-0 text-gray-800">{form.purpose}</dd></div>
                 <div className="flex gap-3"><dt className="w-28 shrink-0 text-gray-400">ตั้งแต่วันที่</dt><dd className="min-w-0 text-gray-800">{thaiDateFromDateInput(form.borrow_start_date)}</dd></div>
                 <div className="flex gap-3"><dt className="w-28 shrink-0 text-gray-400">กำหนดคืน</dt><dd className="min-w-0 text-gray-800">{thaiDateFromDateInput(form.return_due_date)}</dd></div>
               </dl>
             </div>
 
+            {/* แยกหัวข้อตามกอง = แยกตามใบที่จะได้จริง ผู้ยื่นจะได้เห็นว่าของชิ้นไหนอยู่ใบไหน
+                ก่อนกดส่ง ไม่ใช่มารู้ทีหลังตอนกองหนึ่งอนุมัติอีกกองไม่อนุมัติ */}
             <div className="rounded-2xl border border-gray-100 bg-white p-4">
-              <h2 className="mb-3 text-sm font-bold text-gray-800">รายการที่ขอยืม</h2>
-              <ul className="divide-y divide-gray-100">
-                {cartLines.map(line => (
-                  <li key={line.asset.id} className="flex justify-between gap-3 py-2 text-sm">
-                    <span className="min-w-0 text-gray-800">
-                      {line.asset.name}
-                      {line.asset.asset_code && <span className="text-gray-400"> · {line.asset.asset_code}</span>}
-                    </span>
-                    <span className="shrink-0 font-semibold text-gray-800">{line.qty} {line.asset.unit}</span>
-                  </li>
+              <h2 className="mb-3 text-sm font-bold text-gray-800">
+                รายการที่ขอยืม
+                {cartGroups.length > 1 && (
+                  <span className="ml-2 font-normal text-gray-400">แยกเป็น {cartGroups.length} ใบ</span>
+                )}
+              </h2>
+              <div className="space-y-3">
+                {cartGroups.map((group, index) => (
+                  <div key={group.key}>
+                    {cartGroups.length > 1 && (
+                      <p className="mb-1 text-[11px] font-bold text-teal-700">
+                        ใบที่ {index + 1} · {group.departmentName}
+                      </p>
+                    )}
+                    <ul className="divide-y divide-gray-100">
+                      {group.lines.map(line => (
+                        <li key={line.asset.id} className="flex justify-between gap-3 py-2 text-sm">
+                          <span className="min-w-0 text-gray-800">
+                            {line.asset.name}
+                            {line.asset.asset_code && <span className="text-gray-400"> · {line.asset.asset_code}</span>}
+                          </span>
+                          <span className="shrink-0 font-semibold text-gray-800">{line.qty} {line.asset.unit}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 ))}
-              </ul>
+              </div>
             </div>
 
             {/* ข้อความนี้คัดจากใบ บย. ต้นฉบับตรงตัว ไม่ได้แต่งเพิ่ม */}

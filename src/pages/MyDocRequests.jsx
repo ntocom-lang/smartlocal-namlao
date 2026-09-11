@@ -625,6 +625,12 @@ function DocDetailSheet({ req, onClose, tenant, onChanged }) {
               req.document_type === 'asset_borrow_request' && req.permit_form_data?.place_of_use && {
                 label: 'สถานที่ใช้', value: req.permit_form_data.place_of_use,
               },
+              // ของที่ยืมข้ามกองถูกแตกเป็นหลายใบตอนยื่น — ต้องบอกผู้ยื่น ไม่งั้นเห็นคำขอ
+              // หน้าตาเหมือนกัน 2 ใบแล้วคิดว่าระบบยื่นซ้ำให้ แล้วโทรมาขอให้ยกเลิกใบหนึ่ง
+              req.document_type === 'asset_borrow_request' && req.permit_form_data?.batch_total > 1 && {
+                label: 'ชุดคำขอ',
+                value: `1 ใน ${req.permit_form_data.batch_total} ใบ (แยกตามกองเจ้าของพัสดุ)`,
+              },
               // ไม่แสดงประเภทนัด/การเคลื่อนไหวซ้ำตรงนี้ — เป็นข้อมูลสุขภาพ แสดงเท่าที่ผู้ยื่นต้องใช้ตามนัด
               req.document_type === PATIENT_TRANSPORT_TYPE && req.permit_form_data?.patient_name && {
                 label: 'ผู้ป่วย', value: req.permit_form_data.patient_name,

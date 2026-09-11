@@ -52,6 +52,8 @@ export default function AssetBorrowRequestPanel({ requestId, tenant, onChanged }
   const [showExtend, setShowExtend] = useState(false)
   const [printData, setPrintData] = useState({ department: '', clerk: null, mayor: null })
   const [snapshot, setSnapshot] = useState({})
+  // ใบอื่นที่ผู้ยืมยื่นมาพร้อมกันในชุดเดียวกัน (ของคนละกอง)
+  const [siblings, setSiblings] = useState([])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -93,6 +95,26 @@ export default function AssetBorrowRequestPanel({ requestId, tenant, onChanged }
       mayor: toSignatory(pickSignatory(registry, { role: 'mayor' })),
     })
     setSnapshot(parentRes.data?.permit_form_data ?? {})
+
+    // ใบพี่น้องในชุดเดียวกัน — ผู้ยืมยื่นครั้งเดียวแล้วระบบแตกใบตามกองเจ้าของพัสดุ
+    // ⚠️ ต้องบอกเจ้าหน้าที่ ไม่งั้นกองที่เห็นคำขอชื่อเดียวกันวันเดียวกันหลายใบจะเข้าใจว่า
+    // ประชาชนยื่นซ้ำ แล้วปฏิเสธทิ้งใบหนึ่ง ทั้งที่เป็นของคนละกองที่ต้องอนุมัติแยกกัน
+    if (!headRes.data?.batch_id) { setSiblings([]); return }
+    const sibRes = await supabase.from('asset_borrow_requests')
+      .select('request_id, department_id, workflow_status')
+      .eq('batch_id', headRes.data.batch_id)
+      .neq('request_id', requestId)
+    if (sibRes.error || !sibRes.data?.length) { setSiblings([]); return }
+    const deptIds = [...new Set(sibRes.data.map(row => row.department_id).filter(Boolean))]
+    const nameRes = deptIds.length
+      ? await supabase.from('departments').select('id, name').in('id', deptIds)
+      : { data: [] }
+    const nameById = new Map((nameRes.data ?? []).map(row => [row.id, row.name]))
+    setSiblings(sibRes.data.map(row => ({
+      requestId: row.request_id,
+      status: row.workflow_status,
+      departmentName: nameById.get(row.department_id) ?? 'ไม่ระบุกอง',
+    })))
   }, [requestId])
 
   // สิทธิ์ดำเนินการ — อ่านโปรไฟล์ตัวเองแทนการรับเป็น prop เพราะแผงนี้ถูกเรนเดอร์ลึกอยู่ใน
@@ -261,6 +283,31 @@ export default function AssetBorrowRequestPanel({ requestId, tenant, onChanged }
           <span className="rounded-lg bg-gray-100 px-2.5 py-1 text-xs text-gray-600">บย. {header.form_no}</span>
         )}
       </div>
+
+      {/* ⚠️ ผู้ยืมยื่นครั้งเดียวแต่ได้หลายใบเมื่อของอยู่คนละกอง ถ้าไม่บอกตรงนี้ เจ้าหน้าที่ที่เห็น
+          ชื่อผู้ยื่นซ้ำวันเดียวกันจะเข้าใจว่ายื่นซ้ำแล้วปฏิเสธทิ้ง — และใบพวกนี้ "ไม่" ผูกชะตากัน
+          กองนี้ไม่อนุมัติ กองอื่นยังเดินต่อได้ เป็นสิทธิ์ของผู้ยืมที่จะเอาเฉพาะของที่ได้ */}
+      {siblings.length > 0 && (
+        <div className="rounded-xl border border-teal-200 bg-teal-50 p-3 text-xs leading-relaxed text-teal-900">
+          <p className="font-semibold">
+            คำขอนี้เป็น 1 ใน {siblings.length + 1} ใบที่ผู้ยืมยื่นมาพร้อมกัน (ของอยู่คนละกอง)
+          </p>
+          <ul className="mt-1 space-y-0.5">
+            {siblings.map(sibling => (
+              <li key={sibling.requestId}>
+                {sibling.departmentName} · เลขอ้างอิง{' '}
+                <span className="font-mono font-semibold">
+                  {sibling.requestId.slice(0, 8).toUpperCase()}
+                </span>{' '}
+                · {(STATUS_META[sibling.status] ?? STATUS_META.submitted).label}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 text-teal-700">
+            ไม่ใช่การยื่นซ้ำ แต่ละใบอนุมัติและจ่ายของแยกกันตามกองเจ้าของพัสดุ
+          </p>
+        </div>
+      )}
 
       {/* บอกให้ชัดว่าทำไมไม่มีปุ่ม — จอที่เงียบเฉยๆ ทำให้เจ้าหน้าที่คิดว่าระบบพัง แล้วโทรหา
           คนที่แก้ไม่ได้ ข้อความนี้ชี้ตรงไปที่คนที่แก้ให้ได้จริงคือแอดมินของ อปท. */}
