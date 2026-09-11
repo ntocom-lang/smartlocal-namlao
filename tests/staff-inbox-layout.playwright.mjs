@@ -5,8 +5,12 @@
 // (จอ 1280) ปุ่ม "ตรวจสอบคำขอ" ถูกตัดครึ่งและปุ่มลบหายทุกขนาดจอที่เจ้าหน้าที่ใช้จริง
 // ทั้งที่คอมเมนต์เดิมเคยบันทึกปัญหานี้ไว้แล้ว — คอมเมนต์หายไปพร้อมโค้ด จึงต้องมีเทสต์แทน
 //
-// ⚠️ ข้อนี้ไม่ได้ตรวจว่า "ตารางพอดีจอ" (พอดีไม่ได้แน่นอน ความกว้างขึ้นกับชื่อคน) แต่ตรวจว่า
-// ปุ่มหลักของทุกแถวอยู่ในกรอบที่มองเห็นได้ ซึ่งเป็นสิ่งที่เจ้าหน้าที่ต้องการจริง
+// ตรวจ 2 อย่างต่อขนาดจอ:
+//   1. ปุ่มหลักของทุกแถวอยู่ในกรอบที่มองเห็นได้ — กันการถอด sticky (บังคับ ห้ามตก)
+//   2. ป้ายสถานะไม่ถูกคอลัมน์ที่ปักไว้บัง — กันตารางกว้างขึ้นจนล้นพื้นที่อีก
+//      หลัง #136 คืน sticky ตารางยังล้น 84px จนบังสถานะ 10/10 แถว จึงบีบตาราง (รวมวันที่เข้าช่อง
+//      เลขอ้างอิง · padding 8px · ตัดชื่อผู้รับผิดชอบ 150px) และใส่ข้อนี้กันไว้
+// ⚠️ ข้อ 2 ขึ้นกับความยาวข้อมูลบนสนามซ้อม ชื่อที่ยาวกว่าข้อมูลทดสอบมากๆ ดันให้ล้นได้เสมอ
 //
 // อ่านอย่างเดียว ไม่สร้าง/แก้ข้อมูล · ยิงได้เฉพาะ dev server ในเครื่องหรือสนามซ้อม
 //   node tests/staff-inbox-layout.playwright.mjs                       (localhost:5174)
@@ -91,17 +95,32 @@ async function main() {
           const right = Math.min(frame.right, window.innerWidth)
           return [...table.querySelectorAll('tbody tr')].slice(0, 10).map(tr => {
             const buttons = [...tr.querySelectorAll('td:last-child button')]
-            return buttons.map(b => ({ text: b.textContent.trim() || '(ไอคอน)', right: b.getBoundingClientRect().right, frameRight: right }))
+            // ป้ายสถานะอยู่ช่องก่อนสุดท้าย — ต้องไม่ถูกคอลัมน์ที่ปักไว้บังตอนยังไม่เลื่อนตาราง
+            const sticky = tr.querySelector('td:last-child')?.getBoundingClientRect()
+            const badge = tr.children[tr.children.length - 2]?.querySelector('span')?.getBoundingClientRect()
+            return {
+              buttons: buttons.map(b => ({ text: b.textContent.trim() || '(ไอคอน)', right: b.getBoundingClientRect().right, frameRight: right })),
+              badgeCovered: Boolean(sticky && badge && badge.right > sticky.left + 1),
+              badgeRight: badge?.right, stickyLeft: sticky?.left,
+            }
           })
         })
         assert.ok(rows, 'ไม่เจอตารางกล่องงาน')
         assert.ok(rows.length > 0, 'ตารางกล่องงานไม่มีแถวให้ตรวจ')
-        const clipped = rows.flat().filter(b => b.right > b.frameRight + 1)
+        const clipped = rows.flatMap(r => r.buttons).filter(b => b.right > b.frameRight + 1)
         await page.screenshot({ path: path.join(SHOT_DIR, `inbox-${width}.png`) })
         assert.deepEqual(clipped.map(b => b.text), [],
           `ปุ่มถูกตัดนอกกรอบ ${clipped.length} ปุ่ม (ขอบขวาปุ่ม ${Math.round(clipped[0]?.right)}px `
           + `เกินกรอบ ${Math.round(clipped[0]?.frameRight)}px) — ตรวจว่าคอลัมน์ "ดำเนินการ" ยังเป็น sticky right-0`)
-        console.log(`PASS  จอ ${width}px — ปุ่มดำเนินการ ${rows.flat().length} ปุ่มใน ${rows.length} แถว มองเห็นครบ`)
+        // ⚠️ ข้อนี้ขึ้นกับความยาวข้อมูล (ชื่อยาวกว่าข้อมูลทดสอบจะดันตารางให้ล้นอีก) จึงรันกับ
+        // สนามซ้อมเท่านั้น — ถ้าตกเพราะมีคนเพิ่มคอลัมน์หรือขยาย padding ให้บีบกลับ ไม่ใช่ปิดข้อนี้
+        const covered = rows.filter(r => r.badgeCovered)
+        assert.equal(covered.length, 0,
+          `ป้ายสถานะถูกคอลัมน์ "ดำเนินการ" บัง ${covered.length}/${rows.length} แถว (ขอบขวาป้าย `
+          + `${Math.round(covered[0]?.badgeRight)}px เลยขอบซ้ายคอลัมน์ที่ปัก ${Math.round(covered[0]?.stickyLeft)}px) `
+          + '— ตารางกว้างเกินพื้นที่ ต้องบีบคอลัมน์อื่นลง')
+        console.log(`PASS  จอ ${width}px — ปุ่มดำเนินการ ${clipped.length === 0 ? 'ครบ' : ''} `
+          + `${rows.flatMap(r => r.buttons).length} ปุ่ม · ป้ายสถานะไม่ถูกบัง ${rows.length} แถว`)
       } catch (error) {
         failed += 1
         console.log(`${error instanceof BlockedError ? 'BLOCKED' : 'FAIL'}  จอ ${width}px — ${error.message.split('\n')[0]}`)
