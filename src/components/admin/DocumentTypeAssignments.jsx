@@ -30,6 +30,20 @@ import ReferralPartnersCard from './ReferralPartnersCard'
 // ทำงานเหมือนเดิมทุกประการ ที่ต่างคือ **ปิดแล้วไม่ลบแถว document_type_assignments ทิ้งอีก**
 // เปิดกลับมาเมื่อไรก็ได้กอง/ผู้รับผิดชอบ/วันแล้วเสร็จเดิมคืนครบ (เดิมต้องมาตั้งใหม่ทุกครั้ง)
 
+// ประเภทที่กอง/ผู้ดำเนินการตัดสินจากข้อมูลในใบเอง ไม่ใช่จากผังงานในหน้านี้ — แถวของประเภทนี้
+// ไม่แสดงช่องเลือกกอง/ผู้รับผิดชอบ เพราะช่องเลือกได้ค่าเดียว แต่ใบจริงวิ่งได้หลายกอง
+//   asset_borrow_request — ใบวิ่งเข้า "กองเจ้าของพัสดุ" ของแต่ละใบ (create_asset_borrow_request
+//   ใส่ department_id มาเอง) ถ้าตั้งผู้รับผิดชอบคนเดียวไว้ ใบของกองอื่นจะไปอยู่ในมือคนที่
+//   กดดำเนินการไม่ได้ ผู้ดำเนินการจริงคือคนที่ถูกมอบสิทธิ์พัสดุของกองนั้น ซึ่งมองเห็นใบผ่าน
+//   policy "asset staff read asset_borrow requests" (20260912100000)
+// ค่าที่เคยตั้งไว้ใน DB ไม่ถูกลบ (ไม่แสดง = ไม่ถูกเขียนทับ) trigger ใช้เฉพาะผู้รับผิดชอบที่อยู่
+// กองเดียวกับใบ (20260912100100) ส่วนวันแล้วเสร็จและสวิตช์เปิด/ปิดยังตั้งได้ตามปกติ
+const AUTO_ROUTED_TYPES = {
+  asset_borrow_request:
+    'ส่งเข้ากองเจ้าของพัสดุของแต่ละใบอัตโนมัติ (ยืมหลายกองได้ ระบบแยกใบให้) — '
+    + 'ผู้ดำเนินการคือ "เจ้าหน้าที่พัสดุของกอง" นั้น มอบสิทธิ์ที่เมนูจัดการผู้ใช้และการแต่งตั้ง',
+}
+
 export default function DocumentTypeAssignments({ tenant }) {
   const municipalityId = tenant?.id
   const { patchTenant } = useTenant()
@@ -234,7 +248,8 @@ export default function DocumentTypeAssignments({ tenant }) {
 
   const staffGroups = useMemo(() => groupStaffByDepartment(staff), [staff])
   // เตือนเฉพาะประเภทที่เปิดให้บริการอยู่ — ที่ปิดไว้ไม่มีคำขอใหม่เข้ามาอยู่แล้ว
-  const unassigned = enabledTypes.filter(t => !valueOf(t.value).assignee_id)
+  // ประเภทที่ส่งต่อเองตามข้อมูลในใบ (AUTO_ROUTED_TYPES) ไม่มีช่องให้ตั้ง จึงไม่นับว่า "ยังไม่ได้ตั้ง"
+  const unassigned = enabledTypes.filter(t => !AUTO_ROUTED_TYPES[t.value] && !valueOf(t.value).assignee_id)
 
   const selectCls = 'w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-900 bg-white focus:outline-none focus:ring-1 focus:ring-blue-300'
 
@@ -325,6 +340,13 @@ export default function DocumentTypeAssignments({ tenant }) {
                       </td>
                       {/* ช่องผังงานของแถวที่ปิดอยู่ล็อกไว้ ค่าที่ตั้งไว้ยังอยู่ครบและกลับมาแก้ได้
                           ทันทีที่เปิดใหม่ — กันเจ้าหน้าที่เสียเวลาตั้งผู้รับผิดชอบให้บริการที่ปิดอยู่ */}
+                      {AUTO_ROUTED_TYPES[value] ? (
+                        <td colSpan={2} className="px-3 py-2.5">
+                          <p className={'text-[11px] leading-relaxed ' + (enabled ? 'text-gray-500' : 'text-gray-400')}>
+                            {AUTO_ROUTED_TYPES[value]}
+                          </p>
+                        </td>
+                      ) : (<>
                       <td className="px-3 py-2.5">
                         <select value={v.department_id ?? ''} disabled={!enabled}
                           onChange={e => setField(value, 'department_id', e.target.value)}
@@ -349,6 +371,7 @@ export default function DocumentTypeAssignments({ tenant }) {
                           ))}
                         </select>
                       </td>
+                      </>)}
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-1.5">
                           <input type="number" min={1} max={90} disabled={!enabled}
