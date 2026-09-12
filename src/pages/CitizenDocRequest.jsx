@@ -422,7 +422,7 @@ export default function CitizenDocRequest() {
             </p>
           </div>
           <div className="px-8 py-3 bg-white border-b border-gray-200 shadow-sm">
-            <h1 className="text-base font-bold text-gray-800">E-SERVICE งานบริการประชาชน</h1>
+            <h1 className="text-2xl font-bold text-gray-800">งานบริการประชาชน</h1>
             <p className="text-[11px] text-gray-400 mt-0.5">{tenant?.name} — เลือกบริการที่ต้องการ</p>
           </div>
         </div>

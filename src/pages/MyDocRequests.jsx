@@ -857,7 +857,7 @@ export default function MyDocRequests() {
         </div>
         <div className="px-8 py-3 flex items-center justify-between bg-white border-b border-gray-200 shadow-sm">
           <div>
-            <h1 className="text-base font-bold text-gray-800">เอกสารของฉัน</h1>
+            <h1 className="text-2xl font-bold text-gray-800">เอกสารของฉัน</h1>
             <p className="text-[11px] text-gray-400 mt-0.5">{tenant?.name} — คำขอบริการและเอกสารราชการ</p>
           </div>
           <button onClick={() => navigate('/doc-request')}

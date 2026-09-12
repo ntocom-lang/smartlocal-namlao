@@ -100,13 +100,13 @@ export default function PostsPage() {
                   className="p-2 -ml-1 rounded-xl hover:bg-gray-200/60 text-gray-500 transition-colors">
             <ArrowLeft size={20} />
           </button>
-          <h1 className="text-base font-bold text-gray-800">ข่าวสาร / กิจกรรม</h1>
+          <h1 className="text-base font-bold text-gray-800">ข่าวสาร/ประกาศ</h1>
         </div>
       </div>
 
       {/* PC header */}
       <div className="hidden md:block max-w-4xl mx-auto px-4 pt-8 pb-2">
-        <h1 className="text-2xl font-bold text-gray-800">ข่าวสาร / กิจกรรม</h1>
+        <h1 className="text-2xl font-bold text-gray-800">ข่าวสาร/ประกาศ</h1>
       </div>
 
       {/* Tabs */}

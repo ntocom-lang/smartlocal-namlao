@@ -21,13 +21,13 @@ export default function ContactPage() {
             className="p-1.5 -ml-1.5 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors">
             <ArrowLeft size={20} />
           </button>
-          <h1 className="text-base font-bold text-gray-800">ติดต่อหน่วยงาน</h1>
+          <h1 className="text-base font-bold text-gray-800">ติดต่อเรา</h1>
         </div>
       </div>
 
       {/* PC header */}
       <div className="hidden md:flex items-center justify-between px-8 py-4 bg-white border-b border-gray-200 shadow-sm">
-        <h1 className="text-lg font-bold text-gray-800">ติดต่อหน่วยงาน</h1>
+        <h1 className="text-2xl font-bold text-gray-800">ติดต่อเรา</h1>
         <button onClick={() => navigate(-1)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors">
           <ArrowLeft size={15} />

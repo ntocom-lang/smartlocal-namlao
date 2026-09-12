@@ -956,7 +956,7 @@ export default function MyComplaints() {
       {/* PC header */}
       <div className="hidden md:flex items-center justify-between px-8 py-4 bg-white border-b border-gray-200 shadow-sm">
         <div>
-          <h1 className="text-lg font-bold text-gray-800">คำร้องของฉัน</h1>
+          <h1 className="text-2xl font-bold text-gray-800">คำร้องของฉัน</h1>
           <p className="text-xs text-gray-400 mt-0.5">ติดตามสถานะคำร้องที่ยื่น — {complaints.length} รายการ</p>
         </div>
         <button onClick={() => navigate('/complaint')}
