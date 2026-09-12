@@ -7,6 +7,7 @@ import { logAction } from '../../lib/auditLog'
 import { uploadFile } from '../../lib/driveStorage'
 import { driveFolderPath, DRIVE_MODULES } from '../../lib/driveFolders'
 import BusinessRegistrationAdmin from './BusinessRegistrationAdmin'
+import TourismPlacePreview from './TourismPlacePreview'
 import OpeningHoursEditor from './OpeningHoursEditor'
 import { parseCoords, hoursToRows, rowsToHours, rowsAreValid, serviceUrlBlocked } from '../../lib/tourismPlaces'
 
@@ -185,6 +186,8 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
   const [hasNewCols, setHasNewCols] = useState(null)
   const [placesPage, setPlacesPage]         = useState(0)
   const [placesPageSize, setPlacesPageSize] = useState(20)
+  // เก็บเป็น id ไม่ใช่ทั้งแถว — พอกดซ่อน/แสดงใน modal แล้ว places อัปเดต ป้ายในพรีวิวจะตามทันที
+  const [previewId, setPreviewId] = useState(null)
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -212,6 +215,7 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
   }, [])
 
   const sheetPlace = sheet && sheet !== 'add' ? places.find(p => p.id === sheet) : null
+  const previewPlace = previewId ? places.find(p => p.id === previewId) ?? null : null
   const sheetAllImgs = sheetPlace ? [sheetPlace.image_url, ...(sheetPlace.gallery ?? [])].filter(Boolean) : []
 
   function canManagePlace(place) {
@@ -451,7 +455,10 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
               const canManage = canManagePlace(place)
               return (
                 <div key={place.id}
-                  className={`bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden transition-opacity ${!place.is_active ? 'opacity-50' : ''}`}>
+                  role="button" tabIndex={0}
+                  onClick={() => setPreviewId(place.id)}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPreviewId(place.id) } }}
+                  className={`bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden transition-opacity cursor-pointer active:scale-[0.99] ${!place.is_active ? 'opacity-50' : ''}`}>
                   <div className="flex items-center gap-3 p-3">
                     <div className="w-14 h-14 rounded-xl overflow-hidden shrink-0 bg-gray-100 flex items-center justify-center text-xl">
                       {place.image_url ? <img src={place.image_url} alt="" className="w-full h-full object-cover" /> : (cat?.emoji || '')}
@@ -469,7 +476,7 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
                         className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${place.is_active ? 'bg-green-400' : 'bg-gray-300'}`}>
                         {place.is_active ? '✓' : '—'}
                       </button>
-                      <button onClick={() => openEdit(place)} disabled={!canManage}
+                      <button onClick={e => { e.stopPropagation(); openEdit(place) }} disabled={!canManage}
                         className={`w-8 h-8 rounded-full flex items-center justify-center ${canManage ? 'bg-blue-50' : 'bg-gray-50 opacity-40 cursor-not-allowed'}`}>
                         <Pencil size={14} className="text-blue-500" />
                       </button>
@@ -498,7 +505,10 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
                   const imgCount = [place.image_url, ...(place.gallery ?? [])].filter(Boolean).length
                   const canManage = canManagePlace(place)
                   return (
-                    <tr key={place.id} className={`hover:bg-gray-50 transition-colors ${!place.is_active ? 'opacity-50' : ''}`}>
+                    <tr key={place.id}
+                      onClick={() => setPreviewId(place.id)}
+                      title="ดูรายละเอียดแบบที่ประชาชนเห็น"
+                      className={`hover:bg-gray-50 transition-colors cursor-pointer ${!place.is_active ? 'opacity-50' : ''}`}>
                       <td className="px-4 py-3 text-xs text-gray-400">{placesCurrentPage * (placesPageSize === 'all' ? 0 : placesPageSize) + i + 1}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2.5">
@@ -523,7 +533,7 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-1.5">
-                          <button onClick={() => openEdit(place)} disabled={!canManage}
+                          <button onClick={e => { e.stopPropagation(); openEdit(place) }} disabled={!canManage}
                             className={`p-1.5 rounded-lg transition-colors ${canManage ? 'text-gray-400 hover:text-blue-600 hover:bg-blue-50' : 'text-gray-200 cursor-not-allowed'}`} title={canManage ? 'แก้ไข' : 'ดูได้อย่างเดียว'}>
                             <Pencil size={14} />
                           </button>
@@ -564,6 +574,19 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
             </div>
           )}
         </>
+      )}
+
+      {/* ─── พรีวิวแบบที่ประชาชนเห็น (กดที่การ์ด/แถว) ───
+           key = id เพื่อให้ remount ตอนสลับสถานที่ รีวิวจะได้ไม่ค้างของรายการก่อนหน้า */}
+      {previewPlace && (
+        <TourismPlacePreview
+          key={previewPlace.id}
+          place={previewPlace}
+          canManage={canManagePlace(previewPlace)}
+          onClose={() => setPreviewId(null)}
+          onEdit={() => { setPreviewId(null); openEdit(previewPlace) }}
+          onToggleActive={e => toggleActive(previewPlace, e)}
+        />
       )}
 
       {/* ─── Bottom Sheet ─── */}
