@@ -1,5 +1,5 @@
-import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
-import { orgClerkTitle, orgHeadTitle, orgNameParts } from './orgTerms.js'
+import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, GOV_LINE_HEIGHT, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
+import { getOrgTerms, orgClerkTitle, orgHeadTitle, orgNameParts } from './orgTerms.js'
 import { MONTHS_TH, thaiDateTimeText } from './thaiDate.js'
 
 function esc(value) {
@@ -36,6 +36,27 @@ function orgNameHtml(nameOrTenant) {
   const { prefix, locality } = orgNameParts(nameOrTenant)
   if (!locality) return `<span class="nb">${esc(prefix)}</span>`
   return `<span class="nb">${esc(prefix)}</span><span class="nb">${esc(locality)}</span>`
+}
+
+/**
+ * ชื่อตำแหน่งแบบย่อสำหรับบรรทัดหัวข้อ "- ความเห็นปลัด…" / "- ความเห็นนายก…"
+ *
+ * ต้นฉบับกระดาษเขียนย่อว่า "ความเห็นปลัด อบต.โป่งตาลอง" ไม่ได้เขียนเต็มยศ — ที่เขียนเต็มคือ
+ * บรรทัดใต้เส้นลงนามเท่านั้น ไฟล์นี้เคยใช้ชื่อเต็มทั้งสองที่ ผลคือหัวข้อของ อบต.
+ * ("- ความเห็นปลัดองค์การบริหารส่วนตำบลทุ่งแค้ว") ตัดเป็น 2 บรรทัดในคอลัมน์กว้าง 76mm
+ * กินความสูงเพิ่ม ~6mm ทุกใบ (วัดจริง 2569-09-12)
+ *
+ * ⚠️ ใช้เฉพาะบรรทัดหัวข้อ ห้ามเอาไปแทนชื่อตำแหน่งใต้เส้นลงนาม — ใต้เส้นลงนามต้องเต็มยศ
+ * ตามแบบราชการ และเป็นชื่อที่ผูกกับทะเบียนผู้ลงนาม
+ * หน่วยงานที่ org_type เป็น "เทศบาล" เฉย ๆ (ข้อมูลเก่าที่ไม่รู้ระดับ) ไม่มีชื่อย่อในตารางศัพท์
+ * จึงตกไปใช้ชื่อเต็มตามเดิม ซึ่งถูกกว่าการเดาว่าเป็น ทต./ทม./ทน.
+ */
+function shortRoleTitle(role, tenant) {
+  const { abbr } = getOrgTerms(tenant?.org_type)
+  const { locality } = orgNameParts(tenant)
+  const full = role === 'clerk' ? orgClerkTitle(tenant) : orgHeadTitle(tenant)
+  if (!abbr || !locality) return full
+  return role === 'clerk' ? `ปลัด ${abbr}${locality}` : `นายก ${abbr}${locality}`
 }
 
 /** แยกวัน/เดือน/พ.ศ. — ใบนี้พิมพ์ "วันที่.....เดือน.......พ.ศ......" เป็นสามช่องแยกตามต้นฉบับ */
@@ -167,6 +188,41 @@ export function buildAssetBorrowHtml({
   const due = thaiDateParts(header?.return_due_date)
   const problems = items.reduce((sum, item) => sum + (item.damaged_qty ?? 0) + (item.lost_qty ?? 0), 0)
 
+  // ─── ระยะทั้งใบ: 3 ชุดตามน้ำหนักเนื้อหา ไม่ใช่ค่าเดียวตายตัว ──────────────────────
+  // ⚠️ เดิมบีบทุกระยะไว้ที่ค่าต่ำสุด (ระยะบรรทัด 1.25 + ระยะคั่นบล็อก 0.8mm) เพราะกลัวตกหน้า 2
+  // ผลคือตัวหนังสืออัดกันแน่นจนอ่านแล้วอึดอัด ทั้งที่ยังมีที่เหลือ — ต้นฉบับกระดาษของ อปท.
+  // เว้นระยะกว้างทั้งใบ จึงดูเป็นระเบียบกว่าใบที่ระบบพิมพ์ออกมา (เจ้าของระบบเทียบให้ดู 2569-09-12)
+  //
+  // ⚠️ ตัวเลขทุกตัวข้างล่างวัดที่ความกว้างพื้นที่พิมพ์จริง 160mm (= 605px) เท่านั้น
+  // วัดที่ความกว้างอื่นข้อความจะตัดบรรทัดคนละแบบกับตอนพิมพ์ แล้วได้ตัวเลขที่ดูดีเกินจริง
+  // (พลาดมาแล้ว 2569-09-12: วัดที่ 210mm ได้ 240mm เข้าใจว่าเหลือที่ว่าง 36mm
+  //  ความจริงที่ 160mm ใบเดียวกันสูง 247mm และเคสของชำรุดสูง 265mm = เต็มงบพอดี)
+  //
+  // ตัวแปรที่ทำให้ความสูงต่างกันคือจำนวนบรรทัดของย่อหน้าหัวใบ ซึ่งงอกตามความยาวข้อความที่กรอก
+  // วัดจริงที่ชุด compact: หัวใบ 9 บรรทัด = 241mm · 10 บรรทัด = 247mm · 11 บรรทัด = 254mm
+  // (ราว 6.2mm ต่อบรรทัด) และบล็อกหมายเหตุของชำรุดบวกอีก ~18mm
+  // เทียบกับงบ 265mm จึงมีที่ให้เพิ่มความโปร่งได้จริงราว 11mm เท่านั้น ไม่ใช่ 30mm
+  // จึงมีแค่ 2 ชุด ไม่ใช่ไล่ระดับหลายชั้น (เคยลองชุดกลางแล้ววัดได้ 269.7mm = เกินงบ):
+  //   ชุดโปร่ง — หัวใบไม่เกิน 10 บรรทัด (วัดจริง: 219 ตัวอักษร = 10 บรรทัด, 250 = 11 บรรทัด)
+  //             ได้ทั้งระยะบรรทัดและระยะคั่นบล็อก รวม +10.5mm → สูง ~262mm
+  //   ชุดแน่น — ค่าเดิมทั้งชุด ใช้เมื่อมีบล็อกหมายเหตุของชำรุด/สูญหาย รายการเกิน 1 หน้าตาราง
+  //             หรือข้อความหัวใบยาวจนหัวใบเกิน 10 บรรทัด (>220 ตัวอักษร) ซึ่งไม่เหลือที่ให้เพิ่ม
+  //             ใบกลุ่มนี้พิมพ์ออกมาเท่าเดิมทุกประการ ไม่มีอะไรแย่ลงกว่าของที่ใช้อยู่
+  // ⚠️ ทุกชุดต้องอยู่ในงบ 265mm ของ asset-borrow-layout.test.mjs ไม่ใช่ 276mm เต็มพื้นที่พิมพ์
+  //     ส่วนต่าง 11mm สำรองไว้ให้เครื่องที่ไม่มี THSarabunPSK แล้วตกไปใช้ Sarabun ซึ่ง metric
+  //     ไม่เท่ากันเป๊ะ — ห้ามไปขยายเพดานในเทสต์เพื่อให้ค่าที่โปร่งกว่านี้ผ่าน
+  // ⚠️ แก้ค่าชุดไหนก็ตาม ต้องรัน npm run test:asset-borrow ใหม่ทุกครั้ง เทสต์วัดความสูงจริง
+  // ทั้งเคสทั่วไป เคสข้อความยาวสุด เคสของชำรุด และตรวจว่าแต่ละเคสได้ชุดระยะที่ตั้งใจ
+  const headerTextLength = [
+    borrowerName, header?.borrower_position ?? applicant.position ?? '',
+    borrowerAddress, header?.purpose ?? '', departmentName,
+  ].reduce((sum, text) => sum + String(text ?? '').length, 0)
+  const heavy = problems > 0 || items.length > ROWS_PER_PAGE || headerTextLength > 220
+  const space = heavy
+    // ค่าเดิมทั้งชุด (ตั้งไว้ 2569-09-09) — ใบที่หนักจริงยังพิมพ์ออกมาเท่าเดิมเป๊ะ
+    ? { lead: GOV_LINE_HEIGHT, title: '2.5mm', table: '2mm 0 3mm', block: '0.8mm', sep: '1.6mm', note: '2mm', origin: '1mm' }
+    : { lead: 1.3, title: '3mm', table: '2mm 0 3mm', block: '1.6mm', sep: '2.2mm', note: '2mm', origin: '1.2mm' }
+
   // เติมแถวว่างให้ครบหน้า — ไม่เกิน 7 รายการต้องได้ตารางเต็ม 7 แถวเหมือนต้นฉบับ
   // เกิน 7 ให้ปัดขึ้นเป็นจำนวนเท่าของ 7 หน้าสุดท้ายจะได้ไม่กุด (ตารางไหลข้ามหน้าเอง
   // โดยหัวตารางซ้ำทุกหน้าผ่าน display: table-header-group)
@@ -198,26 +254,33 @@ ${GOV_FONT_LINK}
 <style>
   ${govPageCss({ size: 'A4 portrait' })}
   body { margin: 0; background: #fff; color: #000; }
+  /* ⚠️ ระยะบรรทัดที่นี่ส่งผ่านพารามิเตอร์ของ govDocFontCss() ไม่ได้เขียน line-height ทับเอง
+     ฟอนต์/ขนาด/font-size-adjust ยังมาจากค่ากลางทั้งหมดตามกติกาโปรเจกต์
+     ค่ากลาง GOV_LINE_HEIGHT = 1.25 เป็นค่าต่ำสุดที่วรรณยุกต์ไม่ถูกตัด ไม่ใช่ค่าที่สวยที่สุด
+     ใบนี้เป็นแบบฟอร์มที่มีเส้นจุดทั้งใบ 1.25 ทำให้ตัวอักษรเบียดเส้น จึงใช้ 1.4 เมื่อที่พอ */
   .sheet {
-    ${govDocFontCss()}
+    ${govDocFontCss({ lineHeight: space.lead })}
   }
   .form-no { text-align: right; margin-bottom: 1mm; }
-  h1 { text-align: center; font-size: 1.15em; font-weight: 700; margin: 0 0 2.5mm; }
+  h1 { text-align: center; font-size: 1.15em; font-weight: 700; margin: 0 0 ${space.title}; }
   /* ⚠️ margin: 0 โดยตั้งใจ — ย่อหน้าหัวใบของต้นฉบับเป็น "ย่อหน้าเดียวที่ไหลต่อเนื่อง"
      ไม่ใช่หลายย่อหน้าแยกกัน ที่แยกเป็น <p> หลายตัวเพราะต้องคุมจุดขึ้นบรรทัดให้ตรงต้นฉบับ
      ใส่ margin คั่นเมื่อไหร่จะได้ระยะบรรทัดกว้างกว่าต้นฉบับ และดันใบตกหน้า 2
      (วัดจริง: margin 1.5mm × 22 ย่อหน้าทั้งใบ = กินไป 33mm) */
-  /* ⚠️ ไม่ justify เป็นค่าตั้งต้น — บรรทัดสั้นๆ ในบล็อกลงนาม (เช่น "- ความเห็นปลัด…")
-     ที่ตัดสองบรรทัดจะถูกยืดช่องว่างจนขีดนำหน้าลอยห่างจากข้อความ ดูเหมือนพิมพ์ผิด
-     ให้ justify เฉพาะย่อหน้าหัวใบซึ่งเป็นข้อความยาวไหลเต็มความกว้างจริงๆ */
+  /* ⚠️ ห้าม justify ย่อหน้าภาษาไทยในใบนี้ — ถอด text-align: justify ออก 2569-09-12
+     ภาษาไทยไม่เขียนเว้นวรรคระหว่างคำ text-justify: inter-word จึงมีจุดให้ยืดแค่ไม่กี่จุดต่อบรรทัด
+     (ช่องว่างหน้า/หลังค่าที่กรอก) เบราว์เซอร์ยืดเฉพาะจุดเหล่านั้นจนเกิดช่องโหว่กลางบรรทัด เช่น
+     "ข้าพเจ้า(ชื่อผู้ยืม)      สมชาย ใจดี      ตำแหน่ง" — นี่คือต้นเหตุหลักที่ใบพิมพ์จากระบบ
+     ดูรกกว่าต้นฉบับกระดาษ (ต้นฉบับจบบรรทัดชิดขอบขวาได้เพราะลากเส้นจุดไปจนสุดบรรทัด
+     ไม่ได้ยืดช่องว่าง) ปล่อยให้ชิดซ้ายแล้วปลายบรรทัดไม่เท่ากันบ้าง อ่านง่ายกว่ามาก */
   p.para { margin: 0; }
-  p.para.justify { text-align: justify; text-justify: inter-word; }
   /* "วันที่" / "ตำแหน่ง" ห้ามถูกหั่นคนละบรรทัด — เคยได้ "วัน" ค้างท้ายบรรทัดแล้ว "ที่….."
      ไปขึ้นบรรทัดใหม่ ซึ่งอ่านแล้วงงว่าเป็นช่องอะไร */
   p.para.nowrap { white-space: nowrap; }
   .indent { display: inline-block; width: 20mm; }
   /* ค่าที่กรอกแล้ว: ต้องเป็น inline ธรรมดา ไม่งั้นย่อหน้าที่ไหลต่อเนื่องจะแตกบรรทัด */
-  .fill-value { border-bottom: 1px dotted #000; padding: 0 1mm; }
+  /* padding 2mm: ค่าที่กรอกต้องมีที่หายใจทั้งสองข้าง ไม่งั้นชนคำว่า "ตำแหน่ง" ที่ตามมาทันที */
+  .fill-value { border-bottom: 1px dotted #000; padding: 0 2mm; }
   .fill-blank { display: inline-block; border-bottom: 1px dotted #000; }
   .field-blank { white-space: nowrap; }
   .nb { white-space: nowrap; }
@@ -231,7 +294,7 @@ ${GOV_FONT_LINK}
      พัสดุ เช่น "เต็นท์ผ้าใบ 4x8 เมตร พร้อมโครงเหล็ก") ตัดเป็น 2 บรรทัดทุกแถว ทำให้ตารางสูง
      จาก 62mm เป็น 110mm และดันใบ 7 รายการตกไปหน้า 2 ทั้งที่ต้นฉบับจบหน้าเดียว
      วัดจริงแล้ว 12pt คือค่าที่ทำให้ชื่อยาวปกติจบบรรทัดเดียวและยังอ่านออกชัด */
-  table { width: 100%; border-collapse: collapse; margin: 2mm 0 3mm; font-size: 12pt; }
+  table { width: 100%; border-collapse: collapse; margin: ${space.table}; font-size: 12pt; }
   thead { display: table-header-group; }
   /* 7.5mm ต่อแถวคือค่าต่ำสุดที่ยังเขียนด้วยปากกาได้จริง — ต่ำกว่านี้ช่อง "รายการ" กับ
      "หมายเหตุ" เขียนไม่ลง ส่วนที่ต้องบีบให้ใบจบหน้าเดียวจึงไปบีบระยะย่อหน้าแทน */
@@ -271,8 +334,19 @@ ${GOV_FONT_LINK}
      กล่องจะดันล้นขอบขวากระดาษ (เคสจริงที่เทสต์ของใบขอรับการช่วยเหลือจับได้) */
   .sign-label, .sign-role { white-space: nowrap; }
   .sign-role { margin-left: 1mm; }
-  /* บรรทัดใต้เส้นจุดต้องตัดคำได้เมื่อยาวเกินคอลัมน์ และจัดกึ่งกลางทุกบรรทัดที่ตัด */
-  .sign-below { text-align: center; }
+  /* บรรทัดใต้เส้นจุด (วงเล็บชื่อ / ชื่อตำแหน่ง) — จัดกึ่งกลางบนแกนของเส้นจุดเสมอ
+     ⚠️ width: 0 + overflow มองเห็นได้ คือหัวใจของบรรทัดนี้ อย่าถอดออก:
+     ชื่อตำแหน่งเต็มยศของ อบต. ("ปลัดองค์การบริหารส่วนตำบลทุ่งแค้ว" ~52mm) กว้างกว่ากล่องแกน
+     ที่เหลือให้ ~50mm จึงตัดเป็น 2 บรรทัดทุกใบ ทำให้บล็อกปลัด/นายกสูงขึ้น ~12mm
+     วัดจริง 2569-09-12: ใบของ อบต. ชื่อยาวที่มีของชำรุดสูง 277.6mm = ตกหน้า 2 อยู่แล้ว
+     กล่องกว้าง 0 ทำให้ข้อความล้นออกสองข้างเท่า ๆ กันโดยไม่ดันความกว้างของแถว บรรทัดจึงไม่ตัด
+     และยังกึ่งกลางบนแกนเดิมตามกติกาการจัดช่องลงนาม (#114)
+     คอลัมน์กว้าง 76mm จุดกึ่งกลางแกนอยู่ราว 35mm จากขอบคอลัมน์ ข้อความ 52mm จึงล้นอยู่ในคอลัมน์
+     ไม่ล้นขอบกระดาษ — มีเทสต์ no-horizontal-overflow คุมไว้อีกชั้น */
+  .sign-below {
+    text-align: center; white-space: nowrap;
+    width: 0; margin-left: auto; margin-right: auto; overflow: visible;
+  }
   /* ลายมือชื่ออิเล็กทรอนิกส์ — ตัวหนาให้เห็นว่าเป็นการลงชื่อ ไม่ใช่ชื่อที่พิมพ์ซ้ำเฉยๆ
      (แบบเดียวกับ .signed-name ในใบน้ำประปา/ใบเก็บขนขยะ) และไม่มีเส้นจุดใต้ชื่อ
      เพราะลงชื่อไปแล้ว ไม่ต้องเว้นที่ให้เซ็นซ้ำ */
@@ -285,15 +359,19 @@ ${GOV_FONT_LINK}
   .two-col { display: flex; gap: 8mm; break-inside: avoid; page-break-inside: avoid; }
   .two-col > div { flex: 1 1 0; min-width: 0; }
   .center { text-align: center; }
-  /* ⚠️ ระยะคั่นถูกบีบลง 2569-09-09 เพื่อชดเชยความสูงที่เพิ่มจากการจัดบรรทัดวงเล็บชื่อ
-     ให้อยู่ใต้เส้นจุด: ชื่อตำแหน่งยาว ("ปลัดองค์การบริหารส่วนตำบล…") มีที่ในกล่องแกน
-     แค่ ~53mm จึงตัด 2 บรรทัด ทำให้บล็อกปลัด/นายกสูงจาก 37 เป็น 43.5mm และใบหลุด
-     งบ 1 หน้า — ชดเชยที่ระยะคั่นตามลำดับความสำคัญ ห้ามไปลดขนาดฟอนต์ */
-  .rule { border-top: 1px solid #000; margin: 0.7mm 0 0.4mm; }
-  .note-damage { border: 1px solid #000; padding: 1.5mm; margin-top: 2mm; break-inside: avoid; }
-  .origin { ${GOV_ESERVICE_ORIGIN_CSS} text-align: center; margin-top: 1mm; }
+  /* ⚠️ ระยะคั่นทุกค่าด้านล่างมาจากชุด space ที่เลือกไว้ตามน้ำหนักเนื้อหา (ดู buildAssetBorrowHtml)
+     ค่าชุด "แน่น" คือค่าที่ใช้มาตั้งแต่ 2569-09-09 ซึ่งบีบไว้เพื่อชดเชยความสูงที่เพิ่มจากการ
+     จัดบรรทัดวงเล็บชื่อให้อยู่ใต้เส้นจุด (ชื่อตำแหน่งยาวตัด 2 บรรทัด บล็อกปลัด/นายกสูงขึ้น 6.5mm)
+     ห้ามแก้เป็นค่าคงที่ค่าเดียวอีก และห้ามไปลดขนาดฟอนต์แทนเวลาที่ไม่พอ */
+  /* ⚠️ ตัวคั่นท้ายใบเป็น "ช่องว่าง" ไม่ใช่เส้น — ถอด border-top ออก 2569-09-12
+     ต้นฉบับกระดาษของ อปท. ไม่มีเส้นคั่นแนวนอนสักเส้น แยกส่วนด้วยระยะห่างล้วนๆ
+     เส้นคั่นเป็นของที่ระบบเติมเข้าไปเอง แล้วทำให้ใบดูเป็นกล่อง ๆ รกกว่าต้นฉบับ
+     (เจ้าของระบบเทียบใบพิมพ์จริงกับต้นฉบับแล้วสั่งแก้) */
+  .sep { margin-top: ${space.sep}; }
+  .note-damage { border: 1px solid #000; padding: 1.5mm; margin-top: ${space.note}; break-inside: avoid; }
+  .origin { ${GOV_ESERVICE_ORIGIN_CSS} text-align: center; margin-top: ${space.origin}; }
   /* ระยะคั่นระหว่างบล็อกลงนาม — ใช้ที่เดียวกันทุกจุด ไม่กระจาย inline style */
-  .gap { margin-top: 0.8mm; }
+  .gap { margin-top: ${space.block}; }
 </style>
 </head><body>
 <div class="sheet">
@@ -307,7 +385,7 @@ ${GOV_FONT_LINK}
        ไม่ใช่การขึ้นย่อหน้าใหม่ — เคยแตกเป็น 8 <p> แล้ววัดจริงที่ความกว้างพิมพ์ 160mm
        ได้หัวใบสูง 110mm (ต้นฉบับ ~43mm) เพราะค่าที่กรอกยาวดันแต่ละท่อนไปกินบรรทัดของตัวเอง
        แทนที่จะไหลต่อกัน ผลคือใบตกหน้า 2 ทั้งที่มีของแค่ 7 รายการ -->
-  <p class="para justify"><span class="indent"></span>${field('ข้าพเจ้า(ชื่อผู้ยืม)', borrowerName, '62mm')} ${field('ตำแหน่ง', header?.borrower_position ?? applicant.position ?? '', '52mm')} ${field('ที่อยู่', borrowerAddress, '110mm')} ได้ยืมสิ่งของตามบัญชีรายการสิ่งของที่ยืมข้างล่างนี้ไปจากส่วนราชการ ${
+  <p class="para"><span class="indent"></span>${field('ข้าพเจ้า(ชื่อผู้ยืม)', borrowerName, '62mm')} ${field('ตำแหน่ง', header?.borrower_position ?? applicant.position ?? '', '52mm')} ${field('ที่อยู่', borrowerAddress, '110mm')} ได้ยืมสิ่งของตามบัญชีรายการสิ่งของที่ยืมข้างล่างนี้ไปจากส่วนราชการ ${
     departmentName?.trim()
       ? `<span class="fill-value">${orgNameHtml(departmentName)} ${orgNameHtml(tenant)}</span>`
       : '<span class="fill-blank" style="min-width:70mm">&nbsp;</span>'
@@ -358,22 +436,22 @@ ${rows}
     </div>
   </div>
 
-  <div class="rule"></div>
+  <div class="sep"></div>
 
   <div class="two-col">
     <div>
-      <p class="para">- ความเห็น${esc(clerkTitle)}</p>
+      <p class="para">- ความเห็น${esc(shortRoleTitle('clerk', tenant))}</p>
       <p class="para" style="font-weight:700">ควรอนุมัติให้ยืมได้</p>
       ${signRow({ width: '40mm', below: [signatureName(clerk), esc(clerkTitle)] })}
     </div>
     <div>
-      <p class="para">- ความเห็น${esc(mayorTitle)}</p>
+      <p class="para">- ความเห็น${esc(shortRoleTitle('mayor', tenant))}</p>
       <p class="para" style="font-weight:700">อนุมัติ</p>
       ${signRow({ width: '36mm', role: 'ผู้ให้ยืม', below: [signatureName(mayor), esc(mayorTitle)] })}
     </div>
   </div>
 
-  <div class="rule"></div>
+  <div class="sep"></div>
 
   <div class="sign-block">
     <p class="para" style="font-weight:700">- ได้รับสิ่งของตามรายการข้างต้นคืนในสภาพที่ใช้การได้เรียบร้อยและครบถ้วน</p>
