@@ -372,7 +372,7 @@ export default function InfraWorkAdmin({ tenant, currentUserRole, myDepartmentId
         </div>
       )}
 
-      {/* ชื่อหน้าย้ายไปอยู่ที่ StaffModuleHeader ตัวกลางของหน้าเจ้าหน้าที่แล้ว
+      {/* ชื่อหน้าย้ายไปอยู่ที่ ModuleHeader ตัวกลางของหน้าเจ้าหน้าที่แล้ว
           เหลือไว้แค่ปุ่มรีเฟรช จึงชิดขวา */}
       <div className="flex items-center justify-end">
         <button onClick={fetchWorks} disabled={loading}

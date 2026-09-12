@@ -43,7 +43,7 @@ const ComplaintsManager = lazy(() => import('../components/admin/ComplaintsManag
 const ComplaintDetailModal = lazy(() =>
   import('../components/admin/ComplaintsManager').then(m => ({ default: m.ComplaintDetailModal })))
 const ReportManager = lazy(() => import('../components/admin/ReportManager'))
-import StaffModuleHeader from '../components/staff/StaffModuleHeader'
+import ModuleHeader from '../components/common/ModuleHeader'
 const TourismManager = lazy(() => import('../components/admin/TourismManager'))
 const TourismReviewsAdmin = lazy(() => import('../components/admin/TourismManager').then(module => ({ default: module.TourismReviewsAdmin })))
 const PostsManager = lazy(() => import('../components/staff/PostsManager'))
@@ -1124,7 +1124,7 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
 
   return (
     <div className="space-y-4">
-      {/* ชื่อหน้าอยู่ที่ StaffModuleHeader แล้ว เดิมที่นี่เขียนซ้ำทั้งชื่อและคำอธิบาย
+      {/* ชื่อหน้าอยู่ที่ ModuleHeader แล้ว เดิมที่นี่เขียนซ้ำทั้งชื่อและคำอธิบาย
           กลายเป็นหัวเรื่องชื่อเดียวกัน 2 บรรทัดติดกัน เหลือไว้แค่ปุ่ม */}
       <div className="flex items-center justify-end">
         <div className="flex items-center gap-2">
@@ -1887,7 +1887,7 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
         <div className="absolute -bottom-12 right-20 h-28 w-28 rounded-full bg-cyan-300/10" />
         <div className="relative flex items-start justify-between gap-4">
           {/* หัวใหญ่กับป้าย "งานบริการประชาชน" ถูกถอดออก เพราะซ้ำชั้นกับ
-              StaffModuleHeader ที่อยู่เหนือขึ้นไป — แต่ขอบเขตงาน (ของฉัน/ของกอง)
+              ModuleHeader ที่อยู่เหนือขึ้นไป — แต่ขอบเขตงาน (ของฉัน/ของกอง)
               เก็บไว้ เพราะหัวกลางบอกแค่ว่า "คำร้อง" ไม่ได้บอกว่าเห็นแค่ไหน */}
           <div className="min-w-0">
             <p className="text-base font-extrabold tracking-tight">
@@ -2182,7 +2182,7 @@ function StaffReportWrapper({ tenant }) {
       <p className="mt-3 text-xs font-semibold">กำลังประมวลผลรายงานล่าสุด...</p>
     </div>
   )
-  // hideTitle: หน้าเจ้าหน้าที่มี StaffModuleHeader อยู่เหนือขึ้นไปแล้ว ส่วนหน้าแอดมินไม่มี
+  // hideTitle: หน้าเจ้าหน้าที่มี ModuleHeader อยู่เหนือขึ้นไปแล้ว ส่วนหน้าแอดมินไม่มี
   // หัวเรื่องกลาง จึงต้องคงชื่อในแบนเนอร์ไว้ตามเดิม (ดู AdminDashboard → activePage === 'report')
   return <ReportManager complaints={complaints} tenant={tenant} technicians={technicians} hideTitle />
 }
@@ -2550,7 +2550,7 @@ export default function StaffDashboard() {
                 (fleet, คำร้อง, รายงาน) ถูกถอดหัวของมันออกแล้ว เหลือไว้เฉพาะข้อมูลที่หัวกลางไม่มี */}
             {activeModule !== 'home' && (() => {
               const meta = MODULES.find(m => m.key === activeModule)
-              return meta ? <StaffModuleHeader Icon={meta.Icon} label={meta.label} desc={meta.desc} color={meta.color} /> : null
+              return meta ? <ModuleHeader Icon={meta.Icon} label={meta.label} desc={meta.desc} color={meta.color} /> : null
             })()}
             {activeModule === 'home' && (
               <StaffOperationalDashboard
@@ -2574,7 +2574,7 @@ export default function StaffDashboard() {
               // เหมือนบทบาทอื่นที่ไม่ใช่ admin/superadmin
               ['admin', 'superadmin'].includes(profile?.role)
                 ? (
-                  // หัวเรื่องย้ายไปใช้ StaffModuleHeader ตัวกลางด้านบนแล้ว ไม่เขียน inline ซ้ำ
+                  // หัวเรื่องย้ายไปใช้ ModuleHeader ตัวกลางด้านบนแล้ว ไม่เขียน inline ซ้ำ
                   <ComplaintsManager tenant={tenant} currentUserRole={profile?.role} openComplaintId={mapOpenComplaintId} />
                 )
                 : <ComplaintsStaffModule tenant={tenant} staffId={profile?.id}

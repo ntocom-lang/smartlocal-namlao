@@ -73,7 +73,7 @@ function fleetRoleLabel(fleetInfo, isSysAdmin, short = false) {
   return 'ผู้ใช้งาน'
 }
 
-// hideHero — โหมดที่ฝังอยู่ในหน้าเจ้าหน้าที่ มี StaffModuleHeader ทำหน้าที่หัวเรื่องอยู่แล้ว
+// hideHero — โหมดที่ฝังอยู่ในหน้าเจ้าหน้าที่ มี ModuleHeader ทำหน้าที่หัวเรื่องอยู่แล้ว
 // hero ไล่สีนี้จึงซ้ำ — ส่วน standalone /fleet ที่ไม่มีหัวกลาง ยังต้องใช้ตามเดิม
 function MobileGrid({ setTab, fleetInfo, depts, tenant, isSysAdmin, tabs, hideHero = false }) {
   const roleLabel = fleetRoleLabel(fleetInfo, isSysAdmin)
@@ -254,7 +254,7 @@ export default function FleetPage({ onBack } = {}) {
   if (embedded) {
     return (
       <div className="-mx-4 md:-mx-6 -mt-5">
-        {/* ชื่อโมดูลมาจาก StaffModuleHeader ของหน้าเจ้าหน้าที่แล้ว เหลือไว้แค่สิทธิ์กับกอง
+        {/* ชื่อโมดูลมาจาก ModuleHeader ของหน้าเจ้าหน้าที่แล้ว เหลือไว้แค่สิทธิ์กับกอง
             ซึ่งหัวกลางไม่มี — โมดูลนี้คุมสิทธิ์ด้วย fleet_role อีกชั้น คนใช้ต้องเห็นว่าตัวเองเข้ามาด้วยสิทธิ์อะไร
             แสดงทุกความกว้าง เพราะมือถือไม่มี hero ของ MobileGrid มาบอกอีกต่อไป */}
         <div className="flex items-center justify-between gap-2 bg-white px-4 md:px-6 pt-3 md:pt-4">

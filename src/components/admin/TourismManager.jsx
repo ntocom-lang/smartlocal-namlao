@@ -88,7 +88,7 @@ export function TourismReviewsAdmin({ tenant }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
-        {/* ชื่อหน้าย้ายไปอยู่ที่ StaffModuleHeader ตัวกลางแล้ว เหลือไว้แค่สถิติที่เปลี่ยนตามตัวกรอง */}
+        {/* ชื่อหน้าย้ายไปอยู่ที่ ModuleHeader ตัวกลางแล้ว เหลือไว้แค่สถิติที่เปลี่ยนตามตัวกรอง */}
         <div className="flex-1">
           <p className="text-xs text-gray-400">{reviews.length} รีวิว · คะแนนเฉลี่ย {avgRating}</p>
         </div>

@@ -55,6 +55,7 @@ const InboxModule = lazy(() => import('./StaffDashboard').then(m => ({ default: 
 
 // lazy: ตัวนี้เป็นก้อนที่แพงที่สุด — มันลาก recharts (chunk PieChart ~355 KB) ตามมาด้วย
 // ทั้งที่กราฟถูกใช้เฉพาะในหน้ารายงานเท่านั้น
+import ModuleHeader from '../components/common/ModuleHeader'
 const ReportManagerComponent = lazy(() => import('../components/admin/ReportManager'))
 import AuditLogViewer from '../components/admin/AuditLogViewer'
 import { ROLE_LABELS, ROLE_DESCRIPTIONS, fetchAssignableStaff, groupStaffByDepartment } from '../lib/staffRoster'
@@ -555,26 +556,7 @@ function UserManager({ tenant, currentUserRole, currentUserId }) {
         <div className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-cyan-400/20 blur-3xl" />
         <div className="pointer-events-none absolute bottom-0 left-1/3 h-28 w-56 rounded-full bg-violet-500/20 blur-3xl" />
         <div className="relative flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-          <div className="flex min-w-0 items-start gap-3 md:gap-4">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/20 bg-white/10 shadow-inner backdrop-blur-sm md:h-14 md:w-14">
-              <Users size={25} strokeWidth={1.8} />
-            </div>
-            <div>
-              <div className="mb-1 flex flex-wrap items-center gap-2">
-                <span className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-2.5 py-1 text-[10px] font-bold tracking-[0.16em] text-cyan-100">
-                  PERSONNEL CENTER
-                </span>
-                <span className="text-xs text-blue-100/70">ข้อมูลบุคลากรกลางของหน่วยงาน</span>
-              </div>
-              <h3 className="text-lg font-black leading-snug tracking-tight md:text-2xl">
-                <span className="md:hidden">จัดการผู้ใช้<br />และการแต่งตั้ง</span>
-                <span className="hidden md:inline">จัดการผู้ใช้และการแต่งตั้ง</span>
-              </h3>
-              <p className="mt-1 max-w-2xl text-xs leading-relaxed text-blue-100/75 md:text-sm">
-                จัดสังกัด ตำแหน่ง และสิทธิ์การใช้งานจากจุดเดียว ลดข้อมูลซ้ำและตรวจสอบสายงานได้ชัดเจน
-              </p>
-            </div>
-          </div>
+          {/* ชื่อหน้าอยู่ที่ ModuleHeader ตัวกลางของแผงควบคุมแล้ว */}
           <button
             onClick={() => fetchUsers({ search, page })}
             className="group flex min-h-11 shrink-0 items-center justify-center gap-2 self-start rounded-xl border border-white/20 bg-white/10 px-3 text-sm font-semibold text-white backdrop-blur-sm transition-all hover:bg-white/20 active:scale-95 md:self-auto md:px-3.5"
@@ -3337,7 +3319,7 @@ function LocationManager({ tenant }) {
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
-      <h2 className="font-semibold text-gray-700">จัดการสถานที่เกิดเหตุ</h2>
+      {/* ชื่อหน้าอยู่ที่ ModuleHeader ตัวกลางของแผงควบคุมแล้ว */}
 
       {/* Error */}
       {error && (
@@ -4344,8 +4326,8 @@ function CategoryManager({ tenant }) {
           iconStyle={iconStyle}
         />
       )}
-      <div className="flex items-center justify-between">
-        <h2 className="font-semibold text-gray-700">จัดการประเภทคำร้อง</h2>
+      {/* ชื่อหน้าอยู่ที่ ModuleHeader ตัวกลางของแผงควบคุมแล้ว */}
+      <div className="flex items-center justify-end">
         {cats.length === 0 && !loading && (
           <button
             onClick={seedDefaults}
@@ -5255,8 +5237,8 @@ function getAdminMenuGroups(currentUserRole, currentUserId) {
       description: 'รายงานผลการให้บริการและเสียงสะท้อนจากประชาชน',
       accent: '#22c55e',
       items: [
-        { key: 'report', label: 'รายงาน', Icon: TrendingUp, color: '#059669', bg: '#d1fae5', show: true },
-        { key: 'satisfaction', label: 'ผลการประเมิน', Icon: Star, color: '#d97706', bg: '#fef3c7', show: true },
+        { key: 'report', label: 'รายงาน', Icon: TrendingUp, color: '#059669', bg: '#d1fae5', show: true, desc: 'สรุปสถิติการให้บริการและพิมพ์รายงาน' },
+        { key: 'satisfaction', label: 'ผลการประเมิน', Icon: Star, color: '#d97706', bg: '#fef3c7', show: true, desc: 'เสียงสะท้อนความพึงพอใจจากประชาชน' },
       ],
     },
     // ถอดเมนู "ปฏิทินกิจกรรม" ออกจากแผงควบคุม Admin แล้ว (กลุ่ม "ข้อมูลเผยแพร่และกำหนดการ"
@@ -5269,10 +5251,10 @@ function getAdminMenuGroups(currentUserRole, currentUserId) {
       description: 'ข้อมูลอ้างอิงที่ใช้รับเรื่องและติดต่อฉุกเฉิน',
       accent: '#0ea5e9',
       items: [
-        { key: 'categories', label: 'ประเภทคำร้อง', Icon: Tag, color: '#d97706', bg: '#fef3c7', show: canManageContent },
-        { key: 'emergency', label: 'เบอร์โทรสำคัญ', Icon: Phone, color: '#ef4444', bg: '#fee2e2', show: canManageContent },
-        { key: 'locations', label: 'สถานที่เกิดเหตุ', Icon: MapPin, color: '#0891b2', bg: '#e0f2fe', show: canManageContent },
-        { key: 'fleet-setup', label: 'ยานพาหนะ', Icon: Car, color: '#0369a1', bg: '#e0f2fe', show: canManageSystem },
+        { key: 'categories', label: 'ประเภทคำร้อง', Icon: Tag, color: '#d97706', bg: '#fef3c7', show: canManageContent, desc: 'หมวดหมู่คำร้องและกองที่รับผิดชอบ' },
+        { key: 'emergency', label: 'เบอร์โทรสำคัญ', Icon: Phone, color: '#ef4444', bg: '#fee2e2', show: canManageContent, desc: 'สายด่วนฉุกเฉินและทำเนียบเบอร์โทรหน่วยงาน' },
+        { key: 'locations', label: 'สถานที่เกิดเหตุ', Icon: MapPin, color: '#0891b2', bg: '#e0f2fe', show: canManageContent, desc: 'รายชื่อสถานที่ให้ประชาชนเลือกตอนแจ้งเรื่อง' },
+        { key: 'fleet-setup', label: 'ยานพาหนะ', Icon: Car, color: '#0369a1', bg: '#e0f2fe', show: canManageSystem, desc: 'สิทธิ์ผู้ใช้และทะเบียนคนขับของโมดูลยานพาหนะ' },
       ],
     },
     {
@@ -5280,10 +5262,10 @@ function getAdminMenuGroups(currentUserRole, currentUserId) {
       description: 'การตั้งค่าหลัก บัญชีผู้ใช้ สิทธิ์ และประวัติการดำเนินการ',
       accent: '#6366f1',
       items: [
-        { key: 'system-settings', label: 'ตั้งค่าระบบ', Icon: Settings, color: '#3b82f6', bg: '#dbeafe', show: canManageSystem },
-        { key: 'signatories', label: 'ผู้ลงนามเอกสาร', Icon: UserRoundCheck, color: '#4338ca', bg: '#e0e7ff', show: canManageSystem },
-        { key: 'users', label: 'จัดการผู้ใช้และการแต่งตั้ง', Icon: Shield, color: '#7c3aed', bg: '#ede9fe', show: canManageSystem },
-        { key: 'audit-log', label: 'บันทึกกิจกรรม', Icon: BookOpen, color: '#ef4444', bg: '#fee2e2', show: canManageSystem },
+        { key: 'system-settings', label: 'ตั้งค่าระบบ', Icon: Settings, color: '#3b82f6', bg: '#dbeafe', show: canManageSystem, desc: 'ชื่อระบบ ข้อมูลหน่วยงาน ธีม และโมดูลที่เปิดใช้' },
+        { key: 'signatories', label: 'ผู้ลงนามเอกสาร', Icon: UserRoundCheck, color: '#4338ca', bg: '#e0e7ff', show: canManageSystem, desc: 'ทะเบียนผู้ลงนามกลางที่ใช้ร่วมทุกแบบพิมพ์' },
+        { key: 'users', label: 'จัดการผู้ใช้และการแต่งตั้ง', Icon: Shield, color: '#7c3aed', bg: '#ede9fe', show: canManageSystem, desc: 'บัญชีผู้ใช้ บทบาท กอง และการแต่งตั้ง' },
+        { key: 'audit-log', label: 'บันทึกกิจกรรม', Icon: BookOpen, color: '#ef4444', bg: '#fee2e2', show: canManageSystem, desc: 'ประวัติการดำเนินการย้อนหลังสำหรับตรวจสอบ' },
       ],
     },
     {
@@ -5418,11 +5400,8 @@ function SatisfactionAdmin({ tenant }) {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-gray-800">ผลการประเมินความพึงพอใจ</h2>
-          <p className="text-xs text-gray-400 mt-0.5">สรุปความคิดเห็นจากประชาชน</p>
-        </div>
+      {/* ชื่อหน้าอยู่ที่ ModuleHeader ตัวกลางของแผงควบคุมแล้ว */}
+      <div className="flex items-start justify-end">
         <button onClick={handlePrint}
           className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white shadow-sm transition-colors"
           style={{ backgroundColor: '#1a3a5c' }}>
@@ -5869,6 +5848,17 @@ export default function AdminDashboard() {
         })}
       </div>
 
+      {/* หัวเรื่องกลางของทุกหน้าในแผงควบคุม ดึงชื่อ/ไอคอน/สีจาก getAdminMenuGroups() ตัวเดียว
+          กับที่วาดเมนู หัวเรื่องจึงตรงกับปุ่มที่กดมาเสมอ ไม่ต้องไล่แก้ 2 ที่เวลาเปลี่ยนชื่อเมนู
+          ข้าม 'dashboard' เพราะหน้านั้นคือตัวแผงควบคุมเอง มีหัว "แผงควบคุมผู้ดูแลระบบ" อยู่แล้ว
+          และข้าม 'more' ที่เป็นหน้ารวมเมนูเหมือนกัน */}
+      {!['dashboard', 'more'].includes(activePage) && (() => {
+        const meta = adminMenuGroups.flatMap(g => g.items).find(m => m.key === activePage)
+        return meta
+          ? <div className="mb-4"><ModuleHeader Icon={meta.Icon} label={meta.label} desc={meta.desc} color={meta.color} eyebrow="ผู้ดูแลระบบ" /></div>
+          : null
+      })()}
+
       {activePage === 'dashboard' ? (
         <div className="space-y-6">
           {/* All menu items */}
@@ -5948,7 +5938,7 @@ export default function AdminDashboard() {
             <Loader2 size={24} className="animate-spin text-gray-400" />
           </div>
         }>
-          <ReportManagerComponent complaints={complaints} tenant={tenant} technicians={technicians} />
+          <ReportManagerComponent complaints={complaints} tenant={tenant} technicians={technicians} hideTitle />
         </Suspense>
       ) : activePage === 'staff' ? (
         LEGACY_STAFF_PAGE_ENABLED

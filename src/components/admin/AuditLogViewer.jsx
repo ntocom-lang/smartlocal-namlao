@@ -160,17 +160,8 @@ export default function AuditLogViewer({ tenant }) {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-2">
-          <div className="w-9 h-9 rounded-xl bg-red-50 flex items-center justify-center">
-            <Shield size={16} className="text-red-500" />
-          </div>
-          <div>
-            <h2 className="font-bold text-gray-800 text-sm">บันทึกกิจกรรม</h2>
-            <p className="text-[11px] text-gray-400">ประวัติการลบและแก้ไขข้อมูลโดย staff/admin</p>
-          </div>
-        </div>
+      {/* ชื่อหน้าอยู่ที่ ModuleHeader ตัวกลางของแผงควบคุมแล้ว */}
+      <div className="flex items-center justify-end flex-wrap gap-3">
         <button onClick={fetchLogs} className="p-2 rounded-xl hover:bg-gray-100 text-gray-400 transition-colors">
           <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
         </button>

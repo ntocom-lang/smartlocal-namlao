@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Loader2, Plus, Save, Trash2, UserRoundCheck } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Loader2, Plus, Save, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { CUSTOM_ROLE, SIGNATORY_SCOPE, todayBangkok } from '../../lib/documentSignatories'
 
@@ -312,11 +312,10 @@ export default function SignatorySettings({ tenant }) {
 
   return (
     <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm space-y-3">
+      {/* ชื่อหน้าอยู่ที่ ModuleHeader ตัวกลางของแผงควบคุมแล้ว */}
       <div className="flex items-start gap-3">
-        <div className="rounded-xl bg-indigo-100 p-2 text-indigo-700"><UserRoundCheck size={20} /></div>
         <div className="min-w-0 flex-1">
-          <h2 className="font-semibold text-gray-800">ผู้ลงนามเอกสาร</h2>
-          <p className="mt-1 text-xs leading-5 text-gray-500">
+          <p className="text-xs leading-5 text-gray-500">
             ทะเบียนกลางที่ทุกโมดูลดึงไปใช้ ตั้งที่นี่ที่เดียวแล้วมีผลกับทุกเอกสารที่ต้องลงนาม
             ปัจจุบันใช้กับ แบบพิมพ์คำร้อง และ ใบขออนุญาตใช้รถส่วนกลาง (แบบ 3)
             นายก/ปลัด ใช้กับทุกใบ ส่วนแถวของแต่ละกองใช้เฉพาะเอกสารที่ route เข้ากองนั้น
