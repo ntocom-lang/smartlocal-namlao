@@ -1,3 +1,6 @@
+import {
+  GOV_SIGN_LINE_W, govNameBlank, govSignBlockCss, govSignRow,
+} from './govSignBlock.js'
 import { FUEL_LABEL, assetIdentifier, meterUnitShort } from './fleetAssets.js'
 import { fuelRecordAmount } from './fleetFuelAmount.js'
 import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, GOV_PAGE_MARGIN, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
@@ -48,13 +51,16 @@ function row(label, value) {
   </tr>`
 }
 
+// ⚠️ ของเดิมจัดกึ่งกลาง "ของบล็อก" ทั้งเส้นและวงเล็บ วงเล็บจึงเยื้องไปทางซ้ายของเส้น
+// ครึ่งหนึ่งของคำว่า "ลงชื่อ" (~5mm) — อาการเดียวกับที่เจ้าของระบบจับได้จากใบยืมพัสดุ
+// ที่พิมพ์ออกกระดาษ ของกลางมัดเส้นกับบรรทัดใต้ไว้บนแกนเดียวกัน
 function signature(role, name) {
   const inner = String(name ?? '').trim()
-  const nameText = inner ? `(${esc(inner)})` : '<span>(</span><span>)</span>'
-  return `<div class="sign">
-    <p>ลงชื่อ <span class="line"></span></p>
-    <p class="sign-name">${nameText}</p>
-    <p class="sign-role">${esc(role)}</p>
+  return `<div class="sign center-row">
+    ${govSignRow({
+      width: GOV_SIGN_LINE_W,
+      below: [inner ? `(${esc(inner)})` : govNameBlank(GOV_SIGN_LINE_W), esc(role)],
+    })}
   </div>`
 }
 
@@ -123,11 +129,10 @@ export function buildFleetFuelRecordHtml({ record, tenant }) {
       margin-top: 36pt;
     }
     .sign { text-align: center; }
+${govSignBlockCss()}
     /* 9em เดิมไล่ไว้ตอนตัวอักษร 14pt พอขยายเป็น 16pt ตามมาตรฐาน 3 คอลัมน์รวมกัน
        กว้าง 608px เกินพื้นที่พิมพ์ 605px ทำให้ช่องขวาสุดถูกตัด — 8.5em พอดีไม่ล้น */
-    .sign .line { display: inline-block; min-width: 8.5em; border-bottom: 1px dotted #333; }
-    .sign-name { margin: 6pt 0 0; }
-    .sign-role { margin: 2pt 0 0; }
+
     .note { margin-top: 16pt; font-size: 11pt; color: #444; }
     .eservice-origin { ${GOV_ESERVICE_ORIGIN_CSS} margin-top: 5mm; text-align: center; }
   </style>

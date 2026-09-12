@@ -25,6 +25,7 @@ import {
   PROBLEM_MAX_CHARS,
   buildPublicAssistanceRequestHtml,
 } from '../src/lib/publicAssistancePrint.js'
+import { assertSignBlockStandard } from './lib/signBlockChecks.mjs'
 
 const TENANT = {
   name: 'องค์การบริหารส่วนตำบลทุ่งแค้ว',
@@ -297,6 +298,25 @@ const checks = [
       } finally {
         await page.close()
       }
+    },
+  },
+  {
+    // ช่องลงนามของใบนี้มี 2 ชุด: ผู้ยื่นท้ายคำร้อง และช่องเจ้าหน้าที่ 3 ช่องในตารางท้ายใบ
+    // ทั้งสองชุดใช้ของกลาง govSignBlock.js แล้ว จึงตรวจด้วยตัวตรวจกลางชุดเดียวกับใบอื่น
+    name: 'signature-block-standard',
+    reason: 'ช่องลงนามทุกจุดต้องได้มาตรฐานกลาง — บรรทัดใต้เส้นกึ่งกลางบนแกนของเส้น และวงเล็บกว้างเท่าเส้น',
+    async run(browser) {
+      // ใบเปล่า: ทุกช่องเป็นวงเล็บเว้นชื่อ จึงตรวจความกว้างช่องเขียนได้ครบทุกจุด
+      const blank = await render(browser, BLANK_FORM, { departments: DEPARTMENTS, includeOfficerBlock: true })
+      try {
+        await assertSignBlockStandard(blank, { minRows: 4, minBelow: 4 })
+      } finally { await blank.close() }
+
+      // ใบที่มีชื่อยาวสุด: เคสที่แกนกลางเลื่อนง่ายที่สุด เพราะชื่อกว้างกว่าเส้น
+      const filled = await render(browser, longForm(), { departments: DEPARTMENTS, signatories: SIGNATORIES, includeOfficerBlock: true })
+      try {
+        await assertSignBlockStandard(filled, { minRows: 4, minBelow: 4 })
+      } finally { await filled.close() }
     },
   },
   {

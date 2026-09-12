@@ -1,10 +1,15 @@
 import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
+import { govNameBlank } from './govSignBlock.js'
 import { orgHeadTitle } from './orgTerms.js'
 import { MONTHS_TH, thaiDateFromDateInput } from './thaiDate.js'
 // ใช้ตัวแปลงพิกัดตัวเดียวกับใบขอรับบริการโดยตั้งใจ — สองใบนี้พิมพ์จุดวางถังของบ้านหลังเดียวกัน
 // ถ้าเขียนแยกกันแล้ววันหนึ่งฝั่งใดฝั่งหนึ่งเปลี่ยนรูปแบบ (จำนวนทศนิยม/ความยาวชื่อสถานที่)
 // เอกสารสองใบของเรื่องเดียวกันจะพิมพ์พิกัดคนละแบบ
 import { collectionPointText } from './wasteCollectionRequestPrint.js'
+
+// ความกว้างช่องเขียนชื่อในวงเล็บ (ค่าเดิมของใบนี้) — ใบนี้ไม่มีเส้น "ลงชื่อ" ตามต้นฉบับ
+// จึงไม่มีเส้นให้เทียบความกว้างด้วย ใช้ค่าที่ต้นฉบับเว้นไว้ตามเดิม
+const NAME_BLANK_W = '48mm'
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -245,7 +250,7 @@ export function buildWasteCollectionCancelHtml({ form, tenant, thDate, reference
         ? `<div class="signature-typed"></div>
       <p class="signed-name">${esc(applicantName)}</p>`
         : '<div class="signature-space"></div>'}
-      <p>(${line(applicantName, '48mm')})</p>
+      <p>${applicantName ? `(${esc(applicantName)})` : govNameBlank(NAME_BLANK_W)}</p>
       <p>ผู้ยื่นคำร้อง</p>
     </section>
 

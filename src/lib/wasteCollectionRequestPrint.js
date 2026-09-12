@@ -1,5 +1,10 @@
 import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
+import { govNameBlank } from './govSignBlock.js'
 import { thaiDateFromDateInput, thaiDateTimeText } from './thaiDate.js'
+
+// ความกว้างช่องเขียนชื่อในวงเล็บ (ค่าเดิมของใบนี้) — ใบนี้ไม่มีเส้น "ลงชื่อ" ตามต้นฉบับ
+// จึงไม่มีเส้นให้เทียบความกว้างด้วย ใช้ค่าที่ต้นฉบับเว้นไว้ตามเดิม
+const NAME_BLANK_W = '48mm'
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -189,7 +194,7 @@ export function buildWasteCollectionRequestHtml({ form, tenant, thDate, referenc
         ? `<div class="signature-typed"></div>
       <p class="signed-name">${esc(applicantName)}</p>`
         : '<div class="signature-space"></div>'}
-      <p>(${line(applicantName, '48mm')})</p>
+      <p>${applicantName ? `(${esc(applicantName)})` : govNameBlank(NAME_BLANK_W)}</p>
       <p>ผู้ขออนุญาต</p>
       ${signedOnline
         ? `<p class="signed-note">ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service${signedStamp ? `<br>${esc(signedStamp)}` : ''}${referenceNo ? ` · เลขอ้างอิง ${esc(referenceNo)}` : ''}</p>`

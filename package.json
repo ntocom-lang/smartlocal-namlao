@@ -48,6 +48,7 @@
     "test:waste-request": "node tests/waste-request-print.test.mjs",
     "test:water-supply": "node tests/water-supply-print.test.mjs && node tests/water-supply-layout.test.mjs",
     "test:public-assistance": "node tests/public-assistance-print.test.mjs && node tests/public-assistance-layout.test.mjs",
+    "test:council": "node tests/complaint-print-routing.test.mjs && node tests/council-form-layout.test.mjs",
     "test:asset-borrow": "node tests/asset-borrow-print.test.mjs && node tests/asset-borrow-layout.test.mjs",
     "test:patient-transport": "node tests/patient-transport-layout.test.mjs",
     "test:staff-inbox": "node tests/staff-inbox-layout.playwright.mjs",

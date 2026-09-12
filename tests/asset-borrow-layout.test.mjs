@@ -15,6 +15,7 @@ import assert from 'node:assert/strict'
 import process from 'node:process'
 import { chromium } from 'playwright'
 import { buildAssetBorrowHtml } from '../src/lib/assetBorrowPrint.js'
+import { assertSignBlockStandard, assertSignLinesAligned } from './lib/signBlockChecks.mjs'
 
 const TENANT = { name: 'องค์การบริหารส่วนตำบลทุ่งแค้ว', org_type: 'อบต.' }
 
@@ -164,78 +165,41 @@ const checks = [
     async run(browser) {
       const page = await render(browser, { header: typicalHeader(), items: items(7) })
       try {
-        const rows = await page.evaluate(() => [...document.querySelectorAll('.sign-indent .sign-row')]
-          .map(row => ({
-            width: Math.round(row.querySelector('.sign-line, .sign-signed').getBoundingClientRect().width),
-            roleLeft: row.querySelector('.sign-role')
-              ? Math.round(row.querySelector('.sign-role').getBoundingClientRect().left) : null,
-            blockLeft: Math.round(row.getBoundingClientRect().left),
-          })))
-        assert.ok(rows.length >= 6,
-          `ควรเจอช่องลงนามในบล็อกสองคอลัมน์อย่างน้อย 6 จุด แต่เจอ ${rows.length}`)
-        const widths = [...new Set(rows.map(row => row.width))]
-        assert.equal(widths.length, 1,
-          `เส้นลงนามกว้างไม่เท่ากัน (${widths.join(', ')}px) — ห้ามไล่ความกว้างรายจุด ใช้ SIGN_LINE_W ค่าเดียว`)
-        // จัดกลุ่มตามคอลัมน์ (ซ้าย/ขวา) ด้วยขอบซ้ายของแถว แล้วเทียบตำแหน่งคำต่อท้ายในกลุ่มเดียวกัน
-        const byColumn = new Map()
-        for (const row of rows.filter(item => item.roleLeft !== null)) {
-          if (!byColumn.has(row.blockLeft)) byColumn.set(row.blockLeft, [])
-          byColumn.get(row.blockLeft).push(row.roleLeft)
-        }
-        for (const [column, lefts] of byColumn) {
-          assert.ok(Math.max(...lefts) - Math.min(...lefts) <= 1,
-            `คำต่อท้ายในคอลัมน์ที่ x=${column} เริ่มไม่ตรงแนวกัน: ${lefts.join(', ')}px`)
-        }
+        const rows = await page.evaluate(() => document.querySelectorAll('.sign-indent .sign-row').length)
+        assert.ok(rows >= 6, `ควรเจอช่องลงนามในบล็อกสองคอลัมน์อย่างน้อย 6 จุด แต่เจอ ${rows}`)
+        await assertSignLinesAligned(page, '.sign-indent .sign-row')
       } finally { await page.close() }
     },
   },
   {
-    // เจ้าของระบบใช้ใบพิมพ์จริงแล้วแจ้ง 2569-09-12: วงเล็บ (........) สั้นเกินไป เขียนชื่อ-สกุล
-    // ลงไม่หมด ของเดิมตั้งไว้ 26 จุด (~32mm) ใต้เส้นลงนาม 40mm ด้วยเหตุผลเรื่องสัดส่วน
-    // ช่องเขียนต้องกว้างเท่าเส้นด้านบน — ชื่อไทยเต็มยศวัดได้ 41-50mm ยาวกว่าเส้นเสียอีก
-    // ข้อนี้กันไม่ให้จำนวนจุดหลุดจากความกว้างเส้นอีก เวลามีคนแก้ SIGN_LINE_W หรือขนาดฟอนต์
-    // (จำนวนจุดคำนวณจาก DOT_MM/PARENS_MM ที่วัดไว้ ถ้าเปลี่ยนฟอนต์ค่าพวกนี้เพี้ยนทันที)
-    name: 'name-blank-matches-line-width',
-    reason: 'วงเล็บเว้นชื่อต้องกว้างเท่าเส้นลงนามที่อยู่เหนือมัน ไม่งั้นเขียนชื่อ-สกุลลงไม่พอ',
+    // มาตรฐานช่องลงนามทั้งหมดตรวจด้วยตัวตรวจกลาง (tests/lib/signBlockChecks.mjs) ซึ่งใบอื่น
+    // ใช้ชุดเดียวกัน — กึ่งกลางบรรทัดใต้เส้น + ความกว้างวงเล็บเว้นชื่อ
+    //
+    // ⚠️ ทั้งสองอย่างเกิดจากใบที่พิมพ์ออกกระดาษจริง ไม่ใช่จากการเดาในโค้ด:
+    //   2569-09-09 วงเล็บชื่อเยื้องซ้ายของเส้นทุกช่อง ยกเว้นช่อง "ผู้ยืม"
+    //   2569-09-12 แก้แล้วกลับเยื้องขวา 16-25mm (ตั้ง width: 0 ให้ล้นสองข้าง แต่ล้นข้างเดียว)
+    //   2569-09-12 วงเล็บ 26 จุด (~32mm) ใต้เส้น 40mm เขียนชื่อ-สกุลลงไม่หมด
+    // ข้ออื่นในไฟล์นี้วัดแค่ความสูงกับการล้นขอบ จับความเบี้ยวแนวนอนแบบนี้ไม่ได้เลย
+    name: 'signature-block-standard',
+    reason: 'ช่องลงนามทุกจุดต้องได้มาตรฐานเดียวกับ govSignBlock.js (บรรทัดใต้เส้นกึ่งกลาง วงเล็บกว้างเท่าเส้น)',
     async run(browser) {
-      // ทะเบียนผู้ลงนามว่าง = ทุกช่องพิมพ์เป็นเส้นจุดให้เขียนมือ รวมช่องปลัด/นายก
-      // และคำขอที่เจ้าหน้าที่คีย์แทนโดยไม่ได้กรอกชื่อผู้ยื่น ทำให้ช่องผู้ยืมเป็นวงเล็บเว้นชื่อ
-      // ด้วย — ช่องนั้นเส้นยาวกว่าช่องอื่น (55mm) จึงต้องอยู่ในการวัดด้วย
-      const page = await render(browser, {
+      // เคส 1: ทะเบียนผู้ลงนามมีชื่อ+ตำแหน่งยาวเต็มยศ (ค่า default ของ render)
+      // เป็นเคสที่แกนกลางเลื่อนง่ายที่สุด เพราะข้อความกว้างกว่าเส้น
+      const withNames = await render(browser, { header: typicalHeader(), items: items(7) })
+      try {
+        // 7 ช่อง = ผู้ยืม/รับของ/จ่ายของ/ปลัด/นายก/ส่งคืน/รับคืน · 9 บรรทัด = 7 + ตำแหน่งปลัด/นายก
+        await assertSignBlockStandard(withNames, { minRows: 7, minBelow: 9 })
+      } finally { await withNames.close() }
+
+      // เคส 2: ทะเบียนว่างและไม่รู้ชื่อผู้ยื่น — ทุกช่องเป็นวงเล็บเว้นชื่อ รวมช่องผู้ยืม
+      // ที่ใช้เส้นยาวกว่าช่องอื่น (55mm) จึงเป็นเคสเดียวที่ตรวจความกว้างวงเล็บได้ครบทุกขนาด
+      const blank = await render(browser, {
         header: typicalHeader(), items: items(7),
         form: { applicant: {} }, clerk: null, mayor: null,
       })
       try {
-        const blanks = await page.evaluate(() => {
-          // วัดกล่องตัวอักษรจริงด้วย Range ด้วยเหตุผลเดียวกับ signature-name-centered-under-line
-          const textWidth = el => {
-            const range = document.createRange()
-            range.selectNodeContents(el)
-            const rects = [...range.getClientRects()]
-            if (!rects.length) return null
-            return Math.max(...rects.map(rect => rect.right)) - Math.min(...rects.map(rect => rect.left))
-          }
-          return [...document.querySelectorAll('.sign-row')].flatMap((row, index) => {
-            const line = row.querySelector('.sign-line')
-            if (!line) return []
-            return [...row.querySelectorAll('.sign-below')]
-              .filter(below => /^\(\.+\)$/.test(below.textContent.trim()))
-              .map(below => ({
-                block: index,
-                lineMm: line.getBoundingClientRect().width / 3.779527,
-                blankMm: textWidth(below) / 3.779527,
-              }))
-          })
-        })
-        assert.equal(blanks.length, 7,
-          `ควรเจอวงเล็บเว้นชื่อครบ 7 ช่อง (ผู้ยืม/รับของ/จ่ายของ/ปลัด/นายก/ส่งคืน/รับคืน) แต่เจอ ${blanks.length}`)
-        // เผื่อคลาดได้ราวความกว้างจุดตัวเดียว เพราะจำนวนจุดต้องปัดเป็นจำนวนเต็ม
-        const short = blanks.filter(entry => Math.abs(entry.blankMm - entry.lineMm) > 1.5)
-        assert.deepEqual(short, [],
-          `วงเล็บเว้นชื่อกว้างไม่เท่าเส้นลงนาม: ${short
-            .map(entry => `บล็อก ${entry.block} เส้น ${entry.lineMm.toFixed(1)}mm วงเล็บ ${entry.blankMm.toFixed(1)}mm`)
-            .join(', ')}`)
-      } finally { await page.close() }
+        await assertSignBlockStandard(blank, { minRows: 7, minBelow: 7 })
+      } finally { await blank.close() }
     },
   },
   {
@@ -316,54 +280,6 @@ const checks = [
             .filter(diff => diff > 1)
         })
         assert.deepEqual(overflow, [], `มีบล็อกล้นขอบขวา ${overflow.map(n => n.toFixed(1)).join(', ')}px`)
-      } finally { await page.close() }
-    },
-  },
-  {
-    // ⚠️ เทสต์ข้อนี้เกิดจากใบพิมพ์จริง (ผู้ใช้ระบบแจ้ง 2569-09-09): บรรทัดวงเล็บชื่อเยื้อง
-    // ไปทางซ้ายของเส้นจุดทุกช่อง ยกเว้นช่อง "ผู้ยืม" — ข้ออื่นในไฟล์นี้วัดแค่ความสูงกับการล้น
-    // ขอบ จึงจับความเบี้ยวแนวนอนแบบนี้ไม่ได้เลย ถ้าไม่มีข้อนี้ ครั้งหน้าที่มีคนแก้เลย์เอาต์
-    // ช่องลงนามแล้วเบี้ยวกลับมา ก็จะไม่มีอะไรจับได้อีก
-    name: 'signature-name-centered-under-line',
-    reason: 'บรรทัดใต้เส้นลงนาม (วงเล็บชื่อ/ชื่อตำแหน่ง) ต้องอยู่กึ่งกลางแกนเดียวกับเส้นจุด',
-    async run(browser) {
-      // ทดสอบทั้งทะเบียนผู้ลงนามที่มีชื่อยาว (ค่า default ของ render) — เคสที่ชื่อกับตำแหน่ง
-      // กว้างกว่าเส้นจุด ซึ่งเป็นเคสที่แกนกลางเลื่อนง่ายที่สุด
-      const page = await render(browser, { header: typicalHeader(), items: items(7) })
-      try {
-        const offsets = await page.evaluate(() => {
-          // ⚠️ ต้องวัด "กล่องของตัวอักษรจริง" ด้วย Range ไม่ใช่ getBoundingClientRect ของ span
-          // กล่องของ span อยู่กึ่งกลางแกนเสมอ ไม่ว่าตัวอักษรข้างในจะไปกองอยู่ข้างไหนก็ตาม
-          // (2569-09-12 ตั้ง width: 0 ให้ตัวอักษรล้นออกนอกกล่อง ผลจริงคือล้นขวาข้างเดียว
-          //  เยื้อง 16-25mm ทุกบรรทัด แต่เทสต์ข้อนี้ยัง "ผ่าน" เพราะไปวัดกล่องกว้าง 0
-          //  ที่อยู่กลางแกนพอดี ของเสียจึงหลุดขึ้น production และเจ้าของระบบจับได้จากใบพิมพ์จริง)
-          const textCenter = el => {
-            const range = document.createRange()
-            range.selectNodeContents(el)
-            const rects = [...range.getClientRects()]
-            if (!rects.length) return null
-            return (Math.min(...rects.map(rect => rect.left)) + Math.max(...rects.map(rect => rect.right))) / 2
-          }
-          const centerOf = el => {
-            const box = el.getBoundingClientRect()
-            return box.left + box.width / 2
-          }
-          return [...document.querySelectorAll('.sign-row')].flatMap((row, index) => {
-            const line = row.querySelector('.sign-line')
-            return [...row.querySelectorAll('.sign-below')].map((below, order) => ({
-              block: index, order, diff: Math.abs(centerOf(line) - textCenter(below)),
-            }))
-          })
-        })
-        assert.ok(offsets.length >= 9,
-          `เจอบรรทัดใต้เส้นลงนามแค่ ${offsets.length} บรรทัด — ใบนี้ต้องมีอย่างน้อย 9 `
-          + '(ลงนาม 7 จุด + ชื่อตำแหน่งปลัด/นายกอีก 2)')
-        // 1mm = 3.78px ที่ 96dpi — เกินกว่านี้เริ่มเห็นด้วยตาเปล่าบนกระดาษ
-        const crooked = offsets.filter(entry => entry.diff > 3.78)
-        assert.deepEqual(crooked, [],
-          `วงเล็บชื่อไม่อยู่กึ่งกลางใต้เส้นจุด: ${crooked
-            .map(entry => `บล็อก ${entry.block} บรรทัด ${entry.order} เยื้อง ${(entry.diff / 3.78).toFixed(1)}mm`)
-            .join(', ')}`)
       } finally { await page.close() }
     },
   },

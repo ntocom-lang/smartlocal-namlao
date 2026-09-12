@@ -1,6 +1,14 @@
 import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
+import { govNameBlank, govSignBlockCss, govSignRow } from './govSignBlock.js'
 import { getOrgTerms, orgHeadTitle, orgOfficeName } from './orgTerms.js'
 import { MONTHS_TH, thaiDateTimeText } from './thaiDate.js'
+
+// ความกว้างเส้นลงนามของผู้ยื่น (ค่าเดิมของใบนี้ — ช่องเดี่ยวชิดขวา ไม่ต้องเรียงแนวกับช่องอื่น)
+const SIGN_LINE_W = '50mm'
+
+// ตารางเจ้าหน้าที่ท้ายใบใช้ 11pt (ช่องแคบ คุมขนาดเองรายช่อง ดู .officer) จุดในวงเล็บจึงเล็กตาม
+// ต้องบอกขนาดฟอนต์ให้ govNameBlank ไม่งั้นได้วงเล็บสั้นกว่าเส้นเกือบ 5mm
+const OFFICER_FONT_PT = 11
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -189,16 +197,12 @@ export function buildPublicAssistanceRequestHtml({
   // ช่องที่มีคำต่อท้าย ("ผู้รับเรื่อง") เหลือที่ให้เส้นประน้อยกว่าช่องที่ไม่มี — ช่องตารางกว้าง
   // แค่ ~47 มม. หลังหักขอบ ถ้าใช้ความกว้างเดียวกันทั้งสามช่อง ช่องซ้ายจะดันคำต่อท้ายตกบรรทัด
   const signBlock = (role, person) => `<div class="cell-sign">
-          <div class="cell-sign-row">
-            <span>(ลงชื่อ)</span>
-            <span class="cell-sign-name">
-              <span class="fill-blank" style="min-width:${role ? '20mm' : '26mm'}">&nbsp;</span>
-              <span class="cell-paren">(${person?.name
-                ? `<span class="fill-value">${wordSafe(person.name)}</span>`
-                : line('', role ? '16mm' : '22mm')})</span>
-            </span>
-            ${role ? `<span class="cell-sign-role">${role}</span>` : ''}
-          </div>
+          ${govSignRow({
+            width: role ? '20mm' : '26mm',
+            label: '(ลงชื่อ)',
+            role,
+            below: [person?.name ? `(${esc(String(person.name).trim())})` : govNameBlank(role ? '20mm' : '26mm', { fontPt: OFFICER_FONT_PT })],
+          })}
           <div class="cell-date">${field('วันที่', '', '7mm')} ${field('เดือน', '', '14mm')}<br>${field('พ.ศ.', '', '12mm')}</div>
         </div>`
 
@@ -312,18 +316,9 @@ export function buildPublicAssistanceRequestHtml({
       overflow-wrap: break-word;
     }
 
-    /* ช่องลงนามผู้ขอความช่วยเหลือ — โครงเดียวกับใบขออนุญาตใช้น้ำประปา
-       min-width ไม่ใช่ width เพื่อให้ชื่อยาวดันกล่องแทนที่จะล้นทับคำต่อท้าย */
-    .signature { margin: 1.5mm 0 0 auto; width: 118mm; }
-    .signature-row { display: flex; align-items: flex-start; white-space: nowrap; }
-    .sign-label { display: inline-block; width: 14mm; }
-    .signature-name { display: flex; flex: 0 0 auto; min-width: 50mm; flex-direction: column; align-items: stretch; }
-    .signature-line, .sign-paren { min-width: 50mm; text-align: center; white-space: nowrap; }
-    .sign-paren { margin-top: 2mm; }
-    .signature .fill-value { white-space: nowrap; }
-    .signed-name { display: block; min-width: 50mm; text-align: center; font-weight: 700; }
-    .sign-role { margin-left: 1mm; }
-    .signature { margin-bottom: 3mm; }
+    /* ช่องลงนามทั้งใบใช้ของกลาง govSignBlock.js — ตรงนี้เหลือแค่ตำแหน่งของกลุ่มบนหน้ากระดาษ */
+    .signature { margin: 1.5mm 0 3mm auto; width: 118mm; }
+${govSignBlockCss()}
     .signed-note { margin: auto 0 0; font-size: 10pt; color: #333; white-space: normal; line-height: 1.2; }
     /* เปิดตารางท้ายใบเมื่อไหร่ ตารางเป็นตัวยึดขอบล่างแทน (ดู .officer) บรรทัดนี้จึงต่อท้ายตาราง
        ตามปกติ ถ้าปล่อยให้ auto ทั้งคู่ ที่ว่างจะถูกแบ่งครึ่งแล้วตารางลอยขึ้นกลางหน้า */
@@ -352,13 +347,8 @@ export function buildPublicAssistanceRequestHtml({
        (เช่น "นางสาวประกายมาศ ศรีวิชัยเลิศสกุล" กว้าง ~55 มม. ในช่อง ~47 มม.) ถ้าห้ามตัดบรรทัด
        ทั้งแถว ชื่อจะดันกล่องล้นออกนอกขอบขวาของกระดาษ 8 มม. (เทสต์ nothing-overflows จับได้)
        ตัวชื่อครอบ nowrap รายคำด้วย wordSafe() อยู่แล้ว จึงตัดได้เฉพาะที่ช่องว่าง ไม่ขาดกลางคำ */
-    .cell-sign-row { display: flex; align-items: flex-start; }
-    .cell-sign-row > span:first-child, .cell-sign-role { white-space: nowrap; }
-    /* flex: 1 1 auto + min-width: 0 ให้กล่องหดตามช่องตารางได้ ไม่ดันแถวให้ล้น
-       ส่วน min-width ของเส้นประด้านในเป็นตัวกำหนดความกว้างขั้นต่ำของช่องลงชื่อ */
-    .cell-sign-name { display: flex; flex: 0 1 auto; min-width: 0; flex-direction: column; align-items: center; }
-    .cell-sign-role { margin-left: 1mm; }
-    .cell-paren, .cell-title, .cell-date { margin-top: 1mm; }
+    /* ช่องลงนามในตารางเจ้าหน้าที่ใช้ของกลางชุดเดียวกับช่องผู้ยื่น (.sign-row ด้านบน) */
+    .cell-title, .cell-date { margin-top: 1mm; }
     .cell-title { font-size: 11pt; }
     .checkbox { display: inline-block; width: 3.5mm; height: 3.5mm; border: 1px solid #000; margin-right: 1.5mm; vertical-align: -0.3mm; }
     .dept-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5mm 4mm; }
@@ -436,16 +426,15 @@ export function buildPublicAssistanceRequestHtml({
     <p class="regards">ขอแสดงความนับถือ</p>
 
     <section class="signature">
-      <div class="signature-row">
-        <span class="sign-label">(ลงชื่อ)</span>
-        <div class="signature-name">
-          <div class="signature-line">${signedOnline
-            ? `<span class="signed-name">${esc(applicantName)}</span>`
-            : '<span class="fill-blank" style="min-width:50mm">&nbsp;</span>'}</div>
-          <div class="sign-paren">(${line(applicantName, '44mm')})</div>
-        </div>
-        <span class="sign-role">ผู้ขอความช่วยเหลือ</span>
-      </div>
+      ${govSignRow({
+        width: SIGN_LINE_W,
+        label: '(ลงชื่อ)',
+        // grow: ช่องเดี่ยวที่มีคำต่อท้าย ชื่อยาวกว่าแกนต้องดันคำต่อท้ายออก ไม่ใช่พิมพ์ทับ
+        grow: true,
+        role: 'ผู้ขอความช่วยเหลือ',
+        signed: signedOnline ? esc(applicantName) : '',
+        below: [applicantName ? `(${esc(applicantName)})` : govNameBlank(SIGN_LINE_W)],
+      })}
     </section>
 
     <!-- ⚠️ บรรทัดกำกับที่มาของใบต้องอยู่ล่างสุดของหน้า ไม่ใช่ใต้ลายมือชื่อ (ผู้ใช้ระบบสั่งย้าย
