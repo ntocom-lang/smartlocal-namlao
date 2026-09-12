@@ -52,6 +52,7 @@
     "test:asset-borrow": "node tests/asset-borrow-print.test.mjs && node tests/asset-borrow-layout.test.mjs",
     "test:patient-transport": "node tests/patient-transport-layout.test.mjs",
     "test:staff-inbox": "node tests/staff-inbox-layout.playwright.mjs",
+    "test:telegram": "node tests/telegram-notification-message.test.mjs",
     "test:guard": "node tests/guard-master-tree.test.mjs"
   },
   "dependencies": {
