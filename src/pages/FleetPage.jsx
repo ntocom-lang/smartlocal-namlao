@@ -73,13 +73,16 @@ function fleetRoleLabel(fleetInfo, isSysAdmin, short = false) {
   return 'ผู้ใช้งาน'
 }
 
-function MobileGrid({ setTab, fleetInfo, depts, tenant, isSysAdmin, tabs }) {
+// hideHero — โหมดที่ฝังอยู่ในหน้าเจ้าหน้าที่ มี StaffModuleHeader ทำหน้าที่หัวเรื่องอยู่แล้ว
+// hero ไล่สีนี้จึงซ้ำ — ส่วน standalone /fleet ที่ไม่มีหัวกลาง ยังต้องใช้ตามเดิม
+function MobileGrid({ setTab, fleetInfo, depts, tenant, isSysAdmin, tabs, hideHero = false }) {
   const roleLabel = fleetRoleLabel(fleetInfo, isSysAdmin)
   const deptName = depts.find(d => d.id === fleetInfo?.department_id)?.name ?? ''
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50">
+    <div className={`flex flex-col bg-gray-50${hideHero ? '' : ' min-h-screen'}`}>
       {/* Hero header */}
+      {!hideHero && (
       <div className="px-5 pt-8 pb-6" style={{ background: 'linear-gradient(160deg,#0f2744,#1a3a5c,#1e4976)' }}>
         <p className="text-[11px] font-semibold text-blue-300 uppercase tracking-widest mb-1">
           {tenant?.name ?? 'เทศบาล'}
@@ -97,6 +100,7 @@ function MobileGrid({ setTab, fleetInfo, depts, tenant, isSysAdmin, tabs }) {
           <ManualLink light className="w-8 h-8" />
         </div>
       </div>
+      )}
 
       {/* Grid */}
       <div className="px-4 py-5 flex-1">
@@ -153,7 +157,7 @@ function MobileContent({ tab, setTab, children, tabs }) {
             <ArrowLeft size={18} className="text-white" />
           </button>
           <div className="flex-1 min-w-0">
-            <p className="text-[10px] text-white/60 font-medium">ระบบยานพาหนะ</p>
+            <p className="text-[10px] text-white/60 font-medium">ยานพาหนะและเชื้อเพลิง</p>
             <p className="text-[15px] font-black text-white leading-tight">{t.label}</p>
           </div>
           <ManualLink light className="w-9 h-9" />
@@ -250,14 +254,16 @@ export default function FleetPage({ onBack } = {}) {
   if (embedded) {
     return (
       <div className="-mx-4 md:-mx-6 -mt-5">
-        {/* Desktop title (สำนักงาน embed ไม่มีหัวข้อมาก่อนเลย ต่างจากโหมด standalone /fleet ที่มีอยู่แล้ว) */}
-        <div className="hidden md:block bg-white px-4 md:px-6 pt-4">
-          <h1 className="text-base font-black text-gray-800">🚗 ยานพาหนะและเชื้อเพลิง</h1>
-          <p className="text-[11px] text-gray-400 mb-1">
+        {/* ชื่อโมดูลมาจาก StaffModuleHeader ของหน้าเจ้าหน้าที่แล้ว เหลือไว้แค่สิทธิ์กับกอง
+            ซึ่งหัวกลางไม่มี — โมดูลนี้คุมสิทธิ์ด้วย fleet_role อีกชั้น คนใช้ต้องเห็นว่าตัวเองเข้ามาด้วยสิทธิ์อะไร
+            แสดงทุกความกว้าง เพราะมือถือไม่มี hero ของ MobileGrid มาบอกอีกต่อไป */}
+        <div className="flex items-center justify-between gap-2 bg-white px-4 md:px-6 pt-3 md:pt-4">
+          <p className="text-[11px] text-gray-400">
             {fleetRoleLabel(fleetInfo, isSysAdmin, true)}
             {depts.find(d => d.id === fleetInfo?.department_id)
               ? ` · ${depts.find(d => d.id === fleetInfo.department_id).name}` : ''}
           </p>
+          <ManualLink className="md:hidden w-8 h-8" />
         </div>
 
         {/* Desktop tab bar */}
@@ -266,7 +272,7 @@ export default function FleetPage({ onBack } = {}) {
         {/* Mobile: grid or content */}
         <div className="md:hidden">
           {tab === null
-            ? <MobileGrid setTab={setTab} fleetInfo={fleetInfo} depts={depts} tenant={tenant} isSysAdmin={isSysAdmin} tabs={visibleTabs} />
+            ? <MobileGrid setTab={setTab} fleetInfo={fleetInfo} depts={depts} tenant={tenant} isSysAdmin={isSysAdmin} tabs={visibleTabs} hideHero />
             : <MobileContent tab={tab} setTab={setTab} tabs={visibleTabs}>
                 <div>{contentNode}</div>
               </MobileContent>
