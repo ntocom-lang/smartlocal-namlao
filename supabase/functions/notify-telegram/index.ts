@@ -75,21 +75,52 @@ function audienceLabels(orgType: unknown): Record<string, string> {
   }
 }
 
-// ต้องตรงกับ CATEGORY_LABEL ใน src/components/admin/ComplaintsManager.jsx ทุกคำ — ไม่งั้นข้อความ
-// แจ้งเตือนใน Telegram กับหน้าเว็บจะขึ้นชื่อประเภทคำร้องไม่ตรงกัน
-const COMPLAINT_CATEGORY_LABEL: Record<string, string> = {
-  road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าสาธารณะ',
-  trash: 'ขยะ/ความสะอาด', water: 'น้ำประปา',
-  flood: 'น้ำท่วม/ระบายน้ำ', tree: 'ต้นไม้/สวนสาธารณะ',
-  noise: 'เหตุรำคาญ', drain: 'ท่อระบายน้ำ',
-  waste_water: 'น้ำเสีย', building: 'ตรวจสอบอาคาร',
-  mosquito: 'พ่นยุง', canal: 'ลอกคลอง',
-  animals: 'สุนัขจรจัด', water_supply: 'สนับสนุนน้ำอุปโภค',
-  borrow_equipment: 'ยืมพัสดุ', grievance: 'ร้องทุกข์/ร้องเรียน',
-  corruption: 'แจ้งการทุจริต', tax: 'ภาษีและค่าธรรมเนียม',
-  disease: 'ควบคุมโรคติดต่อ', other: 'อื่นๆ',
-  odor: 'กลิ่นเหม็นรบกวน (มลพิษทางอากาศ)',
+type Labelled = { emoji: string; label: string }
+
+// ⚠️ นี่คือ **ค่าสำรอง** เท่านั้น — ชื่อกับอีโมจิตัวจริงอยู่ในตาราง complaint_categories ราย อปท.
+// แต่ละ อปท. ตั้งเองไม่เหมือนกัน (น้ำเลา light = 💡 "ไฟฟ้าสาธารณะ" / ตำหนักธรรม light = ⚡)
+// ของเดิม hardcode ค่าพวกนี้อย่างเดียวจึงขึ้นชื่อไม่ตรงกับเว็บมาตลอด เช่น น้ำเลาตั้งชื่อ road ว่า
+// "ซ่อมแซมถนน" แต่ Telegram ขึ้น "ถนน/ทางสาธารณะ" — ตอนนี้อ่านจาก DB ก่อน แล้วค่อยตกมาที่นี่
+// ใช้เมื่อคำร้องเก่าไม่มี category_id (ยังมีจริงในระบบ) ค่าตรงกับ CATEGORY_LABEL/CATEGORY_EMOJI
+// ใน src/components/admin/ComplaintsManager.jsx
+const COMPLAINT_CATEGORY_FALLBACK: Record<string, Labelled> = {
+  road: { emoji: '🛣️', label: 'ถนน/ทางสาธารณะ' },
+  light: { emoji: '💡', label: 'ไฟฟ้าสาธารณะ' },
+  trash: { emoji: '🗑️', label: 'ขยะ/ความสะอาด' },
+  water: { emoji: '🚰', label: 'น้ำประปา' },
+  flood: { emoji: '🌊', label: 'น้ำท่วม/ระบายน้ำ' },
+  tree: { emoji: '🌳', label: 'ต้นไม้/สวนสาธารณะ' },
+  noise: { emoji: '📢', label: 'เหตุรำคาญ' },
+  drain: { emoji: '🕳️', label: 'ท่อระบายน้ำ' },
+  waste_water: { emoji: '💧', label: 'น้ำเสีย' },
+  building: { emoji: '🏗️', label: 'ตรวจสอบอาคาร' },
+  mosquito: { emoji: '🦟', label: 'พ่นยุง' },
+  canal: { emoji: '🏞️', label: 'ลอกคลอง' },
+  animals: { emoji: '🐕', label: 'สุนัขจรจัด' },
+  water_supply: { emoji: '🚿', label: 'สนับสนุนน้ำอุปโภค' },
+  borrow_equipment: { emoji: '📦', label: 'ยืมพัสดุ' },
+  grievance: { emoji: '📣', label: 'ร้องทุกข์/ร้องเรียน' },
+  corruption: { emoji: '⚖️', label: 'แจ้งการทุจริต' },
+  tax: { emoji: '📋', label: 'ภาษีและค่าธรรมเนียม' },
+  disease: { emoji: '🏥', label: 'ควบคุมโรคติดต่อ' },
+  odor: { emoji: '💨', label: 'กลิ่นเหม็นรบกวน (มลพิษทางอากาศ)' },
+  other: { emoji: '📝', label: 'อื่นๆ' },
 }
+
+// แถบสีนำหน้าบรรทัดแรก แยกตาม "กองที่รับผิดชอบ" ให้เจ้าหน้าที่กวาดตาหางานของกองตัวเองในกลุ่มได้เร็ว
+// ⚠️ Telegram Bot API กำหนดสีตัวอักษรไม่ได้ (รองรับแค่ b/i/u/s/code/pre/a/blockquote) การใช้
+// อีโมจิสี่เหลี่ยมสีคือวิธีเดียวที่ให้ "สี" ได้จริงโดยไม่ต้องใช้ custom emoji ซึ่งต้องมี Premium
+// ผูกกับ departments.code ไม่ใช่ชื่อ เพราะ อปท. เปลี่ยนชื่อกองได้ แต่ code คงที่
+// กองที่ อปท. สร้างเอง (code ขึ้นต้น dept_) ไม่มีสีประจำ ตกมาที่ ⬜
+const DEPARTMENT_COLOR: Record<string, string> = {
+  exec: '🟥',
+  general: '🟩',
+  finance: '🟨',
+  engineering: '🟦',
+  education: '🟪',
+  health: '🟧',
+}
+const DEFAULT_DEPARTMENT_COLOR = '⬜'
 
 // ต้องตรงกับ STATUS ใน src/components/admin/ComplaintsManager.jsx ทุกคำ
 const COMPLAINT_STATUS_LABEL: Record<string, string> = {
@@ -105,18 +136,21 @@ const COMPLAINT_STATUS_LABEL: Record<string, string> = {
 // function ไม่ได้ import โมดูลฝั่ง client จึงต้องคัดลอกมาไว้ที่นี่ เพิ่มประเภทใหม่ต้องแก้ 2 ที่
 // residence_cert / personal_cert ถอดออกจากลิสต์ยื่นใหม่แล้ว แต่คำขอเก่ายังอยู่ในระบบและยัง
 // เปลี่ยนสถานะได้ ถ้าไม่คงไว้ที่นี่ข้อความแจ้งเตือนจะขึ้นค่าดิบ 'personal_cert'
-const DOCUMENT_TYPE_LABEL: Record<string, string> = {
-  tax_notice: '🏦 ค่าธรรมเนียม/ภาษี',
-  waste_collection: '🗑️ ค่าธรรมเนียมขยะ',
-  waste_collection_request: '🚛 ขอรับบริการเก็บขนขยะมูลฝอย',
-  waste_collection_cancel: '🚫 ขอยกเลิกการเก็บขนขยะมูลฝอย',
-  water_supply_request: '🚰 ขออนุญาตใช้น้ำประปา',
-  public_assistance_request: '🤝 ขอรับการช่วยเหลือประชาชน',
-  asset_borrow_request: '📦 ขอยืมพัสดุ/ครุภัณฑ์',
-  patient_transport_request: '🚑 ขออนุเคราะห์รถรับ-ส่งผู้ป่วย',
-  building_permit: '🏗️ ขออนุญาตก่อสร้างบ้าน',
-  residence_cert: '📄 ใบรับรองการอยู่อาศัย',
-  personal_cert: '📄 หนังสือรับรองบุคคล',
+// เก็บอีโมจิแยกจากชื่อ เพราะอีโมจิถูกยกไปไว้หัวข้อความ ส่วนบรรทัด "เรื่อง:" แสดงชื่อล้วน
+// ⚠️ ห้ามรวมเป็นสตริงเดียวแล้วมาตัดทีหลัง — อีโมจิหลายตัวเป็น grapheme หลาย code point
+// (🏗️ = U+1F3D7 + VS16) slice/split ผิดแล้วจะได้อักขระพิการโผล่ในกลุ่ม
+const DOCUMENT_TYPE: Record<string, Labelled> = {
+  tax_notice: { emoji: '🏦', label: 'ค่าธรรมเนียม/ภาษี' },
+  waste_collection: { emoji: '🗑️', label: 'ค่าธรรมเนียมขยะ' },
+  waste_collection_request: { emoji: '🚛', label: 'ขอรับบริการเก็บขนขยะมูลฝอย' },
+  waste_collection_cancel: { emoji: '🚫', label: 'ขอยกเลิกการเก็บขนขยะมูลฝอย' },
+  water_supply_request: { emoji: '🚰', label: 'ขออนุญาตใช้น้ำประปา' },
+  public_assistance_request: { emoji: '🤝', label: 'ขอรับการช่วยเหลือประชาชน' },
+  asset_borrow_request: { emoji: '📦', label: 'ขอยืมพัสดุ/ครุภัณฑ์' },
+  patient_transport_request: { emoji: '🚑', label: 'ขออนุเคราะห์รถรับ-ส่งผู้ป่วย' },
+  building_permit: { emoji: '🏗️', label: 'ขออนุญาตก่อสร้างบ้าน' },
+  residence_cert: { emoji: '📄', label: 'ใบรับรองการอยู่อาศัย' },
+  personal_cert: { emoji: '📄', label: 'หนังสือรับรองบุคคล' },
 }
 
 // ต้องตรงกับ STATUS ใน src/pages/MyDocRequests.jsx — คนละชุดกับ COMPLAINT_STATUS_LABEL
@@ -180,23 +214,60 @@ function formatThaiDateTime(value: unknown) {
 // ❌ ห้ามใส่ลิงก์เข้าระบบท้ายข้อความ — เจ้าของระบบสั่งถอดออก 2569-09-12 หลังเห็นของจริง
 // ในกลุ่ม (เคยมี `🔗 https://<slug>.rk-networks.com/staff`) ถ้าจะเพิ่มกลับต้องถามก่อน
 // กองที่รับผิดชอบ มาจาก department_id ที่ trigger ตั้งให้ตอนสร้างคำขอ/คำร้อง
+function departmentOf(resource: Record<string, unknown>) {
+  return (resource.department ?? null) as { name?: string; code?: string } | null
+}
+
 function departmentName(resource: Record<string, unknown>) {
-  const department = resource.department as { name?: string } | null
-  return cleanText(department?.name, 80)
+  return cleanText(departmentOf(resource)?.name, 80)
+}
+
+function departmentColor(resource: Record<string, unknown>) {
+  return DEPARTMENT_COLOR[String(departmentOf(resource)?.code ?? '')] ?? DEFAULT_DEPARTMENT_COLOR
+}
+
+// แฮชแท็กชื่อกอง — Telegram ทำเป็นลิงก์ให้เอง แตะแล้วค้นทั้งกลุ่มเห็นเฉพาะงานของกองนั้น
+// เป็นเหตุผลหลักที่ใส่: เจ้าหน้าที่กรองงานของตัวเองได้โดยไม่ต้องเลื่อนหาเอง
+// ⚠️ แท็กจบทันทีที่เจออักขระที่ไม่ใช่ตัวอักษร/ตัวเลข/ขีดล่าง — ชื่อกองที่มีเว้นวรรค จุด หรือวงเล็บ
+// ("กองช่าง (สาขา 2)") จะขาดกลางคัน ต้องตัดทิ้งก่อน ไม่ใช่แทนที่ด้วยขีดล่างเพราะจะอ่านยาก
+// อักษรไทยใช้เป็นแฮชแท็กได้ปกติ ไม่ต้องถอดเป็นอังกฤษ
+// ⚠️⚠️ ต้องมี \p{M} ด้วย — สระบน/ล่างและวรรณยุกต์ไทย (่ ้ ิ ี ุ ู ฯลฯ) เป็น combining mark
+// ไม่เข้าเงื่อนไข \p{L} ถ้าไม่นับรวมจะโดนตัดทิ้งเงียบๆ "กองช่าง" กลายเป็น "#กองชาง"
+function departmentHashtag(resource: Record<string, unknown>) {
+  const name = cleanText(departmentOf(resource)?.name, 80).replace(/[^\p{L}\p{N}\p{M}_]/gu, '')
+  return name ? `#${name}` : ''
+}
+
+// ชื่อ+อีโมจิหมวดคำร้อง: ใช้ค่าจากตาราง complaint_categories ของ อปท. นั้นก่อนเสมอ
+// (embed มาทาง category_id) คำร้องเก่าที่ category_id ยังว่างค่อยตกมาที่แมปสำรอง
+function complaintCategory(complaint: Record<string, unknown>): Labelled {
+  const fromDb = complaint.category_ref as { label?: string; emoji?: string } | null
+  const label = cleanText(fromDb?.label, 60)
+  if (label) return { emoji: cleanText(fromDb?.emoji, 8) || '📝', label }
+  const fallback = COMPLAINT_CATEGORY_FALLBACK[String(complaint.category ?? '')]
+  if (fallback) return fallback
+  return { emoji: '📝', label: cleanText(complaint.category, 60) || 'อื่นๆ' }
 }
 
 // ประเภทที่ อปท. เพิ่มเองผ่านแท็บ "ประเภทคำขอเอกสาร" เก็บใน municipalities.fee_schedule._custom_types
-// (ดู customDocumentTypes() ใน src/lib/documentTypes.js) ไม่ได้อยู่ใน DOCUMENT_TYPE_LABEL
-function documentTypeLabel(value: unknown, feeSchedule: unknown) {
+// (ดู customDocumentTypes() ใน src/lib/documentTypes.js) ไม่ได้อยู่ใน DOCUMENT_TYPE
+function documentType(value: unknown, feeSchedule: unknown): Labelled {
   const key = String(value ?? '')
-  if (DOCUMENT_TYPE_LABEL[key]) return DOCUMENT_TYPE_LABEL[key]
+  if (DOCUMENT_TYPE[key]) return DOCUMENT_TYPE[key]
   const customTypes = (feeSchedule as { _custom_types?: unknown } | null)?._custom_types
   if (Array.isArray(customTypes)) {
     const hit = customTypes.find((t) => String((t as Record<string, unknown>)?.value ?? '') === key) as
       Record<string, unknown> | undefined
-    if (hit) return `${cleanText(hit.emoji, 8) || '📋'} ${cleanText(hit.label, 80) || key}`
+    if (hit) return { emoji: cleanText(hit.emoji, 8) || '📋', label: cleanText(hit.label, 80) || key }
   }
-  return cleanText(key, 60) || 'ไม่ระบุประเภท'
+  return { emoji: '📋', label: cleanText(key, 60) || 'ไม่ระบุประเภท' }
+}
+
+// ชื่อเต็มพร้อมอีโมจินำหน้า เทียบเท่า BASE_DOCUMENT_TYPES.label ฝั่ง client — เทสต์ใช้ตัวนี้
+// เทียบกันทีละประเภทกันชื่อเพี้ยน ตัวข้อความจริงเรียก documentType() แล้วแยกอีโมจิไปไว้หัวข้อ
+function documentTypeLabel(value: unknown, feeSchedule: unknown) {
+  const { emoji, label } = documentType(value, feeSchedule)
+  return `${emoji} ${label}`
 }
 
 // document_requests ไม่มีเลขที่คำขอแบบ complaints.ref_no — ใช้ 8 ตัวแรกของ uuid ให้เจ้าหน้าที่
@@ -233,30 +304,37 @@ function buildEventMessage(event: Record<string, unknown>, orgType: unknown) {
 // ที่ประชาชนพิมพ์มา — ให้กดลิงก์เข้าไปดูในระบบตามสิทธิ์แทน
 // complaints.village เป็นช่องสถานที่เกิดเหตุที่ประชาชนกรอกเอง เจ้าของระบบตัดสินใจให้ใส่
 // 2569-09-12 เพราะเจ้าหน้าที่ต้องรู้ว่าเรื่องอยู่ตรงไหนก่อนจะตัดสินใจว่าใครออกพื้นที่
+// รูปแบบบรรทัดแรกของทุกใบ: <แถบสีกอง> <อีโมจิประเภทเรื่อง> <หัวเรื่อง>
+// อีโมจิประเภทอยู่หัวข้อความอย่างเดียว บรรทัด "ประเภท:/เรื่อง:" จึงแสดงชื่อล้วน ไม่ใส่ซ้ำ
+// ข้อยกเว้นเดียวคือ fee_verified ที่ใช้ 💰 เพราะสาระของใบนั้นคือเงิน ไม่ใช่ชนิดเอกสาร
 function buildComplaintCreatedMessage(complaint: Record<string, unknown>) {
-  const category = COMPLAINT_CATEGORY_LABEL[String(complaint.category)] ?? (cleanText(complaint.category, 60) || 'อื่นๆ')
+  const category = complaintCategory(complaint)
   const department = departmentName(complaint)
+  const hashtag = departmentHashtag(complaint)
   const submittedAt = formatThaiDateTime(complaint.created_at)
   return [
-    '📋 <b>มีคำร้องใหม่</b>',
+    `${departmentColor(complaint)} ${category.emoji} <b>มีคำร้องใหม่</b>`,
     complaint.ref_no ? `เลขที่: ${escapeHtml(complaint.ref_no, 40)}` : '',
-    `ประเภท: ${escapeHtml(category, 60)}`,
+    `ประเภท: ${escapeHtml(category.label, 60)}`,
     complaint.village ? `สถานที่: ${escapeHtml(complaint.village, 120)}` : '',
-    department ? `ส่งถึง: ${escapeHtml(department, 80)}` : '',
+    department ? `ส่งถึง: ${escapeHtml(department, 80)}${hashtag ? ` ${hashtag}` : ''}` : '',
     submittedAt ? `แจ้งเมื่อ: ${escapeHtml(submittedAt, 60)}` : '',
   ].filter(Boolean).join('\n')
 }
 
 function buildComplaintStatusMessage(complaint: Record<string, unknown>) {
-  const category = COMPLAINT_CATEGORY_LABEL[String(complaint.category)] ?? (cleanText(complaint.category, 60) || 'อื่นๆ')
+  const category = complaintCategory(complaint)
   const status = COMPLAINT_STATUS_LABEL[String(complaint.status)] ?? cleanText(complaint.status, 60)
+  const department = departmentName(complaint)
+  const hashtag = departmentHashtag(complaint)
   const updatedAt = formatThaiDateTime(complaint.updated_at ?? complaint.created_at)
   return [
-    '🔄 <b>อัปเดตสถานะคำร้อง</b>',
+    `${departmentColor(complaint)} ${category.emoji} <b>อัปเดตสถานะคำร้อง</b>`,
     complaint.ref_no ? `เลขที่: ${escapeHtml(complaint.ref_no, 40)}` : '',
-    `ประเภท: ${escapeHtml(category, 60)}`,
+    `ประเภท: ${escapeHtml(category.label, 60)}`,
     complaint.village ? `สถานที่: ${escapeHtml(complaint.village, 120)}` : '',
     `สถานะ: <b>${escapeHtml(status, 60)}</b>`,
+    department ? `ส่งถึง: ${escapeHtml(department, 80)}${hashtag ? ` ${hashtag}` : ''}` : '',
     updatedAt ? `อัปเดตเมื่อ: ${escapeHtml(updatedAt, 60)}` : '',
   ].filter(Boolean).join('\n')
 }
@@ -266,15 +344,17 @@ function buildComplaintStatusMessage(complaint: Record<string, unknown>) {
 function buildDocumentRequestCreatedMessage(
   request: Record<string, unknown>,
   feeSchedule: unknown,
-  heading = '📄 <b>มีคำขอเอกสารใหม่</b>',
+  headingText = 'มีคำขอเอกสารใหม่',
 ) {
+  const type = documentType(request.document_type, feeSchedule)
   const department = departmentName(request)
+  const hashtag = departmentHashtag(request)
   const submittedAt = formatThaiDateTime(request.created_at)
   const fee = Number(request.fee_amount ?? 0) > 0 ? formatAmount(request.fee_amount, 2) : null
   return [
-    heading,
-    `เรื่อง: ${escapeHtml(documentTypeLabel(request.document_type, feeSchedule), 100)}`,
-    department ? `ส่งถึง: ${escapeHtml(department, 80)}` : '',
+    `${departmentColor(request)} ${type.emoji} <b>${headingText}</b>`,
+    `เรื่อง: ${escapeHtml(type.label, 100)}`,
+    department ? `ส่งถึง: ${escapeHtml(department, 80)}${hashtag ? ` ${hashtag}` : ''}` : '',
     submittedAt ? `ยื่นเมื่อ: ${escapeHtml(submittedAt, 60)}` : '',
     fee ? `ค่าธรรมเนียม: ${escapeHtml(fee, 20)} บาท` : '',
     `อ้างอิง: #${escapeHtml(shortRef(request.id), 8)}`,
@@ -282,24 +362,32 @@ function buildDocumentRequestCreatedMessage(
 }
 
 function buildDocumentRequestStatusMessage(request: Record<string, unknown>, feeSchedule: unknown) {
+  const type = documentType(request.document_type, feeSchedule)
   const status = DOCUMENT_STATUS_LABEL[String(request.status)] ?? cleanText(request.status, 60)
+  const department = departmentName(request)
+  const hashtag = departmentHashtag(request)
   const updatedAt = formatThaiDateTime(request.updated_at ?? request.created_at)
   return [
-    '🔄 <b>อัปเดตสถานะคำขอเอกสาร</b>',
-    `เรื่อง: ${escapeHtml(documentTypeLabel(request.document_type, feeSchedule), 100)}`,
+    `${departmentColor(request)} ${type.emoji} <b>อัปเดตสถานะคำขอเอกสาร</b>`,
+    `เรื่อง: ${escapeHtml(type.label, 100)}`,
     `สถานะ: <b>${escapeHtml(status, 60)}</b>`,
+    department ? `ส่งถึง: ${escapeHtml(department, 80)}${hashtag ? ` ${hashtag}` : ''}` : '',
     updatedAt ? `อัปเดตเมื่อ: ${escapeHtml(updatedAt, 60)}` : '',
     `อ้างอิง: #${escapeHtml(shortRef(request.id), 8)}`,
   ].filter(Boolean).join('\n')
 }
 
 function buildFeeVerifiedMessage(request: Record<string, unknown>, feeSchedule: unknown) {
+  const type = documentType(request.document_type, feeSchedule)
+  const department = departmentName(request)
+  const hashtag = departmentHashtag(request)
   const amount = formatAmount(request.fee_amount, 2)
   const verifiedAt = formatThaiDateTime(request.payment_verified_at ?? request.updated_at)
   return [
-    '💰 <b>ตรวจสอบค่าธรรมเนียมแล้ว</b>',
-    `เรื่อง: ${escapeHtml(documentTypeLabel(request.document_type, feeSchedule), 100)}`,
+    `${departmentColor(request)} 💰 <b>ตรวจสอบค่าธรรมเนียมแล้ว</b>`,
+    `เรื่อง: ${escapeHtml(type.label, 100)}`,
     amount ? `จำนวนเงิน: <b>${escapeHtml(amount, 20)} บาท</b>` : '',
+    department ? `ส่งถึง: ${escapeHtml(department, 80)}${hashtag ? ` ${hashtag}` : ''}` : '',
     verifiedAt ? `ตรวจสอบเมื่อ: ${escapeHtml(verifiedAt, 60)}` : '',
     `อ้างอิง: #${escapeHtml(shortRef(request.id), 8)}`,
   ].filter(Boolean).join('\n')
@@ -514,12 +602,12 @@ serve(async (req) => {
     const selectColumns = spec.table === 'events'
       ? 'id,municipality_id,created_by,created_at,title,description,event_date,event_time,end_time,location,audiences,is_all_day'
       : spec.table === 'complaints'
-        ? 'id,municipality_id,user_id,created_at,updated_at,status,category,assigned_to,ref_no,village,department:departments(name)'
+        ? 'id,municipality_id,user_id,created_at,updated_at,status,category,assigned_to,ref_no,village,department:departments(name,code),category_ref:complaint_categories(label,emoji)'
         : spec.table === 'fleet_trips'
           ? 'id,municipality_id,status,destination,reject_reason,vehicle:fleet_vehicles(name),driver:profiles!fleet_trips_driver_id_fkey(full_name)'
           : spec.table === 'fleet_fuel_records'
             ? 'id,municipality_id,created_at,filled_at,liters,price_per_liter,total_cost,odometer,full_tank,fuel_type,fuel_other_name,fuel_station,receipt_no,vehicle:fleet_vehicles(name,license_plate,meter_unit),driver:profiles!fleet_fuel_records_driver_id_fkey(full_name)'
-            : 'id,municipality_id,user_id,created_at,updated_at,status,document_type,fee_amount,payment_verified_at,department:departments(name)'
+            : 'id,municipality_id,user_id,created_at,updated_at,status,document_type,fee_amount,payment_verified_at,department:departments(name,code)'
     const { data: resource, error: resourceError } = await admin
       .from(spec.table)
       .select(selectColumns)
@@ -592,7 +680,7 @@ serve(async (req) => {
               : notificationType === 'document_request_created'
                 ? buildDocumentRequestCreatedMessage(resource, feeSchedule)
                 : notificationType === 'building_permit_created'
-                  ? buildDocumentRequestCreatedMessage(resource, feeSchedule, '🏗️ <b>มีคำขออนุญาตก่อสร้างใหม่</b>')
+                  ? buildDocumentRequestCreatedMessage(resource, feeSchedule, 'มีคำขออนุญาตก่อสร้างใหม่')
                   : notificationType === 'document_request_status_updated'
                     ? buildDocumentRequestStatusMessage(resource, feeSchedule)
                     : notificationType === 'fee_verified'
