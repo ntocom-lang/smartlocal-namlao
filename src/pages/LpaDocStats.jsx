@@ -7,7 +7,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import FiscalYearPicker from '../components/common/FiscalYearPicker'
-import { FY_ALL, useFiscalYearParam, fiscalPeriodLabel } from '../lib/fiscalYearParam'
+import { FY_ALL, useFiscalYearParam, fiscalPeriodParts } from '../lib/fiscalYearParam'
 import { fiscalYearBounds } from '../lib/fiscalYear'
 
 const DOC_LABELS = {
@@ -38,17 +38,19 @@ function thDate(iso) {
   })
 }
 
+// ขนาดชุดนี้ยกมาจาก ComplaintStats ให้รายงานสาธารณะ 2 หน้าหน้าตาเท่ากันบนมือถือ
+// ของเดิม p-4 + ไอคอน 32px + ตัวเลข 30px ทำให้จอ 390px เห็นการ์ดแค่ 4 ใบจาก 6 ใบ
 function StatCard({ label, value, sub, Icon, iconBg, border }) {
   return (
-    <div className={`bg-white rounded-2xl border p-4 flex flex-col gap-1 ${border}`}>
-      <div className="flex items-center gap-2 mb-1">
-        <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${iconBg}`}>
-          <Icon size={16} className="text-white" />
+    <div className={`bg-white rounded-lg sm:rounded-2xl border p-2 sm:p-4 flex flex-col ${border}`}>
+      <div className="flex items-center gap-1 sm:gap-2">
+        <div className={`w-5 h-5 sm:w-7.5 sm:h-7.5 rounded-md sm:rounded-xl flex items-center justify-center shrink-0 ${iconBg}`}>
+          <Icon size={11} className="text-white sm:w-[15px] sm:h-[15px]" aria-hidden="true" />
         </div>
-        <p className="text-xs font-semibold text-gray-500">{label}</p>
+        <p className="text-[10px] sm:text-xs font-semibold text-gray-500 leading-3 sm:leading-4 truncate">{label}</p>
       </div>
-      <p className="text-3xl font-black text-gray-800 leading-none">{value}</p>
-      {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+      <p className="mt-1 sm:mt-2 text-xl sm:text-[28px] font-black text-gray-800 leading-none">{value}</p>
+      {sub && <p className="mt-0.5 sm:mt-1 text-[9px] sm:text-xs text-gray-400 leading-3 sm:leading-3.5 line-clamp-2">{sub}</p>}
     </div>
   )
 }
@@ -66,6 +68,9 @@ export default function LpaDocStats() {
     [fiscalYear],
   )
   const isPastFiscalYear = fiscalYear !== FY_ALL && fiscalYear < fiscalOptions[0]
+
+  // แยก main/range เพื่อซ่อนวงเล็บช่วงวันที่บนจอมือถือ (ดูเหตุผลที่ fiscalPeriodParts)
+  const fiscalPeriod = fiscalPeriodParts(fiscalYear)
 
   const now = new Date().toLocaleDateString('th-TH', {
     year: 'numeric', month: 'long', day: 'numeric',
@@ -118,34 +123,43 @@ export default function LpaDocStats() {
     <div className="min-h-screen print:bg-white" style={{ backgroundColor: '#eef2f7' }}>
 
       {/* ── Header ── */}
-      <div className="bg-white border-b border-gray-100 shadow-sm print:shadow-none px-4 py-5">
+      <div className="bg-white border-b border-gray-100 shadow-sm print:shadow-none px-4 py-4 sm:py-5">
         <div className="max-w-4xl mx-auto">
-          <Link to="/more"
-            className="print:hidden inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-600 mb-4">
-            <ArrowLeft size={14} /> กลับ
-          </Link>
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                ความโปร่งใสด้านบริการดิจิทัล
-              </span>
-              <h1 className="text-xl font-black text-gray-800 leading-tight mt-2">
-                รายงานสถิติข้อมูลการขอรับบริการผ่านช่องทางออนไลน์ (e-Service)
-              </h1>
-              <p className="text-sm font-semibold text-gray-600 mt-1">
-                ด้านการออกเอกสาร/ใบรับรองดิจิทัล — {fiscalPeriodLabel(fiscalYear)}
-              </p>
-              <p className="text-sm text-gray-500 mt-0.5">{tenant?.name ?? 'หน่วยงาน'}</p>
-              <p className="text-xs text-gray-400 mt-1">ข้อมูล ณ วันที่ {now}</p>
-            </div>
+          {/* "กลับ" กับ "พิมพ์" อยู่แถวเดียวกัน — ปุ่มพิมพ์ที่เคยยืนข้างหัวเรื่องบีบ h1 เหลือ 249px
+              จากพื้นที่ 358px บนจอ 390px จนหัวเรื่องตกเป็น 3 บรรทัด (ชุดเดียวกับ ComplaintStats) */}
+          <div className="print:hidden flex items-center justify-between gap-3 mb-3">
+            <Link to="/more"
+              className="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-600">
+              <ArrowLeft size={14} /> กลับ
+            </Link>
             <button
               onClick={() => window.print()}
-              className="print:hidden flex items-center gap-2 text-sm font-semibold text-gray-600 hover:text-gray-800 border border-gray-200 rounded-xl px-3 py-2 transition-colors shrink-0">
+              className="flex items-center gap-1.5 text-sm font-semibold text-gray-600 hover:text-gray-800 border border-gray-200 rounded-xl px-3 py-1.5 transition-colors shrink-0">
               <Printer size={15} /> พิมพ์
             </button>
           </div>
 
-          <div className="print:hidden mt-4">
+          <span className="inline-block text-[10px] sm:text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+            ความโปร่งใสด้านบริการดิจิทัล
+          </span>
+          <h1 className="text-lg sm:text-xl font-black text-gray-800 leading-tight mt-2">
+            รายงานสถิติข้อมูลการขอรับบริการผ่านช่องทางออนไลน์ (e-Service)
+          </h1>
+          <p className="text-[13px] sm:text-sm font-semibold text-gray-600 mt-1 leading-snug">
+            ด้านการออกเอกสาร/ใบรับรองดิจิทัล{' '}
+            {/* ปีงบต้องไม่แตกกลางคำ — จอ 390px เคยดัน "2569" ลงไปยืนเดี่ยวบรรทัดใหม่ */}
+            <span className="whitespace-nowrap">— {fiscalPeriod.main}</span>
+            {/* ช่วงวันที่ซ้ำกับ dropdown ปีงบที่อยู่ใต้ลงมา จอเล็กจึงตัดออก แต่ใบที่พิมพ์ต้องมีเสมอ */}
+            <span className="hidden sm:inline print:inline">{fiscalPeriod.range}</span>
+          </p>
+          {/* ชื่อหน่วยงานกับวันที่ข้อมูลรวมเป็นบรรทัดเดียว — เดิมแยก 2 บรรทัดโดยไม่ได้ข้อมูลเพิ่ม */}
+          <p className="text-xs sm:text-sm text-gray-500 mt-1 leading-snug">
+            <span className="whitespace-nowrap">{tenant?.name ?? 'หน่วยงาน'}</span>
+            <span className="text-gray-300"> · </span>
+            <span className="text-gray-400 whitespace-nowrap">ข้อมูล ณ วันที่ {now}</span>
+          </p>
+
+          <div className="print:hidden mt-3">
             <FiscalYearPicker id="fy-doc-stats" value={fiscalYear} options={fiscalOptions} onChange={setFiscalYear} />
           </div>
         </div>
@@ -154,7 +168,7 @@ export default function LpaDocStats() {
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-5">
 
         {/* ── Stats grid ── */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3">
           <StatCard
             label={fiscalRange ? 'รวมคำขอในปีงบนี้' : 'รวมคำขอทั้งหมด'}
             value={stats?.total ?? 0}
@@ -168,7 +182,7 @@ export default function LpaDocStats() {
           <StatCard
             label="เสร็จสิ้น"
             value={stats?.completed ?? 0}
-            sub={`คิดเป็น ${completionRate}% ของทั้งหมด`}
+            sub={`${completionRate}% ของทั้งหมด`}
             Icon={CheckCircle2}
             iconBg="bg-emerald-500"
             border="border-emerald-100"
@@ -190,7 +204,7 @@ export default function LpaDocStats() {
           <StatCard
             label="ระยะเวลาเฉลี่ย"
             value={stats?.avg_days != null ? `${stats.avg_days} วัน` : '—'}
-            sub="วันยื่น → วันเสร็จ (เฉพาะที่เสร็จแล้ว)"
+            sub="ยื่น → เสร็จ (เฉพาะที่เสร็จ)"
             Icon={TrendingUp}
             iconBg="bg-purple-500"
             border="border-purple-100"

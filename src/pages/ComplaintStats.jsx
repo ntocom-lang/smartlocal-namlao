@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useSyncExternalStore } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ClipboardList, CheckCircle2, RefreshCw, XCircle, Inbox,
@@ -12,7 +12,7 @@ import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { useVisibleRefresh } from '../hooks/useVisibleRefresh'
 import FiscalYearPicker from '../components/common/FiscalYearPicker'
-import { FY_ALL, useFiscalYearParam, fiscalPeriodLabel } from '../lib/fiscalYearParam'
+import { FY_ALL, useFiscalYearParam, fiscalPeriodParts } from '../lib/fiscalYearParam'
 import { FISCAL_MONTHS_TH, fiscalYearBounds } from '../lib/fiscalYear'
 
 // ดึงมาใช้คำนวณกราฟสรุปทั้งหมด (สถานะ/หมวดหมู่/แนวโน้มรายเดือน) — คำร้องเรียนสะสมของ อปท.
@@ -42,6 +42,29 @@ const FALLBACK_CATEGORY_LABELS = {
   animals: 'สุนัขจรจัด', phone_complaint: 'ร้องเรียนเสียง', other: 'อื่นๆ',
 }
 
+// จอแคบกว่า md (768px) — ใช้เฉพาะกับสิ่งที่สั่งผ่าน CSS ไม่ได้ เช่น prop ของ recharts
+// (เลย์เอาต์ที่เหลือใช้ md: ของ Tailwind ตามปกติ ไม่ต้องพึ่ง JS)
+// useSyncExternalStore ไม่ใช่ useState+useEffect เพราะ matchMedia เป็น external store อยู่แล้ว
+// และการ setState ใน effect ทำให้เกิด cascading render (eslint react-hooks/set-state-in-effect)
+const NARROW_QUERY = '(max-width: 767px)'
+
+function subscribeNarrow(onStoreChange) {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return () => {}
+  const mq = window.matchMedia(NARROW_QUERY)
+  mq.addEventListener('change', onStoreChange)
+  return () => mq.removeEventListener('change', onStoreChange)
+}
+
+function isNarrowNow() {
+  return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    && window.matchMedia(NARROW_QUERY).matches
+}
+
+// snapshot ฝั่ง server เป็น false — ถ้าไม่มี window ให้ถือว่าจอกว้างไว้ก่อน (ค่าเดิมของหน้านี้)
+function useIsNarrow() {
+  return useSyncExternalStore(subscribeNarrow, isNarrowNow, () => false)
+}
+
 function StatCard({ label, value, sub, Icon, iconBg, border }) {
   return (
     <div className={`bg-white rounded-lg sm:rounded-2xl border p-2 sm:p-4 flex flex-col ${border}`}>
@@ -59,6 +82,7 @@ function StatCard({ label, value, sub, Icon, iconBg, border }) {
 
 export default function ComplaintStats() {
   const { tenant } = useTenant()
+  const isNarrow = useIsNarrow()
   const tenantId = tenant?.id
   const [stats, setStats]         = useState(null)
   const [rows, setRows]           = useState([])
@@ -127,6 +151,9 @@ export default function ComplaintStats() {
   // ปีงบที่เลือกจบไปแล้วหรือยัง (ใช้ตัดสินว่าจะโชว์ "เดือนนี้" หรือช่วงวันที่ของปีงบ)
   const isPastFiscalYear = fiscalYear !== FY_ALL && fiscalYear < fiscalOptions[0]
 
+  // แยก main/range เพื่อซ่อนวงเล็บช่วงวันที่บนจอมือถือ (ดูเหตุผลที่ fiscalPeriodParts)
+  const fiscalPeriod = fiscalPeriodParts(fiscalYear)
+
   function categoryLabel(value) {
     return categoryLabels[value] ?? FALLBACK_CATEGORY_LABELS[value] ?? value
   }
@@ -158,6 +185,9 @@ export default function ComplaintStats() {
     // categoryLabel ไม่ต้องอยู่ใน deps — พฤติกรรมขึ้นกับ categoryLabels (มีอยู่แล้ว) เท่านั้น
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, categoryLabels])
+
+  // แท่งฝั่งมือถือคิดความยาวเทียบหมวดที่มากที่สุด (ไม่ใช่เทียบยอดรวม) ให้เห็นความต่างชัดเท่ากราฟ
+  const maxCategoryCount = categoryBreakdown.reduce((m, c) => Math.max(m, c.count), 0)
 
   // แนวโน้มรายเดือน (รวมเดือนที่มี 0 เรื่องด้วย ไม่ข้าม ไม่งั้นเส้นจะกระโดดผิดสัดส่วนเวลา)
   //   เลือกปีงบ → 12 เดือนของปีงบนั้น เรียง ต.ค.→ก.ย. ตามที่ อปท. อ่านรายงานกัน
@@ -199,35 +229,44 @@ export default function ComplaintStats() {
     <div className="min-h-screen print:bg-white" style={{ backgroundColor: '#eef2f7' }}>
 
       {/* ── Header ── */}
-      <div className="bg-white border-b border-gray-100 shadow-sm print:shadow-none px-4 py-5">
+      <div className="bg-white border-b border-gray-100 shadow-sm print:shadow-none px-4 py-4 sm:py-5">
         <div className="max-w-4xl mx-auto">
-          <Link to="/reports"
-            className="print:hidden inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-600 mb-4">
-            <ArrowLeft size={14} /> กลับ
-          </Link>
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                ความโปร่งใสด้านการจัดการเรื่องร้องเรียน
-              </span>
-              <h1 className="text-xl font-black text-gray-800 leading-tight mt-2">
-                รายงานสถิติข้อมูลการขอรับบริการผ่านช่องทางออนไลน์ (e-Service)
-              </h1>
-              <p className="text-sm font-semibold text-gray-600 mt-1">
-                ด้านการจัดการเรื่องร้องเรียน/ร้องทุกข์ — {fiscalPeriodLabel(fiscalYear)}
-              </p>
-              <p className="text-sm text-gray-500 mt-0.5">{tenant?.name ?? 'หน่วยงาน'}</p>
-              <p className="text-xs text-gray-400 mt-1">ข้อมูล ณ วันที่ {now}</p>
-            </div>
+          {/* "กลับ" กับ "พิมพ์" อยู่แถวเดียวกัน — ปุ่มพิมพ์ที่เคยยืนข้างหัวเรื่องบีบ h1 เหลือ 249px
+              จากพื้นที่ 358px บนจอ 390px จนหัวเรื่องตกเป็น 3 บรรทัด ย้ายมาแถวนี้แล้วได้เต็มความกว้าง */}
+          <div className="print:hidden flex items-center justify-between gap-3 mb-3">
+            <Link to="/reports"
+              className="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-600">
+              <ArrowLeft size={14} /> กลับ
+            </Link>
             <button
               onClick={() => window.print()}
-              className="print:hidden flex items-center gap-2 text-sm font-semibold text-gray-600 hover:text-gray-800 border border-gray-200 rounded-xl px-3 py-2 transition-colors shrink-0">
+              className="flex items-center gap-1.5 text-sm font-semibold text-gray-600 hover:text-gray-800 border border-gray-200 rounded-xl px-3 py-1.5 transition-colors shrink-0">
               <Printer size={15} /> พิมพ์
             </button>
           </div>
 
+          <span className="inline-block text-[10px] sm:text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+            ความโปร่งใสด้านการจัดการเรื่องร้องเรียน
+          </span>
+          <h1 className="text-lg sm:text-xl font-black text-gray-800 leading-tight mt-2">
+            รายงานสถิติข้อมูลการขอรับบริการผ่านช่องทางออนไลน์ (e-Service)
+          </h1>
+          <p className="text-[13px] sm:text-sm font-semibold text-gray-600 mt-1 leading-snug">
+            ด้านการจัดการเรื่องร้องเรียน/ร้องทุกข์{' '}
+            {/* ปีงบต้องไม่แตกกลางคำ — จอ 390px เคยดัน "2569" ลงไปยืนเดี่ยวบรรทัดใหม่ */}
+            <span className="whitespace-nowrap">— {fiscalPeriod.main}</span>
+            {/* ช่วงวันที่ซ้ำกับ dropdown ปีงบที่อยู่ใต้ลงมา จอเล็กจึงตัดออก แต่ใบที่พิมพ์ต้องมีเสมอ */}
+            <span className="hidden sm:inline print:inline">{fiscalPeriod.range}</span>
+          </p>
+          {/* ชื่อหน่วยงานกับวันที่ข้อมูลรวมเป็นบรรทัดเดียว — เดิมแยก 2 บรรทัดโดยไม่ได้ข้อมูลเพิ่ม */}
+          <p className="text-xs sm:text-sm text-gray-500 mt-1 leading-snug">
+            <span className="whitespace-nowrap">{tenant?.name ?? 'หน่วยงาน'}</span>
+            <span className="text-gray-300"> · </span>
+            <span className="text-gray-400 whitespace-nowrap">ข้อมูล ณ วันที่ {now}</span>
+          </p>
+
           {/* ตัวกรองปีงบ — ซ่อนตอนพิมพ์ เพราะช่วงเวลาที่เลือกพิมพ์ติดไปกับหัวรายงานอยู่แล้ว */}
-          <div className="print:hidden mt-4">
+          <div className="print:hidden mt-3">
             <FiscalYearPicker value={fiscalYear} options={fiscalOptions} onChange={setFiscalYear} />
           </div>
         </div>
@@ -251,7 +290,7 @@ export default function ComplaintStats() {
           <StatCard
             label="เสร็จสิ้น"
             value={stats?.resolved ?? 0}
-            sub={`คิดเป็น ${completionRate}% ของทั้งหมด`}
+            sub={`${completionRate}% ของทั้งหมด`}
             Icon={CheckCircle2}
             iconBg="bg-emerald-500"
             border="border-emerald-100"
@@ -273,7 +312,7 @@ export default function ComplaintStats() {
           <StatCard
             label="ระยะเวลาเฉลี่ย"
             value={stats?.avg_days != null ? `${stats.avg_days} วัน` : '—'}
-            sub="วันแจ้ง → วันปิดเรื่อง (เฉพาะที่เสร็จแล้ว)"
+            sub="แจ้ง → ปิดเรื่อง (เฉพาะที่เสร็จ)"
             Icon={TrendingUp}
             iconBg="bg-purple-500"
             border="border-purple-100"
@@ -325,7 +364,7 @@ export default function ComplaintStats() {
                   <div key={stage.key} className="flex items-start gap-2">
                     <span className="w-2.5 h-2.5 rounded-full shrink-0 mt-1" style={{ backgroundColor: stage.dot }} />
                     <div className="min-w-0">
-                      <p className="text-xs text-gray-500 leading-tight truncate">{stage.label}</p>
+                      <p className="text-xs text-gray-500 leading-tight">{stage.label}</p>
                       <p className="text-sm font-bold text-gray-800 leading-tight">{value} <span className="text-xs font-normal text-gray-400">({share}%)</span></p>
                     </div>
                   </div>
@@ -338,7 +377,7 @@ export default function ComplaintStats() {
         {/* ปีงบที่ไม่มีคำร้องเลยต้องบอกให้ชัดว่า "ไม่มีเรื่อง" ไม่ใช่ปล่อยหน้าว่างจนดูเหมือนโหลดพัง */}
         {!stats?.total && (
           <p className="bg-white rounded-2xl border border-gray-100 p-4 text-center text-sm text-gray-400">
-            ไม่มีคำร้องใน{fiscalPeriodLabel(fiscalYear)}
+            ไม่มีคำร้องใน{fiscalPeriod.main}
           </p>
         )}
 
@@ -353,7 +392,30 @@ export default function ComplaintStats() {
               {isTruncated && (
                 <p className="text-[10px] text-gray-400 mb-1.5">จากข้อมูล {rows.length.toLocaleString('th-TH')} รายการล่าสุด (ทั้งหมด {stats.total.toLocaleString('th-TH')} รายการ)</p>
               )}
-              <ResponsiveContainer width="100%" height={Math.max(120, categoryBreakdown.length * 26 + 12)}>
+              {/* จอแคบใช้แท่งแบบ HTML — ชื่อหมวดเต็มไม่ถูกตัด เพราะบนมือถือไม่มี hover ให้เปิด tooltip
+                  ดูชื่อเต็ม ป้ายแกน Y ของ recharts ที่ตัดเหลือ 9 ตัวอักษรจึงเท่ากับข้อมูลหายจริง
+                  (เช่น "กลิ่นเหม…" กับ "ไฟฟ้าสาธา…" ที่วัดได้บนจอ 390px) */}
+              <ul className="md:hidden space-y-2 mt-1">
+                {categoryBreakdown.map((c, i) => (
+                  /* หมวดที่ถูกพับรวมชื่อ "อื่นๆ" อาจซ้ำกับหมวดจริงที่ชื่อเดียวกัน — ใส่ลำดับกัน key ชน */
+                  <li key={`${c.label}-${i}`}>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-xs text-gray-600 leading-snug">{c.label}</span>
+                      <span className="text-xs font-bold text-gray-800 shrink-0">{c.count}</span>
+                    </div>
+                    <div className="mt-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+                      <div className="h-full rounded-full"
+                        style={{
+                          width: `${maxCategoryCount > 0 ? (c.count / maxCategoryCount) * 100 : 0}%`,
+                          backgroundColor: 'var(--color-primary)',
+                        }} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+
+              <ResponsiveContainer width="100%" height={Math.max(120, categoryBreakdown.length * 26 + 12)}
+                className="hidden md:block">
                 <BarChart data={categoryBreakdown} layout="vertical" margin={{ top: 2, right: 26, bottom: 2, left: 0 }}>
                   <CartesianGrid horizontal={false} stroke="#e5e7eb" />
                   <XAxis type="number" hide />
@@ -384,7 +446,12 @@ export default function ComplaintStats() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid vertical={false} stroke="#e5e7eb" />
-                  <XAxis dataKey="label" tickLine={false} axisLine={{ stroke: '#c3c2b7' }} tick={{ fontSize: 11, fill: '#898781' }} />
+                  {/* จอแคบใส่ป้าย 12 เดือนไม่พอ recharts จะหล่นเดือนทิ้งเองแบบไม่สม่ำเสมอ
+                      (เคยหล่น เม.ย. กับ ส.ค. ทิ้งจนอ่านช่วงเวลาผิด) — บังคับเว้นเดือนเว้นเดือนแทน
+                      จุดข้อมูลยังครบ 12 เดือนเหมือนเดิม หายแค่ป้ายกำกับ */}
+                  <XAxis dataKey="label" tickLine={false} axisLine={{ stroke: '#c3c2b7' }}
+                    interval={isNarrow && fiscalRange ? 1 : 'preserveEnd'}
+                    tick={{ fontSize: isNarrow ? 10 : 11, fill: '#898781' }} />
                   <YAxis allowDecimals={false} width={24} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#898781' }} />
                   <Tooltip cursor={{ stroke: '#c3c2b7', strokeWidth: 1 }} formatter={(value) => [`${value} เรื่อง`, null]}
                     contentStyle={{ borderRadius: 12, border: '1px solid #f3f4f6', fontSize: 12 }} labelStyle={{ fontWeight: 700 }} />

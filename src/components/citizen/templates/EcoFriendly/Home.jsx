@@ -111,13 +111,22 @@ function EServiceBlock({ docTypes }) {
           </ModuleLink>
         </div>
 
-        {/* มือถือแสดง 4 ช่อง (ไอคอน 52px × 4 + gap 8px = 232px ยังพอบนจอ 360px) — ตอนเหลือ 3
-            ช่อง บริการที่เพิ่มใหม่จะถูกตัดหายไปจากหน้าแรกบนมือถือทั้งที่ PC เห็นปกติ */}
-        <div className="grid lg:hidden gap-2 pb-1"
-          style={{ gridTemplateColumns: `repeat(${Math.max(1, Math.min(docTypes.length, 4))}, minmax(0, 1fr))` }}>
-          {docTypes.slice(0, 4).map(({ value, label, emoji }) => (
+        {/* ไอคอนพอดี 4 ช่องตั้งแต่จอ 360px แต่ "ชื่อ" บริการไม่พอ — จอ 390px การ์ดกว้าง 74px
+            ขณะที่ "ค่าธรรมเนียม/" ต้องการ 78px จึงเหลือ "ค่าธรรมเนี…" ซึ่งแยกไม่ออกจาก
+            "ค่าธรรมเนียมขยะ" ที่ยืนอยู่ในแถวเดียวกัน (ลดขนาดตัวอักษรแก้ไม่ได้ เพราะ text-xs
+            ของโปรเจกต์นี้ถูกยกเป็น 13px ไว้แล้วตาม index.css)
+            ต่ำกว่า 420px จึงเหลือ 3 ช่อง การ์ดได้ 90-114px ชื่อขึ้นครบ — แลกกับบริการที่ 4
+            ที่หายจากหน้าแรกบนจอแคบ ยังกด "ทั้งหมด ›" ข้างบนเข้าไปดูได้ทุกตัว */}
+        <div className="grid lg:hidden gap-2 pb-1
+                        grid-cols-[repeat(var(--sv-cols-narrow),minmax(0,1fr))]
+                        min-[420px]:grid-cols-[repeat(var(--sv-cols),minmax(0,1fr))]"
+          style={{
+            '--sv-cols-narrow': Math.max(1, Math.min(docTypes.length, 3)),
+            '--sv-cols': Math.max(1, Math.min(docTypes.length, 4)),
+          }}>
+          {docTypes.slice(0, 4).map(({ value, label, emoji }, i) => (
             <Link key={value} to={`/doc-request?type=${value}`}
-              className="flex flex-col items-center gap-1.5 active:scale-95 transition-transform group">
+              className={`${i === 3 ? 'hidden min-[420px]:flex' : 'flex'} flex-col items-center gap-1.5 active:scale-95 transition-transform group`}>
               <div className="w-[52px] h-[52px] rounded-2xl flex items-center justify-center shadow-md bg-white/20 border border-white/30 backdrop-blur-sm group-hover:bg-white/30 transition-colors"
                 style={{ fontSize: 26, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
                 {emoji}

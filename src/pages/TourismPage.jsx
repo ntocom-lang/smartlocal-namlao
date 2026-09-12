@@ -353,7 +353,9 @@ export default function TourismPage() {
             className="p-2 -ml-1 rounded-xl hover:bg-gray-100 text-gray-500 transition-colors" aria-label="ย้อนกลับ">
             <ArrowLeft size={20} />
           </button>
-          <h1 className="text-base font-bold text-gray-800 flex-1 truncate">เที่ยว กิน พัก ชอป บริการ</h1>
+          {/* ไม่ตัดคำ — จอ 320px แถบนี้เหลือ 132px แต่ชื่อหน้าต้องการ 165px ถ้า truncate ไว้
+              จะเหลือ "เที่ยว กิน พัก ช…" ปล่อยให้ตกบรรทัดที่ 2 เฉพาะจอแคบแทน */}
+          <h1 className="text-base font-bold text-gray-800 flex-1 leading-tight">เที่ยว กิน พัก ชอป บริการ</h1>
           <button onClick={() => navigate('/business-register')}
             className="shrink-0 flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-xl"
             style={{ backgroundColor: '#fef3c7', color: '#b45309' }}>

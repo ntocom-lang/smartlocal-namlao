@@ -156,10 +156,12 @@ export default function WeatherWidget() {
         <div className="w-px bg-white/90 shadow-[1px_0_0_rgba(148,163,184,0.16)] my-2" />
 
         {/* คอลัมน์ 2 — พยากรณ์อากาศ */}
-        <div className="flex-1 min-w-0 flex items-center gap-2 px-2.5 py-2">
+        {/* จอ 320px ต้องการอีก ~11px ให้คำบรรยายอากาศขึ้นครบ — บีบ gap/padding/ไอคอนเฉพาะจอแคบ
+            (เทมเพลตหน้าแรกแต่ละตัวห่อวิดเจ็ตด้วยระยะขอบไม่เท่ากัน ตัวที่แคบสุดต้องพอด้วย) */}
+        <div className="flex-1 min-w-0 flex items-center gap-1.5 sm:gap-2 px-1.5 sm:px-2.5 py-2">
         {weather && info ? (
           <>
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-gradient-to-br from-amber-100 to-sky-100 shadow-sm border border-white/80">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center shrink-0 bg-gradient-to-br from-amber-100 to-sky-100 shadow-sm border border-white/80">
               <span className="text-lg leading-none">{info.icon}</span>
             </div>
             <div className="min-w-0 flex-1">
@@ -167,13 +169,19 @@ export default function WeatherWidget() {
                 <span className="text-base font-bold text-slate-800 leading-none">
                   {weather.temp}°
                 </span>
-                <span className="text-xs text-slate-600 truncate">
+                {/* คำบรรยายอากาศยืนข้างอุณหภูมิได้เฉพาะจอกว้าง — บนมือถือคอลัมน์นี้เหลือ 49px
+                    (390px) และ 14px (320px) ทำให้ "เมฆเต็มท้องฟ้า" ที่กว้าง 78px เหลือแค่
+                    "เมฆเต็…" อ่านไม่ได้ความ จอแคบจึงย้ายลงบรรทัดล่างที่มีที่เต็มคอลัมน์ */}
+                <span className="hidden sm:inline text-xs text-slate-600 truncate">
                   {info.label}
                 </span>
               </div>
               <div className="flex items-center gap-0.5 mt-0.5
                               text-sky-700 group-hover:text-blue-700 transition-colors">
-                <span className="text-[11px] font-medium truncate">อากาศ{shortName}</span>
+                {/* จอแคบเลือกข้อมูลจริง (สภาพอากาศ) แทนข้อความนำทาง "อากาศ<ชื่อ อปท.>"
+                    ซึ่งซ้ำกับหน้าที่ผู้ใช้ยืนอยู่ และยังมีลูกศร > บอกว่ากดเข้าไปดูต่อได้ */}
+                <span className="sm:hidden text-[11px] font-medium truncate">{info.label}</span>
+                <span className="hidden sm:inline text-[11px] font-medium truncate">อากาศ{shortName}</span>
               </div>
             </div>
             <ChevronRight size={13} className="text-sky-500 shrink-0 transition-transform group-hover:translate-x-0.5" />
