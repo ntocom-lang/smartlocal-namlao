@@ -34,8 +34,19 @@ export function useFiscalYearParam() {
   return { value, setValue, options, bounds: value === FY_ALL ? null : fiscalYearBounds(value) }
 }
 
-// ป้ายช่วงเวลาแบบอ่านออก ใช้ทั้งบนหน้าจอและตอนสั่งพิมพ์
+// ป้ายช่วงเวลาแยกเป็น 2 ท่อน — หน้าจอมือถือกว้างไม่พอจะขึ้นทั้งก้อน และวงเล็บช่วงวันที่
+// ก็ซ้ำกับ dropdown ปีงบที่อยู่ใต้หัวรายงานลงมาอยู่แล้ว หน้ารายงานจึงซ่อนเฉพาะ range บนจอเล็ก
+// แต่ต้องโชว์กลับตอนสั่งพิมพ์เสมอ (หัวรายงานที่พิมพ์ออกกระดาษต้องระบุช่วงวันที่ให้ผู้ตรวจเห็น)
+export function fiscalPeriodParts(value) {
+  if (value === FY_ALL) return { main: 'ทุกปีงบประมาณ', range: ' (ยอดสะสมทั้งหมด)' }
+  return {
+    main: `ปีงบประมาณ พ.ศ. ${value}`,
+    range: ` (1 ต.ค. ${value - 1} – 30 ก.ย. ${value})`,
+  }
+}
+
+// ป้ายช่วงเวลาแบบเต็ม ใช้ทั้งบนหน้าจอและตอนสั่งพิมพ์
 export function fiscalPeriodLabel(value) {
-  if (value === FY_ALL) return 'ทุกปีงบประมาณ (ยอดสะสมทั้งหมด)'
-  return `ปีงบประมาณ พ.ศ. ${value} (1 ต.ค. ${value - 1} – 30 ก.ย. ${value})`
+  const { main, range } = fiscalPeriodParts(value)
+  return main + range
 }

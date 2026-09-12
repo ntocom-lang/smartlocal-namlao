@@ -98,22 +98,25 @@ function WeatherContent({ data, locationName }) {
           const widthPercent = ((max - min) / range) * 100
 
           return (
+            /* ความกว้างคอลัมน์บนมือถือ: ชื่อวัน "พฤหัสบดี" กว้าง 53px แต่กล่องเดิม w-12 = 48px
+               และอุณหภูมิทศนิยม "30.2°" กว้าง 30px ในกล่อง w-6 = 24px — ทั้งคู่ล้นออกไปเบียด
+               ช่องข้างๆ จึงขยายกล่องแล้วชดเชยพื้นที่คืนจาก padding/gap/ไอคอนเฉพาะจอแคบ */
             <div key={dateStr}
-                 className={`flex items-center px-5 py-4 gap-4 transition-colors hover:bg-emerald-50 dark:hover:bg-gray-700/50
+                 className={`flex items-center px-3 sm:px-5 py-4 gap-2.5 sm:gap-4 transition-colors hover:bg-emerald-50 dark:hover:bg-gray-700/50
                    ${i !== 0 ? 'border-t border-emerald-50 dark:border-gray-700/60' : ''}`}>
-              <span className={`text-sm w-12 shrink-0 ${i === 0 ? 'font-bold text-emerald-600 dark:text-emerald-400' : 'font-medium text-gray-600 dark:text-gray-300'}`}>
+              <span className={`text-sm w-14 shrink-0 ${i === 0 ? 'font-bold text-emerald-600 dark:text-emerald-400' : 'font-medium text-gray-600 dark:text-gray-300'}`}>
                 {formatDay(dateStr, i)}
               </span>
-              <div className="flex flex-col items-center w-12 shrink-0">
+              <div className="flex flex-col items-center w-9 sm:w-12 shrink-0">
                 <span className="text-2xl drop-shadow-sm">{info.icon}</span>
               </div>
-              <div className="flex-1 flex items-center gap-2">
-                <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 w-6 text-right">{min}°</span>
+              <div className="flex-1 flex items-center gap-1.5 sm:gap-2">
+                <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 w-8 text-right shrink-0">{min}°</span>
                 <div className="flex-1 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full relative overflow-hidden">
                   <div className="absolute h-full rounded-full bg-gradient-to-r from-emerald-400 to-amber-400"
                        style={{ left: `${leftPercent}%`, width: `${widthPercent}%` }}></div>
                 </div>
-                <span className="text-xs font-bold text-gray-700 dark:text-gray-200 w-6">{max}°</span>
+                <span className="text-xs font-bold text-gray-700 dark:text-gray-200 w-8 shrink-0">{max}°</span>
               </div>
             </div>
           )

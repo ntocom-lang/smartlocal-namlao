@@ -162,7 +162,9 @@ export default function ContactPage() {
                   <MapPinned size={20} />
                 </div>
                 <div className="min-w-0">
-                  <p className="font-semibold text-gray-800 text-[14px] truncate">{tenant?.name || 'เทศบาลตำบลน้ำเลา'}</p>
+                  {/* ชื่อหน่วยงานห้ามตัด — จอ 320px ช่องนี้เหลือ 99px แต่ "เทศบาลตำบลสาธิต"
+                      ต้องการ 112px ปล่อยตกบรรทัดดีกว่าโชว์ชื่อ อปท. ไม่ครบ */}
+                  <p className="font-semibold text-gray-800 text-[14px] leading-snug">{tenant?.name || 'เทศบาลตำบลน้ำเลา'}</p>
                   <p className="text-[12px] text-gray-500 mt-0.5 font-mono">{lat}, {lng}</p>
                 </div>
               </div>
