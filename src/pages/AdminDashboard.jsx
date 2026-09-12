@@ -5742,15 +5742,9 @@ export default function AdminDashboard() {
       {/* ─── Content ─── */}
       <div className="flex-1 min-w-0 px-4 py-4 pb-24 md:py-6 md:pb-8 md:px-6 space-y-4 md:space-y-6 max-w-5xl mx-auto">
 
-      {/* Org banner — desktop only (mobile ใช้ gradient header ด้านบนแทน) */}
-      <div className="hidden md:flex items-center gap-3 bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3">
-        <button onClick={() => navigate('/')} className="shrink-0 active:opacity-70 hover:scale-105 transition-transform">
-          {tenant?.logo_url
-            ? <img src={tenant.logo_url} alt="" className="w-10 h-10 rounded-full object-cover" />
-            : <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-xl">🏛️</div>}
-        </button>
-        <p className="font-bold text-gray-800 text-sm leading-tight">{tenant?.name}</p>
-      </div>
+      {/* ถอดแถบโลโก้+ชื่อ อปท. ออกแล้ว — ซ้ำกับ header บนสุดของเดสก์ท็อปที่มีทั้งโลโก้
+          ชื่อหน่วยงาน และปุ่มกดกลับเว็บหลักอยู่แล้ว (ดู Top row ของ header ด้านบน)
+          มือถือไม่กระทบ เพราะแถบนี้เป็น hidden md:flex อยู่แล้ว */}
 
       {/* Page header — mobile only */}
       <div className="md:hidden flex items-center justify-between">
