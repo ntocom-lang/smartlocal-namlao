@@ -101,13 +101,31 @@ const COMPLAINT_STATUS_LABEL: Record<string, string> = {
   rejected: 'ปฏิเสธ',
 }
 
-// complaint_created/complaint_status_updated/technician_* ไม่อยู่ในนี้แล้ว — ใช้ buildComplaintCreatedMessage()/
-// buildComplaintStatusMessage() แทน เพื่อโชว์ประเภท/สถานะจริงในข้อความ (ดู notificationType selection ด้านล่าง)
-const STATIC_MESSAGES: Partial<Record<NotificationType, string>> = {
-  document_request_created: '📄 <b>มีคำขอเอกสารใหม่</b>\nกรุณาเข้าสู่ระบบ SmartLocal เพื่อดูรายละเอียดตามสิทธิ์',
-  document_request_status_updated: '🔄 <b>มีการอัปเดตสถานะคำขอเอกสาร</b>\nกรุณาเข้าสู่ระบบ SmartLocal เพื่อดูรายละเอียดตามสิทธิ์',
-  building_permit_created: '🏗️ <b>มีคำขออนุญาตก่อสร้างใหม่</b>\nกรุณาเข้าสู่ระบบ SmartLocal เพื่อดูรายละเอียดตามสิทธิ์',
-  fee_verified: '💰 <b>มีการตรวจสอบค่าธรรมเนียมแล้ว</b>\nกรุณาเข้าสู่ระบบ SmartLocal เพื่อดูรายละเอียดตามสิทธิ์',
+// ต้องตรงกับ BASE_DOCUMENT_TYPES ใน src/lib/documentTypes.js ทุกคำ (รวมอีโมจินำหน้า) — edge
+// function ไม่ได้ import โมดูลฝั่ง client จึงต้องคัดลอกมาไว้ที่นี่ เพิ่มประเภทใหม่ต้องแก้ 2 ที่
+// residence_cert / personal_cert ถอดออกจากลิสต์ยื่นใหม่แล้ว แต่คำขอเก่ายังอยู่ในระบบและยัง
+// เปลี่ยนสถานะได้ ถ้าไม่คงไว้ที่นี่ข้อความแจ้งเตือนจะขึ้นค่าดิบ 'personal_cert'
+const DOCUMENT_TYPE_LABEL: Record<string, string> = {
+  tax_notice: '🏦 ค่าธรรมเนียม/ภาษี',
+  waste_collection: '🗑️ ค่าธรรมเนียมขยะ',
+  waste_collection_request: '🚛 ขอรับบริการเก็บขนขยะมูลฝอย',
+  waste_collection_cancel: '🚫 ขอยกเลิกการเก็บขนขยะมูลฝอย',
+  water_supply_request: '🚰 ขออนุญาตใช้น้ำประปา',
+  public_assistance_request: '🤝 ขอรับการช่วยเหลือประชาชน',
+  asset_borrow_request: '📦 ขอยืมพัสดุ/ครุภัณฑ์',
+  patient_transport_request: '🚑 ขออนุเคราะห์รถรับ-ส่งผู้ป่วย',
+  building_permit: '🏗️ ขออนุญาตก่อสร้างบ้าน',
+  residence_cert: '📄 ใบรับรองการอยู่อาศัย',
+  personal_cert: '📄 หนังสือรับรองบุคคล',
+}
+
+// ต้องตรงกับ STATUS ใน src/pages/MyDocRequests.jsx — คนละชุดกับ COMPLAINT_STATUS_LABEL
+// (คำขอเอกสารใช้ pending/processing/completed/rejected ส่วนคำร้องใช้ new/received/in_progress/...)
+const DOCUMENT_STATUS_LABEL: Record<string, string> = {
+  pending: 'รอดำเนินการ',
+  processing: 'กำลังดำเนินการ',
+  completed: 'เสร็จสิ้น',
+  rejected: 'ปฏิเสธ',
 }
 
 function json(body: unknown, status = 200) {
@@ -147,6 +165,55 @@ function formatThaiDate(dateValue: unknown) {
   })
 }
 
+// วัน+เวลาโซนไทย ใช้กับ timestamptz (created_at/updated_at) — ต่างจาก formatThaiDate()
+// ที่รับเฉพาะ date 'YYYY-MM-DD' เพราะ event_date/filled_at เป็นชนิด date ไม่มีเวลา
+function formatThaiDateTime(value: unknown) {
+  const date = new Date(String(value ?? ''))
+  if (Number.isNaN(date.getTime())) return ''
+  const text = date.toLocaleString('th-TH', {
+    day: 'numeric', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok',
+  })
+  return `${text} น.`
+}
+
+// ลิงก์เข้ากล่องงานเจ้าหน้าที่ ให้กดจากมือถือได้เลยแทนที่จะต้องไปเปิดเว็บเอง
+// ⚠️ โดเมน production ถูก hardcode ไว้ตรงนี้ (pattern เดียวกับ ThemeSettingsAdmin.jsx:73)
+// เพราะ municipalities ไม่มีคอลัมน์เก็บ hostname — อปท. ไหนย้ายไป custom domain ต้องมาแก้จุดนี้
+// ยังไม่มี route เจาะรายรายการ จึงลิงก์ไปหน้ารวม /staff
+// กรอง slug ด้วย allowlist ก่อนต่อเป็น URL กัน slug แปลกปลอมทำลิงก์เพี้ยนไปโดเมนอื่น
+function staffInboxLink(slug: unknown) {
+  const value = String(slug ?? '')
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/.test(value)) return ''
+  return `https://${value}.rk-networks.com/staff`
+}
+
+// กองที่รับผิดชอบ มาจาก department_id ที่ trigger ตั้งให้ตอนสร้างคำขอ/คำร้อง
+function departmentName(resource: Record<string, unknown>) {
+  const department = resource.department as { name?: string } | null
+  return cleanText(department?.name, 80)
+}
+
+// ประเภทที่ อปท. เพิ่มเองผ่านแท็บ "ประเภทคำขอเอกสาร" เก็บใน municipalities.fee_schedule._custom_types
+// (ดู customDocumentTypes() ใน src/lib/documentTypes.js) ไม่ได้อยู่ใน DOCUMENT_TYPE_LABEL
+function documentTypeLabel(value: unknown, feeSchedule: unknown) {
+  const key = String(value ?? '')
+  if (DOCUMENT_TYPE_LABEL[key]) return DOCUMENT_TYPE_LABEL[key]
+  const customTypes = (feeSchedule as { _custom_types?: unknown } | null)?._custom_types
+  if (Array.isArray(customTypes)) {
+    const hit = customTypes.find((t) => String((t as Record<string, unknown>)?.value ?? '') === key) as
+      Record<string, unknown> | undefined
+    if (hit) return `${cleanText(hit.emoji, 8) || '📋'} ${cleanText(hit.label, 80) || key}`
+  }
+  return cleanText(key, 60) || 'ไม่ระบุประเภท'
+}
+
+// document_requests ไม่มีเลขที่คำขอแบบ complaints.ref_no — ใช้ 8 ตัวแรกของ uuid ให้เจ้าหน้าที่
+// จับคู่กับรายการในระบบได้ พอสำหรับปริมาณคำขอระดับ อปท. (หลักพันใบ/ปี)
+function shortRef(id: unknown) {
+  return cleanText(id, 8)
+}
+
 function buildEventMessage(event: Record<string, unknown>, orgType: unknown) {
   const AUDIENCE_LABELS = audienceLabels(orgType)
   const audiences = Array.isArray(event.audiences)
@@ -169,24 +236,94 @@ function buildEventMessage(event: Record<string, unknown>, orgType: unknown) {
   ].filter(Boolean).join('\n').slice(0, 1800)
 }
 
-// เดิม complaint_created ใช้ STATIC_MESSAGES ข้อความเดียวกันทุกคำร้อง ไม่บอกประเภท — ผู้ดูแลต้องเปิดระบบ
-// ก่อนถึงจะรู้ว่าเรื่องอะไร เลยเพิ่มประเภทให้เห็นเบื้องต้นในแชทเลย เหมือน buildComplaintStatusMessage()
-function buildComplaintCreatedMessage(complaint: Record<string, unknown>) {
+// ⚠️ PDPA — ข้อความที่ส่งเข้ากลุ่ม Telegram ออกไปอยู่บนเซิร์ฟเวอร์ของผู้ให้บริการภายนอก ลบย้อนหลัง
+// ไม่ได้จริง และไม่ผ่านการควบคุมสิทธิ์ของระบบ จึงใส่ได้เฉพาะข้อมูลที่ระบุตัวบุคคลไม่ได้
+// (ประเภทเรื่อง/กอง/วันเวลา/เลขอ้างอิง) ห้ามใส่ reporter_name, phone, requester_* หรือรายละเอียด
+// ที่ประชาชนพิมพ์มา — ให้กดลิงก์เข้าไปดูในระบบตามสิทธิ์แทน
+// complaints.village เป็นช่องสถานที่เกิดเหตุที่ประชาชนกรอกเอง เจ้าของระบบตัดสินใจให้ใส่
+// 2569-09-12 เพราะเจ้าหน้าที่ต้องรู้ว่าเรื่องอยู่ตรงไหนก่อนจะตัดสินใจว่าใครออกพื้นที่
+function buildComplaintCreatedMessage(complaint: Record<string, unknown>, slug: unknown) {
   const category = COMPLAINT_CATEGORY_LABEL[String(complaint.category)] ?? (cleanText(complaint.category, 60) || 'อื่นๆ')
+  const link = staffInboxLink(slug)
+  const department = departmentName(complaint)
+  const submittedAt = formatThaiDateTime(complaint.created_at)
   return [
     '📋 <b>มีคำร้องใหม่</b>',
+    complaint.ref_no ? `เลขที่: ${escapeHtml(complaint.ref_no, 40)}` : '',
     `ประเภท: ${escapeHtml(category, 60)}`,
-  ].join('\n')
+    complaint.village ? `สถานที่: ${escapeHtml(complaint.village, 120)}` : '',
+    department ? `ส่งถึง: ${escapeHtml(department, 80)}` : '',
+    submittedAt ? `แจ้งเมื่อ: ${escapeHtml(submittedAt, 60)}` : '',
+    link ? `🔗 ${link}` : '',
+  ].filter(Boolean).join('\n')
 }
 
-function buildComplaintStatusMessage(complaint: Record<string, unknown>) {
+function buildComplaintStatusMessage(complaint: Record<string, unknown>, slug: unknown) {
   const category = COMPLAINT_CATEGORY_LABEL[String(complaint.category)] ?? (cleanText(complaint.category, 60) || 'อื่นๆ')
   const status = COMPLAINT_STATUS_LABEL[String(complaint.status)] ?? cleanText(complaint.status, 60)
+  const link = staffInboxLink(slug)
+  const updatedAt = formatThaiDateTime(complaint.updated_at ?? complaint.created_at)
   return [
     '🔄 <b>อัปเดตสถานะคำร้อง</b>',
+    complaint.ref_no ? `เลขที่: ${escapeHtml(complaint.ref_no, 40)}` : '',
     `ประเภท: ${escapeHtml(category, 60)}`,
-    `สถานะ: ${escapeHtml(status, 60)}`,
-  ].join('\n')
+    complaint.village ? `สถานที่: ${escapeHtml(complaint.village, 120)}` : '',
+    `สถานะ: <b>${escapeHtml(status, 60)}</b>`,
+    updatedAt ? `อัปเดตเมื่อ: ${escapeHtml(updatedAt, 60)}` : '',
+    link ? `🔗 ${link}` : '',
+  ].filter(Boolean).join('\n')
+}
+
+type DocumentContext = { feeSchedule: unknown; slug: unknown }
+
+// เดิมคำขอเอกสารทั้ง 4 ชนิดใช้ข้อความตายตัวบรรทัดเดียว ("มีคำขอเอกสารใหม่ / กรุณาเข้าสู่ระบบ...")
+// เหมือนกันหมด ผู้ดูแลที่เห็นในกลุ่มแยกไม่ออกว่าใบไหนเรื่องอะไร ต้องไล่เปิดระบบทุกครั้ง
+function buildDocumentRequestCreatedMessage(
+  request: Record<string, unknown>,
+  context: DocumentContext,
+  heading = '📄 <b>มีคำขอเอกสารใหม่</b>',
+) {
+  const link = staffInboxLink(context.slug)
+  const department = departmentName(request)
+  const submittedAt = formatThaiDateTime(request.created_at)
+  const fee = Number(request.fee_amount ?? 0) > 0 ? formatAmount(request.fee_amount, 2) : null
+  return [
+    heading,
+    `เรื่อง: ${escapeHtml(documentTypeLabel(request.document_type, context.feeSchedule), 100)}`,
+    department ? `ส่งถึง: ${escapeHtml(department, 80)}` : '',
+    submittedAt ? `ยื่นเมื่อ: ${escapeHtml(submittedAt, 60)}` : '',
+    fee ? `ค่าธรรมเนียม: ${escapeHtml(fee, 20)} บาท` : '',
+    `อ้างอิง: #${escapeHtml(shortRef(request.id), 8)}`,
+    link ? `🔗 ${link}` : '',
+  ].filter(Boolean).join('\n')
+}
+
+function buildDocumentRequestStatusMessage(request: Record<string, unknown>, context: DocumentContext) {
+  const status = DOCUMENT_STATUS_LABEL[String(request.status)] ?? cleanText(request.status, 60)
+  const link = staffInboxLink(context.slug)
+  const updatedAt = formatThaiDateTime(request.updated_at ?? request.created_at)
+  return [
+    '🔄 <b>อัปเดตสถานะคำขอเอกสาร</b>',
+    `เรื่อง: ${escapeHtml(documentTypeLabel(request.document_type, context.feeSchedule), 100)}`,
+    `สถานะ: <b>${escapeHtml(status, 60)}</b>`,
+    updatedAt ? `อัปเดตเมื่อ: ${escapeHtml(updatedAt, 60)}` : '',
+    `อ้างอิง: #${escapeHtml(shortRef(request.id), 8)}`,
+    link ? `🔗 ${link}` : '',
+  ].filter(Boolean).join('\n')
+}
+
+function buildFeeVerifiedMessage(request: Record<string, unknown>, context: DocumentContext) {
+  const link = staffInboxLink(context.slug)
+  const amount = formatAmount(request.fee_amount, 2)
+  const verifiedAt = formatThaiDateTime(request.payment_verified_at ?? request.updated_at)
+  return [
+    '💰 <b>ตรวจสอบค่าธรรมเนียมแล้ว</b>',
+    `เรื่อง: ${escapeHtml(documentTypeLabel(request.document_type, context.feeSchedule), 100)}`,
+    amount ? `จำนวนเงิน: <b>${escapeHtml(amount, 20)} บาท</b>` : '',
+    verifiedAt ? `ตรวจสอบเมื่อ: ${escapeHtml(verifiedAt, 60)}` : '',
+    `อ้างอิง: #${escapeHtml(shortRef(request.id), 8)}`,
+    link ? `🔗 ${link}` : '',
+  ].filter(Boolean).join('\n')
 }
 
 // แจ้งเจ้าของการจองรถเดิม เมื่อ admin ใช้สิทธิ์ "จองแทนที่ฉุกเฉิน" ยกเลิกการจองของเขาไปให้ภารกิจด่วนกว่า
@@ -398,12 +535,12 @@ serve(async (req) => {
     const selectColumns = spec.table === 'events'
       ? 'id,municipality_id,created_by,created_at,title,description,event_date,event_time,end_time,location,audiences,is_all_day'
       : spec.table === 'complaints'
-        ? 'id,municipality_id,user_id,created_at,updated_at,status,category,assigned_to'
+        ? 'id,municipality_id,user_id,created_at,updated_at,status,category,assigned_to,ref_no,village,department:departments(name)'
         : spec.table === 'fleet_trips'
           ? 'id,municipality_id,status,destination,reject_reason,vehicle:fleet_vehicles(name),driver:profiles!fleet_trips_driver_id_fkey(full_name)'
           : spec.table === 'fleet_fuel_records'
             ? 'id,municipality_id,created_at,filled_at,liters,price_per_liter,total_cost,odometer,full_tank,fuel_type,fuel_other_name,fuel_station,receipt_no,vehicle:fleet_vehicles(name,license_plate,meter_unit),driver:profiles!fleet_fuel_records_driver_id_fkey(full_name)'
-            : 'id,municipality_id,user_id,created_at,updated_at,status,document_type,fee_amount'
+            : 'id,municipality_id,user_id,created_at,updated_at,status,document_type,fee_amount,payment_verified_at,department:departments(name)'
     const { data: resource, error: resourceError } = await admin
       .from(spec.table)
       .select(selectColumns)
@@ -423,7 +560,7 @@ serve(async (req) => {
     if (!isUuid(municipalityId)) return json({ ok: false, error: 'resource municipality is invalid' }, 422)
     const { data: municipality, error: municipalityError } = await admin
       .from('municipalities')
-      .select('id,telegram_group_id,org_type')
+      .select('id,slug,telegram_group_id,org_type,fee_schedule')
       .eq('id', municipalityId)
       .maybeSingle()
     if (municipalityError || !municipality) return json({ ok: false, error: 'municipality not found' }, 404)
@@ -462,17 +599,26 @@ serve(async (req) => {
       return json({ ok: false, error: 'Telegram bot is not configured' }, 500)
     }
 
+    const docContext = { feeSchedule: municipality.fee_schedule, slug: municipality.slug }
     const message = notificationType === 'event_created'
       ? buildEventMessage(resource, municipality.org_type)
       : notificationType === 'complaint_created'
-        ? buildComplaintCreatedMessage(resource)
+        ? buildComplaintCreatedMessage(resource, municipality.slug)
         : notificationType === 'complaint_status_updated' || notificationType.startsWith('technician_')
-          ? buildComplaintStatusMessage(resource)
+          ? buildComplaintStatusMessage(resource, municipality.slug)
           : notificationType === 'fleet_trip_bumped'
             ? buildFleetTripBumpedMessage(resource)
             : notificationType === 'fleet_fuel_created'
               ? buildFleetFuelCreatedMessage(resource)
-              : STATIC_MESSAGES[notificationType]
+              : notificationType === 'document_request_created'
+                ? buildDocumentRequestCreatedMessage(resource, docContext)
+                : notificationType === 'building_permit_created'
+                  ? buildDocumentRequestCreatedMessage(resource, docContext, '🏗️ <b>มีคำขออนุญาตก่อสร้างใหม่</b>')
+                  : notificationType === 'document_request_status_updated'
+                    ? buildDocumentRequestStatusMessage(resource, docContext)
+                    : notificationType === 'fee_verified'
+                      ? buildFeeVerifiedMessage(resource, docContext)
+                      : null
     if (!message) {
       await finish('failed', { last_error: 'Notification template is not configured' })
       return json({ ok: false, error: 'notification template is not configured' }, 500)
