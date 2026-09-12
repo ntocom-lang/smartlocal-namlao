@@ -1124,12 +1124,9 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-gray-800">คำขอบริการ/เอกสาร</h2>
-          <p className="text-xs text-gray-400 mt-0.5">คำขอบริการและเอกสารจากประชาชน</p>
-        </div>
+      {/* ชื่อหน้าอยู่ที่ StaffModuleHeader แล้ว เดิมที่นี่เขียนซ้ำทั้งชื่อและคำอธิบาย
+          กลายเป็นหัวเรื่องชื่อเดียวกัน 2 บรรทัดติดกัน เหลือไว้แค่ปุ่ม */}
+      <div className="flex items-center justify-end">
         <div className="flex items-center gap-2">
           <button onClick={() => setRefreshKey(k => k + 1)} disabled={loading}
             className="p-2 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors disabled:opacity-40"
@@ -1884,19 +1881,19 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
     <div className="space-y-4 md:space-y-5">
       <OdorReportPanel tenantId={tenantId} staffId={staffId} />
 
-      <section className="relative overflow-hidden rounded-3xl px-5 py-5 text-white shadow-lg shadow-blue-900/10 md:rounded-2xl md:px-6"
+      <section className="relative overflow-hidden rounded-3xl px-5 py-4 text-white shadow-lg shadow-blue-900/10 md:rounded-2xl md:px-6"
         style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 58%, #38bdf8 140%)' }}>
         <div className="absolute -right-8 -top-12 h-36 w-36 rounded-full bg-white/10" />
         <div className="absolute -bottom-12 right-20 h-28 w-28 rounded-full bg-cyan-300/10" />
         <div className="relative flex items-start justify-between gap-4">
+          {/* หัวใหญ่กับป้าย "งานบริการประชาชน" ถูกถอดออก เพราะซ้ำชั้นกับ
+              StaffModuleHeader ที่อยู่เหนือขึ้นไป — แต่ขอบเขตงาน (ของฉัน/ของกอง)
+              เก็บไว้ เพราะหัวกลางบอกแค่ว่า "คำร้อง" ไม่ได้บอกว่าเห็นแค่ไหน */}
           <div className="min-w-0">
-            <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-1 text-[10px] font-bold tracking-wide text-white/90">
-              <MessageSquareWarning size={12} /> งานบริการประชาชน
-            </div>
-            <h2 className="text-xl font-extrabold tracking-tight">
+            <p className="text-base font-extrabold tracking-tight">
               {seesWholeDepartment ? 'งานคำร้องของกอง' : 'งานคำร้องของฉัน'}
-            </h2>
-            <p className="mt-1 text-xs leading-relaxed text-white/75">
+            </p>
+            <p className="mt-0.5 text-xs leading-relaxed text-white/75">
               {seesWholeDepartment
                 ? 'ในฐานะหัวหน้ากอง เห็นคำร้องที่แอดมินรับเรื่องแล้วทั้งกอง ไม่เฉพาะที่มอบหมายให้ตัวเอง'
                 : 'ติดตามและบันทึกผลเฉพาะงานที่ได้รับมอบหมาย'}
@@ -1908,7 +1905,7 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
             <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
           </button>
         </div>
-        <div className="relative mt-4 flex items-center gap-2 text-xs text-white/80">
+        <div className="relative mt-3 flex items-center gap-2 text-xs text-white/80">
           <span className="rounded-xl bg-white px-3 py-1.5 font-extrabold text-blue-700 shadow-sm">{complaints.length}</span>
           <span>งานที่อยู่ในความรับผิดชอบ</span>
         </div>
@@ -2185,7 +2182,9 @@ function StaffReportWrapper({ tenant }) {
       <p className="mt-3 text-xs font-semibold">กำลังประมวลผลรายงานล่าสุด...</p>
     </div>
   )
-  return <ReportManager complaints={complaints} tenant={tenant} technicians={technicians} />
+  // hideTitle: หน้าเจ้าหน้าที่มี StaffModuleHeader อยู่เหนือขึ้นไปแล้ว ส่วนหน้าแอดมินไม่มี
+  // หัวเรื่องกลาง จึงต้องคงชื่อในแบนเนอร์ไว้ตามเดิม (ดู AdminDashboard → activePage === 'report')
+  return <ReportManager complaints={complaints} tenant={tenant} technicians={technicians} hideTitle />
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
