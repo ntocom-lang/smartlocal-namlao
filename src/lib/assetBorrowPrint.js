@@ -1,5 +1,8 @@
 import { GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, GOV_LINE_HEIGHT, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
 import { getOrgTerms, orgClerkTitle, orgHeadTitle, orgNameParts } from './orgTerms.js'
+import {
+  GOV_SIGN_LINE_W, GOV_SIGN_LINE_W_WIDE, govNameBlank, govSignBlockCss, govSignRow,
+} from './govSignBlock.js'
 import { MONTHS_TH, thaiDateTimeText } from './thaiDate.js'
 
 function esc(value) {
@@ -80,33 +83,12 @@ function thaiDateText(value) {
 // ออกมาหน้าตาเหมือนต้นฉบับเป๊ะ จึงต้องเติมแถวว่างให้ครบ ไม่ใช่ปล่อยตารางสั้นกุด
 const ROWS_PER_PAGE = 7
 
-// ─── ระบบช่องลงนาม (แก้ 2569-09-12 หลังเจ้าของระบบเทียบใบพิมพ์จริงกับต้นฉบับ) ──────────
-//
-// ⚠️ เส้นลงนามในบล็อกสองคอลัมน์ต้องกว้างเท่ากันทุกจุด ห้ามไล่ค่ารายจุดอีก
-// ของเดิมไล่ไว้คนละค่า (42 / 40 / 36 / 34mm) คำต่อท้าย (ผู้รับของ ผู้จ่ายของ ผู้ให้ยืม
-// ผู้ส่งคืน ผู้รับคืน) จึงไปจบคนละตำแหน่งในทุกบรรทัด ดูเหมือนพิมพ์มั่ว
-// ต้นฉบับกระดาษเว้นเส้นยาวเท่ากันหมด คำต่อท้ายจึงเรียงตรงกันเป็นแนวเดียว
-const SIGN_LINE_W = '40mm'
+// ─── ช่องลงนาม ──────────────────────────────────────────────────────────────────
+// รูปแบบ ค่าความกว้าง และเหตุผลทั้งหมดอยู่ที่ src/lib/govSignBlock.js ซึ่งใบอื่นใช้ร่วมกัน
+// ใบนี้เป็นใบที่เจ้าของระบบใช้ตรวจกับแบบพิมพ์ต้นฉบับจนได้รูปแบบนั้นมา
+const SIGN_LINE_W = GOV_SIGN_LINE_W
 // ช่องผู้ยืมกลางใบ ต้นฉบับกระดาษเว้นเส้นยาวกว่าบล็อกสองคอลัมน์
-const BORROWER_LINE_W = '55mm'
-
-// ⚠️ วงเล็บชื่อต้องกว้างเท่าเส้นลงนามที่อยู่เหนือมัน — เจ้าของระบบสั่ง 2569-09-12
-// รอบก่อนตั้งไว้ 26 จุด (~32mm) ให้สั้นกว่าเส้น 40mm ด้วยเหตุผลเรื่องความสวยงาม
-// แต่ใช้จริงแล้วเขียนชื่อ-สกุลลงไม่พอ (ชื่อไทยเต็มยศวัดได้ 41-50mm) ความกว้างของช่องเขียน
-// สำคัญกว่าสัดส่วน จำนวนจุดจึงคำนวณจากความกว้างแกน ไม่ใช่ค่าคงที่ตัวเดียวใช้ทุกช่อง
-// (เส้น 40mm → 33 จุด · เส้น 55mm → 47 จุด)
-//
-// ⚠️ ค่าสองตัวนี้วัดจากใบจริงที่เรนเดอร์ด้วย THSarabunPSK 14pt (2569-09-12)
-// ถ้าเปลี่ยนขนาดฟอนต์ต้องวัดใหม่ ไม่ใช่คูณเทียบเอา — เทสต์ name-blank-matches-line-width
-// จับไว้ให้แล้วว่าวงเล็บต้องกว้างเท่าเส้นภายใน ±1.5mm
-const DOT_MM = 1.11
-const PARENS_MM = 3.0
-
-/** เส้นจุดในวงเล็บสำหรับเขียนชื่อด้วยมือ กว้างเท่าเส้นลงนามที่อยู่เหนือมัน */
-function nameBlank(width) {
-  const dots = Math.max(4, Math.round((Number.parseFloat(width) - PARENS_MM) / DOT_MM))
-  return `(${'.'.repeat(dots)})`
-}
+const BORROWER_LINE_W = GOV_SIGN_LINE_W_WIDE
 
 /**
  * ผู้ลงนาม: ชื่อที่พิมพ์ในวงเล็บมาจากทะเบียนผู้ลงนามกลาง (document_signatories)
@@ -116,48 +98,12 @@ function nameBlank(width) {
  */
 function signatureName(signatory, width = SIGN_LINE_W) {
   const name = signatory?.name?.trim()
-  return name ? `(${esc(name)})` : nameBlank(width)
+  return name ? `(${esc(name)})` : govNameBlank(width)
 }
 
-/**
- * บล็อกลงนามหนึ่งจุด — "เส้นจุดคือแกน" บรรทัดที่อยู่ใต้มัน (วงเล็บชื่อ ชื่อตำแหน่ง)
- * ต้องอยู่กึ่งกลางบนแกนเดียวกันเสมอ ไม่ใช่กึ่งกลางของคอลัมน์
- *
- * ⚠️ ผู้ใช้ระบบสั่งแก้ 2569-09-09 หลังเห็นใบพิมพ์จริง — ของเดิมเป็น <p> สองย่อหน้าแยกกัน
- * บรรทัดบนชิดซ้าย บรรทัดล่าง text-align:center ของ "คอลัมน์" ซึ่งไม่ใช่แกนของเส้นจุด
- * เพราะเส้นจุดถูกดันไปทางขวาด้วยคำว่า "ลงชื่อ" (~10 มม.) และมีคำต่อท้ายกินที่ทางขวาอีก
- * วงเล็บจึงเยื้องไปทางซ้ายของเส้นจุดทุกช่อง ยกเว้นช่อง "ผู้ยืม" ที่บังเอิญถูกเพราะทั้งก้อน
- * อยู่ใน .center — วิธีแก้คือมัดเส้นจุดกับบรรทัดใต้ไว้ในกล่องเดียวกันแล้วจัดกึ่งกลาง
- * (เทคนิคเดียวกับ .cell-sign-row/.cell-sign-name ใน publicAssistancePrint.js)
- *
- * ⚠️ ความกว้างกำหนดที่ "กล่องแกน" (.sign-axis) ไม่ใช่ที่เส้นจุด — แก้ 2569-09-12 รอบสอง
- * รอบแรกตั้ง width: 0 ให้บรรทัดใต้เส้นล้นออกสองข้าง เข้าใจผิดว่าเบราว์เซอร์จะล้นเท่ากันทั้งสองข้าง
- * ความจริงล้นไปทางขวาข้างเดียว วัดได้ว่าทุกบรรทัดเยื้องขวา 16-25mm (เจ้าของระบบเห็นจากใบพิมพ์จริง)
- * ที่ถูกคือกล่องแกนกว้างคงที่ (flex: 0 0 auto + width จาก inline style) ส่วนลูกกว้างพอดีเนื้อหา
- * แล้วให้ align-items: center ของแกนเป็นตัวจัดกึ่งกลาง ข้อความที่ยาวกว่าแกนจึงล้นสองข้างเท่ากัน
- *
- * @param {object} args
- * @param {string} [args.width] ความกว้างกล่องแกน = ความกว้างเส้นจุด (ใช้ SIGN_LINE_W ทุกจุด
- *   ยกเว้นช่องผู้ยืมกลางใบที่ต้นฉบับเว้นเส้นยาวกว่า)
- * @param {string} [args.role]  คำต่อท้ายบรรทัดบน เช่น 'ผู้ยืม' (ไม่มีก็เว้นว่าง)
- * @param {string[]} [args.below] บรรทัดใต้เส้นจุด เรียงบนลงล่าง (escape มาแล้ว)
- * @param {string} [args.signed] ชื่อที่พิมพ์แทนลายมือชื่อ (โหมด online เท่านั้น escape มาแล้ว)
- *   มีค่า = ไม่พิมพ์เส้นจุด เพราะลงชื่อแล้ว ไม่มีที่ให้เซ็นซ้ำ
- */
-function signRow({ width = BORROWER_LINE_W, role = '', below = [], signed = '' }) {
-  return `<div class="sign-row">
-      <span class="sign-label">ลงชื่อ</span>
-      <span class="sign-axis" style="width:${width}">
-        <!-- ⚠️ ต้องมี &nbsp; ข้างใน — span ว่างที่มีแต่ border-bottom สูง 0 พอเอามาวางใน
-             flex column แล้วเส้นจุดจะลอยทับบรรทัดวงเล็บ ไม่ได้เป็นบรรทัดของตัวเอง
-             (ตอนเป็น inline อยู่ในย่อหน้าเดิมมันได้ความสูงจาก line box ของย่อหน้า) -->
-        ${signed
-          ? `<span class="sign-signed">${signed}</span>`
-          : `<span class="sign-line">&nbsp;</span>`}
-${below.map(text => `        <span class="sign-below">${text}</span>`).join('\n')}
-      </span>
-      ${role ? `<span class="sign-role">${role}</span>` : ''}
-    </div>`
+/** ช่องลงนามของใบนี้พิมพ์คำว่า "ลงชื่อ" นำหน้าเส้นทุกจุด ตามแบบพิมพ์ต้นฉบับ */
+function signRow(args) {
+  return govSignRow(args)
 }
 
 /**
@@ -348,55 +294,10 @@ ${GOV_FONT_LINK}
   /* จำนวนกับหน่วยต้องไม่ถูกหั่นคนละบรรทัด */
   td.qty { white-space: nowrap; }
 
-  /* กว้างเต็มกล่องแกนเสมอ ความกว้างจริงมาจาก style ของ .sign-axis (ดู signRow) */
-  .sign-line { border-bottom: 1px dotted #000; display: block; width: 100%; }
-  .sign-block { break-inside: avoid; page-break-inside: avoid; }
-
-  /* ⚠️ บล็อกลงนาม: บรรทัดใต้เส้นจุด (วงเล็บชื่อ/ชื่อตำแหน่ง) ต้องอยู่ "กึ่งกลางใต้เส้นจุด"
-     ไม่ใช่กึ่งกลางของคอลัมน์ — เหตุผลเต็มอยู่ที่ signRow() ด้านบน
-     .sign-axis เป็นกล่องเดียวที่ครอบทั้งเส้นจุดและบรรทัดใต้ align-items:center จึงบังคับให้
-     ทั้งสองใช้แกนกลางเดียวกันเสมอ แม้ชื่อในวงเล็บจะยาวกว่าเส้นจุด */
-  .sign-row { display: flex; align-items: flex-start; }
-  /* ⚠️ flex: 0 0 auto + ความกว้างคงที่จาก inline style — ห้ามให้กล่องแกนโตตามเนื้อหา
-     ถ้าปล่อยให้โต (flex: 0 1 auto) ชื่อตำแหน่งที่ยาวกว่าเส้นจะดันแกนกว้างขึ้น เส้นจุดก็ยืดตาม
-     แล้วเส้นในแต่ละบล็อกยาวไม่เท่ากันอีก คำต่อท้ายก็ไม่ตรงแนว (วัดได้ 40 vs 50mm)
-     ลูกทุกตัวในแกนกว้าง 100% ของแกนเท่ากันหมด จึงใช้แกนกลางเดียวกันเสมอ */
-  .sign-axis { display: flex; flex-direction: column; align-items: center; flex: 0 0 auto; }
-  /* ⚠️ nowrap เฉพาะป้ายกำกับสองข้าง ห้ามครอบทั้งแถว — ชื่อตำแหน่งเต็ม
-     ("ปลัดองค์การบริหารส่วนตำบลทุ่งแค้ว") กว้างกว่าคอลัมน์ ~76 มม. ถ้าห้ามตัดบรรทัดทั้งแถว
-     กล่องจะดันล้นขอบขวากระดาษ (เคสจริงที่เทสต์ของใบขอรับการช่วยเหลือจับได้) */
-  .sign-label, .sign-role { white-space: nowrap; }
-  .sign-role { margin-left: 1mm; }
-  /* บรรทัดใต้เส้นจุด (วงเล็บชื่อ / ชื่อตำแหน่ง) — ต้องกึ่งกลางบนแกนของเส้นจุดเสมอ
-     กลไกที่ทำให้ตรง (วัดยืนยันแล้วทุกช่อง เบี้ยว 0.0mm): กล่องแกนกว้างคงที่ + ลูกกว้าง
-     "พอดีเนื้อหา" (display: block ไม่กำหนด width) + .sign-axis align-items: center
-     ตัวที่ยาวกว่าแกนจึงล้นออกสองข้างเท่ากันรอบจุดกึ่งกลางเดียวกับเส้นจุด
-     ⚠️ ห้ามใส่ width ให้บรรทัดนี้ ไม่ว่า 0 หรือ 100% — ผิดมาแล้วทั้งสองแบบ 2569-09-12:
-       width: 0    → ตัวอักษรล้นไปทางขวาข้างเดียว ทุกบรรทัดเยื้องขวา 16-25mm
-                     (เจ้าของระบบจับได้จากใบพิมพ์จริง เทสต์ตอนนั้นวัดกล่องจึงไม่เห็น)
-       width: 100% → กล่องกว้างเท่าแกน ข้อความที่ยาวกว่าเริ่มชิดซ้ายแล้วล้นขวา เยื้อง 5mm
-                     เพราะ text-align: center ไม่จัดกึ่งกลางให้เนื้อหาที่ล้นกล่อง
-     เหตุที่ต้อง nowrap: ชื่อตำแหน่งเต็มยศของ อบต. ("ปลัดองค์การบริหารส่วนตำบลทุ่งแค้ว" ~52mm)
-     กว้างกว่าแกน ถ้าปล่อยให้ตัดบรรทัดจะสูงขึ้น ~12mm ต่อใบ ซึ่งเคยทำให้ใบของชำรุดตกหน้า 2
-     คอลัมน์กว้าง 76mm จุดกึ่งกลางแกนอยู่ราว 35mm จากขอบคอลัมน์ ข้อความ 52mm จึงล้นอยู่ในคอลัมน์
-     ไม่ล้นขอบกระดาษ — มีเทสต์ no-horizontal-overflow คุมไว้อีกชั้น */
-  .sign-below { display: block; text-align: center; white-space: nowrap; overflow: visible; }
-  /* ลายมือชื่ออิเล็กทรอนิกส์ — ตัวหนาให้เห็นว่าเป็นการลงชื่อ ไม่ใช่ชื่อที่พิมพ์ซ้ำเฉยๆ
-     (แบบเดียวกับ .signed-name ในใบน้ำประปา/ใบเก็บขนขยะ) และไม่มีเส้นจุดใต้ชื่อ
-     เพราะลงชื่อไปแล้ว ไม่ต้องเว้นที่ให้เซ็นซ้ำ */
-  /* nowrap + ไม่กำหนด width ด้วยเหตุผลเดียวกับ .sign-below — ชื่อผู้ยืมที่ยาวเคยตัด 2 บรรทัด
-     ทำให้ใบสูงขึ้น 6.5mm จนเกินงบ 1 หน้า (วัดจริง 2569-09-12) */
-  .sign-signed { display: block; text-align: center; white-space: nowrap; font-weight: 700; }
+${govSignBlockCss()}
   /* 10pt: บรรทัดกำกับต้องอ่านออกแต่ไม่แย่งน้ำหนักกับชื่อผู้ลงนาม และต้องไม่ดันใบตกหน้า 2
      เป็นร่องรอยให้ตรวจย้อนได้ว่าใครลงชื่อเมื่อไร — ห้ามตัดออกเวลาบีบพื้นที่ */
   .signed-note { margin: 1mm 0 0; font-size: 10pt; color: #333; line-height: 1.2; text-align: center; }
-  /* .sign-row เป็น flex จึงจัดกลางหน้าด้วย text-align ของพ่อไม่ได้ ต้อง justify-content */
-  .center-row .sign-row { justify-content: center; }
-  /* ต้นฉบับย่อหน้าช่องลงนามเข้าไปจากขอบบล็อก ไม่ได้ชิดซ้ายสุด — บรรทัดหัวข้อ ("- ได้รับของ…"
-     "- ความเห็นปลัด…") ชิดซ้าย ส่วนช่องลงนามกับบรรทัดตำแหน่ง/วันที่ใต้มันย่อหน้าเข้ามาเป็นชุดเดียว
-     ⚠️ ต้องครอบทั้ง .sign-row และ <p> ที่ตามมา ไม่ใช่ใส่ที่ .sign-row อย่างเดียว
-     ไม่งั้นบรรทัด "ตำแหน่ง…/วันที่…" จะไปชิดซ้ายคนละแนวกับเส้นลงนามที่มันสังกัด */
-  .sign-indent { padding-left: 6mm; }
   .two-col { display: flex; gap: 8mm; break-inside: avoid; page-break-inside: avoid; }
   .two-col > div { flex: 1 1 0; min-width: 0; }
   .center { text-align: center; }
@@ -470,11 +371,11 @@ ${rows}
   <div class="two-col gap">
     <div>
       <p class="para">- ได้รับของตามรายการข้างต้นแล้ว</p>
-      <div class="sign-indent">${signRow({ width: SIGN_LINE_W, role: 'ผู้รับของ', below: [nameBlank(SIGN_LINE_W)] })}</div>
+      <div class="sign-indent">${signRow({ width: SIGN_LINE_W, role: 'ผู้รับของ', below: [govNameBlank(SIGN_LINE_W)] })}</div>
     </div>
     <div>
       <p class="para">- ได้จ่ายของตามรายการข้างต้นแล้ว</p>
-      <div class="sign-indent">${signRow({ width: SIGN_LINE_W, role: 'ผู้จ่ายของ', below: [nameBlank(SIGN_LINE_W)] })}</div>
+      <div class="sign-indent">${signRow({ width: SIGN_LINE_W, role: 'ผู้จ่ายของ', below: [govNameBlank(SIGN_LINE_W)] })}</div>
     </div>
   </div>
 
@@ -499,11 +400,11 @@ ${rows}
     <p class="para" style="font-weight:700">- ได้รับสิ่งของตามรายการข้างต้นคืนในสภาพที่ใช้การได้เรียบร้อยและครบถ้วน</p>
     <div class="two-col gap">
       <div class="sign-indent">
-        ${signRow({ width: SIGN_LINE_W, role: 'ผู้ส่งคืน', below: [nameBlank(SIGN_LINE_W)] })}
+        ${signRow({ width: SIGN_LINE_W, role: 'ผู้ส่งคืน', below: [govNameBlank(SIGN_LINE_W)] })}
         <p class="para nowrap">วันที่.........เดือน..................พ.ศ.........</p>
       </div>
       <div class="sign-indent">
-        ${signRow({ width: SIGN_LINE_W, role: 'ผู้รับคืน', below: [nameBlank(SIGN_LINE_W)] })}
+        ${signRow({ width: SIGN_LINE_W, role: 'ผู้รับคืน', below: [govNameBlank(SIGN_LINE_W)] })}
         <p class="para nowrap">ตำแหน่ง.....................................</p>
         <p class="para nowrap">วันที่.........เดือน..................พ.ศ.........</p>
       </div>
