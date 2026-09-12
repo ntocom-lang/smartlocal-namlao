@@ -15,6 +15,16 @@
 //
 // ⚠️ ทุกค่าในไฟล์นี้วัดจากใบจริงที่เรนเดอร์ด้วย THSarabunPSK 14pt ตามมาตรฐานใน govDocStyle.js
 // เปลี่ยนขนาดฟอนต์เมื่อไรต้องวัดใหม่ ห้ามคูณเทียบเอา
+//
+// ใบที่ "ไม่" ใช้ไฟล์นี้ พร้อมเหตุผล (ตรวจครบทุกใบแล้ว 2569-09-12 อย่าไปไล่แปลงซ้ำ):
+//   - fleetTripPrint.js (แบบ 3 ขออนุญาตใช้รถ) — ใช้ grid/subgrid ของตัวเอง ให้เส้นยาวเต็ม
+//     ความกว้างตามต้นฉบับ (113mm) และวัดแล้วบรรทัดใต้เส้นกึ่งกลางพอดี 0.0mm ทุกช่อง
+//     แปลงมาใช้ไฟล์นี้จะทำให้เส้นสั้นลงเหลือ 40mm ซึ่งผิดจากต้นฉบับ — มีเทสต์ล็อกผลไว้แทน
+//   - wasteCollectionRequestPrint.js / wasteCollectionCancelPrint.js — ต้นฉบับไม่มีเส้น
+//     "ลงชื่อ" ใช้ "ขอแสดงความนับถือ" แล้วเว้นที่ 18mm ให้เซ็นทับ ห้ามเติมเส้นเข้าไปเอง
+//     (ใช้เฉพาะ govNameBlank() สำหรับวงเล็บเว้นชื่อ)
+//   - fleetFuelMemoPrint.js — บันทึกข้อความ ต้นฉบับเว้นที่เหนือชื่อให้เซ็นสด ไม่มีเส้น
+//   - buildingPermitPrint.js — แบบพิมพ์ตามกฎหมาย ต้องลอกเลย์เอาต์ต้นฉบับทั้งใบ
 
 /**
  * ความกว้างเส้นลงนามมาตรฐานในบล็อกสองคอลัมน์ (พื้นที่พิมพ์ 160mm หารสองแล้วยังเหลือที่
@@ -31,6 +41,9 @@ export const GOV_SIGN_LINE_W_WIDE = '55mm'
 const DOT_MM = 1.11
 const PARENS_MM = 3.0
 
+/** ขนาดฟอนต์ที่ DOT_MM/PARENS_MM ถูกวัดไว้ — ช่องที่ใช้ขนาดอื่นต้องส่ง fontPt มาด้วย */
+const BASE_FONT_PT = 14
+
 /**
  * วงเล็บเว้นชื่อสำหรับเขียนด้วยมือ กว้างเท่าเส้นลงนามที่อยู่เหนือมัน
  *
@@ -39,9 +52,14 @@ const PARENS_MM = 3.0
  * ความกว้างของช่องเขียนสำคัญกว่าความสวยงาม
  *
  * @param {string} width ความกว้างเส้น เช่น '40mm'
+ * @param {object} [options]
+ * @param {number} [options.fontPt] ขนาดฟอนต์ของช่องนั้นเป็นพอยต์ ถ้าไม่ใช่ 14pt ต้องส่งมา
+ *   ⚠️ จำเป็นจริง ไม่ใช่ของประดับ: จุดกว้างตามขนาดฟอนต์ ช่องลงนามในตารางเจ้าหน้าที่ของใบ
+ *   ขอรับการช่วยเหลือใช้ 11pt ถ้าคิดด้วยค่า 14pt จะได้วงเล็บ 15.4mm ใต้เส้น 20mm (วัดจริง)
  */
-export function govNameBlank(width = GOV_SIGN_LINE_W) {
-  const dots = Math.max(4, Math.round((Number.parseFloat(width) - PARENS_MM) / DOT_MM))
+export function govNameBlank(width = GOV_SIGN_LINE_W, { fontPt = BASE_FONT_PT } = {}) {
+  const scale = fontPt / BASE_FONT_PT
+  const dots = Math.max(4, Math.round((Number.parseFloat(width) - PARENS_MM * scale) / (DOT_MM * scale)))
   return `(${'.'.repeat(dots)})`
 }
 
@@ -65,11 +83,17 @@ export function govNameBlank(width = GOV_SIGN_LINE_W) {
  * @param {string[]} [args.below] บรรทัดใต้เส้น เรียงบนลงล่าง — **escape มาแล้ว**
  * @param {string} [args.signed] ชื่อที่พิมพ์แทนลายมือชื่อ (ยืนยันตัวตนผ่านระบบแล้ว escape มาแล้ว)
  *   มีค่า = ไม่พิมพ์เส้น เพราะลงชื่อแล้ว ไม่ต้องเว้นที่ให้เซ็นซ้ำ
+ * @param {boolean} [args.grow] ให้แกนยืดตามชื่อที่ยาวกว่า `width` แทนที่จะปล่อยให้ล้นออกสองข้าง
+ *   ⚠️ ใช้ได้เฉพาะ "ช่องลงนามเดี่ยว" ที่ไม่มีช่องอื่นต้องเรียงแนวด้วย — ในบล็อกหลายช่อง
+ *   ห้ามใช้เด็ดขาด เพราะแกนที่ยืดไม่เท่ากันทำให้เส้นยาวไม่เท่ากันและคำต่อท้ายไม่ตรงแนว
+ *   เหตุที่ต้องมี: ช่องลงนามเดี่ยวที่มีคำต่อท้าย (เช่น "ผู้ขออนุญาต" ในใบน้ำประปา) ถ้าชื่อยาว
+ *   กว่าแกนแล้วปล่อยให้ล้น ตัวอักษรจะไปพิมพ์ทับคำต่อท้ายจนอ่านไม่ออก (เคสจริง ชื่อ 62mm
+ *   ในแกน 54mm) การยืดแกนดันคำต่อท้ายออกไปแทน ยังคงกึ่งกลางบนแกนเดียวกันเหมือนเดิม
  */
-export function govSignRow({ width = GOV_SIGN_LINE_W, label = 'ลงชื่อ', role = '', below = [], signed = '' } = {}) {
+export function govSignRow({ width = GOV_SIGN_LINE_W, label = 'ลงชื่อ', role = '', below = [], signed = '', grow = false } = {}) {
   return `<div class="sign-row">
       ${label ? `<span class="sign-label">${label}</span>` : ''}
-      <span class="sign-axis" style="width:${width}">
+      <span class="sign-axis" style="${grow ? 'min-width' : 'width'}:${width}">
         <!-- ⚠️ ต้องมี &nbsp; ข้างใน — span ว่างที่มีแต่ border-bottom สูง 0 พอเอามาวางใน
              flex column แล้วเส้นจะลอยทับบรรทัดวงเล็บ ไม่ได้เป็นบรรทัดของตัวเอง -->
         ${signed

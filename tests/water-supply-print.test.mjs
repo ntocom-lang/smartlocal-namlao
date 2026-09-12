@@ -84,8 +84,8 @@ assert.match(online, /จุดติดตั้งมาตรวัดน้�
 assert.match(online, /18\.258742, 100\.308329/)
 
 // ── โหมดออนไลน์: พิมพ์ชื่อเป็นลายมือชื่อ ไม่เว้นช่องให้เซ็น ──────────────────
-assert.match(online, /<span class="signed-name">นายสมชาย ใจดี<\/span>/)
-assert.doesNotMatch(online, /class="fill-blank" style="min-width:54mm"/,
+assert.match(online, /<span class="sign-signed">นายสมชาย ใจดี<\/span>/)
+assert.doesNotMatch(online, /<span class="sign-line">/,
   'โหมดออนไลน์ต้องไม่เว้นช่องเซ็นปากกา ไม่งั้นได้ทั้งชื่อพิมพ์และเส้นประซ้อนกัน')
 assert.match(online, /ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service/)
 assert.equal((online.match(/E-Service/g) || []).length, 1,
@@ -98,19 +98,19 @@ assert.match(online, /ผู้ขออนุญาต/)
 // ── โหมดเคาน์เตอร์: เจ้าหน้าที่กรอกแทน ต้องเว้นช่องให้เซ็นด้วยปากกา ──────────
 // สำคัญเชิงกฎหมาย: ประชาชนไม่ได้ยืนยันตัวตนกับระบบด้วยตัวเอง ระบบจึงอ้างว่าเขาลงชื่อไม่ได้
 const counter = render(baseForm({ signed_by: { channel: 'counter', name: 'นายสมชาย ใจดี' } }))
-assert.match(counter, /class="fill-blank" style="min-width:54mm"/)
-assert.doesNotMatch(counter, /<span class="signed-name">/)
+assert.match(counter, /<span class="sign-line">/)
+assert.doesNotMatch(counter, /<span class="sign-signed">/)
 assert.doesNotMatch(counter, /ลงชื่อโดยการยืนยันตัวตนผ่านระบบ/)
 assert.doesNotMatch(counter, /E-Service/)
 
 // ── คำขอเก่าที่ยื่นก่อนมีฟีเจอร์นี้: ไม่มี signed_by ต้องตกมาที่โหมดเว้นช่องเซ็น ──
 const legacy = render(baseForm({ signed_at: undefined, signed_by: undefined }))
-assert.match(legacy, /class="fill-blank" style="min-width:54mm"/)
+assert.match(legacy, /<span class="sign-line">/)
 assert.doesNotMatch(legacy, /ลงชื่อโดยการยืนยันตัวตนผ่านระบบ/)
 
 // ── ไม่มีเวลาลงชื่อ แต่ channel เป็น online: ยังพิมพ์ชื่อ แต่ตัดบรรทัดวันเวลาทิ้ง ──
 const noStamp = render(baseForm({ signed_at: undefined }))
-assert.match(noStamp, /<span class="signed-name">นายสมชาย ใจดี<\/span>/)
+assert.match(noStamp, /<span class="sign-signed">นายสมชาย ใจดี<\/span>/)
 assert.match(noStamp, /ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service/)
 assert.doesNotMatch(noStamp, /เวลา \d{2}\.\d{2} น\./,
   'ค่าเวลาเสีย/ไม่มี ต้องไม่พิมพ์ Invalid Date ลงใบราชการ')

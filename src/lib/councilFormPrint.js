@@ -1,3 +1,6 @@
+import {
+  GOV_SIGN_LINE_W, govNameBlank, govSignBlockCss, govSignRow,
+} from './govSignBlock.js'
 import { GOV_FONT_LINK, govDocFontCss, govEServiceOriginText, govPageCss } from './govDocStyle.js'
 import { orgClerkTitle, orgHeadTitle } from './orgTerms.js'
 
@@ -216,16 +219,23 @@ export function buildCouncilComplaintHtml({ c, tenant, terminology, num, thDate,
   // อ้างอิงตำแหน่งจากแบบฟอร์มกระดาษจริง: แถวบน กองช่าง+ปลัด สองคอลัมน์ / แถวล่าง นายก อยู่กึ่งกลาง-ขวา
   // authority_reference = เลขที่คำสั่ง/หนังสือรักษาราชการแทน ต้องพิมพ์ติดใต้ตำแหน่งเสมอเมื่อมีค่า
   // เพราะผู้ลงนามที่ไม่ใช่เจ้าของตำแหน่งต้องแสดงฐานอำนาจในเอกสาร ไม่งั้นเอกสารถูกทักท้วงได้
-  const signBlock = (person, fallbackTitle, width = '45%') => `
-    <div style="width:${width};text-align:center;">
-      <div>ลงชื่อ.................................................</div>
-      <div style="margin-top:26px;">(${esc(person?.name) || '.........................................................'})</div>
-      <div>${esc(person?.title) || esc(fallbackTitle)}</div>
-      ${/* 11pt — บรรทัดอ้างอิงคำสั่งมอบอำนาจใต้ชื่อผู้ลงนาม เป็นข้อความประกอบ ไม่ใช่เนื้อความ
-            จึงเล็กกว่าได้ แต่ต้องไม่เล็กจนอ่านไม่ออก (เดิม 12px = 9pt) */''}
-      ${person?.authority_reference
-        ? `<div style="font-size:11pt;margin-top:2px;">(${esc(person.authority_reference)})</div>`
-        : ''}
+  // ⚠️ ของเดิมเป็นข้อความ "ลงชื่อ........." กับวงเล็บชื่อ จัดกึ่งกลาง "ของคอลัมน์" ทั้งคู่
+  // วงเล็บจึงเยื้องซ้ายของเส้นอยู่ครึ่งหนึ่งของคำว่า "ลงชื่อ" (~5mm) เป็นอาการเดียวกับที่
+  // เจ้าของระบบจับได้จากใบยืมพัสดุที่พิมพ์ออกกระดาษ — ของกลางมัดเส้นกับบรรทัดใต้ไว้แกนเดียวกัน
+  const signBlock = (person, fallbackTitle, width = '48%') => `
+    <div class="center-row" style="width:${width};">
+      ${govSignRow({
+        width: GOV_SIGN_LINE_W,
+        below: [
+          person?.name ? `(${esc(person.name)})` : govNameBlank(GOV_SIGN_LINE_W),
+          esc(person?.title) || esc(fallbackTitle),
+          // 11pt — บรรทัดอ้างอิงคำสั่งมอบอำนาจใต้ชื่อผู้ลงนาม เป็นข้อความประกอบ ไม่ใช่เนื้อความ
+          // จึงเล็กกว่าได้ แต่ต้องไม่เล็กจนอ่านไม่ออก (เดิม 12px = 9pt)
+          person?.authority_reference
+            ? `<span style="font-size:11pt">(${esc(person.authority_reference)})</span>`
+            : '',
+        ].filter(Boolean),
+      })}
     </div>`
 
   return `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
@@ -234,6 +244,7 @@ ${GOV_FONT_LINK}
 <style>
   ${govPageCss()}
   body { ${govDocFontCss()} color: #111; }
+${govSignBlockCss()}
   p { margin: 0; }
   .center { text-align: center; }
   /* 11pt โดยตั้งใจ — บล็อกมุมกระดาษเป็นเลขอ้างอิงของระบบกับช่องให้เจ้าหน้าที่ลงเลขรับ
@@ -291,7 +302,9 @@ ${GOV_FONT_LINK}
   </div>
 
   <div style="display:flex;justify-content:flex-end;margin-top:28px;">
-    ${signBlock(mayor, mayorTitle, '45%')}
+    ${/* แถวนี้มีบล็อกเดียว จึงกว้างกว่าแถวบนได้ — ชื่อตำแหน่งนายกยาวกว่าปลัด ถ้าใช้ 48%
+       เท่าแถวบน ตัวอักษรที่ล้นออกจากแกนจะเลยขอบขวาของพื้นที่พิมพ์ไป 4px (วัดจริง) */''}
+    ${signBlock(mayor, mayorTitle, '54%')}
   </div>` : ''}
 </div>
 

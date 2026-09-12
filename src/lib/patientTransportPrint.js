@@ -21,6 +21,9 @@ import {
   GOV_ESERVICE_ORIGIN_CSS, GOV_FONT_LINK, govDocFontCss, govEServiceOriginText,
   govPageCss, govPagePadding,
 } from './govDocStyle.js'
+import {
+  GOV_SIGN_LINE_W_WIDE, govNameBlank, govSignBlockCss, govSignRow,
+} from './govSignBlock.js'
 import { orgHeadTitle, orgNameParts, orgOfficeName } from './orgTerms.js'
 import { MONTHS_TH, thaiDateFromDateInput } from './thaiDate.js'
 import {
@@ -88,26 +91,14 @@ function appointmentDateOnly(value) {
   return `${at.getDate()} ${MONTHS_TH[at.getMonth()]} ${at.getFullYear() + 543}`
 }
 
-/**
- * บล็อกลงนาม — เส้นจุดคือแกน บรรทัดใต้ต้องอยู่กึ่งกลาง "ของเส้น" ไม่ใช่กึ่งกลางคอลัมน์
- * (เหตุผลเต็มอยู่ที่ signRow() ใน assetBorrowPrint.js ซึ่งแก้จากใบพิมพ์จริงมาแล้ว)
- */
-function signRow({ width = '55mm', role = '', below = [], signed = '' }) {
-  return `<div class="sign-row">
-      <span class="sign-label">ลงชื่อ</span>
-      <span class="sign-axis">
-        ${signed
-          ? `<span class="sign-signed" style="min-width:${width}">${signed}</span>`
-          : `<span class="sign-line" style="min-width:${width}">&nbsp;</span>`}
-${below.map(text => `        <span class="sign-below">${text}</span>`).join('\n')}
-      </span>
-      ${role ? `<span class="sign-role">${role}</span>` : ''}
-    </div>`
-}
+// ช่องลงนามใช้ของกลาง govSignBlock.js — ของเดิมเป็นสำเนาของแบบก่อน PR #142 ที่ให้แกนยืด
+// ตามเนื้อหา ทำให้เส้นในแต่ละช่องยาวไม่เท่ากัน (กติกาข้อ 1 ของมาตรฐานห้ามไว้)
+const SIGN_LINE_W = '44mm'      // ช่องลงนามของคณะกรรมการกองทุน (ค่าเดิมของใบนี้)
+const REQUESTER_LINE_W = GOV_SIGN_LINE_W_WIDE  // ช่องผู้ยื่นคำขอกลางใบ
 
-function signatureName(name) {
+function signatureName(name, width = SIGN_LINE_W) {
   const value = String(name ?? '').trim()
-  return value ? `(${esc(value)})` : '(..................................................)'
+  return value ? `(${esc(value)})` : govNameBlank(width)
 }
 
 // ที่อยู่ผู้ยื่น/ผู้ป่วยที่กรอกมาเป็นข้อความอิสระอยู่แล้ว ไม่ต้องประกอบใหม่จากรายช่อง
@@ -158,17 +149,7 @@ function sharedCss() {
       linear-gradient(to bottom right, transparent calc(50% - 0.35mm), #000 50%, transparent calc(50% + 0.35mm));
   }
 
-  /* บล็อกลงนาม (โครงเดียวกับ assetBorrowPrint.js — อย่าแก้ทีละใบให้เพี้ยนกัน) */
-  .sign-row { display: flex; align-items: flex-start; }
-  .sign-axis { display: flex; flex-direction: column; align-items: center; flex: 0 1 auto; min-width: 0; }
-  .sign-line { border-bottom: 1px dotted #000; display: inline-block; }
-  .sign-axis > .sign-line { align-self: stretch; }
-  .sign-label, .sign-role { white-space: nowrap; }
-  .sign-role { margin-left: 1mm; }
-  .sign-below { text-align: center; }
-  .sign-signed { text-align: center; font-weight: 700; }
-  .sign-block { break-inside: avoid; page-break-inside: avoid; }
-  .center-row .sign-row { justify-content: center; }
+${govSignBlockCss()}
   .two-col { display: flex; gap: 8mm; break-inside: avoid; page-break-inside: avoid; }
   .two-col > div { flex: 1 1 0; min-width: 0; }
   /* 10pt: บรรทัดกำกับการลงชื่อผ่านระบบ ต้องอ่านออกแต่ไม่แย่งน้ำหนักกับชื่อผู้ลงนาม */
@@ -457,11 +438,14 @@ ${rows.map(([label, value]) => `    <tr><th>${label}</th><td>${value ? esc(value
   <p class="evidence">หลักฐาน&nbsp;&nbsp;${box()} สำเนาบัตรประชาชนผู้ป่วย&nbsp;&nbsp;${box()} ใบนัดแพทย์&nbsp;&nbsp;${box()} อื่นๆ ${line('', '24mm')}</p>
 
   <div class="sign-block center-row" style="margin-top:3mm">
-    ${signRow({
+    ${govSignRow({
+      width: REQUESTER_LINE_W,
+      // grow: ช่องเดี่ยวที่มีคำต่อท้าย ชื่อยาวกว่าแกนต้องดันคำต่อท้ายออก ไม่ใช่พิมพ์ทับ
+      grow: true,
       role: 'ผู้ยื่นคำขอ',
       // พิมพ์ชื่อบนเส้นทุกกรณี — ไม่มีชื่อจริงๆ (คำขอเก่าที่ไม่ได้กรอก) จึงตกไปเป็นเส้นให้เขียนมือ
       signed: requesterName ? esc(requesterName) : '',
-      below: [signatureName(requesterName)],
+      below: [signatureName(requesterName, REQUESTER_LINE_W)],
     })}
     ${signedOnline
       ? `<p class="signed-note">ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service${
@@ -481,8 +465,8 @@ ${rows.map(([label, value]) => `    <tr><th>${label}</th><td>${value ? esc(value
     <p>ความเห็น ${line('', '135mm')}</p>
     <p>${box()} อนุมัติ&nbsp;&nbsp;&nbsp;${box()} ไม่อนุมัติ เพราะ ${line('', '95mm')}</p>
     <div class="two-col" style="margin-top:3mm">
-      <div>${signRow({ width: '44mm', below: ['(...............................................)', 'ประธานคณะกรรมการกองทุน'] })}</div>
-      <div>${signRow({ width: '44mm', below: ['(...............................................)', 'เหรัญญิก / พยาน'] })}</div>
+      <div>${govSignRow({ width: SIGN_LINE_W, below: [govNameBlank(SIGN_LINE_W), 'ประธานคณะกรรมการกองทุน'] })}</div>
+      <div>${govSignRow({ width: SIGN_LINE_W, below: [govNameBlank(SIGN_LINE_W), 'เหรัญญิก / พยาน'] })}</div>
     </div>
   </div>
 

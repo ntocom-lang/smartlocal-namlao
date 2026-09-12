@@ -15,6 +15,7 @@ import assert from 'node:assert/strict'
 import process from 'node:process'
 import { chromium } from 'playwright'
 import { buildWaterSupplyRequestHtml } from '../src/lib/waterSupplyRequestPrint.js'
+import { assertSignBlockStandard } from './lib/signBlockChecks.mjs'
 
 const TENANT = {
   name: 'องค์การบริหารส่วนตำบลทุ่งแค้ว',
@@ -284,53 +285,45 @@ const checks = [
     },
   },
   {
-    name: 'signature-block-stays-on-one-line-each',
-    reason: 'บรรทัด "ลงชื่อ … ผู้ขออนุญาต" และชื่อในวงเล็บต้องอยู่บรรทัดละหนึ่ง — เคยเจอ "(" กับ ")" ตกคนละบรรทัด',
+    name: 'signature-block',
+    reason: 'ช่องลงนามต้องได้มาตรฐานกลาง บรรทัดละหนึ่ง และชื่อยาวต้องไม่พิมพ์ทับคำว่า "ผู้ขออนุญาต"',
     async run(browser) {
       const page = await render(browser, longForm())
       try {
         // นับ "จำนวนบรรทัด" จากค่า top ที่ไม่ซ้ำกัน ไม่ใช่จำนวน rect —
         // ย่อหน้ามี <span> คั่น Range จึงคืน rect หลายก้อนบนบรรทัดเดียวกัน
         // (วัดจริงได้ 4 rect ทั้งที่อยู่บรรทัดเดียว) ถ้านับ rect ตรงๆ จะรายงานผิดทุกครั้ง
-        const lineCounts = await page.evaluate(() => [...document.querySelectorAll('.signature-line, .sign-paren')]
-          .map(el => {
+        const lineCounts = await page.evaluate(() =>
+          [...document.querySelectorAll('.sign-line, .sign-signed, .sign-below')].map(el => {
             const range = document.createRange()
             range.selectNodeContents(el)
-            return new Set([...range.getClientRects()].map(r => Math.round(r.top))).size
+            return new Set([...range.getClientRects()].map(rect => Math.round(rect.top))).size
           }))
         assert.ok(lineCounts.length >= 2, 'ไม่พบบรรทัดในช่องลงนาม — โครงช่องลงนามเปลี่ยนไปแล้ว')
-        assert.ok(lineCounts.every(n => n <= 1),
+        assert.ok(lineCounts.every(count => count <= 1),
           `บรรทัดในช่องลงนามถูกตัดขึ้นบรรทัดใหม่ (จำนวนบรรทัดต่อย่อหน้า: ${lineCounts.join(', ')})`)
 
         // ⚠️ อยู่บรรทัดเดียวกันยังไม่พอ — ต้องไม่ "พิมพ์ทับกัน" ด้วย เคสจริงที่หลุดมาแล้ว:
-        // ชื่อ 62 มม. ในกล่อง width 54 มม. ล้นออกไปทับคำว่า "ผู้ขออนุญาต" จนอ่านไม่ออก
+        // ชื่อ 62 มม. ในกล่อง 54 มม. ล้นออกไปทับคำว่า "ผู้ขออนุญาต" จนอ่านไม่ออก
         // แต่เทสนับบรรทัดข้างบนยังผ่าน เพราะมันยังเป็นบรรทัดเดียวจริงๆ
+        // (ช่องลงนามเดี่ยวของใบนี้จึงใช้ grow: true ให้แกนยืดดันคำต่อท้ายออกไปแทน)
         const overlap = await page.evaluate(() => {
-          const name = document.querySelector('.signed-name, .signature .fill-blank')
+          const name = document.querySelector('.sign-signed, .sign-line')
           const role = document.querySelector('.sign-role')
           if (!name || !role) return null
           // ⚠️ ต้องวัดด้วย Range ไม่ใช่ getBoundingClientRect() ของตัว element —
-          // inline-block ที่ตั้ง width ตายตัวคืนขนาด "กล่อง" เสมอ ส่วนข้อความที่ล้นออกนอกกล่อง
-          // ไม่ถูกนับ วิธีวัดจากกล่องจึงรายงานว่าไม่ทับทั้งที่ตาเห็นว่าทับ (พิสูจน์แล้ว 2569-09-07)
+          // กล่องที่ตั้งความกว้างตายตัวคืนขนาด "กล่อง" เสมอ ข้อความที่ล้นออกนอกกล่องไม่ถูกนับ
+          // วิธีวัดจากกล่องจึงรายงานว่าไม่ทับทั้งที่ตาเห็นว่าทับ (พิสูจน์แล้ว 2569-09-07)
           const range = document.createRange()
           range.selectNodeContents(name)
-          const textRight = Math.max(...[...range.getClientRects()].map(r => r.right))
+          const textRight = Math.max(...[...range.getClientRects()].map(rect => rect.right))
           return Math.round(textRight - role.getBoundingClientRect().left)
         })
         assert.ok(overlap !== null, 'ไม่พบชื่อผู้ลงนามหรือคำว่า "ผู้ขออนุญาต" — โครงช่องลงนามเปลี่ยนไปแล้ว')
-        assert.ok(overlap <= 0,
-          `ชื่อผู้ลงนามพิมพ์ทับคำว่า "ผู้ขออนุญาต" อยู่ ${overlap}px`)
+        assert.ok(overlap <= 0, `ชื่อผู้ลงนามพิมพ์ทับคำว่า "ผู้ขออนุญาต" อยู่ ${overlap}px`)
 
-        const centers = await page.evaluate(() => {
-          const upper = document.querySelector('.signature-line')?.getBoundingClientRect()
-          const lower = document.querySelector('.sign-paren')?.getBoundingClientRect()
-          return upper && lower
-            ? { upper: upper.left + upper.width / 2, lower: lower.left + lower.width / 2 }
-            : null
-        })
-        assert.ok(centers, 'ไม่พบบรรทัดชื่อบนหรือล่างในช่องลงนาม')
-        assert.ok(Math.abs(centers.upper - centers.lower) <= 1,
-          `ชื่อในวงเล็บไม่อยู่กึ่งกลางใต้ชื่อบรรทัดบน (คลาด ${Math.abs(centers.upper - centers.lower).toFixed(1)}px)`)
+        // มาตรฐานกลาง: บรรทัดใต้เส้นกึ่งกลางบนแกนของเส้น + วงเล็บเว้นชื่อกว้างเท่าเส้น
+        await assertSignBlockStandard(page, { minRows: 1, minBelow: 1 })
       } finally {
         await page.close()
       }

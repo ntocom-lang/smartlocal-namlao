@@ -157,12 +157,12 @@ assert.match(noDepts, /<span class="checkbox"><\/span>สำนักงาน�
 assert.equal((noDepts.match(/class="checkbox"/g) || []).length, 4)
 
 // ── โหมดลงนาม 2 แบบ ─────────────────────────────────────────────────────────
-assert.match(online, /<span class="signed-name">นายสมชาย ใจดี<\/span>/)
+assert.match(online, /<span class="sign-signed">นายสมชาย ใจดี<\/span>/)
 assert.match(online, /ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service องค์การบริหารส่วนตำบลทุ่งแค้ว/)
 assert.match(online, /เลขอ้างอิง A1B2C3D4/)
 
 const counter = render(baseForm({ signed_by: { channel: 'counter', name: 'นายสมชาย ใจดี' } }))
-assert.doesNotMatch(counter, /class="signed-name"/,
+assert.doesNotMatch(counter, /class="sign-signed"/,
   'เจ้าหน้าที่กรอกแทน: ห้ามพิมพ์ชื่อประชาชนเป็นลายมือชื่อ ต้องเว้นให้เซ็นด้วยปากกา')
 assert.doesNotMatch(counter, /ลงชื่อโดยการยืนยันตัวตน/,
   'ผู้ยื่นไม่ได้ยืนยันตัวตนในระบบ ห้ามเขียนว่าลงชื่อทางอิเล็กทรอนิกส์')
@@ -171,7 +171,7 @@ assert.match(counter, /ยื่นคำร้องผ่านระบบ E-
 
 // คำร้องเก่าที่ไม่มี signed_by เลย ต้องตกมาที่โหมดเซ็นปากกา ไม่ใช่ถือว่าลงชื่อแล้ว
 const legacy = render(baseForm({ signed_by: undefined }))
-assert.doesNotMatch(legacy, /class="signed-name"/)
+assert.doesNotMatch(legacy, /class="sign-signed"/)
 
 // ── ผู้ลงนามฝั่งเจ้าหน้าที่ ────────────────────────────────────────────────────
 const signed = renderWithOfficer(baseForm(), {

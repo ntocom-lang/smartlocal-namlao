@@ -79,6 +79,30 @@ async function measure(deptTitle) {
         const r = el.getBoundingClientRect()
         return { text: el.textContent.trim(), right: r.right, width: r.width, scrollWidth: el.scrollWidth }
       }),
+      // ⚠️ วัด "กล่องของตัวอักษรจริง" ด้วย Range ไม่ใช่กล่องของ element — กล่องของ element
+      // ที่ตั้งความกว้างไว้จะอยู่กลางแกนเสมอ ไม่ว่าตัวอักษรข้างในจะไปกองอยู่ข้างไหน
+      // (วิธีวัดจากกล่องเคยทำให้เทสต์ของใบยืมพัสดุ "ผ่าน" ทั้งที่ของจริงเยื้อง 16-25mm)
+      signOffsets: [...document.querySelectorAll('.signature')].flatMap(block => {
+        const line = block.querySelector('.signature-line')?.getBoundingClientRect()
+        if (!line) return []
+        const lineCenter = line.left + line.width / 2
+        return [...block.querySelectorAll('.signature-name, .signature-title')].map(el => {
+          // ⚠️ ไม่นับ .signature-suffix (" หรือผู้แทน") — ต้นฉบับวางไว้นอกวงเล็บทางขวา
+          // ด้วย position: absolute จึงไม่ใช่ส่วนหนึ่งของบรรทัดที่ต้องอยู่กึ่งกลาง
+          // (นับรวมแล้วจะได้ว่าเยื้อง 9.9mm ทั้งที่วงเล็บตรงกับเส้นพอดี — วัดยืนยันแล้ว)
+          const parts = [...el.childNodes].filter(node =>
+            !(node.nodeType === 1 && node.classList.contains('signature-suffix')))
+          const rects = parts.flatMap(node => {
+            const range = document.createRange()
+            range.selectNodeContents(node)
+            return [...range.getClientRects()]
+          })
+          if (!rects.length) return 0
+          const left = Math.min(...rects.map(rect => rect.left))
+          const right = Math.max(...rects.map(rect => rect.right))
+          return Math.abs((left + right) / 2 - lineCenter)
+        })
+      }),
     }
   })
 }
@@ -89,6 +113,19 @@ assert.ok(
   blank.roles.some(r => r.text === 'ผู้อำนวยการกอง/หัวหน้ากอง'),
   'ยังไม่ตั้งผู้ลงนามต้องคงป้ายกลางของแบบฟอร์มไว้ ห้ามเว้นว่าง',
 )
+
+// ── 1.1 วงเล็บชื่อ/ตำแหน่งต้องอยู่กึ่งกลางใต้เส้นลงนาม ───────────────────────────────
+// ใบนี้ไม่ได้ใช้ช่องลงนามกลาง (govSignBlock.js) แต่ใช้ grid/subgrid ของตัวเองซึ่งให้ผล
+// ตามมาตรฐานเดียวกัน (วัดแล้วเยื้อง 0.0mm ทุกช่อง) และให้เส้นยาวเต็มความกว้างตามต้นฉบับ
+// แบบ 3 — แปลงมาใช้ของกลางจะทำให้เส้นสั้นลงจาก 113mm เหลือ 40mm ซึ่งผิดจากต้นฉบับ
+// ข้อนี้จึงล็อก "ผลลัพธ์" ไว้แทนการบังคับให้ใช้โครงเดียวกัน ถ้าวันหนึ่งเลย์เอาต์เพี้ยน
+// จะได้รู้ตั้งแต่ในเทสต์ ไม่ใช่รู้จากใบที่พิมพ์ออกมาแล้ว
+for (const offset of blank.signOffsets) {
+  assert.ok(offset <= 3.78,
+    `บรรทัดใต้เส้นลงนามไม่อยู่กึ่งกลางของเส้น เยื้อง ${(offset / 3.78).toFixed(1)}mm`)
+}
+assert.ok(blank.signOffsets.length >= 4,
+  `ต้องเจอบรรทัดใต้เส้นลงนามอย่างน้อย 4 บรรทัด แต่เจอ ${blank.signOffsets.length} — โครงช่องลงนามเปลี่ยนไปแล้ว`)
 
 // ── 2. ตั้งแล้ว = ป้ายเปลี่ยนเป็นชื่อตำแหน่งที่ระบุ ────────────────────────────────
 const named = await measure('ผู้อำนวยการกองช่าง')

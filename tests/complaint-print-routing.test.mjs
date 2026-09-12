@@ -61,7 +61,11 @@ const draftHtml = buildCouncilComplaintHtml({
   includeStaffSignatures: false,
 })
 assert.doesNotMatch(draftHtml, /\[TEST\] หัวหน้ากองช่าง/)
-assert.doesNotMatch(draftHtml, /ลงชื่อ\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\./)
+// ⚠️ ตรวจจาก "โครงสร้างช่องลงนาม" ไม่ใช่จากข้อความเส้นจุด — ข้อความเปลี่ยนได้ทุกครั้งที่
+// มาตรฐานช่องลงนามเปลี่ยน (เปลี่ยนมาแล้ว 2569-09-12) แล้วเทสต์จะผ่านลวงทั้งที่บล็อกยังอยู่
+assert.doesNotMatch(draftHtml, /class="sign-row"/)
+assert.match(namedHtml, /class="sign-row"/,
+  'ใบที่พิมพ์ปกติต้องมีบล็อกลงชื่อ ไม่งั้นข้อบนไม่ได้พิสูจน์อะไรเลย')
 
 const citizenFormSource = await readFile(new URL('../src/pages/CitizenForm.jsx', import.meta.url), 'utf8')
 const ossFormSource = await readFile(new URL('../src/components/admin/OssIntakeForm.jsx', import.meta.url), 'utf8')

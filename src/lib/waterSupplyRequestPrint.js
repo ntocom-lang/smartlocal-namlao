@@ -1,6 +1,11 @@
 import { GOV_FONT_LINK, govDocFontCss, govPageCss } from './govDocStyle.js'
+import { govNameBlank, govSignBlockCss, govSignRow } from './govSignBlock.js'
 import { orgHeadTitle, orgNameParts, orgOfficeName } from './orgTerms.js'
 import { MONTHS_TH, thaiDateFromDateInput, thaiDateTimeText } from './thaiDate.js'
+
+// ความกว้างเส้นลงนามของใบนี้ — ยาวกว่าค่ามาตรฐาน 40mm เพราะเป็นช่องลงนามเดี่ยวกลางกลุ่ม
+// ด้านขวาของหน้า มีที่เหลือให้เซ็นเต็มที่ ไม่ต้องเรียงแนวกับช่องอื่น (ค่าเดิมของใบนี้)
+const SIGN_LINE_W = '54mm'
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -279,27 +284,10 @@ export function buildWaterSupplyRequestHtml({ form, tenant, docDate, referenceNo
 
     /* ช่องลงนามของใบนี้เป็นแบบ "ลงชื่อ ____ ผู้ขออนุญาต" แล้ววงเล็บชื่อบรรทัดล่าง
        (ต่างจากใบเก็บขนขยะที่ขึ้นต้นด้วย "ขอแสดงความนับถือ") — ต้นฉบับคนละแบบ ห้ามยกมาใช้ซ้ำกัน
-       sign-label กว้างคงที่ เพื่อให้บรรทัดวงเล็บเยื้องมาอยู่ใต้เส้นประพอดี ไม่ใช่กะด้วยช่องว่าง */
+       ตัวช่องลงนามใช้ของกลาง govSignBlock.js ตรงนี้เหลือแค่ตำแหน่งของกลุ่มบนหน้ากระดาษ
+       กว้าง 104mm พอให้ชื่อยาวสุดที่เจอจริง (เส้น 54 + "ลงชื่อ" 10 + "ผู้ขออนุญาต" 22) ไม่ล้น */
     .signature { margin: 18mm 8mm 0 auto; width: 104mm; }
-    .signature-row { display: flex; align-items: flex-start; white-space: nowrap; }
-    .sign-label { display: inline-block; width: 13mm; }
-    /* ⚠️ min-width ไม่ใช่ width — ชื่อที่ยาวกว่ากล่องจะล้นออกไปทับคำว่า "ผู้ขออนุญาต" ที่ต่อท้าย
-       (เคสจริง "นางสาวประกายมาศ ศรีวิชัยเลิศสกุล" กว้าง ~62 มม. พิมพ์ทับกันจนอ่านไม่ออก)
-       ปล่อยให้กล่องยืดตามชื่อแทน ช่องลงนามกว้างสุด ≈ 13 + 62 + 22 = 97 มม. ยังไม่เกิน 104 มม. */
-    /* ชื่อบรรทัดบนและชื่อในวงเล็บอยู่ในกล่องเดียวกัน จึงใช้แกนกึ่งกลางเดียวกันเสมอ
-       แม้ชื่อยาวจนกล่องขยายเกิน 54 มม. */
-    .signature-name { display: flex; flex: 0 0 auto; min-width: 54mm; flex-direction: column; align-items: stretch; }
-    .signature-line, .sign-paren { min-width: 54mm; text-align: center; white-space: nowrap; }
-    .sign-paren { margin-top: 2mm; }
-    /* ⚠️ .fill-value เป็น pre-wrap (ช่องกรอกทั่วไปต้องคงช่องว่างที่ผู้ใช้พิมพ์) ซึ่งชนะ nowrap
-       ของบรรทัดลงชื่อ — ชื่อยาวในวงเล็บจึงถูกตัดขึ้นบรรทัดใหม่ ทั้งที่กล่องจัดกึ่งกลางกว้างแค่
-       54 มม. (วัดจริงกับ "นางสาวประกายมาศ ศรีวิชัยเลิศสกุล" เทสต์ signature-block จับได้)
-       ปล่อยให้ชื่อล้นออกนอกกล่อง 54 มม. ได้ ดีกว่า "(" กับ ")" ตกคนละบรรทัดจนอ่านไม่รู้เรื่อง */
-    .signature .fill-value { white-space: nowrap; }
-    /* ลายมือชื่ออิเล็กทรอนิกส์ — ตัวหนาให้เห็นว่าเป็นการลงชื่อ ไม่ใช่ชื่อที่พิมพ์ซ้ำเฉยๆ
-       inline-block กว้างเท่าเส้นประเพื่อให้ "ผู้ขออนุญาต" อยู่ตำแหน่งเดียวกับโหมดเซ็นปากกา */
-    .signed-name { display: block; min-width: 54mm; text-align: center; font-weight: 700; }
-    .sign-role { margin-left: 1mm; }
+${govSignBlockCss()}
     /* 10pt: บรรทัดกำกับต้องอ่านออกแต่ต้องไม่แย่งน้ำหนักกับชื่อผู้ลงนาม และต้องไม่ดันใบตกหน้า 2
        white-space ปกติ (ไม่ nowrap) เพราะข้อความยาวกว่าความกว้างช่องลงนาม */
     .signed-note { margin-top: 3mm; font-size: 10pt; color: #333; white-space: normal; line-height: 1.2; }
@@ -361,16 +349,15 @@ export function buildWaterSupplyRequestHtml({ form, tenant, docDate, referenceNo
     ${meterPoint ? `<p class="point-copy">จุดติดตั้งมาตรวัดน้ำตามพิกัดแผนที่ ${line(meterPoint)}</p>` : ''}
 
     <section class="signature">
-      <div class="signature-row">
-        <span class="sign-label">ลงชื่อ</span>
-        <div class="signature-name">
-          <div class="signature-line">${signedOnline
-            ? `<span class="signed-name">${esc(applicantName)}</span>`
-            : `<span class="fill-blank" style="min-width:54mm">&nbsp;</span>`}</div>
-          <div class="sign-paren">(${line(applicantName, '44mm')})</div>
-        </div>
-        <span class="sign-role">ผู้ขออนุญาต</span>
-      </div>
+      ${govSignRow({
+        width: SIGN_LINE_W,
+        // grow: ช่องลงนามเดี่ยวที่มีคำต่อท้าย ชื่อยาวกว่าแกนต้องดันคำต่อท้ายออกไป ไม่ใช่พิมพ์ทับ
+        // (เคสจริง "นางสาวประกายมาศ ศรีวิชัยเลิศสกุล" กว้าง ~62mm ในแกน 54mm)
+        grow: true,
+        role: 'ผู้ขออนุญาต',
+        signed: signedOnline ? esc(applicantName) : '',
+        below: [applicantName ? `(${esc(applicantName)})` : govNameBlank(SIGN_LINE_W)],
+      })}
       ${signedOnline
         ? `<p class="signed-note">ลงชื่อโดยการยืนยันตัวตนผ่านระบบ E-Service${signedStamp ? `<br>${esc(signedStamp)}` : ''}${referenceNo ? ` · เลขอ้างอิง ${esc(referenceNo)}` : ''}</p>`
         : ''}

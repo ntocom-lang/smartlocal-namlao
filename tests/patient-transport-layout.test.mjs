@@ -17,6 +17,7 @@ import { chromium } from 'playwright'
 import {
   buildPatientTransportFormHtml, buildPatientTransportPacketHtml,
 } from '../src/lib/patientTransportPrint.js'
+import { assertSignBlockStandard, assertSignLinesAligned } from './lib/signBlockChecks.mjs'
 
 const TENANT = {
   name: 'องค์การบริหารส่วนตำบลทุ่งแค้ว',
@@ -204,33 +205,18 @@ const checks = [
     },
   },
   {
-    name: 'signature-name-centered-under-line',
-    reason: 'บรรทัดใต้เส้นลงนาม (วงเล็บชื่อ/ชื่อตำแหน่ง) ต้องอยู่กึ่งกลางแกนเดียวกับเส้นจุด',
+    // ⚠️ ของเดิมวัดจุดกึ่งกลางจาก getBoundingClientRect() ของ span ซึ่งเป็นวิธีที่เคยให้ผล
+    // "ผ่านลวง" มาแล้วในใบยืมพัสดุ (ของจริงเยื้องขวา 16-25mm แต่เทสต์ผ่าน เพราะกล่องของ span
+    // อยู่กลางแกนเสมอ) ย้ายมาใช้ตัวตรวจกลางที่วัดกล่องตัวอักษรจริงด้วย Range แทน
+    name: 'signature-block-standard',
+    reason: 'ช่องลงนามทุกจุดต้องได้มาตรฐานกลาง — บรรทัดใต้เส้นกึ่งกลางบนแกนของเส้น และวงเล็บกว้างเท่าเส้น',
     async run(browser) {
       const page = await render(browser, buildPatientTransportPacketHtml(args()))
       try {
-        const offsets = await page.evaluate(() => {
-          const centerOf = el => {
-            const box = el.getBoundingClientRect()
-            return box.left + box.width / 2
-          }
-          return [...document.querySelectorAll('.sign-row')].flatMap((row, index) => {
-            const line = row.querySelector('.sign-line')
-            if (!line) return []
-            return [...row.querySelectorAll('.sign-below')].map((below, order) => ({
-              block: index, order, diff: Math.abs(centerOf(line) - centerOf(below)),
-            }))
-          })
-        })
-        // ช่องกรรมการกองทุน 2 ช่อง มีบรรทัดใต้เส้นช่องละ 2 บรรทัด = อย่างน้อย 4
-        assert.ok(offsets.length >= 4,
-          `เจอบรรทัดใต้เส้นลงนามแค่ ${offsets.length} บรรทัด — ต้องมีอย่างน้อย 4`)
-        // 1mm = 3.78px ที่ 96dpi — เกินกว่านี้เริ่มเห็นด้วยตาเปล่าบนกระดาษ
-        const crooked = offsets.filter(entry => entry.diff > 3.78)
-        assert.deepEqual(crooked, [],
-          `วงเล็บชื่อไม่อยู่กึ่งกลางใต้เส้นจุด: ${crooked
-            .map(e => `บล็อก ${e.block} บรรทัด ${e.order} เยื้อง ${(e.diff / 3.78).toFixed(1)}mm`)
-            .join(', ')}`)
+        // ผู้ยื่นคำขอ 1 ช่อง + กรรมการกองทุน 2 ช่อง (ช่องละ 2 บรรทัดใต้เส้น) = อย่างน้อย 5 บรรทัด
+        await assertSignBlockStandard(page, { minRows: 3, minBelow: 5 })
+        // ช่องกรรมการกองทุนอยู่บล็อกเดียวกัน 2 คอลัมน์ เส้นต้องยาวเท่ากัน
+        await assertSignLinesAligned(page, '.committee .sign-row')
       } finally { await page.close() }
     },
   },
