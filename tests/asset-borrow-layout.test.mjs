@@ -156,6 +156,54 @@ const checks = [
     },
   },
   {
+    // ระยะทั้งใบมี 3 ชุด (airy/medium/compact) เลือกตามน้ำหนักเนื้อหา — ดู buildAssetBorrowHtml
+    // ข้อนี้กันไม่ให้ใครแก้กลับไปเป็นค่าแน่นค่าเดียวแบบเงียบ ๆ เวลาไล่บีบพื้นที่ในอนาคต
+    // เทสต์ความสูงอย่างเดียวจับไม่ได้ เพราะใบที่แน่นเกินไปก็ "ผ่าน" งบ 1 หน้าเสมอ
+    name: 'spacing-tier-matches-content',
+    reason: 'ใบเนื้อหาเบาต้องได้ระยะโปร่ง ใบข้อมูลครบปกติได้ระยะกลาง ใบของชำรุดถอยมาใช้ระยะเดิม',
+    async run(browser) {
+      // วัดทั้งระยะบรรทัดและระยะคั่นบล็อก เพราะชุดระยะเปลี่ยนพร้อมกันทั้งสองค่า
+      const spacingOf = page => page.evaluate(() => {
+        const style = getComputedStyle(document.querySelector('.sheet'))
+        const gap = getComputedStyle(document.querySelector('.gap'))
+        return {
+          lead: +(parseFloat(style.lineHeight) / parseFloat(style.fontSize)).toFixed(2),
+          blockMm: +(parseFloat(gap.marginTop) / 3.779527).toFixed(1),
+        }
+      })
+      // เบา: เจ้าหน้าที่คีย์แทนที่เคาน์เตอร์ กรอกแค่ชื่อกับวัตถุประสงค์สั้น ๆ ไม่มีที่อยู่
+      const light = await render(browser, {
+        header: typicalHeader(),
+        items: items(7),
+        form: { applicant: { title: 'นาย', first: 'สมชาย', last: 'ใจดี' } },
+      })
+      // ข้อความยาว: วัตถุประสงค์ยาวจนหัวใบงอกเป็น 11 บรรทัด
+      const wordy = await render(browser, { items: items(7) })
+      // หนัก: มีของชำรุด จึงมีบล็อกหมายเหตุเพิ่มท้ายใบ ไม่เหลือที่ให้เพิ่มระยะเลย
+      const heavy = await render(browser, {
+        header: typicalHeader(),
+        items: items(7).map((item, index) => (index === 0 ? { ...item, damaged_qty: 1 } : item)),
+      })
+      try {
+        assert.deepEqual(await spacingOf(light), { lead: 1.3, blockMm: 1.6 },
+          'ใบเนื้อหาเบาต้องได้ระยะชุดโปร่ง')
+        assert.deepEqual(await spacingOf(wordy), { lead: 1.25, blockMm: 0.8 },
+          'ใบข้อความยาว (หัวใบเกิน 10 บรรทัด) ต้องถอยมาใช้ระยะเดิมทั้งชุด')
+        assert.deepEqual(await spacingOf(heavy), { lead: 1.25, blockMm: 0.8 },
+          'ใบที่มีของชำรุดต้องถอยมาใช้ระยะเดิมทั้งชุด')
+        // เฉพาะสองชุดแรกที่ต้องอยู่ในงบ 1 หน้า — เคสของชำรุดมีข้อตรวจของตัวเองอยู่แล้ว
+        // (damage-note-still-one-extra-page-max) เพราะบล็อกหมายเหตุทำให้สูงเกินงบนี้มาแต่เดิม
+        for (const [label, page] of [['เบา', light], ['ยาว', wordy]]) {
+          const mm = await contentHeightMm(page)
+          assert.ok(mm <= ONE_PAGE_BUDGET_MM,
+            `ใบเนื้อหา${label}สูง ${mm.toFixed(1)}mm เกินงบ ${ONE_PAGE_BUDGET_MM}mm`)
+        }
+      } finally {
+        await Promise.all([light.close(), wordy.close(), heavy.close()])
+      }
+    },
+  },
+  {
     // ⚠️ ข้อนี้ยอมให้ล้นไปหน้า 2 โดยตั้งใจ ไม่ใช่ข้อบกพร่องที่ยังไม่ได้แก้:
     // พื้นที่พิมพ์กว้าง 160mm ใส่รหัสครุภัณฑ์ (38mm) + ชื่อของยาว (72mm) + จำนวน + หมายเหตุ
     // ในบรรทัดเดียวไม่ได้ แถวจึงตัด 2 บรรทัดตามเนื้อหาจริง ซึ่งถูกต้องกว่าการย่อฟอนต์
