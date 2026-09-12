@@ -5,6 +5,8 @@ import {
   ChevronLeft, Hash, MessageSquare,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import ServiceUrlHint from '../common/ServiceUrlHint'
+import { serviceUrlBlocked } from '../../lib/tourismPlaces'
 
 const TABS = [
   { key: 'pending',  label: 'รอดำเนินการ', color: '#f59e0b', bg: '#fef3c7' },
@@ -312,6 +314,7 @@ function DetailSheet({
                     </select>
                     <input value={form.online_url} onChange={set('online_url')}
                       placeholder="ลิงก์ / Line ID / URL" className={inputCls} />
+                    <ServiceUrlHint value={form.online_url} />
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input type="checkbox" checked={form.has_delivery}
                         onChange={e => setForm(p => ({ ...p, has_delivery: e.target.checked }))}
@@ -461,6 +464,10 @@ export default function BusinessRegistrationAdmin({ tenant, currentUserRole, myD
 
   async function handleApprove(form) {
     if (!selected || acting || !canManageRegistration(selected)) return
+    // ด่านสุดท้ายก่อนค่าที่ประชาชนกรอกมาจะขึ้นเว็บจริง ห้ามอนุมัติค่าที่เป็นช่องทางโจมตี
+    if (form.service_type !== 'offline' && serviceUrlBlocked(form.online_url)) {
+      window.alert('ลิงก์/ช่องทางออนไลน์ที่กรอกใช้ไม่ได้ด้วยเหตุผลด้านความปลอดภัย กรุณาใส่ลิงก์เว็บไซต์ เบอร์โทร หรือ Line ID'); return
+    }
     setActing(true)
     const images = selected.images ?? []
     const [image_url, ...gallery] = images

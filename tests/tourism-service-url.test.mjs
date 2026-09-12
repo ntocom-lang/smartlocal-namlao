@@ -4,7 +4,9 @@
 // ที่มา: ปุ่ม "สั่งซื้อเลย" ของ วิสาหกิจชุมชนน้ำพริกลาบริมยม (ทุ่งแค้ว) กดแล้วได้หน้าขาว
 // เพราะ online_url เก็บเบอร์โทร "0983819257" ไว้ แล้วถูกยัดลง href ดิบๆ
 import assert from 'node:assert/strict'
-import { resolveServiceUrl, serviceChannelLabel } from '../src/lib/tourismPlaces.js'
+import {
+  resolveServiceUrl, serviceChannelLabel, describeServiceUrl, serviceUrlBlocked,
+} from '../src/lib/tourismPlaces.js'
 
 const at = (online_url, phone = null) => resolveServiceUrl({ online_url, phone })
 
@@ -102,6 +104,46 @@ for (const svc of ['order', 'book', 'line', 'website']) {
   for (const kind of ['phone', 'line']) {
     assert.ok(lb(svc, kind, { short: true }).length <= 9, `ป้ายสั้นต้องไม่ยาวเกิน: ${svc}/${kind}`)
   }
+}
+
+// ── คำเตือนในฟอร์ม (describeServiceUrl) ──
+const ds = describeServiceUrl
+assert.equal(ds('').status, 'empty')
+assert.equal(ds('   ').status, 'empty')
+assert.equal(ds(null).status, 'empty')
+
+// ค่าที่ใช้ได้ — ต้อง preview ลิงก์จริงให้คนกรอกเห็น
+assert.deepEqual(ds('0983819257'), { status: 'ok', href: 'tel:0983819257', kind: 'phone' })
+assert.deepEqual(ds('ld.0876084038'),
+  { status: 'ok', href: 'https://line.me/R/ti/p/~ld.0876084038', kind: 'line' })
+assert.equal(ds('www.facebook.com/x').status, 'ok')
+assert.equal(ds('https://shopee.co.th/x').kind, 'web')
+
+// อ่านไม่ออก — เตือนเฉยๆ ต้องบันทึกได้
+assert.equal(ds('ทักไลน์ได้เลยครับ').status, 'unknown')
+assert.equal(serviceUrlBlocked('ทักไลน์ได้เลยครับ'), false)
+// scheme ที่ระบบไม่รองรับแต่ไม่อันตราย ก็แค่เตือน ห้ามขวางทางเจ้าหน้าที่
+assert.equal(ds('mailto:shop@example.com').status, 'unknown')
+assert.equal(serviceUrlBlocked('mailto:shop@example.com'), false)
+
+// ด่านเดียวที่บล็อกการบันทึกจริง
+for (const evil of [
+  'javascript:alert(1)',
+  'JAVASCRIPT:alert(1)',
+  '  javascript:alert(1)',
+  'java\tscript:alert(1)',
+  'java\nscript:alert(1)',
+  'data:text/html,<script>alert(1)</script>',
+  'vbscript:msgbox(1)',
+  'file:///etc/passwd',
+  'blob:https://evil.example/x',
+]) {
+  assert.equal(ds(evil).status, 'blocked', `ต้องบล็อก: ${evil}`)
+  assert.equal(serviceUrlBlocked(evil), true, `ต้องบล็อก: ${evil}`)
+}
+// ค่าปกติต้องไม่โดนบล็อก
+for (const good of ['0983819257', 'ld.0876084038', 'https://shopee.co.th/x', '', 'www.x.com']) {
+  assert.equal(serviceUrlBlocked(good), false, `ห้ามบล็อก: ${good}`)
 }
 
 console.log('✅ tourism-service-url: ผ่านทั้งหมด')

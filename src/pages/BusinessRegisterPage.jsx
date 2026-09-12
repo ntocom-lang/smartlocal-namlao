@@ -7,6 +7,8 @@ import { compressImage } from '../lib/imageUtils'
 import { uploadFile } from '../lib/driveStorage'
 import { driveFolderPath, driveMonthFolder, DRIVE_MODULES } from '../lib/driveFolders'
 import MapPicker from '../components/MapPicker'
+import ServiceUrlHint from '../components/common/ServiceUrlHint'
+import { serviceUrlBlocked } from '../lib/tourismPlaces'
 
 const BUSINESS_TYPES = [
   { value: 'shop',    label: '🛍️  ร้านค้าทั่วไป / ร้านสะดวกซื้อ' },
@@ -105,6 +107,11 @@ export default function BusinessRegisterPage() {
     if (!form.business_name.trim()) { setError('กรุณากรอกชื่อร้าน/สถานที่'); return }
     if (!geo.lat && form.service_type !== 'online_only') { setError('กรุณาปักหมุด GPS ตำแหน่งร้านก่อนส่ง — ข้อมูลนี้จะใช้แสดงบนแผนที่'); return }
     if (!tenant?.id) { setError('ไม่พบข้อมูลหน่วยงาน'); return }
+    // ด่านเดียวที่ห้ามผ่าน — ช่องนี้เปิดให้บุคคลภายนอกกรอก ค่าอันตรายที่หลุดการอนุมัติ
+    // จะกลายเป็นปุ่มรันสคริปต์บนเว็บ อปท. ทันที (stored XSS)
+    if (form.service_type !== 'offline' && serviceUrlBlocked(form.online_url)) {
+      setError('ลิงก์/ช่องทางออนไลน์ที่กรอกใช้ไม่ได้ด้วยเหตุผลด้านความปลอดภัย กรุณาใส่ลิงก์เว็บไซต์ เบอร์โทร หรือ Line ID'); return
+    }
 
     setError(null)
     setSubmitting(true)
@@ -387,6 +394,7 @@ export default function BusinessRegisterPage() {
               <input type="text" value={form.online_url} onChange={set('online_url')}
                 placeholder="ลิงก์ / Line ID / URL"
                 className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-300" />
+              <ServiceUrlHint value={form.online_url} />
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={form.has_delivery}
                   onChange={e => setForm(p => ({ ...p, has_delivery: e.target.checked }))}
