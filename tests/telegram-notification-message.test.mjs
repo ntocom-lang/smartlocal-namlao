@@ -99,7 +99,7 @@ assert.equal(
 assert.equal(documentTypeLabel('dog_vaccine', { _custom_types: [{ value: 'dog_vaccine', label: 'ขอรับวัคซีนสุนัข' }] }),
   '📋 ขอรับวัคซีนสุนัข')
 // ประเภทที่ไม่รู้จักต้องไม่ขึ้นค่าดิบให้ผู้ดูแลงง และต้องไม่ทำข้อความพัง
-assert.equal(documentTypeLabel(null, null), 'ไม่ระบุประเภท')
+assert.equal(documentTypeLabel(null, null), '📋 ไม่ระบุประเภท')
 
 // ─────────────────────────────────────────────────────────────────────────────
 // เนื้อข้อความ — ต้องตอบได้ว่า "เรื่องอะไร ที่ไหน เมื่อไร" โดยไม่ต้องเปิดระบบก่อน
@@ -112,7 +112,7 @@ const request = {
   updated_at: '2026-09-12T13:50:00Z',
   payment_verified_at: '2026-09-12T14:10:00Z',
   fee_amount: 200,
-  department: { name: 'กองช่าง' },
+  department: { name: 'กองช่าง', code: 'engineering' },
 }
 const complaint = {
   id: 'c0ffee00-1111-4222-8333-444455556666',
@@ -122,39 +122,48 @@ const complaint = {
   status: 'in_progress',
   created_at: '2026-09-12T12:32:00Z',
   updated_at: '2026-09-12T16:13:00Z',   // 23:13 น. ตามเวลาไทย
-  department: { name: 'กองช่าง' },
+  department: { name: 'กองช่าง', code: 'engineering' },
+  category_ref: { label: 'ไฟฟ้าสาธารณะ', emoji: '💡' },
 }
 
 const created = buildDocumentRequestCreatedMessage(request, null)
-assert.match(created, /^📄 <b>มีคำขอเอกสารใหม่<\/b>$/m)
-assert.match(created, /เรื่อง: 🚰 ขออนุญาตใช้น้ำประปา/)
-assert.match(created, /ส่งถึง: กองช่าง/)
+// บรรทัดแรก = แถบสีกอง + อีโมจิประเภท + หัวเรื่อง (กองช่าง = 🟦)
+assert.match(created, /^🟦 🚰 <b>มีคำขอเอกสารใหม่<\/b>$/m)
+// อีโมจิอยู่หัวข้อความแล้ว บรรทัดเรื่องต้องเป็นชื่อล้วน ไม่ซ้ำอีโมจิ
+assert.match(created, /^เรื่อง: ขออนุญาตใช้น้ำประปา$/m)
+assert.match(created, /^ส่งถึง: กองช่าง #กองช่าง$/m)
 // วันที่ต้องเป็น พ.ศ. และเวลาต้องเป็นโซนไทย ไม่ใช่ UTC (12:32Z = 19:32 น.)
 assert.match(created, /ยื่นเมื่อ: 12 ก\.ย\. 2569 19:32 น\./)
 assert.match(created, /อ้างอิง: #a1b2c3d4/)
 
 const permit = buildDocumentRequestCreatedMessage(
   { ...request, document_type: 'building_permit', fee_amount: 0 }, null,
-  '🏗️ <b>มีคำขออนุญาตก่อสร้างใหม่</b>',
+  'มีคำขออนุญาตก่อสร้างใหม่',
 )
-assert.match(permit, /^🏗️ <b>มีคำขออนุญาตก่อสร้างใหม่<\/b>$/m)
+assert.match(permit, /^🟦 🏗️ <b>มีคำขออนุญาตก่อสร้างใหม่<\/b>$/m)
 assert.equal(/ค่าธรรมเนียม/.test(permit), false, 'ค่าธรรมเนียม 0 บาทต้องไม่ขึ้นบรรทัดเปล่า')
 
 const docStatus = buildDocumentRequestStatusMessage(request, null)
+assert.match(docStatus, /^🟦 🚰 <b>อัปเดตสถานะคำขอเอกสาร<\/b>$/m)
 assert.match(docStatus, /สถานะ: <b>กำลังดำเนินการ<\/b>/)
 assert.match(docStatus, /อัปเดตเมื่อ: 12 ก\.ย\. 2569 20:50 น\./)
 
 const fee = buildFeeVerifiedMessage(request, null)
+// ข้อยกเว้นเดียว: ใบค่าธรรมเนียมใช้ 💰 ไม่ใช่อีโมจิประเภทเอกสาร เพราะสาระคือเงิน
+assert.match(fee, /^🟦 💰 <b>ตรวจสอบค่าธรรมเนียมแล้ว<\/b>$/m)
 assert.match(fee, /จำนวนเงิน: <b>200\.00 บาท<\/b>/)
 assert.match(fee, /ตรวจสอบเมื่อ: 12 ก\.ย\. 2569 21:10 น\./)
 
 const complaintNew = buildComplaintCreatedMessage(complaint)
+assert.match(complaintNew, /^🟦 💡 <b>มีคำร้องใหม่<\/b>$/m)
 assert.match(complaintNew, /เลขที่: ES-69-0030/)
-assert.match(complaintNew, /ประเภท: ไฟฟ้าสาธารณะ/)
+assert.match(complaintNew, /^ประเภท: ไฟฟ้าสาธารณะ$/m)
+assert.match(complaintNew, /^ส่งถึง: กองช่าง #กองช่าง$/m)
 assert.match(complaintNew, /สถานที่: หมู่ 3 ซอยข้างวัด/)
 assert.match(complaintNew, /แจ้งเมื่อ: 12 ก\.ย\. 2569 19:32 น\./)
 
 const complaintStatus = buildComplaintStatusMessage(complaint)
+assert.match(complaintStatus, /^🟦 💡 <b>อัปเดตสถานะคำร้อง<\/b>$/m)
 assert.match(complaintStatus, /สถานะ: <b>กำลังดำเนินการ<\/b>/)
 assert.match(complaintStatus, /อัปเดตเมื่อ: 12 ก\.ย\. 2569 23:13 น\./)
 
@@ -170,6 +179,61 @@ for (const message of [
   assert.equal(message.trim(), message)
   assert.equal(/: *$/m.test(message), false, 'ต้องไม่มีหัวข้อที่ไม่มีค่าตามหลัง')
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// แถบสีรายกอง — ผูกกับ departments.code ไม่ใช่ชื่อ (อปท. เปลี่ยนชื่อกองได้ code คงที่)
+// ─────────────────────────────────────────────────────────────────────────────
+const COLOR_BY_CODE = {
+  exec: '🟥', general: '🟩', finance: '🟨', engineering: '🟦', education: '🟪', health: '🟧',
+}
+for (const [code, square] of Object.entries(COLOR_BY_CODE)) {
+  const message = buildComplaintCreatedMessage({ ...complaint, department: { name: 'กองใดกองหนึ่ง', code } })
+  assert.ok(message.startsWith(`${square} `), `กอง code '${code}' ต้องขึ้นต้นด้วย ${square}`)
+}
+// กองที่ อปท. สร้างเอง (code ขึ้นต้น dept_) และรายการที่ยังไม่มีกอง ต้องได้สีกลาง ไม่ใช่พัง
+for (const department of [{ name: 'ตรวจสอบภายใน', code: 'dept_mrrhejo0' }, { name: 'ไม่มี code' }, null]) {
+  assert.ok(
+    buildComplaintCreatedMessage({ ...complaint, department }).startsWith('⬜ '),
+    `กองที่ไม่มีสีประจำต้องได้ ⬜: ${JSON.stringify(department)}`,
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// อีโมจิ/ชื่อหมวดคำร้อง — ต้องใช้ค่าของ อปท. นั้นจาก complaint_categories ก่อนค่าสำรองเสมอ
+// (เคสจริง: น้ำเลาตั้ง road = "ซ่อมแซมถนน" 🛣️ / ตำหนักธรรมตั้ง light = ⚡ ไม่ใช่ 💡)
+// ─────────────────────────────────────────────────────────────────────────────
+const tenantNamed = buildComplaintCreatedMessage({
+  ...complaint, category: 'road', category_ref: { label: 'ซ่อมแซมถนน', emoji: '🚧' },
+})
+assert.match(tenantNamed, /^🟦 🚧 <b>มีคำร้องใหม่<\/b>$/m)
+assert.match(tenantNamed, /^ประเภท: ซ่อมแซมถนน$/m)
+// คำร้องเก่าที่ category_id ยังว่าง (มีจริงในระบบ) ต้องตกมาที่ค่าสำรอง ไม่ใช่ขึ้นค่าดิบ
+const legacy = buildComplaintCreatedMessage({ ...complaint, category: 'tree', category_ref: null })
+assert.match(legacy, /^🟦 🌳 <b>มีคำร้องใหม่<\/b>$/m)
+assert.match(legacy, /^ประเภท: ต้นไม้\/สวนสาธารณะ$/m)
+// หมวดที่ไม่รู้จักเลย ต้องยังส่งออกได้ ไม่ใช่ข้อความพัง
+const unknownCategory = buildComplaintCreatedMessage({ ...complaint, category: 'cat_zzz', category_ref: null })
+assert.match(unknownCategory, /^🟦 📝 <b>มีคำร้องใหม่<\/b>$/m)
+assert.match(unknownCategory, /^ประเภท: cat_zzz$/m)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// แฮชแท็กชื่อกอง — Telegram ตัดแท็กทันทีที่เจออักขระที่ไม่ใช่ตัวอักษร/ตัวเลข/ขีดล่าง
+// ชื่อกองที่มีเว้นวรรค จุด หรือวงเล็บ ต้องถูกตัดอักขระพวกนั้นทิ้งก่อน ไม่ใช่ปล่อยให้แท็กขาดกลางคัน
+// ─────────────────────────────────────────────────────────────────────────────
+const hashtagOf = (name) => {
+  const line = buildComplaintCreatedMessage({ ...complaint, department: { name, code: 'general' } })
+    .split('\n').find((l) => l.startsWith('ส่งถึง: '))
+  return line?.match(/#\S+/)?.[0] ?? ''
+}
+assert.equal(hashtagOf('กองช่าง'), '#กองช่าง')
+assert.equal(hashtagOf('กองการศึกษา ศาสนาและวัฒนธรรม'), '#กองการศึกษาศาสนาและวัฒนธรรม')
+assert.equal(hashtagOf('กองช่าง (สาขา 2)'), '#กองช่างสาขา2')
+assert.equal(hashtagOf('สำนัก/ปลัด'), '#สำนักปลัด')
+// ชื่อกองที่เหลือแต่อักขระพิเศษ ต้องไม่ออกมาเป็น '#' โดดๆ
+assert.equal(
+  /#/.test(buildComplaintCreatedMessage({ ...complaint, department: { name: '- / -', code: 'general' } })),
+  false,
+)
 
 // HTML parse_mode ของ Telegram — ข้อความที่ประชาชนพิมพ์เองต้องถูก escape ไม่งั้นบอทส่งไม่ออก
 const injected = buildComplaintCreatedMessage({ ...complaint, village: '<b>x</b> & y' })
