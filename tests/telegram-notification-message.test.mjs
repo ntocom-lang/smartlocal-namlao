@@ -35,9 +35,17 @@ for (const column of FORBIDDEN_COLUMNS) {
   assert.equal(
     code.includes(column), false,
     `⚠️ PDPA: notify-telegram ห้ามแตะคอลัมน์ข้อมูลส่วนบุคคล '${column}' — ` +
-    'ข้อความที่ส่งเข้ากลุ่ม Telegram ลบย้อนหลังไม่ได้ ให้กดลิงก์เข้าไปดูในระบบตามสิทธิ์แทน',
+    'ข้อความที่ส่งเข้ากลุ่ม Telegram ลบย้อนหลังไม่ได้ ให้เข้าไปดูในระบบตามสิทธิ์แทน',
   )
 }
+
+// ห้ามมีลิงก์เข้าระบบท้ายข้อความ — เจ้าของระบบเห็นของจริงในกลุ่มแล้วสั่งถอดออก 2569-09-12
+// จะเพิ่มกลับต้องถามก่อน ไม่ใช่เพิ่มเองเพราะคิดว่ามีประโยชน์
+// (ตัดบรรทัด import ออกก่อน — ตัว import ของ Deno เองเป็น URL https)
+assert.equal(
+  /rk-networks\.com|https?:\/\//.test(code.replace(/^import .*$/gm, '')), false,
+  'ข้อความแจ้งเตือน Telegram ต้องไม่มีลิงก์เข้าระบบ — เจ้าของระบบสั่งถอดออกแล้ว',
+)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // โหลด edge function มารันใน Node: แทน import ฝั่ง Deno ด้วย stub แล้วให้ Node strip type เอง
@@ -57,7 +65,7 @@ try {
   writeFileSync(probe, `${stubbed}\nexport {\n`
     + '  buildComplaintCreatedMessage, buildComplaintStatusMessage,\n'
     + '  buildDocumentRequestCreatedMessage, buildDocumentRequestStatusMessage,\n'
-    + '  buildFeeVerifiedMessage, documentTypeLabel, staffInboxLink,\n}\n')
+    + '  buildFeeVerifiedMessage, documentTypeLabel,\n}\n')
   // BOT_TOKEN ถูกอ่านตอน import module — ต้องมี Deno.env ก่อนโหลด
   globalThis.Deno = { env: { get: () => '' } }
   mod = await import(pathToFileURL(probe).href)
@@ -68,7 +76,7 @@ try {
 const {
   buildComplaintCreatedMessage, buildComplaintStatusMessage,
   buildDocumentRequestCreatedMessage, buildDocumentRequestStatusMessage,
-  buildFeeVerifiedMessage, documentTypeLabel, staffInboxLink,
+  buildFeeVerifiedMessage, documentTypeLabel,
 } = mod
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -94,17 +102,8 @@ assert.equal(documentTypeLabel('dog_vaccine', { _custom_types: [{ value: 'dog_va
 assert.equal(documentTypeLabel(null, null), 'ไม่ระบุประเภท')
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ลิงก์กล่องงาน — slug มาจาก DB ต้องกรองก่อนต่อเป็น URL
-// ─────────────────────────────────────────────────────────────────────────────
-assert.equal(staffInboxLink('namlao'), 'https://namlao.rk-networks.com/staff')
-for (const bad of ['', null, 'bad_slug', 'a.b', 'UPPER', '-lead', 'trail-', 'evil.com/x', 'a/b']) {
-  assert.equal(staffInboxLink(bad), '', `slug ที่ใช้ไม่ได้ต้องไม่ออกลิงก์: ${JSON.stringify(bad)}`)
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // เนื้อข้อความ — ต้องตอบได้ว่า "เรื่องอะไร ที่ไหน เมื่อไร" โดยไม่ต้องเปิดระบบก่อน
 // ─────────────────────────────────────────────────────────────────────────────
-const docContext = { slug: 'namlao', feeSchedule: null }
 const request = {
   id: 'a1b2c3d4-1111-4222-8333-444455556666',
   document_type: 'water_supply_request',
@@ -126,37 +125,36 @@ const complaint = {
   department: { name: 'กองช่าง' },
 }
 
-const created = buildDocumentRequestCreatedMessage(request, docContext)
+const created = buildDocumentRequestCreatedMessage(request, null)
 assert.match(created, /^📄 <b>มีคำขอเอกสารใหม่<\/b>$/m)
 assert.match(created, /เรื่อง: 🚰 ขออนุญาตใช้น้ำประปา/)
 assert.match(created, /ส่งถึง: กองช่าง/)
 // วันที่ต้องเป็น พ.ศ. และเวลาต้องเป็นโซนไทย ไม่ใช่ UTC (12:32Z = 19:32 น.)
 assert.match(created, /ยื่นเมื่อ: 12 ก\.ย\. 2569 19:32 น\./)
 assert.match(created, /อ้างอิง: #a1b2c3d4/)
-assert.match(created, /🔗 https:\/\/namlao\.rk-networks\.com\/staff/)
 
 const permit = buildDocumentRequestCreatedMessage(
-  { ...request, document_type: 'building_permit', fee_amount: 0 }, docContext,
+  { ...request, document_type: 'building_permit', fee_amount: 0 }, null,
   '🏗️ <b>มีคำขออนุญาตก่อสร้างใหม่</b>',
 )
 assert.match(permit, /^🏗️ <b>มีคำขออนุญาตก่อสร้างใหม่<\/b>$/m)
 assert.equal(/ค่าธรรมเนียม/.test(permit), false, 'ค่าธรรมเนียม 0 บาทต้องไม่ขึ้นบรรทัดเปล่า')
 
-const docStatus = buildDocumentRequestStatusMessage(request, docContext)
+const docStatus = buildDocumentRequestStatusMessage(request, null)
 assert.match(docStatus, /สถานะ: <b>กำลังดำเนินการ<\/b>/)
 assert.match(docStatus, /อัปเดตเมื่อ: 12 ก\.ย\. 2569 20:50 น\./)
 
-const fee = buildFeeVerifiedMessage(request, docContext)
+const fee = buildFeeVerifiedMessage(request, null)
 assert.match(fee, /จำนวนเงิน: <b>200\.00 บาท<\/b>/)
 assert.match(fee, /ตรวจสอบเมื่อ: 12 ก\.ย\. 2569 21:10 น\./)
 
-const complaintNew = buildComplaintCreatedMessage(complaint, 'namlao')
+const complaintNew = buildComplaintCreatedMessage(complaint)
 assert.match(complaintNew, /เลขที่: ES-69-0030/)
 assert.match(complaintNew, /ประเภท: ไฟฟ้าสาธารณะ/)
 assert.match(complaintNew, /สถานที่: หมู่ 3 ซอยข้างวัด/)
 assert.match(complaintNew, /แจ้งเมื่อ: 12 ก\.ย\. 2569 19:32 น\./)
 
-const complaintStatus = buildComplaintStatusMessage(complaint, 'namlao')
+const complaintStatus = buildComplaintStatusMessage(complaint)
 assert.match(complaintStatus, /สถานะ: <b>กำลังดำเนินการ<\/b>/)
 assert.match(complaintStatus, /อัปเดตเมื่อ: 12 ก\.ย\. 2569 23:13 น\./)
 
@@ -164,9 +162,9 @@ assert.match(complaintStatus, /อัปเดตเมื่อ: 12 ก\.ย\. 
 // ข้อมูลไม่ครบต้องไม่ทำให้ข้อความพังหรือเหลือบรรทัดเปล่า (คำร้องเก่าก่อนมี ref_no/department_id)
 // ─────────────────────────────────────────────────────────────────────────────
 for (const message of [
-  buildComplaintCreatedMessage({ id: 'x', category: 'odor' }, null),
-  buildDocumentRequestCreatedMessage({ id: 'x' }, { slug: null, feeSchedule: null }),
-  buildDocumentRequestStatusMessage({ id: 'x' }, { slug: 'demo', feeSchedule: null }),
+  buildComplaintCreatedMessage({ id: 'x', category: 'odor' }),
+  buildDocumentRequestCreatedMessage({ id: 'x' }, null),
+  buildDocumentRequestStatusMessage({ id: 'x' }, null),
 ]) {
   assert.equal(message.includes('\n\n'), false, 'ต้องไม่มีบรรทัดว่างคั่น')
   assert.equal(message.trim(), message)
@@ -174,7 +172,7 @@ for (const message of [
 }
 
 // HTML parse_mode ของ Telegram — ข้อความที่ประชาชนพิมพ์เองต้องถูก escape ไม่งั้นบอทส่งไม่ออก
-const injected = buildComplaintCreatedMessage({ ...complaint, village: '<b>x</b> & y' }, 'demo')
+const injected = buildComplaintCreatedMessage({ ...complaint, village: '<b>x</b> & y' })
 assert.match(injected, /สถานที่: &lt;b&gt;x&lt;\/b&gt; &amp; y/)
 
 console.log('✓ telegram-notification-message: ผ่านทุกข้อ')
