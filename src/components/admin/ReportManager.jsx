@@ -116,8 +116,8 @@ function handlePrint({ view, viewLabel, total, completed, rejected, active, rate
 }
 
 // hideTitle — ซ่อนชื่อกับไอคอนในแบนเนอร์ ใช้เมื่อหน้าที่เรียกมีหัวเรื่องของตัวเองอยู่แล้ว
-// (หน้าเจ้าหน้าที่มี StaffModuleHeader) ไม่งั้นคนกดเข้ามาจะเห็นชื่อหน้า 2 ชั้นซ้อนกัน
-// ค่าปกติเป็น false เพราะหน้าแอดมินไม่มีหัวเรื่องกลาง ถ้าซ่อนด้วยจะกลายเป็นหน้าที่ไม่มีชื่อเลย
+// (ทั้งหน้าเจ้าหน้าที่และแผงควบคุมแอดมินใช้ ModuleHeader แล้ว) ไม่งั้นจะเห็นชื่อหน้า 2 ชั้นซ้อนกัน
+// ค่าปกติเป็น false เผื่อที่มีหน้าอื่นเรียกใช้โดยไม่มีหัวกลาง จะได้ไม่กลายเป็นหน้าที่ไม่มีชื่อเลย
 export default function ReportManager({ complaints, tenant, technicians = [], hideTitle = false }) {
   const now = new Date()
   const [view, setView]   = useState('month')
