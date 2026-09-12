@@ -3,7 +3,10 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, ChevronLeft, ChevronRight, MapPin, ExternalLink, Share2, Phone, X, Zap, ShoppingCart, CalendarCheck, MessageCircle, Globe, Bike, Star, Loader2, Clock, Navigation } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
-import { getOpenState, weeklyHours, directionsUrl, DAY_KEYS } from '../lib/tourismPlaces'
+import {
+  getOpenState, weeklyHours, directionsUrl, DAY_KEYS,
+  resolveServiceUrl, serviceChannelLabel,
+} from '../lib/tourismPlaces'
 
 const CAT_LABEL = {
   travel:  '🏛️ เที่ยว',
@@ -391,7 +394,16 @@ export default function TourismDetailPage() {
   const isOnline       = place.service_type === 'online' || place.service_type === 'online_only'
   const isOnlineOnly   = place.service_type === 'online_only'
   const svc = SVC[place.online_service] ?? SVC.order
-  const SvcIcon = svc.Icon
+
+  // online_url เป็นช่องข้อความอิสระ ของจริงมีทั้งเบอร์โทรและ Line ID ไม่ใช่ URL เสมอ
+  // ต้องผ่าน resolveServiceUrl ก่อนเสมอ ห้ามเอาค่าดิบยัดลง href (เคยทำให้กดปุ่มแล้วหน้าขาว)
+  const svcLink  = resolveServiceUrl(place)
+  const ctaLabel = serviceChannelLabel(place.online_service, svcLink?.kind) ?? svc.label
+  const CtaIcon  = svcLink?.kind === 'phone' ? Phone
+                 : svcLink?.kind === 'line'  ? MessageCircle
+                 : svc.Icon
+  // tel:/line: ห้ามใส่ target="_blank" — เบราว์เซอร์เดสก์ท็อปจะเปิดแท็บว่างทิ้งไว้อีกใบ
+  const ctaExternal = !!svcLink && svcLink.href.startsWith('http')
 
   const openState = getOpenState(place.opening_hours)
   const hours     = weeklyHours(place.opening_hours)
@@ -436,13 +448,14 @@ export default function TourismDetailPage() {
       </div>
 
       {/* Online CTA — prominent */}
-      {isOnline && place.online_url && (
-        <a href={place.online_url} target="_blank" rel="noopener noreferrer"
+      {isOnline && svcLink && (
+        <a href={svcLink.href}
+          {...(ctaExternal ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
           className="flex items-center justify-center gap-2 w-full py-4 rounded-2xl font-bold text-sm active:scale-[0.98] transition-transform shadow-sm border"
           style={{ backgroundColor: svc.bg, color: svc.color, borderColor: svc.border }}>
-          <SvcIcon size={18} />
-          {svc.label}
-          <ExternalLink size={13} className="opacity-60" />
+          <CtaIcon size={18} />
+          {ctaLabel}
+          {ctaExternal && <ExternalLink size={13} className="opacity-60" />}
         </a>
       )}
 

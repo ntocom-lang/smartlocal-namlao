@@ -9,7 +9,7 @@ import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import {
   TOURISM_CATS, catOf, getOpenState, parseCoords, haversineKm,
-  formatDistance, directionsUrl, matchesQuery,
+  formatDistance, directionsUrl, matchesQuery, resolveServiceUrl, serviceChannelLabel,
 } from '../lib/tourismPlaces'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -66,8 +66,20 @@ function RatingBadge({ avg, count }) {
 function ActionRow({ place }) {
   const dir = directionsUrl(place)
   const svc = SVC[place.online_service] ?? SVC.order
-  const SvcIcon = svc.Icon
   const stop = (e) => e.stopPropagation()
+
+  // ต้องแปลง online_url ก่อนใช้เสมอ ด้วยเหตุผลเดียวกับหน้ารายละเอียด (ดู resolveServiceUrl)
+  const svcLink  = resolveServiceUrl(place)
+  const ctaLabel = serviceChannelLabel(place.online_service, svcLink?.kind, { short: true }) ?? svc.label
+  const CtaIcon  = svcLink?.kind === 'phone' ? Phone
+                 : svcLink?.kind === 'line'  ? MessageCircle
+                 : svc.Icon
+  const ctaExternal = !!svcLink && svcLink.href.startsWith('http')
+
+  // ร้านที่ปุ่มบริการตกมาเป็น "โทร" จะซ้ำกับปุ่มโทรที่อยู่ข้างๆ พอดี — แสดงอันเดียวพอ
+  // ไม่งั้นการ์ดเดียวมีปุ่มโทร 2 ปุ่มติดกัน คนกดจะคิดว่าเป็นคนละเบอร์
+  const showCta = !!svcLink && !(svcLink.kind === 'phone' && place.phone
+                                 && svcLink.href === `tel:${String(place.phone).replace(/[\s\-().]/g, '')}`)
 
   return (
     <div className="flex items-stretch gap-1.5 px-2.5 pb-2.5">
@@ -85,11 +97,12 @@ function ActionRow({ place }) {
           <Navigation size={11} /> นำทาง
         </a>
       )}
-      {place.online_url && (
-        <a href={place.online_url} target="_blank" rel="noopener noreferrer" onClick={stop}
-          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-xl text-[11px] font-bold active:scale-95 transition-transform"
+      {showCta && (
+        <a href={svcLink.href} onClick={stop}
+          {...(ctaExternal ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap active:scale-95 transition-transform"
           style={{ backgroundColor: svc.bg, color: svc.color }}>
-          <SvcIcon size={11} /> {svc.label}
+          <CtaIcon size={11} /> {ctaLabel}
         </a>
       )}
     </div>
