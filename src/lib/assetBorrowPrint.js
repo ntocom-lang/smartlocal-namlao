@@ -87,11 +87,26 @@ const ROWS_PER_PAGE = 7
 // ผู้ส่งคืน ผู้รับคืน) จึงไปจบคนละตำแหน่งในทุกบรรทัด ดูเหมือนพิมพ์มั่ว
 // ต้นฉบับกระดาษเว้นเส้นยาวเท่ากันหมด คำต่อท้ายจึงเรียงตรงกันเป็นแนวเดียว
 const SIGN_LINE_W = '40mm'
+// ช่องผู้ยืมกลางใบ ต้นฉบับกระดาษเว้นเส้นยาวกว่าบล็อกสองคอลัมน์
+const BORROWER_LINE_W = '55mm'
 
-// ⚠️ วงเล็บชื่อต้องสั้นกว่าเส้นลงนามให้เห็นชัด ไม่งั้นอ่านเป็นเส้นสองเส้นซ้อนกัน
-// ไม่ใช่คำบรรยายใต้เส้น — ของเดิมใช้จุด 44-52 ตัว (~45mm) ยาวพอ ๆ กับเส้นด้านบน
-// 26 จุด ≈ 26mm เทียบกับเส้น 40mm คือสัดส่วนเดียวกับต้นฉบับ
-const NAME_BLANK = `(${'.'.repeat(26)})`
+// ⚠️ วงเล็บชื่อต้องกว้างเท่าเส้นลงนามที่อยู่เหนือมัน — เจ้าของระบบสั่ง 2569-09-12
+// รอบก่อนตั้งไว้ 26 จุด (~32mm) ให้สั้นกว่าเส้น 40mm ด้วยเหตุผลเรื่องความสวยงาม
+// แต่ใช้จริงแล้วเขียนชื่อ-สกุลลงไม่พอ (ชื่อไทยเต็มยศวัดได้ 41-50mm) ความกว้างของช่องเขียน
+// สำคัญกว่าสัดส่วน จำนวนจุดจึงคำนวณจากความกว้างแกน ไม่ใช่ค่าคงที่ตัวเดียวใช้ทุกช่อง
+// (เส้น 40mm → 35 จุด · เส้น 55mm → 49 จุด)
+//
+// ⚠️ ค่าสองตัวนี้วัดจากใบจริงที่เรนเดอร์ด้วย THSarabunPSK 14pt (2569-09-12)
+// ถ้าเปลี่ยนขนาดฟอนต์ต้องวัดใหม่ ไม่ใช่คูณเทียบเอา — เทสต์ name-blank-matches-line-width
+// จับไว้ให้แล้วว่าวงเล็บต้องกว้างเท่าเส้นภายใน ±1.5mm
+const DOT_MM = 1.11
+const PARENS_MM = 3.0
+
+/** เส้นจุดในวงเล็บสำหรับเขียนชื่อด้วยมือ กว้างเท่าเส้นลงนามที่อยู่เหนือมัน */
+function nameBlank(width) {
+  const dots = Math.max(4, Math.round((Number.parseFloat(width) - PARENS_MM) / DOT_MM))
+  return `(${'.'.repeat(dots)})`
+}
 
 /**
  * ผู้ลงนาม: ชื่อที่พิมพ์ในวงเล็บมาจากทะเบียนผู้ลงนามกลาง (document_signatories)
@@ -99,9 +114,9 @@ const NAME_BLANK = `(${'.'.repeat(26)})`
  * ทะเบียนว่างให้พิมพ์เป็นเส้นจุดไว้เขียนมือ ส่วนบรรทัดตำแหน่งตกไปใช้ชื่อตำแหน่งตามประเภท
  * หน่วยงาน (เทศบาลได้ "ปลัดเทศบาลตำบล…/นายกเทศมนตรีตำบล…" อัตโนมัติ)
  */
-function signatureName(signatory) {
+function signatureName(signatory, width = SIGN_LINE_W) {
   const name = signatory?.name?.trim()
-  return name ? `(${esc(name)})` : NAME_BLANK
+  return name ? `(${esc(name)})` : nameBlank(width)
 }
 
 /**
@@ -129,7 +144,7 @@ function signatureName(signatory) {
  * @param {string} [args.signed] ชื่อที่พิมพ์แทนลายมือชื่อ (โหมด online เท่านั้น escape มาแล้ว)
  *   มีค่า = ไม่พิมพ์เส้นจุด เพราะลงชื่อแล้ว ไม่มีที่ให้เซ็นซ้ำ
  */
-function signRow({ width = '55mm', role = '', below = [], signed = '' }) {
+function signRow({ width = BORROWER_LINE_W, role = '', below = [], signed = '' }) {
   return `<div class="sign-row">
       <span class="sign-label">ลงชื่อ</span>
       <span class="sign-axis" style="width:${width}">
@@ -439,9 +454,10 @@ ${rows}
        คำขอที่ไม่มีชื่อผู้ยื่น (เจ้าหน้าที่คีย์แทนแล้วไม่ได้กรอก) ตกไปเป็นเส้นจุดให้เขียนมือ -->
   <div class="sign-block center-row">
     ${signRow({
+      width: BORROWER_LINE_W,
       role: 'ผู้ยืม',
       signed: signedOnline && borrowerName ? esc(borrowerName) : '',
-      below: [signatureName({ name: borrowerName })],
+      below: [signatureName({ name: borrowerName }, BORROWER_LINE_W)],
     })}
     ${/* ⚠️ ไม่ใส่ชื่อหน่วยงานในบรรทัดนี้ ทั้งที่ใบน้ำประปา/ใบขยะใส่ — บรรทัดท้ายใบ (.origin)
           บอกชื่อหน่วยงานอยู่แล้ว ใส่ซ้ำทำให้ข้อความยาวจนตัด 2 บรรทัด ดันใบเป็น 271.8mm
@@ -454,11 +470,11 @@ ${rows}
   <div class="two-col gap">
     <div>
       <p class="para">- ได้รับของตามรายการข้างต้นแล้ว</p>
-      <div class="sign-indent">${signRow({ width: SIGN_LINE_W, role: 'ผู้รับของ', below: [NAME_BLANK] })}</div>
+      <div class="sign-indent">${signRow({ width: SIGN_LINE_W, role: 'ผู้รับของ', below: [nameBlank(SIGN_LINE_W)] })}</div>
     </div>
     <div>
       <p class="para">- ได้จ่ายของตามรายการข้างต้นแล้ว</p>
-      <div class="sign-indent">${signRow({ width: SIGN_LINE_W, role: 'ผู้จ่ายของ', below: [NAME_BLANK] })}</div>
+      <div class="sign-indent">${signRow({ width: SIGN_LINE_W, role: 'ผู้จ่ายของ', below: [nameBlank(SIGN_LINE_W)] })}</div>
     </div>
   </div>
 
@@ -483,11 +499,11 @@ ${rows}
     <p class="para" style="font-weight:700">- ได้รับสิ่งของตามรายการข้างต้นคืนในสภาพที่ใช้การได้เรียบร้อยและครบถ้วน</p>
     <div class="two-col gap">
       <div class="sign-indent">
-        ${signRow({ width: SIGN_LINE_W, role: 'ผู้ส่งคืน', below: [NAME_BLANK] })}
+        ${signRow({ width: SIGN_LINE_W, role: 'ผู้ส่งคืน', below: [nameBlank(SIGN_LINE_W)] })}
         <p class="para nowrap">วันที่.........เดือน..................พ.ศ.........</p>
       </div>
       <div class="sign-indent">
-        ${signRow({ width: SIGN_LINE_W, role: 'ผู้รับคืน', below: [NAME_BLANK] })}
+        ${signRow({ width: SIGN_LINE_W, role: 'ผู้รับคืน', below: [nameBlank(SIGN_LINE_W)] })}
         <p class="para nowrap">ตำแหน่ง.....................................</p>
         <p class="para nowrap">วันที่.........เดือน..................พ.ศ.........</p>
       </div>

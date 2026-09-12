@@ -190,6 +190,55 @@ const checks = [
     },
   },
   {
+    // เจ้าของระบบใช้ใบพิมพ์จริงแล้วแจ้ง 2569-09-12: วงเล็บ (........) สั้นเกินไป เขียนชื่อ-สกุล
+    // ลงไม่หมด ของเดิมตั้งไว้ 26 จุด (~32mm) ใต้เส้นลงนาม 40mm ด้วยเหตุผลเรื่องสัดส่วน
+    // ช่องเขียนต้องกว้างเท่าเส้นด้านบน — ชื่อไทยเต็มยศวัดได้ 41-50mm ยาวกว่าเส้นเสียอีก
+    // ข้อนี้กันไม่ให้จำนวนจุดหลุดจากความกว้างเส้นอีก เวลามีคนแก้ SIGN_LINE_W หรือขนาดฟอนต์
+    // (จำนวนจุดคำนวณจาก DOT_MM/PARENS_MM ที่วัดไว้ ถ้าเปลี่ยนฟอนต์ค่าพวกนี้เพี้ยนทันที)
+    name: 'name-blank-matches-line-width',
+    reason: 'วงเล็บเว้นชื่อต้องกว้างเท่าเส้นลงนามที่อยู่เหนือมัน ไม่งั้นเขียนชื่อ-สกุลลงไม่พอ',
+    async run(browser) {
+      // ทะเบียนผู้ลงนามว่าง = ทุกช่องพิมพ์เป็นเส้นจุดให้เขียนมือ รวมช่องปลัด/นายก
+      // และคำขอที่เจ้าหน้าที่คีย์แทนโดยไม่ได้กรอกชื่อผู้ยื่น ทำให้ช่องผู้ยืมเป็นวงเล็บเว้นชื่อ
+      // ด้วย — ช่องนั้นเส้นยาวกว่าช่องอื่น (55mm) จึงต้องอยู่ในการวัดด้วย
+      const page = await render(browser, {
+        header: typicalHeader(), items: items(7),
+        form: { applicant: {} }, clerk: null, mayor: null,
+      })
+      try {
+        const blanks = await page.evaluate(() => {
+          // วัดกล่องตัวอักษรจริงด้วย Range ด้วยเหตุผลเดียวกับ signature-name-centered-under-line
+          const textWidth = el => {
+            const range = document.createRange()
+            range.selectNodeContents(el)
+            const rects = [...range.getClientRects()]
+            if (!rects.length) return null
+            return Math.max(...rects.map(rect => rect.right)) - Math.min(...rects.map(rect => rect.left))
+          }
+          return [...document.querySelectorAll('.sign-row')].flatMap((row, index) => {
+            const line = row.querySelector('.sign-line')
+            if (!line) return []
+            return [...row.querySelectorAll('.sign-below')]
+              .filter(below => /^\(\.+\)$/.test(below.textContent.trim()))
+              .map(below => ({
+                block: index,
+                lineMm: line.getBoundingClientRect().width / 3.779527,
+                blankMm: textWidth(below) / 3.779527,
+              }))
+          })
+        })
+        assert.equal(blanks.length, 7,
+          `ควรเจอวงเล็บเว้นชื่อครบ 7 ช่อง (ผู้ยืม/รับของ/จ่ายของ/ปลัด/นายก/ส่งคืน/รับคืน) แต่เจอ ${blanks.length}`)
+        // เผื่อคลาดได้ราวความกว้างจุดตัวเดียว เพราะจำนวนจุดต้องปัดเป็นจำนวนเต็ม
+        const short = blanks.filter(entry => Math.abs(entry.blankMm - entry.lineMm) > 1.5)
+        assert.deepEqual(short, [],
+          `วงเล็บเว้นชื่อกว้างไม่เท่าเส้นลงนาม: ${short
+            .map(entry => `บล็อก ${entry.block} เส้น ${entry.lineMm.toFixed(1)}mm วงเล็บ ${entry.blankMm.toFixed(1)}mm`)
+            .join(', ')}`)
+      } finally { await page.close() }
+    },
+  },
+  {
     // ระยะทั้งใบมี 2 ชุด (โปร่ง/แน่น) เลือกตามน้ำหนักเนื้อหา — ดู buildAssetBorrowHtml
     // ข้อนี้กันไม่ให้ใครแก้กลับไปเป็นค่าแน่นค่าเดียวแบบเงียบ ๆ เวลาไล่บีบพื้นที่ในอนาคต
     // เทสต์ความสูงอย่างเดียวจับไม่ได้ เพราะใบที่แน่นเกินไปก็ "ผ่าน" งบ 1 หน้าเสมอ
