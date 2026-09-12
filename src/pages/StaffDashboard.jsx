@@ -149,7 +149,7 @@ const STANDALONE_GROUPS = [
       // (ที่ไล่เมนูจาก visibleGroups) หามันไม่เจอ — "เมนูใช้งานด่วน" เหลือ 2 ปุ่ม และบนมือถือที่ไม่มี
       // sidebar เหลือทางเข้าเดียวคือไอคอนเล็กๆ บน header ที่ไม่มีป้ายชื่อ
       { key: 'data-center', label: 'ศูนย์รวมข้อมูลดิจิทัล', Icon: Database, color: '#0284c7', bg: '#e0f2fe', externalUrl: '/data-center/staff' },
-      { key: 'fleet',    label: 'ยานพาหนะ/น้ำมัน',  Icon: Car,           color: '#0369a1', bg: '#e0f2fe' },
+      { key: 'fleet',    label: 'ยานพาหนะและเชื้อเพลิง',  Icon: Car,           color: '#0369a1', bg: '#e0f2fe' },
       // ไม่ได้อยู่ใน MANAGED_MODULE_KEYS จึงเปิดให้ทุก อปท. เสมอ แล้วคุมด้วย profiles.asset_role
       // อีกชั้น (แบบเดียวกับ fleet) — คนที่ไม่ได้รับสิทธิ์จะไม่เห็นเมนูนี้เลย ไม่ใช่เห็นแล้วกดไม่ได้
       // ⚠️ คีย์ยังเป็น 'borrowable-assets' ตามเดิม เปลี่ยนแค่ป้ายชื่อที่เจ้าหน้าที่เห็น —
@@ -202,7 +202,7 @@ const TECHNICIAN_MODULE_KEYS = [
   'infra',         // บันทึกงานซ่อม — งานหลักของกองช่าง
   'events',        // ปฏิทินกิจกรรม
   'data-center',   // ศูนย์ข้อมูลดิจิทัล
-  'fleet',         // ยานพาหนะ/น้ำมัน
+  'fleet',         // ยานพาหนะและเชื้อเพลิง
   'manual-staff',  // คู่มือ
 ]
 
@@ -2229,7 +2229,7 @@ export default function StaffDashboard() {
   // 'fleet' ไม่ได้ผูกกับ role หลัก แต่ผูกกับ profiles.fleet_role อีกคอลัมน์หนึ่ง เงื่อนไขต้องตรงกับ
   // hasAccess ใน FleetPage เป๊ะๆ (fleet_role ใดก็ได้ หรือเป็น admin/superadmin ของ อปท.)
   // ของเดิมกรองด้วย enabled_modules อย่างเดียว เจ้าหน้าที่ที่ไม่ได้ถูกตั้ง fleet_role จึงเห็นเมนู
-  // "ยานพาหนะ/น้ำมัน" แล้วกดไปเจอ "ไม่มีสิทธิ์เข้าใช้ระบบ" — เมนูหลอกแบบเดียวกับ defect P1 ของ
+  // "ยานพาหนะและเชื้อเพลิง" แล้วกดไปเจอ "ไม่มีสิทธิ์เข้าใช้ระบบ" — เมนูหลอกแบบเดียวกับ defect P1 ของ
   // Fleet ที่เพิ่งแก้ไป (ปุ่มจองรถโผล่ให้ fleet_viewer) และขัดกับ TEST_ROLE_MATRIX ที่ระบุว่า
   // demo-staff "ต้องไม่เห็นเมนูยานพาหนะ"
   const hasFleetAccess = Boolean(profile?.fleet_role) || role === 'admin' || role === 'superadmin'
