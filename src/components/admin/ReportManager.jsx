@@ -115,7 +115,10 @@ function handlePrint({ view, viewLabel, total, completed, rejected, active, rate
   setTimeout(() => w.print(), 500)
 }
 
-export default function ReportManager({ complaints, tenant, technicians = [] }) {
+// hideTitle — ซ่อนชื่อกับไอคอนในแบนเนอร์ ใช้เมื่อหน้าที่เรียกมีหัวเรื่องของตัวเองอยู่แล้ว
+// (หน้าเจ้าหน้าที่มี StaffModuleHeader) ไม่งั้นคนกดเข้ามาจะเห็นชื่อหน้า 2 ชั้นซ้อนกัน
+// ค่าปกติเป็น false เพราะหน้าแอดมินไม่มีหัวเรื่องกลาง ถ้าซ่อนด้วยจะกลายเป็นหน้าที่ไม่มีชื่อเลย
+export default function ReportManager({ complaints, tenant, technicians = [], hideTitle = false }) {
   const now = new Date()
   const [view, setView]   = useState('month')
   const [month, setMonth] = useState(now.getMonth())
@@ -287,18 +290,27 @@ export default function ReportManager({ complaints, tenant, technicians = [] }) 
 
   return (
     <div className="space-y-4 pb-24 md:space-y-5 md:pb-8">
-      <section className="relative overflow-hidden rounded-3xl px-5 py-5 text-white shadow-lg shadow-blue-900/10 md:px-6 md:py-6"
+      <section className={`relative overflow-hidden rounded-3xl px-5 text-white shadow-lg shadow-blue-900/10 md:px-6 ${hideTitle ? 'py-4 md:py-4' : 'py-5 md:py-6'}`}
         style={{ background: 'linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 56%, #06b6d4 135%)' }}>
         <div className="absolute -right-10 -top-14 h-40 w-40 rounded-full bg-white/10" />
         <div className="absolute -bottom-14 left-1/3 h-32 w-32 rounded-full bg-cyan-300/10" />
         <div className="relative flex items-start gap-3">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/20 bg-white/15 shadow-sm backdrop-blur">
-            <TrendingUp size={23} />
-          </span>
+          {!hideTitle && (
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/20 bg-white/15 shadow-sm backdrop-blur">
+              <TrendingUp size={23} />
+            </span>
+          )}
           <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-white/70">Staff Analytics</p>
-            <h2 className="mt-0.5 text-xl font-extrabold tracking-tight">รายงานผลการดำเนินงาน</h2>
-            <p className="mt-1 truncate text-xs text-white/75">{viewLabel} · {tenant?.name}</p>
+            {!hideTitle && (
+              <>
+                <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-white/70">Staff Analytics</p>
+                <h2 className="mt-0.5 text-xl font-extrabold tracking-tight">รายงานผลการดำเนินงาน</h2>
+              </>
+            )}
+            {/* ขอบเขตของตัวเลข (เดือน/ปี · ชื่อหน่วยงาน) — หัวเรื่องกลางไม่มีข้อมูลนี้ จึงต้องคงไว้เสมอ */}
+            <p className={hideTitle ? 'truncate text-sm font-bold text-white' : 'mt-1 truncate text-xs text-white/75'}>
+              {viewLabel} · {tenant?.name}
+            </p>
           </div>
         </div>
         <div className="relative mt-4 grid grid-cols-2 gap-2 sm:flex sm:justify-end">
