@@ -80,6 +80,19 @@ function thaiDateText(value) {
 // ออกมาหน้าตาเหมือนต้นฉบับเป๊ะ จึงต้องเติมแถวว่างให้ครบ ไม่ใช่ปล่อยตารางสั้นกุด
 const ROWS_PER_PAGE = 7
 
+// ─── ระบบช่องลงนาม (แก้ 2569-09-12 หลังเจ้าของระบบเทียบใบพิมพ์จริงกับต้นฉบับ) ──────────
+//
+// ⚠️ เส้นลงนามในบล็อกสองคอลัมน์ต้องกว้างเท่ากันทุกจุด ห้ามไล่ค่ารายจุดอีก
+// ของเดิมไล่ไว้คนละค่า (42 / 40 / 36 / 34mm) คำต่อท้าย (ผู้รับของ ผู้จ่ายของ ผู้ให้ยืม
+// ผู้ส่งคืน ผู้รับคืน) จึงไปจบคนละตำแหน่งในทุกบรรทัด ดูเหมือนพิมพ์มั่ว
+// ต้นฉบับกระดาษเว้นเส้นยาวเท่ากันหมด คำต่อท้ายจึงเรียงตรงกันเป็นแนวเดียว
+const SIGN_LINE_W = '40mm'
+
+// ⚠️ วงเล็บชื่อต้องสั้นกว่าเส้นลงนามให้เห็นชัด ไม่งั้นอ่านเป็นเส้นสองเส้นซ้อนกัน
+// ไม่ใช่คำบรรยายใต้เส้น — ของเดิมใช้จุด 44-52 ตัว (~45mm) ยาวพอ ๆ กับเส้นด้านบน
+// 26 จุด ≈ 26mm เทียบกับเส้น 40mm คือสัดส่วนเดียวกับต้นฉบับ
+const NAME_BLANK = `(${'.'.repeat(26)})`
+
 /**
  * ผู้ลงนาม: ชื่อที่พิมพ์ในวงเล็บมาจากทะเบียนผู้ลงนามกลาง (document_signatories)
  * ⚠️ ห้าม hardcode ชื่อจาก PDF ต้นฉบับเด็ดขาด — ชื่อในไฟล์ต้นฉบับเป็นของ อบต. หนึ่งเท่านั้น
@@ -88,7 +101,7 @@ const ROWS_PER_PAGE = 7
  */
 function signatureName(signatory) {
   const name = signatory?.name?.trim()
-  return name ? `(${esc(name)})` : '(..................................................)'
+  return name ? `(${esc(name)})` : NAME_BLANK
 }
 
 /**
@@ -356,6 +369,11 @@ ${GOV_FONT_LINK}
   .signed-note { margin: 1mm 0 0; font-size: 10pt; color: #333; line-height: 1.2; text-align: center; }
   /* .sign-row เป็น flex จึงจัดกลางหน้าด้วย text-align ของพ่อไม่ได้ ต้อง justify-content */
   .center-row .sign-row { justify-content: center; }
+  /* ต้นฉบับย่อหน้าช่องลงนามเข้าไปจากขอบบล็อก ไม่ได้ชิดซ้ายสุด — บรรทัดหัวข้อ ("- ได้รับของ…"
+     "- ความเห็นปลัด…") ชิดซ้าย ส่วนช่องลงนามกับบรรทัดตำแหน่ง/วันที่ใต้มันย่อหน้าเข้ามาเป็นชุดเดียว
+     ⚠️ ต้องครอบทั้ง .sign-row และ <p> ที่ตามมา ไม่ใช่ใส่ที่ .sign-row อย่างเดียว
+     ไม่งั้นบรรทัด "ตำแหน่ง…/วันที่…" จะไปชิดซ้ายคนละแนวกับเส้นลงนามที่มันสังกัด */
+  .sign-indent { padding-left: 6mm; }
   .two-col { display: flex; gap: 8mm; break-inside: avoid; page-break-inside: avoid; }
   .two-col > div { flex: 1 1 0; min-width: 0; }
   .center { text-align: center; }
@@ -428,11 +446,11 @@ ${rows}
   <div class="two-col gap">
     <div>
       <p class="para">- ได้รับของตามรายการข้างต้นแล้ว</p>
-      ${signRow({ width: '42mm', role: 'ผู้รับของ', below: ['(........................................................)'] })}
+      <div class="sign-indent">${signRow({ width: SIGN_LINE_W, role: 'ผู้รับของ', below: [NAME_BLANK] })}</div>
     </div>
     <div>
       <p class="para">- ได้จ่ายของตามรายการข้างต้นแล้ว</p>
-      ${signRow({ width: '42mm', role: 'ผู้จ่ายของ', below: ['(.......................................................)'] })}
+      <div class="sign-indent">${signRow({ width: SIGN_LINE_W, role: 'ผู้จ่ายของ', below: [NAME_BLANK] })}</div>
     </div>
   </div>
 
@@ -442,12 +460,12 @@ ${rows}
     <div>
       <p class="para">- ความเห็น${esc(shortRoleTitle('clerk', tenant))}</p>
       <p class="para" style="font-weight:700">ควรอนุมัติให้ยืมได้</p>
-      ${signRow({ width: '40mm', below: [signatureName(clerk), esc(clerkTitle)] })}
+      <div class="sign-indent">${signRow({ width: SIGN_LINE_W, below: [signatureName(clerk), esc(clerkTitle)] })}</div>
     </div>
     <div>
       <p class="para">- ความเห็น${esc(shortRoleTitle('mayor', tenant))}</p>
       <p class="para" style="font-weight:700">อนุมัติ</p>
-      ${signRow({ width: '36mm', role: 'ผู้ให้ยืม', below: [signatureName(mayor), esc(mayorTitle)] })}
+      <div class="sign-indent">${signRow({ width: SIGN_LINE_W, role: 'ผู้ให้ยืม', below: [signatureName(mayor), esc(mayorTitle)] })}</div>
     </div>
   </div>
 
@@ -456,12 +474,12 @@ ${rows}
   <div class="sign-block">
     <p class="para" style="font-weight:700">- ได้รับสิ่งของตามรายการข้างต้นคืนในสภาพที่ใช้การได้เรียบร้อยและครบถ้วน</p>
     <div class="two-col gap">
-      <div>
-        ${signRow({ width: '34mm', role: 'ผู้ส่งคืน', below: ['(............................................)'] })}
+      <div class="sign-indent">
+        ${signRow({ width: SIGN_LINE_W, role: 'ผู้ส่งคืน', below: [NAME_BLANK] })}
         <p class="para nowrap">วันที่.........เดือน..................พ.ศ.........</p>
       </div>
-      <div>
-        ${signRow({ width: '34mm', role: 'ผู้รับคืน', below: ['(............................................)'] })}
+      <div class="sign-indent">
+        ${signRow({ width: SIGN_LINE_W, role: 'ผู้รับคืน', below: [NAME_BLANK] })}
         <p class="para nowrap">ตำแหน่ง.....................................</p>
         <p class="para nowrap">วันที่.........เดือน..................พ.ศ.........</p>
       </div>

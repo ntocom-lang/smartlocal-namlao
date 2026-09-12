@@ -156,11 +156,45 @@ const checks = [
     },
   },
   {
-    // ระยะทั้งใบมี 3 ชุด (airy/medium/compact) เลือกตามน้ำหนักเนื้อหา — ดู buildAssetBorrowHtml
+    // เจ้าของระบบเทียบใบพิมพ์จริงกับต้นฉบับ 2569-09-12: ของเดิมไล่ความกว้างเส้นลงนามรายจุด
+    // (42 / 40 / 36 / 34mm) คำต่อท้ายจึงไปจบคนละตำแหน่งทุกบรรทัด
+    // ต้นฉบับกระดาษเว้นเส้นยาวเท่ากันหมด คำต่อท้ายจึงเรียงตรงกันเป็นแนวเดียว
+    name: 'signature-lines-aligned',
+    reason: 'เส้นลงนามในบล็อกสองคอลัมน์ต้องกว้างเท่ากันทุกจุด และคำต่อท้ายในคอลัมน์เดียวกันต้องอยู่แนวเดียวกัน',
+    async run(browser) {
+      const page = await render(browser, { header: typicalHeader(), items: items(7) })
+      try {
+        const rows = await page.evaluate(() => [...document.querySelectorAll('.sign-indent .sign-row')]
+          .map(row => ({
+            width: Math.round(row.querySelector('.sign-line, .sign-signed').getBoundingClientRect().width),
+            roleLeft: row.querySelector('.sign-role')
+              ? Math.round(row.querySelector('.sign-role').getBoundingClientRect().left) : null,
+            blockLeft: Math.round(row.getBoundingClientRect().left),
+          })))
+        assert.ok(rows.length >= 6,
+          `ควรเจอช่องลงนามในบล็อกสองคอลัมน์อย่างน้อย 6 จุด แต่เจอ ${rows.length}`)
+        const widths = [...new Set(rows.map(row => row.width))]
+        assert.equal(widths.length, 1,
+          `เส้นลงนามกว้างไม่เท่ากัน (${widths.join(', ')}px) — ห้ามไล่ความกว้างรายจุด ใช้ SIGN_LINE_W ค่าเดียว`)
+        // จัดกลุ่มตามคอลัมน์ (ซ้าย/ขวา) ด้วยขอบซ้ายของแถว แล้วเทียบตำแหน่งคำต่อท้ายในกลุ่มเดียวกัน
+        const byColumn = new Map()
+        for (const row of rows.filter(item => item.roleLeft !== null)) {
+          if (!byColumn.has(row.blockLeft)) byColumn.set(row.blockLeft, [])
+          byColumn.get(row.blockLeft).push(row.roleLeft)
+        }
+        for (const [column, lefts] of byColumn) {
+          assert.ok(Math.max(...lefts) - Math.min(...lefts) <= 1,
+            `คำต่อท้ายในคอลัมน์ที่ x=${column} เริ่มไม่ตรงแนวกัน: ${lefts.join(', ')}px`)
+        }
+      } finally { await page.close() }
+    },
+  },
+  {
+    // ระยะทั้งใบมี 2 ชุด (โปร่ง/แน่น) เลือกตามน้ำหนักเนื้อหา — ดู buildAssetBorrowHtml
     // ข้อนี้กันไม่ให้ใครแก้กลับไปเป็นค่าแน่นค่าเดียวแบบเงียบ ๆ เวลาไล่บีบพื้นที่ในอนาคต
     // เทสต์ความสูงอย่างเดียวจับไม่ได้ เพราะใบที่แน่นเกินไปก็ "ผ่าน" งบ 1 หน้าเสมอ
     name: 'spacing-tier-matches-content',
-    reason: 'ใบเนื้อหาเบาต้องได้ระยะโปร่ง ใบข้อมูลครบปกติได้ระยะกลาง ใบของชำรุดถอยมาใช้ระยะเดิม',
+    reason: 'ใบเนื้อหาเบาต้องได้ระยะโปร่ง ส่วนใบข้อความยาวและใบของชำรุดถอยมาใช้ระยะเดิม',
     async run(browser) {
       // วัดทั้งระยะบรรทัดและระยะคั่นบล็อก เพราะชุดระยะเปลี่ยนพร้อมกันทั้งสองค่า
       const spacingOf = page => page.evaluate(() => {
