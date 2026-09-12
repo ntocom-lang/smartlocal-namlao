@@ -29,7 +29,7 @@ const TABS = [
 /* ── ปุ่มเปิดคู่มือการใช้งาน (เปิดแท็บใหม่ ไม่ทับหน้าที่กำลังทำงานอยู่) ── */
 function ManualLink({ light, className = '' }) {
   return (
-    <a href="/manual-staff.html" target="_blank" rel="noopener noreferrer" title="คู่มือการใช้งานยานพาหนะ/น้ำมัน"
+    <a href="/manual-staff.html" target="_blank" rel="noopener noreferrer" title="คู่มือการใช้งานยานพาหนะและเชื้อเพลิง"
       className={`shrink-0 flex items-center justify-center rounded-xl transition-colors ${
         light ? 'bg-white/15 hover:bg-white/25 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-500'
       } ${className}`}>
@@ -85,7 +85,7 @@ function MobileGrid({ setTab, fleetInfo, depts, tenant, isSysAdmin, tabs }) {
           {tenant?.name ?? 'เทศบาล'}
         </p>
         <h1 className="text-xl font-black text-white leading-tight">
-          ระบบยานพาหนะ<br />และเชื้อเพลิง
+          ยานพาหนะและเชื้อเพลิง
         </h1>
         <div className="mt-3 flex items-center justify-between gap-3">
           <div className="inline-flex items-center gap-1.5 bg-white/10 rounded-full px-3 py-1">
@@ -252,7 +252,7 @@ export default function FleetPage({ onBack } = {}) {
       <div className="-mx-4 md:-mx-6 -mt-5">
         {/* Desktop title (สำนักงาน embed ไม่มีหัวข้อมาก่อนเลย ต่างจากโหมด standalone /fleet ที่มีอยู่แล้ว) */}
         <div className="hidden md:block bg-white px-4 md:px-6 pt-4">
-          <h1 className="text-base font-black text-gray-800">🚗 ระบบยานพาหนะและเชื้อเพลิง</h1>
+          <h1 className="text-base font-black text-gray-800">🚗 ยานพาหนะและเชื้อเพลิง</h1>
           <p className="text-[11px] text-gray-400 mb-1">
             {fleetRoleLabel(fleetInfo, isSysAdmin, true)}
             {depts.find(d => d.id === fleetInfo?.department_id)
@@ -307,7 +307,7 @@ export default function FleetPage({ onBack } = {}) {
               <ArrowLeft size={20} />
             </button>
             <div>
-              <h1 className="text-base font-black text-gray-800">🚗 ระบบยานพาหนะและเชื้อเพลิง</h1>
+              <h1 className="text-base font-black text-gray-800">🚗 ยานพาหนะและเชื้อเพลิง</h1>
               <p className="text-[11px] text-gray-400">
                 {fleetRoleLabel(fleetInfo, isSysAdmin, true)}
                 {depts.find(d => d.id === fleetInfo?.department_id)
