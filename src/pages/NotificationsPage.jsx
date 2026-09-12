@@ -141,7 +141,7 @@ export default function NotificationsPage() {
       {/* ── PC header ── */}
       <div className="hidden md:flex items-center justify-between px-8 py-4 bg-white border-b border-gray-200 shadow-sm">
         <div>
-          <h1 className="text-lg font-bold text-gray-800">{isStaffInbox ? 'งานที่ต้องทำ' : 'การแจ้งเตือน'}</h1>
+          <h1 className="text-2xl font-bold text-gray-800">{isStaffInbox ? 'งานที่ต้องทำ' : 'การแจ้งเตือน'}</h1>
           {!loading && items.length > 0 && (
             <p className="text-xs text-gray-400 mt-0.5">
               {hasUnread ? `${unreadItems.length} รายการยังไม่อ่าน` : 'อ่านทั้งหมดแล้ว'}
