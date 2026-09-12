@@ -19,7 +19,7 @@ const NAV_GROUPS = [
       { label: 'งานบริการประชาชน', href: '/doc-request', Icon: FileText },
       { label: 'ปฏิทินกิจกรรม',   href: '/events',      Icon: CalendarDays },
       { label: 'ข่าวสาร/ประกาศ',  href: '/news',        Icon: Newspaper },
-      { label: 'เที่ยว กิน พัก ชอป', href: '/tourism', Icon: MapPin },
+      { label: 'เที่ยว กิน พัก ชอป บริการ', href: '/tourism', Icon: MapPin },
       { label: 'ศูนย์ข้อมูลดิจิทัล', href: '/data-center', Icon: Database },
     ],
   },

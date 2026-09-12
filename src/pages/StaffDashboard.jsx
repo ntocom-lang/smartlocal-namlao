@@ -43,6 +43,7 @@ const ComplaintsManager = lazy(() => import('../components/admin/ComplaintsManag
 const ComplaintDetailModal = lazy(() =>
   import('../components/admin/ComplaintsManager').then(m => ({ default: m.ComplaintDetailModal })))
 const ReportManager = lazy(() => import('../components/admin/ReportManager'))
+import StaffModuleHeader from '../components/staff/StaffModuleHeader'
 const TourismManager = lazy(() => import('../components/admin/TourismManager'))
 const TourismReviewsAdmin = lazy(() => import('../components/admin/TourismManager').then(module => ({ default: module.TourismReviewsAdmin })))
 const PostsManager = lazy(() => import('../components/staff/PostsManager'))
@@ -123,17 +124,17 @@ const STANDALONE_GROUPS = [
   {
     group: 'งานบริการประชาชน',
     items: [
-      { key: 'complaints', label: 'คำร้อง',     Icon: MessageSquareWarning, color: '#ef4444', bg: '#fee2e2' },
-      { key: 'inbox',      label: 'คำขอบริการ/เอกสาร', Icon: FileText,       color: '#8b5cf6', bg: '#ede9fe' },
+      { key: 'complaints', label: 'คำร้อง',     Icon: MessageSquareWarning, color: '#ef4444', bg: '#fee2e2', desc: 'รับเรื่อง ตรวจสอบ มอบหมาย และติดตามผล' },
+      { key: 'inbox',      label: 'คำขอบริการ/เอกสาร', Icon: FileText,       color: '#8b5cf6', bg: '#ede9fe', desc: 'รับคำขอเอกสารจากประชาชน ออกเลข และติดตามสถานะ' },
     ],
   },
   {
     group: 'ประชาสัมพันธ์และท่องเที่ยว',
     items: [
-      { key: 'events',          label: 'ปฏิทินกิจกรรม',       Icon: CalendarDays, color: '#10b981', bg: '#d1fae5' },
-      { key: 'posts',           label: 'ข่าวสาร/ภาพกิจกรรม',  Icon: Images,       color: '#059669', bg: '#d1fae5' },
-      { key: 'tourism',         label: 'เที่ยว กิน พัก ชอป บริการ', Icon: Luggage,      color: '#d97706', bg: '#fef3c7' },
-      { key: 'tourism-reviews', label: 'รีวิวสถานที่',        Icon: Star,         color: '#f59e0b', bg: '#fef3c7' },
+      { key: 'events',          label: 'ปฏิทินกิจกรรม',       Icon: CalendarDays, color: '#10b981', bg: '#d1fae5', desc: 'กำหนดการและปฏิทินกิจกรรมของหน่วยงาน' },
+      { key: 'posts',           label: 'ข่าวสาร/ภาพกิจกรรม',  Icon: Images,       color: '#059669', bg: '#d1fae5', desc: 'ประกาศ ข่าวประชาสัมพันธ์ และอัลบั้มภาพ' },
+      { key: 'tourism',         label: 'เที่ยว กิน พัก ชอป บริการ', Icon: Luggage,      color: '#d97706', bg: '#fef3c7', desc: 'ที่เที่ยว ร้านอาหาร ที่พัก OTOP และร้านบริการในพื้นที่' },
+      { key: 'tourism-reviews', label: 'รีวิวสถานที่',        Icon: Star,         color: '#f59e0b', bg: '#fef3c7', desc: 'ตรวจสอบและลบรีวิวที่ไม่เหมาะสม' },
     ],
   },
   {
@@ -142,7 +143,7 @@ const STANDALONE_GROUPS = [
       // 'projects' (แผนงาน/โครงการ) กับ 'civil-report' (รายงานโครงการ) ถอดออกจากเมนูชั่วคราว
       // รอออกแบบใหม่ — คอมโพเนนต์ CivilProjectAdmin/CivilProjectReport กับ branch ที่ render
       // มันยังอยู่ครบ เอากลับมาแค่ใส่ 2 บรรทัดนี้คืน
-      { key: 'report',        label: 'รายงาน',           Icon: TrendingUp,    color: '#f59e0b', bg: '#fef3c7' },
+      { key: 'report',        label: 'รายงาน',           Icon: TrendingUp,    color: '#f59e0b', bg: '#fef3c7', desc: 'สรุปสถิติและรายงานของหน่วยงาน' },
       // externalUrl (ไม่ใช่ activeModule) เพราะศูนย์ข้อมูลเป็นหน้าแยกที่ route /data-center/staff
       // เดิมคีย์นี้ไม่มีในลิสต์เลย ถูก hardcode เป็นปุ่มใน sidebar อย่างเดียว ผลคือหน้าแดชบอร์ด
       // (ที่ไล่เมนูจาก visibleGroups) หามันไม่เจอ — "เมนูใช้งานด่วน" เหลือ 2 ปุ่ม และบนมือถือที่ไม่มี
@@ -154,7 +155,7 @@ const STANDALONE_GROUPS = [
       // ⚠️ คีย์ยังเป็น 'borrowable-assets' ตามเดิม เปลี่ยนแค่ป้ายชื่อที่เจ้าหน้าที่เห็น —
       // คีย์นี้ผูกกับ activeModule, TECHNICIAN_MODULE_KEYS และค่าใน enabled_modules ของทุก อปท.
       // เปลี่ยนคีย์เมื่อไหร่เมนูหายทั้งระบบ
-      { key: 'borrowable-assets', label: 'พัสดุ/ครุภัณฑ์', Icon: PackageOpen, color: '#0d9488', bg: '#ccfbf1' },
+      { key: 'borrowable-assets', label: 'พัสดุ/ครุภัณฑ์', Icon: PackageOpen, color: '#0d9488', bg: '#ccfbf1', desc: 'ทะเบียนพัสดุ ครุภัณฑ์ และการยืม-คืน' },
     ],
   },
   // กลุ่ม 'บุคลากร' (เมนู 'positions' ทำเนียบตำแหน่ง) ถอดออก 2026-08-31 — ซ้ำกับหน้า
@@ -177,7 +178,7 @@ const MODULE_GROUPS = [
   {
     group: 'กองช่าง',
     items: [
-      { key: 'infra', label: 'บันทึกงานซ่อม', Icon: Hammer, color: '#0891b2', bg: '#e0f2fe' },
+      { key: 'infra', label: 'บันทึกงานซ่อม', Icon: Hammer, color: '#0891b2', bg: '#e0f2fe', desc: 'ช่างปักหมุดหน้างาน · ธุรการบันทึกรายละเอียด' },
     ],
   },
   { group: 'กองการศึกษา', items: [], alwaysShow: true },
@@ -2545,6 +2546,13 @@ export default function StaffDashboard() {
                 <Loader2 size={28} className="animate-spin text-blue-500" />
               </div>
             }>
+            {/* หัวเรื่องกลางของทุกโมดูล ดึงชื่อ/ไอคอนจาก MODULES ตัวเดียวกับที่วาดเมนูซ้าย
+                ข้าม 'home' (แดชบอร์ดมีหัวทักทายของตัวเอง) และ 'fleet' (FleetPage เป็นหน้าเต็ม
+                ที่มี header ไล่สีของตัวเองอยู่แล้ว ใส่ทับจะได้หัวซ้อน 2 ชั้น) */}
+            {!['home', 'fleet'].includes(activeModule) && (() => {
+              const meta = MODULES.find(m => m.key === activeModule)
+              return meta ? <StaffModuleHeader Icon={meta.Icon} label={meta.label} desc={meta.desc} color={meta.color} /> : null
+            })()}
             {activeModule === 'home' && (
               <StaffOperationalDashboard
                 key={tenant?.id}
@@ -2567,19 +2575,8 @@ export default function StaffDashboard() {
               // เหมือนบทบาทอื่นที่ไม่ใช่ admin/superadmin
               ['admin', 'superadmin'].includes(profile?.role)
                 ? (
-                  <div className="space-y-4">
-                    <header className="flex items-center gap-3 px-1">
-                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-400 text-white shadow-md shadow-blue-500/20">
-                        <MessageSquareWarning size={21} strokeWidth={2.2} />
-                      </span>
-                      <div className="min-w-0">
-                        <p className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-blue-600">ระบบเจ้าหน้าที่</p>
-                        <h1 className="truncate text-lg font-extrabold tracking-tight text-slate-900">จัดการคำร้องประชาชน</h1>
-                        <p className="text-[11px] text-slate-500">รับเรื่อง ตรวจสอบ มอบหมาย และติดตามผล</p>
-                      </div>
-                    </header>
-                    <ComplaintsManager tenant={tenant} currentUserRole={profile?.role} openComplaintId={mapOpenComplaintId} />
-                  </div>
+                  // หัวเรื่องย้ายไปใช้ StaffModuleHeader ตัวกลางด้านบนแล้ว ไม่เขียน inline ซ้ำ
+                  <ComplaintsManager tenant={tenant} currentUserRole={profile?.role} openComplaintId={mapOpenComplaintId} />
                 )
                 : <ComplaintsStaffModule tenant={tenant} staffId={profile?.id}
                     currentUserRole={profile?.role} />

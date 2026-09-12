@@ -372,17 +372,9 @@ export default function InfraWorkAdmin({ tenant, currentUserRole, myDepartmentId
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-violet-100 flex items-center justify-center shrink-0">
-            <MapPin size={16} className="text-violet-600" />
-          </div>
-          <div>
-            <h2 className="font-bold text-gray-800">บันทึกงานซ่อม (GPS)</h2>
-            <p className="text-xs text-gray-400">ช่างปักหมุดหน้างาน · ธุรการบันทึกรายละเอียด</p>
-          </div>
-        </div>
+      {/* ชื่อหน้าย้ายไปอยู่ที่ StaffModuleHeader ตัวกลางของหน้าเจ้าหน้าที่แล้ว
+          เหลือไว้แค่ปุ่มรีเฟรช จึงชิดขวา */}
+      <div className="flex items-center justify-end">
         <button onClick={fetchWorks} disabled={loading}
           className="p-2 rounded-xl border border-gray-200 bg-white text-gray-400 hover:bg-gray-50 transition-colors disabled:opacity-50">
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />

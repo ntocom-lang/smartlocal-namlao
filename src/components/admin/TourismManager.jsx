@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Luggage, Store, Star, RefreshCw, Loader2, Plus, Camera, Pencil, Trash2, X } from 'lucide-react'
+import { Luggage, Store, RefreshCw, Loader2, Plus, Camera, Pencil, Trash2, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import ServiceUrlHint from '../common/ServiceUrlHint'
 import { compressImage } from '../../lib/imageUtils'
@@ -88,12 +88,9 @@ export function TourismReviewsAdmin({ tenant }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
+        {/* ชื่อหน้าย้ายไปอยู่ที่ StaffModuleHeader ตัวกลางแล้ว เหลือไว้แค่สถิติที่เปลี่ยนตามตัวกรอง */}
         <div className="flex-1">
-          <h2 className="font-bold text-gray-800 flex items-center gap-2">
-            <Star size={18} style={{ color: '#f59e0b' }} />
-            รีวิวสถานที่ท่องเที่ยว
-          </h2>
-          <p className="text-xs text-gray-400 mt-0.5">{reviews.length} รีวิว · คะแนนเฉลี่ย {avgRating}</p>
+          <p className="text-xs text-gray-400">{reviews.length} รีวิว · คะแนนเฉลี่ย {avgRating}</p>
         </div>
         <div className="flex items-center gap-1 flex-wrap">
           {[0,5,4,3,2,1].map(r => (
