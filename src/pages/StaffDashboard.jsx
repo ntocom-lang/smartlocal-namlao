@@ -149,7 +149,7 @@ const STANDALONE_GROUPS = [
       // (ที่ไล่เมนูจาก visibleGroups) หามันไม่เจอ — "เมนูใช้งานด่วน" เหลือ 2 ปุ่ม และบนมือถือที่ไม่มี
       // sidebar เหลือทางเข้าเดียวคือไอคอนเล็กๆ บน header ที่ไม่มีป้ายชื่อ
       { key: 'data-center', label: 'ศูนย์รวมข้อมูลดิจิทัล', Icon: Database, color: '#0284c7', bg: '#e0f2fe', externalUrl: '/data-center/staff' },
-      { key: 'fleet',    label: 'ยานพาหนะและเชื้อเพลิง',  Icon: Car,           color: '#0369a1', bg: '#e0f2fe' },
+      { key: 'fleet',    label: 'ยานพาหนะและเชื้อเพลิง',  Icon: Car,           color: '#0369a1', bg: '#e0f2fe', desc: 'ทะเบียนรถและเครื่องยนต์ การใช้รถ การเบิกเชื้อเพลิง และซ่อมบำรุง' },
       // ไม่ได้อยู่ใน MANAGED_MODULE_KEYS จึงเปิดให้ทุก อปท. เสมอ แล้วคุมด้วย profiles.asset_role
       // อีกชั้น (แบบเดียวกับ fleet) — คนที่ไม่ได้รับสิทธิ์จะไม่เห็นเมนูนี้เลย ไม่ใช่เห็นแล้วกดไม่ได้
       // ⚠️ คีย์ยังเป็น 'borrowable-assets' ตามเดิม เปลี่ยนแค่ป้ายชื่อที่เจ้าหน้าที่เห็น —
@@ -2546,9 +2546,9 @@ export default function StaffDashboard() {
               </div>
             }>
             {/* หัวเรื่องกลางของทุกโมดูล ดึงชื่อ/ไอคอนจาก MODULES ตัวเดียวกับที่วาดเมนูซ้าย
-                ข้าม 'home' (แดชบอร์ดมีหัวทักทายของตัวเอง) และ 'fleet' (FleetPage เป็นหน้าเต็ม
-                ที่มี header ไล่สีของตัวเองอยู่แล้ว ใส่ทับจะได้หัวซ้อน 2 ชั้น) */}
-            {!['home', 'fleet'].includes(activeModule) && (() => {
+                ข้ามเฉพาะ 'home' ที่แดชบอร์ดมีหัวทักทายของตัวเอง — โมดูลที่เคยมีหัวของตัวเอง
+                (fleet, คำร้อง, รายงาน) ถูกถอดหัวของมันออกแล้ว เหลือไว้เฉพาะข้อมูลที่หัวกลางไม่มี */}
+            {activeModule !== 'home' && (() => {
               const meta = MODULES.find(m => m.key === activeModule)
               return meta ? <StaffModuleHeader Icon={meta.Icon} label={meta.label} desc={meta.desc} color={meta.color} /> : null
             })()}
