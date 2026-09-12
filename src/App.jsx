@@ -6,6 +6,7 @@ import { NotificationsProvider } from './contexts/NotificationsContext'
 import Header from './components/layout/Header'
 import Footer from './components/layout/Footer'
 import ModuleGuard from './components/common/ModuleGuard'
+import NotFound from './components/common/NotFound'
 import BottomNav from './components/layout/BottomNav'
 import CitizenSidebar from './components/layout/CitizenSidebar'
 import InstallPrompt from './components/InstallPrompt'
@@ -754,6 +755,11 @@ function AppShell() {
               </SuspenseErrorBoundary>
             </RequireAuth>
           } />
+          {/* ตาข่ายรับชั้นสุดท้าย — ต้องอยู่ท้ายสุดเสมอ
+              react-router v7 เลือก route จากความเฉพาะเจาะจง ไม่ใช่ลำดับที่เขียน "*" จึงแพ้
+              ทุกเส้นข้างบนโดยอัตโนมัติ ไม่ต้องกลัวว่าจะกินเส้นอื่น และ ModuleGuard ทำงาน
+              ก่อน <Routes> อยู่แล้ว หน้าของโมดูลที่ อปท. ไม่ได้เปิดจึงยังขึ้นจอเดิมของมัน */}
+          <Route path="*" element={<NotFound />} />
           </Routes>
           </ModuleGuard>
           </Suspense>

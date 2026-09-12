@@ -43,7 +43,7 @@
     "test:shot": "node tests/screenshot-local-build.mjs",
     "test:smoke": "node tests/post-deploy-smoke.mjs",
     "test:browser": "node tests/external-browser.test.mjs",
-    "test:tourism": "node tests/tourism-hours.test.mjs",
+    "test:tourism": "node tests/tourism-hours.test.mjs && node tests/tourism-service-url.test.mjs",
     "test:fleet:form3": "node tests/fleet-form3-signatories.test.mjs && node tests/fleet-form3-layout.test.mjs",
     "test:waste-request": "node tests/waste-request-print.test.mjs",
     "test:water-supply": "node tests/water-supply-print.test.mjs && node tests/water-supply-layout.test.mjs",

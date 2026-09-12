@@ -209,3 +209,125 @@ export function matchesQuery(place, query) {
   ].filter(Boolean).join(' '))
   return hay.includes(q)
 }
+
+// ─── ปุ่มบริการออนไลน์ (สั่งซื้อ / จอง / Line / เว็บไซต์) ─────────────────────────
+//
+// คอลัมน์ online_url เป็นช่องข้อความเปล่าที่ทั้งเจ้าหน้าที่และร้านค้าพิมพ์เอง ของจริงใน DB
+// จึงไม่ใช่ URL เสมอไป — เท่าที่เจอมี "0983819257" (เบอร์โทรล้วน) กับ "ld.0876084038"
+// (Line ID) ซึ่งเดิมถูกยัดลง href ดิบๆ เบราว์เซอร์ตีเป็น relative path แล้วพาไป
+// /tourism/0983819257 ที่ไม่มี route รองรับ ผลคือ "กดปุ่มสั่งซื้อแล้วได้หน้าขาว"
+//
+// ฟังก์ชันนี้จึงเดาเจตนาจากรูปแบบข้อความแทนที่จะเชื่อว่าเป็น URL และถ้าเดาไม่ออกจริงๆ
+// ให้ตกไปใช้เบอร์โทรของร้าน ดีกว่าปล่อยปุ่มที่กดแล้วไปหน้าเปล่า
+//
+// ⚠️ ด่านความปลอดภัย: ต้องกรอง scheme ที่นี่จุดเดียว เพราะ online_url มาจากฟอร์ม
+// ลงทะเบียนร้านค้าฝั่งประชาชน (BusinessRegisterPage) ค่าอย่าง "javascript:..." หรือ
+// "data:text/html,..." ที่หลุดการอนุมัติไปจะกลายเป็นปุ่มรันสคริปต์บนเว็บ อปท. ทันที
+// allowlist เท่านั้น ห้ามเปลี่ยนเป็น blocklist
+
+const SAFE_SCHEMES = ['http:', 'https:', 'tel:', 'line:']
+
+// LINE ID ตามข้อกำหนดของ LINE: a-z 0-9 . _ - ยาว 4-20 ตัว
+const LINE_ID_RE = /^[a-z0-9._-]{4,20}$/i
+
+// โดเมนที่ไม่มี scheme เช่น "www.facebook.com/xxx" — ส่วนท้ายสุดต้องเป็นตัวอักษร 2 ตัวขึ้นไป
+// (TLD) เงื่อนไขนี้คือตัวแยก "ld.0876084038" (Line ID) ออกจากโดเมนจริง ถ้าดูแค่ว่ามีจุด
+// จะได้ https://ld.0876084038 ซึ่งพังเงียบอีกแบบหนึ่ง
+const BARE_DOMAIN_RE = /^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}(?=$|[/?#])/i
+
+// เบอร์โทรไทย: 0 นำหน้า ตามด้วยอีก 8-9 หลัก (เบอร์บ้าน 9 หลัก / มือถือ 10 หลัก)
+const TH_PHONE_RE = /^0\d{8,9}$/
+
+function digitsOnly(s) {
+  return String(s ?? '').replace(/[\s\-().]/g, '')
+}
+
+function safeUrl(raw) {
+  try {
+    const u = new URL(raw)
+    if (!SAFE_SCHEMES.includes(u.protocol)) return null
+    return u
+  } catch {
+    return null
+  }
+}
+
+// คืน { href, kind, source } หรือ null ถ้าไม่มีช่องทางไหนใช้ได้เลย
+//   kind   — 'web' | 'line' | 'phone' ใช้เลือกข้อความบนปุ่มให้ตรงกับสิ่งที่จะเกิดขึ้นจริง
+//   source — 'online_url' (ค่าที่ร้านกรอก) | 'phone' (ตกมาใช้เบอร์ร้านแทน)
+export function resolveServiceUrl(place) {
+  const raw = String(place?.online_url ?? '').trim()
+
+  const fallback = () => {
+    const tel = digitsOnly(place?.phone)
+    if (!TH_PHONE_RE.test(tel)) return null
+    return { href: `tel:${tel}`, kind: 'phone', source: 'phone' }
+  }
+
+  if (!raw) return fallback()
+
+  // 1) มี scheme มาแล้ว — ผ่าน allowlist เท่านั้น
+  if (/^[a-z][a-z0-9+.-]*:/i.test(raw)) {
+    const u = safeUrl(raw)
+    if (!u) return fallback()
+    if (u.protocol === 'tel:') return { href: u.href, kind: 'phone', source: 'online_url' }
+    if (u.protocol === 'line:' || /(^|\.)line\.me$/i.test(u.hostname)) {
+      return { href: u.href, kind: 'line', source: 'online_url' }
+    }
+    return { href: u.href, kind: 'web', source: 'online_url' }
+  }
+
+  // 2) protocol-relative "//example.com/x"
+  if (raw.startsWith('//')) {
+    const u = safeUrl(`https:${raw}`)
+    return u ? { href: u.href, kind: 'web', source: 'online_url' } : fallback()
+  }
+
+  // 3) Line Official Account — "@bannrimyom"
+  if (raw.startsWith('@') && LINE_ID_RE.test(raw.slice(1))) {
+    return { href: `https://line.me/R/ti/p/${raw}`, kind: 'line', source: 'online_url' }
+  }
+
+  // 4) เบอร์โทรล้วน — "0983819257" หรือ "098-381-9257"
+  const tel = digitsOnly(raw)
+  if (TH_PHONE_RE.test(tel)) {
+    return { href: `tel:${tel}`, kind: 'phone', source: 'online_url' }
+  }
+
+  // 5) โดเมนที่ลืมใส่ scheme — "www.facebook.com/xxx"
+  if (BARE_DOMAIN_RE.test(raw)) {
+    const u = safeUrl(`https://${raw}`)
+    if (u) return { href: u.href, kind: 'web', source: 'online_url' }
+  }
+
+  // 6) Line ID ล้วน — "ld.0876084038", "riimyom"
+  if (LINE_ID_RE.test(raw)) {
+    return { href: `https://line.me/R/ti/p/~${raw}`, kind: 'line', source: 'online_url' }
+  }
+
+  // เดาไม่ออก (เช่นข้อความไทย "ทักไลน์ได้เลย") — อย่าเดามั่ว ใช้เบอร์ร้านแทน
+  return fallback()
+}
+
+// ป้ายบนปุ่มต้องบอกสิ่งที่จะเกิดขึ้นจริงเมื่อกด ไม่ใช่เจตนาที่ร้านตั้งไว้
+// ร้าน OTOP ระดับตำบลส่วนใหญ่ตั้ง online_service = 'order' แต่กรอกเบอร์โทรหรือ Line ID
+// ไม่ใช่ลิงก์ร้านค้า ถ้าปล่อยให้ปุ่มเขียนว่า "สั่งซื้อเลย" แล้วเด้งไปหน้าโทรออก
+// คนกดจะงงว่ากดผิดปุ่มหรือเปล่า
+//
+// คืน null เมื่อ kind === 'web' เพราะกรณีนั้นป้ายเดิมของแต่ละหน้าถูกต้องอยู่แล้ว
+export function serviceChannelLabel(onlineService, kind, { short = false } = {}) {
+  if (kind === 'phone') {
+    if (onlineService === 'order') return short ? 'โทรสั่ง' : 'โทรสั่งซื้อ'
+    if (onlineService === 'book')  return short ? 'โทรจอง' : 'โทรจอง'
+    return short ? 'โทร' : 'โทรติดต่อร้าน'
+  }
+  if (kind === 'line') {
+    // การ์ดในหน้ารวมเรียง 2 คอลัมน์ ปุ่มแบ่งกัน 3 อัน เหลือที่ปุ่มละ ~55px เท่านั้น
+    // 'ทัก LINE' ตกบรรทัดเป็น 2 แถว ดันการ์ดสูงไม่เท่ากัน ไอคอนแชทหน้าคำสื่อความหมายครบอยู่แล้ว
+    if (short) return 'LINE'
+    if (onlineService === 'order') return 'สั่งซื้อทาง LINE'
+    if (onlineService === 'book')  return 'จองทาง LINE'
+    return 'ติดต่อทาง LINE'
+  }
+  return null
+}
