@@ -283,6 +283,18 @@ const checks = [
       const page = await render(browser, { header: typicalHeader(), items: items(7) })
       try {
         const offsets = await page.evaluate(() => {
+          // ⚠️ ต้องวัด "กล่องของตัวอักษรจริง" ด้วย Range ไม่ใช่ getBoundingClientRect ของ span
+          // กล่องของ span อยู่กึ่งกลางแกนเสมอ ไม่ว่าตัวอักษรข้างในจะไปกองอยู่ข้างไหนก็ตาม
+          // (2569-09-12 ตั้ง width: 0 ให้ตัวอักษรล้นออกนอกกล่อง ผลจริงคือล้นขวาข้างเดียว
+          //  เยื้อง 16-25mm ทุกบรรทัด แต่เทสต์ข้อนี้ยัง "ผ่าน" เพราะไปวัดกล่องกว้าง 0
+          //  ที่อยู่กลางแกนพอดี ของเสียจึงหลุดขึ้น production และเจ้าของระบบจับได้จากใบพิมพ์จริง)
+          const textCenter = el => {
+            const range = document.createRange()
+            range.selectNodeContents(el)
+            const rects = [...range.getClientRects()]
+            if (!rects.length) return null
+            return (Math.min(...rects.map(rect => rect.left)) + Math.max(...rects.map(rect => rect.right))) / 2
+          }
           const centerOf = el => {
             const box = el.getBoundingClientRect()
             return box.left + box.width / 2
@@ -290,7 +302,7 @@ const checks = [
           return [...document.querySelectorAll('.sign-row')].flatMap((row, index) => {
             const line = row.querySelector('.sign-line')
             return [...row.querySelectorAll('.sign-below')].map((below, order) => ({
-              block: index, order, diff: Math.abs(centerOf(line) - centerOf(below)),
+              block: index, order, diff: Math.abs(centerOf(line) - textCenter(below)),
             }))
           })
         })
