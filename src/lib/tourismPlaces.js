@@ -331,3 +331,34 @@ export function serviceChannelLabel(onlineService, kind, { short = false } = {})
   }
   return null
 }
+
+// ─── ตัวช่วยฝั่งฟอร์ม ─────────────────────────────────────────────────────────
+//
+// ช่องกรอกเขียนว่า "ลิงก์ / Line ID / URL" ซึ่งเชิญให้พิมพ์อะไรลงไปก็ได้ คนกรอกจึงไม่มีทาง
+// รู้เลยว่าค่าที่ใส่จะกลายเป็นปุ่มแบบไหน จนกว่าจะมีคนกดแล้วเจอปัญหา — ฟังก์ชันนี้มีไว้ให้
+// ฟอร์มบอกล่วงหน้าได้ว่า "ปุ่มจะพาไปที่ไหน"
+//
+// จงใจไม่บล็อกการบันทึกสำหรับค่าที่อ่านไม่ออก เพราะถ้ากติกาข้างบนพลาดเคสไหน เจ้าหน้าที่จะ
+// บันทึกร้านไม่ได้เลยและไม่รู้ว่าทำไม ปุ่มเสียหนึ่งปุ่มยังทนได้ แต่บันทึกข้อมูลไม่ได้คือ
+// ระบบใช้งานไม่ได้ ที่บล็อกจริงมีอย่างเดียวคือ scheme ที่เป็นช่องทางโจมตี ไม่ใช่การพิมพ์ผิด
+const DANGEROUS_SCHEME_RE = /^(javascript|data|vbscript|file|blob):/i
+
+export function describeServiceUrl(raw) {
+  const value = String(raw ?? '').trim()
+  if (!value) return { status: 'empty' }
+
+  // เบราว์เซอร์ตัด whitespace กับอักขระควบคุมในกลาง URL ทิ้งก่อนตีความ scheme
+  // "java<tab>script:..." จึงรันได้จริง ต้องเทียบกับค่าที่ยุบแล้วเท่านั้น
+  // ตัดด้วย charCode แทน regex เพราะ regex ที่มีอักขระควบคุมติด lint (no-control-regex)
+  const collapsed = Array.from(value).filter(ch => ch.charCodeAt(0) > 0x20).join('')
+  if (DANGEROUS_SCHEME_RE.test(collapsed)) return { status: 'blocked' }
+
+  const link = resolveServiceUrl({ online_url: value })
+  if (!link) return { status: 'unknown' }
+  return { status: 'ok', href: link.href, kind: link.kind }
+}
+
+// ด่านเดียวที่บล็อกการบันทึกจริง — ใช้ร่วมกันทั้ง 3 ฟอร์มที่มีช่อง online_url
+export function serviceUrlBlocked(raw) {
+  return describeServiceUrl(raw).status === 'blocked'
+}

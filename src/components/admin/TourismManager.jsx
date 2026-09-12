@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react'
 import { Luggage, Store, Star, RefreshCw, Loader2, Plus, Camera, Pencil, Trash2, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import ServiceUrlHint from '../common/ServiceUrlHint'
 import { compressImage } from '../../lib/imageUtils'
 import { logAction } from '../../lib/auditLog'
 import { uploadFile } from '../../lib/driveStorage'
 import { driveFolderPath, DRIVE_MODULES } from '../../lib/driveFolders'
 import BusinessRegistrationAdmin from './BusinessRegistrationAdmin'
 import OpeningHoursEditor from './OpeningHoursEditor'
-import { parseCoords, hoursToRows, rowsToHours, rowsAreValid } from '../../lib/tourismPlaces'
+import { parseCoords, hoursToRows, rowsToHours, rowsAreValid, serviceUrlBlocked } from '../../lib/tourismPlaces'
 
 const TOUR_CATS = [
   { key: 'travel',  label: 'เที่ยว', emoji: '🏛️', color: '#d97706' },
@@ -288,6 +289,10 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
     if (!form.name.trim()) return
     const invalid = validateForm()
     if (invalid) { window.alert(invalid); return }
+    // ด่านเดียวที่ห้ามผ่าน ค่าอื่นที่ระบบอ่านไม่ออกแค่เตือน ไม่บล็อก (ดู ServiceUrlHint)
+    if (form.service_type !== 'offline' && serviceUrlBlocked(form.online_url)) {
+      window.alert('ลิงก์/ช่องทางออนไลน์ที่กรอกใช้ไม่ได้ด้วยเหตุผลด้านความปลอดภัย กรุณาใส่ลิงก์เว็บไซต์ เบอร์โทร หรือ Line ID'); return
+    }
     setSaving(true)
     const onlineFields = form.service_type !== 'offline'
       ? { service_type: form.service_type, online_service: form.online_service, online_url: form.online_url.trim() || null, has_delivery: form.has_delivery }
@@ -740,6 +745,7 @@ export default function TourismManager({ tenant, currentUserRole, currentUserId,
                     </select>
                     <input value={form.online_url} onChange={e => setForm(p => ({ ...p, online_url: e.target.value }))}
                       placeholder="ลิงก์ / Line ID / URL" className={inputCls} />
+                    <ServiceUrlHint value={form.online_url} />
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input type="checkbox" checked={form.has_delivery}
                         onChange={e => setForm(p => ({ ...p, has_delivery: e.target.checked }))}
