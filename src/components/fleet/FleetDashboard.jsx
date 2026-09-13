@@ -7,6 +7,11 @@ import { fetchAllRows } from '../../lib/fetchAllRows'
 const fmt = (n) => (n ?? 0).toLocaleString('th-TH')
 const fmtB = (n) => `฿${fmt(Math.round(n ?? 0))}`
 
+// คำขอใช้รถที่ผู้ดูแลต้องจัดการ — ต้องนับ waitlisted (รอจัดสรรรถ) ด้วย เพราะคำขอใหม่ทั้งหมด
+// ถูก DB ตัดสินเป็น approved/waitlisted ทันทีที่ยื่น ถ้านับแค่ pending ป้ายเตือนจะเป็น 0 ตลอด
+// ทั้งที่มีคำขอรอจัดสรรรถค้างอยู่
+const AWAITING_ADMIN_STATUSES = ['pending', 'waitlisted']
+
 function KpiCard({ icon: Icon, label, value, sub, color }) {
   return (
     <div className="bg-white rounded-xl md:rounded-2xl p-3 md:p-4 shadow-sm border border-gray-100">
@@ -155,7 +160,7 @@ export default function FleetDashboard({ tenant, depts, isAdmin }) {
       supabase.from('fleet_budgets').select('*')
         .eq('municipality_id', tenant.id).eq('fiscal_year', fiscalYearOf(now)),
       supabase.from('fleet_trips').select('id', { count: 'exact', head: true })
-        .eq('municipality_id', tenant.id).eq('status', 'pending'),
+        .eq('municipality_id', tenant.id).in('status', AWAITING_ADMIN_STATUSES),
       fetchAllRows(() => supabase.from('fleet_fuel_records').select('total_cost, vehicle_id, fleet_vehicles(department_id)')
         .eq('municipality_id', tenant.id).gte('filled_at', from).lte('filled_at', to).order('id')),
     ]).then((results) => {
@@ -195,7 +200,7 @@ export default function FleetDashboard({ tenant, depts, isAdmin }) {
 
     const refreshPending = () =>
       supabase.from('fleet_trips').select('id', { count: 'exact', head: true })
-        .eq('municipality_id', tenant.id).eq('status', 'pending')
+        .eq('municipality_id', tenant.id).in('status', AWAITING_ADMIN_STATUSES)
         .then(({ count }) => setPendingCnt(count ?? 0))
 
     const refreshVehicles = () =>
@@ -247,7 +252,7 @@ export default function FleetDashboard({ tenant, depts, isAdmin }) {
         <div className="flex items-center gap-2 md:gap-3 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 md:px-4 md:py-3">
           <CalendarClock size={16} className="text-blue-500 shrink-0" />
           <p className="text-xs md:text-sm text-blue-700">
-            มีคำขอใช้รถรอการอนุมัติ <strong>{pendingCnt}</strong> รายการ
+            มีคำขอใช้รถรอผู้ดูแลดำเนินการ <strong>{pendingCnt}</strong> รายการ (รออนุมัติ/รอจัดสรรรถ)
           </p>
         </div>
       )}

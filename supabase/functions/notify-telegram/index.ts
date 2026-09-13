@@ -28,6 +28,7 @@ const notificationSpecs = {
   technician_in_progress: { table: 'complaints', resourceType: 'complaint', access: 'staff' },
   technician_closed: { table: 'complaints', resourceType: 'complaint', access: 'staff' },
   fleet_trip_bumped: { table: 'fleet_trips', resourceType: 'fleet_trip', access: 'staff' },
+  fleet_trip_waitlisted: { table: 'fleet_trips', resourceType: 'fleet_trip', access: 'staff' },
   fleet_fuel_created: { table: 'fleet_fuel_records', resourceType: 'fleet_fuel', access: 'staff' },
 } as const
 
@@ -431,6 +432,29 @@ function buildFleetTripBumpedMessage(trip: Record<string, unknown>) {
   ].filter(Boolean).join('\n')
 }
 
+// คำขอใช้รถที่รถคันนั้นมีคิวอยู่แล้ว — ระบบอนุมัติอัตโนมัติไม่ได้ ต้องให้ผู้ดูแลจัดสรรรถ
+// (เปลี่ยนรถ/เลื่อนเวลาแล้วอนุมัติ หรือปฏิเสธ) ถ้าไม่แจ้ง คำขอจะค้างเงียบจนถึงวันเดินทาง
+// ชื่อผู้ขอเป็นเจ้าหน้าที่ของ อปท. ไม่ใช่ประชาชน ใส่ได้ตามแนวเดียวกับ fleet_trip_bumped
+function buildFleetTripWaitlistedMessage(trip: Record<string, unknown>) {
+  const vehicle = trip.vehicle as { name?: string; license_plate?: string } | null
+  const requester = trip.requester as { full_name?: string } | null
+  const vehicleName = cleanText(vehicle?.name, 100) || 'ไม่ทราบคัน'
+  const plate = cleanText(vehicle?.license_plate, 40)
+  const departure = formatThaiDateTime(trip.planned_departure)
+  const returned = formatThaiDateTime(trip.planned_return)
+  const department = departmentName(trip)
+  return framedMessage(trip, '🚗', 'คำขอใช้รถรอจัดสรรรถ', [
+    `รถ: ${escapeHtml(vehicleName, 100)}${plate ? ` (${escapeHtml(plate, 40)})` : ''}`,
+    departure ? `ออก: ${escapeHtml(departure, 60)}` : '',
+    returned ? `กลับ: ${escapeHtml(returned, 60)}` : '',
+    trip.destination ? `ปลายทาง: ${escapeHtml(trip.destination, 200)}` : '',
+    requester?.full_name ? `ผู้ขอ: ${escapeHtml(requester.full_name, 100)}` : '',
+    department ? `กอง: ${escapeHtml(department, 80)}` : '',
+    'รถคันนี้มีคิวอยู่แล้วช่วงเวลาดังกล่าว ผู้ดูแลต้องเปลี่ยนรถหรือเวลาก่อนอนุมัติ',
+    `อ้างอิง: #${escapeHtml(shortRef(trip.id), 8)}`,
+  ])
+}
+
 // ป้ายชนิดเชื้อเพลิงต้องตรงกับ FUEL_OPTIONS ใน src/lib/fleetAssets.js — edge function
 // ไม่ได้ใช้โมดูลฝั่ง client จึงต้องคัดลอกมาไว้ที่นี่ แก้ที่ใดที่หนึ่งแล้วต้องแก้อีกฝั่ง
 const FUEL_TYPE_LABEL: Record<string, string> = {
@@ -534,6 +558,8 @@ function notificationMatchesResource(type: NotificationType, resource: Record<st
   if (type === 'technician_in_progress') return resource.status === 'in_progress'
   if (type === 'technician_closed') return resource.status === 'done' || resource.status === 'completed'
   if (type === 'fleet_trip_bumped') return resource.status === 'cancelled'
+  // สถานะนี้ตั้งโดย DB (fleet_trips_guard_overlap) เท่านั้น ห้ามส่งแจ้งเตือนตามคำบอกของ client
+  if (type === 'fleet_trip_waitlisted') return resource.status === 'waitlisted'
   return true
 }
 
@@ -626,7 +652,9 @@ serve(async (req) => {
       : spec.table === 'complaints'
         ? 'id,municipality_id,user_id,created_at,updated_at,status,category,assigned_to,ref_no,village,department:departments(name,color),category_ref:complaint_categories(label,emoji)'
         : spec.table === 'fleet_trips'
-          ? 'id,municipality_id,status,destination,reject_reason,vehicle:fleet_vehicles(name),driver:profiles!fleet_trips_driver_id_fkey(full_name)'
+          // fleet_trips มี FK ไป departments 2 เส้น (department_id กับ dept_head_department_id)
+          // embed ต้องระบุชื่อ FK ไม่งั้น PostgREST ตอบ 300 ambiguous แล้วแจ้งเตือนทุกชนิดของทริปพัง
+          ? 'id,municipality_id,status,destination,reject_reason,planned_departure,planned_return,vehicle:fleet_vehicles(name,license_plate),driver:profiles!fleet_trips_driver_id_fkey(full_name),requester:profiles!fleet_trips_requested_by_fkey(full_name),department:departments!fleet_trips_department_id_fkey(name,color)'
           : spec.table === 'fleet_fuel_records'
             ? 'id,municipality_id,created_at,filled_at,liters,price_per_liter,total_cost,odometer,full_tank,fuel_type,fuel_other_name,fuel_station,receipt_no,vehicle:fleet_vehicles(name,license_plate,meter_unit),driver:profiles!fleet_fuel_records_driver_id_fkey(full_name)'
             : 'id,municipality_id,user_id,created_at,updated_at,status,document_type,fee_amount,payment_verified_at,department:departments(name,color)'
@@ -697,6 +725,8 @@ serve(async (req) => {
           ? buildComplaintStatusMessage(resource)
           : notificationType === 'fleet_trip_bumped'
             ? buildFleetTripBumpedMessage(resource)
+            : notificationType === 'fleet_trip_waitlisted'
+            ? buildFleetTripWaitlistedMessage(resource)
             : notificationType === 'fleet_fuel_created'
               ? buildFleetFuelCreatedMessage(resource)
               : notificationType === 'document_request_created'

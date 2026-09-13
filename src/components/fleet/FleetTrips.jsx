@@ -15,6 +15,8 @@ import ResponsiveSelect from '../common/ResponsiveSelect'
 
 const STATUS_LABEL = {
   pending:     'รอการอนุมัติ',
+  // คำขอที่รถคันนั้นมีคิวอยู่แล้ว — DB ตั้งให้เอง (fleet_trips_guard_overlap) รอผู้ดูแลเปลี่ยนรถ/เวลา
+  waitlisted:  'รอจัดสรรรถ',
   approved:    'อนุมัติแล้ว',
   in_progress: 'กำลังเดินทาง',
   completed:   'เสร็จสิ้น',
@@ -23,12 +25,20 @@ const STATUS_LABEL = {
 }
 const STATUS_CLR = {
   pending:     '#f59e0b',
+  waitlisted:  '#ea580c',
   approved:    '#3b82f6',
   in_progress: '#8b5cf6',
   completed:   '#10b981',
   rejected:    '#ef4444',
   cancelled:   '#9ca3af',
 }
+
+// สถานะที่รอผู้ดูแลตัดสิน (ปุ่มอนุมัติ/ปฏิเสธ) — pending เหลือเฉพาะรายการก่อนเปิดอนุมัติอัตโนมัติ
+// คำขอใหม่ทั้งหมดถูก DB ตัดสินเป็น approved หรือ waitlisted ทันทีที่ยื่น
+const AWAITING_DECISION = ['pending', 'waitlisted']
+// ผู้ขอถอนคำขอของตัวเองได้จนกว่ารถจะออก — ต้องรวม approved เพราะคำขอที่รถว่างถูกอนุมัติทันที
+// ถ้าเหลือแค่ pending ผู้ขอจะไม่มีทางถอนคำขอของตัวเองเลย (DB อนุญาต approved → cancelled อยู่แล้ว)
+const REQUESTER_CANCELLABLE = ['pending', 'waitlisted', 'approved']
 
 const inp = 'w-full px-3 py-2.5 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent'
 const sel = inp + ' appearance-none'
@@ -63,6 +73,8 @@ const TRIP_ERROR_TH = {
   FLEET_TRIP_REQUESTER_INVALID:       'ผู้ขอใช้รถที่เลือกไม่ได้อยู่ในสังกัดนี้ หรือไม่ใช่เจ้าหน้าที่ กรุณาเลือกใหม่',
   FLEET_TRIP_PROGRESS_REQUIRES_OWNER: 'บันทึกออก/กลับได้เฉพาะผู้ขอใช้รถ ผู้ขับรถ หรือผู้ดูแลระบบยานพาหนะ',
   FLEET_TRIP_APPROVAL_REQUIRES_MANAGER: 'อนุมัติหรือปฏิเสธได้เฉพาะผู้ดูแลระบบยานพาหนะ',
+  FLEET_TRIP_INSERT_STATUS_REQUIRES_MANAGER: 'สร้างรายการที่อนุมัติแล้วได้เฉพาะผู้ดูแลระบบยานพาหนะ — คำขอปกติระบบจะตัดสินคิวให้เอง',
+  FLEET_TRIP_INVALID_STATUS_TRANSITION: 'สถานะของรายการนี้เปลี่ยนไปแล้ว กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง',
 }
 // UPDATE ที่ถูก RLS ปฏิเสธจะ "ไม่ตรงแถวใดเลย" ไม่ใช่ error — PostgREST คืน 204 และ error เป็น null
 // ถ้าไม่ดักจำนวนแถวเอง ผู้ใช้จะเห็นหน้าต่างปิดเหมือนบันทึกสำเร็จ แต่สถานะไม่ขยับ กดซ้ำกี่ครั้งก็เท่าเดิม
@@ -454,7 +466,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   const [historyPageSize, setHistoryPageSize] = useState(20)
 
   /* ── Load ── */
-  const ACTIVE_STATUSES  = ['pending', 'approved', 'in_progress']
+  // waitlisted ต้องอยู่ชุด active — ถ้าตกหล่น คำขอที่รอจัดสรรรถจะหายไปจากทั้งสองรายการ
+  // ผู้ดูแลไม่เห็นว่ามีอะไรต้องจัดการ ทั้งที่ Telegram แจ้งไปแล้ว
+  const ACTIVE_STATUSES  = ['pending', 'waitlisted', 'approved', 'in_progress']
   const HISTORY_STATUSES = ['completed', 'rejected', 'cancelled']
 
   function fetchActive() {
@@ -725,7 +739,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   }
 
   /* ── Submit reservation (สร้างใหม่ หรือแก้ไข selTrip ถ้ามี) ── */
-  async function submitReserve() {
+  // sendToWaitlist = ผู้ขอกด "ส่งให้ผู้ดูแลจัดสรรรถ" จากการ์ดคิวชน — ข้ามการเช็คคิวฝั่ง client
+  // แล้วให้ DB บันทึกเป็น waitlisted เอง ใช้กับคำขอใหม่เท่านั้น การแก้ไขรายการเดิมให้ชนคิว
+  // ยังถูก DB ปฏิเสธ (23P01) เหมือนเดิม
+  async function submitReserve({ sendToWaitlist = false } = {}) {
     if (!form.vehicle_id || !form.planned_departure || !form.planned_return
         || !form.destination || !form.destination_locality || !form.destination_province || !form.purpose)
       return alert('กรุณากรอกข้อมูลให้ครบ')
@@ -745,7 +762,9 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       return alert('เวลากลับต้องหลังเวลาออก')
     const isEdit = !!selTrip
     const excludeId = isEdit ? selTrip.id : null
-    const conflicts = await findVehicleConflicts(form.vehicle_id, form.planned_departure, form.planned_return, excludeId)
+    const conflicts = sendToWaitlist && !isEdit
+      ? []
+      : await findVehicleConflicts(form.vehicle_id, form.planned_departure, form.planned_return, excludeId)
     if (conflicts.length) {
       setConflict({
         trips: conflicts,
@@ -775,16 +794,26 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
         ? (form.order_authority_label || null)
         : null,
     }
-    const { error } = isEdit
-      ? await supabase.from('fleet_trips').update(payload).eq('id', selTrip.id)
+    // คำขอใหม่ส่งเป็น pending เสมอ แล้ว DB ตัดสินคิวให้ (fleet_trips_guard_overlap):
+    // รถว่าง → approved อัตโนมัติ · คิวชน → waitlisted — ต้องอ่านสถานะที่ DB ตัดสินกลับมา
+    // ห้ามส่ง status อื่นจาก client (DB ปฏิเสธผู้ที่ไม่ใช่ผู้ดูแลอยู่แล้ว)
+    const { data: saved, error } = isEdit
+      ? await supabase.from('fleet_trips').update(payload).eq('id', selTrip.id).select('id,status').maybeSingle()
       : await supabase.from('fleet_trips').insert({
           ...payload,
           municipality_id: tenant.id,
           created_by: user?.id,
           status: 'pending',
-        })
+        }).select('id,status').single()
     setSaving(false)
     if (error) return alert(tripErrorMessage(error))
+    if (isEdit && !saved) return alert(TRIP_NO_ROW_MSG)
+    if (!isEdit && saved?.status === 'waitlisted') {
+      notifyTelegram('fleet_trip_waitlisted', saved.id)
+      alert('รถคันนี้มีคิวอยู่แล้วช่วงเวลาดังกล่าว — ส่งคำขอให้ผู้ดูแลระบบยานพาหนะจัดสรรรถแล้ว\nสถานะ: รอจัดสรรรถ')
+    } else if (!isEdit && saved?.status === 'approved') {
+      alert('ระบบอนุมัติคิวรถให้แล้ว\nกรุณาพิมพ์ใบขออนุญาตใช้รถ (แบบ 3) ให้ผู้มีอำนาจลงนามก่อนนำรถออก')
+    }
     if (isEdit) {
       logAction({
         action: 'update', resourceType: 'fleet_trip', resourceId: selTrip.id,
@@ -973,7 +1002,11 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     const warn = selfApproved
       ? '\n\n⚠️ คำขอนี้ท่านเป็นผู้ยื่นเอง ระบบจะบันทึกไว้ว่าเป็นการอนุมัติคำขอของตนเอง'
       : ''
-    if (!confirm(`อนุมัติคำขอใช้รถ "${t.vehicle?.name}" ให้ ${t.driver?.full_name}?${warn}`)) return
+    // รอจัดสรรรถ = คิวชนตอนยื่น DB จะตรวจคิวซ้ำตอนอนุมัติ ถ้ายังชนอยู่จะไม่ยอม ต้องแก้ไขเปลี่ยนรถ/เวลาก่อน
+    const waitlistNote = t.status === 'waitlisted'
+      ? '\n\nคำขอนี้รอจัดสรรรถ — ถ้ายังไม่ได้เปลี่ยนรถหรือเวลา ระบบจะไม่ให้อนุมัติเพราะคิวยังชนอยู่'
+      : ''
+    if (!confirm(`อนุมัติคำขอใช้รถ "${t.vehicle?.name}" ให้ ${t.driver?.full_name}?${waitlistNote}${warn}`)) return
     const { error } = await supabase.from('fleet_trips').update({ status: 'approved', approved_by: user?.id, approved_at: new Date().toISOString() }).eq('id', t.id)
     if (error) return alert('อนุมัติไม่สำเร็จ: ' + tripErrorMessage(error))
     logAction({
@@ -1367,12 +1400,12 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
         <ResponsiveSelect
           value={form.requested_by ?? ''}
           onChange={pickRequester}
-          disabled={!!selTrip && selTrip.status !== 'pending'}
+          disabled={!!selTrip && !AWAITING_DECISION.includes(selTrip.status)}
           placeholder="— เลือกผู้ขอใช้รถ —"
           modalTitle="เลือกผู้ขอใช้รถ"
           searchPlaceholder="ค้นหาชื่อ, ตำแหน่ง, สังกัดกอง..."
           options={requesterItems}
-          className={!!selTrip && selTrip.status !== 'pending' ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}
+          className={!!selTrip && !AWAITING_DECISION.includes(selTrip.status) ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}
         />
       </div>
       {delegating ? (
@@ -1408,11 +1441,11 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   /* ── Trip Card (mobile) ── */
   function renderTripCard(t) {
     const clr = STATUS_CLR[t.status]
-    const canApprove = t.status === 'pending' && isAdmin
+    const canApprove = AWAITING_DECISION.includes(t.status) && isAdmin
     const canDepart  = t.status === 'approved' && (isDriver(t) || isRequester(t) || isAdmin)
     const canReturn  = t.status === 'in_progress' && (isDriver(t) || isRequester(t) || isAdmin)
     // admin มีปุ่ม "ปฏิเสธ" อยู่แล้ว จึงไม่ต้องมีปุ่มถอนซ้อนอีกปุ่ม
-    const canCancel  = t.status === 'pending' && isRequester(t) && !isAdmin
+    const canCancel  = REQUESTER_CANCELLABLE.includes(t.status) && isRequester(t) && !isAdmin
     const dist = t.distance_km ?? null
     return (
       <div key={t.id}
@@ -1427,6 +1460,12 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                   style={{ backgroundColor: clr + '18', color: clr }}>
               {STATUS_LABEL[t.status]}
             </span>
+            {t.approval_method === 'auto' && t.status === 'approved' && (
+              <span className="text-[9px] font-semibold bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full"
+                    title="รถว่าง ระบบอนุมัติคิวให้เอง — ยังต้องให้ผู้มีอำนาจลงนามแบบ 3 ก่อนออกรถ">
+                โดยระบบ
+              </span>
+            )}
             {t.planned_departure && (
               <span className="text-[9px] font-semibold bg-blue-50 text-blue-500 px-1.5 py-0.5 rounded-full">คำขอ</span>
             )}
@@ -1496,10 +1535,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   /* ── Trip Row (desktop) ── */
   function renderTripRow(t, idx) {
     const clr = STATUS_CLR[t.status]
-    const canApprove = t.status === 'pending' && isAdmin
+    const canApprove = AWAITING_DECISION.includes(t.status) && isAdmin
     const canDepart  = t.status === 'approved' && (isDriver(t) || isRequester(t) || isAdmin)
     const canReturn  = t.status === 'in_progress' && (isDriver(t) || isRequester(t) || isAdmin)
-    const canCancel  = t.status === 'pending' && isRequester(t) && !isAdmin
+    const canCancel  = REQUESTER_CANCELLABLE.includes(t.status) && isRequester(t) && !isAdmin
     // ออกเดินทางแล้วให้ยึดวันที่ออกจริงเสมอ ไม่ใช่วันที่ตามคำขอ ตารางนี้จะได้ตรงกับ trip_date
     // ที่รายงานใช้ (แถวเก่าก่อนแก้บั๊กนี้ยังไม่มี started_at จึงตกไปใช้ค่าเดิมตามลำดับเดิม)
     const dateStr = fmtDate(t.started_at || t.planned_departure || t.trip_date)
@@ -1529,6 +1568,14 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                 style={{ backgroundColor: clr + '18', color: clr }}>
             {STATUS_LABEL[t.status]}
           </span>
+          {/* แยก "ระบบกันคิวให้" ออกจาก "ผู้ดูแลกดอนุมัติ" ให้เห็นในรายการ — ใบแบบ 3 ของรายการนี้
+              จะพิมพ์ช่องอนุมัติเว้นว่างให้ผู้มีอำนาจติ๊กและลงนามเอง */}
+          {t.approval_method === 'auto' && t.status === 'approved' && (
+            <div className="mt-0.5 text-[9px] text-gray-400 whitespace-nowrap"
+                 title="รถว่าง ระบบอนุมัติคิวให้เอง — ยังต้องให้ผู้มีอำนาจลงนามแบบ 3 ก่อนออกรถ">
+              โดยระบบ
+            </div>
+          )}
         </td>
         <td className="px-3 py-2.5 text-xs">
           <div className="flex gap-1 justify-center flex-wrap">
@@ -1707,7 +1754,11 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       {modal === 'detail' && selTrip && (() => {
         const t = selTrip
         const clr = STATUS_CLR[t.status]
-        const canEdit = t.status === 'pending' && (isRequester(t) || isAdmin)
+        // ยังไม่ตัดสิน (pending/รอจัดสรรรถ) ผู้ขอแก้เองได้ — เปลี่ยนรถ/เวลาให้ไม่ชนคิวแล้วผู้ดูแลอนุมัติ
+        // อนุมัติแล้วให้เฉพาะผู้ดูแลแก้ เพราะคำขอที่รถว่างถูกอนุมัติทันที ถ้าผู้ขอแก้ได้เองหลังอนุมัติ
+        // ก็เท่ากับเปลี่ยนรถ/เวลาได้โดยไม่มีใครเห็น (DB ยังตรวจคิวชนให้ทุกครั้งที่แก้)
+        const canEdit = (AWAITING_DECISION.includes(t.status) && (isRequester(t) || isAdmin))
+          || (t.status === 'approved' && isAdmin)
         return (
           <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 p-4">
             <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl">
@@ -1784,7 +1835,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
             // ล็อกเฉพาะคำขอที่ถูกพิจารณาไปแล้ว — เอกสารที่อนุมัติแล้วต้องไม่เปลี่ยนย้อนหลัง
             // ระหว่างยัง pending ให้แก้ได้ เพราะ job_title ในโปรไฟล์หลายคนไม่เป็นปัจจุบัน
             // และกรณีรักษาราชการแทนตำแหน่งบนเอกสารต่างจากในทะเบียน
-            const positionLocked = Boolean(selTrip) && selTrip.status !== 'pending'
+            const positionLocked = Boolean(selTrip) && !AWAITING_DECISION.includes(selTrip.status)
             return (
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">ตำแหน่งผู้ขอใช้รถ *</label>
@@ -1833,6 +1884,16 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                     ))}
                   </div>
                 </div>
+              )}
+              {/* ไม่มีรถว่างที่เหมาะ หรือต้องการรถคันนี้จริง — ส่งคำขอไว้ให้ผู้ดูแลจัดสรร
+                  DB บันทึกเป็น "รอจัดสรรรถ" (ไม่กินคิว) แล้วแจ้งกลุ่ม Telegram
+                  เฉพาะคำขอใหม่ การแก้ไขรายการเดิมให้ชนคิวยังต้องเปลี่ยนรถ/เวลาเอง */}
+              {!selTrip && (
+                <button type="button" disabled={saving}
+                  onClick={() => submitReserve({ sendToWaitlist: true })}
+                  className="w-full py-2 rounded-lg bg-white border border-orange-300 text-orange-600 font-bold hover:bg-orange-50 disabled:opacity-50">
+                  ส่งคำขอให้ผู้ดูแลจัดสรรรถ
+                </button>
               )}
               {isAdmin && (showOverride ? (
                 <div className="space-y-1.5 pt-1.5 border-t border-red-100">
@@ -2046,7 +2107,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
               placeholder="เช่น เลื่อนกำหนดการประชุม / ระบุวันขอใช้รถผิด / ไปรถส่วนตัวแทน"
               className={inp} />
             <p className="text-[11px] text-gray-400 mt-1">
-              ยกเลิกได้เฉพาะคำขอที่ยังไม่ถูกพิจารณา ระบบบันทึกว่าผู้ขอใช้รถเป็นผู้ยกเลิกเอง
+              ยกเลิกได้จนกว่ารถจะออกเดินทาง ระบบบันทึกว่าผู้ขอใช้รถเป็นผู้ยกเลิกเอง
               พร้อมเหตุผล เพื่อแยกจากกรณีที่ผู้มีอำนาจปฏิเสธ
             </p>
           </div>
