@@ -1,22 +1,25 @@
 import { useState, useEffect } from 'react'
 import { Pencil, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { DEPARTMENT_COLORS, departmentColor } from '../../lib/departmentColors'
 
 const inp = 'w-full px-3 py-2.5 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent'
+
+const EMPTY_FORM = { name: '', short_name: '', color: null }
 
 // จัดการกอง/หน่วยงานกลางของเทศบาล — ใช้ร่วมกันทั้งระบบ (จัดการเจ้าหน้าที่, ยานพาหนะ, งบประมาณ ฯลฯ)
 // ดึงมาจาก DeptTab เดิมใน FleetSetup.jsx (ตาราง departments เดิมชื่อ fleet_departments)
 export default function DepartmentManager({ tenant }) {
   const [depts, setDepts] = useState([])
   const [loading, setLoading] = useState(true)
-  const [form, setForm]     = useState({ name: '', short_name: '' })
+  const [form, setForm]     = useState(EMPTY_FORM)
   const [editId, setEditId] = useState(null)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(null)
 
   useEffect(() => {
     if (!tenant?.id) return
-    supabase.from('departments').select('id, code, name, short_name')
+    supabase.from('departments').select('id, code, name, short_name, color')
       .eq('municipality_id', tenant.id).eq('is_active', true).order('sort_order')
       .then(({ data }) => setDepts(data ?? []))
       .finally(() => setLoading(false))
@@ -29,7 +32,7 @@ export default function DepartmentManager({ tenant }) {
     setSaving(true)
     if (editId) {
       const { data, error } = await supabase.from('departments')
-        .update({ name: form.name.trim(), short_name: form.short_name.trim() || null })
+        .update({ name: form.name.trim(), short_name: form.short_name.trim() || null, color: form.color })
         .eq('id', editId).select().single()
       if (!error) {
         setDepts(prev => prev.map(d => d.id === editId ? data : d))
@@ -39,14 +42,17 @@ export default function DepartmentManager({ tenant }) {
       }
     } else {
       const code = 'dept_' + Date.now().toString(36)
+      // color เป็น null ได้ = "อัตโนมัติ" — trigger departments_fill_color ใน DB เลือกสีจากชื่อกอง
+      // หรือสีแรกที่ยังว่างให้ แถวที่ .select() กลับมาจึงมีสีจริงแล้ว ไม่ต้องคำนวณซ้ำฝั่งหน้าจอ
       const { data, error } = await supabase.from('departments').insert({
         municipality_id: tenant.id, name: form.name.trim(),
         short_name: form.short_name.trim() || null, code,
         sort_order: depts.length,
+        color: form.color,
       }).select().single()
       if (!error) {
         setDepts(prev => [...prev, data])
-        setForm({ name: '', short_name: '' })
+        setForm(EMPTY_FORM)
       } else {
         alert('เพิ่มไม่สำเร็จ: ' + error.message)
       }
@@ -69,13 +75,19 @@ export default function DepartmentManager({ tenant }) {
 
   function startEdit(d) {
     setEditId(d.id)
-    setForm({ name: d.name, short_name: d.short_name ?? '' })
+    setForm({ name: d.name, short_name: d.short_name ?? '', color: d.color ?? null })
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   function cancelEdit() {
     setEditId(null)
-    setForm({ name: '', short_name: '' })
+    setForm(EMPTY_FORM)
+  }
+
+  // กองอื่นที่ใช้สีนั้นอยู่ (ไม่นับกองที่กำลังแก้) — บอกแอดมินว่าเลือกแล้วจะซ้ำกับใคร ไม่ได้ห้ามเลือก
+  // เพราะ อปท. ที่มีกองเกิน 9 กองต้องใช้สีซ้ำอยู่แล้ว
+  function usedBy(key) {
+    return depts.filter(d => d.color === key && d.id !== editId).map(d => d.name)
   }
 
   if (loading) return (
@@ -105,6 +117,42 @@ export default function DepartmentManager({ tenant }) {
               onKeyDown={e => e.key === 'Enter' && handleSave()} />
           </div>
         </div>
+        <div>
+          <label className="text-xs font-semibold text-gray-600 mb-1 block">สีประจำกอง</label>
+          <p className="text-[11px] text-gray-400 mb-2">ใช้เป็นแถบสีบน-ล่างของข้อความแจ้งเตือนในกลุ่ม Telegram ให้เจ้าหน้าที่เห็นงานของกองตัวเองได้ง่าย</p>
+          <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="สีประจำกอง">
+            {/* "อัตโนมัติ" มีเฉพาะตอนเพิ่มกอง — trigger ใน DB เลือกให้ตอน INSERT เท่านั้น
+                ตอนแก้ไขถ้าปล่อยว่างจะค้างเป็นว่างและข้อความจะได้แถบขาว จึงให้เลือกสีจริงเสมอ */}
+            {!editId && (
+              <button type="button" role="radio" aria-checked={form.color === null}
+                onClick={() => setForm(f => ({ ...f, color: null }))}
+                className={`h-9 px-3 rounded-lg text-xs font-semibold border transition-colors ${
+                  form.color === null ? 'border-gray-800 bg-gray-800 text-white' : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                }`}>
+                อัตโนมัติ
+              </button>
+            )}
+            {DEPARTMENT_COLORS.map(c => {
+              const selected = form.color === c.key
+              const others = usedBy(c.key)
+              const hint = others.length ? `${c.label} — ใช้แล้วโดย ${others.join(', ')}` : c.label
+              return (
+                <button key={c.key} type="button" role="radio" aria-checked={selected}
+                  aria-label={hint} title={hint}
+                  onClick={() => setForm(f => ({ ...f, color: c.key }))}
+                  className={`relative w-9 h-9 rounded-lg flex items-center justify-center text-lg border-2 transition-all ${
+                    selected ? 'border-gray-800 scale-110' : 'border-transparent hover:border-gray-300'
+                  }`}>
+                  <span aria-hidden="true">{c.emoji}</span>
+                  {others.length > 0 && !selected && (
+                    <span aria-hidden="true" className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-gray-400" />
+                  )}
+                </button>
+              )
+            })}
+          </div>
+          <p className="text-[10px] text-gray-400 mt-1.5">จุดเทามุมขวาบน = มีกองอื่นใช้สีนี้แล้ว (เลือกซ้ำได้)</p>
+        </div>
         <div className="flex gap-2">
           {editId && (
             <button onClick={cancelEdit}
@@ -129,11 +177,17 @@ export default function DepartmentManager({ tenant }) {
           <div key={d.id} className={`flex items-center justify-between bg-white rounded-xl border px-4 py-3 transition-colors ${
             editId === d.id ? 'border-blue-300 bg-blue-50/40' : 'border-gray-100'
           }`}>
-            <div>
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="text-lg leading-none shrink-0" title={departmentColor(d.color)?.label ?? 'ยังไม่ได้เลือกสี'}
+                aria-label={`สี${departmentColor(d.color)?.label ?? ' ยังไม่ได้เลือก'}`}>
+                {departmentColor(d.color)?.emoji ?? '⬜'}
+              </span>
+              <div className="min-w-0">
               <p className="text-sm font-semibold text-gray-800">{d.name}</p>
               {(d.short_name || d.code) && (
                 <p className="text-[10px] text-gray-400">{d.short_name ? `${d.short_name} · ` : ''}{d.code}</p>
               )}
+              </div>
             </div>
             <div className="flex gap-1">
               <button onClick={() => startEdit(d)} disabled={!!deleting}
