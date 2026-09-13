@@ -5,6 +5,7 @@ import FleetImportModal from './FleetImportModal'
 import FleetVehicleDetail from './FleetVehicleDetail'
 import FleetEmptyState from './FleetEmptyState'
 import { logAction } from '../../lib/auditLog'
+import { notifyTelegram } from '../../lib/notifyTelegram'
 import {
   ASSET_KIND_LABEL,
   ASSET_KIND_OPTIONS,
@@ -340,6 +341,12 @@ export default function FleetVehicles({ tenant, depts, isAdmin }) {
       if (!error) {
         const before = vehicles.find(v => v.id === modal.id)
         setVehicles(prev => prev.map(v => v.id === modal.id ? data : v))
+        // ระบบไม่มีใบแจ้งซ่อม — การเปลี่ยนสถานะรถคือสัญญาณเดียวว่ารถเข้าซ่อม/กลับมาใช้ได้
+        // แจ้งเฉพาะเมื่อสถานะเปลี่ยนจริง (แก้ช่องอื่นของรถที่กำลังซ่อมอยู่ต้องไม่แจ้งซ้ำ)
+        if (before && before.status !== data.status) {
+          if (data.status === 'under_repair') notifyTelegram('fleet_vehicle_repair_started', data.id)
+          else if (before.status === 'under_repair' && data.status === 'active') notifyTelegram('fleet_vehicle_repair_finished', data.id)
+        }
         logAction({
           action: 'update', resourceType: 'fleet_vehicle', resourceId: data.id,
           resourceLabel: `${data.name} (${assetIdentifier(data)})`,

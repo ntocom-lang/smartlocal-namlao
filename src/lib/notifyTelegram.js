@@ -16,6 +16,15 @@ const ALLOWED_NOTIFICATION_TYPES = new Set([
   'fleet_trip_bumped',
   'fleet_trip_waitlisted',
   'fleet_fuel_created',
+  'fleet_trip_created',
+  'fleet_trip_approved',
+  'fleet_trip_rejected',
+  'fleet_trip_cancelled',
+  'fleet_trip_departed',
+  'fleet_trip_returned',
+  'fleet_vehicle_repair_started',
+  'fleet_vehicle_repair_finished',
+  'fleet_maintenance_created',
 ])
 
 /**

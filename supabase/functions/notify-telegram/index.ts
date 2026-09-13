@@ -30,6 +30,15 @@ const notificationSpecs = {
   fleet_trip_bumped: { table: 'fleet_trips', resourceType: 'fleet_trip', access: 'staff' },
   fleet_trip_waitlisted: { table: 'fleet_trips', resourceType: 'fleet_trip', access: 'staff' },
   fleet_fuel_created: { table: 'fleet_fuel_records', resourceType: 'fleet_fuel', access: 'staff' },
+  fleet_trip_created: { table: 'fleet_trips', resourceType: 'fleet_trip', access: 'staff' },
+  fleet_trip_approved: { table: 'fleet_trips', resourceType: 'fleet_trip', access: 'staff' },
+  fleet_trip_rejected: { table: 'fleet_trips', resourceType: 'fleet_trip', access: 'staff' },
+  fleet_trip_cancelled: { table: 'fleet_trips', resourceType: 'fleet_trip', access: 'staff' },
+  fleet_trip_departed: { table: 'fleet_trips', resourceType: 'fleet_trip', access: 'staff' },
+  fleet_trip_returned: { table: 'fleet_trips', resourceType: 'fleet_trip', access: 'staff' },
+  fleet_vehicle_repair_started: { table: 'fleet_vehicles', resourceType: 'fleet_vehicle', access: 'staff' },
+  fleet_vehicle_repair_finished: { table: 'fleet_vehicles', resourceType: 'fleet_vehicle', access: 'staff' },
+  fleet_maintenance_created: { table: 'fleet_maintenance', resourceType: 'fleet_maintenance', access: 'staff' },
 } as const
 
 type NotificationType = keyof typeof notificationSpecs
@@ -423,13 +432,198 @@ function buildFleetTripBumpedMessage(trip: Record<string, unknown>) {
   const vehicleName = cleanText(vehicle?.name, 100) || 'ไม่ทราบคัน'
   const driverName = cleanText(driver?.full_name, 100) || 'ไม่ทราบชื่อ'
   const reason = cleanText(trip.reject_reason, 400) || 'ไม่ระบุเหตุผล'
-  return [
-    '🚨 <b>การจองรถถูกยกเลิกเพื่อภารกิจฉุกเฉิน</b>',
+  return framedMessage(trip, '🚨', 'การจองรถถูกยกเลิกเพื่อภารกิจฉุกเฉิน', [
     `รถ: ${escapeHtml(vehicleName, 100)}`,
     `ผู้จองเดิม: ${escapeHtml(driverName, 100)}`,
     trip.destination ? `ปลายทาง: ${escapeHtml(trip.destination, 200)}` : '',
     `${escapeHtml(reason, 400)}`,
-  ].filter(Boolean).join('\n')
+  ])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// วงจรคำขอใช้รถ — เจ้าของระบบขอให้แจ้งทุกขั้น (2569-09-13): ยื่นใหม่ / อนุมัติ / ไม่อนุมัติ /
+// ยกเลิก / ออกเดินทาง / คืนรถ ⚠️ เป็นข้อความเข้ากลุ่มเดียวกับคำร้อง น้ำเลามีราว 45 ทริป/เดือน
+// = 150–180 ข้อความ ถ้ากลุ่มรกเกินไป ทางออกคือแยกกลุ่ม Telegram ของงานรถ ไม่ใช่ตัดข้อความให้สั้นลง
+// ชื่อผู้ขอ/ผู้ขับ/ผู้อนุมัติเป็นเจ้าหน้าที่ของ อปท. ไม่ใช่ประชาชน ใส่ได้ตามแนว fleet_trip_bumped
+// สีกองใช้กองที่ขอใช้รถ (fleet_trips.department_id) ให้กองนั้นเห็นคำขอของตัวเองในกลุ่ม
+// ─────────────────────────────────────────────────────────────────────────────
+function vehicleLabel(vehicle: { name?: string; license_plate?: string } | null) {
+  const name = cleanText(vehicle?.name, 100) || 'ไม่ทราบคัน'
+  const plate = cleanText(vehicle?.license_plate, 40)
+  return `${escapeHtml(name, 100)}${plate ? ` (${escapeHtml(plate, 40)})` : ''}`
+}
+
+// อุปกรณ์บางชนิด (เครื่องตัดหญ้า เครื่องสูบน้ำ) นับเป็นชั่วโมงไม่ใช่กิโลเมตร
+// ค่าใน DB เป็น 'km'/'hour' ต้องแปลงเป็นไทยเอง เทียบเท่า meterUnitShort() ใน src/lib/fleetAssets.js
+function meterUnitLabel(vehicle: { meter_unit?: string } | null) {
+  return vehicle?.meter_unit === 'hour' ? 'ชม.' : 'กม.'
+}
+
+function tripSummaryLines(trip: Record<string, unknown>) {
+  const vehicle = trip.vehicle as { name?: string; license_plate?: string } | null
+  const driver = trip.driver as { full_name?: string } | null
+  const requester = trip.requester as { full_name?: string } | null
+  const departure = formatThaiDateTime(trip.planned_departure)
+  const returned = formatThaiDateTime(trip.planned_return)
+  const department = departmentName(trip)
+  return [
+    `รถ: ${vehicleLabel(vehicle)}`,
+    driver?.full_name ? `ผู้ขับ: ${escapeHtml(driver.full_name, 100)}` : '',
+    departure ? `ออก: ${escapeHtml(departure, 60)}` : '',
+    returned ? `กลับ: ${escapeHtml(returned, 60)}` : '',
+    trip.destination ? `ปลายทาง: ${escapeHtml(trip.destination, 200)}` : '',
+    requester?.full_name ? `ผู้ขอ: ${escapeHtml(requester.full_name, 100)}` : '',
+    department ? `กอง: ${escapeHtml(department, 80)}` : '',
+  ]
+}
+
+function tripRef(trip: Record<string, unknown>) {
+  return `อ้างอิง: #${escapeHtml(shortRef(trip.id), 8)}`
+}
+
+// คำขอใหม่ถูกส่งเป็น pending เสมอ แล้ว DB ตัดสินคิว (fleet_trips_guard_overlap):
+// รถว่าง → approved + approval_method='auto' · คิวชน → waitlisted (มีข้อความของตัวเองแล้ว)
+function buildFleetTripCreatedMessage(trip: Record<string, unknown>) {
+  const autoApproved = trip.status === 'approved' && trip.approval_method === 'auto'
+  return framedMessage(trip, autoApproved ? '✅' : '🚗', autoApproved ? 'อนุมัติคิวรถอัตโนมัติ' : 'คำขอใช้รถใหม่ รออนุมัติ', [
+    ...tripSummaryLines(trip),
+    autoApproved
+      ? 'สถานะ: <b>อนุมัติแล้ว</b> (รถว่าง ระบบให้คิวอัตโนมัติ)'
+      : 'สถานะ: <b>รออนุมัติ</b>',
+    tripRef(trip),
+  ])
+}
+
+function buildFleetTripApprovedMessage(trip: Record<string, unknown>) {
+  const approver = trip.approver as { full_name?: string } | null
+  return framedMessage(trip, '✅', 'อนุมัติคำขอใช้รถ', [
+    ...tripSummaryLines(trip),
+    approver?.full_name ? `ผู้อนุมัติ: ${escapeHtml(approver.full_name, 100)}` : '',
+    tripRef(trip),
+  ])
+}
+
+// ปฏิเสธ/ยกเลิกบังคับกรอกเหตุผลอย่างน้อย 5 ตัวอักษรที่หน้าจอ แต่ข้อมูลเก่าอาจว่าง
+// approved_by ใช้เก็บ "ผู้พิจารณา/ผู้ดำเนินการ" ทั้งอนุมัติ ปฏิเสธ และยกเลิก (ดู FleetTrips.jsx)
+function buildFleetTripRejectedMessage(trip: Record<string, unknown>) {
+  const approver = trip.approver as { full_name?: string } | null
+  const reason = cleanText(trip.reject_reason, 400)
+  return framedMessage(trip, '❌', 'ไม่อนุมัติคำขอใช้รถ', [
+    ...tripSummaryLines(trip),
+    `เหตุผล: ${reason ? escapeHtml(reason, 400) : 'ไม่ระบุ'}`,
+    approver?.full_name ? `ผู้พิจารณา: ${escapeHtml(approver.full_name, 100)}` : '',
+    tripRef(trip),
+  ])
+}
+
+function buildFleetTripCancelledMessage(trip: Record<string, unknown>) {
+  const approver = trip.approver as { full_name?: string } | null
+  const reason = cleanText(trip.reject_reason, 400)
+  return framedMessage(trip, '🚫', 'ยกเลิกคำขอใช้รถ', [
+    ...tripSummaryLines(trip),
+    `เหตุผล: ${reason ? escapeHtml(reason, 400) : 'ไม่ระบุ'}`,
+    approver?.full_name ? `ผู้ยกเลิก: ${escapeHtml(approver.full_name, 100)}` : '',
+    tripRef(trip),
+  ])
+}
+
+function buildFleetTripDepartedMessage(trip: Record<string, unknown>) {
+  const vehicle = trip.vehicle as { name?: string; license_plate?: string; meter_unit?: string } | null
+  const driver = trip.driver as { full_name?: string } | null
+  const startedAt = formatThaiDateTime(trip.started_at)
+  const plannedReturn = formatThaiDateTime(trip.planned_return)
+  const meter = formatAmount(trip.odometer_start, 0)
+  const department = departmentName(trip)
+  return framedMessage(trip, '🚙', 'รถออกเดินทาง', [
+    `รถ: ${vehicleLabel(vehicle)}`,
+    driver?.full_name ? `ผู้ขับ: ${escapeHtml(driver.full_name, 100)}` : '',
+    startedAt ? `ออกเมื่อ: ${escapeHtml(startedAt, 60)}` : '',
+    plannedReturn ? `กำหนดกลับ: ${escapeHtml(plannedReturn, 60)}` : '',
+    trip.destination ? `ปลายทาง: ${escapeHtml(trip.destination, 200)}` : '',
+    meter ? `เลขไมล์ก่อนออก: ${escapeHtml(meter, 20)} ${meterUnitLabel(vehicle)}` : '',
+    department ? `กอง: ${escapeHtml(department, 80)}` : '',
+    tripRef(trip),
+  ])
+}
+
+function buildFleetTripReturnedMessage(trip: Record<string, unknown>) {
+  const vehicle = trip.vehicle as { name?: string; license_plate?: string; meter_unit?: string } | null
+  const driver = trip.driver as { full_name?: string } | null
+  const returnedAt = formatThaiDateTime(trip.returned_at)
+  const meter = formatAmount(trip.odometer_end, 0)
+  // distance_km เป็น generated column (odometer_end - odometer_start) ว่างเมื่อไม่ได้กรอกเลขไมล์
+  const distance = trip.distance_km == null ? null : formatAmount(trip.distance_km, 0)
+  const department = departmentName(trip)
+  return framedMessage(trip, '🏁', 'คืนรถแล้ว', [
+    `รถ: ${vehicleLabel(vehicle)}`,
+    driver?.full_name ? `ผู้ขับ: ${escapeHtml(driver.full_name, 100)}` : '',
+    returnedAt ? `กลับเมื่อ: ${escapeHtml(returnedAt, 60)}` : '',
+    trip.destination ? `ปลายทาง: ${escapeHtml(trip.destination, 200)}` : '',
+    meter ? `เลขไมล์หลังกลับ: ${escapeHtml(meter, 20)} ${meterUnitLabel(vehicle)}` : '',
+    distance ? `ระยะทาง: <b>${escapeHtml(distance, 20)} ${meterUnitLabel(vehicle)}</b>` : '',
+    department ? `กอง: ${escapeHtml(department, 80)}` : '',
+    tripRef(trip),
+  ])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// รถเข้าซ่อม / ซ่อมเสร็จ — ระบบไม่มีใบแจ้งซ่อม สถานะอยู่ที่ fleet_vehicles.status ('under_repair')
+// ตั้งจากหน้าแก้ข้อมูลรถ ส่วน fleet_maintenance เป็นประวัติหลังซ่อม (ค่าใช้จ่าย/อู่) ไม่มีสถานะ
+// สีกองใช้กองเจ้าของรถ (fleet_vehicles.department_id)
+// ─────────────────────────────────────────────────────────────────────────────
+function vehicleDepartmentResource(resource: Record<string, unknown>) {
+  const vehicle = resource.vehicle as { department?: unknown } | null
+  return { ...resource, department: vehicle?.department ?? null }
+}
+
+function buildFleetVehicleRepairMessage(vehicle: Record<string, unknown>) {
+  const underRepair = vehicle.status === 'under_repair'
+  const department = departmentName(vehicle)
+  const updatedAt = formatThaiDateTime(vehicle.updated_at)
+  return framedMessage(vehicle, underRepair ? '🔧' : '✅', underRepair ? 'รถงดใช้งาน เข้าซ่อม' : 'รถกลับมาใช้งานได้', [
+    `ยานพาหนะ: ${vehicleLabel(vehicle as { name?: string; license_plate?: string })}`,
+    underRepair ? 'สถานะ: <b>กำลังซ่อม</b>' : 'สถานะ: <b>ใช้งานได้</b>',
+    // ตรงกับ vehicle_unavailable ใน fleet_trip_queue_reasons() — คำขอใหม่ของรถคันนี้ไม่ได้คิวอัตโนมัติ
+    underRepair ? 'คำขอใช้รถคันนี้ช่วงซ่อมจะรอจัดสรรรถ ไม่ได้คิวอัตโนมัติ' : '',
+    department ? `กองเจ้าของรถ: ${escapeHtml(department, 80)}` : '',
+    updatedAt ? `อัปเดตเมื่อ: ${escapeHtml(updatedAt, 60)}` : '',
+  ])
+}
+
+// ต้องตรงกับ TYPES ใน src/components/fleet/FleetMaintenance.jsx ทุกคำ (เทสต์ตรวจให้)
+const MAINTENANCE_TYPE_LABEL: Record<string, string> = {
+  routine: 'บำรุงรักษา',
+  oil_change: 'เปลี่ยนถ่ายน้ำมัน',
+  repair: 'ซ่อมแซม',
+  inspection: 'ตรวจสภาพ',
+  tire: 'ยาง',
+  battery: 'แบตเตอรี่',
+  other: 'อื่นๆ',
+}
+
+function buildFleetMaintenanceCreatedMessage(record: Record<string, unknown>) {
+  const vehicle = record.vehicle as { name?: string; license_plate?: string; meter_unit?: string } | null
+  const typeLabel = MAINTENANCE_TYPE_LABEL[String(record.maintenance_type ?? '')] ?? 'อื่นๆ'
+  const cost = formatAmount(record.cost, 2)
+  const meter = formatAmount(record.odometer, 0)
+  const nextMeter = formatAmount(record.next_service_meter, 0)
+  const serviceDate = formatThaiDate(record.service_date)
+  const nextDate = formatThaiDate(record.next_service_date)
+  const resource = vehicleDepartmentResource(record)
+  const department = departmentName(resource)
+  return framedMessage(resource, '🛠️', 'บันทึกซ่อมบำรุงใหม่', [
+    `ยานพาหนะ: ${vehicleLabel(vehicle)}`,
+    `ประเภท: ${escapeHtml(typeLabel, 60)}`,
+    record.description ? `รายละเอียด: ${escapeHtml(record.description, 200)}` : '',
+    serviceDate ? `วันที่ซ่อม: ${escapeHtml(serviceDate, 60)}` : '',
+    cost && Number(record.cost) > 0 ? `ค่าใช้จ่าย: <b>${escapeHtml(cost, 20)} บาท</b>` : '',
+    record.vendor ? `อู่/ร้าน: ${escapeHtml(record.vendor, 100)}` : '',
+    meter ? `เลขไมล์: ${escapeHtml(meter, 20)} ${meterUnitLabel(vehicle)}` : '',
+    nextDate || nextMeter
+      ? `นัดครั้งถัดไป: ${[nextDate, nextMeter ? `${nextMeter} ${meterUnitLabel(vehicle)}` : ''].filter(Boolean).map((v) => escapeHtml(v, 60)).join(' หรือ ')}`
+      : '',
+    department ? `กองเจ้าของรถ: ${escapeHtml(department, 80)}` : '',
+  ])
 }
 
 // คำขอใช้รถที่รถคันนั้นมีคิวอยู่แล้ว — ระบบอนุมัติอัตโนมัติไม่ได้ ต้องให้ผู้ดูแลจัดสรรรถ
@@ -519,6 +713,8 @@ const FUEL_TYPE_LABEL: Record<string, string> = {
 }
 
 function formatAmount(value: unknown, digits = 2) {
+  // Number(null) = 0 — เลขไมล์/ค่าใช้จ่ายที่ไม่ได้กรอกต้องไม่ขึ้นเป็น "0 กม." ในกลุ่ม
+  if (value == null || value === '') return null
   const num = Number(value)
   if (!Number.isFinite(num)) return null
   return num.toLocaleString('th-TH', { minimumFractionDigits: digits, maximumFractionDigits: digits })
@@ -527,11 +723,7 @@ function formatAmount(value: unknown, digits = 2) {
 function buildFleetFuelCreatedMessage(record: Record<string, unknown>) {
   const vehicle = record.vehicle as { name?: string; license_plate?: string; meter_unit?: string } | null
   const driver = record.driver as { full_name?: string } | null
-  const vehicleName = cleanText(vehicle?.name, 100) || 'ไม่ทราบคัน'
-  const plate = cleanText(vehicle?.license_plate, 40)
-  // อุปกรณ์บางชนิด (เครื่องตัดหญ้า เครื่องสูบน้ำ) นับเป็นชั่วโมงไม่ใช่กิโลเมตร
-  // ค่าใน DB เป็น 'km'/'hour' ต้องแปลงเป็นไทยเอง เทียบเท่า meterUnitShort() ใน src/lib/fleetAssets.js
-  const meterUnit = vehicle?.meter_unit === 'hour' ? 'ชม.' : 'กม.'
+  const meterUnit = meterUnitLabel(vehicle)
   const fuelKey = String(record.fuel_type ?? '')
   const fuelLabel = fuelKey === 'other'
     ? cleanText(record.fuel_other_name, 60) || 'อื่น ๆ'
@@ -540,9 +732,9 @@ function buildFleetFuelCreatedMessage(record: Record<string, unknown>) {
   const pricePerLiter = formatAmount(record.price_per_liter, 2)
   const totalCost = formatAmount(record.total_cost, 2)
   const odometer = formatAmount(record.odometer, 0)
-  return [
-    '⛽ <b>บันทึกการเติมเชื้อเพลิงใหม่</b>',
-    `ยานพาหนะ: ${escapeHtml(vehicleName, 100)}${plate ? ` (${escapeHtml(plate, 40)})` : ''}`,
+  // สีกองใช้กองเจ้าของรถ — fleet_fuel_records ไม่มี department_id ของตัวเอง
+  return framedMessage(vehicleDepartmentResource(record), '⛽', 'บันทึกการเติมเชื้อเพลิงใหม่', [
+    `ยานพาหนะ: ${vehicleLabel(vehicle)}`,
     record.filled_at ? `วันที่เติม: ${escapeHtml(formatThaiDate(record.filled_at), 60)}` : '',
     fuelLabel ? `ชนิด: ${escapeHtml(fuelLabel, 60)}${record.full_tank ? ' (เต็มถัง)' : ''}` : '',
     liters ? `ปริมาณ: ${escapeHtml(liters, 20)} ลิตร${pricePerLiter ? ` × ${escapeHtml(pricePerLiter, 20)} บาท` : ''}` : '',
@@ -551,7 +743,20 @@ function buildFleetFuelCreatedMessage(record: Record<string, unknown>) {
     driver?.full_name ? `ผู้ใช้รถ: ${escapeHtml(driver.full_name, 100)}` : '',
     record.fuel_station ? `สถานีบริการ: ${escapeHtml(record.fuel_station, 100)}` : '',
     record.receipt_no ? `เลขที่ใบเสร็จ: ${escapeHtml(record.receipt_no, 60)}` : '',
-  ].filter(Boolean).join('\n')
+  ])
+}
+
+// ชนิดที่สร้างข้อความจากแถวเดียวโดยไม่ต้องอ่านข้อมูลอื่นเพิ่ม
+const FLEET_MESSAGE_BUILDERS: Partial<Record<NotificationType, (resource: Record<string, unknown>) => string>> = {
+  fleet_trip_created: buildFleetTripCreatedMessage,
+  fleet_trip_approved: buildFleetTripApprovedMessage,
+  fleet_trip_rejected: buildFleetTripRejectedMessage,
+  fleet_trip_cancelled: buildFleetTripCancelledMessage,
+  fleet_trip_departed: buildFleetTripDepartedMessage,
+  fleet_trip_returned: buildFleetTripReturnedMessage,
+  fleet_vehicle_repair_started: buildFleetVehicleRepairMessage,
+  fleet_vehicle_repair_finished: buildFleetVehicleRepairMessage,
+  fleet_maintenance_created: buildFleetMaintenanceCreatedMessage,
 }
 
 function isRecent(createdAt: unknown, minutes = 15) {
@@ -600,6 +805,11 @@ function idempotencyKey(type: NotificationType, resource: Record<string, unknown
   if (type.startsWith('technician_')) {
     return `${base}:${cleanText(resource.status, 40)}:${cleanText(resource.updated_at, 40)}`
   }
+  // รถคันเดียวเข้าซ่อมได้หลายรอบ — ผูกกับ updated_at (trigger ตั้งทุกครั้งที่แก้) ไม่งั้นรอบที่ 2 ถูกกันเป็นซ้ำ
+  // ส่วนขั้นของคำขอใช้รถเกิดได้ครั้งเดียวต่อใบ (DB guard ไม่ให้ย้อนสถานะ) ใช้ ชนิด:id พอ
+  if (type === 'fleet_vehicle_repair_started' || type === 'fleet_vehicle_repair_finished') {
+    return `${base}:${cleanText(resource.updated_at, 40)}`
+  }
   return base
 }
 
@@ -612,6 +822,20 @@ function notificationMatchesResource(type: NotificationType, resource: Record<st
   if (type === 'fleet_trip_bumped') return resource.status === 'cancelled'
   // สถานะนี้ตั้งโดย DB (fleet_trips_guard_overlap) เท่านั้น ห้ามส่งแจ้งเตือนตามคำบอกของ client
   if (type === 'fleet_trip_waitlisted') return resource.status === 'waitlisted'
+  // ทุกขั้นของคำขอใช้รถตรวจสถานะจริงใน DB — client บอกว่า "อนุมัติแล้ว" แต่แถวยังไม่ใช่ approved ต้องไม่ส่ง
+  if (type === 'fleet_trip_created') {
+    return resource.status === 'pending' || (resource.status === 'approved' && resource.approval_method === 'auto')
+  }
+  // อนุมัติอัตโนมัติแจ้งไปแล้วใน fleet_trip_created ห้ามส่งซ้ำอีกใบ
+  if (type === 'fleet_trip_approved') return resource.status === 'approved' && resource.approval_method !== 'auto'
+  if (type === 'fleet_trip_rejected') return resource.status === 'rejected'
+  if (type === 'fleet_trip_cancelled') return resource.status === 'cancelled'
+  if (type === 'fleet_trip_departed') return resource.status === 'in_progress'
+  if (type === 'fleet_trip_returned') return resource.status === 'completed'
+  // ตรวจได้แค่สถานะปัจจุบัน ไม่รู้สถานะก่อนแก้ — "ซ่อมเสร็จ" บนรถที่ไม่เคยเข้าซ่อมจึงกันที่ฝั่ง DB ไม่ได้
+  // ความเสียหายจำกัด: ต้องเป็นเจ้าหน้าที่ อปท. เดียวกัน และได้ครั้งเดียวต่อการแก้ข้อมูลรถ 1 ครั้ง (updated_at)
+  if (type === 'fleet_vehicle_repair_started') return resource.status === 'under_repair'
+  if (type === 'fleet_vehicle_repair_finished') return resource.status === 'active'
   return true
 }
 
@@ -708,10 +932,15 @@ serve(async (req) => {
           // embed ต้องระบุชื่อ FK ไม่งั้น PostgREST ตอบ 300 ambiguous แล้วแจ้งเตือนทุกชนิดของทริปพัง
           // ⚠️ waitlist_reasons มาจาก migration 20260913150000 — ห้าม deploy ไฟล์นี้ก่อน apply
           // ไม่งั้น select คอลัมน์ที่ยังไม่มี ทำให้แจ้งเตือนทุกชนิดของทริป (รวมจองแทนที่) พังทั้งหมด
-          ? 'id,municipality_id,status,destination,reject_reason,planned_departure,planned_return,waitlist_reasons,vehicle:fleet_vehicles(name,license_plate),driver:profiles!fleet_trips_driver_id_fkey(full_name),requester:profiles!fleet_trips_requested_by_fkey(full_name),department:departments!fleet_trips_department_id_fkey(name,color)'
+          // profiles ก็มีหลาย FK (driver/requested_by/approved_by/created_by) ต้องระบุชื่อ FK ทุกเส้น
+          ? 'id,municipality_id,status,approval_method,destination,reject_reason,planned_departure,planned_return,started_at,returned_at,odometer_start,odometer_end,distance_km,waitlist_reasons,vehicle:fleet_vehicles(name,license_plate,meter_unit),driver:profiles!fleet_trips_driver_id_fkey(full_name),requester:profiles!fleet_trips_requested_by_fkey(full_name),approver:profiles!fleet_trips_approved_by_fkey(full_name),department:departments!fleet_trips_department_id_fkey(name,color)'
           : spec.table === 'fleet_fuel_records'
-            ? 'id,municipality_id,created_at,filled_at,liters,price_per_liter,total_cost,odometer,full_tank,fuel_type,fuel_other_name,fuel_station,receipt_no,vehicle:fleet_vehicles(name,license_plate,meter_unit),driver:profiles!fleet_fuel_records_driver_id_fkey(full_name)'
-            : 'id,municipality_id,user_id,created_at,updated_at,status,document_type,fee_amount,payment_verified_at,department:departments(name,color)'
+            ? 'id,municipality_id,created_at,filled_at,liters,price_per_liter,total_cost,odometer,full_tank,fuel_type,fuel_other_name,fuel_station,receipt_no,vehicle:fleet_vehicles(name,license_plate,meter_unit,department:departments(name,color)),driver:profiles!fleet_fuel_records_driver_id_fkey(full_name)'
+            : spec.table === 'fleet_vehicles'
+              ? 'id,municipality_id,status,updated_at,name,license_plate,department:departments(name,color)'
+              : spec.table === 'fleet_maintenance'
+                ? 'id,municipality_id,created_at,service_date,maintenance_type,description,cost,vendor,odometer,next_service_meter,next_service_date,vehicle:fleet_vehicles(name,license_plate,meter_unit,department:departments(name,color))'
+                : 'id,municipality_id,user_id,created_at,updated_at,status,document_type,fee_amount,payment_verified_at,department:departments(name,color)'
     const { data: resource, error: resourceError } = await admin
       .from(spec.table)
       .select(selectColumns)
@@ -771,7 +1000,10 @@ serve(async (req) => {
     }
 
     const feeSchedule = municipality.fee_schedule
-    const message = notificationType === 'event_created'
+    const fleetBuilder = FLEET_MESSAGE_BUILDERS[notificationType]
+    const message = fleetBuilder
+      ? fleetBuilder(resource)
+      : notificationType === 'event_created'
       ? buildEventMessage(resource, municipality.org_type)
       : notificationType === 'complaint_created'
         ? buildComplaintCreatedMessage(resource)

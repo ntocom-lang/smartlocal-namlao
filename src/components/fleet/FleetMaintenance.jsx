@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { logAction } from '../../lib/auditLog'
+import { notifyTelegram } from '../../lib/notifyTelegram'
 import FleetEmptyState from './FleetEmptyState'
 import {
   assetIdentifier,
@@ -267,6 +268,8 @@ export default function FleetMaintenance({ tenant, isAdmin, isStaff }) {
           ? { before: auditSnapshot(beforeRecord), after: auditSnapshot(data) }
           : { after: auditSnapshot(data) },
       })
+      // แจ้งเฉพาะรายการใหม่ แก้ไขรายการเดิมไม่แจ้ง (ชนิดนี้กันซ้ำด้วย ชนิด:id อยู่แล้ว)
+      if (!editingId) notifyTelegram('fleet_maintenance_created', recordId)
       if (receiptPath && oldReceiptUrl && oldReceiptUrl !== receiptPath) removeFleetDocument(oldReceiptUrl).catch(() => {})
       // โหลดใหม่ทั้งหน้าปัจจุบันและยอดรวม (totalCost) แทนการแทรก/แก้ state เอง เพื่อให้ยอดรวมไม่ค้างข้อมูลเก่า
       loadRecords()
