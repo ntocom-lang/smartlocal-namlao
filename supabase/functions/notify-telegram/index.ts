@@ -107,9 +107,10 @@ const COMPLAINT_CATEGORY_FALLBACK: Record<string, Labelled> = {
   other: { emoji: '📝', label: 'อื่นๆ' },
 }
 
-// แถบสีนำหน้าบรรทัดแรก แยกตาม "กองที่รับผิดชอบ" ให้เจ้าหน้าที่กวาดตาหางานของกองตัวเองในกลุ่มได้เร็ว
-// ⚠️ Telegram Bot API กำหนดสีตัวอักษรไม่ได้ (รองรับแค่ b/i/u/s/code/pre/a/blockquote) การใช้
-// อีโมจิสี่เหลี่ยมสีคือวิธีเดียวที่ให้ "สี" ได้จริงโดยไม่ต้องใช้ custom emoji ซึ่งต้องมี Premium
+// สีของแถบเหนือหัวข้อ (ดู headerLines()) แยกตาม "กองที่รับผิดชอบ" ให้เจ้าหน้าที่กวาดตาหางานของกองตัวเอง
+// ⚠️ Telegram Bot API กำหนดสีตัวอักษร/พื้นหลังไม่ได้ อีโมจิสี่เหลี่ยมสีคือวิธีที่ให้ "สี" ได้จริง
+// (custom emoji ในข้อความที่บอทส่งเข้ากลุ่มใช้ได้โดยไม่ต้อง Premium แต่ก็เป็นแค่อักขระหนึ่งตัว
+// ไม่ใช่พื้นหลัง และต้องหา emoji-id จากชุดสติกเกอร์ภายนอกมาผูก ไม่คุ้มเมื่อเทียบกับอีโมจิมาตรฐาน)
 // ผูกกับ departments.code ไม่ใช่ชื่อ เพราะ อปท. เปลี่ยนชื่อกองได้ แต่ code คงที่
 // กองที่ อปท. สร้างเอง (code ขึ้นต้น dept_) ไม่มีสีประจำ ตกมาที่ ⬜
 const DEPARTMENT_COLOR: Record<string, string> = {
@@ -226,6 +227,18 @@ function departmentColor(resource: Record<string, unknown>) {
   return DEPARTMENT_COLOR[String(departmentOf(resource)?.code ?? '')] ?? DEFAULT_DEPARTMENT_COLOR
 }
 
+// แถบสีเต็มบรรทัดเหนือหัวข้อ — เจ้าของระบบขอ "พื้นหลังสี" บนบรรทัดหัวข้อ (2569-09-13) แต่
+// Telegram ทำไม่ได้: ตรวจกับ Bot API 10.3 แล้ว HTML รองรับเฉพาะ tag ในรายการ ไม่มีสีตัวอักษร/พื้นหลัง
+// และ Rich Message block ทั้ง 27 แบบไม่มีฟิลด์สี ของที่มีพื้นหลังสีจริงมีแค่ปุ่ม (style 3 สี) ซึ่งไม่พอ
+// กับ 6 กอง อยู่ใต้ข้อความ และต้องผูกลิงก์/callback — จึงเรียงสี่เหลี่ยมสีเต็มบรรทัดแทนให้ดูเป็นแถบ
+// ⚠️ 10 ช่องคือความกว้างที่ไม่ตัดบรรทัดบนจอมือถือแคบ (~360px) เพิ่มจำนวนแล้วแถบจะหักเป็น 2 บรรทัด
+// ⚠️ พรีวิว push notification ยุบขึ้นบรรทัดเป็นช่องว่าง แถบนี้จึงกินที่ต้นพรีวิวไป 10 ตัวอักษร
+const COLOR_BAND_WIDTH = 10
+
+function headerLines(resource: Record<string, unknown>, emoji: string, title: string) {
+  return [departmentColor(resource).repeat(COLOR_BAND_WIDTH), `${emoji} <b>${title}</b>`]
+}
+
 // แฮชแท็กชื่อกอง — Telegram ทำเป็นลิงก์ให้เอง แตะแล้วค้นทั้งกลุ่มเห็นเฉพาะงานของกองนั้น
 // เป็นเหตุผลหลักที่ใส่: เจ้าหน้าที่กรองงานของตัวเองได้โดยไม่ต้องเลื่อนหาเอง
 // ⚠️ แท็กจบทันทีที่เจออักขระที่ไม่ใช่ตัวอักษร/ตัวเลข/ขีดล่าง — ชื่อกองที่มีเว้นวรรค จุด หรือวงเล็บ
@@ -304,7 +317,7 @@ function buildEventMessage(event: Record<string, unknown>, orgType: unknown) {
 // ที่ประชาชนพิมพ์มา — ให้กดลิงก์เข้าไปดูในระบบตามสิทธิ์แทน
 // complaints.village เป็นช่องสถานที่เกิดเหตุที่ประชาชนกรอกเอง เจ้าของระบบตัดสินใจให้ใส่
 // 2569-09-12 เพราะเจ้าหน้าที่ต้องรู้ว่าเรื่องอยู่ตรงไหนก่อนจะตัดสินใจว่าใครออกพื้นที่
-// รูปแบบบรรทัดแรกของทุกใบ: <แถบสีกอง> <อีโมจิประเภทเรื่อง> <หัวเรื่อง>
+// รูปแบบหัวของทุกใบ 2 บรรทัด: <แถบสีกองเต็มบรรทัด> แล้วตามด้วย <อีโมจิประเภทเรื่อง> <หัวเรื่อง>
 // อีโมจิประเภทอยู่หัวข้อความอย่างเดียว บรรทัด "ประเภท:/เรื่อง:" จึงแสดงชื่อล้วน ไม่ใส่ซ้ำ
 // ข้อยกเว้นเดียวคือ fee_verified ที่ใช้ 💰 เพราะสาระของใบนั้นคือเงิน ไม่ใช่ชนิดเอกสาร
 function buildComplaintCreatedMessage(complaint: Record<string, unknown>) {
@@ -313,7 +326,7 @@ function buildComplaintCreatedMessage(complaint: Record<string, unknown>) {
   const hashtag = departmentHashtag(complaint)
   const submittedAt = formatThaiDateTime(complaint.created_at)
   return [
-    `${departmentColor(complaint)} ${category.emoji} <b>มีคำร้องใหม่</b>`,
+    ...headerLines(complaint, category.emoji, 'มีคำร้องใหม่'),
     complaint.ref_no ? `เลขที่: ${escapeHtml(complaint.ref_no, 40)}` : '',
     `ประเภท: ${escapeHtml(category.label, 60)}`,
     complaint.village ? `สถานที่: ${escapeHtml(complaint.village, 120)}` : '',
@@ -329,7 +342,7 @@ function buildComplaintStatusMessage(complaint: Record<string, unknown>) {
   const hashtag = departmentHashtag(complaint)
   const updatedAt = formatThaiDateTime(complaint.updated_at ?? complaint.created_at)
   return [
-    `${departmentColor(complaint)} ${category.emoji} <b>อัปเดตสถานะคำร้อง</b>`,
+    ...headerLines(complaint, category.emoji, 'อัปเดตสถานะคำร้อง'),
     complaint.ref_no ? `เลขที่: ${escapeHtml(complaint.ref_no, 40)}` : '',
     `ประเภท: ${escapeHtml(category.label, 60)}`,
     complaint.village ? `สถานที่: ${escapeHtml(complaint.village, 120)}` : '',
@@ -352,7 +365,7 @@ function buildDocumentRequestCreatedMessage(
   const submittedAt = formatThaiDateTime(request.created_at)
   const fee = Number(request.fee_amount ?? 0) > 0 ? formatAmount(request.fee_amount, 2) : null
   return [
-    `${departmentColor(request)} ${type.emoji} <b>${headingText}</b>`,
+    ...headerLines(request, type.emoji, headingText),
     `เรื่อง: ${escapeHtml(type.label, 100)}`,
     department ? `ส่งถึง: ${escapeHtml(department, 80)}${hashtag ? ` ${hashtag}` : ''}` : '',
     submittedAt ? `ยื่นเมื่อ: ${escapeHtml(submittedAt, 60)}` : '',
@@ -368,7 +381,7 @@ function buildDocumentRequestStatusMessage(request: Record<string, unknown>, fee
   const hashtag = departmentHashtag(request)
   const updatedAt = formatThaiDateTime(request.updated_at ?? request.created_at)
   return [
-    `${departmentColor(request)} ${type.emoji} <b>อัปเดตสถานะคำขอเอกสาร</b>`,
+    ...headerLines(request, type.emoji, 'อัปเดตสถานะคำขอเอกสาร'),
     `เรื่อง: ${escapeHtml(type.label, 100)}`,
     `สถานะ: <b>${escapeHtml(status, 60)}</b>`,
     department ? `ส่งถึง: ${escapeHtml(department, 80)}${hashtag ? ` ${hashtag}` : ''}` : '',
@@ -384,7 +397,7 @@ function buildFeeVerifiedMessage(request: Record<string, unknown>, feeSchedule: 
   const amount = formatAmount(request.fee_amount, 2)
   const verifiedAt = formatThaiDateTime(request.payment_verified_at ?? request.updated_at)
   return [
-    `${departmentColor(request)} 💰 <b>ตรวจสอบค่าธรรมเนียมแล้ว</b>`,
+    ...headerLines(request, '💰', 'ตรวจสอบค่าธรรมเนียมแล้ว'),
     `เรื่อง: ${escapeHtml(type.label, 100)}`,
     amount ? `จำนวนเงิน: <b>${escapeHtml(amount, 20)} บาท</b>` : '',
     department ? `ส่งถึง: ${escapeHtml(department, 80)}${hashtag ? ` ${hashtag}` : ''}` : '',
