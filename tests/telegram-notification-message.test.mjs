@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { BASE_DOCUMENT_TYPES } from '../src/lib/documentTypes.js'
+import { DEPARTMENT_COLORS } from '../src/lib/departmentColors.js'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const edgeFnPath = path.join(root, 'supabase/functions/notify-telegram/index.ts')
@@ -65,7 +66,7 @@ try {
   writeFileSync(probe, `${stubbed}\nexport {\n`
     + '  buildComplaintCreatedMessage, buildComplaintStatusMessage,\n'
     + '  buildDocumentRequestCreatedMessage, buildDocumentRequestStatusMessage,\n'
-    + '  buildFeeVerifiedMessage, documentTypeLabel,\n}\n')
+    + '  buildFeeVerifiedMessage, documentTypeLabel, DEPARTMENT_COLOR_EMOJI,\n}\n')
   // BOT_TOKEN ถูกอ่านตอน import module — ต้องมี Deno.env ก่อนโหลด
   globalThis.Deno = { env: { get: () => '' } }
   mod = await import(pathToFileURL(probe).href)
@@ -76,7 +77,7 @@ try {
 const {
   buildComplaintCreatedMessage, buildComplaintStatusMessage,
   buildDocumentRequestCreatedMessage, buildDocumentRequestStatusMessage,
-  buildFeeVerifiedMessage, documentTypeLabel,
+  buildFeeVerifiedMessage, documentTypeLabel, DEPARTMENT_COLOR_EMOJI,
 } = mod
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -112,7 +113,7 @@ const request = {
   updated_at: '2026-09-12T13:50:00Z',
   payment_verified_at: '2026-09-12T14:10:00Z',
   fee_amount: 200,
-  department: { name: 'กองช่าง', code: 'engineering' },
+  department: { name: 'กองช่าง', color: 'blue' },
 }
 const complaint = {
   id: 'c0ffee00-1111-4222-8333-444455556666',
@@ -122,7 +123,7 @@ const complaint = {
   status: 'in_progress',
   created_at: '2026-09-12T12:32:00Z',
   updated_at: '2026-09-12T16:13:00Z',   // 23:13 น. ตามเวลาไทย
-  department: { name: 'กองช่าง', code: 'engineering' },
+  department: { name: 'กองช่าง', color: 'blue' },
   category_ref: { label: 'ไฟฟ้าสาธารณะ', emoji: '💡' },
 }
 
@@ -181,22 +182,48 @@ for (const message of [
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// แถบสีรายกอง — ผูกกับ departments.code ไม่ใช่ชื่อ (อปท. เปลี่ยนชื่อกองได้ code คงที่)
+// แถบสีรายกอง — อ่านจาก departments.color (แอดมินเลือกเอง/trigger เติมให้) ไม่ใช่ departments.code
+// เคสจริงที่ทำให้ต้องเปลี่ยน: ตำหนักธรรม/ทุ่งแค้วสร้างกองเองทั้งหมด code เป็น dept_* ทุกกอง
+// ผูกกับ code แล้วได้ ⬜ เหมือนกันหมด
 // ─────────────────────────────────────────────────────────────────────────────
-const COLOR_BY_CODE = {
-  exec: '🟥', general: '🟩', finance: '🟨', engineering: '🟦', education: '🟪', health: '🟧',
+for (const { key, emoji } of DEPARTMENT_COLORS) {
+  const message = buildComplaintCreatedMessage({ ...complaint, department: { name: 'สำนักปลัด', color: key } })
+  assert.ok(message.startsWith(`${emoji.repeat(10)}\n`), `สี '${key}' ต้องได้แถบ ${emoji} เต็มบรรทัด:\n${message}`)
+  assert.ok(message.endsWith(`\n${emoji.repeat(10)}`), `สี '${key}' ต้องได้แถบล่าง ${emoji}`)
 }
-for (const [code, square] of Object.entries(COLOR_BY_CODE)) {
-  const message = buildComplaintCreatedMessage({ ...complaint, department: { name: 'กองใดกองหนึ่ง', code } })
-  assert.ok(message.startsWith(`${square.repeat(10)}\n`), `กอง code '${code}' ต้องขึ้นต้นด้วยแถบ ${square} เต็มบรรทัด`)
+// กองที่ code เป็น dept_* แต่มีสีแล้ว ต้องได้สีนั้น (บั๊กเดิมคือได้ ⬜ เพราะไปดู code)
+assert.ok(
+  buildComplaintCreatedMessage({ ...complaint, department: { name: 'กองช่าง', code: 'dept_mrf68120', color: 'blue' } })
+    .startsWith(`${'🟦'.repeat(10)}\n`),
+)
+// ไม่มีสี / คีย์แปลก / ยังไม่ผูกกอง ต้องได้สีกลาง ไม่ใช่ข้อความพัง และห้ามต่อค่าดิบจาก DB เข้าข้อความ
+for (const department of [{ name: 'ไม่มีสี' }, { name: 'สีแปลก', color: '<b>pink</b>' }, null]) {
+  const message = buildComplaintCreatedMessage({ ...complaint, department })
+  assert.ok(message.startsWith(`${'⬜'.repeat(10)}\n`), `กองที่ไม่มีสีที่ใช้ได้ต้องได้ ⬜: ${JSON.stringify(department)}`)
+  assert.equal(message.includes('pink'), false, 'ห้ามต่อคีย์สีดิบเข้าข้อความ')
 }
-// กองที่ อปท. สร้างเอง (code ขึ้นต้น dept_) และรายการที่ยังไม่มีกอง ต้องได้สีกลาง ไม่ใช่พัง
-for (const department of [{ name: 'ตรวจสอบภายใน', code: 'dept_mrrhejo0' }, { name: 'ไม่มี code' }, null]) {
-  assert.ok(
-    buildComplaintCreatedMessage({ ...complaint, department }).startsWith(`${'⬜'.repeat(10)}\n`),
-    `กองที่ไม่มีสีประจำต้องได้ ⬜: ${JSON.stringify(department)}`,
-  )
-}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// รายการคีย์สีต้องตรงกัน 3 ที่ — เพิ่มสีที่ใดที่หนึ่งแล้วลืมอีกที่ = แอดมินเลือกสีได้แต่บันทึกไม่ผ่าน CHECK
+// หรือบันทึกได้แต่ Telegram ขึ้น ⬜
+// ─────────────────────────────────────────────────────────────────────────────
+assert.deepEqual(
+  DEPARTMENT_COLOR_EMOJI,
+  Object.fromEntries(DEPARTMENT_COLORS.map((c) => [c.key, c.emoji])),
+  'DEPARTMENT_COLOR_EMOJI ใน notify-telegram ต้องตรงกับ DEPARTMENT_COLORS ใน src/lib/departmentColors.js',
+)
+const columnMigration = readFileSync(
+  path.join(root, 'supabase/migrations/20260913100000_departments_color_column.sql'), 'utf8')
+const checkKeys = [...(columnMigration.match(/color IN \(([^)]*)\)/)?.[1] ?? '').matchAll(/'([a-z]+)'/g)]
+  .map((m) => m[1])
+assert.deepEqual(checkKeys.sort(), DEPARTMENT_COLORS.map((c) => c.key).sort(),
+  'CHECK departments_color_check ต้องมีคีย์ครบและตรงกับ DEPARTMENT_COLORS')
+const triggerMigration = readFileSync(
+  path.join(root, 'supabase/migrations/20260913100100_departments_color_default_trigger.sql'), 'utf8')
+const paletteKeys = [...(triggerMigration.match(/unnest\(ARRAY\[([^\]]*)\]/)?.[1] ?? '').matchAll(/'([a-z]+)'/g)]
+  .map((m) => m[1])
+assert.deepEqual(paletteKeys.sort(), DEPARTMENT_COLORS.map((c) => c.key).sort(),
+  'ลำดับสีสำรองใน department_default_color() ต้องมีคีย์ครบและตรงกับ DEPARTMENT_COLORS')
 
 // ─────────────────────────────────────────────────────────────────────────────
 // อีโมจิ/ชื่อหมวดคำร้อง — ต้องใช้ค่าของ อปท. นั้นจาก complaint_categories ก่อนค่าสำรองเสมอ
@@ -223,7 +250,7 @@ assert.match(unknownCategory, /^ประเภท: cat_zzz$/m)
 // ─────────────────────────────────────────────────────────────────────────────
 for (const message of [
   complaintNew, complaintStatus, created, docStatus, fee,
-  buildComplaintCreatedMessage({ ...complaint, department: { name: 'สำนักปลัด', code: 'general' } }),
+  buildComplaintCreatedMessage({ ...complaint, department: { name: 'สำนักปลัด', color: 'green' } }),
 ]) {
   assert.equal(/#[฀-๿]/u.test(message), false, `ห้ามมีแฮชแท็กภาษาไทย:\n${message}`)
 }

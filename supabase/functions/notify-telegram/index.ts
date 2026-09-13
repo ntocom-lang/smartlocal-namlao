@@ -107,19 +107,27 @@ const COMPLAINT_CATEGORY_FALLBACK: Record<string, Labelled> = {
   other: { emoji: '📝', label: 'อื่นๆ' },
 }
 
-// สีของแถบเหนือหัวข้อ (ดู headerLines()) แยกตาม "กองที่รับผิดชอบ" ให้เจ้าหน้าที่กวาดตาหางานของกองตัวเอง
+// สีของแถบบน-ล่าง (ดู framedMessage()) แยกตาม "กองที่รับผิดชอบ" ให้เจ้าหน้าที่กวาดตาหางานของกองตัวเอง
 // ⚠️ Telegram Bot API กำหนดสีตัวอักษร/พื้นหลังไม่ได้ อีโมจิสี่เหลี่ยมสีคือวิธีที่ให้ "สี" ได้จริง
 // (custom emoji ในข้อความที่บอทส่งเข้ากลุ่มใช้ได้โดยไม่ต้อง Premium แต่ก็เป็นแค่อักขระหนึ่งตัว
 // ไม่ใช่พื้นหลัง และต้องหา emoji-id จากชุดสติกเกอร์ภายนอกมาผูก ไม่คุ้มเมื่อเทียบกับอีโมจิมาตรฐาน)
-// ผูกกับ departments.code ไม่ใช่ชื่อ เพราะ อปท. เปลี่ยนชื่อกองได้ แต่ code คงที่
-// กองที่ อปท. สร้างเอง (code ขึ้นต้น dept_) ไม่มีสีประจำ ตกมาที่ ⬜
-const DEPARTMENT_COLOR: Record<string, string> = {
-  exec: '🟥',
-  general: '🟩',
-  finance: '🟨',
-  engineering: '🟦',
-  education: '🟪',
-  health: '🟧',
+//
+// อ่านจาก departments.color (คีย์ที่แอดมินเลือกในหน้าจัดการกอง หรือ trigger เติมให้ตอนสร้างกอง)
+// เดิมผูกกับ departments.code มาตรฐาน แต่ อปท. ที่สร้างกองเองได้ code เป็น dept_* ทุกกอง
+// (ตำหนักธรรม/ทุ่งแค้ว) เลยได้ ⬜ เหมือนกันหมด ใช้แยกกองไม่ได้
+// ⚠️ คีย์ต้องตรงกับ DEPARTMENT_COLORS ใน src/lib/departmentColors.js และ CHECK departments_color_check
+// ⚠️ ห้าม deploy ไฟล์นี้ก่อน apply migration 20260913100000 — select คอลัมน์ color ที่ยังไม่มีทำให้
+// query คำร้อง/คำขอพัง และการแจ้งเตือนทุกประเภทที่อิงสองตารางนี้หยุดส่งทั้งระบบ
+const DEPARTMENT_COLOR_EMOJI: Record<string, string> = {
+  red: '🟥',
+  orange: '🟧',
+  yellow: '🟨',
+  green: '🟩',
+  blue: '🟦',
+  purple: '🟪',
+  brown: '🟫',
+  black: '⬛',
+  white: '⬜',
 }
 const DEFAULT_DEPARTMENT_COLOR = '⬜'
 
@@ -216,15 +224,17 @@ function formatThaiDateTime(value: unknown) {
 // ในกลุ่ม (เคยมี `🔗 https://<slug>.rk-networks.com/staff`) ถ้าจะเพิ่มกลับต้องถามก่อน
 // กองที่รับผิดชอบ มาจาก department_id ที่ trigger ตั้งให้ตอนสร้างคำขอ/คำร้อง
 function departmentOf(resource: Record<string, unknown>) {
-  return (resource.department ?? null) as { name?: string; code?: string } | null
+  return (resource.department ?? null) as { name?: string; color?: string } | null
 }
 
 function departmentName(resource: Record<string, unknown>) {
   return cleanText(departmentOf(resource)?.name, 80)
 }
 
+// คีย์ที่ไม่รู้จักหรือว่าง (กองเก่าก่อนมี trigger, รายการที่ยังไม่ผูกกอง) ได้ ⬜ ไม่ใช่ข้อความพัง
+// ใช้ lookup ในแมปเท่านั้น ห้ามต่อค่าจาก DB เข้าข้อความตรงๆ แม้ CHECK จะกันไว้แล้วก็ตาม
 function departmentColor(resource: Record<string, unknown>) {
-  return DEPARTMENT_COLOR[String(departmentOf(resource)?.code ?? '')] ?? DEFAULT_DEPARTMENT_COLOR
+  return DEPARTMENT_COLOR_EMOJI[String(departmentOf(resource)?.color ?? '')] ?? DEFAULT_DEPARTMENT_COLOR
 }
 
 // แถบสีเต็มบรรทัดเหนือหัวข้อ — เจ้าของระบบขอ "พื้นหลังสี" บนบรรทัดหัวข้อ (2569-09-13) แต่
@@ -606,12 +616,12 @@ serve(async (req) => {
     const selectColumns = spec.table === 'events'
       ? 'id,municipality_id,created_by,created_at,title,description,event_date,event_time,end_time,location,audiences,is_all_day'
       : spec.table === 'complaints'
-        ? 'id,municipality_id,user_id,created_at,updated_at,status,category,assigned_to,ref_no,village,department:departments(name,code),category_ref:complaint_categories(label,emoji)'
+        ? 'id,municipality_id,user_id,created_at,updated_at,status,category,assigned_to,ref_no,village,department:departments(name,color),category_ref:complaint_categories(label,emoji)'
         : spec.table === 'fleet_trips'
           ? 'id,municipality_id,status,destination,reject_reason,vehicle:fleet_vehicles(name),driver:profiles!fleet_trips_driver_id_fkey(full_name)'
           : spec.table === 'fleet_fuel_records'
             ? 'id,municipality_id,created_at,filled_at,liters,price_per_liter,total_cost,odometer,full_tank,fuel_type,fuel_other_name,fuel_station,receipt_no,vehicle:fleet_vehicles(name,license_plate,meter_unit),driver:profiles!fleet_fuel_records_driver_id_fkey(full_name)'
-            : 'id,municipality_id,user_id,created_at,updated_at,status,document_type,fee_amount,payment_verified_at,department:departments(name,code)'
+            : 'id,municipality_id,user_id,created_at,updated_at,status,document_type,fee_amount,payment_verified_at,department:departments(name,color)'
     const { data: resource, error: resourceError } = await admin
       .from(spec.table)
       .select(selectColumns)
