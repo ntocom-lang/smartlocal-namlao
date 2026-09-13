@@ -172,8 +172,17 @@ const waitlisted = buildFleetTripWaitlistedMessage({
   vehicle: { name: '[TEST] รถกองคลัง', license_plate: 'กข 1234 แพร่' },
   requester: { full_name: '[TEST] ผู้ขอใช้รถ' },
   department: { name: 'กองคลัง', color: 'yellow' },
+  waitlist_reasons: ['vehicle_busy', 'driver_tight'],
 })
 assert.ok(waitlisted.startsWith('🚗 <b>คำขอใช้รถรอจัดสรรรถ</b>\n'), waitlisted)
+// ผู้ดูแลต้องรู้ว่าจะแก้อะไร (เปลี่ยนรถ/คนขับ/เวลา) โดยไม่ต้องเปิดระบบก่อน
+assert.match(waitlisted, /^เหตุผล: รถคันนี้มีคิวทับช่วงเวลา · คิวผู้ขับรถติดกันเกินไป \(ห่างไม่ถึง 30 นาที\)$/m)
+// รหัสที่ไม่รู้จักห้ามโผล่เป็นค่าดิบ และห้ามต่อข้อความจาก DB เข้า HTML ตรงๆ
+const unknownReason = buildFleetTripWaitlistedMessage({ waitlist_reasons: ['<b>hack</b>'] })
+assert.match(unknownReason, /^เหตุผล: เหตุผลอื่น$/m)
+assert.ok(!unknownReason.includes('hack'), unknownReason)
+// รายการเก่าที่ไม่มีเหตุผลเก็บไว้ ต้องยังมีบรรทัดบอกให้ผู้ดูแลจัดสรร
+assert.match(buildFleetTripWaitlistedMessage({}), /ผู้ดูแลต้องจัดสรรรถก่อนอนุมัติ/)
 assert.ok(waitlisted.endsWith(`\n${rule('🟡')}`), waitlisted)
 assert.match(waitlisted, /^รถ: \[TEST\] รถกองคลัง \(กข 1234 แพร่\)$/m)
 assert.match(waitlisted, /^ออก: 15 ก\.ย\. 2569 08:30 น\.$/m)
@@ -313,5 +322,25 @@ assert.equal(sparse.split('\n').filter((l) => l.includes('┈')).length, 1, spar
 // HTML parse_mode ของ Telegram — ข้อความที่ประชาชนพิมพ์เองต้องถูก escape ไม่งั้นบอทส่งไม่ออก
 const injected = buildComplaintCreatedMessage({ ...complaint, village: '<b>x</b> & y' })
 assert.match(injected, /สถานที่: &lt;b&gt;x&lt;\/b&gt; &amp; y/)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// เหตุผลที่คำขอใช้รถ "รอจัดสรรรถ" ต้องตรงกัน 3 ที่ — รหัสใน CHECK ของ DB, ป้ายบนหน้าจอ, ป้ายใน Telegram
+// เพิ่มเหตุผลใหม่ที่ DB แล้วลืมแก้หน้าจอ ผู้ดูแลจะเห็นรหัสดิบ เช่น "vehicle_documents_expired"
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const sliceBlock = (file, re) => {
+    const match = readFileSync(path.join(root, file), 'utf8').match(re)
+    assert.ok(match, `หา QUEUE_REASON_LABEL/รายการรหัสใน ${file} ไม่เจอ`)
+    return match[1]
+  }
+  const labels = body => Object.fromEntries([...body.matchAll(/(\w+):\s*'([^']+)'/g)].map(m => [m[1], m[2]]))
+  const clientLabels = labels(sliceBlock('src/components/fleet/FleetTrips.jsx', /const QUEUE_REASON_LABEL = \{([\s\S]*?)\n\}/))
+  const edgeLabels = labels(sliceBlock('supabase/functions/notify-telegram/index.ts', /const QUEUE_REASON_LABEL: Record<string, string> = \{([\s\S]*?)\n\}/))
+  const dbCodes = sliceBlock('supabase/migrations/20260913150000_fleet_trip_waitlist_reasons.sql', /ARRAY\[([\s\S]*?)\]::text\[\]/)
+    .match(/'(\w+)'/g).map(s => s.slice(1, -1)).sort()
+  assert.deepEqual(Object.keys(clientLabels).sort(), dbCodes, 'รหัสเหตุผลบนหน้าจอไม่ตรงกับ CHECK ใน DB')
+  assert.deepEqual(Object.keys(edgeLabels).sort(), dbCodes, 'รหัสเหตุผลใน Telegram ไม่ตรงกับ CHECK ใน DB')
+  assert.deepEqual(edgeLabels, clientLabels, 'ข้อความเหตุผลใน Telegram ไม่ตรงกับหน้าจอ')
+}
 
 console.log('✓ telegram-notification-message: ผ่านทุกข้อ')

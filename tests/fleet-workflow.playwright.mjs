@@ -896,7 +896,10 @@ async function checkForm3RequestPrint(baseUrl, headed) {
 //         การอนุญาตตามระเบียบยังเป็นลายเซ็นผู้มีอำนาจบนแบบ 3 ระบบแค่กันคิวรถให้
 async function checkStaffRequestAutoApproval(baseUrl, headed) {
   const pad = n => String(n).padStart(2, '0')
-  const later = new Date(Date.now() + 9 * 86_400_000)
+  // ตั้งแต่ DB เช็คคิวผู้ขับรถด้วย รอบที่ fail กลางทาง (ยังไม่ถึงขั้นเก็บกวาด) จะทิ้งคำขอที่อนุมัติแล้ว
+  // ของผู้ขับรถคนเดิมไว้ ถ้าทุกรอบใช้วันเดียวกัน รอบถัดไปจะชน "ผู้ขับรถไม่ว่าง" แล้ว fail ต่อเนื่อง
+  // จึงเลื่อนวันตามนาทีของ STAMP (9–28 วันข้างหน้า) ให้แต่ละรอบไม่ทับกัน
+  const later = new Date(Date.now() + (9 + Number(STAMP.slice(-2)) % 20) * 86_400_000)
   const at = (d, hour) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(hour)}:00`
   const destination = `${TEST_DESTINATION} คำขอเจ้าหน้าที่ ${STAMP}`
   const clashDestination = `${TEST_DESTINATION} คิวชน ${STAMP}`
@@ -949,7 +952,17 @@ async function checkStaffRequestAutoApproval(baseUrl, headed) {
     await fillField(staff.page, 'วันเวลาออก', at(later, 9))
     await fillField(staff.page, 'กลับโดยประมาณ', at(later, 11))
     await clickButton(staff.page, 'ส่งคำขออนุญาตใช้รถ')
-    await staff.page.waitForTimeout(2_500)
+    // การ์ดต้องบอกเหตุผลจริงจาก DB (fleet_trip_availability) ไม่ใช่ข้อความรวมๆ — ผู้ขอจะได้รู้ว่าต้องแก้อะไร
+    // ทั้งรถคันเดียวกันและผู้ขับรถคนเดียวกันทับช่วงเวลา จึงต้องขึ้นทั้งสองเหตุผล
+    // รอจนการ์ดขึ้นจริง (RPC ผ่านเน็ต) แทนการรอเวลาตายตัว ที่เคยอ่านหน้าจอก่อนการ์ดเรนเดอร์
+    await staff.page.waitForFunction(
+      () => document.body.innerText.includes('ส่งคำขอให้ผู้ดูแลจัดสรรรถ'), null, { timeout: 15_000 },
+    ).catch(() => {})
+    const cardText = await bodyText(staff.page)
+    assert.ok(cardText.includes('รถคันนี้มีคิวทับช่วงเวลา'),
+      'การ์ดคิวชนไม่แสดงเหตุผล "รถคันนี้มีคิวทับช่วงเวลา"')
+    assert.ok(cardText.includes('ผู้ขับรถติดภารกิจอื่นช่วงเวลาเดียวกัน'),
+      'การ์ดคิวชนไม่แสดงว่าผู้ขับรถคนเดียวกันติดภารกิจอื่น — ระบบยังไม่ได้เช็คคิวผู้ขับรถ')
     await clickButton(staff.page, 'ส่งคำขอให้ผู้ดูแลจัดสรรรถ')
     await staff.page.waitForTimeout(3_500)
     const clashRow = await rowTextOf(staff.page, clashDestination)

@@ -435,6 +435,20 @@ function buildFleetTripBumpedMessage(trip: Record<string, unknown>) {
 // คำขอใช้รถที่รถคันนั้นมีคิวอยู่แล้ว — ระบบอนุมัติอัตโนมัติไม่ได้ ต้องให้ผู้ดูแลจัดสรรรถ
 // (เปลี่ยนรถ/เลื่อนเวลาแล้วอนุมัติ หรือปฏิเสธ) ถ้าไม่แจ้ง คำขอจะค้างเงียบจนถึงวันเดินทาง
 // ชื่อผู้ขอเป็นเจ้าหน้าที่ของ อปท. ไม่ใช่ประชาชน ใส่ได้ตามแนวเดียวกับ fleet_trip_bumped
+// ต้องตรงกับ QUEUE_REASON_LABEL ใน src/components/fleet/FleetTrips.jsx และรหัสจาก
+// fleet_trip_queue_reasons() ใน DB ทุกคำ (edge function ไม่ได้ import โมดูลฝั่ง client)
+const QUEUE_REASON_LABEL: Record<string, string> = {
+  vehicle_busy: 'รถคันนี้มีคิวทับช่วงเวลา',
+  driver_busy: 'ผู้ขับรถติดภารกิจอื่นช่วงเวลาเดียวกัน',
+  vehicle_unavailable: 'รถไม่อยู่ในสถานะใช้งานได้ (กำลังซ่อม/ปลดประจำการ)',
+  vehicle_tight: 'คิวรถติดกับคิวอื่นเกินไป (ห่างไม่ถึง 30 นาที)',
+  driver_tight: 'คิวผู้ขับรถติดกันเกินไป (ห่างไม่ถึง 30 นาที)',
+  vehicle_not_returned: 'รถยังไม่คืนจากทริปก่อนหน้าที่เลยเวลากลับแล้ว',
+  past_departure: 'เวลาออกผ่านไปแล้ว (ขอย้อนหลัง)',
+  long_duration: 'ขอใช้รถนานเกิน 72 ชั่วโมง',
+  vehicle_documents_expired: 'พ.ร.บ./ประกัน/ภาษี/ตรวจสภาพ หมดอายุก่อนวันกลับ',
+}
+
 function buildFleetTripWaitlistedMessage(trip: Record<string, unknown>) {
   const vehicle = trip.vehicle as { name?: string; license_plate?: string } | null
   const requester = trip.requester as { full_name?: string } | null
@@ -443,6 +457,10 @@ function buildFleetTripWaitlistedMessage(trip: Record<string, unknown>) {
   const departure = formatThaiDateTime(trip.planned_departure)
   const returned = formatThaiDateTime(trip.planned_return)
   const department = departmentName(trip)
+  // รหัสที่ไม่รู้จักตกเป็นข้อความกลาง ห้ามต่อค่าจาก DB เข้าข้อความตรงๆ
+  const reasons = Array.isArray(trip.waitlist_reasons)
+    ? [...new Set(trip.waitlist_reasons.map((code) => QUEUE_REASON_LABEL[String(code)] ?? 'เหตุผลอื่น'))]
+    : []
   return framedMessage(trip, '🚗', 'คำขอใช้รถรอจัดสรรรถ', [
     `รถ: ${escapeHtml(vehicleName, 100)}${plate ? ` (${escapeHtml(plate, 40)})` : ''}`,
     departure ? `ออก: ${escapeHtml(departure, 60)}` : '',
@@ -450,7 +468,9 @@ function buildFleetTripWaitlistedMessage(trip: Record<string, unknown>) {
     trip.destination ? `ปลายทาง: ${escapeHtml(trip.destination, 200)}` : '',
     requester?.full_name ? `ผู้ขอ: ${escapeHtml(requester.full_name, 100)}` : '',
     department ? `กอง: ${escapeHtml(department, 80)}` : '',
-    'รถคันนี้มีคิวอยู่แล้วช่วงเวลาดังกล่าว ผู้ดูแลต้องเปลี่ยนรถหรือเวลาก่อนอนุมัติ',
+    reasons.length
+      ? `เหตุผล: ${escapeHtml(reasons.join(' · '), 400)}`
+      : 'ระบบให้คิวอัตโนมัติไม่ได้ ผู้ดูแลต้องจัดสรรรถก่อนอนุมัติ',
     `อ้างอิง: #${escapeHtml(shortRef(trip.id), 8)}`,
   ])
 }
@@ -654,7 +674,9 @@ serve(async (req) => {
         : spec.table === 'fleet_trips'
           // fleet_trips มี FK ไป departments 2 เส้น (department_id กับ dept_head_department_id)
           // embed ต้องระบุชื่อ FK ไม่งั้น PostgREST ตอบ 300 ambiguous แล้วแจ้งเตือนทุกชนิดของทริปพัง
-          ? 'id,municipality_id,status,destination,reject_reason,planned_departure,planned_return,vehicle:fleet_vehicles(name,license_plate),driver:profiles!fleet_trips_driver_id_fkey(full_name),requester:profiles!fleet_trips_requested_by_fkey(full_name),department:departments!fleet_trips_department_id_fkey(name,color)'
+          // ⚠️ waitlist_reasons มาจาก migration 20260913150000 — ห้าม deploy ไฟล์นี้ก่อน apply
+          // ไม่งั้น select คอลัมน์ที่ยังไม่มี ทำให้แจ้งเตือนทุกชนิดของทริป (รวมจองแทนที่) พังทั้งหมด
+          ? 'id,municipality_id,status,destination,reject_reason,planned_departure,planned_return,waitlist_reasons,vehicle:fleet_vehicles(name,license_plate),driver:profiles!fleet_trips_driver_id_fkey(full_name),requester:profiles!fleet_trips_requested_by_fkey(full_name),department:departments!fleet_trips_department_id_fkey(name,color)'
           : spec.table === 'fleet_fuel_records'
             ? 'id,municipality_id,created_at,filled_at,liters,price_per_liter,total_cost,odometer,full_tank,fuel_type,fuel_other_name,fuel_station,receipt_no,vehicle:fleet_vehicles(name,license_plate,meter_unit),driver:profiles!fleet_fuel_records_driver_id_fkey(full_name)'
             : 'id,municipality_id,user_id,created_at,updated_at,status,document_type,fee_amount,payment_verified_at,department:departments(name,color)'

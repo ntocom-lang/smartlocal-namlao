@@ -40,6 +40,42 @@ const AWAITING_DECISION = ['pending', 'waitlisted']
 // ถ้าเหลือแค่ pending ผู้ขอจะไม่มีทางถอนคำขอของตัวเองเลย (DB อนุญาต approved → cancelled อยู่แล้ว)
 const REQUESTER_CANCELLABLE = ['pending', 'waitlisted', 'approved']
 
+// เหตุผลที่ระบบยังให้คิวรถไม่ได้ — รหัสมาจาก fleet_trip_queue_reasons() ใน DB (ต้องตรงกันทุกคำ)
+// ตัวเลข 30 นาที / 72 ชั่วโมง ต้องตรงกับ fleet_trip_rules() ถ้าแก้ที่ DB ต้องแก้ข้อความที่นี่ด้วย
+const QUEUE_REASON_LABEL = {
+  vehicle_busy:              'รถคันนี้มีคิวทับช่วงเวลา',
+  driver_busy:               'ผู้ขับรถติดภารกิจอื่นช่วงเวลาเดียวกัน',
+  vehicle_unavailable:       'รถไม่อยู่ในสถานะใช้งานได้ (กำลังซ่อม/ปลดประจำการ)',
+  vehicle_tight:             'คิวรถติดกับคิวอื่นเกินไป (ห่างไม่ถึง 30 นาที)',
+  driver_tight:              'คิวผู้ขับรถติดกันเกินไป (ห่างไม่ถึง 30 นาที)',
+  vehicle_not_returned:      'รถยังไม่คืนจากทริปก่อนหน้าที่เลยเวลากลับแล้ว',
+  past_departure:            'เวลาออกผ่านไปแล้ว (ขอย้อนหลัง)',
+  long_duration:             'ขอใช้รถนานเกิน 72 ชั่วโมง',
+  vehicle_documents_expired: 'พ.ร.บ./ประกัน/ภาษี/ตรวจสภาพ หมดอายุก่อนวันกลับ',
+}
+const queueReasonText = code => QUEUE_REASON_LABEL[code] ?? code
+
+// ป้ายเตือนเรื่องเวลาในรายการ — ผู้ดูแลต้องเห็นว่ารายการไหนค้างผิดปกติโดยไม่ต้องไล่เปิดทีละใบ
+// "เกินเวลาคืนรถ" สำคัญที่สุด: ถ้าไม่บันทึกกลับถึง ทุกคำขอใหม่ของรถคันนั้นจะรอจัดสรรรถ
+// nowMs = 0 ตอน render แรก (ยังไม่มีเวลา) ไม่ขึ้นป้ายใดๆ แทนการเรียก Date.now() ระหว่าง render
+function tripTimingFlag(t, nowMs) {
+  if (!nowMs) return null
+  const at = value => parseDateTime(value)?.getTime() ?? null
+  if (t.status === 'in_progress') {
+    const back = at(t.planned_return)
+    if (back && back < nowMs) return { label: 'เกินเวลาคืนรถ', color: '#dc2626' }
+  }
+  if (t.status === 'approved') {
+    const leave = at(t.planned_departure)
+    if (leave && leave < nowMs - 60 * 60_000) return { label: 'เลยเวลาออก', color: '#d97706' }
+  }
+  if (AWAITING_DECISION.includes(t.status)) {
+    const leave = at(t.planned_departure)
+    if (leave && leave < nowMs) return { label: 'เลยกำหนดแล้ว', color: '#d97706' }
+  }
+  return null
+}
+
 const inp = 'w-full px-3 py-2.5 text-sm text-gray-900 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent'
 const sel = inp + ' appearance-none'
 
@@ -75,6 +111,7 @@ const TRIP_ERROR_TH = {
   FLEET_TRIP_APPROVAL_REQUIRES_MANAGER: 'อนุมัติหรือปฏิเสธได้เฉพาะผู้ดูแลระบบยานพาหนะ',
   FLEET_TRIP_INSERT_STATUS_REQUIRES_MANAGER: 'สร้างรายการที่อนุมัติแล้วได้เฉพาะผู้ดูแลระบบยานพาหนะ — คำขอปกติระบบจะตัดสินคิวให้เอง',
   FLEET_TRIP_INVALID_STATUS_TRANSITION: 'สถานะของรายการนี้เปลี่ยนไปแล้ว กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง',
+  FLEET_TRIP_VEHICLE_UNAVAILABLE: 'รถคันนี้ไม่อยู่ในสถานะใช้งานได้ (กำลังซ่อม/ปลดประจำการ) กรุณาเลือกรถคันอื่น',
 }
 // UPDATE ที่ถูก RLS ปฏิเสธจะ "ไม่ตรงแถวใดเลย" ไม่ใช่ error — PostgREST คืน 204 และ error เป็น null
 // ถ้าไม่ดักจำนวนแถวเอง ผู้ใช้จะเห็นหน้าต่างปิดเหมือนบันทึกสำเร็จ แต่สถานะไม่ขยับ กดซ้ำกี่ครั้งก็เท่าเดิม
@@ -84,6 +121,10 @@ const TRIP_NO_ROW_MSG = 'บันทึกไม่สำเร็จ — บ�
 
 function tripErrorMessage(error) {
   const raw = error?.message ?? ''
+  // ข้อความนี้มีช่วงเวลาที่ชนอยู่ในตัว (มาจาก DB เป็นภาษาไทยแล้ว) ตัดแค่รหัสนำหน้า ไม่แทนทั้งประโยค
+  if (raw.startsWith('FLEET_TRIP_DRIVER_BUSY:')) {
+    return `${raw.slice('FLEET_TRIP_DRIVER_BUSY:'.length).trim()} กรุณาเปลี่ยนผู้ขับรถหรือเวลา`
+  }
   const hit = Object.keys(TRIP_ERROR_TH).find(code => raw.includes(code))
   return hit ? TRIP_ERROR_TH[hit] : raw
 }
@@ -495,6 +536,16 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   // ของ render แรกเสมอ (stale) แล้วเด้งผู้ใช้กลับหน้า 1 เงียบๆ ทุกครั้งที่มีคนแก้ข้อมูล
   const [refreshKey, setRefreshKey] = useState(0)
 
+  // เวลาปัจจุบันสำหรับป้าย "เกินเวลาคืนรถ/เลยกำหนด" — เดินทุก 1 นาทีให้ป้ายขึ้นเองโดยไม่ต้องรีเฟรช
+  // อ่าน Date.now() ใน effect เท่านั้น เรียกระหว่าง render จะผิดกฎ purity และค่าไม่คงที่ข้าม render
+  const [nowMs, setNowMs] = useState(0)
+  useEffect(() => {
+    const tick = () => setNowMs(Date.now())
+    queueMicrotask(tick)
+    const timer = setInterval(tick, 60_000)
+    return () => clearInterval(timer)
+  }, [])
+
   // ปิด popup ด้วยปุ่ม Esc — พฤติกรรมที่ผู้ใช้เดสก์ท็อปคาดหวัง และเป็นทางออกสำรอง
   // เมื่อปุ่มกากบาทหลุดออกนอกจอบนอุปกรณ์เล็ก ไม่ปิดระหว่างกำลังบันทึกเพื่อกันปิดคาครึ่งทาง
   useEffect(() => {
@@ -582,44 +633,37 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
-  /* ── Conflict check — คืนรายการทริปที่ชนคิว (ไม่ใช่แค่ true/false) เพื่อเอาไปแสดง
-     ในการ์ดเตือน + ใช้เป็นเป้าหมาย "ใช้รถแทนคิวเดิมกรณีฉุกเฉิน" ── */
-  async function findVehicleConflicts(vehicleId, from, to, excludeId = null) {
-    let busyQ = supabase.from('fleet_trips')
-      .select('id,status,destination,driver:profiles!fleet_trips_driver_id_fkey(full_name)')
-      .eq('vehicle_id', vehicleId).eq('status', 'in_progress')
-    if (excludeId) busyQ = busyQ.neq('id', excludeId)
-    const { data: busy } = await busyQ
-    let overlapQ = supabase.from('fleet_trips')
-      .select('id,status,destination,driver:profiles!fleet_trips_driver_id_fkey(full_name)')
-      .eq('vehicle_id', vehicleId)
-      .in('status', ['pending', 'approved'])
-      // แปลงเป็น ISO ก่อนเทียบ ไม่งั้นเทียบเวลาท้องถิ่นกับ timestamptz คนละฐานเวลา
-      .lt('planned_departure', toISO(to) ?? to).gt('planned_return', toISO(from) ?? from)
-    if (excludeId) overlapQ = overlapQ.neq('id', excludeId)
-    const { data: overlap } = await overlapQ
-    return [...(busy ?? []), ...(overlap ?? [])]
+  /* ── ตรวจคิวก่อนส่ง — ถาม DB ด้วยตัวตัดสินชุดเดียวกับ trigger (fleet_trip_queue_reasons)
+     เดิมเช็คเองฝั่ง client คนละตรรกะกับ DB: มองไม่เห็นคิวของกองอื่น (RLS), ไม่เช็คคิวผู้ขับรถ
+     และนับรถที่กำลังเดินทางว่าไม่ว่างโดยไม่ดูเวลา ขอสัปดาห์หน้าก็ขึ้นการ์ดคิวชน
+     คืน null เมื่อเช็คไม่สำเร็จ (เน็ต/สิทธิ์) — ไม่บล็อกการยื่น เพราะ DB ตรวจซ้ำตอนบันทึกอยู่แล้ว ── */
+  async function checkTripQueue(vehicleId, driverId, from, to, excludeId = null) {
+    const { data, error } = await supabase.rpc('fleet_trip_availability', {
+      p_vehicle_id: vehicleId,
+      p_driver_id: driverId || null,
+      p_from: toISO(from),
+      p_to: toISO(to),
+      p_exclude_trip: excludeId,
+    })
+    if (error) {
+      console.error('fleet_trip_availability error:', error.message)
+      return null
+    }
+    return data ?? []
   }
 
-  // หารถคันอื่นที่ว่างช่วงเวลาเดียวกัน — คำนวณจาก trips ที่โหลดมาแล้ว (realtime sync อยู่แล้ว)
-  // ไม่ต้องยิง query เพิ่ม เร็วกว่า แต่ไม่ authoritative เท่า findVehicleConflicts
-  // (ใช้แค่ "แนะนำ" ตัวจริงยังเช็คซ้ำที่ findVehicleConflicts ตอน submit)
-  function computeAvailableVehicles(excludeVehicleId, from, to, excludeTripId = null) {
-    const busy = new Set()
-    // เทียบเป็นตัวเลข timestamp — เดิมเทียบ string ระหว่างค่าจากฟอร์ม ("2027-01-05T09:00")
-    // กับค่าจาก DB ("2027-01-05T02:00:00+00:00") ซึ่งคนละรูปแบบและคนละฐานเวลา
-    const fromMs = parseDateTime(from)?.getTime() ?? 0
-    const toMs   = parseDateTime(to)?.getTime() ?? 0
-    trips.forEach(t => {
-      if (t.id === excludeTripId) return
-      if (!['pending', 'approved', 'in_progress'].includes(t.status)) return
-      const overlaps = t.status === 'in_progress'
-        || (t.planned_departure && t.planned_return
-            && (parseDateTime(t.planned_departure)?.getTime() ?? 0) < toMs
-            && (parseDateTime(t.planned_return)?.getTime() ?? 0) > fromMs)
-      if (overlaps) busy.add(t.vehicle_id)
+  // รถคันอื่นที่ว่างและพร้อมใช้ช่วงเวลาเดียวกัน — DB ตัดสิน (เห็นคิวทุกกอง + เอกสารรถ + สถานะรถ)
+  // แล้วกรองเหลือเฉพาะคันที่บัญชีนี้เลือกได้อยู่แล้ว (vehicles ผ่าน RLS มาแล้ว)
+  async function loadAvailableVehicles(from, to, excludeTripId, excludeVehicleId) {
+    const { data, error } = await supabase.rpc('fleet_available_vehicles', {
+      p_from: toISO(from), p_to: toISO(to), p_exclude_trip: excludeTripId,
     })
-    return vehicles.filter(v => v.id !== excludeVehicleId && !busy.has(v.id))
+    if (error) {
+      console.error('fleet_available_vehicles error:', error.message)
+      return []
+    }
+    const free = new Set((data ?? []).map(row => row.vehicle_id))
+    return vehicles.filter(v => v.id !== excludeVehicleId && free.has(v.id))
   }
 
   /* ── Open modals ── */
@@ -762,17 +806,31 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       return alert('เวลากลับต้องหลังเวลาออก')
     const isEdit = !!selTrip
     const excludeId = isEdit ? selTrip.id : null
-    const conflicts = sendToWaitlist && !isEdit
+    // ล็อกปุ่มตั้งแต่ตอนเช็คคิว — ไม่งั้นกดส่งซ้ำระหว่างรอ RPC แล้วได้คำขอซ้ำสองใบ
+    setSaving(true)
+    const queue = sendToWaitlist && !isEdit
       ? []
-      : await findVehicleConflicts(form.vehicle_id, form.planned_departure, form.planned_return, excludeId)
-    if (conflicts.length) {
-      setConflict({
-        trips: conflicts,
-        altVehicles: computeAvailableVehicles(form.vehicle_id, form.planned_departure, form.planned_return, excludeId),
-      })
+      : await checkTripQueue(form.vehicle_id, form.driver_id, form.planned_departure, form.planned_return, excludeId)
+    // แก้ไขรายการเดิม: DB บล็อกเฉพาะเหตุ hard (เหตุ soft ไม่ทำให้รายการกลับไปรอจัดสรร) จึงเตือนเฉพาะ hard
+    const blocking = (queue ?? []).filter(row => !isEdit || row.severity === 'hard')
+    if (blocking.length) {
+      setSaving(false)
+      // แสดงเหตุผลทันที แล้วค่อยเติมรายชื่อรถว่างตามมา — เดิมรอโหลดรถว่างเสร็จก่อน การ์ดขึ้นช้า 1–2 วินาที
+      // ผู้ใช้เห็นหน้าจอนิ่งแล้วกดซ้ำ
+      const nextConflict = {
+        reasons: blocking,
+        // "ใช้รถแทนคิวเดิมกรณีฉุกเฉิน" ยกเลิกได้เฉพาะคิวรถที่ทับ ไม่ช่วยกรณีคนขับไม่ว่าง/รถซ่อม
+        trips: blocking.filter(row => row.reason === 'vehicle_busy'),
+        altVehicles: [],
+      }
+      setConflict(nextConflict)
+      if (blocking.some(row => row.reason.startsWith('vehicle_'))) {
+        const altVehicles = await loadAvailableVehicles(form.planned_departure, form.planned_return, excludeId, form.vehicle_id)
+        // ผู้ใช้อาจเปลี่ยนรถ/เวลาไปแล้วระหว่างรอ (การ์ดถูกล้าง) — เติมเฉพาะการ์ดใบเดิม
+        setConflict(current => (current === nextConflict ? { ...current, altVehicles } : current))
+      }
       return
     }
-    setSaving(true)
     const payload = {
       vehicle_id: form.vehicle_id,
       driver_id: form.driver_id,
@@ -804,13 +862,15 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
           municipality_id: tenant.id,
           created_by: user?.id,
           status: 'pending',
-        }).select('id,status').single()
+        }).select('id,status,waitlist_reasons').single()
     setSaving(false)
     if (error) return alert(tripErrorMessage(error))
     if (isEdit && !saved) return alert(TRIP_NO_ROW_MSG)
     if (!isEdit && saved?.status === 'waitlisted') {
       notifyTelegram('fleet_trip_waitlisted', saved.id)
-      alert('รถคันนี้มีคิวอยู่แล้วช่วงเวลาดังกล่าว — ส่งคำขอให้ผู้ดูแลระบบยานพาหนะจัดสรรรถแล้ว\nสถานะ: รอจัดสรรรถ')
+      // บอกเหตุผลจริงที่ DB ตัดสิน ไม่ใช่ข้อความรวมๆ — ผู้ขอจะได้รู้ว่าเปลี่ยนอะไรแล้วได้คิวเร็วขึ้น
+      const why = (saved.waitlist_reasons ?? []).map(code => `• ${queueReasonText(code)}`).join('\n')
+      alert(`ส่งคำขอให้ผู้ดูแลระบบยานพาหนะจัดสรรรถแล้ว\nสถานะ: รอจัดสรรรถ${why ? `\n\n${why}` : ''}`)
     } else if (!isEdit && saved?.status === 'approved') {
       alert('ระบบอนุมัติคิวรถให้แล้ว\nกรุณาพิมพ์ใบขออนุญาตใช้รถ (แบบ 3) ให้ผู้มีอำนาจลงนามก่อนนำรถออก')
     }
@@ -1184,7 +1244,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       <label className="text-xs font-semibold text-gray-600 mb-1 block">ผู้ขับรถ *</label>
       <ResponsiveSelect
         value={form.driver_id ?? ''}
-        onChange={set('driver_id')}
+        /* เปลี่ยนผู้ขับรถ = เหตุผลคิวชนเดิมอาจไม่จริงแล้ว (คนขับไม่ว่าง) ต้องล้างการ์ดให้เช็คใหม่ตอนกดส่ง */
+        onChange={e => { set('driver_id')(e); setConflict(null); setShowOverride(false) }}
         placeholder="— เลือกผู้ขับรถ —"
         modalTitle="เลือกผู้ขับรถ"
         searchPlaceholder="ค้นหาพนักงานขับรถ..."
@@ -1447,6 +1508,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     // admin มีปุ่ม "ปฏิเสธ" อยู่แล้ว จึงไม่ต้องมีปุ่มถอนซ้อนอีกปุ่ม
     const canCancel  = REQUESTER_CANCELLABLE.includes(t.status) && isRequester(t) && !isAdmin
     const dist = t.distance_km ?? null
+    const timing = tripTimingFlag(t, nowMs)
     return (
       <div key={t.id}
         onClick={e => { if (e.target.closest('button')) return; openDetail(t) }}
@@ -1466,11 +1528,22 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                 โดยระบบ
               </span>
             )}
+            {timing && (
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                    style={{ backgroundColor: timing.color + '18', color: timing.color }}>
+                {timing.label}
+              </span>
+            )}
             {t.planned_departure && (
               <span className="text-[9px] font-semibold bg-blue-50 text-blue-500 px-1.5 py-0.5 rounded-full">คำขอ</span>
             )}
           </div>
         </div>
+        {t.status === 'waitlisted' && t.waitlist_reasons?.length > 0 && (
+          <p className="text-[10px] text-orange-600 leading-4">
+            {t.waitlist_reasons.map(queueReasonText).join(' · ')}
+          </p>
+        )}
         <p className="truncate text-[11px] text-gray-600" title={`${t.destination} — ${t.purpose}`}>
           📍 {t.destination} — {t.purpose}
         </p>
@@ -1543,6 +1616,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     // ที่รายงานใช้ (แถวเก่าก่อนแก้บั๊กนี้ยังไม่มี started_at จึงตกไปใช้ค่าเดิมตามลำดับเดิม)
     const dateStr = fmtDate(t.started_at || t.planned_departure || t.trip_date)
     const dist = t.distance_km ?? null
+    const timing = tripTimingFlag(t, nowMs)
     return (
       <tr key={t.id} style={{ backgroundColor: idx % 2 === 0 ? '#fff' : '#f5f8fc' }}
           onClick={e => { if (e.target.closest('button')) return; openDetail(t) }}
@@ -1574,6 +1648,17 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
             <div className="mt-0.5 text-[9px] text-gray-400 whitespace-nowrap"
                  title="รถว่าง ระบบอนุมัติคิวให้เอง — ยังต้องให้ผู้มีอำนาจลงนามแบบ 3 ก่อนออกรถ">
               โดยระบบ
+            </div>
+          )}
+          {timing && (
+            <div className="mt-0.5 text-[9px] font-bold whitespace-nowrap" style={{ color: timing.color }}>
+              {timing.label}
+            </div>
+          )}
+          {t.status === 'waitlisted' && t.waitlist_reasons?.length > 0 && (
+            <div className="mt-0.5 text-[9px] text-orange-600 leading-3 max-w-[11rem]"
+                 title={t.waitlist_reasons.map(queueReasonText).join('\n')}>
+              {t.waitlist_reasons.map(queueReasonText).join(' · ')}
             </div>
           )}
         </td>
@@ -1801,6 +1886,15 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                     <p className="text-gray-400">{t.status === 'rejected' ? 'ผู้ปฏิเสธ' : t.status === 'cancelled' ? 'ผู้ดำเนินการ' : 'ผู้อนุมัติ'}</p>
                     <p className="font-semibold text-gray-700">{t.approver.full_name}{t.approved_at ? ` · ${fmtDT(t.approved_at)}` : ''}</p>
                   </div>}
+                  {/* เก็บไว้แม้ผู้ดูแลอนุมัติภายหลัง — ตรวจย้อนหลังได้ว่าอนุมัติทั้งที่ระบบเตือนเรื่องอะไร */}
+                  {t.waitlist_reasons?.length > 0 && (
+                    <div className="col-span-2">
+                      <p className="text-gray-400">{t.status === 'waitlisted' ? 'เหตุผลที่รอจัดสรรรถ' : 'ระบบเคยเตือนก่อนอนุมัติ'}</p>
+                      <ul className="list-disc pl-4 font-semibold text-orange-600">
+                        {t.waitlist_reasons.map(code => <li key={code}>{queueReasonText(code)}</li>)}
+                      </ul>
+                    </div>
+                  )}
                   {t.backdated_reason && <div className="col-span-2"><p className="text-gray-400">เหตุผลที่บันทึกย้อนหลัง</p><p className="font-semibold text-amber-600">{t.backdated_reason}</p></div>}
                   {t.reject_reason && <div className="col-span-2"><p className="text-gray-400">เหตุผลปฏิเสธ/ยกเลิก</p><p className="font-semibold text-red-600">{t.reject_reason}</p></div>}
                   {t.notes && <div className="col-span-2"><p className="text-gray-400">หมายเหตุ</p><p className="font-semibold text-gray-700">{t.notes}</p></div>}
@@ -1866,11 +1960,22 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
           </div>
           {conflict && (
             <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-600 space-y-2">
+              {/* แสดงเฉพาะเหตุผลกับช่วงเวลา ไม่แสดงชื่อผู้ขอ/ปลายทางของทริปที่ชน — RPC จงใจไม่คืนมา
+                  เพราะคิวที่ชนอาจเป็นของกองอื่นที่บัญชีนี้ไม่มีสิทธิ์เห็นรายละเอียด */}
               <p className="font-semibold">
-                ⚠️ รถคันนี้มีคำขอใช้รถในช่วงเวลาดังกล่าวแล้ว
-                {conflict.trips[0]?.driver?.full_name ? ` โดย ${conflict.trips[0].driver.full_name}` : ''}
-                {conflict.trips[0]?.destination ? ` (${conflict.trips[0].destination})` : ''}
+                ⚠️ {selTrip ? 'บันทึกการแก้ไขนี้ไม่ได้' : 'ระบบยังให้คิวรถคำขอนี้อัตโนมัติไม่ได้'}
               </p>
+              <ul className="list-disc pl-4 space-y-0.5">
+                {conflict.reasons.map((row, i) => (
+                  <li key={`${row.reason}-${i}`}>
+                    {queueReasonText(row.reason)}
+                    {row.conflict_from ? ` (${fmtDT(row.conflict_from)} – ${fmtDT(row.conflict_to)})` : ''}
+                  </li>
+                ))}
+              </ul>
+              {selTrip && (
+                <p className="text-gray-500">เปลี่ยนรถ ผู้ขับรถ หรือเวลา ให้ไม่ชนกับคิวข้างบนก่อนบันทึก</p>
+              )}
               {conflict.altVehicles.length > 0 && (
                 <div>
                   <p className="text-gray-500 mb-1">รถคันอื่นที่ว่างช่วงเวลานี้ — กดเพื่อเปลี่ยน:</p>
@@ -1895,7 +2000,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                   ส่งคำขอให้ผู้ดูแลจัดสรรรถ
                 </button>
               )}
-              {isAdmin && (showOverride ? (
+              {isAdmin && conflict.trips.length > 0 && (showOverride ? (
                 <div className="space-y-1.5 pt-1.5 border-t border-red-100">
                   <label className="text-[11px] font-semibold text-gray-600 block">เหตุผลความจำเป็นเร่งด่วน (บังคับกรอก) *</label>
                   <textarea value={overrideReason} onChange={e => setOverrideReason(e.target.value)}
