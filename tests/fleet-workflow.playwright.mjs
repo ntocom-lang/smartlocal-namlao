@@ -644,7 +644,7 @@ async function checkFuelCounter(baseUrl, headed) {
   try {
     // เตรียมรถของตัวเองไว้ก่อน เพื่อไม่ไปแตะทรัพย์สินที่ อปท. ใช้จริง
     // ใช้ helper ตัวเดียวกับชุดอื่น ไม่งั้นรถจะถูกสร้างแบบไม่ใช่ "ส่วนกลาง"
-    // แล้วชุด staff-request-approval ที่รันทีหลังจะมองไม่เห็นรถคันนี้
+    // แล้วชุด staff-request-auto-approval ที่รันทีหลังจะมองไม่เห็นรถคันนี้
     await ensureTestVehicle(page)
 
     await openTab(page, 'เชื้อเพลิง')
@@ -701,9 +701,8 @@ async function checkTripDateFollowsDeparture(baseUrl, headed) {
     await clickButton(page, 'ส่งคำขออนุญาตใช้รถ')
     await page.waitForTimeout(3_000)
 
-    await clickButton(page, 'อนุมัติ', { exact: false })
-    await page.waitForTimeout(3_000)
-
+    // ตั้งแต่ 2026-09-13 รถว่าง = DB อนุมัติคิวให้ทันที ไม่มีขั้นกดอนุมัติแล้ว
+    // (ถ้าอนุมัติอัตโนมัติพัง ปุ่ม 🚀 จะไม่ขึ้นและข้อนี้ไม่ผ่านเอง)
     await clickButton(page, '🚀', { exact: false })
     await page.waitForTimeout(1_200)
     await fillField(page, 'เวลาออกจริง', at(today, 9))
@@ -781,7 +780,12 @@ async function checkForm3RequestPrint(baseUrl, headed) {
     const afterSubmit = await bodyText(page)
     assert.ok(afterSubmit.includes(destination), 'ส่งคำขอแล้วไม่พบรายการในหน้าจอ')
 
-    // ── พิมพ์ตอนยังไม่อนุมัติ: ห้ามติ๊ก "อนุมัติ" ให้ล่วงหน้า ──
+    // รถว่าง = ระบบอนุมัติคิวให้ทันที และต้องบอกในรายการว่า "โดยระบบ" แยกจากคนกดอนุมัติ
+    const autoRow = await rowTextOf(page, destination)
+    assert.ok(autoRow.includes('อนุมัติแล้ว') && autoRow.includes('โดยระบบ'),
+      `คำขอที่รถว่างไม่ได้ถูกอนุมัติคิวอัตโนมัติ หรือไม่มีป้าย "โดยระบบ": ${autoRow.slice(0, 160)}`)
+
+    // ── พิมพ์ตอนระบบอนุมัติคิว: ห้ามติ๊ก "อนุมัติ" แทนผู้มีอำนาจ ──
     await openTripDetail(page, destination)
     const detailText = await page.evaluate(() =>
       [...document.querySelectorAll('div.fixed.inset-0')].map(m => m.innerText).join('\n'))
@@ -795,13 +799,11 @@ async function checkForm3RequestPrint(baseUrl, headed) {
       { pdfPath: path.join(PRINT_DIR, 'fleet-form3-pending.pdf') })
     assert.ok(pendingPrint.includes('ใบขออนุญาตใช้รถส่วนกลาง'), 'หน้าต่างพิมพ์ไม่ใช่ใบขออนุญาตใช้รถ (แบบ 3)')
     assert.ok(/\(\s*\)\s*อนุมัติ/.test(pendingPrint),
-      'คำขอที่ยังไม่อนุมัติ แต่เอกสารติ๊กช่อง "อนุมัติ" ให้แล้ว')
+      'ระบบอนุมัติคิวให้อัตโนมัติ แต่เอกสารติ๊กช่อง "อนุมัติ" แทนผู้มีอำนาจ')
     await closeDetail(page)
     await page.waitForTimeout(1_000)
 
-    // ── อนุมัติ แล้วเดินทางจริงจนจบ ──
-    await clickButton(page, 'อนุมัติ', { exact: false })
-    await page.waitForTimeout(3_000)
+    // ── เดินทางจริงจนจบ (ไม่มีขั้นกดอนุมัติแล้ว) ──
     await clickButton(page, '🚀', { exact: false })
     await page.waitForTimeout(1_200)
     await fillField(page, 'เวลาออกจริง', at(new Date(), 8))
@@ -842,8 +844,10 @@ async function checkForm3RequestPrint(baseUrl, headed) {
     const signatureCount = (finalPrint.match(/\(ลงชื่อ\)/g) || []).length
     assert.ok(signatureCount >= 3,
       `เอกสารพิมพ์มีช่องลงนาม ${signatureCount} ช่อง ต้องมีอย่างน้อย 3 (ผู้ขออนุญาต/ผู้ขับรถ/หัวหน้ากอง)`)
-    assert.ok(/\(✓\)\s*อนุมัติ/.test(finalPrint),
-      'คำขอที่อนุมัติและเดินทางจบแล้ว แต่เอกสารไม่ติ๊กช่อง "อนุมัติ"')
+    // เดินทางจบแล้วก็ยังต้องว่าง — ระบบกันคิวให้ ไม่ใช่ผู้มีอำนาจอนุญาต ผู้มีอำนาจติ๊กและลงนามบนกระดาษเอง
+    // (กรณีผู้ดูแลกดอนุมัติเองแล้วติ๊ก ✓ คุมด้วย tests/fleet-form3-signatories.test.mjs)
+    assert.ok(/\(\s*\)\s*อนุมัติ/.test(finalPrint),
+      'ทริปที่ระบบอนุมัติคิวอัตโนมัติ แต่เอกสารฉบับสมบูรณ์ติ๊กช่อง "อนุมัติ" แทนผู้มีอำนาจ')
     assert.ok(!/\(✓\)\s*ไม่อนุมัติ/.test(finalPrint), 'เอกสารติ๊กช่อง "ไม่อนุมัติ" ผิด')
 
     // แบบ 3 กระดาษไม่มีเชิงอรรถระบบท้ายใบ
@@ -886,14 +890,16 @@ async function checkForm3RequestPrint(baseUrl, headed) {
 
 // ข้อ 7 — บันทึกการใช้รถย้อนหลัง: ต้องได้สถานะ "เสร็จสิ้น" ทันที เข้าไปอยู่ในประวัติ
 //         และเอกสารที่พิมพ์ต้อง "ไม่ติ๊กอนุมัติ" เพราะไม่ได้ผ่านขั้นอนุมัติจริง
-// ข้อ 8 — แยกบทบาท "ผู้ขอ" กับ "ผู้อนุมัติ" ให้ขาดจากกัน: เจ้าหน้าที่ยื่นคำขอได้
-//         แต่ต้องอนุมัติคำขอของตัวเองไม่ได้ ต้องรอผู้มีอำนาจสั่งใช้รถกดอนุมัติ
-//         (เป็นหัวใจของแบบ 3 ถ้าพลาดข้อนี้ เอกสารที่พิมพ์ออกมาไม่มีค่าเชิงการควบคุมภายใน)
-async function checkStaffRequestNeedsAdminApproval(baseUrl, headed) {
+// ข้อ 8 — อนุมัติคิวอัตโนมัติ (2026-09-13): เจ้าหน้าที่ยื่นคำขอรถว่างแล้วได้คิวทันที "โดยระบบ"
+//         แต่ยังกดอนุมัติเองไม่ได้ ถ้าคิวชนต้องส่งให้ผู้ดูแลจัดสรรได้ และผู้ดูแลต้องอนุมัติ
+//         รายการรอจัดสรรรถที่คิวยังชนอยู่ไม่ได้ (DB ตรวจซ้ำ) — กันรถคันเดียวถูกอนุมัติให้สองคน
+//         การอนุญาตตามระเบียบยังเป็นลายเซ็นผู้มีอำนาจบนแบบ 3 ระบบแค่กันคิวรถให้
+async function checkStaffRequestAutoApproval(baseUrl, headed) {
   const pad = n => String(n).padStart(2, '0')
   const later = new Date(Date.now() + 9 * 86_400_000)
   const at = (d, hour) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(hour)}:00`
   const destination = `${TEST_DESTINATION} คำขอเจ้าหน้าที่ ${STAMP}`
+  const clashDestination = `${TEST_DESTINATION} คิวชน ${STAMP}`
 
   // รถทดสอบต้องมีก่อน และเจ้าหน้าที่ทั่วไปสร้างทรัพย์สินเองไม่ได้ จึงให้ admin เตรียมให้
   const admin = await openFleet('fleet-admin', baseUrl, headed)
@@ -925,11 +931,30 @@ async function checkStaffRequestNeedsAdminApproval(baseUrl, headed) {
     assert.ok(!/new row violates row-level security/i.test(text),
       'เจ้าหน้าที่เจอ error ดิบจาก RLS ตอนส่งคำขอ')
 
+    const ownRow = await rowTextOf(staff.page, destination)
+    assert.ok(ownRow.includes('อนุมัติแล้ว') && ownRow.includes('โดยระบบ'),
+      `คำขอรถว่างของเจ้าหน้าที่ไม่ได้รับการอนุมัติคิวอัตโนมัติ: ${ownRow.slice(0, 160)}`)
     const ownRowButtons = await rowButtons(staff.page, destination)
     assert.ok(!ownRowButtons.some(label => label.includes('อนุมัติ')),
-      'เจ้าหน้าที่ทั่วไปเห็นปุ่มอนุมัติคำขอของตัวเอง — ขัดหลักแยกผู้ขอออกจากผู้อนุมัติ')
+      'เจ้าหน้าที่ทั่วไปเห็นปุ่มอนุมัติ — ขัดหลักแยกผู้ขอออกจากผู้อนุมัติ')
+    // คำขอถูกอนุมัติทันที ถ้าไม่มีปุ่มยกเลิก ผู้ขอจะถอนคำขอของตัวเองไม่ได้เลย
     assert.ok(ownRowButtons.some(label => label.includes('ยกเลิก')),
-      'เจ้าหน้าที่ยกเลิกคำขอของตัวเองไม่ได้')
+      'เจ้าหน้าที่ยกเลิกคำขอที่ระบบอนุมัติคิวให้แล้วไม่ได้')
+
+    // ── คันเดิม เวลาทับ → การ์ดคิวชน → ส่งให้ผู้ดูแลจัดสรรรถ ──
+    await clickButton(staff.page, 'ขออนุญาตใช้รถ')
+    await staff.page.waitForTimeout(1_000)
+    await fillForm3Fields(staff.page, { destination: clashDestination, purpose: TEST_PURPOSE, passengers: 1 })
+    await selectField(staff.page, 'ยานพาหนะ', `${TEST_VEHICLE_NAME} (${TEST_PLATE})`)
+    await fillField(staff.page, 'วันเวลาออก', at(later, 9))
+    await fillField(staff.page, 'กลับโดยประมาณ', at(later, 11))
+    await clickButton(staff.page, 'ส่งคำขออนุญาตใช้รถ')
+    await staff.page.waitForTimeout(2_500)
+    await clickButton(staff.page, 'ส่งคำขอให้ผู้ดูแลจัดสรรรถ')
+    await staff.page.waitForTimeout(3_500)
+    const clashRow = await rowTextOf(staff.page, clashDestination)
+    assert.ok(clashRow.includes('รอจัดสรรรถ'),
+      `คำขอที่คิวชนไม่ได้เป็น "รอจัดสรรรถ": ${clashRow.slice(0, 160)}`)
   } finally {
     await staff.context.close()
   }
@@ -937,16 +962,41 @@ async function checkStaffRequestNeedsAdminApproval(baseUrl, headed) {
   const approver = await openFleet('fleet-admin', baseUrl, headed)
   try {
     await openTab(approver.page, 'การใช้รถ')
-    const buttons = await rowButtons(approver.page, destination)
-    assert.ok(buttons.some(label => label.includes('อนุมัติ')),
-      'ผู้ดูแลระบบยานพาหนะไม่เห็นปุ่มอนุมัติคำขอของเจ้าหน้าที่')
-    await clickButtonInRow(approver.page, destination, 'อนุมัติ')
+    const buttons = await rowButtons(approver.page, clashDestination)
+    assert.ok(buttons.some(label => label.includes('อนุมัติ')) && buttons.some(label => label.includes('ปฏิเสธ')),
+      'ผู้ดูแลไม่เห็นปุ่มอนุมัติ/ปฏิเสธบนรายการรอจัดสรรรถ')
+
+    // อนุมัติทั้งที่คิวยังชน → DB ต้องไม่ยอม สถานะต้องค้างเป็นรอจัดสรรรถ
+    await clickButtonInRow(approver.page, clashDestination, 'อนุมัติ')
+    await approver.page.waitForTimeout(3_500)
+    const stillWaiting = await rowTextOf(approver.page, clashDestination)
+    assert.ok(stillWaiting.includes('รอจัดสรรรถ'),
+      'ผู้ดูแลอนุมัติรายการรอจัดสรรรถได้ทั้งที่คิวยังชน — รถคันเดียวถูกอนุมัติให้สองคน')
+
+    // เก็บกวาด: ปฏิเสธรายการที่ชน ไม่ทิ้งค้างบนสนามซ้อม
+    await clickButtonInRow(approver.page, clashDestination, 'ปฏิเสธ')
+    await approver.page.waitForTimeout(1_000)
+    await fillField(approver.page, 'เหตุผลการปฏิเสธ', '[TEST] เก็บกวาดหลังทดสอบคิวชน')
+    await clickButton(approver.page, 'ยืนยันปฏิเสธ')
     await approver.page.waitForTimeout(3_000)
-    const rowText = await rowTextOf(approver.page, destination)
-    assert.ok(rowText.includes('อนุมัติแล้ว'),
-      `อนุมัติแล้วแต่สถานะในตารางไม่เปลี่ยนเป็น "อนุมัติแล้ว"`)
   } finally {
     await approver.context.close()
+  }
+
+  // ผู้ขอถอนคำขอที่ระบบอนุมัติคิวให้แล้วได้เอง — คืนคิวรถให้การรันครั้งถัดไป
+  const owner = await openFleet('fleet-staff', baseUrl, headed)
+  try {
+    await openTab(owner.page, 'การใช้รถ')
+    await clickButtonInRow(owner.page, destination, 'ยกเลิก')
+    await owner.page.waitForTimeout(1_000)
+    await fillField(owner.page, 'เหตุผลการยกเลิก', '[TEST] เก็บกวาดหลังทดสอบอนุมัติอัตโนมัติ')
+    await clickButton(owner.page, 'ยืนยันยกเลิกคำขอ')
+    await owner.page.waitForTimeout(3_500)
+    const cancelledRow = await rowTextOf(owner.page, destination)
+    assert.ok(cancelledRow.includes('ยกเลิก'),
+      `ผู้ขอยกเลิกคำขอที่ระบบอนุมัติแล้วไม่สำเร็จ: ${cancelledRow.slice(0, 160)}`)
+  } finally {
+    await owner.context.close()
   }
 }
 
@@ -1129,8 +1179,8 @@ async function main() {
     checks.push(
       { name: 'fuel-counter', reason: 'ตัวนับรายการเชื้อเพลิงอัปเดตทันทีหลังบันทึก', run: checkFuelCounter },
       { name: 'trip-date', reason: 'trip_date ตามวันที่ออกเดินทางจริง', run: checkTripDateFollowsDeparture },
-      { name: 'form3-request-print', reason: 'ขออนุญาตใช้รถ → อนุมัติ → เดินทาง → พิมพ์แบบ 3 ครบทุกช่อง', run: checkForm3RequestPrint },
-      { name: 'staff-request-approval', reason: 'เจ้าหน้าที่ยื่นคำขอได้ แต่อนุมัติเองไม่ได้ ต้องให้ผู้มีอำนาจอนุมัติ', run: checkStaffRequestNeedsAdminApproval },
+      { name: 'form3-request-print', reason: 'ขออนุญาตใช้รถ → ระบบอนุมัติคิว → เดินทาง → พิมพ์แบบ 3 ครบทุกช่อง (ช่องอนุมัติเว้นให้ผู้มีอำนาจ)', run: checkForm3RequestPrint },
+      { name: 'staff-request-auto-approval', reason: 'รถว่างได้คิวอัตโนมัติ · คิวชนส่งผู้ดูแลจัดสรร · อนุมัติทั้งที่ชนไม่ได้ · ผู้ขอยกเลิกเองได้', run: checkStaffRequestAutoApproval },
       { name: 'backdated-entry-print', reason: 'บันทึกย้อนหลังเข้าประวัติทันที และเอกสารไม่ติ๊กอนุมัติเอง', run: checkBackdatedEntryPrint },
     )
   }

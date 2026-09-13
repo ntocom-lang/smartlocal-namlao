@@ -341,4 +341,29 @@ assert.ok(settingsSource.includes('{!slot.departmentId && ('))
 // แถวสำเร็จรูปถูกถอดออกจากรายการแล้ว
 assert.ok(!settingsSource.includes("role: 'vehicle_authority'"))
 
+// ── คำขอที่ระบบอนุมัติคิวให้อัตโนมัติ (2026-09-13) ─────────────────────────────
+// ปุ่มอนุมัติในระบบเป็นแค่การกันคิวรถ การอนุญาตจริงคือลายเซ็นผู้มีอำนาจบนแบบ 3
+// DB จึงตั้ง approved_by = NULL ให้คำขอที่รถว่าง ใบต้องเว้นช่อง "( ) อนุมัติ" ไว้ให้ผู้มีอำนาจติ๊กเอง
+// ถ้าวันหนึ่งมีคนเติม approved_by ให้รายการ auto หรือเปลี่ยนเงื่อนไขติ๊กให้ดูแค่ status
+// ใบจะพิมพ์ว่า "อนุมัติแล้ว" ทั้งที่ยังไม่มีผู้มีอำนาจคนไหนพิจารณา
+const approvalBox = html => {
+  const match = html.match(/ความเห็นของผู้มีอำนาจสั่งใช้รถ&nbsp;&nbsp;\((.*?)\) อนุมัติ/)
+  assert.ok(match, 'ต้องมีช่องความเห็นของผู้มีอำนาจสั่งใช้รถบนแบบ 3')
+  return match[1]
+}
+const autoApproved = { ...trip, status: 'approved', approval_method: 'auto', approved_by: null, approver: null }
+assert.equal(approvalBox(buildFleetTripRequestHtml({ trip: autoApproved, tenant })), '&nbsp;',
+  'คำขอที่ระบบอนุมัติคิวให้ ต้องไม่ติ๊ก "อนุมัติ" แทนผู้มีอำนาจ')
+// ออกเดินทางแล้วก็ยังต้องว่าง — สถานะเปลี่ยนไม่ได้แปลว่ามีคนลงนาม
+assert.equal(approvalBox(buildFleetTripRequestHtml({ trip: { ...autoApproved, status: 'in_progress' }, tenant })), '&nbsp;')
+// ผู้ดูแลกดอนุมัติเอง (มี approved_by) ติ๊กให้ตามเดิม
+assert.equal(approvalBox(buildFleetTripRequestHtml({
+  trip: { ...trip, status: 'approved', approval_method: 'manual', approved_by: 'u-admin', approver: { full_name: 'ผู้ดูแล' } },
+  tenant,
+})), '✓')
+// รอจัดสรรรถ = ยังไม่ได้รถ ห้ามติ๊กทั้งอนุมัติและไม่อนุมัติ
+const waitlistedHtml = buildFleetTripRequestHtml({ trip: { ...trip, status: 'waitlisted', approved_by: null }, tenant })
+assert.equal(approvalBox(waitlistedHtml), '&nbsp;')
+assert.match(waitlistedHtml, /\(&nbsp;\) ไม่อนุมัติ/)
+
 console.log('fleet form 3 signatory assertions passed')

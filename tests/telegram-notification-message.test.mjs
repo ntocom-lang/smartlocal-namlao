@@ -66,7 +66,8 @@ try {
   writeFileSync(probe, `${stubbed}\nexport {\n`
     + '  buildComplaintCreatedMessage, buildComplaintStatusMessage,\n'
     + '  buildDocumentRequestCreatedMessage, buildDocumentRequestStatusMessage,\n'
-    + '  buildFeeVerifiedMessage, documentTypeLabel, DEPARTMENT_COLOR_EMOJI,\n}\n')
+    + '  buildFeeVerifiedMessage, documentTypeLabel, DEPARTMENT_COLOR_EMOJI,\n'
+    + '  buildFleetTripWaitlistedMessage,\n}\n')
   // BOT_TOKEN ถูกอ่านตอน import module — ต้องมี Deno.env ก่อนโหลด
   globalThis.Deno = { env: { get: () => '' } }
   mod = await import(pathToFileURL(probe).href)
@@ -78,6 +79,7 @@ const {
   buildComplaintCreatedMessage, buildComplaintStatusMessage,
   buildDocumentRequestCreatedMessage, buildDocumentRequestStatusMessage,
   buildFeeVerifiedMessage, documentTypeLabel, DEPARTMENT_COLOR_EMOJI,
+  buildFleetTripWaitlistedMessage,
 } = mod
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -158,6 +160,33 @@ const fee = buildFeeVerifiedMessage(request, null)
 assert.match(fee, /^💰 <b>ตรวจสอบค่าธรรมเนียมแล้ว<\/b>$/m)
 assert.match(fee, /จำนวนเงิน: <b>200\.00 บาท<\/b>/)
 assert.match(fee, /ตรวจสอบเมื่อ: 12 ก\.ย\. 2569 21:10 น\./)
+
+// คำขอใช้รถรอจัดสรรรถ — ระบบอนุมัติอัตโนมัติไม่ได้เพราะรถมีคิวอยู่แล้ว ผู้ดูแลต้องรู้ทันที
+// ข้อมูลในกลุ่มต้องพอให้ตัดสินใจได้โดยไม่ต้องเปิดระบบก่อน: รถ, เวลาไป-กลับ, ปลายทาง, ผู้ขอ
+const waitlisted = buildFleetTripWaitlistedMessage({
+  id: 'b7e1c2d3-0000-4000-8000-000000000001',
+  status: 'waitlisted',
+  destination: '[TEST] ศาลากลางจังหวัดแพร่',
+  planned_departure: '2026-09-15T01:30:00.000Z', // 08:30 น. ไทย
+  planned_return: '2026-09-15T09:00:00.000Z', // 16:00 น. ไทย
+  vehicle: { name: '[TEST] รถกองคลัง', license_plate: 'กข 1234 แพร่' },
+  requester: { full_name: '[TEST] ผู้ขอใช้รถ' },
+  department: { name: 'กองคลัง', color: 'yellow' },
+})
+assert.ok(waitlisted.startsWith('🚗 <b>คำขอใช้รถรอจัดสรรรถ</b>\n'), waitlisted)
+assert.ok(waitlisted.endsWith(`\n${rule('🟡')}`), waitlisted)
+assert.match(waitlisted, /^รถ: \[TEST\] รถกองคลัง \(กข 1234 แพร่\)$/m)
+assert.match(waitlisted, /^ออก: 15 ก\.ย\. 2569 08:30 น\.$/m)
+assert.match(waitlisted, /^กลับ: 15 ก\.ย\. 2569 16:00 น\.$/m)
+assert.match(waitlisted, /^ปลายทาง: \[TEST\] ศาลากลางจังหวัดแพร่$/m)
+assert.match(waitlisted, /^ผู้ขอ: \[TEST\] ผู้ขอใช้รถ$/m)
+assert.match(waitlisted, /^กอง: กองคลัง$/m)
+assert.match(waitlisted, /^อ้างอิง: #b7e1c2d3$/m)
+// ปลายทางเป็นข้อความที่ผู้ขอพิมพ์เอง ต้อง escape ไม่งั้น HTML parse_mode ทำให้บอทส่งไม่ออก
+assert.match(
+  buildFleetTripWaitlistedMessage({ destination: '<i>x</i> & y' }),
+  /ปลายทาง: &lt;i&gt;x&lt;\/i&gt; &amp; y/,
+)
 
 const complaintNew = buildComplaintCreatedMessage(complaint)
 assert.ok(complaintNew.startsWith('💡 <b>มีคำร้องใหม่</b>\n'), complaintNew)
@@ -266,7 +295,7 @@ for (const message of [
 // เจ้าของระบบขอเหลือเส้นเดียวไว้ล่างสุด (2569-09-13) เพราะบรรทัดบนมีอีโมจิประเภทอยู่แล้ว
 // ─────────────────────────────────────────────────────────────────────────────
 for (const message of [
-  complaintNew, complaintStatus, created, permit, docStatus, fee,
+  complaintNew, complaintStatus, created, permit, docStatus, fee, waitlisted,
 ]) {
   const lines = message.split('\n')
   const [heading] = lines
