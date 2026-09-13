@@ -173,10 +173,23 @@ const waitlisted = buildFleetTripWaitlistedMessage({
   requester: { full_name: '[TEST] ผู้ขอใช้รถ' },
   department: { name: 'กองคลัง', color: 'yellow' },
   waitlist_reasons: ['vehicle_busy', 'driver_tight'],
-})
+}, { buffer: 30, max_duration: 43200, past_grace: 1440 })
 assert.ok(waitlisted.startsWith('🚗 <b>คำขอใช้รถรอจัดสรรรถ</b>\n'), waitlisted)
 // ผู้ดูแลต้องรู้ว่าจะแก้อะไร (เปลี่ยนรถ/คนขับ/เวลา) โดยไม่ต้องเปิดระบบก่อน
 assert.match(waitlisted, /^เหตุผล: รถคันนี้มีคิวทับช่วงเวลา · คิวผู้ขับรถติดกันเกินไป \(ห่างไม่ถึง 30 นาที\)$/m)
+// ตัวเลขในเหตุผลมาจากกติกาใน DB (นาที) — ต้องแปลงหน่วยให้คนอ่านรู้เรื่อง และห้ามโชว์ {placeholder} ดิบ
+const ruleReasons = (rules) => buildFleetTripWaitlistedMessage(
+  { waitlist_reasons: ['vehicle_tight', 'past_departure', 'long_duration'] }, rules,
+).match(/^เหตุผล: (.*)$/m)?.[1]
+assert.equal(ruleReasons({ buffer: 30, max_duration: 43200, past_grace: 1440 }),
+  'คิวรถติดกับคิวอื่นเกินไป (ห่างไม่ถึง 30 นาที) · เวลาออกย้อนหลังเกิน 1 วัน · ขอใช้รถนานเกิน 30 วัน')
+assert.equal(ruleReasons({ buffer: 90, max_duration: 4320, past_grace: 0 }),
+  'คิวรถติดกับคิวอื่นเกินไป (ห่างไม่ถึง 90 นาที) · เวลาออกย้อนหลังเกิน 0 นาที · ขอใช้รถนานเกิน 3 วัน')
+assert.equal(ruleReasons({ buffer: 120, max_duration: null, past_grace: 'x' }),
+  'คิวรถติดกับคิวอื่นเกินไป (ห่างไม่ถึง 2 ชั่วโมง) · เวลาออกย้อนหลังเกิน เวลาที่กำหนด · ขอใช้รถนานเกิน เวลาที่กำหนด')
+// อ่านกติกาจาก DB ไม่ได้ แจ้งเตือนต้องยังส่งได้ และไม่เดาตัวเลข
+assert.equal(ruleReasons(null),
+  'คิวรถติดกับคิวอื่นเกินไป (ห่างไม่ถึง เวลาที่กำหนด) · เวลาออกย้อนหลังเกิน เวลาที่กำหนด · ขอใช้รถนานเกิน เวลาที่กำหนด')
 // รหัสที่ไม่รู้จักห้ามโผล่เป็นค่าดิบ และห้ามต่อข้อความจาก DB เข้า HTML ตรงๆ
 const unknownReason = buildFleetTripWaitlistedMessage({ waitlist_reasons: ['<b>hack</b>'] })
 assert.match(unknownReason, /^เหตุผล: เหตุผลอื่น$/m)

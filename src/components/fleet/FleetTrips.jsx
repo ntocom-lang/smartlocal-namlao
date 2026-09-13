@@ -41,19 +41,34 @@ const AWAITING_DECISION = ['pending', 'waitlisted']
 const REQUESTER_CANCELLABLE = ['pending', 'waitlisted', 'approved']
 
 // เหตุผลที่ระบบยังให้คิวรถไม่ได้ — รหัสมาจาก fleet_trip_queue_reasons() ใน DB (ต้องตรงกันทุกคำ)
-// ตัวเลข 30 นาที / 72 ชั่วโมง ต้องตรงกับ fleet_trip_rules() ถ้าแก้ที่ DB ต้องแก้ข้อความที่นี่ด้วย
+// {buffer} {max_duration} {past_grace} ระบบเติมตัวเลขจาก fleet_trip_rule_settings() เอง ห้ามพิมพ์ตัวเลขลงข้อความ
+// (แก้ค่าที่ fleet_trip_rules() ใน DB จุดเดียว ข้อความเปลี่ยนตาม) · ต้องตรงกับ notify-telegram ทุกตัวอักษร
 const QUEUE_REASON_LABEL = {
   vehicle_busy:              'รถคันนี้มีคิวทับช่วงเวลา',
   driver_busy:               'ผู้ขับรถติดภารกิจอื่นช่วงเวลาเดียวกัน',
   vehicle_unavailable:       'รถไม่อยู่ในสถานะใช้งานได้ (กำลังซ่อม/ปลดประจำการ)',
-  vehicle_tight:             'คิวรถติดกับคิวอื่นเกินไป (ห่างไม่ถึง 30 นาที)',
-  driver_tight:              'คิวผู้ขับรถติดกันเกินไป (ห่างไม่ถึง 30 นาที)',
+  vehicle_tight:             'คิวรถติดกับคิวอื่นเกินไป (ห่างไม่ถึง {buffer})',
+  driver_tight:              'คิวผู้ขับรถติดกันเกินไป (ห่างไม่ถึง {buffer})',
   vehicle_not_returned:      'รถยังไม่คืนจากทริปก่อนหน้าที่เลยเวลากลับแล้ว',
-  past_departure:            'เวลาออกผ่านไปแล้ว (ขอย้อนหลัง)',
-  long_duration:             'ขอใช้รถนานเกิน 72 ชั่วโมง',
+  past_departure:            'เวลาออกย้อนหลังเกิน {past_grace}',
+  long_duration:             'ขอใช้รถนานเกิน {max_duration}',
   vehicle_documents_expired: 'พ.ร.บ./ประกัน/ภาษี/ตรวจสภาพ หมดอายุก่อนวันกลับ',
 }
-const queueReasonText = code => QUEUE_REASON_LABEL[code] ?? code
+// โหลดกติกาไม่สำเร็จ ต้องยังอ่านรู้เรื่อง ไม่โชว์ {buffer} ดิบ และไม่เดาตัวเลข
+const RULE_UNKNOWN_TEXT = 'เวลาที่กำหนด'
+function formatRuleMinutes(minutes) {
+  const n = Number(minutes)
+  if (minutes == null || !Number.isInteger(n) || n < 0) return null
+  if (n > 0 && n % 1440 === 0) return `${n / 1440} วัน`
+  if (n > 0 && n % 60 === 0) return `${n / 60} ชั่วโมง`
+  return `${n} นาที`
+}
+function queueReasonText(code, rules) {
+  const label = QUEUE_REASON_LABEL[code]
+  if (!label) return code
+  return label.replace(/\{(buffer|max_duration|past_grace)\}/g,
+    (_, key) => formatRuleMinutes(rules?.[key]) ?? RULE_UNKNOWN_TEXT)
+}
 
 // ป้ายเตือนเรื่องเวลาในรายการ — ผู้ดูแลต้องเห็นว่ารายการไหนค้างผิดปกติโดยไม่ต้องไล่เปิดทีละใบ
 // "เกินเวลาคืนรถ" สำคัญที่สุด: ถ้าไม่บันทึกกลับถึง ทุกคำขอใหม่ของรถคันนั้นจะรอจัดสรรรถ
@@ -552,6 +567,23 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     return () => clearInterval(timer)
   }, [])
 
+  // ตัวเลขในข้อความเหตุผลคิวรถ (30 นาที / 30 วัน ฯลฯ) มาจาก DB — กติกาเดียวกับที่ใช้ตัดสินคิวจริง
+  const [tripRules, setTripRules] = useState(null)
+  useEffect(() => {
+    let alive = true
+    supabase.rpc('fleet_trip_rule_settings').maybeSingle().then(({ data, error }) => {
+      if (!alive) return
+      if (error) return console.error('fleet_trip_rule_settings error:', error.message)
+      if (data) setTripRules({
+        buffer: data.queue_buffer_minutes,
+        max_duration: data.max_auto_duration_minutes,
+        past_grace: data.past_grace_minutes,
+      })
+    })
+    return () => { alive = false }
+  }, [])
+  const reasonText = code => queueReasonText(code, tripRules)
+
   // ปิด popup ด้วยปุ่ม Esc — พฤติกรรมที่ผู้ใช้เดสก์ท็อปคาดหวัง และเป็นทางออกสำรอง
   // เมื่อปุ่มกากบาทหลุดออกนอกจอบนอุปกรณ์เล็ก ไม่ปิดระหว่างกำลังบันทึกเพื่อกันปิดคาครึ่งทาง
   useEffect(() => {
@@ -877,7 +909,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     if (!isEdit && saved?.status === 'waitlisted') {
       notifyTelegram('fleet_trip_waitlisted', saved.id)
       // บอกเหตุผลจริงที่ DB ตัดสิน ไม่ใช่ข้อความรวมๆ — ผู้ขอจะได้รู้ว่าเปลี่ยนอะไรแล้วได้คิวเร็วขึ้น
-      const why = (saved.waitlist_reasons ?? []).map(code => `• ${queueReasonText(code)}`).join('\n')
+      const why = (saved.waitlist_reasons ?? []).map(code => `• ${reasonText(code)}`).join('\n')
       alert(`ส่งคำขอให้ผู้ดูแลระบบยานพาหนะจัดสรรรถแล้ว\nสถานะ: รอจัดสรรรถ${why ? `\n\n${why}` : ''}`)
     } else if (!isEdit && saved?.status === 'approved') {
       alert('ระบบอนุมัติคิวรถให้แล้ว\nกรุณาพิมพ์ใบขออนุญาตใช้รถ (แบบ 3) ให้ผู้มีอำนาจลงนามก่อนนำรถออก')
@@ -1600,7 +1632,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
         </div>
         {t.status === 'waitlisted' && t.waitlist_reasons?.length > 0 && (
           <p className="text-[10px] text-orange-600 leading-4">
-            {t.waitlist_reasons.map(queueReasonText).join(' · ')}
+            {t.waitlist_reasons.map(reasonText).join(' · ')}
           </p>
         )}
         <p className="truncate text-[11px] text-gray-600" title={`${t.destination} — ${t.purpose}`}>
@@ -1712,8 +1744,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
           )}
           {t.status === 'waitlisted' && t.waitlist_reasons?.length > 0 && (
             <div className="mt-0.5 text-[9px] text-orange-600 leading-3 max-w-[11rem]"
-                 title={t.waitlist_reasons.map(queueReasonText).join('\n')}>
-              {t.waitlist_reasons.map(queueReasonText).join(' · ')}
+                 title={t.waitlist_reasons.map(reasonText).join('\n')}>
+              {t.waitlist_reasons.map(reasonText).join(' · ')}
             </div>
           )}
         </td>
@@ -1942,7 +1974,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
                     <div className="col-span-2">
                       <p className="text-gray-400">{t.status === 'waitlisted' ? 'เหตุผลที่รอจัดสรรรถ' : 'ระบบเคยเตือนก่อนอนุมัติ'}</p>
                       <ul className="list-disc pl-4 font-semibold text-orange-600">
-                        {t.waitlist_reasons.map(code => <li key={code}>{queueReasonText(code)}</li>)}
+                        {t.waitlist_reasons.map(code => <li key={code}>{reasonText(code)}</li>)}
                       </ul>
                     </div>
                   )}
@@ -2019,7 +2051,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
               <ul className="list-disc pl-4 space-y-0.5">
                 {conflict.reasons.map((row, i) => (
                   <li key={`${row.reason}-${i}`}>
-                    {queueReasonText(row.reason)}
+                    {reasonText(row.reason)}
                     {row.conflict_from ? ` (${fmtDT(row.conflict_from)} – ${fmtDT(row.conflict_to)})` : ''}
                   </li>
                 ))}

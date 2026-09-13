@@ -437,19 +437,51 @@ function buildFleetTripBumpedMessage(trip: Record<string, unknown>) {
 // ชื่อผู้ขอเป็นเจ้าหน้าที่ของ อปท. ไม่ใช่ประชาชน ใส่ได้ตามแนวเดียวกับ fleet_trip_bumped
 // ต้องตรงกับ QUEUE_REASON_LABEL ใน src/components/fleet/FleetTrips.jsx และรหัสจาก
 // fleet_trip_queue_reasons() ใน DB ทุกคำ (edge function ไม่ได้ import โมดูลฝั่ง client)
+// {buffer} {max_duration} {past_grace} เติมตัวเลขจาก fleet_trip_rule_settings() — ห้ามพิมพ์ตัวเลขลงข้อความ
 const QUEUE_REASON_LABEL: Record<string, string> = {
   vehicle_busy: 'รถคันนี้มีคิวทับช่วงเวลา',
   driver_busy: 'ผู้ขับรถติดภารกิจอื่นช่วงเวลาเดียวกัน',
   vehicle_unavailable: 'รถไม่อยู่ในสถานะใช้งานได้ (กำลังซ่อม/ปลดประจำการ)',
-  vehicle_tight: 'คิวรถติดกับคิวอื่นเกินไป (ห่างไม่ถึง 30 นาที)',
-  driver_tight: 'คิวผู้ขับรถติดกันเกินไป (ห่างไม่ถึง 30 นาที)',
+  vehicle_tight: 'คิวรถติดกับคิวอื่นเกินไป (ห่างไม่ถึง {buffer})',
+  driver_tight: 'คิวผู้ขับรถติดกันเกินไป (ห่างไม่ถึง {buffer})',
   vehicle_not_returned: 'รถยังไม่คืนจากทริปก่อนหน้าที่เลยเวลากลับแล้ว',
-  past_departure: 'เวลาออกผ่านไปแล้ว (ขอย้อนหลัง)',
-  long_duration: 'ขอใช้รถนานเกิน 72 ชั่วโมง',
+  past_departure: 'เวลาออกย้อนหลังเกิน {past_grace}',
+  long_duration: 'ขอใช้รถนานเกิน {max_duration}',
   vehicle_documents_expired: 'พ.ร.บ./ประกัน/ภาษี/ตรวจสภาพ หมดอายุก่อนวันกลับ',
 }
 
-function buildFleetTripWaitlistedMessage(trip: Record<string, unknown>) {
+type TripRuleMinutes = { buffer?: unknown; max_duration?: unknown; past_grace?: unknown } | null
+
+// ต้องให้ผลเหมือน formatRuleMinutes ใน FleetTrips.jsx · อ่านกติกาไม่ได้ = ไม่เดาตัวเลข
+const RULE_UNKNOWN_TEXT = 'เวลาที่กำหนด'
+function formatRuleMinutes(minutes: unknown) {
+  const n = Number(minutes)
+  if (minutes == null || !Number.isInteger(n) || n < 0) return null
+  if (n > 0 && n % 1440 === 0) return `${n / 1440} วัน`
+  if (n > 0 && n % 60 === 0) return `${n / 60} ชั่วโมง`
+  return `${n} นาที`
+}
+
+function queueReasonText(code: string, rules: TripRuleMinutes) {
+  const label = QUEUE_REASON_LABEL[code]
+  if (!label) return 'เหตุผลอื่น'
+  return label.replace(/\{(buffer|max_duration|past_grace)\}/g,
+    (_, key: 'buffer' | 'max_duration' | 'past_grace') => formatRuleMinutes(rules?.[key]) ?? RULE_UNKNOWN_TEXT)
+}
+
+async function loadTripRuleMinutes(admin: ReturnType<typeof createClient>): Promise<TripRuleMinutes> {
+  try {
+    const { data, error } = await admin.rpc('fleet_trip_rule_settings').maybeSingle()
+    if (error || !data) return null
+    const row = data as Record<string, unknown>
+    return { buffer: row.queue_buffer_minutes, max_duration: row.max_auto_duration_minutes, past_grace: row.past_grace_minutes }
+  } catch {
+    // อ่านกติกาไม่ได้ต้องไม่ทำให้แจ้งเตือนหลุด — ข้อความขึ้น "เวลาที่กำหนด" แทนตัวเลข
+    return null
+  }
+}
+
+function buildFleetTripWaitlistedMessage(trip: Record<string, unknown>, rules: TripRuleMinutes = null) {
   const vehicle = trip.vehicle as { name?: string; license_plate?: string } | null
   const requester = trip.requester as { full_name?: string } | null
   const vehicleName = cleanText(vehicle?.name, 100) || 'ไม่ทราบคัน'
@@ -459,7 +491,7 @@ function buildFleetTripWaitlistedMessage(trip: Record<string, unknown>) {
   const department = departmentName(trip)
   // รหัสที่ไม่รู้จักตกเป็นข้อความกลาง ห้ามต่อค่าจาก DB เข้าข้อความตรงๆ
   const reasons = Array.isArray(trip.waitlist_reasons)
-    ? [...new Set(trip.waitlist_reasons.map((code) => QUEUE_REASON_LABEL[String(code)] ?? 'เหตุผลอื่น'))]
+    ? [...new Set(trip.waitlist_reasons.map((code) => queueReasonText(String(code), rules)))]
     : []
   return framedMessage(trip, '🚗', 'คำขอใช้รถรอจัดสรรรถ', [
     `รถ: ${escapeHtml(vehicleName, 100)}${plate ? ` (${escapeHtml(plate, 40)})` : ''}`,
@@ -748,7 +780,7 @@ serve(async (req) => {
           : notificationType === 'fleet_trip_bumped'
             ? buildFleetTripBumpedMessage(resource)
             : notificationType === 'fleet_trip_waitlisted'
-            ? buildFleetTripWaitlistedMessage(resource)
+            ? buildFleetTripWaitlistedMessage(resource, await loadTripRuleMinutes(admin))
             : notificationType === 'fleet_fuel_created'
               ? buildFleetFuelCreatedMessage(resource)
               : notificationType === 'document_request_created'
