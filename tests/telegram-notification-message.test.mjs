@@ -127,9 +127,12 @@ const complaint = {
   category_ref: { label: 'ไฟฟ้าสาธารณะ', emoji: '💡' },
 }
 
+// เส้นคั่นบน-ล่าง = จุดสีกอง 1 ตัว + เส้นประบาง 12 ขีด
+const rule = (dot) => `${dot}${'┈'.repeat(12)}`
+
 const created = buildDocumentRequestCreatedMessage(request, null)
-// หัว 2 บรรทัด = แถบสีกองเต็มบรรทัด แล้วตามด้วย อีโมจิประเภท + หัวเรื่อง (กองช่าง = 🟦)
-assert.ok(created.startsWith(`${'🟦'.repeat(10)}\n🚰 <b>มีคำขอเอกสารใหม่</b>\n`), created)
+// หัว 2 บรรทัด = เส้นคั่นสีกอง แล้วตามด้วย อีโมจิประเภท + หัวเรื่อง (กองช่าง = 🔵)
+assert.ok(created.startsWith(`${rule('🔵')}\n🚰 <b>มีคำขอเอกสารใหม่</b>\n`), created)
 // อีโมจิอยู่หัวข้อความแล้ว บรรทัดเรื่องต้องเป็นชื่อล้วน ไม่ซ้ำอีโมจิ
 assert.match(created, /^เรื่อง: ขออนุญาตใช้น้ำประปา$/m)
 assert.match(created, /^ส่งถึง: กองช่าง$/m)
@@ -156,7 +159,7 @@ assert.match(fee, /จำนวนเงิน: <b>200\.00 บาท<\/b>/)
 assert.match(fee, /ตรวจสอบเมื่อ: 12 ก\.ย\. 2569 21:10 น\./)
 
 const complaintNew = buildComplaintCreatedMessage(complaint)
-assert.ok(complaintNew.startsWith(`${'🟦'.repeat(10)}\n💡 <b>มีคำร้องใหม่</b>\n`), complaintNew)
+assert.ok(complaintNew.startsWith(`${rule('🔵')}\n💡 <b>มีคำร้องใหม่</b>\n`), complaintNew)
 assert.match(complaintNew, /เลขที่: ES-69-0030/)
 assert.match(complaintNew, /^ประเภท: ไฟฟ้าสาธารณะ$/m)
 assert.match(complaintNew, /^ส่งถึง: กองช่าง$/m)
@@ -182,30 +185,30 @@ for (const message of [
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// แถบสีรายกอง — อ่านจาก departments.color (แอดมินเลือกเอง/trigger เติมให้) ไม่ใช่ departments.code
+// จุดสีรายกอง — อ่านจาก departments.color (แอดมินเลือกเอง/trigger เติมให้) ไม่ใช่ departments.code
 // เคสจริงที่ทำให้ต้องเปลี่ยน: ตำหนักธรรม/ทุ่งแค้วสร้างกองเองทั้งหมด code เป็น dept_* ทุกกอง
-// ผูกกับ code แล้วได้ ⬜ เหมือนกันหมด
+// ผูกกับ code แล้วได้สีขาวเหมือนกันหมด
 // ─────────────────────────────────────────────────────────────────────────────
 for (const { key, emoji } of DEPARTMENT_COLORS) {
   const message = buildComplaintCreatedMessage({ ...complaint, department: { name: 'สำนักปลัด', color: key } })
-  assert.ok(message.startsWith(`${emoji.repeat(10)}\n`), `สี '${key}' ต้องได้แถบ ${emoji} เต็มบรรทัด:\n${message}`)
-  assert.ok(message.endsWith(`\n${emoji.repeat(10)}`), `สี '${key}' ต้องได้แถบล่าง ${emoji}`)
+  assert.ok(message.startsWith(`${rule(emoji)}\n`), `สี '${key}' ต้องได้เส้นคั่นบนที่มีจุด ${emoji}:\n${message}`)
+  assert.ok(message.endsWith(`\n${rule(emoji)}`), `สี '${key}' ต้องได้เส้นคั่นล่างที่มีจุด ${emoji}`)
 }
-// กองที่ code เป็น dept_* แต่มีสีแล้ว ต้องได้สีนั้น (บั๊กเดิมคือได้ ⬜ เพราะไปดู code)
+// กองที่ code เป็น dept_* แต่มีสีแล้ว ต้องได้สีนั้น (บั๊กเดิมคือได้สีขาวเพราะไปดู code)
 assert.ok(
   buildComplaintCreatedMessage({ ...complaint, department: { name: 'กองช่าง', code: 'dept_mrf68120', color: 'blue' } })
-    .startsWith(`${'🟦'.repeat(10)}\n`),
+    .startsWith(`${rule('🔵')}\n`),
 )
 // ไม่มีสี / คีย์แปลก / ยังไม่ผูกกอง ต้องได้สีกลาง ไม่ใช่ข้อความพัง และห้ามต่อค่าดิบจาก DB เข้าข้อความ
 for (const department of [{ name: 'ไม่มีสี' }, { name: 'สีแปลก', color: '<b>pink</b>' }, null]) {
   const message = buildComplaintCreatedMessage({ ...complaint, department })
-  assert.ok(message.startsWith(`${'⬜'.repeat(10)}\n`), `กองที่ไม่มีสีที่ใช้ได้ต้องได้ ⬜: ${JSON.stringify(department)}`)
+  assert.ok(message.startsWith(`${rule('⚪')}\n`), `กองที่ไม่มีสีที่ใช้ได้ต้องได้ ⚪: ${JSON.stringify(department)}`)
   assert.equal(message.includes('pink'), false, 'ห้ามต่อคีย์สีดิบเข้าข้อความ')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // รายการคีย์สีต้องตรงกัน 3 ที่ — เพิ่มสีที่ใดที่หนึ่งแล้วลืมอีกที่ = แอดมินเลือกสีได้แต่บันทึกไม่ผ่าน CHECK
-// หรือบันทึกได้แต่ Telegram ขึ้น ⬜
+// หรือบันทึกได้แต่ Telegram ขึ้น ⚪
 // ─────────────────────────────────────────────────────────────────────────────
 assert.deepEqual(
   DEPARTMENT_COLOR_EMOJI,
@@ -256,9 +259,9 @@ for (const message of [
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// แถบสีบน-ล่าง — Telegram ทำพื้นหลังหรือกรอบสีไม่ได้ (ตรวจกับ Bot API 10.3 แล้ว) จึงประกบข้อความ
-// ด้วยแถบสี่เหลี่ยมสีกองบรรทัดแรกและบรรทัดสุดท้าย ต้องเป็นสีเดียวกัน ห้ามมีข้อความอื่นปน
-// และห้ามเกิน 10 ช่อง ไม่งั้นแถบหักบนจอแคบ
+// เส้นคั่นบน-ล่าง — Telegram ทำพื้นหลังหรือกรอบสีไม่ได้ (ตรวจกับ Bot API 10.3 แล้ว) จึงประกบข้อความ
+// ด้วยจุดสีกอง + เส้นประ บรรทัดแรกและบรรทัดสุดท้าย ต้องเป็นเส้นเดียวกัน ห้ามมีข้อความอื่นปน
+// จุดสีมีตัวเดียว (เจ้าของระบบขอให้สีกองเล็กที่สุด) และเส้นประห้ามเกิน 12 ขีด ไม่งั้นหักบนจอแคบ
 // ─────────────────────────────────────────────────────────────────────────────
 for (const message of [
   complaintNew, complaintStatus, created, permit, docStatus, fee,
@@ -266,16 +269,16 @@ for (const message of [
   const lines = message.split('\n')
   const [band, heading] = lines
   const footer = lines.at(-1)
-  assert.match(band, /^(?:🟥|🟩|🟨|🟦|🟪|🟧|⬜){10}$/u, `บรรทัดแรกต้องเป็นแถบสีล้วน 10 ช่อง: ${band}`)
+  assert.match(band, /^(?:🔴|🟠|🟡|🟢|🔵|🟣|🟤|⚫|⚪)┈{12}$/u, `บรรทัดแรกต้องเป็นจุดสี 1 ตัว + เส้นประ 12 ขีด: ${band}`)
   assert.match(heading, /^\S+ <b>[^<]+<\/b>$/u, `บรรทัดที่สองต้องเป็นหัวข้อ: ${heading}`)
-  assert.equal(footer, band, `บรรทัดสุดท้ายต้องเป็นแถบสีเดียวกับบรรทัดแรก:\n${message}`)
-  // แถบต้องมีแค่ 2 เส้น บน-ล่าง ไม่โผล่กลางเนื้อหา
-  assert.equal(lines.filter((l) => l === band).length, 2, `ต้องมีแถบแค่บนกับล่าง:\n${message}`)
+  assert.equal(footer, band, `บรรทัดสุดท้ายต้องเป็นเส้นคั่นเดียวกับบรรทัดแรก:\n${message}`)
+  // เส้นคั่นต้องมีแค่ 2 เส้น บน-ล่าง ไม่โผล่กลางเนื้อหา
+  assert.equal(lines.filter((l) => l === band).length, 2, `ต้องมีเส้นคั่นแค่บนกับล่าง:\n${message}`)
 }
-// ข้อมูลไม่ครบ แถบล่างต้องยังอยู่ติดเนื้อหา ไม่เหลือบรรทัดว่างคั่นก่อนแถบ
+// ข้อมูลไม่ครบ เส้นคั่นล่างต้องยังอยู่ติดเนื้อหา ไม่เหลือบรรทัดว่างคั่นก่อนเส้น
 const sparse = buildDocumentRequestCreatedMessage({ id: 'x' }, null)
 assert.equal(sparse.includes('\n\n'), false)
-assert.ok(sparse.endsWith(`\n${'⬜'.repeat(10)}`), sparse)
+assert.ok(sparse.endsWith(`\n${rule('⚪')}`), sparse)
 
 // HTML parse_mode ของ Telegram — ข้อความที่ประชาชนพิมพ์เองต้องถูก escape ไม่งั้นบอทส่งไม่ออก
 const injected = buildComplaintCreatedMessage({ ...complaint, village: '<b>x</b> & y' })
