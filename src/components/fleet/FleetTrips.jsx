@@ -663,6 +663,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   async function loadAvailableVehicles(from, to, excludeTripId, excludeVehicleId) {
     const { data, error } = await supabase.rpc('fleet_available_vehicles', {
       p_from: toISO(from), p_to: toISO(to), p_exclude_trip: excludeTripId,
+      // superadmin ไม่มี อปท. ในโปรไฟล์ ต้องบอก DB ว่ากำลังดู อปท. ไหน
+      p_municipality_id: tenant.id,
     })
     if (error) {
       console.error('fleet_available_vehicles error:', error.message)
