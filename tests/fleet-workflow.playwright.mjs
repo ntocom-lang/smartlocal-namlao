@@ -45,6 +45,9 @@ const ALLOWED_HOSTS = new Set(['demo.rk-networks.com', 'localhost', '127.0.0.1']
 // ข้อมูลทดสอบ ต้องอ่านออกทันทีว่าไม่ใช่ของจริง
 const STAMP = new Date().toISOString().replace(/\D/g, '').slice(4, 12)
 const TEST_VEHICLE_NAME = `[TEST] regression ${STAMP}`
+// เลขไมล์หลังกลับของทริปทดสอบล่าสุดบนรถ TEST_VEHICLE_NAME ในการรันครั้งนี้ — ชุดถัดไปที่ออกเดินทาง
+// ด้วยรถคันเดียวกันต้องได้เลขนี้เติมในช่อง "เลขไมล์ก่อนออก" อัตโนมัติ (null = ยังไม่มีชุดไหนบันทึกกลับถึง)
+let lastReturnedOdometer = null
 const TEST_PLATE = `TEST ${STAMP.slice(-4)}`
 const TEST_DESTINATION = '[TEST] จุดจำลอง ไม่ใช่สถานที่จริง'
 const TEST_PURPOSE = `[TEST] regression ${STAMP} ห้ามใช้รถจริง`
@@ -723,6 +726,7 @@ async function checkTripDateFollowsDeparture(baseUrl, headed) {
     await fillField(page, 'เลขไมล์หลังกลับ', 10_560)
     await clickButton(page, 'ยืนยันกลับถึง')
     await page.waitForTimeout(3_000)
+    lastReturnedOdometer = 10_560
   } finally {
     await context.close()
   }
@@ -806,8 +810,26 @@ async function checkForm3RequestPrint(baseUrl, headed) {
     // ── เดินทางจริงจนจบ (ไม่มีขั้นกดอนุมัติแล้ว) ──
     await clickButton(page, '🚀', { exact: false })
     await page.waitForTimeout(1_200)
+    // รถคันเดียวกันเพิ่งบันทึกกลับถึงในชุด trip-date → ช่องเลขไมล์ก่อนออกต้องเติมเลขนั้นให้เอง
+    // (รันชุดนี้เดี่ยวๆ ด้วย FLEET_TEST_ONLY จะไม่มีทริปก่อนหน้า จึงข้ามการตรวจ)
+    if (lastReturnedOdometer !== null) {
+      const filled = await page.waitForFunction(expected => {
+        const label = [...document.querySelectorAll('label')]
+          .find(el => el.offsetParent !== null && el.textContent.trim().startsWith('เลขไมล์ก่อนออก'))
+        const input = label?.parentElement?.querySelector('input')
+        return input && input.value !== '' ? input.value : (expected && null)
+      }, lastReturnedOdometer, { timeout: 10_000 }).then(handle => handle.jsonValue()).catch(() => '')
+      assert.equal(Number(filled), lastReturnedOdometer,
+        `ช่องเลขไมล์ก่อนออกไม่ได้เติมเลขไมล์หลังกลับครั้งล่าสุดของรถคันนี้ (${lastReturnedOdometer}) ได้ "${filled}"`)
+    }
     await fillField(page, 'เวลาออกจริง', at(new Date(), 8))
+    // แก้เป็นเลขอื่นได้ และต้องขึ้นเตือนว่าไม่ต่อเนื่อง (ระยะที่กระโดด = การใช้รถที่ไม่ได้บันทึก)
     await fillField(page, 'เลขไมล์ก่อนออก', 20_000)
+    if (lastReturnedOdometer !== null) {
+      await page.waitForTimeout(500)
+      assert.ok((await bodyText(page)).includes('มากกว่าครั้งก่อน'),
+        'แก้เลขไมล์ก่อนออกให้ไม่ต่อจากครั้งก่อนแล้ว หน้าต่างไม่ขึ้นเตือนความไม่ต่อเนื่อง')
+    }
     await clickButton(page, 'ยืนยันออกเดินทาง')
     await page.waitForTimeout(3_500)
     await clickButton(page, '🏁', { exact: false })
