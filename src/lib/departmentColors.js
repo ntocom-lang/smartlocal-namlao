@@ -1,5 +1,5 @@
 // สีประจำกอง — ค่าใน departments.color เป็น "คีย์" ส่วนตัวอีโมจิกับชื่อภาษาไทยอยู่ที่นี่
-// ใช้ในหน้าจัดการกอง (DepartmentManager) และเป็นจุดสีหน้าเส้นคั่นบรรทัดแรกของข้อความแจ้งเตือน Telegram
+// ใช้ในหน้าจัดการกอง (DepartmentManager) และเป็นจุดสีหน้าเส้นคั่นบรรทัดสุดท้ายของข้อความแจ้งเตือน Telegram
 //
 // ⚠️ คีย์ต้องตรงกัน 3 ที่: ไฟล์นี้, CHECK departments_color_check ใน
 // supabase/migrations/20260913100000_departments_color_column.sql และ DEPARTMENT_COLOR_EMOJI ใน

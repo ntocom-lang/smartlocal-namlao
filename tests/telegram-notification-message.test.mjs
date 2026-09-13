@@ -127,12 +127,13 @@ const complaint = {
   category_ref: { label: 'ไฟฟ้าสาธารณะ', emoji: '💡' },
 }
 
-// เส้นคั่นบรรทัดแรก = จุดสีกอง 1 ตัว + เส้นประบาง 12 ขีด (ไม่มีเส้นล่าง)
+// เส้นคั่นบรรทัดสุดท้าย = จุดสีกอง 1 ตัว + เส้นประบาง 12 ขีด (ไม่มีเส้นบน)
 const rule = (dot) => `${dot}${'┈'.repeat(12)}`
 
 const created = buildDocumentRequestCreatedMessage(request, null)
-// หัว 2 บรรทัด = เส้นคั่นสีกอง แล้วตามด้วย อีโมจิประเภท + หัวเรื่อง (กองช่าง = 🔵)
-assert.ok(created.startsWith(`${rule('🔵')}\n🚰 <b>มีคำขอเอกสารใหม่</b>\n`), created)
+// บรรทัดแรก = อีโมจิประเภท + หัวเรื่อง / บรรทัดสุดท้าย = เส้นคั่นสีกอง (กองช่าง = 🔵)
+assert.ok(created.startsWith('🚰 <b>มีคำขอเอกสารใหม่</b>\n'), created)
+assert.ok(created.endsWith(`\n${rule('🔵')}`), created)
 // อีโมจิอยู่หัวข้อความแล้ว บรรทัดเรื่องต้องเป็นชื่อล้วน ไม่ซ้ำอีโมจิ
 assert.match(created, /^เรื่อง: ขออนุญาตใช้น้ำประปา$/m)
 assert.match(created, /^ส่งถึง: กองช่าง$/m)
@@ -159,7 +160,8 @@ assert.match(fee, /จำนวนเงิน: <b>200\.00 บาท<\/b>/)
 assert.match(fee, /ตรวจสอบเมื่อ: 12 ก\.ย\. 2569 21:10 น\./)
 
 const complaintNew = buildComplaintCreatedMessage(complaint)
-assert.ok(complaintNew.startsWith(`${rule('🔵')}\n💡 <b>มีคำร้องใหม่</b>\n`), complaintNew)
+assert.ok(complaintNew.startsWith('💡 <b>มีคำร้องใหม่</b>\n'), complaintNew)
+assert.ok(complaintNew.endsWith(`\n${rule('🔵')}`), complaintNew)
 assert.match(complaintNew, /เลขที่: ES-69-0030/)
 assert.match(complaintNew, /^ประเภท: ไฟฟ้าสาธารณะ$/m)
 assert.match(complaintNew, /^ส่งถึง: กองช่าง$/m)
@@ -191,17 +193,17 @@ for (const message of [
 // ─────────────────────────────────────────────────────────────────────────────
 for (const { key, emoji } of DEPARTMENT_COLORS) {
   const message = buildComplaintCreatedMessage({ ...complaint, department: { name: 'สำนักปลัด', color: key } })
-  assert.ok(message.startsWith(`${rule(emoji)}\n`), `สี '${key}' ต้องได้เส้นคั่นบนที่มีจุด ${emoji}:\n${message}`)
+  assert.ok(message.endsWith(`\n${rule(emoji)}`), `สี '${key}' ต้องได้เส้นคั่นล่างที่มีจุด ${emoji}:\n${message}`)
 }
 // กองที่ code เป็น dept_* แต่มีสีแล้ว ต้องได้สีนั้น (บั๊กเดิมคือได้สีขาวเพราะไปดู code)
 assert.ok(
   buildComplaintCreatedMessage({ ...complaint, department: { name: 'กองช่าง', code: 'dept_mrf68120', color: 'blue' } })
-    .startsWith(`${rule('🔵')}\n`),
+    .endsWith(`\n${rule('🔵')}`),
 )
 // ไม่มีสี / คีย์แปลก / ยังไม่ผูกกอง ต้องได้สีกลาง ไม่ใช่ข้อความพัง และห้ามต่อค่าดิบจาก DB เข้าข้อความ
 for (const department of [{ name: 'ไม่มีสี' }, { name: 'สีแปลก', color: '<b>pink</b>' }, null]) {
   const message = buildComplaintCreatedMessage({ ...complaint, department })
-  assert.ok(message.startsWith(`${rule('⚪')}\n`), `กองที่ไม่มีสีที่ใช้ได้ต้องได้ ⚪: ${JSON.stringify(department)}`)
+  assert.ok(message.endsWith(`\n${rule('⚪')}`), `กองที่ไม่มีสีที่ใช้ได้ต้องได้ ⚪: ${JSON.stringify(department)}`)
   assert.equal(message.includes('pink'), false, 'ห้ามต่อคีย์สีดิบเข้าข้อความ')
 }
 
@@ -258,25 +260,25 @@ for (const message of [
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// เส้นคั่นบรรทัดแรก — Telegram ทำพื้นหลังหรือกรอบสีไม่ได้ (ตรวจกับ Bot API 10.3 แล้ว) จึงขึ้นต้นข้อความ
+// เส้นคั่นบรรทัดสุดท้าย — Telegram ทำพื้นหลังหรือกรอบสีไม่ได้ (ตรวจกับ Bot API 10.3 แล้ว) จึงปิดท้ายข้อความ
 // ด้วยจุดสีกอง + เส้นประ ห้ามมีข้อความอื่นปน จุดสีมีตัวเดียว (เจ้าของระบบขอให้สีกองเล็กที่สุด)
 // และเส้นประห้ามเกิน 12 ขีด ไม่งั้นหักบนจอแคบ
-// เจ้าของระบบขอลบเส้นล่างออก เหลือเส้นบนเส้นเดียว (2569-09-13) ห้ามมีเส้นปิดท้ายกลับมา
+// เจ้าของระบบขอเหลือเส้นเดียวไว้ล่างสุด (2569-09-13) เพราะบรรทัดบนมีอีโมจิประเภทอยู่แล้ว
 // ─────────────────────────────────────────────────────────────────────────────
 for (const message of [
   complaintNew, complaintStatus, created, permit, docStatus, fee,
 ]) {
   const lines = message.split('\n')
-  const [rule1, heading] = lines
-  assert.match(rule1, /^(?:🔴|🟠|🟡|🟢|🔵|🟣|🟤|⚫|⚪)┈{12}$/u, `บรรทัดแรกต้องเป็นจุดสี 1 ตัว + เส้นประ 12 ขีด: ${rule1}`)
-  assert.match(heading, /^\S+ <b>[^<]+<\/b>$/u, `บรรทัดที่สองต้องเป็นหัวข้อ: ${heading}`)
-  assert.equal(lines.filter((l) => l.includes('┈')).length, 1, `ต้องมีเส้นคั่นแค่บรรทัดแรก ห้ามมีเส้นล่าง:\n${message}`)
-  assert.equal(lines.at(-1).includes('┈'), false, `บรรทัดสุดท้ายต้องเป็นเนื้อหา ไม่ใช่เส้นคั่น:\n${message}`)
+  const [heading] = lines
+  const last = lines.at(-1)
+  assert.match(heading, /^\S+ <b>[^<]+<\/b>$/u, `บรรทัดแรกต้องเป็นหัวข้อ ไม่ใช่เส้นคั่น: ${heading}`)
+  assert.match(last, /^(?:🔴|🟠|🟡|🟢|🔵|🟣|🟤|⚫|⚪)┈{12}$/u, `บรรทัดสุดท้ายต้องเป็นจุดสี 1 ตัว + เส้นประ 12 ขีด: ${last}`)
+  assert.equal(lines.filter((l) => l.includes('┈')).length, 1, `ต้องมีเส้นคั่นแค่บรรทัดสุดท้าย ห้ามมีเส้นบน:\n${message}`)
 }
-// ข้อมูลไม่ครบ ต้องไม่เหลือบรรทัดว่างและไม่มีเส้นล่าง
+// ข้อมูลไม่ครบ ต้องไม่เหลือบรรทัดว่างก่อนเส้น และไม่มีเส้นบน
 const sparse = buildDocumentRequestCreatedMessage({ id: 'x' }, null)
 assert.equal(sparse.includes('\n\n'), false)
-assert.ok(sparse.startsWith(`${rule('⚪')}\n`), sparse)
+assert.ok(sparse.endsWith(`\n${rule('⚪')}`), sparse)
 assert.equal(sparse.split('\n').filter((l) => l.includes('┈')).length, 1, sparse)
 
 // HTML parse_mode ของ Telegram — ข้อความที่ประชาชนพิมพ์เองต้องถูก escape ไม่งั้นบอทส่งไม่ออก
