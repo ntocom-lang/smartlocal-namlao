@@ -131,7 +131,7 @@ const created = buildDocumentRequestCreatedMessage(request, null)
 assert.ok(created.startsWith(`${'🟦'.repeat(10)}\n🚰 <b>มีคำขอเอกสารใหม่</b>\n`), created)
 // อีโมจิอยู่หัวข้อความแล้ว บรรทัดเรื่องต้องเป็นชื่อล้วน ไม่ซ้ำอีโมจิ
 assert.match(created, /^เรื่อง: ขออนุญาตใช้น้ำประปา$/m)
-assert.match(created, /^ส่งถึง: กองช่าง #กองช่าง$/m)
+assert.match(created, /^ส่งถึง: กองช่าง$/m)
 // วันที่ต้องเป็น พ.ศ. และเวลาต้องเป็นโซนไทย ไม่ใช่ UTC (12:32Z = 19:32 น.)
 assert.match(created, /ยื่นเมื่อ: 12 ก\.ย\. 2569 19:32 น\./)
 assert.match(created, /อ้างอิง: #a1b2c3d4/)
@@ -158,7 +158,7 @@ const complaintNew = buildComplaintCreatedMessage(complaint)
 assert.ok(complaintNew.startsWith(`${'🟦'.repeat(10)}\n💡 <b>มีคำร้องใหม่</b>\n`), complaintNew)
 assert.match(complaintNew, /เลขที่: ES-69-0030/)
 assert.match(complaintNew, /^ประเภท: ไฟฟ้าสาธารณะ$/m)
-assert.match(complaintNew, /^ส่งถึง: กองช่าง #กองช่าง$/m)
+assert.match(complaintNew, /^ส่งถึง: กองช่าง$/m)
 assert.match(complaintNew, /สถานที่: หมู่ 3 ซอยข้างวัด/)
 assert.match(complaintNew, /แจ้งเมื่อ: 12 ก\.ย\. 2569 19:32 น\./)
 
@@ -217,35 +217,38 @@ assert.match(unknownCategory, /^📝 <b>มีคำร้องใหม่<\/b
 assert.match(unknownCategory, /^ประเภท: cat_zzz$/m)
 
 // ─────────────────────────────────────────────────────────────────────────────
-// แฮชแท็กชื่อกอง — Telegram ตัดแท็กทันทีที่เจออักขระที่ไม่ใช่ตัวอักษร/ตัวเลข/ขีดล่าง
-// ชื่อกองที่มีเว้นวรรค จุด หรือวงเล็บ ต้องถูกตัดอักขระพวกนั้นทิ้งก่อน ไม่ใช่ปล่อยให้แท็กขาดกลางคัน
+// ❌ ห้ามมีแฮชแท็กภาษาไทย — ของจริงในกลุ่ม Telegram ตัดแท็กที่สระบน/ล่างหรือวรรณยุกต์
+// "#สำนักปลัด" ขึ้นเป็น "#สำน" + "ักปลัด" ธรรมดา แก้ฝั่งเราไม่ได้ จึงถอดแท็กชื่อกองออกทั้งหมด
+// "#a1b2c3d4" ของบรรทัดอ้างอิงยังมีได้ เพราะเป็นอักษรอังกฤษกับตัวเลขล้วน Telegram ตัดถูก
 // ─────────────────────────────────────────────────────────────────────────────
-const hashtagOf = (name) => {
-  const line = buildComplaintCreatedMessage({ ...complaint, department: { name, code: 'general' } })
-    .split('\n').find((l) => l.startsWith('ส่งถึง: '))
-  return line?.match(/#\S+/)?.[0] ?? ''
+for (const message of [
+  complaintNew, complaintStatus, created, docStatus, fee,
+  buildComplaintCreatedMessage({ ...complaint, department: { name: 'สำนักปลัด', code: 'general' } }),
+]) {
+  assert.equal(/#[฀-๿]/u.test(message), false, `ห้ามมีแฮชแท็กภาษาไทย:\n${message}`)
 }
-assert.equal(hashtagOf('กองช่าง'), '#กองช่าง')
-assert.equal(hashtagOf('กองการศึกษา ศาสนาและวัฒนธรรม'), '#กองการศึกษาศาสนาและวัฒนธรรม')
-assert.equal(hashtagOf('กองช่าง (สาขา 2)'), '#กองช่างสาขา2')
-assert.equal(hashtagOf('สำนัก/ปลัด'), '#สำนักปลัด')
-// ชื่อกองที่เหลือแต่อักขระพิเศษ ต้องไม่ออกมาเป็น '#' โดดๆ
-assert.equal(
-  /#/.test(buildComplaintCreatedMessage({ ...complaint, department: { name: '- / -', code: 'general' } })),
-  false,
-)
 
 // ─────────────────────────────────────────────────────────────────────────────
-// แถบสีเต็มบรรทัด — Telegram ทำพื้นหลังสีไม่ได้ (ตรวจกับ Bot API 10.3 แล้ว) จึงใช้แถบสี่เหลี่ยมแทน
-// ต้องเป็นบรรทัดแรกของตัวเองในทุกชนิด ห้ามมีข้อความอื่นปน และห้ามเกิน 10 ช่อง ไม่งั้นแถบหักบนจอแคบ
+// แถบสีบน-ล่าง — Telegram ทำพื้นหลังหรือกรอบสีไม่ได้ (ตรวจกับ Bot API 10.3 แล้ว) จึงประกบข้อความ
+// ด้วยแถบสี่เหลี่ยมสีกองบรรทัดแรกและบรรทัดสุดท้าย ต้องเป็นสีเดียวกัน ห้ามมีข้อความอื่นปน
+// และห้ามเกิน 10 ช่อง ไม่งั้นแถบหักบนจอแคบ
 // ─────────────────────────────────────────────────────────────────────────────
 for (const message of [
   complaintNew, complaintStatus, created, permit, docStatus, fee,
 ]) {
-  const [band, heading] = message.split('\n')
+  const lines = message.split('\n')
+  const [band, heading] = lines
+  const footer = lines.at(-1)
   assert.match(band, /^(?:🟥|🟩|🟨|🟦|🟪|🟧|⬜){10}$/u, `บรรทัดแรกต้องเป็นแถบสีล้วน 10 ช่อง: ${band}`)
   assert.match(heading, /^\S+ <b>[^<]+<\/b>$/u, `บรรทัดที่สองต้องเป็นหัวข้อ: ${heading}`)
+  assert.equal(footer, band, `บรรทัดสุดท้ายต้องเป็นแถบสีเดียวกับบรรทัดแรก:\n${message}`)
+  // แถบต้องมีแค่ 2 เส้น บน-ล่าง ไม่โผล่กลางเนื้อหา
+  assert.equal(lines.filter((l) => l === band).length, 2, `ต้องมีแถบแค่บนกับล่าง:\n${message}`)
 }
+// ข้อมูลไม่ครบ แถบล่างต้องยังอยู่ติดเนื้อหา ไม่เหลือบรรทัดว่างคั่นก่อนแถบ
+const sparse = buildDocumentRequestCreatedMessage({ id: 'x' }, null)
+assert.equal(sparse.includes('\n\n'), false)
+assert.ok(sparse.endsWith(`\n${'⬜'.repeat(10)}`), sparse)
 
 // HTML parse_mode ของ Telegram — ข้อความที่ประชาชนพิมพ์เองต้องถูก escape ไม่งั้นบอทส่งไม่ออก
 const injected = buildComplaintCreatedMessage({ ...complaint, village: '<b>x</b> & y' })

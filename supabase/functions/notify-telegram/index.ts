@@ -233,22 +233,23 @@ function departmentColor(resource: Record<string, unknown>) {
 // กับ 6 กอง อยู่ใต้ข้อความ และต้องผูกลิงก์/callback — จึงเรียงสี่เหลี่ยมสีเต็มบรรทัดแทนให้ดูเป็นแถบ
 // ⚠️ 10 ช่องคือความกว้างที่ไม่ตัดบรรทัดบนจอมือถือแคบ (~360px) เพิ่มจำนวนแล้วแถบจะหักเป็น 2 บรรทัด
 // ⚠️ พรีวิว push notification ยุบขึ้นบรรทัดเป็นช่องว่าง แถบนี้จึงกินที่ต้นพรีวิวไป 10 ตัวอักษร
+// เจ้าของระบบขอ "กรอบสีรอบข้อความ" ต่อ (2569-09-13) — ทำไม่ได้ด้วยเหตุผลเดียวกัน จึงปิดท้ายด้วย
+// แถบสีเดียวกันอีกเส้นให้ข้อความถูกประกบบน-ล่าง แยกใบชัดเวลาเรียงติดกันในกลุ่ม
+// ไม่ทำขอบซ้าย (สี่เหลี่ยมนำหน้าทุกบรรทัด) เพราะบรรทัดยาวที่ตัดลงบรรทัดใหม่บนมือถือจะไม่มีสี่เหลี่ยม
+// ขอบจึงขาดเป็นช่วง ส่วนขอบขวาทำไม่ได้เลยเพราะแต่ละบรรทัดยาวไม่เท่ากัน
 const COLOR_BAND_WIDTH = 10
 
-function headerLines(resource: Record<string, unknown>, emoji: string, title: string) {
-  return [departmentColor(resource).repeat(COLOR_BAND_WIDTH), `${emoji} <b>${title}</b>`]
-}
+// ❌ ห้ามใส่แฮชแท็กชื่อกองภาษาไทย — เคยใส่ (#161) แล้วเห็นของจริงในกลุ่มว่า Telegram ตัดแท็กทันที
+// ที่เจอสระบน/ล่างหรือวรรณยุกต์ "#สำนักปลัด" เหลือ "#สำน" ตามด้วย "ักปลัด" เป็นข้อความธรรมดา
+// (ฝั่งเรากรองอักขระถูกแล้ว แต่ตัวแยกแท็กของ Telegram ไม่นับ combining mark ไทย แก้ฝั่งเราไม่ได้)
+// ชื่อย่อก็ใช้แทนไม่ได้: บาง อปท. ตั้งชื่อย่อเป็น "ช่าง"/"ศึกษา" ซึ่งมีสระ และบางกองไม่มีชื่อย่อ
+// ส่วน "อ้างอิง: #a1b2c3d4" ยังเป็นแท็กได้ปกติเพราะเป็นอักษรอังกฤษกับตัวเลขล้วน
 
-// แฮชแท็กชื่อกอง — Telegram ทำเป็นลิงก์ให้เอง แตะแล้วค้นทั้งกลุ่มเห็นเฉพาะงานของกองนั้น
-// เป็นเหตุผลหลักที่ใส่: เจ้าหน้าที่กรองงานของตัวเองได้โดยไม่ต้องเลื่อนหาเอง
-// ⚠️ แท็กจบทันทีที่เจออักขระที่ไม่ใช่ตัวอักษร/ตัวเลข/ขีดล่าง — ชื่อกองที่มีเว้นวรรค จุด หรือวงเล็บ
-// ("กองช่าง (สาขา 2)") จะขาดกลางคัน ต้องตัดทิ้งก่อน ไม่ใช่แทนที่ด้วยขีดล่างเพราะจะอ่านยาก
-// อักษรไทยใช้เป็นแฮชแท็กได้ปกติ ไม่ต้องถอดเป็นอังกฤษ
-// ⚠️⚠️ ต้องมี \p{M} ด้วย — สระบน/ล่างและวรรณยุกต์ไทย (่ ้ ิ ี ุ ู ฯลฯ) เป็น combining mark
-// ไม่เข้าเงื่อนไข \p{L} ถ้าไม่นับรวมจะโดนตัดทิ้งเงียบๆ "กองช่าง" กลายเป็น "#กองชาง"
-function departmentHashtag(resource: Record<string, unknown>) {
-  const name = cleanText(departmentOf(resource)?.name, 80).replace(/[^\p{L}\p{N}\p{M}_]/gu, '')
-  return name ? `#${name}` : ''
+// ประกอบข้อความทั้งใบ: แถบสีกอง / <อีโมจิ> <หัวเรื่อง> / เนื้อหา / แถบสีกอง
+// บรรทัดเนื้อหาที่เป็นค่าว่างถูกตัดทิ้ง ไม่เหลือหัวข้อค้างหรือบรรทัดเปล่า
+function framedMessage(resource: Record<string, unknown>, emoji: string, title: string, body: string[]) {
+  const band = departmentColor(resource).repeat(COLOR_BAND_WIDTH)
+  return [band, `${emoji} <b>${title}</b>`, ...body.filter(Boolean), band].join('\n')
 }
 
 // ชื่อ+อีโมจิหมวดคำร้อง: ใช้ค่าจากตาราง complaint_categories ของ อปท. นั้นก่อนเสมอ
@@ -317,39 +318,35 @@ function buildEventMessage(event: Record<string, unknown>, orgType: unknown) {
 // ที่ประชาชนพิมพ์มา — ให้กดลิงก์เข้าไปดูในระบบตามสิทธิ์แทน
 // complaints.village เป็นช่องสถานที่เกิดเหตุที่ประชาชนกรอกเอง เจ้าของระบบตัดสินใจให้ใส่
 // 2569-09-12 เพราะเจ้าหน้าที่ต้องรู้ว่าเรื่องอยู่ตรงไหนก่อนจะตัดสินใจว่าใครออกพื้นที่
-// รูปแบบหัวของทุกใบ 2 บรรทัด: <แถบสีกองเต็มบรรทัด> แล้วตามด้วย <อีโมจิประเภทเรื่อง> <หัวเรื่อง>
+// รูปแบบของทุกใบ (ดู framedMessage()): แถบสีกอง / <อีโมจิประเภทเรื่อง> <หัวเรื่อง> / เนื้อหา / แถบสีกอง
 // อีโมจิประเภทอยู่หัวข้อความอย่างเดียว บรรทัด "ประเภท:/เรื่อง:" จึงแสดงชื่อล้วน ไม่ใส่ซ้ำ
 // ข้อยกเว้นเดียวคือ fee_verified ที่ใช้ 💰 เพราะสาระของใบนั้นคือเงิน ไม่ใช่ชนิดเอกสาร
 function buildComplaintCreatedMessage(complaint: Record<string, unknown>) {
   const category = complaintCategory(complaint)
   const department = departmentName(complaint)
-  const hashtag = departmentHashtag(complaint)
   const submittedAt = formatThaiDateTime(complaint.created_at)
-  return [
-    ...headerLines(complaint, category.emoji, 'มีคำร้องใหม่'),
+  return framedMessage(complaint, category.emoji, 'มีคำร้องใหม่', [
     complaint.ref_no ? `เลขที่: ${escapeHtml(complaint.ref_no, 40)}` : '',
     `ประเภท: ${escapeHtml(category.label, 60)}`,
     complaint.village ? `สถานที่: ${escapeHtml(complaint.village, 120)}` : '',
-    department ? `ส่งถึง: ${escapeHtml(department, 80)}${hashtag ? ` ${hashtag}` : ''}` : '',
+    department ? `ส่งถึง: ${escapeHtml(department, 80)}` : '',
     submittedAt ? `แจ้งเมื่อ: ${escapeHtml(submittedAt, 60)}` : '',
-  ].filter(Boolean).join('\n')
+  ])
 }
 
 function buildComplaintStatusMessage(complaint: Record<string, unknown>) {
   const category = complaintCategory(complaint)
   const status = COMPLAINT_STATUS_LABEL[String(complaint.status)] ?? cleanText(complaint.status, 60)
   const department = departmentName(complaint)
-  const hashtag = departmentHashtag(complaint)
   const updatedAt = formatThaiDateTime(complaint.updated_at ?? complaint.created_at)
-  return [
-    ...headerLines(complaint, category.emoji, 'อัปเดตสถานะคำร้อง'),
+  return framedMessage(complaint, category.emoji, 'อัปเดตสถานะคำร้อง', [
     complaint.ref_no ? `เลขที่: ${escapeHtml(complaint.ref_no, 40)}` : '',
     `ประเภท: ${escapeHtml(category.label, 60)}`,
     complaint.village ? `สถานที่: ${escapeHtml(complaint.village, 120)}` : '',
     `สถานะ: <b>${escapeHtml(status, 60)}</b>`,
-    department ? `ส่งถึง: ${escapeHtml(department, 80)}${hashtag ? ` ${hashtag}` : ''}` : '',
+    department ? `ส่งถึง: ${escapeHtml(department, 80)}` : '',
     updatedAt ? `อัปเดตเมื่อ: ${escapeHtml(updatedAt, 60)}` : '',
-  ].filter(Boolean).join('\n')
+  ])
 }
 
 // เดิมคำขอเอกสารทั้ง 4 ชนิดใช้ข้อความตายตัวบรรทัดเดียว ("มีคำขอเอกสารใหม่ / กรุณาเข้าสู่ระบบ...")
@@ -361,49 +358,43 @@ function buildDocumentRequestCreatedMessage(
 ) {
   const type = documentType(request.document_type, feeSchedule)
   const department = departmentName(request)
-  const hashtag = departmentHashtag(request)
   const submittedAt = formatThaiDateTime(request.created_at)
   const fee = Number(request.fee_amount ?? 0) > 0 ? formatAmount(request.fee_amount, 2) : null
-  return [
-    ...headerLines(request, type.emoji, headingText),
+  return framedMessage(request, type.emoji, headingText, [
     `เรื่อง: ${escapeHtml(type.label, 100)}`,
-    department ? `ส่งถึง: ${escapeHtml(department, 80)}${hashtag ? ` ${hashtag}` : ''}` : '',
+    department ? `ส่งถึง: ${escapeHtml(department, 80)}` : '',
     submittedAt ? `ยื่นเมื่อ: ${escapeHtml(submittedAt, 60)}` : '',
     fee ? `ค่าธรรมเนียม: ${escapeHtml(fee, 20)} บาท` : '',
     `อ้างอิง: #${escapeHtml(shortRef(request.id), 8)}`,
-  ].filter(Boolean).join('\n')
+  ])
 }
 
 function buildDocumentRequestStatusMessage(request: Record<string, unknown>, feeSchedule: unknown) {
   const type = documentType(request.document_type, feeSchedule)
   const status = DOCUMENT_STATUS_LABEL[String(request.status)] ?? cleanText(request.status, 60)
   const department = departmentName(request)
-  const hashtag = departmentHashtag(request)
   const updatedAt = formatThaiDateTime(request.updated_at ?? request.created_at)
-  return [
-    ...headerLines(request, type.emoji, 'อัปเดตสถานะคำขอเอกสาร'),
+  return framedMessage(request, type.emoji, 'อัปเดตสถานะคำขอเอกสาร', [
     `เรื่อง: ${escapeHtml(type.label, 100)}`,
     `สถานะ: <b>${escapeHtml(status, 60)}</b>`,
-    department ? `ส่งถึง: ${escapeHtml(department, 80)}${hashtag ? ` ${hashtag}` : ''}` : '',
+    department ? `ส่งถึง: ${escapeHtml(department, 80)}` : '',
     updatedAt ? `อัปเดตเมื่อ: ${escapeHtml(updatedAt, 60)}` : '',
     `อ้างอิง: #${escapeHtml(shortRef(request.id), 8)}`,
-  ].filter(Boolean).join('\n')
+  ])
 }
 
 function buildFeeVerifiedMessage(request: Record<string, unknown>, feeSchedule: unknown) {
   const type = documentType(request.document_type, feeSchedule)
   const department = departmentName(request)
-  const hashtag = departmentHashtag(request)
   const amount = formatAmount(request.fee_amount, 2)
   const verifiedAt = formatThaiDateTime(request.payment_verified_at ?? request.updated_at)
-  return [
-    ...headerLines(request, '💰', 'ตรวจสอบค่าธรรมเนียมแล้ว'),
+  return framedMessage(request, '💰', 'ตรวจสอบค่าธรรมเนียมแล้ว', [
     `เรื่อง: ${escapeHtml(type.label, 100)}`,
     amount ? `จำนวนเงิน: <b>${escapeHtml(amount, 20)} บาท</b>` : '',
-    department ? `ส่งถึง: ${escapeHtml(department, 80)}${hashtag ? ` ${hashtag}` : ''}` : '',
+    department ? `ส่งถึง: ${escapeHtml(department, 80)}` : '',
     verifiedAt ? `ตรวจสอบเมื่อ: ${escapeHtml(verifiedAt, 60)}` : '',
     `อ้างอิง: #${escapeHtml(shortRef(request.id), 8)}`,
-  ].filter(Boolean).join('\n')
+  ])
 }
 
 // แจ้งเจ้าของการจองรถเดิม เมื่อ admin ใช้สิทธิ์ "จองแทนที่ฉุกเฉิน" ยกเลิกการจองของเขาไปให้ภารกิจด่วนกว่า
