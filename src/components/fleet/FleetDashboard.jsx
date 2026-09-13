@@ -135,6 +135,7 @@ export default function FleetDashboard({ tenant, depts, isAdmin }) {
   const [budgets,    setBudgets]    = useState([])
   const [fuelByDept, setFuelByDept] = useState({})
   const [pendingCnt, setPendingCnt] = useState(0)
+  const [overdueCnt, setOverdueCnt] = useState(0)
   const [loading,    setLoading]    = useState(true)
 
   useEffect(() => {
@@ -207,14 +208,28 @@ export default function FleetDashboard({ tenant, depts, isAdmin }) {
       supabase.from('fleet_vehicles').select('*').eq('municipality_id', tenant.id)
         .then(({ data }) => setVehicles(data ?? []))
 
+    // รถที่ยังไม่คืนเกินเวลาที่ขอไว้ — ทุกคำขอใหม่ของรถคันนั้นจะ "รอจัดสรรรถ" จนกว่าจะบันทึกกลับถึง
+    // (fleet_trip_queue_reasons: vehicle_not_returned) ผู้ดูแลต้องเห็นทันทีว่าต้องตามปิดทริปไหน
+    // ต้องนับซ้ำตามเวลาด้วย ไม่ใช่แค่ตอนข้อมูลเปลี่ยน เพราะทริปเลยกำหนดได้เองโดยไม่มีใครแตะอะไร
+    const refreshOverdue = () =>
+      supabase.from('fleet_trips').select('id', { count: 'exact', head: true })
+        .eq('municipality_id', tenant.id).eq('status', 'in_progress')
+        .lt('planned_return', new Date().toISOString())
+        .then(({ count, error }) => {
+          if (error) console.error('FleetDashboard overdue count error:', error.message)
+          else setOverdueCnt(count ?? 0)
+        })
+    queueMicrotask(refreshOverdue)
+    const overdueTimer = setInterval(refreshOverdue, 5 * 60_000)
+
     const channel = supabase.channel(`fleet-dash-${tenant.id}-${crypto.randomUUID()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fleet_trips' },
-        ({ new: row }) => { if (row?.municipality_id === tenant.id) refreshPending() })
+        ({ new: row }) => { if (row?.municipality_id === tenant.id) { refreshPending(); refreshOverdue() } })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fleet_vehicles' },
         ({ new: row }) => { if (row?.municipality_id === tenant.id) refreshVehicles() })
       .subscribe()
 
-    return () => supabase.removeChannel(channel)
+    return () => { clearInterval(overdueTimer); supabase.removeChannel(channel) }
   }, [tenant?.id])
 
   if (loading) return (
@@ -253,6 +268,16 @@ export default function FleetDashboard({ tenant, depts, isAdmin }) {
           <CalendarClock size={16} className="text-blue-500 shrink-0" />
           <p className="text-xs md:text-sm text-blue-700">
             มีคำขอใช้รถรอผู้ดูแลดำเนินการ <strong>{pendingCnt}</strong> รายการ (รออนุมัติ/รอจัดสรรรถ)
+          </p>
+        </div>
+      )}
+
+      {overdueCnt > 0 && (
+        <div className="flex items-center gap-2 md:gap-3 bg-red-50 border border-red-200 rounded-xl px-3 py-2 md:px-4 md:py-3">
+          <AlertTriangle size={16} className="text-red-500 shrink-0" />
+          <p className="text-xs md:text-sm text-red-700">
+            มีรถยังไม่คืนเกินเวลาที่ขอไว้ <strong>{overdueCnt}</strong> คัน — บันทึก "กลับถึง" ในแท็บการใช้รถ
+            ไม่งั้นคำขอใหม่ของรถคันนั้นจะรอจัดสรรรถทุกรายการ
           </p>
         </div>
       )}
