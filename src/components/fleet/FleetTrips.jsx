@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Plus, Calendar, X, ChevronLeft, ChevronRight, Route, History, Printer } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -176,6 +176,12 @@ function fmtDate(str) {
   const d = parseDateTime(str)
   if (!d) return '—'
   return d.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'short' })
+}
+
+// เลขไมล์ในข้อความเตือน — ใส่คอมมาให้อ่านเทียบกับหน้าปัดง่าย ทศนิยมตามที่บันทึกไว้ (เก็บ numeric)
+function fmtKm(value) {
+  const n = Number(value)
+  return Number.isFinite(n) ? `${n.toLocaleString('th-TH', { maximumFractionDigits: 2 })} กม.` : '—'
 }
 
 const EMPTY_RESERVE = {
@@ -1139,11 +1145,45 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   }
 
   /* ── Depart / Return ── */
+  // เปิดหน้าต่างออกเดินทาง แล้วเติม "เลขไมล์ก่อนออก" ด้วยเลขไมล์หลังกลับครั้งล่าสุดของรถคันนั้น
+  // เจ้าหน้าที่จะได้กรอกแค่เลขไมล์หลังกลับ แล้วคนใช้รถต่อไปได้เลขต่อเนื่องเอง
+  // ต้องถาม DB (fleet_vehicle_last_odometer) ไม่ใช่หาจาก trips/history บนหน้าจอ — RLS บังทริปของกองอื่น
+  // บนรถส่วนกลาง และประวัติบนหน้าจอแบ่งหน้า เลขล่าสุดจริงอาจไม่อยู่ในหน้าที่โหลดมา
+  const departTripRef = useRef(null)
+  const [lastOdometer, setLastOdometer] = useState(null) // null | { odometer, returned_at, trip_date }
+  async function openDepart(t) {
+    departTripRef.current = t.id
+    setSelTrip(t)
+    setLastOdometer(null)
+    setForm({ started_at: toLocalDT(new Date()), odometer_start: '' })
+    setModal('depart')
+    const { data, error } = await supabase.rpc('fleet_vehicle_last_odometer', {
+      p_vehicle_id: t.vehicle_id, p_exclude_trip: t.id,
+    })
+    // เปิดหน้าต่างของทริปอื่นไปแล้วระหว่างรอ — ห้ามเอาเลขของคันเก่าไปเติมให้คันใหม่
+    if (departTripRef.current !== t.id) return
+    if (error) {
+      console.error('fleet_vehicle_last_odometer error:', error.message)
+      return
+    }
+    const last = Array.isArray(data) ? data[0] : null
+    if (!last || last.odometer == null) return
+    setLastOdometer(last)
+    // เติมเฉพาะเมื่อยังว่าง — ผู้ใช้อาจพิมพ์เลขเองไปแล้วระหว่างรอ ห้ามเขียนทับ
+    setForm(f => (f.odometer_start === '' ? { ...f, odometer_start: String(Number(last.odometer)) } : f))
+  }
+
   async function submitDepart() {
     if (!form.started_at) return alert('กรุณาระบุเวลาออก')
     const startMeter = form.odometer_start === '' ? null : Number(form.odometer_start)
     if (startMeter !== null && (!Number.isFinite(startMeter) || startMeter < 0))
       return alert('เลขไมล์ก่อนออกต้องเป็น 0 หรือมากกว่า')
+    const lastMeter = lastOdometer?.odometer == null ? null : Number(lastOdometer.odometer)
+    const meterGap = startMeter !== null && lastMeter !== null ? startMeter - lastMeter : 0
+    // เลขไมล์ถอยหลังเกิดได้จริงแค่กรณีเปลี่ยนหน้าปัดหรือครั้งก่อนพิมพ์ผิด ต้องยืนยันก่อน ไม่งั้นระยะทาง
+    // ของทริปก่อน/ทริปนี้บนแบบ 4 จะผิดโดยไม่มีใครรู้ ส่วนเลขกระโดดไปข้างหน้าเตือนบนหน้าจออยู่แล้ว
+    if (meterGap < 0 && !confirm(`เลขไมล์ก่อนออก (${fmtKm(startMeter)}) น้อยกว่าเลขไมล์หลังกลับครั้งล่าสุดของรถคันนี้ (${fmtKm(lastMeter)})\n\nเปลี่ยนหน้าปัดไมล์ หรือครั้งก่อนบันทึกผิดใช่ไหม? กด OK เพื่อบันทึกต่อ`))
+      return
     setSaving(true)
     const { data: rows, error } = await supabase.from('fleet_trips').update({
       status: 'in_progress',
@@ -1157,6 +1197,23 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     setSaving(false)
     if (error) return alert(tripErrorMessage(error))
     if (!rows?.length) return alert(TRIP_NO_ROW_MSG)
+    // เลขไมล์ไม่ต่อจากครั้งก่อน = มีระยะทางที่ไม่อยู่ในบันทึกการใช้รถ (หรือแก้หน้าปัด) เก็บร่องรอยไว้ให้ตรวจย้อนหลัง
+    // เพราะแบบ 4 คิดระยะทางรายทริป ระยะที่หายไประหว่างทริปจะไม่โผล่ในเอกสารใบไหนเลย
+    if (meterGap !== 0) {
+      logAction({
+        action: 'update', resourceType: 'fleet_trip', resourceId: selTrip.id,
+        resourceLabel: `${selTrip.vehicle?.name ?? ''} — เลขไมล์ไม่ต่อเนื่อง`,
+        municipalityId: tenant.id,
+        metadata: {
+          odometer_gap_km: meterGap,
+          odometer_start: startMeter,
+          previous_odometer_end: lastMeter,
+          previous_trip_date: lastOdometer?.trip_date ?? null,
+        },
+      })
+    }
+    departTripRef.current = null
+    setLastOdometer(null)
     setModal(null); setSelTrip(null)
     loadTrips()
   }
@@ -1581,11 +1638,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
               </button>
             )}
             {canDepart && (
-              <button onClick={() => {
-                setSelTrip(t)
-                setForm({ started_at: toLocalDT(new Date()), odometer_start: '' })
-                setModal('depart')
-              }} className="flex-1 py-1.5 rounded-lg text-[11px] font-bold text-white"
+              <button onClick={() => openDepart(t)} className="flex-1 py-1.5 rounded-lg text-[11px] font-bold text-white"
                 style={{ backgroundColor: 'var(--color-primary)' }}>
                 🚀 ออกเดินทาง
               </button>
@@ -1677,11 +1730,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
               </button>
             )}
             {canDepart && (
-              <button onClick={() => {
-                setSelTrip(t)
-                setForm({ started_at: toLocalDT(new Date()), odometer_start: '' })
-                setModal('depart')
-              }} className="px-2 py-1 rounded-lg text-white text-[12px] font-bold whitespace-nowrap"
+              <button onClick={() => openDepart(t)} className="px-2 py-1 rounded-lg text-white text-[12px] font-bold whitespace-nowrap"
                 style={{ backgroundColor: 'var(--color-primary)' }}>
                 🚀 ออก
               </button>
@@ -2221,7 +2270,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
 
       {modal === 'depart' && selTrip && (
         <Modal title="🚀 บันทึกออกเดินทาง"
-               onClose={() => { setModal(null); setSelTrip(null) }}
+               onClose={() => { departTripRef.current = null; setLastOdometer(null); setModal(null); setSelTrip(null) }}
                onSave={submitDepart} saveLabel="ยืนยันออกเดินทาง" saving={saving}>
           <div className="bg-blue-50 rounded-xl p-3">
             <p className="text-sm font-bold text-gray-800">
@@ -2238,6 +2287,32 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
             <label className="text-xs font-semibold text-gray-600 mb-1 block">เลขไมล์ก่อนออก (กม.)</label>
             <input type="number" value={form.odometer_start} onChange={set('odometer_start')}
               placeholder="เช่น 12345" className={inp} />
+            {(() => {
+              // บอกที่มาของเลขที่เติมให้ และเตือนเมื่อไม่ต่อจากครั้งก่อน — ไม่บล็อก เพราะหน้าปัดจริงอาจต่างได้
+              // (มีคนใช้รถโดยไม่บันทึก/เปลี่ยนหน้าปัด) แต่ต้องทำให้คนกดเห็น ระยะที่กระโดดจะไม่อยู่ในแบบ 4
+              if (lastOdometer?.odometer == null) return null
+              const last = Number(lastOdometer.odometer)
+              const current = form.odometer_start === '' ? null : Number(form.odometer_start)
+              const gap = current !== null && Number.isFinite(current) ? current - last : 0
+              return (
+                <>
+                  <p className="mt-1 text-[10px] text-gray-400">
+                    เลขไมล์หลังกลับครั้งล่าสุดของรถคันนี้ {fmtKm(last)}
+                    {lastOdometer.returned_at ? ` (${fmtDT(lastOdometer.returned_at)})` : lastOdometer.trip_date ? ` (${fmtDate(lastOdometer.trip_date)})` : ''}
+                  </p>
+                  {gap > 0 && (
+                    <p className="mt-1 text-[11px] font-semibold text-amber-600">
+                      ⚠️ มากกว่าครั้งก่อน {fmtKm(gap)} — มีการใช้รถที่ไม่ได้บันทึกหรือไม่ ระบบจะเก็บร่องรอยไว้ให้ตรวจสอบ
+                    </p>
+                  )}
+                  {gap < 0 && (
+                    <p className="mt-1 text-[11px] font-semibold text-red-600">
+                      ⚠️ น้อยกว่าครั้งก่อน {fmtKm(-gap)} — เลขไมล์ถอยหลังได้เฉพาะกรณีเปลี่ยนหน้าปัดหรือครั้งก่อนบันทึกผิด
+                    </p>
+                  )}
+                </>
+              )
+            })()}
           </div>
         </Modal>
       )}
