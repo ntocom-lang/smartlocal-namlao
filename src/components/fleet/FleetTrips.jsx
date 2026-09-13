@@ -912,7 +912,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       const why = (saved.waitlist_reasons ?? []).map(code => `• ${reasonText(code)}`).join('\n')
       alert(`ส่งคำขอให้ผู้ดูแลระบบยานพาหนะจัดสรรรถแล้ว\nสถานะ: รอจัดสรรรถ${why ? `\n\n${why}` : ''}`)
     } else if (!isEdit && saved?.status === 'approved') {
+      notifyTelegram('fleet_trip_created', saved.id)
       alert('ระบบอนุมัติคิวรถให้แล้ว\nกรุณาพิมพ์ใบขออนุญาตใช้รถ (แบบ 3) ให้ผู้มีอำนาจลงนามก่อนนำรถออก')
+    } else if (!isEdit && saved?.status === 'pending') {
+      notifyTelegram('fleet_trip_created', saved.id)
     }
     if (isEdit) {
       logAction({
@@ -1010,6 +1013,8 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       notifyTelegram('fleet_trip_bumped', id)
     })
     if (newTripId) {
+      // คิวใหม่ที่แทรกได้รับอนุมัติทันทีโดยผู้ดูแล — แจ้งเป็น "อนุมัติคำขอใช้รถ" (approval_method ไม่ใช่ auto)
+      notifyTelegram('fleet_trip_approved', newTripId)
       logAction({
         action: 'create_override', resourceType: 'fleet_trip', resourceId: newTripId,
         resourceLabel: `${form.destination} (ใช้รถแทนคิวเดิมกรณีฉุกเฉิน)`, municipalityId: tenant.id,
@@ -1109,6 +1114,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     if (!confirm(`อนุมัติคำขอใช้รถ "${t.vehicle?.name}" ให้ ${t.driver?.full_name}?${waitlistNote}${warn}`)) return
     const { error } = await supabase.from('fleet_trips').update({ status: 'approved', approved_by: user?.id, approved_at: new Date().toISOString() }).eq('id', t.id)
     if (error) return alert('อนุมัติไม่สำเร็จ: ' + tripErrorMessage(error))
+    notifyTelegram('fleet_trip_approved', t.id)
     logAction({
       action: 'approve', resourceType: 'fleet_trip', resourceId: t.id,
       resourceLabel: `${t.vehicle?.name} — ${t.destination}`, municipalityId: tenant.id,
@@ -1141,6 +1147,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     }).eq('id', selTrip.id)
     setSaving(false)
     if (error) return alert('ปฏิเสธไม่สำเร็จ: ' + tripErrorMessage(error))
+    notifyTelegram('fleet_trip_rejected', selTrip.id)
     logAction({ action: 'reject', resourceType: 'fleet_trip', resourceId: selTrip.id,
       resourceLabel: `${selTrip.vehicle?.name} — ${selTrip.destination}`,
       municipalityId: tenant.id, metadata: { reason } })
@@ -1171,6 +1178,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     }).eq('id', selTrip.id)
     setSaving(false)
     if (error) return alert('ยกเลิกไม่สำเร็จ: ' + tripErrorMessage(error))
+    notifyTelegram('fleet_trip_cancelled', selTrip.id)
     logAction({ action: 'cancel', resourceType: 'fleet_trip', resourceId: selTrip.id,
       resourceLabel: `${selTrip.vehicle?.name} — ${selTrip.destination}`,
       municipalityId: tenant.id, metadata: { reason, cancelled_by: 'ผู้ขอใช้รถ' } })
@@ -1231,6 +1239,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     setSaving(false)
     if (error) return alert(tripErrorMessage(error))
     if (!rows?.length) return alert(TRIP_NO_ROW_MSG)
+    notifyTelegram('fleet_trip_departed', selTrip.id)
     // เลขไมล์ไม่ต่อจากครั้งก่อน = มีระยะทางที่ไม่อยู่ในบันทึกการใช้รถ (หรือแก้หน้าปัด) เก็บร่องรอยไว้ให้ตรวจย้อนหลัง
     // เพราะแบบ 4 คิดระยะทางรายทริป ระยะที่หายไประหว่างทริปจะไม่โผล่ในเอกสารใบไหนเลย
     if (meterGap !== 0) {
@@ -1271,6 +1280,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     setSaving(false)
     if (error) return alert(tripErrorMessage(error))
     if (!rows?.length) return alert(TRIP_NO_ROW_MSG)
+    notifyTelegram('fleet_trip_returned', selTrip.id)
     setModal(null); setSelTrip(null)
     loadTrips()
   }

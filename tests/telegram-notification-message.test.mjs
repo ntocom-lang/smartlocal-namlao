@@ -67,7 +67,8 @@ try {
     + '  buildComplaintCreatedMessage, buildComplaintStatusMessage,\n'
     + '  buildDocumentRequestCreatedMessage, buildDocumentRequestStatusMessage,\n'
     + '  buildFeeVerifiedMessage, documentTypeLabel, DEPARTMENT_COLOR_EMOJI,\n'
-    + '  buildFleetTripWaitlistedMessage,\n}\n')
+    + '  buildFleetTripWaitlistedMessage, buildFleetFuelCreatedMessage, buildFleetTripBumpedMessage,\n'
+    + '  notificationSpecs, notificationMatchesResource, idempotencyKey, FLEET_MESSAGE_BUILDERS,\n}\n')
   // BOT_TOKEN ถูกอ่านตอน import module — ต้องมี Deno.env ก่อนโหลด
   globalThis.Deno = { env: { get: () => '' } }
   mod = await import(pathToFileURL(probe).href)
@@ -79,7 +80,8 @@ const {
   buildComplaintCreatedMessage, buildComplaintStatusMessage,
   buildDocumentRequestCreatedMessage, buildDocumentRequestStatusMessage,
   buildFeeVerifiedMessage, documentTypeLabel, DEPARTMENT_COLOR_EMOJI,
-  buildFleetTripWaitlistedMessage,
+  buildFleetTripWaitlistedMessage, buildFleetFuelCreatedMessage, buildFleetTripBumpedMessage,
+  notificationSpecs, notificationMatchesResource, idempotencyKey, FLEET_MESSAGE_BUILDERS,
 } = mod
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -311,6 +313,146 @@ for (const message of [
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ยานพาหนะ — เจ้าของระบบขอแจ้งทุกขั้นของคำขอใช้รถ + รถเข้าซ่อม/ซ่อมเสร็จ + บันทึกซ่อมบำรุง (2569-09-13)
+// ─────────────────────────────────────────────────────────────────────────────
+const trip = {
+  id: 'f1ee7000-1111-4222-8333-444455556666',
+  status: 'approved',
+  approval_method: 'auto',
+  destination: 'ศาลากลางจังหวัด',
+  planned_departure: '2026-09-15T01:30:00.000Z', // 08:30 น.
+  planned_return: '2026-09-15T09:00:00.000Z',    // 16:00 น.
+  started_at: '2026-09-15T01:45:00.000Z',        // 08:45 น.
+  returned_at: '2026-09-15T08:20:00.000Z',       // 15:20 น.
+  odometer_start: 12000,
+  odometer_end: 12085,
+  distance_km: 85,
+  reject_reason: 'ติดประชุม <ด่วน>',
+  vehicle: { name: '[TEST] รถกระบะ', license_plate: 'กข 1234', meter_unit: 'km' },
+  driver: { full_name: '[TEST] คนขับ' },
+  requester: { full_name: '[TEST] ผู้ขอ' },
+  approver: { full_name: '[TEST] ผู้อนุมัติ' },
+  department: { name: 'กองช่าง', color: 'blue' },
+}
+const B = FLEET_MESSAGE_BUILDERS
+const tripAuto = B.fleet_trip_created(trip)
+assert.ok(tripAuto.startsWith('✅ <b>อนุมัติคิวรถอัตโนมัติ</b>\n'), tripAuto)
+for (const line of [/^รถ: \[TEST\] รถกระบะ \(กข 1234\)$/m, /^ผู้ขับ: \[TEST\] คนขับ$/m, /^ออก: 15 ก\.ย\. 2569 08:30 น\.$/m,
+  /^กลับ: 15 ก\.ย\. 2569 16:00 น\.$/m, /^ปลายทาง: ศาลากลางจังหวัด$/m, /^ผู้ขอ: \[TEST\] ผู้ขอ$/m, /^กอง: กองช่าง$/m,
+  /^อ้างอิง: #f1ee7000$/m]) {
+  assert.match(tripAuto, line)
+}
+const tripPending = B.fleet_trip_created({ ...trip, status: 'pending', approval_method: null })
+assert.ok(tripPending.startsWith('🚗 <b>คำขอใช้รถใหม่ รออนุมัติ</b>\n'), tripPending)
+assert.match(tripPending, /^สถานะ: <b>รออนุมัติ<\/b>$/m)
+const tripApproved = B.fleet_trip_approved({ ...trip, approval_method: 'manual' })
+assert.ok(tripApproved.startsWith('✅ <b>อนุมัติคำขอใช้รถ</b>\n'), tripApproved)
+assert.match(tripApproved, /^ผู้อนุมัติ: \[TEST\] ผู้อนุมัติ$/m)
+const tripRejected = B.fleet_trip_rejected({ ...trip, status: 'rejected' })
+assert.ok(tripRejected.startsWith('❌ <b>ไม่อนุมัติคำขอใช้รถ</b>\n'), tripRejected)
+// เหตุผลพิมพ์เองโดยเจ้าหน้าที่ ต้อง escape ไม่งั้น HTML parse_mode ของ Telegram ปฏิเสธทั้งข้อความ
+assert.match(tripRejected, /^เหตุผล: ติดประชุม &lt;ด่วน&gt;$/m)
+assert.match(tripRejected, /^ผู้พิจารณา: \[TEST\] ผู้อนุมัติ$/m)
+const tripCancelled = B.fleet_trip_cancelled({ ...trip, status: 'cancelled', reject_reason: null })
+assert.ok(tripCancelled.startsWith('🚫 <b>ยกเลิกคำขอใช้รถ</b>\n'), tripCancelled)
+assert.match(tripCancelled, /^เหตุผล: ไม่ระบุ$/m)
+const tripDeparted = B.fleet_trip_departed({ ...trip, status: 'in_progress' })
+assert.ok(tripDeparted.startsWith('🚙 <b>รถออกเดินทาง</b>\n'), tripDeparted)
+assert.match(tripDeparted, /^ออกเมื่อ: 15 ก\.ย\. 2569 08:45 น\.$/m)
+assert.match(tripDeparted, /^เลขไมล์ก่อนออก: 12,000 กม\.$/m)
+const tripReturned = B.fleet_trip_returned({ ...trip, status: 'completed' })
+assert.ok(tripReturned.startsWith('🏁 <b>คืนรถแล้ว</b>\n'), tripReturned)
+assert.match(tripReturned, /^กลับเมื่อ: 15 ก\.ย\. 2569 15:20 น\.$/m)
+assert.match(tripReturned, /^เลขไมล์หลังกลับ: 12,085 กม\.$/m)
+assert.match(tripReturned, /^ระยะทาง: <b>85 กม\.<\/b>$/m)
+// อุปกรณ์นับชั่วโมง + ไม่ได้กรอกเลขไมล์ ต้องไม่มีบรรทัดเลขไมล์/ระยะทางค้างว่าง
+const equipmentReturned = B.fleet_trip_returned({
+  ...trip, status: 'completed', odometer_end: null, distance_km: null, vehicle: { name: 'เครื่องสูบน้ำ', meter_unit: 'hour' },
+})
+assert.equal(/เลขไมล์|ระยะทาง/.test(equipmentReturned), false, equipmentReturned)
+assert.match(equipmentReturned, /^รถ: เครื่องสูบน้ำ$/m)
+
+const vehicleRow = {
+  id: 'fee1c1e0-1111-4222-8333-444455556666', status: 'under_repair', updated_at: '2026-09-13T03:00:00Z',
+  name: '[TEST] รถกระบะ', license_plate: 'กข 1234', department: { name: 'สำนักปลัด', color: 'green' },
+}
+const repairStarted = B.fleet_vehicle_repair_started(vehicleRow)
+assert.ok(repairStarted.startsWith('🔧 <b>รถงดใช้งาน เข้าซ่อม</b>\n'), repairStarted)
+assert.match(repairStarted, /^กองเจ้าของรถ: สำนักปลัด$/m)
+assert.ok(repairStarted.endsWith(`\n${rule('🟢')}`), repairStarted)
+const repairFinished = B.fleet_vehicle_repair_finished({ ...vehicleRow, status: 'active' })
+assert.ok(repairFinished.startsWith('✅ <b>รถกลับมาใช้งานได้</b>\n'), repairFinished)
+assert.equal(repairFinished.includes('รอจัดสรรรถ'), false, 'ซ่อมเสร็จแล้วต้องไม่บอกว่าคำขอจะรอจัดสรร')
+
+const maintenance = {
+  id: 'aa000000-1111-4222-8333-444455556666', service_date: '2026-09-13', maintenance_type: 'repair',
+  description: 'เปลี่ยนผ้าเบรก', cost: 2500, vendor: 'อู่ช่างแดง', odometer: 12100,
+  next_service_date: '2027-03-13', next_service_meter: 17100,
+  vehicle: { name: '[TEST] รถกระบะ', license_plate: 'กข 1234', meter_unit: 'km', department: { name: 'กองคลัง', color: 'yellow' } },
+}
+const maintenanceMsg = B.fleet_maintenance_created(maintenance)
+assert.ok(maintenanceMsg.startsWith('🛠️ <b>บันทึกซ่อมบำรุงใหม่</b>\n'), maintenanceMsg)
+assert.match(maintenanceMsg, /^ประเภท: ซ่อมแซม$/m)
+assert.match(maintenanceMsg, /^ค่าใช้จ่าย: <b>2,500\.00 บาท<\/b>$/m)
+assert.match(maintenanceMsg, /^นัดครั้งถัดไป: .*2570 หรือ 17,100 กม\.$/m)
+// สีกองมาจากกองเจ้าของรถ (fleet_maintenance ไม่มี department_id ของตัวเอง)
+assert.ok(maintenanceMsg.endsWith(`\n${rule('🟡')}`), maintenanceMsg)
+assert.equal(/ค่าใช้จ่าย/.test(B.fleet_maintenance_created({ ...maintenance, cost: 0 })), false, 'ค่าใช้จ่าย 0 บาทต้องไม่ขึ้น')
+assert.match(B.fleet_maintenance_created({ ...maintenance, maintenance_type: 'zzz' }), /^ประเภท: อื่นๆ$/m)
+
+const fuelMsg = buildFleetFuelCreatedMessage({
+  id: 'bb000000-1111-4222-8333-444455556666', filled_at: '2026-09-13', liters: 40, price_per_liter: 30.5,
+  total_cost: 1220, fuel_type: 'diesel', vehicle: maintenance.vehicle,
+})
+assert.ok(fuelMsg.startsWith('⛽ <b>บันทึกการเติมเชื้อเพลิงใหม่</b>\n'), fuelMsg)
+assert.ok(fuelMsg.endsWith(`\n${rule('🟡')}`), fuelMsg)
+const bumpedMsg = buildFleetTripBumpedMessage({ ...trip, status: 'cancelled' })
+
+// ด่านสถานะจริงใน DB — client บอกชนิดมา แต่แถวไม่อยู่ในสถานะนั้นต้องไม่ส่ง
+const match = (type, row) => notificationMatchesResource(type, row)
+assert.equal(match('fleet_trip_created', { status: 'approved', approval_method: 'auto' }), true)
+assert.equal(match('fleet_trip_created', { status: 'pending' }), true)
+assert.equal(match('fleet_trip_created', { status: 'approved', approval_method: 'manual' }), false)
+assert.equal(match('fleet_trip_created', { status: 'waitlisted' }), false, 'รอจัดสรรมีข้อความของตัวเองแล้ว')
+assert.equal(match('fleet_trip_approved', { status: 'approved', approval_method: null }), true)
+assert.equal(match('fleet_trip_approved', { status: 'approved', approval_method: 'auto' }), false, 'อนุมัติอัตโนมัติห้ามแจ้งซ้ำ 2 ใบ')
+assert.equal(match('fleet_trip_approved', { status: 'pending' }), false)
+assert.equal(match('fleet_trip_rejected', { status: 'rejected' }), true)
+assert.equal(match('fleet_trip_rejected', { status: 'approved' }), false)
+assert.equal(match('fleet_trip_cancelled', { status: 'cancelled' }), true)
+assert.equal(match('fleet_trip_departed', { status: 'approved' }), false)
+assert.equal(match('fleet_trip_departed', { status: 'in_progress' }), true)
+assert.equal(match('fleet_trip_returned', { status: 'in_progress' }), false)
+assert.equal(match('fleet_trip_returned', { status: 'completed' }), true)
+assert.equal(match('fleet_vehicle_repair_started', { status: 'active' }), false)
+assert.equal(match('fleet_vehicle_repair_started', { status: 'under_repair' }), true)
+assert.equal(match('fleet_vehicle_repair_finished', { status: 'under_repair' }), false)
+assert.equal(match('fleet_vehicle_repair_finished', { status: 'active' }), true)
+// รถคันเดียวเข้าซ่อมได้หลายรอบ — คีย์กันซ้ำต้องเปลี่ยนตาม updated_at
+assert.notEqual(
+  idempotencyKey('fleet_vehicle_repair_started', vehicleRow),
+  idempotencyKey('fleet_vehicle_repair_started', { ...vehicleRow, updated_at: '2026-10-01T00:00:00Z' }),
+)
+
+// ทุกชนิดที่หน้าเว็บยิงได้ต้องมีใน edge function และกลับกัน — ขาดฝั่งใดฝั่งหนึ่งแจ้งเตือนหายเงียบ
+// (client ทิ้งชนิดที่ไม่อยู่ใน allowlist โดยไม่ log / edge function ตอบ 400)
+{
+  const clientTypes = [...readFileSync(path.join(root, 'src/lib/notifyTelegram.js'), 'utf8')
+    .match(/ALLOWED_NOTIFICATION_TYPES = new Set\(\[([\s\S]*?)\]\)/)[1].matchAll(/'(\w+)'/g)].map((m) => m[1]).sort()
+  assert.deepEqual(clientTypes, Object.keys(notificationSpecs).sort(), 'allowlist ใน notifyTelegram.js ต้องตรงกับ notificationSpecs')
+  for (const type of Object.keys(FLEET_MESSAGE_BUILDERS)) {
+    assert.ok(notificationSpecs[type], `FLEET_MESSAGE_BUILDERS มีชนิด '${type}' ที่ไม่อยู่ใน notificationSpecs`)
+  }
+  // ป้ายประเภทซ่อมบำรุงคัดลอกมาจาก TYPES ใน FleetMaintenance.jsx
+  const maintenanceSource = readFileSync(path.join(root, 'src/components/fleet/FleetMaintenance.jsx'), 'utf8')
+  const clientMaintenance = Object.fromEntries([...maintenanceSource.match(/const TYPES = \{([\s\S]*?)\n\}/)[1]
+    .matchAll(/(\w+):\s*\{\s*label:\s*'([^']+)'/g)].map((m) => [m[1], m[2]]))
+  const edgeMaintenance = Object.fromEntries([...source.match(/const MAINTENANCE_TYPE_LABEL: Record<string, string> = \{([\s\S]*?)\n\}/)[1]
+    .matchAll(/(\w+):\s*'([^']+)'/g)].map((m) => [m[1], m[2]]))
+  assert.deepEqual(edgeMaintenance, clientMaintenance, 'ป้ายประเภทซ่อมบำรุงใน Telegram ต้องตรงกับ TYPES ใน FleetMaintenance.jsx')
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // เส้นคั่นบรรทัดสุดท้าย — Telegram ทำพื้นหลังหรือกรอบสีไม่ได้ (ตรวจกับ Bot API 10.3 แล้ว) จึงปิดท้ายข้อความ
 // ด้วยจุดสีกอง + เส้นประ ห้ามมีข้อความอื่นปน จุดสีมีตัวเดียว (เจ้าของระบบขอให้สีกองเล็กที่สุด)
 // และเส้นประห้ามเกิน 12 ขีด ไม่งั้นหักบนจอแคบ
@@ -318,7 +460,11 @@ for (const message of [
 // ─────────────────────────────────────────────────────────────────────────────
 for (const message of [
   complaintNew, complaintStatus, created, permit, docStatus, fee, waitlisted,
+  tripAuto, tripPending, tripApproved, tripRejected, tripCancelled, tripDeparted, tripReturned, equipmentReturned,
+  repairStarted, repairFinished, maintenanceMsg, fuelMsg, bumpedMsg,
 ]) {
+  assert.equal(message.includes('\n\n'), false, `ต้องไม่มีบรรทัดว่าง:\n${message}`)
+  assert.equal(/: *$/m.test(message), false, `ต้องไม่มีหัวข้อที่ไม่มีค่าตามหลัง:\n${message}`)
   const lines = message.split('\n')
   const [heading] = lines
   const last = lines.at(-1)
