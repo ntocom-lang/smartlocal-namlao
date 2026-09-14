@@ -809,6 +809,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
     if (missingDept) return alert('บัญชีของคุณยังไม่ได้กำหนดกอง/หน่วยงาน จึงยังบันทึกการใช้รถไม่ได้ — กรุณาให้ผู้ดูแลระบบกำหนดกองให้ก่อน (ตั้งค่า > เจ้าหน้าที่ยานพาหนะ)')
     directVehicleRef.current = null
     setLastOdometer(null)
+    setOdometerGaps([])
     setForm({
       ...EMPTY_DIRECT,
       driver_id: '',
@@ -1223,24 +1224,44 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
   // บันทึกย้อนหลัง = ยังไม่มี trip id ให้กันด้วย (guard ด้วยรถที่เลือกแทน)
   // เจ้าหน้าที่มักพิมพ์ผิดหลัก/ลืมบันทึกจนเลขไม่ต่อกัน จึงต้องเห็นเลขล่าสุดก่อนกรอกเอง
   const directVehicleRef = useRef(null)
+  // ช่วงเลขไมล์ที่ขาดหายไปในประวัติของรถคันนั้นทั้งหมด (ไม่ใช่แค่ค่าล่าสุด) — เจ้าหน้าที่จะได้
+  // เห็นช่องว่างเก่าที่ยังไม่มีใครมาอุดโดยไม่ต้องไล่ดูจากแบบ 4 ที่พิมพ์ออกมาเอง
+  const [odometerGaps, setOdometerGaps] = useState([])
   async function loadLastOdometerForDirect(vehicleId) {
     directVehicleRef.current = vehicleId
     setLastOdometer(null)
+    setOdometerGaps([])
     if (!vehicleId) return
-    const { data, error } = await supabase.rpc('fleet_vehicle_last_odometer', {
-      p_vehicle_id: vehicleId, p_exclude_trip: null,
-    })
+    const [lastRes, gapsRes] = await Promise.all([
+      supabase.rpc('fleet_vehicle_last_odometer', { p_vehicle_id: vehicleId, p_exclude_trip: null }),
+      supabase.rpc('fleet_vehicle_odometer_gaps', { p_vehicle_id: vehicleId }),
+    ])
     // เลือกรถอื่นไปแล้วระหว่างรอ — ห้ามเอาเลขของคันเก่าไปเติมให้คันที่เพิ่งเลือก
     if (directVehicleRef.current !== vehicleId) return
-    if (error) {
-      console.error('fleet_vehicle_last_odometer error:', error.message)
-      return
+    if (lastRes.error) {
+      console.error('fleet_vehicle_last_odometer error:', lastRes.error.message)
+    } else {
+      const last = Array.isArray(lastRes.data) ? lastRes.data[0] : null
+      if (last?.odometer != null) {
+        setLastOdometer(last)
+        // เติมเฉพาะเมื่อยังว่าง — ผู้ใช้อาจพิมพ์เลขเองไปแล้วระหว่างรอ ห้ามเขียนทับ
+        setForm(f => (f.odometer_start === '' ? { ...f, odometer_start: String(Number(last.odometer)) } : f))
+      }
     }
-    const last = Array.isArray(data) ? data[0] : null
-    if (!last || last.odometer == null) return
-    setLastOdometer(last)
-    // เติมเฉพาะเมื่อยังว่าง — ผู้ใช้อาจพิมพ์เลขเองไปแล้วระหว่างรอ ห้ามเขียนทับ
-    setForm(f => (f.odometer_start === '' ? { ...f, odometer_start: String(Number(last.odometer)) } : f))
+    if (gapsRes.error) {
+      console.error('fleet_vehicle_odometer_gaps error:', gapsRes.error.message)
+    } else if (Array.isArray(gapsRes.data)) {
+      setOdometerGaps(gapsRes.data)
+    }
+  }
+  // กดใช้ช่วงที่ขาดหายไป — เติมเลขไมล์ก่อน/หลังให้ตรงกับช่องว่างพอดี แต่ยังแก้ต่อได้เสมอ
+  // เผื่อจริงๆ แล้วช่วงที่หายไปเป็นการใช้รถ 2 รอบ ไม่ใช่รอบเดียวยาวเท่าช่องว่างทั้งหมด
+  function applyOdometerGap(gap) {
+    setForm(f => ({
+      ...f,
+      odometer_start: String(Number(gap.gap_start)),
+      odometer_end: String(Number(gap.gap_end)),
+    }))
   }
 
   async function openDepart(t) {
@@ -2253,6 +2274,30 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
               options={vehicleItems}
             />
           </div>
+          {odometerGaps.length > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-700 space-y-2">
+              <p className="font-semibold">
+                ⚠️ พบช่วงเลขไมล์ที่ขาดหายไปในประวัติของรถคันนี้ {odometerGaps.length} ช่วง
+              </p>
+              {odometerGaps.map((gap, i) => (
+                <div key={i} className="flex items-center justify-between gap-2 bg-white/60 rounded-lg px-2 py-1.5">
+                  <span>
+                    {fmtKm(Number(gap.gap_start))} – {fmtKm(Number(gap.gap_end))}
+                    {gap.before_returned_at ? ` (หลัง ${fmtDT(gap.before_returned_at)}` : gap.before_trip_date ? ` (หลัง ${fmtDate(gap.before_trip_date)}` : ' ('}
+                    {gap.after_started_at ? ` — ก่อน ${fmtDT(gap.after_started_at)})` : gap.after_trip_date ? ` — ก่อน ${fmtDate(gap.after_trip_date)})` : ')'}
+                  </span>
+                  <button type="button" onClick={() => applyOdometerGap(gap)}
+                    className="shrink-0 rounded-lg bg-amber-600 text-white px-2 py-1 text-[11px] font-semibold">
+                    ใช้ช่วงนี้
+                  </button>
+                </div>
+              ))}
+              <p className="text-[10px] text-amber-600/80">
+                เติมเลขไมล์ก่อน/หลังให้ตรงกับช่วงที่ขาดพอดี แก้ต่อได้เสมอ — ถ้าจริงๆ เป็นการใช้รถ
+                มากกว่า 1 รอบ ให้แบ่งบันทึกทีละรอบ (เลขไมล์หลังของรอบแรกไม่ต้องถึงปลายช่วง)
+              </p>
+            </div>
+          )}
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">จำนวนผู้ร่วมเดินทาง (รวมผู้ขอ) *</label>
             <input type="number" min="1" max="100" step="1" value={form.passengers}

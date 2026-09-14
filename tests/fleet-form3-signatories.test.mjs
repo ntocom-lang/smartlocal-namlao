@@ -395,4 +395,28 @@ assert.match(documentDateMigration, /ADD COLUMN IF NOT EXISTS document_date date
 // ห้ามตั้ง DEFAULT — ทริปเก่าต้องเป็น NULL เพื่อให้ fallback ไปใช้ created_at ทำงาน
 assert.ok(!/ADD COLUMN IF NOT EXISTS document_date[^,;]*DEFAULT/.test(documentDateMigration))
 
+// ── ช่องเลขไมล์ที่ขาดหายไปในประวัติของรถ (2026-09-14) ──────────────────────────
+// ต่อจาก fleet_vehicle_last_odometer ที่รู้แค่ค่าล่าสุด — ต้องไล่หาช่องว่างทั้งประวัติ
+assert.ok(tripsSource.includes("supabase.rpc('fleet_vehicle_odometer_gaps'"))
+assert.ok(tripsSource.includes('function applyOdometerGap(gap)'))
+assert.ok(tripsSource.includes('พบช่วงเลขไมล์ที่ขาดหายไปในประวัติของรถคันนี้'))
+// กดใช้ช่วงต้องเติมทั้งเลขไมล์ก่อนและหลัง แต่ยังแก้ต่อได้ (เผื่อจริงๆ เป็นการใช้รถ 2 รอบ)
+assert.ok(tripsSource.includes('odometer_start: String(Number(gap.gap_start))'))
+assert.ok(tripsSource.includes('odometer_end: String(Number(gap.gap_end))'))
+// ล้างช่องว่างเก่าทิ้งทุกครั้งที่เปิดฟอร์มใหม่หรือเปลี่ยนรถ ไม่งั้นค้างของคันก่อนหน้า
+assert.equal((tripsSource.match(/setOdometerGaps\(\[\]\)/g) ?? []).length, 2)
+
+const odometerGapsMigration = await readFile(
+  new URL('../supabase/migrations/20260914150000_fleet_vehicle_odometer_gaps.sql', import.meta.url), 'utf8',
+)
+assert.ok(odometerGapsMigration.includes('CREATE OR REPLACE FUNCTION public.fleet_vehicle_odometer_gaps('))
+// ต้องเช็คสิทธิ์อ่านรถด้วยตัวตัดสินเดียวกับ fleet_vehicle_last_odometer ไม่งั้นรถส่วนกลาง
+// ของกองอื่นจะโดนดึงช่องว่างมาโชว์ให้คนที่ไม่มีสิทธิ์เห็น
+assert.ok(odometerGapsMigration.includes('fleet_can_read_asset(v_mun, p_vehicle_id)'))
+assert.ok(odometerGapsMigration.includes("RAISE EXCEPTION 'FLEET_ACCESS_DENIED'"))
+// เฉพาะช่องว่างที่เลขไมล์เดินหน้าไม่ครบ (next_start > prev_end) — เลขถอยหลังมีคำเตือนแยกอยู่แล้ว
+assert.ok(odometerGapsMigration.includes('WHERE next_start IS NOT NULL AND next_start > prev_end'))
+assert.ok(odometerGapsMigration.includes('REVOKE ALL ON FUNCTION public.fleet_vehicle_odometer_gaps(uuid) FROM PUBLIC, anon'))
+assert.ok(odometerGapsMigration.includes('GRANT EXECUTE ON FUNCTION public.fleet_vehicle_odometer_gaps(uuid) TO authenticated'))
+
 console.log('fleet form 3 signatory assertions passed')
