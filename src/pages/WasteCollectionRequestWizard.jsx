@@ -435,11 +435,9 @@ export default function WasteCollectionRequestWizard({ tenant, session, onBack, 
                     value={pendingPoint}
                     onChange={point => setPendingPoint(point)}
                     defaultCenter={tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null}
-                  />
-                </Suspense>
-                <div className="flex gap-2">
-                  <button type="button" disabled={!pendingPoint}
-                    onClick={() => {
+                    confirmDisabled={!pendingPoint}
+                    confirmClassName="bg-cyan-700"
+                    onConfirm={() => {
                       setForm(current => ({
                         ...current,
                         collection_point: {
@@ -450,9 +448,9 @@ export default function WasteCollectionRequestWizard({ tenant, session, onBack, 
                       }))
                       setMapOpen(false)
                     }}
-                    className="flex-1 rounded-xl bg-cyan-700 py-2.5 text-sm font-bold text-white disabled:opacity-40">
-                    ใช้ตำแหน่งนี้
-                  </button>
+                  />
+                </Suspense>
+                <div className="flex justify-end">
                   <button type="button" onClick={() => { setMapOpen(false); setPendingPoint(null) }}
                     className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-500">
                     ยกเลิก
