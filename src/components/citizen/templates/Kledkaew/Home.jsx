@@ -10,6 +10,7 @@ import SmartCityBanner from '../../../../components/home/SmartCityBanner'
 import TourismSection from '../../../../components/home/TourismSection'
 import WeatherWidget from '../../../../components/home/WeatherWidget'
 import { CategoryIcon } from '../../../../lib/categoryIcon'
+import { moduleHiddenCategoryValues, withoutModuleHiddenCategories } from '../../../../lib/complaintCategoryModules'
 
 const CAT_FALLBACK_EMOJI = {
   light: '💡', road: '🛤️', mosquito: '🧴', tree: '🌲',
@@ -122,7 +123,7 @@ export default function Home() {
             </div>
 
             <div className="grid grid-cols-3 gap-3 relative z-10">
-              {cats.slice(0, 6).map((cat) => {
+              {withoutModuleHiddenCategories(cats, moduleHiddenCategoryValues(isModuleEnabled)).slice(0, 6).map((cat) => {
                 const emoji = cat.emoji || CAT_FALLBACK_EMOJI[cat.value] || '📋'
                 return (
                   <Link to={`/request?category=${cat.value}`} key={cat.value} className="flex flex-col items-center group">

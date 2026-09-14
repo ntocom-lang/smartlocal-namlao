@@ -3553,6 +3553,9 @@ const DEFAULT_SEED = [
   { value: 'tree',             label: 'ตัดต้นไม้',                emoji: '🌳', color: '#D1FAE5', textColor: '#059669' },
   { value: 'trash',            label: 'ขยะ / ความสะอาด',         emoji: '🗑️', color: '#F3F4F6', textColor: '#374151' },
   { value: 'water_supply',     label: 'สนับสนุนน้ำอุปโภค',        emoji: '🚿', color: '#DBEAFE', textColor: '#2563EB' },
+  // หมวดมาตรฐานของโมดูลงานประปา — รหัสต้องเป็น water_repair เท่านั้น (ผูกกับสวิตช์โมดูลที่
+  // complaintCategoryModules.js) ปิดงานประปาแล้วหมวดนี้หายจากหน้าประชาชนเอง
+  { value: 'water_repair',     label: 'ซ่อมน้ำประปา',             emoji: '💧', color: '#DBEAFE', textColor: '#2563EB' },
   { value: 'borrow_equipment', label: 'ยืมพัสดุ',                 emoji: '📦', color: '#E0E7FF', textColor: '#4338CA' },
   { value: 'corruption',       label: 'แจ้งการทุจริต',            emoji: '⚖️', color: '#FEE2E2', textColor: '#DC2626' },
   { value: 'grievance',        label: 'แจ้งเรื่องร้องทุกข์ร้องเรียน', emoji: '📣', color: '#FEF3C7', textColor: '#D97706' },
@@ -4294,7 +4297,7 @@ function CategoryManager({ tenant }) {
     setSeeding(true)
     setError(null)
     const departmentFor = (category) => {
-      const engineering = new Set(['light', 'road', 'water_supply'])
+      const engineering = new Set(['light', 'road', 'water_supply', 'water_repair'])
       const health = new Set(['mosquito', 'trash', 'odor'])
       const routeCode = engineering.has(category) ? 'engineering' : health.has(category) ? 'health' : 'general'
       return departments.find((department) => (
