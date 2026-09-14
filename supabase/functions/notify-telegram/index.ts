@@ -166,6 +166,8 @@ const DOCUMENT_TYPE: Record<string, Labelled> = {
   waste_collection_request: { emoji: '🚛', label: 'ขอรับบริการเก็บขนขยะมูลฝอย' },
   waste_collection_cancel: { emoji: '🚫', label: 'ขอยกเลิกการเก็บขนขยะมูลฝอย' },
   water_supply_request: { emoji: '🚰', label: 'ขออนุญาตใช้น้ำประปา' },
+  water_meter_change: { emoji: '🔧', label: 'ขออนุญาตเปลี่ยนมาตรน้ำประปา' },
+  water_supply_cancel: { emoji: '🚱', label: 'ขอยกเลิกใช้น้ำประปา' },
   public_assistance_request: { emoji: '🤝', label: 'ขอรับการช่วยเหลือประชาชน' },
   asset_borrow_request: { emoji: '📦', label: 'ขอยืมพัสดุ/ครุภัณฑ์' },
   patient_transport_request: { emoji: '🚑', label: 'ขออนุเคราะห์รถรับ-ส่งผู้ป่วย' },

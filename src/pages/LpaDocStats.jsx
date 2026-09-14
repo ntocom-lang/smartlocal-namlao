@@ -18,6 +18,8 @@ const DOC_LABELS = {
   waste_collection_request: 'ขอรับบริการเก็บขนขยะมูลฝอย',
   waste_collection_cancel:  'ขอยกเลิกการเก็บขนขยะมูลฝอย',
   water_supply_request:     'ขออนุญาตใช้น้ำประปา',
+  water_meter_change:       'ขออนุญาตเปลี่ยนมาตรน้ำประปา',
+  water_supply_cancel:      'ขอยกเลิกใช้น้ำประปา',
   public_assistance_request: 'ขอรับการช่วยเหลือประชาชน',
   asset_borrow_request: 'ขอยืมพัสดุ/ครุภัณฑ์',
   patient_transport_request: 'ขออนุเคราะห์รถรับ-ส่งผู้ป่วย',
