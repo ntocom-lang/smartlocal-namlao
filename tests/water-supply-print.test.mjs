@@ -259,4 +259,17 @@ assert.equal(
   buildWaterSupplyRequestHtml({ form: baseForm(), tenant: TENANT, docDate: '2026-09-07T10:32:00' }),
 )
 
+// คำนำหน้าในวงเล็บเป็นคำใบ้ให้คนกรอกด้วยปากกา ใบที่มีชื่อมาแล้วต้องไม่พิมพ์ซ้ำหน้าชื่อ
+// (ผู้ใช้ระบบสั่งแก้ 2569-09-14 หลังเห็น "ข้าพเจ้า (นาย/นาง/นางสาว) นายยุทธศักดิ์" บนใบจริง
+//  — กติกาเดียวกับใบขอรับการช่วยเหลือประชาชน ทั้ง 3 ใบใช้ builder เดียวจึงตรวจครบทุกใบ)
+// ตัด <style> ทิ้งก่อน: คอมเมนต์ CSS อธิบายความกว้างของคำใบ้นี้ไว้ ถ้าไม่ตัดจะจับได้ลวง
+const bodyOf = (html) => html.replace(/<style[\s\S]*?<\/style>/g, '')
+for (const [label, full] of [['ขอใช้น้ำ', online], ['เปลี่ยนมาตร', change], ['ยกเลิก', cancel]]) {
+  const html = bodyOf(full)
+  assert.doesNotMatch(html, /นาย\/นาง\/นางสาว/, `ใบ${label}ที่มีชื่อผู้ยื่นแล้วต้องไม่พิมพ์ (นาย/นาง/นางสาว)`)
+  assert.match(html, /<span class="field-blank">ข้าพเจ้า&nbsp;|ข้าพเจ้า <span class="fill-value">/, `ใบ${label}ต้องยังขึ้นต้นด้วย "ข้าพเจ้า"`)
+}
+const noName = bodyOf(render(baseForm({ applicant: { age: 45 } })))
+assert.match(noName, /ข้าพเจ้า \(นาย\/นาง\/นางสาว\)/, 'ใบที่ไม่มีชื่อต้องคงคำใบ้คำนำหน้าไว้ให้คนเขียนมือ')
+
 console.log('water-supply-print.test.mjs PASS')

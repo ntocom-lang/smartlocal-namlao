@@ -359,7 +359,7 @@ function buildWaterFormHtml(variant, { form, tenant, docDate, referenceNo = '', 
        แล้ว "234-5678" ตกไปบรรทัดถัดไป) ค่าที่ห้ามขาดกลางต้อง nowrap */
     .fill-value--nowrap { white-space: nowrap; }
     /* ป้ายชื่อช่อง + กล่องเส้นประ ต้องไม่ถูกตัดคั่นกลาง (ดูเหตุผลที่ฟังก์ชัน field())
-       กลุ่มที่กว้างสุดคือ "ข้าพเจ้า (นาย/นาง/นางสาว) + 58mm" ≈ 103mm ยังน้อยกว่าพื้นที่พิมพ์ 160mm
+       กลุ่มที่กว้างสุดคือ "ข้าพเจ้า (นาย/นาง/นางสาว) + 58mm" ของใบเปล่า ≈ 103mm ยังน้อยกว่าพื้นที่พิมพ์ 160mm
        จึงไม่มีทางที่กลุ่มใดจะกว้างเกินบรรทัดจนล้นขอบ */
     .field-blank { white-space: nowrap; }
     /* ชื่อหน่วยงานอยู่กลางประโยคโดยไม่มีช่องว่างคั่น (…ของงานกิจการประปาองค์การบริหารส่วนตำบลทุ่งแค้ว…)
@@ -421,7 +421,7 @@ ${govSignBlockCss()}
     <p class="to"><strong>เรียน</strong><span>${esc(headTitle)}</span></p>
 
 ${enclosureHtml}    <p class="body-copy">
-      ${field('ข้าพเจ้า (นาย/นาง/นางสาว)', applicantName, '58mm', { words: true })} ${field('อายุ', applicant.age, '14mm', { suffix: 'ปี' })}
+      ${field(applicantName ? 'ข้าพเจ้า' : 'ข้าพเจ้า (นาย/นาง/นางสาว)', applicantName, '58mm', { words: true })} ${field('อายุ', applicant.age, '14mm', { suffix: 'ปี' })}
       ${field('อยู่บ้านเลขที่', applicant.addr_no, '22mm')} ${field('หมู่ที่', applicant.addr_moo, '12mm')}
       ${field('ตำบล', applicant.addr_subdistrict, '27mm', { tight: true })} ${field('อำเภอ', applicant.addr_district, '27mm', { tight: true })}
       ${field('จังหวัด', applicant.addr_province, '27mm', { tight: true })} ${field('เบอร์โทรศัพท์', applicant.phone, '30mm', { nowrap: true })}
