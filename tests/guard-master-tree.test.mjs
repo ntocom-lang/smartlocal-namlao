@@ -9,8 +9,8 @@
 //
 // รัน: npm run test:guard
 
-import assert from 'assert'
-import { bashWriteTargets, toolTargets } from '../scripts/guard-master-tree.mjs'
+import path from 'path'
+import { bashWriteTargets, isInside, normalizeShellPath, toolTargets } from '../scripts/guard-master-tree.mjs'
 
 let failed = 0
 function check(name, actual, expected) {
@@ -45,6 +45,53 @@ check('arrow ต่อกับตัวแปร', bashWriteTargets("node -e \"
 check('ลูกศร ->', bashWriteTargets('echo "a -> b"'), [])
 check('มากกว่าเท่ากับ', bashWriteTargets('node -e "x >= 1"'), [])
 check('git ธรรมดา', bashWriteTargets('git status --short'), [])
+check('PowerShell อ่านอย่างเดียว', bashWriteTargets('Get-Content src/a.js | Select-Object -First 5'), [])
+check('ชื่อ cmdlet เป็นแค่คำค้นของ grep', bashWriteTargets('grep -rn Remove-Item src/lib/a.js'), [])
+check('; ในโค้ด node -e ไม่ใช่ตัวแบ่งคำสั่ง', bashWriteTargets('node -e "a(); cd(1)" && echo ok'), [])
+check(
+  'เนื้อ heredoc ของข้อความ commit ไม่ใช่คำสั่ง',
+  bashWriteTargets("git commit -F - <<'EOF'\nแก้ a > b.js\ncd x && rm src/a.js\nEOF"),
+  [],
+)
+
+console.log('\ncd ก่อนเขียน — ต้องต่อโฟลเดอร์ให้ถูก')
+// เคสจริง 2026-09-14: เขียนดัชนีความจำใน ~/.claude โดน hook อ่านเป็น MEMORY.md ที่รากทรีหลัก
+check(
+  'cd ไปโฟลเดอร์ความจำ',
+  bashWriteTargets('cd "/c/Users/me/.claude/projects/x/memory" && printf a >> MEMORY.md'),
+  ['/c/Users/me/.claude/projects/x/memory/MEMORY.md'],
+)
+check('cd ไป worktree', bashWriteTargets('cd /d/tmp/wt-x && echo a > src/a.js'), ['/d/tmp/wt-x/src/a.js'])
+check('cd โฟลเดอร์ย่อยต่อกัน 2 ครั้ง', bashWriteTargets('cd src; cd lib && echo a > a.js'), ['src/lib/a.js'])
+check('ปลายทาง absolute ไม่ต่อกับ cd', bashWriteTargets('cd src && echo a > /d/tmp/a.js'), ['/d/tmp/a.js'])
+check('cd - ถอยไปใช้ cwd ของ session', bashWriteTargets('cd /d/tmp && cd - && echo a > src/a.js'), ['src/a.js'])
+check('Set-Location ของ PowerShell', bashWriteTargets("Set-Location 'D:\\tmp\\wt-x'; 'a' > src\\a.js"), ['D:\\tmp\\wt-x/src\\a.js'])
+check('cd ในเครื่องหมายคำพูดไม่ใช่ cd จริง', bashWriteTargets('echo "cd /d/tmp" && echo a > src/a.js'), ['src/a.js'])
+
+console.log('\ncmdlet PowerShell ที่เขียน/ลบไฟล์ — ต้องจับได้')
+check('Set-Content -Path', bashWriteTargets('Set-Content -Path src/a.js -Value 1'), ['src/a.js'])
+check('Set-Content ตามตำแหน่ง', bashWriteTargets("Set-Content src/a.js 'x'"), ['src/a.js'])
+check('Out-File หลัง pipe', bashWriteTargets('"x" | Out-File -Encoding utf8 src\\a.js'), ['src\\a.js'])
+check('Remove-Item พร้อมสวิตช์', bashWriteTargets('Remove-Item -Recurse -Force src/old'), ['src/old'])
+check('New-Item -ItemType', bashWriteTargets('New-Item -ItemType File -Path src/a.js'), ['src/a.js'])
+check('Copy-Item เอาปลายทาง', bashWriteTargets('Copy-Item a.txt src/b.txt'), ['src/b.txt'])
+check('Move-Item -Destination', bashWriteTargets('Move-Item -Path a.txt -Destination src/b.txt'), ['src/b.txt'])
+check('here-string แล้ว pipe เข้า Out-File', bashWriteTargets("@'\ncd x\n'@ | Out-File src/a.js"), ['src/a.js'])
+
+console.log('\nแปลง path แบบ shell')
+const win = { home: 'C:\\Users\\me', platform: 'win32' }
+check('~ เป็น home', [normalizeShellPath('~/.claude/a.md', win)], ['C:\\Users\\me/.claude/a.md'])
+check('$HOME เป็น home', [normalizeShellPath('$HOME/.claude/a.md', win)], ['C:\\Users\\me/.claude/a.md'])
+check('Git Bash /d/... เป็น D:/...', [normalizeShellPath('/d/VS Code/x/src/a.js', win)], ['D:/VS Code/x/src/a.js'])
+check('~ กลางชื่อไม่แปลง', [normalizeShellPath('src/~backup.js', win)], ['src/~backup.js'])
+check('/d/... บน Linux ไม่แปลง', [normalizeShellPath('/d/tmp/a.js', { home: '/home/me', platform: 'linux' })], ['/d/tmp/a.js'])
+
+console.log('\nอยู่ในทรีหลักหรือไม่')
+const root = path.resolve('/repo/main')
+check('ไฟล์ในทรีหลัก', [isInside(root, path.resolve(root, 'src/a.js'))], [true])
+check('worktree ข้างนอก', [isInside(root, path.resolve('/tmp/wt-x/src/a.js'))], [false])
+check('โฟลเดอร์ชื่อขึ้นต้นเหมือนกัน', [isInside(root, path.resolve('/repo/main-old/a.js'))], [false])
+check('รากทรีหลักเอง', [isInside(root, root)], [false])
 
 console.log('\nการอ่าน payload ของ hook')
 check('Write อ่าน file_path', toolTargets({ tool_name: 'Write', tool_input: { file_path: 'src/App.jsx' } }), ['src/App.jsx'])
