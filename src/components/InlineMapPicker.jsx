@@ -26,13 +26,15 @@ export default function InlineMapPicker({
     <div className={fullscreen ? 'flex h-full min-h-0 flex-col bg-white' : 'relative'}>
       {fullscreen && (
         <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-4 py-3">
-          <p className="font-bold text-gray-800">เลือกตำแหน่งบน Google Maps</p>
+          <p className="font-bold text-gray-800">เลือกตำแหน่งบนแผนที่</p>
           <button type="button" onClick={() => setFullscreen(false)} className="flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-sm font-semibold text-gray-600">
             <Minimize2 size={15} /> ย่อแผนที่
           </button>
         </div>
       )}
       <div className={fullscreen ? 'min-h-0 flex-1 overflow-auto p-4' : ''}>
+        {/* เต็มจอ: หัว + ช่องค้นหา + กล่องที่อยู่ + ระยะห่าง กินราว 220px — หักไม่พอกล่องที่อยู่จะตกขอบจอ
+            dvh ไม่นับแถบที่อยู่ของเบราว์เซอร์มือถือ (100vh นับรวม จึงล้นบนมือถือจริง) ใช้ vh เป็นค่าสำรองเครื่องเก่า */}
         <LeafletMapPicker
           initialPos={value}
           fallbackPos={defaultCenter}
@@ -40,7 +42,9 @@ export default function InlineMapPicker({
           modal={false}
           skipGeolocation
           overlayAction={confirmButton}
-          mapClassName={fullscreen ? 'w-full h-[calc(100vh-180px)] min-h-[420px]' : 'w-full h-80 min-h-[320px]'}
+          mapClassName={fullscreen
+            ? 'w-full h-[calc(100vh-230px)] supports-[height:100dvh]:h-[calc(100dvh-230px)] min-h-[260px]'
+            : 'w-full h-80 min-h-[320px]'}
         />
       </div>
       {!fullscreen && (
