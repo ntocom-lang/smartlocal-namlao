@@ -601,11 +601,9 @@ export default function WaterSupplyRequestWizard({ tenant, session, onBack, staf
                     value={pendingPoint}
                     onChange={point => setPendingPoint(point)}
                     defaultCenter={tenant?.latitude ? { lat: tenant.latitude, lng: tenant.longitude } : null}
-                  />
-                </Suspense>
-                <div className="flex gap-2">
-                  <button type="button" disabled={!pendingPoint}
-                    onClick={() => {
+                    confirmDisabled={!pendingPoint}
+                    confirmClassName="bg-sky-700"
+                    onConfirm={() => {
                       setForm(current => ({
                         ...current,
                         meter_point: {
@@ -616,9 +614,9 @@ export default function WaterSupplyRequestWizard({ tenant, session, onBack, staf
                       }))
                       setMapOpen(false)
                     }}
-                    className="flex-1 rounded-xl bg-sky-700 py-2.5 text-sm font-bold text-white disabled:opacity-40">
-                    ใช้ตำแหน่งนี้
-                  </button>
+                  />
+                </Suspense>
+                <div className="flex justify-end">
                   <button type="button" onClick={() => { setMapOpen(false); setPendingPoint(null) }}
                     className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-500">
                     ยกเลิก

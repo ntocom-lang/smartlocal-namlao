@@ -23,6 +23,8 @@ export default function LeafletMapPicker({
   skipGeolocation = false,
   mapClassName = 'w-full h-80 min-h-[320px]',
   placeholder = 'ค้นหาบ้านเลขที่ ชื่อสถานที่ หรือถนนในประเทศไทย...',
+  // ปุ่มเพิ่มเติมวางต่อจาก "ตำแหน่งของฉัน" บนตัวแผนที่ — ปุ่มที่อยู่นอกแผนที่จะถูกบังเมื่อขยายเต็มจอ
+  overlayAction = null,
 }) {
   const { tenant } = useTenant()
   const mapRef = useRef(null)
@@ -282,19 +284,23 @@ export default function LeafletMapPicker({
           markers={(readOnly || !fixedCenterPin) && validPoint(selected) ? [{ id: 'selected-location', position: selected, color: '#ef4444', scale: 17, title: 'ตำแหน่งที่เลือก' }] : []}
         />
 
-        {/* GPS Locate Button */}
+        {/* GPS Locate Button + overlayAction — กล่องครอบไม่รับคลิก ช่องว่างระหว่างปุ่มจึงยังลากแผนที่ได้
+            เว้นขวา 3.5rem ไว้ให้ปุ่มซูม +/− มุมขวาล่าง ถ้าจอแคบจนล้นให้ขึ้นแถวใหม่ด้านบน (wrap-reverse) ไม่ลงไปทับ attribution */}
         {!readOnly && (
-          <button
-            type="button"
-            onClick={() => locateMe(false)}
-            disabled={locating}
-            className="absolute bottom-12 left-3 z-10 flex items-center gap-1.5 rounded-full bg-blue-600 px-3.5 py-2.5 text-xs font-bold text-white shadow-lg transition-transform active:scale-95 disabled:opacity-70"
-            title="ไปยังตำแหน่งปัจจุบันของฉัน"
-            aria-label="ตำแหน่งปัจจุบันของฉัน"
-          >
-            <LocateFixed size={16} className={locating ? 'animate-pulse' : ''} />
-            {locating ? 'กำลังหาตำแหน่ง...' : 'ตำแหน่งของฉัน'}
-          </button>
+          <div className="pointer-events-none absolute bottom-12 left-3 right-14 z-10 flex flex-wrap-reverse items-center gap-2">
+            <button
+              type="button"
+              onClick={() => locateMe(false)}
+              disabled={locating}
+              className="pointer-events-auto flex items-center gap-1.5 rounded-full bg-blue-600 px-3.5 py-2.5 text-xs font-bold text-white shadow-lg transition-transform active:scale-95 disabled:opacity-70"
+              title="ไปยังตำแหน่งปัจจุบันของฉัน"
+              aria-label="ตำแหน่งปัจจุบันของฉัน"
+            >
+              <LocateFixed size={16} className={locating ? 'animate-pulse' : ''} />
+              {locating ? 'กำลังหาตำแหน่ง...' : 'ตำแหน่งของฉัน'}
+            </button>
+            {overlayAction && <div className="pointer-events-auto">{overlayAction}</div>}
+          </div>
         )}
 
         {/* Center Pin Indicator */}

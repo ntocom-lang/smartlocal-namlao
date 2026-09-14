@@ -1,10 +1,26 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Maximize2, Minimize2 } from 'lucide-react'
+import { CheckCircle2, Maximize2, Minimize2 } from 'lucide-react'
 import LeafletMapPicker from './common/LeafletMapPicker'
 
-export default function InlineMapPicker({ value, onChange, defaultCenter }) {
+export default function InlineMapPicker({
+  value,
+  onChange,
+  defaultCenter,
+  // ปุ่มยืนยันต้องอยู่บนตัวแผนที่ — ถ้าวางไว้ใต้แผนที่ในหน้าที่เรียกใช้ จะถูก portal เต็มจอบังจนกดไม่ได้
+  onConfirm,
+  confirmDisabled = false,
+  confirmLabel = 'ใช้ตำแหน่งนี้',
+  confirmClassName = 'bg-blue-600',
+}) {
   const [fullscreen, setFullscreen] = useState(false)
+
+  const confirmButton = onConfirm ? (
+    <button type="button" disabled={confirmDisabled} onClick={onConfirm}
+      className={`flex items-center gap-1.5 rounded-full px-3.5 py-2.5 text-xs font-bold text-white shadow-lg transition-transform active:scale-95 disabled:opacity-60 ${confirmClassName}`}>
+      <CheckCircle2 size={16} /> {confirmLabel}
+    </button>
+  ) : null
 
   const content = (
     <div className={fullscreen ? 'flex h-full min-h-0 flex-col bg-white' : 'relative'}>
@@ -23,6 +39,7 @@ export default function InlineMapPicker({ value, onChange, defaultCenter }) {
           onLocationSelect={onChange}
           modal={false}
           skipGeolocation
+          overlayAction={confirmButton}
           mapClassName={fullscreen ? 'w-full h-[calc(100vh-180px)] min-h-[420px]' : 'w-full h-80 min-h-[320px]'}
         />
       </div>
