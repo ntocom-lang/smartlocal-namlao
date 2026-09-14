@@ -135,6 +135,65 @@ export function thaiDateParts(value) {
 }
 
 /**
+ * งานประปา 3 ใบใช้โครงเดียวกันทุกบรรทัด ต่างกันแค่ถ้อยคำ — ต้นฉบับ อบต.ทุ่งแค้ว เลข ①②③
+ * (ผู้ใช้ส่งภาพใบ ② ยกเลิก และ ③ เปลี่ยนมาตร มา 2569-09-14) จึงรวมไว้ที่ builder เดียว
+ * แยกไฟล์แล้ววันหนึ่งแก้เลย์เอาต์ใบเดียว อีกสองใบจะเพี้ยนไปเงียบๆ
+ *
+ * ⚠️ ถ้อยคำในแต่ละใบลอกจากต้นฉบับของใบนั้นเอง ห้ามปรับให้เหมือนกัน (ผู้ใช้สั่ง 2569-09-14)
+ *   ① ขอใช้น้ำ   — "ขอใช้มาตรวัดน้ำที่ทาง…จัดหาให้" (ผู้ใช้ยืนยันคำนี้ 2569-09-07)
+ *   ③ เปลี่ยนมาตร — "ขอใช้มาตรที่ทาง…จัดหาให้" ไม่มีคำว่า "วัดน้ำ" ตามภาพต้นฉบับที่อ่านได้ชัด
+ *   ② ยกเลิก     — ไม่มีประโยคขีดเส้นใต้ มีแต่ยินยอมชำระค่าน้ำ "ในรอบบิลที่ผ่านมา" และลงนาม "ผู้แจ้ง"
+ *
+ * ต่างจากต้นฉบับใบ ②③ เพิ่ม 1 จุด: บรรทัด "เลขผู้ใช้น้ำ" พิมพ์เฉพาะเมื่อผู้ยื่นกรอกมา
+ * (ผู้ใช้เลือกเอง 2569-09-14) ระบบยังไม่มีทะเบียนผู้ใช้น้ำ เจ้าหน้าที่ต้องใช้เลขนี้ค้นบัญชี
+ * ในโปรแกรมออกบิลที่ อปท. ใช้อยู่ ส่วนใบ ① เป็นผู้ใช้รายใหม่ ยังไม่มีเลข
+ */
+const WATER_FORMS = {
+  water_supply_request: {
+    title: 'แบบคำขออนุญาตใช้น้ำประปา',
+    subject: 'ขออนุญาตใช้น้ำประปา',
+    enclosure: true,
+    dateKey: 'service_start_date',
+    purposeLead: 'มีความประสงค์ขออนุญาตใช้น้ำประปาของงานกิจการประปา',
+    reason: false,
+    clause: org => `โดยข้าพเจ้า <span class="meter-clause">ขอใช้มาตรวัดน้ำที่ทาง${org}จัดหาให้</span>
+      และยินยอมชำระเงินค่าน้ำประปาและปฏิบัติตามระเบียบข้อบังคับของ${org}ทุกประการ`,
+    pointLabel: 'จุดติดตั้งมาตรวัดน้ำตามพิกัดแผนที่',
+    accountNo: false,
+    role: 'ผู้ขออนุญาต',
+  },
+  water_meter_change: {
+    title: 'แบบคำขอเปลี่ยนมาตรน้ำประปา',
+    subject: 'ขออนุญาตเปลี่ยนมาตรน้ำประปา',
+    enclosure: false,
+    dateKey: 'effective_date',
+    purposeLead: 'มีความประสงค์ขออนุญาตเปลี่ยนมาตรน้ำประปาของงานกิจการประปา',
+    reason: true,
+    clause: org => `โดยข้าพเจ้า <span class="meter-clause">ขอใช้มาตรที่ทาง${org}จัดหาให้</span>
+      และยินยอมชำระเงินค่าน้ำประปาและปฏิบัติตามระเบียบข้อบังคับของ${org}ทุกประการ`,
+    pointLabel: 'จุดที่ตั้งมาตรตามพิกัดแผนที่',
+    accountNo: true,
+    role: 'ผู้ขออนุญาต',
+  },
+  water_supply_cancel: {
+    title: 'แบบคำขอยกเลิกใช้น้ำประปา',
+    subject: 'ขอยกเลิกใช้น้ำประปา',
+    enclosure: false,
+    dateKey: 'effective_date',
+    purposeLead: 'มีความประสงค์ขอยกเลิกการใช้น้ำประปาของงานกิจการประปา',
+    reason: false,
+    // บรรทัดเดียวติดกัน — ต้นฉบับขึ้นบรรทัดตรง "ยินยอม|ชำระ" เพราะหมดกระดาษเท่านั้น
+    // ถ้าขึ้นบรรทัดใน template จะกลายเป็นช่องว่างกลางประโยคไทย
+    clause: org => `โดยข้าพเจ้ายินยอมชำระเงินค่าน้ำประปาในรอบบิลที่ผ่านมาและปฏิบัติตามระเบียบข้อบังคับของ${org}ทุกประการ`,
+    pointLabel: 'จุดที่ตั้งมาตรตามพิกัดแผนที่',
+    accountNo: true,
+    role: 'ผู้แจ้ง',
+  },
+}
+
+export const WATER_FORM_TYPES = Object.keys(WATER_FORMS)
+
+/**
  * แบบคำขออนุญาตใช้น้ำประปา 1 หน้า A4 แนวตั้ง
  *
  * ลอกโครงจากแบบฟอร์มต้นฉบับที่ อบต.ทุ่งแค้ว ใช้จริง (ผู้ใช้ส่งภาพต้นฉบับมา 2569-09-07)
@@ -172,16 +231,60 @@ export function thaiDateParts(value) {
  * ข้อมูลใน form มาจาก permit_form_data (ชื่อคอลัมน์ legacy ของ document_requests)
  * form_type = 'water_supply_request' ใช้แยกรูปแบบข้อมูลนี้ออกจากใบขยะและแบบ ข.๑
  */
-export function buildWaterSupplyRequestHtml({ form, tenant, docDate, referenceNo = '', signedAt = '' }) {
+export function buildWaterSupplyRequestHtml(args) {
+  return buildWaterFormHtml(WATER_FORMS.water_supply_request, args)
+}
+
+/** แบบคำขอเปลี่ยนมาตรน้ำประปา (ต้นฉบับ ③) */
+export function buildWaterMeterChangeHtml(args) {
+  return buildWaterFormHtml(WATER_FORMS.water_meter_change, args)
+}
+
+/** แบบคำขอยกเลิกใช้น้ำประปา (ต้นฉบับ ②) */
+export function buildWaterSupplyCancelHtml(args) {
+  return buildWaterFormHtml(WATER_FORMS.water_supply_cancel, args)
+}
+
+/**
+ * เลือกใบตาม document_type — ใช้ในหน้าที่แสดงคำขอหลายประเภทปนกัน (เอกสารของฉัน / กล่องงาน)
+ * ประเภทที่ไม่รู้จักคืน '' ให้ผู้เรียกไม่แสดงปุ่มพิมพ์ ห้ามตกไปใช้ใบขอใช้น้ำแทน
+ * เพราะจะได้ใบที่ถ้อยคำผูกพันผิดเรื่อง
+ */
+export function buildWaterServiceFormHtml(documentType, args) {
+  const variant = WATER_FORMS[documentType]
+  return variant ? buildWaterFormHtml(variant, args) : ''
+}
+
+function buildWaterFormHtml(variant, { form, tenant, docDate, referenceNo = '', signedAt = '' }) {
   const data = form || {}
   const applicant = data.applicant || {}
   const applicantName = `${applicant.title || ''}${applicant.first || ''} ${applicant.last || ''}`.trim()
   const officeName = orgOfficeName(tenant)
   const headTitle = orgHeadTitle(tenant)
   const { day, month, year } = thaiDateParts(docDate)
-  const serviceStartDate = thaiDateFromDateInput(data.service_start_date)
+  const serviceStartDate = thaiDateFromDateInput(data[variant.dateKey])
   const meterPoint = meterPointText(data.meter_point)
   const orgNameTag = orgNameHtml(tenant)
+  const accountNo = variant.accountNo ? String(data.account_no ?? '').trim() : ''
+  const reasonHtml = variant.reason
+    ? `\n      ${field('เนื่องจาก', data.reason, '60mm', { words: true })}`
+    : ''
+  const enclosureHtml = variant.enclosure
+    ? `    <div class="enclosure">
+      <strong>สิ่งที่ส่งมาด้วย</strong>
+      <div class="enclosure-list">
+        <span>๑.</span><span>สำเนาบัตรประจำตัวประชาชน</span><span>จำนวน ๑ ฉบับ</span>
+        <span>๒.</span><span>สำเนาทะเบียนบ้าน</span><span>จำนวน ๑ ฉบับ</span>
+        <span>๓.</span><span>แผนผังที่ตั้ง</span><span>จำนวน ๑ ฉบับ</span>
+      </div>
+    </div>
+
+`
+    : ''
+  // nowrap: เลขผู้ใช้น้ำมักมีขีดกลาง (เช่น 01-0123) ห้ามขาดตรงขีด เหตุผลเดียวกับเบอร์โทร
+  const accountHtml = accountNo
+    ? `<p class="point-copy">เลขผู้ใช้น้ำ ${line(accountNo, '36mm', { nowrap: true })}</p>\n    `
+    : ''
 
   // ที่อยู่สำนักงานใต้บรรทัด "เขียนที่" — ต้นฉบับพิมพ์ไว้ 2 บรรทัด (เลขที่+หมู่+ตำบล / อำเภอ+จังหวัด)
   // ค่าใน municipalities.address เป็นข้อความหลายบรรทัดที่แอดมินพิมพ์เอง จึงตัดตามบรรทัดจริง
@@ -203,7 +306,7 @@ export function buildWaterSupplyRequestHtml({ form, tenant, docDate, referenceNo
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>แบบคำขออนุญาตใช้น้ำประปา</title>
+  <title>${variant.title}</title>
   ${GOV_FONT_LINK}
   <style>
     ${govPageCss()}
@@ -303,7 +406,7 @@ ${govSignBlockCss()}
 </head>
 <body>
   <main class="sheet" data-pdf-page>
-    <div class="title">แบบคำขออนุญาตใช้น้ำประปา</div>
+    <div class="title">${variant.title}</div>
 
     <div class="write-at">
       <div class="write-at-inner">
@@ -314,19 +417,10 @@ ${govSignBlockCss()}
 
     <p class="date-line">${field('วันที่', day, '16mm')} ${field('เดือน', month, '30mm')} ${field('พ.ศ.', year, '20mm')}</p>
 
-    <p class="subject"><strong>เรื่อง</strong><span>ขออนุญาตใช้น้ำประปา</span></p>
+    <p class="subject"><strong>เรื่อง</strong><span>${variant.subject}</span></p>
     <p class="to"><strong>เรียน</strong><span>${esc(headTitle)}</span></p>
 
-    <div class="enclosure">
-      <strong>สิ่งที่ส่งมาด้วย</strong>
-      <div class="enclosure-list">
-        <span>๑.</span><span>สำเนาบัตรประจำตัวประชาชน</span><span>จำนวน ๑ ฉบับ</span>
-        <span>๒.</span><span>สำเนาทะเบียนบ้าน</span><span>จำนวน ๑ ฉบับ</span>
-        <span>๓.</span><span>แผนผังที่ตั้ง</span><span>จำนวน ๑ ฉบับ</span>
-      </div>
-    </div>
-
-    <p class="body-copy">
+${enclosureHtml}    <p class="body-copy">
       ${field('ข้าพเจ้า (นาย/นาง/นางสาว)', applicantName, '58mm', { words: true })} ${field('อายุ', applicant.age, '14mm', { suffix: 'ปี' })}
       ${field('อยู่บ้านเลขที่', applicant.addr_no, '22mm')} ${field('หมู่ที่', applicant.addr_moo, '12mm')}
       ${field('ตำบล', applicant.addr_subdistrict, '27mm', { tight: true })} ${field('อำเภอ', applicant.addr_district, '27mm', { tight: true })}
@@ -334,7 +428,7 @@ ${govSignBlockCss()}
     </p>
 
     <p class="body-copy">
-      มีความประสงค์ขออนุญาตใช้น้ำประปาของงานกิจการประปา${orgNameTag}
+      ${variant.purposeLead}${orgNameTag}${reasonHtml}
       ${field('ตั้งแต่วันที่', serviceStartDate, '43mm', { words: true, suffix: 'เป็นต้นไป' })}
       ${field('บริเวณที่ตั้งบ้านเลขที่', site.addr_no, '22mm')} ${field('หมู่ที่', site.addr_moo, '12mm')}
       ${field('ตำบล', site.addr_subdistrict, '27mm', { tight: true })} ${field('อำเภอ', site.addr_district, '27mm', { tight: true })}
@@ -342,11 +436,10 @@ ${govSignBlockCss()}
     </p>
 
     <p class="body-copy">
-      โดยข้าพเจ้า <span class="meter-clause">ขอใช้มาตรวัดน้ำที่ทาง${orgNameTag}จัดหาให้</span>
-      และยินยอมชำระเงินค่าน้ำประปาและปฏิบัติตามระเบียบข้อบังคับของ${orgNameTag}ทุกประการ
+      ${variant.clause(orgNameTag)}
     </p>
 
-    ${meterPoint ? `<p class="point-copy">จุดติดตั้งมาตรวัดน้ำตามพิกัดแผนที่ ${line(meterPoint)}</p>` : ''}
+    ${accountHtml}${meterPoint ? `<p class="point-copy">${variant.pointLabel} ${line(meterPoint)}</p>` : ''}
 
     <section class="signature">
       ${govSignRow({
@@ -354,7 +447,7 @@ ${govSignBlockCss()}
         // grow: ช่องลงนามเดี่ยวที่มีคำต่อท้าย ชื่อยาวกว่าแกนต้องดันคำต่อท้ายออกไป ไม่ใช่พิมพ์ทับ
         // (เคสจริง "นางสาวประกายมาศ ศรีวิชัยเลิศสกุล" กว้าง ~62mm ในแกน 54mm)
         grow: true,
-        role: 'ผู้ขออนุญาต',
+        role: variant.role,
         signed: signedOnline ? esc(applicantName) : '',
         below: [applicantName ? `(${esc(applicantName)})` : govNameBlank(SIGN_LINE_W)],
       })}

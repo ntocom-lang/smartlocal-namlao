@@ -18,7 +18,7 @@ import { thaiDate, thaiDateFromDateInput } from '../lib/thaiDate'
 import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
 import { buildWasteCollectionRequestHtml, collectionPointText } from '../lib/wasteCollectionRequestPrint'
 import { buildWasteCollectionCancelHtml, cancelReasonText } from '../lib/wasteCollectionCancelPrint'
-import { buildWaterSupplyRequestHtml } from '../lib/waterSupplyRequestPrint'
+import { buildWaterServiceFormHtml, WATER_FORM_TYPES } from '../lib/waterSupplyRequestPrint'
 import { buildPublicAssistanceRequestHtml } from '../lib/publicAssistancePrint'
 import {
   SIGNATORY_REGISTRY_SELECT, SIGNATORY_SCOPE,
@@ -26,7 +26,10 @@ import {
 } from '../lib/documentSignatories'
 import { uploadFile } from '../lib/driveStorage'
 import { fetchAssignableStaff, groupStaffByDepartment } from '../lib/staffRoster'
-import { BASE_DOCUMENT_TYPES, removedDocumentTypes } from '../lib/documentTypes'
+import {
+  BASE_DOCUMENT_TYPES, removedDocumentTypes,
+  WATERWORKS_DOCUMENT_TYPES, WATERWORKS_MODULE_KEY,
+} from '../lib/documentTypes'
 import { MANAGED_MODULE_KEYS } from '../lib/staffModules'
 import OdorReportPanel from '../components/staff/OdorReportPanel'
 import PortalSwitcher from '../components/layout/PortalSwitcher'
@@ -85,6 +88,15 @@ function getAllDocTypes() { return [...DOC_TYPES, ..._customDocTypes] }
 // เฉพาะประเภทที่ยังเปิดรับคำขอใหม่ — ใช้กับฟอร์มสร้างคำขอ walk-in เท่านั้น
 function getSelectableDocTypes() {
   return getAllDocTypes().filter(d => !_removedDocTypes.includes(d.value))
+}
+
+// โมดูลงานประปาเปิดอยู่ไหมสำหรับ อปท. นี้ — กติกาเดียวกับ isModuleEnabled ใน TenantContext
+// (enabled_modules ว่าง/ไม่ใช่ array = แถวเก่าที่ไม่เคยตั้งค่า ถือว่าเปิดทุกโมดูล)
+// ใช้ tenant ที่ส่งเข้ามาเป็น prop เพราะ NewRequestSheet อยู่นอก provider ของหน้าเจ้าหน้าที่
+function isWaterworksEnabled(tenant) {
+  const keys = tenant?.enabled_modules
+  if (!Array.isArray(keys)) return true
+  return keys.includes(WATERWORKS_MODULE_KEY)
 }
 
 const STATUS = {
@@ -318,7 +330,18 @@ function TaskCard({ req, onClick }) {
 
 // ─── Task Detail Sheet ────────────────────────────────────────────────────────
 
-const FEE_INQUIRY_TYPES = ['tax_notice', 'waste_collection']
+// งานประปา 2 ใบเข้าลิสต์นี้ด้วย — ค่าประกันมาตร/ค่าติดตั้ง/ค่าเปลี่ยนมาตร รู้หลังช่างออกไปสำรวจ
+// หน้างาน เจ้าหน้าที่จึงต้องแจ้งยอดกลับได้ (วิซาร์ดบอกประชาชนไว้แล้วว่าจะแจ้งทีหลัง)
+// ไม่รวมใบยกเลิกใช้น้ำ — เงินของใบนั้นคือค่าน้ำรอบบิลที่ค้างอยู่ในโปรแกรมออกบิล ไม่ใช่ยอดที่
+// เกิดจากคำขอใบนี้ ระบบไม่มีทะเบียนผู้ใช้น้ำจึงยืนยันยอดแทนกองคลังไม่ได้
+const FEE_INQUIRY_TYPES = ['tax_notice', 'waste_collection', 'water_supply_request', 'water_meter_change']
+
+// ชื่อใบบนปุ่มพิมพ์ของงานประปา — ตรงกับหัวกระดาษของแต่ละใบ (ดู WATER_FORMS ในไฟล์ใบพิมพ์)
+const WATER_FORM_PRINT_LABELS = {
+  water_supply_request: 'แบบคำขออนุญาตใช้น้ำประปา',
+  water_meter_change: 'แบบคำขอเปลี่ยนมาตรน้ำประปา',
+  water_supply_cancel: 'แบบคำขอยกเลิกใช้น้ำประปา',
+}
 
 function TaskDetailSheet({
   req, onClose, onUpdate, acting, tenant, onInquiryUpdate, currentUserRole, onDelete,
@@ -432,19 +455,38 @@ function TaskDetailSheet({
               <InfoRow icon={<Calendar size={14} />} label="ขอยกเลิกตั้งแต่"
                 value={thaiDateFromDateInput(req.permit_form_data.cancel_date)} />
             )}
-            {req.document_type === 'water_supply_request' && req.permit_form_data?.applicant?.age && (
+            {WATER_FORM_TYPES.includes(req.document_type) && req.permit_form_data?.applicant?.age && (
               <InfoRow icon={<User size={14} />} label="อายุ" value={`${req.permit_form_data.applicant.age} ปี`} />
+            )}
+            {/* เลขผู้ใช้น้ำไม่บังคับกรอก (ต้นฉบับไม่มีช่องนี้) แต่ถ้ามีคือทางลัดให้เจ้าหน้าที่
+                ไปค้นบัญชีในโปรแกรมออกบิลที่ อปท. ใช้อยู่ ระบบนี้ไม่มีทะเบียนผู้ใช้น้ำเอง */}
+            {WATER_FORM_TYPES.includes(req.document_type) && req.permit_form_data?.account_no && (
+              <InfoRow icon={<Hash size={14} />} label="เลขผู้ใช้น้ำ" value={req.permit_form_data.account_no} />
+            )}
+            {req.document_type === 'water_meter_change' && req.permit_form_data?.reason && (
+              <InfoRow icon={<AlignLeft size={14} />} label="สาเหตุที่ขอเปลี่ยน" value={req.permit_form_data.reason} />
             )}
             {/* จุดติดตั้งมาตรเก็บคนละคีย์กับหมุดของใบขยะ (meter_point ไม่ใช่ collection_point)
                 เพราะเป็นคนละความหมาย ห้ามรวบเป็นคีย์เดียว — ใบหนึ่งบอกจุดวางถัง อีกใบบอกจุด
                 ที่ต้องเจาะท่อ ถ้าใช้ชื่อเดียวกันแล้ววันหนึ่งมีใบที่มีทั้งสองอย่างจะทับกันเงียบๆ */}
-            {req.document_type === 'water_supply_request' && req.permit_form_data?.meter_point && (
-              <InfoRow icon={<MapPin size={14} />} label="จุดติดตั้งมาตร"
+            {WATER_FORM_TYPES.includes(req.document_type) && req.permit_form_data?.meter_point && (
+              <InfoRow icon={<MapPin size={14} />}
+                label={req.document_type === 'water_supply_request' ? 'จุดติดตั้งมาตร' : 'จุดที่ตั้งมาตร'}
                 value={<MapPointValue point={req.permit_form_data.meter_point} />} />
             )}
             {req.document_type === 'water_supply_request' && req.permit_form_data?.service_start_date && (
               <InfoRow icon={<Calendar size={14} />} label="เริ่มใช้น้ำ"
                 value={thaiDateFromDateInput(req.permit_form_data.service_start_date)} />
+            )}
+            {/* ใบเปลี่ยนมาตร/ยกเลิกเก็บวันที่ที่คีย์ effective_date ไม่ใช่ service_start_date
+                — คนละความหมายกับ "วันเริ่มใช้น้ำ" ห้ามรวบเป็นคีย์เดียว */}
+            {req.document_type === 'water_meter_change' && req.permit_form_data?.effective_date && (
+              <InfoRow icon={<Calendar size={14} />} label="ขอเปลี่ยนมาตรตั้งแต่"
+                value={thaiDateFromDateInput(req.permit_form_data.effective_date)} />
+            )}
+            {req.document_type === 'water_supply_cancel' && req.permit_form_data?.effective_date && (
+              <InfoRow icon={<Calendar size={14} />} label="ขอยกเลิกตั้งแต่"
+                value={thaiDateFromDateInput(req.permit_form_data.effective_date)} />
             )}
             {req.document_type === 'public_assistance_request' && req.permit_form_data && (
               <InfoRow icon={<Users size={14} />} label="ผู้เดือดร้อนตามบัญชีแนบท้าย"
@@ -673,10 +715,10 @@ function TaskDetailSheet({
             </button>
           </div>
         )}
-        {req.document_type === 'water_supply_request' && req.permit_form_data && (
+        {WATER_FORM_TYPES.includes(req.document_type) && req.permit_form_data && (
           <div className="px-4 pb-2 pt-3 border-t border-gray-100 shrink-0">
             <button onClick={() => {
-              const html = buildWaterSupplyRequestHtml({
+              const html = buildWaterServiceFormHtml(req.document_type, {
                 form: req.permit_form_data,
                 tenant,
                 // วันที่บนหัวใบ = วันที่ยื่น ไม่ใช่วันที่เจ้าหน้าที่กดพิมพ์ ด้วยเหตุผลเดียวกับ signedAt
@@ -694,7 +736,7 @@ function TaskDetailSheet({
             }}
               className="w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 text-sm active:scale-[0.98] transition-all"
               style={{ backgroundColor: '#0369a1' }}>
-              <Printer size={16} /> พิมพ์แบบคำขออนุญาตใช้น้ำประปา
+              <Printer size={16} /> พิมพ์{WATER_FORM_PRINT_LABELS[req.document_type]}
             </button>
           </div>
         )}
@@ -867,7 +909,11 @@ function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuilding
           <div>
             <label className="text-xs font-semibold text-gray-500 mb-2 block">ประเภทบริการ/เอกสาร</label>
             <div className="grid grid-cols-2 gap-2">
-              {getSelectableDocTypes().map(d => {
+              {getSelectableDocTypes()
+                // อปท. ที่ปิดโมดูลงานประปาต้องไม่เห็นตัวเลือกประปาที่เคาน์เตอร์ด้วย ไม่ใช่ซ่อนแค่
+                // ฝั่งประชาชน — ถ้าเหลือไว้ เจ้าหน้าที่จะกดแล้วโดนฐานข้อมูลปฏิเสธตอนกดส่ง
+                .filter(d => !WATERWORKS_DOCUMENT_TYPES.includes(d.value) || isWaterworksEnabled(tenant))
+                .map(d => {
                 const [emoji, ...rest] = d.label.split(' ')
                 const isSel = form.document_type === d.value
                 return (
@@ -876,7 +922,7 @@ function NewRequestSheet({ tenant, staffId, onClose, onCreated, onSelectBuilding
                       if (d.value === 'building_permit') onSelectBuildingPermit()
                       else if (d.value === 'waste_collection_request') onSelectWasteCollection()
                       else if (d.value === 'waste_collection_cancel') onSelectWasteCancel()
-                      else if (d.value === 'water_supply_request') onSelectWaterSupply()
+                      else if (WATERWORKS_DOCUMENT_TYPES.includes(d.value)) onSelectWaterSupply(d.value)
                       else if (d.value === 'public_assistance_request') onSelectPublicAssistance()
                       // คำขอยืมพัสดุสร้างด้วยฟอร์มทั่วไปไม่ได้ — ต้องเลือกรายการของจากทะเบียน
                       // และเขียน 3 ตารางผ่าน RPC ถ้าปล่อยให้สร้างด้วยฟอร์มทั่วไปจะได้คำขอ
@@ -945,6 +991,7 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
   const [showPermitWizard, setShowPermitWizard] = useState(false)
   const [showWasteWizard, setShowWasteWizard] = useState(false)
   const [showWasteCancelWizard, setShowWasteCancelWizard] = useState(false)
+  // เก็บ "ประเภทคำขอประปา" ที่เลือก ไม่ใช่ true/false — วิซาร์ดตัวเดียวรองรับ 3 ใบ (false = ปิด)
   const [showWaterSupplyWizard, setShowWaterSupplyWizard] = useState(false)
   const [showPublicAssistanceWizard, setShowPublicAssistanceWizard] = useState(false)
   const [showAssetBorrowWizard, setShowAssetBorrowWizard] = useState(false)
@@ -1349,7 +1396,7 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
           onSelectBuildingPermit={() => { setShowAdd(false); setShowPermitWizard(true) }}
           onSelectWasteCollection={() => { setShowAdd(false); setShowWasteWizard(true) }}
           onSelectWasteCancel={() => { setShowAdd(false); setShowWasteCancelWizard(true) }}
-          onSelectWaterSupply={() => { setShowAdd(false); setShowWaterSupplyWizard(true) }}
+          onSelectWaterSupply={type => { setShowAdd(false); setShowWaterSupplyWizard(type) }}
           onSelectPublicAssistance={() => { setShowAdd(false); setShowPublicAssistanceWizard(true) }}
           onSelectAssetBorrow={() => { setShowAdd(false); setShowAssetBorrowWizard(true) }}
           onSelectPatientTransport={() => { setShowAdd(false); setShowPatientTransportWizard(true) }} />
@@ -1381,12 +1428,13 @@ export function InboxModule({ tenant, staffId, currentUserRole }) {
             onDone={() => { setShowWasteCancelWizard(false); setRefreshKey(k => k + 1) }} />
         </div>
       )}
-      {/* คำขอใช้น้ำประปาก็ต้องใช้ฟิลด์ตามแบบคำขอจริง (อายุ, สถานที่ติดตั้งมาตรที่แยกจากที่อยู่ผู้ยื่น,
-          วันที่เริ่มใช้น้ำ, พิกัดจุดติดตั้ง) ฟอร์ม walk-in แบบย่อเก็บไม่ครบ · session={null}
-          ทำให้ wizard รู้ว่าเป็นการกรอกแทน แล้วเว้นช่องลงนามให้เซ็นด้วยปากกา */}
+      {/* งานประปาทั้ง 3 ใบต้องใช้ฟิลด์ตามแบบคำขอจริง (อายุ, สถานที่ตั้งมาตรที่แยกจากที่อยู่ผู้ยื่น,
+          วันที่มีผล, สาเหตุที่ขอเปลี่ยนมาตร, พิกัดมาตร) ฟอร์ม walk-in แบบย่อเก็บไม่ครบ · session={null}
+          ทำให้ wizard รู้ว่าเป็นการกรอกแทน แล้วเว้นช่องลงนามให้เซ็นด้วยปากกา
+          · kind = ประเภทที่เจ้าหน้าที่เลือกจากแผ่นสร้างคำขอ (ใช้วิซาร์ดตัวเดียวกันทั้ง 3 ใบ) */}
       {showWaterSupplyWizard && (
         <div className="fixed inset-0 z-[60] bg-white overflow-y-auto">
-          <WaterSupplyRequestWizard tenant={tenant} session={null} staffId={staffId}
+          <WaterSupplyRequestWizard kind={showWaterSupplyWizard} tenant={tenant} session={null} staffId={staffId}
             onBack={() => setShowWaterSupplyWizard(false)}
             onDone={() => { setShowWaterSupplyWizard(false); setRefreshKey(k => k + 1) }} />
         </div>
@@ -1467,6 +1515,8 @@ const DOC_TITLES = {
   waste_collection_request: 'แจ้งผลการขอรับบริการเก็บขนขยะมูลฝอย',
   waste_collection_cancel: 'แจ้งผลการขอยกเลิกการเก็บขนขยะมูลฝอย',
   water_supply_request: 'แจ้งผลการขออนุญาตใช้น้ำประปา',
+  water_meter_change: 'แจ้งผลการขออนุญาตเปลี่ยนมาตรน้ำประปา',
+  water_supply_cancel: 'แจ้งผลการขอยกเลิกใช้น้ำประปา',
   public_assistance_request: 'แจ้งผลการพิจารณาคำร้องขอรับการช่วยเหลือ',
   other:            'หนังสือรับรอง',
 }
@@ -1566,6 +1616,38 @@ function buildDocBody(req, orgName) {
               <p>${orgName}ได้รับคำขอไว้แล้ว ทั้งนี้ ผู้ขออนุญาตตกลงใช้มาตรวัดน้ำที่${orgName}จัดหาให้ และมีหน้าที่ชำระเงินค่าน้ำประปาและปฏิบัติตามระเบียบข้อบังคับของ${orgName}ทุกประการ</p>
               ${req.staff_notes ? `<p>หมายเหตุ: ${escapeHtml(req.staff_notes)}</p>` : ''}`
     }
+    case 'water_meter_change': {
+      // เหตุผลเดียวกับใบขอใช้น้ำ: ไม่พิมพ์เลขมาตรใหม่/ค่าใช้จ่ายลงหนังสือ ระบบไม่มีทะเบียนผู้ใช้น้ำ
+      // และไม่รู้อัตราตามข้อบัญญัติของแต่ละ อปท. ถ้าต้องแจ้งตัวเลข ให้เจ้าหน้าที่เขียนในหมายเหตุ
+      // ถ้อยคำ "มาตร" (ไม่ใช่ "มาตรวัดน้ำ") ตามแบบคำขอต้นฉบับของใบนี้
+      const form = req.permit_form_data ?? {}
+      const effectiveDate = thaiDateFromDateInput(form.effective_date)
+      const point = collectionPointText(form.meter_point)
+      return `<p>ตามที่ ${name}${idCard} ที่อยู่ ${addr} ได้ยื่นคำขออนุญาตเปลี่ยนมาตรน้ำประปาของ${orgName} นั้น</p>
+              <p class="no-indent" style="margin-left:3em; margin-top:6pt">
+                สถานที่ตั้งมาตร: <strong>${addr}</strong><br/>
+                ${form.account_no ? `เลขผู้ใช้น้ำ: <strong>${escapeHtml(form.account_no)}</strong><br/>` : ''}
+                ${form.reason ? `สาเหตุที่ขอเปลี่ยน: <strong>${escapeHtml(form.reason)}</strong><br/>` : ''}
+                ${point ? `จุดที่ตั้งมาตร (พิกัด): <strong>${escapeHtml(point)}</strong><br/>` : ''}
+                ขอเปลี่ยนมาตรตั้งแต่วันที่: <strong>${effectiveDate || '-'}</strong>
+              </p>
+              <p>${orgName}ได้รับคำขอไว้แล้ว ทั้งนี้ ผู้ขออนุญาตตกลงใช้มาตรที่${orgName}จัดหาให้ และมีหน้าที่ชำระเงินค่าน้ำประปาและปฏิบัติตามระเบียบข้อบังคับของ${orgName}ทุกประการ</p>
+              ${req.staff_notes ? `<p>หมายเหตุ: ${escapeHtml(req.staff_notes)}</p>` : ''}`
+    }
+    case 'water_supply_cancel': {
+      // ย้ำหน้าที่ชำระค่าน้ำรอบบิลที่ค้าง ตามข้อความที่ผู้ยื่นลงชื่อยอมรับบนแบบคำขอต้นฉบับ ②
+      // แต่ไม่ระบุ "ยอด" เพราะยอดอยู่ในโปรแกรมออกบิลของ อปท. ระบบนี้ไม่มีข้อมูลนั้น
+      const form = req.permit_form_data ?? {}
+      const effectiveDate = thaiDateFromDateInput(form.effective_date)
+      return `<p>ตามที่ ${name}${idCard} ที่อยู่ ${addr} ได้ยื่นคำขอยกเลิกใช้น้ำประปาของ${orgName} นั้น</p>
+              <p class="no-indent" style="margin-left:3em; margin-top:6pt">
+                สถานที่ที่ขอยกเลิก: <strong>${addr}</strong><br/>
+                ${form.account_no ? `เลขผู้ใช้น้ำ: <strong>${escapeHtml(form.account_no)}</strong><br/>` : ''}
+                ขอยกเลิกการใช้น้ำตั้งแต่วันที่: <strong>${effectiveDate || '-'}</strong>
+              </p>
+              <p>${orgName}ได้ตรวจสอบและดำเนินการตามคำขอแล้ว ทั้งนี้ ผู้ยื่นคำขอยังคงมีหน้าที่ชำระเงินค่าน้ำประปาในรอบบิลที่ผ่านมาให้ครบถ้วน</p>
+              ${req.staff_notes ? `<p>หมายเหตุ: ${escapeHtml(req.staff_notes)}</p>` : ''}`
+    }
     case 'public_assistance_request': {
       const form = req.permit_form_data ?? {}
       const affected = Array.isArray(form.affected) ? form.affected.length : 0
@@ -1594,7 +1676,7 @@ function buildDocHTML({ req, tenant, docDate }) {
   const isNotice = isFeeInquiry
     || req.document_type === 'waste_collection_request'
     || req.document_type === 'waste_collection_cancel'
-    || req.document_type === 'water_supply_request'
+    || WATER_FORM_TYPES.includes(req.document_type)
     || req.document_type === 'public_assistance_request'
   const logoUrl  = typeof tenant?.logo_url === 'string' && /^https?:\/\//.test(tenant.logo_url)
     ? escapeHtml(tenant.logo_url) : null

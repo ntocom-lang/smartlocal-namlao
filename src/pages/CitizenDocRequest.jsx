@@ -12,7 +12,7 @@ import WaterSupplyRequestWizard from './WaterSupplyRequestWizard'
 import PublicAssistanceWizard from './PublicAssistanceWizard'
 import AssetBorrowRequestWizard from './AssetBorrowRequestWizard'
 import PatientTransportWizard from './PatientTransportWizard'
-import { withoutRemovedTypes } from '../lib/documentTypes'
+import { WATERWORKS_DOCUMENT_TYPES, WATERWORKS_MODULE_KEY, withoutRemovedTypes } from '../lib/documentTypes'
 import { PATIENT_TRANSPORT_TYPE } from '../lib/patientTransport'
 
 // ที่อยู่ผู้ยื่นคำขอ = ที่อยู่ในเขตของหน่วยงานเสมอ (ระบบนี้แยกตามหน่วยงาน ใครหน่วยงานนั้น)
@@ -96,6 +96,28 @@ const BASE_DOC_TYPES = [
     border:  '#bae6fd',
   },
   {
+    value:   'water_meter_change',
+    label:   'ขออนุญาตเปลี่ยนมาตรน้ำประปา',
+    emoji:   '🔧',
+    desc:    'ขอเปลี่ยนมาตรวัดน้ำเดิมที่ชำรุด ไม่หมุน รั่ว หรือเดินผิดปกติ',
+    // บังคับล็อกอิน — ผูกกับบัญชีผู้ใช้น้ำของบ้านหลังนั้น ต้องรู้ว่าใครเป็นผู้ขอ
+    requiresAuth: true,
+    color:   '#0369a1',
+    bg:      '#f0f9ff',
+    border:  '#bae6fd',
+  },
+  {
+    value:   'water_supply_cancel',
+    label:   'ขอยกเลิกใช้น้ำประปา',
+    emoji:   '🚱',
+    desc:    'แจ้งยกเลิกการใช้น้ำประปาของ อปท. เช่น ย้ายออก หรือไม่ใช้น้ำแล้ว',
+    // บังคับล็อกอิน — ยกเลิกใช้น้ำคือตัดน้ำบ้านหลังนั้น ยื่นได้โดยไม่ยืนยันตัวตนเท่ากับใครก็ตัดน้ำบ้านคนอื่นได้
+    requiresAuth: true,
+    color:   '#0369a1',
+    bg:      '#f0f9ff',
+    border:  '#bae6fd',
+  },
+  {
     value:   'public_assistance_request',
     label:   'ขอรับการช่วยเหลือประชาชน',
     emoji:   '🤝',
@@ -149,7 +171,8 @@ const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-3 text-sm tex
 export default function CitizenDocRequest() {
   const navigate  = useNavigate()
   const [searchParams] = useSearchParams()
-  const { tenant, terminology } = useTenant()
+  const { tenant, terminology, isModuleEnabled } = useTenant()
+  const waterworksEnabled = isModuleEnabled(WATERWORKS_MODULE_KEY)
   // การ์ดรถรับ-ส่งผู้ป่วยแสดงเฉพาะ อปท. ที่มีหน่วยงานรับเรื่องต่อเปิดอยู่ — ถามผ่าน RPC ที่คืน
   // boolean อย่างเดียว เพราะผู้ไม่ล็อกอินอ่าน referral_partners ตรงไม่ได้ (RLS)
   // เรียกไม่สำเร็จ = ซ่อนการ์ดไว้ ปลอดภัยกว่าโชว์บริการที่ อปท. ยังไม่ได้เปิด
@@ -177,8 +200,11 @@ export default function CitizenDocRequest() {
     }))
     const base = withoutRemovedTypes(BASE_DOC_TYPES, tenant)
       .filter(d => d.value !== PATIENT_TRANSPORT_TYPE || hasTransportPartner)
+      // อปท. ที่ปิดโมดูลงานประปา ซ่อนคำขอประปาทั้งชุด — ลิงก์เก่า ?type=water_... ก็เปิดไม่ได้
+      // เพราะ selected ด้านล่างกรองด้วยลิสต์นี้ (ฐานข้อมูลปฏิเสธซ้ำอีกชั้นที่ trigger)
+      .filter(d => !WATERWORKS_DOCUMENT_TYPES.includes(d.value) || waterworksEnabled)
     return [...base, ...extras]
-  }, [tenant, hasTransportPartner])
+  }, [tenant, hasTransportPartner, waterworksEnabled])
   const [session, setSession]     = useState(undefined)
   const [selectedRaw, setSelected] = useState(() => {
     const t = searchParams.get('type')
@@ -263,7 +289,7 @@ export default function CitizenDocRequest() {
   const isPermitIntent = selected?.value === 'building_permit'
   const isWasteCollectionRequest = selected?.value === 'waste_collection_request'
   const isWasteCollectionCancel = selected?.value === 'waste_collection_cancel'
-  const isWaterSupplyRequest = selected?.value === 'water_supply_request'
+  const isWaterworksRequest = WATERWORKS_DOCUMENT_TYPES.includes(selected?.value)
   const isPublicAssistanceRequest = selected?.value === 'public_assistance_request'
   const isAssetBorrowRequest = selected?.value === 'asset_borrow_request'
   const isPatientTransportRequest = selected?.value === PATIENT_TRANSPORT_TYPE
@@ -493,10 +519,10 @@ export default function CitizenDocRequest() {
     return <WasteCollectionCancelWizard tenant={tenant} session={session} onBack={() => setSelected(null)} />
   }
 
-  // ขออนุญาตใช้น้ำประปามีข้อมูลเฉพาะตามแบบคำขอต้นฉบับ (อายุ, สถานที่ติดตั้งมาตรที่แยกจากที่อยู่
-  // ผู้ยื่น, วันที่เริ่มใช้น้ำ, พิกัดจุดติดตั้ง และการยอมรับเรื่องมาตรวัดน้ำ) จึงใช้ฟอร์มเฉพาะ
-  if (isWaterSupplyRequest) {
-    return <WaterSupplyRequestWizard tenant={tenant} session={session} onBack={() => setSelected(null)} />
+  // งานประปา (ขอใช้น้ำ / เปลี่ยนมาตร / ยกเลิก) มีข้อมูลเฉพาะตามแบบคำขอต้นฉบับ (อายุ, สถานที่ตั้งมาตร
+  // ที่แยกจากที่อยู่ผู้ยื่น, วันที่มีผล, พิกัดมาตร และข้อตกลงท้ายใบ) จึงใช้ฟอร์มเฉพาะตัวเดียวกันทั้ง 3 ใบ
+  if (isWaterworksRequest) {
+    return <WaterSupplyRequestWizard kind={selected.value} tenant={tenant} session={session} onBack={() => setSelected(null)} />
   }
 
   // คำร้องขอรับการช่วยเหลือมีข้อมูลเฉพาะตามแบบคำร้องต้นฉบับ (เรื่อง, ปัญหาความเดือดร้อน,

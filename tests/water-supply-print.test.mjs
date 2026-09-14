@@ -8,7 +8,14 @@
 // รันด้วย: node tests/water-supply-print.test.mjs
 
 import assert from 'node:assert/strict'
-import { buildWaterSupplyRequestHtml, thaiDateParts } from '../src/lib/waterSupplyRequestPrint.js'
+import {
+  buildWaterMeterChangeHtml,
+  buildWaterServiceFormHtml,
+  buildWaterSupplyCancelHtml,
+  buildWaterSupplyRequestHtml,
+  thaiDateParts,
+} from '../src/lib/waterSupplyRequestPrint.js'
+import { WATERWORKS_DOCUMENT_TYPES } from '../src/lib/documentTypes.js'
 import { orgOfficeName } from '../src/lib/orgTerms.js'
 
 const TENANT = {
@@ -166,5 +173,90 @@ assert.equal(orgOfficeName({ name: 'เทศบาลตำบลน้ำเ�
 const noAddress = render(baseForm(), { tenant: { name: 'องค์การบริหารส่วนตำบลทุ่งแค้ว', org_type: 'อบต.' } })
 assert.doesNotMatch(noAddress, /undefined/)
 assert.match(noAddress, /เขียนที่ ที่ทำการองค์การบริหารส่วนตำบลทุ่งแค้ว/)
+
+// ═══ ใบ ③ เปลี่ยนมาตร / ใบ ② ยกเลิกใช้น้ำ (ต้นฉบับที่ผู้ใช้ส่งมา 2569-09-14) ═══════════════
+function renderWith(build, form, extra = {}) {
+  return build({
+    form,
+    tenant: TENANT,
+    docDate: '2026-09-14T09:05:00',
+    referenceNo: 'E5F6A7B8',
+    signedAt: form?.signed_at ?? null,
+    ...extra,
+  })
+}
+
+function variantForm(formType, overrides = {}) {
+  const { service_start_date: _unused, ...rest } = baseForm()
+  return {
+    ...rest,
+    form_type: formType,
+    effective_date: '2026-10-01',
+    account_no: '01-0456',
+    ...overrides,
+  }
+}
+
+// ── ③ เปลี่ยนมาตร ─────────────────────────────────────────────────────────
+const change = renderWith(buildWaterMeterChangeHtml, variantForm('water_meter_change', { reason: 'มาตรไม่หมุน' }))
+assert.match(change, /<div class="title">แบบคำขอเปลี่ยนมาตรน้ำประปา<\/div>/)
+assert.match(change, /เรื่อง<\/strong><span>ขออนุญาตเปลี่ยนมาตรน้ำประปา<\/span>/)
+assert.match(change, /มีความประสงค์ขออนุญาตเปลี่ยนมาตรน้ำประปาของงานกิจการประปา/)
+assert.match(change, /เนื่องจาก <span class="fill-value"><span class="nb">มาตรไม่หมุน<\/span><\/span>/)
+assert.match(change, /ตั้งแต่วันที่ <span class="fill-value">.*1.*ตุลาคม.*2569.*<\/span> เป็นต้นไป/)
+// ต้นฉบับ ③ เขียน "มาตร" เฉยๆ ต่างจากใบ ① ที่เป็น "มาตรวัดน้ำ" — ผู้ใช้สั่งให้แต่ละใบตามต้นฉบับของมัน
+assert.match(change, /<span class="meter-clause">ขอใช้มาตรที่ทาง/)
+assert.doesNotMatch(change, /ขอใช้มาตรวัดน้ำที่ทาง/,
+  'ใบเปลี่ยนมาตรต้องใช้ถ้อยคำ "ขอใช้มาตรที่ทาง" ตามต้นฉบับ ③ ไม่ใช่ถ้อยคำของใบขอใช้น้ำ')
+assert.doesNotMatch(change, /<div class="enclosure">/, 'ต้นฉบับ ③ ไม่มีรายการสิ่งที่ส่งมาด้วย ห้ามคิดขึ้นเอง')
+assert.match(change, /เลขผู้ใช้น้ำ <span class="fill-value fill-value--nowrap">01-0456<\/span>/)
+assert.match(change, /จุดที่ตั้งมาตรตามพิกัดแผนที่/)
+assert.match(change, /<span class="sign-role">ผู้ขออนุญาต<\/span>/)
+assert.equal((change.match(/<p class="body-copy">/g) || []).length, 3)
+
+// ใบเปล่า/ไม่กรอกสาเหตุ: ต้องได้เส้นประให้เขียน ไม่ใช่ข้อความหาย
+const changeBlank = renderWith(buildWaterMeterChangeHtml, variantForm('water_meter_change', { reason: '', account_no: '' }))
+assert.match(changeBlank, /<span class="field-blank">เนื่องจาก&nbsp;<span class="fill-blank"/)
+assert.doesNotMatch(changeBlank, /เลขผู้ใช้น้ำ/, 'ไม่กรอกเลขผู้ใช้น้ำ ต้องไม่พิมพ์บรรทัดนี้ (ต้นฉบับไม่มีช่องนี้)')
+
+// ── ② ยกเลิกใช้น้ำ ────────────────────────────────────────────────────────
+const cancel = renderWith(buildWaterSupplyCancelHtml, variantForm('water_supply_cancel'))
+assert.match(cancel, /<div class="title">แบบคำขอยกเลิกใช้น้ำประปา<\/div>/)
+assert.match(cancel, /เรื่อง<\/strong><span>ขอยกเลิกใช้น้ำประปา<\/span>/)
+assert.match(cancel, /มีความประสงค์ขอยกเลิกการใช้น้ำประปาของงานกิจการประปา/)
+assert.match(cancel, /โดยข้าพเจ้ายินยอมชำระเงินค่าน้ำประปาในรอบบิลที่ผ่านมาและปฏิบัติตามระเบียบข้อบังคับของ/)
+assert.doesNotMatch(cancel, /class="meter-clause"/, 'ต้นฉบับ ② ไม่มีประโยคขีดเส้นใต้เรื่องมาตร')
+assert.doesNotMatch(cancel, />เนื่องจาก|เนื่องจาก <|เนื่องจาก&nbsp;/, 'ต้นฉบับ ② ไม่มีช่อง "เนื่องจาก"')
+assert.doesNotMatch(cancel, /<div class="enclosure">/)
+assert.match(cancel, /<span class="sign-role">ผู้แจ้ง<\/span>/, 'ต้นฉบับ ② ลงนามเป็น "ผู้แจ้ง" ไม่ใช่ผู้ขออนุญาต')
+assert.match(cancel, /เลขผู้ใช้น้ำ/)
+// ย่อหน้ามีช่องว่างจากการขึ้นบรรทัดใน template ไม่ได้ — ประโยคไทยต้องต่อกันเป็นเนื้อเดียว
+assert.doesNotMatch(cancel, /ยินยอม\s+ชำระ/)
+
+// โหมดลงนามต้องตัดสินแบบเดียวกับใบ ① (ใช้ builder เดียวกัน แต่กันไว้เผื่อวันหนึ่งแยกไฟล์)
+const cancelCounter = renderWith(buildWaterSupplyCancelHtml, variantForm('water_supply_cancel', {
+  signed_by: { channel: 'counter', name: 'นายสมชาย ใจดี' },
+}))
+assert.match(cancelCounter, /<span class="sign-line">/)
+assert.doesNotMatch(cancelCounter, /E-Service/)
+
+// เลขผู้ใช้น้ำมาจากที่ประชาชนพิมพ์เอง ต้อง escape
+const xssAccount = renderWith(buildWaterMeterChangeHtml, variantForm('water_meter_change', {
+  reason: '<b>x</b>', account_no: '<img src=x>',
+}))
+assert.doesNotMatch(xssAccount, /<img src=x>|<b>x<\/b>/)
+
+// ── ตัวเลือกใบตาม document_type ──────────────────────────────────────────────
+for (const type of WATERWORKS_DOCUMENT_TYPES) {
+  assert.ok(buildWaterServiceFormHtml(type, { form: variantForm(type), tenant: TENANT }).length > 0,
+    `ประเภท ${type} อยู่ในลิสต์โมดูลงานประปาแต่ไม่มีใบพิมพ์`)
+}
+assert.equal(buildWaterServiceFormHtml('waste_collection_request', { form: {}, tenant: TENANT }), '',
+  'ประเภทที่ไม่ใช่งานประปาต้องคืนค่าว่าง ห้ามตกไปพิมพ์ใบขอใช้น้ำแทน')
+// ใบ ① ผ่านตัวเลือกต้องได้ผลเดียวกับเรียกตรง (หน้าเอกสารของฉันเรียกผ่านตัวเลือกแล้ว)
+assert.equal(
+  buildWaterServiceFormHtml('water_supply_request', { form: baseForm(), tenant: TENANT, docDate: '2026-09-07T10:32:00' }),
+  buildWaterSupplyRequestHtml({ form: baseForm(), tenant: TENANT, docDate: '2026-09-07T10:32:00' }),
+)
 
 console.log('water-supply-print.test.mjs PASS')

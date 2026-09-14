@@ -14,7 +14,11 @@
 import assert from 'node:assert/strict'
 import process from 'node:process'
 import { chromium } from 'playwright'
-import { buildWaterSupplyRequestHtml } from '../src/lib/waterSupplyRequestPrint.js'
+import {
+  buildWaterMeterChangeHtml,
+  buildWaterSupplyCancelHtml,
+  buildWaterSupplyRequestHtml,
+} from '../src/lib/waterSupplyRequestPrint.js'
 import { assertSignBlockStandard } from './lib/signBlockChecks.mjs'
 
 const TENANT = {
@@ -58,9 +62,9 @@ function longForm(overrides = {}) {
   }
 }
 
-async function render(browser, form, tenant = TENANT) {
+async function render(browser, form, tenant = TENANT, build = buildWaterSupplyRequestHtml) {
   const page = await browser.newPage()
-  const html = buildWaterSupplyRequestHtml({
+  const html = build({
     form,
     tenant,
     docDate: '2026-09-07T10:32:00',
@@ -392,6 +396,155 @@ const checks = [
   },
 ]
 
+// ═══ ใบ ③ เปลี่ยนมาตร / ใบ ② ยกเลิกใช้น้ำ ใช้ builder เดียวกัน แต่ถ้อยคำและช่องต่างกัน ═══════════
+// ใบ ③ มีช่อง "เนื่องจาก" เพิ่มในย่อหน้ากลาง + บรรทัดเลขผู้ใช้น้ำ ส่วนใบ ② ลงนาม "ผู้แจ้ง"
+// ทั้งสองไม่มีบล็อกสิ่งที่ส่งมาด้วย เทสจึงวัดเฉพาะสิ่งที่ยังเสี่ยงพังจากถ้อยคำที่ต่างกัน
+const LONG_REASON = 'มาตรเดินผิดปกติ ค่าน้ำเดือนล่าสุดสูงกว่าปกติสามเท่าทั้งที่ใช้น้ำเท่าเดิม'
+const VARIANTS = [
+  { label: 'เปลี่ยนมาตร', type: 'water_meter_change', build: buildWaterMeterChangeHtml, extra: { reason: LONG_REASON } },
+  { label: 'ยกเลิกใช้น้ำ', type: 'water_supply_cancel', build: buildWaterSupplyCancelHtml, extra: {} },
+]
+
+function longVariantForm(variant, overrides = {}) {
+  const { service_start_date: _unused, ...rest } = longForm()
+  return {
+    ...rest,
+    form_type: variant.type,
+    effective_date: '2026-10-01',
+    account_no: 'WTR-2569-000123',
+    ...variant.extra,
+    ...overrides,
+  }
+}
+
+for (const variant of VARIANTS) {
+  checks.push(
+    {
+      name: `${variant.type}-fits-one-page`,
+      reason: `ใบ${variant.label} ชื่อยาว + ที่อยู่ 2 ชุด + พิกัด + เลขผู้ใช้น้ำ ต้องจบ 1 หน้า ทั้งโหมดออนไลน์ เคาน์เตอร์ และใบเปล่า`,
+      async run(browser) {
+        const forms = [
+          longVariantForm(variant),
+          longVariantForm(variant, { signed_by: { channel: 'counter', name: 'นางสาวประกายมาศ ศรีวิชัยเลิศสกุล' } }),
+          { form_type: variant.type, form_version: 1, applicant: {}, same_as_applicant: false, site: {} },
+        ]
+        for (const [index, form] of forms.entries()) {
+          const page = await render(browser, form, TENANT, variant.build)
+          try {
+            const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true })
+            assert.equal(pdfPageCount(pdf), 1, `ใบ${variant.label} แบบที่ ${index + 1} ล้นไปหน้าที่ 2`)
+            const mm = await contentHeightMm(page)
+            assert.ok(mm <= 262, `ใบ${variant.label} แบบที่ ${index + 1} เนื้อหาสูง ${mm.toFixed(1)}mm เหลือขอบน้อยเกินไป`)
+          } finally {
+            await page.close()
+          }
+        }
+      },
+    },
+    {
+      name: `${variant.type}-no-overflow-and-readable`,
+      reason: `ใบ${variant.label} ไม่มีอะไรล้นขอบพื้นที่พิมพ์ ย่อหน้าหลักยังเป็น 3 ย่อหน้าและไม่มีรูโหว่ ป้ายช่องว่างไม่หลุดจากกล่อง`,
+      async run(browser) {
+        const page = await render(browser, longVariantForm(variant), TENANT, variant.build)
+        try {
+          const result = await page.evaluate(() => {
+            const sheet = document.querySelector('.sheet')
+            const box = sheet.getBoundingClientRect()
+            const style = getComputedStyle(sheet)
+            const left = box.left + parseFloat(style.paddingLeft)
+            const right = box.right - parseFloat(style.paddingRight)
+            const overflow = [...sheet.querySelectorAll('p, div, section, span')]
+              .filter(el => {
+                const r = el.getBoundingClientRect()
+                return r.width > 0 && (r.left < left - 1 || r.right > right + 1)
+              })
+              .map(el => `${el.className || el.tagName}: ${(el.textContent || '').trim().slice(0, 40)}`)
+            const paragraphs = [...document.querySelectorAll('.body-copy')]
+            let worstRatio = 0
+            for (const para of paragraphs) {
+              const gaps = []
+              const walker = document.createTreeWalker(para, NodeFilter.SHOW_TEXT)
+              let node
+              while ((node = walker.nextNode())) {
+                for (let i = 0; i < node.data.length; i += 1) {
+                  if (node.data[i] !== ' ') continue
+                  const range = document.createRange()
+                  range.setStart(node, i)
+                  range.setEnd(node, i + 1)
+                  const rect = range.getBoundingClientRect()
+                  if (rect.width > 0) gaps.push(rect.width)
+                }
+              }
+              if (gaps.length) {
+                const normal = gaps.slice().sort((a, b) => a - b)[Math.floor(gaps.length / 2)]
+                worstRatio = Math.max(worstRatio, Math.max(...gaps) / normal)
+              }
+            }
+            // ชื่อหน่วยงานแต่ละก้อนห้ามขาดกลางคำ (ดู org-name-never-splits-mid-word)
+            const orgSplit = [...document.querySelectorAll('.org-name > span')].map(el => {
+              const range = document.createRange()
+              range.selectNodeContents(el)
+              return new Set([...range.getClientRects()].map(r => Math.round(r.top))).size
+            }).filter(n => n > 1).length
+            return { overflow: overflow.slice(0, 5), count: paragraphs.length, worstRatio, orgSplit }
+          })
+          assert.deepEqual(result.overflow, [], `ใบ${variant.label} องค์ประกอบล้นขอบ: ${result.overflow.join(' | ')}`)
+          assert.equal(result.count, 3, `ใบ${variant.label} ควรมี 3 ย่อหน้าหลัก แต่พบ ${result.count}`)
+          assert.ok(result.worstRatio <= 4, `ใบ${variant.label} มีช่องว่างถูกยืด ${result.worstRatio.toFixed(1)} เท่า`)
+          assert.equal(result.orgSplit, 0, `ใบ${variant.label} ชื่อหน่วยงานถูกตัดกลางคำ ${result.orgSplit} จุด`)
+        } finally {
+          await page.close()
+        }
+
+        const blank = await render(browser,
+          { form_type: variant.type, form_version: 1, applicant: {}, same_as_applicant: false, site: {} },
+          TENANT, variant.build)
+        try {
+          const broken = await blank.evaluate(() => [...document.querySelectorAll('.field-blank')]
+            .map(el => ({
+              text: el.textContent.replace(/\s+/g, ' ').trim().slice(0, 30),
+              height: Math.round(el.getBoundingClientRect().height),
+              limit: Math.round(parseFloat(getComputedStyle(el).lineHeight) * 1.6),
+            }))
+            .filter(item => item.height > item.limit))
+          assert.deepEqual(broken, [], `ใบ${variant.label} (ใบเปล่า) ป้ายช่องหลุดจากกล่อง: ${broken.map(b => b.text).join(' | ')}`)
+        } finally {
+          await blank.close()
+        }
+      },
+    },
+    {
+      name: `${variant.type}-signature-block`,
+      reason: `ใบ${variant.label} ช่องลงนามได้มาตรฐานกลาง และชื่อยาวไม่พิมพ์ทับคำต่อท้าย`,
+      async run(browser) {
+        for (const channel of ['online', 'counter']) {
+          const page = await render(browser,
+            longVariantForm(variant, { signed_by: { channel, name: 'นางสาวประกายมาศ ศรีวิชัยเลิศสกุล' } }),
+            TENANT, variant.build)
+          try {
+            const overlap = await page.evaluate(() => {
+              const name = document.querySelector('.sign-signed, .sign-line')
+              const role = document.querySelector('.sign-role')
+              if (!name || !role) return null
+              // วัดด้วย Range เท่านั้น — กล่อง element ไม่นับข้อความที่ล้นกล่อง (ดู signature-block)
+              const range = document.createRange()
+              range.selectNodeContents(name)
+              const rects = [...range.getClientRects()]
+              if (!rects.length) return Math.round(name.getBoundingClientRect().right - role.getBoundingClientRect().left)
+              return Math.round(Math.max(...rects.map(rect => rect.right)) - role.getBoundingClientRect().left)
+            })
+            assert.ok(overlap !== null, `ใบ${variant.label} ไม่พบช่องลงนาม`)
+            assert.ok(overlap <= 0, `ใบ${variant.label} (${channel}) ชื่อพิมพ์ทับคำต่อท้ายอยู่ ${overlap}px`)
+            await assertSignBlockStandard(page, { minRows: 1, minBelow: 1 })
+          } finally {
+            await page.close()
+          }
+        }
+      },
+    },
+  )
+}
+
 async function main() {
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const results = []
@@ -408,7 +561,7 @@ async function main() {
     await browser.close()
   }
   const failed = results.filter(line => line.startsWith('FAIL')).length
-  process.stdout.write(`แบบคำขออนุญาตใช้น้ำประปา — ตรวจเอกสารที่พิมพ์\n${results.join('\n')}\n`)
+  process.stdout.write(`แบบคำของานประปา (ขอใช้น้ำ / เปลี่ยนมาตร / ยกเลิก) — ตรวจเอกสารที่พิมพ์\n${results.join('\n')}\n`)
   process.stdout.write(`SUMMARY PASS=${results.length - failed} FAIL=${failed}\n`)
   if (failed) process.exitCode = 1
 }

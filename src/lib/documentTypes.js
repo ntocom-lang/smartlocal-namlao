@@ -20,11 +20,20 @@ export const BASE_DOCUMENT_TYPES = [
   { value: 'waste_collection_request', label: '🚛 ขอรับบริการเก็บขนขยะมูลฝอย' },
   { value: 'waste_collection_cancel',  label: '🚫 ขอยกเลิกการเก็บขนขยะมูลฝอย' },
   { value: 'water_supply_request',     label: '🚰 ขออนุญาตใช้น้ำประปา' },
+  { value: 'water_meter_change',       label: '🔧 ขออนุญาตเปลี่ยนมาตรน้ำประปา' },
+  { value: 'water_supply_cancel',      label: '🚱 ขอยกเลิกใช้น้ำประปา' },
   { value: 'public_assistance_request', label: '🤝 ขอรับการช่วยเหลือประชาชน' },
   { value: 'asset_borrow_request',     label: '📦 ขอยืมพัสดุ/ครุภัณฑ์' },
   { value: 'patient_transport_request', label: '🚑 ขออนุเคราะห์รถรับ-ส่งผู้ป่วย' },
   { value: 'building_permit',          label: '🏗️ ขออนุญาตก่อสร้างบ้าน' },
 ]
+
+// คีย์โมดูลงานประปาใน municipalities.enabled_modules — อปท. ที่อยู่ในเขต กปภ. หรือไม่มีกิจการ
+// ประปาหมู่บ้านปิดโมดูลนี้ทีเดียวแล้วคำขอประปาทั้งชุดหายจากตัวเลือกยื่นใหม่
+// ⚠️ ลิสต์นี้ต้องตรงกับด่านใน route_document_request_department() (migration waterworks)
+// ไม่งั้นหน้าจอซ่อนการ์ดแต่ฐานข้อมูลยังรับ หรือกลับกัน ฐานข้อมูลปฏิเสธการ์ดที่ยังโชว์อยู่
+export const WATERWORKS_MODULE_KEY = 'waterworks'
+export const WATERWORKS_DOCUMENT_TYPES = ['water_supply_request', 'water_meter_change', 'water_supply_cancel']
 
 /**
  * ประเภทที่ อปท. เพิ่มเองผ่านแท็บ "ประเภทคำขอเอกสาร" (DocumentTypeAssignments) — เก็บใน
@@ -96,6 +105,10 @@ export const DEFAULT_SLA_DAYS = {
   // ช่างต้องออกไปสำรวจจุดติดตั้ง ประเมินระยะเดินท่อ แจ้งค่าประกันมาตร/ค่าติดตั้ง แล้วจึงติดตั้ง
   // มาตรจริง — งานหน้างานหลายรอบ ไม่ใช่งานออกเอกสารหน้าเคาน์เตอร์
   water_supply_request: 7,
+  // เปลี่ยนมาตร/ยกเลิกใช้น้ำ ใช้เท่ากับขอใช้น้ำ — ช่างต้องออกไปถอด/ติดตั้งมาตรหน้างาน และจดเลขมาตร
+  // ส่งกองคลังคิดค่าน้ำ ไม่ใช่งานออกเอกสารหน้าเคาน์เตอร์ (สมมติฐาน ยังไม่ได้เทียบคู่มือประชาชนของ อปท.)
+  water_meter_change: 7,
+  water_supply_cancel: 7,
   // ต้องออกไปตรวจสอบข้อเท็จจริงในพื้นที่ เสนอความเห็นปลัด แล้วให้ผู้บริหารสั่งการ — ขั้นตอน
   // มากกว่างานออกเอกสารหน้าเคาน์เตอร์ แต่ต้องเร็วกว่าคำขอรับบริการ เพราะเป็นเรื่องเดือดร้อน
   // ⚠️ ระยะเวลาจริงของการช่วยเหลือขึ้นกับระเบียบและงบประมาณ ค่านี้เป็นเพียงกำหนดที่ระบบใช้

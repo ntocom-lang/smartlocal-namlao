@@ -10,7 +10,7 @@ import { useTenant } from '../contexts/TenantContext'
 import { buildBuildingPermitHtml } from '../lib/buildingPermitPrint'
 import { buildWasteCollectionRequestHtml } from '../lib/wasteCollectionRequestPrint'
 import { buildWasteCollectionCancelHtml, cancelReasonText } from '../lib/wasteCollectionCancelPrint'
-import { buildWaterSupplyRequestHtml } from '../lib/waterSupplyRequestPrint'
+import { buildWaterServiceFormHtml, WATER_FORM_TYPES } from '../lib/waterSupplyRequestPrint'
 import { buildPublicAssistanceRequestHtml } from '../lib/publicAssistancePrint'
 import { generateDraftPdfBlob } from '../lib/generateDraftPdf'
 import { thaiDate, thaiDateFromDateInput, thaiDateTimeText } from '../lib/thaiDate'
@@ -26,10 +26,18 @@ const BASE_DOC_TYPES = {
   waste_collection_request: 'ขอรับบริการเก็บขนขยะมูลฝอย',
   waste_collection_cancel: 'ขอยกเลิกการเก็บขนขยะมูลฝอย',
   water_supply_request: 'ขออนุญาตใช้น้ำประปา',
+  water_meter_change: 'ขออนุญาตเปลี่ยนมาตรน้ำประปา',
+  water_supply_cancel: 'ขอยกเลิกใช้น้ำประปา',
   public_assistance_request: 'ขอรับการช่วยเหลือประชาชน',
   asset_borrow_request: 'ขอยืมพัสดุ/ครุภัณฑ์',
   patient_transport_request: 'ขออนุเคราะห์รถรับ-ส่งผู้ป่วย',
   building_permit:  'ขออนุญาตก่อสร้างบ้าน',
+}
+// ชื่อใบบนปุ่มพิมพ์และชื่อไฟล์ PDF ของงานประปา — ตรงกับหัวกระดาษของแต่ละใบ
+const WATER_PRINT_LABELS = {
+  water_supply_request: 'แบบคำขอใช้น้ำประปา',
+  water_meter_change: 'แบบคำขอเปลี่ยนมาตรน้ำประปา',
+  water_supply_cancel: 'แบบคำขอยกเลิกใช้น้ำประปา',
 }
 let _customDocLabels = {}
 function docTypeLabel(key) {
@@ -70,7 +78,10 @@ function StatusBadge({ status, documentType }) {
   )
 }
 
-const FEE_INQUIRY_TYPES = ['tax_notice', 'waste_collection']
+// ⚠️ ต้องตรงกับ FEE_INQUIRY_TYPES ใน StaffDashboard.jsx เสมอ — ถ้าฝั่งเจ้าหน้าที่แจ้งยอดได้
+// แต่ฝั่งนี้ไม่รู้จักประเภทนั้น ประชาชนจะไม่เห็นยอดที่เจ้าหน้าที่แจ้งเลย (ค่าประกันมาตร/ค่าติดตั้ง
+// ของงานประปา รู้หลังช่างออกไปสำรวจหน้างาน)
+const FEE_INQUIRY_TYPES = ['tax_notice', 'waste_collection', 'water_supply_request', 'water_meter_change']
 
 function DocCard({ req, onClick }) {
   const docLabel = docTypeLabel(req.document_type)
@@ -444,8 +455,9 @@ function DocDetailSheet({ req, onClose, tenant, onChanged }) {
     }
   }
 
+  // ไม่ผูกกับโมดูลงานประปา — อปท. ปิดโมดูลภายหลังแล้ว ประชาชนยังต้องพิมพ์ใบที่เคยยื่นไว้ได้
   function waterSupplyHtml() {
-    return buildWaterSupplyRequestHtml({
+    return buildWaterServiceFormHtml(req.document_type, {
       form: req.permit_form_data,
       tenant,
       // วันที่บนหัวใบต้องเป็นวันที่ยื่น ไม่ใช่วันที่กดพิมพ์ซ้ำ — ใบเดิมที่พิมพ์ใหม่อีกหกเดือน
@@ -508,7 +520,7 @@ function DocDetailSheet({ req, onClose, tenant, onChanged }) {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `คำขอใช้น้ำประปา-${req.id.slice(0, 8).toUpperCase()}.pdf`
+      a.download = `${WATER_PRINT_LABELS[req.document_type]}-${req.id.slice(0, 8).toUpperCase()}.pdf`
       a.click()
       URL.revokeObjectURL(url)
     } finally {
@@ -606,6 +618,18 @@ function DocDetailSheet({ req, onClose, tenant, onChanged }) {
               },
               req.document_type === 'water_supply_request' && req.permit_form_data?.service_start_date && {
                 label: 'เริ่มใช้น้ำ', value: thaiDateFromDateInput(req.permit_form_data.service_start_date),
+              },
+              req.document_type === 'water_meter_change' && req.permit_form_data?.reason && {
+                label: 'สาเหตุ', value: req.permit_form_data.reason,
+              },
+              req.document_type === 'water_meter_change' && req.permit_form_data?.effective_date && {
+                label: 'เปลี่ยนมาตรตั้งแต่', value: thaiDateFromDateInput(req.permit_form_data.effective_date),
+              },
+              req.document_type === 'water_supply_cancel' && req.permit_form_data?.effective_date && {
+                label: 'ยกเลิกตั้งแต่', value: thaiDateFromDateInput(req.permit_form_data.effective_date),
+              },
+              WATER_FORM_TYPES.includes(req.document_type) && req.permit_form_data?.account_no && {
+                label: 'เลขผู้ใช้น้ำ', value: req.permit_form_data.account_no,
               },
               req.document_type === 'public_assistance_request' && req.permit_form_data?.need && {
                 label: 'ความต้องการ', value: req.permit_form_data.need,
@@ -736,12 +760,12 @@ function DocDetailSheet({ req, onClose, tenant, onChanged }) {
             </div>
           )}
 
-          {req.document_type === 'water_supply_request' && req.permit_form_data && (
+          {WATER_FORM_TYPES.includes(req.document_type) && req.permit_form_data && (
             <div className="space-y-2">
               <button onClick={handlePrintWaterSupply}
                 className="w-full py-3 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
                 style={{ backgroundColor: '#0369a1' }}>
-                <Printer size={15} /> พิมพ์แบบคำขอใช้น้ำประปา
+                <Printer size={15} /> พิมพ์{WATER_PRINT_LABELS[req.document_type]}
               </button>
               <button onClick={handleDownloadWaterSupplyPdf} disabled={pdfBusy}
                 className="w-full py-3 rounded-2xl font-semibold text-sky-800 bg-sky-50 border border-sky-200 text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-all">

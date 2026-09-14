@@ -7,7 +7,7 @@ import { NAME_TITLES, splitThaiFullName } from '../lib/thaiName'
 import { generateDraftPdfBlob } from '../lib/generateDraftPdf'
 import { thaiDateFromDateInput, todayStr } from '../lib/thaiDate'
 import { tenantDefaultSubdistrict } from '../lib/tenantSubdistrict'
-import { buildWaterSupplyRequestHtml } from '../lib/waterSupplyRequestPrint'
+import { buildWaterServiceFormHtml } from '../lib/waterSupplyRequestPrint'
 
 // โหลดเมื่อผู้ใช้กดเปิดแผนที่เท่านั้น — leaflet + ชั้น tile หนักเกินกว่าจะให้ทุกคนที่เปิด
 // หน้ายื่นคำขอดาวน์โหลดไปเปล่าๆ ทั้งที่การปักหมุดเป็นตัวเลือกเสริม (เหมือนใบเก็บขนขยะ)
@@ -40,23 +40,98 @@ function Field({ label, required, children, className = '' }) {
   )
 }
 
+// ใบเปลี่ยนมาตรต้นฉบับมีช่อง "เนื่องจาก" ว่างไว้ให้เขียนเอง — ปุ่มลัดแค่เติมข้อความให้
+// ผู้สูงอายุไม่ต้องพิมพ์ ค่าที่บันทึกและพิมพ์ลงใบคือข้อความในช่อง แก้ต่อได้เสมอ
+const METER_CHANGE_REASONS = ['มาตรชำรุด', 'มาตรไม่หมุน', 'มาตรรั่ว', 'มาตรเดินผิดปกติ']
+
+// งานประปา 3 ประเภทใช้วิซาร์ดเดียว เพราะแบบฟอร์มต้นฉบับ ①②③ มีช่องชุดเดียวกันทุกช่อง
+// ต่างกันที่ถ้อยคำ ช่อง "เนื่องจาก" (③) และเลขผู้ใช้น้ำ (②③ ผู้ใช้เลือกให้เก็บ 2569-09-14)
+// ⚠️ ข้อความ ack ต้องตรงกับประโยคข้อตกลงในใบพิมพ์ของประเภทนั้นเป๊ะ (ดู WATER_FORMS)
+const WIZARD_KINDS = {
+  water_supply_request: {
+    title: 'ขออนุญาตใช้น้ำประปา',
+    formName: 'แบบคำขออนุญาตใช้น้ำประปา',
+    intro: 'ใช้ขอติดตั้งมาตรวัดน้ำและเปิดใช้น้ำประปาของ อปท. สำหรับบ้านหรือสถานที่ที่ยังไม่มีมาตร ไม่ใช่การแจ้งน้ำไม่ไหล ท่อแตก หรือขอย้าย/เปลี่ยนมาตรเดิม',
+    loginText: 'คำขอใช้น้ำประปาเปิดทะเบียนผู้ใช้น้ำในชื่อของท่านและผูกกับค่าประกันมาตร จึงต้องเข้าสู่ระบบเพื่อยืนยันตัวตนผู้ยื่นและให้ท่านติดตามสถานะได้',
+    doneText: 'เจ้าหน้าที่จะติดต่อกลับเพื่อนัดสำรวจจุดติดตั้งและแจ้งค่าประกันมาตร/ค่าติดตั้ง ก่อนดำเนินการต่อไป',
+    applicantTitle: 'ข้อมูลผู้ขออนุญาต',
+    role: 'ผู้ขออนุญาต',
+    idHint: 'ใช้เปิดทะเบียนผู้ใช้น้ำและผูกค่าประกันมาตรกับตัวผู้ขอ ไม่เปิดเผยต่อสาธารณะตาม พ.ร.บ. PDPA',
+    siteTitle: 'สถานที่ที่ขอติดตั้งมาตรวัดน้ำ',
+    dateKey: 'service_start_date',
+    dateLabel: 'ขอเริ่มใช้น้ำประปาตั้งแต่วันที่',
+    reason: false,
+    accountNo: false,
+    pinLabel: 'ปักหมุดจุดที่ขอให้ติดตั้งมาตรวัดน้ำ',
+    pinHint: 'ไม่บังคับ — ช่วยให้ช่างประปาประเมินระยะเดินท่อและหาจุดติดตั้งได้ตรง โดยเฉพาะบ้านในซอยที่ไม่มีป้ายหรือแปลงที่ยังไม่มีเลขที่บ้าน เลื่อนแผนที่ให้หมุดตรงจุดที่จะติดตั้งแล้วกด "ใช้ตำแหน่งนี้"',
+    enclosure: true,
+    ack: 'ข้าพเจ้าขอใช้มาตรวัดน้ำที่ทาง อปท. จัดหาให้ และยินยอมชำระเงินค่าน้ำประปาและปฏิบัติตามระเบียบข้อบังคับของ อปท. ทุกประการ',
+    purpose: date => `ขออนุญาตใช้น้ำประปา ตั้งแต่วันที่ ${date}`,
+  },
+  water_meter_change: {
+    title: 'ขออนุญาตเปลี่ยนมาตรน้ำประปา',
+    formName: 'แบบคำขอเปลี่ยนมาตรน้ำประปา',
+    intro: 'ใช้ขอเปลี่ยนมาตรวัดน้ำเดิมที่ชำรุดหรือทำงานผิดปกติ สำหรับบ้านที่ใช้น้ำประปาของ อปท. อยู่แล้ว ไม่ใช่การแจ้งน้ำไม่ไหลหรือท่อแตก',
+    loginText: 'การเปลี่ยนมาตรผูกกับบัญชีผู้ใช้น้ำของท่าน จึงต้องเข้าสู่ระบบเพื่อยืนยันตัวตนผู้ยื่นและให้ท่านติดตามสถานะได้',
+    doneText: 'เจ้าหน้าที่จะติดต่อกลับเพื่อนัดตรวจมาตรเดิม และแจ้งค่าใช้จ่าย (ถ้ามี) ก่อนดำเนินการต่อไป',
+    applicantTitle: 'ข้อมูลผู้ขออนุญาต',
+    role: 'ผู้ขออนุญาต',
+    idHint: 'ใช้ยืนยันว่าผู้ขอเป็นผู้ใช้น้ำของมาตรนี้ ไม่เปิดเผยต่อสาธารณะตาม พ.ร.บ. PDPA',
+    siteTitle: 'สถานที่ตั้งมาตรที่ขอเปลี่ยน',
+    dateKey: 'effective_date',
+    dateLabel: 'ขอเปลี่ยนมาตรตั้งแต่วันที่',
+    reason: true,
+    accountNo: true,
+    pinLabel: 'ปักหมุดจุดที่ตั้งมาตร',
+    pinHint: 'ไม่บังคับ — ช่วยให้ช่างประปาหามาตรได้ตรง โดยเฉพาะบ้านในซอยที่ไม่มีป้าย เลื่อนแผนที่ให้หมุดตรงจุดที่ตั้งมาตรแล้วกด "ใช้ตำแหน่งนี้"',
+    enclosure: false,
+    ack: 'ข้าพเจ้าขอใช้มาตรที่ทาง อปท. จัดหาให้ และยินยอมชำระเงินค่าน้ำประปาและปฏิบัติตามระเบียบข้อบังคับของ อปท. ทุกประการ',
+    purpose: date => `ขออนุญาตเปลี่ยนมาตรน้ำประปา ตั้งแต่วันที่ ${date}`,
+  },
+  water_supply_cancel: {
+    title: 'ขอยกเลิกใช้น้ำประปา',
+    formName: 'แบบคำขอยกเลิกใช้น้ำประปา',
+    intro: 'ใช้แจ้งยกเลิกการใช้น้ำประปาของ อปท. สำหรับบ้านที่มีมาตรอยู่แล้ว ค่าน้ำประปาในรอบบิลที่ผ่านมายังต้องชำระตามปกติ',
+    // ยกเลิกใช้น้ำคือตัดน้ำบ้านหลังนั้น — ถ้ายื่นได้โดยไม่ยืนยันตัวตน ใครก็แจ้งตัดน้ำบ้านคนอื่นได้
+    loginText: 'การยกเลิกใช้น้ำผูกกับบัญชีผู้ใช้น้ำของท่าน จึงต้องเข้าสู่ระบบเพื่อยืนยันตัวตน ป้องกันผู้อื่นแจ้งยกเลิกแทนโดยไม่ได้รับอนุญาต',
+    doneText: 'เจ้าหน้าที่จะติดต่อกลับเพื่อนัดวันยกเลิกและแจ้งยอดค่าน้ำประปาที่ต้องชำระ (ถ้ามี)',
+    applicantTitle: 'ข้อมูลผู้แจ้ง',
+    role: 'ผู้แจ้ง',
+    idHint: 'ใช้ยืนยันว่าผู้แจ้งเป็นผู้ใช้น้ำของมาตรนี้ ไม่เปิดเผยต่อสาธารณะตาม พ.ร.บ. PDPA',
+    siteTitle: 'สถานที่ที่ขอยกเลิกใช้น้ำ',
+    dateKey: 'effective_date',
+    dateLabel: 'ขอยกเลิกใช้น้ำตั้งแต่วันที่',
+    reason: false,
+    accountNo: true,
+    pinLabel: 'ปักหมุดจุดที่ตั้งมาตร',
+    pinHint: 'ไม่บังคับ — ช่วยให้เจ้าหน้าที่หามาตรได้ตรง โดยเฉพาะบ้านในซอยที่ไม่มีป้าย เลื่อนแผนที่ให้หมุดตรงจุดที่ตั้งมาตรแล้วกด "ใช้ตำแหน่งนี้"',
+    enclosure: false,
+    ack: 'ข้าพเจ้ายินยอมชำระเงินค่าน้ำประปาในรอบบิลที่ผ่านมาและปฏิบัติตามระเบียบข้อบังคับของ อปท. ทุกประการ',
+    purpose: date => `ขอยกเลิกใช้น้ำประปา ตั้งแต่วันที่ ${date}`,
+  },
+}
+
 /**
- * แบบคำขออนุญาตใช้น้ำประปา — โครงเดียวกับ WasteCollectionRequestWizard
+ * แบบคำขออนุญาตใช้น้ำประปา / เปลี่ยนมาตร / ยกเลิกใช้น้ำ — โครงเดียวกับ WasteCollectionRequestWizard
+ *
+ * kind = document_type ของคำขอ (ดู WIZARD_KINDS) ค่าเริ่มต้นเป็นขอใช้น้ำ ให้ผู้เรียกเดิมไม่ต้องแก้
  *
  * เก็บข้อมูลให้ครบตามใบพิมพ์ (waterSupplyRequestPrint.js) โดยแยก "ที่อยู่ผู้ยื่น" ออกจาก
  * "สถานที่ติดตั้งมาตรวัดน้ำ" ตามต้นฉบับ ซึ่งมีช่องบ้านเลขที่ 2 ชุด — เคสจริงที่ต่างกันมีเยอะ
  * (ขอมิเตอร์ให้บ้านที่กำลังสร้าง, แปลงเกษตร, บ้านเช่าที่เจ้าของอยู่คนละหลัง) ถ้ารวบเป็นชุดเดียว
  * จะกรอกไม่ได้และช่างประปาจะไปติดตั้งผิดหลัง
  */
-export default function WaterSupplyRequestWizard({ tenant, session, onBack, staffId, onDone }) {
+export default function WaterSupplyRequestWizard({ tenant, session, onBack, staffId, onDone, kind = 'water_supply_request' }) {
   const navigate = useNavigate()
+  const cfg = WIZARD_KINDS[kind] ?? WIZARD_KINDS.water_supply_request
+  const documentType = WIZARD_KINDS[kind] ? kind : 'water_supply_request'
   const tenantAddress = tenantAddressDefaults(tenant)
   const [saving, setSaving] = useState(false)
   const [pdfBusy, setPdfBusy] = useState(false)
   const [copied, setCopied] = useState(false)
   const [done, setDone] = useState(null)
   const [form, setForm] = useState(() => ({
-    form_type: 'water_supply_request',
+    form_type: documentType,
     form_version: 1,
     applicant: {
       title: '', first: '', last: '', age: '', phone: '', id_card: '',
@@ -74,9 +149,14 @@ export default function WaterSupplyRequestWizard({ tenant, session, onBack, staf
       addr_district: tenantAddress.district,
       addr_province: tenantAddress.province,
     },
-    service_start_date: todayStr(),
-    // จุดที่ขอให้มาติดตั้งมาตรวัดน้ำ — null จนกว่าผู้ใช้จะกด "ใช้ตำแหน่งนี้" ยืนยันเอง
+    // ใบขอใช้น้ำเก็บที่ service_start_date (คำขอเก่าในฐานข้อมูลใช้ชื่อนี้ เปลี่ยนไม่ได้)
+    // ใบเปลี่ยนมาตร/ยกเลิกเก็บที่ effective_date — ความหมายไม่ใช่ "เริ่มใช้น้ำ"
+    [cfg.dateKey]: todayStr(),
+    ...(cfg.reason ? { reason: '' } : {}),
+    ...(cfg.accountNo ? { account_no: '' } : {}),
+    // จุดที่ขอให้มาติดตั้งมาตรวัดน้ำ (หรือจุดที่ตั้งมาตรเดิม) — null จนกว่าผู้ใช้จะกด "ใช้ตำแหน่งนี้" ยืนยันเอง
     meter_point: null,
+    // ชื่อคีย์คงไว้ทุกประเภทเพื่อให้ข้อมูลรูปแบบเดียวกัน — ใบยกเลิกคือการยอมรับข้อความ ack ของใบนั้น
     meter_ack: false,
   }))
   const [mapOpen, setMapOpen] = useState(false)
@@ -149,7 +229,8 @@ export default function WaterSupplyRequestWizard({ tenant, session, onBack, staf
     && phoneDigits.length >= 9 && phoneDigits.length <= 15
     && idCardDigits.length === 13
     && siteValid
-    && /^\d{4}-\d{2}-\d{2}$/.test(form.service_start_date)
+    && /^\d{4}-\d{2}-\d{2}$/.test(form[cfg.dateKey])
+    && (!cfg.reason || form.reason.trim())
     && form.meter_ack
   )
 
@@ -177,6 +258,8 @@ export default function WaterSupplyRequestWizard({ tenant, session, onBack, staf
           addr_province: applicant.addr_province,
         }
         : { ...form.site },
+      ...(cfg.reason ? { reason: form.reason.trim() } : {}),
+      ...(cfg.accountNo ? { account_no: form.account_no.trim() } : {}),
       meter_ack_at: submittedAt,
       signed_at: submittedAt,
       signed_by: {
@@ -199,16 +282,16 @@ export default function WaterSupplyRequestWizard({ tenant, session, onBack, staf
     const { error } = await supabase.from('document_requests').insert({
       id,
       municipality_id: tenant?.id,
-      document_type: 'water_supply_request',
+      document_type: documentType,
       requester_name: applicantName,
-      // ต้องมีเลขบัตรเสมอ — คำขอนี้เปิดทะเบียนผู้ใช้น้ำและผูกค่าประกันมาตรกับตัวบุคคล
-      // ไม่ใช่แค่ชื่อกับที่อยู่
+      // ต้องมีเลขบัตรเสมอ — ขอใช้น้ำเปิดทะเบียนผู้ใช้น้ำและผูกค่าประกันมาตรกับตัวบุคคล
+      // ส่วนเปลี่ยนมาตร/ยกเลิกต้องยืนยันได้ว่าเป็นผู้ใช้น้ำรายนั้นจริง ไม่ใช่แค่ชื่อกับที่อยู่
       requester_id_card: idCardDigits,
       requester_phone: applicant.phone.trim(),
       requester_address: serviceAddress,
       // purpose ถูกโชว์ดิบๆ ในตารางเจ้าหน้าที่และหน้า "เอกสารของฉัน" จึงต้องเป็นวันที่ไทย (พ.ศ.)
       // ไม่ใช่ค่าดิบ YYYY-MM-DD ของ <input type="date"> ซึ่งเป็น ค.ศ.
-      purpose: `ขออนุญาตใช้น้ำประปา ตั้งแต่วันที่ ${thaiDateFromDateInput(form.service_start_date)}`,
+      purpose: cfg.purpose(thaiDateFromDateInput(form[cfg.dateKey])),
       status: 'pending',
       user_id: session?.user?.id ?? null,
       assigned_to: staffId ?? null,
@@ -229,7 +312,7 @@ export default function WaterSupplyRequestWizard({ tenant, session, onBack, staf
   }
 
   function buildPrintHtml() {
-    return buildWaterSupplyRequestHtml({
+    return buildWaterServiceFormHtml(documentType, {
       form: done.form,
       tenant,
       docDate: done.signedAt,
@@ -253,7 +336,7 @@ export default function WaterSupplyRequestWizard({ tenant, session, onBack, staf
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
-      anchor.download = `คำขอใช้น้ำประปา-${done.ref}.pdf`
+      anchor.download = `${cfg.formName}-${done.ref}.pdf`
       anchor.click()
       URL.revokeObjectURL(url)
     } finally {
@@ -273,11 +356,10 @@ export default function WaterSupplyRequestWizard({ tenant, session, onBack, staf
           </div>
           <h2 className="mb-2 text-lg font-bold text-gray-800">เข้าสู่ระบบก่อนยื่นคำขอ</h2>
           <p className="mb-6 text-sm leading-relaxed text-gray-500">
-            คำขอใช้น้ำประปาเปิดทะเบียนผู้ใช้น้ำในชื่อของท่านและผูกกับค่าประกันมาตร
-            จึงต้องเข้าสู่ระบบเพื่อยืนยันตัวตนผู้ยื่นและให้ท่านติดตามสถานะได้
+            {cfg.loginText}
           </p>
           <button type="button"
-            onClick={() => navigate('/auth', { state: { from: '/doc-request?type=water_supply_request' } })}
+            onClick={() => navigate('/auth', { state: { from: `/doc-request?type=${documentType}` } })}
             className="w-full rounded-2xl bg-sky-700 py-3.5 text-sm font-bold text-white">
             เข้าสู่ระบบ / สมัครสมาชิก
           </button>
@@ -299,17 +381,19 @@ export default function WaterSupplyRequestWizard({ tenant, session, onBack, staf
           </div>
           <h2 className="mb-2 text-xl font-bold text-gray-800">ยื่นคำขอสำเร็จ</h2>
           <p className="mb-5 text-sm leading-relaxed text-gray-500">
-            เจ้าหน้าที่จะติดต่อกลับเพื่อนัดสำรวจจุดติดตั้งและแจ้งค่าประกันมาตร/ค่าติดตั้ง
-            ก่อนดำเนินการต่อไป
+            {cfg.doneText}
           </p>
           {/* ย้ำเรื่องสำเนาที่ต้องนำไปยื่น — ระบบยังไม่มีช่องแนบไฟล์ ถ้าไม่บอกซ้ำตรงนี้
-              ประชาชนจะคิดว่ายื่นออนไลน์แล้วจบ แล้วเรื่องค้างที่กองช่างรอเอกสาร */}
-          <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left text-xs leading-relaxed text-amber-900">
-            <p className="mb-1.5 font-bold">เอกสารที่ต้องนำไปยื่นที่สำนักงาน</p>
-            <p>1. สำเนาบัตรประจำตัวประชาชน จำนวน 1 ฉบับ</p>
-            <p>2. สำเนาทะเบียนบ้าน จำนวน 1 ฉบับ</p>
-            <p>3. แผนผังที่ตั้ง จำนวน 1 ฉบับ</p>
-          </div>
+              ประชาชนจะคิดว่ายื่นออนไลน์แล้วจบ แล้วเรื่องค้างที่กองช่างรอเอกสาร
+              เฉพาะใบขอใช้น้ำ — ต้นฉบับใบเปลี่ยนมาตร/ยกเลิกไม่มีรายการสิ่งที่ส่งมาด้วย ห้ามคิดเอกสารขึ้นเอง */}
+          {cfg.enclosure && (
+            <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left text-xs leading-relaxed text-amber-900">
+              <p className="mb-1.5 font-bold">เอกสารที่ต้องนำไปยื่นที่สำนักงาน</p>
+              <p>1. สำเนาบัตรประจำตัวประชาชน จำนวน 1 ฉบับ</p>
+              <p>2. สำเนาทะเบียนบ้าน จำนวน 1 ฉบับ</p>
+              <p>3. แผนผังที่ตั้ง จำนวน 1 ฉบับ</p>
+            </div>
+          )}
           <div className="mb-5 rounded-2xl bg-gray-50 p-4">
             <p className="mb-1.5 text-xs text-gray-400">หมายเลขอ้างอิง</p>
             <p className="text-2xl font-bold tracking-widest text-gray-800">{done.ref}</p>
@@ -323,7 +407,7 @@ export default function WaterSupplyRequestWizard({ tenant, session, onBack, staf
           <div className="space-y-2.5">
             <button type="button" onClick={handlePrint}
               className="flex w-full items-center justify-center gap-2 rounded-2xl bg-sky-700 py-3.5 text-sm font-bold text-white">
-              <Printer size={16} /> พิมพ์แบบคำขออนุญาตใช้น้ำประปา
+              <Printer size={16} /> พิมพ์{cfg.formName}
             </button>
             <button type="button" onClick={handleDownloadPdf} disabled={pdfBusy}
               className="flex w-full items-center justify-center gap-2 rounded-2xl border border-sky-200 bg-sky-50 py-3.5 text-sm font-bold text-sky-800 disabled:opacity-50">
@@ -349,20 +433,19 @@ export default function WaterSupplyRequestWizard({ tenant, session, onBack, staf
         <div className="flex min-w-0 items-center gap-2.5">
           <Droplets size={21} className="shrink-0 text-sky-700" />
           <div className="min-w-0">
-            <p className="truncate font-bold text-gray-800">ขออนุญาตใช้น้ำประปา</p>
-            <p className="text-xs text-gray-400">กรอกข้อมูลตามแบบคำขออนุญาตใช้น้ำประปา</p>
+            <p className="truncate font-bold text-gray-800">{cfg.title}</p>
+            <p className="text-xs text-gray-400">กรอกข้อมูลตาม{cfg.formName}</p>
           </div>
         </div>
       </div>
 
       <div className="mx-auto max-w-2xl space-y-4 px-4 py-5 pb-28 md:px-8 md:pb-8">
         <div className="rounded-2xl border border-sky-100 bg-sky-50 p-4 text-xs leading-relaxed text-sky-900">
-          ใช้ขอติดตั้งมาตรวัดน้ำและเปิดใช้น้ำประปาของ อปท. สำหรับบ้านหรือสถานที่ที่ยังไม่มีมาตร
-          ไม่ใช่การแจ้งน้ำไม่ไหล ท่อแตก หรือขอย้าย/เปลี่ยนมาตรเดิม
+          {cfg.intro}
         </div>
 
         <section className="space-y-3.5 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-          <p className="text-sm font-bold text-gray-700">ข้อมูลผู้ขออนุญาต</p>
+          <p className="text-sm font-bold text-gray-700">{cfg.applicantTitle}</p>
           <div className="grid grid-cols-12 gap-2">
             <Field label="คำนำหน้า" required className="col-span-4 sm:col-span-3">
               <select value={applicant.title} onChange={setApplicant('title')} className={inputCls}>
@@ -393,7 +476,7 @@ export default function WaterSupplyRequestWizard({ tenant, session, onBack, staf
               }))}
               placeholder="เช่น 1234567890123" className={`${inputCls} tracking-widest`} />
             <p className="mt-1 text-[11px] leading-relaxed text-gray-400">
-              ใช้เปิดทะเบียนผู้ใช้น้ำและผูกค่าประกันมาตรกับตัวผู้ขอ ไม่เปิดเผยต่อสาธารณะตาม พ.ร.บ. PDPA
+              {cfg.idHint}
             </p>
           </Field>
           <div className="grid grid-cols-2 gap-2">
@@ -416,12 +499,12 @@ export default function WaterSupplyRequestWizard({ tenant, session, onBack, staf
         </section>
 
         <section className="space-y-3.5 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-          <p className="text-sm font-bold text-gray-700">สถานที่ที่ขอติดตั้งมาตรวัดน้ำ</p>
+          <p className="text-sm font-bold text-gray-700">{cfg.siteTitle}</p>
           <label className="flex cursor-pointer items-center gap-2.5 rounded-xl bg-gray-50 px-3 py-2.5">
             <input type="checkbox" checked={form.same_as_applicant}
               onChange={event => setForm(current => ({ ...current, same_as_applicant: event.target.checked }))}
               className="h-4 w-4 accent-sky-700" />
-            <span className="text-sm text-gray-700">เป็นที่อยู่เดียวกับผู้ขออนุญาต</span>
+            <span className="text-sm text-gray-700">เป็นที่อยู่เดียวกับ{cfg.role}</span>
           </label>
 
           {!form.same_as_applicant && (
@@ -444,13 +527,43 @@ export default function WaterSupplyRequestWizard({ tenant, session, onBack, staf
             </div>
           )}
 
-          <Field label="ขอเริ่มใช้น้ำประปาตั้งแต่วันที่" required>
-            <input type="date" min={todayStr()} value={form.service_start_date}
-              onChange={event => setForm(current => ({ ...current, service_start_date: event.target.value }))}
+          {cfg.accountNo && (
+            <Field label="เลขผู้ใช้น้ำ (ถ้ามี)">
+              <input value={form.account_no} maxLength={30}
+                onChange={event => setForm(current => ({ ...current, account_no: event.target.value }))}
+                className={inputCls} />
+              <p className="mt-1 text-[11px] leading-relaxed text-gray-400">
+                ดูได้จากใบแจ้งค่าน้ำประปา ไม่บังคับ แต่ช่วยให้เจ้าหน้าที่ค้นบัญชีผู้ใช้น้ำได้เร็วขึ้น
+              </p>
+            </Field>
+          )}
+
+          {cfg.reason && (
+            <Field label="เนื่องจาก" required>
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {METER_CHANGE_REASONS.map(reason => (
+                  <button key={reason} type="button"
+                    onClick={() => setForm(current => ({ ...current, reason }))}
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold ${form.reason === reason
+                      ? 'border-sky-700 bg-sky-700 text-white'
+                      : 'border-gray-200 bg-white text-gray-600'}`}>
+                    {reason}
+                  </button>
+                ))}
+              </div>
+              <input value={form.reason} maxLength={120}
+                onChange={event => setForm(current => ({ ...current, reason: event.target.value }))}
+                placeholder="เลือกด้านบน หรือพิมพ์สาเหตุเอง" className={inputCls} />
+            </Field>
+          )}
+
+          <Field label={cfg.dateLabel} required>
+            <input type="date" min={todayStr()} value={form[cfg.dateKey]}
+              onChange={event => setForm(current => ({ ...current, [cfg.dateKey]: event.target.value }))}
               className={inputCls} />
           </Field>
 
-          <Field label="ปักหมุดจุดที่ขอให้ติดตั้งมาตรวัดน้ำ">
+          <Field label={cfg.pinLabel}>
             {/* ห้ามบันทึกจุดที่แผนที่เล็งอยู่ตอนเปิดโดยอัตโนมัติ — LeafletMapPicker ยิง
                 onLocationSelect ตั้งแต่ mount ด้วยจุดกึ่งกลางเริ่มต้น (ที่ตั้งสำนักงาน อปท.)
                 ถ้ารับค่านั้นเลย ทุกคำขอจะได้หมุดปลอมที่ชี้ไปสำนักงาน ซึ่งแย่กว่าไม่มีหมุด
@@ -519,16 +632,14 @@ export default function WaterSupplyRequestWizard({ tenant, session, onBack, staf
               </button>
             )}
             <p className="mt-1 text-[11px] leading-relaxed text-gray-400">
-              ไม่บังคับ — ช่วยให้ช่างประปาประเมินระยะเดินท่อและหาจุดติดตั้งได้ตรง
-              โดยเฉพาะบ้านในซอยที่ไม่มีป้ายหรือแปลงที่ยังไม่มีเลขที่บ้าน
-              เลื่อนแผนที่ให้หมุดตรงจุดที่จะติดตั้งแล้วกด "ใช้ตำแหน่งนี้"
+              {cfg.pinHint}
             </p>
           </Field>
         </section>
 
         {/* ระบบยังไม่มีช่องแนบไฟล์ในคำขอเอกสาร ต้องบอกตั้งแต่ก่อนกดส่งว่ายังต้องเอาสำเนาไปยื่น
             ไม่งั้นประชาชนคิดว่าจบแล้ว แล้วเรื่องค้างรอเอกสารโดยไม่มีใครรู้ */}
-        <div className="rounded-2xl border border-gray-200 bg-white p-4 text-xs leading-relaxed text-gray-600">
+        {cfg.enclosure && <div className="rounded-2xl border border-gray-200 bg-white p-4 text-xs leading-relaxed text-gray-600">
           <p className="mb-1.5 text-sm font-bold text-gray-700">สิ่งที่ต้องนำไปยื่นที่สำนักงาน</p>
           <p>1. สำเนาบัตรประจำตัวประชาชน จำนวน 1 ฉบับ</p>
           <p>2. สำเนาทะเบียนบ้าน จำนวน 1 ฉบับ</p>
@@ -536,7 +647,7 @@ export default function WaterSupplyRequestWizard({ tenant, session, onBack, staf
           <p className="mt-2 text-[11px] text-gray-400">
             ระบบยังไม่รองรับการแนบไฟล์ในคำขอนี้ กรุณานำสำเนาไปยื่นเมื่อเจ้าหน้าที่นัดสำรวจจุดติดตั้ง
           </p>
-        </div>
+        </div>}
 
         <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
           <input type="checkbox" checked={form.meter_ack}
@@ -546,8 +657,7 @@ export default function WaterSupplyRequestWizard({ tenant, session, onBack, staf
             {/* ถ้อยคำตรงกับประโยคที่ขีดเส้นใต้บนใบพิมพ์เป๊ะ — สิ่งที่ติ๊กยอมรับบนจอต้องเป็นข้อความ
                 เดียวกับที่ลงชื่อบนกระดาษ ไม่งั้นเถียงกันภายหลังได้ว่าตกลงอะไรไว้
                 (กติกาเดียวกับใบขอรับบริการ/ยกเลิกเก็บขนขยะ) */}
-            ข้าพเจ้าขอใช้มาตรวัดน้ำที่ทาง อปท. จัดหาให้
-            และยินยอมชำระเงินค่าน้ำประปาและปฏิบัติตามระเบียบข้อบังคับของ อปท. ทุกประการ
+            {cfg.ack}
           </span>
         </label>
 
@@ -555,7 +665,7 @@ export default function WaterSupplyRequestWizard({ tenant, session, onBack, staf
             ไม่งั้นประชาชนพิมพ์ใบออกมาแล้วไม่แน่ใจว่าต้องเซ็นอีกไหม เจ้าหน้าที่ก็ตอบไม่ตรงกัน */}
         {session && !staffId && (
           <p className="px-1 text-[11px] leading-relaxed text-gray-500">
-            เมื่อกดยืนยัน ระบบจะลงชื่อ “{applicantName || 'ชื่อผู้ขออนุญาต'}” ในแบบคำขอให้อัตโนมัติ
+            เมื่อกดยืนยัน ระบบจะลงชื่อ “{applicantName || `ชื่อ${cfg.role}`}” ในแบบคำขอให้อัตโนมัติ
             โดยอ้างอิงการยืนยันตัวตนของบัญชีที่เข้าสู่ระบบ พร้อมวันเวลาและเลขอ้างอิง
           </p>
         )}
