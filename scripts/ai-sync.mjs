@@ -218,6 +218,19 @@ const domainExtra = domainKeys
   .filter((k) => k !== DOM_ROLE_K && k !== DOM_GATE_K)
   .flatMap((k) => ['', ...domainSection(k)]);
 
+/**
+ * หัวข้อ DOMAIN ที่ส่งไป AI ฝั่งเว็บด้วย — ไล่ชื่อตายตัวโดยเจตนา (ต่างจาก AGENTS.md)
+ * เพราะฝั่งเว็บใช้วางแผน/ปรึกษา ไม่ได้เขียนโค้ด กฎฟอนต์/ช่องลงนาม/กับดักเทคนิคจึงเป็นแค่ขยะในคำสั่ง
+ * และทุกเว็บจำกัดความยาวคำสั่ง ส่วนหัวข้อที่เป็น "หลักคิดตอนออกแบบ" ต้องไปถึงทุกตัว
+ * ไม่งั้น AI ที่ช่วยวางแผนบนเว็บจะคิดคนละแบบกับตัวที่เขียนโค้ด (เจ้าของระบบสั่ง 2026-09-15)
+ * เปลี่ยนชื่อหัวข้อใน DOMAIN.md แล้ว need() จะหยุดสคริปต์ทันที ไม่หลุดหายเงียบๆ
+ */
+const WEB_DOMAIN_KEYS = ['[ระบบอัจฉริยะ — ให้ระบบทำเองก่อน คนทำเท่าที่จำเป็น]'];
+const webDomainExtra = WEB_DOMAIN_KEYS.flatMap((k) => ['', ...domainSection(k)]);
+
+// เพดานต่อบล็อกที่หัวไฟล์ web-snippets.md สัญญาไว้ — เดิมตรวจด้วยมือครั้งเดียว ตอนนี้ตรวจทุกครั้งที่ sync
+const WEB_BLOCK_LIMIT = 11_500;
+
 /** web-snippets.md: เก็บคำอธิบายรอบๆ ไว้ทั้งหมด เปลี่ยนเฉพาะเนื้อในเฟนซ์ที่ขึ้นต้นด้วย [บทบาท] */
 function buildWebSnippets() {
   const lines = read('docs/ai/web-snippets.md');
@@ -241,7 +254,12 @@ function buildWebSnippets() {
     // ในเฟนซ์เต็ม: เนื้อหลัก + [Adapter — <เว็บ>] ต่อท้าย — เปลี่ยนเฉพาะเนื้อหลัก คง adapter ไว้
     const ad = inner.findIndex((l) => l.trim().startsWith('[Adapter'));
     if (ad === -1) die('web-snippets.md: เฟนซ์ [บทบาท] ไม่มีบล็อก [Adapter — ...] ต่อท้าย');
-    out.push(FENCE, ...bodyProject, '', ...trimBlank(inner.slice(ad)), FENCE);
+    const block = [...bodyProject, ...webDomainExtra, '', ...trimBlank(inner.slice(ad))];
+    const size = [...block.join('\n')].length; // นับเป็นตัวอักษร ไม่ใช่ byte — ภาษาไทย 1 ตัว = 3 byte
+    if (size > WEB_BLOCK_LIMIT) {
+      die(`web-snippets.md: บล็อกที่บรรทัด ${i + 1} ยาว ${size} ตัวอักษร เกินเพดาน ${WEB_BLOCK_LIMIT} — ตัดหัวข้อใน WEB_DOMAIN_KEYS หรือย่อต้นฉบับ`);
+    }
+    out.push(FENCE, ...block, FENCE);
     replaced += 1;
     i = close + 1;
   }
