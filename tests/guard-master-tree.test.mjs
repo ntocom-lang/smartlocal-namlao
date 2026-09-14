@@ -10,7 +10,14 @@
 // รัน: npm run test:guard
 
 import path from 'path'
-import { bashWriteTargets, isInside, normalizeShellPath, toolTargets } from '../scripts/guard-master-tree.mjs'
+import {
+  bashWriteTargets,
+  destructiveGitCommands,
+  isInside,
+  normalizeShellPath,
+  toolGitCommands,
+  toolTargets,
+} from '../scripts/guard-master-tree.mjs'
 
 let failed = 0
 function check(name, actual, expected) {
@@ -77,6 +84,49 @@ check('New-Item -ItemType', bashWriteTargets('New-Item -ItemType File -Path src/
 check('Copy-Item เอาปลายทาง', bashWriteTargets('Copy-Item a.txt src/b.txt'), ['src/b.txt'])
 check('Move-Item -Destination', bashWriteTargets('Move-Item -Path a.txt -Destination src/b.txt'), ['src/b.txt'])
 check('here-string แล้ว pipe เข้า Out-File', bashWriteTargets("@'\ncd x\n'@ | Out-File src/a.js"), ['src/a.js'])
+
+// ผลเป็น "โฟลเดอร์|คำสั่ง" — โฟลเดอร์ว่าง = cwd ของ session
+const gitHits = (command) => destructiveGitCommands(command).map((g) => `${g.dir}|${g.command}`)
+
+console.log('\nคำสั่ง git ที่ทำงานค้างหาย — ต้องจับได้')
+check('reset --hard', gitHits('git reset --hard origin/master'), ['|git reset --hard origin/master'])
+check('checkout -- ไฟล์', gitHits('git checkout -- src/App.jsx'), ['|git checkout -- src/App.jsx'])
+check('checkout . ทั้งทรี', gitHits('git checkout .'), ['|git checkout .'])
+check('checkout สลับสาขา', gitHits('git checkout feat/x'), ['|git checkout feat/x'])
+check('switch -c', gitHits('git switch -c feat/x'), ['|git switch -c feat/x'])
+check('restore ไฟล์', gitHits('git restore src/App.jsx'), ['|git restore src/App.jsx'])
+check('restore --staged --worktree', gitHits('git restore --staged --worktree a.js'), ['|git restore --staged --worktree a.js'])
+check('clean -fd', gitHits('git clean -fd'), ['|git clean -fd'])
+check('stash เปล่า', gitHits('git stash'), ['|git stash'])
+check('stash -u', gitHits('git stash -u'), ['|git stash -u'])
+check('stash pop', gitHits('git stash pop'), ['|git stash pop'])
+check('หลัง && และ git -c', gitHits('git fetch && git -c core.x=1 reset --hard'), ['|git reset --hard'])
+check('ต่อโฟลเดอร์จาก cd', gitHits('cd /d/tmp/wt-x && git stash'), ['/d/tmp/wt-x|git stash'])
+check('ต่อโฟลเดอร์จาก git -C', gitHits('git -C "/d/VS Code/main" reset --hard'), ['/d/VS Code/main|git reset --hard'])
+check('PowerShell เรียก git.exe', gitHits('git.exe checkout -- a.js; Get-ChildItem'), ['|git checkout -- a.js'])
+
+console.log('\nคำสั่ง git ที่ไม่ทำงานหาย — ห้ามจับ')
+check('pull --ff-only', gitHits('git pull --ff-only'), [])
+check('reset ธรรมดา (ถอนจาก index)', gitHits('git reset HEAD a.js'), [])
+check('checkout เปล่า', gitHits('git checkout'), [])
+check('restore --staged อย่างเดียว', gitHits('git restore --staged a.js'), [])
+check('clean -n (ลองดู)', gitHits('git clean -nfd'), [])
+check('stash list', gitHits('git stash list'), [])
+check('stash show -p', gitHits('git stash show -p'), [])
+check('worktree add', gitHits('git worktree add /d/tmp/wt-x -b feat/x origin/master'), [])
+check('คำสั่งอันตรายอยู่ในข้อความ commit', gitHits('git commit -m "อย่ารัน git reset --hard; git stash"'), [])
+check(
+  'คำสั่งอันตรายอยู่ใน heredoc ของ commit',
+  gitHits("git commit -F - <<'EOF'\ngit reset --hard\ngit checkout -- a.js\nEOF"),
+  [],
+)
+check('echo ข้อความ', gitHits('echo git stash'), [])
+check('Write ไม่ใช่คำสั่ง shell', toolGitCommands({ tool_name: 'Write', tool_input: { command: 'git stash' } }), [])
+check(
+  'PowerShell payload',
+  toolGitCommands({ tool_name: 'PowerShell', tool_input: { command: 'git stash' } }).map((g) => g.command),
+  ['git stash'],
+)
 
 console.log('\nแปลง path แบบ shell')
 const win = { home: 'C:\\Users\\me', platform: 'win32' }
