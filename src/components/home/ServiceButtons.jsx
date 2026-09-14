@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
+import { moduleHiddenCategoryValues, withoutModuleHiddenCategories } from '../../lib/complaintCategoryModules'
 
 const FALLBACK = [
   { value: 'light',            label: 'ไฟฟ้าสาธารณะ',              emoji: '💡', color: '#FEF3C7' },
@@ -15,7 +16,7 @@ const FALLBACK = [
 ]
 
 export default function ServiceButtons() {
-  const { tenant } = useTenant()
+  const { tenant, isModuleEnabled } = useTenant()
   const navigate = useNavigate()
   const [cats, setCats] = useState(FALLBACK)
 
@@ -42,7 +43,7 @@ export default function ServiceButtons() {
 
       <div className="bg-white dark:bg-white/10 rounded-2xl border border-gray-100 dark:border-white/10 p-4">
         <div className="grid grid-cols-4 gap-3">
-          {cats.map((cat) => (
+          {withoutModuleHiddenCategories(cats, moduleHiddenCategoryValues(isModuleEnabled)).map((cat) => (
             <button
               key={cat.value}
               onClick={() => navigate(`/request?category=${cat.value}`)}

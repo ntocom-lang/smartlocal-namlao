@@ -12,6 +12,7 @@ import { supabase } from '../lib/supabase'
 import { notifyTelegram } from '../lib/notifyTelegram'
 import { useTenant } from '../contexts/TenantContext'
 import { CategoryIcon } from '../lib/categoryIcon'
+import { moduleHiddenCategoryValues } from '../lib/complaintCategoryModules'
 import { compressImage } from '../lib/imageUtils'
 import MapPicker from '../components/MapPicker'
 import { NAME_TITLES, splitThaiFullName, joinThaiFullName } from '../lib/thaiName'
@@ -362,7 +363,7 @@ const FORM_TYPE_CONFIG = {
 }
 
 export default function CitizenForm() {
-  const { tenant } = useTenant()
+  const { tenant, isModuleEnabled } = useTenant()
   const primaryBg = 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)'
   const primaryColor = 'var(--color-primary)'
   const navigate = useNavigate()
@@ -398,11 +399,21 @@ export default function CitizenForm() {
   const [savedPhotoFiles, setSavedPhotoFiles] = useState([])
   const [photos, setPhotos] = useState([]) // { file, preview }
   const [locations, setLocations] = useState([])
-  const [categories, setCategories] = useState(DEFAULT_CATEGORIES)
+  const [dbCategories, setCategories] = useState(DEFAULT_CATEGORIES)
   // ค่าที่ "มีแถวในตารางของเทศบาลนี้แต่ is_active=false" เท่านั้น — ค่าที่ไม่มีแถวเลย (env_hazard,
   // env_fire, pollution, water_flood ที่มีแต่ใน FORM_TYPE_CONFIG) จะไม่อยู่ในนี้และยังแสดงตามเดิม
   // ตั้งใจไม่ใช้วิธี intersect pills กับตารางตรงๆ เพราะจะทำให้ค่าพวกนั้นหายหมดทุกเทศบาล
-  const [disabledCategoryValues, setDisabledCategoryValues] = useState(() => new Set())
+  const [dbDisabledCategoryValues, setDisabledCategoryValues] = useState(() => new Set())
+  // หมวดของโมดูลที่ อปท. ปิด (เช่น ซ่อมน้ำประปาเมื่อปิดงานประปา) ถือเป็น "หมวดที่ปิด" ด้วย
+  // — ใช้กลไกเดิมทั้งชุด: ซ่อนจากตัวเลือก + ลิงก์เก่า ?category=water_repair ขึ้นแถบเตือนและส่งไม่ได้
+  // คำนวณตอน render ไม่ใช่ใน effect ที่โหลดหมวด เพราะสถานะโมดูลอาจมาทีหลังรายการหมวด
+  const moduleHiddenValues = moduleHiddenCategoryValues(isModuleEnabled)
+  const categories = moduleHiddenValues.length
+    ? dbCategories.filter((c) => !moduleHiddenValues.includes(c.value))
+    : dbCategories
+  const disabledCategoryValues = moduleHiddenValues.length
+    ? new Set([...dbDisabledCategoryValues, ...moduleHiddenValues])
+    : dbDisabledCategoryValues
   const abortCtrlRef = useRef(null)
 
   // ถ้า submitting อยู่แล้วกลับมาจาก background นาน > 5s → abort request ทันที
@@ -662,7 +673,9 @@ export default function CitizenForm() {
     }
   }
 
-  const allCatsDisplay = [...(ftConfig?.categories ?? []), ...categories]
+  // หาชื่อ/อีโมจิจากลิสต์เต็ม (dbCategories) ไม่ใช่ลิสต์ที่ตัดหมวดของโมดูลที่ปิดแล้ว — ลิงก์เก่า
+  // ?category=water_repair ตอนปิดงานประปาต้องขึ้น "ซ่อมน้ำประปา" ในแถบเตือน ไม่ใช่รหัสดิบ water_repair
+  const allCatsDisplay = [...(ftConfig?.categories ?? []), ...dbCategories]
   // ต้องคำนวณก่อนแยกไปหน้า SuccessScreen เพราะใช้ตั้งชื่อโฟลเดอร์หมวดบน Drive ด้วย
   const catLabel = allCatsDisplay.find((c) => c.value === form.category)?.label?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category
 
@@ -671,7 +684,7 @@ export default function CitizenForm() {
   // pills ของ ftConfig ต้องเคารพหมวดที่เทศบาลนี้ปิดไว้ เหมือน dropdown หลักที่อ่านจาก DB อยู่แล้ว
   const visibleFtCategories = (ftConfig?.categories ?? []).filter((c) => !disabledCategoryValues.has(c.value))
   const CatIcon = CATEGORY_ICON[form.category] ?? HelpCircle
-  const catDbData = categories.find(c => c.value === form.category)
+  const catDbData = dbCategories.find(c => c.value === form.category)
   const catEmoji = catDbData?.emoji ?? FALLBACK_EMOJI[form.category] ?? null
   const catColor = catDbData?.color ?? FALLBACK_COLOR[form.category] ?? null
   const actionCopy = getFormActionCopy(formType, form.category, catLabel)

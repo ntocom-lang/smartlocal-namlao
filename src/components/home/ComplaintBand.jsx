@@ -5,6 +5,7 @@ import { ChevronRight, Search, Siren } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useTenant } from '../../contexts/TenantContext'
 import { CategoryIcon } from '../../lib/categoryIcon'
+import { moduleHiddenCategoryValues, withoutModuleHiddenCategories } from '../../lib/complaintCategoryModules'
 import AdhocBand from './AdhocBand'
 
 // FALLBACK_EMOJI = ชุดที่แก้ให้ตรงกับไฟล์อื่นๆ ทั้งระบบแล้ว ใช้เฉพาะ clean variant (thungkaew-Theme)
@@ -44,7 +45,7 @@ const DEFAULT_CATEGORIES = [
 // variant="warm" (ค่าเริ่มต้น) = แถบไล่สีส้ม ใช้กับ 6 ธีมเดิมทั้งหมดไม่เปลี่ยนแปลง
 // variant="clean" = พื้นขาว/เทาอ่อน ใช้เฉพาะ thungkaew-Theme (ServiceHub) ให้ตรงกับภาพอ้างอิงที่ขอเลียนแบบ
 function ComplaintBand({ variant = 'warm' }) {
-  const { tenant } = useTenant()
+  const { tenant, isModuleEnabled } = useTenant()
   const navigate = useNavigate()
   const [cats, setCats] = useState(DEFAULT_CATEGORIES)
   const clean = variant === 'clean'
@@ -89,7 +90,8 @@ function ComplaintBand({ variant = 'warm' }) {
     }).catch(() => {})
   }, [tenant?.id])
 
-  const topCats = cats
+  // กรองตอนแสดงผล ไม่ใช่ตอนโหลด — สถานะโมดูลมาจาก tenant ที่อาจโหลดเสร็จทีหลังรายการหมวด
+  const topCats = withoutModuleHiddenCategories(cats, moduleHiddenCategoryValues(isModuleEnabled))
   const titleColor = clean ? 'text-gray-800' : 'text-amber-900'
   const footerBtnCls = clean
     ? 'flex items-center justify-center gap-1 text-white text-xs font-bold px-5 py-1.5 rounded-full transition-opacity hover:opacity-90 active:scale-95'

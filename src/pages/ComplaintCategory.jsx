@@ -9,6 +9,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../contexts/TenantContext'
 import { CategoryIcon } from '../lib/categoryIcon'
+import { moduleHiddenCategoryValues, withoutModuleHiddenCategories } from '../lib/complaintCategoryModules'
 
 
 const FALLBACK_ICON = {
@@ -67,7 +68,7 @@ const DEFAULT_CATEGORIES = [
 ]
 
 export default function ComplaintCategory() {
-  const { tenant } = useTenant()
+  const { tenant, isModuleEnabled } = useTenant()
   const navigate = useNavigate()
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
@@ -138,8 +139,10 @@ export default function ComplaintCategory() {
             <Loader2 size={28} className="animate-spin text-blue-500" />
           </div>
         ) : (() => {
-          const adhocCats = categories.filter(c => !!c.is_adhoc)
-          const normalCats = categories.filter(c => !c.is_adhoc)
+          // หมวดของโมดูลที่ อปท. ปิด (เช่น ซ่อมน้ำประปา) ต้องหายจากหน้านี้ด้วย ดู complaintCategoryModules.js
+          const visibleCats = withoutModuleHiddenCategories(categories, moduleHiddenCategoryValues(isModuleEnabled))
+          const adhocCats = visibleCats.filter(c => !!c.is_adhoc)
+          const normalCats = visibleCats.filter(c => !c.is_adhoc)
 
           const renderCard = (cat, isAdhoc = false) => {
             const dbEmoji = (cat.emoji || '').trim()
