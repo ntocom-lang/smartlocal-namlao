@@ -42,6 +42,15 @@ const MANUAL_SERVICE = {
   external: true,
 }
 
+// ทางลัดตารางวันเก็บขยะ — วางช่องแรก (เจ้าของระบบเลือก 2569-09-14: ไอคอนกดเข้าไปดู ไม่เปลือง
+// พื้นที่หน้าแรก) ต้องกรองออกจากอาร์เรย์ตอนปิดโมดูล waste เพราะจำนวนคอลัมน์คิดจากความยาวอาร์เรย์
+const WASTE_SCHEDULE_SERVICE = {
+  value: 'waste_schedule',
+  label: 'ตารางวันเก็บขยะ',
+  emoji: '📅',
+  href: '/waste',
+}
+
 // 3 บริการเอกสารเดิม (ขยะ/ภาษี/ขอสร้างบ้าน) เข้าถึงผ่านหน้า /doc-request
 // - ค่าธรรมเนียมขยะ
 // - ค่าธรรมเนียม/ภาษี
@@ -99,13 +108,17 @@ function EServiceGrid({ docTypes, rounded = 'rounded-2xl' }) {
   const { tenant } = useTenant()
   const displayItems = docTypes.slice(0, 6)
   const isPair = displayItems.length === 2
+  // 5 ช่องเรียงแถวเดียว — เดิมตกไปกฎ "3 แล้วขึ้นแถวใหม่" ทำให้กล่องสูงขึ้นอีกแถวบนมือถือ
+  // ค่าเริ่มต้นของธีมนี้กลายเป็น 5 ช่องตั้งแต่เพิ่มทางลัดตารางวันเก็บขยะ (2569-09-14)
   const gridCols = isPair
     ? 'grid-cols-2'
     : displayItems.length === 4
       ? 'grid-cols-4'
-      : displayItems.length <= 3
-        ? 'grid-cols-3'
-        : 'grid-cols-3 sm:grid-cols-6'
+      : displayItems.length === 5
+        ? 'grid-cols-5'
+        : displayItems.length <= 3
+          ? 'grid-cols-3'
+          : 'grid-cols-3 sm:grid-cols-6'
   return (
     <div className={`relative isolate overflow-hidden shadow-lg p-4 sm:p-5 ${rounded}`}
       style={{
@@ -180,10 +193,14 @@ function EServiceGrid({ docTypes, rounded = 'rounded-2xl' }) {
       </div>
       <div className={`relative z-10 grid ${gridCols} ${isPair ? 'gap-2' : 'gap-1.5 sm:gap-2'}`}>
         {displayItems.map(({ value, label, emoji, href, external }) => {
+          // 5 ช่องแถวเดียวบนมือถือ การ์ดแคบลงเหลือ 61-67px — วัดจริง 2 บรรทัดไม่พอ "ประเมินความพึงพอใจ"
+          // ถูกตัดที่จอ 360/390px และ "คู่มือสำหรับประชาชน" ที่ 360px ให้ขึ้นได้ 3 บรรทัด การ์ดสูง
+          // เพิ่มจาก 67 เป็น 80px แต่ยังแถวเดียว ไม่เปลี่ยนชื่อบริการเดิมเพื่อให้สั้นลง
+          const lineClamp = displayItems.length >= 5 ? 'line-clamp-3' : 'line-clamp-2'
           const cardContent = (
             <>
               <CategoryIcon emoji={emoji} size={isPair ? 26 : 22} style={tenant?.category_icon_style} />
-              <p className={`${isPair ? 'text-[11px] sm:text-xs' : 'text-[10px] sm:text-[11px]'} font-bold text-gray-700 text-center leading-tight line-clamp-2 transition-colors group-hover:text-blue-700`}>{label}</p>
+              <p className={`${isPair ? 'text-[11px] sm:text-xs' : 'text-[10px] sm:text-[11px]'} font-bold text-gray-700 text-center leading-tight ${lineClamp} transition-colors group-hover:text-blue-700`}>{label}</p>
             </>
           )
           const cardClass = `group flex flex-col items-center justify-center gap-1.5 rounded-xl border border-white/70 bg-white/95 ${isPair ? 'p-2.5 sm:p-3' : 'p-1.5 sm:p-2'} shadow-md shadow-blue-950/10 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:bg-white hover:shadow-lg active:scale-95`
@@ -214,7 +231,9 @@ export default function ServiceHubHome() {
     }))
     const complaintsEnabled = !isModuleEnabled || isModuleEnabled('complaints')
     const inboxEnabled = !isModuleEnabled || isModuleEnabled('inbox')
+    const wasteScheduleEnabled = !isModuleEnabled || isModuleEnabled('waste')
     const base = []
+    if (wasteScheduleEnabled) base.push(WASTE_SCHEDULE_SERVICE)
     if (complaintsEnabled) base.push(COMPLAINT_SERVICE)
     if (inboxEnabled) base.push(CITIZEN_SERVICE)
     if (complaintsEnabled) base.push(SATISFACTION_SERVICE)

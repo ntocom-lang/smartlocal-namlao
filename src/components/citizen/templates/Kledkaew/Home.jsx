@@ -30,7 +30,12 @@ const DEFAULT_CATS = [
   { value: 'trash',       label: 'ขยะ/แจ้งเก็บ',     emoji: '♻️' },
 ]
 
+// ตารางวันเก็บขยะวางเป็นช่องแรก (เจ้าของระบบเลือก 2569-09-14 — ไอคอนกดเข้าไปดู ไม่เปลืองพื้นที่)
+// แถวนี้เป็น flex ที่เลื่อนแนวนอนได้ ไม่ใช่ grid จึงไม่มีบริการไหนหลุดจากหน้าแรก แต่ช่องท้ายสุด
+// อาจต้องปัดดูบนจอแคบ · ModuleLink คืน null เองเมื่อปิดโมดูล waste — flex ไม่จองช่องว่างไว้
+// ไม่ต้องกรองอาร์เรย์เหมือนธีม eco_friendly ที่เป็น grid
 const POPULAR = [
+  { label: 'ตารางวัน\nเก็บขยะ',  emoji: '📅', path: '/waste' },
   { label: 'แจ้งเหตุ\nแจ้งซ่อม', emoji: '🙋', path: '/complaint' },
   { label: 'E-Service',           emoji: '🌐', path: '/doc-request' },
   { label: 'ติดตาม\nคำร้อง',     emoji: '🔎', path: '/my-complaints' },
@@ -59,14 +64,19 @@ export default function Home() {
       <div className="px-4 -mt-10 relative z-20 max-w-6xl mx-auto">
         <h2 className="text-[17px] font-black mb-3 px-2 drop-shadow-sm" style={{ color: 'var(--color-primary-dark)' }}>บริการยอดนิยม</h2>
 
-        <div className="flex justify-evenly items-start backdrop-blur-sm rounded-3xl p-4 shadow-inner overflow-x-auto gap-4 hide-scrollbar border"
+        {/* ย่อช่องจาก 72px เหลือ 62px (ไอคอน 60 → 50px) และตัดช่องไฟ ให้ 5 ช่องพอดีจอ 390px
+            โดยไม่ต้องปัดข้าง — วัดจริงแล้วเดิม 4 ช่องขนาด 72px ก็ล้นอยู่แล้ว "ติดตามเอกสาร" ตก
+            ขอบจอบนมือถือ 390px และแถวซ่อนแถบเลื่อน (hide-scrollbar) คนจึงไม่รู้ว่าต้องปัด
+            พอเพิ่มตารางวันเก็บขยะเป็นช่องที่ 5 จะตกขอบ 2 ช่อง ขนาดตัวอักษรชื่อคง 13px ไว้
+            ไม่ลดตาม เพราะผู้ใช้หลักคือผู้สูงอายุ */}
+        <div className="flex justify-between items-start backdrop-blur-sm rounded-3xl px-1.5 py-4 shadow-inner overflow-x-auto gap-0.5 hide-scrollbar border"
           style={{
             backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, white)',
             borderColor: 'color-mix(in srgb, var(--color-primary) 22%, white)',
           }}>
           {POPULAR.map((srv) => (
-            <ModuleLink to={srv.path} key={srv.path} className="flex flex-col items-center shrink-0 w-[72px] group">
-              <div className="w-[60px] h-[60px] flex items-center justify-center shadow-lg relative bg-white transition-transform group-active:scale-95"
+            <ModuleLink to={srv.path} key={srv.path} className="flex flex-col items-center shrink-0 w-[62px] group">
+              <div className="w-[50px] h-[50px] flex items-center justify-center shadow-lg relative bg-white transition-transform group-active:scale-95"
                    style={{
                      borderRadius: '50% 50% 50% 0',
                      transform: 'rotate(-45deg)',
@@ -74,7 +84,7 @@ export default function Home() {
                      boxShadow: '0 4px 15px color-mix(in srgb, var(--color-primary) 22%, transparent)',
                    }}>
                 <div style={{ transform: 'rotate(45deg)' }}>
-                  <span className="text-3xl drop-shadow-sm">{srv.emoji}</span>
+                  <span className="text-2xl drop-shadow-sm">{srv.emoji}</span>
                 </div>
               </div>
               <span className="text-[13px] font-bold mt-3 text-center whitespace-pre-line leading-tight"

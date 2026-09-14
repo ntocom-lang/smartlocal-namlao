@@ -29,6 +29,15 @@ const BASE_DOC_TYPES = [
   { value: 'building_permit',  label: 'ขออนุญาตก่อสร้างบ้าน',       emoji: '🏗️' },
 ]
 
+// ทางลัดตารางวันเก็บขยะ — ไม่ใช่ประเภทคำขอเอกสาร แต่วางในแถวเดียวกันโดยตั้งใจ (เจ้าของระบบ
+// เลือก 2569-09-14: เป็นไอคอนกดเข้าไปดู ไม่เปลืองพื้นที่หน้าแรก) และวางเป็นช่องแรก เพราะ
+// ประชาชนเปิดดูทุกสัปดาห์ ขณะที่ขออนุญาตก่อสร้างนานๆ ครั้ง
+// ⚠️ ผลข้างเคียงที่รับรู้แล้ว: จอแคบกว่า 420px (มือถือส่วนใหญ่) โชว์ได้ 3 ช่อง
+// "ค่าธรรมเนียม/ภาษี" จึงหลุดจากหน้าแรก ยังกด "ทั้งหมด ›" เข้าไปหาได้
+// ⚠️ ต้องกรองออกจากอาร์เรย์ตอนปิดโมดูล ห้ามพึ่ง ModuleLink คืน null — จำนวนคอลัมน์คิดจาก
+// ความยาวอาร์เรย์ ถ้าปล่อยไว้ในอาร์เรย์จะได้ช่องว่างโบ๋หนึ่งช่องบนหน้าแรก
+const WASTE_SCHEDULE_SHORTCUT = { value: 'waste_schedule', label: 'ตารางวันเก็บขยะ', emoji: '📅', href: '/waste' }
+
 function NewsSlider({ posts, label = 'ข่าวสาร', href = '/news' }) {
   const [idx, setIdx] = useState(0)
   const [paused, setPaused] = useState(false)
@@ -124,8 +133,8 @@ function EServiceBlock({ docTypes }) {
             '--sv-cols-narrow': Math.max(1, Math.min(docTypes.length, 3)),
             '--sv-cols': Math.max(1, Math.min(docTypes.length, 4)),
           }}>
-          {docTypes.slice(0, 4).map(({ value, label, emoji }, i) => (
-            <Link key={value} to={`/doc-request?type=${value}`}
+          {docTypes.slice(0, 4).map(({ value, label, emoji, href }, i) => (
+            <Link key={value} to={href ?? `/doc-request?type=${value}`}
               className={`${i === 3 ? 'hidden min-[420px]:flex' : 'flex'} flex-col items-center gap-1.5 active:scale-95 transition-transform group`}>
               <div className="w-[52px] h-[52px] rounded-2xl flex items-center justify-center shadow-md bg-white/20 border border-white/30 backdrop-blur-sm group-hover:bg-white/30 transition-colors"
                 style={{ fontSize: 26, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
@@ -138,8 +147,8 @@ function EServiceBlock({ docTypes }) {
 
         <div className="hidden lg:grid gap-4 pb-0"
           style={{ gridTemplateColumns: `repeat(${Math.max(1, Math.min(docTypes.length, 6))}, minmax(0, 1fr))` }}>
-          {docTypes.slice(0, 6).map(({ value, label, emoji }) => (
-            <Link key={value} to={`/doc-request?type=${value}`}
+          {docTypes.slice(0, 6).map(({ value, label, emoji, href }) => (
+            <Link key={value} to={href ?? `/doc-request?type=${value}`}
               className="flex flex-col items-center gap-1.5 active:scale-95 transition-transform group">
               <div className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-md bg-white/20 border border-white/30 backdrop-blur-sm group-hover:bg-white/30 transition-colors"
                 style={{ fontSize: 26, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
@@ -156,15 +165,20 @@ function EServiceBlock({ docTypes }) {
 
 // ─────────────────────────────────────────────────────────────────────
 export default function HomePage() {
-  const { tenant } = useTenant()
+  const { tenant, isModuleEnabled } = useTenant()
   const layout = tenant?.layout_theme || 'classic'
+  const wasteScheduleOn = isModuleEnabled('waste')
 
   const docTypes = useMemo(() => {
     const extras = (tenant?.fee_schedule?._custom_types || []).map(t => ({
       value: t.value, label: t.label, emoji: t.emoji || '📋',
     }))
-    return [...withoutRemovedTypes(BASE_DOC_TYPES, tenant), ...extras]
-  }, [tenant])
+    return [
+      ...(wasteScheduleOn ? [WASTE_SCHEDULE_SHORTCUT] : []),
+      ...withoutRemovedTypes(BASE_DOC_TYPES, tenant),
+      ...extras,
+    ]
+  }, [tenant, wasteScheduleOn])
 
   const [sidebarNews, setSidebarNews] = useState([])
   const [sidebarActivities, setSidebarActivities] = useState([])
