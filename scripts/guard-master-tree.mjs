@@ -13,6 +13,9 @@
 //
 // ไฟล์นอกทรีหลัก (~/.claude ความจำ/ตั้งค่า, scratchpad, D:\tmp\wt-*) ปล่อยผ่านเสมอ
 // เพราะไม่มีวันกลายเป็นซากใน git status ของทรีหลัก
+//
+// ด่านที่ 2: คำสั่ง git ที่ทำงานค้างหาย (reset --hard, checkout/switch, restore, clean -f, stash)
+// ในทรีหลักบน master — ใน worktree ยังใช้ได้ตามปกติ และบล็อกเฉพาะ agent ไม่ใช่คนพิมพ์เองใน terminal
 
 import { execFileSync } from 'child_process'
 import { fileURLToPath } from 'url'
@@ -232,6 +235,15 @@ function powershellSegmentTargets(segment) {
  */
 export function bashWriteTargets(command) {
   const targets = []
+  walkSegments(command, (segment, dir) => {
+    const raw = [...bashSegmentTargets(segment), ...powershellSegmentTargets(segment)]
+    for (const target of raw.filter(looksLikeFilePath)) targets.push(joinDir(dir, target))
+  })
+  return targets
+}
+
+/** ไล่ทีละช่วงคำสั่ง พร้อมโฟลเดอร์ที่ช่วงนั้นรันอยู่ ('' = cwd ของ session) */
+function walkSegments(command, visit) {
   let dir = ''
   for (const segment of splitSegments(stripHereDocs(command))) {
     const cd = cdTarget(segment)
@@ -240,10 +252,69 @@ export function bashWriteTargets(command) {
       dir = cd === '-' ? '' : joinDir(dir, cd)
       continue
     }
-    const raw = [...bashSegmentTargets(segment), ...powershellSegmentTargets(segment)]
-    for (const target of raw.filter(looksLikeFilePath)) targets.push(joinDir(dir, target))
+    visit(segment, dir)
   }
-  return targets
+}
+
+/**
+ * เหตุผลที่คำสั่ง git นี้ทำงานที่ยังไม่ commit หาย — null ถ้าปลอดภัย
+ *
+ * ด่านเขียนไฟล์ข้างบนมองไม่เห็นคำสั่งพวกนี้ เพราะไม่มี path ปลายทางให้จับ
+ * แต่ผลหนักกว่า: งานที่ session อื่นแก้ค้างในทรีหลักหายทั้งก้อน และไม่อยู่ใน reflog ให้กู้
+ * AGENTS.md ห้ามไว้แล้ว ("ห้าม checkout ทับ ห้าม stash ห้าม reset") แต่ไม่มีอะไรบังคับ
+ */
+function destructiveGitReason(sub, args) {
+  const has = (...flags) => args.some((a) => flags.includes(a))
+  const shortFlag = (letter) => args.some((a) => /^-[a-zA-Z]+$/.test(a) && a.includes(letter))
+  switch (sub) {
+    case 'reset':
+      return has('--hard') ? 'ล้างงานที่แก้ค้างทั้งทรี กู้คืนไม่ได้' : null
+    case 'checkout':
+    case 'switch':
+      if (!args.length) return null // `git checkout` เปล่าๆ แค่แสดงสถานะ
+      return has('--', '.', '-f', '--force')
+        ? 'ทับไฟล์ที่แก้ค้างด้วยของเดิม กู้คืนไม่ได้'
+        : 'สลับสาขาในทรีหลัก (AGENTS.md: ไม่สลับสาขาในทรีหลัก)'
+    case 'restore':
+      // --staged อย่างเดียวแค่ถอนออกจาก index ไฟล์ในทรีไม่เปลี่ยน
+      if (has('--staged', '-S') && !has('--worktree', '-W')) return null
+      return 'ทับไฟล์ที่แก้ค้างด้วยของเดิม กู้คืนไม่ได้'
+    case 'clean':
+      if (has('--dry-run') || shortFlag('n')) return null
+      return has('--force') || shortFlag('f') ? 'ลบไฟล์ใหม่ที่ยังไม่ได้ add กู้คืนไม่ได้' : null
+    case 'stash':
+      // list/show/create อ่านอย่างเดียว ที่เหลือ (push/save/pop/apply/drop/clear) ขยับงานค้างทั้งหมด
+      return ['list', 'show', 'create'].includes(args[0])
+        ? null
+        : 'ย้ายงานค้าง (ที่อาจเป็นของ session อื่น) ไปซ่อนหรือทับ เจ้าของหาไม่เจอ'
+    default:
+      return null
+  }
+}
+
+/**
+ * คำสั่ง git ที่ทำงานค้างหาย พร้อมโฟลเดอร์ที่มันจะรัน (ต่อจาก cd และ git -C แล้ว)
+ * ต้องเป็นต้นช่วงคำสั่ง — `git commit -m "อย่ารัน git reset --hard"` จึงไม่นับ
+ */
+export function destructiveGitCommands(command) {
+  const found = []
+  walkSegments(command, (segment, dir) => {
+    const tokens = (segment.match(/"[^"]*"|'[^']*'|\S+/g) || []).map(unquote)
+    if (!/^git(?:\.exe)?$/i.test(tokens[0] || '')) return
+    let gitDir = dir
+    let i = 1
+    // ตัวเลือกก่อนชื่อคำสั่งย่อย: -C <dir> ย้ายโฟลเดอร์, -c <key=value> กินค่าถัดไป, ที่เหลือเป็นสวิตช์
+    while (i < tokens.length && tokens[i].startsWith('-')) {
+      if (tokens[i] === '-C' && tokens[i + 1] !== undefined) gitDir = joinDir(gitDir, tokens[++i])
+      else if (tokens[i] === '-c') i++
+      i++
+    }
+    const sub = tokens[i]
+    const args = tokens.slice(i + 1)
+    const reason = destructiveGitReason(sub, args)
+    if (reason) found.push({ dir: gitDir, command: ['git', sub, ...args].join(' '), reason })
+  })
+  return found
 }
 
 /**
@@ -327,18 +398,56 @@ async function main() {
     blocked.push(path.relative(root, abs).split(path.sep).join('/'))
   }
 
-  if (!blocked.length) return
+  const blockedGit = toolGitCommands(payload).filter(({ dir }) => runsInMainTree(root, path.resolve(cwd, normalizeShellPath(dir || '.'))))
 
-  deny([
-    `ห้ามแก้ไฟล์ในทรีหลักขณะอยู่บนสาขา ${GUARDED_BRANCH}: ${blocked.join(', ')}`,
-    '',
-    'กติกาใน AGENTS.md: ทำงานใน worktree แยกที่ตัดจาก origin/master เสมอ',
-    'ทรีหลักสำหรับ pull/รัน dev/อ่านโค้ดเท่านั้น — แก้ตรงนี้แล้วงานจะค้างเป็นซาก',
-    'หลัง squash merge จนทำให้ git pull --ff-only ไม่ผ่านอีกเลย',
-    '',
+  if (!blocked.length && !blockedGit.length) return
+
+  const lines = []
+  if (blocked.length) {
+    lines.push(
+      `ห้ามแก้ไฟล์ในทรีหลักขณะอยู่บนสาขา ${GUARDED_BRANCH}: ${blocked.join(', ')}`,
+      '',
+      'กติกาใน AGENTS.md: ทำงานใน worktree แยกที่ตัดจาก origin/master เสมอ',
+      'ทรีหลักสำหรับ pull/รัน dev/อ่านโค้ดเท่านั้น — แก้ตรงนี้แล้วงานจะค้างเป็นซาก',
+      'หลัง squash merge จนทำให้ git pull --ff-only ไม่ผ่านอีกเลย',
+      '',
+    )
+  }
+  if (blockedGit.length) {
+    lines.push(
+      `ห้ามรันคำสั่ง git ที่ทำงานค้างหายในทรีหลักขณะอยู่บนสาขา ${GUARDED_BRANCH}:`,
+      ...blockedGit.map((g) => `  ${g.command}  → ${g.reason}`),
+      '',
+      'งานที่ยังไม่ commit ในทรีหลักอาจเป็นของ session อื่น และไม่อยู่ใน reflog ให้กู้',
+      '(AGENTS.md: ห้าม checkout ทับ ห้าม stash ห้าม reset)',
+      'ถ้าต้องล้างทรีหลักจริง: หยุด อธิบายให้ผู้ใช้ฟังว่าจะหายอะไร แล้วให้ผู้ใช้สั่งเองใน terminal',
+      '',
+    )
+  }
+  lines.push(
     'ทำแทน:  git worktree add /d/tmp/wt-<ชื่องาน> -b <สาขา> origin/master',
     'ตั้งใจแก้ทรีหลักจริง: ขออนุญาตผู้ใช้ แล้วเปิด session ใหม่ด้วย ALLOW_MASTER_TREE_EDIT=1',
-  ].join('\n'))
+  )
+  deny(lines.join('\n'))
+}
+
+export function toolGitCommands(payload) {
+  const command = payload.tool_input?.command
+  if (!command || !['Bash', 'PowerShell'].includes(payload.tool_name)) return []
+  return destructiveGitCommands(command)
+}
+
+/**
+ * คำสั่ง git ที่รันจาก dir จะไปโดนทรีหลักไหม — ถาม git ตรงๆ แทนการเทียบ path
+ * เพราะ worktree ซ้อนใน .claude/worktrees/ อยู่ใต้โฟลเดอร์ทรีหลักแต่เป็นคนละทรี
+ * โฟลเดอร์ที่ไม่มีอยู่จริง/ไม่ใช่ repo → คำสั่งนั้นพังเองอยู่แล้ว ปล่อยผ่าน
+ */
+function runsInMainTree(root, dir) {
+  try {
+    return path.relative(root, git(['rev-parse', '--show-toplevel'], dir)) === ''
+  } catch {
+    return false
+  }
 }
 
 // รัน main() เฉพาะตอนถูกเรียกเป็น hook จริง — ไม่งั้น import ในเทสต์จะค้างรอ stdin
