@@ -372,8 +372,11 @@ export default function CitizenForm() {
   const ftConfig = FORM_TYPE_CONFIG[formType] ?? null
 
   const defaultCategory = ftConfig?.categories?.[0]?.value ?? preCategory
+  // ข้อความตั้งต้นจากหน้าอื่นในระบบ เช่น ปุ่ม "รถไม่มาเก็บ" ของ /waste กรอกวันที่และหมู่มาให้
+  // ผู้ร้องแก้ได้เหมือนพิมพ์เอง ตัดความยาวไว้เพราะมาจาก URL ที่ใครก็แต่งได้
+  const preDetail = (searchParams.get('detail') ?? '').slice(0, 300)
   const [form, setForm] = useState({
-    category: defaultCategory, issue_type: '', village: '', detail: '', phone: '',
+    category: defaultCategory, issue_type: '', village: '', detail: preDetail, phone: '',
     name_title: '', name_first: '', name_last: '',
     // ฟิลด์เสริมเฉพาะหมวด odor — ดู buildExtraData()/validateOdorFields() ด้านล่าง
     odor_intensity: '', wind_direction: '', health_effect: '', odor_time_range: '',

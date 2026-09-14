@@ -2,7 +2,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   Home, ClipboardList, FileText, CalendarDays, Newspaper,
   MapPin, FileSearch, FolderOpen, Bell,
-  Phone, AlertCircle, BookUser, LogIn, LogOut, LayoutGrid, Database,
+  Phone, AlertCircle, BookUser, LogIn, LogOut, LayoutGrid, Database, Trash2,
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTenant } from '../../contexts/TenantContext'
@@ -17,6 +17,7 @@ const NAV_GROUPS = [
       { label: 'หน้าแรก',          href: '/',            Icon: Home,          exact: true },
       { label: 'ร้องเรียน/ร้องทุกข์', href: '/complaint', Icon: ClipboardList },
       { label: 'งานบริการประชาชน', href: '/doc-request', Icon: FileText },
+      { label: 'ตารางวันเก็บขยะ', href: '/waste',       Icon: Trash2 },
       { label: 'ปฏิทินกิจกรรม',   href: '/events',      Icon: CalendarDays },
       { label: 'ข่าวสาร/ประกาศ',  href: '/news',        Icon: Newspaper },
       { label: 'เที่ยว กิน พัก ชอป บริการ', href: '/tourism', Icon: MapPin },

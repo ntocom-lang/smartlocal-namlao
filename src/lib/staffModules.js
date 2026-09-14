@@ -24,6 +24,8 @@ export const MODULE_GROUPS = [
     items: [
       { key: 'complaints', label: 'คำร้อง', desc: 'ระบบรับเรื่องร้องเรียน/ร้องทุกข์' },
       { key: 'inbox',      label: 'คำขอเอกสาร', desc: 'รับ-ส่งคำขอเอกสารจากประชาชน' },
+      // เพิ่ม 2569-09-14 — คีย์ถูกเติมให้ทุกแถวใน DB แล้วที่ 20260914100200 (ต้อง apply ก่อน deploy)
+      { key: 'waste',      label: 'ตารางเก็บขยะ', desc: 'รอบเก็บขยะทั่วไป/อันตรายรายหมู่ ประชาชนดูวันเก็บครั้งถัดไปได้เอง' },
     ],
   },
   {
@@ -84,6 +86,7 @@ export const MODULE_ROUTES = {
   'data-center': ['/data-center'],
   report: ['/reports', '/doc-stats'],
   fleet: ['/fleet'],
+  waste: ['/waste'],
 }
 
 // path → คีย์โมดูลที่คุมมัน (null = หน้าพื้นฐาน ไม่ผูกกับโมดูลไหน เปิดเสมอ)

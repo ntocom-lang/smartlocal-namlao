@@ -41,6 +41,7 @@ const EventsPage = lazyWithRetry(() => import('./pages/EventsPage'))
 const EventsManager = lazyWithRetry(() => import('./components/admin/EventsManager'))
 const EmergencyPage = lazyWithRetry(() => import('./pages/EmergencyPage'))
 const DirectoryPage = lazyWithRetry(() => import('./pages/DirectoryPage'))
+const WasteSchedulePage = lazyWithRetry(() => import('./pages/WasteSchedulePage'))
 const TourismPage = lazyWithRetry(() => import('./pages/TourismPage'))
 const TourismDetailPage = lazyWithRetry(() => import('./pages/TourismDetailPage'))
 const ContactPage = lazyWithRetry(() => import('./pages/ContactPage'))
@@ -666,6 +667,8 @@ function AppShell() {
           <Route path="/events" element={<EventsEntryPage />} />
           <Route path="/emergency" element={<EmergencyPage />} />
           <Route path="/directory" element={<DirectoryPage />} />
+          {/* ไม่ต้องล็อกอิน — QR บนใบติดบอร์ดหมู่บ้านพามาที่นี่ตรงๆ */}
+          <Route path="/waste" element={<WasteSchedulePage />} />
           <Route path="/tourism" element={<TourismPage />} />
           <Route path="/tourism/:id" element={<TourismDetailPage />} />
           <Route path="/contact" element={<ContactPage />} />
