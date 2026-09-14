@@ -10,16 +10,17 @@
 //
 // ตั้งใจแก้ทรีหลักจริงๆ: ตั้ง env ALLOW_MASTER_TREE_EDIT=1 ก่อนเปิด session
 // (PowerShell: $env:ALLOW_MASTER_TREE_EDIT=1)
+//
+// ไฟล์นอกทรีหลัก (~/.claude ความจำ/ตั้งค่า, scratchpad, D:\tmp\wt-*) ปล่อยผ่านเสมอ
+// เพราะไม่มีวันกลายเป็นซากใน git status ของทรีหลัก
 
 import { execFileSync } from 'child_process'
 import { fileURLToPath } from 'url'
+import os from 'os'
 import path from 'path'
 
 // สาขาเดียวที่หวง — สาขา feature ในทรีหลักถือว่าเจ้าของรู้ตัวว่าทำอะไรอยู่
 const GUARDED_BRANCH = 'master'
-
-// ไฟล์ที่ git ไม่ track อยู่แล้ว (node_modules, .env, scratchpad ฯลฯ) ปล่อยผ่าน
-// เพราะมันไม่มีวันกลายเป็นซากที่ค้างใน git status ตั้งแต่แรก
 
 function git(args, cwd) {
   return execFileSync('git', args, {
@@ -37,21 +38,18 @@ async function readPayload() {
 }
 
 /**
- * แยกทรีหลักออกจาก worktree ด้วย --git-dir เทียบ --git-common-dir
- * ทรีหลักได้ ".git" เท่ากันทั้งคู่ / worktree ได้ ".git/worktrees/<ชื่อ>" ต่างกัน
- * (เช็คจาก path ของโฟลเดอร์ตรงๆ เชื่อถือได้กว่าเดาจากชื่อสาขา)
+ * หาทรีหลักจาก --git-common-dir (ชี้ .git ของทรีหลักเสมอ ไม่ว่า cwd จะอยู่ทรีหลักหรือ worktree)
+ *
+ * เดิมเช็คแค่ "cwd เป็นทรีหลักไหม" แล้วเลิกตรวจถ้าไม่ใช่ — session ที่เปิดใน worktree
+ * แล้วเผลอ Write ด้วย absolute path เข้าทรีหลักจึงรอดด่านทั้งหมด ซึ่งคือเคสเผลอที่พบบ่อยที่สุด
+ * คืนค่า null เมื่อเป็น repo แบบ bare หรือโครงสร้างที่ไม่รู้จัก — ไม่ใช่หน้าที่ด่านนี้จะไปขวาง
  */
-function isMainTree(cwd) {
-  const gitDir = path.resolve(cwd, git(['rev-parse', '--git-dir'], cwd))
+function findMainRoot(cwd) {
   const commonDir = path.resolve(cwd, git(['rev-parse', '--git-common-dir'], cwd))
-  return gitDir === commonDir
+  if (path.basename(commonDir) !== '.git') return null
+  return path.dirname(commonDir)
 }
 
-/**
- * ไฟล์ปลายทางที่คำสั่งจะ "เขียน" — ครอบเฉพาะรูปแบบที่ agent ใช้จริงบ่อย
- * ⚠️ ไม่ใช่ตัวแยกวิเคราะห์ shell ครบรูปแบบ คำสั่งที่ซับซ้อนกว่านี้ (xargs, eval,
- * สคริปต์ที่เขียนไฟล์เอง) รอดด่านนี้ได้ — ด่านนี้กันความเผลอ ไม่ได้กันคนตั้งใจเลี่ยง
- */
 /**
  * กรอง "ปลายทาง" ที่ไม่ใช่ชื่อไฟล์ — กัน false positive จากสัญลักษณ์ในโค้ดที่หลุด regex มา
  * เกิดจริงชั่วโมงแรกที่เปิดใช้: `node -e "...on('end',()=>{const j=...})"` โดน regex redirect
@@ -64,33 +62,202 @@ function isMainTree(cwd) {
  * ยอมรับได้ เพราะ Edit/Write ยังกันครบ 100% — ตรงนี้เป็นชั้นเสริมสำหรับ Bash เท่านั้น
  */
 function looksLikeFilePath(target) {
-  if (!/^[\w .\/\\@~-]+$/.test(target)) return false
+  if (!/^[\w .\/\\@~:-]+$/.test(target)) return false
   return /[\/\\]/.test(target) || /\.[A-Za-z0-9]+$/.test(target)
 }
 
-export function bashWriteTargets(command) {
-  const targets = []
-  const unquote = (s) => s.replace(/^['"]|['"]$/g, '')
+const unquote = (s) => s.replace(/^['"]|['"]$/g, '')
 
+/**
+ * ตัดเนื้อใน heredoc (bash `<<EOF`) และ here-string (PowerShell `@' ... '@`) ทิ้ง
+ * เนื้อพวกนี้คือข้อความ (ข้อความ commit, โค้ดที่เขียนลงไฟล์) ไม่ใช่คำสั่ง
+ * ถ้าปล่อยไว้ ข้อความอย่าง "a > b.js" หรือบรรทัดที่ขึ้นต้นด้วย cd ในเนื้อจะถูกอ่านเป็นคำสั่งจริง
+ * บรรทัดที่เปิด heredoc ยังอยู่ครบ — `cat > file <<EOF` ยังจับ file ได้เหมือนเดิม
+ */
+export function stripHereDocs(command) {
+  const out = []
+  let isEnd = null
+  for (const line of command.split(/\r?\n/)) {
+    if (isEnd) {
+      const rest = isEnd(line)
+      if (rest !== null) {
+        isEnd = null
+        if (rest.trim()) out.push(rest) // เช่น `'@ | Out-File a.js` ต้องตรวจส่วนหลังต่อ
+      }
+      continue
+    }
+    out.push(line)
+    // (?<!<) กัน `<<<` (here-string ของ bash ที่ไม่มีเนื้อหลายบรรทัด)
+    // คำปิดต้องขึ้นต้นด้วยตัวอักษร — กัน `x << 2` ในโค้ดถูกนับเป็น heredoc
+    const bash = line.match(/(?<!<)<<-?\s*(['"]?)([A-Za-z_]\w*)\1/)
+    if (bash) {
+      const word = bash[2]
+      isEnd = (l) => (l.trim() === word ? '' : null)
+      continue
+    }
+    const ps = line.match(/@(['"])\s*$/)
+    if (ps) {
+      const closer = `${ps[1]}@`
+      isEnd = (l) => (l.startsWith(closer) ? l.slice(closer.length) : null)
+    }
+  }
+  return out.join('\n')
+}
+
+/**
+ * แยกคำสั่งเป็นช่วงตาม && || ; และขึ้นบรรทัดใหม่ โดยไม่ตัดกลางเครื่องหมายคำพูด
+ * (`node -e "a; b"` ต้องเป็นช่วงเดียว) ไม่ตัดที่ `|` เดี่ยว เพราะ pipe ไม่ได้ย้าย cwd
+ */
+export function splitSegments(command) {
+  const segments = []
+  let current = ''
+  let quote = null
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i]
+    const next = command[i + 1]
+    if (quote) {
+      current += c
+      // \" ใน bash และ `" ใน PowerShell คือเครื่องหมายคำพูดที่ไม่ได้ปิดสตริง
+      if (quote === '"' && (c === '\\' || c === '`') && next !== undefined) {
+        current += next
+        i++
+      } else if (c === quote) {
+        quote = null
+      }
+      continue
+    }
+    if (c === '"' || c === "'") {
+      quote = c
+      current += c
+      continue
+    }
+    const isPair = (c === '&' && next === '&') || (c === '|' && next === '|')
+    if (c === ';' || c === '\n' || isPair) {
+      segments.push(current)
+      current = ''
+      if (isPair) i++
+      continue
+    }
+    current += c
+  }
+  segments.push(current)
+  return segments.map((s) => s.trim()).filter(Boolean)
+}
+
+const isAbsoluteLike = (p) => /^(?:[\/\\]|~|[A-Za-z]:|\$HOME\b|\$\{HOME\}|\$env:)/i.test(p)
+
+function joinDir(dir, target) {
+  if (!dir || isAbsoluteLike(target)) return target
+  return `${dir.replace(/[\/\\]+$/, '')}/${target}`
+}
+
+/**
+ * ช่วงคำสั่งที่เป็นการย้ายโฟลเดอร์ล้วนๆ — คืนโฟลเดอร์ใหม่ หรือ undefined ถ้าไม่ใช่ cd
+ * ที่ต้องมี: เดิมไม่รู้จัก cd เลย `cd ~/.claude/.../memory && printf >> MEMORY.md`
+ * ถูกอ่านเป็น MEMORY.md ที่รากทรีหลักแล้วโดนบล็อก (เกิดจริง 2026-09-14)
+ * และ `cd /d/tmp/wt-x && echo > src/a.js` ซึ่งเป็นการทำงานใน worktree ตามกติกาก็โดนบล็อกด้วย
+ */
+function cdTarget(segment) {
+  const m = segment.match(
+    /^(?:cd|pushd|sl|Set-Location|Push-Location)(?:\s+-(?:LiteralPath|Path))?(?:\s+("[^"]*"|'[^']*'|[^\s"']+))?(?:\s+\d?>\s*\S+)*\s*$/i,
+  )
+  if (!m) return undefined
+  return m[1] === undefined ? '~' : unquote(m[1])
+}
+
+/** ปลายทางที่เขียนแบบ bash: redirect, sed -i, tee, cp/mv, rm */
+function bashSegmentTargets(segment) {
+  const targets = []
   // redirect: > file, >> file
   // ข้าม >&2 และ 2>&1 (ตัวเลข/& นำหน้า) และข้าม => -> >= <> ที่เป็นสัญลักษณ์ในโค้ด ไม่ใช่ redirect
-  for (const m of command.matchAll(/(?:^|[^0-9&>=<!-])>>?\s*(?!&)("[^"]+"|'[^']+'|[^\s;|&)]+)/g)) {
+  for (const m of segment.matchAll(/(?:^|[^0-9&>=<!-])>>?\s*(?!&)("[^"]+"|'[^']+'|[^\s;|&)]+)/g)) {
     targets.push(unquote(m[1]))
   }
   // แก้ไฟล์ในที่: sed -i, tee, cp/mv (ปลายทางคือ argument สุดท้าย)
-  for (const m of command.matchAll(/\bsed\s+(?:-[a-zA-Z]*i[a-zA-Z]*\S*\s+)(?:-\S+\s+|'[^']*'\s+|"[^"]*"\s+)*(\S+)/g)) {
+  for (const m of segment.matchAll(/\bsed\s+(?:-[a-zA-Z]*i[a-zA-Z]*\S*\s+)(?:-\S+\s+|'[^']*'\s+|"[^"]*"\s+)*(\S+)/g)) {
     targets.push(unquote(m[1]))
   }
-  for (const m of command.matchAll(/\btee\s+(?:-\S+\s+)*("[^"]+"|'[^']+'|[^\s;|&]+)/g)) {
+  for (const m of segment.matchAll(/\btee\s+(?:-\S+\s+)*("[^"]+"|'[^']+'|[^\s;|&]+)/g)) {
     targets.push(unquote(m[1]))
   }
-  for (const m of command.matchAll(/\b(?:cp|mv)\s+(?:-\S+\s+)*\S+\s+("[^"]+"|'[^']+'|[^\s;|&]+)/g)) {
+  for (const m of segment.matchAll(/\b(?:cp|mv)\s+(?:-\S+\s+)*\S+\s+("[^"]+"|'[^']+'|[^\s;|&]+)/g)) {
     targets.push(unquote(m[1]))
   }
-  for (const m of command.matchAll(/\brm\s+(?:-\S+\s+)*("[^"]+"|'[^']+'|[^\s;|&]+)/g)) {
+  for (const m of segment.matchAll(/\brm\s+(?:-\S+\s+)*("[^"]+"|'[^']+'|[^\s;|&]+)/g)) {
     targets.push(unquote(m[1]))
   }
-  return targets.filter(looksLikeFilePath)
+  return targets
+}
+
+// cmdlet ที่เขียน/ลบไฟล์ — เดิมไม่มีเลย ทั้งที่ PowerShell เป็น shell หลักของเครื่องนี้
+const PS_WRITE_CMDLETS = 'Set-Content|Add-Content|Clear-Content|Out-File|New-Item|Remove-Item|Rename-Item|Copy-Item|Move-Item'
+// พารามิเตอร์แบบสวิตช์ (ไม่มีค่าตามหลัง) — ตัวอื่นที่ขึ้นต้นด้วย - ถือว่ากินค่าถัดไป
+const PS_SWITCHES = new Set(['force', 'recurse', 'append', 'nonewline', 'noclobber', 'passthru', 'whatif', 'confirm'])
+
+/** ปลายทางของ cmdlet PowerShell — ต้องอยู่ต้นคำสั่ง/หลัง pipe ไม่งั้น `grep Remove-Item src/a.js` จะโดนด้วย */
+function powershellSegmentTargets(segment) {
+  const targets = []
+  const re = new RegExp(`(?:^|[|({=]\\s*)(${PS_WRITE_CMDLETS})\\b([^|]*)`, 'gi')
+  for (const m of segment.matchAll(re)) {
+    const cmdlet = m[1].toLowerCase()
+    const wantsDestination = cmdlet === 'copy-item' || cmdlet === 'move-item'
+    const tokens = m[2].match(/"[^"]*"|'[^']*'|\S+/g) || []
+    const positional = []
+    let named = null
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i]
+      if (!token.startsWith('-')) {
+        positional.push(token)
+        continue
+      }
+      const name = token.slice(1).toLowerCase()
+      if (name.includes(':') || PS_SWITCHES.has(name)) continue
+      const value = tokens[++i]
+      if (value === undefined) break
+      if (wantsDestination ? name === 'destination' : ['path', 'literalpath', 'filepath'].includes(name)) {
+        named = value
+      }
+    }
+    const target = named ?? positional[wantsDestination ? 1 : 0]
+    if (target) targets.push(unquote(target))
+  }
+  return targets
+}
+
+/**
+ * ไฟล์ปลายทางที่คำสั่งจะ "เขียน" — ครอบเฉพาะรูปแบบที่ agent ใช้จริงบ่อย
+ * path ที่คืนถูกต่อกับโฟลเดอร์จาก cd ก่อนหน้าแล้ว แต่ยังไม่แปลง ~ หรือ /c/... (ดู normalizeShellPath)
+ * ⚠️ ไม่ใช่ตัวแยกวิเคราะห์ shell ครบรูปแบบ คำสั่งที่ซับซ้อนกว่านี้ (xargs, eval,
+ * [IO.File]::WriteAllText, สคริปต์ที่เขียนไฟล์เอง) รอดด่านนี้ได้ — ด่านนี้กันความเผลอ ไม่ได้กันคนตั้งใจเลี่ยง
+ */
+export function bashWriteTargets(command) {
+  const targets = []
+  let dir = ''
+  for (const segment of splitSegments(stripHereDocs(command))) {
+    const cd = cdTarget(segment)
+    if (cd !== undefined) {
+      // `cd -` ไม่รู้ว่ากลับไปไหน — ถอยไปใช้ cwd ของ session ซึ่งเข้มกว่า (บล็อกเกินดีกว่าหลุด)
+      dir = cd === '-' ? '' : joinDir(dir, cd)
+      continue
+    }
+    const raw = [...bashSegmentTargets(segment), ...powershellSegmentTargets(segment)]
+    for (const target of raw.filter(looksLikeFilePath)) targets.push(joinDir(dir, target))
+  }
+  return targets
+}
+
+/**
+ * แปลง path แบบ shell ให้ path.resolve ของ Node เข้าใจ
+ * - ~ / $HOME / $env:USERPROFILE → โฟลเดอร์ home (เดิมกลายเป็นโฟลเดอร์ชื่อ "~" ในทรีหลักแล้วโดนบล็อก)
+ * - /d/VS Code/... ของ Git Bash → D:/VS Code/... บน Windows
+ *   (เดิมกลายเป็น D:\d\VS Code\... ซึ่งอยู่นอก repo — เขียนเข้าทรีหลักด้วย path แบบนี้รอดด่านมาตลอด)
+ */
+export function normalizeShellPath(p, { home = os.homedir(), platform = process.platform } = {}) {
+  let s = p.replace(/^(?:~|\$HOME\b|\$\{HOME\}|\$env:USERPROFILE\b|\$env:HOME\b)(?=$|[\/\\])/i, () => home)
+  if (platform === 'win32') {
+    s = s.replace(/^\/([a-zA-Z])(?:\/|$)/, (_, drive) => `${drive.toUpperCase()}:/`)
+  }
+  return s
 }
 
 export function toolTargets(payload) {
@@ -107,6 +274,12 @@ export function toolTargets(payload) {
     default:
       return []
   }
+}
+
+/** เทียบว่า abs อยู่ใต้ root ไหม — path.relative บน win32 ไม่สนตัวพิมพ์เล็ก/ใหญ่ของ drive (d: กับ D:) */
+export function isInside(root, abs) {
+  const rel = path.relative(root, abs)
+  return !(rel === '' || rel.startsWith('..') || path.isAbsolute(rel))
 }
 
 function deny(reason) {
@@ -132,25 +305,26 @@ async function main() {
   const cwd = payload.cwd || process.cwd()
   let root
   try {
-    if (!isMainTree(cwd)) return
-    if (git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd) !== GUARDED_BRANCH) return
-    root = git(['rev-parse', '--show-toplevel'], cwd)
+    root = findMainRoot(cwd)
+    if (!root) return
+    if (git(['rev-parse', '--abbrev-ref', 'HEAD'], root) !== GUARDED_BRANCH) return
   } catch {
     return // ไม่ใช่ git repo หรือ git ใช้ไม่ได้ — ไม่ใช่หน้าที่ด่านนี้จะไปขวาง
   }
 
   const blocked = []
   for (const target of toolTargets(payload)) {
-    const abs = path.resolve(cwd, target)
-    const rel = path.relative(root, abs)
-    if (rel.startsWith('..') || path.isAbsolute(rel)) continue // นอก repo
+    const abs = path.resolve(cwd, normalizeShellPath(target))
+    if (!isInside(root, abs)) continue // นอกทรีหลัก รวม worktree ที่ D:\tmp และ ~/.claude
     try {
-      execFileSync('git', ['check-ignore', '-q', '--', abs], { cwd, stdio: 'ignore' })
-      continue // git ไม่ track อยู่แล้ว ไม่มีวันค้างเป็นซาก
+      // รัน git จากทรีหลักเสมอ — รันจาก worktree แล้วถาม path ของทรีหลัก git จะตอบ exit 128
+      // (นอก repo) ซึ่งตกไปฝั่ง "บล็อก" ทั้งที่ไฟล์นั้นอาจถูก ignore อยู่
+      execFileSync('git', ['check-ignore', '-q', '--', abs], { cwd: root, stdio: 'ignore' })
+      continue // git ไม่ track อยู่แล้ว (รวม .claude/worktrees/) ไม่มีวันค้างเป็นซาก
     } catch {
       // exit 1 = ไม่ถูก ignore → เป็นไฟล์ที่นับใน git status
     }
-    blocked.push(rel.split(path.sep).join('/'))
+    blocked.push(path.relative(root, abs).split(path.sep).join('/'))
   }
 
   if (!blocked.length) return
