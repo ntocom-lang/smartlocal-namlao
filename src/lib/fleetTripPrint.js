@@ -119,7 +119,9 @@ export function buildFleetTripRequestHtml({ trip, tenant, orderAuthority = null,
   const driverName = trip?.driver?.full_name || ''
   const approverName = trip?.approver?.full_name || ''
   const vehiclePlate = trip?.vehicle?.license_plate || trip?.vehicle?.asset_code || ''
-  const requestedAt = thaiDateParts(trip?.created_at)
+  // document_date = วันที่เอกสารที่แก้ไขได้ตอนบันทึกย้อนหลัง ไม่มีค่า (รายการเดิม/ขอใช้รถตามปกติ)
+  // ให้ถอยไปใช้ created_at เหมือนเดิม — created_at เองต้องคงเป็นเวลาบันทึกจริงเพื่อ audit เสมอ
+  const requestedAt = thaiDateParts(trip?.document_date || trip?.created_at)
   // หลังเริ่ม/จบทริปต้องใช้เวลาปฏิบัติจริงก่อน ส่วนรายการที่ยังไม่ออกเดินทางใช้เวลาตามคำขอ
   const departure = thaiDateParts(trip?.started_at || trip?.planned_departure)
   const returned = thaiDateParts(trip?.returned_at || trip?.planned_return)

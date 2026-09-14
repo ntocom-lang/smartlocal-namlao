@@ -214,6 +214,7 @@ const EMPTY_DIRECT = {
   destination: '', destination_locality: '', destination_province: '',
   purpose: '', passengers: 1, requester_position: '', notes: '', backdated_reason: '',
   dept_head_department_id: '', order_authority_role: '', order_authority_label: '',
+  document_date: '',
 }
 
 /* ── Modal shell ──────────────────────────────────────── */
@@ -818,6 +819,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       ...authorityDefault(),
       destination_province: tenant?.province || '',
       started_at: toLocalDT(new Date()),
+      document_date: localDateStr(new Date()),
     })
     setModal('direct')
   }
@@ -1064,6 +1066,10 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
       return alert('เลขไมล์หลังกลับต้องเป็น 0 หรือมากกว่า')
     if (startMeter !== null && endMeter !== null && endMeter < startMeter)
       return alert('เลขไมล์หลังกลับต้องไม่น้อยกว่าเลขไมล์ก่อนออก')
+    // วันที่เอกสารแบบ 3 — แก้ได้เพื่อให้ตรงกับวันที่เกิดเหตุจริง แต่ต้องไม่ล่วงหน้าถึงวันที่ยังไม่มาถึง
+    const documentDate = form.document_date || null
+    if (documentDate && documentDate > localDateStr(new Date()))
+      return alert('วันที่ของเอกสารแบบ 3 ต้องไม่ล่วงหน้าถึงวันที่ยังไม่มาถึง')
     setSaving(true)
     const { error } = await supabase.from('fleet_trips').insert({
       municipality_id: tenant.id,
@@ -1091,6 +1097,7 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
         : null,
       notes: form.notes || null,
       backdated_reason: backdatedReason,
+      document_date: documentDate,
       status: 'completed',
     })
     setSaving(false)
@@ -2177,6 +2184,13 @@ export default function FleetTrips({ tenant, fleetInfo, depts, isAdmin, isStaff 
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-700">
             ⚠️ รายการนี้จะถูกบันทึกเป็น <strong>“เสร็จสิ้น”</strong> ทันทีโดยไม่ผ่านขั้นอนุมัติ
             ใบขออนุญาตใช้รถที่พิมพ์จากรายการนี้จะไม่มีผู้อนุมัติ ใช้เฉพาะกรณีที่ใช้รถไปแล้วจริงเท่านั้น
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">วันที่ (เอกสารแบบ 3)</label>
+            <input type="date" value={form.document_date || ''} onChange={set('document_date')} className={inp} />
+            <p className="mt-1 text-[10px] text-gray-400">
+              วันที่แสดงบนหัวใบขออนุญาตใช้รถ ปรับให้ตรงกับวันที่เกิดเหตุจริงได้ — ไม่ใช่เวลาที่กดบันทึกในระบบ
+            </p>
           </div>
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">เหตุผลที่บันทึกย้อนหลัง (ไม่บังคับ)</label>
