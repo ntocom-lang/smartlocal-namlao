@@ -16,7 +16,7 @@
 | `~/.claude/CLAUDE.md` | CORE ล้วน **ไม่มี DOMAIN** | Claude Code ทุกโปรเจกต์ (global) |
 | `~/.gemini/GEMINI.md` | CORE ล้วน **ไม่มี DOMAIN** | Antigravity — Global Rules ทุก backend (Claude/GPT/Gemini/Grok) |
 | `~/.codex/AGENTS.md` | CORE ล้วน **ไม่มี DOMAIN** + `[Adapter — Codex]` | Codex (CLI / cloud / IDE extension) ทุกโปรเจกต์ (global) |
-| `docs/ai/web-snippets.md` | CORE + DOMAIN + Adapter รายเว็บ | ต้นทางสำหรับ paste เข้า Gemini Gem / ChatGPT Project / Claude Project |
+| `docs/ai/web-snippets.md` | CORE + DOMAIN เฉพาะหัวข้อใน `WEB_DOMAIN_KEYS` (ตอนนี้ `[ระบบอัจฉริยะ ...]`) + Adapter รายเว็บ · สคริปต์กันบล็อกยาวเกิน 11,500 ตัวอักษร | ต้นทางสำหรับ paste เข้า Gemini Gem / ChatGPT Project / Claude Project (paste เองทุกครั้งที่เปลี่ยน) |
 
 **ไฟล์ที่ไม่ซ้ำเนื้อหา CORE.md (แก้มือได้ตามปกติ):** `CLAUDE.md`, `GEMINI.md` (root)
 — มีแค่คำสั่งอ่าน `AGENTS.md` + `[Adapter]` เฉพาะตัว `ai-sync.mjs` ไม่แตะ 2 ไฟล์นี้
