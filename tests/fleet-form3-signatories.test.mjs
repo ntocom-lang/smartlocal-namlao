@@ -366,4 +366,33 @@ const waitlistedHtml = buildFleetTripRequestHtml({ trip: { ...trip, status: 'wai
 assert.equal(approvalBox(waitlistedHtml), '&nbsp;')
 assert.match(waitlistedHtml, /\(&nbsp;\) ไม่อนุมัติ/)
 
+// ── วันที่เอกสาร (2026-09-14): แก้ได้ตอนบันทึกย้อนหลัง แยกจาก created_at เพื่อ audit ──
+// ไม่มี document_date (ทริปเก่า/ขอใช้รถตามปกติ) ต้องถอยไปใช้ created_at เหมือนเดิมทุกจุด
+const dateLine = html => {
+  const match = html.match(/<p class="date-line">([\s\S]*?)<\/p>/)
+  assert.ok(match, 'ต้องมีบรรทัดวันที่บนแบบ 3')
+  return match[1]
+}
+assert.ok(dateLine(buildFleetTripRequestHtml({ trip, tenant })).includes('>1<'),
+  'ไม่มี document_date ต้องใช้วันที่จาก created_at (1 กันยายน)')
+// มี document_date ต้องพิมพ์วันที่นั้นแทน ไม่ใช่วันที่บันทึกจริงใน created_at
+const backdatedTrip = { ...trip, created_at: '2026-09-01T02:00:00.000Z', document_date: '2026-09-13' }
+const backdatedDateLine = dateLine(buildFleetTripRequestHtml({ trip: backdatedTrip, tenant }))
+assert.ok(backdatedDateLine.includes('>13<'), 'มี document_date ต้องพิมพ์วันที่ 13 แทน created_at')
+assert.ok(!backdatedDateLine.includes('>1<'), 'ต้องไม่หลุดไปใช้วันจาก created_at เมื่อมี document_date')
+
+// UI: ช่องแก้วันที่เอกสารมีเฉพาะโมดัลบันทึกย้อนหลัง ส่งเป็น document_date ตอน insert
+assert.ok(tripsSource.includes('วันที่ (เอกสารแบบ 3)'))
+assert.ok(tripsSource.includes("const documentDate = form.document_date || null"))
+assert.ok(tripsSource.includes('document_date: documentDate,'))
+// ต้องกันวันที่เอกสารล่วงหน้าไปในอนาคต (เอกสารของเหตุการณ์ที่เกิดขึ้นแล้วเท่านั้น)
+assert.ok(tripsSource.includes("documentDate > localDateStr(new Date())"))
+
+const documentDateMigration = await readFile(
+  new URL('../supabase/migrations/20260914140000_fleet_trip_document_date_column.sql', import.meta.url), 'utf8',
+)
+assert.match(documentDateMigration, /ADD COLUMN IF NOT EXISTS document_date date/)
+// ห้ามตั้ง DEFAULT — ทริปเก่าต้องเป็น NULL เพื่อให้ fallback ไปใช้ created_at ทำงาน
+assert.ok(!/ADD COLUMN IF NOT EXISTS document_date[^,;]*DEFAULT/.test(documentDateMigration))
+
 console.log('fleet form 3 signatory assertions passed')
