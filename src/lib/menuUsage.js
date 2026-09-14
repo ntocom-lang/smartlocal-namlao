@@ -10,7 +10,7 @@
 export const TRACKABLE_PATHS = [
   '/emergency', '/complaint', '/doc-request', '/my-complaints',
   '/events', '/tourism', '/data-center',
-  '/my-docs', '/weather', '/contact', '/notifications',
+  '/my-docs', '/weather', '/contact', '/notifications', '/waste',
 ]
 
 const STORAGE_KEY = 'sl_menu_usage_v1'

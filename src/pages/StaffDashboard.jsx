@@ -48,6 +48,7 @@ const TourismManager = lazy(() => import('../components/admin/TourismManager'))
 const TourismReviewsAdmin = lazy(() => import('../components/admin/TourismManager').then(module => ({ default: module.TourismReviewsAdmin })))
 const PostsManager = lazy(() => import('../components/staff/PostsManager'))
 const BorrowableAssetsManager = lazy(() => import('../components/staff/BorrowableAssetsManager'))
+const WasteScheduleManager = lazy(() => import('../components/staff/WasteScheduleManager'))
 const StaffOperationalDashboard = lazy(() => import('../components/staff/StaffOperationalDashboard'))
 const FleetPage = lazy(() => import('./FleetPage'))
 const BuildingPermitWizard = lazy(() => import('./BuildingPermitWizard'))
@@ -173,7 +174,16 @@ const STANDALONE_GROUPS = [
 // จัดกลุ่มเมนูตามโครงสร้างส่วนราชการจริง (สำนักปลัด/กองคลัง/กองช่าง/กองการศึกษา/ตรวจสอบภายใน)
 // กองที่ยังไม่มีเมนูงาน (alwaysShow) ยังคงโชว์หัวข้อไว้ให้ครบทุกกอง ไม่ซ่อน
 const MODULE_GROUPS = [
-  { group: 'สำนักปลัด', items: [], alwaysShow: true },
+  {
+    group: 'สำนักปลัด',
+    items: [
+      // วางใต้สำนักปลัดเพราะยังไม่มี อปท. ไหนมีกองสาธารณสุขใน departments (ตรวจ 2569-09-07)
+      // ถ้าวันหนึ่งเพิ่มกองสาธารณสุขแล้วมีกลุ่มเมนูของกองนั้น ให้ย้ายมาไว้ที่นั่น
+      // เมนูนี้ทุกคนใน อปท. เห็นได้ (อ่านอย่างเดียว) — สิทธิ์แก้ตัดสินที่ can_manage_waste_schedule()
+      { key: 'waste', label: 'ตารางเก็บขยะ', Icon: Trash2, color: '#15803d', bg: '#dcfce7', desc: 'ตั้งรอบเก็บขยะครั้งเดียว ระบบแจ้งวันเก็บให้ประชาชนเอง' },
+    ],
+    alwaysShow: true,
+  },
   { group: 'กองคลัง', items: [], alwaysShow: true },
   {
     group: 'กองช่าง',
@@ -2589,6 +2599,7 @@ export default function StaffDashboard() {
             {activeModule === 'tourism'          && <TourismManager tenant={tenant} currentUserRole={profile?.role ?? 'staff'} currentUserId={profile?.id ?? null} myDepartmentId={profile?.department_id ?? null} />}
             {activeModule === 'tourism-reviews'  && <TourismReviewsAdmin tenant={tenant} />}
             {activeModule === 'fleet' && <FleetPage onBack={() => setActiveModule('home')} />}
+            {activeModule === 'waste' && <WasteScheduleManager tenant={tenant} />}
             {activeModule === 'borrowable-assets' && (
               <BorrowableAssetsManager tenant={tenant}
                 assetRole={role === 'admin' || role === 'superadmin' ? 'asset_admin' : profile?.asset_role}

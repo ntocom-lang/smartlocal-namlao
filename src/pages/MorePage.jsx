@@ -6,7 +6,7 @@ import {
   Phone, Globe, Share2, MessageCircle,
   ChevronRight, ChevronDown, Star, Copy, Download, Check, Monitor, X,
   UploadIcon, PlusSquare, BookOpen, Store, FileText, Briefcase,
-  CalendarDays, Luggage, AlertTriangle, Cloud, RefreshCw, Database,
+  CalendarDays, Luggage, AlertTriangle, Cloud, RefreshCw, Database, Trash2,
 } from 'lucide-react'
 import qrCodeImage from '../assets/qr-code.png'
 import { supabase, signOutSafely } from '../lib/supabase'
@@ -343,6 +343,7 @@ function NamlaoMorePage() {
     { path: '/weather', icon: Cloud, iconBg: 'bg-sky-100', iconColor: 'text-sky-600', label: 'สภาพอากาศ' },
     { path: '/contact', icon: Phone, iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600', label: 'ติดต่อเรา' },
     { path: '/notifications', icon: Bell, iconBg: 'bg-purple-100', iconColor: 'text-purple-600', label: 'แจ้งเตือน' },
+    { path: '/waste', icon: Trash2, iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600', label: 'ตารางวันเก็บขยะ' },
   ]
   const DEFAULT_QUICK_PATHS = ['/complaint', '/emergency', '/doc-request', '/my-complaints']
   // อ่าน localStorage แบบ lazy initializer ของ useState (sync, ครั้งเดียวตอน mount) แทน useEffect+setState
