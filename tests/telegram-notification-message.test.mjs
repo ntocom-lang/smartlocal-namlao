@@ -226,6 +226,30 @@ assert.match(complaintStatus, /^💡 <b>อัปเดตสถานะคำ�
 assert.match(complaintStatus, /สถานะ: <b>กำลังดำเนินการ<\/b>/)
 assert.match(complaintStatus, /อัปเดตเมื่อ: 12 ก\.ย\. 2569 23:13 น\./)
 
+// ระบบรับเรื่องเอง (20260915100100): ใบใหม่ต้องบอกแอดมินว่าใบไหนต้องลงมือ ใบไหนไม่ต้อง
+assert.match(
+  buildComplaintCreatedMessage({ ...complaint, status: 'received' }),
+  /^สถานะ: ระบบรับเรื่องและส่งถึงผู้รับผิดชอบแล้ว$/m,
+)
+assert.match(buildComplaintCreatedMessage({ ...complaint, status: 'pending' }), /^สถานะ: <b>รอแอดมินรับเรื่อง<\/b>$/m)
+// ผู้รับผิดชอบส่งคืน = สถานะเปลี่ยนกลับเป็น pending ต้องไม่ขึ้น "คำร้องใหม่" เหมือนมีคนยื่นซ้ำ
+assert.match(buildComplaintStatusMessage({ ...complaint, status: 'pending' }), /สถานะ: <b>ส่งคืนให้แอดมินรับเรื่อง<\/b>/)
+// สถานะอื่น (แอดมินบันทึกย้อนหลัง) ไม่มีบรรทัดสถานะ และต้องไม่เหลือบรรทัดเปล่า
+assert.doesNotMatch(complaintNew, /สถานะ:/)
+
+// ⚠️ เรื่องลับ (แจ้งการทุจริต): ห้ามมีข้อมูลใดที่ใช้เดาเรื่องหรือผู้แจ้งได้ — ประเภท/สถานที่/กอง/เลขที่/เวลา/สีกอง
+const secret = buildComplaintCreatedMessage({
+  ...complaint, status: 'pending', category: 'corruption',
+  category_ref: { label: 'แจ้งการทุจริต', emoji: '⚖️' },
+  department: { name: 'สำนักปลัด', color: 'red' },
+})
+assert.equal(secret, `🔒 <b>มีเรื่องลับรอแอดมินรับเรื่อง</b>\nกรุณาเข้าสู่ระบบเพื่อตรวจสอบตามสิทธิ์\n${rule('⚪')}`)
+for (const leak of ['ทุจริต', '⚖️', 'หมู่ 3', 'สำนักปลัด', 'ES-69-0030', '2569', '🔴']) {
+  assert.equal(secret.includes(leak), false, `ข้อความเรื่องลับหลุด '${leak}': ${secret}`)
+}
+// ด่านไม่ส่งการเปลี่ยนสถานะของเรื่องลับอยู่ใน handler — ตรวจที่ตัวไฟล์ว่ายังอยู่
+assert.match(code, /notificationType !== 'complaint_created' && isConfidentialComplaint\(resource\)/)
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ข้อมูลไม่ครบต้องไม่ทำให้ข้อความพังหรือเหลือบรรทัดเปล่า (คำร้องเก่าก่อนมี ref_no/department_id)
 // ─────────────────────────────────────────────────────────────────────────────

@@ -2224,6 +2224,8 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
             currentUserRole={currentUserRole ?? 'staff'}
             currentUserId={staffId}
             onDelete={() => {}}
+            // ส่งคืนแล้ว status กลับเป็น pending — รายการนี้กรอง pending ออกอยู่แล้ว ตัดออกทันทีไม่ต้องรอ realtime
+            onReturned={(id) => setComplaints((prev) => prev.filter((row) => row.id !== id))}
           />
         </Suspense>
       )}

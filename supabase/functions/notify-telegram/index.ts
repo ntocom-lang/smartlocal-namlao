@@ -351,22 +351,53 @@ function buildEventMessage(event: Record<string, unknown>, orgType: unknown) {
 // รูปแบบของทุกใบ (ดู framedMessage()): <อีโมจิประเภทเรื่อง> <หัวเรื่อง> / เนื้อหา / เส้นคั่นสีกอง
 // อีโมจิประเภทอยู่หัวข้อความอย่างเดียว บรรทัด "ประเภท:/เรื่อง:" จึงแสดงชื่อล้วน ไม่ใส่ซ้ำ
 // ข้อยกเว้นเดียวคือ fee_verified ที่ใช้ 💰 เพราะสาระของใบนั้นคือเงิน ไม่ใช่ชนิดเอกสาร
+// ⚠️ หมวดที่ห้ามเปิดเผยอะไรในกลุ่มเลย — เจ้าของระบบตัดสินใจ 2569-09-15
+// กลุ่ม Telegram ของ อปท. คือเจ้าหน้าที่ทุกกองรวมกัน ถ้าขึ้น "แจ้งการทุจริต · สถานที่: หมู่ 3 · ส่งถึง:
+// สำนักปลัด" คนในกลุ่มเดาตัวผู้แจ้งได้จากหมู่บ้าน และผู้ถูกร้องอาจอยู่ในกลุ่มนั้นเอง
+// ใบใหม่จึงส่งแค่หัวข้อกลางๆ ให้แอดมินเข้าไปดูในระบบ ส่วนการเปลี่ยนสถานะไม่ส่งเลย (ดู handler)
+// ผูกด้วยรหัสหมวดมาตรฐาน ใช้ได้ทุก อปท. เพราะรหัส corruption เหมือนกันทุกที่
+const CONFIDENTIAL_COMPLAINT_CATEGORIES = new Set(['corruption'])
+
+function isConfidentialComplaint(complaint: Record<string, unknown>) {
+  return CONFIDENTIAL_COMPLAINT_CATEGORIES.has(String(complaint.category ?? ''))
+}
+
 function buildComplaintCreatedMessage(complaint: Record<string, unknown>) {
+  if (isConfidentialComplaint(complaint)) {
+    // ไม่ใช้ framedMessage — เส้นคั่นสีกองก็บอกได้ว่าเรื่องไปกองไหน
+    return [
+      '🔒 <b>มีเรื่องลับรอแอดมินรับเรื่อง</b>',
+      'กรุณาเข้าสู่ระบบเพื่อตรวจสอบตามสิทธิ์',
+      DEFAULT_DEPARTMENT_COLOR + RULE_DASH.repeat(RULE_DASH_COUNT),
+    ].join('\n')
+  }
   const category = complaintCategory(complaint)
   const department = departmentName(complaint)
   const submittedAt = formatThaiDateTime(complaint.created_at)
+  // ระบบรับเรื่องเองตอน INSERT (20260915100100) — บอกให้แอดมินรู้ว่าใบไหนไม่ต้องทำอะไร
+  // ใบที่ยัง pending คือใบที่ระบบรับเองไม่ได้และรอแอดมินจริงๆ
+  const intake = complaint.status === 'received'
+    ? 'สถานะ: ระบบรับเรื่องและส่งถึงผู้รับผิดชอบแล้ว'
+    : complaint.status === 'pending' || complaint.status === 'new'
+      ? 'สถานะ: <b>รอแอดมินรับเรื่อง</b>'
+      : ''
   return framedMessage(complaint, category.emoji, 'มีคำร้องใหม่', [
     complaint.ref_no ? `เลขที่: ${escapeHtml(complaint.ref_no, 40)}` : '',
     `ประเภท: ${escapeHtml(category.label, 60)}`,
     complaint.village ? `สถานที่: ${escapeHtml(complaint.village, 120)}` : '',
     department ? `ส่งถึง: ${escapeHtml(department, 80)}` : '',
     submittedAt ? `แจ้งเมื่อ: ${escapeHtml(submittedAt, 60)}` : '',
+    intake,
   ])
 }
 
 function buildComplaintStatusMessage(complaint: Record<string, unknown>) {
   const category = complaintCategory(complaint)
-  const status = COMPLAINT_STATUS_LABEL[String(complaint.status)] ?? cleanText(complaint.status, 60)
+  // สถานะ "เปลี่ยน" กลับมาเป็นคำร้องใหม่ได้ทางเดียวคือผู้รับผิดชอบกดส่งคืน (return_complaint_to_intake)
+  // ป้าย "คำร้องใหม่" จะอ่านเหมือนมีคนยื่นซ้ำ — บอกให้ตรงว่าเรื่องกลับไปรอแอดมิน
+  const status = complaint.status === 'pending' || complaint.status === 'new'
+    ? 'ส่งคืนให้แอดมินรับเรื่อง'
+    : COMPLAINT_STATUS_LABEL[String(complaint.status)] ?? cleanText(complaint.status, 60)
   const department = departmentName(complaint)
   const updatedAt = formatThaiDateTime(complaint.updated_at ?? complaint.created_at)
   return framedMessage(complaint, category.emoji, 'อัปเดตสถานะคำร้อง', [
@@ -992,6 +1023,13 @@ serve(async (req) => {
     // ของเดิมคืน 422 ทำให้ client log console.error ทุกครั้งที่มีการเปลี่ยนสถานะคำร้อง — E2E
     // อ่านไม่ออกว่าอันไหนคือของพังจริง ต้องคืน 2xx พร้อมธง skipped ให้ client เงียบได้อย่างถูกต้อง
     // ⚠️ เคสตั้งค่าพังจริง (มี group แต่ token/สิทธิ์บอทเสีย) ยังตกไปที่ finish('failed') ตามเดิม
+    // เรื่องลับ: แจ้งแค่ตอนมีใบใหม่ (ข้อความกลางๆ ใน buildComplaintCreatedMessage) การเปลี่ยนสถานะ
+    // ไม่ส่งเข้ากลุ่มเลย — ความเคลื่อนไหวของเรื่องก็บอกคนในกลุ่มได้ว่ามีการสอบสวนอยู่
+    if (spec.table === 'complaints' && notificationType !== 'complaint_created' && isConfidentialComplaint(resource)) {
+      await finish('skipped', { last_error: 'confidential complaint category: status updates are not posted' })
+      return json({ ok: true, skipped: true, reason: 'confidential' })
+    }
+
     if (!municipality.telegram_group_id) {
       await finish('skipped', { last_error: 'telegram group is not configured for this municipality' })
       return json({ ok: true, skipped: true, reason: 'not_configured' })
