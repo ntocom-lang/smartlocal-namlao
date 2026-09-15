@@ -13,6 +13,8 @@ import { notifyTelegram } from '../../lib/notifyTelegram'
 import { compressImage } from '../../lib/imageUtils'
 import { logAction } from '../../lib/auditLog'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../../lib/complaintPrivacy'
+import { canReturnComplaint, complaintIntakeReason } from '../../lib/complaintIntake'
+import ReturnToIntakeButton from '../complaints/ReturnToIntakeButton'
 import { buildCouncilComplaintHtml } from '../../lib/councilFormPrint'
 import { isMissingSignatoryError, prepareComplaintPrint } from '../../lib/complaintPrint'
 import { generateDraftPdfBlob } from '../../lib/generateDraftPdf'
@@ -58,7 +60,8 @@ const STATUS = {
 const STATUS_FLOW = ['new', 'received', 'in_progress', 'done', 'closed']
 const STATUS_FLOW_LABEL = {
   new:         { label: 'คำร้องใหม่',      desc: 'ประชาชนส่งคำร้องเข้าระบบ' },
-  received:    { label: 'รับเรื่องแล้ว',   desc: 'เจ้าหน้าที่รับเรื่องแล้ว' },
+  // ระบบอาจเป็นผู้รับเรื่องเอง (20260915100100) — ไม่อ้างว่าเป็นเจ้าหน้าที่ ผู้รับจริงดูได้จากประวัติการดำเนินการ
+  received:    { label: 'รับเรื่องแล้ว',   desc: 'รับเรื่องและส่งถึงผู้รับผิดชอบแล้ว' },
   in_progress: { label: 'กำลังดำเนินการ',  desc: 'เจ้าหน้าที่ลงพื้นที่ดำเนินการ' },
   done:        { label: 'ดำเนินการแล้ว',   desc: 'เจ้าหน้าที่ดำเนินการเสร็จแล้ว' },
   closed:      { label: 'ปิดเรื่องแล้ว',   desc: 'ปิดเรื่องและแจ้งผลประชาชนแล้ว' },
@@ -559,7 +562,7 @@ function ReporterCard({ c }) {
   )
 }
 
-export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, onPriority, currentUserRole, currentUserId, onDelete, onPinSave, onDocumentUpdate }) {
+export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, onPriority, currentUserRole, currentUserId, onDelete, onPinSave, onDocumentUpdate, categoryMeta, onReturned }) {
   const { tenant, terminology } = useTenant()
   const isAdminRole = ['admin', 'superadmin'].includes(currentUserRole)
   const isTechAssigned = currentUserRole === 'technician' && c.assigned_to === currentUserId
@@ -567,6 +570,11 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
   // staff เห็นหน้าคำร้องเต็มรูปแบบและจัดการเอกสาร GDCC ได้ แต่เปลี่ยนสถานะ/มอบหมายงานไม่ได้
   // (ทุกจุดที่เปลี่ยนสถานะยังผูกกับ canAct/isAdminRole เหมือนเดิม ไม่ได้แก้)
   const canManageDocs = isAdminRole || currentUserRole === 'staff'
+  // ใบที่ระบบรับเองไม่ได้ — บอกแอดมินว่าติดอะไร (เช่น ผู้รับผิดชอบส่งคืนพร้อมเหตุผล)
+  const intakeReason = isAdminRole ? complaintIntakeReason(c, categoryMeta) : null
+  // ผู้รับผิดชอบทุก role ส่งคืนได้ รวม staff ที่เปลี่ยนสถานะเองไม่ได้ (RPC เปิดช่องให้เฉพาะการส่งคืน)
+  // แอดมินไม่ต้องใช้ปุ่มนี้ — มอบหมายใหม่ได้เองอยู่แล้ว
+  const canReturn = !isAdminRole && canReturnComplaint(c, currentUserId, categoryMeta)
   // จัดกลุ่มตามกอง ใช้ render dropdown มอบหมายเป็น <optgroup> — คนหลักสิบ/ร้อยคนจะได้ไม่ต้องไล่หาในลิสต์แบนราบ
   const technicianGroups = groupStaffByDepartment(technicians ?? [])
   const [assigning, setAssigning] = useState(false)
@@ -892,6 +900,11 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
         <div className="overflow-y-auto flex-1 px-5 py-5 space-y-5 bg-white">
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">ความคืบหน้า</p>
+            {intakeReason && (
+              <p className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 whitespace-pre-wrap wrap-break-word">
+                รอแอดมินรับเรื่อง — {intakeReason.text}
+              </p>
+            )}
             <StatusStepper status={c.status} note={c.technician_note} />
           </div>
 
@@ -1241,8 +1254,14 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
           )}
         </div>
 
+        {canReturn && (
+          <div className="px-5 pt-3 border-t border-gray-100 shrink-0 bg-gray-50">
+            <ReturnToIntakeButton complaintId={c.id} onReturned={(id) => { onReturned?.(id); onClose() }} />
+          </div>
+        )}
+
         {/* Footer actions */}
-        <div className="px-5 py-4 border-t border-gray-100 shrink-0 bg-gray-50">
+        <div className={`px-5 py-4 shrink-0 bg-gray-50 ${canReturn ? '' : 'border-t border-gray-100'}`}>
           {!canAct ? (
             <div className="flex gap-2">
               <button onClick={handlePrintComplaint}
@@ -1517,6 +1536,8 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   // ชื่อผู้ใช้ปัจจุบัน ใช้ลง actor_name ของ timeline — ประวัติที่ไม่รู้ว่าใครทำใช้ตรวจสอบไม่ได้
   const [currentUserName, setCurrentUserName]     = useState(null)
   const canBulkDelete = ['admin', 'superadmin'].includes(currentUserRole)
+  // เหตุผลที่ค้างคิวรับเรื่องแสดงเฉพาะแอดมิน — คนอื่นรับเรื่องแทนไม่ได้ ข้อความจะเป็นแค่เสียงรบกวน
+  const isAdmin = canBulkDelete
   const technicianGroups = groupStaffByDepartment(technicians ?? [])
 
   function toggleSelect(id) {
@@ -1560,15 +1581,20 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
 
   // ดึงหมวดหมู่คำร้องที่ Admin สร้างเอง merge เข้า CATEGORY_LABEL/EMOJI
   const [, setCatVer] = useState(0)
+  // ธงรายหมวดสำหรับบอกเหตุผลที่คำร้องค้างคิวแอดมิน (complaintIntakeReason) — key = รหัสหมวด
+  const [categoryMeta, setCategoryMeta] = useState({})
   useEffect(() => {
     if (!tenant?.id) return
-    supabase.from('complaint_categories').select('value, label, emoji').eq('municipality_id', tenant.id)
+    supabase.from('complaint_categories').select('value, label, emoji, is_adhoc, requires_manual_intake').eq('municipality_id', tenant.id)
       .then(({ data }) => {
         if (data && data.length > 0) {
+          const meta = {}
           for (const c of data) {
             CATEGORY_LABEL[c.value] = c.label
             if (c.emoji) CATEGORY_EMOJI[c.value] = c.emoji
+            meta[c.value] = { is_adhoc: !!c.is_adhoc, requires_manual_intake: !!c.requires_manual_intake }
           }
+          setCategoryMeta(meta)
           setCatVer(v => v + 1)
         }
       })
@@ -2421,6 +2447,11 @@ ${summaryHtml}
                     )}
                     <SlaBadge dueDate={c.due_date} status={c.status} />
                   </div>
+                  {isAdmin && complaintIntakeReason(c, categoryMeta) && (
+                    <p className="text-[11px] font-medium text-amber-700 truncate" title={complaintIntakeReason(c, categoryMeta).text}>
+                      ⚠️ {complaintIntakeReason(c, categoryMeta).text}
+                    </p>
+                  )}
                   {c.subject && <p className="text-xs text-gray-600 truncate">{c.subject}</p>}
                   <p className="text-xs text-gray-400 truncate">{c.detail}</p>
                   <div className="flex items-center justify-between gap-2 pt-1">
@@ -2559,6 +2590,12 @@ ${summaryHtml}
                       </td>
                       <td className="px-2 py-2 border-r border-gray-200 overflow-hidden">
                         <StatusBadge status={c.status} />
+                        {/* ไม่ขยายคอลัมน์ — ตารางกว้างเกินพื้นที่อยู่แล้ว (ดู test:staff-inbox) ตัดข้อความแล้วดูเต็มที่ title */}
+                        {isAdmin && complaintIntakeReason(c, categoryMeta) && (
+                          <span className="mt-0.5 block truncate text-[10px] font-medium text-amber-700" title={complaintIntakeReason(c, categoryMeta).text}>
+                            ⚠️ {complaintIntakeReason(c, categoryMeta).text}
+                          </span>
+                        )}
                       </td>
                       <td className="px-2 py-2 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
@@ -2668,6 +2705,8 @@ ${summaryHtml}
           onDelete={handleDeleteComplaint}
           onPinSave={handlePinSave}
           onDocumentUpdate={handleDocumentPatch}
+          categoryMeta={categoryMeta}
+          onReturned={() => fetchComplaints()}
         />
       )}
 

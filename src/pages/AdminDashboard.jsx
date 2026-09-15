@@ -3650,7 +3650,26 @@ function CategoryActiveSwitch({ active, onToggle, compact = false }) {
   )
 }
 
-function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleActive, onToggleAdhoc, onEditEmoji, iconStyle, departments = [], techGroups = [], techId = '', slaDays = 3, onDepartmentChange, onTechChange, onSlaChange, savingAssign = false }) {
+// สวิตช์ "ใครรับเรื่อง" รายหมวด (complaint_categories.requires_manual_intake, 20260915100000)
+// หมวดเฉพาะกิจไม่ใช้ขั้นตอนรับเรื่องเลย จึงไม่แสดง
+function ManualIntakeChip({ cat, onToggle, className = '' }) {
+  if (cat.is_adhoc) return null
+  const manual = !!cat.requires_manual_intake
+  return (
+    <button
+      type="button"
+      onClick={() => onToggle?.(cat.id, manual)}
+      title={manual
+        ? 'คำร้องใหม่ค้างที่แอดมินจนกว่าจะกดรับเรื่อง — กดเพื่อให้ระบบรับเรื่องเอง'
+        : 'ระบบรับเรื่องและส่งถึงผู้รับผิดชอบทันทีเมื่อตั้งกองและผู้รับผิดชอบครบ — กดเพื่อให้แอดมินรับเรื่องเอง'}
+      className={`px-2 py-1 rounded-full font-bold whitespace-nowrap transition-colors ${manual ? 'bg-rose-100 text-rose-700 hover:bg-rose-200' : 'bg-sky-100 text-sky-700 hover:bg-sky-200'} ${className}`}
+    >
+      {manual ? '🛡️ แอดมินรับเรื่อง' : '⚡ ระบบรับเรื่อง'}
+    </button>
+  )
+}
+
+function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleActive, onToggleAdhoc, onToggleManualIntake, onEditEmoji, iconStyle, departments = [], techGroups = [], techId = '', slaDays = 3, onDepartmentChange, onTechChange, onSlaChange, savingAssign = false }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(cat.label)
@@ -3737,6 +3756,13 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
         </button>
       </div>
 
+      {/* ใครรับเรื่อง — แยกบรรทัดจากแถวหัว ซึ่งแน่นอยู่แล้วบนจอมือถือ */}
+      {!cat.is_adhoc && (
+        <div className="flex items-center gap-2 pl-14">
+          <ManualIntakeChip cat={cat} onToggle={onToggleManualIntake} className="text-[12px]" />
+        </div>
+      )}
+
       {/* assignment row */}
       <div className="flex items-center gap-2 pl-14">
         {savingAssign && <Loader2 size={12} className="animate-spin text-gray-300 shrink-0" />}
@@ -3782,7 +3808,7 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
   )
 }
 
-function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [], techGroups = [], onSetDraft, onSaveRow, onCancelRow, onStartLabelEdit, onToggleActive, onToggleAdhoc, onDeleteCat, onEditEmoji, iconStyle }) {
+function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [], techGroups = [], onSetDraft, onSaveRow, onCancelRow, onStartLabelEdit, onToggleActive, onToggleAdhoc, onToggleManualIntake, onDeleteCat, onEditEmoji, iconStyle }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
   const editingLabel = !!draft?.editingLabel
   const hasDraft = !!draft && !editingLabel
@@ -3891,13 +3917,16 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [
         />
       </td>
       <td className="px-2 py-3 text-center">
-        <button
-          onClick={() => onToggleAdhoc(cat.id, !!cat.is_adhoc)}
-          title="สลับปกติ/เฉพาะกิจ"
-          className={`max-w-full px-2 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${cat.is_adhoc ? 'bg-lime-100 text-lime-700 hover:bg-gray-200 hover:text-gray-500' : 'bg-gray-200 text-gray-500 hover:bg-lime-100 hover:text-lime-700'}`}
-        >
-          {cat.is_adhoc ? '💨 เฉพาะกิจ' : 'ปกติ'}
-        </button>
+        <div className="flex flex-col items-center gap-1">
+          <button
+            onClick={() => onToggleAdhoc(cat.id, !!cat.is_adhoc)}
+            title="สลับปกติ/เฉพาะกิจ"
+            className={`max-w-full px-2 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${cat.is_adhoc ? 'bg-lime-100 text-lime-700 hover:bg-gray-200 hover:text-gray-500' : 'bg-gray-200 text-gray-500 hover:bg-lime-100 hover:text-lime-700'}`}
+          >
+            {cat.is_adhoc ? '💨 เฉพาะกิจ' : 'ปกติ'}
+          </button>
+          <ManualIntakeChip cat={cat} onToggle={onToggleManualIntake} className="max-w-full text-[11px]" />
+        </div>
       </td>
       <td className="px-2 py-3">
         {editingLabel ? (
@@ -4275,6 +4304,39 @@ function CategoryManager({ tenant }) {
     setError(null)
   }
 
+  // สลับ "ระบบรับเรื่อง / แอดมินรับเรื่อง" — มีผลเฉพาะคำร้องที่ยื่นหลังจากนี้ (trigger ทำงานตอน INSERT)
+  // ทิศที่อันตรายคือปิดธงของหมวดแจ้งทุจริต/ร้องเรียนเจ้าหน้าที่ เรื่องจะถึงมือผู้รับผิดชอบคนเดียวทันที
+  async function toggleManualIntake(id, current) {
+    const cat = cats.find((c) => c.id === id)
+    const label = cat?.label ?? ''
+    const message = current
+      ? `ให้ระบบรับเรื่อง "${label}" เอง?\n\n`
+        + '• คำร้องใหม่ของหมวดนี้จะถูกรับเรื่องและส่งถึงผู้รับผิดชอบทันทีเมื่อตั้งกองและผู้รับผิดชอบไว้ครบ\n'
+        + '• ไม่มีแอดมินคัดกรองก่อน\n'
+        + '• ⚠️ ไม่ควรใช้กับหมวดแจ้งการทุจริตหรือร้องเรียนเจ้าหน้าที่ — ผู้รับผิดชอบอาจเป็นผู้ถูกร้องเอง\n\n'
+        + 'มีผลกับคำร้องที่ยื่นหลังจากนี้เท่านั้น ยืนยันหรือไม่'
+      : `ให้แอดมินรับเรื่อง "${label}" เอง?\n\n`
+        + '• คำร้องใหม่ของหมวดนี้จะค้างที่แอดมินจนกว่าจะกดรับเรื่อง ผู้รับผิดชอบยังไม่เห็นจนกว่าจะรับ\n\n'
+        + 'มีผลกับคำร้องที่ยื่นหลังจากนี้เท่านั้น ยืนยันหรือไม่'
+    if (!window.confirm(message)) return
+
+    // RLS ปัดตกเงียบได้ (ไม่ใช่แอดมินของ อปท. นี้) — ต้องอ่านค่ากลับมาเทียบ เหมือน toggleAdhoc
+    const { data, error: err } = await supabase.from('complaint_categories')
+      .update({ requires_manual_intake: !current }).eq('id', id).select('id, requires_manual_intake')
+    if (err) { setError('บันทึกไม่สำเร็จ: ' + err.message); return }
+    if (!data || data.length === 0) {
+      setError('ไม่มีสิทธิ์เปลี่ยนการรับเรื่อง (ต้องเป็นผู้ดูแลระบบของ อปท. นี้)')
+      return
+    }
+    const saved = data[0].requires_manual_intake
+    setCats((prev) => prev.map((c) => c.id === id ? { ...c, requires_manual_intake: saved } : c))
+    if (saved === current) {
+      setError('ฐานข้อมูลไม่ได้เปลี่ยนการรับเรื่องของหมวดนี้ กรุณาลองใหม่')
+      return
+    }
+    setError(null)
+  }
+
   async function moveCat(idx, dir) {
     const swapIdx = idx + dir
     if (swapIdx < 0 || swapIdx >= cats.length) return
@@ -4539,6 +4601,7 @@ function CategoryManager({ tenant }) {
                   <SortableCatItem key={cat.id} cat={cat} idx={idx} total={visibleCats.length}
                     onDelete={deleteCat} onMove={moveCat} onEdit={editCat} onToggleActive={toggleActive}
                     onToggleAdhoc={toggleAdhoc}
+                    onToggleManualIntake={toggleManualIntake}
                     onEditEmoji={setIconPickerCat}
                     iconStyle={iconStyle}
                     departments={departments}
@@ -4600,6 +4663,7 @@ function CategoryManager({ tenant }) {
                         onStartLabelEdit={startLabelEdit}
                         onToggleActive={toggleActive}
                         onToggleAdhoc={toggleAdhoc}
+                        onToggleManualIntake={toggleManualIntake}
                         onDeleteCat={deleteCat}
                         onEditEmoji={setIconPickerCat}
                         iconStyle={iconStyle}

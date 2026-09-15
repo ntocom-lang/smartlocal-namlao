@@ -16,6 +16,8 @@ import { uploadFile } from '../lib/driveStorage'
 import { buildCouncilComplaintHtml } from '../lib/councilFormPrint'
 import { isMissingSignatoryError, prepareComplaintPrint } from '../lib/complaintPrint'
 import MapPicker from '../components/MapPicker'
+import ReturnToIntakeButton from '../components/complaints/ReturnToIntakeButton'
+import { canReturnComplaint } from '../lib/complaintIntake'
 import { toDateStr, todayStr } from '../lib/thaiDate'
 
 const STATUS = {
@@ -142,7 +144,7 @@ function StatusStepper({ status }) {
 }
 
 
-function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant }) {
+function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant, currentUserId, onReturned }) {
   const { terminology } = useTenant()
   const [note, setNote] = useState(c.technician_note ?? '')
   const [photos, setPhotos] = useState(c.work_photos ?? [])
@@ -483,6 +485,9 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant }) {
                     : `${action.label} →`}
               </button>
             )}
+            {canReturnComplaint(c, currentUserId) && (
+              <ReturnToIntakeButton complaintId={c.id} onReturned={onReturned} />
+            )}
           </div>
         )}
       </div>
@@ -728,6 +733,15 @@ export default function TechnicianDashboard() {
           onUpdate={updateStatus}
           updating={updating}
           tenant={tenant}
+          currentUserId={staffId}
+          // ส่งคืนแล้ว assigned_to กลายเป็น NULL — realtime ของหน้านี้กรองด้วย assigned_to === staffId
+          // จึงไม่ยิงให้โหลดใหม่ ต้องตัดออกจากรายการเอง
+          onReturned={(id) => {
+            const remaining = complaints.filter((row) => row.id !== id)
+            setComplaints(remaining)
+            emitTechBadge(remaining)
+            setSelected(null)
+          }}
         />
       )}
 
