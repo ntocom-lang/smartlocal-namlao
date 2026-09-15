@@ -68,7 +68,8 @@ try {
     + '  buildDocumentRequestCreatedMessage, buildDocumentRequestStatusMessage,\n'
     + '  buildFeeVerifiedMessage, documentTypeLabel, DEPARTMENT_COLOR_EMOJI,\n'
     + '  buildFleetTripWaitlistedMessage, buildFleetFuelCreatedMessage, buildFleetTripBumpedMessage,\n'
-    + '  notificationSpecs, notificationMatchesResource, idempotencyKey, FLEET_MESSAGE_BUILDERS,\n}\n')
+    + '  notificationSpecs, notificationMatchesResource, idempotencyKey, FLEET_MESSAGE_BUILDERS,\n'
+    + '  buildComplaintReopenedMessage, canRequestNotification,\n}\n')
   // BOT_TOKEN ถูกอ่านตอน import module — ต้องมี Deno.env ก่อนโหลด
   globalThis.Deno = { env: { get: () => '' } }
   mod = await import(pathToFileURL(probe).href)
@@ -82,6 +83,7 @@ const {
   buildFeeVerifiedMessage, documentTypeLabel, DEPARTMENT_COLOR_EMOJI,
   buildFleetTripWaitlistedMessage, buildFleetFuelCreatedMessage, buildFleetTripBumpedMessage,
   notificationSpecs, notificationMatchesResource, idempotencyKey, FLEET_MESSAGE_BUILDERS,
+  buildComplaintReopenedMessage, canRequestNotification,
 } = mod
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -247,6 +249,23 @@ assert.equal(secret, `🔒 <b>มีเรื่องลับรอแอด�
 for (const leak of ['ทุจริต', '⚖️', 'หมู่ 3', 'สำนักปลัด', 'ES-69-0030', '2569', '🔴']) {
   assert.equal(secret.includes(leak), false, `ข้อความเรื่องลับหลุด '${leak}': ${secret}`)
 }
+// ตัดขั้น "ปิดเรื่องแล้ว" (20260915110100) — closed คือ "ดำเนินการแล้ว"
+assert.match(buildComplaintStatusMessage({ ...complaint, status: 'closed' }), /สถานะ: <b>ดำเนินการแล้ว<\/b>/)
+assert.equal(notificationMatchesResource('technician_closed', { status: 'closed' }), true)
+
+// ผู้ร้องเปิดเรื่องกลับ: ไม่มีเหตุผลที่ผู้ร้องพิมพ์ (PDPA) · บอกว่ากลับไปหาใคร · เจ้าของเรื่องเท่านั้นที่ขอส่งได้
+const reopened = buildComplaintReopenedMessage({ ...complaint, status: 'received', extra_data: { reopen_reason: 'ไฟยังดับอยู่หน้าบ้านนายสมชาย' } })
+assert.match(reopened, /^🔁 <b>ผู้ร้องแจ้งว่ายังไม่เรียบร้อย<\/b>$/m)
+assert.match(reopened, /^สถานะ: ส่งกลับถึงผู้รับผิดชอบเดิมแล้ว$/m)
+assert.equal(reopened.includes('สมชาย'), false, 'ข้อความแจ้งเตือนต้องไม่มีเหตุผลที่ผู้ร้องพิมพ์')
+assert.match(buildComplaintReopenedMessage({ ...complaint, status: 'pending' }), /รอแอดมินรับเรื่อง/)
+assert.equal(notificationMatchesResource('complaint_reopened', { status: 'closed' }), false)
+const ownerSpec = notificationSpecs.complaint_reopened
+assert.equal(canRequestNotification(ownerSpec, { user_id: 'u1', created_at: new Date().toISOString() }, 'u1', { role: 'citizen' }), true)
+assert.equal(canRequestNotification(ownerSpec, { user_id: 'u1', created_at: new Date().toISOString() }, 'u2', { role: 'admin' }), false)
+assert.equal(canRequestNotification(ownerSpec, { user_id: null, created_at: new Date().toISOString() }, null, null), false,
+  'ผู้ไม่ล็อกอินต้องขอส่ง complaint_reopened ไม่ได้ แม้คำร้องเพิ่งสร้าง')
+
 // ด่านไม่ส่งการเปลี่ยนสถานะของเรื่องลับอยู่ใน handler — ตรวจที่ตัวไฟล์ว่ายังอยู่
 assert.match(code, /notificationType !== 'complaint_created' && isConfidentialComplaint\(resource\)/)
 

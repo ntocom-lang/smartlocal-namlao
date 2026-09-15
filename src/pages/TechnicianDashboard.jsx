@@ -18,24 +18,31 @@ import { isMissingSignatoryError, prepareComplaintPrint } from '../lib/complaint
 import MapPicker from '../components/MapPicker'
 import ReturnToIntakeButton from '../components/complaints/ReturnToIntakeButton'
 import { canReturnComplaint } from '../lib/complaintIntake'
+import FinishComplaintDialog from '../components/complaints/FinishComplaintDialog'
+import ComplaintTextBlock from '../components/complaints/ComplaintTextBlock'
+import { requiresResolvedPin } from '../lib/complaintWorkflow'
+import { startComplaintWork } from '../lib/complaintFinish'
 import { toDateStr, todayStr } from '../lib/thaiDate'
 
 const STATUS = {
   pending:     { label: 'รอดำเนินการ',    bg: '#fef3c7', text: '#92400e' },
   received:    { label: 'รับเรื่องแล้ว',   bg: '#dbeafe', text: '#1e40af' },
   in_progress: { label: 'กำลังดำเนินการ', bg: '#ede9fe', text: '#5b21b6' },
-  done:        { label: 'รอปิดเรื่อง',    bg: '#fff7ed', text: '#9a3412' },
-  completed:   { label: 'ปิดเรื่องแล้ว',  bg: '#d1fae5', text: '#065f46' },
-  closed:      { label: 'ปิดเรื่องแล้ว',  bg: '#d1fae5', text: '#065f46' },
+  // ตัดขั้น "ปิดเรื่องแล้ว" ออก 2569-09-15 — 'closed' = "ดำเนินการแล้ว" ที่ผู้รับผิดชอบกดเอง ('done' = ขั้นเก่าที่ค้าง)
+  done:        { label: 'ดำเนินการแล้ว',  bg: '#d1fae5', text: '#065f46' },
+  completed:   { label: 'ดำเนินการแล้ว',  bg: '#d1fae5', text: '#065f46' },
+  closed:      { label: 'ดำเนินการแล้ว',  bg: '#d1fae5', text: '#065f46' },
   rejected:    { label: 'ปฏิเสธ',         bg: '#fee2e2', text: '#991b1b' },
 }
 
 const NEXT_ACTION = {
   received:    { label: 'เริ่มดำเนินการ', next: 'in_progress' },
-  in_progress: { label: 'ปิดงาน',        next: 'done' },
+  // "ดำเนินการแล้ว" เปิดกล่องปักหมุด (FinishComplaintDialog) — 'done' ขั้นเก่ากดซ้ำเพื่อปักหมุดให้ครบ
+  in_progress: { label: 'ดำเนินการแล้ว', next: 'closed' },
+  done:        { label: 'ดำเนินการแล้ว', next: 'closed' },
 }
 
-// แอดมินปิดเรื่องด้วยสถานะ 'closed' (ดู STATUS_FLOW ใน ComplaintsManager.jsx) ส่วน 'completed'
+// สถานะสุดท้ายคือ 'closed' ("ดำเนินการแล้ว" — ผู้รับผิดชอบกดเองผ่าน finish_complaint) ส่วน 'completed'
 // เป็นค่า legacy ของสถานะเดียวกัน หน้านี้เคยเช็คแต่ 'completed' อย่างเดียวทุกจุด งานที่แอดมิน
 // ปิดไปแล้วจึงตกอยู่ในกลุ่ม "งานที่รอดำเนินการ" ตลอดกาล ถูกนับเป็นงานค้างและงานใกล้ครบกำหนด
 // ซ้ำทุกวัน แถมช่างยังกดแก้สถานะเรื่องที่ปิดไปแล้วได้อีก — เช็คผ่าน helper ตัวนี้ที่เดียวเท่านั้น
@@ -85,19 +92,18 @@ function emitTechBadge(list) {
   window.dispatchEvent(new CustomEvent('tech-badge-update', { detail: count }))
 }
 
-const STATUS_FLOW = ['pending', 'received', 'in_progress', 'done', 'completed']
+const STATUS_FLOW = ['pending', 'received', 'in_progress', 'completed']
 const STATUS_FLOW_LABEL = {
   pending:     { label: 'รอดำเนินการ',    desc: 'คำร้องของคุณถูกส่งเข้าระบบแล้ว' },
-  received:    { label: 'รับเรื่องแล้ว',   desc: 'เจ้าหน้าที่รับทราบและตรวจสอบ' },
+  received:    { label: 'รับเรื่องแล้ว',   desc: 'รับเรื่องและส่งถึงผู้รับผิดชอบแล้ว' },
   in_progress: { label: 'กำลังดำเนินการ', desc: 'อยู่ระหว่างดำเนินการแก้ไข' },
-  done:        { label: 'รอปิดเรื่อง',    desc: 'ดำเนินการเสร็จแล้ว รอผู้บริหารปิดเรื่อง' },
-  completed:   { label: 'ปิดเรื่องแล้ว',  desc: 'ผู้บริหารปิดเรื่องและแจ้งประชาชนแล้ว' },
+  completed:   { label: 'ดำเนินการแล้ว',  desc: 'ดำเนินการแล้วและแจ้งผลผู้ร้อง' },
 }
 
 function StatusStepper({ status }) {
   // STATUS_FLOW จบที่ 'completed' ตามคำศัพท์ของหน้านี้ แต่แอดมินเขียน 'closed' ลง DB
   // ถ้าส่งเข้าไปตรงๆ indexOf จะได้ -1 แล้วไม่มีขั้นไหนติดสว่างเลยทั้งที่เรื่องปิดไปแล้ว
-  const currentIdx = STATUS_FLOW.indexOf(isClosed(status) ? 'completed' : status)
+  const currentIdx = STATUS_FLOW.indexOf(isClosed(status) || status === 'done' ? 'completed' : status)
   return (
     <div className="space-y-0">
       {STATUS_FLOW.map((step, i) => {
@@ -144,7 +150,7 @@ function StatusStepper({ status }) {
 }
 
 
-function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant, currentUserId, onReturned }) {
+function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant, currentUserId, onReturned, requiresPin = true, onFinished, onTextSaved }) {
   const { terminology } = useTenant()
   const [note, setNote] = useState(c.technician_note ?? '')
   const [photos, setPhotos] = useState(c.work_photos ?? [])
@@ -155,10 +161,9 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant, curren
   const [showMapEdit, setShowMapEdit] = useState(false)
 
   const action = NEXT_ACTION[c.status]
-  // ขั้นสุดท้ายที่ช่างทำได้คือ 'done' (รอแอดมินตรวจรับแล้วปิดเรื่องเอง) — เดิมเทียบกับ
-  // 'completed' ซึ่ง NEXT_ACTION ไม่เคยคืนค่านั้น เงื่อนไขจึงเป็นเท็จเสมอ ปุ่ม "ปิดงาน"
-  // เลยไม่เคยได้สไตล์ปิดงาน และไม่เคยส่งรูปหน้างาน/หมายเหตุไปพร้อมการเปลี่ยนสถานะ
-  const isFinishStep = action?.next === 'done'
+  // ขั้นสุดท้ายคือ "ดำเนินการแล้ว" ('closed') — เปิดกล่องปักหมุดแทนการเปลี่ยนสถานะตรง
+  const isFinishStep = action?.next === 'closed'
+  const [showFinish, setShowFinish] = useState(false)
   const catLabel = CATEGORY_LABEL[c.category] ?? c.category
   const catEmoji = CATEGORY_EMOJI[c.category] ?? '📄'
 
@@ -323,13 +328,9 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant, curren
             <StatusStepper status={c.status} />
           </div>
 
-          {/* รายละเอียด */}
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">รายละเอียดปัญหา</p>
-            <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
-              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{c.detail}</p>
-            </div>
-          </div>
+          {/* รายละเอียด — ผู้รับผิดชอบแก้คำผิดได้ ค่าเดิมเก็บในประวัติ (ComplaintTextBlock) */}
+          <ComplaintTextBlock complaint={c} canEdit={!isClosed(c.status) && c.status !== 'rejected'}
+            onSaved={(patch) => onTextSaved?.(c.id, patch)} />
 
           {/* รูปจากผู้แจ้ง */}
           {(c.attachments ?? []).length > 0 && (
@@ -458,15 +459,7 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant, curren
             </div>
           )}
 
-          {/* บันทึกที่บันทึกไว้แล้ว (completed) */}
-          {isClosed(c.status) && c.technician_note && (
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">บันทึกของช่าง</p>
-              <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
-                <p className="text-sm text-gray-700 whitespace-pre-wrap">{c.technician_note}</p>
-              </div>
-            </div>
-          )}
+          {/* บันทึกผลของเรื่องที่ดำเนินการแล้ว แสดงใน ComplaintTextBlock ด้านบนแล้ว */}
         </div>
 
         {/* Footer */}
@@ -474,7 +467,7 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant, curren
           <div className="px-5 py-4 border-t border-gray-100 bg-gray-50 shrink-0 space-y-2">
             {action && (
               <button
-                onClick={() => onUpdate(c.id, action.next, isFinishStep ? photos : null, isFinishStep ? (note.trim() || null) : null)}
+                onClick={() => isFinishStep ? setShowFinish(true) : onUpdate(c.id, action.next)}
                 disabled={updating === c.id}
                 className="w-full py-3 rounded-2xl text-sm font-bold text-white transition-all active:scale-98 disabled:opacity-50"
                 style={{ backgroundColor: isFinishStep ? '#10b981' : '#2563eb' }}>
@@ -487,6 +480,16 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant, curren
             )}
             {canReturnComplaint(c, currentUserId) && (
               <ReturnToIntakeButton complaintId={c.id} onReturned={onReturned} />
+            )}
+            {showFinish && (
+              <FinishComplaintDialog
+                complaint={{ ...c, work_photos: photos }}
+                requiresPin={requiresPin}
+                categoryLabel={catLabel}
+                tenantSlug={tenant?.slug}
+                onCancel={() => setShowFinish(false)}
+                onDone={(result) => { setShowFinish(false); onFinished?.(c.id, result) }}
+              />
             )}
           </div>
         )}
@@ -505,6 +508,7 @@ export default function TechnicianDashboard() {
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(null)
   const [selected, setSelected] = useState(null)
+  const [catMeta, setCatMeta] = useState({})
   const [myName, setMyName] = useState('')
   const [myAvatar, setMyAvatar] = useState(null)
   const [seenIds, setSeenIds] = useState(getSeenIds)
@@ -513,9 +517,10 @@ export default function TechnicianDashboard() {
   const [, setCatVer] = useState(0)
   useEffect(() => {
     if (!tenant?.id) return
-    supabase.from('complaint_categories').select('value, label, emoji').eq('municipality_id', tenant.id)
+    supabase.from('complaint_categories').select('value, label, emoji, requires_resolved_location').eq('municipality_id', tenant.id)
       .then(({ data }) => {
         if (data && data.length > 0) {
+          setCatMeta(Object.fromEntries(data.map((c) => [c.value, { requires_resolved_location: c.requires_resolved_location !== false }])))
           for (const c of data) {
             CATEGORY_LABEL[c.value] = c.label
             if (c.emoji) CATEGORY_EMOJI[c.value] = c.emoji
@@ -589,11 +594,22 @@ export default function TechnicianDashboard() {
   }, [tenant?.id, staffId, fetchComplaints])
 
   async function updateStatus(id, nextStatus, workPhotos = null, techNote = null) {
-    // หน้านี้เป็นของผู้ปฏิบัติงาน ซึ่งจบงานได้แค่ `done` — การปิดเรื่อง (`closed` และ
-    // `completed` แบบ legacy) เป็นการตรวจรับของ Admin เท่านั้น ปัจจุบัน NEXT_ACTION ของ
-    // ไฟล์นี้จบที่ `done` อยู่แล้ว ด่านนี้จึงมีไว้กันวันที่มีคนแก้ตารางนั้นแล้วลืมเรื่องสิทธิ์
-    if (['closed', 'completed'].includes(nextStatus)) {
-      console.error('final complaint closure requires admin or superadmin')
+    // "ดำเนินการแล้ว" ต้องผ่าน FinishComplaintDialog (ปักหมุด + finish_complaint) เท่านั้น
+    if (['closed', 'completed', 'done'].includes(nextStatus)) {
+      console.error('finishing a complaint must go through FinishComplaintDialog')
+      return
+    }
+    if (nextStatus === 'in_progress') {
+      setUpdating(id)
+      const { error } = await startComplaintWork(id)
+      if (error) alert('เริ่มดำเนินการไม่สำเร็จ: ' + error.message)
+      else {
+        const updated = complaints.map((c) => c.id === id ? { ...c, status: 'in_progress' } : c)
+        setComplaints(updated)
+        emitTechBadge(updated)
+        setSelected(null)
+      }
+      setUpdating(null)
       return
     }
     setUpdating(id)
@@ -609,13 +625,7 @@ export default function TechnicianDashboard() {
       setComplaints(updated)
       emitTechBadge(updated)
 
-      const notificationType = {
-        received: 'technician_received',
-        in_progress: 'technician_in_progress',
-        done: 'technician_closed',
-        completed: 'technician_closed',
-      }[nextStatus]
-      if (notificationType) notifyTelegram(notificationType, id)
+      if (nextStatus === 'received') notifyTelegram('technician_received', id)
 
       setSelected(null)
     }
@@ -734,6 +744,12 @@ export default function TechnicianDashboard() {
           updating={updating}
           tenant={tenant}
           currentUserId={staffId}
+          requiresPin={requiresResolvedPin(catMeta, selected.category)}
+          onFinished={() => { setSelected(null); fetchComplaints({ silent: true }) }}
+          onTextSaved={(id, patch) => {
+            setComplaints((prev) => prev.map((row) => row.id === id ? { ...row, ...patch } : row))
+            setSelected((prev) => prev?.id === id ? { ...prev, ...patch } : prev)
+          }}
           // ส่งคืนแล้ว assigned_to กลายเป็น NULL — realtime ของหน้านี้กรองด้วย assigned_to === staffId
           // จึงไม่ยิงให้โหลดใหม่ ต้องตัดออกจากรายการเอง
           onReturned={(id) => {

@@ -8,6 +8,8 @@ import { uploadFile, resolvePrivateFileUrl, isPrivateDriveRef, driveFileIdFromRe
 import SatisfactionModal from '../components/SatisfactionModal'
 import { workingDaysLeft } from '../lib/workingDays'
 import { odorRoutedAt, isAdhocComplaint, ODOR_INTAKE_LABEL } from '../lib/odorIntake'
+import ComplaintTextBlock from '../components/complaints/ComplaintTextBlock'
+import ReopenComplaintBox from '../components/complaints/ReopenComplaintBox'
 import {
   ClipboardList, Loader2, ChevronRight, X, MapPin,
   Phone, ArrowLeft, Check, XCircle, Navigation, Camera, AlignLeft,
@@ -21,23 +23,23 @@ const ITEMS_PER_PAGE_OPTIONS = [10, 20, 50, 100]
 const STATUS = {
   new:         { label: 'คำร้องใหม่',      bg: '#fef3c7', text: '#92400e' },
   in_progress: { label: 'กำลังดำเนินการ', bg: '#ede9fe', text: '#5b21b6' },
-  done:        { label: 'ดำเนินการแล้ว',  bg: '#dbeafe', text: '#1e40af' },
-  closed:      { label: 'ปิดเรื่องแล้ว',  bg: '#d1fae5', text: '#065f46' },
+  // ตัดขั้น "ปิดเรื่องแล้ว" ออก 2569-09-15 — 'closed' = "ดำเนินการแล้ว" สถานะสุดท้าย ('done' = ขั้นเก่าที่ค้าง)
+  done:        { label: 'ดำเนินการแล้ว',  bg: '#d1fae5', text: '#065f46' },
+  closed:      { label: 'ดำเนินการแล้ว',  bg: '#d1fae5', text: '#065f46' },
   rejected:    { label: 'ปฏิเสธ',         bg: '#fee2e2', text: '#991b1b' },
   // backward compat
   pending:     { label: 'คำร้องใหม่',      bg: '#fef3c7', text: '#92400e' },
   received:    { label: 'รับเรื่องแล้ว',   bg: '#e0f2fe', text: '#0369a1' },
-  completed:   { label: 'ปิดเรื่องแล้ว',  bg: '#d1fae5', text: '#065f46' },
+  completed:   { label: 'ดำเนินการแล้ว',  bg: '#d1fae5', text: '#065f46' },
 }
 
-const STATUS_FLOW = ['new', 'received', 'in_progress', 'done', 'closed']
+const STATUS_FLOW = ['new', 'received', 'in_progress', 'closed']
 const STATUS_FLOW_LABEL = {
   new:         { label: 'คำร้องใหม่',      desc: 'คำร้องของคุณถูกส่งเข้าระบบแล้ว' },
   // ระบบอาจเป็นผู้รับเรื่องเองเมื่อหมวดมีผู้รับผิดชอบครบ (20260915100100) — ไม่อ้างว่าเป็นเจ้าหน้าที่
   received:    { label: 'รับเรื่องแล้ว',   desc: 'รับเรื่องและส่งถึงผู้รับผิดชอบแล้ว' },
   in_progress: { label: 'กำลังดำเนินการ', desc: 'เจ้าหน้าที่ลงพื้นที่ดำเนินการ' },
-  done:        { label: 'ดำเนินการแล้ว',  desc: 'เจ้าหน้าที่ดำเนินการเสร็จแล้ว' },
-  closed:      { label: 'ปิดเรื่องแล้ว',  desc: 'ปิดเรื่องและแจ้งผลประชาชนแล้ว' },
+  closed:      { label: 'ดำเนินการแล้ว',  desc: 'ผู้รับผิดชอบดำเนินการแล้ว ถ้ายังไม่เรียบร้อยแจ้งกลับได้ภายใน 7 วัน' },
 }
 
 // นับเป็น "วันทำการ" ให้ตรงกับฝั่งเจ้าหน้าที่ (ComplaintsManager) — ประชาชนกับเจ้าหน้าที่
@@ -102,7 +104,7 @@ function StatusBadge({ complaint }) {
   )
 }
 
-const STATUS_COMPAT = { pending: 'new', done: 'done', completed: 'closed' }
+const STATUS_COMPAT = { pending: 'new', done: 'closed', completed: 'closed' }
 
 // หมวดเฉพาะกิจ (complaint_categories.is_adhoc เช่น กลิ่นเหม็นรบกวน) ส่งตรงถึงผู้รับผิดชอบและ
 // "ไม่แตะ status เลย" ตลอดสายงาน — ผู้แจ้งจึงเห็น "คำร้องใหม่" ค้างตลอดกาลแม้เรื่องถึงมือคนรับผิดชอบ
@@ -244,7 +246,7 @@ function StatusStepper({ status }) {
   )
 }
 
-function DetailSheet({ complaint: c, onClose, onAttachmentsChange, onRate, catLabel = DEFAULT_CATEGORY_LABEL, catEmoji = DEFAULT_CATEGORY_EMOJI }) {
+function DetailSheet({ complaint: c, onClose, onAttachmentsChange, onRate, catLabel = DEFAULT_CATEGORY_LABEL, catEmoji = DEFAULT_CATEGORY_EMOJI, currentUserId = null, onReopened }) {
   const { tenant } = useTenant()
   // complaints.detail เป็น text not null (002_create_complaints.sql) ค่า null จึงแปลว่า
   // get_complaint_by_ref mask ให้ตอนผู้ค้นไม่ใช่เจ้าของเรื่องหรือเจ้าหน้าที่ — ใช้เป็นสัญญาณ
@@ -433,7 +435,7 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange, onRate, catLa
                 </div>
               ) : (
                 <>
-                  <p className="text-sm font-bold text-green-800">คำร้องนี้ปิดเรื่องแล้ว</p>
+                  <p className="text-sm font-bold text-green-800">คำร้องนี้ดำเนินการแล้ว</p>
                   <p className="text-xs text-green-600 mt-0.5 mb-3">
                     ขอเวลาสักครู่ให้คะแนนความพึงพอใจการให้บริการ
                   </p>
@@ -445,6 +447,11 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange, onRate, catLa
                 </>
               )}
             </div>
+          )}
+
+          {/* ยังไม่เรียบร้อย → เปิดเรื่องกลับ 7 วัน 1 ครั้ง (เฉพาะเจ้าของเรื่องที่ล็อกอิน) */}
+          {currentUserId && !isAdhocComplaint(c) && (
+            <ReopenComplaintBox complaint={c} userId={currentUserId} onReopened={onReopened} />
           )}
 
           {/* เอกสารฉบับสมบูรณ์ (ลงนามจาก GDCC e-Office แล้ว) */}
@@ -539,12 +546,8 @@ function DetailSheet({ complaint: c, onClose, onAttachmentsChange, onRate, catLa
               </div>
             </div>
           ) : c.detail ? (
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">รายละเอียดปัญหา</p>
-              <div className="bg-gray-50 rounded-2xl px-4 py-3">
-                <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{c.detail}</p>
-              </div>
-            </div>
+            // ถ้าเจ้าหน้าที่แก้ข้อความ ผู้ร้องเห็นป้าย "ข้อความถูกแก้ไข" พร้อมข้อความเดิมทุกรุ่น (ComplaintTextBlock)
+            <ComplaintTextBlock complaint={c} title="รายละเอียดปัญหา" showNote={false} />
           ) : null}
 
           {/* citizen attachments — ใช้ freshAttachments (fetch ใหม่ตอนเปิด) เพื่อแก้กรณี list โหลดก่อน upload เสร็จ */}
@@ -1128,6 +1131,15 @@ export default function MyComplaints() {
           onRate={selected.rating == null && isClosed(selected.status) ? openRating : undefined}
           catLabel={catLabel}
           catEmoji={catEmoji}
+          currentUserId={session?.user?.id ?? null}
+          onReopened={(id, status, reason) => {
+            const patch = {
+              status: status ?? 'received', closed_at: null, resolved_latitude: null, resolved_longitude: null,
+              extra_data: { ...(selected.extra_data ?? {}), reopened_at: new Date().toISOString(), reopen_reason: reason, reopen_count: 1 },
+            }
+            setComplaints(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c))
+            setSelected(prev => prev?.id === id ? { ...prev, ...patch } : prev)
+          }}
         />
       )}
       </div>

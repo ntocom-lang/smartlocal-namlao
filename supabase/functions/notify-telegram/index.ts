@@ -19,6 +19,8 @@ const corsHeaders = {
 const notificationSpecs = {
   complaint_created: { table: 'complaints', resourceType: 'complaint', access: 'public_create' },
   complaint_status_updated: { table: 'complaints', resourceType: 'complaint', access: 'staff' },
+  // ผู้ร้องกด "ยังไม่เรียบร้อย" (reopen_complaint) — คนกดคือเจ้าของเรื่อง ไม่ใช่เจ้าหน้าที่
+  complaint_reopened: { table: 'complaints', resourceType: 'complaint', access: 'owner' },
   document_request_created: { table: 'document_requests', resourceType: 'document_request', access: 'public_create' },
   document_request_status_updated: { table: 'document_requests', resourceType: 'document_request', access: 'staff' },
   building_permit_created: { table: 'document_requests', resourceType: 'document_request', access: 'public_create' },
@@ -148,8 +150,9 @@ const COMPLAINT_STATUS_LABEL: Record<string, string> = {
   new: 'คำร้องใหม่', pending: 'คำร้องใหม่',
   received: 'รับเรื่องแล้ว',
   in_progress: 'กำลังดำเนินการ',
+  // ตัดขั้น "ปิดเรื่องแล้ว" ออก 2569-09-15 — 'closed' คือ "ดำเนินการแล้ว" ที่ผู้รับผิดชอบกดเอง
   done: 'ดำเนินการแล้ว', completed: 'ดำเนินการแล้ว',
-  closed: 'ปิดเรื่องแล้ว',
+  closed: 'ดำเนินการแล้ว',
   rejected: 'ปฏิเสธ',
 }
 
@@ -388,6 +391,21 @@ function buildComplaintCreatedMessage(complaint: Record<string, unknown>) {
     department ? `ส่งถึง: ${escapeHtml(department, 80)}` : '',
     submittedAt ? `แจ้งเมื่อ: ${escapeHtml(submittedAt, 60)}` : '',
     intake,
+  ])
+}
+
+// ผู้ร้องแจ้งว่ายังไม่เรียบร้อยภายใน 7 วัน — ไม่ใส่เหตุผลที่ผู้ร้องพิมพ์ (ข้อความอิสระของประชาชน, PDPA)
+function buildComplaintReopenedMessage(complaint: Record<string, unknown>) {
+  const category = complaintCategory(complaint)
+  const department = departmentName(complaint)
+  return framedMessage(complaint, '🔁', 'ผู้ร้องแจ้งว่ายังไม่เรียบร้อย', [
+    complaint.ref_no ? `เลขที่: ${escapeHtml(complaint.ref_no, 40)}` : '',
+    `ประเภท: ${escapeHtml(category.label, 60)}`,
+    complaint.village ? `สถานที่: ${escapeHtml(complaint.village, 120)}` : '',
+    complaint.status === 'received'
+      ? 'สถานะ: ส่งกลับถึงผู้รับผิดชอบเดิมแล้ว'
+      : 'สถานะ: <b>รอแอดมินรับเรื่อง</b>',
+    department ? `ส่งถึง: ${escapeHtml(department, 80)}` : '',
   ])
 }
 
@@ -822,6 +840,11 @@ function canRequestNotification(
     return !!userId && isInternal && sameMunicipality(profile, resource)
   }
 
+  // เจ้าของเรื่องเท่านั้น — ไม่มีทางเข้าของผู้ไม่ล็อกอิน (isRecent) เพราะเปิดเรื่องกลับต้องล็อกอิน
+  if (spec.access === 'owner') {
+    return !!userId && resource.user_id === userId
+  }
+
   if (userId && resource.user_id === userId) return true
   if (userId && isInternal && sameMunicipality(profile, resource)) return true
   return resource.user_id == null && isRecent(resource.created_at)
@@ -851,7 +874,8 @@ function notificationMatchesResource(type: NotificationType, resource: Record<st
   if (type === 'fee_verified') return Number(resource.fee_amount ?? 0) > 0
   if (type === 'technician_received') return resource.status === 'received'
   if (type === 'technician_in_progress') return resource.status === 'in_progress'
-  if (type === 'technician_closed') return resource.status === 'done' || resource.status === 'completed'
+  if (type === 'technician_closed') return resource.status === 'closed' || resource.status === 'done' || resource.status === 'completed'
+  if (type === 'complaint_reopened') return resource.status === 'received' || resource.status === 'pending'
   if (type === 'fleet_trip_bumped') return resource.status === 'cancelled'
   // สถานะนี้ตั้งโดย DB (fleet_trips_guard_overlap) เท่านั้น ห้ามส่งแจ้งเตือนตามคำบอกของ client
   if (type === 'fleet_trip_waitlisted') return resource.status === 'waitlisted'
@@ -1047,6 +1071,8 @@ serve(async (req) => {
       ? buildEventMessage(resource, municipality.org_type)
       : notificationType === 'complaint_created'
         ? buildComplaintCreatedMessage(resource)
+        : notificationType === 'complaint_reopened'
+          ? buildComplaintReopenedMessage(resource)
         : notificationType === 'complaint_status_updated' || notificationType.startsWith('technician_')
           ? buildComplaintStatusMessage(resource)
           : notificationType === 'fleet_trip_bumped'

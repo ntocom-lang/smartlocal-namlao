@@ -152,7 +152,7 @@ const STATUS_LABEL = {
   complaints: {
     new: 'คำร้องใหม่', pending: 'คำร้องใหม่', received: 'รับเรื่องแล้ว',
     in_progress: 'กำลังดำเนินการ', done: 'ดำเนินการแล้ว', completed: 'ดำเนินการแล้ว',
-    closed: 'ปิดเรื่องแล้ว', rejected: 'ปฏิเสธ',
+    closed: 'ดำเนินการแล้ว', rejected: 'ปฏิเสธ',
   },
   business_registrations: { pending: 'รอดำเนินการ', approved: 'อนุมัติแล้ว', rejected: 'ปฏิเสธแล้ว' },
   civil_projects: Object.fromEntries(CIVIL_PROJECT_STATUS_OPTIONS.map(opt => [opt.value, opt.label])),

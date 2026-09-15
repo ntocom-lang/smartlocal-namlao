@@ -119,25 +119,13 @@ const STATUS = {
   pending:     { label: 'รอดำเนินการ',    color: '#f59e0b', bg: '#fef3c7', text: '#92400e' },
   received:    { label: 'รับเรื่องแล้ว',   color: '#3b82f6', bg: '#dbeafe', text: '#1e40af' },
   in_progress: { label: 'กำลังดำเนินการ', color: '#8b5cf6', bg: '#ede9fe', text: '#5b21b6' },
-  done:        { label: 'รอปิดเรื่อง',    color: '#f97316', bg: '#fff7ed', text: '#9a3412' },
-  completed:   { label: 'ปิดเรื่องแล้ว',  color: '#10b981', bg: '#d1fae5', text: '#065f46' },
-  closed:      { label: 'ปิดเรื่องแล้ว',  color: '#10b981', bg: '#d1fae5', text: '#065f46' },
+  // ตัดขั้น "ปิดเรื่องแล้ว" ออก 2569-09-15 — 'closed' = "ดำเนินการแล้ว" สถานะสุดท้าย ('done' = ขั้นเก่าที่ค้าง)
+  done:        { label: 'ดำเนินการแล้ว',  color: '#10b981', bg: '#d1fae5', text: '#065f46' },
+  completed:   { label: 'ดำเนินการแล้ว',  color: '#10b981', bg: '#d1fae5', text: '#065f46' },
+  closed:      { label: 'ดำเนินการแล้ว',  color: '#10b981', bg: '#d1fae5', text: '#065f46' },
   rejected:    { label: 'ปฏิเสธ',         color: '#ef4444', bg: '#fee2e2', text: '#991b1b' },
 }
 
-const STATUS_FLOW = ['pending', 'received', 'in_progress', 'done', 'completed']
-const STATUS_FLOW_LABEL = {
-  pending:     { label: 'รอดำเนินการ',    desc: 'ประชาชนส่งคำร้องเข้าระบบ' },
-  received:    { label: 'รับเรื่องแล้ว',   desc: 'เจ้าหน้าที่รับเรื่องและตรวจสอบ' },
-  in_progress: { label: 'กำลังดำเนินการ', desc: 'อยู่ระหว่างดำเนินการแก้ไข' },
-  done:        { label: 'รอปิดเรื่อง',    desc: 'เจ้าหน้าที่ดำเนินการเสร็จ รอ admin ปิดเรื่อง' },
-  completed:   { label: 'ปิดเรื่องแล้ว',  desc: 'ปิดเรื่องและแจ้งผลประชาชนแล้ว' },
-}
-
-const NEXT_ACTION = {
-  pending:     { label: 'รับเรื่อง',  next: 'received' },
-  done:        { label: 'ปิดเรื่อง', next: 'completed' },
-}
 
 let CATEGORY_LABEL = {
   road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าส่องสว่าง',
@@ -3669,7 +3657,26 @@ function ManualIntakeChip({ cat, onToggle, className = '' }) {
   )
 }
 
-function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleActive, onToggleAdhoc, onToggleManualIntake, onEditEmoji, iconStyle, departments = [], techGroups = [], techId = '', slaDays = 3, onDepartmentChange, onTechChange, onSlaChange, savingAssign = false }) {
+// สวิตช์ "ต้องปักหมุดจุดที่ดำเนินการ" รายหมวด (complaint_categories.requires_resolved_location, 20260915110000)
+// หมวดที่เรื่องไม่มีจุดบนแผนที่ (ภาษี ร้องทุกข์ทั่วไป แจ้งทุจริต) ปิดไว้ ไม่งั้นผู้รับผิดชอบกด "ดำเนินการแล้ว" ไม่ได้
+function ResolvedPinChip({ cat, onToggle, className = '' }) {
+  if (cat.is_adhoc) return null
+  const required = cat.requires_resolved_location !== false
+  return (
+    <button
+      type="button"
+      onClick={() => onToggle?.(cat.id, required)}
+      title={required
+        ? 'ก่อนกด "ดำเนินการแล้ว" ต้องปักหมุดจุดที่ดำเนินการ — กดเพื่อยกเว้นหมวดนี้'
+        : 'หมวดนี้กด "ดำเนินการแล้ว" ได้โดยไม่ต้องปักหมุด — กดเพื่อบังคับปักหมุด'}
+      className={`px-2 py-1 rounded-full font-bold whitespace-nowrap transition-colors ${required ? 'bg-orange-100 text-orange-700 hover:bg-orange-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'} ${className}`}
+    >
+      {required ? '📍 ต้องปักหมุด' : 'ไม่ต้องปักหมุด'}
+    </button>
+  )
+}
+
+function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleActive, onToggleAdhoc, onToggleManualIntake, onToggleResolvedPin, onEditEmoji, iconStyle, departments = [], techGroups = [], techId = '', slaDays = 3, onDepartmentChange, onTechChange, onSlaChange, savingAssign = false }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(cat.label)
@@ -3760,6 +3767,7 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
       {!cat.is_adhoc && (
         <div className="flex items-center gap-2 pl-14">
           <ManualIntakeChip cat={cat} onToggle={onToggleManualIntake} className="text-[12px]" />
+          <ResolvedPinChip cat={cat} onToggle={onToggleResolvedPin} className="text-[12px]" />
         </div>
       )}
 
@@ -3808,7 +3816,7 @@ function SortableCatItem({ cat, idx, total, onDelete, onMove, onEdit, onToggleAc
   )
 }
 
-function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [], techGroups = [], onSetDraft, onSaveRow, onCancelRow, onStartLabelEdit, onToggleActive, onToggleAdhoc, onToggleManualIntake, onDeleteCat, onEditEmoji, iconStyle }) {
+function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [], techGroups = [], onSetDraft, onSaveRow, onCancelRow, onStartLabelEdit, onToggleActive, onToggleAdhoc, onToggleManualIntake, onToggleResolvedPin, onDeleteCat, onEditEmoji, iconStyle }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id })
   const editingLabel = !!draft?.editingLabel
   const hasDraft = !!draft && !editingLabel
@@ -3926,6 +3934,7 @@ function SortableDesktopRow({ cat, idx, draft, assign, isSaving, departments = [
             {cat.is_adhoc ? '💨 เฉพาะกิจ' : 'ปกติ'}
           </button>
           <ManualIntakeChip cat={cat} onToggle={onToggleManualIntake} className="max-w-full text-[11px]" />
+          <ResolvedPinChip cat={cat} onToggle={onToggleResolvedPin} className="max-w-full text-[11px]" />
         </div>
       </td>
       <td className="px-2 py-3">
@@ -4337,6 +4346,32 @@ function CategoryManager({ tenant }) {
     setError(null)
   }
 
+  // สลับ "ต้องปักหมุด / ไม่ต้องปักหมุด" — มีผลกับการกด "ดำเนินการแล้ว" ครั้งถัดไปทันที (ตรวจที่ DB ตอนปิดงาน)
+  async function toggleResolvedPin(id, current) {
+    const cat = cats.find((c) => c.id === id)
+    const label = cat?.label ?? ''
+    const message = current
+      ? `ยกเว้นการปักหมุดสำหรับ "${label}"?\n\nผู้รับผิดชอบกด "ดำเนินการแล้ว" ได้โดยไม่ต้องระบุจุดที่ดำเนินการ ใช้กับหมวดที่เรื่องไม่มีสถานที่เท่านั้น`
+      : `บังคับปักหมุดสำหรับ "${label}"?\n\nก่อนกด "ดำเนินการแล้ว" ผู้รับผิดชอบต้องปักหมุดจุดที่ดำเนินการทุกครั้ง`
+    if (!window.confirm(message)) return
+
+    // RLS ปัดตกเงียบได้ — อ่านค่ากลับมาเทียบ เหมือน toggleAdhoc / toggleManualIntake
+    const { data, error: err } = await supabase.from('complaint_categories')
+      .update({ requires_resolved_location: !current }).eq('id', id).select('id, requires_resolved_location')
+    if (err) { setError('บันทึกไม่สำเร็จ: ' + err.message); return }
+    if (!data || data.length === 0) {
+      setError('ไม่มีสิทธิ์เปลี่ยนการปักหมุด (ต้องเป็นผู้ดูแลระบบของ อปท. นี้)')
+      return
+    }
+    const saved = data[0].requires_resolved_location
+    setCats((prev) => prev.map((c) => c.id === id ? { ...c, requires_resolved_location: saved } : c))
+    if (saved === current) {
+      setError('ฐานข้อมูลไม่ได้เปลี่ยนการปักหมุดของหมวดนี้ กรุณาลองใหม่')
+      return
+    }
+    setError(null)
+  }
+
   async function moveCat(idx, dir) {
     const swapIdx = idx + dir
     if (swapIdx < 0 || swapIdx >= cats.length) return
@@ -4602,6 +4637,7 @@ function CategoryManager({ tenant }) {
                     onDelete={deleteCat} onMove={moveCat} onEdit={editCat} onToggleActive={toggleActive}
                     onToggleAdhoc={toggleAdhoc}
                     onToggleManualIntake={toggleManualIntake}
+                    onToggleResolvedPin={toggleResolvedPin}
                     onEditEmoji={setIconPickerCat}
                     iconStyle={iconStyle}
                     departments={departments}
@@ -4664,6 +4700,7 @@ function CategoryManager({ tenant }) {
                         onToggleActive={toggleActive}
                         onToggleAdhoc={toggleAdhoc}
                         onToggleManualIntake={toggleManualIntake}
+                        onToggleResolvedPin={toggleResolvedPin}
                         onDeleteCat={deleteCat}
                         onEditEmoji={setIconPickerCat}
                         iconStyle={iconStyle}

@@ -12,6 +12,9 @@ import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../lib/c
 import { useTenant } from '../contexts/TenantContext'
 import { useNotifications } from '../contexts/NotificationsContext'
 import { notifyTelegram } from '../lib/notifyTelegram'
+import FinishComplaintDialog from '../components/complaints/FinishComplaintDialog'
+import { isComplaintWorker, requiresResolvedPin } from '../lib/complaintWorkflow'
+import { startComplaintWork } from '../lib/complaintFinish'
 import { logAction } from '../lib/auditLog'
 import { govDocFontCss, govEServiceOriginText, govPageCss } from '../lib/govDocStyle.js'
 import { thaiDate, thaiDateFromDateInput } from '../lib/thaiDate'
@@ -1721,14 +1724,21 @@ const C_STATUS = {
   pending:     { label: 'รอดำเนินการ',    color: '#f59e0b', bg: '#fef3c7' },
   received:    { label: 'รับเรื่องแล้ว',  color: '#3b82f6', bg: '#dbeafe' },
   in_progress: { label: 'กำลังดำเนินการ', color: '#8b5cf6', bg: '#ede9fe' },
-  done:        { label: 'รอปิดเรื่อง',    color: '#f97316', bg: '#fff7ed' },
-  completed:   { label: 'ปิดเรื่องแล้ว',  color: '#10b981', bg: '#d1fae5' },
-  closed:      { label: 'ปิดเรื่องแล้ว',  color: '#10b981', bg: '#d1fae5' },
+  // ตัดขั้น "ปิดเรื่องแล้ว" ออก 2569-09-15 — 'closed' = "ดำเนินการแล้ว" สถานะสุดท้าย ('done' = ขั้นเก่าที่ค้าง)
+  done:        { label: 'ดำเนินการแล้ว',  color: '#10b981', bg: '#d1fae5' },
+  completed:   { label: 'ดำเนินการแล้ว',  color: '#10b981', bg: '#d1fae5' },
+  closed:      { label: 'ดำเนินการแล้ว',  color: '#10b981', bg: '#d1fae5' },
   rejected:    { label: 'ปฏิเสธ',         color: '#ef4444', bg: '#fee2e2' },
+}
+// 'done' ขั้นเก่า + 'completed' legacy แสดงและกรองรวมกับ 'closed' ("ดำเนินการแล้ว")
+function normalizeFinished(status) {
+  return status === 'done' || status === 'completed' ? 'closed' : status
 }
 const C_NEXT = {
   received:    { label: 'เริ่มดำเนินการ', next: 'in_progress' },
-  in_progress: { label: 'ปิดงาน',        next: 'done' },
+  // "ดำเนินการแล้ว" เปิดกล่องปักหมุด (FinishComplaintDialog) ไม่ได้เปลี่ยนสถานะตรง
+  in_progress: { label: 'ดำเนินการแล้ว', next: 'closed' },
+  done:        { label: 'ดำเนินการแล้ว', next: 'closed' },
 }
 // fallback ก่อน complaint_categories ของเทศบาลจะโหลดเสร็จ (หรือถ้าโหลดพลาด) — ครอบคลุม
 // ค่าเดียวกับ DEFAULT_CATEGORIES ใน ComplaintCategory.jsx (ฟอร์มแจ้งเรื่องฝั่งประชาชน) กัน
@@ -1818,11 +1828,16 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
 
   // ดึงชื่อ ไอคอน และสีจากประเภทคำร้องที่ Admin กำหนด ใช้เป็นแหล่งเดียวกันทั้งระบบ
   const [, setCatVer] = useState(0)
+  // ธงรายหมวด: บังคับหมุดตอน "ดำเนินการแล้ว" / หมวดเฉพาะกิจ
+  const [catMeta, setCatMeta] = useState({})
   useEffect(() => {
     if (!tenant?.id) return
-    supabase.from('complaint_categories').select('value, label, emoji, color, text_color').eq('municipality_id', tenant.id)
+    supabase.from('complaint_categories').select('value, label, emoji, color, text_color, is_adhoc, requires_resolved_location').eq('municipality_id', tenant.id)
       .then(({ data }) => {
         if (data && data.length > 0) {
+          setCatMeta(Object.fromEntries(data.map((c) => [c.value, {
+            is_adhoc: !!c.is_adhoc, requires_resolved_location: c.requires_resolved_location !== false,
+          }])))
           for (const c of data) {
             C_CAT[c.value] = c.label
             C_CAT_META[c.value] = {
@@ -1841,6 +1856,7 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
   const [selected, setSelected]     = useState(null)
   const [openingComplaintId, setOpeningComplaintId] = useState(null)
   const [assigneeNames, setAssigneeNames] = useState({})
+  const [finishing, setFinishing] = useState(null)
 
   const loadAssignedComplaints = useCallback(async () => {
     if (!tenantId || !staffId) return
@@ -1912,11 +1928,27 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
     await loadAssignedComplaints()
   }
 
+  // ผู้ทำงานในหน้านี้: ผู้รับผิดชอบ หรือหัวหน้ากอง (รายการกรองเฉพาะกองมาแล้ว) — DB ตรวจซ้ำที่ complaint_worker_can_act()
+  const canWorkOn = (c) => isComplaintWorker(c, staffId, currentUserRole, { departmentScoped: seesWholeDepartment })
+    && !catMeta[c.category]?.is_adhoc
+
   async function advanceStatus(id, next, workPhotos = null, techNote = null) {
-    // Defense in depth: shared detail modal ถูกใช้ทั้ง Admin และหน้าผู้รับผิดชอบ
-    // เจ้าหน้าที่ต้องจบงานที่ `done`; `closed`/legacy `completed` เป็นการตรวจรับของ Admin
-    if (['closed', 'completed'].includes(next) && !['admin', 'superadmin'].includes(currentUserRole)) {
-      console.error('final complaint closure requires admin or superadmin')
+    // "ดำเนินการแล้ว" ต้องผ่านกล่องปักหมุดเท่านั้น
+    if (['closed', 'completed', 'done'].includes(next)) {
+      const row = complaints.find((c) => c.id === id)
+      if (row) setFinishing(row)
+      return
+    }
+    // เริ่มดำเนินการผ่าน RPC — role staff แก้ status ตรงไม่ได้ (enforce_staff_document_only_update)
+    if (next === 'in_progress') {
+      setUpdating(id)
+      const { error } = await startComplaintWork(id)
+      if (error) alert('เริ่มดำเนินการไม่สำเร็จ: ' + error.message)
+      else {
+        setComplaints(prev => prev.map(c => c.id === id ? { ...c, status: 'in_progress' } : c))
+        setSelected(null)
+      }
+      setUpdating(null)
       return
     }
     setUpdating(id)
@@ -1935,7 +1967,7 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
   }
 
   const filtered = complaints.filter(c => {
-    if (filterStatus !== 'all' && c.status !== filterStatus) return false
+    if (filterStatus !== 'all' && normalizeFinished(c.status) !== filterStatus) return false
     if (search.trim()) {
       const q = search.toLowerCase()
       return [
@@ -1963,11 +1995,11 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
     })
   }, [tenantId, seesWholeDepartment])
 
-  const filterItems = ['all', 'received', 'in_progress', 'done', 'completed', 'closed', 'rejected']
-    .filter(status => status === 'all' || complaints.some(c => c.status === status))
+  const filterItems = ['all', 'received', 'in_progress', 'closed', 'rejected']
+    .filter(status => status === 'all' || complaints.some(c => normalizeFinished(c.status) === status))
   const statusCount = status => status === 'all'
     ? complaints.length
-    : complaints.filter(c => c.status === status).length
+    : complaints.filter(c => normalizeFinished(c.status) === status).length
 
   return (
     <div className="space-y-4 md:space-y-5">
@@ -2072,7 +2104,7 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
               <tbody className="divide-y divide-gray-200">
                 {filtered.map((c, i) => {
                   const st = C_STATUS[c.status]
-                  const nx = C_NEXT[c.status]
+                  const nx = canWorkOn(c) ? C_NEXT[c.status] : null
                   const meta = C_CAT_META[c.category] ?? C_CAT_META.other
                   const ref = c.ref_no || c.complaint_number || '—'
                   const location = c.location_name || c.village
@@ -2120,7 +2152,7 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
                         {nx ? (
                           <button onClick={() => advanceStatus(c.id, nx.next)} disabled={updating === c.id}
                             className="min-h-8 w-full rounded-lg px-2 py-1.5 text-[11px] font-extrabold text-white shadow-sm transition active:scale-[0.98] disabled:opacity-50"
-                            style={{ backgroundColor: nx.next === 'done' ? '#10b981' : 'var(--color-primary)' }}>
+                            style={{ backgroundColor: nx.next === 'closed' ? '#10b981' : 'var(--color-primary)' }}>
                             {updating === c.id ? <Loader2 size={13} className="mx-auto animate-spin" /> : nx.label}
                           </button>
                         ) : (
@@ -2142,7 +2174,7 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
         <div className="grid gap-3 md:hidden">
           {filtered.map(c => {
             const st = C_STATUS[c.status]
-            const nx = C_NEXT[c.status]
+            const nx = canWorkOn(c) ? C_NEXT[c.status] : null
             const meta = C_CAT_META[c.category] ?? C_CAT_META.other
             const date = new Date(c.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
             const ref = c.ref_no || c.complaint_number || 'ไม่ระบุเลขที่'
@@ -2193,7 +2225,7 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
                     {nx ? (
                       <button onClick={(e) => { e.stopPropagation(); advanceStatus(c.id, nx.next) }} disabled={updating === c.id}
                         className="min-h-10 flex-1 rounded-xl px-4 py-2 text-xs font-extrabold text-white shadow-sm transition active:scale-[0.98] disabled:opacity-50"
-                        style={{ backgroundColor: nx.next === 'done' ? '#10b981' : 'var(--color-primary)' }}>
+                        style={{ backgroundColor: nx.next === 'closed' ? '#10b981' : 'var(--color-primary)' }}>
                         {updating === c.id ? <Loader2 size={15} className="mx-auto animate-spin" /> : nx.label}
                       </button>
                     ) : (
@@ -2226,8 +2258,22 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
             onDelete={() => {}}
             // ส่งคืนแล้ว status กลับเป็น pending — รายการนี้กรอง pending ออกอยู่แล้ว ตัดออกทันทีไม่ต้องรอ realtime
             onReturned={(id) => setComplaints((prev) => prev.filter((row) => row.id !== id))}
+            categoryMeta={catMeta}
+            onFinished={() => loadAssignedComplaints()}
+            onTextSaved={(id, patch) => setComplaints((prev) => prev.map((row) => row.id === id ? { ...row, ...patch } : row))}
           />
         </Suspense>
+      )}
+
+      {finishing && (
+        <FinishComplaintDialog
+          complaint={finishing}
+          requiresPin={requiresResolvedPin(catMeta, finishing.category)}
+          categoryLabel={C_CAT[finishing.category] ?? finishing.category}
+          tenantSlug={tenant?.slug}
+          onCancel={() => setFinishing(null)}
+          onDone={() => { setFinishing(null); loadAssignedComplaints() }}
+        />
       )}
     </div>
   )

@@ -14,12 +14,13 @@ const STATUS = {
   pending:     { label: 'รอดำเนินการ',    color: '#f59e0b', bg: '#fef3c7', text: '#92400e' },
   received:    { label: 'รับเรื่องแล้ว',   color: '#3b82f6', bg: '#dbeafe', text: '#1e40af' },
   in_progress: { label: 'กำลังดำเนินการ', color: '#8b5cf6', bg: '#ede9fe', text: '#5b21b6' },
-  done:        { label: 'รอปิดเรื่อง',     color: '#f97316', bg: '#ffedd5', text: '#9a3412' },
-  completed:   { label: 'เสร็จสิ้น',      color: '#10b981', bg: '#d1fae5', text: '#065f46' },
-  closed:      { label: 'ปิดเรื่องแล้ว',   color: '#10b981', bg: '#d1fae5', text: '#065f46' },
+  // ตัดขั้น "ปิดเรื่องแล้ว" ออก 2569-09-15 — 'closed' = "ดำเนินการแล้ว" สถานะสุดท้าย ('done' = ขั้นเก่าที่ค้าง)
+  done:        { label: 'ดำเนินการแล้ว',  color: '#10b981', bg: '#d1fae5', text: '#065f46' },
+  completed:   { label: 'ดำเนินการแล้ว',  color: '#10b981', bg: '#d1fae5', text: '#065f46' },
+  closed:      { label: 'ดำเนินการแล้ว',  color: '#10b981', bg: '#d1fae5', text: '#065f46' },
   rejected:    { label: 'ปฏิเสธ',         color: '#ef4444', bg: '#fee2e2', text: '#991b1b' },
 }
-const CLOSED_STATUSES = new Set(['completed', 'closed'])
+const CLOSED_STATUSES = new Set(['completed', 'closed', 'done'])
 const isClosedStatus = status => CLOSED_STATUSES.has(status)
 let CATEGORY_LABEL = {
   road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าส่องสว่าง',
@@ -242,7 +243,7 @@ export default function ReportManager({ complaints, tenant, technicians = [], hi
   // เกณฑ์ค้างงานนับเป็นวันทำการเช่นกัน — คำร้องที่ยื่นก่อนวันหยุดยาวจะไม่ถูกตีว่าค้าง
   // ทั้งที่สำนักงานยังไม่ได้เปิดทำการ
   const overdue = scoped
-    .filter(c => !['completed', 'closed', 'rejected'].includes(c.status) && workingDaysSince(c.created_at, now) > 15)
+    .filter(c => !['completed', 'closed', 'done', 'rejected'].includes(c.status) && workingDaysSince(c.created_at, now) > 15)
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).slice(0, 6)
   const noTechAction = scoped
     .filter(c => c.status === 'received' && workingDaysSince(c.updated_at, now) > 7)
@@ -370,9 +371,9 @@ export default function ReportManager({ complaints, tenant, technicians = [], hi
       <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3">
         {[
           { label: 'คำร้องที่รับเข้า', value: total, color: '#2563eb', bg: '#eff6ff', sub: 'รายการ', delta: view === 'month' ? total - prevTotal : null, unit: '' },
-          { label: 'ปิดเรื่องแล้ว', value: completed, color: '#059669', bg: '#ecfdf5', sub: 'รายการ', delta: view === 'month' ? completed - prevCompleted : null, unit: '' },
-          { label: 'อัตราปิดเรื่อง', value: `${rate}%`, color: rateColor, bg: rate >= 70 ? '#ecfdf5' : rate >= 40 ? '#fffbeb' : '#fef2f2', sub: rate >= 70 ? 'ผลการดำเนินงานดี' : rate >= 40 ? 'ควรติดตาม' : 'ต้องเร่งดำเนินการ', delta: view === 'month' && prevTotal > 0 ? rate - prevRate : null, unit: '%' },
-          { label: 'เวลาเฉลี่ยปิดเรื่อง', value: avgDays !== null ? avgDays : '—', color: '#7c3aed', bg: '#f5f3ff', sub: avgDays !== null ? 'วันทำการ' : 'ไม่มีข้อมูล', delta: view === 'month' && avgDays !== null && prevAvgDays !== null ? prevAvgDays - avgDays : null, unit: 'วันทำการ' },
+          { label: 'ดำเนินการแล้ว', value: completed, color: '#059669', bg: '#ecfdf5', sub: 'รายการ', delta: view === 'month' ? completed - prevCompleted : null, unit: '' },
+          { label: 'อัตราดำเนินการแล้ว', value: `${rate}%`, color: rateColor, bg: rate >= 70 ? '#ecfdf5' : rate >= 40 ? '#fffbeb' : '#fef2f2', sub: rate >= 70 ? 'ผลการดำเนินงานดี' : rate >= 40 ? 'ควรติดตาม' : 'ต้องเร่งดำเนินการ', delta: view === 'month' && prevTotal > 0 ? rate - prevRate : null, unit: '%' },
+          { label: 'เวลาเฉลี่ยจนดำเนินการแล้ว', value: avgDays !== null ? avgDays : '—', color: '#7c3aed', bg: '#f5f3ff', sub: avgDays !== null ? 'วันทำการ' : 'ไม่มีข้อมูล', delta: view === 'month' && avgDays !== null && prevAvgDays !== null ? prevAvgDays - avgDays : null, unit: 'วันทำการ' },
         ].map(({ label, value, color, bg, sub, delta, unit }) => (
           <div key={label} className="relative overflow-hidden rounded-2xl border border-white p-3.5 shadow-sm md:p-4"
             style={{ background: `linear-gradient(145deg, #ffffff 20%, ${bg} 125%)` }}>
@@ -394,7 +395,7 @@ export default function ReportManager({ complaints, tenant, technicians = [], hi
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <h3 className="flex items-center gap-2 text-sm font-extrabold text-slate-800">
               <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><Clock size={15} /></span>
-              ระยะเวลาปิดเรื่อง (วันทำการ)
+              ระยะเวลาจนดำเนินการแล้ว (วันทำการ)
             </h3>
             {slaRate7 !== null && (
               <span className={`rounded-full px-3 py-1 text-xs font-extrabold ${slaRate7 >= 70 ? 'bg-emerald-50 text-emerald-700' : slaRate7 >= 40 ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-600'}`}>
