@@ -54,7 +54,8 @@
     "test:patient-transport": "node tests/patient-transport-layout.test.mjs",
     "test:staff-inbox": "node tests/staff-inbox-layout.playwright.mjs",
     "test:telegram": "node tests/telegram-notification-message.test.mjs",
-    "test:guard": "node tests/guard-master-tree.test.mjs"
+    "test:guard": "node tests/guard-master-tree.test.mjs",
+    "test:app-icon": "node tests/app-icon.test.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

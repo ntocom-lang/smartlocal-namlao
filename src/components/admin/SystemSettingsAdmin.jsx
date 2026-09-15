@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Settings, Save, Loader2, CheckCircle2, QrCode, Upload, Image as ImageIcon, Building2, Wallpaper, MapPinned, X, Plus, Pencil, Trash2, RefreshCw, AlertTriangle } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { uploadFile, toReliableImageUrl } from '../../lib/driveStorage'
+import { buildAppIconBlob } from '../../lib/appIcon'
 import { useTenant } from '../../contexts/TenantContext'
 import DepartmentManager from './DepartmentManager'
 
@@ -67,6 +68,64 @@ export default function SystemSettingsAdmin() {
 
     return () => { cancelled = true }
   }, [tenant?.id])
+
+  // ไอคอนแอป maskable (src/lib/appIcon.js) — ระบบสร้างเองจากโลโก้ แอดมินไม่ต้องทำอะไร
+  // ตอนอัปโหลดโลโก้ handleLogoUpload สร้างให้ทันที ส่วนตรงนี้เก็บตกกรณีที่มีโลโก้อยู่ก่อนแล้ว
+  // หรือรอบก่อนสร้างไม่สำเร็จ (update_municipality_logo ล้าง app_icon_url ทุกครั้งที่เปลี่ยนโลโก้)
+  //
+  // แยก query จาก tourism_background_url ข้างบน: ถ้า migration 20260915090000 ยังไม่ขึ้น
+  // select คอลัมน์นี้จะ error ทั้งก้อน ไม่ควรลากรูปพื้นหลังท่องเที่ยวพังไปด้วย
+  const appIconSyncRef = useRef(false)
+
+  async function syncAppIcon(logoBlob) {
+    const iconBlob = await buildAppIconBlob(logoBlob)
+    const { url, error: upErr } = await uploadFile('municipality-assets', iconBlob, {
+      subject: 'logos',
+      filename: `app-icon-${tenant.slug}.png`,
+      municipality: tenant?.slug,
+    })
+    if (upErr) throw upErr
+    // ไม่ต่อ &v= เหมือนโลโก้ — drive-file ได้ id ใหม่ทุกครั้งที่อัปโหลด URL จึงไม่ซ้ำอยู่แล้ว
+    const { error: dbErr } = await supabase.rpc('update_municipality_app_icon', {
+      p_municipality_id: tenant.id,
+      p_app_icon_url: url,
+    })
+    if (dbErr) throw dbErr
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    if (!tenant?.id || !tenant?.logo_url || appIconSyncRef.current) return undefined
+
+    // ลองครั้งเดียวต่อ session ต่อหน่วยงาน — ถ้าพังซ้ำ (เช่นไม่มีสิทธิ์ RPC) จะไม่อัปโหลดไฟล์กำพร้า
+    // ขึ้น Drive ทุกครั้งที่เปิดหน้านี้ sessionStorage ใช้ไม่ได้ก็ยังมี ref กันซ้ำภายในหน้าเดียว
+    const onceKey = `app-icon-sync:${tenant.id}`
+    try {
+      if (sessionStorage.getItem(onceKey)) return undefined
+    } catch { /* โหมดส่วนตัว/บล็อก storage */ }
+
+    supabase
+      .from('municipalities')
+      .select('app_icon_url')
+      .eq('id', tenant.id)
+      .maybeSingle()
+      .then(async ({ data, error }) => {
+        if (cancelled || error || !data || data.app_icon_url || appIconSyncRef.current) return
+        appIconSyncRef.current = true
+        try { sessionStorage.setItem(onceKey, '1') } catch { /* ข้ามได้ */ }
+        try {
+          const res = await fetch(tenant.logo_url)
+          if (!res.ok) throw new Error(`โหลดโลโก้ไม่สำเร็จ (${res.status})`)
+          await syncAppIcon(await res.blob())
+        } catch (err) {
+          // ไม่ alert: แอดมินไม่ได้สั่งงานนี้เอง และ manifest ยังมีโลโก้แบบเดิมใช้ติดตั้งได้
+          console.warn('[app-icon] สร้างไอคอนแอปจากโลโก้เดิมไม่สำเร็จ', err)
+        }
+      })
+
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant?.id, tenant?.logo_url])
 
   async function saveSystemName(e) {
     e.preventDefault()
@@ -256,7 +315,16 @@ export default function SystemSettingsAdmin() {
       })
       if (dbErr) throw dbErr
       setLogoPreview(bustedUrl)
+      // ตั้ง ref ก่อน patchTenant — logo_url เปลี่ยนแล้ว effect เก็บตกด้านบนจะรันซ้ำ ห้ามสร้างไอคอนซ้อน
+      appIconSyncRef.current = true
       patchTenant({ logo_url: bustedUrl })
+      try {
+        await syncAppIcon(blob)
+      } catch (iconErr) {
+        // โลโก้บันทึกแล้ว ไม่ถือว่าล้มเหลว — manifest ถอยไปใช้โลโก้แบบเดิม และเปิดหน้านี้ใน session ถัดไป
+        // effect เก็บตกจะลองสร้างให้ใหม่เอง
+        console.warn('[app-icon] สร้างไอคอนแอปจากโลโก้ใหม่ไม่สำเร็จ', iconErr)
+      }
       setSavedSection('logo')
       setTimeout(() => setSavedSection(null), 2500)
     } catch (err) {
