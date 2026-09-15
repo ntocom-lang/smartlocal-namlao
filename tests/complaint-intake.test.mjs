@@ -19,10 +19,11 @@ import {
 } from '../src/lib/complaintIntake.js'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const migration = readFileSync(
-  path.join(root, 'supabase/migrations/20260915100100_complaint_auto_receive.sql'), 'utf8')
-const ddl = readFileSync(
-  path.join(root, 'supabase/migrations/20260915100000_complaint_auto_receive_columns.sql'), 'utf8')
+// git บน Windows (core.autocrlf=true) checkout ไฟล์ .sql เป็น CRLF — regex ที่มี \n ข้ามบรรทัดจะไม่ match
+// ทั้งที่โค้ดถูก (เคยล้มบนเครื่องจริงหลัง merge #195) ต้องแปลงเป็น LF ก่อนตรวจเสมอ
+const readText = (file) => readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n')
+const migration = readText('supabase/migrations/20260915100100_complaint_auto_receive.sql')
+const ddl = readText('supabase/migrations/20260915100000_complaint_auto_receive_columns.sql')
 
 const META = {
   light: { is_adhoc: false, requires_manual_intake: false },
