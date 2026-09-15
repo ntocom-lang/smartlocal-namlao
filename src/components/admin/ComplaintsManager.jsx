@@ -1501,7 +1501,7 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   const [odorDeleting, setOdorDeleting] = useState(null) // complaintId ที่กำลังลบอยู่
   const [search, setSearch]         = useState('')
   const [complaintPage, setComplaintPage]         = useState(1)
-  const [complaintsPerPage, setComplaintsPerPage] = useState(10)
+  const [complaintsPerPage, setComplaintsPerPage] = useState(20)
   const [filterCategory, setFilterCategory]       = useState('')
   const [filterVillage, setFilterVillage]         = useState('')
   const [filterTechnician, setFilterTechnician]   = useState('')
