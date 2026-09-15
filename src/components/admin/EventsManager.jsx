@@ -9,6 +9,11 @@ import { driveFolderPath, driveMonthFolder, DRIVE_MODULES } from '../../lib/driv
 import { todayStr } from '../../lib/thaiDate'
 import { AUDIENCE_COLOR, AUDIENCE_LABEL, activeOrgTerms } from '../../lib/orgTerms'
 
+// ปิด AI ทั้งระบบตามคำสั่งเจ้าของระบบ 2569-09-15 กันโควตา Gemini ฟรีหมด
+// Edge Function gemini-extract-event ถูกแทนด้วยตัวที่ตอบ 410 แล้ว ปุ่มจึงใช้ไม่ได้ ซ่อนไว้ไม่ให้กดแล้วเจอ error
+// เปิดกลับ: deploy supabase/functions/gemini-extract-event จาก repo ก่อน แล้วค่อยเปลี่ยนเป็น true
+const AI_EXTRACT_ENABLED = false
+
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
 const MINUTES = ['00', '15', '30', '45']
 
@@ -1346,7 +1351,7 @@ export default function EventsManager({ tenant, currentUserRole = 'staff', autoE
                       ))}
                     </div>
                   )}
-                  {form.attachment_files.length > 0 && (
+                  {AI_EXTRACT_ENABLED && form.attachment_files.length > 0 && (
                     <div className="mb-2">
                       <button type="button" onClick={handleAIExtract} disabled={extracting}
                         className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors disabled:opacity-60"
