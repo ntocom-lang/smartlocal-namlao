@@ -10,6 +10,8 @@
 // ห้ามตั้ง run_worker_first: true ใน wrangler.jsonc เด็ดขาด — จะทำให้ทุกไฟล์ JS/CSS/รูป
 // วิ่งผ่านที่นี่ เผาโควตา 100,000 ครั้ง/วันทิ้งโดยไม่ได้อะไรกลับมา
 
+import { buildIcons } from './manifestIcons.js'
+
 const SHELL_PATH = '/_template.html'
 
 // นามสกุลของ "ไฟล์" ที่เบราว์เซอร์เอาไปใช้ตรงๆ ไม่ใช่หน้าเว็บ
@@ -94,17 +96,25 @@ function escapeHtml(str) {
     .replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+const TENANT_COLUMNS = 'name,logo_url,org_type,pwa_short_name,theme_color'
+
 async function fetchTenant(slug, env) {
   const supabaseUrl = env.VITE_SUPABASE_URL || FALLBACK_SUPABASE_URL
   const supabaseKey = env.VITE_SUPABASE_ANON_KEY || FALLBACK_SUPABASE_KEY
 
-  const response = await fetch(
-    `${supabaseUrl}/rest/v1/municipalities?slug=eq.${encodeURIComponent(slug)}&select=name,logo_url,org_type,pwa_short_name,theme_color`,
+  const query = columns => fetch(
+    `${supabaseUrl}/rest/v1/municipalities?slug=eq.${encodeURIComponent(slug)}&select=${columns}`,
     {
       headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
       signal: AbortSignal.timeout(5000),
     }
   )
+
+  let response = await query(`${TENANT_COLUMNS},app_icon_url`)
+  // app_icon_url มาจาก 20260915090000 — ถ้า deploy โค้ดก่อน apply migration หรือถูกย้อน migration
+  // PostgREST ตอบ error ทั้ง query (ไม่มีคอลัมน์ = 400, ไม่มี GRANT = 401) แล้วทุกเว็บจะไม่มี og:tag
+  // และติดตั้งแอปไม่ได้ ถอยไปขอเฉพาะคอลัมน์เดิมแทน เสียแค่ไอคอน maskable ชั่วคราว
+  if (response.status === 400 || response.status === 401) response = await query(TENANT_COLUMNS)
   if (!response.ok) return null
   const [tenant] = await response.json()
   return tenant ?? null
@@ -138,91 +148,6 @@ function buildMetaTags(tenant, origin) {
 
 const MANIFEST_PATH = '/manifest.webmanifest'
 
-// ขนาดจริงของ PNG จาก IHDR — ต้องประกาศใน manifest ให้ตรงของจริง
-//
-// ของเดิมฝั่ง client hardcode 512x512 ให้โลโก้ทุก อปท. ทั้งที่ของจริงหลายแห่งเป็น 480x480
-// Chrome ตรวจไฟล์ที่โหลดมาจริงเทียบกับที่ประกาศ ไม่ตรงแล้วทิ้งไอคอนนั้น พอไม่เหลือไอคอน
-// ที่ใช้ได้ เว็บก็กลายเป็น "ติดตั้งไม่ได้" ทั้งที่มีโลโก้อยู่
-//
-// ไม่ย่อ/ขยายรูปเอง: Cloudflare Image Resizing เป็นบริการเสียเงิน ผิดนโยบายงบ 0 บาท
-// อ่านหัวไฟล์ 24 ไบต์แรกพอ แล้วยกเลิก stream ทิ้ง ไม่ต้องโหลดรูปทั้งใบ
-async function readPngSize(url) {
-  // redirect: 'manual' ไม่ใช่ 'error' — workerd ไม่รองรับค่า 'error' และโยน TypeError ทิ้งทุกครั้ง
-  // ("'error' won't be implemented since it does not make sense at the edge; use 'manual' and check
-  //  the response status code") ยืนยันด้วย wrangler dev จริงแล้ว ไม่ได้เชื่อเอกสาร — หน้า Request ของ
-  //  Cloudflare ยังลิสต์ 'error' ไว้ว่าใช้ได้ ซึ่งไม่ตรงกับ runtime
-  // เจตนาเดิม (ไม่ตามลิงก์ต่อไปโฮสต์อื่น) ยังอยู่ครบกับ 'manual': มันคืน response 30x กลับมาเฉยๆ
-  //  แล้ว !res.ok บรรทัดถัดไปตัดทิ้งเอง
-  const res = await fetch(url, { headers: { Range: 'bytes=0-33' }, redirect: 'manual', signal: AbortSignal.timeout(3000) })
-  if (!res.ok || !res.body) return null
-
-  const reader = res.body.getReader()
-  const head = new Uint8Array(34)
-  let filled = 0
-  try {
-    while (filled < 24) {
-      const { done, value } = await reader.read()
-      if (done) break
-      const take = Math.min(value.length, head.length - filled)
-      head.set(value.subarray(0, take), filled)
-      filled += take
-    }
-  } finally {
-    // ปล่อย connection ทิ้งทันที ไม่รอไบต์ที่เหลือของรูป
-    reader.cancel().catch(() => {})
-  }
-  if (filled < 24) return null
-
-  // ลายเซ็น PNG — โลโก้ที่เป็น JPEG/WebP หรือ URL ที่คืน HTML กลับมาจะตกตรงนี้
-  const SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
-  if (!SIGNATURE.every((byte, i) => head[i] === byte)) return null
-  if (String.fromCharCode(...head.slice(12, 16)) !== 'IHDR') return null
-
-  const view = new DataView(head.buffer)
-  return { width: view.getUint32(16), height: view.getUint32(20) }
-}
-
-// ไอคอนสำรองของระบบ ใช้เมื่อ อปท. ยังไม่ได้อัปโหลดโลโก้ หรือโลโก้เล็กเกินเกณฑ์ของ Chrome
-const FALLBACK_ICONS = [
-  { src: '/icons/icon-192x192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-  { src: '/icons/icon-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-]
-
-// โลโก้เล็กกว่านี้ใช้ไอคอนสำรอง; manifest คงชุด 192/512 สำหรับ install promotion
-const MIN_ICON_PX = 192
-
-async function buildIcons(tenant, env) {
-  const logoUrl = typeof tenant.logo_url === 'string' && /^https:\/\//.test(tenant.logo_url)
-    ? tenant.logo_url
-    : ''
-  if (!logoUrl) return FALLBACK_ICONS
-  // จำกัดปลายทางที่ Worker อ่าน ป้องกัน URL โลโก้พาไปเรียกเครือข่ายอื่น
-  let parsedLogo
-  try { parsedLogo = new URL(logoUrl) } catch { return FALLBACK_ICONS }
-  const trustedOrigin = new URL(env.VITE_SUPABASE_URL || FALLBACK_SUPABASE_URL).origin
-  if (parsedLogo.origin !== trustedOrigin || parsedLogo.username || parsedLogo.password) return FALLBACK_ICONS
-
-  let size = null
-  try {
-    size = await readPngSize(logoUrl)
-  } catch {
-    // โลโก้โหลดไม่ได้/ช้าเกิน 3 วิ — ยอมได้ไอคอนกลาง ดีกว่าปล่อยให้ติดตั้งไม่ได้เลย
-  }
-  if (!size || size.width < MIN_ICON_PX || size.height < MIN_ICON_PX) return FALLBACK_ICONS
-
-  // คงโลโก้ต้นฉบับและขนาดจริง พร้อมไอคอนสำรอง 192/512 ที่ขาดอยู่
-  // เบราว์เซอร์อาจเลือกไอคอนกลางเมื่อขนาดโลโก้หน่วยงานไม่ตรงกับขนาดที่ต้องการ
-  //
-  // purpose ไม่ใส่ maskable: ตราหน่วยงานเป็นวงกลมพื้นโปร่ง ถ้าประกาศว่า maskable
-  // Android จะถือว่าเต็มกรอบได้แล้วขลิบขอบตราทิ้ง
-  return [...FALLBACK_ICONS.filter(icon => icon.sizes !== `${size.width}x${size.height}`), {
-    src: logoUrl,
-    sizes: `${size.width}x${size.height}`,
-    type: 'image/png',
-    purpose: 'any',
-  }]
-}
-
 async function buildManifest(tenant, env) {
   return {
     // id ตรึงตัวตนของแอปไว้กับ path นี้ เปลี่ยนเมื่อไหร่ = Android มองเป็นคนละแอป
@@ -239,7 +164,7 @@ async function buildManifest(tenant, env) {
     orientation: 'portrait',
     start_url: '/',
     scope: '/',
-    icons: await buildIcons(tenant, env),
+    icons: await buildIcons(tenant, new URL(env.VITE_SUPABASE_URL || FALLBACK_SUPABASE_URL).origin),
   }
 }
 
