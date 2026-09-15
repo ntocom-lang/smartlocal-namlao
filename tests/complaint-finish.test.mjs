@@ -25,8 +25,11 @@ import {
 } from '../src/lib/complaintWorkflow.js'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const fn = readFileSync(path.join(root, 'supabase/migrations/20260915110100_complaint_finish_by_assignee.sql'), 'utf8')
-const ddl = readFileSync(path.join(root, 'supabase/migrations/20260915110000_complaint_finish_columns.sql'), 'utf8')
+// git บน Windows (core.autocrlf=true) checkout ไฟล์ .sql เป็น CRLF — regex ที่มี \n ข้ามบรรทัดจะไม่ match
+// ทั้งที่โค้ดถูก (เคยล้มบนเครื่องจริงหลัง merge #195) ต้องแปลงเป็น LF ก่อนตรวจเสมอ
+const readText = (file) => readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n')
+const fn = readText('supabase/migrations/20260915110100_complaint_finish_by_assignee.sql')
+const ddl = readText('supabase/migrations/20260915110000_complaint_finish_columns.sql')
 const sqlCode = fn.replace(/^\s*--.*$/gm, '')
 
 const DAY = 24 * 60 * 60 * 1000
