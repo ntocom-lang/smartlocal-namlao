@@ -10,6 +10,7 @@ import { useSyncExternalStore } from 'react'
 // โหมดที่คืนออกไป
 //   installed       ติดตั้งแล้ว (เปิดอยู่ในโหมดแอป)
 //   ready           เบราว์เซอร์ให้ prompt ติดตั้งของจริงมาแล้ว กดแล้วติดตั้งได้เลย
+//   installing      กำลังเรียก prompt / รอผู้ใช้ยืนยัน ป้องกันการใช้ event ซ้ำ
 //   manual-ios      iOS ไม่มี prompt ให้ ต้องสอนกด "แชร์ → เพิ่มที่หน้าจอโฮม"
 //   manual-android  Android ที่ยังไม่ให้ prompt มา ต้องสอนกดจากเมนูเบราว์เซอร์
 //   hidden          เดสก์ท็อปที่เบราว์เซอร์ไม่รองรับ — ไม่ต้องรบกวนผู้ใช้
@@ -27,16 +28,18 @@ export function isStandalone() {
 let prompt = null
 let installed = false
 let busy = false
+let failed = false
 const listeners = new Set()
 const emit = () => listeners.forEach(listener => listener())
 const subscribe = listener => { listeners.add(listener); return () => listeners.delete(listener) }
 const getMode = () => installed || isStandalone() ? 'installed'
-  : prompt ? 'ready' : isIOS() ? 'manual-ios' : isAndroid() ? 'manual-android' : 'hidden'
+  : busy ? 'installing' : prompt ? 'ready' : isIOS() ? 'manual-ios' : isAndroid() ? 'manual-android' : 'hidden'
 
 if (typeof window !== 'undefined') {
   window.addEventListener('beforeinstallprompt', event => {
     event.preventDefault()
     prompt = event
+    failed = false
     emit()
   })
   window.addEventListener('appinstalled', () => {
@@ -44,7 +47,9 @@ if (typeof window !== 'undefined') {
     prompt = null
     emit()
   })
-  window.matchMedia('(display-mode: standalone)').addEventListener('change', emit)
+  const displayMode = window.matchMedia('(display-mode: standalone)')
+  if (displayMode.addEventListener) displayMode.addEventListener('change', emit)
+  else displayMode.addListener(emit) // เบราว์เซอร์มือถือรุ่นเก่า
 }
 
 async function install() {
@@ -53,11 +58,13 @@ async function install() {
   const event = prompt
   prompt = null
   busy = true
+  failed = false
   emit()
   try {
     await event.prompt()
     return (await event.userChoice).outcome
   } catch {
+    failed = true
     return 'guide'
   } finally {
     busy = false
@@ -67,5 +74,6 @@ async function install() {
 
 export function useInstallPrompt() {
   const mode = useSyncExternalStore(subscribe, getMode, () => 'hidden')
-  return { mode, install }
+  const promptFailed = useSyncExternalStore(subscribe, () => failed, () => false)
+  return { mode, install, promptFailed }
 }
