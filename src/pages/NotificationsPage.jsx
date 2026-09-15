@@ -18,7 +18,7 @@ const STATUS_INFO = {
   in_progress: { label: 'กำลังดำเนินการ', bg: '#ede9fe', color: '#5b21b6', Icon: RefreshCw },
   done:        { label: 'ดำเนินการแล้ว',  bg: '#d1fae5', color: '#065f46', Icon: CheckCircle2 },
   completed:   { label: 'ดำเนินการแล้ว',  bg: '#d1fae5', color: '#065f46', Icon: CheckCircle2 },
-  closed:      { label: 'ปิดเรื่องแล้ว',  bg: '#f1f5f9', color: '#475569', Icon: CheckCircle2 },
+  closed:      { label: 'ดำเนินการแล้ว',  bg: '#d1fae5', color: '#065f46', Icon: CheckCircle2 },
   rejected:    { label: 'ปฏิเสธ',         bg: '#fee2e2', color: '#991b1b', Icon: XCircle },
 }
 
@@ -27,7 +27,7 @@ const CITIZEN_STATUS_MSG = {
   in_progress: 'เจ้าหน้าที่อยู่ระหว่างดำเนินการ',
   done:        'เจ้าหน้าที่ดำเนินการเสร็จแล้ว 🎉',
   completed:   'เจ้าหน้าที่ดำเนินการเสร็จแล้ว 🎉',
-  closed:      'ปิดเรื่องและแจ้งผลเรียบร้อยแล้ว ✅',
+  closed:      'ดำเนินการแล้ว ✅ ถ้ายังไม่เรียบร้อยแจ้งกลับได้ภายใน 7 วัน',
   rejected:    'ขออภัย คำร้องของคุณถูกปฏิเสธ',
 }
 
@@ -36,8 +36,8 @@ const STAFF_STATUS_MSG = {
   pending:     'มีคำร้องใหม่รอรับเรื่อง',
   received:    'งานรอเริ่มดำเนินการ',
   in_progress: 'งานกำลังดำเนินการ',
-  done:        'ดำเนินการแล้ว รอปิดเรื่อง',
-  completed:   'ดำเนินการแล้ว รอปิดเรื่อง',
+  done:        'ดำเนินการแล้ว',
+  completed:   'ดำเนินการแล้ว',
 }
 
 let CATEGORY_LABEL = {

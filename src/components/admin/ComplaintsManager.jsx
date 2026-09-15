@@ -3,7 +3,7 @@ import MapPicker from '../MapPicker'
 import {
   ClipboardList, Clock, Loader2, CheckCircle2, XCircle, AlertCircle,
   ChevronRight, ChevronLeft, Filter, Search, Phone, Trash2, Wrench,
-  MapPin, X, FileText, AlignLeft, Camera, ChevronDown,
+  MapPin, X, FileText, Camera, ChevronDown,
   Shield, Printer, Users, RefreshCw, AlertTriangle, Building2, BarChart3, List,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
@@ -15,6 +15,10 @@ import { logAction } from '../../lib/auditLog'
 import { fetchComplaintPrivateDetail, fetchRoleScopedComplaints } from '../../lib/complaintPrivacy'
 import { canReturnComplaint, complaintIntakeReason } from '../../lib/complaintIntake'
 import ReturnToIntakeButton from '../complaints/ReturnToIntakeButton'
+import FinishComplaintDialog from '../complaints/FinishComplaintDialog'
+import ComplaintTextBlock from '../complaints/ComplaintTextBlock'
+import { canFinishWork, isComplaintWorker, requiresResolvedPin } from '../../lib/complaintWorkflow'
+import { startComplaintWork } from '../../lib/complaintFinish'
 import { buildCouncilComplaintHtml } from '../../lib/councilFormPrint'
 import { isMissingSignatoryError, prepareComplaintPrint } from '../../lib/complaintPrint'
 import { generateDraftPdfBlob } from '../../lib/generateDraftPdf'
@@ -50,28 +54,28 @@ const STATUS = {
   new:         { label: 'คำร้องใหม่',      color: '#f59e0b', bg: '#fef3c7', text: '#92400e' },
   received:    { label: 'รับเรื่องแล้ว',   color: '#0ea5e9', bg: '#e0f2fe', text: '#0369a1' },
   in_progress: { label: 'กำลังดำเนินการ',  color: '#8b5cf6', bg: '#ede9fe', text: '#5b21b6' },
-  done:        { label: 'ดำเนินการแล้ว',   color: '#3b82f6', bg: '#dbeafe', text: '#1e40af' },
-  closed:      { label: 'ปิดเรื่องแล้ว',   color: '#10b981', bg: '#d1fae5', text: '#065f46' },
+  // ตัดขั้น "ปิดเรื่องแล้ว" ออก 2569-09-15 — 'closed' คือสถานะสุดท้าย "ดำเนินการแล้ว" ที่ผู้รับผิดชอบกดเอง
+  // 'done' เป็นขั้นเก่า (รอแอดมินปิด) ที่ยังค้างในข้อมูลเก่า แสดงเหมือนกัน (ดู src/lib/complaintWorkflow.js)
+  done:        { label: 'ดำเนินการแล้ว',   color: '#10b981', bg: '#d1fae5', text: '#065f46' },
+  closed:      { label: 'ดำเนินการแล้ว',   color: '#10b981', bg: '#d1fae5', text: '#065f46' },
   rejected:    { label: 'ปฏิเสธ',          color: '#ef4444', bg: '#fee2e2', text: '#991b1b' },
   // backward compat
   pending:     { label: 'คำร้องใหม่',      color: '#f59e0b', bg: '#fef3c7', text: '#92400e' },
-  completed:   { label: 'ดำเนินการแล้ว',   color: '#3b82f6', bg: '#dbeafe', text: '#1e40af' },
+  completed:   { label: 'ดำเนินการแล้ว',   color: '#10b981', bg: '#d1fae5', text: '#065f46' },
 }
-const STATUS_FLOW = ['new', 'received', 'in_progress', 'done', 'closed']
+const STATUS_FLOW = ['new', 'received', 'in_progress', 'closed']
 const STATUS_FLOW_LABEL = {
   new:         { label: 'คำร้องใหม่',      desc: 'ประชาชนส่งคำร้องเข้าระบบ' },
   // ระบบอาจเป็นผู้รับเรื่องเอง (20260915100100) — ไม่อ้างว่าเป็นเจ้าหน้าที่ ผู้รับจริงดูได้จากประวัติการดำเนินการ
   received:    { label: 'รับเรื่องแล้ว',   desc: 'รับเรื่องและส่งถึงผู้รับผิดชอบแล้ว' },
   in_progress: { label: 'กำลังดำเนินการ',  desc: 'เจ้าหน้าที่ลงพื้นที่ดำเนินการ' },
-  done:        { label: 'ดำเนินการแล้ว',   desc: 'เจ้าหน้าที่ดำเนินการเสร็จแล้ว' },
-  closed:      { label: 'ปิดเรื่องแล้ว',   desc: 'ปิดเรื่องและแจ้งผลประชาชนแล้ว' },
+  closed:      { label: 'ดำเนินการแล้ว',   desc: 'ผู้รับผิดชอบดำเนินการแล้วและแจ้งผลผู้ร้อง' },
 }
 const DEPARTMENTS = ['สำนักปลัด', 'กองช่าง', 'กองการศึกษา', 'กองคลัง']
 const NEXT_ACTION = {
   new:         { label: 'รับเรื่อง',        next: 'received' },
   received:    { label: 'เริ่มดำเนินการ',   next: 'in_progress' },
-  in_progress: { label: 'ดำเนินการแล้ว',    next: 'done' },
-  done:        { label: 'ปิดเรื่อง',         next: 'closed' },
+  in_progress: { label: 'ดำเนินการแล้ว',    next: 'closed' },
 }
 let CATEGORY_LABEL = {
   road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าสาธารณะ',
@@ -93,7 +97,7 @@ let CATEGORY_EMOJI = {
   tax: '📋', canal: '🏞️', animals: '🐕', water_supply: '🚿',
   borrow_equipment: '📦', grievance: '📣', disease: '🏥', other: '📝',
 }
-const STATUS_MAIN = ['new', 'received', 'in_progress', 'done', 'closed', 'rejected']
+const STATUS_MAIN = ['new', 'received', 'in_progress', 'closed', 'rejected']
 
 // addWorkingDays/workingDaysLeft ย้ายไป src/lib/workingDays.js แล้ว — ของเดิมในไฟล์นี้
 // ตัดแค่เสาร์-อาทิตย์ ไม่ตัดวันหยุดนักขัตฤกษ์ และใช้ toISOString() ซึ่งทำให้ due_date
@@ -279,7 +283,7 @@ function StatusStepper({ status, note }) {
   )
 }
 
-const LEGACY_STATUS = { pending: 'new', completed: 'done', received: 'received' }
+const LEGACY_STATUS = { pending: 'new', completed: 'closed', done: 'closed', received: 'received' }
 function normalizeActionStatus(s) { return LEGACY_STATUS[s] ?? s ?? 'new' }
 
 // รูปผลการดำเนินการลงโฟลเดอร์เดียวกับรูปที่ประชาชนแนบ (โฟลเดอร์ของเรื่องนั้น) แยกกันด้วยชื่อไฟล์
@@ -300,17 +304,18 @@ function workPhotoName(c, index = 0, ext = 'jpg') {
 
 // complaint = แถวคำร้องเต็ม ใช้ตั้งชื่อโฟลเดอร์/ไฟล์รูปผลงานบน Drive ให้เจ้าหน้าที่เปิดหาเองได้
 // (เลขที่ + หมวด + เดือน) ไม่ส่งมาก็ยังทำงานได้ แค่ไฟล์จะไปกองรวมแบบเดิม
-function ActionButton({ status, id, onUpdate, loading, size = 'sm', tenant, canFinalClose = false, complaint = null }) {
+function ActionButton({ status, id, onUpdate, loading, size = 'sm', tenant, complaint = null, categoryMeta, onFinished, allowReceive = false }) {
   const action = NEXT_ACTION[normalizeActionStatus(status)]
   const [confirm, setConfirm] = useState(false)
   const [note, setNote] = useState('')
   const [pendingFiles, setPendingFiles] = useState([])
   const [uploading, setUploading] = useState(false)
   if (!action) return null
-  // เจ้าหน้าที่รายงานผลได้ถึง `done` เท่านั้น การเปลี่ยนเป็น `closed` เป็นการ
-  // ตรวจรับและแจ้งผลประชาชนขั้นสุดท้าย จึงสงวนไว้ให้ Admin/Super Admin
-  if (action.next === 'closed' && !canFinalClose) return null
-  const withPhoto = action.next === 'done'
+  // "รับเรื่อง" เป็นงานคัดกรองของแอดมิน — ผู้รับผิดชอบเริ่มจากเรื่องที่รับแล้ว (ระบบรับเองหรือแอดมินรับให้)
+  if (action.next === 'received' && !allowReceive) return null
+  // "ดำเนินการแล้ว" ผ่านกล่องปักหมุด (finish_complaint) เท่านั้น — ไม่มีขั้นแอดมินปิดเรื่องแล้ว
+  const isFinish = action.next === 'closed'
+  const withPhoto = false
   function handleClose() { setConfirm(false); setNote(''); setPendingFiles([]) }
   async function handleConfirm() {
     if (withPhoto && pendingFiles.length > 0) {
@@ -340,7 +345,7 @@ function ActionButton({ status, id, onUpdate, loading, size = 'sm', tenant, canF
   }
   return (
     <>
-      <button onClick={() => setConfirm(true)} disabled={loading === id}
+      <button onClick={() => setConfirm(true)} disabled={loading === id || (isFinish && !complaint)}
         className={size === 'lg'
           ? 'inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white whitespace-nowrap shadow-sm transition-all active:scale-95 disabled:opacity-50'
           : size === 'xs'
@@ -350,7 +355,17 @@ function ActionButton({ status, id, onUpdate, loading, size = 'sm', tenant, canF
         {loading === id ? <Loader2 size={size === 'lg' ? 15 : 12} className="animate-spin" /> : <ChevronRight size={size === 'lg' ? 15 : 12} />}
         {action.label}
       </button>
-      {confirm && (
+      {confirm && isFinish && complaint && (
+        <FinishComplaintDialog
+          complaint={complaint}
+          requiresPin={requiresResolvedPin(categoryMeta, complaint.category)}
+          categoryLabel={CATEGORY_LABEL[complaint.category] ?? complaint.category}
+          tenantSlug={tenant?.slug}
+          onCancel={handleClose}
+          onDone={(result) => { handleClose(); onFinished?.(id, result) }}
+        />
+      )}
+      {confirm && !isFinish && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40" onClick={handleClose}>
           <div className="bg-white rounded-2xl p-5 shadow-xl w-80 mx-4" onClick={(e) => e.stopPropagation()}>
             <p className="text-sm font-semibold text-gray-800 mb-1">ยืนยันการเปลี่ยนสถานะ</p>
@@ -562,13 +577,16 @@ function ReporterCard({ c }) {
   )
 }
 
-export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, onPriority, currentUserRole, currentUserId, onDelete, onPinSave, onDocumentUpdate, categoryMeta, onReturned }) {
+export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating, technicians, onAssign, onPriority, currentUserRole, currentUserId, onDelete, onPinSave, onDocumentUpdate, categoryMeta, onReturned, onFinished, onTextSaved }) {
   const { tenant, terminology } = useTenant()
   const isAdminRole = ['admin', 'superadmin'].includes(currentUserRole)
   const isTechAssigned = currentUserRole === 'technician' && c.assigned_to === currentUserId
   const canAct = isAdminRole || isTechAssigned
-  // staff เห็นหน้าคำร้องเต็มรูปแบบและจัดการเอกสาร GDCC ได้ แต่เปลี่ยนสถานะ/มอบหมายงานไม่ได้
-  // (ทุกจุดที่เปลี่ยนสถานะยังผูกกับ canAct/isAdminRole เหมือนเดิม ไม่ได้แก้)
+  // ผู้ทำงาน = แอดมิน หรือผู้รับผิดชอบทุก role (รวม staff) — เริ่มงาน/ดำเนินการแล้ว/แก้ข้อความ ผ่าน RPC
+  // (20260915110100) ส่วนงานอื่น (แก้หมุดผู้แจ้ง, มอบหมาย, ปฏิเสธ, แนบรูปตรง) ยังผูกกับ canAct เหมือนเดิม
+  // เพราะ staff ถูก trigger ห้ามแก้คอลัมน์เหล่านั้นตรงๆ
+  const canWork = isComplaintWorker(c, currentUserId, currentUserRole) && !categoryMeta?.[c.category]?.is_adhoc
+  const canFinish = canFinishWork(c, currentUserId, currentUserRole, categoryMeta)
   const canManageDocs = isAdminRole || currentUserRole === 'staff'
   // ใบที่ระบบรับเองไม่ได้ — บอกแอดมินว่าติดอะไร (เช่น ผู้รับผิดชอบส่งคืนพร้อมเหตุผล)
   const intakeReason = isAdminRole ? complaintIntakeReason(c, categoryMeta) : null
@@ -579,9 +597,6 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
   const technicianGroups = groupStaffByDepartment(technicians ?? [])
   const [assigning, setAssigning] = useState(false)
   const [showCloseJob, setShowCloseJob] = useState(false)
-  const [pendingPhotos, setPendingPhotos] = useState([])
-  const [closeNote, setCloseNote] = useState('')
-  const [closeUploading, setCloseUploading] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [overrideConfirm, setOverrideConfirm] = useState(null)
   const [overrideNote, setOverrideNote] = useState('')
@@ -828,26 +843,6 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
 
   async function handleDownloadFinalDoc() { await openOfficialDoc(c.final_document_path) }
   async function handleDownloadDraftPdf() { await openOfficialDoc(c.draft_pdf_path) }
-
-  async function handleCloseJob() {
-    setCloseUploading(true)
-    const urls = []
-    const alreadyClosed = (c.work_photos?.length ?? 0) + extraWorkPhotos.length
-    for (const [i, item] of pendingPhotos.entries()) {
-      const ext = item.file.name.split('.').pop()
-      const compressed = await compressImage(item.file, 1200)
-      const { url, error } = await uploadFile('complaint-attachments', compressed, {
-        subject: c.id,
-        folder: workPhotoFolder(c),
-        filename: workPhotoName(c, alreadyClosed + i, ext),
-        municipality: tenant?.slug,
-      })
-      if (!error) urls.push(url)
-    }
-    setCloseUploading(false)
-    onUpdate(c.id, 'done', urls, closeNote.trim() || null)
-    onClose()
-  }
 
   const categoryLabel = CATEGORY_LABEL[c.category] ?? c.category
   const categoryEmoji = CATEGORY_EMOJI[c.category] || ''
@@ -1173,7 +1168,7 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-800 truncate">{n.subject}</p>
                       <p className="text-xs text-gray-400">
-                        {Math.round(n.distance_m)} ม. · {n.ref_no ?? '—'} · {{ new: 'รอรับเรื่อง', in_progress: 'กำลังดำเนินการ', done: 'เสร็จสิ้น', closed: 'ปิดเรื่อง' }[n.status] ?? n.status}
+                        {Math.round(n.distance_m)} ม. · {n.ref_no ?? '—'} · {{ new: 'รอรับเรื่อง', in_progress: 'กำลังดำเนินการ', done: 'ดำเนินการแล้ว', closed: 'ดำเนินการแล้ว' }[n.status] ?? n.status}
                       </p>
                     </div>
                   </div>
@@ -1202,12 +1197,7 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
             </div>
           )}
 
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">รายละเอียดแนบมา</p>
-            <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
-              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{c.detail}</p>
-            </div>
-          </div>
+          <ComplaintTextBlock complaint={c} canEdit={canWork} onSaved={(patch) => onTextSaved?.(c.id, patch)} />
 
           {(c.attachments ?? []).length > 0 && (
             <div className="space-y-2">
@@ -1262,7 +1252,7 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
 
         {/* Footer actions */}
         <div className={`px-5 py-4 shrink-0 bg-gray-50 ${canReturn ? '' : 'border-t border-gray-100'}`}>
-          {!canAct ? (
+          {!canWork ? (
             <div className="flex gap-2">
               <button onClick={handlePrintComplaint}
                 className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
@@ -1279,9 +1269,11 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
                 style={{ backgroundColor: 'var(--color-primary)' }}>
                 <CheckCircle2 size={12} /> ดำเนินการแล้ว
               </button>
-              <RejectButton status={c.status} id={c.id}
-                onUpdate={(id, next, wp = [], note = null) => { onUpdate(id, next, wp, note); onClose() }}
-                loading={updating} />
+              {canAct && (
+                <RejectButton status={c.status} id={c.id}
+                  onUpdate={(id, next, wp = [], note = null) => { onUpdate(id, next, wp, note); onClose() }}
+                  loading={updating} />
+              )}
               {/* พิมพ์ได้ตั้งแต่ยังไม่จบเรื่อง — เดิมสถานะ "กำลังดำเนินการ" เป็นสถานะเดียวที่ไม่มีปุ่มนี้
                   ทั้งที่เป็นช่วงที่ต้องใช้กระดาษจริงที่สุด (เช่น ยืมพัสดุ ต้องมีใบให้ผู้ยืมลงชื่อตอนรับของ)
                   ฝั่ง DB ไม่ได้ผูกเงื่อนไขสถานะไว้ prepare_complaint_print เรียกได้ทุกสถานะอยู่แล้ว */}
@@ -1299,80 +1291,35 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
                 ปิดหน้าต่าง
               </button>
             </div>
-          ) : c.status === 'in_progress' && showCloseJob ? (
-            <div className="space-y-3 w-full">
-              <p className="text-xs font-semibold text-gray-500 flex items-center gap-1.5">
-                <Camera size={12} /> แนบรูปหลักฐานการทำงาน (ไม่บังคับ)
-              </p>
-              <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-2xl py-4 cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
-                <Camera size={20} className="text-gray-400 mb-1" />
-                <span className="text-xs text-gray-400">แตะเพื่อเลือกรูป</span>
-                <input type="file" accept="image/*" multiple className="hidden"
-                  onChange={(e) => {
-                    const files = Array.from(e.target.files)
-                    setPendingPhotos((prev) => [
-                      ...prev,
-                      ...files.map((f) => ({ file: f, preview: URL.createObjectURL(f) })),
-                    ])
-                  }} />
-              </label>
-              {pendingPhotos.length > 0 && (
-                <div className="grid grid-cols-4 gap-1.5">
-                  {pendingPhotos.map((p, i) => (
-                    <div key={i} className="relative aspect-square rounded-xl overflow-hidden bg-gray-100 border border-gray-200">
-                      <img src={p.preview} alt="" className="w-full h-full object-cover" />
-                      <button className="absolute top-0.5 right-0.5 bg-black/50 rounded-full p-0.5"
-                        onClick={() => setPendingPhotos((prev) => prev.filter((_, j) => j !== i))}>
-                        <X size={10} className="text-white" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div>
-                <p className="text-xs font-semibold text-gray-500 flex items-center gap-1.5 mb-1.5">
-                  <AlignLeft size={12} /> หมายเหตุ / รายการอุปกรณ์ที่ใช้ (ไม่บังคับ)
-                </p>
-                <textarea value={closeNote} onChange={(e) => setCloseNote(e.target.value)} rows={3}
-                  placeholder="เช่น เปลี่ยนหลอดไฟ LED 18W จำนวน 2 ดวง, ค่าแรง 500 บาท..."
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-800 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-blue-300" />
-              </div>
-              <div className="flex gap-2">
-                <button onClick={handleCloseJob} disabled={closeUploading}
-                  className="flex-1 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50 flex items-center justify-center gap-2"
-                  style={{ backgroundColor: 'var(--color-primary)' }}>
-                  {closeUploading
-                    ? <><Loader2 size={14} className="animate-spin" /> กำลังอัปโหลด...</>
-                    : <><CheckCircle2 size={14} /> ยืนยันดำเนินการแล้ว</>}
-                </button>
-                <button onClick={() => { setShowCloseJob(false); setPendingPhotos([]); setCloseNote('') }}
-                  className="px-4 py-2 rounded-xl text-sm text-gray-500 bg-gray-100 hover:bg-gray-200 transition-colors">
-                  ยกเลิก
-                </button>
-              </div>
-            </div>
           ) : (
             <div className="space-y-3">
-              {(c.status === 'done' || c.status === 'completed') && (
+              {c.status === 'done' && (
+                // ขั้นเก่า "รอแอดมินปิด" ที่ค้างจากก่อน 2569-09-15 — กด "ดำเนินการแล้ว" อีกครั้งเพื่อปักหมุดให้ครบ
                 <div className="flex items-start gap-2.5 px-3.5 py-2.5 bg-green-50 border border-green-200 rounded-xl">
                   <CheckCircle2 size={15} className="text-green-500 shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-xs font-semibold text-green-800">ช่างรายงานว่าดำเนินการแล้ว</p>
-                    <p className="text-[11px] text-green-600 mt-0.5">
-                      {isAdminRole
-                        ? 'กรุณาตรวจสอบผลงานและกด "ปิดเรื่อง" เพื่อแจ้งประชาชน'
-                        : 'ส่งผลการดำเนินงานให้ Admin ตรวจสอบและปิดเรื่องแล้ว'}
-                    </p>
+                    <p className="text-xs font-semibold text-green-800">รายงานว่าดำเนินการแล้ว (ขั้นตอนเดิม)</p>
+                    <p className="text-[11px] text-green-600 mt-0.5">กด "ดำเนินการแล้ว" อีกครั้งเพื่อปักหมุดจุดที่ดำเนินการและแจ้งผลผู้ร้อง</p>
                   </div>
                 </div>
               )}
             <div className="flex gap-2 flex-wrap items-center">
-              <ActionButton status={c.status} id={c.id} complaint={c}
-                onUpdate={(id, next, wp = [], note = null) => { onUpdate(id, next, wp, note); onClose() }}
-                loading={updating} size="lg" tenant={tenant} canFinalClose={isAdminRole} />
-              <RejectButton status={c.status} id={c.id}
-                onUpdate={(id, next, wp = [], note = null) => { onUpdate(id, next, wp, note); onClose() }}
-                loading={updating} />
+              {c.status === 'done' && canFinish ? (
+                <button onClick={() => setShowCloseJob(true)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white bg-green-600">
+                  <CheckCircle2 size={15} /> ดำเนินการแล้ว
+                </button>
+              ) : (
+                <ActionButton status={c.status} id={c.id} complaint={c}
+                  onUpdate={(id, next, wp = [], note = null) => { onUpdate(id, next, wp, note); onClose() }}
+                  loading={updating} size="lg" tenant={tenant} categoryMeta={categoryMeta} allowReceive={isAdminRole}
+                  onFinished={(id, result) => { onFinished?.(id, result); onClose() }} />
+              )}
+              {canAct && (
+                <RejectButton status={c.status} id={c.id}
+                  onUpdate={(id, next, wp = [], note = null) => { onUpdate(id, next, wp, note); onClose() }}
+                  loading={updating} />
+              )}
               <button onClick={handlePrintComplaint}
                 className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
                 <Printer size={13} /> พิมพ์
@@ -1390,6 +1337,17 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
             </div>
           )}
 
+          {showCloseJob && canFinish && (
+            <FinishComplaintDialog
+              complaint={c}
+              requiresPin={requiresResolvedPin(categoryMeta, c.category)}
+              categoryLabel={categoryLabel}
+              tenantSlug={tenant?.slug}
+              onCancel={() => setShowCloseJob(false)}
+              onDone={(result) => { setShowCloseJob(false); onFinished?.(c.id, result); onClose() }}
+            />
+          )}
+
           {(currentUserRole === 'superadmin' || currentUserRole === 'admin') && (
             <div className={`mt-3 pt-3 border-t border-dashed ${currentUserRole === 'superadmin' ? 'border-purple-200' : 'border-gray-200'}`}>
               <p className={`text-[13px] font-semibold uppercase tracking-wider mb-2 flex items-center gap-1 ${currentUserRole === 'superadmin' ? 'text-purple-400' : 'text-gray-400'}`}>
@@ -1399,7 +1357,8 @@ export function ComplaintDetailModal({ complaint: c, onClose, onUpdate, updating
                 <FixedSelect
                   value={c.status}
                   onChange={(val) => { setOverrideNote(''); setOverrideConfirm(val) }}
-                  options={STATUS_MAIN.map(key => ({ value: key, label: STATUS[key].label }))}
+                  // "ดำเนินการแล้ว" ต้องผ่านกล่องปักหมุด (finish_complaint) — DB ปฏิเสธการเปลี่ยนตรงถ้าหมวดบังคับหมุด
+                  options={STATUS_MAIN.filter((key) => key !== 'closed').map(key => ({ value: key, label: STATUS[key].label }))}
                 />
               </div>
             </div>
@@ -1761,27 +1720,30 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
   }
 
   async function updateStatus(id, nextStatus, workPhotos = [], techNote = null) {
-    // Defense in depth: ActionButton ซ่อนปุ่มปิดเรื่องไว้แล้วผ่าน canFinalClose แต่ฟังก์ชันนี้
-    // เป็นทางออกสู่ฐานข้อมูลร่วมของทั้งหน้า (การ์ด/ตาราง/โมดัล) จึงต้องกันซ้ำที่นี่ด้วย
-    // ไม่ให้ขึ้นกับว่าใครเรียก — `completed` คือสถานะปิดเรื่องแบบ legacy คุมกติกาเดียวกัน
-    if (['closed', 'completed'].includes(nextStatus) && !['admin', 'superadmin'].includes(currentUserRole)) {
-      console.error('final complaint closure requires admin or superadmin')
+    // "ดำเนินการแล้ว" ต้องผ่าน FinishComplaintDialog (ปักหมุด + finish_complaint) เท่านั้น
+    if (['closed', 'completed', 'done'].includes(nextStatus)) {
+      console.error('finishing a complaint must go through FinishComplaintDialog')
+      return
+    }
+    // เริ่มดำเนินการผ่าน RPC — ผู้รับผิดชอบ role staff แก้ status ตรงไม่ได้ และ RPC ลง timeline ให้แล้ว
+    if (nextStatus === 'in_progress') {
+      setUpdating(id)
+      const { error } = await startComplaintWork(id)
+      if (error) alert('เริ่มดำเนินการไม่สำเร็จ: ' + error.message)
+      else setComplaints((prev) => prev.map((c) => c.id === id ? { ...c, status: 'in_progress' } : c))
+      setUpdating(null)
       return
     }
     setUpdating(id)
     const payload = { status: nextStatus }
     if (workPhotos.length > 0) payload.work_photos = workPhotos
-    // technician_note = "รายงานผลหน้างานของช่าง" เท่านั้น จึงเขียนได้เฉพาะตอนจบงาน (done)
-    // ของเดิมเขียนทุกสถานะ พอแอดมินกดปิดเรื่องพร้อมหมายเหตุตรวจรับ บันทึกของช่าง
-    // ("เปลี่ยนหลอด LED 18W 1 ดวง") ถูกทับหายถาวร ทั้งที่เป็นหลักฐานการปฏิบัติงานที่ใช้ตรวจสอบ
-    // หมายเหตุของสถานะอื่น (รับเรื่อง/ปิดเรื่อง/ปฏิเสธ) ลง complaint_timeline เป็นประวัติแทน
-    if (techNote && ['done', 'completed'].includes(nextStatus)) payload.technician_note = techNote
+    // technician_note = บันทึกผลการดำเนินงาน เขียนตอน "ดำเนินการแล้ว" (finish_complaint) เท่านั้น
+    // หมายเหตุของสถานะอื่น (รับเรื่อง/ปฏิเสธ) ลง complaint_timeline เป็นประวัติแทน ไม่ทับบันทึกผล
     // ห้ามเขียนทับ due_date ที่นี่ — trigger auto_assign_complaint ตั้งกำหนดเสร็จให้แล้วตอน
     // ประชาชนยื่นคำร้อง โดยอ่าน sla_days รายหมวดจาก category_assignments ซึ่งเป็นตัวเลขที่
     // แต่ละ อปท. ตั้งเอง ของเดิมทับด้วย 15 วันทำการแบบตายตัวตอนกด "เริ่มดำเนินการ" ผลคือ
     // กำหนดส่งเลื่อนออกไปไกลกว่าเดิมทุกครั้งที่งานเริ่มเดิน (เคสจริง: ไฟฟ้าสาธารณะ SLA 10 วัน
     // กลายเป็น 15 วันทำการ) ทำให้สถิติ SLA และไฟเตือนใกล้ครบกำหนดเพี้ยนทั้งระบบ
-    if (nextStatus === 'closed') payload.closed_at = new Date().toISOString()
     const { error } = await supabase.from('complaints').update(payload).eq('id', id)
     if (error) {
       console.error('update status error:', error.message)
@@ -1810,20 +1772,9 @@ export default function ComplaintsManager({ tenant, currentUserRole, openComplai
         setTimelineWarning(null)
       }
 
-      if (nextStatus === 'closed' && c?.user_id) {
-        supabase.functions.invoke('send-push', {
-          body: {
-            user_id: c.user_id,
-            title: 'คำร้องของคุณปิดเรื่องแล้ว',
-            // ชวนประเมินตั้งแต่ใน notification — แตะแล้วหน้า /my-complaints จะเด้งแบบประเมิน
-            // ให้เองถ้ายังไม่เคยให้คะแนน (ดู findUnrated ใน MyComplaints.jsx)
-            body: `คำร้อง${CATEGORY_LABEL[c?.category] ?? c?.category ?? ''} ดำเนินการเสร็จสิ้นแล้ว — แตะเพื่อให้คะแนนความพึงพอใจ`,
-            url: '/my-complaints',
-          },
-        }).catch(() => {})
-      } else if (techNote && techNote !== (c?.technician_note ?? '') && c?.user_id) {
+      // push "ดำเนินการแล้ว" ส่งจาก finishComplaint() (src/lib/complaintFinish.js)
+      if (techNote && techNote !== (c?.technician_note ?? '') && c?.user_id) {
         // แจ้งประชาชนเมื่อเจ้าหน้าที่บันทึกข้อความใหม่ (เดิมไม่มี push เลย ต้องเข้าแอปมาเช็คเอง)
-        // ไม่แจ้งซ้ำตอนปิดเรื่อง เพราะ branch ด้านบนมี push ของตัวเองอยู่แล้ว
         supabase.functions.invoke('send-push', {
           body: {
             user_id: c.user_id,
@@ -2044,7 +1995,8 @@ ${summaryHtml}
 
   const normalizeStatus = (s) => {
     if (s === 'pending') return 'new'
-    if (s === 'completed') return 'done'
+    // 'done' ขั้นเก่า + 'completed' legacy = "ดำเนินการแล้ว" เดียวกับ 'closed'
+    if (s === 'completed' || s === 'done') return 'closed'
     return s
   }
 
@@ -2135,7 +2087,7 @@ ${summaryHtml}
         <StatCard label="ทั้งหมด"         value={nonOdorComplaints.length}  icon={ClipboardList} color="#64748b" />
         <StatCard label="คำร้องใหม่"      value={counts.new ?? 0}           icon={Clock}         color="#f59e0b" />
         <StatCard label="กำลังดำเนินการ"  value={counts.in_progress ?? 0}   icon={AlertCircle}   color="#8b5cf6" />
-        <StatCard label="ปิดเรื่องแล้ว"   value={counts.closed ?? 0}        icon={CheckCircle2}  color="#10b981" />
+        <StatCard label="ดำเนินการแล้ว"   value={counts.closed ?? 0}        icon={CheckCircle2}  color="#10b981" />
       </div>
       {/* PC stat bar */}
       <div className="hidden md:flex border border-gray-200 rounded-none bg-white divide-x divide-gray-200 shadow-sm">
@@ -2143,8 +2095,7 @@ ${summaryHtml}
           { label: 'คำร้องทั้งหมด',    value: nonOdorComplaints.length,   color: '#1a3a5c', bg: '#eef2f7' },
           { label: 'คำร้องใหม่',       value: counts.new ?? 0,            color: '#b45309', bg: '#fef3c7' },
           { label: 'กำลังดำเนินการ',  value: counts.in_progress ?? 0,    color: '#6d28d9', bg: '#ede9fe' },
-          { label: 'ดำเนินการแล้ว',   value: counts.done ?? 0,            color: '#1d4ed8', bg: '#dbeafe' },
-          { label: 'ปิดเรื่องแล้ว',   value: counts.closed ?? 0,          color: '#065f46', bg: '#d1fae5' },
+          { label: 'ดำเนินการแล้ว',   value: counts.closed ?? 0,          color: '#065f46', bg: '#d1fae5' },
           { label: 'ปฏิเสธ',           value: counts.rejected ?? 0,        color: '#991b1b', bg: '#fee2e2' },
         ].map(s => (
           <div key={s.label} className="flex-1 px-4 py-3 text-center" style={{ backgroundColor: s.bg }}>
@@ -2470,10 +2421,10 @@ ${summaryHtml}
                         </span>
                       )}
                     </div>
-                    {NEXT_ACTION[c.status] && (['admin', 'superadmin'].includes(currentUserRole) || (currentUserRole === 'technician' && c.assigned_to === currentUserId)) && (
+                    {NEXT_ACTION[normalizeActionStatus(c.status)] && isComplaintWorker(c, currentUserId, currentUserRole) && c.category !== 'odor' && (
                       <div onClick={(e) => e.stopPropagation()}>
                         <ActionButton status={c.status} id={c.id} complaint={c} onUpdate={updateStatus} loading={updating}
-                          tenant={tenant} canFinalClose={['admin', 'superadmin'].includes(currentUserRole)} />
+                          tenant={tenant} categoryMeta={categoryMeta} onFinished={() => fetchComplaints()} allowReceive={isAdmin} />
                       </div>
                     )}
                   </div>
@@ -2599,11 +2550,13 @@ ${summaryHtml}
                       </td>
                       <td className="px-2 py-2 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
-                          {(['admin', 'superadmin'].includes(currentUserRole) || (currentUserRole === 'technician' && c.assigned_to === currentUserId)) && (
+                          {isComplaintWorker(c, currentUserId, currentUserRole) && c.category !== 'odor' && (
                             <>
                               <ActionButton status={c.status} id={c.id} complaint={c} onUpdate={updateStatus} loading={updating}
-                                size="xs" tenant={tenant} canFinalClose={['admin', 'superadmin'].includes(currentUserRole)} />
-                              <RejectButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} compact />
+                                size="xs" tenant={tenant} categoryMeta={categoryMeta} onFinished={() => fetchComplaints()} allowReceive={isAdmin} />
+                              {(['admin', 'superadmin'].includes(currentUserRole) || (currentUserRole === 'technician' && c.assigned_to === currentUserId)) && (
+                                <RejectButton status={c.status} id={c.id} onUpdate={updateStatus} loading={updating} compact />
+                              )}
                             </>
                           )}
                         </div>
@@ -2707,6 +2660,11 @@ ${summaryHtml}
           onDocumentUpdate={handleDocumentPatch}
           categoryMeta={categoryMeta}
           onReturned={() => fetchComplaints()}
+          onFinished={() => fetchComplaints()}
+          onTextSaved={(id, patch) => {
+            setComplaints((prev) => prev.map((row) => row.id === id ? { ...row, ...patch } : row))
+            setSelectedComplaint((prev) => prev?.id === id ? { ...prev, ...patch } : prev)
+          }}
         />
       )}
 

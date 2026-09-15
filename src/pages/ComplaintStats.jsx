@@ -312,7 +312,7 @@ export default function ComplaintStats() {
           <StatCard
             label="ระยะเวลาเฉลี่ย"
             value={stats?.avg_days != null ? `${stats.avg_days} วัน` : '—'}
-            sub="แจ้ง → ปิดเรื่อง (เฉพาะที่เสร็จ)"
+            sub="แจ้ง → ดำเนินการแล้ว (เฉพาะที่เสร็จ)"
             Icon={TrendingUp}
             iconBg="bg-purple-500"
             border="border-purple-100"

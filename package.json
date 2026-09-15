@@ -55,6 +55,7 @@
     "test:staff-inbox": "node tests/staff-inbox-layout.playwright.mjs",
     "test:telegram": "node tests/telegram-notification-message.test.mjs",
     "test:complaint-intake": "node tests/complaint-intake.test.mjs",
+    "test:complaint-finish": "node tests/complaint-finish.test.mjs",
     "test:guard": "node tests/guard-master-tree.test.mjs",
     "test:app-icon": "node tests/app-icon.test.mjs"
   },

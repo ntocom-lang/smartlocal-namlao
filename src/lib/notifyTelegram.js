@@ -5,6 +5,7 @@ const TELEGRAM_NOTIFICATIONS_DISABLED = false
 const ALLOWED_NOTIFICATION_TYPES = new Set([
   'complaint_created',
   'complaint_status_updated',
+  'complaint_reopened',
   'document_request_created',
   'document_request_status_updated',
   'building_permit_created',

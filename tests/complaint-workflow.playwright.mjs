@@ -450,9 +450,11 @@ async function checkTechnicianFinishAffordance(baseUrl, headed) {
     await job.click()
     await waitForApp(page, 800)
 
-    const finishButton = page.getByRole('button', { name: /ปิดงาน/ }).first()
+    // ขั้นสุดท้ายเปลี่ยนเป็น "ดำเนินการแล้ว" ที่ผู้รับผิดชอบกดเอง (20260915110100) — รูปยังไม่บังคับ
+    // (บังคับแค่หมุด ซึ่งอยู่ในกล่องที่เปิดหลังกดปุ่มนี้)
+    const finishButton = page.getByRole('button', { name: /ดำเนินการแล้ว/ }).first()
     if (await isVisible(finishButton)) {
-      assert.equal(await finishButton.isEnabled(), true, 'ปุ่ม "ปิดงาน" ถูก disable ทั้งที่ไม่มีรูปก็ปิดงานได้ตามนโยบาย')
+      assert.equal(await finishButton.isEnabled(), true, 'ปุ่ม "ดำเนินการแล้ว" ถูก disable ทั้งที่ไม่มีรูปก็ปิดงานได้ตามนโยบาย')
     }
     const finalClose = page.getByRole('button', { name: /^ปิดเรื่อง$/ })
     assert.equal(await isVisible(finalClose), false, 'ช่างเห็นปุ่ม "ปิดเรื่อง" ซึ่งเป็นอำนาจของ admin เท่านั้น')
