@@ -75,7 +75,7 @@ export function AndroidGuide({ onClose }) {
           {installing ? 'กำลังเปิดหน้าติดตั้ง กรุณายืนยันในหน้าของเบราว์เซอร์'
             : ready ? 'พร้อมติดตั้งแล้ว กดปุ่มด้านล่างเพื่อยืนยัน'
               : promptFailed ? 'เปิดหน้าติดตั้งไม่สำเร็จ ใช้เมนูเบราว์เซอร์ด้านล่างได้'
-                : 'ยังเรียกหน้าติดตั้งจากปุ่มนี้ไม่ได้ หากเบราว์เซอร์พร้อม ปุ่มติดตั้งจะแสดงที่นี่ หรือใช้เมนูด้านล่างได้เลย'}
+                : offerChrome ? 'เปิดเว็บนี้ใน Chrome เพื่อติดตั้งแอป' : 'ติดตั้งผ่านเมนู Chrome ได้ตามนี้'}
         </p>
         {(ready || installing) && <button type="button" disabled={installing} onClick={handleInstall}
           className="mt-4 min-h-11 w-full rounded-xl bg-blue-700 px-4 py-3 font-semibold text-white disabled:opacity-60">
@@ -87,9 +87,9 @@ export function AndroidGuide({ onClose }) {
         <details open={!offerChrome} className="mt-3 text-gray-700">
         <summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold">วิธีเพิ่มจากเมนูเบราว์เซอร์</summary>
         <ol className="list-decimal pl-5 mt-3 space-y-3 text-sm text-gray-600">
-          <li>เปิดเมนูของเบราว์เซอร์ รูปสามจุดหรือสามขีด</li>
-          <li>หาเมนู “ติดตั้งแอป” หรือ “เพิ่มไปที่หน้าจอโฮม” ชื่อเมนูอาจต่างกันตามเบราว์เซอร์</li>
-          <li>กดยืนยัน แล้วดูไอคอนที่หน้าจอโฮม</li>
+          <li>กดเมนู <strong className="text-xl" aria-label="สามจุด">⋮</strong> มุมขวาบนของ Chrome</li>
+          <li>เลือก <strong>ติดตั้งแอป</strong> หรือ <strong>ติดตั้งและสร้างทางลัด</strong><br />บางรุ่นใช้ชื่อ <strong>เพิ่มไปที่หน้าจอหลัก</strong></li>
+          <li>กด <strong>ติดตั้ง</strong> หรือ <strong>เพิ่ม</strong> แล้วเปิดจากไอคอนบนมือถือ</li>
         </ol>
         <p className="mt-3 text-sm text-gray-500">หากติดตั้งไว้แล้ว ให้เปิดจากไอคอนบนหน้าจอโฮม</p>
         </details>
@@ -147,7 +147,10 @@ export function IOSGuide({ onClose }) {
             <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center shrink-0 mt-0.5">
               <span className="text-xs font-bold text-blue-600">3</span>
             </div>
-            <p className="text-sm font-semibold text-gray-700 mt-0.5">กด "เพิ่ม" มุมขวาบน</p>
+            <div>
+              <p className="text-sm font-semibold text-gray-700 mt-0.5">กด "เพิ่ม"</p>
+              <p className="text-xs text-gray-500 mt-0.5">หากมี "เปิดเป็นเว็บแอป" ให้เปิดไว้</p>
+            </div>
           </div>
         </div>
         <button onClick={onClose}
@@ -163,13 +166,16 @@ export function IOSGuide({ onClose }) {
 export default function InstallPrompt() {
   const { mode, install } = useInstallPrompt()
   const iosMode = mode === 'manual-ios'
+  const androidHelp = (mode === 'hidden' || mode === 'manual-android') && detectBrowserEnvironment().isAndroid
   const [showGuide, setShowGuide] = useState(false)
 
   async function handleInstall() {
+    // ชื่อปุ่มบอกชัดว่าเป็นทางช่วยเหลือ ไม่อ้างว่ากดแล้วติดตั้งเมื่อยังไม่มี event
+    if (androidHelp) { setShowGuide(true); return }
     if (await install() === 'guide') setShowGuide(true)
   }
 
-  if (mode === 'installed' || mode === 'hidden') return null
+  if (mode === 'installed' || (mode === 'hidden' && !androidHelp)) return null
 
   return (
     <>
@@ -178,7 +184,7 @@ export default function InstallPrompt() {
         type="button"
         disabled={mode === 'installing'}
         onClick={handleInstall}
-        aria-label={iosMode ? 'ดูวิธีติดตั้งแอป' : 'ติดตั้งแอป'}
+        aria-label={iosMode ? 'ดูวิธีติดตั้งแอป' : androidHelp ? 'วิธีติดตั้งแอป' : 'ติดตั้งแอป'}
         className="md:hidden fixed bottom-20 left-3 z-[60] min-h-11 inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-[11px] font-bold text-white shadow-lg motion-safe:animate-pulse active:scale-95 transition-transform disabled:opacity-60"
         style={{
           background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)',
@@ -186,7 +192,7 @@ export default function InstallPrompt() {
         }}
       >
         {iosMode ? <PlusSquare size={15} aria-hidden="true" /> : <Download size={15} aria-hidden="true" />}
-        <span>{mode === 'installing' ? 'กำลังเปิดหน้าติดตั้ง…' : 'ติดตั้งแอป'}</span>
+        <span>{mode === 'installing' ? 'กำลังเปิดหน้าติดตั้ง…' : iosMode ? 'เพิ่มหน้าจอโฮม' : androidHelp ? 'วิธีติดตั้งแอป' : 'ติดตั้งแอป'}</span>
       </button>
     </>
   )
