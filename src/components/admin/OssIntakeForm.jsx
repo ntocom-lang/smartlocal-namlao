@@ -35,7 +35,8 @@ export default function OssIntakeForm({ tenant, categoryLabels, onClose }) {
     if (!form.category) { setError('กรุณาเลือกประเภทคำร้อง'); return }
     if (!form.reporter_name.trim()) { setError('กรุณากรอกชื่อ-นามสกุลผู้แจ้ง'); return }
     if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
-    if (form.detail.trim().length < 10) { setError('กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'); return }
+    // ไม่จำกัดความยาวขั้นต่ำแล้ว (เจ้าของระบบสั่ง 2569-09-17) — ยังบังคับว่าต้องกรอก
+    if (!form.detail.trim()) { setError('กรุณากรอกรายละเอียด'); return }
     if (!tenant?.id) { setError('ไม่พบข้อมูลหน่วยงาน'); return }
 
     setError(null)
@@ -212,8 +213,9 @@ export default function OssIntakeForm({ tenant, categoryLabels, onClose }) {
               </div>
               <div>
                 <label className="text-xs font-semibold text-gray-500 mb-1 block">รายละเอียด *</label>
-                <textarea value={form.detail} onChange={set('detail')} rows={3} minLength={10} maxLength={5000}
-                  placeholder="อธิบายปัญหาอย่างน้อย 10 ตัวอักษร..."
+                {/* ถอด minLength ออกแล้ว (ไม่จำกัดความยาวขั้นต่ำ 2569-09-17) */}
+                <textarea value={form.detail} onChange={set('detail')} rows={3} maxLength={5000}
+                  placeholder="อธิบายปัญหาที่พบ..."
                   className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-400 resize-none" />
               </div>
               <div>
