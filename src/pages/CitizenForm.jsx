@@ -24,6 +24,9 @@ import { ODOR_INTENSITY_LEVELS, WIND_DIRECTIONS, HEALTH_EFFECT_OPTIONS } from '.
 
 const MAX_PHOTOS = 3
 
+// ค่าพิเศษของตัวเลือก "ไม่อยู่ในรายการ" — ไม่ถูกบันทึกลงคำร้อง ใช้สลับเป็นช่องพิมพ์เองเท่านั้น
+const OTHER_VILLAGE = '__other__'
+
 
 const CATEGORY_ICON = {
   light:            Lightbulb,
@@ -400,6 +403,9 @@ export default function CitizenForm() {
   const [savedPhotoFiles, setSavedPhotoFiles] = useState([])
   const [photos, setPhotos] = useState([]) // { file, preview }
   const [locations, setLocations] = useState([])
+  // สถานที่นอกทะเบียนของ อปท. (ริมถนน จุดสังเกตที่ไม่ใช่ชื่อหมู่บ้าน) — บังคับเลือกอย่างเดียวไม่พอ
+  // ถ้าไม่มีทางพิมพ์เอง ผู้ร้องที่อยู่นอกรายการจะส่งเรื่องไม่ได้เลย (เจ้าของระบบเลือกทางนี้ 2569-09-17)
+  const [villageOther, setVillageOther] = useState(false)
   const [dbCategories, setCategories] = useState(DEFAULT_CATEGORIES)
   // ค่าที่ "มีแถวในตารางของเทศบาลนี้แต่ is_active=false" เท่านั้น — ค่าที่ไม่มีแถวเลย (env_hazard,
   // env_fire, pollution, water_flood ที่มีแต่ใน FORM_TYPE_CONFIG) จะไม่อยู่ในนี้และยังแสดงตามเดิม
@@ -556,6 +562,16 @@ export default function CitizenForm() {
 
   // คืนข้อความ error ตัวแรกที่พบ หรือ null ถ้าผ่าน — ใช้ทั้ง 2 จุดที่ validate ก่อนส่ง (ปุ่มกดก่อนเปิด
   // consent modal และ handleSubmit จริง) เหมือนแพทเทิร์นเดิมของ issue_type
+  // ⚠️ ต้องเรียกทั้ง 2 จุดที่ validate ก่อนส่ง (ปุ่มกดก่อนเปิดหน้าทวน และ handleSubmit) เหมือน validateDetail
+  function validateVillage(form) {
+    if (!form.village.trim()) {
+      return locations.length === 0 || villageOther
+        ? 'กรุณากรอกสถานที่'
+        : 'กรุณาเลือกสถานที่'
+    }
+    return null
+  }
+
   function validateOdorFields(form) {
     if (form.category !== 'odor') return null
     if (!form.odor_intensity) return 'กรุณาเลือกระดับความรุนแรงของกลิ่น'
@@ -595,6 +611,8 @@ export default function CitizenForm() {
     if (odorErr) { setError(odorErr); return }
     const detailErr = validateDetail(form)
     if (detailErr) { setError(detailErr); return }
+    const villageErr = validateVillage(form)
+    if (villageErr) { setError(villageErr); return }
     if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
     if (!tenant?.id) { setError('ไม่พบข้อมูลหน่วยงาน'); return }
 
@@ -971,18 +989,38 @@ export default function CitizenForm() {
           placeholder={ftConfig?.placeholder ?? 'รายละเอียด'}
           className="w-full px-4 py-3.5 rounded-xl border border-gray-300 bg-white text-gray-900 text-base placeholder-gray-400 resize-none focus:outline-none focus:border-blue-400" />
 
-        {/* Village */}
-        {locations.length === 0 ? (
-          <input type="text" value={form.village} onChange={set('village')}
-            maxLength={250}
-            placeholder="สถานที่"
-            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 bg-white text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-blue-400" />
+        {/* Village — บังคับกรอก/เลือก (เจ้าของระบบกำหนด 2569-09-17) เจ้าหน้าที่ต้องรู้ว่าไปที่ไหน
+            อปท. ที่ยังไม่ได้ตั้งทะเบียนสถานที่ (locations ว่าง) ใช้ช่องพิมพ์เองเหมือนเดิม */}
+        {locations.length === 0 || villageOther ? (
+          <div className="space-y-1.5">
+            <input type="text" value={form.village} onChange={set('village')} required
+              maxLength={250}
+              placeholder="สถานที่ / จุดสังเกต *"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-300 bg-white text-gray-900 text-base placeholder-gray-400 focus:outline-none focus:border-blue-400" />
+            {locations.length > 0 && (
+              <button type="button"
+                onClick={() => { setVillageOther(false); setForm((prev) => ({ ...prev, village: '' })); setError(null) }}
+                className="text-sm font-medium underline" style={{ color: 'var(--color-primary)' }}>
+                กลับไปเลือกจากรายการ
+              </button>
+            )}
+          </div>
         ) : (
           <div className="relative">
-            <select value={form.village} onChange={set('village')}
+            <select value={form.village} required
+              onChange={(e) => {
+                setError(null)
+                if (e.target.value === OTHER_VILLAGE) {
+                  setVillageOther(true)
+                  setForm((prev) => ({ ...prev, village: '' }))
+                  return
+                }
+                setForm((prev) => ({ ...prev, village: e.target.value }))
+              }}
               className="w-full px-4 py-2.5 pr-10 rounded-xl border border-gray-300 bg-white text-gray-900 text-base focus:outline-none focus:border-blue-400 appearance-none">
-              <option value="">— เลือกสถานที่ —</option>
+              <option value="">— เลือกสถานที่ * —</option>
               {locations.map((l) => <option key={l.id} value={l.name}>{l.name}</option>)}
+              <option value={OTHER_VILLAGE}>ไม่อยู่ในรายการ (พิมพ์เอง)</option>
             </select>
             <ChevronDown size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           </div>
@@ -1081,6 +1119,8 @@ export default function CitizenForm() {
           if (odorErr) { setError(odorErr); return }
           const detailErr = validateDetail(form)
     if (detailErr) { setError(detailErr); return }
+          const villageErr = validateVillage(form)
+          if (villageErr) { setError(villageErr); return }
           if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
           setShowConsent(true)
         }} disabled={submitting || categoryDisabled}
