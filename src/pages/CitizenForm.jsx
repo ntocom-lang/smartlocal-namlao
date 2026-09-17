@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { notifyTelegram } from '../lib/notifyTelegram'
+import ComplaintReviewSheet from '../components/complaints/ComplaintReviewSheet'
 import { useTenant } from '../contexts/TenantContext'
 import { CategoryIcon } from '../lib/categoryIcon'
 import { moduleHiddenCategoryValues } from '../lib/complaintCategoryModules'
@@ -580,7 +581,9 @@ export default function CitizenForm() {
     setShowMap(false)
   }
 
-  async function handleSubmit(e) {
+  // choice = ผลจากหน้าทวนก่อนส่ง { detail, source, original } — ข้อความที่ส่งจริงคือฉบับที่ผู้ร้องกดเลือก
+  // ไม่ใช่ค่าในช่องกรอก (ผู้ร้องอาจเลือกฉบับที่ระบบเรียบเรียงหรือแก้เองในหน้าทวน)
+  async function handleSubmit(e, choice = null) {
     e?.preventDefault()
     if (!form.category) { setError('กรุณาเลือกประเภทคำร้อง'); return }
     const catErr = validateCategoryEnabled(form)
@@ -594,6 +597,10 @@ export default function CitizenForm() {
     if (detailErr) { setError(detailErr); return }
     if (!form.phone.trim()) { setError('กรุณากรอกเบอร์โทรติดต่อ'); return }
     if (!tenant?.id) { setError('ไม่พบข้อมูลหน่วยงาน'); return }
+
+    const finalDetail = (choice?.detail ?? form.detail).trim()
+    const textSource = choice?.source ?? 'original'
+    if (!finalDetail) { setError('กรุณากรอกรายละเอียด'); return }
 
     abortCtrlRef.current?.abort()
     setError(null)
@@ -625,7 +632,7 @@ export default function CitizenForm() {
             p_category:        form.category,
             p_form_type:       formType !== 'legacy' ? formType : 'legacy',
             p_village:         form.village || null,
-            p_detail:          form.detail.trim(),
+            p_detail:          finalDetail,
             p_phone:           form.phone.trim(),
             p_reporter_name:   reporterFullName,
             p_latitude:        geo.lat,
@@ -645,6 +652,17 @@ export default function CitizenForm() {
       const { data: inserted, error: dbError } = insertResult ?? {}
       if (dbError) { setError(`เกิดข้อผิดพลาด: ${dbError.message}`); return }
 
+      // เก็บต้นฉบับที่ผู้ร้องพิมพ์ + วิธีที่เลือกส่ง (20260917100000) — ล้มเหลวก็ไม่กระทบคำร้อง
+      if (textSource !== 'original') {
+        supabase.rpc('record_complaint_text_origin', {
+          p_complaint_id: complaintId,
+          p_original: choice?.original ?? form.detail.trim(),
+          p_source: textSource,
+        }).then(({ error }) => {
+          if (error) console.error('[complaint] บันทึกต้นฉบับข้อความไม่สำเร็จ:', error.message)
+        })
+      }
+
       setSuccess(true)
       setComplaintNumber(inserted?.ref_no ?? null)
       setSavedComplaintId(complaintId)
@@ -661,7 +679,7 @@ export default function CitizenForm() {
       const allCats = [...(ftConfig?.categories ?? []), ...categories]
       const catLabel = allCats.find((c) => c.value === form.category)?.label?.replace(/^[\p{Emoji}\s]+/u, '').trim() ?? form.category
       supabase.functions.invoke('send-push', {
-        body: { municipality_id: tenant.id, title: `คำร้องใหม่: ${catLabel}`, body: form.detail.trim().slice(0, 100), url: '/admin' },
+        body: { municipality_id: tenant.id, title: `คำร้องใหม่: ${catLabel}`, body: finalDetail.slice(0, 100), url: '/admin' },
       }).catch(() => {})
       notifyTelegram('complaint_created', complaintId)
     } catch (err) {
@@ -1076,30 +1094,27 @@ export default function CitizenForm() {
 
       </form>
 
-      {/* Consent modal */}
+      {/* หน้าทวนก่อนส่ง — เจ้าของระบบกำหนด 2569-09-17: ผู้ร้องต้องเห็นสิ่งที่จะส่งทั้งหมดและกลับไปแก้ได้
+          ข้อความยินยอม PDPA อยู่ในกล่องเดียวกันเหมือนเดิม ไม่เพิ่มจำนวนครั้งที่ต้องกด */}
       {showConsent && (
-        <div className="fixed inset-0 z-200 flex items-end bg-black/40" onClick={() => setShowConsent(false)}>
-          <div className="w-full max-w-lg mx-auto bg-white rounded-t-3xl px-5 pt-5 pb-8"
-            onClick={(e) => e.stopPropagation()}>
-            <h2 className="font-bold text-gray-800 text-base mb-3">ยืนยันการส่งคำร้อง</h2>
-            <p className="text-sm text-gray-600 leading-relaxed mb-4">
-              ข้าพเจ้ารับรองว่าข้อมูลถูกต้องและเป็นความจริง และยินยอมให้{tenant?.name ?? 'หน่วยงาน'}เก็บข้อมูลส่วนบุคคลเพื่อดำเนินการตามคำร้อง ตาม{' '}
-              <a href="#" className="underline" style={{ color: 'var(--color-primary)' }}
-                onClick={(e) => { e.preventDefault(); setShowConsent(false); setShowPdpa(true) }}>นโยบายความเป็นส่วนตัว (PDPA)</a>
-            </p>
-            <div className="flex gap-3">
-              <button onClick={() => setShowConsent(false)}
-                className="flex-1 py-3 rounded-2xl border border-gray-200 text-gray-600 text-sm font-medium">
-                ยกเลิก
-              </button>
-              <button onClick={() => { setShowConsent(false); handleSubmit() }} disabled={submitting}
-                className="flex-1 py-3 rounded-2xl font-semibold text-white text-sm disabled:opacity-60"
-                style={{ backgroundColor: 'var(--color-primary)' }}>
-                {submitting ? <Loader2 size={16} className="animate-spin mx-auto" /> : 'ยอมรับและส่ง'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ComplaintReviewSheet
+          summary={[
+            { label: 'ประเภท', value: catLabel },
+            { label: 'ลักษณะปัญหา', value: form.issue_type },
+            { label: 'สถานที่', value: form.village },
+            { label: 'พิกัด', value: geo.lat != null ? `${geo.lat.toFixed(5)}, ${geo.lng.toFixed(5)}` : 'ไม่ได้ปักหมุด' },
+            { label: 'ผู้แจ้ง', value: reporterFullName },
+            { label: 'เบอร์โทร', value: form.phone },
+          ]}
+          detail={form.detail.trim()}
+          photoCount={photos.length}
+          orgName={tenant?.name ?? 'หน่วยงาน'}
+          submitting={submitting}
+          submitLabel={actionCopy.submit}
+          onPdpaClick={() => { setShowConsent(false); setShowPdpa(true) }}
+          onBack={() => setShowConsent(false)}
+          onConfirm={(choice) => { setShowConsent(false); handleSubmit(null, choice) }}
+        />
       )}
 
       </div>
