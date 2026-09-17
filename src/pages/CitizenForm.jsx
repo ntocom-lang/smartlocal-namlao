@@ -532,21 +532,14 @@ export default function CitizenForm() {
 
   // รวมฟิลด์เสริมของหมวดที่มีเป็น jsonb object เดียว — คืน null ถ้าหมวดนี้ไม่มีฟิลด์เสริม (ไม่ใช่ odor)
   // ตัด incident_source_suspected/incident_time ออกแล้ว (ใช้ complaints.created_at แทนวันเวลาที่แจ้ง)
-  // ช่องรายละเอียด: ทุกหมวดต้องกรอกเสมอ แต่ขั้นต่ำ 10 ตัวอักษรยกเว้นให้หมวดกลิ่นเหม็นรบกวน
-  //
-  // หมวดกลิ่นบังคับคำตอบ structured ครบชุด (ความรุนแรง/ช่วงเวลา/ทิศลม/อาการ) + พิกัด GPS อยู่แล้ว
-  // เจ้าหน้าที่ลงพื้นที่ได้แม้ผู้แจ้งพิมพ์แค่ "เหม็นมาก" — ข้อมูลที่ใช้ทำงานจริงไม่ได้อยู่ในช่องนี้
-  // ต่างจากหมวดถนน/ไฟฟ้าที่ถ้าได้ detail มาว่า "พัง" คำเดียวจะสั่งการต่อไม่ได้ และข้อความนั้น
-  // ไหลไปขึ้นใบพิมพ์เสนอผู้บังคับบัญชากับข้อความแจ้งเตือน Telegram ตรงๆ
+  // ช่องรายละเอียด: ทุกหมวดต้องกรอกเสมอ แต่ไม่จำกัดความยาวขั้นต่ำแล้ว (เจ้าของระบบสั่ง 2569-09-17)
+  // ของเดิมบังคับ 10 ตัวอักษรทุกหมวดยกเว้นกลิ่นเหม็นรบกวน ผู้ร้องที่พิมพ์สั้นแต่สื่อความชัด
+  // เช่น "ไฟดับ" จึงถูกปฏิเสธ
   //
   // ⚠️ กฎเดียวกันนี้บังคับซ้ำที่ฐานข้อมูล (submit_citizen_complaint_v4 ในไมเกรชัน
-  // 20260908110000) ที่นี่เป็นแค่ UX ให้เห็น error เร็ว แก้ที่เดียวไม่พอ ต้องแก้ทั้งสองที่
+  // 20260917110000) ที่นี่เป็นแค่การแจ้งเตือนให้เห็นเร็ว แก้ที่เดียวไม่พอ ต้องแก้ทั้งสองที่
   function validateDetail(form) {
-    const detail = form.detail.trim()
-    if (!detail) return 'กรุณากรอกรายละเอียด'
-    if (form.category !== 'odor' && detail.length < 10) {
-      return 'กรุณาอธิบายรายละเอียดอย่างน้อย 10 ตัวอักษร'
-    }
+    if (!form.detail.trim()) return 'กรุณากรอกรายละเอียด'
     return null
   }
 
@@ -982,10 +975,10 @@ export default function CitizenForm() {
         )}
 
         {/* Detail */}
-        {/* minLength ของเบราว์เซอร์บล็อกตั้งแต่ก่อนโค้ดเราได้ทำงาน จึงต้องถอดตามหมวดด้วย
-            ไม่ใช่แก้แค่ validateDetail() — required ยังอยู่ทุกหมวด ห้ามปล่อยว่าง */}
+        {/* ถอด minLength ออกแล้ว (ไม่จำกัดความยาวขั้นต่ำ 2569-09-17) — required ยังอยู่ ห้ามปล่อยว่าง
+            ⚠️ minLength ของเบราว์เซอร์บล็อกตั้งแต่ก่อนโค้ดเราได้ทำงาน ถ้าใส่กลับมาต้องแก้ทั้ง
+            validateDetail() และฐานข้อมูลให้ตรงกันทั้งสามที่ */}
         <textarea value={form.detail} onChange={set('detail')} rows={2} required maxLength={5000}
-          minLength={form.category === 'odor' ? undefined : 10}
           placeholder={ftConfig?.placeholder ?? 'รายละเอียด'}
           className="w-full px-4 py-3.5 rounded-xl border border-gray-300 bg-white text-gray-900 text-base placeholder-gray-400 resize-none focus:outline-none focus:border-blue-400" />
 
