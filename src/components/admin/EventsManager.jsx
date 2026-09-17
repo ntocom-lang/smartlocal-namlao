@@ -8,6 +8,7 @@ import { uploadFile } from '../../lib/driveStorage'
 import { driveFolderPath, driveMonthFolder, DRIVE_MODULES } from '../../lib/driveFolders'
 import { todayStr } from '../../lib/thaiDate'
 import { AUDIENCE_COLOR, AUDIENCE_LABEL, activeOrgTerms } from '../../lib/orgTerms'
+import { CalendarDayMarkers, CalendarDayObservances, CalendarObservanceLegend } from '../CalendarObservances'
 
 // ปิด AI ทั้งระบบตามคำสั่งเจ้าของระบบ 2569-09-15 กันโควตา Gemini ฟรีหมด
 // Edge Function gemini-extract-event ถูกแทนด้วยตัวที่ตอบ 410 แล้ว ปุ่มจึงใช้ไม่ได้ ซ่อนไว้ไม่ให้กดแล้วเจอ error
@@ -280,7 +281,9 @@ function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage,
   const dayKey = (d) =>
     `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
 
-  const selectedEvents = selectedDay ? (eventMap[dayKey(selectedDay)] ?? []) : []
+  const selectedEvents = selectedDay ? [...(eventMap[dayKey(selectedDay)] ?? [])].sort((a, b) =>
+    Number(!!b.is_all_day) - Number(!!a.is_all_day) || (a.event_time || '99:99').localeCompare(b.event_time || '99:99')
+  ) : []
 
   const monthName = new Date(calYear, calMonth, 1)
     .toLocaleDateString('th-TH', { year: 'numeric', month: 'long' })
@@ -292,6 +295,8 @@ function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage,
         <button
           type="button"
           onClick={prevMonth}
+          aria-label="เดือนก่อนหน้า"
+          style={{ minWidth: 44, minHeight: 44 }}
           className="p-2 rounded-xl hover:bg-gray-100 text-gray-500 transition-colors"
         >
           <ChevronLeft size={20} />
@@ -300,6 +305,8 @@ function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage,
         <button
           type="button"
           onClick={nextMonth}
+          aria-label="เดือนถัดไป"
+          style={{ minWidth: 44, minHeight: 44 }}
           className="p-2 rounded-xl hover:bg-gray-100 text-gray-500 transition-colors"
         >
           <ChevronRight size={20} />
@@ -342,6 +349,8 @@ function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage,
               key={idx}
               type="button"
               onClick={() => setSelectedDay(day === selectedDay ? null : day)}
+              aria-pressed={isSelected}
+              data-calendar-date={key}
               className={`min-h-12 p-1 flex flex-col items-center transition-colors ${
                 isSelected
                   ? 'bg-blue-50'
@@ -349,7 +358,7 @@ function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage,
               }`}
             >
               <span
-                className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full mb-0.5 ${
+                className={`relative text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full mb-0.5 ${
                   isToday
                     ? 'bg-red-500 text-white'
                     : isSelected
@@ -362,6 +371,7 @@ function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage,
                 }`}
               >
                 {day}
+                <CalendarDayMarkers date={key} />
               </span>
               <div className="flex flex-wrap justify-center gap-px max-w-full">
                 {dayEvs.slice(0, 3).map((ev, i) => (
@@ -382,6 +392,7 @@ function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage,
         })}
       </div>
 
+      <CalendarObservanceLegend year={calYear} />
       {/* Legend */}
       <div className="flex flex-wrap gap-x-4 gap-y-1.5 pt-1 px-1">
         {Object.entries(AUDIENCE_COLOR).map(([key, color]) => (
@@ -489,6 +500,7 @@ function AdminCalendarView({ events, onSelectEvent, onEdit, onDelete, canManage,
               })}
             </div>
           )}
+          <CalendarDayObservances date={dayKey(selectedDay)} />
         </div>
       )}
     </div>

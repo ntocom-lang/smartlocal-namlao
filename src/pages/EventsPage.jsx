@@ -6,6 +6,7 @@ import { useTenant } from '../contexts/TenantContext'
 import EventDetailModal from '../components/EventDetailModal'
 import { toDateStr } from '../lib/thaiDate'
 import { AUDIENCE_COLOR, AUDIENCE_LABEL } from '../lib/orgTerms'
+import { CalendarDayMarkers, CalendarDayObservances, CalendarObservanceLegend } from '../components/CalendarObservances'
 
 const CATEGORY_COLOR = {
   'ประชาสัมพันธ์': '#10b981', 'ประชุม': '#3b82f6', 'กำหนดการ': '#f97316',
@@ -78,7 +79,9 @@ function CalendarView({ events, dotEvents, onSelectEvent, role }) {
   const dayKey = (d) =>
     `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
 
-  const selectedEvents = selectedDay ? (eventMap[dayKey(selectedDay)] ?? []) : []
+  const selectedEvents = selectedDay ? [...(eventMap[dayKey(selectedDay)] ?? [])].sort((a, b) =>
+    Number(!!b.is_all_day) - Number(!!a.is_all_day) || (a.event_time || '99:99').localeCompare(b.event_time || '99:99')
+  ) : []
 
   const monthName = new Date(calYear, calMonth, 1)
     .toLocaleDateString('th-TH', { year: 'numeric', month: 'long' })
@@ -89,6 +92,8 @@ function CalendarView({ events, dotEvents, onSelectEvent, role }) {
       <div className="flex items-center justify-between mb-3">
         <button
           onClick={prevMonth}
+          aria-label="เดือนก่อนหน้า"
+          style={{ minWidth: 44, minHeight: 44 }}
           className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-white/10 text-gray-500 transition-colors"
         >
           <ChevronLeft size={20} />
@@ -96,6 +101,8 @@ function CalendarView({ events, dotEvents, onSelectEvent, role }) {
         <p className="text-sm font-bold text-gray-800 dark:text-slate-200">{monthName}</p>
         <button
           onClick={nextMonth}
+          aria-label="เดือนถัดไป"
+          style={{ minWidth: 44, minHeight: 44 }}
           className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-white/10 text-gray-500 transition-colors"
         >
           <ChevronRight size={20} />
@@ -137,6 +144,8 @@ function CalendarView({ events, dotEvents, onSelectEvent, role }) {
             <button
               key={idx}
               onClick={() => setSelectedDay(day === selectedDay ? null : day)}
+              aria-pressed={isSelected}
+              data-calendar-date={key}
               className={`min-h-13 p-1 flex flex-col items-center transition-colors ${
                 isSelected
                   ? 'bg-blue-50 dark:bg-blue-900/30'
@@ -144,7 +153,7 @@ function CalendarView({ events, dotEvents, onSelectEvent, role }) {
               }`}
             >
               <span
-                className={`text-xs font-bold w-7 h-7 flex items-center justify-center rounded-full mb-0.5 ${
+                className={`relative text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full mb-0.5 ${
                   isToday
                     ? 'bg-red-500 text-white'
                     : isSelected
@@ -157,6 +166,7 @@ function CalendarView({ events, dotEvents, onSelectEvent, role }) {
                 }`}
               >
                 {day}
+                <CalendarDayMarkers date={key} />
               </span>
               <div className="flex flex-wrap justify-center gap-px max-w-full">
                 {dayEvs.slice(0, 3).map((ev, i) => (
@@ -177,6 +187,7 @@ function CalendarView({ events, dotEvents, onSelectEvent, role }) {
         })}
       </div>
 
+      <CalendarObservanceLegend year={calYear} />
       {/* Legend */}
       <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-3 px-1">
         {Object.entries(AUDIENCE_COLOR).map(([key, color]) => (
@@ -200,7 +211,7 @@ function CalendarView({ events, dotEvents, onSelectEvent, role }) {
           {selectedEvents.length === 0 ? (
             <div className="flex flex-col items-center py-8 text-gray-300">
               <CalendarDays size={32} strokeWidth={1.2} className="mb-2" />
-              <p className="text-sm">ไม่มีกิจกรรม</p>
+              <p className="text-sm">ไม่มีกิจกรรมในวันนี้</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -255,6 +266,7 @@ function CalendarView({ events, dotEvents, onSelectEvent, role }) {
               })}
             </div>
           )}
+          <CalendarDayObservances date={dayKey(selectedDay)} />
         </div>
       )}
     </div>
@@ -647,14 +659,7 @@ export default function EventsPage() {
 
             {/* Calendar column */}
             <div className={view === 'calendar' ? 'mt-0' : 'hidden md:block'}>
-              {filteredEvents.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 text-gray-300">
-                  <CalendarDays size={40} strokeWidth={1.2} className="mb-3" />
-                  <p className="text-sm">ยังไม่มีกิจกรรม</p>
-                </div>
-              ) : (
-                <CalendarView events={filteredEvents} dotEvents={filteredDotEvents} onSelectEvent={handleSelectEvent} role={role} />
-              )}
+              <CalendarView events={filteredEvents} dotEvents={filteredDotEvents} onSelectEvent={handleSelectEvent} role={role} />
             </div>
 
             {/* List / Table column */}
