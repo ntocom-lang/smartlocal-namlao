@@ -1734,11 +1734,18 @@ const C_STATUS = {
 function normalizeFinished(status) {
   return status === 'done' || status === 'completed' ? 'closed' : status
 }
+// สีปุ่ม = สีของสถานะ "ปลายทาง" ที่ปุ่มจะพาไป (ฟ้า รับเรื่องแล้ว · ม่วง กำลังดำเนินการ · เขียว
+// ดำเนินการแล้ว) ให้ตรงกับชุดสีป้ายสถานะ คนจะได้จำคู่สีชุดเดียว — เดิมทุกปุ่มใช้ --color-primary
+// สีเดียวกันหมด ไล่ตารางแล้วแยกไม่ออกว่าแถวไหนยังไม่เริ่ม แถวไหนรอปิดงาน
+// ใช้เฉดเข้ม (700) ไม่ใช่สีเดียวกับป้าย เพราะปุ่มเป็นตัวอักษรขาวเล็ก 11-13px — เขียว #10b981
+// กับตัวขาวได้ contrast แค่ราว 2.5:1 อ่านไม่ออกบนจอสว่างน้อย เฉด 700 ได้ราว 5.5-7:1
+// ⚠️ ชุดสีเดียวกันนี้ใช้ใน ComplaintsManager.jsx · StaffDashboard.jsx · TechnicianDashboard.jsx
+// เปลี่ยนที่หนึ่งต้องเปลี่ยนให้ครบทั้งสามไฟล์
 const C_NEXT = {
-  received:    { label: 'เริ่มดำเนินการ', next: 'in_progress' },
+  received:    { label: 'เริ่มดำเนินการ', next: 'in_progress', color: '#6d28d9' },
   // "ดำเนินการแล้ว" เปิดกล่องปักหมุด (FinishComplaintDialog) ไม่ได้เปลี่ยนสถานะตรง
-  in_progress: { label: 'ดำเนินการแล้ว', next: 'closed' },
-  done:        { label: 'ดำเนินการแล้ว', next: 'closed' },
+  in_progress: { label: 'ดำเนินการแล้ว', next: 'closed', color: '#047857' },
+  done:        { label: 'ดำเนินการแล้ว', next: 'closed', color: '#047857' },
 }
 // fallback ก่อน complaint_categories ของเทศบาลจะโหลดเสร็จ (หรือถ้าโหลดพลาด) — ครอบคลุม
 // ค่าเดียวกับ DEFAULT_CATEGORIES ใน ComplaintCategory.jsx (ฟอร์มแจ้งเรื่องฝั่งประชาชน) กัน
@@ -1794,18 +1801,6 @@ function StaffComplaintCategoryIcon({ category, size = 'md' }) {
         : <span className="leading-none">{icon}</span>}
     </span>
   )
-}
-
-// ── badge helpers (คำร้องที่มอบหมายแล้วแต่เจ้าหน้าที่ยังไม่เคยเปิดดู) ──────
-function getStaffSeenIds() {
-  try { return new Set(JSON.parse(localStorage.getItem('sl_staff_seen') ?? '[]')) }
-  catch { return new Set() }
-}
-function markStaffSeen(id) {
-  const seen = getStaffSeenIds()
-  seen.add(id)
-  localStorage.setItem('sl_staff_seen', JSON.stringify([...seen]))
-  window.dispatchEvent(new Event('staff-badge-update'))
 }
 
 function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
@@ -1884,10 +1879,7 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
       alert('ไม่มีสิทธิ์เปิดรายละเอียดคำร้องนี้')
       return
     }
-    if (data) {
-      markStaffSeen(complaint.id)
-      setSelected(data)
-    }
+    if (data) setSelected(data)
   }
 
   useEffect(() => {
@@ -2152,7 +2144,7 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
                         {nx ? (
                           <button onClick={() => advanceStatus(c.id, nx.next)} disabled={updating === c.id}
                             className="min-h-8 w-full rounded-lg px-2 py-1.5 text-[11px] font-extrabold text-white shadow-sm transition active:scale-[0.98] disabled:opacity-50"
-                            style={{ backgroundColor: nx.next === 'closed' ? '#10b981' : 'var(--color-primary)' }}>
+                            style={{ backgroundColor: nx.color }}>
                             {updating === c.id ? <Loader2 size={13} className="mx-auto animate-spin" /> : nx.label}
                           </button>
                         ) : (
@@ -2225,7 +2217,7 @@ function ComplaintsStaffModule({ tenant, staffId, currentUserRole }) {
                     {nx ? (
                       <button onClick={(e) => { e.stopPropagation(); advanceStatus(c.id, nx.next) }} disabled={updating === c.id}
                         className="min-h-10 flex-1 rounded-xl px-4 py-2 text-xs font-extrabold text-white shadow-sm transition active:scale-[0.98] disabled:opacity-50"
-                        style={{ backgroundColor: nx.next === 'closed' ? '#10b981' : 'var(--color-primary)' }}>
+                        style={{ backgroundColor: nx.color }}>
                         {updating === c.id ? <Loader2 size={15} className="mx-auto animate-spin" /> : nx.label}
                       </button>
                     ) : (
@@ -2459,53 +2451,55 @@ export default function StaffDashboard() {
     // แอดมินต้องรอให้รู้รายชื่อหมวดเฉพาะกิจก่อน ไม่งั้น badge จะโชว์ตัวเลขสูงเกินจริงแวบหนึ่ง
     if (isAdmin && adhocCategories === null) return
 
-    // แอดมินไม่เคยถูก assign คำร้อง เงื่อนไข assigned_to จึงทำให้ badge เป็น 0 ตลอดกาล
-    // คิวของแอดมินคือคำร้องที่ยัง status='pending' ทั้งเทศบาล — trigger auto_assign_complaint
-    // (migration 080) มอบหมายช่างตามหมวดให้แล้วแต่จงใจไม่ขยับ status ส่วนช่างกรอง pending ทิ้ง
-    // คำร้องจึงค้างไม่ถึงมือใครเลยจนกว่าแอดมินจะกดรับเรื่อง
-    // ฝั่งแอดมินใช้ head:true นับอย่างเดียว ไม่ดึงแถวลง client = ไม่มี PII ติดมา และไม่ต้องใช้
-    // seen ids เพราะพอกดรับเรื่องแล้ว status เปลี่ยน ตัวเลขลดเองโดยไม่ต้องจำสถานะบนเครื่อง
+    // badge ทั้งสองฝั่งหมายถึงเรื่องเดียวกัน: "คำร้องที่ยังไม่มีใครกดเริ่มดำเนินการ"
+    // สถานะเดินจริงคือ pending → received → in_progress → closed/rejected และปุ่ม
+    // "เริ่มดำเนินการ" คือ received → in_progress (RPC start_complaint_progress) เท่านั้น
     //
-    // ⚠️ ต้องตัดหมวดเฉพาะกิจ (complaint_categories.is_adhoc) ออกเสมอ — OdorReportPanel
+    // ⚠️ เกณฑ์เดิมของแอดมินคือ status='pending' เฉยๆ ซึ่งใช้ได้เฉพาะสมัยที่แอดมินต้องกดรับเรื่อง
+    // ทุกใบ พอ trg_route_complaint_auto_receive (migration 20260915100100) ตั้ง status='received'
+    // ให้ตั้งแต่ตอนยื่น คำร้องส่วนใหญ่ไม่ผ่าน pending เลย badge ของแอดมินจึงดับสนิททั้งที่ยังไม่มีใคร
+    // แตะงาน — นับ pending+received แทน ตัวเลขจะลดตอนผู้รับผิดชอบเริ่มงานจริง ไม่ใช่ตอนระบบ
+    // รับเรื่องแทน (pending ยังต้องนับ เพราะหมวดที่ตั้ง requires_manual_intake เช่นร้องเรียนทุจริต
+    // ระบบไม่รับให้ ต้องรอแอดมินกดรับเอง) ใบที่ผู้ร้องกดเปิดกลับภายใน 7 วันถูกตั้งกลับเป็น
+    // received/pending อยู่แล้ว จึงไหลกลับเข้า badge เองโดยไม่ต้องเขียนเงื่อนไขเพิ่ม
+    //
+    // ทั้งสองฝั่งใช้ head:true นับอย่างเดียว ไม่ดึงแถวลง client = ไม่มี PII ติดมา และไม่ต้องจำ
+    // สถานะบนเครื่อง (เดิมฝั่งเจ้าหน้าที่นับจาก "เคยเปิดดูหรือยัง" ใน localStorage ซึ่งเลขหาย
+    // ตั้งแต่เปิดอ่านทั้งที่ยังไม่เริ่มงาน และกลับมาใหม่ทุกครั้งที่ล้าง storage หรือเปลี่ยนเครื่อง)
+    //
+    // ⚠️ ฝั่งแอดมินต้องตัดหมวดเฉพาะกิจ (complaint_categories.is_adhoc) ออกเสมอ — OdorReportPanel
     // จงใจแยกขาดจาก status pipeline: ระบบรับเรื่องเองตั้งแต่ยื่นโดยเขียนแค่ extra_data.routed_at
     // ไม่เคยแตะ status ⇒ คำร้องเฉพาะกิจค้าง pending ตลอดไปแม้จัดการเสร็จแล้ว ถ้านับรวมเข้ามา
     // badge จะไม่มีวันลงถึง 0 แล้วคนจะเลิกมองมัน ซึ่งแย่กว่าไม่มี badge
     // อีกทั้งหมวดเฉพาะกิจออกแบบให้ "ส่งตรงถึงผู้รับผิดชอบโดยไม่ผ่านแอดมิน" อยู่แล้ว
     // (migration 20260827120000) จึงไม่ควรอยู่ในคิวรับเรื่องของแอดมินตั้งแต่แรก
-    const adminPendingQuery = () => {
+    // ฝั่งผู้รับผิดชอบไม่ต้องตัดหมวดนี้ เพราะกรอง status='received' อยู่แล้ว และคำร้องเฉพาะกิจ
+    // ไม่เคยไปถึง received
+    //
+    // ผู้รับผิดชอบนับเฉพาะ received ของตัวเอง ไม่รวม pending — ใบที่ยัง pending ถูก
+    // auto_assign_complaint มอบหมายไว้แล้วก็จริง แต่ start_complaint_progress บังคับว่าต้องเป็น
+    // received ก่อน กดเริ่มดำเนินการไม่ได้ ถ้านับเข้ามา badge จะค้างโดยที่เจ้าตัวทำอะไรไม่ได้
+    const badgeQuery = () => {
       const q = supabase.from('complaints')
         .select('id', { count: 'exact', head: true })
         .eq('municipality_id', tenant.id)
-        .eq('status', 'pending')
+      if (!isAdmin) return q.eq('assigned_to', profile.id).eq('status', 'received')
+      const adminQ = q.in('status', ['pending', 'received'])
       return adhocCategories.length > 0
-        ? q.not('category', 'in', `(${adhocCategories.map(v => `"${v}"`).join(',')})`)
-        : q
+        ? adminQ.not('category', 'in', `(${adhocCategories.map(v => `"${v}"`).join(',')})`)
+        : adminQ
     }
 
     // badge มีหน้าที่เตือน การเดาค่าเป็น 0 ตอน query พังจึงเป็นค่าที่อันตรายที่สุดที่จะเดา —
     // มันแปลว่า "ไม่มีอะไรต้องทำ" ทั้งที่จริงคือ "ไม่รู้" ตอน error ให้คงค่าเดิมไว้แล้ว log
     // ตัวเลขค้างยังดีกว่าไฟเขียวปลอม และทำให้แยกออกว่า 0 คือศูนย์จริงหรือ query พัง
-    const refreshComplaintBadge = () => isAdmin
-      ? adminPendingQuery().then(({ count, error }) => {
-          if (error) { console.error('admin complaint badge count error:', error.message); return }
-          setNewComplaintCount(count ?? 0)
-        })
-      : supabase.from('complaints')
-          .select('id, status')
-          .eq('municipality_id', tenant.id)
-          .eq('assigned_to', profile.id)
-          .neq('status', 'pending')
-          .then(({ data, error }) => {
-            if (error) { console.error('staff complaint badge fetch error:', error.message); return }
-            const seen = getStaffSeenIds()
-            const count = (data ?? []).filter(c =>
-              c.status !== 'completed' && c.status !== 'closed' && c.status !== 'rejected' && !seen.has(c.id)
-            ).length
-            setNewComplaintCount(count)
-          })
+    const refreshComplaintBadge = () =>
+      badgeQuery().then(({ count, error }) => {
+        if (error) { console.error('complaint badge count error:', error.message); return }
+        setNewComplaintCount(count ?? 0)
+      })
 
     refreshComplaintBadge()
-    window.addEventListener('staff-badge-update', refreshComplaintBadge)
 
     const ch = supabase.channel(`staff-complaint-badge-${tenant.id}-${crypto.randomUUID()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'complaints' },
@@ -2520,7 +2514,6 @@ export default function StaffDashboard() {
       .subscribe()
 
     return () => {
-      window.removeEventListener('staff-badge-update', refreshComplaintBadge)
       supabase.removeChannel(ch)
     }
   }, [tenant?.id, profile?.id, profile?.role, adhocCategories])
@@ -2699,6 +2692,7 @@ export default function StaffDashboard() {
                 setActiveModule={setActiveModule}
                 profile={profile}
                 pendingCount={pendingCount}
+                newComplaintCount={newComplaintCount}
                 navigate={navigate}
                 onCreateManagementEvent={() => {
                   setAutoCreateEventSignal(signal => signal + 1)

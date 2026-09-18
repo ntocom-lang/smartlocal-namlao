@@ -35,11 +35,18 @@ const STATUS = {
   rejected:    { label: 'ปฏิเสธ',         bg: '#fee2e2', text: '#991b1b' },
 }
 
+// สีปุ่ม = สีของสถานะ "ปลายทาง" ที่ปุ่มจะพาไป (ฟ้า รับเรื่องแล้ว · ม่วง กำลังดำเนินการ · เขียว
+// ดำเนินการแล้ว) ให้ตรงกับชุดสีป้ายสถานะ คนจะได้จำคู่สีชุดเดียว — เดิมทุกปุ่มใช้ --color-primary
+// สีเดียวกันหมด ไล่ตารางแล้วแยกไม่ออกว่าแถวไหนยังไม่เริ่ม แถวไหนรอปิดงาน
+// ใช้เฉดเข้ม (700) ไม่ใช่สีเดียวกับป้าย เพราะปุ่มเป็นตัวอักษรขาวเล็ก 11-13px — เขียว #10b981
+// กับตัวขาวได้ contrast แค่ราว 2.5:1 อ่านไม่ออกบนจอสว่างน้อย เฉด 700 ได้ราว 5.5-7:1
+// ⚠️ ชุดสีเดียวกันนี้ใช้ใน ComplaintsManager.jsx · StaffDashboard.jsx · TechnicianDashboard.jsx
+// เปลี่ยนที่หนึ่งต้องเปลี่ยนให้ครบทั้งสามไฟล์
 const NEXT_ACTION = {
-  received:    { label: 'เริ่มดำเนินการ', next: 'in_progress' },
+  received:    { label: 'เริ่มดำเนินการ', next: 'in_progress', color: '#6d28d9' },
   // "ดำเนินการแล้ว" เปิดกล่องปักหมุด (FinishComplaintDialog) — 'done' ขั้นเก่ากดซ้ำเพื่อปักหมุดให้ครบ
-  in_progress: { label: 'ดำเนินการแล้ว', next: 'closed' },
-  done:        { label: 'ดำเนินการแล้ว', next: 'closed' },
+  in_progress: { label: 'ดำเนินการแล้ว', next: 'closed', color: '#047857' },
+  done:        { label: 'ดำเนินการแล้ว', next: 'closed', color: '#047857' },
 }
 
 // สถานะสุดท้ายคือ 'closed' ("ดำเนินการแล้ว" — ผู้รับผิดชอบกดเองผ่าน finish_complaint) ส่วน 'completed'
@@ -470,7 +477,7 @@ function DetailSheet({ complaint: c, onClose, onUpdate, updating, tenant, curren
                 onClick={() => isFinishStep ? setShowFinish(true) : onUpdate(c.id, action.next)}
                 disabled={updating === c.id}
                 className="w-full py-3 rounded-2xl text-sm font-bold text-white transition-all active:scale-98 disabled:opacity-50"
-                style={{ backgroundColor: isFinishStep ? '#10b981' : '#2563eb' }}>
+                style={{ backgroundColor: action.color }}>
                 {updating === c.id
                   ? <Loader2 size={16} className="animate-spin mx-auto" />
                   : isFinishStep
