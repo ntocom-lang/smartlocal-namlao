@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTenant } from '../../../../contexts/TenantContext'
-import { Wifi, Users, MapPinned, Compass, Phone, BookUser, ChevronRight, Ambulance, CalendarDays } from 'lucide-react'
+import { Wifi, Users, MapPinned, Compass, Phone, BookUser, ChevronRight, Ambulance, CalendarDays, Droplets } from 'lucide-react'
 import { supabase } from '../../../../lib/supabase'
 import { PATIENT_TRANSPORT_TYPE } from '../../../../lib/patientTransport'
 import { removedDocumentTypes } from '../../../../lib/documentTypes'
@@ -12,6 +12,7 @@ import PostsHighlight from '../../../../components/home/PostsHighlight'
 import TourismSection from '../../../../components/home/TourismSection'
 import SmartCityBanner from '../../../../components/home/SmartCityBanner'
 import { CategoryIcon } from '../../../../lib/categoryIcon'
+import WaterworksDialog from './WaterworksDialog'
 
 // รายการ "งานบริการประชาชน" จริง — ใช้ชุดข้อมูลเดียวกับ EServiceBlock ของธีมอื่นๆ (EcoFriendly ฯลฯ)
 // คือประเภทคำร้องขอเอกสาร ไม่ใช่เรื่องร้องเรียน (นั่นเป็นของ ComplaintBand คนละส่วนกัน) ผูกกับ
@@ -30,11 +31,10 @@ const CITIZEN_SERVICE = {
   href: '/doc-request',
 }
 
-const SATISFACTION_SERVICE = {
-  value: 'satisfaction',
-  label: 'ประเมินความพึงพอใจ',
-  emoji: '⭐',
-  href: '/satisfaction',
+const WATERWORKS_SERVICE = {
+  value: 'waterworks',
+  label: 'บริการประปา',
+  emoji: '🚰',
 }
 
 const MANUAL_SERVICE = {
@@ -160,6 +160,7 @@ function HeroBanner({ tenant, rounded = 'rounded-2xl' }) {
 
 function EServiceGrid({ docTypes, rounded = 'rounded-2xl' }) {
   const { tenant } = useTenant()
+  const [waterworksOpen, setWaterworksOpen] = useState(false)
   const displayItems = docTypes.slice(0, 6)
   const isPair = displayItems.length === 2
   // เมนูหลัก 4 ช่อง; รองรับบริการเพิ่มเติมที่หน่วยงานตั้งไว้ด้วย
@@ -252,11 +253,21 @@ function EServiceGrid({ docTypes, rounded = 'rounded-2xl' }) {
           const lineClamp = 'line-clamp-3'
           const cardContent = (
             <>
-              <CategoryIcon emoji={emoji} size={isPair ? 26 : 22} style={tenant?.category_icon_style} />
+              {value === 'waterworks'
+                ? <Droplets size={isPair ? 26 : 22} className="text-sky-600" aria-hidden="true" />
+                : <CategoryIcon emoji={emoji} size={isPair ? 26 : 22} style={tenant?.category_icon_style} />}
               <p className={`${isPair ? 'text-[11px] sm:text-xs' : 'text-[10px] sm:text-[11px]'} font-bold text-gray-700 text-center leading-tight ${lineClamp} transition-colors group-hover:text-blue-700`}>{label}</p>
             </>
           )
           const cardClass = `group flex flex-col items-center justify-center gap-1.5 rounded-xl border border-white/70 bg-white/95 ${isPair ? 'p-2.5 sm:p-3' : 'p-1.5 sm:p-2'} shadow-md shadow-blue-950/10 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:bg-white hover:shadow-lg active:scale-95`
+          if (value === 'waterworks') {
+            return (
+              <button key={value} type="button" aria-haspopup="dialog" onClick={() => setWaterworksOpen(true)}
+                className={`${cardClass} ring-2 ring-cyan-200/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white`}>
+                {cardContent}
+              </button>
+            )
+          }
           if (external) {
             return (
               <a key={value} href={href} target="_blank" rel="noopener noreferrer" className={cardClass}>
@@ -272,6 +283,7 @@ function EServiceGrid({ docTypes, rounded = 'rounded-2xl' }) {
         })}
       </div>
       <FeaturedServices />
+      {waterworksOpen && <WaterworksDialog onClose={() => setWaterworksOpen(false)} />}
     </div>
   )
 }
@@ -288,7 +300,7 @@ export default function ServiceHubHome() {
     const base = []
     if (complaintsEnabled) base.push(COMPLAINT_SERVICE)
     if (inboxEnabled) base.push(CITIZEN_SERVICE)
-    if (complaintsEnabled) base.push(SATISFACTION_SERVICE)
+    if (!isModuleEnabled || isModuleEnabled('waterworks')) base.push(WATERWORKS_SERVICE)
     base.push(MANUAL_SERVICE)
     return [...base, ...extras]
   }, [tenant, isModuleEnabled])
