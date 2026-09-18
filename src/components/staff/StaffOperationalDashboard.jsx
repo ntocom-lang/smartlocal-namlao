@@ -17,8 +17,11 @@ const ROLE_LABELS = {
 //      (ส่ง 'YYYY-MM-DD' ดิบจะโดนตีความเป็น UTC เพี้ยน 7 ชม.)
 //   2) Promise.all ต้องมี .catch ไม่งั้น query ที่ชน timeout 25 วิ ทำแดชบอร์ดค้างสปินเนอร์ถาวร
 export default function StaffOperationalDashboard({
-  visibleGroups, setActiveModule, profile, pendingCount, navigate, onCreateManagementEvent,
+  visibleGroups, setActiveModule, profile, pendingCount, newComplaintCount = 0, navigate, onCreateManagementEvent,
 }) {
+  // ตัวเลขบนการ์ดต้องเป็นตัวเดียวกับ badge ใน sidebar (คำนวณที่ StaffDashboard จุดเดียว) —
+  // คำร้อง = ใบที่ยังไม่มีใครกดเริ่มดำเนินการ ห้ามนับซ้ำในไฟล์นี้ ไม่งั้นสองจุดจะเลขไม่ตรงกัน
+  const cardBadges = { inbox: pendingCount, complaints: newComplaintCount }
   const todayTH = new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
 
   const taskCopy = {
@@ -99,7 +102,7 @@ export default function StaffOperationalDashboard({
                     className="flex min-h-14 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left hover:bg-slate-50 active:scale-[0.99]">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: bg ?? `${color}18` }}><Icon size={18} style={{ color }} /></div>
                     <p className="min-w-0 flex-1 text-xs font-bold leading-tight text-slate-700">{label}</p>
-                    {key === 'inbox' && pendingCount > 0 && <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[9px] font-bold text-white">{pendingCount > 99 ? '99+' : pendingCount}</span>}
+                    {cardBadges[key] > 0 && <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[9px] font-bold text-white">{cardBadges[key] > 99 ? '99+' : cardBadges[key]}</span>}
                   </button>
                 ))}
               </div>

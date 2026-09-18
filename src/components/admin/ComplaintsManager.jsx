@@ -72,10 +72,17 @@ const STATUS_FLOW_LABEL = {
   closed:      { label: 'ดำเนินการแล้ว',   desc: 'ผู้รับผิดชอบดำเนินการแล้วและแจ้งผลผู้ร้อง' },
 }
 const DEPARTMENTS = ['สำนักปลัด', 'กองช่าง', 'กองการศึกษา', 'กองคลัง']
+// สีปุ่ม = สีของสถานะ "ปลายทาง" ที่ปุ่มจะพาไป (ฟ้า รับเรื่องแล้ว · ม่วง กำลังดำเนินการ · เขียว
+// ดำเนินการแล้ว) ให้ตรงกับชุดสีป้ายสถานะ คนจะได้จำคู่สีชุดเดียว — เดิมทุกปุ่มใช้ --color-primary
+// สีเดียวกันหมด ไล่ตารางแล้วแยกไม่ออกว่าแถวไหนยังไม่เริ่ม แถวไหนรอปิดงาน
+// ใช้เฉดเข้ม (700) ไม่ใช่สีเดียวกับป้าย เพราะปุ่มเป็นตัวอักษรขาวเล็ก 11-13px — เขียว #10b981
+// กับตัวขาวได้ contrast แค่ราว 2.5:1 อ่านไม่ออกบนจอสว่างน้อย เฉด 700 ได้ราว 5.5-7:1
+// ⚠️ ชุดสีเดียวกันนี้ใช้ใน ComplaintsManager.jsx · StaffDashboard.jsx · TechnicianDashboard.jsx
+// เปลี่ยนที่หนึ่งต้องเปลี่ยนให้ครบทั้งสามไฟล์
 const NEXT_ACTION = {
-  new:         { label: 'รับเรื่อง',        next: 'received' },
-  received:    { label: 'เริ่มดำเนินการ',   next: 'in_progress' },
-  in_progress: { label: 'ดำเนินการแล้ว',    next: 'closed' },
+  new:         { label: 'รับเรื่อง',        next: 'received',    color: '#0369a1' },
+  received:    { label: 'เริ่มดำเนินการ',   next: 'in_progress', color: '#6d28d9' },
+  in_progress: { label: 'ดำเนินการแล้ว',    next: 'closed',      color: '#047857' },
 }
 let CATEGORY_LABEL = {
   road: 'ถนน/ทางสาธารณะ', light: 'ไฟฟ้าสาธารณะ',
@@ -351,7 +358,7 @@ function ActionButton({ status, id, onUpdate, loading, size = 'sm', tenant, comp
           : size === 'xs'
             ? 'inline-flex items-center gap-0.5 px-2 py-1 rounded-lg text-[11px] font-semibold text-white whitespace-nowrap transition-all active:scale-95 disabled:opacity-50'
             : 'inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[13px] font-semibold text-white whitespace-nowrap transition-all active:scale-95 disabled:opacity-50'}
-        style={{ backgroundColor: 'var(--color-primary)' }}>
+        style={{ backgroundColor: action.color }}>
         {loading === id ? <Loader2 size={size === 'lg' ? 15 : 12} className="animate-spin" /> : <ChevronRight size={size === 'lg' ? 15 : 12} />}
         {action.label}
       </button>
