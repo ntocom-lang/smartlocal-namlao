@@ -195,7 +195,7 @@ const checks = [
             const style = getComputedStyle(sheet)
             const inner = sheet.getBoundingClientRect().width
               - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
-            return [...sheet.querySelectorAll('table, .two-col, .committee, .letter-head, .choices')]
+            return [...sheet.querySelectorAll('table, .two-col, .committee, .letter-head')]
               .map(el => ({ index, diff: el.getBoundingClientRect().width - inner }))
               .filter(entry => entry.diff > 1)
           }))
@@ -257,6 +257,21 @@ const checks = [
           'ใบคำขอไม่มีบรรทัดกำกับว่าลอกโครงมาจากแบบตัวอย่างกลางของ พอช.')
         assert.ok(text.includes('มิใช่ของ'),
           'ใบคำขอไม่ได้บอกว่าการพิจารณาเป็นอำนาจของกองทุน ไม่ใช่ของ อปท.')
+      } finally { await page.close() }
+    },
+  },
+  {
+    name: 'form-offers-patient-transport-only',
+    reason: 'ระบบเปิดรับเรื่องรถรับ-ส่งผู้ป่วยเรื่องเดียว ช่องหมวดอื่นของแบบ พอช. ทำให้เข้าใจผิดว่ายื่นเรื่องอื่นได้',
+    async run(browser) {
+      const page = await render(browser, buildPatientTransportFormHtml(args()))
+      try {
+        const text = await page.evaluate(() => document.body.innerText)
+        for (const word of ['เสียชีวิต', 'เยี่ยมไข้', 'ทุนการศึกษา', 'รับขวัญบุตร', 'อื่นๆ (ระบุ)']) {
+          assert.ok(!text.includes(word), `ใบคำขอยังพิมพ์หมวด "${word}" อยู่`)
+        }
+        assert.ok(/เรื่อง\s+ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วย/.test(text),
+          'หัวเรื่องของใบคำขอต้องเป็น "ขอความอนุเคราะห์รถรับ-ส่งผู้ป่วย" ตรงกับหนังสือนำส่ง')
       } finally { await page.close() }
     },
   },
