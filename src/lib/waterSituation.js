@@ -3,7 +3,8 @@
 //
 // ข้อมูลมาจาก get_public_water_situation() ซึ่ง Edge Function thaiwater-sync ดึงจากคลังข้อมูลน้ำ
 // แห่งชาติ (ThaiWater, สสน.) มาเก็บทุกชั่วโมง — ไฟล์นี้แค่จัดรูปแบบการแสดงผล ไม่ประเมินสถานการณ์เอง
-// ป้ายสถานการณ์น้ำ (น้ำปกติ/น้ำมาก/…) มากับข้อมูลจากต้นทางแล้ว ห้ามเขียนเกณฑ์ซ้ำที่นี่
+// ป้ายสถานการณ์ "ระดับน้ำ" (น้ำปกติ/น้ำมาก/…) มากับข้อมูลจากต้นทางแล้ว ห้ามเขียนเกณฑ์ซ้ำที่นี่
+// ส่วนฝนกับอ่างเก็บน้ำต้นทางไม่ส่งเกณฑ์มา จึงเทียบกับเกณฑ์ทางการที่อ้างที่มาไว้ (RAIN_LEVELS / DAM_LEVELS)
 
 const TZ = 'Asia/Bangkok'
 
@@ -28,6 +29,29 @@ export const RAIN_LEVELS = [
   { key: 'heavy',     label: 'ฝนหนัก',      upTo: 90.0,      chip: 'bg-amber-100 text-amber-800' },
   { key: 'veryHeavy', label: 'ฝนหนักมาก',   upTo: Infinity,  chip: 'bg-rose-100 text-rose-700' },
 ]
+
+// เกณฑ์ปริมาณน้ำในอ่างเก็บน้ำ — % ของความจุที่ระดับเก็บกักปกติ (รนก.) ซึ่งเป็นฐานเดียวกับ storage_percent
+//   ป้าย + สี: รายงานสถานภาพน้ำเขื่อนของ สสน. หัวข้อ "สีระดับเกณฑ์ (%รนก.)"
+//     https://tiwrm.hii.or.th/DATA/REPORT/php/rid_bigcm.html (คัดจาก HTML ต้นฉบับ 2569-09-19)
+//   ช่วงเดียวกันนี้ใช้กับ "อ่างเก็บน้ำขนาดกลาง" ในระบบฐานข้อมูลอ่างเก็บน้ำของกรมชลประทาน
+//     https://app.rid.go.th/reservoir/ (≤30 · 31–50 · 51–80 · 81–100 · >100)
+// ⚠️ ใช้สีตามต้นฉบับตรงตัว ห้าม "ปรับให้เข้าใจง่าย" — เขียวคือ "น้ำน้อย" ไม่ใช่ "ปกติ" และแดงคือ
+//    อ่างใกล้เต็ม ถ้าเปลี่ยนสี ประชาชนที่เปิดเว็บกรมชลประทานเทียบจะเห็นไม่ตรงกัน
+export const DAM_LEVELS = [
+  { key: 'critical', label: 'น้ำน้อยวิกฤติ',     range: '≤30%',    upTo: 30,       color: '#FFC000' },
+  { key: 'low',      label: 'น้ำน้อย',          range: '30–50%',  upTo: 50,       color: '#00B050' },
+  { key: 'moderate', label: 'น้ำปานกลาง',       range: '50–80%',  upTo: 80,       color: '#003CFA' },
+  { key: 'high',     label: 'น้ำมาก',           range: '80–100%', upTo: 100,      color: '#FF0000' },
+  { key: 'over',     label: 'เกินความจุเก็บกัก', range: '>100%',   upTo: Infinity, color: '#C70000' },
+]
+
+// ข้อมูลอ่างเป็นรายวันของกรมชลประทาน (1 ค่าต่อวัน เก็บเป็นเที่ยงคืนของวันนั้น) — ถ้าใช้ 3 ชม.
+// แบบสถานีโทรมาตร จะขึ้น "ไม่มีค่าใหม่" ตั้งแต่ตี 3 ทุกวัน · 48 ชม. = ยอมให้ค่าของเมื่อวานค้างได้
+// จนหมดวันนี้ก่อนค่อยเตือน
+export const DAM_STALE_HOURS = 48
+
+// ปริมาตรต่างกันน้อยกว่านี้ถือว่าทรงตัว (ล้าน ลบ.ม.) — ต้นทางปัดทศนิยม 2 ตำแหน่ง
+export const DAM_TREND_FLAT_MCM = 0.01
 
 export function toNum(value) {
   if (value === null || value === undefined || value === '') return null
@@ -67,6 +91,30 @@ export function waterTrend(current, previous) {
     : { dir: 'down', diff, label: `น้ำลง ${Math.abs(diff).toFixed(2)} ม.` }
 }
 
+export function damLevel(percent) {
+  const v = toNum(percent)
+  if (v === null || v < 0) return null
+  return DAM_LEVELS.find(level => v <= level.upTo)
+}
+
+// ปริมาตรน้ำ ล้าน ลบ.ม. — "5.99" / "30.62" / "0.4" ทศนิยมไม่เกิน 2 ตำแหน่งตามต้นทาง
+export function formatMcm(value) {
+  const v = toNum(value)
+  return v === null ? '–' : v.toLocaleString('th-TH', { maximumFractionDigits: 2 })
+}
+
+// เทียบปริมาตรกับเมื่อวาน (prev_dam_storage_mcm จาก RPC = ค่าที่เก่ากว่า 20 ชม.–3 วัน)
+export function damTrend(current, previous) {
+  const a = toNum(current)
+  const b = toNum(previous)
+  if (a === null || b === null) return null
+  const diff = Math.round((a - b) * 100) / 100
+  if (Math.abs(diff) < DAM_TREND_FLAT_MCM) return { dir: 'flat', diff: 0, label: 'ทรงตัว' }
+  return diff > 0
+    ? { dir: 'up', diff, label: `เพิ่ม ${formatMcm(diff)} ล้าน ลบ.ม.` }
+    : { dir: 'down', diff, label: `ลด ${formatMcm(Math.abs(diff))} ล้าน ลบ.ม.` }
+}
+
 export function isStale(iso, now, hours) {
   if (!iso) return true
   const at = new Date(iso).getTime()
@@ -92,6 +140,15 @@ export function measuredAtText(iso, now) {
   if (bangkokDay(at) === bangkokDay(new Date(toMillis(now)))) return `${time} น.`
   const day = at.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', timeZone: TZ })
   return `${day} ${time} น.`
+}
+
+// ข้อมูลรายวัน (อ่างเก็บน้ำ) ไม่มีเวลาวัด — "วันนี้" หรือ "18 ก.ย." ห้ามโชว์ "00:00 น." ให้เข้าใจผิด
+export function dataDayText(iso, now) {
+  if (!iso) return ''
+  const at = new Date(iso)
+  if (Number.isNaN(at.getTime())) return ''
+  if (bangkokDay(at) === bangkokDay(new Date(toMillis(now)))) return 'วันนี้'
+  return at.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', timeZone: TZ })
 }
 
 // "ต.บ้านเวียง" ถ้าอยู่อำเภอเดียวกับสำนักงาน · "ต.น้ำรัด อ.หนองม่วงไข่" ถ้าอยู่นอกอำเภอ

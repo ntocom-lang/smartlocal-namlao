@@ -6,12 +6,14 @@
 //   (ตั้งใจแยกจาก CRON_SECRET ของ fleet-doc-expiry-notify ดูเหตุผลใน 20260918150500)
 //
 // เรียกโดย pg_cron ทุกชั่วโมงเท่านั้น (20260918150500_water_situation_cron.sql) ไม่มีโค้ดฝั่ง client เรียก
-// ดึงข้อมูลฝน/ระดับน้ำจากคลังข้อมูลน้ำแห่งชาติ (ThaiWater, สสน.) แล้วเก็บเฉพาะสถานีที่
-// water_station_config ของทุก อปท. ระบุไว้ — ดึงรอบเดียวใช้ร่วมทุก อปท. ไม่วนยิงราย อปท.
+// ดึงข้อมูลฝน/ระดับน้ำ/อ่างเก็บน้ำขนาดกลางจากคลังข้อมูลน้ำแห่งชาติ (ThaiWater, สสน.) แล้วเก็บเฉพาะ
+// สถานีที่ water_station_config ของทุก อปท. ระบุไว้ — ดึงรอบเดียวใช้ร่วมทุก อปท. ไม่วนยิงราย อปท.
 // หน้าเว็บอ่านผ่าน get_public_water_situation() ไม่ยิงไปต้นทางเอง
 //
 // ต้นทางเป็น API สาธารณะที่ไม่มี key และไม่มีเอกสารเงื่อนไขการใช้งาน (ตรวจ 2569-09-18)
 // จึงดึงแค่ชั่วโมงละครั้ง และขอเฉพาะ endpoint ที่มีสถานีต้องใช้จริง
+// ⚠️ ห้ามเปลี่ยนไปใช้ twa-api-public.thaiwater.net (API ของหน้าแผนที่ใหม่) — ต้องแนบ x-api-key ที่
+//    สสน. ฝังไว้ในเว็บตัวเอง การเอากุญแจนั้นมาใช้ไม่ใช่การเรียก API สาธารณะ
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -23,9 +25,12 @@ const CRON_SECRET = Deno.env.get('THAIWATER_CRON_SECRET')
 const API_BASE = 'https://api-v3.thaiwater.net/api/v1/thaiwater30/public'
 const RAIN_URL = `${API_BASE}/rain_24h`               // ~4.7 MB ทั้งประเทศ
 const WATERLEVEL_URL = `${API_BASE}/waterlevel_load`  // ~1.9 MB ทั้งประเทศ
+// อ่างเก็บน้ำอยู่นอก /public (ไม่มีชุดอ่างใน /public — ไล่ลองแล้ว 404 ทุกชื่อ) ~1 MB
+// ใช้เฉพาะก้อน dam_medium (อ่างขนาดกลาง ข้อมูลรายวันของกรมชลประทาน)
+const DAM_URL = 'https://api-v3.thaiwater.net/api/v1/thaiwater30/analyst/dam'
 
 // งบเวลารวมต้องจบก่อน pg_net ตัดสาย (timeout_milliseconds 60000 ใน cron)
-// 15 วิ × 3 ครั้ง + พัก 1+2 วิ = 48 วิ ต่อ endpoint (2 endpoint ยิงขนานกัน)
+// 15 วิ × 3 ครั้ง + พัก 1+2 วิ = 48 วิ ต่อ endpoint (ทุก endpoint ยิงขนานกัน)
 const FETCH_TIMEOUT_MS = 15_000
 const MAX_ATTEMPTS = 3
 const DEADLINE_MS = 50_000
@@ -34,7 +39,7 @@ const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 // เวลาในอนาคตเกินนี้ถือว่าข้อมูลผิด (นาฬิกาสถานีเพี้ยน)
 const MAX_FUTURE_MS = 2 * 60 * 60 * 1000
 
-type StationConfig = { id: string; station_type: 'rain' | 'waterlevel'; station_code: string }
+type StationConfig = { id: string; station_type: 'rain' | 'waterlevel' | 'dam'; station_code: string }
 type FetchResult = { ok: true; data: unknown } | { ok: false; error: string }
 type Json = Record<string, unknown>
 
@@ -75,6 +80,18 @@ function parseBangkokDatetime(value: unknown, now: number): string | null {
   const m = String(value ?? '').trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/)
   if (!m) return null
   const at = new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6] ?? '00'}+07:00`)
+  const t = at.getTime()
+  if (Number.isNaN(t) || t > now + MAX_FUTURE_MS || t < now - MAX_AGE_MS) return null
+  return at.toISOString()
+}
+
+// ข้อมูลอ่างเป็นรายวัน ต้นทางส่ง dam_date "2026-09-18" → เก็บเป็นเที่ยงคืนเวลาไทยของวันนั้น
+// อ่านแค่ 10 ตัวแรก เผื่อต้นทางเติมเวลาต่อท้ายในอนาคต (วันที่คือสิ่งเดียวที่มีความหมายสำหรับข้อมูลรายวัน)
+// แถวที่ไม่มีข้อมูลจริงของต้นทางมาเป็น "1970-01-01" — ตกเกณฑ์ MAX_AGE_MS ทิ้งเองตรงนี้
+function parseBangkokDate(value: unknown, now: number): string | null {
+  const m = String(value ?? '').trim().slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!m) return null
+  const at = new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00+07:00`)
   const t = at.getTime()
   if (Number.isNaN(t) || t > now + MAX_FUTURE_MS || t < now - MAX_AGE_MS) return null
   return at.toISOString()
@@ -164,6 +181,18 @@ function indexByCode(rows: unknown, wanted: Set<string>) {
   return map
 }
 
+// อ่างใช้ dam.id ของต้นทางเป็นตัวชี้ (ไม่มี tele_station_oldcode) — ต้นทางส่งเป็นตัวเลข เทียบเป็นข้อความ
+function indexDamsById(rows: unknown, wanted: Set<string>) {
+  const map = new Map<string, Json>()
+  if (!Array.isArray(rows)) return map
+  for (const row of rows) {
+    const id = asObject(asObject(row)?.dam)?.id
+    const code = typeof id === 'number' || typeof id === 'string' ? String(id).trim() : ''
+    if (code && wanted.has(code)) map.set(code, row as Json)
+  }
+  return map
+}
+
 serve(async (req) => {
   if (req.method !== 'POST') return json({ ok: false, error: 'method not allowed' }, 405)
 
@@ -196,18 +225,22 @@ serve(async (req) => {
 
   const rainCodes = new Set(stations.filter(s => s.station_type === 'rain').map(s => s.station_code))
   const levelCodes = new Set(stations.filter(s => s.station_type === 'waterlevel').map(s => s.station_code))
+  const damCodes = new Set(stations.filter(s => s.station_type === 'dam').map(s => s.station_code))
 
   // ขอเฉพาะ endpoint ที่มีสถานีต้องใช้จริง — ไม่ดึงก้อนใหญ่ทิ้งเปล่า
   const skipped: FetchResult = { ok: true, data: null }
-  const [rainResult, levelResult] = await Promise.all([
+  const [rainResult, levelResult, damResult] = await Promise.all([
     rainCodes.size ? fetchWithRetry(RAIN_URL, startedAt) : Promise.resolve(skipped),
     levelCodes.size ? fetchWithRetry(WATERLEVEL_URL, startedAt) : Promise.resolve(skipped),
+    damCodes.size ? fetchWithRetry(DAM_URL, startedAt) : Promise.resolve(skipped),
   ])
 
   const rainPayload = rainResult.ok ? asObject(rainResult.data) : null
   const levelPayload = levelResult.ok ? asObject(levelResult.data) : null
+  const damPayload = damResult.ok ? asObject(damResult.data) : null
   const rainByCode = indexByCode(rainPayload?.data, rainCodes)
   const levelByCode = indexByCode(asObject(levelPayload?.waterlevel_data)?.data, levelCodes)
+  const damById = indexDamsById(asObject(damPayload?.data)?.dam_medium, damCodes)
   const situationOf = buildSituationLookup(levelPayload)
 
   const now = Date.now()
@@ -228,6 +261,34 @@ serve(async (req) => {
         fetched_at: fetchedAt,
         rain_24h_mm: rain24,
         rain_1h_mm: rain1 !== null && rain1 >= 0 ? rain1 : null,
+      })
+      continue
+    }
+
+    if (station.station_type === 'dam') {
+      const d = damById.get(station.station_code)
+      const recordedAt = d ? parseBangkokDate(d.dam_date, now) : null
+      const storage = d ? num(d.dam_storage) : null
+      const capacity = d ? num(asObject(d.dam)?.normal_storage) : null
+      // ความจุ 0/null = แถวที่ต้นทางมีแค่ชื่ออ่าง ไม่มีข้อมูลจริง (เจอ 356 จาก 862 อ่าง)
+      if (!recordedAt || storage === null || storage < 0 || capacity === null || capacity <= 0) {
+        unmatched.push(station.station_code)
+        continue
+      }
+      // % ของต้นทางคิดเทียบความจุที่ระดับเก็บกักปกติ (รนก.) ตรงกับที่เราคำนวณเอง — ใช้ของต้นทาง
+      // ถ้าหาย ค่อยคำนวณจากปริมาตร ÷ ความจุ (สูตรเดียวกัน)
+      const givenPercent = num(d?.dam_storage_percent)
+      const inflow = num(d?.dam_inflow)
+      const released = num(d?.dam_released)
+      rows.push({
+        station_config_id: station.id,
+        recorded_at: recordedAt,
+        fetched_at: fetchedAt,
+        dam_storage_mcm: storage,
+        dam_capacity_mcm: capacity,
+        dam_inflow_mcm: inflow !== null && inflow >= 0 ? inflow : null,
+        dam_released_mcm: released !== null && released >= 0 ? released : null,
+        storage_percent: givenPercent ?? round(storage / capacity * 100, 2),
       })
       continue
     }
@@ -272,11 +333,14 @@ serve(async (req) => {
     unmatched,
     rainFetch: rainCodes.size ? (rainResult.ok ? 'ok' : rainResult.error) : 'skipped',
     waterlevelFetch: levelCodes.size ? (levelResult.ok ? 'ok' : levelResult.error) : 'skipped',
+    damFetch: damCodes.size ? (damResult.ok ? 'ok' : damResult.error) : 'skipped',
     elapsedMs: Date.now() - startedAt,
   }
   console.log('[thaiwater-sync]', JSON.stringify(summary))
 
   // ดึงไม่ได้ทั้งหมด = ต้นทางล่มหรือปิดกั้น → 502 ให้เห็นใน net._http_response
-  const anyFetchOk = (rainCodes.size > 0 && rainResult.ok) || (levelCodes.size > 0 && levelResult.ok)
+  const anyFetchOk = (rainCodes.size > 0 && rainResult.ok)
+    || (levelCodes.size > 0 && levelResult.ok)
+    || (damCodes.size > 0 && damResult.ok)
   return json({ ok: anyFetchOk, summary }, anyFetchOk ? 200 : 502)
 })

@@ -36,8 +36,14 @@ const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')
 const ALERT_TENANT_SLUG = 'demo'
 
 const STALE_MINUTES = 125
-const STATION_TYPES = ['rain', 'waterlevel'] as const
-const TYPE_LABEL: Record<string, string> = { rain: 'ข้อมูลฝน', waterlevel: 'ข้อมูลระดับน้ำ' }
+// อ่างเก็บน้ำเป็นข้อมูลรายวัน แต่ตัดสินด้วยเกณฑ์เดียวกันได้ เพราะดูเวลาที่ "ระบบดึงสำเร็จ" (fetched_at)
+// ไม่ใช่วันที่ของข้อมูล — รอบดึงรายชั่วโมงขยับ fetched_at ของแถววันนั้นทุกรอบที่ต้นทางยังตอบได้
+const STATION_TYPES = ['rain', 'waterlevel', 'dam'] as const
+const TYPE_LABEL: Record<string, string> = {
+  rain: 'ข้อมูลฝน',
+  waterlevel: 'ข้อมูลระดับน้ำ',
+  dam: 'ข้อมูลอ่างเก็บน้ำ',
+}
 
 type StationType = typeof STATION_TYPES[number]
 type StaleFeed = { type: StationType; lastFetchedAt: string | null; ageMinutes: number | null }
